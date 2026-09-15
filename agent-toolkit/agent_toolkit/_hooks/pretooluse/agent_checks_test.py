@@ -133,11 +133,13 @@ class TestBashCommandContractWarnings:
             assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
 
     @pytest.mark.parametrize("command", ["atk --help; atk wi list", "atk wi --help && atk wi show a.md"])
-    def test_help_with_same_executable_blocks(self, command: str) -> None:
+    def test_help_with_same_executable_warns(self, command: str) -> None:
+        """格下げ後も検出条件は同じで、実行を止めずに警告だけを返す。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 2
-        assert "ヘルプの取得と同じ実行ファイル" in result.stderr
-        assert "先にヘルプだけを実行" in result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "ヘルプの取得と同じ実行ファイル" in messages
+        assert "先にヘルプだけを実行" in messages
 
     @pytest.mark.parametrize(
         "command",
@@ -206,8 +208,8 @@ class TestBashOutputTruncationWarning:
         assert "安全に`rg`へ補正できない形" in result.stderr
         assert result.stdout == ""
 
-    def test_unfixable_uv_input_with_truncation_remains_blocked(self, tmp_path: pathlib.Path) -> None:
-        """スクリプト形へ一意変換できない入力は切り詰めだけを補正して通さない。"""
+    def test_unfixable_uv_input_with_truncation_warns(self, tmp_path: pathlib.Path) -> None:
+        """スクリプト形へ一意変換できない入力は、切り詰めを補正したうえで警告を返す。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -217,8 +219,8 @@ class TestBashOutputTruncationWarning:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert "uv run python" in result.stderr
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
     def test_repeated_output_truncation_is_blocked(self, tmp_path: pathlib.Path) -> None:
         """同一セッションで同じ補正種別の2回目は補正せず遮断する。"""
@@ -1350,8 +1352,8 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
     def test_second_target_edit_warn_survives_block(self, tmp_path: pathlib.Path):
         """2件目の警告と同じ呼び出しで遮断が成立しても、警告をコーディングエージェントへ届ける。
 
-        遮断時点でカウンタと直前パスは更新済みのため、同一パスを安全に再試行しても
-        警告は再生成されない。遮断で終える直前に出力しなければ警告が失われる。
+        遮断で終える直前に出力しなければ警告が失われる。
+        遮断側は、編集検査のうち唯一遮断を維持する秘匿値ファイルの検査を用いる。
         """
         sid = "direct-edit-warn-with-block"
         self._write_flag_state(tmp_path, sid)
@@ -1367,26 +1369,9 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             env_overrides=env,
         )
         assert result.returncode == 0
-        # 2件目は警告対象であり、同じ入力が文字化け検査で遮断される。
-        second = self._target(tmp_path, "bar/SKILL.md")
+        # 2件目は警告対象であり、同じ入力が秘匿値ファイルの検査で遮断される。
+        second = self._target(tmp_path, "bar/references/.env.md")
         blocked = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(second),
-                    "old_string": "stub",
-                    "new_string": "stub2" + chr(0xFFFD),
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert blocked.returncode == 2
-        assert "U+FFFD" in blocked.stderr
-        assert "次の同種の編集は遮断する" in _agent_messages(blocked)
-        # 同一パスの安全な再試行では警告が再生成されない。
-        retried = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {"file_path": str(second), "old_string": "stub", "new_string": "stub2"},
@@ -1395,10 +1380,12 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             },
             env_overrides=env,
         )
-        assert retried.returncode == 0
-        assert "次の同種の編集は遮断する" not in _agent_messages(retried)
+        assert blocked.returncode == 2
+        assert "シークレット・鍵ファイル" in blocked.stderr
+        assert "計画ファイルを作成しないまま" in _agent_messages(blocked)
 
-    def test_third_target_edit_blocks(self, tmp_path: pathlib.Path):
+    def test_third_target_edit_warns(self, tmp_path: pathlib.Path):
+        """3件目以降も遮断せず警告を返す。検出条件は格下げ前と同じ件数で成立する。"""
         sid = "direct-edit-block"
         self._write_flag_state(tmp_path, sid)
         env = self._state_env(tmp_path)
@@ -1413,27 +1400,19 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 },
                 env_overrides=env,
             )
-            if i < 2:
-                assert result.returncode == 0
+            assert result.returncode == 0
+            if i == 0:
+                assert "計画ファイルを作成しないまま" not in _agent_messages(result)
             else:
-                # 3件目でblockする。
-                assert result.returncode == 2
-                assert "[block]" in result.stderr
-                assert "計画ファイルを作成しないまま" in result.stderr
+                assert "計画ファイルを作成しないまま" in _agent_messages(result)
+                assert "計画ファイルを作成しないまま" not in result.stderr
 
-    def test_block_persists_on_same_path_retry(self, tmp_path: pathlib.Path):
-        """block後にコーディングエージェントが同一パスを再試行してもblockを継続する。
-
-        block時は`direct_agent_toolkit_edit_count`と`last_agent_toolkit_edit_path`を
-        更新しない設計により、再試行時も再度3件目としてblockが返る。
-        block時に更新してしまうと、直前パス一致条件でカウンタ加算がスキップされ
-        blockが素通りする回避経路が発生するため、その回避を防ぐ。
-        """
+    def test_counter_advances_after_third_target_edit(self, tmp_path: pathlib.Path):
+        """3件目以降もカウンタと直前パスを更新し、同一パスの再試行では警告を再生成しない。"""
         sid = "direct-edit-block-retry"
         self._write_flag_state(tmp_path, sid)
         env = self._state_env(tmp_path)
-        # 1件目・2件目で異なるパスの編集を実行しwarn状態にする。
-        for edit_name in ("foo/SKILL.md", "bar/SKILL.md"):
+        for edit_name in ("foo/SKILL.md", "bar/SKILL.md", "baz/SKILL.md"):
             target = self._target(tmp_path, edit_name)
             result = _run(
                 {
@@ -1445,26 +1424,22 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 env_overrides=env,
             )
             assert result.returncode == 0
-        # 3件目でblock。同一パスで複数回再試行しても継続してblockされることを検証する。
         third = self._target(tmp_path, "baz/SKILL.md")
-        for _ in range(3):
-            result = _run(
-                {
-                    "tool_name": "Edit",
-                    "tool_input": {"file_path": str(third), "old_string": "stub", "new_string": "stub2"},
-                    "session_id": sid,
-                    "permission_mode": "default",
-                },
-                env_overrides=env,
-            )
-            assert result.returncode == 2
-            assert "[block]" in result.stderr
-            assert "計画ファイルを作成しないまま" in result.stderr
-        # block後もstateは更新されず、カウンタは2・直前パスは2件目のままである。
+        retried = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(third), "old_string": "stub", "new_string": "stub2"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert retried.returncode == 0
+        assert "計画ファイルを作成しないまま" not in _agent_messages(retried)
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_after = json.loads(state_path.read_text(encoding="utf-8"))
-        assert state_after["direct_agent_toolkit_edit_count"] == 2
-        assert state_after["last_agent_toolkit_edit_path"].endswith("bar/SKILL.md")
+        assert state_after["direct_agent_toolkit_edit_count"] == 3
+        assert state_after["last_agent_toolkit_edit_path"].endswith("baz/SKILL.md")
 
     def test_same_path_repeats_do_not_increment(self, tmp_path: pathlib.Path):
         sid = "direct-edit-same"
@@ -1591,17 +1566,24 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
 class TestForeignScriptMixin:
     """日本語文中への他言語文字の混入検査。"""
 
-    def test_blocks_hangul_in_japanese(self):
-        """日本語を含む文字列へのハングル混入を遮断する。"""
+    def test_warns_hangul_in_japanese(self):
+        """日本語を含む文字列へのハングル混入を警告する。編集は再編集で復元できる。"""
         content = "テスト" + _HANGUL_SAMPLE + "名を確認する"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
-        assert result.returncode == 2
-        assert "日本語以外の文字" in result.stderr
+        assert result.returncode == 0
+        assert "日本語以外の文字" in _agent_messages(result)
 
-    def test_blocks_cyrillic_in_japanese(self):
-        """日本語を含む文字列へのキリル混入を遮断する。"""
+    def test_warns_cyrillic_in_japanese(self):
+        """日本語を含む文字列へのキリル混入を警告する。"""
         content = "テスト" + _CYRILLIC_SAMPLE + "名を確認する"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
+        assert result.returncode == 0
+        assert "日本語以外の文字" in _agent_messages(result)
+
+    def test_blocks_hangul_in_user_facing_text(self):
+        """ユーザーが直接読む本文への混入は、届いた後に取り消せないため遮断を維持する。"""
+        content = "テスト" + _HANGUL_SAMPLE + "名を確認する"
+        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": content}})
         assert result.returncode == 2
         assert "日本語以外の文字" in result.stderr
 

@@ -428,7 +428,12 @@ _ENV_BASENAME_PATTERN = re.compile(r"^\.env(?:\..+)?$")
 
 
 def _check_bash_nested_code_string(command: str) -> bool:
-    """別のシェルへコード文字列を渡す多段の引用解釈を遮断する。"""
+    """別のシェルへコード文字列を渡す多段の引用解釈を遮断する。
+
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断を維持する。
+    段ごとの展開規則が重なると、実行主体が渡した入力とは異なるコマンドが成立し、
+    当該コマンドが削除、上書き、外部送信などの復元できない操作を含み得るためである。
+    """
     masked = _bash_command_parser.mask_heredoc_bodies(command)
     token_groups: list[tuple[str, ...]] = []
     with contextlib.suppress(ValueError):
@@ -469,7 +474,12 @@ def _check_bash_nested_code_string(command: str) -> bool:
 
 
 def _check_bash_heredoc_chain(command: str) -> bool:
-    """heredocと本文外のパイプ又は追加リダイレクトの併用を遮断する。"""
+    """heredocと本文外のパイプ又は追加リダイレクトの併用を遮断する。
+
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断を維持する。
+    heredocが未終端のまま次段へ渡ると、本文の一部がコマンドとして解釈され、
+    当該コマンドが削除、上書きなどの復元できない操作を含み得るためである。
+    """
     masked = _bash_command_parser.mask_heredoc_bodies(command)
     if "<<" not in masked:
         return False
@@ -516,49 +526,52 @@ def _check_bash_env_full_read(command: str) -> bool:
     return False
 
 
-def _check_bash_explicit_path_exists(command: str, cwd: str) -> bool:
-    """単純な`rg`・`ugrep`・`cat`の展開を含まない明示パスが存在するか検査する。"""
+def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
+    """単純な`rg`・`ugrep`・`cat`の展開を含まない明示パスが存在するか検査する。
+
+    通した場合の結果は当該コマンドが不在のパスで失敗することに限り、作業ツリーへ副作用を残さない。
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、警告で返す。
+    """
     masked = _bash_command_parser.mask_heredoc_bodies(command)
     if not cwd or any(operator in masked for operator in ("|", ";", "&&", "||", "\n", ">", "<")):
-        return False
+        return None
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:
-        return False
+        return None
     if not tokens:
-        return False
+        return None
     name = pathlib.PurePath(tokens[0]).name
     if name in {"rg", "ugrep"} and len(tokens) == 3 and not tokens[1].startswith("-"):
         candidates = [tokens[2]]
     elif name == "cat" and len(tokens) >= 2:
         candidates = [token for token in tokens[1:] if not token.startswith("-")]
     else:
-        return False
+        return None
     for candidate in candidates:
         if candidate in {"-", "/dev/stdin"} or any(character in candidate for character in "*$?[]{}~`"):
             continue
         path = pathlib.Path(candidate)
         resolved = path if path.is_absolute() else pathlib.Path(cwd) / path
         if not resolved.exists():
-            print(
-                _block_notice(
-                    f"blocked: 明示された検索・読取パスが存在しない。対象: {candidate}",
-                    fix="対象パスを現行の作業ディレクトリから解決し、実在するパスを指定する。",
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"明示された検索・読取パスが存在しない。対象: {candidate}\n"
+                "対処: 対象パスを現行の作業ディレクトリから解決し、実在するパスを指定する。",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return True
-    return False
+    return None
 
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
 _PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project(?:\.[\w\-]+)?\]\s*$")
 
 
-def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
-    """`uv run python <path>`形式の起動を非Pythonプロジェクトでブロックする。
+def _check_bash_uv_run_python(command: str, cwd: str) -> str | None:
+    """`uv run python <path>`形式の起動を非Pythonプロジェクトで検出して警告する。
 
-    判定詳細は本関数の冒頭コメントを参照する。真を返すとblock（exit 2）。
+    判定詳細は本関数の冒頭コメントを参照する。
+    通した場合の結果はプロジェクト解決の失敗による終了に限り、作業ツリーへ副作用を残さないため警告で返す。
     """
     segments = split_bash_segments(command)
     current_cwd = CwdResolution(cwd, bool(cwd))
@@ -566,7 +579,7 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
         try:
             tokens = shlex.split(segment, posix=True)
         except ValueError:
-            return False
+            return None
         cwd_change = resolve_cwd_change(tokens, current_cwd)
         if cwd_change is not None:
             current_cwd = cwd_change
@@ -577,9 +590,12 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
             if not has_script_or_no_project and (
                 directory_or_project_overridden or not current_cwd.resolved or not _cwd_in_python_project(current_cwd.path)
             ):
-                print(_block_notice(_UV_RUN_PYTHON_BLOCK_MSG, fix=_UV_RUN_PYTHON_FIX), file=sys.stderr)
-                return True
-    return False
+                return _llm_notice(
+                    f"{_UV_RUN_PYTHON_BLOCK_MSG}\n対処: {_UV_RUN_PYTHON_FIX}",
+                    tag=_WARN_TAG,
+                    removable_cause=True,
+                )
+    return None
 
 
 def _skip_env_assignments(tokens: list[str], start: int) -> int:
@@ -1491,7 +1507,11 @@ def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | N
 
 
 def _check_bash_atk_help_observation(command: str, session_id: str) -> str | None:
-    """未観測の最下層`atk`サブコマンドへ、CLI定義から生成した受理形式を添える。"""
+    """未観測の最下層`atk`サブコマンドへ、CLI定義から生成した受理形式を添える。
+
+    ヘルプを生成できない場合も実行は止めず、生成できなかった旨と確認手段を警告で返す。
+    通した場合の結果は未受理オプションによる`atk`の終了に限り、復元できるためである。
+    """
     paths: list[tuple[str, ...]] = []
     for segment in _extract_execution_segments(command):
         if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
@@ -1510,23 +1530,19 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
 
         help_sections = [format_command_contract(path) for path in missing]
     except Exception as error:  # noqa: BLE001 - Hookはヘルプ生成不能を安全側へ倒す
-        print(
-            _block_notice(
-                f"block: atkサブコマンドのヘルプを生成できない: {error}",
-                fix="`atk <サブコマンド> --help`を単独で実行して受理形式を確認する。",
-            ),
-            file=sys.stderr,
+        return _llm_notice(
+            f"atkサブコマンドのヘルプを生成できない: {error}\n"
+            "対処: `atk <サブコマンド> --help`を単独で実行して受理形式を確認する。",
+            tag=_WARN_TAG,
+            removable_cause=False,
         )
-        return "block"
     if any(section is None for section in help_sections):
-        print(
-            _block_notice(
-                "block: atkサブコマンドのヘルプ定義を解決できない。",
-                fix="`atk <サブコマンド> --help`を単独で実行して受理形式を確認する。",
-            ),
-            file=sys.stderr,
+        return _llm_notice(
+            "atkサブコマンドのヘルプ定義を解決できない。\n"
+            "対処: `atk <サブコマンド> --help`を単独で実行して受理形式を確認する。",
+            tag=_WARN_TAG,
+            removable_cause=False,
         )
-        return "block"
     record_atk_help_paths(session_id, [" ".join(path) for path in missing])
     bodies = [f"atk {' '.join(path)}: {section}" for path, section in zip(missing, help_sections, strict=True)]
     return _llm_notice(
@@ -1535,8 +1551,11 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
     )
 
 
-def _check_bash_atk_options(command: str) -> bool:
-    """公開済み最下層`atk`サブコマンドの未対応オプションを実行前に遮断する。"""
+def _check_bash_atk_options(command: str) -> str | None:
+    """公開済み最下層`atk`サブコマンドの未対応オプションを実行前に検出する。
+
+    通した場合の結果は`atk`が未受理オプションで終了することに限り、復元できるため警告で返す。
+    """
     from agent_toolkit.atk import command_option_contract  # pylint: disable=import-outside-toplevel
 
     for segment in _extract_execution_segments(command):
@@ -1576,16 +1595,14 @@ def _check_bash_atk_options(command: str) -> bool:
             ):
                 pass
             elif token.startswith("-") and not re.fullmatch(r"-\d+(?:\.\d+)?", token):
-                print(
-                    _block_notice(
-                        f"blocked: `atk {' '.join(path)}`が受理しないオプションである。対象: {token}",
-                        fix="実行前案内に示された受理オプションへ修正するか、`--help`を単独で確認する。",
-                    ),
-                    file=sys.stderr,
+                return _llm_notice(
+                    f"`atk {' '.join(path)}`が受理しないオプションである。対象: {token}\n"
+                    "対処: 実行前案内に示された受理オプションへ修正するか、`--help`を単独で確認する。",
+                    tag=_WARN_TAG,
+                    removable_cause=True,
                 )
-                return True
             index += 1
-    return False
+    return None
 
 
 def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
@@ -1728,25 +1745,23 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
 
 
 def _check_bash_help_with_execution(command: str) -> str | None:
-    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を遮断する。
+    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を検出する。
 
     `-h`は実行ファイルごとに意味が異なるためヘルプ指定として扱わない。
     ヘルプ取得だけを並べた呼び出しは、警告が求める実行の分離を適用する区間を持たないため対象にしない。
-    代替手段がヘルプの先行実行と後続実行の分離に一意に定まり、同じターンで実行できるため遮断する。
+    通した場合の結果は受理形式の確定が同じ呼び出しの内側へ入ることに限り、復元できるため警告で返す。
     """
     segments = [segment for segment in _extract_execution_segments(command) if segment.resolved and segment.tokens]
     names = [pathlib.PurePosixPath(segment.tokens[0]).name for segment in segments]
     help_names = {name for name, segment in zip(names, segments, strict=True) if _segment_is_help_only(segment)}
     non_help_names = {name for name, segment in zip(names, segments, strict=True) if not _segment_is_help_only(segment)}
     if help_names & non_help_names:
-        print(
-            _block_notice(
-                "block: 同じシェル呼び出しの中でヘルプの取得と同じ実行ファイルの実行が並んでいる。",
-                fix="先にヘルプだけを実行して受理形式を確定し、実行は別の呼び出しへ分ける。",
-            ),
-            file=sys.stderr,
+        return _llm_notice(
+            "同じシェル呼び出しの中でヘルプの取得と同じ実行ファイルの実行が並んでいる。\n"
+            "対処: 先にヘルプだけを実行して受理形式を確定し、実行は別の呼び出しへ分ける。",
+            tag=_WARN_TAG,
+            removable_cause=True,
         )
-        return "block"
     return None
 
 

@@ -108,18 +108,22 @@ class TestLanguageEscalation:
         assert "英語主体" in ctx
         assert "evaluate relevance" not in ctx
 
-    def test_second_english_blocks(self, tmp_path: pathlib.Path):
-        """2回連続英語でexit 2 + stderrでブロックする。"""
+    def test_second_english_escalates_body(self, tmp_path: pathlib.Path):
+        """2回連続英語で、遮断せず強い本文の警告へ切り替える。
+
+        検出した回の応答は既にユーザーへ届いており、当該ツール呼び出しを止めても当該応答は戻らない。
+        """
         env = self._state_env(tmp_path)
         sid = "esc-block"
         # 1回目: warn
         r1 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         assert r1.returncode == 0
-        # 2回目: block
+        # 2回目: 強い本文へ切り替え
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 2
-        assert "2ターン連続" in r2.stderr
-        assert "evaluate relevance" not in r2.stderr
+        assert r2.returncode == 0
+        ctx = _additional_context(r2)
+        assert "2ターン連続" in ctx
+        assert "evaluate relevance" not in ctx
 
     def test_japanese_resets_counter(self, tmp_path: pathlib.Path):
         """日本語応答が間に入るとカウンタがリセットされる。"""
@@ -146,24 +150,24 @@ class TestLanguageEscalation:
         assert r2.returncode == 0  # 同一IDなのでカウンタ増加なし、ブロックしない
         assert "英語主体" not in _additional_context(r2)
 
-    def test_block_then_next_english_reblocks(self, tmp_path: pathlib.Path):
-        """ブロック後の次ターン英語で再ブロックする。"""
+    def test_escalated_body_repeats_on_next_english(self, tmp_path: pathlib.Path):
+        """強い本文へ切り替えた後の次ターン英語でも同じ本文を返す。"""
         env = self._state_env(tmp_path)
         sid = "esc-reblock"
         # 1回目: warn
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
-        # 2回目: block
+        # 2回目: 強い本文
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 2
-        # 3回目: 再block（カウンタが1に設定されているため、次の英語で再度≧2）
+        assert r2.returncode == 0
+        # 3回目: 再び強い本文（カウンタが1に設定されているため、次の英語で再度≧2）
         r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
-        assert r3.returncode == 2
-        assert "2ターン連続" in r3.stderr
+        assert r3.returncode == 0
+        assert "2ターン連続" in _additional_context(r3)
 
     @pytest.mark.parametrize(
         ("text", "expected_count", "expected_returncode"),
         [
-            ("A" * 100, 1, 2),
+            ("A" * 100, 1, 0),
             ("これは日本語の応答です。" * 5, 0, 0),
             ("了解した。", 0, 0),
         ],
@@ -179,7 +183,7 @@ class TestLanguageEscalation:
         """判定結果の3値それぞれについて連続検出カウンタの遷移を検証する。
 
         直前の検出が1回記録された状態から始める。英語主体と判定した回は前回と異なる
-        message IDでカウンタが2へ達してブロックし、ブロック後のカウンタは1になる。
+        message IDでカウンタが2へ達して強い本文へ切り替え、切り替え後のカウンタは1になる。
         英語主体でないと判定した回は、警告本文を返さない結果でもカウンタを0へ戻す。
         """
         env = self._state_env(tmp_path)
@@ -201,15 +205,16 @@ class TestLanguageEscalation:
         assert "自動生成のhook通知" in ctx
         assert "evaluate relevance" not in ctx
 
-    def test_block_has_suffix(self, tmp_path: pathlib.Path):
-        """block時のstderrに共通の日本語サフィックスが含まれることを検証する。"""
+    def test_escalated_body_has_suffix(self, tmp_path: pathlib.Path):
+        """強い本文へ切り替えた回のadditionalContextに共通の日本語サフィックスが含まれる。"""
         env = self._state_env(tmp_path)
         sid = "esc-suffix-block"
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 2
-        assert "自動生成のhook通知" in r2.stderr
-        assert "evaluate relevance" not in r2.stderr
+        assert r2.returncode == 0
+        ctx = _additional_context(r2)
+        assert "自動生成のhook通知" in ctx
+        assert "evaluate relevance" not in ctx
 
 
 class TestGeneralBehavior:

@@ -91,13 +91,14 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
         assert result.returncode == 0
 
-    def test_nearest_non_python_project_blocks_ancestor_project(self, tmp_path: pathlib.Path) -> None:
-        """直近が`[tool.uv]`のみなら祖先に`[project]`があっても遮断する。"""
+    def test_nearest_non_python_project_warns_despite_ancestor_project(self, tmp_path: pathlib.Path) -> None:
+        """直近が`[tool.uv]`のみなら祖先に`[project]`があっても検出する。"""
         self._make_python_project(tmp_path)
         cwd = self._make_child_directory(tmp_path)
         self._make_non_python_project(cwd)
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
     def test_non_python_project_script_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
         """単純なスクリプトパス形を`uv run --script`へ補正する。"""
@@ -107,13 +108,17 @@ class TestBashUvRunPythonBlock:
         output = json.loads(result.stdout)["hookSpecificOutput"]
         assert output["updatedInput"]["command"] == "uv run --script /tmp/foo.py --flag 'two words'"
 
-    def test_non_python_project_inline_code_is_blocked(self, tmp_path: pathlib.Path) -> None:
-        """安全にスクリプト形へ直せないインラインコード形は遮断する。"""
+    def test_non_python_project_inline_code_is_warned(self, tmp_path: pathlib.Path) -> None:
+        """安全にスクリプト形へ直せないインラインコード形は警告する。
+
+        通した場合の結果はプロジェクト解決の失敗による終了に限り、復元できる。
+        """
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python -c 'print(1)'", cwd)
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
-        assert "uv run python" in result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "[auto-generated: agent-toolkit/pretooluse]" in messages
+        assert "uv run python" in messages
 
     def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
         """pyproject.tomlが無いcwdでも単純なスクリプトパス形を補正する。"""
@@ -121,17 +126,19 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == "uv run --script /tmp/foo.py"
 
-    def test_script_after_python_blocked(self, tmp_path: pathlib.Path):
+    def test_script_after_python_warned(self, tmp_path: pathlib.Path):
         """`uv run python --script s.py`は`--script`がpythonの引数となるため例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --script s.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_no_project_after_python_blocked(self, tmp_path: pathlib.Path):
+    def test_no_project_after_python_warned(self, tmp_path: pathlib.Path):
         """`uv run python --no-project s.py`は同上の理由で例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --no-project s.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
     def test_cd_to_python_project_allowed(self, tmp_path: pathlib.Path) -> None:
         """静的に解決できる`cd`先がPythonプロジェクトなら許容する。"""
@@ -169,33 +176,38 @@ class TestBashUvRunPythonBlock:
             f"cd {target} && uv run --script /tmp/foo.py"
         )
 
-    def test_unresolved_cd_blocks(self, tmp_path: pathlib.Path) -> None:
-        """shell展開を含む`cd`は、payload cwdがPythonプロジェクトでも遮断する。"""
+    def test_unresolved_cd_warns(self, tmp_path: pathlib.Path) -> None:
+        """shell展開を含む`cd`は、payload cwdがPythonプロジェクトでも検出する。"""
         payload_cwd = self._make_python_project(tmp_path)
         result = self._invoke('cd "$TARGET" && uv run python /tmp/foo.py', payload_cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_pushd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
+    def test_pushd_then_uv_run_warned(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("pushd /tmp && uv run python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_uv_directory_option_blocked(self, tmp_path: pathlib.Path):
-        """`uv --directory`はプロジェクト解決対象をpayload cwdから外すためblock。"""
+    def test_uv_directory_option_warned(self, tmp_path: pathlib.Path):
+        """`uv --directory`はプロジェクト解決対象をpayload cwdから外すため検出対象。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv --directory /tmp run python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_uv_project_global_option_blocked(self, tmp_path: pathlib.Path):
+    def test_uv_project_global_option_warned(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv --project /tmp run python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_uv_run_project_option_blocked(self, tmp_path: pathlib.Path):
-        """runサブコマンドオプション位置の`--project=`もblock対象。"""
+    def test_uv_run_project_option_warned(self, tmp_path: pathlib.Path):
+        """runサブコマンドオプション位置の`--project=`も検出対象。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv run --project=/tmp python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
     def test_cd_with_no_project_allowed(self, tmp_path: pathlib.Path):
         """cwd変更があっても`--no-project`例外が優先するため許容する。"""
@@ -1302,10 +1314,11 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 2
         assert ".env" in result.stderr
 
-    def test_missing_explicit_path_is_blocked(self, tmp_path: pathlib.Path) -> None:
+    def test_missing_explicit_path_is_warned(self, tmp_path: pathlib.Path) -> None:
+        """不在のパスは実行してもコマンドが失敗するだけで復元できるため警告で返す。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "rg needle absent.txt"}, "cwd": str(tmp_path)})
-        assert result.returncode == 2
-        assert "absent.txt" in result.stderr
+        assert result.returncode == 0
+        assert "absent.txt" in _agent_messages(result)
 
     def test_existing_explicit_path_is_allowed(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "present.txt"
@@ -1318,10 +1331,11 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == ("git grep --ignore-case needle")
 
-    def test_atk_unknown_option_is_blocked(self) -> None:
+    def test_atk_unknown_option_is_warned(self) -> None:
+        """未受理オプションは実行しても`atk`が終了するだけで復元できるため警告で返す。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
-        assert result.returncode == 2
-        assert "--not-supported" in result.stderr
+        assert result.returncode == 0
+        assert "--not-supported" in _agent_messages(result)
 
     def test_heredoc_block_notice_names_a_save_means_that_passes_the_same_check(self) -> None:
         """heredoc遮断の解消手段が、同じ判定へ当たらない形を名指しする。"""

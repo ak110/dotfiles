@@ -67,13 +67,13 @@ class TestCodexApplyPatchEditChecks:
         assert len(result.stdout.strip().splitlines()) == 1
         assert _additional_context(result).count("ホームディレクトリの絶対パス") == 2
 
-    def test_mojibake_in_patch_blocks(self, tmp_path: pathlib.Path) -> None:
-        """patch本文の文字化けを遮断する。"""
+    def test_mojibake_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
+        """patch本文の文字化けを警告する。編集対象は再編集で復元できる。"""
         patch_text = _patch("*** Add File: docs/a.md\n+hello � world\n")
         result = _run(_codex_payload(patch_text, tmp_path))
 
-        assert result.returncode == 2
-        assert "U+FFFD" in result.stderr
+        assert result.returncode == 0
+        assert "U+FFFD" in _additional_context(result)
 
     def test_unparsable_patch_passes_through(self, tmp_path: pathlib.Path) -> None:
         """patch構造を認識できない入力は遮断も警告もせず通過させる。"""
@@ -96,13 +96,13 @@ class TestCodexApplyPatchEditChecks:
         assert "colloquial" not in _agent_messages(result)
         assert result.stderr == ""
 
-    def test_lockfile_path_in_patch_blocks(self, tmp_path: pathlib.Path) -> None:
+    def test_lockfile_path_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
         """patchの対象パス判定は既存のパターン検査を共有する。"""
         patch_text = _patch("*** Update File: uv.lock\n@@\n-old\n+new\n")
         result = _run(_codex_payload(patch_text, tmp_path))
 
-        assert result.returncode == 2
-        assert "uv.lock" in result.stderr
+        assert result.returncode == 0
+        assert "uv.lock" in _additional_context(result)
 
     def test_delete_of_unprotected_file_passes(self, tmp_path: pathlib.Path) -> None:
         """非保護対象の削除はこの検査で誤遮断しない。"""

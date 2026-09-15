@@ -124,17 +124,28 @@ def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path)
 
 
 class TestMojibakeCheck:
-    """文字化け（U+FFFD）検出。"""
+    """文字化け（U+FFFD）検出。
+
+    編集対象は再編集で復元できるため警告とし、ユーザーが直接読む本文だけ遮断を維持する。
+    """
+
+    def test_user_facing_text_with_mojibake_is_blocked(self):
+        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "hello " + chr(0xFFFD) + " world"}})
+        assert result.returncode == 2
+        assert "U+FFFD" in result.stderr
+        assert "[block]" in result.stderr
+        assert "Fix: U+FFFDを意図した文字へ置き換えて再実行する" in result.stderr
 
     def test_write_with_mojibake(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "hello \ufffd world"}})
-        assert result.returncode == 2
-        assert "U+FFFD" in result.stderr
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "U+FFFD" in context
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
-        assert "[block]" in result.stderr
-        assert "Fix: U+FFFDを意図した文字へ置き換えて再実行する" in result.stderr
-        assert "自動生成のhook通知" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse]" in context
+        assert "[warn]" in context
+        assert "対処: U+FFFDを意図した文字へ置き換えて再実行する" in context
+        assert "自動生成のhook通知" in context
 
     def test_edit_with_mojibake(self):
         result = _run(
@@ -143,7 +154,8 @@ class TestMojibakeCheck:
                 "tool_input": {"file_path": "/tmp/a.txt", "old_string": "foo", "new_string": "bar\ufffd"},
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "U+FFFD" in _additional_context(result)
 
     def test_multiedit_with_mojibake(self):
         result = _run(
@@ -158,7 +170,8 @@ class TestMojibakeCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "U+FFFD" in _additional_context(result)
 
     def test_old_string_mojibake_is_allowed(self):
         """old_string 内の文字化けは既存修復を妨げないため通過する。"""
@@ -172,9 +185,12 @@ class TestMojibakeCheck:
 
 
 class TestEditBoundaryResolution:
-    """複数断片の境界解決による遮断。"""
+    """複数断片の境界解決による警告。
 
-    def test_multiedit_missing_last_boundary_is_blocked(self, tmp_path: pathlib.Path) -> None:
+    実行ホストが一致しない境界の編集を適用しないため、通した場合も対象ファイルは変わらない。
+    """
+
+    def test_multiedit_missing_last_boundary_warns(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "target.txt"
         target.write_text("first\nsecond\n", encoding="utf-8")
         result = _run(
@@ -189,8 +205,8 @@ class TestEditBoundaryResolution:
                 },
             }
         )
-        assert result.returncode == 2
-        assert f"{target}: edits[1].new_string" in result.stderr
+        assert result.returncode == 0
+        assert f"{target}: edits[1].new_string" in _additional_context(result)
         assert target.read_text(encoding="utf-8") == "first\nsecond\n"
 
     def test_multiedit_all_boundaries_resolvable_is_allowed(self, tmp_path: pathlib.Path) -> None:
@@ -237,7 +253,7 @@ class TestEditBoundaryResolution:
         assert unreadable.returncode == 0
         assert single.returncode == 0
 
-    def test_multiedit_ambiguous_boundary_is_blocked(self, tmp_path: pathlib.Path) -> None:
+    def test_multiedit_ambiguous_boundary_warns(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "target.txt"
         target.write_text("repeat\nrepeat\nunique\n", encoding="utf-8")
         result = _run(
@@ -252,24 +268,24 @@ class TestEditBoundaryResolution:
                 },
             }
         )
-        assert result.returncode == 2
-        assert f"{target}: edits[0].new_string" in result.stderr
+        assert result.returncode == 0
+        assert f"{target}: edits[0].new_string" in _additional_context(result)
 
-    def test_apply_patch_ambiguous_hunk_is_blocked(self, tmp_path: pathlib.Path) -> None:
+    def test_apply_patch_ambiguous_hunk_warns(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "target.txt"
         target.write_text("repeat\nrepeat\nunique\n", encoding="utf-8")
         command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-repeat\n+updated\n@@\n-unique\n+changed\n*** End Patch"
         result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
-        assert result.returncode == 2
-        assert f"{target}: hunk[0]" in result.stderr
+        assert result.returncode == 0
+        assert f"{target}: hunk[0]" in _additional_context(result)
 
-    def test_apply_patch_missing_hunk_is_blocked(self, tmp_path: pathlib.Path) -> None:
+    def test_apply_patch_missing_hunk_warns(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "target.txt"
         target.write_text("first\nsecond\n", encoding="utf-8")
         command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-first\n+updated\n@@\n-missing\n+added\n*** End Patch"
         result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
-        assert result.returncode == 2
-        assert f"{target}: hunk[1]" in result.stderr
+        assert result.returncode == 0
+        assert f"{target}: hunk[1]" in _additional_context(result)
 
     def test_apply_patch_unique_hunks_are_allowed(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "target.txt"
@@ -280,16 +296,17 @@ class TestEditBoundaryResolution:
 
 
 class TestPs1EolCheck:
-    """PowerShell ファイルへの LF-only 書き込み検出。"""
+    """PowerShell ファイルへの LF-only 書き込み検出（警告）。"""
 
-    def test_ps1_with_lf_only_blocks(self):
+    def test_ps1_with_lf_only_warns(self):
         content = "Set-StrictMode\nWrite-Host 'x'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
-        assert result.returncode == 2
-        assert "LFだけの内容" in result.stderr
-        assert "UTF-8 BOMが失われて日本語が文字化け" in result.stderr
-        assert "*.ps1 text eol=crlf" in result.stderr
-        assert "Fix: 既存ファイルにはEditツールを使う" in result.stderr
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "LFだけの内容" in context
+        assert "UTF-8 BOMが失われて日本語が文字化け" in context
+        assert "*.ps1 text eol=crlf" in context
+        assert "対処: 既存ファイルにはEditツールを使う" in context
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -297,11 +314,12 @@ class TestPs1EolCheck:
         result = _run({"tool_name": "Edit", "tool_input": {"file_path": "./a.ps1.tmpl", "new_string": content}})
         assert result.returncode == 0
 
-    def test_ps1_tmpl_write_with_lf_only_blocks(self):
-        """Write は LF のまま書き込むためブロックする。"""
+    def test_ps1_tmpl_write_with_lf_only_warns(self):
+        """Write は LF のまま書き込むため警告する。"""
         content = "Set-StrictMode\n{{ .chezmoi.homeDir }}\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "./a.ps1.tmpl", "content": content}})
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "LFだけの内容" in _additional_context(result)
 
     def test_ps1_with_crlf_allowed(self):
         content = "Set-StrictMode\r\nWrite-Host 'x'\r\n"
@@ -320,7 +338,10 @@ class TestPs1EolCheck:
 
 
 class TestLockfilesCheck:
-    """lockfile / 生成物ディレクトリの直接編集ブロック。"""
+    """lockfile / 生成物ディレクトリの直接編集警告。
+
+    手編集した内容はパッケージ管理ツールの再生成で復元できるため遮断しない。
+    """
 
     @pytest.mark.parametrize(
         "file_path",
@@ -338,22 +359,24 @@ class TestLockfilesCheck:
             "node_modules/pkg/index.js",
         ],
     )
-    def test_write_blocked(self, file_path: str):
+    def test_write_warned(self, file_path: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
-        assert result.returncode == 2
-        assert "直接編集" in result.stderr
-        assert "Fix: " in result.stderr
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "直接編集" in context
+        assert "対処: " in context
 
-    def test_edit_cargo_lock_blocked(self):
+    def test_edit_cargo_lock_warned(self):
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {"file_path": "Cargo.lock", "old_string": "a", "new_string": "b"},
             }
         )
-        assert result.returncode == 2
-        assert "cargo add" in result.stderr
-        assert "Fix: " in result.stderr
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "cargo add" in context
+        assert "対処: " in context
 
     def test_normal_file_allowed(self):
         """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""
@@ -416,13 +439,21 @@ class TestSecretsCheck:
 
 
 class TestManifestCheck:
-    """manifest 手編集の警告 (warn のみ、exit code は 0)。"""
+    """manifest 手編集の警告 (warn のみ、exit code は 0)。
 
-    def test_pyproject_toml_warns(self):
+    lockfileとの同期が失われるのは依存の節を変える編集に限るため、
+    当該節へ触れない編集では通知しない。
+    """
+
+    def test_pyproject_toml_dependency_edit_warns(self):
         result = _run(
             {
                 "tool_name": "Edit",
-                "tool_input": {"file_path": "pyproject.toml", "old_string": "a", "new_string": "b"},
+                "tool_input": {
+                    "file_path": "pyproject.toml",
+                    "old_string": "a",
+                    "new_string": 'dependencies = ["httpx"]',
+                },
             }
         )
         assert result.returncode == 0
@@ -431,11 +462,26 @@ class TestManifestCheck:
         # 編集警告はstderrではなくadditionalContextへ集約する。
         assert result.stderr == ""
 
+    def test_pyproject_toml_tool_section_edit_is_silent(self):
+        """`[tool.*]`と版数だけを変える編集では通知しない。"""
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "pyproject.toml",
+                    "old_string": 'version = "1.0.0"',
+                    "new_string": 'version = "1.0.1"',
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "pyproject.toml" not in _agent_messages(result)
+
     def test_package_json_warns(self):
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": "app/package.json", "content": "{}"},
+                "tool_input": {"file_path": "app/package.json", "content": '{"dependencies": {"x": "1"}}'},
             }
         )
         assert result.returncode == 0
@@ -1188,7 +1234,7 @@ class TestConsecutiveBashFailureGate:
             env,
         )
 
-    def test_second_same_exit_code_blocks_next_direct_bash(self, tmp_path: pathlib.Path) -> None:
+    def test_second_same_exit_code_warns_next_direct_bash(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
         sid = "bash-failure-gate"
         first = self._failure(sid, 7, env)
@@ -1201,12 +1247,12 @@ class TestConsecutiveBashFailureGate:
         assert first.stdout == ""
         assert allowed_after_first.returncode == 0
         assert "2回連続" in _additional_context(second)
-        blocked = _run(
+        warned = _run(
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo retry"}},
             env,
         )
-        assert blocked.returncode == 2
-        assert "start_shell" in blocked.stderr
+        assert warned.returncode == 0
+        assert "start_shell" in _additional_context(warned)
 
     def test_different_code_success_interrupt_and_unclassified_break_sequence(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
@@ -1787,9 +1833,9 @@ class TestResponseLanguageCheck:
 
 
 class TestBlockCheckExecutionOrder:
-    """複数のblock系checkが同時に違反する場合の先行check契約を検証する。"""
+    """複数のcheckが同時に違反する場合の通知の合成契約を検証する。"""
 
-    def test_direct_edit_block_preempts_retroactive_scan_block(self, tmp_path: pathlib.Path) -> None:
+    def test_direct_edit_warning_is_delivered_with_other_checks(self, tmp_path: pathlib.Path) -> None:
         plan = _write_tmp_file(tmp_path, "home/.claude/plans/current.md", "## 実装資料\n\nなし\n")
         target = _write_tmp_file(tmp_path, "agent-toolkit/rules/new-rule.md", "# 既存\n")
         sid = "block-check-order"
@@ -1812,10 +1858,11 @@ class TestBlockCheckExecutionOrder:
             },
             env_overrides=_plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert "`Write`・`Edit`・`MultiEdit`" in result.stderr
-        assert "new meta-norm pattern" not in result.stderr
-        assert "required items" not in result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "`Write`・`Edit`・`MultiEdit`" in messages
+        assert "new meta-norm pattern" not in messages
+        assert "required items" not in messages
 
 
 class TestWarnJsonAndLanguageWarningComposition:

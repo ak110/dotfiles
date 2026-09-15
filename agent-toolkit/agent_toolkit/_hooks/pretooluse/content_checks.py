@@ -169,27 +169,44 @@ def _check_edit_operation_blocks(
     tool_name: str,
     operation: _hook_tool_input.EditOperation,
 ) -> bool:
-    """1操作分の遮断検査を実行する。"""
+    """1操作分の遮断検査を実行する。
+
+    ファイルへの書き込みは再編集で復元できるため、`references/claude-hooks.md`
+    「遮断・警告フックの成立条件」の第1段により、編集内容を対象とする検査は警告へ移した。
+    秘匿値ファイルの編集だけは、値がログとトランスクリプトへ複写された後に取り消せないため遮断を維持する。
+    """
+    return any(_check_secrets(tool_name, path) for path in operation.display_paths)
+
+
+def _collect_edit_operation_degraded_warnings(
+    tool_name: str,
+    operation: _hook_tool_input.EditOperation,
+) -> list[str]:
+    """復元できる編集結果を対象とする検査の警告を集める。"""
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
     display_path = operation.display_path
-    if (
-        _check_mojibake(tool_name, fields)
-        or _check_foreign_script_mixin(tool_name, fields)
+    candidates = [
+        _warn_mojibake(tool_name, fields),
+        _warn_foreign_script_mixin(tool_name, fields),
         # PowerShellの改行要件はpatch断片のLF表現から判定できないため、Claudeの`Write`だけへ適用する。
-        or (tool_name == "Write" and _is_ps1(display_path) and _check_ps1_eol(tool_name, fields, display_path))
-    ):
-        return True
-    return any(_check_lockfiles(tool_name, path) or _check_secrets(tool_name, path) for path in operation.display_paths)
+        _check_ps1_eol(tool_name, fields, display_path) if tool_name == "Write" and _is_ps1(display_path) else None,
+        *(_check_lockfiles(tool_name, path) for path in operation.display_paths),
+    ]
+    return [warning for warning in candidates if warning is not None]
 
 
 def _check_edit_boundary_resolution(
     tool_name: str,
     operations: list[_hook_tool_input.EditOperation],
-) -> bool:
-    """複数断片の全境界が現在内容へ一意に解決できるかを遮断前に確認する。"""
+) -> str | None:
+    """複数断片の全境界が現在内容へ一意に解決できるかを確認する。
+
+    実行ホストが一致しない境界の編集を適用しないため、通した場合も対象ファイルは変わらない。
+    復元できる結果であるため警告で返す。
+    """
     del tool_name  # noqa: PLW0613
     if sum(len(operation.fragments) for operation in operations) < 2:
-        return False
+        return None
     unresolved = [
         f"{operation.display_path}: {label}"
         for operation in operations
@@ -197,16 +214,14 @@ def _check_edit_boundary_resolution(
         for label in labels
     ]
     if not unresolved:
-        return False
-    print(
-        _block_notice(
-            "blocked: 複数の境界を持つ編集入力に、現在のファイル内容へ一意に適用できない境界がある。"
-            "対象ファイルは変更していない。\n" + "\n".join(unresolved),
-            fix="対象ファイルの現行内容を取得し、一致しない境界を現行の文面へそろえてから編集を再実行する。",
-        ),
-        file=sys.stderr,
+        return None
+    return _llm_notice(
+        "複数の境界を持つ編集入力に、現在のファイル内容へ一意に適用できない境界がある。\n"
+        + "\n".join(unresolved)
+        + "\n対処: 対象ファイルの現行内容を取得し、一致しない境界を現行の文面へそろえてから編集を再実行する。",
+        tag=_WARN_TAG,
+        removable_cause=True,
     )
-    return True
 
 
 def _collect_edit_operation_warnings(
@@ -239,16 +254,17 @@ def _collect_edit_operation_warnings(
         )
 
     # 断片入力を使う検査。
-    warnings = [
+    warnings = _collect_edit_operation_degraded_warnings(tool_name, operation)
+    warnings.extend(
         warning
         for warning in (
-            _check_manifest(tool_name, display_path),
+            _check_manifest(tool_name, fields, display_path),
             _check_home_path(tool_name, fields, display_path),
             colloquial_warning,
             _check_style_negation(tool_name, operation, display_path),
         )
         if warning is not None
-    ]
+    )
     if is_codex:
         # 同一patch内で追加・移動する参照先を実ファイルだけで解決できないため、
         # 外部ファイル解決を伴う2検査はClaude入力へ限定する。
@@ -263,8 +279,8 @@ def _collect_edit_operation_warnings(
     return warnings
 
 
-def _check_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -> bool:
-    """日本語を含む文字列へのハングル・キリル文字の混入を検出したらTrueを返す。
+def _detect_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -> tuple[str, str] | None:
+    """日本語を含む文字列へのハングル・キリル文字の混入を検出して本文と解消手段を返す。
 
     日本語（ひらがな・カタカナ・漢字）を含まない文字列は対象外とする。
     多言語の文字列を意図的に扱う場面での誤検出を避けるためである。
@@ -279,20 +295,38 @@ def _check_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -
             continue
         start = max(0, match.start() - 10)
         end = min(len(value), match.end() + 10)
-        print(
-            _block_notice(
-                f"blocked: 日本語本文の`{tool_name}.{field}`に日本語以外の文字（ハングル／キリル文字）が混入している。"
-                f"文脈: {ascii(value[start:end])}。",
-                fix="意図した日本語の文字へ置き換える。",
-            ),
-            file=sys.stderr,
+        return (
+            f"日本語本文の`{tool_name}.{field}`に日本語以外の文字（ハングル／キリル文字）が混入している。"
+            f"文脈: {ascii(value[start:end])}。",
+            "意図した日本語の文字へ置き換える。",
         )
-        return True
-    return False
+    return None
 
 
-def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
-    """U+FFFD（mojibake）を検出したらTrueを返す。"""
+def _check_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -> bool:
+    """ユーザーが直接読む本文への他言語文字の混入を遮断する。
+
+    当該本文はユーザーへ届いた後の書き換えが当該回の提示へ及ばないため、遮断を維持する。
+    """
+    detected = _detect_foreign_script_mixin(tool_name, fields)
+    if detected is None:
+        return False
+    body, fix = detected
+    print(_block_notice(f"blocked: {body}", fix=fix), file=sys.stderr)
+    return True
+
+
+def _warn_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -> str | None:
+    """編集対象への他言語文字の混入を警告する。"""
+    detected = _detect_foreign_script_mixin(tool_name, fields)
+    if detected is None:
+        return None
+    body, fix = detected
+    return _llm_notice(f"{body}\n対処: {fix}", tag=_WARN_TAG, removable_cause=True)
+
+
+def _detect_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> tuple[str, str] | None:
+    """U+FFFD（mojibake）を検出して本文と解消手段を返す。"""
     for field, value in fields:
         position = value.find(_REPLACEMENT_CHAR)
         if position == -1:
@@ -300,15 +334,33 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
         start = max(0, position - 10)
         end = min(len(value), position + 11)
         sample = value[start:end]
-        print(
-            _block_notice(
-                f"blocked: `{tool_name}.{field}`にU+FFFD（文字化け）を検出した。文脈: {sample!r}",
-                fix="U+FFFDを意図した文字へ置き換えて再実行する。",
-            ),
-            file=sys.stderr,
+        return (
+            f"`{tool_name}.{field}`にU+FFFD（文字化け）を検出した。文脈: {sample!r}",
+            "U+FFFDを意図した文字へ置き換えて再実行する。",
         )
-        return True
-    return False
+    return None
+
+
+def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
+    """ユーザーが直接読む本文の文字化けを遮断する。
+
+    当該本文はユーザーへ届いた後の書き換えが当該回の提示へ及ばないため、遮断を維持する。
+    """
+    detected = _detect_mojibake(tool_name, fields)
+    if detected is None:
+        return False
+    body, fix = detected
+    print(_block_notice(f"blocked: {body}", fix=fix), file=sys.stderr)
+    return True
+
+
+def _warn_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> str | None:
+    """編集対象の文字化けを警告する。"""
+    detected = _detect_mojibake(tool_name, fields)
+    if detected is None:
+        return None
+    body, fix = detected
+    return _llm_notice(f"{body}\n対処: {fix}", tag=_WARN_TAG, removable_cause=True)
 
 
 _ATK_QUESTION_CONTRACT_FIX = (
@@ -384,27 +436,26 @@ def _is_ps1(file_path: str) -> bool:
     return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
 
-def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """BOMなしのLF-only書き込みと改行規約の不一致を検出したらTrueを返す。"""
+def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """BOMなしのLF-only書き込みと改行規約の不一致を検出して警告本文を返す。
+
+    書き込んだファイルは再作成で復元できるため、警告で返す。
+    """
     for field, value in fields:
         if "\n" not in value:
             continue
         if "\r\n" in value:
             continue
-        print(
-            _block_notice(
-                f"blocked: `{tool_name}.{field}`にLFだけの内容を検出した。"
-                "この書き込みではUTF-8 BOMが失われて日本語が文字化けし、"
-                f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}",
-                fix=(
-                    "既存ファイルにはEditツールを使う（CRLFを透過的に維持する）。"
-                    "新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。"
-                ),
-            ),
-            file=sys.stderr,
+        return _llm_notice(
+            f"`{tool_name}.{field}`にLFだけの内容を検出した。"
+            "この書き込みではUTF-8 BOMが失われて日本語が文字化けし、"
+            f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}\n"
+            "対処: 既存ファイルにはEditツールを使う（CRLFを透過的に維持する）。"
+            "新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。",
+            tag=_WARN_TAG,
+            removable_cause=True,
         )
-        return True
-    return False
+    return None
 
 
 # --- lockfile / 生成物ディレクトリcheck ---
@@ -434,23 +485,23 @@ _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 )
 
 
-def _check_lockfiles(tool_name: str, file_path: str) -> bool:
-    """lockfileや生成物ディレクトリへの直接編集を検出した場合に真を返す。"""
+def _check_lockfiles(tool_name: str, file_path: str) -> str | None:
+    """lockfileや生成物ディレクトリへの直接編集を検出して警告本文を返す。
+
+    手編集した内容はパッケージ管理ツールの再生成で復元できるため、警告で返す。
+    """
     if not file_path:
-        return False
+        return None
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _LOCKFILE_RULES:
         if pattern.search(normalized):
             fix = "このパスを直接編集せず、パッケージ管理ツールで再生成する。" if label in {".venv/", "node_modules/"} else hint
-            print(
-                _block_notice(
-                    f"blocked: {tool_name}による{label}の直接編集は禁止されている。対象: {file_path}",
-                    fix=fix,
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"{tool_name}による{label}の直接編集を検出した。対象: {file_path}\n対処: {fix}",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return True
-    return False
+    return None
 
 
 # --- シークレット / 鍵ファイルcheck ---
@@ -550,18 +601,33 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 )
 
 
-def _check_manifest(tool_name: str, file_path: str) -> str | None:
-    """manifest手編集を検出したら警告本文を返す（warnのみ、exit codeは変えない）。"""
+_DEPENDENCY_SECTION_RE = re.compile(r"dependenc", re.IGNORECASE)
+"""manifestの依存の節へ触れる編集断片を判別する語。
+
+`pyproject.toml`の`[project.dependencies]`・`[project.optional-dependencies]`・`dependencies = [`と、
+`package.json`の`dependencies`・`devDependencies`などをまとめて捉える。
+`[tool.*]`と版数だけを変える編集は当該語を含まないため、警告の対象から外れる。
+"""
+
+
+def _check_manifest(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """manifestの依存の節への手編集を検出したら警告本文を返す（warnのみ、exit codeは変えない）。
+
+    lockfileとの同期が失われるのは依存の節を変える編集に限るため、当該節へ触れない編集では通知しない。
+    """
     if not file_path:
         return None
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _MANIFEST_RULES:
-        if pattern.search(normalized):
-            return _llm_notice(
-                f"`{tool_name}`で`{label}`を編集しようとしている。{hint}",
-                tag=_WARN_TAG,
-                removable_cause=True,
-            )
+        if not pattern.search(normalized):
+            continue
+        if not any(_DEPENDENCY_SECTION_RE.search(value) for _, value in fields):
+            return None
+        return _llm_notice(
+            f"`{tool_name}`で`{label}`の依存の節を編集しようとしている。{hint}",
+            tag=_WARN_TAG,
+            removable_cause=True,
+        )
     return None
 
 
@@ -1139,15 +1205,12 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）へのWrite/Edit時は
     `plan_file_written`を真にしてカウンタをリセットする。
     対象外パスへの編集時もカウンタをリセットする。
-    カウンタ2件目でwarn（`additionalContext`へ載せる通知本文を返して進行を継続）、
-    3件目以上でblock（stderr出力＋第1要素にTrueを返してツール呼び出しを中断）する。
-    block時は`direct_agent_toolkit_edit_count`と`last_agent_toolkit_edit_path`を更新しない。
-    block後にコーディングエージェントが同一パスを再試行した場合、
-    直前パス一致条件によるカウンタ加算スキップで素通りする回避を防ぐため、
-    カウンタは加算直前の値のまま保持し、再試行時に再度加算されblockが継続する。
+    カウンタ2件目以降で警告本文を返して進行を継続する。
+    計画を経ない編集はファイルの再編集で復元できるため、
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
 
     Returns:
-        （block判定, 通知本文またはNone）のタプル。
+        （block判定, 通知本文またはNone）のタプル。第1要素は常に偽を返す。
     """
     if not session_id:
         return False, None
@@ -1195,13 +1258,6 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     def _increment(current: dict) -> dict | None:
         count = int(current.get("direct_agent_toolkit_edit_count", 0) or 0) + 1
         captured["count"] = count
-        if count >= 3:
-            # block時はstate更新をスキップする。
-            # 直前パスとカウンタを更新してしまうと、コーディングエージェントが
-            # 同一パスを再試行した際に「直前と同一パス」条件で
-            # `_increment`到達前にreturn Falseとなりblockが素通りする。
-            # 更新をスキップすることで再試行時も再度3件目としてblockが継続する。
-            return None
         current["direct_agent_toolkit_edit_count"] = count
         current["last_agent_toolkit_edit_path"] = file_path_raw
         return current
@@ -1210,19 +1266,17 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     new_count = captured["count"]
 
     if new_count >= 3:
-        print(
-            _block_notice(
-                f"blocked: `plan-mode`スキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とする"
-                f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。",
-                fix="agent-toolkit配下のファイルを編集する前に`~/.claude/plans/`配下へ計画ファイルを作成する。",
-            ),
-            file=sys.stderr,
+        return False, _llm_notice(
+            f"`plan-mode`スキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とする"
+            f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。\n"
+            "対処: agent-toolkit配下のファイルを編集する前に`~/.claude/plans/`配下へ計画ファイルを作成する。",
+            tag=_WARN_TAG,
+            removable_cause=True,
         )
-        return True, None
     if new_count == 2:
         return False, _llm_notice(
-            f"warn: `plan-mode`スキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とする"
-            f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。次の同種の編集は遮断する。"
+            f"`plan-mode`スキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とする"
+            f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。"
             "先に`~/.claude/plans/`配下へ計画ファイルを作成する。",
             tag=_WARN_TAG,
             removable_cause=True,

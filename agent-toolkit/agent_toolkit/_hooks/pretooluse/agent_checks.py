@@ -156,34 +156,35 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 
-def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, str | None]:
+def _handle_language_check(payload: dict, session_id: str) -> str | None:
     """直前メインエージェント応答の言語検査を実行し、セッション状態でエスカレーションを管理する。
 
     agents_serverが起動した委譲先セッションでは、作業途中の文章を呼び出し元もユーザーも読まないため検査しない。
 
     Returns:
-        (exit code, 警告本文)のタプル。
-        exit code 2: ブロック（stderrに出力済み）。
-        exit code None + 本文あり: 警告（呼び出し側でadditionalContextに追記）。
-        exit code None + 本文None: 対象外。
+        通知本文。対象外の場合はNone。
+
+    検出した回の応答は既にユーザーへ届いており、当該ツール呼び出しを止めても当該応答は戻らない。
+    以降の応答を日本語へ切り替えることで是正できるため、
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
 
     セッション状態キー:
     - english_warning_count: 連続英語ターンのカウンタ（int）
     - english_warning_msg_id: 前回検出時のmessage ID（str）
 
     エスカレーションロジック:
-    - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2でブロック
-    - PASS・SKIP: カウンタを0にリセットする。ブロック本文が「2ターン連続」と宣言するため、
-      英語主体でないと判定した回を経た後は、1回の検出だけではブロックしない
-    - ブロック後はカウンタを1に設定する（日本語に切り替わるまで毎ターンブロックを継続）
+    - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2で強い本文へ切り替える
+    - PASS・SKIP: カウンタを0にリセットする。強い本文が「2ターン連続」と宣言するため、
+      英語主体でないと判定した回を経た後は、1回の検出だけでは当該本文へ切り替えない
+    - 切り替え後はカウンタを1に設定する（日本語に切り替わるまで毎ターン当該本文を返す）
     """
     transcript_path = payload.get("transcript_path", "")
     if not isinstance(transcript_path, str) or not transcript_path:
-        return (None, None)
+        return None
     if payload.get("isSidechain") is True:
-        return (None, None)
+        return None
     if os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1":
-        return (None, None)
+        return None
 
     outcome, body, msg_id = _response_language_check.detailed_check(transcript_path)
 
@@ -200,11 +201,11 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
                 return current
 
             update_state(session_id, _reset_count)
-        return (None, None)
+        return None
 
     # WARN
     if not session_id:
-        return (None, body)
+        return body
 
     # update_stateがOSErrorで失敗した場合、_incrementは実行されずcountは初期値0のまま残る。
     # この場合はブロックしない方向（安全側）にフォールバックする。
@@ -227,7 +228,7 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
     update_state(session_id, _increment)
 
     if duplicate:
-        return (None, None)
+        return None
 
     if count >= 2:
 
@@ -236,13 +237,9 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
             return current
 
         update_state(session_id, _set_threshold)
-        print(
-            _llm_notice(_response_language_check.BLOCK_BODY, tag=_WARN_TAG, removable_cause=True),
-            file=sys.stderr,
-        )
-        return (2, None)
+        return _response_language_check.BLOCK_BODY
 
-    return (None, body)
+    return body
 
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
@@ -337,8 +334,7 @@ def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
         "WebFetchは要約モデルを経由するため、その出力は逐語引用の根拠にならない。"
         "逐語で引用する場合は、同じURLの生データをagent-toolkitの管理対象一時領域へ保存し、"
         "保存した本文から該当箇所だけを引用する。",
-        tag=_WARN_TAG,
-        removable_cause=True,
+        tag="notice",
     )
 
 
@@ -375,8 +371,7 @@ def _check_generic_agent_preference(tool_input: dict) -> str | None:
         return None
     return _llm_notice(
         "汎用Agentより`agents_server`を優先する。読み取り専用探索には`start_explore`、自由形式の委譲には`start_custom`を使う。",
-        tag=_WARN_TAG,
-        removable_cause=True,
+        tag="notice",
     )
 
 

@@ -181,29 +181,32 @@ class TestHomeClaudeEditWarning:
 
 
 class TestPs1DirectivesBlock:
-    """PowerShell スクリプトの必須ディレクティブ欠落ブロック。"""
+    """PowerShell スクリプトの必須ディレクティブ欠落警告。
+
+    書き込んだファイルは再編集で復元できるため遮断せず、検出条件は格下げ前と同じとする。
+    """
 
     _OK_HEADER = "Set-StrictMode -Version Latest\r\n$ErrorActionPreference = 'Stop'\r\n"
 
     @pytest.mark.parametrize("file_path", ["a.ps1", "scripts/foo.ps1.tmpl", "C:/x/setup.ps1"])
-    def test_missing_both_blocks(self, file_path: str):
+    def test_missing_both_warns(self, file_path: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "Write-Host 'x'\r\n"}})
-        assert result.returncode == 2
-        assert "Set-StrictMode" in result.stderr
-        assert "ErrorActionPreference" in result.stderr
-        assert "Fix: " in result.stderr
+        assert result.returncode == 0
+        message = _get_additional_context(result)
+        assert "Set-StrictMode" in message
+        assert "ErrorActionPreference" in message
 
-    def test_missing_only_strict_mode_blocks(self):
+    def test_missing_only_strict_mode_warns(self):
         content = "$ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
-        assert result.returncode == 2
-        assert "Set-StrictMode" in result.stderr
+        assert result.returncode == 0
+        assert "Set-StrictMode" in _get_additional_context(result)
 
-    def test_missing_only_error_action_blocks(self):
+    def test_missing_only_error_action_warns(self):
         content = "Set-StrictMode -Version Latest\r\nWrite-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
-        assert result.returncode == 2
-        assert "ErrorActionPreference" in result.stderr
+        assert result.returncode == 0
+        assert "ErrorActionPreference" in _get_additional_context(result)
 
     def test_both_present_at_top_allowed(self):
         result = _run(
@@ -227,12 +230,13 @@ class TestPs1DirectivesBlock:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1.tmpl", "content": content}})
         assert result.returncode == 0
 
-    def test_directives_after_50_lines_blocks(self):
-        """先頭 50 行を超えた位置にしかディレクティブが無ければブロック。"""
+    def test_directives_after_50_lines_warns(self):
+        """先頭 50 行を超えた位置にしかディレクティブが無ければ警告する。"""
         padding = "\r\n".join(f"# pad {i}" for i in range(60)) + "\r\n"
         content = padding + self._OK_HEADER
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "Set-StrictMode" in _get_additional_context(result)
 
     def test_edit_skipped(self):
         """Edit はファイル先頭を含まないことが多いため対象外として通す。"""
@@ -260,22 +264,24 @@ class TestPs1DirectivesBlock:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.sh", "content": "echo hi\n"}})
         assert result.returncode == 0
 
-    def test_directive_in_comment_blocks(self):
-        """コメント行内に文字列だけ含まれる PS1 はブロックされること (I-2)。"""
+    def test_directive_in_comment_warns(self):
+        """コメント行内に文字列だけ含まれる PS1 は検出されること (I-2)。"""
         content = "# TODO: add Set-StrictMode -Version Latest and $ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
-        assert result.returncode == 2
-        assert "Set-StrictMode" in result.stderr
-        assert "ErrorActionPreference" in result.stderr
+        assert result.returncode == 0
+        message = _get_additional_context(result)
+        assert "Set-StrictMode" in message
+        assert "ErrorActionPreference" in message
 
-    def test_indented_directive_blocks(self):
-        """行頭にインデントされたディレクティブはブロックされること (I-2)。
+    def test_indented_directive_warns(self):
+        """行頭にインデントされたディレクティブは検出されること (I-2)。
 
         関数/条件ブロック内に書かれている可能性があり、スクリプト全体には適用されないため。
         """
         content = "    " + self._OK_HEADER + "Write-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "Set-StrictMode" in _get_additional_context(result)
 
     def test_directive_with_extra_spaces_allowed(self):
         """`Set-StrictMode  -Version  Latest` のように空白が複数でも許可されること (`\\s+` パターン確認)。"""
@@ -623,7 +629,7 @@ class TestAgentToolkitDotfilesNamesCheck:
             "smpr",
         ],
     )
-    def test_block_when_target_is_in_agent_toolkit(self, name: str):
+    def test_warn_when_target_is_in_agent_toolkit_with_specific_name(self, name: str):
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
@@ -631,14 +637,15 @@ class TestAgentToolkitDotfilesNamesCheck:
                 "tool_input": {"file_path": target, "content": f"See {name} for details."},
             }
         )
-        assert result.returncode == 2
-        assert name in result.stderr
-        assert "Fix: " in result.stderr
+        assert result.returncode == 0
+        message = _get_additional_context(result)
+        assert name in message
+        assert "generalized wording" in message
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
-        assert "自動生成のhook通知" in result.stderr
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in message
+        assert "自動生成のhook通知" in message
 
-    def test_block_in_agent_toolkit_rules(self):
+    def test_warn_in_agent_toolkit_rules(self):
         target = str(_AT_RULES_DIR / "01-agent.md")
         result = _run(
             {
@@ -650,10 +657,10 @@ class TestAgentToolkitDotfilesNamesCheck:
                 },
             }
         )
-        assert result.returncode == 2
-        assert "glatasks" in result.stderr
+        assert result.returncode == 0
+        assert "glatasks" in _get_additional_context(result)
 
-    def test_block_in_multiedit(self):
+    def test_warn_in_multiedit(self):
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
@@ -667,8 +674,8 @@ class TestAgentToolkitDotfilesNamesCheck:
                 },
             }
         )
-        assert result.returncode == 2
-        assert "smpr" in result.stderr
+        assert result.returncode == 0
+        assert "smpr" in _get_additional_context(result)
 
     @pytest.mark.parametrize("name", ["pyfltr", "pytilpack"])
     def test_warn_when_target_is_in_agent_toolkit(self, name: str):
@@ -684,8 +691,8 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert name in msg
         assert "warn" in msg.lower()
 
-    def test_block_takes_precedence_over_warn(self):
-        """block と warn の両方が成立する場合は block を優先 (exit 2)。"""
+    def test_specific_and_oss_names_are_reported_together(self):
+        """固有名とOSS名の双方が成立する場合は、いずれも同じ警告本文へ載せる。"""
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
@@ -696,8 +703,10 @@ class TestAgentToolkitDotfilesNamesCheck:
                 },
             }
         )
-        assert result.returncode == 2
-        assert "glatasks" in result.stderr
+        assert result.returncode == 0
+        message = _get_additional_context(result)
+        assert "glatasks" in message
+        assert "pyfltr" in message
 
     def test_outside_distribution_silently_allowed(self):
         """配布範囲外のファイル (例: scripts/) では混入しても通す。"""
@@ -794,20 +803,20 @@ class TestPytoolsCommandLaunchFormBlock:
             f"{_UVX} --isolated --from x {_PYTOOLS_COMMAND}",
         ],
     )
-    def test_blocks_unresolvable_launch_form(self, invocation: str):
+    def test_warns_unresolvable_launch_form(self, invocation: str):
         result = _run(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": self._TARGET, "content": f"```bash\n{invocation}\n```\n"},
             }
         )
-        assert result.returncode == 2
-        assert _PYTOOLS_COMMAND in result.stderr
-        assert "uv tool install" in result.stderr
-        assert "Fix: " in result.stderr
-        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
+        assert result.returncode == 0
+        message = _get_additional_context(result)
+        assert _PYTOOLS_COMMAND in message
+        assert "uv tool install" in message
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in message
 
-    def test_blocks_in_edit_new_string(self):
+    def test_warns_in_edit_new_string(self):
         result = _run(
             {
                 "tool_name": "Edit",
@@ -818,8 +827,8 @@ class TestPytoolsCommandLaunchFormBlock:
                 },
             }
         )
-        assert result.returncode == 2
-        assert _PYTOOLS_COMMAND in result.stderr
+        assert result.returncode == 0
+        assert _PYTOOLS_COMMAND in _get_additional_context(result)
 
     def test_allows_command_name_in_launched_command_arguments(self):
         """起動されるコマンドの引数位置にある配布コマンド名は、起動形の対象にしない。"""

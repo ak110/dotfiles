@@ -13,11 +13,11 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 任意ツール:
 
-- メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
+- メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
 - ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
 - 質問本文・選択肢が指す`atk`サブコマンドの公開契約が未観測の場合の検査 (block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
-- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
+- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続の警告 (warn)
 
 固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
 計画メタ情報の4項目と記法、計画単位のエージェント提案詳細表（5項目）を含む
@@ -37,7 +37,7 @@ list:
 Bash:
 
 - 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
-- 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
+- 単純な明示パスの不存在と`atk`未対応オプションの警告 (warn)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 350行を超える通常ファイルの静的に確定できる全文取得の遮断 (block)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
@@ -47,7 +47,7 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は遮断 (auto-fix/block)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は警告 (auto-fix/warn)
 - 除外設定を持たない単純な再帰`grep`の`rg`への補正 (auto-fix)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
@@ -227,7 +227,6 @@ _is_python_token = _bash_command_parser.is_python_token
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
-_bash_failure_block_notice = _block_notice_formatter("agent-toolkit/pretooluse")
 
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
@@ -286,9 +285,7 @@ def main(payload_text: str) -> int:
     # 直前メインエージェント応答の日本語比率警告（任意ツール）。
     # 他warn系checkがJSONを返す場合はadditionalContextの末尾へ追記し、それ以外は単独でJSON出力する。
     # transcriptを安定インターフェースとして扱えないCodexでは実行しない。
-    exit_code, language_warning_body = (None, None) if is_codex else _handle_language_check(payload, session_id)
-    if exit_code == 2:
-        return 2
+    language_warning_body = None if is_codex else _handle_language_check(payload, session_id)
 
     # 出力を保留する通知の一覧。exit 0のstderrはコーディングエージェントへ届かないため、
     # 通常はstdoutの`hookSpecificOutput.additionalContext`へ結合して出力する。
@@ -327,10 +324,8 @@ def main(payload_text: str) -> int:
     if plan_mode_notice is not None:
         pending_notices.append(plan_mode_notice)
 
-    # plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続をブロック
-    blocked, direct_edit_notice = _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id)
-    if blocked:
-        return exit_with(2)
+    # plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続を警告
+    _, direct_edit_notice = _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id)
     if direct_edit_notice is not None:
         pending_notices.append(direct_edit_notice)
 
@@ -453,20 +448,21 @@ def _handle_bash_tool(
         return 0
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+    warnings: list[str] = []
     if bash_failure_gate_is_active(session_id):
-        print(
-            _bash_failure_block_notice(
-                "同じ終了コードによるBash失敗が連続したため、直接のBash実行を遮断している。",
-                fix="原因調査と次のコマンド実行をagents_serverのstart_shellへ分離する。成功後に直接実行を再開できる。",
-            ),
-            file=sys.stderr,
+        # 通した場合の結果は同じ失敗の反復に限り、作業ツリーへ副作用を残さないため警告で返す。
+        warnings.append(
+            _llm_notice(
+                "同じ終了コードによるBash失敗が連続している。\n"
+                "対処: 原因調査と次のコマンド実行をagents_serverのstart_shellへ分離する。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
         )
-        return 2
     large_read_notice = check_large_bash_read(command, cwd)
     if large_read_notice is not None:
         print(large_read_notice, file=sys.stderr)
         return 2
-    warnings: list[str] = []
     sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, bool(tool_input.get("run_in_background")))
     if sleep_poll_result == "block":
         return 2
@@ -483,30 +479,18 @@ def _handle_bash_tool(
     if (
         (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
         or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
-        or _check_bash_uv_run_python(command, cwd)
         or _check_bash_process_kill_by_pattern(command)
     ):
         return 2
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
-    if _check_bash_help_with_execution(command) == "block":
-        return 2
-    if (
-        _check_bash_nested_code_string(command)
-        or _check_bash_heredoc_chain(command)
-        or _check_bash_env_full_read(command)
-        or _check_bash_explicit_path_exists(command, cwd)
-        or _check_bash_atk_options(command)
-    ):
+    if _check_bash_nested_code_string(command) or _check_bash_heredoc_chain(command) or _check_bash_env_full_read(command):
         return 2
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":
         return 2
     if _check_bash_unbounded_root_traversal(command) == "block":
-        return 2
-    atk_help_result = _check_bash_atk_help_observation(command, session_id)
-    if atk_help_result == "block":
         return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
@@ -515,7 +499,11 @@ def _handle_bash_tool(
         _check_bash_recursive_home_search(command),
         _check_bash_unbounded_home_traversal(command),
         recursive_grep_result,
-        atk_help_result,
+        _check_bash_atk_help_observation(command, session_id),
+        _check_bash_uv_run_python(command, cwd),
+        _check_bash_help_with_execution(command),
+        _check_bash_explicit_path_exists(command, cwd),
+        _check_bash_atk_options(command),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -631,9 +619,10 @@ def _handle_edit_tool(
     for operation in operations:
         if _check_edit_operation_blocks(tool_name, operation):
             return 2
-    if _check_edit_boundary_resolution(tool_name, operations):
-        return 2
     warnings: list[str] = []
+    boundary_warning = _check_edit_boundary_resolution(tool_name, operations)
+    if boundary_warning is not None:
+        warnings.append(boundary_warning)
     for index, operation in enumerate(operations):
         warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images, is_codex=is_codex))
     if warnings:
