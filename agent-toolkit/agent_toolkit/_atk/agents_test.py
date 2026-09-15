@@ -81,10 +81,12 @@ def test_agents_list_returns_diagnostic_fields(capsys: pytest.CaptureFixture[str
         "updated_at": "2026-09-13T00:01:00+00:00",
         "owner_status_file": "root.json",
         "result_available": False,
+        "seconds_since_activity": session["seconds_since_activity"],
         "output_updated_at": None,
         "seconds_since_output": session["seconds_since_output"],
         "stalled": True,
     }
+    assert isinstance(session["seconds_since_activity"], int)
     assert isinstance(session["seconds_since_output"], int)
 
 
