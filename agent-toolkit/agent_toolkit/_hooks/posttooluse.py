@@ -51,6 +51,11 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import (
     status_file as _agents_server_status_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._agents_server import (
+    tool_names as _agents_server_tool_names,
+)  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
@@ -264,10 +269,7 @@ _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
-_AGENTS_SERVER_NAMESPACES = (
-    "mcp__plugin_agent-toolkit_agents_server__",
-    "mcp__agents_server__",
-)
+_AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
 _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}"
     for namespace in _AGENTS_SERVER_NAMESPACES

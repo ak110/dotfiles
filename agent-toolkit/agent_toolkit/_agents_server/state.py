@@ -12,7 +12,7 @@ import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Literal
 
-from agent_toolkit._agents_server import session_registry
+from agent_toolkit._agents_server import session_registry, tool_names
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
@@ -636,9 +636,9 @@ def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> 
 
 
 def _agents_server_tool_name(tool_name: str) -> str | None:
-    prefix = "mcp__agents_server__"
-    if tool_name.startswith(prefix):
-        return tool_name.removeprefix(prefix)
+    for prefix in tool_names.MCP_NAMESPACES:
+        if tool_name.startswith(prefix):
+            return tool_name.removeprefix(prefix)
     if tool_name in {"start", "start_explore", "start_shell", "start_write", "kill"}:
         return tool_name
     return None

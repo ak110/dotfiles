@@ -102,6 +102,9 @@ from typing import TYPE_CHECKING
 
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
+from agent_toolkit._agents_server import (
+    tool_names as _agents_server_tool_names,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
 from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -243,10 +246,7 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
 
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
-_AGENTS_SERVER_NAMESPACES = (
-    "mcp__plugin_agent-toolkit_agents_server__",
-    "mcp__agents_server__",
-)
+_AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
 _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}"
     for namespace in _AGENTS_SERVER_NAMESPACES
