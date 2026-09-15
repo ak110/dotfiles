@@ -27,7 +27,7 @@
 completion-reportが報告する前に、メインがベースbranchの公開状態を1回観測する。
 観測前に`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`の「受領と検収」節を全文読み、同節が挙げる4つの観測項目を現在のGit状態から再取得する。
 終端担当が返した`base_branch_state`を再観測に代用しない。
-終端担当の終端後に是正commitが生じた場合は再起動せず、ローカルのベースbranchへ保持し、次のセッションの公開工程で公開する。その他の理由で成立しない項目がある場合は、`agent-toolkit:wi-standards`をSkill機能で起動してUWIを登録し、観測結果を報告へ含める。
+終端担当の終端後に当該セッションで生じた成果（主作業ツリーの是正commit、及び追加した是正レーンの統合commitを含む）がある場合は終端担当を再起動せず、ローカルのベースbranchへ保持し、次のセッションの公開工程で公開する。当該制約の正本は`SKILL.md`の「不変条件」とする。その他の理由で成立しない項目がある場合は、`agent-toolkit:wi-standards`をSkill機能で起動してUWIを登録し、観測結果を報告へ含める。
 公開工程の完了後に`agent-toolkit:completion-report`を起動する。同スキルが定める手順と報告内容を本書へ重ねて定めない。
 
 active一覧を再取得して追加分を同じセッションへ混ぜず、追加分は次回セッションで扱う。
