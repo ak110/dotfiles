@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import contextlib
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
@@ -21,6 +23,21 @@ Gitの版管理の対象外にある。除外設定は利用者のcloneごとに
 """
 
 _GITIGNORE_UPDATE_LOCK = "agent-toolkit-plan-lock-gitignore.lock"
+
+_WINDOWS_LOCK_TIMEOUT_SECONDS = 60.0
+"""Windows向けのブロッキングロック取得を打ち切る待機時間（秒）。
+
+待機ありの取得を使う消費側は、セッション状態の更新、ログの追記、計画ファイルの作成、
+レビュー表の更新など、いずれも単一のファイル操作の区間だけロックを保持する。
+正常な競合で取得できる時間を上回る値を選び、保持側が終了しない状態だけを打ち切る。
+"""
+
+_WINDOWS_LOCK_POLL_INTERVAL_SECONDS = 0.1
+"""Windows向けのブロッキングロック取得で、失敗した取得の後に待つ時間（秒）。
+
+`msvcrt.locking`の`LK_LOCK`は取得できない場合に内部で再試行してから`OSError`を送出するため、
+この値は再試行の間隔を支配しない。取得が即座に失敗する場合の密な再試行だけを避ける。
+"""
 
 
 def ensure_plan_lock_ignored(lock_path: Path) -> bool:
@@ -111,7 +128,9 @@ def acquire_lock(fh: IO, *, blocking: bool = True) -> None:
 
     POSIXは`fcntl.flock`、Windowsは`msvcrt.locking`を使う。
     `blocking=True`（既定）は取得できるまで待機する。
+    Windowsでは待機に上限があり、上限を超えた場合は`OSError`を送出する。
     `blocking=False`時は即時取得できない場合に`OSError`を送出する。
+    いずれの`OSError`も送出時点でロックを取得していないため、呼び出し側は`release_lock`を呼ばない。
     """
     _acquire_lock_impl(fh, blocking=blocking)
 
@@ -119,6 +138,30 @@ def acquire_lock(fh: IO, *, blocking: bool = True) -> None:
 def release_lock(fh: IO) -> None:
     """`acquire_lock`で取得したロックを解放する。解放失敗はベストエフォートで無視する。"""
     _release_lock_impl(fh)
+
+
+def acquire_with_deadline(
+    attempt: Callable[[], None],
+    *,
+    timeout: float,
+    poll_interval: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """`attempt`が成功するまで再試行し、`timeout`を超えた時点の`OSError`をそのまま送出する。
+
+    `attempt`は取得に成功した場合に戻り、取得できない場合に`OSError`を送出する呼び出しとする。
+    `monotonic`と`sleep`は、実時間の経過を待たずに上限の動作を検証するための差し替え点とする。
+    """
+    deadline = monotonic() + timeout
+    while True:
+        try:
+            attempt()
+            return
+        except OSError:
+            if monotonic() >= deadline:
+                raise
+            sleep(poll_interval)
 
 
 def rotate_if_needed(path: Path, max_bytes: int, generations: int = 1) -> None:
@@ -168,19 +211,23 @@ if os.name == "nt":
         """Windows: バイト範囲ロックを取得する。
 
         `blocking=True`時、空ファイルでも`LK_LOCK`はブロッキング取得可能。
-        `LK_LOCK`は最大10秒で再試行する仕様のため、長時間の競合に備えてOSError時はループで再試行する。
+        `LK_LOCK`は最大10秒で再試行する仕様のため、長時間の競合に備えてOSError時は再試行する。
+        再試行は`_WINDOWS_LOCK_TIMEOUT_SECONDS`を上限とし、超えた場合は`OSError`を呼び出し側へ返す。
         `blocking=False`時は`LK_NBLCK`で即時判定し、取得不能なら`OSError`を送出する。
         """
         fh.seek(0)
         if not blocking:
             msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
             return
-        while True:
-            try:
-                msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
-                return
-            except OSError:
-                continue
+
+        def _lock_once() -> None:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
+
+        acquire_with_deadline(
+            _lock_once,
+            timeout=_WINDOWS_LOCK_TIMEOUT_SECONDS,
+            poll_interval=_WINDOWS_LOCK_POLL_INTERVAL_SECONDS,
+        )
 
     def _release_lock_impl(fh: IO) -> None:
         """Windows: バイト範囲ロックを解放する。"""

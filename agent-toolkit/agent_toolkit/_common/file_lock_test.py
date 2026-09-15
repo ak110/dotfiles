@@ -211,6 +211,66 @@ class TestRotateIfNeeded:
             _file_lock.rotate_if_needed(path, max_bytes=0, generations=2)
 
 
+class _FakeClock:
+    """実時間を進めずに待機の経過を再現する差し替え用の時計。"""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    def monotonic(self) -> float:
+        """現在時刻を返す。"""
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        """指定秒だけ時刻を進め、待機した秒数を記録する。"""
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+class TestAcquireWithDeadline:
+    """取得できない状態が続く場合に待機が有限時間で終わることを検証する。"""
+
+    def test_raises_when_timeout_elapses(self) -> None:
+        """取得が常に失敗する場合、上限に達した時点で`OSError`を送出する。"""
+        clock = _FakeClock()
+
+        def _always_fails() -> None:
+            raise OSError("locked")
+
+        with pytest.raises(OSError):
+            _file_lock.acquire_with_deadline(
+                _always_fails,
+                timeout=1.0,
+                poll_interval=0.25,
+                monotonic=clock.monotonic,
+                sleep=clock.sleep,
+            )
+
+        assert clock.slept == [0.25, 0.25, 0.25, 0.25]
+
+    def test_returns_after_transient_failures(self) -> None:
+        """上限内に取得できた場合は例外を送出せず戻る。"""
+        clock = _FakeClock()
+        attempts: list[None] = []
+
+        def _succeeds_on_third() -> None:
+            attempts.append(None)
+            if len(attempts) < 3:
+                raise OSError("locked")
+
+        _file_lock.acquire_with_deadline(
+            _succeeds_on_third,
+            timeout=1.0,
+            poll_interval=0.25,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        assert len(attempts) == 3
+        assert clock.slept == [0.25, 0.25]
+
+
 def test_acquire_and_release_blocking(tmp_path: pathlib.Path) -> None:
     """選択されたOS別実装でブロッキング取得・解放が完了する。"""
     path = tmp_path / "lock"
