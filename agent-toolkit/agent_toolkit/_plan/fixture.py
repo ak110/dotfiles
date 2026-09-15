@@ -119,7 +119,8 @@ CURRENT_VERIFICATION_TABLE: str = (
 
 PERMANENCE_ROW: str = "| 更新経路を恒久化する | エージェント提案詳細 | 対象ファイル | 後続の更新でも参照するため。 |"
 PERMANENCE_TABLE: str = f"{_header_row(_plan_format.PLAN_PERMANENCE_TABLE_HEADER)}\n{PERMANENCE_ROW}"
-REFACTORING_TABLE: str = rows_table(_plan_format.PLAN_REFACTORING_TABLE_ROWS)
+REFACTORING_ROW: str = "| 判定処理 | 契約が旧い。 | 更新する。 |"
+REFACTORING_TABLE: str = f"{_header_row(_plan_format.PLAN_REFACTORING_TABLE_HEADER)}\n{REFACTORING_ROW}"
 LEGACY_SIMILAR_REVIEW_SECTION: str = (
     f"### {_plan_format.PLAN_LEGACY_PERMANENCE_H3[0]}\n\n{rows_table(('母集団', '点検観点', '該当箇所'))}\n\n"
 )

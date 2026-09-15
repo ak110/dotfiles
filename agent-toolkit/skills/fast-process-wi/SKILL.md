@@ -30,7 +30,7 @@ disable-model-invocation: true
 
 1. processable一覧と各AWI本文を取得し、全項目を直接実装又は計画へ分ける。
 2. 対象を`processing`へ移し、集合を固定する。
-3. 処理開始時のHEAD完全OIDを起点OIDとして保持する。
+3. 処理開始時のHEADを`git rev-parse --short=7 HEAD`で取得し、起点OIDとして保持する。
 4. 計画対象がある場合は`agent-toolkit:plan-mode`のSKILL.mdと計画ファイル基準を全文読み、全項目を1つの計画ファイルへ起草する。`create_plan_files.py`で作成し、`check_plan_file.py --reject-migration-warnings`を単独実行する。
 5. 主作業ツリーで、計画対象は`## 要件・外部仕様`、直接実装対象はAWIの要求と完成条件に従って実装する。近接検証を実行し、`agent-toolkit:commit`に従ってcommitする。
 6. 計画対象は計画をレビュー基準として1件、直接実装対象はAWIをレビュー基準として処理回全体で1件の実行レビューを`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動する。

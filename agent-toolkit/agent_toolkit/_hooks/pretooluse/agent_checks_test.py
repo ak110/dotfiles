@@ -21,46 +21,10 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._hooks import required_reads
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
-
-
-def test_required_read_document_fits_read_default_limit() -> None:
-    """Readの既定上限で判断基準文書の全文へ到達する。"""
-    assert len(pathlib.Path(required_reads.document_path()).read_text(encoding="utf-8").splitlines()) <= 2_000
-
-
-def _write_agents_server_wait_state(tmp_path: pathlib.Path, session_id: str, records: dict[str, dict]) -> None:
-    (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)).write_text(
-        json.dumps({"agents_server_sessions": records}), encoding="utf-8"
-    )
-
-
-@pytest.mark.parametrize(
-    "records",
-    [
-        {name: {"owner_agent_id": "main", "status": "running"} for name in ("remote-a", "remote-b")},
-        {
-            "own": {"owner_agent_id": "main", "status": "running"},
-            "other": {"owner_agent_id": "agent-2", "status": "running"},
-            "legacy": {"status": "running"},
-        },
-    ],
-    ids=["same-owner", "mixed-owner"],
-)
-def test_wait_is_allowed_regardless_of_unfinished_session_count(tmp_path: pathlib.Path, records: dict[str, dict]) -> None:
-    """未終端sessionの件数と所有主体によらず待機の発行を遮断しない。"""
-    session_id = "wait-mode-allow"
-    _write_agents_server_wait_state(tmp_path, session_id, records)
-    result = _run(
-        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {}},
-        env_overrides=_plan_file_state_env(tmp_path),
-    )
-    assert result.returncode == 0
-    assert "blocked" not in result.stderr
 
 
 class TestBashCommandContractWarnings:
@@ -257,7 +221,7 @@ class TestBashOutputTruncationWarning:
         assert "uv run python" in result.stderr
 
     def test_repeated_output_truncation_is_blocked(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの2回目は補正せず、分離実行を要求する。"""
+        """同一セッションで同じ補正種別の2回目は補正せず遮断する。"""
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -272,13 +236,14 @@ class TestBashOutputTruncationWarning:
         second = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "uvx pyfltr run-for-agent | head -20"},
+                "tool_input": {"command": "uvx pyfltr run-for-agent | tail -20"},
                 "session_id": session_id,
             },
             env,
         )
         assert second.returncode == 2
         assert second.stdout == ""
+        assert "ファイルへリダイレクト" in second.stderr
         assert "start_explore" in second.stderr
         assert "start_shell" in second.stderr
 
@@ -829,14 +794,11 @@ class TestBashOutputTruncationWarning:
         ],
         ids=["tee-then-head", "head-then-tee", "downstream-tee"],
     )
-    def test_multi_statement_shell_upstream_not_connected_silent(self, command: str) -> None:
-        """内側が複数の文へ分かれる`sh -c`は、渡した標準入力を消費する文を確定できないため警告しない。
-
-        下流は各文へ連結するため、下流に`tee`がある場合も全量保存として扱い警告しない。
-        """
+    def test_multi_statement_shell_code_string_is_blocked(self, command: str) -> None:
+        """内側の文と標準入力の対応を確定できない`sh -c`コード文字列を遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
+        assert result.returncode == 2
+        assert "コード文字列" in result.stderr
 
 
 class TestAgentNameParameterAccepted:
@@ -909,11 +871,7 @@ class TestGenericAgentPreferenceNotice:
 
 
 class TestTaskStopBlock:
-    """`TaskStop`の初回遮断と再実行窓。
-
-    利用者の停止要求または停滞判定を経ずに背景タスクを停止する呼び出しを初回だけ遮断し、
-    警告を読んだうえでの短時間内の再実行は通す契約を検証する。
-    """
+    """`TaskStop`を自セッションの所有記録又は停滞検知完了記録へ限定する。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -928,22 +886,27 @@ class TestTaskStopBlock:
         }
         return _run(payload, env_overrides=env)
 
-    def test_first_call_is_blocked_and_records_time(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
-        """記録が無い初回呼び出しを遮断し、遮断時刻を記録する。"""
-        before = time.time()
-        result = self._invoke("task-stop-first", state_dir)
-        assert result.returncode == 2
-        blocked_at = _read_session_state(tmp_path, "task-stop-first")["task_stop_blocked_at"]
-        assert before <= blocked_at <= time.time()
+    def test_unowned_target_is_blocked_on_every_call(self, state_dir: dict[str, str]) -> None:
+        """所有記録が無い対象は再実行しても通さない。"""
+        first = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
+        second = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
+
+        assert first.returncode == 2
+        assert second.returncode == 2
+        assert first.stderr == second.stderr
+        assert "所有記録に一致する識別子" in first.stderr
+        assert "対象別の停滞検知完了記録を作成" in first.stderr
+        assert "再実行すると続行できる" not in first.stderr
 
     def test_block_message_states_the_stop_conditions(self, state_dir: dict[str, str]) -> None:
         """遮断文面が停止の根拠、その完了条件の所在、不十分な理由、確認手段、再実行方法を示す。"""
         stderr = self._invoke("task-stop-message", state_dir).stderr
+        assert "現在のセッションには" in stderr
+        assert "所有記録も停滞検知完了記録も無い" in stderr
         assert "明示的な即時停止要求" in stderr
         assert "停滞検知の手順" in stderr
         assert "進行が遅い" in stderr
         assert "AskUserQuestionで確認" in stderr
-        assert "5分以内にTaskStopを再実行" in stderr
         assert "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節" in stderr
 
     def test_block_message_defaults_to_additional_instructions_and_limits_stopping(self, state_dir: dict[str, str]) -> None:
@@ -953,36 +916,6 @@ class TestTaskStopBlock:
         assert "委譲範囲または前提を無効" in stderr
         assert "継続すると誤った成果物が確定" in stderr
         assert "`agent-toolkit:delegation`「継続と新規起動」" in stderr
-
-    @pytest.mark.parametrize(
-        ("label", "elapsed_seconds", "expected_returncode"),
-        [
-            ("just-blocked", 0.0, 0),
-            ("inside-window", 60.0, 0),
-            ("outside-window", 600.0, 2),
-        ],
-    )
-    def test_retry_window_decides_pass_or_block(
-        self,
-        state_dir: dict[str, str],
-        tmp_path: pathlib.Path,
-        label: str,
-        elapsed_seconds: float,
-        expected_returncode: int,
-    ) -> None:
-        """直近の遮断からの経過時間が5分以内の再実行だけを通す。"""
-        session_id = f"task-stop-{label}"
-        _write_session_state(tmp_path, session_id, {"task_stop_blocked_at": time.time() - elapsed_seconds})
-        result = self._invoke(session_id, state_dir)
-        assert result.returncode == expected_returncode
-
-    def test_reblock_after_window_updates_recorded_time(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
-        """窓を超えた再遮断では記録時刻を現在時刻へ更新し、次の窓を開く。"""
-        stale = time.time() - 600.0
-        _write_session_state(tmp_path, "task-stop-reblock", {"task_stop_blocked_at": stale})
-        assert self._invoke("task-stop-reblock", state_dir).returncode == 2
-        assert _read_session_state(tmp_path, "task-stop-reblock")["task_stop_blocked_at"] > stale
-        assert self._invoke("task-stop-reblock", state_dir).returncode == 0
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),
@@ -998,10 +931,10 @@ class TestTaskStopBlock:
         label: str,
         tool_input: dict,
     ) -> None:
-        """自セッションの起動記録が無い停止は、識別子の有無と値によらず初回を遮断し窓内は通す。"""
+        """自セッションの起動記録が無い停止は、識別子の有無と値によらず繰り返し遮断する。"""
         session_id = f"task-stop-input-{label}"
         assert self._invoke(session_id, state_dir, tool_input).returncode == 2
-        assert self._invoke(session_id, state_dir, tool_input).returncode == 0
+        assert self._invoke(session_id, state_dir, tool_input).returncode == 2
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),
@@ -1017,11 +950,10 @@ class TestTaskStopBlock:
         label: str,
         tool_input: dict,
     ) -> None:
-        """自セッションが起動した背景タスクの停止は初回から通し、遮断時刻を記録しない。"""
+        """自セッションが起動した背景タスクの停止は初回から通す。"""
         session_id = f"task-stop-self-{label}"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, tool_input).returncode == 0
-        assert "task_stop_blocked_at" not in _read_session_state(tmp_path, session_id)
 
     def test_other_task_is_blocked_even_with_recorded_background_tasks(
         self,

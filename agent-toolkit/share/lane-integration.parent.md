@@ -30,11 +30,11 @@ process-wiのメインが、実行レビューの収束後又は`実装なし`�
 
 レーン担当から`統合完了`に続く値を受領する。
 
-- `merged_head`: マージ後の統合先branchの完全OID。マージなしでは統合開始時の完全OID
+- `merged_head`: マージ後の統合先branchの7文字以上の一意な短縮OID。マージなしでは統合開始時の7文字以上の一意な短縮OID
 - `plan_committed`: `atk plans commit`が成功した計画ファイル名
 - `adopted`: adoptしたAWIファイル名
 - `rejected`: rejectしたAWIファイル名
-- `deferred_adopt_commits`: 固有の終端工程後へadoptを延期したAWIファイル名と対応する完全OID
+- `deferred_adopt_commits`: 固有の終端工程後へadoptを延期したAWIファイル名と対応する7文字以上の一意な短縮OID
 
 `merged_head`を統合先branchの実体へ照合する。`plan_committed`が起動時のメイン計画ファイル名と一致することを確認する。AWIの集合が起動時の終端区分と一致し、延期対象だけが`deferred_adopt_commits`へ現れることを確認する。
 不一致の場合は同じthreadへ観測値を返して是正を求める。全て一致した後にだけ専用worktreeの回収へ進む。

@@ -1,4 +1,4 @@
-"""`atk agents list/show`の共有状態診断を検証する。"""
+"""`atk agents list/show/wait`の共有状態診断と公開説明を検証する。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,23 @@ from agent_toolkit import _atk_agents, atk
 from agent_toolkit._atk import config
 
 status_file = _atk_agents.status_file
+
+
+def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureFixture[str]) -> None:
+    """回収できた全件の出力形式と、待機の成立判定および再発行の条件を説明する。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait", "--help"])
+
+    output = capsys.readouterr().out
+    assert "1回の巡回で回収できた全件" in output
+    assert "1件1行のJSON Lines" in output
+    assert "最初の待機で起動中sessionと未回収結果を登録簿へ固定" in output
+    assert "通知だけを回収した場合" in output
+    assert "待機対象の行が現れない応答は当該対象が未終端であることを示す" in output
+    assert "同じターン内に同じコマンドを再発行" in output
+    assert "結果を保持しない`stop`とsession登録簿での喪失確定" in output
+    assert "待機対象登録が破損している場合" in output
+    assert "終端statusでは追加の結果受領操作は不要" in output
 
 
 @pytest.fixture
@@ -52,7 +69,8 @@ def test_agents_list_returns_diagnostic_fields(capsys: pytest.CaptureFixture[str
         atk.main(["agents", "list"])
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["sessions"][0] == {
+    session = payload["sessions"][0]
+    assert session == {
         "session_id": "session-1",
         "status": "running",
         "cwd": "/worktree",
@@ -63,7 +81,11 @@ def test_agents_list_returns_diagnostic_fields(capsys: pytest.CaptureFixture[str
         "updated_at": "2026-09-13T00:01:00+00:00",
         "owner_status_file": "root.json",
         "result_available": False,
+        "output_updated_at": None,
+        "seconds_since_output": session["seconds_since_output"],
+        "stalled": True,
     }
+    assert isinstance(session["seconds_since_output"], int)
 
 
 @pytest.mark.usefixtures("session_environment")
@@ -84,3 +106,39 @@ def test_agents_show_rejects_unknown_session(capsys: pytest.CaptureFixture[str])
         atk.main(["agents", "show", "missing"])
 
     assert capsys.readouterr().err == "unknown session: missing\n"
+
+
+def test_agents_list_from_terminal_merges_all_root_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """会話識別子のない直接端末では有効な全rootのsessionを統合する。"""
+    for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
+        directory = status_file.status_directory(root_session_id, tmp_path)
+        directory.mkdir(parents=True)
+        (directory / "root.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "sessions": [
+                        {
+                            "session_id": remote_session_id,
+                            "status": "running",
+                            "started_at": "2026-09-14T00:00:00+00:00",
+                            "updated_at": "2026-09-14T00:00:00+00:00",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert {session["session_id"] for session in payload["sessions"]} == {"session-a", "session-b"}

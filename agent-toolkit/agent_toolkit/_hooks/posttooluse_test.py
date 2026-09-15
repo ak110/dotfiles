@@ -22,7 +22,6 @@ import pytest
 
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._hooks import required_reads
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
@@ -52,28 +51,6 @@ def _load_posttooluse_module() -> types.ModuleType:
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
-def test_wait_observation_attempt_clears_sessions_of_the_caller(monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機の観測試行は呼出主体が所有する全sessionを解消する。"""
-    state = {
-        "agents_server_sessions": {
-            "remote-a": {"pending_observation": True, "owner_agent_id": "main"},
-            "remote-b": {"pending_observation": True, "owner_agent_id": "main"},
-            "other": {"pending_observation": True, "owner_agent_id": "child-1"},
-        }
-    }
-
-    def apply(_session_id: str, mutator: object) -> None:
-        assert callable(mutator)
-        mutator(state)
-
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
-    _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt("local", {}, operation="wait", owner_agent_id="main")
-
-    assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
-    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is False
-    assert state["agents_server_sessions"]["other"]["pending_observation"] is True
-
-
 def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch: pytest.MonkeyPatch) -> None:
     """中断の観測試行は入力のsessionだけを解消する。"""
     state = {
@@ -88,9 +65,7 @@ def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch:
         mutator(state)
 
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
-    _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt(
-        "local", {"session_id": "remote-a"}, operation="kill", owner_agent_id="main"
-    )
+    _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt("local", {"session_id": "remote-a"}, operation="kill")
 
     assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
     assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is True
@@ -136,29 +111,6 @@ def test_start_state_record_without_shared_status_does_not_write_alias(
     )
 
     assert not (tmp_path / "agents-server" / "aliases" / "current-session.json").exists()
-
-
-class TestAgentsServerBackgroundResponse:
-    """agents_serverの背景移行応答を正常系として扱う。"""
-
-    @staticmethod
-    def _payload(tool_response: object) -> dict:
-        return {
-            "tool_name": "mcp__agents_server__wait",
-            "tool_input": {"session_id": "remote-session"},
-            "tool_response": tool_response,
-            "session_id": "local-session",
-        }
-
-    def test_background_transition_does_not_warn(self) -> None:
-        result = _run(self._payload({"content": [{"type": "text", "text": "moved to the background as task task-1"}]}))
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_malformed_regular_response_still_warns(self) -> None:
-        result = _run(self._payload("invalid response"))
-        assert result.returncode == 0
-        assert "応答でresponse, statusが欠落しているか不正" in result.stdout
 
 
 def _run(
@@ -280,7 +232,7 @@ class TestCodexBashStateRecording:
 
 
 class TestAtkHelpObservation:
-    """実行済みヘルプの応答だけを同一セッションの案内抑止へ使う。"""
+    """注入済み又は実行済みヘルプを同一セッションの案内抑止へ使う。"""
 
     @staticmethod
     def _pre_payload(session_id: str) -> dict:
@@ -291,20 +243,17 @@ class TestAtkHelpObservation:
             "cwd": "/repo",
         }
 
-    def test_successful_help_suppresses_next_notice(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize(
+        "command", ["atk wi list --help", "atk wi list --help > /tmp/help", "atk wi list --help 2>/tmp/error"]
+    )
+    def test_successful_help_suppresses_next_notice(self, tmp_path: pathlib.Path, command: str) -> None:
         session_id = "atk-help-success"
-        before = _run_pretooluse(self._pre_payload(session_id), tmp_path)
-        before_output = json.loads(before.stdout)
-        assert before.returncode == 0
-        assert "使い方: atk wi list" in before_output["hookSpecificOutput"]["additionalContext"]
-        assert "permissionDecision" not in before_output["hookSpecificOutput"]
-
         observed = _run(
             {
                 "session_id": session_id,
                 "tool_name": "Bash",
-                "tool_input": {"command": "atk wi list --help"},
-                "tool_response": {"stdout": "使い方: atk wi list [options]"},
+                "tool_input": {"command": command},
+                "tool_response": {"stdout": ""},
                 "cwd": "/repo",
             },
             state_dir=tmp_path,
@@ -315,22 +264,17 @@ class TestAtkHelpObservation:
         assert after.returncode == 0
         assert after.stdout == ""
 
-    def test_missing_help_response_keeps_notice(self, tmp_path: pathlib.Path) -> None:
-        session_id = "atk-help-failed"
-        _run(
-            {
-                "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi list --help"},
-                "cwd": "/repo",
-            },
-            state_dir=tmp_path,
-        )
+    def test_injected_help_is_recorded_before_command_execution(self, tmp_path: pathlib.Path) -> None:
+        session_id = "atk-help-injected"
+        first = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+        second = _run_pretooluse(self._pre_payload(session_id), tmp_path)
 
-        result = _run_pretooluse(self._pre_payload(session_id), tmp_path)
-
-        assert result.returncode == 0
-        assert "additionalContext" in json.loads(result.stdout)["hookSpecificOutput"]
+        first_output = json.loads(first.stdout)
+        assert first.returncode == 0
+        assert "atk wi list: 値なし:" in first_output["hookSpecificOutput"]["additionalContext"]
+        assert "permissionDecision" not in first_output["hookSpecificOutput"]
+        assert second.returncode == 0
+        assert second.stdout == ""
 
 
 class TestTestExecution:
@@ -478,6 +422,52 @@ class TestTestExecution:
             )
         assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-1", "bg-task-2"]
 
+    def test_failed_background_command_records_task_id(self, tmp_path: pathlib.Path):
+        """背景実行の起動が失敗した応答でも、返ったタスクIDを所有記録として保存する。"""
+        sid = "background-task-failure"
+        result = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": "Command running in background with ID: bg-task-failed. Exit code 1",
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-failed"]
+
+    def test_background_move_notice_records_task_id(self, tmp_path: pathlib.Path):
+        """ツール種別によらず、背景移行通知が返したタスクIDを所有記録として保存する。"""
+        sid = "background-task-notice"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_explore",
+                "tool_input": {"prompt": "調査", "cwd": str(tmp_path)},
+                "tool_response": "This tool call was moved to the background as task bg-task-notice.",
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-notice"]
+
+    def test_response_without_identifier_does_not_record_task_id(self, tmp_path: pathlib.Path):
+        """識別子を持たない応答では所有記録を残さない。"""
+        sid = "background-task-none"
+        _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": "Exit code 1",
+            },
+            state_dir=tmp_path,
+        )
+        assert "background_task_ids" not in _read_state(tmp_path, sid)
+
     def test_pyfltr_mcp_run_for_agent_detected(self, tmp_path: pathlib.Path):
         """pyfltr MCPの検証成功をCLI経由と同じ状態へ記録する。"""
         sid = "test-mcp-run-for-agent"
@@ -561,8 +551,8 @@ class TestTestExecution:
         [
             "mcp__plugin_agent-toolkit_agents_server__start",
             "mcp__plugin_agent-toolkit_agents_server__start_explore",
+            "mcp__plugin_agent-toolkit_agents_server__start_write",
             "mcp__plugin_agent-toolkit_agents_server__send_message",
-            "mcp__plugin_agent-toolkit_agents_server__wait",
             "mcp__plugin_agent-toolkit_agents_server__kill",
             "mcp__plugin_agent-toolkit_agents_server__stop",
         ],
@@ -572,12 +562,6 @@ class TestTestExecution:
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         assert re.fullmatch(matcher, tool_name) is None
-
-    def test_posttooluse_failure_matcher_excludes_wait(self):
-        """waitの失敗はPostToolUseFailure matcherへ配送しない。"""
-        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
-        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
-        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__wait") is None
 
     def test_posttooluse_failure_matcher_keeps_agent_task_and_bash(self):
         """Agent・Taskに加えてBashの失敗イベントmatcherを維持する。"""
@@ -1045,44 +1029,6 @@ class TestGitLogChecked:
         assert isinstance(recorded, dict)
         for key in expected_keys:
             assert recorded.get(key) is True, f"{key} not recorded in {recorded}"
-
-
-class TestReadHandlerNoop:
-    """Readは対象文書の全文読取だけを状態へ記録する。"""
-
-    def test_required_full_read_is_recorded(self, tmp_path: pathlib.Path) -> None:
-        sid = "read-required"
-        _run(
-            {"session_id": sid, "tool_name": "Read", "tool_input": {"file_path": required_reads.document_path()}},
-            state_dir=tmp_path,
-        )
-
-        assert _read_state(tmp_path, sid)["observed_required_reads"] == [required_reads.DOCUMENT_NAME]
-
-    @pytest.mark.parametrize(
-        "file_path",
-        [
-            "/home/user/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md",
-            r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
-            "/tmp/random.txt",
-        ],
-    )
-    def test_read_does_not_set_removed_tracking_flag(
-        self,
-        tmp_path: pathlib.Path,
-        file_path: str,
-    ) -> None:
-        """旧追跡対象と無関係パスのいずれでも撤去済みフラグを記録しない。"""
-        sid = f"read-textlint-{len(file_path)}"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Read",
-                "tool_input": {"file_path": file_path},
-            },
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("textlint_violations_read") is not True
 
 
 class TestPlanFilePostWriteNotice:
@@ -1593,20 +1539,18 @@ class TestAgentsServerSessionState:
         record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
         assert record["status"] == "failed"
 
-    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill"))
+    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "start_write", "send_message", "kill"))
     def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
         remote_session_id = "thread-json"
-        start_tools = ("start", "start_explore")
+        start_tools = ("start", "start_explore", "start_write")
         status = "running" if tool_name in (*start_tools, "send_message") else "interrupted"
         tool_input = {"cwd": str(tmp_path)} if tool_name in start_tools else {"session_id": remote_session_id}
-        if tool_name == "wait":
-            tool_input = {}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
         response: dict[str, object] = {}
-        if tool_name in start_tools or tool_name == "wait":
+        if tool_name in start_tools:
             response.update({"session_id": remote_session_id, "status": status})
         elif tool_name == "kill":
             response["status"] = status
@@ -1672,7 +1616,7 @@ class TestAgentsServerSessionState:
         assert "cwd" not in state["agents_server_sessions"]["thread-start"]
         assert state["agents_server_sessions"]["thread-start"]["owner_agent_id"] == "main"
 
-    @pytest.mark.parametrize("tool_name", ("wait", "send_message", "kill", "stop"))
+    @pytest.mark.parametrize("tool_name", ("send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """継続・観測・中断ツールはcwd mapを参照し、session記録へcwdを保存しない。
 
@@ -1684,13 +1628,11 @@ class TestAgentsServerSessionState:
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(state, ensure_ascii=False), encoding="utf-8"
         )
-        tool_input: dict[str, object] = {} if tool_name == "wait" else {"session_id": remote_session_id}
+        tool_input: dict[str, object] = {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
         response: dict[str, object] = {}
-        if tool_name == "wait":
-            response.update({"session_id": remote_session_id, "status": "running"})
-        elif tool_name == "send_message":
+        if tool_name == "send_message":
             response["delivery"] = "reply_started"
         if tool_name == "kill":
             response.update({"status": "interrupted", "kill_requested": True})
@@ -1755,42 +1697,6 @@ class TestAgentsServerSessionState:
         assert remote_session_id not in current["agents_server_sessions"]
         assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
 
-    def test_missing_cwd_map_does_not_fallback_to_session_record(self, tmp_path: pathlib.Path) -> None:
-        """cwd map欠落時も古いsession記録のcwdへフォールバックしない。"""
-        sid = "continuation-no-cwd-map"
-        remote_session_id = "thread-no-cwd-map"
-        state = {
-            "agents_server_sessions": {
-                remote_session_id: {
-                    "session_id": remote_session_id,
-                    "status": "running",
-                    "cwd": "/fallback/that/must/not/be/used",
-                }
-            }
-        }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8"
-        )
-        result = _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {},
-                "tool_response": {
-                    "structuredContent": {
-                        "session_id": remote_session_id,
-                        "status": "completed",
-                        "agent_message": "完了",
-                    }
-                },
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
-        assert record["status"] == "completed"
-        assert "cwd" not in record
-
     def test_pending_observation_transitions(self, tmp_path: pathlib.Path) -> None:
         """公開操作の応答だけから未観測作業の発生と解消を記録する。"""
 
@@ -1803,14 +1709,12 @@ class TestAgentsServerSessionState:
             delivery: str | None = None,
         ) -> bool:
             tool_input: dict[str, object] = {"session_id": remote_session_id}
-            if operation in {"start", "start_explore"}:
+            if operation in {"start", "start_explore", "start_write"}:
                 tool_input = {"cwd": str(tmp_path), "prompt": "委譲する"}
-            elif operation == "wait":
-                tool_input = {}
             elif operation == "send_message":
                 tool_input["prompt"] = "続行する"
             response: dict[str, object]
-            if operation in {"start", "start_explore", "wait"}:
+            if operation in {"start", "start_explore", "start_write"}:
                 response = {"session_id": remote_session_id, "status": status}
             elif operation == "kill":
                 response = {"status": status}
@@ -1832,7 +1736,19 @@ class TestAgentsServerSessionState:
             assert result.returncode == 0
             return _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]["pending_observation"]
 
-        for operation in ("start", "start_explore"):
+        def run_wait(sid: str, remote_session_id: str, *, status: str = "running") -> None:
+            result = _run(
+                {
+                    "session_id": sid,
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "atk agents wait"},
+                    "tool_response": json.dumps({"session_id": remote_session_id, "status": status}),
+                },
+                state_dir=tmp_path,
+            )
+            assert result.returncode == 0
+
+        for operation in ("start", "start_explore", "start_write"):
             sid = f"pending-{operation}"
             assert run_operation(sid, f"remote-{operation}", operation, status="running") is True
 
@@ -1840,13 +1756,14 @@ class TestAgentsServerSessionState:
             sid = f"pending-wait-{status}"
             remote_session_id = f"remote-wait-{status}"
             assert run_operation(sid, remote_session_id, "start", status="running") is True
-            assert run_operation(sid, remote_session_id, "wait", status=status) is False
+            run_wait(sid, remote_session_id, status=status)
+            assert _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]["pending_observation"] is False
 
         for delivery in ("reply_started", "reply_ambiguous"):
             sid = f"pending-send-{delivery}"
             remote_session_id = f"remote-send-{delivery}"
             assert run_operation(sid, remote_session_id, "start", status="running") is True
-            assert run_operation(sid, remote_session_id, "wait", status="running") is False
+            run_wait(sid, remote_session_id)
             assert (
                 run_operation(
                     sid,
@@ -1861,7 +1778,7 @@ class TestAgentsServerSessionState:
         sid = "pending-send-steered"
         remote_session_id = "remote-send-steered"
         assert run_operation(sid, remote_session_id, "start", status="running") is True
-        assert run_operation(sid, remote_session_id, "wait", status="running") is False
+        run_wait(sid, remote_session_id)
         assert (
             run_operation(
                 sid,
@@ -1876,7 +1793,7 @@ class TestAgentsServerSessionState:
         sid = "pending-send-reply-failed"
         remote_session_id = "remote-send-reply-failed"
         assert run_operation(sid, remote_session_id, "start", status="running") is True
-        assert run_operation(sid, remote_session_id, "wait", status="completed") is False
+        run_wait(sid, remote_session_id, status="completed")
         assert (
             run_operation(
                 sid,
@@ -1985,9 +1902,9 @@ class TestAgentsServerSessionState:
         _run(
             {
                 "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {},
-                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "completed"}},
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk agents wait"},
+                "tool_response": json.dumps({"session_id": remote_session_id, "status": "completed"}),
             },
             state_dir=tmp_path,
         )
@@ -2045,17 +1962,17 @@ class TestAgentsServerSessionState:
         )
         assert result.returncode == 0
 
-    @pytest.mark.parametrize("operation", ["wait", "kill"])
-    def test_background_notice_clears_pending_observation(self, tmp_path: pathlib.Path, operation: str) -> None:
+    def test_background_kill_notice_clears_pending_observation(self, tmp_path: pathlib.Path) -> None:
         """観測操作が背景タスクへ移った通知でも、観測を試みた事実として未観測作業を解消する。"""
-        sid = f"background-{operation}"
-        remote_session_id = f"remote-background-{operation}"
+        operation = "kill"
+        sid = "background-kill"
+        remote_session_id = "remote-background-kill"
         self._start_pending_session(tmp_path, sid, remote_session_id)
         result = _run(
             {
                 "session_id": sid,
                 "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
-                "tool_input": {} if operation == "wait" else {"session_id": remote_session_id},
+                "tool_input": {"session_id": remote_session_id},
                 "tool_response": self._background_notice_response(operation),
             },
             state_dir=tmp_path,
@@ -2132,7 +2049,7 @@ class TestAgentsServerProcessLoopLog:
         tmp_path: pathlib.Path,
         *,
         model_type: str,
-        observe_tool: str = "wait",
+        observe_tool: str = "kill",
         final_status: str = "completed",
         enable_env: bool = True,
     ) -> str:
@@ -2171,7 +2088,7 @@ class TestAgentsServerProcessLoopLog:
         log_path = xdg_state_home / "agent-toolkit" / "process-wi.log"
         return log_path.read_text(encoding="utf-8") if log_path.exists() else ""
 
-    @pytest.mark.parametrize("observe_tool", ("wait", "kill"))
+    @pytest.mark.parametrize("observe_tool", ("kill",))
     def test_terminal_status_logs_start_and_end(self, tmp_path: pathlib.Path, observe_tool: str) -> None:
         """観測対象の工程は起動時刻を記録し、終端した観測で終了時刻を記録する。"""
         text = self._run_session(tmp_path, model_type="execute", observe_tool=observe_tool)

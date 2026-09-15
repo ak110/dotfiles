@@ -22,6 +22,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
+    process_tree,  # pylint: disable=wrong-import-position
     status_file,  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
@@ -131,11 +132,25 @@ class JsonRpcProcess:
         self._closed = False
         self._reader_failure: BaseException | None = None
         self._stderr_text = ""
+        self._initialization_stage = "created"
+        self._received_message_types: dict[str, int] = {}
+
+    def initialization_diagnostic(self) -> dict[str, Any]:
+        """初期化の到達段階と子プロセスの有界な診断値を返す。"""
+        process = self.process
+        return {
+            "stage": self._initialization_stage,
+            "received_message_types": dict(sorted(self._received_message_types.items())),
+            "received_message_count": sum(self._received_message_types.values()),
+            "child_pid": None if process is None else process.pid,
+            "stderr": self._stderr_text.strip(),
+        }
 
     async def start(self) -> None:
         """子プロセスを起動し、initialize/initializedを完了する。"""
         if self.process is not None:
             return
+        self._initialization_stage = "starting_process"
         try:
             environment = os.environ.copy()
             environment.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
@@ -162,9 +177,12 @@ class JsonRpcProcess:
         )
         self._reader_task = asyncio.create_task(self._read_stdout())
         self._stderr_task = asyncio.create_task(self._read_stderr())
+        self._initialization_stage = "process_started"
+        _LOG.info("Codex App Server初期化段階: %s", self.initialization_diagnostic())
         try:
             # 子プロセスが応答を返さないまま生存する場合、要求の応答futureは読取taskの失敗経路では解消しない。
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                self._initialization_stage = "initialize_requested"
                 initialize_result = await self.request(
                     "initialize",
                     {
@@ -172,15 +190,26 @@ class JsonRpcProcess:
                         "capabilities": {},
                     },
                 )
+                self._initialization_stage = "initialize_received"
                 _LOG.info("Codex App Serverのinitialize応答を受信しました: keys=%s", sorted(initialize_result))
                 await self.notify("initialized", {})
+                self._initialization_stage = "initialized_sent"
+                _LOG.info("Codex App Server初期化完了: %s", self.initialization_diagnostic())
         except TimeoutError as exc:
+            diagnostic = self.initialization_diagnostic()
+            _LOG.error("Codex App Server初期化timeout: diagnostic=%s", diagnostic)
             await self.close()
             raise SessionInitializationTimeoutError(
                 f"Codex App Server did not complete initialize within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
-                f"command={' '.join(APP_SERVER_COMMAND)}"
+                f"command={' '.join(APP_SERVER_COMMAND)}; diagnostic={diagnostic}"
             ) from exc
-        except Exception:
+        except Exception as exc:
+            _LOG.error(
+                "Codex App Server初期化失敗: exception_type=%s exception=%s diagnostic=%s",
+                type(exc).__name__,
+                exc,
+                self.initialization_diagnostic(),
+            )
             await self.close()
             raise
 
@@ -231,7 +260,14 @@ class JsonRpcProcess:
                 self.process.stdin.write(encoded)
                 await self.process.stdin.drain()
             except (BrokenPipeError, ConnectionError) as exc:
-                raise AppServerError(f"failed to write to Codex App Server: {exc}") from exc
+                diagnostic = self.initialization_diagnostic()
+                _LOG.error(
+                    "Codex App Serverへの書込失敗: exception_type=%s exception=%s diagnostic=%s",
+                    type(exc).__name__,
+                    exc,
+                    diagnostic,
+                )
+                raise AppServerError(f"failed to write to Codex App Server: {exc}; diagnostic={diagnostic}") from exc
 
     @property
     def closed(self) -> bool:
@@ -262,6 +298,13 @@ class JsonRpcProcess:
                     raise AppServerError(f"invalid Codex App Server JSON line: {exc}") from exc
                 if not isinstance(message, dict):
                     continue
+                if "id" in message and ("result" in message or "error" in message):
+                    message_type = "response"
+                elif "id" in message and isinstance(message.get("method"), str):
+                    message_type = "server_request"
+                else:
+                    message_type = str(message.get("method", "notification"))
+                self._received_message_types[message_type] = self._received_message_types.get(message_type, 0) + 1
                 if "id" in message and ("result" in message or "error" in message):
                     request_id = message.get("id")
                     future = self._pending.get(request_id) if isinstance(request_id, int) else None
@@ -330,11 +373,18 @@ class JsonRpcProcess:
         return AppServerError(message)
 
     async def close(self) -> None:
-        """自身が起動した子プロセスだけを終了し、関連taskを回収する。"""
+        """自身が起動した子プロセスと、その子孫プロセスを終了し、関連taskを回収する。
+
+        対象は自身が起動したプロセスからの子孫関係だけで特定する。
+        子孫の回収に失敗しても終端自体は完了させ、回収できなかった対象は診断へ残す。
+        """
         if self._closed and self.process is None:
             return
         self._closed = True
         process = self.process
+        # 子孫の列挙は終了要求より前に行う。App Serverが終了すると子孫の親が変わり、
+        # 保持しているPIDを起点に辿れなくなるためである。
+        descendants = process_tree.collect_descendants(None if process is None else process.pid)
         tasks = tuple(
             task for task in (self._reader_task, self._stderr_task) if task is not None and task is not asyncio.current_task()
         )
@@ -359,6 +409,8 @@ class JsonRpcProcess:
             await asyncio.gather(*tasks, return_exceptions=True)
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
+        residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+        process_tree.log_residual(residual, context="codex app-server")
         self.process = None
         error = AppServerError("Codex App Server client closed")
         for future in tuple(self._pending.values()):
@@ -409,11 +461,27 @@ class AppServerManager:
             }
         }
 
+    @staticmethod
+    def _base_thread_config(*, lightweight: bool) -> dict[str, Any]:
+        """thread開始・再開のリクエストへ常に載せる設定を返す。
+
+        `bypass_hook_trust`は、hookの定義が変わった後もcodexが承認済みの記録を要求せずにhookを実行するために渡す。
+        `agents_server`が開始する委譲先は対話UIを持たず、承認要求へ応答する主体が存在しないため、
+        当該キーが無いとプラグインの更新のたびに委譲先が起動しない。
+        当該制約は`launch_kind`に依存しないため、軽量起動と通常の委譲で分けない。
+        当該キーは`codex app-server`のコマンドラインオプションとしても`-c`による設定上書きとしても受理されず、
+        `thread/start`系リクエストの`config`だけが受理する。
+        """
+        config: dict[str, Any] = {"bypass_hook_trust": True}
+        if lightweight:
+            config["project_doc_max_bytes"] = 0
+        return config
+
     def _thread_config(
         self, session_id: str | None = None, *, lightweight: bool
     ) -> tuple[dict[str, Any], str | None, str | None]:
         """thread開始・再開に必要な設定と書込主体を返す。"""
-        config: dict[str, Any] = {"project_doc_max_bytes": 0} if lightweight else {}
+        config = self._base_thread_config(lightweight=lightweight)
         owner_session_id = _plan_file.resolve_owner_session_id()
         if owner_session_id is None:
             return config, None, None
@@ -477,16 +545,22 @@ class AppServerManager:
         if model is not None:
             params["model"] = model
         config, owner_session_id, writer_session_id = self._thread_config(lightweight=launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
-        if config:
-            params["config"] = config
+        params["config"] = config
         params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
                 thread_response = await client.request("thread/start", params)
         except TimeoutError as exc:
+            diagnostic_method = getattr(client, "initialization_diagnostic", None)
+            diagnostic = (
+                diagnostic_method()
+                if callable(diagnostic_method)
+                else {"stage": "thread_start_response_wait", "pid": "unavailable"}
+            )
+            _LOG.error("Codex thread/start初期化timeout: diagnostic=%s", diagnostic)
             raise SessionInitializationTimeoutError(
                 f"Codex thread/start did not return within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
-                f"cwd={cwd}, launch_kind={launch_kind}"
+                f"cwd={cwd}, launch_kind={launch_kind}; diagnostic={diagnostic}"
             ) from exc
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
@@ -719,13 +793,12 @@ class AppServerManager:
         }
         if session.model is not None:
             resume_params["model"] = session.model
-        config: dict[str, Any] = {"project_doc_max_bytes": 0} if session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else {}
+        config = AppServerManager._base_thread_config(lightweight=session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
         owner_session_id = _plan_file.resolve_owner_session_id()
         if owner_session_id is not None:
             writer_session_id = writer_session_id or uuid.uuid4().hex
             config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))
-        if config:
-            resume_params["config"] = config
+        resume_params["config"] = config
         resume_params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[session.launch_kind]}\n{AUTO_RESUME_NOTICE}"
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")

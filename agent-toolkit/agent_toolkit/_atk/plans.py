@@ -38,7 +38,7 @@ _PATH_TOKEN_CHARACTER_CLASS = r"[A-Za-z0-9_./\\~+%@-]"
 _MAIN_ATTACHMENT_SUFFIXES = (".detail.md", ".bugs.md", ".review.md", "-workaround-check.md", ".codex.log")
 _CURRENT_ATTACHMENT_SUFFIXES = (".bugs.md", ".exec-review.tsv")
 _CI_REVIEW_DIRECTORY = pathlib.Path("ci")
-_CI_REVIEW_NAME_RE = re.compile(r"^ci-[0-9a-f]{40}\.exec-review\.tsv$")
+_CI_REVIEW_NAME_RE = re.compile(r"^ci-[0-9a-f]{7,64}\.exec-review\.tsv$")
 _SAVED_BUNDLE_CONFLICT_MESSAGE = (
     "保存先に内容の異なる計画ファイルがあります: {destination}。"
     "保存済み計画を正とする場合は作業側を退避し、作業側を残す場合は別名の新しい計画として保存してください"
@@ -60,7 +60,7 @@ def build_parser(parser) -> None:
         help=(
             "計画作業root直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
             "保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.md、または"
-            "ci-{原因commit完全OID}.exec-review.tsv。"
+            "ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsv。"
         ),
     )
     commit_parser.add_argument(
@@ -269,7 +269,9 @@ def _validate_working_ci_review_relative_path(review_table: str) -> pathlib.Path
         raise _common.WebInputError("独立CI実行レビュー表のパスが不正です")
     relative = pathlib.Path(review_table)
     if relative.parent != pathlib.Path() or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
-        raise _common.WebInputError("独立CI実行レビュー表はci-{原因commit完全OID}.exec-review.tsvで指定してください")
+        raise _common.WebInputError(
+            "独立CI実行レビュー表はci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください"
+        )
     return relative
 
 
@@ -280,7 +282,7 @@ def _validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
     relative = pathlib.Path(review_table)
     if relative.parent != _CI_REVIEW_DIRECTORY or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
         raise _common.WebInputError(
-            "保存済みの独立CI実行レビュー表はci/ci-{原因commit完全OID}.exec-review.tsvで指定してください"
+            "保存済みの独立CI実行レビュー表はci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください"
         )
     return relative
 
@@ -872,7 +874,7 @@ def commit_ci_review(
                     f"保存も取得もできません。相違した対象は{differences}です。次の順に実行してください。"
                     f"作業root直下の{working.name}を作業root外へ退避します。"
                     f"`atk plans commit {working.name}`を実行すると、作業側が不在のため取得記録だけを回収します。"
-                    "保存済みの表を確認し、退避した内容を残す場合は別の完全OIDに対応する表として保存します。"
+                    "保存済みの表を確認し、退避した内容を残す場合は別の原因commitに対応する表として保存します。"
                 )
         elif saved_contents and saved_contents != working_contents:
             raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=saved))

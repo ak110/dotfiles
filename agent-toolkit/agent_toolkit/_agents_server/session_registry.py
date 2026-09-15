@@ -36,7 +36,7 @@ class ResumeInfo:
     model: str | None
     effort: str | None
     model_type: str | None
-    launch_kind: Literal["delegate", "explore", "shell"]
+    launch_kind: Literal["delegate", "explore", "shell", "write"]
     turn_seq: int
     status: Literal["running", "completed", "failed", "interrupted"]
 
@@ -64,7 +64,7 @@ def publish(
     model: str | None = None,
     effort: str | None = None,
     model_type: str | None = None,
-    launch_kind: Literal["delegate", "explore", "shell"] = "delegate",
+    launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
     status: Literal["running", "completed", "failed", "interrupted"] | None = None,
     state_root: pathlib.Path | None = None,
@@ -150,7 +150,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         and not isinstance(payload.get("effort"), str)
         or payload.get("model_type") is not None
         and not isinstance(payload.get("model_type"), str)
-        or launch_kind not in {"delegate", "explore", "shell"}
+        or launch_kind not in {"delegate", "explore", "shell", "write"}
         or not isinstance(payload.get("turn_seq"), int)
         or isinstance(payload.get("turn_seq"), bool)
         or status not in _STATUSES

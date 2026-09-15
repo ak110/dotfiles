@@ -279,3 +279,6 @@
 - 2026年9月13日: marketplaceのtimeout検体が実利用者の`known_marketplaces.json`へpytestの一時ディレクトリを保存した。
   直接原因: 検体がdotfiles rootだけを差し替え、`claude_marketplace`がmodule定数で保持するmarketplace登録とsettingsの書込先を隔離しなかった。
   対策: marketplace書込操作の検体では、同モジュールが保持する全永続パスを`tmp_path`へ差し替え、書込先を検体内へ閉じる
+- 2026年9月15日: レーン計画の作成手順どおりに`create_plan_files.py`を起動すると、必須の本文入力が無いため終了コード2で停止した。
+  直接原因: 受信タスク文書へ`--lane`だけを追加し、本文入力を必須とするCLI実装と実行順序を同期しなかった。
+  対策: 計画本文を先に保存して`--main-source`を渡す手順へ改め、バグ対応時の`--bugs-source`と`--lane`を含む文書契約をCLI検体で固定する

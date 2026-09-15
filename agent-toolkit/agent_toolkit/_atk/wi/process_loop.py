@@ -798,8 +798,8 @@ def _restart_process_loop(
     セッション終了後経路・待機中経路の双方から呼ぶ共通ヘルパーとする。
     ランチャー経由で起動された場合は受け渡しファイルへ次の起動対象を書き、
     専用の終了コードで終了する。ランチャーは同一プロセスで次の実体を`uv run`で起動するため、
-    PEP 723の依存解決が再実行され、かつプロセス階層が増えない。
-    受け渡しファイルの指定が無い直接起動では、従来どおり自プロセスを置き換える。
+    plugin projectの依存解決が再実行され、かつプロセス階層が増えない。
+    受け渡しファイルの指定が無い直接起動でも、同じprojectを指定して自プロセスを置き換える。
     """
     script, rest = _build_restart_target(
         argv,
@@ -815,7 +815,16 @@ def _restart_process_loop(
     executable = _resolve_executable("uv")
     if executable is None:
         return
-    restart_argv = [executable, "run", "--no-project", "--script", str(script), *rest]
+    restart_argv = [
+        executable,
+        "run",
+        "--project",
+        str(script.parent.parent),
+        "--locked",
+        "--no-default-groups",
+        str(script),
+        *rest,
+    ]
     os.execv(executable, restart_argv)
 
 

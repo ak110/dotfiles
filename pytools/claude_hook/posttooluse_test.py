@@ -174,7 +174,7 @@ class TestReferenceDocsReadRecording:
         incidents = docs_root / "incidents.md"
         for path in (concepts, concepts, incidents):
             result = _run(
-                {"tool_name": "Read", "tool_input": {"file_path": str(path), "limit": 1}, "session_id": sid},
+                {"tool_name": "Read", "tool_input": {"file_path": str(path)}, "session_id": sid},
                 env=env,
             )
             assert result.returncode == 0
@@ -183,16 +183,17 @@ class TestReferenceDocsReadRecording:
             str(incidents.resolve()),
         ]
 
-    def test_records_matching_path_outside_repository_root(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize("partial", [{"offset": 10}, {"limit": 1}, {"offset": 1, "limit": 10}])
+    def test_partial_read_is_not_recorded(self, tmp_path: pathlib.Path, partial: dict[str, int]):
         env = _state_env(tmp_path)
         sid = "reference-worktree"
         path = tmp_path / "checkout" / "docs" / "development" / "concepts.md"
         result = _run(
-            {"tool_name": "Read", "tool_input": {"file_path": str(path), "offset": 10}, "session_id": sid},
+            {"tool_name": "Read", "tool_input": {"file_path": str(path), **partial}, "session_id": sid},
             env=env,
         )
         assert result.returncode == 0
-        assert _read_state(tmp_path, sid)["dotfiles_reference_docs_read"] == [str(path.resolve())]
+        assert not list(tmp_path.glob("claude-agent-toolkit-*.json"))
 
     @pytest.mark.parametrize(
         "payload",

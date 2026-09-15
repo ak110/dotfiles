@@ -566,6 +566,33 @@ def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> Non
     assert not warnings, warnings
 
 
+def test_current_plan_legacy_refactoring_table_is_migration_only(repo: tuple[pathlib.Path, str]) -> None:
+    """旧リファクタリング表は読取時に警告し、新規作成・改訂では拒否する。"""
+    work_dir, _base = repo
+    legacy = """| 項目 | 内容 |
+| --- | --- |
+| 対象 | 判定処理 |
+| 現状の問題 | 契約が旧い。 |
+| 対応 | 更新する。 |
+| 本計画に含めるか | 含める |"""
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+        _plan_fixture.REFACTORING_TABLE,
+        legacy,
+        1,
+    )
+    path = work_dir / "legacy-refactoring.md"
+    path.write_text(content, encoding="utf-8")
+
+    read_errors, read_warnings = check_plan_file.check(path, work_dir)
+    create_errors, create_warnings = check_plan_file.check(path, work_dir, reject_migration_warnings=True)
+    message = "リファクタリング表が旧2列4行形式である。新規作成・改訂では`対象`、`現状の問題`、`対応`の3列表へ移行する"
+
+    assert not read_errors, read_errors
+    assert message in read_warnings
+    assert message in create_errors
+    assert message not in create_warnings
+
+
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [

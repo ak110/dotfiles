@@ -78,9 +78,28 @@ _EXEC_PREFIX_WITHOUT_OPTIONS: frozenset[str] = frozenset({"command", "nohup", "u
 _TIMEOUT_DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
 
 _SHELL_TOKENS: frozenset[str] = frozenset({"sh", "bash"})
+_SHELL_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|<<<|<<|>>|<>|>&|<&|>\||>|<)")
 
 _UV_TERMINAL_OPTIONS: frozenset[str] = frozenset({"--help", "-h", "--version", "-V"})
 """後続の指定を実行しない終端オプション。走査中のコマンド自身を実行位置として確定する。"""
+
+
+def without_shell_redirections(tokens: Sequence[str]) -> tuple[str, ...]:
+    """シェルのリダイレクト指定と、その分離された宛先を除いたトークン列を返す。"""
+    retained: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        match = _SHELL_REDIRECTION_PATTERN.match(token)
+        if match is None:
+            retained.append(token)
+            index += 1
+            continue
+        index += 1
+        if match.end() == len(token) and index < len(tokens):
+            index += 1
+    return tuple(retained)
+
 
 _UV_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     {

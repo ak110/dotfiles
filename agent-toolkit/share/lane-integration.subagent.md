@@ -15,11 +15,11 @@
 1. 専用worktreeがcleanであり、専用branchのHEADが実行レビュー済みHEADと一致することを確認する。
 2. 統合先worktreeの現在branchが統合先branchであり、別の書込主体とGitの中断状態が無いことを確認する。
 3. 統合先branchを専用branchへfast-forwardできることを確認し、fast-forwardマージする。非fast-forward又は競合を観測した場合は、rebase、merge commit又はcherry-pickで独自解決せず`needs_escalation`で返す。
-4. マージ後の統合先branchの完全OIDを取得する。
+4. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
 ## マージなしの統合
 
-実装commitを作成せず、統合先branchを変更しない。統合開始時の統合先branch完全OIDを`merged_head`とする。
+実装commitを作成せず、統合先branchを変更しない。統合開始時の統合先branchの7文字以上の一意な短縮OIDを`merged_head`とする。
 
 ## 計画最終化
 
@@ -39,11 +39,11 @@
 
 ```text
 統合完了
-merged_head: <完全OID>
+merged_head: <7文字以上の一意な短縮OID>
 plan_committed: <メイン計画ファイル名>
 adopted: <ファイル名のASCIIカンマ区切り。無い場合は「なし」>
 rejected: <ファイル名のASCIIカンマ区切り。無い場合は「なし」>
-deferred_adopt_commits: <AWIファイル名と完全OIDの対応。無い場合は「なし」>
+deferred_adopt_commits: <AWIファイル名と7文字以上の一意な短縮OIDの対応。無い場合は「なし」>
 ```
 
 続行不能時は`status: needs_escalation`と`reason:`の2行だけを返す。自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

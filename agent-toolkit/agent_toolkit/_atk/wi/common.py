@@ -735,23 +735,21 @@ def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object])
 def _iter_entries(
     private_notes: pathlib.Path,
     states: Iterable[str],
-    filter_repo: str | None,
-    entry_type: str = "all",
+    filter_repo: str | Iterable[str] | None,
+    entry_type: str | Iterable[str] = "all",
 ) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
     """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。"""
     resolver_cache: dict[str, str | None] = {}
-    canonical_filter = _canonical_repo(filter_repo, resolver_cache) if filter_repo is not None else None
+    raw_repos = (filter_repo,) if isinstance(filter_repo, str) else tuple(filter_repo or ())
+    canonical_filters = {canonical for repo in raw_repos if (canonical := _canonical_repo(repo, resolver_cache)) is not None}
+    entry_types = {entry_type} if isinstance(entry_type, str) else set(entry_type)
     for state in states:
         state_dir = private_notes / state
         for path, target_repo, text in _iter_inbox_entries(state_dir):
             actual_type = _require_type(path, text)
-            if (
-                filter_repo is not None
-                and actual_type is not None
-                and (canonical_filter is None or _canonical_repo(target_repo, resolver_cache) != canonical_filter)
-            ):
+            if raw_repos and actual_type is not None and _canonical_repo(target_repo, resolver_cache) not in canonical_filters:
                 continue
-            if entry_type not in ("all", actual_type):
+            if "all" not in entry_types and actual_type not in entry_types:
                 continue
             yield path, target_repo, text, state, actual_type
 
@@ -764,7 +762,7 @@ UNANSWERED_UWI_NOTICE_HEADER = "# 未回答UWI通知（`atk wi list`と`atk wi s
 """
 
 
-def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str | None) -> None:
+def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str | Iterable[str] | None) -> None:
     """未回答UWIが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
     entries = [
         (path, entry_repo, text, state)

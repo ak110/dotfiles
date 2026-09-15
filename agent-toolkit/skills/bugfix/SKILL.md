@@ -14,6 +14,8 @@ description: >
 
 ## 適用手順
 
+問題を発見した時点で、対処に着手する前に`references/response.md`を全文読む。
+
 1. 後述の「初動と拡張原因分析の判定」を読む
 2. 拡張原因分析の条件に該当する場合だけ、`references/root-cause-analysis.md`を全文読む
 3. CI失敗を扱う時は`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む

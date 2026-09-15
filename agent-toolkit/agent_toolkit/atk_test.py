@@ -69,6 +69,44 @@ def _isolate_agent_and_managed_temp_environment(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
 
+def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """別cloneの追加項目を取得し、連続実行でも明示pull経路を完了する。"""
+    origin = tmp_path / "origin.git"
+    seed = tmp_path / "seed"
+    notes = tmp_path / "private-notes"
+    peer = tmp_path / "peer"
+    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
+    seed.mkdir()
+    subprocess.run(["git", "init", "--initial-branch=main"], cwd=seed, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "atk-test"], cwd=seed, check=True)
+    subprocess.run(["git", "config", "user.email", "atk-test@example.invalid"], cwd=seed, check=True)
+    (seed / "inbox").mkdir()
+    (seed / "inbox/.gitkeep").write_text("", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=seed, check=True)
+    subprocess.run(["git", "commit", "-m", "base"], cwd=seed, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", str(origin)], cwd=seed, check=True)
+    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=seed, check=True, capture_output=True)
+    subprocess.run(["git", "clone", str(origin), str(notes)], check=True, capture_output=True)
+    subprocess.run(["git", "clone", str(origin), str(peer)], check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "atk-test"], cwd=peer, check=True)
+    subprocess.run(["git", "config", "user.email", "atk-test@example.invalid"], cwd=peer, check=True)
+    _write_awi_file(peer, "remote.md")
+    subprocess.run(["git", "add", "inbox/remote.md"], cwd=peer, check=True)
+    subprocess.run(["git", "commit", "-m", "remote entry"], cwd=peer, check=True, capture_output=True)
+    subprocess.run(["git", "push"], cwd=peer, check=True, capture_output=True)
+
+    for _ in range(2):
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+
+    assert (notes / "inbox/remote.md").exists()
+    assert capsys.readouterr().out == f"同期完了: {notes.resolve()}\n" * 2
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -727,7 +765,8 @@ class TestMutationTargetRepoParserOption:
         """6種のmutation系サブコマンドすべてが`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args([top_command, subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
-        assert args.target_repo == "github.com/foo/bar"
+        expected = ["github.com/foo/bar"] if subcommand == "rm" else "github.com/foo/bar"
+        assert args.target_repo == expected
 
     def test_edit_rejects_message(self) -> None:
         """`edit FILENAME MESSAGE`の旧受理形式を拒否する。"""
@@ -803,6 +842,138 @@ class TestMutationTargetRepoParserOption:
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["wi", "commit", "--target-repo", "github.com/foo/bar"])
         assert exc_info.value.code == 2
+
+
+def test_repeatable_wi_filters_preserve_all_values() -> None:
+    """一覧系フィルターは同じオプションの全指定値を構文解析結果へ保持する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    args = parser.parse_args(
+        [
+            "wi",
+            "list",
+            "--target-repo=github.com/example/foo",
+            "--target-repo=github.com/example/bar",
+            "--type=awi",
+            "--type=uwi",
+            "--status=inbox",
+            "--status=hold",
+            "--answered=yes",
+            "--answered=no",
+            "--source=human",
+            "--source=!agent",
+        ]
+    )
+
+    assert args.target_repo == ["github.com/example/foo", "github.com/example/bar"]
+    assert args.type == ["awi", "uwi"]
+    assert args.status == ["inbox", "hold"]
+    assert args.answered == ["yes", "no"]
+    assert args.source == ["human", "!agent"]
+
+
+@pytest.mark.parametrize("subcommand", ("adopt", "reject", "rm"))
+def test_note_and_note_file_are_mutually_exclusive(subcommand: str) -> None:
+    """3つの状態変更コマンドは文字列メモとファイルメモの併用を構文解析時に拒否する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["wi", subcommand, "entry.md", "--note=本文", "--note-file=/tmp/note.txt"])
+
+    assert exc_info.value.code == 2
+
+
+def test_note_file_preserves_utf8_text(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ファイルメモは改行とシェル制御文字を変更せず既存の採用処理へ渡す。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "entry.md")
+    note_file = tmp_path / "note.txt"
+    note = '1行目\n"引用"と`backtick`と$記号\n'
+    note_file.write_text(note, encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "adopt", "entry.md", "--note-file", str(note_file)], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert f"- メモ: {note}" in (notes / "adopted/entry.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("invalid_bytes", (None, b"\xff"))
+def test_note_file_read_error_precedes_environment_changes(
+    tmp_path: pathlib.Path,
+    invalid_bytes: bytes | None,
+) -> None:
+    """存在しない又はUTF-8でないメモはprivate-notesの準備前に拒否する。"""
+    note_file = tmp_path / "note.txt"
+    if invalid_bytes is not None:
+        note_file.write_bytes(invalid_bytes)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "reject", "entry.md", "--note-file", str(note_file)], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    assert not (tmp_path / "private-notes").exists()
+
+
+@pytest.mark.parametrize("subcommand", ("adopt", "reject", "rm"))
+def test_note_file_rejects_relative_path_before_environment_changes(
+    tmp_path: pathlib.Path,
+    subcommand: str,
+) -> None:
+    """相対メモパスはprivate-notesの準備前に3コマンドで拒否する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", subcommand, "entry.md", "--note-file=note.txt"], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    assert not (tmp_path / "private-notes").exists()
+
+
+@pytest.mark.parametrize("subcommand", ("adopt", "reject", "rm"))
+def test_note_file_help_describes_safe_absolute_path_use(
+    subcommand: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """3コマンドのヘルプは長文メモを安全な絶対パスで渡す用途を示す。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["wi", subcommand, "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "引用符・改行・バッククォート" in help_text
+    assert "シェルのエスケープを介さず" in help_text
+    assert "UTF-8ファイルの絶対パス" in help_text
+
+
+def test_wi_pull_uses_lock_and_suppresses_entry_notification(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """明示pullは排他区間で毎回同期し、対象パスの1行だけを出力する。"""
+    notes = _setup_notes(tmp_path)
+    events: list[str] = []
+    common_module = vars(atk)["_common"]
+
+    class Lock:
+        def __enter__(self) -> None:
+            events.append("lock-enter")
+
+        def __exit__(self, *_args: object) -> None:
+            events.append("lock-exit")
+
+    monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(common_module, "_repo_lock", lambda _path: Lock())
+    monkeypatch.setattr(common_module, "pull", lambda _path: events.append("pull"))
+    monkeypatch.setattr(common_module, "notify_unanswered_uwis_if_any", lambda *_args: events.append("notify"))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "pull"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert events == ["lock-enter", "pull", "lock-exit"]
+    assert capsys.readouterr().out == f"同期完了: {notes.resolve()}\n"
 
 
 @pytest.mark.parametrize(
@@ -1009,14 +1180,14 @@ def test_transition_commit_help_describes_resolution_and_warning(
     subcommand: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """採否のcommit案内が完全OID化と対応不能時の警告継続を説明する。"""
+    """採否のcommit案内が対象リポジトリでの解決と対応不能時の警告継続を説明する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["wi", subcommand, "--help"])
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
     assert "対象リポジトリで解決できるrevision" in output
-    assert "記録時に完全OIDへ解決" in output
+    assert "記録時に対象リポジトリで解決" in output
     assert "対応付けできない場合は警告" in output
 
 
@@ -1174,7 +1345,7 @@ def test_public_review_table_show_accepts_compat_track(
         atk.main(["review-table", "show", str(path), "--track=implementation-review"])
 
     assert exc_info.value.code == 0
-    assert capsys.readouterr().out == raw
+    assert capsys.readouterr().out == f"1\t{raw}"
 
 
 def test_public_review_table_validate_rejects_whitespace_around_stored_track(

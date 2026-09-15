@@ -15,7 +15,7 @@ autosquashの直前と、autosquashの競合を解消した後の継続の直前
 
 ## 修正方法の選択
 
-autosquashの単位は、レビュー結果を一意に示す識別子（レビュー指摘管理表の絶対パスと当該ラウンドのround値の組）と最古fixup対象の完全OIDの組とする。
+autosquashの単位は、レビュー結果を一意に示す識別子（レビュー指摘管理表の絶対パスと当該ラウンドのround値の組）と最古fixup対象の7文字以上の一意な短縮OIDの組とする。
 同じ組に対するautosquashは、当該組へ帰属する全てのfixupを作成した後の1回だけとし、レビュー修正の受け渡し、追加の照会、工程の再開のいずれをまたいでも再実行しない。
 工程を再開した時点では、`## 履歴確認の起動形`が定める起動形の`git log`の出力に、件名の先頭が`fixup!`、`squash!`又は`amend!`である行があるかで新しいfixupの有無を判定する。当該行が無い場合はautosquashを実行しない。
 
@@ -23,7 +23,7 @@ autosquashの単位は、レビュー結果を一意に示す識別子（レビ�
 fixupは、修正が統合先コミットの時点で独立して成立し、対応する近接検証を再実行できる場合に限る。
 中間状態を独立して検証できない場合はfixupを使わず新規コミットを作成する。
 
-通常実装モードのレビュー修正担当がレビュー表と現行履歴を照合し、採用指摘IDと実装単位commit完全OIDの対応を確定したレビュー修正は、上記の新規commit既定の例外とする。
+通常実装モードのレビュー修正担当がレビュー表と現行履歴を照合し、採用指摘IDと実装単位commitの7文字以上の一意な短縮OIDの対応を確定したレビュー修正は、上記の新規commit既定の例外とする。
 最終単位だけが対象の場合は、修正・近接検証・stage後に`amend` phaseで下記の汎用判定を再実行し、成功した場合だけamendを実行する。
 過去単位だけが対象の場合は対象commitへのfixupとautosquashだけを実行する。
 両方が対象の場合は過去単位だけを先に実装してautosquashする。
@@ -35,10 +35,11 @@ autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近
 未pushかつ単一の実装担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refの照合、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
 
 過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。
-各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認し、その確認後にだけ次の過去単位の修正差分を適用する。
+各fixup作成後に対象OIDと件名を確認し、作業ツリーがcleanであることも確認する。
+その確認後にだけ次の過去単位の修正差分を適用する。
 全過去単位のfixupを作成した後に1回だけautosquashを実行する。
 最終単位と過去単位の両方が対象の場合は、autosquash前の反復対象を過去単位だけに限定する。最終単位の修正実装と近接検証、stageはautosquash成功後へ延期する。
-autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
+autosquash成功後に`git rev-parse --short=7 HEAD`で書換え後HEADの7文字以上の一意な短縮OIDを取得し、書換え前後の実装単位を履歴検収用に対応付ける。tree、親及びcommitの厳密な比較では、各短縮OIDを比較の直前に対象リポジトリで解決する。
 autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。開始済みの同じ実装担当が最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする。
 
 - 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend --no-edit`を使う。
@@ -60,7 +61,7 @@ autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換す�
 - `--fixup`は`-m`・`-F`と併用できない
   （`fatal: options '-m' and '--fixup:reword' cannot be used together`で失敗する）。
   非対話環境では`GIT_EDITOR`へ1行目を保持したまま以降を差し替える処理を指定する
-- autosquashを実行する場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを完全OIDで保持する。
+- autosquashを実行する場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを7文字以上の一意な短縮OIDで保持し、Git操作の直前に対象リポジトリで解決する。
   `git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でrebase範囲のfirst-parent全OIDを確定する。
   `git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
   この範囲のfirst-parent全OIDについて、fixup作成前に下記の「プッシュ済み判定」で公開済み判定を完了する。

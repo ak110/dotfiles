@@ -1,6 +1,6 @@
 r"""多段終了手順の起動順をStopフックで検査する。
 
-`agent-toolkit:process-wi`と`agent-toolkit:add-awi`は、
+`agent-toolkit:process-wi`と`agent-toolkit:add-awi-by-user`は、
 本体の作業を終える際に固定の終了工程列（`agent-toolkit:completion-report`、
 `agent-toolkit:process-wi`だけはこれに続けて`atk agents-exit-session`）を順に実行する契約を持つ。
 本フックは対象スキルの最新の起動以後に、要求される終了工程が要求順で実行されたかを
@@ -43,9 +43,13 @@ _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 # 表示用の代表名（`agent-toolkit:`修飾つき）と、プレフィックス付き・素の両表記を受理する名前集合の対。
 # 代表名はアルファベット順による自動選出ではなく明示指定とする
-# （`add-awi`は`agent-toolkit:add-awi`より辞書順で先に位置するため、自動選出では修飾を除いた表記を選んでしまう）。
+# （`add-awi-by-user`は`agent-toolkit:add-awi-by-user`より辞書順で先に位置するため、
+# 自動選出では修飾を除いた表記を選んでしまう）。
 _PROCESS_WI = ("agent-toolkit:process-wi", frozenset({"agent-toolkit:process-wi", "process-wi"}))
-_ADD_AWI = ("agent-toolkit:add-awi", frozenset({"agent-toolkit:add-awi", "add-awi"}))
+_ADD_AWI_BY_USER = (
+    "agent-toolkit:add-awi-by-user",
+    frozenset({"agent-toolkit:add-awi-by-user", "add-awi-by-user"}),
+)
 _COMPLETION_REPORT = (
     "agent-toolkit:completion-report",
     frozenset({"agent-toolkit:completion-report", "completion-report"}),
@@ -55,7 +59,7 @@ _EXIT_SESSION = ("atk agents-exit-session", frozenset({"atk agents-exit-session"
 # 検査対象スキルの(代表名, 名前集合)と、その最新起動以後に要求順で起動される必要がある終了スキル列。
 _TERMINATION_SEQUENCES: tuple[tuple[tuple[str, frozenset[str]], tuple[tuple[str, frozenset[str]], ...]], ...] = (
     (_PROCESS_WI, (_COMPLETION_REPORT, _EXIT_SESSION)),
-    (_ADD_AWI, (_COMPLETION_REPORT,)),
+    (_ADD_AWI_BY_USER, (_COMPLETION_REPORT,)),
 )
 
 _MISSING_STEP_TEMPLATE = "{target}の終了手順が未完了である。次の順で残りの工程を実行する: {remaining}"

@@ -291,21 +291,21 @@ def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> N
 
 
 @pytest.mark.parametrize(
-    "line",
+    ("line", "expected"),
     [
-        f"- ベースコミット: `{'a' * 40}`（`git rev-parse HEAD`で実測）",
-        f"- ベースコミット: `{'a' * 40}`（実測値）。",
-        f"  - ベースコミット: `{'a' * 40}`",
-        f"- 基準コミット:  `{'a' * 40}`",
+        (f"- ベースコミット: `{'a' * 7}`（`git rev-parse --short=7 HEAD`で実測）", "a" * 7),
+        (f"- ベースコミット: `{'a' * 40}`（実測値）。", "a" * 40),
+        (f"  - ベースコミット: `{'a' * 40}`", "a" * 40),
+        (f"- 基準コミット:  `{'a' * 40}`", "a" * 40),
     ],
 )
-def test_metadata_reads_base_commit_with_legacy_notations(line: str) -> None:
+def test_metadata_reads_base_commit_with_legacy_notations(line: str, expected: str) -> None:
     """注記付き、字下げ、旧別名のベースコミット記法からもOIDを読み取る。"""
     content = f"## 背景\n\n### 計画メタ情報\n\n{line}\n"
     metadata, errors = _plan_format.parse_plan_metadata(content)
     assert not errors
     assert metadata is not None
-    assert metadata.base_commit_candidates == ("a" * 40,)
+    assert metadata.base_commit_candidates == (expected,)
 
 
 def test_markdown_body_text_excludes_code_fence() -> None:

@@ -20,11 +20,13 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
-_NOTICE_PREFIX = "[auto-generated: agent-toolkit/user_prompt_submit][warn] "
+_NOTICE_PREFIX = "[auto-generated: agent-toolkit/user_prompt_submit][notice] "
 _NOTICE_SUFFIX = " （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
-    "発話が示す事実と是正要求は現物（原文・実装・規範・実行結果）で照合してから応答する。"
+    "直前の発話から、当該発話が主張する事実と是正を求めている対象を列挙し、"
+    "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
     "照合に用いた手段と結果を応答へ書く。照合できない場合は同意も変更もしない。"
+    "いずれも含まないと判定した発話では、照合を要さないと判断して次の工程へ進む。"
     "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
 )
 

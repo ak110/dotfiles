@@ -141,7 +141,8 @@ if TYPE_CHECKING:
         PLAN_PLACEHOLDER_WORDS,
         PLAN_PROGRESS_TABLE_HEADER,
         PLAN_QUEUE_ID_PATTERN,
-        PLAN_REFACTORING_TABLE_ROWS,
+        PLAN_LEGACY_REFACTORING_TABLE_ROWS,
+        PLAN_REFACTORING_TABLE_HEADER,
         PLAN_SINGLE_FILE_H2_ORDER,
         PLAN_REQUIREMENT_ID_PATTERN,
         PLAN_REQUIREMENT_TABLE_HEADER,
@@ -874,18 +875,22 @@ def _check_permanence_sections(
             else:
                 errors.extend(table_errors)
         elif heading.text == "リファクタリング":
-            matching = [
+            current, current_errors = _check_fixed_table(
+                section,
+                PLAN_REFACTORING_TABLE_HEADER,
+                "`### リファクタリング`",
+            )
+            legacy = [
                 table
                 for table in tables
-                if table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_REFACTORING_TABLE_ROWS
+                if table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_LEGACY_REFACTORING_TABLE_ROWS
             ]
-            if not matching:
-                errors.append(
-                    f"`### リファクタリング`は対象ごとに{list(PLAN_BUG_TABLE_HEADER)}の2列と"
-                    f"{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く"
-                )
+            if current is not None:
+                errors.extend(current_errors)
+            elif not legacy:
+                errors.append(f"`### リファクタリング`は{list(PLAN_REFACTORING_TABLE_HEADER)}の3列表を1件置く")
             elif current_format:
-                for table in matching:
+                for table in legacy:
                     for row_index, row in enumerate(table.rows):
                         if len(row) != len(PLAN_BUG_TABLE_HEADER):
                             errors.append(
@@ -899,6 +904,14 @@ def _check_permanence_sections(
                         elif any(not cell for cell in row):
                             errors.append(f"`### リファクタリング`の表に空cellがある: {table.row_location(row_index)}")
     return errors
+
+
+def has_legacy_refactoring_table(content: str) -> bool:
+    """旧2列4行のリファクタリング表が本文にある場合に真を返す。"""
+    tables = extract_tables(list(iter_markdown_body_lines(content)))
+    return any(
+        table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_LEGACY_REFACTORING_TABLE_ROWS for table in tables
+    )
 
 
 def _check_h1(headings: list[PlanHeading]) -> list[str]:

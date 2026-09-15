@@ -539,7 +539,7 @@ class TestAgentsServerListRepeat:
         assert blocked.returncode == 2
         assert "前回の`list`から`agents_server`の状態が変化していない" in blocked.stderr
         assert "`stop(session_id)`" in blocked.stderr
-        assert "引数を取らない`wait`" in blocked.stderr
+        assert "`atk agents wait`" in blocked.stderr
         assert not blocked.stdout
 
     def test_agents_server_list_passes_on_retry_and_state_change(
@@ -1162,19 +1162,19 @@ class TestBashHeredocLiteralExclusion:
         ("command", "detected_text"),
         [
             (
-                "cat <<'EOF' > /tmp/doc.md\n待機例: echo start; sleep 300; echo done\nEOF",
+                "cat <<'EOF'\n待機例: echo start; sleep 300; echo done\nEOF",
                 "foreground sleep",
             ),
             (
-                "cat <<'EOF' > /tmp/doc.md\npytest -q | tail -5\nEOF",
+                "cat <<'EOF'\npytest -q | tail -5\nEOF",
                 "truncating it",
             ),
             (
-                "cat <<'EOF' > /tmp/doc.md\nrg keyword ~/.local\nEOF",
+                "cat <<'EOF'\nrg keyword ~/.local\nEOF",
                 "high-capacity user directory",
             ),
             (
-                "cat <<'EOF' > /tmp/doc.md\ncodex exec 'draft the plan'\nEOF",
+                "cat <<'EOF'\ncodex exec 'draft the plan'\nEOF",
                 "running codex exec",
             ),
         ],
@@ -1198,7 +1198,7 @@ class TestBashHeredocLiteralExclusion:
         result = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "cat <<'EOF' > /tmp/doc.md\nkillall は所有権を確認できない\nEOF"},
+                "tool_input": {"command": "cat <<'EOF'\nkillall は所有権を確認できない\nEOF"},
                 "session_id": "heredoc-pattern-kill",
             },
             _plan_file_state_env(tmp_path),
@@ -1222,7 +1222,7 @@ class TestBashHeredocLiteralExclusion:
         result = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "cat <<'EOF' > /tmp/doc.md\npytest -q | tail -5; echo \"$?\"\nEOF"},
+                "tool_input": {"command": "cat <<'EOF'\npytest -q | tail -5; echo \"$?\"\nEOF"},
                 "session_id": "output-status-after-truncation-heredoc",
             },
             _plan_file_state_env(tmp_path),
@@ -1245,3 +1245,206 @@ class TestBashHeredocLiteralExclusion:
 
         assert result.returncode == 2
         assert "除外設定を反映しない再帰`grep`" in result.stderr
+        assert "Git管理対象の内容は`git grep`" in result.stderr
+        assert "`rg`には`--hidden`" in result.stderr
+        assert "構造の探索は`find`" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git grep -F needle -- .claude",
+            "rg --hidden needle .",
+            "find . -name AGENTS.md",
+        ],
+    )
+    def test_recursive_grep_fix_commands_are_not_blocked(self, command: str, tmp_path: pathlib.Path) -> None:
+        """通知が対象性質ごとに示す再実行は同じ検査で遮断しない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": f"recursive-grep-fix-{len(command)}",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+
+
+class TestStaticSafetyBlocks:
+    """静的に一意判定できる多段シェル、heredoc及び秘密情報読取を遮断する。"""
+
+    @pytest.mark.parametrize("command", ["sh -c 'echo ok'", "docker exec app sh -c 'echo ok'", "su -c 'echo ok'"])
+    def test_nested_code_string_is_blocked(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "コード文字列" in result.stderr
+
+    def test_heredoc_with_output_redirection_is_blocked(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat <<'EOF' > out.txt\ntext\nEOF"}})
+        assert result.returncode == 2
+        assert "heredoc" in result.stderr
+
+    @pytest.mark.parametrize("command", ["cat .env", "head -n 1 config/.env.local", "xxd .env.production"])
+    def test_env_content_output_is_blocked(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert ".env" in result.stderr
+
+    def test_env_example_and_key_extraction_are_allowed(self) -> None:
+        for command in ("cat .env.example", "grep '^TOKEN=' .env"):
+            result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+            assert result.returncode == 0
+
+    def test_read_env_is_blocked(self) -> None:
+        result = _run({"tool_name": "Read", "tool_input": {"file_path": "/tmp/.env"}})
+        assert result.returncode == 2
+        assert ".env" in result.stderr
+
+    def test_missing_explicit_path_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "rg needle absent.txt"}, "cwd": str(tmp_path)})
+        assert result.returncode == 2
+        assert "absent.txt" in result.stderr
+
+    def test_existing_explicit_path_is_allowed(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "present.txt"
+        target.write_text("needle", encoding="utf-8")
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "rg needle present.txt"}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+
+    def test_git_grep_trailing_option_is_moved(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git grep needle --ignore-case"}})
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == ("git grep --ignore-case needle")
+
+    def test_atk_unknown_option_is_blocked(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
+        assert result.returncode == 2
+        assert "--not-supported" in result.stderr
+
+    def test_heredoc_block_notice_names_a_save_means_that_passes_the_same_check(self) -> None:
+        """heredoc遮断の解消手段が、同じ判定へ当たらない形を名指しする。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat > out.txt <<'EOF'\ntext\nEOF"}})
+        assert result.returncode == 2
+        assert "編集ツール" in result.stderr
+        assert "heredoc単独" in result.stderr
+
+    @pytest.mark.parametrize("command", ["sh -c 'echo ok'", "su -c 'echo ok'", "ssh host 'echo ok'"])
+    def test_nested_code_string_notice_names_the_save_means(self, command: str) -> None:
+        """多段引用の遮断も保存手段を編集ツールとして名指しする。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "編集ツール" in result.stderr
+
+
+class TestBashOutputTruncationRepetition:
+    """Bash出力の切り詰め補正の許容を補正種別ごとに数える。"""
+
+    @staticmethod
+    def _invoke(command: str, session_id: str, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        return _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
+            _plan_file_state_env(tmp_path),
+        )
+
+    def test_same_kind_is_blocked_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
+        """同じ補正種別の2回目を遮断する。"""
+        session_id = "truncation-same-kind"
+        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
+
+        result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        assert result.returncode == 2
+        assert "切り詰め補正が同じ形で繰り返された" in result.stderr
+
+    def test_other_kind_is_allowed_after_a_block(self, tmp_path: pathlib.Path) -> None:
+        """別の補正種別の初回は、過去の別種の補正と遮断を理由に遮断しない。"""
+        session_id = "truncation-other-kind"
+        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
+        assert self._invoke("ls -1 /var | head -5", session_id, tmp_path).returncode == 2
+
+        assert self._invoke("ls -1 /tmp | tail -5", session_id, tmp_path).returncode == 0
+
+    def test_block_notice_shows_a_means_without_separated_execution(self, tmp_path: pathlib.Path) -> None:
+        """遮断本文が分離実行に依存しない解消手段を示す。"""
+        session_id = "truncation-fix-body"
+        self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+
+        result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        assert result.returncode == 2
+        assert "ファイルへリダイレクト" in result.stderr
+        assert "保存済みファイルから必要な範囲だけを" in result.stderr
+
+
+class TestBashRecursiveGrepTargetJudgement:
+    """再帰`grep`の遮断本文が対象ごとのGit作業ツリー判定を示す。"""
+
+    def test_notice_reports_the_worktree_root_for_a_tracked_target(self, tmp_path: pathlib.Path) -> None:
+        """Git作業ツリーに属する対象では、rootを併記して`git grep`を組み立てられる状態にする。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "grep -r needle ."}, "cwd": str(repo)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "Git作業ツリー" in result.stderr
+        assert repo.name in result.stderr
+
+    def test_notice_reports_a_target_outside_git(self, tmp_path: pathlib.Path) -> None:
+        """Git管理外の対象では管理外である旨を示す。"""
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "grep -r needle ."}, "cwd": str(plain)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "Git管理外" in result.stderr
+
+
+class TestBashUnboundedRootTraversal:
+    """走査範囲を限定しないファイルシステムの根からの`find`を遮断する。"""
+
+    def test_root_traversal_is_blocked(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "find / -name review_table"}})
+
+        assert result.returncode == 2
+        assert "ファイルシステムの根" in result.stderr
+        assert "-maxdepth" in result.stderr
+        assert "-prune" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "find / -maxdepth 2 -name review_table",
+            "find / -xdev -name review_table",
+            "find /usr/share -name review_table",
+            "find . -name review_table",
+        ],
+        ids=["maxdepth", "xdev", "scoped-directory", "relative-directory"],
+    )
+    def test_bounded_or_scoped_traversal_is_allowed(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+
+        assert result.returncode == 0
+
+    def test_home_traversal_stays_a_warning(self, tmp_path: pathlib.Path) -> None:
+        """ホームディレクトリ起点の走査は既存の警告のまま維持する。"""
+        home = tmp_path / "home"
+        home.mkdir()
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "find ~ -name review_table"}},
+            _plan_file_state_env(tmp_path, home),
+        )
+
+        assert result.returncode == 0
+        assert "大容量のユーザーディレクトリ" in _additional_context(result)

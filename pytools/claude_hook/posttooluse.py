@@ -8,7 +8,7 @@ dotfilesローカル配布対象外のスキル呼び出し及び参照文書の
 - `agent-toolkit-edit`スキル: `agent_toolkit_edit_skill_invoked`キーへ`True`を書き込む。
   PreToolUse側（`claude_hook_pretooluse.py`）が参照し、`agent-toolkit/`配下の編集時に
   スキル未起動なら警告を発する。
-- `docs/development/concepts.md`・`incidents.md`へのRead:
+- `docs/development/concepts.md`・`incidents.md`へのoffset・limitなしのRead:
   `dotfiles_reference_docs_read`キーへ解決済み絶対パスを重複なしで記録する。
   PreToolUse側が同じチェックアウト内のコーディングエージェント向け文書の編集警告に使う。
 
@@ -42,6 +42,8 @@ def main(payload_text: str) -> int:
         return 0
 
     if tool_name == "Read":
+        if "offset" in tool_input or "limit" in tool_input:
+            return 0
         file_path = tool_input.get("file_path")
         resolved = _reference_doc_path(file_path) if isinstance(file_path, str) else None
         if resolved is None:

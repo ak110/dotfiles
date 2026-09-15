@@ -1,6 +1,6 @@
 # grilling
 
-`agent-toolkit:plan-mode`の直接起動で実装前の共通理解へ到達し、`agent-toolkit:add-awi`の起動でAWI投入前の共通理解へ到達するためのユーザー確認手順。
+`agent-toolkit:plan-mode`の直接起動で実装前の共通理解へ到達し、`agent-toolkit:add-awi-by-user`の起動でAWI投入前の共通理解へ到達するためのユーザー確認手順。
 `agent-toolkit:process-wi`経路では本書を適用しない。当該経路とレーン担当としての起動における確認事項の扱いは`../SKILL.md`が定める。
 
 ## 確認対象
@@ -20,12 +20,13 @@
 ## 質問表示
 
 `AskUserQuestion`で質問を提示する。
-当該ツールを利用できない実行環境では、`agent-toolkit/share/rules-main.codex.md`「ユーザー確認の提示形式」が定める固定テンプレートで提示する。
+当該ツールを利用できないCodex環境では、`agent-toolkit:confirmation-and-uwi`の`references/codex-format.md`が定める固定形式で提示する。
 質問を提示したら、そのラウンドの回答を待ってから次のラウンドへ進む。
 
 ## 終了条件
 
 未回答のユーザー判断と、その判断を妨げる未調査の事実がなくなった時点で確認を終了する。
+質問数、質問ラウンド数及び「聞き過ぎている」という自己評価を終了条件にせず、未回答の判断又は未調査の事実が残る場合は確認を継続する。
 
 ## 終了時報告
 
@@ -37,5 +38,5 @@
   - **最有力の対案**: <選ばなかった中で最も有力だった案>
 ````
 
-この報告は承認を求めるものではないため、追加承認を待たず次の工程へ進む。次の工程は、`agent-toolkit:plan-mode`では計画ファイルの起草、`agent-toolkit:add-awi`ではAWI本文の起草とする。
+この報告は承認を求めるものではないため、追加承認を待たず次の工程へ進む。次の工程は、`agent-toolkit:plan-mode`では計画ファイルの起草、`agent-toolkit:add-awi-by-user`ではAWI本文の起草とする。
 ユーザーが後から異論を示した場合は、その判断と依存する後続判断を更新する。

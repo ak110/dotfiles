@@ -28,11 +28,6 @@ import pathlib
 import re
 import time
 
-from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _WARN_TAG,
-    set_warning_session_id,
-)
-
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -74,11 +69,20 @@ _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
 _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
 _LAST_USER_PROMPT_AT_KEY = "last_user_prompt_at"
+_VERIFICATION_NOTICE_TAG = "notice"
 _VERIFICATION_NOTICE_BODY = (
-    "発話が示す事実と是正要求は現物（原文・実装・規範・実行結果）で照合してから応答する。"
+    "直前の発話から、当該発話が主張する事実と是正を求めている対象を列挙し、"
+    "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
     "照合に用いた手段と結果を応答へ書く。照合できない場合は同意も変更もしない。"
+    "いずれも含まないと判定した発話では、照合を要さないと判断して次の工程へ進む。"
     "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
 )
+"""照合要求の注記の本文。
+
+照合すべき対象は発話ごとに異なるため、対象の列挙を受領側の手順として本文に持たせる。
+当該列挙をフック側の判定で代替しない。本フックの入力は発話本文だけであり、
+規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
+"""
 _llm_notice = _notice_formatter("agent-toolkit/user_prompt_submit")
 
 
@@ -169,7 +173,6 @@ def main(payload_text: str) -> int:
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
         return 0
-    set_warning_session_id(session_id)
 
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt:
@@ -186,8 +189,8 @@ def main(payload_text: str) -> int:
     is_normal_prompt = not first_line.startswith(command_prefix)
     additional_context = None
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
-        # 発火条件は受領側が変更できないため、原因の除去を求める反復注記を付けない。
-        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_WARN_TAG, removable_cause=False)
+        # 発火条件は受領側が除去できないため、是正を求める区分ではなく情報提示として配送する。
+        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG)
 
     if not is_normal_prompt:
         match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])

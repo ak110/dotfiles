@@ -22,6 +22,7 @@
 通常の開発先は`develop`とし、リリース先及び既定ブランチは`master`とする。
 `master`は直接更新せず、必須CIを通過したPRのマージコミットだけで更新する。
 `agent-toolkit:process-wi`の終端では、当該セッションで処理対象へ固定したAWIのうち阻害要因を持つものを除く全件が終端した場合に、`develop`から`master`へのリリースPRを作成してマージまで実施する（2026年9月、利用者指示）。
+実施可否の第1条件は選定工程の完了時点で評価し、当該時点の判定結果を公開工程まで保持して再評価しない（2026年9月15日、利用者指示）。公開工程で評価すると、`agent-toolkit:session-review`が終盤に投入する項目と並行セッションが投入する項目により条件が成立せず、`develop`が`master`より進み続けたためである。
 条件が成立しない場合と当該スキル以外の経路では、PRの作成とマージ依頼を手動で行う。
 いずれの経路でもauto-merge、マージ失敗後の自動再試行、自動rollbackを導入しない。
 判定条件と実施手順は[日次リリースの自動実施](operations.md#日次リリースの自動実施)に従う。
@@ -41,7 +42,7 @@ statusline（`rust/claude-statusline/`配下）を変更した場合は、その
 初回移行では初回リリースPRを作成しない。
 実装済みHEADを`develop`として公開し、`origin/master`が移行前OIDであることを確認する。
 ローカル`master`は、ローカル`develop`と`origin/develop`のOID一致を確認した後にだけ削除する。
-branchの公開又はCIが失敗した場合は`master`を保持し、同じ完全OIDを再確認してから再開する。
+branchの公開又はCIが失敗した場合は`master`を保持し、同じcommitをref又は7文字以上の一意な短縮OIDで再確認してから再開する。
 
 ## WIキューの運用
 
@@ -155,7 +156,7 @@ AWIはユーザーとエージェントが非同期に共有する人間向け�
   UWI本文は、冒頭の疑問文と判断を変える事実を順に置く。`choice`と`yes-no`では疑問文の後に選択肢と各選択肢の帰結を置き、回答方法の説明を書かない。
   `free-form`では自由記述で回答できる問いとし、返信形式を指定する必要がある場合だけ回答方法を書く
   （2026年9月8日、利用者指示。本文が長く、UWIでは何を問われているかが読み取りにくいという指摘に由来する）
-- `agent-toolkit:add-awi`は、`agent-toolkit:plan-mode`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好に依存する未確定判断を解消する。
+- `agent-toolkit:add-awi-by-user`は、`agent-toolkit:plan-mode`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好に依存する未確定判断を解消する。
   解消した後に、保存する本文の全文を提示して可否の回答を得てから投入する
   （2026年9月8日、利用者指示。確認が不十分なままAWIが投入される事故に由来する）
 
@@ -181,9 +182,9 @@ processing、UWI、終端項目と人間由来の項目はユーザーコメン�
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 移管先ファイル名を記録して元項目を終端する。
-`agent-toolkit:add-awi`と`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
+`agent-toolkit:add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
 主題が継続するか、AWI投入と直接実装の境界が不明な場合は、変更・投入の前に確認する。
-`agent-toolkit:add-awi`が新規項目を起票する場合は、利用者発話を原文とする手動起動を含めて`source: add-awi`を`atk wi add --source`へ必ず渡す。別リポジトリ項目の移管では、移管元に保存済みのsourceがある場合に同じ値を保持する。
+`agent-toolkit:add-awi-by-user`が新規項目を起票する場合は、利用者発話を原文とする手動起動を含めて`source: add-awi-by-user`を`atk wi add --source`へ必ず渡す。別リポジトリ項目の移管では、移管元に保存済みのsourceがある場合に同じ値を保持する。
 
 ## 計画ファイルの体裁の扱い
 

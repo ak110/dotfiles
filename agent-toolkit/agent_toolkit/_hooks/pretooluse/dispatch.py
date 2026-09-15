@@ -24,14 +24,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / start_shell / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
-
-wait:
-
-- 既存sessionの観測として通過 (pass-through)
 
 list:
 
@@ -39,6 +35,10 @@ list:
 
 Bash:
 
+- 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
+- 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
+- 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
+- 350行を超える通常ファイルの静的に確定できる全文取得の遮断 (block)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
 - 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の補正又は遮断 (auto-fix/block)
@@ -60,14 +60,14 @@ Skill:
 
 TaskStop:
 
-- 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の初回遮断 (block)
+- 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の遮断 (block)
 
-Write / Edit / MultiEdit / apply_patch:
+Read / Write / Edit / MultiEdit / apply_patch:
 
 - 文字化け（U+FFFD）検出 (block)
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
 - lockfile / 生成物ディレクトリの直接編集 (block)
-- シークレット / 鍵ファイルの直接編集 (block)
+- `.env`系のReadとシークレット・鍵ファイルの直接編集 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -170,7 +170,6 @@ if TYPE_CHECKING:
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
-        check_required_read_before_ask_user_question,
         _handle_language_check,
         _record_iss_sidechain_probe,
         _reset_plan_mode_state,
@@ -182,6 +181,7 @@ if TYPE_CHECKING:
         _check_foreign_script_mixin,
         _check_mojibake,
         _check_plan_mode_skill_first,
+        _check_secret_read,
         _collect_edit_operation_warnings,
         check_user_facing_typo,
     )
@@ -193,12 +193,18 @@ if TYPE_CHECKING:
         _check_bash_git_log_decorate,
         _check_bash_git_push_after_amend_with_dirty_status,
     )
+    from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read, check_large_read
     from agent_toolkit._hooks.pretooluse.notices import _llm_notice
     from agent_toolkit._hooks.pretooluse.shell_checks import (
         _autofix_bash_command,
         _check_bash_codex_exec,
         _check_bash_atk_help_observation,
+        _check_bash_atk_options,
+        _check_bash_explicit_path_exists,
         _check_bash_help_with_execution,
+        _check_bash_heredoc_chain,
+        _check_bash_env_full_read,
+        _check_bash_nested_code_string,
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
         _check_bash_process_kill_by_pattern,
@@ -207,6 +213,7 @@ if TYPE_CHECKING:
         _check_repeated_bash_output_truncation,
         _check_bash_sleep_poll_pattern,
         _check_bash_unbounded_home_traversal,
+        _check_bash_unbounded_root_traversal,
         _check_bash_uv_run_python,
     )
 
@@ -330,7 +337,7 @@ def main(payload_text: str) -> int:
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, session_id, emit_json, flush_pending_notices))
+        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
     if tool_name == "Skill":
@@ -388,8 +395,14 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
-    # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
+        file_path = tool_input.get("file_path", "")
+        if isinstance(file_path, str) and _check_secret_read(file_path):
+            return exit_with(2)
+        large_read_notice = check_large_read(tool_input, cwd)
+        if large_read_notice is not None:
+            print(large_read_notice, file=sys.stderr)
+            return exit_with(2)
         flush_pending_notices()
         return 0
 
@@ -447,6 +460,10 @@ def _handle_bash_tool(
             file=sys.stderr,
         )
         return 2
+    large_read_notice = check_large_bash_read(command, cwd)
+    if large_read_notice is not None:
+        print(large_read_notice, file=sys.stderr)
+        return 2
     warnings: list[str] = []
     sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, bool(tool_input.get("run_in_background")))
     if sleep_poll_result == "block":
@@ -473,8 +490,18 @@ def _handle_bash_tool(
         return 2
     if _check_bash_help_with_execution(command) == "block":
         return 2
+    if (
+        _check_bash_nested_code_string(command)
+        or _check_bash_heredoc_chain(command)
+        or _check_bash_env_full_read(command)
+        or _check_bash_explicit_path_exists(command, cwd)
+        or _check_bash_atk_options(command)
+    ):
+        return 2
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":
+        return 2
+    if _check_bash_unbounded_root_traversal(command) == "block":
         return 2
     atk_help_result = _check_bash_atk_help_observation(command, session_id)
     if atk_help_result == "block":
@@ -550,7 +577,6 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
 def _handle_user_facing_text_tool(
     tool_name: str,
     tool_input: dict,
-    session_id: str,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
@@ -562,11 +588,6 @@ def _handle_user_facing_text_tool(
     誤字検査は、検出語が変換誤りかどうかを本文の文脈でしか判定できないため警告に留める。
     """
     warnings: list[str] = []
-    if tool_name == "AskUserQuestion":
-        required_read_block = check_required_read_before_ask_user_question(session_id)
-        if required_read_block is not None:
-            print(required_read_block, file=sys.stderr)
-            return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2

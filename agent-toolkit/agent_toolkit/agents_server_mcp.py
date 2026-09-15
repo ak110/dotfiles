@@ -9,23 +9,25 @@ import dataclasses
 import datetime
 import json
 import logging
-import logging.handlers
 import os
 import pathlib
 import re
 import secrets
 import warnings
 from collections.abc import AsyncIterator, Mapping, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
+from anyio.abc import ObjectReceiveStream, ObjectSendStream
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp.server.fastmcp import FastMCP
-from platformdirs import user_state_dir
+from mcp.server.stdio import stdio_server
+from mcp.shared.message import SessionMessage
 from pydantic import Field
 
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
-from agent_toolkit._agents_server import session_registry, state, status_file
+from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
 from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
     LaunchKind,
@@ -81,8 +83,6 @@ _REQUIRED_INPUT_PREFIX = "必須入力名: "
 _REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 _TASK_MODEL_TYPES = state.TASK_MODEL_TYPES
-_LOG_MAX_BYTES = 2 * 1024 * 1024
-_LOG_BACKUP_COUNT = 3
 
 # 検査が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
 _REQUIRED_INPUT_LINE_FORMAT = (
@@ -258,6 +258,7 @@ class AgentsServerManager:
         self._carried_unavailable_candidates: dict[tuple[str, LaunchKind], ModelCandidate] = {}
         self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._auto_resume_task: asyncio.Task[None] | None = None
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = status_file.resolve_status_file_identity(os.environ)
             self._status_writer = status_file.StatusFileWriter(self.sessions, identity) if identity is not None else None
@@ -271,6 +272,7 @@ class AgentsServerManager:
 
     def activate(self) -> None:
         """状態ファイル出力を有効化する。"""
+        self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
         if self._status_writer is not None:
             self._status_writer.activate()
             self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
@@ -281,6 +283,14 @@ class AgentsServerManager:
         while True:
             await asyncio.sleep(status_file.HEARTBEAT_INTERVAL_SECONDS)
             self._status_writer.flush()
+
+    async def _monitor_auto_resume(self) -> None:
+        """公開待機操作に依存せず、孫session終端後の自動再開を進める。"""
+        while True:
+            awaiting = [session for session in self.sessions.values() if session.awaiting_auto_resume]
+            for session in awaiting:
+                await self._advance_child_session_wait(session)
+            await asyncio.sleep(0.1 if awaiting else 1.0)
 
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
@@ -343,7 +353,7 @@ class AgentsServerManager:
             self._expire_session(session_id)
         return self.expired_sessions.get(session_id)
 
-    def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
+    def _expired_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
         """期限切れsessionの未回収結果を1回だけ返す。"""
         resume_state = self._resolve_expired_session(session_id)
         if resume_state is None:
@@ -356,7 +366,7 @@ class AgentsServerManager:
             return {"status": "expired"}
         self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         if self._status_writer is not None:
-            self._status_writer.delete_result(session_id)
+            self._status_writer.delete_result(session_id, collector=collector)
             self._status_writer.schedule()
         return response
 
@@ -375,11 +385,21 @@ class AgentsServerManager:
             self.stopped_sessions[session_id] = resume_state
         return resume_state
 
-    def _restore_registry_session(self, session_id: str) -> SessionResumeState | None:
-        """再起動前の終端sessionを登録簿から最小の再開状態へ復元する。"""
+    def _restore_registry_session(
+        self,
+        session_id: str,
+        *,
+        resolution: session_registry.SessionResolution | None = None,
+    ) -> SessionResumeState | None:
+        """再起動前の終端sessionを登録簿から最小の再開状態へ復元する。
+
+        `resolution`は、呼び出し元が同じ識別子を既に解決している場合に渡す。
+        登録簿のファイル読取を1回の照会へ収めるための入力であり、省略時は自ら解決する。
+        """
         if session_id in self.sessions or session_id in self.stopped_sessions or session_id in self.expired_sessions:
             return None
-        resolution = session_registry.resolve(session_id)
+        if resolution is None:
+            resolution = session_registry.resolve(session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
             raise ValueError(f"error.recovery=turn_unobserved: {session_id}")
         if resolution.state is session_registry.Resolution.MISSING:
@@ -421,14 +441,20 @@ class AgentsServerManager:
             response["error"] = resume_state.error
         return response
 
-    def _take_stopped_result(self, session_id: str, resume_state: SessionResumeState) -> dict[str, Any] | None:
+    def _take_stopped_result(
+        self,
+        session_id: str,
+        resume_state: SessionResumeState,
+        *,
+        collector: str,
+    ) -> dict[str, Any] | None:
         """破棄済みsessionの未回収結果を返し、配送済みとして記録する。"""
         response = self._stopped_result_response(resume_state)
         if response is None:
             return None
         self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         if self._status_writer is not None:
-            self._status_writer.delete_result(session_id)
+            self._status_writer.delete_result(session_id, collector=collector)
             self._status_writer.schedule()
         return response
 
@@ -469,11 +495,12 @@ class AgentsServerManager:
             "label": label,
             "result_available": result_available,
         }
-        seconds_since_update = _elapsed_seconds(session.updated_at)
-        if seconds_since_update is not None:
-            listed["updated_at"] = session.updated_at
-            listed["seconds_since_update"] = seconds_since_update
-            if seconds_since_update >= state.STALL_NOTICE_SECONDS:
+        output_updated_at = session.output_updated_at
+        seconds_since_output = _elapsed_seconds(output_updated_at or session.started_at)
+        if seconds_since_output is not None:
+            listed["output_updated_at"] = output_updated_at
+            listed["seconds_since_output"] = seconds_since_output
+            if seconds_since_output >= state.STALL_NOTICE_SECONDS:
                 listed["stalled"] = True
         return listed
 
@@ -547,12 +574,25 @@ class AgentsServerManager:
         }
 
     def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
-        """保持中又は再開可能なsessionの復旧用詳細を返す。"""
+        """保持中又は再開可能なsessionの復旧用詳細を返す。
+
+        自プロセスの保持状態に無い識別子は、共有の登録簿を正本として在否を判定する。
+        当該sessionを別のMCPサーバープロセスが実行中である場合と、登録簿にレコードが無い場合を
+        区別せずに喪失として案内すると、照会した主体が新しいsessionの起動へ進む。
+        """
         session: SessionState | SessionResumeState | None = self.sessions.get(session_id)
         if session is None and session_id in self._pending_resumes:
             session = self._pending_resumes[session_id].state
         if session is None:
             session = self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
+        if session is None:
+            resolution = session_registry.resolve(session_id)
+            if resolution.state is session_registry.Resolution.RUNNING:
+                raise ValueError(
+                    f"session {session_id} belongs to another writer's agents_server process and is still running; "
+                    "receive its result with `atk agents wait` on the owning root session"
+                )
+            session = self._restore_registry_session(session_id, resolution=resolution)
         if session is None:
             raise self._unresolved_session_error(session_id, label="session")
         status = "running" if session_id in self._pending_resumes else session.status
@@ -570,11 +610,16 @@ class AgentsServerManager:
             "cwd": session.cwd,
             "result_available": result_available,
         }
-        seconds_since_update = _elapsed_seconds(session.updated_at)
-        if status == "running" and seconds_since_update is not None:
-            response.update(updated_at=session.updated_at, seconds_since_update=seconds_since_update)
-            if seconds_since_update >= state.STALL_NOTICE_SECONDS:
+        seconds_since_output = _elapsed_seconds(session.output_updated_at or session.started_at)
+        if status == "running" and seconds_since_output is not None:
+            response.update(
+                output_updated_at=session.output_updated_at,
+                seconds_since_output=seconds_since_output,
+            )
+            if seconds_since_output >= state.STALL_NOTICE_SECONDS:
                 response["stalled"] = True
+        if status == "running" and isinstance(session, SessionState) and session.live_child_session_ids:
+            response["live_child_session_ids"] = sorted(session.live_child_session_ids)
         if verbose:
             response.update(
                 engine=session.engine,
@@ -632,10 +677,12 @@ class AgentsServerManager:
         session_registry.remove(session_id)
         if self._status_writer is not None:
             try:
+                if not keep_result:
+                    self._status_writer.delete_wait_target(session_id)
                 if keep_result and result_state == "unpublished" and not self._status_writer.result_exists(session_id):
                     self._status_writer.retain_result(resume_state)
                 elif not keep_result and (result_state == "published" or self._status_writer.result_exists(session_id)):
-                    self._status_writer.delete_result(session_id)
+                    self._status_writer.delete_result(session_id, collector="stop")
                 self._status_writer.schedule()
             except Exception as exc:
                 raise RuntimeError(
@@ -778,6 +825,12 @@ class AgentsServerManager:
                 session.touch()
                 if self._status_writer is not None:
                     self._status_writer.flush()
+                _LOG.info(
+                    "session_transition event=start session_id=%s writer=mcp-manager status=%s turn_seq=%d",
+                    session.session_id,
+                    session.status,
+                    session.turn_seq,
+                )
                 return response
             unavailable_response, unavailable_session = response, session
             excluded |= {candidate}
@@ -791,6 +844,12 @@ class AgentsServerManager:
             unavailable_session.touch()
             if self._status_writer is not None:
                 self._status_writer.flush()
+            _LOG.info(
+                "session_transition event=start session_id=%s writer=mcp-manager status=%s turn_seq=%d",
+                unavailable_session.session_id,
+                unavailable_session.status,
+                unavailable_session.turn_seq,
+            )
             return unavailable_response
         raise RuntimeError(f"no available model candidates: {model_type}")
 
@@ -812,9 +871,18 @@ class AgentsServerManager:
         初期化へ到達しない事象は候補のmodelに依存しないため、次候補へは進めず同じ候補で試みる。
         """
         last_timeout: SessionInitializationTimeoutError | None = None
+        timeout_diagnostics: list[str] = []
         for attempt in range(1, state.SESSION_INITIALIZATION_ATTEMPTS + 1):
+            _LOG.info(
+                "session初期化を開始します: engine=%s attempt=%d/%d model_type=%s launch_kind=%s",
+                engine,
+                attempt,
+                state.SESSION_INITIALIZATION_ATTEMPTS,
+                model_type,
+                launch_kind,
+            )
             try:
-                return await self._backend(engine).start(
+                session = await self._backend(engine).start(
                     prompt,
                     cwd,
                     model,
@@ -823,15 +891,33 @@ class AgentsServerManager:
                     launch_kind=launch_kind,
                     excluded_candidates=excluded_candidates,
                 )
+                _LOG.info(
+                    "session初期化が完了しました: engine=%s attempt=%d/%d session_id=%s",
+                    engine,
+                    attempt,
+                    state.SESSION_INITIALIZATION_ATTEMPTS,
+                    session.session_id,
+                )
+                return session
             except SessionInitializationTimeoutError as exc:
                 last_timeout = exc
+                timeout_diagnostics.append(f"attempt={attempt}: {exc}")
+                _LOG.warning(
+                    "session初期化timeout: engine=%s attempt=%d/%d exception_type=%s exception=%s",
+                    engine,
+                    attempt,
+                    state.SESSION_INITIALIZATION_ATTEMPTS,
+                    type(exc).__name__,
+                    exc,
+                )
                 if attempt < state.SESSION_INITIALIZATION_ATTEMPTS:
                     _LOG.warning("session初期化が上限へ達したため同じ候補で再試行します: engine=%s, 試行=%d", engine, attempt)
         assert last_timeout is not None
         raise SessionInitializationTimeoutError(
             f"{engine} session initialization timed out on every attempt: "
             f"attempts={state.SESSION_INITIALIZATION_ATTEMPTS}, cwd={cwd}, "
-            f"model_type={model_type}, launch_kind={launch_kind}"
+            f"model_type={model_type}, launch_kind={launch_kind}, "
+            f"diagnostics=[{'; '.join(timeout_diagnostics)}]"
         ) from last_timeout
 
     async def _abandon_unavailable_session(self, session: SessionState) -> None:
@@ -839,13 +925,13 @@ class AgentsServerManager:
         await self._backend(session.engine).release_session(session.session_id)
         self.sessions.pop(session.session_id, None)
         if self._status_writer is not None:
-            self._status_writer.delete_result(session.session_id)
+            self._status_writer.delete_result(session.session_id, collector="start-unavailable")
             self._status_writer.schedule()
 
     async def _await_start_outcome(self, session: SessionState) -> None:
         """起動直後の可用性失敗を確定するため、上限付きで終端を待つ。
 
-        上限内に終端しないsessionは通常の実行中として扱い、以降は`wait`が観測する。
+        上限内に終端しないsessionは通常の実行中として扱い、以降は`atk agents wait`が観測する。
         """
         if session.result_available:
             return
@@ -887,6 +973,15 @@ class AgentsServerManager:
             label=command,
         )
 
+    async def start_write(self, prompt: str, cwd: str) -> dict[str, Any]:
+        """対象と内容が確定済みの軽量な書込turnを開始する。"""
+        return await self.start(
+            "explore_fast",
+            prompt,
+            cwd,
+            launch_kind="write",
+        )
+
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
         """bucket別の既定待機上限を導出し、同じbucketの以降の呼び出しへ再利用する。
 
@@ -911,17 +1006,17 @@ class AgentsServerManager:
                 targets.add(session_id)
         return sorted(targets)
 
-    def _retained_result_response(self, session_id: str) -> dict[str, Any] | None:
+    def _retained_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
         """破棄済み又は期限切れsessionの未回収の終端結果だけを返す。"""
         stopped_state = self._resolve_stopped_session(session_id)
         if stopped_state is not None:
-            response = self._take_stopped_result(session_id, stopped_state)
+            response = self._take_stopped_result(session_id, stopped_state, collector=collector)
             if response is None:
                 return None
             return self._response_with_notices(response, self._take_notices(session_id))
         if self._resolve_expired_session(session_id) is None:
             return None
-        response = self._expired_result_response(session_id)
+        response = self._expired_result_response(session_id, collector=collector)
         if response is None or "agent_message" not in response:
             return None
         return self._response_with_notices(response, self._take_notices(session_id))
@@ -933,11 +1028,10 @@ class AgentsServerManager:
         残るsessionの終端結果は次の呼び出しまで保持する。
         待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
         当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
-        保持中のsessionの最終活動時刻と停滞の印は`list`が返す。待機せずに現状態を確認する場合は`list`を発行する。
+        保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
         以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
         呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
-        本ツールの背景移行で待たず、`atk agents-wait`を実行ホストの背景ジョブとして起動して待機表明でターンを終える。
-        当該背景ジョブの完了通知を受領した後に本ツールを1回発行し、結果本文の配送を確定させる。
+        公開MCP toolではなく、`atk agents wait`を実行ホストの前景又は背景ジョブとして起動する。
         委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
         呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
         終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
@@ -960,7 +1054,7 @@ class AgentsServerManager:
 
         while True:
             for session_id in ordered_ids:
-                retained_response = self._retained_result_response(session_id)
+                retained_response = self._retained_result_response(session_id, collector="mcp-wait")
                 if retained_response is not None:
                     return {"session_id": session_id, **retained_response}
                 session = self.sessions.get(session_id)
@@ -972,10 +1066,21 @@ class AgentsServerManager:
                 for session_id in ordered_ids:
                     candidate = self.sessions.get(session_id)
                     if candidate is not None and candidate.result_available and not candidate.result_delivered:
+                        if self._status_writer is not None and self._status_writer.result_state(session_id) == "consumed":
+                            candidate.result_delivered = True
+                            continue
                         terminal.append(candidate)
                 terminal.sort(key=lambda candidate: (candidate.finalized_at or "", candidate.session_id))
                 if terminal:
                     session = terminal[0]
+                    if self._status_writer is not None and self._status_writer.result_state(session.session_id) == "published":
+                        claimed, claim_error = self._status_writer.take_result(session.session_id, collector="mcp-wait")
+                        if claim_error is not None:
+                            raise RuntimeError(f"終端結果を回収できません: {session.session_id}: {claim_error}")
+                        if claimed is None:
+                            session.result_delivered = True
+                            continue
+                    _LOG.info("result_collected session_id=%s collector=mcp-wait", session.session_id)
                     response = self._response_with_notices(
                         self._result_response(session), self._take_notices(session.session_id)
                     )
@@ -1004,8 +1109,15 @@ class AgentsServerManager:
                         session_id = pending_ids[0]
                         response = self._pending_resume_status(self._pending_resumes[session_id])
                         return {"session_id": session_id, **response}
-                    session = next((candidate for candidate in retained if not candidate.result_delivered), retained[0])
-                    return {"session_id": session.session_id, **self._result_response(session)}
+                    undelivered = next((candidate for candidate in retained if not candidate.result_delivered), None)
+                    if undelivered is not None:
+                        return {"session_id": undelivered.session_id, **self._result_response(undelivered)}
+                    session = retained[0]
+                    timeout_response: dict[str, Any] = {"status": "running", "progress": ""}
+                    elapsed_seconds = _elapsed_seconds(session.started_at)
+                    if elapsed_seconds is not None:
+                        timeout_response["elapsed_seconds"] = elapsed_seconds
+                    return {"session_id": session.session_id, **timeout_response}
                 interval = 0.1 if any(candidate.awaiting_auto_resume for candidate in retained) else 1.0
                 try:
                     await asyncio.wait_for(self._condition.wait(), timeout=min(interval, remaining))
@@ -1085,7 +1197,7 @@ class AgentsServerManager:
             if session.pending_result is not None:
                 finalize_pending_result(session, touch=False)
             if self._status_writer is not None:
-                self._status_writer.delete_result(session.session_id)
+                self._status_writer.delete_result(session.session_id, collector="auto-resume")
             return
 
         if not has_pending_auto_resume_targets(session):
@@ -1137,6 +1249,8 @@ class AgentsServerManager:
     def _kill_result_response(self, session: SessionState, *, kill_requested: bool) -> dict[str, Any]:
         """killの応答を組み立て、回収した通知がある場合だけ付ける。"""
         response = self._result_response(session, include_progress=False)
+        if "agent_message" in response and self._status_writer is not None:
+            self._status_writer.delete_result(session.session_id, collector="kill")
         response["kill_requested"] = kill_requested
         return self._response_with_notices(response, self._take_notices(session.session_id))
 
@@ -1168,9 +1282,15 @@ class AgentsServerManager:
                 turn_seq=resume_state.turn_seq,
             )
             if self._status_writer is not None:
-                self._status_writer.delete_result(session_id)
+                self._status_writer.delete_result(session_id, collector="send-message")
             session.announced = True
             session.touch()
+            _LOG.info(
+                "session_transition event=resume session_id=%s writer=mcp-manager status=%s turn_seq=%d",
+                session.session_id,
+                session.status,
+                session.turn_seq,
+            )
             return session
         except BaseException:
             if session_id not in self.sessions:
@@ -1329,7 +1449,11 @@ class AgentsServerManager:
                         if resume_state is not None:
                             previous_result = None
                             if stopped_state is not None:
-                                previous_result = self._take_stopped_result(session_id, stopped_state)
+                                previous_result = self._take_stopped_result(
+                                    session_id,
+                                    stopped_state,
+                                    collector="send-message",
+                                )
                             return await self._resume_and_reply(
                                 resume_state,
                                 prompt,
@@ -1355,7 +1479,7 @@ class AgentsServerManager:
                                 previous_result,
                             )
                     if self._status_writer is not None:
-                        self._status_writer.delete_result(session_id)
+                        self._status_writer.delete_result(session_id, collector="send-message")
                     delivery = result["delivery"]
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
@@ -1367,7 +1491,7 @@ class AgentsServerManager:
                     return response
         except TimeoutError as exc:
             raise TimeoutError(
-                f"send_message timed out: {session_id}; delivery is undetermined, observe the session with wait"
+                f"send_message timed out: {session_id}; delivery is undetermined, observe with atk agents wait"
             ) from exc
 
     async def kill(
@@ -1389,7 +1513,7 @@ class AgentsServerManager:
             response["kill_requested"] = False
             return response
         if stopped_state is not None:
-            stopped_response = self._take_stopped_result(session_id, stopped_state)
+            stopped_response = self._take_stopped_result(session_id, stopped_state, collector="kill")
             if stopped_response is not None:
                 stopped_response["kill_requested"] = False
                 notices = self._take_notices(session_id)
@@ -1462,7 +1586,7 @@ class AgentsServerManager:
                     session.touch()
                     await self._notify_waiters()
                     raise TimeoutError(
-                        f"kill timed out: {session_id}; interrupt delivery is undetermined, observe the session with wait"
+                        f"kill timed out: {session_id}; interrupt delivery is undetermined, observe with atk agents wait"
                     ) from None
                 except Exception:
                     session.interrupt_requested = False
@@ -1497,6 +1621,10 @@ class AgentsServerManager:
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""
+        if self._auto_resume_task is not None:
+            self._auto_resume_task.cancel()
+            await asyncio.gather(self._auto_resume_task, return_exceptions=True)
+            self._auto_resume_task = None
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
             await asyncio.gather(self._heartbeat_task, return_exceptions=True)
@@ -1523,28 +1651,153 @@ class AgentsServerManager:
 _MANAGER = AgentsServerManager()
 
 
+class _InitializationLogTracker:
+    """initialize要求と対応応答の節目だけを永続ログへ記録する。"""
+
+    def __init__(self) -> None:
+        self._pending_request_ids: set[str | int] = set()
+
+    def receive(self, message: SessionMessage | Exception) -> None:
+        root = getattr(getattr(message, "message", None), "root", None)
+        if getattr(root, "method", None) != "initialize":
+            return
+        request_id = getattr(root, "id", None)
+        if not isinstance(request_id, (str, int)):
+            return
+        self._pending_request_ids.add(request_id)
+        _LOG.info("FastMCP initializeを受信しました: request_id=%s", request_id)
+
+    def sent(self, message: SessionMessage) -> None:
+        root = getattr(message.message, "root", None)
+        request_id = getattr(root, "id", None)
+        if request_id not in self._pending_request_ids:
+            return
+        self._pending_request_ids.remove(request_id)
+        error = getattr(root, "error", None)
+        if error is not None:
+            _LOG.error(
+                "FastMCP initialize応答が失敗しました: request_id=%s exception_type=%s exception=%s",
+                request_id,
+                type(error).__name__,
+                getattr(error, "message", error),
+            )
+            return
+        _LOG.info("FastMCP initialize応答が完了しました: request_id=%s", request_id)
+
+    def send_failed(self, message: SessionMessage, exc: BaseException) -> None:
+        root = getattr(message.message, "root", None)
+        request_id = getattr(root, "id", None)
+        if request_id not in self._pending_request_ids:
+            return
+        self._pending_request_ids.remove(request_id)
+        _LOG.error(
+            "FastMCP initialize応答の送信に失敗しました: request_id=%s exception_type=%s exception=%s",
+            request_id,
+            type(exc).__name__,
+            exc,
+        )
+
+    def transport_closed(self) -> None:
+        for request_id in sorted(self._pending_request_ids, key=str):
+            _LOG.error(
+                "FastMCP initializeが未完了のままtransportが終了しました: "
+                "request_id=%s exception_type=RuntimeError exception=transport closed before initialize response",
+                request_id,
+            )
+        self._pending_request_ids.clear()
+
+
+class _InitializationLoggingReceiveStream(ObjectReceiveStream[SessionMessage | Exception]):
+    def __init__(
+        self,
+        stream: ObjectReceiveStream[SessionMessage | Exception],
+        tracker: _InitializationLogTracker,
+    ) -> None:
+        self._stream = stream
+        self._tracker = tracker
+
+    async def receive(self) -> SessionMessage | Exception:
+        message = await self._stream.receive()
+        self._tracker.receive(message)
+        return message
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+
+class _InitializationLoggingSendStream(ObjectSendStream[SessionMessage]):
+    def __init__(self, stream: ObjectSendStream[SessionMessage], tracker: _InitializationLogTracker) -> None:
+        self._stream = stream
+        self._tracker = tracker
+
+    async def send(self, item: SessionMessage) -> None:
+        try:
+            await self._stream.send(item)
+        except BaseException as exc:
+            self._tracker.send_failed(item, exc)
+            raise
+        self._tracker.sent(item)
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+
+class _AgentsServerFastMCP(FastMCP[Any]):
+    """stdio上のinitialize節目を診断ログへ残すFastMCP。"""
+
+    async def run_stdio_async(self) -> None:
+        tracker = _InitializationLogTracker()
+        async with stdio_server() as (read_stream, write_stream):
+            try:
+                await self._mcp_server.run(
+                    cast(
+                        MemoryObjectReceiveStream[SessionMessage | Exception],
+                        _InitializationLoggingReceiveStream(read_stream, tracker),
+                    ),
+                    cast(
+                        MemoryObjectSendStream[SessionMessage],
+                        _InitializationLoggingSendStream(write_stream, tracker),
+                    ),
+                    self._mcp_server.create_initialization_options(),
+                )
+            finally:
+                tracker.transport_closed()
+
+
 @contextlib.asynccontextmanager
 async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncIterator[None]:
-    _MANAGER.activate()
+    _LOG.info("manager activateを開始します")
+    try:
+        _MANAGER.activate()
+    except BaseException:
+        _LOG.exception("manager activateに失敗しました: stage=manager_activate")
+        raise
+    _LOG.info("manager activateが完了しました")
     try:
         yield
     finally:
-        await _MANAGER.close()
+        _LOG.info("manager closeを開始します")
+        try:
+            await _MANAGER.close()
+        except BaseException:
+            _LOG.exception("manager closeに失敗しました: stage=manager_close")
+            raise
+        _LOG.info("manager closeが完了しました")
 
 
 with warnings.catch_warnings():
     if IncompleteFieldDefinitionWarning is not None:
         warnings.simplefilter("ignore", IncompleteFieldDefinitionWarning)
-    mcp = FastMCP(
+    mcp = _AgentsServerFastMCP(
         "agents_server",
         instructions=(
             "CodexまたはClaudeへの非同期委譲。承認操作は公開しない。\n"
             "`start`は専用タスク文書、`start_custom`は自由本文からsessionを開始する。"
-            "`start_explore`は読み取り専用探索、`start_shell`はコマンドの実行と要約を委譲する。"
-            "`wait`で終端と結果本文を受け取る。`list`は最小状態、`show`は個別の診断情報を返す。"
+            "`start_explore`は読み取り専用探索、`start_shell`はコマンド実行、`start_write`は確定済みの軽量書込を委譲する。"
+            "終端と結果本文は`atk agents wait`で受け取る。`list`は最小状態、`show`は個別の診断情報を返す。"
             "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
             "`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
-            "同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
+            "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
             "engine、model及びeffortは専用タスク文書又は`model_type`と`fast`から本サーバーが工程別モデル設定を解決して決める。"
             "呼び出し側は指定しない。"
@@ -1574,7 +1827,7 @@ async def start(
 
     タスク文書を読み、同文書の必須入力名と`extra_params`を照合してから起動する。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
-    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     応答は`session_id`と`status`だけを含む。起動条件の詳細は`show`で取得する。
     全候補がengineの可用性を理由として終端した場合は、最後の候補の終端応答を返す。
     全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
@@ -1597,7 +1850,7 @@ async def start_custom(
 
     既存の`.subagent.md`で表現できる作業には使わない。engine、model及びeffortは
     `model_type`から解決し、通常応答は後続の観測に必要な`session_id`と`status`だけを返す。
-    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     """
     response = await _MANAGER.start(model_type, prompt, cwd)
@@ -1621,7 +1874,7 @@ async def start_explore(
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
-    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     プロジェクト指示の読込を減らした軽量な起動条件で開始する。
     起動時のシステム指示でファイルを作成、変更及び削除しない契約を委譲先へ課すため、成果ファイルの出力を依頼しない。
     委譲と直接実行の採算は、追加のツール呼び出しが2回以上必要か、読む対象の合計が4,000トークンを超えるかで判定する。
@@ -1644,7 +1897,7 @@ async def start_shell(
 
     `start_explore`と同じ軽量な起動条件で開始し、呼び出し元へは終了状態と要約だけを返す。
     読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
-    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     委譲と直接実行の採算は、コマンドの出力量で判定する。
     出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドは本ツールへ委譲し、
     1,000トークン未満に収まる見込みのコマンドは自ら実行する。
@@ -1656,31 +1909,17 @@ async def start_shell(
     return {key: response[key] for key in ("session_id", "status")}
 
 
-@mcp.tool(name="wait", structured_output=True)
-async def wait() -> dict[str, Any]:
-    """委譲先の終端を待ち、終端時だけ結果本文を返す。
+@mcp.tool(name="start_write", structured_output=True)
+async def start_write(prompt: str, cwd: str) -> dict[str, Any]:
+    """対象と内容が確定済みの小規模な書込を軽量な委譲先で実行する。
 
-    引数を受け取らない。対象は当該MCPサーバープロセスが保持する起動中のsession全体とし、最初に終端した1件の結果を返す。
-    残るsessionの終端結果は次の呼び出しまで保持する。
-    待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
-    当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
-    保持中のsessionの識別子と状態は`list`、最終活動時刻と停滞の印は`show`が返す。
-    以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
-    呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
-    本ツールの背景移行で待たず、`atk agents wait`を実行ホストの背景ジョブとして起動して待機表明でターンを終える。
-    当該背景ジョブの完了通知を受領した後に本ツールを1回発行し、結果本文の配送を確定させる。
-    委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
-    呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
-    終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
-    終端結果は呼び出し元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
-    受領した終端結果のsessionを破棄する場合は`stop`を発行する。
-    終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
-    委譲先が実行中に`atk agents notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
-    再待機の要否は`notices`の有無ではなく`status`で判定する。
-    `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
-    応答へ載せた通知は回収済みとして再び返さない。
+    設計、調査、レビュー及び公開操作を依頼せず、変更対象と完成形を`prompt`へ明記する。
+    プロジェクト指示の読込を省いた`explore_fast`候補を使い、ファイルの読取・検索・作成・編集だけを許可する。
+    終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`で受け取る。
+    結果が不要なら`kill`で破棄する。
     """
-    return await _MANAGER.wait()
+    response = await _MANAGER.start_write(prompt, cwd)
+    return {key: response[key] for key in ("session_id", "status")}
 
 
 @mcp.tool(name="send_message", structured_output=True)
@@ -1698,10 +1937,10 @@ async def send_message(
 
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     待つのは継続要求の配送結果が確定するまでであり、委譲先の応答生成の完了ではない。
-    上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
+    上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`だけを含む。直前の終端結果は`wait`で受領する。
+    応答は`delivery`だけを含む。直前の終端結果は`atk agents wait`で受領する。
     sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
@@ -1731,7 +1970,7 @@ async def kill(
     本ツールを選ぶ前に、`send_message`による訂正では足りないことと、当該作業の継続自体が不要であることを確認する。
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     `timeout=0`は中断要求配送後の現状態を返す。
-    timeoutに達した場合もsessionとbackend processは破棄しないため、`wait`で状態を確認してから次の操作を選ぶ。
+    timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
     """
     return await _MANAGER.kill(session_id, timeout, stop)
@@ -1754,7 +1993,7 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
     各sessionの`session_id`と`status`だけを返す。起動条件や停滞診断は`show`で取得する。
-    結果本文は返さないため、終端の観測と結果の受領には`wait`を使う。
+    結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
     既定では未回収結果を持たない終端済み又は`expired`のsessionを除き、除いた件数を`omitted`へ返す。
     全件が必要な場合は`include_terminated`へ真を渡す。このとき`omitted`は0となる。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
@@ -1767,8 +2006,9 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
     """1件のsessionについて、文脈復旧又はトラブルシューティング用の詳細を返す。
 
     既定では起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
+    稼働中の子sessionがある場合は、安定した順序の`live_child_session_ids`も返す。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号及び解決可能なroot sessionも加える。
-    終端結果本文は返さないため、受領には`wait`を使う。
+    終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """
     return _MANAGER.show_session(session_id, verbose=verbose)
 
@@ -1785,38 +2025,7 @@ def _prepare_child_environment() -> None:
 
 def _configure_logging() -> pathlib.Path:
     """標準エラーと永続ファイルへagents_serverの診断ログを出力する。"""
-    log_level = os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING")
-    server_logger = logging.getLogger("agent-toolkit.agents-server")
-    server_logger.setLevel(logging.INFO)
-    server_logger.propagate = False
-    if not any(getattr(handler, "agents_server_stderr", False) for handler in server_logger.handlers):
-        stderr_handler = logging.StreamHandler()
-        stderr_handler.setLevel(log_level)
-        stderr_handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        stderr_handler.agents_server_stderr = True  # type: ignore[attr-defined]
-        server_logger.addHandler(stderr_handler)
-
-    log_path = pathlib.Path(user_state_dir("agent-toolkit", appauthor=False)) / "agents-server.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    for handler in tuple(server_logger.handlers):
-        if not getattr(handler, "agents_server_file", False):
-            continue
-        if pathlib.Path(handler.baseFilename) == log_path:  # type: ignore[attr-defined]
-            break
-        server_logger.removeHandler(handler)
-        handler.close()
-    if not any(getattr(handler, "agents_server_file", False) for handler in server_logger.handlers):
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_path,
-            maxBytes=_LOG_MAX_BYTES,
-            backupCount=_LOG_BACKUP_COUNT,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-        file_handler.agents_server_file = True  # type: ignore[attr-defined]
-        server_logger.addHandler(file_handler)
-    return log_path
+    return logging_config.configure_logging()
 
 
 def main(argv: Sequence[str] | None = None) -> int:

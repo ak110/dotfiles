@@ -220,6 +220,47 @@ def test_permanence_table_rejects_empty_cells_and_column_mismatch(
     assert any(f"{lineno}行目: {row}" in error for error in errors), errors
 
 
+def test_refactoring_table_accepts_one_row_per_target() -> None:
+    """現行リファクタリング表は3列で複数の対象箇所を受理する。"""
+    additional = "| 表示処理 | 判定が重複する。 | 共通化する。 |"
+    content = _VALID_CONTENT.replace(
+        _plan_fixture.REFACTORING_ROW,
+        f"{_plan_fixture.REFACTORING_ROW}\n{additional}",
+        1,
+    )
+
+    assert not _plan_format.check_plan_structure(content)
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        ("| 判定処理 |  | 更新する。 |", "空cell"),
+        ("| 判定処理 | 契約が旧い。 |", "列数が一致しない"),
+    ],
+)
+def test_refactoring_table_rejects_empty_cells_and_column_mismatch(row: str, expected: str) -> None:
+    """現行リファクタリング表の空cellと列数不一致を拒否する。"""
+    content = _VALID_CONTENT.replace(_plan_fixture.REFACTORING_ROW, row, 1)
+    errors = _plan_format.check_plan_structure(content)
+
+    assert any(expected in error for error in errors), errors
+
+
+def test_legacy_refactoring_table_remains_readable() -> None:
+    """旧2列4行表を既存計画の読み取り互換として受理する。"""
+    legacy = """| 項目 | 内容 |
+| --- | --- |
+| 対象 | 判定処理 |
+| 現状の問題 | 契約が旧い。 |
+| 対応 | 更新する。 |
+| 本計画に含めるか | 含める |"""
+    content = _VALID_CONTENT.replace(_plan_fixture.REFACTORING_TABLE, legacy, 1)
+
+    assert _plan_format.has_legacy_refactoring_table(content)
+    assert not _plan_format.check_plan_structure(content)
+
+
 def test_new_material_tables_take_priority_over_legacy_fence() -> None:
     """新形式の表と旧形式の素材記法が混在する場合は新形式を解析する。"""
     legacy_tail = """

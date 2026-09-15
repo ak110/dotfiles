@@ -207,12 +207,13 @@ def _worktree_name(value: str) -> str:
     return value
 
 
-def _add_source_arg(parser: argparse.ArgumentParser) -> None:
+def _add_source_arg(parser: argparse.ArgumentParser, *, multiple: bool = False) -> None:
     """`--source`オプションを共通形式で登録する。"""
     parser.add_argument(
         "--source",
         metavar="NAME",
         type=_source_filter_type,
+        action="append" if multiple else "store",
         default=None,
         help=(
             "投入元識別子（frontmatterのsource）で限定する。完全一致の値、"
@@ -227,15 +228,41 @@ def _add_target_repo_arg(
     parser: argparse.ArgumentParser,
     *,
     help_extra: str = "",
+    multiple: bool = False,
     required: bool = False,
 ) -> None:
     """`--target-repo`オプションを共通形式で登録する。"""
     parser.add_argument(
         "--target-repo",
         metavar="REPO",
+        action="append" if multiple else "store",
         default=None,
         required=required,
         help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターまたは検証する。" + help_extra,
+    )
+
+
+def _absolute_note_path(raw_path: str) -> pathlib.Path:
+    """メモファイルの絶対パスだけを受理する。"""
+    path = pathlib.Path(raw_path)
+    if not path.is_absolute():
+        raise argparse.ArgumentTypeError("--note-fileには絶対パスを指定してください。")
+    return path
+
+
+def _add_note_args(parser: argparse.ArgumentParser, *, help_text: str) -> None:
+    """文字列またはUTF-8ファイルからメモを受け取る排他引数を登録する。"""
+    note = parser.add_mutually_exclusive_group()
+    note.add_argument("--note", metavar="TEXT", default=None, help=help_text)
+    note.add_argument(
+        "--note-file",
+        metavar="PATH",
+        type=_absolute_note_path,
+        default=None,
+        help=(
+            "メモを記載したUTF-8ファイルの絶対パス。引用符・改行・バッククォートを含む本文を"
+            "シェルのエスケープを介さず渡す場合に使う。--noteとは併用できない。"
+        ),
     )
 
 
@@ -356,12 +383,19 @@ def _add_wi_add_parser(sub: Any) -> None:
 def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
     list_ = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk wi list"])
-    _add_target_repo_arg(list_)
-    list_.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
+    _add_target_repo_arg(list_, multiple=True)
+    list_.add_argument(
+        "--type",
+        choices=("all", *_common.WI_TYPES),
+        action="append",
+        default=None,
+        help="出力対象種別（既定: all）。",
+    )
     list_.add_argument(
         "--status",
         choices=("all", "active", "processable", *_common.WI_STATES),
-        default="active",
+        action="append",
+        default=None,
         help=(
             "状態フォルダで表示範囲を限定する（既定: active）。"
             "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
@@ -371,10 +405,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
     list_.add_argument(
         "--answered",
         choices=("all", "yes", "no"),
-        default="all",
+        action="append",
+        default=None,
         help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
-    _add_source_arg(list_)
+    _add_source_arg(list_, multiple=True)
     output = list_.add_mutually_exclusive_group()
     output.add_argument(
         "--count",
@@ -411,13 +446,20 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
-    _add_target_repo_arg(show)
+    _add_target_repo_arg(show, multiple=True)
     _output_file.add_output_file_arg(show)
-    show.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
+    show.add_argument(
+        "--type",
+        choices=("all", *_common.WI_TYPES),
+        action="append",
+        default=None,
+        help="出力対象種別（既定: all）。",
+    )
     show.add_argument(
         "--status",
         choices=("all", "active", "processable", *_common.WI_STATES),
-        default="active",
+        action="append",
+        default=None,
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
             "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
@@ -427,10 +469,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
     show.add_argument(
         "--answered",
         choices=("all", "yes", "no"),
-        default="all",
+        action="append",
+        default=None,
         help="UWIの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はAWIを除外する。",
     )
-    _add_source_arg(show)
+    _add_source_arg(show, multiple=True)
     _add_mq_read_sync_args(show)
     show.set_defaults(subparser=show)
 
@@ -484,11 +527,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     adopt.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="採用するファイル名（1個以上。inbox・processingいずれも対象）。"
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
-    adopt.add_argument(
-        "--note",
-        metavar="TEXT",
-        default=None,
-        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
+    _add_note_args(
+        adopt,
+        help_text="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
     )
     adopt.add_argument(
         "--commit",
@@ -496,7 +537,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         default=None,
         help=(
             "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
-            "記録時に完全OIDへ解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "記録時に対象リポジトリで解決する。対応付けできない場合は警告し、指定値を記録する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
@@ -511,11 +552,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     reject.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="不採用とするファイル名（1個以上。inbox・processingいずれも対象）。"
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
-    reject.add_argument(
-        "--note",
-        metavar="TEXT",
-        default=None,
-        help="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
+    _add_note_args(
+        reject,
+        help_text="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
     )
     reject.add_argument(
         "--commit",
@@ -523,7 +562,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         default=None,
         help=(
             "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
-            "記録時に完全OIDへ解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "記録時に対象リポジトリで解決する。対応付けできない場合は警告し、指定値を記録する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
@@ -551,20 +590,28 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         action="store_true",
         help="--target-repoとフィルターに一致する全項目を一覧表示後に削除する。",
     )
-    rm.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="--allの対象種別（既定: all）。")
+    rm.add_argument(
+        "--type",
+        choices=("all", *_common.WI_TYPES),
+        action="append",
+        default=None,
+        help="--allの対象種別（既定: all）。",
+    )
     rm.add_argument(
         "--status",
         choices=("all", "active", "processable", *_common.WI_STATES),
-        default="active",
+        action="append",
+        default=None,
         help="--allの対象状態（既定: active）。listと同じ集合名を受理する。",
     )
     rm.add_argument(
         "--answered",
         choices=("all", "yes", "no"),
-        default="all",
+        action="append",
+        default=None,
         help="--allのUWI回答状況（既定: all）。",
     )
-    _add_source_arg(rm)
+    _add_source_arg(rm, multiple=True)
     rm.add_argument(
         "--state",
         choices=_common.WI_STATES,
@@ -586,15 +633,14 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         action="store_true",
         help=("削除対象の選定・確認をremote同期せずローカル状態で行う（削除直前は毎回同期する）。--all指定時のみ有効。"),
     )
-    rm.add_argument(
-        "--note",
-        metavar="TEXT",
-        default=None,
-        help="削除の理由を記録するメモ。`--note=VALUE`の形式で渡すことを推奨する。",
+    _add_note_args(
+        rm,
+        help_text="削除の理由を記録するメモ。`--note=VALUE`の形式で渡すことを推奨する。",
     )
     _add_target_repo_arg(
         rm,
         help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は削除対象を限定する。",
+        multiple=True,
     )
     rm.set_defaults(subparser=rm)
 
@@ -679,6 +725,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_target_repo_arg(answer)
 
     _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
+    _atk_help.add_command(sub, "pull", **_atk_help.HELP["atk wi pull"])
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
@@ -859,6 +906,44 @@ def format_command_help(command_path: tuple[str, ...]) -> str | None:
     return parser.format_help()
 
 
+def command_option_contract(command_path: tuple[str, ...]) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]] | None:
+    """公開サブコマンドのargparse定義から値なし・値付きオプションと位置引数名を返す。"""
+    parser = _build_parser()
+    for name in command_path:
+        choices = next(
+            (action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)),
+            None,
+        )
+        if choices is None or name not in choices:
+            return None
+        parser = choices[name]
+    flags: set[str] = set()
+    valued: set[str] = set()
+    positionals: list[str] = []
+    for action in parser._actions:
+        if action.option_strings:
+            target = flags if action.nargs == 0 else valued
+            target.update(action.option_strings)
+        elif not isinstance(action, argparse._SubParsersAction):
+            metavar = action.metavar or action.dest.upper()
+            positionals.append(" ".join(metavar) if isinstance(metavar, tuple) else str(metavar))
+    return frozenset(flags), frozenset(valued), tuple(positionals)
+
+
+def format_command_contract(command_path: tuple[str, ...]) -> str | None:
+    """実行前案内用に最下層サブコマンドの簡潔な受理形式を返す。"""
+    contract = command_option_contract(command_path)
+    if contract is None:
+        return None
+    flags, valued, positionals = contract
+    fields = [
+        "値なし: " + (", ".join(sorted(flags)) or "なし"),
+        "値付き: " + (", ".join(sorted(valued)) or "なし"),
+        "位置引数: " + (", ".join(positionals) or "なし"),
+    ]
+    return " / ".join(fields)
+
+
 def _validate_rm_args(args: argparse.Namespace) -> None:
     """`wi rm`の個別指定と一括指定が排他的であることを検証する。"""
     if args.command != "wi" or args.wi_subcommand != "rm":
@@ -877,9 +962,29 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
         args.subparser.error("--yesは--allとともに指定してください。")
     if args.skip_pull:
         args.subparser.error("--skip-pullは--allとともに指定してください。")
-    non_all_filters = args.type != "all" or args.status != "active" or args.answered != "all" or args.source is not None
+    non_all_filters = args.type != ["all"] or args.status != ["active"] or args.answered != ["all"] or args.source is not None
     if non_all_filters:
         args.subparser.error("--type・--status・--answered・--sourceは--allとともに指定してください。")
+
+
+def _normalize_repeatable_wi_filters(args: argparse.Namespace) -> None:
+    """一覧・表示・削除の反復可能フィルターへ従来の既定値を設定する。"""
+    if args.command != "wi" or args.wi_subcommand not in {"list", "show", "rm"}:
+        return
+    args.type = args.type or ["all"]
+    args.status = args.status or ["active"]
+    args.answered = args.answered or ["all"]
+
+
+def _resolve_note_file(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """メモファイルを状態変更より前にUTF-8として解決する。"""
+    note_file = getattr(args, "note_file", None)
+    if note_file is None:
+        return
+    try:
+        args.note = note_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        parser.error(f"--note-fileをUTF-8として読み込めません: {note_file}: {error}")
 
 
 def _validate_add_args(args: argparse.Namespace) -> None:
@@ -919,6 +1024,13 @@ def _sync_exit_code(exit_code: int, private_notes: pathlib.Path, *, should_check
     return exit_code
 
 
+def _cmd_pull(private_notes: pathlib.Path) -> None:
+    """private-notesを排他ロック内で明示的に同期する。"""
+    with _common._repo_lock(private_notes):
+        _common.pull(private_notes)
+    print(f"同期完了: {private_notes.resolve()}")
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -946,6 +1058,8 @@ def main(
     if args._help_parser is not None:
         args._help_parser.print_help()
         return
+    _normalize_repeatable_wi_filters(args)
+    _resolve_note_file(args, parser)
     output_path = getattr(args, "output_file", None)
     if output_path is not None and not _output_file_active:
         if not output_path.is_absolute():
@@ -1094,6 +1208,7 @@ def main(
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
+        "pull": lambda: _cmd_pull(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
     }
     try:
@@ -1109,8 +1224,10 @@ def main(
         private_notes,
         should_check=sub in _WI_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
     )
-    suppress_notify = (sub == "list" and _list._covers_unanswered_uwis(args)) or (
-        sub == "show" and _show._covers_unanswered_uwis(args)
+    suppress_notify = (
+        sub == "pull"
+        or (sub == "list" and _list._covers_unanswered_uwis(args))
+        or (sub == "show" and _show._covers_unanswered_uwis(args))
     )
     if not suppress_notify:
         _common.notify_unanswered_uwis_if_any(private_notes, getattr(args, "target_repo", None))

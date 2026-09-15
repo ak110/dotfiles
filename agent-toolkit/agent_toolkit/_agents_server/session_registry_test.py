@@ -17,13 +17,14 @@ from agent_toolkit._agents_server import state
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     """同じsessionの実行中状態を終端状態で置き換えて観測する。"""
-    subject.publish("child-session", terminal=False, state_root=tmp_path)
+    subject.publish("child-session", terminal=False, cwd=str(tmp_path), state_root=tmp_path)
     path = subject.registry_directory(tmp_path) / "child-session.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
 
     assert payload["version"] == 2
     assert payload["session_id"] == "child-session"
     assert payload["terminal"] is False
+    assert payload["cwd"] == str(tmp_path.resolve())
     datetime.datetime.fromisoformat(payload["updated_at"])
     assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.RUNNING
 

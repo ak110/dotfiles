@@ -259,6 +259,18 @@ def _legacy_bug_warnings(text: str) -> list[_ClassifiedWarning]:
     return [("migration", "バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")]
 
 
+def _legacy_refactoring_warnings(text: str) -> list[_ClassifiedWarning]:
+    """旧2列4行のリファクタリング表を現行3列表へ移行するwarningを返す。"""
+    if not _plan_format.has_legacy_refactoring_table(text):
+        return []
+    return [
+        (
+            "migration",
+            "リファクタリング表が旧2列4行形式である。新規作成・改訂では`対象`、`現状の問題`、`対応`の3列表へ移行する",
+        )
+    ]
+
+
 def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
     """新書式で旧見出し別名を使っている場合の移行warningを返す。"""
     if not _plan_format.is_canonical_main_format(text):
@@ -396,6 +408,7 @@ def _check_new_format(
     errors.extend(_check_references(detail_text, work_dir))
     warnings.extend(_check_plan_size(detail_lines))
     warnings.extend(_legacy_bug_warnings(detail_text))
+    warnings.extend(_legacy_refactoring_warnings(detail_text))
     warnings.extend(_legacy_fixed_notation_warnings(detail_text))
 
     materials = None
@@ -444,6 +457,7 @@ def _check_single_file_format(
     bug_errors, bug_warnings = _check_bug_file_reference(plan_path, text, work_type, private_notes, home)
     errors.extend(bug_errors)
     warnings.extend(bug_warnings)
+    warnings.extend(_legacy_refactoring_warnings(text))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(text.splitlines()))
     return errors, warnings
@@ -463,6 +477,7 @@ def _check_legacy_format(
     warnings: list[_ClassifiedWarning] = []
     warnings.extend(_legacy_action_warnings(text))
     warnings.extend(_legacy_bug_warnings(text))
+    warnings.extend(_legacy_refactoring_warnings(text))
     warnings.extend(_legacy_fixed_notation_warnings(text))
     if materials is not None and materials.is_legacy:
         warnings.append(("migration", "提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する"))

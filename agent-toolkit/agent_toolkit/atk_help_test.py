@@ -222,7 +222,7 @@ def test_review_table_init_help_describes_current_review_tables() -> None:
     help_text = parser.format_help()
 
     assert "<計画stem>.exec-review.tsv" in help_text
-    assert "ci-<起点OID>.exec-review.tsv" in help_text
+    assert "ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv" in help_text
     assert "dlg-" not in help_text
     assert ".plan-review.tsv" not in help_text
 
@@ -241,9 +241,9 @@ def test_removed_plan_commands_are_absent_from_help() -> None:
     [
         ("atk wi list", "JSON Lines"),
         ("atk plans list", "TSV"),
-        ("atk agents wait", "単一のJSON文書"),
+        ("atk agents wait", "JSON Lines"),
         ("atk managed-temp list", "JSON Lines"),
-        ("atk review-table show", "raw TSV"),
+        ("atk review-table show", "`row-id`を先頭に付けた9フィールドの表示形式"),
     ],
 )
 def test_structured_output_commands_state_their_format(command: str, format_name: str) -> None:
@@ -253,3 +253,16 @@ def test_structured_output_commands_state_their_format(command: str, format_name
 
     assert description is not None
     assert format_name in description
+
+
+def test_agents_wait_help_states_absent_target_termination() -> None:
+    """`atk agents wait`の公開説明が、待機対象が不在のまま終わる経路を示す。
+
+    当該経路を説明しないと、待機を発行する主体が非0の終了を再発行すべき実行中通知と取り違える。
+    """
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    description = commands["atk agents wait"].description
+
+    assert description is not None
+    assert "待機対象を1件も取得できない状態が続く場合" in description
+    assert "同じコマンドを再発行せず" in description

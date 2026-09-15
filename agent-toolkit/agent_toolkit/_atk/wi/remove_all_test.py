@@ -102,6 +102,37 @@ def _run_main(argv: list[str], home: pathlib.Path) -> int:
     return exc_info.value.code
 
 
+def test_remove_all_accepts_multiple_target_repositories(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """複数リポジトリの候補を単一の確認記録とcommitで削除する。"""
+    notes = _setup_notes(tmp_path)
+    _write_entry(notes, "inbox", "foo.md", target_repo="github.com/example/foo")
+    _write_entry(notes, "hold", "bar.md", target_repo="github.com/example/bar")
+    _write_entry(notes, "inbox", "keep.md", target_repo="github.com/example/baz")
+    commits: list[tuple[str, list[str]]] = []
+    _patch_storage(monkeypatch, commits)
+
+    removed = remove_all.remove_all_entries(
+        notes,
+        target_repo=["github.com/example/foo", "github.com/example/bar", "github.com/example/foo"],
+        assume_yes=True,
+        force=False,
+        note=None,
+        skip_pull=True,
+        status=["active"],
+        entry_type=["all"],
+        answered=["all"],
+        source=None,
+        actor_is_agent=False,
+    )
+
+    assert set(removed) == {"foo.md", "bar.md"}
+    assert (notes / "inbox/keep.md").exists()
+    assert len(commits) == 1
+
+
 class TestRemoveAllArguments:
     """一括削除と個別削除の引数制約を検証する。"""
 

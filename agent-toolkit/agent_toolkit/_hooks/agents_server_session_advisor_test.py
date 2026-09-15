@@ -4,13 +4,14 @@ import json
 import os
 import pathlib
 
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-    "`wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
+    "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
     "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
 )
@@ -36,8 +37,6 @@ def _record_operation(
     tool_input: dict[str, object] = {"session_id": remote_session_id}
     if operation in {"start", "start_explore"}:
         tool_input = {"cwd": str(state_directory), "prompt": "委譲する"}
-    elif operation == "wait":
-        tool_input = {}
     elif operation == "send_message":
         tool_input["prompt"] = "続行する"
     payload: dict[str, object] = {
@@ -69,11 +68,14 @@ def _run_stop(
     payload: dict[str, object] = {"session_id": local_session_id, "stop_hook_active": stop_hook_active}
     if agent_id is not None:
         payload["agent_id"] = agent_id
+    environment = _environment(state_directory)
+    environment["CLAUDE_CODE_SESSION_ID"] = local_session_id
+    environment["XDG_STATE_HOME"] = str(state_directory)
     result = _fork_runner.run_script(
         _HOOK,
         argv=("agents_server_session_advisor",),
         input=json.dumps(payload),
-        env=_environment(state_directory),
+        env=environment,
     )
     assert result.returncode == 0
     return result.stdout
@@ -89,12 +91,8 @@ def _record_start(state_directory: pathlib.Path, local_session_id: str, remote_s
 
 
 def _record_running_wait(state_directory: pathlib.Path, local_session_id: str, remote_session_id: str) -> None:
-    _record_operation(
-        state_directory,
-        local_session_id,
-        "wait",
-        {"session_id": remote_session_id, "status": "running"},
-    )
+    del remote_session_id
+    _record_bash(state_directory, local_session_id, "atk agents wait")
 
 
 def _record_send_message(state_directory: pathlib.Path, local_session_id: str, remote_session_id: str) -> None:
@@ -246,7 +244,7 @@ def test_kill_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
 
 
 def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> None:
-    """Bash経由のatk agents-waitが未観測作業を解消する。"""
+    """Bash経由のatk agents waitが未観測作業を解消する。"""
     commands = (
         "atk agents wait",
         "uv run --project /plugin/agent-toolkit --locked --no-default-groups "
@@ -271,24 +269,82 @@ def test_agents_wait_resolves_pending_observation_for_all_owned_sessions(tmp_pat
     assert _run_stop(tmp_path, local_session_id) == ""
 
 
+def _status_directory(state_directory: pathlib.Path, local_session_id: str) -> pathlib.Path:
+    """当該ルートsessionの状態ディレクトリを返す。"""
+    return state_directory / "agent-toolkit" / "agents-server" / local_session_id
+
+
+def _register_wait_target(state_directory: pathlib.Path, local_session_id: str, owner: str, remote_session_id: str) -> None:
+    """待機主体の待機対象登録簿へ対象を書く。"""
+    directory = _status_directory(state_directory, local_session_id) / "wait-targets" / owner
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{remote_session_id}.json").write_text(
+        json.dumps({"version": 1, "session_id": remote_session_id}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _owner_wait_lock_path(state_directory: pathlib.Path, local_session_id: str, owner: str) -> pathlib.Path:
+    """待機主体の待機所有権ロックのパスを返す。"""
+    lock_directory = _status_directory(state_directory, local_session_id) / "wait-locks"
+    lock_directory.mkdir(parents=True, exist_ok=True)
+    return lock_directory / f"{owner}.lock"
+
+
+def test_running_agents_wait_lock_satisfies_observation(tmp_path: pathlib.Path) -> None:
+    """待機主体がロックを保持し、対象を登録簿へ残している間は警告しない。"""
+    local_session_id = "agents-wait-running"
+    remote_session_id = "remote-running"
+    owner = "root.json"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+    _register_wait_target(tmp_path, local_session_id, owner, remote_session_id)
+    with _owner_wait_lock_path(tmp_path, local_session_id, owner).open("a+b") as lock_file:
+        acquire_lock(lock_file, blocking=False)
+        try:
+            assert _run_stop(tmp_path, local_session_id) == ""
+        finally:
+            release_lock(lock_file)
+
+
+def test_wait_target_without_held_lock_still_warns(tmp_path: pathlib.Path) -> None:
+    """登録簿に対象が残っていても、待機主体のロックが解放されていれば警告する。"""
+    local_session_id = "agents-wait-released"
+    remote_session_id = "remote-released"
+    owner = "root.json"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+    _register_wait_target(tmp_path, local_session_id, owner, remote_session_id)
+    _owner_wait_lock_path(tmp_path, local_session_id, owner).touch()
+
+    assert _WARNING_BODY in _run_stop(tmp_path, local_session_id)
+
+
+def test_held_lock_without_registered_target_still_warns(tmp_path: pathlib.Path) -> None:
+    """待機主体がロックを保持していても、対象が登録簿に無ければ警告する。"""
+    local_session_id = "agents-wait-unregistered"
+    remote_session_id = "remote-unregistered"
+    owner = "root.json"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+    with _owner_wait_lock_path(tmp_path, local_session_id, owner).open("a+b") as lock_file:
+        acquire_lock(lock_file, blocking=False)
+        try:
+            assert _WARNING_BODY in _run_stop(tmp_path, local_session_id)
+        finally:
+            release_lock(lock_file)
+
+
 def test_wait_response_resolves_pending_observation_for_unselected_sessions(tmp_path: pathlib.Path) -> None:
     """終端1件を返した待機でも、同じ呼出主体の残るsessionの未観測状態を解消する。"""
     local_session_id = "wait-unselected"
     for remote_session_id in ("remote-selected", "remote-unselected"):
         _record_start(tmp_path, local_session_id, remote_session_id)
 
-    _record_operation(
-        tmp_path,
-        local_session_id,
-        "wait",
-        {"session_id": "remote-selected", "status": "completed", "agent_message": "完了"},
-    )
+    _record_bash(tmp_path, local_session_id, "atk agents wait")
 
     assert _run_stop(tmp_path, local_session_id) == ""
 
 
 def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathlib.Path) -> None:
-    """保持期限切れで結果のないsessionもagents-waitの実行後は警告しない。"""
+    """保持期限切れで結果のないsessionもagents waitの実行後は警告しない。"""
     local_session_id = "agents-wait-expired"
     remote_session_id = "remote-expired"
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=local_session_id)
@@ -314,7 +370,7 @@ def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathli
 
 
 def test_agents_wait_text_as_argument_does_not_clear_pending_observation(tmp_path: pathlib.Path) -> None:
-    """引数に現れるagents-waitの文字列は観測の試みとして扱わない。"""
+    """引数に現れる旧agents-waitの文字列は観測の試みとして扱わない。"""
     local_session_id = "agents-wait-argument"
     remote_session_id = "remote-argument"
     _record_start(tmp_path, local_session_id, remote_session_id)

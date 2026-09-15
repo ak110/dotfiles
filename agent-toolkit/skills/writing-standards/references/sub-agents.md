@@ -66,7 +66,7 @@ frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agent
 呼び出し元が読み込んだファイル、呼び出し元が起動したスキルを引き継がない。
 サブエージェントとその下位のサブエージェントの間も同じ関係になる。
 
-起動経路を問わず、委譲元と委譲先の文脈が独立することを前提として手順を設計する。設計時の判定は`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」を正本とする。
+起動経路を問わず、委譲元と委譲先の文脈が独立することを前提として手順を設計する。設計時の判定は`agent-toolkit:delegation`の`references/base-contract.md`を正本とする。
 `agents_server`で起動した委譲先が起動時に受け取るものは、起動プロンプトと、`agent-toolkit:delegation`の`references/runtime-routing.md`「経路」が定める起動条件で決まる。当該委譲先は`agents/`配下の定義本文と`skills`の宣言を受け取らない。
 
 `Agent`ツールで`agents/`配下の定義から起動したサブエージェントが起動時に受け取るものは次のとおりとする。

@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import logging
 import os
 import pathlib
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+from agent_toolkit._agents_server import logging_config, process_tree
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
     AUTO_RESUME_NOTICE,
@@ -29,6 +31,7 @@ from agent_toolkit._agents_server.state import (
     SessionInitializationTimeoutError,
     SessionOwnerGoneError,
     SessionState,
+    _append_bounded,
     _begin_reply,
 )
 from agent_toolkit._plan import locations as _plan_file
@@ -41,9 +44,111 @@ _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 _LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
     "explore": ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
     "shell": ["Bash", "Read"],
+    "write": ["Read", "Write", "Edit", "Glob", "Grep"],
 }
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
+_INITIALIZATION_STDERR_LIMIT_CHARS = 4000
+# 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を有界で保持する。
+_INITIALIZATION_MESSAGE_LIMIT = 20
+_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS = 200
+# 委譲先CLIの診断記録を置く場所と、自動削除の対象を決める保持世代数。
+_DEBUG_LOG_DIR_NAME = "delegate-debug"
+_DEBUG_LOG_RETENTION = 20
+
+
+class _InitializationDiagnostic:
+    """Claude SDK初期化の到達点と有界な観測値を保持する。"""
+
+    def __init__(self) -> None:
+        self.stage = "created"
+        self.received_message_types: dict[str, int] = {}
+        self.received_messages: list[str] = []
+        self.child_pid: int | None = None
+        self.debug_file: str | None = None
+        self.stderr = ""
+        self.exception_type: str | None = None
+        self.exception_body: str | None = None
+
+    def capture_stderr(self, text: str) -> None:
+        self.stderr = _append_bounded(self.stderr, text, _INITIALIZATION_STDERR_LIMIT_CHARS)
+
+    def capture_client(self, client: Any) -> None:
+        transport = getattr(client, "_transport", None)
+        process = getattr(transport, "_process", None)
+        pid = getattr(process, "pid", None)
+        self.child_pid = pid if isinstance(pid, int) else None
+
+    def record_message(self, message: Any) -> None:
+        name = _message_name(message)
+        self.received_message_types[name] = self.received_message_types.get(name, 0) + 1
+        if len(self.received_messages) < _INITIALIZATION_MESSAGE_LIMIT:
+            self.received_messages.append(f"{name}: {_message_summary(message)}")
+
+    def record_exception(self, error: BaseException) -> None:
+        self.exception_type = type(error).__name__
+        self.exception_body = str(error) or self.exception_type
+
+    def public(self) -> dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "received_message_types": dict(sorted(self.received_message_types.items())),
+            "received_message_count": sum(self.received_message_types.values()),
+            "received_messages": list(self.received_messages),
+            "child_pid": self.child_pid,
+            "child_processes": _describe_child_processes(self.child_pid),
+            "debug_file": self.debug_file,
+            "stderr": self.stderr.strip(),
+            "exception_type": self.exception_type,
+            "exception_body": self.exception_body,
+        }
+
+
+def _message_summary(message: Any) -> str:
+    """受信メッセージを識別できる有界な要約を返す。"""
+    for attribute in ("subtype", "hook_event_name", "event", "name"):
+        value = getattr(message, attribute, None)
+        if isinstance(value, str) and value:
+            return value[:_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS]
+    return repr(message)[:_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS]
+
+
+def _describe_child_processes(pid: int | None) -> list[str]:
+    """委譲先プロセスが起動した子プロセスをPIDと起動コマンドで列挙する。
+
+    `/proc`を持たない実行環境と、列挙の途中で終了したプロセスでは、当該分を空として扱う。
+    診断の付随情報であり、取得できないことを初期化の失敗として扱わない。
+    """
+    if pid is None:
+        return []
+    children: list[str] = []
+    try:
+        task_dir = pathlib.Path(f"/proc/{pid}/task")
+        child_pids = {
+            int(child) for task in task_dir.iterdir() for child in (task / "children").read_text(encoding="utf-8").split()
+        }
+    except (OSError, ValueError):
+        return []
+    for child_pid in sorted(child_pids):
+        try:
+            cmdline = pathlib.Path(f"/proc/{child_pid}/cmdline").read_bytes()
+        except OSError:
+            continue
+        command = " ".join(os.fsdecode(part) for part in cmdline.split(b"\0") if part)
+        children.append(f"{child_pid}: {command[:_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS]}")
+    return children
+
+
+def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
+    """委譲先CLIの診断記録の保存先を用意し、保持世代を超えた記録を削除する。"""
+    directory = logging_config.state_dir() / _DEBUG_LOG_DIR_NAME
+    directory.mkdir(parents=True, exist_ok=True)
+    existing = sorted(directory.glob("*.log"), key=lambda path: path.stat().st_mtime)
+    for stale in existing[: max(0, len(existing) - _DEBUG_LOG_RETENTION + 1)]:
+        with contextlib.suppress(OSError):
+            stale.unlink()
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%f")
+    return directory / f"{stamp}-{os.getpid()}-{launch_kind}.log"
 
 
 def _settings_from_cmdline(cmdline: bytes) -> str | None:
@@ -110,6 +215,8 @@ def _build_options(
     effort: str | None,
     session_id: str | None = None,
     launch_kind: LaunchKind = "delegate",
+    stderr: Callable[[str], None] | None = None,
+    debug_file: pathlib.Path | None = None,
 ) -> Any:
     """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
@@ -118,6 +225,11 @@ def _build_options(
     委譲先の計画バンドルを委譲元の所有として記録できるよう、自プロセスで解決した所有セッション識別子も渡す。
     子Claudeが親と同じ設定の下で動くよう、親の`--settings`層を継承する。
     親cmdlineを取得できない実行環境では継承せず、従来の設定層を維持する。
+
+    起動区分によらず権限モードをbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
+    受信側がbypass系であり送信側が権限モードを申告していない場合に当該メッセージを保留する。
+    委譲元は起動直後にメッセージを送るため、bypass系で起動したセッションは保留のまま
+    初期化を完了できない。当該保留は起動区分に依存しない。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -141,7 +253,7 @@ def _build_options(
         "model": model,
         "effort": cast(_EffortLevel, effort),
         "resume": session_id,
-        "permission_mode": "bypassPermissions",
+        "permission_mode": "auto",
         "env": env,
         "setting_sources": [] if lightweight else ["user", "project"],
         "system_prompt": (
@@ -154,6 +266,10 @@ def _build_options(
             }
         ),
     }
+    if stderr is not None:
+        options["stderr"] = stderr
+    if debug_file is not None:
+        options["extra_args"] = {"debug-file": str(debug_file)}
     if (settings := _parent_settings()) is not None:
         options["settings"] = settings
     if lightweight:
@@ -286,7 +402,18 @@ class ClaudeServerManager:
         turn_seq: int,
     ) -> SessionState:
         """新規又は保存済みsessionを所有する長命タスクを開始する。"""
-        options = _build_options(cwd, model, effort, session_id, launch_kind=launch_kind)
+        diagnostic = _InitializationDiagnostic()
+        debug_file = _prepare_debug_file(launch_kind)
+        diagnostic.debug_file = str(debug_file)
+        options = _build_options(
+            cwd,
+            model,
+            effort,
+            session_id,
+            launch_kind=launch_kind,
+            stderr=diagnostic.capture_stderr,
+            debug_file=debug_file,
+        )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
         task: asyncio.Task[Any] = asyncio.create_task(
@@ -302,6 +429,7 @@ class ClaudeServerManager:
                 launch_kind=launch_kind,
                 excluded_candidates=excluded_candidates,
                 turn_seq=turn_seq,
+                diagnostic=diagnostic,
             )
         )
         self._tasks.add(task)
@@ -311,12 +439,16 @@ class ClaudeServerManager:
         except TimeoutError as exc:
             # SDKがinitを届けないまま接続を保つ場合、当該待機は所有タスクの失敗経路では解消しない。
             await self._release_unstarted_task(task)
+            diagnostic.record_exception(exc)
+            _LOG.error("Claude session初期化timeout: diagnostic=%s", diagnostic.public())
             raise SessionInitializationTimeoutError(
                 f"Claude session did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
-                f"cwd={cwd}, launch_kind={launch_kind}, model={model}"
+                f"cwd={cwd}, launch_kind={launch_kind}, model={model}; diagnostic={diagnostic.public()}"
             ) from exc
-        except BaseException:
+        except BaseException as exc:
             await self._release_unstarted_task(task)
+            diagnostic.record_exception(exc)
+            _LOG.error("Claude session初期化失敗: diagnostic=%s", diagnostic.public())
             raise
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
@@ -402,6 +534,7 @@ class ClaudeServerManager:
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
         turn_seq: int,
+        diagnostic: _InitializationDiagnostic,
     ) -> None:
         from claude_agent_sdk import TERMINAL_TASK_STATUSES
 
@@ -414,13 +547,19 @@ class ClaudeServerManager:
         retrieved: _Command | None = None
         active_future: asyncio.Future[_DeliveryResult] | None = None
         try:
+            diagnostic.stage = "creating_client"
             client = self._client_factory(options)
+            diagnostic.stage = "connecting"
             await client.connect()
+            diagnostic.capture_client(client)
+            diagnostic.stage = "connected"
             if isinstance(prompt, ResumePrompt):
                 await prompt.deliver(client.query)
             else:
                 await client.query(prompt)
+            diagnostic.stage = "query_sent"
             iterator = aiter(client.receive_messages())
+            diagnostic.stage = "receiving_messages"
             while True:
                 loop = asyncio.get_running_loop()
                 now = loop.time()
@@ -485,6 +624,7 @@ class ClaudeServerManager:
                         else:
                             raise RuntimeError("Claude Agent SDK message stream ended before ResultMessage") from None
                     else:
+                        diagnostic.record_message(message)
                         name = _message_name(message)
                         if name == "SystemMessage" and getattr(message, "subtype", None) == "init":
                             data = getattr(message, "data", {})
@@ -498,6 +638,8 @@ class ClaudeServerManager:
                             # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
                             # turnごとにinitが再送されても再生成しない。
                             if session is None:
+                                diagnostic.stage = "initialized"
+                                _LOG.info("Claude session初期化完了: diagnostic=%s", diagnostic.public())
                                 session = SessionState(
                                     session_id=session_id,
                                     cwd=cwd,
@@ -568,7 +710,10 @@ class ClaudeServerManager:
                         message_task = None
                     iterator = await self._handle_command(client, session, command, iterator)
                     active_future = None
-        except Exception as exc:
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            diagnostic.record_exception(exc)
             if session is None:
                 if not initialized.done():
                     initialized.set_exception(exc)
@@ -587,7 +732,14 @@ class ClaudeServerManager:
             if active_future is not None and not active_future.done():
                 active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
             if client is not None:
+                # 子孫の列挙は切断より前に行う。切断で委譲先プロセスが終了すると子孫の親が変わり、
+                # 保持しているPIDを起点に辿れなくなるためである。
+                descendants = process_tree.collect_descendants(diagnostic.child_pid)
                 await self._disconnect_client(client)
+                residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+                process_tree.log_residual(
+                    residual, context=f"claude session_id={None if session is None else session.session_id}"
+                )
             if session is not None:
                 self._channels.pop(session.session_id, None)
             channel.close()

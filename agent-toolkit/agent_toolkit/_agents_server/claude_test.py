@@ -1,7 +1,9 @@
 """Claude backendと共有する自動再開状態の契約を検証する。"""
 
 import asyncio
+import os
 import pathlib
+import subprocess
 import sys
 import types
 from collections.abc import AsyncIterator
@@ -83,6 +85,105 @@ def test_build_options_inherits_parent_settings(
     assert ("settings" in captured) is (settings is not None)
 
 
+def _capture_options(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """`_build_options`がSDKへ渡す引数を捕捉する。"""
+    captured: dict[str, object] = {}
+
+    class Options:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", types.SimpleNamespace(ClaudeAgentOptions=Options))
+    monkeypatch.setattr(claude, "_parent_settings", lambda: None)
+    monkeypatch.setattr(claude._plan_file, "resolve_owner_session_id", lambda: None)  # pylint: disable=protected-access
+    return captured
+
+
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+def test_build_options_keeps_every_launch_out_of_bypass_modes(
+    monkeypatch: pytest.MonkeyPatch,
+    launch_kind: str,
+) -> None:
+    """起動区分によらずbypass系以外の権限モードで起動する。
+
+    bypass系の受信側はセッション間メッセージを保留するため、起動したセッションが初期化を完了できない。
+    """
+    captured = _capture_options(monkeypatch)
+
+    claude._build_options("/tmp", "model", "medium", launch_kind=launch_kind)  # type: ignore[arg-type]  # pylint: disable=protected-access
+
+    assert captured["permission_mode"] == "auto"
+
+
+def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """診断記録の保存先を委譲先CLIの引数として渡す。"""
+    captured = _capture_options(monkeypatch)
+    debug_file = tmp_path / "delegate.log"
+
+    claude._build_options("/tmp", "model", "medium", debug_file=debug_file)  # pylint: disable=protected-access
+
+    assert captured["extra_args"] == {"debug-file": str(debug_file)}
+
+
+def test_build_options_omits_debug_file_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """保存先を指定しない起動では診断記録の引数を渡さない。"""
+    captured = _capture_options(monkeypatch)
+
+    claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
+
+    assert "extra_args" not in captured
+
+
+def test_prepare_debug_file_drops_records_beyond_retention(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """保持世代を超えた古い診断記録を自動的に削除する。"""
+    monkeypatch.setattr(claude.logging_config, "state_dir", lambda: tmp_path)
+    directory = tmp_path / claude._DEBUG_LOG_DIR_NAME  # pylint: disable=protected-access
+    directory.mkdir(parents=True)
+    retention = claude._DEBUG_LOG_RETENTION  # pylint: disable=protected-access
+    existing = []
+    for index in range(retention + 5):
+        path = directory / f"{index:04d}.log"
+        path.write_text("記録", encoding="utf-8")
+        os.utime(path, (index, index))
+        existing.append(path)
+
+    created = claude._prepare_debug_file("delegate")  # pylint: disable=protected-access
+    created.write_text("記録", encoding="utf-8")
+
+    assert created.parent == directory
+    assert len(sorted(directory.glob("*.log"))) == retention
+    assert not existing[0].exists()
+    assert existing[-1].exists()
+
+
+def test_initialization_diagnostic_identifies_received_messages() -> None:
+    """初期化診断は受信メッセージを種別だけでなく内容で識別できる形で保持する。"""
+    diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access
+
+    diagnostic.record_message(types.SimpleNamespace(subtype="SessionStart"))
+    diagnostic.record_message(types.SimpleNamespace(subtype="PreToolUse"))
+
+    public = diagnostic.public()
+    assert public["received_messages"] == ["SimpleNamespace: SessionStart", "SimpleNamespace: PreToolUse"]
+    assert public["received_message_count"] == 2
+    assert not public["child_processes"]
+
+
+def test_initialization_diagnostic_lists_child_processes() -> None:
+    """初期化診断は委譲先プロセスが起動した子プロセスを列挙する。"""
+    diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"]) as child:
+        try:
+            diagnostic.child_pid = os.getpid()
+            children = diagnostic.public()["child_processes"]
+        finally:
+            child.terminate()
+    assert any(entry.startswith(f"{child.pid}: ") for entry in children), children
+
+
 @pytest.mark.asyncio
 async def test_start_aborts_when_init_message_never_arrives(
     monkeypatch: pytest.MonkeyPatch,
@@ -90,6 +191,7 @@ async def test_start_aborts_when_init_message_never_arrives(
 ) -> None:
     """initへ到達しないsessionを上限で打ち切り、子プロセスを終了させて例外で返す。"""
     monkeypatch.setattr(shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
+    monkeypatch.setattr(claude.logging_config, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(claude._plan_file, "resolve_owner_session_id", lambda: None)  # pylint: disable=protected-access
     client = _SilentClient()
     manager = claude.ClaudeServerManager(client_factory=lambda _options: client)

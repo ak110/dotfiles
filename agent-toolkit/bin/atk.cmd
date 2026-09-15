@@ -4,7 +4,7 @@ for /f "delims=" %%A in ('cd /d "%~dp0.." ^& cd') do set "SCRIPT_DIR=%%A"
 set "SCRIPT=%SCRIPT_DIR%\agent_toolkit\atk.py"
 
 rem Run non-daemon subcommands once, preserving the existing behavior.
-if not "%~1"=="mq" goto :run_once
+if not "%~1"=="wi" if not "%~1"=="mq" goto :run_once
 if not "%~2"=="process-loop" goto :run_once
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ^

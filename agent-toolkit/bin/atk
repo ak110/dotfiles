@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
 SCRIPT="${SCRIPT_DIR}/agent_toolkit/atk.py"
 
 # 常駐サブコマンド以外は従来どおり実体へ置き換えて起動する。
-if [ "${1:-}" != "mq" ] || [ "${2:-}" != "process-loop" ]; then
+if [ "${2:-}" != "process-loop" ] || { [ "${1:-}" != "wi" ] && [ "${1:-}" != "mq" ]; }; then
     exec uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "$@"
 fi
 

@@ -287,13 +287,13 @@ def test_add_awi_requires_only_completion_report(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """`agent-toolkit:add-awi`は`agent-toolkit:completion-report`だけを要求する。"""
+    """`agent-toolkit:add-awi-by-user`は`agent-toolkit:completion-report`だけを要求する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     transcript = _write_transcript(
         tmp_path,
         [
-            _skill_entry("agent-toolkit:add-awi", tool_use_id="toolu_1"),
+            _skill_entry("agent-toolkit:add-awi-by-user", tool_use_id="toolu_1"),
             _tool_result_entry("toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
             _tool_result_entry("toolu_2"),
@@ -309,18 +309,18 @@ def test_add_awi_blocks_without_completion_report(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """`agent-toolkit:add-awi`起動後に終了スキルが無ければ遮断する。"""
+    """`agent-toolkit:add-awi-by-user`起動後に終了スキルが無ければ遮断する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     transcript = _write_transcript(
         tmp_path,
-        [_skill_entry("agent-toolkit:add-awi"), _tool_result_entry("toolu_skill")],
+        [_skill_entry("agent-toolkit:add-awi-by-user"), _tool_result_entry("toolu_skill")],
     )
 
     decision, body = termination_order_advisor.evaluate(_payload("sess-add-awi-missing", str(transcript)))
 
     assert decision == "block"
-    assert "agent-toolkit:add-awi" in body
+    assert "agent-toolkit:add-awi-by-user" in body
     assert "agent-toolkit:completion-report" in body
 
 
@@ -353,7 +353,7 @@ def test_failed_completion_report_does_not_satisfy_termination(
     transcript = _write_transcript(
         tmp_path,
         [
-            _skill_entry("agent-toolkit:add-awi", tool_use_id="toolu_1"),
+            _skill_entry("agent-toolkit:add-awi-by-user", tool_use_id="toolu_1"),
             _tool_result_entry("toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
             _tool_result_entry("toolu_2", is_error=True),

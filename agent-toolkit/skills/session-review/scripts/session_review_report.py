@@ -153,7 +153,8 @@ def render(
     if tuple(timings) != PHASES:
         raise ReportError("工程時刻は規定の6工程を順序どおり含める")
 
-    rows: list[str] = []
+    candidate_rows: list[str] = []
+    used_analysis_ids: set[str] = set()
     for locators, candidate in candidate_by_locators.items():
         locator_text = ", ".join(f"{record}:{line}" for record, line in locators)
         decision = decision_by_locators[locators]
@@ -162,7 +163,8 @@ def render(
             reason = decision.get("reason")
             if not isinstance(reason, str) or not reason.strip():
                 raise ReportError(f"{locator_text}: 一次選別の除外理由がない")
-            cells = (reason, "一次選別で除外", "一次選別で除外", "一次選別で除外", "一次選別で除外")
+            outcome = f"一次選別で除外: {reason}"
+            analysis_id_text = "-"
         elif disposition == "analyzed":
             analysis_id = decision.get("analysis_id")
             analysis = analyses.get(analysis_id) if isinstance(analysis_id, str) else None
@@ -173,17 +175,33 @@ def render(
             ]
             if missing_fields:
                 raise ReportError(f"{locator_text}: 完全分析の必須欄がない: {missing_fields}")
-            cells = (
-                str(decision.get("defect", "要処置")),
-                analysis["direct_cause"],
-                analysis["root_cause"],
-                analysis["rule_gap"],
-                analysis["action"],
-            )
+            assert isinstance(analysis_id, str)
+            used_analysis_ids.add(analysis_id)
+            outcome = str(decision.get("defect", "要処置"))
+            analysis_id_text = analysis_id
         else:
             raise ReportError(f"{locator_text}: dispositionが不正である")
         summary = _cell_text(str(candidate.get("text", candidate.get("candidate_kind", "候補"))))
-        rows.append("| " + " | ".join((f"{locator_text} {summary}", *cells)) + " |")
+        occurrence_count = candidate.get("occurrence_count")
+        omitted_locator_count = candidate.get("omitted_locator_count")
+        if isinstance(occurrence_count, int) and isinstance(omitted_locator_count, int):
+            summary += f"（発生{occurrence_count}件、代表位置{len(locators)}件、省略{omitted_locator_count}件）"
+        candidate_rows.append("| " + " | ".join((f"{locator_text} {summary}", outcome, analysis_id_text)) + " |")
+
+    analysis_rows = [
+        "| "
+        + " | ".join(
+            (
+                analysis_id,
+                _cell_text(analyses[analysis_id]["direct_cause"]),
+                _cell_text(analyses[analysis_id]["root_cause"]),
+                _cell_text(analyses[analysis_id]["rule_gap"]),
+                _cell_text(analyses[analysis_id]["action"]),
+            )
+        )
+        + " |"
+        for analysis_id in sorted(used_analysis_ids)
+    ]
 
     timing_rows = [f"| {phase} | {_seconds(timings[phase], phase):.3f} |" for phase in PHASES]
     return "\n".join(
@@ -194,9 +212,13 @@ def render(
             "",
             "## 問題候補の判定記録",
             "",
-            "| 候補 | 欠陥判定 | 直接的原因 | 根本原因 | 既存規範が適用されなかった理由 | 処置 |",
-            "| --- | --- | --- | --- | --- | --- |",
-            *rows,
+            "| 候補 | 判定 | 分析ID |",
+            "| --- | --- | --- |",
+            *candidate_rows,
+            "",
+            "| 分析ID | 直接的原因 | 根本原因 | 既存規範が適用されなかった理由 | 処置 |",
+            "| --- | --- | --- | --- | --- |",
+            *analysis_rows,
             "",
             f"構造検査: 候補{len(candidate_items)}件、locator{len(flattened)}件、過不足0件、重複0件",
             "",

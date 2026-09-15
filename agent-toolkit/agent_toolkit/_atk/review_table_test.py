@@ -33,6 +33,7 @@ _RESPOND_NAMESPACE_DEFAULTS = {
     "review_table_subcommand": "respond",
     "_help_parser": None,
     "path": "review.tsv",
+    "row_id": None,
     "round": "1",
     "track": _TRACK,
     "location_file": None,
@@ -144,7 +145,11 @@ def _invoke_table_operation(operation: str, path: pathlib.Path) -> int:
     }[operation]()
 
 
-def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_init_add_and_show_formats_share_row_ids(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存8列を維持し、TSVとJSON Linesへ同じrow-idを付ける。"""
     path = tmp_path / "review.tsv"
     assert table.init(path) == 0
     assert table.add(path, "1", _TRACK, "module.py:10", "修正が必要") == 0
@@ -155,7 +160,16 @@ def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     assert all(len(line.split("\t")) == 8 for line in lines)
     assert all(isinstance(json.loads(cell), str) for line in lines for cell in line.split("\t"))
     assert table.show(path) == 0
-    assert capsys.readouterr().out == path.read_text(encoding="utf-8")
+    shown_tsv = capsys.readouterr().out.splitlines()
+    assert all(len(line.split("\t")) == 9 for line in shown_tsv)
+    tsv_row_ids = [line.split("\t", 1)[0] for line in shown_tsv]
+    assert tsv_row_ids == ["1", "2"]
+    assert [line.split("\t", 1)[1] for line in shown_tsv] == lines
+
+    assert table.show(path, output_format="jsonl") == 0
+    shown_jsonl = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [str(row["row-id"]) for row in shown_jsonl] == tsv_row_ids
+    assert all(list(row) == ["row-id", *table.COLUMNS] for row in shown_jsonl)
 
 
 def test_add_reports_each_saved_cell_match_without_saved_bodies(
@@ -481,7 +495,7 @@ def test_show_filters_compat_track_without_rewriting_raw_tsv(
     path.write_text(raw, encoding="utf-8")
 
     assert table.show(path, track=track) == 0
-    assert capsys.readouterr().out == raw
+    assert capsys.readouterr().out == f"1\t{raw}"
     assert path.read_text(encoding="utf-8") == raw
 
 
@@ -527,7 +541,7 @@ def test_show_jsonl_decodes_control_characters_and_quotes(
     assert table.show(path, output_format="jsonl") == 0
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     expected = ["1", _TRACK, "module.py:10", issue, "詳細", "", "", ""]
-    assert rows == [dict(zip(table.COLUMNS, expected, strict=True))]
+    assert rows == [{"row-id": 1, **dict(zip(table.COLUMNS, expected, strict=True))}]
 
 
 def test_show_jsonl_supplies_empty_level_for_legacy_row(
@@ -542,7 +556,7 @@ def test_show_jsonl_supplies_empty_level_for_legacy_row(
     assert table.show(path, output_format="jsonl") == 0
     row = json.loads(capsys.readouterr().out)
     assert row["level"] == ""
-    assert list(row) == list(table.COLUMNS)
+    assert list(row) == ["row-id", *table.COLUMNS]
 
 
 def test_show_jsonl_filters_decoded_rows_by_track(
@@ -819,9 +833,11 @@ def test_show_preserves_legacy_seven_columns_with_and_without_track_filter(
     path.write_text(raw, encoding="utf-8")
 
     assert table.show(path) == 0
-    assert capsys.readouterr().out == raw
+    assert capsys.readouterr().out == "".join(
+        f"{row_id}\t{line}" for row_id, line in enumerate(raw.splitlines(keepends=True), start=1)
+    )
     assert table.show(path, track=_TRACK) == 0
-    assert capsys.readouterr().out == raw.splitlines(keepends=True)[0]
+    assert capsys.readouterr().out == f"1\t{raw.splitlines(keepends=True)[0]}"
     assert path.read_text(encoding="utf-8") == raw
 
 
@@ -984,6 +1000,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
                 "--response-file",
                 "--response-needed",
                 "--round",
+                "--row-id",
                 "--track",
             ),
         ),
@@ -1039,6 +1056,18 @@ def test_cell_file_options_are_shown_in_help(
         assert option not in help_text
 
 
+def test_respond_help_presents_row_id_as_default_selector(capsys: pytest.CaptureFixture[str]) -> None:
+    """応答ヘルプはshow由来のrow-idを既定とし、複合キーを互換経路として示す。"""
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", "respond", "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "`show`が出力した`row-id`で応答対象を一意に指定" in help_text
+    assert "応答対象は`show`が出力した`row-id`で指定" in help_text
+    assert "部分複合キー指定も互換経路" in help_text
+
+
 @pytest.mark.parametrize(
     ("subcommand", "expected_descriptions"),
     (
@@ -1056,7 +1085,7 @@ def test_cell_file_options_are_shown_in_help(
             "show",
             (
                 "表示対象を指定したレビュー区分の行だけに限定する",
-                "出力形式。tsvは保存済みのraw TSV、jsonlはデコード済みのJSON Linesを表示する",
+                "出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Linesを表示する",
             ),
         ),
         ("validate", ("未応答行を許容し、8列と複合キーなどの構造だけを検証する",)),
@@ -1127,7 +1156,7 @@ def test_cell_files_preserve_issue_and_supply_responses(
     )
     assert table.dispatch(add_args) == 0
     assert table.show(path) == 0
-    stored = [[json.loads(cell) for cell in line.split("\t")] for line in capsys.readouterr().out.splitlines()[-1:]][0]
+    stored = [[json.loads(cell) for cell in line.split("\t")[1:]] for line in capsys.readouterr().out.splitlines()[-1:]][0]
     assert stored[:4] == ["1", _TRACK, location, issue]
 
     respond_args = _parser().parse_args(
@@ -1249,6 +1278,53 @@ def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path
 
     assert table.respond(path, "1", _TRACK, "module.py:10", issue, "yes", "対応した", "") == 0
     assert table.validate(path) == 0
+
+
+def test_row_id_is_stable_across_filters_and_updates_only_selected_row(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """row-idは保存順を表し、表示条件の適用後も番号を変えず対象行だけを更新する。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", "指摘A")
+    table.add(path, "1", "plan-review", "plan.md", "指摘B")
+    table.add(path, "2", _TRACK, "module.py:20", "指摘C")
+    capsys.readouterr()
+
+    assert table.show(path, track="plan-review", output_format="jsonl") == 0
+    assert json.loads(capsys.readouterr().out)["row-id"] == 2
+    assert table.respond(path, "", "", "", "", "yes", "対応した", "", row_id=2) == 0
+
+    rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
+    assert rows[0][5:] == ["", "", ""]
+    assert rows[1][5:] == ["yes", "対応した", ""]
+    assert rows[2][5:] == ["", "", ""]
+    assert all(len(row) == 8 for row in rows)
+
+
+@pytest.mark.parametrize("row_id", (0, 2))
+def test_respond_rejects_invalid_row_id_without_changing_table(tmp_path: pathlib.Path, row_id: int) -> None:
+    """0以下又は範囲外のrow-idは保存本文を変更せず拒否する。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", "指摘")
+    before = path.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="row-id"):
+        table.respond(path, "", "", "", "", "yes", "対応した", "", row_id=row_id)
+
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_respond_rejects_row_id_with_legacy_key(tmp_path: pathlib.Path) -> None:
+    """row-idと従来の部分複合キーは同時指定できない。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", "指摘")
+
+    with pytest.raises(ValueError, match="同時に指定できない"):
+        table.respond(path, "1", "", "", "", "yes", "対応した", "", row_id=1)
 
 
 def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.Path) -> None:

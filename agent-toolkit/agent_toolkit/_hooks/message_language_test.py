@@ -91,7 +91,12 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
         "ユーザーの介入があった場合は、既定では稼働中の委譲先へ追加指示を送る。停止するのは、当該介入が委譲範囲または前提を無効にし、"
         "継続すると誤った成果物が確定する場合に限る。詳細は`agent-toolkit:delegation`「継続と新規起動」が定める。",
     ),
-    ("pretooluse.py:1588 解消手段", "停止の根拠を確認済みであれば、5分以内にTaskStopを再実行すると続行できる。"),
+    (
+        "pretooluse.py:1588 解消手段",
+        "自セッションが起動した対象は所有記録に一致する識別子を指定する。"
+        "その他の対象は`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節に従い、"
+        "対象別の停滞検知完了記録を作成してからTaskStopを実行する。",
+    ),
     ("pretooluse.py:1691 本文", "blocked: {op}。作業ディレクトリを表す式{event.unresolved_expression!r}を静的に解決できない。"),
     (
         "pretooluse.py:1691 解消手段",
@@ -382,7 +387,8 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("pending_question_advisor.py:_BLOCK_FIX", "AskUserQuestionで確認するか、当該問いかけを本文から除いて応答を書き直す。"),
     (
         "agents_server_session_advisor.py:_WARNING_BODY",
-        "`agents_server`の`session`に、観測を試みていない作業が残っている。`wait`で観測するか、"
+        "`agents_server`の`session`に、観測を試みていない作業が残っている。"
+        "実行ホストの`atk agents wait`で観測するか、"
         "結果が不要なら`kill(session_id)`で破棄してから終了する。`send_message`は新しい作業を配送するだけで観測しないため、"
         "この警告は解消しない。観測しないまま終了すると、当該作業の成果を回収する主体が残らない。",
     ),

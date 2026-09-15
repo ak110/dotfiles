@@ -54,6 +54,17 @@ class _AcceptingStdin:
         return None
 
 
+class _DisconnectedStdin:
+    """書込時に接続断を返すstdinの検体。"""
+
+    def write(self, data: bytes) -> None:
+        del data  # noqa
+        raise BrokenPipeError("peer disconnected")
+
+    async def drain(self) -> None:
+        return None
+
+
 class _SilentProcess:
     """起動後にJSON-RPC応答を返さない子プロセスの検体。"""
 
@@ -72,6 +83,26 @@ class _SilentProcess:
 
     async def wait(self) -> int:
         return self.returncode if self.returncode is not None else 0
+
+
+@pytest.mark.asyncio
+async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
+    """接続断は到達段階、子PID及び直前stderrを例外とログへ残す。"""
+    client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
+    process = _SilentProcess()
+    process.__dict__["stdin"] = _DisconnectedStdin()
+    client.process = process  # type: ignore[assignment]
+    client._initialization_stage = "initialized_sent"
+    client._stderr_text = "network unavailable"
+
+    with pytest.raises(subject.AppServerError) as exc_info:
+        await client.send({"method": "test"})
+
+    message = str(exc_info.value)
+    assert "peer disconnected" in message
+    assert "initialized_sent" in message
+    assert "child_pid" in message
+    assert "network unavailable" in message
 
 
 async def _ignore_message(message: dict[str, Any]) -> None:
@@ -203,6 +234,20 @@ async def test_start_aborts_when_thread_start_never_returns(monkeypatch: pytest.
 
     assert not manager.sessions
     await manager.close()
+
+
+@pytest.mark.parametrize("lightweight", [False, True])
+def test_thread_config_bypasses_hook_trust_for_every_launch(monkeypatch: pytest.MonkeyPatch, lightweight: bool) -> None:
+    """thread開始・再開の設定は、hookの承認状態にかかわらず委譲先が起動できる形で渡す。
+
+    委譲先は対話UIを持たず承認要求へ応答できないため、当該指定は`launch_kind`で分けない。
+    """
+    monkeypatch.setattr(subject._plan_file, "resolve_owner_session_id", lambda: None)
+    manager = subject.AppServerManager()
+
+    config, _owner_session_id, _writer_session_id = manager._thread_config(lightweight=lightweight)
+
+    assert config["bypass_hook_trust"] is True
 
 
 async def _return(value: Any) -> Any:

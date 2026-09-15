@@ -70,6 +70,12 @@ _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>"
 
 _MCP_BACKGROUND_TASK_RE = re.compile(r"moved to the background as task\s+(\S+)")
 
+# 抽出した値は背景タスクの識別子として`<task-id>`との突合と停止対象の所有判定へ渡すため、
+# 文末に付く句読点を識別子へ取り込まない。
+# 識別子の文字種を限定する形は採らない。限定した場合、当該文字種の外にある文字を含む識別子は
+# 途中までしか一致せず、従来正しく抽出できていた入力の結果が変わるためである。
+_TRAILING_PUNCTUATION = ".,;:!?)]}\"'"
+
 # `<task-notification>`要素内の`<tool-use-id>toolu_xxx</tool-use-id>`から
 # `toolu_xxx`を抽出する正規表現。
 _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
@@ -903,10 +909,17 @@ def _collect_mcp_background_task_id_tool_use_ids(
 
 
 def background_task_id_from_notice(value: object) -> str | None:
-    """MCP呼び出しの背景移行通知からタスクIDを返す。"""
+    """MCP呼び出しの背景移行通知からタスクIDを返す。
+
+    識別子の直後に続く文末の句読点は除く。
+    通知本文は文として書かれるため、句読点を含めた値は`<task-id>`要素の値とも
+    停止対象の識別子とも一致しない。
+    """
     if isinstance(value, str):
         match = _MCP_BACKGROUND_TASK_RE.search(value)
-        return match.group(1) if match is not None else None
+        if match is None:
+            return None
+        return match.group(1).rstrip(_TRAILING_PUNCTUATION) or None
     if isinstance(value, dict):
         nested_values = value.values()
     elif isinstance(value, list):

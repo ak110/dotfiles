@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime
 import os
 import pathlib
 import re
@@ -19,6 +20,9 @@ from collections.abc import Iterator
 try:
     from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         file_lock as _file_lock,
+    )
+    from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        session_state as _session_state,
     )
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
@@ -49,6 +53,7 @@ _TOKEN_RE = re.compile(r"[0-9a-f]{4}\Z")
 _PORTABLE_REFERENCE_RE = re.compile(re.escape(PORTABLE_PLAN_PREFIX) + r"[^\s`<>\"']+")
 _ADJUNCT_REFERENCE_RE = re.compile(re.escape(PLAN_ADJUNCT_REFERENCE_PREFIX) + r"[^\s`<>\"']*")
 _FORBIDDEN_NAME_CHARACTERS = frozenset('/\\:*?"<>|')
+_PROCESS_LANE_PATTERN = re.compile(r"lane-(?P<number>[0-9]{2})\Z")
 _DEFAULT_MAX_ATTEMPTS = 100
 
 
@@ -69,6 +74,17 @@ def _validate_plan_name(plan_name: str) -> str:
     if plan_name.endswith(".md"):
         raise ValueError("計画名に拡張子を指定できません")
     return plan_name
+
+
+def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | None = None) -> str:
+    """`lane-NN`とUTC時刻からprocess-wi用の正規stemを返す。"""
+    match = _PROCESS_LANE_PATTERN.fullmatch(lane_identifier)
+    if match is None:
+        raise ValueError("レーン識別子は`lane-NN`の2桁形式で指定してください")
+    current = datetime.datetime.now(datetime.UTC) if now is None else now
+    if current.tzinfo is None:
+        raise ValueError("計画名の生成時刻にはタイムゾーンが必要です")
+    return f"{current.astimezone(datetime.UTC):%d-%H%M}_process-wi_レーン{match.group('number')}"
 
 
 def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
@@ -219,6 +235,26 @@ def _check_structure(
         raise PlanCreationError("計画構造検査に失敗しました: " + " / ".join(errors))
 
 
+def _record_plan_written_state() -> None:
+    """計画ファイルの確定を、連続直接編集検査が読むセッション状態へ記録する。
+
+    当該検査は`plan_file_written`が偽である間だけ`agent-toolkit`配下への連続した直接編集を数え、
+    3件目を遮断する。正規の計画作成経路である本処理が当該項目を設定しないと、
+    手順どおり計画を作成した実行主体が3ファイル目の編集で遮断される。
+    設定する3項目と値は、当該検査と共有する`_session_state.mark_plan_written()`が定める。
+
+    セッション識別子は`CLAUDE_CODE_SESSION_ID`だけを読む。
+    `_plan_file.resolve_owner_session_id()`は`AGENT_TOOLKIT_OWNER_SESSION`を優先するため、
+    委譲先で実行すると委譲元の識別子を返し、別セッションの状態を書き換える。
+    当該環境変数を持たない実行環境では記録を書かず、計画の作成は成功として扱う。
+    """
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not session_id:
+        return
+
+    _session_state.mark_plan_written(session_id)
+
+
 def _finalize_candidate(
     directory: pathlib.Path,
     plans_root: pathlib.Path,
@@ -231,7 +267,8 @@ def _finalize_candidate(
 ) -> tuple[pathlib.Path, ...]:
     """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。
 
-    確定と検査に成功した後、当該計画バンドルの所有セッションを記録する。
+    確定と検査に成功した後、当該計画バンドルの所有セッションと、
+    連続直接編集検査が読むセッション状態を記録する。
     所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
     """
     main_path = directory / f"{stem}.md"
@@ -261,6 +298,7 @@ def _finalize_candidate(
         _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
         _plan_file.record_plan_owner(main_path)
+        _record_plan_written_state()
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
         for path, identity, content in reversed(owned):
@@ -354,15 +392,18 @@ def main(argv: list[str] | None = None) -> int:
     source_group.add_argument("--main-source", dest="main_source", type=pathlib.Path)
     source_group.add_argument("--source", dest="main_source", type=pathlib.Path)
     parser.add_argument("--bugs-source", type=pathlib.Path)
-    parser.add_argument("--name", required=True)
+    name_group = parser.add_mutually_exclusive_group(required=True)
+    name_group.add_argument("--name")
+    name_group.add_argument("--lane")
     parser.add_argument("--private-notes", type=pathlib.Path)
     parser.add_argument("--home", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
     args = parser.parse_args(argv)
     try:
+        plan_name = args.name if args.name is not None else process_lane_plan_name(args.lane)
         paths = create_plan_files(
             args.main_source,
-            args.name,
+            plan_name,
             bug_source=args.bugs_source,
             private_notes=args.private_notes,
             home=args.home,

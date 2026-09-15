@@ -35,9 +35,13 @@ wait:
 
 Bash:
 
+- 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
+- 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
+- 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
 - 高容量のユーザー領域を対象限定なしに走査する`find`・`ls -R`の検出 (warn)
+- 走査範囲を限定しないファイルシステムの根からの`find`の遮断 (block)
 - 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
@@ -56,14 +60,14 @@ Skill:
 
 TaskStop:
 
-- 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
+- 自セッションの所有記録又は停滞検知完了記録に一致しない対象の遮断 (block)
 
-Write / Edit / MultiEdit / apply_patch:
+Read / Write / Edit / MultiEdit / apply_patch:
 
 - 文字化け（U+FFFD）検出 (block)
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
 - lockfile / 生成物ディレクトリの直接編集 (block)
-- シークレット / 鍵ファイルの直接編集 (block)
+- `.env`系のReadとシークレット・鍵ファイルの直接編集 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -133,6 +137,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     resolve_cwd_change,
     resolve_execution_segment,
     split_bash_segments,
+    without_shell_redirections,
 )
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -151,6 +156,7 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
     is_plan_adjunct_file,
     is_plan_component_file,
 )
+import contextlib
 
 if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.dispatch import (
@@ -229,6 +235,73 @@ def _rewrite_simple_uv_script(command: str, cwd: str) -> str | None:
     return shlex.join([*tokens[:python_index], "--script", script, *tokens[python_index + 2 :]])
 
 
+_GIT_GREP_FLAGS = frozenset(
+    {
+        "-F",
+        "-H",
+        "-I",
+        "-P",
+        "-E",
+        "-i",
+        "-l",
+        "-n",
+        "-q",
+        "-w",
+        "--fixed-strings",
+        "--perl-regexp",
+        "--extended-regexp",
+        "--ignore-case",
+        "--files-with-matches",
+        "--line-number",
+        "--quiet",
+        "--word-regexp",
+    }
+)
+_GIT_GREP_VALUED_OPTIONS = frozenset(
+    {"-A", "-B", "-C", "-m", "--after-context", "--before-context", "--context", "--max-count"}
+)
+
+
+def _rewrite_simple_git_grep(command: str) -> str | None:
+    """単純な`git grep`でパターン後方にある既知オプションだけを前方へ移す。"""
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    if any(operator in masked for operator in ("|", ";", "&&", "||", "\n")):
+        return None
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    if len(tokens) < 4 or tokens[:2] != ["git", "grep"] or "--" in tokens:
+        return None
+    pattern = tokens[2]
+    if pattern.startswith("-") or any(character in pattern for character in "$`"):
+        return None
+    moved: list[str] = []
+    rest: list[str] = []
+    index = 3
+    while index < len(tokens):
+        token = tokens[index]
+        option_name = token.split("=", 1)[0]
+        if token in _GIT_GREP_FLAGS:
+            moved.append(token)
+        elif option_name in _GIT_GREP_VALUED_OPTIONS:
+            if "=" in token:
+                moved.append(token)
+            elif index + 1 < len(tokens) and not tokens[index + 1].startswith("-"):
+                moved.extend((token, tokens[index + 1]))
+                index += 1
+            else:
+                return None
+        elif token.startswith("-"):
+            return None
+        else:
+            rest.append(token)
+        index += 1
+    if not moved:
+        return None
+    return shlex.join(["git", "grep", *moved, pattern, *rest])
+
+
 def _split_simple_truncation(command: str) -> tuple[str, str] | None:
     """単純な1段パイプのうち後段が切り詰めコマンドである場合だけ分割する。"""
     masked = _bash_command_parser.mask_heredoc_bodies(command)
@@ -260,6 +333,10 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
     notices: list[str] = []
     if rewritten != producer:
         notices.append("安全に一意変換できるコマンド入力を推奨形へ補正した。")
+    git_grep_rewritten = _rewrite_simple_git_grep(rewritten)
+    if git_grep_rewritten is not None:
+        rewritten = git_grep_rewritten
+        notices.append("`git grep`のパターン後方にある既知オプションを受理位置へ移した。")
     if truncation is not None:
         if not session_id:
             return None
@@ -275,17 +352,36 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
     return rewritten, notices
 
 
+_REPEATED_OUTPUT_TRUNCATION_FIX = (
+    "標準出力をファイルへリダイレクトして全量を保存し、保存済みファイルから必要な範囲だけを"
+    "行数指定又は構造化条件で読む。"
+    "分離実行を利用できる場合は、読み取り専用の探索をagents_serverのstart_explore、"
+    "コマンド実行をstart_shellへ分離してもよい。"
+)
+"""切り詰め補正の反復に対する解消手段。
+
+保存と再読の形はこの検査の判定条件に一致しないため、分離実行を利用できない実行主体も
+当該本文だけで遮断されない形へ到達できる。
+"""
+
+
 def _check_repeated_bash_output_truncation(command: str, session_id: str) -> bool:
-    """同一セッションで2回目以降の切り詰め補正なら遮断する。"""
+    """同一セッションで同じ補正種別の2回目以降の切り詰め補正なら遮断する。
+
+    補正種別は`_split_simple_truncation`が返す後段コマンド名とし、種別ごとに初回だけ許容する。
+    別種の切り詰めを初めて含む呼び出しは、過去の別種の補正を理由に遮断しない。
+    """
     segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    if not session_id or not any(_split_simple_truncation(segment) is not None for segment in segments):
+    truncations = [_split_simple_truncation(segment) for segment in segments]
+    kinds = sorted({truncation[1] for truncation in truncations if truncation is not None})
+    if not session_id or not kinds:
         return False
-    if claim_bash_output_truncation_autofix(session_id):
+    if claim_bash_output_truncation_autofix(session_id, kinds):
         return False
     print(
         _block_notice(
-            "同一セッションでBash出力の切り詰め補正が繰り返された。",
-            fix="読み取り専用の探索はagents_serverのstart_explore、コマンド実行はstart_shellへ分離する。",
+            "同一セッションでBash出力の切り詰め補正が同じ形で繰り返された。",
+            fix=_REPEATED_OUTPUT_TRUNCATION_FIX,
         ),
         file=sys.stderr,
     )
@@ -316,6 +412,141 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         rewritten_command = rewritten_command[:start] + replacement + rewritten_command[end:]
     unique_notices = list(dict.fromkeys(notices))
     return rewritten_command, _llm_notice(" ".join(unique_notices), tag=_WARN_TAG, removable_cause=True)
+
+
+_EDIT_TOOL_SAVE_PHRASE = "実行環境が提供する編集ツール（Claude Codeでは`Write`、Codexでは`apply_patch`）でファイルへ保存する"
+"""解消手段としてファイルの書込を案内する場合に用いる保存手段の名指し。
+
+保存手段を名指ししない案内は、`cat > <ファイル> <<'EOF'`の形を選ばせてheredocの判定へ当たる。
+"""
+
+_NESTED_SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
+_ENV_READ_COMMANDS = frozenset({"cat", "head", "less", "more", "tail", "xxd"})
+_ENV_BASENAME_PATTERN = re.compile(r"^\.env(?:\..+)?$")
+
+
+def _check_bash_nested_code_string(command: str) -> bool:
+    """別のシェルへコード文字列を渡す多段の引用解釈を遮断する。"""
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    token_groups: list[tuple[str, ...]] = []
+    with contextlib.suppress(ValueError):
+        token_groups.append(tuple(shlex.split(masked, posix=True)))
+    token_groups.extend(segment.tokens for segment in _extract_execution_segments(masked) if segment.resolved)
+    for tokens in token_groups:
+        if any(
+            token in _NESTED_SHELLS and index + 1 < len(tokens) and tokens[index + 1] == "-c"
+            for index, token in enumerate(tokens)
+        ):
+            print(
+                _block_notice(
+                    "blocked: 別のシェルへ`-c`でコード文字列を渡す入力は、引用を2段以上で解釈する。",
+                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを対象シェルへ渡す。",
+                ),
+                file=sys.stderr,
+            )
+            return True
+        if tokens and pathlib.PurePath(tokens[0]).name == "su" and "-c" in tokens[1:]:
+            print(
+                _block_notice(
+                    "blocked: `su -c`へコード文字列を渡す入力は、引用を2段以上で解釈する。",
+                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを`su`の対象シェルへ渡す。",
+                ),
+                file=sys.stderr,
+            )
+            return True
+    if re.search(r"(?:^|[;&|]\s*)ssh\s+[^\n;&|]*[\"'][^\n]*[\"']", masked):
+        print(
+            _block_notice(
+                "blocked: `ssh`へ引用したコード文字列を渡す入力は、ローカルと接続先で引用を解釈する。",
+                fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを転送し、接続先ではそのファイルを実行する。",
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
+
+
+def _check_bash_heredoc_chain(command: str) -> bool:
+    """heredocと本文外のパイプ又は追加リダイレクトの併用を遮断する。"""
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    if "<<" not in masked:
+        return False
+    without_heredoc = re.sub(r"<<-?\s*['\"]?[A-Za-z_][A-Za-z_0-9]*['\"]?", "", masked)
+    if not re.search(r"\||(?:^|\s)(?:>>?|<)\s*\S", without_heredoc):
+        return False
+    print(
+        _block_notice(
+            "blocked: heredocと本文外のパイプ又は追加リダイレクトを同じコマンドチェーンで併用している。",
+            fix=(
+                f"スクリプト又は本文を{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを後続のコマンドの入力にする。"
+                "本文を標準入力へ渡すだけであれば、パイプとリダイレクトを伴わないheredoc単独の実行にする。"
+            ),
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+def _check_bash_env_full_read(command: str) -> bool:
+    """内容出力コマンドによる`.env`系ファイルの全文又は範囲読取を遮断する。"""
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        name = pathlib.PurePath(segment.tokens[0]).name
+        if name not in _ENV_READ_COMMANDS:
+            continue
+        for token in segment.tokens[1:]:
+            if token.startswith("-") or token in {"-", "/dev/stdin"}:
+                continue
+            normalized = token.rstrip("/")
+            basename = pathlib.PurePath(normalized).name
+            if basename.endswith((".example", ".sample")):
+                continue
+            if _ENV_BASENAME_PATTERN.fullmatch(basename):
+                print(
+                    _block_notice(
+                        f"blocked: `{name}`による`.env`系ファイルの内容出力は禁止されている。対象: {token}",
+                        fix="必要なキーの値だけを`grep`、`sed`又は`awk`で抽出する。",
+                    ),
+                    file=sys.stderr,
+                )
+                return True
+    return False
+
+
+def _check_bash_explicit_path_exists(command: str, cwd: str) -> bool:
+    """単純な`rg`・`ugrep`・`cat`の展開を含まない明示パスが存在するか検査する。"""
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    if not cwd or any(operator in masked for operator in ("|", ";", "&&", "||", "\n", ">", "<")):
+        return False
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    name = pathlib.PurePath(tokens[0]).name
+    if name in {"rg", "ugrep"} and len(tokens) == 3 and not tokens[1].startswith("-"):
+        candidates = [tokens[2]]
+    elif name == "cat" and len(tokens) >= 2:
+        candidates = [token for token in tokens[1:] if not token.startswith("-")]
+    else:
+        return False
+    for candidate in candidates:
+        if candidate in {"-", "/dev/stdin"} or any(character in candidate for character in "*$?[]{}~`"):
+            continue
+        path = pathlib.Path(candidate)
+        resolved = path if path.is_absolute() else pathlib.Path(cwd) / path
+        if not resolved.exists():
+            print(
+                _block_notice(
+                    f"blocked: 明示された検索・読取パスが存在しない。対象: {candidate}",
+                    fix="対象パスを現行の作業ディレクトリから解決し、実在するパスを指定する。",
+                ),
+                file=sys.stderr,
+            )
+            return True
+    return False
 
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
@@ -1234,7 +1465,7 @@ def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) ->
 
 def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
     """区間が`--help`以外のオプションを持たないヘルプ専用呼び出しかを返す。"""
-    arguments = segment.tokens[1:]
+    arguments = without_shell_redirections(segment.tokens[1:])
     return (
         segment.resolved
         and "--" not in arguments
@@ -1261,7 +1492,7 @@ def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | N
 
 
 def _check_bash_atk_help_observation(command: str, session_id: str) -> str | None:
-    """未観測の最下層`atk`サブコマンドへ、CLI定義から生成したヘルプを添える。"""
+    """未観測の最下層`atk`サブコマンドへ、CLI定義から生成した受理形式を添える。"""
     paths: list[tuple[str, ...]] = []
     for segment in _extract_execution_segments(command):
         if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
@@ -1278,9 +1509,9 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
     if not missing:
         return None
     try:
-        from agent_toolkit.atk import format_command_help  # pylint: disable=import-outside-toplevel
+        from agent_toolkit.atk import format_command_contract  # pylint: disable=import-outside-toplevel
 
-        help_sections = [format_command_help(path) for path in missing]
+        help_sections = [format_command_contract(path) for path in missing]
     except Exception as error:  # noqa: BLE001 - Hookはヘルプ生成不能を安全側へ倒す
         print(
             _block_notice(
@@ -1299,11 +1530,76 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
             file=sys.stderr,
         )
         return "block"
-    bodies = [f"$ atk {' '.join(path)} --help\n{section}" for path, section in zip(missing, help_sections, strict=True)]
+    normalized_missing = [" ".join(path) for path in missing]
+
+    def _record_injected_help(current_state: dict) -> dict | None:
+        current = current_state.get(_ATK_HELP_OBSERVED_KEY)
+        values = [value for value in current if isinstance(value, str)] if isinstance(current, list) else []
+        additions = [value for value in normalized_missing if value not in values]
+        if not additions:
+            return None
+        current_state[_ATK_HELP_OBSERVED_KEY] = [*values, *additions]
+        return current_state
+
+    update_state(session_id, _record_injected_help)
+    bodies = [f"atk {' '.join(path)}: {section}" for path, section in zip(missing, help_sections, strict=True)]
     return _llm_notice(
-        "info: 未観測のatkサブコマンドについて、実行前に現行ヘルプを案内する。\n" + "\n".join(bodies),
+        "info: 未観測のatkサブコマンドについて、実行前に受理形式を案内する。\n" + "\n".join(bodies),
         tag="notice",
     )
+
+
+def _check_bash_atk_options(command: str) -> bool:
+    """公開済み最下層`atk`サブコマンドの未対応オプションを実行前に遮断する。"""
+    from agent_toolkit.atk import command_option_contract  # pylint: disable=import-outside-toplevel
+
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        path = _recognized_atk_command_path(segment.tokens)
+        if path is None:
+            continue
+        contract = command_option_contract(path)
+        if contract is None:
+            continue
+        flags, valued, _positionals = contract
+        arguments = list(segment.tokens[1 + len(path) :])
+        index = 0
+        while index < len(arguments):
+            token = arguments[index]
+            if token == "--":
+                break
+            option_name = token.split("=", 1)[0]
+            if token in flags or option_name in valued:
+                if option_name in valued and "=" not in token:
+                    index += 1
+            elif (
+                token.startswith("-")
+                and not token.startswith("--")
+                and any(
+                    option.startswith("-")
+                    and not option.startswith("--")
+                    and token.startswith(option)
+                    and len(token) > len(option)
+                    for option in valued
+                )
+                or token.startswith("-")
+                and not token.startswith("--")
+                and len(token) > 2
+                and all(f"-{character}" in flags for character in token[1:])
+            ):
+                pass
+            elif token.startswith("-") and not re.fullmatch(r"-\d+(?:\.\d+)?", token):
+                print(
+                    _block_notice(
+                        f"blocked: `atk {' '.join(path)}`が受理しないオプションである。対象: {token}",
+                        fix="実行前案内に示された受理オプションへ修正するか、`--help`を単独で確認する。",
+                    ),
+                    file=sys.stderr,
+                )
+                return True
+            index += 1
+    return False
 
 
 def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
@@ -1361,9 +1657,26 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], fr
 
 
 _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
-    "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
+    "Git管理対象の内容は`git grep`、Git管理外・正規表現・除外設定に従う内容は`rg`を使う。"
+    "隠し対象を母集団に含める`rg`には`--hidden`を付け、属性・ディレクトリ構造の探索は`find`を使う。"
     "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。"
 )
+
+
+def _describe_grep_target_worktrees(targets: Sequence[str], base: pathlib.Path) -> str:
+    """遮断対象ごとのGit作業ツリー判定を通知本文の1文へまとめる。
+
+    判定は遮断が確定した経路でだけ実行する。属する場合はrootを併記して、受領した実行主体が
+    追加の取得なしに`git -C <root> grep`の形を組み立てられる状態にする。
+    判定できない対象はGit管理外として示し、遮断の可否は変えない。
+    """
+    described: list[str] = []
+    for target in targets:
+        candidate = pathlib.Path(target).expanduser()
+        resolved = candidate if candidate.is_absolute() else base / candidate
+        root = _git_status.get_worktree_root(str(resolved))
+        described.append(f"`{target}`はGit作業ツリー`{root}`に属する" if root is not None else f"`{target}`はGit管理外")
+    return "、".join(described)
 
 
 def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str | None:
@@ -1371,9 +1684,11 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
 
     検索対象の内容、ファイル種別及びリンク構造はBash入力に現れないため、`rg`と出力及び終了状態が
     同値になる入力集合を構文だけから確定できない。
+    遮断が確定した経路では、対象ごとにGit作業ツリーへ属するかを判定して通知本文へ載せる。
+    実行主体が`git grep`と`rg`のどちらを選ぶかを別の呼び出しで取得せずに決められるようにするためである。
     """
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
-    detected = False
+    targets: list[str] | None = None
     for pipeline in _extract_execution_pipelines(command):
         for segment in pipeline:
             if not segment.resolved or segment.tokens[0] not in _GREP_COMMANDS:
@@ -1397,7 +1712,7 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     for token in raw_options
                 )
                 if has_recursive_option and not has_exclusion:
-                    detected = True
+                    targets = []
                     break
                 continue
             files, options = parsed
@@ -1405,16 +1720,20 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                 continue
             if options & {"--include", "--exclude", "--exclude-dir"}:
                 continue
-            if not files or any(token != "-" and (token.endswith("/") or (base / token).is_dir()) for token in files):
-                detected = True
+            directories = [token for token in files if token != "-" and (token.endswith("/") or (base / token).is_dir())]
+            if not files or directories:
+                targets = directories
                 break
-        if detected:
+        if targets is not None:
             break
-    if not detected:
+    if targets is None:
         return None
+    # operandを解決できない区間と、operandを省略した呼び出しは実効の走査起点であるcwdを対象とする。
+    described = _describe_grep_target_worktrees(targets or [str(base)], base)
     print(
         _block_notice(
-            "block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。",
+            "block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。"
+            f"対象の判定: {described}。",
             fix=_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX,
         ),
         file=sys.stderr,
@@ -1970,8 +2289,13 @@ _LS_LONG_OPTIONS_WITH_VALUE = frozenset(
 _LS_LONG_OPTIONS_WITH_OPTIONAL_VALUE = frozenset({"--classify", "--color", "--hyperlink"})
 
 
-def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
-    """`find`区間が高容量領域だけを対象とし、走査範囲を限定しない場合に真を返す。"""
+def _find_unbounded_start_paths(tokens: Sequence[str]) -> list[str] | None:
+    """走査範囲を限定しない`find`区間の起点パスを返す。
+
+    `-prune`・`-maxdepth`・`-xdev`・`-mount`のいずれかを対象限定とみなす。
+    限定がある場合と、範囲を制限し得る未知のオプションを含む場合は、限定の有無を構文だけから
+    確定できないためNoneを返す。起点を省略した呼び出しもNoneを返す。
+    """
     index = 1
     while index < len(tokens) and tokens[index] in _FIND_GLOBAL_OPTIONS:
         index += 1
@@ -1982,18 +2306,33 @@ def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
             break
         paths.append(token)
         index += 1
-    if not paths or not all(_is_high_capacity_home_target(path) for path in paths):
-        return False
+    if not paths:
+        return None
     expression = tokens[index:]
     if any(token in _FIND_BOUNDS for token in expression):
-        return False
-    return all(
+        return None
+    known_expression = all(
         not token.startswith("-")
         or token in _FIND_KNOWN_EXPRESSION_OPTIONS
         or token.startswith("-newer")
         and len(token) == len("-newer") + 2
         for token in expression
     )
+    return paths if known_expression else None
+
+
+def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """`find`区間が高容量領域だけを対象とし、走査範囲を限定しない場合に真を返す。"""
+    paths = _find_unbounded_start_paths(tokens)
+    return paths is not None and all(_is_high_capacity_home_target(path) for path in paths)
+
+
+def _find_traverses_filesystem_root(tokens: Sequence[str]) -> bool:
+    """`find`区間がファイルシステムの根を起点とし、走査範囲を限定しない場合に真を返す。"""
+    if not tokens or tokens[0] != "find":
+        return False
+    paths = _find_unbounded_start_paths(tokens)
+    return paths is not None and any(not path.rstrip("/") for path in paths)
 
 
 def _ls_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
@@ -2075,6 +2414,36 @@ def _check_bash_unbounded_home_traversal(command: str) -> str | None:
         tag="warn",
         removable_cause=True,
     )
+
+
+_UNBOUNDED_ROOT_TRAVERSAL_FIX = (
+    "探索する対象を含むディレクトリを走査の起点へ指定する。"
+    "根からの探索が必要な場合は`-maxdepth`で深さを限定するか、`-prune`で走査対象を限定する。"
+)
+
+
+def _check_bash_unbounded_root_traversal(command: str) -> str | None:
+    """走査範囲を限定しないファイルシステムの根からの`find`を初回から遮断する。
+
+    根からの走査は`/proc`・`/sys`とマウント先を含み、実用的な時間で終わらない。
+    観測事象では発行した委譲先の応答が返らなくなり、背景ジョブの停止を要した。
+    この停止は最初の発行で生じるため、1件目を警告として通過させる形にせず初回から遮断する。
+    高容量のユーザー領域を起点とする走査は`_check_bash_unbounded_home_traversal`の警告で扱う。
+    """
+    if not any(
+        segment.resolved and _find_traverses_filesystem_root(segment.tokens)
+        for pipeline in _extract_execution_pipelines(command)
+        for segment in pipeline
+    ):
+        return None
+    print(
+        _block_notice(
+            "block: 走査範囲を限定しない`find`をファイルシステムの根から実行している。",
+            fix=_UNBOUNDED_ROOT_TRAVERSAL_FIX,
+        ),
+        file=sys.stderr,
+    )
+    return "block"
 
 
 # --- Bash: codex exec未決事項の念押し ---

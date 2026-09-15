@@ -25,6 +25,7 @@ LLM宛て出力は`agent_toolkit._hooks.notice`の整形関数経由で整形す
 agent-toolkitはpytoolsの依存パッケージとして通常のimportで解決する。
 """
 
+import contextlib
 import json
 import pathlib
 import re
@@ -75,6 +76,8 @@ def main(payload_text: str) -> int:
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
     session_id_raw = payload.get("session_id", "")
     session_id = session_id_raw if isinstance(session_id_raw, str) else ""
+    cwd_raw = payload.get("cwd", "")
+    cwd = cwd_raw if isinstance(cwd_raw, str) else ""
     dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
 
     # --- block 系 check（最初の違反で exit 2）---
@@ -110,7 +113,7 @@ def main(payload_text: str) -> int:
         warnings.append(personal_warning)
     if dotfiles_warn is not None:
         warnings.append(dotfiles_warn)
-    skill_warning = _agent_toolkit_edit_skill_warning(tool_name, file_path, session_id, dotfiles_root)
+    skill_warning = _agent_toolkit_edit_skill_warning(tool_name, file_path, session_id, dotfiles_root, cwd)
     if skill_warning is not None:
         warnings.append(skill_warning)
     reference_docs_warning = _reference_docs_warning(tool_name, file_path, session_id, dotfiles_root)
@@ -572,12 +575,17 @@ def _agent_toolkit_edit_skill_warning(
     file_path: str,
     session_id: str,
     dotfiles_root: pathlib.Path,
+    cwd: str,
 ) -> str | None:
     """`agent-toolkit/` 配下編集時の `agent-toolkit-edit` スキル未起動警告を返す。
 
     `agent-toolkit-edit` スキルは bump 種別判定・行数規定・編集手順を提供する。
     PostToolUse (`pytools/claude_hook/posttooluse.py`) が当該スキル呼び出しを観測し
     セッション状態の `agent_toolkit_edit_skill_invoked` を真にする。
+
+    当該スキルを起動できないセッションには起動を案内せず、同じ判断材料を持つファイルの
+    絶対パスを案内する。案内した手段を実行できない受領側が、警告だけでは判断材料へ
+    到達できない状態を避けるためである。
     """
     if tool_name not in {"Write", "Edit", "MultiEdit"}:
         return None
@@ -588,12 +596,43 @@ def _agent_toolkit_edit_skill_warning(
     state = read_state(session_id)
     if state.get("agent_toolkit_edit_skill_invoked", False):
         return None
+    if _is_agent_toolkit_edit_skill_resolvable(cwd, dotfiles_root):
+        return (
+            "editing files under `agent-toolkit/` without invoking the"
+            " `agent-toolkit-edit` skill first."
+            " Invoke the skill to load bump policy, 200-line guideline,"
+            " and editing workflow before proceeding."
+        )
+    documents = ", ".join(f"`{path}`" for path in _agent_toolkit_edit_skill_documents(dotfiles_root))
     return (
-        "editing files under `agent-toolkit/` without invoking the"
-        " `agent-toolkit-edit` skill first."
-        " Invoke the skill to load bump policy, 200-line guideline,"
+        "editing files under `agent-toolkit/` from a session that cannot resolve the"
+        " `agent-toolkit-edit` skill, which lives in the dotfiles checkout and is not distributed."
+        f" Read {documents} to load bump policy, 200-line guideline,"
         " and editing workflow before proceeding."
     )
+
+
+def _is_agent_toolkit_edit_skill_resolvable(cwd: str, dotfiles_root: pathlib.Path) -> bool:
+    """`agent-toolkit-edit` スキルを当該セッションから起動できるかを返す。
+
+    当該スキルはdotfilesリポジトリ直下の `.claude/skills/` にあるプロジェクトスキルであり、
+    作業ディレクトリがdotfilesのチェックアウトに属するセッションだけが解決できる。
+    `cwd` から属するチェックアウトを確定できない場合は真を返し、現行の案内を維持する。
+    解決可否を判定できないことを案内を変える根拠にしない。
+    """
+    checkout_root = _find_git_checkout_root(cwd)
+    if checkout_root is None:
+        return True
+    return _is_dotfiles_checkout(checkout_root, dotfiles_root)
+
+
+def _agent_toolkit_edit_skill_documents(dotfiles_root: pathlib.Path) -> tuple[str, ...]:
+    """`agent-toolkit-edit` スキルが保持する判断材料のファイルを絶対パスで返す。"""
+    directory = dotfiles_root / ".claude" / "skills" / "agent-toolkit-edit"
+    documents = [directory / "SKILL.md"]
+    with contextlib.suppress(OSError):
+        documents.extend(sorted((directory / "references").glob("*.md")))
+    return tuple(str(path) for path in documents)
 
 
 # --- コーディングエージェント向け文書の参照警告 check (warn) ---
@@ -631,8 +670,9 @@ def _reference_docs_warning(
         return None
     paths = ", ".join(f"`{path}`" for path in missing)
     return (
-        f"read {paths} in this checkout before editing coding-agent documentation."
-        " Continue the edit after using Read on the missing reference documents."
+        f"the editing agent must fully read {paths} in this checkout and this session before editing"
+        " coding-agent documentation. A summary, heading list, partial Read, or another agent's Read does not"
+        " satisfy this requirement. Continue only after using Read without offset or limit on each missing file."
     )
 
 

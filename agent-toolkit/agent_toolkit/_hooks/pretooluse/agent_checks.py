@@ -24,14 +24,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / start_write / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
-
-wait:
-
-- 既存sessionの観測として通過 (pass-through)
 
 Bash:
 
@@ -106,6 +102,9 @@ from typing import TYPE_CHECKING
 
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
+from agent_toolkit._agents_server import (
+    tool_names as _agents_server_tool_names,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
 from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -121,7 +120,6 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks import (
     scratchpad_path as _scratchpad_path,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._hooks import required_reads as _required_reads  # noqa: E402
 from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
@@ -248,20 +246,16 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
 
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
-_AGENTS_SERVER_NAMESPACES = (
-    "mcp__plugin_agent-toolkit_agents_server__",
-    "mcp__agents_server__",
-)
+_AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
+    f"{namespace}{tool}"
+    for namespace in _AGENTS_SERVER_NAMESPACES
+    for tool in ("start", "start_explore", "start_shell", "start_write")
 )
-_AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_LIST_TOOLS = frozenset(f"{namespace}list" for namespace in _AGENTS_SERVER_NAMESPACES)
-_AGENTS_SERVER_TOOL_NAMES = (
-    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
-)
+_AGENTS_SERVER_TOOL_NAMES = _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
 
 # hooks.json・hooks.codex.jsonのPreToolUse matcherが被覆すべきagents_serverツール名の全体。
 # 一致検査（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
@@ -277,7 +271,7 @@ def _check_agents_server_list_repeat(session_id: str) -> bool:
     状態キー`agents_server_sessions`をキー順JSONへ正規化した指紋で前回の`list`からの
     変化を判定する。直近の遮断から5分以内の再実行は、記録できない状態変化がある経路で
     恒久的に停止しないよう通過させる。遮断する場合は、前回の結果を再利用する代替手段を
-    同じターンで実行できるためblockを返す。あわせて、状態を進める`wait`と`stop`の
+    同じターンで実行できるためblockを返す。あわせて、状態を進める`atk agents wait`と`stop`の
     呼び出し形を通知本文へ示す。
     """
     if not session_id:
@@ -313,7 +307,7 @@ def _check_agents_server_list_repeat(session_id: str) -> bool:
         _block_notice(
             "blocked: 前回の`list`から`agents_server`の状態が変化していないため、同じ結果が返る。"
             "前回の`list`の結果を再利用する。"
-            "状態を進める操作は`list`ではない。終端を待つ場合は引数を取らない`wait`を、"
+            "状態を進める操作は`list`ではない。終端を待つ場合は実行ホストで`atk agents wait`を、"
             "終端済みの委譲先を一覧から除く場合は`stop(session_id)`を発行する。"
             "これらは状態を変えるため、続けて発行する`list`は遮断されない。",
             fix="完了通知の受領後など再取得が必要な場合は、5分以内に同じ`list`を再実行すると続行できる。",
@@ -388,11 +382,9 @@ def _check_generic_agent_preference(tool_input: dict) -> str | None:
 
 # --- TaskStop: 初回遮断と再実行窓 ---
 
-_TASK_STOP_RETRY_WINDOW_SECONDS = 300
-
 
 def _check_task_stop(session_id: str, tool_input: dict) -> bool:
-    """根拠記録の無い`TaskStop`を初回遮断し、再実行窓内なら通過させる。
+    """自セッションの所有記録又は対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
 
     停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
     当該キーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
@@ -402,14 +394,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     `stall_detection_completed_at_by_task`に5分以内の一致記録がある場合も遮断しない。
     当該記録は待機手順を完了した主体が対象別に作成し、成功したPostToolUse(TaskStop)が消費する。
 
-    それ以外は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
-    直近の遮断時刻のPOSIX秒）で判定する。値が存在し現在時刻との差が
-    `_TASK_STOP_RETRY_WINDOW_SECONDS`以下なら通過（偽を返す）し、それ以外は値を
-    現在時刻へ更新して遮断（真を返す）する。
-
-    ここで保存する時刻は再実行許可窓の判定にのみ用いる値であり、状態ファイル自体の
-    回収期限（`_session_state.STALE_STATE_MAX_AGE_SECONDS`によるmtime基準の14日）とは
-    別の寿命を持つ。
+    いずれの記録も無い対象は、再実行回数にかかわらず遮断する。
     """
     now = time.time()
     state = read_state(session_id)
@@ -418,18 +403,10 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     targets = target_ids(tool_input)
     if targets & recorded_ids or has_recent_completion(session_id, targets, now=now):
         return False
-    blocked_at = state.get("task_stop_blocked_at")
-    if isinstance(blocked_at, (int, float)) and now - blocked_at <= _TASK_STOP_RETRY_WINDOW_SECONDS:
-        return False
-
-    def _mark_blocked(current: dict) -> dict | None:
-        current["task_stop_blocked_at"] = now
-        return current
-
-    update_state(session_id, _mark_blocked)
     print(
         _block_notice(
-            "blocked: TaskStop。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
+            "blocked: TaskStop。現在のセッションには、指定した対象の所有記録も停滞検知完了記録も無い。"
+            "背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
             "停滞検知の手順を完了した場合に限る。"
             "当該手順の完了条件は`agent-toolkit:delegation`の"
             "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節が定める。"
@@ -438,26 +415,15 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
             "ユーザーの介入があった場合は、既定では稼働中の委譲先へ追加指示を送る。"
             "停止するのは、当該介入が委譲範囲または前提を無効にし、継続すると誤った成果物が確定する場合に限る。"
             "詳細は`agent-toolkit:delegation`「継続と新規起動」が定める。",
-            fix="停止の根拠を確認済みであれば、5分以内にTaskStopを再実行すると続行できる。",
+            fix=(
+                "自セッションが起動した対象は所有記録に一致する識別子を指定する。"
+                "その他の対象は`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節に従い、"
+                "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
+            ),
         ),
         file=sys.stderr,
     )
     return True
-
-
-def check_required_read_before_ask_user_question(session_id: str) -> str | None:
-    """質問前に判断基準文書の全文読解が未観測なら遮断理由を返す。"""
-    if not session_id:
-        return None
-    recorded = read_state(session_id).get("observed_required_reads")
-    names = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
-    if _required_reads.DOCUMENT_NAME in names:
-        return None
-    path = _required_reads.document_path()
-    return _block_notice(
-        "AskUserQuestionの判断基準となる詳細資料の全文読解を観測していない。",
-        fix=f"Readで{path}を全文読解し、同じAskUserQuestionを再実行する。",
-    )
 
 
 def _reset_plan_mode_state(session_id: str) -> None:

@@ -51,11 +51,15 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import (
     status_file as _agents_server_status_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._agents_server import (
+    tool_names as _agents_server_tool_names,
+)  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._hooks import required_reads as _required_reads  # noqa: E402
 from agent_toolkit._hooks import stop_gate as _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -69,6 +73,7 @@ from agent_toolkit._hooks.agent_id import (
 from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_execution_segments,
     extract_git_events,
+    without_shell_redirections,
 )
 from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _WARN_TAG,
@@ -264,25 +269,17 @@ _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
-_AGENTS_SERVER_NAMESPACES = (
-    "mcp__plugin_agent-toolkit_agents_server__",
-    "mcp__agents_server__",
-)
+_AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
 _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}"
     for namespace in _AGENTS_SERVER_NAMESPACES
-    for tool in ("start", "start_custom", "start_explore", "start_shell")
+    for tool in ("start", "start_custom", "start_explore", "start_write", "start_shell")
 )
-_AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_STOP_TOOLS = frozenset(f"{namespace}stop" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
-    _AGENTS_SERVER_START_TOOLS
-    | _AGENTS_SERVER_WAIT_TOOLS
-    | _AGENTS_SERVER_SEND_TOOLS
-    | _AGENTS_SERVER_KILL_TOOLS
-    | _AGENTS_SERVER_STOP_TOOLS
+    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_STOP_TOOLS
 )
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
 
@@ -381,7 +378,7 @@ def _is_nonempty_absolute_cwd(value: object) -> bool:
 
 def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_name: str) -> str | None:
     """操作ごとの正本から委譲先session識別子を返す。"""
-    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_TOOLS else tool_input
+    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS else tool_input
     value = source.get("session_id") if isinstance(source, dict) else None
     return value if isinstance(value, str) and value else None
 
@@ -410,7 +407,7 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
         return model_type if isinstance(model_type, str) else None
     if operation == "start_explore":
         return "explore_fast" if tool_input.get("fast", True) else "explore"
-    if operation == "start_shell":
+    if operation in {"start_write", "start_shell"}:
         return "explore_fast"
     return None
 
@@ -476,7 +473,7 @@ def _record_agents_server_session_state(
         record.update({"session_id": remote_session_id, "status": status})
         if model_type is not None:
             record["model_type"] = model_type
-        if operation in {"start", "start_custom", "start_explore", "start_shell"}:
+        if operation in {"start", "start_custom", "start_explore", "start_write", "start_shell"}:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
@@ -485,7 +482,7 @@ def _record_agents_server_session_state(
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
-        elif operation in {"wait", "kill"}:
+        elif operation == "kill":
             record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
         if isinstance(kill_requested, bool):
@@ -584,21 +581,16 @@ def _record_agents_server_observation_attempt(
     tool_input: dict,
     *,
     operation: str,
-    owner_agent_id: str,
 ) -> None:
-    """背景タスクへ移った`wait`・`kill`の移行通知から観測の試みだけを記録する。
+    """背景タスクへ移った`kill`の移行通知から観測の試みだけを記録する。
 
     実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
     `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
     呼び出しの受理をもって観測を試みたものとして扱い、応答境界へ到達しない経路でも
-    `pending_observation`を偽にする。`wait`は対象sessionを入力に持たないため呼出主体が所有する
-    記録の全件を対象とし、`kill`は`tool_input`の`session_id`で解決した既存記録に限る。
-    いずれも記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
+    `pending_observation`を偽にする。`tool_input`の`session_id`で解決した既存記録に限り、
+    記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
     公開状態は移行通知から確定できないため更新しない。
     """
-    if operation == "wait":
-        _clear_agents_server_pending_observation(session_id, owner_agent_id)
-        return
     if operation != "kill":
         return
     remote_session_id = tool_input.get("session_id")
@@ -675,7 +667,7 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
     help_paths: list[str] = []
     for segment in segments:
         path = _recognized_atk_command_path(segment.tokens)
-        arguments = segment.tokens[1:]
+        arguments = without_shell_redirections(segment.tokens[1:])
         if path is None or "--help" not in arguments:
             continue
         if arguments != (*path, "--help"):
@@ -683,7 +675,7 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
         normalized = " ".join(path)
         if normalized not in help_paths:
             help_paths.append(normalized)
-    if help_paths and any(text.strip() for text in _response_texts(tool_response)):
+    if help_paths:
 
         def _record_help(state: dict) -> dict | None:
             current = state.get(_ATK_HELP_OBSERVED_KEY)
@@ -786,9 +778,12 @@ def _background_task_id_from_response(value: object) -> str | None:
 
 
 def _record_background_task_id(session_id: str, task_id: str) -> None:
-    """自セッションが起動した背景タスクのIDを記録する。
+    """自セッションのツール呼び出しが返した背景タスクのIDを記録する。
 
     PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力とする。
+    記録の契機は、Bashの背景実行が成功した応答、同じ指定で失敗した応答、
+    およびツール種別を問わない背景移行通知の3つとする。
+    所有の根拠は自身の呼び出しが識別子を返したことであり、当該呼び出しの成否に依存しない。
     """
 
     def _append(state: dict) -> dict | None:
@@ -972,25 +967,6 @@ def _handle_bash_tool(
     update_state(session_id, _apply_bash_updates)
 
 
-def _record_required_read_observation(session_id: str, tool_input: dict) -> None:
-    """部分読取ではない対象文書のReadだけを全文読解として記録する。"""
-    if "offset" in tool_input or "limit" in tool_input:
-        return
-    file_path = tool_input.get("file_path")
-    if not isinstance(file_path, str) or not _required_reads.matches_document(file_path):
-        return
-
-    def _record(state: dict) -> dict | None:
-        recorded = state.get("observed_required_reads")
-        names = [value for value in recorded if isinstance(value, str)] if isinstance(recorded, list) else []
-        if _required_reads.DOCUMENT_NAME in names:
-            return None
-        state["observed_required_reads"] = [*names, _required_reads.DOCUMENT_NAME]
-        return state
-
-    update_state(session_id, _record)
-
-
 def _dispatch(payload_text: str, notices: list[str]) -> int:
     """payloadを解析し、通知本文を`notices`へ蓄積する。終了コードは常に0。"""
     parsed = _parse_hook_payload(payload_text)
@@ -999,7 +975,17 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     payload, session_id, tool_name, tool_input, cwd, event_name = parsed
     set_warning_session_id(session_id)
 
+    # 所有の根拠は、自セッションのツール呼び出しの応答が背景タスク識別子を返したことである。
+    # 起動の成否は所有の有無を変えないため、背景移行通知はツール種別と成否によらず記録する。
+    notice_task_id = _stop_gate.background_task_id_from_notice(payload.get("tool_response"))
+    if notice_task_id is not None:
+        _record_background_task_id(session_id, notice_task_id)
+
     if event_name == "PostToolUseFailure":
+        if tool_input.get("run_in_background"):
+            failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
+            if failed_task_id is not None:
+                _record_background_task_id(session_id, failed_task_id)
         exit_code = _bash_failure_exit_code(payload)
         if exit_code is None:
             reset_bash_failure_sequence(session_id)
@@ -1040,16 +1026,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         tool_response = payload.get("tool_response", {})
         structured = _extract_agents_server_structured_response(tool_response)
-        moved_to_background = _stop_gate.background_task_id_from_notice(tool_response) is not None
+        moved_to_background = notice_task_id is not None
         operation = tool_name.rsplit("__", 1)[-1]
         owner_agent_id = resolve_hook_agent_id(payload)
-        if operation == "wait":
-            _record_agents_server_observation_attempt(
-                session_id,
-                tool_input,
-                operation=operation,
-                owner_agent_id=owner_agent_id,
-            )
         if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and not moved_to_background:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
@@ -1061,7 +1040,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 session_id,
                 tool_input,
                 operation=operation,
-                owner_agent_id=owner_agent_id,
             )
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
@@ -1092,11 +1070,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 owner_agent_id=owner_agent_id,
                 remote_session_id=remote_session_id,
             )
-        return 0
-
-    # Readは対象文書の全文読取だけを状態へ記録する。
-    if tool_name == "Read":
-        _record_required_read_observation(session_id, tool_input)
         return 0
 
     if tool_name == "TaskStop":

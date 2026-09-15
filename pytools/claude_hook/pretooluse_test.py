@@ -895,13 +895,53 @@ class TestAgentToolkitEditSkillWarning:
                 "tool_name": "Write",
                 "tool_input": {"file_path": target, "content": "harmless"},
                 "session_id": "at-edit-warn",
+                "cwd": str(_DOTFILES_ROOT),
             },
             env=env,
         )
         assert result.returncode == 0
         msg = _get_additional_context(result)
         assert "agent-toolkit-edit" in msg
+        assert "Invoke the skill" in msg
         assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
+
+    def test_points_to_files_when_skill_is_not_resolvable(self, tmp_path: pathlib.Path):
+        """dotfiles外のセッションには、起動できないスキルではなく参照先の絶対パスを示す。"""
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        other_checkout = tmp_path / "other-repo"
+        (other_checkout / ".git").mkdir(parents=True)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": "at-edit-unresolvable",
+                "cwd": str(other_checkout),
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "Invoke the skill" not in msg
+        skill_dir = _DOTFILES_ROOT / ".claude" / "skills" / "agent-toolkit-edit"
+        assert str(skill_dir / "SKILL.md") in msg
+        for reference in sorted((skill_dir / "references").glob("*.md")):
+            assert str(reference) in msg
+
+    def test_keeps_skill_guidance_when_cwd_is_absent(self, tmp_path: pathlib.Path):
+        """`cwd`から所属チェックアウトを確定できない場合は現行の案内を維持する。"""
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": "at-edit-nocwd",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "Invoke the skill" in _get_additional_context(result)
 
     def test_silent_when_skill_invoked(self, tmp_path: pathlib.Path):
         target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
@@ -967,6 +1007,7 @@ class TestAgentToolkitEditSkillWarning:
                 "tool_name": "Edit",
                 "tool_input": {"file_path": target, "old_string": "a", "new_string": "b"},
                 "session_id": "at-edit-edit",
+                "cwd": str(_DOTFILES_ROOT),
             },
             env=env,
         )
@@ -1002,6 +1043,8 @@ class TestReferenceDocsWarning:
         assert result.returncode == 0
         assert "docs/development/concepts.md" in message
         assert "docs/development/incidents.md" in message
+        assert "without offset or limit" in message
+        assert "another agent's Read does not satisfy" in message
 
     def test_silent_after_both_docs_are_read_in_worktree(self, tmp_path: pathlib.Path):
         sid = "reference-worktree"
@@ -1044,7 +1087,26 @@ class TestReferenceDocsWarning:
             },
             env=self._state_env(tmp_path),
         )
-        assert "reference documents" in _get_additional_context(result)
+        assert "must fully read" in _get_additional_context(result)
+
+    def test_other_session_docs_do_not_suppress_warning(self, tmp_path: pathlib.Path):
+        self._write_state(
+            tmp_path,
+            "reference-other-session",
+            [
+                _DOTFILES_ROOT / "docs" / "development" / "concepts.md",
+                _DOTFILES_ROOT / "docs" / "development" / "incidents.md",
+            ],
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "content": "harmless"},
+                "session_id": "reference-current-session",
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert "must fully read" in _get_additional_context(result)
 
     def test_non_dotfiles_repository_is_not_targeted(self, tmp_path: pathlib.Path):
         other = tmp_path / "other"

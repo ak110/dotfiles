@@ -402,6 +402,95 @@ def test_convert_to_plan_validates_saved_plan_after_pull(
     assert parsed[0]["plan_file"] == portable
 
 
+def test_resolve_plan_base_commit_expands_seven_character_oid(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """7文字以上の一意な短縮OIDを永続保存用の40桁OIDへ解決する。"""
+    plan = _write_convert_plan(tmp_path, "abc1234")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    full_oid = "b" * 40
+
+    def resolve_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert cmd == [
+            "git",
+            "-C",
+            str(worktree),
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            "abc1234^{commit}",
+        ]
+        return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+
+    monkeypatch.setattr(mutations.subprocess, "run", resolve_run)
+
+    assert (
+        mutations._resolve_plan_base_commit(plan, worktree)  # pylint: disable=protected-access  # noqa: SLF001
+        == full_oid
+    )
+
+
+@pytest.mark.parametrize("base_commit", ["abc123", "ggggggg"])
+def test_resolve_plan_base_commit_rejects_invalid_short_oid(
+    base_commit: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """7文字の16進表現ではない計画ベースをGit実行前に拒否する。"""
+    plan = _write_convert_plan(tmp_path, base_commit)
+
+    def unexpected_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("Gitを実行してはならない")
+
+    monkeypatch.setattr(mutations.subprocess, "run", unexpected_run)
+
+    with pytest.raises(mutations.WebInputError, match="ベースコミット"):
+        mutations._resolve_plan_base_commit(  # pylint: disable=protected-access  # noqa: SLF001
+            plan,
+            tmp_path,
+        )
+
+
+def test_resolve_plan_base_commit_explains_minimum_abbreviation_length(
+    tmp_path: pathlib.Path,
+) -> None:
+    """形式不正の説明に短縮OIDの最小長を含める。"""
+    plan = _write_convert_plan(tmp_path, "a" * 65)
+
+    with pytest.raises(mutations.WebInputError, match="7文字以上"):
+        mutations._resolve_plan_base_commit(  # pylint: disable=protected-access  # noqa: SLF001
+            plan,
+            tmp_path,
+        )
+
+
+def test_resolve_plan_base_commit_rejects_unresolved_seven_character_oid(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """曖昧又は存在しない7文字以上のOIDをGitの解決失敗として拒否する。"""
+    plan = _write_convert_plan(tmp_path, "abc1234")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+
+    def resolve_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, 128, "", "fatal: ambiguous argument")
+
+    monkeypatch.setattr(mutations.subprocess, "run", resolve_run)
+
+    with pytest.raises(SystemExit) as captured:
+        mutations._resolve_plan_base_commit(  # pylint: disable=protected-access  # noqa: SLF001
+            plan,
+            worktree,
+        )
+
+    assert captured.value.code == 2
+    assert "対応commitを解決できませんでした" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     ("state", "message", "expected"),
     [

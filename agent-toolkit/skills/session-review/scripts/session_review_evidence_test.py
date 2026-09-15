@@ -863,26 +863,6 @@ def test_elapsed_until_after_reconciliation_includes_finalization_time(
     ]
 
 
-def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
-    """再照合の固定点と成果確定後の計測時刻を規範本文から検査する。"""
-    skill = (pathlib.Path(__file__).resolve().parents[1] / "SKILL.md").read_text(encoding="utf-8")
-    problem_candidates = skill.split("## 問題候補の抽出\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-    elapsed_analysis = skill.split("## 所要時間の分析と改善提案\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-
-    fixed_point_rule = (
-        "手順1が返した観測境界を照合済み境界の初期値とし、"
-        "追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受領していない状態になるまで"
-        "次を繰り返す。"
-    )
-    elapsed_boundary_rule = (
-        "振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
-    )
-
-    assert fixed_point_rule in problem_candidates
-    assert elapsed_boundary_rule in elapsed_analysis
-    assert "手順4" not in elapsed_analysis
-
-
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
@@ -5157,14 +5137,34 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
 
     candidates = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
     candidate_items = [item for item in candidates if item["kind"] == "candidate"]
+    assert [item["candidate_id"] for item in candidate_items] == ["c0001", "c0002"]
     assert [(item["locators"], item["candidate_kind"]) for item in candidate_items] == [
         ([{"record": "main", "line": 4}], "escalation"),
-        ([{"record": "main", "line": 6}], "hook-notice"),
         ([{"record": "main", "line": 5}], "warning"),
     ]
-    assert candidates[-1]["excluded"] == {"initial-request": 1}
-    assert candidates[-1]["included_locator_count"] == 3
-    assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 4} in bundle_events
+    assert candidates[-1]["excluded"] == {"hook-notice-informational": 1, "initial-request": 1}
+    assert candidates[-1]["included_locator_count"] == 2
+    assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 3} in bundle_events
+    candidate_evidence = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [item["candidate_id"] for item in candidate_evidence] == ["c0001", "c0002"]
+    assert [item["locators"] for item in candidate_evidence] == [item["locators"] for item in candidate_items]
+    assert all(item["events"] for item in candidate_evidence)
+    assert all(item["text_limit"] == 2000 and item["user_context_limit_per_side"] == 1 for item in candidate_evidence)
+    assert all(item["source_chars"] > 0 for item in candidate_evidence)
+    assert {
+        "kind": "bundle-file",
+        "path": str((bundle_dir / "candidate-evidence.jsonl").resolve()),
+        "count": 2,
+    } in bundle_events
+    metrics = next(item for item in bundle_events if item["kind"] == "bundle-evidence-metrics")
+    assert metrics["candidate_evidence_lines"] == 2
+    assert metrics["decision_count"] == 2
+    assert metrics["analysis_group_count"] == 2
+    assert metrics["full_scan_lines"] > metrics["candidate_evidence_lines"]
+    assert metrics["full_scan_bytes"] > 0
+    assert metrics["candidate_evidence_bytes"] > 0
 
     assert {event["event_kind"]: event["count"] for event in bundle_events if event["kind"] == "bundle-kind-count"} == {
         "user": 1,
@@ -5194,6 +5194,47 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     assert [event for event in bundle_events if str(event["kind"]).startswith("stats-")] == []
     assert bundle_events[-1] == {"kind": "unresolved-record", "record": missing_thread, "line": 9}
     assert [event for event in bundle_events if event["kind"] == "hook-notice"] == []
+
+
+def test_candidates_bound_hook_notice_variants_and_keep_each_emitter() -> None:
+    """block/warn通知は発生源ごとに上位5変種の代表位置へ限定し、発生総数を保持する。"""
+    notices: list[dict] = []
+    line = 1
+    for variant, count in enumerate(range(7, 0, -1)):
+        for _ in range(count):
+            notices.append(
+                {
+                    "kind": "hook-notice",
+                    "record": "main",
+                    "line": line,
+                    "text": f"warn: variant-{variant}",
+                    "hook": "agent-toolkit/pretooluse",
+                    "hook_name": "PreToolUse:Bash" if variant % 2 == 0 else "PostToolUse:Bash",
+                    "tag": "warn",
+                }
+            )
+            line += 1
+    notices.append(
+        {
+            "kind": "hook-notice",
+            "record": "main",
+            "line": line,
+            "text": "block: another-emitter",
+            "hook": "dotfiles/pretooluse",
+            "hook_name": "PreToolUse:Write",
+            "tag": "block",
+        }
+    )
+
+    events = evidence._candidate_events([], [], notices)  # pylint: disable=protected-access
+    candidates = [event for event in events if event["kind"] == "candidate"]
+    first_emitter = [candidate for candidate in candidates if candidate["event_key"][0] == "agent-toolkit/pretooluse"]
+
+    assert [candidate["occurrence_count"] for candidate in first_emitter] == [7, 6, 5, 4, 3]
+    assert all(candidate["count"] == 1 and len(candidate["locators"]) == 1 for candidate in candidates)
+    assert any(candidate["event_key"][0] == "dotfiles/pretooluse" for candidate in candidates)
+    assert events[-1]["included_locator_count"] == 6
+    assert events[-1]["excluded"] == {"hook-notice-detail-budget": 23}
 
 
 def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
@@ -5242,6 +5283,45 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
             "samples": [{"record": "main", "line": 2}, {"record": "main", "line": 3}, {"record": "main", "line": 4}],
         }
     ]
+
+
+def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """候補の直前と直後の双方に利用者介入がある場合、両側をそれぞれ上限まで証拠へ残す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "最初の依頼"}},
+            {"type": "user", "message": {"role": "user", "content": "直前の介入"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": "失敗"}],
+                },
+            },
+            {"type": "user", "message": {"role": "user", "content": "直後の介入"}},
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    capsys.readouterr()
+    candidate_evidence = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    contexts = [
+        (event["direction"], event["line"], event["text"])
+        for item in candidate_evidence
+        for event in item["events"]
+        if event["kind"] == "user-context"
+    ]
+    assert ("before", 2, "直前の介入") in contexts
+    assert ("after", 4, "直後の介入") in contexts
 
 
 def test_bundle_stdout_excludes_saved_stats_and_hook_notices(

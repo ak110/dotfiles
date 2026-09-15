@@ -32,7 +32,7 @@
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、検査へ与えるのと同じ環境変数を与えて`mise trust`を実行する
     - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
-  - `agent-toolkit:process-wi`の終端では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)の判定に従ってリリースPRを作成し、マージまで実施する
+  - `agent-toolkit:process-wi`では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)に従い、選定工程の完了時点で第1条件を評価して記録し、終端でリリースPRを作成してマージまで実施する
   - それ以外の経路では、リリースPRの作成を手動で行う。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
   - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はリリース経路によらず必要であり、更新漏れは`develop`へのpushで実行されるCIの`statusline-version` jobが検出する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
@@ -85,8 +85,10 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
   - 記述スタイル・構成・記述量の指針は自作規範を優先する
 - 本リポジトリでは`claude-code-setup:claude-automation-recommender`が推奨する自動化手段の選定を適用対象外とし、
   `agent-toolkit:writing-standards`の振り分け規定と`agent-toolkit-edit`の「フック実装の配置先」に従う
-- コーディングエージェント向け文書を編集する前に、`docs/development/concepts.md`と
-  `docs/development/incidents.md`を読み、確定済みの方針・事故対策との整合を確認する。
+- コーディングエージェント向け文書を編集する実際の主体は、編集前に同じ実行コンテキストで
+  `docs/development/concepts.md`と`docs/development/incidents.md`の全文を読み、
+  確定済みの方針・事故対策との整合を確認する。要約、見出し一覧、部分読取及び別主体の読取結果は、
+  編集主体自身による全文読了の代わりにしない。
   編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
 - 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
   修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。
@@ -105,6 +107,9 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
 `agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
 `project_notes`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
 本節の適用対象となる規範を変更するAWIには、当該変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
+反映先に本リポジトリのコーディングエージェント向け文書を含むAWIには、`docs/development/concepts.md`と`docs/development/incidents.md`を編集主体自身が同じセッションで全文読む要求も書く。
+対象かどうかの判定は、当該AWIが挙げる反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行う。
+レーン担当は選定工程の固定出力ファイルから自レーンの`project_notes`を読むため、メインの起動プロンプトへ当該要求を再掲しない。
 メインは、`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、当該項目のファイル名と対象ファイルのパスを渡す。
 当該レーンで規範の変更を確定した主体は、同じレーンの以降の委譲先の起動プロンプトへ変更後の文面を明示して渡す。並行する他のレーンは当該変更を統合前に取得できないため、レーンをまたぐ伝播は本節の対象としない。
 

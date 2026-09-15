@@ -38,6 +38,72 @@ def test_git_log_decorate_is_inserted_after_heredoc() -> None:
     assert updated == "cat <<'EOF'\ngit log in body\nEOF\ngit log --decorate -3"
 
 
+class TestGitCommitVerificationNotice:
+    """commit前の未検証警告が、委譲先セッションの検証記録を判定の入力に含めることを検証する。"""
+
+    _WARNING = "テストを実行せずにcommit"
+
+    @staticmethod
+    def _delegate_record(delegate_session_id: str) -> dict:
+        """`agents_server_sessions`が保持する委譲先1件分の公開状態を返す。"""
+        return {"session_id": delegate_session_id, "status": "completed"}
+
+    @staticmethod
+    def _commit(tmp_path: pathlib.Path, session_id: str) -> subprocess.CompletedProcess[str]:
+        """未検証のセッションでcommitを試みるPreToolUseを実行する。"""
+        return _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'sample'"},
+                "session_id": session_id,
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+
+    def test_skips_warning_when_a_delegate_session_executed_tests(self, tmp_path: pathlib.Path) -> None:
+        """委譲先のいずれかが検証済みであれば警告を返さない。"""
+        session_id = "commit-with-verified-delegate"
+        _write_session_state(tmp_path, "delegate-verified", {"test_executed": True})
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "test_executed": False,
+                "agents_server_sessions": {
+                    "delegate-missing-state": self._delegate_record("delegate-missing-state"),
+                    "delegate-verified": self._delegate_record("delegate-verified"),
+                },
+            },
+        )
+
+        assert self._WARNING not in _additional_context(self._commit(tmp_path, session_id))
+
+    def test_warns_when_no_delegate_session_executed_tests(self, tmp_path: pathlib.Path) -> None:
+        """委譲先の記録が不在または未検証であれば警告を返す。"""
+        session_id = "commit-with-unverified-delegate"
+        _write_session_state(tmp_path, "delegate-unverified", {"test_executed": False})
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "test_executed": False,
+                "agents_server_sessions": {
+                    "delegate-missing-state": self._delegate_record("delegate-missing-state"),
+                    "delegate-unverified": self._delegate_record("delegate-unverified"),
+                },
+            },
+        )
+
+        assert self._WARNING in _additional_context(self._commit(tmp_path, session_id))
+
+    def test_warns_when_session_has_no_delegate(self, tmp_path: pathlib.Path) -> None:
+        """委譲先の記録自体を持たないセッションでは警告を返す。"""
+        session_id = "commit-without-delegate"
+        _write_session_state(tmp_path, session_id, {"test_executed": False})
+
+        assert self._WARNING in _additional_context(self._commit(tmp_path, session_id))
+
+
 class TestManifestSsot:
     """Claude Code向け正本manifest間のSSOT整合性。
 

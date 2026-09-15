@@ -112,6 +112,7 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     content = paths[-1].read_text(encoding="utf-8")
     assert "main:2" in content and "一次選別で除外" in content
     assert "main:5" in content and "事前検査不足" in content
+    assert content.count("| a1 | 入力不備 | 事前検査不足 | 適用漏れ | 入口で検査する |") == 1
     assert "候補2件、locator3件、過不足0件、重複0件" in content
     assert (
         tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS

@@ -31,14 +31,17 @@ Codex CLIが起動するMCPサーバープロセスへは、`codex app-server`�
 | 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイルの`host_session_id`を起動元のsession識別子へ解決する主体 | 当該sessionを起動したMCPサーバー |
 | 状態ファイルの生存の印`heartbeat_at` | 状態ファイルを書き込むMCPサーバー | statusline、同じルートに属する他のMCPサーバー | 当該状態ファイルを書き込むMCPサーバー |
 | 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在 | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成と削除）、待機CLI（自身の書込主体が公開した結果だけを削除） |
-| 待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<session_id>.lock`のファイルロック | `atk agents wait` | `atk agents wait`。ロックファイル自体は解放後も保持する |
+| CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop時の未観測作業の助言 | `atk agents wait`。1書込主体につき同時に1実行だけが全対象を待ち、ロックファイル自体は解放後も保持する |
+| CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | `atk agents wait`（追加と削除）。助言側は読むだけで内容を変更しない |
 | 全sessionの終端登録と再開情報 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー | 当該sessionを所有するMCPサーバー |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | session-reviewの証拠抽出器 | agents_serverのCodex backend |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify` |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`系応答の`session_id`を共有状態ファイルへ照合する） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
+| 委譲先CLI自身の診断記録 | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<プロセスID>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成と、保持世代を超えた記録の削除） |
 
 状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
+診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
 
 索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
 MCPサーバーは`start`系の応答を返す前に起動したsessionを状態ファイルへ同期反映する。PostToolUseフックは応答の`session_id`を状態ファイルへ照合し、一意に得たルートsession識別子を索引へ書く。公開応答へ索引用の内部識別子を加えない。
@@ -50,6 +53,9 @@ MCPサーバーは`start`系の応答を返す前に起動したsessionを状態
 - 対象の状態について、上表の「更新できる主体」が2つ以上あるかを確認する。2つ以上ある場合は、片方だけを読んで網羅を判定しない。
 - MCPサーバーのメモリーにだけ存在する状態は、プロセス境界の外にある`atk`のCLIとフックからは更新できない。当該状態を判定へ用いる経路が、CLI経由の操作でも成立するかを個別に確認する。
 - 同じ事実を2つの表現で保持する状態を新設しない。未回収の終端結果は、当該ファイルを書いた主体の公開台帳とファイルの在否から`published`、`consumed`、`unpublished`へ区分する。回収済みと判定するのは`consumed`だけであり、ファイルが不在であることだけを根拠にしない。`SessionState.result_delivered`はファイルを削除する契機を表す内部状態であり、ファイル表現を持たない経路に限り用いる。
+- MCP待機とCLI待機は`status_file.take_result`で所有者照合、排他取得、本文の読取及び削除を1つの区間として実行する。個別の待機入口で結果ファイルを読んでから削除する処理を持たない。
+- 待機所有権と待機対象の登録は、いずれも書込主体を単位とする名前空間で表す。読む側も同じ単位で読み、対象session識別子を名前とするロック又は登録を探さない。
+- `atk agents wait`の前景実行と背景実行を同じ書込主体で重ねない。後発は書込主体、対象session群及び「先行待機の終了後に再実行する」という次の操作を含む診断で終了する。対象sessionごとのロックは、動的に増える対象間で一部だけ所有する状態を生じさせるため用いない。
 
 各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルに加え、生存の印が失効した他の状態ファイルを削除できる。生存の印を持たない状態ファイルは削除しない。`results`配下は共有するため、削除できるのは結果本文を呼び出し元へ配送した後と、`stop`による明示的な破棄の後だけとする。経過時間を条件とする削除は行わない。`notices`および`hosts`配下も共有するため、各書込主体が削除できるのは保持期限を超えたファイルだけとする。`sessions`配下の登録簿レコードを削除できるのは当該sessionを所有するMCPサーバーだけとし、削除の契機は`stop`による明示的な破棄と保持期限の経過に限る。終端を観測した待機側は当該レコードを削除しない。
 
