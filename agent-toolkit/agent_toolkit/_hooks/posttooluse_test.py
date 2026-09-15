@@ -422,6 +422,52 @@ class TestTestExecution:
             )
         assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-1", "bg-task-2"]
 
+    def test_failed_background_command_records_task_id(self, tmp_path: pathlib.Path):
+        """背景実行の起動が失敗した応答でも、返ったタスクIDを所有記録として保存する。"""
+        sid = "background-task-failure"
+        result = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": "Command running in background with ID: bg-task-failed. Exit code 1",
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-failed"]
+
+    def test_background_move_notice_records_task_id(self, tmp_path: pathlib.Path):
+        """ツール種別によらず、背景移行通知が返したタスクIDを所有記録として保存する。"""
+        sid = "background-task-notice"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_explore",
+                "tool_input": {"prompt": "調査", "cwd": str(tmp_path)},
+                "tool_response": "This tool call was moved to the background as task bg-task-notice.",
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-notice"]
+
+    def test_response_without_identifier_does_not_record_task_id(self, tmp_path: pathlib.Path):
+        """識別子を持たない応答では所有記録を残さない。"""
+        sid = "background-task-none"
+        _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": "Exit code 1",
+            },
+            state_dir=tmp_path,
+        )
+        assert "background_task_ids" not in _read_state(tmp_path, sid)
+
     def test_pyfltr_mcp_run_for_agent_detected(self, tmp_path: pathlib.Path):
         """pyfltr MCPの検証成功をCLI経由と同じ状態へ記録する。"""
         sid = "test-mcp-run-for-agent"

@@ -123,7 +123,10 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 ## 背景タスク系
 
-- `background_task_ids`: PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを重複なく記録する。
+- `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から取得したタスクIDを重複なく記録する。
+  記録の契機は、Bashの`run_in_background`指定が成功した応答、同じ指定が失敗した応答、
+  およびツール種別を問わない背景移行通知の3つとする。所有の根拠は自身の呼び出しが識別子を返したことであり、
+  当該呼び出しの成否に依存しない。
   PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力として読む。
   セッション終了まで保持し、リセット経路は設けない
 - `task_stop_blocked_at`: PreToolUse(TaskStop)が遮断した時刻のPOSIX秒を記録し、同フックが再実行許可窓の判定に読む。

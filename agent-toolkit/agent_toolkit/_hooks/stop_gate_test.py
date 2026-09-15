@@ -1595,3 +1595,44 @@ class TestReadTranscriptEntriesCached:
 
         assert first_entries != second_entries
         assert second_entries == read_transcript_entries_cached(str(second_transcript))
+
+
+class TestBackgroundTaskIdFromNotice:
+    """背景移行通知から抽出する識別子の境界を固定する。"""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Tool use moved to the background as task task-1", "task-1"),
+            ("moved to the background as task task-1 and keeps running; wait for it", "task-1"),
+            ("moved to the background as task mcp_task_1\n", "mcp_task_1"),
+            ("moved to the background as task  spaced-1 ", "spaced-1"),
+        ],
+        ids=["end-of-text", "followed-by-word", "trailing-newline", "extra-space"],
+    )
+    def test_keeps_previously_extracted_identifiers(self, text: str, expected: str) -> None:
+        """従来から正しく抽出できていた形は結果が変わらない。"""
+        assert _stop_gate.background_task_id_from_notice(text) == expected
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("This tool call was moved to the background as task bg-task-notice.", "bg-task-notice"),
+            ("moved to the background as task bg-1, and the result is pending.", "bg-1"),
+            ("moved to the background as task bg-2; observe it later", "bg-2"),
+            ("(moved to the background as task bg-3)", "bg-3"),
+        ],
+        ids=["period", "comma", "semicolon", "closing-paren"],
+    )
+    def test_drops_sentence_punctuation_after_the_identifier(self, text: str, expected: str) -> None:
+        """文末の句読点は識別子へ取り込まない。"""
+        assert _stop_gate.background_task_id_from_notice(text) == expected
+
+    def test_keeps_identifiers_containing_non_word_characters(self) -> None:
+        """語構成文字以外を含む識別子も途中で打ち切らない。"""
+        assert _stop_gate.background_task_id_from_notice("moved to the background as task bash:12/34") == "bash:12/34"
+
+    def test_returns_none_without_identifier(self) -> None:
+        """識別子を伴わない本文では`None`を返す。"""
+        assert _stop_gate.background_task_id_from_notice("moved to the background as task .") is None
+        assert _stop_gate.background_task_id_from_notice("no notice here") is None

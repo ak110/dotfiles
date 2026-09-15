@@ -778,9 +778,12 @@ def _background_task_id_from_response(value: object) -> str | None:
 
 
 def _record_background_task_id(session_id: str, task_id: str) -> None:
-    """自セッションが起動した背景タスクのIDを記録する。
+    """自セッションのツール呼び出しが返した背景タスクのIDを記録する。
 
     PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力とする。
+    記録の契機は、Bashの背景実行が成功した応答、同じ指定で失敗した応答、
+    およびツール種別を問わない背景移行通知の3つとする。
+    所有の根拠は自身の呼び出しが識別子を返したことであり、当該呼び出しの成否に依存しない。
     """
 
     def _append(state: dict) -> dict | None:
@@ -972,7 +975,17 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     payload, session_id, tool_name, tool_input, cwd, event_name = parsed
     set_warning_session_id(session_id)
 
+    # 所有の根拠は、自セッションのツール呼び出しの応答が背景タスク識別子を返したことである。
+    # 起動の成否は所有の有無を変えないため、背景移行通知はツール種別と成否によらず記録する。
+    notice_task_id = _stop_gate.background_task_id_from_notice(payload.get("tool_response"))
+    if notice_task_id is not None:
+        _record_background_task_id(session_id, notice_task_id)
+
     if event_name == "PostToolUseFailure":
+        if tool_input.get("run_in_background"):
+            failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
+            if failed_task_id is not None:
+                _record_background_task_id(session_id, failed_task_id)
         exit_code = _bash_failure_exit_code(payload)
         if exit_code is None:
             reset_bash_failure_sequence(session_id)
@@ -1013,7 +1026,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         tool_response = payload.get("tool_response", {})
         structured = _extract_agents_server_structured_response(tool_response)
-        moved_to_background = _stop_gate.background_task_id_from_notice(tool_response) is not None
+        moved_to_background = notice_task_id is not None
         operation = tool_name.rsplit("__", 1)[-1]
         owner_agent_id = resolve_hook_agent_id(payload)
         if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and not moved_to_background:
