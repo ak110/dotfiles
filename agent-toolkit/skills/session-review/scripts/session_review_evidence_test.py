@@ -1265,6 +1265,22 @@ def test_claude_normal_user_entry_keeps_multiple_text_blocks_in_order(tmp_path: 
     assert [event["text"] for event in events] == ["最初の入力", "次の入力"]
 
 
+@pytest.mark.parametrize("field", ["isMeta", "turnCompanion"])
+def test_claude_runtime_generated_user_entry_is_marked(field: str, tmp_path: pathlib.Path) -> None:
+    """実行環境が生成したエントリの利用者イベントへ標識を付ける。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {"type": "user", field: True, "message": {"role": "user", "content": "[Image: original 2938x1682]"}},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event.get("runtime_generated") for event in events] == [None, True]
+
+
 def test_claude_queued_commands_keep_only_human_prompts(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
