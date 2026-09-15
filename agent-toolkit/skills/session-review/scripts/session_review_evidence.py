@@ -86,12 +86,12 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
 
 
 _HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
-_HOOK_NOTICE_KIND_LENGTH = 80
-# 通知本文の可変部（語頭から始まるパスと、UWI識別子・行番号などの数値）。種別キーの分裂を防ぐため置換する。
+_CANDIDATE_KIND_LENGTH = 80
+# 本文の可変部（語頭から始まるパスと、UWI識別子・行番号・トークン数などの数値）。種別キーの分裂を防ぐため置換する。
 # パスは語頭に限定するが、数値列は語頭・語中を問わず置換するため、`github.com/ak110/dotfiles`のような
 # 固定の識別子も数値部分が置換される。
-_HOOK_NOTICE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
-_HOOK_NOTICE_VARIABLE_PLACEHOLDER = "<var>"
+_CANDIDATE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
+_CANDIDATE_VARIABLE_PLACEHOLDER = "<var>"
 _FALLBACK_TEXT = (
     "記録は読み込めたが形式を判定できないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
@@ -2122,8 +2122,16 @@ def _hook_notice_key(body: str, hook_name: str | None) -> _HookNoticeKey | None:
     hook = matched.group("hook") if matched is not None else None
     tag = matched.group("tag") if matched is not None else None
     text = normalized[matched.end() :].strip() if matched is not None else normalized
-    kind_text = _HOOK_NOTICE_VARIABLE.sub(_HOOK_NOTICE_VARIABLE_PLACEHOLDER, text)
-    return _HookNoticeKey(hook or None, hook_name, tag or None, kind_text[:_HOOK_NOTICE_KIND_LENGTH])
+    return _HookNoticeKey(hook or None, hook_name, tag or None, _normalize_candidate_kind_text(text))
+
+
+def _normalize_candidate_kind_text(text: str) -> str:
+    """本文を、可変部を置換した先頭一定長の種別テキストへ正規化する。
+
+    可変部を残すと同じ原因の事象が複数の候補へ分かれ、長さが不足すると別原因の事象が
+    同一候補へ統合されるため、長さは実測に基づいて確定する。
+    """
+    return _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(text.split()))[:_CANDIDATE_KIND_LENGTH]
 
 
 def _scannable_records(records: list[_Record]) -> list[_Record]:
@@ -2640,7 +2648,16 @@ def _candidate_events(
     warnings: list[dict[str, Any]],
     hook_notices: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。"""
+    """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
+
+    同じ位置の事象は先に走査した種別が取る。`hook-notice`は発生源ごとの上位種への限定を持つ唯一の種別であり、
+    hookが返した本文は`escalation`と`warning`の本文としても現れるため、`hook-notice`を先頭に置く。
+    後ろに置くと、当該限定の対象にならない種別が同じ本文を取り、発生源ごとの候補数が発生件数に比例する。
+
+    候補件数の削減は、正規化した本文での集約と、利用者介入ではない入力の除外だけで行う。
+    `hook-notice`の既存の限定を除いて件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
+    判定表の位置の集合の一致を求めるため、位置を失う削減は当該検査と両立しない。
+    """
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     seen: set[tuple[str, int]] = set()
     excluded: collections.Counter[str] = collections.Counter()
@@ -2651,10 +2668,10 @@ def _candidate_events(
             first_main_user = ("main", line)
             break
     sources = (
+        ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
         ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
         ("escalation", (event for event in timeline if event.get("kind") == "failed-tool")),
         ("warning", (event for event in warnings if event.get("kind") == "warning")),
-        ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -2682,7 +2699,7 @@ def _candidate_events(
     selected_groups: list[tuple[tuple[str, ...], list[dict[str, Any]], int, int]] = []
     bounded_hook_groups: dict[tuple[str, ...], list[tuple[tuple[str, ...], list[dict[str, Any]]]]] = {}
     for key, events in groups.items():
-        if len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}:
+        if _is_bounded_hook_group(key):
             bounded_hook_groups.setdefault((key[1], key[3]), []).append((key, events))
         else:
             selected_groups.append((key, events, len(events), 0))
@@ -2720,7 +2737,7 @@ def _candidate_events(
         text = events[0].get("text")
         if isinstance(text, str):
             candidate["text"] = text
-        if len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}:
+        if _is_bounded_hook_group(key):
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
         candidates.append(candidate)
@@ -2829,7 +2846,12 @@ def _user_candidate_exclusion(
     text: str,
     first_main_user: tuple[str, int] | None,
 ) -> str | None:
-    """構造と固定接頭辞だけで利用者介入ではない入力を分類する。"""
+    """構造と固定接頭辞だけで利用者介入ではない入力を分類する。
+
+    接頭辞は、実行環境が利用者のメッセージへ挿入する本文、常駐処理の通知、及び定時promptの
+    先頭に現れる固定文字列を実記録から採取したものとする。これらは利用者の発話ではないため、
+    残すと利用者介入の候補が実際の介入件数を超える。
+    """
     if record != "main":
         return "delegated-record"
     if text.startswith(
@@ -2839,6 +2861,12 @@ def _user_candidate_exclusion(
             "This session is being continued",
             "<normative-context",
             "<task-notification>",
+            "<command-name>",
+            "<local-command-caveat>",
+            "<local-command-stdout>",
+            "A session-scoped Stop hook is now active",
+            "Goal check-in:",
+            "Stop hook feedback:",
         ),
     ):
         return "runtime-inserted"
@@ -2849,8 +2877,21 @@ def _user_candidate_exclusion(
     return None
 
 
+def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
+    """発生源ごとの上位種への限定を適用する候補キーかを返す。
+
+    対象はblock又はwarnのhook通知とする。他の種別のキーは軸の数が異なるため、
+    タグの位置を参照する前に種別と軸の数を確認する。
+    """
+    return len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}
+
+
 def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
-    """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。"""
+    """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。
+
+    軸には正規化した本文だけを置く。呼び出しごとに一意な識別子（`tool_use_id`など）を軸へ含めると、
+    同じ原因の事象が発生件数と同じ数の候補へ分かれ、集約が成立しない。
+    """
     if candidate_kind == "hook-notice":
         tag = str(event.get("tag", ""))
         return (
@@ -2862,9 +2903,9 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         )
     if candidate_kind == "escalation":
         raw_text = event.get("text")
-        first_line = " ".join(raw_text.splitlines()[0].split()) if isinstance(raw_text, str) and raw_text.splitlines() else ""
-        return candidate_kind, str(event.get("tool", "")), first_line
-    return candidate_kind, normalized_text
+        first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""
+        return candidate_kind, _normalize_candidate_kind_text(first_line)
+    return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 
 
 def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
