@@ -1,6 +1,7 @@
 # SQLAlchemy
 
 SQLAlchemy 2.0系のORMを使うコードへ適用する。
+NULLチェックには`.is_(None)`を使う。
 既定構成の`Session`は、ORM対応の問い合わせを送信する前に保留中の変更をflushする。
 このautoflushにより、入力検証で扱うべき誤りがDB制約違反として先に送出されることを防ぐ。
 

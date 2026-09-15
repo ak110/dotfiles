@@ -7,6 +7,7 @@ description: >
   AWI・UWIの本文起草時、成果物へ書く事実主張の裏付け調査時、ホスト機能の可否・入出力契約の調査時、
   セッション記録（`~/.claude/projects`配下）の集計・分析時も呼び出す。
   規範・基準・手順・目標値の妥当性、到達性、有無、置き場所を確認する場面でも呼び出す。
+  formatter・linter・testerその他の品質検査を起動する時も呼び出す。
   理解のためコードを読むだけの場合はトリガー不要。
 # 編集時の注意点:
 # 著者向けの品質基準だけを扱い、レビュー担当とレビューイーの判断指針はreview-standardsを正本とする。
@@ -50,12 +51,12 @@ description: >
 コード編集に着手する前に、次の3段を順に実施する。
 
 1. `references/writing.md`を全文読む。
-2. 後掲の対応表の左列を、編集対象の拡張子、プロジェクトの依存定義（`package.json`の`dependencies`など）又は`<script>`読み込みの技術利用痕跡へ照合し、該当する行の資料を全文読む。該当する行が1つも無い場合だけ共通品質のみで進める。
+2. 後掲の対応表の左列を、編集対象の拡張子、ファイル名、リポジトリ内のパス、プロジェクトの依存定義（`package.json`の`dependencies`など）又は`<script>`読み込みの技術利用痕跡へ照合し、該当する行の資料を全文読む。該当する行が1つも無い場合だけ共通品質のみで進める。
 3. 後掲の条件付き資料のうち、当該工程と対象に該当するものを全文読む。
 
 手順2の対応表は次のとおりとする。
 
-| 対象の拡張子・依存名 | 全文読む資料 |
+| 対象の拡張子・ファイル名・パス・依存名 | 全文読む資料 |
 | --- | --- |
 | `py` | `references/python.md` |
 | `ts`・`tsx` | `references/typescript.md` |
@@ -77,10 +78,10 @@ description: >
 
 - 計画ファイルを作成する時点: `references/design-time.md`
 - コードを編集する時点: `references/implementation-time.md`
-- 計画ファイルの作成と実装を同じ主体が続けて実施する場合、及びコードレビューを実施する場合: 上記2資料の両方
+- 計画ファイルの作成と実装を同じ主体が続けて実施する場合、及びコードレビューを実施する場合: 上記2資料の両方と`references/design-heuristics.md`
 - 設計判断を確定する時: `references/design-heuristics.md`と`references/implementation-time.md`
 - 依存の追加・更新をする時: `references/dependency-management.md`と`references/implementation-time.md`
-- テストコードを書く時: `references/testing.md`
+- テストコードを書く時、及び条件分岐と判定条件を新設又は変更する時: `references/testing.md`
 - 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`
 - 管理対象一時領域を扱う時: `references/managed-temp.md`

@@ -19,6 +19,17 @@ def test_read_blocks_large_file_without_range(tmp_path: pathlib.Path) -> None:
     assert check_large_read({"file_path": str(path)}, str(tmp_path)) is not None
 
 
+def test_block_notice_shows_offset_and_limit_pairs_covering_the_file(tmp_path: pathlib.Path) -> None:
+    """遮断本文が、実測行数と閾値から確定する`offset`と`limit`の組を全行分示す。"""
+    path = _large_file(tmp_path, lines=622)
+
+    notice = check_large_read({"file_path": str(path)}, str(tmp_path))
+
+    assert notice is not None
+    assert "offset=1, limit=350" in notice
+    assert "offset=351, limit=272" in notice
+
+
 def test_read_allows_explicit_range_and_mandatory_document(tmp_path: pathlib.Path) -> None:
     path = _large_file(tmp_path)
     instructions = _large_file(tmp_path, "AGENTS.md")

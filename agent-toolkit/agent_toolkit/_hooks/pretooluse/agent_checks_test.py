@@ -158,7 +158,7 @@ class TestBashCommandContractWarnings:
 
 
 class TestBashOutputTruncationWarning:
-    """`Bash`経由の検証コマンド出力切り詰めを補正又は遮断する。"""
+    """`Bash`経由の検証コマンド出力切り詰めを補正する。"""
 
     def test_simple_output_truncation_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
         """単純な1段切り詰めは除去し、セッション管理領域への保存へ補正する。"""
@@ -180,7 +180,7 @@ class TestBashOutputTruncationWarning:
         assert f"`pytest -q | tail -5` の標準出力を`{log_path}`へ保存した" in context
         assert "当該呼び出しは標準出力を返さない" in context
         assert "保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている" in context
-        assert "再び発行した場合は、補正ではなく遮断になる" in context
+        assert "切り詰めを含まない書き方" in context
 
     def test_partial_truncation_keeps_remaining_stdout_notice(self, tmp_path: pathlib.Path) -> None:
         """切り詰めを含まない直列区間が残る場合は、標準出力が空になると案内しない。"""
@@ -247,8 +247,12 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         assert "uv run python" in _agent_messages(result)
 
-    def test_repeated_output_truncation_is_blocked(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションで同じ補正種別の2回目は補正せず遮断する。"""
+    def test_repeated_output_truncation_is_corrected(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションで同じ補正種別の2回目以降も、遮断せず同じ変換で補正する。
+
+        補正は入力から補正後の形を一意に決められるため、反復回数を分岐条件にすると
+        当該ターンのBash呼び出しだけが失われ、反復そのものは止まらない。
+        """
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -263,19 +267,18 @@ class TestBashOutputTruncationWarning:
         second = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "uvx pyfltr run-for-agent | tail -20"},
+                "tool_input": {"command": "uvx pyfltr run | tail -20"},
                 "session_id": session_id,
             },
             env,
         )
-        assert second.returncode == 2
-        assert second.stdout == ""
-        assert "ファイルへリダイレクト" in second.stderr
-        assert "start_explore" in second.stderr
-        assert "start_shell" in second.stderr
+        assert second.returncode == 0
+        context = json.loads(second.stdout)["hookSpecificOutput"]
+        assert context["updatedInput"]["command"].startswith("uvx pyfltr run > ")
         # 分離実行を利用できない主体も本文だけで次の工程を構成できるよう、代替と正本の所在を併記する。
-        assert "当該コマンド自身が提供する対象の限定" in second.stderr
-        assert "agent-toolkit/rules/02-agent-operations.md" in second.stderr
+        body = context["additionalContext"]
+        assert "当該コマンド自身が提供する対象の限定" in body
+        assert "agent-toolkit/rules/02-agent-operations.md" in body
 
     def test_status_reference_after_truncation_is_safely_fixed(self, tmp_path: pathlib.Path) -> None:
         """切り詰め除去後の終了状態参照がproducerを指す入力へ補正する。"""

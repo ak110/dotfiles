@@ -36,6 +36,7 @@ wait:
 Bash:
 
 - 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
+- `python`の`-c`へ渡す複数文のコードと構文として成立しないコードの遮断 (block)
 - 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
@@ -91,6 +92,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 
 from __future__ import annotations
 
+import ast
 import datetime
 import importlib
 import json
@@ -136,6 +138,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     extract_git_events,
     resolve_cwd_change,
     resolve_execution_segment,
+    shell_redirection_targets,
     split_bash_segments,
     without_shell_redirections,
 )
@@ -147,7 +150,6 @@ from agent_toolkit._hooks.notice import _WARN_TAG  # noqa: E402
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    claim_bash_output_truncation_autofix,
     observed_atk_help_paths,
     read_state,
     record_atk_help_paths,
@@ -375,8 +377,7 @@ def _format_truncation_autofix_notice(saved: list[tuple[str, str]], *, total_seg
             *lines,
             remaining,
             "保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている。",
-            "同一セッションで同じ構造のBash呼び出しを再び発行した場合は、補正ではなく遮断になる。",
-            f"遮断を避ける書き方: {_OUTPUT_TRUNCATION_AVOIDANCE}",
+            f"切り詰めを含まない書き方: {_OUTPUT_TRUNCATION_AVOIDANCE}",
         ]
     )
 
@@ -389,40 +390,13 @@ _OUTPUT_TRUNCATION_AVOIDANCE = (
     "コマンド実行をstart_shellへ分離してもよい。"
     "判定条件の正本は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」とする。"
 )
-"""切り詰めを含む呼び出しを遮断されない形へ組み直す手段。
+"""切り詰めを含む呼び出しを組み直す手段。
 
-補正の通知と遮断の通知の双方が本定数を参照する。
-解消手段を一方の本文だけが持つと、補正の通知だけを読んだ実行主体は次の呼び出しでも同じ形を選び、
-遮断のたびにコマンドの組み直しと再実行を要する。
+補正の通知が本定数を参照する。
+補正は入力から補正後の形を一意に決められるため、同一セッションでの反復回数によらず同じ変換で実行を通す。
 保存と再読の形と、コマンド自身の限定指定はこの検査の判定条件に一致しないため、
-分離実行を利用できない実行主体も当該本文だけで遮断されない形へ到達できる。
+分離実行を利用できない実行主体も当該本文だけで切り詰めを含まない形へ到達できる。
 """
-
-_REPEATED_OUTPUT_TRUNCATION_FIX = _OUTPUT_TRUNCATION_AVOIDANCE
-"""切り詰め補正の反復に対する解消手段。"""
-
-
-def _check_repeated_bash_output_truncation(command: str, session_id: str) -> bool:
-    """同一セッションで同じ補正種別の2回目以降の切り詰め補正なら遮断する。
-
-    補正種別は`_split_simple_truncation`が返す後段コマンド名とし、種別ごとに初回だけ許容する。
-    別種の切り詰めを初めて含む呼び出しは、過去の別種の補正を理由に遮断しない。
-    """
-    segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    truncations = [_split_simple_truncation(segment) for segment in segments]
-    kinds = sorted({truncation[1] for truncation in truncations if truncation is not None})
-    if not session_id or not kinds:
-        return False
-    if claim_bash_output_truncation_autofix(session_id, kinds):
-        return False
-    print(
-        _block_notice(
-            "同一セッションでBash出力の切り詰め補正が同じ形で繰り返された。",
-            fix=_REPEATED_OUTPUT_TRUNCATION_FIX,
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str, str] | None:
@@ -523,6 +497,66 @@ def _check_bash_nested_code_string(command: str) -> bool:
     return False
 
 
+_PYTHON_EVAL_OPTION = "-c"
+
+
+def _python_eval_code(tokens: Sequence[str]) -> str | None:
+    """`python`の実行位置に続く`-c`の直後のコード文字列を返す。
+
+    当該形でない場合と、`-c`より前に値を取り得るオプションが現れて位置を確定できない場合はNoneを返す。
+    """
+    for index, token in enumerate(tokens):
+        if not _is_python_token(token):
+            continue
+        for offset in range(index + 1, len(tokens)):
+            argument = tokens[offset]
+            if argument == _PYTHON_EVAL_OPTION:
+                return tokens[offset + 1] if offset + 1 < len(tokens) else None
+            if not argument.startswith("-"):
+                return None
+        return None
+    return None
+
+
+def _check_bash_python_code_string(command: str) -> bool:
+    """`python`の`-c`へ複数の文又は構文として成立しないコードを渡す入力を遮断する。
+
+    `agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」は、複数行のコードを
+    評価用引数へ埋め込むことを厳守規定として禁じる。
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断する。
+    コマンド文字列とコードの引用境界が重なるとコードの改行が失われ、後続の文が前の文へ連結された
+    別のコードが成立する。当該コードが削除、上書きなどの復元できない操作を含み得るためである。
+    単一の文だけを渡す呼び出しは、引用境界が重なっても実行されるコードが変わらないため対象にしない。
+    """
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    token_groups: list[tuple[str, ...]] = []
+    with contextlib.suppress(ValueError):
+        token_groups.append(tuple(shlex.split(masked, posix=True)))
+    token_groups.extend(segment.tokens for segment in _extract_execution_segments(masked) if segment.resolved)
+    for tokens in token_groups:
+        code = _python_eval_code(tokens)
+        if code is None:
+            continue
+        try:
+            parsed = ast.parse(code)
+        except SyntaxError:
+            reason = "構文として成立しない"
+        else:
+            if len(parsed.body) < 2:
+                continue
+            reason = "複数の文を含む"
+        print(
+            _block_notice(
+                f"blocked: `python`の`-c`へ渡すコードが{reason}。"
+                "コマンド文字列とコードの引用境界が重なると、コードの改行が失われる。",
+                fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
+
+
 def _check_bash_heredoc_chain(command: str) -> bool:
     """heredocと本文外のパイプ又は追加リダイレクトの併用を遮断する。
 
@@ -558,7 +592,7 @@ def _check_bash_env_full_read(command: str) -> bool:
         name = pathlib.PurePath(segment.tokens[0]).name
         if name not in _ENV_READ_COMMANDS:
             continue
-        for token in segment.tokens[1:]:
+        for token in _argument_tokens(segment):
             if token.startswith("-") or token in {"-", "/dev/stdin"}:
                 continue
             normalized = token.rstrip("/")
@@ -630,12 +664,22 @@ def _looks_like_path(token: str) -> bool:
     return _PATH_LIKE_PATTERN.search(token) is not None
 
 
+def _argument_tokens(segment: _ExecutionSegment, start: int = 1) -> tuple[str, ...]:
+    """区間の実行位置以降から、シェルのリダイレクトを除いた引数トークン列を返す。
+
+    受理形式（オプション、位置引数、値の数）とoperandを引数の個数と並びから導く検査は、
+    本関数が返す列だけを入力とする。
+    検査ごとに`segment.tokens`を直接切り出すと、リダイレクトのトークンと宛先を引数として数える誤りが再現する。
+    """
+    return without_shell_redirections(segment.tokens[start:])
+
+
 def _path_operands(segment: _ExecutionSegment) -> list[str]:
     """区間の実行位置から、実在を検査するパス候補を取り出す。"""
     name = pathlib.PurePath(segment.tokens[0]).name
     if name not in _PATH_OPERAND_COMMANDS:
         return []
-    tokens = list(without_shell_redirections(segment.tokens[1:]))
+    tokens = list(_argument_tokens(segment))
     operands: list[str] = []
     option_terminator = False
     pattern_consumed = name not in _PATTERN_FIRST_COMMANDS
@@ -671,6 +715,11 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
     """検索・読取・複製コマンドの展開を含まない明示パスが存在するか検査する。
 
     実行位置ごとに判定するため、パイプと制御演算子を含む呼び出しも対象とする。
+    実行区間を先頭から順に走査し、先行する区間が出力リダイレクトの宛先として作成するパスは
+    以降の区間の不在判定から除く。全量を保存先へリダイレクトしてから同じ呼び出しで読む形が
+    規範の求める形であり、当該形を不在として扱うと規定どおりの操作へ毎回警告が発火するためである。
+    除外は当該コマンド文字列から書き込み先として確定できる宛先に限り、変数とglobを含むトークンは
+    現行どおり判定の対象外のまま扱う。
     不在のパスは実行位置ごとに全件を列挙し、複数パスを渡した呼び出しの是正が1回で済む形にする。
     通した場合の結果は当該コマンドが不在のパスで失敗することに限り、作業ツリーへ副作用を残さない。
     `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、警告で返す。
@@ -678,6 +727,7 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
     if not cwd:
         return None
     missing: list[str] = []
+    created: set[pathlib.Path] = set()
     for segment in _extract_execution_segments(command):
         if not segment.resolved or not segment.tokens:
             continue
@@ -688,8 +738,15 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
                 continue
             path = pathlib.Path(candidate)
             resolved = path if path.is_absolute() else pathlib.Path(cwd) / path
+            if resolved in created:
+                continue
             if not resolved.exists() and candidate not in missing:
                 missing.append(candidate)
+        for target in shell_redirection_targets(segment.tokens):
+            if any(character in target for character in "*$?[]{}~`"):
+                continue
+            target_path = pathlib.Path(target)
+            created.add(target_path if target_path.is_absolute() else pathlib.Path(cwd) / target_path)
     if not missing:
         return None
     return _llm_notice(
@@ -1707,7 +1764,7 @@ def _check_bash_atk_options(command: str) -> str | None:
         if contract is None:
             continue
         flags, valued, positionals = contract
-        arguments = list(segment.tokens[1 + len(path) :])
+        arguments = list(_argument_tokens(segment, 1 + len(path)))
         extra_positionals: list[str] = []
         index = 0
         while index < len(arguments):
@@ -1770,11 +1827,16 @@ def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
     return len(events) == 1 and events[0].subcommand in {"commit", "push"}
 
 
-def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], frozenset[str]] | None:
-    """再帰`grep`区間のファイルoperandと認識済みオプションを返す。"""
+def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[str, ...], frozenset[str]] | None:
+    """再帰`grep`区間のpattern本文、ファイルoperand及び認識済みオプションを返す。
+
+    patternは通知本文が置換後のコマンドを組み立てるために返す。
+    ファイルから読む指定では本文を一意に取り出せないためNoneを返す。
+    """
     operands: list[str] = []
     options: set[str] = set()
-    tokens = segment.tokens[1:]
+    pattern: str | None = None
+    tokens = _argument_tokens(segment)
     index = 0
     option_terminator = False
     while index < len(tokens):
@@ -1788,9 +1850,11 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], fr
             index += 1
             continue
         if token.startswith("--"):
-            name, separator, _ = token.partition("=")
+            name, separator, value = token.partition("=")
             if name in _GREP_LONG_OPTIONS_WITH_VALUE:
                 options.add(name)
+                if name == "--regexp" and pattern is None:
+                    pattern = value if separator else (tokens[index + 1] if index + 1 < len(tokens) else None)
                 index += 1 if separator else 2
                 continue
             if name in _GREP_LONG_OPTIONS_WITHOUT_VALUE and not separator:
@@ -1801,6 +1865,8 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], fr
         short = token[1:]
         if short[:1] in {"e", "f"}:
             options.add(f"-{short[0]}")
+            if short[0] == "e" and pattern is None:
+                pattern = short[1:] if len(short) > 1 else (tokens[index + 1] if index + 1 < len(tokens) else None)
             index += 1 if len(short) > 1 else 2
             continue
         if not short or any(character not in _GREP_SHORT_OPTIONS_WITHOUT_VALUE for character in short):
@@ -1808,7 +1874,11 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], fr
         options.update(f"-{character}" for character in short)
         index += 1
     pattern_is_option = bool(options & {"-e", "-f", "--regexp", "--file"})
-    return (tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
+    if not pattern_is_option:
+        pattern = operands[0] if operands else None
+    elif options & {"-f", "--file"}:
+        pattern = None
+    return (pattern, tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
 
 
 _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
@@ -1818,20 +1888,34 @@ _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
 )
 
 
-def _describe_grep_target_worktrees(targets: Sequence[str], base: pathlib.Path) -> str:
-    """遮断対象ごとのGit作業ツリー判定を通知本文の1文へまとめる。
+def _describe_grep_replacement(pattern: str | None, targets: Sequence[str], base: pathlib.Path) -> str:
+    """遮断対象ごとのGit作業ツリー判定と、置換後のコマンド文字列を通知本文へまとめる。
 
-    判定は遮断が確定した経路でだけ実行する。属する場合はrootを併記して、受領した実行主体が
-    追加の取得なしに`git -C <root> grep`の形を組み立てられる状態にする。
-    判定できない対象はGit管理外として示し、遮断の可否は変えない。
+    判定は遮断が確定した経路でだけ実行する。全ての対象が同じGit作業ツリーへ属する場合は`git grep`、
+    いずれも属さない場合は`rg`の形を、当該呼び出しのpatternとパスを埋めた状態で示す。
+    受領した実行主体が代替形を自ら導出せず、そのまま実行できる状態にするためである。
+    対象が双方を含む場合とpattern本文を一意に取り出せない場合は、確定できなかった理由を示す。
     """
     described: list[str] = []
+    roots: list[str | None] = []
     for target in targets:
         candidate = pathlib.Path(target).expanduser()
         resolved = candidate if candidate.is_absolute() else base / candidate
         root = _git_status.get_worktree_root(str(resolved))
+        roots.append(root)
         described.append(f"`{target}`はGit作業ツリー`{root}`に属する" if root is not None else f"`{target}`はGit管理外")
-    return "、".join(described)
+    judgement = "対象の判定: " + "、".join(described) + "。"
+    if pattern is None:
+        return judgement + "置換後の形を確定できない理由: 当該呼び出しのpattern本文を一意に取り出せない。"
+    operands = " ".join(shlex.quote(target) for target in targets)
+    unique_roots = set(roots)
+    if unique_roots == {None}:
+        replacement = f"rg -F -- {shlex.quote(pattern)} {operands}".rstrip()
+    elif len(unique_roots) == 1:
+        replacement = f"git -C {shlex.quote(str(roots[0]))} grep -F -- {shlex.quote(pattern)} {operands}".rstrip()
+    else:
+        return judgement + "置換後の形を確定できない理由: 対象がGit管理対象と管理外の双方を含む。"
+    return judgement + f"置換後のコマンド: `{replacement}`"
 
 
 def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str | None:
@@ -1844,13 +1928,14 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
     """
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     targets: list[str] | None = None
+    pattern: str | None = None
     for pipeline in _extract_execution_pipelines(command):
         for segment in pipeline:
             if not segment.resolved or segment.tokens[0] not in _GREP_COMMANDS:
                 continue
             parsed = _grep_file_operands(segment)
             if parsed is None:
-                raw_options = segment.tokens[1:]
+                raw_options = _argument_tokens(segment)
                 has_recursive_option = any(
                     token in {"-r", "-R", "--recursive"}
                     or (
@@ -1870,7 +1955,7 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     targets = []
                     break
                 continue
-            files, options = parsed
+            segment_pattern, files, options = parsed
             if not options & {"-r", "-R", "--recursive"}:
                 continue
             if options & {"--include", "--exclude", "--exclude-dir"}:
@@ -1878,17 +1963,17 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
             directories = [token for token in files if token != "-" and (token.endswith("/") or (base / token).is_dir())]
             if not files or directories:
                 targets = directories
+                pattern = segment_pattern
                 break
         if targets is not None:
             break
     if targets is None:
         return None
     # operandを解決できない区間と、operandを省略した呼び出しは実効の走査起点であるcwdを対象とする。
-    described = _describe_grep_target_worktrees(targets or [str(base)], base)
+    described = _describe_grep_replacement(pattern, targets or [str(base)], base)
     print(
         _block_notice(
-            "block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。"
-            f"対象の判定: {described}。",
+            f"block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。{described}",
             fix=_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX,
         ),
         file=sys.stderr,
@@ -1936,16 +2021,10 @@ def _tee_saves_to_file(segment: _ExecutionSegment) -> bool:
     if not _segment_starts_with(segment, (_OUTPUT_FULL_SAVE_COMMAND,)):
         return False
     option_terminator = False
-    tokens = segment.tokens[1:]
+    tokens = _argument_tokens(segment)
     index = 0
     while index < len(tokens):
         token = tokens[index]
-        redirect_match = _SHELL_REDIRECTION_PATTERN.match(token)
-        if redirect_match is not None:
-            index += 1
-            if redirect_match.end() == len(token):
-                index += 1
-            continue
         if _tee_operand_is_non_regular_file(token):
             index += 1
             continue
@@ -1977,7 +2056,7 @@ def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
         return ()
     targets: list[str] = []
     option_terminator = False
-    tokens = iter(segment.tokens[1:])
+    tokens = iter(_argument_tokens(segment))
     for token in tokens:
         if _MAKE_ASSIGNMENT_PATTERN.match(token):
             continue
@@ -2051,13 +2130,14 @@ def _task_runner_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
         (("pnpm", "run-script"), _PNPM_RUN_OPTIONS_WITH_VALUE, _PNPM_RUN_OPTIONS_WITHOUT_VALUE),
         (("npm", "run"), _NPM_RUN_OPTIONS_WITH_VALUE, _NPM_RUN_OPTIONS_WITHOUT_VALUE),
     )
+    tokens = _argument_tokens(segment, 0)
     for prefix, options_with_value, options_without_value in runners:
         if not _segment_starts_with(segment, prefix):
             continue
         if prefix[0] == "mise":
-            return _mise_task_targets(segment.tokens, len(prefix))
-        target_index = _option_operand_index(segment.tokens, len(prefix), options_with_value, options_without_value)
-        return () if target_index is None else (segment.tokens[target_index],)
+            return _mise_task_targets(tokens, len(prefix))
+        target_index = _option_operand_index(tokens, len(prefix), options_with_value, options_without_value)
+        return () if target_index is None else (tokens[target_index],)
     return ()
 
 
@@ -2273,12 +2353,6 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
     index = 0
     while index < len(arguments):
         token = arguments[index]
-        redirect_match = _SHELL_REDIRECTION_PATTERN.match(token)
-        if redirect_match is not None:
-            index += 1
-            if redirect_match.end() == len(token):
-                index += 1
-            continue
         if token in _RECURSIVE_SEARCH_OPTIONS_WITHOUT_VALUE:
             index += 1
             continue
@@ -2301,7 +2375,7 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
 def _check_bash_recursive_home_search(command: str) -> str | None:
     """高容量のユーザー領域を無限定に再帰検索する実行位置へ警告を返す。"""
     if not any(
-        segment.resolved and _pipeline_has_recursive_home_search(segment.tokens)
+        segment.resolved and _pipeline_has_recursive_home_search(_argument_tokens(segment, 0))
         for pipeline in _extract_execution_pipelines(command)
         for segment in pipeline
     ):
@@ -2555,7 +2629,7 @@ def _pipeline_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
 def _check_bash_unbounded_home_traversal(command: str) -> str | None:
     """対象限定の無い`find`・`ls -R`による高容量領域の走査へ警告を返す。"""
     if not any(
-        segment.resolved and _pipeline_has_unbounded_home_traversal(segment.tokens)
+        segment.resolved and _pipeline_has_unbounded_home_traversal(_argument_tokens(segment, 0))
         for pipeline in _extract_execution_pipelines(command)
         for segment in pipeline
     ):
@@ -2584,7 +2658,7 @@ def _check_bash_unbounded_root_traversal(command: str) -> str | None:
     高容量のユーザー領域を起点とする走査は`_check_bash_unbounded_home_traversal`の警告で扱う。
     """
     if not any(
-        segment.resolved and _find_traverses_filesystem_root(segment.tokens)
+        segment.resolved and _find_traverses_filesystem_root(_argument_tokens(segment, 0))
         for pipeline in _extract_execution_pipelines(command)
         for segment in pipeline
     ):
@@ -2661,8 +2735,50 @@ def _git_subcommand_tokens(segment: _ExecutionSegment) -> tuple[str, tuple[str, 
     return None
 
 
+_GIT_GREP_BASIC_REGEXP_METACHARACTERS: frozenset[str] = frozenset(".*[]^$\\")
+"""`git grep`が種別の指定なしに基本正規表現として解釈するメタ文字。
+
+いずれも含まないpatternでは`-F`を指定した場合と一致結果が変わらないため、当該場合は警告しない。
+"""
+_GIT_GREP_PATTERN_OPTIONS: frozenset[str] = frozenset({"-e", "--regexp"})
+_GIT_GREP_PATTERN_FILE_OPTIONS: frozenset[str] = frozenset({"-f", "--file"})
+
+
+def _git_grep_pattern(arguments: Sequence[str]) -> str | None:
+    """`git grep`の引数列からpattern本文を一意に取り出す。
+
+    取り出せない場合はNoneを返す。ファイルからpatternを読む指定、オプション終端の位置によって
+    pattern本文が定まらない指定が該当する。
+    """
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            return None
+        name = token.split("=", 1)[0]
+        if name in _GIT_GREP_PATTERN_FILE_OPTIONS:
+            return None
+        if name in _GIT_GREP_PATTERN_OPTIONS:
+            if "=" in token:
+                return token.split("=", 1)[1]
+            return arguments[index + 1] if index + 1 < len(arguments) else None
+        if name in _GIT_GREP_VALUED_OPTIONS:
+            index += 1 if "=" in token else 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return token
+    return None
+
+
 def _check_bash_git_grep_pattern_type(command: str) -> str | None:
-    """`git grep`でpattern種別を明示していない呼び出しを検出する。"""
+    """`git grep`でpattern種別を明示せず、かつ指定の有無で一致結果が変わる呼び出しを検出する。
+
+    種別を指定しない`git grep`は基本正規表現として解釈するため、メタ文字を含まないpatternでは
+    `-F`を指定した場合と一致結果が変わらない。当該場合は是正すべき差異を示さないため警告しない。
+    pattern本文を一意に取り出せない指定は、差異の有無を確定できないため警告する。
+    """
     for segment in _extract_execution_segments(command):
         resolved = _git_subcommand_tokens(segment)
         if resolved is None or resolved[0] != "grep":
@@ -2676,6 +2792,9 @@ def _check_bash_git_grep_pattern_type(command: str) -> str | None:
             for token in arguments
         )
         if specified:
+            continue
+        pattern = _git_grep_pattern(arguments)
+        if pattern is not None and not any(character in _GIT_GREP_BASIC_REGEXP_METACHARACTERS for character in pattern):
             continue
         return _llm_notice(
             "`git grep`が固定文字列・拡張正規表現・Perl互換正規表現のいずれの種別も指定していない。\n"

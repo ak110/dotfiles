@@ -1383,9 +1383,28 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 2
         assert "編集ツール" in result.stderr
 
+    def test_python_eval_argument_with_multiple_statements_is_blocked(self) -> None:
+        """`python -c`へ複数の文を渡す入力を遮断する。"""
+        code = "import json\nprint(json.dumps({}))"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"python3 -c {shlex.quote(code)}"}})
+        assert result.returncode == 2
+        assert "複数の文を含む" in result.stderr
+        assert "編集ツール" in result.stderr
+
+    def test_python_eval_argument_with_syntax_error_is_blocked(self) -> None:
+        """`python -c`へ構文として成立しないコードを渡す入力を遮断する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "python3 -c 'for x in'"}})
+        assert result.returncode == 2
+        assert "構文として成立しない" in result.stderr
+
+    def test_python_eval_argument_with_a_single_statement_is_allowed(self) -> None:
+        """単一の文だけを渡す`python -c`は引用境界が重なっても意味が変わらないため通す。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "python3 -c 'print(1)'"}})
+        assert result.returncode == 0
+
 
 class TestBashOutputTruncationRepetition:
-    """Bash出力の切り詰め補正の許容を補正種別ごとに数える。"""
+    """Bash出力の切り詰め補正を、同一セッションでの反復時も同じ変換で通す。"""
 
     @staticmethod
     def _invoke(command: str, session_id: str, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -1394,60 +1413,37 @@ class TestBashOutputTruncationRepetition:
             _plan_file_state_env(tmp_path),
         )
 
-    def test_same_kind_is_blocked_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
-        """同じ補正種別の2回目を遮断する。"""
+    def test_same_kind_is_corrected_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
+        """同じ補正種別の2回目以降も遮断せず、切り詰めを除いた保存形へ補正する。"""
         session_id = "truncation-same-kind"
         assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
 
         result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
 
-        assert result.returncode == 2
-        assert "切り詰め補正が同じ形で繰り返された" in result.stderr
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert "head" not in corrected
+        assert " > " in corrected
 
-    def test_other_kind_is_allowed_after_a_block(self, tmp_path: pathlib.Path) -> None:
-        """別の補正種別の初回は、過去の別種の補正と遮断を理由に遮断しない。"""
+    def test_other_kind_is_also_corrected(self, tmp_path: pathlib.Path) -> None:
+        """別の補正種別も過去の補正によらず同じ変換で通す。"""
         session_id = "truncation-other-kind"
         assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
-        assert self._invoke("ls -1 /var | head -5", session_id, tmp_path).returncode == 2
+        assert self._invoke("ls -1 /var | head -5", session_id, tmp_path).returncode == 0
 
         assert self._invoke("ls -1 /tmp | tail -5", session_id, tmp_path).returncode == 0
 
-    def test_block_notice_shows_a_means_without_separated_execution(self, tmp_path: pathlib.Path) -> None:
-        """遮断本文が分離実行に依存しない解消手段を示す。"""
-        session_id = "truncation-fix-body"
-        self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
-
-        result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
-
-        assert result.returncode == 2
-        assert "ファイルへリダイレクト" in result.stderr
-        assert "保存済みファイルから必要な範囲だけを" in result.stderr
-
-    def test_autofix_notice_predicts_the_block_and_shows_how_to_avoid_it(self, tmp_path: pathlib.Path) -> None:
-        """補正の通知が、次に同じ形を書くと遮断されることと、遮断を避ける書き方の双方を示す。"""
+    def test_autofix_notice_shows_the_remaining_operation_and_the_avoidance_body(self, tmp_path: pathlib.Path) -> None:
+        """補正の通知が、保存先から範囲を限定して読む操作と、切り詰めを含まない書き方を示す。"""
         session_id = "truncation-autofix-body"
 
         result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "補正ではなく遮断になる" in context
-        assert "遮断を避ける書き方" in context
-        assert "ファイルへリダイレクト" in context
-        assert "保存済みファイルから必要な範囲だけを" in context
-
-    def test_autofix_and_block_share_the_same_avoidance_body(self, tmp_path: pathlib.Path) -> None:
-        """補正の通知と遮断の通知が、同じ解消手段の本文を持つ。"""
-        session_id = "truncation-shared-body"
-        autofix = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
-        blocked = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
-
-        assert autofix.returncode == 0
-        assert blocked.returncode == 2
-        context = json.loads(autofix.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "保存先から必要な範囲だけを" in context
         avoidance = shell_checks._OUTPUT_TRUNCATION_AVOIDANCE  # pylint: disable=protected-access  # noqa: SLF001
         assert avoidance in context
-        assert avoidance in blocked.stderr
 
 
 class TestBashRecursiveGrepTargetJudgement:
@@ -1480,6 +1476,49 @@ class TestBashRecursiveGrepTargetJudgement:
 
         assert result.returncode == 2
         assert "Git管理外" in result.stderr
+
+    def test_notice_shows_the_replacement_command_for_a_tracked_target(self, tmp_path: pathlib.Path) -> None:
+        """Git作業ツリーへ属する対象では、patternとパスを埋めた`git grep`の形を示す。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "grep -r needle ."}, "cwd": str(repo)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "置換後のコマンド" in result.stderr
+        assert "git -C " in result.stderr
+        assert "grep -F -- needle" in result.stderr
+
+    def test_notice_shows_the_replacement_command_outside_git(self, tmp_path: pathlib.Path) -> None:
+        """Git管理外の対象では、patternとパスを埋めた`rg`の形を示す。"""
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "grep -r needle ."}, "cwd": str(plain)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "置換後のコマンド" in result.stderr
+        assert "rg -F -- needle" in result.stderr
+
+    def test_notice_reports_why_the_replacement_is_undetermined(self, tmp_path: pathlib.Path) -> None:
+        """pattern本文を一意に取り出せない入力では、確定できなかった理由を示す。"""
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "grep -r -f patterns.txt ."}, "cwd": str(plain)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "置換後の形を確定できない理由" in result.stderr
 
 
 class TestBashUnboundedRootTraversal:
@@ -1571,9 +1610,47 @@ class TestNormViolatingArgumentForms:
             assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
 
     def test_git_grep_without_pattern_type_warns(self, tmp_path: pathlib.Path) -> None:
-        result = self._invoke("git grep needle", tmp_path)
+        """メタ文字を含むpatternでは、種別の指定により一致結果が変わるため警告する。"""
+        result = self._invoke("git grep 'need.*le'", tmp_path)
         assert result.returncode == 0
         assert "いずれの種別も指定していない" in _agent_messages(result)
+
+    @pytest.mark.parametrize("command", ["git grep needle", "git grep -n needle", "git grep -e needle"])
+    def test_git_grep_without_metacharacter_is_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        """メタ文字を含まないpatternは`-F`の指定で一致結果が変わらないため警告しない。"""
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" not in _agent_messages(result)
+
+    def test_git_grep_with_unresolvable_pattern_warns(self, tmp_path: pathlib.Path) -> None:
+        """pattern本文を一意に取り出せない指定は、差異の有無を確定できないため警告する。"""
+        result = self._invoke("git grep -f patterns.txt", tmp_path)
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" in _agent_messages(result)
+
+    def test_redirect_target_written_by_an_earlier_segment_is_not_missing(self, tmp_path: pathlib.Path) -> None:
+        """先行区間がリダイレクト先として生成するパスを、後続区間の不在判定から除く。"""
+        result = self._invoke("ls -1 > listing.txt 2> listing.err; wc -l listing.txt listing.err", tmp_path)
+        assert result.returncode == 0
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    def test_path_not_written_by_an_earlier_segment_is_still_missing(self, tmp_path: pathlib.Path) -> None:
+        """先行区間が生成しない不在パスは引き続き検出する。"""
+        result = self._invoke("ls -1 > listing.txt; wc -l absent.txt", tmp_path)
+        assert result.returncode == 0
+        assert "absent.txt" in _agent_messages(result)
+
+    def test_atk_redirection_is_not_counted_as_a_positional(self, tmp_path: pathlib.Path) -> None:
+        """リダイレクトのトークンと宛先を位置引数として数えない。"""
+        result = self._invoke("atk agents wait > wait.json 2> wait.err", tmp_path)
+        assert result.returncode == 0
+        assert "位置引数を受理しない" not in _agent_messages(result)
+
+    def test_atk_actual_positional_is_still_warned(self, tmp_path: pathlib.Path) -> None:
+        """位置引数を受理しないサブコマンドへ実際の位置引数を渡した場合は現行どおり警告する。"""
+        result = self._invoke("atk agents wait extra", tmp_path)
+        assert result.returncode == 0
+        assert "位置引数を受理しない" in _agent_messages(result)
 
     @pytest.mark.parametrize("command", ["git grep -F needle", "git grep -nE needle", "git grep -P needle"])
     def test_git_grep_with_pattern_type_is_silent(self, command: str, tmp_path: pathlib.Path) -> None:

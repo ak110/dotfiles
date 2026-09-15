@@ -37,7 +37,6 @@ _TITLE_DIRECTORY_NAME = "claude-agent-toolkit-session-title"
 _SESSION_TITLE_KEY = "last_hook_session_title"
 _INHERITED_FROM_SESSION_KEY = "inherited_from_session_id"
 _WARN_NOTICE_COUNTS_KEY = "warn_notice_counts"
-_BASH_OUTPUT_TRUNCATION_AUTOFIX_KINDS_KEY = "bash_output_truncation_autofix_kinds"
 _ATK_HELP_OBSERVED_KEY = "atk_help_observed"
 _BASH_FAILURE_STREAK_KEY = "bash_failure_streak"
 _BASH_FAILURE_GATE_KEY = "bash_failure_gate"
@@ -267,34 +266,6 @@ def increment_warn_notice_count(session_id: str, key: str) -> int:
 
     update_state(session_id, _increment)
     return count
-
-
-def claim_bash_output_truncation_autofix(session_id: str, kinds: Sequence[str]) -> bool:
-    """補正種別ごとに初回のBash出力切り詰め補正だけを許可する。
-
-    `kinds`は当該呼び出しで検出した切り詰めの後段コマンド名とする。値の由来は
-    `_hooks/pretooluse/shell_checks.py`の`_split_simple_truncation`が返す2要素目であり、
-    同じ種別の反復だけを検出対象とする前提を置く。当該関数が種別を区別しない値を返すと、
-    別種の切り詰めを初めて含む呼び出しが過去の別種の補正を理由に遮断される。
-
-    未記録の種別が1件でもあれば許可し、許可した場合だけ当該呼び出しの未記録種別を記録する。
-    遮断した呼び出しは記録を変えないため、遮断の反復が記録へ積み上がらない。
-    """
-    claimed = False
-
-    def _claim(current: dict) -> dict | None:
-        nonlocal claimed
-        previous = current.get(_BASH_OUTPUT_TRUNCATION_AUTOFIX_KINDS_KEY)
-        recorded = {kind for kind in previous if isinstance(kind, str)} if isinstance(previous, list) else set()
-        unrecorded = {kind for kind in kinds if kind not in recorded}
-        claimed = bool(unrecorded)
-        if not claimed:
-            return None
-        current[_BASH_OUTPUT_TRUNCATION_AUTOFIX_KINDS_KEY] = sorted(recorded | unrecorded)
-        return current
-
-    update_state(session_id, _claim)
-    return claimed
 
 
 def observed_atk_help_paths(session_id: str) -> set[str]:

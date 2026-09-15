@@ -1,5 +1,7 @@
 # GitHub Actionsワークフロー記述スタイル
 
+本書は、GitHub Actionsのワークフロー定義の記述スタイル基準を定める。
+
 ## 基本
 
 - ワークフローファイルは`.github/workflows/*.yaml`（または`.yml`）に配置する

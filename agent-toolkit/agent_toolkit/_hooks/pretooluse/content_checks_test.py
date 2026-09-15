@@ -29,13 +29,17 @@ from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 
-def test_colloquial_notice_references_existing_writing_rules(deny_substring: str) -> None:
-    """口語警告は発話と成果物の実在する記述規範を参照する。"""
+def test_colloquial_notice_references_only_the_deliverable_writing_rule(deny_substring: str) -> None:
+    """口語警告は、検査対象から一意に確定する成果物向けの参照先だけを示す。
+
+    当該検査は書き込む変更行だけを対象とするため、ユーザーへ向けた発話の参照先は対象にならない。
+    2つの参照先を並べると、通知の受領側にどちらへ従うかの判定が残る。
+    """
     notice = content_checks._check_colloquial("Write", None, f"概要は{deny_substring}該当する。", "note.md")
 
     assert notice is not None
-    assert "agent-toolkit/share/rules-main.md" in notice
     assert "references/writing.md" in notice
+    assert "agent-toolkit/share/rules-main.md" not in notice
     assert "agent-toolkit/rules/01-agent.md`「日本語」" not in notice
 
 

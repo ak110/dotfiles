@@ -1,5 +1,6 @@
 # Drizzle ORM／Drizzle Kit記述スタイル
 
+本書は、Drizzle ORMとDrizzle Kitを用いる実装の記述スタイル基準を定める。
 対象バージョン: drizzle-orm/drizzle-kit 0.x系（参考実利用バージョン: drizzle-orm 0.45・drizzle-kit 0.31）。公式ドキュメントは<https://orm.drizzle.team/docs/overview>を参照する。
 
 ## スキーマ定義

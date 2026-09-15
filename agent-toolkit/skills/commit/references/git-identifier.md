@@ -2,7 +2,7 @@
 
 本書は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が委ねる、
 報告と操作で用いるGit識別子（人間可読ref、短縮OID、完全OIDへの解決、`git -C`）の正本である。
-`git commit`作業の直前とコミットメッセージ案の起草時に、`references/history-rewrite.md`及び`references/push-and-ci.md`と同じ場面で全文読む。
+本スキルの起動時に全文読む。
 
 報告、記録又は成果物へ書く識別子は、branch名、tag名、PR番号、run URL、計画名、WIファイル名、レーン識別子などの、人間が対象を判別できる値を優先する。
 Git commitに当該識別子がない場合は、`git rev-parse --short=7 <revision>`が返した7文字以上の一意な短縮OIDを用いる。

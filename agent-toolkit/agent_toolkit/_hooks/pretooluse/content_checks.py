@@ -826,6 +826,8 @@ def _check_colloquial(
     上限を超える一致の位置は総件数だけで示す。
     allowlistに一致する部分を先に除去してからdenylistを適用し、
     複合動詞・複合名詞などの標準用語が誤検出されることを抑える。
+    本検査は書き込む変更行だけを対象とするため、通知が示す参照先は成果物向けの1つに限る。
+    ユーザーへ向けた発話が対象になることはなく、参照先を並べると受領側へ選択の判定が残る。
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
@@ -851,8 +853,7 @@ def _check_colloquial(
     return _llm_notice(
         f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
         f"{_colloquial_hit_summary(hits)}"
-        "ユーザーへ向けた発話は`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」、"
-        "それ以外の成果物は`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
+        "`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
         "検出箇所を含む文全体を書き換える。単語だけを同義語へ置き換えず、文全体を組み直す。"
         f" 対象: {target}",
         tag=_WARN_TAG,

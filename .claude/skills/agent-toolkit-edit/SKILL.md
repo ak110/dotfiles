@@ -108,7 +108,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は書かない
 - 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
-  - 例外: 実測を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。当該記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。当該索引が配布物から解決しないことは`agent-toolkit/rules/01-agent.md`「調査と検証」が明示する
+  - 例外: 実測を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。当該記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。当該記録先は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」が定める
 - 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名検査を適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文でhook内部の実装挙動
@@ -148,7 +148,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
 全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
-`.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に同ファイルを全文読む。
+`.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
 `## 要件・外部仕様`へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
@@ -195,8 +195,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 `agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の
 `references/session-state-and-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
 
-SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず
-警告が返るため、必ずSkillツールで起動する。
+SKILL.mdを`Read`で読むだけではPostToolUseフックが記録する`agent_toolkit_edit_skill_invoked`フラグが立たず、
+PreToolUseフックが警告を返すため、Skillツールで起動する。
 
 ## 権限設定の配置
 

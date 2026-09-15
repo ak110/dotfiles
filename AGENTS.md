@@ -34,7 +34,20 @@
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、検査へ与えるのと同じ環境変数を与えて`mise trust`を実行する
     - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
-  - `agent-toolkit:process-wi`では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)に従い、選定工程の完了時点で第1条件を評価して記録し、終端でリリースPRを作成してマージまで実施する
+  - `agent-toolkit:process-wi`では、次の2条件がいずれも成立する場合に`develop`から`master`へのリリースPRを作成し、マージまで実施する。判定と実施はメインが担う。導入の経緯と根拠は[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)にある
+    - 第1条件: 選定工程の完了時点の`atk wi list --target-repo=<対象リポジトリの絶対パス> --skip-pull`の標準出力を判定の入力とする。当該セッションが処理対象へ固定した集合の項目を除いた残りが、`state`が`hold`の項目と、`state`が`inbox`かつ`ready`が偽の項目だけである。選定工程の完了でAWIの状態を照合するために実行する当該コマンドの出力をそのまま判定へ用い、判定専用の実行を追加しない
+    - 第2条件: 公開工程のpushとCI成功を確認した後に`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`をそれぞれ実行し、返る一意な短縮OIDが互いに異なる
+    - 第1条件は選定工程の完了時点で評価し、判定結果と、判定に用いた出力に残った項目のファイル名、`state`及び`ready`を、当該セッションの管理対象一時領域直下の`daily-release-condition1.txt`へ記録する。公開工程では当該ファイルを読んで第1条件の判定結果とし、`atk wi list`を再実行しない。当該ファイルが無い場合は第1条件を不成立として扱う。選定工程の判定時点より後に登録された項目は判定の対象へ含めず、次回セッションで扱う
+    - 条件が成立しない場合は、成立しなかった条件と、第1条件が不成立のときは`daily-release-condition1.txt`に残る項目を報告し、PRを作成しない
+    - 実施する場合は、次の1行目で同じheadとbaseのopen PRを最大2件取得する。1件ならそのPRを再利用する。0件なら管理対象一時領域へPR本文のファイルを作成し、次の2行目でPRを作成する。2件取得した場合は対象を推測せず、両PRの番号とURLを報告して停止する。タイトルには当該セッションで反映した変更の主題を1文で書き、本文には反映したAWIの正本ファイル名と1行要約を列挙する
+
+      ```sh
+      gh pr list --repo ak110/dotfiles --base master --head develop --state open --limit 2 --json number,url,title,headRefName,baseRefName,state
+      gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>
+      ```
+
+    - 続けて、既存又は新規PRの完全なURLを指定して`.claude/skills/merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
+    - PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する
   - それ以外の経路では、リリースPRの作成を手動で行う。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
   - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はリリース経路によらず必要であり、更新漏れは`develop`へのpushで実行されるCIの`statusline-version` jobが検出する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
@@ -103,7 +116,7 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
 対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
 規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへ当該文面を明示して渡す。
 適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
-除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
+除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
 `agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
@@ -159,8 +172,8 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.claude/`（本リポジトリルート）: dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
   - Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする
 - `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
-  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/codex-agents-base.md`と`agent-toolkit/rules/`配下の共有規範から
-    `scripts/sync_generated_files.py`が生成するため、手動編集しない（生成差分で上書きされ、手動編集は消失する）
+  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-main.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`及び`agent-toolkit/rules/`配下の共有規範から
+    `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、手動編集しない（生成差分で上書きされ、手動編集は消失する）
   - 共有ルール・スキルは`setup_codex_links.py`が
     `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
     （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション。
