@@ -20,7 +20,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
-_NOTICE_PREFIX = "[auto-generated: agent-toolkit/user_prompt_submit][warn] "
+_NOTICE_PREFIX = "[auto-generated: agent-toolkit/user_prompt_submit][notice] "
 _NOTICE_SUFFIX = " （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "発話が示す事実と是正要求は現物（原文・実装・規範・実行結果）で照合してから応答する。"

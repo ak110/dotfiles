@@ -28,11 +28,6 @@ import pathlib
 import re
 import time
 
-from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _WARN_TAG,
-    set_warning_session_id,
-)
-
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -74,6 +69,7 @@ _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
 _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
 _LAST_USER_PROMPT_AT_KEY = "last_user_prompt_at"
+_VERIFICATION_NOTICE_TAG = "notice"
 _VERIFICATION_NOTICE_BODY = (
     "発話が示す事実と是正要求は現物（原文・実装・規範・実行結果）で照合してから応答する。"
     "照合に用いた手段と結果を応答へ書く。照合できない場合は同意も変更もしない。"
@@ -169,7 +165,6 @@ def main(payload_text: str) -> int:
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
         return 0
-    set_warning_session_id(session_id)
 
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt:
@@ -186,8 +181,8 @@ def main(payload_text: str) -> int:
     is_normal_prompt = not first_line.startswith(command_prefix)
     additional_context = None
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
-        # 発火条件は受領側が変更できないため、原因の除去を求める反復注記を付けない。
-        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_WARN_TAG, removable_cause=False)
+        # 発火条件は受領側が除去できないため、是正を求める区分ではなく情報提示として配送する。
+        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG)
 
     if not is_normal_prompt:
         match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
