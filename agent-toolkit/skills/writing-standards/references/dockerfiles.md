@@ -1,5 +1,7 @@
 # Dockerfile記述スタイル
 
+本書は、Dockerfileの記述スタイル基準を定める。
+
 ## 基本
 
 - 冒頭に`# syntax=docker/dockerfile:1`を必ず記述する

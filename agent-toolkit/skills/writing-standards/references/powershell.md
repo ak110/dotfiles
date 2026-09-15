@@ -1,9 +1,11 @@
 # PowerShell記述スタイル
 
+本書は、PowerShellスクリプトの記述スタイル基準と、Windows PowerShell 5.1互換を保つための注意点を定める。
+
 - Claude Codeツールの挙動と注意点
   - EditツールはCRLF改行とUTF-8 BOMを透過的に維持する。既存ファイルの編集はEditを使う
   - Writeツールは常にLF改行・BOMなしで書くため、CRLFとBOMが消失する。PS1ファイルにはWriteを使わない
-    - agent-toolkitプラグインがPS1へのLF-only書き込みをブロックするため、Writeは実行自体が失敗する
+    - agent-toolkitプラグインはPS1へのLF-only書き込みへ警告を返すが書き込み自体は成立するため、Writeで書いた場合はBOMとCRLFを別途復元する
   - 新規ファイル作成時はBashツールでBOM付きCRLFファイルを書く
     - 例: `printf '\xEF\xBB\xBF' > file.ps1 && cat <<'ENDOFPS1' | sed 's/$/\r/' >> file.ps1`
   - `.gitattributes`の`eol=crlf`は改行のみ管理し、BOMは復元しない。BOM付加は別途必要

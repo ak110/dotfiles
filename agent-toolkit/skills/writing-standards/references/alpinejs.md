@@ -1,5 +1,6 @@
 # Alpine.js記述スタイル
 
+本書は、Alpine.jsを用いる実装の記述スタイル基準を定める。
 対象バージョン: Alpine.js v3系。公式ドキュメントは<https://alpinejs.dev/start-here>を参照する。
 
 ## 適用範囲の判断

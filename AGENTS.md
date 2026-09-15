@@ -116,7 +116,7 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
 対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
 規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへ当該文面を明示して渡す。
 適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
-除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
+除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
 `agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
@@ -172,8 +172,8 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.claude/`（本リポジトリルート）: dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
   - Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする
 - `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
-  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/codex-agents-base.md`と`agent-toolkit/rules/`配下の共有規範から
-    `scripts/sync_generated_files.py`が生成するため、手動編集しない（生成差分で上書きされ、手動編集は消失する）
+  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-main.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`及び`agent-toolkit/rules/`配下の共有規範から
+    `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、手動編集しない（生成差分で上書きされ、手動編集は消失する）
   - 共有ルール・スキルは`setup_codex_links.py`が
     `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
     （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション。

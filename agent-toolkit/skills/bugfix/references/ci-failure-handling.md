@@ -16,7 +16,7 @@ formatter未適用・単純なテスト期待値の未追随など）と確定�
 呼び出し元が対象worktreeの書込所有権を保持し、当該worktreeへ書き込む稼働中の実装担当が無い場合は、実装担当を起動せず呼び出し元が当該worktreeで修正する。
 書込所有権を保持していない場合と、稼働中の実装担当がある場合は、呼び出し元が`agent-toolkit:delegation`の工程別モデル設定にある`execute_model`を起動直前に解決し、単一の実装担当へ次の入力を渡す。
 
-- `agent-toolkit:plan-mode`のCI修正担当契約及び担当種別`CI修正担当`
+- `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定めるCI修正担当の契約及び担当種別`CI修正担当`（起動側の入力の確定規則は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`が定める）
 - 対象worktreeとプロジェクト規範の絶対パス
 - 実装単位、その目的及び変更説明
 - 適用する作成規範スキル名と絶対パス
