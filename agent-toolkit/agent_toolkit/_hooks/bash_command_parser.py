@@ -79,6 +79,8 @@ _TIMEOUT_DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
 
 _SHELL_TOKENS: frozenset[str] = frozenset({"sh", "bash"})
 _SHELL_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|<<<|<<|>>|<>|>&|<&|>\||>|<)")
+_WRITE_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|>>|<>|>&|>\||>)")
+"""宛先へ書き込むリダイレクト指定。`_SHELL_REDIRECTION_PATTERN`の部分集合とする。"""
 
 _UV_TERMINAL_OPTIONS: frozenset[str] = frozenset({"--help", "-h", "--version", "-V"})
 """後続の指定を実行しない終端オプション。走査中のコマンド自身を実行位置として確定する。"""
@@ -99,6 +101,34 @@ def without_shell_redirections(tokens: Sequence[str]) -> tuple[str, ...]:
         if match.end() == len(token) and index < len(tokens):
             index += 1
     return tuple(retained)
+
+
+def shell_redirection_targets(tokens: Sequence[str]) -> tuple[str, ...]:
+    """出力リダイレクトが書き込み先とするトークンを、`without_shell_redirections`と同じ走査で返す。
+
+    当該区間の実行により作成されるパスを呼び出し側が確定するために用いる。
+    入力リダイレクトは書き込みを伴わないため対象から外し、ファイル記述子を指す数字だけの宛先も除く。
+    """
+    targets: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        match = _SHELL_REDIRECTION_PATTERN.match(token)
+        if match is None:
+            index += 1
+            continue
+        write_match = _WRITE_REDIRECTION_PATTERN.match(token)
+        if match.end() == len(token):
+            index += 1
+            if index < len(tokens):
+                if write_match is not None:
+                    targets.append(tokens[index])
+                index += 1
+            continue
+        if write_match is not None:
+            targets.append(token[write_match.end() :])
+        index += 1
+    return tuple(target for target in targets if target and not target.isdigit())
 
 
 _UV_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(

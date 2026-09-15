@@ -218,9 +218,9 @@ if TYPE_CHECKING:
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
         _check_bash_process_kill_by_pattern,
+        _check_bash_python_code_string,
         _check_bash_recursive_grep_without_exclusion,
         _check_bash_recursive_home_search,
-        _check_repeated_bash_output_truncation,
         _check_bash_sleep_poll_pattern,
         _check_bash_unbounded_home_traversal,
         _check_bash_unbounded_root_traversal,
@@ -476,8 +476,6 @@ def _handle_bash_tool(
         return 2
     if sleep_poll_result is not None:
         warnings.append(sleep_poll_result)
-    if _check_repeated_bash_output_truncation(command, session_id):
-        return 2
     auto_fix = _autofix_bash_command(command, cwd, session_id)
     if auto_fix is not None:
         command, auto_fix_notice = auto_fix
@@ -493,7 +491,12 @@ def _handle_bash_tool(
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
-    if _check_bash_nested_code_string(command) or _check_bash_heredoc_chain(command) or _check_bash_env_full_read(command):
+    if (
+        _check_bash_nested_code_string(command)
+        or _check_bash_python_code_string(command)
+        or _check_bash_heredoc_chain(command)
+        or _check_bash_env_full_read(command)
+    ):
         return 2
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":

@@ -73,13 +73,24 @@ def _full_read_operand(tokens: Sequence[str]) -> str | None:
     return None
 
 
+def _offset_limit_plan(line_count: int, threshold: int) -> str:
+    """実測行数と閾値から、全行を覆う`offset`と`limit`の組を先頭から順に返す。
+
+    判定時点で確定している2つの値だけから代替形を導けるため、通知の受領側が自ら算出せずに済む形で示す。
+    """
+    return "、".join(
+        f"`offset={offset}, limit={min(threshold, line_count - offset + 1)}`" for offset in range(1, line_count + 1, threshold)
+    )
+
+
 def _large_read_notice(path: pathlib.Path, line_count: int, cwd: str) -> str:
+    threshold = _line_threshold()
     return _block_notice(
-        f"{line_count}行のファイルの全文取得を遮断した（閾値: {_line_threshold()}行）: {path}",
+        f"{line_count}行のファイルの全文取得を遮断した（閾値: {threshold}行）: {path}",
         fix=(
-            "Readのoffset/limitで必要な範囲へ分割するか、"
+            f"Readへ次の組を順に渡して分割する: {_offset_limit_plan(line_count, threshold)}。"
             "agents_serverのstart_exploreへ"
-            f"質問とcwd={cwd}を渡して読み取り専用調査を委譲する。"
+            f"質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。"
         ),
     )
 

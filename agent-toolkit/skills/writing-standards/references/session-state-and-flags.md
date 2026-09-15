@@ -109,7 +109,6 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   キーは`<hook_id>|<原因識別子>`、値は当該セッションでの発生件数とする。
   通知の整形処理が記録元であり、同じ処理が3件目以降の通知本文へ反復の旨と累積件数を載せる判定に読む。
   セッション終了まで保持し、リセット経路は設けない
-- `bash_output_truncation_autofix_count`: 安全に一意変換できるBash出力切り詰めをPreToolUseが補正した検出回数を保持する。初回だけ`updatedInput`で全量保存へ補正し、2回目以降は分離実行を要求して遮断する。汎用の`warn_notice_counts`とは独立してセッション終了まで保持する
 - `atk_help_observed`: 最下層の`atk`サブコマンド経路を文字列配列へ重複なく記録する。記録の契機は次のとおりとする。PreToolUseが未観測のサブコマンド仕様を実行前に注入した時点、PreToolUseが`AskUserQuestion`の本文に現れた未観測のサブコマンドの公開契約を添えて遮断した時点、及びPostToolUseが単独の`atk <サブコマンド> --help`の成功を観測した時点とする。標準出力・標準エラー出力のリダイレクトを伴うヘルプも単独呼び出しとして扱い、PostToolUseの応答本文が空でも成功イベントを観測とする。PreToolUseは同じ経路を再注入せず、同じ経路を含む確認の再発行も遮断しない。寿命はセッション状態ファイルと同じとする
 - `bash_failure_streak`: PostToolUseFailureが分類できた直近のBash終了コードと連続回数を保持する。成功したBash、異なる終了コード、中断又は分類不能な失敗で連続性を更新又は解除する。他ツールでは変更しない
 - `bash_failure_gate`: 同じ終了コードのBash失敗が2回連続した場合に真となり、PreToolUseが直接Bashを遮断する。成功した`agents_server`の`start_shell`で解除する
