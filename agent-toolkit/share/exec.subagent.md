@@ -66,9 +66,13 @@
 
 ## レビュー修正の履歴統合
 
-レビュー指摘への修正は指摘ごとにfixup commitを作成し、元commitの7文字以上の一意な短縮OIDへ対応付ける。レビューの収束後、対象worktreeがcleanであり、rewrite対象がpushされておらず、rewrite対象を操作直前に解決したOID集合が当該レーンのcommitだけであることを確認する。
+レビュー指摘への修正は、ラウンド番号によらず指摘ごとにfixup commitを作成し、元commitの7文字以上の一意な短縮OIDへ対応付ける。当該ラウンドへ帰属する全てのfixupを作成し終えた時点で、当該ラウンドのautosquashを1回実行する。autosquashの単位は`agent-toolkit:commit`の`references/history-rewrite.md`「修正方法の選択」が定めるものとし、同じ単位に対して2回実行しない。
+
+autosquashの前に、対象worktreeがcleanであり、rewrite対象がpushされておらず、rewrite対象を操作直前に解決したOID集合が当該レーンのcommitだけであることを確認する。この確認はラウンドごとに行う。
 
 `git -c sequence.editor=: rebase -i --autosquash <起点OID>`を実行し、競合が無いことを確認する。競合時は作業を止め、競合対象と中断状態を`needs_escalation`で返す。fixup先が直前の1commitだけでありautosquashを要しない場合は、同じ安全条件を確認したうえで`git commit --amend`を用いてよい。
+
+ラウンドごとのautosquashにより、次のラウンドを開始する時点のrebase範囲には、件名の先頭が`fixup!`・`squash!`・`amend!`のcommitが残らない。同`references/history-rewrite.md`「fixupの実行上の制約」は当該件名のcommitが範囲内にある場合にfixupの作成を遮断するため、2ラウンド目以降の修正も本節の手順のままfixupとして作成できる。
 
 履歴書換えの前後ではrewrite対象を操作直前に解決したOID、tree、親OID及び件名を照合用に保持し、`rewrite_guard`の要求へ照合する。レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、照合結果を証拠として保存する。履歴統合後のHEADの7文字以上の一意な短縮OIDと近接検証結果を`## 進捗ログ`へ追記する。
 
