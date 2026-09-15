@@ -16,8 +16,8 @@ disable-model-invocation: true
 
 1. `agent-toolkit:wi-standards`と`agent-toolkit:writing-standards`を起動する。通常AWIの本文、起草完了ゲート、由来、投入と取得及び保存照合は`agent-toolkit:wi-standards`だけを正本として適用する。
 2. `agent-toolkit:plan-mode`の`references/grilling.md`を全文読み、ユーザーの選好に依存する未確定判断がなくなるまで質問ラウンドを行い、同書の終了時報告を出力する。
-3. `agent-toolkit:wi-standards`のdry-runが成功した後、保存する本文をユーザーが確認できる状態にする。本文全文を地の文へ出力せず、`AskUserQuestion`の本文へ、見出し語`確認コマンド`とコロンに続けて`less <本文ファイルの絶対パス>`を1行のコードスパンで示し、投入可否の回答を得る。対象リポジトリ、種別及び`source`は質問本文へ添えない。
-4. 修正要求を受領した場合は本文を改訂し、同じdry-runからやり直して再提示する。承認後はdry-runと同じ本文及び引数で`atk wi add`を実行し、`agent-toolkit:wi-standards`の保存照合を完了する。
+3. 保存する本文をユーザーが確認できる状態にする。本文全文を地の文へ出力せず、`AskUserQuestion`の本文へ、見出し語`確認コマンド`とコロンに続けて`less <本文ファイルの絶対パス>`を1行のコードスパンで示し、投入可否の回答を得る。対象リポジトリ、種別及び`source`は質問本文へ添えない。
+4. 修正要求を受領した場合は本文を改訂して再提示する。承認後は提示した本文で`atk wi add`を実行し、`agent-toolkit:wi-standards`の保存照合を完了する。`atk wi add`が投入を拒否した場合は承認を取り直さず、拒否理由を解消して投入し、投入後に修正内容をユーザーへ報告する。修正が本文の要求内容（対象、反映先、完成条件）を変える場合だけ、改訂した本文を再提示して承認を得る。
 5. 対象リポジトリの規範が同じ工程で固有の追跡先を要求する場合だけ、その記載を完了する。
 6. 完成済みのAWI投入結果を作業成果として`agent-toolkit:completion-report`へ渡し、ユーザー向け完了報告を生成する。
 
@@ -30,6 +30,6 @@ disable-model-invocation: true
 ## 完成条件
 
 - ユーザー依存事項の回答を投入前に得ている
-- dry-run済み本文を`less`の確認コマンドで提示し、投入承認後に同じ入力を登録している
+- 保存する本文を`less`の確認コマンドで提示し、投入承認後に同じ入力を登録している
 - `agent-toolkit:wi-standards`が定める一致判定、成功報告及び警告の不在を確認している
 - 対象リポジトリの実装と`processing`項目を変更していない
