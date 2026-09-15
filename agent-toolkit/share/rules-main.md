@@ -22,7 +22,7 @@
 自律モードのまま継続する。UWIへの回答は本切り替えの対象外とし、
 本節のUWI受領規定に従って扱う。
 
-判定にはセッション状態フラグ`process_wi_skill_invoked`を用いる。
+協調モードと自律モードのいずれであるかの判定には、セッション状態フラグ`process_wi_skill_invoked`を用いる。当該フラグの記録元と利用先は`agent-toolkit:writing-standards`の`references/session-state-and-flags.md`が定める。
 
 ### 確認を要する事項
 

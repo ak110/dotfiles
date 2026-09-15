@@ -5,6 +5,7 @@
 ```
 
 メインが`agent-toolkit:process-wi`のレーンを実行する際、本書に従ってレーン担当を起動し、計画作成完了、実装完了及びエスカレーションを受領する。
+公開工程で終端担当が`CI修正担当`を起動する場合と、実行レビューの修正担当を新しく起動する場合も、起動と受領は本書に従う。
 レーン担当は計画の起草、実装、近接検証、commit、レビュー修正、統合を同じthreadで担う。
 レーン担当自身の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を正本とする。
 
@@ -47,4 +48,4 @@
 
 レーン担当から`needs_escalation`を受領した場合は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## エスカレーションの事由別の扱い`に従って区分し、回答だけを同じthreadへ返す。
 ユーザーの選好に依存する判断は確認経路へ送り、回答を受領してから返す。
-同じthreadを継続できない場合の扱いは`agent-toolkit:delegation`の経路選択契約に従い、新しいレーン担当を起動する場合は`再開位置`へ作業rootの計画ファイルの絶対パスを渡す。
+同じthreadを継続できない場合の扱いは`agent-toolkit:delegation`のSKILL.mdの`## 継続と新規起動`に従い、新しいレーン担当を起動する場合は`再開位置`へ作業rootの計画ファイルの絶対パスを渡す。

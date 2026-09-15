@@ -1,7 +1,7 @@
 # 実行レビュー反復の調整
 
 実行レビューの呼び出し元が、指摘の受領、修正、再レビュー及びエスカレーションを収束まで調整する。
-レビューイーは、`agent-toolkit:process-wi`では当該レーンのレーン担当、`agent-toolkit:plan-mode`の直接起動と`agent-toolkit:fast-process-wi`ではメインとする。
+レビューイーは、`agent-toolkit:process-wi`では当該レーンのレーン担当、`agent-toolkit:plan-mode`の直接起動と`agent-toolkit:fast-process-wi`ではメイン、公開工程のCI失敗修正では終端担当が起動する`CI修正担当`とする。
 
 ## ラウンド番号の正本
 
