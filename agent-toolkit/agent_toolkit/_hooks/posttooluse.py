@@ -84,6 +84,7 @@ from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
+    record_atk_help_paths,
     record_bash_failure,
     reset_bash_failure_sequence,
     update_state,
@@ -618,9 +619,6 @@ def _is_agents_wait_invocation(tokens: tuple[str, ...]) -> bool:
     return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1:3] == ("agents", "wait")
 
 
-_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
-
-
 def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
     """実行トークン列から公開済みの最下層`atk`サブコマンド経路を返す。"""
     if len(tokens) < 2 or pathlib.PurePath(tokens[0]).name not in {"atk", "atk.py"}:
@@ -676,17 +674,7 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
         if normalized not in help_paths:
             help_paths.append(normalized)
     if help_paths:
-
-        def _record_help(state: dict) -> dict | None:
-            current = state.get(_ATK_HELP_OBSERVED_KEY)
-            observed = [value for value in current if isinstance(value, str)] if isinstance(current, list) else []
-            additions = [value for value in help_paths if value not in observed]
-            if not additions:
-                return None
-            state[_ATK_HELP_OBSERVED_KEY] = [*observed, *additions]
-            return state
-
-        update_state(session_id, _record_help)
+        record_atk_help_paths(session_id, help_paths)
     exit_invoked = any(
         pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"} and segment.tokens[1:] == ("agents-exit-session",)
         for segment in segments

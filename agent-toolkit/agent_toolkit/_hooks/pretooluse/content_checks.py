@@ -15,6 +15,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
 - ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (warn/block)
+- 質問本文・選択肢が指す`atk`サブコマンドの公開契約が未観測の場合の検査 (block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 
@@ -141,7 +142,9 @@ from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatt
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     mark_plan_written,
+    observed_atk_help_paths,
     read_state,
+    record_atk_help_paths,
     update_state,
 )
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -306,6 +309,73 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
         )
         return True
     return False
+
+
+_ATK_QUESTION_CONTRACT_FIX = (
+    "添えた公開契約で選択が一意に定まる場合は確認を発行せず自ら確定する。"
+    "定まらない場合は、当該契約が示す外部可視の結果と副作用を選択肢の説明へ書いてから再発行する。"
+    "判断基準は`agent-toolkit:confirmation-and-uwi`の「確認の選択肢を組む手順」が定める。"
+    "公開契約を添えられない場合は`atk <サブコマンド> --help`を単独で実行して目的と副作用を確認する。"
+)
+
+
+def _matched_atk_command_paths(text: str) -> list[tuple[str, ...]]:
+    """本文に現れる公開済みの最下層`atk`サブコマンド経路を返す。
+
+    同じ位置へ上位経路と下位経路の双方が一致するため、他の一致の接頭となる経路を除いて
+    最下層だけを残す。語境界の判定により、より長い識別子の一部として現れる語を除く。
+    """
+    from agent_toolkit._atk.help_text import HELP  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    matched = [
+        tuple(key.split()[1:])
+        for key in HELP
+        if key.startswith("atk ") and re.search(rf"(?<![0-9A-Za-z_-]){re.escape(key)}(?![0-9A-Za-z_-])", text)
+    ]
+    return [path for path in matched if not any(other != path and other[: len(path)] == path for other in matched)]
+
+
+def _check_atk_contract_before_question(tool_name: str, fields: list[tuple[str, str]], session_id: str) -> bool:
+    """確認の本文が指す`atk`サブコマンドの公開契約が未観測なら、契約を添えて遮断する。
+
+    ユーザーへ提示した確認は当該回について取り消せないため、通した結果を復元できない。
+    規範が定める代替手段は`agent-toolkit:confirmation-and-uwi`の「確認の選択肢を組む手順」が
+    定める1つ（当該公開契約を実測してから選択肢を組む）に定まり、遮断の本文どおりに判定し直して
+    再発行すれば観測済みの記録により通過する。この2点により警告ではなく遮断で返す。
+    公開契約から選択が一意に定まる確認が回答の待機を生じさせ、契約に書かれた副作用が
+    選択肢の説明へ現れなかった観測に由来する。
+    """
+    paths: list[tuple[str, ...]] = []
+    for _field, value in fields:
+        for path in _matched_atk_command_paths(value):
+            if path not in paths:
+                paths.append(path)
+    if not paths:
+        return False
+    observed = observed_atk_help_paths(session_id)
+    missing = [path for path in paths if " ".join(path) not in observed]
+    if not missing:
+        return False
+    from agent_toolkit._atk.help_text import HELP  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    descriptions = [HELP.get(f"atk {' '.join(path)}", {}).get("description", "") for path in missing]
+    if not all(descriptions):
+        print(
+            _block_notice("blocked: atkサブコマンドの公開契約の定義を解決できない。", fix=_ATK_QUESTION_CONTRACT_FIX),
+            file=sys.stderr,
+        )
+        return True
+    record_atk_help_paths(session_id, [" ".join(path) for path in missing])
+    bodies = [f"atk {' '.join(path)}: {description}" for path, description in zip(missing, descriptions, strict=True)]
+    print(
+        _block_notice(
+            f"blocked: `{tool_name}`の本文が`atk`のサブコマンドを指すが、"
+            "当該サブコマンドの公開契約を確認要否の判定と選択肢の起草の入力にしていない。\n" + "\n".join(bodies),
+            fix=_ATK_QUESTION_CONTRACT_FIX,
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 def _is_ps1(file_path: str) -> bool:

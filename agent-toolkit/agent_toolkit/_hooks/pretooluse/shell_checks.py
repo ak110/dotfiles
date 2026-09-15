@@ -148,7 +148,9 @@ from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatt
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     claim_bash_output_truncation_autofix,
+    observed_atk_help_paths,
     read_state,
+    record_atk_help_paths,
     update_state,
 )
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -1474,9 +1476,6 @@ def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
     )
 
 
-_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
-
-
 def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
     """実行トークン列から公開済みの最下層`atk`サブコマンド経路を返す。"""
     if len(tokens) < 2 or pathlib.PurePath(tokens[0]).name not in {"atk", "atk.py"}:
@@ -1502,9 +1501,7 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
             paths.append(path)
     if not paths:
         return None
-    state = read_state(session_id)
-    recorded = state.get(_ATK_HELP_OBSERVED_KEY)
-    observed = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
+    observed = observed_atk_help_paths(session_id)
     missing = [path for path in paths if " ".join(path) not in observed]
     if not missing:
         return None
@@ -1530,18 +1527,7 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
             file=sys.stderr,
         )
         return "block"
-    normalized_missing = [" ".join(path) for path in missing]
-
-    def _record_injected_help(current_state: dict) -> dict | None:
-        current = current_state.get(_ATK_HELP_OBSERVED_KEY)
-        values = [value for value in current if isinstance(value, str)] if isinstance(current, list) else []
-        additions = [value for value in normalized_missing if value not in values]
-        if not additions:
-            return None
-        current_state[_ATK_HELP_OBSERVED_KEY] = [*values, *additions]
-        return current_state
-
-    update_state(session_id, _record_injected_help)
+    record_atk_help_paths(session_id, [" ".join(path) for path in missing])
     bodies = [f"atk {' '.join(path)}: {section}" for path, section in zip(missing, help_sections, strict=True)]
     return _llm_notice(
         "info: 未観測のatkサブコマンドについて、実行前に受理形式を案内する。\n" + "\n".join(bodies),

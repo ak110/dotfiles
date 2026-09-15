@@ -38,6 +38,7 @@ _SESSION_TITLE_KEY = "last_hook_session_title"
 _INHERITED_FROM_SESSION_KEY = "inherited_from_session_id"
 _WARN_NOTICE_COUNTS_KEY = "warn_notice_counts"
 _BASH_OUTPUT_TRUNCATION_AUTOFIX_KINDS_KEY = "bash_output_truncation_autofix_kinds"
+_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
 _BASH_FAILURE_STREAK_KEY = "bash_failure_streak"
 _BASH_FAILURE_GATE_KEY = "bash_failure_gate"
 _TRANSCRIPT_SESSION_ID_KEYS = ("sessionId", "session_id")
@@ -294,6 +295,38 @@ def claim_bash_output_truncation_autofix(session_id: str, kinds: Sequence[str]) 
 
     update_state(session_id, _claim)
     return claimed
+
+
+def observed_atk_help_paths(session_id: str) -> set[str]:
+    """当該セッションで公開契約を観測済みの`atk`サブコマンド経路を返す。
+
+    経路は`atk`を除いたサブコマンド名を半角空白で連結した文字列とする。
+    PreToolUseの案内、PostToolUseのヘルプ実行の記録及び確認の発行前の検査が同じ集合を共有し、
+    同じ公開契約を同一セッションで繰り返し提示しない。
+    """
+    recorded = read_state(session_id).get(_ATK_HELP_OBSERVED_KEY)
+    if not isinstance(recorded, list):
+        return set()
+    return {value for value in recorded if isinstance(value, str)}
+
+
+def record_atk_help_paths(session_id: str, paths: Sequence[str]) -> bool:
+    """`atk`サブコマンド経路を観測済みとして追記し、追記したかを返す。"""
+    added = False
+
+    def _record(current: dict) -> dict | None:
+        nonlocal added
+        recorded = current.get(_ATK_HELP_OBSERVED_KEY)
+        observed = [value for value in recorded if isinstance(value, str)] if isinstance(recorded, list) else []
+        additions = [value for value in paths if value not in observed]
+        added = bool(additions)
+        if not added:
+            return None
+        current[_ATK_HELP_OBSERVED_KEY] = [*observed, *additions]
+        return current
+
+    update_state(session_id, _record)
+    return added
 
 
 def record_bash_failure(session_id: str, exit_code: int) -> bool:

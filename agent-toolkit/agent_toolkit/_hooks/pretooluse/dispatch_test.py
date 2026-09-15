@@ -22,6 +22,7 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk.help_text import HELP as _ATK_HELP
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -1087,6 +1088,60 @@ class TestUserFacingTextChecks:
 
         assert result.returncode == 0
         assert result.stdout == ""
+        assert result.stderr == ""
+
+
+class TestAtkContractBeforeQuestion:
+    """確認の発行前に、選択の対象が持つ`atk`サブコマンドの公開契約を実行主体へ渡す。"""
+
+    _SUBCOMMAND = "atk wi process-loop-abort"
+
+    def _payload(self, field: str, session_id: str) -> dict:
+        payload = _user_facing_payload(field, f"`{self._SUBCOMMAND}`の扱いを選んでください。")
+        payload["session_id"] = session_id
+        return payload
+
+    @pytest.mark.parametrize("field", ["question", "header", "label", "description"])
+    def test_unobserved_subcommand_blocks_with_contract(self, tmp_path: pathlib.Path, field: str) -> None:
+        """未観測のサブコマンド名を含む確認を、当該サブコマンドの公開契約を添えて遮断する。"""
+        result = _run(self._payload(field, f"contract-{field}"), env_overrides=_plan_file_state_env(tmp_path))
+
+        assert result.returncode == 2
+        assert _ATK_HELP[self._SUBCOMMAND]["description"] in result.stderr
+        assert "confirmation-and-uwi" in result.stderr
+
+    def test_second_question_with_same_subcommand_passes(self, tmp_path: pathlib.Path) -> None:
+        """同じサブコマンドを含む再発行は、観測済みの記録により通過する。"""
+        env = _plan_file_state_env(tmp_path)
+        first = _run(self._payload("question", "contract-repeat"), env_overrides=env)
+        assert first.returncode == 2
+
+        second = _run(self._payload("question", "contract-repeat"), env_overrides=env)
+
+        assert second.returncode == 0
+        assert second.stderr == ""
+
+    def test_question_without_subcommand_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
+        """サブコマンド名を含まない確認は遮断しない。"""
+        payload = _user_facing_payload("question", "常駐処理の扱いを選んでください。")
+        payload["session_id"] = "contract-absent"
+
+        result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+
+    def test_exit_plan_mode_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
+        """計画本文は選択肢を伴わないため本検査の対象にしない。"""
+        payload = {
+            "tool_name": "ExitPlanMode",
+            "tool_input": {"plan": f"`{self._SUBCOMMAND}`で常駐処理を止める。"},
+            "session_id": "contract-plan",
+        }
+
+        result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
+
+        assert result.returncode == 0
         assert result.stderr == ""
 
 
