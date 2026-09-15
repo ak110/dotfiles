@@ -762,6 +762,8 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         ]
     if task_name == "upstream-submission.subagent.md":
         return ["元項目と投入先の組: 20260101-000000-001.md=/upstream", handoff]
+    if task_name == "add-wi.subagent.md":
+        return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
     raise ValueError(f"未対応のタスク文書: {task_name}")
 
 
@@ -773,6 +775,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
 @pytest.mark.parametrize(
     "task_name",
     [
+        "add-wi.subagent.md",
         "exec-review.subagent.md",
         "exec.subagent.md",
         "lane-integration.subagent.md",
@@ -783,7 +786,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
     ],
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
-    """実運用で観測した7種類の最小起動文が必須入力検査を通過する。"""
+    """実運用で観測した最小起動文が必須入力検査を通過する。"""
     task_document = subject._SHARE_DIRECTORY / task_name
     extra_params = _observed_input_params(task_name, tmp_path)
 

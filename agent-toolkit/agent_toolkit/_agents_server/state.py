@@ -51,6 +51,7 @@ WAIT_TIMEOUT_SECONDS = 3600.0
 EMPTY_WAIT_TIMEOUT_SECONDS = 150.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
+    "add-wi.subagent.md": "execute",
     "exec-review.subagent.md": "execute_review",
     "exec.subagent.md": "execute",
     "lane-integration.subagent.md": "execute",
