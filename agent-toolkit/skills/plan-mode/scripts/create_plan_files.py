@@ -21,6 +21,9 @@ try:
     from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         file_lock as _file_lock,
     )
+    from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        session_state as _session_state,
+    )
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
     )
@@ -232,6 +235,39 @@ def _check_structure(
         raise PlanCreationError("計画構造検査に失敗しました: " + " / ".join(errors))
 
 
+def _record_plan_written_state() -> None:
+    """計画ファイルの確定を、連続直接編集検査が読むセッション状態へ記録する。
+
+    当該検査は`plan_file_written`が偽である間だけ`agent-toolkit`配下への連続した直接編集を数え、
+    3件目を遮断する。正規の計画作成経路である本処理が当該項目を設定しないと、
+    手順どおり計画を作成した実行主体が3ファイル目の編集で遮断される。
+    設定する3項目と値は`agent_toolkit._hooks.pretooluse.content_checks`の完了記録とそろえる。
+
+    セッション識別子は`CLAUDE_CODE_SESSION_ID`だけを読む。
+    `_plan_file.resolve_owner_session_id()`は`AGENT_TOOLKIT_OWNER_SESSION`を優先するため、
+    委譲先で実行すると委譲元の識別子を返し、別セッションの状態を書き換える。
+    当該環境変数を持たない実行環境では記録を書かず、計画の作成は成功として扱う。
+    """
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not session_id:
+        return
+
+    def _mark_plan_written(current: dict) -> dict | None:
+        changed = False
+        if not current.get("plan_file_written", False):
+            current["plan_file_written"] = True
+            changed = True
+        if current.get("direct_agent_toolkit_edit_count", 0) != 0:
+            current["direct_agent_toolkit_edit_count"] = 0
+            changed = True
+        if current.get("last_agent_toolkit_edit_path") is not None:
+            current["last_agent_toolkit_edit_path"] = None
+            changed = True
+        return current if changed else None
+
+    _session_state.update_state(session_id, _mark_plan_written)
+
+
 def _finalize_candidate(
     directory: pathlib.Path,
     plans_root: pathlib.Path,
@@ -244,7 +280,8 @@ def _finalize_candidate(
 ) -> tuple[pathlib.Path, ...]:
     """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。
 
-    確定と検査に成功した後、当該計画バンドルの所有セッションを記録する。
+    確定と検査に成功した後、当該計画バンドルの所有セッションと、
+    連続直接編集検査が読むセッション状態を記録する。
     所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
     """
     main_path = directory / f"{stem}.md"
@@ -274,6 +311,7 @@ def _finalize_candidate(
         _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
         _plan_file.record_plan_owner(main_path)
+        _record_plan_written_state()
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
         for path, identity, content in reversed(owned):

@@ -3,10 +3,12 @@
 import datetime
 import pathlib
 import subprocess
+import tempfile
 
 import create_plan_files
 import pytest
 
+from agent_toolkit._hooks import session_state as _session_state
 from agent_toolkit._plan import fixture as _plan_fixture
 
 
@@ -24,6 +26,17 @@ def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
     repo.mkdir()
     _git(repo, "init", "-q")
     return repo
+
+
+@pytest.fixture(name="state_root")
+def fixture_state_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """セッション状態ファイルの保存先を実行環境の一時ディレクトリから隔離する。"""
+    root = tmp_path / "state"
+    root.mkdir()
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(name, str(root))
+    monkeypatch.setattr(tempfile, "tempdir", str(root))
+    return root
 
 
 def _source(repo: pathlib.Path, directory: pathlib.Path, *, bug: bool = False) -> tuple[pathlib.Path, pathlib.Path | None]:
@@ -112,6 +125,46 @@ def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pa
 
     assert path == tmp_path / "home/.claude/plans/13-0217_計画保存先移行.md"
     assert path.is_file()
+
+
+def test_records_direct_edit_completion_state(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    state_root: pathlib.Path,  # pylint: disable=unused-argument
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """計画の確定後に連続直接編集検査の完了3項目を現在のセッションへ記録する。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    _session_state.update_state(
+        "current-session",
+        lambda current: {**current, "direct_agent_toolkit_edit_count": 2, "last_agent_toolkit_edit_path": "/repo/a.md"},
+    )
+    source, _bug_source = _source(repo, tmp_path)
+
+    create_plan_files.create_plan_files(source, "13-0217_状態記録", home=tmp_path / "home", work_dir=repo)
+
+    state = _session_state.read_state("current-session")
+    assert state["plan_file_written"] is True
+    assert state["direct_agent_toolkit_edit_count"] == 0
+    assert state["last_agent_toolkit_edit_path"] is None
+
+
+def test_skips_state_record_for_delegating_session(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    state_root: pathlib.Path,  # pylint: disable=unused-argument
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """自身のセッション識別子が無い場合は委譲元の識別子へ記録せず作成に成功する。"""
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-session")
+    source, _bug_source = _source(repo, tmp_path)
+
+    (path,) = create_plan_files.create_plan_files(source, "13-0217_状態非記録", home=tmp_path / "home", work_dir=repo)
+
+    assert path.is_file()
+    assert _session_state.read_state("owner-session") == {}
 
 
 def test_cli_accepts_source_alias_and_creates_bug_file(
