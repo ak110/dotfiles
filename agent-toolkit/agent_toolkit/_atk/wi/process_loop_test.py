@@ -551,13 +551,13 @@ class TestProcessLoopPromptAndEnv:
         with pytest.raises(OSError):
             os.fstat(closed_descriptors[0])
 
-    def test_abort_request_stops_after_one_session_and_clears_state(
+    def test_abort_request_before_first_session_stops_without_session(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """中断要求があれば現セッション後にベルを3回鳴らし、要求を消費して終了する。"""
+        """反復の開始時点に中断要求があれば、子セッションを起動せずベルを鳴らして終了する。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -576,7 +576,89 @@ class TestProcessLoopPromptAndEnv:
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert loop_exit.value.code == 0
+        assert not session_calls
+        assert capsys.readouterr().err == "\a\a\a"
+        assert sleeps == [0.1, 0.1]
+        assert not (tmp_path / "state" / "agent-toolkit" / "process-wi-abort").exists()
+
+    def test_abort_requested_during_session_stops_before_restart(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """既定の起動形でも、セッション中の中断要求を再起動より先に検出して終了する。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        session_calls: list[dict[str, Any]] = []
+        sleeps: list[float] = []
+        restart_calls: list[tuple[object, ...]] = []
+        base_run = _fake_run_with_remote_url(myrepo, session_calls, 0)
+        abort_path = tmp_path / "state" / "agent-toolkit" / "process-wi-abort"
+        abort_requests: list[int] = []
+
+        def request_abort_after_session(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+            result = base_run(cmd, *args, **kwargs)
+            if session_calls and not abort_requests:
+                abort_requests.append(len(abort_requests))
+                with contextlib.suppress(SystemExit):
+                    atk.main(["wi", "process-loop-abort"], home=tmp_path)
+            return result
+
+        def record_restart(*args: Any, **kwargs: Any) -> None:
+            del kwargs
+            restart_calls.append(args)
+
+        monkeypatch.setattr(subprocess, "run", request_abort_after_session)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1)
+        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: None)
+        monkeypatch.setattr(_process_loop, "_restart_process_loop", record_restart)
+        monkeypatch.setattr(_process_loop.time, "sleep", sleeps.append)
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as loop_exit:
+            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-alerts"], home=tmp_path)
+
+        assert loop_exit.value.code == 0
         assert len(session_calls) == 1
+        assert not restart_calls
+        assert capsys.readouterr().err == "\a\a\a"
+        assert sleeps == [0.1, 0.1]
+        assert not abort_path.exists()
+
+    def test_abort_requested_during_wait_stops_at_next_iteration(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """0件の待機中に設定した中断要求を、復帰後の反復境界で検出して終了する。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        session_calls: list[dict[str, Any]] = []
+        sleeps: list[float] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, session_calls, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 0)
+        monkeypatch.setattr(_process_loop.time, "sleep", sleeps.append)
+
+        def request_abort_while_waiting(*_args: object, **_kwargs: object) -> bool:
+            with contextlib.suppress(SystemExit):
+                atk.main(["wi", "process-loop-abort"], home=tmp_path)
+            return True
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", request_abort_while_waiting)
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as loop_exit:
+            atk.main(
+                ["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+        assert loop_exit.value.code == 0
+        assert not session_calls
         assert capsys.readouterr().err == "\a\a\a"
         assert sleeps == [0.1, 0.1]
         assert not (tmp_path / "state" / "agent-toolkit" / "process-wi-abort").exists()

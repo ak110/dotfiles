@@ -116,6 +116,28 @@ def _cmd_process_loop_status() -> None:
     print(f"常駐処理への中断要求: {status}")
 
 
+def _consume_process_loop_abort() -> bool:
+    """中断要求があればベルを3回鳴らして要求を消費し、常駐処理を終了すべきかを返す。
+
+    判定点は反復の境界と、呼び出し元へ戻らない再起動の直前の2箇所へ限定する。
+    `_restart_process_loop`は`os.execv`又は`sys.exit`で呼び出し元へ戻らないため、
+    当該呼び出しの後段へ置いた判定は`--no-update`を指定しない既定の起動形で実行されない。
+    同じ理由で`_update_before_session`と`_check_and_restart_on_update`の後段にも判定を置かず、
+    反復ループの先頭でまとめて判定する。
+    `atk wi process-loop-abort`の公開契約は、現在のセッションが終わった時点で次の反復へ進まず
+    終了することと、中断で終了した時点で要求も解除されることを定める。
+    """
+    abort_path = _process_loop_abort_path()
+    if not abort_path.exists():
+        return False
+    for bell_index in range(3):
+        print("\a", end="", file=sys.stderr, flush=True)
+        if bell_index < 2:
+            time.sleep(_ABORT_BELL_INTERVAL_SEC)
+    abort_path.unlink(missing_ok=True)
+    return True
+
+
 def _dialog_timeout_settings() -> str:
     """メイン会話の質問タイムアウトとRemote Control無効化の設定を返す。
 
@@ -1021,7 +1043,11 @@ def _run_process_session(
     resume_pending: bool,
     dotfiles_root: pathlib.Path | None,
 ) -> bool:
-    """子セッションを1回実行し、正常終了後の再起動を要求する。"""
+    """子セッションを1回実行し、常駐処理を終了すべきかを返す。
+
+    中断要求の判定は`_restart_process_loop`の呼び出しより前に置く。同関数は呼び出し元へ
+    戻らないため、後段へ置いた判定は`--no-update`を指定しない経路で実行されない。
+    """
     session_argv, hook_debug_log = _build_session_argv(
         args,
         session_prompt,
@@ -1051,6 +1077,8 @@ def _run_process_session(
     )
     if not _is_normal_session_exit(orchestrator, result.returncode, platform=os.name):
         _exit_abnormal_session(orchestrator, result.returncode)
+    if _consume_process_loop_abort():
+        return True
     if args.no_update:
         return False
     print("process-loopを再起動します。")
@@ -1122,7 +1150,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     Claude Codeは0・-15・15・143、POSIXのCodexは0・-15、WindowsのCodexは0を正常終了とする。
     正常終了した場合、
     `--no-update`未指定なら`_restart_process_loop`でランチャーへ再起動を要求する。
-    中断要求がある場合は再起動より先に端末ベルを3回鳴らし、要求を解除して正常終了する。
+    中断要求は反復ループの先頭と再起動の直前で判定する。要求がある場合は端末ベルを3回鳴らし、
+    要求を解除して正常終了する。反復ループ先頭の判定により、更新検知による再起動と0件待機を
+    含む反復の境界でも要求を検出する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
     秒間隔で実行し、新規アラートを検知した場合はAWIへ投入して即座に次反復へ進む。
@@ -1177,6 +1207,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
         try:
             try:
                 while True:
+                    if _consume_process_loop_abort():
+                        return
                     if not _pull_private_notes(private_notes):
                         print("同期を再試行するまで変更検知を待機します。")
                         _wait_for_changes(private_notes, target_repo_id)
@@ -1223,7 +1255,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             _resolve_orchestrator_specs(), env, session_path
                         )
                         print(f"{count}件のAWI/回答済みUWIを検知。{orchestrator}へ委譲します。")
-                        _run_process_session(
+                        if _run_process_session(
                             args,
                             session_path,
                             session_prompt,
@@ -1233,14 +1265,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             effort=effort,
                             resume_pending=current_resume_pending,
                             dotfiles_root=dotfiles_root,
-                        )
-                        abort_path = _process_loop_abort_path()
-                        if abort_path.exists():
-                            for bell_index in range(3):
-                                print("\a", end="", file=sys.stderr, flush=True)
-                                if bell_index < 2:
-                                    time.sleep(_ABORT_BELL_INTERVAL_SEC)
-                            abort_path.unlink(missing_ok=True)
+                        ):
                             return
                         continue
                     last_alert_check, submitted = _check_process_loop_alerts(
