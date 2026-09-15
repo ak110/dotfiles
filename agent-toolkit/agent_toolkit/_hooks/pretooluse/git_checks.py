@@ -518,10 +518,25 @@ def _is_docs_only_commit(event: GitEvent, cwd: str) -> bool:
     return all(path.lower().endswith(".md") for path in files)
 
 
+def _delegate_test_executed(state: dict) -> bool:
+    """自セッションが起動した委譲先のいずれかで検証を実行済みであれば真を返す。
+
+    委譲先は同じホストの別セッションとして動作し、自身の状態ファイルへ`test_executed`を記録する。
+    呼び出し元の状態が保持する`agents_server_sessions`の各セッション識別子について当該記録を読む。
+    記録が無い識別子と読み取りに失敗した識別子は`read_state`が空辞書を返すため偽として扱う。
+    """
+    sessions = state.get("agents_server_sessions")
+    if not isinstance(sessions, dict):
+        return False
+    return any(read_state(delegate_session_id).get("test_executed", False) for delegate_session_id in sessions)
+
+
 def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | None:
     """テスト未実行のままgit commitする場合に警告文を返す。
 
     テスト実行済み（stateの`test_executed`が真）の場合はスキップする。
+    検証を`agents_server`の委譲先で実行した場合は当該セッションの状態へ記録が残るため、
+    自セッションが偽の場合は`_delegate_test_executed`で委譲先の記録も読む。
     状態ファイル不在時は`test_executed` = falseとして扱い警告を表示する。
     コミット対象が全てMarkdownファイルの場合はpre-commit側に検証を委ねる運用を想定してスキップする。
     `git`コマンドの検出はシェルトークン解析（`extract_git_events`）に基づき、各セグメントの先頭
@@ -549,7 +564,7 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
     if not commit_events:
         return None
     state = read_state(session_id)
-    if state.get("test_executed", False):
+    if state.get("test_executed", False) or _delegate_test_executed(state):
         return None
     if any(not event.cwd_resolved for event in commit_events):
         return _llm_notice(

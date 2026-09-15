@@ -52,7 +52,10 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 - `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run_for_agent`成功時に記録し、
   `git commit`未検証警告の抑制に使う。セッション終了まで保持する。
-  Bash経由の記録元は、失敗した実行でPostToolUseが発火しないClaude Codeに限る
+  Bash経由の記録元は、失敗した実行でPostToolUseが発火しないClaude Codeに限る。
+  当該警告の判定は、自セッションの本フラグが偽である場合に`agents_server_sessions`が保持する
+  各セッション識別子の状態からも本フラグを読み、いずれかが真であれば警告を抑制する。
+  記録が無い識別子と読み取りに失敗した識別子は偽として扱う
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する。
   Bash経由の記録元は`test_executed`と同じくClaude Codeに限る
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う。
