@@ -1468,3 +1468,166 @@ class TestBashUnboundedRootTraversal:
 
         assert result.returncode == 0
         assert "大容量のユーザーディレクトリ" in _additional_context(result)
+
+
+class TestNormViolatingArgumentForms:
+    """規範が明文で禁じる引数の形の実行前検出。
+
+    いずれも通した場合の結果は当該コマンドの失敗に限り復元できるため、応答水準は警告とする。
+    """
+
+    @staticmethod
+    def _invoke(command: str, cwd: pathlib.Path, session_id: str = "arg-forms") -> subprocess.CompletedProcess[str]:
+        return _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(cwd), "session_id": session_id},
+            _plan_file_state_env(cwd),
+        )
+
+    def test_missing_paths_are_listed_together(self, tmp_path: pathlib.Path) -> None:
+        """不在のパスは実行位置ごとに全件を列挙する。"""
+        result = self._invoke("rg needle absent-a.txt absent-b.txt", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "absent-a.txt" in messages
+        assert "absent-b.txt" in messages
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "sed -n '1,5p' absent.txt",
+            "ls -l absent.txt",
+            "cp absent.txt copied.txt",
+            "find absent.txt -name x",
+            "wc -l absent.txt",
+            "grep -n needle absent.txt",
+            "cat absent.txt | wc -l",
+        ],
+    )
+    def test_missing_path_in_extended_commands(self, command: str, tmp_path: pathlib.Path) -> None:
+        """対象コマンドとパイプを含む呼び出しでも不在のパスを検出する。"""
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "absent.txt" in _agent_messages(result)
+
+    def test_existing_relative_and_absolute_paths_are_silent(self, tmp_path: pathlib.Path) -> None:
+        """実在するパスは相対と絶対のいずれでも検出しない。"""
+        target = tmp_path / "present.txt"
+        target.write_text("needle\n", encoding="utf-8")
+        for command in (f"wc -l {target}", "wc -l present.txt"):
+            result = self._invoke(command, tmp_path)
+            assert result.returncode == 0
+            assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    def test_git_grep_without_pattern_type_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke("git grep needle", tmp_path)
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" in _agent_messages(result)
+
+    @pytest.mark.parametrize("command", ["git grep -F needle", "git grep -nE needle", "git grep -P needle"])
+    def test_git_grep_with_pattern_type_is_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" not in _agent_messages(result)
+
+    def test_word_embedded_parenthesis_warns(self, tmp_path: pathlib.Path) -> None:
+        """語の内側の丸括弧は引用の崩れとして検出する。"""
+        result = self._invoke("wc -l report(1).txt", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "引用されていないシェルメタ文字" in messages
+        assert "ANSI-Cクォート" in messages
+
+    @pytest.mark.parametrize("command", ["(cd /tmp && ls)", "echo $(date)", "wc -l 'report(1).txt'"])
+    def test_legitimate_parenthesis_forms_are_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "引用されていないシェルメタ文字" not in _agent_messages(result)
+
+    def test_unresolved_git_object_warns(self, tmp_path: pathlib.Path) -> None:
+        """対象リポジトリで解決できないOIDを検出する。"""
+        repository = tmp_path / "repo"
+        repository.mkdir()
+        subprocess.run(["git", "init", "-q", str(repository)], check=True, capture_output=True)
+        result = self._invoke("git log deadbeefdeadbeef..cafebabecafebabe", repository)
+        assert result.returncode == 0
+        assert "deadbeefdeadbeef" in _agent_messages(result)
+
+    def test_option_terminator_missing_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke("rg needle -weird.txt", tmp_path)
+        assert result.returncode == 0
+        assert "オプション終端" in _agent_messages(result)
+
+    def test_option_terminator_missing_warns_for_revision_subcommand(self, tmp_path: pathlib.Path) -> None:
+        """revisionを位置引数として受け取る`git`サブコマンドは対象とする。"""
+        result = self._invoke("git log -weird.txt", tmp_path)
+        assert result.returncode == 0
+        assert "オプション終端" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        ["git commit -m -weird.txt", "git config -weird.txt", "git push -weird.txt"],
+    )
+    def test_option_terminator_is_silent_for_non_revision_subcommand(self, command: str, tmp_path: pathlib.Path) -> None:
+        """revisionを受け取らない`git`サブコマンドは対象外とする。"""
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "オプション終端" not in _agent_messages(result)
+
+    def test_rg_newline_pattern_without_multiline_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(r"rg 'a\nb' .", tmp_path)
+        assert result.returncode == 0
+        assert "複数行モード" in _agent_messages(result)
+
+    def test_rg_newline_pattern_with_multiline_is_silent(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(r"rg -U 'a\nb' .", tmp_path)
+        assert result.returncode == 0
+        assert "複数行モード" not in _agent_messages(result)
+
+    def test_unknown_atk_subcommand_warns(self, tmp_path: pathlib.Path) -> None:
+        """実在しないサブコマンドでは、親コマンドが受理する一覧と要約を示す。"""
+        result = self._invoke("atk not-a-subcommand", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "実在しないサブコマンド" in messages
+        assert "- wi: " in messages
+
+    def test_atk_subcommand_without_positionals_warns(self, tmp_path: pathlib.Path) -> None:
+        """位置引数を受理しないサブコマンドへ引数を付けた実行を検出する。"""
+        result = self._invoke("atk wi list 20260101-000000-001.md", tmp_path)
+        assert result.returncode == 0
+        assert "位置引数を受理しない" in _agent_messages(result)
+
+    def test_atk_subcommand_with_positionals_is_silent(self, tmp_path: pathlib.Path) -> None:
+        """位置引数を受理するサブコマンドの正常な実行は検出しない。"""
+        result = self._invoke("atk wi show 20260101-000000-001.md", tmp_path)
+        assert result.returncode == 0
+        assert "位置引数を受理しない" not in _agent_messages(result)
+
+    def test_redirect_to_missing_parent_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke("wc -l /etc/hostname > absent-dir/out.txt", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "親ディレクトリが存在しない" in messages
+        assert "absent-dir" in messages
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "wc -l /etc/hostname > out.txt",
+            'wc -l /etc/hostname > "$LOG_DIR"/out.txt',
+            "mkdir -p new-dir && wc -l /etc/hostname > new-dir/out.txt",
+        ],
+    )
+    def test_redirect_targets_without_violation_are_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        """存在する親、動的な出力先、先行作成を含む入力は検出しない。"""
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "親ディレクトリが存在しない" not in _agent_messages(result)
+
+    def test_rg_unknown_option_warns(self, tmp_path: pathlib.Path) -> None:
+        """`rg`の受理しないオプションは、受理集合とともに実行前に差し戻す。"""
+        result = self._invoke("rg --not-supported needle .", tmp_path, session_id="rg-option-contract")
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "--not-supported" in messages
+        assert "当該コマンドが受理するオプション" in messages

@@ -570,41 +570,127 @@ def _check_bash_env_full_read(command: str) -> bool:
     return False
 
 
-def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
-    """単純な`rg`・`ugrep`・`cat`の展開を含まない明示パスが存在するか検査する。
+# 明示パスの実在を検査する対象コマンドと、pattern・scriptを先頭の非オプション引数として取るコマンド。
+_PATH_OPERAND_COMMANDS: frozenset[str] = frozenset(
+    {"rg", "ugrep", "cat", "sed", "ls", "cp", "find", "wc", "grep", "egrep", "fgrep"}
+)
+_PATTERN_FIRST_COMMANDS: frozenset[str] = frozenset({"rg", "ugrep", "sed", "grep", "egrep", "fgrep"})
+# pattern・scriptを別の位置で受け取るオプション。指定がある場合は先頭の非オプション引数もパス候補とする。
+_PATTERN_OPTIONS: frozenset[str] = frozenset({"-e", "-f", "--regexp", "--file", "--expression"})
+# 直後のトークンを値として取る既知のオプション。パス候補の判定から当該値を除く。
+_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "-e",
+        "-f",
+        "-m",
+        "-A",
+        "-B",
+        "-C",
+        "-g",
+        "-t",
+        "-T",
+        "-d",
+        "--regexp",
+        "--file",
+        "--expression",
+        "--max-count",
+        "--include",
+        "--exclude",
+        "--exclude-dir",
+        "--glob",
+        "--type",
+        "--type-not",
+        "--max-filesize",
+        "--max-columns",
+        "--max-depth",
+        "--encoding",
+        "--color",
+        "--colour",
+        "--context",
+        "--after-context",
+        "--before-context",
+    }
+)
+_PATH_LIKE_PATTERN = re.compile(r"[/]|^[.~]|\.[A-Za-z0-9_]+$")
 
+
+def _looks_like_path(token: str) -> bool:
+    """パス候補として実在を検査する形かを返す。
+
+    パス区切り、先頭のドット・チルダ、拡張子のいずれかを持つトークンだけを対象とする。
+    拡張子を持たない語をパスとして扱うと、検索patternと`find`の述語を誤って対象にする。
+    """
+    return _PATH_LIKE_PATTERN.search(token) is not None
+
+
+def _path_operands(segment: _ExecutionSegment) -> list[str]:
+    """区間の実行位置から、実在を検査するパス候補を取り出す。"""
+    name = pathlib.PurePath(segment.tokens[0]).name
+    if name not in _PATH_OPERAND_COMMANDS:
+        return []
+    tokens = list(without_shell_redirections(segment.tokens[1:]))
+    operands: list[str] = []
+    option_terminator = False
+    pattern_consumed = name not in _PATTERN_FIRST_COMMANDS
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if not option_terminator and token == "--":
+            option_terminator = True
+            index += 1
+            continue
+        if not option_terminator and token.startswith("-") and token != "-":
+            name_part = token.split("=", 1)[0]
+            if name_part in _PATTERN_OPTIONS:
+                pattern_consumed = True
+            if name_part in _VALUE_OPTIONS and "=" not in token:
+                index += 2
+                continue
+            index += 1
+            continue
+        if not pattern_consumed:
+            pattern_consumed = True
+            index += 1
+            continue
+        operands.append(token)
+        index += 1
+    if name == "cp" and operands:
+        # `cp`の最終operandは複製先であり、実在しないことが正常な入力である。
+        operands = operands[:-1]
+    return operands
+
+
+def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
+    """検索・読取・複製コマンドの展開を含まない明示パスが存在するか検査する。
+
+    実行位置ごとに判定するため、パイプと制御演算子を含む呼び出しも対象とする。
+    不在のパスは実行位置ごとに全件を列挙し、複数パスを渡した呼び出しの是正が1回で済む形にする。
     通した場合の結果は当該コマンドが不在のパスで失敗することに限り、作業ツリーへ副作用を残さない。
     `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、警告で返す。
     """
-    masked = _bash_command_parser.mask_heredoc_bodies(command)
-    if not cwd or any(operator in masked for operator in ("|", ";", "&&", "||", "\n", ">", "<")):
+    if not cwd:
         return None
-    try:
-        tokens = shlex.split(command, posix=True)
-    except ValueError:
-        return None
-    if not tokens:
-        return None
-    name = pathlib.PurePath(tokens[0]).name
-    if name in {"rg", "ugrep"} and len(tokens) == 3 and not tokens[1].startswith("-"):
-        candidates = [tokens[2]]
-    elif name == "cat" and len(tokens) >= 2:
-        candidates = [token for token in tokens[1:] if not token.startswith("-")]
-    else:
-        return None
-    for candidate in candidates:
-        if candidate in {"-", "/dev/stdin"} or any(character in candidate for character in "*$?[]{}~`"):
+    missing: list[str] = []
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
             continue
-        path = pathlib.Path(candidate)
-        resolved = path if path.is_absolute() else pathlib.Path(cwd) / path
-        if not resolved.exists():
-            return _llm_notice(
-                f"明示された検索・読取パスが存在しない。対象: {candidate}\n"
-                "対処: 対象パスを現行の作業ディレクトリから解決し、実在するパスを指定する。",
-                tag=_WARN_TAG,
-                removable_cause=True,
-            )
-    return None
+        for candidate in _path_operands(segment):
+            if candidate in {"-", "/dev/stdin"} or any(character in candidate for character in "*$?[]{}~`"):
+                continue
+            if not _looks_like_path(candidate):
+                continue
+            path = pathlib.Path(candidate)
+            resolved = path if path.is_absolute() else pathlib.Path(cwd) / path
+            if not resolved.exists() and candidate not in missing:
+                missing.append(candidate)
+    if not missing:
+        return None
+    return _llm_notice(
+        "明示された検索・読取パスが存在しない。対象: " + "、".join(missing) + "\n"
+        "対処: 対象パスを現行の作業ディレクトリから解決し、実在するパスを指定する。",
+        tag=_WARN_TAG,
+        removable_cause=True,
+    )
 
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
@@ -1613,12 +1699,14 @@ def _check_bash_atk_options(command: str) -> str | None:
         contract = command_option_contract(path)
         if contract is None:
             continue
-        flags, valued, _positionals = contract
+        flags, valued, positionals = contract
         arguments = list(segment.tokens[1 + len(path) :])
+        extra_positionals: list[str] = []
         index = 0
         while index < len(arguments):
             token = arguments[index]
             if token == "--":
+                extra_positionals.extend(arguments[index + 1 :])
                 break
             option_name = token.split("=", 1)[0]
             if token in flags or option_name in valued:
@@ -1649,7 +1737,16 @@ def _check_bash_atk_options(command: str) -> str | None:
                     tag=_WARN_TAG,
                     removable_cause=True,
                 )
+            else:
+                extra_positionals.append(token)
             index += 1
+        if not positionals and extra_positionals:
+            return _llm_notice(
+                f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(extra_positionals)}\n"
+                "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
     return None
 
 
@@ -2522,3 +2619,438 @@ def _check_bash_codex_exec(command: str) -> str | None:
         "`codex exec`を実行しようとしている。計画ファイルをレビューへ提出する実行であれば、"
         "ユーザー確認ではなく推測で確定した判断が無いかを確認し、未解決の質問をユーザーと解消してから続行する。"
     )
+
+
+# --- 規範が明文で禁じる引数の形の実行前検出 ---
+#
+# 本節の各判定は、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が
+# 既に明文で禁じている形のうち、静的に確定できるものを実行前に検出する。
+# 通した場合の結果はいずれも当該コマンドの失敗に限り復元できるため、応答水準は警告とする。
+
+_GIT_GREP_PATTERN_TYPE_OPTIONS: frozenset[str] = frozenset(
+    {"-F", "-E", "-P", "-G", "--fixed-strings", "--basic-regexp", "--extended-regexp", "--perl-regexp"}
+)
+
+
+def _git_subcommand_tokens(segment: _ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
+    """`git`区間のサブコマンド名と、当該サブコマンド以降の引数を返す。"""
+    if not segment.resolved or not segment.tokens:
+        return None
+    if pathlib.PurePath(segment.tokens[0]).name != "git":
+        return None
+    index = 1
+    tokens = segment.tokens
+    while index < len(tokens):
+        token = tokens[index]
+        if not token.startswith("-"):
+            return token, tuple(tokens[index + 1 :])
+        if token in _GLOBAL_OPTIONS_WITH_VALUE:
+            index += 2
+            continue
+        if token in _GLOBAL_OPTIONS_WITHOUT_VALUE or "=" in token:
+            index += 1
+            continue
+        return None
+    return None
+
+
+def _check_bash_git_grep_pattern_type(command: str) -> str | None:
+    """`git grep`でpattern種別を明示していない呼び出しを検出する。"""
+    for segment in _extract_execution_segments(command):
+        resolved = _git_subcommand_tokens(segment)
+        if resolved is None or resolved[0] != "grep":
+            continue
+        arguments = without_shell_redirections(resolved[1])
+        if any(token == "--help" for token in arguments):
+            continue
+        specified = any(
+            token in _GIT_GREP_PATTERN_TYPE_OPTIONS
+            or (token.startswith("-") and not token.startswith("--") and any(letter in "FEPG" for letter in token[1:]))
+            for token in arguments
+        )
+        if specified:
+            continue
+        return _llm_notice(
+            "`git grep`が固定文字列・拡張正規表現・Perl互換正規表現のいずれの種別も指定していない。\n"
+            "対処: 検索意図に応じて`-F`・`-E`・`-P`のいずれかを明示し、"
+            "オプション、pattern、`--`、pathspecの順で引数を置く。",
+            tag=_WARN_TAG,
+            removable_cause=True,
+        )
+    return None
+
+
+_SHELL_GROUPING_PREFIX = re.compile(r"^(?:[$<>]?\()+")
+_SHELL_METACHARACTERS_IN_WORD = frozenset({"(", ")", "`"})
+
+
+def _check_bash_unquoted_shell_metacharacter(command: str) -> str | None:
+    """語の内側にある引用されていないシェルメタ文字を検出する。
+
+    検出対象は、単語の途中に現れる丸括弧とバッククォートに限る。
+    サブシェル、プロセス置換及びコマンド置換は語の先頭と末尾に現れるため、
+    当該位置の括弧を取り除いた核に残るものだけを対象とする。
+    二重引用符とドル記号は正当な用法が多く、静的には引用の崩れと区別できないため対象にしない。
+    """
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    stripped = re.sub(r"'[^']*'", lambda match: "_" * len(match.group()), masked)
+    stripped = re.sub(r'"[^"]*"', lambda match: "_" * len(match.group()), stripped)
+    for word in stripped.split():
+        core = _SHELL_GROUPING_PREFIX.sub("", word).rstrip(")")
+        detected = next((character for character in core if character in _SHELL_METACHARACTERS_IN_WORD), None)
+        if detected is None:
+            continue
+        return _llm_notice(
+            f"語の内側に引用されていないシェルメタ文字がある。対象の文字: {detected}\n"
+            "対処: 当該引数を`$'...'`のANSI-Cクォートで囲むか、変数へ代入してから`\"$VAR\"`で展開する。",
+            tag=_WARN_TAG,
+            removable_cause=True,
+        )
+    return None
+
+
+_GIT_OBJECT_PATTERN = re.compile(r"^[0-9a-f]{7,64}$")
+_GIT_RANGE_PATTERN = re.compile(r"^([0-9a-f]{7,64})\.{2,3}([0-9a-f]{7,64})$")
+
+
+def _git_object_candidates(arguments: Sequence[str]) -> list[str]:
+    """Git objectのOIDとして渡された候補を取り出す。"""
+    candidates: list[str] = []
+    for token in arguments:
+        if token.startswith("-"):
+            continue
+        range_match = _GIT_RANGE_PATTERN.match(token)
+        if range_match is not None:
+            candidates.extend(range_match.groups())
+            continue
+        if _GIT_OBJECT_PATTERN.match(token):
+            candidates.append(token)
+    return candidates
+
+
+def _git_object_exists(oid: str, cwd: str) -> bool | None:
+    """対象リポジトリでOIDを解決できるかを返す。判定できない場合はNoneを返す。"""
+    try:
+        completed = subprocess.run(  # noqa: S603
+            ["git", "-C", cwd, "cat-file", "-e", f"{oid}^{{commit}}"],  # noqa: S607
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode == 0:
+        return True
+    if "not a git repository" in completed.stderr.lower():
+        return None
+    return False
+
+
+def _check_bash_unresolved_git_object(command: str, cwd: str) -> str | None:
+    """対象リポジトリで解決できないGit objectのOIDを渡す呼び出しを検出する。
+
+    branch名とtag名を誤って対象にしないため、7文字以上の16進文字列だけを候補とする。
+    判定のためのGitコマンドが失敗した場合は、判定不能を検出の根拠にせず通過させる。
+    """
+    if not cwd:
+        return None
+    for segment in _extract_execution_segments(command):
+        resolved = _git_subcommand_tokens(segment)
+        if resolved is None:
+            continue
+        for oid in _git_object_candidates(without_shell_redirections(resolved[1])):
+            if _git_object_exists(oid, cwd) is False:
+                return _llm_notice(
+                    f"対象リポジトリで解決できないGit objectのOIDを渡している。対象: {oid}\n"
+                    "対処: 当該操作の直前に対象リポジトリで`git rev-parse`によりrevisionを解決し、"
+                    "得た値をそのまま渡す。",
+                    tag=_WARN_TAG,
+                    removable_cause=True,
+                )
+    return None
+
+
+def _check_bash_rg_multiline_pattern(command: str) -> str | None:
+    """改行を含むpatternへ複数行モードを指定していない`rg`の呼び出しを検出する。"""
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        if pathlib.PurePath(segment.tokens[0]).name != "rg":
+            continue
+        arguments = without_shell_redirections(segment.tokens[1:])
+        if any(token in {"-U", "--multiline"} for token in arguments):
+            continue
+        if any("\\n" in token and not token.startswith("-") for token in arguments):
+            return _llm_notice(
+                "`rg`のpatternへ`\\n`を含めているが、複数行モードを指定していない。\n対処: `-U`又は`--multiline`を指定する。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
+    return None
+
+
+def _atk_subcommand_catalog(prefix: tuple[str, ...]) -> list[tuple[str, str]]:
+    """指定した`atk`サブコマンド経路の直下にある受理サブコマンドと要約を返す。"""
+    from agent_toolkit._atk.help_text import HELP  # pylint: disable=import-outside-toplevel
+
+    depth = len(prefix) + 1
+    catalog: list[tuple[str, str]] = []
+    for key, entry in HELP.items():
+        parts = key.split()
+        if parts[0] != "atk" or len(parts) != depth + 1:
+            continue
+        if tuple(parts[1:depth]) != prefix:
+            continue
+        summary = entry.get("summary", "") if isinstance(entry, dict) else ""
+        catalog.append((parts[-1], summary))
+    return sorted(catalog)
+
+
+def _check_bash_unknown_atk_subcommand(command: str) -> str | None:
+    """`atk`のコマンド木に実在しないサブコマンドを指定した呼び出しを検出する。"""
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or len(segment.tokens) < 2:
+            continue
+        if pathlib.PurePath(segment.tokens[0]).name not in {"atk", "atk.py"}:
+            continue
+        candidate = segment.tokens[1]
+        if candidate.startswith("-"):
+            continue
+        if _recognized_atk_command_path(segment.tokens) is not None:
+            continue
+        catalog = _atk_subcommand_catalog(())
+        if not catalog:
+            continue
+        listed = "\n".join(f"- {name}: {summary}" for name, summary in catalog)
+        return _llm_notice(
+            f"`atk`のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
+            f"`atk`が受理するサブコマンド:\n{listed}\n"
+            "対処: 上記のいずれかへ修正する。",
+            tag=_WARN_TAG,
+            removable_cause=True,
+        )
+    return None
+
+
+# revisionを位置引数として受け取る`git`サブコマンド。
+# オプション終端の不在がrevisionとオプションの曖昧性を生むのは当該サブコマンドに限るため、
+# `commit`・`push`・`config`のようにrevisionを受け取らないサブコマンドは検出対象から外す。
+_GIT_REVISION_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
+        "bisect",
+        "blame",
+        "branch",
+        "cat-file",
+        "checkout",
+        "cherry-pick",
+        "describe",
+        "diff",
+        "log",
+        "merge",
+        "merge-base",
+        "range-diff",
+        "rebase",
+        "reset",
+        "restore",
+        "rev-list",
+        "rev-parse",
+        "revert",
+        "shortlog",
+        "show",
+        "switch",
+        "tag",
+    }
+)
+_HYPHEN_PREFIXED_DATA_PATTERN = re.compile(r"^-{1,2}[^\s=]*\.[A-Za-z0-9_]+$")
+
+
+def _check_bash_option_terminator_missing(command: str, cwd: str) -> str | None:
+    """ハイフンで始まるデータをオプション終端なしで位置引数へ渡す呼び出しを検出する。
+
+    オプションとデータを静的に区別できないため、パス区切り又は拡張子を持つ形だけを対象とする。
+    `git`はrevisionを位置引数として受け取るサブコマンドだけを対象とする。
+    """
+    del cwd  # noqa: PLW0613
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        name = pathlib.PurePath(segment.tokens[0]).name
+        if name == "git":
+            resolved = _git_subcommand_tokens(segment)
+            if resolved is None or resolved[0] not in _GIT_REVISION_SUBCOMMANDS:
+                continue
+            arguments = list(without_shell_redirections(resolved[1]))
+        elif name in _PATH_OPERAND_COMMANDS:
+            arguments = list(without_shell_redirections(segment.tokens[1:]))
+        else:
+            continue
+        if "--" in arguments:
+            continue
+        for token in arguments:
+            if not token.startswith("-") or token == "-":
+                continue
+            if "/" in token or _HYPHEN_PREFIXED_DATA_PATTERN.match(token):
+                return _llm_notice(
+                    f"ハイフンで始まるデータをオプション終端なしで渡している。対象: {token}\n"
+                    "対処: 当該コマンドが提供するオプション終端`--`を、データの直前へ置く。",
+                    tag=_WARN_TAG,
+                    removable_cause=True,
+                )
+    return None
+
+
+_REDIRECT_TARGET_PATTERN = re.compile(r"(?:^|\s)(?:\d*|&)(?:>>|>)\s*([^\s|&;<>]+)")
+
+
+def _check_bash_redirect_parent_exists(command: str, cwd: str) -> str | None:
+    """出力リダイレクト先の親ディレクトリが存在しない呼び出しを検出する。
+
+    変数展開とコマンド置換を含む出力先は実行前に一意へ解決できないため対象外とする。
+    同一の直列実行内で先行コマンドがディレクトリを作成する入力も、誤検出を避けるため対象外とする。
+    """
+    if not cwd:
+        return None
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    if "mkdir" in masked:
+        return None
+    for match in _REDIRECT_TARGET_PATTERN.finditer(masked):
+        target = match.group(1).strip("\"'")
+        if not target or any(character in target for character in "*$?[]{}~`"):
+            continue
+        if target.startswith("/dev/") or target.startswith("/proc/"):
+            continue
+        path = pathlib.Path(target)
+        resolved = path if path.is_absolute() else pathlib.Path(cwd) / path
+        parent = resolved.parent
+        if not parent.is_dir():
+            return _llm_notice(
+                f"出力リダイレクト先の親ディレクトリが存在しない。解決した出力先: {resolved}\n"
+                f"不在の親ディレクトリ: {parent}\n"
+                "対処: 実在するディレクトリ配下の出力先を指定するか、先行して当該ディレクトリを作成する。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
+    return None
+
+
+_COMMAND_OPTION_CONTRACT_KEY = "external_command_option_contracts"
+
+
+def _external_command_targets(command: str) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """受理オプションの照合対象となるコマンドの経路と実引数を返す。
+
+    対象は`rg`に限る。`git <サブコマンド> -h`は長い形のオプションを網羅せず
+    （`git commit -h`は`--amend`を示す一方で`--edit`と`--no-edit`を示さないことを実測した）、
+    当該出力を受理集合として照合すると正当な呼び出しを誤検出するためである。
+    """
+    targets: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
+            continue
+        if pathlib.PurePath(segment.tokens[0]).name != "rg":
+            continue
+        candidate = (("rg",), tuple(without_shell_redirections(segment.tokens[1:])))
+        if any(token.startswith("-") and token != "-" for token in candidate[1]):
+            targets.append(candidate)
+    return targets
+
+
+def _parse_help_options(help_text: str) -> tuple[list[str], list[str]] | None:
+    """ヘルプ出力から、値を取らないオプションと値を取るオプションを取り出す。"""
+    flags: list[str] = []
+    valued: list[str] = []
+    for line in help_text.splitlines():
+        for option_match in re.finditer(r"(?<![\w-])(--?[A-Za-z][\w-]*)(=?)", line):
+            option = option_match.group(1)
+            following = line[option_match.end() :]
+            takes_value = bool(option_match.group(2)) or re.match(r"^[ =]?[<[]", following) is not None
+            target = valued if takes_value else flags
+            if option not in target:
+                target.append(option)
+    flags = [option for option in flags if option not in valued]
+    if not flags and not valued:
+        return None
+    return flags, valued
+
+
+def _external_command_option_contract(path: tuple[str, ...], session_id: str) -> tuple[list[str], list[str]] | None:
+    """外部コマンドの受理オプションを、セッションごとに1回だけヘルプから取得して保持する。
+
+    `rg`は受理形式を機械可読な定義として公開しないため、当該コマンドのヘルプを解析する。
+    取得できない場合はNoneを返し、照合そのものを行わない。
+    """
+    key = " ".join(path)
+    state = read_state(session_id)
+    recorded = state.get(_COMMAND_OPTION_CONTRACT_KEY)
+    if isinstance(recorded, dict):
+        cached = recorded.get(key)
+        if isinstance(cached, dict):
+            flags = [value for value in cached.get("flags", []) if isinstance(value, str)]
+            valued = [value for value in cached.get("valued", []) if isinstance(value, str)]
+            return (flags, valued) if flags or valued else None
+    argv = [*path, "--help"] if path[0] == "rg" else [*path, "-h"]
+    try:
+        completed = subprocess.run(  # noqa: S603
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    parsed = _parse_help_options(completed.stdout or completed.stderr)
+    if parsed is None:
+        return None
+
+    def _record(current_state: dict) -> dict | None:
+        current = current_state.get(_COMMAND_OPTION_CONTRACT_KEY)
+        contracts = dict(current) if isinstance(current, dict) else {}
+        if key in contracts:
+            return None
+        contracts[key] = {"flags": parsed[0], "valued": parsed[1]}
+        current_state[_COMMAND_OPTION_CONTRACT_KEY] = contracts
+        return current_state
+
+    update_state(session_id, _record)
+    return parsed
+
+
+def _check_bash_external_command_options(command: str, session_id: str) -> str | None:
+    """`rg`が受理しないオプションを実行前に検出する。
+
+    受理形式は当該コマンドのヘルプから1セッション1回だけ取得して保持する。
+    記憶と別のコマンドの同名オプションからの類推による誤りを、実行前に本文の受理集合とともに差し戻す。
+    未観測の対象へ受理形式そのものを毎回配送する形は採らない。
+    当該配送は対象が増えるたびに実行主体のコンテキストを消費する一方、
+    誤りが無い呼び出しでは判断を変えないためである。
+    """
+    if not session_id:
+        return None
+    for path, arguments in _external_command_targets(command):
+        contract = _external_command_option_contract(path, session_id)
+        if contract is None:
+            continue
+        flags, valued = contract
+        accepted = set(flags) | set(valued)
+        for token in arguments:
+            if not token.startswith("-") or token == "-" or token == "--":
+                continue
+            option_name = token.split("=", 1)[0]
+            if option_name in accepted:
+                continue
+            # `--no-`接頭辞の否定形は、対応する肯定形を受理するコマンドが一般に受理する。
+            if option_name.startswith("--no-") and f"--{option_name.removeprefix('--no-')}" in accepted:
+                continue
+            if not token.startswith("--") and all(f"-{character}" in accepted for character in token[1:]):
+                continue
+            label = " ".join(path)
+            return _llm_notice(
+                f"`{label}`が受理しないオプションである。対象: {token}\n"
+                f"当該コマンドが受理するオプション: {', '.join(sorted(accepted))}\n"
+                "対処: 上記の受理オプションへ修正するか、`--help`を単独で確認する。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
+    return None
