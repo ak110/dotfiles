@@ -239,6 +239,52 @@ def _progress_excerpt(text: str) -> str:
     return f"…{normalized[-80:]}"
 
 
+def elapsed_seconds(value: str | None) -> int | None:
+    """ISO 8601のタイムゾーン付き時刻から現在までの経過秒を返す。
+
+    解釈できない値とタイムゾーンを持たない値では`None`を返す。
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        timestamp = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if timestamp.utcoffset() is None:
+        return None
+    return max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
+
+
+def activity_projection(
+    *,
+    updated_at: str | None,
+    output_updated_at: str | None,
+    started_at: str | None,
+) -> dict[str, Any]:
+    """活動とテキスト出力の各時刻からの経過、及び停滞の印を公開項目へ射影する。
+
+    停滞の判定入力は活動時刻とする。テキスト出力の時刻を判定入力にすると、
+    ツール呼び出しだけを長時間続ける正常なsessionを停滞と判定し、
+    呼び出し元が不要な催促と巻き取りへ進む。
+    テキスト出力の停止と活動の停止を呼び出し元が1回の照会で切り分けられるよう、
+    両者の時刻と経過を同じ応答へ並べる。
+    `show`・`list`・`atk agents wait`・`atk agents list`の4経路は本関数を共有する。
+    経路ごとに判定入力が分かれると、同じsessionへ異なる停滞の印が返る。
+    """
+    seconds_since_activity = elapsed_seconds(updated_at or started_at)
+    if seconds_since_activity is None:
+        return {}
+    projection: dict[str, Any] = {
+        "updated_at": updated_at,
+        "seconds_since_activity": seconds_since_activity,
+        "output_updated_at": output_updated_at,
+        "seconds_since_output": elapsed_seconds(output_updated_at or started_at),
+    }
+    if seconds_since_activity >= STALL_NOTICE_SECONDS:
+        projection["stalled"] = True
+    return projection
+
+
 def _nonempty_error(error: Any) -> bool:
     return error is not None and error != "" and error != {}
 
@@ -269,6 +315,8 @@ class SessionState:
     status: str = "running"
     plan: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     current_item: dict[str, Any] | None = None
+    # Codex backendの進行中itemを受信した時刻。`current_item`と対で保持する。
+    current_item_started_at: str | None = None
     commentary: str = ""
     diff_changed: bool = False
     error: Any = None
@@ -288,6 +336,12 @@ class SessionState:
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
+    # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名と当該ブロックを受信した時刻の対とする。
+    # `child_tool_uses`は`agents_server`のツール呼び出しの引数を孫session追跡のために保持する別の責務を持つため統合しない。
+    pending_tool_uses: dict[str, tuple[str, str]] = dataclasses.field(default_factory=dict, repr=False)
+    # 最後に観測した行動。assistantのテキスト出力ではその抜粋、ツール呼び出しではツール名又はitem種別を持つ。
+    # statuslineが、テキスト出力の無い区間でも稼働を表示するための射影元とする。
+    last_action: str = ""
     awaiting_auto_resume: bool = False
     # `auto_resume_consumed`は、Claude backendのタスク完了通知による再開と、
     # MCP層が孫sessionの終端を検出して発行する再開の2経路だけが真にする。
@@ -330,7 +384,48 @@ class SessionState:
         self._progress_text = text
         if text.strip():
             self.output_updated_at = _utc_now()
+            self.last_action = _progress_excerpt(text)
         self.touch()
+
+    def record_tool_use_start(self, tool_use_id: str, tool_name: str) -> None:
+        """未完了のツール呼び出しを記録し、最後の行動をツール名で更新する。"""
+        self.pending_tool_uses[tool_use_id] = (tool_name, _utc_now())
+        self.last_action = tool_name
+
+    def record_tool_use_end(self, tool_use_id: str) -> None:
+        """完了したツール呼び出しを未完了の記録から除く。"""
+        self.pending_tool_uses.pop(tool_use_id, None)
+
+    def record_current_item_start(self, item: dict[str, Any] | None) -> None:
+        """Codex backendの進行中itemと受信時刻を記録し、最後の行動をitem種別で更新する。"""
+        self.current_item = item
+        if item is None:
+            self.current_item_started_at = None
+            return
+        self.current_item_started_at = _utc_now()
+        item_type = item.get("type")
+        if isinstance(item_type, str) and item_type:
+            self.last_action = item_type
+
+    def active_tool_uses(self) -> list[dict[str, str]]:
+        """未完了のツール呼び出しを、開始時刻の昇順で公開項目へ射影する。
+
+        呼び出し元が停滞を疑った時点で、長時間のコマンドの実行中か活動そのものの停止かを
+        1回の照会で切り分けられるようにする。
+        Claude backendは`tool_use`ブロックの記録から、Codex backendは進行中itemから射影する。
+        1つのsessionはいずれか一方のbackendだけを使うため、両者を同じ項目で返す。
+        引数、コマンド文字列、パッチ内容その他の本文は載せない。
+        当該本文には秘匿値が含まれ得るため、呼び出し元の応答へ渡さない。
+        """
+        if self.current_item is not None and self.current_item_started_at is not None:
+            entry: dict[str, str] = {"started_at": self.current_item_started_at}
+            for key in ("type", "id"):
+                value = self.current_item.get(key)
+                if isinstance(value, str) and value:
+                    entry[key] = value
+            return [entry]
+        ordered = sorted(self.pending_tool_uses.items(), key=lambda item: (item[1][1], item[0]))
+        return [{"name": tool_name, "started_at": started_at} for _, (tool_name, started_at) in ordered]
 
     def reset_progress(self) -> None:
         """現在turnの進捗を初期化する。"""
@@ -515,6 +610,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.status = "running"
     session.plan = []
     session.current_item = None
+    session.current_item_started_at = None
     session.commentary = ""
     session.diff_changed = False
     session.error = None
@@ -530,6 +626,8 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.live_child_session_ids.clear()
     session.terminal_child_session_ids.clear()
     session.child_tool_uses.clear()
+    session.pending_tool_uses.clear()
+    session.last_action = ""
     session.awaiting_auto_resume = False
     session.auto_resume_consumed = False
     session.auto_resume_deadline = None
@@ -543,21 +641,28 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
 
 
 def consume_claude_agents_server_message(session: SessionState, message: Any) -> None:
-    """Claude SDKのツール利用と結果から孫sessionの状態を更新する。"""
+    """Claude SDKのツール利用と結果から、孫sessionと未完了のツール呼び出しの状態を更新する。
+
+    未完了のツール呼び出しは`agents_server`のツールに限らず記録する。
+    記録の対象を`agents_server`のツールへ限ると、呼び出し元は委譲先が何で止まっているかを
+    `show`の応答から判定できない。
+    """
     for block in _content_blocks(message):
         tool_use_id = _block_value(block, "id")
         tool_name = _block_value(block, "name")
         tool_input = _block_value(block, "input")
         if isinstance(tool_use_id, str) and isinstance(tool_name, str):
+            session.record_tool_use_start(tool_use_id, tool_name)
             normalized = _agents_server_tool_name(tool_name)
             if normalized is not None:
                 arguments = dict(tool_input) if isinstance(tool_input, Mapping) else {}
                 session.child_tool_uses[tool_use_id] = (normalized, arguments)
-                continue
+            continue
 
         tool_use_id = _block_value(block, "tool_use_id")
         if not isinstance(tool_use_id, str):
             continue
+        session.record_tool_use_end(tool_use_id)
         tool_use = session.child_tool_uses.pop(tool_use_id, None)
         if tool_use is None:
             continue

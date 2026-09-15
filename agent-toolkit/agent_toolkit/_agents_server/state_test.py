@@ -102,6 +102,94 @@ def test_child_session_is_tracked_for_every_host_tool_name_form(namespace: str) 
     assert state.has_pending_auto_resume_targets(session)
 
 
+def test_pending_tool_uses_track_tools_outside_agents_server() -> None:
+    """`agents_server`以外のツール呼び出しも未完了として記録し、結果の到着で除く。"""
+    session = state.SessionState("parent-1", "/tmp")
+
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_1", "name": "Bash", "input": {"command": "secret --token=abc"}}]},
+    )
+
+    assert [entry["name"] for entry in session.active_tool_uses()] == ["Bash"]
+
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"tool_use_id": "toolu_1", "content": "done"}]},
+    )
+
+    assert session.active_tool_uses() == []
+
+
+def test_active_tool_uses_omit_arguments_and_sort_by_start() -> None:
+    """未完了のツール呼び出しは開始時刻の昇順で返し、引数を載せない。"""
+    session = state.SessionState("parent-1", "/tmp")
+    session.pending_tool_uses.update(
+        {
+            "toolu_2": ("Read", "2026-09-15T00:00:02+00:00"),
+            "toolu_1": ("Bash", "2026-09-15T00:00:01+00:00"),
+        }
+    )
+
+    assert session.active_tool_uses() == [
+        {"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00"},
+        {"name": "Read", "started_at": "2026-09-15T00:00:02+00:00"},
+    ]
+
+
+def test_current_item_is_projected_as_active_tool_use() -> None:
+    """Codex backendの進行中itemを、同じ項目で`type`・`id`・開始時刻として返す。"""
+    session = state.SessionState("thread-1", "/tmp", engine="codex")
+
+    session.record_current_item_start({"type": "commandExecution", "id": "item-1", "command": "secret --token=abc"})
+    entries = session.active_tool_uses()
+
+    assert len(entries) == 1
+    assert entries[0]["type"] == "commandExecution"
+    assert entries[0]["id"] == "item-1"
+    assert "command" not in entries[0]
+    assert entries[0]["started_at"]
+    assert session.last_action == "commandExecution"
+
+    session.record_current_item_start(None)
+
+    assert session.active_tool_uses() == []
+
+
+def test_last_action_prefers_tool_use_issued_after_text() -> None:
+    """同じメッセージがテキストとツール呼び出しを持つ場合は、後のツール呼び出しを最後の行動とする。"""
+    session = state.SessionState("parent-1", "/tmp")
+
+    session.set_progress("調査を続ける")
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_1", "name": "Bash", "input": {}}]},
+    )
+
+    assert session.last_action == "Bash"
+
+
+def test_activity_projection_decides_stall_by_activity_time() -> None:
+    """停滞の印は活動時刻からの経過だけで決め、テキスト出力の停止では付けない。"""
+    text_silent = state.activity_projection(
+        updated_at="2099-01-01T00:00:00+00:00",
+        output_updated_at="2000-01-01T00:00:00+00:00",
+        started_at="2000-01-01T00:00:00+00:00",
+    )
+    inactive = state.activity_projection(
+        updated_at="2000-01-01T00:00:00+00:00",
+        output_updated_at="2099-01-01T00:00:00+00:00",
+        started_at="2000-01-01T00:00:00+00:00",
+    )
+    unreadable = state.activity_projection(updated_at=None, output_updated_at=None, started_at="2026-09-15T00:00:00")
+
+    assert text_silent["seconds_since_output"] >= state.STALL_NOTICE_SECONDS
+    assert text_silent["seconds_since_activity"] == 0
+    assert "stalled" not in text_silent
+    assert inactive["stalled"] is True
+    assert not unreadable
+
+
 @pytest.mark.asyncio
 async def test_terminal_transition_logs_safe_fields_once(caplog: pytest.LogCaptureFixture) -> None:
     """turn終端を一度だけ記録し、結果本文を含めない。"""

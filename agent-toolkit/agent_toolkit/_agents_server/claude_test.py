@@ -159,6 +159,36 @@ def test_prepare_debug_file_drops_records_beyond_retention(
     assert existing[-1].exists()
 
 
+def test_assistant_message_without_text_advances_activity_time() -> None:
+    """ツール呼び出しだけのassistantメッセージでも活動時刻を進め、テキスト出力時刻は進めない。"""
+    session = shared_state.SessionState("session-1", "/tmp")
+    session.updated_at = "2000-01-01T00:00:00+00:00"
+    message = types.SimpleNamespace(
+        content=[types.SimpleNamespace(id="toolu_1", name="Bash", input={"command": "ls"})],
+    )
+
+    claude.consume_assistant_message(session, message)
+
+    assert session.updated_at != "2000-01-01T00:00:00+00:00"
+    assert session.output_updated_at is None
+    assert [entry["name"] for entry in session.active_tool_uses()] == ["Bash"]
+    assert session.last_action == "Bash"
+
+
+def test_assistant_message_with_text_updates_both_activity_and_output() -> None:
+    """テキストを持つassistantメッセージは活動時刻とテキスト出力時刻の双方を進める。"""
+    session = shared_state.SessionState("session-1", "/tmp")
+    session.updated_at = "2000-01-01T00:00:00+00:00"
+    message = types.SimpleNamespace(content=[types.SimpleNamespace(text="調査を続ける")])
+
+    claude.consume_assistant_message(session, message)
+
+    assert session.updated_at != "2000-01-01T00:00:00+00:00"
+    assert session.output_updated_at is not None
+    assert session.agent_message == "調査を続ける"
+    assert session.last_action == "調査を続ける"
+
+
 def test_initialization_diagnostic_identifies_received_messages() -> None:
     """初期化診断は受信メッセージを種別だけでなく内容で識別できる形で保持する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access

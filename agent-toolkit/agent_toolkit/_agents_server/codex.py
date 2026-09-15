@@ -926,7 +926,7 @@ class AppServerManager:
         session.turn_id = ""
         session.status = "failed"
         session.plan = []
-        session.current_item = None
+        session.record_current_item_start(None)
         session.commentary = ""
         session.diff_changed = False
         session.error = {"message": str(error) or error.__class__.__name__}
@@ -1075,7 +1075,7 @@ class AppServerManager:
                 session.diff_changed = True
         elif method == "item/started":
             item = params.get("item")
-            session.current_item = item if isinstance(item, dict) else None
+            session.record_current_item_start(item if isinstance(item, dict) else None)
             if isinstance(item, dict):
                 if item.get("type") == "fileChange":
                     session.diff_changed = True
@@ -1092,7 +1092,7 @@ class AppServerManager:
         elif method == "item/completed":
             item = params.get("item")
             if isinstance(item, dict):
-                session.current_item = None
+                session.record_current_item_start(None)
                 self._consume_item(session, item)
                 item_id = item.get("id")
                 completed_at_ms = params.get("completedAtMs")

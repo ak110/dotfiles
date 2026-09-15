@@ -622,11 +622,12 @@ def test_agents_wait_reports_seconds_since_output_on_timeout(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """待機上限の応答はsessionの最新テキスト出力時刻を返す。"""
+    """待機上限の応答はsessionの活動時刻と最新テキスト出力時刻を別項目で返す。"""
     output_updated_at = "2026-09-09T00:00:00+00:00"
+    updated_at = "2099-01-01T00:00:00+00:00"
     _write_own_status(
         wait_environment,
-        [{"session_id": "session-1", "output_updated_at": output_updated_at, "updated_at": "2099-01-01T00:00:00+00:00"}],
+        [{"session_id": "session-1", "output_updated_at": output_updated_at, "updated_at": updated_at}],
     )
 
     with pytest.raises(SystemExit, match="3"):
@@ -635,8 +636,10 @@ def test_agents_wait_reports_seconds_since_output_on_timeout(
     response = json.loads(capsys.readouterr().out)
     assert response["output_updated_at"] == output_updated_at
     assert isinstance(response["seconds_since_output"], int)
-    assert "updated_at" not in response
-    assert "seconds_since_update" not in response
+    assert response["updated_at"] == updated_at
+    assert isinstance(response["seconds_since_activity"], int)
+    # テキスト出力が古くても活動が新しい間は停滞の印を付けない。
+    assert "stalled" not in response
 
 
 @pytest.mark.parametrize(
@@ -704,11 +707,12 @@ def test_agents_wait_notices_response_reports_seconds_since_output(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """通知だけを回収する非終端応答にも最新テキスト出力時刻を付ける。"""
+    """通知だけを回収する非終端応答にも活動時刻と最新テキスト出力時刻を付ける。"""
     output_updated_at = "2026-09-09T00:00:00+00:00"
+    updated_at = "2099-01-01T00:00:00+00:00"
     _write_own_status(
         wait_environment,
-        [{"session_id": "session-1", "output_updated_at": output_updated_at, "updated_at": "2099-01-01T00:00:00+00:00"}],
+        [{"session_id": "session-1", "output_updated_at": output_updated_at, "updated_at": updated_at}],
     )
     notices = wait_environment.parent / "notices"
     notices.mkdir()
@@ -723,8 +727,34 @@ def test_agents_wait_notices_response_reports_seconds_since_output(
     response = json.loads(capsys.readouterr().out)
     assert response["output_updated_at"] == output_updated_at
     assert isinstance(response["seconds_since_output"], int)
-    assert "updated_at" not in response
-    assert "seconds_since_update" not in response
+    assert response["updated_at"] == updated_at
+    assert isinstance(response["seconds_since_activity"], int)
+
+
+def test_agents_wait_stall_uses_activity_not_text_output(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """テキスト出力が閾値を超えて止まっていても、活動が続く間は停滞の印を付けない。"""
+    _write_own_status(
+        wait_environment,
+        [
+            {
+                "session_id": "session-1",
+                "started_at": "2000-01-01T00:00:00+00:00",
+                "output_updated_at": "2000-01-01T00:00:00+00:00",
+                "updated_at": "2099-01-01T00:00:00+00:00",
+            }
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents", "wait"])
+
+    response = json.loads(capsys.readouterr().out)
+    assert response["seconds_since_output"] >= state.STALL_NOTICE_SECONDS
+    assert response["seconds_since_activity"] == 0
+    assert "stalled" not in response
 
 
 def test_agents_wait_adds_notices_to_terminal_result(

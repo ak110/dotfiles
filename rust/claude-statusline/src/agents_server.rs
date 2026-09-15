@@ -37,6 +37,7 @@ struct Session {
     launch_kind: String,
     status: String,
     progress: String,
+    last_action: String,
     label: String,
     started_at: String,
 }
@@ -170,6 +171,15 @@ fn optional_string(object: &Map<String, Value>, key: &str) -> Option<Option<Stri
     }
 }
 
+/// 不在とnullを空文字として受理し、文字列以外だけを解釈失敗として返す。
+fn absent_as_empty_string(object: &Map<String, Value>, key: &str) -> Option<String> {
+    match object.get(key) {
+        None | Some(Value::Null) => Some(String::new()),
+        Some(Value::String(value)) => Some(value.clone()),
+        Some(_) => None,
+    }
+}
+
 fn parse_session(value: &Value) -> Option<Session> {
     let object = value.as_object()?;
     let model = optional_string(object, "model")?;
@@ -182,6 +192,10 @@ fn parse_session(value: &Value) -> Option<Session> {
         launch_kind: required_string(object, "launch_kind")?,
         status: required_string(object, "status")?,
         progress: required_string(object, "progress")?,
+        // `last_action`は任意項目とする。長命なMCPサーバープロセスは起動時に読み込んだ
+        // モジュールを保持し続けるため、statuslineだけが先に更新される区間では
+        // 当該項目を持たない状態ファイルが書かれ続ける。必須にすると当該区間で行が消える。
+        last_action: absent_as_empty_string(object, "last_action")?,
         label: required_string(object, "label")?,
         started_at: required_string(object, "started_at")?,
     };
@@ -215,7 +229,11 @@ pub(crate) fn render_state_files(
         .iter()
         .zip(names)
         .map(|(item, name)| {
-            let description = if item.session.progress.is_empty() {
+            // 最後に観測した行動を優先する。テキスト出力の無い区間でもツール名が進み、
+            // 稼働しているかを1行で読み取れる。
+            let description = if !item.session.last_action.is_empty() {
+                &item.session.last_action
+            } else if item.session.progress.is_empty() {
                 &item.session.label
             } else {
                 &item.session.progress
@@ -550,6 +568,71 @@ mod tests {
         assert!(lines[3].starts_with("shell (Claude)"));
         assert!(lines[4].starts_with("└ shell (Claude)"));
         assert!(lines.iter().all(|line| display_width(line) <= 100));
+    }
+
+    #[test]
+    fn rendering_prefers_last_action_and_falls_back_when_absent() {
+        let mut with_action = session(
+            "with-action",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("latest progress", "fallback label"),
+            "2025-12-31T23:59:30+00:00",
+        );
+        with_action["last_action"] = Value::String("Bash".to_string());
+        let mut empty_action = session(
+            "empty-action",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("latest progress", "fallback label"),
+            "2025-12-31T23:59:31+00:00",
+        );
+        empty_action["last_action"] = Value::String(String::new());
+        let without_action = session(
+            "without-action",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("", "fallback label"),
+            "2025-12-31T23:59:32+00:00",
+        );
+        let root = state_file(
+            "root.json",
+            Value::Null,
+            serde_json::json!([with_action, empty_action, without_action]),
+        );
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let lines = render_state_files(&[root], 200, now);
+
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(lines[0].contains("Bash"), "{lines:?}");
+        assert!(!lines[0].contains("latest progress"), "{lines:?}");
+        assert!(lines[1].contains("latest progress"), "{lines:?}");
+        assert!(lines[2].contains("fallback label"), "{lines:?}");
+    }
+
+    #[test]
+    fn sessions_with_non_string_last_action_are_ignored() {
+        let mut broken = session(
+            "broken",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("", "fallback label"),
+            "2025-12-31T23:59:30+00:00",
+        );
+        broken["last_action"] = Value::from(1);
+        let root = state_file("root.json", Value::Null, serde_json::json!([broken]));
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert!(render_state_files(&[root], 200, now).is_empty());
     }
 
     #[test]

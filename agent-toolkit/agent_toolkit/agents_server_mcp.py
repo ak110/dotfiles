@@ -495,13 +495,13 @@ class AgentsServerManager:
             "label": label,
             "result_available": result_available,
         }
-        output_updated_at = session.output_updated_at
-        seconds_since_output = _elapsed_seconds(output_updated_at or session.started_at)
-        if seconds_since_output is not None:
-            listed["output_updated_at"] = output_updated_at
-            listed["seconds_since_output"] = seconds_since_output
-            if seconds_since_output >= state.STALL_NOTICE_SECONDS:
-                listed["stalled"] = True
+        listed.update(
+            state.activity_projection(
+                updated_at=session.updated_at,
+                output_updated_at=session.output_updated_at,
+                started_at=session.started_at,
+            )
+        )
         return listed
 
     def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
@@ -610,14 +610,19 @@ class AgentsServerManager:
             "cwd": session.cwd,
             "result_available": result_available,
         }
-        seconds_since_output = _elapsed_seconds(session.output_updated_at or session.started_at)
-        if status == "running" and seconds_since_output is not None:
-            response.update(
-                output_updated_at=session.output_updated_at,
-                seconds_since_output=seconds_since_output,
-            )
-            if seconds_since_output >= state.STALL_NOTICE_SECONDS:
-                response["stalled"] = True
+        activity = state.activity_projection(
+            updated_at=session.updated_at,
+            output_updated_at=session.output_updated_at,
+            started_at=session.started_at,
+        )
+        if status != "running":
+            # 終端済みsessionは活動が止まっていることが定義上明らかであり、停滞の印を返さない。
+            activity.pop("stalled", None)
+        response.update(activity)
+        if status == "running" and isinstance(session, SessionState):
+            active_tool_uses = session.active_tool_uses()
+            if active_tool_uses:
+                response["active_tool_uses"] = active_tool_uses
         if status == "running" and isinstance(session, SessionState) and session.live_child_session_ids:
             # 呼び出し元が当該識別子へ`send_message`と`kill`を発行できるよう、許可判定の入力となる`cwd`を併記する。
             # `cwd`を解決できない識別子は、対を持たない側の項目として区別できる形で返す。
@@ -639,7 +644,6 @@ class AgentsServerManager:
                 model=session.model,
                 effort=session.effort,
                 started_at=session.started_at,
-                updated_at=session.updated_at,
                 turn_seq=session.turn_seq,
             )
             if self._status_writer is not None:

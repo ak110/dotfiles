@@ -295,6 +295,22 @@ def _assistant_text(message: Any) -> str:
     return "\n".join(text for block in blocks if (text := getattr(block, "text", None)) is not None and isinstance(text, str))
 
 
+def consume_assistant_message(session: SessionState, message: Any) -> None:
+    """assistantメッセージをsessionの共有状態へ反映する。
+
+    テキストの有無によらず活動時刻を進める。進めないと、ツール呼び出しだけを長時間続ける
+    正常なsessionへ停滞の印が付き、呼び出し元が不要な催促と巻き取りへ進む。
+    ツール呼び出しの記録はテキストの反映後に行う。同じメッセージがテキストと
+    ツール呼び出しの両方を持つ場合、後に発行したツール呼び出しを最後の行動とするためである。
+    """
+    text = _assistant_text(message)
+    if text.strip():
+        session.agent_message = text
+        session.set_progress(text)
+    shared_state.consume_claude_agents_server_message(session, message)
+    session.touch()
+
+
 class ClaudeServerManager:
     """Claudeセッションの所有タスクと結果メタデータを管理する。"""
 
@@ -662,11 +678,7 @@ class ClaudeServerManager:
                             elif session_id != session.session_id:
                                 raise RuntimeError("Claude init message reported a different session_id")
                         elif name == "AssistantMessage" and session is not None:
-                            shared_state.consume_claude_agents_server_message(session, message)
-                            text = _assistant_text(message)
-                            if text.strip():
-                                session.agent_message = text
-                                session.set_progress(text)
+                            consume_assistant_message(session, message)
                             await self._notify_waiters()
                         elif name == "UserMessage" and session is not None:
                             shared_state.consume_claude_agents_server_message(session, message)

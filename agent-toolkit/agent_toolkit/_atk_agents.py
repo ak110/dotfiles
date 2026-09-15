@@ -145,19 +145,16 @@ def _status_payload_is_current(payload: Any) -> bool:
 
 
 def _add_output_activity(session: dict[str, Any]) -> None:
-    """最新テキスト出力からの経過秒と停滞印を公開射影へ加える。"""
+    """活動とテキスト出力からの経過秒、及び停滞印を公開射影へ加える。"""
+    updated_at = session.get("updated_at")
     output_updated_at = session.get("output_updated_at")
-    reference = output_updated_at if isinstance(output_updated_at, str) else session.get("started_at")
-    if not isinstance(reference, str):
-        return
-    try:
-        timestamp = datetime.datetime.fromisoformat(reference)
-    except ValueError:
-        return
-    if timestamp.tzinfo is None:
-        return
-    elapsed = max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
-    session["output_updated_at"] = output_updated_at if isinstance(output_updated_at, str) else None
-    session["seconds_since_output"] = elapsed
-    if session.get("status") == "running" and elapsed >= state.STALL_NOTICE_SECONDS:
-        session["stalled"] = True
+    started_at = session.get("started_at")
+    activity = state.activity_projection(
+        updated_at=updated_at if isinstance(updated_at, str) else None,
+        output_updated_at=output_updated_at if isinstance(output_updated_at, str) else None,
+        started_at=started_at if isinstance(started_at, str) else None,
+    )
+    if session.get("status") != "running":
+        # 終端済みsessionは活動が止まっていることが定義上明らかであり、停滞の印を返さない。
+        activity.pop("stalled", None)
+    session.update(activity)
