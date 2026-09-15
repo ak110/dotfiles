@@ -128,7 +128,7 @@ def acquire_lock(fh: IO, *, blocking: bool = True) -> None:
 
     POSIXは`fcntl.flock`、Windowsは`msvcrt.locking`を使う。
     `blocking=True`（既定）は取得できるまで待機する。
-    Windowsでは待機に上限があり、上限を超えた場合は`OSError`を送出する。
+    Windowsでは待機に上限があり、上限を超えた場合はロック対象と経過時間を持つ`OSError`を送出する。
     `blocking=False`時は即時取得できない場合に`OSError`を送出する。
     いずれの`OSError`も送出時点でロックを取得していないため、呼び出し側は`release_lock`を呼ばない。
     """
@@ -145,23 +145,49 @@ def acquire_with_deadline(
     *,
     timeout: float,
     poll_interval: float,
+    target: str = "",
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """`attempt`が成功するまで再試行し、`timeout`を超えた時点の`OSError`をそのまま送出する。
+    """`attempt`が成功するまで再試行し、`timeout`を超えた時点で`OSError`を送出する。
 
+    送出する`OSError`のメッセージへ`target`と経過秒数を加える。
+    待機している主体が、どの対象をどれだけ待って打ち切ったかを例外だけから観測できるようにする。
     `attempt`は取得に成功した場合に戻り、取得できない場合に`OSError`を送出する呼び出しとする。
     `monotonic`と`sleep`は、実時間の経過を待たずに上限の動作を検証するための差し替え点とする。
     """
-    deadline = monotonic() + timeout
+    started = monotonic()
+    deadline = started + timeout
     while True:
         try:
             attempt()
             return
-        except OSError:
-            if monotonic() >= deadline:
-                raise
+        except OSError as error:
+            now = monotonic()
+            if now >= deadline:
+                raise _timeout_error(error, target=target, elapsed=now - started) from error
             sleep(poll_interval)
+
+
+def _timeout_error(error: OSError, *, target: str, elapsed: float) -> OSError:
+    """待機の上限を超えた取得の`OSError`へ、対象と経過時間を加えたものを返す。"""
+    context = f"lock target={target or 'unknown'}, elapsed={elapsed:.1f}s"
+    if error.errno is None:
+        return OSError(f"{error}; {context}")
+    return OSError(error.errno, f"{error.strerror or error}; {context}")
+
+
+def lock_target(fh: IO) -> str:
+    """ロック対象を識別できる表現を返す。
+
+    ファイル名を持たないハンドルでは、当該ハンドルを識別できる代替の表現を返す。
+    """
+    name = getattr(fh, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    with contextlib.suppress(OSError, ValueError):
+        return f"fd={fh.fileno()}"
+    return "unknown"
 
 
 def rotate_if_needed(path: Path, max_bytes: int, generations: int = 1) -> None:
@@ -213,6 +239,7 @@ if os.name == "nt":
         `blocking=True`時、空ファイルでも`LK_LOCK`はブロッキング取得可能。
         `LK_LOCK`は最大10秒で再試行する仕様のため、長時間の競合に備えてOSError時は再試行する。
         再試行は`_WINDOWS_LOCK_TIMEOUT_SECONDS`を上限とし、超えた場合は`OSError`を呼び出し側へ返す。
+        当該`OSError`はロック対象と経過時間を持つ。
         `blocking=False`時は`LK_NBLCK`で即時判定し、取得不能なら`OSError`を送出する。
         """
         fh.seek(0)
@@ -227,6 +254,7 @@ if os.name == "nt":
             _lock_once,
             timeout=_WINDOWS_LOCK_TIMEOUT_SECONDS,
             poll_interval=_WINDOWS_LOCK_POLL_INTERVAL_SECONDS,
+            target=lock_target(fh),
         )
 
     def _release_lock_impl(fh: IO) -> None:

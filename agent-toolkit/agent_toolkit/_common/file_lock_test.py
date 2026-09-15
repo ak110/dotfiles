@@ -5,6 +5,7 @@ OS別ロック実装は`_session_state_test.py`の先例に倣い、実行環境
 `pytest.mark.skipif`で有効化し、実際のロックAPI経由で検証する。
 """
 
+import errno
 import multiprocessing
 import pathlib
 import subprocess
@@ -249,6 +250,47 @@ class TestAcquireWithDeadline:
 
         assert clock.slept == [0.25, 0.25, 0.25, 0.25]
 
+    def test_timeout_error_carries_target_and_elapsed(self) -> None:
+        """上限超過の例外は、ロック対象と経過時間を含む。"""
+        clock = _FakeClock()
+
+        def _always_fails() -> None:
+            raise OSError("locked")
+
+        with pytest.raises(OSError) as excinfo:
+            _file_lock.acquire_with_deadline(
+                _always_fails,
+                timeout=1.0,
+                poll_interval=0.25,
+                target="/tmp/example.lock",
+                monotonic=clock.monotonic,
+                sleep=clock.sleep,
+            )
+
+        message = str(excinfo.value)
+        assert "/tmp/example.lock" in message
+        assert "elapsed=1.0s" in message
+
+    def test_timeout_error_keeps_errno(self) -> None:
+        """元の`OSError`が`errno`を持つ場合は、加工後も同じ`errno`を保つ。"""
+        clock = _FakeClock()
+
+        def _always_fails() -> None:
+            raise OSError(errno.EACCES, "Permission denied")
+
+        with pytest.raises(OSError) as excinfo:
+            _file_lock.acquire_with_deadline(
+                _always_fails,
+                timeout=0.5,
+                poll_interval=0.25,
+                target="/tmp/example.lock",
+                monotonic=clock.monotonic,
+                sleep=clock.sleep,
+            )
+
+        assert excinfo.value.errno == errno.EACCES
+        assert "/tmp/example.lock" in str(excinfo.value)
+
     def test_returns_after_transient_failures(self) -> None:
         """上限内に取得できた場合は例外を送出せず戻る。"""
         clock = _FakeClock()
@@ -269,6 +311,13 @@ class TestAcquireWithDeadline:
 
         assert len(attempts) == 3
         assert clock.slept == [0.25, 0.25]
+
+
+def test_lock_target_returns_file_path(tmp_path: pathlib.Path) -> None:
+    """ファイルハンドルからロック対象のパスを返す。"""
+    path = tmp_path / "lock"
+    with open(path, "a+", encoding="utf-8") as fh:
+        assert _file_lock.lock_target(fh) == str(path)
 
 
 def test_acquire_and_release_blocking(tmp_path: pathlib.Path) -> None:
