@@ -10,6 +10,14 @@ description: >
 本スキルは、確認要否の判定から回答後の作業再開までを一続きに扱う手順を提供する。
 UWIの本文、投入、状態及び依存関係の形式は`agent-toolkit:wi-standards`を起動して適用する。
 
+本スキルの起動契機の全場面で、次の5資料を全文読む。
+
+- `references/judgment.md`: 確認要否の2段階判定、確認を要する事項の列挙、原文からの具体化を要する軸
+- `references/main-behavior.md`: メインの未確定判断の保留、暫定判断、事前承認の合意判定、事後承認型UWI
+- `references/user-utterance.md`: ユーザー発話の解釈の詳細箇条
+- `references/conflict-resolution.md`: 規範どうしが矛盾する場合の由来確定
+- `references/procedure-conflict.md`: 手順どおりに進められない場合の判定順
+
 ## 確認要否の判定
 
 確認要否を判定する前に`references/approval-scope.md`を全文読む。

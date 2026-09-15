@@ -10,7 +10,8 @@ user-invocable: false
 Codexで実行する場合は、委譲、待機、状態確認又は中断へ着手する前に`references/codex-runtime.md`を全文読む。
 
 本スキルは、委譲の開始、経路選択、継続、停滞検知及び複数主体調整の手順を提供する。
-委譲を開始する前に`references/base-contract.md`と`references/mandatory-rules.md`を全文読む。
+委譲を開始する前に`references/base-contract.md`、`references/mandatory-rules.md`、`references/routing.md`、`references/handoff-record.md`の4資料を全文読む。
+`references/routing.md`は委譲の要否判定と委譲単位の確定を、`references/handoff-record.md`は`引き継ぎ記録先`を受領した委譲先の記録項目と更新契機を定める。
 受信者が行う用途固有の作業は
 受信者用のタスク文書またはagent定義を正本とする。
 

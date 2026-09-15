@@ -48,6 +48,7 @@ commit直前に次を実施する。
 
 ## 条件付き手順
 
+- 本スキルの起動時に`agent-toolkit/skills/commit/references/git-identifier.md`を全文読む
 - amend、fixup、autosquashを行う直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
 - 実際にpushする直前に`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
 - CI失敗を扱う直前に`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
