@@ -466,10 +466,25 @@ class TestClearSessionState:
 class TestBashRepetitionState:
     """Bash反復検査の状態を汎用警告カウンターから独立して保持する。"""
 
-    def test_output_truncation_claim_allows_only_first_detection(self) -> None:
-        assert claim_bash_output_truncation_autofix("sid") is True
-        assert claim_bash_output_truncation_autofix("sid") is False
+    def test_output_truncation_claim_allows_first_detection_of_each_kind(self) -> None:
+        """補正種別ごとに初回だけ許容し、別種の初回を過去の別種で遮断しない。"""
+        assert claim_bash_output_truncation_autofix("sid", ["head"]) is True
+        assert claim_bash_output_truncation_autofix("sid", ["head"]) is False
+        assert claim_bash_output_truncation_autofix("sid", ["tail"]) is True
+        assert claim_bash_output_truncation_autofix("sid", ["tail"]) is False
         assert "warn_notice_counts" not in read_state("sid")
+
+    def test_output_truncation_claim_ignores_blocked_call(self) -> None:
+        """遮断した呼び出しは記録を変えず、後続の別種の初回を許容する。"""
+        assert claim_bash_output_truncation_autofix("sid", ["head"]) is True
+        assert claim_bash_output_truncation_autofix("sid", ["head"]) is False
+        assert claim_bash_output_truncation_autofix("sid", ["head", "tail"]) is True
+        assert claim_bash_output_truncation_autofix("sid", ["tail"]) is False
+
+    def test_output_truncation_claim_without_kinds_is_not_claimed(self) -> None:
+        """検出した種別が無い呼び出しは許容を消費しない。"""
+        assert claim_bash_output_truncation_autofix("sid", []) is False
+        assert claim_bash_output_truncation_autofix("sid", ["head"]) is True
 
     def test_same_failure_activates_gate_and_reset_can_clear_it(self) -> None:
         assert record_bash_failure("sid", 17) is False

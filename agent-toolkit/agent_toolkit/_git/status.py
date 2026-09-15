@@ -31,16 +31,16 @@ def is_tracked_change(line: str) -> bool:
     return bool(line) and not line.startswith("??")
 
 
-def get_status_porcelain(cwd: str) -> str | None:
-    """`git -C <cwd> status --porcelain`の標準出力を返す。
+def _run_git(cwd: str, *arguments: str) -> str | None:
+    """`git -C <cwd> <arguments>`の標準出力を返す。
 
-    `cwd`未指定・実行失敗・タイムアウト時はNoneを返す。
+    `cwd`未指定・終了コード非0・実行失敗・タイムアウト時はNoneを返す。
     """
     if not cwd:
         return None
     try:
         result = subprocess.run(
-            ["git", "-C", cwd, "status", "--porcelain"],
+            ["git", "-C", cwd, *arguments],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -50,9 +50,25 @@ def get_status_porcelain(cwd: str) -> str | None:
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    if result.returncode != 0:
-        return None
-    return result.stdout
+    return result.stdout if result.returncode == 0 else None
+
+
+def get_status_porcelain(cwd: str) -> str | None:
+    """`git -C <cwd> status --porcelain`の標準出力を返す。
+
+    `cwd`未指定・実行失敗・タイムアウト時はNoneを返す。
+    """
+    return _run_git(cwd, "status", "--porcelain")
+
+
+def get_worktree_root(path: str) -> str | None:
+    """対象パスが属するGit作業ツリーのrootを返す。
+
+    `git -C <path> rev-parse --show-toplevel`の終了コード0とその標準出力で判定する。
+    対象がGit管理外である場合、パスが存在しない場合、実行失敗とタイムアウトの場合はNoneを返す。
+    """
+    output = _run_git(path, "rev-parse", "--show-toplevel")
+    return output.strip() or None if output is not None else None
 
 
 def has_tracked_dirty(cwd: str) -> bool | None:

@@ -213,6 +213,7 @@ if TYPE_CHECKING:
         _check_repeated_bash_output_truncation,
         _check_bash_sleep_poll_pattern,
         _check_bash_unbounded_home_traversal,
+        _check_bash_unbounded_root_traversal,
         _check_bash_uv_run_python,
     )
 
@@ -499,6 +500,8 @@ def _handle_bash_tool(
         return 2
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":
+        return 2
+    if _check_bash_unbounded_root_traversal(command) == "block":
         return 2
     atk_help_result = _check_bash_atk_help_observation(command, session_id)
     if atk_help_result == "block":

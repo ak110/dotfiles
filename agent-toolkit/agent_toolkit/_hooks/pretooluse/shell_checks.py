@@ -41,6 +41,7 @@ Bash:
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
 - 高容量のユーザー領域を対象限定なしに走査する`find`・`ls -R`の検出 (warn)
+- 走査範囲を限定しないファイルシステムの根からの`find`の遮断 (block)
 - 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
@@ -351,17 +352,36 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
     return rewritten, notices
 
 
+_REPEATED_OUTPUT_TRUNCATION_FIX = (
+    "標準出力をファイルへリダイレクトして全量を保存し、保存済みファイルから必要な範囲だけを"
+    "行数指定又は構造化条件で読む。"
+    "分離実行を利用できる場合は、読み取り専用の探索をagents_serverのstart_explore、"
+    "コマンド実行をstart_shellへ分離してもよい。"
+)
+"""切り詰め補正の反復に対する解消手段。
+
+保存と再読の形はこの検査の判定条件に一致しないため、分離実行を利用できない実行主体も
+当該本文だけで遮断されない形へ到達できる。
+"""
+
+
 def _check_repeated_bash_output_truncation(command: str, session_id: str) -> bool:
-    """同一セッションで2回目以降の切り詰め補正なら遮断する。"""
+    """同一セッションで同じ補正種別の2回目以降の切り詰め補正なら遮断する。
+
+    補正種別は`_split_simple_truncation`が返す後段コマンド名とし、種別ごとに初回だけ許容する。
+    別種の切り詰めを初めて含む呼び出しは、過去の別種の補正を理由に遮断しない。
+    """
     segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    if not session_id or not any(_split_simple_truncation(segment) is not None for segment in segments):
+    truncations = [_split_simple_truncation(segment) for segment in segments]
+    kinds = sorted({truncation[1] for truncation in truncations if truncation is not None})
+    if not session_id or not kinds:
         return False
-    if claim_bash_output_truncation_autofix(session_id):
+    if claim_bash_output_truncation_autofix(session_id, kinds):
         return False
     print(
         _block_notice(
-            "同一セッションでBash出力の切り詰め補正が繰り返された。",
-            fix="読み取り専用の探索はagents_serverのstart_explore、コマンド実行はstart_shellへ分離する。",
+            "同一セッションでBash出力の切り詰め補正が同じ形で繰り返された。",
+            fix=_REPEATED_OUTPUT_TRUNCATION_FIX,
         ),
         file=sys.stderr,
     )
@@ -394,6 +414,12 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
     return rewritten_command, _llm_notice(" ".join(unique_notices), tag=_WARN_TAG, removable_cause=True)
 
 
+_EDIT_TOOL_SAVE_PHRASE = "実行環境が提供する編集ツール（Claude Codeでは`Write`、Codexでは`apply_patch`）でファイルへ保存する"
+"""解消手段としてファイルの書込を案内する場合に用いる保存手段の名指し。
+
+保存手段を名指ししない案内は、`cat > <ファイル> <<'EOF'`の形を選ばせてheredocの判定へ当たる。
+"""
+
 _NESTED_SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
 _ENV_READ_COMMANDS = frozenset({"cat", "head", "less", "more", "tail", "xxd"})
 _ENV_BASENAME_PATTERN = re.compile(r"^\.env(?:\..+)?$")
@@ -414,7 +440,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: 別のシェルへ`-c`でコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix="実行するコードをファイルへ保存し、対象シェルへそのファイルを渡す。",
+                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを対象シェルへ渡す。",
                 ),
                 file=sys.stderr,
             )
@@ -423,7 +449,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: `su -c`へコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix="実行するコードをファイルへ保存し、`su`の対象シェルへそのファイルを渡す。",
+                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを`su`の対象シェルへ渡す。",
                 ),
                 file=sys.stderr,
             )
@@ -432,7 +458,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
         print(
             _block_notice(
                 "blocked: `ssh`へ引用したコード文字列を渡す入力は、ローカルと接続先で引用を解釈する。",
-                fix="実行するコードをファイルへ保存して転送し、接続先ではそのファイルを実行する。",
+                fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを転送し、接続先ではそのファイルを実行する。",
             ),
             file=sys.stderr,
         )
@@ -451,7 +477,10 @@ def _check_bash_heredoc_chain(command: str) -> bool:
     print(
         _block_notice(
             "blocked: heredocと本文外のパイプ又は追加リダイレクトを同じコマンドチェーンで併用している。",
-            fix="スクリプト又は本文をファイルへ保存し、後続のコマンドでそのファイルを入力にする。",
+            fix=(
+                f"スクリプト又は本文を{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを後続のコマンドの入力にする。"
+                "本文を標準入力へ渡すだけであれば、パイプとリダイレクトを伴わないheredoc単独の実行にする。"
+            ),
         ),
         file=sys.stderr,
     )
@@ -1634,14 +1663,32 @@ _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
 )
 
 
+def _describe_grep_target_worktrees(targets: Sequence[str], base: pathlib.Path) -> str:
+    """遮断対象ごとのGit作業ツリー判定を通知本文の1文へまとめる。
+
+    判定は遮断が確定した経路でだけ実行する。属する場合はrootを併記して、受領した実行主体が
+    追加の取得なしに`git -C <root> grep`の形を組み立てられる状態にする。
+    判定できない対象はGit管理外として示し、遮断の可否は変えない。
+    """
+    described: list[str] = []
+    for target in targets:
+        candidate = pathlib.Path(target).expanduser()
+        resolved = candidate if candidate.is_absolute() else base / candidate
+        root = _git_status.get_worktree_root(str(resolved))
+        described.append(f"`{target}`はGit作業ツリー`{root}`に属する" if root is not None else f"`{target}`はGit管理外")
+    return "、".join(described)
+
+
 def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str | None:
     """除外指定の無い再帰`grep`を、補正せず初回から遮断する。
 
     検索対象の内容、ファイル種別及びリンク構造はBash入力に現れないため、`rg`と出力及び終了状態が
     同値になる入力集合を構文だけから確定できない。
+    遮断が確定した経路では、対象ごとにGit作業ツリーへ属するかを判定して通知本文へ載せる。
+    実行主体が`git grep`と`rg`のどちらを選ぶかを別の呼び出しで取得せずに決められるようにするためである。
     """
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
-    detected = False
+    targets: list[str] | None = None
     for pipeline in _extract_execution_pipelines(command):
         for segment in pipeline:
             if not segment.resolved or segment.tokens[0] not in _GREP_COMMANDS:
@@ -1665,7 +1712,7 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     for token in raw_options
                 )
                 if has_recursive_option and not has_exclusion:
-                    detected = True
+                    targets = []
                     break
                 continue
             files, options = parsed
@@ -1673,16 +1720,20 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                 continue
             if options & {"--include", "--exclude", "--exclude-dir"}:
                 continue
-            if not files or any(token != "-" and (token.endswith("/") or (base / token).is_dir()) for token in files):
-                detected = True
+            directories = [token for token in files if token != "-" and (token.endswith("/") or (base / token).is_dir())]
+            if not files or directories:
+                targets = directories
                 break
-        if detected:
+        if targets is not None:
             break
-    if not detected:
+    if targets is None:
         return None
+    # operandを解決できない区間と、operandを省略した呼び出しは実効の走査起点であるcwdを対象とする。
+    described = _describe_grep_target_worktrees(targets or [str(base)], base)
     print(
         _block_notice(
-            "block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。",
+            "block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。"
+            f"対象の判定: {described}。",
             fix=_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX,
         ),
         file=sys.stderr,
@@ -2238,8 +2289,13 @@ _LS_LONG_OPTIONS_WITH_VALUE = frozenset(
 _LS_LONG_OPTIONS_WITH_OPTIONAL_VALUE = frozenset({"--classify", "--color", "--hyperlink"})
 
 
-def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
-    """`find`区間が高容量領域だけを対象とし、走査範囲を限定しない場合に真を返す。"""
+def _find_unbounded_start_paths(tokens: Sequence[str]) -> list[str] | None:
+    """走査範囲を限定しない`find`区間の起点パスを返す。
+
+    `-prune`・`-maxdepth`・`-xdev`・`-mount`のいずれかを対象限定とみなす。
+    限定がある場合と、範囲を制限し得る未知のオプションを含む場合は、限定の有無を構文だけから
+    確定できないためNoneを返す。起点を省略した呼び出しもNoneを返す。
+    """
     index = 1
     while index < len(tokens) and tokens[index] in _FIND_GLOBAL_OPTIONS:
         index += 1
@@ -2250,18 +2306,33 @@ def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
             break
         paths.append(token)
         index += 1
-    if not paths or not all(_is_high_capacity_home_target(path) for path in paths):
-        return False
+    if not paths:
+        return None
     expression = tokens[index:]
     if any(token in _FIND_BOUNDS for token in expression):
-        return False
-    return all(
+        return None
+    known_expression = all(
         not token.startswith("-")
         or token in _FIND_KNOWN_EXPRESSION_OPTIONS
         or token.startswith("-newer")
         and len(token) == len("-newer") + 2
         for token in expression
     )
+    return paths if known_expression else None
+
+
+def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """`find`区間が高容量領域だけを対象とし、走査範囲を限定しない場合に真を返す。"""
+    paths = _find_unbounded_start_paths(tokens)
+    return paths is not None and all(_is_high_capacity_home_target(path) for path in paths)
+
+
+def _find_traverses_filesystem_root(tokens: Sequence[str]) -> bool:
+    """`find`区間がファイルシステムの根を起点とし、走査範囲を限定しない場合に真を返す。"""
+    if not tokens or tokens[0] != "find":
+        return False
+    paths = _find_unbounded_start_paths(tokens)
+    return paths is not None and any(not path.rstrip("/") for path in paths)
 
 
 def _ls_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
@@ -2343,6 +2414,36 @@ def _check_bash_unbounded_home_traversal(command: str) -> str | None:
         tag="warn",
         removable_cause=True,
     )
+
+
+_UNBOUNDED_ROOT_TRAVERSAL_FIX = (
+    "探索する対象を含むディレクトリを走査の起点へ指定する。"
+    "根からの探索が必要な場合は`-maxdepth`で深さを限定するか、`-prune`で走査対象を限定する。"
+)
+
+
+def _check_bash_unbounded_root_traversal(command: str) -> str | None:
+    """走査範囲を限定しないファイルシステムの根からの`find`を初回から遮断する。
+
+    根からの走査は`/proc`・`/sys`とマウント先を含み、実用的な時間で終わらない。
+    観測事象では発行した委譲先の応答が返らなくなり、背景ジョブの停止を要した。
+    この停止は最初の発行で生じるため、1件目を警告として通過させる形にせず初回から遮断する。
+    高容量のユーザー領域を起点とする走査は`_check_bash_unbounded_home_traversal`の警告で扱う。
+    """
+    if not any(
+        segment.resolved and _find_traverses_filesystem_root(segment.tokens)
+        for pipeline in _extract_execution_pipelines(command)
+        for segment in pipeline
+    ):
+        return None
+    print(
+        _block_notice(
+            "block: 走査範囲を限定しない`find`をファイルシステムの根から実行している。",
+            fix=_UNBOUNDED_ROOT_TRAVERSAL_FIX,
+        ),
+        file=sys.stderr,
+    )
+    return "block"
 
 
 # --- Bash: codex exec未決事項の念押し ---

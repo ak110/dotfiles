@@ -1322,3 +1322,129 @@ class TestStaticSafetyBlocks:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
         assert result.returncode == 2
         assert "--not-supported" in result.stderr
+
+    def test_heredoc_block_notice_names_a_save_means_that_passes_the_same_check(self) -> None:
+        """heredoc遮断の解消手段が、同じ判定へ当たらない形を名指しする。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat > out.txt <<'EOF'\ntext\nEOF"}})
+        assert result.returncode == 2
+        assert "編集ツール" in result.stderr
+        assert "heredoc単独" in result.stderr
+
+    @pytest.mark.parametrize("command", ["sh -c 'echo ok'", "su -c 'echo ok'", "ssh host 'echo ok'"])
+    def test_nested_code_string_notice_names_the_save_means(self, command: str) -> None:
+        """多段引用の遮断も保存手段を編集ツールとして名指しする。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "編集ツール" in result.stderr
+
+
+class TestBashOutputTruncationRepetition:
+    """Bash出力の切り詰め補正の許容を補正種別ごとに数える。"""
+
+    @staticmethod
+    def _invoke(command: str, session_id: str, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        return _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
+            _plan_file_state_env(tmp_path),
+        )
+
+    def test_same_kind_is_blocked_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
+        """同じ補正種別の2回目を遮断する。"""
+        session_id = "truncation-same-kind"
+        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
+
+        result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        assert result.returncode == 2
+        assert "切り詰め補正が同じ形で繰り返された" in result.stderr
+
+    def test_other_kind_is_allowed_after_a_block(self, tmp_path: pathlib.Path) -> None:
+        """別の補正種別の初回は、過去の別種の補正と遮断を理由に遮断しない。"""
+        session_id = "truncation-other-kind"
+        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
+        assert self._invoke("ls -1 /var | head -5", session_id, tmp_path).returncode == 2
+
+        assert self._invoke("ls -1 /tmp | tail -5", session_id, tmp_path).returncode == 0
+
+    def test_block_notice_shows_a_means_without_separated_execution(self, tmp_path: pathlib.Path) -> None:
+        """遮断本文が分離実行に依存しない解消手段を示す。"""
+        session_id = "truncation-fix-body"
+        self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+
+        result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        assert result.returncode == 2
+        assert "ファイルへリダイレクト" in result.stderr
+        assert "保存済みファイルから必要な範囲だけを" in result.stderr
+
+
+class TestBashRecursiveGrepTargetJudgement:
+    """再帰`grep`の遮断本文が対象ごとのGit作業ツリー判定を示す。"""
+
+    def test_notice_reports_the_worktree_root_for_a_tracked_target(self, tmp_path: pathlib.Path) -> None:
+        """Git作業ツリーに属する対象では、rootを併記して`git grep`を組み立てられる状態にする。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "grep -r needle ."}, "cwd": str(repo)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "Git作業ツリー" in result.stderr
+        assert repo.name in result.stderr
+
+    def test_notice_reports_a_target_outside_git(self, tmp_path: pathlib.Path) -> None:
+        """Git管理外の対象では管理外である旨を示す。"""
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "grep -r needle ."}, "cwd": str(plain)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "Git管理外" in result.stderr
+
+
+class TestBashUnboundedRootTraversal:
+    """走査範囲を限定しないファイルシステムの根からの`find`を遮断する。"""
+
+    def test_root_traversal_is_blocked(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "find / -name review_table"}})
+
+        assert result.returncode == 2
+        assert "ファイルシステムの根" in result.stderr
+        assert "-maxdepth" in result.stderr
+        assert "-prune" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "find / -maxdepth 2 -name review_table",
+            "find / -xdev -name review_table",
+            "find /usr/share -name review_table",
+            "find . -name review_table",
+        ],
+        ids=["maxdepth", "xdev", "scoped-directory", "relative-directory"],
+    )
+    def test_bounded_or_scoped_traversal_is_allowed(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+
+        assert result.returncode == 0
+
+    def test_home_traversal_stays_a_warning(self, tmp_path: pathlib.Path) -> None:
+        """ホームディレクトリ起点の走査は既存の警告のまま維持する。"""
+        home = tmp_path / "home"
+        home.mkdir()
+
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "find ~ -name review_table"}},
+            _plan_file_state_env(tmp_path, home),
+        )
+
+        assert result.returncode == 0
+        assert "大容量のユーザーディレクトリ" in _additional_context(result)

@@ -221,7 +221,7 @@ class TestBashOutputTruncationWarning:
         assert "uv run python" in result.stderr
 
     def test_repeated_output_truncation_is_blocked(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの2回目は補正せず、分離実行を要求する。"""
+        """同一セッションで同じ補正種別の2回目は補正せず遮断する。"""
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -236,13 +236,14 @@ class TestBashOutputTruncationWarning:
         second = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "uvx pyfltr run-for-agent | head -20"},
+                "tool_input": {"command": "uvx pyfltr run-for-agent | tail -20"},
                 "session_id": session_id,
             },
             env,
         )
         assert second.returncode == 2
         assert second.stdout == ""
+        assert "ファイルへリダイレクト" in second.stderr
         assert "start_explore" in second.stderr
         assert "start_shell" in second.stderr
 
