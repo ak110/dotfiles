@@ -5149,6 +5149,60 @@ async def test_stop_rejects_unknown_session() -> None:
 
 
 @pytest.mark.asyncio
+async def test_show_reports_another_writer_for_running_registry_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿が実行中として保持する識別子は、喪失ではなく別主体の実行中として案内する。"""
+    manager, _ = _manager_with_fake("codex")
+    session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    session_registry.publish(session_id, terminal=False, engine="codex", cwd=str(tmp_path))
+
+    with pytest.raises(ValueError) as excinfo:
+        manager.show_session(session_id)
+
+    message = str(excinfo.value)
+    assert "agents_server may have restarted and lost this session" not in message
+    assert "another writer" in message
+    assert "atk agents wait" in message
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_show_keeps_lost_session_diagnosis_without_registry_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿にレコードが無い識別子では従来の喪失の案内を返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session_id = "5c9c2ec4-08f0-4a1e-9a02-9e8f0a4a4f21"
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+
+    with pytest.raises(ValueError, match=f"unknown session: {session_id}"):
+        manager.show_session(session_id)
+
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_show_returns_terminal_session_restored_from_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿から復元できた終端sessionは通常の応答として返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session_id = "9f2a37f4-40f8-4d38-9c1b-1f6f9f52a1c3"
+    _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
+
+    response = manager.show_session(session_id)
+
+    assert response["session_id"] == session_id
+    assert response["status"] == "completed"
+    await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_send_message_resumes_stopped_session(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,

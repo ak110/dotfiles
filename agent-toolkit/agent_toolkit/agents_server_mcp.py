@@ -385,11 +385,21 @@ class AgentsServerManager:
             self.stopped_sessions[session_id] = resume_state
         return resume_state
 
-    def _restore_registry_session(self, session_id: str) -> SessionResumeState | None:
-        """再起動前の終端sessionを登録簿から最小の再開状態へ復元する。"""
+    def _restore_registry_session(
+        self,
+        session_id: str,
+        *,
+        resolution: session_registry.SessionResolution | None = None,
+    ) -> SessionResumeState | None:
+        """再起動前の終端sessionを登録簿から最小の再開状態へ復元する。
+
+        `resolution`は、呼び出し元が同じ識別子を既に解決している場合に渡す。
+        登録簿のファイル読取を1回の照会へ収めるための入力であり、省略時は自ら解決する。
+        """
         if session_id in self.sessions or session_id in self.stopped_sessions or session_id in self.expired_sessions:
             return None
-        resolution = session_registry.resolve(session_id)
+        if resolution is None:
+            resolution = session_registry.resolve(session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
             raise ValueError(f"error.recovery=turn_unobserved: {session_id}")
         if resolution.state is session_registry.Resolution.MISSING:
@@ -564,12 +574,25 @@ class AgentsServerManager:
         }
 
     def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
-        """保持中又は再開可能なsessionの復旧用詳細を返す。"""
+        """保持中又は再開可能なsessionの復旧用詳細を返す。
+
+        自プロセスの保持状態に無い識別子は、共有の登録簿を正本として在否を判定する。
+        当該sessionを別のMCPサーバープロセスが実行中である場合と、登録簿にレコードが無い場合を
+        区別せずに喪失として案内すると、照会した主体が新しいsessionの起動へ進む。
+        """
         session: SessionState | SessionResumeState | None = self.sessions.get(session_id)
         if session is None and session_id in self._pending_resumes:
             session = self._pending_resumes[session_id].state
         if session is None:
             session = self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
+        if session is None:
+            resolution = session_registry.resolve(session_id)
+            if resolution.state is session_registry.Resolution.RUNNING:
+                raise ValueError(
+                    f"session {session_id} belongs to another writer's agents_server process and is still running; "
+                    "receive its result with `atk agents wait` on the owning root session"
+                )
+            session = self._restore_registry_session(session_id, resolution=resolution)
         if session is None:
             raise self._unresolved_session_error(session_id, label="session")
         status = "running" if session_id in self._pending_resumes else session.status
