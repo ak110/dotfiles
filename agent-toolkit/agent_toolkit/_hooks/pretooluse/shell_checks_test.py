@@ -23,6 +23,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
+from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
@@ -1018,6 +1019,31 @@ class TestBashAgentToolkitVersionBump:
         assert result.returncode == 0
         assert self._has_version_bump_warning(result)
 
+    def test_linked_worktree_no_warn(self, tmp_path: pathlib.Path):
+        """linked worktreeからのcommitでは警告しない。当該作業ツリーはbumpを実行しない。"""
+        repo = self._make_repo(tmp_path)
+        worktree = tmp_path / "lane"
+        subprocess.run(
+            ["git", "worktree", "add", "-b", "lane-branch", str(worktree)],
+            cwd=str(repo),
+            capture_output=True,
+            check=True,
+        )
+        target = worktree / "agent-toolkit" / "skills" / "x" / "SKILL.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# x\n")
+        subprocess.run(
+            ["git", "add", "agent-toolkit/skills/x/SKILL.md"],
+            cwd=str(worktree),
+            capture_output=True,
+            check=True,
+        )
+
+        result = self._invoke("git commit -m 'skill'", str(worktree))
+
+        assert result.returncode == 0
+        assert not self._has_version_bump_warning(result)
+
     def test_commit_string_in_argument_position_no_warn(self, tmp_path: pathlib.Path):
         """`git commit`を検索語として含むだけの読み取り操作は警告しない。"""
         repo = self._make_repo(tmp_path, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
@@ -1396,6 +1422,32 @@ class TestBashOutputTruncationRepetition:
         assert result.returncode == 2
         assert "ファイルへリダイレクト" in result.stderr
         assert "保存済みファイルから必要な範囲だけを" in result.stderr
+
+    def test_autofix_notice_predicts_the_block_and_shows_how_to_avoid_it(self, tmp_path: pathlib.Path) -> None:
+        """補正の通知が、次に同じ形を書くと遮断されることと、遮断を避ける書き方の双方を示す。"""
+        session_id = "truncation-autofix-body"
+
+        result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "補正ではなく遮断になる" in context
+        assert "遮断を避ける書き方" in context
+        assert "ファイルへリダイレクト" in context
+        assert "保存済みファイルから必要な範囲だけを" in context
+
+    def test_autofix_and_block_share_the_same_avoidance_body(self, tmp_path: pathlib.Path) -> None:
+        """補正の通知と遮断の通知が、同じ解消手段の本文を持つ。"""
+        session_id = "truncation-shared-body"
+        autofix = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+        blocked = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        assert autofix.returncode == 0
+        assert blocked.returncode == 2
+        context = json.loads(autofix.stdout)["hookSpecificOutput"]["additionalContext"]
+        avoidance = shell_checks._OUTPUT_TRUNCATION_AVOIDANCE  # pylint: disable=protected-access  # noqa: SLF001
+        assert avoidance in context
+        assert avoidance in blocked.stderr
 
 
 class TestBashRecursiveGrepTargetJudgement:

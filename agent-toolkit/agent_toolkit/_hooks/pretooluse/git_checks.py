@@ -590,6 +590,21 @@ _AGENT_TOOLKIT_TEST_SUFFIX = "_test.py"
 _AGENT_TOOLKIT_SCRIPTS_PREFIX = "agent-toolkit/scripts/"
 
 
+def _is_linked_worktree(cwd: str) -> bool:
+    """作業ツリーがlinked worktreeであるかを返す。
+
+    `--git-dir`はlinked worktreeで`<共通dir>/worktrees/<名前>`を指し、主作業ツリーでは
+    `--git-common-dir`と同じ値になる。両者の相違でlinked worktreeを判定する。
+    Gitへ問い合わせられない場合は判定不能として偽を返し、呼び出し元を警告側へ倒す。
+    """
+    resolved = _git_status.run_git_lines(["git", "rev-parse", "--git-dir", "--git-common-dir"], cwd)
+    if resolved is None or len(resolved) != 2:
+        return False
+    # `rev-parse`は相対パスを返し得る。基準はコマンドを実行した作業ディレクトリである。
+    base = pathlib.Path(cwd)
+    return (base / resolved[0]).resolve() != (base / resolved[1]).resolve()
+
+
 def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None:
     """agent-toolkit/配下の変更をコミットする際にversion bump漏れを警告する。
 
@@ -607,7 +622,12 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
        （上流未設定・追跡先削除済みの`gone`状態）は、構成済みリモートの既定ブランチ
        （`refs/remotes/<remote>/HEAD`）との比較へフォールバックする。フォールバックも
        解決できない場合は警告側へ倒す
-    5. 上記いずれにも該当しない場合、warn JSONを返す
+    5. commitを行う作業ツリーがlinked worktreeの場合は警告しない。
+       複数レーンを並列実装する作業では、version bumpを各レーンではなく全レーンのマージ後に
+       1回だけ実行する運用であり、レーン用の作業ツリーから当該処置を実行できない。
+       公開工程は主作業ツリーで行うため、bumpの漏れは当該工程で検出できる。
+       判定できない場合は警告側へ倒す
+    6. 上記いずれにも該当しない場合、warn JSONを返す
     """
     commit_events = [event for event in extract_git_events(command, cwd) if event.subcommand == "commit"]
     if not commit_events or any(not event.cwd_resolved for event in commit_events):
@@ -644,6 +664,8 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
                 effective_cwd,
             )
     if unpushed:
+        return None
+    if _is_linked_worktree(effective_cwd):
         return None
 
     return _llm_notice(

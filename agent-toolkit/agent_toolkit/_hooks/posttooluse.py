@@ -67,8 +67,9 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks import (
     uwi_completion as _uwi_completion,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._hooks.agent_id import (
-    resolve_hook_agent_id,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks.agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    is_main_agent_context,
+    resolve_hook_agent_id,
 )
 from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     ExecutionSegment,
@@ -1057,7 +1058,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
-    if cwd:
+    # 当該通知が指示する反映と依存作業の再開はメインが所有するため、
+    # in-processのサブエージェントと`agents_server`の委譲先セッションでは通知を組み立てない。
+    if cwd and is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))

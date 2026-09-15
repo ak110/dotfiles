@@ -13,6 +13,11 @@ subagent call. Use this to distinguish subagent hook calls from main-thread call
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
+
+from agent_toolkit._common.delegated_session import is_delegated
+
 MAIN_AGENT_ID = "main"
 """`agent_id`を持たないメイン会話の呼び出しへ与える識別子。"""
 
@@ -24,3 +29,14 @@ def resolve_hook_agent_id(payload: object) -> str:
         if isinstance(agent_id, str) and agent_id:
             return agent_id
     return MAIN_AGENT_ID
+
+
+def is_main_agent_context(payload: object, environ: Mapping[str, str] | None = None) -> bool:
+    """呼出主体が最上位セッションのメインであるかを返す。
+
+    in-processのサブエージェントはpayloadの`agent_id`で、`agents_server`が起動した
+    委譲先セッションは環境変数の印で除く。
+    通知本文が指示する処置をメインだけが実行できる場合に、当該通知の発火条件として使う。
+    処置できない主体が通知を受領すると、差し戻しだけの工程が生じる。
+    """
+    return resolve_hook_agent_id(payload) == MAIN_AGENT_ID and not is_delegated(os.environ if environ is None else environ)

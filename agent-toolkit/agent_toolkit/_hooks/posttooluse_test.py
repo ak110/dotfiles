@@ -630,8 +630,15 @@ class TestDelegationStateRemoval:
 class TestUwiCompletionNotice:
     """UWI回答差分をPostToolUseの追加contextへ接続する。"""
 
+    @staticmethod
+    def _clear_delegation_marks(monkeypatch: pytest.MonkeyPatch) -> None:
+        """メインの実行主体として判定されるよう、委譲先セッションの印を除く。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+
     def test_dispatch_appends_answered_filename_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """回答差分通知をLLM向けnoticeとして蓄積する。"""
+        self._clear_delegation_marks(monkeypatch)
         monkeypatch.setattr(
             _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
             "build_notice",
@@ -670,6 +677,65 @@ class TestUwiCompletionNotice:
         payload = {
             "session_id": "uwi-failure",
             "hook_event_name": hook_event_name,
+            "tool_name": "Read",
+            "tool_input": {"file_path": "README.md"},
+            "cwd": "/repo",
+        }
+
+        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
+            json.dumps(payload), notices
+        )
+
+        assert result == 0
+        assert not notices
+
+    def test_in_process_subagent_skips_uwi_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`agent_id`を持つin-processのサブエージェントでは通知を組み立てない。"""
+        self._clear_delegation_marks(monkeypatch)
+        monkeypatch.setattr(
+            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            "build_notice",
+            lambda *_args: pytest.fail("サブエージェントでUWI通知が呼ばれた"),
+        )
+        notices: list[str] = []
+        payload = {
+            "session_id": "uwi-subagent",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "README.md"},
+            "cwd": "/repo",
+            "agent_id": "agent-1",
+        }
+
+        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
+            json.dumps(payload), notices
+        )
+
+        assert result == 0
+        assert not notices
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner-1")],
+    )
+    def test_delegated_session_skips_uwi_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        name: str,
+        value: str,
+    ) -> None:
+        """`agents_server`が起動した委譲先セッションでは通知を組み立てない。"""
+        self._clear_delegation_marks(monkeypatch)
+        monkeypatch.setenv(name, value)
+        monkeypatch.setattr(
+            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            "build_notice",
+            lambda *_args: pytest.fail("委譲先セッションでUWI通知が呼ばれた"),
+        )
+        notices: list[str] = []
+        payload = {
+            "session_id": "uwi-delegate",
+            "hook_event_name": "PostToolUse",
             "tool_name": "Read",
             "tool_input": {"file_path": "README.md"},
             "cwd": "/repo",

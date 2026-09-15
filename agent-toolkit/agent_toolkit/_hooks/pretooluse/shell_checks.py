@@ -376,11 +376,12 @@ def _format_truncation_autofix_notice(saved: list[tuple[str, str]], *, total_seg
             remaining,
             "保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている。",
             "同一セッションで同じ構造のBash呼び出しを再び発行した場合は、補正ではなく遮断になる。",
+            f"遮断を避ける書き方: {_OUTPUT_TRUNCATION_AVOIDANCE}",
         ]
     )
 
 
-_REPEATED_OUTPUT_TRUNCATION_FIX = (
+_OUTPUT_TRUNCATION_AVOIDANCE = (
     "当該コマンド自身が提供する対象の限定、件数指定、要約指定又は構造化条件で出力量を制御する。"
     "制御できない場合は標準出力をファイルへリダイレクトして全量を保存し、"
     "保存済みファイルから必要な範囲だけを行数指定又は構造化条件で読む。"
@@ -388,11 +389,17 @@ _REPEATED_OUTPUT_TRUNCATION_FIX = (
     "コマンド実行をstart_shellへ分離してもよい。"
     "判定条件の正本は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」とする。"
 )
-"""切り詰め補正の反復に対する解消手段。
+"""切り詰めを含む呼び出しを遮断されない形へ組み直す手段。
 
+補正の通知と遮断の通知の双方が本定数を参照する。
+解消手段を一方の本文だけが持つと、補正の通知だけを読んだ実行主体は次の呼び出しでも同じ形を選び、
+遮断のたびにコマンドの組み直しと再実行を要する。
 保存と再読の形と、コマンド自身の限定指定はこの検査の判定条件に一致しないため、
 分離実行を利用できない実行主体も当該本文だけで遮断されない形へ到達できる。
 """
+
+_REPEATED_OUTPUT_TRUNCATION_FIX = _OUTPUT_TRUNCATION_AVOIDANCE
+"""切り詰め補正の反復に対する解消手段。"""
 
 
 def _check_repeated_bash_output_truncation(command: str, session_id: str) -> bool:
