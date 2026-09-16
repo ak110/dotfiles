@@ -402,21 +402,23 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
     properties = start_tool.parameters["properties"]
-    assert {"subagent_md_path", "extra_params", "cwd"} == properties.keys()
+    assert {"subagent_md_path", "extra_params", "cwd", "label"} == properties.keys()
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     custom_tool = subject.mcp._tool_manager.get_tool("start_custom")
     assert custom_tool is not None
-    assert {"prompt", "model_type", "cwd"} == custom_tool.parameters["properties"].keys()
+    assert {"prompt", "model_type", "cwd", "label"} == custom_tool.parameters["properties"].keys()
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
-    assert {"prompt", "cwd", "fast"} == explore_tool.parameters["properties"].keys()
+    assert {"prompt", "cwd", "fast", "label"} == explore_tool.parameters["properties"].keys()
     assert explore_tool.parameters["properties"]["fast"]["default"] is True
     shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
     assert shell_tool is not None
-    assert {"command", "cwd", "summary_policy"} == shell_tool.parameters["properties"].keys()
+    assert {"command", "cwd", "summary_policy", "label"} == shell_tool.parameters["properties"].keys()
     write_tool = subject.mcp._tool_manager.get_tool("start_write")
     assert write_tool is not None
-    assert {"prompt", "cwd"} == write_tool.parameters["properties"].keys()
+    assert {"prompt", "cwd", "label"} == write_tool.parameters["properties"].keys()
+    for tool in (start_tool, custom_tool, explore_tool, shell_tool, write_tool):
+        assert tool.parameters["properties"]["label"]["default"] is None
     for tool in (start_tool, custom_tool, explore_tool):
         assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
@@ -437,6 +439,57 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
         assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
+@pytest.mark.asyncio
+async def test_session_label_prefers_argument_over_generated_value(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """識別名は引数の指定を優先し、省略時は依頼本文又はコマンドから導く。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda _model_type: [("codex", "model", "high")],
+    )
+    manager, _ = _manager_with_fake("codex")
+
+    named = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label="lane-02")
+    unnamed = await manager.start("plan", "対象の調査\n詳細", str(tmp_path))
+    shell_default = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す")
+    shell_named = await manager.start_shell(
+        "git status --short",
+        str(tmp_path),
+        "終了コードだけを返す",
+        label="作業ツリーの差分",
+    )
+
+    assert manager.show_session(named["session_id"])["label"] == "lane-02"
+    assert manager.show_session(unnamed["session_id"])["label"] == "対象の調査"
+    assert manager.show_session(shell_default["session_id"])["label"] == "git status --short"
+    assert manager.show_session(shell_named["session_id"])["label"] == "作業ツリーの差分"
+
+
+@pytest.mark.parametrize("label", ["", "   "])
+@pytest.mark.asyncio
+async def test_empty_session_label_falls_back_to_the_generated_value(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    label: str,
+) -> None:
+    """空になる識別名の指定は未指定と同じ扱いとし、識別名の列を空のままにしない。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda _model_type: [("codex", "model", "high")],
+    )
+    manager, _ = _manager_with_fake("codex")
+
+    started = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label=label)
+    shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
+
+    assert manager.show_session(started["session_id"])["label"] == "対象の調査"
+    assert manager.show_session(shell["session_id"])["label"] == "git status --short"
+
+
 def test_server_instructions_carry_standalone_contract() -> None:
     """サーバー説明だけを読む主体へ観測の義務とモデル解決の主体を示す。"""
     instructions = subject.mcp.instructions
@@ -444,6 +497,7 @@ def test_server_instructions_carry_standalone_contract() -> None:
     assert "実行ホストで`atk agents wait`を発行して観測する" in instructions
     assert "結果が不要なら`kill`で破棄する" in instructions
     assert "engine、model及びeffortは" in instructions
+    assert "起動時の`label`は当該sessionを人が識別する短い名前とし" in instructions
 
 
 def test_tool_descriptions_carry_standalone_contract() -> None:

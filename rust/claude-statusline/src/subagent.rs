@@ -390,7 +390,7 @@ pub(crate) fn display_width(text: &str) -> usize {
 /// 文字列を表示幅`budget`セル以内へ省略記号付きで切り詰める。
 ///
 /// 省略記号`…`（U+2026）は対象端末で1セルを占めるため、`display_width`の実測幅を予約する。
-fn truncate(text: &str, budget: usize) -> String {
+pub(crate) fn truncate(text: &str, budget: usize) -> String {
     if budget == 0 {
         return String::new();
     }

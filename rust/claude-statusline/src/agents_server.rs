@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
 use crate::subagent::{
-    display_width, format_elapsed, normalize_description, render_line, short_model_name,
+    display_width, format_elapsed, normalize_description, render_line, short_model_name, truncate,
     DEFAULT_COLUMNS, NAME_WIDTH_DIVISOR,
 };
 
@@ -20,6 +20,8 @@ const HEARTBEAT_EXPIRY_SECONDS: i64 = 120;
 // Claude Codeの描画は先頭の字下げ2セルと行末の2セルを確保する。
 // 確保幅は描画された行の表示幅とCOLUMNSの差から導出した。
 const STATUSLINE_RESERVED_COLUMNS: usize = 4;
+// 識別名の列は、右端へ並ぶ経過時間とstatusの位置を行ごとにそろえるため上限幅を持つ。
+const LABEL_WIDTH_CAP: usize = 16;
 
 #[derive(Debug)]
 pub(crate) struct StateFile {
@@ -224,6 +226,12 @@ pub(crate) fn render_state_files(
         .map(|name| display_width(name).min(cap))
         .max()
         .unwrap_or(0);
+    let label_width = display_sessions
+        .iter()
+        .map(|item| display_width(&item.session.label))
+        .max()
+        .unwrap_or(0)
+        .min(LABEL_WIDTH_CAP);
 
     display_sessions
         .iter()
@@ -231,14 +239,17 @@ pub(crate) fn render_state_files(
         .map(|(item, name)| {
             // 最後に観測した行動を優先する。テキスト出力の無い区間でもツール名が進み、
             // 稼働しているかを1行で読み取れる。
-            let description = if !item.session.last_action.is_empty() {
-                &item.session.last_action
-            } else if item.session.progress.is_empty() {
-                &item.session.label
-            } else {
+            let description = if item.session.last_action.is_empty() {
                 &item.session.progress
+            } else {
+                &item.session.last_action
             };
             let mut right_parts = Vec::new();
+            if label_width > 0 {
+                let fitted = truncate(&item.session.label, label_width);
+                let pad = label_width.saturating_sub(display_width(&fitted));
+                right_parts.push(format!("{fitted}{}", " ".repeat(pad)));
+            }
             let started_at = Value::String(item.session.started_at.clone());
             if let Some(elapsed) = format_elapsed(Some(&started_at), now) {
                 right_parts.push(elapsed);
@@ -559,7 +570,8 @@ mod tests {
 
         assert_eq!(lines.len(), 5);
         assert!(lines[0].starts_with("impl (Claude/Opus)"));
-        assert!(lines[0].contains("implementation label"));
+        // 識別名の列は上限16セルで切り詰める。
+        assert!(lines[0].contains("implementation …"));
         assert!(lines[0].ends_with("45s · running"));
         assert!(lines[1].starts_with("└ explore (Codex/gpt-5.6-terra)"));
         assert!(lines[1].contains("latest progress"));
@@ -571,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn rendering_prefers_last_action_and_falls_back_when_absent() {
+    fn rendering_prefers_last_action_over_progress() {
         let mut with_action = session(
             "with-action",
             "claude",
@@ -613,7 +625,43 @@ mod tests {
         assert!(lines[0].contains("Bash"), "{lines:?}");
         assert!(!lines[0].contains("latest progress"), "{lines:?}");
         assert!(lines[1].contains("latest progress"), "{lines:?}");
-        assert!(lines[2].contains("fallback label"), "{lines:?}");
+        assert!(!lines[2].contains("Bash"), "{lines:?}");
+        assert!(!lines[2].contains("latest progress"), "{lines:?}");
+    }
+
+    #[test]
+    fn label_column_keeps_fixed_width_left_of_elapsed() {
+        let short = session(
+            "short",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("", "lane-02"),
+            "2025-12-31T23:59:30+00:00",
+        );
+        let long = session(
+            "long",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("", "とても長い名前を持つセッション"),
+            "2025-12-31T23:59:30+00:00",
+        );
+        let root = state_file("root.json", Value::Null, serde_json::json!([short, long]));
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let lines = render_state_files(&[root], 200, now);
+
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        for line in &lines {
+            assert!(line.ends_with("30s · running"), "{lines:?}");
+        }
+        assert!(lines[0].contains("lane-02"), "{lines:?}");
+        assert!(lines[1].contains('…'), "{lines:?}");
+        assert!(!lines[1].contains("持つセッション"), "{lines:?}");
+        assert!(lines.iter().all(|line| display_width(line) <= 200));
     }
 
     #[test]

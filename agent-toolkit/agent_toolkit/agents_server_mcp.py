@@ -122,6 +122,16 @@ class _PendingResume:
         return result
 
 
+def _resolve_display_label(label: str | None, fallback: str) -> str:
+    """呼び出し元が指定した識別名を正規化し、空になる指定では代替の本文から導く。
+
+    未指定と、空白だけで構成された指定を含む空になる指定を同じ扱いとする。
+    識別名の列が空のまま表示されると、当該sessionを名前で見分けられないためである。
+    """
+    normalized = status_file.normalize_label(label) if label else ""
+    return normalized or status_file.normalize_label(fallback)
+
+
 def _engine_unavailable(session: SessionState) -> bool:
     """終端したsessionが、engineの可用性を理由に失敗したかを返す。"""
     if session.status != "failed" or not isinstance(session.error, dict):
@@ -606,6 +616,7 @@ class AgentsServerManager:
             "status": status,
             "launch_kind": session.launch_kind,
             "model_type": session.model_type,
+            "label": session.label,
             "prompt": session.prompt,
             "cwd": session.cwd,
             "result_available": result_available,
@@ -804,7 +815,7 @@ class AgentsServerManager:
         _validate_cwd(cwd)
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
-        display_label = status_file.normalize_label(prompt if label is None else label)
+        display_label = _resolve_display_label(label, prompt)
         delivery_body = _wrap_delivery_body(prompt)
         for candidate_index, candidate in enumerate(candidates):
             engine, model, effort = candidate
@@ -964,6 +975,8 @@ class AgentsServerManager:
         fast: bool,
         prompt: str,
         cwd: str,
+        *,
+        label: str | None = None,
     ) -> dict[str, Any]:
         """探索専用の軽量な起動条件でturnを開始する。"""
         model_type = "explore_fast" if fast else "explore"
@@ -972,6 +985,7 @@ class AgentsServerManager:
             prompt,
             cwd,
             launch_kind="explore",
+            label=label,
         )
 
     async def start_shell(
@@ -979,6 +993,8 @@ class AgentsServerManager:
         command: str,
         cwd: str,
         summary_policy: str,
+        *,
+        label: str | None = None,
     ) -> dict[str, Any]:
         """コマンド実行専用の軽量な起動条件でturnを開始する。"""
         _validate_shell_request(command, summary_policy)
@@ -987,16 +1003,17 @@ class AgentsServerManager:
             _shell_prompt(command, summary_policy),
             cwd,
             launch_kind="shell",
-            label=command,
+            label=_resolve_display_label(label, command),
         )
 
-    async def start_write(self, prompt: str, cwd: str) -> dict[str, Any]:
+    async def start_write(self, prompt: str, cwd: str, *, label: str | None = None) -> dict[str, Any]:
         """対象と内容が確定済みの軽量な書込turnを開始する。"""
         return await self.start(
             "explore_fast",
             prompt,
             cwd,
             launch_kind="write",
+            label=label,
         )
 
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
@@ -1817,7 +1834,11 @@ with warnings.catch_warnings():
             "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
             "engine、model及びeffortは専用タスク文書又は`model_type`と`fast`から本サーバーが工程別モデル設定を解決して決める。"
-            "呼び出し側は指定しない。"
+            "呼び出し側は指定しない。\n"
+            "起動時の`label`は当該sessionを人が識別する短い名前とし、`show`・`atk agents list`・statuslineへ現れる。"
+            "表記をそろえるため、`start`では担当を表す識別子（`lane-02`など）、"
+            "`start_explore`では調べる対象を表す名詞句（`pyfltrの起動形`など）、"
+            "`start_shell`では実行するコマンドのように、当該sessionの役割を最短で表す語を渡す。"
         ),
         lifespan=_mcp_lifespan,
     )
@@ -1839,6 +1860,15 @@ async def start(
         Field(description="タスク文書の必須入力名をキーとする追加パラメータ。固有の補足は`追加指示`へ渡す。"),
     ],
     cwd: str,
+    label: Annotated[
+        str | None,
+        Field(
+            description=(
+                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
+                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """専用タスク文書と名前付き追加入力から委譲先turnを開始する。
 
@@ -1846,11 +1876,12 @@ async def start(
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     応答は`session_id`と`status`だけを含む。起動条件の詳細は`show`で取得する。
+    `label`は当該sessionの識別名として`show`・`atk agents list`・statuslineへ現れる。
     全候補がengineの可用性を理由として終端した場合は、最後の候補の終端応答を返す。
     全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
     """
     model_type, prompt = _task_document_request(subagent_md_path, extra_params)
-    response = await _MANAGER.start(model_type, prompt, cwd)
+    response = await _MANAGER.start(model_type, prompt, cwd, label=label)
     return {key: response[key] for key in ("session_id", "status")}
 
 
@@ -1862,6 +1893,15 @@ async def start_custom(
         Field(description="工程別モデル設定の種別。専用タスク文書がある場合は`start`を使う。"),
     ],
     cwd: str,
+    label: Annotated[
+        str | None,
+        Field(
+            description=(
+                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
+                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """専用タスク文書がない自由な指示本文から委譲先turnを開始する。
 
@@ -1870,7 +1910,7 @@ async def start_custom(
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     """
-    response = await _MANAGER.start(model_type, prompt, cwd)
+    response = await _MANAGER.start(model_type, prompt, cwd, label=label)
     return {key: response[key] for key in ("session_id", "status")}
 
 
@@ -1887,6 +1927,15 @@ async def start_explore(
             )
         ),
     ] = True,
+    label: Annotated[
+        str | None,
+        Field(
+            description=(
+                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
+                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
@@ -1900,7 +1949,7 @@ async def start_explore(
     文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
-    response = await _MANAGER.start_explore(fast, prompt, cwd)
+    response = await _MANAGER.start_explore(fast, prompt, cwd, label=label)
     return {key: response[key] for key in ("session_id", "status")}
 
 
@@ -1909,6 +1958,15 @@ async def start_shell(
     command: Annotated[str, Field(description="実行するコマンド。委譲先がシェルで実行する。")],
     cwd: Annotated[str, Field(description="実行時の作業ディレクトリ。既存ディレクトリの絶対パスとする。")],
     summary_policy: Annotated[str, Field(description="結果の要約方針。報告へ含める値と粒度を書く。")],
+    label: Annotated[
+        str | None,
+        Field(
+            description=(
+                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
+                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """コマンドを実行して結果を要約する委譲先turnを開始する。
 
@@ -1922,12 +1980,24 @@ async def start_shell(
     文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
-    response = await _MANAGER.start_shell(command, cwd, summary_policy)
+    response = await _MANAGER.start_shell(command, cwd, summary_policy, label=label)
     return {key: response[key] for key in ("session_id", "status")}
 
 
 @mcp.tool(name="start_write", structured_output=True)
-async def start_write(prompt: str, cwd: str) -> dict[str, Any]:
+async def start_write(
+    prompt: str,
+    cwd: str,
+    label: Annotated[
+        str | None,
+        Field(
+            description=(
+                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
+                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """対象と内容が確定済みの小規模な書込を軽量な委譲先で実行する。
 
     設計、調査、レビュー及び公開操作を依頼せず、変更対象と完成形を`prompt`へ明記する。
@@ -1935,7 +2005,7 @@ async def start_write(prompt: str, cwd: str) -> dict[str, Any]:
     終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`で受け取る。
     結果が不要なら`kill`で破棄する。
     """
-    response = await _MANAGER.start_write(prompt, cwd)
+    response = await _MANAGER.start_write(prompt, cwd, label=label)
     return {key: response[key] for key in ("session_id", "status")}
 
 
@@ -2022,7 +2092,7 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
 async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]:
     """1件のsessionについて、文脈復旧又はトラブルシューティング用の詳細を返す。
 
-    既定では起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
+    既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
     稼働中の子sessionがある場合は、安定した順序の`live_child_sessions`（`session_id`と`cwd`の対）も返す。
     `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、当該識別子へは追送と打ち切りを発行できない。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号及び解決可能なroot sessionも加える。
