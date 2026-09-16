@@ -255,13 +255,6 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
    MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う
 6. 変更をコミットする
 
-次のいずれかを変更した場合は、変更後の互換起動条件を確認する。
-
-- `agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」のキー
-- `agent-toolkit/share/rules-main.codex.md`のCodex互換起動条件
-
-両者の対応関係は機械判定できる入力を持たないため、自動検査では保証しない。人手で確認する。
-
 ## フック実装の配置先（個人フックと配布物）
 
 PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。

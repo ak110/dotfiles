@@ -32,7 +32,7 @@
 
 ## pnpm
 
-- `pnpm/action-setup` v6は`packageManager`フィールドにSHAハッシュがないとlockfile解析エラーになる場合がある
+- `packageManager`フィールドはSHAハッシュ付きで保持する
   - `corepack use pnpm@<version>`でSHAハッシュ付きに更新する
 - pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日」にある
