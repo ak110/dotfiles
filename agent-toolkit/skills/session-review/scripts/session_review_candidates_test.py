@@ -35,6 +35,26 @@ def test_candidate_events_excludes_non_interventions_and_reports_counts() -> Non
     }
 
 
+def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
+    """選択肢の外の回答と自由記述を伴う回答を問題候補として残し、選択肢どおりの回答だけを除く。"""
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
+        {"kind": "user", "record": "main", "line": 2, "text": "質問: 方針\n回答: 既存機構へ統合"},
+        {
+            "kind": "user",
+            "record": "main",
+            "line": 3,
+            "text": "質問: 方針\n回答: 対象範囲を広げる",
+            "answer_intervention": True,
+        },
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
+    assert candidates[-1]["excluded"] == {"initial-request": 1, "question-answer": 1}
+
+
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
     """常駐処理の通知、定時prompt及び実行環境が挿入した本文を利用者介入から除く。"""
     timeline = [

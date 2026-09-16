@@ -291,29 +291,74 @@ def _question_answers_event(pairs: list[tuple[str, list[str], str]]) -> dict[str
     return _event("user", "\n".join(sections))
 
 
-def _claude_question_call_ids(content: Any) -> set[str]:
-    """AskUserQuestionのtool_use IDだけを取得する。"""
+class _PendingQuestion(NamedTuple):
+    """回答イベントの生成に要する、質問側の行番号と質問文ごとの選択肢label。"""
+
+    line: int
+    labels: dict[str, list[str]]
+
+
+def _claude_question_options(content: Any) -> dict[str, dict[str, list[str]]]:
+    """AskUserQuestionのtool_use IDごとに、質問文と選択肢labelの対応を取得する。
+
+    labelは`input.questions[].options[].label`に現れる。回答の文字列を当該labelの集合と
+    照合して、選択肢をそのまま選んだ回答と方針を是正した回答を判別する。
+    """
     if not isinstance(content, list):
-        return set()
-    return {
-        block["id"]
-        for block in content
-        if isinstance(block, dict)
-        and block.get("type") == "tool_use"
-        and block.get("name") == "AskUserQuestion"
-        and isinstance(block.get("id"), str)
-    }
+        return {}
+    options: dict[str, dict[str, list[str]]] = {}
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        if block.get("name") != "AskUserQuestion" or not isinstance(block.get("id"), str):
+            continue
+        options[block["id"]] = _claude_question_labels(block.get("input"))
+    return options
+
+
+def _claude_question_labels(payload: Any) -> dict[str, list[str]]:
+    """AskUserQuestionの入力から、質問文ごとの選択肢labelを取得する。"""
+    if not isinstance(payload, dict):
+        return {}
+    questions = payload.get("questions")
+    if not isinstance(questions, list):
+        return {}
+    labels: dict[str, list[str]] = {}
+    for question in questions:
+        if not isinstance(question, dict) or not isinstance(question.get("question"), str):
+            continue
+        choices = question.get("options")
+        if not isinstance(choices, list):
+            continue
+        labels[question["question"]] = [
+            choice["label"] for choice in choices if isinstance(choice, dict) and isinstance(choice.get("label"), str)
+        ]
+    return labels
+
+
+def _is_offered_answer(answer: str, labels: list[str]) -> bool:
+    """回答の文字列が、提示した選択肢のlabelだけで構成されるかを返す。
+
+    複数選択の回答はlabelをカンマと空白で連結した1つの文字列として記録されるため、
+    区切った全ての要素がlabelに一致する場合だけ、選択肢をそのまま選んだ回答とする。
+    labelを取得できない記録では当該判別が成立しないため、選択肢をそのまま選んだ回答として扱う。
+    """
+    if not labels:
+        return True
+    return all(part.strip() in labels for part in answer.split(",") if part.strip())
 
 
 def _claude_answers_event(
     result: Any,
     content: Any,
-    pending_question_lines: dict[str, int],
+    pending_questions: dict[str, _PendingQuestion],
 ) -> dict[str, Any] | None:
     """対応するAskUserQuestionの結果だけを回答イベントへ変換する。
 
     質問と回答は別の行に由来するため、行番号には質問側（先頭行）の値を用いる。
     `annotations`の`notes`はユーザーが選択肢の外へ書いた自由記述であり、`preview`は取り込まない。
+    選択肢のlabelと一致しない回答と、`notes`を持つ回答は従来の判断を是正した介入であるため、
+    `answer_intervention`を付けて問題候補の母集団へ残す。
     """
     if not isinstance(content, list):
         return None
@@ -322,10 +367,14 @@ def _claude_answers_event(
         for block in content
         if isinstance(block, dict) and block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str)
     }
-    matched_ids = set(pending_question_lines).intersection(result_ids)
+    matched_ids = set(pending_questions).intersection(result_ids)
     if not matched_ids:
         return None
-    question_line = min(pending_question_lines.pop(matched_id) for matched_id in matched_ids)
+    matched = [pending_questions.pop(matched_id) for matched_id in matched_ids]
+    question_line = min(pending.line for pending in matched)
+    labels: dict[str, list[str]] = {}
+    for pending in matched:
+        labels.update(pending.labels)
     if not isinstance(result, dict):
         return None
     answers = result.get("answers")
@@ -335,13 +384,19 @@ def _claude_answers_event(
         return None
     annotations = result.get("annotations")
     pairs: list[tuple[str, list[str], str]] = []
+    intervention = False
     for question, answer in answers.items():
         annotation = annotations.get(question) if isinstance(annotations, dict) else None
-        notes = annotation.get("notes") if isinstance(annotation, dict) else ""
-        pairs.append((question, [answer], notes if isinstance(notes, str) else ""))
+        raw_notes = annotation.get("notes") if isinstance(annotation, dict) else ""
+        notes = raw_notes if isinstance(raw_notes, str) else ""
+        if notes or not _is_offered_answer(answer, labels.get(question, [])):
+            intervention = True
+        pairs.append((question, [answer], notes))
     event = _question_answers_event(pairs)
     if event is not None:
         event["line"] = question_line
+        if intervention:
+            event["answer_intervention"] = True
     return event
 
 
@@ -397,10 +452,10 @@ def _is_subagent_record(entries: list[dict[str, Any]]) -> bool:
 def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
     """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
-    pending_question_lines: dict[str, int] = {}
+    pending_claude_questions: dict[str, _PendingQuestion] = {}
     subagent_record = _is_subagent_record(entries)
     for line, entry in zip(lines, entries, strict=True):
-        for event in _claude_entry_events(entry, line, pending_question_lines, subagent_record):
+        for event in _claude_entry_events(entry, line, pending_claude_questions, subagent_record):
             event.setdefault("line", line)
             events.append(event)
     return events
@@ -409,7 +464,7 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
 def _claude_entry_events(
     entry: dict[str, Any],
     line: int,
-    pending_question_lines: dict[str, int],
+    pending_claude_questions: dict[str, _PendingQuestion],
     subagent_record: bool = False,
 ) -> list[dict[str, Any]]:
     """Claude Codeの1エントリから共通イベントを取得する。
@@ -466,12 +521,17 @@ def _claude_entry_events(
                     if runtime_generated:
                         event["runtime_generated"] = True
                     events.append(event)
-            answer_event = _claude_answers_event(result, message.get("content"), pending_question_lines)
+            answer_event = _claude_answers_event(result, message.get("content"), pending_claude_questions)
             if answer_event:
                 events.append(answer_event)
             events.extend(_failed_tool_events(entry))
         elif entry_type == "assistant" and role == "assistant":
-            pending_question_lines.update({call_id: line for call_id in _claude_question_call_ids(message.get("content"))})
+            pending_claude_questions.update(
+                {
+                    call_id: _PendingQuestion(line, labels)
+                    for call_id, labels in _claude_question_options(message.get("content")).items()
+                }
+            )
             for text in _text_blocks(message.get("content")):
                 event = _event("assistant", text)
                 if event:
@@ -2522,14 +2582,14 @@ def _user_events_since(collected: list[_CollectedRecord], since: datetime.dateti
         if runtime is None:
             break
         selected_events: list[dict[str, Any]] = []
-        pending_question_lines: dict[str, int] = {}
+        pending_claude_questions: dict[str, _PendingQuestion] = {}
         pending_questions: dict[str, tuple[int, dict[str, str]]] = {}
         subagent_record = _is_subagent_record([record.entry for record in item.records])
         for record in item.records:
             record_events = (
                 _codex_entry_events(record.entry, record.line, pending_questions)
                 if runtime == "codex"
-                else _claude_entry_events(record.entry, record.line, pending_question_lines, subagent_record)
+                else _claude_entry_events(record.entry, record.line, pending_claude_questions, subagent_record)
             )
             for event in record_events:
                 event.setdefault("line", record.line)
@@ -2909,6 +2969,8 @@ def _user_candidate_exclusion(
     残すと利用者介入の候補が実際の介入件数を超える。
     接頭辞を持たない実行環境の生成は本文の形からは判別できないため、`_is_runtime_generated`が
     付けた標識で分類する。
+    確認への回答のうち`answer_intervention`を持つものは、選択肢をそのまま選んだ回答ではなく
+    従来の判断を是正した介入であるため、除外せず候補として残す。
     """
     if record != "main":
         return "delegated-record"
@@ -2931,7 +2993,7 @@ def _user_candidate_exclusion(
     ):
         return "runtime-inserted"
     if text.startswith("質問:") and "回答:" in text:
-        return "question-answer"
+        return None if event.get("answer_intervention") is True else "question-answer"
     if first_main_user == (record, line):
         return "initial-request"
     return None
