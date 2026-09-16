@@ -1517,6 +1517,19 @@ class TestBashOutputTruncationRepetition:
         assert match is not None
         assert match.group(1) == match.group(2)
 
+    def test_loop_body_append_keeps_every_iteration(self, tmp_path: pathlib.Path) -> None:
+        """consumerが操作対象を持つ区間がループ本体にある場合は、反復ごとの出力を保存先へ追記する。
+
+        上書きにすると、反復が同じ保存先を上書きして最後の1件の内容だけが残る。
+        """
+        session_id = "truncation-loop-append"
+
+        result = self._invoke("for f in a b; do ls -1 $f | grep -m1 needle -; done", session_id, tmp_path)
+
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert re.search(r"do ls -1 \$f >> \S+; done$", corrected) is not None
+
     def test_autofix_notice_identifies_the_detected_segment(self, tmp_path: pathlib.Path) -> None:
         """補正の通知が、検出した直列区間と切り詰めと判定したコマンドの表記を示す。"""
         session_id = "truncation-detected-segment"
@@ -1783,6 +1796,15 @@ class TestNormViolatingArgumentForms:
         assert result.returncode == 0
         assert "いずれの種別も指定していない" in _agent_messages(result)
 
+    def test_git_grep_attached_context_value_is_silent(self, tmp_path: pathlib.Path) -> None:
+        """値を密着させた`-C3`は、オプション終端の欠落にも種別の誤判定にも当たらない。"""
+        result = self._invoke("git grep -C3 needle", tmp_path)
+
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "オプション終端" not in messages
+        assert "いずれの種別も指定していない" not in messages
+
     def test_git_grep_attached_pattern_without_metacharacter_is_silent(self, tmp_path: pathlib.Path) -> None:
         """値を密着させた`-e`からもpattern本文を取り出し、メタ文字が無ければ警告しない。"""
         result = self._invoke("git grep -eneedle", tmp_path)
@@ -2036,7 +2058,7 @@ class TestNormViolatingArgumentForms:
             session_id,
             {"external_command_option_contracts": {"rg": {"flags": ["-n"], "valued": ["-A", "-B", "-m"]}}},
         )
-        for command in ("rg -A14 needle .", "rg -B30 needle .", "rg -m10 needle ."):
+        for command in ("rg -A14 needle .", "rg -A5 needle .", "rg -B30 needle .", "rg -m10 needle ."):
             result = self._invoke(command, tmp_path, session_id=session_id)
             assert result.returncode == 0
             assert "受理しないオプションである" not in _agent_messages(result)
