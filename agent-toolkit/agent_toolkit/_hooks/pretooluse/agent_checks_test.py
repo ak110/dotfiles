@@ -1643,12 +1643,12 @@ class TestForeignScriptMixin:
         assert result.returncode == 0
         assert "日本語以外の文字" in _agent_messages(result)
 
-    def test_blocks_hangul_in_user_facing_text(self):
-        """ユーザーが直接読む本文への混入は、届いた後に取り消せないため遮断を維持する。"""
+    def test_warns_hangul_in_user_facing_text(self):
+        """ユーザーが直接読む本文への混入も、ユーザーが読み取って是正できるため警告に留める。"""
         content = "テスト" + _HANGUL_SAMPLE + "名を確認する"
         result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": content}})
-        assert result.returncode == 2
-        assert "日本語以外の文字" in result.stderr
+        assert result.returncode == 0
+        assert "日本語以外の文字" in _agent_messages(result)
 
     def test_passes_japanese_only(self):
         """日本語のみの文字列は通過する。"""

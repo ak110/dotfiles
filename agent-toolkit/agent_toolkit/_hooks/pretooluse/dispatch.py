@@ -177,15 +177,14 @@ if TYPE_CHECKING:
         _reset_plan_mode_state,
     )
     from agent_toolkit._hooks.pretooluse.content_checks import (
-        _check_atk_contract_before_question,
         _check_direct_agent_toolkit_edits_after_plan_mode,
         _check_edit_boundary_resolution,
         _check_edit_operation_blocks,
-        _check_foreign_script_mixin,
-        _check_mojibake,
         _check_plan_mode_skill_first,
         _check_secret_read,
         _collect_edit_operation_warnings,
+        _warn_foreign_script_mixin,
+        _warn_mojibake,
         check_user_facing_typo,
         record_atk_help_paths_from_read,
     )
@@ -594,24 +593,23 @@ def _handle_user_facing_text_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文へ言語品質検査、公開契約の提示検査及び誤字検査を適用する。
+    """質問・計画本文へ言語品質検査と誤字検査を適用し、いずれも警告として返す。
 
-    ユーザーへ直接到達する本文を対象とする検査の応答水準は、到達後に是正できるかで決める。
-    本関数が扱う文字化け、日本語以外の文字の混入及び`atk`サブコマンドの公開契約の未提示は、
-    いずれも当該本文がユーザーへ届いた後の書き換えが当該回の提示へ及ばないため、同じ遮断経路へそろえる。
-    誤字検査は、検出語が変換誤りかどうかを本文の文脈でしか判定できないため警告に留める。
-    公開契約の検査は`AskUserQuestion`だけを対象とする。計画本文は選択肢を伴わず、
-    提示の前に選択を確定する判断が成立しないためである。
+    ユーザーへ直接到達する本文を対象とする検査は、当該本文をユーザー自身が読んで誤りを指摘できるため、
+    第1段の復元できない結果に当たらない。遮断すると当該ターンの入力と作業を失わせたうえで
+    同じ確認の再発行を要するため、文字化け、日本語以外の文字の混入及び誤字のいずれも警告で返す。
+    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    「遮断・警告フックの成立条件」が定める。
     """
     warnings: list[str] = []
     fields = _user_facing_text_fields(tool_name, tool_input)
-    if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
-        return 2
-    if tool_name == "AskUserQuestion" and _check_atk_contract_before_question(tool_name, fields, session_id):
-        return 2
-    typo_warning = check_user_facing_typo(tool_name, fields)
-    if typo_warning is not None:
-        warnings.append(typo_warning)
+    for warning in (
+        _warn_mojibake(tool_name, fields),
+        _warn_foreign_script_mixin(tool_name, fields),
+        check_user_facing_typo(tool_name, fields),
+    ):
+        if warning is not None:
+            warnings.append(warning)
     if not warnings:
         flush_warning()
     else:
