@@ -17,12 +17,12 @@
 `atk wi list --status=processable --target-repo=<repo-path> --skip-pull`を実行する。明示一覧がある場合は出力に現れる指定項目だけを対象とし、現れない名前を`needs_escalation`へ返す。指定が無い場合は`processing`の全項目と、次の除外条件に当たらない`inbox`項目を候補とする。
 
 - `cooldown-until`、frontmatter不備又は依存不備でblockedである
-- 未回答UWIへ依存する
-- 候補にも回答済みUWIにも含まれない項目へ依存する
+- 候補に含まれない項目へ依存する
 
-候補内の先行項目だけへ依存するAWIは除外せず、同じレーンの依存順で扱う。`hold`と処理回の進行中に追加された項目は含めない。
+候補内の先行項目だけへ依存するAWIは除外せず、同じレーンの依存順で扱う。処理回の進行中に追加された項目は含めない。`hold`の項目も含めないが、回答を保存したUWIの本文が指す保留中の元項目は次段の手順で候補へ加える。
 
-回答済みUWIは`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo> --skip-pull`で取得する。回答が是正を求めないUWIは処理開始前に終端し、是正を求めるUWIは回答を作業要求としてdecisionへ含める。
+回答済みUWIは`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo> --skip-pull`で取得する。回答が作業を求めないUWIは処理開始前に終端し、是正又は保留中の元項目での作業を求めるUWIは回答を作業要求としてdecisionへ含める。
+回答済みUWIの本文が保留中の元項目のファイル名を示す場合は、当該元項目を`atk wi unhold`で`inbox`へ戻してdecisionへ含める。当該UWIをdecisionへ含める場合は、当該UWIと元項目を同じレーンへ割り当てる。
 
 `processing`のまま残った項目では`atk plans list`を実行し、作業root内にある計画の`関連WI`を候補AWIへ照合する。一意に対応する計画ファイルの絶対パスと`## 進捗ログ`の最終行から、残る最初の工程を`再開位置`へ返す。対応が無い場合又は複数ある場合は推測せず`needs_escalation`へ返す。再開位置をキュー項目へ追記しない。
 
@@ -53,7 +53,7 @@ AWIが指定する反映先の実測はレーン担当が計画起草時に行�
 
 候補集合とdecisionのファイル名集合が一致し、各ファイル名が1回だけ現れ、複数レーンへ重複しないことを検査する。合格後は集合を変更しない。
 
-是正を求めない回答済みUWIを`atk wi adopt <filename>... --target-repo=<repo-path>`で終端する。続けて選定時点が`inbox`のdecisionだけを`atk wi start-processing <filename>... --target-repo=<repo-path>`で移す。既に`processing`の項目を引数へ含めない。各状態変更は成功報告と警告の不在を確認し、部分状態又は原因不明ではAWIを追加遷移させず`needs_escalation`へ返す。
+作業を求めない回答済みUWIを`atk wi adopt <filename>... --target-repo=<repo-path>`で終端する。続けて、回答済みUWIの本文が指す保留中の元項目を`atk wi unhold <filename>... --target-repo=<repo-path>`で`inbox`へ戻す。続けて選定時点が`inbox`のdecisionと当該`unhold`した元項目を`atk wi start-processing <filename>... --target-repo=<repo-path>`で移す。既に`processing`の項目を引数へ含めない。各状態変更は成功報告と警告の不在を確認し、部分状態又は原因不明ではAWIを追加遷移させず`needs_escalation`へ返す。
 
 ## 出力
 
@@ -61,7 +61,7 @@ AWIが指定する反映先の実測はレーン担当が計画起草時に行�
 
 ```yaml
 decisions:
-- awi: <AWI又は是正を求めるUWIのファイル名>
+- awi: <AWI又は作業を求める回答が保存されたUWIのファイル名>
   lane: <`lane-NN`形式のレーン識別子(`NN`は2桁のレーン番号)又は「なし」>
   再開位置: <作業root内の計画ファイル絶対パスと残る工程。既定値は「なし」>
   terminal_order: <固有の終端順序。既定値は「既定」>

@@ -149,7 +149,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 詳細手順は`references/version-bump.md`に集約する。
 全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
 `.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
-`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
+`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に`references/version-bump.md`の「plan modeでの取り扱い」節を読み、
 `## 要件・外部仕様`へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。

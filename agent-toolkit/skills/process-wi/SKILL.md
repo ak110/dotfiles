@@ -50,5 +50,5 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本ス
 
 ## 終端
 
-選定、レーン又は公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:wi-standards`に従ってUWIへ記録し、依存するAWIを`inbox`かつ`blocked`で保持する。
+選定、レーン又は公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:wi-standards`に従ってUWIへ記録し、当該回答を得るまで進められないAWIを`atk wi hold`で保留する。
 通常の完了報告は`agent-toolkit:completion-report`に従う。本スキルの工程で生じたcommitをローカルだけに残したまま完了を報告しない。
