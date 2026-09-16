@@ -29,7 +29,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.codex.json"
-_PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
+_PYFLTR_RUN_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run"
 
 
 @functools.cache
@@ -468,28 +468,28 @@ class TestTestExecution:
         )
         assert "background_task_ids" not in _read_state(tmp_path, sid)
 
-    def test_pyfltr_mcp_run_for_agent_detected(self, tmp_path: pathlib.Path):
+    def test_pyfltr_mcp_run_detected(self, tmp_path: pathlib.Path):
         """pyfltr MCPの検証成功をCLI経由と同じ状態へ記録する。"""
-        sid = "test-mcp-run-for-agent"
+        sid = "test-mcp-run"
         _run(
             {
                 "session_id": sid,
                 "hook_event_name": "PostToolUse",
-                "tool_name": _PYFLTR_RUN_FOR_AGENT_TOOL_NAME,
+                "tool_name": _PYFLTR_RUN_TOOL_NAME,
                 "tool_input": {"paths": ["."], "work_dir": "/repo"},
             },
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("test_executed") is True
 
-    def test_pyfltr_mcp_run_for_agent_failure_not_detected(self, tmp_path: pathlib.Path):
+    def test_pyfltr_mcp_run_failure_not_detected(self, tmp_path: pathlib.Path):
         """失敗イベントは正式な検証完了として記録しない。"""
-        sid = "test-mcp-run-for-agent-failure"
+        sid = "test-mcp-run-failure"
         _run(
             {
                 "session_id": sid,
                 "hook_event_name": "PostToolUseFailure",
-                "tool_name": _PYFLTR_RUN_FOR_AGENT_TOOL_NAME,
+                "tool_name": _PYFLTR_RUN_TOOL_NAME,
                 "tool_input": {"paths": ["."]},
             },
             state_dir=tmp_path,
@@ -516,7 +516,7 @@ class TestTestExecution:
         )
         assert _read_state(tmp_path, sid).get("test_executed") is not True
 
-    def test_posttooluse_matcher_routes_pyfltr_mcp_run_for_agent(self):
+    def test_posttooluse_matcher_routes_pyfltr_mcp_run(self):
         """MCP成功イベントがPostToolUse実装へ配送されるmatcherを維持する。
 
         実装側の`AGENTS_SERVER_HOOK_TOOL_NAMES`（Claude Code名前空間分）を入力として反復し、
@@ -526,7 +526,7 @@ class TestTestExecution:
         module = _load_posttooluse_module()
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
-        assert re.fullmatch(matcher, _PYFLTR_RUN_FOR_AGENT_TOOL_NAME) is not None
+        assert re.fullmatch(matcher, _PYFLTR_RUN_TOOL_NAME) is not None
         claude_tool_names = {
             name
             for name in module.AGENTS_SERVER_HOOK_TOOL_NAMES

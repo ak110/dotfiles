@@ -256,7 +256,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
 3. `scripts/sync_codex_plugin_manifests.py`を実行してAgent Plugins・Codex向け派生JSONを同期する
 4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
-5. MCP経由の`run_for_agent`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
+5. MCP経由の`run`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
    `["."]`を渡し、SSOTテストを含む全テストが成功することを確認する。
    必要に応じて`commands`配列でSSOTテストなど特定ツールを指定する。
    MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う

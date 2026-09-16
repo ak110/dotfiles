@@ -2,7 +2,7 @@
 name: dotfiles-development
 description: >
   dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make test-browser`を
-  実行するとき、pyfltr・MCPの`run_for_agent`・`pytest`の直接実行を選ぶとき、
+  実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、
   mise trustを要する作業ツリーと状態ディレクトリを扱うとき、commit typeを判定するとき、
   `agent-toolkit:session-review`の参照文書の位置を確認するときに起動する。
 ---
@@ -24,7 +24,7 @@ description: >
     テキスト整形hookで扱うファイル、及び生成物の同期先である。
     コミット範囲を確定する前に`git status`で自分の変更以外の差分の有無を確認する。
     自動修正が必要な場合は`make format`（`uv run --frozen pyfltr fast`）を使う
-  - 特定ファイルに限定する場合はMCP経由の`run_for_agent`へ当該ファイルのパスを渡す。
+  - 特定ファイルに限定する場合はMCP経由の`run`へ当該ファイルのパスを渡す。
     MCPを利用できない場合は`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。
     デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。

@@ -10,7 +10,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 
 検出対象:
 
-1. テスト実行 (Bash / pyfltr MCPの`run_for_agent`)
+1. テスト実行 (Bash / pyfltr MCPの`run`)
 2. git log確認状態の記録・リセット (Bash: logで記録、対象コミットの親子関係が
    変化する操作＝commit/rebase/resetでリセット)
 3. plan file（計画作業root `~/.claude/plans/` または
@@ -109,7 +109,12 @@ _HOOK_ID = "agent-toolkit/posttooluse"
 
 # agent-toolkitプラグインに同梱するpyfltr MCPの検証実行ツール名。
 # hooks/hooks.jsonのPostToolUse matcherと同一値を保つ。
-_PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
+# 本値はpyfltrが公開するMCPツール名と完全一致でなければ当該検査が発動しない。
+# MCPサーバーは`.mcp.json`が指定する版の下限だけを持ち、実際に解決される版は実行環境の
+# uvxのキャッシュが決めるため、pyfltr側の改名から当該キャッシュが更新されるまでの間は
+# 当該検査が発動しない期間が生じる（改名時の実測では、最新版が3.18.0の時点で
+# `uvx --from "pyfltr>=3.17.8" pyfltr --version`が3.17.10を返した）。
+_PYFLTR_RUN_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run"
 
 _llm_notice = _notice_formatter(_HOOK_ID)
 
@@ -1109,9 +1114,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
 
-    # pyfltr MCPのrun_for_agentはPostToolUseへ到達した時点で成功済みである。
+    # pyfltr MCPのrunはPostToolUseへ到達した時点で成功済みである。
     # CLI経由と同じ検証完了契約として記録し、コミット前の未検証警告を抑制する。
-    if tool_name == _PYFLTR_RUN_FOR_AGENT_TOOL_NAME:
+    if tool_name == _PYFLTR_RUN_TOOL_NAME:
         _record_test_executed(session_id)
         return 0
 

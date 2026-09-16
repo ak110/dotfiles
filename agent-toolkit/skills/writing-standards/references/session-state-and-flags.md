@@ -51,7 +51,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 - `inherited_from_session_id`: 背景化などで現行`session_id`の状態が不在となった場合に、一意に特定した前身`session_id`を記録する。共通hook入口が前身の全状態キーと同時に1回だけ書き込み、現行状態が存在する間は再継承しない
 
-- `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run_for_agent`成功時に記録し、
+- `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run`成功時に記録し、
   `git commit`未検証警告の抑制に使う。セッション終了まで保持する。
   Bash経由の記録元は、失敗した実行でPostToolUseが発火しないClaude Codeに限る。
   当該警告の判定は、自セッションの本フラグが偽である場合に`agents_server_sessions`が保持する
