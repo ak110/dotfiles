@@ -71,7 +71,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             sessions = [
                 session for session in sessions if session.get("status") == "running" or session.get("result_available") is True
             ]
-        print(_dump({"sessions": sessions}, env))
+        print(_dump({"sessions": [_without_prompt(session) for session in sessions]}, env))
         return 0
     if root_session_id is None:
         root_session_id = status_file.find_root_session_id_for_session(args.session_id)
@@ -89,6 +89,16 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         return 2
     print(_dump(selected, env))
     return 0
+
+
+def _without_prompt(session: dict[str, Any]) -> dict[str, Any]:
+    """起動文を除いた一覧用の射影を返す。
+
+    `list`の用途は稼働状況の把握であり、起動文はこれに使わない。
+    起動文の量はsession数と長さの積で増えるため、一覧から外して呼び出し元が受け取る量の伸びを抑える。
+    起動文は`show`が返すため、除いても取得経路は失われない。
+    """
+    return {key: value for key, value in session.items() if key != "prompt"}
 
 
 def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:

@@ -197,7 +197,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを詳しい状態とともに一覧表示する",
-        "description": "目的: 同じルートセッション配下の委譲sessionを診断できる形で一覧表示する。\n利用場面: 識別子を失ったsessionの回復又は残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読み、session一覧を単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。\n前提: 対象と同じルートセッションで実行する。既定では未回収結果を持たない終端済みsessionを除く。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 同じルートセッション配下の委譲sessionを診断できる形で一覧表示する。\n利用場面: 識別子を失ったsessionの回復又は残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読み、session一覧を単一のJSON文書として標準出力へ書く。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。\n前提: 対象と同じルートセッションで実行する。既定では未回収結果を持たない終端済みsessionを除く。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
     },
     "atk agents show": {
