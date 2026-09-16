@@ -31,6 +31,23 @@ from agent_toolkit._testing.helpers import delivery_payload
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
 
 
+@pytest.fixture(autouse=True)
+def _restore_session_listeners() -> Any:
+    """テストが登録した共有リスナーを、当該テストの終了時に元の集合へ戻す。
+
+    `SessionState.touch`のリスナー集合はプロセス全体で共有される。
+    有効化したままの`StatusFileWriter`が残ると、後続の別モジュールのテストが`touch`を呼んだ時点で
+    実行中のイベントループを要求して失敗するため、テストごとに登録を元へ戻す。
+    """
+    touch_listeners = set(state._TOUCH_LISTENERS)
+    terminal_listeners = set(state._TERMINAL_LISTENERS)
+    yield
+    state._TOUCH_LISTENERS.clear()
+    state._TOUCH_LISTENERS.update(touch_listeners)
+    state._TERMINAL_LISTENERS.clear()
+    state._TERMINAL_LISTENERS.update(terminal_listeners)
+
+
 def _assert_no_forbidden_keys(value: Any) -> None:
     """応答と入れ子のprevious_resultから内部状態キーを除外する。"""
     if isinstance(value, dict):
