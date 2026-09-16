@@ -130,6 +130,33 @@ def test_create_with_session_root_returns_unregistered_child() -> None:
     subject.cleanup_managed_temp(session_root)
 
 
+def test_cleanup_removes_child_of_registered_temp(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--session-root`で作成した子領域は、個別の管理情報が無くても回収できる。"""
+    session_root = subject.create_managed_temp("session", session_id="session-1")
+    assert subject.main(["create", "--prefix", "work", "--session-root", str(session_root)]) == 0
+    child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    assert child.is_dir()
+    assert not (child / _MARKER_NAME).exists()
+
+    assert subject.main(["cleanup", "--path", str(child)]) == 0
+
+    assert not child.exists()
+    assert session_root.is_dir()
+    assert str(session_root) in capsys.readouterr().err
+    subject.cleanup_managed_temp(session_root)
+
+
+def test_cleanup_rejects_path_outside_registered_temp(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """登録済み領域の配下に無い管理情報なしのパスは、現行どおり終了コード2で拒否する。"""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    assert subject.main(["cleanup", "--path", str(outside)]) == 2
+
+    assert outside.is_dir()
+    assert "失敗: " in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("conflict", ["--awi=20260913-221409-001.md", "--session-id=session-2"])
 def test_create_with_session_root_rejects_registration_options(conflict: str) -> None:
     """セッション内の子領域へ個別登録用の引数を併用しない。"""

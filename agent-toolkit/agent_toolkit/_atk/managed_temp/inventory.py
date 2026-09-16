@@ -923,6 +923,43 @@ def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: Man
     _outcome.report_warning(f"--force-removeにより管理情報、登録及び権限の検証を省いて管理対象を回収した: {path}")
 
 
+def _registered_ancestor(path: pathlib.Path) -> pathlib.Path | None:
+    """対象の祖先にある登録済み管理対象領域を返す。該当が無ければNoneを返す。"""
+    try:
+        resolved = pathlib.Path(os.path.abspath(path))
+    except OSError:
+        return None
+    for entry in list_managed_temp():
+        recorded = entry["path"]
+        if not isinstance(recorded, str):
+            continue
+        registered = pathlib.Path(recorded)
+        if registered in resolved.parents:
+            return registered
+    return None
+
+
+def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
+    """個別の管理情報を持たない子領域を、登録済み領域の配下である場合に削除する。
+
+    `atk managed-temp create --session-root`は、個別登録を持たない子領域を親の配下へ作成する。
+    当該子領域は管理情報を持たないため、通常の検証経路では回収できない。
+    祖先に登録済みの管理対象領域が実在する場合だけ、当該対象を削除して回収を成立させる。
+    """
+    path = pathlib.Path(path_arg)
+    if os.path.lexists(path / _MARKER_NAME) or not path.is_dir():
+        return False
+    ancestor = _registered_ancestor(path)
+    if ancestor is None:
+        return False
+    shutil.rmtree(path)
+    print(
+        f"note: 登録済みの管理対象領域{ancestor}の配下にあるため、個別の管理情報を経ずに削除した: {path}",
+        file=sys.stderr,
+    )
+    return True
+
+
 def cleanup_managed_temp(
     path_arg: pathlib.Path | str | None = None,
     *,
@@ -942,6 +979,8 @@ def cleanup_managed_temp(
         path_arg = entries[0]["path"]
     if path_arg is None:
         raise ManagedTempError("path又はsession_idを指定する")
+    if _cleanup_child_of_registered_temp(path_arg):
+        return
     try:
         _cleanup_managed_temp(path_arg, recover_registry=recover_registry)
     except ManagedTempError as error:
