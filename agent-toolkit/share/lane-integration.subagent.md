@@ -23,7 +23,8 @@
 8. rebaseが成功した場合は、`git range-diff <rebase前のベースOID>..<rebase前の専用branchのHEAD> <統合先branchの現在HEAD>..<rebase後の専用branchのHEAD>`を実行する。全commitが1対1で対応し、かつ内容が変化していないこと（各行の対応記号が`=`であること）を確認する。対応の欠落、追加、又は内容の変化を観測した場合は手順9へ進まず、`git range-diff`の該当行を`reason:`へ書いて`needs_escalation`で返す。
 9. 計画ファイルの`## 検証`の`近接検証`行のコマンドを、rebase後の専用branchのHEADで再実行し、終了コード0と警告の不在を確認する。成立しない場合は手順10へ進まず、実行したコマンドと観測した出力を`reason:`へ書いて`needs_escalation`で返す。実行レビューは再実施しない。受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が各commitの内容の不変を担保する。
 10. 統合先branchを専用branchへfast-forwardできることを確認し、fast-forwardマージする。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず`needs_escalation`で返す。
-11. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
+11. 対象リポジトリのプロジェクト規範が、複数の書込主体の成果を統合した後にだけ成立する検査として定めるコマンドがある場合は、当該コマンドを`agents_server`の`start_shell`へ渡して1回実行し、終了コード0と警告の不在を確認する。当該検査は他のレーンの成果と合わせた状態でだけ成立するため、専用worktreeの近接検証では代替できない。成立しない場合は、専用worktreeで是正commitを作成し、近接検証を再実行してから手順10をやり直す。当該検査を定める記述が対象リポジトリのプロジェクト規範に無い場合は、本手順を実行せず手順12へ進む。
+12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
 ## マージなしの統合
 
