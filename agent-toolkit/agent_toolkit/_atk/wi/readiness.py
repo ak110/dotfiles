@@ -54,10 +54,15 @@ class QueueEntry:
 
 @dataclasses.dataclass(frozen=True)
 class ReadinessResult:
-    """対象リポジトリの`active`項目に対する着手可否と修復診断。"""
+    """対象リポジトリの`active`項目に対する着手可否と修復診断。
+
+    `internal_dependency_waits`は、未終端の依存先を1件以上持ち、その全てが引数`target_repo`の
+    `processable`集合の内側にある項目を保持する。
+    """
 
     ready: tuple[str, ...] = ()
     blocked: tuple[str, ...] = ()
+    internal_dependency_waits: tuple[str, ...] = ()
     frontmatter_broken: tuple[str, ...] = ()
     frontmatter_broken_needs_uwi: tuple[str, ...] = ()
     missing_plan_file: tuple[str, ...] = ()
@@ -372,6 +377,30 @@ def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
     return cyclic
 
 
+def _entries_by_filename(entries: Iterable[QueueEntry]) -> dict[str, tuple[QueueEntry, ...]]:
+    """ファイル名ごとのキュー項目を返す。対象リポジトリが異なる同名の項目は同じ値へ並べる。"""
+    grouped: dict[str, list[QueueEntry]] = {}
+    for entry in entries:
+        grouped.setdefault(entry.filename, []).append(entry)
+    return {filename: tuple(group) for filename, group in grouped.items()}
+
+
+def _dependency_targets(
+    entry: QueueEntry,
+    dependency: str,
+    entries_by_name: dict[str, tuple[QueueEntry, ...]],
+) -> tuple[QueueEntry, ...]:
+    """依存先のファイル名を、ファイル名と対象リポジトリの組で解決する。
+
+    キュー項目のファイル名は投入時刻から生成するため、対象リポジトリをまたぐと同じ値になり得る。
+    依存元と同じ対象リポジトリの候補があればそれだけを依存先とし、無い場合だけ同名の全候補を
+    依存先として対象リポジトリを横断する依存を解決する。
+    """
+    candidates = entries_by_name.get(dependency, ())
+    same_repo = tuple(candidate for candidate in candidates if candidate.target_repo == entry.target_repo)
+    return same_repo or candidates
+
+
 def calculate_readiness(
     private_notes: pathlib.Path,
     target_repo: str | None,
@@ -408,8 +437,9 @@ def calculate_readiness(
         for entry in all_active
         if entry.kind == WI_TYPE_UWI and entry.uwi_answered is False
     }
-    active_by_name = {entry.filename: entry for entry in all_active}
-    terminal_names = {entry.filename for entry in terminal}
+    entries_by_name = _entries_by_filename((*all_active, *terminal))
+    active_pairs = {(entry.filename, entry.target_repo) for entry in all_active}
+    target_pairs = {(entry.filename, entry.target_repo) for entry in active}
     cooldown_values: dict[str, str] = {}
     invalid_cooldowns: set[str] = set()
     cooldown_pending: set[str] = set()
@@ -465,10 +495,13 @@ def calculate_readiness(
     )
     missing_dependencies = tuple(
         sorted(
-            name
-            for name, dependencies in graph.items()
-            if name not in cooldown_pending
-            and any(dependency not in active_by_name and dependency not in terminal_names for dependency in dependencies)
+            {
+                entry.filename
+                for entry in active
+                if entry.filename in graph
+                and entry.filename not in cooldown_pending
+                and any(not _dependency_targets(entry, dependency, entries_by_name) for dependency in graph[entry.filename])
+            }
         )
     )
     all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
@@ -478,6 +511,7 @@ def calculate_readiness(
     )
     ready: list[str] = []
     blocked: list[str] = []
+    internal_waits: list[str] = []
     for entry in active:
         if entry.filename in cooldown_pending:
             blocked.append(entry.filename)
@@ -485,7 +519,12 @@ def calculate_readiness(
         if entry.filename in permanently_blocked or (entry.kind == WI_TYPE_UWI and entry.uwi_answered is False):
             blocked.append(entry.filename)
             continue
-        dependencies = graph.get(entry.filename, ())
+        waiting_targets = tuple(
+            target
+            for dependency in graph.get(entry.filename, ())
+            for target in _dependency_targets(entry, dependency, entries_by_name)
+            if (target.filename, target.target_repo) in active_pairs
+        )
         legacy_satisfied = _legacy_dependency_is_satisfied(
             entry,
             all_active=all_active,
@@ -495,20 +534,21 @@ def calculate_readiness(
             resolver_cache=resolver_cache,
         )
         if _has_explicit_dependencies(entry):
-            waiting = any(dependency in active_by_name for dependency in dependencies)
+            waiting = bool(waiting_targets)
         else:
             waiting = legacy_satisfied is False or any(
-                dependency in active_by_name
-                and not (active_by_name[dependency].kind == WI_TYPE_UWI and active_by_name[dependency].uwi_answered is True)
-                for dependency in dependencies
+                not (target.kind == WI_TYPE_UWI and target.uwi_answered is True) for target in waiting_targets
             )
-        if waiting:
-            blocked.append(entry.filename)
-        else:
+        if not waiting:
             ready.append(entry.filename)
+            continue
+        blocked.append(entry.filename)
+        if waiting_targets and all((target.filename, target.target_repo) in target_pairs for target in waiting_targets):
+            internal_waits.append(entry.filename)
     return ReadinessResult(
         ready=tuple(sorted(ready)),
         blocked=tuple(sorted(blocked)),
+        internal_dependency_waits=tuple(sorted(internal_waits)),
         frontmatter_broken=broken,
         frontmatter_broken_needs_uwi=broken_needs_uwi,
         missing_plan_file=missing_plan,

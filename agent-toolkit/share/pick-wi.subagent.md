@@ -16,8 +16,7 @@
 
 `atk wi list --status=processable --target-repo=<repo-path> --skip-pull`を実行する。明示一覧がある場合は出力に現れる指定項目だけを対象とし、現れない名前を`needs_escalation`へ返す。指定が無い場合は`processing`の全項目と、次の除外条件に当たらない`inbox`項目を候補とする。
 
-- `cooldown-until`、frontmatter不備又は依存不備でblockedである
-- 候補に含まれない項目へ依存する
+- `ready`が偽であり、`blocked_reason`が`dependency-unmet-internal`以外である。依存の未充足を理由とする除外は`dependency-unmet-external`だけが該当する
 
 候補内の先行項目だけへ依存するAWIは除外せず、同じレーンの依存順で扱う。処理回の進行中に追加された項目は含めない。`hold`の項目も含めないが、回答を保存したUWIの本文が指す保留中の元項目は次段の手順で候補へ加える。
 

@@ -1870,3 +1870,26 @@ class TestUpstreamCrossRepoDependency:
         readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
         assert readiness.ready == ("downstream.md",)
         assert not readiness.blocked
+
+    def test_terminal_entry_in_other_repo_does_not_release_wait(self, tmp_path: pathlib.Path) -> None:
+        """同じtarget_repoの依存先が未終端の間は、別target_repoの同名項目が終端していても待機する。"""
+        _write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/other")
+
+        readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
+
+        assert readiness.ready == ("upstream.md",)
+        assert readiness.blocked == ("downstream.md",)
+        assert not readiness.missing_dependencies
+
+    def test_active_entry_in_other_repo_does_not_block_resolved_dependency(self, tmp_path: pathlib.Path) -> None:
+        """同じtarget_repoの依存先が終端していれば、別target_repoの同名項目が未終端でも着手できる。"""
+        _write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", target_repo="github.com/example/other")
+
+        readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
+
+        assert readiness.ready == ("downstream.md",)
+        assert not readiness.blocked
