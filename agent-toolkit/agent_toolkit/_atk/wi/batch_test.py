@@ -51,10 +51,10 @@ def _assume_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
     """取り込み先が大文字小文字を区別しないファイルシステムである状況を再現する。
 
     Linuxの一時ディレクトリでは実際に区別しないファイルシステムを用意できないため、
-    実測結果だけを差し替える。プローブ処理そのものは`test_case_sensitivity_probe_*`と
+    実測結果だけを差し替える。プローブ処理そのものは`common_test`の該当テストと
     差し替えを行わない他のテストが実経路で検証する。
     """
-    monkeypatch.setattr(batch, "_is_case_sensitive", lambda _directory: False)
+    monkeypatch.setattr(batch, "is_case_sensitive", lambda _directory: False)
 
 
 def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body: str = "本文") -> str:
@@ -195,7 +195,7 @@ def test_import_keeps_original_names_and_raw_text(
     )
     text = f"# uwi\n## target_repo: github.com/example/foo\n### keep.md [inbox/answered]\n{raw}\n"
 
-    mapping, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
+    mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     assert mapping == [("keep.md", "keep.md")]
     assert not warnings
@@ -213,7 +213,7 @@ def test_import_renumbers_only_colliding_names(
     (notes / "adopted" / "clash.md").write_text("既存\n", encoding="utf-8")
     text = _entry_text("clash.md") + _entry_text("keep.md")
 
-    mapping, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
+    mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     assert mapping == [("clash.md", f"{_FIXED_TIMESTAMP}-001.md"), ("keep.md", "keep.md")]
     assert (notes / "adopted" / "clash.md").read_text(encoding="utf-8") == "既存\n"
@@ -231,47 +231,48 @@ def test_import_avoids_renumbering_onto_kept_original_name(
     (notes / "inbox" / "clash.md").write_text("既存\n", encoding="utf-8")
     text = _entry_text("clash.md") + _entry_text(kept)
 
-    mapping, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
+    mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     assert mapping == [("clash.md", f"{_FIXED_TIMESTAMP}-002.md"), (kept, kept)]
     assert (notes / "inbox" / kept).read_text(encoding="utf-8").endswith("本文\n")
 
 
-def test_case_sensitivity_probe_reports_linux_filesystem_as_case_sensitive(tmp_path: pathlib.Path) -> None:
-    """実際のプローブ処理が一時ディレクトリを大文字小文字を区別すると判定し、残留物を残さない。"""
-    assert batch._is_case_sensitive(tmp_path) is True
-    assert not list(tmp_path.iterdir())
-
-
-def test_case_sensitivity_probe_detects_case_insensitive_directory(
-    tmp_path: pathlib.Path,
+def test_import_skips_entry_matching_existing_name_and_body(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
 ) -> None:
-    """名前を畳み込むディレクトリでは、反転名の実在をもって区別しないと判定する。"""
-    original_exists = pathlib.Path.exists
+    """ファイル名と本文がともに既存項目と一致するエントリは書き込まず、commitも追加しない。"""
+    notes = _setup_notes(tmp_path)
+    commits = _patch_repo_operations(monkeypatch, batch)
+    text = _entry_text("same.md")
+    batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
-    def case_folding_exists(self: pathlib.Path) -> bool:
-        """名前の大文字小文字を無視して実在判定するファイルシステムを模擬する。"""
-        if original_exists(self):
-            return True
-        return any(entry.name.lower() == self.name.lower() for entry in self.parent.iterdir())
+    mapping, skipped, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
-    monkeypatch.setattr(pathlib.Path, "exists", case_folding_exists)
-
-    assert batch._is_case_sensitive(tmp_path) is False
-    assert not list(tmp_path.iterdir())
+    assert not mapping
+    assert skipped == ["same.md"]
+    assert not warnings
+    assert len(commits) == 1
+    assert sorted(path.name for path in (notes / "inbox").iterdir()) == ["same.md"]
 
 
-@pytest.mark.parametrize(
-    ("case_sensitive", "expected"),
-    [(True, False), (False, True)],
-)
-def test_comparison_key_folds_case_only_when_insensitive(case_sensitive: bool, expected: bool) -> None:
-    """比較キーは大文字小文字を区別しない場合だけ同名として畳み込む。"""
-    left = batch._comparison_key("Same.md", case_sensitive=case_sensitive)
-    right = batch._comparison_key("same.md", case_sensitive=case_sensitive)
+def test_import_renumbers_entry_matching_existing_name_with_different_body(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """ファイル名だけが既存項目と一致するエントリは取り込みを省かず再採番する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    batch.add_batch_entries(notes, texts=[_entry_text("same.md")], now=_FIXED_DT)
 
-    assert (left == right) is expected
+    mapping, skipped, _warnings = batch.add_batch_entries(
+        notes,
+        texts=[_entry_text("same.md", body="別の本文")],
+        now=_FIXED_DT,
+    )
+
+    assert mapping == [("same.md", f"{_FIXED_TIMESTAMP}-001.md")]
+    assert not skipped
 
 
 def test_import_keeps_names_differing_only_by_case_on_case_sensitive_filesystem(
@@ -283,7 +284,7 @@ def test_import_keeps_names_differing_only_by_case_on_case_sensitive_filesystem(
     _patch_repo_operations(monkeypatch, batch)
     (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
 
-    mapping, _warnings = batch.add_batch_entries(
+    mapping, _skipped, _warnings = batch.add_batch_entries(
         notes,
         texts=[_entry_text("clash.md"), _entry_text("Same.md"), _entry_text("same.md")],
         now=_FIXED_DT,
@@ -303,7 +304,7 @@ def test_import_renumbers_name_colliding_only_by_case(
     _assume_case_insensitive(monkeypatch)
     (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
 
-    mapping, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md")], now=_FIXED_DT)
+    mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md")], now=_FIXED_DT)
 
     assert mapping == [("clash.md", f"{_FIXED_TIMESTAMP}-001.md")]
     assert not (notes / "inbox" / "clash.md").exists()
@@ -373,7 +374,7 @@ def test_import_rewrites_only_renamed_depends_on_element_lines(
     )
     text = _entry_text("dep.md") + dependent
 
-    mapping, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
+    mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     renamed = dict(mapping)["dep.md"]
     saved = (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
@@ -403,7 +404,7 @@ def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
         "---\n\n本文\n\n"
     )
 
-    mapping, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
+    mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
 
     renamed = dict(mapping)["dep.md"]
     assert f"- {renamed}  # 依存の由来\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
@@ -427,7 +428,7 @@ def test_import_rewrites_depends_on_with_commented_heading_line(
         "---\n\n本文\n\n"
     )
 
-    mapping, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
+    mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
 
     renamed = dict(mapping)["dep.md"]
     saved = (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
@@ -481,7 +482,7 @@ def test_import_warns_for_missing_external_dependency(
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- missing.md\n---\n\n本文\n\n"
     )
 
-    _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
+    _mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
 
     assert warnings == ["plan.mdのdepends_onが参照するmissing.mdは取り込み先に実在しません"]
 
@@ -497,7 +498,7 @@ def test_import_warns_for_missing_scalar_dependency(
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on: missing.md\n---\n\n本文\n\n"
     )
 
-    _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
+    _mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
 
     assert warnings == ["plan.mdのdepends_onが参照するmissing.mdは取り込み先に実在しません"]
 
@@ -515,7 +516,7 @@ def test_import_does_not_warn_for_dependency_differing_only_by_case(
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- Dep.md\n---\n\n本文\n\n"
     )
 
-    _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
+    _mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
 
     assert not warnings
     assert "- Dep.md\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
@@ -540,7 +541,7 @@ def test_import_does_not_warn_for_dependency_on_renumbered_name(
         "---\n\n本文\n\n"
     )
 
-    mapping, warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md") + dependent], now=_FIXED_DT)
+    mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md") + dependent], now=_FIXED_DT)
 
     assert dict(mapping)["clash.md"] == renumbered
     assert not warnings
@@ -577,6 +578,26 @@ def test_import_normalizes_new_plan_file_to_portable_value(
 
     stored = (notes / "inbox/imported.md").read_text(encoding="utf-8")
     assert f"plan_file: {_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/08/30-計画保存先移行-d4f9.md" in stored
+
+
+def test_import_skips_entry_matching_existing_after_plan_file_normalization(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`plan_file`の表記だけが異なる再投入も、正規化後に本文が一致すれば取り込みを省く。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+    absolute = f"### same.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\nplan_file: {plan}\n---\n\n本文\n\n"
+    batch.add_batch_entries(notes, texts=[absolute], now=_FIXED_DT)
+
+    mapping, skipped, _warnings = batch.add_batch_entries(notes, texts=[absolute], now=_FIXED_DT)
+
+    assert not mapping
+    assert skipped == ["same.md"]
+    assert sorted(path.name for path in (notes / "inbox").iterdir()) == ["same.md"]
 
 
 def _show_all_output(notes: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> str:
@@ -618,7 +639,7 @@ def test_show_all_output_round_trips_into_another_repository(
     )
     originals = {name: (source_notes / "inbox" / name).read_text(encoding="utf-8") for name in generated}
 
-    mapping, warnings = batch.add_batch_entries(
+    mapping, _skipped, warnings = batch.add_batch_entries(
         target_notes,
         texts=[_show_all_output(source_notes, capsys)],
         now=_FIXED_DT,

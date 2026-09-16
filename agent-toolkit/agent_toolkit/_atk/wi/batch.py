@@ -21,12 +21,10 @@ import collections
 import dataclasses
 import datetime
 import functools
-import os
 import pathlib
 import re
 import subprocess
 import sys
-import tempfile
 import typing
 
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
@@ -46,7 +44,11 @@ from agent_toolkit._atk.wi.common import (
     _pull,
     _repo_lock,
     _subdir,
+    comparison_key,
+    existing_entry_filenames,
     is_agent_environment,
+    is_case_sensitive,
+    missing_dependency_warnings,
     validate_filename,
 )
 from agent_toolkit._atk.wi.formatters import _shorten_home
@@ -148,42 +150,51 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
     return entries
 
 
-def _existing_filenames(private_notes: pathlib.Path) -> set[str]:
-    """5状態フォルダに実在する`.md`ファイル名の集合を返す。"""
-    return {
-        path.name
-        for state in WI_STATES
-        if (private_notes / state).exists()
-        for path in (private_notes / state).iterdir()
-        if path.suffix == ".md"
-    }
+def _existing_entry_path(private_notes: pathlib.Path, name: str) -> pathlib.Path | None:
+    """5状態フォルダから当該ファイル名の実体を探し、最初に見つかったパスを返す。"""
+    for state in WI_STATES:
+        path = private_notes / state / name
+        if path.is_file():
+            return path
+    return None
 
 
-def _is_case_sensitive(directory: pathlib.Path) -> bool:
-    """指定ディレクトリのファイルシステムがファイル名の大文字小文字を区別するかを実測する。
+def _duplicate_original_names(
+    private_notes: pathlib.Path,
+    entries: list[BatchEntry],
+    *,
+    existing: set[str],
+    case_sensitive: bool,
+) -> set[str]:
+    """ファイル名と本文がともに既存項目と一致するエントリの元ファイル名を返す。
 
-    OS種別から推定すると誤る（`os.path.normcase`はPOSIX実装では恒等関数であり、
-    大文字小文字を区別しないファイルシステムを既定とする環境でも名前を畳み込まない）ため、
-    一意な名前の空ファイルを当該ディレクトリへ作成し、名前の大文字小文字を反転させたパスが
-    存在するかどうかで判定する。プローブ用ファイルは判定後に必ず削除する。
+    同じ`show`形式の出力を二重に取り込む操作で、内容の同じ項目が再採番されて増えることを防ぐ。
+    本文の一致は全文の完全一致で判定し、frontmatterの差異と空白の差異を同一視しない。
+    比較する入力は`_normalize_plan_file`を適用済みのエントリとし、ここでさらに改行を正規化する。
+    移行元が`plan_file`を旧表記で保存していても、正規化後に同じ本文となる入力を重複として扱うためである。
+
+    `_rewrite_depends_on`による読み替えは本判定の前に適用しない。読み替え先は取り込むエントリの
+    保存名の割り当てで決まり、その割り当ては本判定の結果に依存するためである。
+    取り込みを省いたエントリの依存先は、既存項目として保存済みの本文が指す名前のまま解決できる。
+
+    本判定の対象を本モジュールの取り込み経路だけとするのは、`atk wi add`の通常の投入経路が
+    保存ファイル名を投入時刻から新規採番し、既存項目とファイル名が一致する入力を生じさせないことによる。
+    当該採番規則が変わると通常の投入経路でも同じ重複が生じるため、その時点で本判定の適用範囲を見直す。
     """
-    handle, created = tempfile.mkstemp(prefix=".atk-case-probe-", dir=directory)
-    os.close(handle)
-    probe = pathlib.Path(created)
-    try:
-        return not probe.with_name(probe.name.swapcase()).exists()
-    finally:
-        probe.unlink()
-
-
-def _comparison_key(name: str, *, case_sensitive: bool) -> str:
-    """ファイル名の衝突判定に用いる比較キーを返す。
-
-    大文字小文字を区別しないファイルシステムでは同一物理パスへ解決される名前を同一視するため
-    小文字化したキーを返し、区別するファイルシステムでは元の名前をそのまま返す。
-    保存名自体はこのキーと分離し、常に元の大文字小文字を維持する。
-    """
-    return name if case_sensitive else name.lower()
+    key = functools.partial(comparison_key, case_sensitive=case_sensitive)
+    existing_by_key = {key(name): name for name in existing}
+    duplicated: set[str] = set()
+    for entry in entries:
+        stored_name = existing_by_key.get(key(entry.original_name))
+        if stored_name is None:
+            continue
+        stored_path = _existing_entry_path(private_notes, stored_name)
+        if stored_path is None:
+            continue
+        stored_text = _frontmatter.decode_entry_text(stored_path.read_bytes())
+        if stored_text == _frontmatter.normalize_newlines(entry.raw_text):
+            duplicated.add(entry.original_name)
+    return duplicated
 
 
 def _assign_filenames(
@@ -199,11 +210,11 @@ def _assign_filenames(
     元名を維持できるエントリを先に確定し、5状態フォルダの既存名と衝突するエントリだけを
     通常の投入経路と同じ採番規則で再採番する。再採番候補は既存名・元名を維持するエントリの元名・
     割り当て済みの保存名を予約集合として除外する。
-    既存名との衝突判定と予約集合の判定は`_comparison_key`が返す比較キーで行い、
+    既存名との衝突判定と予約集合の判定は`comparison_key`が返す比較キーで行い、
     大文字小文字を区別しないファイルシステムでも既存ファイルを上書きしない。
     """
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    key = functools.partial(_comparison_key, case_sensitive=case_sensitive)
+    key = functools.partial(comparison_key, case_sensitive=case_sensitive)
     reserved = {key(name) for name in existing}
     assignments = {entry.original_name: entry.original_name for entry in entries if key(entry.original_name) not in reserved}
     reserved |= {key(name) for name in assignments}
@@ -333,19 +344,14 @@ def _dependency_warnings(
     （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
     及び再採番で確定した保存名の3種とする。
     判定対象の依存先は`_declared_dependencies`が返す列とし、スカラー形式の`depends_on`も含める。
-    実在判定は`_comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
+    実在判定は`comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
     大小の綴りだけが異なる参照を不在と誤判定しない。警告文には参照の原文を用いる。
     """
-    warnings: list[str] = []
-    key = functools.partial(_comparison_key, case_sensitive=case_sensitive)
-    resolvable = {key(name) for name in assignments} | {key(name) for name in assignments.values()}
-    resolvable |= {key(name) for name in existing}
-    for entry in entries:
-        for dependency in _declared_dependencies(entry):
-            if key(dependency) in resolvable:
-                continue
-            warnings.append(f"{assignments[entry.original_name]}のdepends_onが参照する{dependency}は取り込み先に実在しません")
-    return warnings
+    return missing_dependency_warnings(
+        [(assignments[entry.original_name], dependency) for entry in entries for dependency in _declared_dependencies(entry)],
+        resolvable=set(assignments) | set(assignments.values()) | existing,
+        case_sensitive=case_sensitive,
+    )
 
 
 def add_batch_entries(
@@ -354,16 +360,18 @@ def add_batch_entries(
     texts: list[str],
     now: datetime.datetime,
     lock_timeout: float = -1,
-) -> tuple[list[tuple[str, str]], list[str]]:
+) -> tuple[list[tuple[str, str]], list[str], list[str]]:
     """`show`形式のテキスト群を解析し、全エントリをinboxへ原文保持で取り込む。
 
-    戻り値は`(元ファイル名, 保存ファイル名)`の対応リストと警告リストとする。
+    戻り値は`(元ファイル名, 保存ファイル名)`の対応リスト、取り込みを省いた元ファイル名のリスト、
+    及び警告リストとする。
     元ファイル名は連結後の全体集合で重複を検査し、重複があれば`depends_on`の読み替え先が
     一意に定まらないため全件拒否する。
     重複の検査と既存名との衝突判定は、取り込み先ディレクトリの大文字小文字の区別を
-    `_is_case_sensitive`で実測した結果に基づく比較キーで行い、大文字小文字を区別しない
+    `is_case_sensitive`で実測した結果に基づく比較キーで行い、大文字小文字を区別しない
     ファイルシステムで書き込みが互いを上書きする組も拒否する。
-    ファイル名は取り込み先と衝突しない限り元名を維持する。
+    ファイル名と本文がともに既存項目と一致するエントリは書き込まず、再採番もしない。
+    それ以外のファイル名は取り込み先と衝突しない限り元名を維持する。
     """
     if not texts:
         raise WebInputError("取り込む本文を1件以上指定してください")
@@ -373,46 +381,50 @@ def add_batch_entries(
         validate_filename(entry.original_name, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        case_sensitive = _is_case_sensitive(inbox_dir)
-        counts = collections.Counter(_comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries)
+        case_sensitive = is_case_sensitive(inbox_dir)
+        counts = collections.Counter(comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries)
         duplicated = sorted(
             {
                 entry.original_name
                 for entry in entries
-                if counts[_comparison_key(entry.original_name, case_sensitive=case_sensitive)] > 1
+                if counts[comparison_key(entry.original_name, case_sensitive=case_sensitive)] > 1
             }
         )
         if duplicated:
             raise WebInputError(f"元ファイル名が重複しています: {'、'.join(duplicated)}")
-        existing = _existing_filenames(private_notes)
+        existing = existing_entry_filenames(private_notes)
+        normalized_entries = [_normalize_plan_file(entry, private_notes) for entry in entries]
+        skipped = _duplicate_original_names(private_notes, normalized_entries, existing=existing, case_sensitive=case_sensitive)
+        imported = [entry for entry in normalized_entries if entry.original_name not in skipped]
         assignments = _assign_filenames(
             private_notes,
-            entries,
+            imported,
             existing=existing,
             now=now,
             case_sensitive=case_sensitive,
         )
         renames = {original: saved for original, saved in assignments.items() if original != saved}
-        normalized_entries = [_normalize_plan_file(entry, private_notes) for entry in entries]
         contents = [
             (assignments[entry.original_name], _frontmatter.normalize_newlines(_rewrite_depends_on(entry, renames)))
-            for entry in normalized_entries
+            for entry in imported
         ]
         for filename, content in contents:
             _frontmatter.write_entry_text(inbox_dir / filename, content)
         warnings = _dependency_warnings(
-            entries,
+            imported,
             assignments=assignments,
             existing=existing,
             case_sensitive=case_sensitive,
         )
-        count = len(entries)
-        _commit_and_push(
-            private_notes,
-            f"chore: add {count} imported {'item' if count == 1 else 'items'}",
-            [WI_STATE_INBOX],
-        )
-    return [(entry.original_name, assignments[entry.original_name]) for entry in entries], warnings
+        count = len(imported)
+        if count:
+            _commit_and_push(
+                private_notes,
+                f"chore: add {count} imported {'item' if count == 1 else 'items'}",
+                [WI_STATE_INBOX],
+            )
+    mapping = [(entry.original_name, assignments[entry.original_name]) for entry in imported]
+    return mapping, [entry.original_name for entry in entries if entry.original_name in skipped], warnings
 
 
 def _collect_batch_texts(args: argparse.Namespace) -> list[str]:
@@ -443,6 +455,7 @@ def _cmd_add_batch(
 
     入力は`--body-file`群、$EDITORのいずれか1経路から収集する。
     remote同期失敗時は確定済みの入力をstderrへ再表示し、内容の消失を防ぐ。
+    既存項目とファイル名・本文がともに一致して取り込みを省いたエントリは、取り込み分と分けて示す。
     """
     texts = _collect_batch_texts(args)
     if is_agent_environment() and any(_user_comment.has_reserved_heading(text) for text in texts):
@@ -454,7 +467,7 @@ def _cmd_add_batch(
         )
         sys.exit(1)
     try:
-        mapping, warnings = add_batch_entries(private_notes, texts=texts, now=now)
+        mapping, skipped, warnings = add_batch_entries(private_notes, texts=texts, now=now)
     except WebInputError as error:
         print(f"投入を拒否しました: {error}", file=sys.stderr)
         sys.exit(1)
@@ -470,6 +483,10 @@ def _cmd_add_batch(
     for original, saved in mapping:
         renamed = f"（{original} -> {saved}）" if original != saved else ""
         print(f"  {_shorten_home(inbox_dir / saved, home)}{renamed}")
+    if skipped:
+        print(f"{len(skipped)}件スキップ（ファイル名と本文が既存項目と一致）:")
+        for original in skipped:
+            print(f"  {original}")
     for warning in warnings:
         print(f"警告: {warning}", file=sys.stderr)
     print(f"inbox: 計{_count_awi(inbox_dir)}件（processing: {_count_awi(processing_dir)}件）")

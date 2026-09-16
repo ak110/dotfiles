@@ -668,8 +668,9 @@ class Operations:
         """`atk wi show --all`の出力形式のテキストからエントリを一括で取り込む。
 
         原文保持の契約はCLIと共通の`_atk_wi_batch.add_batch_entries`が担う。
+        ファイル名と本文がともに既存項目と一致して取り込みを省いたエントリは`skipped`で返す。
         """
-        mapping, warnings = awi_batch.add_batch_entries(
+        mapping, skipped, warnings = awi_batch.add_batch_entries(
             self.private_notes,
             texts=[text],
             now=datetime.datetime.now(),
@@ -678,6 +679,7 @@ class Operations:
         return {
             "filenames": [saved for _original, saved in mapping],
             "mapping": dict(mapping),
+            "skipped": skipped,
             "warnings": warnings,
         }
 

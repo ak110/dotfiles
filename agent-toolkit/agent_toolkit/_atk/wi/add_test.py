@@ -58,6 +58,7 @@ def _cmd_add_args(
     plan_file: str | None = None,
     dry_run: bool = False,
     origin_locator: str | None = None,
+    depends_on: list[str] | None = None,
 ) -> argparse.Namespace:
     """`_cmd_add`の単体テストへ必要な引数を返す。"""
     body_path = tmp_path / "body.md"
@@ -67,7 +68,7 @@ def _cmd_add_args(
         repo_path_override=None,
         target_repo="github.com/example/repo",
         type=entry_type,
-        depends_on=[],
+        depends_on=depends_on or [],
         source=source,
         origin_locator=origin_locator,
         scope=None,
@@ -1018,6 +1019,45 @@ def test_add_operation_records_top_level_dependencies(
     parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0]["depends_on"] == ["first.md", "second.md"]
+
+
+def test_add_warns_for_missing_dependency_and_keeps_registering(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実在しない依存先を指定しても投入を拒否せず、警告を出力したうえで登録を完了する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", depends_on=["absent.md"]), notes, _FIXED_DT, tmp_path)
+
+    captured = capsys.readouterr()
+    generated = sorted(path.name for path in (notes / "inbox").iterdir() if path.suffix == ".md")
+    assert len(generated) == 1
+    assert captured.err == f"警告: {generated[0]}のdepends_onが参照するabsent.mdは取り込み先に実在しません\n"
+    assert "1件投入:" in captured.out
+
+
+def test_add_does_not_warn_for_existing_dependency(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """依存先が取り込み先に実在する場合は警告を出力しない。"""
+    notes = _setup_notes(tmp_path)
+    (notes / "inbox" / "present.md").write_text("---\ntype: awi\n---\n\n本文\n", encoding="utf-8")
+    monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", depends_on=["present.md"]), notes, _FIXED_DT, tmp_path)
+
+    assert capsys.readouterr().err == ""
 
 
 def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Path) -> None:

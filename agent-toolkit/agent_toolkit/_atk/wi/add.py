@@ -32,7 +32,10 @@ from agent_toolkit._atk.wi.common import (
     _repo_lock,
     _subdir,
     _validate_filename,
+    existing_entry_filenames,
     is_agent_environment,
+    is_case_sensitive,
+    missing_dependency_warnings,
 )
 from agent_toolkit._atk.wi.formatters import _shorten_home
 from agent_toolkit._atk.wi.repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
@@ -97,6 +100,27 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
     """CLIの依存ファイル名を検証し、`.md`付きの初出順へ正規化する。"""
     return tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in (values or ())))
+
+
+def _missing_dependency_warnings(
+    private_notes: pathlib.Path,
+    inbox_dir: pathlib.Path,
+    generated: list[str],
+    dependencies: tuple[str, ...],
+) -> list[str]:
+    """投入したエントリの依存先のうち、取り込み先に実在しないものを警告文へ列挙する。
+
+    依存先が実在しないことを理由に投入を拒否せず、警告を返して登録を続ける。
+    `--depends-on`は当該呼び出しの全エントリへ共通に付くため、エントリと依存先の組ごとに1件返す。
+    判定と文面は`--batch`経路と共有し、両経路で同じ条件の参照へ同じ警告が出る状態を保つ。
+    """
+    if not dependencies:
+        return []
+    return missing_dependency_warnings(
+        [(filename, dependency) for filename in generated for dependency in dependencies],
+        resolvable=existing_entry_filenames(private_notes),
+        case_sensitive=is_case_sensitive(inbox_dir),
+    )
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
@@ -528,6 +552,7 @@ def _cmd_add(
     計画実装型の分類は`--plan-file`の指定だけで確定する。
     `--body-file`を指定した場合は当該ファイルの内容を本文として扱う。
     シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
+    `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
     """
     body_files = getattr(args, "body_file", None)
     if body_files:
@@ -635,6 +660,8 @@ def _cmd_add(
     count = len(generated)
     inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
+        print(f"警告: {warning}", file=sys.stderr)
     print(f"{count}件投入:")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")

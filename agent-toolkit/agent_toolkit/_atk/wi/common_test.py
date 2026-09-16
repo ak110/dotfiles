@@ -23,6 +23,56 @@ from agent_toolkit._common import file_lock as _file_lock  # noqa: E402  # pylin
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 
 
+def test_case_sensitivity_probe_reports_linux_filesystem_as_case_sensitive(tmp_path: pathlib.Path) -> None:
+    """実際のプローブ処理が一時ディレクトリを大文字小文字を区別すると判定し、残留物を残さない。"""
+    assert _common.is_case_sensitive(tmp_path) is True
+    assert not list(tmp_path.iterdir())
+
+
+def test_case_sensitivity_probe_detects_case_insensitive_directory(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """名前を畳み込むディレクトリでは、反転名の実在をもって区別しないと判定する。"""
+    original_exists = pathlib.Path.exists
+
+    def case_folding_exists(self: pathlib.Path) -> bool:
+        """名前の大文字小文字を無視して実在判定するファイルシステムを模擬する。"""
+        if original_exists(self):
+            return True
+        return any(entry.name.lower() == self.name.lower() for entry in self.parent.iterdir())
+
+    monkeypatch.setattr(pathlib.Path, "exists", case_folding_exists)
+
+    assert _common.is_case_sensitive(tmp_path) is False
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("case_sensitive", "expected"),
+    [(True, False), (False, True)],
+)
+def test_comparison_key_folds_case_only_when_insensitive(case_sensitive: bool, expected: bool) -> None:
+    """比較キーは大文字小文字を区別しない場合だけ同名として畳み込む。"""
+    left = _common.comparison_key("Same.md", case_sensitive=case_sensitive)
+    right = _common.comparison_key("same.md", case_sensitive=case_sensitive)
+
+    assert (left == right) is expected
+
+
+@pytest.mark.parametrize("case_sensitive", [True, False])
+def test_missing_dependency_warnings_reports_only_unresolvable_references(case_sensitive: bool) -> None:
+    """取り込み先に実在しない参照だけを警告へ列挙し、比較キーで一致する参照は除く。"""
+    warnings = _common.missing_dependency_warnings(
+        [("a.md", "Present.md"), ("a.md", "absent.md")],
+        resolvable={"present.md"},
+        case_sensitive=case_sensitive,
+    )
+
+    expected = ["a.mdのdepends_onが参照するPresent.mdは取り込み先に実在しません"] if case_sensitive else []
+    assert warnings == [*expected, "a.mdのdepends_onが参照するabsent.mdは取り込み先に実在しません"]
+
+
 def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """WI共通処理のGit実行は成功時に標準出力と標準エラーへ書かない。"""
     _common._run_git(["init", "--initial-branch=main"], tmp_path)
