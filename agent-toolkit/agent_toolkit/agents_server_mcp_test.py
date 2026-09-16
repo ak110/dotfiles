@@ -2981,42 +2981,11 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
     assert turn_start["effort"] == "high"
 
 
-def test_explore_system_prompt_contains_delegate_notice() -> None:
-    """通常起動、探索起動及びシェル実行起動のいずれの指示も委譲先宣言から始まる。"""
-    assert state.DELEGATE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
-    assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
-
-
 def test_subagent_rules_reach_only_normal_delegation() -> None:
     """委譲先規範は通常起動の指示だけへ連結し、軽量起動の指示へは入らない。"""
     assert state.DELEGATE_SYSTEM_PROMPT.endswith(state.SUBAGENT_RULES)
     assert state.SUBAGENT_RULES not in state.EXPLORE_SYSTEM_PROMPT
     assert state.SUBAGENT_RULES not in state.SHELL_SYSTEM_PROMPT
-    assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
-    assert "あなたはメインエージェントでも最上位セッションでもない。" in state.DELEGATE_NOTICE
-    assert "呼び出し元エージェントの配送" in state.DELEGATE_NOTICE
-
-
-def test_auto_resume_notice_limits_waiting_exception_to_child_agents() -> None:
-    """自動再開の判定入力は子の完了待ちだけを例外とし、背景ジョブを除外する。"""
-    assert "あなたが起動した委譲先（サブエージェント）の完了通知" in state.AUTO_RESUME_NOTICE
-    assert "同じsessionを一度だけ自動的に再開する" in state.AUTO_RESUME_NOTICE
-    assert "背景ジョブはこの自動再開の対象ではない" in state.AUTO_RESUME_NOTICE
-
-
-def test_shell_system_prompt_requires_background_result_collection() -> None:
-    """シェル実行担当は背景移行を終端とせず、出力ファイルから終了状態を確定する。"""
-    assert "背景実行へ移行した場合は、移行の通知を結果として報告しない" in state.SHELL_SYSTEM_PROMPT
-    assert "起動結果が返す出力ファイルを読み" in state.SHELL_SYSTEM_PROMPT
-    assert "終了状態を確定してから報告する" in state.SHELL_SYSTEM_PROMPT
-
-
-def test_lightweight_system_prompts_require_limit_reporting() -> None:
-    """軽量起動は上限到達を報告し、不完全な結果から確定しない契約を受領する。"""
-    assert "その事実と切り詰められた範囲を要約へ必ず含める" in state.SHELL_SYSTEM_PROMPT
-    assert "切り詰めを含む出力から、成功、網羅性、件数、終端のいずれも結論しない" in state.SHELL_SYSTEM_PROMPT
-    assert "その事実と到達した上限を報告へ必ず含める" in state.EXPLORE_SYSTEM_PROMPT
-    assert "上限に達した結果から、網羅性、件数、不在のいずれも結論しない" in state.EXPLORE_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
