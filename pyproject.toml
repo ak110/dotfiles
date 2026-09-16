@@ -128,6 +128,10 @@ mypy-exclude = ["conftest.py"]
 shellcheck = true
 shfmt = true
 colloquial-check = true
+# agent-toolkit/はpyproject.tomlを持つためpyfltrがサブプロジェクトとして検出し、
+# サブプロジェクト側の設定にagent-doc-toneの定義が無いと当該配下を丸ごとスキップする。
+# 母集団はルートとagent-toolkit/にまたがるため、本コマンドだけサブプロジェクト分割を無効にする。
+agent-doc-tone-subproject-aware = false
 markdownlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-args = ["--cache"]
@@ -231,6 +235,27 @@ targets = [
     ".claude-plugin/marketplace.json",
     "**/.claude-plugin/plugin.json",
     "**/.claude-plugin/marketplace.json",
+]
+
+[tool.pyfltr.custom-commands.agent-doc-tone]
+type = "linter"
+path = "scripts/check_agent_doc_tone.py"
+targets = [
+    # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
+    "AGENTS.md",
+    "agent-toolkit/rules/*.md",
+    "agent-toolkit/share/*.md",
+    "agent-toolkit/skills/*/*.md",
+    "agent-toolkit/skills/*/*/*.md",
+    ".chezmoi-source/dot_claude/*/*.md",
+    ".chezmoi-source/dot_claude/*/*/*.md",
+    ".chezmoi-source/dot_claude/*/*/*/*.md",
+    ".claude/skills/*/*.md",
+    ".claude/skills/*/*/*.md",
+    # `.agents/skills`は`.claude/skills`へのsymlinkであり、pyfltrは実体単位で重複排除して
+    # 辞書順で先行する`.agents/`側のパスだけを残す。`.claude/`側だけの指定では対象が0件になる。
+    ".agents/skills/*/*.md",
+    ".agents/skills/*/*/*.md",
 ]
 
 [tool.pylint."messages control"]

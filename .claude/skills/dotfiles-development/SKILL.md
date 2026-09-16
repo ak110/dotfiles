@@ -42,6 +42,14 @@ description: >
     - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、検査へ与えるのと同じ環境変数を与えて`mise trust`を実行する
     - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
+  - `make test`はlinter`agent-doc-tone`を含む。
+    単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で起動する。
+    対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・
+    `.chezmoi-source/dot_claude/`・`.claude/skills/`）とする。
+    文体の密度を測り、閾値を超えたファイルを指標付きで報告する。
+    測る指標と閾値は`scripts/check_agent_doc_tone.py`のdocstringを正本とする。
+    報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
+    指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる
 - 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
   OSパッケージの導入には権限が必要となる場合がある
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
