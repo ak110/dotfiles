@@ -158,11 +158,13 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     os.close(read_fd)
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+    # Gitの作業ツリー外で起動し、`--target-repo`の既定解決が対象を限定しない状態にする。
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
         stdout=write_fd,
         stderr=subprocess.PIPE,
         env=env,
+        cwd=tmp_path,
         text=True,
     ) as process:
         os.close(write_fd)

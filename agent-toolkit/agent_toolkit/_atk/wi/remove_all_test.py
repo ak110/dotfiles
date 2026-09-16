@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import remove_all  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing.git_fakes import make_outside_worktree_fake as _make_outside_worktree_fake  # noqa: E402
 from agent_toolkit.atk_test import _setup_notes, _write_awi_file  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -139,7 +140,7 @@ class TestRemoveAllArguments:
     @pytest.mark.parametrize(
         "argv",
         [
-            ["wi", "rm", "--all"],
+            ["wi", "rm", "--all", "--target-repo", "all"],
             ["wi", "rm", "--all", "--target-repo", "github.com/example/foo", "entry.md"],
             ["wi", "rm"],
             ["wi", "rm", "--yes", "entry.md"],
@@ -158,6 +159,18 @@ class TestRemoveAllArguments:
         assert _run_main(argv, tmp_path) == 2
         assert "使い方:" in capsys.readouterr().err
         assert not (tmp_path / "private-notes").exists()
+
+    def test_rejects_all_without_resolvable_repository(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """カレントディレクトリから対象リポジトリを確定できない場合は一括削除を拒否する。"""
+        monkeypatch.setattr(subprocess, "run", _make_outside_worktree_fake())
+
+        assert _run_main(["wi", "rm", "--all"], tmp_path) == 2
+        assert "--allの対象リポジトリを確定できません。" in capsys.readouterr().err
 
 
 class TestRemoveAllConfirmation:

@@ -12,8 +12,8 @@ commitとpushを伴う状態遷移系は同期を省略せず、変更直前の�
 remote同期はfetch後の統合対象を現在のブランチの`@{u}`へ明示し、fast-forward更新とpush再試行時のrebaseを
 共有状態の`FETCH_HEAD`と利用者の`pull.rebase`設定から独立させる。
 
-同じ対象リポジトリの複数項目を同一工程で読む場合は、管理対象一時領域を作成し、`atk wi show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存ファイルへ書き込んでから全文を読み、ファイル名見出しから本文を対応付ける。保存内容の構造成立・不成立・コマンド失敗を確定した後、独立登録した領域だけcleanupを完了する。セッションrootの子領域は同セッションの終了時に回収し、保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も、ファイル名昇順の
-`atk wi start-processing <filename>... --target-repo=<repo>`を1回実行する。
+同じ対象リポジトリの複数項目を同一工程で読む場合は、管理対象一時領域を作成し、`atk wi show <filename>... --skip-pull`の標準出力を保存ファイルへ書き込んでから全文を読み、ファイル名見出しから本文を対応付ける。保存内容の構造成立・不成立・コマンド失敗を確定した後、独立登録した領域だけcleanupを完了する。セッションrootの子領域は同セッションの終了時に回収し、保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も、ファイル名昇順の
+`atk wi start-processing <filename>...`を1回実行する。
 処理開始コマンドは全対象の存在、状態及び`target_repo`を移動前に検証するため、一部不適合で集合全体を拒否できる。
 移動開始後にI/O、commit又はpushが失敗した場合は、指定集合のprocessing配置、管理リポジトリの未コミット差分、
 集合の移動だけを含む遷移commit及びremote設定時のupstream包含を分けて確認する。

@@ -269,12 +269,13 @@ processing、UWI、終端項目及び人間由来の項目では操作を使用�
 未回答UWIは`atk wi answer`で順に確認して回答できる。ファイル名と回答を指定する場合は次の形式を使う。
 
 ```bash
-atk wi answer <UWIファイル名> '<回答本文>' --target-repo=<対象リポジトリ>
+atk wi answer <UWIファイル名> '<回答本文>'
 ```
 
 回答後はUWIが先に終端し、そのUWIを待っていたAWIが次回の処理対象へ戻る。
-現在の項目は`atk wi list --status=active --target-repo=<対象リポジトリ>`で確認できる。
+現在の項目は`atk wi list --status=active`で確認できる。
 自動処理へ渡せる状態だけを確認する場合は`--status=processable`、未回答UWIだけを確認する場合は`--type=uwi --answered=no`を指定する。
+対象リポジトリはカレントディレクトリが属するリポジトリとなる。全てのリポジトリの項目を確認する場合は`--target-repo=all`を指定する。
 
 ## 運用と保守
 

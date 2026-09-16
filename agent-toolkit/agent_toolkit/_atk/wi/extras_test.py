@@ -130,7 +130,7 @@ class TestListPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list"], home=tmp_path)
+            atk.main(["wi", "list", "--target-repo=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
@@ -151,7 +151,7 @@ class TestShowAllPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "--all"], home=tmp_path)
+            atk.main(["wi", "show", "--all", "--target-repo=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]

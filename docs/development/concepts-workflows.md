@@ -104,8 +104,8 @@ AWIはユーザーとエージェントが非同期に共有する人間向け�
   本項の判断は現行の工程構造ではレーン分けが担い、
   正本は`agent-toolkit/share/pick-wi.subagent.md`にある
 - 同じ対象リポジトリの複数項目を同一工程で取得する場合は、管理対象一時領域を作成し、複数引数対応の
-  `atk wi show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存して全文を検査し、cleanupまで完了する。保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も
-  `atk wi start-processing <filename>... --target-repo=<repo>`を1回実行する
+  `atk wi show <filename>... --skip-pull`の標準出力を保存して全文を検査し、cleanupまで完了する。保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も
+  `atk wi start-processing <filename>...`を1回実行する
 - 一括処理開始は移動前に集合全体を検証し、移動開始後の失敗ではprocessing配置、未コミット差分、遷移commit及び
   remote設定時のupstream包含を照合する。全条件が成立しない場合は項目別再実行をせず未完了で停止する
 - 通常型AWIのファイル名を1件以上指定する計画化では、調査前に同一対象リポジトリの全対象を`hold`へ一括移動する

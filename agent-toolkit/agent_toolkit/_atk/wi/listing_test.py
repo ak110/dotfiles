@@ -20,7 +20,9 @@ from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-posi
 from agent_toolkit._atk.wi import frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._testing.git_fakes import make_current_worktree_fake as _make_current_worktree_fake  # noqa: E402
 from agent_toolkit._testing.git_fakes import make_git_remote_fake as _make_git_remote_fake  # noqa: E402
+from agent_toolkit._testing.git_fakes import make_outside_worktree_fake as _make_outside_worktree_fake  # noqa: E402
 from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _GitCall,
@@ -411,7 +413,7 @@ class TestLegacyReservationMigration:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as skip_exit:
-            atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--skip-pull", "--target-repo=all"], home=tmp_path)
 
         assert skip_exit.value.code == 0
         assert legacy.is_file()
@@ -419,7 +421,7 @@ class TestLegacyReservationMigration:
         assert not git_calls
 
         with pytest.raises(SystemExit) as normal_exit:
-            atk.main(["wi", "list"], home=tmp_path)
+            atk.main(["wi", "list", "--target-repo=all"], home=tmp_path)
 
         assert normal_exit.value.code == 0
         assert (notes / "inbox/main.md").is_file()
@@ -689,6 +691,91 @@ class TestListTargetRepoFilter:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == ""
+
+
+class TestListTargetRepoDefault:
+    """listサブコマンド: --target-repo未指定時はカレントディレクトリのリポジトリを対象とする。"""
+
+    def test_default_limits_to_current_repository(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """未指定時はカレントディレクトリが属するリポジトリのエントリだけを出力する。"""
+        notes = _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo")
+        _write_awi_file(notes, "other.md", target_repo="github.com/example/other")
+        monkeypatch.setattr(subprocess, "run", _make_current_worktree_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "current.md" in output
+        assert "other.md" not in output
+
+    def test_all_value_covers_every_repository(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--target-repo=all`はカレントディレクトリのリポジトリによらず全件を出力する。"""
+        notes = _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo")
+        _write_awi_file(notes, "other.md", target_repo="github.com/example/other")
+        monkeypatch.setattr(subprocess, "run", _make_current_worktree_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--skip-pull", "--target-repo=all"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "current.md" in output
+        assert "other.md" in output
+
+    def test_outside_git_worktree_covers_every_repository(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Gitの作業ツリー外では対象を限定せず全件を出力する。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo")
+        _write_awi_file(notes, "other.md", target_repo="github.com/example/other")
+        monkeypatch.setattr(subprocess, "run", _make_outside_worktree_fake())
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "current.md" in output
+        assert "other.md" in output
+
+    def test_single_target_subcommand_rejects_all_value(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """単一の対象リポジトリを確定するサブコマンドは`all`を受理せず終了コード2で終わる。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo")
+        monkeypatch.setattr(subprocess, "run", _make_outside_worktree_fake())
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "hold", "current.md", "--target-repo=all"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "--target-repo=all" in capsys.readouterr().err
 
 
 class TestListSourceFilter:

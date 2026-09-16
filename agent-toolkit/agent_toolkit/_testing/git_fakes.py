@@ -37,6 +37,36 @@ def make_git_remote_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Compl
     return fake_run
 
 
+def make_current_worktree_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
+    """カレント作業ツリーを`myrepo`として応答するfakeを返す。
+
+    `--target-repo`の既定解決がカレントディレクトリから対象リポジトリを確定する経路を検証するために使う。
+    """
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        response = fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+        if response is not None:
+            return response
+        empty: Any = "" if kwargs.get("text") else b""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    return fake_run
+
+
+def make_outside_worktree_fake() -> Callable[..., subprocess.CompletedProcess[Any]]:
+    """カレントディレクトリがGitの作業ツリー外であるとして応答するfakeを返す。
+
+    `--target-repo`の既定解決が対象を限定しない経路を検証するために使う。
+    """
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        empty: Any = "" if kwargs.get("text") else b""
+        returncode = 128 if cmd == ["git", "rev-parse", "--show-toplevel"] else 0
+        return subprocess.CompletedProcess(cmd, returncode=returncode, stdout=empty, stderr=empty)
+
+    return fake_run
+
+
 def fake_git_worktree_remote_response(
     cmd: list[str], myrepo: pathlib.Path, kwargs: dict[str, object]
 ) -> subprocess.CompletedProcess[Any] | None:
