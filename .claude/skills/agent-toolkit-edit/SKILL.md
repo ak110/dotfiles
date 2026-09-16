@@ -107,6 +107,10 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 - 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は書かない
+- 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
+  修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。
+  `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
+  サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
 - 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
   - 例外: 実測を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。当該記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。当該記録先は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」が定める
 - 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名検査を適用し、
@@ -149,7 +153,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 詳細手順は`references/version-bump.md`に集約する。
 全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
 `.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
-`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
+`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に`references/version-bump.md`の「plan modeでの取り扱い」節を読み、
 `## 要件・外部仕様`へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
@@ -165,8 +169,11 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
 
-- コーディングエージェント向け文書を編集する場合は、`AGENTS.md`「編集時に起動するスキル」が定める
-  `docs/development/concepts.md`・`docs/development/incidents.md`の確認と更新に従う
+- コーディングエージェント向け文書を編集する実際の主体は、編集前に同じ実行コンテキストで
+  `docs/development/concepts.md`と`docs/development/incidents.md`の全文を読み、
+  確定済みの方針・事故対策との整合を確認する。要約、見出し一覧、部分読取及び別主体の読取結果は、
+  編集主体自身による全文読了の代わりにしない。
+  編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
@@ -255,14 +262,10 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
    MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う
 6. 変更をコミットする
 
-次のいずれかを変更した場合は、変更後の互換起動条件を確認する。
-
-- `agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」のキー
-- `agent-toolkit/share/rules-main.codex.md`のCodex互換起動条件
-
-両者の対応関係は機械判定できる入力を持たないため、自動検査では保証しない。人手で確認する。
-
 ## フック実装の配置先（個人フックと配布物）
+
+本リポジトリでは`claude-code-setup:claude-automation-recommender`が推奨する自動化手段の選定を適用対象外とし、
+`agent-toolkit:writing-standards`の振り分け規定と本節に従う。
 
 PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
 類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。

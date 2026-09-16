@@ -6,7 +6,8 @@
 ## バージョン指定と更新
 
 - バージョン固定は管理コスト増大のため原則採用せず、公開直後の新バージョンを一定期間（目安1日）待つ設定で代替する
- （ツール例: uvの`exclude-newer`、pnpmの`minimum-release-age`）
+ （ツール例: uvの`exclude-newer`、pnpmの`minimum-release-age`）。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日」にある
 - 公開直後の新バージョンを待つ設定が有効な環境では、待機期間を満たさない版を下限として要求すると依存解決が失敗する。
   配布物の依存下限を公開直後の版へ引き上げる場合は、待機期間の経過後に解決を確認する
 - 依存追加時はメンテナンス状況・代替の有無を確認する。使われていない依存は削除する
@@ -31,8 +32,9 @@
 
 ## pnpm
 
-- `pnpm/action-setup` v6は`packageManager`フィールドにSHAハッシュがないとlockfile解析エラーになる場合がある
+- `packageManager`フィールドはSHAハッシュ付きで保持する
   - `corepack use pnpm@<version>`でSHAハッシュ付きに更新する
-- pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）
+- pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日」にある
   - env var経由の設定反映テストには`npm config get`を使う
 - `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数より優先される

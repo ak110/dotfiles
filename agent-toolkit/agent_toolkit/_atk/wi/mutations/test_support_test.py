@@ -26,6 +26,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk.wi import (  # pylint: disable=wrong-import-position
     common,  # noqa: E402  # pylint: disable=wrong-import-position
     mutations,  # noqa: E402  # pylint: disable=wrong-import-position
+    repo,  # noqa: E402  # pylint: disable=wrong-import-position
     user_comment,  # noqa: E402  # pylint: disable=wrong-import-position
     uwi,  # noqa: E402  # pylint: disable=wrong-import-position
 )
@@ -73,7 +74,12 @@ def _write_uwi_entry(
 
 
 def _disable_transition_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    """状態遷移テストからprivate-notesのgit操作を除外する。"""
+    """状態遷移テストからprivate-notesのgit操作とカレントディレクトリのリポジトリ解決を除外する。
+
+    `--target-repo`の既定解決はテスト実行時のカレントディレクトリに依存するため、
+    対象リポジトリの照合を明示指定だけで判定する状態へそろえる。
+    """
+    monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)

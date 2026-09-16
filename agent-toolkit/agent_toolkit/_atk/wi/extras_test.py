@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -67,7 +68,7 @@ class TestAddSourceOption:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         body_file = tmp_path / "body.md"
-        body_file.write_text("メッセージ\n\n## 実現性\nテスト用の投入経路を確認済み", encoding="utf-8")
+        body_file.write_text(wi_bodies.AGENT_AWI_BODY, encoding="utf-8")
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
@@ -129,7 +130,7 @@ class TestListPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list"], home=tmp_path)
+            atk.main(["wi", "list", "--target-repo=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
@@ -150,7 +151,7 @@ class TestShowAllPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "--all"], home=tmp_path)
+            atk.main(["wi", "show", "--all", "--target-repo=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]

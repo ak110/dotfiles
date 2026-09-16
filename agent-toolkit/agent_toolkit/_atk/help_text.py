@@ -47,12 +47,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi start-processing": {
         "summary": "AWI又はUWIをprocessingへ移して処理中にする",
-        "description": "目的: inboxのAWI又はUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。事後承認型UWIの回答が是正を求め、当該是正を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
+        "description": "目的: inboxのAWI又はUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。UWIの回答が是正又は保留中の元項目での作業を求め、当該作業を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
         "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
     "atk wi hold": {
         "summary": "inboxまたはprocessingの項目を保留する",
-        "description": "目的: inbox又はprocessingの項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで当該項目を処理させないとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
+        "description": "目的: inbox又はprocessingの項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで当該項目を処理させないとき。確認の回答を得られず当該項目を進められないとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
         "epilog": "実行例:\n\n  atk wi hold 20260901-072734-001.md",
     },
     "atk wi unhold": {
@@ -197,7 +197,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを詳しい状態とともに一覧表示する",
-        "description": "目的: 同じルートセッション配下の委譲sessionを診断できる形で一覧表示する。\n利用場面: 識別子を失ったsessionの回復又は残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読み、session一覧を単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。\n前提: 対象と同じルートセッションで実行する。既定では未回収結果を持たない終端済みsessionを除く。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 同じルートセッション配下の委譲sessionを診断できる形で一覧表示する。\n利用場面: 識別子を失ったsessionの回復又は残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読み、session一覧を単一のJSON文書として標準出力へ書く。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。\n前提: 対象と同じルートセッションで実行する。既定では未回収結果を持たない終端済みsessionを除く。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
     },
     "atk agents show": {

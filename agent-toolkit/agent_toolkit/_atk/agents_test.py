@@ -30,6 +30,20 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
     assert "終端statusでは追加の結果受領操作は不要" in output
 
 
+def _without_wrapping(text: str) -> str:
+    """端末幅で変わる折り返しに依存せず本文を照合するため、空白文字を取り除いた文字列を返す。"""
+    return "".join(text.split())
+
+
+def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.CaptureFixture[str]) -> None:
+    """一覧が起動文を含まないことと、起動文の取得先を説明する。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list", "--help"])
+
+    output = _without_wrapping(capsys.readouterr().out)
+    assert _without_wrapping("各sessionへ起動文を含めず、起動文は`atk agents show`が返す。") in output
+
+
 @pytest.fixture
 def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     """1件の実行中sessionを持つ共有状態を準備する。"""
@@ -49,6 +63,7 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
                         "status": "running",
                         "cwd": "/worktree",
                         "prompt": "調査せよ",
+                        "label": "調査レーン",
                         "model_type": "execute",
                         "launch_kind": "delegate",
                         "started_at": "2026-09-13T00:00:00+00:00",
@@ -63,8 +78,8 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
 
 
 @pytest.mark.usefixtures("session_environment")
-def test_agents_list_returns_diagnostic_fields(capsys: pytest.CaptureFixture[str]) -> None:
-    """listはMCP listで省いた起動条件も診断用に返す。"""
+def test_agents_list_returns_diagnostic_fields_without_prompt(capsys: pytest.CaptureFixture[str]) -> None:
+    """listは診断用の項目を返し、起動文だけを除く。"""
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
 
@@ -74,7 +89,7 @@ def test_agents_list_returns_diagnostic_fields(capsys: pytest.CaptureFixture[str
         "session_id": "session-1",
         "status": "running",
         "cwd": "/worktree",
-        "prompt": "調査せよ",
+        "label": "調査レーン",
         "model_type": "execute",
         "launch_kind": "delegate",
         "started_at": "2026-09-13T00:00:00+00:00",
@@ -106,7 +121,7 @@ def test_agents_list_indents_output_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人間が読む環境では一覧を字下げしたJSONで書き、非ASCII文字をそのまま残す。"""
+    """人間が読む環境では一覧を字下げしたJSONで書き、非ASCII文字をそのまま残したうえで起動文を除く。"""
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
 
@@ -116,7 +131,8 @@ def test_agents_list_indents_output_outside_agent_environment(
     output = capsys.readouterr().out
     assert len(output.splitlines()) > 1
     assert '"session_id": "session-1"' in output
-    assert "調査せよ" in output
+    assert "調査レーン" in output
+    assert "調査せよ" not in output
     assert json.loads(output)["sessions"][0]["session_id"] == "session-1"
 
 

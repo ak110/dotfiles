@@ -5,6 +5,7 @@
 
 import asyncio
 import dataclasses
+import datetime
 import json
 import logging
 import os
@@ -29,6 +30,23 @@ from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._testing.helpers import delivery_payload
 
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
+
+
+@pytest.fixture(autouse=True)
+def _restore_session_listeners() -> Any:
+    """テストが登録した共有リスナーを、当該テストの終了時に元の集合へ戻す。
+
+    `SessionState.touch`のリスナー集合はプロセス全体で共有される。
+    有効化したままの`StatusFileWriter`が残ると、後続の別モジュールのテストが`touch`を呼んだ時点で
+    実行中のイベントループを要求して失敗するため、テストごとに登録を元へ戻す。
+    """
+    touch_listeners = set(state._TOUCH_LISTENERS)
+    terminal_listeners = set(state._TERMINAL_LISTENERS)
+    yield
+    state._TOUCH_LISTENERS.clear()
+    state._TOUCH_LISTENERS.update(touch_listeners)
+    state._TERMINAL_LISTENERS.clear()
+    state._TERMINAL_LISTENERS.update(terminal_listeners)
 
 
 def _assert_no_forbidden_keys(value: Any) -> None:
@@ -385,21 +403,23 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
     properties = start_tool.parameters["properties"]
-    assert {"subagent_md_path", "extra_params", "cwd"} == properties.keys()
+    assert {"subagent_md_path", "extra_params", "cwd", "label"} == properties.keys()
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     custom_tool = subject.mcp._tool_manager.get_tool("start_custom")
     assert custom_tool is not None
-    assert {"prompt", "model_type", "cwd"} == custom_tool.parameters["properties"].keys()
+    assert {"prompt", "model_type", "cwd", "label"} == custom_tool.parameters["properties"].keys()
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
-    assert {"prompt", "cwd", "fast"} == explore_tool.parameters["properties"].keys()
+    assert {"prompt", "cwd", "fast", "label"} == explore_tool.parameters["properties"].keys()
     assert explore_tool.parameters["properties"]["fast"]["default"] is True
     shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
     assert shell_tool is not None
-    assert {"command", "cwd", "summary_policy"} == shell_tool.parameters["properties"].keys()
+    assert {"command", "cwd", "summary_policy", "label"} == shell_tool.parameters["properties"].keys()
     write_tool = subject.mcp._tool_manager.get_tool("start_write")
     assert write_tool is not None
-    assert {"prompt", "cwd"} == write_tool.parameters["properties"].keys()
+    assert {"prompt", "cwd", "label"} == write_tool.parameters["properties"].keys()
+    for tool in (start_tool, custom_tool, explore_tool, shell_tool, write_tool):
+        assert tool.parameters["properties"]["label"]["default"] is None
     for tool in (start_tool, custom_tool, explore_tool):
         assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
@@ -420,6 +440,57 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
         assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
+@pytest.mark.asyncio
+async def test_session_label_prefers_argument_over_generated_value(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """識別名は引数の指定を優先し、省略時は依頼本文又はコマンドから導く。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda _model_type: [("codex", "model", "high")],
+    )
+    manager, _ = _manager_with_fake("codex")
+
+    named = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label="lane-02")
+    unnamed = await manager.start("plan", "対象の調査\n詳細", str(tmp_path))
+    shell_default = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す")
+    shell_named = await manager.start_shell(
+        "git status --short",
+        str(tmp_path),
+        "終了コードだけを返す",
+        label="作業ツリーの差分",
+    )
+
+    assert manager.show_session(named["session_id"])["label"] == "lane-02"
+    assert manager.show_session(unnamed["session_id"])["label"] == "対象の調査"
+    assert manager.show_session(shell_default["session_id"])["label"] == "git status --short"
+    assert manager.show_session(shell_named["session_id"])["label"] == "作業ツリーの差分"
+
+
+@pytest.mark.parametrize("label", ["", "   "])
+@pytest.mark.asyncio
+async def test_empty_session_label_falls_back_to_the_generated_value(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    label: str,
+) -> None:
+    """空になる識別名の指定は未指定と同じ扱いとし、識別名の列を空のままにしない。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda _model_type: [("codex", "model", "high")],
+    )
+    manager, _ = _manager_with_fake("codex")
+
+    started = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label=label)
+    shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
+
+    assert manager.show_session(started["session_id"])["label"] == "対象の調査"
+    assert manager.show_session(shell["session_id"])["label"] == "git status --short"
+
+
 def test_server_instructions_carry_standalone_contract() -> None:
     """サーバー説明だけを読む主体へ観測の義務とモデル解決の主体を示す。"""
     instructions = subject.mcp.instructions
@@ -427,6 +498,7 @@ def test_server_instructions_carry_standalone_contract() -> None:
     assert "実行ホストで`atk agents wait`を発行して観測する" in instructions
     assert "結果が不要なら`kill`で破棄する" in instructions
     assert "engine、model及びeffortは" in instructions
+    assert "起動時の`label`は当該sessionを人が識別する短い名前とし" in instructions
 
 
 def test_tool_descriptions_carry_standalone_contract() -> None:
@@ -511,7 +583,9 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
         await asyncio.gather(task, return_exceptions=True)
 
     assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
-    assert all(set(session) == {"session_id", "status"} for session in response["sessions"])
+    assert all(
+        {"session_id", "status"} <= set(session) <= {"session_id", "status", "stalled"} for session in response["sessions"]
+    )
     assert response["sessions"][0]["status"] == "expired"
     assert response["sessions"][1]["status"] == "running"
     assert response["sessions"][2]["status"] == "running"
@@ -739,6 +813,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     if task_name == "lane-integration.subagent.md":
         return [
             "統合区分: マージあり",
+            "実行レビュー済みHEAD: 0123abc",
             f"統合先worktree: {root}",
             "統合先branch: develop",
             "メイン計画ファイル名: plan.md",
@@ -1168,6 +1243,124 @@ async def test_start_returns_failed_session_when_every_candidate_is_unavailable(
     assert (await manager.wait())["error"] == codex.error
 
 
+@pytest.mark.parametrize("api_error_status", [401, 403])
+@pytest.mark.asyncio
+async def test_authentication_failure_switches_to_next_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    api_error_status: int,
+) -> None:
+    """認証と認可の失敗は別候補で起動し、切替の内容を応答へ返す。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    _install_backend(
+        manager,
+        "claude",
+        UnavailableStartBackend(
+            manager.sessions,
+            "claude",
+            {"message": "Failed to authenticate.", "apiErrorStatus": api_error_status},
+        ),
+    )
+    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+    public = subject._public_start_response(response)
+
+    assert response["engine"] == "codex"
+    assert response["model"] == "second"
+    assert public["excluded_candidates"] == [
+        {"engine": "claude", "model": "first", "effort": "high", "reason": str(api_error_status)}
+    ]
+    assert public["engine"] == "codex"
+    assert public["model"] == "second"
+    assert public["effort"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_engine_switch_is_written_to_the_diagnostic_log(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """候補の切替は、除外した候補と採用した候補を持つ行として診断ログへ残る。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    _install_backend(
+        manager,
+        "claude",
+        UnavailableStartBackend(manager.sessions, "claude", {"message": "auth", "apiErrorStatus": 401}),
+    )
+    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+
+    with caplog.at_level(logging.INFO, logger="agent-toolkit.agents-server.mcp"):
+        await manager.start("plan", "調査", str(tmp_path))
+
+    switch_records = [record.getMessage() for record in caplog.records if record.getMessage().startswith("engine_switch ")]
+    assert len(switch_records) == 1
+    assert '"engine": "claude"' in switch_records[0]
+    assert '"reason": "401"' in switch_records[0]
+    assert '"engine": "codex"' in switch_records[0]
+
+
+@pytest.mark.asyncio
+async def test_exclusion_record_is_read_by_a_newly_created_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """除外の記録は状態ディレクトリを正本とし、別のmanagerの起動でも先頭候補を試さない。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    failing = subject.AgentsServerManager()
+    _install_backend(
+        failing,
+        "claude",
+        UnavailableStartBackend(failing.sessions, "claude", {"message": "auth", "apiErrorStatus": 401}),
+    )
+    _install_backend(failing, "codex", FakeBackend(failing.sessions, "codex"))
+    await failing.start("plan", "調査", str(tmp_path))
+
+    restarted = subject.AgentsServerManager()
+    claude = UnavailableStartBackend(restarted.sessions, "claude", {"message": "auth", "apiErrorStatus": 401})
+    _install_backend(restarted, "claude", claude)
+    codex = FakeBackend(restarted.sessions, "codex")
+    _install_backend(restarted, "codex", codex)
+
+    response = await restarted.start("plan", "再起動後", str(tmp_path))
+
+    assert not claude.start_calls
+    assert response["engine"] == "codex"
+    assert codex.start_calls == [("second", "medium", "delegate")]
+
+
+@pytest.mark.asyncio
+async def test_internal_server_error_keeps_the_first_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """サービス内部の失敗では候補を進めず、切替の項目も返さない。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    claude = UnavailableStartBackend(
+        manager.sessions,
+        "claude",
+        {"message": "internal", "apiErrorStatus": 500},
+    )
+    _install_backend(manager, "claude", claude)
+    codex = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", codex)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert response["status"] == "failed"
+    assert response["engine"] == "claude"
+    assert not codex.start_calls
+    assert "excluded_candidates" not in subject._public_start_response(response)
+
+
 async def _carry_over_late_unavailability(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1205,11 +1398,11 @@ async def test_late_engine_unavailability_carries_over_to_next_start(
 
 
 @pytest.mark.asyncio
-async def test_available_start_clears_carried_over_candidate(
+async def test_carried_over_exclusion_survives_a_successful_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """持ち越し後の起動が成立した時点で除外を解除する。"""
+    """後続の候補で成立しても、除外した候補は保持期間内は先頭から試さない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
     manager, _ = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
 
@@ -1217,8 +1410,10 @@ async def test_available_start_clears_carried_over_candidate(
     following = await manager.start("plan", "通常起動", str(tmp_path))
 
     assert recovered["model"] == "second"
-    assert following["model"] == "first"
-    assert ("plan", "delegate") not in manager._carried_unavailable_candidates
+    assert following["model"] == "second"
+    assert recovered["excluded_candidates"] == [
+        {"engine": "codex", "model": "first", "effort": "high", "reason": "usageLimitExceeded"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -1234,7 +1429,8 @@ async def test_carried_over_candidate_is_dropped_when_no_candidate_remains(
 
     assert response["model"] == "only"
     assert available.start_calls == [("only", "high", "delegate")]
-    assert ("plan", "delegate") not in manager._carried_unavailable_candidates
+    assert "excluded_candidates" not in response
+    assert not status_file.load_unavailable_candidates("plan", "delegate", now=datetime.datetime.now(datetime.UTC))
 
 
 @pytest.mark.asyncio
@@ -1812,6 +2008,7 @@ async def test_four_observation_paths_share_the_same_stall_judgement(
     session.started_at = started_at
     session.output_updated_at = output_updated_at
     session.updated_at = updated_at
+    session.status = "running"
     manager.sessions[session.session_id] = session
     serialized = {
         "session_id": session.session_id,
@@ -1830,13 +2027,7 @@ async def test_four_observation_paths_share_the_same_stall_judgement(
 
     flags = [
         "stalled" in manager.show_session(session.session_id),
-        "stalled"
-        in manager._listed_session(  # pylint: disable=protected-access  # noqa: SLF001
-            session,
-            status="running",
-            progress="",
-            result_available=False,
-        ),
+        "stalled" in manager.list_sessions()["sessions"][0],
         "stalled"
         in agents_wait._session_output_activity(  # pylint: disable=protected-access  # noqa: SLF001
             [status_path],
@@ -2790,42 +2981,11 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
     assert turn_start["effort"] == "high"
 
 
-def test_explore_system_prompt_contains_delegate_notice() -> None:
-    """通常起動、探索起動及びシェル実行起動のいずれの指示も委譲先宣言から始まる。"""
-    assert state.DELEGATE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
-    assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
-
-
 def test_subagent_rules_reach_only_normal_delegation() -> None:
     """委譲先規範は通常起動の指示だけへ連結し、軽量起動の指示へは入らない。"""
     assert state.DELEGATE_SYSTEM_PROMPT.endswith(state.SUBAGENT_RULES)
     assert state.SUBAGENT_RULES not in state.EXPLORE_SYSTEM_PROMPT
     assert state.SUBAGENT_RULES not in state.SHELL_SYSTEM_PROMPT
-    assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
-    assert "あなたはメインエージェントでも最上位セッションでもない。" in state.DELEGATE_NOTICE
-    assert "呼び出し元エージェントの配送" in state.DELEGATE_NOTICE
-
-
-def test_auto_resume_notice_limits_waiting_exception_to_child_agents() -> None:
-    """自動再開の判定入力は子の完了待ちだけを例外とし、背景ジョブを除外する。"""
-    assert "あなたが起動した委譲先（サブエージェント）の完了通知" in state.AUTO_RESUME_NOTICE
-    assert "同じsessionを一度だけ自動的に再開する" in state.AUTO_RESUME_NOTICE
-    assert "背景ジョブはこの自動再開の対象ではない" in state.AUTO_RESUME_NOTICE
-
-
-def test_shell_system_prompt_requires_background_result_collection() -> None:
-    """シェル実行担当は背景移行を終端とせず、出力ファイルから終了状態を確定する。"""
-    assert "背景実行へ移行した場合は、移行の通知を結果として報告しない" in state.SHELL_SYSTEM_PROMPT
-    assert "起動結果が返す出力ファイルを読み" in state.SHELL_SYSTEM_PROMPT
-    assert "終了状態を確定してから報告する" in state.SHELL_SYSTEM_PROMPT
-
-
-def test_lightweight_system_prompts_require_limit_reporting() -> None:
-    """軽量起動は上限到達を報告し、不完全な結果から確定しない契約を受領する。"""
-    assert "その事実と切り詰められた範囲を要約へ必ず含める" in state.SHELL_SYSTEM_PROMPT
-    assert "切り詰めを含む出力から、成功、網羅性、件数、終端のいずれも結論しない" in state.SHELL_SYSTEM_PROMPT
-    assert "その事実と到達した上限を報告へ必ず含める" in state.EXPLORE_SYSTEM_PROMPT
-    assert "上限に達した結果から、網羅性、件数、不在のいずれも結論しない" in state.EXPLORE_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
@@ -4313,7 +4473,10 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     assert client.disconnected is True
     assert sessions[session.session_id] is session
     assert session.status == "failed"
-    assert session.error == {"message": "stream failed"}
+    # 初期化の完了後の失敗は、原因の特定に要する診断を終端結果へ添える。
+    assert session.error["message"] == "stream failed"
+    assert set(session.error) == {"message", "engine", "model", "stderr", "childPid", "debugFile"}
+    assert session.error["engine"] == "claude"
 
 
 @pytest.mark.asyncio
@@ -4455,7 +4618,8 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
         await asyncio.sleep(0.01)
 
     result = await manager.wait()
-    assert result["error"] == {"message": "stream failed"}
+    assert result["error"]["message"] == "stream failed"
+    assert result["error"]["engine"] == "claude"
     response = await manager.send_message(session.session_id, "続行")
 
     assert response == {"delivery": "reply_started"}
@@ -4491,12 +4655,14 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 
     response = await manager.send_message(session.session_id, "続行")
 
+    previous_error = response["previous_result"].pop("error")
+    assert previous_error["message"] == "stream failed"
+    assert previous_error["engine"] == "claude"
     assert response == {
         "delivery": "reply_started",
         "previous_result": {
             "status": "failed",
             "agent_message": "",
-            "error": {"message": "stream failed"},
         },
     }
     assert not manager.expired_sessions

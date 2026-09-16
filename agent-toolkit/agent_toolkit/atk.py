@@ -61,6 +61,7 @@ from agent_toolkit._atk.wi import grep as _grep  # noqa: E402
 from agent_toolkit._atk.wi import listing as _list  # noqa: E402
 from agent_toolkit._atk.wi import mutations as _mutations  # noqa: E402
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402
+from agent_toolkit._atk.wi import repo as _wi_repo  # noqa: E402
 from agent_toolkit._atk.wi import show as _show  # noqa: E402
 from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
@@ -230,15 +231,31 @@ def _add_target_repo_arg(
     help_extra: str = "",
     multiple: bool = False,
     required: bool = False,
+    allow_all: bool = False,
+    resolved_by_consumer: bool = False,
 ) -> None:
-    """`--target-repo`オプションを共通形式で登録する。"""
+    """`--target-repo`オプションを共通形式で登録する。
+
+    受理条件をヘルプ文面と同じ位置で確定する。`allow_all`は対象を限定しない`all`を受理するか、
+    `resolved_by_consumer`はサブコマンド自身が未指定時の解決を行うかを表す。
+    登録した値は`_resolve_wi_target_repo`が読み取る。
+    """
+    default_note = (
+        "" if required else "省略時はカレントディレクトリが属するリポジトリを対象とし、Gitの作業ツリー外では対象を限定しない。"
+    )
+    all_note = f"`{_wi_repo.TARGET_REPO_ALL}`を指定すると対象を限定しない。" if allow_all else ""
     parser.add_argument(
         "--target-repo",
         metavar="REPO",
         action="append" if multiple else "store",
         default=None,
         required=required,
-        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターまたは検証する。" + help_extra,
+        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターまたは検証する。" + default_note + all_note + help_extra,
+    )
+    parser.set_defaults(
+        _target_repo_multiple=multiple,
+        _target_repo_allow_all=allow_all,
+        _target_repo_resolved_by_consumer=resolved_by_consumer,
     )
 
 
@@ -376,6 +393,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "ローカルHEADを持たないリポジトリ識別子として解決する。"
             "frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。"
         ),
+        resolved_by_consumer=True,
     )
     add.set_defaults(subparser=add)
 
@@ -383,7 +401,7 @@ def _add_wi_add_parser(sub: Any) -> None:
 def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
     list_ = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk wi list"])
-    _add_target_repo_arg(list_, multiple=True)
+    _add_target_repo_arg(list_, multiple=True, allow_all=True)
     list_.add_argument(
         "--type",
         choices=("all", *_common.WI_TYPES),
@@ -446,7 +464,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
-    _add_target_repo_arg(show, multiple=True)
+    _add_target_repo_arg(show, multiple=True, allow_all=True)
     _output_file.add_output_file_arg(show)
     show.add_argument(
         "--type",
@@ -712,7 +730,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         default="all",
         help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
-    _add_target_repo_arg(grep)
+    _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
     _output_file.add_output_file_arg(grep)
     grep.set_defaults(subparser=grep)
@@ -737,6 +755,8 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）。既定は現在の作業リポジトリ。",
     )
+    # 常駐処理はローカル作業ツリーのパスを必要とするため、未指定時の解決を自身で行う。
+    loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
     loop.add_argument(
         "--worktree",
         nargs="?",
@@ -952,7 +972,10 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
         if args.filenames:
             args.subparser.error("FILENAMEと--allは同時に指定できません。")
         if args.target_repo is None:
-            args.subparser.error("--allには--target-repoが必要です。")
+            args.subparser.error(
+                "--allの対象リポジトリを確定できません。"
+                "カレントディレクトリを対象リポジトリの作業ツリーへ移すか、--target-repoを指定してください。"
+            )
         if args.state is not None:
             args.subparser.error("--stateは--allと併用できません。")
         return
@@ -965,6 +988,34 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
     non_all_filters = args.type != ["all"] or args.status != ["active"] or args.answered != ["all"] or args.source is not None
     if non_all_filters:
         args.subparser.error("--type・--status・--answered・--sourceは--allとともに指定してください。")
+
+
+def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """`--target-repo`の未指定時の既定と`all`の受理可否を確定する。
+
+    確定後の`args.target_repo`は、Noneが対象の非限定を、値が対象リポジトリを表す。
+    未指定のときはカレントディレクトリが属するリポジトリを対象とし、解決できない場合は非限定とする。
+    `all`は非限定の指定として受理し、単一の対象リポジトリを確定するサブコマンドでは拒否する。
+    未指定時の解決を自ら行うサブコマンドへは既定の解決を適用せず、`all`の拒否だけを適用する。
+    """
+    if args.command != "wi" or not hasattr(args, "target_repo"):
+        return
+    raw = args.target_repo
+    values = raw if isinstance(raw, list) else ([] if raw is None else [raw])
+    if _wi_repo.TARGET_REPO_ALL in values:
+        if not getattr(args, "_target_repo_allow_all", False):
+            parser.error(
+                f"--target-repo={_wi_repo.TARGET_REPO_ALL}は、単一の対象リポジトリを確定する"
+                f"`atk wi {args.wi_subcommand}`では指定できません。"
+            )
+        args.target_repo = None
+        return
+    if values or getattr(args, "_target_repo_resolved_by_consumer", False):
+        return
+    current = _wi_repo.detect_current_repo_id()
+    if current is None:
+        return
+    args.target_repo = [current] if getattr(args, "_target_repo_multiple", False) else current
 
 
 def _normalize_repeatable_wi_filters(args: argparse.Namespace) -> None:
@@ -1059,6 +1110,7 @@ def main(
         args._help_parser.print_help()
         return
     _normalize_repeatable_wi_filters(args)
+    _resolve_wi_target_repo(args, parser)
     _resolve_note_file(args, parser)
     output_path = getattr(args, "output_file", None)
     if output_path is not None and not _output_file_active:

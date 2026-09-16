@@ -57,7 +57,8 @@ auto modeの拒否ではなくpermissions設定による確認ダイアログが
 
 ## 既知の誤拒否パターンと対応
 
-次の事例を実機で観測した。
+本節の表は、拒否に遭遇した場合に適用を検討する対応の対応付けとする。
+当該表は観測日付と対象版数の記録を持たないため、適用の前に当該環境で拒否メッセージ本文と分類名を取得し、該当を確認する。
 分類名は`claude auto-mode defaults`の出力で確認できる区分を指す。
 
 | 拒否される操作 | 分類名 | 対応 |
@@ -66,14 +67,14 @@ auto modeの拒否ではなくpermissions設定による確認ダイアログが
 | `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | CLIがプロセス開始情報と実行ファイルを再照合し、単一PIDだけを停止する |
 | リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 設定に`Release Workflow Dispatch`が存在する場合、個人リポジトリの`release.yaml`起動に限定して同ルールを使う |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | AWI処理由来に限定するルールを追加する |
-| MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | マージ操作を無条件に許可するルールを追加する（必須レビュー・チェックの迂回形態とhard_deny領域は対象外のまま） |
+| MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | `autoMode.environment`の信頼境界と一致する個人リポジトリへ限定して許可するルールを追加する（必須レビュー・チェックの迂回形態とhard_deny領域は対象外のまま） |
 | ユーザーの指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | `Reconsidered Retry Approval`により拒否本文とユーザーメッセージを照合し、同一のコマンド・引数・ツールを1回だけ再発行する |
 
 - `git commit --amend`はデフォルトの`soft_deny`が自身の作成したHEADへのamendを`clears`するが、
   別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
 - Self Modificationの許可ルールは、正規のAWI処理フロー由来・ユーザー投入AWI限定
   （自己生成起点を除外）・計画に基づく実装工程を条件とする
-- マージ許可ルールは承認条件を付けない無条件許可とする（ユーザー指定）。
+- マージ許可ルールは`autoMode.environment`の信頼境界と一致する個人リポジトリへ対象を限定し、承認条件は付けない（ユーザー指定）。
   AWI本文・UWI回答による承認はtranscript外の実体でありclassifierが参照できないため、
   承認条件付きのルールでは承認済みマージの再拒否が残る。
   必須レビュー・チェックの迂回形態（`--admin`・`--force`等）はCI Bypass領域として対象外を維持する

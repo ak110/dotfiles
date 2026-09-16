@@ -31,7 +31,7 @@ description: >
 
 改行・厳格モード・エンコーディング指定・パス操作などの記述作法は
 `<plugin root>/skills/writing-standards/references/powershell.md`に従う。
-ペアファイル側で追加する事項は次の2点とする。
+ペアファイル側で追加する事項を次に挙げる。
 
 - BOMなしUTF-8で出力する場合は`System.Text.UTF8Encoding`のインスタンスを使う
   （既存`install-claude.ps1`の`$script:utf8NoBom`を参照する）

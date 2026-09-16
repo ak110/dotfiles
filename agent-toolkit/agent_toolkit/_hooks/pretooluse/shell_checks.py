@@ -93,6 +93,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 from __future__ import annotations
 
 import ast
+import dataclasses
 import datetime
 import importlib
 import json
@@ -135,6 +136,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
     CwdResolution,
     GitEvent,
+    QuotingScanner,
     extract_git_events,
     resolve_cwd_change,
     resolve_execution_segment,
@@ -306,12 +308,49 @@ def _rewrite_simple_git_grep(command: str) -> str | None:
     return shlex.join(["git", "grep", *moved, pattern, *rest])
 
 
-def _split_simple_truncation(command: str) -> tuple[str, str] | None:
-    """単純な1段パイプのうち後段が切り詰めコマンドである場合だけ分割する。"""
-    masked = _bash_command_parser.mask_heredoc_bodies(command)
-    if any(operator in masked for operator in ("|&", "||", ";", "&&", "\n")) or masked.count("|") != 1:
+def _single_unquoted_pipe_index(masked: str) -> int | None:
+    """引用の外側に単独のパイプ演算子がちょうど1つある場合に、その位置を返す。
+
+    `|&`・`||`・`;`・`&&`・改行のいずれかが引用の外側にある入力と、引用の外側のパイプが
+    1つでない入力はNoneを返す。引用が閉じない入力もNoneを返す。
+    入力はheredoc本文をマスクした文字列とし、当該マスクは文字位置を保つため、
+    返す位置は元のコマンド文字列へそのまま適用できる。
+    """
+    positions: list[int] = []
+    scanner = QuotingScanner(masked)
+    while scanner.index < len(masked):
+        if scanner.consume_quoted():
+            continue
+        index = scanner.index
+        char = masked[index]
+        if char in {"'", '"'}:
+            scanner.enter_quote(char)
+            continue
+        if char == "\n" or char == ";" or masked.startswith("&&", index):
+            return None
+        if masked.startswith("||", index) or masked.startswith("|&", index):
+            return None
+        if char == "|":
+            positions.append(index)
+        scanner.index += 1
+    if scanner.quote is not None or len(positions) != 1:
         return None
-    producer, consumer = (part.strip() for part in command.split("|", 1))
+    return positions[0]
+
+
+def _split_simple_truncation(command: str) -> tuple[str, str] | None:
+    """単純な1段パイプのうち後段が切り詰めコマンドである場合だけ分割する。
+
+    パイプ演算子の判定と分割位置は引用を考慮した走査で求める。
+    検索patternなどの引数の内側にあるパイプ文字を演算子として数えると、
+    当該呼び出しが切り詰めの補正の対象から外れる。
+    """
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    pipe_index = _single_unquoted_pipe_index(masked)
+    if pipe_index is None:
+        return None
+    producer = command[:pipe_index].strip()
+    consumer = command[pipe_index + 1 :].strip()
     try:
         consumer_tokens = shlex.split(consumer, posix=True)
     except ValueError:
@@ -329,10 +368,37 @@ def _split_simple_truncation(command: str) -> tuple[str, str] | None:
     return None
 
 
-def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str, list[str], str | None] | None:
+@dataclasses.dataclass(frozen=True)
+class _TruncationFix:
+    """切り詰めの補正が1つの直列区間へ適用した内容。
+
+    通知本文が是正の対象を一意に示すため、検出した直列区間と当該区間で切り詰めと判定した
+    コマンドの表記を保持する。
+    """
+
+    position: int
+    """当該呼び出しの何番目の直列区間か。1から数える。"""
+
+    segment: str
+    """検出の対象とした直列区間のコマンド文字列。"""
+
+    truncation_command: str
+    """当該区間で切り詰めと判定したコマンドの表記。"""
+
+    log_path: str
+    """標準出力の保存先の絶対パス。"""
+
+    stderr_merged: bool
+    """保存先へ標準エラーも入るか。producerが`2>&1`を末尾に持つ場合に真とする。"""
+
+
+_STDERR_DUPLICATION_SUFFIX = "2>&1"
+
+
+def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str, list[str], _TruncationFix | None] | None:
     """1つの直列区間にある競合しない補正を適用する。
 
-    戻り値の3つ目は、切り詰めを補正した場合の保存先の絶対パスとする。
+    戻り値の3つ目は、切り詰めを補正した場合の適用内容とする。`position`は呼び出し元が確定する。
     切り詰めの通知は呼び出し全体の構成に依存するため、本関数では組み立てず`_autofix_bash_command`が生成する。
     """
     truncation = _split_simple_truncation(command)
@@ -345,7 +411,7 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
     if git_grep_rewritten is not None:
         rewritten = git_grep_rewritten
         notices.append("`git grep`のパターン後方にある既知オプションを受理位置へ移した。")
-    log_path: str | None = None
+    fix: _TruncationFix | None = None
     if truncation is not None:
         if not session_id:
             return None
@@ -354,23 +420,45 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
         except (managed_temp.ManagedTempError, OSError):
             return None
         log_path = str(session_temp / f"bash-output-{time.time_ns()}.log")
-        rewritten = f"{rewritten} > {shlex.quote(log_path)}"
+        # `2>&1`はその時点の標準出力の宛先を標準エラーへ複製する。保存先への
+        # リダイレクトを当該冗長化の後方へ置くと、標準エラーは元の宛先のまま残る。
+        stderr_merged = rewritten.rstrip().endswith(_STDERR_DUPLICATION_SUFFIX)
+        if stderr_merged:
+            body = rewritten.rstrip()[: -len(_STDERR_DUPLICATION_SUFFIX)].rstrip()
+            rewritten = f"{body} > {shlex.quote(log_path)} {_STDERR_DUPLICATION_SUFFIX}"
+        else:
+            rewritten = f"{rewritten} > {shlex.quote(log_path)}"
+        fix = _TruncationFix(
+            position=0,
+            segment=command,
+            truncation_command=truncation[1],
+            log_path=log_path,
+            stderr_merged=stderr_merged,
+        )
     if rewritten == command:
         return None
-    return rewritten, notices, log_path
+    return rewritten, notices, fix
 
 
-def _format_truncation_autofix_notice(saved: list[tuple[str, str]], *, total_segments: int) -> str:
+def _format_truncation_autofix_notice(saved: list[_TruncationFix], *, total_segments: int) -> str:
     """切り詰め補正の通知本文を、補正対象の直列区間と保存先の対応として組み立てる。
 
-    実行主体が受け取る結果の変化を本文へ示す。
+    実行主体が是正の対象を特定できるよう、検出した直列区間と当該区間で切り詰めと判定した
+    コマンドの表記を区間ごとに示す。
+    実行主体が受け取る結果の変化も本文へ示す。
     全ての直列区間を保存した場合と一部だけを保存した場合で、標準出力に残る内容の案内を切り替える。
     """
-    lines = [f"- `{segment}` の標準出力を`{log_path}`へ保存した" for segment, log_path in saved]
+    lines = [
+        f"- 第{fix.position}直列区間 `{fix.segment}`: 切り詰めと判定したコマンドは`{fix.truncation_command}`。"
+        f"{'標準出力と標準エラー' if fix.stderr_merged else '標準出力'}を`{fix.log_path}`へ保存した"
+        for fix in saved
+    ]
     if len(saved) >= total_segments:
         remaining = "当該呼び出しは標準出力を返さない。"
     else:
         remaining = "切り詰めを含まない直列区間の標準出力は当該呼び出しの結果へ残る。"
+    if any(not fix.stderr_merged for fix in saved):
+        remaining += "標準エラーを保存先へ向けていない区間の標準エラーは、当該呼び出しの結果へ残る。"
     return "\n".join(
         [
             "切り詰め処理を除去し、標準出力の全量を保存先へ補正した。",
@@ -404,21 +492,21 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
     segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     replacements: list[tuple[int, int, str]] = []
     notices: list[str] = []
-    saved: list[tuple[str, str]] = []
-    position = 0
-    for segment in segments:
-        start = command.find(segment, position)
+    saved: list[_TruncationFix] = []
+    cursor = 0
+    for index, segment in enumerate(segments, start=1):
+        start = command.find(segment, cursor)
         if start < 0:
             return None
-        position = start + len(segment)
+        cursor = start + len(segment)
         fixed = _autofix_bash_segment(segment, cwd, session_id)
         if fixed is None:
             continue
-        rewritten, segment_notices, log_path = fixed
-        replacements.append((start, position, rewritten))
+        rewritten, segment_notices, fix = fixed
+        replacements.append((start, cursor, rewritten))
         notices.extend(segment_notices)
-        if log_path is not None:
-            saved.append((segment, log_path))
+        if fix is not None:
+            saved.append(dataclasses.replace(fix, position=index))
     if not replacements:
         return None
     rewritten_command = command
@@ -652,6 +740,43 @@ _VALUE_OPTIONS: frozenset[str] = frozenset(
         "--before-context",
     }
 )
+_FIND_NON_PATH_VALUE_PREDICATES: frozenset[str] = frozenset(
+    {
+        "-name",
+        "-iname",
+        "-regex",
+        "-iregex",
+        "-lname",
+        "-ilname",
+        "-maxdepth",
+        "-mindepth",
+        "-type",
+        "-size",
+        "-perm",
+        "-user",
+        "-group",
+        "-mtime",
+        "-mmin",
+        "-path",
+        "-ipath",
+        "-wholename",
+        "-iwholename",
+    }
+)
+"""`find`の述語のうち、直後のトークンを値として取り、当該値が実在のパスを指さないもの。
+
+`-name`系と`-regex`系の値はファイル名のパターン、`-path`系の値は探索先からの相対パターンであり、
+`-maxdepth`・`-type`などの値は数値と種別である。いずれも実在を検査する対象にならない。
+値が実在するパスを指す`-newer`・`-newermt`・`-anewer`・`-cnewer`は含めず、現行どおりパス候補として扱う。
+当該述語の値をパス候補として扱うと、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が
+推測したパスの解決手段として指定する`find`の呼び出しそのものへ不在の警告が発火する。
+"""
+_COMMAND_VALUE_OPTIONS: dict[str, frozenset[str]] = {"find": _FIND_NON_PATH_VALUE_PREDICATES}
+"""実行位置のコマンド名ごとの、直後のトークンを値として取るオプション。
+
+`_VALUE_OPTIONS`はgrep系のオプションを対象とするため、別のコマンドの述語を同じ集合へ加えない。
+同じ集合へ加えると、当該オプション名を持つ別のコマンドの判定も変わる。
+"""
 _PATH_LIKE_PATTERN = re.compile(r"[/]|^[.~]|\.[A-Za-z0-9_]+$")
 
 
@@ -680,6 +805,7 @@ def _path_operands(segment: _ExecutionSegment) -> list[str]:
     if name not in _PATH_OPERAND_COMMANDS:
         return []
     tokens = list(_argument_tokens(segment))
+    value_options = _VALUE_OPTIONS | _COMMAND_VALUE_OPTIONS.get(name, frozenset())
     operands: list[str] = []
     option_terminator = False
     pattern_consumed = name not in _PATTERN_FIRST_COMMANDS
@@ -694,7 +820,7 @@ def _path_operands(segment: _ExecutionSegment) -> list[str]:
             name_part = token.split("=", 1)[0]
             if name_part in _PATTERN_OPTIONS:
                 pattern_consumed = True
-            if name_part in _VALUE_OPTIONS and "=" not in token:
+            if name_part in value_options and "=" not in token:
                 index += 2
                 continue
             index += 1
@@ -720,6 +846,10 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
     規範の求める形であり、当該形を不在として扱うと規定どおりの操作へ毎回警告が発火するためである。
     除外は当該コマンド文字列から書き込み先として確定できる宛先に限り、変数とglobを含むトークンは
     現行どおり判定の対象外のまま扱う。
+    相対パスの解決基準は、同じコマンド文字列の内側にある`cd`の遷移先を反映した実効の作業ディレクトリとする。
+    `cd <ディレクトリ> &&`に続く相対パスを起動時の作業ディレクトリから解決すると、
+    実際には成功する呼び出しへ不在の警告が発火する。
+    `cd`の遷移先を静的に解決できない場合は、起動時の作業ディレクトリを基準として現行どおり判定する。
     不在のパスは実行位置ごとに全件を列挙し、複数パスを渡した呼び出しの是正が1回で済む形にする。
     通した場合の結果は当該コマンドが不在のパスで失敗することに限り、作業ツリーへ副作用を残さない。
     `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、警告で返す。
@@ -728,16 +858,22 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
         return None
     missing: list[str] = []
     created: set[pathlib.Path] = set()
+    current = CwdResolution(cwd, True)
     for segment in _extract_execution_segments(command):
         if not segment.resolved or not segment.tokens:
             continue
+        cwd_change = resolve_cwd_change(list(segment.tokens), current)
+        if cwd_change is not None:
+            current = cwd_change
+            continue
+        base = current.path if current.resolved and current.path else cwd
         for candidate in _path_operands(segment):
             if candidate in {"-", "/dev/stdin"} or any(character in candidate for character in "*$?[]{}~`"):
                 continue
             if not _looks_like_path(candidate):
                 continue
             path = pathlib.Path(candidate)
-            resolved = path if path.is_absolute() else pathlib.Path(cwd) / path
+            resolved = path if path.is_absolute() else pathlib.Path(base) / path
             if resolved in created:
                 continue
             if not resolved.exists() and candidate not in missing:
@@ -746,7 +882,7 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
             if any(character in target for character in "*$?[]{}~`"):
                 continue
             target_path = pathlib.Path(target)
-            created.add(target_path if target_path.is_absolute() else pathlib.Path(cwd) / target_path)
+            created.add(target_path if target_path.is_absolute() else pathlib.Path(base) / target_path)
     if not missing:
         return None
     return _llm_notice(
@@ -1747,10 +1883,32 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
     )
 
 
-def _check_bash_atk_options(command: str) -> str | None:
-    """公開済み最下層`atk`サブコマンドの未対応オプションを実行前に検出する。
+_ATK_HELP_ONLY_FLAGS: frozenset[str] = frozenset({"-h", "--help"})
+"""全ての`atk`サブコマンドが共通で受理するヘルプのフラグ。
 
-    通した場合の結果は`atk`が未受理オプションで終了することに限り、復元できるため警告で返す。
+当該フラグだけを受理し、値付きオプションも位置引数も持たないサブコマンドは引数を受理しない。
+"""
+
+
+def _format_atk_accepted_options(flags: frozenset[str], valued: frozenset[str]) -> str:
+    """警告本文へ載せる受理オプションの一覧行を組み立てる。
+
+    受理しないオプションの通知と位置引数の通知が同じ表現を使うため、生成経路を1つに保つ。
+    """
+    return "当該サブコマンドが受理するオプション: " + (", ".join(sorted(flags | valued)) or "なし")
+
+
+def _check_bash_atk_options(command: str) -> str | None:
+    """公開済み最下層`atk`サブコマンドの受理形式に一致しない引数を実行前に検出する。
+
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できると判定して警告で返す。
+    通した場合の結果は`atk`が受理形式の不一致で終了することに限り、副作用を残さないためである。
+    第1段で復元できると判定した操作は反復しても遮断へ格上げしないため、第2段は適用しない。
+    通知本文は当該判定が保持する受理形式から組み立て、受理形式に応じて対処を切り替える。
+    受理形式から導かない固定の対処文は、引数を受理しないサブコマンドで実行できない案内になる。
+    認識できた経路の直下に当該階層が受理しないサブコマンドがある呼び出しは、
+    `_check_bash_unknown_atk_subcommand`が階層の誤りとして扱うため本判定の対象から外す。
+    同じ呼び出しへ実態の異なる2つの本文を返さないためである。
     """
     from agent_toolkit.atk import command_option_contract  # pylint: disable=import-outside-toplevel
 
@@ -1759,6 +1917,8 @@ def _check_bash_atk_options(command: str) -> str | None:
             continue
         path = _recognized_atk_command_path(segment.tokens)
         if path is None:
+            continue
+        if _atk_unknown_subcommand(segment) is not None:
             continue
         contract = command_option_contract(path)
         if contract is None:
@@ -1793,10 +1953,9 @@ def _check_bash_atk_options(command: str) -> str | None:
             ):
                 pass
             elif token.startswith("-") and not re.fullmatch(r"-\d+(?:\.\d+)?", token):
-                accepted = ", ".join(sorted(flags | valued)) or "なし"
                 return _llm_notice(
                     f"`atk {' '.join(path)}`が受理しないオプションである。対象: {token}\n"
-                    f"当該サブコマンドが受理するオプション: {accepted}\n"
+                    f"{_format_atk_accepted_options(flags, valued)}\n"
                     "対処: 上記の受理オプションへ修正するか、`--help`を単独で確認する。",
                     tag=_WARN_TAG,
                     removable_cause=True,
@@ -1805,9 +1964,16 @@ def _check_bash_atk_options(command: str) -> str | None:
                 extra_positionals.append(token)
             index += 1
         if not positionals and extra_positionals:
+            accepts_no_arguments = not valued and set(flags) <= _ATK_HELP_ONLY_FLAGS
+            remedy = (
+                "対処: 当該サブコマンドは引数を受理しない。引数を付けずに再発行する。"
+                if accepts_no_arguments
+                else "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。"
+            )
             return _llm_notice(
                 f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(extra_positionals)}\n"
-                "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。",
+                f"{_format_atk_accepted_options(flags, valued)}\n"
+                f"{remedy}",
                 tag=_WARN_TAG,
                 removable_cause=True,
             )
@@ -2165,15 +2331,17 @@ def _segment_requires_complete_output(segment: _ExecutionSegment) -> bool:
     )
 
 
-def _pipeline_truncates_required_output(pipeline: Sequence[_ExecutionSegment]) -> bool:
-    """1つのパイプライン内で、必要な出力が全量保存されないまま切り詰められるかを判定する。
+def _pipeline_truncation_detections(pipeline: Sequence[_ExecutionSegment]) -> list[tuple[str, str]]:
+    """1つのパイプライン内で検出した、全量観測が必要なコマンドと切り詰めコマンドの対を返す。
 
     全量観測が必要なコマンドより後方で最初に現れる切り詰めコマンドを発生点とし、
-    その手前に`tee`が無い場合に真を返す。`tee`で全量を先に保存してから抽出する形は対象外とし、
+    その手前に`tee`が無い場合に当該対を加える。`tee`で全量を先に保存してから抽出する形は対象外とし、
     切り詰めた後に`tee`で保存する形は保存内容が既に切り詰め後であるため対象とする。
-    同一パイプラインに対象コマンドが複数ある場合は、いずれか1件でも該当すれば真を返す。
+    同一パイプラインに対象コマンドが複数ある場合は、該当する全件を返す。
     状態変更コマンドでは`head`・`tail`に加えて`grep`系も切り詰めとして扱う。
+    通知本文が是正の対象を一意に示すため、真偽ではなく検出した対を返す。
     """
+    detections: list[tuple[str, str]] = []
     for index, segment in enumerate(pipeline):
         if not _segment_requires_complete_output(segment):
             continue
@@ -2189,8 +2357,13 @@ def _pipeline_truncates_required_output(pipeline: Sequence[_ExecutionSegment]) -
             continue
         if any(_tee_saves_to_file(item) for item in following[:truncation_index]):
             continue
-        return True
-    return False
+        detections.append((segment.tokens[0], following[truncation_index].tokens[0]))
+    return detections
+
+
+def _pipeline_truncates_required_output(pipeline: Sequence[_ExecutionSegment]) -> bool:
+    """1つのパイプライン内で、必要な出力が全量保存されないまま切り詰められるかを判定する。"""
+    return bool(_pipeline_truncation_detections(pipeline))
 
 
 def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
@@ -2199,17 +2372,25 @@ def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
     全量をファイルへ保存してから必要部分を抽出する形、構造化出力をレコード種別で抽出する形、
     または分離したコンテキストで実行する形を解消手段として示す。
     全パイプラインの検証コマンドと保存本文を返すコマンドを対象とし、1件でも切り詰めに該当すれば1回だけ通知する。
+    通知本文へは、検出の対象とした直列区間と当該区間で切り詰めと判定したコマンドの表記を区間ごとに並べる。
+    是正の対象を示さない通知は、実行主体が入力全体を推測で書き直し、同じ形の再提出を反復させる。
     `;`・`&&`・`||`・`&`で連結した後続コマンドは対象コマンドの出力を受け取らないため対象外とする。
     判定は`_extract_execution_pipelines`が返す実行位置で行うため、対象コマンド名を検索語・引数として
     含むだけの場合は検出しない。実行位置を確定できない区間と、実行位置以外で起動される対象コマンドも
     検出しない（助言であり非検出側の誤差の実害が小さいため）。
     """
-    if not any(_pipeline_truncates_required_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
+    detected: list[str] = [
+        f"- 第{index}直列区間: 全量観測が必要なコマンドは`{required_command}`、"
+        f"切り詰めと判定したコマンドは`{truncation_command}`"
+        for index, pipeline in enumerate(_extract_execution_pipelines(command), start=1)
+        for required_command, truncation_command in _pipeline_truncation_detections(pipeline)
+    ]
+    if not detected:
         return None
     del session_id
     print(
         _block_notice(
-            "block: 全量観測が必要なコマンドの実行出力を`tail`・`head`・`grep`などで限定している。",
+            "block: 全量観測が必要なコマンドの実行出力を`tail`・`head`・`grep`などで限定している。\n" + "\n".join(detected),
             fix=(
                 "実行出力を`tail`・`head`で切り詰めている場合を含め、最初に全出力を保存し、"
                 "保存済みファイルから抽出するか、構造化出力から必要なレコード種別を選ぶか、"
@@ -2935,25 +3116,51 @@ def _atk_subcommand_catalog(prefix: tuple[str, ...]) -> list[tuple[str, str]]:
     return sorted(catalog)
 
 
-def _check_bash_unknown_atk_subcommand(command: str) -> str | None:
-    """`atk`のコマンド木に実在しないサブコマンドを指定した呼び出しを検出する。"""
-    for segment in _extract_execution_segments(command):
-        if not segment.resolved or len(segment.tokens) < 2:
-            continue
-        if pathlib.PurePath(segment.tokens[0]).name not in {"atk", "atk.py"}:
-            continue
+def _atk_unknown_subcommand(segment: _ExecutionSegment) -> tuple[tuple[str, ...], str] | None:
+    """`atk`区間が当該階層の受理しないサブコマンドを指定する場合に、経路と対象を返す。
+
+    照合は最上位の段と、認識できた経路の直下の段の双方へ適用する。
+    下位の段の誤りを受理形式の判定へ委ねると、当該判定は下位サブコマンドを位置引数として表現するため、
+    実態と異なる本文が返る。
+    当該階層が下位サブコマンドを持たない場合と、受理一覧を取得できない場合はNoneを返す。
+    """
+    if not segment.resolved or len(segment.tokens) < 2:
+        return None
+    if pathlib.PurePath(segment.tokens[0]).name not in {"atk", "atk.py"}:
+        return None
+    path = _recognized_atk_command_path(segment.tokens)
+    if path is None:
+        prefix: tuple[str, ...] = ()
         candidate = segment.tokens[1]
-        if candidate.startswith("-"):
+    else:
+        prefix = path
+        arguments = _argument_tokens(segment, 1 + len(path))
+        candidate = arguments[0] if arguments else ""
+    if not candidate or candidate.startswith("-"):
+        return None
+    catalog = _atk_subcommand_catalog(prefix)
+    if not catalog or any(name == candidate for name, _ in catalog):
+        return None
+    return prefix, candidate
+
+
+def _check_bash_unknown_atk_subcommand(command: str) -> str | None:
+    """`atk`のコマンド木に実在しないサブコマンドを指定した呼び出しを検出する。
+
+    当該階層が受理するサブコマンドと要約を本文へ示し、受領した実行主体が同じターンの内側で
+    正しい形へ書き換える材料を得られるようにする。
+    """
+    for segment in _extract_execution_segments(command):
+        unknown = _atk_unknown_subcommand(segment)
+        if unknown is None:
             continue
-        if _recognized_atk_command_path(segment.tokens) is not None:
-            continue
-        catalog = _atk_subcommand_catalog(())
-        if not catalog:
-            continue
+        prefix, candidate = unknown
+        catalog = _atk_subcommand_catalog(prefix)
         listed = "\n".join(f"- {name}: {summary}" for name, summary in catalog)
+        label = f"`atk {' '.join(prefix)}`" if prefix else "`atk`"
         return _llm_notice(
-            f"`atk`のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
-            f"`atk`が受理するサブコマンド:\n{listed}\n"
+            f"{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
+            f"{label}が受理するサブコマンド:\n{listed}\n"
             "対処: 上記のいずれかへ修正する。",
             tag=_WARN_TAG,
             removable_cause=True,

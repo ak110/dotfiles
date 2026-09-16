@@ -34,6 +34,11 @@ description: >
 - Python CLI入口の再構成を経由しないログと標準出力のメッセージは、WindowsのCP932で符号化できる範囲に収める。可否は`str.encode("cp932")`の成否で判定する。漢字にもU+20BB7のように符号化できないものがあり、em dash・en dash・`✓`・`•`も符号化できない
 - `pytools/post_apply.py`のステップが外部ツールの不在で当該ステップ全体をスキップする場合は、当該ツールを同じステップ又は先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
   利用者が導入先を選ぶアプリケーションは、この対象から外す
+- `rust/`配下の配置の単位は`rust/<クレート名>/`のCargoクレートとする。
+  記述作法の正本は`agent-toolkit:writing-standards`の`references/rust.md`とする。
+  `make test`は`rust/`配下を検査しないため、変更したクレートで`cargo fmt --check`、`cargo clippy`及び`cargo test`を近接検査として実行する。
+  CIでは`rust-lint` jobが同等の検査を担う。
+  配布版数の更新要求は`dotfiles-release`を正本とし、本書へ再掲しない
 
 ## テスト配置
 

@@ -836,8 +836,9 @@ class TestShowStatePrefixedFilename:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
+        # 対象リポジトリを明示し、`--target-repo`の既定解決によるgit呼び出しを検証対象から外す。
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", f"{state}/fb-001.md"], home=tmp_path)
+            atk.main(["wi", "show", f"{state}/fb-001.md", "--target-repo=all"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()

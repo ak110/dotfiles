@@ -3,60 +3,6 @@
 本リポジトリはchezmoi管理のdotfilesリポジトリであり、`.chezmoi-source/`配下を`~/.*`にデプロイする。
 多数の小規模なコマンドラインツールや、Claude Code用の共有設定（ルール・プラグイン）も持つ。
 
-## 開発手順
-
-- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
-  - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
-- ローカルで全体検査が必要な場合の実行方法: `make test`
-  - `make test`（`uv run --frozen pyfltr run --no-fix`）はlintで自動修正しない。
-    ただしpyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は
-    `--no-fix`を付けても対象ファイルを書き換え、書き換えた場合も終了コード0で成功扱いになる。
-    書き換えの対象は、整形結果が現在の内容と異なるファイル、`prek`が`.pre-commit-config.yaml`の
-    テキスト整形hookで扱うファイル、及び生成物の同期先である。
-    コミット範囲を確定する前に`git status`で自分の変更以外の差分の有無を確認する。
-    自動修正が必要な場合は`make format`（`uv run --frozen pyfltr fast`）を使う
-  - 特定ファイルに限定する場合はMCP経由の`run_for_agent`へ当該ファイルのパスを渡す。
-    MCPを利用できない場合は`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。
-    デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
-    `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
-    `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
-  - 修正後の再実行時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
-    CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
-  - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
-    `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
-  - 検証は変更ファイルに対応する近接検査を先に実行する。公開前の全体検査はCIへ委ね、ローカルでは次の2件を実行する。CIの成功を確認して全体検査の結論を確定する
-    - CIが実行しない検査: `uv run --frozen pyfltr run --commands=claude-plugin-validate`
-    - 複数の書込主体の成果を統合した後にだけ成立する検査: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの近接検査では検出できないため、全体検査をCIへ委ねる判定が成立する場合も公開工程のpush前に1回実行する
-  - ユーザーが局所変更の即時公開と、次回の`agent-toolkit:process-wi`での正式対応の両方を同じ指示で明示した場合だけ、即時公開では近接検査の成功と正式対応AWIの登録を条件として、全体検査とCI成功の待機を省略できる。push後はCIの起動とrun URLを確認し、省略した検査、未確定のCI、run URL及び正式対応AWIを報告する。次回の正式対応では通常どおり全体検査とCI成功を確認し、即時公開済みであることを検査の代替にしない
-  - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、当該作業場所を作成した主体が検査の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
-    - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
-    - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する
-    - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、検査へ与えるのと同じ環境変数を与えて`mise trust`を実行する
-    - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
-- 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
-  - `agent-toolkit:process-wi`では、次の2条件がいずれも成立する場合に`develop`から`master`へのリリースPRを作成し、マージまで実施する。判定と実施はメインが担う。導入の経緯と根拠は[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)にある
-    - 第1条件: 選定工程の完了時点の`atk wi list --target-repo=<対象リポジトリの絶対パス> --skip-pull`の標準出力を判定の入力とする。当該セッションが処理対象へ固定した集合の項目を除いた残りが、`state`が`hold`の項目と、`state`が`inbox`かつ`ready`が偽の項目だけである。選定工程の完了でAWIの状態を照合するために実行する当該コマンドの出力をそのまま判定へ用い、判定専用の実行を追加しない
-    - 第2条件: 公開工程のpushとCI成功を確認した後に`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`をそれぞれ実行し、返る一意な短縮OIDが互いに異なる
-    - 第1条件は選定工程の完了時点で評価し、判定結果と、判定に用いた出力に残った項目のファイル名、`state`及び`ready`を、当該セッションの管理対象一時領域直下の`daily-release-condition1.txt`へ記録する。公開工程では当該ファイルを読んで第1条件の判定結果とし、`atk wi list`を再実行しない。当該ファイルが無い場合は第1条件を不成立として扱う。選定工程の判定時点より後に登録された項目は判定の対象へ含めず、次回セッションで扱う
-    - 条件が成立しない場合は、成立しなかった条件と、第1条件が不成立のときは`daily-release-condition1.txt`に残る項目を報告し、PRを作成しない
-    - 実施する場合は、次の1行目で同じheadとbaseのopen PRを最大2件取得する。1件ならそのPRを再利用する。0件なら管理対象一時領域へPR本文のファイルを作成し、次の2行目でPRを作成する。2件取得した場合は対象を推測せず、両PRの番号とURLを報告して停止する。タイトルには当該セッションで反映した変更の主題を1文で書き、本文には反映したAWIの正本ファイル名と1行要約を列挙する
-
-      ```sh
-      gh pr list --repo ak110/dotfiles --base master --head develop --state open --limit 2 --json number,url,title,headRefName,baseRefName,state
-      gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>
-      ```
-
-    - 続けて、既存又は新規PRの完全なURLを指定して`.claude/skills/merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
-    - PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する
-  - それ以外の経路では、リリースPRの作成を手動で行う。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
-  - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はリリース経路によらず必要であり、更新漏れは`develop`へのpushで実行されるCIの`statusline-version` jobが検出する
-  - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
-- 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
-  OSパッケージの導入には権限が必要となる場合がある
-- `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
-  実ブラウザーテストを変更した場合は`make test-browser`を実行する
-- コミットメッセージtypeの判定例: [docs/development/commit-types.md](docs/development/commit-types.md)
-
 ## 詳細の参照先
 
 次の各文書は、判断のたびに適用する規範ではなく、経緯、根拠及び構造の記録である。
@@ -74,116 +20,17 @@
 - 規範の条文が根拠とする実測の日付・版数・再検証手段:
   [docs/development/audit-records.md](docs/development/audit-records.md)
 
-## 振り返りの参照文書
+## 本リポジトリのスキル
 
-`agent-toolkit:session-review`が読む本リポジトリ固有の参照文書は、Claude Codeでは`~/.claude/references/session-review-dotfiles.md`とする。
-Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
-同文書はセッションの所要時間目標と本リポジトリ固有の振り返り観点を保持する。
-配布元は`.chezmoi-source/dot_claude/references/session-review-dotfiles.md`である。
+次のスキルはリポジトリ直下の`.claude/skills/`配下にあり、配布対象外である。
+起動する場面は各スキルの`description`が定める。
 
-## 編集時に起動するスキル
-
-本節の`agent-toolkit-edit`・`pytools-edit`・`sync-platform-pair`は、リポジトリ直下の`.claude/skills/`配下にあり、配布対象外である。
-
-- `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時、及び同パス群を変更対象に含む計画の起草前はSkillツールで`agent-toolkit-edit`を呼び出す。
-  呼び出し漏れは編集時にPreToolUseフックが警告を返す。
-  権限設定の配置・marketplace管理・フック実装の配置先判断・version bump手順・worktree編集時の注意も同スキルへ集約する
-  - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-toolkit:writing-standards`を適用する
-- `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集時は`pytools-edit`を呼び出す
-  （配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを集約する）
-- プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`を呼び出して両側を同期する
-- 本リポジトリでコーディングエージェント向け文書の記述指針やフック実装の配置を判断するときは、
-  `agent-toolkit:writing-standards`（`references/agent-skills.md`・`references/claude-hooks.md`を含む）と
-  `agent-toolkit-edit`を正本とする
-  - 公式マーケットプレイスの`plugin-dev`各スキルと`skill-creator`は、frontmatterの項目名と受理値、
-    ディレクトリ構造の要件、フックイベントの入出力契約などの上流仕様を確認するために参照する
-  - 記述スタイル・構成・記述量の指針は自作規範を優先する
-- 本リポジトリでは`claude-code-setup:claude-automation-recommender`が推奨する自動化手段の選定を適用対象外とし、
-  `agent-toolkit:writing-standards`の振り分け規定と`agent-toolkit-edit`の「フック実装の配置先」に従う
-- コーディングエージェント向け文書を編集する実際の主体は、編集前に同じ実行コンテキストで
-  `docs/development/concepts.md`と`docs/development/incidents.md`の全文を読み、
-  確定済みの方針・事故対策との整合を確認する。要約、見出し一覧、部分読取及び別主体の読取結果は、
-  編集主体自身による全文読了の代わりにしない。
-  編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
-- 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
-  修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。
-  `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
-  サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
-
-## 変更後の規範の自セッション適用
-
-本リポジトリでコーディングエージェント自身のふるまいを定める規範を変更する作業では、変更を確定した時点から当該セッションの以降の作業へ変更後の文面を適用する。
-対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
-規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへ当該文面を明示して渡す。
-適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
-除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
-変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
-
-`agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
-`project_notes`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
-本節の適用対象となる規範を変更するAWIには、当該変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
-反映先に本リポジトリのコーディングエージェント向け文書を含むAWIには、`docs/development/concepts.md`と`docs/development/incidents.md`を編集主体自身が同じセッションで全文読む要求も書く。
-対象かどうかの判定は、当該AWIが挙げる反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行う。
-レーン担当は選定工程の固定出力ファイルから自レーンの`project_notes`を読むため、メインの起動プロンプトへ当該要求を再掲しない。
-メインは、`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、当該項目のファイル名と対象ファイルのパスを渡す。
-当該レーンで規範の変更を確定した主体は、同じレーンの以降の委譲先の起動プロンプトへ変更後の文面を明示して渡す。並行する他のレーンは当該変更を統合前に取得できないため、レーンをまたぐ伝播は本節の対象としない。
-
-## 固有差分
-
-### ロールとファイル群の対応
-
-本リポジトリと配布物には複数のロールが関与する。ファイル群を編集する際は対象読者を意識する。
-
-- dotfiles利用者: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
-- agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfiles利用者含む）
-  - 配布ルール（`~/.claude/rules/agent-toolkit/`）も導入済み前提で記述してよい
-- 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするコーディングエージェント
-  - 配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
-- dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント
-  - 全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`AGENTS.md`もロードする
-   （Claude Codeは`CLAUDE.md`経由のfile importで読む）
-
-各ファイル群の対象読者と役割。
-
-| ファイル群 | 対象読者 | 役割 |
-| --- | --- | --- |
-| `agent-toolkit/skills/`配下 | 全プロジェクト編集者 | スキルの指示本体 |
-| `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者・dotfiles利用者 | 常時自動ロードされる行動原則（dotfiles利用者には配布先`~/.claude/`相当） |
-| `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |
-| `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |
-| `.claude/`（リポジトリ直下） | dotfiles編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
-| `AGENTS.md`（本ファイル） | dotfiles編集者 | 本リポジトリの修正方針・固有知見。`CLAUDE.md`は`@AGENTS.md`importの1行アダプター |
-| `pytools/`・`bin/`・`scripts/` | dotfiles利用者・dotfiles編集者 | コマンドラインツールと開発スクリプト |
-
-### ディレクトリ構造の注意
-
-Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響範囲の異なる事故につながる。指示の対象を必ず確認する。
-
-本リポジトリの成果物はLinux・Windowsの複数マシンへ配布される。
-設定・規範・ツールの変更は全環境への配布を前提として反映先を判定し、配布先を直接編集せず配布原本
-（chezmoiソース・`share/`配下のmanaged設定・agent-toolkitプラグイン）を編集する。
-例外は、ユーザーが単一環境限定と明示した対象と、既存規範が環境限定と定めた成果物
-（`scripts/`配下をLinux前提とする[docs/development/architecture.md](docs/development/architecture.md)の方針など）とする。
-配布元と配布先の対応は次の列挙を正本とする。
-
-- `.chezmoi-source/dot_claude/`: 配布元。chezmoiが`~/.claude/`にデプロイする（グローバルユーザー設定の原本）
-- `~/.claude/`: デプロイ先。`chezmoi apply`で上書きされるため直接編集してはならない
-  - ユーザーが「`~/.claude`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_claude/`
-- `.claude/`（本リポジトリルート）: dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
-  - Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする
-- `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
-  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-main.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`及び`agent-toolkit/rules/`配下の共有規範から
-    `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、手動編集しない（生成差分で上書きされ、手動編集は消失する）
-  - 共有ルール・スキルは`setup_codex_links.py`が
-    `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
-    （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション。
-    chezmoiの`symlink_`はWindowsで特権不足により失敗するため未使用）
-  - `~/.codex/skills`にはグローバルに使うスキルだけを置く
-- `.chezmoi-source/dot_config/`: XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元
-  - ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_config/<tool>/`
-- `.chezmoi-source/`配下のファイルを削除・改名した場合、chezmoiは配布先を自動削除しない。
-  配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する。
-  改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
-  旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
-- `AGENTS.md`（本リポジトリルート）: dotfiles編集者向けのSSOT。Claude Code／Codex双方がここを読む
-  - `CLAUDE.md`は`@AGENTS.md`をimportする1行のみのアダプター
+| スキル | 扱う範囲 |
+| --- | --- |
+| `dotfiles-development` | 検査、整形及び依存更新の手順と、振り返りの参照文書の位置 |
+| `dotfiles-release` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
+| `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応、変更した規範の自セッション適用 |
+| `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、version bump、権限設定の配置 |
+| `pytools-edit` | `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集 |
+| `sync-platform-pair` | Linux/Windowsペアファイルの同期 |
+| `merge-pr` | PRのマージと、マージ後のbranch同期、CI及び必要なReleaseの検収 |

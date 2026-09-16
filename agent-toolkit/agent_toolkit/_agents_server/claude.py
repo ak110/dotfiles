@@ -140,7 +140,11 @@ def _describe_child_processes(pid: int | None) -> list[str]:
 
 
 def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
-    """委譲先CLIの診断記録の保存先を用意し、保持世代を超えた記録を削除する。"""
+    """委譲先CLIの診断記録の保存先を用意し、保持世代を超えた記録を削除する。
+
+    session識別子は初期化の完了まで確定しないため、開始時点では時刻を名前に使う。
+    確定後の改名は`rename_debug_file_for_session`が行う。
+    """
     directory = logging_config.state_dir() / _DEBUG_LOG_DIR_NAME
     directory.mkdir(parents=True, exist_ok=True)
     existing = sorted(directory.glob("*.log"), key=lambda path: path.stat().st_mtime)
@@ -148,7 +152,22 @@ def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
         with contextlib.suppress(OSError):
             stale.unlink()
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%f")
-    return directory / f"{stamp}-{os.getpid()}-{launch_kind}.log"
+    return directory / f"{stamp}-{launch_kind}.log"
+
+
+def rename_debug_file_for_session(debug_file: pathlib.Path, session_id: str, launch_kind: LaunchKind) -> pathlib.Path:
+    """診断記録の名前がsession識別子を持つ形へ改名し、確定後の絶対パスを返す。
+
+    委譲先CLIが当該ファイルを開いたまま改名する。改名できない実行環境では元の名前を保ち、
+    session識別子との対応は終端結果の`debugFile`から解決する。
+    """
+    stamp = debug_file.name.split("-", 1)[0]
+    renamed = debug_file.with_name(f"{stamp}-{session_id}-{launch_kind}.log")
+    try:
+        debug_file.rename(renamed)
+    except OSError:
+        return debug_file
+    return renamed
 
 
 def _settings_from_cmdline(cmdline: bytes) -> str | None:
@@ -451,7 +470,7 @@ class ClaudeServerManager:
         self._tasks.add(task)
         task.add_done_callback(self._forget_task)
         try:
-            return await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+            session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
         except TimeoutError as exc:
             # SDKがinitを届けないまま接続を保つ場合、当該待機は所有タスクの失敗経路では解消しない。
             await self._release_unstarted_task(task)
@@ -466,6 +485,8 @@ class ClaudeServerManager:
             diagnostic.record_exception(exc)
             _LOG.error("Claude session初期化失敗: diagnostic=%s", diagnostic.public())
             raise
+        diagnostic.debug_file = str(rename_debug_file_for_session(debug_file, session.session_id, launch_kind))
+        return session
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
         """初期化を完了していない所有タスクを終了し、SDKクライアントの接続を解放する。"""
@@ -730,7 +751,7 @@ class ClaudeServerManager:
                 if not initialized.done():
                     initialized.set_exception(exc)
             else:
-                self._record_failure(session, exc)
+                self._record_failure(session, exc, diagnostic=diagnostic)
                 await self._notify_waiters()
         finally:
             for task in (message_task, command_task):
@@ -876,14 +897,36 @@ class ClaudeServerManager:
             shared_state.record_unobserved_sessions(session, unobserved)
 
     @classmethod
-    def _record_failure(cls, session: SessionState, error: BaseException) -> None:
+    def _record_failure(
+        cls,
+        session: SessionState,
+        error: BaseException,
+        *,
+        diagnostic: _InitializationDiagnostic | None = None,
+    ) -> None:
+        """失敗を終端結果へ確定し、初期化の完了後に生じた失敗へは原因の特定に要する診断を添える。"""
+        failure: dict[str, Any] = {"message": str(error) or error.__class__.__name__}
+        if diagnostic is not None:
+            stderr = diagnostic.stderr.strip()
+            failure.update(
+                engine=session.engine or "claude",
+                model=session.model,
+                stderr=stderr,
+                childPid=diagnostic.child_pid,
+                debugFile=diagnostic.debug_file,
+            )
+            _LOG.error(
+                "claude_session_failure session_id=%s engine=%s model=%s child_pid=%s debug_file=%s stderr=%s",
+                session.session_id,
+                session.engine or "claude",
+                session.model,
+                diagnostic.child_pid,
+                diagnostic.debug_file,
+                stderr,
+            )
         cls._finalize_turn(
             session,
-            {
-                "status": "failed",
-                "agent_message": session.agent_message,
-                "error": {"message": str(error) or error.__class__.__name__},
-            },
+            {"status": "failed", "agent_message": session.agent_message, "error": failure},
         )
 
     async def _notify_waiters(self) -> None:

@@ -27,6 +27,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk.wi import (  # pylint: disable=wrong-import-position
     common,  # noqa: E402  # pylint: disable=wrong-import-position
     mutations,  # noqa: E402  # pylint: disable=wrong-import-position
+    repo,  # noqa: E402  # pylint: disable=wrong-import-position
     user_comment,  # noqa: E402  # pylint: disable=wrong-import-position
     uwi,  # noqa: E402  # pylint: disable=wrong-import-position
 )
@@ -639,6 +640,8 @@ class TestSkipPush:
         tmp_path: pathlib.Path,
     ) -> None:
         """通常遷移は即時pushし、remote進行後もskip-pushの滞留commitを回復する。"""
+        # 対象リポジトリの照合はテスト実行時のカレントディレクトリに依存するため、既定解決を無効化する。
+        monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
         first_home = tmp_path / "first"
         first_home.mkdir()
         notes = _setup_notes(first_home)

@@ -28,6 +28,7 @@ from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import wi_bodies as _wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
 )
@@ -157,11 +158,13 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     os.close(read_fd)
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+    # Gitの作業ツリー外で起動し、`--target-repo`の既定解決が対象を限定しない状態にする。
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
         stdout=write_fd,
         stderr=subprocess.PIPE,
         env=env,
+        cwd=tmp_path,
         text=True,
     ) as process:
         os.close(write_fd)
@@ -2032,10 +2035,7 @@ class TestAddFrontmatterOverride:
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
-        message = (
-            "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\n"
-            "テスト本文\n\n## 実現性\nテスト用の投入経路を確認済み"
-        )
+        message = f"---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\n{_wi_bodies.AGENT_AWI_BODY}"
         argv = ["wi", "add", str(myrepo), "--source", "cli-source", *_body_file_args(tmp_path, message)]
 
         with pytest.raises(SystemExit) as exc_info:
@@ -2048,7 +2048,7 @@ class TestAddFrontmatterOverride:
         assert "target_repo: github.com/other/repo" in content
         assert "source: session-review" in content
         body = content.split("---\n\n", 1)[1]
-        assert body == "テスト本文\n\n## 実現性\nテスト用の投入経路を確認済み"
+        assert body == _wi_bodies.AGENT_AWI_BODY
 
     def test_multiple_messages_mixed_frontmatter(
         self,
@@ -2093,7 +2093,7 @@ class TestAddFrontmatterOverride:
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
-        message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文\n\n## 実現性\nテスト用の投入経路を確認済み"
+        message = f"---\ntarget_repo: github.com/other/repo\n---\n\n{_wi_bodies.AGENT_AWI_BODY}"
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(

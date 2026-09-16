@@ -23,6 +23,9 @@ from agent_toolkit._atk.wi.common import (
 from agent_toolkit._atk.wi.formatters import _parse_target_repo
 from agent_toolkit._git import remote as _git_remote
 
+TARGET_REPO_ALL = "all"
+"""`--target-repo`へ指定すると対象リポジトリを限定しない値。"""
+
 
 def _normalize_remote_url(url: str) -> str:
     """リモートURLを`host/owner/repo`形式（またはネスト配下`host/group/.../repo`）へ正規化して返す。
@@ -134,6 +137,39 @@ def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> s
 def resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
     """CLIとWeb APIで共有するリポジトリ識別子を解決する。"""
     return _resolve_repo_id(value, cwd=cwd)
+
+
+def detect_current_repo_id() -> str | None:
+    """カレントディレクトリが属するリポジトリの識別子を返し、解決できない場合はNoneを返す。
+
+    `--target-repo`を省略したときの既定値として使う。Gitの作業ツリー外、`origin`未設定、
+    リモートURLを正規化できない形式のいずれでもNoneを返す。Noneを受け取った呼び出し元は
+    対象を限定せず、全ての対象リポジトリを扱う。
+    """
+    toplevel = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if toplevel.returncode != 0:
+        return None
+    remote = subprocess.run(
+        ["git", "-C", toplevel.stdout.strip(), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if remote.returncode != 0:
+        return None
+    try:
+        return _normalize_remote_url(remote.stdout.strip())
+    except ValueError:
+        return None
 
 
 def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:

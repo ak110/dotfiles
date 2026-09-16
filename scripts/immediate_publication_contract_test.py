@@ -6,7 +6,7 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[1]
 _DOCUMENT_PATHS = {
-    "project": _ROOT / "AGENTS.md",
+    "development": _ROOT / ".claude/skills/dotfiles-development/SKILL.md",
     "process": _ROOT / "agent-toolkit/skills/process-wi/SKILL.md",
     "finish": _ROOT / "agent-toolkit/skills/process-wi/references/finish-session.md",
     "parent": _ROOT / "agent-toolkit/share/session-termination.parent.md",
@@ -14,7 +14,7 @@ _DOCUMENT_PATHS = {
 }
 _REQUIRED_CLAUSES = (
     (
-        "project",
+        "development",
         "ユーザーが局所変更の即時公開と、次回の`agent-toolkit:process-wi`での正式対応の両方を同じ指示で明示した場合だけ",
     ),
     (
@@ -82,7 +82,7 @@ _REQUIRED_CLAUSES = (
         "いずれが成立する場合もpush前に1回実行し、終了コード0と警告の不在を確認する。",
     ),
     (
-        "project",
+        "development",
         "複数の書込主体の成果を統合した後にだけ成立する検査: `uv run --frozen pyfltr run --commands=arid`",
     ),
     (
