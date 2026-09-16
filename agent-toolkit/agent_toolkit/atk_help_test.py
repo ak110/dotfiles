@@ -11,6 +11,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk import outcome as _outcome
 
 _DESCRIPTION_MARKERS = ("目的:", "利用場面:", "対象と出力:", "前提:", "復元・後始末:")
 
@@ -266,3 +267,98 @@ def test_agents_wait_help_states_absent_target_termination() -> None:
     assert description is not None
     assert "待機対象を1件も取得できない状態が続く場合" in description
     assert "同じコマンドを再発行せず" in description
+
+
+def _leaf_commands() -> set[str]:
+    """サブコマンドを持たないリーフだけを返す。"""
+    leaves: set[str] = set()
+    for command, parser, _summary in _walk_commands():
+        has_subcommands = any(
+            isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
+            for action in parser._actions  # pylint: disable=protected-access
+        )
+        if has_subcommands:
+            continue
+        leaves.add(command)
+    return leaves
+
+
+def test_every_leaf_command_belongs_to_one_result_kind() -> None:
+    """全リーフサブコマンドが結果行の区分のいずれか1つへ属する。
+
+    区分の対応が無いリーフを追加すると、当該コマンドの成否を結果行の先頭の語で確定できなくなる。
+    """
+    classified = (
+        _outcome.STATE_CHANGE_COMMANDS
+        | _outcome.VALUE_OUTPUT_COMMANDS
+        | _outcome.READ_ONLY_COMMANDS
+        | _outcome.OUT_OF_SCOPE_COMMANDS
+    )
+    leaves = _leaf_commands()
+
+    assert leaves - classified == set(), "区分の対応が無いリーフサブコマンドがある"
+    assert classified - leaves == set(), "実在しないコマンドを区分表が持つ"
+
+
+def test_result_kinds_do_not_overlap() -> None:
+    """同じリーフサブコマンドが複数の区分へ属さない。"""
+    groups = (
+        _outcome.STATE_CHANGE_COMMANDS,
+        _outcome.VALUE_OUTPUT_COMMANDS,
+        _outcome.READ_ONLY_COMMANDS,
+        _outcome.OUT_OF_SCOPE_COMMANDS,
+    )
+    total = sum(len(group) for group in groups)
+
+    assert len(frozenset().union(*groups)) == total
+
+
+@pytest.mark.parametrize(
+    ("commands", "expected"),
+    [
+        (_outcome.STATE_CHANGE_COMMANDS, "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。"),
+        (_outcome.VALUE_OUTPUT_COMMANDS, "状態変更が成立した実行は標準エラーの1行目へ`成功: `で始まる行を書き"),
+        (_outcome.READ_ONLY_COMMANDS, "成功行は書かない。"),
+    ],
+)
+def test_help_states_result_line_prefix_and_stream(commands: frozenset[str], expected: str) -> None:
+    """各区分のヘルプが結果行の接頭辞と出力先を示す。"""
+    for command in sorted(commands):
+        assert expected in _atk_help.HELP[command]["description"], command
+
+
+def test_no_match_commands_state_the_no_match_line() -> None:
+    """該当0件で非0終了する読み取り経路のヘルプが該当0件の行を示す。"""
+    for command in sorted(_outcome.NO_MATCH_COMMANDS):
+        description = _atk_help.HELP[command]["description"]
+        assert "該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。" in description, command
+
+
+def test_bulk_transition_help_states_filter_and_precondition() -> None:
+    """一括操作を受理する状態遷移コマンドのヘルプが、候補の限定と必須指定を示す。"""
+    for command in _atk_help.BULK_TRANSITION_COMMANDS:
+        description = _atk_help.HELP[command]["description"]
+        assert "`--all`では`wi list`と同じ" in description, command
+        assert "個別指定ではFILENAMEを1個以上、一括操作では--allと--target-repoを指定する。" in description, command
+
+
+def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
+    """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    expected = {"--all", "--type", "--status", "--answered", "--source", "--yes", "--skip-pull", "--target-repo"}
+
+    for command in (*_atk_help.BULK_TRANSITION_COMMANDS, "atk wi rm"):
+        option_strings = {
+            option
+            for action in commands[command]._actions  # pylint: disable=protected-access
+            for option in action.option_strings
+        }
+        assert expected <= option_strings, command
+
+
+def test_help_does_not_mention_body_match_output() -> None:
+    """保存本文の一致判定を出力する旨がヘルプに残らない。"""
+    for command in ("atk wi add", "atk wi edit", "atk review-table add", "atk review-table respond"):
+        description = _atk_help.HELP[command]["description"]
+        assert "一致判定" not in description, command
+        assert "body_match" not in description, command

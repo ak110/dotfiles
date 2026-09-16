@@ -16,7 +16,6 @@ import pathlib
 import re
 import stat
 import subprocess
-import sys
 import tempfile
 from collections.abc import Iterable
 
@@ -24,6 +23,7 @@ import platformdirs
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.wi import common as _common
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
@@ -619,11 +619,10 @@ def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content
             backup.unlink()
         except OSError as recovery_error:
             existing = "、".join(str(path) for path in (source, destination, backup) if path.exists())
-            print(
-                f"error: 計画ファイルを自動復元できません: {recovery_error}。"
+            _outcome.report_failure(
+                f"計画ファイルを自動復元できない: {recovery_error}。"
                 f"実在するパス: {existing}。退避用の複製 {backup} の内容を {source} へ書き戻し、"
-                "移行前の日時を復元してください",
-                file=sys.stderr,
+                "移行前の日時を復元する"
             )
             raise _common.WebInputError(f"計画ファイルを自動復元できません: {source}") from error
         raise
@@ -631,9 +630,8 @@ def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content
     try:
         backup.unlink()
     except OSError as error:
-        print(
-            f"warning: 移行は完了しましたが、退避用の複製を削除できません: {backup}: {error}。この複製は移行結果に影響しません",
-            file=sys.stderr,
+        _outcome.report_warning(
+            f"移行は完了したが、退避用の複製を削除できない: {backup}: {error}。この複製は移行結果に影響しない"
         )
 
 
@@ -1512,9 +1510,9 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     """`atk plans`のサブコマンドを実行する。"""
     if args.plans_subcommand == "commit":
         result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
-        action = "commitしました" if args.skip_push else "commit・pushしました"
+        action = "commitした" if args.skip_push else "commit・pushした"
         subject = "独立CI実行レビュー表" if result.get("kind") == "ci-review" else "計画bundle"
-        print(f"{subject}を保存rootへ移動して{action}: {result['plan_file']}")
+        _outcome.report_success(f"{subject}を保存rootへ移動して{action}: {result['plan_file']}")
         return 0
     if args.plans_subcommand == "list":
         for entry in list_working_plans(home):
@@ -1523,7 +1521,7 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
         return 0
     if args.plans_subcommand == "rewrite-references":
         result = rewrite_plan_references(private_notes)
-        print(f"付属ファイル参照を書き換えました: {result['plans']}件（参照: {result['references']}件）")
+        _outcome.report_success(f"付属ファイル参照を書き換えた: {result['plans']}件（参照: {result['references']}件）")
         return 0
     raise _common.WebInputError(f"未知のplansサブコマンド: {args.plans_subcommand}")
 

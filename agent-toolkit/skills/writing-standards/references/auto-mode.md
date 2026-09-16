@@ -1,7 +1,7 @@
 # Claude Code auto modeのカスタムルール
 
 auto modeはユーザー環境の`~/.claude/settings.json`の`autoMode.allow`配列に自然言語の許可指示を追加できる。
-`allow`・`soft_deny`・`hard_deny`・`environment`の各配列は、設定すると当該区分のデフォルト一覧を置き換える。
+`allow`・`soft_deny`・`hard_deny`・`environment`の各配列は、設定するとその区分のデフォルト一覧を置き換える。
 デフォルトを維持したまま追加するには、配列へリテラル文字列`"$defaults"`を含める。
 `allow`の許可指示はデフォルトの`soft_deny`判定を上書きする。
 区分外のキー（`allowMode`等）は無効であり、実在は公式スキーマ（`$schema`のURL）で確認する。
@@ -27,24 +27,24 @@ auto modeは次の4区分でルールを判定する。
 拒否・許可ルールを確認する。対象は`/etc/claude-code/managed-settings.json`・
 `~/.claude/settings.json`・リポジトリ直下の`.claude/settings.json`・`.claude/settings.local.json`とする。
 評価はdeny・ask・allowの順で最初の一致が結果を決めるため、
-拒否ルールに該当する対象は許可・参照範囲の追加では解消しない。
+拒否ルールに該当する対象は、許可・参照範囲の追加ではなく拒否ルール自体の見直しで解消する。
 権限評価はpermissionsルール（deny→ask→allowの順で最初の一致が確定）→作業ディレクトリ内編集等の自動承認→
 auto mode classifierの順で行われる。
-PreToolUseフックの`permissionDecision: "allow"`はpermissions評価を迂回しない。
+PreToolUseフックの`permissionDecision: "allow"`より前にpermissions評価が確定する。
 auto modeの拒否ではなくpermissions設定による確認ダイアログが対象の場合は本節の対象外とし、
-確認ダイアログの自動許可は`claude-hooks.md`の「PermissionRequest」が扱い、本節の対象としない。
+確認ダイアログの自動許可は`claude-hooks.md`の「PermissionRequest」が扱う。
 
 ## カスタムルール追加のワークフロー
 
 1. 拒否事象に遭遇したら`claude auto-mode defaults`でデフォルトルールを確認する
 2. 該当ルールの`clears when ...`例外条件を読み、誤拒否されている領域を特定する
 3. 設定ファイルの`autoMode.allow`配列に自然言語の許可指示を追加する
-   - 配布側の設定ファイル（chezmoi等のsource）を使う場合は当該sourceを編集する
+   - 配布側の設定ファイル（chezmoi等のsource）を使う場合はそのsourceを編集する
      - デプロイ手順でユーザー環境の`~/.claude/settings.json`へ反映する
    - 配布側を持たない場合はユーザー環境の`~/.claude/settings.json`を直接編集する
 4. 追加文面はデフォルトの`soft_deny`判定を狭く上書きする位置付けとし、対象操作・適用条件・許容範囲を明示する
 5. 設定ファイル編集後、Claude Codeに設定を再ロードする
-   - 再ロード後の状態で`claude auto-mode config`を実行し、当該項目が有効設定として表示されることを確認する
+   - 再ロード後の状態で`claude auto-mode config`を実行し、その項目が有効設定として表示されることを確認する
    - `"$defaults"`を含む区分では、デフォルトルールが展開されて件数が維持されていることも確認する
 6. 配布元がある場合は、配布元が所有する契約を既存の対象固有テストで確認する
 7. 設定調整の完了後は毎回`claude auto-mode critique`を実行して結果を確認する。
@@ -58,7 +58,7 @@ auto modeの拒否ではなくpermissions設定による確認ダイアログが
 ## 既知の誤拒否パターンと対応
 
 本節の表は、拒否に遭遇した場合に適用を検討する対応の対応付けとする。
-当該表は観測日付と対象版数の記録を持たないため、適用の前に当該環境で拒否メッセージ本文と分類名を取得し、該当を確認する。
+この表は観測日付と対象版数の記録を持たないため、適用の前に実行中の環境で拒否メッセージ本文と分類名を取得し、該当を確認する。
 分類名は`claude auto-mode defaults`の出力で確認できる区分を指す。
 
 | 拒否される操作 | 分類名 | 対応 |
@@ -74,22 +74,22 @@ auto modeの拒否ではなくpermissions設定による確認ダイアログが
   別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
 - Self Modificationの許可ルールは、正規のAWI処理フロー由来・ユーザー投入AWI限定
   （自己生成起点を除外）・計画に基づく実装工程を条件とする
-- マージ許可ルールは`autoMode.environment`の信頼境界と一致する個人リポジトリへ対象を限定し、承認条件は付けない（ユーザー指定）。
+- マージ許可ルールは`autoMode.environment`の信頼境界と一致する個人リポジトリへ対象を限定し、承認条件を伴わない形で置く（ユーザー指定）。
   AWI本文・UWI回答による承認はtranscript外の実体でありclassifierが参照できないため、
   承認条件付きのルールでは承認済みマージの再拒否が残る。
   必須レビュー・チェックの迂回形態（`--admin`・`--force`等）はCI Bypass領域として対象外を維持する
 - リリースワークフロー起動の拒否本文には分類名が含まれないため、`Production Deploy`は既定の
   `soft_deny`との対応から見た有力候補にとどまり、確認済みの分類名として扱わない
 - `Release Workflow Dispatch`は`autoMode.environment`の信頼境界と一致する個人リポジトリに限定し、
-  `hard_deny`を上書きしない
+  上書きの対象を`soft_deny`の範囲に留める
 - 分類名を取得できない場合は、拒否メッセージ本文を根拠として後掲のユーザー確認へ進む。
   `claude auto-mode defaults`自体が拒否されて分類名を確認できない場合も同じ扱いとする
 - `kill -TERM $PPID`のルールは、transcriptの直前のツール呼び出しがこのエージェントによる
   `atk agents-exit-session`の実行である場合だけ適用する。
-  チェーン演算子や他の対象を含まない単独実行に限定し、他プロセスへのシグナル送出には適用しない
-- `Reconsidered Retry Approval`による1回の再発行後も拒否が続く場合は`AskUserQuestion`で当該判定が偽陽性かを明示的に問い、
+  適用範囲は、チェーン演算子や他の対象を含まない単独実行に限る
+- `Reconsidered Retry Approval`による1回の再発行後も拒否が続く場合は`AskUserQuestion`でその判定が偽陽性かを明示的に問い、
   偽陽性である旨の回答を得てから再試行する（進行への同意のみでは`clears`されない）
-- `Reconsidered Retry Approval`は、拒否理由がtranscript内のユーザーによる当該操作の明示指示または承認を
+- `Reconsidered Retry Approval`は、拒否理由がtranscript内のユーザーによるその操作の明示指示または承認を
   反映していない場合に限り、拒否メッセージ本文と該当するユーザーメッセージを照合して適用する
 
 ### 偽陽性と判断できる拒否への対応
@@ -104,8 +104,8 @@ GitHubリポジトリ設定変更等の外部サービスの設定変更コマ�
 これらがauto mode classifierに拒否される場合がある。
 拒否理由が「クロスセッションのteammate messageのみに基づく」等、
 有効な指示に対する偽陽性判定である可能性が高い場合の対応フロー。
-適用条件は、ユーザーまたは処理中のAWIで当該操作が承認済みであると実体確認でき、
-拒否理由がその承認を反映していないと判断できる場合に限る。hard_deny領域には適用しない。
+適用条件は、ユーザーまたは処理中のAWIでその操作が承認済みであると実体確認でき、
+拒否理由がその承認を反映していないと判断できる場合に限る。適用範囲は`hard_deny`領域の外とする。
 
 1. 拒否理由をメッセージ本文で確認する。
    拒否分類名（`claude auto-mode defaults`出力で確認可能な分類名）を取得できる場合は
@@ -124,12 +124,12 @@ GitHubリポジトリ設定変更等の外部サービスの設定変更コマ�
      撤回した旨と再開時の条件を返却する
    - レビュー完了待ちを選んだ場合はサブエージェント側のレビューを起動し、
      完了報告の受領後に再度本フローの1へ戻り拒否再現の有無を確認する
-4. `AskUserQuestion`が無応答のまま期限を迎えた場合は、対象操作を保留して再試行しない。
+4. `AskUserQuestion`が無応答のまま期限を迎えた場合は、対象操作を保留する。
    回答を待つためのUWIを記録し、解除条件を満たすまで代替経路だけを継続する
-5. 無応答後にUWIへ回答が保存されても、それだけではclassifierが観測する承認にならない。
+5. 無応答後にUWIへ回答が保存された場合も、classifierが観測する承認はtranscript内の確認で成立する。
    transcript内で同じ操作への再確認を発行し、ユーザーの回答を受領したことを確認してから、
    本フローの1へ戻って拒否の有無を再確認する。
-   `Reconsidered Retry Approval`による1回の再発行を終えた後は、再確認前の再試行を禁止する
+   `Reconsidered Retry Approval`による1回の再発行を終えた後の再試行は、この再確認を経てから行う
 
 ## カスタムルール記述の注意点
 
@@ -138,7 +138,7 @@ GitHubリポジトリ設定変更等の外部サービスの設定変更コマ�
   - 例:「同一セッション内でエージェントが作成したコミット限定」「`origin`への通常pushに限定」など、対象を狭める条件を含める
   - ユーザー意図に依存する条件（「計画・指示で承認された場合」など）はUser Intent Ruleに任せる領域と重複する
   - ルール側では対象を限定する条件を優先する
-- デフォルトの`hard_deny`領域を上書きするカスタムルールは追加しない（auto modeの安全境界を逸脱するため）
+- カスタムルールが上書きする範囲は`soft_deny`までとし、デフォルトの`hard_deny`領域はそのまま維持する（auto modeの安全境界を保つため）
 - 自作allowルールが参照する信頼対象（個人リポジトリ・信頼ドメイン等）は`autoMode.environment`の
   信頼境界宣言と整合させる。allowルールだけで表現すると内容系判定が未設定既定へフォールバックする
 - `claude auto-mode critique`の出力は非決定的で、末尾が欠落する場合を実測している（exit 0のまま文中切断）。

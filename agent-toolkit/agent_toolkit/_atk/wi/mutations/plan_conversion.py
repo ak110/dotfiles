@@ -24,9 +24,10 @@ import typing
 from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import remove_all as _remove_all
+from agent_toolkit._atk.wi import bulk as _bulk
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
@@ -455,7 +456,7 @@ def _restore_conversion_paths(
             if status.stdout.strip():
                 raise RuntimeError(f"計画変換対象の復元後に差分が残っています: {relative_path}")
     except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
-        print(f"計画変換対象の復元に失敗しました。手動確認が必要です: {error}", file=sys.stderr)
+        _outcome.report_failure(f"計画変換対象の復元に失敗した: {error}。作業ツリーの状態を手動で確認する")
 
 
 def _convert_held_entries(
@@ -812,7 +813,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
     try:
         message = _add.read_body_files([body_file])[0] if body_file is not None else None
     except WebInputError as error:
-        print(f"変換を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"変換を拒否した: {error}")
         sys.exit(1)
     target_repo, local_worktree = _add.resolve_add_target(args.target_repo)
     if message is not None and local_worktree is None:
@@ -837,10 +838,9 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
         if not isinstance(entries, list):
             raise RuntimeError("複数変換結果のentriesがリストではありません")
     except WebInputError as error:
-        print(f"変換を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"変換を拒否した: {error}")
         sys.exit(1)
-    for filename in filenames:
-        print(f"計画実装型へ変換: {filename}")
+    _outcome.report_success(f"{len(filenames)}件を計画実装型へ変換した: {', '.join(filenames)}")
     if not single_compat or result.get("integrated") is True:
         commit_oid = result.get("commit")
         if commit_oid:

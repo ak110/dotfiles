@@ -37,9 +37,9 @@ url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/53665369
 provenance = "cosign"
 
 [[tools.dotnet]]
-version = "10.0.400"
+version = "10.0.401"
 backend = "core:dotnet"
-specifiers = ["10.0.400"]
+specifiers = ["10.0.401"]
 
 [[tools.fzf]]
 version = "0.74.3"
@@ -106,19 +106,19 @@ url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checke
 provenance = "github-attestations"
 
 [[tools.glab]]
-version = "1.116.0"
+version = "1.117.0"
 backend = "gitlab:gitlab-org/cli"
 specifiers = ["latest"]
 
 [tools.glab."platforms.linux-x64"]
-checksum = "sha256:173cc61ea94c562f2ccd831f320d25b73982192e82810064552282482e3713ea"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.116.0/downloads/glab_1.116.0_linux_amd64.tar.gz"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E116%2E0/glab_1%2E116%2E0_linux_amd64%2Etar%2Egz"
+checksum = "sha256:1edfd0fba284e93396a9fd8899b9fff10f34f90b733943b1a70e21431a1991ab"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.117.0/downloads/glab_1.117.0_linux_amd64.tar.gz"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E117%2E0/glab_1%2E117%2E0_linux_amd64%2Etar%2Egz"
 
 [tools.glab."platforms.windows-x64"]
-checksum = "sha256:ae0d8b26b12d515479a508cce33b27144064508659a996733f7e068ef3570c59"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.116.0/downloads/glab_1.116.0_windows_amd64.zip"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E116%2E0/glab_1%2E116%2E0_windows_amd64%2Ezip"
+checksum = "sha256:3272ddb8e74f75e4d956b9fd137e7ababf23f3d74441c5ddc7a5ca45bb4eb8a0"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.117.0/downloads/glab_1.117.0_windows_amd64.zip"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E117%2E0/glab_1%2E117%2E0_windows_amd64%2Ezip"
 
 [[tools.glow]]
 version = "3.0.0"
@@ -168,7 +168,7 @@ checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e
 url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
-version = "0.58.0"
+version = "0.59.0"
 backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 

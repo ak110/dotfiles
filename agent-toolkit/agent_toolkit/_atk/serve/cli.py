@@ -54,9 +54,12 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
         state.stop()
 
 
-def build_console_title(port: int) -> str:
-    """起動ターミナルのウィンドウタイトル文字列を組み立てる。"""
-    return f"atk serve :{port}"
+def build_console_title() -> str:
+    """起動ターミナルのウィンドウタイトル文字列を返す。
+
+    待受ポートなどの起動ごとに変わる値を含めず、コマンド名だけの固定値とする。
+    """
+    return "atk serve"
 
 
 def run(*, host: str | None = None, port: int | None = None, home: pathlib.Path | None = None) -> None:
@@ -75,5 +78,5 @@ def run(*, host: str | None = None, port: int | None = None, home: pathlib.Path 
     private_notes = common.ensure_environment(resolved_home)
     config = _atk_serve_config.resolve_config(host=host, port=port)
     logger.info("ワークアイテムWeb UIを http://%s:%s/ で配信します", config.host, config.port)
-    with _console_title.console_title(build_console_title(config.port)):
+    with _console_title.console_title(build_console_title()):
         asyncio.run(_serve(private_notes, config))

@@ -12,8 +12,8 @@ from __future__ import annotations
 import argparse
 import datetime
 import pathlib
-import sys
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._git import status as _git_status
 
 # 値を取得できなかった項目へ用いる標識。
@@ -104,21 +104,18 @@ def dispatch(args: argparse.Namespace, *, now: datetime.datetime | None = None) 
     worktree_values = args.worktree or []
     file_values = args.file or []
     if not worktree_values and not file_values:
-        print("--worktreeまたは--fileを1件以上指定してください。", file=sys.stderr)
+        _outcome.report_failure("観測対象の指定が無い。--worktreeまたは--fileを1件以上指定する")
         return 2
     try:
         worktrees = [_split_target(value, stem=False) for value in worktree_values]
         files = [_split_target(value, stem=True) for value in file_values]
     except TargetSpecError as error:
-        print(str(error), file=sys.stderr)
+        _outcome.report_failure(str(error))
         return 2
     labels = [label for label, _ in worktrees] + [label for label, _ in files]
     duplicated = sorted({label for label in labels if labels.count(label) > 1})
     if duplicated:
-        print(
-            f"ラベルが重複しています。<ラベル>=<パス>形式で区別してください: {'・'.join(duplicated)}",
-            file=sys.stderr,
-        )
+        _outcome.report_failure(f"ラベルが重複している: {'・'.join(duplicated)}。<ラベル>=<パス>形式で区別する")
         return 2
     if now is None:
         now = datetime.datetime.now()

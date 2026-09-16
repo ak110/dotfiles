@@ -1050,8 +1050,8 @@ class TestListSkipPull:
         assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"]) for call in git_calls)
         stderr = capsys.readouterr().err
         assert stderr == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
-            "最新化する場合は`--pull`を指定してください。\n"
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
+            "最新化する場合は`--pull`を指定する。\n"
         )
 
     def test_pull_forces_remote_sync_after_recent_sync(
@@ -1317,6 +1317,43 @@ class TestListJson:
         assert record["summary"] == body
         assert record["ready"] is False
         assert record["blocked_reason"] == "missing-dependency"
+
+    def test_json_splits_dependency_unmet_by_candidate_set(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """依存の未充足を、未終端の依存先が同じ出力へ現れるかで2値へ分けて報告する。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "leader.md")
+        _write_awi_file(notes, "external.md", target_repo="github.com/example/bar")
+        inner = _write_awi_file(notes, "inner.md")
+        outer = _write_awi_file(notes, "outer.md")
+        inner.write_text(
+            inner.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [leader.md]\n"),
+            encoding="utf-8",
+        )
+        outer.write_text(
+            outer.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [external.md]\n"),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["wi", "list", "--json", "--skip-pull", "--target-repo=github.com/example/foo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        reasons = {record["filename"]: record["blocked_reason"] for record in records}
+        assert reasons == {
+            "inner.md": "dependency-unmet-internal",
+            "leader.md": None,
+            "outer.md": "dependency-unmet-external",
+        }
 
     def test_json_and_count_are_mutually_exclusive(
         self,

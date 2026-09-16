@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi.common import (
     WI_PROCESSABLE_STATES,
@@ -143,17 +144,14 @@ def warn_question_quality(filename: str, message: str, question_type: str | None
     `reject_reserved_uwi_markup`が拒否で扱い、本関数は内容面の品質のみを警告で扱う。
     """
     if question_type != "choice" and not _looks_like_question(message):
-        print(
-            f"警告: {filename}の質問本文に問い（疑問文）が含まれていません。"
-            "回答者が何に答えるべきか分かる文面か確認してください。",
-            file=sys.stderr,
+        _outcome.report_warning(
+            f"{filename}の質問本文に問い（疑問文）が含まれていない。回答者が何に答えるべきか分かる文面か確認する。"
         )
     reason = _detect_self_containment_deficiency(message)
     if reason is not None:
-        print(
-            f"警告: {filename}の質問本文が単独で判断可能な情報を欠く可能性があります（{reason}）。"
-            "agent-toolkit:wi-standardsが定める自己完結要件を満たす形に見直してください。",
-            file=sys.stderr,
+        _outcome.report_warning(
+            f"{filename}の質問本文が単独で判断可能な情報を欠く可能性がある（{reason}）。"
+            "agent-toolkit:wi-standardsが定める自己完結要件を満たす形に見直す。"
         )
 
 
@@ -202,21 +200,18 @@ def _answer_noninteractive(private_notes: pathlib.Path, *, filename: str, answer
     Tracebackを露出させず他サブコマンドと同じ文面の案内へ変換する。
     """
     if ANSWER_MARKER in answer:
-        print(
-            f"回答本文に回答欄マーカーを含められません: {filename}",
-            file=sys.stderr,
-        )
+        _outcome.report_failure(f"回答本文に回答欄マーカーを含められない: {filename}。マーカーを除いた本文だけを渡す")
         sys.exit(1)
     try:
         changed = answer_uwi(private_notes, filename=filename, answer=answer)
     except FileNotFoundError:
-        print(f"inbox・processingのいずれにも存在しません: {filename}", file=sys.stderr)
+        _outcome.report_failure(f"inbox・processingのいずれにも存在しない: {filename}。実在するファイル名を指定し直す")
         sys.exit(1)
     except WebInputError as error:
-        print(str(error), file=sys.stderr)
+        _outcome.report_failure(str(error))
         sys.exit(1)
     if changed:
-        print(f"1件回答反映: {filename}")
+        _outcome.report_success(f"UWIへ回答を反映した: {filename}")
     else:
         print("差分なし。")
 
@@ -275,10 +270,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     （エディター起動失敗・ユーザーによる強制終了などを成功として扱わないため）。
     """
     if is_agent_environment():
-        print(
-            "UWIの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。",
-            file=sys.stderr,
-        )
+        _outcome.report_failure("UWIの回答はユーザーだけが書き込む。エージェント環境から起動したatkでは回答できない")
         sys.exit(1)
     filename = getattr(args, "filename", None)
     answer_body = getattr(args, "answer_body", None)
@@ -286,11 +278,11 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _answer_noninteractive(private_notes, filename=filename, answer=answer_body)
         return
     if filename is not None or answer_body is not None:
-        print("非対話で回答する場合はファイル名と回答本文の両方を指定してください。", file=sys.stderr)
+        _outcome.report_failure("非対話で回答する場合はファイル名と回答本文の両方を指定する")
         sys.exit(1)
     editor = os.environ.get("EDITOR")
     if not editor:
-        print("$EDITORが未設定のため回答経路を利用できません。", file=sys.stderr)
+        _outcome.report_failure("$EDITORが未設定のため回答経路を利用できない。$EDITORを設定してから再実行する")
         sys.exit(1)
     targets: list[pathlib.Path] = []
     with _repo_lock(private_notes):
@@ -319,10 +311,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         tmp_path = _copy_to_tempfile(snapshot)
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
-            print(
-                f"エディターが終了コード{result.returncode}で終了しました。中断します。",
-                file=sys.stderr,
-            )
+            _outcome.report_failure(f"エディターが終了コード{result.returncode}で終了したため中断した")
             tmp_path.unlink(missing_ok=True)
             editor_failed = True
             break
@@ -332,7 +321,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             continue
         edited_text = _frontmatter.decode_entry_text(answered)
         if ANSWER_MARKER not in edited_text:
-            print(f"回答欄マーカーがありません: {path.name}", file=sys.stderr)
+            _outcome.report_warning(f"回答欄マーカーが無いため反映しない: {path.name}")
             tmp_path.unlink(missing_ok=True)
             continue
         try:
@@ -343,16 +332,15 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 expected_content=_frontmatter.decode_entry_text(snapshot),
             )
         except RuntimeError:
-            print(
-                f"編集中に他プロセスが対象を変更しました: {path.name}。編集内容は{tmp_path}に残しています。スキップします。",
-                file=sys.stderr,
+            _outcome.report_warning(
+                f"編集中に他プロセスが対象を変更したため反映しない: {path.name}。編集内容は{tmp_path}に残した。"
             )
             had_conflict = True
             continue
         tmp_path.unlink(missing_ok=True)
         edited.append(path.name)
     if edited:
-        print(f"{len(edited)}件回答反映: {', '.join(edited)}")
+        _outcome.report_success(f"UWIへ回答を反映した: {len(edited)}件（{', '.join(edited)}）")
     elif not had_conflict and not editor_failed:
         print("差分なし。")
     if had_conflict or editor_failed:

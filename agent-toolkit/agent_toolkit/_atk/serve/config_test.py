@@ -906,9 +906,9 @@ async def test_safe_base_path_rejects_value_that_proxy_fix_accepts(tmp_path: pat
     assert 'const BASE_PATH="";' in js_body
 
 
-def test_console_title_builds_command_and_port() -> None:
-    """ターミナルタイトルにコマンド名とポートを含める。"""
-    assert serve.build_console_title(28766) == "atk serve :28766"
+def test_console_title_is_fixed_command_name() -> None:
+    """ターミナルタイトルはコマンド名だけの固定値とし、起動ごとに変わる値を含めない。"""
+    assert serve.build_console_title() == "atk serve"
 
 
 @pytest.mark.asyncio

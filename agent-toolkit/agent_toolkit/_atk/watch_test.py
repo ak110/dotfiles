@@ -216,7 +216,7 @@ class TestWatch:
         captured = capsys.readouterr()
         assert exit_code == 2
         assert not captured.out
-        assert "ラベルが重複しています" in captured.err
+        assert "ラベルが重複している" in captured.err
         assert "result" in captured.err
 
     @pytest.mark.parametrize("whitespace", [" ", "\t", "\n", "\r", "\v", "\f"])
@@ -268,7 +268,7 @@ class TestWatch:
         captured = capsys.readouterr()
         assert exit_code == 2
         assert not captured.out
-        assert "--worktreeまたは--fileを1件以上指定してください" in captured.err
+        assert "--worktreeまたは--fileを1件以上指定する" in captured.err
 
     def test_multiple_targets_share_one_line(
         self,

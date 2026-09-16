@@ -7,6 +7,7 @@ import argparse
 import pathlib
 import re
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.common import _iter_entries, _pull_with_recent_reuse, _repo_lock
 from agent_toolkit._atk.wi.listing import _answered_matches, _resolve_states
 from agent_toolkit._atk.wi.repo import _resolve_repo_id
@@ -53,4 +54,7 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
             if compiled.search(line):
                 matched = True
                 print(f"{path.name}:{line_no}:{line}")
-    return 0 if matched else 1
+    if not matched:
+        _outcome.report_no_match("検索条件に一致する行は無い。検索は正常に完了した")
+        return 1
+    return 0

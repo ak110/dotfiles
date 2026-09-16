@@ -39,7 +39,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -488,7 +488,7 @@ def test_resolve_plan_base_commit_rejects_unresolved_seven_character_oid(
         )
 
     assert captured.value.code == 2
-    assert "対応commitを解決できませんでした" in capsys.readouterr().err
+    assert "対応commitを解決できない" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -830,7 +830,7 @@ class TestRmSingle:
         assert exc_info.value.code == 2
         assert (processing_dir / "fb-001.md").exists()
         captured = capsys.readouterr()
-        assert "processing状態のファイルは既定で削除を保護します" in captured.err
+        assert "processing状態のファイルは既定で削除を保護する" in captured.err
         assert "fb-001.md" in captured.err
 
     def test_missing_file_reports_all_user_removable_states(
@@ -848,7 +848,7 @@ class TestRmSingle:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "processing・inbox・hold・adopted・rejectedのいずれにも存在しません" in captured.err
+        assert "processing・inbox・hold・adopted・rejectedのいずれにも存在しない" in captured.err
 
 
 def test_common_edit_and_append_accept_user_comment_change_in_agent_environment(
@@ -1008,7 +1008,7 @@ class TestEditWithChanges:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", "変更"), home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "inbox・processing・holdのいずれにも存在しません" in capsys.readouterr().err
+        assert "inbox・processing・holdのいずれにも存在しない" in capsys.readouterr().err
 
     def test_editor_target_repo_change_invalidates_target_commit(
         self,
@@ -1066,7 +1066,7 @@ class TestEditWithChanges:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox・processing・holdのいずれにも存在しません" in captured.err
+        assert "inbox・processing・holdのいずれにも存在しない" in captured.err
 
 
 class TestHold:
@@ -1118,7 +1118,7 @@ class TestHold:
                 "rejected",
             ]
         ]
-        assert "2件保留: 20260827-000000-002.md, 20260827-000000-001.md" in capsys.readouterr().out
+        assert "成功: 2件をholdへ移した: 20260827-000000-002.md, 20260827-000000-001.md" in capsys.readouterr().out
 
 
 def test_edit_entry_to_plan_push_failure_leaves_local_inbox_commit_without_processing(

@@ -1324,6 +1324,28 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 2
         assert "heredoc" in result.stderr
 
+    def test_heredoc_with_a_pipeline_is_blocked(self) -> None:
+        """heredocと本文外のパイプの併用を遮断する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "python3 - <<'PY' | wc -l\nprint(1)\nPY"}})
+        assert result.returncode == 2
+        assert "heredoc" in result.stderr
+
+    def test_quoted_operator_characters_are_not_a_heredoc_chain(self) -> None:
+        """引用符で囲んだ1つの引数の内側にある`<<`とパイプ記号を演算子として数えない。
+
+        引用規則を解かない文字列照合では、heredocもパイプも持たない呼び出しが遮断される。
+        遮断は復元できない結果を対象とするため、偽陽性1件ごとに当該ターンの入力と作業が失われる。
+        """
+        command = "git log --grep $'A14|structure.py|<<' --oneline"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+
+    def test_unparsable_quoting_with_a_heredoc_is_blocked(self) -> None:
+        """引用を解けない入力は生の文字列で判定して遮断側へ倒す。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat <<'EOF' > out.txt 'unclosed\ntext\nEOF"}})
+        assert result.returncode == 2
+        assert "heredoc" in result.stderr
+
     @pytest.mark.parametrize("command", ["cat .env", "head -n 1 config/.env.local", "xxd .env.production"])
     def test_env_content_output_is_blocked(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
@@ -1360,14 +1382,15 @@ class TestStaticSafetyBlocks:
     def test_atk_unknown_option_is_warned(self) -> None:
         """未受理オプションは実行しても`atk`が終了するだけで復元できるため警告で返す。
 
-        通知本文は、判定の時点で保持している受理オプションの集合を列挙する。
+        通知本文は対象トークンと接頭辞が一致する受理オプションだけを示す。
+        受理集合の全体は判定を変えないまま実行主体のコンテキストを占めるため載せない。
         """
         result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "--not-supported" in messages
-        assert "当該サブコマンドが受理するオプション: " in messages
-        assert "--target-repo" in messages
+        assert "接頭辞が一致する受理オプション: --no-json" in messages
+        assert "当該サブコマンドが受理するオプション: " not in messages
 
     def test_heredoc_block_notice_names_a_save_means_that_passes_the_same_check(self) -> None:
         """heredoc遮断の解消手段が、同じ判定へ当たらない形を名指しする。"""
@@ -1422,8 +1445,10 @@ class TestBashOutputTruncationRepetition:
 
         assert result.returncode == 0
         corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        assert "head" not in corrected
-        assert " > " in corrected
+        producer, separator, consumer = corrected.partition("; ")
+        assert separator == "; "
+        assert producer.startswith("ls -1 /var > ")
+        assert consumer.startswith("head -5 ")
 
     def test_other_kind_is_also_corrected(self, tmp_path: pathlib.Path) -> None:
         """別の補正種別も過去の補正によらず同じ変換で通す。"""
@@ -1433,15 +1458,15 @@ class TestBashOutputTruncationRepetition:
 
         assert self._invoke("ls -1 /tmp | tail -5", session_id, tmp_path).returncode == 0
 
-    def test_autofix_notice_shows_the_remaining_operation_and_the_avoidance_body(self, tmp_path: pathlib.Path) -> None:
-        """補正の通知が、保存先から範囲を限定して読む操作と、切り詰めを含まない書き方を示す。"""
+    def test_autofix_notice_shows_the_returned_range_and_the_avoidance_body(self, tmp_path: pathlib.Path) -> None:
+        """補正の通知が、当該呼び出しへ返る範囲と、切り詰めを含まない書き方を示す。"""
         session_id = "truncation-autofix-body"
 
         result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "保存先から必要な範囲だけを" in context
+        assert "補正前のコマンドが要求した範囲を当該呼び出しの結果へ返す" in context
         avoidance = shell_checks._OUTPUT_TRUNCATION_AVOIDANCE  # pylint: disable=protected-access  # noqa: SLF001
         assert avoidance in context
 
@@ -1453,8 +1478,10 @@ class TestBashOutputTruncationRepetition:
 
         assert result.returncode == 0
         corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        assert "head" not in corrected
-        assert " > " in corrected
+        producer, separator, consumer = corrected.partition("; ")
+        assert separator == "; "
+        assert producer.startswith("rg -l 'alpha|beta' --glob '!*.lock' > ")
+        assert consumer.startswith("head -20 ")
 
     def test_stderr_duplication_is_kept_after_the_save_target(self, tmp_path: pathlib.Path) -> None:
         """`2>&1`を末尾に持つ呼び出しでは、保存先へのリダイレクトを当該冗長化の前へ置く。
@@ -1468,8 +1495,40 @@ class TestBashOutputTruncationRepetition:
         assert result.returncode == 0
         payload = json.loads(result.stdout)["hookSpecificOutput"]
         corrected = payload["updatedInput"]["command"]
-        assert re.search(r"> \S+ 2>&1$", corrected) is not None
+        match = re.search(r"> (\S+) 2>&1; head -5 (\S+)$", corrected)
+        assert match is not None
+        assert match.group(1) == match.group(2)
         assert "標準出力と標準エラー" in payload["additionalContext"]
+
+    def test_loop_body_read_back_returns_each_iteration(self, tmp_path: pathlib.Path) -> None:
+        """ループ本体の補正でも、反復ごとにconsumerが当該反復の出力を読む形へ補正する。
+
+        保存先の読み戻しを持たない補正では、反復が同じ保存先を上書きし、
+        最後の1件の内容だけが残って当該呼び出しの観測目的へ達しない。
+        """
+        session_id = "truncation-loop-body"
+
+        result = self._invoke("for f in a b; do atk wi show $f | grep -m1 '^# '; done", session_id, tmp_path)
+
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert "| grep" not in corrected
+        match = re.search(r"do atk wi show \$f > (\S+); grep -m1 '\^# ' (\S+); done$", corrected)
+        assert match is not None
+        assert match.group(1) == match.group(2)
+
+    def test_loop_body_append_keeps_every_iteration(self, tmp_path: pathlib.Path) -> None:
+        """consumerが操作対象を持つ区間がループ本体にある場合は、反復ごとの出力を保存先へ追記する。
+
+        上書きにすると、反復が同じ保存先を上書きして最後の1件の内容だけが残る。
+        """
+        session_id = "truncation-loop-append"
+
+        result = self._invoke("for f in a b; do ls -1 $f | grep -m1 needle -; done", session_id, tmp_path)
+
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert re.search(r"do ls -1 \$f >> \S+; done$", corrected) is not None
 
     def test_autofix_notice_identifies_the_detected_segment(self, tmp_path: pathlib.Path) -> None:
         """補正の通知が、検出した直列区間と切り詰めと判定したコマンドの表記を示す。"""
@@ -1665,6 +1724,94 @@ class TestNormViolatingArgumentForms:
             assert result.returncode == 0
             assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
 
+    def test_missing_path_is_removed_when_other_targets_remain(self, tmp_path: pathlib.Path) -> None:
+        """不在パスを除いても対象が残る呼び出しは、当該パスを除いた形へ補正する。
+
+        警告は当該呼び出しの入力を変えないため、補正しなければ当該コマンドが失敗して再発行を要する。
+        """
+        (tmp_path / "present.txt").write_text("needle\n", encoding="utf-8")
+
+        result = self._invoke("rg needle present.txt absent.txt", tmp_path)
+
+        assert result.returncode == 0
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["command"] == "rg needle present.txt"
+        context = output["additionalContext"]
+        assert "実在しない検索・読取パスを当該呼び出しの対象から除いた" in context
+        assert "absent.txt" in context
+        assert "明示された検索・読取パスが存在しない" not in context
+
+    def test_only_missing_path_stays_a_warning(self, tmp_path: pathlib.Path) -> None:
+        """不在パスを除くと対象が残らない呼び出しは補正せず警告のまま通す。"""
+        result = self._invoke("rg needle absent.txt", tmp_path)
+
+        assert result.returncode == 0
+        assert "明示された検索・読取パスが存在しない" in _agent_messages(result)
+        assert "updatedInput" not in result.stdout
+
+    def test_output_of_a_preceding_script_is_not_missing(self, tmp_path: pathlib.Path) -> None:
+        """先行区間がスクリプトを実行する場合は、以降の区間を不在判定の対象から外す。
+
+        当該プログラムが出力するファイルはコマンド文字列へ現れず、実在を静的に判定できない。
+        """
+        result = self._invoke("python3 build.py && wc -l generated.txt", tmp_path)
+
+        assert result.returncode == 0
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    def test_redirect_after_cd_resolves_from_the_destination(self, tmp_path: pathlib.Path) -> None:
+        """`cd <実在の絶対パス> &&`に続くリダイレクト先は、当該ディレクトリから解決する。
+
+        起動時の作業ディレクトリから解決すると、遷移先にだけ存在する親ディレクトリを不在と判定する。
+        """
+        destination = tmp_path / "work"
+        (destination / "logs").mkdir(parents=True)
+
+        result = self._invoke(f"cd {destination} && wc -l /etc/hostname > logs/out.txt", tmp_path)
+
+        assert result.returncode == 0
+        assert "親ディレクトリが存在しない" not in _agent_messages(result)
+
+    def test_redirect_after_cd_to_a_missing_directory_warns(self, tmp_path: pathlib.Path) -> None:
+        """`cd`先にも存在しないディレクトリ配下への出力は引き続き検出する。"""
+        destination = tmp_path / "work"
+        destination.mkdir()
+
+        result = self._invoke(f"cd {destination} && wc -l /etc/hostname > absent-dir/out.txt", tmp_path)
+
+        assert result.returncode == 0
+        assert "親ディレクトリが存在しない" in _agent_messages(result)
+
+    def test_attached_short_value_option_is_not_terminator_data(self, tmp_path: pathlib.Path) -> None:
+        """値を密着させた短縮オプションを、オプション終端を要するデータとして扱わない。"""
+        result = self._invoke("rg -g'*.py' needle .", tmp_path)
+
+        assert result.returncode == 0
+        assert "オプション終端" not in _agent_messages(result)
+
+    def test_git_grep_attached_pattern_value_is_not_a_type_option(self, tmp_path: pathlib.Path) -> None:
+        """値を密着させた`-e`の値に種別を表す文字が含まれても、種別の指定として扱わない。"""
+        result = self._invoke("git grep -eP.*needle", tmp_path)
+
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" in _agent_messages(result)
+
+    def test_git_grep_attached_context_value_is_silent(self, tmp_path: pathlib.Path) -> None:
+        """値を密着させた`-C3`は、オプション終端の欠落にも種別の誤判定にも当たらない。"""
+        result = self._invoke("git grep -C3 needle", tmp_path)
+
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "オプション終端" not in messages
+        assert "いずれの種別も指定していない" not in messages
+
+    def test_git_grep_attached_pattern_without_metacharacter_is_silent(self, tmp_path: pathlib.Path) -> None:
+        """値を密着させた`-e`からもpattern本文を取り出し、メタ文字が無ければ警告しない。"""
+        result = self._invoke("git grep -eneedle", tmp_path)
+
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" not in _agent_messages(result)
+
     def test_git_grep_without_pattern_type_warns(self, tmp_path: pathlib.Path) -> None:
         """メタ文字を含むpatternでは、種別の指定により一致結果が変わるため警告する。"""
         result = self._invoke("git grep 'need.*le'", tmp_path)
@@ -1712,7 +1859,6 @@ class TestNormViolatingArgumentForms:
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "位置引数を受理しない" in messages
-        assert "当該サブコマンドが受理するオプション: " in messages
         assert "引数を付けずに再発行する" in messages
         assert "当該の値をオプションで渡す" not in messages
 
@@ -1787,15 +1933,14 @@ class TestNormViolatingArgumentForms:
     def test_atk_subcommand_without_positionals_warns(self, tmp_path: pathlib.Path) -> None:
         """位置引数を受理しないサブコマンドへ引数を付けた実行を検出する。
 
-        オプションを受理するサブコマンドでは、受理オプションの一覧とオプションで渡す対処を示す。
+        オプションを受理するサブコマンドでは、オプションで渡す対処と受理形式の確定手段を示す。
         """
         result = self._invoke("atk wi list 20260101-000000-001.md", tmp_path)
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "位置引数を受理しない" in messages
-        assert "当該サブコマンドが受理するオプション: " in messages
-        assert "--target-repo" in messages
         assert "当該の値をオプションで渡す" in messages
+        assert "受理するオプションは`--help`を単独で実行して確認する" in messages
 
     def test_atk_subcommand_with_positionals_is_silent(self, tmp_path: pathlib.Path) -> None:
         """位置引数を受理するサブコマンドの正常な実行は検出しない。"""
@@ -1873,7 +2018,10 @@ class TestNormViolatingArgumentForms:
         assert "親ディレクトリが存在しない" not in _agent_messages(result)
 
     def test_rg_unknown_option_warns(self, tmp_path: pathlib.Path) -> None:
-        """`rg`の受理しないオプションは、受理集合とともに実行前に差し戻す。"""
+        """`rg`の受理しないオプションは、受理形式の確定手段とともに実行前に差し戻す。
+
+        接頭辞が一致する受理オプションが無い呼び出しでは、受理集合の全体を列挙せず確定手段だけを示す。
+        """
         session_id = "rg-option-contract"
         # 受理集合は`rg --help`から取得して保持する。
         # 実行環境への`rg`の導入有無で結果が変わらないよう、保持済みの状態として与える。
@@ -1886,4 +2034,62 @@ class TestNormViolatingArgumentForms:
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "--not-supported" in messages
-        assert "当該コマンドが受理するオプション" in messages
+        assert "`--help`を単独で実行して受理形式を確定する" in messages
+        assert "--files-with-matches" not in messages
+
+    def test_rg_option_terminator_and_value_arguments_are_not_options(self, tmp_path: pathlib.Path) -> None:
+        """オプション終端の後ろと値引数の位置にあるハイフン始まりのデータを、オプションとして扱わない。"""
+        session_id = "rg-option-terminator"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"external_command_option_contracts": {"rg": {"flags": ["-n"], "valued": ["-e"]}}},
+        )
+        for command in ("rg -n -- '--all' .", "rg -n -e '--all' ."):
+            result = self._invoke(command, tmp_path, session_id=session_id)
+            assert result.returncode == 0
+            assert "受理しないオプションである" not in _agent_messages(result)
+
+    def test_rg_short_option_with_attached_value_is_accepted(self, tmp_path: pathlib.Path) -> None:
+        """値を密着させた短縮オプションは、対象コマンドが受理する1つのトークンとして扱う。"""
+        session_id = "rg-attached-value"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"external_command_option_contracts": {"rg": {"flags": ["-n"], "valued": ["-A", "-B", "-m"]}}},
+        )
+        for command in ("rg -A14 needle .", "rg -A5 needle .", "rg -B30 needle .", "rg -m10 needle ."):
+            result = self._invoke(command, tmp_path, session_id=session_id)
+            assert result.returncode == 0
+            assert "受理しないオプションである" not in _agent_messages(result)
+
+    def test_help_line_with_an_uppercase_value_placeholder_marks_a_valued_option(self, tmp_path: pathlib.Path) -> None:
+        """`-A NUM, --after-context=NUM`の形のヘルプ1行で、`-A`を値付きへ分類する。
+
+        当該分類を欠くと、値を密着させた`-A14`を短縮オプションの連結として1文字ずつ照合し、
+        受理集合に無い数字を根拠に警告を返す。
+        """
+        session_id = "rg-help-placeholder"
+        stub_bin = tmp_path / "bin"
+        stub_bin.mkdir()
+        stub = stub_bin / "rg"
+        stub.write_text(
+            "#!/bin/sh\nprintf '%s\\n' '    -A NUM, --after-context=NUM' '    -n, --line-number'\n", encoding="utf-8"
+        )
+        stub.chmod(0o755)
+        env = _plan_file_state_env(tmp_path)
+        env["PATH"] = f"{stub_bin}{os.pathsep}{os.environ['PATH']}"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "rg -A14 needle ."},
+                "cwd": str(tmp_path),
+                "session_id": session_id,
+            },
+            env,
+        )
+        assert result.returncode == 0
+        assert "受理しないオプションである" not in _agent_messages(result)
+        contract = _read_session_state(tmp_path, session_id)["external_command_option_contracts"]["rg"]
+        assert "-A" in contract["valued"]
+        assert "-n" in contract["flags"]

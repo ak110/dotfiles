@@ -23,6 +23,56 @@ from agent_toolkit._common import file_lock as _file_lock  # noqa: E402  # pylin
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 
 
+def test_case_sensitivity_probe_reports_linux_filesystem_as_case_sensitive(tmp_path: pathlib.Path) -> None:
+    """実際のプローブ処理が一時ディレクトリを大文字小文字を区別すると判定し、残留物を残さない。"""
+    assert _common.is_case_sensitive(tmp_path) is True
+    assert not list(tmp_path.iterdir())
+
+
+def test_case_sensitivity_probe_detects_case_insensitive_directory(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """名前を畳み込むディレクトリでは、反転名の実在をもって区別しないと判定する。"""
+    original_exists = pathlib.Path.exists
+
+    def case_folding_exists(self: pathlib.Path) -> bool:
+        """名前の大文字小文字を無視して実在判定するファイルシステムを模擬する。"""
+        if original_exists(self):
+            return True
+        return any(entry.name.lower() == self.name.lower() for entry in self.parent.iterdir())
+
+    monkeypatch.setattr(pathlib.Path, "exists", case_folding_exists)
+
+    assert _common.is_case_sensitive(tmp_path) is False
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("case_sensitive", "expected"),
+    [(True, False), (False, True)],
+)
+def test_comparison_key_folds_case_only_when_insensitive(case_sensitive: bool, expected: bool) -> None:
+    """比較キーは大文字小文字を区別しない場合だけ同名として畳み込む。"""
+    left = _common.comparison_key("Same.md", case_sensitive=case_sensitive)
+    right = _common.comparison_key("same.md", case_sensitive=case_sensitive)
+
+    assert (left == right) is expected
+
+
+@pytest.mark.parametrize("case_sensitive", [True, False])
+def test_missing_dependency_warnings_reports_only_unresolvable_references(case_sensitive: bool) -> None:
+    """取り込み先に実在しない参照だけを警告へ列挙し、比較キーで一致する参照は除く。"""
+    warnings = _common.missing_dependency_warnings(
+        [("a.md", "Present.md"), ("a.md", "absent.md")],
+        resolvable={"present.md"},
+        case_sensitive=case_sensitive,
+    )
+
+    expected = ["a.mdのdepends_onが参照するPresent.mdは取り込み先に実在しません"] if case_sensitive else []
+    assert warnings == [*expected, "a.mdのdepends_onが参照するabsent.mdは取り込み先に実在しません"]
+
+
 def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """WI共通処理のGit実行は成功時に標準出力と標準エラーへ書かない。"""
     _common._run_git(["init", "--initial-branch=main"], tmp_path)
@@ -707,7 +757,7 @@ class TestWarnSpaceSeparatedOption:
         """対象サブコマンドの空白区切り指定では推奨形式を警告する。"""
         _common.warn_space_separated_option([top_command, subcommand, "item.md", option, "value"])
 
-        assert capsys.readouterr().err == f"警告: {option}は{option}=VALUE形式で渡すことを推奨します。\n"
+        assert capsys.readouterr().err == f"警告: {option}は{option}=VALUE形式で渡す。\n"
 
     @pytest.mark.parametrize(
         "argv",
@@ -1047,7 +1097,7 @@ class TestCommitAndPushRetry:
         error = capsys.readouterr().err
         assert "rebase状態を保持" in error
         assert "git add <競合解消済みパス>" in error
-        assert "自動abortは行っていません" in error
+        assert "自動abortは行っていない" in error
         assert "git rebase --abort" in error
 
     def test_reports_conflict_path_when_rebase_fails(
@@ -1610,8 +1660,8 @@ class TestPullWithRecentNotice:
 
         assert [call for call in calls if call[0] in ("fetch", "merge")] == []
         assert capsys.readouterr().err == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
-            "最新化する場合は`--pull`を指定してください。\n"
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
+            "最新化する場合は`--pull`を指定する。\n"
         )
 
     def test_recent_reuse_still_migrates_legacy_reservations(
@@ -1818,5 +1868,28 @@ class TestUpstreamCrossRepoDependency:
         (tmp_path / "adopted").mkdir(exist_ok=True)
         (tmp_path / "inbox" / "upstream.md").rename(tmp_path / "adopted" / "upstream.md")
         readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
+        assert readiness.ready == ("downstream.md",)
+        assert not readiness.blocked
+
+    def test_terminal_entry_in_other_repo_does_not_release_wait(self, tmp_path: pathlib.Path) -> None:
+        """同じtarget_repoの依存先が未終端の間は、別target_repoの同名項目が終端していても待機する。"""
+        _write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/other")
+
+        readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
+
+        assert readiness.ready == ("upstream.md",)
+        assert readiness.blocked == ("downstream.md",)
+        assert not readiness.missing_dependencies
+
+    def test_active_entry_in_other_repo_does_not_block_resolved_dependency(self, tmp_path: pathlib.Path) -> None:
+        """同じtarget_repoの依存先が終端していれば、別target_repoの同名項目が未終端でも着手できる。"""
+        _write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", target_repo="github.com/example/other")
+
+        readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
+
         assert readiness.ready == ("downstream.md",)
         assert not readiness.blocked

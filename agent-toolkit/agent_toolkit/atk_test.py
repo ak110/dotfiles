@@ -105,7 +105,7 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
         assert exc_info.value.code == 0
 
     assert (notes / "inbox/remote.md").exists()
-    assert capsys.readouterr().out == f"同期完了: {notes.resolve()}\n" * 2
+    assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n" * 2
 
 
 @pytest.mark.parametrize(
@@ -410,7 +410,7 @@ class TestWaitScheduleParser:
             assert not warning_lines
         else:
             assert warning_lines == [
-                f"warning: 登録を持たない管理対象が{count}件あります（一覧と回収方法は atk managed-temp list で確認できます）"
+                f"警告: 登録を持たない管理対象が{count}件ある（一覧と回収方法は atk managed-temp list で確認できる）"
             ]
             assert str(tmp_path) not in captured.err
 
@@ -441,7 +441,7 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "fixed-subcommand-output\n"
-        assert ("登録を持たない管理対象が1件あります" in captured.err) is expects_warning
+        assert ("登録を持たない管理対象が1件ある" in captured.err) is expects_warning
 
     def test_unregistered_managed_temp_count_failure_does_not_change_subcommand_result(
         self,
@@ -470,7 +470,7 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "fixed-subcommand-output\n"
-        assert captured.err == "warning: 登録を持たない管理対象を探索できませんでした: 走査失敗\n"
+        assert captured.err == "警告: 登録を持たない管理対象を探索できなかった: 走査失敗\n"
 
     def test_managed_temp_list_reports_unregistered_paths(
         self,
@@ -490,7 +490,7 @@ class TestWaitScheduleParser:
         captured = capsys.readouterr()
         assert str(target) in captured.err
         assert f"atk managed-temp cleanup --path {target} --recover-registry" in captured.err
-        assert "登録を持たない管理対象が1件あります" not in captured.err
+        assert "登録を持たない管理対象が1件ある" not in captured.err
 
     def test_cleanup_failure_does_not_change_subcommand_exit_code(
         self,
@@ -518,7 +518,7 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "*/30 * * * *\n"
-        assert "warning: 管理対象一時領域を自動削除できませんでした" in captured.err
+        assert "警告: 管理対象一時領域を自動削除できない" in captured.err
         assert target.exists()
 
     @pytest.mark.parametrize("path_form", ["canonical", "parent-reference"])
@@ -740,7 +740,7 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
         atk.main(["wi", "start-processing", "awi.md"], home=tmp_path)
     assert exc_info.value.code == 3
     stderr = capsys.readouterr().err
-    assert "private-notesに未pushのcommitが1件残っています" in stderr
+    assert "private-notesに未pushのcommitが1件残る" in stderr
     assert f"`git -C {notes.resolve()} status`" in stderr
     assert "atk wi commit" in stderr
 
@@ -768,7 +768,7 @@ class TestMutationTargetRepoParserOption:
         """6種のmutation系サブコマンドすべてが`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args([top_command, subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
-        expected = ["github.com/foo/bar"] if subcommand == "rm" else "github.com/foo/bar"
+        expected = "github.com/foo/bar" if subcommand == "edit" else ["github.com/foo/bar"]
         assert args.target_repo == expected
 
     def test_edit_rejects_message(self) -> None:
@@ -976,7 +976,7 @@ def test_wi_pull_uses_lock_and_suppresses_entry_notification(
 
     assert exc_info.value.code == 0
     assert events == ["lock-enter", "pull", "lock-exit"]
-    assert capsys.readouterr().out == f"同期完了: {notes.resolve()}\n"
+    assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n"
 
 
 @pytest.mark.parametrize(
@@ -1203,10 +1203,10 @@ def test_process_loop_abort_commands_report_and_transition_state(
 
     for command, expected in (
         ("process-loop-status", "常駐処理への中断要求: なし\n"),
-        ("process-loop-abort-cancel", "常駐処理への中断要求は設定されていません。\n"),
-        ("process-loop-abort", "常駐処理へ中断を要求しました。\n"),
+        ("process-loop-abort-cancel", "成功: 常駐処理への中断要求は設定されていないため、解除の変更は無い\n"),
+        ("process-loop-abort", "成功: 常駐処理へ中断を要求した\n"),
         ("process-loop-status", "常駐処理への中断要求: あり\n"),
-        ("process-loop-abort-cancel", "常駐処理への中断要求を解除しました。\n"),
+        ("process-loop-abort-cancel", "成功: 常駐処理への中断要求を解除した\n"),
         ("process-loop-status", "常駐処理への中断要求: なし\n"),
     ):
         with pytest.raises(SystemExit) as exc_info:
@@ -1320,7 +1320,7 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     with pytest.raises(SystemExit) as structural_exc_info:
         atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
     assert structural_exc_info.value.code == 0
-    assert "構造検証成功" in capsys.readouterr().out
+    assert "成功: 構造を検証した" in capsys.readouterr().out
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["review-table", "validate", str(path)])
@@ -1480,7 +1480,7 @@ class TestSpaceSeparatedOptionWarning:
     def test_warns_before_argument_error(self, top_command: str, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit):
             atk.main([top_command, subcommand, "missing.md", "--note", "memo"])
-        assert "警告: --noteは--note=VALUE形式で渡すことを推奨します。" in capsys.readouterr().err
+        assert "警告: --noteは--note=VALUE形式で渡す。" in capsys.readouterr().err
 
     def test_does_not_warn_for_equals_form(self, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit):
@@ -1616,7 +1616,7 @@ class TestInboxAlwaysEnabled:
             atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert "1件投入:" in capsys.readouterr().out
+        assert "成功: 1件をinboxへ投入した" in capsys.readouterr().out
 
 
 class TestPrivateNotesMissing:
@@ -1635,7 +1635,7 @@ class TestPrivateNotesMissing:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "WI保存ディレクトリが見つかりません" in captured.err
+        assert "WI保存ディレクトリが見つからない" in captured.err
 
 
 class TestNoSubcommand:
@@ -1716,7 +1716,7 @@ class TestAddSingleMessage:
                 assert call["kwargs"].get("cwd") == notes
 
         captured = capsys.readouterr()
-        assert "1件投入:\n" in captured.out
+        assert "成功: 1件をinboxへ投入した\n" in captured.out
         assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
         assert "編集する場合:\n" in captured.out
@@ -1943,7 +1943,7 @@ class TestAddMultipleMessages:
         assert "chore: add 2 awi items" in commit_cmd
 
         captured = capsys.readouterr()
-        assert "2件投入:\n" in captured.out
+        assert "成功: 2件をinboxへ投入した\n" in captured.out
         assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
         assert f"  ~/private-notes/inbox/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
@@ -2308,7 +2308,7 @@ class TestAddBatchOption:
         assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8") == (
             "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
         )
-        assert "1件取り込み:" in capsys.readouterr().out
+        assert "成功: 1件をinboxへ取り込んだ" in capsys.readouterr().out
 
     def test_rejects_non_show_format_input(
         self,
@@ -2326,5 +2326,5 @@ class TestAddBatchOption:
             atk.main(["wi", "add", "--batch", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
-        assert "投入を拒否しました" in capsys.readouterr().err
+        assert "投入を拒否した" in capsys.readouterr().err
         assert not list((notes / "inbox").iterdir())

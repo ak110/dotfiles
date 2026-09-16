@@ -35,15 +35,15 @@ from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 @pytest.mark.parametrize(
     ("entries", "expected"),
     [
-        ([], "error: --pathを指定してください。現在の管理対象はありません。\n"),
+        ([], "失敗: --pathを指定してください。現在の管理対象はありません。\n"),
         (
             [{"path": "/tmp/first"}],
-            "error: --pathを指定してください。現在の管理対象は1件です。"
+            "失敗: --pathを指定してください。現在の管理対象は1件です。"
             "atk managed-temp cleanup --path /tmp/first を実行してください。\n",
         ),
         (
             [{"path": "/tmp/first"}, {"path": "/tmp/second"}],
-            "error: --pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n/tmp/first\n/tmp/second\n",
+            "失敗: --pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n/tmp/first\n/tmp/second\n",
         ),
     ],
 )
@@ -102,6 +102,29 @@ def test_session_id_create_is_idempotent_and_cleanup_resolves_target(tmp_path: p
     assert not target.exists()
 
 
+def test_cli_writes_result_lines_under_a_non_utf8_stdio_encoding(tmp_path: pathlib.Path) -> None:
+    """標準入出力の既定符号化が日本語を扱えない環境でも結果行を送出する。"""
+    env, _ = _isolated_cli_environment(tmp_path)
+    env["PYTHONIOENCODING"] = "cp1252"
+
+    created = subprocess.run(
+        [sys.executable, str(_SCRIPT), "create", "--prefix", "session", "--session-id", "session-1"],
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    cleaned = subprocess.run(
+        [sys.executable, str(_SCRIPT), "cleanup", "--session-id", "session-1"],
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+    assert created.returncode == 0, created.stderr
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "成功: セッションの管理対象一時領域を回収した" in cleaned.stdout.decode("utf-8")
+
+
 def test_cleanup_rejects_path_with_session_id(tmp_path: pathlib.Path) -> None:
     """cleanupの対象指定はpathとsession_idのいずれか一方に限る。"""
     with pytest.raises(SystemExit) as captured:
@@ -128,6 +151,33 @@ def test_create_with_session_root_returns_unregistered_child() -> None:
     assert len(entries) == 1
     assert entries[0]["path"] == str(session_root)
     subject.cleanup_managed_temp(session_root)
+
+
+def test_cleanup_removes_child_of_registered_temp(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--session-root`で作成した子領域は、個別の管理情報が無くても回収できる。"""
+    session_root = subject.create_managed_temp("session", session_id="session-1")
+    assert subject.main(["create", "--prefix", "work", "--session-root", str(session_root)]) == 0
+    child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    assert child.is_dir()
+    assert not (child / _MARKER_NAME).exists()
+
+    assert subject.main(["cleanup", "--path", str(child)]) == 0
+
+    assert not child.exists()
+    assert session_root.is_dir()
+    assert str(session_root) in capsys.readouterr().err
+    subject.cleanup_managed_temp(session_root)
+
+
+def test_cleanup_rejects_path_outside_registered_temp(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """登録済み領域の配下に無い管理情報なしのパスは、現行どおり終了コード2で拒否する。"""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    assert subject.main(["cleanup", "--path", str(outside)]) == 2
+
+    assert outside.is_dir()
+    assert "失敗: " in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("conflict", ["--awi=20260913-221409-001.md", "--session-id=session-2"])

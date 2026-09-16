@@ -3,9 +3,9 @@
 作業対象リポジトリと、AWI、UWI及び計画を保管するキュー管理リポジトリ（`atk config get private_notes`が返すprivate-notes）は別のリポジトリとして扱う。
 
 - 変更対象の特定、差分の確認、commit、退避及び巻き戻しは、依頼が指す作業対象リポジトリの作業ツリーに限って行う
-- コーディングエージェントがprivate-notesの作業ツリーを変更する場合は、`atk wi`、`atk plans`及び`atk serve`が提供する経路を既定とする。`atk`がGit履歴の分岐又はrebaseの失敗を報告し、同じ`atk`操作の再実行でも解消しない場合に限り、当該出力が示した回復手順の範囲で`git`を直接実行して復旧してよい。復旧の前に`git -C <private-notesのroot> status`と`git -C <private-notesのroot> log --left-right --oneline HEAD...@{u}`で現在の状態を確認する。実行した操作と観測した出力は報告へ含める。`atk worktree-stash`による退避、`git stash`及び未コミット差分の破棄は、回復手順に該当する場合も行わない。private-notesは常駐する`atk wi process-loop`と`atk serve`、並行する別セッションが同時に更新するため、これらの操作は他主体の未コミットのキュー操作を失わせる。本項は厳守規定とする
+- コーディングエージェントがprivate-notesの作業ツリーを変更する場合は、`atk wi`、`atk plans`及び`atk serve`が提供する経路を既定とする。`atk`がGit履歴の分岐又はrebaseの失敗を報告し、同じ`atk`操作の再実行でも解消しない場合に限り、当該出力が示した回復手順の範囲で`git`を直接実行して復旧してよい。復旧の前に`git -C <private-notesのroot> status`と`git -C <private-notesのroot> log --left-right --oneline HEAD...@{u}`で現在の状態を確認する。実行した操作と観測した出力は報告へ含める。`atk worktree-stash`による退避、`git stash`及び未コミット差分の破棄は、回復手順に該当する場合も行わない。private-notesは常駐する`atk wi process-loop`と`atk serve`、並行する別セッションが同時に更新するため、これらの操作は他主体の未コミットのキュー操作を失わせる。本項は既定で従う規定とする
 - AWI及びUWIの投入では、private-notesの別の作業ツリーを作成せず、`atk config get private_notes`が返す作業ツリーへ書き込む
-- 投入の完了は`agent-toolkit:wi-standards`「投入と取得」が定める判定に従い、別の作業ツリーのローカルcommitを投入の完了として報告しない（厳守規定。正本から取得できない記録は、消費主体であるユーザーと後続のセッションが受け取れない）
+- 投入の完了は`agent-toolkit:wi-standards`「投入と取得」が定める判定に従って報告する。別の作業ツリーのローカルcommitは、正本から取得できないため、ユーザーと後続のセッションが受け取れない
 - 本項はコーディングエージェントの操作を対象とする。ユーザーが外部のエディターでキューのファイルを直接編集することは本項の制限の対象にせず、その未コミット変更は`atk wi commit`で確定する
 - private-notesの未コミット差分は、キューの状態ディレクトリと保存済みの計画ファイルを含めて`atk wi commit`で確定する。cleanでないためにコマンドが失敗した場合は、差分を退避せず同コマンドで確定するか、当該差分を所有する主体の終端を待つ
 - 委譲先へ渡す`push不可`の権限は、作業対象リポジトリの`git push`を指す。`atk`がキュー管理リポジトリへ内部で行うcommitとpushの反映は当該権限の対象に含めず、委譲先はこれを権限の逸脱として扱わない

@@ -73,6 +73,41 @@ TRANSITION_EXPLICIT_STATES = {
 `remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
 """
 
+BULK_SOURCE_STATES = {
+    "start-processing": (WI_STATE_INBOX, WI_STATE_HOLD),
+    "hold": (WI_STATE_INBOX, WI_STATE_PROCESSING),
+    "unhold": (WI_STATE_HOLD,),
+    "return-to-inbox": (WI_STATE_PROCESSING, WI_STATE_REJECTED),
+    "adopt": (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD),
+    "reject": (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD),
+    "remove": WI_USER_REMOVABLE_STATES,
+}
+"""操作ごとの遷移元状態集合。`--all`の候補は当該集合に属する項目だけとする。
+
+各値は、個別指定時の暗黙解決が探索する状態と`TRANSITION_EXPLICIT_STATES`が受理する状態の和集合と一致する。
+`remove`だけは呼出主体で値が変わるため、本表は非エージェント環境の値を持ち、
+エージェント環境の値は`bulk_source_states`が返す。
+"""
+
+BULK_ACTION_LABELS = {
+    "start-processing": "処理開始",
+    "hold": "保留",
+    "unhold": "保留解除",
+    "return-to-inbox": "差し戻し",
+    "adopt": "採用",
+    "reject": "不採用",
+    "remove": "削除",
+}
+"""一括経路の候補0件、確認及び再照合の各メッセージが使う操作名。"""
+
+
+def bulk_source_states(action: str, *, actor_is_agent: bool) -> tuple[str, ...]:
+    """呼出主体を加味した当該操作の遷移元状態集合を返す。"""
+    if action == "remove":
+        return WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
+    return BULK_SOURCE_STATES[action]
+
+
 WI_TYPE_AWI = "awi"
 """frontmatterの`type`がエージェントワークアイテムであることを示す値。"""
 

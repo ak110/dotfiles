@@ -22,7 +22,7 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._atk.help_text import HELP as _ATK_HELP
+from agent_toolkit._atk import help_text as _ATK_HELP_SOURCE
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -126,15 +126,15 @@ def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path)
 class TestMojibakeCheck:
     """文字化け（U+FFFD）検出。
 
-    編集対象は再編集で復元できるため警告とし、ユーザーが直接読む本文だけ遮断を維持する。
+    編集対象もユーザーが直接読む本文も再編集で是正できるため、いずれも警告で返す。
     """
 
-    def test_user_facing_text_with_mojibake_is_blocked(self):
+    def test_user_facing_text_with_mojibake_is_warned(self):
         result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "hello " + chr(0xFFFD) + " world"}})
-        assert result.returncode == 2
-        assert "U+FFFD" in result.stderr
-        assert "[block]" in result.stderr
-        assert "Fix: U+FFFDを意図した文字へ置き換えて再実行する" in result.stderr
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "U+FFFD" in context
+        assert "U+FFFDを意図した文字へ置き換えて再実行する" in context
 
     def test_write_with_mojibake(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "hello \ufffd world"}})
@@ -1073,7 +1073,34 @@ class TestColloquialCheck:
 
 
 class TestUserFacingTextChecks:
-    """ユーザーが直接読む質問・計画本文へ共通本文検査を適用する。"""
+    """ユーザーが直接読む質問・計画本文へ共通本文検査を適用し、いずれも警告で返す。"""
+
+    @pytest.mark.parametrize("tool_name", ["AskUserQuestion", "ExitPlanMode"])
+    def test_user_facing_tools_are_never_blocked(self, tool_name: str) -> None:
+        """ユーザーへ提示する本文を入力とする判定は、当該ツールの実行を遮断しない。
+
+        遮断は当該ターンの入力と作業を失わせ、同じ確認の再発行を要する。
+        ユーザーが本文を読んで誤りを指摘できるため、検出は警告で返す。
+        """
+        body = "日本語の�本文に가が混入し、atk wi addの契約へ触れる。"
+        tool_input = (
+            {"plan": body}
+            if tool_name == "ExitPlanMode"
+            else {
+                "questions": [
+                    {
+                        "question": body,
+                        "header": body,
+                        "options": [{"label": body, "description": body}],
+                    }
+                ]
+            }
+        )
+
+        result = _run({"tool_name": tool_name, "tool_input": tool_input})
+
+        assert result.returncode == 0
+        assert "[block]" not in result.stderr
 
     @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])
     @pytest.mark.parametrize("check", ["mojibake", "foreign"])
@@ -1084,9 +1111,9 @@ class TestUserFacingTextChecks:
         }
         result = _run(_user_facing_payload(field, values[check]))
 
-        assert result.returncode == 2
+        assert result.returncode == 0
         expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
-        assert expected in result.stderr
+        assert expected in _additional_context(result)
 
     @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])
     def test_colloquial_text_is_not_blocked(self, field: str, deny_substring: str) -> None:
@@ -1138,7 +1165,11 @@ class TestUserFacingTextChecks:
 
 
 class TestAtkContractBeforeQuestion:
-    """確認の発行前に、選択の対象が持つ`atk`サブコマンドの公開契約を実行主体へ渡す。"""
+    """`atk`サブコマンドを主題とする確認を遮断しない。
+
+    受理形式の事前確認は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が定め、
+    hookの遮断では強制しない。
+    """
 
     _SUBCOMMAND = "atk wi process-loop-abort"
 
@@ -1148,24 +1179,12 @@ class TestAtkContractBeforeQuestion:
         return payload
 
     @pytest.mark.parametrize("field", ["question", "header", "label", "description"])
-    def test_unobserved_subcommand_blocks_with_contract(self, tmp_path: pathlib.Path, field: str) -> None:
-        """未観測のサブコマンド名を含む確認を、当該サブコマンドの公開契約を添えて遮断する。"""
+    def test_unobserved_subcommand_is_not_blocked(self, tmp_path: pathlib.Path, field: str) -> None:
+        """未観測のサブコマンド名を含む確認も遮断しない。"""
         result = _run(self._payload(field, f"contract-{field}"), env_overrides=_plan_file_state_env(tmp_path))
 
-        assert result.returncode == 2
-        assert _ATK_HELP[self._SUBCOMMAND]["description"] in result.stderr
-        assert "confirmation-and-uwi" in result.stderr
-
-    def test_second_question_with_same_subcommand_passes(self, tmp_path: pathlib.Path) -> None:
-        """同じサブコマンドを含む再発行は、観測済みの記録により通過する。"""
-        env = _plan_file_state_env(tmp_path)
-        first = _run(self._payload("question", "contract-repeat"), env_overrides=env)
-        assert first.returncode == 2
-
-        second = _run(self._payload("question", "contract-repeat"), env_overrides=env)
-
-        assert second.returncode == 0
-        assert second.stderr == ""
+        assert result.returncode == 0
+        assert result.stderr == ""
 
     def test_question_without_subcommand_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
         """サブコマンド名を含まない確認は遮断しない。"""
@@ -1178,7 +1197,7 @@ class TestAtkContractBeforeQuestion:
         assert result.stderr == ""
 
     def test_exit_plan_mode_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
-        """計画本文は選択肢を伴わないため本検査の対象にしない。"""
+        """計画本文も遮断しない。"""
         payload = {
             "tool_name": "ExitPlanMode",
             "tool_input": {"plan": f"`{self._SUBCOMMAND}`で常駐処理を止める。"},
@@ -1189,6 +1208,60 @@ class TestAtkContractBeforeQuestion:
 
         assert result.returncode == 0
         assert result.stderr == ""
+
+
+class TestAtkHelpTextReadObservation:
+    """`atk`の公開契約の正本を読んだ範囲を、`--help`の実行と同じ観測集合へ合流させる。"""
+
+    _HELP_TEXT_PATH = pathlib.Path(_ATK_HELP_SOURCE.__file__).resolve()
+    _SUBCOMMAND = "atk wi process-loop-abort"
+
+    @classmethod
+    def _definition_line(cls) -> int:
+        """`HELP`のキー定義行の1始まりの行番号を返す。"""
+        for index, line in enumerate(cls._HELP_TEXT_PATH.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.strip().startswith(f'"{cls._SUBCOMMAND}"'):
+                return index
+        raise AssertionError(f"{cls._SUBCOMMAND}のキー定義行が見つからない")
+
+    def _read_payload(self, session_id: str, file_path: str, offset: int, limit: int) -> dict:
+        return {
+            "tool_name": "Read",
+            "tool_input": {"file_path": file_path, "offset": offset, "limit": limit},
+            "session_id": session_id,
+        }
+
+    @staticmethod
+    def _observed_paths(state_dir: pathlib.Path, session_id: str) -> list[str]:
+        """当該セッションが観測済みとして記録した`atk`サブコマンド経路を返す。"""
+        path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+        if not path.exists():
+            return []
+        recorded = json.loads(path.read_text(encoding="utf-8")).get("atk_help_observed")
+        return recorded if isinstance(recorded, list) else []
+
+    def test_read_of_definition_range_records_subcommand(self, tmp_path: pathlib.Path) -> None:
+        """定義を含む範囲の取得は、当該サブコマンド経路を観測済みとして記録する。"""
+        env = _plan_file_state_env(tmp_path)
+        session_id = "help-read-in-range"
+        line = self._definition_line()
+
+        read_result = _run(self._read_payload(session_id, str(self._HELP_TEXT_PATH), line, 1), env_overrides=env)
+
+        assert read_result.returncode == 0
+        assert " ".join(self._SUBCOMMAND.split()[1:]) in self._observed_paths(tmp_path, session_id)
+
+    def test_read_of_other_file_does_not_record(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル以外の取得は観測として記録しない。"""
+        env = _plan_file_state_env(tmp_path)
+        session_id = "help-read-other-file"
+        other = tmp_path / "help_text_copy.py"
+        other.write_text(f'HELP = {{\n    "{self._SUBCOMMAND}": {{}},\n}}\n', encoding="utf-8")
+
+        read_result = _run(self._read_payload(session_id, str(other), 1, 3), env_overrides=env)
+
+        assert read_result.returncode == 0
+        assert self._observed_paths(tmp_path, session_id) == []
 
 
 class TestUserFacingTypoCheck:

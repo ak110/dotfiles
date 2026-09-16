@@ -731,7 +731,7 @@ class TestUwiAnswerEditorFailure:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "エディターが終了コード1で終了しました" in captured.err
+        assert "エディターが終了コード1で終了した" in captured.err
         commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert commit_calls == []
 
@@ -764,7 +764,7 @@ class TestUwiAnswerNonInteractive:
         assert content.rstrip().endswith("採用する")
         assert _is_uwi_answered(content)
         captured = capsys.readouterr()
-        assert f"1件回答反映: {filename}" in captured.out
+        assert f"成功: UWIへ回答を反映した: {filename}" in captured.out
         assert "$EDITOR" not in captured.err
         assert [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
 
@@ -786,7 +786,7 @@ class TestUwiAnswerNonInteractive:
 
         assert exc_info.value.code == 1
         assert path.read_text(encoding="utf-8") == before
-        assert "回答欄マーカーを含められません" in capsys.readouterr().err
+        assert "回答欄マーカーを含められない" in capsys.readouterr().err
 
     def test_filename_without_answer_body_exits_1(
         self,
@@ -805,7 +805,7 @@ class TestUwiAnswerNonInteractive:
             atk.main(["wi", "answer", filename], home=tmp_path)
 
         assert exc_info.value.code == 1
-        assert "ファイル名と回答本文の両方を指定してください" in capsys.readouterr().err
+        assert "ファイル名と回答本文の両方を指定する" in capsys.readouterr().err
 
     def test_answer_body_without_filename_exits_1(
         self,
@@ -819,7 +819,7 @@ class TestUwiAnswerNonInteractive:
             _cmd_answer(argparse.Namespace(filename=None, answer_body="採用する"), notes)
 
         assert exc_info.value.code == 1
-        assert "ファイル名と回答本文の両方を指定してください" in capsys.readouterr().err
+        assert "ファイル名と回答本文の両方を指定する" in capsys.readouterr().err
 
     def test_missing_entry_exits_1(
         self,
@@ -835,7 +835,7 @@ class TestUwiAnswerNonInteractive:
             atk.main(["wi", "answer", f"{_FIXED_TIMESTAMP}-999.md", "採用する"], home=tmp_path)
 
         assert exc_info.value.code == 1
-        assert "inbox・processingのいずれにも存在しません" in capsys.readouterr().err
+        assert "inbox・processingのいずれにも存在しない" in capsys.readouterr().err
 
     def test_non_uwi_entry_exits_1(
         self,
@@ -880,8 +880,7 @@ def test_agent_environment_rejects_uwi_answer_before_writing(
     assert exc_info.value.code == 1
     assert path.read_bytes() == before
     assert (
-        capsys.readouterr().err
-        == "UWIの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。\n"
+        capsys.readouterr().err == "失敗: UWIの回答はユーザーだけが書き込む。エージェント環境から起動したatkでは回答できない\n"
     )
 
 
@@ -1099,7 +1098,7 @@ class TestUwiAdopt:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox・processingのいずれにも存在しません" in captured.err
+        assert "inbox・processingのいずれにも存在しない" in captured.err
 
     def test_partial_missing_file_prevents_any_move(
         self,
@@ -1147,7 +1146,7 @@ class TestUwiAdopt:
         assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         assert (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         stderr = capsys.readouterr().err
-        assert "重複が含まれます" in stderr
+        assert "重複がある" in stderr
         commit_calls = [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert len(commit_calls) == 1
         assert "chore: process 1 entry (adopted)" in commit_calls[0]
@@ -1282,7 +1281,7 @@ class TestUwiRm:
         assert exc_info.value.code == 0
         assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         stderr = capsys.readouterr().err
-        assert "重複が含まれます" in stderr
+        assert "重複がある" in stderr
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 entry" in " ".join(commit_cmd)
 

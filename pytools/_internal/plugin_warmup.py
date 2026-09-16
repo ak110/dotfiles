@@ -152,16 +152,17 @@ def warmup(
     )
     elapsed = time.monotonic() - started
     short = log_format.home_short(path)
+    if result is not None and result.returncode == 0:
+        logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {short}"))
+        return
+    # 失敗時は`uv`の標準エラーと標準出力を必ず伝播させる。
+    # 終了コードと経過時間だけの診断では、依存解決の失敗本文が永続ログにもtracebackにも現れず、
+    # 利用者と後続の調査主体が原因へ到達できない。
     if result is None:
-        message = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {short}"
-        logger.warning(log_format.format_status(tag, message))
-        if fail_on_error:
-            raise RuntimeError(message)
-        return
-    if result.returncode != 0:
-        message = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {short}"
-        logger.warning(log_format.format_status(tag, message))
-        if fail_on_error:
-            raise RuntimeError(message)
-        return
-    logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {short}"))
+        summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {short}"
+    else:
+        summary = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {short}"
+    message = f"{summary} / {claude_common.format_cli_error(result)}"
+    logger.warning(log_format.format_status(tag, message))
+    if fail_on_error:
+        raise RuntimeError(message)

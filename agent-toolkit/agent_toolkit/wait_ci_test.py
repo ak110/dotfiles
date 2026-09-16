@@ -712,12 +712,12 @@ class TestUnifiedCompletionLoop:
         """一時的な取得失敗後の成功を両経路で受理する。"""
         calls = 0
 
-        def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord]]:
+        def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord], set[int]]:
             nonlocal calls
             calls += 1
             if calls == 1:
                 raise wait_ci.RunListError("transient completion failure")
-            return [_run()], []
+            return [_run()], [], set()
 
         result, runs, _ = wait_ci._wait_for_completion(  # pylint: disable=protected-access  # noqa: SLF001
             start=0.0,
@@ -740,7 +740,7 @@ class TestUnifiedCompletionLoop:
     def test_three_snapshot_failures_return_gh_error(self, follow_mode: bool) -> None:
         """3回連続取得失敗を両経路で同じ終了コードへ変換する。"""
 
-        def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord]]:
+        def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord], set[int]]:
             raise wait_ci.RunListError("completion failure")
 
         result, runs, _ = wait_ci._wait_for_completion(  # pylint: disable=protected-access  # noqa: SLF001
@@ -759,6 +759,51 @@ class TestUnifiedCompletionLoop:
 
         assert result == wait_ci.EXIT_GH_ERROR
         assert not runs
+
+
+class TestSupersededCancelledRuns:
+    """同じworkflow名・同じcommitへ重複登録され、後続runへ置き換えられて打ち切られたrunの扱いを検証する。
+
+    保証する契約は、打ち切られた残骸runを成否判定の対象へ含めないことと、
+    当該runを期待run集合へ残したまま欠落待機を継続しないこととする。
+    """
+
+    def _superseded_pair_dispatch(self, final_conclusion: str):
+        """登録猶予中は2runとも実行中、以降は先行runがcancelled・後続runが指定の結論となる一覧を返す。"""
+        calls = {"n": 0}
+
+        def _fn(_sha):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return [
+                    _run(status="in_progress", conclusion=None, db_id=1),
+                    _run(status="in_progress", conclusion=None, db_id=2),
+                ]
+            return [_run(conclusion="cancelled", db_id=1), _run(conclusion=final_conclusion, db_id=2)]
+
+        return _fn
+
+    def test_superseded_cancelled_run_does_not_block_success(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """後続runが成功した入力を成功と判定し、期待run集合の欠落待機を発生させない。"""
+        assert _run_wait(self._superseded_pair_dispatch("success"), registration_grace=1.0) == wait_ci.EXIT_SUCCESS
+        assert "期待run集合の一部が取得結果から欠落" not in capsys.readouterr().err
+
+    def test_superseded_cancelled_run_keeps_later_failure(self) -> None:
+        """後続runが失敗した入力は従来どおり失敗と判定する。"""
+        assert _run_wait(self._superseded_pair_dispatch("failure"), registration_grace=1.0) == wait_ci.EXIT_CI_FAILED
+
+    def test_single_cancelled_run_still_follows_later_commits(self) -> None:
+        """同一commitのrunが1件だけcancelledである場合は、後続SHA追跡の振る舞いを変えない。"""
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(db_id=2, head_sha="sha2")]
+
+        def _fn(sha):
+            return cancelled if sha == "sha1" else follow
+
+        assert (
+            _run_wait(_fn, follow_cancelled=True, registration_grace=0.0, follow_shas_fn=lambda _b: ["sha2"])
+            == wait_ci.EXIT_SUCCESS
+        )
 
 
 class TestFollowCancelled:

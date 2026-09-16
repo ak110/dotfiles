@@ -8,6 +8,7 @@ import argparse
 import pathlib
 import sys
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.common import (
     WI_PROCESSABLE_STATES,
     WI_STATES,
@@ -87,7 +88,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     for filename in args.filenames:
         hint = _state_prefixed_filename_hint(filename)
         if hint is not None:
-            print(hint, file=sys.stderr)
+            _outcome.report_failure(hint)
             sys.exit(2)
     filenames = _dedup_positional_filenames(args.filenames, "show")
     validated_filenames = [
@@ -125,7 +126,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 selected_by_name.append(selected_entry)
         if missing:
             for filename in missing:
-                print(f"全状態フォルダに存在しません: {filename}", file=sys.stderr)
+                _outcome.report_failure(f"全状態フォルダに存在しない: {filename}。実在するファイル名を指定し直す")
             sys.exit(2)
         for path, target_repo, text, state, kind in selected_by_name:
             answered = _is_uwi_answered(text)

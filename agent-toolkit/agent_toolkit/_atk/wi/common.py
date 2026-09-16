@@ -22,6 +22,7 @@ UWIの回答判定`_is_uwi_answered`は`_uwi_scan`が実体を持つ。PostToolU
 import argparse
 import dataclasses
 import datetime
+import functools
 import os
 import pathlib
 import re
@@ -36,6 +37,7 @@ import filelock
 import platformdirs
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import legacy as _atk_wi_legacy
 from agent_toolkit._atk.wi.constants import (
@@ -147,7 +149,7 @@ def warn_space_separated_option(argv: list[str]) -> None:
             continue
         value = argv[index + 1]
         if not value.startswith("--") and "=" not in value:
-            print(f"警告: {arg}は{arg}=VALUE形式で渡すことを推奨します。", file=sys.stderr)
+            _outcome.report_warning(f"{arg}は{arg}=VALUE形式で渡す。")
 
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
@@ -240,7 +242,7 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     root = _private_notes_path(home)
     if not root.exists():
         if os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
-            print(f"WI保存ディレクトリが見つかりません: {root}", file=sys.stderr)
+            _outcome.report_failure(f"WI保存ディレクトリが見つからない: {root}。AGENT_TOOLKIT_PRIVATE_NOTESの値を確認する")
             sys.exit(1)
         _init_local_private_notes_repo(root)
     _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
@@ -425,8 +427,8 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
 
     interval = int(_PULL_MIN_INTERVAL_SECONDS)
     print(
-        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
-        "最新化する場合は`--pull`を指定してください。",
+        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
+        "最新化する場合は`--pull`を指定する。",
         file=sys.stderr,
     )
     _migrate_legacy_reservations(private_notes)
@@ -520,10 +522,9 @@ def _notify_unpushed_commits_if_any(private_notes: pathlib.Path) -> bool:
     if count is None or count == 0:
         return False
     resolved = private_notes.resolve()
-    print(f"private-notesに未pushのcommitが{count}件残っています。操作自体は完了しています。", file=sys.stderr)
-    print(
-        f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushしてください。",
-        file=sys.stderr,
+    _outcome.report_warning(
+        f"private-notesに未pushのcommitが{count}件残る。操作自体は完了している。"
+        f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushする。"
     )
     return True
 
@@ -589,7 +590,7 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
         or ".." in parts
         or pathlib.PurePath(filename).is_absolute()
     ):
-        print(f"不正なファイル名: {filename}", file=sys.stderr)
+        _outcome.report_failure(f"不正なファイル名: {filename}。パス区切りを含まないファイル名を指定する")
         sys.exit(2)
     filename = _normalize_md_filename(filename)
     path = base_dir / filename
@@ -597,7 +598,7 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     try:
         path.resolve().relative_to(base_resolved)
     except ValueError:
-        print(f"ファイル名が基準ディレクトリ外を指しています: {filename}", file=sys.stderr)
+        _outcome.report_failure(f"ファイル名が基準ディレクトリ外を指す: {filename}。基準ディレクトリ内のファイル名を指定する")
         sys.exit(2)
     return path
 
@@ -606,6 +607,66 @@ def _validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> No
     """ファイル名群のみ検証する（pull前の早期拒否用）。"""
     for f in filenames:
         _validate_filename(f, base_dir)
+
+
+def existing_entry_filenames(private_notes: pathlib.Path) -> set[str]:
+    """5状態フォルダに実在する`.md`ファイル名の集合を返す。"""
+    return {
+        path.name
+        for state in WI_STATES
+        if (private_notes / state).exists()
+        for path in (private_notes / state).iterdir()
+        if path.suffix == ".md"
+    }
+
+
+def is_case_sensitive(directory: pathlib.Path) -> bool:
+    """指定ディレクトリのファイルシステムがファイル名の大文字小文字を区別するかを実測する。
+
+    OS種別から推定すると誤る（`os.path.normcase`はPOSIX実装では恒等関数であり、
+    大文字小文字を区別しないファイルシステムを既定とする環境でも名前を畳み込まない）ため、
+    一意な名前の空ファイルを当該ディレクトリへ作成し、名前の大文字小文字を反転させたパスが
+    存在するかどうかで判定する。プローブ用ファイルは判定後に必ず削除する。
+    """
+    handle, created = tempfile.mkstemp(prefix=".atk-case-probe-", dir=directory)
+    os.close(handle)
+    probe = pathlib.Path(created)
+    try:
+        return not probe.with_name(probe.name.swapcase()).exists()
+    finally:
+        probe.unlink()
+
+
+def comparison_key(name: str, *, case_sensitive: bool) -> str:
+    """ファイル名の衝突判定に用いる比較キーを返す。
+
+    大文字小文字を区別しないファイルシステムでは同一物理パスへ解決される名前を同一視するため
+    小文字化したキーを返し、区別するファイルシステムでは元の名前をそのまま返す。
+    保存名自体はこのキーと分離し、常に元の大文字小文字を維持する。
+    """
+    return name if case_sensitive else name.lower()
+
+
+def missing_dependency_warnings(
+    references: Iterable[tuple[str, str]],
+    *,
+    resolvable: set[str],
+    case_sensitive: bool,
+) -> list[str]:
+    """取り込み先に実在しない`depends_on`参照を警告文へ列挙する。
+
+    `references`は`(参照元の保存ファイル名, 依存先の原文)`の列とする。
+    実在判定は`comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
+    大小の綴りだけが異なる参照を不在と誤判定しない。警告文には参照の原文を用いる。
+    判定と文面を`atk wi add`の通常経路と`--batch`経路で共有し、両経路で同じ条件の参照へ同じ警告を返す。
+    """
+    key = functools.partial(comparison_key, case_sensitive=case_sensitive)
+    resolvable_keys = {key(name) for name in resolvable}
+    return [
+        f"{source}のdepends_onが参照する{dependency}は取り込み先に実在しません"
+        for source, dependency in references
+        if key(dependency) not in resolvable_keys
+    ]
 
 
 def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[str]:
@@ -627,9 +688,8 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
             seen[key] = name
     if duplicates:
         unique_duplicates = list(dict.fromkeys(duplicates))
-        print(
-            f"警告: {subcommand}の引数リストに重複が含まれます（重複除去して処理を継続）: {', '.join(unique_duplicates)}",
-            file=sys.stderr,
+        _outcome.report_warning(
+            f"{subcommand}の引数リストに重複がある（重複を除いて処理を継続する）: {', '.join(unique_duplicates)}"
         )
     return list(seen.values())
 
@@ -713,10 +773,7 @@ def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object])
     """
     entry_type = normalized_wi_type(metadata.get("type"))
     if entry_type is None:
-        print(
-            f"frontmatterのtypeが不正または欠落しています（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}",
-            file=sys.stderr,
-        )
+        _outcome.report_failure(f"frontmatterのtypeが不正または欠落している（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}")
         sys.exit(2)
     return entry_type
 
@@ -861,18 +918,18 @@ def _collect_message_via_editor(*, strip: bool = True) -> str | None:
     """
     editor = os.environ.get("EDITOR")
     if not editor:
-        print("$EDITORが未設定のためエディター経路を利用できません。", file=sys.stderr)
+        _outcome.report_failure("$EDITORが未設定のためエディター経路を利用できない。$EDITORを設定するか--body-fileを指定する")
         return None
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8", delete=False) as f:
         tmp_path = pathlib.Path(f.name)
     try:
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
-            print(f"エディターが終了コード{result.returncode}で終了しました。", file=sys.stderr)
+            _outcome.report_failure(f"エディターが終了コード{result.returncode}で終了した")
             return None
         saved = tmp_path.read_text(encoding="utf-8")
         if not saved.strip():
-            print("本文が空のため投入を中止しました。", file=sys.stderr)
+            _outcome.report_failure("本文が空のため投入を中止した。本文を書いてから再実行する")
             return None
         return saved.strip() if strip else saved
     finally:

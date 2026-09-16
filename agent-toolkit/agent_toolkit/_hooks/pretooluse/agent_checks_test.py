@@ -160,8 +160,11 @@ class TestBashCommandContractWarnings:
 class TestBashOutputTruncationWarning:
     """`Bash`経由の検証コマンド出力切り詰めを補正する。"""
 
-    def test_simple_output_truncation_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
-        """単純な1段切り詰めは除去し、セッション管理領域への保存へ補正する。"""
+    def test_simple_output_truncation_is_read_back(self, tmp_path: pathlib.Path) -> None:
+        """単純な1段切り詰めは全量を保存し、保存先を操作対象として同じ範囲を読み戻す。
+
+        補正後の呼び出しが補正前の要求範囲を返さないと、保存先を読む呼び出しが別に必要になる。
+        """
         result = _run(
             {
                 "tool_name": "Bash",
@@ -172,18 +175,44 @@ class TestBashOutputTruncationWarning:
         )
         assert result.returncode == 0
         output = json.loads(result.stdout)["hookSpecificOutput"]
-        assert output["updatedInput"]["command"].startswith("pytest -q > ")
-        log_path = pathlib.Path(output["updatedInput"]["command"].removeprefix("pytest -q > "))
+        producer, separator, consumer = output["updatedInput"]["command"].partition("; ")
+        assert separator == "; "
+        log_path = pathlib.Path(producer.removeprefix("pytest -q > "))
         assert log_path.parent.is_dir()
+        assert consumer == f"tail -5 {log_path}"
         context = output["additionalContext"]
         assert "標準出力の全量を保存先へ補正した" in context
         assert (
-            f"第1直列区間 `pytest -q | tail -5`: 切り詰めと判定したコマンドは`tail`。標準出力を`{log_path}`へ保存した"
-            in context
+            f"第1直列区間 `pytest -q | tail -5`: 切り詰めと判定したコマンドは`tail`。標準出力を`{log_path}`へ保存し、"
+            "当該保存先を操作対象として同じコマンドへ渡した" in context
         )
-        assert "当該呼び出しは標準出力を返さない" in context
-        assert "保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている" in context
+        assert "補正前のコマンドが要求した範囲を当該呼び出しの結果へ返す" in context
+        assert "当該呼び出しは標準出力を返さない" not in context
         assert "切り詰めを含まない書き方" in context
+
+    def test_consumer_with_an_operand_is_appended_without_read_back(self, tmp_path: pathlib.Path) -> None:
+        """操作対象を既に持つconsumerは読み戻さず、保存先を追記にする。
+
+        追記により、当該区間がループ本体で反復される呼び出しでも全反復の出力が保存先へ残る。
+        """
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "pytest -q | grep -m1 needle -"},
+                "session_id": "output-truncation-operand",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        corrected = output["updatedInput"]["command"]
+        assert corrected.startswith("pytest -q >> ")
+        assert "grep" not in corrected
+        context = output["additionalContext"]
+        assert "当該保存先へ追記した" in context
+        assert "当該呼び出しは標準出力を返さない" in context
+        assert "反復ごとの出力は同じ保存先へ追記される" in context
+        assert "保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている" in context
 
     def test_partial_truncation_keeps_remaining_stdout_notice(self, tmp_path: pathlib.Path) -> None:
         """切り詰めを含まない直列区間が残る場合は、標準出力が空になると案内しない。"""
@@ -192,7 +221,7 @@ class TestBashOutputTruncationWarning:
         result = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "rg needle present.txt; pytest -q | tail -5"},
+                "tool_input": {"command": "rg needle present.txt; pytest -q | grep -m1 needle -"},
                 "session_id": "output-truncation-partial",
                 "cwd": str(tmp_path),
             },
@@ -201,7 +230,7 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         output = json.loads(result.stdout)["hookSpecificOutput"]
         context = output["additionalContext"]
-        assert "第2直列区間 `pytest -q | tail -5`: 切り詰めと判定したコマンドは`tail`。標準出力を`" in context
+        assert "第2直列区間 `pytest -q | grep -m1 needle -`: 切り詰めと判定したコマンドは`grep`。標準出力を`" in context
         assert "切り詰めを含まない直列区間の標準出力は当該呼び出しの結果へ残る" in context
         assert "当該呼び出しは標準出力を返さない" not in context
 
@@ -1614,12 +1643,12 @@ class TestForeignScriptMixin:
         assert result.returncode == 0
         assert "日本語以外の文字" in _agent_messages(result)
 
-    def test_blocks_hangul_in_user_facing_text(self):
-        """ユーザーが直接読む本文への混入は、届いた後に取り消せないため遮断を維持する。"""
+    def test_warns_hangul_in_user_facing_text(self):
+        """ユーザーが直接読む本文への混入も、ユーザーが読み取って是正できるため警告に留める。"""
         content = "テスト" + _HANGUL_SAMPLE + "名を確認する"
         result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": content}})
-        assert result.returncode == 2
-        assert "日本語以外の文字" in result.stderr
+        assert result.returncode == 0
+        assert "日本語以外の文字" in _agent_messages(result)
 
     def test_passes_japanese_only(self):
         """日本語のみの文字列は通過する。"""

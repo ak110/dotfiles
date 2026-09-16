@@ -24,9 +24,10 @@ import typing
 from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import remove_all as _remove_all
+from agent_toolkit._atk.wi import bulk as _bulk
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
@@ -272,7 +273,7 @@ def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path)
             target_repo=target_repo,
         )
     except WebInputError as error:
-        print(f"依存更新を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"依存更新を拒否した: {error}")
         sys.exit(1)
-    print(f"依存を更新: {args.filename}")
+    _outcome.report_success(f"依存を更新した: {args.filename}")
     _add._print_entry_details(details)  # pylint: disable=protected-access

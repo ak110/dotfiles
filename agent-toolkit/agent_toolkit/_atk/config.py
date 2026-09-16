@@ -17,6 +17,7 @@ from typing import cast
 import platformdirs
 
 from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk import outcome as _outcome
 
 _CONFIG_FILENAME = "config.json"
 
@@ -195,7 +196,7 @@ def _cmd_config_show(home: pathlib.Path) -> None:
         print(f"{key}: {value}")
         if key in _MUTABLE_KEY_DEFAULTS:
             for warning in _stage_model_candidate_warnings(key, value):
-                print(warning, file=sys.stderr)
+                _outcome.report_warning(warning)
 
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
@@ -204,9 +205,8 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     requested_keys = cast(list[str], args.key)
     unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
-        print(
-            f"未知の設定キーです: {', '.join(unknown_keys)}（利用可能: {', '.join(sorted(settings))}）",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"未知の設定キーを指定した: {', '.join(unknown_keys)}。利用可能なキーから選び直す: {', '.join(sorted(settings))}"
         )
         sys.exit(2)
     for key in requested_keys:
@@ -216,32 +216,26 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
 def _cmd_config_set(args: argparse.Namespace) -> None:
     """setサブコマンド: 変更可能設定を更新する。対象外キーはexit 2。"""
     if args.key not in _MUTABLE_KEY_DEFAULTS:
-        print(
-            f"変更できない設定キーです: {args.key}（変更可能: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}）",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"変更できない設定キーを指定した: {args.key}。"
+            f"変更可能なキーから選び直す: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}"
         )
         sys.exit(2)
     try:
         _validate_stage_model_candidates(args.value)
     except ValueError as error:
-        print(
-            f"設定値の書式が不正です。{error}",
-            file=sys.stderr,
-        )
+        _outcome.report_failure(f"設定値の書式が不正である。{error}")
         sys.exit(2)
     for warning in _stage_model_candidate_warnings(args.key, args.value):
-        print(warning, file=sys.stderr)
+        _outcome.report_warning(warning)
     print("設定は保存します。", file=sys.stderr)
     config = _load_config()
     config[args.key] = args.value
     _save_config(config)
-    print(f"設定を更新しました: {args.key}={args.value}")
+    _outcome.report_success(f"設定を更新した: {args.key}={args.value}")
     env_name = _config_env_name(args.key)
     if os.environ.get(env_name, ""):
-        print(
-            f"警告: 環境変数{env_name}が優先されるため、解除するまで更新値は実効値になりません。",
-            file=sys.stderr,
-        )
+        _outcome.report_warning(f"環境変数{env_name}が優先されるため、解除するまで更新値は実効値にならない。")
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
@@ -250,6 +244,7 @@ def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
     config = _load_config()
     config.update(settings)
     _save_config(config)
+    _outcome.report_success(f"工程別モデル設定をpreset「{args.preset}」で一括保存した: {len(settings)}件")
     for key, value in settings.items():
         print(f"{key}: {value}")
 
@@ -314,6 +309,6 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
         else:
             _cmd_config_set(args)
     except ValueError as error:
-        print(error, file=sys.stderr)
+        _outcome.report_failure(str(error))
         sys.exit(2)
     sys.exit(0)

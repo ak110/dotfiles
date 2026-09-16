@@ -56,7 +56,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
   - Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする
 - `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
   - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-main.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`及び`agent-toolkit/rules/`配下の共有規範から
-    `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、手動編集しない（生成差分で上書きされ、手動編集は消失する）
+    `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、変更は生成元へ行う（手動編集は生成差分で上書きされて消失する）
   - 共有ルール・スキルは`setup_codex_links.py`が
     `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
     （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション。
@@ -64,8 +64,8 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
   - `~/.codex/skills`にはグローバルに使うスキルだけを置く
 - `.chezmoi-source/dot_config/`: XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元
   - ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_config/<tool>/`
-- `.chezmoi-source/`配下のファイルを削除・改名した場合、chezmoiは配布先を自動削除しない。
-  配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する。
+- `.chezmoi-source/`配下のファイルを削除・改名した場合、配布先の除去は`pytools/post_apply.py`の`_REMOVED_PATHS`への追記で行う。
+  chezmoi自身は配布先を自動削除しないためである。
   改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
   旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
 - `AGENTS.md`（本リポジトリルート）: dotfiles編集者向けの入口。Claude Code／Codex双方がここを読む
@@ -73,18 +73,18 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 
 ## 変更後の規範の自セッション適用
 
-本リポジトリでコーディングエージェント自身のふるまいを定める規範を変更する作業では、変更を確定した時点から当該セッションの以降の作業へ変更後の文面を適用する。
+本リポジトリでコーディングエージェント自身のふるまいを定める規範を変更する作業では、変更を確定した時点からそのセッションの以降の作業へ変更後の文面を適用する。
 対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
-規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへ当該文面を明示して渡す。
-適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
-除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
-変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
+規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへその文面を明示して渡す。
+適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまでそのセッションへ反映されないため対象から除く。
+除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥をそのセッションで是正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`が定める`是正済み資源:`の行でその資源の作業ツリー側の絶対パスを起動文へ渡す。
+変更後の規範に従うとその作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
 `agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
 `project_notes`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
-本節の適用対象となる規範を変更するAWIには、当該変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
+本節の適用対象となる規範を変更するAWIには、その変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
 反映先に本リポジトリのコーディングエージェント向け文書を含むAWIには、`docs/development/concepts.md`と`docs/development/incidents.md`を編集主体自身が同じセッションで全文読む要求も書く。
-対象かどうかの判定は、当該AWIが挙げる反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行う。
-レーン担当は選定工程の固定出力ファイルから自レーンの`project_notes`を読むため、メインの起動プロンプトへ当該要求を再掲しない。
-メインは、`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、当該項目のファイル名と対象ファイルのパスを渡す。
-当該レーンで規範の変更を確定した主体は、同じレーンの以降の委譲先の起動プロンプトへ変更後の文面を明示して渡す。並行する他のレーンは当該変更を統合前に取得できないため、レーンをまたぐ伝播は本節の対象としない。
+対象かどうかの判定は、そのAWIが挙げる反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行う。
+レーン担当は選定工程の固定出力ファイルから自レーンの`project_notes`を読むため、メインの起動プロンプトへその要求を再掲しない。
+メインは、`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、その項目のファイル名と対象ファイルのパスを渡す。
+そのレーンで規範の変更を確定した主体は、同じレーンの以降の委譲先の起動プロンプトへ変更後の文面を明示して渡す。並行する他のレーンはその変更を統合前に取得できないため、レーンをまたぐ伝播を本節の適用範囲から除く。

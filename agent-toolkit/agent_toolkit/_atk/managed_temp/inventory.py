@@ -28,6 +28,7 @@ from ctypes import wintypes
 from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk import outcome as _outcome
 
 if TYPE_CHECKING:
     from agent_toolkit._atk.managed_temp.cli import build_parser, dispatch, main
@@ -375,28 +376,24 @@ def _report_unregistered_candidates(prefix: str | None) -> None:
     try:
         candidates = _unregistered_candidates(prefix)
     except (OSError, ManagedTempError) as error:
-        print(f"warning: 登録を持たない管理対象を探索できない: {error}", file=sys.stderr)
+        _outcome.report_warning(f"登録を持たない管理対象を探索できない: {error}")
         return
     for child in candidates:
         registry_path = _registry_path(child)
         if _consuming_registry_path(registry_path) is not None:
-            print(
-                f"warning: 後始末が中断した可能性がある管理対象があります: {child}"
-                f"（回収する場合は atk managed-temp cleanup --path {child}）",
-                file=sys.stderr,
+            _outcome.report_warning(
+                f"後始末が中断した可能性がある管理対象がある: {child}（回収する場合は atk managed-temp cleanup --path {child}）"
             )
             continue
         if not _marker_recovery_is_accepted(child):
-            print(
-                f"warning: マーカーから登録を復元できない管理対象があります: {child}"
-                f"（回収する場合は atk managed-temp cleanup --path {child} --force-remove）",
-                file=sys.stderr,
+            _outcome.report_warning(
+                f"マーカーから登録を復元できない管理対象がある: {child}"
+                f"（回収する場合は atk managed-temp cleanup --path {child} --force-remove）"
             )
             continue
-        print(
-            f"warning: 登録を持たない管理対象があります: {child}"
-            f"（回収する場合は atk managed-temp cleanup --path {child} --recover-registry）",
-            file=sys.stderr,
+        _outcome.report_warning(
+            f"登録を持たない管理対象がある: {child}"
+            f"（回収する場合は atk managed-temp cleanup --path {child} --recover-registry）"
         )
 
 
@@ -450,12 +447,11 @@ def list_managed_temp(
             if not os.path.lexists(path):
                 if _entity_absence_is_confirmed(record, path):
                     registry_path.unlink(missing_ok=True)
-                    print(f"warning: 実体が失われた管理対象の登録を回収しました: {path}", file=sys.stderr)
+                    _outcome.report_warning(f"実体が失われた管理対象の登録を回収した: {path}")
                 elif report_recovery_candidates:
-                    print(
-                        f"warning: 実体へ到達できないため登録を保持しました: {path}"
-                        "（同じ絶対パスへ到達できる実行文脈で atk managed-temp list を実行すると回収されます）",
-                        file=sys.stderr,
+                    _outcome.report_warning(
+                        f"実体へ到達できないため登録を保持した: {path}"
+                        "（同じ絶対パスへ到達できる実行文脈で atk managed-temp list を実行すると回収する）"
                     )
                 continue
             validate_managed_temp(path)
@@ -472,15 +468,12 @@ def list_managed_temp(
             if report_recovery_candidates:
                 recorded_target = f": {recorded_path}" if isinstance(recorded_path, str) else ""
                 recovery = (
-                    f"。後始末する場合は atk managed-temp cleanup --path {recorded_path} を実行できます。"
-                    "実体を削除した場合は、次回の atk managed-temp list で登録を回収します"
+                    f"。後始末する場合は atk managed-temp cleanup --path {recorded_path} を実行する。"
+                    "実体を削除した場合は、次回の atk managed-temp list で登録を回収する"
                     if isinstance(recorded_path, str)
                     else ""
                 )
-                print(
-                    f"warning: 管理対象を列挙できない: {registry_path}{recorded_target}: {error}{recovery}",
-                    file=sys.stderr,
-                )
+                _outcome.report_warning(f"管理対象を列挙できない: {registry_path}{recorded_target}: {error}{recovery}")
     if report_recovery_candidates:
         _report_unregistered_candidates(prefix)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
@@ -520,11 +513,11 @@ def sweep_expired_managed_temp(
                 continue
             cleanup_managed_temp(path)
         except (ManagedTempError, OSError) as error:
-            print(f"warning: 管理対象一時領域を自動削除できませんでした: {path}: {error}", file=sys.stderr)
+            _outcome.report_warning(f"管理対象一時領域を自動削除できない: {path}: {error}")
             continue
         deleted.append(path)
         print(
-            f"note: 最終更新から{max_age_days}日を超えた管理対象一時領域を削除しました: {path}",
+            f"note: 最終更新から{max_age_days}日を超えた管理対象一時領域を削除した: {path}",
             file=sys.stderr,
         )
     return deleted
@@ -823,7 +816,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     registry_path = _registry_path(path)
     if _restore_interrupted_consume(registry_path):
-        print(f"warning: 中断した後始末の登録を復元しました: {registry_path}", file=sys.stderr)
+        _outcome.report_warning(f"中断した後始末の登録を復元した: {registry_path}")
     judgement = _classify_quarantine(root, path)
     if judgement.state is _QuarantineState.UNVERIFIABLE:
         raise ManagedTempError(
@@ -834,7 +827,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
         if judgement.quarantine is None or judgement.identity is None:
             raise AssertionError("一致した隔離途中状態に後始末情報がない")
         _cleanup_quarantine(root, judgement.quarantine, judgement.identity)
-        print(f"warning: 中断した後始末の隔離先を後始末しました: {path}", file=sys.stderr)
+        _outcome.report_warning(f"中断した後始末の隔離先を後始末した: {path}")
     if is_missing_registered_temp(path):
         _cleanup_missing_registered_temp(path)
         return
@@ -845,7 +838,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
     )
     if _lstat_or_none(validated.registry_path) is None:
         _write_private_json(validated.registry_path, validated.record)
-        print(f"warning: 欠落した登録をマーカーから復元しました: {validated.registry_path}", file=sys.stderr)
+        _outcome.report_warning(f"欠落した登録をマーカーから復元した: {validated.registry_path}")
     if os.name == "nt":
         # 利用中に追加された受理済みACEを除去し、隔離以降を現在利用者だけのDACLで実行する。
         _windows_secure_path(
@@ -927,10 +920,44 @@ def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: Man
             consuming.unlink(missing_ok=True)
     except OSError as error:
         raise ManagedTempError(f"管理対象を強制回収できない: {path}: {error}") from error
+    _outcome.report_warning(f"--force-removeにより管理情報、登録及び権限の検証を省いて管理対象を回収した: {path}")
+
+
+def _registered_ancestor(path: pathlib.Path) -> pathlib.Path | None:
+    """対象の祖先にある登録済み管理対象領域を返す。該当が無ければNoneを返す。"""
+    try:
+        resolved = pathlib.Path(os.path.abspath(path))
+    except OSError:
+        return None
+    for entry in list_managed_temp():
+        recorded = entry["path"]
+        if not isinstance(recorded, str):
+            continue
+        registered = pathlib.Path(recorded)
+        if registered in resolved.parents:
+            return registered
+    return None
+
+
+def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
+    """個別の管理情報を持たない子領域を、登録済み領域の配下である場合に削除する。
+
+    `atk managed-temp create --session-root`は、個別登録を持たない子領域を親の配下へ作成する。
+    当該子領域は管理情報を持たないため、通常の検証経路では回収できない。
+    祖先に登録済みの管理対象領域が実在する場合だけ、当該対象を削除して回収を成立させる。
+    """
+    path = pathlib.Path(path_arg)
+    if os.path.lexists(path / _MARKER_NAME) or not path.is_dir():
+        return False
+    ancestor = _registered_ancestor(path)
+    if ancestor is None:
+        return False
+    shutil.rmtree(path)
     print(
-        f"warning: --force-removeにより管理情報、登録及び権限の検証を省いて管理対象を回収しました: {path}",
+        f"note: 登録済みの管理対象領域{ancestor}の配下にあるため、個別の管理情報を経ずに削除した: {path}",
         file=sys.stderr,
     )
+    return True
 
 
 def cleanup_managed_temp(
@@ -952,6 +979,8 @@ def cleanup_managed_temp(
         path_arg = entries[0]["path"]
     if path_arg is None:
         raise ManagedTempError("path又はsession_idを指定する")
+    if _cleanup_child_of_registered_temp(path_arg):
+        return
     try:
         _cleanup_managed_temp(path_arg, recover_registry=recover_registry)
     except ManagedTempError as error:

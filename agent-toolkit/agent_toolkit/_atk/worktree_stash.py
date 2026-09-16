@@ -6,17 +6,17 @@ import argparse
 import pathlib
 import re
 import subprocess
-import sys
 
 from agent_toolkit._atk import help_text as _atk_help  # pylint: disable=wrong-import-position
+from agent_toolkit._atk import outcome as _outcome  # pylint: disable=wrong-import-position
 from agent_toolkit._common import file_lock as _file_lock  # pylint: disable=wrong-import-position
 
 _LOCK_NAME = "agent-toolkit-stash.lock"
 _STASH_IDENTIFIER_PATTERN = re.compile(r"stash@\{[0-9]+\}\Z")
 _QUEUE_REPOSITORY_ERROR = (
-    "操作を拒否しました: 対象はキュー管理リポジトリです。"
+    "対象はキュー管理リポジトリのため操作を拒否した。"
     "変更にはatk wi・atk plans・atk serveが提供する経路を使い、"
-    "未コミットのキュー操作はatk wi commitで確定してください。"
+    "未コミットのキュー操作はatk wi commitで確定する。"
 )
 
 
@@ -43,7 +43,7 @@ def _common_dir(cwd: pathlib.Path) -> pathlib.Path | None:
     """worktreeからGit共通ディレクトリを絶対パスへ解決する。"""
     result = _run_git(["rev-parse", "--git-common-dir"], cwd)
     if result.returncode != 0 or not result.stdout.strip():
-        print(f"Git共通ディレクトリを解決できません: {result.stderr.strip()}", file=sys.stderr)
+        _outcome.report_failure(f"Git共通ディレクトリを解決できない: {result.stderr.strip()}。Gitの作業ツリーで実行し直す")
         return None
     value = pathlib.Path(result.stdout.strip())
     return value.resolve() if value.is_absolute() else (cwd / value).resolve()
@@ -73,7 +73,7 @@ def _ref_exists(ref: str, cwd: pathlib.Path) -> bool | None:
         return True
     if result.returncode == 1:
         return False
-    print(f"退避refの存在を照会できません: {result.stderr.strip()}", file=sys.stderr)
+    _outcome.report_failure(f"退避refの存在を照会できない: {result.stderr.strip()}。Gitの状態を確認してから再実行する")
     return None
 
 
@@ -92,10 +92,7 @@ def _report_failure(
 ) -> None:
     """途中失敗時に退避物と復旧識別子を標準エラーへ記録する。"""
     location = "worktree固有refへ記録済み" if ref_recorded else "共有refs/stashへ保持"
-    print(
-        f"{message}: {location}; stash_oid={stash_oid or '(なし)'}; ref={ref}; cwd={cwd}",
-        file=sys.stderr,
-    )
+    _outcome.report_failure(f"{message}: {location}; stash_oid={stash_oid or '(なし)'}; ref={ref}; cwd={cwd}")
 
 
 def _worktree_ref(label: str, cwd: pathlib.Path) -> str | None:
@@ -104,7 +101,7 @@ def _worktree_ref(label: str, cwd: pathlib.Path) -> str | None:
     check = _run_git(["check-ref-format", ref], cwd)
     if check.returncode == 0:
         return ref
-    print(f"退避ラベルが不正です: {label}", file=sys.stderr)
+    _outcome.report_failure(f"退避ラベルが不正である: {label}。Gitのref名として有効なラベルを指定し直す")
     return None
 
 
@@ -117,7 +114,7 @@ def save(
     """現在worktreeの変更を`refs/worktree/<label>`へ退避する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
-        print(_QUEUE_REPOSITORY_ERROR, file=sys.stderr)
+        _outcome.report_failure(_QUEUE_REPOSITORY_ERROR)
         return 2
     ref = _worktree_ref(label, worktree)
     if ref is None:
@@ -134,7 +131,7 @@ def save(
                 if existing is None:
                     return 1
                 if existing:
-                    print(f"退避refが既に存在します: {ref}", file=sys.stderr)
+                    _outcome.report_failure(f"退避refが既に存在する: {ref}。別のラベルを指定するか既存のrefをdropする")
                     return 2
                 before = _stash_oid(worktree)
                 stash_push = _run_git(["stash", "push", "--include-untracked"], worktree)
@@ -150,7 +147,7 @@ def save(
                     return 1
                 after = _stash_oid(worktree)
                 if after is None or after == before:
-                    print("退避対象がありません", file=sys.stderr)
+                    _outcome.report_failure("退避対象の変更が無い。変更を加えてから退避する")
                     return 2
                 update_ref = _run_git(["update-ref", ref, after], worktree)
                 if update_ref.returncode != 0:
@@ -173,6 +170,7 @@ def save(
                         cwd=worktree,
                     )
                     return 1
+                _outcome.report_success(f"現在worktreeの変更を退避した: {ref}", _outcome.ResultKind.VALUE_OUTPUT)
                 print(ref)
                 return 0
             finally:
@@ -197,7 +195,7 @@ def drop(
     """退避識別子を固定ロック下でOID照合して削除する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
-        print(_QUEUE_REPOSITORY_ERROR, file=sys.stderr)
+        _outcome.report_failure(_QUEUE_REPOSITORY_ERROR)
         return 2
     if identifier.startswith("refs/worktree/"):
         check = _run_git(["check-ref-format", identifier], worktree)
@@ -205,7 +203,7 @@ def drop(
     else:
         is_worktree_ref = False
     if not is_worktree_ref and _STASH_IDENTIFIER_PATTERN.fullmatch(identifier) is None:
-        print(f"退避識別子が不正です: {identifier}", file=sys.stderr)
+        _outcome.report_failure(f"退避識別子が不正である: {identifier}。refs/worktree/配下のref又はstash@{{N}}形式を指定し直す")
         return 2
     common_dir = _common_dir(worktree)
     if common_dir is None:
@@ -217,19 +215,22 @@ def drop(
             try:
                 oid = _git_output(["rev-parse", "--verify", identifier], worktree)
                 if oid is None:
-                    print(f"退避識別子が存在しません: {identifier}", file=sys.stderr)
+                    _outcome.report_failure(f"退避識別子が存在しない: {identifier}。実在する識別子を指定し直す")
                     return 2
                 delete_args = ["update-ref", "-d", identifier, oid] if is_worktree_ref else ["stash", "drop", identifier]
                 deleted = _run_git(delete_args, worktree)
                 if deleted.returncode != 0:
-                    print(f"退避識別子を削除できません: {deleted.stderr.strip()}", file=sys.stderr)
+                    _outcome.report_failure(
+                        f"退避識別子を削除できない: {deleted.stderr.strip()}。Gitの状態を確認してから再実行する"
+                    )
                     return 1
+                _outcome.report_success(f"退避を削除した: {identifier}", _outcome.ResultKind.VALUE_OUTPUT)
                 print(identifier)
                 return 0
             finally:
                 _file_lock.release_lock(lock_file)
     except OSError as error:
-        print(f"退避用ロックを取得できません: {error}", file=sys.stderr)
+        _outcome.report_failure(f"退避用ロックを取得できない: {error}。ロックを保持する処理の終了後に再実行する")
         return 1
 
 

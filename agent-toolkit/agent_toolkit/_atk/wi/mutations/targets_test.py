@@ -41,7 +41,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -632,7 +632,7 @@ class TestSkipPush:
             check=True,
         ).stdout.strip()
         assert local_head == remote_head
-        assert "差分なし。滞留commitをpushしました。" in capsys.readouterr().out
+        assert "外部編集の差分は無く、滞留commitをpushした" in capsys.readouterr().out
 
     def test_real_git_transitions_push_and_recover_after_remote_advances(
         self,

@@ -13,7 +13,7 @@ description: >
 
 - `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用を担う）
-- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
+- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）。編集は配布元の`agent-toolkit/rules/`へ行う
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く
   （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
@@ -31,7 +31,7 @@ description: >
 
 - 常時自動ロードしたい一般指針はルールファイルへ置く
 - 特定タスクでのみ必要な指針はスキル本体に残す
-- 配置先は表層識別子ではなく、規範の成立条件が依存する対象で判定する
+- 配置先は規範の成立条件が依存する対象で判定し、表層識別子はその判定の入力から外す
 - プロジェクト固有のツール、データ、命名、CI、運用経路へ依存する内容はプロジェクト側へ置く
 - 固有要素を同種の任意要素へ置換しても判定基準、工程順序、停止条件が成立する内容だけを配布物候補とする
 
@@ -47,15 +47,23 @@ description: >
 同じ層の中のimportは制限しない。
 テスト専用の共有ヘルパーは`_testing`へ置く。
 `_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
-新しいモジュールの追加先は、当該モジュールを読み込む主体が属するサブパッケージで判定する。
+新しいモジュールの追加先は、そのモジュールを読み込む主体が属するサブパッケージで判定する。
 直下の入口は接頭辞`_`を付けずに命名する。
-`_managed_temp.py`だけは外部の許可判定が当該パスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_test.py`が当該1件を除外する。
+`_managed_temp.py`だけは外部の許可判定がそのパスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_test.py`がこの1件を除外する。
 
 サブパッケージ内のimportには絶対importを使う。
 `scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の検査の被覆が失われるためである。
 同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
-モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
+モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名とは異なる名前を選ぶ。
 テストは対象モジュールと同じディレクトリへ`<モジュール名>_test.py`として置く。
+
+### atkの実行結果出力
+
+`atk`のサブコマンドを追加する場合と、成功、失敗、警告又は該当0件を表す出力を変更する場合は、
+`agent-toolkit/agent_toolkit/_atk/outcome.py`が定める接頭辞と区分を使う。
+接頭辞の文字列を各出力箇所へ直接書かず、新しいリーフサブコマンドは同モジュールの区分表へ加える。
+区分表と実在するリーフの対応は`agent-toolkit/agent_toolkit/atk_help_test.py`が検査する。
+規約の目的、区分の意味及び却下した代替案は`docs/development/design.md`「atkサブコマンドの実行結果出力」が持つ。
 
 ### agents_serverの共有状態
 
@@ -82,7 +90,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
   （`a`・`h1`から`h6`・`p`・`ul`・`ol`・`li`・`hr`・`blockquote`・`code`・`pre`・`table`・`thead`・`th`・`td`・`img`・`strong`）を書かない。
   Markdown本文とセッション本文向けの装飾は、本文コンテナー用クラス`.markdown-body`を経由してだけ適用する。
   画面の骨組みを選ぶ`main`・`aside`と入力部品を選ぶ`input`・`select`・`textarea`・`dialog`は、
-  前項が挙げる5つの宣言を持たない限り本項の対象にしない
+  前項が挙げる5つの宣言を持つ場合だけ本項の対象とする
 - 共有シェル部品（`.app-header`・`.app-nav`・共通ダイアログ・`main > .toolbar`）は3画面で同一の規則を共有し、
   画面別の上書きを水平方向の余白だけに限る
 
@@ -100,24 +108,23 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 
 ## 配布物としての記述方針
 
-配布先のエンドユーザーは本リポジトリのdotfiles利用者とは限らないため、手元プロジェクト固有の前提を断定的に書かない。
+配布先のエンドユーザーは本リポジトリのdotfiles利用者とは限らないため、手元プロジェクト固有の前提は条件付きで書く。
 
 - 自己言及的な表現・特定設定値の前提・特定ディレクトリ構成の前提を断定せず、
   異なり得る条件は条件付き表現（「`～`設定が有効な場合、」など）で書く
 - 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
-- 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、
-  エンドユーザー環境側の連携設計（個人フックとの優先順序など）は書かない
+- 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述する。
+  エンドユーザー環境側の連携設計（個人フックとの優先順序など）は記述の対象から外す
 - 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
-  修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。
+  修飾のない素のスキル名は、同名のスキルを探索する無駄な工程を招く。
   `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
   サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
-- 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
-  - 例外: 実測を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。当該記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。当該記録先は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」が定める
+- 配布物内の記述が参照するSSOTは配布物内に配置する。参照先はdotfiles固有ファイルと非配布対象ファイルの外から選ぶ
+  - 例外: 実測を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。この記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。記録先は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」が定める
 - 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名検査を適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
-- 配布物スキル本文でhook内部の実装挙動
-  （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
-  エンドユーザーには挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
+- 配布物スキル本文では、hookの挙動をエンドユーザーが観測できる結果（特定操作がブロックされる・警告が返る等）として提示する。
+  ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込みなどの内部実装の説明は、その提示の外に置く。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
     （`<plugin root>/skills/writing-standards/references/session-state-and-flags.md`等）は本規定の対象外とする
 
@@ -139,7 +146,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 エンドユーザー環境で実行される実行時パス（`hooks.json`の`command`・エージェント/スキル本文の実行コマンド例）は`${CLAUDE_PLUGIN_ROOT}/<相対パス>`形式に統一する。
 プラグイン配布物のルートはインストール先で動的に解決されるため、dotfilesリポジトリ相対パスはエンドユーザー環境で実行不能となる。
 規範文書内で役割を説明する言及（「〜は`agent-toolkit/agent_toolkit/<name>.py`が担う」等）はリポジトリ相対表記のままでよい。
-判定基準は当該パスをエンドユーザー環境で実行するか否かとする。
+判定基準は、そのパスをエンドユーザー環境で実行するか否かとする。
 Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`env`の各値に含まれる`${CLAUDE_PLUGIN_ROOT}`を`${PLUGIN_ROOT}`へ変換する。Claude Code側の実行時パスは前項の形式を維持する。
 
 ## スキル間の連携
@@ -163,7 +170,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 整合性は`agent-toolkit/agent_toolkit/_hooks/pretooluse/git_checks_test.py`の`TestManifestSsot`が検査し、`uv run --frozen pyfltr run`で自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
-Agent Plugins・Codex向け生成物を手動編集してはならない。
+Agent Plugins・Codex向け生成物を手動編集してはならない。変更は正本の更新と生成器の実行で行う。
 
 ## 同期先ドキュメント
 
@@ -171,8 +178,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 - コーディングエージェント向け文書を編集する実際の主体は、編集前に同じ実行コンテキストで
   `docs/development/concepts.md`と`docs/development/incidents.md`の全文を読み、
-  確定済みの方針・事故対策との整合を確認する。要約、見出し一覧、部分読取及び別主体の読取結果は、
-  編集主体自身による全文読了の代わりにしない。
+  確定済みの方針・事故対策との整合を確認する。全文読了の成立条件は編集主体自身による読み取りとし、
+  要約、見出し一覧、部分読取及び別主体の読取結果はその成立条件の外に置く。
   編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
@@ -192,7 +199,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   対象は、同ファイルが構造定数として名称を持つものとする。
   改訂時は同ファイルの構造定数を変更する。
   `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、`agent-toolkit/share/`配下の担当タスク文書、
-  `docs/development/design.md`、`docs/development/concepts.md`及び`docs/guide/claude-code-guide.md`のうち、当該名称を持つ記述も同じ変更単位でそろえる。
+  `docs/development/design.md`、`docs/development/concepts.md`及び`docs/guide/claude-code-guide.md`のうち、同じ名称を持つ記述も同じ変更単位でそろえる。
   改訂前の名称は読み取り互換用の構造定数として残し、新規作成・改訂の経路でだけ拒否する
 - 構造定数を持たず`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`だけが必須とする見出しは、同ファイルを正本とする。
   稼働中の計画を検査で不合格にする変更を避ける必要がある場合に選び、選んだ理由を計画へ記録する
@@ -219,34 +226,31 @@ PreToolUseフックが警告を返すため、Skillツールで起動する。
 プラグインの有効・無効は、永続的な設定値だけで再現できる場合に
 `share/claude_settings_json_managed*.json`の`enabledPlugins`へ置く。設定反映前に
 インストール済みプラグインへCLI遷移が必要な場合だけ
-`pytools/_internal/install_claude_plugins.py`のauto一覧を使う。既存の歴史的重複は
-新規登録の既定にしない。
+`pytools/_internal/install_claude_plugins.py`のauto一覧を使う。新規登録は前段の判定で置き場所を決め、既存の歴史的重複はその判定の入力から外す。
 
 ## worktreeでの編集時の注意
 
 作業用の複製（git worktree等）で配布物（`agent-toolkit/`配下等）を改訂しても、
-実行中のhook・検査には当該セッションでは反映されない。稼働中の版は
+実行中のhook・検査にはそのセッションでは反映されない。稼働中の版は
 `~/.claude/plugins/installed_plugins.json`の`installPath`で確認する。
 保持済みのplugin rootが失効した場合は同ファイルから現行の導入版と`installPath`を再解決し、利用する資源の実在を確認する。
-`~/.claude/plugins/data/`配下をplugin本体の展開先として用いない。
+plugin本体の展開先は`installPath`が示す位置とし、`~/.claude/plugins/data/`配下はその対象から外す。
 hookに新規にブロックされた場合は、まず作業ツリーと稼働中の版との差を疑い、
-当該hookが参照する配布先のファイルを`diff`等で比較してから対応する。
+そのhookが参照する配布先のファイルを`diff`等で比較してから対応する。
 
 常駐するMCPサーバープロセス（`agent-toolkit/agent_toolkit/agents_server_mcp.py`等）は、起動時に読み込んだ
-Pythonモジュールを保持し続ける。このため、`agent-toolkit/agent_toolkit/`配下の修正は当該プロセスの再起動まで反映されない。
-修正の確定後も同じ事象を観測した場合は、修正が無効であると結論する前に当該プロセスが読み込んだ版を確定する。
-起動時刻だけでは判別できない。別の作業ツリーや別のplugin rootから起動したプロセスは、
-修正commitより後に起動していても当該修正を含まないファイルを読み込み得るためである。
-次の順で確定する。
+Pythonモジュールを保持し続ける。このため、`agent-toolkit/agent_toolkit/`配下の修正はそのプロセスの再起動後に反映される。
+修正の確定後も同じ事象を観測した場合は、修正が無効であると結論する前にそのプロセスが読み込んだ版を確定する。
+確定には次の順の観測を用い、起動時刻だけの比較はその根拠から外す。別の作業ツリーや別のplugin rootから起動したプロセスは、
+修正commitより後に起動していてもその修正を含まないファイルを読み込み得るためである。
 
-1. `ps -eo pid,cmd`で稼働プロセスのPIDと起動スクリプトの絶対パスを取得し、当該パスが対象の配布経路であることを確認する
-2. `stat -c %Y /proc/<PID>`でプロセス起動時刻を、`stat -c %Y <当該パス配下の対象ファイル>`でファイル更新時刻を取得する
+1. `ps -eo pid,cmd`で稼働プロセスのPIDと起動スクリプトの絶対パスを取得し、そのパスが対象の配布経路であることを確認する
+2. `stat -c %Y /proc/<PID>`でプロセス起動時刻を、`stat -c %Y <そのパス配下の対象ファイル>`でファイル更新時刻を取得する
    （`ps -o lstart=`の出力は実行環境のロケールにより`date -d`が解釈できないため、時刻の比較には用いない）
-3. ファイル更新時刻がプロセス起動時刻より後であれば、当該プロセスは修正前の版を保持している
+3. ファイル更新時刻がプロセス起動時刻より後であれば、そのプロセスは修正前の版を保持している
 
 過去に終了したプロセスについては同じ証拠を回収できない。
-当時の起動スクリプトのパスと起動時刻を保持していない場合は、版差を原因として断定せず、
-現行経路での再現可否を実測した範囲だけを結論とする。
+当時の起動スクリプトのパスと起動時刻を保持していない場合は、版差を原因として断定せず、現行経路での再現可否を実測した範囲だけを結論とする。
 
 ## 編集手順
 
@@ -256,7 +260,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
 3. `scripts/sync_codex_plugin_manifests.py`を実行してAgent Plugins・Codex向け派生JSONを同期する
 4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
-5. MCP経由の`run_for_agent`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
+5. MCP経由の`run`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
    `["."]`を渡し、SSOTテストを含む全テストが成功することを確認する。
    必要に応じて`commands`配列でSSOTテストなど特定ツールを指定する。
    MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う
@@ -269,7 +273,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
 類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。
-両方に該当すると判断した場合は、当該チェックがdotfiles固有の運用前提（配布先ディレクトリ構成・個人の命名規約など）へ
+両方に該当すると判断した場合は、そのチェックがdotfiles固有の運用前提（配布先ディレクトリ構成・個人の命名規約など）へ
 依存するかで判定し、依存しないものをプラグインへ置く。
 
 - `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
@@ -289,12 +293,12 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - `agent-toolkit/pyproject.toml`の`dependencies`へパッケージを追加・更新する場合、
   同projectの`uv.lock`も更新する。`agent-toolkit/scripts/`に残すリモート補助処理だけはPEP 723宣言を維持する
 - 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
-  `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、当該イベントの既存の入口へ相乗りさせる。
+  `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、そのイベントの既存の入口へ相乗りさせる。
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
   入口の実装契約は`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_hook/pretooluse.py`の専用チェックがブロックする。
-個人プロジェクト名固定リストは当該スクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
+個人プロジェクト名固定リストはそのスクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
 スキル名・pytoolsコマンド名・scripts名は、`pytools/claude_hook/pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
 外部CLI参照は`_EXTERNAL_CLI_ALLOWED`登録識別子に限り`command -v`等の存在検査経由で許容する。
 

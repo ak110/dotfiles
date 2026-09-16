@@ -12,6 +12,7 @@ from pathlib import Path
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common.atomic_file import atomic_write
@@ -87,6 +88,7 @@ def _mark(repository: str, identifiers: list[str]) -> int:
         for identifier in identifiers:
             repository_records.setdefault(identifier, recorded_at)
         atomic_write(path, json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True) + "\n", fsync=True)
+    _outcome.report_success(f"判定済みreviewを記録した: {repository}（{len(identifiers)}件）", _outcome.ResultKind.VALUE_OUTPUT)
     _print_identifiers(repository_records)
     return 0
 

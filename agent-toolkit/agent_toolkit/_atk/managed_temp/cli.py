@@ -27,6 +27,7 @@ from ctypes import wintypes
 from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 
 if TYPE_CHECKING:
@@ -253,6 +254,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                         session_id=args.session_id,
                     )
                 )
+            _outcome.report_success(f"管理対象一時領域を作成した: {created}", _outcome.ResultKind.VALUE_OUTPUT)
             print(created)
         elif getattr(args, command_dest) == "cleanup":
             if args.path is None and args.session_id is None:
@@ -274,25 +276,32 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                     recover_registry=getattr(args, "recover_registry", False),
                     force_remove=getattr(args, "force_remove", False),
                 )
+                _outcome.report_success(f"管理対象一時領域を回収した: {args.path}")
             else:
                 cleanup_managed_temp(
                     session_id=args.session_id,
                     recover_registry=getattr(args, "recover_registry", False),
                     force_remove=getattr(args, "force_remove", False),
                 )
+                _outcome.report_success(f"セッションの管理対象一時領域を回収した: session_id={args.session_id}")
         else:
             entries = list_managed_temp(args.prefix, report_recovery_candidates=True)
             for entry in entries:
                 print(json.dumps(entry, ensure_ascii=False, sort_keys=True))
-            return 0 if entries else 1
+            if not entries:
+                _outcome.report_no_match("条件に一致する管理対象一時領域は無い。探索は正常に完了した")
+                return 1
+            return 0
         return 0
     except ManagedTempError as error:
-        print(f"error: {error}", file=sys.stderr)
+        _outcome.report_failure(str(error))
         return 2
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI引数を解釈して管理対象一時ディレクトリを操作する。"""
+    # `atk`本体を経由しない互換入口からも結果行を送出できるようUTF-8を強制する。
+    _outcome.force_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     build_parser(parser)
     return dispatch(parser.parse_args(argv))

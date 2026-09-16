@@ -48,6 +48,7 @@ from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402
 from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
+from agent_toolkit._atk import outcome as _outcome  # noqa: E402
 from agent_toolkit._atk import output_file as _output_file  # noqa: E402
 from agent_toolkit._atk import plans as _plans  # noqa: E402
 from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
@@ -496,35 +497,103 @@ def _add_mq_read_parsers(sub: Any) -> None:
     show.set_defaults(subparser=show)
 
 
+def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
+    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢・既定値で追加する。"""
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help=f"--target-repoとフィルターに一致する全項目を一覧表示後に{action_label}する。",
+    )
+    parser.add_argument(
+        "--type",
+        choices=("all", *_common.WI_TYPES),
+        action="append",
+        default=None,
+        help="--allの対象種別（既定: all）。",
+    )
+    parser.add_argument(
+        "--status",
+        choices=("all", "active", "processable", *_common.WI_STATES),
+        action="append",
+        default=None,
+        help="--allの対象状態（既定: active）。listと同じ集合名を受理する。",
+    )
+    parser.add_argument(
+        "--answered",
+        choices=("all", "yes", "no"),
+        action="append",
+        default=None,
+        help="--allのUWI回答状況（既定: all）。",
+    )
+    _add_source_arg(parser, multiple=True)
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help=f"--allによる一括{action_label}の確認入力を省略する。一覧表示は維持する。",
+    )
+    parser.add_argument(
+        "--skip-pull",
+        action="store_true",
+        help=(
+            f"{action_label}対象の選定・確認をremote同期せずローカル状態で行う"
+            f"（{action_label}の直前は毎回同期する）。--all指定時のみ有効。"
+        ),
+    )
+
+
 def _add_mq_transition_parsers(sub: Any) -> None:
     """状態遷移・削除サブコマンドを登録する。"""
     start_processing = _atk_help.add_command(sub, "start-processing", **_atk_help.HELP["atk wi start-processing"])
     start_processing.add_argument(
         "filenames",
         metavar="FILENAME",
-        nargs="+",
-        help="処理開始するinboxのAWI又はUWIのファイル名（1個以上）。",
+        nargs="*",
+        help="処理開始するAWI又はUWIのファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
-    _add_target_repo_arg(start_processing, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+    _add_bulk_transition_args(start_processing, action_label="処理開始")
+    _add_target_repo_arg(
+        start_processing,
+        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
+        multiple=True,
+    )
+    start_processing.set_defaults(subparser=start_processing)
 
     hold = _atk_help.add_command(sub, "hold", **_atk_help.HELP["atk wi hold"])
     hold.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="保留するファイル名。"
+        "filenames",
+        metavar="FILENAME",
+        nargs="*",
+        help="保留するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _processable_filename_completer
-    _add_target_repo_arg(hold, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+    _add_bulk_transition_args(hold, action_label="保留")
+    _add_target_repo_arg(
+        hold,
+        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
+        multiple=True,
+    )
+    hold.set_defaults(subparser=hold)
 
     unhold = _atk_help.add_command(sub, "unhold", **_atk_help.HELP["atk wi unhold"])
     unhold.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="保留を解除するファイル名。"
+        "filenames",
+        metavar="FILENAME",
+        nargs="*",
+        help="保留を解除するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _hold_filename_completer
-    _add_target_repo_arg(unhold, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+    _add_bulk_transition_args(unhold, action_label="保留解除")
+    _add_target_repo_arg(
+        unhold,
+        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
+        multiple=True,
+    )
+    unhold.set_defaults(subparser=unhold)
 
     return_to_inbox = _atk_help.add_command(sub, "return-to-inbox", **_atk_help.HELP["atk wi return-to-inbox"])
     return_to_inbox.add_argument(
         "filenames",
         metavar="FILENAME",
-        nargs="+",
-        help="差し戻すprocessingファイル名（1個以上）。",
+        nargs="*",
+        help="差し戻すファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _processing_filename_completer  # type: ignore[attr-defined]
     return_to_inbox.add_argument(
         "--cooldown-days",
@@ -537,13 +606,22 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         "--state",
         choices=(_common.WI_STATE_REJECTED,),
         default=None,
-        help="rejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。",
+        help="rejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。--allとは併用できない。",
     )
-    _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+    _add_bulk_transition_args(return_to_inbox, action_label="差し戻し")
+    _add_target_repo_arg(
+        return_to_inbox,
+        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
+        multiple=True,
+    )
+    return_to_inbox.set_defaults(subparser=return_to_inbox)
 
     adopt = _atk_help.add_command(sub, "adopt", **_atk_help.HELP["atk wi adopt"])
     adopt.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="採用するファイル名（1個以上。inbox・processingいずれも対象）。"
+        "filenames",
+        metavar="FILENAME",
+        nargs="*",
+        help="採用するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     _add_note_args(
         adopt,
@@ -564,11 +642,20 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         action="store_true",
         help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
     )
-    _add_target_repo_arg(adopt, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+    _add_bulk_transition_args(adopt, action_label="採用")
+    _add_target_repo_arg(
+        adopt,
+        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
+        multiple=True,
+    )
+    adopt.set_defaults(subparser=adopt)
 
     reject = _atk_help.add_command(sub, "reject", **_atk_help.HELP["atk wi reject"])
     reject.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="不採用とするファイル名（1個以上。inbox・processingいずれも対象）。"
+        "filenames",
+        metavar="FILENAME",
+        nargs="*",
+        help="不採用とするファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     _add_note_args(
         reject,
@@ -592,9 +679,18 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     reject.add_argument(
         "--if-inbox",
         action="store_true",
-        help="pull後も全対象がinboxにある場合だけ不採用とし、processingへ移った対象があれば全体を変更しない。",
+        help=(
+            "pull後も全対象がinboxにある場合だけ不採用とし、processingへ移った対象があれば全体を変更しない。"
+            "--allとは併用できない。"
+        ),
     )
-    _add_target_repo_arg(reject, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+    _add_bulk_transition_args(reject, action_label="不採用")
+    _add_target_repo_arg(
+        reject,
+        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
+        multiple=True,
+    )
+    reject.set_defaults(subparser=reject)
 
     rm = _atk_help.add_command(sub, "rm", **_atk_help.HELP["atk wi rm"])
     rm.add_argument(
@@ -603,33 +699,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         nargs="*",
         help="削除するファイル名。--allと併用せず、個別削除では1個以上を指定する。",
     ).completer = _removable_filename_completer  # type: ignore[attr-defined]
-    rm.add_argument(
-        "--all",
-        action="store_true",
-        help="--target-repoとフィルターに一致する全項目を一覧表示後に削除する。",
-    )
-    rm.add_argument(
-        "--type",
-        choices=("all", *_common.WI_TYPES),
-        action="append",
-        default=None,
-        help="--allの対象種別（既定: all）。",
-    )
-    rm.add_argument(
-        "--status",
-        choices=("all", "active", "processable", *_common.WI_STATES),
-        action="append",
-        default=None,
-        help="--allの対象状態（既定: active）。listと同じ集合名を受理する。",
-    )
-    rm.add_argument(
-        "--answered",
-        choices=("all", "yes", "no"),
-        action="append",
-        default=None,
-        help="--allのUWI回答状況（既定: all）。",
-    )
-    _add_source_arg(rm, multiple=True)
+    _add_bulk_transition_args(rm, action_label="削除")
     rm.add_argument(
         "--state",
         choices=_common.WI_STATES,
@@ -637,19 +707,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         help="個別削除で探索する状態を明示する。--allとは併用できない。",
     )
     rm.add_argument(
-        "--yes",
-        action="store_true",
-        help="--allによる一括削除の確認入力を省略する。一覧表示とprocessing保護は維持する。",
-    )
-    rm.add_argument(
         "--force",
         action="store_true",
         help="processing状態のファイルも削除する（既定では保護し拒否する）。",
-    )
-    rm.add_argument(
-        "--skip-pull",
-        action="store_true",
-        help=("削除対象の選定・確認をremote同期せずローカル状態で行う（削除直前は毎回同期する）。--all指定時のみ有効。"),
     )
     _add_note_args(
         rm,
@@ -964,9 +1024,21 @@ def format_command_contract(command_path: tuple[str, ...]) -> str | None:
     return " / ".join(fields)
 
 
-def _validate_rm_args(args: argparse.Namespace) -> None:
-    """`wi rm`の個別指定と一括指定が排他的であることを検証する。"""
-    if args.command != "wi" or args.wi_subcommand != "rm":
+_BULK_TRANSITION_SUBCOMMANDS = (
+    "start-processing",
+    "hold",
+    "unhold",
+    "return-to-inbox",
+    "adopt",
+    "reject",
+    "rm",
+)
+"""`--all`とフィルター系引数を受理する状態遷移サブコマンド。"""
+
+
+def _validate_bulk_transition_args(args: argparse.Namespace) -> None:
+    """状態遷移サブコマンドの個別指定と一括指定が排他的であることを検証する。"""
+    if args.command != "wi" or args.wi_subcommand not in _BULK_TRANSITION_SUBCOMMANDS:
         return
     if args.all:
         if args.filenames:
@@ -976,11 +1048,13 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
                 "--allの対象リポジトリを確定できません。"
                 "カレントディレクトリを対象リポジトリの作業ツリーへ移すか、--target-repoを指定してください。"
             )
-        if args.state is not None:
+        if getattr(args, "state", None) is not None:
             args.subparser.error("--stateは--allと併用できません。")
+        if getattr(args, "if_inbox", False):
+            args.subparser.error("--if-inboxは--allと併用できません。")
         return
     if not args.filenames:
-        args.subparser.error("削除するFILENAME、または--allを指定してください。")
+        args.subparser.error("対象のFILENAME、または--allを指定してください。")
     if args.yes:
         args.subparser.error("--yesは--allとともに指定してください。")
     if args.skip_pull:
@@ -1019,8 +1093,8 @@ def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentP
 
 
 def _normalize_repeatable_wi_filters(args: argparse.Namespace) -> None:
-    """一覧・表示・削除の反復可能フィルターへ従来の既定値を設定する。"""
-    if args.command != "wi" or args.wi_subcommand not in {"list", "show", "rm"}:
+    """一覧・表示・状態遷移の反復可能フィルターへ従来の既定値を設定する。"""
+    if args.command != "wi" or args.wi_subcommand not in {"list", "show", *_BULK_TRANSITION_SUBCOMMANDS}:
         return
     args.type = args.type or ["all"]
     args.status = args.status or ["active"]
@@ -1079,7 +1153,7 @@ def _cmd_pull(private_notes: pathlib.Path) -> None:
     """private-notesを排他ロック内で明示的に同期する。"""
     with _common._repo_lock(private_notes):
         _common.pull(private_notes)
-    print(f"同期完了: {private_notes.resolve()}")
+    _outcome.report_success(f"private-notesをremoteと同期した: {private_notes.resolve()}")
 
 
 def main(
@@ -1091,10 +1165,7 @@ def main(
 ) -> None:
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
-            reconfigure(encoding="utf-8", errors="replace")
+    _outcome.force_utf8_stdio()
     parser = _build_parser()
     # bash補完（argcomplete）は配布物内で直接遅延importして呼び出す。
     # `pytools._internal.cli`依存を避け、agent-toolkitプラグインの独立性を保つため。
@@ -1125,21 +1196,19 @@ def main(
     try:
         automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
-        print(f"warning: 管理対象一時領域の自動削除に失敗しました: {error}", file=sys.stderr)
+        _outcome.report_warning(f"管理対象一時領域の自動削除に失敗した: {error}")
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
     if args.command != "managed-temp" and not is_delegated_session:
         try:
             unregistered_count = _managed_temp.count_unregistered_candidates()
         except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
-            print(f"warning: 登録を持たない管理対象を探索できませんでした: {error}", file=sys.stderr)
+            _outcome.report_warning(f"登録を持たない管理対象を探索できなかった: {error}")
         else:
             if unregistered_count:
-                print(
-                    f"warning: 登録を持たない管理対象が{unregistered_count}件あります"
-                    "（一覧と回収方法は atk managed-temp list で確認できます）",
-                    file=sys.stderr,
+                _outcome.report_warning(
+                    f"登録を持たない管理対象が{unregistered_count}件ある（一覧と回収方法は atk managed-temp list で確認できる）"
                 )
-    _validate_rm_args(args)
+    _validate_bulk_transition_args(args)
     args.repo_path_override = repo_path_override
     if args.command == "wi" and args.wi_subcommand == "add":
         _validate_add_args(args)
@@ -1211,22 +1280,22 @@ def main(
                 )
             )
         except (_common.WebInputError, _atk_git_sync.RebaseInProgressError) as error:
-            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"操作を拒否した: {error}")
             sys.exit(1)
         except subprocess.CalledProcessError as error:
-            print(f"Git操作に失敗しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"Git操作に失敗した: {error}")
             sys.exit(1)
     if args.command == "review-table":
         try:
             sys.exit(_review_table.dispatch(args))
         except ValueError as error:
-            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"操作を拒否した: {error}")
             sys.exit(1)
     if args.command == "review-audit":
         try:
             sys.exit(_review_audit.dispatch(args))
         except ValueError as error:
-            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"操作を拒否した: {error}")
             sys.exit(1)
     if args.command != "wi":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
@@ -1266,10 +1335,10 @@ def main(
     try:
         exit_code = dispatch[sub]() or 0
     except _common.WebInputError as error:
-        print(f"操作を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"操作を拒否した: {error}")
         sys.exit(1)
     except subprocess.CalledProcessError as error:
-        print(f"Git操作に失敗しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"Git操作に失敗した: {error}")
         sys.exit(1)
     exit_code = _sync_exit_code(
         exit_code,

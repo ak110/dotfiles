@@ -197,7 +197,7 @@ class TestCommitSubcommand:
         assert git_cmds[6] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()
-        assert "外部編集分をコミット" in captured.out
+        assert "外部編集分をcommit・pushした" in captured.out
 
     def test_commit_when_clean_pushes_pending_commits(
         self,
@@ -232,7 +232,7 @@ class TestCommitSubcommand:
         assert not [cmd for cmd in git_cmds if cmd[:2] == ["git", "commit"]]
         assert [cmd for cmd in git_cmds if cmd[:2] == ["git", "push"]] == [["git", "push"], ["git", "push"]]
         captured = capsys.readouterr()
-        assert "差分なし。滞留commitをpushしました。" in captured.out
+        assert "外部編集の差分は無く、滞留commitをpushした" in captured.out
 
     def test_commit_confirms_plans_only_diff(
         self,
@@ -249,7 +249,7 @@ class TestCommitSubcommand:
             atk.main(["wi", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert "外部編集分をコミット" in capsys.readouterr().out
+        assert "外部編集分をcommit・pushした" in capsys.readouterr().out
         status = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=notes,

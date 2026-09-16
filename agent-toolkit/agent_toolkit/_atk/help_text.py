@@ -16,6 +16,8 @@ import typing
 from collections.abc import Sequence
 from typing import Any
 
+from agent_toolkit._atk import outcome as _outcome
+
 ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、管理対象一時領域と委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとコーディングエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末は当該コマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 
@@ -27,7 +29,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi add": {
         "summary": "エントリをinboxへ投入する",
-        "description": "目的: AWI又はUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remote及び対象リポジトリのいずれも変更せず、検証が成立した旨だけを標準出力へ書く。\n前提: 本文を`--body-file`又は$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
+        "description": "目的: AWI又はUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文を照合し、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remote及び対象リポジトリのいずれも変更せず、検証が成立した旨だけを標準出力へ書く。\n前提: 本文を`--body-file`又は$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
         "epilog": "実行例:\n\n  atk wi add --body-file=/tmp/awi-body.md",
     },
     "atk wi list": {
@@ -42,7 +44,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi grep": {
         "summary": "本文を正規表現で検索して該当行を列挙する",
-        "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現で検索し、ファイル名、行番号、該当行を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。\n対象と出力: private-notesを読み取り、標準出力へ`<ファイル名>:<行番号>:<該当行>`の形式で書く。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。該当が0件のときは終了コード1を返す。ファイルは変更しない。\n前提: PATTERNはPythonのreモジュールが解釈できる正規表現として与える。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現で検索し、ファイル名、行番号、該当行を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。\n対象と出力: private-notesを読み取り、標準出力へ`<ファイル名>:<行番号>:<該当行>`の形式で書く。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNはPythonのreモジュールが解釈できる正規表現として与える。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": '実行例:\n\n  atk wi grep "worktree-stash" --status=all',
     },
     "atk wi start-processing": {
@@ -82,7 +84,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。非対話で編集する場合は`--body-file`を使う。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。コーディングエージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。コーディングエージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。非対話で編集する場合は`--body-file`を使う。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文を照合し、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。コーディングエージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。コーディングエージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/tmp/awi-body.md",
     },
     "atk wi set-dependencies": {
@@ -222,12 +224,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk managed-temp cleanup": {
         "summary": "管理対象一時ディレクトリを後始末する",
-        "description": "目的: 指定した管理対象一時ディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。成功した場合は何も出力しない。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり現在の利用者が所有するディレクトリであることだけを確認して実体と登録を回収する。",
+        "description": "目的: 指定した管理対象一時ディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成した子領域のように個別の管理情報を持たない対象は、祖先に登録済みの管理対象領域が実在する場合だけ当該検証を経ずに削除し、その旨を標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり現在の利用者が所有するディレクトリであることだけを確認して実体と登録を回収する。",
         "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/tmp/wi-show-abcd1234",
     },
     "atk managed-temp list": {
         "summary": "管理対象一時ディレクトリを列挙する",
-        "description": "目的: 検証を通過した管理対象一時領域を作成時刻の順に1件1行のJSONで列挙し、回収の候補を警告として報告する。\n利用場面: 残存している領域を把握するとき。登録と実体が一致しない領域の回収手順を確認するとき。\n対象と出力: 状態ディレクトリの登録と各領域を読み取り、標準出力へ1行1レコードのJSON Linesで書く。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。実体の消滅を確定できた登録だけを削除し、確定できない登録は保持して標準エラーへ報告する。該当が0件のときは終了コード1を返す。\n前提: `--prefix`を指定すると、当該prefixの領域だけを対象にする。\n復元・後始末: 報告された領域は`atk managed-temp cleanup --path <絶対パス>`で後始末する。実体へ到達できない登録は、同じ絶対パスへ到達できる実行文脈で本コマンドを再実行すると回収する。",
+        "description": "目的: 検証を通過した管理対象一時領域を作成時刻の順に1件1行のJSONで列挙し、回収の候補を警告として報告する。\n利用場面: 残存している領域を把握するとき。登録と実体が一致しない領域の回収手順を確認するとき。\n対象と出力: 状態ディレクトリの登録と各領域を読み取り、標準出力へ1行1レコードのJSON Linesで書く。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。実体の消滅を確定できた登録だけを削除し、確定できない登録は保持して標準エラーへ報告する。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。\n前提: `--prefix`を指定すると、当該prefixの領域だけを対象にする。\n復元・後始末: 報告された領域は`atk managed-temp cleanup --path <絶対パス>`で後始末する。実体へ到達できない登録は、同じ絶対パスへ到達できる実行文脈で本コマンドを再実行すると回収する。",
         "epilog": "実行例:\n\n  atk managed-temp list --prefix=wi-show",
     },
     "atk worktree-stash": {
@@ -262,12 +264,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、追加した行ごとに、保存済みの表から読み直した指摘箇所と指摘内容について送信した本文との一致判定を`location_body_match`、`issue_body_match`の順で標準出力へ書く。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、保存済みの表から読み直した指摘箇所と指摘内容を送信した本文と照合する。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
         "epilog": "実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --round=1 --track=exec-review --level=詳細 --location-file=/tmp/location.txt --issue-file=/tmp/issue.md",
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方について、送信した本文との一致判定`body_match`だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換経路として利用できる。本文は対応するファイル指定オプションで渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方を、送信した本文と照合する。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換経路として利用できる。本文は対応するファイル指定オプションで渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
         "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-needed=yes --response-file=/tmp/response.md",
     },
     "atk review-table show": {
@@ -296,6 +298,59 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 987654321",
     },
 }
+
+_STATE_CHANGE_RESULT_LINE = "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
+_VALUE_OUTPUT_RESULT_LINE = (
+    "状態変更が成立した実行は標準エラーの1行目へ`成功: `で始まる行を書き、標準出力は値と構造化データだけを保つ。"
+    "非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
+)
+_READ_ONLY_RESULT_LINE = "成功行は書かない。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
+
+
+BULK_TRANSITION_COMMANDS = (
+    "atk wi start-processing",
+    "atk wi hold",
+    "atk wi unhold",
+    "atk wi return-to-inbox",
+    "atk wi adopt",
+    "atk wi reject",
+)
+"""`--all`とフィルター系引数を`atk wi rm`と同じ形式で受理する状態遷移コマンド。"""
+
+_BULK_TRANSITION_OUTPUT = (
+    "`--all`では`wi list`と同じ`--type`、`--status`、`--answered`及び`--source`で候補を限定し、操作の前に候補を一覧表示する。"
+)
+_BULK_TRANSITION_PRECONDITION = "個別指定ではFILENAMEを1個以上、一括操作では--allと--target-repoを指定する。"
+
+
+def _with_result_line(description: str, result_line: str) -> str:
+    """`対象と出力`節の末尾へ結果行の接頭辞と出力先を加える。"""
+    marker = "\n前提: "
+    head, separator, tail = description.partition(marker)
+    if not separator:
+        return f"{description}{result_line}"
+    return f"{head}{result_line}{separator}{tail}"
+
+
+def _with_bulk_transition_help(description: str) -> str:
+    """`対象と出力`の末尾と`前提`の先頭へ一括操作の受理形式を加える。"""
+    marker = "\n前提: "
+    head, separator, tail = description.partition(marker)
+    if not separator:
+        return f"{description}{_BULK_TRANSITION_OUTPUT}"
+    return f"{head}{_BULK_TRANSITION_OUTPUT}{separator}{_BULK_TRANSITION_PRECONDITION}{tail}"
+
+
+for _command in BULK_TRANSITION_COMMANDS:
+    HELP[_command]["description"] = _with_bulk_transition_help(HELP[_command]["description"])
+
+
+for _command, _result_line in (
+    *((command, _STATE_CHANGE_RESULT_LINE) for command in _outcome.STATE_CHANGE_COMMANDS),
+    *((command, _VALUE_OUTPUT_RESULT_LINE) for command in _outcome.VALUE_OUTPUT_COMMANDS),
+    *((command, _READ_ONLY_RESULT_LINE) for command in _outcome.READ_ONLY_COMMANDS),
+):
+    HELP[_command]["description"] = _with_result_line(HELP[_command]["description"], _result_line)
 
 
 class JapaneseHelpFormatter(argparse.HelpFormatter):

@@ -7,6 +7,7 @@
 # pylint: disable=protected-access
 
 import json
+import logging
 import pathlib
 
 import pytest
@@ -456,3 +457,140 @@ class TestReadTargetInfo:
         changed, _ = _install_claude_plugins.run()
         assert changed is False
         assert not calls
+
+
+class TestEnsurePluginCacheComplete:
+    """plugin cache の必須ファイルの欠落を検出し、1 回だけ再インストールで修復する。"""
+
+    _NAME = "agent-toolkit"
+
+    def _prepare(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, install_path: pathlib.Path) -> None:
+        installed = tmp_path / "plugins" / "installed_plugins.json"
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        installed.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "plugins": {
+                        f"{self._NAME}@{_install_claude_plugins._MARKETPLACE_NAME}": [
+                            {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", installed)
+
+    def _write_cache(self, cache_dir: pathlib.Path, *, missing: tuple[str, ...] = ()) -> None:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        for relative in _install_claude_plugins._PLUGIN_CACHE_REQUIRED_FILES:
+            if relative in missing:
+                continue
+            target = cache_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("", encoding="utf-8")
+
+    def _cache_dir(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        return tmp_path / "plugins" / "cache" / "ak110-dotfiles" / self._NAME / "1.0.0"
+
+    def test_complete_cache_does_not_reinstall(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """必須ファイルが揃っている場合は再インストールを起動しない。"""
+        cache_dir = self._cache_dir(tmp_path)
+        self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
+        self._write_cache(cache_dir)
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_install_plugin",
+            lambda _name: pytest.fail("必須ファイルが揃う状態で再インストールを起動した"),
+        )
+
+        assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is False
+
+    def test_missing_file_triggers_repair_install(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """欠落を検出したらキャッシュを削除して再インストールし、欠落を解消する。"""
+        cache_dir = self._cache_dir(tmp_path)
+        self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
+        self._write_cache(cache_dir, missing=("pyproject.toml",))
+        calls: list[str] = []
+
+        def fake_install(name: str) -> bool:
+            calls.append(name)
+            assert not cache_dir.exists()
+            self._write_cache(cache_dir)
+            return True
+
+        monkeypatch.setattr(_install_claude_plugins, "_install_plugin", fake_install)
+
+        assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is True
+        assert calls == [self._NAME]
+        assert _install_claude_plugins._missing_plugin_cache_files(cache_dir) == []
+
+    def test_still_missing_after_repair_fails_with_file_names(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """再インストール後も欠落する場合は、欠落ファイル名を含む失敗で終える。"""
+        cache_dir = self._cache_dir(tmp_path)
+        self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
+        self._write_cache(cache_dir, missing=("uv.lock",))
+        calls: list[str] = []
+
+        def fake_install(name: str) -> bool:
+            calls.append(name)
+            self._write_cache(cache_dir, missing=("uv.lock",))
+            return True
+
+        monkeypatch.setattr(_install_claude_plugins, "_install_plugin", fake_install)
+
+        with pytest.raises(RuntimeError, match="uv.lock"):
+            _install_claude_plugins._ensure_plugin_cache_complete(self._NAME)
+        assert calls == [self._NAME]
+
+    def test_failed_repair_install_fails(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """修復の再インストール自体が失敗した場合も、成功として扱わない。"""
+        cache_dir = self._cache_dir(tmp_path)
+        self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
+        self._write_cache(cache_dir, missing=("pyproject.toml",))
+        monkeypatch.setattr(_install_claude_plugins, "_install_plugin", lambda _name: False)
+
+        with pytest.raises(RuntimeError, match="修復インストールに失敗"):
+            _install_claude_plugins._ensure_plugin_cache_complete(self._NAME)
+
+    def test_unresolvable_install_path_skips_check(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """導入先を解決できない場合は、探索先を警告して検査を省略する。"""
+        installed = tmp_path / "plugins" / "installed_plugins.json"
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        installed.write_text(json.dumps({"version": 2, "plugins": {}}), encoding="utf-8")
+        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", installed)
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_install_plugin",
+            lambda _name: pytest.fail("導入先を解決できない状態で再インストールを起動した"),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is False
+
+        assert str(installed) in caplog.text
+
+    def test_install_path_outside_cache_is_not_deleted(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """plugin cache の外にある導入先は削除も再インストールもせず、警告して検査を省略する。"""
+        outside = tmp_path / "elsewhere" / "1.0.0"
+        self._prepare(monkeypatch, tmp_path, install_path=outside)
+        self._write_cache(outside, missing=("pyproject.toml",))
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_install_plugin",
+            lambda _name: pytest.fail("cache の外にある導入先で再インストールを起動した"),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is False
+
+        assert outside.is_dir()
+        assert str(outside) in caplog.text

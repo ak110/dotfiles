@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import psutil
 
+from agent_toolkit._atk import outcome as _outcome
+
 _NO_VALUE = frozenset(
     {
         "--strict-config",
@@ -207,12 +209,16 @@ def main() -> int:
     target = identify_current_host()
     if target is None:
         print(json.dumps({"exit_session_invoked": True, "status": "unsupported"}, separators=(",", ":")))
-        print("現在の対話CLI本体を一意に識別できません。/exit又は/quitを入力してください。", file=sys.stderr)
+        _outcome.report_warning("現在の対話CLI本体を一意に識別できない。/exit又は/quitを入力して終了する。")
         return 0
     if not _same_process(target):
         print(json.dumps({"exit_session_invoked": True, "status": "changed"}, separators=(",", ":")))
-        print("終了対象が識別後に変化したため停止しません。", file=sys.stderr)
+        _outcome.report_warning("終了対象が識別後に変化したため停止しない。")
         return 0
+    _outcome.report_success(
+        f"現在のセッションへ終了要求を送る: {target.host} pid={target.pid}",
+        _outcome.ResultKind.VALUE_OUTPUT,
+    )
     print(
         json.dumps(
             {"exit_session_invoked": True, "status": "terminating", "host": target.host, "pid": target.pid},

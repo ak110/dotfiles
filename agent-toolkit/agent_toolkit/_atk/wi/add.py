@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import user_comment as _user_comment
@@ -32,7 +33,10 @@ from agent_toolkit._atk.wi.common import (
     _repo_lock,
     _subdir,
     _validate_filename,
+    existing_entry_filenames,
     is_agent_environment,
+    is_case_sensitive,
+    missing_dependency_warnings,
 )
 from agent_toolkit._atk.wi.formatters import _shorten_home
 from agent_toolkit._atk.wi.repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
@@ -41,7 +45,7 @@ from agent_toolkit._plan import locations as _plan_file
 
 
 def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
-    """保存済みエントリを再読込し、一致判定とユーザーが照合するメタデータを返す。
+    """保存済みエントリを再読込し、本文の一致を検証したうえで照合用のメタデータを返す。
 
     `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存経路で本文が欠落又は改変されて
     いないことを、呼び出し元が終了状態で確定できるようにする。
@@ -53,8 +57,7 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     data, _body = parsed
     raw_dependencies = data.get("depends_on")
     depends_on = [value for value in raw_dependencies if isinstance(value, str)] if isinstance(raw_dependencies, list) else []
-    body_match = _body_match.verdict(expected_body, saved_body)
-    if body_match != "一致":
+    if _body_match.verdict(expected_body, saved_body) != "一致":
         position = _body_match.first_difference(expected_body, saved_body)
         raise WebInputError(
             f"保存本文が送信元本文と一致しない: {path.name}\n"
@@ -63,7 +66,6 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
             f"保存本文:\n{saved_body}"
         )
     return {
-        "body_match": body_match,
         "target_repo": data.get("target_repo"),
         "target_commit": data.get("target_commit"),
         "plan_file": data.get("plan_file"),
@@ -97,6 +99,27 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
     """CLIの依存ファイル名を検証し、`.md`付きの初出順へ正規化する。"""
     return tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in (values or ())))
+
+
+def _missing_dependency_warnings(
+    private_notes: pathlib.Path,
+    inbox_dir: pathlib.Path,
+    generated: list[str],
+    dependencies: tuple[str, ...],
+) -> list[str]:
+    """投入したエントリの依存先のうち、取り込み先に実在しないものを警告文へ列挙する。
+
+    依存先が実在しないことを理由に投入を拒否せず、警告を返して登録を続ける。
+    `--depends-on`は当該呼び出しの全エントリへ共通に付くため、エントリと依存先の組ごとに1件返す。
+    判定と文面は`--batch`経路と共有し、両経路で同じ条件の参照へ同じ警告が出る状態を保つ。
+    """
+    if not dependencies:
+        return []
+    return missing_dependency_warnings(
+        [(filename, dependency) for filename in generated for dependency in dependencies],
+        resolvable=existing_entry_filenames(private_notes),
+        case_sensitive=is_case_sensitive(inbox_dir),
+    )
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
@@ -528,13 +551,14 @@ def _cmd_add(
     計画実装型の分類は`--plan-file`の指定だけで確定する。
     `--body-file`を指定した場合は当該ファイルの内容を本文として扱う。
     シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
+    `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
     """
     body_files = getattr(args, "body_file", None)
     if body_files:
         try:
             messages = read_body_files(body_files)
         except WebInputError as error:
-            print(f"投入を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"投入を拒否した: {error}")
             sys.exit(1)
     else:
         messages = []
@@ -568,23 +592,24 @@ def _cmd_add(
         except WebInputError as error:
             if str(error) == _EMPTY_AWI_ERROR:
                 preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
-                print(
-                    "投入を拒否しました: 本文が実質空です"
+                _outcome.report_failure(
+                    "投入を拒否した: 本文が実質空である"
                     "（空文字・空白のみ・箇条書きマーカー単独文字のいずれか）。"
-                    f"該当メッセージの先頭: {preview}",
-                    file=sys.stderr,
+                    f"該当メッセージの先頭: {preview}。本文を書いてから再投入する"
                 )
             else:
-                print(f"投入を拒否しました: {error}", file=sys.stderr)
+                _outcome.report_failure(f"投入を拒否した: {error}")
             sys.exit(1)
     if args.type == WI_TYPE_UWI and args.depends_on:
-        print("投入を拒否しました: --depends-onは--type=awiでのみ指定できます", file=sys.stderr)
+        _outcome.report_failure("投入を拒否した: --depends-onは--type=awiでのみ指定できる")
         sys.exit(1)
     try:
         target_commit = resolve_head_commit(local_worktree) if local_worktree is not None else None
     except SystemExit:
         if collected_via_editor:
-            print("HEADコミットの取得に失敗しました。確定済みの本文を以下に再表示します。", file=sys.stderr)
+            _outcome.report_failure(
+                "HEADコミットの取得に失敗した。確定済みの本文を以下に再表示するため、保存してから再投入する"
+            )
             for message in messages:
                 print("---", file=sys.stderr)
                 print(message, file=sys.stderr)
@@ -604,7 +629,7 @@ def _cmd_add(
                 target_commit=target_commit,
                 plan_file=args.plan_file,
             )
-            print("検証が成立しました。")
+            _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
         generated = add_entries(
             private_notes,
@@ -624,10 +649,10 @@ def _cmd_add(
             saved_details=saved_details,
         )
     except WebInputError as error:
-        print(f"投入を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"投入を拒否した: {error}")
         sys.exit(1)
     except subprocess.CalledProcessError:
-        print("remote同期に失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
+        _outcome.report_failure("remote同期に失敗した。確定済みの本文を以下に再表示するため、保存してから再投入する")
         for message in messages:
             print("---", file=sys.stderr)
             print(message, file=sys.stderr)
@@ -635,7 +660,9 @@ def _cmd_add(
     count = len(generated)
     inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
-    print(f"{count}件投入:")
+    for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
+        _outcome.report_warning(warning)
+    _outcome.report_success(f"{count}件をinboxへ投入した")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
         _print_entry_details(saved_details[filename])

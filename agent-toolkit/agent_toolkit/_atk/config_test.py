@@ -377,7 +377,10 @@ class TestConfigApplyPreset:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert not captured.err
-        assert captured.out.splitlines() == [f"{key}: {value}" for key, value in expected.items()]
+        assert captured.out.splitlines() == [
+            f"成功: 工程別モデル設定をpreset「{preset}」で一括保存した: {len(expected)}件",
+            *(f"{key}: {value}" for key, value in expected.items()),
+        ]
         assert json.loads(config_file.read_text(encoding="utf-8")) == {"other_setting": "keep", **expected}
 
     def test_defaults_equal_codex_balanced(self) -> None:
@@ -415,7 +418,7 @@ class TestConfigSet:
             atk.main(["config", "set", key, value], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"設定を更新しました: {key}={value}" in captured.out
+        assert f"成功: 設定を更新した: {key}={value}" in captured.out
         assert captured.err == "設定は保存します。\n"
 
         with pytest.raises(SystemExit) as exc_info:
@@ -433,7 +436,7 @@ class TestConfigSet:
             atk.main(["config", "set", "execute_fix_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "変更できない設定キーです: execute_fix_model" in capsys.readouterr().err
+        assert "失敗: 変更できない設定キーを指定した: execute_fix_model" in capsys.readouterr().err
         assert not (tmp_path / "config" / "config.json").exists()
 
     def test_legacy_execute_fix_model_get_is_rejected(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -444,7 +447,7 @@ class TestConfigSet:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert not captured.out
-        assert "未知の設定キーです: execute_fix_model" in captured.err
+        assert "失敗: 未知の設定キーを指定した: execute_fix_model" in captured.err
 
     def test_known_claude_models_include_fable(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """`claude:fable`は主に使うモデルの一覧に含まれ、警告を出力しない。"""
@@ -479,7 +482,7 @@ class TestConfigSet:
             atk.main(["config", "set", "orchestrate_model", value], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"設定を更新しました: orchestrate_model={value}\n"
+        assert captured.out == f"成功: 設定を更新した: orchestrate_model={value}\n"
         assert captured.err == "設定は保存します。\n"
 
         with pytest.raises(SystemExit) as exc_info:
@@ -616,7 +619,7 @@ class TestConfigSet:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "設定を更新しました: execute_model=claude:unknown-model" in captured.out
+        assert "成功: 設定を更新した: execute_model=claude:unknown-model" in captured.out
         assert "モデル名`unknown-model`は主に使うモデルの一覧" in captured.err
         assert "利用可否は実行時に各engineが判定します" in captured.err
 
@@ -662,7 +665,7 @@ class TestConfigSet:
             atk.main(["config", "set", "merge_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "変更できない設定キーです: merge_model" in capsys.readouterr().err
+        assert "失敗: 変更できない設定キーを指定した: merge_model" in capsys.readouterr().err
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "merge_model"], home=tmp_path)
@@ -699,7 +702,7 @@ class TestConfigSet:
             atk.main(["config", "set", "codex_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "変更できない設定キーです" in capsys.readouterr().err
+        assert "失敗: 変更できない設定キーを指定した" in capsys.readouterr().err
 
     def test_set_immutable_key_exits_2(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """XDGパス等の導出値キーは変更できずexit 2でエラー案内を出力する。"""
@@ -707,4 +710,4 @@ class TestConfigSet:
             atk.main(["config", "set", "config_dir", "/tmp/somewhere"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "変更できない設定キーです" in capsys.readouterr().err
+        assert "失敗: 変更できない設定キーを指定した" in capsys.readouterr().err

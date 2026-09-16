@@ -122,7 +122,13 @@ def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
 
 
 def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
-    """項目の具体的なblocked理由を安定した識別子で返す。"""
+    """項目の具体的なblocked理由を安定した識別子で返す。
+
+    依存の未充足は、未終端の依存先が全て`--target-repo`の`processable`集合の内側にあるかで
+    2値へ分ける。未終端の依存先を持たないblockedは、当該集合の内側の項目が終端しても解除されないため
+    外側として返す。この対応が崩れると、時間経過だけで解除される待機が内側として返り、
+    当該処理回で着手できない項目が選定の候補へ入る。
+    """
     reasons = (
         ("frontmatter-broken", readiness.frontmatter_broken),
         ("invalid-cooldown", readiness.invalid_cooldowns),
@@ -136,7 +142,9 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     specific = next((reason for reason, filenames in reasons if filename in filenames), None)
     if specific is not None:
         return specific
-    return "dependency-unmet" if filename in readiness.blocked else None
+    if filename not in readiness.blocked:
+        return None
+    return "dependency-unmet-internal" if filename in readiness.internal_dependency_waits else "dependency-unmet-external"
 
 
 def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:

@@ -58,6 +58,7 @@ def _cmd_add_args(
     plan_file: str | None = None,
     dry_run: bool = False,
     origin_locator: str | None = None,
+    depends_on: list[str] | None = None,
 ) -> argparse.Namespace:
     """`_cmd_add`の単体テストへ必要な引数を返す。"""
     body_path = tmp_path / "body.md"
@@ -67,7 +68,7 @@ def _cmd_add_args(
         repo_path_override=None,
         target_repo="github.com/example/repo",
         type=entry_type,
-        depends_on=[],
+        depends_on=depends_on or [],
         source=source,
         origin_locator=origin_locator,
         scope=None,
@@ -127,7 +128,7 @@ def test_add_dry_run_validates_without_side_effects(
         text=True,
     ).stdout
     after_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
-    assert capsys.readouterr().out == "検証が成立しました。\n"
+    assert capsys.readouterr().out == "成功: 投入前の検証が成立した（--dry-runのため保存していない）\n"
     assert after_files == before_files
     assert after_head == before_head
 
@@ -403,6 +404,23 @@ def test_cmd_add_accepts_agent_awi_with_all_required_sections(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
+def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quoted_h2(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """必須節の本文が引用の内側のH2から始まっても当該節を非空として数える。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    message = _AGENT_AWI_BODY.replace(
+        "## 実現性\n対象実装を確認済み",
+        "## 実現性\n\n> ## 引用した規範の見出し\n>\n> 対象実装を確認済み",
+    )
+    add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
 def test_cmd_add_accepts_human_awi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -570,7 +588,7 @@ def test_add_reloads_saved_details_while_holding_lock(
 
     assert saved_details[generated[0]]["target_repo"] == "github.com/example/repo"
     assert "saved_body" not in saved_details[generated[0]]
-    assert saved_details[generated[0]]["body_match"] == "一致"
+    assert "body_match" not in saved_details[generated[0]]
 
 
 def test_cli_add_does_not_output_body_verification_details(
@@ -1001,6 +1019,45 @@ def test_add_operation_records_top_level_dependencies(
     parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0]["depends_on"] == ["first.md", "second.md"]
+
+
+def test_add_warns_for_missing_dependency_and_keeps_registering(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実在しない依存先を指定しても投入を拒否せず、警告を出力したうえで登録を完了する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", depends_on=["absent.md"]), notes, _FIXED_DT, tmp_path)
+
+    captured = capsys.readouterr()
+    generated = sorted(path.name for path in (notes / "inbox").iterdir() if path.suffix == ".md")
+    assert len(generated) == 1
+    assert captured.err == f"警告: {generated[0]}のdepends_onが参照するabsent.mdは取り込み先に実在しません\n"
+    assert "成功: 1件をinboxへ投入した" in captured.out
+
+
+def test_add_does_not_warn_for_existing_dependency(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """依存先が取り込み先に実在する場合は警告を出力しない。"""
+    notes = _setup_notes(tmp_path)
+    (notes / "inbox" / "present.md").write_text("---\ntype: awi\n---\n\n本文\n", encoding="utf-8")
+    monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", depends_on=["present.md"]), notes, _FIXED_DT, tmp_path)
+
+    assert capsys.readouterr().err == ""
 
 
 def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Path) -> None:
@@ -1844,7 +1901,7 @@ def test_cli_add_rejects_existing_path_outside_worktree(
         atk.main(["wi", "add", str(bare_repo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 2
-    assert "ローカルworktreeではありません" in capsys.readouterr().err
+    assert "ローカルworktreeではない" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
     assert not any(command[-3:] == ["rev-parse", "--verify", "HEAD^{commit}"] for command in git_commands)
 
@@ -2459,7 +2516,7 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
         saved_details=saved_details,
     )
 
-    assert saved_details[generated[0]]["body_match"] == "一致"
+    assert (notes / "inbox" / generated[0]).exists()
 
 
 @pytest.mark.parametrize("input_kind", ["position", "body-file"])
@@ -2490,7 +2547,7 @@ def test_add_reports_body_match_for_crlf_inputs(
 
     saved = (notes / "inbox" / generated[0]).read_bytes()
     assert b"\r" not in saved
-    assert saved_details[generated[0]]["body_match"] == "一致"
+    assert (notes / "inbox" / generated[0]).exists()
 
 
 def test_cli_add_omits_body_verification_details(

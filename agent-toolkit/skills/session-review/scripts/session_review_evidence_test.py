@@ -150,6 +150,67 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
     ]
 
 
+def _claude_answer_event_with_options(
+    tmp_path: pathlib.Path,
+    options: list[dict[str, str]],
+    answer: str,
+    notes: str | None,
+) -> dict[str, object]:
+    """選択肢を持つAskUserQuestionの回答記録から抽出した単一イベントを返す。"""
+    annotations: dict[str, object] = {"方針": {"notes": notes}} if notes is not None else {}
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "AskUserQuestion",
+                            "id": "question",
+                            "input": {"questions": [{"question": "方針", "options": options}]},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"answers": {"方針": answer}, "annotations": annotations},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "question", "content": "通常出力"}],
+                },
+            },
+        ],
+    )
+    return evidence.load_and_extract(str(transcript))[0]
+
+
+@pytest.mark.parametrize(
+    ("options", "answer", "notes", "expected"),
+    [
+        ([{"label": "既存機構へ統合"}, {"label": "新機構を追加"}], "既存機構へ統合", None, False),
+        ([{"label": "既存機構へ統合"}, {"label": "新機構を追加"}], "既存機構へ統合, 新機構を追加", None, False),
+        ([{"label": "既存機構へ統合"}], "対象範囲を広げて全件を対象にする", None, True),
+        ([{"label": "既存機構へ統合"}], "既存機構へ統合", "ただし対象範囲は全件とする", True),
+        ([], "(notes only)", "全件を対象にする", True),
+    ],
+)
+def test_claude_answer_intervention_marks_answers_outside_offered_choices(
+    tmp_path: pathlib.Path,
+    options: list[dict[str, str]],
+    answer: str,
+    notes: str | None,
+    expected: bool,
+) -> None:
+    """提示した選択肢のlabelと一致しない回答と自由記述を伴う回答へ介入の標識を付ける。"""
+    event = _claude_answer_event_with_options(tmp_path, options, answer, notes)
+
+    assert (event.get("answer_intervention") is True) is expected
+
+
 def _claude_answer_event(tmp_path: pathlib.Path, result: dict[str, object]) -> dict[str, str | int]:
     """AskUserQuestionの回答記録から抽出した単一イベントを返す。"""
     transcript = _write_transcript(

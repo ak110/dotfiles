@@ -66,7 +66,7 @@ class TestShowSingleFile:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "全状態フォルダに存在しません" in captured.err
+        assert "全状態フォルダに存在しない" in captured.err
 
     def test_target_repo_mismatch_falls_through_and_exits(
         self,
@@ -88,7 +88,7 @@ class TestShowSingleFile:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert captured.out == ""
-        assert "全状態フォルダに存在しません" in captured.err
+        assert "全状態フォルダに存在しない" in captured.err
 
     def test_filename_filter_matches_legacy_local_path(
         self,
@@ -419,7 +419,7 @@ class TestShowTypeFilter:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "全状態フォルダに存在しません" in captured.err
+        assert "全状態フォルダに存在しない" in captured.err
 
     def test_type_all_searches_awi_then_uwi(
         self,
@@ -782,8 +782,8 @@ class TestShowSkipPull:
         assert exc_info.value.code == 0
         assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"]) for call in git_calls)
         assert capsys.readouterr().err == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
-            "最新化する場合は`--pull`を指定してください。\n"
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
+            "最新化する場合は`--pull`を指定する。\n"
         )
 
     def test_pull_forces_remote_sync_after_recent_sync(
