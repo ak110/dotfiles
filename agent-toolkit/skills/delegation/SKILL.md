@@ -265,7 +265,7 @@ Codexが遅延実行されるツールを介して`atk agents wait`を呼ぶ二�
 
 上流から委譲を受領した実行主体が自らさらに委譲する場合、当該実行主体自身が次を守る。
 本スキルの送信側契約も併せて適用する。
-受信者一般が守る厳守規定は`references/mandatory-rules.md`と`agent-toolkit/share/rules-subagent.md`が定め、
+受信者一般が守る既定で従う規定は`references/mandatory-rules.md`と`agent-toolkit/share/rules-subagent.md`が定め、
 本スキルを起動しない委譲先へも適用される。
 
 - 上流から受領した取り決め（作業場所、書込主体、出力言語、プロセス所有権、不可逆操作権限とその許可範囲）を

@@ -275,7 +275,7 @@ PYTHONPATH=<plugin rootの絶対パス> python /absolute/path/to/plan-mode/scrip
 `uvx --from agent-toolkit python <スクリプトの絶対パス>`は当該パッケージを解決せず、本スクリプトは当該解決の失敗を検出した場合に上記の起動形を示して終了コード2で終わる。
 対象リポジトリがセッションの作業ディレクトリと異なる場合は`--work-dir /absolute/path/to/target-repository`を付ける。
 専用worktreeで作業する場合は、当該worktreeを作業ディレクトリとして検査するか、`--work-dir`へ当該worktreeの絶対パスを渡す。
-これは厳守規定である。
+これは既定で従う規定である。
 本スクリプトは`--work-dir`が解決するGitルートを計画メタ情報の`対象リポジトリ`と照合するため、複製元の作業ツリーから実行すると当該照合が成立せず、計画が拒否される。
 `--reject-migration-warnings`は新規作成・改訂で旧形式からの移行警告をエラーとして扱う。保存済み計画を読み取りだけで検査する場合は同オプションを省略する。
 通常のシェルでは`${CLAUDE_PLUGIN_ROOT}`が展開されないため、読込済みの本書の絶対パスからスキルの絶対ベースディレクトリを確定して指定する。

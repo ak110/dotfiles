@@ -169,6 +169,31 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月16日、参考実利用バージョンの取得元を実測した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で指定する。再検証は同ファイルの当該2つの依存の版指定を取得する。再検証の契機は当該依存の更新とする。
 
+## agent-toolkit/skills/writing-standards/references/llm-characteristics.md：知識の想起：2026年9月16日
+
+2026年9月16日、本リポジトリのHEAD `2ee94027`でコーパス分析とA/B実験を実測した。
+
+コーパス分析の対象は、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`.chezmoi-source/dot_claude/`、`.claude/skills/`配下のMarkdownと`AGENTS.md`とする。
+現行本文137ファイル・9850文のうち、否定形で終わる文は1481文（15.0%）、「当該」は1393回（1000文あたり141回）現れた。
+由来の区分は`git log --format='%H%x09%an%x09%(trailers:key=Co-Authored-By,valueonly)'`で全3578commitのトレーラーを取って行った。
+`Codex`を含むものをCodex由来（107件、いずれも2026年8月）、`Claude`を含むものをClaude由来とした。
+Codexが委譲先として書いた変更はClaude名義で記録されるため、Codex由来の件数は下限である。
+追加文の抽出は各commitの`git show --format= --unified=0 -- '*.md'`の追加行から行い、コードブロック・表・見出しを除いて「」で分割した。
+追加文1000文あたりの推移は、Codex利用前のClaude由来、2026年8月のCodex由来、2026年9月のClaude由来の順に次のとおりであった。
+「当該」23→55→163、「主体」0.6→7.6→17.5、「正本」0.4→10.4→35.4、「契約」0.2→8.3→11.0。
+「終端」0.5→2.5→36.7、「厳守規定」0.8→5.6→18.2、「〜を根拠にしない」型2.9→7.8→10.2。
+「〜だけを…しない」型0.7→6.8→6.3、否定形終端文の割合5.0〜8.0%→10.9%→15.7%。
+
+A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「完遂と先送り」（112行）を条件Aの抜粋とし、同じ内容を平易な肯定形へ書き換えた99行を条件Bの抜粋とし、抜粋を読ませない条件Cを対照とした。
+抜粋の否定形終端率はA19.5%・B12.1%、「当該」はA34回・B0回、「厳守規定」はA7回・B0回である。
+課題はスキルの1節の起草（10〜20文）、バグ修正方針の指示文（300〜600字）、ユーザーへの完了報告（200〜400字）の3件とし、各条件3回ずつClaude Opusの委譲先へ与え、条件を隠した匿名のファイル名で別の委譲先へ採点させた。
+修正方針の課題では、範囲外の追加要素がA4.67件・B2.00件・C1.67件、過剰設計度がA3.00点・B2.00点・C2.33点であった。
+成果物の否定形終端率は、スキル起草の課題でA17.9%・B9.0%・C22.9%、修正方針の課題でA30.5%・B16.5%・C27.6%であった。
+反復は3回であり、統計的な検定は行っていない。完了報告の課題では条件間の差は現れなかった。
+
+再検証は、`uv run --frozen python scripts/check_agent_doc_tone.py --report <対象ファイル>`で現行本文の指標を取得し、上記の値と比べる。
+再検証の契機は、規範文書の一括改訂と、文体の閾値の見直しとする。
+
 ## agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
 本表は2026年9月5日に実測した。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つの検体を作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`で検査した。

@@ -307,7 +307,7 @@ Stop/SubagentStopの`decision: "block"`は、対象主体が同一ターン内�
 上限値は`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`環境変数で変更できる。
 
 Stop・SubagentStopの`additionalContext`と`decision: "block"`の違いは、`additionalContext`がフックの想定内の助言としてtranscriptへ表示され、フックのエラー通知を伴わない点である。
-いずれも`stop_hook_active`と連続継続上限による同じループ保護を通るため、前段の厳守規定を両経路へ等しく適用し、対象主体が同一ターン内の行動で解消できる条件だけを警告と遮断の条件にする。
+いずれも`stop_hook_active`と連続継続上限による同じループ保護を通るため、前段の既定で従う規定を両経路へ等しく適用し、対象主体が同一ターン内の行動で解消できる条件だけを警告と遮断の条件にする。
 
 ターン終了の言語的判定（完了文言・質問・待機表明の判別）をフック側のコードで
 正規表現等により行うと誤検知が生じやすい。

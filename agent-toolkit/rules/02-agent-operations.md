@@ -144,7 +144,7 @@
   `start_explore`の成立の有無で判定する。
   これら以外の委譲と直接実行の分岐は、当該ツールの説明が示す採算の目安で判定する。
   出力量が小さい通常のコマンドは対象外とする（努力目標）
-- サブエージェント及び委譲先では、前項の分離実行を`agent-toolkit/share/rules-subagent.md`「大量出力コマンドの分離実行」が厳守規定として定める
+- サブエージェント及び委譲先では、前項の分離実行を`agent-toolkit/share/rules-subagent.md`「大量出力コマンドの分離実行」が既定で従う規定として定める
 - 分離実行の受領物の指定、分離先の実行上限を超える見込みのコマンドの扱い、及びコンテキスト消費が大きい調査の切り出しは`agent-toolkit:delegation`の`references/base-contract.md`と`references/routing.md`が定める
 - ファイル属性・内容の検索手段の選定と、検索の出力量の制御は`agent-toolkit:writing-standards`の`references/search.md`が定める
 - 対象の削除、回収又は解放が完了したことを照合する場合は、対象の不在を成功として判定する。
