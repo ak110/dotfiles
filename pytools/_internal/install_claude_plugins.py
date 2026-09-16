@@ -8,6 +8,7 @@ dotfiles apply全体の失敗にはしない。
 
 import json
 import logging
+import shutil
 import sys
 from pathlib import Path
 from typing import cast
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 _MARKETPLACE_NAME = claude_common.MARKETPLACE_NAME
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 _PLUGIN_OPERATION_TIMEOUT_SEC = claude_common.PLUGIN_OPERATION_TIMEOUT
+
+# plugin cache の version 直下に揃っている必要があるファイル。
+# いずれかが欠けると `uv run --project <キャッシュ>` が当該ディレクトリをプロジェクトとして
+# 解決できず、当該 plugin の入口が import に失敗する。
+_PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock", ".claude-plugin/plugin.json")
 
 # インストール済みかつ既定で有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
@@ -124,6 +130,8 @@ def run() -> tuple[bool, list[str]]:
     installed_count = 0
     resynced_count = 0
     failed_count = 0
+    # CLI が成功終了した plugin だけを、キャッシュ実体の検査対象にする。
+    cache_check_names: list[str] = []
     for name, target in target_versions.items():
         # project scope に残存するエントリを除去 (user scope 移行用)
         _cleanup_old_project_scope(name, raw_data)
@@ -133,6 +141,7 @@ def run() -> tuple[bool, list[str]]:
             if _install_plugin(name):
                 any_change = True
                 installed_count += 1
+                cache_check_names.append(name)
             else:
                 failed_count += 1
         elif target and current != target:
@@ -140,6 +149,7 @@ def run() -> tuple[bool, list[str]]:
             if _update_plugin(name):
                 any_change = True
                 updated_count += 1
+                cache_check_names.append(name)
             else:
                 failed_count += 1
         elif is_directory_type:
@@ -149,11 +159,18 @@ def run() -> tuple[bool, list[str]]:
             if _install_plugin(name):
                 any_change = True
                 resynced_count += 1
+                cache_check_names.append(name)
             else:
                 failed_count += 1
         else:
             logger.info(log_format.format_status(name, f"最新 ({current or '不明'})"))
             latest_count += 1
+
+    # CLI が成功終了しても、同じ version を既に導入済みと判定した場合はキャッシュが検証されない。
+    # Claude Code が次回起動時に読む実体を確認し、欠落していれば 1 回だけ再インストールで修復する。
+    for name in cache_check_names:
+        if _ensure_plugin_cache_complete(name):
+            any_change = True
 
     # 外部 marketplace の自動 disable 実行と install/enable 推奨コマンド算出 (公式プラグイン)。
     # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
@@ -627,6 +644,81 @@ def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
         if isinstance(key, str) and isinstance(value, bool):
             result[key] = value
     return result
+
+
+def _plugin_cache_directory(name: str) -> Path | None:
+    """`installed_plugins.json` が保持する user scope の導入先ディレクトリを返す。"""
+    try:
+        data = json.loads(_INSTALLED_PLUGINS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    entries = plugins.get(f"{name}@{_MARKETPLACE_NAME}") if isinstance(plugins, dict) else None
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("scope") not in (None, "user"):
+            continue
+        install_path = entry.get("installPath")
+        if isinstance(install_path, str) and install_path:
+            return Path(install_path).expanduser()
+    return None
+
+
+def _missing_plugin_cache_files(cache_dir: Path) -> list[str]:
+    """必須ファイルのうち plugin cache に揃っていないものを列挙する。"""
+    return [relative for relative in _PLUGIN_CACHE_REQUIRED_FILES if not (cache_dir / relative).is_file()]
+
+
+def _ensure_plugin_cache_complete(name: str) -> bool:
+    """導入先の実体が揃っていることを確認し、欠落を 1 回だけ修復する (修復した場合 True)。
+
+    `claude plugin install/update` は同じ version の plugin を既に導入済みと判定した場合に
+    キャッシュを検証せずスキップするため、CLI の終了コード 0 はキャッシュの完全性を含意しない。
+    必須ファイルを欠いたまま後続の工程が `uv run --project <キャッシュ>` を実行すると、
+    当該ディレクトリがプロジェクトとして解決されず `ModuleNotFoundError` で終わる。
+
+    導入先を解決できない場合と、導入先が plugin cache の外にある場合は、検査できなかった旨と
+    探索先を警告して False を返す。導入そのものの欠落は `_verify_target_plugins` が扱うため、
+    本関数では新しい失敗経路を増やさない。
+    """
+    cache_root = _INSTALLED_PLUGINS_PATH.parent / "cache"
+    cache_dir = _plugin_cache_directory(name)
+    if cache_dir is None:
+        source = log_format.home_short(_INSTALLED_PLUGINS_PATH)
+        logger.warning(log_format.format_status(name, f"plugin cache の導入先を {source} から解決できず検査を省略"))
+        return False
+    if not cache_dir.is_relative_to(cache_root):
+        # 削除の対象は plugin cache の内側だけとし、想定外の位置にある導入先は削除しない。
+        short = log_format.home_short(cache_dir)
+        logger.warning(log_format.format_status(name, f"plugin cache の外にある導入先のため検査を省略: {short}"))
+        return False
+    missing = _missing_plugin_cache_files(cache_dir)
+    if not missing:
+        return False
+    logger.warning(
+        log_format.format_status(
+            name,
+            f"plugin cache に {', '.join(missing)} が無いため削除して再インストールします: {log_format.home_short(cache_dir)}",
+        )
+    )
+    shutil.rmtree(cache_dir, ignore_errors=True)
+    if not _install_plugin(name):
+        message = f"plugin cache の修復インストールに失敗しました: {log_format.home_short(cache_dir)}"
+        logger.error(log_format.format_status(name, message))
+        raise RuntimeError(f"{name}: {message}")
+    repaired_dir = _plugin_cache_directory(name) or cache_dir
+    missing = _missing_plugin_cache_files(repaired_dir)
+    if missing:
+        command = f"claude plugin install {name}@{_MARKETPLACE_NAME} --scope=user -y"
+        message = (
+            f"再インストール後も plugin cache に {', '.join(missing)} がありません: "
+            f"{log_format.home_short(repaired_dir)} (確認手順: 当該ディレクトリを削除して `{command}` を実行する)"
+        )
+        logger.error(log_format.format_status(name, message))
+        raise RuntimeError(f"{name}: {message}")
+    logger.info(log_format.format_status(name, "plugin cache の欠落を再インストールで解消しました"))
+    return True
 
 
 def _verify_target_plugins(target_versions: dict[str, str]) -> None:
