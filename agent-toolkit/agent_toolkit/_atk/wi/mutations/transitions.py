@@ -27,7 +27,7 @@ from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import remove_all as _remove_all
+from agent_toolkit._atk.wi import bulk as _bulk
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
@@ -417,6 +417,78 @@ def transition_entries(
     return [path.name for path in paths]
 
 
+def _single_target_repo(target_repo: str | typing.Iterable[str] | None) -> str | None:
+    """`--target-repo`が1個のときだけ当該値を返し、2個以上では`None`を返す。
+
+    `--commit`のローカル作業ツリーは単一のリポジトリでしか解決できないため、
+    2個以上を指定した実行では現在位置からの解決へ委ねる。
+    """
+    if target_repo is None or isinstance(target_repo, str):
+        return target_repo
+    values = tuple(target_repo)
+    return values[0] if len(values) == 1 else None
+
+
+def _bulk_transition(
+    args: argparse.Namespace,
+    private_notes: pathlib.Path,
+    now: datetime.datetime,
+    *,
+    action: str,
+) -> list[str]:
+    """`--all`経路で候補を確定し、確認済みの項目へ当該操作を1回のcommitで適用する。"""
+    note = getattr(args, "note", None)
+    commit = getattr(args, "commit", None)
+    skip_push = getattr(args, "skip_push", False)
+    cooldown_days = getattr(args, "cooldown_days", None)
+    local_worktree = _candidate_local_worktree(_single_target_repo(args.target_repo)) if commit is not None else None
+
+    def apply_fn(notes: pathlib.Path, candidates: list[_bulk.QueueEntryDisplay]) -> list[str]:
+        paths = [entry[0] for entry in candidates]
+        # 個別指定と同じ内容検証を適用の直前へ置く。`--cooldown-days`の対象種別の制約もここが判定する。
+        # processing状態の保護は候補の確認時に`bulk`が判定済みのため、ここでは再判定しない。
+        _validate_transition_targets(
+            paths,
+            action=action,
+            target_repo=args.target_repo,
+            expected_content=None,
+            cooldown_days=cooldown_days,
+            force=True,
+        )
+        commit_values = _commit_values_by_path(paths, commit, local_worktree)
+        _apply_transition(
+            notes,
+            paths,
+            action=action,
+            now=now,
+            note=note,
+            commit_values=commit_values,
+            cooldown_days=cooldown_days,
+        )
+        _commit_and_push(
+            notes,
+            _transition_commit_message(action, len(paths), note),
+            list(WI_STATES),
+            skip_push=skip_push,
+        )
+        return [path.name for path in paths]
+
+    return _bulk.bulk_apply_entries(
+        private_notes,
+        action=action,
+        target_repo=args.target_repo,
+        assume_yes=args.yes,
+        force=getattr(args, "force", False),
+        skip_pull=args.skip_pull,
+        status=args.status,
+        entry_type=args.type,
+        answered=args.answered,
+        source=args.source,
+        actor_is_agent=is_agent_environment(),
+        apply_fn=apply_fn,
+    )
+
+
 def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """adoptサブコマンド: 採用としてinboxまたはprocessingからadopted/へ移動しcommit・push。
 
@@ -425,8 +497,15 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    if args.all:
+        filenames = _bulk_transition(args, private_notes, now, action="adopt")
+        if filenames:
+            _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")
+            for filename in filenames:
+                print(private_notes / WI_STATE_ADOPTED / filename)
+        return
     args.filenames = _dedup_positional_filenames(args.filenames, "adopt")
-    local_worktree = _candidate_local_worktree(args.target_repo) if args.commit is not None else None
+    local_worktree = _candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
     filenames = transition_entries(
         private_notes,
         action="adopt",
@@ -451,8 +530,15 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    if args.all:
+        filenames = _bulk_transition(args, private_notes, now, action="reject")
+        if filenames:
+            _outcome.report_success(f"{len(filenames)}件をrejectedへ移した")
+            for filename in filenames:
+                print(private_notes / WI_STATE_REJECTED / filename)
+        return
     args.filenames = _dedup_positional_filenames(args.filenames, "reject")
-    local_worktree = _candidate_local_worktree(args.target_repo) if args.commit is not None else None
+    local_worktree = _candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
     filenames = transition_entries(
         private_notes,
         action="reject",
@@ -477,6 +563,11 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
     （最終処理結果の記録は`adopt`・`reject`側で行う）。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    if args.all:
+        filenames = _bulk_transition(args, private_notes, now, action="start-processing")
+        if filenames:
+            _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
+        return
     args.filenames = _dedup_positional_filenames(args.filenames, "start-processing")
     filenames = transition_entries(
         private_notes,
@@ -490,6 +581,11 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
 
 def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """holdサブコマンド: 処理可能な項目をholdへ移動する。"""
+    if args.all:
+        filenames = _bulk_transition(args, private_notes, now, action="hold")
+        if filenames:
+            _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
+        return
     args.filenames = _dedup_positional_filenames(args.filenames, "hold")
     filenames = transition_entries(
         private_notes,
@@ -503,6 +599,11 @@ def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
 
 def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """unholdサブコマンド: hold項目をinboxへ戻す。"""
+    if args.all:
+        filenames = _bulk_transition(args, private_notes, now, action="unhold")
+        if filenames:
+            _outcome.report_success(f"{len(filenames)}件をholdからinboxへ戻した: {', '.join(filenames)}")
+        return
     args.filenames = _dedup_positional_filenames(args.filenames, "unhold")
     filenames = transition_entries(
         private_notes,
@@ -521,6 +622,11 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, 
     （`agent-toolkit:process-wi`のpicker起動契約「同一セッション中にUWIの回答を受領した場合」参照）。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    if args.all:
+        filenames = _bulk_transition(args, private_notes, now, action="return-to-inbox")
+        if filenames:
+            _outcome.report_success(f"{len(filenames)}件をinboxへ差し戻した: {', '.join(filenames)}")
+        return
     args.filenames = _dedup_positional_filenames(args.filenames, "return-to-inbox")
     filenames = transition_entries(
         private_notes,
@@ -537,7 +643,7 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, 
 def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """rmサブコマンド: 個別指定または対象リポジトリ単位でactive項目を削除する。"""
     if args.all:
-        filenames = _remove_all.remove_all_entries(
+        filenames = _bulk.remove_all_entries(
             private_notes,
             target_repo=args.target_repo,
             assume_yes=args.yes,

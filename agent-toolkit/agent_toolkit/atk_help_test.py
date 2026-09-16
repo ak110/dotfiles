@@ -334,6 +334,28 @@ def test_no_match_commands_state_the_no_match_line() -> None:
         assert "該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。" in description, command
 
 
+def test_bulk_transition_help_states_filter_and_precondition() -> None:
+    """一括操作を受理する状態遷移コマンドのヘルプが、候補の限定と必須指定を示す。"""
+    for command in _atk_help.BULK_TRANSITION_COMMANDS:
+        description = _atk_help.HELP[command]["description"]
+        assert "`--all`では`wi list`と同じ" in description, command
+        assert "個別指定ではFILENAMEを1個以上、一括操作では--allと--target-repoを指定する。" in description, command
+
+
+def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
+    """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    expected = {"--all", "--type", "--status", "--answered", "--source", "--yes", "--skip-pull", "--target-repo"}
+
+    for command in (*_atk_help.BULK_TRANSITION_COMMANDS, "atk wi rm"):
+        option_strings = {
+            option
+            for action in commands[command]._actions  # pylint: disable=protected-access
+            for option in action.option_strings
+        }
+        assert expected <= option_strings, command
+
+
 def test_help_does_not_mention_body_match_output() -> None:
     """保存本文の一致判定を出力する旨がヘルプに残らない。"""
     for command in ("atk wi add", "atk wi edit", "atk review-table add", "atk review-table respond"):

@@ -307,6 +307,22 @@ _VALUE_OUTPUT_RESULT_LINE = (
 _READ_ONLY_RESULT_LINE = "成功行は書かない。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
 
 
+BULK_TRANSITION_COMMANDS = (
+    "atk wi start-processing",
+    "atk wi hold",
+    "atk wi unhold",
+    "atk wi return-to-inbox",
+    "atk wi adopt",
+    "atk wi reject",
+)
+"""`--all`とフィルター系引数を`atk wi rm`と同じ形式で受理する状態遷移コマンド。"""
+
+_BULK_TRANSITION_OUTPUT = (
+    "`--all`では`wi list`と同じ`--type`、`--status`、`--answered`及び`--source`で候補を限定し、操作の前に候補を一覧表示する。"
+)
+_BULK_TRANSITION_PRECONDITION = "個別指定ではFILENAMEを1個以上、一括操作では--allと--target-repoを指定する。"
+
+
 def _with_result_line(description: str, result_line: str) -> str:
     """`対象と出力`節の末尾へ結果行の接頭辞と出力先を加える。"""
     marker = "\n前提: "
@@ -314,6 +330,19 @@ def _with_result_line(description: str, result_line: str) -> str:
     if not separator:
         return f"{description}{result_line}"
     return f"{head}{result_line}{separator}{tail}"
+
+
+def _with_bulk_transition_help(description: str) -> str:
+    """`対象と出力`の末尾と`前提`の先頭へ一括操作の受理形式を加える。"""
+    marker = "\n前提: "
+    head, separator, tail = description.partition(marker)
+    if not separator:
+        return f"{description}{_BULK_TRANSITION_OUTPUT}"
+    return f"{head}{_BULK_TRANSITION_OUTPUT}{separator}{_BULK_TRANSITION_PRECONDITION}{tail}"
+
+
+for _command in BULK_TRANSITION_COMMANDS:
+    HELP[_command]["description"] = _with_bulk_transition_help(HELP[_command]["description"])
 
 
 for _command, _result_line in (

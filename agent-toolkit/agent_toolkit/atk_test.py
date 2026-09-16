@@ -768,7 +768,7 @@ class TestMutationTargetRepoParserOption:
         """6種のmutation系サブコマンドすべてが`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args([top_command, subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
-        expected = ["github.com/foo/bar"] if subcommand == "rm" else "github.com/foo/bar"
+        expected = "github.com/foo/bar" if subcommand == "edit" else ["github.com/foo/bar"]
         assert args.target_repo == expected
 
     def test_edit_rejects_message(self) -> None:

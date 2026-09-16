@@ -10,7 +10,7 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import remove_all  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import bulk as remove_all  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import make_outside_worktree_fake as _make_outside_worktree_fake  # noqa: E402
 from agent_toolkit.atk_test import _setup_notes, _write_awi_file  # noqa: E402  # pylint: disable=wrong-import-position
 

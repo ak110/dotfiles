@@ -15,6 +15,7 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 import argparse
 import contextlib
 import datetime
+import io
 import pathlib
 import re
 import subprocess
@@ -30,7 +31,13 @@ from agent_toolkit._atk.wi import (  # pylint: disable=wrong-import-position
     user_comment,  # noqa: E402  # pylint: disable=wrong-import-position
     uwi,  # noqa: E402  # pylint: disable=wrong-import-position
 )
+from agent_toolkit._atk.wi import bulk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.constants import (  # noqa: E402  # pylint: disable=wrong-import-position
+    BULK_ACTION_LABELS,
+    TRANSITION_EXPLICIT_STATES,
+    bulk_source_states,
+)
 from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _GitCall,
@@ -1191,3 +1198,283 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
     assert f"最初の差異: {position}文字目" in error
     assert "送信元本文:" in error
     assert "保存本文:" in error
+
+
+class _BulkTtyInput(io.StringIO):
+    """対話端末として応答するテスト用標準入力。"""
+
+    def isatty(self) -> bool:
+        """対話端末であることを返す。"""
+        return True
+
+
+def _write_bulk_entry(
+    notes: pathlib.Path,
+    state: str,
+    filename: str,
+    *,
+    target_repo: str = "github.com/example/foo",
+) -> pathlib.Path:
+    """一括経路の検証用エントリを指定状態へ書き込む。"""
+    directory = notes / state
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / filename
+    path.write_text(f"---\ntarget_repo: {target_repo}\ntype: awi\n---\n\nテスト本文\n", encoding="utf-8")
+    return path
+
+
+def _patch_bulk_git(monkeypatch: pytest.MonkeyPatch, commit_calls: list[str]) -> None:
+    """一括経路が経由する2モジュールのgit操作を抑止し、commitメッセージを記録する。"""
+    _disable_transition_git(monkeypatch)
+    monkeypatch.setattr(bulk, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(bulk, "_pull", lambda _path: None)
+    monkeypatch.setattr(
+        mutations,
+        "_commit_and_push",
+        lambda _private_notes, message, _paths, **_kwargs: commit_calls.append(message),
+    )
+
+
+@pytest.mark.parametrize(
+    ("action", "source_state", "destination", "summary"),
+    [
+        ("start-processing", "inbox", "processing", "成功: 1件をprocessingへ移した"),
+        ("hold", "inbox", "hold", "成功: 1件をholdへ移した"),
+        ("unhold", "hold", "inbox", "成功: 1件をholdからinboxへ戻した"),
+        ("return-to-inbox", "processing", "inbox", "成功: 1件をinboxへ差し戻した"),
+        ("adopt", "inbox", "adopted", "成功: 1件をadoptedへ移した"),
+        ("reject", "inbox", "rejected", "成功: 1件をrejectedへ移した"),
+    ],
+)
+def test_bulk_transition_applies_to_filtered_candidates(
+    action: str,
+    source_state: str,
+    destination: str,
+    summary: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--all`は対象リポジトリの候補だけを1回のcommitで遷移させ、完了メッセージを書く。"""
+    notes = _setup_notes(tmp_path)
+    target = _write_bulk_entry(notes, source_state, "target.md")
+    other = _write_bulk_entry(notes, source_state, "other.md", target_repo="github.com/example/bar")
+    commits: list[str] = []
+    _patch_bulk_git(monkeypatch, commits)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", action, "--all", "--target-repo=github.com/example/foo", "--status=all", "--yes"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    assert not target.exists()
+    assert (notes / destination / "target.md").is_file()
+    assert other.exists()
+    assert len(commits) == 1
+    assert summary in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("action", "state"),
+    [("unhold", "inbox"), ("start-processing", "adopted"), ("return-to-inbox", "inbox")],
+)
+def test_bulk_transition_excludes_entries_outside_source_states(
+    action: str,
+    state: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """遷移元状態集合に属さない項目は候補にせず、状態を変えずに終える。"""
+    notes = _setup_notes(tmp_path)
+    kept = _write_bulk_entry(notes, state, "kept.md")
+    commits: list[str] = []
+    _patch_bulk_git(monkeypatch, commits)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", action, "--all", "--target-repo=github.com/example/foo", "--status=all", "--yes"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    assert kept.is_file()
+    assert not commits
+    assert f"{BULK_ACTION_LABELS[action]}対象なし" in capsys.readouterr().out
+
+
+def test_bulk_transition_requires_yes_in_non_interactive_environment(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """非対話環境で`--yes`を省略した一括操作は終了コード2で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    kept = _write_bulk_entry(notes, "inbox", "kept.md")
+    commits: list[str] = []
+    _patch_bulk_git(monkeypatch, commits)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", "--all", "--target-repo=github.com/example/foo"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 2
+    assert kept.is_file()
+    assert not commits
+    assert "非対話環境で一括保留するには--yesを指定する" in capsys.readouterr().err
+
+
+def test_bulk_transition_keeps_entries_when_confirmation_is_declined(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """確認を否定した一括操作は状態を変えずに終える。"""
+    notes = _setup_notes(tmp_path)
+    kept = _write_bulk_entry(notes, "inbox", "kept.md")
+    commits: list[str] = []
+    _patch_bulk_git(monkeypatch, commits)
+    monkeypatch.setattr(sys, "stdin", _BulkTtyInput("n\n"))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", "--all", "--target-repo=github.com/example/foo"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 0
+    assert kept.is_file()
+    assert not commits
+    captured = capsys.readouterr().out
+    assert "上記1件を保留します" in captured
+    assert "保留を中止しました。" in captured
+
+
+def test_bulk_transition_skips_entries_changed_after_confirmation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """確認後に本文が変わった項目は対象から外し、ファイル名を報告する。"""
+    notes = _setup_notes(tmp_path)
+    changed = _write_bulk_entry(notes, "inbox", "changed.md")
+    commits: list[str] = []
+    _patch_bulk_git(monkeypatch, commits)
+
+    def edit_after_confirmation(_path: pathlib.Path) -> None:
+        changed.write_text(changed.read_text(encoding="utf-8") + "\n追記\n", encoding="utf-8")
+
+    monkeypatch.setattr(bulk, "_pull", edit_after_confirmation)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", "hold", "--all", "--target-repo=github.com/example/foo", "--yes"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    assert changed.is_file()
+    assert not commits
+    captured = capsys.readouterr().out
+    assert "確認後に変更されたため保留しません: changed.md" in captured
+
+
+@pytest.mark.parametrize(
+    ("argv_tail", "message"),
+    [
+        (["--all", "fb-001.md", "--target-repo=github.com/example/foo"], "FILENAMEと--allは同時に指定できません。"),
+        (["--all"], "--allの対象リポジトリを確定できません。"),
+        (["--yes", "fb-001.md"], "--yesは--allとともに指定してください。"),
+        (["--skip-pull", "fb-001.md"], "--skip-pullは--allとともに指定してください。"),
+        (["--status=all", "fb-001.md"], "--type・--status・--answered・--sourceは--allとともに指定してください。"),
+        ([], "対象のFILENAME、または--allを指定してください。"),
+    ],
+)
+def test_bulk_transition_rejects_invalid_combinations(
+    argv_tail: list[str],
+    message: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """個別指定と一括指定の併用制約を公開CLIの入口で拒否する。"""
+    _setup_notes(tmp_path)
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", *argv_tail], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+def _write_bulk_uwi(notes: pathlib.Path, state: str, filename: str) -> pathlib.Path:
+    """一括経路の検証用UWIを指定状態へ作成する。"""
+    directory = notes / state
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / filename
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\n---\n\n## 質問\n\n確認事項\n\n## 回答\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_bulk_cooldown_rejects_non_awi_like_individual_route(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--all`と`--cooldown-days`の組み合わせは、個別指定と同じ結果で非AWIを拒否する。
+
+    `--cooldown-days`はAWI専用であり、候補にUWIが含まれる実行では、どのファイルへも
+    `cooldown_until`を書き込まずに拒否する。個別指定経路と同じ終了コードで終える。
+    """
+    notes = _setup_notes(tmp_path)
+    awi_entry = _write_bulk_entry(notes, "processing", "target.md")
+    uwi_entry = _write_bulk_uwi(notes, "processing", "question.md")
+    commits: list[str] = []
+    _patch_bulk_git(monkeypatch, commits)
+
+    with pytest.raises(SystemExit) as individual:
+        atk.main(
+            ["wi", "return-to-inbox", "question.md", "--cooldown-days=3"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as bulk_run:
+        atk.main(
+            [
+                "wi",
+                "return-to-inbox",
+                "--all",
+                "--target-repo=github.com/example/foo",
+                "--status=all",
+                "--yes",
+                "--cooldown-days=3",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert bulk_run.value.code == individual.value.code
+    assert "cooldown-days" in capsys.readouterr().err
+    assert not commits
+    assert awi_entry.is_file()
+    assert uwi_entry.is_file()
+    assert "cooldown_until" not in awi_entry.read_text(encoding="utf-8")
+    assert "cooldown_until" not in uwi_entry.read_text(encoding="utf-8")
+
+
+def test_bulk_source_states_cover_transition_explicit_states() -> None:
+    """明示`state`として受理する状態が、当該操作の遷移元状態集合に含まれる。
+
+    `remove`は呼出主体で値が変わるため、明示`state`の受理範囲と一致する非エージェント環境の値で比較する。
+    """
+    for action, explicit_states in TRANSITION_EXPLICIT_STATES.items():
+        source_states = bulk_source_states(action, actor_is_agent=False)
+        assert set(explicit_states) <= set(source_states), action
