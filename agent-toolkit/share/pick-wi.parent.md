@@ -27,7 +27,7 @@ pickerと並行して、対象がGitHub上にある場合は`skills/process-wi/r
 
 ## 出力の受領
 
-pickerから`status`、`output_file`及び`lines`の3行を受領し、出力先が起動時の絶対パスと一致することを確認して本文を読む。各decisionのファイル名、レーン、再開位置、固有順序、`project_notes`、上流投入情報を検収する。
+pickerから`status`、`output_file`及び`lines`の3行を受領し、出力先が起動時の絶対パスと一致することを確認して本文を読む。各decisionの項目を`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`の`## 出力`が定める項目、既定値、省略規則へ照合して検収する。
 
 固定形式に適合する出力を受領した時点で選定結果を検証し、監査の終端を待たずに選定工程の完了とレーン起動へ進む。受領済みのpickerを再び待機又は起動しない。監査はレーンと並行して継続し、`## 自動コードレビュー監査`が定める公開工程の開始条件として検収する。
 
