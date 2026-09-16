@@ -403,6 +403,23 @@ def test_cmd_add_accepts_agent_awi_with_all_required_sections(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
+def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quoted_h2(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """必須節の本文が引用の内側のH2から始まっても当該節を非空として数える。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    message = _AGENT_AWI_BODY.replace(
+        "## 実現性\n対象実装を確認済み",
+        "## 実現性\n\n> ## 引用した規範の見出し\n>\n> 対象実装を確認済み",
+    )
+    add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
 def test_cmd_add_accepts_human_awi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

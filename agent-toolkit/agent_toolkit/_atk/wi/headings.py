@@ -46,13 +46,15 @@ def h2_sections(text: str) -> list[tuple[str, bool]]:
     """
     normalized = frontmatter.normalize_newlines(text)
     lines = normalized.split("\n")
-    headings = parse_h2_headings(normalized)
+    # 次の見出しまでを本文とするため、境界の探索もトップレベルのATX H2だけに限る。
+    # 引用や箇条書きの内側にあるH2を境界へ含めると、節の本文の範囲が当該行で終わり、非空の判定を誤る。
+    toplevel = [
+        (token, content) for token, content in parse_h2_headings(normalized) if token.level == 0 and token.markup == "##"
+    ]
     sections: list[tuple[str, bool]] = []
-    for index, (token, content) in enumerate(headings):
-        if token.level != 0 or token.markup != "##":
-            continue
+    for index, (token, content) in enumerate(toplevel):
         assert token.map is not None
-        next_token = headings[index + 1][0] if index + 1 < len(headings) else None
+        next_token = toplevel[index + 1][0] if index + 1 < len(toplevel) else None
         end = next_token.map[0] if next_token is not None and next_token.map is not None else len(lines)
         has_body = any(line.strip() for line in lines[token.map[1] : end])
         sections.append((content.strip(), has_body))
