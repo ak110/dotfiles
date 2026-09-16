@@ -27,7 +27,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 10. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 11. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
-12. PostToolUseFailure: Bashの同一終了コードの連続失敗だけを記録。その他は状態を変更せず終了
+12. PostToolUseFailure: Bashの同一終了コードの連続失敗だけを記録。非エラーの真偽判定を終了コードで
+    表現する公開契約を持つコマンドの終了は記録の対象から外す。その他は状態を変更せず終了
 13. PermissionDenied: 状態を変更せず終了
 14. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
@@ -784,6 +785,46 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
 _BASH_FAILURE_EXIT_CODE_PATTERN = re.compile(r"^Exit code ([0-9]+)$")
 
 
+_BOOLEAN_EXIT_CODE_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+    ("atk", "wi", "grep"),
+    ("atk", "mq", "grep"),
+    ("git", "grep"),
+    ("grep",),
+    ("egrep",),
+    ("fgrep",),
+    ("rg",),
+)
+"""非エラーの真偽判定を終了コードで表現する公開契約を持つコマンドの実行位置の接頭語。
+
+集合へ加える判定の基準は、当該コマンドが該当0件などの非エラーの結果を非0の終了コードで表す契約を
+公開するかとする。`atk wi grep`の当該契約は`agent_toolkit/_atk/wi/grep.py`のdocstringが定め、
+`grep`系と`rg`は一致0件を終了コード1で表す。
+当該コマンドの終了を連続失敗として記録すると、読み取り専用の検索が0件で続いた区間で
+直接Bashの遮断が成立する。
+"""
+_DIFF_COMMAND = "diff"
+_DIFF_BOOLEAN_EXIT_CODE_OPTIONS: frozenset[str] = frozenset({"-q", "--quiet", "--brief"})
+"""`diff`が差分の有無を終了コードで表す指定。当該指定では差分ありの終了コード1が非エラーの結果である。"""
+
+
+def _is_boolean_exit_code_command(command: str) -> bool:
+    """Bash入力が、非エラーの真偽判定を終了コードで表すコマンド1件だけであるかを返す。
+
+    実行位置が1つであり、当該実行位置が当該契約を持つ場合だけ真を返す。
+    複数の実行位置を持つ入力では、どの位置が非0で終了したかを失敗payloadから確定できず、
+    当該契約を持たないコマンドの失敗を記録から外し得るためである。
+    """
+    segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
+    if len(segments) != 1:
+        return False
+    tokens = segments[0].tokens
+    name = _executable_name(tokens[0])
+    normalized = (name, *tokens[1:])
+    if any(normalized[: len(prefix)] == prefix for prefix in _BOOLEAN_EXIT_CODE_COMMAND_PREFIXES):
+        return True
+    return name == _DIFF_COMMAND and any(token in _DIFF_BOOLEAN_EXIT_CODE_OPTIONS for token in tokens[1:])
+
+
 def _bash_failure_exit_code(payload: dict) -> int | None:
     """公式の失敗payloadから分類可能なBash終了コードを返す。"""
     if payload.get("is_interrupt") is True:
@@ -1043,7 +1084,10 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             if failed_task_id is not None:
                 _record_background_task_id(session_id, failed_task_id)
         exit_code = _bash_failure_exit_code(payload)
-        if exit_code is None:
+        failed_command = tool_input.get("command")
+        # 非エラーの真偽判定を終了コードで表すコマンドの終了は実行の失敗ではないため、
+        # 連続失敗の記録対象から外し、連続性も解除する。
+        if exit_code is None or (isinstance(failed_command, str) and _is_boolean_exit_code_command(failed_command)):
             reset_bash_failure_sequence(session_id)
         elif record_bash_failure(session_id, exit_code):
             notices.append(
@@ -1152,7 +1196,10 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
-    reset_bash_failure_sequence(session_id)
+    # 直接Bashの成功は、連続失敗の通知が求める是正の完了を示す最も一般的な観測である。
+    # 解除の契機を分離実行の成功だけに限ると、原因を除去して直接実行を継続した主体へ、
+    # 当該セッションの残余で同じ警告が付き続ける。
+    reset_bash_failure_sequence(session_id, clear_gate=True)
 
     if tool_input.get("run_in_background"):
         task_id = _background_task_id_from_response(payload.get("tool_response"))

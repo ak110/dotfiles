@@ -1328,6 +1328,60 @@ class TestConsecutiveBashFailureGate:
         )
         assert allowed.returncode == 0
 
+    def test_boolean_exit_code_command_does_not_set_gate(self, tmp_path: pathlib.Path) -> None:
+        """非エラーの真偽判定を終了コードで表すコマンドの終了は連続失敗として記録しない。
+
+        該当0件の検索が続いた区間で直接Bashの遮断が成立すると、原因の無い警告が当該セッションで反復する。
+        """
+        env = _plan_file_state_env(tmp_path)
+        sid = "bash-failure-boolean-exit"
+        for _ in range(2):
+            _run_posttooluse(
+                {
+                    "session_id": sid,
+                    "hook_event_name": "PostToolUseFailure",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "atk wi grep needle"},
+                    "error": "Exit code 1\nno match",
+                    "is_interrupt": False,
+                },
+                env,
+            )
+
+        allowed = _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo retry"}},
+            env,
+        )
+        assert allowed.returncode == 0
+        assert "start_shell" not in _additional_context(allowed)
+
+    def test_successful_direct_bash_clears_gate(self, tmp_path: pathlib.Path) -> None:
+        """直接Bashの成功は、通知が求める是正の完了を示すためゲートを解除する。
+
+        解除の契機を分離実行の成功だけに限ると、原因を除去して直接実行を継続した主体へ
+        当該セッションの残余で同じ警告が付き続ける。
+        """
+        env = _plan_file_state_env(tmp_path)
+        sid = "bash-failure-direct-success"
+        self._failure(sid, 9, env)
+        self._failure(sid, 9, env)
+        _run_posttooluse(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "true"},
+            },
+            env,
+        )
+
+        allowed = _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo recovered"}},
+            env,
+        )
+        assert allowed.returncode == 0
+        assert "start_shell" not in _additional_context(allowed)
+
 
 class TestPlanModeSkillFirstCheck:
     """plan fileの起草編集でplan-modeスキル未起動を警告する検査（block降格済み）。

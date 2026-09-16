@@ -1445,6 +1445,62 @@ class TestBashOutputTruncationRepetition:
         avoidance = shell_checks._OUTPUT_TRUNCATION_AVOIDANCE  # pylint: disable=protected-access  # noqa: SLF001
         assert avoidance in context
 
+    def test_quoted_pipe_in_an_argument_is_corrected(self, tmp_path: pathlib.Path) -> None:
+        """引用の内側にあるパイプ文字を演算子として数えず、切り詰めを補正する。"""
+        session_id = "truncation-quoted-pipe"
+
+        result = self._invoke("rg -l 'alpha|beta' --glob '!*.lock' | head -20", session_id, tmp_path)
+
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert "head" not in corrected
+        assert " > " in corrected
+
+    def test_stderr_duplication_is_kept_after_the_save_target(self, tmp_path: pathlib.Path) -> None:
+        """`2>&1`を末尾に持つ呼び出しでは、保存先へのリダイレクトを当該冗長化の前へ置く。
+
+        後方へ連結すると、標準エラーは元の標準出力の宛先へ複製され、保存先へ入らない。
+        """
+        session_id = "truncation-stderr-merge"
+
+        result = self._invoke("ls -1 /tmp 2>&1 | head -5", session_id, tmp_path)
+
+        assert result.returncode == 0
+        payload = json.loads(result.stdout)["hookSpecificOutput"]
+        corrected = payload["updatedInput"]["command"]
+        assert re.search(r"> \S+ 2>&1$", corrected) is not None
+        assert "標準出力と標準エラー" in payload["additionalContext"]
+
+    def test_autofix_notice_identifies_the_detected_segment(self, tmp_path: pathlib.Path) -> None:
+        """補正の通知が、検出した直列区間と切り詰めと判定したコマンドの表記を示す。"""
+        session_id = "truncation-detected-segment"
+
+        result = self._invoke("ls -1 /tmp; ls -1 /var | head -5", session_id, tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "第2直列区間" in context
+        assert "切り詰めと判定したコマンドは`head`" in context
+
+
+class TestBashOutputTruncationBlockNotice:
+    """全量観測が必要な出力の切り詰めを遮断する通知本文が、是正の対象を一意に示す。"""
+
+    def test_block_notice_identifies_the_detected_segment(self, tmp_path: pathlib.Path) -> None:
+        """遮断の通知が、検出した直列区間と切り詰めと判定したコマンドの表記を示す。
+
+        是正の対象を示さない通知は、実行主体が入力全体を推測で書き直し、同じ形の再提出を反復させる。
+        """
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "ls -1 /tmp; pytest | head -5"}, "cwd": str(tmp_path)},
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "第2直列区間" in result.stderr
+        assert "全量観測が必要なコマンドは`pytest`" in result.stderr
+        assert "切り詰めと判定したコマンドは`head`" in result.stderr
+
 
 class TestBashRecursiveGrepTargetJudgement:
     """再帰`grep`の遮断本文が対象ごとのGit作業ツリー判定を示す。"""
@@ -1746,6 +1802,54 @@ class TestNormViolatingArgumentForms:
         result = self._invoke("atk wi show 20260101-000000-001.md", tmp_path)
         assert result.returncode == 0
         assert "位置引数を受理しない" not in _agent_messages(result)
+
+    def test_unknown_child_subcommand_lists_the_level_catalog(self, tmp_path: pathlib.Path) -> None:
+        """下位の段の誤りでは、当該階層の受理一覧を示し、位置引数の警告を返さない。
+
+        受理形式の判定は下位サブコマンドを位置引数として表現するため、当該判定へ委ねると実態と異なる本文が返る。
+        """
+        result = self._invoke("atk config list", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "実在しないサブコマンド" in messages
+        assert "- show: " in messages
+        assert "位置引数を受理しない" not in messages
+
+    def test_find_pattern_predicate_value_is_not_a_path(self, tmp_path: pathlib.Path) -> None:
+        """`find`の値がパスを指さない述語の値は、パス候補として扱わない。
+
+        規範がパスの解決手段として指定する`find`の呼び出しそのものへ、不在の警告を発火させない。
+        """
+        result = self._invoke("find . -maxdepth 1 -name 'absent.jsonl'", tmp_path)
+        assert result.returncode == 0
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    def test_find_newer_predicate_value_is_still_checked(self, tmp_path: pathlib.Path) -> None:
+        """値が実在のパスを指す述語では、不在の検出を保つ。"""
+        result = self._invoke("find . -newer absent.txt", tmp_path)
+        assert result.returncode == 0
+        assert "absent.txt" in _agent_messages(result)
+
+    def test_relative_path_after_cd_is_resolved_from_the_destination(self, tmp_path: pathlib.Path) -> None:
+        """`cd <ディレクトリ> &&`に続く相対パスは、当該ディレクトリから解決する。"""
+        destination = tmp_path / "work"
+        destination.mkdir()
+        (destination / "present.txt").write_text("needle\n", encoding="utf-8")
+
+        result = self._invoke(f"cd {destination} && wc -l present.txt", tmp_path)
+
+        assert result.returncode == 0
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    def test_relative_path_absent_at_the_destination_is_still_missing(self, tmp_path: pathlib.Path) -> None:
+        """`cd`先にも存在しない相対パスは引き続き検出する。"""
+        destination = tmp_path / "work"
+        destination.mkdir()
+
+        result = self._invoke(f"cd {destination} && wc -l absent.txt", tmp_path)
+
+        assert result.returncode == 0
+        assert "absent.txt" in _agent_messages(result)
 
     def test_redirect_to_missing_parent_warns(self, tmp_path: pathlib.Path) -> None:
         result = self._invoke("wc -l /etc/hostname > absent-dir/out.txt", tmp_path)

@@ -177,7 +177,10 @@ class TestBashOutputTruncationWarning:
         assert log_path.parent.is_dir()
         context = output["additionalContext"]
         assert "標準出力の全量を保存先へ補正した" in context
-        assert f"`pytest -q | tail -5` の標準出力を`{log_path}`へ保存した" in context
+        assert (
+            f"第1直列区間 `pytest -q | tail -5`: 切り詰めと判定したコマンドは`tail`。標準出力を`{log_path}`へ保存した"
+            in context
+        )
         assert "当該呼び出しは標準出力を返さない" in context
         assert "保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている" in context
         assert "切り詰めを含まない書き方" in context
@@ -198,7 +201,7 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         output = json.loads(result.stdout)["hookSpecificOutput"]
         context = output["additionalContext"]
-        assert "pytest -q | tail -5` の標準出力を`" in context
+        assert "第2直列区間 `pytest -q | tail -5`: 切り詰めと判定したコマンドは`tail`。標準出力を`" in context
         assert "切り詰めを含まない直列区間の標準出力は当該呼び出しの結果へ残る" in context
         assert "当該呼び出しは標準出力を返さない" not in context
 
