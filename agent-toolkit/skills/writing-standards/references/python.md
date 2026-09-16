@@ -61,7 +61,7 @@
 ### 実行環境
 
 - 構文の互換範囲: 構文は、公開互換性として宣言された全対応版（`requires-python`等）で受理されることを
-  確認する。固定された開発・実行版で受理されることを、構文の公開互換性を狭める根拠にしない
+  確認する。固定された開発・実行版での受理は、この判定の入力の外に置く
 - agent-toolkit配下のPython入口は、自身のplugin rootを
   `uv run --project <plugin root> --locked --no-default-groups <対象>`へ指定して起動する。
   SSH先で動く`agent-toolkit/scripts/`のリモート補助処理だけは独立したPEP 723スクリプトとして起動する
@@ -174,9 +174,9 @@
   Windows系設定ディレクトリ変数（`LOCALAPPDATA`・`APPDATA`・`USERPROFILE`・`PROGRAMDATA`等）。
   `platformdirs`が参照し得る全変数を含める
 - 設定経路を1本でも漏らすと開発者ホームの実設定を読み込んでしまうため、
-  当該CLIの設定解決経路をプラットフォーム横断で洗い出してから一括で隔離するfixtureに集約する。
-  当該CLIが特定OS専用でも、テスト実行環境のOSと参照変数のOSが一致しない場合に隔離漏れが発生する
-- 隔離fixtureは`autouse=True`で当該テストモジュールに適用するか、
+  そのCLIの設定解決経路をプラットフォーム横断で洗い出してから一括で隔離するfixtureに集約する。
+  そのCLIが特定OS専用でも、テスト実行環境のOSと参照変数のOSが一致しない場合に隔離漏れが発生する
+- 隔離fixtureは`autouse=True`でそのテストモジュールに適用するか、
   `@pytest.mark.usefixtures(...)`で明示適用する
 
 ### monkeypatchによる関数差し替え
@@ -200,15 +200,15 @@
 
 ## pyfltrの起動形
 
-- pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。当該定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
+- pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
 - project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
 - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
 - script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してから`--frozen`を指定する
-- サブコマンドの使い分け、オプションの受理形式、JSONL出力のレコード種別とフィールドの解釈、失敗ツールの再実行手段、ツール解決の失敗への対処は、`pyfltr <サブコマンド> --help`の出力とMCPツールのスキーマで確認する。これらが扱わない設定リファレンスと新規プロジェクトへの導入手順は<https://ak110.github.io/pyfltr/llms.txt>を取得し、当該ページからたどって参照する
+- サブコマンドの使い分け、オプションの受理形式、JSONL出力のレコード種別とフィールドの解釈、失敗ツールの再実行手段、ツール解決の失敗への対処は、`pyfltr <サブコマンド> --help`の出力とMCPツールのスキーマで確認する。これらが扱わない設定リファレンスと新規プロジェクトへの導入手順は<https://ak110.github.io/pyfltr/llms.txt>を取得し、そのページからたどって参照する
 
 ## 参照情報
 
-対象コードのPythonバージョンが該当PEPの導入バージョン以上の場合、当該構文は正規構文であり指摘の対象にしない。
+対象コードのPythonバージョンが該当PEPの導入バージョン以上の場合、その構文は正規構文であり、指摘の対象の外に置く。
 
 ### Python新構文と導入バージョン
 
