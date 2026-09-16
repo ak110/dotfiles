@@ -22,6 +22,7 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk import help_text as _ATK_HELP_SOURCE
 from agent_toolkit._atk.help_text import HELP as _ATK_HELP
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks
@@ -1189,6 +1190,84 @@ class TestAtkContractBeforeQuestion:
 
         assert result.returncode == 0
         assert result.stderr == ""
+
+    def test_fix_requires_help_for_newly_named_subcommands(self, tmp_path: pathlib.Path) -> None:
+        """遮断の本文が、再発行で新たに名指しするサブコマンドのhelpの先行取得を指示する。"""
+        result = _run(self._payload("question", "contract-fix"), env_overrides=_plan_file_state_env(tmp_path))
+
+        assert result.returncode == 2
+        assert "再発行する本文で新たに別の`atk`サブコマンドを名指しする場合" in result.stderr
+        assert "1回のBash呼び出しへまとめて取得する" in result.stderr
+
+
+class TestAtkHelpTextReadObservation:
+    """`atk`の公開契約の正本を読んだ範囲を、`--help`の実行と同じ観測集合へ合流させる。"""
+
+    _HELP_TEXT_PATH = pathlib.Path(_ATK_HELP_SOURCE.__file__).resolve()
+    _SUBCOMMAND = "atk wi process-loop-abort"
+
+    @classmethod
+    def _definition_line(cls) -> int:
+        """`HELP`のキー定義行の1始まりの行番号を返す。"""
+        for index, line in enumerate(cls._HELP_TEXT_PATH.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.strip().startswith(f'"{cls._SUBCOMMAND}"'):
+                return index
+        raise AssertionError(f"{cls._SUBCOMMAND}のキー定義行が見つからない")
+
+    def _read_payload(self, session_id: str, file_path: str, offset: int, limit: int) -> dict:
+        return {
+            "tool_name": "Read",
+            "tool_input": {"file_path": file_path, "offset": offset, "limit": limit},
+            "session_id": session_id,
+        }
+
+    def _question_payload(self, session_id: str) -> dict:
+        payload = _user_facing_payload("question", f"`{self._SUBCOMMAND}`の扱いを選んでください。")
+        payload["session_id"] = session_id
+        return payload
+
+    def test_read_of_definition_range_allows_question(self, tmp_path: pathlib.Path) -> None:
+        """定義を含む範囲の取得を記録した後は、当該サブコマンドを名指しする確認を遮断しない。"""
+        env = _plan_file_state_env(tmp_path)
+        session_id = "help-read-in-range"
+        line = self._definition_line()
+
+        read_result = _run(self._read_payload(session_id, str(self._HELP_TEXT_PATH), line, 1), env_overrides=env)
+        assert read_result.returncode == 0
+
+        result = _run(self._question_payload(session_id), env_overrides=env)
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+
+    def test_read_outside_definition_range_still_blocks(self, tmp_path: pathlib.Path) -> None:
+        """取得範囲の外にある定義は未観測のまま扱い、現行どおり遮断する。"""
+        env = _plan_file_state_env(tmp_path)
+        session_id = "help-read-out-of-range"
+        line = self._definition_line()
+
+        read_result = _run(self._read_payload(session_id, str(self._HELP_TEXT_PATH), 1, max(line - 1, 1)), env_overrides=env)
+        assert read_result.returncode == 0
+
+        result = _run(self._question_payload(session_id), env_overrides=env)
+
+        assert result.returncode == 2
+        assert _ATK_HELP[self._SUBCOMMAND]["description"] in result.stderr
+
+    def test_read_of_other_file_does_not_record(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル以外の取得は観測として記録しない。"""
+        env = _plan_file_state_env(tmp_path)
+        session_id = "help-read-other-file"
+        other = tmp_path / "help_text_copy.py"
+        other.write_text(f'HELP = {{\n    "{self._SUBCOMMAND}": {{}},\n}}\n', encoding="utf-8")
+
+        read_result = _run(self._read_payload(session_id, str(other), 1, 3), env_overrides=env)
+        assert read_result.returncode == 0
+
+        result = _run(self._question_payload(session_id), env_overrides=env)
+
+        assert result.returncode == 2
+        assert _ATK_HELP[self._SUBCOMMAND]["description"] in result.stderr
 
 
 class TestUserFacingTypoCheck:

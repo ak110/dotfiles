@@ -367,8 +367,53 @@ _ATK_QUESTION_CONTRACT_FIX = (
     "添えた公開契約で選択が一意に定まる場合は確認を発行せず自ら確定する。"
     "定まらない場合は、当該契約が示す外部可視の結果と副作用を選択肢の説明へ書いてから再発行する。"
     "判断基準は`agent-toolkit:confirmation-and-uwi`の「確認の選択肢を組む手順」が定める。"
+    "再発行する本文で新たに別の`atk`サブコマンドを名指しする場合は、"
+    "再発行の前に当該サブコマンドの`--help`を1回のBash呼び出しへまとめて取得する。"
     "公開契約を添えられない場合は`atk <サブコマンド> --help`を単独で実行して目的と副作用を確認する。"
 )
+
+# `atk`の公開契約の正本。末尾一致で判定し、作業ツリーと配布キャッシュのどちらの複製でも同じ扱いにする。
+_ATK_HELP_TEXT_PATH_SUFFIX = ("agent_toolkit", "_atk", "help_text.py")
+# `HELP`のキーを定義する行。`"atk <経路>":`の形で1行へ現れる。
+_ATK_HELP_KEY_DEFINITION_RE = re.compile(r'^\s*"(atk [^"]+)"\s*:')
+
+
+def record_atk_help_paths_from_read(tool_input: dict, cwd: str, session_id: str) -> None:
+    """`help_text.py`の取得範囲に定義がある`atk`サブコマンド経路を観測済みとして記録する。
+
+    公開契約の充足条件を情報の入手経路（`--help`の実行）ではなく情報の保持で判定するため、
+    当該契約の正本を直接読んだ範囲を`atk <サブコマンド> --help`の実行と同じ観測集合へ合流させる。
+    取得範囲の外にある定義は未観測のまま扱う。対象ファイル以外の取得、取得範囲を解決できない場合、
+    及びキーを1件も解決できない場合は記録しない。
+    """
+    file_path = tool_input.get("file_path")
+    if not isinstance(file_path, str) or not file_path or not session_id:
+        return
+    target = pathlib.Path(file_path)
+    if not target.is_absolute():
+        if not cwd:
+            return
+        target = pathlib.Path(cwd) / target
+    if target.parts[-len(_ATK_HELP_TEXT_PATH_SUFFIX) :] != _ATK_HELP_TEXT_PATH_SUFFIX:
+        return
+    try:
+        lines = target.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    offset = tool_input.get("offset")
+    limit = tool_input.get("limit")
+    start = offset - 1 if isinstance(offset, int) and offset > 0 else 0
+    end = start + limit if isinstance(limit, int) and limit > 0 else len(lines)
+    paths = []
+    for line in lines[start:end]:
+        matched = _ATK_HELP_KEY_DEFINITION_RE.match(line)
+        if matched is None:
+            continue
+        path = " ".join(matched.group(1).split()[1:])
+        if path and path not in paths:
+            paths.append(path)
+    if paths:
+        record_atk_help_paths(session_id, paths)
 
 
 def _matched_atk_command_paths(text: str) -> list[tuple[str, ...]]:

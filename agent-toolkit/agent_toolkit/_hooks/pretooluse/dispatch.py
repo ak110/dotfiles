@@ -77,6 +77,7 @@ Read / Write / Edit / MultiEdit / apply_patch:
 - 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (warn。ユーザーが直接読む本文はblock)
 - .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
 - 複数断片の全境界が現在内容へ一意に解決できるかの検査 (warn)
+- `atk`の公開契約の正本を取得した範囲にある`atk`サブコマンド経路の観測記録 (side-effect)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 block系checkの検査対象は「新規に書き込まれる側」（変更後断片）を基本とする。
@@ -186,6 +187,7 @@ if TYPE_CHECKING:
         _check_secret_read,
         _collect_edit_operation_warnings,
         check_user_facing_typo,
+        record_atk_help_paths_from_read,
     )
     from agent_toolkit._hooks.pretooluse.git_checks import (
         _check_bash_agent_toolkit_version_bump,
@@ -408,6 +410,8 @@ def main(payload_text: str) -> int:
         if large_read_notice is not None:
             print(large_read_notice, file=sys.stderr)
             return exit_with(2)
+        # 遮断せずに通した取得だけを観測として記録する。
+        record_atk_help_paths_from_read(tool_input, cwd, session_id)
         flush_pending_notices()
         return 0
 
