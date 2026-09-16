@@ -22,6 +22,7 @@ import watchdog.observers
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import alerts as _alerts
 from agent_toolkit._atk.wi import auto_resume as _auto_resume
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
@@ -97,17 +98,17 @@ def _cmd_process_loop_abort() -> None:
     path = _process_loop_abort_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch()
-    print("常駐処理へ中断を要求しました。")
+    _outcome.report_success("常駐処理へ中断を要求した")
 
 
 def _cmd_process_loop_abort_cancel() -> None:
     """process-loopへの中断要求を解除する。"""
     path = _process_loop_abort_path()
     if not path.exists():
-        print("常駐処理への中断要求は設定されていません。")
+        _outcome.report_success("常駐処理への中断要求は設定されていないため、解除の変更は無い")
         return
     path.unlink(missing_ok=True)
-    print("常駐処理への中断要求を解除しました。")
+    _outcome.report_success("常駐処理への中断要求を解除した")
 
 
 def _cmd_process_loop_status() -> None:

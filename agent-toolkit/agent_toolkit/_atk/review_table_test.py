@@ -155,7 +155,7 @@ def test_init_add_and_show_formats_share_row_ids(
     assert table.add(path, "1", _TRACK, "module.py:10", "修正が必要") == 0
     assert table.add(path, "1", _TRACK, "README.md", "説明が不足") == 0
     output = capsys.readouterr().out
-    assert "追加成功" in output
+    assert "成功: 指摘行を1件追加した" in output
     lines = path.read_text(encoding="utf-8").splitlines()
     assert all(len(line.split("\t")) == 8 for line in lines)
     assert all(isinstance(json.loads(cell), str) for line in lines for cell in line.split("\t"))
@@ -183,7 +183,7 @@ def test_add_reports_each_saved_cell_match_without_saved_bodies(
 
     assert table.add(path, "1", _TRACK, location, issue) == 0
 
-    assert capsys.readouterr().out == (f"追加成功: {path} (1件)\nlocation_body_match: 一致\nissue_body_match: 一致\n")
+    assert capsys.readouterr().out == f"成功: 指摘行を1件追加した: {path}（1件）\n"
 
 
 def test_add_matches_location_and_issue_with_corresponding_saved_cells(
@@ -251,7 +251,7 @@ def test_respond_reports_decoded_response_and_match(
     assert table.respond(path, "1", _TRACK, "位置", "指摘", "yes", response, "") == 0
 
     output = capsys.readouterr().out
-    assert output == f"応答更新成功: {path}\nbody_match: 一致\n"
+    assert output == f"成功: 応答欄を更新した: {path}\n"
     assert response not in output
 
 
@@ -354,7 +354,7 @@ def test_respond_reports_only_decoded_no_response_reason(
     assert table.respond(path, "1", _TRACK, "位置", "指摘", "no", "", reason) == 0
 
     output = capsys.readouterr().out
-    assert output == f"応答更新成功: {path}\nbody_match: 一致\n"
+    assert output == f"成功: 応答欄を更新した: {path}\n"
     assert reason not in output
     assert "response:" not in output
 

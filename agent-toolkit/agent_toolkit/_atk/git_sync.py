@@ -28,6 +28,7 @@ from typing import Protocol, cast
 import filelock
 import platformdirs
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._git import command as _git_command
 
 LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
@@ -35,7 +36,7 @@ LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
 
 PUSH_DEFERRED_MESSAGE = (
     "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した。\n"
-    "`git status`で差分を確認してcommit等でcleanにした後、元の`atk`操作を再実行してください。"
+    "`git status`で差分を確認してcommit等でcleanにした後、元の`atk`操作を再実行する。"
 )
 """履歴分岐時に無関係な差分がある場合の確定通知。"""
 
@@ -392,7 +393,7 @@ def _report_divergence(
     result_runner: _GitResultRunner,
 ) -> None:
     """自動回復できない分岐の原因と手動回復手順を表示する。"""
-    count_text = "取得できませんでした"
+    count_text = "取得できなかった"
     try:
         counts = result_runner(["rev-list", "--left-right", "--count", "HEAD...@{u}"], private_notes)
         if counts.returncode == 0:
@@ -401,7 +402,7 @@ def _report_divergence(
                 count_text = f"ローカルのみ{fields[0]}件、upstreamのみ{fields[1]}件"
     except (OSError, subprocess.SubprocessError):
         pass
-    print(f"Git履歴が分岐しています（{count_text}）: {private_notes}", file=sys.stderr)
+    _outcome.report_failure(f"Git履歴が分岐している（{count_text}）: {private_notes}。次の回復手順で解消する")
     try:
         differences = result_runner(["diff", "--name-status", "HEAD", "@{u}"], private_notes)
         if differences.returncode == 0 and differences.stdout.strip():
@@ -410,18 +411,17 @@ def _report_divergence(
     except (OSError, subprocess.SubprocessError):
         pass
     print(
-        "ローカルの未push commitを残した間に、別のcloneからupstreamが更新された状態です。",
+        "ローカルの未push commitを残した間に、別のcloneからupstreamが更新された状態である。",
         file=sys.stderr,
     )
     print("確認: `git log --left-right --oneline HEAD...@{u}`", file=sys.stderr)
     print(
-        "回復: `git rebase @{u}`を実行し、競合を解消して`git add <path>`、"
-        "`git rebase --continue`、`git push`の順に実行してください。",
+        "回復: `git rebase @{u}`を実行し、競合を解消して`git add <path>`、`git rebase --continue`、`git push`の順に実行する。",
         file=sys.stderr,
     )
     print(
-        "同じ変更がupstreamに存在する重複commitなら、内容を確認して`git rebase --skip`を実行できます。"
-        "中止する場合は`git rebase --abort`を実行してください。",
+        "同じ変更がupstreamに存在する重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
+        "中止する場合は`git rebase --abort`を実行する。",
         file=sys.stderr,
     )
 
@@ -436,16 +436,16 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
         names = [line for line in conflicts.stdout.splitlines() if line]
     except (OSError, subprocess.SubprocessError):
         names = []
-    print("rebaseに失敗したため、rebase状態を保持しています。自動abortは行っていません。", file=sys.stderr)
+    _outcome.report_failure("rebaseに失敗したため、rebase状態を保持した。自動abortは行っていない。次の手順で競合を解消する")
     print(
-        "競合ファイル: " + ("、".join(names) if names else "取得できませんでした"),
+        "競合ファイル: " + ("、".join(names) if names else "取得できなかった"),
         file=sys.stderr,
     )
-    print("競合を解消した後、次の順に実行してください: `git add <競合解消済みパス>`、", file=sys.stderr)
+    print("競合を解消した後、次の順に実行する: `git add <競合解消済みパス>`、", file=sys.stderr)
     print("`git rebase --continue`、`git push`。", file=sys.stderr)
     print(
-        "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して`git rebase --skip`を実行できます。"
-        "中止する場合は`git rebase --abort`を実行してください。",
+        "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
+        "中止する場合は`git rebase --abort`を実行する。",
         file=sys.stderr,
     )
 
@@ -453,13 +453,13 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
 def _report_sync_failure(private_notes: pathlib.Path, operation: str) -> None:
     """pull又はpush失敗後に確認と再実行の手順を表示する。"""
     resolved = private_notes.resolve()
-    print(f"private-notesの{operation}に失敗しました: {resolved}", file=sys.stderr)
+    _outcome.report_failure(f"private-notesの{operation}に失敗した: {resolved}。次の手順で原因を解消してから再実行する")
     print(
-        "直前のgitの出力が失敗理由です。認証、ネットワーク接続、remoteの状態のいずれかを解消してください。",
+        "直前のgitの出力が失敗理由である。認証、ネットワーク接続、remoteの状態のいずれかを解消する。",
         file=sys.stderr,
     )
     print(f"確認: `git -C {resolved} status`", file=sys.stderr)
-    print("解消後、失敗した`atk`操作を再実行すると同期を完了できます。", file=sys.stderr)
+    print("解消後、失敗した`atk`操作を再実行すると同期を完了できる。", file=sys.stderr)
 
 
 def push_pending_commits(
@@ -529,7 +529,7 @@ def _push_pending_commits_impl(
     if is_worktree_dirty(private_notes, result_runner=result_runner):
         _forward_error_output(original_error)
         _report_divergence(private_notes, result_runner=result_runner)
-        print(PUSH_DEFERRED_MESSAGE, file=sys.stderr)
+        _outcome.report_warning(PUSH_DEFERRED_MESSAGE)
         return
 
     if _recover_redundant_divergence(

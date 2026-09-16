@@ -27,6 +27,7 @@ import subprocess
 import sys
 import typing
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi.add import _body_is_effectively_empty, read_body_files
@@ -437,7 +438,7 @@ def _collect_batch_texts(args: argparse.Namespace) -> list[str]:
         try:
             return read_body_files(body_files)
         except WebInputError as error:
-            print(f"投入を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"投入を拒否した: {error}")
             sys.exit(1)
     text = _collect_message_via_editor(strip=False)
     if text is None:
@@ -459,27 +460,26 @@ def _cmd_add_batch(
     """
     texts = _collect_batch_texts(args)
     if is_agent_environment() and any(_user_comment.has_reserved_heading(text) for text in texts):
-        print(
-            "投入を拒否しました: ユーザーコメントはユーザーだけが書き込みます。"
-            "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
-            "ユーザーの発言は本文中へ出所を示して引用してください。",
-            file=sys.stderr,
+        _outcome.report_failure(
+            "投入を拒否した: ユーザーコメントはユーザーだけが書き込む。"
+            "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できない。"
+            "ユーザーの発言は本文中へ出所を示して引用する"
         )
         sys.exit(1)
     try:
         mapping, skipped, warnings = add_batch_entries(private_notes, texts=texts, now=now)
     except WebInputError as error:
-        print(f"投入を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"投入を拒否した: {error}")
         sys.exit(1)
     except subprocess.CalledProcessError:
-        print("remote同期に失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
+        _outcome.report_failure("remote同期に失敗した。確定済みの本文を以下に再表示するため、保存してから再投入する")
         for text in texts:
             print("---", file=sys.stderr)
             print(text, file=sys.stderr)
         sys.exit(1)
     inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
-    print(f"{len(mapping)}件取り込み:")
+    _outcome.report_success(f"{len(mapping)}件をinboxへ取り込んだ")
     for original, saved in mapping:
         renamed = f"（{original} -> {saved}）" if original != saved else ""
         print(f"  {_shorten_home(inbox_dir / saved, home)}{renamed}")
@@ -488,5 +488,5 @@ def _cmd_add_batch(
         for original in skipped:
             print(f"  {original}")
     for warning in warnings:
-        print(f"警告: {warning}", file=sys.stderr)
+        _outcome.report_warning(warning)
     print(f"inbox: 計{_count_awi(inbox_dir)}件（processing: {_count_awi(processing_dir)}件）")

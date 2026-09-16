@@ -31,5 +31,5 @@ disable-model-invocation: true
 
 - ユーザー依存事項の回答を投入前に得ている
 - 保存する本文を`less`の確認コマンドで提示し、投入承認後に同じ入力を登録している
-- `agent-toolkit:wi-standards`が定める一致判定、成功報告及び警告の不在を確認している
+- `agent-toolkit:wi-standards`が定める成功報告と警告の不在を確認している
 - 対象リポジトリの実装と`processing`項目を変更していない

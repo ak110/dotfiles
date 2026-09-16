@@ -24,6 +24,7 @@ import typing
 from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import remove_all as _remove_all
@@ -225,9 +226,9 @@ def _validate_transition_targets(
         else:
             actual_target_repo = _entry_target_repo(path, content)
             if actual_target_repo not in normalized_target_repos:
-                print(
-                    f"target_repo不一致: 期待={', '.join(normalized_target_repos)} 実際={actual_target_repo} ファイル={path}",
-                    file=sys.stderr,
+                _outcome.report_failure(
+                    f"target_repoが一致しない: 期待={', '.join(normalized_target_repos)} 実際={actual_target_repo} "
+                    f"ファイル={path}。対象リポジトリの指定を見直す"
                 )
                 sys.exit(2)
     if cooldown_days is not None:
@@ -237,10 +238,9 @@ def _validate_transition_targets(
     if action == "remove" and not force:
         protected = [path.name for path in paths if path.parent.name == WI_STATE_PROCESSING]
         if protected:
-            print(
-                "processing状態のファイルは既定で削除を保護します。"
-                f"削除するには--force（Web APIはforce指定）を指定してください: {', '.join(protected)}",
-                file=sys.stderr,
+            _outcome.report_failure(
+                "processing状態のファイルは既定で削除を保護する: "
+                f"{', '.join(protected)}。削除するには--force（Web APIはforce指定）を指定する"
             )
             sys.exit(2)
     return current_content
@@ -308,9 +308,9 @@ def _apply_transition(
     destination = _subdir(private_notes, destination_name)
     conflicts = [path.name for path in paths if (destination / path.name).exists()]
     if conflicts:
-        print(
-            f"移動先（{destination_name}）に同名エントリが既に存在します: {', '.join(conflicts)}",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"移動先（{destination_name}）に同名エントリが既に存在する: {', '.join(conflicts)}。"
+            "移動先の同名エントリを整理してから再実行する"
         )
         sys.exit(2)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
@@ -438,7 +438,7 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         local_worktree=local_worktree,
         skip_push=args.skip_push,
     )
-    print(f"{len(filenames)}件採用処理:")
+    _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")
     for filename in filenames:
         print(private_notes / WI_STATE_ADOPTED / filename)
 
@@ -465,7 +465,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
         local_worktree=local_worktree,
         skip_push=args.skip_push,
     )
-    print(f"{len(filenames)}件不採用処理:")
+    _outcome.report_success(f"{len(filenames)}件をrejectedへ移した")
     for filename in filenames:
         print(private_notes / WI_STATE_REJECTED / filename)
 
@@ -485,7 +485,7 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
         now=now,
         target_repo=args.target_repo,
     )
-    print(f"{len(filenames)}件処理開始: {', '.join(filenames)}")
+    _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
 
 
 def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -498,7 +498,7 @@ def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
         now=now,
         target_repo=args.target_repo,
     )
-    print(f"{len(filenames)}件保留: {', '.join(filenames)}")
+    _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
 
 
 def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -511,7 +511,7 @@ def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: date
         now=now,
         target_repo=args.target_repo,
     )
-    print(f"{len(filenames)}件保留解除: {', '.join(filenames)}")
+    _outcome.report_success(f"{len(filenames)}件をholdからinboxへ戻した: {', '.join(filenames)}")
 
 
 def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -531,7 +531,7 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, 
         state=args.state,
         cooldown_days=args.cooldown_days,
     )
-    print(f"{len(filenames)}件inboxへ差し戻し: {', '.join(filenames)}")
+    _outcome.report_success(f"{len(filenames)}件をinboxへ差し戻した: {', '.join(filenames)}")
 
 
 def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -551,7 +551,7 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             actor_is_agent=is_agent_environment(),
         )
         if filenames:
-            print(f"{len(filenames)}件削除: {', '.join(filenames)}")
+            _outcome.report_success(f"{len(filenames)}件を削除した: {', '.join(filenames)}")
         return
 
     args.filenames = _dedup_positional_filenames(args.filenames, "rm")
@@ -566,4 +566,4 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         state=args.state,
         actor_is_agent=is_agent_environment(),
     )
-    print(f"{len(filenames)}件削除: {', '.join(filenames)}")
+    _outcome.report_success(f"{len(filenames)}件を削除した: {', '.join(filenames)}")

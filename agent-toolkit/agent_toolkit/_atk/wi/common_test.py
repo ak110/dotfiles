@@ -757,7 +757,7 @@ class TestWarnSpaceSeparatedOption:
         """対象サブコマンドの空白区切り指定では推奨形式を警告する。"""
         _common.warn_space_separated_option([top_command, subcommand, "item.md", option, "value"])
 
-        assert capsys.readouterr().err == f"警告: {option}は{option}=VALUE形式で渡すことを推奨します。\n"
+        assert capsys.readouterr().err == f"警告: {option}は{option}=VALUE形式で渡す。\n"
 
     @pytest.mark.parametrize(
         "argv",
@@ -1097,7 +1097,7 @@ class TestCommitAndPushRetry:
         error = capsys.readouterr().err
         assert "rebase状態を保持" in error
         assert "git add <競合解消済みパス>" in error
-        assert "自動abortは行っていません" in error
+        assert "自動abortは行っていない" in error
         assert "git rebase --abort" in error
 
     def test_reports_conflict_path_when_rebase_fails(
@@ -1660,8 +1660,8 @@ class TestPullWithRecentNotice:
 
         assert [call for call in calls if call[0] in ("fetch", "merge")] == []
         assert capsys.readouterr().err == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
-            "最新化する場合は`--pull`を指定してください。\n"
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
+            "最新化する場合は`--pull`を指定する。\n"
         )
 
     def test_recent_reuse_still_migrates_legacy_reservations(

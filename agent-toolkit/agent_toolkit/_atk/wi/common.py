@@ -37,6 +37,7 @@ import filelock
 import platformdirs
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import legacy as _atk_wi_legacy
 from agent_toolkit._atk.wi.constants import (
@@ -148,7 +149,7 @@ def warn_space_separated_option(argv: list[str]) -> None:
             continue
         value = argv[index + 1]
         if not value.startswith("--") and "=" not in value:
-            print(f"警告: {arg}は{arg}=VALUE形式で渡すことを推奨します。", file=sys.stderr)
+            _outcome.report_warning(f"{arg}は{arg}=VALUE形式で渡す。")
 
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
@@ -241,7 +242,7 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     root = _private_notes_path(home)
     if not root.exists():
         if os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
-            print(f"WI保存ディレクトリが見つかりません: {root}", file=sys.stderr)
+            _outcome.report_failure(f"WI保存ディレクトリが見つからない: {root}。AGENT_TOOLKIT_PRIVATE_NOTESの値を確認する")
             sys.exit(1)
         _init_local_private_notes_repo(root)
     _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
@@ -426,8 +427,8 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
 
     interval = int(_PULL_MIN_INTERVAL_SECONDS)
     print(
-        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
-        "最新化する場合は`--pull`を指定してください。",
+        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
+        "最新化する場合は`--pull`を指定する。",
         file=sys.stderr,
     )
     _migrate_legacy_reservations(private_notes)
@@ -521,10 +522,9 @@ def _notify_unpushed_commits_if_any(private_notes: pathlib.Path) -> bool:
     if count is None or count == 0:
         return False
     resolved = private_notes.resolve()
-    print(f"private-notesに未pushのcommitが{count}件残っています。操作自体は完了しています。", file=sys.stderr)
-    print(
-        f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushしてください。",
-        file=sys.stderr,
+    _outcome.report_warning(
+        f"private-notesに未pushのcommitが{count}件残る。操作自体は完了している。"
+        f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushする。"
     )
     return True
 
@@ -590,7 +590,7 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
         or ".." in parts
         or pathlib.PurePath(filename).is_absolute()
     ):
-        print(f"不正なファイル名: {filename}", file=sys.stderr)
+        _outcome.report_failure(f"不正なファイル名: {filename}。パス区切りを含まないファイル名を指定する")
         sys.exit(2)
     filename = _normalize_md_filename(filename)
     path = base_dir / filename
@@ -598,7 +598,7 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     try:
         path.resolve().relative_to(base_resolved)
     except ValueError:
-        print(f"ファイル名が基準ディレクトリ外を指しています: {filename}", file=sys.stderr)
+        _outcome.report_failure(f"ファイル名が基準ディレクトリ外を指す: {filename}。基準ディレクトリ内のファイル名を指定する")
         sys.exit(2)
     return path
 
@@ -688,9 +688,8 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
             seen[key] = name
     if duplicates:
         unique_duplicates = list(dict.fromkeys(duplicates))
-        print(
-            f"警告: {subcommand}の引数リストに重複が含まれます（重複除去して処理を継続）: {', '.join(unique_duplicates)}",
-            file=sys.stderr,
+        _outcome.report_warning(
+            f"{subcommand}の引数リストに重複がある（重複を除いて処理を継続する）: {', '.join(unique_duplicates)}"
         )
     return list(seen.values())
 
@@ -774,10 +773,7 @@ def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object])
     """
     entry_type = normalized_wi_type(metadata.get("type"))
     if entry_type is None:
-        print(
-            f"frontmatterのtypeが不正または欠落しています（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}",
-            file=sys.stderr,
-        )
+        _outcome.report_failure(f"frontmatterのtypeが不正または欠落している（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}")
         sys.exit(2)
     return entry_type
 
@@ -922,18 +918,18 @@ def _collect_message_via_editor(*, strip: bool = True) -> str | None:
     """
     editor = os.environ.get("EDITOR")
     if not editor:
-        print("$EDITORが未設定のためエディター経路を利用できません。", file=sys.stderr)
+        _outcome.report_failure("$EDITORが未設定のためエディター経路を利用できない。$EDITORを設定するか--body-fileを指定する")
         return None
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8", delete=False) as f:
         tmp_path = pathlib.Path(f.name)
     try:
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
-            print(f"エディターが終了コード{result.returncode}で終了しました。", file=sys.stderr)
+            _outcome.report_failure(f"エディターが終了コード{result.returncode}で終了した")
             return None
         saved = tmp_path.read_text(encoding="utf-8")
         if not saved.strip():
-            print("本文が空のため投入を中止しました。", file=sys.stderr)
+            _outcome.report_failure("本文が空のため投入を中止した。本文を書いてから再実行する")
             return None
         return saved.strip() if strip else saved
     finally:

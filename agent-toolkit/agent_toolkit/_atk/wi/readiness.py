@@ -3,10 +3,10 @@
 import dataclasses
 import datetime
 import pathlib
-import sys
 from collections.abc import Iterable, Iterator
 from typing import Literal
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import (
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
@@ -97,7 +97,7 @@ def _require_type(path: pathlib.Path, text: str) -> str | None:
         return None
     entry_type = normalized_wi_type(parsed[0].get("type"))
     if entry_type is None:
-        print(f"frontmatterのtypeが不正または欠落しています（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}", file=sys.stderr)
+        _outcome.report_warning(f"frontmatterのtypeが不正または欠落している（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}")
         raise SystemExit(2)
     return entry_type
 

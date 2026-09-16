@@ -870,7 +870,7 @@ def test_dispatch_reports_saved_relative_path_for_direct_working_plan(
     result = _atk_plans.dispatch(args, notes, home)
 
     assert result == 0
-    assert capsys.readouterr().out == (f"計画bundleを保存rootへ移動してcommitしました: {year}/{month}/{relative.name}\n")
+    assert capsys.readouterr().out == (f"成功: 計画bundleを保存rootへ移動してcommitした: {year}/{month}/{relative.name}\n")
 
 
 def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path: pathlib.Path) -> None:
@@ -1171,7 +1171,7 @@ def test_migrate_reports_leftover_backup_when_cleanup_fails(
     assert len(backups) == 1
     error = capsys.readouterr().err
     assert str(backups[0]) in error
-    assert "この複製は移行結果に影響しません" in error
+    assert "この複製は移行結果に影響しない" in error
 
 
 def test_migrate_reports_manual_recovery_when_restore_fails(

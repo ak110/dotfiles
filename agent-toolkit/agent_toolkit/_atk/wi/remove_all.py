@@ -5,6 +5,7 @@ import sys
 import typing
 from collections.abc import Iterable
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.common import (
     WI_AGENT_REMOVABLE_STATES,
     WI_STATE_PROCESSING,
@@ -80,9 +81,8 @@ def _ensure_processing_is_explicit(
     """processing候補がある場合に明示的な保護解除を要求する。"""
     protected = [path.name for path, _repo, _text, state, _type in candidates if state == WI_STATE_PROCESSING]
     if protected and not force:
-        print(
-            f"processing状態のファイルは既定で削除を保護します。削除するには--forceを指定してください: {', '.join(protected)}",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"processing状態のファイルは既定で削除を保護する: {', '.join(protected)}。削除するには--forceを指定する"
         )
         sys.exit(2)
 
@@ -90,7 +90,7 @@ def _ensure_processing_is_explicit(
 def _confirm_removal(count: int) -> bool:
     """対話端末で一括削除を1回確認する。"""
     if not sys.stdin.isatty():
-        print("非対話環境で一括削除するには--yesを指定してください。", file=sys.stderr)
+        _outcome.report_failure("非対話環境で一括削除するには--yesを指定する")
         sys.exit(2)
     answer = input(f"上記{count}件を削除します。続行しますか？ [Y/n]: ")
     return answer.strip().casefold() in {"", "y", "yes"}

@@ -85,7 +85,7 @@ def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
 
     assert exc_info.value.code == 1
     assert not list((notes / "inbox").iterdir())
-    assert "ユーザーコメント節を含む本文を投入できません" in capsys.readouterr().err
+    assert "ユーザーコメント節を含む本文を投入できない" in capsys.readouterr().err
 
 
 def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environment(

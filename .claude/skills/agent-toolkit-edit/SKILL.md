@@ -57,6 +57,14 @@ description: >
 モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
 テストは対象モジュールと同じディレクトリへ`<モジュール名>_test.py`として置く。
 
+### atkの実行結果出力
+
+`atk`のサブコマンドを追加する場合と、成功、失敗、警告又は該当0件を表す出力を変更する場合は、
+`agent-toolkit/agent_toolkit/_atk/outcome.py`が定める接頭辞と区分を使う。
+接頭辞の文字列を各出力箇所へ直接書かず、新しいリーフサブコマンドは同モジュールの区分表へ加える。
+区分表と実在するリーフの対応は`agent-toolkit/agent_toolkit/atk_help_test.py`が検査する。
+規約の目的、区分の意味及び却下した代替案は`docs/development/design.md`「atkサブコマンドの実行結果出力」が持つ。
+
 ### agents_serverの共有状態
 
 agents_serverの実装を変更する場合と調査する場合は、着手前に`references/agents-server-shared-state.md`を全文読む。

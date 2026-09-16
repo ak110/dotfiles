@@ -128,7 +128,7 @@ def test_add_dry_run_validates_without_side_effects(
         text=True,
     ).stdout
     after_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
-    assert capsys.readouterr().out == "検証が成立しました。\n"
+    assert capsys.readouterr().out == "成功: 投入前の検証が成立した（--dry-runのため保存していない）\n"
     assert after_files == before_files
     assert after_head == before_head
 
@@ -588,7 +588,7 @@ def test_add_reloads_saved_details_while_holding_lock(
 
     assert saved_details[generated[0]]["target_repo"] == "github.com/example/repo"
     assert "saved_body" not in saved_details[generated[0]]
-    assert saved_details[generated[0]]["body_match"] == "一致"
+    assert "body_match" not in saved_details[generated[0]]
 
 
 def test_cli_add_does_not_output_body_verification_details(
@@ -1039,7 +1039,7 @@ def test_add_warns_for_missing_dependency_and_keeps_registering(
     generated = sorted(path.name for path in (notes / "inbox").iterdir() if path.suffix == ".md")
     assert len(generated) == 1
     assert captured.err == f"警告: {generated[0]}のdepends_onが参照するabsent.mdは取り込み先に実在しません\n"
-    assert "1件投入:" in captured.out
+    assert "成功: 1件をinboxへ投入した" in captured.out
 
 
 def test_add_does_not_warn_for_existing_dependency(
@@ -1901,7 +1901,7 @@ def test_cli_add_rejects_existing_path_outside_worktree(
         atk.main(["wi", "add", str(bare_repo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 2
-    assert "ローカルworktreeではありません" in capsys.readouterr().err
+    assert "ローカルworktreeではない" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
     assert not any(command[-3:] == ["rev-parse", "--verify", "HEAD^{commit}"] for command in git_commands)
 
@@ -2516,7 +2516,7 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
         saved_details=saved_details,
     )
 
-    assert saved_details[generated[0]]["body_match"] == "一致"
+    assert (notes / "inbox" / generated[0]).exists()
 
 
 @pytest.mark.parametrize("input_kind", ["position", "body-file"])
@@ -2547,7 +2547,7 @@ def test_add_reports_body_match_for_crlf_inputs(
 
     saved = (notes / "inbox" / generated[0]).read_bytes()
     assert b"\r" not in saved
-    assert saved_details[generated[0]]["body_match"] == "一致"
+    assert (notes / "inbox" / generated[0]).exists()
 
 
 def test_cli_add_omits_body_verification_details(

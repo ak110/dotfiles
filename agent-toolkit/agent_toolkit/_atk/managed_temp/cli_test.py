@@ -35,15 +35,15 @@ from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 @pytest.mark.parametrize(
     ("entries", "expected"),
     [
-        ([], "error: --pathを指定してください。現在の管理対象はありません。\n"),
+        ([], "失敗: --pathを指定してください。現在の管理対象はありません。\n"),
         (
             [{"path": "/tmp/first"}],
-            "error: --pathを指定してください。現在の管理対象は1件です。"
+            "失敗: --pathを指定してください。現在の管理対象は1件です。"
             "atk managed-temp cleanup --path /tmp/first を実行してください。\n",
         ),
         (
             [{"path": "/tmp/first"}, {"path": "/tmp/second"}],
-            "error: --pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n/tmp/first\n/tmp/second\n",
+            "失敗: --pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n/tmp/first\n/tmp/second\n",
         ),
     ],
 )

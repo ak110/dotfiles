@@ -40,7 +40,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -953,7 +953,7 @@ class TestStartProcessingMissing:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inboxに存在しません" in captured.err
+        assert "inboxに存在しない" in captured.err
 
 
 class TestRejectFromProcessing:
@@ -1117,7 +1117,7 @@ class TestTargetRepoVerification:
             atk.main([*command, "--target-repo", "github.com/example/other"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
-        assert "target_repo不一致" in capsys.readouterr().err
+        assert "target_repoが一致しない" in capsys.readouterr().err
 
     def test_processing_entry_with_legacy_target_repo_rejects_different_target_on_return(
         self,
@@ -1150,7 +1150,7 @@ class TestTargetRepoVerification:
             )
 
         assert exc_info.value.code == 2
-        assert "target_repo不一致" in capsys.readouterr().err
+        assert "target_repoが一致しない" in capsys.readouterr().err
 
     def test_unresolvable_saved_target_repo_exits_2_without_traceback(
         self,
@@ -1172,7 +1172,7 @@ class TestTargetRepoVerification:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "target_repo不一致" in captured.err
+        assert "target_repoが一致しない" in captured.err
         assert "Traceback" not in captured.err
 
     @pytest.mark.parametrize(
@@ -1207,7 +1207,7 @@ class TestTargetRepoVerification:
             atk.main([*command, "--target-repo", "github.com/example/foo"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "target_repo不一致" in capsys.readouterr().err
+        assert "target_repoが一致しない" in capsys.readouterr().err
         assert processing_path.exists()
 
     def test_edit_verifies_resolved_processing_entry_when_same_name_exists_in_inbox(
@@ -1242,7 +1242,7 @@ class TestTargetRepoVerification:
             )
 
         assert exc_info.value.code == 2
-        assert "target_repo不一致" in capsys.readouterr().err
+        assert "target_repoが一致しない" in capsys.readouterr().err
         assert not editor_calls
 
     def test_adopt_mismatch_exits_2(
@@ -1261,7 +1261,7 @@ class TestTargetRepoVerification:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "target_repo不一致" in captured.err
+        assert "target_repoが一致しない" in captured.err
         assert (notes / "inbox" / "fb-001.md").exists()
         assert not (notes / "adopted" / "fb-001.md").exists()
 

@@ -24,6 +24,7 @@ import typing
 from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import remove_all as _remove_all
@@ -140,7 +141,7 @@ def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
         changed = True
     if not changed:
         return False
-    print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
+    _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
     return True
 
 
@@ -148,7 +149,7 @@ def _reject_agent_user_comment_message(message: str) -> bool:
     """エージェント環境の本文が予約見出しを含む場合に真を返す。"""
     if not is_agent_environment() or not _user_comment.has_reserved_heading(message):
         return False
-    print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
+    _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
     return True
 
 
@@ -159,7 +160,7 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     try:
         _before, saved_user_comment = _user_comment.split_before_user_comment(original)
     except _user_comment.UserCommentError:
-        print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
+        _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
         sys.exit(1)
     if not saved_user_comment:
         return updated
@@ -264,10 +265,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
 
     requested_type = message_frontmatter.get("type")
     if requested_type is not None and requested_type != entry_type:
-        print(
-            f"typeを変更することはできません（現在値: {entry_type}）: {path.name}",
-            file=sys.stderr,
-        )
+        _outcome.report_failure(f"typeは変更できない（現在値: {entry_type}）: {path.name}。frontmatterのtypeを元の値へ戻す")
         sys.exit(2)
     if entry_type != WI_TYPE_UWI:
         uwi_only_keys = sorted({"scope", "question_type", "choices"} & message_frontmatter.keys())
@@ -333,7 +331,7 @@ def _resolve_edit_message(args: argparse.Namespace) -> str | None:
     try:
         return _add.read_body_files([args.body_file])[0]
     except WebInputError as error:
-        print(f"編集を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"編集を拒否した: {error}")
         sys.exit(1)
 
 
@@ -373,7 +371,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
             target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
         except (OSError, ValueError, WebInputError) as error:
-            print(f"計画型編集を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"計画型編集を拒否した: {error}")
             sys.exit(1)
 
         inbox_dir = private_notes / WI_STATE_INBOX
@@ -382,7 +380,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _pull(private_notes)
             snapshot_path = _validate_filename(args.filename, private_notes / WI_STATE_HOLD)
             if not snapshot_path.is_file():
-                print(f"holdに存在しません: {snapshot_path.name}", file=sys.stderr)
+                _outcome.report_failure(f"holdに存在しない: {snapshot_path.name}。実在するファイル名を指定し直す")
                 sys.exit(2)
             snapshot = snapshot_path.read_text(encoding="utf-8")
             _verify_target_repo_content(snapshot_path, snapshot, target_repo)
@@ -401,16 +399,15 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 expected_content=snapshot,
             )
         except RuntimeError:
-            print(
-                f"編集中に他プロセスが対象を変更しました: {snapshot_path.name}。"
-                "指定した本文は反映されていません。同じFILENAMEと--body-fileで再実行してください。",
-                file=sys.stderr,
+            _outcome.report_failure(
+                f"編集中に他プロセスが対象を変更した: {snapshot_path.name}。"
+                "指定した本文は反映していない。同じFILENAMEと--body-fileで再実行する"
             )
             sys.exit(1)
         except WebInputError as error:
-            print(f"計画型編集を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"計画型編集を拒否した: {error}")
             sys.exit(1)
-        print(f"計画型編集反映: {snapshot_path.name}")
+        _outcome.report_success(f"計画型の編集を反映した: {snapshot_path.name}")
         _add._print_entry_details(details)  # pylint: disable=protected-access
         return
     if args.append:
@@ -423,7 +420,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if message is None:
         editor = os.environ.get("EDITOR")
         if not editor:
-            print("$EDITORが未設定のため編集できません。", file=sys.stderr)
+            _outcome.report_failure("$EDITORが未設定のため編集できない。$EDITORを設定するか--body-fileを指定する")
             sys.exit(1)
     inbox_dir = private_notes / WI_STATE_INBOX
     _subdir(private_notes, WI_STATE_PROCESSING)
@@ -435,7 +432,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 key=lambda p: p.name,
             )
             if not candidates:
-                print("inboxが空のため編集対象がありません。", file=sys.stderr)
+                _outcome.report_failure("inboxが空のため編集対象が無い。FILENAMEを指定するか項目を投入する")
                 sys.exit(2)
             path = candidates[-1]
         else:
@@ -444,12 +441,11 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             paths = _resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
         if path.parent.name == WI_STATE_PROCESSING and is_agent_environment():
-            print(
-                f"processingの項目はエージェント環境から編集できません: {path.name}。"
-                "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わります。"
+            _outcome.report_failure(
+                f"processingの項目はエージェント環境から編集できない: {path.name}。"
+                "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わる。"
                 "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
-                "atk wi edit --appendで追記してください。",
-                file=sys.stderr,
+                "atk wi edit --appendで追記する"
             )
             sys.exit(2)
         snapshot = path.read_bytes()
@@ -466,7 +462,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         try:
             edited = _build_noninteractive_edit_content(path, original, message)
         except WebInputError as error:
-            print(f"編集を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"編集を拒否した: {error}")
             sys.exit(1)
         edited = _preserve_agent_user_comment(original, edited)
     if edited == original:
@@ -483,7 +479,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     except WebInputError as error:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
-        print(f"編集を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"編集を拒否した: {error}")
         sys.exit(1)
     finalized_content: dict[str, str] = {}
     try:
@@ -498,21 +494,18 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         )
     except RuntimeError:
         if tmp_path is None:
-            print(
-                f"編集中に他プロセスが対象を変更しました: {path.name}。"
-                "指定した本文は反映されていません。同じFILENAMEと--body-fileで再実行してください。",
-                file=sys.stderr,
+            _outcome.report_failure(
+                f"編集中に他プロセスが対象を変更した: {path.name}。"
+                "指定した本文は反映していない。同じFILENAMEと--body-fileで再実行する"
             )
         else:
-            print(
-                f"編集中に他プロセスが対象を変更しました: {path.name}。"
-                f"編集内容は{tmp_path}に残しています。再度atk wi editを実行してください。",
-                file=sys.stderr,
+            _outcome.report_failure(
+                f"編集中に他プロセスが対象を変更した: {path.name}。編集内容は{tmp_path}に残した。再度atk wi editを実行する"
             )
         sys.exit(1)
     if tmp_path is not None:
         tmp_path.unlink(missing_ok=True)
-    print(f"編集反映: {path.name}")
+    _outcome.report_success(f"編集を反映した: {path.name}")
     _add._print_entry_details(  # pylint: disable=protected-access
         _add._read_saved_entry_details(  # pylint: disable=protected-access
             path,
@@ -542,7 +535,7 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
         try:
             before_user_comment, saved_user_comment = _user_comment.split_before_user_comment(original)
         except _user_comment.UserCommentError:
-            print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
+            _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
             sys.exit(1)
         content = (
             before_user_comment.encode("utf-8")
@@ -564,13 +557,12 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
             finalized_content=finalized_content,
         )
     except RuntimeError:
-        print(
-            f"追記中に他プロセスが対象を変更しました: {path.name}。"
-            "指定した本文は反映されていません。同じFILENAMEと--body-fileで再実行してください。",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"追記中に他プロセスが対象を変更した: {path.name}。"
+            "指定した本文は反映していない。同じFILENAMEと--body-fileで再実行する"
         )
         sys.exit(1)
-    print(f"追記反映: {path.name}")
+    _outcome.report_success(f"追記を反映した: {path.name}")
     _add._print_entry_details(  # pylint: disable=protected-access
         _add._read_saved_entry_details(  # pylint: disable=protected-access
             path,

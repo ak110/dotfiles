@@ -1050,8 +1050,8 @@ class TestListSkipPull:
         assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"]) for call in git_calls)
         stderr = capsys.readouterr().err
         assert stderr == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
-            "最新化する場合は`--pull`を指定してください。\n"
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
+            "最新化する場合は`--pull`を指定する。\n"
         )
 
     def test_pull_forces_remote_sync_after_recent_sync(

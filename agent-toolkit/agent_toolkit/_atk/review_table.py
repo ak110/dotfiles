@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
@@ -185,8 +186,8 @@ def validate(path: str | Path, *, require_responses: bool = True) -> int:
     target = _path(str(path))
     rows = _read(target)
     _validate_rows(rows, require_responses=require_responses)
-    label = "検証成功" if require_responses else "構造検証成功"
-    print(f"{label}: {target} ({len(rows)}件)")
+    label = "応答欄を含めて検証した" if require_responses else "構造を検証した"
+    _outcome.report_success(f"{label}: {target}（{len(rows)}件）")
     return 0
 
 
@@ -242,6 +243,7 @@ def init(path: str | Path) -> int:
         if target.exists():
             raise ValueError(f"レビュー表が既に存在する: {target}")
         _write_atomic(target, [])
+    _outcome.report_success(f"レビュー指摘管理表を作成した: {target}", _outcome.ResultKind.VALUE_OUTPUT)
     print(target)
     return 0
 
@@ -271,9 +273,7 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
                 f"送信元本文:\n{expected}\n"
                 f"保存本文:\n{saved}"
             )
-    print(f"追加成功: {target} ({len(rows)}件)")
-    print("location_body_match: 一致")
-    print("issue_body_match: 一致")
+    _outcome.report_success(f"指摘行を1件追加した: {target}（{len(rows)}件）")
     return 0
 
 
@@ -393,8 +393,7 @@ def respond(
             f"送信元本文:\n{expected_body}\n"
             f"保存本文:\n{saved_body}"
         )
-    print(f"応答更新成功: {target}")
-    print("body_match: 一致")
+    _outcome.report_success(f"応答欄を更新した: {target}")
     return 0
 
 

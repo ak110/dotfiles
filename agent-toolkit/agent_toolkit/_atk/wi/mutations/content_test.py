@@ -40,7 +40,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -876,7 +876,7 @@ class TestEditBodyFile:
     @pytest.mark.parametrize(
         ("message", "exit_code", "error_fragment"),
         [
-            ("---\ntype: uwi\n---\n\n本文", 2, "typeを変更"),
+            ("---\ntype: uwi\n---\n\n本文", 2, "typeは変更できない"),
             ("---\nscope: item\n---\n\n本文", 1, "AWIでは指定できない"),
             (" \n-\n ", 1, "実質空"),
         ],
@@ -1028,10 +1028,10 @@ class TestEditBodyFile:
 
         assert exc_info.value.code == 2
         assert capsys.readouterr().err == (
-            "processingの項目はエージェント環境から編集できません: fb-001.md。"
-            "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わります。"
+            "失敗: processingの項目はエージェント環境から編集できない: fb-001.md。"
+            "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わる。"
             "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
-            "atk wi edit --appendで追記してください。\n"
+            "atk wi edit --appendで追記する\n"
         )
         assert path.read_text(encoding="utf-8") == original
 
@@ -1179,7 +1179,7 @@ class TestEditBodyFile:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "fb-001.md" in captured.err
-        assert "反映されていません" in captured.err
+        assert "反映していない" in captured.err
         assert path.read_text(encoding="utf-8").endswith("\n競合側の変更\n")
 
     def test_logically_identical_awi_reports_no_changes(

@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from typing import Any
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, serialize_frontmatter, write_entry_text
 
@@ -81,7 +82,7 @@ def _plan_legacy_migration(
             destinations.add(destination)
             planned.append((path, destination, migrated))
     if errors:
-        print(f"旧レイアウトの移行を中止しました（{private_notes}）。以下を解消してから再実行してください。", file=sys.stderr)
+        _outcome.report_failure(f"旧レイアウトの移行を中止した（{private_notes}）。以下を解消してから再実行する")
         for error in errors:
             print(f"- {error}", file=sys.stderr)
         sys.exit(2)
@@ -146,14 +147,14 @@ def migrate_legacy_layout(
             shutil.rmtree(legacy_dir)
         count = len(planned)
         if not count and not tracked_legacy_names:
-            print(f"旧レイアウトの空ディレクトリを削除しました: {private_notes}", file=sys.stderr)
+            print(f"旧レイアウトの空ディレクトリを削除した: {private_notes}", file=sys.stderr)
             return
         commit_fn(
             private_notes,
             f"chore: migrate {count} {'entry' if count == 1 else 'entries'} to flat layout",
             [*(name for name in WI_STATES if (private_notes / name).is_dir()), *tracked_legacy_names],
         )
-        print(f"旧レイアウトの{count}件を平坦レイアウトへ移行しました: {private_notes}", file=sys.stderr)
+        print(f"旧レイアウトの{count}件を平坦レイアウトへ移行した: {private_notes}", file=sys.stderr)
 
 
 _LEGACY_RESERVATION_INTERNAL_REPO = "internal/agent-toolkit/reservations"
@@ -303,5 +304,5 @@ def migrate_legacy_reservations(
         f"chore: migrate {migrated_count} legacy queue reservations",
         (WI_STATE_INBOX, WI_STATE_PROCESSING),
     )
-    print(f"旧予約形式の{migrated_count}件を通常inboxへ移行しました。", file=sys.stderr)
+    print(f"旧予約形式の{migrated_count}件を通常inboxへ移行した。", file=sys.stderr)
     return migrated_count

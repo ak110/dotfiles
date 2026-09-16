@@ -40,7 +40,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -518,7 +518,7 @@ def test_return_to_inbox_missing_file_reports_processing_state(
 
     assert exc_info.value.code == 2
     captured = capsys.readouterr()
-    assert "processingに存在しません" in captured.err
+    assert "processingに存在しない" in captured.err
 
 
 class TestAdoptZeroArgs:
@@ -569,8 +569,8 @@ class TestAdoptStampWithoutOptional:
 @pytest.mark.parametrize(
     ("action", "destination", "summary"),
     (
-        ("adopt", "adopted", "1件採用処理:"),
-        ("reject", "rejected", "1件不採用処理:"),
+        ("adopt", "adopted", "成功: 1件をadoptedへ移した"),
+        ("reject", "rejected", "成功: 1件をrejectedへ移した"),
     ),
 )
 def test_terminal_transition_prints_destination_path(
@@ -849,7 +849,7 @@ class TestAppendEdit:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "fb-001.md" in captured.err
-        assert "反映されていません" in captured.err
+        assert "反映していない" in captured.err
         assert "追記本文".encode() not in path.read_bytes()
 
 

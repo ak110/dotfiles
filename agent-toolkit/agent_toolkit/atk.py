@@ -48,6 +48,7 @@ from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402
 from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
+from agent_toolkit._atk import outcome as _outcome  # noqa: E402
 from agent_toolkit._atk import output_file as _output_file  # noqa: E402
 from agent_toolkit._atk import plans as _plans  # noqa: E402
 from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
@@ -1079,7 +1080,7 @@ def _cmd_pull(private_notes: pathlib.Path) -> None:
     """private-notesを排他ロック内で明示的に同期する。"""
     with _common._repo_lock(private_notes):
         _common.pull(private_notes)
-    print(f"同期完了: {private_notes.resolve()}")
+    _outcome.report_success(f"private-notesをremoteと同期した: {private_notes.resolve()}")
 
 
 def main(
@@ -1125,19 +1126,17 @@ def main(
     try:
         automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
-        print(f"warning: 管理対象一時領域の自動削除に失敗しました: {error}", file=sys.stderr)
+        _outcome.report_warning(f"管理対象一時領域の自動削除に失敗した: {error}")
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
     if args.command != "managed-temp" and not is_delegated_session:
         try:
             unregistered_count = _managed_temp.count_unregistered_candidates()
         except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
-            print(f"warning: 登録を持たない管理対象を探索できませんでした: {error}", file=sys.stderr)
+            _outcome.report_warning(f"登録を持たない管理対象を探索できなかった: {error}")
         else:
             if unregistered_count:
-                print(
-                    f"warning: 登録を持たない管理対象が{unregistered_count}件あります"
-                    "（一覧と回収方法は atk managed-temp list で確認できます）",
-                    file=sys.stderr,
+                _outcome.report_warning(
+                    f"登録を持たない管理対象が{unregistered_count}件ある（一覧と回収方法は atk managed-temp list で確認できる）"
                 )
     _validate_rm_args(args)
     args.repo_path_override = repo_path_override
@@ -1211,22 +1210,22 @@ def main(
                 )
             )
         except (_common.WebInputError, _atk_git_sync.RebaseInProgressError) as error:
-            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"操作を拒否した: {error}")
             sys.exit(1)
         except subprocess.CalledProcessError as error:
-            print(f"Git操作に失敗しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"Git操作に失敗した: {error}")
             sys.exit(1)
     if args.command == "review-table":
         try:
             sys.exit(_review_table.dispatch(args))
         except ValueError as error:
-            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"操作を拒否した: {error}")
             sys.exit(1)
     if args.command == "review-audit":
         try:
             sys.exit(_review_audit.dispatch(args))
         except ValueError as error:
-            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            _outcome.report_failure(f"操作を拒否した: {error}")
             sys.exit(1)
     if args.command != "wi":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
@@ -1266,10 +1265,10 @@ def main(
     try:
         exit_code = dispatch[sub]() or 0
     except _common.WebInputError as error:
-        print(f"操作を拒否しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"操作を拒否した: {error}")
         sys.exit(1)
     except subprocess.CalledProcessError as error:
-        print(f"Git操作に失敗しました: {error}", file=sys.stderr)
+        _outcome.report_failure(f"Git操作に失敗した: {error}")
         sys.exit(1)
     exit_code = _sync_exit_code(
         exit_code,

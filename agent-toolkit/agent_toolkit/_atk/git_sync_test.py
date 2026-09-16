@@ -169,7 +169,7 @@ def test_sync_failure_reports_recovery_steps_and_preserves_exception(
 
     assert exc_info.value is expected
     stderr = capsys.readouterr().err
-    assert f"private-notesの{operation}に失敗しました: {repo.resolve()}" in stderr
+    assert f"private-notesの{operation}に失敗した: {repo.resolve()}" in stderr
     assert f"確認: `git -C {repo.resolve()} status`" in stderr
     assert "失敗した`atk`操作を再実行" in stderr
 
@@ -208,7 +208,7 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
 
     assert ["rebase", "@{u}"] not in calls
     stderr = capsys.readouterr().err
-    assert "Git履歴が分岐しています" in stderr
+    assert "Git履歴が分岐している" in stderr
     assert stderr.endswith(_atk_git_sync.PUSH_DEFERRED_MESSAGE + "\n")
 
 
@@ -268,7 +268,7 @@ def test_push_reports_output_of_unresolved_first_push(
     assert exc_info.value is original_error
     stderr = capsys.readouterr().err
     assert "rejected stdout\nrejected stderr\n" in stderr
-    assert "private-notesのpushに失敗しました" in stderr
+    assert "private-notesのpushに失敗した" in stderr
 
 
 def test_pull_suppresses_output_of_recovered_first_merge(
@@ -402,7 +402,7 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     assert _git(local, "rev-parse", "HEAD").stdout.strip() == local_head
     assert not _atk_git_sync.is_rebase_in_progress(local)
     stderr = capsys.readouterr().err
-    assert "Git履歴が分岐しています（ローカルのみ1件、upstreamのみ1件）" in stderr
+    assert "Git履歴が分岐している（ローカルのみ1件、upstreamのみ1件）" in stderr
     assert "local.txt" in stderr
     assert "remote.txt" in stderr
     assert "git rebase @{u}" in stderr
@@ -428,5 +428,5 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     assert _atk_git_sync.is_rebase_in_progress(local)
     assert _git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
     stderr = capsys.readouterr().err
-    assert "rebaseに失敗したため、rebase状態を保持しています" in stderr
-    assert "Git履歴が分岐しています" not in stderr
+    assert "rebaseに失敗したため、rebase状態を保持した" in stderr
+    assert "Git履歴が分岐している" not in stderr

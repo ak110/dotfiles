@@ -55,7 +55,7 @@ def test_duplicate_filenames_deduplicated_with_warning(
     assert not (notes / "inbox" / "fb-001.md").exists()
     for directory in present_directories:
         assert (notes / directory / "fb-001.md").exists()
-    assert "重複が含まれます" in capsys.readouterr().err
+    assert "重複がある" in capsys.readouterr().err
     commit_cmds = [call["cmd"] for call in git_calls if "commit" in call["cmd"]]
     assert len(commit_cmds) == 1
     assert commit_message in commit_cmds[0]

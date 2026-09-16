@@ -394,7 +394,7 @@ class TestManagedTempPosix:
                 "session_id": None,
             },
         ]
-        assert "warning: 管理対象を列挙できない" in lines.err
+        assert "警告: 管理対象を列挙できない" in lines.err
 
     def test_list_sorts_same_created_at_by_path_and_excludes_v1_prefix_filter(
         self,
@@ -454,7 +454,7 @@ class TestManagedTempPosix:
 
         assert subject.sweep_expired_managed_temp(now=now) == [target]
         assert not target.exists()
-        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除しました: {target}" in capsys.readouterr().err
+        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除した: {target}" in capsys.readouterr().err
 
     def test_sweep_retains_a_recent_session_root(
         self,
@@ -497,8 +497,8 @@ class TestManagedTempPosix:
         assert failed.exists()
         assert not deleted.exists()
         captured = capsys.readouterr()
-        assert f"warning: 管理対象一時領域を自動削除できませんでした: {failed}" in captured.err
-        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除しました: {deleted}" in captured.err
+        assert f"警告: 管理対象一時領域を自動削除できない: {failed}" in captured.err
+        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除した: {deleted}" in captured.err
 
     def test_sweep_keeps_an_expired_root_with_recent_nested_content(
         self,
@@ -575,9 +575,9 @@ class TestManagedTempPosix:
         error = capsys.readouterr().err
         assert str(registry) in error
         assert str(target) in error
-        assert f"warning: 管理対象を列挙できない: {registry}: {target}: " in error
+        assert f"警告: 管理対象を列挙できない: {registry}: {target}: " in error
         assert f"atk managed-temp cleanup --path {target}" in error
-        assert "実体を削除した場合は、次回の atk managed-temp list で登録を回収します" in error
+        assert "実体を削除した場合は、次回の atk managed-temp list で登録を回収する" in error
         assert registry.exists()
 
     def test_sweep_keeps_a_managed_temp_at_the_deadline_without_scanning(
@@ -667,7 +667,7 @@ class TestManagedTempPosix:
                 "session_id": None,
             }
         ]
-        assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
+        assert "実体が失われた管理対象の登録を回収した" in capsys.readouterr().err
         assert not registry.exists()
 
     def test_list_removes_registry_of_a_missing_target_recorded_under_another_temp_root(
@@ -690,7 +690,7 @@ class TestManagedTempPosix:
 
         assert subject.is_missing_registered_temp(missing) is True
         assert subject.list_managed_temp() == []
-        assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
+        assert "実体が失われた管理対象の登録を回収した" in capsys.readouterr().err
         assert not registry.exists()
 
     def test_list_keeps_registry_when_recorded_device_differs(
@@ -781,7 +781,7 @@ class TestManagedTempPosix:
         listed = subject.list_managed_temp(report_recovery_candidates=True)
         assert [entry["path"] for entry in listed] == [str(registered)]
         error = capsys.readouterr().err
-        assert all(f"warning: 登録を持たない管理対象があります: {orphan}" in error for orphan in orphans)
+        assert all(f"警告: 登録を持たない管理対象がある: {orphan}" in error for orphan in orphans)
         assert all(str(directory) not in error for directory in unmarked)
 
         resolutions = 0
@@ -937,7 +937,7 @@ class TestManagedTempPosix:
 
         assert subject.list_managed_temp(report_recovery_candidates=True) == []
         error = capsys.readouterr().err
-        assert f"warning: マーカーから登録を復元できない管理対象があります: {target}" in error
+        assert f"警告: マーカーから登録を復元できない管理対象がある: {target}" in error
         assert f"（回収する場合は atk managed-temp cleanup --path {target} --force-remove）" in error
         assert f"atk managed-temp cleanup --path {target} --recover-registry" not in error
 
@@ -1026,7 +1026,7 @@ class TestManagedTempPosix:
         consuming, _ = _interrupt_cleanup(target)
 
         subject.cleanup_managed_temp(target)
-        assert "中断した後始末の登録を復元しました" in capsys.readouterr().err
+        assert "中断した後始末の登録を復元した" in capsys.readouterr().err
         assert not target.exists()
         assert not subject._registry_path(target).exists()
         assert not consuming.exists()
@@ -1060,7 +1060,7 @@ class TestManagedTempPosix:
         consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
 
         subject.cleanup_managed_temp(target)
-        assert "中断した後始末の隔離先を後始末しました" in capsys.readouterr().err
+        assert "中断した後始末の隔離先を後始末した" in capsys.readouterr().err
         assert not target.exists()
         assert not quarantine.exists()
         assert not subject._registry_path(target).exists()

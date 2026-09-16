@@ -24,6 +24,7 @@ import typing
 from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import remove_all as _remove_all
@@ -129,11 +130,11 @@ def _entry_target_repo(path: pathlib.Path, text: str) -> str:
     """エントリの`target_repo`を検証し、正規化した識別子を返す。"""
     parsed = _frontmatter.parse_frontmatter(text)
     if parsed is None:
-        print(f"frontmatterを解析できないため処理を停止しました: {path}", file=sys.stderr)
+        _outcome.report_failure(f"frontmatterを解析できないため処理を停止した: {path}。frontmatterの書式を直す")
         sys.exit(2)
     raw_target_repo = parsed[0].get("target_repo")
     if not isinstance(raw_target_repo, str) or not raw_target_repo:
-        print(f"frontmatterにtarget_repoがないため処理を停止しました: {path}", file=sys.stderr)
+        _outcome.report_failure(f"frontmatterにtarget_repoが無いため処理を停止した: {path}。target_repoを追記する")
         sys.exit(2)
     return _resolve_repo_id(raw_target_repo)
 
@@ -206,10 +207,8 @@ def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
         result = None
     commit = result.stdout.strip() if result is not None and result.returncode == 0 else ""
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
-        print(
-            f"対応commitを解決できませんでした。対象作業ツリーでrevisionを取得して再実行してください: "
-            f"{local_worktree} ({revision})",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"対応commitを解決できない: {local_worktree} ({revision})。対象作業ツリーでrevisionを取得して再実行する"
         )
         sys.exit(2)
     return commit
@@ -237,9 +236,8 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetad
     except ValueError:
         author_date = ""
     if separator != "\0" or not author_date or not subject or "\n" in subject:
-        print(
-            f"対応commitの作成者日時と件名を取得できませんでした: {local_worktree} ({revision})",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"対応commitの作成者日時と件名を取得できない: {local_worktree} ({revision})。revisionの指定を見直す"
         )
         sys.exit(2)
     return _CommitMetadata(author_date=author_date, subject=subject)
@@ -258,9 +256,8 @@ def _commit_values_by_path(
     unmatched = sorted({target_repo for target_repo in target_repos.values() if target_repo != candidate_repo})
     if local_worktree is None or candidate_repo is None or unmatched:
         targets = ", ".join(unmatched or sorted(set(target_repos.values())))
-        print(
-            f"対応commitを検証できる対象リポジトリの作業ツリーを特定できませんでした: {targets}",
-            file=sys.stderr,
+        _outcome.report_failure(
+            f"対応commitを検証できる対象リポジトリの作業ツリーを特定できない: {targets}。--commitへ当該作業ツリーを指定する"
         )
         sys.exit(2)
     resolved = _resolve_commit(local_worktree, revision)
@@ -322,7 +319,7 @@ def _resolve_awi_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for p in missing:
-            print(f"{awi_dir.name}に存在しません: {p.name}", file=sys.stderr)
+            _outcome.report_failure(f"{awi_dir.name}に存在しない: {p.name}。実在するファイル名を指定し直す")
         sys.exit(2)
     return paths
 
@@ -356,7 +353,7 @@ def _resolve_processable_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            print(f"inbox・processingのいずれにも存在しません: {name}", file=sys.stderr)
+            _outcome.report_failure(f"inbox・processingのいずれにも存在しない: {name}。実在するファイル名を指定し直す")
         sys.exit(2)
     return resolved
 
@@ -388,7 +385,7 @@ def _resolve_editable_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            print(f"inbox・processing・holdのいずれにも存在しません: {name}", file=sys.stderr)
+            _outcome.report_failure(f"inbox・processing・holdのいずれにも存在しない: {name}。実在するファイル名を指定し直す")
         sys.exit(2)
     return resolved
 
@@ -418,7 +415,7 @@ def _resolve_conversion_targets(
             missing.append(inbox_path.name)
     if missing:
         for name in missing:
-            print(f"inbox・processing・holdのいずれにも存在しません: {name}", file=sys.stderr)
+            _outcome.report_failure(f"inbox・processing・holdのいずれにも存在しない: {name}。実在するファイル名を指定し直す")
         sys.exit(2)
     states = {path.parent.name for path in resolved}
     if len(states) != 1:
@@ -462,7 +459,7 @@ def _resolve_active_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            print(f"{'・'.join(state_names)}のいずれにも存在しません: {name}", file=sys.stderr)
+            _outcome.report_failure(f"{'・'.join(state_names)}のいずれにも存在しない: {name}。実在するファイル名を指定し直す")
         sys.exit(2)
     return resolved
 
@@ -510,6 +507,6 @@ def _cmd_commit(private_notes: pathlib.Path) -> None:
     未コミット変更がない場合も滞留commitをpushする。
     """
     if commit_entries(private_notes):
-        print("private-notesの外部編集分をコミット・pushしました。")
+        _outcome.report_success("private-notesの外部編集分をcommit・pushした")
     else:
-        print("差分なし。滞留commitをpushしました。")
+        _outcome.report_success("外部編集の差分は無く、滞留commitをpushした")
