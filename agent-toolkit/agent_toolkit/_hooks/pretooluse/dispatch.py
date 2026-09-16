@@ -343,7 +343,7 @@ def main(payload_text: str) -> int:
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, session_id, emit_json, flush_pending_notices))
+        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
     if tool_name == "Skill":
@@ -589,7 +589,6 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
 def _handle_user_facing_text_tool(
     tool_name: str,
     tool_input: dict,
-    session_id: str,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
