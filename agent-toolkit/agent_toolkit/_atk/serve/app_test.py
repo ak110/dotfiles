@@ -1157,6 +1157,7 @@ async def test_batch_api_imports_entries(tmp_path: pathlib.Path, monkeypatch: py
     assert await response.get_json() == {
         "filenames": ["keep.md"],
         "mapping": {"keep.md": "keep.md"},
+        "skipped": [],
         "warnings": [],
     }
     assert (tmp_path / "inbox" / "keep.md").read_text(encoding="utf-8") == (
