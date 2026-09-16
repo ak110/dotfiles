@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
@@ -121,9 +122,23 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_AWI_ERROR = "AWI本文が実質空です"
-_FEASIBILITY_HEADING_PATTERN = re.compile(r"^ {0,3}##\s+実現性\s*$")
-_CODE_FENCE_OPEN_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
-_CODE_FENCE_CLOSE_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})[ \t]*$")
+_REQUIRED_AWI_HEADINGS: tuple[str, ...] = (
+    "反映内容と反映先",
+    "適用範囲",
+    "実現性",
+    "メリット",
+    "デメリット",
+    "完成条件",
+)
+"""`source`を持つ通常AWIが必須とするH2見出し。
+
+`agent-toolkit:wi-standards`の`## 通常AWIの本文`が定める必須節をそのまま写す。
+規範が必須と定める集合と本検査が判定する集合を1箇所へ集約し、
+規範の一部だけを判定する状態が生じないようにする。規範側の必須節を変える改訂では本定数も同じ変更単位で更新する。
+"""
+
+_AWI_HEADING_ORDER: tuple[str, ...] = (*_REQUIRED_AWI_HEADINGS, "ユーザー指摘の逐語引用")
+"""同じ規範が定めるH2の並び順。`ユーザー指摘の逐語引用`は条件付きで必須なため順序の判定にだけ用いる。"""
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -136,7 +151,7 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     return frontmatter, body
 
 
-def _require_agent_awi_feasibility(
+def _require_agent_awi_sections(
     body: str,
     frontmatter: dict[str, object],
     *,
@@ -144,34 +159,31 @@ def _require_agent_awi_feasibility(
     source: str | None,
     plan_file: str | None,
 ) -> None:
-    """エージェント由来の通常AWIに非空の`## 実現性`節があることを検証する。"""
+    """エージェント由来の通常AWIが必須H2を全件持ち、規定順序に従うことを検証する。
+
+    不足と順序の不一致は1件の例外へまとめて返す。
+    1件ずつ返すと、起草側が本文を書き直して再投入する往復が不足節の件数だけ生じるためである。
+    """
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
     if entry_type != WI_TYPE_AWI or plan_file is not None or not item_source:
         return
-    feasibility_found = False
-    feasibility_has_content = False
-    open_fence: str | None = None
-    for line in body.splitlines():
-        if open_fence is not None:
-            closing_match = _CODE_FENCE_CLOSE_PATTERN.match(line)
-            if closing_match is not None:
-                closing_fence = closing_match.group("fence")
-                if closing_fence[0] == open_fence[0] and len(closing_fence) >= len(open_fence):
-                    open_fence = None
-            continue
-        if (opening_match := _CODE_FENCE_OPEN_PATTERN.match(line)) is not None:
-            open_fence = opening_match.group("fence")
-            continue
-        if feasibility_found and re.match(r"^ {0,3}##\s+", line):
-            break
-        if _FEASIBILITY_HEADING_PATTERN.match(line) is not None:
-            feasibility_found = True
-            continue
-        if feasibility_found and line.strip():
-            feasibility_has_content = True
-    if not feasibility_found or not feasibility_has_content:
-        raise WebInputError("実現性を記載してください。agent-toolkit:wi-standardsの`## 通常AWIの本文`が定める必須節です。")
+    sections = _headings.h2_sections(body)
+    filled = {name for name, has_body in sections if has_body}
+    appeared = [name for name, _has_body in sections if name in _AWI_HEADING_ORDER]
+    problems: list[str] = []
+    if missing := [name for name in _REQUIRED_AWI_HEADINGS if name not in filled]:
+        problems.append(f"非空の必須節がありません: {'、'.join(missing)}")
+    order_indexes = [_AWI_HEADING_ORDER.index(name) for name in appeared]
+    if order_indexes != sorted(order_indexes):
+        problems.append(f"H2の順序が規定と異なります: {'、'.join(appeared)}")
+    if not problems:
+        return
+    raise WebInputError(
+        "。".join(problems)
+        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{'、'.join(_AWI_HEADING_ORDER)}の順に置くことと、"
+        + f"{'、'.join(_REQUIRED_AWI_HEADINGS)}を必須とすることを定めます。"
+    )
 
 
 def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
@@ -546,7 +558,7 @@ def _cmd_add(
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             _require_agent_source(frontmatter, args.source)
-            _require_agent_awi_feasibility(
+            _require_agent_awi_sections(
                 body,
                 frontmatter,
                 entry_type=args.type,

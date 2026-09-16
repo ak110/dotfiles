@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -67,7 +68,7 @@ class TestAddSourceOption:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         body_file = tmp_path / "body.md"
-        body_file.write_text("メッセージ\n\n## 実現性\nテスト用の投入経路を確認済み", encoding="utf-8")
+        body_file.write_text(wi_bodies.AGENT_AWI_BODY, encoding="utf-8")
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 

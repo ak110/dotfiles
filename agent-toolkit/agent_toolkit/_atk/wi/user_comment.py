@@ -2,13 +2,12 @@
 
 import re
 
-import markdown_it
 from markdown_it.token import Token
 
 from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit._atk.wi import headings as _headings
 
 _COMMENT_HEADING = "ユーザーコメント"
-_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 _AGENT_USER_COMMENT_PREFIX = "ユーザーコメントはユーザーだけが書き込みます。"
 AGENT_USER_COMMENT_ADD_ERROR = (
     _AGENT_USER_COMMENT_PREFIX + "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
@@ -76,16 +75,7 @@ def _normalize_comment(text: str) -> str:
 
 def _heading_tokens(text: str) -> list[tuple[Token, str]]:
     """H2の開きtokenと見出し本文tokenを対応付けて返す。"""
-    tokens = _MARKDOWN.parse(frontmatter.normalize_newlines(text))
-    headings: list[tuple[Token, str]] = []
-    for index, token in enumerate(tokens[:-1]):
-        if token.type != "heading_open" or token.tag != "h2" or token.map is None:
-            continue
-        inline = tokens[index + 1]
-        if inline.type != "inline":
-            continue
-        headings.append((token, inline.content))
-    return headings
+    return _headings.parse_h2_headings(text)
 
 
 def _reserved_heading(token: Token, content: str) -> bool:
@@ -148,7 +138,7 @@ def _validate_comment(text: str) -> str:
     normalized = _normalize_comment(frontmatter.normalize_newlines(text))
     if not normalized:
         raise UserCommentError("ユーザーコメントは空にできません")
-    if any(token.type == "heading_open" and token.tag == "h2" for token in _MARKDOWN.parse(text)):
+    if _headings.contains_h2(text):
         raise UserCommentError("ユーザーコメントにコードフェンス外のH2見出しを含められません")
     return normalized
 

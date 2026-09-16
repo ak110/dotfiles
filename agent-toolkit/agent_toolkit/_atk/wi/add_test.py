@@ -29,6 +29,15 @@ from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
 )
+from agent_toolkit._testing.wi_bodies import (  # noqa: E402  # pylint: disable=wrong-import-position
+    AGENT_AWI_BODY as _AGENT_AWI_BODY,
+)
+from agent_toolkit._testing.wi_bodies import (  # noqa: E402  # pylint: disable=wrong-import-position
+    AGENT_AWI_SECTIONS as _AGENT_AWI_SECTIONS,
+)
+from agent_toolkit._testing.wi_bodies import (  # noqa: E402  # pylint: disable=wrong-import-position
+    agent_awi_body_without as _agent_awi_body_without,
+)
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -142,12 +151,12 @@ def test_add_dry_run_rejects_invalid_input(
     assert not list((notes / "inbox").iterdir())
 
 
-def test_add_dry_run_rejects_agent_awi_without_feasibility(
+def test_add_dry_run_rejects_agent_awi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`実現性`欄が無いエージェント由来AWIは検証と実登録が同じ理由で拒否する。"""
+    """必須節が無いエージェント由来AWIは検証と実登録が同じ理由で拒否する。"""
     notes = _setup_notes(tmp_path)
     subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
@@ -174,7 +183,8 @@ def test_add_dry_run_rejects_agent_awi_without_feasibility(
         errors.append(capsys.readouterr().err)
 
     assert errors[0] == errors[1]
-    assert "実現性" in errors[0]
+    for heading in ("反映内容と反映先", "適用範囲", "実現性", "メリット", "デメリット", "完成条件"):
+        assert heading in errors[0]
     assert not list((notes / "inbox").iterdir())
     after_head = subprocess.run(
         ["git", "-C", str(notes), "rev-parse", "HEAD"],
@@ -199,39 +209,111 @@ def test_add_dry_run_rejects_batch(
     assert "--dry-runは--batchと併用できません" in capsys.readouterr().err
 
 
-def test_cmd_add_rejects_agent_awi_without_feasibility(
+def test_cmd_add_rejects_agent_awi_missing_one_required_section(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """sourceを持つ通常AWIは`実現性`欄の欠落を拒否する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-
-    with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, "本文", source="test"), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
-    assert "実現性" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
-
-
-def test_cmd_add_rejects_agent_awi_with_empty_feasibility(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """sourceを持つ通常AWIは空の`## 実現性`節を拒否する。"""
+    """sourceを持つ通常AWIは必須節を1件欠くだけで拒否し、欠けた節名を示す。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
         add_module._cmd_add(
-            _cmd_add_args(tmp_path, "本文\n## 実現性\n\n## 完成条件\n完了", source="test"), notes, _FIXED_DT, tmp_path
+            _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲"), source="test"),
+            notes,
+            _FIXED_DT,
+            tmp_path,
         )
 
     assert exc_info.value.code == 1
-    assert "実現性" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "非空の必須節がありません: 適用範囲" in error
+    assert "順序" not in error
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_cmd_add_lists_every_missing_required_section_at_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数の必須節を欠く本文は、欠けた節名を1回の応答で全件示して拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(
+            _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲", "メリット", "完成条件"), source="test"),
+            notes,
+            _FIXED_DT,
+            tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    assert "非空の必須節がありません: 適用範囲、メリット、完成条件" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_cmd_add_rejects_agent_awi_with_unordered_required_sections(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """必須節をすべて持っても規定順序と異なる本文は拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    sections = _AGENT_AWI_SECTIONS.split("\n\n")
+    sections[1], sections[2] = sections[2], sections[1]
+    message = "本文\n\n" + "\n\n".join(sections)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "H2の順序が規定と異なります" in error
+    assert "非空の必須節がありません" not in error
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_cmd_add_reports_missing_and_unordered_sections_together(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """不足と順序の不一致がともに成立する本文は、双方を同じ応答へ含めて拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    sections = _agent_awi_body_without("メリット").removeprefix("本文\n\n").split("\n\n")
+    sections[0], sections[1] = sections[1], sections[0]
+    message = "本文\n\n" + "\n\n".join(sections)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "非空の必須節がありません: メリット" in error
+    assert "H2の順序が規定と異なります" in error
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_cmd_add_rejects_agent_awi_with_empty_required_section(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """sourceを持つ通常AWIは本文が空の必須節を欠落として拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = _AGENT_AWI_BODY.replace("## 実現性\n対象実装を確認済み", "## 実現性\n")
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
 
 
@@ -250,12 +332,12 @@ def test_cmd_add_rejects_agent_awi_with_feasibility_only_in_code_fence(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    message = f"本文\n\n{opening_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
+    message = f"{_agent_awi_body_without('実現性')}\n\n{opening_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
     with pytest.raises(SystemExit) as exc_info:
         add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
-    assert "実現性" in capsys.readouterr().err
+    assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
 
 
@@ -275,12 +357,15 @@ def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    message = f"本文\n\n{opening_fence}\nコード例\n{non_closing_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
+    message = (
+        f"{_agent_awi_body_without('実現性')}\n\n"
+        f"{opening_fence}\nコード例\n{non_closing_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
+    )
     with pytest.raises(SystemExit) as exc_info:
         add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
-    assert "実現性" in capsys.readouterr().err
+    assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
 
 
@@ -292,22 +377,24 @@ def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    message = "本文\n\n```markdown\n## 実現性\n見かけだけ\n````\n## 実現性\n対象実装を確認済み"
+    sections = _AGENT_AWI_SECTIONS.split("\n\n")
+    sections[2] = "```markdown\n## 実現性\n見かけだけ\n````\n" + sections[2]
+    message = "本文\n\n" + "\n\n".join(sections)
     add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
-def test_cmd_add_accepts_agent_awi_with_feasibility(
+def test_cmd_add_accepts_agent_awi_with_all_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """sourceを持つ通常AWIは非空の`## 実現性`節があれば保存する。"""
+    """sourceを持つ通常AWIは必須節を規定順序ですべて満たせば保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
     add_module._cmd_add(
-        _cmd_add_args(tmp_path, "本文\n## 実現性\n対象実装を確認済み", source="test"),
+        _cmd_add_args(tmp_path, _AGENT_AWI_BODY, source="test"),
         notes,
         _FIXED_DT,
         tmp_path,
@@ -316,11 +403,11 @@ def test_cmd_add_accepts_agent_awi_with_feasibility(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
-def test_cmd_add_accepts_human_awi_without_feasibility(
+def test_cmd_add_accepts_human_awi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """sourceを持たない通常AWIは`実現性`欄が無くても保存する。"""
+    """sourceを持たない通常AWIは必須節が無くても保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -378,18 +465,18 @@ def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
-    message = "---\nsource: test\n---\n\n本文\n\n## 実現性\n対象実装を確認済み"
+    message = f"---\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
 
     add_module._cmd_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
-def test_cmd_add_accepts_uwi_without_feasibility(
+def test_cmd_add_accepts_uwi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """UWIはsourceを持っても`実現性`欄が無い本文を保存する。"""
+    """UWIはsourceを持っても必須節が無い本文を保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -403,11 +490,11 @@ def test_cmd_add_accepts_uwi_without_feasibility(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
-def test_cmd_add_accepts_plan_awi_without_feasibility(
+def test_cmd_add_accepts_plan_awi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """計画実装型AWIはsourceを持っても`実現性`欄が無い本文を保存する。"""
+    """計画実装型AWIはsourceを持っても必須節が無い本文を保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     plan = notes / "plans" / "2026" / "09" / "test.md"
@@ -1659,7 +1746,7 @@ class TestAddRepoPathOverrideCli:
         _patch_add_git(monkeypatch, myrepo)
 
         body_path = tmp_path / "body.md"
-        body_path.write_text("本文\n\n## 実現性\nテスト用の投入経路を確認済み", encoding="utf-8")
+        body_path.write_text(_AGENT_AWI_BODY, encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
                 ["wi", "add", str(myrepo), "--source", "session-review", "--body-file", str(body_path)],
@@ -2224,7 +2311,10 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
     _patch_add_git(monkeypatch, repo)
     monkeypatch.setenv("AI_AGENT", "1")
     body_path = tmp_path / "body.md"
-    body_path.write_text("本文\n\n```markdown\n## ユーザーコメント\n```\n\n## 実現性\n確認済み", encoding="utf-8")
+    body_path.write_text(
+        f"本文\n\n```markdown\n## ユーザーコメント\n```\n\n{_AGENT_AWI_SECTIONS}",
+        encoding="utf-8",
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
@@ -2422,7 +2512,7 @@ def test_cli_add_outputs_source_and_extra_frontmatter(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """投入の出力はsourceと非予約frontmatterを表示する。"""
-    message = "---\ncustom_key: 値\n---\n投入本文\n\n## 実現性\nテスト用の投入経路を確認済み"
+    message = f"---\ncustom_key: 値\n---\n投入本文\n\n{_AGENT_AWI_SECTIONS}"
     _invoke_add_body_file(monkeypatch, tmp_path, message, "--source", "test-source")
     output = capsys.readouterr().out
     assert "    source: test-source\n" in output
