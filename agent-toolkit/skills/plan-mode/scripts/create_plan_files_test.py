@@ -2,6 +2,7 @@
 
 import datetime
 import pathlib
+import re
 import subprocess
 import tempfile
 
@@ -39,12 +40,23 @@ def fixture_state_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
     return root
 
 
-def _source(repo: pathlib.Path, directory: pathlib.Path, *, bug: bool = False) -> tuple[pathlib.Path, pathlib.Path | None]:
-    """検査を通過する入力本文を保存する。"""
+def _source(
+    repo: pathlib.Path,
+    directory: pathlib.Path,
+    *,
+    bug: bool = False,
+    bug_reference: str | None = None,
+) -> tuple[pathlib.Path, pathlib.Path | None]:
+    """検査を通過する入力本文を保存する。
+
+    `bug_reference`は計画本文へ書く計画ファイル（バグ）の参照値を差し替える。
+    """
     main_source = directory / "main.md"
     bug_source = directory / "bug.md" if bug else None
     reference = (
-        f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md" if bug else None
+        bug_reference or f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
+        if bug
+        else None
     )
     bug_line = f"\n- 計画ファイル（バグ）: `{reference}`" if reference is not None else ""
     content = f"""# 計画の主題
@@ -193,6 +205,39 @@ def test_cli_accepts_source_alias_and_creates_bug_file(
     assert result == 0, captured.err
     paths = [pathlib.Path(line) for line in captured.out.splitlines()]
     assert [path.name for path in paths] == ["13-0217_バグ対応.md", "13-0217_バグ対応.bugs.md"]
+    assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
+
+
+_DOCUMENTED_BUG_REFERENCE_PATTERN = re.compile(r"^- 計画ファイル（バグ）: `([^`]+)`$", re.MULTILINE)
+
+
+def _documented_bug_reference() -> str:
+    """計画ファイル作成基準が計画メタ情報の例として示す計画ファイル（バグ）の参照値を返す。"""
+    standards = pathlib.Path(__file__).resolve().parents[3] / "skills/plan-mode/references/plan-file-standards.md"
+    references = _DOCUMENTED_BUG_REFERENCE_PATTERN.findall(standards.read_text(encoding="utf-8"))
+    assert len(references) == 1, "計画ファイル（バグ）の参照値の記載例が1件に定まらない"
+    return references[0]
+
+
+def test_documented_bug_reference_is_accepted_without_substitution(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """計画ファイル作成基準の記載例を置換せず転記した計画本文を作成処理が受理する。
+
+    記載例は起草者がそのまま書き写す値であり、受理形式を満たさない例は計画作成のやり直しを招く。
+    書式の正本（固定プレースホルダー）を改訂したときに記載例が追随しない状態を、本検体が検出する。
+    """
+    reference = _documented_bug_reference()
+    assert reference.startswith(create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX)
+    source, bug_source = _source(repo, tmp_path, bug=True, bug_reference=reference)
+
+    paths = create_plan_files.create_plan_files(
+        source,
+        "13-0217_記載例の転記",
+        bug_source=bug_source,
+        home=tmp_path / "home",
+        work_dir=repo,
+    )
+
+    assert [path.name for path in paths] == ["13-0217_記載例の転記.md", "13-0217_記載例の転記.bugs.md"]
     assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
 
 
