@@ -13,9 +13,18 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し�
 Claude CodeのsessionTitleは、process-loop起動セッションでは`process-loop`、
 process-wi手動起動セッションでは`process-wi`の固定値を優先する
 （両条件が真の場合はprocess-loopを優先する）。
-いずれにも該当しないセッションは従来どおり計画ファイルのstemを一度だけ反映する。
+いずれにも該当しないセッションは計画ファイルのstemを一度だけ反映する。
 固定値の判定は、当該呼び出しでのスキル起動フラグ更新の後に行う
 （同一呼び出しで検出したスラッシュコマンド起動を、その場でsessionTitleへ反映するため）。
+
+通常発話へ返す注記は次の2種とし、成立した分を1つの`additionalContext`へ結合する。
+
+- 参照注記: 発話解釈の規範を保持する文書の読込だけを求める。判定手順を本文へ持たず、
+  通常発話の受領ごとに無条件で返す。ユーザーの介入のたびに当該規範の所在を想起させるため、
+  間隔による抑止を置かない
+- 照合注記: 照合の手順を本文へ持つ。直前の通常発話からの経過時間が閾値以上の場合だけ返す
+
+ハーネスが挿入した通知とコマンド起動では、いずれの注記も返さず経過時間の記録も更新しない。
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -75,6 +84,7 @@ _VERIFICATION_NOTICE_BODY = (
     "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
     "照合に用いた手段と結果を応答へ書く。照合できない場合は同意も変更もしない。"
     "いずれも含まないと判定した発話では、照合を要さないと判断して次の工程へ進む。"
+    "稼働中の依頼がある場合は、元の依頼の目的と未完了工程を照合してから次に実行する工程を確定する。"
     "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
 )
 """照合要求の注記の本文。
@@ -82,6 +92,16 @@ _VERIFICATION_NOTICE_BODY = (
 照合すべき対象は発話ごとに異なるため、対象の列挙を受領側の手順として本文に持たせる。
 当該列挙をフック側の判定で代替しない。本フックの入力は発話本文だけであり、
 規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
+"""
+_REFERENCE_NOTICE_TAG = "notice"
+_REFERENCE_NOTICE_BODY = (
+    "当該発話へ応答する前に、`agent-toolkit:confirmation-and-uwi`の"
+    "`references/user-utterance.md`を全文読み、同書の各項を当該発話へ適用する。"
+)
+"""発話解釈の規範の所在だけを示す注記の本文。
+
+判定手順を本文へ置かず当該文書の読込だけを求めるのは、判定の正本を当該文書の1箇所へ保ち、
+通常発話の受領ごとに注入しても文脈へ載る量を1文へ抑えるためである。
 """
 _llm_notice = _notice_formatter("agent-toolkit/user_prompt_submit")
 
@@ -187,10 +207,13 @@ def main(payload_text: str) -> int:
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
     is_normal_prompt = not first_line.startswith(command_prefix)
-    additional_context = None
-    if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
-        # 発火条件は受領側が除去できないため、是正を求める区分ではなく情報提示として配送する。
-        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG)
+    # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
+    notices: list[str] = []
+    if is_normal_prompt:
+        notices.append(_llm_notice(_REFERENCE_NOTICE_BODY, tag=_REFERENCE_NOTICE_TAG))
+        if _claim_verification_notice(session_id, time.time()):
+            notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
+    additional_context = "\n".join(notices) if notices else None
 
     if not is_normal_prompt:
         match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])

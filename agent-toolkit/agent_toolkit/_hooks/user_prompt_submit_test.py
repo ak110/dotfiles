@@ -27,15 +27,30 @@ _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
     "照合に用いた手段と結果を応答へ書く。照合できない場合は同意も変更もしない。"
     "いずれも含まないと判定した発話では、照合を要さないと判断して次の工程へ進む。"
+    "稼働中の依頼がある場合は、元の依頼の目的と未完了工程を照合してから次に実行する工程を確定する。"
     "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
+)
+_EXPECTED_REFERENCE_NOTICE_BODY = (
+    "当該発話へ応答する前に、`agent-toolkit:confirmation-and-uwi`の"
+    "`references/user-utterance.md`を全文読み、同書の各項を当該発話へ適用する。"
 )
 
 
-def _notice_body(context: str) -> str:
-    """標準プレフィックスとサフィックスを検証し、通知本文を返す。"""
-    assert context.startswith(_NOTICE_PREFIX)
-    assert context.endswith(_NOTICE_SUFFIX)
-    return context.removeprefix(_NOTICE_PREFIX).removesuffix(_NOTICE_SUFFIX)
+def _notice_bodies(context: str) -> list[str]:
+    """結合された通知を分解し、標準プレフィックスとサフィックスを検証した本文の並びを返す。"""
+    bodies = []
+    for notice in context.split("\n"):
+        assert notice.startswith(_NOTICE_PREFIX)
+        assert notice.endswith(_NOTICE_SUFFIX)
+        bodies.append(notice.removeprefix(_NOTICE_PREFIX).removesuffix(_NOTICE_SUFFIX))
+    return bodies
+
+
+def _session_title(result: subprocess.CompletedProcess[str]) -> str | None:
+    """出力したsessionTitleを返す。出力自体が無い場合と当該欄が無い場合はNoneを返す。"""
+    if not result.stdout:
+        return None
+    return json.loads(result.stdout)["hookSpecificOutput"].get("sessionTitle")
 
 
 def _run(
@@ -96,7 +111,13 @@ class TestSlashCommandDetection:
 
 
 class TestNonMatchingPrompts:
-    """非スキル起動プロンプトで状態と追加出力が変わらないことの検証。"""
+    """非スキル起動プロンプトでスキル状態とsessionTitleが変わらないことの検証。"""
+
+    @staticmethod
+    def _assert_reference_notice_only(result: subprocess.CompletedProcess[str]) -> None:
+        hook_output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert "sessionTitle" not in hook_output
+        assert _notice_bodies(hook_output["additionalContext"]) == [_EXPECTED_REFERENCE_NOTICE_BODY]
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
         sid = "non-skill"
@@ -105,7 +126,7 @@ class TestNonMatchingPrompts:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert result.stdout == ""
+        self._assert_reference_notice_only(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
         assert isinstance(state["last_user_prompt_at"], float)
@@ -127,7 +148,7 @@ class TestNonMatchingPrompts:
         )
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        self._assert_reference_notice_only(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
         assert isinstance(state["last_user_prompt_at"], float)
@@ -144,7 +165,7 @@ class TestNonMatchingPrompts:
         )
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        self._assert_reference_notice_only(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
         assert isinstance(state["last_user_prompt_at"], float)
@@ -207,7 +228,7 @@ class TestNonMatchingPrompts:
 
 
 class TestVerificationNoticeInjection:
-    """通常発話の間隔に応じた照合指示の注入契約を検証する。"""
+    """通常発話へ返す参照注記と照合注記の注入契約を検証する。"""
 
     @staticmethod
     def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
@@ -222,7 +243,20 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_body(context) == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
+
+    def test_reference_notice_accompanies_every_normal_prompt(self, tmp_path: pathlib.Path) -> None:
+        """間隔によらず通常発話のたびに参照注記を返し、判定手順を本文へ持たせない。"""
+        sid = "reference-every-prompt"
+        contexts = []
+        for _ in range(3):
+            result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
+            assert result.returncode == 0
+            contexts.append(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
+
+        assert [_notice_bodies(context) for context in contexts] == [[_EXPECTED_REFERENCE_NOTICE_BODY]] * 3
+        assert all("user-utterance.md" in context for context in contexts)
+        assert all("照合してから応答する" not in context for context in contexts)
 
     def test_repeated_notices_do_not_request_cause_removal(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-repeated"
@@ -255,7 +289,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_body(context) == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
         assert _read_state(tmp_path, session_id)["last_user_prompt_at"] > previous
 
     def test_claims_notice_at_exact_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -291,7 +325,8 @@ class TestVerificationNoticeInjection:
         result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY]
 
     def test_does_not_inject_on_first_prompt(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-first-prompt"
@@ -299,7 +334,8 @@ class TestVerificationNoticeInjection:
         result = _run({"session_id": sid, "prompt": "最初の通常発話です。"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY]
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
         assert isinstance(state["last_user_prompt_at"], float)
@@ -340,7 +376,10 @@ class TestVerificationNoticeInjection:
         assert result.returncode == 0
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert hook_output["hookEventName"] == "UserPromptSubmit"
-        assert _notice_body(hook_output["additionalContext"]) == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert _notice_bodies(hook_output["additionalContext"]) == [
+            _EXPECTED_REFERENCE_NOTICE_BODY,
+            _EXPECTED_VERIFICATION_NOTICE_BODY,
+        ]
         assert "sessionTitle" not in hook_output
 
     def test_emits_session_title_and_notice_in_single_json(self, tmp_path: pathlib.Path) -> None:
@@ -364,7 +403,10 @@ class TestVerificationNoticeInjection:
         assert result.returncode == 0
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert hook_output["sessionTitle"] == "current-plan"
-        assert _notice_body(hook_output["additionalContext"]) == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert _notice_bodies(hook_output["additionalContext"]) == [
+            _EXPECTED_REFERENCE_NOTICE_BODY,
+            _EXPECTED_VERIFICATION_NOTICE_BODY,
+        ]
 
 
 class TestClaudePlanSessionTitle:
@@ -451,7 +493,7 @@ class TestClaudePlanSessionTitle:
         result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert "sessionTitle" not in json.loads(result.stdout)["hookSpecificOutput"]
 
     def test_later_plan_edit_does_not_emit_title_again_in_same_session(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -471,7 +513,7 @@ class TestClaudePlanSessionTitle:
         result = _run({"session_id": sid, "prompt": "計画を更新"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert "sessionTitle" not in json.loads(result.stdout)["hookSpecificOutput"]
         title_state = json.loads(self._title_state_path(tmp_path, sid).read_text(encoding="utf-8"))
         assert title_state == {"last_hook_session_title": "old-plan"}
 
@@ -542,7 +584,7 @@ class TestClaudePlanSessionTitle:
             home_dir=home,
         )
         assert next_prompt.returncode == 0
-        assert next_prompt.stdout == ""
+        assert _session_title(next_prompt) is None
         assert json.loads(title_state_path.read_text(encoding="utf-8")) == {"last_hook_session_title": "original-plan"}
 
     def test_concurrent_prompts_emit_title_once(
@@ -566,9 +608,8 @@ class TestClaudePlanSessionTitle:
 
         assert all(not thread.is_alive() for thread in threads)
         assert all(result.returncode == 0 for result in results)
-        outputs = [result.stdout for result in results if result.stdout]
-        assert len(outputs) == 1
-        assert json.loads(outputs[0])["hookSpecificOutput"]["sessionTitle"] == "concurrent-plan"
+        titles = [_session_title(result) for result in results]
+        assert [title for title in titles if title is not None] == ["concurrent-plan"]
 
     def test_corrupt_title_record_suppresses_output(
         self,
@@ -585,7 +626,7 @@ class TestClaudePlanSessionTitle:
         result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert _session_title(result) is None
         assert title_path.read_text(encoding="utf-8") == "{"
 
     @pytest.mark.parametrize("invalid_path", [None, 42, "relative.md", "/tmp/not-a-plan.md"])
@@ -607,7 +648,7 @@ class TestClaudePlanSessionTitle:
         result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert _session_title(result) is None
         assert not self._title_state_path(tmp_path, sid).exists()
 
     def test_codex_payload_does_not_emit_plan_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
@@ -620,7 +661,7 @@ class TestClaudePlanSessionTitle:
         )
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert _session_title(result) is None
         assert not self._title_state_path(tmp_path, sid).exists()
 
 
@@ -654,7 +695,7 @@ class TestFixedSessionTitle:
         result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert _session_title(result) is None
 
     def test_process_loop_fixed_title_is_emitted_only_once(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -668,7 +709,7 @@ class TestFixedSessionTitle:
 
         assert json.loads(first.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-loop"
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert _session_title(result) is None
 
     def test_process_loop_env_emits_fixed_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`のセッションは固定値`process-loop`を出力する。"""
@@ -714,7 +755,7 @@ class TestFixedSessionTitle:
         result = _run({"session_id": sid, "prompt": "通常の入力", "model": "gpt-5"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert _session_title(result) is None
 
     def test_neither_condition_falls_back_to_plan_stem(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """いずれの固定条件も満たさないセッションは従来どおり計画ファイルのstemを反映する。"""
