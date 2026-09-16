@@ -1647,10 +1647,18 @@ class TestNormViolatingArgumentForms:
         assert "位置引数を受理しない" not in _agent_messages(result)
 
     def test_atk_actual_positional_is_still_warned(self, tmp_path: pathlib.Path) -> None:
-        """位置引数を受理しないサブコマンドへ実際の位置引数を渡した場合は現行どおり警告する。"""
+        """位置引数を受理しないサブコマンドへ実際の位置引数を渡した場合は警告する。
+
+        引数を受理しないサブコマンドでは、対処として引数なしでの再発行を示す。
+        値をオプションで渡す対処は当該サブコマンドで実行できないため示さない。
+        """
         result = self._invoke("atk agents wait extra", tmp_path)
         assert result.returncode == 0
-        assert "位置引数を受理しない" in _agent_messages(result)
+        messages = _agent_messages(result)
+        assert "位置引数を受理しない" in messages
+        assert "当該サブコマンドが受理するオプション: " in messages
+        assert "引数を付けずに再発行する" in messages
+        assert "当該の値をオプションで渡す" not in messages
 
     @pytest.mark.parametrize("command", ["git grep -F needle", "git grep -nE needle", "git grep -P needle"])
     def test_git_grep_with_pattern_type_is_silent(self, command: str, tmp_path: pathlib.Path) -> None:
@@ -1721,10 +1729,17 @@ class TestNormViolatingArgumentForms:
         assert "- wi: " in messages
 
     def test_atk_subcommand_without_positionals_warns(self, tmp_path: pathlib.Path) -> None:
-        """位置引数を受理しないサブコマンドへ引数を付けた実行を検出する。"""
+        """位置引数を受理しないサブコマンドへ引数を付けた実行を検出する。
+
+        オプションを受理するサブコマンドでは、受理オプションの一覧とオプションで渡す対処を示す。
+        """
         result = self._invoke("atk wi list 20260101-000000-001.md", tmp_path)
         assert result.returncode == 0
-        assert "位置引数を受理しない" in _agent_messages(result)
+        messages = _agent_messages(result)
+        assert "位置引数を受理しない" in messages
+        assert "当該サブコマンドが受理するオプション: " in messages
+        assert "--target-repo" in messages
+        assert "当該の値をオプションで渡す" in messages
 
     def test_atk_subcommand_with_positionals_is_silent(self, tmp_path: pathlib.Path) -> None:
         """位置引数を受理するサブコマンドの正常な実行は検出しない。"""

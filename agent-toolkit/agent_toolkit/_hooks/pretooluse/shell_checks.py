@@ -1747,10 +1747,29 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
     )
 
 
-def _check_bash_atk_options(command: str) -> str | None:
-    """公開済み最下層`atk`サブコマンドの未対応オプションを実行前に検出する。
+_ATK_HELP_ONLY_FLAGS: frozenset[str] = frozenset({"-h", "--help"})
+"""全ての`atk`サブコマンドが共通で受理するヘルプのフラグ。
 
-    通した場合の結果は`atk`が未受理オプションで終了することに限り、復元できるため警告で返す。
+当該フラグだけを受理し、値付きオプションも位置引数も持たないサブコマンドは引数を受理しない。
+"""
+
+
+def _format_atk_accepted_options(flags: frozenset[str], valued: frozenset[str]) -> str:
+    """警告本文へ載せる受理オプションの一覧行を組み立てる。
+
+    受理しないオプションの通知と位置引数の通知が同じ表現を使うため、生成経路を1つに保つ。
+    """
+    return "当該サブコマンドが受理するオプション: " + (", ".join(sorted(flags | valued)) or "なし")
+
+
+def _check_bash_atk_options(command: str) -> str | None:
+    """公開済み最下層`atk`サブコマンドの受理形式に一致しない引数を実行前に検出する。
+
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できると判定して警告で返す。
+    通した場合の結果は`atk`が受理形式の不一致で終了することに限り、副作用を残さないためである。
+    第1段で復元できると判定した操作は反復しても遮断へ格上げしないため、第2段は適用しない。
+    通知本文は当該判定が保持する受理形式から組み立て、受理形式に応じて対処を切り替える。
+    受理形式から導かない固定の対処文は、引数を受理しないサブコマンドで実行できない案内になる。
     """
     from agent_toolkit.atk import command_option_contract  # pylint: disable=import-outside-toplevel
 
@@ -1793,10 +1812,9 @@ def _check_bash_atk_options(command: str) -> str | None:
             ):
                 pass
             elif token.startswith("-") and not re.fullmatch(r"-\d+(?:\.\d+)?", token):
-                accepted = ", ".join(sorted(flags | valued)) or "なし"
                 return _llm_notice(
                     f"`atk {' '.join(path)}`が受理しないオプションである。対象: {token}\n"
-                    f"当該サブコマンドが受理するオプション: {accepted}\n"
+                    f"{_format_atk_accepted_options(flags, valued)}\n"
                     "対処: 上記の受理オプションへ修正するか、`--help`を単独で確認する。",
                     tag=_WARN_TAG,
                     removable_cause=True,
@@ -1805,9 +1823,16 @@ def _check_bash_atk_options(command: str) -> str | None:
                 extra_positionals.append(token)
             index += 1
         if not positionals and extra_positionals:
+            accepts_no_arguments = not valued and set(flags) <= _ATK_HELP_ONLY_FLAGS
+            remedy = (
+                "対処: 当該サブコマンドは引数を受理しない。引数を付けずに再発行する。"
+                if accepts_no_arguments
+                else "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。"
+            )
             return _llm_notice(
                 f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(extra_positionals)}\n"
-                "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。",
+                f"{_format_atk_accepted_options(flags, valued)}\n"
+                f"{remedy}",
                 tag=_WARN_TAG,
                 removable_cause=True,
             )
