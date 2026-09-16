@@ -76,7 +76,7 @@ review_contract:
 
 ## レビュー修正
 
-初回の新規起動ではレビュー基準、生成済みの`review_contract`と`引き継ぎ記録先`を`extra_params`へ追加する。
+初回の新規起動ではレビュー基準、生成済みの`review_contract`と`引き継ぎ記録先`を`extra_params`へ追加する。`引き継ぎ記録先`の値は、当該委譲で初めて渡すため絶対パスへ`（新規）`を続けた値とする。
 
 指摘への修正は、当該worktreeを所有する主体が実施する。`agent-toolkit:process-wi`のレーンではレーン担当の同じthreadへ`レビュー指摘の対応をせよ`と`round: <ラウンド番号>`の2行を送り、新しい修正担当を起動しない。`agent-toolkit:plan-mode`の直接起動と`agent-toolkit:fast-process-wi`では、メインが自ら修正する。公開工程のCI失敗修正では、終端担当が主作業ツリーを対象worktreeとする`CI修正担当`を起動して修正させる。
 同じthreadを継続できない場合は`agent-toolkit:delegation`のSKILL.mdの`## 継続と新規起動`に従い、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`## 入力`と同じ形式で新しいレーン担当を起動する。このとき`担当種別`を`レビュー修正担当`とし、`再開位置`へ作業rootの計画ファイルの絶対パスを渡す。
