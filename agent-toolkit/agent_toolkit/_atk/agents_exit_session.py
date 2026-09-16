@@ -204,6 +204,29 @@ def _same_process(target: Target) -> bool:
         return False
 
 
+def request_termination() -> tuple[str, Target | None]:
+    """停止対象を停止直前に再識別し、一致した場合だけ単一PIDへ終了要求を送る。
+
+    標準出力と標準エラーへは何も書かない。hookのように出力の形式が別に決まっている
+    呼び出し元からの実行を可能にするためである。
+    戻り値の状態は次の3つとする。
+
+    - `unsupported`: 現在の対話CLI本体を一意に識別できない
+    - `changed`: 識別後に対象が変化したため停止しない
+    - `terminating`: 単一PIDへ終了要求を送った
+    """
+    target = identify_current_host()
+    if target is None:
+        return "unsupported", None
+    if not _same_process(target):
+        return "changed", target
+    if os.name == "nt":
+        psutil.Process(target.pid).terminate()
+    else:
+        os.kill(target.pid, signal.SIGTERM)
+    return "terminating", target
+
+
 def main() -> int:
     """終了要求の実行証跡を出力し、再照合済みの単一PIDだけを停止する。"""
     target = identify_current_host()

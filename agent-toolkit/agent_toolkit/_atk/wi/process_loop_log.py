@@ -24,6 +24,7 @@ from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_
 
 _ENABLE_ENV_VAR = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _MAX_BYTES = 1_000_000
+_ABORT_FILENAME = "process-wi-abort"
 
 
 def log_path() -> Path:
@@ -32,6 +33,27 @@ def log_path() -> Path:
     if state_home:
         return Path(state_home) / "agent-toolkit" / "process-wi.log"
     return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-wi.log"
+
+
+def abort_path() -> Path:
+    """`atk wi process-loop`の中断要求を保持する状態ファイルのパスを返す。
+
+    常駐処理本体（`process_loop.py`）とStop hookの双方がこのパスを使うため、
+    解決処理は本モジュールを唯一の正本とする。本モジュールは常駐処理の重い依存を持たず、
+    hookからのimportでも起動コストを増やさない。
+    """
+    return log_path().parent / _ABORT_FILENAME
+
+
+def request_abort() -> Path:
+    """常駐処理へ中断を要求し、要求ファイルのパスを返す。
+
+    既に要求がある場合は内容を保ったまま同じパスを返す。
+    """
+    path = abort_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    return path
 
 
 def _is_enabled() -> bool:

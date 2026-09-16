@@ -4,6 +4,8 @@
 判定順を保つ。遮断が1件以上ある場合は全ての遮断理由の後に通知を空行で連結して`reason`へ含め、
 遮断が無い場合だけ通知を`hookSpecificOutput.additionalContext`へ集約する。
 
+判定が`notify_user`を返した本文は利用者向けの`systemMessage`へ集約し、遮断の有無によらず同じ応答へ添える。
+
 連続blockの上限は7回とし、Claude Codeが8回の連続blockでフックを上書きして
 ターンを終える仕様の内側で、打ち切りの事実を記録して終了を許可する。
 
@@ -21,6 +23,7 @@ from agent_toolkit._hooks.stop_gate import (  # noqa: E402  # pylint: disable=wr
 )
 
 CHECK_MODULE_NAMES = (
+    "busy_loop_guard",
     "autonomous_exit",
     "plan_save_advisor",
     "agents_server_session_advisor",
@@ -49,6 +52,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
     block_reasons: list[str] = []
     blocking_checks: list[str] = []
     notifications: list[str] = []
+    user_messages: list[str] = []
     for module_name in CHECK_MODULE_NAMES:
         try:
             module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
@@ -64,6 +68,14 @@ def evaluate(payload_text: str) -> dict[str, object]:
             blocking_checks.append(module_name)
         elif decision == "notify":
             notifications.append(body)
+        elif decision == "notify_user":
+            user_messages.append(body)
+
+    def _finalize(result: dict[str, object]) -> dict[str, object]:
+        """利用者宛ての本文がある場合に`systemMessage`を添えて返す。"""
+        if user_messages:
+            result["systemMessage"] = "\n\n".join(user_messages)
+        return result
 
     if block_reasons:
         if session_id:
@@ -86,19 +98,21 @@ def evaluate(payload_text: str) -> dict[str, object]:
                     {"details": json.dumps(detail, ensure_ascii=False)},
                 )
                 update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
-                return {}
+                return _finalize({})
             update_state(session_id, lambda item: _set_consecutive_block_count(item, current_count + 1))
-        return {"decision": "block", "reason": "\n\n".join([*block_reasons, *notifications])}
+        return _finalize({"decision": "block", "reason": "\n\n".join([*block_reasons, *notifications])})
     if session_id:
         update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
     if notifications:
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "Stop",
-                "additionalContext": "\n\n".join(notifications),
+        return _finalize(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "Stop",
+                    "additionalContext": "\n\n".join(notifications),
+                }
             }
-        }
-    return {}
+        )
+    return _finalize({})
 
 
 def _approve() -> None:

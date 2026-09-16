@@ -100,6 +100,10 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   PostToolUse(Skill)とUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受領した時点で偽へ戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が`atk agents-exit-session`の実行と機械可読な応答を記録し、
   `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。保持はセッション状態の有効期間中に限り、通常のスキル完了処理では再利用の対象外とする
+- `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションのツール呼び出しを含まないターンの連続回数を記録する。
+  同フックが常駐ループの停止判定の入力として読む。ツール呼び出しを観測したターンと、委譲先又は背景ジョブの完了待ちのターンで0へ戻し、停止工程を実行した時点でも0へ戻す。セッション終了まで保持する
+- `stop_observed_entry_count`: 同フックが、Stop判定の時点で観測済みの会話記録のエントリ数を記録する。
+  同フックが次のターンで増分だけを走査する起点として読む。セッション終了まで保持する
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間で照合指示の注入要否を判定する入力として読む。
   記録と注入の対象は通常のユーザー発話に限り、ハーネスが挿入した通知とコマンド起動は対象の外に置く。セッション終了まで保持し、リセット経路は設けない
