@@ -450,6 +450,14 @@ def _iter_assistant_blocks(entries: list[dict], *, include_sidechain: bool = Fal
         yield from (block for block in content if isinstance(block, dict))
 
 
+def has_tool_use_block(entries: list[dict]) -> bool:
+    """走査範囲内のassistantエントリにツール呼び出しが1件以上ある場合に真を返す。
+
+    委譲先（sidechain）のエントリは走査範囲の外とし、自セッションの進捗だけを数える。
+    """
+    return any(block.get("type") == "tool_use" for block in _iter_assistant_blocks(entries))
+
+
 def _get_last_tool_use_block(entries: list[dict]) -> dict | None:
     """最新assistantメッセージ内で最後に現れたtool_useブロックを返す。
 

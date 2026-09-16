@@ -2,7 +2,8 @@
 name: confirmation-and-uwi
 description: >
   操作又は判断の確認要否を判定するとき、UWIへ確認を退避するとき、
-  又は回答済みUWIを元の作業へ反映するときに起動する。
+  回答済みUWIを元の作業へ反映するとき、
+  又はツール呼び出しが権限設定若しくはauto mode classifierに拒否されたときに起動する。
 ---
 
 # 確認とUWIの状態遷移
@@ -17,6 +18,10 @@ UWIの本文、投入、状態及び依存関係の形式は`agent-toolkit:wi-st
 - `references/user-utterance.md`: ユーザー発話の解釈の詳細箇条
 - `references/conflict-resolution.md`: 規範どうしが矛盾する場合の由来確定
 - `references/procedure-conflict.md`: 手順どおりに進められない場合の判定順
+
+ツール呼び出しが権限設定又はauto mode classifierに拒否された場合は、上記に加えて`references/permission-denial.md`を全文読み、同書の手順に従う。
+同書は拒否の確認手順、既知の誤拒否パターン、偽陽性と判断できる拒否への対応を扱う。
+auto modeのカスタムルールを追加・編集する手順は`agent-toolkit:writing-standards`の`references/auto-mode.md`が定める。
 
 ## 確認要否の判定
 

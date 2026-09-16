@@ -1074,7 +1074,12 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
 Stopの登録は共通入口1件とする。
-共通入口から、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。次に、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行漏れを判定する。
+共通入口から、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。
+次に、`busy_loop_guard.py`が常駐ループのセッションの無進捗の反復を判定し、閾値へ達した場合は常駐処理への中断要求とセッションの終了要求を実行する。
+判定の入力は、前回のStop判定から今回のStop判定までに会話記録へ加わった自セッションのツール呼び出しの有無とし、経過時間とStopの発火間隔はこの入力から外す。
+実行環境の応答速度と正当な待機の長さが時間の値を変えるため、時間窓での判定は正当な待機を停止し得る。
+停止の事実は`systemMessage`で利用者へ伝え、中断要求は`atk wi process-loop-abort`と同じ状態ファイルを使う。
+続いて、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行漏れを判定する。
 続いて、`plan_save_advisor.py`で計画作業rootに残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 最後に、`pending_question_advisor.py`で地の文の問いかけによる終了を遮断する。
 共通入口は判定の順序、例外の隔離、応答の集約及び連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。

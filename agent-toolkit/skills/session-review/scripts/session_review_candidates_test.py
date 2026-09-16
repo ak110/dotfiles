@@ -134,6 +134,28 @@ def test_candidate_events_groups_failures_sharing_a_cause_across_tool_calls() ->
     ]
 
 
+def test_candidate_events_classifies_auto_mode_denial_as_permission_denial() -> None:
+    """auto mode classifierの拒否は、他の失敗と分かれた候補種別として抽出する。"""
+    timeline = [
+        {
+            "kind": "failed-tool",
+            "record": "main",
+            "line": 2,
+            "tool": "toolu_01",
+            "text": (
+                "Permission for this action was denied by the Claude Code auto mode classifier. Reason: [Self-Modification]."
+            ),
+        },
+        {"kind": "failed-tool", "record": "main", "line": 5, "tool": "toolu_02", "text": "Exit code 1\n詳細"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    kinds = {candidate["candidate_kind"]: candidate["locators"] for candidate in candidates[:-1]}
+    assert kinds["permission-denial"] == [{"record": "main", "line": 2}]
+    assert kinds["escalation"] == [{"record": "main", "line": 5}]
+
+
 def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
     """hook通知と同じ位置の失敗は、発生源ごとの限定を持つhook通知として扱う。"""
     timeline = [

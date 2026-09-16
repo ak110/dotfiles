@@ -139,6 +139,25 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
         "permissions.deny",
         "Read(//**/.credentials.json)",
     ),
+    # 2026-09: autoMode.allow を4件の包括ルールへ再編したため、廃止したラベルの旧文面を除去する。
+    # `_strip_stale_labeled_list_items`は配布原本に現存するラベルの旧文面だけを除去するため、
+    # 配布原本から消えたラベルはここで明示しないと利用者設定に残り続ける
+    # （配布原本14件に対し`~/.claude/settings.json`が16件を保持していた実測による。
+    # 残留していたのは下記の`Feedback-`で始まる2件）。
+    ("autoMode.allow", "Session-Owned Amend: "),
+    ("autoMode.allow", "Exit-Session Termination: "),
+    ("autoMode.allow", "AWI-Originated Gate Revision: "),
+    ("autoMode.allow", "Feedback-Originated Gate Revision: "),
+    ("autoMode.allow", "Background Operator Auto-Approval: "),
+    ("autoMode.allow", "External Marketplace Registration: "),
+    ("autoMode.allow", "Agent Config Read: "),
+    ("autoMode.allow", "Delegation Continuation Message: "),
+    ("autoMode.allow", "Release Workflow Dispatch: "),
+    ("autoMode.allow", "Personal Repo Default-Branch Push: "),
+    ("autoMode.allow", "Merge Approval: "),
+    ("autoMode.allow", "Plan File Write: "),
+    ("autoMode.allow", "WI Queue State Transition: "),
+    ("autoMode.allow", "Feedback Queue State Transition: "),
 )
 
 # ラベル付き配列要素（`^<ラベル>: `形式の接頭辞を持つ要素）の先頭ラベルを抽出する正規表現。

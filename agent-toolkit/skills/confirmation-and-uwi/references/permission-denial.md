@@ -1,0 +1,59 @@
+# 権限拒否への対応
+
+ツール呼び出しが権限設定又はauto mode classifierに拒否された場面の手順を定める。
+auto modeのカスタムルールを追加・編集する手順は`agent-toolkit:writing-standards`の`references/auto-mode.md`が定める。
+
+## 拒否の確認手順
+
+拒否を観測したら、別の手段で迂回する前に有効な設定ファイルを`Read`して許可・拒否のルールを確認する。
+対象は`/etc/claude-code/managed-settings.json`、`~/.claude/settings.json`、リポジトリ直下の`.claude/settings.json`及び`.claude/settings.local.json`とする。
+
+権限評価は、permissionsルール（deny→ask→allowの順で最初の一致が確定）、作業ディレクトリ内編集等の自動承認、auto mode classifierの順に進む。
+PreToolUseフックの`permissionDecision: "allow"`より前にpermissions評価が確定する。
+このため、拒否ルールに該当する対象は、許可の追加ではなく拒否ルール自体の見直しで解消する。
+
+permissions設定による確認ダイアログが対象の場合は本書の範囲の外とし、`agent-toolkit:writing-standards`の`references/claude-hooks.md`の「PermissionRequest」に従う。
+
+## 既知の誤拒否パターンと対応
+
+次の表は、拒否に遭遇した場合に適用を検討する対応の対応付けとする。
+観測日付と対象版数の記録を持たないため、適用の前に実行中の環境で拒否メッセージ本文と分類名を取得して該当を確認する。
+分類名は`claude auto-mode defaults`の出力で確認できる区分を指す。
+
+| 拒否される操作 | 分類名 | 対応 |
+| --- | --- | --- |
+| 自身が作成したHEADへの`git commit --amend` | Git Destructive | 許可ルール`Personal Repository Operations`が対象に含む。拒否が残る場合は後掲の偽陽性フローへ進む |
+| MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | 同じルールが対象に含む。remoteのホストによる限定は置いていない |
+| リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 同じルールが起動と結果確認を対象に含む |
+| 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
+| `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | 許可ルール`Session And Delegation Control`が対象に含む |
+| ユーザーの指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | 許可ルール`Reconsidered Retry Approval`により、拒否本文とユーザーメッセージを照合して同一のコマンド・引数・ツールを1回だけ再発行する |
+
+- 許可ルールはremoteのホスト、由来及び所有者による限定を置かず、操作の種別と除外条件で対象を決める。方針の出所は`docs/development/concepts-governance.md`にある
+- 必須レビュー・必須チェックの迂回形態（`--admin`・`--force`等）と、リポジトリ又は組織の検査設定を変える操作は許可の範囲の外にあり、CI Bypass領域のまま残る
+- リリースワークフロー起動の拒否本文には分類名が現れないため、`Production Deploy`は既定の`soft_deny`との対応から見た有力候補に留まる
+- 分類名を取得できない場合は、拒否メッセージ本文を根拠として後掲のユーザー確認へ進む。`claude auto-mode defaults`自体が拒否された場合も同じ扱いとする
+- `Reconsidered Retry Approval`は、拒否理由がtranscript内のユーザーによるその操作の明示指示又は承認を反映していない場合に適用する。適用は同一操作につき1回とする
+- `Reconsidered Retry Approval`による1回の再発行後も拒否が続く場合は`AskUserQuestion`でその判定が偽陽性かを明示的に問い、偽陽性である旨の回答を得てから再試行する。`clears`が成立する回答はこの明示的な回答に限り、進行への同意はその外に置く
+
+## 偽陽性と判断できる拒否への対応
+
+auto mode classifierによる拒否は対象操作の実行自体を妨げる技術的ブロックであり、UWIの記録では解消できない。
+このため、自律モードと協調モードのいずれでも本フローの`AskUserQuestion`を発行する。
+本フローは`Reconsidered Retry Approval`で許可された1回の再発行の後も拒否が残る場合に適用する。
+
+メイン・サブエージェントのいずれが発行した操作にも適用する。
+対象操作は`git commit`、`git commit --amend`、`Write`／`Edit`／`MultiEdit`によるファイル編集、GitHubリポジトリ設定変更等の外部サービスの設定変更コマンドを含む（代表例であり、同種の操作を含む開放集合とする）。
+適用条件は、ユーザー又は処理中のAWIでその操作が承認済みであると実体確認でき、拒否理由がその承認を反映していないと判断できる場合とする。適用範囲は`hard_deny`領域の外とする。
+
+1. 拒否理由をメッセージ本文で確認する。分類名を取得できる場合は分類名と本文を記録する。`claude auto-mode defaults`自体が拒否されて分類名を取得できない場合は、拒否メッセージ本文を根拠として手順2へ進む
+2. 偽陽性の可能性が高い場合、`AskUserQuestion`で次の選択肢を提示する。拒否経緯の説明と選択肢の説明文は要点だけとし、判断材料の詳細はターン内のテキスト出力側へ置く（auto mode classifierの拒否はほとんどが偽陽性であり、確認自体を簡潔に保つ）
+   - 偽陽性として実行を承認する
+   - 該当操作を撤回する
+   - サブエージェント側でレビューを完了してから判断する
+3. ユーザーの選択に応じて後続動作を実行する
+   - 承認を選んだ場合はメイン側で該当操作を直接実行する
+   - 撤回を選んだ場合は該当操作を破棄する。委譲経路で発行された操作では、撤回した旨と再開時の条件をサブエージェントへ返却する
+   - レビュー完了待ちを選んだ場合はサブエージェント側のレビューを起動し、完了報告の受領後に手順1へ戻って拒否の再現の有無を確認する
+4. `AskUserQuestion`が無応答のまま期限を迎えた場合は対象操作を保留する。回答を待つためのUWIを記録し、解除条件を満たすまで代替経路だけを継続する
+5. 無応答の後にUWIへ回答が保存された場合も、classifierが観測する承認はtranscript内の確認で成立する。transcript内で同じ操作への再確認を発行し、ユーザーの回答を受領してから手順1へ戻って拒否の有無を再確認する

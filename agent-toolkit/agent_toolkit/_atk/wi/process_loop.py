@@ -85,19 +85,19 @@ _AVAILABILITY_PROBE_PROMPT = "応答できる場合はOKだけを返してくだ
 
 # 端末が連続するBELを1回へまとめないよう、鳴動の間に置く待機秒。
 _ABORT_BELL_INTERVAL_SEC = 0.1
-_PROCESS_LOOP_ABORT_FILENAME = "process-wi-abort"
 
 
 def _process_loop_abort_path() -> pathlib.Path:
-    """process-loopの中断要求を保持する状態ファイルのパスを返す。"""
-    return _process_loop_log.log_path().parent / _PROCESS_LOOP_ABORT_FILENAME
+    """process-loopの中断要求を保持する状態ファイルのパスを返す。
+
+    解決処理の正本は`process_loop_log.abort_path`とする。Stop hookも同じ関数を使う。
+    """
+    return _process_loop_log.abort_path()
 
 
 def _cmd_process_loop_abort() -> None:
     """process-loopへ現在のセッション終了後の中断を要求する。"""
-    path = _process_loop_abort_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.touch()
+    _process_loop_log.request_abort()
     _outcome.report_success("常駐処理へ中断を要求した")
 
 
