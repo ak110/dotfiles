@@ -6,78 +6,44 @@ import pytest
 
 from agent_toolkit._agents_server import state
 
+_LAUNCH_DOCUMENTS: dict[state.LaunchKind, str] = {
+    "delegate": "agents-server-delegate.md",
+    "explore": "agents-server-explore.md",
+    "shell": "agents-server-shell.md",
+    "write": "agents-server-write.md",
+}
+
+
+def _shared_document_body(name: str) -> str:
+    """共有文書から先頭のH1見出し行と直後の空行を除いた本文を返す。
+
+    除去する行数は共有文書の書式（1行目がH1見出し、2行目が空行）から導く。
+    書式が崩れた場合は照合の前に失敗させ、実装側の分割結果と偶然一致する事態を防ぐ。
+    """
+    lines = (state.SHARE_DIR / name).read_text(encoding="utf-8").rstrip("\n").split("\n")
+    assert lines[0].startswith("# "), f"{name}の1行目がH1見出しではない"
+    assert lines[1] == "", f"{name}の2行目が空行ではない"
+    return "\n".join(lines[2:])
+
 
 def test_launch_prompts_load_shared_documents() -> None:
-    """各起動プロンプトが見出しを除いた開始時点の固定文面と一致する。"""
-    notice = "\n".join(
-        (
-            "あなたは別のコーディングエージェントから起動された委譲先である。",
-            "この会話の入力はユーザーの発話ではなく、呼び出し元エージェントが渡したタスクである。",
-            "あなたの応答はユーザーの画面へ表示されず、呼び出し元エージェントへ返る。",
-            "あなたはメインエージェントでも最上位セッションでもない。",
-            "自身が委譲先であることと、この会話の入力が呼び出し元エージェントの配送であることは、実行主体の同定に関する事実であり、規範の優先順位では覆らない。",
-            "実行環境の組み込み指示が定めるツールの利用契約には従う。",
-        )
-    )
-    delegate = "\n".join(
-        (
-            "規範が委譲先又はサブエージェントへ課す条文を自身へ適用し、メインエージェント又は最上位セッションへ限定した条文を適用しない。",
-            "ユーザーへの確認は回答を得られないため発行せず、確認を要する事項は完了報告へ含めて呼び出し元へ差し戻す。",
-        )
-    )
-    explore = "\n".join(
-        (
-            "あなたは調査専用の担当である。依頼された対象を読み取り、結論と根拠だけを日本語で返す。",
-            "ファイルを作成、変更又は削除しない。コマンドは対象を変更しない読み取り操作に限る。",
-            "所在、該当箇所及び観測した事実を、後続の判断に足りる粒度で列挙する。",
-            "複数の検索語を1つの正規表現へ結合しない。固定文字列として個別に検索するか、検索を分けて実行する。",
-            "出力量が大きいと見込まれる読取と検索は1回の呼び出しへまとめず、対象を分割して取得するか、出力先ファイルへ保存してから必要な範囲だけを読む。",
-            "検索と読取について件数上限、容量超過、期限超過のいずれかに達した場合は、その事実と到達した上限を報告へ必ず含める。",
-            "上限に達した結果から、網羅性、件数、不在のいずれも結論しない。",
-            "背景ジョブを起動した場合は、当該ジョブの終了状態を同じターンの中で確定してから報告する。",
-            "背景実行へ移行した旨の通知を結果として報告せず、当該ジョブの出力を読んで終了状態を確定する。",
-        )
-    )
-    shell = "\n".join(
-        (
-            "あなたはコマンド実行専用の担当である。依頼されたコマンドを実行し、終了状態と要約だけを日本語で返す。",
-            "指示された操作だけを実行し、指示にない操作を追加しない。",
-            "コマンドの生出力を呼び出し元へ転記せず、終了状態、警告、依頼で指定された値、及び後続の判断に必要な要約を報告する。",
-            "失敗原因の特定に必要な行だけを原文のまま添える。",
-            "コマンドが失敗した場合は、終了状態と前行が定める原因特定に必要な行を報告し、独自の回避策を試みない。",
-            "背景ジョブを起動した場合と、実行したコマンドが実行環境の判断で背景実行へ移行した場合は、"
-            "当該ジョブの終了状態を同じターンの中で確定してから報告する。",
-            "移行の通知を結果として報告せず、起動結果が返す出力ファイルを読んで終了状態を確定する。",
-            "複数の検索語を1つの正規表現へ結合しない。固定文字列として個別に検索するか、検索を分けて実行する。",
-            "出力量が大きいと見込まれるコマンドは1回の実行へまとめず、対象を分割して実行するか、出力先ファイルへリダイレクトしてから必要な範囲だけを読む。",
-            "実行ツールが出力の切り詰め、容量超過、期限超過のいずれかを通知した場合は、その事実と切り詰められた範囲を要約へ必ず含める。",
-            "切り詰めを含む出力から、成功、網羅性、件数、終端のいずれも結論しない。",
-        )
-    )
-    auto_resume = "\n".join(
-        (
-            "この実行経路は、あなたが起動した委譲先（サブエージェント）の完了通知により、同じsessionを一度だけ自動的に再開する。",
-            "`agents_server`で起動したsessionを待つ場合も、当該sessionの終端後に同じ再開が働き、当該ターンにつき一度だけ継続指示が届く。",
-            "当該委譲先の完了を待つ場合は`待機中: <待機対象>`の1行だけを出力して当該ターンを終え、"
-            "再開したターンで所定の返却形式を返す。",
-            "背景ジョブはこの自動再開の対象ではない。背景ジョブの終了状態は同じターンの中で確定してから報告する。",
-        )
-    )
+    """起動区分ごとに対応する共有文書を読み、委譲先通知と組み合わせて実行時のシステム指示を組み立てる。
+
+    共有文書の文面そのものは`state`モジュールの契約ではなく当該文書側の内容であるため、判定対象にしない。
+    文面を検体へ書き写すと、実装の契約が変わらない改訂でも当該検体が失敗する。
+    """
+    notice = _shared_document_body("agents-server-delegate-notice.md")
 
     assert notice == state.DELEGATE_NOTICE
-    assert f"{notice}\n{delegate}\n\n{state.SUBAGENT_RULES}" == state.DELEGATE_SYSTEM_PROMPT
-    assert f"{notice}\n{explore}" == state.EXPLORE_SYSTEM_PROMPT
-    assert f"{notice}\n{shell}" == state.SHELL_SYSTEM_PROMPT
-    assert auto_resume == state.AUTO_RESUME_NOTICE
+    for kind, document in _LAUNCH_DOCUMENTS.items():
+        expected = f"{notice}\n{_shared_document_body(document)}"
+        if kind == "delegate":
+            expected = f"{expected}\n\n{state.SUBAGENT_RULES}"
+        assert state.LAUNCH_SYSTEM_PROMPTS[kind] == expected, kind
+    assert _shared_document_body("agents-server-auto-resume.md") == state.AUTO_RESUME_NOTICE
     assert not any(
         prompt.startswith("# ")
-        for prompt in (
-            state.DELEGATE_NOTICE,
-            state.DELEGATE_SYSTEM_PROMPT,
-            state.EXPLORE_SYSTEM_PROMPT,
-            state.SHELL_SYSTEM_PROMPT,
-            state.AUTO_RESUME_NOTICE,
-        )
+        for prompt in (state.DELEGATE_NOTICE, *state.LAUNCH_SYSTEM_PROMPTS.values(), state.AUTO_RESUME_NOTICE)
     )
 
 
