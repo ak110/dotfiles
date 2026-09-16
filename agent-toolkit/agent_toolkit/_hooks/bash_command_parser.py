@@ -621,57 +621,86 @@ class GitEvent:
     unresolved_expression: str | None = None
 
 
+@dataclasses.dataclass
+class QuotingScanner:
+    """引用とエスケープの状態を保ちながらシェル文字列を1文字ずつ走査する。
+
+    `consume_quoted`が真を返した位置は、エスケープ指定・エスケープされた文字・
+    引用の内側のいずれかに属し、当該位置まで`index`が進む。偽を返した位置は
+    引用の外側にあり、呼び出し側が固有の解釈を加えて`index`を進める。
+    引用の開始は呼び出し側が判定し、`enter_quote`で状態へ反映する。
+    走査を終えた時点で`quote`が`None`でない場合、入力の引用は閉じていない。
+    """
+
+    text: str
+    index: int = 0
+    quote: str | None = None
+    escaped: bool = False
+
+    def consume_quoted(self) -> bool:
+        """現在位置がエスケープ又は引用に属する場合、位置を進めて真を返す。"""
+        char = self.text[self.index]
+        if self.escaped:
+            self.escaped = False
+            self.index += 1
+            return True
+        if char == "\\" and self.quote != "'":
+            self.escaped = True
+            self.index += 1
+            return True
+        if self.quote is not None:
+            if char == self.quote:
+                self.quote = None
+            self.index += 1
+            return True
+        return False
+
+    def enter_quote(self, quote: str) -> None:
+        """引用の開始位置で呼び、引用状態へ入って位置を進める。"""
+        self.quote = quote
+        self.index += 1
+
+
 def _heredoc_declarations(line: str) -> list[tuple[str, bool]]:
     """コマンド行にあるheredocの区切り語とtab除去指定を出現順に返す。"""
     declarations: list[tuple[str, bool]] = []
-    quote: str | None = None
-    escaped = False
+    scanner = QuotingScanner(line)
     arithmetic_depth = 0
     word_boundary = True
-    index = 0
-    while index < len(line):
+    while scanner.index < len(line):
+        was_escaped = scanner.escaped
+        if scanner.consume_quoted():
+            if was_escaped:
+                word_boundary = False
+            continue
+        index = scanner.index
         char = line[index]
-        if escaped:
-            escaped = False
-            word_boundary = False
-            index += 1
-            continue
-        if char == "\\" and quote != "'":
-            escaped = True
-            index += 1
-            continue
-        if quote is not None:
-            if char == quote:
-                quote = None
-            index += 1
-            continue
         if arithmetic_depth:
             if char == "(":
                 arithmetic_depth += 1
             elif char == ")":
                 arithmetic_depth -= 1
-            index += 1
+            scanner.index += 1
             continue
         if char in {"'", '"'}:
-            quote = char
             word_boundary = False
-            index += 1
+            scanner.enter_quote(char)
             continue
         if line.startswith("$((", index):
             arithmetic_depth = 2
             word_boundary = False
-            index += 3
+            scanner.index += 3
             continue
         if line.startswith("((", index):
             arithmetic_depth = 2
             word_boundary = False
-            index += 2
+            scanner.index += 2
             continue
         if char == "#" and word_boundary:
             break
         if not line.startswith("<<", index) or line.startswith("<<<", index):
             word_boundary = char in " \t;&|()"
-            index += 1
+            scanner.index += 1
             continue
 
         cursor = index + 2
@@ -698,7 +727,7 @@ def _heredoc_declarations(line: str) -> list[tuple[str, bool]]:
         if delimiter:
             declarations.append((delimiter, strip_tabs))
         word_boundary = False
-        index = cursor
+        scanner.index = cursor
     return declarations
 
 

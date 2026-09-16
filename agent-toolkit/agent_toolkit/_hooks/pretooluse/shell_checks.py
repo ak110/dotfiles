@@ -136,6 +136,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
     CwdResolution,
     GitEvent,
+    QuotingScanner,
     extract_git_events,
     resolve_cwd_change,
     resolve_execution_segment,
@@ -316,27 +317,14 @@ def _single_unquoted_pipe_index(masked: str) -> int | None:
     返す位置は元のコマンド文字列へそのまま適用できる。
     """
     positions: list[int] = []
-    quote: str | None = None
-    escaped = False
-    index = 0
-    while index < len(masked):
+    scanner = QuotingScanner(masked)
+    while scanner.index < len(masked):
+        if scanner.consume_quoted():
+            continue
+        index = scanner.index
         char = masked[index]
-        if escaped:
-            escaped = False
-            index += 1
-            continue
-        if char == "\\" and quote != "'":
-            escaped = True
-            index += 1
-            continue
-        if quote is not None:
-            if char == quote:
-                quote = None
-            index += 1
-            continue
         if char in {"'", '"'}:
-            quote = char
-            index += 1
+            scanner.enter_quote(char)
             continue
         if char == "\n" or char == ";" or masked.startswith("&&", index):
             return None
@@ -344,8 +332,8 @@ def _single_unquoted_pipe_index(masked: str) -> int | None:
             return None
         if char == "|":
             positions.append(index)
-        index += 1
-    if quote is not None or len(positions) != 1:
+        scanner.index += 1
+    if scanner.quote is not None or len(positions) != 1:
         return None
     return positions[0]
 
