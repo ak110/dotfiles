@@ -19,7 +19,7 @@ description: >
     - 第2条件: 公開工程のpushとCI成功を確認した後に`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`をそれぞれ実行し、返る一意な短縮OIDが互いに異なる
     - 第1条件は選定工程の完了時点で評価し、判定結果と、判定に用いた出力に残った項目のファイル名、`state`及び`ready`を、当該セッションの管理対象一時領域直下の`daily-release-condition1.txt`へ記録する。公開工程では当該ファイルを読んで第1条件の判定結果とし、`atk wi list`を再実行しない。当該ファイルが無い場合は第1条件を不成立として扱う。選定工程の判定時点より後に登録された項目は判定の対象へ含めず、次回セッションで扱う
     - 条件が成立しない場合は、成立しなかった条件と、第1条件が不成立のときは`daily-release-condition1.txt`に残る項目を報告し、PRを作成しない
-    - 実施する場合は、次の1行目で同じheadとbaseのopen PRを最大2件取得する。1件ならそのPRを再利用する。0件なら管理対象一時領域へPR本文のファイルを作成し、次の2行目でPRを作成する。2件取得した場合は対象を推測せず、両PRの番号とURLを報告して停止する。タイトルには当該セッションで反映した変更の主題を1文で書き、本文には反映したAWIの正本ファイル名と1行要約を列挙する
+    - 実施する場合は、次の1行目で同じheadとbaseのopen PRを最大2件取得する。1件ならそのPRを再利用する。0件なら管理対象一時領域へPR本文のファイルを作成し、次の2行目でPRを作成する。2件取得した場合は対象を推測せず、両PRの番号とURLを報告して停止する。タイトルには当該セッションで反映した変更の主題を1文で書く。本文の読み手と粒度は`agent-toolkit:writing-standards`「人間向け文章の共通規定」に従う
 
       ```sh
       gh pr list --repo ak110/dotfiles --base master --head develop --state open --limit 2 --json number,url,title,headRefName,baseRefName,state
