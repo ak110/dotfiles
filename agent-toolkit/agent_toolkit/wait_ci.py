@@ -515,14 +515,20 @@ def _fetch_snapshot(
     job_list_fn: JobListFn,
     expected_ids: set[int] | None = None,
     excluded_ids: frozenset[int] = frozenset(),
-) -> tuple[list[RunRecord], list[JobRecord]]:
-    """baselineを除いたrunと対応ジョブを不可分なpollスナップショットとして取得する。"""
+) -> tuple[list[RunRecord], list[JobRecord], set[int]]:
+    """baselineを除いたrunと対応ジョブを不可分なpollスナップショットとして取得する。
+
+    戻り値の第3要素は、後続runへ置き換えられて打ち切られたため判定対象から除いたrunの識別子とする。
+    """
     candidates = run_list_fn(sha)
     _run_ids(candidates)
-    new_runs = [run for run in candidates if run["databaseId"] not in excluded_ids and not _is_dynamic_dependabot_run(run)]
+    superseded_ids = _superseded_cancelled_ids(candidates)
+    new_runs = [
+        run for run in candidates if run["databaseId"] not in excluded_ids and not _is_excluded_run(run, superseded_ids)
+    ]
     runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
     jobs = [job for run in runs for job in job_list_fn(run)]
-    return runs, jobs
+    return runs, jobs, superseded_ids
 
 
 def _fetch_follow_snapshot(
@@ -531,23 +537,71 @@ def _fetch_follow_snapshot(
     job_list_fn: JobListFn,
     expected_ids: set[int] | None = None,
     excluded_ids: frozenset[int] = frozenset(),
-) -> tuple[list[RunRecord], list[JobRecord]]:
-    """全後続SHAのrun・ジョブ一覧を不可分なpollスナップショットとして取得する。"""
+) -> tuple[list[RunRecord], list[JobRecord], set[int]]:
+    """全後続SHAのrun・ジョブ一覧を不可分なpollスナップショットとして取得する。
+
+    戻り値の第3要素の意味は`_fetch_snapshot`と同じとする。
+    """
     candidates = [run for follow_sha in follow_shas for run in run_list_fn(follow_sha)]
     _run_ids(candidates)
+    superseded_ids = _superseded_cancelled_ids(candidates)
     new_runs = [
         run
         for run in candidates
-        if run.get("headSha") in follow_shas and run["databaseId"] not in excluded_ids and not _is_dynamic_dependabot_run(run)
+        if run.get("headSha") in follow_shas
+        and run["databaseId"] not in excluded_ids
+        and not _is_excluded_run(run, superseded_ids)
     ]
     runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
     jobs = [job for run in runs for job in job_list_fn(run)]
-    return runs, jobs
+    return runs, jobs, superseded_ids
+
+
+def _is_excluded_run(run: RunRecord, superseded_ids: set[int]) -> bool:
+    """成否判定の対象から除くrunかを返す。"""
+    return _is_dynamic_dependabot_run(run) or run["databaseId"] in superseded_ids
 
 
 def _is_dynamic_dependabot_run(run: RunRecord) -> bool:
     """pushへ帰属しないDependabotの動的更新runかを返す。"""
     return run.get("event") == "dynamic" and run.get("workflowName") == "Dependabot Updates"
+
+
+def _supersede_key(run: RunRecord) -> tuple[str, str] | None:
+    """同じ論理単位のrunをまとめるキーを返す。キーを組めないrunは`None`を返す。
+
+    GitLabのパイプラインは`workflowName`を持たないため`None`となり、置き換え判定の対象から外れる。
+    """
+    workflow_name = run.get("workflowName")
+    head_sha = run.get("headSha")
+    if not isinstance(workflow_name, str) or not workflow_name:
+        return None
+    if not isinstance(head_sha, str) or not head_sha:
+        return None
+    return workflow_name, head_sha
+
+
+def _superseded_cancelled_ids(runs: list[RunRecord]) -> set[int]:
+    """後続runへ置き換えられて打ち切られたrunの識別子を返す。
+
+    GitHubは同じworkflow・同じcommitへ複数のrunを登録することがあり、
+    workflowの`concurrency`設定により先に登録されたrunが`cancelled`で打ち切られる。
+    当該runは対象commitのCIの成否を表さないため、全件一致で完了を判定する集合から除く。
+    判定は同じキーでより大きい`databaseId`のrunが存在することとする。GitHubの`databaseId`は
+    登録順に増加するため、登録時刻を別途取得せずに先行・後続を決められる。
+    呼び出し元が先に`_run_ids`で識別子を検証するため、ここでは型を再検査しない。
+    """
+    latest_ids: dict[tuple[str, str], int] = {}
+    for run in runs:
+        key = _supersede_key(run)
+        if key is not None:
+            latest_ids[key] = max(latest_ids.get(key, run["databaseId"]), run["databaseId"])
+    superseded: set[int] = set()
+    for run in runs:
+        key = _supersede_key(run)
+        if key is not None and run.get("conclusion") == "cancelled" and run["databaseId"] < latest_ids[key]:
+            superseded.add(run["databaseId"])
+    return superseded
 
 
 def _run_ids(runs: list[RunRecord]) -> set[int]:
@@ -579,7 +633,7 @@ def _wait_for_completion(
     timeout: float,
     poll_interval: float,
     expected_ids: set[int],
-    fetch_fn: Callable[[], tuple[list[RunRecord], list[JobRecord]]],
+    fetch_fn: Callable[[], tuple[list[RunRecord], list[JobRecord], set[int]]],
     select_fn: Callable[[list[RunRecord]], list[RunRecord]],
     forge: str,
     sleep_fn: Callable[[float], None],
@@ -587,10 +641,15 @@ def _wait_for_completion(
     consecutive_failures: int,
     follow_mode: bool,
 ) -> tuple[int, list[RunRecord], float]:
-    """確定したrun集合の完了を待つ主経路・後続SHA経路の共通ループ。"""
+    """確定したrun集合の完了を待つ主経路・後続SHA経路の共通ループ。
+
+    登録猶予中に実行中として観測したrunが後続runへ置き換えられて打ち切られた場合、当該runは
+    取得結果から消える。期待run集合へ残すと欠落判定で待ち続けるため、除外した識別子を同集合からも取り除く。
+    """
     while True:
         try:
-            candidates, jobs = fetch_fn()
+            candidates, jobs, superseded_ids = fetch_fn()
+            expected_ids -= superseded_ids
             consecutive_failures = 0
         except RunListError as exc:
             consecutive_failures += 1
@@ -660,6 +719,8 @@ def wait_for_ci(
       後続SHA追跡時は`_fetch_follow_snapshot`で不可分なスナップショットとして取得し、
       `_find_early_failure`が確定的な失敗（forgeごとの判定は同関数docstring参照）を1件検出した時点で
       run/pipeline完了を待たずEXIT_CI_FAILEDを返す
+    - 同じworkflow名・同じcommitでより後に登録されたrunに置き換えられて打ち切られたrunは、
+      判定対象と期待run集合の双方から除く（`_superseded_cancelled_ids`）
     - 登録猶予期間全体でrun集合を継続収集し、期間末に1件以上あることを確認して完了待ちへ移る
     - 完了待ちフェーズでも対象shaのrunを毎pollで取り込み、猶予後に登録されたrunを期待集合へ加える
       （run一覧は対象shaで限定するため、猶予後のrunも同じcommitに対する実行である）
@@ -695,8 +756,9 @@ def wait_for_ci(
     while True:  # 登録猶予フェーズ: 猶予末まで継続収集する
         last_call_failed = False
         try:
-            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids)
+            runs, jobs, superseded_ids = _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids)
             consecutive_failures = 0
+            expected_ids -= superseded_ids
             expected_ids |= _run_ids(runs)
             if failure := _find_early_failure(runs, jobs, forge):
                 _emit_failure_summary(*failure)
@@ -792,13 +854,14 @@ def _follow_cancelled(
         follow_shas |= current_shas
         last_call_failed = False
         try:
-            candidates, jobs = _fetch_follow_snapshot(
+            candidates, jobs, superseded_ids = _fetch_follow_snapshot(
                 follow_shas,
                 run_list_fn,
                 job_list_fn,
                 excluded_ids=excluded_ids,
             )
             consecutive_failures = 0
+            expected_ids -= superseded_ids
             expected_ids |= _run_ids(candidates)
             if failure := _find_early_failure(candidates, jobs, forge):
                 _emit_failure_summary(*failure)
