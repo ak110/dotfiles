@@ -739,6 +739,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     if task_name == "lane-integration.subagent.md":
         return [
             "統合区分: マージあり",
+            "実行レビュー済みHEAD: 0123abc",
             f"統合先worktree: {root}",
             "統合先branch: develop",
             "メイン計画ファイル名: plan.md",
