@@ -102,6 +102,29 @@ def test_session_id_create_is_idempotent_and_cleanup_resolves_target(tmp_path: p
     assert not target.exists()
 
 
+def test_cli_writes_result_lines_under_a_non_utf8_stdio_encoding(tmp_path: pathlib.Path) -> None:
+    """標準入出力の既定符号化が日本語を扱えない環境でも結果行を送出する。"""
+    env, _ = _isolated_cli_environment(tmp_path)
+    env["PYTHONIOENCODING"] = "cp1252"
+
+    created = subprocess.run(
+        [sys.executable, str(_SCRIPT), "create", "--prefix", "session", "--session-id", "session-1"],
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    cleaned = subprocess.run(
+        [sys.executable, str(_SCRIPT), "cleanup", "--session-id", "session-1"],
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+    assert created.returncode == 0, created.stderr
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "成功: セッションの管理対象一時領域を回収した" in cleaned.stdout.decode("utf-8")
+
+
 def test_cleanup_rejects_path_with_session_id(tmp_path: pathlib.Path) -> None:
     """cleanupの対象指定はpathとsession_idのいずれか一方に限る。"""
     with pytest.raises(SystemExit) as captured:

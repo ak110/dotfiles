@@ -97,6 +97,18 @@ NO_MATCH_COMMANDS = frozenset({"atk wi grep", "atk managed-temp list"})
 """該当0件で終了コード1を返し、該当0件の行を標準エラーへ書く読み取り経路。"""
 
 
+def force_utf8_stdio() -> None:
+    """結果行を書く前に標準出力と標準エラーをUTF-8へ切り替える。
+
+    接頭辞と本文が日本語のため、Windowsのcp932・cp1252環境では既定の符号化で送出に失敗する。
+    結果行を書く入口はこの関数を呼んでから`report_*`を使う。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def report_success(message: str, kind: ResultKind = ResultKind.STATE_CHANGE) -> None:
     """完了した外部状態を区分に応じた出力先へ1行で書く。"""
     stream = sys.stderr if kind is ResultKind.VALUE_OUTPUT else sys.stdout

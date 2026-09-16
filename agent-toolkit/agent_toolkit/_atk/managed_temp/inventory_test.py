@@ -402,7 +402,7 @@ class TestManagedTempWindows:
         missing.rmdir()
 
         assert {entry["path"] for entry in subject.list_managed_temp()} == {str(valid)}
-        assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
+        assert "実体が失われた管理対象の登録を回収した" in capsys.readouterr().err
         assert not registry.exists()
 
     def test_cleanup_consumes_registry_of_a_missing_target(

@@ -1165,10 +1165,7 @@ def main(
 ) -> None:
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
-            reconfigure(encoding="utf-8", errors="replace")
+    _outcome.force_utf8_stdio()
     parser = _build_parser()
     # bash補完（argcomplete）は配布物内で直接遅延importして呼び出す。
     # `pytools._internal.cli`依存を避け、agent-toolkitプラグインの独立性を保つため。
