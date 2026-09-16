@@ -153,6 +153,22 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節及び`SubagentStop`節で前段の入力仕様を確認した。同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
 
+## agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日
+
+2026年9月16日、公開直後の新バージョンを待つ目安1日の典拠を実測した。`.chezmoi-source/dot_config/uv/uv.toml`は`exclude-newer = "1 day"`を持ち、同ファイルのコメントが公開後24時間未満のパッケージを除外する目的を示す。再検証は同ファイルの当該キーの値を取得する。再検証の契機は当該設定値の変更とする。
+
+## agent-toolkit/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日
+
+2026年9月16日、pnpm 11.25.0とnpm 11.19.0で実測した。
+環境変数`NPM_CONFIG_REGISTRY`へ`https://example.invalid/`を与えて`pnpm config get registry`を実行すると`https://registry.npmjs.org/`を返した。
+同じ環境変数で`npm config get registry`を実行すると`https://example.invalid/`を返した。
+再検証は、両ツールの当該版へ同じ環境変数を与えて実効のレジストリー設定を取得し、反映の有無を比べる。
+再検証の契機はpnpm又はnpmの更改とする。
+
+## agent-toolkit/skills/writing-standards/references/drizzle.md：H1直下：2026年9月16日
+
+2026年9月16日、参考実利用バージョンの取得元を実測した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で指定する。再検証は同ファイルの当該2つの依存の版指定を取得する。再検証の契機は当該依存の更新とする。
+
 ## agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
 本表は2026年9月5日に実測した。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つの検体を作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`で検査した。
