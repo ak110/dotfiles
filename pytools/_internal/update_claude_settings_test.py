@@ -1893,3 +1893,76 @@ class TestManagedAutoModeAllowLabelFormat:
             if (match := mod._LABELED_LIST_ITEM_PATTERN.match(item))  # pylint: disable=protected-access
         ]
         assert len(labels) == len(set(labels))
+
+
+class TestRetiredAutoModeAllowLabels:
+    """再編で廃止した`autoMode.allow`ラベルが配布先から除去されることの検査。
+
+    `_strip_stale_labeled_list_items`は配布原本に現存するラベルの旧文面だけを除去するため、
+    配布原本から消えたラベルは`_REMOVED_LIST_ITEM_SUBSTRINGS`へ登録しないと配布先に残り続ける。
+    """
+
+    _RETIRED_LABELS = (
+        "Session-Owned Amend",
+        "Exit-Session Termination",
+        "AWI-Originated Gate Revision",
+        "Feedback-Originated Gate Revision",
+        "Background Operator Auto-Approval",
+        "External Marketplace Registration",
+        "Agent Config Read",
+        "Delegation Continuation Message",
+        "Release Workflow Dispatch",
+        "Personal Repo Default-Branch Push",
+        "Merge Approval",
+        "Plan File Write",
+        "WI Queue State Transition",
+        "Feedback Queue State Transition",
+    )
+
+    def test_retired_labels_are_registered_for_removal(self) -> None:
+        """廃止した全ラベルが削除マッピングへ登録されている。"""
+        markers = {
+            marker
+            for path, marker in mod._REMOVED_LIST_ITEM_SUBSTRINGS  # pylint: disable=protected-access
+            if path == "autoMode.allow"
+        }
+        missing = [label for label in self._RETIRED_LABELS if f"{label}: " not in markers]
+        assert missing == []
+
+    def test_retired_labels_are_absent_from_managed(self) -> None:
+        """廃止したラベルが配布原本に残っていない。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        allow = managed["autoMode"]["allow"]
+        remaining = [label for label in self._RETIRED_LABELS if any(item.startswith(f"{label}: ") for item in allow)]
+        assert remaining == []
+
+    def test_retired_labels_are_stripped_from_user_settings(self, tmp_path: Path) -> None:
+        """配布反映で、配布先に残る旧ラベルが除去され現行ルールと利用者独自エントリが残る。"""
+        target_path = tmp_path / "settings.json"
+        target_path.write_text(
+            json.dumps(
+                {
+                    "autoMode": {
+                        "allow": [
+                            "ラベルを持たない利用者独自ルール",
+                            *[f"{label}: 旧文面" for label in self._RETIRED_LABELS],
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(
+            _PROD_MANAGED_SETTINGS,
+            target_path,
+            removed_list_item_substrings=mod._REMOVED_LIST_ITEM_SUBSTRINGS,  # pylint: disable=protected-access
+            stale_labeled_list_paths=("autoMode.allow",),
+        )
+
+        allow = json.loads(target_path.read_text(encoding="utf-8"))["autoMode"]["allow"]
+        assert [item for item in allow if any(item.startswith(f"{label}: ") for label in self._RETIRED_LABELS)] == []
+        assert "ラベルを持たない利用者独自ルール" in allow
+        managed_allow = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))["autoMode"]["allow"]
+        assert [item for item in managed_allow if item not in allow] == []

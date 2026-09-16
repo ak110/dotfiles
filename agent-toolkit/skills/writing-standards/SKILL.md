@@ -103,7 +103,7 @@ description: >
 - スキル編集（公式リファレンスの参照先を含む）: `references/agent-skills.md`
 - サブエージェント定義ファイルの編集、及びサブエージェントが関与する手順の作成・改訂: `references/sub-agents.md`
 - hook編集、及びhookのエンドユーザー向けメッセージの新設・改訂: `references/claude-hooks.md`と`references/agent-skills.md`
-- auto mode編集と権限拒否時: `references/claude-hooks.md`と`references/auto-mode.md`と`references/agent-skills.md`
+- auto modeのカスタムルール編集: `references/claude-hooks.md`と`references/auto-mode.md`と`references/agent-skills.md`。権限拒否に遭遇した場面の手順は`agent-toolkit:confirmation-and-uwi`が扱う
 - セッション状態フラグを扱う編集: `references/session-state-and-flags.md`
 - セッション記録の集計・分析: `references/session-records.md`
 - 機械チェックスクリプトの新設・改修: `references/check-script-design.md`
