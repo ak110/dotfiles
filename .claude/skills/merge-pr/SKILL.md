@@ -6,7 +6,7 @@ description: 「PRをマージして」などの明示依頼を受領したと�
 # PRマージ完遂
 
 このスキルは、明示的なPRマージ依頼を受領した場合と、`agent-toolkit:process-wi`の終端で日次リリースの条件が成立した場合だけ実行する。
-条件は`docs/development/operations.md`「日次リリースの自動実施」が定める。
+条件は`dotfiles-release`スキルの「developとmasterのリリース運用」が定める。
 PRが存在するという観測だけでは起動しない。
 
 ## 失敗時の共通規定
