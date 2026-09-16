@@ -143,6 +143,58 @@ def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
     assert candidates[0]["occurrence_count"] == 1
 
 
+def test_candidate_events_includes_delegate_returns_that_report_failure() -> None:
+    """工程の不成立を返却値で表した最終返却を、候補と`included_locators`の双方へ含める。"""
+    timeline = [
+        {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: needs_escalation\nreason: 認可の不足"},
+        {
+            "kind": "final-result",
+            "record": "agent-2",
+            "line": 30,
+            "text": "status: analysis_failed\nreason: 記録の取得に失敗した",
+        },
+        {"kind": "final-result", "record": "agent-3", "line": 40, "text": "status: failed"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"] * 3
+    assert candidates[-1]["included_locators"] == [
+        {"record": "agent-1", "line": 20},
+        {"record": "agent-2", "line": 30},
+        {"record": "agent-3", "line": 40},
+    ]
+
+
+def test_candidate_events_excludes_delegate_returns_that_report_success() -> None:
+    """工程の成立を表す返却値と、`status`行を持たない最終返却を候補にしない。"""
+    timeline = [
+        {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: completed\noutput_file: /tmp/out.md"},
+        {"kind": "final-result", "record": "agent-2", "line": 30, "text": "実装完了\n検証結果: 終了コード0、警告なし"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert not candidates[:-1]
+    assert not candidates[-1]["included_locators"]
+    assert not candidates[-1]["excluded"]
+
+
+def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None:
+    """同じ理由の差し戻しを1候補へ集約し、理由が異なる差し戻しを別の候補へ分ける。"""
+    timeline = [
+        {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: needs_escalation\nreason: 認可の不足"},
+        {"kind": "final-result", "record": "agent-2", "line": 30, "text": "status: needs_escalation\nreason: 認可の不足"},
+        {"kind": "final-result", "record": "agent-3", "line": 40, "text": "status: needs_escalation\nreason: 入力の欠落"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert sorted(candidate["count"] for candidate in candidates[:-1]) == [1, 2]
+    assert candidates[-1]["count"] == 2
+    assert candidates[-1]["included_locator_count"] == 3
+
+
 def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> None:
     """同種の失敗・警告・通知を集約し、重複位置を一度だけ保持する。
 

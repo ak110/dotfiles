@@ -2594,6 +2594,8 @@ _BUNDLE_BODY_LENGTH = 200
 _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
 _HOOK_NOTICE_VARIANT_LIMIT = 5
+_RETURN_STATUS_PREFIX = "status:"
+_UNSUCCESSFUL_RETURN_STATUSES = frozenset({"analysis_failed", "failed", "needs_escalation"})
 _CANDIDATE_EVIDENCE_LENGTH = 2000
 _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE = 1
 
@@ -2662,6 +2664,10 @@ def _candidate_events(
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
+    母集団はhook通知、利用者介入、失敗したツール実行、警告及び工程の返却値とする。
+    返却値を含めるのは、`status`で工程の不成立を表す返却が他の4種のいずれにも現れず、
+    差し戻しで停止した工程が候補集合から漏れるためである。
+
     同じ位置の事象は先に走査した種別が取る。`hook-notice`は発生源ごとの上位種への限定を持つ唯一の種別であり、
     hookが返した本文は`escalation`と`warning`の本文としても現れるため、`hook-notice`を先頭に置く。
     後ろに置くと、当該限定の対象にならない種別が同じ本文を取り、発生源ごとの候補数が発生件数に比例する。
@@ -2684,6 +2690,7 @@ def _candidate_events(
         ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
         ("escalation", (event for event in timeline if event.get("kind") == "failed-tool")),
         ("warning", (event for event in warnings if event.get("kind") == "warning")),
+        ("delegate-return", (event for event in timeline if _is_unsuccessful_return(event))),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -2852,6 +2859,26 @@ def _candidate_evidence_events(
             item["omitted"] = True
         evidence.append(item)
     return evidence
+
+
+def _is_unsuccessful_return(event: dict[str, Any]) -> bool:
+    """工程の不成立を`status`行で表す最終返却であるかを返す。
+
+    `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
+    委譲先の記録では当該委譲先が呼び出し元へ返した返却値に対応する。
+    `status`値の集合は返却値で工程の不成立を表す値とし、差し戻しの返却に限らない。
+    `agents_server`のsessionが`status: failed`で終端した返却も同じ集合で扱う。
+    """
+    if event.get("kind") != "final-result":
+        return False
+    text = event.get("text")
+    if not isinstance(text, str):
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(_RETURN_STATUS_PREFIX):
+            return stripped.removeprefix(_RETURN_STATUS_PREFIX).strip() in _UNSUCCESSFUL_RETURN_STATUSES
+    return False
 
 
 def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
