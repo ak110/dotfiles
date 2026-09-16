@@ -5,14 +5,15 @@
 ## 入力
 
 ```text
-必須入力名: 統合区分,統合先worktree,統合先branch,メイン計画ファイル名,AWI終端区分
+必須入力名: 統合区分,実行レビュー済みHEAD,統合先worktree,統合先branch,メイン計画ファイル名,AWI終端区分
 ```
 
+`実行レビュー済みHEAD`は、`統合区分`が`マージあり`の場合は実行レビューが収束したラウンドのレビュー対象HEADの7文字以上の一意な短縮OID、`マージなし`の場合は`なし`を受領する。
 固有の終端順序がある場合はAWIごとの対象と時機も受領する。`引き継ぎ記録先`はレーン担当の起動時に受領した値を継続し、統合指示からは受領しない。commitとffマージは実行できるがpushは行わない。受領した統合先worktreeだけへ書き込み、専用worktreeには計画の追記を除いて新しい実装変更を加えない。
 
 ## マージありの統合
 
-1. 専用worktreeがcleanであり、専用branchのHEADが実行レビュー済みHEADと一致することを確認する。
+1. 専用worktreeがcleanであることを確認する。受領した`実行レビュー済みHEAD`と専用branchのHEADを、いずれも`git rev-parse --short=7 <revision>`で7文字以上の一意な短縮OIDへ正規化して文字列比較し、一致することを確認する。指摘管理表の内容を当該判定の入力にしない。比較に完全OIDを用いない。
 2. 統合先worktreeの現在branchが統合先branchであり、別の書込主体とGitの中断状態が無いことを確認する。
 3. 統合先branchの現在HEADの7文字以上の一意な短縮OIDと、`git merge-base <専用branch> <統合先branch>`で得たrebase前のベースOIDを取得する。
 4. 専用branchのHEADが統合先branchの現在HEADの子孫である場合（`git merge-base --is-ancestor <統合先branchの現在HEAD> <専用branchのHEAD>`が終了コード0）は、rebaseせず手順9へ進む。
