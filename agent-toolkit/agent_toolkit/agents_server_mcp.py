@@ -75,10 +75,12 @@ START_AVAILABILITY_TIMEOUT = 15.0
 # 利用枠超過、流量制限及びサーバー側過負荷に該当する区分へ限定する。
 ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExceeded", "serverOverloaded"})
 # engineの可用性に起因し、別候補なら結果が変わり得るClaude APIのHTTPステータス。
-# Claude APIの公式なエラーコード表が再試行可能とする429（rate_limit_error）と
-# 529（overloaded_error）へ限定する。500（api_error）はサービス内部の失敗であり、
-# 候補の変更で解決するとは限らないため含めない。
-ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({429, 529})
+# 429（rate_limit_error）と529（overloaded_error）は公式なエラーコード表が再試行可能とする。
+# 401（authentication_error）と403（permission_error）は、認証情報の不備と権限の不足という
+# 別々の原因を持つが、いずれも同じ候補での再試行では解消せず、別候補なら結果が変わり得る点で
+# 前2者と一致するため同じ集合の要素とする。
+# 500（api_error）はサービス内部の失敗であり、候補の変更で解決するとは限らないため含めない。
+ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({401, 403, 429, 529})
 _REQUIRED_INPUT_PREFIX = "必須入力名: "
 _REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
@@ -132,13 +134,56 @@ def _resolve_display_label(label: str | None, fallback: str) -> str:
     return normalized or status_file.normalize_label(fallback)
 
 
+def _listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
+    """一覧の公開応答へ返す項目だけを取り出す。
+
+    停滞の印は稼働中のsessionにだけ現れるため、当該項目を持つsessionへだけ加える。
+    """
+    public = {"session_id": session["session_id"], "status": session["status"]}
+    if "stalled" in session:
+        public["stalled"] = session["stalled"]
+    return public
+
+
+def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
+    """起動の応答のうち呼び出し元へ公開する項目を返す。
+
+    候補を切り替えて成立した起動だけが、除外した候補と採用した候補を加える。
+    切り替えが起きない起動は`session_id`と`status`の2項目とする。
+    """
+    public: dict[str, Any] = {key: response[key] for key in ("session_id", "status")}
+    if response.get("excluded_candidates"):
+        public["excluded_candidates"] = response["excluded_candidates"]
+        public["engine"] = response["engine"]
+        public["model"] = response["model"]
+        public["effort"] = response["effort"]
+    return public
+
+
+def _engine_unavailable_reason(session: SessionState) -> str | None:
+    """engineの可用性を理由に失敗した場合だけ、根拠となった識別子を返す。"""
+    if session.status != "failed" or not isinstance(session.error, dict):
+        return None
+    error_info = session.error.get("codexErrorInfo")
+    if error_info in ENGINE_UNAVAILABLE_ERROR_INFO:
+        return str(error_info)
+    api_error_status = session.error.get("apiErrorStatus")
+    if api_error_status in ENGINE_UNAVAILABLE_API_ERROR_STATUS:
+        return str(api_error_status)
+    return None
+
+
 def _engine_unavailable(session: SessionState) -> bool:
     """終端したsessionが、engineの可用性を理由に失敗したかを返す。"""
-    if session.status != "failed" or not isinstance(session.error, dict):
-        return False
-    if session.error.get("codexErrorInfo") in ENGINE_UNAVAILABLE_ERROR_INFO:
-        return True
-    return session.error.get("apiErrorStatus") in ENGINE_UNAVAILABLE_API_ERROR_STATUS
+    return _engine_unavailable_reason(session) is not None
+
+
+def _excluded_candidate_payload(excluded: Mapping[ModelCandidate, str]) -> list[dict[str, Any]]:
+    """除外した候補と除外の根拠を、呼び出し元が読む形へそろえる。"""
+    return [
+        {"engine": engine, "model": model, "effort": effort, "reason": reason}
+        for (engine, model, effort), reason in sorted(excluded.items())
+    ]
 
 
 def _elapsed_seconds(started_at_value: str) -> int | None:
@@ -265,7 +310,6 @@ class AgentsServerManager:
         self._codex: Any = None
         self._claude: Any = None
         self._wait_timeouts: dict[str, float] = {}
-        self._carried_unavailable_candidates: dict[tuple[str, LaunchKind], ModelCandidate] = {}
         self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._auto_resume_task: asyncio.Task[None] | None = None
@@ -570,7 +614,7 @@ class AgentsServerManager:
         sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: item[0])]
         if include_terminated:
             return {
-                "sessions": [{"session_id": session["session_id"], "status": session["status"]} for session in sessions],
+                "sessions": [_listed_public_session(session) for session in sessions],
                 "omitted": 0,
             }
         visible = [
@@ -579,7 +623,7 @@ class AgentsServerManager:
             if session["result_available"] or session["status"] not in TERMINAL_STATUSES | {"expired"}
         ]
         return {
-            "sessions": [{"session_id": session["session_id"], "status": session["status"]} for session in visible],
+            "sessions": [_listed_public_session(session) for session in visible],
             "omitted": len(sessions) - len(visible),
         }
 
@@ -752,18 +796,24 @@ class AgentsServerManager:
         model_type: str,
         *,
         launch_kind: LaunchKind,
-    ) -> tuple[list[ModelCandidate], frozenset[ModelCandidate]]:
-        """起動条件を検証し、除外後の候補列を設定順で返す。"""
+    ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
+        """起動条件を検証し、除外後の候補列を設定順で返す。
+
+        除外中の候補は状態ディレクトリの記録を正本として読む。
+        除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
+        """
         candidates = _atk_config.resolve_model_candidates(model_type)
         if not candidates:
             raise ValueError(f"no model candidates remain for model_type: {model_type}")
-        key = (model_type, launch_kind)
-        carried = self._carried_unavailable_candidates.get(key)
-        excluded = frozenset({carried}) if carried is not None else frozenset()
+        recorded = status_file.load_unavailable_candidates(
+            model_type,
+            launch_kind,
+            now=datetime.datetime.now(datetime.UTC),
+        )
+        excluded = {candidate: recorded[candidate] for candidate in candidates if candidate in recorded}
         remaining = [item for item in candidates if item not in excluded]
         if not remaining:
-            self._carried_unavailable_candidates.pop(key, None)
-            return candidates, frozenset()
+            return candidates, {}
         return remaining, excluded
 
     def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
@@ -777,9 +827,16 @@ class AgentsServerManager:
         if self.sessions.get(session.session_id) is not session:
             return
         candidate = selected_candidate(session)
-        if not _engine_unavailable(session) or candidate is None or session.model_type is None:
+        reason = _engine_unavailable_reason(session)
+        if reason is None or candidate is None or session.model_type is None:
             return
-        self._carried_unavailable_candidates[(session.model_type, session.launch_kind)] = candidate
+        status_file.record_unavailable_candidate(
+            session.model_type,
+            session.launch_kind,
+            candidate,
+            reason,
+            now=datetime.datetime.now(datetime.UTC),
+        )
 
     def _record_pending_unobserved_child_sessions(self, session: SessionState) -> None:
         """自動再開をまたいで保持した未観測の孫sessionを終端結果へ併合する。"""
@@ -806,6 +863,7 @@ class AgentsServerManager:
         起動直後にengineの可用性を理由として終端した候補だけを
         除外集合へ加えて次候補へ進む。backendの起動例外では候補を進めない。
         候補を変えても結果が変わらない失敗では候補を進めず、そのまま呼び出し元へ返す。
+        候補を除外して後続の候補で成立した場合は、除外した候補と除外の根拠を応答へ加える。
         """
         candidates, excluded = self._resolve_start_candidates(
             model_type,
@@ -831,11 +889,11 @@ class AgentsServerManager:
                 effort,
                 model_type=model_type,
                 launch_kind=launch_kind,
-                excluded_candidates=excluded,
+                excluded_candidates=frozenset(excluded),
             )
             session.engine = engine
             await self._await_start_outcome(session)
-            response = {
+            response: dict[str, Any] = {
                 "session_id": session.session_id,
                 "status": session.status,
                 "engine": engine,
@@ -843,10 +901,27 @@ class AgentsServerManager:
                 "model": model,
                 "effort": effort,
             }
+            if excluded:
+                response["excluded_candidates"] = _excluded_candidate_payload(excluded)
             if self._status_writer is not None:
                 response["root_session_id"] = self._status_writer.root_session_id
-            if not _engine_unavailable(session):
-                self._carried_unavailable_candidates.pop((model_type, launch_kind), None)
+            unavailable_reason = _engine_unavailable_reason(session)
+            if unavailable_reason is None:
+                status_file.clear_unavailable_candidate(
+                    model_type,
+                    launch_kind,
+                    candidate,
+                    now=datetime.datetime.now(datetime.UTC),
+                )
+                if excluded:
+                    _LOG.info(
+                        "engine_switch session_id=%s model_type=%s launch_kind=%s excluded=%s selected=%s",
+                        session.session_id,
+                        model_type,
+                        launch_kind,
+                        json.dumps(_excluded_candidate_payload(excluded), ensure_ascii=False),
+                        json.dumps({"engine": engine, "model": model, "effort": effort}, ensure_ascii=False),
+                    )
                 session.label = display_label
                 session.prompt = prompt
                 session.announced = True
@@ -861,7 +936,7 @@ class AgentsServerManager:
                 )
                 return response
             unavailable_response, unavailable_session = response, session
-            excluded |= {candidate}
+            excluded[candidate] = unavailable_reason
             if candidate_index + 1 < len(candidates):
                 await self._abandon_unavailable_session(session)
         if unavailable_response is not None:
@@ -1875,14 +1950,15 @@ async def start(
     タスク文書を読み、同文書の必須入力名と`extra_params`を照合してから起動する。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
-    応答は`session_id`と`status`だけを含む。起動条件の詳細は`show`で取得する。
+    応答は`session_id`と`status`を含む。候補を切り替えて起動した場合だけ、除外した候補と
+    除外の根拠、および採用した`engine`・`model`・`effort`を加える。起動条件の詳細は`show`で取得する。
     `label`は当該sessionの識別名として`show`・`atk agents list`・statuslineへ現れる。
     全候補がengineの可用性を理由として終端した場合は、最後の候補の終端応答を返す。
     全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
     """
     model_type, prompt = _task_document_request(subagent_md_path, extra_params)
     response = await _MANAGER.start(model_type, prompt, cwd, label=label)
-    return {key: response[key] for key in ("session_id", "status")}
+    return _public_start_response(response)
 
 
 @mcp.tool(name="start_custom", structured_output=True)
@@ -1906,12 +1982,13 @@ async def start_custom(
     """専用タスク文書がない自由な指示本文から委譲先turnを開始する。
 
     既存の`.subagent.md`で表現できる作業には使わない。engine、model及びeffortは
-    `model_type`から解決し、通常応答は後続の観測に必要な`session_id`と`status`だけを返す。
+    `model_type`から解決し、通常応答は後続の観測に必要な`session_id`と`status`を返す。
+    候補を切り替えて起動した場合だけ、除外した候補と採用した候補を加える。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     """
     response = await _MANAGER.start(model_type, prompt, cwd, label=label)
-    return {key: response[key] for key in ("session_id", "status")}
+    return _public_start_response(response)
 
 
 @mcp.tool(name="start_explore", structured_output=True)
@@ -1950,7 +2027,7 @@ async def start_explore(
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
     response = await _MANAGER.start_explore(fast, prompt, cwd, label=label)
-    return {key: response[key] for key in ("session_id", "status")}
+    return _public_start_response(response)
 
 
 @mcp.tool(name="start_shell", structured_output=True)
@@ -1981,7 +2058,7 @@ async def start_shell(
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
     response = await _MANAGER.start_shell(command, cwd, summary_policy, label=label)
-    return {key: response[key] for key in ("session_id", "status")}
+    return _public_start_response(response)
 
 
 @mcp.tool(name="start_write", structured_output=True)
@@ -2004,9 +2081,10 @@ async def start_write(
     プロジェクト指示の読込を省いた`explore_fast`候補を使い、ファイルの読取・検索・作成・編集だけを許可する。
     終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`で受け取る。
     結果が不要なら`kill`で破棄する。
+    応答は`start`と同じ項目を含む。
     """
     response = await _MANAGER.start_write(prompt, cwd, label=label)
-    return {key: response[key] for key in ("session_id", "status")}
+    return _public_start_response(response)
 
 
 @mcp.tool(name="send_message", structured_output=True)
@@ -2079,7 +2157,8 @@ async def stop_session(session_id: str) -> dict[str, Any]:
 async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
-    各sessionの`session_id`と`status`だけを返す。起動条件や停滞診断は`show`で取得する。
+    各sessionの`session_id`と`status`を返し、最終活動時刻からの経過が閾値を超えた稼働中のsessionへ`stalled`を加える。
+    起動条件は`show`で取得する。
     結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
     既定では未回収結果を持たない終端済み又は`expired`のsessionを除き、除いた件数を`omitted`へ返す。
     全件が必要な場合は`include_terminated`へ真を渡す。このとき`omitted`は0となる。

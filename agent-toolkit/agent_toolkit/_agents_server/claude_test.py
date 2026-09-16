@@ -15,6 +15,27 @@ from agent_toolkit._agents_server import claude
 from agent_toolkit._agents_server import state as shared_state
 
 
+def test_debug_file_name_carries_session_id_after_initialization(tmp_path: pathlib.Path) -> None:
+    """診断記録の名前がsession識別子を持ち、対応を時刻の突き合わせなしで判別できる状態にする。"""
+    debug_file = tmp_path / "20260916T000000000000-delegate.log"
+    debug_file.write_text("diagnostic", encoding="utf-8")
+
+    renamed = claude.rename_debug_file_for_session(debug_file, "session-1", "delegate")
+
+    assert renamed.name == "20260916T000000000000-session-1-delegate.log"
+    assert renamed.read_text(encoding="utf-8") == "diagnostic"
+    assert not debug_file.exists()
+
+
+def test_debug_file_keeps_its_name_when_renaming_is_rejected(tmp_path: pathlib.Path) -> None:
+    """改名できない実行環境では元の名前を保ち、後続の記録先を失わない。"""
+    debug_file = tmp_path / "missing" / "20260916T000000000000-delegate.log"
+
+    renamed = claude.rename_debug_file_for_session(debug_file, "session-1", "delegate")
+
+    assert renamed == debug_file
+
+
 class _SilentClient:
     """接続を保ったままinitメッセージを送らないSDKクライアントの検体。
 

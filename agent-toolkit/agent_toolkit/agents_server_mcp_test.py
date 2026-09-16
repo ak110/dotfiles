@@ -5,6 +5,7 @@
 
 import asyncio
 import dataclasses
+import datetime
 import json
 import logging
 import os
@@ -582,7 +583,9 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
         await asyncio.gather(task, return_exceptions=True)
 
     assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
-    assert all(set(session) == {"session_id", "status"} for session in response["sessions"])
+    assert all(
+        {"session_id", "status"} <= set(session) <= {"session_id", "status", "stalled"} for session in response["sessions"]
+    )
     assert response["sessions"][0]["status"] == "expired"
     assert response["sessions"][1]["status"] == "running"
     assert response["sessions"][2]["status"] == "running"
@@ -1240,6 +1243,67 @@ async def test_start_returns_failed_session_when_every_candidate_is_unavailable(
     assert (await manager.wait())["error"] == codex.error
 
 
+@pytest.mark.parametrize("api_error_status", [401, 403])
+@pytest.mark.asyncio
+async def test_authentication_failure_switches_to_next_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    api_error_status: int,
+) -> None:
+    """認証と認可の失敗は別候補で起動し、切替の内容を応答へ返す。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    _install_backend(
+        manager,
+        "claude",
+        UnavailableStartBackend(
+            manager.sessions,
+            "claude",
+            {"message": "Failed to authenticate.", "apiErrorStatus": api_error_status},
+        ),
+    )
+    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+    public = subject._public_start_response(response)
+
+    assert response["engine"] == "codex"
+    assert response["model"] == "second"
+    assert public["excluded_candidates"] == [
+        {"engine": "claude", "model": "first", "effort": "high", "reason": str(api_error_status)}
+    ]
+    assert public["engine"] == "codex"
+    assert public["model"] == "second"
+    assert public["effort"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_internal_server_error_keeps_the_first_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """サービス内部の失敗では候補を進めず、切替の項目も返さない。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    claude = UnavailableStartBackend(
+        manager.sessions,
+        "claude",
+        {"message": "internal", "apiErrorStatus": 500},
+    )
+    _install_backend(manager, "claude", claude)
+    codex = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", codex)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert response["status"] == "failed"
+    assert response["engine"] == "claude"
+    assert not codex.start_calls
+    assert "excluded_candidates" not in subject._public_start_response(response)
+
+
 async def _carry_over_late_unavailability(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1277,11 +1341,11 @@ async def test_late_engine_unavailability_carries_over_to_next_start(
 
 
 @pytest.mark.asyncio
-async def test_available_start_clears_carried_over_candidate(
+async def test_carried_over_exclusion_survives_a_successful_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """持ち越し後の起動が成立した時点で除外を解除する。"""
+    """後続の候補で成立しても、除外した候補は保持期間内は先頭から試さない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
     manager, _ = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
 
@@ -1289,8 +1353,10 @@ async def test_available_start_clears_carried_over_candidate(
     following = await manager.start("plan", "通常起動", str(tmp_path))
 
     assert recovered["model"] == "second"
-    assert following["model"] == "first"
-    assert ("plan", "delegate") not in manager._carried_unavailable_candidates
+    assert following["model"] == "second"
+    assert recovered["excluded_candidates"] == [
+        {"engine": "codex", "model": "first", "effort": "high", "reason": "usageLimitExceeded"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -1306,7 +1372,8 @@ async def test_carried_over_candidate_is_dropped_when_no_candidate_remains(
 
     assert response["model"] == "only"
     assert available.start_calls == [("only", "high", "delegate")]
-    assert ("plan", "delegate") not in manager._carried_unavailable_candidates
+    assert "excluded_candidates" not in response
+    assert not status_file.load_unavailable_candidates("plan", "delegate", now=datetime.datetime.now(datetime.UTC))
 
 
 @pytest.mark.asyncio
@@ -4385,7 +4452,10 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     assert client.disconnected is True
     assert sessions[session.session_id] is session
     assert session.status == "failed"
-    assert session.error == {"message": "stream failed"}
+    # 初期化の完了後の失敗は、原因の特定に要する診断を終端結果へ添える。
+    assert session.error["message"] == "stream failed"
+    assert set(session.error) == {"message", "engine", "model", "stderr", "childPid", "debugFile"}
+    assert session.error["engine"] == "claude"
 
 
 @pytest.mark.asyncio
@@ -4527,7 +4597,8 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
         await asyncio.sleep(0.01)
 
     result = await manager.wait()
-    assert result["error"] == {"message": "stream failed"}
+    assert result["error"]["message"] == "stream failed"
+    assert result["error"]["engine"] == "claude"
     response = await manager.send_message(session.session_id, "続行")
 
     assert response == {"delivery": "reply_started"}
@@ -4563,12 +4634,14 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 
     response = await manager.send_message(session.session_id, "続行")
 
+    previous_error = response["previous_result"].pop("error")
+    assert previous_error["message"] == "stream failed"
+    assert previous_error["engine"] == "claude"
     assert response == {
         "delivery": "reply_started",
         "previous_result": {
             "status": "failed",
             "agent_message": "",
-            "error": {"message": "stream failed"},
         },
     }
     assert not manager.expired_sessions
