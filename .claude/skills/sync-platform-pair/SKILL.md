@@ -11,7 +11,7 @@ description: >
 ## 適用条件
 
 本リポジトリでLinux/Windowsのペアファイルのいずれかを編集するときに適用する。該当の判定は後掲のファイル名規則で行う。
-片方のみ変更すると配布経路の一方が不整合になる。
+両側をそろえて変更する。片方だけの変更は配布経路の一方を不整合にする。
 
 ## ペアファイルの判別
 
@@ -45,7 +45,7 @@ description: >
 
 `make test`が実行するツール集合は、CIの`python-lint (3.14)`ジョブが実行する集合とほぼ同じである。
 CIが`claude-plugin-validate`を無効化する点だけが異なる。
-次の検査はローカルの`make test`では実行されない。
+次の検査はローカルの`make test`では実行されず、それぞれの経路で実行する。
 
 - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
 - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
@@ -53,7 +53,7 @@ CIが`claude-plugin-validate`を無効化する点だけが異なる。
 - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検査
 - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
 
-Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されない。
+Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されず、CIの`test-windows`ジョブが検証する。
 `agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
 
 ## 変更フロー

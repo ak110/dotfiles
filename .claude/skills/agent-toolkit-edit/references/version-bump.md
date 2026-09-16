@@ -2,7 +2,7 @@
 
 `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節の詳細手順を集約する。
 対象範囲は同節が定める。`.chezmoi-source/`配下のchezmoi配布物・`bin/`配下のCLIラッパー・`scripts/`配下のヘルパースクリプトは
-本規定の対象外とし、`agent_toolkit_bump.py`も更新しない。
+本規定の対象外とし、`agent_toolkit_bump.py`も更新せず版数を据え置く。
 
 ## 判定基準
 
@@ -10,16 +10,17 @@
 （pre-1.0であれば頻繁にMINORを更新しても問題ない）。
 `git commit`時に`agent-toolkit/`配下の変更を含みつつ`plugin.json`の`version`未変更の場合、
 検知フックが`warn`を返す。bump不要に該当する場合は警告を無視して進める。
-コメント・docstringのみ、`*_test.py`のみ、入出力が不変なリファクタリング、誤字・スタイル調整はbumpしない。
+コメント・docstringのみ、`*_test.py`のみ、入出力が不変なリファクタリング、誤字・スタイル調整はbumpせず版数を据え置く。
 
 - PATCH（`+0.0.1`）: 軽微な修正（フック・検出パターン・メッセージの変更、バグ修正、
   既存の見出し配下への規範文追記・条件補強・例示追加など）
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・description変更・節新設など、規模の大きい変更
-- MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がない限り行わない
+- MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がある場合だけ実行する
   （規定の正本は`agent-toolkit:commit`の`references/push-and-ci.md`「リリースバージョン指定」）
 - 現行版が`major.minor.patch`の数値3要素で表せない非SemVerの場合は、文字列の辞書順・
-桁数・接尾辞からPATCH/MINOR/MAJORを推測しない。プロジェクト固有の対応表又はユーザーの
-  明示指定がある場合だけその区分を適用し、どちらも無い場合はbumpを行わず判定不能として報告する
+  桁数・接尾辞からPATCH/MINOR/MAJORを推測せず、プロジェクト固有の対応表又はユーザーの
+  明示指定がある場合だけその区分を適用する。
+  どちらも無い場合はbumpを行わず判定不能として報告する
 
 ## 競合解決と統合後の確認
 
@@ -29,7 +30,7 @@ rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`�
 `scripts/sync_codex_plugin_manifests.py --check`で派生物を変更せず整合性を検査する。
 検査は最新なら終了コード0、不整合なら終了コード1、引数誤用なら終了コード2とする。
 同スクリプトが正本間の`version`と`description`の一致と派生manifestの内容一致をまとめて判定するため、
-派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値を突き合わせない。
+派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値を突き合わせず、同スクリプトの実行で確認を終える。
 
 rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の正本の`version`値を比較する。
 自分の未公開コミットにエンドユーザーの振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
@@ -50,7 +51,7 @@ plugin cache directory配下の新versionのrootを解決し直す。
 再解決したroot配下でplugin manifestの`version`が導入版と一致することと、
 利用する後続スクリプトの実在を確認してから使う。
 確認できない場合は旧rootへフォールバックせず未完了として扱う
-（`source.path`は配布元を示す値であり、導入cache rootの更新には使用しない）。
+（`source.path`は配布元を示す値であり、導入cache rootの更新には使用せず、新versionのrootを解決して用いる）。
 
 ## plan modeでの取り扱い
 
@@ -64,11 +65,11 @@ plugin cache directory配下の新versionのrootを解決し直す。
 （既存bumpとの統合はツール側が吸収する）。bump不要の場合は`## 要件・外部仕様`へ`bump不要`と根拠を記載する。
 version bumpを伴う計画では、Claude Code向け正本2ファイルを`## 要件・外部仕様`の変更説明へ含める。
 正式な生成コマンドと生成器出力との一致確認は`## 検証`へ記載する。
-生成コマンドが扱う派生manifestは、version・description欄の有無や実際の差分有無を問わず変更説明へ重複して含めない。
+生成コマンドが扱う派生manifestは、version・description欄の有無や実際の差分有無を問わず変更説明へ重複して含めず、正本2ファイルだけを記載する。
 派生manifestの完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
 Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
 正本更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で非変更検査する。
-bumpの完了条件は、実装開始時点の版との増加比較で判定しない。
+bumpの完了条件は、実装開始時点の版との増加比較で判定せず、
 公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、及び正本2ファイルと派生manifestの`version`が一致することで判定する。
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
 複数レーンを並列実装するAWI処理では、各レーンはbump種別（`bump不要`を含む）と選定根拠、MAJORの場合は認可根拠を計画へ記録するに留める。
