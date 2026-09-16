@@ -38,7 +38,7 @@ description: >
   記述作法の正本は`agent-toolkit:writing-standards`の`references/rust.md`とする。
   `make test`は`rust/`配下を検査しないため、変更したクレートで`cargo fmt --check`、`cargo clippy`及び`cargo test`を近接検査として実行する。
   CIでは`rust-lint` jobが同等の検査を担う。
-  配布版数の更新要求は`AGENTS.md`を正本とし、本書へ再掲しない
+  配布版数の更新要求は`dotfiles-release`を正本とし、本書へ再掲しない
 
 ## テスト配置
 

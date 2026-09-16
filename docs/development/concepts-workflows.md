@@ -5,7 +5,7 @@
 ## 複数環境での利用
 
 利用者はLinux・Windowsの複数マシンで本リポジトリを利用する（2026年8月、利用者指示）。
-現行の正本は[AGENTS.md](../../AGENTS.md)の「ディレクトリ構造の注意」にある。
+現行の正本は`dotfiles-repo-layout`スキルの「ディレクトリ構造の注意」にある。
 
 - 設定・規範・ツールの変更は全環境へ配布される前提で反映先を判定する
   （単一環境の直接編集で完結した対応が他環境へ波及しなかった観測に由来）
@@ -15,7 +15,7 @@
 
 ## developとmasterのリリース運用
 
-現行の正本は[AGENTS.md](../../AGENTS.md)の「開発手順」、[operations.md](operations.md)の
+現行の正本は`dotfiles-release`スキル、[operations.md](operations.md)の
 「日次リリースの自動実施」、[design.md](design.md)の「developとmasterのbranch・リリース設計」及び
 `merge-pr`スキルにある。
 

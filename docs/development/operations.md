@@ -328,7 +328,7 @@ uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/skills
 ## 日次リリースの自動実施
 
 dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
-実行時の正本は[AGENTS.md](../../AGENTS.md)の「開発手順」であり、判定条件、評価の時点、記録先及び実施手順は同節が定める。
+実行時の正本は`dotfiles-release`スキルであり、判定条件、評価の時点、記録先及び実施手順は同スキルが定める。
 本節は当該運用を導入した経緯と根拠を記録する。
 
 第1条件を選定工程の完了時点で評価する扱いは、2026年9月15日の利用者指示による。

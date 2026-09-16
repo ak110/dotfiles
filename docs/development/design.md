@@ -1388,7 +1388,7 @@ dirtyな場合はrebaseせず、従来どおり分岐と手動回復手順を報
 `develop`を開発用branch、`master`をリリース用branch及びGitHubの既定branchとする。
 `master`への更新経路はPRのマージコミットだけに限定し、直接pushを許可しない。
 PRの作成は、条件が成立する`agent-toolkit:process-wi`の経路ではエージェントが実施し、それ以外の経路では手動で行う。
-経路と条件の判定は[AGENTS.md](../../AGENTS.md)の「開発手順」が定める。
+経路と条件の判定は`dotfiles-release`スキルが定める。
 head branchの機械的な限定は設けない。
 
 repository設定ではマージコミットを有効にし、squash merge、rebase merge及びauto-mergeを無効にする。
