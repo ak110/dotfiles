@@ -1279,6 +1279,63 @@ async def test_authentication_failure_switches_to_next_candidate(
 
 
 @pytest.mark.asyncio
+async def test_engine_switch_is_written_to_the_diagnostic_log(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """候補の切替は、除外した候補と採用した候補を持つ行として診断ログへ残る。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    _install_backend(
+        manager,
+        "claude",
+        UnavailableStartBackend(manager.sessions, "claude", {"message": "auth", "apiErrorStatus": 401}),
+    )
+    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+
+    with caplog.at_level(logging.INFO, logger="agent-toolkit.agents-server.mcp"):
+        await manager.start("plan", "調査", str(tmp_path))
+
+    switch_records = [record.getMessage() for record in caplog.records if record.getMessage().startswith("engine_switch ")]
+    assert len(switch_records) == 1
+    assert '"engine": "claude"' in switch_records[0]
+    assert '"reason": "401"' in switch_records[0]
+    assert '"engine": "codex"' in switch_records[0]
+
+
+@pytest.mark.asyncio
+async def test_exclusion_record_is_read_by_a_newly_created_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """除外の記録は状態ディレクトリを正本とし、別のmanagerの起動でも先頭候補を試さない。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    failing = subject.AgentsServerManager()
+    _install_backend(
+        failing,
+        "claude",
+        UnavailableStartBackend(failing.sessions, "claude", {"message": "auth", "apiErrorStatus": 401}),
+    )
+    _install_backend(failing, "codex", FakeBackend(failing.sessions, "codex"))
+    await failing.start("plan", "調査", str(tmp_path))
+
+    restarted = subject.AgentsServerManager()
+    claude = UnavailableStartBackend(restarted.sessions, "claude", {"message": "auth", "apiErrorStatus": 401})
+    _install_backend(restarted, "claude", claude)
+    codex = FakeBackend(restarted.sessions, "codex")
+    _install_backend(restarted, "codex", codex)
+
+    response = await restarted.start("plan", "再起動後", str(tmp_path))
+
+    assert not claude.start_calls
+    assert response["engine"] == "codex"
+    assert codex.start_calls == [("second", "medium", "delegate")]
+
+
+@pytest.mark.asyncio
 async def test_internal_server_error_keeps_the_first_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1951,6 +2008,7 @@ async def test_four_observation_paths_share_the_same_stall_judgement(
     session.started_at = started_at
     session.output_updated_at = output_updated_at
     session.updated_at = updated_at
+    session.status = "running"
     manager.sessions[session.session_id] = session
     serialized = {
         "session_id": session.session_id,
@@ -1969,13 +2027,7 @@ async def test_four_observation_paths_share_the_same_stall_judgement(
 
     flags = [
         "stalled" in manager.show_session(session.session_id),
-        "stalled"
-        in manager._listed_session(  # pylint: disable=protected-access  # noqa: SLF001
-            session,
-            status="running",
-            progress="",
-            result_available=False,
-        ),
+        "stalled" in manager.list_sessions()["sessions"][0],
         "stalled"
         in agents_wait._session_output_activity(  # pylint: disable=protected-access  # noqa: SLF001
             [status_path],
