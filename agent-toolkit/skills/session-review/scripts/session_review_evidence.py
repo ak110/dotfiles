@@ -87,6 +87,8 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
 
 _HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
 _CANDIDATE_KIND_LENGTH = 80
+_PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
+"""auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
 # 本文の可変部（語頭から始まるパスと、UWI識別子・行番号・トークン数などの数値）。種別キーの分裂を防ぐため置換する。
 # パスは語頭に限定するが、数値列は語頭・語中を問わず置換するため、`github.com/ak110/dotfiles`のような
 # 固定の識別子も数値部分が置換される。
@@ -2732,6 +2734,9 @@ def _candidate_events(
     hookが返した本文は`escalation`と`warning`の本文としても現れるため、`hook-notice`を先頭に置く。
     後ろに置くと、当該限定の対象にならない種別が同じ本文を取り、発生源ごとの候補数が発生件数に比例する。
 
+    auto mode classifierの拒否は`failed-tool`の一部として現れるため、`permission-denial`を`escalation`より前に置く。
+    後ろに置くと`escalation`が同じ位置を取り、許可ルールの見直しへ結び付く候補が他の失敗と同じ種別へ埋もれる。
+
     候補件数の削減は、正規化した本文での集約と、利用者介入ではない入力の除外だけで行う。
     `hook-notice`の既存の限定を除いて件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
     判定表の位置の集合の一致を求めるため、位置を失う削減は当該検査と両立しない。
@@ -2748,6 +2753,7 @@ def _candidate_events(
     sources = (
         ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
         ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
+        ("permission-denial", (event for event in timeline if _is_permission_denial(event))),
         ("escalation", (event for event in timeline if event.get("kind") == "failed-tool")),
         ("warning", (event for event in warnings if event.get("kind") == "warning")),
         ("delegate-return", (event for event in timeline if _is_unsuccessful_return(event))),
@@ -2919,6 +2925,18 @@ def _candidate_evidence_events(
             item["omitted"] = True
         evidence.append(item)
     return evidence
+
+
+def _is_permission_denial(event: dict[str, Any]) -> bool:
+    """Auto mode classifierの拒否で終わったツール実行であるかを返す。
+
+    拒否は`is_error`のtool_resultとして記録されるため`failed-tool`の一部に当たる。
+    許可ルールの見直しという他の失敗とは別の是正へ結び付くため、独立した候補種別として扱う。
+    """
+    if event.get("kind") != "failed-tool":
+        return False
+    text = event.get("text")
+    return isinstance(text, str) and _PERMISSION_DENIAL_MARKER in text
 
 
 def _is_unsuccessful_return(event: dict[str, Any]) -> bool:
