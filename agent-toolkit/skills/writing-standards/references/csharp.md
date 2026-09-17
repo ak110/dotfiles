@@ -22,11 +22,10 @@
    （解除し忘れると購読先オブジェクトがGC対象にならず、メモリーリークや多重発火の原因になるため）
 - EF Coreでは`Include`でeager loadingを明示するか`Select`で射影する（暗黙の遅延ロードによるN+1クエリを防ぐため）
 - ドキュメントコメントはXMLドキュメント（`///`）で書き、公開APIには`<summary>`を記述する（内容が自明な場合は省略してよい）
-- セキュリティ上の危険パターン
-  - SQLはパラメーター化クエリを使う（`SqlCommand.Parameters`／Dapper／EF Coreのパラメーター）
-  - `Process.Start`は`ProcessStartInfo.ArgumentList`で引数を渡す（文字列結合は避ける）
-  - 信頼できないXMLは`XmlResolver = null`でXXEを無効化する
-  - `BinaryFormatter`は使わない（非推奨・安全でない）。`System.Text.Json`やMessagePackで代替
+- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。C#での対応は次のとおり
+  - SQLは`SqlCommand.Parameters`／Dapper／EF Coreのパラメーター化クエリを使う
+  - `Process.Start`は`ProcessStartInfo.ArgumentList`で引数を渡す
+  - 信頼できないXMLは`XmlResolver = null`でXXEを無効化し、安全でない復元を避けるため`BinaryFormatter`に代えて`System.Text.Json`やMessagePackを使う
   - 乱数はセキュリティ用途なら`RandomNumberGenerator`、それ以外は`Random.Shared`
 - 対象プロジェクトの`LangVersion`・`TargetFramework`で利用できる機能は公式ドキュメントで確認する
   <https://learn.microsoft.com/dotnet/csharp/whats-new/>
