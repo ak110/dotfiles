@@ -506,6 +506,9 @@ def _handle_bash_tool(
         return 2
     if _check_bash_unbounded_root_traversal(command) == "block":
         return 2
+    git_grep_pattern_type_result = _check_bash_git_grep_pattern_type(command)
+    if git_grep_pattern_type_result == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
@@ -520,7 +523,7 @@ def _handle_bash_tool(
         _check_bash_explicit_path_exists(command, cwd),
         _check_bash_atk_options(command),
         _check_bash_unknown_atk_subcommand(command),
-        _check_bash_git_grep_pattern_type(command),
+        git_grep_pattern_type_result,
         _check_bash_unquoted_shell_metacharacter(command),
         _check_bash_unresolved_git_object(command, cwd),
         _check_bash_rg_multiline_pattern(command),

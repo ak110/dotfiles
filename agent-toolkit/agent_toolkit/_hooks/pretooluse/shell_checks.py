@@ -3297,6 +3297,13 @@ def _git_grep_specifies_pattern_type(token: str) -> bool:
     return any(letter in "FEPG" for letter in token[1:])
 
 
+_GIT_GREP_BASIC_ALTERNATION = r"\|"
+_GIT_GREP_BASIC_ALTERNATION_FIX = (
+    "選択として検索する場合は`-E`を明示し、patternを`(a|b)`の形へ書き換える。"
+    rf"`{_GIT_GREP_BASIC_ALTERNATION}`をリテラルとして検索する場合は`-F`を明示する。"
+)
+
+
 def _check_bash_git_grep_pattern_type(command: str) -> str | None:
     """`git grep`でpattern種別を明示せず、かつ指定の有無で一致結果が変わる呼び出しを検出する。
 
@@ -3316,34 +3323,93 @@ def _check_bash_git_grep_pattern_type(command: str) -> str | None:
         pattern = _git_grep_pattern(arguments)
         if pattern is not None and not any(character in _GIT_GREP_BASIC_REGEXP_METACHARACTERS for character in pattern):
             continue
+        if pattern is not None and _GIT_GREP_BASIC_ALTERNATION in pattern:
+            print(
+                _block_notice(
+                    "block: `git grep`が種別を指定せず、patternへ"
+                    f"`{_GIT_GREP_BASIC_ALTERNATION}`を含んでいる。"
+                    "基本正規表現は当該表記を選択として解釈しないため、この呼び出しは意図した一致を返さない。",
+                    fix=_GIT_GREP_BASIC_ALTERNATION_FIX,
+                ),
+                file=sys.stderr,
+            )
+            return "block"
         return _llm_notice(
             "`git grep`が固定文字列・拡張正規表現・Perl互換正規表現のいずれの種別も指定していない。\n"
             "対処: 検索意図に応じて`-F`・`-E`・`-P`のいずれかを明示し、"
-            "オプション、pattern、`--`、pathspecの順で引数を置く。",
+            "オプション、pattern、`--`、pathspecの順で引数を置く。"
+            "patternが正規表現のメタ文字を含む場合は`-E`、リテラルとして検索する場合は`-F`を選ぶ。",
             tag=_WARN_TAG,
             removable_cause=True,
         )
     return None
 
 
-_SHELL_GROUPING_PREFIX = re.compile(r"^(?:[$<>]?\()+")
 _SHELL_METACHARACTERS_IN_WORD = frozenset({"(", ")", "`"})
+_SHELL_SUBSTITUTION_PREFIXES = "$<>"
+
+
+def _substitution_open_index(text: str, search_from: int) -> tuple[int, int] | None:
+    """コマンド置換、プロセス置換又はサブシェルを開く括弧の位置と接頭の長さを返す。
+
+    対象は、`$(`・`<(`・`>(`の形と、語の先頭に現れる`(`とする。
+    語の内側に接頭なしで現れる`(`（`report(1).txt`など）は引用の崩れであり、対象から外す。
+    """
+    index = text.find("(", search_from)
+    while index >= 0:
+        if index > 0 and text[index - 1] in _SHELL_SUBSTITUTION_PREFIXES:
+            return index, 1
+        if index == 0 or text[index - 1].isspace():
+            return index, 0
+        index = text.find("(", index + 1)
+    return None
+
+
+def _strip_balanced_substitutions(text: str) -> str:
+    """対応の取れたコマンド置換、プロセス置換及びサブシェルを取り除いた残りを返す。
+
+    これらの括弧は構文上の必然として現れ、引用できない。語の内側に接頭付きで現れる形も
+    取り除く。対応が取れない括弧と、接頭を持たず語の内側に現れる括弧はそのまま残し、
+    引用の崩れの検出対象にする。
+    """
+    result = text
+    search_from = 0
+    while True:
+        found = _substitution_open_index(result, search_from)
+        if found is None:
+            return result
+        start, prefix_length = found
+        depth = 0
+        end = -1
+        for index in range(start, len(result)):
+            if result[index] == "(":
+                depth += 1
+            elif result[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    end = index
+                    break
+        if end < 0:
+            search_from = start + 1
+            continue
+        result = result[: start - prefix_length] + result[end + 1 :]
+        search_from = 0
 
 
 def _check_bash_unquoted_shell_metacharacter(command: str) -> str | None:
     """語の内側にある引用されていないシェルメタ文字を検出する。
 
     検出対象は、単語の途中に現れる丸括弧とバッククォートに限る。
-    サブシェル、プロセス置換及びコマンド置換は語の先頭と末尾に現れるため、
-    当該位置の括弧を取り除いた核に残るものだけを対象とする。
+    サブシェル、プロセス置換及びコマンド置換は引用できないため、対応の取れた範囲を
+    取り除いた残りに現れるものだけを対象とする。
     二重引用符とドル記号は正当な用法が多く、静的には引用の崩れと区別できないため対象にしない。
     """
     masked = _bash_command_parser.mask_heredoc_bodies(command)
     stripped = re.sub(r"'[^']*'", lambda match: "_" * len(match.group()), masked)
     stripped = re.sub(r'"[^"]*"', lambda match: "_" * len(match.group()), stripped)
+    stripped = _strip_balanced_substitutions(stripped)
     for word in stripped.split():
-        core = _SHELL_GROUPING_PREFIX.sub("", word).rstrip(")")
-        detected = next((character for character in core if character in _SHELL_METACHARACTERS_IN_WORD), None)
+        detected = next((character for character in word if character in _SHELL_METACHARACTERS_IN_WORD), None)
         if detected is None:
             continue
         return _llm_notice(

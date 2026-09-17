@@ -2093,3 +2093,70 @@ class TestNormViolatingArgumentForms:
         contract = _read_session_state(tmp_path, session_id)["external_command_option_contracts"]["rg"]
         assert "-A" in contract["valued"]
         assert "-n" in contract["flags"]
+
+
+class TestBashUnquotedShellMetacharacter:
+    """語の内側の引用されていないシェルメタ文字の検出。
+
+    コマンド置換とプロセス置換の括弧は引用できないため、対応の取れた範囲を取り除いた
+    残りだけを検出対象とする。語頭に限らず語の内側に現れる形も取り除く。
+    """
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "line=$(grep '^X=' ~/.env)",
+            "curl --data=$(cat f) https://example.invalid/",
+            "diff <(sort a) <(sort b)",
+            "payload=$(cat /tmp/a)",
+        ],
+    )
+    def test_balanced_substitution_does_not_warn(command: str, tmp_path: pathlib.Path) -> None:
+        """接頭が付いたコマンド置換とプロセス置換を警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "語の内側に引用されていない" not in _agent_messages(result)
+
+    @staticmethod
+    @pytest.mark.parametrize("command", ["echo abc(def", "foo=abc(def", "echo a`b", "echo a(b)c("])
+    def test_unbalanced_metacharacter_warns(command: str, tmp_path: pathlib.Path) -> None:
+        """対応の取れない括弧とバッククォートは従来どおり警告する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "語の内側に引用されていない" in _agent_messages(result)
+
+
+class TestBashGitGrepBasicAlternation:
+    """種別未指定の`git grep`のうち基本正規表現の代替表現を含むpatternの遮断。
+
+    基本正規表現は当該表記を選択として解釈しないため、当該呼び出しは常に意図した一致を返さない。
+    他のメタ文字だけを含むpatternは従来どおり警告で実行が継続する。
+    """
+
+    @staticmethod
+    def test_alternation_without_pattern_type_is_blocked(tmp_path: pathlib.Path) -> None:
+        """代替表現を含み種別を指定しない呼び出しを遮断する。"""
+        command = "git grep -n " + shlex.quote("def a\\|def b") + " -- app"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 2
+        messages = _agent_messages(result)
+        assert "基本正規表現は当該表記を選択として解釈しない" in messages
+        assert "`-E`を明示" in messages
+        assert "`-F`を明示" in messages
+
+    @staticmethod
+    def test_other_metacharacter_still_warns(tmp_path: pathlib.Path) -> None:
+        """代替表現を含まないpatternは警告のまま実行を継続する。"""
+        command = "git grep -n " + shlex.quote("def .*a") + " -- app"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" in _agent_messages(result)
+
+    @staticmethod
+    def test_explicit_pattern_type_is_accepted(tmp_path: pathlib.Path) -> None:
+        """種別を明示した呼び出しは遮断も警告もしない。"""
+        command = "git grep -nE " + shlex.quote("def (a|b)") + " -- app"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "いずれの種別も指定していない" not in messages
+        assert "基本正規表現は当該表記を選択として解釈しない" not in messages
