@@ -107,7 +107,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間で照合指示の注入要否を判定する入力として読む。
   記録と注入の対象は通常のユーザー発話に限り、コマンド起動と機械注入ターンは対象の外に置く。
-  機械注入ターンの判定入力は4系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`[agent-toolkit:periodic-recheck]`だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`又は`<cross-session-message`で始まること。
+  機械注入ターンの判定入力は4系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`[agent-toolkit/periodic-recheck]`だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`又は`<cross-session-message`で始まること。
   セッション終了まで保持し、リセット経路は設けない
 
 ## 通知反復系

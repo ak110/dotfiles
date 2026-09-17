@@ -28,7 +28,7 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 機械注入ターンの判定入力は次の4系統とし、いずれかが成立したターンを対象とする。
 
 1. payloadの`source`が存在し、値が`user`以外であること
-2. `prompt`の1行目が`[agent-toolkit:periodic-recheck]`だけの行であること
+2. `prompt`の1行目が`[agent-toolkit/periodic-recheck]`だけの行であること
 3. 委譲先として起動されていること
 4. `prompt`が`<task-notification`又は`<cross-session-message`で始まること
 
@@ -46,6 +46,9 @@ import time
 from agent_toolkit._common.delegated_session import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_delegated,
 )
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._hooks import plugin_resources as _plugin_resources  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -86,7 +89,7 @@ _LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<(?:task-notification|cross-session-message)\b")
-PERIODIC_RECHECK_MARKER = "[agent-toolkit:periodic-recheck]"
+PERIODIC_RECHECK_MARKER = "[agent-toolkit/periodic-recheck]"
 """定期再確認のpromptの1行目へ置く役割標識。
 
 `agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」が
@@ -112,9 +115,10 @@ _VERIFICATION_NOTICE_BODY = (
 規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
 """
 _REFERENCE_NOTICE_TAG = "notice"
-_REFERENCE_NOTICE_BODY = (
-    "当該発話へ応答する前に、`agent-toolkit:confirmation-and-uwi`の"
-    "`references/user-utterance.md`を全文読み、同書の各項を当該発話へ適用する。"
+REFERENCE_NOTICE_BODY = (
+    "当該発話へ応答する前に、"
+    f"{_plugin_resources.skill_reference('confirmation-and-uwi', 'references/user-utterance.md')}"
+    "を全文読み、同書の各項を当該発話へ適用する。"
 )
 """発話解釈の規範の所在だけを示す注記の本文。
 
@@ -253,7 +257,7 @@ def main(payload_text: str) -> int:
     # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
     notices: list[str] = []
     if is_normal_prompt:
-        notices.append(_llm_notice(_REFERENCE_NOTICE_BODY, tag=_REFERENCE_NOTICE_TAG))
+        notices.append(_llm_notice(REFERENCE_NOTICE_BODY, tag=_REFERENCE_NOTICE_TAG))
         if _claim_verification_notice(session_id, time.time()):
             notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     additional_context = "\n".join(notices) if notices else None

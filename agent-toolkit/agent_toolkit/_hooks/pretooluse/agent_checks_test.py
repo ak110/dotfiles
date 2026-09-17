@@ -307,10 +307,10 @@ class TestBashOutputTruncationWarning:
         assert second.returncode == 0
         context = json.loads(second.stdout)["hookSpecificOutput"]
         assert context["updatedInput"]["command"].startswith("uvx pyfltr run > ")
-        # 分離実行を利用できない主体も本文だけで次の工程を構成できるよう、代替と正本の所在を併記する。
+        # 同じ原因の2件目以降は、補正の対象と保存先と件数の3点へ短縮する。
         body = context["additionalContext"]
-        assert "当該コマンド自身が提供する対象の限定" in body
-        assert "agent-toolkit/rules/02-agent-operations.md" in body
+        assert "当該コマンド自身が提供する対象の限定" not in body
+        assert "この通知は同一セッションで2件目である。" in body
 
     def test_status_reference_after_truncation_is_safely_fixed(self, tmp_path: pathlib.Path) -> None:
         """切り詰め除去後の終了状態参照がproducerを指す入力へ補正する。"""
@@ -972,7 +972,8 @@ class TestTaskStopBlock:
         assert "停滞検知の手順" in stderr
         assert "進行が遅い" in stderr
         assert "AskUserQuestionで確認" in stderr
-        assert "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節" in stderr
+        assert "references/waiting-and-monitoring.md" in stderr
+        assert "「停滞の検知と巻き取り」節" in stderr
 
     def test_block_message_defaults_to_additional_instructions_and_limits_stopping(self, state_dir: dict[str, str]) -> None:
         """遮断文面が利用者介入時の追加指示既定と停止限定条件を示す。"""

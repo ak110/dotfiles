@@ -30,10 +30,13 @@ _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "稼働中の依頼がある場合は、元の依頼の目的と未完了工程を照合してから次に実行する工程を確定する。"
     "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
 )
-_EXPECTED_REFERENCE_NOTICE_BODY = (
-    "当該発話へ応答する前に、`agent-toolkit:confirmation-and-uwi`の"
-    "`references/user-utterance.md`を全文読み、同書の各項を当該発話へ適用する。"
-)
+_EXPECTEDREFERENCE_NOTICE_BODY = user_prompt_submit.REFERENCE_NOTICE_BODY
+"""参照注記の期待値。
+
+本文は読込を求める資料の絶対パスを含み、当該パスは実行環境のplugin rootで変わる。
+実装の定数を期待値とし、同じ仕様を検体側へ二重に固定しない。
+絶対パスが実在することは`plugin_resources_test.py`が検査する。
+"""
 
 
 def _notice_bodies(context: str) -> list[str]:
@@ -110,7 +113,7 @@ class TestMachineInjectedTurn:
         context = ""
         if result.stdout:
             context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
-        assert _EXPECTED_REFERENCE_NOTICE_BODY not in context
+        assert _EXPECTEDREFERENCE_NOTICE_BODY not in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
         assert _read_state(tmp_path, sid).get("last_user_prompt_at") is None
 
@@ -122,7 +125,7 @@ class TestMachineInjectedTurn:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _EXPECTED_REFERENCE_NOTICE_BODY in context
+        assert _EXPECTEDREFERENCE_NOTICE_BODY in context
         assert _read_state(tmp_path, sid).get("last_user_prompt_at") is not None
 
     @staticmethod
@@ -139,7 +142,7 @@ class TestMachineInjectedTurn:
 
         assert result.returncode == 0
         bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-        assert _EXPECTED_REFERENCE_NOTICE_BODY in bodies
+        assert _EXPECTEDREFERENCE_NOTICE_BODY in bodies
         assert _EXPECTED_VERIFICATION_NOTICE_BODY in bodies
 
 
@@ -190,7 +193,7 @@ class TestNonMatchingPrompts:
     def _assert_reference_notice_only(result: subprocess.CompletedProcess[str]) -> None:
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert "sessionTitle" not in hook_output
-        assert _notice_bodies(hook_output["additionalContext"]) == [_EXPECTED_REFERENCE_NOTICE_BODY]
+        assert _notice_bodies(hook_output["additionalContext"]) == [_EXPECTEDREFERENCE_NOTICE_BODY]
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
         sid = "non-skill"
@@ -316,7 +319,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
 
     def test_reference_notice_accompanies_every_normal_prompt(self, tmp_path: pathlib.Path) -> None:
         """間隔によらず通常発話のたびに参照注記を返し、判定手順を本文へ持たせない。"""
@@ -327,7 +330,7 @@ class TestVerificationNoticeInjection:
             assert result.returncode == 0
             contexts.append(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
 
-        assert [_notice_bodies(context) for context in contexts] == [[_EXPECTED_REFERENCE_NOTICE_BODY]] * 3
+        assert [_notice_bodies(context) for context in contexts] == [[_EXPECTEDREFERENCE_NOTICE_BODY]] * 3
         assert all("user-utterance.md" in context for context in contexts)
         assert all("照合してから応答する" not in context for context in contexts)
 
@@ -362,7 +365,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
         assert _read_state(tmp_path, session_id)["last_user_prompt_at"] > previous
 
     def test_claims_notice_at_exact_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -399,7 +402,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY]
 
     def test_does_not_inject_on_first_prompt(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-first-prompt"
@@ -408,7 +411,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY]
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
         assert isinstance(state["last_user_prompt_at"], float)
@@ -450,7 +453,7 @@ class TestVerificationNoticeInjection:
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert hook_output["hookEventName"] == "UserPromptSubmit"
         assert _notice_bodies(hook_output["additionalContext"]) == [
-            _EXPECTED_REFERENCE_NOTICE_BODY,
+            _EXPECTEDREFERENCE_NOTICE_BODY,
             _EXPECTED_VERIFICATION_NOTICE_BODY,
         ]
         assert "sessionTitle" not in hook_output
@@ -477,7 +480,7 @@ class TestVerificationNoticeInjection:
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert hook_output["sessionTitle"] == "current-plan"
         assert _notice_bodies(hook_output["additionalContext"]) == [
-            _EXPECTED_REFERENCE_NOTICE_BODY,
+            _EXPECTEDREFERENCE_NOTICE_BODY,
             _EXPECTED_VERIFICATION_NOTICE_BODY,
         ]
 

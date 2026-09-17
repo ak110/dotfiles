@@ -117,6 +117,9 @@ from agent_toolkit._hooks import (
     response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
+    plugin_resources as _plugin_resources,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._hooks import (
     scratchpad_path as _scratchpad_path,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
@@ -864,7 +867,7 @@ def _check_colloquial(
     return _llm_notice(
         f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
         f"{_colloquial_hit_summary(hits)}"
-        "`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
+        f"{_plugin_resources.skill_reference('writing-standards', 'references/writing.md')}「日本語の書き方」に従う。"
         "検出箇所を含む文全体を書き換える。単語だけを同義語へ置き換えず、文全体を組み直す。"
         f" 対象: {target}",
         tag=_WARN_TAG,
