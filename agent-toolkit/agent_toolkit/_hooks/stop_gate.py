@@ -68,7 +68,20 @@ _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "CronC
 # `re.DOTALL`で本文中の改行も拾う。
 _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
 
-_MCP_BACKGROUND_TASK_RE = re.compile(r"moved to the background as task\s+(\S+)")
+_MCP_BACKGROUND_TASK_PATTERNS = (
+    re.compile(r"moved to the background as task\s+(\S+)"),
+    re.compile(r"timed out[^\n]{0,160}?\bID:\s*(\S+)"),
+)
+"""背景移行通知が識別子を示す形。
+
+第1はMCP呼び出しの移行通知、第2は実行ホストが実行時間の上限により`Bash`のジョブを
+背景へ移した通知である。いずれも自身の呼び出しが返した識別子であり、
+`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」が停止を許容する所有の根拠に当たる。
+
+第2の判定へ`timed out`を必須とするのは、`run_in_background`を指定しない前景実行の応答が
+`running in background with ID:`の形で識別子を返す場合と区別するためである。
+前景実行の応答を所有記録へ加えると、起動していない対象の停止が通る。
+"""
 
 # 抽出した値は背景タスクの識別子として`<task-id>`との突合と停止対象の所有判定へ渡すため、
 # 文末に付く句読点を識別子へ取り込まない。
@@ -917,17 +930,19 @@ def _collect_mcp_background_task_id_tool_use_ids(
 
 
 def background_task_id_from_notice(value: object) -> str | None:
-    """MCP呼び出しの背景移行通知からタスクIDを返す。
+    """背景移行通知からタスクIDを返す。
 
+    対象はMCP呼び出しの移行通知と、実行時間の上限により実行ホストがジョブを背景へ移した通知とする。
     識別子の直後に続く文末の句読点は除く。
     通知本文は文として書かれるため、句読点を含めた値は`<task-id>`要素の値とも
     停止対象の識別子とも一致しない。
     """
     if isinstance(value, str):
-        match = _MCP_BACKGROUND_TASK_RE.search(value)
-        if match is None:
-            return None
-        return match.group(1).rstrip(_TRAILING_PUNCTUATION) or None
+        for pattern in _MCP_BACKGROUND_TASK_PATTERNS:
+            match = pattern.search(value)
+            if match is not None:
+                return match.group(1).rstrip(_TRAILING_PUNCTUATION) or None
+        return None
     if isinstance(value, dict):
         nested_values = value.values()
     elif isinstance(value, list):

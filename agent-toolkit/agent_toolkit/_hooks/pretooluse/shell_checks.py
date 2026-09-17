@@ -611,7 +611,13 @@ class _TruncationFix:
 _STDERR_DUPLICATION_SUFFIX = "2>&1"
 
 
-def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str, list[str], _TruncationFix | None] | None:
+def _autofix_bash_segment(
+    command: str,
+    cwd: str,
+    session_id: str,
+    *,
+    inside_conditional: bool = False,
+) -> tuple[str, list[str], _TruncationFix | None] | None:
     """1つの直列区間にある競合しない補正を適用する。
 
     戻り値の3つ目は、切り詰めを補正した場合の適用内容とする。`position`は呼び出し元が確定する。
@@ -656,6 +662,10 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
             rewritten = f"{rewritten} {redirection} {shlex.quote(log_path)}"
         if read_back:
             rewritten = f"{rewritten}; {shlex.join([*consumer_tokens, log_path])}"
+            if inside_conditional:
+                # `||`と`&&`の被演算子の内側では、読み戻しを同じ被演算子の内側へ留める。
+                # 外側の`;`区間へ移すと、読み戻しが条件によらず実行されて成否が変わる。
+                rewritten = f"{{ {rewritten}; }}"
         fix = _TruncationFix(
             position=0,
             segment=command,
@@ -769,7 +779,10 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         if start < 0:
             return None
         cursor = start + len(segment)
-        fixed = _autofix_bash_segment(segment, cwd, session_id)
+        preceding = command_after_path_fix[:start].rstrip()
+        following = command_after_path_fix[cursor:].lstrip()
+        inside_conditional = preceding.endswith(("||", "&&")) or following.startswith(("||", "&&"))
+        fixed = _autofix_bash_segment(segment, cwd, session_id, inside_conditional=inside_conditional)
         if fixed is None:
             continue
         rewritten, segment_notices, fix = fixed
@@ -1324,6 +1337,63 @@ def _remove_command_word(command: str, word: str) -> str | None:
     return command[:start] + command[end:]
 
 
+def _remove_missing_paths(command: str, missing: Sequence[str]) -> str | None:
+    """実在しないパスを語として除いた文字列を返す。除去を確定できない場合はNoneを返す。"""
+    rewritten = command
+    for candidate in missing:
+        replaced = _remove_command_word(rewritten, candidate)
+        if replaced is None:
+            return None
+        rewritten = replaced
+    return rewritten
+
+
+def _operand_loss_commands(before: str, after: str) -> list[str]:
+    """パスの除去により操作対象の引数を全て失う区間のコマンド名を返す。"""
+    before_segments = list(_extract_execution_segments(before))
+    after_segments = list(_extract_execution_segments(after))
+    if len(before_segments) != len(after_segments):
+        return []
+    losses: list[str] = []
+    for original, updated in zip(before_segments, after_segments, strict=False):
+        if not original.resolved or not updated.resolved or not updated.tokens:
+            continue
+        if _path_operands(original) and not _path_operands(updated):
+            losses.append(updated.tokens[0])
+    return losses
+
+
+def _check_bash_missing_path_operand_loss(command: str, cwd: str) -> str | None:
+    """実在しないパスの除去で操作対象の引数を全て失う呼び出しを遮断する。
+
+    引数を失ったコマンドは標準入力を読んで別の意味で成立するため、補正して実行させない。
+    """
+    if not cwd:
+        return None
+    scan = _scan_explicit_paths(command, cwd)
+    if not scan.missing or not scan.present:
+        return None
+    rewritten = _remove_missing_paths(command, scan.missing)
+    if rewritten is None:
+        return None
+    losses = _operand_loss_commands(command, rewritten)
+    if not losses:
+        return None
+    print(
+        _block_notice(
+            "block: 実在しないパスを除くと操作対象の引数が無くなるコマンドがある。"
+            f"対象のコマンド: {'、'.join(f'`{name}`' for name in losses)}。"
+            f"実在しないパス: {'、'.join(scan.missing)}",
+            fix=(
+                "当該コマンドへ実在するパスを指定するか、当該コマンドを呼び出しから外す。"
+                "引数を失ったコマンドは標準入力を読み、補正前とは異なる成否を返す。"
+            ),
+        ),
+        file=sys.stderr,
+    )
+    return "block"
+
+
 def _autofix_missing_paths(command: str, cwd: str) -> tuple[str, tuple[str, ...]] | None:
     """実在しないパスを除いても対象が残る呼び出しを、当該パスを除いた形へ補正する。
 
@@ -1336,12 +1406,9 @@ def _autofix_missing_paths(command: str, cwd: str) -> tuple[str, tuple[str, ...]
     scan = _scan_explicit_paths(command, cwd)
     if not scan.missing or not scan.present:
         return None
-    rewritten = command
-    for candidate in scan.missing:
-        replaced = _remove_command_word(rewritten, candidate)
-        if replaced is None:
-            return None
-        rewritten = replaced
+    rewritten = _remove_missing_paths(command, scan.missing)
+    if rewritten is None or _operand_loss_commands(command, rewritten):
+        return None
     return rewritten, scan.missing
 
 

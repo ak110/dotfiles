@@ -216,6 +216,7 @@ if TYPE_CHECKING:
         _check_bash_help_with_execution,
         _check_bash_heredoc_chain,
         _check_bash_env_full_read,
+        _check_bash_missing_path_operand_loss,
         _check_bash_nested_code_string,
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
@@ -490,6 +491,8 @@ def _handle_bash_tool(
         return 2
     if sleep_poll_result is not None:
         warnings.append(sleep_poll_result)
+    if _check_bash_missing_path_operand_loss(command, cwd) == "block":
+        return 2
     auto_fix = _autofix_bash_command(command, cwd, session_id)
     if auto_fix is not None:
         command, auto_fix_notice = auto_fix

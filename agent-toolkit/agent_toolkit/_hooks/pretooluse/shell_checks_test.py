@@ -2109,6 +2109,59 @@ class TestNormViolatingArgumentForms:
         assert "-n" in contract["flags"]
 
 
+class TestTruncationFixKeepsConditionalStructure:
+    """切り詰め補正が`||`と`&&`の条件構造を保つこと。
+
+    読み戻しを被演算子の外側の`;`区間へ移すと、補正前と異なる成否を返す。
+    """
+
+    @staticmethod
+    def test_read_back_stays_inside_the_conditional(tmp_path: pathlib.Path) -> None:
+        """`A || B | head -N`では読み戻しが`||`の右辺の内側に留まる。"""
+        existing = tmp_path / "docs"
+        existing.mkdir()
+        command = f"test -f {tmp_path / 'absent.txt'} || ls -la {existing} | head -40"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": "conditional-truncation",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        left, separator, right = corrected.partition("|| ")
+        assert separator == "|| "
+        assert "head -40 " not in left
+        assert right.startswith("{ ")
+        assert right.rstrip().endswith("; }")
+
+    @staticmethod
+    def test_missing_path_removal_losing_all_operands_is_blocked(tmp_path: pathlib.Path) -> None:
+        """実在しないパスを除くと引数が無くなるコマンドを含む呼び出しを遮断する。"""
+        existing = tmp_path / "docs"
+        existing.mkdir()
+        command = f"wc -l {tmp_path / 'absent.txt'} 2>/dev/null || ls -la {existing}"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": "operand-loss",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        messages = _agent_messages(result)
+        assert "操作対象の引数が無くなる" in messages
+        assert "`wc`" in messages
+        assert "absent.txt" in messages
+
+
 class TestRecursiveGrepReplacementKeepsOriginalOptions:
     """再帰`grep`の遮断が示す置換後コマンドの内容。
 
