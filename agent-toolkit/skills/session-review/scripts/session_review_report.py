@@ -32,24 +32,22 @@ REPORT_H2_HEADINGS = (
 _GENERATED_SECTION_HEADINGS = ("問題候補の判定記録", "所要時間の内訳と改善提案")
 _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
 
---decisions: 候補ごとの判定を並べた配列。
-  locators: 候補の記録位置の配列（`<記録名>:<行番号>`）
-  disposition: 判定の区分
-  analysis_id: 欠陥と判定した候補が参照する分析の識別子
-  reason: 欠陥でないと判定した候補の根拠
-  defect: 欠陥かどうかの真偽値
+--decisions: 候補ごとの判定を並べたJSON配列。各要素は次のキーを持つJSON object。
+  locators: 候補の記録位置の配列。各要素は`record`（記録名の文字列）と
+            `line`（行番号の整数）を持つJSON objectとする。重複のない昇順で並べる
+  disposition: 判定の区分。`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する
+  reason: `excluded`で必須。欠陥でないと判定した根拠の文字列
+  analysis_id: `analyzed`で必須。参照する分析の識別子の文字列
+  defect: `analyzed`で任意。判定結果として表へ書く値。省略時は`要処置`とする
 
---analyses: 分析の識別子ごとの原因分析を並べた配列。
-  analysis_id: 分析の識別子
+--analyses: 分析の識別子をキーとするJSON object。値は次のキーを持つJSON object。
   {ANALYSIS_FIELDS[0]}: 直接的原因
   {ANALYSIS_FIELDS[1]}: 根本原因
   {ANALYSIS_FIELDS[2]}: 規範の欠落
   {ANALYSIS_FIELDS[3]}: 確定した処置
 
---timings: 工程ごとの区間を並べた配列。工程名は{"、".join(PHASES)}の6つとする。
-  phase: 工程名
-  started_at: 開始時刻（ISO 8601）
-  finished_at: 終了時刻（ISO 8601）
+--timings: 工程名をキーとするJSON object。キーは{"、".join(PHASES)}の6つを、この順序で漏れなく含める。
+           値は`started_at`と`finished_at`をISO 8601の文字列で持つJSON object。
 """
 """`--help`へ示す入力JSONの構造。
 
