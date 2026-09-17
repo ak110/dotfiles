@@ -315,6 +315,23 @@ def test_incorrect_candidate_count_is_rejected(tmp_path: pathlib.Path) -> None:
     assert not paths[-1].exists()
 
 
+def test_input_structure_help_matches_the_accepted_forms() -> None:
+    """`--help`の入力JSONの構造が、実装が受理する型と値をそのまま示す。
+
+    ヘルプと実装が別々に構造を保持するため、一致を固定しないと
+    ヘルプどおりに組み立てた入力が型の検査で失敗し、報告生成の再実行が生じる。
+    """
+    help_text = report._INPUT_STRUCTURE_HELP  # pylint: disable=protected-access  # noqa: SLF001
+
+    assert "--analyses: 分析の識別子をキーとするJSON object" in help_text
+    assert "--timings: 工程名をキーとするJSON object" in help_text
+    assert "`record`（記録名の文字列）と" in help_text
+    assert "`line`（行番号の整数）を持つJSON object" in help_text
+    assert "`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する" in help_text
+    assert "reason: `excluded`で必須" in help_text
+    assert "analysis_id: `analyzed`で必須" in help_text
+
+
 def test_uncertain_candidate_cannot_be_excluded_without_reason(tmp_path: pathlib.Path) -> None:
     paths = _inputs(tmp_path)
     decisions = json.loads(paths[1].read_text(encoding="utf-8"))

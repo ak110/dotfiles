@@ -10,16 +10,15 @@ Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿�
 Copilot由来のreview本文は、状態（open・closed・merged）を問わず全Pull Requestを対象に取得する。
 inline commentもreview threadも伴わずreview本文だけが到着する場合があり、未解決threadの有無で対象を限定すると、その本文が漏れるためである。
 Copilot由来のinline commentとreview threadは、未解決のreview threadを持つPull Requestだけを対象に取得する。
-本監査は是正済みと根拠付き対応不要の未解決threadを解決するため、解決済みのthreadだけを持つPull Requestは、その時点で未処置のinline commentを持たない。
+解決済みのthreadだけを持つPull Requestは、その時点で未処置のinline commentを持たない。
 要修正としてAWIへ記録した指摘のthreadは未解決のまま残り、以降も対象に入り続ける。
 Copilot由来の判定条件は、authorの`__typename`が`Bot`であることと、authorのloginに`copilot`を大文字小文字を区別せず含むことの双方が成立することとする。login名だけで判定すると、その文字列を含む人間のアカウントの指摘へ自動返信と解決を書き込む。
 
 ## 取得
 
 Copilot由来のreview本文の取得と、review threadの解決状態による対象判定は、独立した接続として扱い、それぞれpaginationの終端まで取得する。
-いずれの接続も、初回は`cursor`を渡さず、`pageInfo.hasNextPage`が真の場合は、直前の`pageInfo.endCursor`を
-`-F cursor=<END_CURSOR>`で渡して偽になるまで取得する。
-Pull Request単位のクエリーは`cursor`を渡さない状態から取得し直し、横断クエリーの結果とは独立した取得として扱う。
+いずれの接続も初回は`cursor`を渡さず、`pageInfo.hasNextPage`が真の場合は直前の`pageInfo.endCursor`を`-F cursor=<END_CURSOR>`で渡して偽になるまで取得する。
+Pull Request単位のクエリーは横断クエリーの結果とは独立した取得として扱う。
 
 全Pull Requestの番号、`reviews`の先頭ページ及び`reviewThreads`の先頭ページを、次の横断GraphQLクエリーで取得する。
 
@@ -62,7 +61,7 @@ review本文が概要と進行状況だけを述べ、成果物への処置を�
 指摘なしの分類は本文全体に対して行い、本文へ含まれる個々の指摘の分類とは別の単位として扱う。
 要修正は所在と対処案を返し、同一セッションの是正とAWIへの記録は呼び出し元が確定する。
 是正済み又は根拠付き対応不要と分類した指摘は、「判定結果のGitHubへの記録」に従って分類と根拠をGitHubへ残す。
-全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentについて、所在、分類及び処置をメインへ返す。inline commentの取得対象へ入らなかったPull Request番号と、その判定に用いたクエリーの結果も併せて返す。
+全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentについて、所在、分類及び処置をメインへ返す。inline commentの取得対象へ入らなかったPull Request番号も併せて返す。
 
 ## 判定結果のGitHubへの記録
 
@@ -115,4 +114,4 @@ gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 記録するdatabaseIdはreview本文のものに限る。inline commentは未解決threadの解決状態が同じ役割を果たす。
 記録の読み書きは`atk review-audit`だけで行う。記録ファイルのパス解決と保存形式をこのコマンドが正本として持ち、別の手段で同じファイルを読み書きすると形式が分岐するためである。
 記録先は対象GitHubリポジトリの外にある状態ディレクトリであり、本記録は成果物を変更しない制約の対象に当たらない。
-記録は分類の再導出を省く目的だけに用いる。本記録は分類と根拠を保持しない索引であり、分類と根拠はGitHubへ残す記録が保持する。成果物の変更により再判定が必要になった指摘は、その変更に対する新しいreviewが別のdatabaseIdで到着するため、記録の無効化を経ずに再判定できる。
+本記録は分類の再導出を省く索引であり、分類と根拠はGitHubへ残す記録が保持する。成果物の変更により再判定が必要になった指摘は、その変更に対する新しいreviewが別のdatabaseIdで到着するため、記録の無効化を経ずに再判定できる。

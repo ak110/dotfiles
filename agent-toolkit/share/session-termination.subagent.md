@@ -31,7 +31,7 @@ pushとCI確認後、現在branchがベースbranchであること、作業ツ�
 
 ## 検証又はCIの失敗
 
-最初の失敗からCI成功又は本タスクの終端までを同一の失敗処理とする。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装及び期待値から直接的原因を確定し、原因分析結果、修正認可根拠、対象の検証結果、変更目的、対象、公開契約及び入力計画の7項目を持つCI記録を保持する。
+最初の失敗からCI成功又は本タスクの終端までを同一の失敗処理とする。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装及び期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 
 修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、push及びCI確認を再判定する。
 

@@ -23,10 +23,9 @@
 - 非同期処理
   - ランタイムは`tokio`を基本とする
   - `block_on`は`main`等の境界でのみ使う
-- セキュリティ上の危険パターン
-  - `std::process::Command`はshell経由（`sh -c`）を避け、引数を配列で渡す
+- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Rustでの対応は次のとおり
+  - `std::process::Command`へ引数を配列で渡し、パスは`Path`／`PathBuf`で扱う
   - 信頼できない入力のデシリアライズは`serde` + 明示的な構造体で行う（`serde_json::Value`のまま後段へ渡さない）
-  - パスは`Path`／`PathBuf`で扱い、文字列結合で組み立てない
   - 乱数はセキュリティ用途なら`rand::rngs::OsRng`、それ以外は`rand::thread_rng`
 - MSRV（最小サポートバージョン）は`Cargo.toml`の`rust-version`に明記する
 - テスト（inline, 最低限）
@@ -36,7 +35,7 @@
    （sleepループはflakyテストの主要因となるため）
   - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`でcompile-timeに行う
    （Rust 1.79+）。実行時テストにはしない
-- 対象プロジェクトの`rust-version`・editionで利用できる機能は公式リリースノートで確認する
+- 対象プロジェクトの`rust-version`・editionで使える機能は公式リリースノートで確認する
   <https://doc.rust-lang.org/releases.html>
 
 ## テストコード（統合テスト）

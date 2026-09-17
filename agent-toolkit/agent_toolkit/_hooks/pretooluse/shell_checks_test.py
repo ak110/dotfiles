@@ -1414,6 +1414,15 @@ class TestStaticSafetyBlocks:
         assert "複数の文を含む" in result.stderr
         assert "編集ツール" in result.stderr
 
+    def test_python_eval_block_notice_names_specialized_commands_first(self) -> None:
+        """`python -c`の遮断案内が、保存と実行より先に判定する専用コマンドを名指しする。"""
+        code = "import json\nprint(json.dumps({}))"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"python3 -c {shlex.quote(code)}"}})
+        assert result.returncode == 2
+        assert "構造化データからの項目の取り出しだけを行う場合は`jq`" in result.stderr
+        assert "行の抽出と置換だけを行う場合は`rg`" in result.stderr
+        assert "先にその成否を判定する" in result.stderr
+
     def test_python_eval_argument_with_syntax_error_is_blocked(self) -> None:
         """`python -c`へ構文として成立しないコードを渡す入力を遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "python3 -c 'for x in'"}})
@@ -1449,6 +1458,33 @@ class TestBashOutputTruncationRepetition:
         assert separator == "; "
         assert producer.startswith("ls -1 /var > ")
         assert consumer.startswith("head -5 ")
+
+    def test_second_and_later_notices_are_shortened(self, tmp_path: pathlib.Path) -> None:
+        """2件目以降の通知本文は補正の対象と保存先と件数の3点だけを持つ。"""
+        session_id = "truncation-shortened"
+        first = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+        second = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        first_context = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
+        second_context = json.loads(second.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "切り詰めを含まない書き方" in first_context
+        assert "切り詰めを含まない書き方" not in second_context
+        assert "補正対象のコマンドに対応する指定" not in second_context
+        assert "対象: 第1直列区間の`head`→`" in second_context
+        assert "この通知は同一セッションで2件目である。" in second_context
+
+    def test_autofix_notice_is_tagged_as_informational(self, tmp_path: pathlib.Path) -> None:
+        """補正が成立した通知は`notice`タグで発行し、是正を要する`warn`と区別する。
+
+        補正は補正前の呼び出しが要求した結果をそのまま返すため、実行主体の是正を要さない。
+        `warn`のまま発行すると、振り返りの抽出器が当該通知を問題候補として保持する。
+        """
+        result = self._invoke("ls -1 /tmp | head -5", "truncation-notice-tag", tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "[notice]" in context
+        assert "[warn]" not in context
 
     def test_other_kind_is_also_corrected(self, tmp_path: pathlib.Path) -> None:
         """別の補正種別も過去の補正によらず同じ変換で通す。"""
@@ -1606,7 +1642,7 @@ class TestBashRecursiveGrepTargetJudgement:
         assert result.returncode == 2
         assert "置換後のコマンド" in result.stderr
         assert "git -C " in result.stderr
-        assert "grep -F -- needle" in result.stderr
+        assert "grep -e needle -- ." in result.stderr
 
     def test_notice_shows_the_replacement_command_outside_git(self, tmp_path: pathlib.Path) -> None:
         """Git管理外の対象では、patternとパスを埋めた`rg`の形を示す。"""
@@ -1620,7 +1656,7 @@ class TestBashRecursiveGrepTargetJudgement:
 
         assert result.returncode == 2
         assert "置換後のコマンド" in result.stderr
-        assert "rg -F -- needle" in result.stderr
+        assert "rg -e needle -- ." in result.stderr
 
     def test_notice_reports_why_the_replacement_is_undetermined(self, tmp_path: pathlib.Path) -> None:
         """pattern本文を一意に取り出せない入力では、確定できなかった理由を示す。"""
@@ -1740,6 +1776,8 @@ class TestNormViolatingArgumentForms:
         assert "実在しない検索・読取パスを当該呼び出しの対象から除いた" in context
         assert "absent.txt" in context
         assert "明示された検索・読取パスが存在しない" not in context
+        # 補正で呼び出しの対象集合が狭まるため、是正を要する通知として`warn`で発行する。
+        assert "[warn]" in context
 
     def test_only_missing_path_stays_a_warning(self, tmp_path: pathlib.Path) -> None:
         """不在パスを除くと対象が残らない呼び出しは補正せず警告のまま通す。"""
@@ -1854,8 +1892,10 @@ class TestNormViolatingArgumentForms:
 
         引数を受理しないサブコマンドでは、対処として引数なしでの再発行を示す。
         値をオプションで渡す対処は当該サブコマンドで実行できないため示さない。
+        対象には受理オプションが`-h`だけの`atk wi pull`を使う。値付きオプションを持つサブコマンドは
+        値をオプションで渡す対処が成立するため、本検体の対象から外れる。
         """
-        result = self._invoke("atk agents wait extra", tmp_path)
+        result = self._invoke("atk wi pull extra", tmp_path)
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "位置引数を受理しない" in messages
@@ -2093,3 +2133,205 @@ class TestNormViolatingArgumentForms:
         contract = _read_session_state(tmp_path, session_id)["external_command_option_contracts"]["rg"]
         assert "-A" in contract["valued"]
         assert "-n" in contract["flags"]
+
+
+class TestTruncationFixKeepsConditionalStructure:
+    """切り詰め補正が`||`と`&&`の条件構造を保つこと。
+
+    読み戻しを被演算子の外側の`;`区間へ移すと、補正前と異なる成否を返す。
+    """
+
+    @staticmethod
+    def test_read_back_stays_inside_the_conditional(tmp_path: pathlib.Path) -> None:
+        """`A || B | head -N`では読み戻しが`||`の右辺の内側に留まる。"""
+        existing = tmp_path / "docs"
+        existing.mkdir()
+        command = f"test -f {tmp_path / 'absent.txt'} || ls -la {existing} | head -40"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": "conditional-truncation",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        left, separator, right = corrected.partition("|| ")
+        assert separator == "|| "
+        assert "head -40 " not in left
+        assert right.startswith("{ ")
+        assert right.rstrip().endswith("; }")
+
+    @staticmethod
+    def test_missing_path_removal_losing_all_operands_is_blocked(tmp_path: pathlib.Path) -> None:
+        """実在しないパスを除くと引数が無くなるコマンドを含む呼び出しを遮断する。"""
+        existing = tmp_path / "docs"
+        existing.mkdir()
+        command = f"wc -l {tmp_path / 'absent.txt'} 2>/dev/null || ls -la {existing}"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": "operand-loss",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        messages = _agent_messages(result)
+        assert "操作対象の引数が無くなる" in messages
+        assert "`wc`" in messages
+        assert "absent.txt" in messages
+
+
+class TestRecursiveGrepReplacementKeepsOriginalOptions:
+    """再帰`grep`の遮断が示す置換後コマンドの内容。
+
+    元の呼び出しが指定した行番号出力、複数のpattern及び種別を保つ。
+    """
+
+    @staticmethod
+    def test_line_number_and_multiple_patterns_are_preserved(tmp_path: pathlib.Path) -> None:
+        """行番号出力と2件のpatternが提示へ現れる。"""
+        target = tmp_path / "docs"
+        target.mkdir()
+        command = "grep -rn -e " + shlex.quote("ユーザー入力素材") + " -e " + shlex.quote("逐語") + " " + str(target)
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+
+        assert result.returncode == 2
+        messages = _agent_messages(result)
+        assert "置換後のコマンド: `" in messages
+        assert "-n" in messages
+        assert "-e 'ユーザー入力素材'" in messages
+        assert "-e '逐語'" in messages
+
+    @staticmethod
+    def test_fixed_string_option_is_not_added_without_the_original(tmp_path: pathlib.Path) -> None:
+        """元の呼び出しが固定文字列指定を持たない場合は提示へ加えない。"""
+        target = tmp_path / "docs"
+        target.mkdir()
+        command = "grep -r " + shlex.quote("needle") + " " + str(target)
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+
+        assert result.returncode == 2
+        replacement = _agent_messages(result).split("置換後のコマンド: `", 1)[1].split("`", 1)[0]
+        assert " -F " not in f" {replacement} "
+
+    @staticmethod
+    def test_fixed_string_option_is_preserved(tmp_path: pathlib.Path) -> None:
+        """元の呼び出しが固定文字列指定を持つ場合は提示へ保つ。"""
+        target = tmp_path / "docs"
+        target.mkdir()
+        command = "grep -rF " + shlex.quote("needle") + " " + str(target)
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+
+        assert result.returncode == 2
+        replacement = _agent_messages(result).split("置換後のコマンド: `", 1)[1].split("`", 1)[0]
+        assert " -F " in f" {replacement} "
+
+
+class TestBashWriteTargetIsNotMissingPath:
+    """コマンド自身の出力オプションが指す書込先の不在判定。
+
+    書込先は実行の前に不在であることが正常であり、同じコマンド文字列の後続区間が
+    その書込先を読む形も不在判定の対象から外す。
+    """
+
+    @staticmethod
+    def test_curl_output_is_created_for_later_segments(tmp_path: pathlib.Path) -> None:
+        """`curl -o <保存先>`の保存先を後続区間が読んでも警告しない。"""
+        command = "curl -fsSL https://example.invalid/a -o saved.json; wc -l saved.json"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    @staticmethod
+    def test_output_option_without_value_still_warns(tmp_path: pathlib.Path) -> None:
+        """`-o`の直後が別のオプションである呼び出しでは保存先が作成されないため警告する。"""
+        command = "curl -fsSL https://example.invalid/a -o -X POST; wc -l saved.json"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "明示された検索・読取パスが存在しない" in _agent_messages(result)
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "tee saved.log; wc -l saved.log",
+            "sort -o sorted.txt /etc/hostname; wc -l sorted.txt",
+            "mv /etc/hostname moved.txt",
+        ],
+    )
+    def test_other_write_targets_are_not_missing(command: str, tmp_path: pathlib.Path) -> None:
+        """`tee`、`sort -o`及び`mv`の宛先を不在として扱わない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+
+class TestBashUnquotedShellMetacharacter:
+    """語の内側の引用されていないシェルメタ文字の検出。
+
+    コマンド置換とプロセス置換の括弧は引用できないため、対応の取れた範囲を取り除いた
+    残りだけを検出対象とする。語頭に限らず語の内側に現れる形も取り除く。
+    """
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "line=$(grep '^X=' ~/.env)",
+            "curl --data=$(cat f) https://example.invalid/",
+            "diff <(sort a) <(sort b)",
+            "payload=$(cat /tmp/a)",
+        ],
+    )
+    def test_balanced_substitution_does_not_warn(command: str, tmp_path: pathlib.Path) -> None:
+        """接頭が付いたコマンド置換とプロセス置換を警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "語の内側に引用されていない" not in _agent_messages(result)
+
+    @staticmethod
+    @pytest.mark.parametrize("command", ["echo abc(def", "foo=abc(def", "echo a`b", "echo a(b)c("])
+    def test_unbalanced_metacharacter_warns(command: str, tmp_path: pathlib.Path) -> None:
+        """対応の取れない括弧とバッククォートは従来どおり警告する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "語の内側に引用されていない" in _agent_messages(result)
+
+
+class TestBashGitGrepBasicAlternation:
+    """種別未指定の`git grep`のうち基本正規表現の代替表現を含むpatternの遮断。
+
+    基本正規表現は当該表記を選択として解釈しないため、当該呼び出しは常に意図した一致を返さない。
+    他のメタ文字だけを含むpatternは従来どおり警告で実行が継続する。
+    """
+
+    @staticmethod
+    def test_alternation_without_pattern_type_is_blocked(tmp_path: pathlib.Path) -> None:
+        """代替表現を含み種別を指定しない呼び出しを遮断する。"""
+        command = "git grep -n " + shlex.quote("def a\\|def b") + " -- app"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 2
+        messages = _agent_messages(result)
+        assert "基本正規表現は当該表記を選択として解釈しない" in messages
+        assert "`-E`を明示" in messages
+        assert "`-F`を明示" in messages
+
+    @staticmethod
+    def test_other_metacharacter_still_warns(tmp_path: pathlib.Path) -> None:
+        """代替表現を含まないpatternは警告のまま実行を継続する。"""
+        command = "git grep -n " + shlex.quote("def .*a") + " -- app"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" in _agent_messages(result)
+
+    @staticmethod
+    def test_explicit_pattern_type_is_accepted(tmp_path: pathlib.Path) -> None:
+        """種別を明示した呼び出しは遮断も警告もしない。"""
+        command = "git grep -nE " + shlex.quote("def (a|b)") + " -- app"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "いずれの種別も指定していない" not in messages
+        assert "基本正規表現は当該表記を選択として解釈しない" not in messages

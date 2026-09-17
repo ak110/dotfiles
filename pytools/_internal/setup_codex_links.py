@@ -21,7 +21,7 @@ _LINKS: dict[str, str] = {
     "skills/export-session": ".chezmoi-source/dot_claude/skills/export-session",
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
     "skills/ak110-projects-operations": ".chezmoi-source/dot_claude/skills/ak110-projects-operations",
-    "references": ".chezmoi-source/dot_claude/references",
+    "docs": ".chezmoi-source/dot_claude/docs",
     "agent-toolkit/rules": "agent-toolkit/rules",
 }
 

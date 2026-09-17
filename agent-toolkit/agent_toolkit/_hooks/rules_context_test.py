@@ -10,6 +10,7 @@ import re
 import pytest
 
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk.wi import process_loop_log
 from agent_toolkit._hooks import rules_context, rules_context_codex
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -253,7 +254,6 @@ def test_session_start_provides_one_session_scoped_managed_temp(
 def test_rules_files_have_no_role_specific_sentences() -> None:
     allowed = {
         "- サブエージェントは細かく分け過ぎない（起動するごとに固定コストがあるため）",
-        "委譲先は事象、根本原因及び対応案を完了報告へ含めて委譲元へ返し、自らは登録しない。",
     }
     pattern = re.compile(r"^(?:- |\d+\. )?(?:委譲先|サブエージェント|メインエージェント)は")
     actual = {
@@ -284,3 +284,41 @@ def test_rules_files_have_no_main_only_capabilities() -> None:
 def test_rejects_unknown_event_and_missing_source(payload: dict[str, str]) -> None:
     with pytest.raises(ValueError):
         rules_context.main(json.dumps(payload))
+
+
+def test_session_start_context_fits_cap_with_maximum_instruction(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """追加指示が上限まで載った場合も、固定分との合計がhook上限へ収まる。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "あ" * process_loop_log.INSTRUCTION_MAX_CHARS)
+    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
+
+    output = _output(capsys)
+    assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
+
+
+def test_session_start_injects_process_loop_instruction(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """常駐処理が渡した追加指示をメインへ注入し、委譲先へは注入しない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "既存の検体を先に読む")
+    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-1"}))
+    main_output = _output(capsys)
+
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-2"}))
+    delegated_output = _output(capsys)
+
+    assert "既存の検体を先に読む" in main_output
+    assert rules_context.PROCESS_LOOP_INSTRUCTION_PREFIX in main_output
+    assert "既存の検体を先に読む" not in delegated_output

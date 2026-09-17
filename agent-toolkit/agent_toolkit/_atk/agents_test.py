@@ -28,6 +28,8 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
     assert "結果を保持しない`stop`とsession登録簿での喪失確定" in output
     assert "待機対象登録が破損している場合" in output
     assert "終端statusでは追加の結果受領操作は不要" in output
+    assert "`--output-file`を指定した場合" in output
+    assert "回収した本文は当該保存先に残る" in output
 
 
 def _without_wrapping(text: str) -> str:
@@ -99,10 +101,37 @@ def test_agents_list_returns_diagnostic_fields_without_prompt(capsys: pytest.Cap
         "seconds_since_activity": session["seconds_since_activity"],
         "output_updated_at": None,
         "seconds_since_output": session["seconds_since_output"],
-        "stalled": True,
     }
     assert isinstance(session["seconds_since_activity"], int)
     assert isinstance(session["seconds_since_output"], int)
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_wait_saves_collected_lines_to_the_output_file(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存先を指定した待機は、回収したJSON Linesを当該ファイルへ残し、標準出力を2行に保つ。
+
+    保存先を持たない待機では、回収と同時に原本が削除されて本文が標準出力にだけ現れ、
+    後続の工程と後続のセッションが当該本文を取得できない。
+    """
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "session-1.json").write_text(
+        json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "完了"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    destination = tmp_path / "wait-result.jsonl"
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait", f"--output-file={destination}"])
+
+    output_lines = capsys.readouterr().out.splitlines()
+    assert output_lines == [f"保存先: {destination}", "行数: 1"]
+    saved = json.loads(destination.read_text(encoding="utf-8").strip())
+    assert saved["session_id"] == "session-1"
+    assert saved["agent_message"] == "完了"
 
 
 @pytest.mark.usefixtures("session_environment")

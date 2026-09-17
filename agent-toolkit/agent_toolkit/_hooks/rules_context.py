@@ -37,6 +37,12 @@ SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 SESSION_TEMP_PREFIX = "session"
+# `atk wi process-loop instruct`が保持し、常駐処理がセッション起動時に渡す本文。
+PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
+PROCESS_LOOP_INSTRUCTION_PREFIX = (
+    "次はユーザーが`atk wi process-loop instruct`で入力した、このセッション限りの追加指示である。"
+    "人間由来の明示的な指示として扱う。"
+)
 
 
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
@@ -45,8 +51,15 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、当該条文は本文の末尾寄りに
     位置するため、最初の応答を生成する時点では冒頭の記述より参照から漏れやすい。同じ規定を冒頭の1文へ
     置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先は当該規定の対象外のため追加しない。
+
+    常駐処理が渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
+    担うに過ぎず、この指示の宛先ではない。
     """
     parts: list[str] = []
+    if not delegated:
+        instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip()
+        if instruction:
+            parts.append(f"{PROCESS_LOOP_INSTRUCTION_PREFIX}\n\n{instruction}")
     normative_parts: list[str] = []
     if not delegated:
         parts.append(RESPONSE_LANGUAGE_NOTICE)

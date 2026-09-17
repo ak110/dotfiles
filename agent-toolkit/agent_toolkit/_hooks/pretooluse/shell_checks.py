@@ -611,7 +611,13 @@ class _TruncationFix:
 _STDERR_DUPLICATION_SUFFIX = "2>&1"
 
 
-def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str, list[str], _TruncationFix | None] | None:
+def _autofix_bash_segment(
+    command: str,
+    cwd: str,
+    session_id: str,
+    *,
+    inside_conditional: bool = False,
+) -> tuple[str, list[str], _TruncationFix | None] | None:
     """1つの直列区間にある競合しない補正を適用する。
 
     戻り値の3つ目は、切り詰めを補正した場合の適用内容とする。`position`は呼び出し元が確定する。
@@ -656,6 +662,10 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
             rewritten = f"{rewritten} {redirection} {shlex.quote(log_path)}"
         if read_back:
             rewritten = f"{rewritten}; {shlex.join([*consumer_tokens, log_path])}"
+            if inside_conditional:
+                # `||`と`&&`の被演算子の内側では、読み戻しを同じ被演算子の内側へ留める。
+                # 外側の`;`区間へ移すと、読み戻しが条件によらず実行されて成否が変わる。
+                rewritten = f"{{ {rewritten}; }}"
         fix = _TruncationFix(
             position=0,
             segment=command,
@@ -699,8 +709,35 @@ def _format_truncation_autofix_notice(saved: list[_TruncationFix], *, total_segm
         messages.append("保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている。")
     if any(not fix.stderr_merged for fix in saved):
         messages.append("標準エラーを保存先へ向けていない区間の標準エラーは、当該呼び出しの結果へ残る。")
+    alternatives = _truncated_command_alternatives(saved)
+    if alternatives:
+        messages.append("補正対象のコマンドに対応する指定: " + "、".join(alternatives))
     messages.append(f"切り詰めを含まない書き方: {_OUTPUT_TRUNCATION_AVOIDANCE}")
     return "\n".join(messages)
+
+
+_COMMAND_SPECIFIC_LIMITATIONS: dict[str, str] = {
+    "git": "`git grep`は一致件数を`-c`、一致ファイル名を`-l`で返す",
+    "ls": "`ls`は対象のディレクトリとglobで走査範囲を限定する",
+    "rg": "`rg`は一致件数を`-c`、一致ファイル名を`-l`で返す",
+    "grep": "`grep`は一致件数を`-c`、一致ファイル名を`-l`で返す",
+    "find": "`find`は`-maxdepth`と述語で走査範囲を限定する",
+}
+"""補正対象の直列区間の先頭コマンドごとの、出力量を制御する指定。
+
+一般的な方針だけを示す通知は、同じ組み立ての反復を止めない。
+"""
+
+
+def _truncated_command_alternatives(saved: Sequence[_TruncationFix]) -> list[str]:
+    """補正対象の直列区間に現れるコマンドへ対応する限定指定を、重複なく返す。"""
+    alternatives: list[str] = []
+    for fix in saved:
+        for token in fix.segment.split():
+            hint = _COMMAND_SPECIFIC_LIMITATIONS.get(pathlib.PurePath(token).name)
+            if hint is not None and hint not in alternatives:
+                alternatives.append(hint)
+    return alternatives
 
 
 _OUTPUT_TRUNCATION_AVOIDANCE = (
@@ -742,7 +779,10 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         if start < 0:
             return None
         cursor = start + len(segment)
-        fixed = _autofix_bash_segment(segment, cwd, session_id)
+        preceding = command_after_path_fix[:start].rstrip()
+        following = command_after_path_fix[cursor:].lstrip()
+        inside_conditional = preceding.endswith(("||", "&&")) or following.startswith(("||", "&&"))
+        fixed = _autofix_bash_segment(segment, cwd, session_id, inside_conditional=inside_conditional)
         if fixed is None:
             continue
         rewritten, segment_notices, fix = fixed
@@ -757,10 +797,26 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         rewritten_command = rewritten_command[:start] + replacement + rewritten_command[end:]
     unique_notices = list(dict.fromkeys(notices))
     body = " ".join(unique_notices)
+    summary: str | None = None
     if saved:
         truncation_notice = _format_truncation_autofix_notice(saved, total_segments=len(segments))
         body = f"{body}\n{truncation_notice}" if body else truncation_notice
-    return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True)
+        summary = _format_truncation_autofix_summary(saved)
+    if missing_fix is not None:
+        # 実在しないパスの除去は呼び出しの対象集合そのものを狭めるため、是正を要する通知として返す。
+        return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True, summary=summary)
+    # 残る補正は、補正前の呼び出しが要求した結果をそのまま当該呼び出しへ返す。
+    # 実行主体の是正を要さないため、振り返りの問題候補へ残らない情報提示のタグで返す。
+    return rewritten_command, _llm_notice(body, tag="notice", summary=summary)
+
+
+def _format_truncation_autofix_summary(saved: Sequence[_TruncationFix]) -> str:
+    """2件目以降の通知へ用いる要旨を、補正の対象と保存先だけで組み立てる。
+
+    理由の説明、書き方の案内及び判定条件の所在は1件目の本文が既に届けているため、要旨から外す。
+    """
+    targets = "、".join(f"第{fix.position}直列区間の`{fix.truncation_command}`→`{fix.log_path}`" for fix in saved)
+    return f"切り詰め処理を除去し、標準出力の全量を保存先へ補正した。対象: {targets}"
 
 
 _EDIT_TOOL_SAVE_PHRASE = (
@@ -773,6 +829,15 @@ _FILE_LAUNCH_FORM_PHRASE = (
 """解消手段としてファイルの書込を案内する場合に用いる保存手段の名指し。
 
 保存手段を名指ししない案内は、`cat > <ファイル> <<'EOF'`の形を選ばせてheredocの判定へ当たる。
+"""
+
+_SPECIALIZED_COMMAND_FIRST_PHRASE = (
+    "そのコードが構造化データからの項目の取り出しだけを行う場合は`jq`、"
+    "行の抽出と置換だけを行う場合は`rg`で成立するため、先にその成否を判定する。成立しない場合は、"
+)
+"""保存と実行の前に判定する専用コマンドの案内。
+
+保存と実行だけを示す案内は、1回の取得で成立する用途でも2工程を選ばせる。
 """
 
 _NESTED_SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
@@ -880,7 +945,7 @@ def _check_bash_python_code_string(command: str) -> bool:
             _block_notice(
                 f"blocked: `python`の`-c`へ渡すコードが{reason}。"
                 "コマンド文字列とコードの引用境界が重なると、コードの改行が失われる。",
-                fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                fix=f"{_SPECIALIZED_COMMAND_FIRST_PHRASE}実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
             ),
             file=sys.stderr,
         )
@@ -1099,10 +1164,52 @@ def _path_operands(segment: _ExecutionSegment) -> list[str]:
             continue
         operands.append(token)
         index += 1
-    if name == "cp" and operands:
-        # `cp`の最終operandは複製先であり、実在しないことが正常な入力である。
+    if name in _COPY_COMMANDS and operands:
+        # `cp`と`mv`の最終operandは宛先であり、実在しないことが正常な入力である。
         operands = operands[:-1]
     return operands
+
+
+_COPY_COMMANDS: frozenset[str] = frozenset({"cp", "mv"})
+_WRITE_TARGET_VALUE_OPTIONS: dict[str, frozenset[str]] = {
+    "curl": frozenset({"-o", "--output"}),
+    "wget": frozenset({"-O", "--output-document"}),
+    "sort": frozenset({"-o", "--output"}),
+}
+"""コマンド名ごとの、直後のトークンを書込先として取るオプション。"""
+
+
+def _command_write_targets(segment: _ExecutionSegment) -> list[str]:
+    """区間が作成する書込先のうち、コマンド文字列から静的に確定できるものを返す。
+
+    シェルのリダイレクト先と同じく、以降の区間の不在判定から除くために用いる。
+    値の位置に別のオプションが現れる呼び出しは書込先を確定できないため返さない。
+    その呼び出しでは保存先が作成されないため、後続区間の読取に対する警告が真陽性になる。
+    """
+    name = pathlib.PurePath(segment.tokens[0]).name
+    tokens = list(_argument_tokens(segment))
+    targets: list[str] = []
+    options = _WRITE_TARGET_VALUE_OPTIONS.get(name, frozenset())
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in options:
+            value = tokens[index + 1] if index + 1 < len(tokens) else None
+            if value is not None and not value.startswith("-"):
+                targets.append(value)
+            index += 2
+            continue
+        attached = next((option for option in options if option.startswith("--") and token.startswith(f"{option}=")), None)
+        if attached is not None:
+            targets.append(token.split("=", 1)[1])
+        index += 1
+    if name == "tee":
+        targets.extend(token for token in tokens if not token.startswith("-"))
+    if name in _COPY_COMMANDS:
+        operands = [token for token in tokens if not token.startswith("-")]
+        if len(operands) >= 2:
+            targets.append(operands[-1])
+    return [target for target in targets if target and not any(character in target for character in "*$?[]{}~`")]
 
 
 _SCRIPT_INTERPRETERS: frozenset[str] = frozenset({"bash", "sh", "zsh", "node", "perl", "ruby", "pwsh", "powershell"})
@@ -1143,9 +1250,10 @@ def _scan_explicit_paths(command: str, cwd: str) -> _ExplicitPathScan:
     """検索・読取・複製コマンドの明示パスを、実在するものと実在しないものへ分けて返す。
 
     実行位置ごとに判定するため、パイプと制御演算子を含む呼び出しも対象とする。
-    実行区間を先頭から順に走査し、先行する区間が出力リダイレクトの宛先として作成するパスは
-    以降の区間の不在判定から除く。全量を保存先へリダイレクトしてから同じ呼び出しで読む形が
-    規範の求める形であり、当該形を不在として扱うと規定どおりの操作へ毎回警告が発火するためである。
+    実行区間を先頭から順に走査し、先行する区間が出力リダイレクトの宛先として作成するパスと、
+    コマンド自身の出力オプションが指す書込先は、以降の区間の不在判定から除く。全量を保存先へ
+    保存してから同じ呼び出しで読む形が規範の求める形であり、当該形を不在として扱うと
+    規定どおりの操作へ毎回警告が発火するためである。
     除外は当該コマンド文字列から書き込み先として確定できる宛先に限り、変数とglobを含むトークンは
     判定の対象外のまま扱う。
     先行する区間がスクリプトファイルを実行する場合は、以降の区間を不在判定の対象から外す。
@@ -1182,7 +1290,8 @@ def _scan_explicit_paths(command: str, cwd: str) -> _ExplicitPathScan:
                 continue
             if candidate not in missing:
                 missing.append(candidate)
-        for target in shell_redirection_targets(segment.tokens):
+        write_targets = list(shell_redirection_targets(segment.tokens)) + _command_write_targets(segment)
+        for target in write_targets:
             if any(character in target for character in "*$?[]{}~`"):
                 continue
             target_path = pathlib.Path(target)
@@ -1233,6 +1342,63 @@ def _remove_command_word(command: str, word: str) -> str | None:
     return command[:start] + command[end:]
 
 
+def _remove_missing_paths(command: str, missing: Sequence[str]) -> str | None:
+    """実在しないパスを語として除いた文字列を返す。除去を確定できない場合はNoneを返す。"""
+    rewritten = command
+    for candidate in missing:
+        replaced = _remove_command_word(rewritten, candidate)
+        if replaced is None:
+            return None
+        rewritten = replaced
+    return rewritten
+
+
+def _operand_loss_commands(before: str, after: str) -> list[str]:
+    """パスの除去により操作対象の引数を全て失う区間のコマンド名を返す。"""
+    before_segments = list(_extract_execution_segments(before))
+    after_segments = list(_extract_execution_segments(after))
+    if len(before_segments) != len(after_segments):
+        return []
+    losses: list[str] = []
+    for original, updated in zip(before_segments, after_segments, strict=False):
+        if not original.resolved or not updated.resolved or not updated.tokens:
+            continue
+        if _path_operands(original) and not _path_operands(updated):
+            losses.append(updated.tokens[0])
+    return losses
+
+
+def _check_bash_missing_path_operand_loss(command: str, cwd: str) -> str | None:
+    """実在しないパスの除去で操作対象の引数を全て失う呼び出しを遮断する。
+
+    引数を失ったコマンドは標準入力を読んで別の意味で成立するため、補正して実行させない。
+    """
+    if not cwd:
+        return None
+    scan = _scan_explicit_paths(command, cwd)
+    if not scan.missing or not scan.present:
+        return None
+    rewritten = _remove_missing_paths(command, scan.missing)
+    if rewritten is None:
+        return None
+    losses = _operand_loss_commands(command, rewritten)
+    if not losses:
+        return None
+    print(
+        _block_notice(
+            "block: 実在しないパスを除くと操作対象の引数が無くなるコマンドがある。"
+            f"対象のコマンド: {'、'.join(f'`{name}`' for name in losses)}。"
+            f"実在しないパス: {'、'.join(scan.missing)}",
+            fix=(
+                "当該コマンドへ実在するパスを指定するか、当該コマンドを呼び出しから外す。"
+                "引数を失ったコマンドは標準入力を読み、補正前とは異なる成否を返す。"
+            ),
+        ),
+        file=sys.stderr,
+    )
+    return "block"
+
+
 def _autofix_missing_paths(command: str, cwd: str) -> tuple[str, tuple[str, ...]] | None:
     """実在しないパスを除いても対象が残る呼び出しを、当該パスを除いた形へ補正する。
 
@@ -1245,12 +1411,9 @@ def _autofix_missing_paths(command: str, cwd: str) -> tuple[str, tuple[str, ...]
     scan = _scan_explicit_paths(command, cwd)
     if not scan.missing or not scan.present:
         return None
-    rewritten = command
-    for candidate in scan.missing:
-        replaced = _remove_command_word(rewritten, candidate)
-        if replaced is None:
-            return None
-        rewritten = replaced
+    rewritten = _remove_missing_paths(command, scan.missing)
+    if rewritten is None or _operand_loss_commands(command, rewritten):
+        return None
     return rewritten, scan.missing
 
 
@@ -2315,15 +2478,16 @@ def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
     return len(events) == 1 and events[0].subcommand in {"commit", "push"}
 
 
-def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[str, ...], frozenset[str]] | None:
-    """再帰`grep`区間のpattern本文、ファイルoperand及び認識済みオプションを返す。
+def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], tuple[str, ...], frozenset[str]] | None:
+    """再帰`grep`区間のpattern本文の列、ファイルoperand及び認識済みオプションを返す。
 
-    patternは通知本文が置換後のコマンドを組み立てるために返す。
-    ファイルから読む指定では本文を一意に取り出せないためNoneを返す。
+    patternは通知本文が置換後のコマンドを組み立てるために返す。複数の`-e`を渡した呼び出しでは
+    指定順に全件を返し、置換後のコマンドが同じ対象集合を検索する形になるようにする。
+    ファイルから読む指定では本文を一意に取り出せないため空の列を返す。
     """
     operands: list[str] = []
     options: set[str] = set()
-    pattern: str | None = None
+    patterns: list[str] = []
     tokens = _argument_tokens(segment)
     index = 0
     option_terminator = False
@@ -2341,8 +2505,10 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[s
             name, separator, value = token.partition("=")
             if name in _GREP_LONG_OPTIONS_WITH_VALUE:
                 options.add(name)
-                if name == "--regexp" and pattern is None:
-                    pattern = value if separator else (tokens[index + 1] if index + 1 < len(tokens) else None)
+                if name == "--regexp":
+                    found = value if separator else (tokens[index + 1] if index + 1 < len(tokens) else None)
+                    if found is not None:
+                        patterns.append(found)
                 index += 1 if separator else 2
                 continue
             if name in _GREP_LONG_OPTIONS_WITHOUT_VALUE and not separator:
@@ -2353,8 +2519,10 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[s
         short = token[1:]
         if short[:1] in {"e", "f"}:
             options.add(f"-{short[0]}")
-            if short[0] == "e" and pattern is None:
-                pattern = short[1:] if len(short) > 1 else (tokens[index + 1] if index + 1 < len(tokens) else None)
+            if short[0] == "e":
+                found = short[1:] if len(short) > 1 else (tokens[index + 1] if index + 1 < len(tokens) else None)
+                if found is not None:
+                    patterns.append(found)
             index += 1 if len(short) > 1 else 2
             continue
         if not short or any(character not in _GREP_SHORT_OPTIONS_WITHOUT_VALUE for character in short):
@@ -2363,10 +2531,10 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[s
         index += 1
     pattern_is_option = bool(options & {"-e", "-f", "--regexp", "--file"})
     if not pattern_is_option:
-        pattern = operands[0] if operands else None
+        patterns = operands[:1]
     elif options & {"-f", "--file"}:
-        pattern = None
-    return (pattern, tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
+        patterns = []
+    return (tuple(patterns), tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
 
 
 _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
@@ -2376,12 +2544,54 @@ _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
 )
 
 
-def _describe_grep_replacement(pattern: str | None, targets: Sequence[str], base: pathlib.Path) -> str:
+_GREP_LINE_NUMBER_OPTIONS: frozenset[str] = frozenset({"-n", "--line-number"})
+_GREP_PATTERN_TYPE_BY_OPTION: dict[str, str] = {
+    "-F": "-F",
+    "--fixed-strings": "-F",
+    "-E": "-E",
+    "--extended-regexp": "-E",
+    "-P": "-P",
+    "--perl-regexp": "-P",
+    "-G": "-G",
+    "--basic-regexp": "-G",
+}
+"""元の`grep`の種別指定と、置換後の`git grep`が受理する短縮形の対応。"""
+_RG_PATTERN_TYPE_BY_GIT_GREP: dict[str, str] = {"-F": "-F", "-P": "-P"}
+"""`git grep`の種別指定のうち`rg`が同じ意味で受理するもの。
+
+`rg`は`-E`を文字コードの指定として解釈し、基本正規表現を受理しない。
+このため`-E`と`-G`は置換後の`rg`へ引き継がず、`rg`の既定の正規表現へ委ねる。
+"""
+
+
+def _preserved_grep_options(options: frozenset[str], *, for_ripgrep: bool) -> list[str]:
+    """元の呼び出しが指定した出力形式と種別のうち、置換後も保つものを返す。"""
+    preserved: list[str] = []
+    if options & _GREP_LINE_NUMBER_OPTIONS:
+        preserved.append("-n")
+    pattern_type = next(
+        (_GREP_PATTERN_TYPE_BY_OPTION[option] for option in sorted(options) if option in _GREP_PATTERN_TYPE_BY_OPTION),
+        None,
+    )
+    if pattern_type is not None:
+        mapped = _RG_PATTERN_TYPE_BY_GIT_GREP.get(pattern_type) if for_ripgrep else pattern_type
+        if mapped is not None:
+            preserved.append(mapped)
+    return preserved
+
+
+def _describe_grep_replacement(
+    patterns: Sequence[str],
+    targets: Sequence[str],
+    base: pathlib.Path,
+    options: frozenset[str] = frozenset(),
+) -> str:
     """遮断対象ごとのGit作業ツリー判定と、置換後のコマンド文字列を通知本文へまとめる。
 
     判定は遮断が確定した経路でだけ実行する。全ての対象が同じGit作業ツリーへ属する場合は`git grep`、
     いずれも属さない場合は`rg`の形を、当該呼び出しのpatternとパスを埋めた状態で示す。
-    受領した実行主体が代替形を自ら導出せず、そのまま実行できる状態にするためである。
+    元の呼び出しが指定した行番号出力、種別及び複数のpatternは置換後も保つ。
+    提示が元の指定を欠くと、受領した実行主体が指定を戻して組み直す往復が生じる。
     対象が双方を含む場合とpattern本文を一意に取り出せない場合は、確定できなかった理由を示す。
     """
     described: list[str] = []
@@ -2393,14 +2603,18 @@ def _describe_grep_replacement(pattern: str | None, targets: Sequence[str], base
         roots.append(root)
         described.append(f"`{target}`はGit作業ツリー`{root}`に属する" if root is not None else f"`{target}`はGit管理外")
     judgement = "対象の判定: " + "、".join(described) + "。"
-    if pattern is None:
+    if not patterns:
         return judgement + "置換後の形を確定できない理由: 当該呼び出しのpattern本文を一意に取り出せない。"
     operands = " ".join(shlex.quote(target) for target in targets)
+    pattern_arguments = " ".join(f"-e {shlex.quote(pattern)}" for pattern in patterns)
     unique_roots = set(roots)
     if unique_roots == {None}:
-        replacement = f"rg -F -- {shlex.quote(pattern)} {operands}".rstrip()
+        preserved = " ".join(_preserved_grep_options(options, for_ripgrep=True))
+        replacement = f"rg {preserved} {pattern_arguments} -- {operands}".replace("  ", " ").rstrip()
     elif len(unique_roots) == 1:
-        replacement = f"git -C {shlex.quote(str(roots[0]))} grep -F -- {shlex.quote(pattern)} {operands}".rstrip()
+        preserved = " ".join(_preserved_grep_options(options, for_ripgrep=False))
+        prefix = f"git -C {shlex.quote(str(roots[0]))} grep"
+        replacement = f"{prefix} {preserved} {pattern_arguments} -- {operands}".replace("  ", " ").rstrip()
     else:
         return judgement + "置換後の形を確定できない理由: 対象がGit管理対象と管理外の双方を含む。"
     return judgement + f"置換後のコマンド: `{replacement}`"
@@ -2416,7 +2630,8 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
     """
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     targets: list[str] | None = None
-    pattern: str | None = None
+    patterns: tuple[str, ...] = ()
+    preserved_options: frozenset[str] = frozenset()
     for pipeline in _extract_execution_pipelines(command):
         for segment in pipeline:
             if not segment.resolved or segment.tokens[0] not in _GREP_COMMANDS:
@@ -2443,7 +2658,7 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     targets = []
                     break
                 continue
-            segment_pattern, files, options = parsed
+            segment_patterns, files, options = parsed
             if not options & {"-r", "-R", "--recursive"}:
                 continue
             if options & {"--include", "--exclude", "--exclude-dir"}:
@@ -2451,14 +2666,15 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
             directories = [token for token in files if token != "-" and (token.endswith("/") or (base / token).is_dir())]
             if not files or directories:
                 targets = directories
-                pattern = segment_pattern
+                patterns = segment_patterns
+                preserved_options = options
                 break
         if targets is not None:
             break
     if targets is None:
         return None
     # operandを解決できない区間と、operandを省略した呼び出しは実効の走査起点であるcwdを対象とする。
-    described = _describe_grep_replacement(pattern, targets or [str(base)], base)
+    described = _describe_grep_replacement(patterns, targets or [str(base)], base, preserved_options)
     print(
         _block_notice(
             f"block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。{described}",
@@ -3297,6 +3513,13 @@ def _git_grep_specifies_pattern_type(token: str) -> bool:
     return any(letter in "FEPG" for letter in token[1:])
 
 
+_GIT_GREP_BASIC_ALTERNATION = r"\|"
+_GIT_GREP_BASIC_ALTERNATION_FIX = (
+    "選択として検索する場合は`-E`を明示し、patternを`(a|b)`の形へ書き換える。"
+    rf"`{_GIT_GREP_BASIC_ALTERNATION}`をリテラルとして検索する場合は`-F`を明示する。"
+)
+
+
 def _check_bash_git_grep_pattern_type(command: str) -> str | None:
     """`git grep`でpattern種別を明示せず、かつ指定の有無で一致結果が変わる呼び出しを検出する。
 
@@ -3316,34 +3539,93 @@ def _check_bash_git_grep_pattern_type(command: str) -> str | None:
         pattern = _git_grep_pattern(arguments)
         if pattern is not None and not any(character in _GIT_GREP_BASIC_REGEXP_METACHARACTERS for character in pattern):
             continue
+        if pattern is not None and _GIT_GREP_BASIC_ALTERNATION in pattern:
+            print(
+                _block_notice(
+                    "block: `git grep`が種別を指定せず、patternへ"
+                    f"`{_GIT_GREP_BASIC_ALTERNATION}`を含んでいる。"
+                    "基本正規表現は当該表記を選択として解釈しないため、この呼び出しは意図した一致を返さない。",
+                    fix=_GIT_GREP_BASIC_ALTERNATION_FIX,
+                ),
+                file=sys.stderr,
+            )
+            return "block"
         return _llm_notice(
             "`git grep`が固定文字列・拡張正規表現・Perl互換正規表現のいずれの種別も指定していない。\n"
             "対処: 検索意図に応じて`-F`・`-E`・`-P`のいずれかを明示し、"
-            "オプション、pattern、`--`、pathspecの順で引数を置く。",
+            "オプション、pattern、`--`、pathspecの順で引数を置く。"
+            "patternが正規表現のメタ文字を含む場合は`-E`、リテラルとして検索する場合は`-F`を選ぶ。",
             tag=_WARN_TAG,
             removable_cause=True,
         )
     return None
 
 
-_SHELL_GROUPING_PREFIX = re.compile(r"^(?:[$<>]?\()+")
 _SHELL_METACHARACTERS_IN_WORD = frozenset({"(", ")", "`"})
+_SHELL_SUBSTITUTION_PREFIXES = "$<>"
+
+
+def _substitution_open_index(text: str, search_from: int) -> tuple[int, int] | None:
+    """コマンド置換、プロセス置換又はサブシェルを開く括弧の位置と接頭の長さを返す。
+
+    対象は、`$(`・`<(`・`>(`の形と、語の先頭に現れる`(`とする。
+    語の内側に接頭なしで現れる`(`（`report(1).txt`など）は引用の崩れであり、対象から外す。
+    """
+    index = text.find("(", search_from)
+    while index >= 0:
+        if index > 0 and text[index - 1] in _SHELL_SUBSTITUTION_PREFIXES:
+            return index, 1
+        if index == 0 or text[index - 1].isspace():
+            return index, 0
+        index = text.find("(", index + 1)
+    return None
+
+
+def _strip_balanced_substitutions(text: str) -> str:
+    """対応の取れたコマンド置換、プロセス置換及びサブシェルを取り除いた残りを返す。
+
+    これらの括弧は構文上の必然として現れ、引用できない。語の内側に接頭付きで現れる形も
+    取り除く。対応が取れない括弧と、接頭を持たず語の内側に現れる括弧はそのまま残し、
+    引用の崩れの検出対象にする。
+    """
+    result = text
+    search_from = 0
+    while True:
+        found = _substitution_open_index(result, search_from)
+        if found is None:
+            return result
+        start, prefix_length = found
+        depth = 0
+        end = -1
+        for index in range(start, len(result)):
+            if result[index] == "(":
+                depth += 1
+            elif result[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    end = index
+                    break
+        if end < 0:
+            search_from = start + 1
+            continue
+        result = result[: start - prefix_length] + result[end + 1 :]
+        search_from = 0
 
 
 def _check_bash_unquoted_shell_metacharacter(command: str) -> str | None:
     """語の内側にある引用されていないシェルメタ文字を検出する。
 
     検出対象は、単語の途中に現れる丸括弧とバッククォートに限る。
-    サブシェル、プロセス置換及びコマンド置換は語の先頭と末尾に現れるため、
-    当該位置の括弧を取り除いた核に残るものだけを対象とする。
+    サブシェル、プロセス置換及びコマンド置換は引用できないため、対応の取れた範囲を
+    取り除いた残りに現れるものだけを対象とする。
     二重引用符とドル記号は正当な用法が多く、静的には引用の崩れと区別できないため対象にしない。
     """
     masked = _bash_command_parser.mask_heredoc_bodies(command)
     stripped = re.sub(r"'[^']*'", lambda match: "_" * len(match.group()), masked)
     stripped = re.sub(r'"[^"]*"', lambda match: "_" * len(match.group()), stripped)
+    stripped = _strip_balanced_substitutions(stripped)
     for word in stripped.split():
-        core = _SHELL_GROUPING_PREFIX.sub("", word).rstrip(")")
-        detected = next((character for character in core if character in _SHELL_METACHARACTERS_IN_WORD), None)
+        detected = next((character for character in word if character in _SHELL_METACHARACTERS_IN_WORD), None)
         if detected is None:
             continue
         return _llm_notice(

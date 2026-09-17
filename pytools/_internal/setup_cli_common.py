@@ -1,5 +1,6 @@
 """CodexとClaude CodeのCLI導入処理が共有する安全確認。"""
 
+import contextlib
 import json
 import logging
 import os
@@ -7,14 +8,56 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
+import httpx
 import psutil
 
 from pytools._internal import claude_common, log_format
 
 logger = logging.getLogger(__name__)
+
+
+def run_official_installer(
+    client: httpx.Client | None,
+    *,
+    posix_url: str,
+    windows_url: str,
+    tag: str,
+    timeout: float,
+    http_timeout: float = 30.0,
+) -> tuple[subprocess.CompletedProcess[str] | None, str]:
+    """公式インストーラーを取得して実行し、結果と失敗の理由を返す。
+
+    取得も実行もCLIごとに同じ手順であり、異なるのは取得先URLと記録用のタグだけである。
+    失敗の扱い（例外にするか警告に留めるか）は呼び出し側で決める。
+    """
+    owns_client = client is None
+    active_client = client or httpx.Client(timeout=http_timeout, follow_redirects=True)
+    windows = sys.platform == "win32"
+    temp_path: Path | None = None
+    try:
+        response = active_client.get(windows_url if windows else posix_url)
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".ps1" if windows else ".sh", delete=False) as temp:
+            temp.write(response.content)
+            temp_path = Path(temp.name)
+        command = (
+            ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+            if windows
+            else ["bash", str(temp_path)]
+        )
+        return claude_common.run_subprocess(command, timeout=timeout, tag=tag), ""
+    except (httpx.HTTPError, OSError) as error:
+        return None, f"公式インストーラーの取得に失敗: {error}"
+    finally:
+        if temp_path is not None:
+            with contextlib.suppress(OSError):
+                temp_path.unlink()
+        if owns_client:
+            active_client.close()
 
 
 def prepend_path(path: Path) -> None:

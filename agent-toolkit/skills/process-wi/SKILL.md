@@ -9,6 +9,19 @@ description: >
 選定時に固定したAWIをレーンへ分け、各レーンの同じ担当threadが計画の起草から統合までを担う。メインは選定、計画境界の確認、実行レビューの調整、公開工程及びセッション終端を担う。
 AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本スキルの実行中は自律モードとする。
 
+## 用語
+
+本スキルが扱う主要用語を次のとおり定める。詳細は各用語が挙げる正本が定める。
+
+- **メイン**: `agent-toolkit/rules/01-agent.md`が定めるメインエージェントの短縮呼称
+- **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める
+- **picker**: 選定工程で処理対象のAWIを固定する担当
+- **レーン**: pickerが固定した処理対象を割り当てる仮想的な処理単位。各レーンは専用branchと専用worktreeを1つ持つ（`references/run-lanes.md`「レーンと資源」が正本）
+- **専用worktree**: 各レーンへ1つ割り当てるgit worktree。書き込む主体はそのレーンのレーン担当threadだけとする
+- **レーン担当**: 各レーンの計画、実装、レビュー修正、履歴統合及び主作業ツリーへの統合を同じthreadで担う担当。担当種別はレーン担当、レビュー修正担当、CI修正担当の3種とする（`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分が正本）
+- **主作業ツリー**: マージ先branchをチェックアウトしている作業ツリー
+- **終端担当**: 公開工程のpush、CI、検証失敗時の修正、固有の終端工程及び延期adoptを担う委譲先
+
 ## 不変条件
 
 - 全ての実装要求を計画工程へ送り、各レーンのレーン担当が実装前に1つの計画ファイルを起草する
@@ -32,12 +45,19 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本ス
 ## 実行順
 
 1. 対象リポジトリが個人プロジェクトに該当するかの判定手段は`ak110-projects-operations`が定める。該当する場合は同スキルを起動し、同期と依存更新の要否を確定する。
-2. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定、処理開始及び監査を開始する。
+2. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って監査担当を起動する。
 3. `references/run-lanes.md`を全文読み、選定結果から専用worktreeとレーンを作成し、レーン担当を起動する。
 4. 各レーンから`計画作成完了`を受領し、計画の`## 概要`と`## 実施内容`だけから由来、不採用範囲及び実装有無を確認して、`実装開始`又は`実装なし`を返す。
 5. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
-6. 同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.parent.md`に従って統合を指示し、計画最終化とAWI終端までを完了させる。
+6. 同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
 7. 全レーンの終端及び監査の処置確定後、`references/finish-session.md`を全文読み、`検証・CI方針`を明示して公開とセッション終端を完遂する。
+
+## 自動コードレビュー監査
+
+pickerと並行して、対象がGitHub上にある場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得する。監査の返却と処置確定を公開工程の開始条件とし、取得は1回で完了とする。新しいレビューの到着は次の処理回の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
+
+監査担当は`agents_server`の`start_custom`で1件起動し、`model_type`へ`execute`を渡す。`cwd`には対象リポジトリの絶対パスを渡し、`prompt`には同書に従って監査を実施する指示と返却する項目を書く。
+監査はレーンと並行して継続し、公開工程の開始条件として検収する。
 
 ## 読み分け
 
@@ -45,7 +65,7 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本ス
 - レーン作成、採否及び中断再開: `references/run-lanes.md`
 - レーン担当の起動と工程境界: `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`
 - 実行レビュー: `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`
-- 統合: `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.parent.md`
+- 統合: `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」
 - 公開と終了: `references/finish-session.md`
 
 ## 終端

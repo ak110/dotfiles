@@ -19,19 +19,32 @@ def set_warning_session_id(session_id: str) -> None:
 def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
     """`hook_id`と既定タグを固定した通知整形関数を返す。"""
 
-    def format_notice(body: str, *, tag: str = default_tag, removable_cause: bool | None = None) -> str:
+    def format_notice(
+        body: str,
+        *,
+        tag: str = default_tag,
+        removable_cause: bool | None = None,
+        summary: str | None = None,
+    ) -> str:
+        frame = inspect.currentframe()
+        caller = frame.f_back if frame is not None else None
+        cause = caller.f_code.co_name.removeprefix("_check_").removeprefix("_collect_") if caller else "unknown"
         if tag == _WARN_TAG:
             if removable_cause is None:
                 raise ValueError("warn通知のremovable_causeは真偽値で指定する必要がある")
-            frame = inspect.currentframe()
-            caller = frame.f_back if frame is not None else None
-            cause = caller.f_code.co_name.removeprefix("_check_").removeprefix("_collect_") if caller else "unknown"
             return warning_formatter(hook_id)(
                 body,
                 cause=cause,
                 session_id=_warning_context["session_id"],
                 removable_cause=removable_cause,
+                summary=summary,
             )
+        if summary is not None:
+            # 1件目で判断材料は到達済みであり、2件目以降は対象と件数だけを返す。
+            # 反復の集約はタグの重大度と独立の性質であるため、warn以外のタグでも同じ扱いにする。
+            count = _increment_warn_notice_count(_warning_context["session_id"], f"{hook_id}|{cause}")
+            if count >= 2:
+                body = f"{summary}\nこの通知は同一セッションで{count}件目である。"
         return _message_format.llm_notice(body, hook_id, tag=tag)
 
     return format_notice
@@ -56,8 +69,22 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
     原因の除去を求める反復注記だけを省く。
     """
 
-    def format_warning(body: str, *, cause: str, session_id: str, removable_cause: bool) -> str:
+    def format_warning(
+        body: str,
+        *,
+        cause: str,
+        session_id: str,
+        removable_cause: bool,
+        summary: str | None = None,
+    ) -> str:
         count = _increment_warn_notice_count(session_id, f"{hook_id}|{cause}")
+        if summary is not None and count >= 2:
+            # 1件目で判断材料は到達済みであり、2件目以降は対象と件数だけを返す。
+            return _message_format.llm_notice(
+                f"{summary}\nこの通知は同一セッションで{count}件目である。",
+                hook_id,
+                tag=_WARN_TAG,
+            )
         if removable_cause and count >= _WARN_REPEAT_THRESHOLD:
             body = (
                 f"{body}\nこの通知は同一セッションで{count}件目である。"

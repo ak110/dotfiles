@@ -638,8 +638,6 @@ def test_agents_wait_reports_seconds_since_output_on_timeout(
     assert isinstance(response["seconds_since_output"], int)
     assert response["updated_at"] == updated_at
     assert isinstance(response["seconds_since_activity"], int)
-    # テキスト出力が古くても活動が新しい間は停滞の印を付けない。
-    assert "stalled" not in response
 
 
 @pytest.mark.parametrize(
@@ -683,7 +681,7 @@ def test_agents_wait_returns_stall_notice_after_threshold(
 
     response = json.loads(capsys.readouterr().out)
     assert response["output_updated_at"] is None
-    assert response["stalled"] is True
+    assert response["seconds_since_activity"] >= state.STALL_NOTICE_SECONDS
 
 
 def test_agents_wait_keeps_waiting_after_stall_threshold(
@@ -754,7 +752,6 @@ def test_agents_wait_stall_uses_activity_not_text_output(
     response = json.loads(capsys.readouterr().out)
     assert response["seconds_since_output"] >= state.STALL_NOTICE_SECONDS
     assert response["seconds_since_activity"] == 0
-    assert "stalled" not in response
 
 
 def test_agents_wait_adds_notices_to_terminal_result(

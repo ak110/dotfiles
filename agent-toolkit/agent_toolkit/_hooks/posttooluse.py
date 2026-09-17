@@ -862,6 +862,7 @@ def _background_task_id_from_response(value: object) -> str | None:
     """Bashの背景実行応答からタスクIDを返す。
 
     応答は文字列と辞書のいずれの形でも届くため、入れ子を再帰的に走査する。
+    実行ホストが背景へ移した通知は`stop_gate.background_task_id_from_notice`が扱う。
     """
     if isinstance(value, str):
         match = _BACKGROUND_TASK_ID_RE.search(value)

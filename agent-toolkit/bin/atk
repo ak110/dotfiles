@@ -5,7 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
 SCRIPT="${SCRIPT_DIR}/agent_toolkit/atk.py"
 
 # 常駐サブコマンド以外は従来どおり実体へ置き換えて起動する。
-if [ "${2:-}" != "process-loop" ] || { [ "${1:-}" != "wi" ] && [ "${1:-}" != "mq" ]; }; then
+# `process-loop`配下のサブコマンド（`abort`など）は常駐処理を開始しないため、第3引数が
+# 空であるかオプションである場合だけ監督ループへ入る。
+if [ "${2:-}" != "process-loop" ] || { [ "${1:-}" != "wi" ] && [ "${1:-}" != "mq" ]; } ||
+    { [ -n "${3:-}" ] && [ "${3#-}" = "${3}" ]; }; then
     exec uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "$@"
 fi
 

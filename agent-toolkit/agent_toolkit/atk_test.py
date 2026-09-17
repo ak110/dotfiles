@@ -1202,15 +1202,15 @@ def test_process_loop_abort_commands_report_and_transition_state(
     state_file = tmp_path / "state" / "agent-toolkit" / "process-wi-abort"
 
     for command, expected in (
-        ("process-loop-status", "常駐処理への中断要求: なし\n"),
-        ("process-loop-abort-cancel", "成功: 常駐処理への中断要求は設定されていないため、解除の変更は無い\n"),
-        ("process-loop-abort", "成功: 常駐処理へ中断を要求した\n"),
-        ("process-loop-status", "常駐処理への中断要求: あり\n"),
-        ("process-loop-abort-cancel", "成功: 常駐処理への中断要求を解除した\n"),
-        ("process-loop-status", "常駐処理への中断要求: なし\n"),
+        ("status", "常駐処理への中断要求: なし\n保持中の追加指示: 0件\n"),
+        ("abort-cancel", "成功: 常駐処理への中断要求は設定されていないため、解除の変更は無い\n"),
+        ("abort", "成功: 常駐処理へ中断を要求した\n"),
+        ("status", "常駐処理への中断要求: あり\n保持中の追加指示: 0件\n"),
+        ("abort-cancel", "成功: 常駐処理への中断要求を解除した\n"),
+        ("status", "常駐処理への中断要求: なし\n保持中の追加指示: 0件\n"),
     ):
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", command], home=tmp_path)
+            atk.main(["wi", "process-loop", command], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == expected
 
@@ -1220,20 +1220,20 @@ def test_process_loop_abort_commands_report_and_transition_state(
 
 @pytest.mark.parametrize(
     "subcommand",
-    ["process-loop-abort", "process-loop-abort-cancel", "process-loop-status"],
+    ["abort", "abort-cancel", "status", "instruct", "instruct-cancel"],
 )
-def test_process_loop_abort_command_help_is_available(
+def test_process_loop_subcommand_help_is_available(
     subcommand: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """中断要求の各コマンドが個別のヘルプを表示する。"""
+    """常駐処理の各サブコマンドが個別のヘルプを表示する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
 
     with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", subcommand, "--help"])
+        parser.parse_args(["wi", "process-loop", subcommand, "--help"])
 
     assert exc_info.value.code == 0
-    assert f"atk wi {subcommand}" in capsys.readouterr().out
+    assert f"atk wi process-loop {subcommand}" in capsys.readouterr().out
 
 
 def test_add_output_reloads_saved_metadata(
@@ -1293,7 +1293,6 @@ def test_review_table_subcommands_are_public() -> None:
                     "--track=exec-review",
                     "--location-file=location.txt",
                     "--issue-file=issue.txt",
-                    "--response-needed=yes",
                     "--response-file=response.txt",
                 ]
             )
@@ -1326,7 +1325,7 @@ def test_public_review_table_validate_rejects_unanswered_rows(
         atk.main(["review-table", "validate", str(path)])
 
     assert exc_info.value.code == 1
-    assert "対応要否が未回答" in capsys.readouterr().err
+    assert "未応答" in capsys.readouterr().err
 
 
 def test_public_review_table_show_accepts_compat_track(
@@ -1407,7 +1406,7 @@ def test_public_review_table_invalid_column_count_error_explains_recovery(
         atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は8" in error
+    assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
     assert "levelの位置はissueの直後" in error
     assert "plan-review, exec-review, plan-conformance, independent" in error
@@ -1443,7 +1442,6 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
                 "--track=exec-review",
                 f"--location-file={location_file}",
                 f"--issue-file={issue_file}",
-                "--response-needed=yes",
                 f"--response-file={response_file}",
             ]
         )
@@ -1463,7 +1461,7 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は8" in error
+    assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
     assert "levelの位置はissueの直後" in error
     assert "plan-review, exec-review, plan-conformance, independent" in error

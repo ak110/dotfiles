@@ -244,7 +244,7 @@ def test_removed_plan_commands_are_absent_from_help() -> None:
         ("atk plans list", "TSV"),
         ("atk agents wait", "JSON Lines"),
         ("atk managed-temp list", "JSON Lines"),
-        ("atk review-table show", "`row-id`を先頭に付けた9フィールドの表示形式"),
+        ("atk review-table show", "`row-id`を先頭に付けた8フィールドの表示形式"),
     ],
 )
 def test_structured_output_commands_state_their_format(command: str, format_name: str) -> None:
@@ -270,14 +270,23 @@ def test_agents_wait_help_states_absent_target_termination() -> None:
 
 
 def _leaf_commands() -> set[str]:
-    """サブコマンドを持たないリーフだけを返す。"""
+    """それ自体を実行できるコマンドを返す。
+
+    サブコマンドを持つ場合も、そのサブコマンドが必須でなければ当該コマンド自体を実行できるため、
+    結果行の区分を要するコマンドとして数える。
+    """
     leaves: set[str] = set()
     for command, parser, _summary in _walk_commands():
-        has_subcommands = any(
-            isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
+        subparsers = [
+            action
             for action in parser._actions  # pylint: disable=protected-access
-        )
-        if has_subcommands:
+            if isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
+        ]
+        # サブコマンドを持つ場合でも、省略時に自身を実行するコマンドは結果行の区分を要する。
+        # サブコマンドが必須であるか、省略時に一覧を表示して終わるコマンドは自身を実行しない。
+        shows_help_when_missing = parser.get_default("_help_parser") is not None
+        requires_subcommand = any(action.required for action in subparsers)
+        if subparsers and (requires_subcommand or shows_help_when_missing):
             continue
         leaves.add(command)
     return leaves
@@ -345,6 +354,8 @@ def test_bulk_transition_help_states_filter_and_precondition() -> None:
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
     """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
     commands = {name: parser for name, parser, _summary in _walk_commands()}
+    # `--state`は`return-to-inbox`が差し戻し元の指定に使う綴りと重なるため、本検査の期待集合から除く。
+    # フィルターの綴りの別名は`listing_test.py`が検証する。
     expected = {"--all", "--type", "--status", "--answered", "--source", "--yes", "--skip-pull", "--target-repo"}
 
     for command in (*_atk_help.BULK_TRANSITION_COMMANDS, "atk wi rm"):

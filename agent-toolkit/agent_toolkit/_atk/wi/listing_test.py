@@ -1206,6 +1206,26 @@ class TestListStatusFilter:
 
         assert exc_info.value.code == 2
 
+    @pytest.mark.parametrize(
+        "argv",
+        [["wi", "list"], ["wi", "show"], ["wi", "grep", "pattern"]],
+        ids=["list", "show", "grep"],
+    )
+    def test_state_and_status_resolve_to_the_same_filter(self, argv: list[str]) -> None:
+        """状態フィルターを`--state`と`--status`のどちらの綴りでも同じ値へ解決する。
+
+        キューの語彙は状態ディレクトリ、`WI_STATES`、`wi list --json`の`state`のいずれも`state`であり、
+        `atk wi return-to-inbox`と`atk wi rm`も`--state`を受理する。
+        フィルター側が`--status`だけを受理すると、語彙どおりに組み立てた実行が終了コード2で終わる。
+        """
+        parser = atk._build_parser()  # noqa: SLF001  # pylint: disable=protected-access
+
+        by_state = parser.parse_args([*argv, "--state=processable"])
+        by_status = parser.parse_args([*argv, "--status=processable"])
+
+        assert by_state.status == by_status.status
+        assert "processable" in by_state.status
+
 
 class TestListCount:
     """listサブコマンド: --count指定時は種別ヘッダ・エントリ行を抑制し件数のみ出力する。"""

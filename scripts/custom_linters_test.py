@@ -46,7 +46,7 @@ AGENT_DOC_TONE_REPRESENTATIVES = (
     "agent-toolkit/share/add-wi.parent.md",
     "agent-toolkit/skills/add-awi-by-user/SKILL.md",
     "agent-toolkit/skills/bugfix/references/ci-failure-handling.md",
-    ".chezmoi-source/dot_claude/references/session-review-dotfiles.md",
+    ".chezmoi-source/dot_claude/docs/session-review-dotfiles.md",
     ".chezmoi-source/dot_claude/skills/ak110-projects-operations/SKILL.md",
     ".chezmoi-source/dot_claude/skills/ak110-projects-operations/references/doc-structure.md",
     ".claude/skills/agent-toolkit-edit/SKILL.md",

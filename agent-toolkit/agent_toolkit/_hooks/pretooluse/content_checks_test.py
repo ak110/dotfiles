@@ -43,6 +43,29 @@ def test_colloquial_notice_references_only_the_deliverable_writing_rule(deny_sub
     assert "agent-toolkit/rules/01-agent.md`「日本語」" not in notice
 
 
+def test_colloquial_check_skips_its_own_judgment_sources(deny_substring: str) -> None:
+    """判定辞書、同じディレクトリの検体及びscratchpad配下は口語検査の対象から外す。
+
+    いずれも検出語そのものを本文として書き込む操作であり、書き換えるべき散文が存在しない。
+    """
+    body = f"概要は{deny_substring}該当する。"
+    targets = [
+        str(_colloquial_check.DENY_PATH),
+        str(_colloquial_check.ALLOW_PATH),
+        str(content_checks._TYPO_DICT_PATH),
+        str(pathlib.Path(_colloquial_check.DENY_PATH).parent / "colloquial_check_test.py"),
+        "/tmp/claude-1000/project/session/scratchpad/msg.txt",
+    ]
+    for target in targets:
+        assert content_checks._check_colloquial("Write", None, body, target) is None
+
+
+def test_colloquial_check_still_warns_for_other_documents(deny_substring: str) -> None:
+    """判定素材以外の文書は従来どおり警告する。"""
+    notice = content_checks._check_colloquial("Write", None, f"概要は{deny_substring}該当する。", "note.md")
+    assert notice is not None
+
+
 def test_detected_terms_specs_have_single_source() -> None:
     """`_hooks/`配下の`*_test.py`が検出語ラベルとコロンからなる文字列を直接固定しないことを検査する。
 

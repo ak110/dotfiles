@@ -117,6 +117,9 @@ from agent_toolkit._hooks import (
     response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
+    plugin_resources as _plugin_resources,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._hooks import (
     scratchpad_path as _scratchpad_path,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
@@ -160,6 +163,7 @@ if TYPE_CHECKING:
         _is_claude_job_file,
         _is_plan_file_or_adjunct,
         _materialize_cached,
+        is_plan_handoff_file,
     )
     from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
@@ -788,6 +792,37 @@ def _is_in_managed_temp(file_path: str) -> bool:
         return False
 
 
+def _is_colloquial_judgment_source(file_path: str) -> bool:
+    """書き込み先が口語検査自身の判定素材かを返す。
+
+    辞書の行と検体は検出語そのものを本文として書き込むため、書き換えるべき散文が存在しない。
+    ホストがセッションごとに作成するscratchpadも、そのセッションの内側だけで消費する作業領域として扱う。
+    """
+    try:
+        path = pathlib.Path(file_path).expanduser().resolve(strict=False)
+    except (OSError, ValueError):
+        return False
+    dictionaries = tuple(
+        _resolve_quietly(candidate)
+        for candidate in (_colloquial_check.DENY_PATH, _colloquial_check.ALLOW_PATH, _TYPO_DICT_PATH)
+    )
+    if path in dictionaries:
+        return True
+    if path.name.endswith("_test.py") and any(
+        dictionary is not None and path.parent == dictionary.parent for dictionary in dictionaries
+    ):
+        return True
+    return _scratchpad_path.is_scratchpad_path(path)
+
+
+def _resolve_quietly(path: pathlib.Path) -> pathlib.Path | None:
+    """解決できないパスを`None`として返す。"""
+    try:
+        return path.expanduser().resolve(strict=False)
+    except (OSError, ValueError):
+        return None
+
+
 def _check_colloquial(
     tool_name: str,
     before_image: str | None,
@@ -805,7 +840,12 @@ def _check_colloquial(
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
-    if file_path and (_is_plan_file_or_adjunct(file_path) or _is_in_managed_temp(file_path)):
+    if file_path and (
+        _is_plan_file_or_adjunct(file_path)
+        or is_plan_handoff_file(file_path)
+        or _is_in_managed_temp(file_path)
+        or _is_colloquial_judgment_source(file_path)
+    ):
         return None
     if not after_image:
         return None
@@ -827,7 +867,7 @@ def _check_colloquial(
     return _llm_notice(
         f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
         f"{_colloquial_hit_summary(hits)}"
-        "`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
+        f"{_plugin_resources.skill_reference('writing-standards', 'references/writing.md')}「日本語の書き方」に従う。"
         "検出箇所を含む文全体を書き換える。単語だけを同義語へ置き換えず、文全体を組み直す。"
         f" 対象: {target}",
         tag=_WARN_TAG,

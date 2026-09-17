@@ -4,3 +4,6 @@
 # `ja-technical-writing/no-dropping-the-ra`等のチェックから除外する。
 # `check_colloquial.py`側でも_TONE_EXAMPLESとして同じ理由で除外している。
 agent-toolkit/skills/writing-standards/references/tone-examples.md
+
+# Antigravity CLIへ配る外部由来の規範。本文を改変せずそのまま配るため対象外とする。
+.chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md

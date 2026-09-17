@@ -24,7 +24,13 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
   間隔による抑止を置かない
 - 照合注記: 照合の手順を本文へ持つ。直前の通常発話からの経過時間が閾値以上の場合だけ返す
 
-ハーネスが挿入した通知とコマンド起動では、いずれの注記も返さず経過時間の記録も更新しない。
+コマンド起動と機械注入ターンでは、いずれの注記も返さず経過時間の記録も更新しない。
+機械注入ターンの判定入力は次の4系統とし、いずれかが成立したターンを対象とする。
+
+1. payloadの`source`が存在し、値が`user`以外であること
+2. `prompt`の1行目が`[agent-toolkit/periodic-recheck]`だけの行であること
+3. 委譲先として起動されていること
+4. `prompt`が`<task-notification`又は`<cross-session-message`で始まること
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -36,6 +42,13 @@ import os
 import pathlib
 import re
 import time
+
+from agent_toolkit._common.delegated_session import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    is_delegated,
+)
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._hooks import plugin_resources as _plugin_resources  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -75,7 +88,15 @@ _LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
-_HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
+_HARNESS_MESSAGE_RE = re.compile(r"^\s*<(?:task-notification|cross-session-message)\b")
+PERIODIC_RECHECK_MARKER = "[agent-toolkit/periodic-recheck]"
+"""定期再確認のpromptの1行目へ置く役割標識。
+
+`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」が
+同じリテラルを持ち、装着するpromptの1行目をこの標識だけの行と定める。
+"""
+_USER_PROMPT_SOURCE_KEY = "source"
+_USER_PROMPT_SOURCE_USER = "user"
 _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
 _LAST_USER_PROMPT_AT_KEY = "last_user_prompt_at"
 _VERIFICATION_NOTICE_TAG = "notice"
@@ -94,9 +115,10 @@ _VERIFICATION_NOTICE_BODY = (
 規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
 """
 _REFERENCE_NOTICE_TAG = "notice"
-_REFERENCE_NOTICE_BODY = (
-    "当該発話へ応答する前に、`agent-toolkit:confirmation-and-uwi`の"
-    "`references/user-utterance.md`を全文読み、同書の各項を当該発話へ適用する。"
+REFERENCE_NOTICE_BODY = (
+    "当該発話へ応答する前に、"
+    f"{_plugin_resources.skill_reference('confirmation-and-uwi', 'references/user-utterance.md')}"
+    "を全文読み、同書の各項を当該発話へ適用する。"
 )
 """発話解釈の規範の所在だけを示す注記の本文。
 
@@ -112,6 +134,30 @@ def _is_harness_message(prompt: str) -> bool:
     ハーネス通知をユーザーのスラッシュコマンドとして扱わないために用いる。
     """
     return _HARNESS_MESSAGE_RE.search(prompt) is not None
+
+
+def _is_machine_injected(payload: dict, prompt: str) -> bool:
+    """ユーザーが発話していないターンかを判定する。
+
+    判定入力は次の4系統とし、いずれかが成立したターンを機械注入とする。
+
+    1. payloadの`source`が存在し、値が`user`以外であること
+    2. `prompt`の1行目が`PERIODIC_RECHECK_MARKER`だけの行であること
+    3. 委譲先として起動されていること
+    4. `prompt`がハーネスの挿入する包みで始まること
+
+    Claude Code 2.1.274の時点で`source`は配送されないため、残る3系統で判定する。
+    出所を判定入力に持たないと、機械が投入したターンが通常発話として処理され、
+    実ユーザー発話が受け取るべき照合注記をそのターンが消費する。
+    """
+    source = payload.get(_USER_PROMPT_SOURCE_KEY)
+    if isinstance(source, str) and source and source != _USER_PROMPT_SOURCE_USER:
+        return True
+    if prompt.split("\n", 1)[0].strip() == PERIODIC_RECHECK_MARKER:
+        return True
+    if is_delegated(os.environ):
+        return True
+    return _is_harness_message(prompt)
 
 
 def _set_plan_mode_invoked(state: dict) -> dict | None:
@@ -203,19 +249,20 @@ def main(payload_text: str) -> int:
     if _is_harness_message(prompt):
         return 0
 
+    machine_injected = _is_machine_injected(payload, prompt)
     is_codex = "model" in payload or is_codex_payload(payload)
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
-    is_normal_prompt = not first_line.startswith(command_prefix)
+    is_normal_prompt = not first_line.startswith(command_prefix) and not machine_injected
     # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
     notices: list[str] = []
     if is_normal_prompt:
-        notices.append(_llm_notice(_REFERENCE_NOTICE_BODY, tag=_REFERENCE_NOTICE_TAG))
+        notices.append(_llm_notice(REFERENCE_NOTICE_BODY, tag=_REFERENCE_NOTICE_TAG))
         if _claim_verification_notice(session_id, time.time()):
             notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     additional_context = "\n".join(notices) if notices else None
 
-    if not is_normal_prompt:
+    if first_line.startswith(command_prefix):
         match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
         if match is not None:
             name = match.group(1)

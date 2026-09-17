@@ -189,8 +189,8 @@ def test_activity_projection_decides_stall_by_activity_time() -> None:
 
     assert text_silent["seconds_since_output"] >= state.STALL_NOTICE_SECONDS
     assert text_silent["seconds_since_activity"] == 0
-    assert "stalled" not in text_silent
-    assert inactive["stalled"] is True
+    assert text_silent["seconds_since_activity"] < state.STALL_NOTICE_SECONDS
+    assert inactive["seconds_since_activity"] >= state.STALL_NOTICE_SECONDS
     assert not unreadable
 
 

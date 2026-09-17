@@ -45,15 +45,14 @@
 ### 入力検証とセキュリティ
 
 - 入力バリデーション: API境界や外部入力は型駆動でバリデーションする（`pydantic` v2等を活用する）
-- セキュリティ上の危険パターン
-  - `eval()`／`exec()`／`compile()`はユーザー入力に対して使わない（`ast.literal_eval()`や専用パーサーで代替）
-  - `pickle`／`shelve`は信頼できないデータに使わない（`json`や`msgpack`で代替）
-  - `subprocess`は`shell=True`を避ける（引数はリスト形式で渡す。やむを得ない場合は`shlex.quote()`で引数をエスケープ）
+- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでの対応は次のとおり
+  - 評価系は`eval()`／`exec()`／`compile()`であり、`ast.literal_eval()`や専用パーサーで代替する
+  - 安全でない復元は`pickle`／`shelve`と`yaml.load()`であり、`json`／`msgpack`／`yaml.safe_load()`で代替する
+  - `subprocess`は引数をリスト形式で渡し、`shell=True`を避ける
   - `subprocess.run(..., capture_output=True)`の戻り値`proc.stdout`は静的解析（ty/mypy）で
     `bytes | None`寄りに推論されるため、`.decode("utf-8")`で警告が出る
     - 使う前に`assert isinstance(proc.stdout, bytes)`で型を限定すると以降の解析が通る
     - `text=True`を指定する場合は`str`に推論されるが、`None`の可能性が残るため同様に限定する
-  - YAML読み込みは`yaml.safe_load()`を使う（`yaml.load()`は任意コード実行の危険あり）
   - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
   - 一時ファイルは`tempfile`モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
   - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は`secrets`モジュールを使う
@@ -226,7 +225,7 @@ PEP 758の`as`節使用時は従来通り括弧必須とする（`except (ValueE
 
 ## 新しいPythonバージョンの機能
 
-- 対象プロジェクトの`requires-python`で利用できる機能は公式のWhat's Newで確認する
+- 対象プロジェクトの`requires-python`で使える機能は公式のWhat's Newで確認する
   <https://docs.python.org/3/whatsnew/index.html>
 - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）自体は注入対策にならない。
   安全性は後段のレンダラやAPI側に依存するため、SQL／HTML生成では対応レンダラと組み合わせて使う

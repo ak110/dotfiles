@@ -33,7 +33,7 @@ def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
     次の全条件を満たす場合に`True`を返す:
     - `args.filenames`が空かつ`args.all`が`True`（ファイル指定は全集合対象外）
     - `args.type`が`"all"`または`"uwi"`
-    - `args.status`が`"all"`または`"active"`
+    - `args.status`（`--state`の値）が`"all"`または`"active"`
     - `args.answered`が`"all"`または`"no"`
     - `args.source`が`None`
     """
@@ -72,10 +72,10 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--type`指定時は出力対象種別（awi・uwi・all）を限定する（既定: all）。
     `FILENAME...`指定時は5状態フォルダすべてを探索し、指定順に表示する。
     `--type`・`--target-repo`・`--source`の
-    値で対象を限定する。`--status`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
-    状態・回答有無フィルタを迂回する既定挙動であり、既定の`--status=active`によって
+    値で対象を限定する。`--state`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
+    状態・回答有無フィルタを迂回する既定挙動であり、既定の`--state=active`によって
     adopted・rejected状態のエントリが参照不能になる事態を避けるためである）。
-    `--all`指定時のAWI・`uwi`双方の走査対象は`--status`と連動する
+    `--all`指定時のAWI・`uwi`双方の走査対象は`--state`と連動する
     （既定`active`はinbox・processing・hold、`processable`はinbox・processing、
     `all`は5状態フォルダ全連結、個別状態指定は当該状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が

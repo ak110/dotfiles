@@ -155,6 +155,7 @@ from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylin
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
     is_plan_component_file,
+    is_plan_handoff_file,
 )
 
 if TYPE_CHECKING:
@@ -215,6 +216,7 @@ if TYPE_CHECKING:
         _check_bash_help_with_execution,
         _check_bash_heredoc_chain,
         _check_bash_env_full_read,
+        _check_bash_missing_path_operand_loss,
         _check_bash_nested_code_string,
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
@@ -405,11 +407,21 @@ def main(payload_text: str) -> int:
         file_path = tool_input.get("file_path", "")
         if isinstance(file_path, str) and _check_secret_read(file_path):
             return exit_with(2)
-        large_read_notice = check_large_read(tool_input, cwd)
-        if large_read_notice is not None:
-            print(large_read_notice, file=sys.stderr)
-            return exit_with(2)
-        # 遮断せずに通した取得だけを観測として記録する。
+        large_read_fix = check_large_read(tool_input, cwd)
+        if large_read_fix is not None:
+            corrected_input, large_read_notice = large_read_fix
+            record_atk_help_paths_from_read(corrected_input, cwd, session_id)
+            emit_json(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "updatedInput": corrected_input,
+                        "additionalContext": "\n".join([*pending_notices, large_read_notice]),
+                    }
+                }
+            )
+            return 0
         record_atk_help_paths_from_read(tool_input, cwd, session_id)
         flush_pending_notices()
         return 0
@@ -479,6 +491,8 @@ def _handle_bash_tool(
         return 2
     if sleep_poll_result is not None:
         warnings.append(sleep_poll_result)
+    if _check_bash_missing_path_operand_loss(command, cwd) == "block":
+        return 2
     auto_fix = _autofix_bash_command(command, cwd, session_id)
     if auto_fix is not None:
         command, auto_fix_notice = auto_fix
@@ -506,6 +520,9 @@ def _handle_bash_tool(
         return 2
     if _check_bash_unbounded_root_traversal(command) == "block":
         return 2
+    git_grep_pattern_type_result = _check_bash_git_grep_pattern_type(command)
+    if git_grep_pattern_type_result == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
@@ -520,7 +537,7 @@ def _handle_bash_tool(
         _check_bash_explicit_path_exists(command, cwd),
         _check_bash_atk_options(command),
         _check_bash_unknown_atk_subcommand(command),
-        _check_bash_git_grep_pattern_type(command),
+        git_grep_pattern_type_result,
         _check_bash_unquoted_shell_metacharacter(command),
         _check_bash_unresolved_git_object(command, cwd),
         _check_bash_rg_multiline_pattern(command),

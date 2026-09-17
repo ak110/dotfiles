@@ -30,11 +30,12 @@ disable-model-invocation: true
 
 1. processable一覧と各WI本文を取得し、全項目を直接実装又は計画へ分ける。
 2. 対象を`processing`へ移し、集合を固定する。
-3. 処理開始時のHEADを`git rev-parse --short=7 HEAD`で取得し、起点OIDとして保持する。
-4. 計画対象がある場合は`agent-toolkit:plan-mode`のSKILL.mdと計画ファイル基準を全文読み、全項目を1つの計画ファイルへ起草する。`create_plan_files.py`で作成し、`check_plan_file.py --reject-migration-warnings`を単独実行する。
+3. 処理開始時のHEADの7文字以上の一意な短縮OIDを取得し、起点OIDとして保持する。
+4. 計画対象がある場合は`agent-toolkit:plan-mode`のSKILL.mdと計画ファイル基準を全文読み、全項目を1つの計画ファイルへ起草する。作成と構造検査は同基準が定める経路で行う。
 5. 主作業ツリーで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。近接検証を実行し、`agent-toolkit:commit`に従ってcommitする。
 6. 処理回全体で1件の実行レビューを`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動する。計画対象がある処理回では計画ファイルの絶対パスを渡し、直接実装対象がある処理回では直接実装したWIの記録を渡す。両方がある処理回では両方を同じ起動文へ渡す。計画対象が無い処理回では、手順3で保持した起点OIDを`処理開始OID`として渡す。
 7. `${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させる。修正はメインが行い、同じ起点OIDとレビュー表を継続する。
-8. 計画の`## 進捗ログ`へ完了判定を記録し、`check_plan_file.py --reject-migration-warnings`の成功後に`atk plans commit <計画ファイル名>`で保存する。
-9. 各WIを採否に応じて`adopt`又は`reject`し、対象リポジトリのタスクランナーが定める全体検査、push、CI及び固有の終端工程を実行する。
-10. 一時的なレビュー表を正式な保存又は回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。
+8. 計画の`## 進捗ログ`へ完了判定を記録し、構造検査の成功を確認してから計画バンドルを保存する。
+9. 各WIを採否に応じて`adopt`又は`reject`し、対象リポジトリの開発手順が定める公開前検査、push、CI及び固有の終端工程を実行する。ローカルで検査する範囲は、その開発手順が定めるローカルとCIの分担に従う。公開前の全体検査をCIへ委ねると定める開発手順では、その開発手順が挙げるローカル検査だけを実行する。分担を定めていない対象リポジトリでは全体検査まで実行する。
+10. push後のCIの完了を待つ間に、CIの結果を入力に持たず、かつ待機対象と同じ資源を占有しない対象リポジトリ固有の終端工程を実行する。作業ツリーへ書き込む工程は「不変条件」の書込主体の定めを保つため、この重ね合わせの対象から外す。
+11. 一時的なレビュー表を正式な保存又は回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。

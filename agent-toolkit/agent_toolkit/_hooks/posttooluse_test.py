@@ -453,6 +453,21 @@ class TestTestExecution:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-notice"]
 
+    def test_timeout_background_move_records_task_id(self, tmp_path: pathlib.Path):
+        """実行時間の上限で背景へ移ったBashのジョブも所有記録として保存する。"""
+        sid = "background-task-timeout"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "make logs-app"},
+                "tool_response": "Command timed out and is now running in the background. ID: bgvs1qd2z",
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bgvs1qd2z"]
+
     def test_response_without_identifier_does_not_record_task_id(self, tmp_path: pathlib.Path):
         """識別子を持たない応答では所有記録を残さない。"""
         sid = "background-task-none"

@@ -29,6 +29,7 @@ from pytools._internal import (
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
     restore_codex_logs_linux,
+    setup_agy_cli,
     setup_atk_serve_linux,
     setup_bin_path,
     setup_claude_cli,
@@ -116,6 +117,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("scripts/claude_hook_stop_bell.py"),
     ],
     Path.home() / ".claude": [
+        # `references/`はスキル配下だけの名前としたため、旧配布先のディレクトリを削除する。
+        Path("references"),
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
@@ -330,6 +333,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("Codex CLI の導入と更新", setup_codex_cli.run),
     _StepSpec("Codex の Claude MCP 登録削除", remove_codex_claude_mcp.run),
     _StepSpec("Claude Code CLI の導入と更新", setup_claude_cli.run),
+    _StepSpec("Antigravity CLI の導入", setup_agy_cli.run),
     _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run),
     _StepSpec("Codex リンクの同期", setup_codex_links.run),
     _StepSpec("Codex 診断ログの通常ストレージ復元 (Linux)", restore_codex_logs_linux.run),

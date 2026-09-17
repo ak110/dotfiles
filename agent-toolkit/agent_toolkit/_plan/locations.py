@@ -326,6 +326,13 @@ def _main_candidate_for_new_path(path: pathlib.Path) -> pathlib.Path | None:
     return None
 
 
+_HANDOFF_SUFFIX = ".handoff.md"
+"""引き継ぎ記録の接尾辞。
+
+計画rootの内側へ置く計画本体以外の成果物であり、計画ファイルとして扱わない。
+"""
+
+
 def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
     """作業root又は保存root内の計画ファイルの種別を返す。"""
     try:
@@ -348,6 +355,8 @@ def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
             return "adjunct"
         if path.name.endswith(".detail.md"):
             return "detail"
+        if path.name.endswith(_HANDOFF_SUFFIX):
+            return "handoff"
         if path.name.endswith(".md"):
             return "main"
     except (OSError, StopIteration, ValueError):
@@ -555,6 +564,7 @@ def _is_component_name(name: str) -> bool:
         or name.endswith(".codex.log")
         or name.endswith("-workaround-check.md")
         or name.endswith(".bugs.md")
+        or name.endswith(_HANDOFF_SUFFIX)
     ):
         return False
     return name.endswith(".md")
@@ -594,6 +604,22 @@ def is_plan_adjunct_file(file_path: str) -> bool:
     except (OSError, ValueError):
         return False
     return _new_plan_kind(path) == "adjunct"
+
+
+def is_plan_handoff_file(file_path: str) -> bool:
+    """計画root配下の引き継ぎ記録か判定する。
+
+    引き継ぎ記録は計画本体ではないため、`agent-toolkit:plan-mode`の未起動を警告する判定の対象から外す。
+    起草中の素材を含むため、口語検査の対象からは外さない。
+    """
+    name = _plan_file_name(file_path)
+    if name is not None:
+        return name.endswith(_HANDOFF_SUFFIX)
+    try:
+        path = resolve_plan_file(file_path)
+    except (OSError, ValueError):
+        return False
+    return _new_plan_kind(path) == "handoff"
 
 
 # 実装側で読みやすい公開別名。既存hookの関数名は維持する。

@@ -30,10 +30,13 @@ _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "稼働中の依頼がある場合は、元の依頼の目的と未完了工程を照合してから次に実行する工程を確定する。"
     "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
 )
-_EXPECTED_REFERENCE_NOTICE_BODY = (
-    "当該発話へ応答する前に、`agent-toolkit:confirmation-and-uwi`の"
-    "`references/user-utterance.md`を全文読み、同書の各項を当該発話へ適用する。"
-)
+_EXPECTEDREFERENCE_NOTICE_BODY = user_prompt_submit.REFERENCE_NOTICE_BODY
+"""参照注記の期待値。
+
+本文は読込を求める資料の絶対パスを含み、当該パスは実行環境のplugin rootで変わる。
+実装の定数を期待値とし、同じ仕様を検体側へ二重に固定しない。
+絶対パスが実在することは`plugin_resources_test.py`が検査する。
+"""
 
 
 def _notice_bodies(context: str) -> list[str]:
@@ -79,6 +82,79 @@ def _run_subcommand(
     return _fork_runner.run_script(_SCRIPT, argv=(subcommand,), input=text, env=env)
 
 
+class TestMachineInjectedTurn:
+    """ユーザーが発話していないターンでの注記と時刻記録の抑止。
+
+    実ユーザー発話が受け取るべき照合注記を機械注入ターンが消費しないようにする。
+    """
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        ("payload_extra", "prompt", "env_extra"),
+        [
+            ({"source": "system"}, "状況を確認する。", {}),
+            ({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n稼働状況を確認する。", {}),
+            ({}, "<task-notification>完了</task-notification>", {}),
+            ({}, '<cross-session-message from="main:x" nonce="n">継続</cross-session-message>', {}),
+        ],
+    )
+    def test_no_notice_and_no_timestamp(
+        payload_extra: dict,
+        prompt: str,
+        env_extra: dict,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """機械注入ターンでは注記を返さず、直前の通常発話の時刻も更新しない。"""
+        del env_extra
+        sid = "machine-injected"
+        result = _run({"session_id": sid, "prompt": prompt, **payload_extra}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        context = ""
+        if result.stdout:
+            context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
+        assert _EXPECTEDREFERENCE_NOTICE_BODY not in context
+        assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
+        assert _read_state(tmp_path, sid).get("last_user_prompt_at") is None
+
+    @staticmethod
+    def test_source_user_keeps_current_behavior(tmp_path: pathlib.Path) -> None:
+        """`source`が`user`の入力は従来どおり注記を返し時刻を記録する。"""
+        sid = "source-user"
+        result = _run({"session_id": sid, "prompt": "通常の入力", "source": "user"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert _EXPECTEDREFERENCE_NOTICE_BODY in context
+        assert _read_state(tmp_path, sid).get("last_user_prompt_at") is not None
+
+    @staticmethod
+    def test_normal_prompt_after_machine_turn_receives_verification_notice(tmp_path: pathlib.Path) -> None:
+        """機械注入ターンの後でも、直前の通常発話から閾値以上離れた発話は照合注記を受け取る。"""
+        sid = "machine-then-user"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        state_path.write_text(json.dumps({"last_user_prompt_at": time.time() - 600.0}), encoding="utf-8")
+        _run(
+            {"session_id": sid, "prompt": f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n確認する。"},
+            state_dir=tmp_path,
+        )
+        result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
+        assert _EXPECTEDREFERENCE_NOTICE_BODY in bodies
+        assert _EXPECTED_VERIFICATION_NOTICE_BODY in bodies
+
+
+def test_periodic_recheck_marker_matches_the_runtime_document() -> None:
+    """フックの標識と`claude-code-runtime.md`の記述が同じリテラルを持つ。
+
+    標識を2箇所が保持するため、片方だけの改訂で機械注入判定が成立しなくなる状態を検出する。
+    """
+    document = pathlib.Path(__file__).resolve().parents[2] / "skills" / "delegation" / "references" / "claude-code-runtime.md"
+    assert f"`{user_prompt_submit.PERIODIC_RECHECK_MARKER}`" in document.read_text(encoding="utf-8")
+
+
 class TestSlashCommandDetection:
     """スラッシュコマンド起動時のセッション状態フラグ書き込み検証。"""
 
@@ -117,7 +193,7 @@ class TestNonMatchingPrompts:
     def _assert_reference_notice_only(result: subprocess.CompletedProcess[str]) -> None:
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert "sessionTitle" not in hook_output
-        assert _notice_bodies(hook_output["additionalContext"]) == [_EXPECTED_REFERENCE_NOTICE_BODY]
+        assert _notice_bodies(hook_output["additionalContext"]) == [_EXPECTEDREFERENCE_NOTICE_BODY]
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
         sid = "non-skill"
@@ -243,7 +319,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
 
     def test_reference_notice_accompanies_every_normal_prompt(self, tmp_path: pathlib.Path) -> None:
         """間隔によらず通常発話のたびに参照注記を返し、判定手順を本文へ持たせない。"""
@@ -254,7 +330,7 @@ class TestVerificationNoticeInjection:
             assert result.returncode == 0
             contexts.append(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
 
-        assert [_notice_bodies(context) for context in contexts] == [[_EXPECTED_REFERENCE_NOTICE_BODY]] * 3
+        assert [_notice_bodies(context) for context in contexts] == [[_EXPECTEDREFERENCE_NOTICE_BODY]] * 3
         assert all("user-utterance.md" in context for context in contexts)
         assert all("照合してから応答する" not in context for context in contexts)
 
@@ -289,7 +365,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY, _EXPECTED_VERIFICATION_NOTICE_BODY]
         assert _read_state(tmp_path, session_id)["last_user_prompt_at"] > previous
 
     def test_claims_notice_at_exact_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -326,7 +402,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY]
 
     def test_does_not_inject_on_first_prompt(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-first-prompt"
@@ -335,7 +411,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_REFERENCE_NOTICE_BODY]
+        assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY]
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
         assert isinstance(state["last_user_prompt_at"], float)
@@ -377,7 +453,7 @@ class TestVerificationNoticeInjection:
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert hook_output["hookEventName"] == "UserPromptSubmit"
         assert _notice_bodies(hook_output["additionalContext"]) == [
-            _EXPECTED_REFERENCE_NOTICE_BODY,
+            _EXPECTEDREFERENCE_NOTICE_BODY,
             _EXPECTED_VERIFICATION_NOTICE_BODY,
         ]
         assert "sessionTitle" not in hook_output
@@ -404,7 +480,7 @@ class TestVerificationNoticeInjection:
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
         assert hook_output["sessionTitle"] == "current-plan"
         assert _notice_bodies(hook_output["additionalContext"]) == [
-            _EXPECTED_REFERENCE_NOTICE_BODY,
+            _EXPECTEDREFERENCE_NOTICE_BODY,
             _EXPECTED_VERIFICATION_NOTICE_BODY,
         ]
 

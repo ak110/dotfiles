@@ -1,0 +1,146 @@
+"""Antigravity CLI backendのコマンド構築とstream-jsonの消費を検証する。"""
+
+import asyncio
+import os
+import pathlib
+import stat
+import sys
+from typing import Any
+
+import pytest
+
+from agent_toolkit._agents_server import antigravity
+from agent_toolkit._agents_server import state as shared_state
+
+_FAKE_AGY = """#!{python}
+import json
+import sys
+
+args = sys.argv[1:]
+conversation = args[args.index("--conversation") + 1] if "--conversation" in args else "conv-1"
+prompt = args[args.index("-p") + 1]
+print(json.dumps({{"type": "init", "conversation_id": conversation}}), flush=True)
+print(json.dumps({{"type": "step_update", "text": "調査中"}}), flush=True)
+print(json.dumps({{"type": "result", "status": "completed", "response": prompt[-20:]}}), flush=True)
+"""
+
+
+def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """PATHの先頭へstream-jsonを返す`agy`の検体を置く。"""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "agy"
+    fake.write_text(_FAKE_AGY.format(python=sys.executable), encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    return fake
+
+
+def test_build_command_passes_model_effort_and_conversation() -> None:
+    """モデル、effort、会話識別子と事前承認の指定をコマンド列へ渡す。"""
+    command = antigravity.build_command("推敲して", "gemini-3.8-flash", "medium", "conv-1")
+
+    assert command[0] == "agy"
+    assert command[command.index("-p") + 1] == "推敲して"
+    assert command[command.index("--output-format") + 1] == "stream-json"
+    assert command[command.index("--model") + 1] == "gemini-3.8-flash"
+    assert command[command.index("--effort") + 1] == "medium"
+    assert command[command.index("--conversation") + 1] == "conv-1"
+    assert "--dangerously-skip-permissions" in command
+    # 非対話実行の既定の上限は5分であり、1turnがこれを超えるため明示する。
+    assert int(command[command.index("--print-timeout") + 1]) > 300
+
+
+def test_build_command_omits_absent_options() -> None:
+    """モデル、effort、会話識別子を指定しない起動では当該オプションを渡さない。"""
+    command = antigravity.build_command("推敲して", None, None, None)
+
+    assert "--model" not in command
+    assert "--effort" not in command
+    assert "--conversation" not in command
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_status"),
+    [
+        ({"status": "completed", "response": "整えた"}, "completed"),
+        ({"status": "interrupted"}, "interrupted"),
+        ({"status": "failed", "error": {"message": "利用上限"}}, "failed"),
+        ({"status": "completed"}, "failed"),
+    ],
+)
+def test_result_values_maps_status(payload: dict[str, Any], expected_status: str) -> None:
+    """`result`イベントの状態を終端状態へ対応付け、本文の無い完了は失敗として扱う。"""
+    session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy")
+
+    assert antigravity.result_values(session, payload)["status"] == expected_status
+
+
+def test_decode_event_ignores_non_json_lines() -> None:
+    """JSONでない行と空行は無視する。"""
+    assert antigravity.decode_event(b"\n") is None
+    assert antigravity.decode_event(b"loading...\n") is None
+    assert antigravity.decode_event(b'{"type": "init"}\n') == {"type": "init"}
+
+
+def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`init`でsessionを生成し、`result`で終端結果を確定する。"""
+    _install_fake_agy(tmp_path, monkeypatch)
+
+    async def scenario() -> shared_state.SessionState:
+        manager = antigravity.AntigravityManager()
+        session = await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
+        for _ in range(200):
+            if session.terminal:
+                break
+            await asyncio.sleep(0.02)
+        await manager.close()
+        return session
+
+    session = asyncio.run(scenario())
+
+    assert session.session_id == "conv-1"
+    assert session.engine == "agy"
+    assert session.status == "completed"
+    assert session.agent_message.endswith("原稿を推敲して")
+
+
+def test_send_message_starts_a_new_turn_on_the_same_conversation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """継続は同じ会話識別子の新しい実行として開始する。"""
+    _install_fake_agy(tmp_path, monkeypatch)
+
+    async def scenario() -> tuple[dict[str, Any], shared_state.SessionState]:
+        manager = antigravity.AntigravityManager()
+        session = await manager.start("原稿を推敲して", str(tmp_path))
+        for _ in range(200):
+            if session.terminal:
+                break
+            await asyncio.sleep(0.02)
+        delivery = await manager.send_message(session, "続けて短くして")
+        for _ in range(200):
+            if session.terminal:
+                break
+            await asyncio.sleep(0.02)
+        await manager.close()
+        return delivery, session
+
+    delivery, session = asyncio.run(scenario())
+
+    assert delivery["delivery"] == "reply_started"
+    assert session.session_id == "conv-1"
+    assert session.turn_seq == 2
+    assert session.agent_message.endswith("続けて短くして")
+
+
+def test_send_message_rejects_an_unfinished_turn() -> None:
+    """実行中のturnへの継続は受理しない。"""
+    session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy", status="running")
+
+    async def scenario() -> None:
+        manager = antigravity.AntigravityManager()
+        with pytest.raises(ValueError, match="has not finished"):
+            await manager.send_message(session, "続けて")
+
+    asyncio.run(scenario())

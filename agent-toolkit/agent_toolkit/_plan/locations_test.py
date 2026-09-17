@@ -96,6 +96,23 @@ def test_is_plan_component_file_bugs_md_returns_false(_plans_home: pathlib.Path)
     assert _plan_file.is_plan_component_file(str(path)) is False
 
 
+def test_is_plan_handoff_file_returns_true(_plans_home: pathlib.Path) -> None:
+    """引き継ぎ記録は専用の述語でだけ真になる。"""
+    path = _plans_home / "sample.handoff.md"
+    path.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_handoff_file(str(path)) is True
+    assert _plan_file.is_plan_component_file(str(path)) is False
+    assert _plan_file.is_plan_adjunct_file(str(path)) is False
+
+
+@pytest.mark.parametrize("name", ["sample.md", "sample.bugs.md", "sample.detail.md"])
+def test_is_plan_handoff_file_other_names_return_false(_plans_home: pathlib.Path, name: str) -> None:
+    """引き継ぎ記録以外の計画ファイルは専用の述語で偽になる。"""
+    path = _plans_home / name
+    path.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_handoff_file(str(path)) is False
+
+
 def test_is_plan_component_file_review_md_excluded(_plans_home: pathlib.Path) -> None:
     """`.review.md`サフィックスは計画構成要素述語でも除外される。"""
     path = _plans_home / "sample.review.md"

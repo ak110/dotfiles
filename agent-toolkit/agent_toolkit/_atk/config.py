@@ -71,12 +71,18 @@ def _preset_settings(preset: str) -> dict[str, str]:
 
 
 _MUTABLE_KEY_DEFAULTS = _preset_settings("codex-balanced")
-_STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/,\s]+(?:/[^/,\s]+)?$")
+_STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
     "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]"}),
     "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"}),
+    # Antigravity CLIの`--model`は、`agy models`が返す推論の深さ込みの完全スラッグと、
+    # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。
+    # 実測の日付と再検証手段は`docs/development/audit-records.md`の
+    # 「agent-toolkit/agent_toolkit/_atk/config.py：Antigravity CLIのモデル指定」が持つ。
+    # 日本語文書の推敲へ用途を限定するため、一覧は当該用途で使う1件だけとする。
+    "agy": frozenset({"gemini-3.8-flash"}),
 }
 _KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
@@ -138,7 +144,7 @@ def _validate_stage_model_candidates(value: str) -> None:
     """候補列の各候補を検証し、書式不正なら`ValueError`を送出する。"""
     candidates = value.split(",")
     if not candidates or any(_STAGE_MODEL_PATTERN.fullmatch(candidate) is None for candidate in candidates):
-        raise ValueError("受理可能書式: <claude|codex>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
+        raise ValueError("受理可能書式: <claude|codex|agy>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
 
 
 def resolve_mutable_setting(key: str) -> str:

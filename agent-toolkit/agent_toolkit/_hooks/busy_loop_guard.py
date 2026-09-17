@@ -96,7 +96,7 @@ def _halt(session_id: str, count: int) -> str:
     )
     lines = [
         f"無進捗のターンが{count}回続いたため、常駐処理の停止とセッションの終了を実行した。",
-        f"常駐処理への中断要求: {abort_path}（解除は`atk wi process-loop-abort-cancel`）。",
+        f"常駐処理への中断要求: {abort_path}（解除は`atk wi process-loop abort-cancel`）。",
     ]
     if status == "terminating" and target is not None:
         lines.append(f"現在のセッションへ終了要求を送った: {target.host} pid={target.pid}。")

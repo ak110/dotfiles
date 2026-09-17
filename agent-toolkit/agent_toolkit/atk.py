@@ -17,7 +17,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
-- mq process-loop-abort/process-loop-abort-cancel/process-loop-status: 常駐処理への中断要求を設定・解除・参照する
+- mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: 常駐処理への中断要求と追加指示を操作する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - plans commit/list: 現行計画又は独立CI実行レビュー表の保存と作業中計画の一覧
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
@@ -411,7 +411,9 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="出力対象種別（既定: all）。",
     )
     list_.add_argument(
+        "--state",
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         action="append",
         default=None,
@@ -475,7 +477,9 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="出力対象種別（既定: all）。",
     )
     show.add_argument(
+        "--state",
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         action="append",
         default=None,
@@ -498,7 +502,12 @@ def _add_mq_read_parsers(sub: Any) -> None:
 
 
 def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
-    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢・既定値で追加する。"""
+    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢・既定値で追加する。
+
+    一括フィルターの綴りは`--status`だけとする。`rm`と`return-to-inbox`は
+    個別指定の探索先と差し戻し元を`--state`で受け取るため、同じ綴りが2つの概念を指す状態を避ける。
+    フィルター専用の`list`・`show`・`grep`だけが`--state`を正式名として受理する。
+    """
     parser.add_argument(
         "--all",
         action="store_true",
@@ -513,6 +522,7 @@ def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
     )
     parser.add_argument(
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         action="append",
         default=None,
@@ -779,7 +789,9 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
     grep.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     grep.add_argument(
+        "--state",
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         default="active",
         help="状態フォルダで検索範囲を限定する（既定: active）。`list`と同じ選択肢・既定値。",
@@ -884,21 +896,13 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
             "候補情報を表示して確認のうえ再開する。--resumeとは同時指定できない。初回のみ有効。"
         ),
     )
-    _atk_help.add_command(
-        sub,
-        "process-loop-abort",
-        **_atk_help.HELP["atk wi process-loop-abort"],
-    )
-    _atk_help.add_command(
-        sub,
-        "process-loop-abort-cancel",
-        **_atk_help.HELP["atk wi process-loop-abort-cancel"],
-    )
-    _atk_help.add_command(
-        sub,
-        "process-loop-status",
-        **_atk_help.HELP["atk wi process-loop-status"],
-    )
+    loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
+    _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
+    _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
+    _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
+    instruct = _atk_help.add_command(loop_sub, "instruct", **_atk_help.HELP["atk wi process-loop instruct"])
+    instruct.add_argument("body", metavar="BODY", help="次に起動する1セッションへ渡す追加指示の本文。")
+    _atk_help.add_command(loop_sub, "instruct-cancel", **_atk_help.HELP["atk wi process-loop instruct-cancel"])
 
 
 def _build_wi_parser(mq: argparse.ArgumentParser) -> None:
@@ -1301,12 +1305,16 @@ def main(
         parser.error(f"未知のトップレベルコマンド: {args.command}")
     sub = args.wi_subcommand
     process_loop_state_dispatch = {
-        "process-loop-abort": _process_loop._cmd_process_loop_abort,
-        "process-loop-abort-cancel": _process_loop._cmd_process_loop_abort_cancel,
-        "process-loop-status": _process_loop._cmd_process_loop_status,
+        "abort": _process_loop._cmd_process_loop_abort,
+        "abort-cancel": _process_loop._cmd_process_loop_abort_cancel,
+        "status": _process_loop._cmd_process_loop_status,
+        "instruct": lambda: _process_loop._cmd_process_loop_instruct(args.body),
+        "instruct-cancel": _process_loop._cmd_process_loop_instruct_cancel,
     }
-    if sub in process_loop_state_dispatch:
-        process_loop_state_dispatch[sub]()
+    process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
+    if sub == "process-loop" and process_loop_subcommand is not None:
+        # これらの操作はprivate-notesを必要としないため、環境の用意より前で処理する。
+        process_loop_state_dispatch[process_loop_subcommand]()
         sys.exit(0)
     private_notes = _common._ensure_environment(home)
     dispatch = {

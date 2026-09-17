@@ -115,6 +115,9 @@ from agent_toolkit._hooks import (
     bash_command_parser as _bash_command_parser,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
+    plugin_resources as _plugin_resources,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._hooks import (
     response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
@@ -404,7 +407,8 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
             "背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
             "停滞検知の手順を完了した場合に限る。"
             "当該手順の完了条件は`agent-toolkit:delegation`の"
-            "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節が定める。"
+            f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
+            "「停滞の検知と巻き取り」節が定める。"
             "進行が遅いことや非効率に確認できることだけでは停止の指示にならない。"
             "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
             "ユーザーの介入があった場合は、既定では稼働中の委譲先へ追加指示を送る。"
@@ -412,7 +416,9 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
             "詳細は`agent-toolkit:delegation`「継続と新規起動」が定める。",
             fix=(
                 "自セッションが起動した対象は所有記録に一致する識別子を指定する。"
-                "その他の対象は`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節に従い、"
+                "その他の対象は"
+                f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
+                "「停滞の検知と巻き取り」節に従い、"
                 "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
                 '記録は`uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
                 '"${CLAUDE_PLUGIN_ROOT}/skills/delegation/scripts/record_stall_detection.py" '

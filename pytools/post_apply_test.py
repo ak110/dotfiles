@@ -105,10 +105,9 @@ def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
     assert relative in post_apply._REMOVED_PATHS[Path.home() / ".codex"]  # noqa: SLF001
 
 
-def test_session_review_reference_is_not_cleanup_target() -> None:
-    """新しい参照文書を旧資産の後始末対象へ含めない。"""
-    for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
-        assert Path("references/session-review-dotfiles.md") not in paths
+def test_legacy_reference_directory_is_cleanup_target() -> None:
+    """スキル配下以外の旧`references/`を配布先から削除する。"""
+    assert Path("references") in post_apply._REMOVED_PATHS[Path.home() / ".claude"]  # noqa: SLF001
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:
@@ -664,6 +663,13 @@ class TestDefaultSteps:
         names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert "claude-statusline バイナリの取得" in names
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
+
+    def test_agy_cli_step_follows_claude_code_cli(self):
+        """Antigravity CLIの導入をClaude Code CLIの直後に1回登録する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        agy_name = "Antigravity CLI の導入"
+        assert names.count(agy_name) == 1
+        assert names.index(agy_name) == names.index("Claude Code CLI の導入と更新") + 1
 
     def test_codex_plugin_step_order(self):
         """Codex pluginは正本からsnapshotを生成した後に導入する。"""

@@ -169,9 +169,14 @@ _REVIEW_TABLE_HEADERS = (
     "箇所",
     "指摘内容",
     "指摘レベル",
-    "対応要否",
     "対応内容",
     "対応不要理由",
+)
+# 保存済みの旧形式の列数。8列は指摘レベルと対応要否の双方を、7列は対応要否だけを持つ。
+_LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT = 8
+# 旧7列形式の5列目が取る対応要否の値域。現行7列形式の5列目の指摘レベルと区別する。
+_LEGACY_RESPONSE_NEEDED_VALUES = frozenset(
+    {"yes", "true", "1", "required", "対応要", "no", "false", "0", "not-required", "対応不要"}
 )
 
 # debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓で畳み込む。

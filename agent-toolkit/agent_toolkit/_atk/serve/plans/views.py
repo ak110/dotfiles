@@ -120,7 +120,9 @@ if TYPE_CHECKING:
         _CURRENT_PLAN_SUFFIX_LABELS,
         _DETAIL_SUFFIX,
         _LEGACY_CACHE_NAME_RE,
+        _LEGACY_RESPONSE_NEEDED_VALUES,
         _LEGACY_TEMPORARY_NAME_RE,
+        _LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT,
         _LISTED_EXCLUDED_SUFFIXES,
         _PLAN_SUFFIX_LABELS,
         _PYGMENTS_CSS_CLASS,
@@ -412,18 +414,25 @@ def resolve_source_id(context: PlansContext, host: str, source_id: str, rel: str
 
 
 def review_table_html(text: str) -> str:
-    """JSON文字列8列又は旧7列のレビュー指摘管理表をHTML表へ変換する。"""
+    """JSON文字列7列又は保存済みの旧形式のレビュー指摘管理表をHTML表へ変換する。
+
+    旧8列形式は指摘レベルと対応要否の双方を持つため、対応要否の列を除く。
+    旧7列形式は指摘レベルを持たず5列目が対応要否であるため、5列目の値域で現行形式と判別し、
+    指摘レベルを空として対応要否の列を除く。
+    """
     rows: list[list[str]] = []
     try:
         for line in text.splitlines():
             encoded_cells = line.split("\t")
-            if len(encoded_cells) == len(_REVIEW_TABLE_HEADERS) - 1:
-                encoded_cells.insert(4, json.dumps(""))
+            if len(encoded_cells) == _LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT:
+                del encoded_cells[5]
             elif len(encoded_cells) != len(_REVIEW_TABLE_HEADERS):
                 raise ValueError("レビュー指摘管理表の列数が不正です")
             cells = [json.loads(cell) for cell in encoded_cells]
             if not all(isinstance(cell, str) for cell in cells):
                 raise ValueError("レビュー指摘管理表のセルがJSON文字列ではありません")
+            if cells[4].strip().casefold() in _LEGACY_RESPONSE_NEEDED_VALUES:
+                cells = [*cells[:4], "", *cells[5:]]
             rows.append(cells)
     except (json.JSONDecodeError, ValueError):
         return f"<pre>{html_lib.escape(text)}</pre>\n"

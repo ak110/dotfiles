@@ -148,6 +148,9 @@ extend-exclude = [
     "agent-toolkit-codex/**",
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
     "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+    # Antigravity CLIへ配る外部由来の規範。検査を通すための書き換えは出所の正確さを損なうため、
+    # 本リポジトリの表記検査の対象から外す。
+    ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
 ]
 # chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]

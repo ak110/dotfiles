@@ -117,6 +117,26 @@ winget install jdx.mise
 update-dotfiles
 ```
 
+### Antigravity CLI
+
+`update-dotfiles`はAntigravity CLI（`agy`）も導入する。
+日本語の技術文書の推敲に使い、`agents_server`からはモデルを明示指定したときだけ選べる。
+
+初回はブラウザでの認証を要する。`agy`を対話で起動して認証を済ませるまで、`agents_server`からは使えない。
+
+```bash
+agy
+```
+
+指定できるモデルスラッグは次のコマンドで確認する。
+
+```bash
+agy models
+```
+
+statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CLIのstatuslineコマンドへ
+`claude-statusline agy-statusline`を設定する。
+
 ## ドキュメント
 
 - [docs/index.md](docs/index.md): ドキュメント入口

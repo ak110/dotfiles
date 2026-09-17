@@ -209,10 +209,9 @@ def test_candidate_events_includes_delegate_returns_that_report_failure() -> Non
 
 
 def test_candidate_events_excludes_delegate_returns_that_report_success() -> None:
-    """工程の成立を表す返却値と、`status`行を持たない最終返却を候補にしない。"""
+    """工程の成立を表す`status`値の最終返却を候補にしない。"""
     timeline = [
         {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: completed\noutput_file: /tmp/out.md"},
-        {"kind": "final-result", "record": "agent-2", "line": 30, "text": "実装完了\n検証結果: 終了コード0、警告なし"},
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
@@ -220,6 +219,19 @@ def test_candidate_events_excludes_delegate_returns_that_report_success() -> Non
     assert not candidates[:-1]
     assert not candidates[-1]["included_locators"]
     assert not candidates[-1]["excluded"]
+
+
+def test_candidate_events_includes_delegate_returns_without_status_line() -> None:
+    """委譲先の`status`行を持たない最終返却を候補へ含め、メイン記録の最終出力は候補にしない。"""
+    timeline = [
+        {"kind": "final-result", "record": "agent-1", "line": 30, "text": "実装完了\n検証結果: 終了コード0、警告なし"},
+        {"kind": "final-result", "record": "main", "line": 40, "text": "対応を完了した。"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"]
+    assert candidates[-1]["included_locators"] == [{"record": "agent-1", "line": 30}]
 
 
 def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None:
