@@ -802,7 +802,12 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         truncation_notice = _format_truncation_autofix_notice(saved, total_segments=len(segments))
         body = f"{body}\n{truncation_notice}" if body else truncation_notice
         summary = _format_truncation_autofix_summary(saved)
-    return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True, summary=summary)
+    if missing_fix is not None:
+        # 実在しないパスの除去は呼び出しの対象集合そのものを狭めるため、是正を要する通知として返す。
+        return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True, summary=summary)
+    # 残る補正は、補正前の呼び出しが要求した結果をそのまま当該呼び出しへ返す。
+    # 実行主体の是正を要さないため、振り返りの問題候補へ残らない情報提示のタグで返す。
+    return rewritten_command, _llm_notice(body, tag="notice", summary=summary)
 
 
 def _format_truncation_autofix_summary(saved: Sequence[_TruncationFix]) -> str:

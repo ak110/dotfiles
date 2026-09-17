@@ -1473,6 +1473,19 @@ class TestBashOutputTruncationRepetition:
         assert "対象: 第1直列区間の`head`→`" in second_context
         assert "この通知は同一セッションで2件目である。" in second_context
 
+    def test_autofix_notice_is_tagged_as_informational(self, tmp_path: pathlib.Path) -> None:
+        """補正が成立した通知は`notice`タグで発行し、是正を要する`warn`と区別する。
+
+        補正は補正前の呼び出しが要求した結果をそのまま返すため、実行主体の是正を要さない。
+        `warn`のまま発行すると、振り返りの抽出器が当該通知を問題候補として保持する。
+        """
+        result = self._invoke("ls -1 /tmp | head -5", "truncation-notice-tag", tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "[notice]" in context
+        assert "[warn]" not in context
+
     def test_other_kind_is_also_corrected(self, tmp_path: pathlib.Path) -> None:
         """別の補正種別も過去の補正によらず同じ変換で通す。"""
         session_id = "truncation-other-kind"
@@ -1763,6 +1776,8 @@ class TestNormViolatingArgumentForms:
         assert "実在しない検索・読取パスを当該呼び出しの対象から除いた" in context
         assert "absent.txt" in context
         assert "明示された検索・読取パスが存在しない" not in context
+        # 補正で呼び出しの対象集合が狭まるため、是正を要する通知として`warn`で発行する。
+        assert "[warn]" in context
 
     def test_only_missing_path_stays_a_warning(self, tmp_path: pathlib.Path) -> None:
         """不在パスを除くと対象が残らない呼び出しは補正せず警告のまま通す。"""
@@ -1877,8 +1892,10 @@ class TestNormViolatingArgumentForms:
 
         引数を受理しないサブコマンドでは、対処として引数なしでの再発行を示す。
         値をオプションで渡す対処は当該サブコマンドで実行できないため示さない。
+        対象には受理オプションが`-h`だけの`atk wi pull`を使う。値付きオプションを持つサブコマンドは
+        値をオプションで渡す対処が成立するため、本検体の対象から外れる。
         """
-        result = self._invoke("atk agents wait extra", tmp_path)
+        result = self._invoke("atk wi pull extra", tmp_path)
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "位置引数を受理しない" in messages
