@@ -116,6 +116,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("scripts/claude_hook_stop_bell.py"),
     ],
     Path.home() / ".claude": [
+        # `references/`はスキル配下だけの名前としたため、旧配布先のディレクトリを削除する。
+        Path("references"),
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),

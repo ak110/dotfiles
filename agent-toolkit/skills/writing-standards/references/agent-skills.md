@@ -24,6 +24,9 @@ Claude Code固有の挙動には節ごとに「Claude Code固有」の注記を�
 
 ## SKILL.md本体とreferences/の役割分担
 
+`references/`はスキルの付属資料を置くディレクトリであり、`skills/<skill-name>/references/`の位置だけへ作成する。
+スキルに属さない参照文書は別の名前のディレクトリへ置く。スキル外の`references/`があると、読み手はどのスキルの付属資料かを判定する手掛かりを失う。
+
 言語・トピック非依存の汎用規範はSKILL.md本体へ置き、言語固有・トピック固有の詳細はreferences/配下へ置く。
 
 - 本体は全対象に共通する原則を記述する

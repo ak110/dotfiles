@@ -16,7 +16,8 @@ UWIにするのはユーザーの判断を要する確認事項に限る。回�
 AWIとUWIはキュー管理リポジトリで管理するユーザーの手元の記録であり、作業対象リポジトリの公開物ではない。
 リポジトリの外の読み手が参照できる成果物へこれらの識別子を書かない規定は`agent-toolkit:writing-standards`「人間向け文章の共通規定」が定める。
 
-作業対象リポジトリとキュー管理リポジトリを扱う前に`references/repository-scope.md`を全文読む。
+作業対象リポジトリはAWIが対象とする実装リポジトリ、キュー管理リポジトリはWIのキューを保持するリポジトリを指す。
+この2つを扱う前に`references/repository-scope.md`を全文読む。
 委譲先が`atk wi`でキュー項目の状態を変更する場合は`references/subagent-queue-ops.md`を全文読む。
 
 本文は`agent-toolkit:writing-standards`に従い、技術的な実装へ寄り過ぎず、単独で対象と期待結果を特定できる粒度で書く。

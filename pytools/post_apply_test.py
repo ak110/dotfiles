@@ -105,10 +105,9 @@ def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
     assert relative in post_apply._REMOVED_PATHS[Path.home() / ".codex"]  # noqa: SLF001
 
 
-def test_session_review_reference_is_not_cleanup_target() -> None:
-    """新しい参照文書を旧資産の後始末対象へ含めない。"""
-    for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
-        assert Path("references/session-review-dotfiles.md") not in paths
+def test_legacy_reference_directory_is_cleanup_target() -> None:
+    """スキル配下以外の旧`references/`を配布先から削除する。"""
+    assert Path("references") in post_apply._REMOVED_PATHS[Path.home() / ".claude"]  # noqa: SLF001
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:

@@ -72,9 +72,9 @@
   目標は達成の判定、工程の省略、停止又は先送りの条件には用いない。
   超過の有無にかかわらず毎セッションで所要時間の内訳を分析し、品質と必須工程を維持した高速化の改善提案を作成する。
   次のセッションが前のセッションより短くなるよう改善を続ける。
-  振り返り時に読み込まれる正本は`~/.claude/references/session-review-dotfiles.md`の
+  振り返り時に読み込まれる正本は`~/.claude/docs/session-review-dotfiles.md`の
   「セッションの所要時間目標」節とする。
-  配布元は`.chezmoi-source/dot_claude/references/session-review-dotfiles.md`である。
+  配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。
   本文書は経緯を記録する
   （2026年8月、利用者指示。2026年9月2日、利用者指示により計測範囲と毎セッションの分析を定めた。
   2026年9月4日、利用者指示により規模別の目標を撤去して単一の値へ戻した。
