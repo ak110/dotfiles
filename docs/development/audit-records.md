@@ -53,7 +53,7 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月4日、agent-toolkit 2.94.0で通常起動と軽量起動の設定読込先およびStop系フックの動作を実測した。再検証は`agents_server`の通常起動と軽量起動を比較する。
 
-## agent-toolkit/share/lane-integration.parent.md：所有資源の回収：2026年9月3日
+## agent-toolkit/share/exec.parent.md「統合の指示と受領」：所有資源の回収：2026年9月3日
 
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを実測した。再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。
 

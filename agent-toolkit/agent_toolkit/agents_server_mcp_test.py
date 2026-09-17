@@ -836,8 +836,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
             "正式対応AWI: なし",
             handoff,
         ]
-    if task_name == "upstream-submission.subagent.md":
-        return ["元項目と投入先の組: 20260101-000000-001.md=/upstream", handoff]
     if task_name == "add-wi.subagent.md":
         return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
     raise ValueError(f"未対応のタスク文書: {task_name}")
@@ -858,7 +856,6 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
         "pick-wi.subagent.md",
         "session-review-delegate.subagent.md",
         "session-termination.subagent.md",
-        "upstream-submission.subagent.md",
     ],
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:

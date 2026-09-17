@@ -59,7 +59,7 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 
 ## 統合とAWI終端
 
-`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.parent.md`を全文読み、同じレーン担当threadへ統合指示を送る。マージありでは専用branchをベースbranchへfast-forwardし、マージなしではベースbranchを現在の状態のまま保つ。計画最終化とAWI終端も同じthreadが行う。
+`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従い、同じレーン担当threadへ統合指示を送る。マージありでは専用branchをベースbranchへfast-forwardし、マージなしではベースbranchを現在の状態のまま保つ。計画最終化とAWI終端も同じthreadが行う。
 
 統合結果のOID、計画保存及びAWI終端を検収した後、レーン担当の終端と外部プロセスの終了を確認する。専用worktreeと管理対象一時領域は、それらを入力とする全工程が完了してから作成時の管理経路で回収する。
 
