@@ -231,7 +231,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`list`サブコマンド: AWI/`uwi`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
     `--type`指定で出力対象種別（awi・uwi・all）を限定する（既定: all）。
-    `--status`指定で表示範囲を限定する（既定: active）。
+    `--state`指定で表示範囲を限定する（既定: active）。
     `active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を出力する。
     個別状態は`inbox`・`processing`・`hold`・`adopted`・`rejected`を解釈し、`all`は5状態すべてを出力する。
     `uwi`側は`answered`・`unanswered`で回答状況を限定する。

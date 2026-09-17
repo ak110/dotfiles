@@ -411,7 +411,9 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="出力対象種別（既定: all）。",
     )
     list_.add_argument(
+        "--state",
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         action="append",
         default=None,
@@ -475,7 +477,9 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="出力対象種別（既定: all）。",
     )
     show.add_argument(
+        "--state",
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         action="append",
         default=None,
@@ -498,7 +502,12 @@ def _add_mq_read_parsers(sub: Any) -> None:
 
 
 def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
-    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢・既定値で追加する。"""
+    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢・既定値で追加する。
+
+    一括フィルターの綴りは`--status`だけとする。`rm`と`return-to-inbox`は
+    個別指定の探索先と差し戻し元を`--state`で受け取るため、同じ綴りが2つの概念を指す状態を避ける。
+    フィルター専用の`list`・`show`・`grep`だけが`--state`を正式名として受理する。
+    """
     parser.add_argument(
         "--all",
         action="store_true",
@@ -513,6 +522,7 @@ def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
     )
     parser.add_argument(
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         action="append",
         default=None,
@@ -779,7 +789,9 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
     grep.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     grep.add_argument(
+        "--state",
         "--status",
+        dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         default="active",
         help="状態フォルダで検索範囲を限定する（既定: active）。`list`と同じ選択肢・既定値。",

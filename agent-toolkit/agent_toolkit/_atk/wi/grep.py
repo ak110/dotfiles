@@ -17,7 +17,7 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     """grepサブコマンド: 本文全体（frontmatterを含む）を正規表現で検索し、該当行を列挙する。
 
     該当行は`<ファイル名>:<行番号>:<該当行>`形式（git grep準拠の出力形式）で列挙する。
-    行番号はファイル先頭から1始まり。`--type`・`--status`・`--answered`・`--target-repo`は
+    行番号はファイル先頭から1始まり。`--type`・`--state`・`--answered`・`--target-repo`は
     `list`サブコマンドと同一の選択肢・既定値を踏襲する。パターンはPythonの正規表現（`re`モジュール）
     として解釈し、`--ignore-case`指定時は大文字小文字を無視する。
     該当0件の場合は1、該当1件以上で0を返す。

@@ -354,6 +354,8 @@ def test_bulk_transition_help_states_filter_and_precondition() -> None:
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
     """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
     commands = {name: parser for name, parser, _summary in _walk_commands()}
+    # `--state`は`return-to-inbox`が差し戻し元の指定に使う綴りと重なるため、本検査の期待集合から除く。
+    # フィルターの綴りの別名は`listing_test.py`が検証する。
     expected = {"--all", "--type", "--status", "--answered", "--source", "--yes", "--skip-pull", "--target-repo"}
 
     for command in (*_atk_help.BULK_TRANSITION_COMMANDS, "atk wi rm"):

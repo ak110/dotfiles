@@ -13,6 +13,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import agents_wait, state, status_file
 from agent_toolkit._atk import help_text as _help
+from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk_agents_notify import send_notification
 
@@ -20,7 +21,10 @@ from agent_toolkit._atk_agents_notify import send_notification
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """`agents`配下のサブコマンドを登録する。"""
     sub = _help.add_subcommands(parser, dest="agents_subcommand", required=False, show_help_when_missing=True)
-    _help.add_command(sub, "wait", **_help.HELP["atk agents wait"])
+    wait = _help.add_command(sub, "wait", **_help.HELP["atk agents wait"])
+    # 保存先は待機の巡回より前に開く。`atk`のmainが`--output-file`を解決してから当該サブコマンドを
+    # 実行するため、保存できない指定では結果ファイルと通知ファイルを削除せずに終わる。
+    _output_file.add_output_file_arg(wait)
     notify = _help.add_command(sub, "notify", **_help.HELP["atk agents notify"])
     notify.set_defaults(error_parser=notify)
     notification_body = notify.add_mutually_exclusive_group(required=True)
