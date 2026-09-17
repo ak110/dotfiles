@@ -1,10 +1,8 @@
 """Claude Code公式ネイティブバイナリを導入または更新する。"""
 
-import contextlib
 import logging
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import httpx
@@ -55,32 +53,18 @@ def run(client: httpx.Client | None = None) -> bool:
 
 
 def _install_native(client: httpx.Client | None) -> subprocess.CompletedProcess[str] | None:
-    owns_client = client is None
-    active_client = client or httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True)
-    suffix = ".ps1" if sys.platform == "win32" else ".sh"
-    url = "https://claude.ai/install.ps1" if sys.platform == "win32" else "https://claude.ai/install.sh"
-    temp_path: Path | None = None
-    try:
-        response = active_client.get(url)
-        response.raise_for_status()
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, delete=False) as temp:
-            temp.write(response.content)
-            temp_path = Path(temp.name)
-        command = (
-            ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
-            if sys.platform == "win32"
-            else ["bash", str(temp_path)]
-        )
-        return claude_common.run_subprocess(command, timeout=_COMMAND_TIMEOUT, tag="claude")
-    except (httpx.HTTPError, OSError) as error:
-        logger.warning(log_format.format_status("claude", f"公式インストーラーの取得に失敗: {error}"))
-        raise RuntimeError("公式インストーラーの取得に失敗") from error
-    finally:
-        if temp_path is not None:
-            with contextlib.suppress(OSError):
-                temp_path.unlink()
-        if owns_client:
-            active_client.close()
+    result, reason = setup_cli_common.run_official_installer(
+        client,
+        posix_url="https://claude.ai/install.sh",
+        windows_url="https://claude.ai/install.ps1",
+        tag="claude",
+        timeout=_COMMAND_TIMEOUT,
+        http_timeout=_HTTP_TIMEOUT,
+    )
+    if reason:
+        logger.warning(log_format.format_status("claude", reason))
+        raise RuntimeError("公式インストーラーの取得に失敗")
+    return result
 
 
 if __name__ == "__main__":

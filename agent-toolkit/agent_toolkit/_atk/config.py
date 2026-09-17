@@ -71,12 +71,14 @@ def _preset_settings(preset: str) -> dict[str, str]:
 
 
 _MUTABLE_KEY_DEFAULTS = _preset_settings("codex-balanced")
-_STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/,\s]+(?:/[^/,\s]+)?$")
+_STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
     "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]"}),
     "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"}),
+    # Antigravity CLIはモデル一覧を`agy models`で返す。ここへは用途限定で使う1件だけを置く。
+    "agy": frozenset({"gemini-3.8-flash"}),
 }
 _KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
@@ -138,7 +140,7 @@ def _validate_stage_model_candidates(value: str) -> None:
     """候補列の各候補を検証し、書式不正なら`ValueError`を送出する。"""
     candidates = value.split(",")
     if not candidates or any(_STAGE_MODEL_PATTERN.fullmatch(candidate) is None for candidate in candidates):
-        raise ValueError("受理可能書式: <claude|codex>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
+        raise ValueError("受理可能書式: <claude|codex|agy>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
 
 
 def resolve_mutable_setting(key: str) -> str:

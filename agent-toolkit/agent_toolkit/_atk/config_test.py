@@ -694,7 +694,7 @@ class TestConfigSet:
             atk.main(["config", "set", "execute_model", value], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "<claude|codex>:<model>[/<effort>]" in capsys.readouterr().err
+        assert "<claude|codex|agy>:<model>[/<effort>]" in capsys.readouterr().err
 
     def test_removed_codex_model_is_unknown(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """廃止した`codex_model`は変更可能キーとして受理しない。"""

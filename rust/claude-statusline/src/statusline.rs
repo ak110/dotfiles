@@ -8,15 +8,15 @@
 
 use serde_json::Value;
 
-const RESET: &str = "\x1b[0m";
+pub(crate) const RESET: &str = "\x1b[0m";
 const RED: &str = "\x1b[31m";
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
-const BLUE: &str = "\x1b[34m";
-const CYAN: &str = "\x1b[36m";
-const GRAY: &str = "\x1b[90m";
+pub(crate) const BLUE: &str = "\x1b[34m";
+pub(crate) const CYAN: &str = "\x1b[36m";
+pub(crate) const GRAY: &str = "\x1b[90m";
 
-const LABEL_CONTEXT: &str = "コンテキスト";
+pub(crate) const LABEL_CONTEXT: &str = "コンテキスト";
 const LABEL_COST: &str = "コスト";
 const LABEL_DURATION: &str = "経過時間";
 const LABEL_RATE_LIMITS: &str = "消費量(5h/7d)";
@@ -172,7 +172,7 @@ fn build_model_label(model_name: Option<&str>, effort_level: Option<&str>) -> St
 }
 
 /// ホームディレクトリ部分を`~`へ短縮する。
-fn shorten_home(path: &str, home: Option<&str>) -> String {
+pub(crate) fn shorten_home(path: &str, home: Option<&str>) -> String {
     let Some(home) = home else {
         return path.to_string();
     };
@@ -189,7 +189,7 @@ fn shorten_home(path: &str, home: Option<&str>) -> String {
 }
 
 /// `.claude/worktrees/<名前>`を親ディレクトリに続く` (<名前>)`へ短縮する。
-fn shorten_worktree_path(path: &str) -> String {
+pub(crate) fn shorten_worktree_path(path: &str) -> String {
     let match_ = ["/", "\\"]
         .into_iter()
         .filter_map(|separator| {
@@ -218,7 +218,7 @@ fn shorten_worktree_path(path: &str) -> String {
     )
 }
 
-fn home_dir() -> Option<String> {
+pub(crate) fn home_dir() -> Option<String> {
     std::env::var("HOME")
         .ok()
         .or_else(|| std::env::var("USERPROFILE").ok())
@@ -271,7 +271,7 @@ fn severer_color(a: &'static str, b: &'static str) -> &'static str {
 }
 
 /// 80%超で赤・50%超で黄・それ以下で緑を返す。
-fn threshold_color(percentage: f64) -> &'static str {
+pub(crate) fn threshold_color(percentage: f64) -> &'static str {
     if percentage > 80.0 {
         RED
     } else if percentage > 50.0 {
@@ -281,18 +281,18 @@ fn threshold_color(percentage: f64) -> &'static str {
     }
 }
 
-fn color(text: &str, code: &str) -> String {
+pub(crate) fn color(text: &str, code: &str) -> String {
     format!("{code}{text}{RESET}")
 }
 
-fn get_nested_str(data: &Value, keys: &[&str]) -> Option<String> {
+pub(crate) fn get_nested_str(data: &Value, keys: &[&str]) -> Option<String> {
     match get_nested(data, keys)? {
         Value::String(s) if !s.is_empty() => Some(s.clone()),
         _ => None,
     }
 }
 
-fn get_nested_number(data: &Value, keys: &[&str]) -> Option<f64> {
+pub(crate) fn get_nested_number(data: &Value, keys: &[&str]) -> Option<f64> {
     match get_nested(data, keys)? {
         Value::Number(n) => n.as_f64(),
         _ => None,

@@ -307,6 +307,8 @@ def _install_backend(manager: subject.AgentsServerManager, engine: str, backend:
     """指定engineのバックエンドを差し替える。"""
     if engine == "codex":
         manager._codex = backend
+    elif engine == "agy":
+        manager._agy = backend
     else:
         manager._claude = backend
 
@@ -343,6 +345,8 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "agents_server_mcp.py",
         "_agents_server/codex.py",
         "_agents_server/claude.py",
+        "_agents_server/antigravity.py",
+        "_agents_server/process_tree.py",
         "_agents_server/state.py",
         "_agents_server/status_file.py",
         "_agents_server/session_registry.py",
@@ -376,6 +380,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
                 "shutil.rmtree(script_dir)\n"
                 "assert subject._MANAGER._backend('codex').__class__.__name__ == 'AppServerManager'\n"
                 "assert subject._MANAGER._backend('claude').__class__.__name__ == 'ClaudeServerManager'\n"
+                "assert subject._MANAGER._backend('agy').__class__.__name__ == 'AntigravityManager'\n"
             ),
             str(script_dir),
         ],

@@ -664,6 +664,13 @@ class TestDefaultSteps:
         assert "claude-statusline バイナリの取得" in names
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
 
+    def test_agy_cli_step_follows_claude_code_cli(self):
+        """Antigravity CLIの導入をClaude Code CLIの直後に1回登録する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        agy_name = "Antigravity CLI の導入"
+        assert names.count(agy_name) == 1
+        assert names.index(agy_name) == names.index("Claude Code CLI の導入と更新") + 1
+
     def test_codex_plugin_step_order(self):
         """Codex pluginは正本からsnapshotを生成した後に導入する。"""
         names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001

@@ -1,12 +1,14 @@
 //! Claude Code statusLine/subagentStatusLine 用CLIエントリポイント。
 //!
-//! 第1引数でモードを選択する。単一バイナリに2モードを持たせる理由は、GitHub Releaseの
+//! 第1引数でモードを選択する。単一バイナリに3モードを持たせる理由は、GitHub Releaseの
 //! 配布アセットを1個に抑え、post_apply側のダウンロード・配置ロジックを単純化するため。
 //!
 //! - `statusline`: `scripts/claude_status_line.py`の後継
 //! - `subagent-statusline`: `scripts/claude_subagent_status_line.py`の後継
+//! - `agy-statusline`: Antigravity CLIのstatuslineをClaude Codeと同じ体裁で表示する
 
 mod agents_server;
+mod agy;
 mod statusline;
 mod subagent;
 
@@ -21,8 +23,9 @@ fn main() {
     match mode.as_deref() {
         Some("statusline") => statusline::run(&raw),
         Some("subagent-statusline") => subagent::run(&raw),
+        Some("agy-statusline") => agy::run(&raw),
         _ => {
-            eprintln!("usage: claude-statusline <statusline|subagent-statusline>");
+            eprintln!("usage: claude-statusline <statusline|subagent-statusline|agy-statusline>");
             std::process::exit(1);
         }
     }

@@ -25,6 +25,7 @@ from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
 from pydantic import Field
 
+from agent_toolkit._agents_server import antigravity as antigravity_backend
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
@@ -63,7 +64,7 @@ except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開�
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 DEFAULT_KILL_TIMEOUT = 270.0
 DEFAULT_SEND_MESSAGE_TIMEOUT = 270.0
-SUPPORTED_ENGINES = frozenset({"claude", "codex"})
+SUPPORTED_ENGINES = frozenset({"claude", "codex", "agy"})
 REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"})
 # 起動直後の可用性失敗を確定するために`start`が終端を待つ上限秒数。
 # Codex CLI 0.152.0で利用上限に達した状態のturnは、backendの起動応答から3.84〜4.27秒後に
@@ -309,6 +310,7 @@ class AgentsServerManager:
         self._resume_lock = asyncio.Lock()
         self._codex: Any = None
         self._claude: Any = None
+        self._agy: Any = None
         self._wait_timeouts: dict[str, float] = {}
         self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
@@ -364,6 +366,14 @@ class AgentsServerManager:
                     publish_registry=True,
                 )
             return self._claude
+        if engine == "agy":
+            if self._agy is None:
+                self._agy = antigravity_backend.AntigravityManager(
+                    self.sessions,
+                    self._condition,
+                    publish_registry=True,
+                )
+            return self._agy
         raise ValueError(f"unsupported engine: {engine}")
 
     def _get_session(self, session_id: str) -> SessionState:
@@ -1744,7 +1754,7 @@ class AgentsServerManager:
                 task.cancel()
         if resume_tasks:
             await asyncio.gather(*resume_tasks, return_exceptions=True)
-        backends = tuple(backend for backend in (self._codex, self._claude) if backend is not None)
+        backends = tuple(backend for backend in (self._codex, self._claude, self._agy) if backend is not None)
         for backend in backends:
             await backend.close()
         remove_terminal_listener(self._carry_over_unavailable_candidate)

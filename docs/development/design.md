@@ -222,6 +222,37 @@ backend側で個別に取り除く案が成立しないことにある。同じ�
 却下した代替案は、backendごとに除去処理を複製する案と、委譲先の各コマンド呼び出しで回避する案である。
 前者は同じ契約が複数箇所へ分かれ、後者は回避策を規範や起動文へ書き足す恒常費が残る。
 
+## Antigravity CLI backendの用途限定の追加
+
+`agents_server`は3つ目のengineとしてAntigravity CLI（`agy`）を持つ。
+`_agents_server/antigravity.py`が`start`・`resume`・`send_message`・`release_session`・`interrupt`・`close`を
+他の2backendと同じ引数の並びで提供する。
+Antigravity CLIの非対話モードは常駐プロトコルを持たず、`-p`で渡した1件の指示を処理して終わるため、
+turnごとにプロセスを起動し、継続は`--conversation <会話識別子>`を付けた新しい実行とする。
+session識別子は`--output-format stream-json`が返す`init`イベントの会話識別子とする。
+
+工程別モデル設定とpresetへは加えない。
+`_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
+`_MODEL_SETTING_CATEGORIES`・`_CATEGORY_ENGINE_MODELS`・`_PRESET_ENGINE_ORDERS`は変えない。
+当該engineは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
+候補列のフォールバックの対象にもしないため、`_engine_unavailable_reason`は当該engineの失敗を分類しない。
+
+委譲先には`--dangerously-skip-permissions`を付ける。
+原稿ファイルの書き換えまでを任せる用途であり、Antigravity CLIの非対話モードは対話確認を持たず、
+agent-toolkitのhookによる遮断も当該CLIへ及ばないためである。
+この判断は利用者が確定した。当該engineの権限を見直す作業は、この記録を根拠として扱う。
+
+導入のステップ（`pytools/_internal/setup_agy_cli.py`）は、失敗を警告1行に留めて`False`を返す。
+公式インストーラーはバイナリ本体を`*.run.app`のエンドポイントから取得するため、当該ホストを遮断するネットワークでは導入できない。
+他のステップと同じく例外で終えると、当該環境の`update-dotfiles`が毎回終了コード1になり、他のステップの失敗が埋もれる。
+この判断も利用者が確定した。導入のステップを見直す作業は、この記録を根拠として扱う。
+更新はAntigravity CLI自身が実行中に自動で行うため、当該ステップはランチャーが無い場合だけインストーラーを実行する。
+
+statuslineは`claude-statusline`の`agy-statusline`モードが担う。
+Antigravity CLIが渡すJSONはClaude CodeのstatusLine入力と項目が完全には重ならないため、
+受け取れる項目だけを同じ区切りと日本語ラベルへ射影する。
+配布アセットを1個に保つため、モードを増やす形で既存のバイナリへ同居させる。
+
 ## agents_server sessionのstatusline表示
 
 `agents_server`が`start`・`start_explore`・`start_write`・`start_shell`で起動したsessionは、Claude CodeのUIでは`atk agents wait`の応答が届くまで状態を観測できない。
