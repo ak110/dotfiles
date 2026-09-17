@@ -53,8 +53,15 @@ _WARNING_LINE_PATTERN = re.compile(
     r")",
     re.IGNORECASE,
 )
+_ZERO_COUNT_ANNOTATION = r"(?:[\s]*[(（](?:warnings?|エラー|警告)?[\s:：]*0(?:件)?[)）])?"
+"""不在を表す語の後に続く、件数が0であることを示す注記。
+
+`警告: なし(warning: 0)`のように、検査の正常終了が件数の注記を伴う形で書かれる。
+注記を不在判定の対象外にすると、正常終了の本文が警告候補として上がる。
+一致の条件を件数が0の場合へ限り、0でない件数が続く本文を除外しない。
+"""
 _WARNING_ABSENCE_PATTERN = re.compile(
-    r"(?:なし|無し|ありません|検出なし|0件|none|no|n/a|-)[\s。.]*\Z",
+    r"(?:なし|無し|ありません|検出なし|0件|none|no|n/a|-)" + _ZERO_COUNT_ANNOTATION + r"[\s。.]*\Z",
     re.IGNORECASE,
 )
 _STRUCTURED_WARNING_VALUES = frozenset({"warn", "warning", "警告"})
@@ -459,8 +466,20 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
     for line, entry in zip(lines, entries, strict=True):
         for event in _claude_entry_events(entry, line, pending_claude_questions, subagent_record):
             event.setdefault("line", line)
+            _set_entry_timestamp(event, entry)
             events.append(event)
     return events
+
+
+def _set_entry_timestamp(event: dict[str, Any], entry: dict[str, Any]) -> None:
+    """イベントへ、由来するエントリの時刻を付ける。
+
+    所要時間の区間の境界を、消費側が`--detail`の追加照会なしで確定できるようにする。
+    時刻を持たないエントリでは項目を付けず、消費側が空として扱えるようにする。
+    """
+    timestamp = entry.get("timestamp")
+    if isinstance(timestamp, str) and timestamp:
+        event.setdefault("timestamp", timestamp)
 
 
 def _claude_entry_events(
@@ -639,6 +658,7 @@ def _extract_codex(entries: list[dict[str, Any]], lines: list[int]) -> list[dict
     for line, entry in zip(lines, entries, strict=True):
         for event in _codex_entry_events(entry, line, pending_questions):
             event.setdefault("line", line)
+            _set_entry_timestamp(event, entry)
             events.append(event)
     return events
 
@@ -2194,9 +2214,28 @@ def _hook_notice_key(body: str, hook_name: str | None) -> _HookNoticeKey | None:
         return None
     matched = _HOOK_NOTICE_MARKER.match(normalized)
     hook = matched.group("hook") if matched is not None else None
-    tag = matched.group("tag") if matched is not None else None
+    tag = _heaviest_hook_notice_tag(normalized, matched)
     text = normalized[matched.end() :].strip() if matched is not None else normalized
-    return _HookNoticeKey(hook or None, hook_name, tag or None, _normalize_candidate_kind_text(text))
+    return _HookNoticeKey(hook or None, hook_name, tag, _normalize_candidate_kind_text(text))
+
+
+_HOOK_NOTICE_TAG_WEIGHT: dict[str, int] = {"block": 4, "warn": 3, "notice": 2, "info": 1}
+"""通知の標識の重さ。値が大きいほど重い。
+
+1つの通知本文が複数の標識を持つ場合に、最も重いものを分類へ採る。
+先頭の標識だけで分類すると、`warn`と`block`を発火した発生源が候補の母集団から機械的に外れる。
+"""
+
+
+def _heaviest_hook_notice_tag(normalized: str, matched: re.Match[str] | None) -> str | None:
+    """本文に現れる全ての標識のうち、最も重いものを返す。
+
+    標識を持たない本文は`None`を返す。重さの順序は`block`、`warn`、`notice`、`info`とする。
+    """
+    tags = [found.group("tag") for found in _HOOK_NOTICE_MARKER.finditer(normalized) if found.group("tag")]
+    if not tags:
+        return matched.group("tag") or None if matched is not None else None
+    return max(tags, key=lambda tag: _HOOK_NOTICE_TAG_WEIGHT.get(tag, 0))
 
 
 def _normalize_candidate_kind_text(text: str) -> str:
@@ -2940,23 +2979,28 @@ def _is_permission_denial(event: dict[str, Any]) -> bool:
 
 
 def _is_unsuccessful_return(event: dict[str, Any]) -> bool:
-    """工程の不成立を`status`行で表す最終返却であるかを返す。
+    """工程の不成立を表す最終返却、又は返却形式を伴わない最終返却であるかを返す。
 
     `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
     委譲先の記録では当該委譲先が呼び出し元へ返した返却値に対応する。
     `status`値の集合は返却値で工程の不成立を表す値とし、差し戻しの返却に限らない。
     `agents_server`のsessionが`status: failed`で終端した返却も同じ集合で扱う。
+
+    委譲先の記録では、`status`行を持たない最終返却も候補へ含める。当該返却は呼び出し元へ継続の要求を
+    発行させ、工程1件ごとに1往復を失わせるため、候補として現れないと再発防止策の対象から外れる。
+    判定の入力は返却の本文だけとし、終端の`status`が成功であることを除外の根拠にしない。
+    メイン記録の最終出力は呼び出し元へ返す返却ではないため、この扱いの対象から外す。
     """
     if event.get("kind") != "final-result":
         return False
     text = event.get("text")
-    if not isinstance(text, str):
+    if not isinstance(text, str) or not text.strip():
         return False
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith(_RETURN_STATUS_PREFIX):
             return stripped.removeprefix(_RETURN_STATUS_PREFIX).strip() in _UNSUCCESSFUL_RETURN_STATUSES
-    return False
+    return event.get("record") != "main"
 
 
 def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
@@ -3053,6 +3097,8 @@ def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, An
 
     `assistant`と`skill-invocation`は件数だけで候補を確定できるため、本文を標準出力へ含めない。
     位置を伴う種別の本文も冒頭に限り、全体は`--detail`で取得する。
+    位置を伴うイベントへは、そのエントリの時刻を`timestamp`として載せる。
+    時刻を持たないエントリでは空文字列とし、所要時間の区間の境界を`--detail`の追加照会なしで確定できるようにする。
     """
     counts = collections.Counter(str(event["kind"]) for event in timeline)
     events: list[dict[str, Any]] = [
@@ -3061,6 +3107,7 @@ def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, An
     ]
     for event in timeline:
         event_kind = event["kind"]
+        timestamp = str(event.get("timestamp") or "")
         if event_kind in _BUNDLE_BODY_KINDS:
             events.append(
                 {
@@ -3068,12 +3115,19 @@ def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, An
                     "event_kind": event_kind,
                     "record": event["record"],
                     "line": event["line"],
+                    "timestamp": timestamp,
                     "text": _clip(str(event.get("text", "")), _BUNDLE_BODY_LENGTH),
                 }
             )
         elif event_kind in _BUNDLE_LOCATOR_ONLY_KINDS:
             events.append(
-                {"kind": "bundle-locator", "event_kind": event_kind, "record": event["record"], "line": event["line"]}
+                {
+                    "kind": "bundle-locator",
+                    "event_kind": event_kind,
+                    "record": event["record"],
+                    "line": event["line"],
+                    "timestamp": timestamp,
+                }
             )
     return events
 

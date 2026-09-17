@@ -5254,12 +5254,15 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     serialized = json.dumps(bundle_events, ensure_ascii=False)
     assert "作業中" not in serialized
     assert "Base directory for this skill" not in serialized
-    assert [event for event in bundle_events if event["kind"] == "bundle-locator"] == [
+    locators = [event for event in bundle_events if event["kind"] == "bundle-locator"]
+    assert [{key: value for key, value in event.items() if key != "timestamp"} for event in locators] == [
         {"kind": "bundle-locator", "event_kind": "user", "record": "main", "line": 1},
         {"kind": "bundle-locator", "event_kind": "failed-tool", "record": "main", "line": 4, "text": "失敗の詳細"},
         {"kind": "bundle-locator", "event_kind": "agent-completion", "record": "main", "line": 7, "text": "agent-1: 完了報告"},
         {"kind": "bundle-locator", "event_kind": "final-result", "record": "main", "line": 10, "text": "最終結果"},
     ]
+    # 区間の境界の時刻を`--detail`の追加照会なしで確定できるよう、全イベントが`timestamp`を持つ。
+    assert all("timestamp" in event for event in locators)
     assert [event for event in bundle_events if event["kind"] == "bundle-warning-group"] == [
         {
             "kind": "bundle-warning-group",

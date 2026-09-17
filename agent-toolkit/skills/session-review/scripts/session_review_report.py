@@ -23,12 +23,38 @@ SUMMARY_MAX_CHARS = 200
 REPORT_H2_HEADINGS = (
     "対象セッション",
     "問題候補の判定記録",
+    "メイン由来の改善点",
     "規範適用による停止",
     "所要時間の内訳と改善提案",
     "登録したキュー項目",
     "未確認範囲",
 )
 _GENERATED_SECTION_HEADINGS = ("問題候補の判定記録", "所要時間の内訳と改善提案")
+_INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
+
+--decisions: 候補ごとの判定を並べた配列。
+  locators: 候補の記録位置の配列（`<記録名>:<行番号>`）
+  disposition: 判定の区分
+  analysis_id: 欠陥と判定した候補が参照する分析の識別子
+  reason: 欠陥でないと判定した候補の根拠
+  defect: 欠陥かどうかの真偽値
+
+--analyses: 分析の識別子ごとの原因分析を並べた配列。
+  analysis_id: 分析の識別子
+  {ANALYSIS_FIELDS[0]}: 直接的原因
+  {ANALYSIS_FIELDS[1]}: 根本原因
+  {ANALYSIS_FIELDS[2]}: 規範の欠落
+  {ANALYSIS_FIELDS[3]}: 確定した処置
+
+--timings: 工程ごとの区間を並べた配列。工程名は{"、".join(PHASES)}の6つとする。
+  phase: 工程名
+  started_at: 開始時刻（ISO 8601）
+  finished_at: 終了時刻（ISO 8601）
+"""
+"""`--help`へ示す入力JSONの構造。
+
+消費側が構造を確定するために実装を読む往復を除く。
+"""
 
 
 class ReportError(ValueError):
@@ -222,6 +248,8 @@ def render(
             "",
             f"構造検査: 候補{len(candidate_items)}件、locator{len(flattened)}件、過不足0件、重複0件",
             "",
+            "## メイン由来の改善点",
+            "",
             "## 規範適用による停止",
             "",
             "## 所要時間の内訳と改善提案",
@@ -240,12 +268,14 @@ def render(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
+    parser.epilog = _INPUT_STRUCTURE_HELP
     parser.add_argument("mode", choices=("generate", "check"))
-    parser.add_argument("--candidates", type=pathlib.Path, required=True)
-    parser.add_argument("--decisions", type=pathlib.Path, required=True)
-    parser.add_argument("--analyses", type=pathlib.Path, required=True)
-    parser.add_argument("--timings", type=pathlib.Path, required=True)
-    parser.add_argument("--output", type=pathlib.Path, required=True)
+    parser.add_argument("--candidates", type=pathlib.Path, required=True, help="抽出器が出力したcandidates.jsonlの絶対パス")
+    parser.add_argument("--decisions", type=pathlib.Path, required=True, help="候補ごとの判定を並べたJSONの絶対パス")
+    parser.add_argument("--analyses", type=pathlib.Path, required=True, help="分析IDごとの原因分析を並べたJSONの絶対パス")
+    parser.add_argument("--timings", type=pathlib.Path, required=True, help="工程ごとの開始と終了を並べたJSONの絶対パス")
+    parser.add_argument("--output", type=pathlib.Path, required=True, help="生成する報告の絶対パス")
     return parser
 
 
