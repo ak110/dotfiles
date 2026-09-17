@@ -6,7 +6,7 @@
     "allow": [
       "$defaults",
       "Personal Repository Operations: 利用者本人が権限を持つリポジトリでの通常の開発・運用操作を許可する。対象は、コミット、`origin`への通常push（デフォルトブランチを含む）、PR/MRの作成とマージ、リリースワークフローの起動とその結果確認、成功後の`git fetch --tags --prune`と`git pull --ff-only`、タグの作成とpush、及び同一の変更でpushとPR/MRがCIを二重に起動する場合に一方の起動を止めるCIスキップの指定（`git push -o ci.skip`など）とする。`git commit --amend`は、稼働中の別の実装担当が現在のHEADを作成したとtranscriptが示さない場合に、セッション開始前のコミットと利用者が作成したコミットを含めて対象とする。remoteのホストや名前空間で対象を限定せず、人間のレビュー・承認の証跡がtranscriptに無いことを拒否理由にしない。",
-      "Agent Workspace Writes: エージェント自身の作業資産への読み書きとコミットを、`Write`・`Edit`・Bashのいずれの経路でも許可する。対象は、計画ファイルの保存先（`~/.claude/plans/`など）配下のファイルの作成・追記・編集、`atk wi`によるWIキューの参照と更新（`--target-repo`の指定先を問わず、キュー項目の移動と削除、当該リポジトリへのコミットとpushを含む）、作業中リポジトリが持つエージェント向けの規範・スキル・フック・検査・権限設定の原本ファイルの編集とコミット、及び利用者の指示で調整するエージェント自身の設定ファイル（`~/.claude/settings.json`や`CLAUDE_CONFIG_DIR`が指す検証用の設定ディレクトリなど）とする。承認ゲートの緩和、規範改訂、許可ルール自体の変更、及びそれらを扱う計画本文を含む場合も拒否理由にせず、由来を条件にしない。",
+      "Agent Workspace Writes: エージェント自身の作業資産への読み書きとコミットを、`Write`・`Edit`・Bashのいずれの経路でも許可する。対象は、計画ファイルの保存先（`~/.claude/plans/`など）配下のファイルの作成・追記・編集、`atk wi`によるWIキューの参照と更新（`--target-repo`の指定先を問わず、キュー項目の移動と削除、当該リポジトリへのコミットとpushを含む）、作業中リポジトリが持つエージェント向けの規範・スキル・フック・検査・権限設定の原本ファイルの編集とコミット、実行環境が作業ディレクトリによらず常時読み込む規範ファイルの置き場所（`~/.claude/rules/`配下や`CLAUDE_CONFIG_DIR`が指す設定ディレクトリ配下など）にあるファイルの作成と編集、当該規範の配布元となる利用者本人のリポジトリに対する値を変更しない参照、及び利用者の指示で調整するエージェント自身の設定ファイル（`~/.claude/settings.json`や`CLAUDE_CONFIG_DIR`が指す検証用の設定ディレクトリなど）とする。承認ゲートの緩和、規範改訂、許可ルール自体の変更、及びそれらを扱う計画本文を含む場合も拒否理由にせず、由来を条件にしない。",
       "Session And Delegation Control: セッションと委譲先の制御、及び値を変更しない参照を許可する。対象は、現在の対話CLI本体だけを一意に識別して停止する`atk agents-exit-session`の単独実行、稼働中または再開可能な委譲先への継続指示の送信、シェルの`&`によるコマンドの背景実行（連結した各コマンドは個別に判定する）、`atk config get`など値を変更しない`atk`の参照、`claude auto-mode`の`config`・`defaults`・`critique`、及びプラグインのmarketplace登録とインストールとする。メインとサブエージェントのいずれからの実行も許可する。",
       "Reconsidered Retry Approval: transcript内で同一操作がauto mode classifierに拒否され、その拒否理由がtranscript内の利用者による当該操作の明示指示または承認を反映していない場合、エージェントが拒否メッセージ本文と該当する利用者メッセージを照合し、進行中の作業の遂行に必要と判断したうえで、同一のコマンド・引数・ツールによる再発行を、同一操作につき1回だけ許可する。"
     ],
@@ -52,5 +52,6 @@
   "showClearContextOnPlanAccept": false,
   "showThinkingSummaries": true,
   "subagentPromptCacheTtl": "1h",
-  "viewMode": "verbose"
+  "verbose": false,
+  "viewMode": "default"
 }

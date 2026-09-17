@@ -28,6 +28,8 @@ permissions設定による確認ダイアログが対象の場合は本書の範
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
 | `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | 許可ルール`Session And Delegation Control`が対象に含む |
 | ユーザーの指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | 許可ルール`Reconsidered Retry Approval`により、拒否本文とユーザーメッセージを照合して同一のコマンド・引数・ツールを1回だけ再発行する |
+| 常時読み込む規範ファイル（`~/.claude/rules/`配下など）の編集 | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
+| 規範の配布元となる利用者本人のリポジトリへの読み取り | Self Modification | 同じルールが値を変更しない参照を対象に含む |
 
 - 許可ルールはremoteのホスト、由来及び所有者による限定を置かず、操作の種別と除外条件で対象を決める。方針の出所は`docs/development/concepts-governance.md`にある
 - 必須レビュー・必須チェックの迂回形態（`--admin`・`--force`等）と、リポジトリ又は組織の検査設定を変える操作は許可の範囲の外にあり、CI Bypass領域のまま残る

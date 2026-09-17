@@ -1473,6 +1473,25 @@ class TestStripRemovedKeys:
         assert json.loads(settings_path.read_text(encoding="utf-8")) == expected
         assert json.loads(config_path.read_text(encoding="utf-8")) == expected
 
+    def test_run_removes_verbose_from_claude_json_only(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`run()`は`~/.claude.json`の`verbose`を除去し、settings.json側の値は保つ。
+
+        表示の指定を`~/.claude/settings.json`の1箇所へ残し、両方が同じ表示を指定する状態を解く。
+        """
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {"verbose": False})
+        config_path = tmp_path / "claude.json"
+        settings_path.write_text(json.dumps({"verbose": True}, ensure_ascii=False), encoding="utf-8")
+        config_path.write_text(json.dumps({"verbose": True, "other": 1}, ensure_ascii=False), encoding="utf-8")
+
+        mod.run()
+
+        assert json.loads(settings_path.read_text(encoding="utf-8"))["verbose"] is False
+        assert json.loads(config_path.read_text(encoding="utf-8")) == {"other": 1}
+
 
 class TestStripRemovedListItems:
     """配布元から削除された配列項目の自動削除テスト。"""

@@ -84,6 +84,11 @@ _REMOVED_ENV_KEYS: tuple[str, ...] = (
 # dictは再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
 _REMOVED_KEYS: tuple[str, ...] = ("autoMode.allowMode",)
 
+# `~/.claude.json`から除去する設定キーのドット区切りパス。
+# `verbose`は`~/.claude/settings.json`が管理するため、`~/.claude.json`側に残ると
+# 両方が同じ表示を指定し、どちらの値が適用されるかを利用者が判別できない。
+_REMOVED_CONFIG_KEYS: tuple[str, ...] = (*_REMOVED_KEYS, "verbose")
+
 # settings.json 配下のリスト要素から除去する部分文字列のペア。
 # ドット区切りパスで対象配列を指定し、配列要素のうち部分文字列を含むものを除去する。
 # share/claude_settings_json_managed.* から廃止した配列項目を列挙する。
@@ -211,6 +216,7 @@ def run() -> bool:
     changed_config = update_claude_settings(
         _MANAGED_CONFIG_PATH,
         _CONFIG_PATH,
+        removed_keys=_REMOVED_CONFIG_KEYS,
         strip_legacy_codex_timeout=True,
     )
     return changed_settings or changed_config
