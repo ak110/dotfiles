@@ -226,7 +226,7 @@ def test_execution_review_covers_non_machine_authoring_contracts() -> None:
     assert "適用中の執筆規範又はプロジェクト規範に違反" in recipient
     assert all(value in recipient for value in ("規範間", "親用文書と受信者用文書", "実行時に読む位置"))
     assert "レビュー分類と判定手順を再定義しない" in parent
-    assert all(value in additions for value in ("適用母集団", "網羅検索", "既存違反が0件"))
+    assert all(value in additions for value in ("既存成果物", "違反する箇所", "同じ変更で是正"))
 
 
 def test_git_identifiers_prefer_refs_and_short_oids() -> None:

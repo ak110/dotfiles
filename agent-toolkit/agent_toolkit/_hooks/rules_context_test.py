@@ -253,7 +253,6 @@ def test_session_start_provides_one_session_scoped_managed_temp(
 def test_rules_files_have_no_role_specific_sentences() -> None:
     allowed = {
         "- サブエージェントは細かく分け過ぎない（起動するごとに固定コストがあるため）",
-        "委譲先は事象、根本原因及び対応案を完了報告へ含めて委譲元へ返し、自らは登録しない。",
     }
     pattern = re.compile(r"^(?:- |\d+\. )?(?:委譲先|サブエージェント|メインエージェント)は")
     actual = {
