@@ -246,7 +246,6 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
         "exec-review",
         "sample.py:1",
         "初回指摘",
-        "yes",
         "修正済み",
         "",
     )
@@ -264,7 +263,6 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
         "exec-review",
         "sample.py:2",
         f"再帰失敗の指摘（原因commit: {second_cause_oid}）",
-        "yes",
         "2回目の修正済み",
         "",
     )

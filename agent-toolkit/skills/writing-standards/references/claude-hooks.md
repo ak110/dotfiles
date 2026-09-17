@@ -33,7 +33,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある
 - CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
   出力文字列だけが届くため、状態記録の条件からコマンドの成否を外す。
-  `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる。
+  `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ使える。
   失敗したシェル実行でPostToolUseが発火するかは未検証とする。
   再検証は、通常起動のCodexセッションで失敗するシェル実行を1回行い、
   同じ状態ファイルの`test_executed`と`git_log_checked`の変化を確認する。
@@ -125,7 +125,7 @@ Codexの`apply_patch`は、matcher上で`Edit`・`Write`の別名に一致する
 ホスト差を検査本体へ持ち込まないため、編集入力は次の2層で正規化する。
 
 - 操作記録: 入力だけから操作種別、対象パス、順序付き編集断片を求める。ファイルを読まないため
-  PostToolUse（適用後）からも安全に利用できる
+  PostToolUse（適用後）からも安全に使える
 - 変更前後像: 対象ファイルの現在内容へ操作記録を適用して全文を組み立てる。PreToolUse（適用前）だけが使う
 
 patch構文は`apply_patch`の構文として解釈する。相対パスはpayloadの`cwd`起点で解決する。

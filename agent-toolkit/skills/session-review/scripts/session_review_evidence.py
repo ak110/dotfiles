@@ -2096,14 +2096,12 @@ def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
             tool_use_id = hook_record.get("toolUseID")
             hook_name = hook_record.get("hookName")
             for body in _hook_notice_bodies(hook_record):
-                key = _hook_notice_key(body, hook_name if isinstance(hook_name, str) else None)
-                if key is None:
-                    continue
-                identity = (tool_use_id if isinstance(tool_use_id, str) else None, key)
-                if identity in seen:
-                    continue
-                seen.add(identity)
-                counts[key] += 1
+                for key in _hook_notice_keys(body, hook_name if isinstance(hook_name, str) else None):
+                    identity = (tool_use_id if isinstance(tool_use_id, str) else None, key)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    counts[key] += 1
     events: list[dict[str, Any]] = [
         {
             "kind": "hook-notice",
@@ -2130,24 +2128,22 @@ def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dic
                 normalized_id = tool_use_id if isinstance(tool_use_id, str) else None
                 hook_name = hook_record.get("hookName")
                 for body in _hook_notice_bodies(hook_record):
-                    key = _hook_notice_key(body, hook_name if isinstance(hook_name, str) else None)
-                    if key is None:
-                        continue
-                    identity = (item.record_id, normalized_id, key)
-                    if identity in seen:
-                        continue
-                    seen.add(identity)
-                    events.append(
-                        {
-                            "kind": "hook-notice",
-                            "record": item.record_id,
-                            "line": record.line,
-                            "text": key.kind_text,
-                            "hook": key.hook,
-                            "hook_name": key.hook_name,
-                            "tag": key.tag,
-                        }
-                    )
+                    for key in _hook_notice_keys(body, hook_name if isinstance(hook_name, str) else None):
+                        identity = (item.record_id, normalized_id, key)
+                        if identity in seen:
+                            continue
+                        seen.add(identity)
+                        events.append(
+                            {
+                                "kind": "hook-notice",
+                                "record": item.record_id,
+                                "line": record.line,
+                                "text": key.kind_text,
+                                "hook": key.hook,
+                                "hook_name": key.hook_name,
+                                "tag": key.tag,
+                            }
+                        )
     return events
 
 
@@ -2200,10 +2196,12 @@ def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
     return bodies
 
 
-def _hook_notice_key(body: str, hook_name: str | None) -> _HookNoticeKey | None:
+def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
     """通知本文を、hook識別子・タグ・正規化した種別へ分解する。空の本文は`None`を返す。
 
     標識を持たない本文は識別子とタグを`None`とし、発動元と種別だけで分類する。
+    1つの本文が複数の標識を持つ場合は、標識ごとに別の分類軸を返す。
+    最も重い標識だけを採用すると、同じ本文が発火した他の標識が発生源として数えられない。
     種別は、標識を除いた本文の連続する空白を単一の空白へ正規化し、
     対象パスや識別子などの可変部を固定の記号へ置換した先頭一定長とする。
     可変部を残すと同種の通知が複数の種別へ分かれ、
@@ -2211,31 +2209,31 @@ def _hook_notice_key(body: str, hook_name: str | None) -> _HookNoticeKey | None:
     """
     normalized = " ".join(body.split())
     if not normalized:
-        return None
+        return []
     matched = _HOOK_NOTICE_MARKER.match(normalized)
     hook = matched.group("hook") if matched is not None else None
-    tag = _heaviest_hook_notice_tag(normalized, matched)
     text = normalized[matched.end() :].strip() if matched is not None else normalized
-    return _HookNoticeKey(hook or None, hook_name, tag, _normalize_candidate_kind_text(text))
-
-
-_HOOK_NOTICE_TAG_WEIGHT: dict[str, int] = {"block": 4, "warn": 3, "notice": 2, "info": 1}
-"""通知の標識の重さ。値が大きいほど重い。
-
-1つの通知本文が複数の標識を持つ場合に、最も重いものを分類へ採る。
-先頭の標識だけで分類すると、`warn`と`block`を発火した発生源が候補の母集団から機械的に外れる。
-"""
-
-
-def _heaviest_hook_notice_tag(normalized: str, matched: re.Match[str] | None) -> str | None:
-    """本文に現れる全ての標識のうち、最も重いものを返す。
-
-    標識を持たない本文は`None`を返す。重さの順序は`block`、`warn`、`notice`、`info`とする。
-    """
-    tags = [found.group("tag") for found in _HOOK_NOTICE_MARKER.finditer(normalized) if found.group("tag")]
+    kind_text = _normalize_candidate_kind_text(text)
+    tags = _hook_notice_tags(normalized, matched)
     if not tags:
-        return matched.group("tag") or None if matched is not None else None
-    return max(tags, key=lambda tag: _HOOK_NOTICE_TAG_WEIGHT.get(tag, 0))
+        return [_HookNoticeKey(hook or None, hook_name, None, kind_text)]
+    return [_HookNoticeKey(hook or None, hook_name, tag, kind_text) for tag in tags]
+
+
+def _hook_notice_tags(normalized: str, matched: re.Match[str] | None) -> list[str]:
+    """本文に現れる標識を出現順で重複なく返す。
+
+    標識を持たない本文は空のリストを返す。
+    """
+    tags: list[str] = []
+    for found in _HOOK_NOTICE_MARKER.finditer(normalized):
+        tag = found.group("tag")
+        if tag and tag not in tags:
+            tags.append(tag)
+    if tags:
+        return tags
+    fallback = matched.group("tag") if matched is not None else None
+    return [fallback] if fallback else []
 
 
 def _normalize_candidate_kind_text(text: str) -> str:

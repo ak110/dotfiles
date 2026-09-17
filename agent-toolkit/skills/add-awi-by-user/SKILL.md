@@ -16,10 +16,9 @@ disable-model-invocation: true
 
 1. `agent-toolkit:wi-standards`と`agent-toolkit:writing-standards`を起動する。通常AWIの本文、起草完了ゲート、由来、投入と取得及び保存照合は`agent-toolkit:wi-standards`だけを正本として適用する。
 2. `agent-toolkit:plan-mode`の`references/grilling.md`を全文読み、ユーザーの選好に依存する未確定判断がなくなるまで質問ラウンドを行い、同書の終了時報告を出力する。
-3. 保存する本文をユーザーが確認できる状態にする。実行環境の構造化質問（Claude Codeでは`AskUserQuestion`）の本文へ、見出し語`確認コマンド`とコロンに続けて`less <本文ファイルの絶対パス>`を1行のコードスパンで示し、投入可否の回答を得る。質問本文へ載せるのは、この確認コマンドと投入可否の選択肢だけとし、本文全文、対象リポジトリ、種別及び`source`はファイル側へ置く。構造化質問を利用できない実行環境では`agent-toolkit:confirmation-and-uwi`の`references/codex-format.md`の固定形式で同じ内容を提示する。
-4. 修正要求を受け取った場合は本文を改訂して再提示する。承認後は提示した本文で`atk wi add`を実行し、`agent-toolkit:wi-standards`の保存照合を完了する。`atk wi add`が投入を拒否した場合は、拒否理由を解消して同じ承認のまま投入し、投入後に修正内容をユーザーへ報告する。本文の要求内容（対象、反映先、完成条件）が変わる修正だけ、改訂した本文を再提示して承認を得る。
-5. 対象リポジトリの規範が同じ工程で固有の追跡先を要求する場合だけ、その記載を完了する。
-6. 完成済みのAWI投入結果を作業成果として`agent-toolkit:completion-report`へ渡し、ユーザー向け完了報告を生成する。
+3. 保存する本文をユーザーが確認できる状態にし、投入可否の回答を得る。確認は、実行環境の構造化質問（Claude Codeでは`AskUserQuestion`）の本文へ見出し語`確認コマンド`とコロンに続けて`less <本文ファイルの絶対パス>`を1行のコードスパンで示す手段が一般的に有効である。質問本文へ載せるのは確認コマンドと投入可否の選択肢だけとし、本文全文、対象リポジトリ、種別及び`source`はファイル側へ置く。構造化質問を利用できない実行環境では`agent-toolkit:confirmation-and-uwi`の`references/codex-format.md`の固定形式で同じ内容を提示する。
+4. 修正要求を受け取った場合は本文を改訂して再提示する。承認後は提示した本文で`atk wi add`を実行し、`agent-toolkit:wi-standards`の保存照合を完了する。投入が拒否された場合は、拒否理由を解消して同じ承認のまま投入し、投入後に修正内容をユーザーへ報告する。本文の要求内容（対象、反映先、完成条件）が変わる修正だけ、改訂した本文を再提示して承認を得る。
+5. 対象リポジトリの規範が同じ工程で固有の追跡先を要求する場合だけ、その記載を完了し、投入結果を`agent-toolkit:completion-report`へ渡して完了報告を生成する。
 
 本スキルは協調モードで動作する。投入する項目の`source`は`add-awi-by-user`とする。ユーザー要求の逐語転記は`agent-toolkit:wi-standards`「由来と承認」に従う。
 

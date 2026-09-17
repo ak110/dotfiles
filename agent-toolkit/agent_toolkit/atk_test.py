@@ -1293,7 +1293,6 @@ def test_review_table_subcommands_are_public() -> None:
                     "--track=exec-review",
                     "--location-file=location.txt",
                     "--issue-file=issue.txt",
-                    "--response-needed=yes",
                     "--response-file=response.txt",
                 ]
             )
@@ -1326,7 +1325,7 @@ def test_public_review_table_validate_rejects_unanswered_rows(
         atk.main(["review-table", "validate", str(path)])
 
     assert exc_info.value.code == 1
-    assert "対応要否が未回答" in capsys.readouterr().err
+    assert "未応答" in capsys.readouterr().err
 
 
 def test_public_review_table_show_accepts_compat_track(
@@ -1407,7 +1406,7 @@ def test_public_review_table_invalid_column_count_error_explains_recovery(
         atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は8" in error
+    assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
     assert "levelの位置はissueの直後" in error
     assert "plan-review, exec-review, plan-conformance, independent" in error
@@ -1443,7 +1442,6 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
                 "--track=exec-review",
                 f"--location-file={location_file}",
                 f"--issue-file={issue_file}",
-                "--response-needed=yes",
                 f"--response-file={response_file}",
             ]
         )
@@ -1463,7 +1461,7 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は8" in error
+    assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
     assert "levelの位置はissueの直後" in error
     assert "plan-review, exec-review, plan-conformance, independent" in error

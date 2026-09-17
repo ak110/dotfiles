@@ -5104,6 +5104,36 @@ def test_hook_notices_mode_separates_kinds_by_leading_body_and_skips_empty_bodie
     assert events[-1] == {"kind": "summary", "count": 3}
 
 
+def test_hook_notices_mode_counts_each_marker_of_a_multi_marker_body(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """1つの本文が複数の標識を持つ場合、標識ごとに別の発生源として数える。"""
+    body = (
+        "[auto-generated: agent-toolkit/pretooluse][warn] 入力を補正した "
+        "[auto-generated: agent-toolkit/pretooluse][block] 固定待機を検出した"
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "content": [body],
+                }
+            )
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert sorted(event["tag"] for event in events[:-1]) == ["block", "warn"]
+    assert events[-1] == {"kind": "summary", "count": 2}
+
+
 def test_hook_notices_mode_merges_kinds_differing_only_by_variable_parts(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

@@ -264,8 +264,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table": {
         "summary": "レビュー指摘管理表（8列TSV）を操作する",
-        "description": "目的: 実行レビューの指摘、指摘レベル、採否、対応内容を8列のTSVへ排他的に記録し、保存済みの旧レビュー表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行の実行レビュー表を読み書きし、保存済みの旧レビュー表は読み取り専用で扱う。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response-needed`、`response`、`no-response-reason`の順とする。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新規の経路では`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`及び`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの7列形式は`level`を空として読み込む。",
+        "description": "目的: 実行レビューの指摘、指摘レベル、対応内容を7列のTSVへ排他的に記録し、保存済みの旧レビュー表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行の実行レビュー表を読み書きし、保存済みの旧レビュー表は読み取り専用で扱う。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
+        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新規の経路では`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`及び`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
     },
     "atk review-table init": {
         "summary": "空のレビュー表を作成する",
@@ -279,12 +279,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方を、送信した本文と照合する。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換経路として利用できる。本文は対応するファイル指定オプションで渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
-        "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-needed=yes --response-file=/tmp/response.md",
+        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容又は対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方を、送信した本文と照合する。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換経路として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-file=/tmp/response.md",
     },
     "atk review-table show": {
         "summary": "レビュー表を表示する",
-        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は`row-id`を先頭に付けた9フィールドの表示形式、`jsonl`は`row-id`とデコード済みの各列を持つJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は保存済み8列TSVの各行の先頭へ整数の`row-id`を付けた9フィールドの表示形式、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定すると当該trackの行だけを、`--round`を指定すると当該ラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。デコード済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は`row-id`を先頭に付けた8フィールドの表示形式、`jsonl`は`row-id`とデコード済みの各列を持つJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は保存済み7列TSVの各行の先頭へ整数の`row-id`を付けた8フィールドの表示形式、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定すると当該trackの行だけを、`--round`を指定すると当該ラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。デコード済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-table validate": {

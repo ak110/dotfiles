@@ -1414,6 +1414,15 @@ class TestStaticSafetyBlocks:
         assert "複数の文を含む" in result.stderr
         assert "編集ツール" in result.stderr
 
+    def test_python_eval_block_notice_names_specialized_commands_first(self) -> None:
+        """`python -c`の遮断案内が、保存と実行より先に判定する専用コマンドを名指しする。"""
+        code = "import json\nprint(json.dumps({}))"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"python3 -c {shlex.quote(code)}"}})
+        assert result.returncode == 2
+        assert "構造化データからの項目の取り出しだけを行う場合は`jq`" in result.stderr
+        assert "行の抽出と置換だけを行う場合は`rg`" in result.stderr
+        assert "先にその成否を判定する" in result.stderr
+
     def test_python_eval_argument_with_syntax_error_is_blocked(self) -> None:
         """`python -c`へ構文として成立しないコードを渡す入力を遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "python3 -c 'for x in'"}})

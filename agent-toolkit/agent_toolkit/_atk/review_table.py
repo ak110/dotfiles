@@ -33,11 +33,12 @@ COLUMNS = (
     "location",
     "issue",
     "level",
-    "response-needed",
     "response",
     "no-response-reason",
 )
 _COLUMN_COUNT = len(COLUMNS)
+# 保存済みの旧形式の列数。8列は`level`と`response-needed`の双方を持ち、7列は`response-needed`だけを持つ。
+_LEGACY_WIDE_COLUMN_COUNT = 8
 _KEY_COLUMN_COUNT = 4
 TRACK_VALUES = ("plan-review", "exec-review", "plan-conformance", "independent")
 _TRACK_ALIASES = {"implementation-review": "exec-review"}
@@ -49,7 +50,9 @@ _RECOVERY_GUIDANCE = (
     f"levelの位置はissueの直後、levelの正規値集合は{', '.join(LEVEL_VALUES)}、"
     f"trackの正規値集合は{', '.join(TRACK_VALUES)}。"
     "implementation-reviewはexec-reviewとして読み取る。"
-    "保存済み7列形式はlevelを空として読み込み、更新時に8列形式へ書き戻す"
+    f"保存済み{_LEGACY_WIDE_COLUMN_COUNT}列形式はresponse-neededを読み込みの対象から外す。"
+    f"保存済み{_COLUMN_COUNT}列形式のうち5列目がyes/noの値域を持つ行は旧形式とみなし、"
+    "levelを空としてresponse-neededを読み込みの対象から外す"
 )
 _INPUT_GUIDANCE = (
     "計画ファイルと同じstemの`.exec-review.tsv`、または原因commitの7文字以上の一意な短縮OID由来の"
@@ -89,6 +92,23 @@ def _normalize_track(value: str) -> str:
     return _TRACK_ALIASES.get(value, value)
 
 
+def _drop_legacy_response_needed(row: list[str]) -> list[str]:
+    """保存済みの旧形式から`response-needed`列を除き、現行の7列へそろえる。
+
+    列数が8の行は`level`と`response-needed`の双方を持つ旧形式である。
+    列数が7の行は現行形式と、`level`を持たない旧形式のいずれかであり、5列目の値域で判別する。
+    5列目が`level`の正規値であれば現行形式、yes/noの値域であれば旧形式とする。
+    5列目が空の行は、残る2列が空であれば両解釈が同じ値へ帰着するため現行形式として扱い、
+    いずれかが埋まっていればlevelを空とする現行形式と確定する。
+    """
+    if len(row) == _LEGACY_WIDE_COLUMN_COUNT:
+        return [*row[:5], *row[6:]]
+    fifth = _normalized(row[4]).casefold()
+    if fifth in _YES_VALUES or fifth in _NO_VALUES:
+        return [*row[:4], "", *row[5:]]
+    return row
+
+
 def _parse_text(text: str) -> list[tuple[str, list[str]]]:
     """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
     rows: list[tuple[str, list[str]]] = []
@@ -97,11 +117,10 @@ def _parse_text(text: str) -> list[tuple[str, list[str]]]:
         if not line:
             continue
         cells = line.split("\t")
-        if len(cells) not in (_COLUMN_COUNT - 1, _COLUMN_COUNT):
+        if len(cells) not in (_COLUMN_COUNT, _LEGACY_WIDE_COLUMN_COUNT):
             raise ValueError(f"{line_number}行の列数が{_COLUMN_COUNT}ではない: {len(cells)}。{_RECOVERY_GUIDANCE}")
         row = [_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)]
-        if len(row) == _COLUMN_COUNT - 1:
-            row.insert(4, "")
+        row = _drop_legacy_response_needed(row)
         row[1] = _normalize_track(row[1])
         rows.append((raw_line, row))
     return rows
@@ -145,7 +164,11 @@ def _key(row: list[str]) -> tuple[str, str, str, str]:
 
 
 def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) -> None:
-    """8列、先頭4列の複合キー一意性、指摘レベル及び応答分岐を検証する。"""
+    """7列、先頭4列の複合キー一意性、指摘レベル及び応答分岐を検証する。
+
+    対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。
+    双方が空である行を未応答とし、双方が埋まっている行を矛盾として拒否する。
+    """
     keys: set[tuple[str, str, str, str]] = set()
     for index, row in enumerate(rows, start=1):
         if len(row) != _COLUMN_COUNT:
@@ -162,23 +185,12 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
         if key in keys:
             raise ValueError(f"{index}行の先頭4列が重複している")
         keys.add(key)
-        response_needed = _normalized(row[5]).casefold()
-        response = row[6].strip()
-        reason = row[7].strip()
-        if not response_needed:
-            if require_responses:
-                raise ValueError(f"{index}行の対応要否が未回答である")
-            if response or reason:
-                raise ValueError(f"{index}行は対応要否なしで応答欄を埋められない")
-            continue
-        if response_needed in _YES_VALUES:
-            if not response or reason:
-                raise ValueError(f"{index}行の対応要は対応内容だけを必要とする")
-        elif response_needed in _NO_VALUES:
-            if response or not reason:
-                raise ValueError(f"{index}行の対応不要は対応不要理由だけを必要とする")
-        else:
-            raise ValueError(f"{index}行の対応要否がyes/noではない")
+        response = row[5].strip()
+        reason = row[6].strip()
+        if response and reason:
+            raise ValueError(f"{index}行は対応内容と対応不要理由を同時に持てない")
+        if require_responses and not response and not reason:
+            raise ValueError(f"{index}行が未応答である")
 
 
 def validate(path: str | Path, *, require_responses: bool = True) -> int:
@@ -251,7 +263,7 @@ def init(path: str | Path) -> int:
 def add(path: str | Path, round_value: str, track: str, location: str, issue: str, level: str = "詳細") -> int:
     """レビュー担当の指摘行を追加する。"""
     target = _path(str(path))
-    row = [round_value, _normalize_track(track), location, issue, level, "", "", ""]
+    row = [round_value, _normalize_track(track), location, issue, level, "", ""]
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
         if _key(row) in {_key(existing) for existing in rows}:
@@ -275,16 +287,6 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
             )
     _outcome.report_success(f"指摘行を1件追加した: {target}（{len(rows)}件）")
     return 0
-
-
-def _response_value(raw: str) -> str:
-    """CLIの対応要否を保存用のyes/noへ正規化する。"""
-    normalized = _normalized(raw).casefold()
-    if normalized in _YES_VALUES:
-        return "yes"
-    if normalized in _NO_VALUES:
-        return "no"
-    raise ValueError("対応要否はyesまたはnoを指定する")
 
 
 def _row_id(raw: str) -> int:
@@ -322,7 +324,6 @@ def respond(
     track: str,
     location: str,
     issue: str,
-    response_needed: str,
     response: str,
     no_response_reason: str,
     row_id: int | None = None,
@@ -331,19 +332,17 @@ def respond(
 
     `round`・`track`・`location`・`issue`のうち非空で与えられた列だけを比較対象とし、
     該当行を特定する。該当行が1件でない場合は複合キー解決不能として拒否する。
-    対応要否と矛盾する欄（`response-needed=yes`に対する`no-response-reason`、
-    `response-needed=no`に対する`response`）の同時指定は`ValueError`で拒否する。
+    対応要否は対応内容と対応不要理由のどちらを渡したかで決まる。双方を渡した場合と
+    どちらも渡さなかった場合は`ValueError`で拒否する。
     """
     target = _path(str(path))
-    needed = _response_value(response_needed)
-    response = response.strip()
+    replacement = response.strip()
     reason = no_response_reason.strip()
-    if needed == "yes" and reason:
-        raise ValueError("対応要否がyesの場合はno-response-reasonを指定できない")
-    if needed == "no" and response:
-        raise ValueError("対応要否がnoの場合はresponseを指定できない")
-    replacement = response if needed == "yes" else ""
-    reason = reason if needed == "no" else ""
+    if replacement and reason:
+        raise ValueError("対応内容と対応不要理由は同時に指定できない")
+    if not replacement and not reason:
+        raise ValueError("対応内容と対応不要理由のいずれかを指定する")
+    needed = "yes" if replacement else "no"
     track = _normalize_track(track)
     given = [
         (index, _normalized(value)) for index, value in enumerate((round_value, track, location, issue)) if _normalized(value)
@@ -368,7 +367,7 @@ def respond(
             diagnostic = _format_key_diagnostic(rows, given, matches)
             raise ValueError(f"応答対象の複合キーが一意に解決できない: {len(matches)}件\n{diagnostic}")
         updated = [*rows]
-        updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], updated[matches[0]][4], needed, replacement, reason]
+        updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], updated[matches[0]][4], replacement, reason]
         return updated
 
     _locked_update(target, updater)
@@ -381,7 +380,7 @@ def respond(
     if len(saved_rows) != 1:
         raise ValueError(f"更新した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
     saved_row = saved_rows[0]
-    saved_body = saved_row[6] if needed == "yes" else saved_row[7]
+    saved_body = saved_row[5] if needed == "yes" else saved_row[6]
     expected_body = replacement if needed == "yes" else reason
     if _body_match.verdict(expected_body, saved_body) != "一致":
         position = _body_match.first_difference(expected_body, saved_body)
@@ -532,12 +531,6 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         ("issue", "更新する行を特定する指摘内容"),
     ):
         _add_cell_options(respond_parser, name, description)
-    respond_parser.add_argument(
-        "--response-needed",
-        required=True,
-        choices=("yes", "no", "対応要", "対応不要"),
-        help="指摘への対応要否。yes又は対応要、no又は対応不要を指定する。",
-    )
     _add_cell_options(respond_parser, "response", "対応要とした指摘へ記録する対応内容")
     _add_cell_options(respond_parser, "no-response-reason", "対応不要とした指摘へ記録する理由")
     show_parser = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk review-table show"])
@@ -599,7 +592,6 @@ def dispatch(args: argparse.Namespace) -> int:
             track,
             location,
             issue,
-            args.response_needed,
             _cell_value(args, "response"),
             _cell_value(args, "no_response_reason"),
             args.row_id,

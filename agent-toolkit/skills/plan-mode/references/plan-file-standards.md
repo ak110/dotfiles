@@ -27,6 +27,8 @@ stemは起動経路ごとに次のとおりとし、`dd`は作成日、`HHmm`は
 | `agent-toolkit:fast-process-wi` | `dd-HHmm_fast-process-wi` |
 | `agent-toolkit:plan-mode`の直接起動 | `dd-HHmm_<日本語の簡潔な名詞>` |
 
+作業root直下の計画ファイル名は、上表のstemに`.md`を続けた形と、保存先の正準形`dd-<名称>-<小文字16進数4桁>.md`の双方を受理する。保存先の正準形だけを満たす名前を自ら組み立てる必要はない。
+
 `agent-toolkit:process-wi`のレーンは、内部作成処理へ`--lane lane-NN`で起動文のレーン識別子を渡す。`NN`は2桁のレーン番号とし、日付、時刻、固定接頭辞及びレーン番号は作成処理が組み立てる。
 
 計画本文が参照する計画ファイル（バグ）とレビュー指摘管理表には、固定接頭辞`~/.claude/plans/`とファイル名を使う。
