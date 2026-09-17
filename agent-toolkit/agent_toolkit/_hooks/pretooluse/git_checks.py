@@ -568,7 +568,7 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
         return None
     if any(not event.cwd_resolved for event in commit_events):
         return _llm_notice(
-            "テストを実行せずにcommitしようとしている。`01-agent.md`の検証後commit手順に従い、先にテストを実行する。",
+            "テストを実行せずにcommitしようとしている。`agent-toolkit:commit`の「通常commit」が定めるcommit直前の確認に従い、先にテストを実行する。対象プロジェクトの規範が検査の関門をCIと定め、ローカル検査の完了を後続工程の条件から外すと宣言している場合は、本通知の対象外とする。",
             tag=_WARN_TAG,
             removable_cause=True,
         )
@@ -576,7 +576,7 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
     if _is_docs_only_commit(commit_event, commit_event.cwd):
         return None
     return _llm_notice(
-        "テストを実行せずにcommitしようとしている。`01-agent.md`の検証後commit手順に従い、先にテストを実行する。",
+        "テストを実行せずにcommitしようとしている。`agent-toolkit:commit`の「通常commit」が定めるcommit直前の確認に従い、先にテストを実行する。対象プロジェクトの規範が検査の関門をCIと定め、ローカル検査の完了を後続工程の条件から外すと宣言している場合は、本通知の対象外とする。",
         tag=_WARN_TAG,
         removable_cause=True,
     )
