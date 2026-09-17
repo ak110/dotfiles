@@ -784,10 +784,21 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         rewritten_command = rewritten_command[:start] + replacement + rewritten_command[end:]
     unique_notices = list(dict.fromkeys(notices))
     body = " ".join(unique_notices)
+    summary: str | None = None
     if saved:
         truncation_notice = _format_truncation_autofix_notice(saved, total_segments=len(segments))
         body = f"{body}\n{truncation_notice}" if body else truncation_notice
-    return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True)
+        summary = _format_truncation_autofix_summary(saved)
+    return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True, summary=summary)
+
+
+def _format_truncation_autofix_summary(saved: Sequence[_TruncationFix]) -> str:
+    """2件目以降の通知へ用いる要旨を、補正の対象と保存先だけで組み立てる。
+
+    理由の説明、書き方の案内及び判定条件の所在は1件目の本文が既に届けているため、要旨から外す。
+    """
+    targets = "、".join(f"第{fix.position}直列区間の`{fix.truncation_command}`→`{fix.log_path}`" for fix in saved)
+    return f"切り詰め処理を除去し、標準出力の全量を保存先へ補正した。対象: {targets}"
 
 
 _EDIT_TOOL_SAVE_PHRASE = (
@@ -2395,15 +2406,16 @@ def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
     return len(events) == 1 and events[0].subcommand in {"commit", "push"}
 
 
-def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[str, ...], frozenset[str]] | None:
-    """再帰`grep`区間のpattern本文、ファイルoperand及び認識済みオプションを返す。
+def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], tuple[str, ...], frozenset[str]] | None:
+    """再帰`grep`区間のpattern本文の列、ファイルoperand及び認識済みオプションを返す。
 
-    patternは通知本文が置換後のコマンドを組み立てるために返す。
-    ファイルから読む指定では本文を一意に取り出せないためNoneを返す。
+    patternは通知本文が置換後のコマンドを組み立てるために返す。複数の`-e`を渡した呼び出しでは
+    指定順に全件を返し、置換後のコマンドが同じ対象集合を検索する形になるようにする。
+    ファイルから読む指定では本文を一意に取り出せないため空の列を返す。
     """
     operands: list[str] = []
     options: set[str] = set()
-    pattern: str | None = None
+    patterns: list[str] = []
     tokens = _argument_tokens(segment)
     index = 0
     option_terminator = False
@@ -2421,8 +2433,10 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[s
             name, separator, value = token.partition("=")
             if name in _GREP_LONG_OPTIONS_WITH_VALUE:
                 options.add(name)
-                if name == "--regexp" and pattern is None:
-                    pattern = value if separator else (tokens[index + 1] if index + 1 < len(tokens) else None)
+                if name == "--regexp":
+                    found = value if separator else (tokens[index + 1] if index + 1 < len(tokens) else None)
+                    if found is not None:
+                        patterns.append(found)
                 index += 1 if separator else 2
                 continue
             if name in _GREP_LONG_OPTIONS_WITHOUT_VALUE and not separator:
@@ -2433,8 +2447,10 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[s
         short = token[1:]
         if short[:1] in {"e", "f"}:
             options.add(f"-{short[0]}")
-            if short[0] == "e" and pattern is None:
-                pattern = short[1:] if len(short) > 1 else (tokens[index + 1] if index + 1 < len(tokens) else None)
+            if short[0] == "e":
+                found = short[1:] if len(short) > 1 else (tokens[index + 1] if index + 1 < len(tokens) else None)
+                if found is not None:
+                    patterns.append(found)
             index += 1 if len(short) > 1 else 2
             continue
         if not short or any(character not in _GREP_SHORT_OPTIONS_WITHOUT_VALUE for character in short):
@@ -2443,10 +2459,10 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[str | None, tuple[s
         index += 1
     pattern_is_option = bool(options & {"-e", "-f", "--regexp", "--file"})
     if not pattern_is_option:
-        pattern = operands[0] if operands else None
+        patterns = operands[:1]
     elif options & {"-f", "--file"}:
-        pattern = None
-    return (pattern, tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
+        patterns = []
+    return (tuple(patterns), tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
 
 
 _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
@@ -2456,12 +2472,54 @@ _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
 )
 
 
-def _describe_grep_replacement(pattern: str | None, targets: Sequence[str], base: pathlib.Path) -> str:
+_GREP_LINE_NUMBER_OPTIONS: frozenset[str] = frozenset({"-n", "--line-number"})
+_GREP_PATTERN_TYPE_BY_OPTION: dict[str, str] = {
+    "-F": "-F",
+    "--fixed-strings": "-F",
+    "-E": "-E",
+    "--extended-regexp": "-E",
+    "-P": "-P",
+    "--perl-regexp": "-P",
+    "-G": "-G",
+    "--basic-regexp": "-G",
+}
+"""元の`grep`の種別指定と、置換後の`git grep`が受理する短縮形の対応。"""
+_RG_PATTERN_TYPE_BY_GIT_GREP: dict[str, str] = {"-F": "-F", "-P": "-P"}
+"""`git grep`の種別指定のうち`rg`が同じ意味で受理するもの。
+
+`rg`は`-E`を文字コードの指定として解釈し、基本正規表現を受理しない。
+このため`-E`と`-G`は置換後の`rg`へ引き継がず、`rg`の既定の正規表現へ委ねる。
+"""
+
+
+def _preserved_grep_options(options: frozenset[str], *, for_ripgrep: bool) -> list[str]:
+    """元の呼び出しが指定した出力形式と種別のうち、置換後も保つものを返す。"""
+    preserved: list[str] = []
+    if options & _GREP_LINE_NUMBER_OPTIONS:
+        preserved.append("-n")
+    pattern_type = next(
+        (_GREP_PATTERN_TYPE_BY_OPTION[option] for option in sorted(options) if option in _GREP_PATTERN_TYPE_BY_OPTION),
+        None,
+    )
+    if pattern_type is not None:
+        mapped = _RG_PATTERN_TYPE_BY_GIT_GREP.get(pattern_type) if for_ripgrep else pattern_type
+        if mapped is not None:
+            preserved.append(mapped)
+    return preserved
+
+
+def _describe_grep_replacement(
+    patterns: Sequence[str],
+    targets: Sequence[str],
+    base: pathlib.Path,
+    options: frozenset[str] = frozenset(),
+) -> str:
     """遮断対象ごとのGit作業ツリー判定と、置換後のコマンド文字列を通知本文へまとめる。
 
     判定は遮断が確定した経路でだけ実行する。全ての対象が同じGit作業ツリーへ属する場合は`git grep`、
     いずれも属さない場合は`rg`の形を、当該呼び出しのpatternとパスを埋めた状態で示す。
-    受領した実行主体が代替形を自ら導出せず、そのまま実行できる状態にするためである。
+    元の呼び出しが指定した行番号出力、種別及び複数のpatternは置換後も保つ。
+    提示が元の指定を欠くと、受領した実行主体が指定を戻して組み直す往復が生じる。
     対象が双方を含む場合とpattern本文を一意に取り出せない場合は、確定できなかった理由を示す。
     """
     described: list[str] = []
@@ -2473,14 +2531,18 @@ def _describe_grep_replacement(pattern: str | None, targets: Sequence[str], base
         roots.append(root)
         described.append(f"`{target}`はGit作業ツリー`{root}`に属する" if root is not None else f"`{target}`はGit管理外")
     judgement = "対象の判定: " + "、".join(described) + "。"
-    if pattern is None:
+    if not patterns:
         return judgement + "置換後の形を確定できない理由: 当該呼び出しのpattern本文を一意に取り出せない。"
     operands = " ".join(shlex.quote(target) for target in targets)
+    pattern_arguments = " ".join(f"-e {shlex.quote(pattern)}" for pattern in patterns)
     unique_roots = set(roots)
     if unique_roots == {None}:
-        replacement = f"rg -F -- {shlex.quote(pattern)} {operands}".rstrip()
+        preserved = " ".join(_preserved_grep_options(options, for_ripgrep=True))
+        replacement = f"rg {preserved} {pattern_arguments} -- {operands}".replace("  ", " ").rstrip()
     elif len(unique_roots) == 1:
-        replacement = f"git -C {shlex.quote(str(roots[0]))} grep -F -- {shlex.quote(pattern)} {operands}".rstrip()
+        preserved = " ".join(_preserved_grep_options(options, for_ripgrep=False))
+        prefix = f"git -C {shlex.quote(str(roots[0]))} grep"
+        replacement = f"{prefix} {preserved} {pattern_arguments} -- {operands}".replace("  ", " ").rstrip()
     else:
         return judgement + "置換後の形を確定できない理由: 対象がGit管理対象と管理外の双方を含む。"
     return judgement + f"置換後のコマンド: `{replacement}`"
@@ -2496,7 +2558,8 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
     """
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     targets: list[str] | None = None
-    pattern: str | None = None
+    patterns: tuple[str, ...] = ()
+    preserved_options: frozenset[str] = frozenset()
     for pipeline in _extract_execution_pipelines(command):
         for segment in pipeline:
             if not segment.resolved or segment.tokens[0] not in _GREP_COMMANDS:
@@ -2523,7 +2586,7 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     targets = []
                     break
                 continue
-            segment_pattern, files, options = parsed
+            segment_patterns, files, options = parsed
             if not options & {"-r", "-R", "--recursive"}:
                 continue
             if options & {"--include", "--exclude", "--exclude-dir"}:
@@ -2531,14 +2594,15 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
             directories = [token for token in files if token != "-" and (token.endswith("/") or (base / token).is_dir())]
             if not files or directories:
                 targets = directories
-                pattern = segment_pattern
+                patterns = segment_patterns
+                preserved_options = options
                 break
         if targets is not None:
             break
     if targets is None:
         return None
     # operandを解決できない区間と、operandを省略した呼び出しは実効の走査起点であるcwdを対象とする。
-    described = _describe_grep_replacement(pattern, targets or [str(base)], base)
+    described = _describe_grep_replacement(patterns, targets or [str(base)], base, preserved_options)
     print(
         _block_notice(
             f"block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。{described}",

@@ -1450,6 +1450,20 @@ class TestBashOutputTruncationRepetition:
         assert producer.startswith("ls -1 /var > ")
         assert consumer.startswith("head -5 ")
 
+    def test_second_and_later_notices_are_shortened(self, tmp_path: pathlib.Path) -> None:
+        """2件目以降の通知本文は補正の対象と保存先と件数の3点だけを持つ。"""
+        session_id = "truncation-shortened"
+        first = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+        second = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        first_context = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
+        second_context = json.loads(second.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "切り詰めを含まない書き方" in first_context
+        assert "切り詰めを含まない書き方" not in second_context
+        assert "補正対象のコマンドに対応する指定" not in second_context
+        assert "対象: 第1直列区間の`head`→`" in second_context
+        assert "この通知は同一セッションで2件目である。" in second_context
+
     def test_other_kind_is_also_corrected(self, tmp_path: pathlib.Path) -> None:
         """別の補正種別も過去の補正によらず同じ変換で通す。"""
         session_id = "truncation-other-kind"
@@ -1606,7 +1620,7 @@ class TestBashRecursiveGrepTargetJudgement:
         assert result.returncode == 2
         assert "置換後のコマンド" in result.stderr
         assert "git -C " in result.stderr
-        assert "grep -F -- needle" in result.stderr
+        assert "grep -e needle -- ." in result.stderr
 
     def test_notice_shows_the_replacement_command_outside_git(self, tmp_path: pathlib.Path) -> None:
         """Git管理外の対象では、patternとパスを埋めた`rg`の形を示す。"""
@@ -1620,7 +1634,7 @@ class TestBashRecursiveGrepTargetJudgement:
 
         assert result.returncode == 2
         assert "置換後のコマンド" in result.stderr
-        assert "rg -F -- needle" in result.stderr
+        assert "rg -e needle -- ." in result.stderr
 
     def test_notice_reports_why_the_replacement_is_undetermined(self, tmp_path: pathlib.Path) -> None:
         """pattern本文を一意に取り出せない入力では、確定できなかった理由を示す。"""
@@ -2093,6 +2107,52 @@ class TestNormViolatingArgumentForms:
         contract = _read_session_state(tmp_path, session_id)["external_command_option_contracts"]["rg"]
         assert "-A" in contract["valued"]
         assert "-n" in contract["flags"]
+
+
+class TestRecursiveGrepReplacementKeepsOriginalOptions:
+    """再帰`grep`の遮断が示す置換後コマンドの内容。
+
+    元の呼び出しが指定した行番号出力、複数のpattern及び種別を保つ。
+    """
+
+    @staticmethod
+    def test_line_number_and_multiple_patterns_are_preserved(tmp_path: pathlib.Path) -> None:
+        """行番号出力と2件のpatternが提示へ現れる。"""
+        target = tmp_path / "docs"
+        target.mkdir()
+        command = "grep -rn -e " + shlex.quote("ユーザー入力素材") + " -e " + shlex.quote("逐語") + " " + str(target)
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+
+        assert result.returncode == 2
+        messages = _agent_messages(result)
+        assert "置換後のコマンド: `" in messages
+        assert "-n" in messages
+        assert "-e 'ユーザー入力素材'" in messages
+        assert "-e '逐語'" in messages
+
+    @staticmethod
+    def test_fixed_string_option_is_not_added_without_the_original(tmp_path: pathlib.Path) -> None:
+        """元の呼び出しが固定文字列指定を持たない場合は提示へ加えない。"""
+        target = tmp_path / "docs"
+        target.mkdir()
+        command = "grep -r " + shlex.quote("needle") + " " + str(target)
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+
+        assert result.returncode == 2
+        replacement = _agent_messages(result).split("置換後のコマンド: `", 1)[1].split("`", 1)[0]
+        assert " -F " not in f" {replacement} "
+
+    @staticmethod
+    def test_fixed_string_option_is_preserved(tmp_path: pathlib.Path) -> None:
+        """元の呼び出しが固定文字列指定を持つ場合は提示へ保つ。"""
+        target = tmp_path / "docs"
+        target.mkdir()
+        command = "grep -rF " + shlex.quote("needle") + " " + str(target)
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+
+        assert result.returncode == 2
+        replacement = _agent_messages(result).split("置換後のコマンド: `", 1)[1].split("`", 1)[0]
+        assert " -F " in f" {replacement} "
 
 
 class TestBashWriteTargetIsNotMissingPath:
