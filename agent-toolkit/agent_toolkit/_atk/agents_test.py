@@ -99,7 +99,6 @@ def test_agents_list_returns_diagnostic_fields_without_prompt(capsys: pytest.Cap
         "seconds_since_activity": session["seconds_since_activity"],
         "output_updated_at": None,
         "seconds_since_output": session["seconds_since_output"],
-        "stalled": True,
     }
     assert isinstance(session["seconds_since_activity"], int)
     assert isinstance(session["seconds_since_output"], int)

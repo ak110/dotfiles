@@ -584,7 +584,8 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
 
     assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
     assert all(
-        {"session_id", "status"} <= set(session) <= {"session_id", "status", "stalled"} for session in response["sessions"]
+        {"session_id", "status"} <= set(session) <= {"session_id", "status", "seconds_since_activity"}
+        for session in response["sessions"]
     )
     assert response["sessions"][0]["status"] == "expired"
     assert response["sessions"][1]["status"] == "running"
@@ -637,10 +638,10 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
     exact_label = subject.SessionState("exact", str(tmp_path), label="b" * 100)
     manager.sessions = {long_label.session_id: long_label, exact_label.session_id: exact_label}
 
-    assert manager.list_sessions()["sessions"] == [
-        {"session_id": "long", "status": "running"},
-        {"session_id": "exact", "status": "running"},
-    ]
+    listed = manager.list_sessions()["sessions"]
+
+    assert [item["session_id"] for item in listed] == ["long", "exact"]
+    assert all({"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"} for item in listed)
 
 
 def test_delegation_break_even_guidance_is_available_before_calling() -> None:
@@ -999,7 +1000,10 @@ async def test_success_response_key_sets_for_all_tools(
 
     listed = manager.list_sessions(include_terminated=True)
     assert listed.keys() == {"sessions", "omitted"}
-    assert all(item.keys() == {"session_id", "status"} for item in listed["sessions"])
+    assert all(
+        {"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"}
+        for item in listed["sessions"]
+    )
 
 
 @pytest.mark.asyncio
@@ -1214,7 +1218,8 @@ async def test_abandoned_candidate_is_released(
 
     assert response["session_id"] == "claude-session"
     assert set(manager.sessions) == {"claude-session"}
-    assert manager.list_sessions(include_terminated=True)["sessions"] == [{"session_id": "claude-session", "status": "running"}]
+    listed = manager.list_sessions(include_terminated=True)["sessions"]
+    assert [item["session_id"] for item in listed] == ["claude-session"]
     assert not abandoned_result.exists()
     assert codex.release_calls == ["codex-session"]
     await manager.close()
@@ -1964,12 +1969,11 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
     assert isinstance(fresh_detail["seconds_since_output"], int)
     assert fresh_detail["updated_at"] == fresh.updated_at
     assert isinstance(fresh_detail["seconds_since_activity"], int)
-    assert "stalled" not in fresh_detail
-    # テキスト出力だけが閾値を超えて止まっている状態は停滞と判定しない。
+    # テキスト出力だけが閾値を超えて止まっている状態と、活動そのものが止まった状態を経過秒数で区別できる。
     assert text_silent_detail["output_updated_at"] == text_silent.output_updated_at
     assert text_silent_detail["seconds_since_output"] >= subject.state.STALL_NOTICE_SECONDS
-    assert "stalled" not in text_silent_detail
-    assert inactive_detail["stalled"] is True
+    assert text_silent_detail["seconds_since_activity"] < subject.state.STALL_NOTICE_SECONDS
+    assert inactive_detail["seconds_since_activity"] >= subject.state.STALL_NOTICE_SECONDS
 
     response = await manager.wait()
 
@@ -1978,7 +1982,6 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
         "seconds_since_output",
         "updated_at",
         "seconds_since_activity",
-        "stalled",
     }.isdisjoint(response)
 
 
@@ -1988,15 +1991,15 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
     [("2000-01-01T00:00:00+00:00", True), ("2099-01-01T00:00:00+00:00", False)],
     ids=["inactive", "active"],
 )
-async def test_four_observation_paths_share_the_same_stall_judgement(
+async def test_four_observation_paths_share_the_same_activity_projection(
     tmp_path: pathlib.Path,
     updated_at: str,
     expected_stalled: bool,
 ) -> None:
-    """`show`・`list`・待機CLI・`atk agents list`が、同じ入力へ同じ停滞の印を返す。
+    """`show`・`list`・待機CLI・`atk agents list`が、同じ入力へ同じ経過秒数を返す。
 
     いずれかの経路が共通の射影から外れて独自の判定入力へ戻る退行を検出する。
-    テキスト出力時刻は常に閾値を超えた値とし、活動時刻だけで結果が分かれることを確認する。
+    停滞の判定は呼び出し元が経過秒数と閾値の比較で行うため、4経路の返す経過秒数が同じ判定を与えることを確認する。
     """
     started_at = "2000-01-01T00:00:00+00:00"
     output_updated_at = "2000-01-01T00:00:00+00:00"
@@ -2022,15 +2025,21 @@ async def test_four_observation_paths_share_the_same_stall_judgement(
     listed_by_cli = dict(serialized)
     atk_agents._add_output_activity(listed_by_cli)  # pylint: disable=protected-access  # noqa: SLF001
 
+    threshold = subject.state.STALL_NOTICE_SECONDS
+
+    def _stalled(payload: dict[str, Any]) -> bool:
+        return cast(float, payload["seconds_since_activity"]) >= threshold
+
     flags = [
-        "stalled" in manager.show_session(session.session_id),
-        "stalled" in manager.list_sessions()["sessions"][0],
-        "stalled"
-        in agents_wait._session_output_activity(  # pylint: disable=protected-access  # noqa: SLF001
-            [status_path],
-            session.session_id,
+        _stalled(manager.show_session(session.session_id)),
+        _stalled(manager.list_sessions()["sessions"][0]),
+        _stalled(
+            agents_wait._session_output_activity(  # pylint: disable=protected-access  # noqa: SLF001
+                [status_path],
+                session.session_id,
+            )
         ),
-        "stalled" in listed_by_cli,
+        _stalled(listed_by_cli),
     ]
 
     assert flags == [expected_stalled] * 4

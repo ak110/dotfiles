@@ -307,8 +307,6 @@ def activity_projection(
         "output_updated_at": output_updated_at,
         "seconds_since_output": elapsed_seconds(output_updated_at or started_at),
     }
-    if seconds_since_activity >= STALL_NOTICE_SECONDS:
-        projection["stalled"] = True
     return projection
 
 

@@ -164,7 +164,4 @@ def _add_output_activity(session: dict[str, Any]) -> None:
         output_updated_at=output_updated_at if isinstance(output_updated_at, str) else None,
         started_at=started_at if isinstance(started_at, str) else None,
     )
-    if session.get("status") != "running":
-        # 終端済みsessionは活動が止まっていることが定義上明らかであり、停滞の印を返さない。
-        activity.pop("stalled", None)
     session.update(activity)
