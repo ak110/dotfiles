@@ -13,19 +13,27 @@ def _large_file(tmp_path: pathlib.Path, name: str = "large.txt", lines: int = 35
     return path
 
 
-def test_read_blocks_large_file_without_range(tmp_path: pathlib.Path) -> None:
+def test_read_corrects_large_file_without_range(tmp_path: pathlib.Path) -> None:
+    """範囲指定のない全文取得を、先頭の閾値行へ補正して通す。"""
     path = _large_file(tmp_path)
 
-    assert check_large_read({"file_path": str(path)}, str(tmp_path)) is not None
+    corrected = check_large_read({"file_path": str(path)}, str(tmp_path))
+
+    assert corrected is not None
+    tool_input, _notice = corrected
+    assert tool_input["offset"] == 1
+    assert tool_input["limit"] == 350
+    assert tool_input["file_path"] == str(path)
 
 
-def test_block_notice_shows_offset_and_limit_pairs_covering_the_file(tmp_path: pathlib.Path) -> None:
-    """遮断本文が、実測行数と閾値から確定する`offset`と`limit`の組を全行分示す。"""
+def test_notice_shows_offset_and_limit_pairs_covering_the_file(tmp_path: pathlib.Path) -> None:
+    """通知本文が、実測行数と閾値から確定する`offset`と`limit`の組を全行分示す。"""
     path = _large_file(tmp_path, lines=622)
 
-    notice = check_large_read({"file_path": str(path)}, str(tmp_path))
+    corrected = check_large_read({"file_path": str(path)}, str(tmp_path))
 
-    assert notice is not None
+    assert corrected is not None
+    _tool_input, notice = corrected
     assert "offset=1, limit=350" in notice
     assert "offset=351, limit=272" in notice
 
@@ -72,12 +80,32 @@ def test_threshold_environment_override(tmp_path: pathlib.Path, monkeypatch) -> 
     assert check_large_read({"file_path": str(path)}, str(tmp_path)) is not None
 
 
-def test_dispatch_blocks_large_read(tmp_path: pathlib.Path, capsys) -> None:
+def test_dispatch_corrects_large_read(tmp_path: pathlib.Path, capsys) -> None:
+    """`Read`の全文取得を遮断せず、範囲を補正した入力で通す。"""
     path = _large_file(tmp_path)
     payload = {
         "tool_name": "Read",
         "tool_input": {"file_path": str(path)},
         "session_id": "large-read",
+        "cwd": str(tmp_path),
+    }
+
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = json.loads(capsys.readouterr().out)
+    output = captured["hookSpecificOutput"]
+    assert output["permissionDecision"] == "allow"
+    assert output["updatedInput"]["offset"] == 1
+    assert output["updatedInput"]["limit"] == 350
+    assert str(path) in output["additionalContext"]
+
+
+def test_dispatch_still_blocks_bash_full_read(tmp_path: pathlib.Path, capsys) -> None:
+    """`Bash`の全文取得は遮断のまま保つ。"""
+    path = _large_file(tmp_path)
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": f"cat {path}"},
+        "session_id": "large-bash-read",
         "cwd": str(tmp_path),
     }
 

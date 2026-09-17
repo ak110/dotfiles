@@ -406,11 +406,21 @@ def main(payload_text: str) -> int:
         file_path = tool_input.get("file_path", "")
         if isinstance(file_path, str) and _check_secret_read(file_path):
             return exit_with(2)
-        large_read_notice = check_large_read(tool_input, cwd)
-        if large_read_notice is not None:
-            print(large_read_notice, file=sys.stderr)
-            return exit_with(2)
-        # 遮断せずに通した取得だけを観測として記録する。
+        large_read_fix = check_large_read(tool_input, cwd)
+        if large_read_fix is not None:
+            corrected_input, large_read_notice = large_read_fix
+            record_atk_help_paths_from_read(corrected_input, cwd, session_id)
+            emit_json(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "updatedInput": corrected_input,
+                        "additionalContext": "\n".join([*pending_notices, large_read_notice]),
+                    }
+                }
+            )
+            return 0
         record_atk_help_paths_from_read(tool_input, cwd, session_id)
         flush_pending_notices()
         return 0

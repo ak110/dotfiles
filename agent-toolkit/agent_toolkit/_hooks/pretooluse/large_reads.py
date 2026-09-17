@@ -7,7 +7,7 @@ import pathlib
 from collections.abc import Sequence
 
 from agent_toolkit._hooks import bash_command_parser
-from agent_toolkit._hooks.notice import block_formatter
+from agent_toolkit._hooks.notice import _WARN_TAG, block_formatter, formatter
 
 _DEFAULT_LINE_THRESHOLD = 350
 _THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_LINES"
@@ -18,6 +18,7 @@ _MANDATORY_PATH_PARTS = frozenset({"rules", "skills"})
 # 当該形式では改行バイトの個数が取得量に対応せず、`offset`と`limit`も取得量を変えない。
 _NON_LINE_ORIENTED_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".pdf", ".png", ".webp"})
 _block_notice = block_formatter("agent-toolkit/pretooluse")
+_llm_notice = formatter("agent-toolkit/pretooluse")
 
 
 def _line_threshold() -> int:
@@ -95,12 +96,14 @@ def _large_read_notice(path: pathlib.Path, line_count: int, cwd: str) -> str:
     )
 
 
-def check_large_read(tool_input: dict, cwd: str) -> str | None:
-    """範囲指定のないReadが大容量ファイルを対象とする場合に遮断理由を返す。
+def check_large_read(tool_input: dict, cwd: str) -> tuple[dict, str] | None:
+    """範囲指定のないReadが大容量ファイルを対象とする場合に、補正後の入力と通知を返す。
 
+    代替の入力は判定の時点で一意に算出できるため、遮断して同じ操作の再発行を求めず、
+    先頭の閾値行へ補正して通す。残りの範囲は通知本文が示す。
     行数を取得量の指標とする判定は、`Read`が対象を行の列として提示する場合にだけ成立する。
-    行の列として提示しない形式では、遮断しても取得量が変わらず再発行の往復だけが増えるため
-    判定の対象から外す。Bashの全文取得は当該形式も行の列として直列化するため対象に含める。
+    行の列として提示しない形式では、補正しても取得量が変わらないため判定の対象から外す。
+    Bashの全文取得は当該形式も行の列として直列化するため`check_large_bash_read`が扱う。
     """
     if tool_input.get("offset") is not None or tool_input.get("limit") is not None:
         return None
@@ -111,7 +114,20 @@ def check_large_read(tool_input: dict, cwd: str) -> str | None:
     if _is_non_line_oriented(path):
         return None
     line_count = _line_count_if_large(path)
-    return _large_read_notice(path, line_count, cwd) if line_count is not None else None
+    if line_count is None:
+        return None
+    threshold = _line_threshold()
+    corrected = dict(tool_input)
+    corrected["offset"] = 1
+    corrected["limit"] = threshold
+    notice = _llm_notice(
+        f"{line_count}行のファイルの全文取得を先頭{threshold}行へ補正した: {path}\n"
+        f"残りの範囲は次の組で取得する: {_offset_limit_plan(line_count, threshold)}。\n"
+        f"agents_serverのstart_exploreへ質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。",
+        tag=_WARN_TAG,
+        removable_cause=True,
+    )
+    return corrected, notice
 
 
 def check_large_bash_read(command: str, cwd: str) -> str | None:

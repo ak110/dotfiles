@@ -236,6 +236,17 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 同日、codex-cli 0.154.0の同じ2169件に対し、`atk wi process-loop`がCodexへ渡す起動プロンプトの完全一致を数えた。一致は0件であった。いずれの記録も、最初のuser役レコードの本文は実行環境が挿入する前置きであった。前置きは``# AGENTS.md instructions``又は``<recommended_plugins>``で始まる。`agent-toolkit:process-wi`をuser役の本文へ含む記録は304件であった。当該304件の`session_meta`の`originator`は、`agent-toolkit-codex-app-server`が303件、`codex-tui`が1件であった。
 再検証は、Claude Codeの記録から`Launching skill:`を含む行を1件取得して`tool_result`の構造を確認し、Codexの記録から同じスキル名を含む行を取得してレコード種別を確認する。あわせてCodexの記録から当該起動プロンプトの完全一致と包含の件数を数え、user役レコードの`text`の先頭が前置きであることを確認する。
 
+## agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py：UserPromptSubmitの出所欄：2026年9月17日
+
+2026年9月17日に実測した。Claude Code 2.1.274の実行ファイルは、UserPromptSubmitの入力スキーマへ`source`を宣言し、値を`user`、`sdk`、`system`、`loop_wakeup`、`schedule_wakeup`、`poll_event`の6種とする。
+同スキーマの説明は`schedule_wakeup`を`scheduled-task fire (CronCreate/routine)`と定める。
+`system`は`other machine-injected turns (peer/channel messages, task notifications, auto-continuation)`と定める。
+説明の末尾へは`Payloads may omit it while the field rolls out.`と記す。
+一方、同じ実行ファイルでUserPromptSubmitの入力を組み立てる2箇所は、いずれも`prompt`の直後に`...!1`を持ち、当該位置の代入が畳み込まれている。同じ実行ファイルのSessionStartの入力組み立ては`source:n`を持つため、当該位置の`...!1`は出所欄の欠落を示すと判定した。2.1.272と2.1.273も同じ形である。
+確認の範囲は、この3版が出所欄を配送しないこととする。配送を開始する版と時期は確認していない。
+この実測により、出所欄だけを判定入力とする案は現行版で成立しないため、機械注入ターンの判定を4系統で構成した。
+再検証は、対象版の実行ファイルに対し`hook_event_name:"UserPromptSubmit"`の前後の文字列を取得し、当該位置に`source`の代入が現れるかを`hook_event_name:"SessionStart"`の同じ箇所と対にして確認する。
+
 ## agent-toolkit/skills/writing-standards/references/claude-hooks.md：Bash失敗の分類：2026年9月14日
 
 2026年9月14日、Claude Code 2.1.270のPostToolUseFailure入力で、失敗ツール名を`tool_name`、中断状態を`is_interrupt`、エラー本文を`error`として取得できることを確認した。Bashの非ゼロ終了では`error`の先頭行が`Exit code N`となる。再検証は同版以降で終了コードを変えたBash失敗と中断を発生させ、PostToolUseFailureへ渡る3項目と先頭行を記録して確認する。
