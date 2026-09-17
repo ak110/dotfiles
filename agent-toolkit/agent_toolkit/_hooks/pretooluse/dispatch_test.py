@@ -1171,7 +1171,7 @@ class TestAtkContractBeforeQuestion:
     hookの遮断では強制しない。
     """
 
-    _SUBCOMMAND = "atk wi process-loop-abort"
+    _SUBCOMMAND = "atk wi process-loop abort"
 
     def _payload(self, field: str, session_id: str) -> dict:
         payload = _user_facing_payload(field, f"`{self._SUBCOMMAND}`の扱いを選んでください。")
@@ -1214,7 +1214,7 @@ class TestAtkHelpTextReadObservation:
     """`atk`の公開契約の正本を読んだ範囲を、`--help`の実行と同じ観測集合へ合流させる。"""
 
     _HELP_TEXT_PATH = pathlib.Path(_ATK_HELP_SOURCE.__file__).resolve()
-    _SUBCOMMAND = "atk wi process-loop-abort"
+    _SUBCOMMAND = "atk wi process-loop abort"
 
     @classmethod
     def _definition_line(cls) -> int:

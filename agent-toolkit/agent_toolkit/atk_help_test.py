@@ -270,14 +270,23 @@ def test_agents_wait_help_states_absent_target_termination() -> None:
 
 
 def _leaf_commands() -> set[str]:
-    """サブコマンドを持たないリーフだけを返す。"""
+    """それ自体を実行できるコマンドを返す。
+
+    サブコマンドを持つ場合も、そのサブコマンドが必須でなければ当該コマンド自体を実行できるため、
+    結果行の区分を要するコマンドとして数える。
+    """
     leaves: set[str] = set()
     for command, parser, _summary in _walk_commands():
-        has_subcommands = any(
-            isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
+        subparsers = [
+            action
             for action in parser._actions  # pylint: disable=protected-access
-        )
-        if has_subcommands:
+            if isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
+        ]
+        # サブコマンドを持つ場合でも、省略時に自身を実行するコマンドは結果行の区分を要する。
+        # サブコマンドが必須であるか、省略時に一覧を表示して終わるコマンドは自身を実行しない。
+        shows_help_when_missing = parser.get_default("_help_parser") is not None
+        requires_subcommand = any(action.required for action in subparsers)
+        if subparsers and (requires_subcommand or shows_help_when_missing):
             continue
         leaves.add(command)
     return leaves

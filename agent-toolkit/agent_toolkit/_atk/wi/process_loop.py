@@ -74,6 +74,8 @@ _RESTART_EXIT_CODE = 75
 
 # process-loopセッションを識別する正本と、更新中に旧Stop hookと併存するための移行互換名。
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
+# 次に起動する1セッションだけへ渡す利用者の追加指示。SessionStart hookが本文を注入する。
+_PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
@@ -112,9 +114,34 @@ def _cmd_process_loop_abort_cancel() -> None:
 
 
 def _cmd_process_loop_status() -> None:
-    """process-loopへの中断要求の有無を表示する。"""
+    """process-loopへの中断要求と保持中の追加指示を表示する。"""
     status = "あり" if _process_loop_abort_path().exists() else "なし"
     print(f"常駐処理への中断要求: {status}")
+    instructions = _process_loop_log.read_instructions()
+    print(f"保持中の追加指示: {len(instructions)}件")
+    for index, body in enumerate(instructions, start=1):
+        print(f"[{index}] {body}")
+
+
+def _cmd_process_loop_instruct(body: str) -> None:
+    """次に起動する1セッションへ渡す追加指示を保持する。"""
+    appended, summary = _process_loop_log.append_instruction(body)
+    if not appended:
+        if summary.startswith("保持中の合計") or summary == "本文が空である":
+            _outcome.report_failure(f"追加指示を保持しなかった: {summary}")
+            raise SystemExit(1)
+        _outcome.report_success(f"追加指示は{summary}ため、変更は無い")
+        return
+    _outcome.report_success(f"次のセッションへ渡す追加指示を保持した。{summary}")
+
+
+def _cmd_process_loop_instruct_cancel() -> None:
+    """保持中の追加指示を全件破棄する。"""
+    count = _process_loop_log.discard_instructions()
+    if count == 0:
+        _outcome.report_success("保持中の追加指示が無いため、変更は無い")
+        return
+    _outcome.report_success(f"保持中の追加指示を{count}件破棄した")
 
 
 def _consume_process_loop_abort() -> bool:
@@ -125,7 +152,7 @@ def _consume_process_loop_abort() -> bool:
     当該呼び出しの後段へ置いた判定は`--no-update`を指定しない既定の起動形で実行されない。
     同じ理由で`_update_before_session`と`_check_and_restart_on_update`の後段にも判定を置かず、
     反復ループの先頭でまとめて判定する。
-    `atk wi process-loop-abort`の公開契約は、現在のセッションが終わった時点で次の反復へ進まず
+    `atk wi process-loop abort`の公開契約は、現在のセッションが終わった時点で次の反復へ進まず
     終了することと、中断で終了した時点で要求も解除されることを定める。
     """
     abort_path = _process_loop_abort_path()
@@ -1062,10 +1089,16 @@ def _run_process_session(
         print(f"Claude hook診断ログ: {hook_debug_log}")
     _process_loop_log.append("session_start")
     session_started_at = time.monotonic()
+    # 追加指示はセッションを実際に起動する反復でだけ消費する。
+    # AWIが0件で変更検知を待つ反復はここへ到達しないため、保持したまま次の起動へ残る。
+    launch_env = _session_env(env, orchestrator)
+    instruction = _process_loop_log.consume_instructions()
+    if instruction:
+        launch_env[_PROCESS_LOOP_INSTRUCTION_ENV] = instruction
     result = subprocess.run(
         session_argv,
         check=False,
-        env=_session_env(env, orchestrator),
+        env=launch_env,
         cwd=session_path,
         creationflags=_session_creation_flags(orchestrator),
     )
