@@ -35,25 +35,17 @@ description: >
 
 ## 文章の作成時に読む資料
 
-節又は文書を新規に起草する場面、表記検査時、lint違反の対処時、lint設定を緩和する時、及び口調の自己点検時は、
-まず`references/notation-rules.md`を全文読む。
-同資料は表記規則の目次と検査手段を持ち、該当する節が次の4資料への条件付きの参照を示す。
+文章を書く時と表記を検査する時は、まず`references/notation-rules.md`を全文読む。
+同資料は表記規則の目次と検査手段を持つ。該当する節が、textlint違反、lint緩和の判定、口調の対比集の各資料への条件付きの参照を示す。
 
-- `references/textlint-violations.md`
-- `references/lint-relax-criteria.md`
-- `references/tone-examples.md`
-- `references/tone-examples-llm-tone.md`
-
-次の場面では併せて対応する資料を全文読む。
-
-- 計画ファイルの起草で新しい概念名・識別子を導入する場面、命名場面、及び同名・同種の対象を複数の主体間で記述する場面: `references/referent-table.md`
+新しい概念名又は識別子を導入する時は、併せて`references/referent-table.md`を全文読む。
 
 ## コードの編集時に読む資料
 
 コード編集に着手する前に、次の3段を順に実施する。
 
 1. `references/writing.md`を全文読む。
-2. 後掲の対応表の左列を、編集対象の拡張子、ファイル名、リポジトリ内のパス、プロジェクトの依存定義（`package.json`の`dependencies`など）又は`<script>`読み込みの技術利用痕跡へ照合し、該当する行の資料を全文読む。該当する行が1つも無い場合だけ共通品質のみで進める。
+2. 編集対象で使う技術に対応する資料を後掲の対応表から選び、全文読む。
 3. 後掲の条件付き資料のうち、着手する工程と対象に該当するものを全文読む。
 
 手順2の対応表は次のとおりとする。
@@ -79,10 +71,9 @@ description: >
 手順3の条件付き資料は次のとおりとする。
 
 - 計画ファイルを作成する時点: `references/design-time.md`
-- コードを編集する時点: `references/implementation-time.md`
-- 計画ファイルの作成と実装を同じ主体が続けて実施する場合、及びコードレビューを実施する場合: 上記2資料の両方と`references/design-heuristics.md`
-- 設計判断を確定する時: `references/design-heuristics.md`と`references/implementation-time.md`
-- 依存の追加・更新をする時: `references/dependency-management.md`と`references/implementation-time.md`
+- コードを編集する時点、設計判断を確定する時、及び依存の追加・更新をする時: `references/implementation-time.md`
+- 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、及びコードレビューを実施する場合: `references/design-heuristics.md`
+- 依存の追加・更新をする時: `references/dependency-management.md`
 - テストコードを書く時、及び条件分岐と判定条件を新設又は変更する時: `references/testing.md`
 - 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`
@@ -97,8 +88,6 @@ description: >
 1. `references/llm-characteristics.md`を全文読む。同資料は後続2段の設計入力となる読者特性を扱う。
 2. `references/writing.md`と`references/agent-documents-basics.md`を全文読む。
 3. 後掲の対象別資料のうち、編集対象に該当するものを全文読む。
-
-手順1は、意味を変えない誤字・句読点・リンクの修正だけの編集では省いてよい。
 
 手順3の対象別資料は次のとおりとする。
 
