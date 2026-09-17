@@ -77,7 +77,11 @@ _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 _KNOWN_MODELS = {
     "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]"}),
     "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"}),
-    # Antigravity CLIはモデル一覧を`agy models`で返す。ここへは用途限定で使う1件だけを置く。
+    # Antigravity CLIの`--model`は、`agy models`が返す推論の深さ込みの完全スラッグと、
+    # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。
+    # 実測の日付と再検証手段は`docs/development/audit-records.md`の
+    # 「agent-toolkit/agent_toolkit/_atk/config.py：Antigravity CLIのモデル指定」が持つ。
+    # 日本語文書の推敲へ用途を限定するため、一覧は当該用途で使う1件だけとする。
     "agy": frozenset({"gemini-3.8-flash"}),
 }
 _KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
