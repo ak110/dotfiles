@@ -122,8 +122,9 @@ git rev-parse --abbrev-ref HEAD
 git merge-base --is-ancestor HEAD origin/master
 ```
 
-`git status --porcelain`の出力が空で、現在branchが`develop`で、`git merge-base --is-ancestor HEAD origin/master`が終了コード0を返すことをすべて満たす場合だけ、続けて次を実行する。
-`git merge --ff-only origin/master`は対象branchを引数に取らず現在branchを更新するため、実行の前提はこの再取得の結果とする。
+ローカルbranchの同期は、利用者の未コミット変更とローカルbranchを壊さない場合だけ実行する。
+実行の直前に前掲の3観点（作業ツリーがcleanであること、現在branchが対象であること、fast-forwardが成立すること）を取得して判定する。
+すべて満たす場合だけ、続けて次を実行する。
 
 ```sh
 git merge --ff-only origin/master
@@ -133,26 +134,20 @@ git rev-parse --short=7 develop
 実行後に`git rev-parse --short=7 develop`が`origin/master`の短縮OIDと一致することを確認する。
 再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略し、既存の未コミット差分とローカルbranchを変更せずリモートの完遂を維持する。
 
-develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。commit不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`が同じcommitを指す最終照合は毎回実施する。master CIの待機を省略できる条件は本節の後段が定める。
+develop CIの待機を省略できるのは、既に検収済みのcommitと対象refのcommitが同一であり、かつ対象branch固有の検査が無いことを現行のワークフロー定義から確認できる場合に限る。
+いずれかを確認できない場合は、develop push前のbaselineを用いる既存の待機経路をそのまま実行する。
+必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`が同じcommitを指す最終照合は毎回実施する。
 
 ```sh
-# OID一致かつdevelop固有検査なしの条件が成立しない場合だけ実行する。
+# 省略条件が成立しない場合だけ実行する。
 uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/agent_toolkit/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha origin/master
 ```
 
-現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であるため、develop固有検査として扱わない。CI定義が変化した場合は省略条件を再判定する。
+master CIの待機も同じ条件で省略できる。次の3つをすべて確認できる場合に限り、いずれか1つでも確認できない場合は後段の待機経路をそのまま実行する。
 
-master CIの待機は、次の4つをすべて確認できる場合だけ省略する。いずれか1つでも確認できない場合は省略せず、後段の待機経路をそのまま実行する。
-
-- マージコミットのツリーがPR headのツリーと同一である。
-  PR番号から操作直前に`headRefOid`を取得する。
-  `git rev-parse --short=7 origin/master^{tree} <headRefOid>^{tree}`が返す2行が同じ値であり、`git diff --name-only <headRefOid> origin/master`の出力が0行であることで判定する
-- PR番号から特定したhead commitを対象とし、`push` eventかつ`develop` head branchであるCI runが`success`で完了している
-- 「条件付きRelease検収」の判定で、マージコミットの第一親との差分に`rust/claude-statusline/`が含まれず、Release検収が不要である
-- 現行CI定義にmaster固有のjob、master向けにだけ実行される追加検査及び外部検査がない
-
-`release-statusline.yaml`はCIの成功を契機に起動し、そのgateは`push` event・`success`・`master` head branchの3条件で対象を絞る。`rust/claude-statusline/`に差分がある場合はmaster CIの成功が後続工程の前提になるため、その差分がある場合は待機をそのまま実行する。
-現行の`.github/workflows/ci.yaml`は全branchのpushへ共通jobを実行し、master固有jobを持たない。branchで分岐する条件は`develop`から`master`へのpull_requestイベントで一部stepを省く分岐だけであり、`push` eventのjob構成はbranchによらず同一である。CI定義が変化した場合は省略条件を再判定する。
+- マージコミットのツリーがPR headのツリーと同一であり、そのhead commitを対象とするCI runが`success`で完了している
+- 「条件付きRelease検収」の判定で、Release検収が不要である。Release検収を要する差分がある場合はmaster CIの成功が後続工程の前提になる
+- 現行のワークフロー定義に、master向けにだけ実行されるjob、追加検査及び外部検査がない
 
 master pushのCIは、`origin/master`、`push` event及び`master` head branchに一致するrunを一覧から特定する。
 `gh run list --commit`へ渡す値は、外部インターフェースが要求するため`origin/master`から操作直前に完全OIDへ解決し、その呼び出しだけに用いる。
