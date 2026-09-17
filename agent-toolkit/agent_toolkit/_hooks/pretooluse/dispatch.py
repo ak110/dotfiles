@@ -155,6 +155,7 @@ from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylin
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
     is_plan_component_file,
+    is_plan_handoff_file,
 )
 
 if TYPE_CHECKING:

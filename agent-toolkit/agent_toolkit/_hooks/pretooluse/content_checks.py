@@ -160,6 +160,7 @@ if TYPE_CHECKING:
         _is_claude_job_file,
         _is_plan_file_or_adjunct,
         _materialize_cached,
+        is_plan_handoff_file,
     )
     from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
@@ -788,6 +789,37 @@ def _is_in_managed_temp(file_path: str) -> bool:
         return False
 
 
+def _is_colloquial_judgment_source(file_path: str) -> bool:
+    """書き込み先が口語検査自身の判定素材かを返す。
+
+    辞書の行と検体は検出語そのものを本文として書き込むため、書き換えるべき散文が存在しない。
+    ホストがセッションごとに作成するscratchpadも、そのセッションの内側だけで消費する作業領域として扱う。
+    """
+    try:
+        path = pathlib.Path(file_path).expanduser().resolve(strict=False)
+    except (OSError, ValueError):
+        return False
+    dictionaries = tuple(
+        _resolve_quietly(candidate)
+        for candidate in (_colloquial_check.DENY_PATH, _colloquial_check.ALLOW_PATH, _TYPO_DICT_PATH)
+    )
+    if path in dictionaries:
+        return True
+    if path.name.endswith("_test.py") and any(
+        dictionary is not None and path.parent == dictionary.parent for dictionary in dictionaries
+    ):
+        return True
+    return _scratchpad_path.is_scratchpad_path(path)
+
+
+def _resolve_quietly(path: pathlib.Path) -> pathlib.Path | None:
+    """解決できないパスを`None`として返す。"""
+    try:
+        return path.expanduser().resolve(strict=False)
+    except (OSError, ValueError):
+        return None
+
+
 def _check_colloquial(
     tool_name: str,
     before_image: str | None,
@@ -805,7 +837,12 @@ def _check_colloquial(
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
-    if file_path and (_is_plan_file_or_adjunct(file_path) or _is_in_managed_temp(file_path)):
+    if file_path and (
+        _is_plan_file_or_adjunct(file_path)
+        or is_plan_handoff_file(file_path)
+        or _is_in_managed_temp(file_path)
+        or _is_colloquial_judgment_source(file_path)
+    ):
         return None
     if not after_image:
         return None

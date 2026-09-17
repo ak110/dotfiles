@@ -2095,6 +2095,42 @@ class TestNormViolatingArgumentForms:
         assert "-n" in contract["flags"]
 
 
+class TestBashWriteTargetIsNotMissingPath:
+    """コマンド自身の出力オプションが指す書込先の不在判定。
+
+    書込先は実行の前に不在であることが正常であり、同じコマンド文字列の後続区間が
+    その書込先を読む形も不在判定の対象から外す。
+    """
+
+    @staticmethod
+    def test_curl_output_is_created_for_later_segments(tmp_path: pathlib.Path) -> None:
+        """`curl -o <保存先>`の保存先を後続区間が読んでも警告しない。"""
+        command = "curl -fsSL https://example.invalid/a -o saved.json; wc -l saved.json"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    @staticmethod
+    def test_output_option_without_value_still_warns(tmp_path: pathlib.Path) -> None:
+        """`-o`の直後が別のオプションである呼び出しでは保存先が作成されないため警告する。"""
+        command = "curl -fsSL https://example.invalid/a -o -X POST; wc -l saved.json"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "明示された検索・読取パスが存在しない" in _agent_messages(result)
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "tee saved.log; wc -l saved.log",
+            "sort -o sorted.txt /etc/hostname; wc -l sorted.txt",
+            "mv /etc/hostname moved.txt",
+        ],
+    )
+    def test_other_write_targets_are_not_missing(command: str, tmp_path: pathlib.Path) -> None:
+        """`tee`、`sort -o`及び`mv`の宛先を不在として扱わない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+
 class TestBashUnquotedShellMetacharacter:
     """語の内側の引用されていないシェルメタ文字の検出。
 

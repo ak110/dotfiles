@@ -699,8 +699,35 @@ def _format_truncation_autofix_notice(saved: list[_TruncationFix], *, total_segm
         messages.append("保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている。")
     if any(not fix.stderr_merged for fix in saved):
         messages.append("標準エラーを保存先へ向けていない区間の標準エラーは、当該呼び出しの結果へ残る。")
+    alternatives = _truncated_command_alternatives(saved)
+    if alternatives:
+        messages.append("補正対象のコマンドに対応する指定: " + "、".join(alternatives))
     messages.append(f"切り詰めを含まない書き方: {_OUTPUT_TRUNCATION_AVOIDANCE}")
     return "\n".join(messages)
+
+
+_COMMAND_SPECIFIC_LIMITATIONS: dict[str, str] = {
+    "git": "`git grep`は一致件数を`-c`、一致ファイル名を`-l`で返す",
+    "ls": "`ls`は対象のディレクトリとglobで走査範囲を限定する",
+    "rg": "`rg`は一致件数を`-c`、一致ファイル名を`-l`で返す",
+    "grep": "`grep`は一致件数を`-c`、一致ファイル名を`-l`で返す",
+    "find": "`find`は`-maxdepth`と述語で走査範囲を限定する",
+}
+"""補正対象の直列区間の先頭コマンドごとの、出力量を制御する指定。
+
+一般的な方針だけを示す通知は、同じ組み立ての反復を止めない。
+"""
+
+
+def _truncated_command_alternatives(saved: Sequence[_TruncationFix]) -> list[str]:
+    """補正対象の直列区間に現れるコマンドへ対応する限定指定を、重複なく返す。"""
+    alternatives: list[str] = []
+    for fix in saved:
+        for token in fix.segment.split():
+            hint = _COMMAND_SPECIFIC_LIMITATIONS.get(pathlib.PurePath(token).name)
+            if hint is not None and hint not in alternatives:
+                alternatives.append(hint)
+    return alternatives
 
 
 _OUTPUT_TRUNCATION_AVOIDANCE = (
@@ -773,6 +800,15 @@ _FILE_LAUNCH_FORM_PHRASE = (
 """解消手段としてファイルの書込を案内する場合に用いる保存手段の名指し。
 
 保存手段を名指ししない案内は、`cat > <ファイル> <<'EOF'`の形を選ばせてheredocの判定へ当たる。
+"""
+
+_SPECIALIZED_COMMAND_FIRST_PHRASE = (
+    "そのコードが構造化データからの項目の取り出しだけを行う場合は`jq`、"
+    "行の抽出と置換だけを行う場合は`rg`で成立するため、先にその成否を判定する。成立しない場合は、"
+)
+"""保存と実行の前に判定する専用コマンドの案内。
+
+保存と実行だけを示す案内は、1回の取得で成立する用途でも2工程を選ばせる。
 """
 
 _NESTED_SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
@@ -880,7 +916,7 @@ def _check_bash_python_code_string(command: str) -> bool:
             _block_notice(
                 f"blocked: `python`の`-c`へ渡すコードが{reason}。"
                 "コマンド文字列とコードの引用境界が重なると、コードの改行が失われる。",
-                fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                fix=f"{_SPECIALIZED_COMMAND_FIRST_PHRASE}実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
             ),
             file=sys.stderr,
         )
@@ -1099,10 +1135,52 @@ def _path_operands(segment: _ExecutionSegment) -> list[str]:
             continue
         operands.append(token)
         index += 1
-    if name == "cp" and operands:
-        # `cp`の最終operandは複製先であり、実在しないことが正常な入力である。
+    if name in _COPY_COMMANDS and operands:
+        # `cp`と`mv`の最終operandは宛先であり、実在しないことが正常な入力である。
         operands = operands[:-1]
     return operands
+
+
+_COPY_COMMANDS: frozenset[str] = frozenset({"cp", "mv"})
+_WRITE_TARGET_VALUE_OPTIONS: dict[str, frozenset[str]] = {
+    "curl": frozenset({"-o", "--output"}),
+    "wget": frozenset({"-O", "--output-document"}),
+    "sort": frozenset({"-o", "--output"}),
+}
+"""コマンド名ごとの、直後のトークンを書込先として取るオプション。"""
+
+
+def _command_write_targets(segment: _ExecutionSegment) -> list[str]:
+    """区間が作成する書込先のうち、コマンド文字列から静的に確定できるものを返す。
+
+    シェルのリダイレクト先と同じく、以降の区間の不在判定から除くために用いる。
+    値の位置に別のオプションが現れる呼び出しは書込先を確定できないため返さない。
+    その呼び出しでは保存先が作成されないため、後続区間の読取に対する警告が真陽性になる。
+    """
+    name = pathlib.PurePath(segment.tokens[0]).name
+    tokens = list(_argument_tokens(segment))
+    targets: list[str] = []
+    options = _WRITE_TARGET_VALUE_OPTIONS.get(name, frozenset())
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in options:
+            value = tokens[index + 1] if index + 1 < len(tokens) else None
+            if value is not None and not value.startswith("-"):
+                targets.append(value)
+            index += 2
+            continue
+        attached = next((option for option in options if option.startswith("--") and token.startswith(f"{option}=")), None)
+        if attached is not None:
+            targets.append(token.split("=", 1)[1])
+        index += 1
+    if name == "tee":
+        targets.extend(token for token in tokens if not token.startswith("-"))
+    if name in _COPY_COMMANDS:
+        operands = [token for token in tokens if not token.startswith("-")]
+        if len(operands) >= 2:
+            targets.append(operands[-1])
+    return [target for target in targets if target and not any(character in target for character in "*$?[]{}~`")]
 
 
 _SCRIPT_INTERPRETERS: frozenset[str] = frozenset({"bash", "sh", "zsh", "node", "perl", "ruby", "pwsh", "powershell"})
@@ -1143,9 +1221,10 @@ def _scan_explicit_paths(command: str, cwd: str) -> _ExplicitPathScan:
     """検索・読取・複製コマンドの明示パスを、実在するものと実在しないものへ分けて返す。
 
     実行位置ごとに判定するため、パイプと制御演算子を含む呼び出しも対象とする。
-    実行区間を先頭から順に走査し、先行する区間が出力リダイレクトの宛先として作成するパスは
-    以降の区間の不在判定から除く。全量を保存先へリダイレクトしてから同じ呼び出しで読む形が
-    規範の求める形であり、当該形を不在として扱うと規定どおりの操作へ毎回警告が発火するためである。
+    実行区間を先頭から順に走査し、先行する区間が出力リダイレクトの宛先として作成するパスと、
+    コマンド自身の出力オプションが指す書込先は、以降の区間の不在判定から除く。全量を保存先へ
+    保存してから同じ呼び出しで読む形が規範の求める形であり、当該形を不在として扱うと
+    規定どおりの操作へ毎回警告が発火するためである。
     除外は当該コマンド文字列から書き込み先として確定できる宛先に限り、変数とglobを含むトークンは
     判定の対象外のまま扱う。
     先行する区間がスクリプトファイルを実行する場合は、以降の区間を不在判定の対象から外す。
@@ -1182,7 +1261,8 @@ def _scan_explicit_paths(command: str, cwd: str) -> _ExplicitPathScan:
                 continue
             if candidate not in missing:
                 missing.append(candidate)
-        for target in shell_redirection_targets(segment.tokens):
+        write_targets = list(shell_redirection_targets(segment.tokens)) + _command_write_targets(segment)
+        for target in write_targets:
             if any(character in target for character in "*$?[]{}~`"):
                 continue
             target_path = pathlib.Path(target)
