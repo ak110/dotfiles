@@ -1311,7 +1311,7 @@ class TestBashHeredocLiteralExclusion:
 
 
 class TestStaticSafetyBlocks:
-    """静的に一意判定できる多段シェル、heredoc及び秘密情報読取を遮断する。"""
+    """静的に一意判定できる多段シェルと秘密情報読取を遮断する。"""
 
     @pytest.mark.parametrize("command", ["sh -c 'echo ok'", "docker exec app sh -c 'echo ok'", "su -c 'echo ok'"])
     def test_nested_code_string_is_blocked(self, command: str) -> None:
@@ -1319,32 +1319,22 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 2
         assert "コード文字列" in result.stderr
 
-    def test_heredoc_with_output_redirection_is_blocked(self) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat <<'EOF' > out.txt\ntext\nEOF"}})
-        assert result.returncode == 2
-        assert "heredoc" in result.stderr
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cat <<'EOF' > out.txt\ntext\nEOF",
+            "cat > out.txt <<'EOF'\ntext\nEOF",
+            "python3 - <<'PY' | wc -l\nprint(1)\nPY",
+        ],
+    )
+    def test_heredoc_with_redirection_or_pipe_is_allowed(self, command: str) -> None:
+        """heredocとリダイレクト・パイプの併用を遮断しない。
 
-    def test_heredoc_with_a_pipeline_is_blocked(self) -> None:
-        """heredocと本文外のパイプの併用を遮断する。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "python3 - <<'PY' | wc -l\nprint(1)\nPY"}})
-        assert result.returncode == 2
-        assert "heredoc" in result.stderr
-
-    def test_quoted_operator_characters_are_not_a_heredoc_chain(self) -> None:
-        """引用符で囲んだ1つの引数の内側にある`<<`とパイプ記号を演算子として数えない。
-
-        引用規則を解かない文字列照合では、heredocもパイプも持たない呼び出しが遮断される。
-        遮断は復元できない結果を対象とするため、偽陽性1件ごとに当該ターンの入力と作業が失われる。
+        実行環境がBash中心の作業手段を指示する構成でこの形が必要になるため、
+        規範から併用禁止を外した変更に合わせて遮断も外した。
         """
-        command = "git log --grep $'A14|structure.py|<<' --oneline"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-
-    def test_unparsable_quoting_with_a_heredoc_is_blocked(self) -> None:
-        """引用を解けない入力は生の文字列で判定して遮断側へ倒す。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat <<'EOF' > out.txt 'unclosed\ntext\nEOF"}})
-        assert result.returncode == 2
-        assert "heredoc" in result.stderr
 
     @pytest.mark.parametrize("command", ["cat .env", "head -n 1 config/.env.local", "xxd .env.production"])
     def test_env_content_output_is_blocked(self, command: str) -> None:
@@ -1392,19 +1382,12 @@ class TestStaticSafetyBlocks:
         assert "接頭辞が一致する受理オプション: --no-json" in messages
         assert "当該サブコマンドが受理するオプション: " not in messages
 
-    def test_heredoc_block_notice_names_a_save_means_that_passes_the_same_check(self) -> None:
-        """heredoc遮断の解消手段が、同じ判定へ当たらない形を名指しする。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat > out.txt <<'EOF'\ntext\nEOF"}})
-        assert result.returncode == 2
-        assert "編集ツール" in result.stderr
-        assert "heredoc単独" in result.stderr
-
     @pytest.mark.parametrize("command", ["sh -c 'echo ok'", "su -c 'echo ok'", "ssh host 'echo ok'"])
-    def test_nested_code_string_notice_names_the_save_means(self, command: str) -> None:
-        """多段引用の遮断も保存手段を編集ツールとして名指しする。"""
+    def test_nested_code_string_notice_names_the_save_destination(self, command: str) -> None:
+        """多段引用の遮断は保存先を管理対象一時領域として名指しする。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
-        assert "編集ツール" in result.stderr
+        assert "管理対象一時領域" in result.stderr
 
     def test_python_eval_argument_with_multiple_statements_is_blocked(self) -> None:
         """`python -c`へ複数の文を渡す入力を遮断する。"""
@@ -1412,7 +1395,7 @@ class TestStaticSafetyBlocks:
         result = _run({"tool_name": "Bash", "tool_input": {"command": f"python3 -c {shlex.quote(code)}"}})
         assert result.returncode == 2
         assert "複数の文を含む" in result.stderr
-        assert "編集ツール" in result.stderr
+        assert "管理対象一時領域" in result.stderr
 
     def test_python_eval_block_notice_names_specialized_commands_first(self) -> None:
         """`python -c`の遮断案内が、保存と実行より先に判定する専用コマンドを名指しする。"""
@@ -1436,7 +1419,7 @@ class TestStaticSafetyBlocks:
 
 
 class TestBashOutputTruncationRepetition:
-    """Bash出力の切り詰め補正を、同一セッションでの反復時も同じ変換で通す。"""
+    """Bash出力の切り詰め補正を、同一セッションの初回だけ通し2回目から遮断する。"""
 
     @staticmethod
     def _invoke(command: str, session_id: str, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -1445,33 +1428,58 @@ class TestBashOutputTruncationRepetition:
             _plan_file_state_env(tmp_path),
         )
 
-    def test_same_kind_is_corrected_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
-        """同じ補正種別の2回目以降も遮断せず、切り詰めを除いた保存形へ補正する。"""
+    def test_same_kind_is_blocked_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
+        """検索語と対象パスを変えた同種の指定も2回目として遮断する。"""
         session_id = "truncation-same-kind"
         assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
 
         result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
 
+        assert result.returncode == 2
+        assert "同じセッションで再び検出した" in result.stderr
+
+    def test_other_truncation_command_is_also_blocked_as_a_repeat(self, tmp_path: pathlib.Path) -> None:
+        """切り詰めコマンドの表記が変わっても同じ判定種別として2回目に数える。"""
+        session_id = "truncation-other-command"
+        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
+
+        assert self._invoke("ls -1 /tmp | tail -5", session_id, tmp_path).returncode == 2
+
+    def test_first_notice_announces_the_next_block(self, tmp_path: pathlib.Path) -> None:
+        """初回の補正の通知が、次回から遮断する旨を示す。"""
+        result = self._invoke("ls -1 /tmp | head -5", "truncation-announce", tmp_path)
+
         assert result.returncode == 0
-        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        producer, separator, consumer = corrected.partition("; ")
-        assert separator == "; "
-        assert producer.startswith("ls -1 /var > ")
-        assert consumer.startswith("head -5 ")
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "補正せず実行前に遮断する" in context
 
-    def test_second_and_later_notices_are_shortened(self, tmp_path: pathlib.Path) -> None:
-        """2件目以降の通知本文は補正の対象と保存先と件数の3点だけを持つ。"""
-        session_id = "truncation-shortened"
-        first = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
-        second = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+    def test_atk_output_and_help_are_not_corrected(self, tmp_path: pathlib.Path) -> None:
+        """規範が対象外と定めるヘルプ取得と`atk`の出力では補正が発火しない。"""
+        for command in ("atk wi list --help | head -50", "atk wi list | head -50", "git log --help | head -20"):
+            result = self._invoke(command, f"truncation-exempt-{hash(command)}", tmp_path)
+            assert result.returncode == 0
+            assert "切り詰め処理を除去し" not in result.stdout
 
-        first_context = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
-        second_context = json.loads(second.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "切り詰めを含まない書き方" in first_context
-        assert "切り詰めを含まない書き方" not in second_context
-        assert "補正対象のコマンドに対応する指定" not in second_context
-        assert "対象: 第1直列区間の`head`→`" in second_context
-        assert "この通知は同一セッションで2件目である。" in second_context
+    def test_exempt_calls_do_not_consume_the_first_detection(self, tmp_path: pathlib.Path) -> None:
+        """対象外の取得は検出回数へ算入せず、後続の初回の補正を遮断へ変えない。"""
+        session_id = "truncation-exempt-count"
+        assert self._invoke("atk wi list --help | head -50", session_id, tmp_path).returncode == 0
+        assert self._invoke("git log --help | head -20", session_id, tmp_path).returncode == 0
+
+        result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+
+        assert result.returncode == 0
+        assert "切り詰め処理を除去し" in json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    def test_repository_file_search_is_still_corrected(self, tmp_path: pathlib.Path) -> None:
+        """作業ツリー内のファイルを件数指定で初回取得する呼び出しでは補正が発火する。"""
+        target = tmp_path / "present.txt"
+        target.write_text("needle\n", encoding="utf-8")
+
+        result = self._invoke(f"rg needle {target} | head -5", "truncation-repo-search", tmp_path)
+
+        assert result.returncode == 0
+        assert "切り詰め処理を除去し" in json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
 
     def test_autofix_notice_is_tagged_as_informational(self, tmp_path: pathlib.Path) -> None:
         """補正が成立した通知は`notice`タグで発行し、是正を要する`warn`と区別する。
@@ -1485,14 +1493,6 @@ class TestBashOutputTruncationRepetition:
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert "[notice]" in context
         assert "[warn]" not in context
-
-    def test_other_kind_is_also_corrected(self, tmp_path: pathlib.Path) -> None:
-        """別の補正種別も過去の補正によらず同じ変換で通す。"""
-        session_id = "truncation-other-kind"
-        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
-        assert self._invoke("ls -1 /var | head -5", session_id, tmp_path).returncode == 0
-
-        assert self._invoke("ls -1 /tmp | tail -5", session_id, tmp_path).returncode == 0
 
     def test_autofix_notice_shows_the_returned_range_and_the_avoidance_body(self, tmp_path: pathlib.Path) -> None:
         """補正の通知が、当該呼び出しへ返る範囲と、切り詰めを含まない書き方を示す。"""

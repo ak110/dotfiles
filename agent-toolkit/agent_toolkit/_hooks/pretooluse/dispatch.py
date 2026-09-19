@@ -36,7 +36,7 @@ list:
 
 Bash:
 
-- 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
+- 多段シェルへのコード文字列と`.env`内容出力の遮断 (block)
 - 単純な明示パスの不存在と`atk`未対応オプションの警告 (warn)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 350行を超える通常ファイルの静的に確定できる全文取得の遮断 (block)
@@ -214,7 +214,6 @@ if TYPE_CHECKING:
         _check_bash_unquoted_shell_metacharacter,
         _check_bash_unresolved_git_object,
         _check_bash_help_with_execution,
-        _check_bash_heredoc_chain,
         _check_bash_env_full_read,
         _check_bash_missing_path_operand_loss,
         _check_bash_nested_code_string,
@@ -225,6 +224,7 @@ if TYPE_CHECKING:
         _check_bash_recursive_grep_without_exclusion,
         _check_bash_recursive_home_search,
         _check_bash_sleep_poll_pattern,
+        _check_bash_truncation_autofix_repeat,
         _check_bash_unbounded_home_traversal,
         _check_bash_unbounded_root_traversal,
         _check_bash_uv_run_python,
@@ -493,6 +493,8 @@ def _handle_bash_tool(
         warnings.append(sleep_poll_result)
     if _check_bash_missing_path_operand_loss(command, cwd) == "block":
         return 2
+    if _check_bash_truncation_autofix_repeat(command, session_id) == "block":
+        return 2
     auto_fix = _autofix_bash_command(command, cwd, session_id)
     if auto_fix is not None:
         command, auto_fix_notice = auto_fix
@@ -508,12 +510,7 @@ def _handle_bash_tool(
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
-    if (
-        _check_bash_nested_code_string(command)
-        or _check_bash_python_code_string(command)
-        or _check_bash_heredoc_chain(command)
-        or _check_bash_env_full_read(command)
-    ):
+    if _check_bash_nested_code_string(command) or _check_bash_python_code_string(command) or _check_bash_env_full_read(command):
         return 2
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":

@@ -35,7 +35,7 @@ wait:
 
 Bash:
 
-- 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
+- 多段シェルへのコード文字列と`.env`内容出力の遮断 (block)
 - `python`の`-c`へ渡す複数文のコードと構文として成立しないコードの遮断 (block)
 - 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
@@ -338,42 +338,6 @@ def _single_unquoted_pipe_index(masked: str) -> int | None:
     return positions[0]
 
 
-_SHELL_OPERATOR_TOKENS: tuple[str, ...] = ("<<<", "<<-", "<<", ">>", ">|", ">&", ">", "<&", "<", "|&", "||", "|")
-"""引用の外側で演算子として解釈する表記。長い表記を先に照合するため、長さの降順で並べる。"""
-_HEREDOC_OPERATORS: frozenset[str] = frozenset({"<<-", "<<"})
-"""heredocを開始する演算子。`<<<`はヒアストリングであり本文の区切り語を取らないため含めない。"""
-_PIPE_OPERATORS: frozenset[str] = frozenset({"|", "|&", "||"})
-_REDIRECTION_OPERATORS: frozenset[str] = frozenset({"<<<", ">>", ">|", ">&", ">", "<&", "<"})
-
-
-def _unquoted_shell_operators(masked: str) -> list[tuple[int, str]] | None:
-    """引用の外側にあるシェル演算子を、位置と表記の対で出現順に返す。
-
-    引用が閉じない入力はトークンの境界を確定できないためNoneを返し、呼び出し側が安全側の判定へ倒す。
-    入力はheredoc本文をマスクした文字列とし、当該マスクは文字位置を保つため、
-    返す位置は元のコマンド文字列へそのまま適用できる。
-    """
-    found: list[tuple[int, str]] = []
-    scanner = QuotingScanner(masked)
-    while scanner.index < len(masked):
-        if scanner.consume_quoted():
-            continue
-        index = scanner.index
-        char = masked[index]
-        if char in {"'", '"'}:
-            scanner.enter_quote(char)
-            continue
-        operator = next((token for token in _SHELL_OPERATOR_TOKENS if masked.startswith(token, index)), None)
-        if operator is None:
-            scanner.index += 1
-            continue
-        found.append((index, operator))
-        scanner.index += len(operator)
-    if scanner.quote is not None:
-        return None
-    return found
-
-
 # --- 外部コマンドと`atk`が共有する受理形式の走査 ---
 
 
@@ -500,6 +464,24 @@ def _format_accepted_option_candidates(token: str, flags: Iterable[str], valued:
     )
 
 
+def _is_truncation_exempt_producer(producer: str) -> bool:
+    """規範が切り詰め禁止の対象外と定める取得かを返す。
+
+    ヘルプ表示は出力量が入力に依存せず上限を持ち、`atk`のサブコマンドは自身の標準出力の量を
+    公開契約として制御する。`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」は
+    この2つを切り詰め禁止の対象外と定めるため、補正も反復の計数も行わない。
+    """
+    try:
+        tokens = shlex.split(producer, posix=True)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    if pathlib.PurePosixPath(tokens[0]).name == "atk":
+        return True
+    return any(token in {"--help", "-h"} for token in tokens[1:])
+
+
 def _split_simple_truncation(command: str) -> tuple[str, tuple[str, ...]] | None:
     """単純な1段パイプのうち後段が切り詰めコマンドである場合だけ分割する。
 
@@ -515,6 +497,8 @@ def _split_simple_truncation(command: str) -> tuple[str, tuple[str, ...]] | None
         return None
     producer = command[:pipe_index].strip()
     consumer = command[pipe_index + 1 :].strip()
+    if _is_truncation_exempt_producer(producer):
+        return None
     try:
         consumer_tokens = shlex.split(consumer, posix=True)
     except ValueError:
@@ -713,6 +697,7 @@ def _format_truncation_autofix_notice(saved: list[_TruncationFix], *, total_segm
     if alternatives:
         messages.append("補正対象のコマンドに対応する指定: " + "、".join(alternatives))
     messages.append(f"切り詰めを含まない書き方: {_OUTPUT_TRUNCATION_AVOIDANCE}")
+    messages.append("同じセッションで次に同種の切り詰め指定を検出した場合は、補正せず実行前に遮断する。")
     return "\n".join(messages)
 
 
@@ -750,11 +735,43 @@ _OUTPUT_TRUNCATION_AVOIDANCE = (
 )
 """切り詰めを含む呼び出しを組み直す手段。
 
-補正の通知が本定数を参照する。
-補正は入力から補正後の形を一意に決められるため、同一セッションでの反復回数によらず同じ変換で実行を通す。
+補正の通知と、`_check_bash_truncation_autofix_repeat`の遮断の通知が本定数を参照する。
+同一セッションの初回は補正して実行を通し、2回目以降は補正せず遮断するため、
+いずれの通知も本定数が示す形への組み替えを求める。
 保存と再読の形と、コマンド自身の限定指定はこの検査の判定条件に一致しないため、
 分離実行を利用できない実行主体も当該本文だけで切り詰めを含まない形へ到達できる。
 """
+
+
+_TRUNCATION_AUTOFIX_REPEAT_KEY = "truncation_autofix_detected"
+"""切り詰め補正の検出をセッション単位で数えるキー。
+
+検索語と対象パスの違いで初回へ戻さないため、判定の種別だけをキーとする。
+"""
+
+
+def _check_bash_truncation_autofix_repeat(command: str, session_id: str) -> str | None:
+    """規範が禁じる切り詰め指定を、同じセッションの2回目以降は補正せず遮断する。
+
+    初回は補正して実行を通し、次回から遮断する旨を補正の通知本文が示す。
+    補正は不成立な入力を成功する入力へ変換するため、反復も許すと実行主体が入力を改めないまま
+    同じ保存と読み戻しを繰り返す。
+    `_is_truncation_exempt_producer`が対象外と判定した取得は、`_split_simple_truncation`が
+    切り詰めとして返さないため、検出回数へ算入されず遮断もされない。
+    """
+    segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
+    if not any(_split_simple_truncation(segment) is not None for segment in segments):
+        return None
+    if not _record_repeat_detection(session_id, _TRUNCATION_AUTOFIX_REPEAT_KEY):
+        return None
+    print(
+        _block_notice(
+            "blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。",
+            fix=_OUTPUT_TRUNCATION_AVOIDANCE,
+        ),
+        file=sys.stderr,
+    )
+    return "block"
 
 
 def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str, str] | None:
@@ -819,17 +836,12 @@ def _format_truncation_autofix_summary(saved: Sequence[_TruncationFix]) -> str:
     return f"切り詰め処理を除去し、標準出力の全量を保存先へ補正した。対象: {targets}"
 
 
-_EDIT_TOOL_SAVE_PHRASE = (
-    "実行環境が提供する編集ツール（Claude Codeでは`Write`、Codexでは`apply_patch`）で管理対象一時領域のファイルへ保存する"
-)
+_TEMP_FILE_SAVE_PHRASE = "管理対象一時領域のファイルへ保存する"
 _FILE_LAUNCH_FORM_PHRASE = (
     "保存したファイルは、ファイルを実行対象として渡す起動形（`bash <ファイル>`、`python3 <ファイル>`、"
     "`powershell -File <ファイル>`など）で起動する。"
 )
-"""解消手段としてファイルの書込を案内する場合に用いる保存手段の名指し。
-
-保存手段を名指ししない案内は、`cat > <ファイル> <<'EOF'`の形を選ばせてheredocの判定へ当たる。
-"""
+"""解消手段としてファイルの書込を案内する場合に用いる保存先の名指し。"""
 
 _SPECIALIZED_COMMAND_FIRST_PHRASE = (
     "そのコードが構造化データからの項目の取り出しだけを行う場合は`jq`、"
@@ -865,7 +877,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: 別のシェルへ`-c`でコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                    fix=f"実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
                 ),
                 file=sys.stderr,
             )
@@ -874,7 +886,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: `su -c`へコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                    fix=f"実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
                 ),
                 file=sys.stderr,
             )
@@ -884,7 +896,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             _block_notice(
                 "blocked: `ssh`へ引用したコード文字列を渡す入力は、ローカルと接続先で引用を解釈する。",
                 fix=(
-                    f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを接続先へ転送する。{_FILE_LAUNCH_FORM_PHRASE}"
+                    f"実行するコードを{_TEMP_FILE_SAVE_PHRASE}。保存したファイルを接続先へ転送する。{_FILE_LAUNCH_FORM_PHRASE}"
                 ),
             ),
             file=sys.stderr,
@@ -945,64 +957,12 @@ def _check_bash_python_code_string(command: str) -> bool:
             _block_notice(
                 f"blocked: `python`の`-c`へ渡すコードが{reason}。"
                 "コマンド文字列とコードの引用境界が重なると、コードの改行が失われる。",
-                fix=f"{_SPECIALIZED_COMMAND_FIRST_PHRASE}実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                fix=f"{_SPECIALIZED_COMMAND_FIRST_PHRASE}実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
             ),
             file=sys.stderr,
         )
         return True
     return False
-
-
-def _heredoc_chain_has_conflict(masked: str) -> bool:
-    """heredocの併用が成立するかを、引用の外側の演算子だけから判定する。
-
-    判定入力を引用解決済みの走査結果へ限るため、検索patternなどの引数の内側にある
-    `<<`・パイプ記号・リダイレクト記号を演算子として数えない。
-    追加リダイレクトは、直前が行頭又は空白である位置に現れるものだけを対象とする。
-    ファイル記述子を前置した`2>&1`の形は同じコマンドの出力先の複製であり、
-    heredoc本文の区切りへ作用しないためである。
-    """
-    operators = _unquoted_shell_operators(masked)
-    if operators is None:
-        return _heredoc_chain_has_conflict_by_text(masked)
-    if not any(operator in _HEREDOC_OPERATORS for _, operator in operators):
-        return False
-    return any(
-        operator in _PIPE_OPERATORS or (operator in _REDIRECTION_OPERATORS and (index == 0 or masked[index - 1] in " \t\n"))
-        for index, operator in operators
-    )
-
-
-def _heredoc_chain_has_conflict_by_text(masked: str) -> bool:
-    """引用を解けない入力について、生の文字列の照合で併用を判定する。"""
-    if "<<" not in masked:
-        return False
-    without_heredoc = re.sub(r"<<-?\s*['\"]?[A-Za-z_][A-Za-z_0-9]*['\"]?", "", masked)
-    return re.search(r"\||(?:^|\s)(?:>>?|<)\s*\S", without_heredoc) is not None
-
-
-def _check_bash_heredoc_chain(command: str) -> bool:
-    """heredocと本文外のパイプ又は追加リダイレクトの併用を遮断する。
-
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断を維持する。
-    heredocが未終端のまま次段へ渡ると、本文の一部がコマンドとして解釈され、
-    当該コマンドが削除、上書きなどの復元できない操作を含み得るためである。
-    """
-    masked = _bash_command_parser.mask_heredoc_bodies(command)
-    if not _heredoc_chain_has_conflict(masked):
-        return False
-    print(
-        _block_notice(
-            "blocked: heredocと本文外のパイプ又は追加リダイレクトを同じコマンドチェーンで併用している。",
-            fix=(
-                f"スクリプト又は本文を{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを後続のコマンドの入力にする。"
-                f"{_FILE_LAUNCH_FORM_PHRASE}"
-                "本文を標準入力へ渡すだけであれば、パイプとリダイレクトを伴わないheredoc単独の実行にする。"
-            ),
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 def _check_bash_env_full_read(command: str) -> bool:
