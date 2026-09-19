@@ -27,7 +27,7 @@
   - `Process.Start`は`ProcessStartInfo.ArgumentList`で引数を渡す
   - 信頼できないXMLは`XmlResolver = null`でXXEを無効化し、安全でない復元を避けるため`BinaryFormatter`に代えて`System.Text.Json`やMessagePackを使う
   - 乱数はセキュリティ用途なら`RandomNumberGenerator`、それ以外は`Random.Shared`
-- 対象プロジェクトの`LangVersion`・`TargetFramework`で使える機能は公式ドキュメントで確認する
+- 対象プロジェクトの`LangVersion`・`TargetFramework`で利用できる機能は公式ドキュメントで確認する
   <https://learn.microsoft.com/dotnet/csharp/whats-new/>
 
 ## テストコード（xUnit）

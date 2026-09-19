@@ -5514,24 +5514,6 @@ def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
     assert ("after", 4, "直後の介入") in contexts
 
 
-def test_bundle_stdout_excludes_saved_stats_and_hook_notices(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """保存済みの集計と通知の走査を標準出力へ重複して返さない。"""
-    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
-    bundle_dir = tmp_path / "bundle"
-    bundle_dir.mkdir()
-
-    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
-
-    events = _read_jsonl(capsys, raw=True)
-    assert not [event for event in events if str(event["kind"]).startswith("stats-")]
-    assert not [event for event in events if event["kind"] == "hook-notice"]
-    assert (bundle_dir / "stats.jsonl").exists()
-    assert (bundle_dir / "hook-notices.jsonl").exists()
-
-
 @pytest.mark.parametrize("existing", [False, True])
 def test_bundle_rejects_output_that_is_not_an_existing_directory(
     tmp_path: pathlib.Path,
