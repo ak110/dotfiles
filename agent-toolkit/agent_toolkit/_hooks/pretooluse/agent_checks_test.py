@@ -279,11 +279,11 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         assert "uv run python" in _agent_messages(result)
 
-    def test_repeated_output_truncation_is_corrected(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションで同じ補正種別の2回目以降も、遮断せず同じ変換で補正する。
+    def test_repeated_output_truncation_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションの初回は補正して通し、2回目以降は補正せず遮断する。
 
-        補正は入力から補正後の形を一意に決められるため、反復回数を分岐条件にすると
-        当該ターンのBash呼び出しだけが失われ、反復そのものは止まらない。
+        補正は不成立な入力を成功する入力へ変換するため、反復も許すと実行主体が入力を
+        改めないまま同じ保存と読み戻しを繰り返す。
         """
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
@@ -296,6 +296,9 @@ class TestBashOutputTruncationWarning:
             env,
         )
         assert first.returncode == 0
+        assert first.stdout and json.loads(first.stdout)["hookSpecificOutput"]["updatedInput"]["command"].startswith(
+            "pytest -q > "
+        )
         second = _run(
             {
                 "tool_name": "Bash",
@@ -304,13 +307,8 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 0
-        context = json.loads(second.stdout)["hookSpecificOutput"]
-        assert context["updatedInput"]["command"].startswith("uvx pyfltr run > ")
-        # 同じ原因の2件目以降は、補正の対象と保存先と件数の3点へ短縮する。
-        body = context["additionalContext"]
-        assert "当該コマンド自身が提供する対象の限定" not in body
-        assert "この通知は同一セッションで2件目である。" in body
+        assert second.returncode == 2
+        assert "同じセッションで再び検出した" in second.stderr
 
     def test_status_reference_after_truncation_is_safely_fixed(self, tmp_path: pathlib.Path) -> None:
         """切り詰め除去後の終了状態参照がproducerを指す入力へ補正する。"""
