@@ -23,14 +23,15 @@ def test_configure_logging_reuses_handlers_and_rotation(
     try:
         first = logging_config.configure_logging()
         second = logging_config.configure_logging()
-        file_handlers = [handler for handler in logger.handlers if getattr(handler, "agents_server_file", False)]
+        file_handlers = [handler for handler in logger.handlers if isinstance(handler, logging_config._LogFileHandler)]  # pylint: disable=protected-access  # noqa: SLF001
 
         assert first == second == tmp_path / "agents-server.log"
         assert len(file_handlers) == 1
         assert isinstance(file_handlers[0], RotatingFileHandler)
         assert file_handlers[0].maxBytes == logging_config.LOG_MAX_BYTES
         assert file_handlers[0].backupCount == logging_config.LOG_BACKUP_COUNT
-        assert len([handler for handler in logger.handlers if getattr(handler, "agents_server_stderr", False)]) == 1
+        stderr_handlers = [handler for handler in logger.handlers if isinstance(handler, logging_config._StderrHandler)]  # pylint: disable=protected-access  # noqa: SLF001
+        assert len(stderr_handlers) == 1
     finally:
         for handler in logger.handlers:
             handler.close()

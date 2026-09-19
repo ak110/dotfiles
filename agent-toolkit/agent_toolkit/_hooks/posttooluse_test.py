@@ -17,6 +17,8 @@ import re
 import shlex
 import subprocess
 import types
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -60,8 +62,7 @@ def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch:
         }
     }
 
-    def apply(_session_id: str, mutator: object) -> None:
-        assert callable(mutator)
+    def apply(_session_id: str, mutator: Callable[[dict[str, Any]], object]) -> None:
         mutator(state)
 
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)

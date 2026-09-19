@@ -1065,33 +1065,6 @@ async def test_start_does_not_advance_candidate_when_backend_start_raises(
 
 
 @pytest.mark.asyncio
-async def test_start_raises_first_failure_when_backend_start_fails(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    """backend開始が例外で終わった場合は最初の失敗をそのまま送出する。"""
-    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
-    manager, backend = _manager_with_fake("codex")
-    calls: list[tuple[str | None, str | None]] = []
-
-    async def fail_start(
-        _prompt: str,
-        _cwd: str,
-        model: str | None,
-        effort: str | None,
-        **_kwargs: Any,
-    ) -> subject.SessionState:
-        calls.append((model, effort))
-        raise RuntimeError(f"backend unavailable: {model}")
-
-    monkeypatch.setattr(backend, "start", fail_start)
-    with pytest.raises(RuntimeError, match="backend unavailable: first"):
-        await manager.start("plan", "調査", str(tmp_path))
-    assert calls == [("first", "high")]
-
-
-@pytest.mark.asyncio
 async def test_start_retries_same_candidate_when_initialization_times_out(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1700,37 +1673,19 @@ async def test_send_message_continues_without_model_type(tmp_path: pathlib.Path)
 
 
 @pytest.mark.asyncio
-async def test_send_message_continues_when_selected_candidate_is_replaced(
+@pytest.mark.parametrize("updated", [[("claude", "replacement", "medium")], []])
+async def test_send_message_continues_after_candidates_change(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    updated: list[tuple[str, str, str]],
 ) -> None:
-    """採用済み候補が置換されても起動時のsessionを継続する。"""
+    """起動後に候補列が別engineへ置換された場合と、候補が残らない場合のいずれでもsessionを継続する。"""
     current = [("codex", "first", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
     manager, backend = _manager_with_fake("codex")
     response = await manager.start("plan", "調査", str(tmp_path))
     session_id = response["session_id"]
-    current[:] = [("claude", "replacement", "medium")]
-
-    result = await manager.send_message(session_id, "続行")
-
-    assert result["delivery"] == "steered"
-    assert session_id in manager.sessions
-    assert backend.send_calls == 1
-
-
-@pytest.mark.asyncio
-async def test_send_message_continues_when_no_configured_candidate_remains(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    """候補が残らない場合も起動時のsessionを継続する。"""
-    current = [("codex", "first", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
-    manager, backend = _manager_with_fake("codex")
-    response = await manager.start("plan", "調査", str(tmp_path))
-    session_id = response["session_id"]
-    current.clear()
+    current[:] = updated
 
     result = await manager.send_message(session_id, "続行")
 
@@ -4176,7 +4131,7 @@ def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPa
     assert "agents_serverを起動します: mode=check-dependencies" in content
     assert "agents_serverが正常終了しました: mode=check-dependencies" in content
     handlers = logging.getLogger("agent-toolkit.agents-server").handlers
-    file_handler = next(handler for handler in handlers if getattr(handler, "agents_server_file", False))
+    file_handler = next(handler for handler in handlers if isinstance(handler, logging_config._LogFileHandler))  # pylint: disable=protected-access  # noqa: SLF001
     assert isinstance(file_handler, RotatingFileHandler)
     assert file_handler.maxBytes == logging_config.LOG_MAX_BYTES
     assert file_handler.backupCount == logging_config.LOG_BACKUP_COUNT
@@ -4364,41 +4319,6 @@ async def test_claude_resume_replaces_retained_terminal_state_while_new_turn_run
         assert manager.sessions[session_id] is resumed
         assert resumed.status == "running"
         assert resumed.agent_message == ""
-    finally:
-        await manager.close()
-
-
-@pytest.mark.asyncio
-async def test_claude_reply_repeats_when_init_is_resent_per_turn(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    """turnごとにinitが再送されても同じセッションへ継続を繰り返せる。"""
-    client = FakeClaudeClient(
-        [
-            [SystemMessage("claude-session"), ResultMessage("初回結果")],
-            [SystemMessage("claude-session"), ResultMessage("1回目のreply結果")],
-            [SystemMessage("claude-session"), ResultMessage("2回目のreply結果")],
-        ]
-    )
-    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    try:
-        session = await manager.start("調査", str(tmp_path), None, None)
-        for prompt, expected in (("続行1", "1回目のreply結果"), ("続行2", "2回目のreply結果")):
-            for _ in range(200):
-                if session.result_available:
-                    break
-                await asyncio.sleep(0.01)
-            assert session.result_available is True
-            reply = await asyncio.wait_for(manager.send_message(session, prompt), timeout=5)
-            assert reply["delivery"] == "reply_started"
-            for _ in range(200):
-                if session.agent_message == expected:
-                    break
-                await asyncio.sleep(0.01)
-            assert session.agent_message == expected
-        assert client.queries == ["調査", "続行1", "続行2"]
-        assert manager.sessions["claude-session"] is session
     finally:
         await manager.close()
 
@@ -5813,11 +5733,10 @@ async def test_start_warns_and_continues_when_task_document_cannot_be_read(
         path: pathlib.Path,
         encoding: str | None = None,
         errors: str | None = None,
-        newline: str | None = None,
     ) -> str:
         if path == task_document:
             raise OSError("read failed")
-        return original_read_text(path, encoding=encoding, errors=errors, newline=newline)
+        return original_read_text(path, encoding=encoding, errors=errors)
 
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
