@@ -93,13 +93,38 @@ def test_prepare_does_not_read_queue(
     assert json.loads(captured.out) == {
         "evidence_script": str(pathlib.Path(prepare.__file__).resolve().with_name("session_review_evidence.py")),
         "report_script": str(pathlib.Path(prepare.__file__).resolve().with_name("session_review_report.py")),
+        "plugin_root": str(pathlib.Path(prepare.__file__).resolve().parents[3]),
         "transcript_path": str(transcript.resolve()),
         "codex_thread_id": None,
         "managed_temp": str(managed_temp),
+        "bundle_dir": str(managed_temp / "bundle"),
         "observation_boundary": "2026-09-06T12:34:56Z",
         "target_repo": str(target_repo.resolve()),
+        "reference_document": None,
     }
+    assert (managed_temp / "bundle").is_dir()
     assert _calls(log_path) == [["managed-temp", "create", "--prefix", "session-review"]]
+
+
+def test_prepare_resolves_the_project_reference_document(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対象リポジトリ固有の参照文書が実在する場合は、その絶対パスを返す。"""
+    _install_atk_stub(monkeypatch, tmp_path)
+    transcript = _write_transcript(tmp_path)
+    target_repo = tmp_path / "target-repo"
+    target_repo.mkdir()
+    home = tmp_path / "home"
+    document = home / ".claude" / "docs" / "session-review-target-repo.md"
+    document.parent.mkdir(parents=True)
+    document.write_text("# 観点\n", encoding="utf-8")
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: home))
+
+    assert prepare.main(["--transcript", str(transcript), "--target-repo", str(target_repo)], now=_FIXED_NOW) == 0
+
+    assert json.loads(capsys.readouterr().out)["reference_document"] == str(document)
 
 
 def test_prepare_omits_target_repo(

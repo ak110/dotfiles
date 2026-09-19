@@ -2724,7 +2724,9 @@ def _bundle_events(
     hook_notices = _hook_notice_events([record for item in collected for record in item.records])
     candidates = _candidate_events(timeline, warnings, _hook_notice_candidate_events(collected))
 
-    candidate_evidence = _candidate_evidence_events(collected, candidates, timeline, warnings, hook_notices)
+    candidate_evidence = _write_candidate_evidence_files(
+        resolved, _candidate_evidence_events(collected, candidates, timeline, warnings, hook_notices)
+    )
     events: list[dict[str, Any]] = []
     scans = (timeline, warnings, stats, hook_notices, candidates, candidate_evidence)
     for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, scans, strict=True):
@@ -2876,6 +2878,40 @@ def _candidate_events(
             "excluded": dict(sorted(excluded.items())),
         },
     ]
+
+
+_CANDIDATE_EVIDENCE_DIRNAME = "candidate-evidence"
+"""候補ごとの証拠を保存するbundle直下のディレクトリ名。"""
+
+
+def _write_candidate_evidence_files(directory: Path, evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """候補ごとの証拠を個別ファイルへ保存し、索引の行を返す。
+
+    完全分析は候補単位で行うため、証拠の保存単位も候補単位とする。
+    1ファイルへ集約すると、消費側は全候補の長文証拠を読み込むか、
+    出力上限に達した後で範囲を指定して取得し直すことになる。
+    索引は候補ID、証拠件数、個別ファイルの相対パス及び総文字数を持ち、
+    一次選別で除外した候補の本文を読まずに完全分析の対象を選べるようにする。
+    """
+    evidence_dir = directory / _CANDIDATE_EVIDENCE_DIRNAME
+    evidence_dir.mkdir(exist_ok=True)
+    index: list[dict[str, Any]] = []
+    for item in evidence:
+        candidate_id = str(item["candidate_id"])
+        body = json.dumps(item, ensure_ascii=False)
+        (evidence_dir / f"{candidate_id}.json").write_text(f"{body}\n", encoding="utf-8")
+        index.append(
+            {
+                "kind": "candidate-evidence-index",
+                "candidate_id": candidate_id,
+                "analysis_group_hint": item["analysis_group_hint"],
+                "locators": item["locators"],
+                "evidence_count": len(item["events"]),
+                "path": f"{_CANDIDATE_EVIDENCE_DIRNAME}/{candidate_id}.json",
+                "total_chars": len(body),
+            }
+        )
+    return index
 
 
 def _candidate_evidence_events(

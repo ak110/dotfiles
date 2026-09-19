@@ -119,6 +119,35 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     )
 
 
+def test_sections_input_fills_every_free_section(tmp_path: pathlib.Path) -> None:
+    """自由記述の節を入力から生成し、生成後の部分編集を要さない。"""
+    paths = _inputs(tmp_path)
+    sections = tmp_path / "sections.json"
+    bodies = {heading: f"{heading}の本文" for heading in report.FREE_SECTION_HEADINGS}
+    sections.write_text(json.dumps(bodies, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main([*_argv(paths, "generate"), "--sections", str(sections)]) == 0
+    assert report.main([*_argv(paths, "check"), "--sections", str(sections)]) == 0
+
+    content = paths[-1].read_text(encoding="utf-8")
+    for heading, body in bodies.items():
+        assert body in content
+        assert report._section_body(content, heading) == body  # pylint: disable=protected-access  # noqa: SLF001
+    assert (
+        tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS
+    )
+
+
+def test_sections_input_rejects_an_unknown_heading(tmp_path: pathlib.Path) -> None:
+    """受理しない節名を渡した場合は報告を生成せず終了コード2で終わる。"""
+    paths = _inputs(tmp_path)
+    sections = tmp_path / "sections.json"
+    sections.write_text(json.dumps({"問題候補の判定記録": "上書き"}, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main([*_argv(paths, "generate"), "--sections", str(sections)]) == 2
+    assert not paths[-1].exists()
+
+
 def test_check_accepts_delegate_authored_section_content(tmp_path: pathlib.Path) -> None:
     """担当が機械生成部分を維持して各節へ追記した報告を受理する。"""
     paths = _inputs(tmp_path)

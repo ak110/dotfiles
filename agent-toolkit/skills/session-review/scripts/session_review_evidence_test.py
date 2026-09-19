@@ -5252,11 +5252,14 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     assert candidates[-1]["excluded"] == {"hook-notice-informational": 1, "initial-request": 1}
     assert candidates[-1]["included_locator_count"] == 2
     assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 3} in bundle_events
-    candidate_evidence = [
+    evidence_index = [
         json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
     ]
+    assert [item["candidate_id"] for item in evidence_index] == ["c0001", "c0002"]
+    assert [item["locators"] for item in evidence_index] == [item["locators"] for item in candidate_items]
+    assert all(item["evidence_count"] > 0 and item["total_chars"] > 0 for item in evidence_index)
+    candidate_evidence = [json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8")) for item in evidence_index]
     assert [item["candidate_id"] for item in candidate_evidence] == ["c0001", "c0002"]
-    assert [item["locators"] for item in candidate_evidence] == [item["locators"] for item in candidate_items]
     assert all(item["events"] for item in candidate_evidence)
     assert all(item["text_limit"] == 2000 and item["user_context_limit_per_side"] == 1 for item in candidate_evidence)
     assert all(item["source_chars"] > 0 for item in candidate_evidence)
@@ -5395,6 +5398,82 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
     ]
 
 
+def test_bundle_writes_one_evidence_file_per_candidate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """候補数が多い場合も、全候補IDへ対応する個別ファイルを索引から解決できる。"""
+    entries: list[dict[str, object]] = [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}]
+    for index in range(12):
+        entries.append(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": f"call-{index}", "is_error": True, "content": f"失敗{index}"}
+                    ],
+                },
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    capsys.readouterr()
+    evidence_index = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert evidence_index
+    for item in evidence_index:
+        body = json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8"))
+        assert body["candidate_id"] == item["candidate_id"]
+        assert body["events"]
+
+
+def test_candidate_evidence_file_holds_only_its_own_candidate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """1候補の証拠が大きい場合も、個別ファイルへ別候補の証拠を混ぜない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "最初の依頼"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": "あ" * 4000}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-2", "is_error": True, "content": "別の失敗"}],
+                },
+            },
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    capsys.readouterr()
+    evidence_index = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(evidence_index) >= 2
+    for item in evidence_index:
+        body = json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8"))
+        assert {locator["line"] for locator in body["locators"]} == {locator["line"] for locator in item["locators"]}
+        assert all(event.get("record") is not None for event in body["events"])
+
+
 def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -5421,9 +5500,10 @@ def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
     assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
 
     capsys.readouterr()
-    candidate_evidence = [
+    evidence_index = [
         json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
     ]
+    candidate_evidence = [json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8")) for item in evidence_index]
     contexts = [
         (event["direction"], event["line"], event["text"])
         for item in candidate_evidence
