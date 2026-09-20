@@ -56,7 +56,7 @@ _REQUIRED_CLAUSES = (
     ),
     (
         "parent",
-        "`検証・CI方針`が`通常`の場合、`overall_verification`が`CI判定`又は`ローカル成功`である。",
+        "`overall_verification`が`CI判定`又は`ローカル成功`のいずれかだけ",
     ),
     (
         "parent",
@@ -95,8 +95,7 @@ _REQUIRED_CLAUSES = (
     ),
     (
         "subagent",
-        "overall_verification: <通常はCI判定又はローカル成功。即時対応は近接検証のコマンドと終了コードを併記する。"
-        "いずれも統合後にだけ成立する検査の終了コードと警告の有無を併記する>",
+        "overall_verification: <通常は「CI判定」又は「ローカル成功」のいずれかだけ。",
     ),
     (
         "subagent",
@@ -104,7 +103,7 @@ _REQUIRED_CLAUSES = (
     ),
     (
         "subagent",
-        "terminal_steps: <実行した工程と対象。即時対応は省略した全体検査と正式対応AWIも併記する。無い場合は「なし」>",
+        "terminal_steps: <実行した工程と対象。統合後にだけ成立する検査は検査名、終了コード及び警告の有無。",
     ),
 )
 

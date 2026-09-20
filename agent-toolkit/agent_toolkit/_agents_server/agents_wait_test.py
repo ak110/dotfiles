@@ -599,6 +599,28 @@ def test_agents_wait_releases_registered_session_missing_from_registry(
     assert error is None
 
 
+def test_agents_wait_collects_registered_terminal_result_and_releases_target(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PostToolUseが保持した対象の終端結果を回収し、待機対象登録を解除する。"""
+    state_root = wait_environment.parents[2]
+    status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
+    wait_environment.mkdir(parents=True)
+    (wait_environment / "session-1.json").write_text(
+        json.dumps({"status": "completed"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-1"}
+    retained, error = status_file.read_wait_targets("root-session", "root.json", state_root)
+    assert retained == set()
+    assert error is None
+
+
 def test_agents_wait_releases_corrupted_wait_target(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

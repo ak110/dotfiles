@@ -55,7 +55,7 @@ class TestCodexApplyPatchEditChecks:
         assert "colloquial" not in _agent_messages(result)
 
     def test_multiple_warnings_are_merged_into_single_json(self, tmp_path: pathlib.Path) -> None:
-        """複数対象の警告を1つのadditionalContextへ結合する。"""
+        """同一入力の初回警告をJSON、反復警告をblock通知として返す。"""
         home = str(pathlib.Path.home())
         patch_text = _patch(
             f"*** Add File: src/one.py\n+first = '{home}/a'\n",
@@ -63,9 +63,12 @@ class TestCodexApplyPatchEditChecks:
         )
         result = _run(_codex_payload(patch_text, tmp_path))
 
-        assert result.returncode == 0
+        assert result.returncode == 2
         assert len(result.stdout.strip().splitlines()) == 1
         assert _additional_context(result).count("ホームディレクトリの絶対パス") == 2
+        assert result.stderr.count("ホームディレクトリの絶対パス") == 2
+        assert "この通知は同一セッションで2件目である" in result.stderr
+        assert "Fix:" in result.stderr
 
     def test_mojibake_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
         """patch本文の文字化けを警告する。編集対象は再編集で復元できる。"""

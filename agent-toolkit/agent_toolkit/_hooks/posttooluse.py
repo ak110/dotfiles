@@ -17,7 +17,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
-6. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録
+6. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
 7. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)
 8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
@@ -286,10 +286,9 @@ _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
+_AGENTS_SERVER_START_OPERATIONS = frozenset(("start", "start_custom", "start_explore", "start_write", "start_shell"))
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}"
-    for namespace in _AGENTS_SERVER_NAMESPACES
-    for tool in ("start", "start_custom", "start_explore", "start_write", "start_shell")
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in _AGENTS_SERVER_START_OPERATIONS
 )
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
@@ -525,7 +524,7 @@ def _record_agents_server_session_state(
         record.update({"session_id": remote_session_id, "status": status})
         if model_type is not None:
             record["model_type"] = model_type
-        if operation in {"start", "start_custom", "start_explore", "start_write", "start_shell"}:
+        if operation in _AGENTS_SERVER_START_OPERATIONS:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
@@ -564,9 +563,16 @@ def _record_agents_server_session_state(
         return state if changed else None
 
     update_state(session_id, _mutator)
-    if operation in {"start", "start_custom", "start_explore", "start_shell"} and not os.environ.get(
-        "AGENT_TOOLKIT_OWNER_SESSION"
-    ):
+    starts_reply = operation == "send_message" and structured.get("delivery") in {"reply_started", "reply_ambiguous"}
+    if operation in _AGENTS_SERVER_START_OPERATIONS or starts_reply:
+        identity = _agents_server_status_file.resolve_status_file_identity(os.environ)
+        if identity is not None and _agents_server_status_file.valid_session_id(remote_session_id):
+            _agents_server_status_file.retain_wait_targets(
+                identity.root_session_id,
+                identity.file_name,
+                [remote_session_id],
+            )
+    if operation in _AGENTS_SERVER_START_OPERATIONS and not os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
         root_session_id = _agents_server_status_file.find_root_session_id_for_session(remote_session_id)
         if root_session_id is not None:
             _agents_server_status_file.write_root_alias(session_id, root_session_id)

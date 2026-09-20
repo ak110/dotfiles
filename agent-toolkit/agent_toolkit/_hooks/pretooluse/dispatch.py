@@ -144,7 +144,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
 )
 
 # pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id  # noqa: E402
+from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
@@ -340,6 +340,13 @@ def main(payload_text: str) -> int:
         同じ入力を再試行しても通知が再生成されず失われる。
         exit 2のstderrはコーディングエージェントへ届くため、遮断理由と同じ経路で出力する。
         """
+        warning_blocks = consume_warning_blocks()
+        if warning_blocks:
+            if pending_notices:
+                print("\n".join(pending_notices), file=sys.stderr)
+                pending_notices.clear()
+            print("\n".join(warning_blocks), file=sys.stderr)
+            return 2
         if code == 2 and pending_notices:
             print("\n".join(pending_notices), file=sys.stderr)
             pending_notices.clear()
@@ -369,13 +376,13 @@ def main(payload_text: str) -> int:
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
             _reset_plan_mode_state(session_id)
         flush_pending_notices()
-        return 0
+        return exit_with(0)
 
     if tool_name in _AGENTS_SERVER_LIST_TOOLS:
         if _check_agents_server_list_repeat(session_id):
             return exit_with(2)
         flush_pending_notices()
-        return 0
+        return exit_with(0)
 
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         return exit_with(_handle_agents_server_tool(payload, tool_name, tool_input, session_id, emit_json))
@@ -396,28 +403,28 @@ def main(payload_text: str) -> int:
         if _check_task_stop(session_id, tool_input):
             return exit_with(2)
         flush_pending_notices()
-        return 0
+        return exit_with(0)
 
     if tool_name == "WebFetch":
         notice = _check_webfetch_verbatim_request(tool_input)
         if notice is not None:
             pending_notices.append(notice)
         flush_pending_notices()
-        return 0
+        return exit_with(0)
 
     if tool_name == "SendMessage":
         notice = _check_sendmessage_agent_type_recipient(tool_input)
         if notice is not None:
             pending_notices.append(notice)
         flush_pending_notices()
-        return 0
+        return exit_with(0)
 
     if tool_name in {"Agent", "Task"}:
         notice = _check_generic_agent_preference(tool_input)
         if notice is not None:
             pending_notices.append(notice)
         flush_pending_notices()
-        return 0
+        return exit_with(0)
 
     if tool_name == "Read":
         file_path = tool_input.get("file_path", "")
@@ -437,10 +444,10 @@ def main(payload_text: str) -> int:
                     }
                 }
             )
-            return 0
+            return exit_with(0)
         record_atk_help_paths_from_read(tool_input, cwd, session_id)
         flush_pending_notices()
-        return 0
+        return exit_with(0)
 
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex))
 

@@ -8,6 +8,10 @@ auto modeのカスタムルールを追加・編集する手順は`agent-toolkit
 拒否を観測したら、別の手段で迂回する前に有効な設定ファイルを`Read`して許可・拒否のルールを確認する。
 対象は`/etc/claude-code/managed-settings.json`、`~/.claude/settings.json`、リポジトリ直下の`.claude/settings.json`及び`.claude/settings.local.json`とする。
 
+拒否された操作を、有効な`autoMode.allow`の各規則について、対象操作、適用条件及び信頼境界の包含関係で照合する。
+対応するallow規則がある場合は、拒否本文の分類名又は意味上の一致とは独立に偽陽性の可能性が高い条件として扱う。
+分類名との意味上の一致を理由にallow規則との照合を省かない。`hard_deny`に属する操作は偽陽性フローの対象から外す。
+
 権限評価は、permissionsルール（deny→ask→allowの順で最初の一致が確定）、作業ディレクトリ内編集等の自動承認、auto mode classifierの順に進む。
 PreToolUseフックの`permissionDecision: "allow"`より前にpermissions評価が確定する。
 このため、拒否ルールに該当する対象は、許可の追加ではなく拒否ルール自体の見直しで解消する。
@@ -25,6 +29,7 @@ permissions設定による確認ダイアログが対象の場合は本書の範
 | 自身が作成したHEADへの`git commit --amend` | Git Destructive | 許可ルール`Personal Repository Operations`が対象に含む。拒否が残る場合は後掲の偽陽性フローへ進む |
 | MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | 同じルールが対象に含む。remoteのホストによる限定は置いていない |
 | リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 同じルールが起動と結果確認を対象に含む |
+| コンテナー又はサービスの再作成 | Interfere With Workloads等 | 許可ルール`Reversible Change Approval`が、利用者本人の環境で変更前の構成を復元できる再作成を対象に含む |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
 | `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | 許可ルール`Session And Delegation Control`が対象に含む |
 | ユーザーの指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | 許可ルール`Reconsidered Retry Approval`により、拒否本文とユーザーメッセージを照合して同一のコマンド・引数・ツールを1回だけ再発行する |
@@ -46,7 +51,7 @@ auto mode classifierによる拒否は対象操作の実行自体を妨げる技
 
 メイン・サブエージェントのいずれが発行した操作にも適用する。
 対象操作は`git commit`、`git commit --amend`、`Write`／`Edit`／`MultiEdit`によるファイル編集、GitHubリポジトリ設定変更等の外部サービスの設定変更コマンドを含む（代表例であり、同種の操作を含む開放集合とする）。
-適用条件は、ユーザー又は処理中のAWIでその操作が承認済みであると実体確認でき、拒否理由がその承認を反映していないと判断できる場合とする。適用範囲は`hard_deny`領域の外とする。
+適用条件は、ユーザー又は処理中のAWIでその操作が承認済みであると実体確認でき、拒否理由がその承認を反映していないと判断できる場合、又は有効なallow規則が対象操作を含む場合とする。両条件は独立に判定し、いずれかが成立した操作を偽陽性の可能性が高い対象として扱う。適用範囲は`hard_deny`領域の外とする。
 
 1. 拒否理由をメッセージ本文で確認する。分類名を取得できる場合は分類名と本文を記録する。`claude auto-mode defaults`自体が拒否されて分類名を取得できない場合は、拒否メッセージ本文を根拠として手順2へ進む
 2. 偽陽性の可能性が高い場合、`AskUserQuestion`で次の選択肢を提示する。拒否経緯の説明と選択肢の説明文は要点だけとし、判断材料の詳細はターン内のテキスト出力側へ置く（auto mode classifierの拒否はほとんどが偽陽性であり、確認自体を簡潔に保つ）

@@ -1447,7 +1447,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert "計画ファイルを作成しないまま" in _agent_messages(blocked)
 
     def test_third_target_edit_warns(self, tmp_path: pathlib.Path):
-        """3件目以降も遮断せず警告を返す。検出条件は格下げ前と同じ件数で成立する。"""
+        """同じ原因の警告2件目以降を遮断し、検出条件は従来と同じ件数で成立する。"""
         sid = "direct-edit-block"
         self._write_flag_state(tmp_path, sid)
         env = self._state_env(tmp_path)
@@ -1462,12 +1462,15 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 },
                 env_overrides=env,
             )
-            assert result.returncode == 0
             if i == 0:
+                assert result.returncode == 0
                 assert "計画ファイルを作成しないまま" not in _agent_messages(result)
-            else:
+            elif i == 1:
+                assert result.returncode == 0
                 assert "計画ファイルを作成しないまま" in _agent_messages(result)
-                assert "計画ファイルを作成しないまま" not in result.stderr
+            else:
+                assert result.returncode == 2
+                assert "計画ファイルを作成しないまま" in _agent_messages(result)
 
     def test_counter_advances_after_third_target_edit(self, tmp_path: pathlib.Path):
         """3件目以降もカウンタと直前パスを更新し、同一パスの再試行では警告を再生成しない。"""
@@ -1485,7 +1488,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 },
                 env_overrides=env,
             )
-            assert result.returncode == 0
+            assert result.returncode == (2 if edit_name == "baz/SKILL.md" else 0)
         third = self._target(tmp_path, "baz/SKILL.md")
         retried = _run(
             {
