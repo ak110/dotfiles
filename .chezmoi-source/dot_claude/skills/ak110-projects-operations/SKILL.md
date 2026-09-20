@@ -54,7 +54,7 @@ description: >
 - Node.js設定: `package.json`
 - lint/format: `.pre-commit-config.yaml`
 - CI: `.github/workflows/**`
-- ドキュメント: `README.md` / `CLAUDE.md` / `docs/**/development.md` / `docs/**/security.md`
+- ドキュメント: `README.md` / `AGENTS.md` / `docs/**/development.md` / `docs/**/security.md`
 
 ## 追従作業と複数リポジトリ横断投入
 
@@ -191,7 +191,7 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 
 ## ドキュメント章構成の統一
 
-README.md・CLAUDE.md・docs/development/development.mdの標準章構成・共通文面・記述基準・バッジ記法は
+README.md・AGENTS.md・docs/development/development.mdの標準章構成・共通文面・記述基準・バッジ記法は
 [references/doc-structure.md](references/doc-structure.md)が定める。
 ドキュメント構成を変更・同期する場合は同ファイルを読む。
 
@@ -202,14 +202,14 @@ README.md・CLAUDE.md・docs/development/development.mdの標準章構成・共�
 - ツールチェイン周りの修正では、「足回りファイルの推奨設定維持」節が挙げる推奨ガイドのメンテナンスも確認する（気付きにくい）
 - 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を
   発見したらdotfiles側を修正する（マスター）
-- README.md・CLAUDE.md・docs/development/development.md間で、
+- README.md・AGENTS.md・docs/development/development.md間で、
   共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
 - Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能
 - Makefileではなく`mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
-- `package.json`の`lint`/`lint:fix`スクリプトは`CLAUDE.md`もtextlint/markdownlint-cli2対象に含めている
+- `package.json`の`lint`/`lint:fix`スクリプトは`AGENTS.md`もtextlint/markdownlint-cli2対象に含める
   - 新規Node系プロジェクトでも同様に設定する
 - cargo-denyの導入は`taiki-e/install-action@v2`と`with: tool: cargo-deny`を用い、
   actionをpinactのハッシュピン対象にする。

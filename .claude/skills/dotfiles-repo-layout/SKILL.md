@@ -24,7 +24,7 @@ description: >
   - 配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント
   - 全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`AGENTS.md`もロードする
-   （Claude Codeは`CLAUDE.md`経由のfile importで読む）
+   （Claude Code 2.1.277以上は`AGENTS.md`を直接読む）
 
 各ファイル群の対象読者と役割。
 
@@ -35,7 +35,7 @@ description: >
 | `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |
 | `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |
 | `.claude/`（リポジトリ直下） | dotfiles編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
-| `AGENTS.md`（リポジトリ直下） | dotfiles編集者 | 本リポジトリの入口。`CLAUDE.md`は`@AGENTS.md`importの1行アダプター |
+| `AGENTS.md`（リポジトリ直下） | dotfiles編集者 | 本リポジトリの入口 |
 | `pytools/`・`bin/`・`scripts/` | dotfiles利用者・dotfiles編集者 | コマンドラインツールと開発スクリプト |
 
 ## ディレクトリ構造の注意
@@ -69,7 +69,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
   改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
   旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
 - `AGENTS.md`（本リポジトリルート）: dotfiles編集者向けの入口。Claude Code／Codex双方がここを読む
-  - `CLAUDE.md`は`@AGENTS.md`をimportする1行のみのアダプター
+  - `CLAUDE.md`は置かず、`AGENTS.md`をホスト共通の正本とする
 
 ## 変更後の規範の自セッション適用
 

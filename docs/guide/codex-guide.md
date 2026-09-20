@@ -166,7 +166,7 @@ WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版�
 - `~/.codex/skills/*`: `.chezmoi-source/dot_claude/skills/*`のうちdotfiles固有のグローバルスキルへのシンボリックリンク。agent-toolkit skillsはCodex plugin marketplace経由で配布する
 - プロジェクト直下の`.agents/skills`: プロジェクト専用スキルディレクトリへのシンボリックリンク
 
-CodexはClaude Codeの`CLAUDE.md`や`.claude/rules/`を同じ読み込み規則では扱わない。
+CodexとClaude Code 2.1.277以上は、プロジェクト指示の正本として`AGENTS.md`を共用できる。
 そのため、常時ロードの入口は`AGENTS.md`へ集約し、本文は原本ファイルを参照する形にする。
 ファイルコピーで同期すると改訂漏れが発生するため、共有対象はリンクで配布する。
 chezmoiの`symlink_`はWindowsで特権不足により失敗するため採用しない。
@@ -182,6 +182,6 @@ Codexでは同じ挙動を前提にできないため、Codex側のプロジェ�
 agent-toolkitのMarkdownルールは`~/.codex/agent-toolkit/rules`に配置する。
 
 プロジェクト固有設定は、原則として`AGENTS.md`を実体ファイル、
-`CLAUDE.md`をClaude Codeのfile import記法`@AGENTS.md`を含むアダプターとして配置する。
+`CLAUDE.md`アダプターは配置せず、`AGENTS.md`単一実体に統一する。
 両方を実体ファイルとすることで、コピー欠落やシンボリックリンク非対応環境での事故を回避する。
 Codex専用の差分が必要な場合のみ、`AGENTS.md`本体に分岐記述を追加する。
