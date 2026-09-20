@@ -1642,6 +1642,12 @@ class TestForeignScriptMixin:
         assert result.returncode == 0
         assert "日本語以外の文字" in _agent_messages(result)
 
+    def test_warns_simplified_han_in_japanese(self):
+        """日本語を含む文字列への簡体字専用字の混入を警告する。"""
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "行动を確認する"}})
+        assert result.returncode == 0
+        assert "簡体字専用字" in _agent_messages(result)
+
     def test_warns_hangul_in_user_facing_text(self):
         """ユーザーが直接読む本文への混入も、ユーザーが読み取って是正できるため警告に留める。"""
         content = "テスト" + _HANGUL_SAMPLE + "名を確認する"
@@ -1660,6 +1666,12 @@ class TestForeignScriptMixin:
         content = "test" + _CYRILLIC_SAMPLE + "name"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
         assert result.returncode == 0
+
+    def test_passes_chinese_without_japanese_script(self):
+        """簡体字だけの中国語本文は既存の多言語除外契約に従い通過する。"""
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "行动"}})
+        assert result.returncode == 0
+        assert "簡体字専用字" not in _agent_messages(result)
 
 
 class TestBodySectionReferenceExists:

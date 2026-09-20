@@ -1269,7 +1269,13 @@ class TestUserFacingTypoCheck:
 
     @pytest.mark.parametrize(
         ("detected", "replacement"),
-        [("番面", "画面"), ("迲回", "迂回"), ("模型定義", "モデル定義")],
+        [
+            ("番面", "画面"),
+            ("迲回", "迂回"),
+            ("模型定義", "モデル定義"),
+            ("行动", "行動"),
+            ("挺動", "挙動"),
+        ],
     )
     def test_typo_in_user_facing_text_warns(self, detected: str, replacement: str) -> None:
         result = _run(_user_facing_payload("question", f"{detected}の説明を確認してください。"))

@@ -2335,3 +2335,111 @@ class TestBashGitGrepBasicAlternation:
         messages = _agent_messages(result)
         assert "いずれの種別も指定していない" not in messages
         assert "基本正規表現は当該表記を選択として解釈しない" not in messages
+
+
+class TestBashBoundaryAndPathRegressions:
+    """Bashの外側境界、URI、書込先及びオプション契約の回帰検体。"""
+
+    @staticmethod
+    def test_nested_operators_do_not_trigger_truncation_autofix(tmp_path: pathlib.Path) -> None:
+        command = f"stat -c '%y %n' $(ls -t {tmp_path}/*.jsonl 2>/dev/null | head -3)"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        output = json.loads(result.stdout or "{}")
+        assert "updatedInput" not in output.get("hookSpecificOutput", {})
+
+    @staticmethod
+    def test_invalid_rewrite_is_not_returned(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """補正処理が不正な構文を生成しても`updatedInput`候補として返さない。"""
+        monkeypatch.setattr(
+            shell_checks,
+            "_autofix_missing_paths",
+            lambda _command, _cwd: ("echo $(", ("absent.txt",)),
+        )
+        assert (
+            shell_checks._autofix_bash_command(  # pylint: disable=protected-access
+                "wc -l absent.txt present.txt",
+                str(tmp_path),
+                "syntax-gate",
+            )
+            is None
+        )
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "value=$(printf x; printf y); echo $value",
+            "diff <(printf x | cat) <(printf y | cat); echo done",
+            "(printf x && printf y); echo done",
+            "value=`printf x | cat`; echo $value",
+        ],
+    )
+    def test_nested_operators_are_not_serial_boundaries(command: str) -> None:
+        assert len(shell_checks._split_serial_shell_commands(command)) == 2  # pylint: disable=protected-access
+
+    @staticmethod
+    def test_uri_is_not_a_local_path_but_local_operand_is(tmp_path: pathlib.Path) -> None:
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "wc -l https://example.invalid/a absent.txt"},
+                "cwd": str(tmp_path),
+            }
+        )
+        messages = _agent_messages(result)
+        assert "absent.txt" in messages
+        assert "https://example.invalid/a" not in messages
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "atk wi list --output-file report.txt; wc -l report.txt",
+            "atk wi list --output-file=report.txt; wc -l report.txt",
+        ],
+    )
+    def test_atk_output_file_is_created_for_later_segment(command: str, tmp_path: pathlib.Path) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    @staticmethod
+    def test_missing_path_guidance_explains_resolution_and_absence_check(tmp_path: pathlib.Path) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "wc -l absent.txt"}, "cwd": str(tmp_path)})
+        messages = _agent_messages(result)
+        assert "`rg --files`" in messages
+        assert "`find`" in messages
+        assert "`test -e`" in messages
+
+    @staticmethod
+    def test_rg_ambiguous_valued_short_option_warns(tmp_path: pathlib.Path) -> None:
+        session_id = "rg-ambiguous-valued-short"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"external_command_option_contracts": {"rg": {"flags": ["-n"], "valued": ["-r", "-m"]}}},
+        )
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "rg -rn needle ."}, "cwd": str(tmp_path), "session_id": session_id},
+            _plan_file_state_env(tmp_path),
+        )
+        assert "曖昧な形" in _agent_messages(result)
+
+    @staticmethod
+    def test_arithmetic_expansion_does_not_warn(tmp_path: pathlib.Path) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "echo $((1 + 2))"}, "cwd": str(tmp_path)})
+        assert "語の内側に引用されていない" not in _agent_messages(result)
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "printf data > artifact.txt; bash -c 'echo nested'",
+            "printf data > artifact.txt; python -c 'x = 1; print(x)'",
+        ],
+    )
+    def test_blocked_code_chain_explains_prior_artifact_is_absent(command: str, tmp_path: pathlib.Path) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 2
+        assert "呼び出し全体を実行しない" in result.stderr
+        assert "成果物も未作成" in result.stderr

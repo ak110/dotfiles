@@ -335,6 +335,8 @@ class TestBashSleepPollPattern:
         )
         assert result.returncode == 0
         assert "反復ポーリングになる可能性" in _additional_context(result)
+        assert "`sleep`を単独で実行" in _additional_context(result)
+        assert "02-agent-operations.md" in _additional_context(result)
 
     def test_second_detection_in_same_session_blocks(self, tmp_path: pathlib.Path) -> None:
         session_id = "sleep-poll-repeat-test"
@@ -351,6 +353,8 @@ class TestBashSleepPollPattern:
         assert second.returncode == 2
         assert "完了通知" in second.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
+        assert "`sleep`を単独で実行" in second.stderr
+        assert "02-agent-operations.md" in second.stderr
 
     @pytest.mark.parametrize(
         ("command", "session_id"),

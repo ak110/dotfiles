@@ -317,11 +317,15 @@ def _single_unquoted_pipe_index(masked: str) -> int | None:
     返す位置は元のコマンド文字列へそのまま適用できる。
     """
     positions: list[int] = []
+    nested = _bash_command_parser.nested_shell_positions(masked)
     scanner = QuotingScanner(masked)
     while scanner.index < len(masked):
         if scanner.consume_quoted():
             continue
         index = scanner.index
+        if index in nested:
+            scanner.index += 1
+            continue
         char = masked[index]
         if char in {"'", '"'}:
             scanner.enter_quote(char)
@@ -372,6 +376,9 @@ class _OptionScan:
     positionals: tuple[str, ...]
     """位置引数として扱ったトークン。"""
 
+    ambiguous_option: str | None = None
+    """値付き短縮オプションとフラグ連結の両方に解釈できる最初のトークン。"""
+
 
 def _is_accepted_option_form(
     token: str,
@@ -415,6 +422,7 @@ def _scan_accepted_options(
     valued_set = frozenset(valued)
     positionals: list[str] = []
     unknown: str | None = None
+    ambiguous: str | None = None
     index = 0
     while index < len(arguments):
         token = arguments[index]
@@ -422,6 +430,10 @@ def _scan_accepted_options(
             positionals.extend(arguments[index + 1 :])
             break
         option_name = token.split("=", 1)[0]
+        attached_value = _attached_short_value_option(token, valued_set)
+        if attached_value is not None and all(f"-{character}" in flag_set for character in token[len(attached_value) :]):
+            ambiguous = token
+            break
         if token in flag_set or option_name in valued_set:
             if option_name in valued_set and "=" not in token:
                 index += 1
@@ -433,7 +445,7 @@ def _scan_accepted_options(
         else:
             positionals.append(token)
         index += 1
-    return _OptionScan(unknown, tuple(positionals))
+    return _OptionScan(unknown, tuple(positionals), ambiguous)
 
 
 def _shares_option_prefix(token: str, option: str) -> bool:
@@ -812,6 +824,21 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
     rewritten_command = command_after_path_fix
     for start, end, replacement in reversed(replacements):
         rewritten_command = rewritten_command[:start] + replacement + rewritten_command[end:]
+    try:
+        syntax = subprocess.run(  # noqa: S603
+            ["bash", "-n"],
+            input=rewritten_command,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if syntax.returncode != 0:
+        return None
     unique_notices = list(dict.fromkeys(notices))
     body = " ".join(unique_notices)
     summary: str | None = None
@@ -855,6 +882,10 @@ _SPECIALIZED_COMMAND_FIRST_PHRASE = (
 _NESTED_SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
 _ENV_READ_COMMANDS = frozenset({"cat", "head", "less", "more", "tail", "xxd"})
 _ENV_BASENAME_PATTERN = re.compile(r"^\.env(?:\..+)?$")
+_BLOCKED_CHAIN_ARTIFACT_GUIDANCE = (
+    "この遮断では呼び出し全体を実行しないため、同じ呼び出しの先行工程による成果物も未作成である。"
+    "後続工程が読む成果物は、別の呼び出しで先に作成する。"
+)
 
 
 def _check_bash_nested_code_string(command: str) -> bool:
@@ -877,7 +908,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: 別のシェルへ`-c`でコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix=f"実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                    fix=f"{_BLOCKED_CHAIN_ARTIFACT_GUIDANCE}実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
                 ),
                 file=sys.stderr,
             )
@@ -886,7 +917,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: `su -c`へコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix=f"実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                    fix=f"{_BLOCKED_CHAIN_ARTIFACT_GUIDANCE}実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
                 ),
                 file=sys.stderr,
             )
@@ -896,7 +927,8 @@ def _check_bash_nested_code_string(command: str) -> bool:
             _block_notice(
                 "blocked: `ssh`へ引用したコード文字列を渡す入力は、ローカルと接続先で引用を解釈する。",
                 fix=(
-                    f"実行するコードを{_TEMP_FILE_SAVE_PHRASE}。保存したファイルを接続先へ転送する。{_FILE_LAUNCH_FORM_PHRASE}"
+                    f"{_BLOCKED_CHAIN_ARTIFACT_GUIDANCE}実行するコードを{_TEMP_FILE_SAVE_PHRASE}。"
+                    f"保存したファイルを接続先へ転送する。{_FILE_LAUNCH_FORM_PHRASE}"
                 ),
             ),
             file=sys.stderr,
@@ -957,7 +989,10 @@ def _check_bash_python_code_string(command: str) -> bool:
             _block_notice(
                 f"blocked: `python`の`-c`へ渡すコードが{reason}。"
                 "コマンド文字列とコードの引用境界が重なると、コードの改行が失われる。",
-                fix=f"{_SPECIALIZED_COMMAND_FIRST_PHRASE}実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
+                fix=(
+                    f"{_BLOCKED_CHAIN_ARTIFACT_GUIDANCE}{_SPECIALIZED_COMMAND_FIRST_PHRASE}"
+                    f"実行するコードを{_TEMP_FILE_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}"
+                ),
             ),
             file=sys.stderr,
         )
@@ -1079,6 +1114,8 @@ def _looks_like_path(token: str) -> bool:
     パス区切り、先頭のドット・チルダ、拡張子のいずれかを持つトークンだけを対象とする。
     拡張子を持たない語をパスとして扱うと、検索patternと`find`の述語を誤って対象にする。
     """
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", token):
+        return False
     return _PATH_LIKE_PATTERN.search(token) is not None
 
 
@@ -1132,6 +1169,7 @@ def _path_operands(segment: _ExecutionSegment) -> list[str]:
 
 _COPY_COMMANDS: frozenset[str] = frozenset({"cp", "mv"})
 _WRITE_TARGET_VALUE_OPTIONS: dict[str, frozenset[str]] = {
+    "atk": frozenset({"--output-file"}),
     "curl": frozenset({"-o", "--output"}),
     "wget": frozenset({"-O", "--output-document"}),
     "sort": frozenset({"-o", "--output"}),
@@ -1275,7 +1313,8 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
         return None
     return _llm_notice(
         "明示された検索・読取パスが存在しない。対象: " + "、".join(scan.missing) + "\n"
-        "対処: 対象パスを現行の作業ディレクトリから解決し、実在するパスを指定する。",
+        "対処: Git管理対象は`rg --files`、属性・ディレクトリ構造は`find`で実体を解決し、実在するパスを指定する。"
+        "不在を確認する意図では、確認を別の呼び出しにするか、絶対パスを渡す`test -e`を使う。",
         tag=_WARN_TAG,
         removable_cause=True,
     )
@@ -1352,6 +1391,7 @@ def _check_bash_missing_path_operand_loss(command: str, cwd: str) -> str | None:
             fix=(
                 "当該コマンドへ実在するパスを指定するか、当該コマンドを呼び出しから外す。"
                 "引数を失ったコマンドは標準入力を読み、補正前とは異なる成否を返す。"
+                "不在を確認する意図では、確認を別の呼び出しにするか、絶対パスを渡す`test -e`を使う。"
             ),
         ),
         file=sys.stderr,
@@ -1596,6 +1636,7 @@ def _split_serial_shell_commands(
     コメント内の演算子を区切りとして誤検出しない。
     """
     command = _bash_command_parser.mask_heredoc_bodies(command)
+    nested = _bash_command_parser.nested_shell_positions(command)
     segments: list[str] = []
     buffer: list[str] = []
     quote: str | None = None
@@ -1607,6 +1648,11 @@ def _split_serial_shell_commands(
     index = 0
     while index < len(command):
         char = command[index]
+        if index in nested:
+            buffer.append(char)
+            word_boundary = False
+            index += 1
+            continue
         if escaped:
             buffer.append(char)
             escaped = False
@@ -1916,9 +1962,10 @@ def _check_bash_sleep_poll_pattern(
     already_detected = _record_repeat_detection(session_id, "sleep_poll_detected")
     guidance = (
         "待機対象の終了状態を返す公開機能で待つ。委譲先には`atk agents wait`、CIには`atk wait-ci`を使う。\n"
-        "当該公開機能が無い場合は、完了通知を受領するか、背景ジョブの機械可読な完了標識を使うか、"
-        "`atk watch`で委譲作業を観測し、\n"
-        "待機状態を示してターンを終了する。"
+        "当該公開機能が無い場合は、完了通知を利用できるなら受領する。利用できなければ`sleep`を単独で実行し、"
+        "終了後の別の呼び出しで状態を確認する。\n"
+        "公開機能で待機中は同じ対象の状態照会を重ねない。根拠: "
+        "`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」。"
     )
     if already_detected:
         print(
@@ -3979,6 +4026,13 @@ def _check_bash_external_command_options(command: str, session_id: str) -> str |
         flags, valued = contract
         # `--no-`接頭辞の否定形は、対応する肯定形を受理するコマンドが一般に受理する。
         scan = _scan_accepted_options(arguments, flags, valued, accepts_long_negation=True)
+        if scan.ambiguous_option is not None:
+            return _llm_notice(
+                f"`{' '.join(path)}`の値付き短縮オプションへ別の短縮フラグを連結した曖昧な形である。"
+                f"対象: {scan.ambiguous_option}\n対処: 値付きオプションと各フラグを別の引数へ分ける。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
         if scan.unknown_option is None:
             continue
         return _llm_notice(

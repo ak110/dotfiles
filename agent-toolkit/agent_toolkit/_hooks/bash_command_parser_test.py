@@ -164,6 +164,33 @@ class TestSplitBashSegments:
         comment = "echo ok # <<EOF\nnext command"
         assert mask_heredoc_bodies(comment) == comment
 
+    def test_unescaped_newlines_split_top_level_commands(self) -> None:
+        command = "atk review-table --help\necho add\natk review-table add --help"
+        assert split_bash_segments(command) == [
+            "atk review-table --help",
+            "echo add",
+            "atk review-table add --help",
+        ]
+
+    def test_control_keyword_used_as_argument_does_not_open_a_structure(self) -> None:
+        assert split_bash_segments("echo for\ngit status") == ["echo for", "git status"]
+
+    def test_line_continuation_and_nested_newlines_are_not_split(self) -> None:
+        assert split_bash_segments("echo alpha \\\nbeta") == ["echo alpha \\\nbeta"]
+        assert split_bash_segments("echo $(printf 'a\\nb')\necho done") == ["echo $(printf 'a\\nb')", "echo done"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "for item in a b\ndo\necho $item\ndone",
+            "while true\ndo\necho wait\ndone",
+            "if true\nthen\necho yes\nfi",
+            "case x in\nx) echo yes ;;\nesac",
+        ],
+    )
+    def test_control_structure_newlines_remain_in_one_outer_segment(self, command: str) -> None:
+        assert "\n" in split_bash_segments(command)[0]
+
 
 class TestExtractGitEvents:
     """`extract_git_events`によるgit呼び出しイベント抽出。"""
