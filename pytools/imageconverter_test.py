@@ -287,3 +287,133 @@ def test_main_exit_code(
     with pytest.raises(SystemExit) as exc:
         imageconverter.main()
     assert exc.value.code == expected_code
+
+
+def _rgb_pixel(img: PIL.Image.Image) -> tuple[int, ...]:
+    """左上の画素をRGBの整数タプルで返す。"""
+    with img.convert("RGB") as rgb:
+        pixel = rgb.getpixel((0, 0))
+    assert isinstance(pixel, tuple)
+    return pixel
+
+
+_TARGET_MODES = ("L", "LA", "RGB", "RGBA")
+"""PNGとWebPの出力で保存を許す画像モード。"""
+
+_LOSSY_COLOR_TOLERANCE = 8
+"""非可逆圧縮の出力で許す画素値の差。JPEGとWebPは既定の品質で再符号化する。"""
+
+_UNIFORM_LUMINANCE = {"1": 1, "I;16": 76, "F": 76.0}
+"""輝度だけを持つモードの単色画像に与える値。
+
+`convert`の誤差拡散で画素ごとに値が分かれると、非可逆圧縮の出力で画素の比較が成立しない。
+"""
+
+_EXPECTED_SAVED_MODES = {
+    "RGB": {"jpeg": "RGB", "png": "RGB"},
+    "RGBA": {"jpeg": "RGB", "png": "RGBA"},
+    "L": {"jpeg": "L", "png": "L"},
+    "LA": {"jpeg": "L", "png": "LA"},
+    "P": {"jpeg": "RGB", "png": "RGB"},
+    "CMYK": {"jpeg": "RGB", "png": "RGB"},
+    "1": {"jpeg": "L", "png": "L"},
+    "I;16": {"jpeg": "L", "png": "L"},
+    "F": {"jpeg": "L", "png": "L"},
+}
+"""入力モードと出力形式に対する保存後のモード。
+
+WebPはPillowが保存時にRGB又はRGBAへ変換するため、当該形式の保存後のモードは
+`_TARGET_MODES`へ収まることだけを契約とし、本対応表の対象から外す。
+"""
+
+
+def _source_path(root: pathlib.Path, mode: str) -> pathlib.Path:
+    """当該モードを保存できる入力ファイルのパスを返す。"""
+    if mode == "CMYK":
+        return root / "source.jpg"
+    if mode == "F":
+        return root / "source.tiff"
+    return root / "source.png"
+
+
+def _make_source_image(path: pathlib.Path, mode: str) -> None:
+    """指定モードの単色画像を保存する。"""
+    size = (16, 12)
+    if mode in _UNIFORM_LUMINANCE:
+        img = PIL.Image.new(mode, size, color=_UNIFORM_LUMINANCE[mode])
+    else:
+        base = PIL.Image.new("RGB", size, color=(255, 0, 0))
+        if mode == "RGB":
+            img = base
+        elif mode == "P":
+            img = base.convert("P", palette=PIL.Image.Palette.ADAPTIVE)
+        else:
+            img = base.convert(mode)
+    img.save(path)
+
+
+def _assert_color_preserved(actual: tuple[int, ...], expected: tuple[int, ...], tolerance: int) -> None:
+    """代表画素の色が許容差の内側であることを確かめる。"""
+    assert all(abs(a - e) <= tolerance for a, e in zip(actual, expected, strict=True)), f"{actual} != {expected}"
+
+
+@pytest.mark.parametrize("source_mode", list(_EXPECTED_SAVED_MODES))
+@pytest.mark.parametrize("output_type", ["jpeg", "png", "webp"])
+def test_conversion_keeps_color_and_saves_within_target_modes(
+    tmp_path: pathlib.Path,
+    source_mode: str,
+    output_type: imageconverter.OutputType,
+) -> None:
+    """入力モードと出力形式の組ごとに、保存後のモードと代表画素の色を確かめる。
+
+    メタデータ除去の往復は配列の形状と要素型だけからモードを推定するため、限定しないと
+    `CMYK`はJPEGが保存できない`RGBA`になり、パレット画像は索引値を輝度とする`L`になって色を失う。
+    `1`・`I;16`・`F`は往復では保たれるが対象集合の外にあるため、`L`として保存する。
+    """
+    path = _source_path(tmp_path, source_mode)
+    _make_source_image(path, source_mode)
+    with PIL.Image.open(path) as source:
+        assert source.mode == source_mode
+        expected_color = _rgb_pixel(source)
+
+    summary = imageconverter.convert_paths([path], output_type=output_type, remove_failed=False)
+
+    assert not summary.events
+    assert summary.success_count == 1
+    saved_path = path.with_suffix({"jpeg": ".jpg", "png": ".png", "webp": ".webp"}[output_type])
+    with PIL.Image.open(saved_path) as saved:
+        if output_type == "webp":
+            assert saved.mode in _TARGET_MODES
+        else:
+            assert saved.mode == _EXPECTED_SAVED_MODES[source_mode][output_type]
+        actual_color = _rgb_pixel(saved)
+    _assert_color_preserved(actual_color, expected_color, 0 if output_type == "png" else _LOSSY_COLOR_TOLERANCE)
+
+
+@pytest.mark.parametrize("output_type", ["png", "webp"])
+def test_palette_transparency_is_saved_as_rgba(
+    tmp_path: pathlib.Path,
+    output_type: imageconverter.OutputType,
+) -> None:
+    """透過情報を持つ入力を`RGBA`として保存し、不透明な画素の色と透明な画素を保つ。"""
+    path = tmp_path / "source.png"
+    base = PIL.Image.new("RGB", (16, 12), color=(255, 0, 0))
+    base.paste((0, 255, 0), (8, 0, 16, 12))
+    palette = base.convert("P", palette=PIL.Image.Palette.ADAPTIVE, colors=2)
+    palette.info["transparency"] = palette.getpixel((15, 0))
+    palette.save(path)
+    with PIL.Image.open(path) as source:
+        assert source.has_transparency_data
+        expected_color = _rgb_pixel(source)
+
+    summary = imageconverter.convert_paths([path], output_type=output_type, remove_failed=False)
+
+    assert not summary.events
+    saved_path = path.with_suffix(".png" if output_type == "png" else ".webp")
+    with PIL.Image.open(saved_path) as saved:
+        assert saved.mode == "RGBA"
+        transparent_pixel = saved.getpixel((15, 0))
+        assert isinstance(transparent_pixel, tuple)
+        assert transparent_pixel[3] == 0
+        actual_color = _rgb_pixel(saved)
+    _assert_color_preserved(actual_color, expected_color, 0 if output_type == "png" else _LOSSY_COLOR_TOLERANCE)

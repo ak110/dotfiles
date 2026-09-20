@@ -31,6 +31,15 @@ _IGNORE_SUFFIXES = {".db", ".txt", ".htm", ".html", ".pdf", ".bat"}
 _TYPE_SUFFIXES = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}
 _WILDCARD_CHARS = ("*", "?", "[")
 
+_NON_JPEG_TARGET_MODES = frozenset({"L", "LA", "RGB", "RGBA"})
+"""PNGとWebPの出力でメタデータ除去の往復へ渡すモード。
+
+`np.asarray`と`PIL.Image.fromarray`の往復でモードが変わらず、どちらの形式も保存できる。
+"""
+
+_LUMINANCE_MODES = frozenset({"1", "L", "LA", "La", "I", "I;16", "F"})
+"""単一の輝度チャンネルで画素を表す画像モード。透過情報の有無に応じて`L`と`LA`へ変換する。"""
+
 OutputType = typing.Literal["jpeg", "png", "webp"]
 EventSeverity = typing.Literal["warning", "error"]
 ConvertEvent = tuple[pathlib.Path, EventSeverity, str]
@@ -284,6 +293,30 @@ def convert_paths(
     return ConvertSummary(events=events, success_count=success_count)
 
 
+def _normalize_mode(img: PIL.Image.Image, output_type: OutputType) -> PIL.Image.Image:
+    """メタデータ除去の往復で保たれ、出力形式が保存できるモードへ変換した画像を返す。
+
+    メタデータの除去は画素を`numpy`配列へ写してから画像を組み直す。`PIL.Image.fromarray`は
+    配列の形状と要素型だけからモードを推定するため、往復の入力を推定結果が元と一致する
+    モードへ限定する。限定しないと、`CMYK`はJPEGが保存できない`RGBA`として再構成され、
+    パレット画像は索引値を輝度とする`L`になって色を失う。
+
+    JPEGはアルファチャンネルと4チャンネルの色空間を保存しないため、輝度だけを持つ入力を`L`へ、
+    それ以外を`RGB`へ変換する。PNGとWebPでは`_NON_JPEG_TARGET_MODES`へ限定し、透過情報を持つ入力を
+    `LA`又は`RGBA`へ、持たない入力を`L`又は`RGB`へ変換する。
+    16bitの`I;16`と1bitの`1`も当該集合の外にあるため、この変換で8bitの`L`になる。
+    """
+    if output_type == "jpeg":
+        target = "L" if img.mode in _LUMINANCE_MODES else "RGB"
+    elif img.mode in _NON_JPEG_TARGET_MODES:
+        target = img.mode
+    elif img.has_transparency_data:
+        target = "LA" if img.mode in _LUMINANCE_MODES else "RGBA"
+    else:
+        target = "L" if img.mode in _LUMINANCE_MODES else "RGB"
+    return img if img.mode == target else img.convert(target)
+
+
 def _convert_one(
     path: pathlib.Path,
     *,
@@ -317,11 +350,7 @@ def _convert_one(
         except PIL.UnidentifiedImageError:
             return None, False
         with img:
-            if output_type == "jpeg":
-                if img.mode == "RGBA":
-                    img = img.convert("RGB")
-                elif img.mode == "LA":
-                    img = img.convert("L")
+            img = _normalize_mode(img, output_type)
             if img.width >= max_width or img.height >= max_height:
                 r = min(max_width / img.width, max_height / img.height)
                 size = int(img.width * r), int(img.height * r)
