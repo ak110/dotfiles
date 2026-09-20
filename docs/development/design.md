@@ -289,7 +289,7 @@ MCPの`list`は3項目の公開契約を保つため、`stalled`を`seconds_sinc
 ルートセッション識別子は`AGENT_TOOLKIT_OWNER_SESSION`、無ければMCPサーバー起動時の`CLAUDE_CODE_SESSION_ID`から取る。`CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。Claude Codeが同一プロセスのままsession識別子を切り替えると、長命なMCPサーバーだけが起動時の値を保持し、statuslineが受け取る入力JSONの`session_id`と一致しなくなる。このため同じディレクトリ配下ではなく`agents-server/aliases/<現行のsession識別子>.json`へ索引を置き、statuslineと`atk agents wait`は当該索引を経てルートセッション識別子を解決する。`atk agents notify`は所有者sessionを直接解決する経路を保ち、索引を読まない。MCPサーバーは`start`・`start_explore`・`start_write`・`start_shell`の応答に、自身の状態ファイル書込先として解決した`root_session_id`を含める。PostToolUseフックは当該応答項目を索引の書込先として直接使う。状態ファイルは1秒単位で集約され、応答直後には起動したsessionが未反映であり得るため、状態ディレクトリの走査による逆引きは行わない。却下した代替案は、両側がClaude Codeプロセスの識別子を環境変数から解決する案と、鍵を作業ディレクトリへ変える案である。前者はMCPサーバープロセスに`CLAUDE_PID`が渡らないため成立せず、後者は同じディレクトリで複数の会話を同時に動かすと行が混ざるため採用しない。共有状態ごとの正本と読み書き経路の対応は`.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md`を正本とする。
 Claude Codeが直接起動した`agents_server`は`root.json`を書き、委譲先の中で起動した`agents_server`は自身を収容するsessionの識別子を名前とするファイルを書く。
 収容sessionの識別子は、Claude backendの委譲先では`AGENT_TOOLKIT_DELEGATED_SESSION`が示すとおり自身の`CLAUDE_CODE_SESSION_ID`、Codex backendの委譲先では`CODEX_THREAD_ID`から取る。いずれも親の`agents_server`が公開する`session_id`と同じ値である。
-Codex委譲先自身のシェルには`CODEX_THREAD_ID`が存在するため、当該シェルで動く待機処理と通知処理は共有状態ディレクトリを解決できる。
+Codex委譲先自身のシェルには`CODEX_THREAD_ID`が存在するため、当該シェルで動く待機処理と通知処理は共有状態ディレクトリを解決できる。PostToolUseフックの環境に`CODEX_THREAD_ID`が無い場合は、フック入力の検証済み現行session識別子を既存の書込主体解決へ補完し、同じ書込主体の`wait-targets`へ子sessionの開始とreply再開を登録する。フック入力を新しい台帳へ保存する案は、待機CLIと別の正本を増やすため採用しない。
 Codex backendは子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継承した`AGENT_TOOLKIT_DELEGATED_SESSION`を除く。
 除かない場合、Claude委譲先の中で起動したCodex委譲先がClaude委譲先と誤判定される。
 一方、Codexホストから直接起動したMCPサーバープロセスは、所有session識別子とCodex thread識別子のいずれも持たないため状態ファイルを書かない。
@@ -1570,7 +1570,7 @@ workflowの`workflow_run`入力境界は、同日時点の[workflow_runイベン
 PRマージ後は、`origin/master`をマージコミットの正本として保持し、`git rev-parse --short=7 origin/master`で人間可読の識別子を取得する。
 その後にpush前のCI baselineを保存し、`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。ローカルbranchを`origin/develop`更新の操作元にしない。
 develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。commit不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commit照合は省略しない。
-同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop origin/master`で`origin/develop`と`origin/master`の一意な短縮OIDを比較し、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であり、develop固有検査には含めない。CI定義が変化した場合は省略条件を再判定する。
+同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であり、develop固有検査には含めない。CI定義が変化した場合は省略条件を再判定する。
 待機する場合、runが登録される前は読み取りだけを継続し、自作のshell sleep loopを追加しない。
 
 `origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub Release及びLinux・Windows assetを検収する。`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。

@@ -500,6 +500,7 @@ def _record_agents_server_session_state(
     cwd: str | None = None,
     model_type: str | None = None,
     remote_session_id: str | None = None,
+    fallback_status_host_session: str | None = None,
 ) -> None:
     """agents_serverの公開応答をhook側の状態へ記録する。"""
     if remote_session_id is None:
@@ -566,6 +567,15 @@ def _record_agents_server_session_state(
     starts_reply = operation == "send_message" and structured.get("delivery") in {"reply_started", "reply_ambiguous"}
     if operation in _AGENTS_SERVER_START_OPERATIONS or starts_reply:
         identity = _agents_server_status_file.resolve_status_file_identity(os.environ)
+        if (
+            identity is None
+            and os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")
+            and fallback_status_host_session is not None
+            and _agents_server_status_file.valid_session_id(fallback_status_host_session)
+        ):
+            environment = dict(os.environ)
+            environment["AGENT_TOOLKIT_STATUS_HOST_SESSION"] = fallback_status_host_session
+            identity = _agents_server_status_file.resolve_status_file_identity(environment)
         if identity is not None and _agents_server_status_file.valid_session_id(remote_session_id):
             _agents_server_status_file.retain_wait_targets(
                 identity.root_session_id,
@@ -1207,6 +1217,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 cwd=cwd_value if isinstance(cwd_value, str) else None,
                 model_type=model_type,
                 remote_session_id=remote_session_id,
+                fallback_status_host_session=session_id if tool_name.startswith("mcp__agents_server__") else None,
             )
             if operation == "start_shell":
                 reset_bash_failure_sequence(session_id, clear_gate=True)
@@ -1221,6 +1232,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 operation=operation,
                 owner_agent_id=owner_agent_id,
                 remote_session_id=remote_session_id,
+                fallback_status_host_session=session_id if tool_name.startswith("mcp__agents_server__") else None,
             )
         return 0
 

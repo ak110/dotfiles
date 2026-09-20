@@ -293,6 +293,8 @@ def test_single_lane_process_partitions_plans_and_reviews_by_worktree() -> None:
         value in parent for value in ("単一の対象リポジトリ", "全てが同じ対象リポジトリ", "対象worktreeごとの別の実行レビュー")
     )
     assert all(value in recipient for value in ("単一の対象リポジトリ", "別の対象リポジトリ", "needs_escalation"))
+    assert all(value in single_lane for value in ("全push後", "CI監視を全件開始", "監視識別子", "全件回収"))
+    assert all(value in single_lane for value in ("成果依存", "手動workflow", "先行対象の成功後", "対象リポジトリが1件"))
 
 
 def test_picker_serializes_overlapping_write_regions() -> None:
@@ -328,6 +330,10 @@ def test_lane_integration_returns_changed_agent_rules() -> None:
 
     assert all(value in recipient for value in ("agent_rule_changes", '"path"', '"text"', "統合後ファイルから逐語"))
     assert all(value in parent for value in ("agent_rule_changes", "path集合", "逐語で存在", "メイン自身へ適用"))
+    assert all(
+        value in parent for value in ("管理対象一時領域へ逐語保存", "JSON parser", "不正JSON", "入力は受領本文のまま保持")
+    )
+    assert all(value in parent for value in ("agent_rule_changes[*].path", "そのまま検査入力", "逐語照合の完了後"))
 
 
 def test_external_api_commit_oid_is_resolved_immediately() -> None:
@@ -366,6 +372,20 @@ def test_subagent_command_prerequisites_point_to_shared_sources() -> None:
     assert all(value in recipient for value in ("references/search.md", "large_reads.py", "現行本文を取得"))
     assert all(value in recipient for value in ("rg --files", "references/git-identifier.md", "references/history-rewrite.md"))
     assert all(value in recipient for value in ("子孫", "探索担当"))
+    assert all(
+        value in recipient for value in ("内側の各最大出力量", "外側の`max_output_tokens`以下", "重複と欠落のない別セル")
+    )
+    assert "外側の上限を超える取得" in recipient
+    assert all(value in recipient for value in ("切り詰め", "容量超過", "期限超過", "網羅性", "終端の根拠から外す"))
+
+
+def test_commit_message_contract_separates_subject_from_following_lines() -> None:
+    """複数行のコミットメッセージは件名と本文又はtrailerを空行で区切る。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    commit_skill = (plugin_root / "skills" / "commit" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert all(value in commit_skill for value in ("本文又はtrailer", "第2行が空行", "件名だけ"))
+    assert "件名と後続行の間に空行を1行置く" in commit_skill
 
 
 def test_history_rewrite_and_identifier_contracts_cover_observed_failures() -> None:
