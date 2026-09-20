@@ -1664,6 +1664,13 @@ class TestForeignScriptMixin:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
         assert result.returncode == 0
 
+    def test_passes_japanese_with_shared_han(self):
+        """日本語でも用いるU+5199は簡体字専用字として警告しない。"""
+        content = "文書を\u5199す"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
+        assert result.returncode == 0
+        assert "簡体字専用字" not in _agent_messages(result)
+
     def test_passes_english_with_cyrillic(self):
         """英語＋キリルは通過する（日本語を含まないため対象外）。"""
         content = "test" + _CYRILLIC_SAMPLE + "name"
