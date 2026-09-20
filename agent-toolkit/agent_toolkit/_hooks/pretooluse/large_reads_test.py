@@ -3,6 +3,8 @@
 import json
 import pathlib
 
+import pytest
+
 from agent_toolkit._hooks import pretooluse
 from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read, check_large_read
 
@@ -87,6 +89,36 @@ def test_bash_blocks_only_direct_static_full_reads(tmp_path: pathlib.Path) -> No
     assert check_large_bash_read(f"awk '{{print}}' {path}", str(tmp_path)) is not None
     assert check_large_bash_read(f"cat {path} | rg value", str(tmp_path)) is None
     assert check_large_bash_read(f"cat {path} > output.txt", str(tmp_path)) is None
+
+
+@pytest.mark.parametrize("command", ["cat", "less", "more"])
+def test_bash_blocks_multiple_files_over_total_threshold(tmp_path: pathlib.Path, command: str) -> None:
+    """個別には閾値以内でも、合計が閾値を超える全文取得を遮断する。"""
+    first = _large_file(tmp_path, "first.txt", lines=180)
+    second = _large_file(tmp_path, "second.txt", lines=171)
+
+    notice = check_large_bash_read(f"{command} {first} {second}", str(tmp_path))
+
+    assert notice is not None
+    assert f"`{first}`: 180行" in notice
+    assert f"`{second}`: 171行" in notice
+    assert "合計: 351行" in notice
+    assert "ファイルごと" in notice
+    assert "連続した行範囲" in notice
+
+
+def test_bash_blocks_multiple_files_when_one_exceeds_threshold(tmp_path: pathlib.Path) -> None:
+    large = _large_file(tmp_path, "large.txt")
+    small = _large_file(tmp_path, "small.txt", lines=1)
+
+    assert check_large_bash_read(f"cat {large} {small}", str(tmp_path)) is not None
+
+
+def test_bash_allows_multiple_files_within_total_threshold(tmp_path: pathlib.Path) -> None:
+    first = _large_file(tmp_path, "first.txt", lines=175)
+    second = _large_file(tmp_path, "second.txt", lines=175)
+
+    assert check_large_bash_read(f"cat {first} {second}", str(tmp_path)) is None
 
 
 def test_threshold_environment_override(tmp_path: pathlib.Path, monkeypatch) -> None:
