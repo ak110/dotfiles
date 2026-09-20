@@ -13,6 +13,9 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
+    make_current_worktree_fake as _make_current_worktree_fake,
+)
+from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     make_git_remote_fake as _make_git_remote_fake,
 )
 from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
@@ -89,6 +92,27 @@ class TestShowSingleFile:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert "全状態フォルダに存在しない" in captured.err
+
+    def test_filename_lookup_ignores_the_current_repository_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """カレントディレクトリから注入した既定は、ファイル名で指定した項目を候補から外さない。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "myrepo"
+        local_repo.mkdir()
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/other", body="別リポジトリ本文")
+        monkeypatch.setattr(subprocess, "run", _make_current_worktree_fake(local_repo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "show", "fb-001.md", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-001.md" in captured.out
+        assert "別リポジトリ本文" in captured.out
 
     def test_filename_filter_matches_legacy_local_path(
         self,
@@ -295,6 +319,28 @@ class TestShowAll:
         assert "legacy.md" in output
         assert "current.md" in output
         assert "missing.md" not in output
+
+    def test_all_keeps_the_current_repository_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--allは対象集合を走査するため、省略時もカレントリポジトリで限定する。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "myrepo"
+        local_repo.mkdir()
+        _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo", body="現行リポジトリ本文")
+        _write_awi_file(notes, "other.md", target_repo="github.com/example/other", body="別リポジトリ本文")
+        monkeypatch.setattr(subprocess, "run", _make_current_worktree_fake(local_repo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "show", "--all", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "current.md" in output
+        assert "other.md" not in output
 
     def test_all_shows_every_entry_grouped(
         self,

@@ -71,10 +71,12 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     1件だけ指定した場合は従来どおり空行を付けない。
     `--type`指定時は出力対象種別（awi・uwi・all）を限定する（既定: all）。
     `FILENAME...`指定時は5状態フォルダすべてを探索し、指定順に表示する。
-    `--type`・`--target-repo`・`--source`の
-    値で対象を限定する。`--state`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
-    状態・回答有無フィルタを迂回する既定挙動であり、既定の`--state=active`によって
-    adopted・rejected状態のエントリが参照不能になる事態を避けるためである）。
+    `--type`・`--source`と明示指定の`--target-repo`の
+    値で対象を限定する。`--state`・`--answered`と省略時の`--target-repo`は迂回する
+    （個別ファイル指定は明示的照会のため状態・回答有無フィルタを迂回する既定挙動であり、
+    既定の`--state=active`によってadopted・rejected状態のエントリが参照不能になる事態を避けるためである。
+    同じ理由で、カレントディレクトリから注入した対象リポジトリの既定も、
+    ファイル名で一意に指定した項目を候補から外さないよう迂回する）。
     `--all`指定時のAWI・`uwi`双方の走査対象は`--state`と連動する
     （既定`active`はinbox・processing・hold、`processable`はinbox・processing、
     `all`は5状態フォルダ全連結、個別状態指定は当該状態のみ）。
@@ -100,6 +102,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     resolved_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in (args.target_repo or ())))
 
     if validated_filenames:
+        # 省略時の既定は対象集合を走査する照会のためのものであり、ファイル名で一意に指定した項目へは適用しない。
+        explicit_repos = () if getattr(args, "target_repo_defaulted", False) else resolved_repos
         resolver_cache: dict[str, str | None] = {}
         selected_by_name: list[tuple[pathlib.Path, str, str, str, str | None]] = []
         missing: list[str] = []
@@ -114,7 +118,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 if "all" not in args.type and kind not in args.type:
                     continue
                 target_repo = _parse_target_repo(text)
-                if resolved_repos and _canonical_repo(target_repo, resolver_cache) not in resolved_repos:
+                if explicit_repos and _canonical_repo(target_repo, resolver_cache) not in explicit_repos:
                     continue
                 if args.source is not None and not any(_source_matches(_parse_source(text), source) for source in args.source):
                     continue
