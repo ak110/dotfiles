@@ -1247,7 +1247,8 @@ def test_codex_failed_command_without_output_keeps_failure_event(tmp_path: pathl
     assert len(events) == 1
     assert events[0]["kind"] == "failed-tool"
     assert events[0]["tool"] == "CommandExecution"
-    assert '"exit_code": 1' in events[0]["text"]
+    assert events[0]["text"] == "CommandExecution failed"
+    assert events[0]["diagnostic"] == ""
 
 
 @pytest.mark.parametrize("command", [["git", "status"], ["tool", "one", "two"], []])
@@ -1277,6 +1278,57 @@ def test_codex_failed_command_keeps_structured_command_and_exit_code(tmp_path: p
     assert event["command"] == json.dumps(command, ensure_ascii=False)
     assert event["exit_code"] == 17
     assert event["text"] == "失敗"
+    assert event["executable"] == (command[0] if command else "")
+    assert event["diagnostic"] == "失敗"
+
+
+@pytest.mark.parametrize(
+    ("commands", "diagnostics", "expected_candidates"),
+    (
+        ([["rg", "-F", "one"], ["rg", "-F", "two"]], ["", ""], 1),
+        ([["test", "-e", "/one"], ["test", "-e", "/two"]], ["", ""], 1),
+        ([["tool", "one"], ["tool", "two"]], ["same diagnostic", "same diagnostic"], 1),
+        ([["tool", "one"], ["tool", "two"]], ["first diagnostic", "second diagnostic"], 2),
+    ),
+)
+def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    commands: list[list[str]],
+    diagnostics: list[str],
+    expected_candidates: int,
+) -> None:
+    """コマンド引数ではなく実行ファイル、終了コード及び診断で失敗候補を集約する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "failed",
+                        "command": command,
+                        "exit_code": 1,
+                        "stderr": diagnostic,
+                    },
+                },
+            }
+            for command, diagnostic in zip(commands, diagnostics, strict=True)
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys, raw=True)
+    records = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    candidates = [record for record in records if record["kind"] == "candidate"]
+
+    assert len(candidates) == expected_candidates
+    assert sum(candidate["count"] for candidate in candidates) == 2
+    assert sum(len(candidate["locators"]) for candidate in candidates) == 2
 
 
 def test_codex_failed_command_clips_only_long_structured_command(tmp_path: pathlib.Path) -> None:

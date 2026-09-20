@@ -9,6 +9,7 @@ from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read, c
 
 def _large_file(tmp_path: pathlib.Path, name: str = "large.txt", lines: int = 351) -> pathlib.Path:
     path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("line\n" * lines, encoding="utf-8")
     return path
 
@@ -38,13 +39,28 @@ def test_notice_shows_offset_and_limit_pairs_covering_the_file(tmp_path: pathlib
     assert "offset=351, limit=272" in notice
 
 
-def test_read_allows_explicit_range_and_mandatory_document(tmp_path: pathlib.Path) -> None:
+def test_read_allows_explicit_range(tmp_path: pathlib.Path) -> None:
     path = _large_file(tmp_path)
-    instructions = _large_file(tmp_path, "AGENTS.md")
 
     assert check_large_read({"file_path": str(path), "limit": 100}, str(tmp_path)) is None
     assert check_large_read({"file_path": str(path), "offset": 2}, str(tmp_path)) is None
-    assert check_large_read({"file_path": str(instructions)}, str(tmp_path)) is None
+
+
+def test_read_and_bash_apply_threshold_to_mandatory_documents(tmp_path: pathlib.Path) -> None:
+    """必須文書も通常ファイルと同じ閾値で分割する。"""
+    paths = [
+        _large_file(tmp_path, "AGENTS.md"),
+        _large_file(tmp_path, "CLAUDE.md"),
+        _large_file(tmp_path, "SKILL.md"),
+        _large_file(tmp_path / "agent-toolkit" / "rules", "01-agent.md"),
+        _large_file(tmp_path / "agent-toolkit" / "skills", "workflow.md"),
+    ]
+
+    for path in paths:
+        assert check_large_read({"file_path": str(path)}, str(tmp_path)) is not None
+        notice = check_large_bash_read(f"cat {path}", str(tmp_path))
+        assert notice is not None
+        assert "offset=1, limit=350" in notice
 
 
 def test_read_allows_non_line_oriented_formats(tmp_path: pathlib.Path) -> None:

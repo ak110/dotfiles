@@ -7,7 +7,9 @@ import pytest
 import session_review_report as report
 
 
-def _inputs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
+def _inputs(
+    tmp_path: pathlib.Path,
+) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
     candidates = tmp_path / "candidates.jsonl"
     candidates.write_text(
         "\n".join(
@@ -86,11 +88,27 @@ def _inputs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib
         ),
         encoding="utf-8",
     )
-    return candidates, decisions, analyses, timings, tmp_path / "report.md"
+    duration_analysis = tmp_path / "duration-analysis.json"
+    duration_analysis.write_text(
+        json.dumps(
+            {
+                "bottleneck": {"interval": "完全分析", "seconds": 12.5},
+                "reduction": {"seconds": 2.5, "basis": "候補集約"},
+                "non_reducible_reason": "人間の判断が必要",
+                "unmeasured_intervals": [{"interval": "外部待機", "reason": "記録に時刻が無い"}],
+                "extractor_event": {"kind": "failed-tool", "value": "CommandExecution"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return candidates, decisions, analyses, timings, duration_analysis, tmp_path / "report.md"
 
 
-def _argv(paths: tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path], mode: str) -> list[str]:
-    candidates, decisions, analyses, timings, output = paths
+def _argv(
+    paths: tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path], mode: str
+) -> list[str]:
+    candidates, decisions, analyses, timings, duration_analysis, output = paths
     return [
         mode,
         "--candidates",
@@ -101,6 +119,8 @@ def _argv(paths: tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, p
         str(analyses),
         "--timings",
         str(timings),
+        "--duration-analysis",
+        str(duration_analysis),
         "--output",
         str(output),
     ]
@@ -116,6 +136,12 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     assert "main:5" in content and "事前検査不足" in content
     assert content.count("| a1 | 入力不備 | 事前検査不足 | 適用漏れ | 入口で検査する |") == 1
     assert "候補2件、locator3件、過不足0件、重複0件" in content
+    assert "- ボトルネック: 完全分析（12.500秒）" in content
+    assert "- 削減見込み: 2.500秒（候補集約）" in content
+    assert "- 削減不能部分: 人間の判断が必要" in content
+    assert "- 未計測区間: 外部待機（記録に時刻が無い）" in content
+    assert "- 抽出器イベント: failed-tool=CommandExecution" in content
+    assert "- 180秒目標との比較: 改善後見込み3.500秒、目標を176.500秒下回る" in content
     assert (
         tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS
     )
@@ -357,10 +383,59 @@ def test_input_structure_help_matches_the_accepted_forms() -> None:
 
     assert "--analyses: 分析の識別子をキーとするJSON object" in help_text
     assert "--timings: 工程名をキーとするJSON object" in help_text
+    assert "--duration-analysis: 次のキーを持つJSON object" in help_text
     assert "candidate_id: candidates.jsonlの候補を参照する識別子" in help_text
     assert "`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する" in help_text
     assert "reason: `excluded`で必須" in help_text
     assert "analysis_id: `analyzed`で必須" in help_text
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("bottleneck", {"interval": "", "seconds": 1}),
+        ("bottleneck", {"interval": "区間", "seconds": True}),
+        ("reduction", {"seconds": -1, "basis": "根拠"}),
+        ("non_reducible_reason", ""),
+        ("unmeasured_intervals", [{"interval": "区間"}]),
+        ("extractor_event", {"kind": "failed-tool", "value": ""}),
+    ),
+)
+def test_duration_analysis_rejects_invalid_fields(tmp_path: pathlib.Path, field: str, value: object) -> None:
+    """所要時間分析の欠落、型不正及び空値を生成前に拒否する。"""
+    paths = _inputs(tmp_path)
+    duration_analysis = json.loads(paths[4].read_text(encoding="utf-8"))
+    duration_analysis[field] = value
+    paths[4].write_text(json.dumps(duration_analysis, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 2
+    assert not paths[-1].exists()
+
+
+@pytest.mark.parametrize("value", (float("nan"), float("inf"), float("-inf")))
+@pytest.mark.parametrize("mode", ("generate", "check"))
+def test_duration_analysis_rejects_nonfinite_seconds(tmp_path: pathlib.Path, value: float, mode: str) -> None:
+    """生成と検査の公開CLIは非有限秒数を終了コード2で拒否する。"""
+    paths = _inputs(tmp_path)
+    if mode == "check":
+        assert report.main(_argv(paths, "generate")) == 0
+    duration_analysis = json.loads(paths[4].read_text(encoding="utf-8"))
+    duration_analysis["bottleneck"]["seconds"] = value
+    paths[4].write_text(json.dumps(duration_analysis, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, mode)) == 2
+    if mode == "generate":
+        assert not paths[-1].exists()
+
+
+def test_check_rejects_duration_analysis_changes(tmp_path: pathlib.Path) -> None:
+    """機械生成した所要時間分析の改変を拒否する。"""
+    paths = _inputs(tmp_path)
+    assert report.main(_argv(paths, "generate")) == 0
+    content = paths[-1].read_text(encoding="utf-8").replace("完全分析（12.500秒）", "完全分析（99.000秒）", 1)
+    paths[-1].write_text(content, encoding="utf-8")
+
+    assert report.main(_argv(paths, "check")) == 2
 
 
 def test_uncertain_candidate_cannot_be_excluded_without_reason(tmp_path: pathlib.Path) -> None:

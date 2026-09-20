@@ -725,12 +725,14 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
     stderr = item.get("stderr")
     text = output or (stderr if isinstance(stderr, str) and stderr.strip() else "")
     if not text:
-        text = error if isinstance(error, str) and error.strip() else json.dumps(item, ensure_ascii=False)
+        text = error if isinstance(error, str) and error.strip() else "CommandExecution failed"
     event = _event("failed-tool", text, tool="CommandExecution")
     if event:
         command = item.get("command")
         if isinstance(command, list) and all(isinstance(part, str) for part in command):
             event["command"] = _clip(json.dumps(command, ensure_ascii=False))
+            event["executable"] = _basename(command[0]) if command else ""
+        event["diagnostic"] = "" if text == "CommandExecution failed" else _clip(text)
         exit_code = item.get("exit_code")
         if isinstance(exit_code, int) and not isinstance(exit_code, bool):
             event["exit_code"] = exit_code
@@ -3139,6 +3141,18 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             _normalize_hook_candidate_text(normalized_text),
         )
     if candidate_kind == "escalation":
+        if event.get("tool") == "CommandExecution":
+            diagnostic = event.get("diagnostic")
+            first_diagnostic_line = (
+                diagnostic.splitlines()[0] if isinstance(diagnostic, str) and diagnostic.splitlines() else ""
+            )
+            return (
+                candidate_kind,
+                "CommandExecution",
+                str(event.get("exit_code", "")),
+                str(event.get("executable", "")),
+                _normalize_candidate_kind_text(first_diagnostic_line),
+            )
         raw_text = event.get("text")
         first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""
         return candidate_kind, _normalize_candidate_kind_text(first_line)

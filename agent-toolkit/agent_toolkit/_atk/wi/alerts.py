@@ -306,6 +306,8 @@ def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
         "自動監視が未解決の事象を検知した。当該事象を解消し、継続的な検査を正常化する。\n\n"
         "## 反映内容と反映先\n\n"
         f"検知した事象を調査し、必要な是正と検証を行う。反映先は`{target_repo_id}`とする。\n\n"
+        "## 適用範囲\n\n検知した事象を発生させる条件と、その条件に該当する実装を対象とする。\n\n"
+        "## 実現性\n\n検知元が返した識別子と詳細から、調査対象及び検収場所を確定できる。\n\n"
         "## メリット\n\n障害又は脆弱性を解消し、継続的な検査を正常化できる。\n\n"
         "## デメリット\n\n調査と変更の検証に作業が必要になる。\n\n"
         f"## 完成条件\n\n{alert.completion}\n\n"
@@ -388,5 +390,6 @@ def check_and_submit_alerts(
         target_repo=repo_id,
         source="alert-monitor",
         now=now,
+        scope_aligned=True,
     )
     return len(generated)

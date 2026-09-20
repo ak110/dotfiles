@@ -18,7 +18,7 @@
 - `担当種別`: `レーン担当`。公開工程のCI失敗修正では`CI修正担当`
 - `選定結果の出力先ファイル`: pickerが返した固定出力ファイルの絶対パス
 - `レーン識別子`: pickerがそのレーンへ割り当てた識別子
-- `固有指示`: AWI固有の処理順、公開、確認又は検証指示。無い場合はこの行を送らない
+- `固有指示`: AWI固有の処理順、公開、確認又は検証指示。pickerの固定出力が持つ`project_notes`と上流投入の値は含めない。無い場合はこの行を送らない
 - `再開位置`: 中断したレーンを再開する場合に、作業rootに残る計画ファイルの絶対パス。新規のレーンではこの行を送らない
 - `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ、新規のレーン担当では`（新規）`を、`再開位置`を渡す再開と`担当種別`が`レビュー修正担当`である起動では先行する担当の記録を引き継ぐため`（継続）`を続けた値。領域の作成と回収は`agent-toolkit:writing-standards`の`references/managed-temp.md`に従う
 
@@ -70,5 +70,5 @@
 
 実装を伴わないレーンにも統合指示を送り、計画最終化とAWI終端を同じレーン担当に行わせる。
 
-返却の形式は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`の`## 出力`が定める。受領した`merged_head`を統合先branchの実体へ照合し、`plan_committed`が起動時のメイン計画ファイル名と一致することと、AWIの集合が起動時の終端区分と一致して延期対象だけが`deferred_adopt_commits`へ現れることを確認する。
+返却の形式は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`の`## 出力`が定める。受領した`merged_head`を統合先branchの実体へ照合し、`plan_committed`が起動時のメイン計画ファイル名と一致することと、AWIの集合が起動時の終端区分と一致して延期対象だけが`deferred_adopt_commits`へ現れることを確認する。`agent_rule_changes`のpath集合が統合差分のエージェント向け規範文書の変更集合と一致し、各textが統合後ファイルに逐語で存在することを検査する。検査済みの規則本文は、後続のレーン判断と公開工程の前にメイン自身へ適用する。
 不一致の場合は同じthreadへ観測値を返して是正を求める。全て一致した後にだけ専用worktreeの回収へ進む。

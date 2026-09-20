@@ -59,6 +59,7 @@ def _cmd_add_args(
     dry_run: bool = False,
     origin_locator: str | None = None,
     depends_on: list[str] | None = None,
+    scope_aligned: bool | None = None,
 ) -> argparse.Namespace:
     """`_cmd_add`の単体テストへ必要な引数を返す。"""
     body_path = tmp_path / "body.md"
@@ -70,6 +71,9 @@ def _cmd_add_args(
         type=entry_type,
         depends_on=depends_on or [],
         source=source,
+        scope_aligned=(source is not None and entry_type == "awi" and plan_file is None)
+        if scope_aligned is None
+        else scope_aligned,
         origin_locator=origin_locator,
         scope=None,
         question_type="free-form" if entry_type == WI_TYPE_UWI else None,
@@ -404,6 +408,60 @@ def test_cmd_add_accepts_agent_awi_with_all_required_sections(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
+def test_cmd_add_requires_scope_alignment_for_agent_awi(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント由来通常AWIは対象3節の照合済み指定を必須とする。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(
+            _cmd_add_args(tmp_path, _AGENT_AWI_BODY, source="test", scope_aligned=False),
+            notes,
+            _FIXED_DT,
+            tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    assert "対象集合の照合済み記録を確認できません: 記録がありません" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_cmd_add_rejects_stale_scope_alignment_after_body_change(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """照合後に対象3節を変更した本文は再照合まで拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    add_module._cmd_add(
+        _cmd_add_args(tmp_path, _AGENT_AWI_BODY, source="test", scope_aligned=True),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
+    capsys.readouterr()
+    saved_path = next((notes / "inbox").iterdir())
+    saved = saved_path.read_text(encoding="utf-8")
+    assert "scope_alignment: sha256:" in saved
+    changed = saved.replace("対象と反映先", "対象、反映先及び配布先", 1)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(
+            _cmd_add_args(tmp_path, changed, scope_aligned=False),
+            notes,
+            _FIXED_DT,
+            tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    assert "記録が現在本文と一致しません" in capsys.readouterr().err
+
+
 def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quoted_h2(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -485,7 +543,7 @@ def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
     monkeypatch.setenv("AI_AGENT", "1")
     message = f"---\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
 
-    add_module._cmd_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
+    add_module._cmd_add(_cmd_add_args(tmp_path, message, scope_aligned=True), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
@@ -538,10 +596,11 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     generated = add_module.add_entries(
         notes,
-        messages=["本文"],
+        messages=[_AGENT_AWI_BODY],
         target_repo="github.com/example/repo",
         source="test",
         now=_FIXED_DT,
+        scope_aligned=True,
     )
     assert generated == [f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"]
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
@@ -579,11 +638,12 @@ def test_add_reloads_saved_details_while_holding_lock(
 
     generated = add_module.add_entries(
         notes,
-        messages=["本文"],
+        messages=[_AGENT_AWI_BODY],
         target_repo="github.com/example/repo",
         source="test",
         now=_FIXED_DT,
         saved_details=saved_details,
+        scope_aligned=True,
     )
 
     assert saved_details[generated[0]]["target_repo"] == "github.com/example/repo"
@@ -732,13 +792,14 @@ def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     # frontmatterに大文字小文字混在のURLを指定
-    message = "---\ntarget_repo: GitHub.com/Example/Repo\nsource: test\n---\n\n本文\n"
+    message = f"---\ntarget_repo: GitHub.com/Example/Repo\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
     generated = add_module.add_entries(
         notes,
         messages=[message],
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
+        scope_aligned=True,
     )
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
     # 保存されたcontentは正規化後の値を含むべき
@@ -757,13 +818,17 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     # 既に正規化済みのURLとサフィックス付きURLの両方をテスト
-    message = "---\ntarget_repo: github.com/example/repo.git\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
+    message = (
+        "---\ntarget_repo: github.com/example/repo.git\nsource: alert-monitor\n"
+        f"alert_keys: github-run:1\n---\n\n{_AGENT_AWI_BODY}"
+    )
     generated = add_module.add_entries(
         notes,
         messages=[message],
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
+        scope_aligned=True,
     )
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
     # alert_keysが引き継がれている
@@ -784,17 +849,25 @@ def test_flat_add_operation_saves_complete_origin_pair(
 
     generated = add_module.add_entries(
         notes,
-        messages=["本文"],
+        messages=[_AGENT_AWI_BODY],
         target_repo="github.com/example/repo",
         source="session-review",
         origin_session="session-123",
         origin_locator="rollout-456:17",
         now=_FIXED_DT,
+        scope_aligned=True,
     )
 
     parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
     assert parsed is not None
-    assert list(parsed[0])[:5] == ["target_repo", "type", "source", "origin_session", "origin_locator"]
+    assert list(parsed[0])[:6] == [
+        "target_repo",
+        "type",
+        "source",
+        "scope_alignment",
+        "origin_session",
+        "origin_locator",
+    ]
     assert parsed[0]["origin_session"] == "session-123"
     assert parsed[0]["origin_locator"] == "rollout-456:17"
 
@@ -844,7 +917,9 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    message = "---\ntarget_repo: github.com/target/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
+    message = (
+        f"---\ntarget_repo: github.com/target/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n{_AGENT_AWI_BODY}"
+    )
 
     generated = add_module.add_entries(
         notes,
@@ -852,6 +927,7 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
         target_repo="github.com/target/repo",
         source=None,
         now=_FIXED_DT,
+        scope_aligned=True,
     )
 
     parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
@@ -860,7 +936,7 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
     assert data["target_repo"] == "github.com/target/repo"
     assert data["source"] == "alert-monitor"
     assert data["alert_keys"] == "github-run:1"
-    assert body.strip() == "本文"
+    assert body.strip() == _AGENT_AWI_BODY
 
 
 def test_flat_add_operation_drops_input_queue_schedule(
@@ -1806,7 +1882,16 @@ class TestAddRepoPathOverrideCli:
         body_path.write_text(_AGENT_AWI_BODY, encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", str(myrepo), "--source", "session-review", "--body-file", str(body_path)],
+                [
+                    "wi",
+                    "add",
+                    str(myrepo),
+                    "--source",
+                    "session-review",
+                    "--scope-aligned",
+                    "--body-file",
+                    str(body_path),
+                ],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -2375,7 +2460,7 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["wi", "add", "--source", "test", "--body-file", str(body_path)],
+            ["wi", "add", "--source", "test", "--scope-aligned", "--body-file", str(body_path)],
             home=tmp_path,
             now=_FIXED_DT,
         )
@@ -2474,11 +2559,12 @@ def test_add_reports_body_mismatch_when_saved_body_is_altered(
     with pytest.raises(add_module.WebInputError) as exc_info:
         add_module.add_entries(
             notes,
-            messages=["本文"],
+            messages=[_AGENT_AWI_BODY],
             target_repo="github.com/example/repo",
             source="test",
             now=_FIXED_DT,
             saved_details=saved_details,
+            scope_aligned=True,
         )
 
     position = captured["expected"].index("本文") + 1
@@ -2509,11 +2595,12 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
 
     generated = add_module.add_entries(
         notes,
-        messages=["本文"],
+        messages=[_AGENT_AWI_BODY],
         target_repo="github.com/example/repo",
         source="test",
         now=_FIXED_DT,
         saved_details=saved_details,
+        scope_aligned=True,
     )
 
     assert (notes / "inbox" / generated[0]).exists()
@@ -2527,7 +2614,8 @@ def test_add_reports_body_match_for_crlf_inputs(
 ) -> None:
     """位置引数と本文ファイルのCRLFをLFで保存し、保存本文との一致を報告する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
-    message = "1行目\r\n2行目\r\n"
+    message = _AGENT_AWI_BODY.replace("\n", "\r\n")
+    messages: list[str]
     if input_kind == "body-file":
         body_path = tmp_path / "body.md"
         body_path.write_bytes(message.encode())
@@ -2543,6 +2631,7 @@ def test_add_reports_body_match_for_crlf_inputs(
         source="test",
         now=_FIXED_DT,
         saved_details=saved_details,
+        scope_aligned=True,
     )
 
     saved = (notes / "inbox" / generated[0]).read_bytes()
@@ -2570,7 +2659,7 @@ def test_cli_add_outputs_source_and_extra_frontmatter(
 ) -> None:
     """投入の出力はsourceと非予約frontmatterを表示する。"""
     message = f"---\ncustom_key: 値\n---\n投入本文\n\n{_AGENT_AWI_SECTIONS}"
-    _invoke_add_body_file(monkeypatch, tmp_path, message, "--source", "test-source")
+    _invoke_add_body_file(monkeypatch, tmp_path, message, "--source", "test-source", "--scope-aligned")
     output = capsys.readouterr().out
     assert "    source: test-source\n" in output
     assert '    extra_frontmatter: {"custom_key": "値"}\n' in output
