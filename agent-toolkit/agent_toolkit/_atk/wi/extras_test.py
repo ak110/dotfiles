@@ -78,6 +78,7 @@ class TestAddSourceOption:
                     "wi",
                     "add",
                     "--source=session-review",
+                    "--scope-aligned",
                     str(myrepo),
                     "--body-file",
                     str(body_file),

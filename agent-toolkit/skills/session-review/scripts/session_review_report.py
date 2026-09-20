@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import pathlib
 import sys
 from typing import Any
@@ -19,6 +20,7 @@ PHASES = (
     "構造検査",
 )
 ANALYSIS_FIELDS = ("direct_cause", "root_cause", "rule_gap", "action")
+DURATION_TARGET_SECONDS = 180.0
 SUMMARY_MAX_CHARS = 200
 REPORT_H2_HEADINGS = (
     "対象セッション",
@@ -60,6 +62,13 @@ _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
 
 --timings: 工程名をキーとするJSON object。キーは{"、".join(PHASES)}の6つを、この順序で漏れなく含める。
            値は`started_at`と`finished_at`をISO 8601の文字列で持つJSON object。
+
+--duration-analysis: 次のキーを持つJSON object。
+  bottleneck: `interval`（非空文字列）と`seconds`（0以上の有限な数値）を持つJSON object
+  reduction: `seconds`（0以上の有限な数値）と`basis`（非空文字列）を持つJSON object
+  non_reducible_reason: 削減できない区間又は理由を示す非空文字列
+  unmeasured_intervals: `interval`と`reason`を非空文字列で持つJSON objectの配列
+  extractor_event: `kind`と`value`を非空文字列で持つJSON object
 
 --sections: 節名をキーとするJSON object。値はその節へ置くMarkdown本文の文字列。
             受理する節名は{"、".join(FREE_SECTION_HEADINGS)}の5つとする。
@@ -126,6 +135,73 @@ def _seconds(value: dict[str, Any], phase: str) -> float:
     return seconds
 
 
+def _nonempty_string(value: Any, field: str) -> str:
+    """非空文字列を返し、型又は空値を拒否する。"""
+    if not isinstance(value, str) or not value.strip():
+        raise ReportError(f"所要時間分析の{field}は非空文字列で指定する")
+    return value.strip()
+
+
+def _nonnegative_number(value: Any, field: str) -> float:
+    """boolを除く0以上の有限な数値をfloatで返す。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ReportError(f"所要時間分析の{field}は0以上の有限な数値で指定する")
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ReportError(f"所要時間分析の{field}は0以上の有限な数値で指定する") from error
+    if not math.isfinite(number) or number < 0:
+        raise ReportError(f"所要時間分析の{field}は0以上の有限な数値で指定する")
+    return number
+
+
+def _duration_analysis_lines(value: dict[str, Any], measured_seconds: float) -> list[str]:
+    """構造化された所要時間分析を検証し、固定順のMarkdown行へ変換する。"""
+    expected = {"bottleneck", "reduction", "non_reducible_reason", "unmeasured_intervals", "extractor_event"}
+    if set(value) != expected:
+        raise ReportError(f"所要時間分析のキーが不正である: {sorted(set(value) ^ expected)}")
+    bottleneck = value["bottleneck"]
+    reduction = value["reduction"]
+    extractor_event = value["extractor_event"]
+    unmeasured = value["unmeasured_intervals"]
+    if not isinstance(bottleneck, dict) or set(bottleneck) != {"interval", "seconds"}:
+        raise ReportError("所要時間分析のbottleneckが不正である")
+    if not isinstance(reduction, dict) or set(reduction) != {"seconds", "basis"}:
+        raise ReportError("所要時間分析のreductionが不正である")
+    if not isinstance(extractor_event, dict) or set(extractor_event) != {"kind", "value"}:
+        raise ReportError("所要時間分析のextractor_eventが不正である")
+    if not isinstance(unmeasured, list):
+        raise ReportError("所要時間分析のunmeasured_intervalsは配列で指定する")
+    bottleneck_seconds = _nonnegative_number(bottleneck["seconds"], "bottleneck.seconds")
+    reduction_seconds = _nonnegative_number(reduction["seconds"], "reduction.seconds")
+    unmeasured_texts: list[str] = []
+    for index, interval in enumerate(unmeasured):
+        if not isinstance(interval, dict) or set(interval) != {"interval", "reason"}:
+            raise ReportError(f"所要時間分析のunmeasured_intervals[{index}]が不正である")
+        unmeasured_texts.append(
+            f"{_nonempty_string(interval['interval'], f'unmeasured_intervals[{index}].interval')}"
+            f"（{_nonempty_string(interval['reason'], f'unmeasured_intervals[{index}].reason')}）"
+        )
+    estimated_seconds = max(0.0, measured_seconds - reduction_seconds)
+    difference = estimated_seconds - DURATION_TARGET_SECONDS
+    comparison = (
+        f"目標を{abs(difference):.3f}秒下回る"
+        if difference < 0
+        else f"目標を{difference:.3f}秒上回る"
+        if difference > 0
+        else "目標と一致する"
+    )
+    return [
+        f"- ボトルネック: {_nonempty_string(bottleneck['interval'], 'bottleneck.interval')}（{bottleneck_seconds:.3f}秒）",
+        f"- 削減見込み: {reduction_seconds:.3f}秒（{_nonempty_string(reduction['basis'], 'reduction.basis')}）",
+        f"- 削減不能部分: {_nonempty_string(value['non_reducible_reason'], 'non_reducible_reason')}",
+        f"- 未計測区間: {'、'.join(unmeasured_texts) if unmeasured_texts else 'なし'}",
+        f"- 抽出器イベント: {_nonempty_string(extractor_event['kind'], 'extractor_event.kind')}="
+        f"{_nonempty_string(extractor_event['value'], 'extractor_event.value')}",
+        f"- 180秒目標との比較: 改善後見込み{estimated_seconds:.3f}秒、{comparison}",
+    ]
+
+
 def _section_body(content: str, heading: str) -> str:
     """指定したH2の本文を次のH2直前まで返す。"""
     lines = content.splitlines()
@@ -163,6 +239,7 @@ def render(
     decisions: list[dict[str, Any]],
     analyses: dict[str, dict[str, Any]],
     timings: dict[str, dict[str, Any]],
+    duration_analysis: dict[str, Any],
     sections: dict[str, str] | None = None,
 ) -> str:
     """全候補を過不足なく含むMarkdown報告を返す。"""
@@ -265,7 +342,9 @@ def render(
         for analysis_id in sorted(used_analysis_ids)
     ]
 
-    timing_rows = [f"| {phase} | {_seconds(timings[phase], phase):.3f} |" for phase in PHASES]
+    phase_seconds = [_seconds(timings[phase], phase) for phase in PHASES]
+    timing_rows = [f"| {phase} | {seconds:.3f} |" for phase, seconds in zip(PHASES, phase_seconds, strict=True)]
+    duration_lines = _duration_analysis_lines(duration_analysis, sum(phase_seconds))
     return "\n".join(
         [
             "# セッション振り返り",
@@ -297,6 +376,8 @@ def render(
             "| --- | ---: |",
             *timing_rows,
             "",
+            *duration_lines,
+            "",
             "## 登録したキュー項目",
             "",
             *_section_lines(sections, "登録したキュー項目"),
@@ -316,6 +397,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--decisions", type=pathlib.Path, required=True, help="候補ごとの判定を並べたJSONの絶対パス")
     parser.add_argument("--analyses", type=pathlib.Path, required=True, help="分析IDごとの原因分析を並べたJSONの絶対パス")
     parser.add_argument("--timings", type=pathlib.Path, required=True, help="工程ごとの開始と終了を並べたJSONの絶対パス")
+    parser.add_argument(
+        "--duration-analysis",
+        type=pathlib.Path,
+        required=True,
+        help="所要時間分析の構造化JSONの絶対パス",
+    )
     parser.add_argument("--sections", type=pathlib.Path, help="節ごとの自由記述本文を並べたJSONの絶対パス")
     parser.add_argument("--output", type=pathlib.Path, required=True, help="生成する報告の絶対パス")
     return parser
@@ -328,12 +415,18 @@ def main(argv: list[str] | None = None) -> int:
         decisions = _load_json(args.decisions)
         analyses = _load_json(args.analyses)
         timings = _load_json(args.timings)
+        duration_analysis = _load_json(args.duration_analysis)
         sections = _load_json(args.sections) if args.sections is not None else {}
-        if not isinstance(decisions, list) or not isinstance(analyses, dict) or not isinstance(timings, dict):
-            raise ReportError("判定・分析・工程時刻のJSON型が不正である")
+        if (
+            not isinstance(decisions, list)
+            or not isinstance(analyses, dict)
+            or not isinstance(timings, dict)
+            or not isinstance(duration_analysis, dict)
+        ):
+            raise ReportError("判定・分析・工程時刻・所要時間分析のJSON型が不正である")
         if not isinstance(sections, dict):
             raise ReportError("節の本文のJSON型が不正である")
-        content = render(_load_jsonl(args.candidates), decisions, analyses, timings, sections)
+        content = render(_load_jsonl(args.candidates), decisions, analyses, timings, duration_analysis, sections)
         if args.mode == "generate":
             args.output.write_text(content, encoding="utf-8")
         elif not args.output.is_file():

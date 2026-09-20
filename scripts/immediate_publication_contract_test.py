@@ -87,11 +87,11 @@ _REQUIRED_CLAUSES = (
     ),
     (
         "subagent",
-        "`検証・CI方針`が`通常`の場合は、pushしたcommitの7文字以上の一意な短縮OIDをCI照会の直前に対象リポジトリで解決してCIを確認し、差分が無い場合は現在HEADのCI結論を1回確定する。",
+        "CI照会の直前に対象リポジトリで`git rev-parse --verify <revision>^{commit}`を実行する。",
     ),
     (
         "subagent",
-        "`即時対応`の場合は、同じcommitに対応するCIの起動とrun URLを確認した時点で待機を終え、成功又は失敗を判定しない。",
+        "`即時対応`の場合は、同じcommitに対応するCIの起動とrun URLを確認した時点で待機を終える。",
     ),
     (
         "subagent",

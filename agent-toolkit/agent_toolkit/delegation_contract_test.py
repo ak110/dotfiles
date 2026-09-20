@@ -252,6 +252,48 @@ def test_delegation_wait_contract_separates_launch_routes() -> None:
     assert "残る種類が変わった時点で間隔を再計算" in waiting
 
 
+def test_delegation_wait_contract_selects_result_destination() -> None:
+    """待機結果は消費回数と保持要否に応じて標準出力とファイルを選ぶ。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    waiting = (plugin_root / "skills" / "delegation" / "references" / "waiting-and-monitoring.md").read_text(encoding="utf-8")
+
+    assert all(value in waiting for value in ("1回だけ消費", "標準出力", "--output-file", "監査証跡"))
+    assert all(value in waiting for value in ("atk agents wait --help", "公開の要約指定", "待機を再発行しない"))
+
+
+def test_picker_output_carries_validated_costs_and_fixed_notes() -> None:
+    """pickerは固定出力でノート、上流条件及びレーン費用を完全に渡す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+
+    assert all(value in picker for value in ("lane_costs", "implementation_seconds", "integration_seconds", "rationale"))
+    assert all(value in picker for value in ("project_notes", "実在し読み取れる", "upstream_target_repo", "空でない文字列"))
+    assert all(value in parent for value in ("lane_costs", "集合一致", "非負"))
+    assert "起動文と`固有指示`へは再掲しない" in lanes
+
+
+def test_lane_integration_returns_changed_agent_rules() -> None:
+    """レーン統合は変更したエージェント規則のパスと確定本文を返す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    recipient = (plugin_root / "share" / "lane-integration.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
+
+    assert all(value in recipient for value in ("agent_rule_changes", '"path"', '"text"', "統合後ファイルから逐語"))
+    assert all(value in parent for value in ("agent_rule_changes", "path集合", "逐語で存在", "メイン自身へ適用"))
+
+
+def test_external_api_commit_oid_is_resolved_immediately() -> None:
+    """外部API用commitは呼出直前に完全OIDへ解決して同じ値を渡す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    termination = (plugin_root / "share" / "session-termination.subagent.md").read_text(encoding="utf-8")
+
+    assert "git rev-parse --verify <revision>^{commit}" in termination
+    assert all(value in termination for value in ("40桁か64桁", "小文字16進数", "同じ完全OID"))
+    assert all(value in termination for value in ("この実行が返した完全OID", "適用範囲", "限定する"))
+
+
 def test_subagent_command_prerequisites_point_to_shared_sources() -> None:
     """軽量委譲先の実行前提は詳細規範の正本へ到達する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]

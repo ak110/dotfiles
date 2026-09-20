@@ -12,8 +12,6 @@ from agent_toolkit._hooks.notice import _WARN_TAG, block_formatter, formatter
 _DEFAULT_LINE_THRESHOLD = 350
 _THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_LINES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
-_MANDATORY_DOCUMENT_NAMES = frozenset({"AGENTS.md", "CLAUDE.md", "SKILL.md"})
-_MANDATORY_PATH_PARTS = frozenset({"rules", "skills"})
 # `Read`が行の列ではない形（画像の視覚提示、PDFのページ単位）で提示する形式。
 # 当該形式では改行バイトの個数が取得量に対応せず、`offset`と`limit`も取得量を変えない。
 _NON_LINE_ORIENTED_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".pdf", ".png", ".webp"})
@@ -30,19 +28,11 @@ def _line_threshold() -> int:
     return threshold if threshold > 0 else _DEFAULT_LINE_THRESHOLD
 
 
-def _is_mandatory_document(path: pathlib.Path) -> bool:
-    """分割すると契約の読了を損なう必須指示文書であるかを返す。"""
-    if path.name in _MANDATORY_DOCUMENT_NAMES:
-        return True
-    parts = set(path.parts)
-    return "agent-toolkit" in parts and bool(parts & _MANDATORY_PATH_PARTS)
-
-
 def _line_count_if_large(path: pathlib.Path) -> int | None:
-    """通常ファイルが閾値を超える場合に実測行数を返す。"""
+    """行指向ファイルが閾値を超える場合に実測行数を返す。"""
     threshold = _line_threshold()
     try:
-        if not path.is_file() or _is_mandatory_document(path):
+        if not path.is_file():
             return None
         with path.open("rb") as source:
             line_count = sum(1 for _line in source)
