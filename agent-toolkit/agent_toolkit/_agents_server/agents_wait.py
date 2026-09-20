@@ -84,7 +84,10 @@ def wait_for_result(
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
     root_session_id = status_file.resolve_conversation_root_session_id(env, state_root)
-    identity = status_file.resolve_status_file_identity(env)
+    try:
+        identity = status_file.resolve_status_owner_identity(env, state_root)
+    except ValueError as error:
+        return _fail(f"agents_serverの状態書込主体を解決できません: {error}", 4)
     if root_session_id is None or identity is None:
         message = (
             "agents_serverの状態ディレクトリを解決できません。"

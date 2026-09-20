@@ -244,6 +244,58 @@ def test_delegate_wait_consumes_own_writer_result(
     assert not own_result.exists()
 
 
+def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codex threadと異なる書込主体の稼働状態と終端結果を同じ所有単位で回収する。"""
+    root = status_file.status_directory("root-session", tmp_path)
+    root.mkdir(parents=True)
+    (root / "writer-session.json").write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
+        encoding="utf-8",
+    )
+    status_file.write_host_alias("root-session", "writer-session", "codex-thread", tmp_path)
+    environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root-session", "CODEX_THREAD_ID": "codex-thread"}
+
+    assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 3
+    assert json.loads(capsys.readouterr().out) == {"session_id": "remote-session", "status": "running"}
+
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(exist_ok=True)
+    result_path = results / "remote-session.json"
+    result_path.write_text(
+        json.dumps({"status": "completed", "owner_status_file": "writer-session.json"}),
+        encoding="utf-8",
+    )
+
+    assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 0
+    assert json.loads(capsys.readouterr().out) == {"session_id": "remote-session", "status": "completed"}
+    assert not result_path.exists()
+    retained, error = status_file.read_wait_targets("root-session", "writer-session.json", tmp_path)
+    assert retained == set()
+    assert error is None
+
+
+def test_codex_delegate_wait_reports_ambiguous_writer_aliases(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数の書込主体へ対応するCodex threadは診断を返して待機しない。"""
+    status_file.write_host_alias("root-session", "writer-a", "codex-thread", tmp_path)
+    status_file.write_host_alias("root-session", "writer-b", "codex-thread", tmp_path)
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session", "CODEX_THREAD_ID": "codex-thread"},
+            state_root=tmp_path,
+        )
+        == 4
+    )
+
+    assert "書込主体を一意に解決できません" in capsys.readouterr().err
+
+
 def _wait_lock_path(tmp_path: pathlib.Path) -> pathlib.Path:
     """root書込主体の待機所有権を表すロックの経路を返す。"""
     return status_file.status_directory("root-session", tmp_path) / "wait-locks" / "root.json.lock"

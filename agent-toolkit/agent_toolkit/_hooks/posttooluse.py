@@ -501,13 +501,13 @@ def _record_agents_server_session_state(
     model_type: str | None = None,
     remote_session_id: str | None = None,
     fallback_status_host_session: str | None = None,
-) -> None:
+) -> str | None:
     """agents_serverの公開応答をhook側の状態へ記録する。"""
     if remote_session_id is None:
         value = structured.get("session_id")
         remote_session_id = value if isinstance(value, str) and value else None
     if remote_session_id is None:
-        return
+        return None
 
     def _mutator(state: dict) -> dict | None:
         sessions = state.setdefault(_AGENTS_SERVER_SESSION_STATE_KEY, {})
@@ -566,16 +566,19 @@ def _record_agents_server_session_state(
     update_state(session_id, _mutator)
     starts_reply = operation == "send_message" and structured.get("delivery") in {"reply_started", "reply_ambiguous"}
     if operation in _AGENTS_SERVER_START_OPERATIONS or starts_reply:
-        identity = _agents_server_status_file.resolve_status_file_identity(os.environ)
-        if (
-            identity is None
-            and os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")
-            and fallback_status_host_session is not None
-            and _agents_server_status_file.valid_session_id(fallback_status_host_session)
-        ):
-            environment = dict(os.environ)
-            environment["AGENT_TOOLKIT_STATUS_HOST_SESSION"] = fallback_status_host_session
-            identity = _agents_server_status_file.resolve_status_file_identity(environment)
+        try:
+            identity = _agents_server_status_file.resolve_status_owner_identity(os.environ)
+            if (
+                identity is None
+                and os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")
+                and fallback_status_host_session is not None
+                and _agents_server_status_file.valid_session_id(fallback_status_host_session)
+            ):
+                environment = dict(os.environ)
+                environment["AGENT_TOOLKIT_STATUS_HOST_SESSION"] = fallback_status_host_session
+                identity = _agents_server_status_file.resolve_status_owner_identity(environment)
+        except ValueError as error:
+            return f"agents_serverの待機対象を登録できない: {error}"
         if identity is not None and _agents_server_status_file.valid_session_id(remote_session_id):
             _agents_server_status_file.retain_wait_targets(
                 identity.root_session_id,
@@ -586,6 +589,7 @@ def _record_agents_server_session_state(
         root_session_id = _agents_server_status_file.find_root_session_id_for_session(remote_session_id)
         if root_session_id is not None:
             _agents_server_status_file.write_root_alias(session_id, root_session_id)
+    return None
 
 
 def _remove_agents_server_session_record(session_id: str, remote_session_id: str | None) -> None:
@@ -1209,7 +1213,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             model_type = _agents_server_model_type(tool_input, operation)
             if model_type in _TRACKED_MODEL_TYPES:
                 _process_loop_log.append("subagent_start", type=model_type)
-            _record_agents_server_session_state(
+            warning = _record_agents_server_session_state(
                 session_id,
                 structured,
                 operation=operation,
@@ -1219,6 +1223,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 remote_session_id=remote_session_id,
                 fallback_status_host_session=session_id if tool_name.startswith("mcp__agents_server__") else None,
             )
+            if warning is not None:
+                notices.append(_llm_notice(warning, tag=_WARN_TAG, removable_cause=False))
             if operation == "start_shell":
                 reset_bash_failure_sequence(session_id, clear_gate=True)
         elif operation == "stop":
@@ -1226,7 +1232,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         else:
             if operation in {"wait", "kill"}:
                 _log_tracked_session_end(session_id, structured, remote_session_id)
-            _record_agents_server_session_state(
+            warning = _record_agents_server_session_state(
                 session_id,
                 structured,
                 operation=operation,
@@ -1234,6 +1240,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 remote_session_id=remote_session_id,
                 fallback_status_host_session=session_id if tool_name.startswith("mcp__agents_server__") else None,
             )
+            if warning is not None:
+                notices.append(_llm_notice(warning, tag=_WARN_TAG, removable_cause=False))
         return 0
 
     if tool_name == "TaskStop":
