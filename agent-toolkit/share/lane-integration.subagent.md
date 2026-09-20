@@ -46,7 +46,7 @@
 
 ## 出力
 
-統合差分から、`AGENTS.md`、`CLAUDE.md`、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`及びhook関連のエージェント向け文書の変更パスを列挙する。各パスについて、後続の判断へ影響する確定済み規則本文を統合後ファイルから逐語で取得する。該当しない場合は空配列とする。
+統合差分から、`AGENTS.md`、`CLAUDE.md`、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`及びhook関連のエージェント向け文書の変更パスを列挙する。各パスについて、後続の判断へ影響する確定済み規則本文を統合後ファイルから逐語で取得する。非連続の本文は別の配列要素とし、同じpathの反復を許す。同じpathの要素は統合後ファイルでの出現順に並べ、各`text`はファイル内へ連続して逐語で存在する本文とする。該当しない場合は空配列とする。
 
 次の形式だけを返す。
 
@@ -56,7 +56,7 @@ merged_head: <7文字以上の一意な短縮OID>
 plan_committed: <メイン計画ファイル名>
 adopted: <ファイル名のASCIIカンマ区切り。無い場合は「なし」>
 rejected: <ファイル名のASCIIカンマ区切り。無い場合は「なし」>
-deferred_adopt_commits: <AWIファイル名と7文字以上の一意な短縮OIDの対応。無い場合は「なし」>
+deferred_adopt_commits: <[{"awi":"AWIファイル名","commit":"7文字以上の一意な短縮OID"}]形式のJSON配列。無い場合は[]>
 agent_rule_changes: <[{"path":"リポジトリ相対パス","text":"確定済み規則本文"}]形式のJSON配列。無い場合は[]>
 ```
 

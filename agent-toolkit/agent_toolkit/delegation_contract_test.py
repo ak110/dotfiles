@@ -338,12 +338,35 @@ def test_lane_integration_returns_changed_agent_rules() -> None:
     recipient = (plugin_root / "share" / "lane-integration.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
 
-    assert all(value in recipient for value in ("agent_rule_changes", '"path"', '"text"', "統合後ファイルから逐語"))
-    assert all(value in parent for value in ("agent_rule_changes", "path集合", "逐語で存在", "メイン自身へ適用"))
     assert all(
-        value in parent for value in ("管理対象一時領域へ逐語保存", "JSON parser", "不正JSON", "入力は受領本文のまま保持")
+        value in recipient for value in ("agent_rule_changes", '"path"', '"text"', "非連続の本文", "同じpathの反復", "出現順")
     )
-    assert all(value in parent for value in ("agent_rule_changes[*].path", "そのまま検査入力", "逐語照合の完了後"))
+    assert all(value in parent for value in ("agent_rule_changes", "path集合", "連続して逐語で存在", "メイン自身へ適用"))
+    assert all(
+        value in parent
+        for value in ("管理対象一時領域へ逐語保存", "JSON parser", "JSONとして解析できない", "入力は受領本文のまま保持")
+    )
+    assert all(
+        value in parent
+        for value in ("agent_rule_changes[*].path", "そのまま検査入力", "同じpathの反復", "出現順", "逐語照合の完了後")
+    )
+
+
+def test_multi_value_delegation_results_use_json_arrays() -> None:
+    """複数件を返す委譲契約は構造化配列と親側の構文検査を共有する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    lane = (plugin_root / "share" / "lane-integration.subagent.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
+    termination = (plugin_root / "share" / "session-termination.subagent.md").read_text(encoding="utf-8")
+    termination_parent = (plugin_root / "share" / "session-termination.parent.md").read_text(encoding="utf-8")
+
+    assert 'deferred_adopt_commits: <[{"awi":"AWIファイル名","commit":' in lane
+    assert 'agent_rule_changes: <[{"path":"リポジトリ相対パス","text":' in lane
+    assert "無い場合は[]>" in lane
+    assert all(value in executor for value in ("それぞれJSON parser", "必須キーの欠落", "余分なキー"))
+    assert all(value in executor for value in ("deferred_adopt_commits[*].awi", "各`commit`"))
+    assert "deferred_adopted: <AWIファイル名のJSON文字列配列。無い場合は[]>" in termination
+    assert all(value in termination_parent for value in ("JSON parser", "文字列配列", "文字列以外の要素"))
 
 
 def test_external_api_commit_oid_is_resolved_immediately() -> None:
@@ -372,6 +395,27 @@ def test_session_termination_contract_separates_summary_and_details() -> None:
     assert all(value in parent for value in ("terminal_steps", "検査名", "終了コード", "警告の有無"))
     assert all(value in parent for value in ("確定した種別", "選定根拠の要約", "計画ファイルのパスは渡さない"))
     assert all(value in recipient for value in ("受領した確定済みの種別", "計画ファイルのパス", "読み直さない"))
+
+
+def test_session_review_resolves_project_reference_from_auto_loaded_rules() -> None:
+    """振り返り担当は参照文書を準備manifestではなくプロジェクト規範から解決する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    repository_root = plugin_root.parent
+    recipient = (plugin_root / "share" / "session-review-delegate.subagent.md").read_text(encoding="utf-8")
+    project_rules = (repository_root / "AGENTS.md").read_text(encoding="utf-8")
+    prepare = (plugin_root / "skills" / "session-review" / "scripts" / "session_review_prepare.py").read_text(encoding="utf-8")
+
+    assert all(value in recipient for value in ("自動読込された", "現在の実行ホスト", "指定が無い場合"))
+    assert all(value in recipient for value in ("リポジトリ名からパスを組み立てる経路", "準備manifest"))
+    assert all(
+        value in project_rules
+        for value in (
+            "## セッションレビュー",
+            "~/.claude/docs/session-review-dotfiles.md",
+            "~/.codex/docs/session-review-dotfiles.md",
+        )
+    )
+    assert '"reference_document"' not in prepare
 
 
 def test_subagent_command_prerequisites_point_to_shared_sources() -> None:

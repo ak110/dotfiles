@@ -39,17 +39,23 @@ PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeabl
 マージの前提はこれらのリモート側の条件とする。作業ツリーのclean、現在branch及びローカル`develop`の位置は、この前提から外す。
 マージの続行は、リモート側の条件の成立だけで判定する。
 
-ローカル`develop`を同期するかどうかは、マージの前提とは分けて次の読み取りコマンドで判定し、判定結果をマージ後まで保持する。
+ローカル`develop`を同期するかどうかは、マージの前提とは分けて判定する。まず次の読み取りコマンドで全worktreeを取得し、`branch refs/heads/develop`を持つblockを抽出する。
 
 ```sh
-git status --porcelain
-git rev-parse --abbrev-ref HEAD
-git rev-parse --short=7 origin/develop
-git merge-base --is-ancestor HEAD origin/develop
+git worktree list --porcelain
 ```
 
-`git status --porcelain`の出力が空で、現在branchが`develop`で、`git merge-base --is-ancestor HEAD origin/develop`が終了コード0を返す場合だけ、マージ後にローカル`develop`の同期を試みる。
-いずれかを満たさない場合は、既存の未コミット差分とローカルbranchを変更せず保持し、リモートだけでリリースを完遂する。
+該当blockが1件だけなら、その`worktree`行の絶対パスを`develop` worktreeとして保持し、次の読み取りコマンドをそのパスへ実行する。0件又は複数件ならローカル同期の候補を確定せず、マージ後も同期を省略する。
+
+```sh
+git -C <develop worktreeの絶対パス> status --porcelain
+git -C <develop worktreeの絶対パス> rev-parse --abbrev-ref HEAD
+git -C <develop worktreeの絶対パス> rev-parse --short=7 origin/develop
+git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD origin/develop
+```
+
+次の条件を全て満たす場合だけ、マージ後にそのworktreeでローカル`develop`の同期を試みる。`git status --porcelain`の出力が空であり、現在branchが`develop`であることを条件とする。rebase・merge・cherry-pickの中断状態が無く、`git merge-base --is-ancestor HEAD origin/develop`が終了コード0を返すことも条件とする。中断状態は、対象worktreeに対応するGit管理領域の`rebase-merge`、`rebase-apply`、`MERGE_HEAD`と`CHERRY_PICK_HEAD`の実在で判定する。
+いずれかを満たさない場合は、対象worktreeとローカル`develop`に加え、既存の未コミット差分も変更せず保持する。リモートだけでリリースを完遂する。
 この判定はマージ前時点の見込みであり、同期を実行してよいかはマージ後に同じ観点を再取得して確定する。
 
 必須checkの完了を次のコマンドで待つ。
@@ -115,25 +121,25 @@ git rev-parse --short=7 origin/master
 ```
 
 `origin/develop`と`origin/master`の7文字以上の一意な短縮OIDが一致することを確認する。
-マージ前の判定でローカル`develop`の同期を試みるとした場合は、同期を実行する直前に次を再取得する。
+マージ前の判定でローカル`develop`の同期を試みるとした場合は、同期を実行する直前に`git worktree list --porcelain`を再取得し、保持した絶対パスが引き続き`branch refs/heads/develop`を持つ唯一のblockであることを確認する。続けて、そのworktreeから次を再取得する。
 
 ```sh
-git status --porcelain
-git rev-parse --abbrev-ref HEAD
-git merge-base --is-ancestor HEAD origin/master
+git -C <develop worktreeの絶対パス> status --porcelain
+git -C <develop worktreeの絶対パス> rev-parse --abbrev-ref HEAD
+git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD origin/master
 ```
 
 ローカルbranchの同期は、利用者の未コミット変更とローカルbranchを壊さない場合だけ実行する。
-実行の直前に前掲の3観点（作業ツリーがcleanであること、現在branchが対象であること、fast-forwardが成立すること）を取得して判定する。
+実行の直前に前掲の観点（対象worktreeが一意であること、作業ツリーがcleanであること、現在branchが対象であること、中断状態が無いこと、fast-forwardが成立すること）を取得して判定する。
 すべて満たす場合だけ、続けて次を実行する。
 
 ```sh
-git merge --ff-only origin/master
-git rev-parse --short=7 develop
+git -C <develop worktreeの絶対パス> merge --ff-only origin/master
+git -C <develop worktreeの絶対パス> rev-parse --short=7 develop
 ```
 
-実行後に`git rev-parse --short=7 develop`が`origin/master`の短縮OIDと一致することを確認する。
-再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略し、既存の未コミット差分とローカルbranchを変更せずリモートの完遂を維持する。
+実行後に対象worktreeで取得した`develop`が`origin/master`の短縮OIDと一致することを確認する。
+再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略する。対象worktreeと既存の未コミット差分に加え、ローカルbranchも変更せずリモートの完遂を維持する。完了報告には、省略した条件と対象worktreeの絶対パスを記録する。ローカル`develop`の短縮OIDと`origin/master`の短縮OIDも記録する。
 
 develop CIの待機を省略できるのは、既に検収済みのcommitと対象refのcommitが同一であり、かつ対象branch固有の検査が無いことを現行のワークフロー定義から確認できる場合に限る。
 いずれかを確認できない場合は、develop push前のbaselineを用いる既存の待機経路をそのまま実行する。
@@ -141,7 +147,7 @@ develop CIの待機を省略できるのは、既に検収済みのcommitと対�
 
 ```sh
 # 省略条件が成立しない場合だけ実行する。
-uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/agent_toolkit/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha origin/master
+uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/agent_toolkit/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha origin/master --timeout 1800
 ```
 
 master CIの待機も同じ条件で省略できる。次の3つをすべて確認できる場合に限り、いずれか1つでも確認できない場合は後段の待機経路をそのまま実行する。

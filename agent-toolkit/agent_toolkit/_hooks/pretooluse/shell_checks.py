@@ -2377,7 +2377,7 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
     """未観測の最下層`atk`サブコマンドへ、CLI定義から生成した受理形式を添える。
 
     ヘルプを生成できない場合も実行は止めず、生成できなかった旨と確認手段を警告で返す。
-    通した場合の結果は未受理オプションによる`atk`の終了に限り、復元できるためである。
+    ヘルプ生成の失敗だけでは呼び出し自体の不成立を確定できないためである。
     """
     paths: list[tuple[str, ...]] = []
     for segment in _extract_execution_segments(command):
@@ -2428,9 +2428,7 @@ _ATK_HELP_ONLY_FLAGS: frozenset[str] = frozenset({"-h", "--help"})
 def _check_bash_atk_options(command: str) -> str | None:
     """公開済み最下層`atk`サブコマンドの受理形式に一致しない引数を実行前に検出する。
 
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できると判定して警告で返す。
-    通した場合の結果は`atk`が受理形式の不一致で終了することに限り、副作用を残さないためである。
-    第1段で復元できると判定した操作は反復しても遮断へ格上げしないため、第2段は適用しない。
+    公開契約から不成立が確定する呼び出しは、同じ失敗を実行させず遮断する。
     通知本文は当該判定が保持する受理形式から組み立て、受理形式に応じて対処を切り替える。
     受理形式から導かない固定の対処文は、引数を受理しないサブコマンドで実行できない案内になる。
     認識できた経路の直下に当該階層が受理しないサブコマンドがある呼び出しは、
@@ -2454,12 +2452,14 @@ def _check_bash_atk_options(command: str) -> str | None:
         arguments = list(_argument_tokens(segment, 1 + len(path)))
         scan = _scan_accepted_options(arguments, flags, valued)
         if scan.unknown_option is not None:
-            return _llm_notice(
-                f"`atk {' '.join(path)}`が受理しないオプションである。対象: {scan.unknown_option}\n"
-                f"{_format_accepted_option_candidates(scan.unknown_option, flags, valued)}",
-                tag=_WARN_TAG,
-                removable_cause=True,
+            print(
+                _block_notice(
+                    f"`atk {' '.join(path)}`が受理しないオプションである。対象: {scan.unknown_option}",
+                    fix=_format_accepted_option_candidates(scan.unknown_option, flags, valued),
+                ),
+                file=sys.stderr,
             )
+            return "block"
         if not positionals and scan.positionals:
             accepts_no_arguments = not valued and set(flags) <= _ATK_HELP_ONLY_FLAGS
             remedy = (
@@ -2468,11 +2468,14 @@ def _check_bash_atk_options(command: str) -> str | None:
                 else "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。"
                 "受理するオプションは`--help`を単独で実行して確認する。"
             )
-            return _llm_notice(
-                f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(scan.positionals)}\n{remedy}",
-                tag=_WARN_TAG,
-                removable_cause=True,
+            print(
+                _block_notice(
+                    f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(scan.positionals)}",
+                    fix=remedy.removeprefix("対処: "),
+                ),
+                file=sys.stderr,
             )
+            return "block"
     return None
 
 
@@ -3800,13 +3803,15 @@ def _check_bash_unknown_atk_subcommand(command: str) -> str | None:
         catalog = _atk_subcommand_catalog(prefix)
         listed = "\n".join(f"- {name}: {summary}" for name, summary in catalog)
         label = f"`atk {' '.join(prefix)}`" if prefix else "`atk`"
-        return _llm_notice(
-            f"{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
-            f"{label}が受理するサブコマンド:\n{listed}\n"
-            "対処: 上記のいずれかへ修正する。",
-            tag=_WARN_TAG,
-            removable_cause=True,
+        print(
+            _block_notice(
+                f"{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
+                f"{label}が受理するサブコマンド:\n{listed}",
+                fix="上記のいずれかへ修正する。",
+            ),
+            file=sys.stderr,
         )
+        return "block"
     return None
 
 

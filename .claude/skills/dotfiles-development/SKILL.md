@@ -3,13 +3,12 @@ name: dotfiles-development
 description: >
   dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make test-browser`を
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、
-  mise trustを要する作業ツリーと状態ディレクトリを扱うとき、commit typeを判定するとき、
-  `agent-toolkit:session-review`の参照文書の位置を確認するときに起動する。
+  mise trustを要する作業ツリーと状態ディレクトリを扱うとき、commit typeを判定するときに起動する。
 ---
 
 # dotfilesの開発手順
 
-本スキルは、本リポジトリの検査、整形、依存更新及び振り返りの参照文書の位置を提供する。
+本スキルは、本リポジトリの検査、整形及び依存更新の手順を提供する。
 リリース運用は`dotfiles-release`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
 ## 開発手順
@@ -56,10 +55,3 @@ description: >
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
   実ブラウザーテストを変更した場合は`make test-browser`を実行する
 - コミットメッセージtypeの判定例: [commit-types.md](../../../docs/development/commit-types.md)
-
-## 振り返りの参照文書
-
-`agent-toolkit:session-review`が読む本リポジトリ固有の参照文書は、Claude Codeでは`~/.claude/docs/session-review-dotfiles.md`とする。
-Codexでは`~/.codex/docs/session-review-dotfiles.md`とする。
-同文書はセッションの所要時間目標と本リポジトリ固有の振り返り観点を保持する。
-配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。
