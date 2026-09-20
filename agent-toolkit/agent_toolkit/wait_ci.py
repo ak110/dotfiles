@@ -26,6 +26,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote, urlparse
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import json_command as _json_command
 
 # 以下の終了コードはCLIの公開インターフェース（ユーザーが`echo $?`等で参照する契約）であり、
@@ -264,7 +265,79 @@ def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout:
     )
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise RunListError(f"glab ci list returned unexpected JSON shape: {payload!r}")
-    return [_normalize_gitlab_pipeline(item) for item in payload]
+    pipelines = list(payload)
+    seen_ids = {item.get("id") for item in pipelines}
+    for parent in payload:
+        parent_id = parent.get("id")
+        parent_project_id = parent.get("project_id")
+        if not isinstance(parent_id, int) or isinstance(parent_id, bool):
+            raise RunListError(f"glab ci list returned invalid pipeline id: {parent!r}")
+        if not isinstance(parent_project_id, int) or isinstance(parent_project_id, bool):
+            continue
+        for child in _glab_downstream_pipelines(repository, parent_id, parent_project_id, subprocess_timeout):
+            child_id = child.get("id")
+            if child_id not in seen_ids:
+                pipelines.append(child)
+                seen_ids.add(child_id)
+    return [_normalize_gitlab_pipeline(item) for item in pipelines]
+
+
+def _glab_downstream_pipelines(
+    repository: str,
+    parent_pipeline_id: int,
+    parent_project_id: int,
+    subprocess_timeout: float,
+) -> list[dict[str, Any]]:
+    """同一projectのbridgeが再帰的に指すdownstream pipeline詳細を返す。"""
+    target = _parse_repository(repository)
+    encoded_project = quote(target.project_path, safe="")
+    children: list[dict[str, Any]] = []
+    pending = [parent_pipeline_id]
+    visited = {parent_pipeline_id}
+    while pending:
+        current_id = pending.pop(0)
+        command = [
+            "glab",
+            "api",
+            f"projects/{encoded_project}/pipelines/{current_id}/bridges?per_page=100",
+            "--paginate",
+            "--output",
+            "json",
+        ]
+        if target.hostname is not None:
+            command.extend(["--hostname", target.hostname])
+        bridges = _run_forge_json_command(command, subprocess_timeout, "glab api bridges")
+        if not isinstance(bridges, list) or not all(isinstance(item, dict) for item in bridges):
+            raise RunListError(f"glab api bridges returned unexpected JSON shape: {bridges!r}")
+        for bridge in bridges:
+            downstream = bridge.get("downstream_pipeline")
+            if downstream is None:
+                continue
+            if not isinstance(downstream, dict):
+                raise RunListError(f"glab api bridges returned invalid downstream pipeline: {bridge!r}")
+            if downstream.get("project_id") != parent_project_id:
+                continue
+            child_id = downstream.get("id")
+            if not isinstance(child_id, int) or isinstance(child_id, bool):
+                raise RunListError(f"glab api bridges returned invalid downstream pipeline id: {bridge!r}")
+            if child_id in visited:
+                continue
+            visited.add(child_id)
+            child_command = [
+                "glab",
+                "api",
+                f"projects/{encoded_project}/pipelines/{child_id}",
+                "--output",
+                "json",
+            ]
+            if target.hostname is not None:
+                child_command.extend(["--hostname", target.hostname])
+            child = _run_forge_json_command(child_command, subprocess_timeout, "glab api downstream pipeline")
+            if not isinstance(child, dict):
+                raise RunListError(f"glab api downstream pipeline returned unexpected JSON shape: {child!r}")
+            children.append(child)
+            pending.append(child_id)
+    return children
 
 
 def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -> list[JobRecord]:
@@ -1011,13 +1084,22 @@ def _non_negative_float(value: str) -> float:
     return parsed
 
 
+def _full_sha(value: str) -> str:
+    """Forge APIへそのまま渡せる完全長commit SHAを検証する。"""
+    if re.fullmatch(r"[0-9a-fA-F]{40}", value) is None:
+        raise argparse.ArgumentTypeError("40桁の完全長commit SHAを指定してください")
+    return value.lower()
+
+
 def main(argv: list[str] | None = None) -> int:
     """コマンドライン引数を解析し、baseline作成またはCI通過確認を実行する。"""
+    _outcome.force_utf8_stdio()
     _install_signal_handlers()
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write-baseline", type=pathlib.Path, help="push前の実行IDを保存するJSONパス")
     mode.add_argument("--baseline", type=pathlib.Path, help="push前に保存したbaseline JSONパス")
+    mode.add_argument("--wait-sha", type=_full_sha, help="baselineを使わず全実行を待つ完全長commit SHA")
     parser.add_argument("--repo", required=True, help="対象repository（owner/repoまたはホストを含むURL）")
     parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")
     parser.add_argument("--source-ref", required=True, help="push元のローカルsource ref（例: HEAD）")
@@ -1042,6 +1124,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時にsource refの後続run成功を追跡")
     args = parser.parse_args(argv)
+    if args.wait_sha is not None and args.sha is not None:
+        parser.error("--wait-shaと--shaは同時に指定できません")
     forge = _resolve_forge(args.forge, args.repo)
     if forge is None:
         print("[wait_ci] 対象forgeを--repoから判別できない。--forgeで明示指定する", file=sys.stderr)
@@ -1068,6 +1152,20 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_GH_ERROR
         print(f"[wait_ci] baseline保存: {args.write_baseline} ({len(baseline.run_ids)}件)")
         return EXIT_SUCCESS
+    if args.wait_sha is not None:
+        return wait_for_ci(
+            args.wait_sha,
+            args.timeout,
+            args.poll_interval,
+            args.registration_grace,
+            args.follow_cancelled,
+            args.subprocess_timeout,
+            repository=args.repo,
+            ref=args.ref,
+            source_ref=args.source_ref,
+            baseline_ids=frozenset(),
+            forge=forge,
+        )
     try:
         baseline = _load_baseline(args.baseline)
         if args.sha is None:

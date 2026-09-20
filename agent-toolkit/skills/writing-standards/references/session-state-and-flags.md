@@ -137,6 +137,12 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   その呼び出しの成否に依存しない。
   PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力として読む。
   セッション終了まで保持し、リセット経路は設けない
+- `background_task_output_paths`: PostToolUseが背景移行応答から得たタスクIDをキー、絶対出力パスを値として記録する。
+  `run_in_background=true`の応答と、実行時間上限によるホストの背景移行応答を同じ形式で扱う。
+  PreToolUse(Bash)は`stop_gate.py`と同じ起動集合と完了集合を使って未完了のタスクだけを選び、
+  対応する出力パスを読取コマンドのオペランドとして渡した場合に完了通知待ちを案内する。
+  完了通知がUserPromptSubmitへ到達した時点で、同通知のタスクIDに対応する要素を削除する。
+  未完了の対応はセッション終了まで保持する
 - `task_stop_blocked_at`: PreToolUse(TaskStop)が遮断した時刻のPOSIX秒を記録し、同フックが再実行許可窓の判定に読む。
   セッション終了まで保持し、リセット経路は設けない
 - `stall_detection_completed_at_by_task`: `record_stall_detection.py`が停滞検知を完了した停止対象の完全なタスクIDをキー、完了時刻のPOSIX秒を値として記録する。

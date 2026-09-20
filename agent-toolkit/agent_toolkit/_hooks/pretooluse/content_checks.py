@@ -810,6 +810,10 @@ def _is_colloquial_judgment_source(file_path: str) -> bool:
     )
     if path in dictionaries:
         return True
+    if path.name in {"words_allow.txt", "words_deny.txt"} and path.parent.name == "colloquial" and "pyfltr" in path.parts:
+        return True
+    if path.name == "colloquial_check_test.py" and path.parent.name == "tests" and "pyfltr" in path.parts:
+        return True
     if path.name.endswith("_test.py") and any(
         dictionary is not None and path.parent == dictionary.parent for dictionary in dictionaries
     ):
