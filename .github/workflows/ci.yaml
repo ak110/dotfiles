@@ -160,12 +160,14 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: |
-          mise install --force actionlint
-          $actual = [IO.Path]::GetFullPath((mise which actionlint).Trim())
+          $mise = Join-Path $env:LOCALAPPDATA "mise\bin\mise.exe"
+          & $mise install --force actionlint
+          $actual = [IO.Path]::GetFullPath((& $mise which actionlint).Trim())
           $binDirectory = Split-Path -Leaf (Split-Path -Parent $actual)
           if ($binDirectory -ne ".mise-bins") {
             throw "actionlintが.mise-bins配下にない: $actual"
           }
+          $env:PATH = "$(Split-Path -Parent $actual);$env:PATH"
           actionlint --version
       - name: 主要ファイルの存在確認
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'

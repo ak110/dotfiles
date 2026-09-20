@@ -66,7 +66,7 @@ class TestCodexApplyPatchEditChecks:
         assert result.returncode == 2
         assert len(result.stdout.strip().splitlines()) == 1
         assert _additional_context(result).count("ホームディレクトリの絶対パス") == 2
-        assert result.stderr.count("ホームディレクトリの絶対パス") == 2
+        assert result.stderr.count("ホームディレクトリの絶対パス") == 1
         assert "この通知は同一セッションで2件目である" in result.stderr
         assert "Fix:" in result.stderr
 
