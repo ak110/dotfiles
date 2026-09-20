@@ -479,6 +479,24 @@ def list_managed_temp(
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
 
 
+def _sweep_cleanup_completed_elsewhere(
+    path: pathlib.Path,
+    registry_path: pathlib.Path,
+    nonce: str | None,
+) -> bool:
+    """別実行が実体と全ての後始末状態を削除済みである場合だけ真を返す。"""
+    try:
+        if os.path.lexists(path) or os.path.lexists(registry_path):
+            return False
+        if next(registry_path.parent.glob(f"{registry_path.name}.consuming-*"), None) is not None:
+            return False
+        if nonce is None:
+            return next(path.parent.glob(".agent-toolkit-cleanup-*"), None) is None
+        return not os.path.lexists(path.parent / f".agent-toolkit-cleanup-{nonce}")
+    except OSError:
+        return False
+
+
 def sweep_expired_managed_temp(
     *,
     now: datetime.datetime,
@@ -493,7 +511,12 @@ def sweep_expired_managed_temp(
     deleted: list[pathlib.Path] = []
     for entry in list_managed_temp():
         path = pathlib.Path(entry["path"])
+        registry_path = _registry_path(path)
+        nonce: str | None = None
         try:
+            record = _load_private_json(registry_path)
+            recorded_nonce = record.get("nonce")
+            nonce = recorded_nonce if isinstance(recorded_nonce, str) else None
             latest_mtime_ns = path.stat().st_mtime_ns
             if latest_mtime_ns >= cutoff_ns:
                 continue
@@ -513,6 +536,8 @@ def sweep_expired_managed_temp(
                 continue
             cleanup_managed_temp(path)
         except (ManagedTempError, OSError) as error:
+            if _sweep_cleanup_completed_elsewhere(path, registry_path, nonce):
+                continue
             _outcome.report_warning(f"管理対象一時領域を自動削除できない: {path}: {error}")
             continue
         deleted.append(path)

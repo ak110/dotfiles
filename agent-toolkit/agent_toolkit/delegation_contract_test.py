@@ -229,6 +229,16 @@ def test_execution_review_covers_non_machine_authoring_contracts() -> None:
     assert all(value in additions for value in ("既存成果物", "違反する箇所", "同じ変更で是正"))
 
 
+def test_execution_review_initializes_only_a_missing_initial_review_table() -> None:
+    """実行レビューは既存表を保持し、初回不在だけを初期化し、再レビュー不在を差し戻す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    recipient = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+
+    assert all(value in recipient for value in ("初回レビュー", "既存の表をそのまま使い", "表が無い場合だけ"))
+    assert all(value in recipient for value in ("再レビュー", "初期化せず", "needs_escalation"))
+    assert "実在する表へ`init`を再実行しない" in recipient
+
+
 def test_execution_and_review_share_direct_consumer_evidence_contract() -> None:
     """実装側とレビュー側が直接消費側探索の証跡と欠落時の分類を共有する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]

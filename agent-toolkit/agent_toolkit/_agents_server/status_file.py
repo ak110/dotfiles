@@ -559,6 +559,46 @@ def hosts_directory(root_session_id: str, state_root: pathlib.Path | None = None
     return status_directory(root_session_id, state_root) / "hosts"
 
 
+def resolve_status_owner_identity(
+    environment: Mapping[str, str],
+    state_root: pathlib.Path | None = None,
+) -> StatusFileIdentity | None:
+    """呼出主体を共有状態の書込主体へ解決し、対応が曖昧な場合は失敗する。"""
+    identity = resolve_status_file_identity(environment)
+    if identity is None or identity.host_session_id is None:
+        return identity
+    try:
+        paths = tuple(hosts_directory(identity.root_session_id, state_root).iterdir())
+    except FileNotFoundError:
+        return identity
+    except OSError as error:
+        raise ValueError(f"書込主体索引を読めません: {error}") from error
+
+    writers: list[str] = []
+    for path in paths:
+        if path.suffix != ".json" or not valid_session_id(path.stem):
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(payload, dict)
+            and payload.get("version") == 1
+            and payload.get("host_session_id") == identity.host_session_id
+        ):
+            writers.append(path.stem)
+    if not writers:
+        return identity
+    if len(writers) != 1:
+        raise ValueError(
+            "起動元sessionに対応する書込主体を一意に解決できません: "
+            f"host_session_id={identity.host_session_id}, writers={','.join(sorted(writers))}"
+        )
+    writer_session_id = writers[0]
+    return StatusFileIdentity(identity.root_session_id, f"{writer_session_id}.json", writer_session_id)
+
+
 def write_host_alias(
     root_session_id: str,
     writer_session_id: str,

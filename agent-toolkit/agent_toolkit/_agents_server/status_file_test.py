@@ -230,6 +230,35 @@ def test_write_host_alias_resolves_writer_to_thread_id(tmp_path: pathlib.Path) -
         subject.write_host_alias("root", "bad/writer", "thread", tmp_path)
 
 
+def test_resolve_status_owner_identity_uses_writer_alias(tmp_path: pathlib.Path) -> None:
+    """Codex threadを内側MCPの書込主体へ逆引きする。"""
+    environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}
+    subject.write_host_alias("root", "writer", "thread", tmp_path)
+
+    assert subject.resolve_status_owner_identity(environment, tmp_path) == subject.StatusFileIdentity(
+        "root", "writer.json", "writer"
+    )
+
+
+def test_resolve_status_owner_identity_keeps_unindexed_identity(tmp_path: pathlib.Path) -> None:
+    """索引が無い呼出主体は環境変数から解決した書込主体を維持する。"""
+    environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}
+
+    assert subject.resolve_status_owner_identity(environment, tmp_path) == subject.StatusFileIdentity(
+        "root", "thread.json", "thread"
+    )
+
+
+def test_resolve_status_owner_identity_rejects_ambiguous_aliases(tmp_path: pathlib.Path) -> None:
+    """同じthreadへ複数の書込主体が対応する索引を推測で選ばない。"""
+    environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}
+    subject.write_host_alias("root", "writer-a", "thread", tmp_path)
+    subject.write_host_alias("root", "writer-b", "thread", tmp_path)
+
+    with pytest.raises(ValueError, match="書込主体を一意に解決できません"):
+        subject.resolve_status_owner_identity(environment, tmp_path)
+
+
 @pytest.mark.asyncio
 async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_path: pathlib.Path) -> None:
     """内側の3起動種別を親thread識別子へ射影して1つの状態ファイルへ集約する。"""

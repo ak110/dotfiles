@@ -500,6 +500,99 @@ class TestManagedTempPosix:
         assert f"警告: 管理対象一時領域を自動削除できない: {failed}" in captured.err
         assert f"note: 最終更新から7日を超えた管理対象一時領域を削除した: {deleted}" in captured.err
 
+    @pytest.mark.parametrize("race_point", ["stat", "scandir", "cleanup"])
+    def test_sweep_silences_cleanup_completed_by_another_process(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        race_point: str,
+    ) -> None:
+        """一覧取得後に別実行が後始末を完了した競合を削除失敗として警告しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp(f"concurrent-{race_point}")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(target, old_ns)
+        entries = subject.list_managed_temp()
+        original_cleanup = subject.cleanup_managed_temp
+        triggered = False
+
+        def finish_elsewhere() -> None:
+            nonlocal triggered
+            triggered = True
+            original_cleanup(target)
+            raise FileNotFoundError(target)
+
+        monkeypatch.setattr(subject, "list_managed_temp", lambda: entries)
+        if race_point == "stat":
+            original_stat = pathlib.Path.stat
+
+            def concurrent_stat(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> os.stat_result:
+                if path == target and not triggered:
+                    finish_elsewhere()
+                return original_stat(path, *args, **kwargs)
+
+            monkeypatch.setattr(pathlib.Path, "stat", concurrent_stat)
+        elif race_point == "scandir":
+            original_scandir = subject.os.scandir
+
+            def concurrent_scandir(path: pathlib.Path | str) -> typing.Any:
+                if pathlib.Path(path) == target and not triggered:
+                    finish_elsewhere()
+                return original_scandir(path)
+
+            monkeypatch.setattr(subject.os, "scandir", concurrent_scandir)
+        else:
+            monkeypatch.setattr(subject, "cleanup_managed_temp", lambda _path: finish_elsewhere())
+
+        assert subject.sweep_expired_managed_temp(now=now) == []
+        assert triggered
+        assert not target.exists()
+        assert not subject._registry_path(target).exists()
+        assert capsys.readouterr().err == ""
+
+    @pytest.mark.parametrize("interrupted_state", ["consuming", "quarantine"])
+    def test_sweep_completion_check_keeps_interrupted_cleanup_state(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        interrupted_state: str,
+    ) -> None:
+        """消費途中又は隔離途中の状態が残る対象を別実行の完了として扱わない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp(f"interrupted-{interrupted_state}")
+        registry = subject._registry_path(target)
+        nonce = subject._load_private_json(registry)["nonce"]
+        assert isinstance(nonce, str)
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(target, old_ns)
+        entries = subject.list_managed_temp()
+        original_stat = pathlib.Path.stat
+        triggered = False
+
+        def interrupt_cleanup(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> os.stat_result:
+            nonlocal triggered
+            if path == target and not triggered:
+                triggered = True
+                if interrupted_state == "consuming":
+                    subject.shutil.rmtree(target)
+                    os.replace(registry, registry.with_name(f"{registry.name}.consuming-{nonce}"))
+                else:
+                    os.replace(target, target.parent / f".agent-toolkit-cleanup-{nonce}")
+                    registry.unlink()
+                raise FileNotFoundError(target)
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(subject, "list_managed_temp", lambda: entries)
+        monkeypatch.setattr(pathlib.Path, "stat", interrupt_cleanup)
+
+        assert subject.sweep_expired_managed_temp(now=now) == []
+        assert triggered
+        assert f"警告: 管理対象一時領域を自動削除できない: {target}" in capsys.readouterr().err
+
     def test_sweep_keeps_an_expired_root_with_recent_nested_content(
         self,
         monkeypatch: pytest.MonkeyPatch,
