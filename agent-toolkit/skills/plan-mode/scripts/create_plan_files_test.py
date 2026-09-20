@@ -139,6 +139,63 @@ def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pa
     assert path.is_file()
 
 
+def test_named_plan_name_adds_utc_timestamp_to_bare_name() -> None:
+    """名称だけの入力へ作成処理がUTCの日付と時刻を付ける。"""
+    now = datetime.datetime(2026, 9, 18, 12, 34, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
+
+    assert create_plan_files.named_plan_name("計画", now=now) == "18-0334_計画"
+
+
+def test_named_plan_name_keeps_complete_stem() -> None:
+    """日時接頭辞を持つ完全stemは変更しない。"""
+    assert create_plan_files.named_plan_name("18-0334_計画") == "18-0334_計画"
+
+
+def test_named_plan_name_rejects_naive_clock() -> None:
+    """日時を生成する時計にはタイムゾーンを要求する。"""
+    with pytest.raises(ValueError, match="タイムゾーン"):
+        create_plan_files.named_plan_name("計画", now=datetime.datetime(2026, 9, 18, 3, 34))
+
+
+def test_cli_accepts_bare_name(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLIの--nameへ名称だけを渡して日時付きファイルを作成できる。"""
+    source, _bug_source = _source(repo, tmp_path)
+    monkeypatch.setattr(create_plan_files, "named_plan_name", lambda name: f"18-0334_{name}")
+
+    result = create_plan_files.main(
+        [
+            "--main-source",
+            str(source),
+            "--name",
+            "計画",
+            "--home",
+            str(tmp_path / "home"),
+            "--work-dir",
+            str(repo),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0, captured.err
+    assert pathlib.Path(captured.out.strip()).name == "18-0334_計画.md"
+
+
+def test_cli_help_describes_name_and_lane(capsys: pytest.CaptureFixture[str]) -> None:
+    """呼び出し側が--helpだけで名称生成の受理形式を確定できる。"""
+    with pytest.raises(SystemExit) as raised:
+        create_plan_files.main(["--help"])
+
+    assert raised.value.code == 0
+    output = capsys.readouterr().out
+    assert "名称だけの場合はUTCの日時を付ける" in output
+    assert "lane-NN形式のレーン識別子" in output
+
+
 def test_records_direct_edit_completion_state(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,

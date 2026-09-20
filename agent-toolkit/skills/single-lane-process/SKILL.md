@@ -1,13 +1,24 @@
 ---
-name: fast-process-wi
+name: single-lane-process
 description: >
-  対象リポジトリの少数のAWIを、レーンへ分けずメインが主作業ツリーでまとめて実装して終端するときに起動する。
+  対象リポジトリのAWIを、レーンへ分けずメインが主作業ツリーでまとめて実装して終端するときに起動する。
 disable-model-invocation: true
 ---
 
-# AWIのまとめ処理
+# AWIの単一レーン処理
 
 メインがAWIを取得し、同じ処理回で計画、実装、実行レビュー及び終端を行う。選定と実装を委譲して並列化する場合は`../process-wi/SKILL.md`を使う。本スキルの実行中は自律モードとし、WIの共通契約は`../wi-standards/SKILL.md`を正本とする。
+
+## process-wi契約の読み替え
+
+`agent-toolkit:process-wi`を名指しする条文は、picker、レーン担当、終端担当又は専用worktreeに依存する場合を除き、本スキルの実行中にも適用する。これらの役割・資源へ依存する契約は直接適用せず、本節が明示する同等の契約だけをメインの工程として適用する。
+
+直接適用しないスキル側の文書は`agent-toolkit/skills/process-wi/`配下とする。
+pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
+レーン実行の文書は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`とする。
+終端担当の文書は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`及び`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`とする。
+
+本スキルから`agent-toolkit:plan-mode`を起動する場合は、確認事項をUWIへ登録する専用処理経路として扱い、計画の起草後は本スキルの実行順へ戻って主作業ツリーで実装する。計画stemは`dd-HHmm_single-lane-process`とする。実行レビューのレビューイーはメインとする。Codexでは`../plan-mode/references/codex-runtime.md`が専用処理経路へ定めるUWI記録と暫定判断を、本スキルにも適用する。
 
 ## 経路
 
@@ -35,7 +46,7 @@ disable-model-invocation: true
 5. 主作業ツリーで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。近接検証を実行し、`agent-toolkit:commit`に従ってcommitする。
 6. 処理回全体で1件の実行レビューを`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動する。計画対象がある処理回では計画ファイルの絶対パスを渡し、直接実装対象がある処理回では直接実装したWIの記録を渡す。両方がある処理回では両方を同じ起動文へ渡す。計画対象が無い処理回では、手順3で保持した起点OIDを`処理開始OID`として渡す。
 7. `${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させる。修正はメインが行い、同じ起点OIDとレビュー表を継続する。
-8. 計画の`## 進捗ログ`へ完了判定を記録し、構造検査の成功を確認してから計画バンドルを保存する。
+8. `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/append_progress_log.py`で計画の完了判定を`## 進捗ログ`へ記録し、構造検査の成功を確認してから計画バンドルを保存する。
 9. 各WIを採否に応じて`adopt`又は`reject`し、対象リポジトリの開発手順が定める公開前検査、push、CI及び固有の終端工程を実行する。ローカルで検査する範囲は、その開発手順が定めるローカルとCIの分担に従う。公開前の全体検査をCIへ委ねると定める開発手順では、その開発手順が挙げるローカル検査だけを実行する。分担を定めていない対象リポジトリでは全体検査まで実行する。
 10. push後のCIの完了を待つ間に、CIの結果を入力に持たず、かつ待機対象と同じ資源を占有しない対象リポジトリ固有の終端工程を実行する。作業ツリーへ書き込む工程は「不変条件」の書込主体の定めを保つため、この重ね合わせの対象から外す。
 11. 一時的なレビュー表を正式な保存又は回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。

@@ -8,6 +8,8 @@
 
 ## 起動前の前提
 
+メインは`agent-toolkit:delegation`のSKILL.md、同スキルの`references/base-contract.md`及び`references/mandatory-rules.md`を全文読む。本書が起動経路と必須入力を逐語で定めるため、起動側は`references/routing.md`と`references/handoff-record.md`を読まない。
+
 メインは起動の前に、`agent-toolkit:session-review`のSKILL.mdが定める準備工程を完了する。標準出力から`evidence_script`、`transcript_path`又は`codex_thread_id`、`managed_temp`、`observation_boundary`及び`target_repo`を取得する。項目を取得できない場合と準備工程が非0で終了した場合は、振り返り担当を起動せず分析失敗として扱う。
 
 観測境界は、境界より後に親記録へ追加されるメイン自身の進捗報告を、過去の未完了工程と区別するために取得する。`managed_temp`が指す領域はメインが所有し、振り返り担当はその領域へ書き込むだけとする。回収はメインが行う。

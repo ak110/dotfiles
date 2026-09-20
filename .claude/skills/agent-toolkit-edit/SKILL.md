@@ -154,6 +154,8 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 `agent-toolkit:plan-mode`から作業を開始した場合は、承認後にメインがカレントディレクトリで直接実装する。
 工程の詳細は各スキルを正本とする。
 
+`agent-toolkit/skills/single-lane-process/`配下以外の`agent-toolkit/`配下の規範文書は、`single-lane-process`を名指ししない。共通契約と`agent-toolkit:process-wi`側は読み替え先を知らない一方向の依存とし、`single-lane-process`側から共通契約を参照して上書きを定める。利用者が起動名を知る必要がある`docs/`配下の案内と方針記録は対象外とする。
+
 ## バージョン更新
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。

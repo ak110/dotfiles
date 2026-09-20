@@ -13,7 +13,8 @@ Codexで実行する場合は、委譲、待機、状態確認又は中断へ着
 
 本スキルは、委譲の開始、経路選択、継続、停滞検知及び複数主体調整の手順を提供する。
 委譲を開始する前に`references/base-contract.md`、`references/mandatory-rules.md`、`references/routing.md`、`references/handoff-record.md`の4資料を全文読む。
-`references/routing.md`は委譲の要否判定と委譲単位の確定を、`references/handoff-record.md`は`引き継ぎ記録先`を受け取った委譲先の記録項目と更新契機を定める。
+ただし、`${CLAUDE_PLUGIN_ROOT}/share/`配下の`*.parent.md`が起動経路と必須入力を逐語で定める委譲では、起動側が全文読む資料を`references/base-contract.md`と`references/mandatory-rules.md`の2件とする。前者2件は起動側の義務を定める。`references/routing.md`が扱う委譲の要否と単位はparent文書と起動元スキルが確定済みであり、`references/handoff-record.md`は`引き継ぎ記録先`を受け取った委譲先の記録項目と更新契機を定めるため、この条件では起動側の読解対象から外す。
+前記の条件に当たらない委譲では、`references/routing.md`を委譲の要否判定と委譲単位の確定に、`references/handoff-record.md`を受信者へ渡す引き継ぎ経路の確定に用いる。
 受信者が行う用途固有の作業は
 受信者用のタスク文書またはagent定義を正本とする。
 
