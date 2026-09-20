@@ -160,7 +160,7 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: |
-          $mise = Join-Path $env:LOCALAPPDATA "mise\bin\mise.exe"
+          $mise = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links\mise.exe"
           & $mise install --force actionlint
           $actual = [IO.Path]::GetFullPath((& $mise which actionlint).Trim())
           $binDirectory = Split-Path -Leaf (Split-Path -Parent $actual)
