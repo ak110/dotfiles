@@ -217,20 +217,16 @@ README.md・AGENTS.md・docs/development/development.mdの標準章構成・共�
   ハッシュ固定対象から除外する（ツール名タグのSHA固定は更新後に参照不能となり得るため
   公式に強く非推奨であることによる）
 
-`~/gv`・`~/lc`の`mise.toml`はWindows前提で`{{ env.LOCALAPPDATA }}`を参照しているため、
-Linux環境ではmiseの評価時に未定義変数エラーで展開に失敗する。
-pre-commit hookや`pyfltr`配下のmarkdownlint・textlintなどmise経由で動く処理も同じ理由で中断する。
-ドキュメント修正等でLinuxから作業する場合は、以下のいずれかで対処する。
-
-- 全実行コマンドの先頭に`LOCALAPPDATA=/tmp/dummy`を付与する（`git commit`時にも必須）
-- mise依存のlint・buildタスクを呼ばず、該当箇所はスキップする
+`~/gv`の`mise.toml`は`LOCALAPPDATA`を参照しない。
+`~/lc`の`mise.toml`による参照はWindows用タスクの内側だけにあり、Linuxでの設定読み込みには影響しない。
+両リポジトリでは、Linuxからmiseを起動するための`LOCALAPPDATA`の付与は不要である。
 
 加えて`~/gv`のRustコードは、`windows-future`等のWindows専用クレートが依存ツリーに含まれるため、
 Linux環境で`cargo check`・`cargo clippy`・`cargo test`がビルド段階で失敗する。
 Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで対処する。
 
 - Windows実機で`cargo`系チェックを実行してからpushする
-- `SKIP=<該当hook>`環境変数でpre-commit hookを部分的に無効化してコミットする
+- `SKIP=pyfltr`でcargo系検査を含むhookを無効化してコミットし、cargo対象外の変更パスへ`uvx pyfltr run`を実行する
 - 該当コードを`#[cfg(windows)]`ガードで囲み、Linux向けビルド対象外にする
 
 ### prek / pyfltr / ビルド関連

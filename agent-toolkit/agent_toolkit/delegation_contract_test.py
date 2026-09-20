@@ -294,6 +294,24 @@ def test_external_api_commit_oid_is_resolved_immediately() -> None:
     assert all(value in termination for value in ("この実行が返した完全OID", "適用範囲", "限定する"))
 
 
+def test_session_termination_contract_separates_summary_and_details() -> None:
+    """終端担当の通常公開結果は列挙値と検査詳細を別の項目へ返す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    recipient = (plugin_root / "share" / "session-termination.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "session-termination.parent.md").read_text(encoding="utf-8")
+    output_lines = recipient.splitlines()
+    overall = next(line for line in output_lines if line.startswith("overall_verification:"))
+    terminal = next(line for line in output_lines if line.startswith("terminal_steps:"))
+
+    assert all(value in overall for value in ("CI判定", "ローカル成功", "いずれかだけ"))
+    assert not any(value in overall for value in ("検査名", "警告の有無"))
+    assert all(value in terminal for value in ("検査名", "終了コード", "警告の有無"))
+    assert all(value in parent for value in ("CI判定", "ローカル成功", "いずれかだけ"))
+    assert all(value in parent for value in ("terminal_steps", "検査名", "終了コード", "警告の有無"))
+    assert all(value in parent for value in ("確定した種別", "選定根拠の要約", "計画ファイルのパスは渡さない"))
+    assert all(value in recipient for value in ("受領した確定済みの種別", "計画ファイルのパス", "読み直さない"))
+
+
 def test_subagent_command_prerequisites_point_to_shared_sources() -> None:
     """軽量委譲先の実行前提は詳細規範の正本へ到達する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
