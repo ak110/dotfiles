@@ -236,11 +236,72 @@ def test_start_registers_wait_target_for_delegated_caller(
     ).exists()
 
 
+@pytest.mark.parametrize(
+    ("operation", "tool_input", "structured"),
+    [
+        ("start", {"prompt": "委譲する"}, {"session_id": "remote-session", "status": "running"}),
+        ("send_message", {"session_id": "remote-session", "prompt": "再開する"}, {"delivery": "reply_started"}),
+    ],
+)
+def test_codex_delegate_hook_session_registers_wait_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    operation: str,
+    tool_input: dict[str, object],
+    structured: dict[str, object],
+) -> None:
+    """Codex委譲先はhook入力のsession識別子で待機対象を登録する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    tool_input = dict(tool_input)
+    if operation == "start":
+        tool_input["cwd"] = str(tmp_path)
+
+    exit_code = _POSTTOOLUSE_MODULE.main(
+        json.dumps(
+            {
+                "session_id": "codex-thread",
+                "cwd": str(tmp_path),
+                "tool_name": f"mcp__agents_server__{operation}",
+                "tool_input": tool_input,
+                "tool_response": {"structuredContent": structured},
+            }
+        )
+    )
+
+    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+        "root-session",
+        "codex-thread.json",
+        tmp_path,
+    )
+    assert (exit_code, retained, error) == (0, {"remote-session"}, None)
+    root_targets = _POSTTOOLUSE_MODULE._agents_server_status_file.wait_targets_directory(
+        "root-session",
+        "root.json",
+        tmp_path,
+    )
+    assert not root_targets.exists()
+
+
+@pytest.mark.parametrize(
+    ("owner_session", "tool_name"),
+    [
+        (None, "mcp__agents_server__start"),
+        ("root-session", "mcp__plugin_agent-toolkit_agents_server__start"),
+    ],
+)
 def test_start_without_caller_identity_does_not_register_wait_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    owner_session: str | None,
+    tool_name: str,
 ) -> None:
-    """呼出主体を解決できない開始応答は待機対象登録簿へ書き込まない。"""
+    """呼出主体又はCodex経路を解決できない開始応答は待機対象登録簿へ書き込まない。"""
     for name in (
         "AGENT_TOOLKIT_OWNER_SESSION",
         "AGENT_TOOLKIT_DELEGATED_SESSION",
@@ -249,6 +310,8 @@ def test_start_without_caller_identity_does_not_register_wait_target(
         "CODEX_THREAD_ID",
     ):
         monkeypatch.delenv(name, raising=False)
+    if owner_session is not None:
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner_session)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
 
@@ -257,7 +320,7 @@ def test_start_without_caller_identity_does_not_register_wait_target(
             {
                 "session_id": "hook-session",
                 "cwd": str(tmp_path),
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_name": tool_name,
                 "tool_input": {"prompt": "委譲する", "cwd": str(tmp_path)},
                 "tool_response": {"structuredContent": {"session_id": "remote-session", "status": "running"}},
             }

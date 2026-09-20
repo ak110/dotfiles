@@ -70,5 +70,5 @@
 
 実装を伴わないレーンにも統合指示を送り、計画最終化とAWI終端を同じレーン担当に行わせる。
 
-返却の形式は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`の`## 出力`が定める。受領した`merged_head`を統合先branchの実体へ照合し、`plan_committed`が起動時のメイン計画ファイル名と一致することと、AWIの集合が起動時の終端区分と一致して延期対象だけが`deferred_adopt_commits`へ現れることを確認する。`agent_rule_changes`のpath集合が統合差分のエージェント向け規範文書の変更集合と一致し、各textが統合後ファイルに逐語で存在することを検査する。検査済みの規則本文は、後続のレーン判断と公開工程の前にメイン自身へ適用する。
+返却の形式は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`の`## 出力`が定める。受領した構造化本文は管理対象一時領域へ逐語保存し、JSON parserで構文を検査する。不正JSONは返却契約の不成立として同じthreadへ是正を求め、入力は受領本文のまま保持する。parserが抽出した値を使い、`merged_head`を統合先branchの実体へ照合し、`plan_committed`が起動時のメイン計画ファイル名と一致することと、AWIの集合が起動時の終端区分と一致して延期対象だけが`deferred_adopt_commits`へ現れることを確認する。parserから得た`agent_rule_changes[*].path`と`text`をそのまま検査入力へ渡し、path集合が統合差分のエージェント向け規範文書の変更集合と一致し、各textが統合後ファイルに逐語で存在することを検査する。人間向けの要約は逐語照合の完了後に作成する。検査済みの規則本文は、後続のレーン判断と公開工程の前にメイン自身へ適用する。
 不一致の場合は同じthreadへ観測値を返して是正を求める。全て一致した後にだけ専用worktreeの回収へ進む。

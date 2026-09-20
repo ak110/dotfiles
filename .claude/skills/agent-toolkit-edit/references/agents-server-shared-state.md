@@ -20,6 +20,7 @@ MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Code
 
 Codex CLIが起動するMCPサーバープロセスが受け取る環境変数は、外側の`agents_server`が`thread/start`の`config.mcp_servers.agents_server.env`で明示した値だけである。`codex app-server`自身の環境はこのプロセスへ継承されず、明示した値だけが届く。
 ルートsession識別子と書込主体識別子は、この経路で配送する。
+CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。これにより同じCodex委譲先で動く`atk agents wait`と同じ書込主体の待機対象登録を更新する。
 
 ## 共有状態ごとの正本と読み書き経路
 

@@ -14,7 +14,7 @@ description: >
 
 ## 開発手順
 
-- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
+- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新、prek autoupdate、mise lock、pinactアクション更新及び全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体検査が必要な場合の実行方法: `make test`
   - `make test`（`uv run --frozen pyfltr run --no-fix`）はlintで自動修正しない。
@@ -31,6 +31,7 @@ description: >
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
   - 修正後の再実行時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
+  - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新又はその他の`.venv`再作成を起こし得る検査は、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で検査する場合は直列に実行する。並列実行する場合は検査ごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する近接検査を先に実行する。公開前の全体検査はCIへ委ね、ローカルでは次の2件を実行する。CIの成功を確認して全体検査の結論を確定する

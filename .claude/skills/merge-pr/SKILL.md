@@ -110,7 +110,8 @@ push前に管理対象一時領域を作成し、`origin/develop`のCI runをbas
 uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/agent_toolkit/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha origin/master
 git push origin origin/master:refs/heads/develop
 git fetch origin develop master
-git rev-parse --short=7 origin/develop origin/master
+git rev-parse --short=7 origin/develop
+git rev-parse --short=7 origin/master
 ```
 
 `origin/develop`と`origin/master`の7文字以上の一意な短縮OIDが一致することを確認する。
@@ -215,7 +216,8 @@ pushの完了とCI runの起動をもってその変更の公開工程を終え�
 成功時に次を取得する。
 
 ```sh
-git rev-parse --short=7 origin/develop origin/master
+git rev-parse --short=7 origin/develop
+git rev-parse --short=7 origin/master
 git status --short
 ```
 
