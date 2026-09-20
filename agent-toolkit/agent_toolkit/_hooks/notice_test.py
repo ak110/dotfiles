@@ -41,6 +41,22 @@ def test_warning_formatter_requests_block_from_second_notice(monkeypatch: pytest
     assert "Fix: retry" in second_blocks[0]
 
 
+def test_warning_formatter_block_fix_without_marker(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """解消手段のマーカーが無い警告では、Fix欄へ本文を複製せず汎用の手段を書く。"""
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    format_warning = warning_formatter("test/hook")
+
+    format_warning("警告本文", cause="no-marker", session_id="session-1", removable_cause=True)
+    consume_warning_blocks()
+    format_warning("警告本文", cause="no-marker", session_id="session-1", removable_cause=True)
+    blocks = consume_warning_blocks()
+
+    assert len(blocks) == 1
+    fix_line = blocks[0].split("\nFix: ", maxsplit=1)[1]
+    assert "警告本文" not in fix_line
+    assert "原因を除去してから同じ操作を実行する" in fix_line
+
+
 def test_warning_formatter_separates_causes_and_sessions(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """原因識別子とセッションIDが異なる警告を別々に数える。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
