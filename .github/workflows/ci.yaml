@@ -155,6 +155,20 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: pwsh
         run: dotfiles-post-apply
+      - name: actionlint の再インストールと配置確認
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        shell: pwsh
+        working-directory: ${{ env.DOTFILES_DIR }}
+        run: |
+          $mise = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links\mise.exe"
+          & $mise install --force actionlint
+          $actual = [IO.Path]::GetFullPath((& $mise which actionlint).Trim())
+          $binDirectory = Split-Path -Leaf (Split-Path -Parent $actual)
+          if ($binDirectory -ne ".mise-bins") {
+            throw "actionlintが.mise-bins配下にない: $actual"
+          }
+          $env:PATH = "$(Split-Path -Parent $actual);$env:PATH"
+          actionlint --version
       - name: 主要ファイルの存在確認
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: pwsh
@@ -205,6 +219,14 @@ jobs:
         run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+      - name: actionlint の再インストールと配置確認
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: |
+          set -euo pipefail
+          mise install --force actionlint
+          actionlint_path="$(mise which actionlint)"
+          test "$(basename "$(dirname "$actionlint_path")")" = ".mise-bins"
+          actionlint --version
       - name: 利用者設定から隔離したlockfile検証
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
         run: |
@@ -310,6 +332,14 @@ jobs:
         run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+      - name: actionlint の再インストールと配置確認
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: |
+          set -euo pipefail
+          mise install --force actionlint
+          actionlint_path="$(mise which actionlint)"
+          test "$(basename "$(dirname "$actionlint_path")")" = ".mise-bins"
+          actionlint --version
       - name: safe.directory の設定
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、

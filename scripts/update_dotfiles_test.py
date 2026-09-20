@@ -718,13 +718,18 @@ def _run_git_pull_in_pty(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="ptyと/dev/ttyを使用するLinux検体")
-@pytest.mark.parametrize("timeout", [1, None])
+@pytest.mark.parametrize("timeout", [30, None])
 def test_git_pull_preserves_terminal_interaction(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     timeout: int | None,
 ) -> None:
-    """上限の有無にかかわらず、子が制御端末から入力を受け取る。"""
+    """上限の有無にかかわらず、子が制御端末から入力を受け取る。
+
+    上限ありの検体は上限の到達ではなく端末入力の受け渡しを検査するため、
+    並行実行の負荷でも到達しない秒数を渡す。上限の到達側は
+    `test_git_pull_timeout_terminates_stream_holding_descendant`が検査する。
+    """
     returncode, output, _pid_path = _run_git_pull_in_pty(
         tmp_path,
         monkeypatch,

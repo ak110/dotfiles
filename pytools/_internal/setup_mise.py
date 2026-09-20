@@ -114,7 +114,14 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
     if _is_windows():
         try:
             result = claude_common.run_subprocess(
-                ["winget", "install", "jdx.mise"],
+                [
+                    "winget",
+                    "install",
+                    "--accept-package-agreements",
+                    "--accept-source-agreements",
+                    "--disable-interactivity",
+                    "jdx.mise",
+                ],
                 timeout=_MISE_INSTALL_TIMEOUT,
                 tag="mise",
             )
@@ -171,6 +178,7 @@ def find_mise_binary() -> Path | None:
     if _is_windows():
         localappdata = os.environ.get("LOCALAPPDATA")
         if localappdata:
+            candidates.append(Path(localappdata) / "Microsoft" / "WinGet" / "Links" / "mise.exe")
             candidates.append(Path(localappdata) / "mise" / "bin" / "mise.exe")
     else:
         candidates.append(Path.home() / ".local" / "bin" / "mise")

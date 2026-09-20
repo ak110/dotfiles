@@ -124,7 +124,7 @@ def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path)
 
 
 def test_second_removable_warning_blocks_with_count_and_fix(tmp_path: pathlib.Path) -> None:
-    """同一原因の2件目は、警告の対処をFixとして同種操作を遮断する。"""
+    """同一原因の2件目は、累積件数と解消手段を添えて同種操作を遮断する。"""
     payload = {
         "tool_name": "Bash",
         "tool_input": {"command": "rg keyword ~/.local"},
@@ -138,7 +138,7 @@ def test_second_removable_warning_blocks_with_count_and_fix(tmp_path: pathlib.Pa
     assert first.returncode == 0
     assert second.returncode == 2
     assert "この通知は同一セッションで2件目である" in second.stderr
-    assert "Fix: warn: 再帰検索" in second.stderr
+    assert "Fix: この通知が挙げた原因を除去してから同じ操作を実行する。" in second.stderr
     assert "対象ディレクトリを狭め" in second.stderr
 
 

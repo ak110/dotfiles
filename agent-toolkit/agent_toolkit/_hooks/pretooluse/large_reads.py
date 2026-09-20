@@ -28,17 +28,21 @@ def _line_threshold() -> int:
     return threshold if threshold > 0 else _DEFAULT_LINE_THRESHOLD
 
 
-def _line_count_if_large(path: pathlib.Path) -> int | None:
-    """行指向ファイルが閾値を超える場合に実測行数を返す。"""
-    threshold = _line_threshold()
+def _line_count(path: pathlib.Path) -> int | None:
+    """実在するファイルの実測行数を返す。"""
     try:
         if not path.is_file():
             return None
         with path.open("rb") as source:
-            line_count = sum(1 for _line in source)
-            return line_count if line_count > threshold else None
+            return sum(1 for _line in source)
     except OSError:
         return None
+
+
+def _line_count_if_large(path: pathlib.Path) -> int | None:
+    """行指向ファイルが閾値を超える場合に実測行数を返す。"""
+    line_count = _line_count(path)
+    return line_count if line_count is not None and line_count > _line_threshold() else None
 
 
 def _is_non_line_oriented(path: pathlib.Path) -> bool:
@@ -51,17 +55,24 @@ def _resolve_path(value: str, cwd: str) -> pathlib.Path:
     return path if path.is_absolute() else pathlib.Path(cwd) / path
 
 
-def _full_read_operand(tokens: Sequence[str]) -> str | None:
-    """静的に全文取得と確定できる単純コマンドから単一ファイルを返す。"""
-    if len(tokens) == 2 and pathlib.PurePath(tokens[0]).name in _FULL_READ_COMMANDS and not tokens[1].startswith("-"):
-        return tokens[1]
+def _full_read_operands(tokens: Sequence[str]) -> tuple[str, ...]:
+    """静的に全文取得と確定できる単純コマンドからファイル群を返す。"""
+    if (
+        len(tokens) >= 2
+        and pathlib.PurePath(tokens[0]).name in _FULL_READ_COMMANDS
+        and all(
+            not operand.startswith("-") and not any(marker in operand for marker in ("<", ">", "$(", "`"))
+            for operand in tokens[1:]
+        )
+    ):
+        return tuple(tokens[1:])
     if len(tokens) == 4 and pathlib.PurePath(tokens[0]).name == "sed" and tuple(tokens[1:3]) in {("-n", "p"), ("-n", "1,$p")}:
-        return tokens[3]
+        return (tokens[3],)
     if len(tokens) == 3 and pathlib.PurePath(tokens[0]).name == "awk":
         program = "".join(tokens[1].split())
         if program in {"{print}", "{print$0}"}:
-            return tokens[2]
-    return None
+            return (tokens[2],)
+    return ()
 
 
 def _offset_limit_plan(line_count: int, threshold: int) -> str:
@@ -83,6 +94,16 @@ def _large_read_notice(path: pathlib.Path, line_count: int, cwd: str) -> str:
             "agents_serverのstart_exploreへ"
             f"質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。"
         ),
+    )
+
+
+def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, int]]) -> str:
+    threshold = _line_threshold()
+    total = sum(line_count for _path, line_count in path_counts)
+    details = "、".join(f"`{path}`: {line_count}行" for path, line_count in path_counts)
+    return _block_notice(
+        f"複数ファイルの全文取得を遮断した（合計: {total}行、閾値: {threshold}行）: {details}",
+        fix="ファイルごとに個別取得するか、各ファイルを連続した行範囲へ分割して取得する。",
     )
 
 
@@ -125,11 +146,23 @@ def check_large_bash_read(command: str, cwd: str) -> str | None:
     for pipeline in bash_command_parser.extract_execution_pipelines(command):
         if len(pipeline) != 1 or not pipeline[0].resolved:
             continue
-        operand = _full_read_operand(pipeline[0].tokens)
-        if operand is None:
+        operands = _full_read_operands(pipeline[0].tokens)
+        if not operands:
             continue
-        path = _resolve_path(operand, cwd)
-        line_count = _line_count_if_large(path)
-        if line_count is not None:
-            return _large_read_notice(path, line_count, cwd)
+        path_counts = tuple(
+            (path, line_count)
+            for operand in operands
+            if (line_count := _line_count(path := _resolve_path(operand, cwd))) is not None
+        )
+        if not path_counts:
+            continue
+        threshold = _line_threshold()
+        if (
+            any(line_count > threshold for _path, line_count in path_counts)
+            or sum(line_count for _path, line_count in path_counts) > threshold
+        ):
+            if len(path_counts) == 1:
+                path, line_count = path_counts[0]
+                return _large_read_notice(path, line_count, cwd)
+            return _large_multi_read_notice(path_counts)
     return None

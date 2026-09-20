@@ -24,14 +24,21 @@ def consume_warning_blocks() -> list[str]:
     return list(blocks) if isinstance(blocks, list) else []
 
 
+_GENERIC_FIX = "この通知が挙げた原因を除去してから同じ操作を実行する。"
+
+
 def _warning_body_and_fix(body: str) -> tuple[str, str]:
-    """warn本文をblock理由と解消手段へ分ける。"""
+    """warn本文をblock理由と解消手段へ分ける。
+
+    解消手段のマーカーを持たない本文では、本文を複製せず汎用の解消手段を返す。
+    `Fix:`欄は解消手段を示す欄であり、理由の複製を置くと読む側が実行する操作を得られない。
+    """
     for marker in ("\n対処: ", "\nFix: "):
         if marker in body:
             reason, fix = body.rsplit(marker, maxsplit=1)
             if fix.strip():
                 return reason, fix
-    return body, body
+    return body, _GENERIC_FIX
 
 
 def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:

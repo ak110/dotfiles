@@ -97,7 +97,7 @@ class TestFindMiseBinary:
 
     def test_returns_windows_known_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         localappdata = tmp_path / "AppData" / "Local"
-        mise_path = localappdata / "mise" / "bin" / "mise.exe"
+        mise_path = localappdata / "Microsoft" / "WinGet" / "Links" / "mise.exe"
         mise_path.parent.mkdir(parents=True)
         mise_path.write_bytes(b"mise")
         monkeypatch.setattr(_setup_mise.shutil, "which", lambda _name: None)
@@ -184,7 +184,16 @@ class TestRunMiseInstallation:
         monkeypatch.delenv("LOCALAPPDATA", raising=False)
 
         assert _setup_mise.run() is True
-        assert [record["cmd"] for record in mise_stub.records].count(["winget", "install", "jdx.mise"]) == 1
+        assert [record["cmd"] for record in mise_stub.records].count(
+            [
+                "winget",
+                "install",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--disable-interactivity",
+                "jdx.mise",
+            ]
+        ) == 1
         assert mise_stub.calls_for("install")
 
 

@@ -274,6 +274,52 @@ def test_picker_output_carries_validated_costs_and_fixed_notes() -> None:
     assert "起動文と`固有指示`へは再掲しない" in lanes
 
 
+def test_single_lane_process_partitions_plans_and_reviews_by_worktree() -> None:
+    """単一レーン処理と実行レビューは対象worktreeごとの単一リポジトリ境界を共有する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    single_lane = (plugin_root / "skills" / "single-lane-process" / "SKILL.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
+    recipient = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+
+    assert all(
+        value in single_lane
+        for value in ("対象worktreeごとの部分集合", "各1つの計画ファイル", "対象worktreeごとに1件の実行レビュー")
+    )
+    assert all(
+        value in single_lane
+        for value in ("計画経路と直接実装経路", "異なる対象worktree", "同じ計画又は実行レビューへ混在させない")
+    )
+    assert all(
+        value in parent for value in ("単一の対象リポジトリ", "全てが同じ対象リポジトリ", "対象worktreeごとの別の実行レビュー")
+    )
+    assert all(value in recipient for value in ("単一の対象リポジトリ", "別の対象リポジトリ", "needs_escalation"))
+
+
+def test_picker_serializes_overlapping_write_regions() -> None:
+    """pickerは重なる書込領域と領域不明の同一ファイルを分割不能条件にする。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+
+    assert all(value in picker for value in ("書込対象ファイル", "同じ節又は定義", "分割不能な連結成分"))
+    assert all(value in picker for value in ("書込集合が交わらない", "変更領域を一意に特定できない", "ファイル単位で重複"))
+    assert "直列統合時間ではなく" in picker
+
+
+def test_picker_resolves_dependencies_across_repositories() -> None:
+    """pickerは同一リポジトリを優先し、横断照会の一意性と終端状態を判定する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+
+    assert all(
+        value in picker
+        for value in ("--target-repo=<repo-path>", "現在の対象リポジトリに無い場合だけ", "全状態と全対象リポジトリ")
+    )
+    assert all(
+        value in picker
+        for value in ("複数の`target_repo`", "needs_escalation", "終端済みなら充足済み", "未終端なら外部依存未達")
+    )
+
+
 def test_lane_integration_returns_changed_agent_rules() -> None:
     """レーン統合は変更したエージェント規則のパスと確定本文を返す。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
