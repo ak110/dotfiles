@@ -794,11 +794,15 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
     実在しないパスの候補として現れる。
     """
     notices: list[str] = []
+    summary_parts: list[str] = []
     command_after_path_fix = command
     missing_fix = _autofix_missing_paths(command, cwd)
     if missing_fix is not None:
         command_after_path_fix, removed = missing_fix
-        notices.append("実在しない検索・読取パスを当該呼び出しの対象から除いた。除いた対象: " + "、".join(removed))
+        missing_notice = "実在しない検索・読取パスを当該呼び出しの対象から除いた。除いた対象: " + "、".join(removed)
+        notices.append(missing_notice)
+        # この文面は除去の対象だけを示すため、2件目以降の要旨も同じ文面で成立する。
+        summary_parts.append(missing_notice)
     segments = _split_serial_shell_commands(command_after_path_fix, separators=_STATUS_SHELL_SEPARATORS)
     replacements: list[tuple[int, int, str]] = []
     saved: list[_TruncationFix] = []
@@ -841,11 +845,11 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         return None
     unique_notices = list(dict.fromkeys(notices))
     body = " ".join(unique_notices)
-    summary: str | None = None
     if saved:
         truncation_notice = _format_truncation_autofix_notice(saved, total_segments=len(segments))
         body = f"{body}\n{truncation_notice}" if body else truncation_notice
-        summary = _format_truncation_autofix_summary(saved)
+        summary_parts.append(_format_truncation_autofix_summary(saved))
+    summary = "\n".join(summary_parts) if summary_parts else None
     if missing_fix is not None:
         # 実在しないパスの除去は呼び出しの対象集合そのものを狭めるため、是正を要する通知として返す。
         return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True, summary=summary)
@@ -3564,8 +3568,18 @@ def _check_bash_git_grep_pattern_type(command: str) -> str | None:
             "patternが正規表現のメタ文字を含む場合は`-E`、リテラルとして検索する場合は`-F`を選ぶ。",
             tag=_WARN_TAG,
             removable_cause=True,
+            summary=_format_git_grep_pattern_type_summary(pattern),
         )
     return None
+
+
+def _format_git_grep_pattern_type_summary(pattern: str | None) -> str:
+    """2件目以降の通知へ用いる要旨を、警告の対象だけで組み立てる。
+
+    対処の案内と種別の選び方は1件目の本文が既に届けているため、要旨から外す。
+    """
+    target = f"`{pattern}`" if pattern is not None else "pattern本文を一意に取り出せない指定"
+    return f"`git grep`が種別を指定していない。対象のpattern: {target}"
 
 
 _SHELL_METACHARACTERS_IN_WORD = frozenset({"(", ")", "`"})

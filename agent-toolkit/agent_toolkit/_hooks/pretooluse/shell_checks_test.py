@@ -2443,3 +2443,56 @@ class TestBashBoundaryAndPathRegressions:
         assert result.returncode == 2
         assert "呼び出し全体を実行しない" in result.stderr
         assert "成果物も未作成" in result.stderr
+
+
+class TestRepeatedNoticeSummary:
+    """同一原因の通知の2件目以降を、補正又は警告の対象と件数だけへ縮める契約。
+
+    1件目が理由と対処を届けるため、2件目以降が運ぶのは対象の特定に要する情報に限る。
+    """
+
+    @staticmethod
+    def _invoke(command: str, session_id: str, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        return _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "session_id": session_id},
+            _plan_file_state_env(tmp_path),
+        )
+
+    def test_summary_keeps_removed_paths_beside_the_truncation_target(self, tmp_path: pathlib.Path) -> None:
+        """補正が同時に成立した2件目では、除いたパスと切り詰めの対象をどちらも残す。"""
+        (tmp_path / "present.txt").write_text("needle\n", encoding="utf-8")
+        session_id = "autofix-summary-both"
+        assert "absent-a.txt" in _agent_messages(self._invoke("rg needle absent-a.txt present.txt", session_id, tmp_path))
+
+        second = _agent_messages(self._invoke("rg needle absent-b.txt present.txt | head -5", session_id, tmp_path))
+
+        assert "absent-b.txt" in second
+        assert "切り詰め処理を除去し" in second
+        assert "この通知は同一セッションで2件目である" in second
+
+    def test_missing_path_notice_drops_the_repeat_instruction(self, tmp_path: pathlib.Path) -> None:
+        """実在しないパスの除去では、2件目から除いた対象と件数だけを残す。"""
+        (tmp_path / "present.txt").write_text("needle\n", encoding="utf-8")
+        session_id = "missing-path-summary"
+        for index in range(2):
+            assert f"absent-{index}.txt" in _agent_messages(
+                self._invoke(f"rg needle absent-{index}.txt present.txt", session_id, tmp_path)
+            )
+
+        third = _agent_messages(self._invoke("rg needle absent-2.txt present.txt", session_id, tmp_path))
+
+        assert "absent-2.txt" in third
+        assert "この通知は同一セッションで3件目である" in third
+        assert "原因を除去してから同種の操作を続ける" not in third
+
+    def test_git_grep_pattern_type_notice_keeps_only_the_pattern(self, tmp_path: pathlib.Path) -> None:
+        """`git grep`の種別未指定では、2件目から対象のpatternと件数だけを残す。"""
+        session_id = "git-grep-type-summary"
+        first = _agent_messages(self._invoke("git grep " + shlex.quote("need.*le"), session_id, tmp_path))
+        assert "対処:" in first
+
+        second = _agent_messages(self._invoke("git grep " + shlex.quote("other.*one"), session_id, tmp_path))
+
+        assert "`other.*one`" in second
+        assert "この通知は同一セッションで2件目である" in second
+        assert "対処:" not in second
