@@ -101,6 +101,8 @@ _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 # 固定の識別子も数値部分が置換される。
 _CANDIDATE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
 _CANDIDATE_VARIABLE_PLACEHOLDER = "<var>"
+_HOOK_FAILURE_PREFIX = re.compile(r"^[^\r\n]*?\bhook error:\s*\[[^\r\n]*?\]:\s*", re.IGNORECASE)
+_EXIT_CODE_PREFIX = re.compile(r"^Exit code\s+\d+\s*(?:\r?\n)+", re.IGNORECASE)
 _FALLBACK_TEXT = (
     "記録は読み込めたが形式を判定できないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
@@ -475,11 +477,10 @@ def _set_entry_timestamp(event: dict[str, Any], entry: dict[str, Any]) -> None:
     """イベントへ、由来するエントリの時刻を付ける。
 
     所要時間の区間の境界を、消費側が`--detail`の追加照会なしで確定できるようにする。
-    時刻を持たないエントリでは項目を付けず、消費側が空として扱えるようにする。
+    時刻を持たないエントリではJSONのnullを付け、消費側が項目の有無を分岐せず扱えるようにする。
     """
     timestamp = entry.get("timestamp")
-    if isinstance(timestamp, str) and timestamp:
-        event.setdefault("timestamp", timestamp)
+    event.setdefault("timestamp", timestamp if isinstance(timestamp, str) and timestamp else None)
 
 
 def _claude_entry_events(
@@ -1848,6 +1849,12 @@ def _structured_warning_fields(value: dict[str, Any]) -> tuple[list[Any], bool]:
     return warning_values, direct_warning
 
 
+def _has_structured_warning_body(value: dict[str, Any]) -> bool:
+    """警告本文として扱える明示フィールドが辞書に存在するかを返す。"""
+    normalized_keys = {key.casefold() for key in value if isinstance(key, str)}
+    return bool(normalized_keys.intersection(_STRUCTURED_WARNING_BODY_KEYS))
+
+
 def _structured_warning_value_texts(value: Any) -> list[str]:
     """構造化警告の値又は直接警告辞書から本文だけを取り出す。"""
     if isinstance(value, str):
@@ -1962,7 +1969,7 @@ def _warning_texts(entry: dict[str, Any]) -> list[str]:
             for warning_value in warning_values:
                 for text in _structured_warning_value_texts(warning_value):
                     bodies.append((text, False, from_hook_record))
-            if direct_warning and not warning_values:
+            if direct_warning and not warning_values and _has_structured_warning_body(value):
                 for text in _structured_warning_value_texts(value):
                     bodies.append((text, False, from_hook_record))
             for item in value.values():
@@ -2242,7 +2249,18 @@ def _normalize_candidate_kind_text(text: str) -> str:
     可変部を残すと同じ原因の事象が複数の候補へ分かれ、長さが不足すると別原因の事象が
     同一候補へ統合されるため、長さは実測に基づいて確定する。
     """
-    return _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(text.split()))[:_CANDIDATE_KIND_LENGTH]
+    without_hook_prefix = _HOOK_FAILURE_PREFIX.sub("", text, count=1)
+    without_common_prefix = _EXIT_CODE_PREFIX.sub("", without_hook_prefix, count=1)
+    normalized = _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(without_common_prefix.split()))
+    return normalized[:_CANDIDATE_KIND_LENGTH]
+
+
+def _normalize_hook_candidate_text(text: str) -> str:
+    """hook通知の定型標識を除いた是正本文を候補種別へ正規化する。"""
+    match = _HOOK_NOTICE_MARKER.search(text)
+    if match is None:
+        return text[:_CANDIDATE_KIND_LENGTH]
+    return _normalize_candidate_kind_text(text[match.end() :].strip())
 
 
 def _scannable_records(records: list[_Record]) -> list[_Record]:
@@ -2769,19 +2787,16 @@ def _candidate_events(
     返却値を含めるのは、`status`で工程の不成立を表す返却が他の4種のいずれにも現れず、
     差し戻しで停止した工程が候補集合から漏れるためである。
 
-    同じ位置の事象は先に走査した種別が取る。`hook-notice`は発生源ごとの上位種への限定を持つ唯一の種別であり、
-    hookが返した本文は`escalation`と`warning`の本文としても現れるため、`hook-notice`を先頭に置く。
-    後ろに置くと、当該限定の対象にならない種別が同じ本文を取り、発生源ごとの候補数が発生件数に比例する。
-
-    auto mode classifierの拒否は`failed-tool`の一部として現れるため、`permission-denial`を`escalation`より前に置く。
-    後ろに置くと`escalation`が同じ位置を取り、許可ルールの見直しへ結び付く候補が他の失敗と同じ種別へ埋もれる。
+    同じ位置でも候補種別又はhookタグが異なる事象は別候補として保持する。同じ位置、候補種別及びhookタグの
+    組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
+    `escalation`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
 
     候補件数の削減は、正規化した本文での集約と、利用者介入ではない入力の除外だけで行う。
     `hook-notice`の既存の限定を除いて件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
     判定表の位置の集合の一致を求めるため、位置を失う削減は当該検査と両立しない。
     """
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
-    seen: set[tuple[str, int]] = set()
+    seen: set[tuple[str, int, str, str]] = set()
     excluded: collections.Counter[str] = collections.Counter()
     first_main_user: tuple[str, int] | None = None
     for event in timeline:
@@ -2803,10 +2818,11 @@ def _candidate_events(
             line = event.get("line")
             if not isinstance(record, str) or not isinstance(line, int):
                 continue
-            locator = (record, line)
-            if locator in seen:
+            identity = (record, line, candidate_kind, str(event.get("tag", "")))
+            if identity in seen:
+                excluded["duplicate-candidate"] += 1
                 continue
-            seen.add(locator)
+            seen.add(identity)
             text = event.get("text")
             normalized_text = " ".join(text.split()) if isinstance(text, str) else ""
             if candidate_kind == "user-intervention":
@@ -2842,15 +2858,18 @@ def _candidate_events(
 
     candidates: list[dict[str, Any]] = []
     included_locators: list[dict[str, Any]] = []
+    included_locator_keys: set[tuple[str, int]] = set()
     for index, (key, events, occurrence_count, omitted_locator_count) in enumerate(
         sorted(selected_groups, key=lambda item: item[0]),
         start=1,
     ):
-        locators = sorted(
-            ({"record": str(event["record"]), "line": int(event["line"])} for event in events),
-            key=lambda locator: (locator["record"], locator["line"]),
-        )
-        included_locators.extend(locators)
+        locators: list[dict[str, Any]] = [{"record": str(event["record"]), "line": int(event["line"])} for event in events]
+        locators.sort(key=lambda locator: (str(locator["record"]), int(locator["line"])))
+        for locator in locators:
+            locator_key = (str(locator["record"]), int(locator["line"]))
+            if locator_key not in included_locator_keys:
+                included_locator_keys.add(locator_key)
+                included_locators.append(locator)
         candidate: dict[str, Any] = {
             "kind": "candidate",
             "candidate_id": f"c{index:04d}",
@@ -3117,7 +3136,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             str(event.get("hook", "")),
             "" if tag in {"block", "warn"} else str(event.get("hook_name", "")),
             tag,
-            normalized_text,
+            _normalize_hook_candidate_text(normalized_text),
         )
     if candidate_kind == "escalation":
         raw_text = event.get("text")
@@ -3141,7 +3160,7 @@ def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, An
     ]
     for event in timeline:
         event_kind = event["kind"]
-        timestamp = str(event.get("timestamp") or "")
+        timestamp = event.get("timestamp")
         if event_kind in _BUNDLE_BODY_KINDS:
             events.append(
                 {
@@ -3187,6 +3206,243 @@ def _bundle_warning_events(warnings: list[dict[str, Any]]) -> list[dict[str, Any
     ]
 
 
+def _catalog_session_id(path: Path, records: list[_Record], runtime: _Runtime) -> str:
+    """カタログ内記録のセッション識別子を返す。"""
+    if runtime == "claude":
+        return path.stem
+    item = _CollectedRecord("main", path, records, runtime, None, None, None, "main")
+    return _codex_record_thread_id(item) or path.stem.removeprefix("rollout-")
+
+
+def _catalog_value(records: list[_Record], *keys: str) -> str:
+    """セッションmetadataの先頭の非空文字列を返す。"""
+    for record in records:
+        entry = record.entry
+        payload = entry.get("payload")
+        for source in (entry, payload if isinstance(payload, dict) else {}):
+            for key in keys:
+                value = source.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        if isinstance(payload, dict):
+            git = payload.get("git")
+            if isinstance(git, dict):
+                for key in keys:
+                    value = git.get(key)
+                    if isinstance(value, str) and value:
+                        return value
+    return "unknown"
+
+
+def _wi_command(tokens: list[str]) -> str | None:
+    """直接実行された`atk wi`の操作名を返す。"""
+    index = 0
+    while index < len(tokens) and _ENV_ASSIGNMENT.match(tokens[index]):
+        index += 1
+    words = tokens[index:]
+    if len(words) < 3 or _basename(words[0]) != "atk" or words[1] != "wi":
+        return None
+    return words[2]
+
+
+def _successful_wi_operations(item: _CollectedRecord) -> list[dict[str, Any]]:
+    """成功結果まで記録された直接の`atk wi`操作を返す。"""
+    pending: dict[str, tuple[int, str]] = {}
+    operations: list[dict[str, Any]] = []
+    for record in item.records:
+        entry = record.entry
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                    block_input = block.get("input")
+                    command = block_input.get("command") if isinstance(block_input, dict) else None
+                    operation = _wi_command(_shell_tokens(command)) if isinstance(command, str) else None
+                    if operation is not None:
+                        pending[block["id"]] = (record.line, operation)
+                if block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
+                    call = pending.pop(block["tool_use_id"], None)
+                    if call is not None and block.get("is_error") is not True:
+                        line, operation = call
+                        operations.append({"operation": operation, "locator": {"record": item.record_id, "line": line}})
+
+        payload = entry.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        payload_type = payload.get("type")
+        if payload_type in {"function_call", "custom_tool_call"} and isinstance(payload.get("call_id"), str):
+            operation = _wi_command(_payload_command_tokens(payload))
+            if operation is not None:
+                pending[payload["call_id"]] = (record.line, operation)
+        elif payload_type in {"function_call_output", "custom_tool_call_output"} and isinstance(payload.get("call_id"), str):
+            call = pending.pop(payload["call_id"], None)
+            output = payload.get("output")
+            output_object = output if isinstance(output, dict) else _json_object(output)
+            failed = isinstance(output_object, dict) and output_object.get("exit_code") not in (None, 0)
+            if call is not None and not failed:
+                line, operation = call
+                operations.append({"operation": operation, "locator": {"record": item.record_id, "line": line}})
+        elif entry.get("type") == "event_msg" and payload_type == "item_completed":
+            command_item = payload.get("item")
+            if not isinstance(command_item, dict) or command_item.get("type") != "CommandExecution":
+                continue
+            operation = _wi_command(_payload_command_tokens(payload))
+            if operation is not None and command_item.get("status") in {"completed", "success", "succeeded"}:
+                operations.append({"operation": operation, "locator": {"record": item.record_id, "line": record.line}})
+    return operations
+
+
+def _workflow_evidence(item: _CollectedRecord) -> tuple[str, dict[str, Any] | str]:
+    """明示されたprocess-wi系workflowと位置を返す。"""
+    for event in _extract_records(item.records):
+        text = event.get("text")
+        if event.get("kind") == "skill-invocation" and isinstance(text, str) and "process-wi" in text:
+            return "process-wi", {"record": item.record_id, "line": int(event["line"])}
+        if (
+            event.get("kind") == "user"
+            and isinstance(text, str)
+            and ("agent-toolkit:process-wi" in text or text.strip() == "/process-wi")
+        ):
+            return "process-wi", {"record": item.record_id, "line": int(event["line"])}
+    return "unknown", "unknown"
+
+
+def _catalog_family_tokens(family: list[_CollectedRecord]) -> dict[str, int] | str:
+    """親とroot内で追跡できた子孫のトークンを同じ成分ごとに合算する。"""
+    total: dict[str, int] = {}
+    found = False
+    for item in family:
+        if item.runtime is None:
+            continue
+        tokens = _stats_summary_data(item.records, item.runtime).get("tokens")
+        if not isinstance(tokens, dict):
+            continue
+        found = True
+        _add_tokens(total, {key: value for key, value in tokens.items() if isinstance(value, int)})
+    return total if found else "unknown"
+
+
+def _catalog_events(
+    root: Path,
+    runtime: _Runtime,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+) -> tuple[list[dict[str, Any]], int]:
+    """指定root内だけから比較用の親セッションカタログを生成する。"""
+    if not root.is_dir():
+        return [{"kind": "error", "text": f"カタログrootが実在するディレクトリでない: {root}"}], 2
+    resolved_root = root.resolve()
+    paths = sorted(resolved_root.glob("**/*.jsonl"))
+    if runtime == "codex":
+        paths = [path for path in paths if path.name.startswith("rollout-")]
+    if not paths:
+        return [{"kind": "error", "text": f"カタログrootから{runtime}記録を判別できない: {resolved_root}"}], 2
+    loaded: dict[str, _CollectedRecord] = {}
+    path_items: dict[Path, _CollectedRecord] = {}
+    unresolved_loads = 0
+    for path in paths:
+        records = _load_records(str(path))
+        if records is None:
+            unresolved_loads += 1
+            continue
+        detected = _detect_runtime([record.entry for record in records])
+        if detected != runtime:
+            continue
+        session_id = _catalog_session_id(path, records, runtime)
+        item = _CollectedRecord(session_id, path, records, runtime, None, None, None, "main")
+        loaded.setdefault(session_id, item)
+        path_items[path.resolve()] = item
+    if not loaded:
+        return [{"kind": "error", "text": f"カタログrootから{runtime}記録を判別できない: {resolved_root}"}], 2
+
+    children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
+    referenced: set[str] = set()
+    unresolved_references: set[tuple[str, str]] = set()
+    for session_id, item in loaded.items():
+        call_ids = _agents_server_call_ids(item.records)
+        for record in item.records:
+            for _, child_id in _thread_ids_from_record(record, call_ids):
+                if child_id in loaded:
+                    if child_id not in children[session_id]:
+                        children[session_id].append(child_id)
+                    referenced.add(child_id)
+                else:
+                    unresolved_references.add((session_id, child_id))
+        if runtime == "claude":
+            subagent_dir = item.path.with_suffix("") / "subagents"
+            for path, child in path_items.items():
+                if path.parent == subagent_dir.resolve() and child.record_id != session_id:
+                    if child.record_id not in children[session_id]:
+                        children[session_id].append(child.record_id)
+                    referenced.add(child.record_id)
+
+    if runtime == "claude":
+        parent_ids = [
+            item.record_id
+            for path, item in path_items.items()
+            if path.parent == resolved_root and item.record_id not in referenced
+        ]
+    else:
+        parent_ids = [session_id for session_id in loaded if session_id not in referenced]
+
+    events: list[dict[str, Any]] = []
+    for parent_id in sorted(set(parent_ids)):
+        parent = loaded[parent_id]
+        stats = _stats_summary_data(parent.records, runtime)
+        start_text = stats.get("start")
+        end_text = stats.get("end")
+        start = _parse_timestamp(start_text) if isinstance(start_text, str) else None
+        end = _parse_timestamp(end_text) if isinstance(end_text, str) else None
+        if end is not None and end <= since:
+            continue
+        if start is not None and start > boundary:
+            continue
+        descendant_ids: list[str] = []
+        queue = list(children[parent_id])
+        while queue:
+            child_id = queue.pop(0)
+            if child_id in descendant_ids:
+                continue
+            descendant_ids.append(child_id)
+            queue.extend(children.get(child_id, ()))
+        family = [parent, *(loaded[child_id] for child_id in descendant_ids)]
+        workflow, workflow_locator = _workflow_evidence(parent)
+        operations = [operation for item in family for operation in _successful_wi_operations(item)]
+        events.append(
+            {
+                "kind": "catalog-parent",
+                "runtime": runtime,
+                "session_id": parent_id,
+                "started_at": start_text if isinstance(start_text, str) else "unknown",
+                "finished_at": end_text if isinstance(end_text, str) else "unknown",
+                "cwd": _catalog_value(parent.records, "cwd", "originalCwd"),
+                "branch": _catalog_value(parent.records, "gitBranch", "originalBranch", "branch"),
+                "workflow": workflow,
+                "workflow_locator": workflow_locator,
+                "tokens": _catalog_family_tokens(family),
+                "descendant_count": len(descendant_ids),
+                "successful_wi_operations": operations,
+                "successful_wi_operation_count": len(operations),
+            }
+        )
+    events.sort(key=lambda event: (str(event["started_at"]), str(event["session_id"])))
+    events.append(
+        {
+            "kind": "catalog-summary",
+            "scan_root": str(resolved_root),
+            "runtime": runtime,
+            "since": since.isoformat(),
+            "observation_boundary": boundary.isoformat(),
+            "parent_record_count": len(events),
+            "unresolved_record_count": unresolved_loads + len(unresolved_references),
+        }
+    )
+    return events, 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """既定の抽出と照会モードの引数を定義する。"""
     parser = argparse.ArgumentParser(
@@ -3203,6 +3459,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。`--codex-thread-id`と併用しない。",
     )
     parser.add_argument(
+        "--transcript",
+        metavar="PATH",
+        help="位置引数と同じ単一transcriptの絶対パス。位置引数・Codex thread ID・カタログ走査とは併用しない。",
+    )
+    parser.add_argument(
         "--codex-thread-id",
         metavar="THREAD_ID",
         help="Codex thread IDから親transcriptの正本を解決して抽出を開始する。"
@@ -3213,6 +3474,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--codex-home",
         metavar="DIR",
         help="Codexの記録の保存先。`--codex-thread-id`と併用する。",
+    )
+    catalog_group = parser.add_mutually_exclusive_group()
+    catalog_group.add_argument(
+        "--catalog-claude-project",
+        metavar="DIR",
+        help="指定したClaude projectディレクトリ内だけを走査し、比較用の親セッションカタログを返す。",
+    )
+    catalog_group.add_argument(
+        "--catalog-codex-history",
+        metavar="DIR",
+        help="指定したCodex履歴ディレクトリ内だけを走査し、比較用の親セッションカタログを返す。",
     )
     parser.add_argument(
         "--compaction-record-dir",
@@ -3276,7 +3548,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--since",
         metavar="TIMESTAMP",
-        help="`--user-events`の開始境界をISO 8601の時刻で指定する。当該時刻を持つレコードは対象外とする。",
+        help="`--user-events`又はカタログ走査の開始境界をISO 8601の時刻で指定する。",
     )
     parser.add_argument(
         "--bundle",
@@ -3330,10 +3602,31 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         > 1
     ):
         return _print_error("--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-untilは併用できない")
-    if args.since is not None and not args.user_events:
-        return _print_error("--sinceは--user-eventsと併用する")
+    catalog_root = args.catalog_claude_project or args.catalog_codex_history
+    catalog_runtime: _Runtime | None = (
+        "claude" if args.catalog_claude_project else "codex" if args.catalog_codex_history else None
+    )
+    if catalog_root is not None and any(
+        (
+            args.warn,
+            args.grep is not None,
+            args.detail is not None,
+            args.stats,
+            args.hook_notices,
+            args.bundle is not None,
+            args.elapsed_until is not None,
+            args.user_events,
+        )
+    ):
+        return _print_error("カタログ走査は単一transcriptの照会モードと併用できない")
+    if args.since is not None and not args.user_events and catalog_root is None:
+        return _print_error("--sinceは--user-events又はカタログ走査と併用する")
     if args.user_events and args.since is None:
         return _print_error("--user-eventsには--sinceが必要")
+    if catalog_root is not None and args.since is None:
+        return _print_error("カタログ走査には--sinceが必要")
+    if catalog_root is not None and args.observation_boundary is None:
+        return _print_error("カタログ走査には--observation-boundaryが必要")
     since = None
     if args.since is not None:
         try:
@@ -3341,15 +3634,35 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         except ValueError:
             return _print_error(f"開始境界が不正: {args.since}")
 
-    if (args.transcript_path is None) == (args.codex_thread_id is None):
-        return _print_error("transcript_pathと--codex-thread-idはいずれか一方だけを指定する")
+    sources = (
+        args.transcript_path,
+        args.transcript,
+        args.codex_thread_id,
+        args.catalog_claude_project,
+        args.catalog_codex_history,
+    )
+    if sum(source is not None for source in sources) != 1:
+        return _print_error("transcript_path・--transcript・--codex-thread-id・カタログ走査はいずれか一つだけを指定する")
+    if args.codex_home is not None and args.codex_thread_id is None:
+        return _print_error("--codex-homeは--codex-thread-idと併用する")
+    if catalog_root is not None:
+        assert since is not None and catalog_runtime is not None and args.observation_boundary is not None
+        try:
+            catalog_boundary = _parse_timestamp(args.observation_boundary)
+        except ValueError:
+            return _print_error(f"観測境界が不正: {args.observation_boundary}")
+        if catalog_boundary < since:
+            return _print_error("観測境界は開始境界以後を指定する")
+        events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
+        _print_events(events)
+        return exit_code
     if args.codex_thread_id is not None:
         try:
             transcript_path = str(_resolve_codex_transcript(args.codex_thread_id, args.codex_home))
         except ValueError as error:
             return _print_error(str(error))
     else:
-        transcript_path = args.transcript_path
+        transcript_path = args.transcript or args.transcript_path
 
     records = _load_records(transcript_path)
     if records is None:
