@@ -36,7 +36,7 @@ list:
 
 Bash:
 
-- 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
+- 多段シェルへのコード文字列と`.env`内容出力の遮断 (block)
 - 単純な明示パスの不存在と`atk`未対応オプションの警告 (warn)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 350行を超える通常ファイルの静的に確定できる全文取得の遮断 (block)
@@ -117,6 +117,9 @@ from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: di
 
 # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import (
+    background_task_outputs as _background_task_outputs,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._hooks import (
     bash_command_parser as _bash_command_parser,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
@@ -150,6 +153,9 @@ from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disabl
     bash_failure_gate_is_active,
     read_state,
     update_state,
+)
+from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    format_warning_context,
 )
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -214,7 +220,6 @@ if TYPE_CHECKING:
         _check_bash_unquoted_shell_metacharacter,
         _check_bash_unresolved_git_object,
         _check_bash_help_with_execution,
-        _check_bash_heredoc_chain,
         _check_bash_env_full_read,
         _check_bash_missing_path_operand_loss,
         _check_bash_nested_code_string,
@@ -225,6 +230,7 @@ if TYPE_CHECKING:
         _check_bash_recursive_grep_without_exclusion,
         _check_bash_recursive_home_search,
         _check_bash_sleep_poll_pattern,
+        _check_bash_truncation_autofix_repeat,
         _check_bash_unbounded_home_traversal,
         _check_bash_unbounded_root_traversal,
         _check_bash_uv_run_python,
@@ -260,7 +266,10 @@ _JAPANESE_SCRIPT_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
 # 日本語文中への混入を検出する他言語の文字。
 # ハングル字母（U+1100-U+11FF）・ハングル互換字母（U+3130-U+318F）・ハングル音節（U+AC00-U+D7A3）・
 # 半角ハングル（U+FFA0-U+FFDC）・キリル文字（U+0400-U+04FF）・キリル補助（U+0500-U+052F）を対象とする。
-_FOREIGN_SCRIPT_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-\uffdc\u0400-\u04ff\u0500-\u052f]")
+_FOREIGN_SCRIPT_RE = re.compile(
+    "[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-\uffdc\u0400-\u04ff\u0500-\u052f"
+    "动为发应对实现进过这选项认证结问题处术统规读写义误该让还]"
+)
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
 
@@ -306,8 +315,15 @@ def main(payload_text: str) -> int:
         pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG, removable_cause=True))
 
     def emit_json(result: dict) -> None:
-        for notice in pending_notices:
-            _append_additional_context(result, notice)
+        hook_output = result.get("hookSpecificOutput")
+        if isinstance(hook_output, dict):
+            existing_context = hook_output.get("additionalContext")
+            contexts: list[str] = []
+            if isinstance(existing_context, str) and existing_context:
+                contexts.append(existing_context)
+            contexts.extend(pending_notices)
+            if contexts:
+                hook_output["additionalContext"] = format_warning_context(contexts)
         pending_notices.clear()
         print(json.dumps(result, ensure_ascii=False))
 
@@ -417,7 +433,7 @@ def main(payload_text: str) -> int:
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
                         "updatedInput": corrected_input,
-                        "additionalContext": "\n".join([*pending_notices, large_read_notice]),
+                        "additionalContext": format_warning_context([*pending_notices, large_read_notice]),
                     }
                 }
             )
@@ -493,6 +509,8 @@ def _handle_bash_tool(
         warnings.append(sleep_poll_result)
     if _check_bash_missing_path_operand_loss(command, cwd) == "block":
         return 2
+    if _check_bash_truncation_autofix_repeat(command, session_id) == "block":
+        return 2
     auto_fix = _autofix_bash_command(command, cwd, session_id)
     if auto_fix is not None:
         command, auto_fix_notice = auto_fix
@@ -508,18 +526,31 @@ def _handle_bash_tool(
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
-    if (
-        _check_bash_nested_code_string(command)
-        or _check_bash_python_code_string(command)
-        or _check_bash_heredoc_chain(command)
-        or _check_bash_env_full_read(command)
-    ):
+    if _check_bash_nested_code_string(command) or _check_bash_python_code_string(command) or _check_bash_env_full_read(command):
         return 2
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":
         return 2
     if _check_bash_unbounded_root_traversal(command) == "block":
         return 2
+    transcript_path = payload.get("transcript_path")
+    if isinstance(transcript_path, str) and transcript_path:
+        state = read_state(session_id)
+        recorded_paths = state.get("background_task_output_paths")
+        if isinstance(recorded_paths, dict):
+            pending_ids = _background_task_outputs.pending_bash_task_ids(transcript_path, session_id)
+            pending_paths = {
+                path for task_id, path in recorded_paths.items() if task_id in pending_ids and isinstance(path, str)
+            }
+            if _background_task_outputs.command_reads_path(command, pending_paths):
+                warnings.append(
+                    _llm_notice(
+                        "未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。\n"
+                        "対処: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。",
+                        tag=_WARN_TAG,
+                        removable_cause=True,
+                    )
+                )
     git_grep_pattern_type_result = _check_bash_git_grep_pattern_type(command)
     if git_grep_pattern_type_result == "block":
         return 2
@@ -552,7 +583,7 @@ def _handle_bash_tool(
     result = _check_bash_git_log_decorate(command, tool_input)
     if result is not None:
         if warnings:
-            _append_additional_context(result, "\n".join(warnings))
+            _append_additional_context(result, format_warning_context(warnings))
         emit_json(result)
         return 0
     if auto_fix is not None:
@@ -562,13 +593,20 @@ def _handle_bash_tool(
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "allow",
                     "updatedInput": tool_input,
-                    "additionalContext": "\n".join(warnings),
+                    "additionalContext": format_warning_context(warnings),
                 }
             }
         )
         return 0
     if warnings:
-        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
+        emit_json(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "additionalContext": format_warning_context(warnings),
+                }
+            }
+        )
     else:
         flush_warning()
     return 0
@@ -629,7 +667,14 @@ def _handle_user_facing_text_tool(
     if not warnings:
         flush_warning()
     else:
-        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
+        emit_json(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "additionalContext": format_warning_context(warnings),
+                }
+            }
+        )
     return 0
 
 
@@ -667,7 +712,7 @@ def _handle_edit_tool(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
-                    "additionalContext": "\n\n".join(warnings),
+                    "additionalContext": format_warning_context(warnings),
                 },
             }
         )

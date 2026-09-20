@@ -32,7 +32,7 @@
 
 ## 計画最終化
 
-計画ファイルの`## 進捗ログ`へ、統合区分、統合先branch、`merged_head`、実行レビューの収束及びAWI終端前の状態を追記する。
+`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/append_progress_log.py`で計画ファイルの`## 進捗ログ`へ、統合区分、統合先branch、`merged_head`、実行レビューの収束及びAWI終端前の状態を追記する。
 同じ追記へ当該レーンの稼働時間も記録する。値はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とし、書式は`agent-toolkit:plan-mode`の計画ファイル基準が定める。
 この記録は、次の処理回の選定工程がレーン配分の見込みを導く入力になる。記録が無いと、見込みと実測の乖離がそのまま待ち時間として残る。rebaseを実行した場合は、rebase前後の専用branchの7文字以上の一意な短縮OIDの対応も同じ追記へ含める。
 `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py --reject-migration-warnings <計画ファイルの絶対パス>`を計画ファイル基準が定める起動形で単独実行し、終了コード0と警告の不在を確認する。

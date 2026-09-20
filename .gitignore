@@ -10,7 +10,8 @@
 /.claude/.format-dirty
 /.claude/scheduled_tasks.lock
 /.claude/settings.local.json
-/.textlintcache
+# サブプロジェクトも`textlint --cache`を使うため、任意の深さのキャッシュを除外する。
+.textlintcache
 /.codex/
 /agent-toolkit-codex/
 /.config/

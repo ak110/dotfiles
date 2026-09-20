@@ -58,6 +58,18 @@ def _managed_temp_path(result: subprocess.CompletedProcess[str] | None) -> pathl
     return path if path.is_absolute() and path.is_dir() else None
 
 
+def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pathlib.Path | None:
+    """対象リポジトリ固有の振り返り参照文書を解決する。
+
+    振り返り担当が所在を自ら探すと、証拠抽出を始める前に1往復を要する。
+    実在しない場合はNoneを返し、参照文書を持たないリポジトリと区別しない。
+    """
+    if target_repo is None:
+        return None
+    path = pathlib.Path.home() / (".codex" if codex else ".claude") / "docs" / f"session-review-{target_repo.name}.md"
+    return path if path.is_file() else None
+
+
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """準備項目を取得して1行のJSONを出力する。"""
     args = _build_parser().parse_args(argv)
@@ -83,15 +95,24 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observation_boundary = current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     target_repo = pathlib.Path(args.target_repo).expanduser().resolve() if args.target_repo is not None else None
+    bundle_dir = managed_temp / "bundle"
+    try:
+        bundle_dir.mkdir(exist_ok=True)
+    except OSError:
+        return _missing("bundle_dir")
+    reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
 
     record = {
         "evidence_script": str(evidence_script),
         "report_script": str(report_script),
+        "plugin_root": str(pathlib.Path(__file__).resolve().parents[3]),
         "transcript_path": str(transcript_path) if transcript_path is not None else None,
         "codex_thread_id": args.codex_thread_id,
         "managed_temp": str(managed_temp),
+        "bundle_dir": str(bundle_dir),
         "observation_boundary": observation_boundary,
         "target_repo": str(target_repo) if target_repo is not None else None,
+        "reference_document": str(reference_document) if reference_document is not None else None,
     }
     print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
     return 0

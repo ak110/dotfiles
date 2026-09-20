@@ -151,9 +151,11 @@ def test_candidate_events_classifies_auto_mode_denial_as_permission_denial() -> 
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    kinds = {candidate["candidate_kind"]: candidate["locators"] for candidate in candidates[:-1]}
-    assert kinds["permission-denial"] == [{"record": "main", "line": 2}]
-    assert kinds["escalation"] == [{"record": "main", "line": 5}]
+    by_kind: dict[str, list[dict[str, object]]] = {}
+    for candidate in candidates[:-1]:
+        by_kind.setdefault(candidate["candidate_kind"], []).extend(candidate["locators"])
+    assert by_kind["permission-denial"] == [{"record": "main", "line": 2}]
+    assert by_kind["escalation"] == [{"record": "main", "line": 5}, {"record": "main", "line": 2}]
 
 
 def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
@@ -181,8 +183,8 @@ def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
 
     candidates = evidence._candidate_events(timeline, [], hook_notices)  # pylint: disable=protected-access
 
-    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["hook-notice"]
-    assert candidates[0]["occurrence_count"] == 1
+    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["escalation", "hook-notice"]
+    assert candidates[1]["occurrence_count"] == 1
 
 
 def test_candidate_events_includes_delegate_returns_that_report_failure() -> None:
@@ -301,11 +303,49 @@ def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> N
         {"record": "main", "line": 2},
         {"record": "main", "line": 5},
     ]
-    assert by_kind["warning"]["count"] == 2
+    assert by_kind["warning"]["count"] == 3
     assert by_kind["warning"]["locators"] == [
         {"record": "main", "line": 7},
+        {"record": "main", "line": 8},
         {"record": "main", "line": 12},
     ]
     assert by_kind["hook-notice"]["locators"] == [{"record": "main", "line": 9}]
     assert candidates[-1]["included_locator_count"] == 6
     assert candidates[-1]["excluded"]["hook-notice-informational"] == 1
+
+
+def test_candidate_events_keeps_distinct_kinds_at_the_same_locator() -> None:
+    """同じ記録位置でも候補種別が異なる事象は別候補として保持する。"""
+    timeline = [{"kind": "failed-tool", "record": "main", "line": 4, "text": "実行失敗"}]
+    warnings = [{"kind": "warning", "record": "main", "line": 4, "text": "実行時警告"}]
+
+    candidates = evidence._candidate_events(timeline, warnings, [])  # pylint: disable=protected-access
+
+    assert {candidate["candidate_kind"] for candidate in candidates[:-1]} == {"escalation", "warning"}
+    assert candidates[-1]["included_locator_count"] == 1
+    assert candidates[-1]["included_locators"] == [{"record": "main", "line": 4}]
+
+
+def test_candidate_events_classifies_hook_failures_from_the_reason_after_the_command_prefix() -> None:
+    """hook起動コマンドが同じでも、後続の遮断理由が異なる失敗を別候補にする。"""
+    prefix = "PreToolUse:Bash hook error: [uv run --project /plugin --locked hook.py]: "
+    timeline = [
+        {"kind": "failed-tool", "record": "main", "line": 2, "text": prefix + "再帰検索は除外設定を反映しない"},
+        {"kind": "failed-tool", "record": "main", "line": 3, "text": prefix + "python -cへ複数文を渡している"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    escalations = [candidate for candidate in candidates[:-1] if candidate["candidate_kind"] == "escalation"]
+    assert len(escalations) == 2
+    assert all("hook error" not in candidate["event_key"][0] for candidate in escalations)
+
+
+def test_candidate_events_counts_only_identical_candidate_identity_as_duplicate() -> None:
+    """位置・種別・タグが同じ重複だけを機械除外件数へ加える。"""
+    event = {"kind": "warning", "record": "main", "line": 8, "text": "同じ警告"}
+
+    candidates = evidence._candidate_events([], [event, dict(event)], [])  # pylint: disable=protected-access
+
+    assert len(candidates[:-1]) == 1
+    assert candidates[-1]["excluded"] == {"duplicate-candidate": 1}

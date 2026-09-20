@@ -25,6 +25,7 @@ def test_output_file_saves_events_and_prints_path_and_line_count(
         "kind": "user",
         "text": "入力",
         "line": 1,
+        "timestamp": None,
         "sequence": 1,
         "record": "main",
     }
@@ -145,6 +146,7 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
             "kind": "user",
             "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答",
             "line": 1,
+            "timestamp": None,
             "sequence": 1,
         }
     ]
@@ -407,8 +409,8 @@ def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_pa
     )
 
     assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "user", "text": "質問: 質問\n回答: 回答", "line": 1, "sequence": 1},
-        {"kind": "user", "text": "質問: 別の質問\n回答: 別の回答", "line": 1, "sequence": 2},
+        {"kind": "user", "text": "質問: 質問\n回答: 回答", "line": 1, "timestamp": None, "sequence": 1},
+        {"kind": "user", "text": "質問: 別の質問\n回答: 別の回答", "line": 1, "timestamp": None, "sequence": 2},
     ]
 
 
@@ -434,7 +436,14 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     assert output.err == ""
     lines = output.out.splitlines()
     assert len(lines) == 1
-    assert json.loads(lines[0]) == {"kind": "user", "text": "入力", "line": 1, "sequence": 1, "record": "main"}
+    assert json.loads(lines[0]) == {
+        "kind": "user",
+        "text": "入力",
+        "line": 1,
+        "timestamp": None,
+        "sequence": 1,
+        "record": "main",
+    }
 
 
 def test_main_resolves_codex_transcript_from_thread_id(
@@ -456,7 +465,9 @@ def test_main_resolves_codex_transcript_from_thread_id(
 
     assert evidence.main(["--codex-thread-id", thread_id, "--codex-home", str(codex_home)]) == 0
 
-    assert _read_jsonl(capsys) == [{"kind": "user", "text": "thread IDから解決した記録", "line": 1, "sequence": 1}]
+    assert _read_jsonl(capsys) == [
+        {"kind": "user", "text": "thread IDから解決した記録", "line": 1, "timestamp": None, "sequence": 1}
+    ]
 
 
 def test_main_rejects_ambiguous_or_missing_codex_thread_id(
@@ -545,10 +556,20 @@ def test_main_requires_exactly_one_transcript_source(
     thread_id = "44444444-4444-4444-8444-444444444444"
 
     assert evidence.main([str(transcript), "--codex-thread-id", thread_id]) == 2
-    assert _read_jsonl(capsys) == [{"kind": "error", "text": "transcript_pathと--codex-thread-idはいずれか一方だけを指定する"}]
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "error",
+            "text": "transcript_path・--transcript・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+        }
+    ]
 
     assert evidence.main([]) == 2
-    assert _read_jsonl(capsys) == [{"kind": "error", "text": "transcript_pathと--codex-thread-idはいずれか一方だけを指定する"}]
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "error",
+            "text": "transcript_path・--transcript・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+        }
+    ]
 
 
 def _timestamped_entry(timestamp: str | None, text: str) -> dict:
@@ -1026,11 +1047,12 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
     events = evidence.load_and_extract(str(transcript))
 
     assert events == [
-        {"kind": "final-result", "text": "回答待ち", "line": 2, "sequence": 1},
+        {"kind": "final-result", "text": "回答待ち", "line": 2, "timestamp": None, "sequence": 1},
         {
             "kind": "user",
             "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答1\n次の回答2",
             "line": 1,
+            "timestamp": None,
             "sequence": 2,
         },
     ]
@@ -1170,7 +1192,15 @@ def test_codex_agent_message_block_array_extracts_only_final_answer(tmp_path: pa
 
     events = evidence.load_and_extract(str(transcript))
 
-    assert events == [{"kind": "agent-completion", "text": "Message Type: FINAL_ANSWER\n完了報告", "line": 2, "sequence": 1}]
+    assert events == [
+        {
+            "kind": "agent-completion",
+            "text": "Message Type: FINAL_ANSWER\n完了報告",
+            "line": 2,
+            "timestamp": None,
+            "sequence": 1,
+        }
+    ]
 
 
 @pytest.mark.parametrize("key", ["message", "text", "content"])
@@ -1620,7 +1650,7 @@ def test_final_result_skips_commentary_phase(tmp_path: pathlib.Path) -> None:
     )
 
     assert evidence.load_and_extract(str(commentary_only)) == [
-        {"kind": "assistant", "text": "作業中", "phase": "commentary", "line": 1, "sequence": 1}
+        {"kind": "assistant", "text": "作業中", "phase": "commentary", "line": 1, "timestamp": None, "sequence": 1}
     ]
 
     with_final_answer = _write_transcript(
@@ -2124,6 +2154,30 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
         {"kind": "warning", "line": 1, "text": "構造化警告"},
         {"kind": "warning", "line": 2, "text": "直接表す警告本文"},
     ]
+
+
+@pytest.mark.parametrize(
+    "marker",
+    (
+        {"severity": "warning"},
+        {"type": "warning"},
+        {"kind": "warning"},
+        {"severity": "warning", "stdout": "通常の標準出力", "stderr": "通常の標準エラー"},
+    ),
+)
+def test_warn_mode_rejects_structured_markers_without_a_warning_body(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    marker: dict[str, str],
+) -> None:
+    """区分だけを持つ構造化結果は、警告本文が無いため警告として数えない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "toolUseResult": marker, "message": {"role": "user", "content": []}}],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
 
 
 @pytest.mark.parametrize(
@@ -5252,11 +5306,14 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     assert candidates[-1]["excluded"] == {"hook-notice-informational": 1, "initial-request": 1}
     assert candidates[-1]["included_locator_count"] == 2
     assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 3} in bundle_events
-    candidate_evidence = [
+    evidence_index = [
         json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
     ]
+    assert [item["candidate_id"] for item in evidence_index] == ["c0001", "c0002"]
+    assert [item["locators"] for item in evidence_index] == [item["locators"] for item in candidate_items]
+    assert all(item["evidence_count"] > 0 and item["total_chars"] > 0 for item in evidence_index)
+    candidate_evidence = [json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8")) for item in evidence_index]
     assert [item["candidate_id"] for item in candidate_evidence] == ["c0001", "c0002"]
-    assert [item["locators"] for item in candidate_evidence] == [item["locators"] for item in candidate_items]
     assert all(item["events"] for item in candidate_evidence)
     assert all(item["text_limit"] == 2000 and item["user_context_limit_per_side"] == 1 for item in candidate_evidence)
     assert all(item["source_chars"] > 0 for item in candidate_evidence)
@@ -5395,6 +5452,82 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
     ]
 
 
+def test_bundle_writes_one_evidence_file_per_candidate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """候補数が多い場合も、全候補IDへ対応する個別ファイルを索引から解決できる。"""
+    entries: list[dict[str, object]] = [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}]
+    for index in range(12):
+        entries.append(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": f"call-{index}", "is_error": True, "content": f"失敗{index}"}
+                    ],
+                },
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    capsys.readouterr()
+    evidence_index = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert evidence_index
+    for item in evidence_index:
+        body = json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8"))
+        assert body["candidate_id"] == item["candidate_id"]
+        assert body["events"]
+
+
+def test_candidate_evidence_file_holds_only_its_own_candidate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """1候補の証拠が大きい場合も、個別ファイルへ別候補の証拠を混ぜない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "最初の依頼"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": "あ" * 4000}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-2", "is_error": True, "content": "別の失敗"}],
+                },
+            },
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    capsys.readouterr()
+    evidence_index = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(evidence_index) >= 2
+    for item in evidence_index:
+        body = json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8"))
+        assert {locator["line"] for locator in body["locators"]} == {locator["line"] for locator in item["locators"]}
+        assert all(event.get("record") is not None for event in body["events"])
+
+
 def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -5421,9 +5554,10 @@ def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
     assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
 
     capsys.readouterr()
-    candidate_evidence = [
+    evidence_index = [
         json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
     ]
+    candidate_evidence = [json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8")) for item in evidence_index]
     contexts = [
         (event["direction"], event["line"], event["text"])
         for item in candidate_evidence
@@ -5432,24 +5566,6 @@ def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
     ]
     assert ("before", 2, "直前の介入") in contexts
     assert ("after", 4, "直後の介入") in contexts
-
-
-def test_bundle_stdout_excludes_saved_stats_and_hook_notices(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """保存済みの集計と通知の走査を標準出力へ重複して返さない。"""
-    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
-    bundle_dir = tmp_path / "bundle"
-    bundle_dir.mkdir()
-
-    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
-
-    events = _read_jsonl(capsys, raw=True)
-    assert not [event for event in events if str(event["kind"]).startswith("stats-")]
-    assert not [event for event in events if event["kind"] == "hook-notice"]
-    assert (bundle_dir / "stats.jsonl").exists()
-    assert (bundle_dir / "hook-notices.jsonl").exists()
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -5604,6 +5720,7 @@ def test_explicit_codex_home_applies_to_parent_and_delegate_records(
             "kind": "user",
             "text": "明示先の委譲記録",
             "line": 1,
+            "timestamp": None,
             "sequence": 1,
             "record": f"codex:{child_id}",
         }
@@ -5933,3 +6050,170 @@ def test_hook_record_scan_tolerates_non_string_type_values(
     assert evidence.main([str(transcript), "--warn"]) == 0
     warn_events = _read_jsonl(capsys)
     assert [event["text"] for event in warn_events if event["kind"] == "warning"] == [notice]
+
+
+def test_transcript_alias_selects_the_single_record_source(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--transcript`を位置引数と同じ単一記録の入口として扱う。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
+
+    assert evidence.main(["--transcript", str(transcript)]) == 0
+    assert _read_jsonl(capsys)[0]["text"] == "入力"
+    assert evidence.main([str(transcript), "--transcript", str(transcript)]) == 2
+
+
+def test_catalog_claude_project_aggregates_traceable_descendants_without_leaving_root(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Claudeカタログはroot内の子記録だけを集約し、root外参照を未解決として数える。"""
+    root = tmp_path / "project"
+    child_id = "child-session"
+    missing_id = "outside-session"
+    _write_jsonl(
+        root / "parent-session.jsonl",
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-09-10T00:00:00Z",
+                "cwd": "/repo",
+                "gitBranch": "develop",
+                "message": {"role": "user", "content": "Base directory for this skill: /plugin/skills/process-wi"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-10T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "mcp__agents_server__start", "id": "child", "input": {}}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-10T00:00:02Z",
+                "toolUseResult": {"sessionId": child_id, "engine": "claude"},
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "child"}]},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-10T00:00:03Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "mcp__agents_server__start", "id": "missing", "input": {}}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-10T00:00:04Z",
+                "toolUseResult": {"sessionId": missing_id, "engine": "claude"},
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "missing"}]},
+            },
+        ],
+    )
+    _write_jsonl(
+        root / f"{child_id}.jsonl",
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-10T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "wi", "input": {"command": "atk wi get"}}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-10T00:00:02Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "wi", "content": "ok"}]},
+            },
+        ],
+    )
+
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(root),
+                "--since",
+                "2026-09-09T00:00:00Z",
+                "--observation-boundary",
+                "2026-09-11T00:00:00Z",
+            ]
+        )
+        == 0
+    )
+    events = _read_jsonl(capsys, raw=True)
+    parent, summary = events
+    assert parent["session_id"] == "parent-session"
+    assert parent["workflow"] == "process-wi"
+    assert parent["descendant_count"] == 1
+    assert parent["successful_wi_operation_count"] == 1
+    assert parent["successful_wi_operations"][0]["operation"] == "get"
+    assert summary["parent_record_count"] == 1
+    assert summary["unresolved_record_count"] == 1
+
+
+def test_catalog_codex_history_reports_unknown_fields_and_successful_wi_operation(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexカタログは親記録を期間で選び、未記録値をunknownとして返す。"""
+    root = tmp_path / "codex-history"
+    session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    _write_jsonl(
+        root / f"rollout-test-{session_id}.jsonl",
+        [
+            {
+                "type": "session_meta",
+                "timestamp": "2026-09-10T00:00:00Z",
+                "payload": {"id": session_id, "cwd": "/repo"},
+            },
+            {
+                "type": "event_msg",
+                "timestamp": "2026-09-10T00:00:01Z",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {"type": "CommandExecution", "status": "completed", "command": ["atk", "wi", "list"]},
+                },
+            },
+        ],
+    )
+
+    assert (
+        evidence.main(
+            [
+                "--catalog-codex-history",
+                str(root),
+                "--since",
+                "2026-09-09T00:00:00Z",
+                "--observation-boundary",
+                "2026-09-11T00:00:00Z",
+            ]
+        )
+        == 0
+    )
+    parent, summary = _read_jsonl(capsys, raw=True)
+    assert parent["session_id"] == session_id
+    assert parent["branch"] == "unknown"
+    assert parent["workflow"] == "unknown"
+    assert parent["tokens"] == "unknown"
+    assert parent["successful_wi_operations"][0]["operation"] == "list"
+    assert summary["parent_record_count"] == 1
+
+
+def test_catalog_rejects_an_unclassifiable_root_and_reversed_period(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """記録を判別できないrootと開始後に終わる観測期間を終了コード2で拒否する。"""
+    root = tmp_path / "empty"
+    root.mkdir()
+    base = ["--catalog-claude-project", str(root), "--since", "2026-09-10T00:00:00Z"]
+
+    assert evidence.main([*base, "--observation-boundary", "2026-09-11T00:00:00Z"]) == 2
+    assert "判別できない" in _read_jsonl(capsys)[0]["text"]
+
+    assert evidence.main([*base, "--observation-boundary", "2026-09-09T00:00:00Z"]) == 2
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "観測境界は開始境界以後を指定する"}]

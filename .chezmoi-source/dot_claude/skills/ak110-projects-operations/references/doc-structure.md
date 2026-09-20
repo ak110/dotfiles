@@ -1,6 +1,6 @@
 # ドキュメント章構成の統一
 
-各プロジェクトのREADME.md・CLAUDE.md・docs/development/development.mdは章構成・章順を揃える。
+各プロジェクトのREADME.md・AGENTS.md・docs/development/development.mdは章構成・章順を揃える。
 共通化可能な部分（コマンド例・典型節の説明文など）は一字一句揃え、プロジェクト固有部分は無理に揃えず必要な情報を記述する。
 単独プロジェクトでの章追加・章順変更は避け、`/ak110-projects-operations`スキル実行時に逸脱を検出する。
 
@@ -14,9 +14,9 @@
 6. 使い方（任意）
 7. ドキュメント
 
-## CLAUDE.mdの標準章構成
+## AGENTS.mdの標準章構成
 
-`AGENTS.md`を正本とし`CLAUDE.md`をimportだけのアダプターとするプロジェクトでは、本章構成を`AGENTS.md`へ適用する。
+Claude Code 2.1.277以上とCodexが共通で読む`AGENTS.md`に本章構成を適用する。
 
 1. プロジェクト概要パラグラフ（必須）
 2. 開発手順（必須）

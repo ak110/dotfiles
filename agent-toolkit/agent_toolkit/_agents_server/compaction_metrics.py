@@ -16,9 +16,10 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import file_lock
 
 
-def record_directory() -> Path:
+def record_directory(state_root: Path | None = None) -> Path:
     """コンパクション計測記録の既定ディレクトリを返す。"""
-    return _atk_config.state_dir() / "agents-server" / "compaction"
+    root = _atk_config.state_dir() if state_root is None else state_root
+    return root / "agents-server" / "compaction"
 
 
 def append_compaction_record(

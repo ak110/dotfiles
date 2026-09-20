@@ -43,7 +43,7 @@ def test_colloquial_notice_references_only_the_deliverable_writing_rule(deny_sub
     assert "agent-toolkit/rules/01-agent.md`「日本語」" not in notice
 
 
-def test_colloquial_check_skips_its_own_judgment_sources(deny_substring: str) -> None:
+def test_colloquial_check_skips_its_own_judgment_sources(deny_substring: str, tmp_path: pathlib.Path) -> None:
     """判定辞書、同じディレクトリの検体及びscratchpad配下は口語検査の対象から外す。
 
     いずれも検出語そのものを本文として書き込む操作であり、書き換えるべき散文が存在しない。
@@ -54,6 +54,9 @@ def test_colloquial_check_skips_its_own_judgment_sources(deny_substring: str) ->
         str(_colloquial_check.ALLOW_PATH),
         str(content_checks._TYPO_DICT_PATH),
         str(pathlib.Path(_colloquial_check.DENY_PATH).parent / "colloquial_check_test.py"),
+        str(tmp_path / "pyfltr" / "src" / "pyfltr" / "colloquial" / "words_allow.txt"),
+        str(tmp_path / "pyfltr" / "src" / "pyfltr" / "colloquial" / "words_deny.txt"),
+        str(tmp_path / "pyfltr" / "tests" / "colloquial_check_test.py"),
         "/tmp/claude-1000/project/session/scratchpad/msg.txt",
     ]
     for target in targets:
@@ -63,6 +66,36 @@ def test_colloquial_check_skips_its_own_judgment_sources(deny_substring: str) ->
 def test_colloquial_check_still_warns_for_other_documents(deny_substring: str) -> None:
     """判定素材以外の文書は従来どおり警告する。"""
     notice = content_checks._check_colloquial("Write", None, f"概要は{deny_substring}該当する。", "note.md")
+    assert notice is not None
+
+
+def test_colloquial_check_does_not_skip_unrelated_dictionary_name(
+    deny_substring: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """pyfltr worktree外の同名ファイルは通常の本文として検査する。"""
+    target = tmp_path / "other-project" / "words_deny.txt"
+    notice = content_checks._check_colloquial(
+        "Write",
+        None,
+        f"概要は{deny_substring}該当する。",
+        str(target),
+    )
+    assert notice is not None
+
+
+def test_colloquial_check_does_not_skip_unrelated_test_name(
+    deny_substring: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """pyfltr worktree外の同名検体は通常の本文として検査する。"""
+    target = tmp_path / "other-project" / "tests" / "colloquial_check_test.py"
+    notice = content_checks._check_colloquial(
+        "Write",
+        None,
+        f"概要は{deny_substring}該当する。",
+        str(target),
+    )
     assert notice is not None
 
 
@@ -335,6 +368,8 @@ class TestBashSleepPollPattern:
         )
         assert result.returncode == 0
         assert "反復ポーリングになる可能性" in _additional_context(result)
+        assert "`sleep`を単独で実行" in _additional_context(result)
+        assert "02-agent-operations.md" in _additional_context(result)
 
     def test_second_detection_in_same_session_blocks(self, tmp_path: pathlib.Path) -> None:
         session_id = "sleep-poll-repeat-test"
@@ -351,6 +386,8 @@ class TestBashSleepPollPattern:
         assert second.returncode == 2
         assert "完了通知" in second.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
+        assert "`sleep`を単独で実行" in second.stderr
+        assert "02-agent-operations.md" in second.stderr
 
     @pytest.mark.parametrize(
         ("command", "session_id"),

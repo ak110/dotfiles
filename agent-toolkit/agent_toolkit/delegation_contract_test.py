@@ -229,6 +229,62 @@ def test_execution_review_covers_non_machine_authoring_contracts() -> None:
     assert all(value in additions for value in ("既存成果物", "違反する箇所", "同じ変更で是正"))
 
 
+def test_execution_and_review_share_direct_consumer_evidence_contract() -> None:
+    """実装側とレビュー側が直接消費側探索の証跡と欠落時の分類を共有する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    reviewer = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+
+    assert all(value in executor for value in ("変更前の期待値", "変更入口への直接参照", "管理対象一時領域"))
+    assert all(value in reviewer for value in ("直接消費側探索", "不足していた記録", "種類5"))
+    assert "指摘にせず" in reviewer
+
+
+def test_delegation_wait_contract_separates_launch_routes() -> None:
+    """待機規範はagents_serverと組み込み委譲の観測経路を分離する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    waiting = (plugin_root / "skills" / "delegation" / "references" / "waiting-and-monitoring.md").read_text(encoding="utf-8")
+    recipient = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
+
+    assert all(value in waiting for value in ("終了コード10", "組み込み委譲", "要求する機能と権限が同等"))
+    assert all(value in recipient for value in ("組み込み委譲", "委譲一覧", "指定成果物"))
+    assert all(value in waiting for value in ("人間の入力", "外部インフラの復旧", "外部サービスの処理完了"))
+    assert "残る種類が変わった時点で間隔を再計算" in waiting
+
+
+def test_subagent_command_prerequisites_point_to_shared_sources() -> None:
+    """軽量委譲先の実行前提は詳細規範の正本へ到達する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    recipient = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
+
+    assert all(value in recipient for value in ("references/search.md", "large_reads.py", "現行本文を取得"))
+    assert all(value in recipient for value in ("rg --files", "references/git-identifier.md", "references/history-rewrite.md"))
+    assert all(value in recipient for value in ("子孫", "探索担当"))
+
+
+def test_history_rewrite_and_identifier_contracts_cover_observed_failures() -> None:
+    """履歴改変とGit識別子の正本は観測済みの副作用と入力失敗を遮断する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    history = (plugin_root / "skills" / "commit" / "references" / "history-rewrite.md").read_text(encoding="utf-8")
+    identifier = (plugin_root / "skills" / "commit" / "references" / "git-identifier.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    operations = (plugin_root / "rules" / "02-agent-operations.md").read_text(encoding="utf-8")
+
+    assert "--autosquash --no-update-refs" in history
+    assert "--autosquash --no-update-refs" in executor
+    assert all(value in identifier for value in ("revisionを1件だけ", "Needed a single revision", "'HEAD^{commit}'"))
+    assert all(value in operations for value in ("介在した場合だけ", "test -e", "atk agents list", "所有識別子"))
+
+
+def test_wi_draft_only_delegation_keeps_submission_with_parent() -> None:
+    """AWI起草の分離は入力と親の検収を同じ契約に保持する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    standards = (plugin_root / "skills" / "wi-standards" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "agents_server start_write" in standards
+    assert all(value in standards for value in ("逐語入力", "必須H2", "投入操作と未確定事項の判断を渡さない"))
+
+
 def test_git_identifiers_prefer_refs_and_short_oids() -> None:
     """Git識別子はrefを優先し、完全OIDを外部要求の一時値へ限定する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]

@@ -54,6 +54,7 @@ _PORTABLE_REFERENCE_RE = re.compile(re.escape(PORTABLE_PLAN_PREFIX) + r"[^\s`<>\
 _ADJUNCT_REFERENCE_RE = re.compile(re.escape(PLAN_ADJUNCT_REFERENCE_PREFIX) + r"[^\s`<>\"']*")
 _FORBIDDEN_NAME_CHARACTERS = frozenset('/\\:*?"<>|')
 _PROCESS_LANE_PATTERN = re.compile(r"lane-(?P<number>[0-9]{2})\Z")
+_TIMESTAMPED_NAME_PATTERN = re.compile(r"[0-9]{2}-[0-9]{4}_.+\Z")
 _DEFAULT_MAX_ATTEMPTS = 100
 
 
@@ -85,6 +86,17 @@ def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | Non
     if current.tzinfo is None:
         raise ValueError("計画名の生成時刻にはタイムゾーンが必要です")
     return f"{current.astimezone(datetime.UTC):%d-%H%M}_process-wi_レーン{match.group('number')}"
+
+
+def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> str:
+    """名称又は完全stemを受け取り、直接起動用の正規stemを返す。"""
+    name = _validate_plan_name(plan_name)
+    if _TIMESTAMPED_NAME_PATTERN.fullmatch(name) is not None:
+        return name
+    current = datetime.datetime.now(datetime.UTC) if now is None else now
+    if current.tzinfo is None:
+        raise ValueError("計画名の生成時刻にはタイムゾーンが必要です")
+    return f"{current.astimezone(datetime.UTC):%d-%H%M}_{name}"
 
 
 def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
@@ -397,14 +409,20 @@ def main(argv: list[str] | None = None) -> int:
     source_group.add_argument("--source", dest="main_source", type=pathlib.Path)
     parser.add_argument("--bugs-source", type=pathlib.Path)
     name_group = parser.add_mutually_exclusive_group(required=True)
-    name_group.add_argument("--name")
-    name_group.add_argument("--lane")
+    name_group.add_argument(
+        "--name",
+        help="計画の名称又はdd-HHmm_<名称>形式の完全stem。名称だけの場合はUTCの日時を付ける。",
+    )
+    name_group.add_argument(
+        "--lane",
+        help="lane-NN形式のレーン識別子。UTCの日時を含むprocess-wi用stemを生成する。",
+    )
     parser.add_argument("--private-notes", type=pathlib.Path)
     parser.add_argument("--home", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
     args = parser.parse_args(argv)
     try:
-        plan_name = args.name if args.name is not None else process_lane_plan_name(args.lane)
+        plan_name = named_plan_name(args.name) if args.name is not None else process_lane_plan_name(args.lane)
         paths = create_plan_files(
             args.main_source,
             plan_name,

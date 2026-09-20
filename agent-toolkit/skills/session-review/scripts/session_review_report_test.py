@@ -15,6 +15,7 @@ def _inputs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib
             for value in (
                 {
                     "kind": "candidate",
+                    "candidate_id": "c0001",
                     "locators": [{"record": "main", "line": 2}, {"record": "main", "line": 3}],
                     "count": 2,
                     "candidate_kind": "warning",
@@ -22,6 +23,7 @@ def _inputs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib
                 },
                 {
                     "kind": "candidate",
+                    "candidate_id": "c0002",
                     "locators": [{"record": "main", "line": 5}],
                     "count": 1,
                     "candidate_kind": "escalation",
@@ -48,11 +50,11 @@ def _inputs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib
         json.dumps(
             [
                 {
-                    "locators": [{"record": "main", "line": 2}, {"record": "main", "line": 3}],
+                    "candidate_id": "c0001",
                     "disposition": "excluded",
                     "reason": "期待された通知",
                 },
-                {"locators": [{"record": "main", "line": 5}], "disposition": "analyzed", "analysis_id": "a1"},
+                {"candidate_id": "c0002", "disposition": "analyzed", "analysis_id": "a1"},
             ],
             ensure_ascii=False,
         ),
@@ -119,6 +121,35 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     )
 
 
+def test_sections_input_fills_every_free_section(tmp_path: pathlib.Path) -> None:
+    """自由記述の節を入力から生成し、生成後の部分編集を要さない。"""
+    paths = _inputs(tmp_path)
+    sections = tmp_path / "sections.json"
+    bodies = {heading: f"{heading}の本文" for heading in report.FREE_SECTION_HEADINGS}
+    sections.write_text(json.dumps(bodies, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main([*_argv(paths, "generate"), "--sections", str(sections)]) == 0
+    assert report.main([*_argv(paths, "check"), "--sections", str(sections)]) == 0
+
+    content = paths[-1].read_text(encoding="utf-8")
+    for heading, body in bodies.items():
+        assert body in content
+        assert report._section_body(content, heading) == body  # pylint: disable=protected-access  # noqa: SLF001
+    assert (
+        tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS
+    )
+
+
+def test_sections_input_rejects_an_unknown_heading(tmp_path: pathlib.Path) -> None:
+    """受理しない節名を渡した場合は報告を生成せず終了コード2で終わる。"""
+    paths = _inputs(tmp_path)
+    sections = tmp_path / "sections.json"
+    sections.write_text(json.dumps({"問題候補の判定記録": "上書き"}, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main([*_argv(paths, "generate"), "--sections", str(sections)]) == 2
+    assert not paths[-1].exists()
+
+
 def test_check_accepts_delegate_authored_section_content(tmp_path: pathlib.Path) -> None:
     """担当が機械生成部分を維持して各節へ追記した報告を受理する。"""
     paths = _inputs(tmp_path)
@@ -171,6 +202,7 @@ def test_numeric_locator_order_generates_and_checks(tmp_path: pathlib.Path) -> N
     candidates = [
         {
             "kind": "candidate",
+            "candidate_id": "c0001",
             "locators": locators,
             "count": len(locators),
             "candidate_kind": "warning",
@@ -189,7 +221,7 @@ def test_numeric_locator_order_generates_and_checks(tmp_path: pathlib.Path) -> N
         encoding="utf-8",
     )
     paths[1].write_text(
-        json.dumps([{"locators": locators, "disposition": "excluded", "reason": "確認済み"}], ensure_ascii=False),
+        json.dumps([{"candidate_id": "c0001", "disposition": "excluded", "reason": "確認済み"}], ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -325,8 +357,7 @@ def test_input_structure_help_matches_the_accepted_forms() -> None:
 
     assert "--analyses: 分析の識別子をキーとするJSON object" in help_text
     assert "--timings: 工程名をキーとするJSON object" in help_text
-    assert "`record`（記録名の文字列）と" in help_text
-    assert "`line`（行番号の整数）を持つJSON object" in help_text
+    assert "candidate_id: candidates.jsonlの候補を参照する識別子" in help_text
     assert "`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する" in help_text
     assert "reason: `excluded`で必須" in help_text
     assert "analysis_id: `analyzed`で必須" in help_text
@@ -350,3 +381,54 @@ def test_analyzed_candidate_requires_nonempty_analysis_fields(tmp_path: pathlib.
 
     assert report.main(_argv(paths, "generate")) == 2
     assert not paths[-1].exists()
+
+
+def test_report_matches_decisions_by_candidate_id_when_locators_overlap(tmp_path: pathlib.Path) -> None:
+    """同じ位置を持つ別候補をcandidate_idで区別して過不足なく生成する。"""
+    paths = _inputs(tmp_path)
+    candidates = [json.loads(line) for line in paths[0].read_text(encoding="utf-8").splitlines()]
+    candidates[1]["locators"] = candidates[0]["locators"][:1]
+    candidates[1]["count"] = 1
+    candidates[-1]["included_locator_count"] = 2
+    candidates[-1]["included_locators"] = candidates[0]["locators"]
+    paths[0].write_text(
+        "\n".join(json.dumps(value, ensure_ascii=False) for value in candidates) + "\n",
+        encoding="utf-8",
+    )
+
+    assert report.main(_argv(paths, "generate")) == 0
+    assert report.main(_argv(paths, "check")) == 0
+    assert "候補2件、locator2件" in paths[-1].read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("mutation", ("missing", "duplicate"))
+def test_report_rejects_missing_or_duplicate_candidate_ids(tmp_path: pathlib.Path, mutation: str) -> None:
+    """候補IDの欠落と重複を拒否する。"""
+    paths = _inputs(tmp_path)
+    candidates = [json.loads(line) for line in paths[0].read_text(encoding="utf-8").splitlines()]
+    if mutation == "missing":
+        candidates[0].pop("candidate_id")
+    else:
+        candidates[1]["candidate_id"] = candidates[0]["candidate_id"]
+    paths[0].write_text(
+        "\n".join(json.dumps(value, ensure_ascii=False) for value in candidates) + "\n",
+        encoding="utf-8",
+    )
+
+    assert report.main(_argv(paths, "generate")) == 2
+
+
+@pytest.mark.parametrize("mutation", ("missing", "duplicate", "extra"))
+def test_report_rejects_missing_duplicate_or_extra_decision_ids(tmp_path: pathlib.Path, mutation: str) -> None:
+    """判定IDの欠落、重複及び候補に無い余分な値を拒否する。"""
+    paths = _inputs(tmp_path)
+    decisions = json.loads(paths[1].read_text(encoding="utf-8"))
+    if mutation == "missing":
+        decisions[0].pop("candidate_id")
+    elif mutation == "duplicate":
+        decisions[1]["candidate_id"] = decisions[0]["candidate_id"]
+    else:
+        decisions.append({"candidate_id": "c9999", "disposition": "excluded", "reason": "余分"})
+    paths[1].write_text(json.dumps(decisions, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 2

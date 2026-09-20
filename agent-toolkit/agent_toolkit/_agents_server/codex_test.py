@@ -92,7 +92,8 @@ async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
     client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
     process = _SilentProcess()
     process.__dict__["stdin"] = _DisconnectedStdin()
-    client.process = process  # type: ignore[assignment]
+    # 実プロセスの代わりに検体用の二重を割り当てるため、静的な型判定の対象から外す。
+    client.process = process  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
     client._initialization_stage = "initialized_sent"
     client._stderr_text = "network unavailable"
 

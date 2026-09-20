@@ -131,7 +131,8 @@ def test_build_options_keeps_every_launch_out_of_bypass_modes(
     """
     captured = _capture_options(monkeypatch)
 
-    claude._build_options("/tmp", "model", "medium", launch_kind=launch_kind)  # type: ignore[arg-type]  # pylint: disable=protected-access
+    # 受理しない値を意図的に渡す検体のため、静的な型判定の対象から外す。
+    claude._build_options("/tmp", "model", "medium", launch_kind=launch_kind)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]  # pylint: disable=protected-access
 
     assert captured["permission_mode"] == "auto"
 

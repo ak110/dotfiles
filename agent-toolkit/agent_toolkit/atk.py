@@ -257,6 +257,7 @@ def _add_target_repo_arg(
         _target_repo_multiple=multiple,
         _target_repo_allow_all=allow_all,
         _target_repo_resolved_by_consumer=resolved_by_consumer,
+        target_repo_defaulted=False,
     )
 
 
@@ -467,7 +468,12 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
-    _add_target_repo_arg(show, multiple=True, allow_all=True)
+    _add_target_repo_arg(
+        show,
+        multiple=True,
+        allow_all=True,
+        help_extra="FILENAME指定時は明示的照会として扱い、省略時の限定を適用しない。",
+    )
     _output_file.add_output_file_arg(show)
     show.add_argument(
         "--type",
@@ -1075,6 +1081,8 @@ def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentP
     未指定のときはカレントディレクトリが属するリポジトリを対象とし、解決できない場合は非限定とする。
     `all`は非限定の指定として受理し、単一の対象リポジトリを確定するサブコマンドでは拒否する。
     未指定時の解決を自ら行うサブコマンドへは既定の解決を適用せず、`all`の拒否だけを適用する。
+    既定を注入した実行では`args.target_repo_defaulted`を真にする。
+    明示指定と既定の注入を区別できないと、対象を一意に指定した照会まで既定で除外される。
     """
     if args.command != "wi" or not hasattr(args, "target_repo"):
         return
@@ -1094,6 +1102,7 @@ def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentP
     if current is None:
         return
     args.target_repo = [current] if getattr(args, "_target_repo_multiple", False) else current
+    args.target_repo_defaulted = True
 
 
 def _normalize_repeatable_wi_filters(args: argparse.Namespace) -> None:

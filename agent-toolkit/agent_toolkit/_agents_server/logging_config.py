@@ -13,6 +13,20 @@ LOG_MAX_BYTES = 2 * 1024 * 1024
 LOG_BACKUP_COUNT = 3
 
 
+class _StderrHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """agents_serverが追加した標準エラー向けhandler。
+
+    同じloggerへ二重に追加しないための識別を、動的属性ではなく型で表す。
+    """
+
+
+class _LogFileHandler(logging.handlers.RotatingFileHandler):
+    """agents_serverが追加した永続ファイル向けhandler。
+
+    出力先の比較で`baseFilename`を読むため、その属性を持つ型として扱えるようにする。
+    """
+
+
 def state_dir() -> pathlib.Path:
     """agents_serverの診断記録を置く状態ディレクトリを返す。"""
     return pathlib.Path(user_state_dir("agent-toolkit", appauthor=False))
@@ -24,24 +38,23 @@ def configure_logging() -> pathlib.Path:
     server_logger = logging.getLogger("agent-toolkit.agents-server")
     server_logger.setLevel(logging.INFO)
     server_logger.propagate = False
-    if not any(getattr(handler, "agents_server_stderr", False) for handler in server_logger.handlers):
-        stderr_handler = logging.StreamHandler()
+    if not any(isinstance(handler, _StderrHandler) for handler in server_logger.handlers):
+        stderr_handler = _StderrHandler()
         stderr_handler.setLevel(log_level)
         stderr_handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        stderr_handler.agents_server_stderr = True  # type: ignore[attr-defined]
         server_logger.addHandler(stderr_handler)
 
     log_path = state_dir() / "agents-server.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     for handler in tuple(server_logger.handlers):
-        if not getattr(handler, "agents_server_file", False):
+        if not isinstance(handler, _LogFileHandler):
             continue
-        if pathlib.Path(handler.baseFilename) == log_path:  # type: ignore[attr-defined]
+        if pathlib.Path(handler.baseFilename) == log_path:
             break
         server_logger.removeHandler(handler)
         handler.close()
-    if not any(getattr(handler, "agents_server_file", False) for handler in server_logger.handlers):
-        file_handler = logging.handlers.RotatingFileHandler(
+    if not any(isinstance(handler, _LogFileHandler) for handler in server_logger.handlers):
+        file_handler = _LogFileHandler(
             log_path,
             maxBytes=LOG_MAX_BYTES,
             backupCount=LOG_BACKUP_COUNT,
@@ -49,6 +62,5 @@ def configure_logging() -> pathlib.Path:
         )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-        file_handler.agents_server_file = True  # type: ignore[attr-defined]
         server_logger.addHandler(file_handler)
     return log_path

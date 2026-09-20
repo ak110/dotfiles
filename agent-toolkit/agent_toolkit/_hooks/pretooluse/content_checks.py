@@ -283,7 +283,7 @@ def _collect_edit_operation_warnings(
 
 
 def _detect_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -> tuple[str, str] | None:
-    """日本語を含む文字列へのハングル・キリル文字の混入を検出して本文と解消手段を返す。
+    """日本語を含む文字列への他言語文字の混入を検出して本文と解消手段を返す。
 
     日本語（ひらがな・カタカナ・漢字）を含まない文字列は対象外とする。
     多言語の文字列を意図的に扱う場面での誤検出を避けるためである。
@@ -296,10 +296,12 @@ def _detect_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) 
         match = _FOREIGN_SCRIPT_RE.search(value)
         if match is None:
             continue
+        if "\u4e00" <= match.group() <= "\u9fff" and re.search(r"[぀-ゟ゠-ヿ]", value) is None:
+            continue
         start = max(0, match.start() - 10)
         end = min(len(value), match.end() + 10)
         return (
-            f"日本語本文の`{tool_name}.{field}`に日本語以外の文字（ハングル／キリル文字）が混入している。"
+            f"日本語本文の`{tool_name}.{field}`に日本語以外の文字（ハングル／キリル文字／簡体字専用字）が混入している。"
             f"文脈: {ascii(value[start:end])}。",
             "意図した日本語の文字へ置き換える。",
         )
@@ -807,6 +809,10 @@ def _is_colloquial_judgment_source(file_path: str) -> bool:
         for candidate in (_colloquial_check.DENY_PATH, _colloquial_check.ALLOW_PATH, _TYPO_DICT_PATH)
     )
     if path in dictionaries:
+        return True
+    if path.name in {"words_allow.txt", "words_deny.txt"} and path.parent.name == "colloquial" and "pyfltr" in path.parts:
+        return True
+    if path.name == "colloquial_check_test.py" and path.parent.name == "tests" and "pyfltr" in path.parts:
         return True
     if path.name.endswith("_test.py") and any(
         dictionary is not None and path.parent == dictionary.parent for dictionary in dictionaries

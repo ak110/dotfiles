@@ -30,11 +30,23 @@ REPORT_H2_HEADINGS = (
     "未確認範囲",
 )
 _GENERATED_SECTION_HEADINGS = ("問題候補の判定記録", "所要時間の内訳と改善提案")
+FREE_SECTION_HEADINGS = (
+    "対象セッション",
+    "メイン由来の改善点",
+    "規範適用による停止",
+    "登録したキュー項目",
+    "未確認範囲",
+)
+"""自由記述の本文を入力から受け取る節。
+
+表を機械生成する2節を除く全てとする。
+本文を入力として渡せる節を限ると、残る節は生成後の部分編集で埋めることになり、
+報告1件ごとに編集の往復が生じる。
+"""
 _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
 
 --decisions: 候補ごとの判定を並べたJSON配列。各要素は次のキーを持つJSON object。
-  locators: 候補の記録位置の配列。各要素は`record`（記録名の文字列）と
-            `line`（行番号の整数）を持つJSON objectとする。重複のない昇順で並べる
+  candidate_id: candidates.jsonlの候補を参照する識別子
   disposition: 判定の区分。`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する
   reason: `excluded`で必須。欠陥でないと判定した根拠の文字列
   analysis_id: `analyzed`で必須。参照する分析の識別子の文字列
@@ -48,6 +60,10 @@ _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
 
 --timings: 工程名をキーとするJSON object。キーは{"、".join(PHASES)}の6つを、この順序で漏れなく含める。
            値は`started_at`と`finished_at`をISO 8601の文字列で持つJSON object。
+
+--sections: 節名をキーとするJSON object。値はその節へ置くMarkdown本文の文字列。
+            受理する節名は{"、".join(FREE_SECTION_HEADINGS)}の5つとする。
+            省略した節と空文字列の節は本文を持たない節として生成する。
 """
 """`--help`へ示す入力JSONの構造。
 
@@ -136,31 +152,51 @@ def _check_rendered_report(content: str, expected: str) -> None:
             raise ReportError(f"機械生成部分が入力と一致しない: ## {heading}")
 
 
+def _section_lines(sections: dict[str, str], heading: str) -> list[str]:
+    """節ごとの自由記述本文を、本文と後続の空行の並びで返す。"""
+    body = sections.get(heading, "").strip()
+    return [body, ""] if body else []
+
+
 def render(
     candidates: list[dict[str, Any]],
     decisions: list[dict[str, Any]],
     analyses: dict[str, dict[str, Any]],
     timings: dict[str, dict[str, Any]],
+    sections: dict[str, str] | None = None,
 ) -> str:
     """全候補を過不足なく含むMarkdown報告を返す。"""
+    sections = sections or {}
+    unknown = sorted(set(sections) - set(FREE_SECTION_HEADINGS))
+    if unknown:
+        raise ReportError(f"受理しない節名がある: {unknown}")
+    if any(not isinstance(body, str) for body in sections.values()):
+        raise ReportError("節の本文が文字列ではない")
     summaries = [item for item in candidates if item.get("kind") == "candidate-summary"]
     candidate_items = [item for item in candidates if item.get("kind") == "candidate"]
     if len(summaries) != 1 or len(candidate_items) + 1 != len(candidates):
         raise ReportError("候補入力はcandidateと末尾のcandidate-summaryだけを含める")
-    candidate_by_locators = {_locators(item): item for item in candidate_items}
-    if len(candidate_by_locators) != len(candidate_items):
-        raise ReportError("候補locatorsが重複している")
-    for locators, candidate in candidate_by_locators.items():
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    for candidate in candidate_items:
+        candidate_id = candidate.get("candidate_id")
+        if not isinstance(candidate_id, str) or not candidate_id or candidate_id in candidate_by_id:
+            raise ReportError("候補candidate_idがないか重複している")
+        candidate_by_id[candidate_id] = candidate
+    for candidate in candidate_items:
+        locators = _locators(candidate)
         if candidate.get("count") != len(locators):
             raise ReportError("候補countがlocatorsの件数と一致しない")
-    decision_by_locators = {_locators(item): item for item in decisions}
-    if len(decision_by_locators) != len(decisions):
-        raise ReportError("判定locatorsが重複している")
-    if decision_by_locators.keys() != candidate_by_locators.keys():
-        missing = sorted(candidate_by_locators.keys() - decision_by_locators.keys())
-        extra = sorted(decision_by_locators.keys() - candidate_by_locators.keys())
+    decision_by_id: dict[str, dict[str, Any]] = {}
+    for decision in decisions:
+        candidate_id = decision.get("candidate_id")
+        if not isinstance(candidate_id, str) or not candidate_id or candidate_id in decision_by_id:
+            raise ReportError("判定candidate_idがないか重複している")
+        decision_by_id[candidate_id] = decision
+    if decision_by_id.keys() != candidate_by_id.keys():
+        missing = sorted(candidate_by_id.keys() - decision_by_id.keys())
+        extra = sorted(decision_by_id.keys() - candidate_by_id.keys())
         raise ReportError(f"候補と判定が一致しない: missing={missing}, extra={extra}")
-    flattened = sorted(locator for locators in candidate_by_locators for locator in locators)
+    flattened = sorted({locator for candidate in candidate_items for locator in _locators(candidate)})
     if flattened:
         summary_locators = _locators({"locators": summaries[0].get("included_locators")})
     else:
@@ -179,9 +215,11 @@ def render(
 
     candidate_rows: list[str] = []
     used_analysis_ids: set[str] = set()
-    for locators, candidate in candidate_by_locators.items():
+    for candidate in candidate_items:
+        candidate_id = str(candidate["candidate_id"])
+        locators = _locators(candidate)
         locator_text = ", ".join(f"{record}:{line}" for record, line in locators)
-        decision = decision_by_locators[locators]
+        decision = decision_by_id[candidate_id]
         disposition = decision.get("disposition")
         if disposition == "excluded":
             reason = decision.get("reason")
@@ -234,6 +272,7 @@ def render(
             "",
             "## 対象セッション",
             "",
+            *_section_lines(sections, "対象セッション"),
             "## 問題候補の判定記録",
             "",
             "| 候補 | 判定 | 分析ID |",
@@ -248,8 +287,10 @@ def render(
             "",
             "## メイン由来の改善点",
             "",
+            *_section_lines(sections, "メイン由来の改善点"),
             "## 規範適用による停止",
             "",
+            *_section_lines(sections, "規範適用による停止"),
             "## 所要時間の内訳と改善提案",
             "",
             "| 工程 | 秒 |",
@@ -258,8 +299,10 @@ def render(
             "",
             "## 登録したキュー項目",
             "",
+            *_section_lines(sections, "登録したキュー項目"),
             "## 未確認範囲",
             "",
+            *_section_lines(sections, "未確認範囲"),
         ]
     )
 
@@ -273,6 +316,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--decisions", type=pathlib.Path, required=True, help="候補ごとの判定を並べたJSONの絶対パス")
     parser.add_argument("--analyses", type=pathlib.Path, required=True, help="分析IDごとの原因分析を並べたJSONの絶対パス")
     parser.add_argument("--timings", type=pathlib.Path, required=True, help="工程ごとの開始と終了を並べたJSONの絶対パス")
+    parser.add_argument("--sections", type=pathlib.Path, help="節ごとの自由記述本文を並べたJSONの絶対パス")
     parser.add_argument("--output", type=pathlib.Path, required=True, help="生成する報告の絶対パス")
     return parser
 
@@ -284,9 +328,12 @@ def main(argv: list[str] | None = None) -> int:
         decisions = _load_json(args.decisions)
         analyses = _load_json(args.analyses)
         timings = _load_json(args.timings)
+        sections = _load_json(args.sections) if args.sections is not None else {}
         if not isinstance(decisions, list) or not isinstance(analyses, dict) or not isinstance(timings, dict):
             raise ReportError("判定・分析・工程時刻のJSON型が不正である")
-        content = render(_load_jsonl(args.candidates), decisions, analyses, timings)
+        if not isinstance(sections, dict):
+            raise ReportError("節の本文のJSON型が不正である")
+        content = render(_load_jsonl(args.candidates), decisions, analyses, timings, sections)
         if args.mode == "generate":
             args.output.write_text(content, encoding="utf-8")
         elif not args.output.is_file():

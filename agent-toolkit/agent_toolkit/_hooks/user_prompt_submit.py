@@ -48,13 +48,17 @@ from agent_toolkit._common.delegated_session import (  # noqa: E402  # pylint: d
 )
 
 # pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks import plugin_resources as _plugin_resources  # noqa: E402
+from agent_toolkit._hooks import background_task_outputs as _background_task_outputs  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_WI_SKILL_NAMES,
+)
+from agent_toolkit._hooks.reference_notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    REFERENCE_NOTICE_BODY,
+    REFERENCE_NOTICE_TAG,
 )
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     claim_session_title,
@@ -113,17 +117,6 @@ _VERIFICATION_NOTICE_BODY = (
 照合すべき対象は発話ごとに異なるため、対象の列挙を受領側の手順として本文に持たせる。
 当該列挙をフック側の判定で代替しない。本フックの入力は発話本文だけであり、
 規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
-"""
-_REFERENCE_NOTICE_TAG = "notice"
-REFERENCE_NOTICE_BODY = (
-    "当該発話へ応答する前に、"
-    f"{_plugin_resources.skill_reference('confirmation-and-uwi', 'references/user-utterance.md')}"
-    "を全文読み、同書の各項を当該発話へ適用する。"
-)
-"""発話解釈の規範の所在だけを示す注記の本文。
-
-判定手順を本文へ置かず当該文書の読込だけを求めるのは、判定の正本を当該文書の1箇所へ保ち、
-通常発話の受領ごとに注入しても文脈へ載る量を1文へ抑えるためである。
 """
 _llm_notice = _notice_formatter("agent-toolkit/user_prompt_submit")
 
@@ -247,6 +240,7 @@ def main(payload_text: str) -> int:
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知の混入経路だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
+        _background_task_outputs.consume_completed_task_outputs(session_id, prompt)
         return 0
 
     machine_injected = _is_machine_injected(payload, prompt)
@@ -257,7 +251,7 @@ def main(payload_text: str) -> int:
     # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
     notices: list[str] = []
     if is_normal_prompt:
-        notices.append(_llm_notice(REFERENCE_NOTICE_BODY, tag=_REFERENCE_NOTICE_TAG))
+        notices.append(_llm_notice(REFERENCE_NOTICE_BODY, tag=REFERENCE_NOTICE_TAG))
         if _claim_verification_notice(session_id, time.time()):
             notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     additional_context = "\n".join(notices) if notices else None

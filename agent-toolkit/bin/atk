@@ -25,7 +25,7 @@ trap 'rm -f "${SPEC}"' EXIT
 export AGENT_TOOLKIT_RESTART_SPEC="${SPEC}"
 args=("$@")
 while :; do
-    : > "${SPEC}"
+    : >"${SPEC}"
     status=0
     SCRIPT_DIR="$(cd "$(dirname "${SCRIPT}")/.." && pwd)"
     uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "${args[@]}" || status=$?
@@ -36,7 +36,7 @@ while :; do
     next=()
     while IFS= read -r line; do
         next+=("${line}")
-    done < "${SPEC}"
+    done <"${SPEC}"
     # 先頭要素は次に起動するスクリプトパスであり、空の場合は再起動先を決められない。
     if [ "${#next[@]}" -lt 1 ] || [ -z "${next[0]}" ]; then
         exit "${status}"

@@ -770,20 +770,109 @@ def mask_heredoc_bodies(command: str) -> str:
     return "".join(masked)
 
 
+def nested_shell_positions(command: str) -> frozenset[int]:
+    """置換構文、サブシェル及びバッククォートの内側にある文字位置を返す。
+
+    対応が閉じない構文は開始位置から末尾までを内側として扱う。補正位置を外側と
+    誤認するより、補正を見送って元の入力をBashへ渡す方が入力を壊さないためである。
+    heredoc本文は同じ長さの空白へ置換してから走査する。
+    """
+    masked = mask_heredoc_bodies(command)
+    protected: set[int] = set()
+    stack: list[int] = []
+    quote: str | None = None
+    backtick_start: int | None = None
+    escaped = False
+    index = 0
+    while index < len(masked):
+        char = masked[index]
+        if escaped:
+            if stack or backtick_start is not None:
+                protected.add(index)
+            escaped = False
+            index += 1
+            continue
+        if char == "\\" and quote != "'":
+            if stack or backtick_start is not None:
+                protected.add(index)
+            escaped = True
+            index += 1
+            continue
+        if quote is not None:
+            if stack or backtick_start is not None:
+                protected.add(index)
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            if stack or backtick_start is not None:
+                protected.add(index)
+            quote = char
+            index += 1
+            continue
+        if char == "`":
+            protected.add(index)
+            backtick_start = index if backtick_start is None else None
+            index += 1
+            continue
+        if backtick_start is not None:
+            protected.add(index)
+            index += 1
+            continue
+        opens_nested = char == "(" and (
+            bool(stack) or (index > 0 and masked[index - 1] in "$<>") or index == 0 or masked[index - 1].isspace()
+        )
+        if opens_nested:
+            stack.append(index)
+        if stack:
+            protected.add(index)
+            if char == ")":
+                stack.pop()
+        index += 1
+    return frozenset(protected)
+
+
 def split_bash_segments(command: str) -> list[str]:
-    """Bashコマンドを`;`・`&&`・`||`・`|`・`&`で分割する。
+    """Bashコマンドを`;`・`&&`・`||`・`|`・`&`・改行で分割する。
 
     クォート（`'`・`"`）内のメタ文字は分割対象外とする。
     heredoc本文は同じ長さの空白へ置換してから分割し、本文外の位置を保つ。
+    行継続と置換構文、サブシェル及びバッククォート内の演算子・改行も分割しない。
+    `for`・`while`・`until`・`if`・`case`から対応する終端までの改行は、制御構造を
+    外側の独立呼び出しへ分けないため保持する。内部の`;`は従来どおり検査対象を分ける。
     """
+    original = command
     command = mask_heredoc_bodies(command)
+    nested = nested_shell_positions(original)
     segments: list[str] = []
     buf: list[str] = []
     in_single = False
     in_double = False
+    compound_depth = 0
+    word: list[str] = []
+    word_at_command_start = False
+    command_start = True
+
+    def finish_word() -> None:
+        nonlocal command_start, compound_depth
+        token = "".join(word)
+        word.clear()
+        if not token:
+            return
+        if word_at_command_start and token in {"for", "while", "until", "if", "case"}:
+            compound_depth += 1
+        elif word_at_command_start and token in {"done", "fi", "esac"} and compound_depth:
+            compound_depth -= 1
+        command_start = word_at_command_start and token in {"do", "then", "else", "elif"}
+
     i = 0
     while i < len(command):
         c = command[i]
+        if i in nested:
+            buf.append(original[i])
+            i += 1
+            continue
         if in_single:
             buf.append(c)
             if c == "'":
@@ -806,16 +895,36 @@ def split_bash_segments(command: str) -> list[str]:
             buf.append(c)
             i += 1
             continue
+        if c == "\\" and i + 1 < len(command) and command[i + 1] == "\n":
+            buf.extend((c, "\n"))
+            i += 2
+            continue
+        if c.isalnum() or c == "_":
+            if not word:
+                word_at_command_start = command_start
+            word.append(c)
+        else:
+            finish_word()
         if c in ("&", "|") and i + 1 < len(command) and command[i + 1] == c:
             segments.append("".join(buf))
             buf = []
+            command_start = True
             i += 2
             continue
         if c in (";", "&", "|"):
             segments.append("".join(buf))
             buf = []
+            command_start = True
             i += 1
             continue
+        if c == "\n" and compound_depth == 0:
+            segments.append("".join(buf))
+            buf = []
+            command_start = True
+            i += 1
+            continue
+        if c == "\n":
+            command_start = True
         buf.append(c)
         i += 1
     if buf:

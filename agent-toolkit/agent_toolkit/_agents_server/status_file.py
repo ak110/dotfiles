@@ -25,9 +25,11 @@ import json
 import logging
 import pathlib
 import re
+import shutil
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from agent_toolkit._agents_server import compaction_metrics, session_registry
 from agent_toolkit._agents_server.state import (
     RESULT_RETENTION_SECONDS,
     TERMINAL_STATUSES,
@@ -45,6 +47,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 HEARTBEAT_INTERVAL_SECONDS = 30
 HEARTBEAT_EXPIRY_SECONDS = 120
+STALE_SHARED_STATE_SECONDS = 7 * 24 * 60 * 60
 
 
 @dataclasses.dataclass(frozen=True)
@@ -114,6 +117,77 @@ def list_root_session_ids(state_root: pathlib.Path | None = None) -> list[str]:
     except OSError:
         return []
     return sorted(identifiers)
+
+
+def sweep_stale_shared_state(
+    *,
+    keep_root_session_id: str | None,
+    state_root: pathlib.Path | None = None,
+    now: float | None = None,
+) -> None:
+    """7日を超えて更新されていない共有状態を個別失敗で停止せず回収する。"""
+    root = _atk_config.state_dir() if state_root is None else state_root
+    cutoff = datetime.datetime.now(datetime.UTC).timestamp() if now is None else now
+    cutoff -= STALE_SHARED_STATE_SECONDS
+    base = root / "agents-server"
+    try:
+        entries = tuple(base.iterdir())
+    except OSError:
+        return
+    reserved = {"aliases", "sessions", "compaction"}
+    for directory in entries:
+        if (
+            not directory.is_dir()
+            or directory.name in reserved
+            or directory.name == keep_root_session_id
+            or not valid_session_id(directory.name)
+        ):
+            continue
+        try:
+            files = tuple(path for path in directory.rglob("*") if path.is_file())
+            latest = max((path.stat().st_mtime for path in files), default=directory.stat().st_mtime)
+            if latest < cutoff:
+                shutil.rmtree(directory)
+        except OSError as exc:
+            _LOG.warning("stale root状態を回収できませんでした: path=%s error=%s", directory, exc)
+    _sweep_stale_files(session_registry.registry_directory(root), cutoff)
+    _sweep_stale_compaction(compaction_metrics.record_directory(root), cutoff)
+
+
+def _sweep_stale_files(directory: pathlib.Path, cutoff: float) -> None:
+    """ディレクトリ直下の期限切れファイルを個別失敗で停止せず削除する。"""
+    try:
+        paths = tuple(directory.iterdir())
+    except OSError:
+        return
+    for path in paths:
+        try:
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                path.unlink()
+        except OSError as exc:
+            _LOG.warning("期限切れ共有状態を回収できませんでした: path=%s error=%s", path, exc)
+
+
+def _sweep_stale_compaction(directory: pathlib.Path, cutoff: float) -> None:
+    """期限切れJSONLと対応するlockを対として削除する。"""
+    try:
+        paths = tuple(directory.iterdir())
+    except OSError:
+        return
+    records = {
+        path.with_name(path.name.removesuffix(".lock")) if path.name.endswith(".jsonl.lock") else path
+        for path in paths
+        if path.name.endswith((".jsonl", ".jsonl.lock"))
+    }
+    for record in records:
+        lock = record.with_name(f"{record.name}.lock")
+        try:
+            members = [path for path in (record, lock) if path.exists()]
+            if members and max(path.stat().st_mtime for path in members) < cutoff:
+                for path in members:
+                    path.unlink(missing_ok=True)
+        except OSError as exc:
+            _LOG.warning("期限切れコンパクション記録を回収できませんでした: path=%s error=%s", record, exc)
 
 
 def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path | None = None) -> str | None:
@@ -598,6 +672,13 @@ class StatusFileWriter:
 
     def activate(self) -> None:
         """書込を有効化し、前回プロセスの残存状態を初期化する。"""
+        try:
+            sweep_stale_shared_state(
+                keep_root_session_id=self.root_session_id,
+                state_root=self._state_root,
+            )
+        except OSError as exc:
+            _LOG.warning("共有状態の期限掃引を開始できませんでした: error=%s", exc)
         self._active = True
         self._remove_owned_and_expired_files()
         self._remove_stale_status_files()

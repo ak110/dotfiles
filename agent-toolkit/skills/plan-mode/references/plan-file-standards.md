@@ -24,12 +24,12 @@ stemは起動経路ごとに次のとおりとし、`dd`は作成日、`HHmm`は
 | 起動経路 | stem |
 | --- | --- |
 | `agent-toolkit:process-wi`のレーン | `dd-HHmm_process-wi_レーンNN` |
-| `agent-toolkit:fast-process-wi` | `dd-HHmm_fast-process-wi` |
 | `agent-toolkit:plan-mode`の直接起動 | `dd-HHmm_<日本語の簡潔な名詞>` |
 
 作業root直下の計画ファイル名は、上表のstemに`.md`を続けた形と、保存先の正準形`dd-<名称>-<小文字16進数4桁>.md`の双方を受理する。保存先の正準形だけを満たす名前を自ら組み立てる必要はない。
 
 `agent-toolkit:process-wi`のレーンは、内部作成処理へ`--lane lane-NN`で起動文のレーン識別子を渡す。`NN`は2桁のレーン番号とし、日付、時刻、固定接頭辞及びレーン番号は作成処理が組み立てる。
+`agent-toolkit:plan-mode`の直接起動では、内部作成処理へ`--name <名称>`を渡す。日時接頭辞を持たない名称では作成処理がUTCの日付と時刻を組み立て、既に`dd-HHmm_`接頭辞を持つ完全stemはそのまま用いる。
 
 計画本文が参照する計画ファイル（バグ）とレビュー指摘管理表には、固定接頭辞`~/.claude/plans/`とファイル名を使う。
 新規作成では最終stemが未確定であるため、ファイル名のstem部分へ固定プレースホルダー`__PLAN_STEM__`を書く。
@@ -47,7 +47,7 @@ stemは起動経路ごとに次のとおりとし、`dd`は作成日、`HHmm`は
 自身が所有しない計画はそのまま残す。private-notesの計画ファイルの更新は`atk plans`の各コマンドで行う。
 
 実行レビュー指摘管理表は計画ファイルと同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
-計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。`agent-toolkit:fast-process-wi`の直接実装では`fastwi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
+計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。WIだけをレビュー基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
 前者は収束後に削除し、後者は`atk plans commit ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
 
 本書、`agent-toolkit:plan-mode`のSKILL.md及び`${CLAUDE_PLUGIN_ROOT}/share/`配下の計画関連文書は、計画に属するファイルを次の呼称で指す。
@@ -229,6 +229,7 @@ WI由来の行は、区分に続けて半角空白1字を置き、半角丸括�
 
 `## 進捗ログ`は実装工程を中断後に再開できる粗い記録として、`日時`、`完了した工程`、`結果・特記事項`の3列表を置く。
 起草時は内容行を置かず、新規作成の受理条件も内容行を持たない本文とする。
+実装開始後の追記は`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/append_progress_log.py <計画ファイル> --completed-step <完了した工程> --result <結果・特記事項>`で行う。日時は同処理が実行時のローカル時計から生成し、呼び出し側は日時を渡さない。
 実装開始後は、中断した主体が再開時に次の工程を選べる情報を追記する。commitの完了、近接検証の結果、実行レビューの収束、完了判定と、専用worktreeを用いる経路ではその絶対パス、専用branch名、作成時HEADの短縮OID、回収対象がこれに当たる。
 `agent-toolkit:process-wi`のレーンでは、統合の行の結果・特記事項へ`レーン稼働時間: <秒数>秒`を書く。秒数はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とする。
 完了報告を発行する主体は、`## 要件・外部仕様`の完了条件について各条件の充足根拠又は未達理由を進捗ログの最終行へ記録する。
