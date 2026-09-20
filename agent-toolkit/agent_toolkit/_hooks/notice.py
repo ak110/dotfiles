@@ -6,14 +6,32 @@ from collections.abc import Callable
 from agent_toolkit._hooks import message_format as _message_format
 from agent_toolkit._hooks.session_state import increment_warn_notice_count as _increment_warn_notice_count
 
-_WARN_REPEAT_THRESHOLD = 3
+_WARN_REPEAT_THRESHOLD = 2
 _WARN_TAG = "warn"
-_warning_context = {"session_id": ""}
+_warning_context: dict[str, object] = {"session_id": "", "blocks": []}
 
 
 def set_warning_session_id(session_id: str) -> None:
     """現在のhook payloadのセッションIDをwarn整形経路へ渡す。"""
     _warning_context["session_id"] = session_id
+    _warning_context["blocks"] = []
+
+
+def consume_warning_blocks() -> list[str]:
+    """反復した除去可能warnから生成したblock通知を取り出す。"""
+    blocks = _warning_context.get("blocks")
+    _warning_context["blocks"] = []
+    return list(blocks) if isinstance(blocks, list) else []
+
+
+def _warning_body_and_fix(body: str) -> tuple[str, str]:
+    """warn本文をblock理由と解消手段へ分ける。"""
+    for marker in ("\n対処: ", "\nFix: "):
+        if marker in body:
+            reason, fix = body.rsplit(marker, maxsplit=1)
+            if fix.strip():
+                return reason, fix
+    return body, body
 
 
 def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
@@ -32,17 +50,22 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
         if tag == _WARN_TAG:
             if removable_cause is None:
                 raise ValueError("warn通知のremovable_causeは真偽値で指定する必要がある")
+            session_id = _warning_context.get("session_id")
             return warning_formatter(hook_id)(
                 body,
                 cause=cause,
-                session_id=_warning_context["session_id"],
+                session_id=session_id if isinstance(session_id, str) else "",
                 removable_cause=removable_cause,
                 summary=summary,
             )
         if summary is not None:
             # 1件目で判断材料は到達済みであり、2件目以降は対象と件数だけを返す。
             # 反復の集約はタグの重大度と独立の性質であるため、warn以外のタグでも同じ扱いにする。
-            count = _increment_warn_notice_count(_warning_context["session_id"], f"{hook_id}|{cause}")
+            session_id = _warning_context.get("session_id")
+            count = _increment_warn_notice_count(
+                session_id if isinstance(session_id, str) else "",
+                f"{hook_id}|{cause}",
+            )
             if count >= 2:
                 body = f"{summary}\nこの通知は同一セッションで{count}件目である。"
         return _message_format.llm_notice(body, hook_id, tag=tag)
@@ -78,17 +101,23 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
         summary: str | None = None,
     ) -> str:
         count = _increment_warn_notice_count(session_id, f"{hook_id}|{cause}")
+        removable_count = _increment_warn_notice_count(session_id, f"{hook_id}|{cause}|removable") if removable_cause else 0
+        if removable_count >= _WARN_REPEAT_THRESHOLD:
+            reason, fix = _warning_body_and_fix(body)
+            block = block_formatter(hook_id)(
+                f"{reason}\nこの通知は同一セッションで{removable_count}件目である。同じ原因の操作を遮断した。",
+                fix=fix,
+            )
+            blocks = _warning_context.setdefault("blocks", [])
+            if isinstance(blocks, list):
+                blocks.append(block)
+            body = f"{body}\nこの通知は同一セッションで{removable_count}件目である。原因を除去してから続行する。"
         if summary is not None and count >= 2:
             # 1件目で判断材料は到達済みであり、2件目以降は対象と件数だけを返す。
             return _message_format.llm_notice(
                 f"{summary}\nこの通知は同一セッションで{count}件目である。",
                 hook_id,
                 tag=_WARN_TAG,
-            )
-        if removable_cause and count >= _WARN_REPEAT_THRESHOLD:
-            body = (
-                f"{body}\nこの通知は同一セッションで{count}件目である。"
-                "同じ原因の通知が反復しているため、原因を除去してから同種の操作を続ける。"
             )
         return _message_format.llm_notice(body, hook_id, tag=_WARN_TAG)
 

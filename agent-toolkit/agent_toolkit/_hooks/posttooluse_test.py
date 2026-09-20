@@ -23,6 +23,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import agents_server_mcp
+from agent_toolkit._agents_server import agents_wait
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
@@ -112,6 +113,199 @@ def test_start_state_record_without_shared_status_does_not_write_alias(
     )
 
     assert not (tmp_path / "agents-server" / "aliases" / "current-session.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("operation", "structured"),
+    [
+        ("start", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
+        ("start_custom", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
+        ("start_explore", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
+        ("start_write", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
+        ("start_shell", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
+        ("send_message", {"delivery": "reply_started"}),
+        ("send_message", {"delivery": "reply_ambiguous"}),
+    ],
+)
+def test_start_and_reply_register_wait_target_for_caller(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    operation: str,
+    structured: dict[str, object],
+) -> None:
+    """開始又は再開したsessionを、PostToolUseの呼出主体の待機対象へ登録する。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    tool_input: dict[str, object] = {"session_id": "remote-session"}
+    if operation in _POSTTOOLUSE_MODULE._AGENTS_SERVER_START_OPERATIONS:
+        tool_input = {"prompt": "委譲する", "cwd": str(tmp_path)}
+
+    exit_code = _POSTTOOLUSE_MODULE.main(
+        json.dumps(
+            {
+                "session_id": "root-session",
+                "cwd": str(tmp_path),
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
+                "tool_input": tool_input,
+                "tool_response": {"structuredContent": structured},
+            }
+        )
+    )
+
+    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+        "root-session",
+        "root.json",
+        tmp_path,
+    )
+    assert exit_code == 0
+    assert retained == {"remote-session"}
+    assert error is None
+
+
+def test_steer_does_not_register_wait_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """既存turnへ追送するsteerは、新しい待機対象として登録しない。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+
+    exit_code = _POSTTOOLUSE_MODULE.main(
+        json.dumps(
+            {
+                "session_id": "root-session",
+                "cwd": str(tmp_path),
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
+                "tool_input": {"session_id": "remote-session", "prompt": "補足する"},
+                "tool_response": {"structuredContent": {"delivery": "steered"}},
+            }
+        )
+    )
+
+    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+        "root-session",
+        "root.json",
+        tmp_path,
+    )
+    assert exit_code == 0
+    assert retained == set()
+    assert error is None
+
+
+def test_start_registers_wait_target_for_delegated_caller(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """委譲先が開始したsessionを、その委譲先の状態ファイルにだけ登録する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "delegate-session")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+
+    exit_code = _POSTTOOLUSE_MODULE.main(
+        json.dumps(
+            {
+                "session_id": "delegate-session",
+                "cwd": str(tmp_path),
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"prompt": "委譲する", "cwd": str(tmp_path)},
+                "tool_response": {"structuredContent": {"session_id": "remote-session", "status": "running"}},
+            }
+        )
+    )
+
+    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+        "root-session",
+        "delegate-session.json",
+        tmp_path,
+    )
+    assert exit_code == 0
+    assert retained == {"remote-session"}
+    assert error is None
+    assert not (
+        _POSTTOOLUSE_MODULE._agents_server_status_file.wait_targets_directory(
+            "root-session",
+            "root.json",
+            tmp_path,
+        )
+    ).exists()
+
+
+def test_start_without_caller_identity_does_not_register_wait_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """呼出主体を解決できない開始応答は待機対象登録簿へ書き込まない。"""
+    for name in (
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_DELEGATED_SESSION",
+        "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CODEX_THREAD_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+
+    exit_code = _POSTTOOLUSE_MODULE.main(
+        json.dumps(
+            {
+                "session_id": "hook-session",
+                "cwd": str(tmp_path),
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"prompt": "委譲する", "cwd": str(tmp_path)},
+                "tool_response": {"structuredContent": {"session_id": "remote-session", "status": "running"}},
+            }
+        )
+    )
+
+    assert exit_code == 0
+    assert not (tmp_path / "agents-server").exists()
+
+
+def test_wait_collects_posttooluse_registered_result_and_releases_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """開始直後の待機はPostToolUseの登録から終端結果を回収し、登録を解除する。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    payload = {
+        "session_id": "root-session",
+        "cwd": str(tmp_path),
+        "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+        "tool_input": {"prompt": "委譲する", "cwd": str(tmp_path)},
+        "tool_response": {"structuredContent": {"session_id": "remote-session", "status": "running"}},
+    }
+    assert _POSTTOOLUSE_MODULE.main(json.dumps(payload)) == 0
+    results = _POSTTOOLUSE_MODULE._agents_server_status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True)
+    (results / "remote-session.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+
+    exit_code = agents_wait.wait_for_result(
+        environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+        state_root=tmp_path,
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "remote-session"}
+    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+        "root-session",
+        "root.json",
+        tmp_path,
+    )
+    assert retained == set()
+    assert error is None
 
 
 def _run(

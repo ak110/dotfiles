@@ -123,6 +123,74 @@ def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path)
     assert "ヘルプ出力を観測していない" not in result.stderr
 
 
+def test_second_removable_warning_blocks_with_count_and_fix(tmp_path: pathlib.Path) -> None:
+    """同一原因の2件目は、警告の対処をFixとして同種操作を遮断する。"""
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "rg keyword ~/.local"},
+        "session_id": "dispatch-repeated-removable-warning",
+    }
+    environment = _plan_file_state_env(tmp_path)
+
+    first = _run(payload, env_overrides=environment)
+    second = _run(payload, env_overrides=environment)
+
+    assert first.returncode == 0
+    assert second.returncode == 2
+    assert "この通知は同一セッションで2件目である" in second.stderr
+    assert "Fix: warn: 再帰検索" in second.stderr
+    assert "対象ディレクトリを狭め" in second.stderr
+
+
+def test_irremovable_warning_does_not_advance_removable_block_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """除去不能警告の後も、除去可能警告の初回を通し、2回目を遮断する。"""
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    def emit_controlled_warning(
+        _tool_name: str,
+        tool_input: dict,
+        _cwd: str,
+        _emit_json: Callable[[dict], None],
+        _flush_warning: Callable[[], None],
+        *,
+        is_codex: bool,
+    ) -> int:
+        del is_codex
+        pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
+            "controlled warning\n対処: retry",
+            tag=pretooluse._WARN_TAG,  # noqa: SLF001  # pylint: disable=protected-access
+            removable_cause=bool(tool_input["removable"]),
+        )
+        return 0
+
+    monkeypatch.setattr(pretooluse, "_handle_edit_tool", emit_controlled_warning)
+
+    def run(removable: bool) -> int:
+        return pretooluse.main(
+            json.dumps(
+                {
+                    "tool_name": "SyntheticEdit",
+                    "tool_input": {"removable": removable},
+                    "session_id": "dispatch-mixed-removability",
+                }
+            )
+        )
+
+    irremovable = run(False)
+    first_removable = run(True)
+    second_removable = run(True)
+
+    captured = capsys.readouterr()
+    assert irremovable == 0
+    assert first_removable == 0
+    assert second_removable == 2
+    assert "この通知は同一セッションで2件目である" in captured.err
+
+
 class TestMojibakeCheck:
     """文字化け（U+FFFD）検出。
 
