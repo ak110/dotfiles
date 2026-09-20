@@ -78,11 +78,11 @@ description: >
 - 新設オプションの既定動作によって個別設定が不要になるか
 
 上流吸収の十分条件は前記3点の比較結果とし、設定値の同一性だけでは満たさない。
-比較の結果として上流吸収を選ぶ場合は、`agent-toolkit:add-awi-by-user`で上流リポジトリ宛のAWIを1件投入する。
+比較の結果として上流吸収を選ぶ場合は、`agent-toolkit:wi-standards`で上流リポジトリ宛のAWIを1件投入する。
 未投入の配布提案は取り下げ、適用済みの個別設定は別の削除対象として扱う。
 
 推奨ガイドまたは同期対象マトリクスが対象とするファイル群を更新した場合、
-同一セッション内で実行主体が`agent-toolkit:add-awi-by-user`をSkill機能で起動し、
+同一セッション内で実行主体が`agent-toolkit:wi-standards`をSkill機能で起動し、
 他プロジェクト向けの追従提案を各リポジトリのAWIとして投入する。
 複数リポジトリでは`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`に従う。
 
