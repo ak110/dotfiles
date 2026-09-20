@@ -76,7 +76,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   `amend:`・`reword:`では`amend! <統合先の件名>`を確認する。
   いずれも対象OIDから得た統合先件名との完全一致を確認する。
   autosquashを実行するのは、期待件名と一致した場合に限る。一致しない場合は`## 失敗時の扱い`に従う
-- 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で行う
+- 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash --no-update-refs <base>`で行う
   （`<base>`は対象コミットの親以前を指す）。
   fixupの作成は履歴確認の記録をリセットするため、autosquashの直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独のBash呼び出しで再度実行する
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
@@ -87,6 +87,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と返却種別`needs_escalation`は、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていない主体は、`needs_escalation`に代えて同じ観測結果を呼び出し元へ報告する。
 
 `pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、失敗の事実と観測結果を呼び出し元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は呼び出し元の判断を得てから行う。失敗時点の履歴とindexの状態は失敗の種別ごとに異なり、状態を確定しない復旧操作と再試行はcommitの消失を招く。
+`--no-update-refs`を付けずにrebaseを実行したことを観測した場合は、local branch refsを列挙し、事前に保持したOIDと照合する。base branchを含む作業branch以外のrefが移動していた場合は、移動したref、変更前後のOID及び復旧操作に必要な許可を呼び出し元へ返し、自らrefを復旧しない。
 ただし、autosquashが内容競合で停止した場合は、同じ実装担当が次の条件を満たす範囲に限って競合を解消してよい。競合箇所が採用済みの指摘に対する修正と統合先commitの変更だけから成り、解消後もその中間commitの公開契約を維持できることを条件とする。解消したパスだけをstageし、`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して履歴と継続対象を確認した直後に`git rebase --continue`を実行する。再び内容競合で停止した場合も同じ条件を改めて判定する。
 競合箇所へ担当外の変更が含まれる場合、修正の帰属を確定できない場合又は中間commitの公開契約を維持できない場合は、競合をそのまま残して呼び出し元へ返す。
 失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`及び`git log --oneline -5`の観測結果を添えて`needs_escalation`で返す。

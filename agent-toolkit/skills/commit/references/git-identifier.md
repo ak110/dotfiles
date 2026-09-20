@@ -7,7 +7,10 @@
 報告、記録又は成果物へ書く識別子は、branch名、tag名、PR番号、run URL、計画名、WIファイル名、レーン識別子などの、人間が対象を判別できる値を優先する。
 Git commitにこうした識別子がない場合は、`git rev-parse --short=7 <revision>`が返した7文字以上の一意な短縮OIDを用いる。
 Git 2.43.0の公式仕様では`--short=7`は少なくとも7文字の一意なprefixを返し、`--short`だけの最小長が`core.abbrev`の実効値に従う。
+`git rev-parse --short=7`は1回につきrevisionを1件だけ渡す。複数のrevisionを扱う場合はrevisionごとに個別実行し、入力と出力の対応を保持する。複数のrevisionを同じ呼び出しへ渡すと`fatal: Needed a single revision`で失敗する。
 値は実行結果として得たものをそのまま使う。記憶や推測で組み立てた識別子は別対象への操作を招き、受け取った主体が実在しない対象を待つ。
+
+revisionへpeel式を付ける場合は、その式全体を実行shellで単一引数にする。PowerShellでは`git rev-parse --verify 'HEAD^{commit}'`のように単一引用符で囲み、caretと波括弧をPowerShellの解釈から保護する。この引用規則は、前段のrevision件数の制約とは別に適用する。
 
 外部コマンド又はAPIがGit objectを40桁か64桁のOIDで要求する場合は、人間可読識別子か7文字以上の一意な短縮OIDを用いる。
 その操作の直前に対象リポジトリで40桁か64桁のOIDへ解決し、その操作だけに用いる。
