@@ -10,7 +10,10 @@ from agent_toolkit._hooks import bash_command_parser
 from agent_toolkit._hooks.notice import _WARN_TAG, block_formatter, formatter
 
 _DEFAULT_LINE_THRESHOLD = 350
-_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_LINES"
+# 1回の応答へ収まる実効上限を超える前に、バイト数でも分割へ誘導する。
+_DEFAULT_BYTE_THRESHOLD = 16 * 1024
+_LINE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_LINES"
+_BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
 # `Read`が行の列ではない形（画像の視覚提示、PDFのページ単位）で提示する形式。
 # 当該形式では改行バイトの個数が取得量に対応せず、`offset`と`limit`も取得量を変えない。
@@ -19,13 +22,21 @@ _block_notice = block_formatter("agent-toolkit/pretooluse")
 _llm_notice = formatter("agent-toolkit/pretooluse")
 
 
-def _line_threshold() -> int:
+def _positive_threshold(environment_name: str, default: int) -> int:
     """環境指定が正の整数なら採用し、それ以外は既定値を返す。"""
     try:
-        threshold = int(os.environ.get(_THRESHOLD_ENV, str(_DEFAULT_LINE_THRESHOLD)))
+        threshold = int(os.environ.get(environment_name, str(default)))
     except ValueError:
-        return _DEFAULT_LINE_THRESHOLD
-    return threshold if threshold > 0 else _DEFAULT_LINE_THRESHOLD
+        return default
+    return threshold if threshold > 0 else default
+
+
+def _line_threshold() -> int:
+    return _positive_threshold(_LINE_THRESHOLD_ENV, _DEFAULT_LINE_THRESHOLD)
+
+
+def _byte_threshold() -> int:
+    return _positive_threshold(_BYTE_THRESHOLD_ENV, _DEFAULT_BYTE_THRESHOLD)
 
 
 def _line_count(path: pathlib.Path) -> int | None:
@@ -39,10 +50,15 @@ def _line_count(path: pathlib.Path) -> int | None:
         return None
 
 
-def _line_count_if_large(path: pathlib.Path) -> int | None:
-    """行指向ファイルが閾値を超える場合に実測行数を返す。"""
+def _file_measurement(path: pathlib.Path) -> tuple[int, int] | None:
+    """実在するファイルの行数とバイト数を返す。"""
     line_count = _line_count(path)
-    return line_count if line_count is not None and line_count > _line_threshold() else None
+    if line_count is None:
+        return None
+    try:
+        return line_count, path.stat().st_size
+    except OSError:
+        return None
 
 
 def _is_non_line_oriented(path: pathlib.Path) -> bool:
@@ -85,24 +101,28 @@ def _offset_limit_plan(line_count: int, threshold: int) -> str:
     )
 
 
-def _large_read_notice(path: pathlib.Path, line_count: int, cwd: str) -> str:
-    threshold = _line_threshold()
+def _large_read_notice(path: pathlib.Path, line_count: int, byte_count: int, cwd: str) -> str:
+    line_threshold = _line_threshold()
     return _block_notice(
-        f"{line_count}行のファイルの全文取得を遮断した（閾値: {threshold}行）: {path}",
+        f"{line_count}行、{byte_count}バイトのファイルの全文取得を遮断した"
+        f"（閾値: {line_threshold}行又は{_byte_threshold()}バイト）: {path}",
         fix=(
-            f"Readへ次の組を順に渡して分割する: {_offset_limit_plan(line_count, threshold)}。"
+            f"Readへ次の組を順に渡して分割する: {_offset_limit_plan(line_count, line_threshold)}。"
             "agents_serverのstart_exploreへ"
             f"質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。"
         ),
     )
 
 
-def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, int]]) -> str:
-    threshold = _line_threshold()
-    total = sum(line_count for _path, line_count in path_counts)
-    details = "、".join(f"`{path}`: {line_count}行" for path, line_count in path_counts)
+def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, int, int]]) -> str:
+    line_threshold = _line_threshold()
+    byte_threshold = _byte_threshold()
+    total_lines = sum(line_count for _path, line_count, _byte_count in path_counts)
+    total_bytes = sum(byte_count for _path, _line_count, byte_count in path_counts)
+    details = "、".join(f"`{path}`: {line_count}行、{byte_count}バイト" for path, line_count, byte_count in path_counts)
     return _block_notice(
-        f"複数ファイルの全文取得を遮断した（合計: {total}行、閾値: {threshold}行）: {details}",
+        f"複数ファイルの全文取得を遮断した（合計: {total_lines}行、{total_bytes}バイト、"
+        f"閾値: {line_threshold}行又は{byte_threshold}バイト）: {details}",
         fix="ファイルごとに個別取得するか、各ファイルを連続した行範囲へ分割して取得する。",
     )
 
@@ -124,15 +144,19 @@ def check_large_read(tool_input: dict, cwd: str) -> tuple[dict, str] | None:
     path = _resolve_path(file_path, cwd)
     if _is_non_line_oriented(path):
         return None
-    line_count = _line_count_if_large(path)
-    if line_count is None:
+    measurement = _file_measurement(path)
+    if measurement is None:
+        return None
+    line_count, byte_count = measurement
+    if line_count <= _line_threshold() and byte_count <= _byte_threshold():
         return None
     threshold = _line_threshold()
     corrected = dict(tool_input)
     corrected["offset"] = 1
     corrected["limit"] = threshold
     notice = _llm_notice(
-        f"{line_count}行のファイルの全文取得を先頭{threshold}行へ補正した: {path}\n"
+        f"{line_count}行、{byte_count}バイトのファイルの全文取得を先頭{threshold}行へ補正した"
+        f"（閾値: {threshold}行又は{_byte_threshold()}バイト）: {path}\n"
         f"残りの範囲は次の組で取得する: {_offset_limit_plan(line_count, threshold)}。\n"
         f"agents_serverのstart_exploreへ質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。",
         tag=_WARN_TAG,
@@ -150,19 +174,22 @@ def check_large_bash_read(command: str, cwd: str) -> str | None:
         if not operands:
             continue
         path_counts = tuple(
-            (path, line_count)
+            (path, line_count, byte_count)
             for operand in operands
-            if (line_count := _line_count(path := _resolve_path(operand, cwd))) is not None
+            if (measurement := _file_measurement(path := _resolve_path(operand, cwd))) is not None
+            for line_count, byte_count in (measurement,)
         )
         if not path_counts:
             continue
-        threshold = _line_threshold()
+        line_threshold = _line_threshold()
+        byte_threshold = _byte_threshold()
         if (
-            any(line_count > threshold for _path, line_count in path_counts)
-            or sum(line_count for _path, line_count in path_counts) > threshold
+            any(line_count > line_threshold or byte_count > byte_threshold for _path, line_count, byte_count in path_counts)
+            or sum(line_count for _path, line_count, _byte_count in path_counts) > line_threshold
+            or sum(byte_count for _path, _line_count, byte_count in path_counts) > byte_threshold
         ):
             if len(path_counts) == 1:
-                path, line_count = path_counts[0]
-                return _large_read_notice(path, line_count, cwd)
+                path, line_count, byte_count = path_counts[0]
+                return _large_read_notice(path, line_count, byte_count, cwd)
             return _large_multi_read_notice(path_counts)
     return None

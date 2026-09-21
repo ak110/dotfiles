@@ -6584,3 +6584,22 @@ def test_catalog_rejects_an_unclassifiable_root_and_reversed_period(
 
     assert evidence.main([*base, "--observation-boundary", "2026-09-09T00:00:00Z"]) == 2
     assert _read_jsonl(capsys) == [{"kind": "error", "text": "観測境界は開始境界以後を指定する"}]
+
+
+def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() -> None:
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
+        {"kind": "user", "record": "main", "line": 2, "text": "<skill>\n本文\n</skill>"},
+        {"kind": "user", "record": "main", "line": 3, "text": "最初の依頼"},
+        {"kind": "user", "record": "main", "line": 4, "text": "後続の訂正"},
+        {"kind": "user", "record": "main", "line": 5, "text": "通常文中の <skill> という表記"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    items = [item for item in candidates if item["kind"] == "candidate"]
+    assert [item["locators"] for item in items] == [
+        [{"record": "main", "line": 4}],
+        [{"record": "main", "line": 5}],
+    ]
+    assert candidates[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1, "runtime-meta": 1}

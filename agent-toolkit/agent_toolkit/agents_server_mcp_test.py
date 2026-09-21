@@ -786,12 +786,22 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     assert await subject.start_custom("本文", "execute", str(tmp_path)) == {
         "session_id": "session",
         "status": "running",
+        "root_session_id": "root",
     }
-    assert await subject.start_explore("探索", str(tmp_path)) == {"session_id": "session", "status": "running"}
-    assert await subject.start_write("定型変更", str(tmp_path)) == {"session_id": "session", "status": "running"}
+    assert await subject.start_explore("探索", str(tmp_path)) == {
+        "session_id": "session",
+        "status": "running",
+        "root_session_id": "root",
+    }
+    assert await subject.start_write("定型変更", str(tmp_path)) == {
+        "session_id": "session",
+        "status": "running",
+        "root_session_id": "root",
+    }
     assert await subject.start_shell("make test", str(tmp_path), "終了状態") == {
         "session_id": "session",
         "status": "running",
+        "root_session_id": "root",
     }
     assert await subject.send_message("session", "続行") == {"delivery": "replied"}
 

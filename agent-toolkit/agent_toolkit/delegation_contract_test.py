@@ -237,6 +237,33 @@ def test_execution_review_documents_share_initial_review_table_contract() -> Non
     assert all("再レビュー" in content for content in documents)
 
 
+def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> None:
+    """WI鮮度は選定、計画起草及び計画なしレビューへ到達する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    lane = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+
+    assert all("staleness" in content for content in (picker, lane, review))
+    assert all("notice" in content for content in (picker, lane, review))
+    assert all("不一致" in content and "充足済み" in content and "巻戻し" in content for content in (picker, lane, review))
+    assert "WI`だけを受領した場合" in review
+    assert "--with-staleness" in review
+    assert "--state=all" in review
+    assert all(state in review for state in ("processing", "adopted", "rejected"))
+
+
+def test_entry_replacement_validation_reaches_execution_review() -> None:
+    """入口置換の完遂検証は計画、実装及び実行レビューで共有する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plan = (plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md").read_text(encoding="utf-8")
+    lane = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+
+    assert all("新しい入口" in content for content in (plan, lane, review))
+    assert all("mock" in content and "部分" in content and "旧入口" in content for content in (plan, lane, review))
+
+
 def test_delegation_wait_contract_separates_launch_routes() -> None:
     """待機規範はagents_serverと組み込み委譲の観測経路を分離する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]

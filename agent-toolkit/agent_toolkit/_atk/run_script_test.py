@@ -2,7 +2,9 @@
 
 import argparse
 import json
+import os
 import pathlib
+import subprocess
 import sys
 
 import pytest
@@ -151,3 +153,112 @@ def test_dispatch_keeps_worktree_inputs_independent(
         {"cwd": str(tmp_path / "worktree-a"), "args": ["worktree-a"]},
         {"cwd": str(tmp_path / "worktree-b"), "args": ["worktree-b"]},
     ]
+
+
+def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_path: pathlib.Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=repository, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=repository, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "--quiet", "--allow-empty", "-m", "base"], cwd=repository, check=True)
+    source = tmp_path / "source.md"
+    source.write_text(
+        f"""# 外部入口検証
+
+## 概要
+
+登録済み入口を検証する。
+
+### 計画メタ情報
+
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `{repository}`
+- 関連WI: なし
+- 作業種別: 通常変更
+
+## 実施内容
+
+| 実施内容 | 由来 | 採否 | 根拠 |
+| --- | --- | --- | --- |
+| 登録済み入口を検証する | ユーザー指示 | 採用 | - |
+
+## 要件・外部仕様
+
+隔離したhomeへ計画を保存する。
+
+## 恒久化・リファクタリング
+
+### 恒久化
+
+| 知見 | 出所 | 反映先 | 根拠 |
+| --- | --- | --- | --- |
+| 登録済み入口 | ユーザー指示 | 検体 | 公開経路を固定するため。 |
+
+### リファクタリング
+
+| 対象 | 現状の問題 | 対応 |
+| --- | --- | --- |
+| 起動経路 | 実入口の検体が無い。 | 統合検体を追加する。 |
+
+## 変更履歴
+
+### ユーザー発言1
+
+```text
+登録済み入口を検証する。
+```
+
+## 検証
+
+| 区分 | 検証コマンド |
+| --- | --- |
+| 近接検証 | `pytest` |
+| 全体検証 | `make test` |
+
+## 終端工程
+
+なし
+
+## 進捗ログ
+
+| 日時 | 完了した工程 | 結果・特記事項 |
+| --- | --- | --- |
+""",
+        encoding="utf-8",
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    isolated_home = tmp_path / "home"
+    executable = run_script.PLUGIN_ROOT / "bin/atk"
+    assert executable.is_file()
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    environment.pop("VIRTUAL_ENV", None)
+
+    result = subprocess.run(
+        [
+            executable,
+            "run-script",
+            "plan-create",
+            "--",
+            "--main-source",
+            str(source),
+            "--name",
+            "01-0000_external-entry",
+            "--home",
+            str(isolated_home),
+            "--work-dir",
+            str(repository),
+        ],
+        cwd=outside,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = pathlib.Path(result.stdout.strip())
+    assert output == isolated_home / ".claude/plans/01-0000_external-entry.md"
+    assert output.is_file()

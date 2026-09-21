@@ -490,6 +490,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="JSON Linesの既定を無効にし、従来のテキスト形式で出力する。",
     )
+    list_.add_argument(
+        "--with-staleness",
+        action="store_true",
+        help="picker向けにtarget_commit以後の履歴の鮮度情報をJSONへ加える。",
+    )
     _add_mq_read_sync_args(list_)
     _output_file.add_output_file_arg(list_)
 
