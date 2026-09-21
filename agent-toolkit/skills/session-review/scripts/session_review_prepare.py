@@ -105,6 +105,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     managed_temp = _managed_temp_path(create_result)
     if managed_temp is None:
         return _missing("managed_temp")
+    output_result = _run_atk(executable, ["managed-temp", "create", "--prefix", "session-review-output"])
+    output_temp = _managed_temp_path(output_result)
+    if output_temp is None:
+        return _missing("output_temp")
 
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observation_boundary = current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -115,6 +119,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     except OSError:
         return _missing("bundle_dir")
     reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
+    manifest_path = output_temp / "prepare-manifest.json"
+    output_file = output_temp / "session-review.md"
     record = {
         "evidence_script": str(evidence_script),
         "report_script": str(report_script),
@@ -123,11 +129,19 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "codex_thread_id": args.codex_thread_id,
         "managed_temp": str(managed_temp),
         "bundle_dir": str(bundle_dir),
+        "manifest_path": str(manifest_path),
+        "output_temp": str(output_temp),
+        "output_file": str(output_file),
         "observation_boundary": observation_boundary,
         "target_repo": str(target_repo) if target_repo is not None else None,
         "reference_document": str(reference_document) if reference_document is not None else None,
     }
-    print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+    serialized = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+    try:
+        manifest_path.write_text(f"{serialized}\n", encoding="utf-8")
+    except OSError:
+        return _missing("manifest_path")
+    print(serialized)
     return 0
 
 

@@ -840,7 +840,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
             "bump種別: bump不要",
             "検証・CI方針: 通常",
             "近接検証結果: なし",
-            "正式対応AWI: なし",
+            "後続処置AWI: なし",
             handoff,
         ]
     if task_name == "add-wi.subagent.md":

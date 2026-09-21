@@ -20,7 +20,8 @@ def _install_atk_stub(
     tmp_path: pathlib.Path,
     *,
     create_fails: bool = False,
-) -> tuple[pathlib.Path, pathlib.Path]:
+    output_create_fails: bool = False,
+) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
     """呼び出しを記録する`atk`スタブをPATHの先頭へ置く。"""
     executable_dir = tmp_path / "bin"
     executable_dir.mkdir()
@@ -37,11 +38,17 @@ log_path = pathlib.Path(os.environ["ATK_STUB_LOG"])
 with log_path.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(arguments, ensure_ascii=False) + "\\n")
 managed_temp = pathlib.Path(os.environ["ATK_STUB_TEMP"])
+output_temp = pathlib.Path(os.environ["ATK_STUB_OUTPUT_TEMP"])
 if arguments == ["managed-temp", "create", "--prefix", "session-review"]:
     if os.environ.get("ATK_STUB_CREATE_FAILS") == "1":
         raise SystemExit(1)
-    managed_temp.mkdir()
+    managed_temp.mkdir(exist_ok=False)
     print(managed_temp)
+elif arguments == ["managed-temp", "create", "--prefix", "session-review-output"]:
+    if os.environ.get("ATK_STUB_OUTPUT_CREATE_FAILS") == "1":
+        raise SystemExit(1)
+    output_temp.mkdir(exist_ok=False)
+    print(output_temp)
 else:
     raise SystemExit(9)
 """,
@@ -50,11 +57,14 @@ else:
     executable.chmod(0o755)
     log_path = tmp_path / "atk-calls.jsonl"
     managed_temp = tmp_path / "managed-temp"
+    output_temp = tmp_path / "output-temp"
     monkeypatch.setenv("PATH", f"{executable_dir}{os.pathsep}{_ORIGINAL_PATH}")
     monkeypatch.setenv("ATK_STUB_LOG", str(log_path))
     monkeypatch.setenv("ATK_STUB_TEMP", str(managed_temp))
+    monkeypatch.setenv("ATK_STUB_OUTPUT_TEMP", str(output_temp))
     monkeypatch.setenv("ATK_STUB_CREATE_FAILS", "1" if create_fails else "0")
-    return managed_temp, log_path
+    monkeypatch.setenv("ATK_STUB_OUTPUT_CREATE_FAILS", "1" if output_create_fails else "0")
+    return managed_temp, output_temp, log_path
 
 
 def _write_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -75,7 +85,7 @@ def test_prepare_does_not_read_queue(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """対象リポジトリ指定時もキューを読まず、準備項目だけを1行で返す。"""
-    managed_temp, log_path = _install_atk_stub(monkeypatch, tmp_path)
+    managed_temp, output_temp, log_path = _install_atk_stub(monkeypatch, tmp_path)
     transcript = _write_transcript(tmp_path)
     target_repo = tmp_path / "target-repo"
     target_repo.mkdir()
@@ -99,12 +109,22 @@ def test_prepare_does_not_read_queue(
         "codex_thread_id": None,
         "managed_temp": str(managed_temp),
         "bundle_dir": str(managed_temp / "bundle"),
+        "manifest_path": str(output_temp / "prepare-manifest.json"),
+        "output_temp": str(output_temp),
+        "output_file": str(output_temp / "session-review.md"),
         "observation_boundary": "2026-09-06T12:34:56Z",
         "target_repo": str(target_repo.resolve()),
         "reference_document": None,
     }
     assert (managed_temp / "bundle").is_dir()
-    assert _calls(log_path) == [["managed-temp", "create", "--prefix", "session-review"]]
+    manifest_path = pathlib.Path(json.loads(captured.out)["manifest_path"])
+    output_file = pathlib.Path(json.loads(captured.out)["output_file"])
+    assert manifest_path.parent == output_file.parent == output_temp
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == json.loads(captured.out)
+    assert _calls(log_path) == [
+        ["managed-temp", "create", "--prefix", "session-review"],
+        ["managed-temp", "create", "--prefix", "session-review-output"],
+    ]
 
 
 def test_prepare_omits_target_repo(
@@ -113,7 +133,7 @@ def test_prepare_omits_target_repo(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """対象リポジトリ未指定時は対象項目をnullにする。"""
-    _, log_path = _install_atk_stub(monkeypatch, tmp_path)
+    _, _, log_path = _install_atk_stub(monkeypatch, tmp_path)
 
     assert prepare.main(["--codex-thread-id", "thread-1"], now=_FIXED_NOW) == 0
 
@@ -123,7 +143,10 @@ def test_prepare_omits_target_repo(
     assert record["transcript_path"] is None
     assert record["codex_thread_id"] == "thread-1"
     assert record["target_repo"] is None
-    assert _calls(log_path) == [["managed-temp", "create", "--prefix", "session-review"]]
+    assert _calls(log_path) == [
+        ["managed-temp", "create", "--prefix", "session-review"],
+        ["managed-temp", "create", "--prefix", "session-review-output"],
+    ]
 
 
 @pytest.mark.parametrize("linked_worktree", [False, True])
@@ -217,7 +240,7 @@ def test_prepare_reports_managed_temp_failure(
     assert not captured.out
     assert captured.err == "不足: managed_temp\n"
 
-    _, log_path = _install_atk_stub(monkeypatch, tmp_path, create_fails=True)
+    _, _, log_path = _install_atk_stub(monkeypatch, tmp_path, create_fails=True)
 
     assert prepare.main(["--transcript", str(transcript)], now=_FIXED_NOW) == 2
 
@@ -225,3 +248,17 @@ def test_prepare_reports_managed_temp_failure(
     assert not captured.out
     assert captured.err == "不足: managed_temp\n"
     assert _calls(log_path) == [["managed-temp", "create", "--prefix", "session-review"]]
+
+    retry_path = tmp_path / "retry"
+    retry_path.mkdir()
+    _, _, log_path = _install_atk_stub(monkeypatch, retry_path, output_create_fails=True)
+
+    assert prepare.main(["--transcript", str(transcript)], now=_FIXED_NOW) == 2
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert captured.err == "不足: output_temp\n"
+    assert _calls(log_path) == [
+        ["managed-temp", "create", "--prefix", "session-review"],
+        ["managed-temp", "create", "--prefix", "session-review-output"],
+    ]

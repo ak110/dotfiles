@@ -32,17 +32,17 @@ description: >
 
 工程を実行する主体は次の1から3の順に進める。
 
-1. メインが`atk managed-temp create --prefix session-review-output`を1回実行し、返った領域の直下を準備manifestと成果ファイルの保存先として保持する。続いて、読み込んだ本`SKILL.md`の絶対パスから現行plugin rootを確定し、`skills/session-review/scripts/session_review_prepare.py`を次のいずれか1つの形で1回実行する。
+1. メインが読み込んだ本`SKILL.md`の絶対パスから現行plugin rootを確定し、`skills/session-review/scripts/session_review_prepare.py`を次のいずれか1つの形で1回実行する。
    Claude Codeで把握している現在のtranscript絶対パスを`--transcript`へ渡し、Codexでは`CODEX_THREAD_ID`を`--codex-thread-id`へ渡す。
    対象リポジトリを確定できない場合は`--target-repo`を渡さない。
-   標準出力の1行JSONは前段の領域直下の`prepare-manifest.json`へ保存する。終了コードが0でない場合、保存内容が1行のJSONではない場合、又はJSONから`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`が要求する項目を取得できない場合は、`## 分析失敗`へ進む。
+   標準出力の1行JSONから`manifest_path`を取得し、その絶対パスに実在するファイルを準備manifestとして読む。終了コードが0でない場合、標準出力が1行のJSONではない場合、又は`manifest_path`が実在しない場合は、`## 分析失敗`へ進む。manifestから`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`が要求する項目を取得できない場合も同じ扱いとする。準備スクリプトが作成した`managed_temp`と`output_temp`は別領域であり、前者は抽出物を保持する。準備manifestと成果ファイルは後者の直下に置く。
 
    ```sh
    uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
    uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
    ```
 
-   いずれの起動形も、準備スクリプトを1回だけ実行する。以降は保存した`prepare-manifest.json`だけを準備結果の正本とし、同じ振り返りで準備スクリプトを再実行しない。
+   いずれの起動形も、準備スクリプトを1回だけ実行する。以降は`manifest_path`が指す`prepare-manifest.json`だけを準備結果の正本とし、同じ振り返りで準備スクリプトを再実行しない。
 
 2. メインが`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`を全文読み、同書に従って振り返り担当を起動する。
    振り返り担当は本書の全節を適用する。抽出器の実行、問題候補の判別と既存キュー項目との照合は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`が定める。
@@ -84,7 +84,13 @@ description: >
    振り返り担当は一次選別の開始時にこの固定パスを読み、存在する内容を最初の分析へ取り込む。担当からメインへの追加配送要求は、ファイルが存在しない場合に限り、欠落した絶対パスと期待した改善点件数を添えて行う。このファイルの配送は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`の`## メイン由来の改善点の配送`が定める。
 
 3. メインが振り返り担当の返却を検収した後、ユーザー発話の追加分を再照合する。
-   再照合には抽出器の`--user-events`を、手順1と同じ起動形へ`--since <照合済み境界>`と`--observation-boundary <再照合境界>`を加えて用いる。
+   再照合は、準備manifestの`evidence_script`を次のいずれか1つの形で明示的に起動する。対象リポジトリはユーザー発話イベントの抽出条件ではないため、`--target-repo`を渡さない。
+
+   ```sh
+   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> --transcript <transcriptの絶対パス> --user-events --since <照合済み境界> --observation-boundary <再照合境界> --output-file <領域内ファイルの絶対パス>
+   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> --codex-thread-id <thread ID> --user-events --since <照合済み境界> --observation-boundary <再照合境界> --output-file <領域内ファイルの絶対パス>
+   ```
+
    手順1が返した観測境界を照合済み境界の初期値とし、追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受け取っていない状態になるまで繰り返す。
 
    各回では次を行う。
@@ -130,8 +136,10 @@ CIの所要時間が長い環境では、CIが失敗する見込みが高い場�
 振り返り工程そのものの所要時間目標を180秒とし、改善提案の起点として用いる。本節と本書の他の箇所が対象を伴わずに`所要時間目標`と書く箇所は対象セッションの所要時間目標を指す。
 計測範囲は準備工程の開始から振り返りの成果を確定した時点までとし、メインによる成果の検収と追加分の再照合は振り返り担当が観測できないため範囲の外に置く。
 その区間の秒数と180秒との比較結果を成果へ書き、短縮できる箇所があれば改善提案の対象へ含める。
-180秒を超過した場合は、準備、抽出、一次選別、完全分析、既存キュー照合、報告生成及び構造検査のそれぞれについて開始時刻と終了時刻を成果ファイルの`## 所要時間の内訳と改善提案`へ書き、律速と判定した区間とその短縮案を併せて書く。外部API待ちなど実行主体が短縮できない区間は、短縮案の対象から分けて記録する。
+観測できた区間について、区間名、区分、開始時刻、終了時刻、典拠を書く。区分は準備、規範適用による停止、委譲先実行、親による検収とし、観測できない区間は推定せず理由を書く。180秒を超過した場合は、観測できた区間から律速と判定した区間とその短縮案を併せて書く。外部API待ちなど実行主体が短縮できない区間は、短縮案の対象から分けて記録する。
 この目標は振り返りの完了条件の外に置く。超過を理由とする未完了の判定とUWIの登録も同じ扱いとする。
+
+短縮後の所要時間と目標を比較する場合は、短縮前と短縮後で同じ観測済み区間集合だけを用いる。未観測区間を0秒又は推定値として加えず、比較対象の区間集合が揃わない場合は比較結果を未確定とする。
 
 短縮の対象は、工程別の合計時間ではなく律速区間とする。
 律速区間は、抽出器の`stats-critical-path`が返す`main_only_seconds`と、agent thread別の`exclusive_seconds`の並びとする。
@@ -193,7 +201,7 @@ CIの所要時間が長い環境では、CIが失敗する見込みが高い場�
 ユーザー介入、拒否、エスカレーション、未解決証拠は全件を保持する。block又はwarnのhook通知はhook識別子、発動元及びタグを発生源とし、正規化した通知種別ごとの発生件数を数える。同じ発生源では件数降順かつ安定順の上位5種だけを候補とし、各種の安定順で最初のlocatorを代表位置にする。候補へ発生総数と省略locator数を保持し、`candidate-summary.excluded`へ省略総数を機械可読に記録する。各発生源から最低1候補を残す。その他の候補は発生件数と安定順の全locatorを保持する。
 恒久対策を要しないことが明確な候補だけを除外し、観測根拠を記録する。不確かな候補は完全分析へ送る。
 一次選別の除外は分析の省略を意味し、最終報告では候補を保持する。
-完全分析では、抽出器が生成した候補証拠の索引`candidate-evidence.jsonl`を先に読み、分析へ送る候補の個別ファイル`candidate-evidence/<candidate_id>.json`だけを読む。証拠が不足する候補だけ追加照会する。`candidate_id`と`analysis_group_hint`を起点に、直接的原因と対策の変更単位が同じ候補を1つの`analysis_id`へまとめる。原因分析、類似見直し、再発防止策の確定には`agent-toolkit:bugfix`を適用する。既存キュー項目との照合も完全分析の対象だけへ行う。
+完全分析では、抽出器が生成した候補証拠の索引`candidate-evidence.jsonl`を先に読む。対象リポジトリがある場合は、個別証拠を読む前に既存キュー項目と候補を照合する。既存項目が候補の事象、原因及び完成条件を全て覆う場合は、そのファイル名と対応根拠を記録して完全分析を省く。一部だけを覆う候補と新しい証拠を持つ候補は完全分析へ進める。分析へ送る候補の個別ファイル`candidate-evidence/<candidate_id>.json`だけを読み、証拠が不足する候補だけ追加照会する。`candidate_id`と`analysis_group_hint`を起点に、直接的原因と対策の変更単位が同じ候補を1つの`analysis_id`へまとめる。原因分析、類似見直し、再発防止策の確定には`agent-toolkit:bugfix`を適用する。
 
 全候補の判定は、`候補`、`欠陥判定`、`直接的原因`、`根本原因`、`既存規範が適用されなかった理由`、`処置`の表へ記録する。
 一次選別で除外した候補は、候補表の`判定`へ除外の観測根拠を書き、`分析ID`を`-`とする。

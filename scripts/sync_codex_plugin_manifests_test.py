@@ -243,6 +243,9 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
         }
     }
     assert len(generated_hooks["hooks"]) == 8
+    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"].endswith(
+        "/agent_toolkit/hook.py rules_context_codex"
+    )
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 

@@ -18,8 +18,8 @@ description: >
   （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
   - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
-- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`・`rules-subagent.claude-code.md`: 実行主体別の規範。
-  順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけ、Claude Codeのサブエージェントと委譲先だけに適用する。
+- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範とホスト別規範
+- `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
@@ -197,7 +197,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   計画の`## 要件・外部仕様`へ編集する正本だけを変更説明として記載する。
   `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は`## 検証`へ記載し、
   自動生成先は変更対象の説明へ重複して記載しない
-- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`・`rules-subagent.claude-code.md`の編集は、生成差分もClaude配布一覧の変更も生じさせない。
+- `agent-toolkit/share/rules-main.md`とホスト別の`rules-main.*.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は、生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hook及びagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_server経路へ共有規範を配らない境界も検体で保持する。
   バージョン更新の規定は適用する
 - 計画ファイルの見出し、固定H3及び表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`を正本とする。
   対象は、同ファイルが構造定数として名称を持つものとする。

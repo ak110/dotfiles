@@ -19,7 +19,9 @@ agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の
 | `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:plan-mode`の`references/codex-runtime.md`に従う |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 公開能力がなければ、手動運用又はユーザーへの依頼へ切り替える |
 
-agents_serverの`start`、`start_explore`、`start_write`及び`start_shell`は、対応する`model_type`からengine、model及びeffortを解決する。可用性失敗時の候補切替はサーバーへ委ね、呼び出し側は同じ失敗に再起動を重ねない。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start_shell`、読取専用探索は`start_explore`を使い、各ツールの採算基準に従う。
+Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働中の入力追加、`followup_task`は待機中又は終端後の同一主体の継続、`wait_agent`は終端待機、`interrupt_agent`は起動主体が所有する処理の中断に使う。`fork_turns`で渡す会話履歴と、Codexの`SubagentStart` hookが追加する`rules-subagent.md`は別契約である。会話履歴をforkしない場合も共通委譲先規範はhookから適用され、`AGENTS.md`は対象worktreeの自動読込経路から適用される。Codex固有の委譲先規範が将来必要になった場合は、共通規範と別ファイルに置き、同じhook生成経路でCodexだけへ追加する。
+
+agents_serverの`start`、`start_explore`、`start_write`及び`start_shell`はCodexネイティブ委譲とは別経路であり、対応する`model_type`からengine、model及びeffortを解決する。通常の`start`は`_agents_server/state.py`が共通の`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell経路は共有規範を注入せず、起動文が必要な制約を持つ。可用性失敗時の候補切替はサーバーへ委ね、呼び出し側の起動は最初の1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start_shell`、読取専用探索は`start_explore`を使い、各ツールの採算基準に従う。
 
 工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置換せず、CodexからClaudeへは対応する`model_type`でagents_serverを使う。指定engineの経路がなければ同書の未完了又は`needs_escalation`で返す。
 
@@ -27,4 +29,4 @@ agents_serverの`start`、`start_explore`、`start_write`及び`start_shell`は�
 
 `functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返した場合は同じ識別子を`functions.wait`へ渡す。外側のyieldを理由に別の`atk agents wait`を起動しない。CLI自身が待機上限へ達し対象が未終端なら、その結果を確認してから新しい待機を開始する。
 
-委譲先の成果物側だけを補助観測するときは、`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使う。この出力をsession自体の稼働確認に代用しない。
+委譲先の成果物側だけを補助観測するときは、`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使う。session自体の稼働確認には起動経路の状態を用いる。
