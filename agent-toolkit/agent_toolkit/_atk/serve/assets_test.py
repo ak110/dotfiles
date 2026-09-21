@@ -408,21 +408,42 @@ async def test_state_publishes_once_after_last_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """閾値内の連続変更をまとめ、最後の変更後に1回だけ通知する。"""
-    current = state.ServeState(tmp_path, debounce_seconds=0.03)
+    clock = [1_000.0]
+    timers: list[_FakeTimer] = []
+
+    def _make_timer(
+        interval: float,
+        function: typing.Callable[..., None],
+        args: tuple[typing.Any, ...] = (),
+    ) -> _FakeTimer:
+        timer = _FakeTimer(interval, function, args)
+        timers.append(timer)
+        return timer
+
+    current = state.ServeState(
+        tmp_path,
+        debounce_seconds=0.03,
+        monotonic=lambda: clock[0],
+        timer_factory=_make_timer,
+    )
     current._loop = asyncio.get_running_loop()
     published: list[str] = []
     monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
     event = watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md"))
 
     current.on_modified(event)
-    await asyncio.sleep(0.01)
+    clock[0] += 0.01
     current.on_modified(event)
-    await asyncio.sleep(0.01)
+    clock[0] += 0.01
     current.on_modified(event)
 
-    await asyncio.sleep(0.02)
+    assert [timer.cancelled for timer in timers] == [True, True, False]
+    for timer in timers[:-1]:
+        timer.function(*timer.args)
+    await asyncio.sleep(0)
     assert not published
-    await asyncio.sleep(0.03)
+    timers[-1].function(*timers[-1].args)
+    await asyncio.sleep(0)
     assert published == ["changed"]
 
 
