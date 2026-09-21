@@ -33,7 +33,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|Agent|Task|mcp__plugin_agent-toolkit_agents_server__start|mcp__plugin_agent-toolkit_agents_server__start_custom|mcp__plugin_agent-toolkit_agents_server__start_explore|mcp__plugin_agent-toolkit_agents_server__start_write|mcp__plugin_agent-toolkit_agents_server__start_shell|mcp__plugin_agent-toolkit_agents_server__send_message|mcp__plugin_agent-toolkit_agents_server__kill|mcp__plugin_agent-toolkit_agents_server__stop|mcp__plugin_agent-toolkit_agents_server__show|mcp__plugin_agent-toolkit_pyfltr__run",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|Agent|Task|mcp__plugin_agent-toolkit_agents_server__start|mcp__plugin_agent-toolkit_agents_server__start_custom|mcp__plugin_agent-toolkit_agents_server__start_explore|mcp__plugin_agent-toolkit_agents_server__start_write|mcp__plugin_agent-toolkit_agents_server__start_shell|mcp__plugin_agent-toolkit_agents_server__send_message|mcp__plugin_agent-toolkit_agents_server__kill|mcp__plugin_agent-toolkit_agents_server__stop|mcp__plugin_agent-toolkit_agents_server__list|mcp__plugin_agent-toolkit_agents_server__show|mcp__plugin_agent-toolkit_pyfltr__run",
         "hooks": [
           {
             "type": "command",

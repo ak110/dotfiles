@@ -537,8 +537,26 @@ def test_agents_wait_reports_absent_targets_as_failure(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """待機対象も保持sessionも無い場合は理由を標準エラーへ書いて即座に非0で終わる。"""
+    """root対応を確認できない空状態はMCP一覧による復旧を案内する。"""
     assert not wait_environment.exists()
+
+    with pytest.raises(SystemExit, match="4"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "CLIが解決したroot=root-session" in captured.err
+    assert "MCPの`list`を1回" in captured.err
+    assert "`atk agents wait`を再実行" in captured.err
+    assert "待機対象の登録が0件" not in captured.err
+
+
+def test_agents_wait_reports_confirmed_empty_root_as_absent_targets(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """確認済みrootで待機対象も保持sessionも無い場合は既存の終了区分を保つ。"""
+    _write_own_status(wait_environment, [])
 
     with pytest.raises(SystemExit, match="10"):
         atk.main(["agents", "wait"])

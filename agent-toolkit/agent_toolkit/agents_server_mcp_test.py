@@ -1005,11 +1005,29 @@ async def test_success_response_key_sets_for_all_tools(
     assert await manager.stop(terminal_id) == {}
 
     listed = manager.list_sessions(include_terminated=True)
-    assert listed.keys() == {"sessions", "omitted"}
+    assert listed.keys() == {"sessions", "omitted", "root_session_id"}
+    assert listed["root_session_id"] == "root-session"
     assert all(
         {"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"}
         for item in listed["sessions"]
     )
+
+
+@pytest.mark.asyncio
+async def test_list_returns_root_session_id_when_session_list_is_empty(tmp_path: pathlib.Path) -> None:
+    """空一覧でもPostToolUseが会話rootの索引を復旧できる値を返す。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+
+    assert manager.list_sessions() == {
+        "sessions": [],
+        "omitted": 0,
+        "root_session_id": "root-session",
+    }
 
 
 @pytest.mark.asyncio
@@ -5018,7 +5036,9 @@ async def test_stop_discards_terminal_session(
     response = await manager.stop(session.session_id)
 
     assert response == {}
-    assert manager.list_sessions() == {"sessions": [], "omitted": 0}
+    listed = manager.list_sessions()
+    assert listed["sessions"] == []
+    assert listed["omitted"] == 0
     assert "terminal" not in manager.sessions
     assert "terminal" not in manager.expired_sessions
     assert manager.stopped_sessions["terminal"].session_id == "terminal"
@@ -5358,7 +5378,9 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
     assert response == {}
     assert session.session_id not in manager.expired_sessions
     assert session.session_id in manager.stopped_sessions
-    assert manager.list_sessions() == {"sessions": [], "omitted": 0}
+    listed = manager.list_sessions()
+    assert listed["sessions"] == []
+    assert listed["omitted"] == 0
     assert backend.release_calls == [session.session_id]
 
 

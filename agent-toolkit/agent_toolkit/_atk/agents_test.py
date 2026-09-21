@@ -30,6 +30,7 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
     assert "終端statusでは追加の結果受領操作は不要" in output
     assert "`--output-file`を指定した場合" in output
     assert "回収した本文は当該保存先に残る" in output
+    assert "MCPの`list`を1回呼び出してから同じコマンドを再実行" in output
 
 
 def _without_wrapping(text: str) -> str:
@@ -44,6 +45,7 @@ def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.Cap
 
     output = _without_wrapping(capsys.readouterr().out)
     assert _without_wrapping("各sessionへ起動文を含めず、起動文は`atk agents show`が返す。") in output
+    assert _without_wrapping("MCPの`list`を1回呼び出してから同じコマンドを再実行") in output
 
 
 @pytest.fixture
@@ -230,3 +232,73 @@ def test_agents_list_from_terminal_merges_all_root_sessions(
 
     payload = json.loads(capsys.readouterr().out)
     assert {session["session_id"] for session in payload["sessions"]} == {"session-a", "session-b"}
+
+
+def test_agents_list_reports_unconfirmed_conversation_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対応未確認の空一覧は成功扱いせず、MCP一覧による復旧を案内する。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+
+    with pytest.raises(SystemExit, match="4"):
+        atk.main(["agents", "list"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "CLIが解決したroot=current-session" in captured.err
+    assert "MCPの`list`を1回" in captured.err
+    assert "`atk agents list`を再実行" in captured.err
+
+
+def test_agents_list_returns_empty_for_confirmed_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """現行識別子自身の状態ディレクトリを確認できれば空一覧を通常結果として返す。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+
+    assert json.loads(capsys.readouterr().out) == {"sessions": []}
+
+
+def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """明示的な別名索引のrootだけを読み、別rootのsessionを混在させない。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
+        directory = status_file.status_directory(root_session_id, tmp_path)
+        directory.mkdir(parents=True)
+        (directory / "root.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "sessions": [{"session_id": remote_session_id, "status": "running"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+    status_file.write_root_alias("current-session", "root-a", tmp_path)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [session["session_id"] for session in payload["sessions"]] == ["session-a"]

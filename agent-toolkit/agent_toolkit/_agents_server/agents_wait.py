@@ -158,7 +158,8 @@ def wait_for_result(
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
-    root_session_id = status_file.resolve_conversation_root_session_id(env, state_root)
+    root_resolution = status_file.resolve_conversation_root(env, state_root)
+    root_session_id = None if root_resolution is None else root_resolution.root_session_id
     try:
         identity = status_file.resolve_status_owner_identity(env, state_root)
     except ValueError as error:
@@ -183,6 +184,11 @@ def wait_for_result(
     ordered_ids = sorted(origins)
     own_sessions = _read_sessions(own_status_path)
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
+        if root_resolution is not None and not root_resolution.mapping_confirmed:
+            return _fail(
+                status_file.unconfirmed_root_recovery_message(root_resolution, "atk agents wait"),
+                4,
+            )
         return _fail(
             "待機対象の登録が0件で、保持中のsessionも0件です。"
             "委譲先を起動してから`atk agents wait`を実行してください: "

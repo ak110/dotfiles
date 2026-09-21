@@ -620,19 +620,23 @@ class AgentsServerManager:
             )
         sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: item[0])]
         if include_terminated:
-            return {
+            response: dict[str, Any] = {
                 "sessions": [_listed_public_session(session) for session in sessions],
                 "omitted": 0,
             }
-        visible = [
-            session
-            for session in sessions
-            if session["result_available"] or session["status"] not in TERMINAL_STATUSES | {"expired"}
-        ]
-        return {
-            "sessions": [_listed_public_session(session) for session in visible],
-            "omitted": len(sessions) - len(visible),
-        }
+        else:
+            visible = [
+                session
+                for session in sessions
+                if session["result_available"] or session["status"] not in TERMINAL_STATUSES | {"expired"}
+            ]
+            response = {
+                "sessions": [_listed_public_session(session) for session in visible],
+                "omitted": len(sessions) - len(visible),
+            }
+        if self._status_writer is not None:
+            response["root_session_id"] = self._status_writer.root_session_id
+        return response
 
     def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
         """保持中又は再開可能なsessionの復旧用詳細を返す。
@@ -2168,6 +2172,7 @@ async def stop_session(session_id: str) -> dict[str, Any]:
 async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
+    所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
     各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
     起動条件は`show`で取得する。
     結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。

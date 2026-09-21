@@ -293,16 +293,17 @@ _AGENTS_SERVER_START_TOOLS = frozenset(
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_STOP_TOOLS = frozenset(f"{namespace}stop" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_LIST_TOOLS = frozenset(f"{namespace}list" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
     _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_STOP_TOOLS
 )
-_AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
+_AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_LIST_TOOLS
 # `show`は稼働中の子sessionの識別子と`cwd`の対を返すため、当該対の記録だけを目的として受信する。
 _AGENTS_SERVER_SHOW_TOOLS = frozenset(f"{namespace}show" for namespace in _AGENTS_SERVER_NAMESPACES)
 
 # hooks.json・hooks.codex.jsonのPostToolUse matcherが被覆すべきagents_serverツール名の全体。
 # 一致検査（posttooluse_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
-AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_SHOW_TOOLS
+AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_SHOW_TOOLS | _AGENTS_SERVER_LIST_TOOLS
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
@@ -439,7 +440,9 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
         missing.append("response")
     required_fields: tuple[str, ...]
     if tool_name in _AGENTS_SERVER_START_TOOLS:
-        required_fields = ("session_id", "status")
+        required_fields = ("session_id", "status", "root_session_id")
+    elif tool_name in _AGENTS_SERVER_LIST_TOOLS:
+        required_fields = ("root_session_id",)
     elif operation in {"wait", "kill"}:
         required_fields = ("status",)
     elif operation == "send_message":
@@ -448,7 +451,11 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
         required_fields = ()
     for field in required_fields:
         value = structured.get(field)
-        if not isinstance(value, str) or not value.strip():
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or (field == "root_session_id" and not _agents_server_status_file.valid_session_id(value))
+        ):
             missing.append(field)
     if tool_name in _AGENTS_SERVER_START_TOOLS and not _is_nonempty_absolute_cwd(
         _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
@@ -489,6 +496,18 @@ def _record_child_session_cwds(session_id: str, structured: dict) -> None:
         return state if changed else None
 
     update_state(session_id, _mutator)
+
+
+def _record_agents_server_root_alias(session_id: str, structured: dict) -> None:
+    """MCP応答が明示した所有rootを現行会話の別名索引へ記録する。"""
+    if os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
+        return
+    root_session_id = structured.get("root_session_id")
+    if not _agents_server_status_file.valid_session_id(session_id):
+        return
+    if not isinstance(root_session_id, str) or not _agents_server_status_file.valid_session_id(root_session_id):
+        return
+    _agents_server_status_file.write_root_alias(session_id, root_session_id)
 
 
 def _record_agents_server_session_state(
@@ -585,10 +604,6 @@ def _record_agents_server_session_state(
                 identity.file_name,
                 [remote_session_id],
             )
-    if operation in _AGENTS_SERVER_START_OPERATIONS and not os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
-        root_session_id = _agents_server_status_file.find_root_session_id_for_session(remote_session_id)
-        if root_session_id is not None:
-            _agents_server_status_file.write_root_alias(session_id, root_session_id)
     return None
 
 
@@ -1188,6 +1203,15 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_child_session_cwds(session_id, structured)
         return 0
 
+    # listはsession状態を変更せず、応答が明示した所有rootだけを別名索引へ記録する。
+    if tool_name in _AGENTS_SERVER_LIST_TOOLS:
+        structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
+        missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
+        if missing:
+            notices.append(_llm_notice(f"warn: listの応答で{', '.join(missing)}が欠落しているか不正である。"))
+        _record_agents_server_root_alias(session_id, structured)
+        return 0
+
     # agents_server応答からsession_id→cwdを保存し、session状態を更新する。
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         tool_response = payload.get("tool_response", {})
@@ -1210,6 +1234,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
+            _record_agents_server_root_alias(session_id, structured)
             model_type = _agents_server_model_type(tool_input, operation)
             if model_type in _TRACKED_MODEL_TYPES:
                 _process_loop_log.append("subagent_start", type=model_type)
