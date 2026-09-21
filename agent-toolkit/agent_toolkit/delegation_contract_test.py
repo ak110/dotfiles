@@ -305,6 +305,8 @@ def test_single_lane_process_partitions_plans_and_reviews_by_worktree() -> None:
     assert all(value in recipient for value in ("単一の対象リポジトリ", "別の対象リポジトリ", "needs_escalation"))
     assert all(value in single_lane for value in ("全push後", "CI監視を全件開始", "監視識別子", "全件回収"))
     assert all(value in single_lane for value in ("成果依存", "手動workflow", "先行対象の成功後", "対象リポジトリが1件"))
+    assert all(value in single_lane for value in ("1つの`Monitor`", "until-loop", "全ての未終端識別子"))
+    assert all(value in single_lane for value in ("固定時間の`sleep`", "空の`ReadNotifications`", "個別回収"))
 
 
 def test_picker_serializes_overlapping_write_regions() -> None:
@@ -402,6 +404,8 @@ def test_session_review_receives_project_reference_from_prepare_manifest() -> No
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     repository_root = plugin_root.parent
     recipient = (plugin_root / "share" / "session-review-delegate.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "session-review-delegate.parent.md").read_text(encoding="utf-8")
+    skill = (plugin_root / "skills" / "session-review" / "SKILL.md").read_text(encoding="utf-8")
     project_rules = (repository_root / "AGENTS.md").read_text(encoding="utf-8")
     development_skill = (repository_root / ".claude" / "skills" / "dotfiles-development" / "SKILL.md").read_text(
         encoding="utf-8"
@@ -409,6 +413,10 @@ def test_session_review_receives_project_reference_from_prepare_manifest() -> No
     prepare = (plugin_root / "skills" / "session-review" / "scripts" / "session_review_prepare.py").read_text(encoding="utf-8")
 
     assert all(value in recipient for value in ("準備manifest", "振り返り参照文書の絶対パス", "`null`"))
+    assert "必須入力名: 対象セッションの実行系,対象セッションの識別子,準備manifest,出力先ファイル,引き継ぎ記録先" in recipient
+    assert all(value in recipient for value in ("保存済みの1行JSON", "担当は`session_review_prepare.py`を実行しない"))
+    assert all(value in parent for value in ("prepare-manifest.json", "単一正本", "名前付き必須入力は次の5項目"))
+    assert all(value in skill for value in ("session-review-output", "prepare-manifest.json", "準備スクリプトを再実行しない"))
     assert all(
         value in development_skill
         for value in (
@@ -419,6 +427,41 @@ def test_session_review_receives_project_reference_from_prepare_manifest() -> No
     )
     assert "## セッションレビュー" not in project_rules
     assert all(value in prepare for value in ('"reference_document"', "--git-common-dir"))
+
+
+def test_plan_contract_requires_discriminating_reachable_completion_conditions() -> None:
+    """計画は修正前後を判別でき、対象分岐へ到達する完了条件だけを確定する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plan = (plugin_root / "skills" / "plan-mode" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert all(value in plan for value in ("観測値の生成主体", "消費経路", "有効化条件", "是正前の基準状態", "是正後の期待値"))
+    assert all(value in plan for value in ("基準状態と期待値が同じ", "対象分岐が無効", "抑制される生出力の不在"))
+    assert all(value in plan for value in ("公開状態", "直接の契約検体"))
+
+
+def test_plan_start_and_review_changes_preserve_explicit_prohibitions() -> None:
+    """計画開始とレビュー修正は要求が明示した禁止条件を反転させない。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plan = (plugin_root / "skills" / "plan-mode" / "SKILL.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
+
+    assert all(value in plan for value in ("実施しない操作", "選択肢から外す機構", "許容しない副作用", "## 実施内容"))
+    assert all(value in parent for value in ("禁止操作", "選択肢から外した機構", "実装開始`を返さず"))
+    assert all(value in parent for value in ("レビュー指摘への応答", "同じ禁止条件との照合を再実行"))
+    assert "実装レビュー段階の認可範囲照合はこの検査と別に維持する" in parent
+
+
+def test_completion_report_lists_only_non_terminal_work_items_and_allows_independent_lanes() -> None:
+    """完了報告は未終端WIだけを示し、振り返りと独立した是正レーンを待たせない。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    completion = (plugin_root / "skills" / "completion-report" / "SKILL.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+
+    assert all(value in completion for value in ("報告時点で終端していない", "`adopted`", "`rejected`"))
+    assert all(value in completion for value in ("atk wi show <ファイル名>...", "--skip-pull", "見出し行から現在状態"))
+    assert all(value in completion for value in ("掲載条件", "報告直前の状態取得", "### 対策として投入したWI"))
+    assert all(value in completion for value in ("入力が揃う順序", "直列に待たせる指定ではない", "並行して進める"))
+    assert all(value in lanes for value in ("session-review`の稼働", "completion-report`の残る手順", "待たせる条件にしない"))
 
 
 def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:

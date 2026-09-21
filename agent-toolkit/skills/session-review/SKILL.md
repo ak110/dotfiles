@@ -32,17 +32,17 @@ description: >
 
 工程を実行する主体は次の1から3の順に進める。
 
-1. メインが、読み込んだ本`SKILL.md`の絶対パスから現行plugin rootを確定し、`skills/session-review/scripts/session_review_prepare.py`を次のいずれか1つの形で1回実行する。
+1. メインが`atk managed-temp create --prefix session-review-output`を1回実行し、返った領域の直下を準備manifestと成果ファイルの保存先として保持する。続いて、読み込んだ本`SKILL.md`の絶対パスから現行plugin rootを確定し、`skills/session-review/scripts/session_review_prepare.py`を次のいずれか1つの形で1回実行する。
    Claude Codeで把握している現在のtranscript絶対パスを`--transcript`へ渡し、Codexでは`CODEX_THREAD_ID`を`--codex-thread-id`へ渡す。
    対象リポジトリを確定できない場合は`--target-repo`を渡さない。
-   終了コードが0でない場合と、標準出力から`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`が要求する項目を取得できない場合は、`## 分析失敗`へ進む。
+   標準出力の1行JSONは前段の領域直下の`prepare-manifest.json`へ保存する。終了コードが0でない場合、保存内容が1行のJSONではない場合、又はJSONから`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`が要求する項目を取得できない場合は、`## 分析失敗`へ進む。
 
    ```sh
    uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
    uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
    ```
 
-   いずれの起動形も、準備スクリプトを1回だけ実行する。
+   いずれの起動形も、準備スクリプトを1回だけ実行する。以降は保存した`prepare-manifest.json`だけを準備結果の正本とし、同じ振り返りで準備スクリプトを再実行しない。
 
 2. メインが`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`を全文読み、同書に従って振り返り担当を起動する。
    振り返り担当は本書の全節を適用する。抽出器の実行、問題候補の判別と既存キュー項目との照合は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`が定める。
@@ -80,7 +80,7 @@ description: >
    機械的な抽出は標識を残す事象だけを対象とする。推測で組んだコマンドの試行錯誤、同じ資料の読み直し、採用した設計の書き直しは候補に現れない。規範の解釈へ費やした工程と、委譲先への指示不足による手戻りも同じく現れない。これらを観測できるのは、その判断を下したメイン自身のコンテキストだけである。
    探す対象はそのセッション全体とし、観点を限定しない。抽出器が候補として拾った事象と重複してよい。
    列挙する単位は、その改善で防げる事象と、その事象が生じた工程とする。記録位置の特定は求めない。
-   列挙した内容は、準備工程が返した管理対象一時領域の直下の`main-observations.md`へ書く。会話圧縮でコンテキストから失われた区間がある場合は、その区間を列挙の対象外として同じファイルへ書く。列挙が0件の場合は空ファイルを作成する。
+   列挙した内容は、保存済み準備manifestの`managed_temp`が指す領域の直下の`main-observations.md`へ書く。会話圧縮でコンテキストから失われた区間がある場合は、その区間を列挙の対象外として同じファイルへ書く。列挙が0件の場合は空ファイルを作成する。
    振り返り担当は一次選別の開始時にこの固定パスを読み、存在する内容を最初の分析へ取り込む。担当からメインへの追加配送要求は、ファイルが存在しない場合に限り、欠落した絶対パスと期待した改善点件数を添えて行う。このファイルの配送は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`の`## メイン由来の改善点の配送`が定める。
 
 3. メインが振り返り担当の返却を検収した後、ユーザー発話の追加分を再照合する。
