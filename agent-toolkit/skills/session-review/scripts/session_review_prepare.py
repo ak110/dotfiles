@@ -58,6 +58,32 @@ def _managed_temp_path(result: subprocess.CompletedProcess[str] | None) -> pathl
     return path if path.is_absolute() and path.is_dir() else None
 
 
+def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pathlib.Path | None:
+    """Git共通dirから対象リポジトリ固有の振り返り参照文書を解決する。"""
+    if target_repo is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(target_repo), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return None
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 1:
+        return None
+    common_dir = pathlib.Path(lines[0])
+    if not common_dir.is_absolute():
+        common_dir = target_repo / common_dir
+    repository_name = common_dir.resolve().parent.name
+    path = pathlib.Path.home() / (".codex" if codex else ".claude") / "docs" / f"session-review-{repository_name}.md"
+    return path if path.is_file() else None
+
+
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """準備項目を取得して1行のJSONを出力する。"""
     args = _build_parser().parse_args(argv)
@@ -88,6 +114,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         bundle_dir.mkdir(exist_ok=True)
     except OSError:
         return _missing("bundle_dir")
+    reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
     record = {
         "evidence_script": str(evidence_script),
         "report_script": str(report_script),
@@ -98,6 +125,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "bundle_dir": str(bundle_dir),
         "observation_boundary": observation_boundary,
         "target_repo": str(target_repo) if target_repo is not None else None,
+        "reference_document": str(reference_document) if reference_document is not None else None,
     }
     print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
     return 0

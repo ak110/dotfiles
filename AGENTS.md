@@ -18,13 +18,6 @@
 - 規範の条文が根拠とする実測の日付・版数・再検証手段:
   [docs/development/audit-records.md](docs/development/audit-records.md)
 
-## セッションレビュー
-
-`agent-toolkit:session-review`が読む本リポジトリ固有の参照文書は、Claude Codeでは
-`~/.claude/docs/session-review-dotfiles.md`とする。Codexでは`~/.codex/docs/session-review-dotfiles.md`とする。
-同文書はセッションの所要時間目標と本リポジトリ固有の振り返り観点を保持する。
-配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。
-
 ## 本リポジトリのスキル
 
 次のスキルはリポジトリ直下の`.claude/skills/`配下にあり、配布対象外である。
@@ -32,7 +25,7 @@
 
 | スキル | 扱う範囲 |
 | --- | --- |
-| `dotfiles-development` | 検査、整形及び依存更新の手順 |
+| `dotfiles-development` | 検査、整形及び依存更新の手順と、振り返りの参照文書の位置 |
 | `dotfiles-release` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
 | `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応、変更した規範の自セッション適用 |
 | `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、version bump、権限設定の配置 |

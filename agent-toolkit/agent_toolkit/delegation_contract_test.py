@@ -397,25 +397,53 @@ def test_session_termination_contract_separates_summary_and_details() -> None:
     assert all(value in recipient for value in ("受領した確定済みの種別", "計画ファイルのパス", "読み直さない"))
 
 
-def test_session_review_resolves_project_reference_from_auto_loaded_rules() -> None:
-    """振り返り担当は参照文書を準備manifestではなくプロジェクト規範から解決する。"""
+def test_session_review_receives_project_reference_from_prepare_manifest() -> None:
+    """振り返り担当はGit共通dirから解決した参照文書を準備manifestで受け取る。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     repository_root = plugin_root.parent
     recipient = (plugin_root / "share" / "session-review-delegate.subagent.md").read_text(encoding="utf-8")
     project_rules = (repository_root / "AGENTS.md").read_text(encoding="utf-8")
+    development_skill = (repository_root / ".claude" / "skills" / "dotfiles-development" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
     prepare = (plugin_root / "skills" / "session-review" / "scripts" / "session_review_prepare.py").read_text(encoding="utf-8")
 
-    assert all(value in recipient for value in ("自動読込された", "現在の実行ホスト", "指定が無い場合"))
-    assert all(value in recipient for value in ("リポジトリ名からパスを組み立てる経路", "準備manifest"))
+    assert all(value in recipient for value in ("準備manifest", "振り返り参照文書の絶対パス", "`null`"))
     assert all(
-        value in project_rules
+        value in development_skill
         for value in (
-            "## セッションレビュー",
+            "## 振り返りの参照文書",
             "~/.claude/docs/session-review-dotfiles.md",
             "~/.codex/docs/session-review-dotfiles.md",
         )
     )
-    assert '"reference_document"' not in prepare
+    assert "## セッションレビュー" not in project_rules
+    assert all(value in prepare for value in ('"reference_document"', "--git-common-dir"))
+
+
+def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
+    """委譲先の確認事項は標識へ保存せず確定時点でメインへ通知する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    subagent_rules = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
+    main_rules = (plugin_root / "share" / "rules-main.md").read_text(encoding="utf-8")
+    confirmation = (plugin_root / "skills" / "confirmation-and-uwi" / "SKILL.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    plan_standard = (plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md").read_text(encoding="utf-8")
+
+    assert all(value in subagent_rules for value in ("turnの終端を待たず", "判断対象", "回答に依存しない工程"))
+    assert all(value in main_rules for value in ("ユーザー向け発話ルール", "不足項目", "発行の要否"))
+    assert all(value in confirmation for value in ("atk agents notify --body-file", 'to: "main"', "判断対象"))
+    assert all(value in executor for value in ("確認事項又は事後承認の対象", "その時点でメインへ通知"))
+    assert "計画の現在の結論と`## 変更履歴`を更新する" not in executor
+    assert "レビュー指摘管理表へ現在の結論を記録する" in executor
+    assert all(value in lanes for value in ("受け取った時点", "投入の成功", "正本ファイル名"))
+    marker = "事後承認" + "対象:"
+    assert marker not in executor
+    assert marker not in parent
+    assert marker not in lanes
+    assert marker not in plan_standard
 
 
 def test_subagent_command_prerequisites_point_to_shared_sources() -> None:
