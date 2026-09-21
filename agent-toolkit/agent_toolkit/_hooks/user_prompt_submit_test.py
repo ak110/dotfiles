@@ -8,6 +8,7 @@ subprocessで起動しexit code・状態ファイルの内容を検証する。
 import json
 import os
 import pathlib
+import re
 import subprocess
 import threading
 import time
@@ -20,8 +21,11 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
-_NOTICE_PREFIX = "[auto-generated: agent-toolkit/user_prompt_submit][notice] "
-_NOTICE_SUFFIX = " （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
+_NOTICE_PATTERN = re.compile(
+    r'<agent-toolkit-hook-message source="agent-toolkit/user_prompt_submit" kind="notice" nonce="[^"]+">\n'
+    r"(?P<body>.*?)\n</agent-toolkit-hook-message>",
+    re.DOTALL,
+)
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "直前の発話から、当該発話が主張する事実と是正を求めている対象を列挙し、"
     "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
@@ -40,13 +44,10 @@ _EXPECTEDREFERENCE_NOTICE_BODY = user_prompt_submit.REFERENCE_NOTICE_BODY
 
 
 def _notice_bodies(context: str) -> list[str]:
-    """結合された通知を分解し、標準プレフィックスとサフィックスを検証した本文の並びを返す。"""
-    bodies = []
-    for notice in context.split("\n"):
-        assert notice.startswith(_NOTICE_PREFIX)
-        assert notice.endswith(_NOTICE_SUFFIX)
-        bodies.append(notice.removeprefix(_NOTICE_PREFIX).removesuffix(_NOTICE_SUFFIX))
-    return bodies
+    """結合された通知を分解し、標準XML境界を検証した本文の並びを返す。"""
+    matches = list(_NOTICE_PATTERN.finditer(context))
+    assert matches
+    return [match.group("body") for match in matches]
 
 
 def _session_title(result: subprocess.CompletedProcess[str]) -> str | None:

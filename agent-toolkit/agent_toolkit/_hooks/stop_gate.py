@@ -147,6 +147,7 @@ def _pending_cache_key(
     transcript_path: str,
     session_id: str,
     background_tasks: object,
+    session_state: object,
 ) -> tuple[object, ...]:
     """入力とtranscriptの現行状態を表すキャッシュキーを返す。"""
     try:
@@ -158,7 +159,11 @@ def _pending_cache_key(
         background_state = json.dumps(background_tasks, ensure_ascii=False, sort_keys=True)
     except (TypeError, ValueError):
         background_state = repr(background_tasks)
-    return transcript_path, session_id, background_state, transcript_state
+    try:
+        stored_state = json.dumps(session_state, ensure_ascii=False, sort_keys=True)
+    except (TypeError, ValueError):
+        stored_state = repr(session_state)
+    return transcript_path, session_id, background_state, stored_state, transcript_state
 
 
 def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool]:
@@ -172,11 +177,28 @@ def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool
     return len(valid_tasks), non_teammate_tasks, len(valid_tasks) == len(background_tasks)
 
 
+def _has_pending_owned_observation(session_state: object, owner_agent_id: str) -> bool:
+    """呼出主体がまだ回収していないagents_server結果があれば真を返す。"""
+    if not isinstance(session_state, dict):
+        return False
+    sessions = session_state.get("agents_server_sessions")
+    if not isinstance(sessions, dict):
+        return False
+    return any(
+        isinstance(record, dict)
+        and record.get("pending_observation") is True
+        and record.get("owner_agent_id") == owner_agent_id
+        for record in sessions.values()
+    )
+
+
 def is_pending_async_work(
     transcript_path: str,
     session_id: str,
     *,
     background_tasks: object = None,
+    session_state: object = None,
+    owner_agent_id: str = "main",
 ) -> bool:
     """セッションが構造的に継続中の場合に真を返す。
 
@@ -184,6 +206,7 @@ def is_pending_async_work(
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
       `CronCreate`・`Monitor`、または`Bash`かつ`input.run_in_background == true`）
     - 未完了のbackground task（Agent・Bash・SendMessage背景再開・MCP）が存在する
+    - 呼出主体がまだ回収していないagents_serverの終端結果がセッション状態に存在する
 
     Stop入力の`background_tasks`に有効な非`teammate` taskがあれば、無効な要素の混在に
     かかわらず真を返す。個別taskの`status`その他の任意フィールドは判定に使わない。
@@ -228,15 +251,16 @@ def is_pending_async_work(
 
     本経路は非sidechainエントリだけを走査する。
 
-    transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
+    transcriptを読み取れない異常系ではtranscript由来の根拠を偽とし、
+    Stop入力とセッション状態の根拠は独立に判定する。
     `session_id`は常時ログ（`append_stop_log`）の宛先ファイル特定にのみ使う。
     """
-    cache_key = _pending_cache_key(transcript_path, session_id, background_tasks)
+    cache_key = _pending_cache_key(transcript_path, session_id, background_tasks, session_state)
     if cache_key in _PENDING_ASYNC_WORK_CACHE:
         return _PENDING_ASYNC_WORK_CACHE[cache_key]
 
     entries = read_transcript_entries_cached(transcript_path)
-    cache_key = _pending_cache_key(transcript_path, session_id, background_tasks)
+    cache_key = _pending_cache_key(transcript_path, session_id, background_tasks, session_state)
     last_tool_use = _get_last_tool_use_block(entries)
     last_async = _last_tool_use_is_async_wait(last_tool_use)
     launched, completed, host_reported_launched = _describe_pending_background_entries(
@@ -248,6 +272,7 @@ def is_pending_async_work(
     host_reported_remainder = host_reported_launched - completed
     unreported_remainder = remainder - host_reported_remainder
     payload_valid, payload_non_teammate, payload_authoritative = _describe_background_tasks(background_tasks)
+    pending_observation = _has_pending_owned_observation(session_state, owner_agent_id)
     pending_sources: list[str] = []
     if payload_non_teammate:
         pending_sources.append("background_tasks")
@@ -257,9 +282,15 @@ def is_pending_async_work(
         pending_sources.append("transcript")
     if unreported_remainder:
         pending_sources.append("transcript_unreported")
+    if pending_observation:
+        pending_sources.append("agents_server_observation")
     source = "+".join(pending_sources) if pending_sources else "none"
     pending = bool(
-        last_async or payload_non_teammate or (host_reported_remainder and not payload_authoritative) or unreported_remainder
+        last_async
+        or payload_non_teammate
+        or (host_reported_remainder and not payload_authoritative)
+        or unreported_remainder
+        or pending_observation
     )
     last_tool = _describe_last_tool_use(last_tool_use)
     _emit_debug(
@@ -285,6 +316,7 @@ def is_pending_async_work(
             "payload_valid": payload_valid,
             "payload_non_teammate": payload_non_teammate,
             "payload_authoritative": payload_authoritative,
+            "pending_observation": pending_observation,
             "source": source,
         },
     )

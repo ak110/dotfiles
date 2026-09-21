@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import sys
 
+from agent_toolkit._atk import run_script
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """コマンドライン引数を定義する。"""
@@ -87,8 +89,12 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """準備項目を取得して1行のJSONを出力する。"""
     args = _build_parser().parse_args(argv)
-    evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
-    if not evidence_script.is_file():
+    local_evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
+    try:
+        evidence_script = run_script.registered_script_path("session-review-evidence")
+    except ValueError:
+        return _missing("evidence_script")
+    if local_evidence_script != evidence_script:
         return _missing("evidence_script")
     report_script = pathlib.Path(__file__).resolve().with_name("session_review_report.py")
     if not report_script.is_file():
@@ -105,6 +111,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     managed_temp = _managed_temp_path(create_result)
     if managed_temp is None:
         return _missing("managed_temp")
+    output_result = _run_atk(executable, ["managed-temp", "create", "--prefix", "session-review-output"])
+    output_temp = _managed_temp_path(output_result)
+    if output_temp is None:
+        return _missing("output_temp")
 
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observation_boundary = current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -115,6 +125,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     except OSError:
         return _missing("bundle_dir")
     reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
+    manifest_path = output_temp / "prepare-manifest.json"
+    output_file = output_temp / "session-review.md"
     record = {
         "evidence_script": str(evidence_script),
         "report_script": str(report_script),
@@ -123,11 +135,19 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "codex_thread_id": args.codex_thread_id,
         "managed_temp": str(managed_temp),
         "bundle_dir": str(bundle_dir),
+        "manifest_path": str(manifest_path),
+        "output_temp": str(output_temp),
+        "output_file": str(output_file),
         "observation_boundary": observation_boundary,
         "target_repo": str(target_repo) if target_repo is not None else None,
         "reference_document": str(reference_document) if reference_document is not None else None,
     }
-    print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+    serialized = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+    try:
+        manifest_path.write_text(f"{serialized}\n", encoding="utf-8")
+    except OSError:
+        return _missing("manifest_path")
+    print(serialized)
     return 0
 
 

@@ -102,7 +102,7 @@ baseline作成、push、監視の順で実行する。
 7. 診断目的で対象jobを再実行した後も、保存済みの同一baselineに対して`wait_ci.py --baseline`を再起動し、待機はこのスクリプトへ委ねる。自作の待機ループは、baselineが定める判定対象を再現しないため、待機の手段の外に置く。
    許容された再実行後も失敗が残る場合は、CI未通過を終端状態として確定する。
    完了報告と採否記録には、未通過であることと帰属判定を記録する。
-   `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/append_progress_log.py`で計画ファイルの`## 進捗ログ`へも同じ内容を記録する。
+   `atk run-script plan-progress --`で計画ファイルの`## 進捗ログ`へも同じ内容を記録する。
    対象workflowが同一concurrency groupで`cancel-in-progress: true`を有効にしている場合、
    再実行の終端前の新規pushは先行runを`cancelled`にし、非決定性とCI通過の判定根拠を失わせる。
    判定に用いるrunの終端を確定してから次のpushを行う

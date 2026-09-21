@@ -37,20 +37,26 @@ _SUBCOMMANDS = (
 )
 
 
+def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
+    """依存する通知モジュールと共通entrypointを検証用ディレクトリへ複製する。"""
+    entrypoint = tmp_path / "hook.py"
+    entrypoint.write_text(
+        _SCRIPT.read_text(encoding="utf-8").replace("agent_toolkit._hooks", "_hooks"),
+        encoding="utf-8",
+    )
+    hooks = tmp_path / "_hooks"
+    hooks.mkdir()
+    (hooks / "__init__.py").write_text("", encoding="utf-8")
+    source_hooks = _SCRIPT.parent / "_hooks"
+    for name in ("notice.py", "message_format.py"):
+        (hooks / name).write_text((source_hooks / name).read_text(encoding="utf-8"), encoding="utf-8")
+    return entrypoint
+
+
 class TestEntrypointExceptionStages:
     """共通エントリポイントが例外の発生段階に応じて出力を分けることを検証する。"""
 
-    @staticmethod
-    def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
-        entrypoint = tmp_path / "hook.py"
-        entrypoint.write_text(
-            _SCRIPT.read_text(encoding="utf-8").replace("agent_toolkit._hooks", "_hooks"),
-            encoding="utf-8",
-        )
-        hooks = tmp_path / "_hooks"
-        hooks.mkdir()
-        (hooks / "__init__.py").write_text("", encoding="utf-8")
-        return entrypoint
+    _copy_entrypoint = staticmethod(_copy_entrypoint)
 
     @pytest.mark.parametrize("subcommand", ["stop"])
     def test_main_import_error_emits_summary_traceback_and_empty_json(
@@ -79,7 +85,8 @@ class TestEntrypointExceptionStages:
 
         assert result.returncode == 0
         assert result.stdout == "{}\n"
-        assert result.stderr.startswith(f"[{subcommand}] 想定外エラー: ImportError: main failure")
+        assert result.stderr.startswith('<agent-toolkit-hook-message source="agent-toolkit/hook" kind="warn" nonce="')
+        assert f"\n[{subcommand}] 想定外エラー: ImportError: main failure" in result.stderr
         assert "Traceback (most recent call last):" in result.stderr
 
     def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
@@ -121,7 +128,8 @@ class TestEntrypointExceptionStages:
         )
         assert result.returncode == 0
         assert not result.stdout
-        assert result.stderr.startswith("[pretooluse] 想定外エラー: RuntimeError: boom")
+        assert result.stderr.startswith('<agent-toolkit-hook-message source="agent-toolkit/hook" kind="warn" nonce="')
+        assert "\n[pretooluse] 想定外エラー: RuntimeError: boom" in result.stderr
         assert "Traceback (most recent call last):" in result.stderr
 
     def test_session_end_cleanup_exception_returns_0_without_json(
@@ -143,23 +151,14 @@ class TestEntrypointExceptionStages:
         )
         assert result.returncode == 0
         assert not result.stdout
-        assert result.stderr.startswith(f"[{subcommand}] 想定外エラー: RuntimeError: boom")
+        assert result.stderr.startswith('<agent-toolkit-hook-message source="agent-toolkit/hook" kind="warn" nonce="')
+        assert f"\n[{subcommand}] 想定外エラー: RuntimeError: boom" in result.stderr
 
 
 class TestStandardInputAndPayloadDump:
     """共通入口のUTF-8境界とpayloadダンプを検証する。"""
 
-    @staticmethod
-    def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
-        entrypoint = tmp_path / "hook.py"
-        entrypoint.write_text(
-            _SCRIPT.read_text(encoding="utf-8").replace("agent_toolkit._hooks", "_hooks"),
-            encoding="utf-8",
-        )
-        hooks = tmp_path / "_hooks"
-        hooks.mkdir()
-        (hooks / "__init__.py").write_text("", encoding="utf-8")
-        return entrypoint
+    _copy_entrypoint = staticmethod(_copy_entrypoint)
 
     @staticmethod
     def _write_echo_module(tmp_path: pathlib.Path, subcommand: str = "pretooluse") -> None:
@@ -224,7 +223,8 @@ class TestStandardInputAndPayloadDump:
         stderr = result.stderr.decode("utf-8")
         assert result.returncode == 0
         assert not result.stdout
-        assert stderr.startswith("[auto-generated: agent-toolkit/hook] hook定義と実装が不整合:")
+        assert stderr.startswith('<agent-toolkit-hook-message source="agent-toolkit/hook" kind="warn" nonce="')
+        assert "\nhook定義と実装が不整合:" in stderr
         assert "stop_advisor" in stderr
         assert "|".join(sorted(_SUBCOMMANDS)) in stderr
 
@@ -238,7 +238,9 @@ class TestStandardInputAndPayloadDump:
 
         assert result.returncode == 0
         assert not result.stdout
-        assert result.stderr.decode("utf-8").startswith("[auto-generated: agent-toolkit/hook] usage: hook.py <")
+        stderr = result.stderr.decode("utf-8")
+        assert stderr.startswith('<agent-toolkit-hook-message source="agent-toolkit/hook" kind="warn" nonce="')
+        assert "\nusage: hook.py <" in stderr
 
     def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:
         """各サブコマンドへ渡す前に共通入口が前身状態を継承する。"""

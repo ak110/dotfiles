@@ -15,9 +15,7 @@ except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}。"
-        f"本スクリプトはplugin同梱パッケージへ依存するため、"
-        f"`uv run --project {_SELF.parents[3]} --locked --no-default-groups {_SELF} <引数>`"
-        f"又は`PYTHONPATH={_SELF.parents[3]} python {_SELF} <引数>`の形で起動する。",
+        "`atk run-script plan-progress -- <引数>`で起動してください。",
         file=sys.stderr,
     )
     sys.exit(2)

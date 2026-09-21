@@ -217,7 +217,7 @@ commit時刻（2026-09-06T14:57:05Z）より後であり、かつ当該セッシ
 次に以下を実行する。
 
 ```sh
-uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/skills/session-review/scripts/session_review_evidence.py --stats <当該記録の絶対パス>
+atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 ```
 
 出力の`stats-compaction-total`の`by_record`から、キーが`codex:`で始まる項目の値の合計を求める。

@@ -74,22 +74,14 @@ def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch:
 
 
 def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """startが同期反映した共有状態からルート識別子の索引を書く。"""
+    """start応答が明示したルート識別子の索引を書く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
-    root = tmp_path / "agents-server" / "root-session"
-    root.mkdir(parents=True)
-    (root / "root.json").write_text(
-        json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
-        encoding="utf-8",
-    )
+    _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
 
-    _POSTTOOLUSE_MODULE._record_agents_server_session_state(
+    _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
         "current-session",
-        {"session_id": "remote-session", "status": "running"},
-        operation="start",
-        owner_agent_id="main",
+        {"root_session_id": "root-session"},
     )
 
     alias = tmp_path / "agents-server" / "aliases" / "current-session.json"
@@ -100,19 +92,59 @@ def test_start_state_record_without_shared_status_does_not_write_alias(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """共有状態からルート識別子を一意に解決できない場合は索引を書かない。"""
+    """応答が所有rootを明示しない場合は索引を書かない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
 
-    _POSTTOOLUSE_MODULE._record_agents_server_session_state(
+    _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
         "current-session",
-        {"session_id": "remote-session", "status": "running"},
-        operation="start",
-        owner_agent_id="main",
+        {"session_id": "remote-session"},
     )
 
     assert not (tmp_path / "agents-server" / "aliases" / "current-session.json").exists()
+
+
+def test_root_alias_uses_explicit_response_without_scanning_other_roots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """同じ子識別子を持つ別rootがあっても応答の所有rootだけへ対応付ける。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    for root_session_id in ("root-a", "root-b"):
+        root = _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory(root_session_id, tmp_path)
+        root.mkdir(parents=True)
+        (root / "root.json").write_text(
+            json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
+            encoding="utf-8",
+        )
+
+    _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
+        "current-session",
+        {"root_session_id": "root-b"},
+    )
+
+    alias = tmp_path / "agents-server" / "aliases" / "current-session.json"
+    assert json.loads(alias.read_text(encoding="utf-8"))["root_session_id"] == "root-b"
+
+
+def test_list_response_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """空のlist応答でも明示された所有rootを現行会話へ対応付ける。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
+    payload = {
+        "session_id": "current-session",
+        "cwd": str(tmp_path),
+        "tool_name": "mcp__plugin_agent-toolkit_agents_server__list",
+        "tool_input": {},
+        "tool_response": {"structuredContent": {"sessions": [], "omitted": 0, "root_session_id": "root-session"}},
+    }
+
+    assert _POSTTOOLUSE_MODULE.main(json.dumps(payload)) == 0
+
+    alias = tmp_path / "agents-server" / "aliases" / "current-session.json"
+    assert json.loads(alias.read_text(encoding="utf-8")) == {"version": 1, "root_session_id": "root-session"}
 
 
 @pytest.mark.parametrize(
@@ -424,7 +456,13 @@ def test_wait_collects_posttooluse_registered_result_and_releases_target(
         "cwd": str(tmp_path),
         "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
         "tool_input": {"prompt": "委譲する", "cwd": str(tmp_path)},
-        "tool_response": {"structuredContent": {"session_id": "remote-session", "status": "running"}},
+        "tool_response": {
+            "structuredContent": {
+                "session_id": "remote-session",
+                "status": "running",
+                "root_session_id": "root-session",
+            }
+        },
     }
     assert _POSTTOOLUSE_MODULE.main(json.dumps(payload)) == 0
     results = _POSTTOOLUSE_MODULE._agents_server_status_file.results_directory("root-session", tmp_path)
@@ -1517,7 +1555,7 @@ class TestPlanFilePostWriteNotice:
         message = payload["hookSpecificOutput"]["additionalContext"]
         assert "書き込み後の検査" in message
         assert "check_plan_file.py" in message
-        assert "[auto-generated: agent-toolkit/posttooluse]" in message
+        assert '<agent-toolkit-hook-message source="agent-toolkit/posttooluse"' in message
 
     def test_plan_file_write_notice_is_executable_as_written(self, tmp_path: pathlib.Path) -> None:
         """案内文がそのまま実行できる形であること。
@@ -1949,14 +1987,26 @@ class TestAgentsServerSessionState:
     @pytest.mark.parametrize(
         ("tool_name", "tool_input", "response"),
         (
-            ("start", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
-            ("start_explore", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
-            ("start_shell", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
+            (
+                "start",
+                {"cwd": "/repo"},
+                {"session_id": "remote", "status": "running", "root_session_id": "root-session"},
+            ),
+            (
+                "start_explore",
+                {"cwd": "/repo"},
+                {"session_id": "remote", "status": "running", "root_session_id": "root-session"},
+            ),
+            (
+                "start_shell",
+                {"cwd": "/repo"},
+                {"session_id": "remote", "status": "running", "root_session_id": "root-session"},
+            ),
             ("wait", {}, {"session_id": "remote", "status": "completed", "agent_message": "完了"}),
             ("send_message", {"session_id": "remote"}, {"delivery": "reply_started"}),
             ("kill", {"session_id": "remote"}, {"status": "interrupted", "kill_requested": True}),
             ("stop", {"session_id": "remote"}, {}),
-            ("list", {}, {"sessions": [], "omitted": 0}),
+            ("list", {}, {"sessions": [], "omitted": 0, "root_session_id": "root-session"}),
         ),
     )
     def test_reduced_success_responses_have_no_missing_fields(

@@ -1648,6 +1648,74 @@ def test_warn_keeps_hook_marker_in_hook_record(
     assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": notice}]
 
 
+def test_warn_keeps_xml_hook_marker_in_hook_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """XML境界のwarn通知を実行時警告として返す。"""
+    notice = (
+        '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n'
+        "実行時の警告\n"
+        "</agent-toolkit-hook-message>"
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-xml-warn",
+                    "content": [notice],
+                }
+            )
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "実行時の警告"}]
+
+
+def test_hook_notices_mode_parses_xml_boundary_without_closing_tag(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """XML境界の属性と本文を分類し、閉じタグを種別本文から除く。"""
+    notice = (
+        '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n'
+        "入力を補正した\n"
+        "</agent-toolkit-hook-message>"
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-xml-notice",
+                    "content": [notice],
+                }
+            )
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "hook-notice",
+            "hook": "agent-toolkit/pretooluse",
+            "hook_name": "PreToolUse:Bash",
+            "tag": "warn",
+            "kind_text": "入力を補正した",
+            "count": 1,
+        },
+        {"kind": "summary", "count": 1},
+    ]
+
+
 def test_warn_keeps_command_output_warning(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

@@ -17,7 +17,7 @@
 `atk plans commit`が保存する付属ファイルは計画ファイル（バグ）と実行レビュー指摘管理表だけとする。
 計画stemで始まるそれ以外のファイルは保存されず、同じ操作で作業側から削除される。
 計画に属さない作業ファイルは、計画stemとは別の名前で管理対象一時領域へ保存する。
-新規作成は`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/create_plan_files.py`を経由し、実装前の計画ファイルは作業root直下へ作成する。
+新規作成は`atk run-script plan-create --`を経由し、実装前の計画ファイルは作業root直下へ作成する。
 作成処理は同じstemに属する全ファイルを排他的に確定し、読み戻しと計画構造検査に成功してからパスを返す。
 stemは起動経路ごとに次のとおりとし、`dd`は作成日、`HHmm`は作成時刻とする。同じstemが既にある場合は作成処理が`-<小文字16進数4桁>`を付けて再試行する。
 
@@ -229,7 +229,7 @@ WI由来の行は、区分に続けて半角空白1字を置き、半角丸括�
 
 `## 進捗ログ`は実装工程を中断後に再開できる粗い記録として、`日時`、`完了した工程`、`結果・特記事項`の3列表を置く。
 起草時は内容行を置かず、新規作成の受理条件も内容行を持たない本文とする。
-実装開始後の追記は`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/append_progress_log.py <計画ファイル> --completed-step <完了した工程> --result <結果・特記事項>`で行う。日時は同処理が実行時のローカル時計から生成し、呼び出し側は日時を渡さない。
+実装開始後の追記は`atk run-script plan-progress -- <計画ファイル> --completed-step <完了した工程> --result <結果・特記事項>`で行う。日時は同処理が実行時のローカル時計から生成し、呼び出し側は日時を渡さない。
 実装開始後は、中断した主体が再開時に次の工程を選べる情報を追記する。commitの完了、近接検証の結果、実行レビューの収束、完了判定と、専用worktreeを用いる経路ではその絶対パス、専用branch名、作成時HEADの短縮OID、回収対象がこれに当たる。
 `agent-toolkit:process-wi`のレーンでは、統合の行の結果・特記事項へ`レーン稼働時間: <秒数>秒`を書く。秒数はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とする。
 完了報告を発行する主体は、`## 要件・外部仕様`の完了条件について各条件の充足根拠又は未達理由を進捗ログの最終行へ記録する。
@@ -253,14 +253,13 @@ GFM表のセルにリテラルの`|`を含める場合は、コードスパン�
 
 `skills/plan-mode/scripts/check_plan_file.py`が計画の構造と実体を検査する。
 同じ祖先見出しの下に同じ文言の見出しが複数現れる状態は不正とする。
-本スクリプトはplugin同梱の`agent_toolkit`パッケージへ依存するため、次のいずれかの形で実行する。引数には計画ファイル`<計画名>.md`の絶対パスを渡す。
+引数には計画ファイル`<計画名>.md`の絶対パスを渡し、現在のagent-toolkit環境から次の形で実行する。
 
 ```sh
-uv run --project <plugin rootの絶対パス> --locked --no-default-groups /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
-PYTHONPATH=<plugin rootの絶対パス> python /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
+atk run-script plan-check -- --reject-migration-warnings /absolute/path/to/plan.md
 ```
 
-`uvx --from agent-toolkit python <スクリプトの絶対パス>`はそのパッケージを解決せず、本スクリプトはその解決の失敗を検出した場合に上記の起動形を示して終了コード2で終わる。
+内部scriptを別のPythonから直接起動してplugin packageを解決できない場合は、上記の公開入口を示して終了コード2で終わる。
 対象リポジトリがセッションの作業ディレクトリと異なる場合は`--work-dir /absolute/path/to/target-repository`を付ける。
 専用worktreeで作業する場合は、そのworktreeを作業ディレクトリとして検査するか、`--work-dir`へそのworktreeの絶対パスを渡す。
 本スクリプトは`--work-dir`が解決するGitルートを計画メタ情報の`対象リポジトリ`と照合するため、複製元の作業ツリーから実行するとその照合が成立せず、計画が拒否される。

@@ -278,3 +278,8 @@ error: invalid model selection (--model "gemini-3.8-flash" --effort ""): --model
 同じ呼び出しへ`--effort low`を加えると終了コード0で終わり、標準出力へ`OK`だけを書いた。
 この実測により、`--model`へベース名を渡し`--effort`を別に渡す`agent_toolkit/_agents_server/antigravity.py`の`build_command`の形が、現行版で成立することを確認した。
 再検証は、`agy models`の出力から完全スラッグの接尾辞の有無を確認し、`agy -p 'reply with OK only' --model <ベース名>`を`--effort`の有無で1回ずつ実行して終了コードと標準エラーを比べる。
+
+## agent-toolkit/skills/delegation/references/codex-runtime.md：Codexネイティブ委譲の入力境界：2026年9月21日
+
+2026年9月21日、Codex CLI 0.155.1で実測した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動した検体では共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
+再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力する検体と、`_agents_server/state.py`の通常・軽量promptの検体を実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範及び軽量経路の境界を照合する。

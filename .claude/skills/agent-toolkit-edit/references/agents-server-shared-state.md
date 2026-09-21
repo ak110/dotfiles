@@ -32,11 +32,12 @@ CodexのPostToolUseフックは、所有session識別子があり環境変数か
 | 状態ファイルの生存の印`heartbeat_at` | 状態ファイルを書き込むMCPサーバー | statusline、同じルートに属する他のMCPサーバー | その状態ファイルを書き込むMCPサーバー |
 | 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在 | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成と削除）、待機CLI（自身の書込主体が公開した結果だけを削除） |
 | CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop時の未観測作業の助言 | `atk agents wait`。1書込主体につき同時に1実行だけが全対象を待ち、ロックファイル自体は解放後も保持する |
+| CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`と`current.json` | 先行waitへ合流する後続`atk agents wait` | 先行waitが`running`と`published`及び再待機が必要かを示す`continuable`を書き、結果を返した後続waitが`consumed`を書く |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
 | 全sessionの終端登録と再開情報 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー | そのsessionを所有するMCPサーバー |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | session-reviewの証拠抽出器 | agents_serverのCodex backend |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify` |
-| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`系応答の`session_id`を共有状態ファイルへ照合する） |
+| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`系と`list`の応答が明示する`root_session_id`を使う） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
 | 委譲先CLI自身の診断記録 | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成、初期化完了後の改名と、保持世代を超えた記録の削除） |
 | engineの可用性を理由に除外した候補 | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
@@ -45,7 +46,8 @@ CodexのPostToolUseフックは、所有session識別子があり環境変数か
 診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
 
 索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
-MCPサーバーは`start`系の応答を返す前に起動したsessionを状態ファイルへ同期反映する。PostToolUseフックは応答の`session_id`を状態ファイルへ照合し、一意に得たルートsession識別子を索引へ書く。公開応答が持つのは公開契約上の項目とし、索引用の内部識別子は状態ファイル側へ置く。
+MCPサーバーは`start`系と`list`の応答へ、自身の状態ファイル書込先である`root_session_id`を明示する。`list`はsession一覧が空でも同じ項目を返す。PostToolUseフックは応答の当該項目を索引へ直接書き、子session識別子から状態ディレクトリを逆引きしない。
+`atk agents list`と`atk agents wait`は、索引又は現行識別子自身の状態ディレクトリから会話rootとの対応を確認する。対応を確認できず対象が0件の場合は、CLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行する復旧手順を返す。対応確認済みの空状態は通常の空状態として扱う。
 `atk agents notify`は委譲先から`AGENT_TOOLKIT_OWNER_SESSION`で所有者sessionを直接解決するため、索引の読み取りを省く。
 子から親へ通知する経路では所有者sessionが宛先の正本であり、現行のsession識別子から解決すると宛先が自分自身になるためである。
 
@@ -56,7 +58,7 @@ MCPサーバーは`start`系の応答を返す前に起動したsessionを状態
 - 新しい状態は1つの表現で保持する形へ設計する。未回収の終端結果は、そのファイルを書いた主体の公開台帳とファイルの在否から`published`、`consumed`、`unpublished`へ区分する。回収済みと判定するのは`consumed`だけとし、判定の入力には公開台帳とファイルの在否の両方を用いる。`SessionState.result_delivered`はファイルを削除する契機を表す内部状態であり、ファイル表現を持たない経路に限り用いる。
 - MCP待機とCLI待機は`status_file.take_result`で所有者照合、排他取得、本文の読取及び削除を1つの区間として実行する。個別の待機入口は同じ関数を呼び、結果ファイルの読取と削除もその区間の内側で行う。
 - 待機所有権と待機対象の登録は、いずれも書込主体を単位とする名前空間で表す。読む側も同じ単位で読み、探す対象は書込主体を名前とするロックと登録とする。
-- `atk agents wait`の前景実行と背景実行は、書込主体ごとに同時に1つとする。後発は書込主体、対象session群及び「先行待機の終了後に再実行する」という次の操作を含む診断で終了する。ロックの単位は書込主体とする。対象sessionごとのロックは、動的に増える対象間で一部だけ所有する状態を生じさせるため用いない。
+- `atk agents wait`の前景実行と背景実行は、書込主体ごとに同時に1つとする。後発は`current.json`が示すrun IDを固定し、同じロックの解放後にそのrunの本文と終了コードを返す。返却後は`consumed`へ遷移させ、結果の再演は1回に限る。ロック解放後に開始する後続waitも、対象集合が一致し、`continuable`がfalseの`published`か`consumed`であればそのrunを返す。待機上限への到達又は通知だけを返したrunは`continuable`をtrueとする。次の発行は新規runを開始する。run記録がない旧形式のlockだけを観測した場合は、旧形式との競合を示す診断で終了する。ロックの単位は書込主体とし、対象sessionごとのロックは除外する。
 
 各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルに加え、生存の印が失効した他の状態ファイルを削除できる。生存の印を持たない状態ファイルは保持する。`results`配下は共有するため、削除できるのは結果本文を呼び出し元へ配送した後と、`stop`による明示的な破棄の後だけとする。削除の契機はこの2つに限り、経過時間は契機から外す。`notices`および`hosts`配下も共有するため、各書込主体が削除できるのは保持期限を超えたファイルだけとする。`sessions`配下の登録簿レコードを削除できるのはそのsessionを所有するMCPサーバーだけとし、削除の契機は`stop`による明示的な破棄と保持期限の経過に限る。終端を観測した待機側はそのレコードを保持する。
 

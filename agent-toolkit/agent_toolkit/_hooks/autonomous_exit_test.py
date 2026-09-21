@@ -146,6 +146,36 @@ class TestApproveConditions:
         decision = _parse_decision(result)
         assert "decision" not in decision
 
+    def test_pending_agents_server_observation_approves(self, tmp_path: pathlib.Path):
+        """終端済みでも未回収のagents_server結果があれば終了再促を保留する。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
+            tmp_path,
+            "pending-observation",
+            {"agents_server_sessions": {"remote-session": {"pending_observation": True, "owner_agent_id": "main"}}},
+        )
+        result = _run(
+            {"session_id": "pending-observation", "transcript_path": str(transcript), "background_tasks": []},
+            state_dir=tmp_path,
+        )
+
+        assert "decision" not in _parse_decision(result)
+
+    def test_observed_agents_server_result_preserves_block_path(self, tmp_path: pathlib.Path):
+        """回収済みのagents_server結果だけなら現行の終了工程再促へ戻る。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
+            tmp_path,
+            "observed-result",
+            {"agents_server_sessions": {"remote-session": {"pending_observation": False, "owner_agent_id": "main"}}},
+        )
+        result = _run(
+            {"session_id": "observed-result", "transcript_path": str(transcript), "background_tasks": []},
+            state_dir=tmp_path,
+        )
+
+        assert _parse_decision(result).get("decision") == "block"
+
     def test_empty_background_tasks_preserve_block_path(self, tmp_path: pathlib.Path):
         """空のStop payloadでは現行の終了工程再促へ戻る。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])

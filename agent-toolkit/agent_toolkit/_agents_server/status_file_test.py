@@ -131,18 +131,62 @@ def test_resolve_root_session_id(environment: dict[str, str], expected: str | No
 
 
 def test_conversation_root_resolution_uses_only_alias_with_existing_target(tmp_path: pathlib.Path) -> None:
-    """索引が無い場合と参照先が無い場合は現行識別子へ戻り、有効な索引だけを採用する。"""
+    """索引の有無、妥当性及び参照先の実在を別々の解決状態として返す。"""
     environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
-    assert subject.resolve_conversation_root_session_id(environment, tmp_path) == "current-session"
+    resolution = subject.resolve_conversation_root(environment, tmp_path)
+    assert resolution == subject.ConversationRootResolution(
+        current_session_id="current-session",
+        root_session_id="current-session",
+        alias_present=False,
+        alias_valid=False,
+        mapping_confirmed=False,
+    )
 
     aliases = subject.aliases_directory(tmp_path)
     aliases.mkdir(parents=True)
     alias_path = aliases / "current-session.json"
     alias_path.write_text(json.dumps({"version": 1, "root_session_id": "root-session"}), encoding="utf-8")
-    assert subject.resolve_conversation_root_session_id(environment, tmp_path) == "current-session"
+    resolution = subject.resolve_conversation_root(environment, tmp_path)
+    assert resolution is not None
+    assert resolution.root_session_id == "current-session"
+    assert resolution.alias_present is True
+    assert resolution.alias_valid is True
+    assert resolution.mapping_confirmed is False
 
     subject.status_directory("root-session", tmp_path).mkdir()
-    assert subject.resolve_conversation_root_session_id(environment, tmp_path) == "root-session"
+    resolution = subject.resolve_conversation_root(environment, tmp_path)
+    assert resolution is not None
+    assert resolution.root_session_id == "root-session"
+    assert resolution.mapping_confirmed is True
+
+
+def test_conversation_root_resolution_confirms_direct_root_directory(tmp_path: pathlib.Path) -> None:
+    """索引が無くても現行識別子自身の状態ディレクトリがあれば対応を確認済みとする。"""
+    environment = {"CLAUDE_CODE_SESSION_ID": "root-session"}
+    subject.status_directory("root-session", tmp_path).mkdir(parents=True)
+
+    resolution = subject.resolve_conversation_root(environment, tmp_path)
+
+    assert resolution is not None
+    assert resolution.root_session_id == "root-session"
+    assert resolution.alias_present is False
+    assert resolution.mapping_confirmed is True
+
+
+def test_conversation_root_resolution_rejects_invalid_alias(tmp_path: pathlib.Path) -> None:
+    """不正な索引は現行識別子へ戻し、対応未確認として扱う。"""
+    environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
+    aliases = subject.aliases_directory(tmp_path)
+    aliases.mkdir(parents=True)
+    (aliases / "current-session.json").write_text("{}", encoding="utf-8")
+
+    resolution = subject.resolve_conversation_root(environment, tmp_path)
+
+    assert resolution is not None
+    assert resolution.root_session_id == "current-session"
+    assert resolution.alias_present is True
+    assert resolution.alias_valid is False
+    assert resolution.mapping_confirmed is False
 
 
 def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib.Path) -> None:

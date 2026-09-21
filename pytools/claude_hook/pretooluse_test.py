@@ -68,9 +68,7 @@ class TestHomeClaudeEditWarning:
         msg = _get_additional_context(result)
         assert "~/.claude/" in msg
         assert ".chezmoi-source/dot_claude/" in msg
-        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
-        assert "自動生成のhook通知" in msg
+        assert '<agent-toolkit-hook-message source="dotfiles/claude_hook_pretooluse" kind="warn"' in msg
 
     def test_edit_warns(self):
         target = str(_HOME / ".claude" / "CLAUDE.md")
@@ -318,9 +316,7 @@ class TestPersonalFileMentionWarning:
         msg = _get_additional_context(result)
         assert _LOCAL_MD in msg
         assert "warn" in msg.lower()
-        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
-        assert "自動生成のhook通知" in msg
+        assert '<agent-toolkit-hook-message source="dotfiles/claude_hook_pretooluse" kind="warn"' in msg
 
     def test_edit_reference_warns_but_passes(self):
         result = _run(
@@ -641,9 +637,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         message = _get_additional_context(result)
         assert name in message
         assert "generalized wording" in message
-        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in message
-        assert "自動生成のhook通知" in message
+        assert '<agent-toolkit-hook-message source="dotfiles/claude_hook_pretooluse"' in message
 
     def test_warn_in_agent_toolkit_rules(self):
         target = str(_AT_RULES_DIR / "01-agent.md")
@@ -814,7 +808,7 @@ class TestPytoolsCommandLaunchFormBlock:
         message = _get_additional_context(result)
         assert _PYTOOLS_COMMAND in message
         assert "uv tool install" in message
-        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in message
+        assert '<agent-toolkit-hook-message source="dotfiles/claude_hook_pretooluse"' in message
 
     def test_warns_in_edit_new_string(self):
         result = _run(
@@ -912,7 +906,7 @@ class TestAgentToolkitEditSkillWarning:
         msg = _get_additional_context(result)
         assert "agent-toolkit-edit" in msg
         assert "Invoke the skill" in msg
-        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
+        assert '<agent-toolkit-hook-message source="dotfiles/claude_hook_pretooluse" kind="warn"' in msg
 
     def test_points_to_files_when_skill_is_not_resolvable(self, tmp_path: pathlib.Path):
         """dotfiles外のセッションには、起動できないスキルではなく参照先の絶対パスを示す。"""

@@ -33,6 +33,8 @@ import pathlib
 import sys
 import traceback
 
+from agent_toolkit._hooks.notice import formatter as _notice_formatter
+
 _SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "pretooluse",
@@ -56,10 +58,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 # 例外時に`_approve()`で終了を許可する対象。出力形式はStop系モジュールの実装へ委ねる。
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop"})
 
-# 複数hookが共存する環境で自身の出力を判別するための標識。書式は`agent-toolkit:writing-standards`の
-# メッセージ標識契約に従う。終了コード0の標準エラー出力はコーディングエージェントへ直接渡らないため、
-# 同契約のサフィックスは付けない。
-_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/hook]"
+_llm_notice = _notice_formatter("agent-toolkit/hook")
 
 
 def _configure_standard_output() -> None:
@@ -86,15 +85,22 @@ def main(argv: list[str]) -> int:
     _configure_standard_output()
     known_subcommands = "|".join(sorted(_SUBCOMMANDS))
     if not argv:
-        print(f"{_MESSAGE_PREFIX} usage: hook.py <{known_subcommands}>", file=sys.stderr)
+        print(
+            _llm_notice(f"usage: hook.py <{known_subcommands}>", tag="warn", removable_cause=False),
+            file=sys.stderr,
+        )
         return 0
     if argv[0] not in _SUBCOMMANDS:
         print(
-            f"{_MESSAGE_PREFIX} hook定義と実装が不整合: 未知のサブコマンド'{argv[0]}'を受領した。"
-            f"現行のサブコマンド: {known_subcommands}。"
-            "呼び出し元のhook定義の登録名と現行のサブコマンドを照合する。"
-            "稼働中のセッションが起動時に読んだ旧定義を保持している場合は、"
-            "プラグインを更新してセッションを再起動すると解消する。",
+            _llm_notice(
+                f"hook定義と実装が不整合: 未知のサブコマンド'{argv[0]}'を受領した。"
+                f"現行のサブコマンド: {known_subcommands}。"
+                "呼び出し元のhook定義の登録名と現行のサブコマンドを照合する。"
+                "稼働中のセッションが起動時に読んだ旧定義を保持している場合は、"
+                "プラグインを更新してセッションを再起動すると解消する。",
+                tag="warn",
+                removable_cause=False,
+            ),
             file=sys.stderr,
         )
         return 0
@@ -104,7 +110,11 @@ def main(argv: list[str]) -> int:
         payload_text = payload_bytes.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         print(
-            f"{_MESSAGE_PREFIX} stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
+            _llm_notice(
+                f"stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
+                tag="warn",
+                removable_cause=False,
+            ),
             file=sys.stderr,
         )
         return 0
@@ -128,7 +138,14 @@ def main(argv: list[str]) -> int:
         frame = tb[-1] if tb else None
         location = f" ({pathlib.Path(frame.filename).name}:{frame.lineno})" if frame is not None else ""
         label = argv[0]
-        print(f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}", file=sys.stderr)
+        print(
+            _llm_notice(
+                f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}",
+                tag="warn",
+                removable_cause=False,
+            ),
+            file=sys.stderr,
+        )
         traceback.print_exc()
         if argv[0] in _APPROVE_FALLBACK_SUBCOMMANDS:
             approve = getattr(module, "_approve", None)

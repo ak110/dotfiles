@@ -81,8 +81,23 @@ def _inputs(
     timings.write_text(
         json.dumps(
             {
-                phase: {"started_at": f"2026-09-12T00:00:0{index}+00:00", "finished_at": f"2026-09-12T00:00:0{index + 1}+00:00"}
-                for index, phase in enumerate(report.PHASES)
+                "prepare": {
+                    "category": "preparation",
+                    "source": "prepareイベント",
+                    "started_at": "2026-09-12T00:00:00+00:00",
+                    "finished_at": "2026-09-12T00:00:01+00:00",
+                },
+                "delegate": {
+                    "category": "delegate-runtime",
+                    "source": "delegateイベント",
+                    "started_at": "2026-09-12T00:00:01+00:00",
+                    "finished_at": "2026-09-12T00:00:05+00:00",
+                },
+                "parent-review": {
+                    "category": "parent-review",
+                    "source": "親記録",
+                    "unknown_reason": "終了時刻が記録されていない",
+                },
             },
             ensure_ascii=False,
         ),
@@ -97,6 +112,7 @@ def _inputs(
                 "non_reducible_reason": "人間の判断が必要",
                 "unmeasured_intervals": [{"interval": "外部待機", "reason": "記録に時刻が無い"}],
                 "extractor_event": {"kind": "failed-tool", "value": "CommandExecution"},
+                "comparison_intervals": ["prepare", "delegate"],
             },
             ensure_ascii=False,
         ),
@@ -141,7 +157,9 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     assert "- 削減不能部分: 人間の判断が必要" in content
     assert "- 未計測区間: 外部待機（記録に時刻が無い）" in content
     assert "- 抽出器イベント: failed-tool=CommandExecution" in content
-    assert "- 180秒目標との比較: 改善後見込み3.500秒、目標を176.500秒下回る" in content
+    assert "| parent-review | parent-review | 不明 | 親記録: 終了時刻が記録されていない |" in content
+    assert "- 比較対象区間: prepare、delegate" in content
+    assert "- 180秒目標との比較: 同一区間集合の改善後見込み2.500秒、目標を177.500秒下回る" in content
     assert (
         tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS
     )
@@ -382,7 +400,7 @@ def test_input_structure_help_matches_the_accepted_forms() -> None:
     help_text = report._INPUT_STRUCTURE_HELP  # pylint: disable=protected-access  # noqa: SLF001
 
     assert "--analyses: 分析の識別子をキーとするJSON object" in help_text
-    assert "--timings: 工程名をキーとするJSON object" in help_text
+    assert "--timings: 区間IDをキーとするJSON object" in help_text
     assert "--duration-analysis: 次のキーを持つJSON object" in help_text
     assert "candidate_id: candidates.jsonlの候補を参照する識別子" in help_text
     assert "`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する" in help_text
@@ -399,6 +417,7 @@ def test_input_structure_help_matches_the_accepted_forms() -> None:
         ("non_reducible_reason", ""),
         ("unmeasured_intervals", [{"interval": "区間"}]),
         ("extractor_event", {"kind": "failed-tool", "value": ""}),
+        ("comparison_intervals", []),
     ),
 )
 def test_duration_analysis_rejects_invalid_fields(tmp_path: pathlib.Path, field: str, value: object) -> None:
@@ -436,6 +455,31 @@ def test_check_rejects_duration_analysis_changes(tmp_path: pathlib.Path) -> None
     paths[-1].write_text(content, encoding="utf-8")
 
     assert report.main(_argv(paths, "check")) == 2
+
+
+def test_unobserved_comparison_interval_is_reported_as_unknown(tmp_path: pathlib.Path) -> None:
+    """未観測区間を0秒扱いせず、目標比較を未確定にする。"""
+    paths = _inputs(tmp_path)
+    duration_analysis = json.loads(paths[4].read_text(encoding="utf-8"))
+    duration_analysis["comparison_intervals"] = ["parent-review"]
+    paths[4].write_text(json.dumps(duration_analysis, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 0
+    content = paths[-1].read_text(encoding="utf-8")
+    assert "- 180秒目標との比較: 未確定（未観測区間: parent-review）" in content
+
+
+def test_comparison_uses_only_the_declared_observed_population(tmp_path: pathlib.Path) -> None:
+    """短縮前後の比較へ指定した同一区間集合だけを合計する。"""
+    paths = _inputs(tmp_path)
+    duration_analysis = json.loads(paths[4].read_text(encoding="utf-8"))
+    duration_analysis["comparison_intervals"] = ["delegate"]
+    duration_analysis["reduction"]["seconds"] = 1.0
+    paths[4].write_text(json.dumps(duration_analysis, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 0
+    content = paths[-1].read_text(encoding="utf-8")
+    assert "同一区間集合の改善後見込み3.000秒" in content
 
 
 def test_uncertain_candidate_cannot_be_excluded_without_reason(tmp_path: pathlib.Path) -> None:

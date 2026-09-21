@@ -64,7 +64,8 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         assert body is not None
         return send_notification(body)
     env = os.environ if environment is None else environment
-    root_session_id = status_file.resolve_conversation_root_session_id(env)
+    root_resolution = status_file.resolve_conversation_root(env)
+    root_session_id = None if root_resolution is None else root_resolution.root_session_id
     if args.agents_subcommand == "list":
         sessions = (
             _load_sessions(root_session_id)
@@ -75,6 +76,12 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             sessions = [
                 session for session in sessions if session.get("status") == "running" or session.get("result_available") is True
             ]
+        if not sessions and root_resolution is not None and not root_resolution.mapping_confirmed:
+            print(
+                status_file.unconfirmed_root_recovery_message(root_resolution, "atk agents list"),
+                file=sys.stderr,
+            )
+            return 4
         print(_dump({"sessions": [_without_prompt(session) for session in sessions]}, env))
         return 0
     if root_session_id is None:

@@ -25,7 +25,7 @@ ready一覧とactive一覧は公開工程の開始時点の内容のまま扱い
 
 メインは公開工程の工程のうち、版数更新、生成物同期、全体検証の要否判定、push、CI確認、検証失敗時の主作業ツリーでの修正、固有の終端工程及び延期`adopt`を1件の終端担当へ1回だけ委譲する。起動、渡す入力、受領と検収は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`が定める。同書を全文読んでから起動する。終端担当は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「生成物とpush」に従い、対象リポジトリのタスクランナーが定める全体検査とCIの同値性から全体検証の要否を決める。終端担当の稼働中に対象リポジトリの主作業ツリーへ書き込む主体は、終端担当だけとする。
 
-通常の公開では`検証・CI方針: 通常`を渡す。`SKILL.md`「局所変更の即時公開」の条件が全て成立する場合だけ、`検証・CI方針: 即時対応`と、成功した近接検査のコマンド・終了コード、正式対応AWIのファイル名を渡す。即時対応では全体検査とCI成功の待機を省略するが、push後のCI起動とrun URLは確認する。省略した全体検査、未確定のCI、run URL及び正式対応AWIをcompletion-reportへ含める。
+通常の公開では`検証・CI方針: 通常`を渡す。`SKILL.md`「局所変更の即時公開」の条件が全て成立する場合だけ、`検証・CI方針: 即時対応`と、成功した近接検査のコマンド・終了コード、後続処置AWIのファイル名又は`なし`を渡す。即時対応では全体検査とCI成功の待機を省略するが、push後のCI起動とrun URLは確認する。省略した全体検査、未確定のCI、run URL及び後続処置AWIをcompletion-reportへ含める。
 
 completion-reportが報告する前に、メインがベースbranchの公開状態を1回観測する。
 観測は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`の「受領と検収」節を全文読んでから、同節が挙げる4つの観測項目を現在のGit状態から再取得して行う。終端担当が返した`base_branch_state`は参考値として扱う。

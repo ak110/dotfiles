@@ -1,7 +1,6 @@
-# サブエージェント定義ファイルの記述基準（Claude Code固有）
+# サブエージェント定義ファイルと委譲文書の記述基準
 
-`agents/`配下のサブエージェント定義ファイルの新規作成・改訂と、サブエージェントが関与する手順の
-作成・改訂で満たす基準を定める。
+`agents/`配下のClaude Codeサブエージェント定義ファイルの新規作成・改訂と、Claude Code又はCodexの委譲先が関与する手順の作成・改訂で満たす基準を定める。
 frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agents.md`を正本とする。
 
 ## ディレクトリ構成
@@ -96,6 +95,8 @@ frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agent
 
 起動経路を問わず、委譲元と委譲先の文脈が独立することを前提として手順を設計する。設計時の判定は`agent-toolkit:delegation`の`references/base-contract.md`を正本とする。
 `agents_server`で起動した委譲先が起動時に受け取るものは、起動プロンプトと、`agent-toolkit:delegation`の`references/runtime-routing.md`「経路」が定める起動条件で決まる。この委譲先が受け取る範囲は、この2つに限る。
+
+Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns`が選ぶ会話履歴、対象worktreeから自動読込される`AGENTS.md`、及び`SubagentStart` hookが追加する委譲先規範を別々の入力として扱う。会話履歴へ規範が含まれることをhook配送の代わりにせず、共通委譲先規範は`rules-subagent.md`を正本としてCodex hookとagents_serverの通常委譲へ同期する。Claude Code固有の委譲先規範はCodexへ配送せず、軽量な探索・書込・shell経路へ共通規範を配送しない契約も維持する。
 
 `Agent`ツールで`agents/`配下の定義から起動したサブエージェントが起動時に受け取るものは次のとおりとする。
 

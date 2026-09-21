@@ -90,6 +90,7 @@ uv run --frozen pyfltr fast                             # 高速ツールと生�
 | `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 
 `scripts/sync_codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を同期する。
+Codex向け`agents_server`は、plugin rootを作業ディレクトリに固定した`uv run --project . --locked --no-default-groups agent_toolkit/agents_server_mcp.py`として生成する。Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
 
 agent-toolkitには、公開互換入口である`install-claude.sh`・`install-claude.ps1`を使う単体導入と、

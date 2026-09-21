@@ -2,19 +2,94 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import os
 import pathlib
 import sys
 import time
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
+
+
+def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Path | None) -> pathlib.Path:
+    return status_file.status_directory(root_session_id, state_root) / "wait-results" / owner
+
+
+def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def _read_json(path: pathlib.Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _matching_current_wait_run(run_directory: pathlib.Path, targets: list[str]) -> pathlib.Path | None:
+    current = _read_json(run_directory / "current.json")
+    run_id = current.get("run_id") if current is not None else None
+    if not isinstance(run_id, str):
+        return None
+    run_path = run_directory / f"{run_id}.json"
+    run = _read_json(run_path)
+    if run is None or run.get("targets") != targets:
+        return None
+    if run.get("continuable") is True and run.get("status") in {"published", "consumed"}:
+        return None
+    return run_path
+
+
+def _publish_wait_result(
+    run_path: pathlib.Path,
+    output: str,
+    code: int,
+    *,
+    stream: str = "stdout",
+    continuable: bool = False,
+) -> int:
+    value = _read_json(run_path) or {}
+    value.update(
+        {
+            "status": "published",
+            "output": output,
+            "exit_code": code,
+            "stream": stream,
+            "continuable": continuable,
+        }
+    )
+    _write_json(run_path, value)
+    print(output, file=sys.stderr if stream == "stderr" else sys.stdout)
+    return code
+
+
+def _consume_wait_result(run_path: pathlib.Path) -> int:
+    value = _read_json(run_path)
+    if value is None:
+        return _fail(f"先行する待機の結果記録を読めません: {run_path}", 8)
+    if value.get("status") == "consumed":
+        print(json.dumps({"status": "consumed", "run_id": value.get("run_id")}, ensure_ascii=False, separators=(",", ":")))
+        return 8
+    output = value.get("output")
+    code = value.get("exit_code")
+    stream = value.get("stream")
+    if value.get("status") != "published" or not isinstance(output, str) or not isinstance(code, int):
+        return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8)
+    print(output, file=sys.stderr if stream == "stderr" else sys.stdout)
+    value["status"] = "consumed"
+    _write_json(run_path, value)
+    return code
 
 
 def _fail(message: str, code: int, *, session_id: str | None = None) -> int:
@@ -83,7 +158,8 @@ def wait_for_result(
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
-    root_session_id = status_file.resolve_conversation_root_session_id(env, state_root)
+    root_resolution = status_file.resolve_conversation_root(env, state_root)
+    root_session_id = None if root_resolution is None else root_resolution.root_session_id
     try:
         identity = status_file.resolve_status_owner_identity(env, state_root)
     except ValueError as error:
@@ -108,6 +184,11 @@ def wait_for_result(
     ordered_ids = sorted(origins)
     own_sessions = _read_sessions(own_status_path)
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
+        if root_resolution is not None and not root_resolution.mapping_confirmed:
+            return _fail(
+                status_file.unconfirmed_root_recovery_message(root_resolution, "atk agents wait"),
+                4,
+            )
         return _fail(
             "待機対象の登録が0件で、保持中のsessionも0件です。"
             "委譲先を起動してから`atk agents wait`を実行してください: "
@@ -123,16 +204,43 @@ def wait_for_result(
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_path = lock_directory / f"{identity.file_name}.lock"
     lock_file = lock_path.open("a+b")
+    owns_lock = False
+    run_path: pathlib.Path | None = None
     try:
         try:
             acquire_lock(lock_file, blocking=False)
+            owns_lock = True
         except OSError:
             _LOG.info("wait_lock_failed owner=%s targets=%s", identity.file_name, ",".join(ordered_ids) or "none")
-            return _fail(
-                "同じ書込主体の待機を別の実行が保持しています。先行する`atk agents wait`の終了を待ってから再実行してください: "
-                f"owner={identity.file_name}, targets={','.join(ordered_ids) or 'none'}",
-                8,
-            )
+            run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
+            current = _read_json(run_directory / "current.json")
+            run_id = current.get("run_id") if current is not None else None
+            if not isinstance(run_id, str):
+                return _fail(
+                    "同じ書込主体の旧形式の待機がlockを保持しています: "
+                    f"owner={identity.file_name}, targets={','.join(ordered_ids) or 'none'}",
+                    8,
+                )
+            run_path = run_directory / f"{run_id}.json"
+            acquire_lock(lock_file, blocking=True)
+            owns_lock = True
+            return _consume_wait_result(run_path)
+        run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
+        current_run_path = _matching_current_wait_run(run_directory, ordered_ids)
+        if current_run_path is not None:
+            return _consume_wait_result(current_run_path)
+        run_id = uuid.uuid4().hex
+        run_path = run_directory / f"{run_id}.json"
+        _write_json(
+            run_path,
+            {
+                "run_id": run_id,
+                "status": "running",
+                "targets": ordered_ids,
+                "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            },
+        )
+        _write_json(run_directory / "current.json", {"run_id": run_id})
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         started_at = time.monotonic()
@@ -146,7 +254,8 @@ def wait_for_result(
                 state_root,
             )
             if target_error is not None:
-                return _fail(*target_error)
+                message, code = target_error
+                return _publish_wait_result(run_path, message, code, stream="stderr")
             for session_id in sorted(set(current_origins) - set(ordered_ids)):
                 ordered_ids.append(session_id)
                 ordered_ids.sort()
@@ -159,7 +268,6 @@ def wait_for_result(
             status_paths = status_file.list_status_files(root_session_id, state_root)
             collected: list[dict[str, Any]] = []
             read_failure: tuple[str, int] | None = None
-            failed_session_id: str | None = None
             for session_id in ordered_ids:
                 result_path = result_directory / f"{session_id}.json"
                 result, read_error = status_file.take_result(
@@ -171,7 +279,6 @@ def wait_for_result(
                 )
                 if read_error is not None:
                     read_failure = (f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
-                    failed_session_id = session_id
                     break
                 notices = status_file.take_notices(root_session_id, session_id, state_root)
                 if result is not None:
@@ -186,15 +293,17 @@ def wait_for_result(
                     response["notices"] = notices
                     collected.append(response)
             if collected:
-                print("\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected))
+                output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
                 _LOG.info(
                     "wait_return reason=collected count=%d session_ids=%s",
                     len(collected),
                     ",".join(str(item["session_id"]) for item in collected),
                 )
-                return 0
+                continuable = all(item.get("status") == "running" for item in collected)
+                return _publish_wait_result(run_path, output, 0, continuable=continuable)
             if read_failure is not None:
-                return _fail(*read_failure, session_id=failed_session_id)
+                message, code = read_failure
+                return _publish_wait_result(run_path, message, code, stream="stderr")
 
             now = time.monotonic()
             retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
@@ -207,13 +316,14 @@ def wait_for_result(
             )
             remaining = deadline - now
             if remaining <= 0:
-                print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+                output = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
                 _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
-                return 3
+                return _publish_wait_result(run_path, output, 3, continuable=True)
             time.sleep(min(1.0, remaining))
     finally:
-        if not lock_file.closed:
+        if owns_lock and not lock_file.closed:
             release_lock(lock_file)
+        if not lock_file.closed:
             lock_file.close()
 
 

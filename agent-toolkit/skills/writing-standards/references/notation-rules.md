@@ -31,12 +31,22 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 
 起草の後に前掲のCLI形式で検査して検出箇所を解消する。
 
-## ダッシュチェック
-
-日本語の地の文・見出しにおけるemダッシュ・horizontal bar・2倍ダッシュは`scripts/check_dash.py`で検査する。
+対象ファイルが検査設定を持つプロジェクトの外側にある場合は、設定を持つプロジェクトの絶対パスを
+`--work-dir`へ渡し、`--allow-external-paths`を併用する。
 
 ```sh
-uv run --project <plugin rootの絶対パス> --locked --no-default-groups path/to/writing-standards/scripts/check_dash.py path/to/file.md
+uv run --frozen pyfltr run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <検査設定を持つプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
+```
+
+この経路も、JSONLの`header`レコードと各commandレコードで対象ファイルへの到達を判定する。
+外部パスを理由とする警告、skip又は対象除外が現れた結果は検査済みと判定しない。
+
+## ダッシュチェック
+
+日本語の地の文・見出しにおけるemダッシュ・horizontal bar・2倍ダッシュは`atk run-script writing-check-dash --`で検査する。
+
+```sh
+atk run-script writing-check-dash -- path/to/file.md
 ```
 
 コードブロック・インラインコード・URL内は対象外とし、検出対象の詳細は`check_dash.py`を正本とする。

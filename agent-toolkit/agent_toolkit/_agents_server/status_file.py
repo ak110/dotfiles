@@ -59,6 +59,17 @@ class StatusFileIdentity:
     host_session_id: str | None
 
 
+@dataclasses.dataclass(frozen=True)
+class ConversationRootResolution:
+    """現行会話から解決したルートと、その対応を確認できた根拠を表す。"""
+
+    current_session_id: str
+    root_session_id: str
+    alias_present: bool
+    alias_valid: bool
+    mapping_confirmed: bool
+
+
 def resolve_root_session_id(environment: Mapping[str, str]) -> str | None:
     """環境変数から読取対象のルートsessionを解決する。"""
     owner = environment.get("AGENT_TOOLKIT_OWNER_SESSION") or environment.get("CLAUDE_CODE_SESSION_ID")
@@ -378,26 +389,70 @@ def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     return root / "agents-server" / "aliases"
 
 
-def resolve_conversation_root_session_id(environment: Mapping[str, str], state_root: pathlib.Path | None = None) -> str | None:
-    """現行会話のsession識別子を索引経由でルートsession識別子へ解決する。"""
+def resolve_conversation_root(
+    environment: Mapping[str, str],
+    state_root: pathlib.Path | None = None,
+) -> ConversationRootResolution | None:
+    """現行会話のルートsession識別子と対応の確認状態を返す。"""
     current_session_id = resolve_root_session_id(environment)
     if current_session_id is None:
         return None
     alias_path = aliases_directory(state_root) / f"{current_session_id}.json"
+    alias_present = alias_path.is_file()
     try:
         payload = json.loads(alias_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
-        return current_session_id
+        direct = not alias_present and status_directory(current_session_id, state_root).is_dir()
+        return ConversationRootResolution(
+            current_session_id=current_session_id,
+            root_session_id=current_session_id,
+            alias_present=alias_present,
+            alias_valid=False,
+            mapping_confirmed=direct,
+        )
     root_session_id = payload.get("root_session_id") if isinstance(payload, dict) else None
     if (
         isinstance(payload, dict)
         and payload.get("version") == 1
         and isinstance(root_session_id, str)
         and valid_session_id(root_session_id)
-        and status_directory(root_session_id, state_root).is_dir()
     ):
-        return root_session_id
-    return current_session_id
+        alias_valid = True
+        mapping_confirmed = status_directory(root_session_id, state_root).is_dir()
+        resolved_root_session_id = root_session_id if mapping_confirmed else current_session_id
+    else:
+        alias_valid = False
+        mapping_confirmed = False
+        resolved_root_session_id = current_session_id
+    return ConversationRootResolution(
+        current_session_id=current_session_id,
+        root_session_id=resolved_root_session_id,
+        alias_present=True,
+        alias_valid=alias_valid,
+        mapping_confirmed=mapping_confirmed,
+    )
+
+
+def resolve_conversation_root_session_id(environment: Mapping[str, str], state_root: pathlib.Path | None = None) -> str | None:
+    """現行会話のsession識別子を索引経由でルートsession識別子へ解決する。"""
+    resolution = resolve_conversation_root(environment, state_root)
+    return None if resolution is None else resolution.root_session_id
+
+
+def unconfirmed_root_recovery_message(resolution: ConversationRootResolution, command: str) -> str:
+    """未確認の会話rootをMCPの一覧応答から復旧する手順を返す。"""
+    if not resolution.alias_present:
+        reason = "aliasが存在しません"
+    elif not resolution.alias_valid:
+        reason = "aliasの書式が不正です"
+    else:
+        reason = "aliasの参照先を確認できません"
+    return (
+        "agents_serverの会話root対応を確認できません。"
+        f"CLIが解決したroot={resolution.root_session_id}、{reason}。"
+        "MCPの`list`を1回呼び出してから"
+        f"`{command}`を再実行してください。"
+    )
 
 
 def write_root_alias(

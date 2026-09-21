@@ -11,13 +11,11 @@ import pathlib
 import sys
 from typing import Any
 
-PHASES = (
-    "抽出",
-    "一次選別",
-    "完全分析",
-    "既存キュー照合",
-    "報告生成",
-    "構造検査",
+TIMING_CATEGORIES = (
+    "preparation",
+    "rule-stop",
+    "delegate-runtime",
+    "parent-review",
 )
 ANALYSIS_FIELDS = ("direct_cause", "root_cause", "rule_gap", "action")
 DURATION_TARGET_SECONDS = 180.0
@@ -60,8 +58,9 @@ _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
   {ANALYSIS_FIELDS[2]}: 規範の欠落
   {ANALYSIS_FIELDS[3]}: 確定した処置
 
---timings: 工程名をキーとするJSON object。キーは{"、".join(PHASES)}の6つを、この順序で漏れなく含める。
-           値は`started_at`と`finished_at`をISO 8601の文字列で持つJSON object。
+--timings: 区間IDをキーとするJSON object。値は`category`（{"、".join(TIMING_CATEGORIES)}のいずれか）と
+           `source`（典拠）を持ち、観測できた区間では`started_at`と`finished_at`をISO 8601の文字列で、
+           観測できない区間では`unknown_reason`を非空文字列で持つ。
 
 --duration-analysis: 次のキーを持つJSON object。
   bottleneck: `interval`（非空文字列）と`seconds`（0以上の有限な数値）を持つJSON object
@@ -69,6 +68,7 @@ _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
   non_reducible_reason: 削減できない区間又は理由を示す非空文字列
   unmeasured_intervals: `interval`と`reason`を非空文字列で持つJSON objectの配列
   extractor_event: `kind`と`value`を非空文字列で持つJSON object
+  comparison_intervals: 短縮前後の比較へ用いる観測済み区間IDの配列
 
 --sections: 節名をキーとするJSON object。値はその節へ置くMarkdown本文の文字列。
             受理する節名は{"、".join(FREE_SECTION_HEADINGS)}の5つとする。
@@ -155,15 +155,23 @@ def _nonnegative_number(value: Any, field: str) -> float:
     return number
 
 
-def _duration_analysis_lines(value: dict[str, Any], measured_seconds: float) -> list[str]:
+def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) -> list[str]:
     """構造化された所要時間分析を検証し、固定順のMarkdown行へ変換する。"""
-    expected = {"bottleneck", "reduction", "non_reducible_reason", "unmeasured_intervals", "extractor_event"}
+    expected = {
+        "bottleneck",
+        "reduction",
+        "non_reducible_reason",
+        "unmeasured_intervals",
+        "extractor_event",
+        "comparison_intervals",
+    }
     if set(value) != expected:
         raise ReportError(f"所要時間分析のキーが不正である: {sorted(set(value) ^ expected)}")
     bottleneck = value["bottleneck"]
     reduction = value["reduction"]
     extractor_event = value["extractor_event"]
     unmeasured = value["unmeasured_intervals"]
+    comparison_intervals = value["comparison_intervals"]
     if not isinstance(bottleneck, dict) or set(bottleneck) != {"interval", "seconds"}:
         raise ReportError("所要時間分析のbottleneckが不正である")
     if not isinstance(reduction, dict) or set(reduction) != {"seconds", "basis"}:
@@ -172,6 +180,13 @@ def _duration_analysis_lines(value: dict[str, Any], measured_seconds: float) -> 
         raise ReportError("所要時間分析のextractor_eventが不正である")
     if not isinstance(unmeasured, list):
         raise ReportError("所要時間分析のunmeasured_intervalsは配列で指定する")
+    if (
+        not isinstance(comparison_intervals, list)
+        or not comparison_intervals
+        or any(not isinstance(interval, str) or not interval for interval in comparison_intervals)
+        or len(set(comparison_intervals)) != len(comparison_intervals)
+    ):
+        raise ReportError("所要時間分析のcomparison_intervalsは重複のない非空文字列配列で指定する")
     bottleneck_seconds = _nonnegative_number(bottleneck["seconds"], "bottleneck.seconds")
     reduction_seconds = _nonnegative_number(reduction["seconds"], "reduction.seconds")
     unmeasured_texts: list[str] = []
@@ -182,7 +197,22 @@ def _duration_analysis_lines(value: dict[str, Any], measured_seconds: float) -> 
             f"{_nonempty_string(interval['interval'], f'unmeasured_intervals[{index}].interval')}"
             f"（{_nonempty_string(interval['reason'], f'unmeasured_intervals[{index}].reason')}）"
         )
-    estimated_seconds = max(0.0, measured_seconds - reduction_seconds)
+    missing_comparison = [interval for interval in comparison_intervals if interval not in measured]
+    if missing_comparison:
+        comparison_line = f"- 180秒目標との比較: 未確定（未観測区間: {'、'.join(missing_comparison)}）"
+        return [
+            f"- ボトルネック: {_nonempty_string(bottleneck['interval'], 'bottleneck.interval')}（{bottleneck_seconds:.3f}秒）",
+            f"- 削減見込み: {reduction_seconds:.3f}秒（{_nonempty_string(reduction['basis'], 'reduction.basis')}）",
+            f"- 削減不能部分: {_nonempty_string(value['non_reducible_reason'], 'non_reducible_reason')}",
+            f"- 未計測区間: {'、'.join(unmeasured_texts) if unmeasured_texts else 'なし'}",
+            f"- 抽出器イベント: {_nonempty_string(extractor_event['kind'], 'extractor_event.kind')}="
+            f"{_nonempty_string(extractor_event['value'], 'extractor_event.value')}",
+            comparison_line,
+        ]
+    measured_seconds = sum(measured[interval] for interval in comparison_intervals)
+    if reduction_seconds > measured_seconds:
+        raise ReportError("所要時間分析のreduction.secondsが比較対象区間の合計を超える")
+    estimated_seconds = measured_seconds - reduction_seconds
     difference = estimated_seconds - DURATION_TARGET_SECONDS
     comparison = (
         f"目標を{abs(difference):.3f}秒下回る"
@@ -198,8 +228,39 @@ def _duration_analysis_lines(value: dict[str, Any], measured_seconds: float) -> 
         f"- 未計測区間: {'、'.join(unmeasured_texts) if unmeasured_texts else 'なし'}",
         f"- 抽出器イベント: {_nonempty_string(extractor_event['kind'], 'extractor_event.kind')}="
         f"{_nonempty_string(extractor_event['value'], 'extractor_event.value')}",
-        f"- 180秒目標との比較: 改善後見込み{estimated_seconds:.3f}秒、{comparison}",
+        f"- 比較対象区間: {'、'.join(comparison_intervals)}",
+        f"- 180秒目標との比較: 同一区間集合の改善後見込み{estimated_seconds:.3f}秒、{comparison}",
     ]
+
+
+def _timing_rows(timings: dict[str, dict[str, Any]]) -> tuple[list[str], dict[str, float]]:
+    """任意個の観測区間と未観測区間を検証して表へ変換する。"""
+    if not timings:
+        raise ReportError("工程時刻は1区間以上を含める")
+    rows: list[str] = []
+    measured: dict[str, float] = {}
+    for interval_id, value in timings.items():
+        if not isinstance(interval_id, str) or not interval_id or not isinstance(value, dict):
+            raise ReportError("工程時刻の区間ID又は値が不正である")
+        category = value.get("category")
+        source = value.get("source")
+        if category not in TIMING_CATEGORIES:
+            raise ReportError(f"{interval_id}のcategoryが不正である")
+        source_text = _nonempty_string(source, f"timings.{interval_id}.source")
+        timestamp_keys = {"started_at", "finished_at"}
+        has_timestamps = timestamp_keys <= set(value)
+        has_unknown = "unknown_reason" in value
+        expected_keys = {"category", "source"} | (timestamp_keys if has_timestamps else {"unknown_reason"})
+        if has_timestamps == has_unknown or set(value) != expected_keys:
+            raise ReportError(f"{interval_id}は時刻の組又はunknown_reasonの一方だけを持つ")
+        if has_timestamps:
+            seconds = _seconds(value, interval_id)
+            measured[interval_id] = seconds
+            rows.append(f"| {interval_id} | {category} | {seconds:.3f} | {source_text} |")
+        else:
+            reason = _nonempty_string(value["unknown_reason"], f"timings.{interval_id}.unknown_reason")
+            rows.append(f"| {interval_id} | {category} | 不明 | {source_text}: {reason} |")
+    return rows, measured
 
 
 def _section_body(content: str, heading: str) -> str:
@@ -287,9 +348,6 @@ def render(
         raise ReportError("candidate-summaryのcountが候補件数と一致しない")
     if summaries[0].get("included_locator_count") != len(flattened):
         raise ReportError("candidate-summaryのlocator件数が一致しない")
-    if tuple(timings) != PHASES:
-        raise ReportError("工程時刻は規定の6工程を順序どおり含める")
-
     candidate_rows: list[str] = []
     used_analysis_ids: set[str] = set()
     for candidate in candidate_items:
@@ -342,9 +400,8 @@ def render(
         for analysis_id in sorted(used_analysis_ids)
     ]
 
-    phase_seconds = [_seconds(timings[phase], phase) for phase in PHASES]
-    timing_rows = [f"| {phase} | {seconds:.3f} |" for phase, seconds in zip(PHASES, phase_seconds, strict=True)]
-    duration_lines = _duration_analysis_lines(duration_analysis, sum(phase_seconds))
+    timing_rows, measured = _timing_rows(timings)
+    duration_lines = _duration_analysis_lines(duration_analysis, measured)
     return "\n".join(
         [
             "# セッション振り返り",
@@ -372,8 +429,8 @@ def render(
             *_section_lines(sections, "規範適用による停止"),
             "## 所要時間の内訳と改善提案",
             "",
-            "| 工程 | 秒 |",
-            "| --- | ---: |",
+            "| 区間 | 区分 | 秒 | 典拠・未観測理由 |",
+            "| --- | --- | ---: | --- |",
             *timing_rows,
             "",
             *duration_lines,

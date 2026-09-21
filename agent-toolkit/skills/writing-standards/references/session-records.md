@@ -48,8 +48,8 @@ Codexでスキルの起動を判定する場合は、そのスキルの起動を
 ## 集計値の典拠
 
 セッション記録から集計したトークン量、リクエスト数又は所要時間を成果物へ書く場合と利用者へ提示する場合は、抽出器の出力を典拠とする。
-抽出器は`agent-toolkit:session-review`の`session-review/scripts/session_review_evidence.py`とする。
-振り返りの全候補は同抽出器の`--bundle`が生成する`candidates.jsonl`を正本とし、一次選別結果からの報告生成と構造検査には`session-review/scripts/session_review_report.py`を用いる。
+抽出器は`atk run-script session-review-evidence -- <引数>`とする。
+振り返りの全候補は同抽出器の`--bundle`が生成する`candidates.jsonl`を正本とし、一次選別結果からの報告生成と構造検査には`atk run-script session-review-report -- <引数>`を用いる。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付けて実行する。
 自作の集計は典拠の対象の外に置く。
 Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。抽出器はこの重複を最後の`usage`だけへ畳み込んだ値を返す。
@@ -73,7 +73,7 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 
 ## 本文の検索
 
-セッション記録から本文を取得する場合は、`agent-toolkit:session-review`の`session-review/scripts/session_review_evidence.py`を用いる。
+セッション記録から本文を取得する場合は、`atk run-script session-review-evidence -- <引数>`を用いる。
 対象は、Claude CodeとCodexの記録に含まれる利用者発話、ツール結果、警告と委譲記録とする。
 Claude Codeの記録はtranscriptの絶対パスを位置引数へ、Codexの記録は`--codex-thread-id <thread ID>`へ渡す。
 検索語から該当箇所を探す場合は`--grep <Pythonの正規表現>`、位置が確定している記録の本文を読む場合は`--detail <記録>:<行番号>`、出力を保存する場合は`--output-file <絶対パス>`を付ける。

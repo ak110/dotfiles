@@ -32,10 +32,7 @@ except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}。"
-        f"本スクリプトはplugin同梱パッケージへ依存するため、"
-        f"`uv run --project {_SELF.parents[3]} --locked --no-default-groups {_SELF} <引数>`"
-        f"又は`PYTHONPATH={_SELF.parents[3]} python {_SELF} <引数>`の形で起動する。"
-        f"`uvx --from agent-toolkit python {_SELF}`は当該パッケージを解決しない。",
+        "`atk run-script session-review-evidence -- <引数>`で起動してください。",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -46,6 +43,7 @@ _OMISSION_MARK = "…[省略]"
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
     r"\s*(?:\d+\t)?(?:"
+    r'<agent-toolkit-hook-message\s+source="[^"]+"\s+kind="(?:warn|warning)"[^>]*>|'
     r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
     r"⚠(?:\s+|\s*[:：])"
     r")|"
@@ -92,7 +90,10 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
     return isinstance(value.get("type"), str) and value["type"] in _HOOK_RECORD_TYPES
 
 
-_HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
+_HOOK_NOTICE_MARKER = re.compile(
+    r'(?:<agent-toolkit-hook-message\s+source="(?P<hook_xml>[^"]+)"\s+kind="(?P<tag_xml>[^"]+)"[^>]*>|'
+    r"\[auto-generated:\s*(?P<hook_legacy>[^\]]*?)\s*\](?:\s*\[(?P<tag_legacy>[^\]]*)\])?)"
+)
 _CANDIDATE_KIND_LENGTH = 80
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
@@ -2042,6 +2043,21 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
     seen: set[str] = set()
     result: list[str] = []
     for body_index, (text, marker_only, from_hook_record) in enumerate(bodies):
+        normalized_text = " ".join(text.split())
+        xml_marker = _HOOK_NOTICE_MARKER.match(normalized_text)
+        if (
+            marker_only
+            and from_hook_record
+            and xml_marker is not None
+            and xml_marker.group("tag_xml") in _STRUCTURED_WARNING_VALUES
+        ):
+            warning_body = normalized_text[xml_marker.end() :].strip()
+            if warning_body.endswith("</agent-toolkit-hook-message>"):
+                warning_body = warning_body[: -len("</agent-toolkit-hook-message>")].rstrip()
+            if warning_body and not _WARNING_ABSENCE_PATTERN.fullmatch(warning_body) and warning_body not in seen:
+                seen.add(warning_body)
+                result.append(warning_body)
+            continue
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped or not (not marker_only or _WARNING_LINE_PATTERN.search(line)):
@@ -2274,8 +2290,10 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
     if not normalized:
         return []
     matched = _HOOK_NOTICE_MARKER.match(normalized)
-    hook = matched.group("hook") if matched is not None else None
+    hook = matched.group("hook_xml") or matched.group("hook_legacy") if matched is not None else None
     text = normalized[matched.end() :].strip() if matched is not None else normalized
+    if text.endswith("</agent-toolkit-hook-message>"):
+        text = text[: -len("</agent-toolkit-hook-message>")].rstrip()
     kind_text = _normalize_candidate_kind_text(text)
     tags = _hook_notice_tags(normalized, matched)
     if not tags:
@@ -2290,12 +2308,12 @@ def _hook_notice_tags(normalized: str, matched: re.Match[str] | None) -> list[st
     """
     tags: list[str] = []
     for found in _HOOK_NOTICE_MARKER.finditer(normalized):
-        tag = found.group("tag")
+        tag = found.group("tag_xml") or found.group("tag_legacy")
         if tag and tag not in tags:
             tags.append(tag)
     if tags:
         return tags
-    fallback = matched.group("tag") if matched is not None else None
+    fallback = (matched.group("tag_xml") or matched.group("tag_legacy")) if matched is not None else None
     return [fallback] if fallback else []
 
 

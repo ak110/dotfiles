@@ -4,7 +4,7 @@
 サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents <sub>`・
 `atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
-`atk review-audit <sub>`形式とする。
+`atk review-audit <sub>`・`atk run-script <script> -- <引数>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
@@ -24,6 +24,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 - agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
+- run-script: plugin内部スクリプトを安定した公開名で実行する
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
 `_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
@@ -54,6 +55,7 @@ from agent_toolkit._atk import output_file as _output_file  # noqa: E402
 from agent_toolkit._atk import plans as _plans  # noqa: E402
 from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
 from agent_toolkit._atk import review_table as _review_table  # noqa: E402
+from agent_toolkit._atk import run_script as _run_script  # noqa: E402
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 from agent_toolkit._atk.wi import add as _add  # noqa: E402
@@ -980,6 +982,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     wi = _atk_help.add_command(top, "wi", **_atk_help.HELP["atk wi"])
     _build_wi_parser(wi)
+    run_script = _atk_help.add_command(top, "run-script", **_atk_help.HELP["atk run-script"])
+    _run_script.build_parser(run_script)
     plans = _atk_help.add_command(top, "plans", **_atk_help.HELP["atk plans"])
     _plans.build_parser(plans)
     serve = _atk_help.add_command(top, "serve", **_atk_help.HELP["atk serve"])
@@ -1291,6 +1295,12 @@ def main(
         sys.exit(_agents.dispatch(args))
     if args.command == "agents-exit-session":
         sys.exit(_agents_exit_session.main())
+    if args.command == "run-script":
+        try:
+            sys.exit(_run_script.dispatch(args))
+        except ValueError as error:
+            _outcome.report_failure(f"操作を拒否した: {error}")
+            sys.exit(1)
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":

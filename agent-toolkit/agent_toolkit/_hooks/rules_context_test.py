@@ -320,5 +320,6 @@ def test_session_start_injects_process_loop_instruction(
     delegated_output = _output(capsys)
 
     assert "既存の検体を先に読む" in main_output
-    assert rules_context.PROCESS_LOOP_INSTRUCTION_PREFIX in main_output
+    assert f"<{rules_context.PROCESS_LOOP_INSTRUCTION_ELEMENT} " in main_output
+    assert 'origin="user"' in main_output
     assert "既存の検体を先に読む" not in delegated_output
