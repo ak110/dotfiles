@@ -899,6 +899,11 @@ class AgentsServerManager:
                 excluded_candidates=frozenset(excluded),
             )
             session.engine = engine
+            if session.status == "starting":
+                session.status = "running"
+                session.touch()
+                if self._status_writer is not None:
+                    self._status_writer.flush()
             await self._await_start_outcome(session)
             response: dict[str, Any] = {
                 "session_id": session.session_id,
@@ -1399,6 +1404,8 @@ class AgentsServerManager:
             )
             if self._status_writer is not None:
                 self._status_writer.delete_result(session_id, collector="send-message")
+            if session.status == "starting":
+                session.status = "running"
             session.announced = True
             session.touch()
             _LOG.info(

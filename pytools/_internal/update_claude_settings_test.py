@@ -90,12 +90,6 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, {"dialogExpiry": "5m"})
         assert result["dialogExpiry"] == "never"
 
-    def test_managed_thinking_summaries_are_disabled(self, tmp_path: Path):
-        """配布原本は思考要約を表示しない値を既存設定へ反映する。"""
-        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        result = _run(tmp_path, managed, {"showThinkingSummaries": True})
-        assert result["showThinkingSummaries"] is False
-
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
         """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {

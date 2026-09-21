@@ -209,8 +209,9 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
     assert "# Dependabot未解決アラート1件" in content
     assert "## 反映内容と反映先" in content
     assert "反映先は`github.com/owner/repo`とする。" in content
-    assert "## メリット" in content
-    assert "## デメリット" in content
+    assert "## メリット" not in content
+    assert "## デメリット" not in content
+    assert "調査と変更の検証に作業が必要になる。" not in content
     assert "## 完成条件" in content
 
 

@@ -690,6 +690,8 @@ class ClaudeServerManager:
                                     publish_registry=self._publish_registry,
                                 )
                                 self.sessions[session_id] = session
+                                session.status = "starting" if expected_session_id is None else "running"
+                                session.touch()
                                 self._channels[session_id] = channel
                                 current_task = asyncio.current_task()
                                 if current_task is not None:

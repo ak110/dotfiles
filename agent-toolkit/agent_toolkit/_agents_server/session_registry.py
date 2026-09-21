@@ -15,7 +15,7 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
-_STATUSES = frozenset({"running", "completed", "failed", "interrupted"})
+_STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupted"})
 
 
 class Resolution(enum.StrEnum):
@@ -38,7 +38,7 @@ class ResumeInfo:
     model_type: str | None
     launch_kind: Literal["delegate", "explore", "shell", "write"]
     turn_seq: int
-    status: Literal["running", "completed", "failed", "interrupted"]
+    status: Literal["starting", "running", "completed", "failed", "interrupted"]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,7 +66,7 @@ def publish(
     model_type: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
-    status: Literal["running", "completed", "failed", "interrupted"] | None = None,
+    status: Literal["starting", "running", "completed", "failed", "interrupted"] | None = None,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。"""
