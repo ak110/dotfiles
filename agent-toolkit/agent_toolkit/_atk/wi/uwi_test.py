@@ -1327,6 +1327,65 @@ def test_answer_uwi_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, mon
     assert content.rstrip().endswith("不採用とする")
 
 
+def test_answer_uwi_auto_adopts_affirmative_post_approval(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """標準の事後承認UWIへ肯定回答した場合は回答保存と採用を同じ操作で完了する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    commits: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        uwi_module,
+        "_commit_and_push",
+        lambda _notes, message, paths: commits.append((message, list(paths))),
+    )
+    path = notes / "inbox/post-approval.md"
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
+        "choices: [その対応で問題無い, 問題がある]\n---\n\n"
+        f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
+        f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
+        encoding="utf-8",
+    )
+
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer=" その対応で問題無い\n") is True
+
+    adopted = notes / "adopted/post-approval.md"
+    assert not path.exists()
+    assert adopted.exists()
+    content = adopted.read_text(encoding="utf-8")
+    assert "その対応で問題無い" in content
+    assert "- 採否: adopted" in content
+    assert commits == [("chore: answer and adopt uwi item", list(uwi_module.WI_STATES))]
+
+
+@pytest.mark.parametrize("answer", ["問題がある", "別の回答"])
+def test_answer_uwi_does_not_auto_adopt_other_answers(
+    answer: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """否定回答と標準外回答は従来どおり回答だけを保存する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    path = notes / "inbox/post-approval-other.md"
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
+        "choices: その対応で問題無い,問題がある\n---\n\n"
+        f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
+        f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
+        encoding="utf-8",
+    )
+
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer=answer) is True
+    assert path.exists()
+    assert not (notes / "adopted" / path.name).exists()
+
+
 def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
     tmp_path: pathlib.Path,
 ) -> None:

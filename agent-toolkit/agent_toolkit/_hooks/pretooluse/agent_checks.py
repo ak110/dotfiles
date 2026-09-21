@@ -255,68 +255,15 @@ _AGENTS_SERVER_START_TOOLS = frozenset(
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_LIST_TOOLS = frozenset(f"{namespace}list" for namespace in _AGENTS_SERVER_NAMESPACES)
-_AGENTS_SERVER_TOOL_NAMES = _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
+_AGENTS_SERVER_TOOL_NAMES = (
+    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_LIST_TOOLS
+)
 
 # hooks.json・hooks.codex.jsonのPreToolUse matcherが被覆すべきagents_serverツール名の全体。
 # 一致検査（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
-AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_LIST_TOOLS
+AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
-_AGENTS_SERVER_LIST_RETRY_WINDOW_SECONDS = 300
-
-
-def _check_agents_server_list_repeat(session_id: str) -> bool:
-    """状態変化のない`agents_server`の`list`再取得を一度だけ遮断する。
-
-    状態キー`agents_server_sessions`をキー順JSONへ正規化した指紋で前回の`list`からの
-    変化を判定する。直近の遮断から5分以内の再実行は、記録できない状態変化がある経路で
-    恒久的に停止しないよう通過させる。遮断する場合は、前回の結果を再利用する代替手段を
-    同じターンで実行できるためblockを返す。あわせて、状態を進める`atk agents wait`と`stop`の
-    呼び出し形を通知本文へ示す。
-    """
-    if not session_id:
-        return False
-    now = time.time()
-    state = read_state(session_id)
-    fingerprint = json.dumps(state.get("agents_server_sessions"), ensure_ascii=False, sort_keys=True)
-    blocked_at = state.get("agents_server_list_blocked_at")
-    if isinstance(blocked_at, (int, float)) and now - blocked_at <= _AGENTS_SERVER_LIST_RETRY_WINDOW_SECONDS:
-
-        def _allow_retry(current: dict) -> dict:
-            current["agents_server_list_fingerprint"] = fingerprint
-            current.pop("agents_server_list_blocked_at", None)
-            return current
-
-        update_state(session_id, _allow_retry)
-        return False
-    if state.get("agents_server_list_fingerprint") != fingerprint:
-
-        def _record_fingerprint(current: dict) -> dict:
-            current["agents_server_list_fingerprint"] = fingerprint
-            return current
-
-        update_state(session_id, _record_fingerprint)
-        return False
-
-    def _mark_blocked(current: dict) -> dict:
-        current["agents_server_list_blocked_at"] = now
-        return current
-
-    update_state(session_id, _mark_blocked)
-    print(
-        _block_notice(
-            "blocked: 前回の`list`から`agents_server`の状態が変化していないため、同じ結果が返る。"
-            "前回の`list`の結果を再利用する。"
-            "状態を進める操作は`list`ではない。終端を待つ場合は実行ホストで`atk agents wait`を、"
-            "終端済みの委譲先を一覧から除く場合は`stop(session_id)`を発行する。"
-            "これらは状態を変えるため、続けて発行する`list`は遮断されない。",
-            fix="完了通知の受領後など再取得が必要な場合は、5分以内に同じ`list`を再実行すると続行できる。",
-        ),
-        file=sys.stderr,
-    )
-    return True
-
-
 # --- 計画単位の状態管理 ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
@@ -488,27 +435,6 @@ def _record_iss_sidechain_probe(
         _locked_rotate_and_append(log_path, json.dumps(entry, ensure_ascii=False) + "\n", 1_000_000)
     except OSError:
         pass
-
-
-# --- agents_server: 開始点の絶対cwd検査 ---
-
-
-def _check_agents_server_cwd(tool_input: dict) -> bool:
-    """`start.cwd`が非空の絶対パスでない呼び出しを検出する。"""
-    cwd = tool_input.get("cwd")
-    if isinstance(cwd, str) and cwd.strip() != "" and pathlib.PurePath(cwd).is_absolute():
-        return False
-    specified = tool_input.get("cwd")
-    actual = f"`{specified}`" if isinstance(specified, str) and specified != "" else "unspecified"
-    print(
-        _block_notice(
-            f"blocked: agents_serverのstartには空でない絶対パスの`cwd`が必要である（実際: {actual}）。"
-            "指定が無い場合、Codexは要求されたworktreeではなくApp Serverプロセスから作業ディレクトリを解決する。",
-            fix="`cwd`へ対象作業ディレクトリの絶対パスを設定して再実行する。",
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> bool:

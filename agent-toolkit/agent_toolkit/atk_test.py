@@ -28,6 +28,7 @@ from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._hooks import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing import wi_bodies as _wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
@@ -397,7 +398,11 @@ class TestWaitScheduleParser:
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", lambda: count)
+        monkeypatch.setattr(
+            _managed_temp,
+            "list_unregistered_candidates",
+            lambda: tuple(tmp_path / f"orphan-{index}" for index in range(count)),
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -429,7 +434,7 @@ class TestWaitScheduleParser:
         """未登録領域の警告は値が1の委譲先だけで抑止する。"""
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", lambda: 1)
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda: (tmp_path / "orphan",))
         if delegated_session is None:
             monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         else:
@@ -459,10 +464,10 @@ class TestWaitScheduleParser:
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
 
-        def fail_count() -> int:
+        def fail_count() -> tuple[pathlib.Path, ...]:
             raise _managed_temp.ManagedTempError("走査失敗")
 
-        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", fail_count)
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", fail_count)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -471,6 +476,38 @@ class TestWaitScheduleParser:
         captured = capsys.readouterr()
         assert captured.out == "fixed-subcommand-output\n"
         assert captured.err == "警告: 登録を持たない管理対象を探索できなかった: 走査失敗\n"
+
+    def test_identical_unregistered_managed_temp_warning_is_emitted_once_per_session(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同じセッションと候補集合では未登録領域の警告を初回だけ出力する。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda: (tmp_path / "orphan",))
+        state: dict = {}
+
+        def update_state(_session_id: str, mutator):
+            updated = mutator(state.copy())
+            if updated is None:
+                return False
+            state.clear()
+            state.update(updated)
+            return True
+
+        monkeypatch.setattr(_session_state, "update_state", update_state)
+
+        for _ in range(2):
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+            assert exc_info.value.code == 0
+
+        warning_lines = [line for line in capsys.readouterr().err.splitlines() if "登録を持たない管理対象" in line]
+        assert len(warning_lines) == 1
 
     def test_managed_temp_list_reports_unregistered_paths(
         self,

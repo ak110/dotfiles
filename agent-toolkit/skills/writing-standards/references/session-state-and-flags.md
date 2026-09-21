@@ -112,6 +112,8 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 ## 通知反復系
 
+- `pretool_last_call_fingerprint`・`pretool_last_call_count`: PreToolUseが任意ツールのツール名とJSON入力を正規化した指紋及び同一指紋の連続数を記録する。異なる指紋で連続数を1へ戻し、10回目以降の同一呼び出しを遮断する。寿命はセッション状態ファイルと同じとする
+- `unregistered_managed_temp_fingerprint`: `atk`の共通入口が、登録を持たない管理対象の絶対パス集合を安定順で正規化した指紋を記録する。同じセッションで同じ集合を報告済みの場合は警告を省略し、集合が変化した場合は再度警告する。寿命はセッション状態ファイルと同じとする
 - `warn_notice_counts`: `warn`区分の通知を生成した検査の原因識別子ごとの累積件数を記録する。
   キーは`<hook_id>|<原因識別子>`、値はそのセッションでの発生件数とする。
   通知の整形処理が記録元であり、同じ処理が3件目以降の通知本文へ反復の旨と累積件数を載せる判定に読む。
@@ -126,7 +128,6 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の検査及び各ツールのPostToolUse状態更新に使う。`show`の応答が返す稼働中の子sessionの識別子と`cwd`の対も同じキーへ記録し、呼び出し元がその子sessionへ追送と打ち切りを発行できる状態にする
 - `external_command_option_contracts`: `rg`のヘルプから解析した受理オプションの集合を、コマンド経路ごとに1セッション1回だけ記録する。PreToolUseが受理しないオプションの検出へ使う。寿命はセッション状態ファイルと同じとする
 - `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。公開状態はそのsessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`はその作業を発生させた主体を示す。`model_type`は専用`start`ではタスク文書名、`start_custom`では起動入力から解決し、`error`と`agent_message`は終端時の値とする。内部状態は`turn_id`とする。記録は`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する。`pending_observation`は各開始操作の成功応答で真になる。`send_message`の応答では、`delivery`が`reply_started`又は`reply_ambiguous`である場合だけ真にする。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録する。`delivery`が`steered`である応答では真にしない。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、そのturnの終端はそのturnに対する既存の観測が待つためである。`agent_id`を持たないメイン会話は`main`とする。`transcript_path`はサブエージェント内で発火したフックでもセッション本体の記録を指すため、呼出主体の判別に使わない。`kill`の成功応答及びBash経由の`atk agents wait`完了時は`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。CLI待機中はルートセッションが所有する待機所有権の生存をStopフックが確認し、`pending_observation`が真でも未観測警告の対象から除外する。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する全sessionを観測済みにする。更新の対象は、既存の記録を持つsessionに限る。呼び出しの受理をもって観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。警告の対象は、責任主体を記録した形式の記録に限る。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
-- `agents_server_list_fingerprint`・`agents_server_list_blocked_at`: PreToolUseが`agents_server`の`list`直前に、`agents_server_sessions`をキー順JSONへ正規化した指紋と直近の遮断時刻を記録する。同じ指紋での2回目の`list`を遮断し、遮断から5分以内の再実行では時刻を削除して通過させる。記録元と利用先は`agent_checks._check_agents_server_list_repeat`だけとし、寿命はセッション状態ファイルと同じとする。リセットは遮断直後の再実行だけで行う
 `wait`の応答境界とBash経由の`atk agents wait`では、呼出主体が所有する全sessionの`pending_observation`を偽にする。`wait`が返した選択済みsessionの公開状態は応答の`session_id`と`status`から更新する。`status`が`running`である記録の件数は、待機の遮断の入力の外にある。`stop`の成功応答を受領した場合は、その`session_id`のエントリーを本キーから除去する。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その応答はそのsessionが終端済み、期限切れ又は既破棄のいずれかであることを含意し、除去により未終端のsessionの記録が失われることはない。
 
 ## 背景タスク系

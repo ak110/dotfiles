@@ -390,103 +390,28 @@ class TestCodexMcpExecution:
 
 
 class TestCheckCodexMcpCwd:
-    """`mcp__plugin_agent-toolkit_agents_server__start`呼び出しの`cwd`絶対パス強制（CLI統合テスト、公開インターフェース経由）。"""
+    """開始時`cwd`は実行基盤の入力検査へ委ねる。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    def test_blocks_missing_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`未指定の場合はブロックする。"""
+    @pytest.mark.parametrize("cwd", [None, "", "   ", "relative/path", "/tmp/worktree"])
+    def test_start_input_is_allowed(self, state_dir: dict[str, str], cwd: str | None) -> None:
+        """開始入力は`cwd`の値にかかわらずフックを通過する。"""
+        tool_input = {"prompt": "hello", "sandbox": "danger-full-access"}
+        if cwd is not None:
+            tool_input["cwd"] = cwd
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
-                "session_id": "cwd-missing",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "unspecified" in result.stderr
-
-    def test_blocks_empty_string_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が空文字列の場合はブロックする。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": ""},
-                "session_id": "cwd-empty",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "unspecified" in result.stderr
-
-    def test_blocks_whitespace_only_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が空白のみの場合はブロックする。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "   "},
-                "session_id": "cwd-whitespace",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "`   `" in result.stderr
-
-    def test_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が相対パスの場合はブロックする。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "relative/path"},
-                "session_id": "cwd-relative",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "relative/path" in result.stderr
-
-    def test_start_explore_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """探索起動も相対`cwd`を開始前に拒否する。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_explore",
-                "tool_input": {"prompt": "調査", "cwd": "relative/path"},
-                "session_id": "explore-cwd-relative",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "relative/path" in result.stderr
-
-    def test_start_shell_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """シェル実行委譲も相対`cwd`を開始前に拒否する。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_shell",
-                "tool_input": {"command": "make test", "cwd": "relative/path", "summary_policy": "終了状態だけ"},
-                "session_id": "shell-cwd-relative",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "relative/path" in result.stderr
-
-    def test_allows_absolute_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が絶対パスの場合は許可する。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/home/aki/dotfiles"},
-                "session_id": "cwd-absolute",
+                "tool_input": tool_input,
+                "session_id": f"cwd-{cwd}",
             },
             env_overrides=state_dir,
         )
         assert result.returncode == 0
-        out = json.loads(result.stdout)
-        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
 class TestCodexMcpReply:
@@ -522,56 +447,6 @@ class TestCodexMcpReply:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-
-
-class TestAgentsServerListRepeat:
-    """状態指紋に基づく`agents_server`の`list`再取得遮断を検証する。"""
-
-    @pytest.fixture(name="state_dir")
-    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
-        return _plan_file_state_env(tmp_path)
-
-    @staticmethod
-    def _payload(session_id: str) -> dict:
-        return {
-            "tool_name": "mcp__agents_server__list",
-            "tool_input": {},
-            "session_id": session_id,
-        }
-
-    def test_agents_server_list_repeat_is_blocked_once(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
-        """同一状態の2回目だけを遮断し、権限決定を出力しない。"""
-        session_id = "list-repeat"
-        _write_session_state(tmp_path, session_id, {"agents_server_sessions": {"remote": {"status": "running"}}})
-
-        first = _run(self._payload(session_id), env_overrides=state_dir)
-        blocked = _run(self._payload(session_id), env_overrides=state_dir)
-
-        assert first.returncode == 0
-        assert not first.stdout
-        assert blocked.returncode == 2
-        assert "前回の`list`から`agents_server`の状態が変化していない" in blocked.stderr
-        assert "`stop(session_id)`" in blocked.stderr
-        assert "`atk agents wait`" in blocked.stderr
-        assert not blocked.stdout
-
-    def test_agents_server_list_passes_on_retry_and_state_change(
-        self, state_dir: dict[str, str], tmp_path: pathlib.Path
-    ) -> None:
-        """遮断直後の再実行と状態変化後の再取得は通過する。"""
-        session_id = "list-retry"
-        _write_session_state(tmp_path, session_id, {"agents_server_sessions": {"remote": {"status": "running"}}})
-
-        assert _run(self._payload(session_id), env_overrides=state_dir).returncode == 0
-        assert _run(self._payload(session_id), env_overrides=state_dir).returncode == 2
-        retry = _run(self._payload(session_id), env_overrides=state_dir)
-
-        assert retry.returncode == 0
-        state = _read_session_state(tmp_path, session_id)
-        state["agents_server_sessions"] = {"remote": {"status": "completed"}}
-        _write_session_state(tmp_path, session_id, state)
-        changed = _run(self._payload(session_id), env_overrides=state_dir)
-        assert changed.returncode == 0
 
 
 class TestCodexMcpLanguageWarningMerge:
