@@ -5,9 +5,8 @@
 
 ## 協調と自律
 
-`agent-toolkit:add-awi-by-user`又は`agent-toolkit:process-wi`を起動したセッションでは、起動時に確定した主題に関する後続のユーザー指示を、そのスキルの処理を継続する追加指示として扱う。
-主題の継続判定と、判別できない場合の扱いは各スキルが定める。
 成果物の種別の限定とその引き継ぎは`agent-toolkit/rules/01-agent.md`「完遂と先送り」を正本とする。
+`agent-toolkit:add-awi-by-user`と`agent-toolkit:process-wi`のいずれかを起動したセッションでは、この成果物制限を先に適用し、その内側で後続指示の主題を分類する。主題の分類は各スキルが定める成果物の更新先を選ぶために使い、成果物制限の解除にも別種の成果物の認可にも使わない。
 
 メインの未確定判断のUWI退避と暫定判断、暫定判断で確定できない対象成果物の扱いは`agent-toolkit:confirmation-and-uwi`の`references/main-behavior.md`が定める。
 同書は、必須の外部資料を取得できない場合の扱い、事前承認の合意判定、事後承認型UWIと回答の受領も定める。

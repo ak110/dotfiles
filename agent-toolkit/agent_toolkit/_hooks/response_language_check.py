@@ -35,6 +35,19 @@ _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 # HTTP/HTTPS URL。
 _URL_PATTERN = re.compile(r"https?://\S+")
 
+# 裸の機械識別子。パス、UUID、Git commit ID及びsnake_case識別子は、
+# 日本語の地の文へ値として埋め込まれても英語の散文量を表さないため、語数比の計数から除外する。
+# 通常の英単語まで除外しないよう、パスは区切り文字、commit IDは数字を必須とする。
+_MACHINE_IDENTIFIER_PATTERN = re.compile(
+    r"(?:"
+    r"(?<![\w.])(?:[A-Za-z]:[\\/]|\.{0,2}/|/)[^\s`、。]+"
+    r"|\b[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\b"
+    r"|\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
+    r"|\b(?=[0-9a-fA-F]{7,64}\b)(?=[0-9a-fA-F]*[0-9])[0-9a-fA-F]+\b"
+    r"|\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b"
+    r")"
+)
+
 # 機械可読な返却行。小文字のsnake_case識別子だけの行と、当該識別子をキーとする`<キー>: <値>`行を対象とする。
 # `agent-toolkit/rules/02-agent-operations.md`「委譲時の厳守事項」は、委譲先がチェックポイント又は
 # 完了報告でターンを終える場合に指定形式の文面だけを出力し地の文を加えないことを求める。
@@ -107,6 +120,7 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     plain_text = _INLINE_CODE_PATTERN.sub(" ", plain_text)
     plain_text = _URL_PATTERN.sub(" ", plain_text)
     plain_text = _MACHINE_READABLE_LINE_PATTERN.sub(" ", plain_text)
+    plain_text = _MACHINE_IDENTIFIER_PATTERN.sub(" ", plain_text)
     japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
     english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
     if _is_english_only(japanese_count, english_word_count):

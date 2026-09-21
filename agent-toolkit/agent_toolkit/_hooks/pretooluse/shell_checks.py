@@ -726,15 +726,82 @@ _COMMAND_SPECIFIC_LIMITATIONS: dict[str, str] = {
 """
 
 
-def _truncated_command_alternatives(saved: Sequence[_TruncationFix]) -> list[str]:
-    """補正対象の直列区間に現れるコマンドへ対応する限定指定を、重複なく返す。"""
+def _truncation_count(tokens: Sequence[str]) -> int | None:
+    """`head`又は`tail`の件数指定を静的に解決できる場合だけ返す。"""
+    for index, token in enumerate(tokens[1:], start=1):
+        if token == "-n" and index + 1 < len(tokens):
+            value = tokens[index + 1]
+        elif re.fullmatch(r"-[0-9]+", token):
+            value = token[1:]
+        else:
+            continue
+        return int(value)
+    return None
+
+
+def _is_managed_truncation_log(path: str) -> bool:
+    """hookが全量保存先として生成した管理対象ログのパスなら真を返す。"""
+    candidate = pathlib.Path(path)
+    if not candidate.is_absolute() or not candidate.name.startswith("bash-output-") or candidate.suffix != ".log":
+        return False
+    try:
+        managed_temp.validate_managed_temp(candidate.parent)
+    except (managed_temp.ManagedTempError, OSError):
+        return False
+    return candidate.is_file()
+
+
+def _specific_truncation_alternative(segment: str) -> str | None:
+    """検出した用途から一意に組み立てられる、切り詰めを含まない代替を返す。"""
+    split = _split_simple_truncation(segment)
+    if split is None:
+        return None
+    producer, consumer = split
+    try:
+        producer_tokens = shlex.split(producer)
+    except ValueError:
+        return None
+    if not producer_tokens or not consumer:
+        return None
+    producer_name = pathlib.PurePath(producer_tokens[0]).name
+    consumer_name = pathlib.PurePath(consumer[0]).name
+    operands = [token for token in producer_tokens[1:] if not token.startswith("-")]
+    count = _truncation_count(consumer)
+    if producer_name == "cat" and consumer_name == "tail" and len(operands) == 1 and _is_managed_truncation_log(operands[0]):
+        direct = shlex.join([*consumer, operands[0]])
+        return f"保存済みログの終端確認は`{direct}`を直接実行する"
+    if (
+        producer_name == "ls"
+        and consumer_name == "head"
+        and count == 1
+        and "-d" in producer_tokens
+        and len(operands) == 1
+        and not any(character in operands[0] for character in "*?[]{}")
+    ):
+        return f"対象の存在確認は`test -e {shlex.quote(operands[0])}`を実行する"
+    if producer_name == "find" and consumer_name == "head" and count == 1:
+        direct = shlex.join([*producer_tokens, "-print", "-quit"])
+        return f"単一対象の選択はproducer自身の終了条件を使い、`{direct}`を実行する"
+    return None
+
+
+def _truncated_command_alternatives_for_segments(segments: Sequence[str]) -> list[str]:
+    """補正対象の直列区間へ対応する代替を、具体形から一般形の順で返す。"""
     alternatives: list[str] = []
-    for fix in saved:
-        for token in fix.segment.split():
+    for segment in segments:
+        specific = _specific_truncation_alternative(segment)
+        if specific is not None and specific not in alternatives:
+            alternatives.append(specific)
+        for token in segment.split():
             hint = _COMMAND_SPECIFIC_LIMITATIONS.get(pathlib.PurePath(token).name)
             if hint is not None and hint not in alternatives:
                 alternatives.append(hint)
     return alternatives
+
+
+def _truncated_command_alternatives(saved: Sequence[_TruncationFix]) -> list[str]:
+    """補正対象の直列区間へ対応する代替を、重複なく返す。"""
+    return _truncated_command_alternatives_for_segments([fix.segment for fix in saved])
 
 
 _OUTPUT_TRUNCATION_AVOIDANCE = (
@@ -776,10 +843,14 @@ def _check_bash_truncation_autofix_repeat(command: str, session_id: str) -> str 
         return None
     if not _record_repeat_detection(session_id, _TRUNCATION_AUTOFIX_REPEAT_KEY):
         return None
+    alternatives = _truncated_command_alternatives_for_segments(segments)
+    fix = _OUTPUT_TRUNCATION_AVOIDANCE
+    if alternatives:
+        fix = "補正対象の用途に対応する指定: " + "、".join(alternatives) + "。" + fix
     print(
         _block_notice(
             "blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。",
-            fix=_OUTPUT_TRUNCATION_AVOIDANCE,
+            fix=fix,
         ),
         file=sys.stderr,
     )

@@ -102,6 +102,29 @@ class TestCheckText:
         assert body is None
 
     @pytest.mark.parametrize(
+        "identifier",
+        [
+            "/opt/project/agent-toolkit/hooks.py",
+            "agent-toolkit/agent_toolkit/_hooks/stop_gate.py",
+            "C:\\Users\\aki\\dotfiles\\hook.py",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "b4acde0123456789abcdef0123456789abcdef01",
+            "pending_observation",
+        ],
+    )
+    def test_excludes_bare_machine_identifiers_from_word_ratio(self, identifier: str):
+        """日本語の説明に添えた裸の機械識別子は英単語数へ算入しない。"""
+        outcome, body = check_text("確認: " + " ".join([identifier] * 8))
+        assert outcome is not CheckOutcome.WARN
+        assert body is None
+
+    def test_machine_identifier_exclusion_does_not_hide_english_prose(self):
+        """機械識別子の前後にある英語の地の文は引き続きWARNを返す。"""
+        outcome, body = check_text("/opt/project/hook.py was updated and all validation checks completed successfully.")
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
+    @pytest.mark.parametrize(
         "text",
         [
             "status: checkpoint\ntype: review_round\nround: 2\nfindings_count: 3\nrequirement_spec_count: 0",

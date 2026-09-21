@@ -615,7 +615,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
+                "tool_input": {"prompt": "os-error-probe", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe-oserror",
                 "isSidechain": True,
             },
@@ -1303,6 +1303,18 @@ class TestBashOutputTruncationRepetition:
             _plan_file_state_env(tmp_path),
         )
 
+    def _saved_truncation_log(self, tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
+        """公開入口の補正が生成した保存先へ、実行後相当の内容を置いて返す。"""
+        result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+        assert result.returncode == 0
+        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        producer, separator, _consumer = corrected.partition("; ")
+        assert separator == "; "
+        tokens = shlex.split(producer)
+        saved_path = pathlib.Path(tokens[tokens.index(">") + 1])
+        saved_path.write_text("saved output\n", encoding="utf-8")
+        return saved_path
+
     def test_same_kind_is_blocked_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
         """検索語と対象パスを変えた同種の指定も2回目として遮断する。"""
         session_id = "truncation-same-kind"
@@ -1380,6 +1392,67 @@ class TestBashOutputTruncationRepetition:
         assert "補正前のコマンドが要求した範囲を当該呼び出しの結果へ返す" in context
         avoidance = shell_checks._OUTPUT_TRUNCATION_AVOIDANCE  # pylint: disable=protected-access  # noqa: SLF001
         assert avoidance in context
+
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ("ls -d /tmp/example | head -1", "`test -e /tmp/example`"),
+            ("find /tmp -name '*.log' | head -1", "`find /tmp -name '*.log' -print -quit`"),
+        ],
+    )
+    def test_autofix_notice_gives_an_executable_use_specific_alternative(
+        self,
+        tmp_path: pathlib.Path,
+        command: str,
+        expected: str,
+    ) -> None:
+        """初回通知が検出用途に対応する、切り詰めを含まない具体形を示す。"""
+        result = self._invoke(command, f"truncation-specific-{expected}", tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert expected in context
+
+    def test_saved_log_tail_gets_an_executable_use_specific_alternative(self, tmp_path: pathlib.Path) -> None:
+        """hookが全量保存した実在ログだけは、直接`tail`する案を示す。"""
+        saved_path = self._saved_truncation_log(tmp_path, "truncation-saved-tail-seed")
+        command = f"cat {shlex.quote(str(saved_path))} | tail -20"
+
+        result = self._invoke(command, "truncation-saved-tail", tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert f"`tail -20 {saved_path}`" in context
+
+    def test_saved_log_tail_alternative_is_allowed(self, tmp_path: pathlib.Path) -> None:
+        """通知が示す保存済みログの末尾取得は切り詰め補正の対象にしない。"""
+        result = self._invoke("tail -20 /tmp/run.log", "truncation-direct-tail", tmp_path)
+
+        assert result.returncode == 0
+        assert "切り詰め処理を除去し" not in result.stdout
+
+    def test_unsaved_cat_tail_uses_only_the_general_alternative(self, tmp_path: pathlib.Path) -> None:
+        """保存済み出力と識別できない入力を直接`tail`する案は示さない。"""
+        result = self._invoke("cat /tmp/run.log | tail -20", "truncation-unsaved-tail", tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "`tail -20 /tmp/run.log`" not in context
+        assert shell_checks._OUTPUT_TRUNCATION_AVOIDANCE in context  # pylint: disable=protected-access  # noqa: SLF001
+
+    def test_repeat_block_keeps_the_use_specific_alternative(self, tmp_path: pathlib.Path) -> None:
+        """2回目の遮断通知にも、その呼び出しに対応する具体的な代替を示す。"""
+        session_id = "truncation-repeat-specific"
+        saved_path = self._saved_truncation_log(tmp_path, session_id)
+
+        result = self._invoke(
+            f"cat {shlex.quote(str(saved_path))} | tail -20",
+            session_id,
+            tmp_path,
+        )
+
+        assert result.returncode == 2
+        assert f"`tail -20 {saved_path}`" in result.stderr
 
     def test_quoted_pipe_in_an_argument_is_corrected(self, tmp_path: pathlib.Path) -> None:
         """引用の内側にあるパイプ文字を演算子として数えず、切り詰めを補正する。"""

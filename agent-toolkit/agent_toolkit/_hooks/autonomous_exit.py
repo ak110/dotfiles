@@ -13,7 +13,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 1. 新旧いずれのセッション識別子も`"1"`でない: 常駐ループ外のセッションのため無条件approve
 2. 委譲先セッションの印が`"1"`: 常駐ループの最上位ではないため無条件approve
-3. `is_pending_async_work`が真: サブエージェント継続時の誤発火防止のためapprove
+3. `is_pending_async_work`が真: 非同期処理又は未回収の終端結果が残るためapprove
 4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
 5. 上記いずれでもない: blockして順序制約の再促文を返す
 
@@ -86,15 +86,16 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
-    if transcript_path and is_pending_async_work(
+    state = read_state(session_id)
+    if is_pending_async_work(
         transcript_path,
         session_id,
         background_tasks=payload.get("background_tasks"),
+        session_state=state,
     ):
         append_stop_log(session_id, "approve_pending_async", {})
         return "approve", ""
 
-    state = read_state(session_id)
     if state.get(_STATE_KEY) is True:
         append_stop_log(session_id, "approve_exit_invoked", {})
         return "approve", ""

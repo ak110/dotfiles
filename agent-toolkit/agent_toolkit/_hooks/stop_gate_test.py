@@ -556,6 +556,37 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks) is expected
 
     @pytest.mark.parametrize(
+        ("record", "owner_agent_id", "expected"),
+        [
+            ({"pending_observation": True, "owner_agent_id": "main"}, "main", True),
+            ({"pending_observation": False, "owner_agent_id": "main"}, "main", False),
+            ({"pending_observation": True, "owner_agent_id": "child-1"}, "main", False),
+            ({"pending_observation": True, "owner_agent_id": "child-1"}, "child-1", True),
+        ],
+    )
+    def test_pending_agents_server_observation_is_owned_by_the_caller(
+        self,
+        tmp_path: pathlib.Path,
+        record: dict[str, object],
+        owner_agent_id: str,
+        expected: bool,
+    ) -> None:
+        """呼出主体が未回収のagents_server結果だけを継続中と判定する。"""
+        transcript = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
+        session_state = {"agents_server_sessions": {"remote-session": record}}
+
+        assert (
+            is_pending_async_work(
+                str(transcript),
+                "",
+                background_tasks=[],
+                session_state=session_state,
+                owner_agent_id=owner_agent_id,
+            )
+            is expected
+        )
+
+    @pytest.mark.parametrize(
         ("background_tasks", "payload_pending", "payload_authoritative"),
         [
             pytest.param(_BACKGROUND_TASKS_OMITTED, False, False, id="omitted"),
@@ -590,8 +621,10 @@ class TestIsPendingAsyncWork:
         entries.append(_assistant_entry(final_content))
         transcript = _write_transcript(tmp_path, entries)
 
-        kwargs = {} if background_tasks is _BACKGROUND_TASKS_OMITTED else {"background_tasks": background_tasks}
-        actual = is_pending_async_work(str(transcript), "", **kwargs)
+        if background_tasks is _BACKGROUND_TASKS_OMITTED:
+            actual = is_pending_async_work(str(transcript), "")
+        else:
+            actual = is_pending_async_work(str(transcript), "", background_tasks=background_tasks)
         expected = last_tool_pending or payload_pending or (transcript_pending and not payload_authoritative)
         assert actual is expected
 
