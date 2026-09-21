@@ -63,6 +63,16 @@ def _load_workflow() -> dict[str, object]:
     return _mapping(value)
 
 
+def test_concurrency_separates_event_types_on_the_same_ref() -> None:
+    """同じrefのpushとpull_requestは別のconcurrency groupを使う。"""
+    concurrency = _mapping(_load_workflow()["concurrency"])
+
+    assert concurrency == {
+        "group": "ci-${{ github.event_name }}-${{ github.ref }}",
+        "cancel-in-progress": "true",
+    }
+
+
 def _statusline_job(workflow: dict[str, object]) -> dict[str, object]:
     jobs = [job for value in _jobs(workflow).values() if (job := _mapping(value)).get("name") == "statusline-version"]
     assert len(jobs) == 1

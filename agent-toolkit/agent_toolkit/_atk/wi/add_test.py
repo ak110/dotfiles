@@ -188,7 +188,7 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
         errors.append(capsys.readouterr().err)
 
     assert errors[0] == errors[1]
-    for heading in ("反映内容と反映先", "適用範囲", "実現性", "メリット", "デメリット", "完成条件"):
+    for heading in ("反映内容と反映先", "適用範囲", "実現性", "完成条件"):
         assert heading in errors[0]
     assert not list((notes / "inbox").iterdir())
     after_head = subprocess.run(
@@ -249,14 +249,14 @@ def test_cmd_add_lists_every_missing_required_section_at_once(
 
     with pytest.raises(SystemExit) as exc_info:
         add_module._cmd_add(
-            _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲", "メリット", "完成条件"), source="test"),
+            _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲", "完成条件"), source="test"),
             notes,
             _FIXED_DT,
             tmp_path,
         )
 
     assert exc_info.value.code == 1
-    assert "非空の必須節がありません: 適用範囲、メリット、完成条件" in capsys.readouterr().err
+    assert "非空の必須節がありません: 適用範囲、完成条件" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
 
 
@@ -290,7 +290,7 @@ def test_cmd_add_reports_missing_and_unordered_sections_together(
     """不足と順序の不一致がともに成立する本文は、双方を同じ応答へ含めて拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    sections = _agent_awi_body_without("メリット").removeprefix("本文\n\n").split("\n\n")
+    sections = _agent_awi_body_without("実現性").removeprefix("本文\n\n").split("\n\n")
     sections[0], sections[1] = sections[1], sections[0]
     message = "本文\n\n" + "\n\n".join(sections)
 
@@ -299,7 +299,7 @@ def test_cmd_add_reports_missing_and_unordered_sections_together(
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "非空の必須節がありません: メリット" in error
+    assert "非空の必須節がありません: 実現性" in error
     assert "H2の順序が規定と異なります" in error
     assert not list((notes / "inbox").iterdir())
 

@@ -12,6 +12,34 @@ import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wron
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
+def _execution_tool_use(tool_id: str, name: str = "Bash") -> dict[str, object]:
+    """実行ツールのClaude呼び出し記録を返す。"""
+    return {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "name": name, "id": tool_id, "input": {}}],
+        },
+    }
+
+
+def _execution_result_transcript(tmp_path: pathlib.Path, *contents: str) -> pathlib.Path:
+    """実行ツールの呼び出しと結果を持つ記録を書く。"""
+    return _write_transcript(
+        tmp_path,
+        [
+            _execution_tool_use("call-1"),
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": content} for content in contents],
+                },
+            },
+        ],
+    )
+
+
 def test_output_file_saves_events_and_prints_path_and_line_count(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1285,8 +1313,9 @@ def test_codex_failed_command_keeps_structured_command_and_exit_code(tmp_path: p
 @pytest.mark.parametrize(
     ("commands", "diagnostics", "expected_candidates"),
     (
-        ([["rg", "-F", "one"], ["rg", "-F", "two"]], ["", ""], 1),
-        ([["test", "-e", "/one"], ["test", "-e", "/two"]], ["", ""], 1),
+        ([["rg", "-F", "one"], ["rg", "-F", "two"]], ["", ""], 2),
+        ([["test", "-e", "/one"], ["test", "-e", "/two"]], ["", ""], 2),
+        ([["rg", "-F", "one"], ["rg", "-F", "one"]], ["", ""], 1),
         ([["tool", "one"], ["tool", "two"]], ["same diagnostic", "same diagnostic"], 1),
         ([["tool", "one"], ["tool", "two"]], ["first diagnostic", "second diagnostic"], 2),
     ),
@@ -1298,7 +1327,7 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
     diagnostics: list[str],
     expected_candidates: int,
 ) -> None:
-    """コマンド引数ではなく実行ファイル、終了コード及び診断で失敗候補を集約する。"""
+    """診断が無い失敗だけはコマンド単位とし、診断があれば既存軸で集約する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1329,6 +1358,40 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
     assert len(candidates) == expected_candidates
     assert sum(candidate["count"] for candidate in candidates) == 2
     assert sum(len(candidate["locators"]) for candidate in candidates) == 2
+
+
+def test_codex_failed_commands_without_diagnostic_or_command_use_record_position(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """診断とcommandを欠く失敗は異なる記録位置を同一候補へ集約しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {"type": "CommandExecution", "status": "failed", "exit_code": 1},
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {"type": "CommandExecution", "status": "failed", "exit_code": 1},
+                },
+            },
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys, raw=True)
+    records = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+
+    assert len([record for record in records if record["kind"] == "candidate"]) == 2
 
 
 def test_codex_failed_command_clips_only_long_structured_command(tmp_path: pathlib.Path) -> None:
@@ -1976,6 +2039,137 @@ def test_warn_mode_reports_matching_entries_with_line_and_tool(
     assert events[0]["text"] == "warning: 警告が出た"
 
 
+@pytest.mark.parametrize("tool_name", ["WebSearch", "WebFetch", "Read", "web__run"])
+def test_warn_mode_excludes_plain_warning_lines_from_external_content_tools(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    tool_name: str,
+) -> None:
+    """外部検索及び文書取得の本文にある警告語を実行時警告へ数えない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": tool_name, "id": "call-1", "input": {}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "warning: 外部本文"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+def test_warn_mode_keeps_structured_warning_from_external_tool(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """外部ツールも構造化して返した警告は実行時警告として保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "WebSearch", "id": "call-1", "input": {}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": json.dumps({"warning_message": "構造化された警告"}, ensure_ascii=False),
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": "構造化された警告", "tool": "call-1"}]
+
+
+def test_warn_mode_excludes_plain_warning_lines_from_codex_web_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexの外部検索結果に含まれる警告語も実行時警告へ数えない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "function_call", "name": "web__run", "call_id": "call-1", "arguments": "{}"},
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "function_call_output", "call_id": "call-1", "output": "warning: 外部本文"},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+def test_warn_mode_excludes_plain_warning_lines_from_unmatched_results(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """呼び出し名を対応付けられない結果本文を実行時警告へ数えない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "missing-tool", "content": "warning: 外部本文"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "missing-function",
+                    "output": "warning: 外部本文",
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "missing-custom",
+                    "output": "warning: 外部本文",
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
 def test_warn_mode_ignores_identifier_only_management_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -2026,10 +2220,17 @@ def test_warn_mode_accepts_real_line_start_markers_only(
         [
             {"type": "user", "message": {"role": "user", "content": "本文途中の warning と warn"}},
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "call-1", "input": {}}],
+                },
+            },
+            {
                 "type": "user",
                 "message": {
                     "role": "user",
-                    "content": [{"type": "tool_result", "content": warning_line}],
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": warning_line}],
                 },
             },
         ],
@@ -2038,7 +2239,9 @@ def test_warn_mode_accepts_real_line_start_markers_only(
     assert evidence.main([str(transcript), "--warn"]) == 0
 
     expected_events = (
-        [{"kind": "warning", "line": 2, "text": warning_line}] if expected else [{"kind": "warning", "text": "一致なし"}]
+        [{"kind": "warning", "line": 3, "text": warning_line, "tool": "call-1"}]
+        if expected
+        else [{"kind": "warning", "text": "一致なし"}]
     )
     assert _read_jsonl(capsys) == expected_events
 
@@ -2064,13 +2267,28 @@ def test_warn_mode_restricts_generic_markers_to_actual_line_start(
     """一般警告語だけを引用・行番号付き表示から除外し、明示マーカーは維持する。"""
     transcript = _write_transcript(
         tmp_path,
-        [{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": warning_line}]}}],
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "call-1", "input": {}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": warning_line}],
+                },
+            },
+        ],
     )
 
     assert evidence.main([str(transcript), "--warn"]) == 0
 
     expected = (
-        [{"kind": "warning", "line": 1, "text": warning_line.lstrip()}]
+        [{"kind": "warning", "line": 2, "text": warning_line.lstrip(), "tool": "call-1"}]
         if matched
         else [{"kind": "warning", "text": "一致なし"}]
     )
@@ -2535,21 +2753,7 @@ def test_query_modes_normalize_line_number_prefix_across_body_fields(
     pattern: str | None,
 ) -> None:
     """別本文間だけ行番号接頭辞を正規化し、最初に現れた原文を表示する。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [
-                        {"type": "tool_result", "content": "12\twarning: 同じ本文"},
-                        {"type": "tool_result", "content": "warning: 同じ本文"},
-                    ],
-                },
-            }
-        ],
-    )
+    transcript = _execution_result_transcript(tmp_path, "12\twarning: 同じ本文", "warning: 同じ本文")
 
     arguments = [str(transcript), option]
     if pattern is not None:
@@ -2558,7 +2762,14 @@ def test_query_modes_normalize_line_number_prefix_across_body_fields(
 
     events = _read_jsonl(capsys)
     expected_text = "warning: 同じ本文" if option == "--warn" else "12\twarning: 同じ本文"
-    assert events[0] == {"kind": "warning" if option == "--warn" else "match", "line": 1, "text": expected_text}
+    expected_event = {
+        "kind": "warning" if option == "--warn" else "match",
+        "line": 2,
+        "text": expected_text,
+    }
+    if option == "--warn":
+        expected_event["tool"] = "call-1"
+    assert events[0] == expected_event
     if option == "--grep":
         assert events[-1] == {"kind": "summary", "count": 1}
         assert len(events) == 2
@@ -2577,18 +2788,7 @@ def test_query_modes_keep_numbered_and_unnumbered_lines_in_one_body_distinct(
     pattern: str | None,
 ) -> None:
     """同一本文内の行番号接頭辞は、別行を表すため重複として除かない。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [{"type": "tool_result", "content": "12\twarning: 本文\nwarning: 本文"}],
-                },
-            }
-        ],
-    )
+    transcript = _execution_result_transcript(tmp_path, "12\twarning: 本文\nwarning: 本文")
 
     arguments = [str(transcript), option]
     if pattern is not None:
@@ -2726,6 +2926,13 @@ def test_query_modes_keep_warnings_outside_own_invocation(
     entries = [
         *_self_invocation_entries(command),
         {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "name": "Bash", "id": "tu2", "input": {}}],
+            },
+        },
+        {
             "type": "user",
             "message": {
                 "role": "user",
@@ -2739,7 +2946,7 @@ def test_query_modes_keep_warnings_outside_own_invocation(
 
     events = _read_jsonl(capsys)
     assert [event["text"] for event in events] == ["warning: 実在の警告"]
-    assert [event["line"] for event in events] == [3]
+    assert [event["line"] for event in events] == [4]
 
 
 @pytest.mark.parametrize(
@@ -5297,6 +5504,16 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
             },
             {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "作業中"}]}},
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "id": "call-1", "input": {}},
+                        {"type": "tool_use", "name": "Bash", "id": "call-2", "input": {}},
+                    ],
+                },
+            },
+            {
                 "type": "user",
                 "message": {
                     "role": "user",
@@ -5352,8 +5569,8 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     candidate_items = [item for item in candidates if item["kind"] == "candidate"]
     assert [item["candidate_id"] for item in candidate_items] == ["c0001", "c0002"]
     assert [(item["locators"], item["candidate_kind"]) for item in candidate_items] == [
-        ([{"record": "main", "line": 4}], "escalation"),
-        ([{"record": "main", "line": 5}], "warning"),
+        ([{"record": "main", "line": 5}], "escalation"),
+        ([{"record": "main", "line": 6}], "warning"),
     ]
     assert candidates[-1]["excluded"] == {"hook-notice-informational": 1, "initial-request": 1}
     assert candidates[-1]["included_locator_count"] == 2
@@ -5396,9 +5613,9 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     locators = [event for event in bundle_events if event["kind"] == "bundle-locator"]
     assert [{key: value for key, value in event.items() if key != "timestamp"} for event in locators] == [
         {"kind": "bundle-locator", "event_kind": "user", "record": "main", "line": 1},
-        {"kind": "bundle-locator", "event_kind": "failed-tool", "record": "main", "line": 4, "text": "失敗の詳細"},
-        {"kind": "bundle-locator", "event_kind": "agent-completion", "record": "main", "line": 7, "text": "agent-1: 完了報告"},
-        {"kind": "bundle-locator", "event_kind": "final-result", "record": "main", "line": 10, "text": "最終結果"},
+        {"kind": "bundle-locator", "event_kind": "failed-tool", "record": "main", "line": 5, "text": "失敗の詳細"},
+        {"kind": "bundle-locator", "event_kind": "agent-completion", "record": "main", "line": 8, "text": "agent-1: 完了報告"},
+        {"kind": "bundle-locator", "event_kind": "final-result", "record": "main", "line": 11, "text": "最終結果"},
     ]
     # 区間の境界の時刻を`--detail`の追加照会なしで確定できるよう、全イベントが`timestamp`を持つ。
     assert all("timestamp" in event for event in locators)
@@ -5407,11 +5624,11 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
             "kind": "bundle-warning-group",
             "text": "warning: 警告が出た",
             "count": 1,
-            "samples": [{"record": "main", "line": 5}],
+            "samples": [{"record": "main", "line": 6}],
         }
     ]
     assert [event for event in bundle_events if str(event["kind"]).startswith("stats-")] == []
-    assert bundle_events[-1] == {"kind": "unresolved-record", "record": missing_thread, "line": 9}
+    assert bundle_events[-1] == {"kind": "unresolved-record", "record": missing_thread, "line": 10}
     assert [event for event in bundle_events if event["kind"] == "hook-notice"] == []
 
 
@@ -5466,6 +5683,15 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
         tmp_path,
         [
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "id": f"call-{index}", "input": {}} for index in range(1, 5)
+                    ],
+                },
+            },
+            {
                 "type": "user",
                 "message": {
                     "role": "user",
@@ -5499,7 +5725,7 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
             "kind": "bundle-warning-group",
             "text": ("warning: " + "い" * 130)[:120],
             "count": 3,
-            "samples": [{"record": "main", "line": 2}, {"record": "main", "line": 3}, {"record": "main", "line": 4}],
+            "samples": [{"record": "main", "line": 3}, {"record": "main", "line": 4}, {"record": "main", "line": 5}],
         }
     ]
 
@@ -5859,8 +6085,18 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
         [
             {"type": "user", "message": {"role": "user", "content": "root record"}},
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "root-warning", "input": {}}],
+                },
+            },
+            {
                 "type": "user",
-                "message": {"role": "user", "content": [{"type": "tool_result", "content": "[warn] root warning"}]},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "root-warning", "content": "[warn] root warning"}],
+                },
             },
         ],
     )
@@ -5950,8 +6186,18 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
             _assistant_usage_entry("2026-08-30T00:00:00Z", "child", _usage(2, 3)),
             {"type": "user", "message": {"role": "user", "content": "child record"}},
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "child-warning", "input": {}}],
+                },
+            },
+            {
                 "type": "user",
-                "message": {"role": "user", "content": [{"type": "tool_result", "content": "[warning] child warning"}]},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "child-warning", "content": "[warning] child warning"}],
+                },
             },
         ],
     )

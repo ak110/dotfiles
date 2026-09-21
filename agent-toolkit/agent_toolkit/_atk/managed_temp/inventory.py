@@ -347,6 +347,11 @@ def count_unregistered_candidates(prefix: str | None = None) -> int:
     return len(_unregistered_candidates(prefix))
 
 
+def list_unregistered_candidates(prefix: str | None = None) -> tuple[pathlib.Path, ...]:
+    """登録を持たない管理対象の絶対パスを安定順で返す。"""
+    return tuple(_unregistered_candidates(prefix))
+
+
 def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
     """実体側マーカーだけから登録を復元できる管理対象かを返す。
 

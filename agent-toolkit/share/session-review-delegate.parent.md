@@ -10,7 +10,7 @@
 
 メインは`agent-toolkit:delegation`のSKILL.md、同スキルの`references/base-contract.md`及び`references/mandatory-rules.md`を全文読む。本書が起動経路と必須入力を逐語で定めるため、起動側は`references/routing.md`と`references/handoff-record.md`を読まない。
 
-メインは起動の前に、`agent-toolkit:session-review`のSKILL.mdが定める準備工程を完了する。標準出力から`evidence_script`、`transcript_path`又は`codex_thread_id`、`managed_temp`、`observation_boundary`及び`target_repo`を取得する。項目を取得できない場合と準備工程が非0で終了した場合は、振り返り担当を起動せず分析失敗として扱う。
+メインは起動の前に、`agent-toolkit:session-review`のSKILL.mdが定める準備工程を完了し、標準出力の1行JSONを管理対象一時領域の`prepare-manifest.json`へ保存する。保存済みJSONから`evidence_script`、`transcript_path`又は`codex_thread_id`、`managed_temp`、`observation_boundary`及び`target_repo`を取得する。項目を取得できない場合と準備工程が非0で終了した場合は、振り返り担当を起動せず分析失敗として扱う。以降はこのファイルを準備結果の単一正本とし、準備スクリプトを再実行しない。
 
 観測境界は、境界より後に親記録へ追加されるメイン自身の進捗報告を、過去の未完了工程と区別するために取得する。`managed_temp`が指す領域はメインが所有し、振り返り担当はその領域へ書き込むだけとする。回収はメインが行う。
 
@@ -20,22 +20,21 @@
 
 ## 起動
 
-起動の前に`atk managed-temp create --prefix session-review-output`を1回実行し、終了コード0と単一行の絶対パスを確認する。そのディレクトリ直下の`<対象セッションの識別子>.md`を出力先ファイルとし、メインが所有する。
+準備manifestと同じ`session-review-output`領域直下の`<対象セッションの識別子>.md`を出力先ファイルとし、メインが所有する。
 
 メインは`agent-toolkit:delegation`をSkill機能で起動し、`agents_server`の`start`で通常のサブエージェントを1つ起動する。
 `subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`を解決した絶対パスを渡す。
 `target_repo`が値を持つ場合は`cwd`へ対象リポジトリの絶対パスを渡す。`target_repo`が`null`の場合は、Git worktreeではない`managed_temp`の絶対パスを`cwd`へ渡す。
 
-`extra_params`の名前付き必須入力は次の6項目とし、値を次のとおり確定する。
+`extra_params`の名前付き必須入力は次の5項目とし、値を次のとおり確定する。
 
 - 対象セッションの実行系: 対象セッションを実行しているコーディングエージェントの製品名。Claude Codeでは`Claude Code`、Codexでは`Codex`とする
 - 対象セッションの識別子: Claude Codeでは準備工程が返した`transcript_path`の拡張子を除いたファイル名、Codexでは`codex_thread_id`の値とする
-- 管理対象一時領域: 準備工程が返した`managed_temp`の値とする
-- 観測境界: 準備工程が返した`observation_boundary`の値とする
+- 準備manifest: 準備工程の1行JSONを保存した`prepare-manifest.json`の絶対パスとする
 - 出力先ファイル: 本節冒頭で確定した出力先ファイルの絶対パスとする
 - 引き継ぎ記録先: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収は`agent-toolkit:writing-standards`の`references/managed-temp.md`に従う
 
-起動経路は固定タスク契約、抽出器は現行plugin root、対象リポジトリとプロジェクト規範は`cwd`から振り返り担当が解決するため、名前付き入力は前記の6項目に限る。
+起動経路は固定タスク契約、抽出器、対象リポジトリ、管理対象一時領域及び観測境界は準備manifest、プロジェクト規範は`cwd`から振り返り担当が解決するため、名前付き入力は前記の5項目に限る。
 
 メインは2つの領域の絶対パスを保持し、保持、進捗記録及び回収のいずれもメインが担う。
 
@@ -49,7 +48,7 @@
 
 ## メイン由来の改善点の配送
 
-メインは成果の`## メイン由来の改善点`へ`<managed_temp>/main-observations.md`の絶対パス、受領件数及び各項目の統合先又は分析結果があることを検収する。全てが揃う通常時は追加配送を行わない。
+メインは成果の`## メイン由来の改善点`へ`<managed_temp>/main-observations.md`の絶対パス、受領件数及び各項目の統合先又は分析結果があることを検収する。全てが揃う通常時は、その検収結果を採用して追加配送を省く。
 いずれかが欠ける場合だけ、`## ユーザー発話の追加分の配送`と同じ`send_message`の経路で、同じファイルの絶対パスと期待した改善点件数を既存sessionへ配送する。担当が補完した成果を再返却するまで待つ。
 
 ## ユーザー発話の追加分の配送

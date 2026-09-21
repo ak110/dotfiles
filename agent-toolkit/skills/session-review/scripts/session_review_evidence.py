@@ -1904,35 +1904,87 @@ def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return found
 
 
-def _warning_result_values(entry: dict[str, Any]) -> list[tuple[Any, bool]]:
-    """構造化警告を抽出できる実行結果領域の値とhook記録由来かを返す。"""
-    values: list[tuple[Any, bool]] = []
+def _is_execution_tool_name(name: str | None) -> bool:
+    """非構造化の実行時警告を返し得るツール名かを判定する。"""
+    if not isinstance(name, str):
+        return False
+    leaf = name.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1]
+    return leaf in {"bash", "commandexecution", "exec_command", "start_batch", "start_shell"}
+
+
+def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
+    """ツール結果の識別子を、先行する呼び出しのツール名へ対応付ける。"""
+    names: dict[str, str] = {}
+    for record in records:
+        entry = record.entry
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                tool_id = block.get("id")
+                name = block.get("name")
+                if isinstance(tool_id, str) and isinstance(name, str):
+                    names[tool_id] = name
+        payload = entry.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") not in {"function_call", "custom_tool_call"}:
+            continue
+        call_id = payload.get("call_id")
+        name = payload.get("name")
+        if isinstance(call_id, str) and isinstance(name, str):
+            names[call_id] = name
+    return names
+
+
+def _warning_result_values(entry: dict[str, Any], tool_names: dict[str, str]) -> list[tuple[Any, bool, bool]]:
+    """警告を抽出できる結果値、hook由来及び非構造化本文の走査可否を返す。"""
+    values: list[tuple[Any, bool, bool]] = []
     tool_use_result = entry.get("toolUseResult")
     is_read_result = isinstance(tool_use_result, dict) and "file" in tool_use_result
 
-    if "toolUseResult" in entry and not is_read_result:
-        values.append((tool_use_result, False))
-
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
+    result_blocks = (
+        [block for block in content if isinstance(block, dict) and block.get("type") == "tool_result"]
+        if isinstance(content, list)
+        else []
+    )
+    result_ids = [block.get("tool_use_id") for block in result_blocks if isinstance(block.get("tool_use_id"), str)]
+    known_result_names = [tool_names[tool_id] for tool_id in result_ids if tool_id in tool_names]
+    stream_result = isinstance(tool_use_result, dict) and any(key in tool_use_result for key in ("stdout", "stderr"))
+    allow_tool_use_result_markers = (
+        any(_is_execution_tool_name(name) for name in known_result_names) if known_result_names else stream_result
+    )
+
+    if "toolUseResult" in entry and not is_read_result:
+        values.append((tool_use_result, False, allow_tool_use_result_markers))
+
     if isinstance(content, list) and not is_read_result:
-        values.extend((block, False) for block in content if isinstance(block, dict) and block.get("type") == "tool_result")
+        for block in result_blocks:
+            tool_id = block.get("tool_use_id")
+            tool_name = tool_names.get(tool_id) if isinstance(tool_id, str) else None
+            values.append((block, False, tool_name is not None and _is_execution_tool_name(tool_name)))
 
     payload = entry.get("payload")
     if isinstance(payload, dict) and payload.get("type") == "function_call_output":
-        values.append((payload.get("output"), False))
+        call_id = payload.get("call_id")
+        tool_name = tool_names.get(call_id) if isinstance(call_id, str) else None
+        values.append((payload.get("output"), False, tool_name is not None and _is_execution_tool_name(tool_name)))
     if isinstance(payload, dict) and payload.get("type") == "custom_tool_call_output":
-        values.append((payload.get("output"), False))
+        call_id = payload.get("call_id")
+        tool_name = tool_names.get(call_id) if isinstance(call_id, str) else None
+        values.append((payload.get("output"), False, tool_name is not None and _is_execution_tool_name(tool_name)))
     if entry.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") == "item_completed":
         item = payload.get("item")
         if isinstance(item, dict) and item.get("type") == "CommandExecution":
-            values.extend((item.get(key), False) for key in ("aggregated_output", "output", "stdout", "stderr"))
+            values.extend((item.get(key), False, True) for key in ("aggregated_output", "output", "stdout", "stderr"))
 
-    values.extend((hook_record, True) for hook_record in _warning_hook_records(entry))
+    values.extend((hook_record, True, True) for hook_record in _warning_hook_records(entry))
     return values
 
 
-def _warning_texts(entry: dict[str, Any]) -> list[str]:
+def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = None) -> list[str]:
     """本文の由来に基づき、実行結果領域から実行時警告の本文行を返す。
 
     フック通知標識はhook実行の記録に由来する場合だけ採用する。コマンド出力に由来する通常の
@@ -1980,8 +2032,9 @@ def _warning_texts(entry: dict[str, Any]) -> list[str]:
             for item in value:
                 collect_structured(item, from_hook_record)
 
-    for result_value, from_hook_record in _warning_result_values(entry):
-        collect_markers(result_value, from_hook_record)
+    for result_value, from_hook_record, allow_markers in _warning_result_values(entry, tool_names or {}):
+        if allow_markers:
+            collect_markers(result_value, from_hook_record)
         collect_structured(result_value, from_hook_record)
     unnumbered_by_body = [
         {line.strip() for line in text.splitlines() if _LINE_NUMBER_PREFIX.match(line) is None} for text, _, _ in bodies
@@ -2043,8 +2096,9 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     seen_hook_warnings: set[tuple[str, str]] = set()
     scannable = _scannable_records(records)
+    tool_names = _warning_tool_names(scannable)
     for record in scannable:
-        matched_lines = _warning_texts(record.entry)
+        matched_lines = _warning_texts(record.entry, tool_names)
         if not matched_lines:
             continue
         hook_identities = _warning_hook_identities(record.entry)
@@ -3128,8 +3182,8 @@ def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
 def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
     """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。
 
-    軸には正規化した本文だけを置く。呼び出しごとに一意な識別子（`tool_use_id`など）を軸へ含めると、
-    同じ原因の事象が発生件数と同じ数の候補へ分かれ、集約が成立しない。
+    軸には原則として正規化した本文だけを置く。診断を欠くCommandExecutionでは本文による原因の
+    区別が成立しないため、構造化コマンド、さらにコマンドも無い場合は記録位置を用いる。
     """
     if candidate_kind == "hook-notice":
         tag = str(event.get("tag", ""))
@@ -3146,12 +3200,15 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             first_diagnostic_line = (
                 diagnostic.splitlines()[0] if isinstance(diagnostic, str) and diagnostic.splitlines() else ""
             )
+            command_or_location = str(event.get("command", "")) or (
+                f"{event.get('record', '')}:{event.get('line', '')}" if not first_diagnostic_line else ""
+            )
             return (
                 candidate_kind,
                 "CommandExecution",
                 str(event.get("exit_code", "")),
                 str(event.get("executable", "")),
-                _normalize_candidate_kind_text(first_diagnostic_line),
+                _normalize_candidate_kind_text(first_diagnostic_line) if first_diagnostic_line else command_or_location,
             )
         raw_text = event.get("text")
         first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""

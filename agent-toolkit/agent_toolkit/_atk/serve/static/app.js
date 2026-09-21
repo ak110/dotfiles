@@ -158,6 +158,12 @@ function openDialog(dialog, origin, focusTarget) {
   if (focusTarget) focusTarget.focus();
 }
 
+function openDetailDialog(origin) {
+  const body = byId('detail-dialog-body');
+  openDialog(byId('detail-dialog'), origin, body);
+  body.scrollTop = 0;
+}
+
 function closeDialog(dialog, {restoreFocus = true} = {}) {
   const wasOpen = dialog.open;
   if (wasOpen) dialog.close();
@@ -815,7 +821,7 @@ async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) 
     const payload = await api(`/api/entries/${encodeURIComponent(entry.state)}/${encodeURIComponent(entry.filename)}`);
     if (!requestIsCurrent()) return;
     displayEntry(payload.entry);
-    openDialog(byId('detail-dialog'), detailOrigin, byId('detail-dialog-body'));
+    openDetailDialog(detailOrigin);
   } catch (error) {
     if (requestIsCurrent() && !(ignoreNotFound && error.status === 404)) setGlobalError(error.message);
   }

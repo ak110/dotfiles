@@ -390,103 +390,28 @@ class TestCodexMcpExecution:
 
 
 class TestCheckCodexMcpCwd:
-    """`mcp__plugin_agent-toolkit_agents_server__start`呼び出しの`cwd`絶対パス強制（CLI統合テスト、公開インターフェース経由）。"""
+    """開始時`cwd`は実行基盤の入力検査へ委ねる。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    def test_blocks_missing_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`未指定の場合はブロックする。"""
+    @pytest.mark.parametrize("cwd", [None, "", "   ", "relative/path", "/tmp/worktree"])
+    def test_start_input_is_allowed(self, state_dir: dict[str, str], cwd: str | None) -> None:
+        """開始入力は`cwd`の値にかかわらずフックを通過する。"""
+        tool_input = {"prompt": "hello", "sandbox": "danger-full-access"}
+        if cwd is not None:
+            tool_input["cwd"] = cwd
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
-                "session_id": "cwd-missing",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "unspecified" in result.stderr
-
-    def test_blocks_empty_string_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が空文字列の場合はブロックする。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": ""},
-                "session_id": "cwd-empty",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "unspecified" in result.stderr
-
-    def test_blocks_whitespace_only_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が空白のみの場合はブロックする。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "   "},
-                "session_id": "cwd-whitespace",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "`   `" in result.stderr
-
-    def test_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が相対パスの場合はブロックする。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "relative/path"},
-                "session_id": "cwd-relative",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "relative/path" in result.stderr
-
-    def test_start_explore_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """探索起動も相対`cwd`を開始前に拒否する。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_explore",
-                "tool_input": {"prompt": "調査", "cwd": "relative/path"},
-                "session_id": "explore-cwd-relative",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "relative/path" in result.stderr
-
-    def test_start_shell_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """シェル実行委譲も相対`cwd`を開始前に拒否する。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_shell",
-                "tool_input": {"command": "make test", "cwd": "relative/path", "summary_policy": "終了状態だけ"},
-                "session_id": "shell-cwd-relative",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "relative/path" in result.stderr
-
-    def test_allows_absolute_path_cwd(self, state_dir: dict[str, str]) -> None:
-        """`cwd`が絶対パスの場合は許可する。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/home/aki/dotfiles"},
-                "session_id": "cwd-absolute",
+                "tool_input": tool_input,
+                "session_id": f"cwd-{cwd}",
             },
             env_overrides=state_dir,
         )
         assert result.returncode == 0
-        out = json.loads(result.stdout)
-        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
 class TestCodexMcpReply:
@@ -522,56 +447,6 @@ class TestCodexMcpReply:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-
-
-class TestAgentsServerListRepeat:
-    """状態指紋に基づく`agents_server`の`list`再取得遮断を検証する。"""
-
-    @pytest.fixture(name="state_dir")
-    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
-        return _plan_file_state_env(tmp_path)
-
-    @staticmethod
-    def _payload(session_id: str) -> dict:
-        return {
-            "tool_name": "mcp__agents_server__list",
-            "tool_input": {},
-            "session_id": session_id,
-        }
-
-    def test_agents_server_list_repeat_is_blocked_once(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
-        """同一状態の2回目だけを遮断し、権限決定を出力しない。"""
-        session_id = "list-repeat"
-        _write_session_state(tmp_path, session_id, {"agents_server_sessions": {"remote": {"status": "running"}}})
-
-        first = _run(self._payload(session_id), env_overrides=state_dir)
-        blocked = _run(self._payload(session_id), env_overrides=state_dir)
-
-        assert first.returncode == 0
-        assert not first.stdout
-        assert blocked.returncode == 2
-        assert "前回の`list`から`agents_server`の状態が変化していない" in blocked.stderr
-        assert "`stop(session_id)`" in blocked.stderr
-        assert "`atk agents wait`" in blocked.stderr
-        assert not blocked.stdout
-
-    def test_agents_server_list_passes_on_retry_and_state_change(
-        self, state_dir: dict[str, str], tmp_path: pathlib.Path
-    ) -> None:
-        """遮断直後の再実行と状態変化後の再取得は通過する。"""
-        session_id = "list-retry"
-        _write_session_state(tmp_path, session_id, {"agents_server_sessions": {"remote": {"status": "running"}}})
-
-        assert _run(self._payload(session_id), env_overrides=state_dir).returncode == 0
-        assert _run(self._payload(session_id), env_overrides=state_dir).returncode == 2
-        retry = _run(self._payload(session_id), env_overrides=state_dir)
-
-        assert retry.returncode == 0
-        state = _read_session_state(tmp_path, session_id)
-        state["agents_server_sessions"] = {"remote": {"status": "completed"}}
-        _write_session_state(tmp_path, session_id, state)
-        changed = _run(self._payload(session_id), env_overrides=state_dir)
-        assert changed.returncode == 0
 
 
 class TestCodexMcpLanguageWarningMerge:
@@ -1369,15 +1244,15 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == ("git grep --ignore-case needle")
 
-    def test_atk_unknown_option_is_warned(self) -> None:
-        """未受理オプションは実行しても`atk`が終了するだけで復元できるため警告で返す。
+    def test_atk_unknown_option_is_blocked(self) -> None:
+        """未受理オプションは公開契約から不成立が確定するため遮断する。
 
         通知本文は対象トークンと接頭辞が一致する受理オプションだけを示す。
         受理集合の全体は判定を変えないまま実行主体のコンテキストを占めるため載せない。
         """
         result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
-        assert result.returncode == 0
-        messages = _agent_messages(result)
+        assert result.returncode == 2
+        messages = result.stderr
         assert "--not-supported" in messages
         assert "接頭辞が一致する受理オプション: --no-json" in messages
         assert "当該サブコマンドが受理するオプション: " not in messages
@@ -1887,8 +1762,8 @@ class TestNormViolatingArgumentForms:
         assert result.returncode == 0
         assert "位置引数を受理しない" not in _agent_messages(result)
 
-    def test_atk_actual_positional_is_still_warned(self, tmp_path: pathlib.Path) -> None:
-        """位置引数を受理しないサブコマンドへ実際の位置引数を渡した場合は警告する。
+    def test_atk_actual_positional_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """位置引数を受理しないサブコマンドへ実際の位置引数を渡した場合は遮断する。
 
         引数を受理しないサブコマンドでは、対処として引数なしでの再発行を示す。
         値をオプションで渡す対処は当該サブコマンドで実行できないため示さない。
@@ -1896,8 +1771,8 @@ class TestNormViolatingArgumentForms:
         値をオプションで渡す対処が成立するため、本検体の対象から外れる。
         """
         result = self._invoke("atk wi pull extra", tmp_path)
-        assert result.returncode == 0
-        messages = _agent_messages(result)
+        assert result.returncode == 2
+        messages = result.stderr
         assert "位置引数を受理しない" in messages
         assert "引数を付けずに再発行する" in messages
         assert "当該の値をオプションで渡す" not in messages
@@ -1962,25 +1837,39 @@ class TestNormViolatingArgumentForms:
         assert result.returncode == 0
         assert "複数行モード" not in _agent_messages(result)
 
-    def test_unknown_atk_subcommand_warns(self, tmp_path: pathlib.Path) -> None:
-        """実在しないサブコマンドでは、親コマンドが受理する一覧と要約を示す。"""
+    def test_unknown_atk_subcommand_blocks(self, tmp_path: pathlib.Path) -> None:
+        """実在しないサブコマンドを遮断し、親コマンドが受理する一覧と要約を示す。"""
         result = self._invoke("atk not-a-subcommand", tmp_path)
-        assert result.returncode == 0
-        messages = _agent_messages(result)
+        assert result.returncode == 2
+        messages = result.stderr
         assert "実在しないサブコマンド" in messages
         assert "- wi: " in messages
 
-    def test_atk_subcommand_without_positionals_warns(self, tmp_path: pathlib.Path) -> None:
-        """位置引数を受理しないサブコマンドへ引数を付けた実行を検出する。
+    def test_atk_subcommand_without_positionals_blocks(self, tmp_path: pathlib.Path) -> None:
+        """位置引数を受理しないサブコマンドへ引数を付けた実行を遮断する。
 
         オプションを受理するサブコマンドでは、オプションで渡す対処と受理形式の確定手段を示す。
         """
         result = self._invoke("atk wi list 20260101-000000-001.md", tmp_path)
-        assert result.returncode == 0
-        messages = _agent_messages(result)
+        assert result.returncode == 2
+        messages = result.stderr
         assert "位置引数を受理しない" in messages
         assert "当該の値をオプションで渡す" in messages
         assert "受理するオプションは`--help`を単独で実行して確認する" in messages
+
+    def test_atk_unknown_option_blocks(self, tmp_path: pathlib.Path) -> None:
+        """公開契約が受理しないatkオプションは初回から遮断する。"""
+        result = self._invoke("atk wi list --not-supported", tmp_path)
+
+        assert result.returncode == 2
+        assert "受理しないオプション" in result.stderr
+
+    def test_atk_managed_temp_cleanup_positional_path_blocks(self, tmp_path: pathlib.Path) -> None:
+        """managed-temp cleanupへ位置引数のパスを指定した呼び出しを遮断する。"""
+        result = self._invoke("atk managed-temp cleanup /tmp/example", tmp_path)
+
+        assert result.returncode == 2
+        assert "位置引数を受理しない" in result.stderr
 
     def test_atk_subcommand_with_positionals_is_silent(self, tmp_path: pathlib.Path) -> None:
         """位置引数を受理するサブコマンドの正常な実行は検出しない。"""
@@ -1994,8 +1883,8 @@ class TestNormViolatingArgumentForms:
         受理形式の判定は下位サブコマンドを位置引数として表現するため、当該判定へ委ねると実態と異なる本文が返る。
         """
         result = self._invoke("atk config list", tmp_path)
-        assert result.returncode == 0
-        messages = _agent_messages(result)
+        assert result.returncode == 2
+        messages = result.stderr
         assert "実在しないサブコマンド" in messages
         assert "- show: " in messages
         assert "位置引数を受理しない" not in messages

@@ -64,6 +64,7 @@ Write / Edit / MultiEdit / apply_patch:
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - シークレット / 鍵ファイルの直接編集 (block)
+- Pythonと計画Markdownの末尾へ混入したツール境界タグの検出 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -171,6 +172,7 @@ if TYPE_CHECKING:
 def _check_edit_operation_blocks(
     tool_name: str,
     operation: _hook_tool_input.EditOperation,
+    materialized: _hook_tool_input.MaterializedEdit | None,
 ) -> bool:
     """1操作分の遮断検査を実行する。
 
@@ -178,7 +180,29 @@ def _check_edit_operation_blocks(
     「遮断・警告フックの成立条件」の第1段により、編集内容を対象とする検査は警告へ移した。
     秘匿値ファイルの編集だけは、値がログとトランスクリプトへ複写された後に取り消せないため遮断を維持する。
     """
-    return any(_check_secrets(tool_name, path) for path in operation.display_paths)
+    if any(_check_secrets(tool_name, path) for path in operation.display_paths):
+        return True
+    if materialized is None or not _is_trailing_tool_boundary_target(operation.path):
+        return False
+    if _TRAILING_TOOL_BOUNDARY_RE.search(materialized.after_image) is None:
+        return False
+    print(
+        _block_notice(
+            f"blocked: `{operation.display_path}`の末尾にツール境界タグ`</content>`と`</invoke>`が混入している。",
+            fix="末尾のツール境界タグを削除してから編集を再実行する。",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+_TRAILING_TOOL_BOUNDARY_RE = re.compile(r"</content>\s*</invoke>\s*\Z")
+
+
+def _is_trailing_tool_boundary_target(file_path: str) -> bool:
+    """Python又は計画Markdownをツール境界タグ検査の対象とする。"""
+    suffix = pathlib.PurePath(file_path).suffix.lower()
+    return suffix == ".py" or (suffix == ".md" and _is_plan_file_or_adjunct(file_path))
 
 
 def _collect_edit_operation_degraded_warnings(

@@ -72,6 +72,7 @@ from agent_toolkit._atk.managed_temp.inventory import (
     cleanup_managed_temp,
     count_unregistered_candidates,
     is_missing_registered_temp,
+    list_unregistered_candidates,
     list_managed_temp,
     sweep_expired_managed_temp,
 )
@@ -326,6 +327,7 @@ __all__ = [
     "is_missing_registered_temp",
     "is_valid_prefix",
     "json",
+    "list_unregistered_candidates",
     "list_managed_temp",
     "main",
     "os",

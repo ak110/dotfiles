@@ -1625,11 +1625,13 @@ main > .toolbar {
   align-items: baseline;
 }
 #screen-sessions .event .event-kind {
+  flex: 0 0 auto;
   padding: 0 6px;
   border-radius: 999px;
   color: #fff;
   background: #6b7280;
   font-size: calc(var(--font-size-base) * 0.8);
+  white-space: nowrap;
 }
 #screen-sessions .event.kind-user .event-kind {
   background: #2563eb;
@@ -1653,7 +1655,9 @@ main > .toolbar {
   background: #b91c1c;
 }
 #screen-sessions .event .event-time {
+  flex: 0 0 auto;
   color: #6b7280;
+  white-space: nowrap;
 }
 #screen-sessions .event .event-input-summary {
   min-width: 0;

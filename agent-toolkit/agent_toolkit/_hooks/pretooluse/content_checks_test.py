@@ -29,6 +29,41 @@ from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 
+@pytest.mark.parametrize("suffix", [".py", ".md"])
+def test_trailing_tool_boundary_tags_are_blocked(
+    suffix: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Pythonと計画Markdownの末尾へ混入したツール境界タグを遮断する。"""
+    if suffix == ".md":
+        target = tmp_path / ".claude/plans/example.md"
+        target.parent.mkdir(parents=True)
+    else:
+        target = tmp_path / "example.py"
+    result = _run(
+        {
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(target), "content": "本文\n</content>\n</invoke>\n"},
+            "session_id": f"boundary-{suffix}",
+        },
+        env_overrides={"HOME": str(tmp_path)},
+    )
+    assert result.returncode == 2
+    assert "ツール境界タグ" in result.stderr
+
+
+def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: pathlib.Path) -> None:
+    """計画以外のMarkdownはツール境界タグ検査の対象外とする。"""
+    result = _run(
+        {
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(tmp_path / "note.md"), "content": "本文\n</content>\n</invoke>\n"},
+            "session_id": "boundary-regular-markdown",
+        }
+    )
+    assert result.returncode == 0
+
+
 def test_colloquial_notice_references_only_the_deliverable_writing_rule(deny_substring: str) -> None:
     """口語警告は、検査対象から一意に確定する成果物向けの参照先だけを示す。
 

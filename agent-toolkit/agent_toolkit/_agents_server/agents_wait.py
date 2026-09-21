@@ -78,8 +78,8 @@ def wait_for_result(
     待機中に開始又は再稼働したsessionも、巡回ごとに取得して対象へ追加する。
     状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
-    対象を1件も取得できない状態が続く場合だけは、起動そのものが失敗した可能性を呼び出し元へ返すため、
-    通常の待機上限とは別の短い上限で理由を標準エラーへ書いて非0で終わる。
+    待機対象の登録も、`starting`を含む保持中sessionも0件の場合は、待機しても回収対象が生じないため、
+    両方の不在を理由として標準エラーへ書き、即座に非0で終わる。
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
@@ -106,6 +106,14 @@ def wait_for_result(
     if target_error is not None:
         return _fail(*target_error)
     ordered_ids = sorted(origins)
+    own_sessions = _read_sessions(own_status_path)
+    if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
+        return _fail(
+            "待機対象の登録が0件で、保持中のsessionも0件です。"
+            "委譲先を起動してから`atk agents wait`を実行してください: "
+            f"owner={identity.file_name}",
+            10,
+        )
     _LOG.info(
         "wait_start targets=%s origins=%s",
         ",".join(ordered_ids) or "none",
@@ -129,8 +137,6 @@ def wait_for_result(
 
         started_at = time.monotonic()
         deadline = started_at + state.WAIT_TIMEOUT_SECONDS
-        # 対象を1件でも取得した時点で不在の上限は失効し、以後は通常の待機上限だけが働く。
-        empty_deadline: float | None = None if ordered_ids else started_at + state.EMPTY_WAIT_TIMEOUT_SECONDS
         while True:
             current_origins, target_error = _target_origins(
                 own_status_path,
@@ -191,18 +197,6 @@ def wait_for_result(
                 return _fail(*read_failure, session_id=failed_session_id)
 
             now = time.monotonic()
-            if ordered_ids:
-                empty_deadline = None
-            elif empty_deadline is not None and now >= empty_deadline:
-                return _fail(
-                    "待機対象が1件も登録されないまま上限へ達しました。"
-                    "委譲先の起動に失敗した可能性があるため、`atk agents list`と起動側の応答を確認してください: "
-                    f"owner={identity.file_name}, "
-                    f"elapsed={now - started_at:.1f}s, "
-                    f"limit={state.EMPTY_WAIT_TIMEOUT_SECONDS:.0f}s",
-                    10,
-                )
-
             retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
             selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), None)
             if selected is None and ordered_ids:

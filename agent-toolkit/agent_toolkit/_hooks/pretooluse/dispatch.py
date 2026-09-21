@@ -13,6 +13,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 任意ツール:
 
+- 同一のツール名とJSON入力が10回連続した場合の遮断 (block)
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
 - ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
 - 質問本文・選択肢が指す`atk`サブコマンドの公開契約が未観測の場合の検査 (block)
@@ -25,14 +26,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / start_shell / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / start_shell / send_message / kill / list:
 
-- 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
+- `send_message`・`kill`のprompt/sessionと所有記録の検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
-
-list:
-
-- 状態が変化していない再取得を再実行窓付きで遮断 (block)
 
 Bash:
 
@@ -69,6 +66,7 @@ Read / Write / Edit / MultiEdit / apply_patch:
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - `.env`系のReadとシークレット・鍵ファイルの直接編集 (block)
+- Pythonと計画Markdownの末尾へ混入したツール境界タグの検出 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -167,14 +165,11 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
 if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.agent_checks import (
         _AGENTS_SERVER_KILL_TOOLS,
-        _AGENTS_SERVER_LIST_TOOLS,
         _AGENTS_SERVER_SEND_TOOLS,
         _AGENTS_SERVER_START_TOOLS,
         _AGENTS_SERVER_TOOL_NAMES,
         _PLAN_MODE_SKILL_NAMES,
         _check_agents_server_continuation_input,
-        _check_agents_server_cwd,
-        _check_agents_server_list_repeat,
         _check_generic_agent_preference,
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
@@ -183,6 +178,7 @@ if TYPE_CHECKING:
         _record_iss_sidechain_probe,
         _reset_plan_mode_state,
     )
+    from agent_toolkit._hooks.pretooluse.repeat_guard import check_repeated_tool_call
     from agent_toolkit._hooks.pretooluse.content_checks import (
         _check_direct_agent_toolkit_edits_after_plan_mode,
         _check_edit_boundary_resolution,
@@ -355,6 +351,9 @@ def main(payload_text: str) -> int:
             pending_notices.clear()
         return code
 
+    if check_repeated_tool_call(session_id, tool_name, tool_input):
+        return exit_with(2)
+
     # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）。
     # 呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する
     plan_mode_notice = _check_plan_mode_skill_first(tool_name, tool_input, session_id)
@@ -378,12 +377,6 @@ def main(payload_text: str) -> int:
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
             _reset_plan_mode_state(session_id)
-        flush_pending_notices()
-        return exit_with(0)
-
-    if tool_name in _AGENTS_SERVER_LIST_TOOLS:
-        if _check_agents_server_list_repeat(session_id):
-            return exit_with(2)
         flush_pending_notices()
         return exit_with(0)
 
@@ -464,10 +457,7 @@ def _handle_agents_server_tool(
 ) -> int:
     """agents_serverの開始点・観測点を分離して検査する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
-    if tool_name in _AGENTS_SERVER_START_TOOLS:
-        if _check_agents_server_cwd(tool_input):
-            return 2
-    elif tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS and _check_agents_server_continuation_input(
+    if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS and _check_agents_server_continuation_input(
         session_id, tool_input, tool_name
     ):
         return 2
@@ -564,6 +554,10 @@ def _handle_bash_tool(
     git_grep_pattern_type_result = _check_bash_git_grep_pattern_type(command)
     if git_grep_pattern_type_result == "block":
         return 2
+    if _check_bash_atk_options(command) == "block":
+        return 2
+    if _check_bash_unknown_atk_subcommand(command) == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
@@ -576,8 +570,6 @@ def _handle_bash_tool(
         _check_bash_uv_run_python(command, cwd),
         _check_bash_help_with_execution(command),
         _check_bash_explicit_path_exists(command, cwd),
-        _check_bash_atk_options(command),
-        _check_bash_unknown_atk_subcommand(command),
         git_grep_pattern_type_result,
         _check_bash_unquoted_shell_metacharacter(command),
         _check_bash_unresolved_git_object(command, cwd),
@@ -708,8 +700,8 @@ def _handle_edit_tool(
         flush_warning()
         return 0
     images: dict[int, _hook_tool_input.MaterializedEdit | None] = {}
-    for operation in operations:
-        if _check_edit_operation_blocks(tool_name, operation):
+    for index, operation in enumerate(operations):
+        if _check_edit_operation_blocks(tool_name, operation, _materialize_cached(operation, index, images)):
             return 2
     warnings: list[str] = []
     boundary_warning = _check_edit_boundary_resolution(tool_name, operations)

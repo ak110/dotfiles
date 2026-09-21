@@ -59,14 +59,28 @@ def _managed_temp_path(result: subprocess.CompletedProcess[str] | None) -> pathl
 
 
 def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pathlib.Path | None:
-    """対象リポジトリ固有の振り返り参照文書を解決する。
-
-    振り返り担当が所在を自ら探すと、証拠抽出を始める前に1往復を要する。
-    実在しない場合はNoneを返し、参照文書を持たないリポジトリと区別しない。
-    """
+    """Git共通dirから対象リポジトリ固有の振り返り参照文書を解決する。"""
     if target_repo is None:
         return None
-    path = pathlib.Path.home() / (".codex" if codex else ".claude") / "docs" / f"session-review-{target_repo.name}.md"
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(target_repo), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return None
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 1:
+        return None
+    common_dir = pathlib.Path(lines[0])
+    if not common_dir.is_absolute():
+        common_dir = target_repo / common_dir
+    repository_name = common_dir.resolve().parent.name
+    path = pathlib.Path.home() / (".codex" if codex else ".claude") / "docs" / f"session-review-{repository_name}.md"
     return path if path.is_file() else None
 
 
@@ -101,7 +115,6 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     except OSError:
         return _missing("bundle_dir")
     reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
-
     record = {
         "evidence_script": str(evidence_script),
         "report_script": str(report_script),

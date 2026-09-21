@@ -113,7 +113,7 @@ def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path)
     result = _run(
         {
             "tool_name": "Bash",
-            "tool_input": {"command": "atk wi add example"},
+            "tool_input": {"command": "atk wi list"},
             "session_id": "dispatch-unverified-atk-help",
         },
         env_overrides=_plan_file_state_env(tmp_path),

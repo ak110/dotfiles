@@ -109,7 +109,7 @@ class TestCheckText:
             (
                 "統合完了\n"
                 "merged_head: 0123456789abcdef0123456789abcdef01234567\n"
-                "deferred_adopt_commits: 20260101-ccc.md=0123456789abcdef0123456789abcdef01234567\n"
+                'deferred_adopt_commits: [{"awi":"20260101-ccc.md","commit":"0123456789abcdef0123456789abcdef01234567"}]\n'
                 "adopted: 20260101-aaa.md, 20260101-bbb.md\n"
                 "rejected: なし"
             ),

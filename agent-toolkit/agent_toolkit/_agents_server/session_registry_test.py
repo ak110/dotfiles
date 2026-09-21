@@ -32,6 +32,17 @@ def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.TERMINAL
 
 
+def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
+    """起動処理中のsessionを非終端の再開情報として観測する。"""
+    subject.publish("child-session", terminal=False, status="starting", cwd=str(tmp_path), state_root=tmp_path)
+
+    resolution = subject.resolve("child-session", state_root=tmp_path)
+
+    assert resolution.state is subject.Resolution.RUNNING
+    assert resolution.resume_info is not None
+    assert resolution.resume_info.status == "starting"
+
+
 def test_remove_discards_observed_session(tmp_path: pathlib.Path) -> None:
     """観測済みsessionと空になった登録簿ディレクトリを取り除く。"""
     subject.publish("child-session", terminal=True, state_root=tmp_path)
@@ -50,8 +61,14 @@ async def test_session_state_publishes_state_transitions(
     monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
     session = state.SessionState("published-session", str(tmp_path), publish_registry=True)
 
+    session.status = "starting"
     session.touch()
     first = json.loads((subject.registry_directory() / "published-session.json").read_text(encoding="utf-8"))
+    assert first["status"] == "starting"
+    session.status = "running"
+    session.touch()
+    first = json.loads((subject.registry_directory() / "published-session.json").read_text(encoding="utf-8"))
+    assert first["status"] == "running"
     session.set_progress("進捗")
     second = json.loads((subject.registry_directory() / "published-session.json").read_text(encoding="utf-8"))
     assert second == first

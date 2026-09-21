@@ -829,6 +829,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         return [
             "対象セッションの実行系: codex",
             "対象セッションの識別子: 00000000-0000-0000-0000-000000000000",
+            f"準備manifest: {root / 'prepare-manifest.json'}",
             f"管理対象一時領域: {root / 'managed-temp'}",
             "観測境界: 2026-01-01T00:00:00Z",
             f"出力先ファイル: {root / 'session-review.md'}",
@@ -1031,6 +1032,39 @@ async def test_start_rejects_unknown_model_type_before_backend(
     with pytest.raises(ValueError, match="available: plan"):
         await manager.start("unknown", "調査", str(tmp_path))
     assert not backend.start_calls
+
+
+@pytest.mark.asyncio
+async def test_start_is_listed_as_starting_until_backend_initialization_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """session_id確定後はstartの応答前でもlistとshowがstartingを返す。"""
+    manager, backend = _manager_with_fake("codex")
+    original_start = backend.start
+    registered = asyncio.Event()
+    finish_initialization = asyncio.Event()
+
+    async def blocked_start(*args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await original_start(*args, **kwargs)
+        session.status = "starting"
+        session.touch()
+        registered.set()
+        await finish_initialization.wait()
+        return session
+
+    monkeypatch.setattr(backend, "start", blocked_start)
+    start_task = asyncio.create_task(manager.start("execute", "調査", str(tmp_path)))
+    await registered.wait()
+
+    listed = manager.list_sessions()["sessions"]
+    assert [(item["session_id"], item["status"]) for item in listed] == [("codex-session", "starting")]
+    assert manager.show_session("codex-session")["status"] == "starting"
+
+    finish_initialization.set()
+    response = await start_task
+    assert response["status"] == "running"
+    assert manager.show_session("codex-session")["status"] == "running"
 
 
 @pytest.mark.asyncio
@@ -2937,7 +2971,7 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
 
     monkeypatch.setattr(manager, "_ensure_client", ensure_client)
     session = await manager.start("調査", str(tmp_path), "gpt-test", "high")
-    assert session.status == "running"
+    assert session.status == "starting"
     thread_start = client.requests[0][1]
     turn_start = client.requests[1][1]
     assert thread_start["approvalPolicy"] == "never"
@@ -5806,13 +5840,3 @@ def test_initialization_failure_resolves_before_host_moves_call_to_background() 
     """
     failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
     assert failure_path + subject.START_AVAILABILITY_TIMEOUT < state.HOST_BACKGROUND_THRESHOLD_SECONDS
-
-
-def test_empty_wait_limit_outlasts_the_initialization_failure_path() -> None:
-    """対象不在の待機上限が、初期化が失敗し得る最大の経過を上回る。
-
-    当該関係が崩れると、初期化中の委譲先を待つ正常な待機を打ち切る。
-    """
-    failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
-    assert failure_path + subject.START_AVAILABILITY_TIMEOUT < state.EMPTY_WAIT_TIMEOUT_SECONDS
-    assert state.EMPTY_WAIT_TIMEOUT_SECONDS < state.WAIT_TIMEOUT_SECONDS

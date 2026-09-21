@@ -32,6 +32,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 
 import argparse
 import datetime
+import hashlib
 import importlib
 import math
 import os
@@ -66,6 +67,8 @@ from agent_toolkit._atk.wi import repo as _wi_repo  # noqa: E402
 from agent_toolkit._atk.wi import show as _show  # noqa: E402
 from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
+from agent_toolkit._hooks import session_state as _session_state  # noqa: E402
+from agent_toolkit._plan import locations as _plan_file  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES)
@@ -92,6 +95,29 @@ _WI_SYNC_MUTATIONS = frozenset(
         "commit",
     )
 )
+
+_UNREGISTERED_TEMP_FINGERPRINT_KEY = "unregistered_managed_temp_fingerprint"
+
+
+def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
+    """候補集合が現行セッションで未報告の場合だけ警告権を取得する。"""
+    session_id = _plan_file.resolve_owner_session_id()
+    if session_id is None:
+        return bool(candidates)
+    source = "\0".join(str(path) for path in candidates)
+    fingerprint = hashlib.sha256(source.encode()).hexdigest()
+    should_warn = False
+
+    def _claim(current: dict) -> dict | None:
+        nonlocal should_warn
+        if current.get(_UNREGISTERED_TEMP_FINGERPRINT_KEY) == fingerprint:
+            return None
+        current[_UNREGISTERED_TEMP_FINGERPRINT_KEY] = fingerprint
+        should_warn = bool(candidates)
+        return current
+
+    _session_state.update_state(session_id, _claim)
+    return should_warn
 
 
 def _cooldown_days(value: str) -> int:
@@ -1223,13 +1249,14 @@ def main(
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
     if args.command != "managed-temp" and not is_delegated_session:
         try:
-            unregistered_count = _managed_temp.count_unregistered_candidates()
+            unregistered_candidates = _managed_temp.list_unregistered_candidates()
         except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
             _outcome.report_warning(f"登録を持たない管理対象を探索できなかった: {error}")
         else:
-            if unregistered_count:
+            if _claim_unregistered_temp_warning(unregistered_candidates):
                 _outcome.report_warning(
-                    f"登録を持たない管理対象が{unregistered_count}件ある（一覧と回収方法は atk managed-temp list で確認できる）"
+                    f"登録を持たない管理対象が{len(unregistered_candidates)}件ある"
+                    "（一覧と回収方法は atk managed-temp list で確認できる）"
                 )
     _validate_bulk_transition_args(args)
     args.repo_path_override = repo_path_override

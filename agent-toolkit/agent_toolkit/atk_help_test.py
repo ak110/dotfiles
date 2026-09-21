@@ -265,7 +265,9 @@ def test_agents_wait_help_states_absent_target_termination() -> None:
     description = commands["atk agents wait"].description
 
     assert description is not None
-    assert "待機対象を1件も取得できない状態が続く場合" in description
+    assert "待機対象の登録が0件" in description
+    assert "`starting`を含む保持中sessionも0件" in description
+    assert "保持中sessionが1件以上ある場合は通常の待機上限まで待つ" in description
     assert "同じコマンドを再発行せず" in description
 
 

@@ -317,6 +317,8 @@ class AntigravityManager:
                         conversation_id=conversation_id,
                     )
                     self._attach_session(session, process, turn_seq)
+                    session.status = "starting"
+                    session.touch()
                     if not initialized.done():
                         initialized.set_result(session)
                 elif kind == "step_update" and session is not None:

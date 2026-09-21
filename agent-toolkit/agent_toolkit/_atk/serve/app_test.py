@@ -193,6 +193,20 @@ process.stdout.write(JSON.stringify({
     }
 
 
+def test_open_detail_dialog_resets_scroll_position() -> None:
+    """WI詳細は再表示のたびに本文の先頭から表示する。"""
+    result = _run_node_ui(
+        """
+const origin = new Element('origin', 'BUTTON');
+const body = elements['detail-dialog-body'];
+body.scrollTop = 240;
+openDetailDialog(origin);
+process.stdout.write(JSON.stringify({scrollTop: body.scrollTop, focused}));
+"""
+    )
+    assert result == {"scrollTop": 0, "focused": "detail-dialog-body"}
+
+
 def test_assets_restore_detail_focus_after_origin_row_disappears() -> None:
     """詳細の起点行が消えた場合も、残存行又は空状態の操作へフォーカスを戻す。"""
     result = _run_node_ui(
@@ -681,6 +695,59 @@ async def test_uwi_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatc
     assert response.status_code == 200
     assert (tmp_path / "rejected" / "entry.md").is_file()
     assert not (inbox / "entry.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_answer_api_auto_adopts_affirmative_post_approval(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回答APIは標準の事後承認UWIへの肯定回答を採択まで完了する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(serve_app.uwi_mutations, "_repo_lock", lock)
+    monkeypatch.setattr(serve_app.uwi_mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.uwi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    for state_name in common.WI_STATES:
+        (tmp_path / state_name).mkdir()
+    content = (
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
+        "choices: [その対応で問題無い, 問題がある]\n---\n\n"
+        "## 質問\n\n実施済みの対応を承認しますか。\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+    )
+    inbox = tmp_path / "inbox" / "post-approval.md"
+    inbox.write_text(content, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    response = await client.post(
+        "/api/entries/answer",
+        json={
+            "filename": inbox.name,
+            "state": "inbox",
+            "answer": " その対応で問題無い\n",
+            "expected_content": content,
+        },
+    )
+    active_response = await client.get("/api/entries?status=active")
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"changed": True}
+    assert active_response.status_code == 200
+    assert not (await active_response.get_json())["entries"]
+    assert not inbox.exists()
+    adopted = tmp_path / "adopted" / inbox.name
+    saved = adopted.read_text(encoding="utf-8")
+    assert "その対応で問題無い" in saved
+    assert "- 採否: adopted" in saved
 
 
 @pytest.mark.asyncio

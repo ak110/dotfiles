@@ -6,9 +6,10 @@ from agent_toolkit._hooks.pretooluse import dispatch as _dispatch
 from agent_toolkit._hooks.pretooluse import git_checks as _git_checks
 from agent_toolkit._hooks.pretooluse import large_reads as _large_reads
 from agent_toolkit._hooks.pretooluse import notices as _notices
+from agent_toolkit._hooks.pretooluse import repeat_guard as _repeat_guard
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 
-_MODULES = (_notices, _dispatch, _content_checks, _git_checks, _large_reads, _shell_checks, _agent_checks)
+_MODULES = (_notices, _repeat_guard, _dispatch, _content_checks, _git_checks, _large_reads, _shell_checks, _agent_checks)
 
 for _target in _MODULES:
     for _source in _MODULES:

@@ -42,13 +42,6 @@ SESSION_INITIALIZATION_TIMEOUT = 50.0
 SESSION_INITIALIZATION_ATTEMPTS = 2
 # `atk agents wait`が待機対象を1件以上取得した後に用いる上限秒数。
 WAIT_TIMEOUT_SECONDS = 3600.0
-# `atk agents wait`が待機対象を1件も取得できない状態を続けられる上限秒数。
-# 起動に失敗した委譲先はsessionを登録しないため、対象が空のまま待ち続けると呼び出し元が失敗を観測できない。
-# 対象は待機中にも追加されるため空であることを即時の終了条件にはできず、
-# SESSION_INITIALIZATION_TIMEOUTとSESSION_INITIALIZATION_ATTEMPTSの積へ
-# START_AVAILABILITY_TIMEOUTを加えた和を上回る値を選ぶ。
-# この関係が崩れると、初期化中の委譲先を待つ正常な待機を打ち切る。
-EMPTY_WAIT_TIMEOUT_SECONDS = 150.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "execute",
@@ -503,7 +496,7 @@ class SessionState:
                 model_type=self.model_type,
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
-                status=typing.cast(typing.Literal["running", "completed", "failed", "interrupted"], self.status),
+                status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
             )
             self._published_registry_terminal = registry_terminal
             self._published_registry_turn_seq = self.turn_seq

@@ -642,6 +642,8 @@ class AppServerManager:
         )
         self.sessions[session_id] = session
         _initialize_turn(session)
+        session.status = "starting"
+        session.touch()
         try:
             await self._start_turn(session, prompt, client)
         except Exception as exc:

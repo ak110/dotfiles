@@ -5,9 +5,11 @@
 """
 
 import argparse
+import datetime
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -15,9 +17,11 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi.common import (
     WI_PROCESSABLE_STATES,
+    WI_STATE_ADOPTED,
     WI_STATE_HOLD,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
+    WI_STATES,
     WI_TYPE_UWI,
     WebInputError,
     _commit_and_push,
@@ -27,6 +31,8 @@ from agent_toolkit._atk.wi.common import (
     _pull,
     _repo_lock,
     _require_type,
+    _stamp_result,
+    _subdir,
     _validate_filename,
     is_agent_environment,
 )
@@ -46,6 +52,7 @@ ANSWER_HEADING = "## 回答"
 """UWIエントリの回答見出し。`_atk_wi_add.add_entries`が投入時に付与する。"""
 
 _RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
+_POST_APPROVAL_CHOICES = ("その対応で問題無い", "問題がある")
 
 
 def _looks_like_question(message: str) -> bool:
@@ -253,11 +260,37 @@ def answer_uwi(
         # 既存データにマーカーが重複するエントリが存在するため最後のマーカーを基準に分割する。
         # 最初のマーカーで分割すると回答見出しが消失し質問本文が途中で切断される。
         content = text.rsplit(ANSWER_MARKER, maxsplit=1)[0] + ANSWER_MARKER + "\n" + answer.strip() + "\n"
-        if text == content:
+        auto_adopt = _is_affirmative_post_approval(text, answer)
+        if text == content and not auto_adopt:
             return False
-        _frontmatter.write_entry_text(path, content)
-        _commit_and_push(private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))])
+        destination = _subdir(private_notes, WI_STATE_ADOPTED) / path.name if auto_adopt else None
+        if destination is not None and destination.exists():
+            raise WebInputError(f"移動先（{WI_STATE_ADOPTED}）に同名エントリが既に存在します: {path.name}")
+        if text != content:
+            _frontmatter.write_entry_text(path, content)
+        if destination is not None:
+            _stamp_result(path, outcome=WI_STATE_ADOPTED, now=datetime.datetime.now(datetime.UTC))
+            shutil.move(path, destination)
+            _commit_and_push(private_notes, "chore: answer and adopt uwi item", list(WI_STATES))
+        else:
+            _commit_and_push(private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))])
     return True
+
+
+def _is_affirmative_post_approval(text: str, answer: str) -> bool:
+    """標準の事後承認UWIに対する肯定回答であるかを返す。"""
+    parsed = _frontmatter.parse_frontmatter(text)
+    if parsed is None or answer.strip() != _POST_APPROVAL_CHOICES[0]:
+        return False
+    metadata, _body = parsed
+    choices = metadata.get("choices")
+    if isinstance(choices, str):
+        normalized_choices = tuple(choice.strip() for choice in choices.split(","))
+    elif isinstance(choices, list) and all(isinstance(choice, str) for choice in choices):
+        normalized_choices = tuple(choice.strip() for choice in choices)
+    else:
+        return False
+    return metadata.get("question_type") == "choice" and normalized_choices == _POST_APPROVAL_CHOICES
 
 
 def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

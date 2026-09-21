@@ -6,6 +6,7 @@ import datetime
 import json
 import os
 import pathlib
+import subprocess
 
 import pytest
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -106,27 +107,6 @@ def test_prepare_does_not_read_queue(
     assert _calls(log_path) == [["managed-temp", "create", "--prefix", "session-review"]]
 
 
-def test_prepare_resolves_the_project_reference_document(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """対象リポジトリ固有の参照文書が実在する場合は、その絶対パスを返す。"""
-    _install_atk_stub(monkeypatch, tmp_path)
-    transcript = _write_transcript(tmp_path)
-    target_repo = tmp_path / "target-repo"
-    target_repo.mkdir()
-    home = tmp_path / "home"
-    document = home / ".claude" / "docs" / "session-review-target-repo.md"
-    document.parent.mkdir(parents=True)
-    document.write_text("# 観点\n", encoding="utf-8")
-    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: home))
-
-    assert prepare.main(["--transcript", str(transcript), "--target-repo", str(target_repo)], now=_FIXED_NOW) == 0
-
-    assert json.loads(capsys.readouterr().out)["reference_document"] == str(document)
-
-
 def test_prepare_omits_target_repo(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -144,6 +124,59 @@ def test_prepare_omits_target_repo(
     assert record["codex_thread_id"] == "thread-1"
     assert record["target_repo"] is None
     assert _calls(log_path) == [["managed-temp", "create", "--prefix", "session-review"]]
+
+
+@pytest.mark.parametrize("linked_worktree", [False, True])
+def test_prepare_resolves_reference_document_from_main_worktree_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    linked_worktree: bool,
+) -> None:
+    """通常checkoutとlinked worktreeは同じ参照文書へ解決する。"""
+    _install_atk_stub(monkeypatch, tmp_path)
+    transcript = _write_transcript(tmp_path)
+    main_worktree = tmp_path / "dotfiles"
+    main_worktree.mkdir()
+    subprocess.run(["git", "-C", str(main_worktree), "init"], check=True, capture_output=True)
+    (main_worktree / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(main_worktree), "add", "tracked.txt"], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(main_worktree),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "initial",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    target_repo = main_worktree
+    if linked_worktree:
+        target_repo = tmp_path / "process-loop"
+        subprocess.run(
+            ["git", "-C", str(main_worktree), "worktree", "add", "--detach", str(target_repo)],
+            check=True,
+            capture_output=True,
+        )
+    home = tmp_path / "home"
+    document = home / ".claude" / "docs" / "session-review-dotfiles.md"
+    document.parent.mkdir(parents=True)
+    document.write_text("# 観点\n", encoding="utf-8")
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: home))
+
+    assert prepare.main(["--transcript", str(transcript), "--target-repo", str(target_repo)], now=_FIXED_NOW) == 0
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["target_repo"] == str(target_repo.resolve())
+    assert record["reference_document"] == str(document)
 
 
 def test_prepare_reports_missing_items(
