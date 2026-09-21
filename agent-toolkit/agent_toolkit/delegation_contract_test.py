@@ -98,6 +98,26 @@ def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str]
     return errors
 
 
+def _pair_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[str]:
+    """指定した呼び元と受信者の組が同じ起動契約を持つか検査する。"""
+    errors: list[str] = []
+    targets, valid_structure = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
+    if not valid_structure or recipient.name not in targets:
+        errors.append(f"起動対象が一致しない: {parent.name} -> {recipient.name}")
+        return errors
+
+    required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
+    if not valid_structure or not required_names:
+        errors.append(f"必須入力名の構造が不正: {recipient.name}")
+        return errors
+
+    parent_content = parent.read_text(encoding="utf-8")
+    for name in required_names:
+        if not _contains_exact_name(parent_content, name):
+            errors.append(f"必須入力名が欠けている: {parent.name} -> {recipient.name}: {name}")
+    return errors
+
+
 def _contract_errors(share: pathlib.Path) -> list[str]:
     """share直下の委譲起動契約に反する箇所を返す。"""
     parents = sorted(share.glob("*.parent.md"))
@@ -131,17 +151,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         recipient = recipients.get(target)
         if recipient is None:
             continue
-        required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
-        if not valid_structure:
-            errors.append(f"必須入力名の構造が不正: {recipient.name}")
-            continue
-        if not required_names:
-            errors.append(f"必須入力名の記載がない: {recipient.name}")
-            continue
-        parent_content = parent.read_text(encoding="utf-8")
-        for name in required_names:
-            if not _contains_exact_name(parent_content, name):
-                errors.append(f"必須入力名が欠けている: {parent.name} -> {target}: {name}")
+        errors.extend(_pair_errors(parent, recipient))
 
     parent_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
     for parent, target in pairs:
@@ -253,6 +263,18 @@ def test_lane_integration_returns_changed_agent_rules() -> None:
     assert all("agent_rule_changes" in content for content in (recipient, parent))
 
 
+def test_agent_rule_self_update_switches_parent_and_recipient_atomically() -> None:
+    """規範の自己更新は呼び元と受信者を同じ資源rootから採用する。"""
+    repository = pathlib.Path(__file__).resolve().parents[2]
+    parent = (repository / "agent-toolkit" / "share" / "exec.parent.md").read_text(encoding="utf-8")
+    layout = (repository / ".claude" / "skills" / "dotfiles-repo-layout" / "SKILL.md").read_text(encoding="utf-8")
+    design = (repository / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+
+    for content in (parent, layout, design):
+        assert "同一の資源root" in content
+        assert "稼働開始時" in content
+
+
 def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
     """委譲先の確認事項は標識へ保存せず確定時点でメインへ通知する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
@@ -321,6 +343,35 @@ def test_changed_required_input_fails_without_parent_update(tmp_path: pathlib.Pa
     )
 
     assert "必須入力名が欠けている: task.parent.md -> task.subagent.md: 新しい入力" in _contract_errors(tmp_path)
+
+
+def test_parent_and_recipient_versions_cannot_be_mixed(tmp_path: pathlib.Path) -> None:
+    """旧版と新版は各組だけが整合し、異なる資源rootの親子を混在させない。"""
+    old_root = tmp_path / "old"
+    new_root = tmp_path / "new"
+    _write_pair(old_root, parent_body=_parent_body())
+    _write_pair(
+        new_root,
+        parent_body=_parent_body().replace("対象リポジトリ", "新しい入力"),
+        required_name="新しい入力",
+    )
+
+    assert not _contract_errors(old_root)
+    assert not _contract_errors(new_root)
+    assert _pair_errors(old_root / "task.parent.md", new_root / "task.subagent.md")
+    assert _pair_errors(new_root / "task.parent.md", old_root / "task.subagent.md")
+
+
+def test_incomplete_new_root_keeps_existing_pair_as_fallback(tmp_path: pathlib.Path) -> None:
+    """新版の受信者が欠ける場合は新版を不成立とし、旧版の有効な親子を維持する。"""
+    old_root = tmp_path / "old"
+    new_root = tmp_path / "new"
+    _write_pair(old_root, parent_body=_parent_body())
+    new_root.mkdir()
+    (new_root / "task.parent.md").write_text(_parent_body(), encoding="utf-8")
+
+    assert "受信者が実在しない: task.parent.md -> task.subagent.md" in _contract_errors(new_root)
+    assert not _pair_errors(old_root / "task.parent.md", old_root / "task.subagent.md")
 
 
 def test_partial_required_input_name_does_not_match(tmp_path: pathlib.Path) -> None:

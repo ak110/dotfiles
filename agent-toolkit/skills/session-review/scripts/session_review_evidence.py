@@ -2786,7 +2786,8 @@ _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
 _HOOK_NOTICE_VARIANT_LIMIT = 5
 _RETURN_STATUS_PREFIX = "status:"
-_UNSUCCESSFUL_RETURN_STATUSES = frozenset({"analysis_failed", "failed", "needs_escalation"})
+_UNSUCCESSFUL_RETURN_STATUSES = frozenset({"analysis_failed", "failed"})
+_ESCALATION_RETURN_STATUS = "needs_escalation"
 _CANDIDATE_EVIDENCE_LENGTH = 2000
 _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE = 1
 
@@ -2863,7 +2864,7 @@ def _candidate_events(
 
     同じ位置でも候補種別又はhookタグが異なる事象は別候補として保持する。同じ位置、候補種別及びhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
-    `escalation`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
+    `tool-failure`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
 
     候補件数の削減は、正規化した本文での集約と、利用者介入ではない入力の除外だけで行う。
     `hook-notice`の既存の限定を除いて件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
@@ -2882,8 +2883,16 @@ def _candidate_events(
         ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
         ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
         ("permission-denial", (event for event in timeline if _is_permission_denial(event))),
-        ("escalation", (event for event in timeline if event.get("kind") == "failed-tool")),
+        (
+            "command-failure",
+            (event for event in timeline if event.get("kind") == "failed-tool" and event.get("tool") == "CommandExecution"),
+        ),
+        (
+            "tool-failure",
+            (event for event in timeline if event.get("kind") == "failed-tool" and event.get("tool") != "CommandExecution"),
+        ),
         ("warning", (event for event in warnings if event.get("kind") == "warning")),
+        ("escalation", (event for event in timeline if _is_escalation_return(event))),
         ("delegate-return", (event for event in timeline if _is_unsuccessful_return(event))),
     )
     for candidate_kind, events in sources:
@@ -3130,6 +3139,20 @@ def _is_unsuccessful_return(event: dict[str, Any]) -> bool:
     return event.get("record") != "main"
 
 
+def _is_escalation_return(event: dict[str, Any]) -> bool:
+    """上位判断を要求する明示的な最終返却であるかを返す。"""
+    if event.get("kind") != "final-result":
+        return False
+    text = event.get("text")
+    if not isinstance(text, str):
+        return False
+    return any(
+        line.strip().removeprefix(_RETURN_STATUS_PREFIX).strip() == _ESCALATION_RETURN_STATUS
+        for line in text.splitlines()
+        if line.strip().startswith(_RETURN_STATUS_PREFIX)
+    )
+
+
 def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
     """是正を求めない区分のhook通知を問題候補から除く場合に、除外の種別名を返す。
 
@@ -3212,7 +3235,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             tag,
             _normalize_hook_candidate_text(normalized_text),
         )
-    if candidate_kind == "escalation":
+    if candidate_kind == "command-failure":
         if event.get("tool") == "CommandExecution":
             diagnostic = event.get("diagnostic")
             first_diagnostic_line = (

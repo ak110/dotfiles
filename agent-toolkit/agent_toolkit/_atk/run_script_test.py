@@ -56,6 +56,74 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
     assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
 
 
+def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """報告段階と振り返り状態を検査器へ同じ順序で渡す。"""
+    observed: list[str] = []
+
+    def capture_argv(_target: str, *, run_name: str) -> None:
+        assert run_name == "__main__"
+        observed.extend(sys.argv)
+
+    monkeypatch.setattr(run_script.runpy, "run_path", capture_argv)
+    script_args = ["/tmp/report.md", "--stage", "review-result", "--review-state", "failed"]
+
+    assert run_script.dispatch(argparse.Namespace(script_name="completion-report-check", script_args=["--", *script_args])) == 0
+
+    assert observed == [str(run_script.registered_script_path("completion-report-check")), *script_args]
+
+
+@pytest.mark.parametrize(
+    ("module_name", "script_source"),
+    [
+        ("eager_sibling", "import eager_sibling\nprint(eager_sibling.VALUE)\n"),
+        (
+            "delayed_sibling",
+            "def main():\n    import delayed_sibling\n    print(delayed_sibling.VALUE)\n\nmain()\n",
+        ),
+    ],
+)
+def test_dispatch_resolves_sibling_module_and_restores_sys_path(
+    module_name: str,
+    script_source: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plugin_root = tmp_path / "plugin"
+    plugin_root.mkdir()
+    (plugin_root / f"{module_name}.py").write_text("VALUE = 'resolved'\n", encoding="utf-8")
+    (plugin_root / "probe.py").write_text(script_source, encoding="utf-8")
+    monkeypatch.setattr(run_script, "PLUGIN_ROOT", plugin_root)
+    monkeypatch.setitem(run_script.SCRIPT_PATHS, "probe", pathlib.Path("probe.py"))
+    previous_path = list(sys.path)
+
+    try:
+        assert run_script.dispatch(argparse.Namespace(script_name="probe", script_args=[])) == 0
+
+        assert capsys.readouterr().out == "resolved\n"
+        assert sys.path == previous_path
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_dispatch_restores_sys_path_when_script_raises(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plugin_root = tmp_path / "plugin"
+    plugin_root.mkdir()
+    script = plugin_root / "probe.py"
+    script.write_text("import sys\nsys.path.append('leaked')\nraise RuntimeError('probe failed')\n", encoding="utf-8")
+    monkeypatch.setattr(run_script, "PLUGIN_ROOT", plugin_root)
+    monkeypatch.setitem(run_script.SCRIPT_PATHS, "probe", pathlib.Path("probe.py"))
+    previous_path = list(sys.path)
+
+    with pytest.raises(RuntimeError, match="probe failed"):
+        run_script.dispatch(argparse.Namespace(script_name="probe", script_args=[]))
+
+    assert sys.path == previous_path
+
+
 def test_dispatch_keeps_worktree_inputs_independent(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

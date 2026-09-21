@@ -1356,6 +1356,7 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
     candidates = [record for record in records if record["kind"] == "candidate"]
 
     assert len(candidates) == expected_candidates
+    assert {candidate["candidate_kind"] for candidate in candidates} == {"command-failure"}
     assert sum(candidate["count"] for candidate in candidates) == 2
     assert sum(len(candidate["locators"]) for candidate in candidates) == 2
 
@@ -5637,7 +5638,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     candidate_items = [item for item in candidates if item["kind"] == "candidate"]
     assert [item["candidate_id"] for item in candidate_items] == ["c0001", "c0002"]
     assert [(item["locators"], item["candidate_kind"]) for item in candidate_items] == [
-        ([{"record": "main", "line": 5}], "escalation"),
+        ([{"record": "main", "line": 5}], "tool-failure"),
         ([{"record": "main", "line": 6}], "warning"),
     ]
     assert candidates[-1]["excluded"] == {"hook-notice-informational": 1, "initial-request": 1}

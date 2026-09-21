@@ -56,8 +56,11 @@ def dispatch(args: argparse.Namespace) -> int:
     if script_args[:1] == ["--"]:
         script_args.pop(0)
     previous_argv = sys.argv
+    previous_path = sys.path
+    previous_path_contents = list(sys.path)
     try:
         sys.argv = [str(target), *script_args]
+        sys.path.insert(0, str(target.parent))
         runpy.run_path(str(target), run_name="__main__")
     except SystemExit as exc:
         if exc.code is None:
@@ -68,4 +71,6 @@ def dispatch(args: argparse.Namespace) -> int:
         return 1
     finally:
         sys.argv = previous_argv
+        previous_path[:] = previous_path_contents
+        sys.path = previous_path
     return 0
