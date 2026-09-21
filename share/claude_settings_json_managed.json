@@ -51,7 +51,7 @@
   },
   "promptCacheTtl": "1h",
   "showClearContextOnPlanAccept": false,
-  "showThinkingSummaries": true,
+  "showThinkingSummaries": false,
   "subagentPromptCacheTtl": "1h",
   "verbose": false,
   "viewMode": "default"
