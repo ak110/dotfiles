@@ -193,6 +193,20 @@ process.stdout.write(JSON.stringify({
     }
 
 
+def test_open_detail_dialog_resets_scroll_position() -> None:
+    """WI詳細は再表示のたびに本文の先頭から表示する。"""
+    result = _run_node_ui(
+        """
+const origin = new Element('origin', 'BUTTON');
+const body = elements['detail-dialog-body'];
+body.scrollTop = 240;
+openDetailDialog(origin);
+process.stdout.write(JSON.stringify({scrollTop: body.scrollTop, focused}));
+"""
+    )
+    assert result == {"scrollTop": 0, "focused": "detail-dialog-body"}
+
+
 def test_assets_restore_detail_focus_after_origin_row_disappears() -> None:
     """詳細の起点行が消えた場合も、残存行又は空状態の操作へフォーカスを戻す。"""
     result = _run_node_ui(

@@ -464,6 +464,11 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
             assert header_box["height"] < 150
         await page.keyboard.press("Escape")
         await playwright.async_api.expect(row).to_be_focused()
+        await row.click()
+        await playwright.async_api.expect(dialog).to_be_visible()
+        assert await body.evaluate("element => element.scrollTop") == 0
+        await page.keyboard.press("Escape")
+        await playwright.async_api.expect(row).to_be_focused()
 
 
 @pytest.mark.asyncio
@@ -2072,7 +2077,7 @@ def _write_session_records(root: Path) -> None:
                     "usage": {"input_tokens": 12, "output_tokens": 3},
                     "content": [
                         {"type": "thinking", "thinking": "Claudeの思考"},
-                        {"type": "tool_use", "name": "Bash", "input": {"command": "ls\npwd"}},
+                        {"type": "tool_use", "name": "Bash", "input": {"command": f"ls {'x' * 160}\npwd"}},
                         {"type": "tool_use", "name": "Read", "input": {"file_path": "/tmp/input.md"}},
                         {"type": "tool_use", "name": "Search", "input": {"pattern": "needle", "count": 1}},
                     ],
@@ -3025,8 +3030,42 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
 
     await harness.page.locator("#sessions-filter").fill("")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
+    await harness.page.set_viewport_size({"width": 390, "height": 844})
+    await harness.page.locator("#sessions-menu-btn").click()
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
     await harness.page.locator("#detail .kind-thinking").wait_for(state="visible")
+    tool_call = harness.page.locator("#detail .kind-tool_call").first
+    assert "ツール呼び出し" in await tool_call.locator(".event-kind").inner_text()
+    header_metrics = await tool_call.locator("summary").evaluate(
+        """element => {
+          const lineCount = child => {
+            const range = document.createRange();
+            range.selectNodeContents(child);
+            return range.getClientRects().length;
+          };
+          const kind = element.querySelector('.event-kind');
+          const time = element.querySelector('.event-time');
+          const name = element.querySelector(':scope > span:not([class])');
+          const input = element.querySelector('.event-input-summary');
+          const inputStyle = getComputedStyle(input);
+          return {
+            kindLines: lineCount(kind),
+            timeLines: lineCount(time),
+            name: name.textContent,
+            inputOverflow: input.scrollWidth > input.clientWidth,
+            inputTextOverflow: inputStyle.textOverflow,
+            inputWhiteSpace: inputStyle.whiteSpace,
+          };
+        }"""
+    )
+    assert header_metrics == {
+        "kindLines": 1,
+        "timeLines": 1,
+        "name": "Bash",
+        "inputOverflow": True,
+        "inputTextOverflow": "ellipsis",
+        "inputWhiteSpace": "nowrap",
+    }
     # 思考とツール呼び出しは既定で畳み、要求された時だけ本文を展開する。
     await harness.page.locator("#detail .kind-thinking summary").click()
     detail_text = await harness.page.locator("#detail").inner_text()
