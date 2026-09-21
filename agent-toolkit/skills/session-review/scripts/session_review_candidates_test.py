@@ -126,6 +126,7 @@ def test_candidate_events_groups_failures_sharing_a_cause_across_tool_calls() ->
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert len(candidates[:-1]) == 1
+    assert candidates[0]["candidate_kind"] == "tool-failure"
     assert candidates[0]["count"] == 3
     assert candidates[0]["locators"] == [
         {"record": "main", "line": 2},
@@ -155,7 +156,7 @@ def test_candidate_events_classifies_auto_mode_denial_as_permission_denial() -> 
     for candidate in candidates[:-1]:
         by_kind.setdefault(candidate["candidate_kind"], []).extend(candidate["locators"])
     assert by_kind["permission-denial"] == [{"record": "main", "line": 2}]
-    assert by_kind["escalation"] == [{"record": "main", "line": 5}, {"record": "main", "line": 2}]
+    assert by_kind["tool-failure"] == [{"record": "main", "line": 5}, {"record": "main", "line": 2}]
 
 
 def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
@@ -183,12 +184,12 @@ def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
 
     candidates = evidence._candidate_events(timeline, [], hook_notices)  # pylint: disable=protected-access
 
-    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["escalation", "hook-notice"]
-    assert candidates[1]["occurrence_count"] == 1
+    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["hook-notice", "tool-failure"]
+    assert candidates[0]["occurrence_count"] == 1
 
 
-def test_candidate_events_includes_delegate_returns_that_report_failure() -> None:
-    """工程の不成立を返却値で表した最終返却を、候補と`included_locators`の双方へ含める。"""
+def test_candidate_events_separates_escalations_from_unsuccessful_delegate_returns() -> None:
+    """上位判断を求める返却だけをエスカレーションとし、通常の不成功返却から分離する。"""
     timeline = [
         {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: needs_escalation\nreason: 認可の不足"},
         {
@@ -202,7 +203,7 @@ def test_candidate_events_includes_delegate_returns_that_report_failure() -> Non
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"] * 3
+    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"] * 2 + ["escalation"]
     assert candidates[-1]["included_locators"] == [
         {"record": "agent-1", "line": 20},
         {"record": "agent-2", "line": 30},
@@ -298,8 +299,8 @@ def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> N
     candidates = evidence._candidate_events(timeline, warnings, hook_notices)  # pylint: disable=protected-access
 
     by_kind = {candidate["candidate_kind"]: candidate for candidate in candidates[:-1]}
-    assert by_kind["escalation"]["count"] == 2
-    assert by_kind["escalation"]["locators"] == [
+    assert by_kind["tool-failure"]["count"] == 2
+    assert by_kind["tool-failure"]["locators"] == [
         {"record": "main", "line": 2},
         {"record": "main", "line": 5},
     ]
@@ -321,7 +322,7 @@ def test_candidate_events_keeps_distinct_kinds_at_the_same_locator() -> None:
 
     candidates = evidence._candidate_events(timeline, warnings, [])  # pylint: disable=protected-access
 
-    assert {candidate["candidate_kind"] for candidate in candidates[:-1]} == {"escalation", "warning"}
+    assert {candidate["candidate_kind"] for candidate in candidates[:-1]} == {"tool-failure", "warning"}
     assert candidates[-1]["included_locator_count"] == 1
     assert candidates[-1]["included_locators"] == [{"record": "main", "line": 4}]
 
@@ -336,9 +337,9 @@ def test_candidate_events_classifies_hook_failures_from_the_reason_after_the_com
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    escalations = [candidate for candidate in candidates[:-1] if candidate["candidate_kind"] == "escalation"]
-    assert len(escalations) == 2
-    assert all("hook error" not in candidate["event_key"][0] for candidate in escalations)
+    failures = [candidate for candidate in candidates[:-1] if candidate["candidate_kind"] == "tool-failure"]
+    assert len(failures) == 2
+    assert all("hook error" not in candidate["event_key"][0] for candidate in failures)
 
 
 def test_candidate_events_counts_only_identical_candidate_identity_as_duplicate() -> None:

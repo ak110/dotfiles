@@ -56,6 +56,22 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
     assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
 
 
+def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """報告段階と振り返り状態を検査器へ同じ順序で渡す。"""
+    observed: list[str] = []
+
+    def capture_argv(_target: str, *, run_name: str) -> None:
+        assert run_name == "__main__"
+        observed.extend(sys.argv)
+
+    monkeypatch.setattr(run_script.runpy, "run_path", capture_argv)
+    script_args = ["/tmp/report.md", "--stage", "review-result", "--review-state", "failed"]
+
+    assert run_script.dispatch(argparse.Namespace(script_name="completion-report-check", script_args=["--", *script_args])) == 0
+
+    assert observed == [str(run_script.registered_script_path("completion-report-check")), *script_args]
+
+
 def test_dispatch_keeps_worktree_inputs_independent(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

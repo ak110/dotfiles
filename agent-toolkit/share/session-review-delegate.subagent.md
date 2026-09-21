@@ -37,10 +37,10 @@
 
 ## 問題候補の判別
 
-抽出器が`candidates.jsonl`へ生成した集約候補を単位として一次選別する。各判定は候補の`candidate_id`を参照し、候補側の`locators`を表示へ用いる。infoタグとnoticeタグのhook通知は情報提示だけなので抽出器が機械除外する。block又はwarnのhook通知は発生源ごとに上位5種と代表位置へ限定し、`occurrence_count`と`omitted_locator_count`へ総数を保持する。ユーザー介入、エスカレーション及び未解決証拠は全件を保持する。除外する候補には観測根拠を付け、不確かな候補は完全分析へ送る。
+抽出器が`candidates.jsonl`へ生成した集約候補を単位として一次選別する。各判定は候補の`candidate_id`を参照し、候補側の`locators`を表示へ用いる。infoタグとnoticeタグのhook通知は情報提示だけなので抽出器が機械除外する。block又はwarnのhook通知は発生源ごとに上位5種と代表位置へ限定し、`occurrence_count`と`omitted_locator_count`へ総数を保持する。ユーザー介入、権限拒否、明示的な`needs_escalation`の返却、未解決証拠は全件を保持する。`command-failure`と`tool-failure`は終了コード、コマンド、診断、locatorから恒久対策の要否を判定し、`delegate-return`は通常の不成功返却としてエスカレーションと分ける。除外する候補には観測根拠を付け、不確かな候補は完全分析へ送る。
 一次選別のcandidate ID集合が全候補と一致し、各候補の`locators`を平坦化した一意集合が`candidate-summary`の`included_locators`と一致することを`session_review_report.py`で機械検査してから、完全分析する候補の詳細取得を1回へまとめる。`candidate-summary`の`excluded`は種類別の除外件数として報告する。
 各候補の`candidate_id`と`analysis_group_hint`を起点に、同じ原因と対策の変更単位を持つ候補は1つの`analysis_id`を共有する。候補ごとの判定表には全locatorと`analysis_id`を残し、原因と処置は分析表へ`analysis_id`ごとに1回だけ書く。
-block又はwarnを1回以上発火した各発生源には、欠陥判定にかかわらず、規範・判定条件・フック撤去のいずれかの改善提案を最低1件対応付ける。
+blockかwarnを1回以上発火した各発生源には、欠陥判定にかかわらず、規範・判定条件・フック撤去のいずれかの改善提案を最低1件対応付ける。
 走査対象は対象セッションの全区間とし、抽出器が識別した非ユーザーイベントと同一イベントの重複だけを除く。
 対象セッション自身の常駐処理、再開機構、実行環境が生成した定時promptは、role、イベント種別と起動経路で識別して利用者入力から除く。
 過去に不採用が確定した案は、新しい観測か要件変更を対応付けられた場合に限り提案集合へ加える。
