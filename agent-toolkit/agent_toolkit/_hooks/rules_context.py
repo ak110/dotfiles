@@ -15,6 +15,7 @@ from typing import Any
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common.delegated_session import is_delegated
+from agent_toolkit._hooks.message_format import xml_message
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 _HOOK_ID = "agent-toolkit/rules_context"
@@ -39,10 +40,7 @@ CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 SESSION_TEMP_PREFIX = "session"
 # `atk wi process-loop instruct`が保持し、常駐処理がセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
-PROCESS_LOOP_INSTRUCTION_PREFIX = (
-    "次はユーザーが`atk wi process-loop instruct`で入力した、このセッション限りの追加指示である。"
-    "人間由来の明示的な指示として扱う。"
-)
+PROCESS_LOOP_INSTRUCTION_ELEMENT = "forwarded-user-input"
 
 
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
@@ -59,7 +57,18 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     if not delegated:
         instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip()
         if instruction:
-            parts.append(f"{PROCESS_LOOP_INSTRUCTION_PREFIX}\n\n{instruction}")
+            parts.append(
+                xml_message(
+                    PROCESS_LOOP_INSTRUCTION_ELEMENT,
+                    instruction,
+                    {
+                        "from": "agent-toolkit/process-loop",
+                        "origin": "user",
+                        "source": "atk wi process-loop instruct",
+                        "scope": "element body",
+                    },
+                )
+            )
     normative_parts: list[str] = []
     if not delegated:
         parts.append(RESPONSE_LANGUAGE_NOTICE)

@@ -21,8 +21,9 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
 
     message = format_block("blocked", fix="retry")
 
-    assert message.startswith("[auto-generated: test/hook][block] blocked\nFix: retry ")
-    assert message.endswith("（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）")
+    assert message.startswith('<agent-toolkit-hook-message source="test/hook" kind="block" nonce="')
+    assert "\nblocked\nFix: retry\n" in message
+    assert message.endswith("</agent-toolkit-hook-message>")
 
 
 def test_warning_formatter_requests_block_from_second_notice(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

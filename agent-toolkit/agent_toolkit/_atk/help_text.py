@@ -22,6 +22,11 @@ ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、�
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 
 HELP: dict[str, dict[str, str]] = {
+    "atk run-script": {
+        "summary": "登録済みplugin内Pythonスクリプトを実行する",
+        "description": "目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skill又は規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、標準出力、標準エラー及び終了コードを透過する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",
+        "epilog": "実行例:\n\n  atk run-script plan-check -- /absolute/path/to/plan.md",
+    },
     "atk wi": {
         "summary": "AWIとUWIのキューを操作する",
         "description": "目的: 対象リポジトリごとのAWIとUWIを、投入、参照、状態遷移、編集、常駐処理の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk wi commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk wi commit`で確定する。",

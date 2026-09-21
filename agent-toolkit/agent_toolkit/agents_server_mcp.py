@@ -12,7 +12,6 @@ import logging
 import os
 import pathlib
 import re
-import secrets
 import warnings
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Annotated, Any, cast
@@ -55,6 +54,7 @@ from agent_toolkit._agents_server.state import (
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._hooks.message_format import xml_message
 
 try:
     from pydantic_settings.exceptions import IncompleteFieldDefinitionWarning
@@ -221,11 +221,8 @@ def _wrap_delivery_body(body: str) -> str:
     いずれの場合も、呼び出し元が構成した指示がユーザー発話として扱われる。
     受信側の解釈は`agent-toolkit/share/rules-subagent.md`「受領した本文の出所」が定める。
     """
-    nonce = secrets.token_hex(8)
-    while nonce in body:
-        nonce = secrets.token_hex(8)
     sender = _delivery_sender_label()
-    return f'<cross-session-message from="{sender}" nonce="{nonce}">\n{body}\n</cross-session-message>'
+    return xml_message("cross-session-message", body, {"from": sender})
 
 
 def _validate_required_prompt_inputs(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> str | None:

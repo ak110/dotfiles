@@ -222,6 +222,31 @@ def _agent_mcp(source: dict[str, Any]) -> dict[str, Any]:
     return {"$schema": AGENT_MCP_SCHEMA, "mcpServers": servers}
 
 
+def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
+    """Codex plugin rootをcwdとして解決できるMCP設定へ投影する。"""
+    projected = _agent_mcp(source)
+    servers = projected["mcpServers"]
+    agents_server = servers.get("agents_server")
+    if agents_server is not None:
+        agents_server.clear()
+        agents_server.update(
+            {
+                "type": "stdio",
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--project",
+                    ".",
+                    "--locked",
+                    "--no-default-groups",
+                    "agent_toolkit/agents_server_mcp.py",
+                ],
+                "cwd": "./",
+            }
+        )
+    return projected
+
+
 def _outputs(root: Path) -> dict[Path, str]:
     plugin = _load(root, PLUGIN_SOURCE)
     marketplace = _load(root, MARKETPLACE_SOURCE)
@@ -301,9 +326,8 @@ def _outputs(root: Path) -> dict[Path, str]:
             raise ValueError("MCP正本はmcpServers objectを持つ必要がある")
         shared = {name: value for name, value in servers.items() if name in SHARED_MCP_SERVER_NAMES}
         shared_source = {"mcpServers": shared}
-        projected = json.dumps(_agent_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"
-        result[MCP_CODEX_TARGET] = projected
-        result[AGENT_MCP_TARGET] = projected
+        result[MCP_CODEX_TARGET] = json.dumps(_codex_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"
+        result[AGENT_MCP_TARGET] = json.dumps(_agent_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"
     if selected:
         result[HOOKS_TARGET] = json.dumps({"hooks": selected}, ensure_ascii=False, indent=2) + "\n"
     return result

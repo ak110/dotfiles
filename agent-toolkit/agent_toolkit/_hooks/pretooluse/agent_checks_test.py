@@ -958,7 +958,9 @@ class TestTaskStopBlock:
 
         assert first.returncode == 2
         assert second.returncode == 2
-        assert first.stderr == second.stderr
+        assert re.sub(r'nonce="[^"]+"', 'nonce="<nonce>"', first.stderr) == re.sub(
+            r'nonce="[^"]+"', 'nonce="<nonce>"', second.stderr
+        )
         assert "所有記録に一致する識別子" in first.stderr
         assert "対象別の停滞検知完了記録を作成" in first.stderr
         assert "再実行すると続行できる" not in first.stderr
@@ -1405,11 +1407,11 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             )
             if i == 0:
                 assert result.returncode == 0
-                assert "[warn]" not in _agent_messages(result)
+                assert 'kind="warn"' not in _agent_messages(result)
             else:
                 # 2件目はwarnして通過する（returncode 0）。
                 assert result.returncode == 0
-                assert "[warn]" in _agent_messages(result)
+                assert 'kind="warn"' in _agent_messages(result)
                 assert "計画ファイルを作成しないまま" in _agent_messages(result)
                 assert "計画ファイルを作成しないまま" not in result.stderr
 
@@ -1524,7 +1526,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 env_overrides=env,
             )
             assert result.returncode == 0
-            assert "[warn]" not in _agent_messages(result)
+            assert 'kind="warn"' not in _agent_messages(result)
             assert "[block]" not in result.stderr
 
     def test_non_target_path_edit_passes(self, tmp_path: pathlib.Path):

@@ -6,7 +6,7 @@ import re
 from collections.abc import Sequence
 
 _COUNT_HEADER_RE = re.compile(r"\A警告: \d+件\n\n")
-_NOTICE_PREFIX_RE = re.compile(r"(?m)^\[auto-generated: [^\]]+\]\[warn\]")
+_NOTICE_PREFIX_RE = re.compile(r'(?m)^<agent-toolkit-hook-message\b[^>]*\bkind="warn"[^>]*>')
 
 
 def format_warning_context(warnings: Sequence[str]) -> str:

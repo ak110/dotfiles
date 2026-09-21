@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import sys
 
+from agent_toolkit._atk import run_script
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """コマンドライン引数を定義する。"""
@@ -87,8 +89,12 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """準備項目を取得して1行のJSONを出力する。"""
     args = _build_parser().parse_args(argv)
-    evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
-    if not evidence_script.is_file():
+    local_evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
+    try:
+        evidence_script = run_script.registered_script_path("session-review-evidence")
+    except ValueError:
+        return _missing("evidence_script")
+    if local_evidence_script != evidence_script:
         return _missing("evidence_script")
     report_script = pathlib.Path(__file__).resolve().with_name("session_review_report.py")
     if not report_script.is_file():

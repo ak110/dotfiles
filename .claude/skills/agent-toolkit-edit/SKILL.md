@@ -309,8 +309,8 @@ agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_h
 ## 複数hook共存時の識別子
 
 agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
-自身のhookメッセージを他hookから判別するため、`[auto-generated: agent-toolkit/<hook>]`形式のプレフィックスを行頭に置く。
-プレフィックス・サフィックスの規約は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
+自身のhookメッセージを他hookから判別するため、`agent-toolkit-hook-message`要素の`source`へ`agent-toolkit/<hook>`を置く。
+XML境界と属性の規約は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
 「コーディングエージェント宛てメッセージの標識」節に従う。
 
 ## marketplace管理

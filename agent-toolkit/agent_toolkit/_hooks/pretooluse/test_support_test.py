@@ -46,10 +46,10 @@ _SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("exec-review.subagent.md",)
 
 
-_NOTICE_PREFIX = "[auto-generated: agent-toolkit/pretooluse][warn] "
+_NOTICE_PREFIX = '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn" nonce="'
 
 
-_NOTICE_SUFFIX = " （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
+_NOTICE_SUFFIX = "</agent-toolkit-hook-message>"
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -82,10 +82,11 @@ def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def _notice_body(context: str) -> str:
-    """標準プレフィックスとサフィックスを検証し、通知本文を返す。"""
+    """標準XML境界を検証し、通知本文を返す。"""
     assert context.startswith(_NOTICE_PREFIX)
     assert context.endswith(_NOTICE_SUFFIX)
-    return context.removeprefix(_NOTICE_PREFIX).removesuffix(_NOTICE_SUFFIX)
+    opening_end = context.index(">\n") + 2
+    return context[opening_end:].removesuffix("\n" + _NOTICE_SUFFIX)
 
 
 def _agent_messages(result: subprocess.CompletedProcess[str]) -> str:

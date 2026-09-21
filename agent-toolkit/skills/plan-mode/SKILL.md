@@ -29,8 +29,8 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
    - 基準状態と期待値が同じ条件、対象分岐が無効な条件及び成功時に抑制される生出力の不在は識別条件にせず、公開状態又は直接の契約検体を使う
    - 人間の依頼かWIが禁止条件を明示する場合は、その条件と採用する手段を`## 実施内容`の同じ概念行へ書く。禁止条件には、実施しない操作、選択肢から外す機構及び許容しない副作用を含める。メインが同節だけで両者を照合できる計画を確定する
 2. 計画の変更対象又は採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し、`agent-toolkit/rules/01-agent.md`「協調と自律」の確認要否判定を適用する。直接起動では`references/grilling.md`に従って確認を完了し、`agent-toolkit:process-wi`の経路では確認事項をUWIへ登録する。レーン担当として起動された場合は、確認事項をそのまま呼び出し元へ返す
-3. `references/plan-file-standards.md`を全文読み、`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/create_plan_files.py`で計画ファイルを作成する。作業種別が`バグ対応`の場合は`agent-toolkit:bugfix`の原因分析契約に従って計画ファイル（バグ）を先に埋める
-4. `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py --reject-migration-warnings <計画ファイルの絶対パス>`を単独のコマンドとして実行し、直接返った終了コード0を確認する。同書「計画構造検査」が定める起動形を用いる
+3. `references/plan-file-standards.md`を全文読み、`atk run-script plan-create --`で計画ファイルを作成する。作業種別が`バグ対応`の場合は`agent-toolkit:bugfix`の原因分析契約に従って計画ファイル（バグ）を先に埋める
+4. `atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独のコマンドとして実行し、直接返った終了コード0を確認する
 5. 起動経路に対応する次の1行だけを実施する
 
 | 起動経路 | 手順4の後に実施すること |
@@ -52,6 +52,6 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
 2. `agent-toolkit:writing-standards`の該当資料を読み、計画の`## 要件・外部仕様`に従って実装する。`## 検証`の近接検証を実行し、commitする。実装単位ごとのcommitとcommitメッセージは`agent-toolkit:commit`に従う
 3. `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビュー指摘管理表を準備し、実行レビュー担当を起動して収束まで反復する。指摘への修正はメインが実施し、修正commitの履歴統合は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」と同じ順序で行う
 4. 実行レビューの収束後に`## 検証`の`全体検証`行のコマンドで検証する。`CIで代替`の計画ではpush後のCIの結果で判定する
-5. `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/append_progress_log.py`で`## 進捗ログ`へ完了判定を記録し、`atk plans commit <計画ファイル名>`で保存する。`## 終端工程`が挙げる操作を実施し、`agent-toolkit:completion-report`で報告する
+5. `atk run-script plan-progress --`で`## 進捗ログ`へ完了判定を記録し、`atk plans commit <計画ファイル名>`で保存する。`## 終端工程`が挙げる操作を実施し、`agent-toolkit:completion-report`で報告する
 
 本スキルの起動後に対象規範配下（`agent-toolkit/`等のコーディングエージェント向け規範文書）を編集するのは、計画ファイルを作成した後とする。計画を経ない直接編集で、ユーザーが合意していない規範が確定した事例がある。連続する直接編集はPreToolUseフックが遮断する。

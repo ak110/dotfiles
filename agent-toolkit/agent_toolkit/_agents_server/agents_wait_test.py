@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import threading
 from collections.abc import Callable
 
 import pytest
@@ -303,6 +304,31 @@ def _wait_lock_path(tmp_path: pathlib.Path) -> pathlib.Path:
     return status_file.status_directory("root-session", tmp_path) / "wait-locks" / "root.json.lock"
 
 
+def _write_current_wait_run(
+    tmp_path: pathlib.Path,
+    *,
+    target: str,
+    status: str,
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """指定したrunをcurrentとして保存し、runディレクトリと記録経路を返す。"""
+    run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
+    run_path = run_directory / "run-1.json"
+    agents_wait._write_json(  # pylint: disable=protected-access
+        run_path,
+        {
+            "run_id": "run-1",
+            "status": status,
+            "targets": [target],
+            "started_at": "2026-09-21T00:00:00+00:00",
+            "output": f'{{"session_id":"{target}","status":"completed"}}',
+            "exit_code": 0,
+            "stream": "stdout",
+        },
+    )
+    agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
+    return run_directory, run_path
+
+
 def _wait_while_owner_is_locked(tmp_path: pathlib.Path, own_session_id: str) -> int:
     """別実行が同じ書込主体の待機所有権を保持する状態で待機を発行する。"""
     _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": own_session_id}])
@@ -320,13 +346,163 @@ def _wait_while_owner_is_locked(tmp_path: pathlib.Path, own_session_id: str) -> 
 
 
 def test_agents_wait_rejects_overlapping_owner(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """同じ書込主体の後発待機は再実行条件と対象を添えて終了コード8で拒否する。"""
+    """旧形式のlock競合は識別可能な診断を添えて終了コード8で拒否する。"""
     assert _wait_while_owner_is_locked(tmp_path, "session-1") == 8
 
     assert _wait_lock_path(tmp_path).exists()
     error = capsys.readouterr().err
-    assert "先行する`atk agents wait`の終了を待ってから再実行" in error
+    assert "旧形式の待機がlockを保持" in error
     assert "targets=session-1" in error
+
+
+def test_consume_wait_result_replays_once(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """後続待機は先行runの本文と終了コードを1回だけ回収する。"""
+    run_path = tmp_path / "run.json"
+    agents_wait._write_json(  # pylint: disable=protected-access
+        run_path,
+        {
+            "run_id": "run-1",
+            "status": "published",
+            "output": '{"session_id":"session-1","status":"completed"}',
+            "exit_code": 0,
+            "stream": "stdout",
+        },
+    )
+
+    assert agents_wait._consume_wait_result(run_path) == 0  # pylint: disable=protected-access
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
+    assert agents_wait._consume_wait_result(run_path) == 8  # pylint: disable=protected-access
+    assert json.loads(capsys.readouterr().out) == {"status": "consumed", "run_id": "run-1"}
+
+
+def test_followers_join_the_same_wait_run(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同時に発行した2件の後発待機は先行runへ固定し、結果を1回だけ再演する。"""
+    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    lock_path = _wait_lock_path(tmp_path)
+    lock_path.parent.mkdir(parents=True)
+    run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
+    run_path = run_directory / "run-1.json"
+    agents_wait._write_json(  # pylint: disable=protected-access
+        run_path,
+        {
+            "run_id": "run-1",
+            "status": "running",
+            "targets": ["session-1"],
+            "started_at": "2026-09-21T00:00:00+00:00",
+        },
+    )
+    agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
+
+    original_acquire = agents_wait.acquire_lock
+    followers_waiting = threading.Event()
+    count_lock = threading.Lock()
+    failed_nonblocking = 0
+
+    def observe_acquire(lock_file, *, blocking: bool):
+        nonlocal failed_nonblocking
+        try:
+            return original_acquire(lock_file, blocking=blocking)
+        except OSError:
+            if not blocking:
+                with count_lock:
+                    failed_nonblocking += 1
+                    if failed_nonblocking == 2:
+                        followers_waiting.set()
+            raise
+
+    monkeypatch.setattr(agents_wait, "acquire_lock", observe_acquire)
+    results: list[int] = []
+
+    def follow() -> None:
+        results.append(
+            agents_wait.wait_for_result(
+                environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+                state_root=tmp_path,
+            )
+        )
+
+    with lock_path.open("a+b") as lock_file:
+        original_acquire(lock_file, blocking=False)
+        followers = [threading.Thread(target=follow) for _ in range(2)]
+        for follower in followers:
+            follower.start()
+        assert followers_waiting.wait(timeout=5)
+        agents_wait._publish_wait_result(  # pylint: disable=protected-access
+            run_path,
+            '{"session_id":"session-1","status":"completed"}',
+            0,
+        )
+        release_lock(lock_file)
+        for follower in followers:
+            follower.join(timeout=5)
+            assert not follower.is_alive()
+
+    assert sorted(results) == [0, 8]
+    output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert {"session_id": "session-1", "status": "completed"} in output
+    assert {"status": "consumed", "run_id": "run-1"} in output
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code", "expected_stream"),
+    [
+        ("published", 0, "stdout"),
+        ("consumed", 8, "stdout"),
+        ("running", 8, "stderr"),
+    ],
+)
+def test_later_wait_uses_matching_current_run(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    status: str,
+    expected_code: int,
+    expected_stream: str,
+) -> None:
+    """lock解放後の後続waitは対象が一致する先行runの状態を返す。"""
+    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    run_directory, run_path = _write_current_wait_run(tmp_path, target="session-1", status=status)
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == expected_code
+    )
+    captured = capsys.readouterr()
+    output = captured.out if expected_stream == "stdout" else captured.err
+    if status == "published":
+        assert json.loads(output) == {"session_id": "session-1", "status": "completed"}
+        assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "consumed"
+    elif status == "consumed":
+        assert json.loads(output) == {"status": "consumed", "run_id": "run-1"}
+    else:
+        assert "先行する待機の終端結果が公開されていません" in output
+    assert json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8")) == {"run_id": "run-1"}
+
+
+def test_later_wait_starts_new_run_for_changed_targets(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対象が変わった後続waitは回収済みの先行runではなく新規runを開始する。"""
+    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-2"}])
+    run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status="consumed")
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 3
+    )
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-2", "status": "running"}
+    current = json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8"))
+    assert current["run_id"] != "run-1"
 
 
 def test_agents_wait_rejects_disjoint_sets_for_same_owner(tmp_path: pathlib.Path) -> None:

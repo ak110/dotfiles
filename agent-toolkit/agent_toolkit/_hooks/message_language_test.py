@@ -397,8 +397,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
 
 def _is_japanese_notice(text: str) -> bool:
     """通知の自然言語部分が日本語だけで構成される場合に真を返す。"""
-    body = re.sub(r"\[auto-generated:[^\]]+\](?:\[[^\]]+\])?", "", text)
-    body = body.replace("（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）", "")
+    body = re.sub(r"</?agent-toolkit-hook-message(?:\s[^>]*)?>", "", text)
     body = re.sub(r"(?m)^\s*(?:warn|warning|block|blocked):\s*", "", body)
     body = re.sub(r"(?m)^\s*Fix:\s*", "", body)
     body = re.sub(r"\{[^{}]*\}", "", body)

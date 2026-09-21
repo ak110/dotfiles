@@ -292,24 +292,24 @@ class TestLanguageEscalation:
         assert _read_session_state(tmp_path, sid)["english_warning_count"] == expected_count
 
     def test_warn_has_suffix(self, tmp_path: pathlib.Path):
-        """warn時のadditionalContextに共通の日本語サフィックスが含まれることを検証する。"""
+        """warn時のadditionalContextがXML境界で閉じることを検証する。"""
         env = self._state_env(tmp_path)
         result = self._invoke(tmp_path, env, "esc-suffix-warn", "A" * 100, msg_id="m1")
         assert result.returncode == 0
         ctx = _additional_context(result)
         assert ctx  # 警告が出ていること
-        assert "自動生成のhook通知" in ctx
+        assert ctx.endswith("</agent-toolkit-hook-message>")
         assert "evaluate relevance" not in ctx
 
     def test_escalated_body_has_suffix(self, tmp_path: pathlib.Path):
-        """強い本文へ切り替えたblock通知に共通の日本語サフィックスが含まれる。"""
+        """強い本文へ切り替えたblock通知がXML境界で閉じる。"""
         env = self._state_env(tmp_path)
         sid = "esc-suffix-block"
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
         assert r2.returncode == 2
         ctx = r2.stderr
-        assert "自動生成のhook通知" in ctx
+        assert ctx.rstrip().endswith("</agent-toolkit-hook-message>")
         assert "evaluate relevance" not in ctx
 
 
@@ -421,7 +421,7 @@ class TestBashSleepPollPattern:
         )
         assert second.returncode == 2
         assert "完了通知" in second.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
+        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse"' in second.stderr
         assert "`sleep`を単独で実行" in second.stderr
         assert "02-agent-operations.md" in second.stderr
 
@@ -667,9 +667,11 @@ class TestBashGitCommitWarning:
         if expect_warn:
             output = json.loads(result.stdout)
             assert "permissionDecision" not in output["hookSpecificOutput"]
-            assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
+            assert self._has_additional_context(
+                result, '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn"'
+            )
             assert self._has_additional_context(result, "テストを実行せずにcommit")
-            assert self._has_additional_context(result, "自動生成のhook通知")
+            assert self._has_additional_context(result, "</agent-toolkit-hook-message>")
         else:
             assert result.stdout == ""
 

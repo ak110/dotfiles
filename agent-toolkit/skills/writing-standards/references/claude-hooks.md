@@ -325,50 +325,31 @@ hookメッセージの目的はコーディングエージェントが参照先�
 
 ## コーディングエージェント宛てメッセージの標識
 
-コーディングエージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）には、
-自動生成であることを明示するプレフィックスとサフィックスを付ける。
-hookの出力はユーザー発言と同じ形で会話コンテキストに注入されるため、指示として誤認されないよう二重の標識を設ける。
+コーディングエージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）は、
+`agent-toolkit-hook-message`要素で全体を囲む。`source`へ`<plugin>/<hook>`、`kind`へ通知種別、`nonce`へ本文に現れない配送単位を置く。
+hookの出力はユーザー発言と同じ形で会話コンテキストに注入されるため、機械判定できる境界と出所を設ける。
 
-### プレフィックス
+種別は受領した主体が通知の原因を除去できるかで選ぶ。除去できる事象には`warn`、発話ごとの定型の配送には`notice`、遮断には`block`を使う。
+振り返りの証拠抽出器は`info`又は`notice`を持つhook通知を問題候補から除く。原因も対策も持たない通知へ`warn`を指定すると、候補の判定工程が発話のたびに生じる。
 
-`[auto-generated]` または `[auto-generated: <plugin>/<hook>]` を行頭に置く。
-プラグイン識別子やフック種別のみの内部名（例: `[agent-toolkit]`）はコーディングエージェントの観点では
-「自動生成である」という意味論が伝わらないため、前記の2形式を用いる。
-
-種別タグ（例: `[warn]`）は、受領した主体が通知の原因を除去できるかで選んで並置する。
-除去できる事象には`warn`、発話ごとの定型の配送のように除去できない通知には`notice`を並置する。
-遮断の通知には整形関数が`block`を設定する。タグを並置するのは、区分を示す必要がある通知に限る。
-振り返りの証拠抽出器は、`info`若しくは`notice`を持つhook通知とタグを持たないhook通知を問題候補から除く。
-原因も対策も持たない通知へ`warn`を並置すると、候補の判定工程が発話のたびに生じる。
-
-```text
-[auto-generated: agent-toolkit/pretooluse] blocked: ...
-[auto-generated: agent-toolkit/pretooluse][warn] detected ...
+```xml
+<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">
+detected ...
+</agent-toolkit-hook-message>
 ```
 
-### サフィックス
-
-メッセージ本文の末尾に次の一行を追加する。
-
-```text
-（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）
-```
-
-コーディングエージェントに対して「妥当性を文脈と照らして判断してから行動する」ことを明示する。
 `systemMessage` / `stopReason` などコーディングエージェントに届かないフィールドや、
 `permissionDecision: "allow"`で追加メッセージを持たない経路は、付与の対象の外に置く。
 
 ### ヘルパー関数
 
-hookスクリプトごとに次のようなヘルパーを持ち、発出箇所から呼び出す（重複実装は許容）。
+共有formatterを発出箇所から呼び出す。hookごとの重複実装は置かない。
 
 ```python
-_MESSAGE_PREFIX = "[auto-generated: myplugin/myhook]"
-_MESSAGE_SUFFIX = "（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
+from agent_toolkit._hooks.notice import formatter
 
 
-def _llm_notice(body: str) -> str:
-    return f"{_MESSAGE_PREFIX} {body} {_MESSAGE_SUFFIX}"
+_llm_notice = formatter("myplugin/myhook")
 ```
 
 ## セッション状態ファイル

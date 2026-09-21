@@ -32,14 +32,15 @@ description: >
 
 工程を実行する主体は次の1から3の順に進める。
 
-1. メインが読み込んだ本`SKILL.md`の絶対パスから現行plugin rootを確定し、`skills/session-review/scripts/session_review_prepare.py`を次のいずれか1つの形で1回実行する。
+1. メインが`atk run-script session-review-prepare --`を次のいずれか1つの形で1回実行する。
    Claude Codeで把握している現在のtranscript絶対パスを`--transcript`へ渡し、Codexでは`CODEX_THREAD_ID`を`--codex-thread-id`へ渡す。
    対象リポジトリを確定できない場合は`--target-repo`を渡さない。
    標準出力の1行JSONから`manifest_path`を取得し、その絶対パスに実在するファイルを準備manifestとして読む。終了コードが0でない場合、標準出力が1行のJSONではない場合、又は`manifest_path`が実在しない場合は、`## 分析失敗`へ進む。manifestから`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`が要求する項目を取得できない場合も同じ扱いとする。準備スクリプトが作成した`managed_temp`と`output_temp`は別領域であり、前者は抽出物を保持する。準備manifestと成果ファイルは後者の直下に置く。
+   準備スクリプトは`evidence_script`の絶対パスが登録名`session-review-evidence`の解決先と一致することを検証し、不一致の場合は準備失敗とする。
 
    ```sh
-   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
-   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
+   atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
+   atk run-script session-review-prepare -- --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
    ```
 
    いずれの起動形も、準備スクリプトを1回だけ実行する。以降は`manifest_path`が指す`prepare-manifest.json`だけを準備結果の正本とし、同じ振り返りで準備スクリプトを再実行しない。
@@ -84,11 +85,11 @@ description: >
    振り返り担当は一次選別の開始時にこの固定パスを読み、存在する内容を最初の分析へ取り込む。担当からメインへの追加配送要求は、ファイルが存在しない場合に限り、欠落した絶対パスと期待した改善点件数を添えて行う。このファイルの配送は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`の`## メイン由来の改善点の配送`が定める。
 
 3. メインが振り返り担当の返却を検収した後、ユーザー発話の追加分を再照合する。
-   再照合は、準備manifestの`evidence_script`を次のいずれか1つの形で明示的に起動する。対象リポジトリはユーザー発話イベントの抽出条件ではないため、`--target-repo`を渡さない。
+   再照合では、準備manifestの`evidence_script`を手順1で検証した絶対パスとして保持し、登録名`session-review-evidence`を次のいずれか1つの形で起動する。対象リポジトリはユーザー発話イベントの抽出条件ではないため、`--target-repo`を渡さない。
 
    ```sh
-   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> --transcript <transcriptの絶対パス> --user-events --since <照合済み境界> --observation-boundary <再照合境界> --output-file <領域内ファイルの絶対パス>
-   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> --codex-thread-id <thread ID> --user-events --since <照合済み境界> --observation-boundary <再照合境界> --output-file <領域内ファイルの絶対パス>
+   atk run-script session-review-evidence -- --transcript <transcriptの絶対パス> --user-events --since <照合済み境界> --observation-boundary <再照合境界> --output-file <領域内ファイルの絶対パス>
+   atk run-script session-review-evidence -- --codex-thread-id <thread ID> --user-events --since <照合済み境界> --observation-boundary <再照合境界> --output-file <領域内ファイルの絶対パス>
    ```
 
    手順1が返した観測境界を照合済み境界の初期値とし、追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受け取っていない状態になるまで繰り返す。
@@ -208,7 +209,7 @@ CIの所要時間が長い環境では、CIが失敗する見込みが高い場�
 完全分析した候補は候補表へ全locator、判定及び`analysis_id`を記録し、原因と処置は分析表へ`analysis_id`ごとに1回だけ記録する。block又はwarnを1回以上発火した各発生源には、確定した処置とその根拠を記録する。現状維持を選ぶ場合は、その発火が規範どおりに停止させた証拠を1件添える。
 `permission-denial`の候補にも、確定した処置とその根拠を記録する。許可ルールを変える案で確定した候補は、拒否本文と分類名を証拠として`agent-toolkit:writing-standards`の`references/auto-mode.md`が定めるワークフローの対象へ送る。
 候補の同一性は記録、行番号、候補種別及びhookタグの組とする。同じ位置でも候補種別又はhookタグが異なる事象は別候補に保つ。同じ組の重複だけを`candidate-summary.excluded.duplicate-candidate`へ数え、候補全体の位置一覧は同じ位置を1回だけ保持する。
-抽出した集約候補の`candidate_id`を判定入力の参照キーとする。一次選別集合と最終表について、候補IDの過不足、候補ごとのlocator及び全候補の一意なlocator集合を`skills/session-review/scripts/session_review_report.py`で構造検査する。
+抽出した集約候補の`candidate_id`を判定入力の参照キーとする。一次選別集合と最終表について、候補IDの過不足、候補ごとのlocator及び全候補の一意なlocator集合を`atk run-script session-review-report --`で構造検査する。
 一時的な振り返り報告は報告の成立に必要な構造を検査する。汎用の文章lintは恒久成果物へその作成規範に従って適用し、登録するWIの本文はその対象から外す。
 これは既定で従う規定とする。原因分析を省略する候補を記録から失わせると、未処理の欠陥と分析済みの結果を区別できないためである。
 

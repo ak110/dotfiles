@@ -2,6 +2,7 @@
 
 import pytest
 
+from agent_toolkit._hooks.message_format import llm_notice
 from agent_toolkit._hooks.pretooluse.warning_context import format_warning_context
 
 
@@ -20,9 +21,9 @@ def test_format_warning_context(warnings: list[str], expected: str) -> None:
 
 def test_preformatted_context_is_recounted_without_nested_header() -> None:
     """局所検査で結合済みの警告と入口の警告を総数で数え直す。"""
-    first = "[auto-generated: hook][warn] first suffix"
-    second = "[auto-generated: hook][warn] second suffix"
-    third = "[auto-generated: hook][warn] third suffix"
+    first = llm_notice("first", "hook", tag="warn")
+    second = llm_notice("second", "hook", tag="warn")
+    third = llm_notice("third", "hook", tag="warn")
     combined = format_warning_context([first, second])
 
     assert format_warning_context([third, combined]) == f"警告: 3件\n\n{third}\n\n{first}\n\n{second}"

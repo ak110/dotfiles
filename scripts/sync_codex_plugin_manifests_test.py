@@ -172,7 +172,26 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             },
         },
     }
-    assert json.loads(codex_mcp_text) == expected_mcp
+    expected_codex_mcp = {
+        **expected_mcp,
+        "mcpServers": {
+            "pyfltr": expected_mcp["mcpServers"]["pyfltr"],
+            "agents_server": {
+                "type": "stdio",
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--project",
+                    ".",
+                    "--locked",
+                    "--no-default-groups",
+                    "agent_toolkit/agents_server_mcp.py",
+                ],
+                "cwd": "./",
+            },
+        },
+    }
+    assert json.loads(codex_mcp_text) == expected_codex_mcp
     assert json.loads(agent_mcp_text) == expected_mcp
     assert codex_mcp_text.endswith("\n")
     assert agent_mcp_text.endswith("\n")

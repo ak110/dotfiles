@@ -118,7 +118,7 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 0
         messages = _agent_messages(result)
-        assert "[auto-generated: agent-toolkit/pretooluse]" in messages
+        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse"' in messages
         assert "uv run python" in messages
 
     def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
@@ -941,7 +941,7 @@ class TestBashProcessKillByPattern:
     def test_blocks(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse"' in result.stderr
 
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
@@ -1378,8 +1378,8 @@ class TestBashOutputTruncationRepetition:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "[notice]" in context
-        assert "[warn]" not in context
+        assert 'kind="notice"' in context
+        assert 'kind="warn"' not in context
 
     def test_autofix_notice_shows_the_returned_range_and_the_avoidance_body(self, tmp_path: pathlib.Path) -> None:
         """補正の通知が、当該呼び出しへ返る範囲と、切り詰めを含まない書き方を示す。"""
@@ -1725,7 +1725,7 @@ class TestNormViolatingArgumentForms:
         assert "absent.txt" in context
         assert "明示された検索・読取パスが存在しない" not in context
         # 補正で呼び出しの対象集合が狭まるため、是正を要する通知として`warn`で発行する。
-        assert "[warn]" in context
+        assert 'kind="warn"' in context
 
     def test_only_missing_path_stays_a_warning(self, tmp_path: pathlib.Path) -> None:
         """不在パスを除くと対象が残らない呼び出しは補正せず警告のまま通す。"""
