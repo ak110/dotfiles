@@ -37,20 +37,20 @@ url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/5
 provenance = "github-attestations"
 
 [[tools.prek]]
-version = "0.5.2"
+version = "0.5.3"
 backend = "aqua:j178/prek"
 specifiers = ["latest"]
 
 [tools.prek."platforms.linux-x64"]
-checksum = "sha256:a4d51a463cb15ee2929368cc4884eec4ef33dce3ff5101b40e8ad7e1205b8f40"
-url = "https://github.com/j178/prek/releases/download/v0.5.2/prek-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/541547346"
+checksum = "sha256:c1475ddc56df0003c780557d9b52273d9eb19c9ef8d91143f3ce03511182a36e"
+url = "https://github.com/j178/prek/releases/download/v0.5.3/prek-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/560889224"
 provenance = "github-attestations"
 
 [tools.prek."platforms.windows-x64"]
-checksum = "sha256:03b6a7261d3a7e2d184ceca9c7e5fcb43b9dec83c8945976cddc3caa8b34b4c0"
-url = "https://github.com/j178/prek/releases/download/v0.5.2/prek-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/541547341"
+checksum = "sha256:c15a5636bf93a3937507d8da2302b074b0946b3d35882471b002ea93586728d8"
+url = "https://github.com/j178/prek/releases/download/v0.5.3/prek-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/560889220"
 provenance = "github-attestations"
 
 [[tools.rust]]
