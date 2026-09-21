@@ -23,8 +23,18 @@ SCRIPT_PATHS = {
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """run-scriptの引数を登録する。"""
-    parser.add_argument("script_name", choices=sorted(SCRIPT_PATHS), metavar="SCRIPT")
-    parser.add_argument("script_args", nargs=argparse.REMAINDER, metavar="ARG")
+    parser.add_argument(
+        "script_name",
+        choices=sorted(SCRIPT_PATHS),
+        metavar="SCRIPT",
+        help="実行する登録済みplugin内スクリプトの公開名。",
+    )
+    parser.add_argument(
+        "script_args",
+        nargs="*",
+        metavar="ARG",
+        help="`--`の後に指定するスクリプトへの引数。",
+    )
 
 
 def registered_script_path(script_name: str) -> pathlib.Path:

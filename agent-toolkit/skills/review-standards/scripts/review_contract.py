@@ -62,6 +62,8 @@ def validate(contract: Any, target_repo: pathlib.Path) -> None:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0:
             raise ContractError(f"commit参照を解決できない: {reference}")
@@ -71,6 +73,8 @@ def validate(contract: Any, target_repo: pathlib.Path) -> None:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0:
             raise ContractError("AWI参照を正本から取得できない")

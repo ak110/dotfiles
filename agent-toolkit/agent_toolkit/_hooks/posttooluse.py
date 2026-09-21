@@ -34,7 +34,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 15. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 16. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
-    （編集ツールの操作記録と`create_plan_files.py`のBash標準出力）
+    （編集ツールの操作記録と`create_plan_files.py`又は`atk run-script plan-create`のBash標準出力）
 """
 
 import json
@@ -776,20 +776,24 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
 
 
 _PLAN_CREATION_SCRIPT_NAME = "create_plan_files.py"
+_PLAN_CREATION_RUN_SCRIPT_PREFIX = ("atk", "run-script", "plan-create")
+
+
+def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
+    """実行トークン列が旧又は現行の計画ファイル作成入口であるかを返す。"""
+    if any(_PLAN_CREATION_SCRIPT_NAME in token for token in tokens):
+        return True
+    normalized = (_executable_name(tokens[0]), *tokens[1:]) if tokens else ()
+    return normalized[: len(_PLAN_CREATION_RUN_SCRIPT_PREFIX)] == _PLAN_CREATION_RUN_SCRIPT_PREFIX
 
 
 def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment], tool_response: object) -> None:
-    """`create_plan_files.py`の標準出力から計画ファイル（メイン）の絶対パスを記録する。
+    """計画ファイル作成入口の標準出力から計画ファイル（メイン）の絶対パスを記録する。
 
     当該スクリプトは確定したパスを標準出力へ1行ずつ書くため、計画ファイル（メイン）と判定した行だけを抽出する。
     該当が無い場合は記録せず、PostToolUseの応答を変えない。
     """
-    if not any(
-        _PLAN_CREATION_SCRIPT_NAME in token
-        for segment in segments
-        for token in getattr(segment, "tokens", ())
-        if isinstance(token, str)
-    ):
+    if not any(_is_plan_creation_invocation(segment.tokens) for segment in segments):
         return
     for text in _response_texts(tool_response):
         for line in text.splitlines():
