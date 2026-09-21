@@ -46,7 +46,7 @@ def _matching_current_wait_run(run_directory: pathlib.Path, targets: list[str]) 
     run = _read_json(run_path)
     if run is None or run.get("targets") != targets:
         return None
-    if run.get("continuable") is True and run.get("status") in {"published", "consumed"}:
+    if run.get("status") == "consumed" or (run.get("status") == "published" and run.get("continuable") is True):
         return None
     return run_path
 

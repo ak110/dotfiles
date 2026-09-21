@@ -309,6 +309,7 @@ def _write_current_wait_run(
     *,
     target: str,
     status: str,
+    continuable: bool = False,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """指定したrunをcurrentとして保存し、runディレクトリと記録経路を返す。"""
     run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
@@ -320,6 +321,7 @@ def _write_current_wait_run(
             "status": status,
             "targets": [target],
             "started_at": "2026-09-21T00:00:00+00:00",
+            "continuable": continuable,
             "output": f'{{"session_id":"{target}","status":"completed"}}',
             "exit_code": 0,
             "stream": "stdout",
@@ -451,7 +453,6 @@ def test_followers_join_the_same_wait_run(
     ("status", "expected_code", "expected_stream"),
     [
         ("published", 0, "stdout"),
-        ("consumed", 8, "stdout"),
         ("running", 8, "stderr"),
     ],
 )
@@ -478,11 +479,36 @@ def test_later_wait_uses_matching_current_run(
     if status == "published":
         assert json.loads(output) == {"session_id": "session-1", "status": "completed"}
         assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "consumed"
-    elif status == "consumed":
-        assert json.loads(output) == {"status": "consumed", "run_id": "run-1"}
     else:
         assert "先行する待機の終端結果が公開されていません" in output
     assert json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8")) == {"run_id": "run-1"}
+
+
+@pytest.mark.parametrize("continuable", [False, True])
+def test_later_wait_starts_new_run_for_consumed_current_run(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    continuable: bool,
+) -> None:
+    """回収済みの現行runと対象が一致しても新規runを開始する。"""
+    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    run_directory, _ = _write_current_wait_run(
+        tmp_path,
+        target="session-1",
+        status="consumed",
+        continuable=continuable,
+    )
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 3
+    )
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "running"}
+    current = json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8"))
+    assert current["run_id"] != "run-1"
 
 
 def test_later_wait_starts_new_run_for_changed_targets(
