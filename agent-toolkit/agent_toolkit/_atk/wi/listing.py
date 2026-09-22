@@ -207,6 +207,8 @@ def _staleness(text: str, target_repo: str, now: datetime.datetime) -> dict[str,
         ["git", "-C", target_repo, "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
