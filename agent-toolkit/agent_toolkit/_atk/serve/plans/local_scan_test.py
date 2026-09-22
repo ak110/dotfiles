@@ -129,7 +129,7 @@ async def test_long_stderr_keeps_the_tail_in_the_error(monkeypatch: pytest.Monke
     monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, f"{head}\n末尾の理由\n".encode()))
 
     with pytest.raises(plans.RemoteHelperError) as error:
-        await plans.fetch_remote_file("circe", "p.md", plans.default_ssh_runner, None)
+        await plans.fetch_remote_file("remote-host", "p.md", plans.default_ssh_runner, None)
 
     message = str(error.value)
     assert "末尾の理由" in message

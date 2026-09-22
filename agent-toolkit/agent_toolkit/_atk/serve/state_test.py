@@ -495,22 +495,22 @@ def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> N
         "\n"
         "[plans]\n"
         'root = "/srv/plans"\n'
-        'remote_hosts = ["circe", "stheno"]\n'
+        'remote_hosts = ["remote-host", "stheno"]\n'
         "\n"
         "[sessions]\n"
         'claude_home = "/srv/claude"\n'
         'codex_home = "/srv/codex"\n'
-        'remote_hosts = ["circe"]\n',
+        'remote_hosts = ["remote-host"]\n',
         encoding="utf-8",
     )
     resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
     assert resolved.host == "toml-host"
     assert resolved.port == 28766
-    assert resolved.plans == config.PlansConfig(root="/srv/plans", remote_hosts=("circe", "stheno"))
+    assert resolved.plans == config.PlansConfig(root="/srv/plans", remote_hosts=("remote-host", "stheno"))
     assert resolved.sessions == config.SessionsConfig(
         claude_home="/srv/claude",
         codex_home="/srv/codex",
-        remote_hosts=("circe",),
+        remote_hosts=("remote-host",),
     )
 
 

@@ -177,10 +177,10 @@ async def test_remote_path_outside_the_root_is_rejected_before_ssh(
     root = tmp_path / "plans"
     root.mkdir()
     runner, calls = _runner_returning(_read_payload("body"))
-    context = _context(root, remote_hosts=["circe"], ssh_runner=runner)
+    context = _context(root, remote_hosts=["remote-host"], ssh_runner=runner)
 
     with pytest.raises(plans.PlanFileError) as error:
-        await plans.resolve_text_and_mtime(context, "circe", "", "../secret.md")
+        await plans.resolve_text_and_mtime(context, "remote-host", "", "../secret.md")
 
     assert error.value.status == 400
     assert not calls

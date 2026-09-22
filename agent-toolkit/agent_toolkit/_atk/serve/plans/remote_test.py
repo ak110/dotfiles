@@ -111,7 +111,7 @@ async def test_remote_read_passes_source_id_before_the_path() -> None:
     """複数rootの構成では保存元IDを先頭の引数として渡す。"""
     runner, calls = _runner_returning(_read_payload("body"))
 
-    await plans.fetch_remote_file("circe", "p.md", runner, None, source_id=plans.NEW_SOURCE_ID)
+    await plans.fetch_remote_file("remote-host", "p.md", runner, None, source_id=plans.NEW_SOURCE_ID)
 
     assert len(calls[0][2]) == 2
 

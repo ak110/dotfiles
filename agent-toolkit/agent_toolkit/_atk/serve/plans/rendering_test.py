@@ -123,7 +123,7 @@ async def test_remote_read_failure_reports_stderr(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, stderr))
 
     with pytest.raises(plans.RemoteHelperError) as error:
-        await plans.fetch_remote_file("circe", "p.md", plans.default_ssh_runner, None)
+        await plans.fetch_remote_file("remote-host", "p.md", plans.default_ssh_runner, None)
 
     assert "終了コード3" in str(error.value)
     assert expected in str(error.value)

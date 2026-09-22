@@ -109,7 +109,7 @@ async def test_remote_file_is_read_through_rpc_when_connected() -> None:
     runner, calls = _runner_returning(_read_payload("fallback"))
     watcher = _FakeWatcher(connected=True, response=_read_payload("rpc", 2_000.0))
 
-    text, mtime = await plans.fetch_remote_file("circe", "p.md", runner, typing.cast(typing.Any, watcher))
+    text, mtime = await plans.fetch_remote_file("remote-host", "p.md", runner, typing.cast(typing.Any, watcher))
 
     assert (text, mtime) == ("rpc", 2_000.0)
     assert not calls
