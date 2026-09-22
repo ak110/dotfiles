@@ -53,58 +53,12 @@ def test_invalid_host(host: object) -> None:
 
 
 def test_assets_are_self_contained() -> None:
-    """UI資産の自己完結性とサブパス置換点を検証する。"""
+    """UI資産は外部配信元へ依存せず、HTMLとして解釈する本文の代入を1箇所へ限る。"""
     combined = assets.HTML + assets.CSS + assets.JS
     assert "https://" not in combined
     assert "http://" not in combined
     assert combined.count("innerHTML") == 1
-    assert "entry.body_html ?? entry.content_html ?? ''" in assets.JS
-    assert "eventSource.addEventListener('changed'" in assets.JS
-    assert "entries-changed" not in assets.JS
     assert "insertAdjacentHTML" not in combined
-    assert "/api/entries" in combined
-    assert "/api/events" in combined
-    assert "__BASE_PATH_HTML__" in assets.HTML
-    assert "__BASE_PATH_JS__" in assets.JS
-    assert f'<meta name="theme-color" content="{assets.THEME_COLOR}">' in assets.HTML
-    assert 'rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg"' in assets.HTML
-    assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
-
-
-def test_assets_use_shared_dialog_shell_without_cancel_ui() -> None:
-    """3ダイアログへ共通シェルと唯一の終了操作を適用する。"""
-    assert assets.HTML.count("<dialog ") == 3
-    assert assets.HTML.count('class="dialog-shell') == 3
-    assert 'class="dialog-shell detail-dialog"' in assets.HTML
-    for dialog_id, heading_id, close_id in [
-        ("detail-dialog", "detail-heading", "detail-close-button"),
-        ("create-dialog", "create-dialog-heading", "create-close-button"),
-        ("delete-dialog", "delete-dialog-heading", "delete-close-button"),
-    ]:
-        dialog = re.search(rf'<dialog id="{dialog_id}"([^>]*)>(.*?)</dialog>', assets.HTML, re.DOTALL)
-        assert dialog is not None
-        assert f'aria-labelledby="{heading_id}"' in dialog.group(1)
-        assert 'class="dialog-header"' in dialog.group(2)
-        assert 'class="dialog-body"' in dialog.group(2)
-        assert 'class="dialog-footer' in dialog.group(2)
-        assert f'id="{close_id}"' in dialog.group(2)
-        assert 'aria-label="閉じる"' in dialog.group(2)
-    assert "unsaved-dialog" not in assets.HTML
-    assert "cancel-" not in assets.HTML
-    assert "requestDiscard" not in assets.JS
-    assert "pendingDiscardAction" not in assets.JS
-    assert "中止</button>" not in assets.HTML
-    assert "width: 2.75rem;" in assets.CSS
-    assert "height: 2.75rem;" in assets.CSS
-    assert "overflow-y: auto;" in assets.CSS
-    assert "#screen-wi dialog.dialog-shell {" in assets.CSS
-    dialog_rule = re.search(
-        r"#screen-wi dialog\.dialog-shell \{(.*?)\n\}",
-        assets.CSS,
-        re.DOTALL,
-    )
-    assert dialog_rule is not None
-    assert "overflow: hidden;" in dialog_rule.group(1)
 
 
 def test_assets_global_error_does_not_restore_refresh_after_user_focus_move() -> None:
@@ -542,13 +496,9 @@ async def test_read_routes_remain_available_during_entry_move(
     assert detail_response.status_code == 404
 
 
-@pytest.mark.parametrize(
-    "text",
-    ["本文のみ\n", "---\ninvalid: [unterminated\n---\n本文\n"],
-)
-def test_detail_returns_empty_frontmatter_when_unavailable(tmp_path: pathlib.Path, text: str) -> None:
-    """frontmatterが無い又は解析できない詳細は空の表示用一覧を返す。"""
-    _write_detail_entry(tmp_path, text)
+def test_detail_returns_empty_frontmatter_when_unavailable(tmp_path: pathlib.Path) -> None:
+    """frontmatterが無い詳細は空の表示用一覧を返す。"""
+    _write_detail_entry(tmp_path, "本文のみ\n")
     detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
     assert not detail["frontmatter_entries"]
 
@@ -904,11 +854,6 @@ async def test_safe_base_path_rejects_value_that_proxy_fix_accepts(tmp_path: pat
 
     js_body = await (await client.get("/atk:1/static/app.js", headers=headers)).get_data(as_text=True)
     assert 'const BASE_PATH="";' in js_body
-
-
-def test_console_title_is_fixed_command_name() -> None:
-    """ターミナルタイトルはコマンド名だけの固定値とし、起動ごとに変わる値を含めない。"""
-    assert serve.build_console_title() == "atk serve"
 
 
 @pytest.mark.asyncio

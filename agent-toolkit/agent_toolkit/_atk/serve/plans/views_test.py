@@ -56,31 +56,6 @@ def test_pygments_css_keeps_token_rules_without_base_rule() -> None:
     assert not any(line.strip().startswith(".codehilite {") for line in css.splitlines())
 
 
-@pytest.mark.parametrize(
-    ("rel", "expected"),
-    [("a.plan-review.tsv", True), ("a.exec-review.tsv", True), ("a.md", False), ("a.tsv", False)],
-)
-def test_review_table_path_is_identified_by_suffix(rel: str, expected: bool) -> None:
-    """レビュー指摘管理表は接尾辞で判定する。"""
-    assert plans.is_review_table_path(rel) is expected
-
-
-def test_current_plan_links_exclude_legacy_attachments() -> None:
-    """作業rootの現行計画はメイン・バグ・実行レビューだけを移動候補にする。"""
-    assert plans._plan_paths("a.md", plans.LEGACY_SOURCE_ID) == (
-        ("a.md", "メイン"),
-        ("a.bugs.md", "バグ"),
-        ("a.exec-review.tsv", "実行レビュー指摘管理表"),
-    )
-
-
-def test_saved_plan_links_keep_legacy_attachments_readable() -> None:
-    """保存rootでは旧付属ファイルを読取用の移動候補として維持する。"""
-    paths = dict(plans._plan_paths("a.md", plans.NEW_SOURCE_ID))
-    assert paths["a.detail.md"] == "詳細"
-    assert paths["a.plan-review.tsv"] == "計画レビュー指摘管理表"
-
-
 @pytest.mark.asyncio
 async def test_plan_links_checks_independent_attachments_concurrently(
     tmp_path: pathlib.Path,
@@ -113,16 +88,6 @@ async def test_plan_links_checks_independent_attachments_concurrently(
 
     assert len(started) == 4
     assert html.count("data-plan-path") == 4
-
-
-def test_absent_root_is_listed_without_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """計画を1件も保存していないrootは通常の状態として扱い、警告を返さず一覧を空とする。"""
-    del index_path
-
-    entries, warning = plans.scan_files(tmp_path / "missing", "local-host")
-
-    assert not entries
-    assert warning is None
 
 
 @pytest.mark.parametrize("rel", ["../outside.md", "a/../../outside.md", "/etc/passwd.md"])

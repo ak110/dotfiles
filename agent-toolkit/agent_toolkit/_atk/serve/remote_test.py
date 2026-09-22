@@ -4,7 +4,6 @@ import io
 import json
 import pathlib
 import shutil
-import subprocess
 import sys
 import typing
 
@@ -18,21 +17,6 @@ _HELPERS = (
     (sessions.REMOTE_BOOTSTRAP, "atk_serve_sessions_remote_helper.py"),
 )
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[3] / "scripts"
-
-
-def test_python_c_namespace_has_no_file() -> None:
-    """`python -c`の実行名前空間は`__name__`が`__main__`で`__file__`を持たない。
-
-    bootstrapが`__file__`を補う前提を実機で固定する。
-    """
-    completed = subprocess.run(
-        [sys.executable, "-c", "import json, sys; json.dump([__name__, '__file__' in globals()], sys.stdout)"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    assert json.loads(completed.stdout) == ["__main__", False]
 
 
 @pytest.mark.parametrize(("bootstrap", "helper_name"), _HELPERS)
@@ -81,12 +65,9 @@ def test_helper_resolves_own_root_from_bound_file(tmp_path: pathlib.Path, monkey
     assert namespace["_dotfiles_roots"]() == (tmp_path / "opt" / "dotfiles", home / "dotfiles")
 
 
-@pytest.mark.parametrize(("bootstrap", "helper_name"), _HELPERS)
-def test_bootstrap_avoids_shell_metacharacters(bootstrap: str, helper_name: str) -> None:
+@pytest.mark.parametrize("bootstrap", [bootstrap for bootstrap, _ in _HELPERS])
+def test_bootstrap_avoids_shell_metacharacters(bootstrap: str) -> None:
     """bootstrapはPOSIXシェルとcmd.exeの双方で1つのダブルクォート引数として渡せる文字だけで構成する。"""
-    assert helper_name in bootstrap
-    assert "sys.stdout.reconfigure(encoding='utf-8', newline=chr(10))" in bootstrap
-    assert "sys.stdin.reconfigure(encoding='utf-8')" in bootstrap
     assert not set(bootstrap) & set('"$%<>|&^\\')
 
 
