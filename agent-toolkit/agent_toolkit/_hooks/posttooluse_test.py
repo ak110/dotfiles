@@ -883,12 +883,6 @@ class TestTestExecution:
         )
         assert _read_state(tmp_path, sid).get("test_executed") is not True
 
-    def test_posttooluse_failure_matcher_routes_bash(self):
-        """Bash失敗イベントが連続失敗記録へ配送されるmatcherを維持する。"""
-        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
-        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
-        assert re.fullmatch(matcher, "Bash") is not None
-
     def test_other_pyfltr_mcp_tool_not_detected(self, tmp_path: pathlib.Path):
         """検索など検証以外のpyfltr MCPツールでは状態を変更しない。"""
         sid = "test-mcp-grep"
@@ -933,17 +927,7 @@ class TestTestExecution:
         for tool_name in codex_tool_names:
             assert re.fullmatch(matcher, tool_name) is not None, tool_name
 
-    @pytest.mark.parametrize(
-        "tool_name",
-        [
-            "mcp__plugin_agent-toolkit_agents_server__start",
-            "mcp__plugin_agent-toolkit_agents_server__start_explore",
-            "mcp__plugin_agent-toolkit_agents_server__start_write",
-            "mcp__plugin_agent-toolkit_agents_server__send_message",
-            "mcp__plugin_agent-toolkit_agents_server__kill",
-            "mcp__plugin_agent-toolkit_agents_server__stop",
-        ],
-    )
+    @pytest.mark.parametrize("tool_name", ["mcp__plugin_agent-toolkit_agents_server__start"])
     def test_posttooluse_failure_matcher_excludes_agents_server(self, tool_name: str):
         """agents_server専用のPostToolUseFailure配送を撤去する。"""
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))

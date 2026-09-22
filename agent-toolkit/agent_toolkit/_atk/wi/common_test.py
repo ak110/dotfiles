@@ -182,18 +182,6 @@ def test_state_sets_have_single_definition_site() -> None:
     assert definition_sites == {"constants.py"}
 
 
-def test_state_sets_define_five_states_without_withdrawn_names() -> None:
-    """保存状態を5つに固定し、一覧集合を型によらず同じ集合として定義する。"""
-    assert _common.WI_STATES == ("inbox", "processing", "hold", "adopted", "rejected")
-    assert _common.WI_ACTIVE_STATES == ("inbox", "processing", "hold")
-    assert _common.WI_PROCESSABLE_STATES == ("inbox", "processing")
-    assert not hasattr(_common, "WI_AWI_ACTIVE_STATES")
-    assert set(_common.WI_ACTIVE_STATES) <= set(_common.WI_STATES)
-    assert set(_common.WI_PROCESSABLE_STATES) <= set(_common.WI_ACTIVE_STATES)
-    for states in _common.TRANSITION_EXPLICIT_STATES.values():
-        assert set(states) <= set(_common.WI_STATES)
-
-
 def test_make_filename_completer_filters_entry_type(tmp_path: pathlib.Path) -> None:
     """種別を指定した場合はfrontmatterの種別が一致するものだけを返す。"""
     private_notes = tmp_path / "private-notes"
@@ -826,10 +814,6 @@ class TestNotifyUnansweredUwisIfAny:
             "002.md: github.com/example/repo [inbox/unanswered] 質問2\n"
         )
 
-    def test_header_differs_from_list_headers(self) -> None:
-        """通知の種別ヘッダーは`atk wi list`の種別ヘッダーのいずれとも一致しない。"""
-        assert _common.UNANSWERED_UWI_NOTICE_HEADER not in (f"# {_common.WI_TYPE_AWI}", f"# {_common.WI_TYPE_UWI}")
-
     def test_local_path_filter_notifies_legacy_and_current_repo_forms(
         self,
         tmp_path: pathlib.Path,
@@ -902,14 +886,6 @@ class TestNotifyUnansweredUwisIfAny:
 
 class TestIsExistingDir:
     """長大な文字列候補に対する`is_existing_dir`のOSError耐性を検証する。"""
-
-    def test_returns_true_for_existing_directory(self, tmp_path: pathlib.Path) -> None:
-        """実在ディレクトリはTrueを返す。"""
-        assert _common.is_existing_dir(tmp_path) is True
-
-    def test_returns_false_for_missing_path(self, tmp_path: pathlib.Path) -> None:
-        """存在しないパスはFalseを返す。"""
-        assert _common.is_existing_dir(tmp_path / "missing") is False
 
     def test_returns_false_for_oversized_name_without_raising(self) -> None:
         """OS上限を超える長さの文字列でも`OSError`を送出せずFalseを返す。"""

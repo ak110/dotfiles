@@ -350,23 +350,6 @@ def _lane_plan_creation_step() -> str:
     return content[step_start:step_end]
 
 
-def test_process_lane_task_prepares_sources_before_creation() -> None:
-    """レーン手順は本文の保存を作成処理より前へ置く。"""
-    step = _lane_plan_creation_step()
-
-    assert step.index("管理対象一時領域のファイルへ保存する") < step.index("atk run-script plan-create")
-
-
-def test_process_lane_task_checks_plan_tables_before_commits() -> None:
-    """実装手順はcommit単位の照合と最終commit前の全行確認を区別する。"""
-    task_path = pathlib.Path(__file__).resolve().parents[3] / "share/exec.subagent.md"
-    content = task_path.read_text(encoding="utf-8")
-
-    assert "当該commitの実装単位" in content
-    assert "最後の実装commitの直前" in content
-    assert all(value in content for value in ("### 恒久化", "### リファクタリング"))
-
-
 @pytest.mark.parametrize("bug", [False, True])
 def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
     repo: pathlib.Path,

@@ -432,7 +432,8 @@ def test_convert_held_entries_integrates_all_materials_into_oldest_inbox_item(
     assert data["depends_on"] == [uwi_name, "external-a.md", "external-b.md"]
     assert "統合した計画本文" in body
     entries = result["entries"]
-    assert isinstance(entries, list) and len(entries) == 1
+    assert isinstance(entries, list)
+    assert len(entries) == 1
     assert result["integrated"] is True
     assert len(commit_calls) == 1
     assert commit_calls[0][2] == (

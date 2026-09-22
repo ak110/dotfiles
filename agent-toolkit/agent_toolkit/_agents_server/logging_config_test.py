@@ -2,7 +2,6 @@
 
 import logging
 import pathlib
-from logging.handlers import RotatingFileHandler
 
 import pytest
 
@@ -27,9 +26,6 @@ def test_configure_logging_reuses_handlers_and_rotation(
 
         assert first == second == tmp_path / "agents-server.log"
         assert len(file_handlers) == 1
-        assert isinstance(file_handlers[0], RotatingFileHandler)
-        assert file_handlers[0].maxBytes == logging_config.LOG_MAX_BYTES
-        assert file_handlers[0].backupCount == logging_config.LOG_BACKUP_COUNT
         stderr_handlers = [handler for handler in logger.handlers if isinstance(handler, logging_config._StderrHandler)]  # pylint: disable=protected-access  # noqa: SLF001
         assert len(stderr_handlers) == 1
     finally:

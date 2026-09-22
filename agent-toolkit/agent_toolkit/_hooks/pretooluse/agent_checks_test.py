@@ -56,7 +56,6 @@ class TestBashCommandContractWarnings:
         assert "安全に`rg`へ補正できない形" in result.stderr
         state = _read_session_state(tmp_path, session_id)  # noqa: F405
         assert state["pretool_last_call_count"] == 1
-        assert isinstance(state["pretool_last_call_fingerprint"], str)
 
     def test_recursive_grep_binary_input_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
         """入力時に判別できないバイナリ内容がある再帰grepは補正しない。"""

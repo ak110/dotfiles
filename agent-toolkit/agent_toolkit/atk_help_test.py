@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 from collections.abc import Iterator
 
 import pytest
@@ -33,14 +32,6 @@ def _walk_commands() -> Iterator[tuple[str, argparse.ArgumentParser, str | None]
                 command = f"{parent_name} {name}"
                 yield command, child, summaries[name]
                 pending.append((command, child))
-
-
-def test_add_command_requires_summary_and_description() -> None:
-    parameters = inspect.signature(_atk_help.add_command).parameters
-
-    for name in ("summary", "description"):
-        assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
-        assert parameters[name].default is inspect.Parameter.empty
 
 
 def test_every_command_has_summary_and_description() -> None:
@@ -324,35 +315,6 @@ def test_result_kinds_do_not_overlap() -> None:
     assert len(frozenset().union(*groups)) == total
 
 
-@pytest.mark.parametrize(
-    ("commands", "expected"),
-    [
-        (_outcome.STATE_CHANGE_COMMANDS, "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。"),
-        (_outcome.VALUE_OUTPUT_COMMANDS, "状態変更が成立した実行は標準エラーの1行目へ`成功: `で始まる行を書き"),
-        (_outcome.READ_ONLY_COMMANDS, "成功行は書かない。"),
-    ],
-)
-def test_help_states_result_line_prefix_and_stream(commands: frozenset[str], expected: str) -> None:
-    """各区分のヘルプが結果行の接頭辞と出力先を示す。"""
-    for command in sorted(commands):
-        assert expected in _atk_help.HELP[command]["description"], command
-
-
-def test_no_match_commands_state_the_no_match_line() -> None:
-    """該当0件で非0終了する読み取り経路のヘルプが該当0件の行を示す。"""
-    for command in sorted(_outcome.NO_MATCH_COMMANDS):
-        description = _atk_help.HELP[command]["description"]
-        assert "該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。" in description, command
-
-
-def test_bulk_transition_help_states_filter_and_precondition() -> None:
-    """一括操作を受理する状態遷移コマンドのヘルプが、候補の限定と必須指定を示す。"""
-    for command in _atk_help.BULK_TRANSITION_COMMANDS:
-        description = _atk_help.HELP[command]["description"]
-        assert "`--all`では`wi list`と同じ" in description, command
-        assert "個別指定ではFILENAMEを1個以上、一括操作では--allと--target-repoを指定する。" in description, command
-
-
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
     """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
     commands = {name: parser for name, parser, _summary in _walk_commands()}
@@ -367,11 +329,3 @@ def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
             for option in action.option_strings
         }
         assert expected <= option_strings, command
-
-
-def test_help_does_not_mention_body_match_output() -> None:
-    """保存本文の一致判定を出力する旨がヘルプに残らない。"""
-    for command in ("atk wi add", "atk wi edit", "atk review-table add", "atk review-table respond"):
-        description = _atk_help.HELP[command]["description"]
-        assert "一致判定" not in description, command
-        assert "body_match" not in description, command

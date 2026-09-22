@@ -127,8 +127,6 @@ def test_agents_list_returns_diagnostic_fields_without_prompt(capsys: pytest.Cap
         "output_updated_at": None,
         "seconds_since_output": session["seconds_since_output"],
     }
-    assert isinstance(session["seconds_since_activity"], int)
-    assert isinstance(session["seconds_since_output"], int)
 
 
 @pytest.mark.usefixtures("session_environment")

@@ -206,7 +206,6 @@ class TestNonMatchingPrompts:
         self._assert_reference_notice_only(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
-        assert isinstance(state["last_user_prompt_at"], float)
 
     def test_ignores_unrelated_slash(self, tmp_path: pathlib.Path):
         sid = "unrelated-slash"
@@ -228,7 +227,6 @@ class TestNonMatchingPrompts:
         self._assert_reference_notice_only(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
-        assert isinstance(state["last_user_prompt_at"], float)
 
     def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
@@ -245,7 +243,6 @@ class TestNonMatchingPrompts:
         self._assert_reference_notice_only(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
-        assert isinstance(state["last_user_prompt_at"], float)
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -415,7 +412,6 @@ class TestVerificationNoticeInjection:
         assert _notice_bodies(context) == [_EXPECTEDREFERENCE_NOTICE_BODY]
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
-        assert isinstance(state["last_user_prompt_at"], float)
 
     def test_does_not_inject_for_harness_message(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-harness-message"

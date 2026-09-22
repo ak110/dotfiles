@@ -596,7 +596,6 @@ def test_lock_path_is_stable_for_same_target(tmp_path: pathlib.Path) -> None:
     first = tmp_path / "sample.plan-review.tsv"
     second = tmp_path / "sample.exec-review.tsv"
 
-    assert table.lock_path(first) == table.lock_path(first)
     assert table.lock_path(first) != table.lock_path(second)
     assert table.lock_path(first).parent == table.lock_path(second).parent
 

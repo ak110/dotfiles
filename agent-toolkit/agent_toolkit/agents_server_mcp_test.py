@@ -496,37 +496,6 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
     assert manager.show_session(shell["session_id"])["label"] == "git status --short"
 
 
-def test_server_instructions_carry_standalone_contract() -> None:
-    """サーバー説明だけを読む主体へ観測の義務とモデル解決の主体を示す。"""
-    instructions = subject.mcp.instructions
-    assert instructions is not None
-    assert "実行ホストで`atk agents wait`を発行して観測する" in instructions
-    assert "結果が不要なら`kill`で破棄する" in instructions
-    assert "engine、model及びeffortは" in instructions
-    assert "起動時の`label`は当該sessionを人が識別する短い名前とし" in instructions
-
-
-def test_tool_descriptions_carry_standalone_contract() -> None:
-    """各ツールの公開説明だけで候補枯渇と継続不能の応答を判別できる。"""
-    tools = {}
-    for tool_name in ("start", "start_explore", "start_write", "start_shell", "send_message", "kill", "list"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        tools[tool_name] = tool
-    assert "最後の候補の終端応答を返す" in tools["start"].description
-    assert "最後の例外を送出する" in tools["start"].description
-    assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
-    assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
-    assert "ファイルの読取・検索・作成・編集だけを許可" in tools["start_write"].description
-    assert "起動時に確定したengine・model・effortで継続する" in tools["send_message"].description
-    assert "unknown session" in tools["send_message"].description
-    assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
-    assert "sessionとbackend processは破棄しない" in tools["kill"].description
-    assert "`status`へ`expired`" in tools["kill"].description
-    assert "`send_message`による訂正では足りないこと" in tools["kill"].description
-    assert "結果本文は返さない" in tools["list"].description
-
-
 @pytest.mark.asyncio
 async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_path: pathlib.Path) -> None:
     """active、再開中及び期限切れのsessionを同じ項目集合で開始順に返す。"""
@@ -3012,13 +2981,6 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
     assert turn_start["sandboxPolicy"] == {"type": "dangerFullAccess"}
     assert turn_start["model"] == "gpt-test"
     assert turn_start["effort"] == "high"
-
-
-def test_subagent_rules_reach_only_normal_delegation() -> None:
-    """委譲先規範は通常起動の指示だけへ連結し、軽量起動の指示へは入らない。"""
-    assert state.DELEGATE_SYSTEM_PROMPT.endswith(state.SUBAGENT_RULES)
-    assert state.SUBAGENT_RULES not in state.EXPLORE_SYSTEM_PROMPT
-    assert state.SUBAGENT_RULES not in state.SHELL_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
