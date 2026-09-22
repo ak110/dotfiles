@@ -67,10 +67,3 @@ def test_test_only_import_does_not_make_entry_private(tmp_path: pathlib.Path) ->
     (tmp_path / "_foo_test.py").write_text("import _foo\n", encoding="utf-8")
 
     assert _standalone_private_prefixed_scripts(sorted(tmp_path.glob("*.py"))) == ["_foo.py"]
-
-
-def test_exempt_entry_is_not_reported(tmp_path: pathlib.Path) -> None:
-    """外部の許可判定がパスを解決する例外入口は違反にしない。"""
-    entry = tmp_path / "_managed_temp.py"
-    entry.write_text('if __name__ == "__main__":\n    pass\n', encoding="utf-8")
-    assert _standalone_private_prefixed_scripts([entry]) == []

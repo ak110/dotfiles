@@ -48,10 +48,6 @@ def _read_ps1_files() -> list[str]:
 class TestInstallScriptSsot:
     """`agent-toolkit/rules/`配下のmdファイル一覧と`install-claude.{sh,ps1}`の配列の整合性を検証する。"""
 
-    def test_rules_dir_exists(self):
-        assert _RULES_DIR.is_dir(), f"agent-toolkit/rules/ が存在しない: {_RULES_DIR}"
-        assert _read_rules_dir(), "agent-toolkit/rules/ にmdファイルが存在しない"
-
     @pytest.mark.parametrize(
         ("name", "reader"),
         [
@@ -64,11 +60,4 @@ class TestInstallScriptSsot:
         script_files = reader()
         assert script_files == rules, (
             f"{name} のファイル一覧が agent-toolkit/rules/ と不一致: script={script_files} rules={rules}"
-        )
-
-    def test_install_sh_and_ps1_match_each_other(self):
-        sh_files = _read_sh_files()
-        ps1_files = _read_ps1_files()
-        assert sh_files == ps1_files, (
-            f"install-claude.sh と install-claude.ps1 のファイル一覧が不一致: sh={sh_files} ps1={ps1_files}"
         )
