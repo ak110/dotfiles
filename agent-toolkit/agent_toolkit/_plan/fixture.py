@@ -146,7 +146,8 @@ WI_FILES: tuple[tuple[str, str], ...] = (
 """`関連WI`へ記載する正本ファイル名と1行要約。"""
 
 USER_ACTION_SUBJECT: str = "公開契約に必要な変更を実装する"
-USER_ACTION_ROW: str = f"| {USER_ACTION_SUBJECT} | ユーザー指示 | 採用 | - |"
+USER_ACTION_REASON: str = "原文の要求単位は公開契約の修正1件であり、開放性を保ったまま実施範囲とする。"
+USER_ACTION_ROW: str = f"| {USER_ACTION_SUBJECT} | ユーザー指示 | 採用 | {USER_ACTION_REASON} |"
 PROPOSAL_ACTION_ROW: str = (
     "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |"
 )

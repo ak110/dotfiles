@@ -181,7 +181,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 
 | 実施内容 | 由来 | 採否 | 根拠 |
 | --- | --- | --- | --- |
-| 登録済み入口を検証する | ユーザー指示 | 採用 | - |
+| 登録済み入口を検証する | ユーザー指示 | 採用 | 原文の要求単位は1件であり、開放性を保ったまま実施範囲とする。 |
 
 ## 要件・外部仕様
 
