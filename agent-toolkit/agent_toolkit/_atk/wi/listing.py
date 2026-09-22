@@ -5,9 +5,11 @@
 """
 
 import argparse
+import datetime
 import json
 import pathlib
 import shutil
+import subprocess
 import sys
 from collections.abc import Iterable
 
@@ -195,8 +197,39 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
             print(f"{prefix}{summary}")
 
 
-def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:
+def _staleness(text: str, target_repo: str, now: datetime.datetime) -> dict[str, object]:
+    """target_commit以後に12時間以上経過したcommitがあるかを返す。"""
+    parsed = parse_frontmatter(text)
+    target_commit = parsed[0].get("target_commit") if parsed is not None else None
+    if not isinstance(target_commit, str) or not target_commit:
+        return {"status": "indeterminate", "reason": "target-commit-missing"}
+    result = subprocess.run(
+        ["git", "-C", target_repo, "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        return {"status": "indeterminate", "reason": "history-unavailable"}
+    timestamps = [int(line) for line in result.stdout.splitlines() if line.isdigit()]
+    cutoff = int((now - datetime.timedelta(hours=12)).timestamp())
+    old_count = sum(timestamp <= cutoff for timestamp in timestamps)
+    if old_count:
+        return {"status": "notice", "old_commit_count": old_count, "later_commit_count": len(timestamps)}
+    return {"status": "current", "later_commit_count": len(timestamps)}
+
+
+def _print_json_entries(
+    selected: list[QueueEntryDisplay],
+    readiness: ReadinessResult,
+    *,
+    include_staleness: bool = False,
+    staleness_now: datetime.datetime | None = None,
+) -> None:
     """選択済みエントリを端末幅に依存しないJSON Linesで出力する。"""
+    now = staleness_now or datetime.datetime.now(datetime.UTC)
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
         actual_type = entry_type or WI_TYPE_AWI
         state_readiness = _state_readiness(state, path.name, readiness)
@@ -217,6 +250,8 @@ def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessR
             "source": _parse_source(text),
             "summary": summary,
         }
+        if include_staleness:
+            record["staleness"] = _staleness(text, target_repo, now)
         print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
 
 
@@ -269,7 +304,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         return
 
     if getattr(args, "json", False) or (is_agent_environment() and not getattr(args, "no_json", False)):
-        _print_json_entries(selected, readiness)
+        _print_json_entries(selected, readiness, include_staleness=getattr(args, "with_staleness", False))
         return
 
     _print_entries(selected, readiness)

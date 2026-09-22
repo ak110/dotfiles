@@ -26,6 +26,7 @@ import logging
 import pathlib
 import re
 import shutil
+import uuid
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -96,6 +97,11 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
 
     file_name = "root.json" if host_session_id is None else f"{host_session_id}.json"
     return StatusFileIdentity(owner, file_name, host_session_id)
+
+
+def create_process_root_identity() -> StatusFileIdentity:
+    """環境から所有会話を解決できないMCPプロセス専用のルート識別子を生成する。"""
+    return StatusFileIdentity(f"mcp-{uuid.uuid4().hex}", "root.json", None)
 
 
 def status_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:

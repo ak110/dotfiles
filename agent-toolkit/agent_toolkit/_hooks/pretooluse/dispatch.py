@@ -493,7 +493,8 @@ def _handle_bash_tool(
         warnings.append(
             _llm_notice(
                 "同じ終了コードによるBash失敗が連続している。\n"
-                "対処: 原因調査と次のコマンド実行をagents_serverのstart_shellへ分離する。",
+                "対処: 原因調査と次のコマンド実行をagents_serverのstart_shellへ分離する。"
+                "start_shellが成功すると連続失敗の状態を解除し、その後は直接Bashを再開できる。",
                 tag=_WARN_TAG,
                 removable_cause=True,
             )

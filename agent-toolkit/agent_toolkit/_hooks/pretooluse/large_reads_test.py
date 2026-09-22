@@ -128,6 +128,38 @@ def test_threshold_environment_override(tmp_path: pathlib.Path, monkeypatch) -> 
     assert check_large_read({"file_path": str(path)}, str(tmp_path)) is not None
 
 
+def test_read_applies_independent_byte_threshold(tmp_path: pathlib.Path, monkeypatch) -> None:
+    path = tmp_path / "long-line.md"
+    path.write_text("x" * 101, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+
+    corrected = check_large_read({"file_path": str(path)}, str(tmp_path))
+
+    assert corrected is not None
+    assert "101バイト" in corrected[1]
+
+
+def test_bash_applies_total_byte_threshold(tmp_path: pathlib.Path, monkeypatch) -> None:
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("a" * 60, encoding="utf-8")
+    second.write_text("b" * 41, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+
+    notice = check_large_bash_read(f"cat {first} {second}", str(tmp_path))
+
+    assert notice is not None
+    assert "101バイト" in notice
+
+
+def test_byte_threshold_preserves_non_line_oriented_read(tmp_path: pathlib.Path, monkeypatch) -> None:
+    image = tmp_path / "large.png"
+    image.write_bytes(b"x" * 101)
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+
+    assert check_large_read({"file_path": str(image)}, str(tmp_path)) is None
+
+
 def test_dispatch_corrects_large_read(tmp_path: pathlib.Path, capsys) -> None:
     """`Read`の全文取得を遮断せず、範囲を補正した入力で通す。"""
     path = _large_file(tmp_path)

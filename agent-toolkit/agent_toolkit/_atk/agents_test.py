@@ -198,12 +198,12 @@ def test_agents_show_rejects_unknown_session(capsys: pytest.CaptureFixture[str])
     assert capsys.readouterr().err == "unknown session: missing\n"
 
 
-def test_agents_list_from_terminal_merges_all_root_sessions(
+def test_agents_list_without_conversation_root_does_not_cross_root_boundaries(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """会話識別子のない直接端末では有効な全rootのsessionを統合する。"""
+    """会話識別子のない直接端末では他のrootのsessionを表示しない。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
@@ -231,7 +231,7 @@ def test_agents_list_from_terminal_merges_all_root_sessions(
         atk.main(["agents", "list"])
 
     payload = json.loads(capsys.readouterr().out)
-    assert {session["session_id"] for session in payload["sessions"]} == {"session-a", "session-b"}
+    assert payload == {"sessions": []}
 
 
 def test_agents_list_reports_unconfirmed_conversation_root(

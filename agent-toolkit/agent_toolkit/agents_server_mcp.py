@@ -153,6 +153,8 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
     切り替えが起きない起動は`session_id`と`status`の2項目とする。
     """
     public: dict[str, Any] = {key: response[key] for key in ("session_id", "status")}
+    if "root_session_id" in response:
+        public["root_session_id"] = response["root_session_id"]
     if response.get("excluded_candidates"):
         public["excluded_candidates"] = response["excluded_candidates"]
         public["engine"] = response["engine"]
@@ -312,9 +314,12 @@ class AgentsServerManager:
         self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._auto_resume_task: asyncio.Task[None] | None = None
+        self._status_writer: status_file.StatusFileWriter | None
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = status_file.resolve_status_file_identity(os.environ)
-            self._status_writer = status_file.StatusFileWriter(self.sessions, identity) if identity is not None else None
+            if identity is None:
+                identity = status_file.create_process_root_identity()
+            self._status_writer = status_file.StatusFileWriter(self.sessions, identity)
         else:
             assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
             self._status_writer = status_writer

@@ -32,11 +32,11 @@
 
 ## 計画最終化
 
-`atk run-script plan-progress --`で計画ファイルの`## 進捗ログ`へ、統合区分、統合先branch、`merged_head`、実行レビューの収束及びAWI終端前の状態を追記する。
+計画メタ情報が示す対象リポジトリの専用worktreeをcwdとして、`atk run-script plan-progress --`で計画ファイルの`## 進捗ログ`へ、統合区分、統合先branch、`merged_head`、実行レビューの収束及びAWI終端前の状態を追記する。
 同じ追記へ当該レーンの稼働時間も記録する。値はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とし、書式は`agent-toolkit:plan-mode`の計画ファイル基準が定める。
 この記録は、次の処理回の選定工程がレーン配分の見込みを導く入力になる。記録が無いと、見込みと実測の乖離がそのまま待ち時間として残る。rebaseを実行した場合は、rebase前後の専用branchの7文字以上の一意な短縮OIDの対応も同じ追記へ含める。
-`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行し、終了コード0と警告の不在を確認する。
-続けて`atk plans commit <メイン計画ファイル名>`を単独実行し、成功の報告と警告の不在を確認する。
+同じ専用worktreeをcwdとして`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行し、終了コード0と警告の不在を確認する。統合先worktreeと専用worktreeが異なる場合も、この2コマンドでは専用worktreeをcwdとして維持する。
+続けて、`atk plans commit`が作業計画rootを解決する契約に従うcwdで`atk plans commit <メイン計画ファイル名>`を単独実行し、成功の報告と警告の不在を確認する。
 
 ## AWI行の終端
 
@@ -46,7 +46,9 @@
 
 ## 出力
 
-統合差分から、`AGENTS.md`、`CLAUDE.md`、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`及びhook関連のエージェント向け文書の変更パスを列挙する。各パスについて、後続の判断へ影響する確定済み規則本文を統合後ファイルから逐語で取得する。非連続の本文は別の配列要素とし、同じpathの反復を許す。同じpathの要素は統合後ファイルでの出現順に並べ、各`text`はファイル内へ連続して逐語で存在する本文とする。該当しない場合は空配列とする。
+統合差分から、`agent_toolkit._plan.structure.parsing.is_agent_doc_target_file()`が真を返すエージェント向け文書の変更パスを列挙する。対象集合には`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、`.claude/skills/`を含む。`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`agent-toolkit/agents/`、hook関連文書も含む。通常コードと履歴文書は対象外とする。
+
+各パスについて、後続の判断へ影響する確定済み規則本文を統合後ファイルから逐語で取得する。非連続の本文は別の配列要素とし、同じpathの反復を許す。同じpathの要素は統合後ファイルでの出現順で並べる。各`text`はファイル内へ連続して逐語で存在する本文とする。該当しない場合は空配列とする。
 
 次の形式だけを返す。
 

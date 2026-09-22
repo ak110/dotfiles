@@ -67,11 +67,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     root_resolution = status_file.resolve_conversation_root(env)
     root_session_id = None if root_resolution is None else root_resolution.root_session_id
     if args.agents_subcommand == "list":
-        sessions = (
-            _load_sessions(root_session_id)
-            if root_session_id is not None
-            else _load_all_sessions(status_file.list_root_session_ids())
-        )
+        sessions = _load_sessions(root_session_id) if root_session_id is not None else []
         if not args.include_terminated:
             sessions = [
                 session for session in sessions if session.get("status") == "running" or session.get("result_available") is True
@@ -133,17 +129,6 @@ def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
             session["owner_status_file"] = path.name
             session["result_available"] = (results / f"{session['session_id']}.json").is_file()
             _add_output_activity(session)
-            previous = by_id.get(session["session_id"])
-            if previous is None or str(previous.get("updated_at", "")) <= str(session.get("updated_at", "")):
-                by_id[session["session_id"]] = session
-    return sorted(by_id.values(), key=lambda session: str(session.get("started_at", "")))
-
-
-def _load_all_sessions(root_session_ids: list[str]) -> list[dict[str, Any]]:
-    """複数のルート状態をsession識別子ごとの最新版へ統合する。"""
-    by_id: dict[str, dict[str, Any]] = {}
-    for root_session_id in root_session_ids:
-        for session in _load_sessions(root_session_id):
             previous = by_id.get(session["session_id"])
             if previous is None or str(previous.get("updated_at", "")) <= str(session.get("updated_at", "")):
                 by_id[session["session_id"]] = session

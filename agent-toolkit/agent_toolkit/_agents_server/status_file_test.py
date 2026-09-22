@@ -83,6 +83,16 @@ def test_unavailable_candidates_record_is_a_file_and_not_a_root_session(tmp_path
     assert subject.list_root_session_ids(tmp_path) == []
 
 
+def test_process_root_identities_are_valid_and_collision_free() -> None:
+    first = subject.create_process_root_identity()
+    second = subject.create_process_root_identity()
+
+    assert first.file_name == "root.json"
+    assert first.host_session_id is None
+    assert subject.valid_session_id(first.root_session_id)
+    assert first.root_session_id != second.root_session_id
+
+
 @pytest.mark.asyncio
 async def test_writer_logs_result_write_and_delete_without_body(
     tmp_path: pathlib.Path,

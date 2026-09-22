@@ -14,7 +14,7 @@
 
 ## 処理対象の決定
 
-`atk wi list --status=processable --target-repo=<repo-path> --skip-pull`を実行する。明示一覧がある場合は出力に現れる指定項目だけを対象とし、現れない名前を`needs_escalation`へ返す。指定が無い場合は`processing`の全項目と、次の除外条件に当たらない`inbox`項目を候補とする。
+`atk wi list --status=processable --target-repo=<repo-path> --skip-pull --with-staleness`を実行する。明示一覧がある場合は出力に現れる指定項目だけを対象とし、現れない名前を`needs_escalation`へ返す。指定が無い場合は`processing`の全項目と、次の除外条件に当たらない`inbox`項目を候補とする。鮮度情報は選定結果へそのまま保存し、`notice`だけを理由とする履歴調査は行わない。内容不一致、充足済み又は巻戻しの危険を観測した項目だけ履歴を確認する。
 
 - `ready`が偽であり、`blocked_reason`が`dependency-unmet-internal`以外である。依存の未充足を理由とする除外は`dependency-unmet-external`だけが該当する
 
@@ -67,6 +67,7 @@ AWIが指定する反映先の実測はレーン担当が計画起草時に行�
 decisions:
 - awi: <AWI又は作業を求める回答が保存されたUWIのファイル名>
   lane: <`lane-NN`形式のレーン識別子(`NN`は2桁のレーン番号)又は「なし」>
+  staleness: <`atk wi list --with-staleness`が返した鮮度情報のYAMLフロー写像>
   再開位置: <作業root内の計画ファイル絶対パスと残る工程。既定値は「なし」>
   terminal_order: <固有の終端順序。既定値は「既定」>
   project_notes: <プロジェクト規範が指定した内容。既定値は「なし」>
@@ -82,7 +83,7 @@ lane_costs:
 - <確認事項。完了時は「なし」>
 ```
 
-既定値のとき省略する行は`再開位置`、`terminal_order`、`project_notes`及び3つの上流投入行とする。行の不在は記載した既定値として解釈する。各decisionが必ず持つ行は`awi`と`lane`とする。
+既定値のとき省略する行は`再開位置`、`terminal_order`、`project_notes`及び3つの上流投入行とする。行の不在は記載した既定値として解釈する。各decisionが必ず持つ行は`awi`、`lane`、`staleness`とする。`staleness`は一覧JSONの写像を値と型を変えずに転記する。
 
 `lane_costs`は`なし`でないレーンを重複なく全て1件ずつ含める。秒数は実装時間と直列統合時間を分けて保持し、同じ値へ重複計上しない。
 

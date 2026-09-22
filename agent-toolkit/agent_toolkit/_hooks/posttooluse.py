@@ -1166,7 +1166,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             notices.append(
                 _llm_notice(
                     f"同じ終了コード{exit_code}でBashが2回連続して失敗した。"
-                    "次の直接Bash実行を遮断する。原因調査とコマンド実行はagents_serverのstart_shellへ分離する。",
+                    "次の直接Bash実行を遮断する。原因調査とコマンド実行はagents_serverのstart_shellへ分離する。"
+                    "start_shellが成功すると連続失敗の状態を解除し、その後は直接Bashを再開できる。",
                     tag=_WARN_TAG,
                     removable_cause=False,
                 )

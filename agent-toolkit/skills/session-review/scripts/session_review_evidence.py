@@ -2876,7 +2876,14 @@ def _candidate_events(
     first_main_user: tuple[str, int] | None = None
     for event in timeline:
         line = event.get("line")
-        if event.get("kind") == "user" and event.get("record") == "main" and isinstance(line, int):
+        text = event.get("text")
+        if (
+            event.get("kind") == "user"
+            and event.get("record") == "main"
+            and isinstance(line, int)
+            and isinstance(text, str)
+            and _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None
+        ):
             first_main_user = ("main", line)
             break
     sources = (
@@ -3188,6 +3195,8 @@ def _user_candidate_exclusion(
         return "delegated-record"
     if event.get("runtime_generated") is True:
         return "runtime-meta"
+    if text.startswith("<skill>") and "</skill>" in text:
+        return "runtime-inserted"
     if text.startswith(
         (
             "<system-reminder>",

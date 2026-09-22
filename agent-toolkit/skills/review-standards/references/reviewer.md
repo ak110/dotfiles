@@ -1,6 +1,7 @@
 # レビュー担当側心得
 
 本書は、レビューを実施する主体が適用する走査契約、指摘の確定基準及び完了報告の形式を定める。
+過剰設計、点修正と共通原因修正、責務帰属の評価は`agent-toolkit:writing-standards`の`references/design-heuristics.md`「設計案の予備選別」を正本とする。
 
 ## 適用契約
 

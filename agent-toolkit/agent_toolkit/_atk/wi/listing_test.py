@@ -17,7 +17,7 @@ import unicodedata
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import frontmatter, listing  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._testing.git_fakes import make_current_worktree_fake as _make_current_worktree_fake  # noqa: E402
@@ -1668,3 +1668,43 @@ class TestListNonTtyTargetRepo:
         output_lines = captured.out.splitlines()
         assert self._LONG_REPO in captured.out
         assert any(self._display_width(line) > terminal_columns for line in output_lines)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    [
+        ("", {"status": "current", "later_commit_count": 0}),
+        ("1726876800\n", {"status": "notice", "old_commit_count": 1, "later_commit_count": 1}),
+        ("1726963199\n", {"status": "current", "later_commit_count": 1}),
+    ],
+)
+def test_staleness_uses_fixed_time_and_commit_age(
+    monkeypatch: pytest.MonkeyPatch,
+    stdout: str,
+    expected: dict[str, object],
+) -> None:
+    monkeypatch.setattr(
+        listing.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=stdout, stderr=""),
+    )
+    text = "---\ntarget_commit: 0123456789abcdef\n---\n\n# item\n"
+    now = datetime.datetime(2024, 9, 22, 0, 0, tzinfo=datetime.UTC)
+
+    assert listing._staleness(text, "/target/repository", now) == expected  # pylint: disable=protected-access
+
+
+def test_staleness_reports_unavailable_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        listing.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 128, stdout="", stderr="bad revision"),
+    )
+    text = "---\ntarget_commit: missing\n---\n\n# item\n"
+
+    assert listing._staleness(  # pylint: disable=protected-access
+        text, "/target/repository", datetime.datetime.now(datetime.UTC)
+    ) == {
+        "status": "indeterminate",
+        "reason": "history-unavailable",
+    }
