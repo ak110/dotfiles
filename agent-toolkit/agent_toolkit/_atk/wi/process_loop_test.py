@@ -30,6 +30,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common import automated_prompt as _automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import inherited_venv as _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
@@ -833,9 +834,11 @@ class TestProcessLoopPromptAndEnv:
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
     def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:
-        """新規セッションの目的文がスキルの完遂だけを伝えること。"""
+        """新規セッションの目的文がスキルの完遂だけを伝え、機械生成の境界標識を持つこと。"""
         prompt = _process_loop._build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
-        assert prompt == "/goal `agent-toolkit:process-wi`を完遂してください。"
+        assert prompt.startswith("/goal ")
+        assert "`agent-toolkit:process-wi`を完遂してください。" in prompt
+        assert _automated_prompt.contains(prompt)
         assert "agent-toolkit:exit-session" not in prompt
 
         forbidden_details = (

@@ -341,6 +341,21 @@ detected ...
 `systemMessage` / `stopReason` などコーディングエージェントに届かないフィールドや、
 `permissionDecision: "allow"`で追加メッセージを持たない経路は、付与の対象の外に置く。
 
+### hook以外の経路の要素
+
+自動生成する本文はhook以外の経路も同じ形式の境界を持つ。要素名は経路の種別ごとに分け、属性は`source`、`kind`及び`nonce`とする。
+
+| 要素 | 対象の本文 |
+| --- | --- |
+| `agent-toolkit-hook-message` | hookがコーディングエージェントへ返す通知 |
+| `normative-context` | 実行主体へ常時読み込ませる規範と役割説明 |
+| `forwarded-user-input` | 常駐処理が保持したユーザー自身の入力 |
+| `cross-session-message` | agent間の配送本文 |
+| `automated-prompt` | 機械が生成してユーザー入力欄へ入る本文 |
+
+`automated-prompt`で囲んだ本文は、ユーザー発話の解釈規範を再読させる注記の対象から外れる。
+スラッシュコマンドはホストが1行目の先頭でだけ解釈するため、コマンドを伴う本文では引数の位置へ標識を置く。
+
 ### ヘルパー関数
 
 共有formatterを発出箇所から呼び出す。hookごとの重複実装は置かない。

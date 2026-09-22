@@ -15,6 +15,7 @@ import time
 
 import pytest
 
+from agent_toolkit._common import automated_prompt
 from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
@@ -207,13 +208,31 @@ class TestNonMatchingPrompts:
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
 
-    def test_ignores_unrelated_slash(self, tmp_path: pathlib.Path):
+    def test_unrelated_slash_is_treated_as_user_utterance(self, tmp_path: pathlib.Path):
+        """対応スキル以外のスラッシュコマンドもユーザー自身の発話として注記の対象にする。"""
         sid = "unrelated-slash"
         result = _run(
             {"session_id": sid, "prompt": "/help"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
+        self._assert_reference_notice_only(result)
+        assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
+
+    def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
+        """常駐処理が渡す起動時プロンプトは注記の対象から外し、経過時間も記録しない。"""
+        sid = "automated-prompt"
+        goal = automated_prompt.wrap(
+            "`agent-toolkit:process-wi`を完遂してください。",
+            source=automated_prompt.SOURCE_PROCESS_LOOP,
+            kind=automated_prompt.KIND_GOAL,
+        )
+        result = _run(
+            {"session_id": sid, "prompt": f"/goal {goal}"},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
         assert _read_state(tmp_path, sid) == {}
 
     def test_claude_treats_codex_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
@@ -424,7 +443,8 @@ class TestVerificationNoticeInjection:
         assert result.stdout == ""
         assert _read_state(tmp_path, sid)["last_user_prompt_at"] == previous
 
-    def test_does_not_inject_for_slash_command(self, tmp_path: pathlib.Path) -> None:
+    def test_injects_for_slash_command(self, tmp_path: pathlib.Path) -> None:
+        """スラッシュコマンドで始まる発話もユーザー自身の入力として注記の対象にする。"""
         sid = "verification-slash-command"
         previous = time.time() - 200
         self._write_state(tmp_path, sid, {"last_user_prompt_at": previous})
@@ -432,10 +452,14 @@ class TestVerificationNoticeInjection:
         result = _run({"session_id": sid, "prompt": "/plan-mode"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        hook_output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert _notice_bodies(hook_output["additionalContext"]) == [
+            _EXPECTEDREFERENCE_NOTICE_BODY,
+            _EXPECTED_VERIFICATION_NOTICE_BODY,
+        ]
         state = _read_state(tmp_path, sid)
         assert state["plan_mode_skill_invoked"] is True
-        assert state["last_user_prompt_at"] == previous
+        assert state["last_user_prompt_at"] > previous
 
     def test_codex_payload_receives_same_notice(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-codex"

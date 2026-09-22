@@ -24,13 +24,16 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
   間隔による抑止を置かない
 - 照合注記: 照合の手順を本文へ持つ。直前の通常発話からの経過時間が閾値以上の場合だけ返す
 
-コマンド起動と機械注入ターンでは、いずれの注記も返さず経過時間の記録も更新しない。
-機械注入ターンの判定入力は次の4系統とし、いずれかが成立したターンを対象とする。
+注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
+スラッシュコマンド（Claude Codeは`/`、Codexは`$`）で始まるものも対象に含める。
+機械注入ターンでは、いずれの注記も返さず経過時間の記録も更新しない。
+機械注入ターンの判定入力は次の5系統とし、いずれかが成立したターンを対象とする。
 
 1. payloadの`source`が存在し、値が`user`以外であること
 2. `prompt`の1行目が`[agent-toolkit/periodic-recheck]`だけの行であること
 3. 委譲先として起動されていること
 4. `prompt`が`<task-notification`又は`<cross-session-message`で始まること
+5. `prompt`の1行目が`<automated-prompt`要素の開始タグを含むこと
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -43,6 +46,7 @@ import pathlib
 import re
 import time
 
+from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._common.delegated_session import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_delegated,
 )
@@ -132,16 +136,19 @@ def _is_harness_message(prompt: str) -> bool:
 def _is_machine_injected(payload: dict, prompt: str) -> bool:
     """ユーザーが発話していないターンかを判定する。
 
-    判定入力は次の4系統とし、いずれかが成立したターンを機械注入とする。
+    判定入力は次の5系統とし、いずれかが成立したターンを機械注入とする。
 
     1. payloadの`source`が存在し、値が`user`以外であること
     2. `prompt`の1行目が`PERIODIC_RECHECK_MARKER`だけの行であること
     3. 委譲先として起動されていること
     4. `prompt`がハーネスの挿入する包みで始まること
+    5. `prompt`の1行目が機械生成の本文を示す境界標識を含むこと
 
-    Claude Code 2.1.274の時点で`source`は配送されないため、残る3系統で判定する。
+    Claude Code 2.1.274の時点で`source`は配送されないため、残る4系統で判定する。
     出所を判定入力に持たないと、機械が投入したターンが通常発話として処理され、
     実ユーザー発話が受け取るべき照合注記をそのターンが消費する。
+    第5の系統は、常駐処理が子セッションの最初の入力として渡す本文を対象とする。
+    生成側が付ける境界標識だけを判定入力とし、本文の文言を写した別の判定を持たない。
     """
     source = payload.get(_USER_PROMPT_SOURCE_KEY)
     if isinstance(source, str) and source and source != _USER_PROMPT_SOURCE_USER:
@@ -149,6 +156,8 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
     if prompt.split("\n", 1)[0].strip() == PERIODIC_RECHECK_MARKER:
         return True
     if is_delegated(os.environ):
+        return True
+    if automated_prompt.contains(prompt):
         return True
     return _is_harness_message(prompt)
 
@@ -247,7 +256,9 @@ def main(payload_text: str) -> int:
     is_codex = "model" in payload or is_codex_payload(payload)
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
-    is_normal_prompt = not first_line.startswith(command_prefix) and not machine_injected
+    # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。
+    # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
+    is_normal_prompt = not machine_injected
     # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
     notices: list[str] = []
     if is_normal_prompt:

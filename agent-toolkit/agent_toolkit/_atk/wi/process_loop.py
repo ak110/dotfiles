@@ -29,6 +29,7 @@ from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi.common import _count_pending_entries, _pull, _repo_lock
 from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATE_PROCESSING
 from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
+from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
@@ -83,7 +84,12 @@ _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
-_AVAILABILITY_PROBE_PROMPT = "応答できる場合はOKだけを返してください。"
+# 受領した委譲先がユーザー自身の発話と区別できるよう、境界標識で囲んで渡す。
+_AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
+    "応答できる場合はOKだけを返してください。",
+    source=_automated_prompt.SOURCE_PROCESS_LOOP,
+    kind=_automated_prompt.KIND_AVAILABILITY_PROBE,
+)
 
 # 端末が連続するBELを1回へまとめないよう、鳴動の間に置く待機秒。
 _ABORT_BELL_INTERVAL_SEC = 0.1
@@ -575,8 +581,17 @@ def _build_process_loop_prompt() -> str:
     処理対象は`_run_process_session`が子セッションの作業ディレクトリとして渡す経路で伝わる。
     `atk wi`の各サブコマンドは`--target-repo`を省略した場合に作業ディレクトリから対象
     リポジトリを解決するため、目的文へ処理対象を書く必要はない。
+
+    目的文は境界標識で囲み、受領した子セッションがユーザー自身の発話と区別できる形にする。
+    標識は`/goal`の引数の位置へ置く。ホストは1行目の先頭にあるスラッシュコマンドだけを
+    コマンドとして解釈するため、本文全体を囲むとコマンドとして成立しない。
     """
-    return "/goal `agent-toolkit:process-wi`を完遂してください。"
+    goal = _automated_prompt.wrap(
+        "`agent-toolkit:process-wi`を完遂してください。",
+        source=_automated_prompt.SOURCE_PROCESS_LOOP,
+        kind=_automated_prompt.KIND_GOAL,
+    )
+    return f"/goal {goal}"
 
 
 def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
