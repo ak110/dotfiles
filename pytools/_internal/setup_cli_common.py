@@ -1,4 +1,4 @@
-"""CodexとClaude CodeのCLI導入処理が共有する安全確認。"""
+"""公式インストーラーを利用するCLI導入処理の共通機能。"""
 
 import contextlib
 import json
