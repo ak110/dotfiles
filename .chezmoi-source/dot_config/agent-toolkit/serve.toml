@@ -6,7 +6,7 @@
 host = "localhost"
 
 [plans]
-remote_hosts = ["circe", "stheno"]
+remote_hosts = ["stheno"]
 
 [sessions]
-remote_hosts = ["circe", "stheno"]
+remote_hosts = ["stheno"]

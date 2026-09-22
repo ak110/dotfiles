@@ -14,26 +14,6 @@ import pytest
 from pytools._internal import claude_common
 
 
-class TestIsTargetHost:
-    """``is_target_host``の大文字小文字・FQDN接尾辞の扱いを検証する。"""
-
-    @pytest.mark.parametrize(
-        ("hostname", "expected"),
-        [
-            pytest.param("stheno", True, id="exact-match"),
-            pytest.param("STHENO", True, id="uppercase"),
-            pytest.param("Circe", True, id="mixed-case"),
-            pytest.param("circe-container", True, id="circe-container"),
-            pytest.param("euryale", True, id="euryale"),
-            pytest.param("euryale-container", True, id="euryale-container"),
-            pytest.param("circe.local", True, id="fqdn-suffix-stripped"),
-            pytest.param("other-host", False, id="non-target-host"),
-        ],
-    )
-    def test_matches_target_hosts_case_and_fqdn_insensitively(self, hostname: str, expected: bool):
-        assert claude_common.is_target_host(hostname) is expected
-
-
 class TestIsEuryale:
     """``is_euryale``のplatform・大文字小文字・FQDN接尾辞の扱いを検証する。"""
 
@@ -43,7 +23,7 @@ class TestIsEuryale:
             pytest.param("linux", "euryale", True, id="exact-match"),
             pytest.param("linux", "EURYALE", True, id="uppercase"),
             pytest.param("linux", "Euryale.example.test", True, id="fqdn-suffix-stripped"),
-            pytest.param("linux", "circe", False, id="other-host"),
+            pytest.param("linux", "other-host", False, id="other-host"),
             pytest.param("win32", "euryale", False, id="non-linux"),
         ],
     )
