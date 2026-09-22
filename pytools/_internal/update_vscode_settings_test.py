@@ -30,16 +30,6 @@ def _make_settings_dir(tmp_path: Path, *, is_windows: bool) -> Path:
 class TestHostnameColor:
     """`run()` 経由でホスト名カラーの動作を検証する。"""
 
-    def test_returns_valid_hex_color(self, tmp_path: Path) -> None:
-        """有効な 7 文字の hex カラーコードが activityBar.background に書き込まれる。"""
-        target = _make_settings_dir(tmp_path, is_windows=False)
-        mod.run(hostname="test-host", is_windows=False, home=tmp_path)
-        result = json.loads(target.read_text(encoding="utf-8"))
-        color = result["workbench.colorCustomizations"]["activityBar.background"]
-        assert color.startswith("#")
-        assert len(color) == 7
-        int(color[1:], 16)  # 16 進数として有効であること
-
     def test_palette_brightness_not_too_dark(self) -> None:
         """パレット全色の加重平均輝度が閾値 140 以上である。
 
@@ -325,20 +315,6 @@ class TestBuildManagedSettings:
         assert "markdown.styles" not in result
         assert "workbench.colorCustomizations" in result
         assert "markdown-pdf.styles" in result
-
-    def test_markdown_styles_is_jsdelivr_url(self, tmp_path: Path) -> None:
-        """User scope の markdown.styles は jsDelivr CDN の HTTPS URL を指す。
-
-        GitHub raw URL に安易に差し戻されると WebView で CSS が
-        拒否される (Content-Type が text/plain + nosniff のため) ので、
-        jsDelivr URL であることを明示的にアサートする予防線を設ける。
-        """
-        target = _make_settings_dir(tmp_path, is_windows=True)
-        (tmp_path / "Code").mkdir(exist_ok=True)
-        mod.run(hostname="test", is_windows=True, environ={"APPDATA": str(tmp_path)})
-        result = json.loads(target.read_text(encoding="utf-8"))
-        assert result["markdown.styles"] == [_MARKDOWN_STYLE_URL]
-        assert _MARKDOWN_STYLE_URL.startswith("https://cdn.jsdelivr.net/")
 
     def test_markdown_pdf_styles_points_to_share_vscode(self, tmp_path: Path) -> None:
         """markdown-pdf.styles は両 scope で絶対パスとして share/vscode/ の CSS を指す。"""

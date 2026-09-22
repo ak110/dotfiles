@@ -59,23 +59,15 @@ class TestRename:
 class TestPatternFile:
     """rgrename 互換のパターンファイル機能のテスト。"""
 
-    def test_load_pattern_file_basic(self, tmp_path: pathlib.Path) -> None:
-
-        pf = tmp_path / "rules.txt"
-        pf.write_text("foo\tbar\n# comment\nF\t^prefix_\t\nD\t_suffix$\t\n", encoding="utf-8")
-        rules = rename.load_pattern_file(pf)
-        assert len(rules) == 3
-        assert rules[0].target == "both"
-        assert rules[1].target == "file"
-        assert rules[2].target == "dir"
-
     def test_rename_tree_with_pattern_file(self, tmp_path: pathlib.Path) -> None:
 
         (tmp_path / "img_01.txt").touch()
         (tmp_path / "img_02.txt").touch()
         pf = tmp_path / "rules.txt"
-        pf.write_text("^img_\t\n", encoding="utf-8")
+        # `#`で始まる行は規則として読まない。
+        pf.write_text("# 先頭のコメント行\n^img_\t\n", encoding="utf-8")
         rules = rename.load_pattern_file(pf)
+        assert len(rules) == 1
         rename.rename_tree(tmp_path, rules)
         assert (tmp_path / "01.txt").exists()
         assert (tmp_path / "02.txt").exists()

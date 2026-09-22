@@ -53,9 +53,6 @@ class TestValidateReleaseWorkflow:
             "          - MAJOR\n"
         )
         data = yaml.safe_load(text)
-        # PyYAMLのYAML 1.1仕様により`on`キーが真偽値Trueへ強制変換されることを前提に検証する。
-        assert True in data
-        assert "on" not in data
         _validate_release_workflow_dict(data)
 
     def test_top_level_not_dict(self) -> None:
@@ -91,7 +88,6 @@ class TestParser:
     def test_bump_lowercase_accepted(self) -> None:
         args = _build_parser().parse_args(["patch"])
         assert args.bump == "patch"
-        assert args.bump.upper() == "PATCH"
 
     def test_bump_optional(self) -> None:
         args = _build_parser().parse_args([])

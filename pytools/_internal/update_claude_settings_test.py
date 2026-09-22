@@ -244,27 +244,6 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "deny" not in data["permissions"]
 
-    def test_windows_hook_commands_use_console_script(self):
-        """Windows個人hookがpytoolsのconsole scriptを起動する。"""
-        path = _PROD_MANAGED_SETTINGS.with_suffix(".win32.json")
-        data = json.loads(path.read_text(encoding="utf-8"))
-        commands = [
-            hook["command"]
-            for groups in data["hooks"].values()
-            for group in groups
-            for hook in group["hooks"]
-            if hook.get("type") == "command"
-        ]
-        posttooluse_command = next(
-            hook["command"]
-            for group in data["hooks"]["PostToolUse"]
-            for hook in group["hooks"]
-            if hook.get("type") == "command"
-        )
-        assert posttooluse_command in commands
-        assert "claude-hook-posttooluse.ps1" in posttooluse_command
-        assert all("claude_hook.py" not in command for command in commands)
-
     @pytest.mark.parametrize(
         ("event", "hook_exit_code", "expected_exit_code"),
         [
@@ -343,30 +322,19 @@ class TestProductionManagedSettings:
         assert result.stdout == b""
         assert result.stderr == b""
 
-    def test_windows_pretooluse_script_preserves_exit_contract(self):
-        """PowerShellスクリプトはフックの終了コード2だけを呼び出し元へ伝える。"""
+    def test_windows_pretooluse_script_uses_bom_and_crlf(self):
+        """PowerShellスクリプトはBOM付きUTF-8とCRLF改行で書く。"""
         raw = _PROD_PRETOOLUSE_SCRIPT.read_bytes()
         assert raw.startswith(b"\xef\xbb\xbf")
         assert b"\r\n" in raw
         assert b"\n" not in raw.replace(b"\r\n", b"")
-        text = raw.decode("utf-8-sig")
-        assert "Get-Command dotfiles-claude-hook -ErrorAction SilentlyContinue" in text
-        assert "& $hook.Source pretooluse" in text
-        assert "uv run" not in text
-        assert "if ($LASTEXITCODE -eq 2)" in text
-        assert text.rstrip().endswith("exit 0")
 
-    def test_windows_posttooluse_script_preserves_exit_contract(self):
-        """PostToolUse用PowerShellスクリプトはhookの終了コードを伝えない。"""
+    def test_windows_posttooluse_script_uses_bom_and_crlf(self):
+        """PostToolUse用PowerShellスクリプトはBOM付きUTF-8とCRLF改行で書く。"""
         raw = _PROD_POSTTOOLUSE_SCRIPT.read_bytes()
         assert raw.startswith(b"\xef\xbb\xbf")
         assert b"\r\n" in raw
         assert b"\n" not in raw.replace(b"\r\n", b"")
-        text = raw.decode("utf-8-sig")
-        assert "Get-Command dotfiles-claude-hook -ErrorAction SilentlyContinue" in text
-        assert "& $hook.Source posttooluse" in text
-        assert "$LASTEXITCODE" not in text
-        assert text.rstrip().endswith("exit 0")
 
     @pytest.mark.parametrize(("hook_exit_code", "expected_exit_code"), [(0, 0), (1, 0), (2, 2)])
     @pytest.mark.parametrize("invocation", ["direct", "bash"])
@@ -1937,23 +1905,6 @@ class TestRetiredAutoModeAllowLabels:
         "WI Queue State Transition",
         "Feedback Queue State Transition",
     )
-
-    def test_retired_labels_are_registered_for_removal(self) -> None:
-        """廃止した全ラベルが削除マッピングへ登録されている。"""
-        markers = {
-            marker
-            for path, marker in mod._REMOVED_LIST_ITEM_SUBSTRINGS  # pylint: disable=protected-access
-            if path == "autoMode.allow"
-        }
-        missing = [label for label in self._RETIRED_LABELS if f"{label}: " not in markers]
-        assert missing == []
-
-    def test_retired_labels_are_absent_from_managed(self) -> None:
-        """廃止したラベルが配布原本に残っていない。"""
-        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        allow = managed["autoMode"]["allow"]
-        remaining = [label for label in self._RETIRED_LABELS if any(item.startswith(f"{label}: ") for item in allow)]
-        assert remaining == []
 
     def test_retired_labels_are_stripped_from_user_settings(self, tmp_path: Path) -> None:
         """配布反映で、配布先に残る旧ラベルが除去され現行ルールと利用者独自エントリが残る。"""

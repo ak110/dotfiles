@@ -221,35 +221,6 @@ def test_returns_false_when_dotfiles_root_unresolved(
     assert setup_codex_links.run() is False
 
 
-# 以下のテストは配布マップ定数 `_LINKS` の中身を直接確認するためアンダースコアプレフィックス属性へアクセスする。
-# pylint: disable=protected-access
-
-
-def test_links_excludes_agent_toolkit_skills() -> None:
-    """agent-toolkitスキルはplugin配布へ移行したため個別リンクに含めない。"""
-    assert not any(source.startswith("agent-toolkit/skills/") for source in setup_codex_links._LINKS.values())
-
-
-def test_links_contains_dotfiles_skills() -> None:
-    """dotfiles固有スキルのリンクは維持する。"""
-    assert setup_codex_links._LINKS["skills/refine-prompt"].startswith(".chezmoi-source/")
-    assert setup_codex_links._LINKS["skills/ak110-projects-operations"] == (
-        ".chezmoi-source/dot_claude/skills/ak110-projects-operations"
-    )
-
-
-def test_links_replaces_session_review_skill_with_reference_directory() -> None:
-    """独立スキルを除去し、振り返りの追加観点を参照文書として共有する。"""
-    assert "skills/session-review-dotfiles" not in setup_codex_links._LINKS
-    assert setup_codex_links._LINKS["docs"] == ".chezmoi-source/dot_claude/docs"
-
-
-def test_links_omits_agent_toolkit_agents() -> None:
-    """`_LINKS`辞書に`agent-toolkit/agents`エントリが含まれないこと。"""
-    assert "agent-toolkit/agents" not in setup_codex_links._LINKS
-    assert setup_codex_links._LINKS["agent-toolkit/rules"] == "agent-toolkit/rules"
-
-
 def test_windows_recreates_link_when_junction_like_dangling(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

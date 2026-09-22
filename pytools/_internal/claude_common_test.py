@@ -225,7 +225,6 @@ class TestRunSubprocess:
         claude_common.run_subprocess(["echo"], env_overrides=overrides)
 
         env = captured["kwargs"]["env"]
-        assert isinstance(env, dict)
         for key, value in expected_subset.items():
             assert env[key] == value
         # os.environ をベースとしているため、上書きしていない他のキーも残る

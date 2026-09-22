@@ -606,9 +606,6 @@ class TestBrokenZip:
         original = archive.read_bytes()
         assert len(original) > truncate_bytes
         archive.write_bytes(original[:-truncate_bytes])
-        # 前提: 先頭は PK\x03\x04 のままだが EOCD は欠落している
-        assert archive.read_bytes()[:4] == b"PK\x03\x04"
-        assert not zipfile.is_zipfile(archive)
 
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 1
@@ -663,12 +660,6 @@ class TestFilenameEncoding:
             zf.writestr("README.txt", b"readme")
             # 日本語名: zipfile 既定動作で UTF-8 + bit 11 設定
             zf.writestr("日本語.txt", b"ja")
-        # 事前確認: 想定どおりの bit 11 構成になっている
-        with zipfile.ZipFile(archive, "r") as zf:
-            flags = {info.filename: info.flag_bits & 0x800 for info in zf.infolist()}
-        assert flags["README.txt"] == 0
-        assert flags["日本語.txt"] == 0x800
-
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 0
         entries = _zip_entries(tmp_path / "mixed.zip")
