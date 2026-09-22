@@ -5,6 +5,7 @@
 """
 
 import io
+import json
 import logging
 import logging.handlers
 import re
@@ -25,6 +26,45 @@ from pytools._internal import post_apply_outcome
 def _isolate_update_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """post-applyの永続ログを実利用者のstate directoryから隔離する。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
+
+
+@pytest.fixture(autouse=True, name="sync_report_path")
+def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """同期結果の記録先を一時領域へ向け、実行環境の状態ディレクトリを書き換えないようにする。"""
+    report_path = tmp_path / "state" / "sync-report.json"
+    monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", report_path)
+    return report_path
+
+
+def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:
+    """失敗したステップの名前、例外の内容、tracebackの末尾を同期結果の記録へ残す。"""
+    steps = [("success", lambda: True), ("failure", lambda: (_ for _ in ()).throw(RuntimeError("boom")))]
+
+    with pytest.raises(SystemExit):
+        post_apply.main(runner=lambda: post_apply.run(steps=steps))
+
+    post_apply_report = json.loads(sync_report_path.read_text(encoding="utf-8"))["post_apply"]
+    assert post_apply_report["updated"] == 1
+    assert post_apply_report["skipped"] == 0
+    assert post_apply_report["failed"] == 1
+    failed_step = post_apply_report["failed_steps"][0]
+    assert failed_step["name"] == "failure"
+    assert failed_step["reason"] == "RuntimeError: boom"
+    assert "RuntimeError: boom" in failed_step["detail"]
+
+
+def test_sync_report_preserves_report_of_the_same_run(monkeypatch: pytest.MonkeyPatch, sync_report_path: Path) -> None:
+    """同じ実行の記録がある場合は、その記録へpost-apply段の結果を足す。"""
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "run-1")
+    post_apply.sync_report.write_start("run-1", "2026-09-22T00:00:00+00:00")
+
+    with pytest.raises(SystemExit):
+        post_apply.main(runner=lambda: post_apply.run(steps=[("success", lambda: True)]))
+
+    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+    assert report["run_id"] == "run-1"
+    assert report["status"] == "running"
+    assert report["post_apply"]["failed"] == 0
 
 
 def test_configure_logging_preserves_cp932_record_with_unencodable_character(

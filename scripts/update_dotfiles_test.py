@@ -7,6 +7,7 @@
 
 import contextlib
 import importlib
+import json
 import os
 import pathlib
 import select
@@ -40,6 +41,14 @@ def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pa
             step_no, total, timeout=timeout
         ),
     )
+
+
+@pytest.fixture(autouse=True, name="sync_report_path")
+def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """同期結果の記録先を一時領域へ向け、実行環境の状態ディレクトリを書き換えないようにする。"""
+    report_path = tmp_path / "state" / "sync-report.json"
+    monkeypatch.setattr(update_dotfiles.sync_report, "REPORT_PATH", report_path)
+    return report_path
 
 
 def _fake_run(
@@ -520,6 +529,55 @@ class TestStepFailureStopsExecution:
 
         assert update_dotfiles.main() == 7
         assert [call[1] for call in calls] == ["git", "init", "status", "diff"]
+
+
+class TestSyncReport:
+    """同期結果の記録が、次のセッションの続行判定へ必要な内容を残すことを検証する。"""
+
+    def test_successful_run_is_recorded_as_succeeded(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        sync_report_path: pathlib.Path,
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 0
+
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert report["status"] == "succeeded"
+        assert report["exit_code"] == 0
+        assert report["failed_stage"] is None
+        assert report["stderr_tail"] is None
+        assert report["run_id"]
+        assert report["started_at"] and report["finished_at"]
+
+    def test_failed_stage_and_stderr_are_recorded(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        sync_report_path: pathlib.Path,
+    ) -> None:
+        """失敗した段の名前と標準エラーの末尾が、実行の記録から読み取れること。"""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run({"apply": 5}, calls, stderr_by_command={"apply": "対象ツールの導入に失敗しました\n"}),
+        )
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 5
+
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert report["status"] == "failed"
+        assert report["exit_code"] == 5
+        assert "chezmoi apply" in report["failed_stage"]
+        assert "対象ツールの導入に失敗しました" in report["stderr_tail"]
 
 
 class TestCapturedStderr:

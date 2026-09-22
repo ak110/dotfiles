@@ -45,13 +45,24 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本ス
 
 ## 実行順
 
-1. 対象リポジトリが個人プロジェクトに該当するかの判定手段は`ak110-projects-operations`が定める。該当する場合は同スキルを起動し、同期と依存更新の要否を確定する。
-2. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って監査担当を起動する。
-3. `references/run-lanes.md`を全文読み、選定結果から専用worktreeとレーンを作成し、レーン担当を起動する。
-4. 各レーンから`計画作成完了`を受領し、計画の`## 概要`と`## 実施内容`だけから由来、不採用範囲及び実装有無を確認して、`実装開始`又は`実装なし`を返す。
-5. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
-6. 同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
-7. 全レーンの終端及び監査の処置確定後、`references/finish-session.md`を全文読み、`検証・CI方針`を明示して公開とセッション終端を完遂する。
+1. 直前の同期結果を読み、このセッションでAWIの処理を完遂できるかを判定する。判定の手順は`## 直前の同期結果の検分`が定める。
+2. 対象リポジトリが個人プロジェクトに該当するかの判定手段は`ak110-projects-operations`が定める。該当する場合は同スキルを起動し、同期と依存更新の要否を確定する。
+3. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って監査担当を起動する。
+4. `references/run-lanes.md`を全文読み、選定結果から専用worktreeとレーンを作成し、レーン担当を起動する。
+5. 各レーンから`計画作成完了`を受領し、計画の`## 概要`と`## 実施内容`だけから由来、不採用範囲及び実装有無を確認して、`実装開始`又は`実装なし`を返す。
+6. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
+7. 同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
+8. 全レーンの終端及び監査の処置確定後、`references/finish-session.md`を全文読み、`検証・CI方針`を明示して公開とセッション終端を完遂する。
+
+## 直前の同期結果の検分
+
+処理環境の同期が失敗したまま処理へ着手すると、失敗の内容によってはAWIの処理が途中で成立しなくなる。
+同期処理は結果を`atk config show`が示す`state_dir`直下の`sync-report.json`へ残すため、選定の前にその記録を読んで続行と中断を判定する。
+
+- ファイルが無い場合と`status`が`succeeded`の場合は、判定を記録せず次の工程へ進む
+- `status`が`failed`の場合と、`post_apply`の`failed_steps`が1件以上ある場合は、失敗した段とステップの内容から、このセッションでAWIの処理を完遂できるかを判定する
+- 完遂できると判定した場合は、判定した内容と根拠を報告してから次の工程へ進む
+- 完遂できないと判定した場合は、AWIの処理へ着手せず、`atk wi process-loop abort`で常駐処理へ中断を要求し、失敗した段と判定の根拠を報告してセッションを終える
 
 ## 自動コードレビュー監査
 

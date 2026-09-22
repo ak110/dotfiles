@@ -1010,6 +1010,11 @@ def _update_before_session(
 
     戻り値は、子セッションを起動できるかと`update-dotfiles`が成功したかの組とする。
     更新による再起動先には一回限りの指定を渡し、同じ上流状態への開始前更新を抑止する。
+
+    同期が非0で終了した場合も子セッションを起動する。同期の終了コードは、失敗した段の種類、
+    失敗の回復可能性及びAWIの内容のいずれも表さないため、消化を止める判定の根拠から外す。
+    判定は、同期処理が残す構造化された記録を子セッション側のエージェントが読んで行う。
+    同期処理そのものを起動できない場合だけは、判定材料となる記録も生じないため待機を続ける。
     """
     executable = _resolve_executable("update-dotfiles")
     if executable is None:
@@ -1017,12 +1022,13 @@ def _update_before_session(
         return False, False
     result = subprocess.run([executable], check=False, env=env)
     _console_title.set_console_title("atk wi process-loop")
-    if result.returncode != 0:
+    update_succeeded = result.returncode == 0
+    if not update_succeeded:
         print(
-            f"update-dotfilesに失敗しました（exit code {result.returncode}）。子セッションを起動せず待機します。",
+            f"update-dotfilesに失敗しました（exit code {result.returncode}）。"
+            "同期結果の記録を子セッションが判定するため、子セッションの起動は続行します。",
             file=sys.stderr,
         )
-        return False, False
     if dotfiles_root is not None and startup_hash is not None:
         current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
         if current_hash != startup_hash:
@@ -1032,9 +1038,9 @@ def _update_before_session(
                 argv,
                 dotfiles_root,
                 mise_refreshed=mark_mise_refreshed,
-                dotfiles_updated=True,
+                dotfiles_updated=update_succeeded,
             )
-    return _pull_private_notes(private_notes), True
+    return _pull_private_notes(private_notes), update_succeeded
 
 
 def _prepare_session_target(

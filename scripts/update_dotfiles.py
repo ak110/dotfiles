@@ -32,6 +32,11 @@ Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常�
 取得したchezmoi出力は、プラットフォームの既定値に依存せずUTF-8として厳格にデコードする。
 git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定時は600秒、
 `0`は上限なしとし、負数又は整数でない値は終了コード2で拒否する。
+
+実行の開始時と終了時に、同期結果を`scripts/sync_report.py`が定める構造化ファイルへ記録する。
+次に起動するコーディングエージェントが、失敗した段と標準エラーの末尾からAWIの処理を
+完遂できるかを判定するための記録であり、失敗の内容を人間の目視に頼らず残す。
+取得した段の標準エラーは、表示のために親の標準エラーへ転送したうえで末尾を記録へ残す。
 """
 
 # pylint: disable=global-statement
@@ -49,6 +54,7 @@ import time
 import filelock
 import platformdirs
 import psutil
+import sync_report
 
 _SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DOTFILES_ROOT = _SOURCE_ROOT
@@ -66,6 +72,8 @@ _GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
 logger = logging.getLogger(__name__)
 _current_run_id: str | None = None
 _persistent_log_ready = False
+_current_stage_title: str | None = None
+_last_stderr_tail: str | None = None
 
 
 def _configure_persistent_log(run_id: str) -> logging.Handler | None:
@@ -92,8 +100,21 @@ def _configure_persistent_log(run_id: str) -> logging.Handler | None:
 
 
 def _finish(returncode: int) -> int:
-    """実行終了を記録し、失敗時は診断ログの位置を案内する。"""
+    """実行終了を記録し、失敗時は診断ログの位置を案内する。
+
+    同期結果の構造化記録も本関数だけが確定させる。全ての終了経路が本関数を通るため、
+    記録の欠落と、成功した段を失敗として残す書き分けの誤りを避けられる。
+    """
     logger.info("update-dotfiles終了: exit=%d", returncode)
+    if _current_run_id is not None:
+        sync_report.write_finish(
+            _current_run_id,
+            status="succeeded" if returncode == 0 else "failed",
+            exit_code=returncode,
+            failed_stage=None if returncode == 0 else _current_stage_title,
+            stderr_tail=None if returncode == 0 else _last_stderr_tail,
+            finished_at=sync_report.now_text(),
+        )
     if returncode != 0 and _persistent_log_ready:
         print(f"永続ログ: {_LOG_PATH}", file=sys.stderr)
     return returncode
@@ -124,7 +145,15 @@ def _child_env() -> dict[str, str]:
 
 
 def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture: bool = False) -> tuple[int, str]:
-    """1段を実行し見出しを表示する。`capture=True`時のみ標準出力を文字列で返す。"""
+    """1段を実行し見出しを表示する。`capture=True`時のみ標準出力を文字列で返す。
+
+    `capture=False`の段でも標準エラーだけは取得し、段の終了後に親の標準エラーへ転送する。
+    同期結果の記録へ失敗した段の標準エラーを残すためである。進捗を表す標準出力は取得せず、
+    子プロセスの出力先を親から引き継いだまま保つ。
+    """
+    global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
+    _current_stage_title = title
+    _last_stderr_tail = None
     print(f"=== [{step_no}/{total}] {title} ===")
     logger.info("stage開始: %d/%d %s", step_no, total, title)
     started_at = time.monotonic()
@@ -133,19 +162,22 @@ def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture:
             argv,
             cwd=_DOTFILES_ROOT,
             check=False,
-            capture_output=capture,
-            encoding="utf-8" if capture else None,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
             env=_child_env(),
         )
     except OSError as error:
         logger.exception("stage起動失敗: %d/%d %s", step_no, total, title)
         print(f"{title}を開始できませんでした: {error}", file=sys.stderr)
+        _last_stderr_tail = sync_report.truncate_tail(str(error))
         return 1, ""
     logger.info(
         "stage終了: %d/%d %s exit=%d duration=%.3f", step_no, total, title, result.returncode, time.monotonic() - started_at
     )
-    if capture and result.stderr:
+    if result.stderr:
         sys.stderr.write(result.stderr)
+        _last_stderr_tail = sync_report.truncate_tail(result.stderr)
     return result.returncode, (result.stdout if capture else "")
 
 
@@ -195,6 +227,9 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     `timeout=None`は待機上限を設けない。上限超過時は子を終了する前に子孫を列挙して全て強制終了し、
     出力回収にも上限を設ける。
     """
+    global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
+    _current_stage_title = "git pull"
+    _last_stderr_tail = None
     print(f"=== [{step_no}/{total}] git pull ===")
     logger.info("stage開始: %d/%d git pull", step_no, total)
     started_at = time.monotonic()
@@ -221,6 +256,7 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     except OSError as error:
         logger.exception("stage起動失敗: %d/%d git pull", step_no, total)
         print(f"git pullを開始できませんでした: {error}", file=sys.stderr)
+        _last_stderr_tail = sync_report.truncate_tail(str(error))
         return 1
     try:
         stdout, stderr = process.communicate(timeout=timeout) if timeout is not None else process.communicate()
@@ -234,11 +270,12 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
             sys.stdout.write(stdout)
         if stderr:
             sys.stderr.write(stderr)
-        print(
+        timeout_message = (
             f"git pullが{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
-            f"未完了です。必要に応じて{_GIT_TIMEOUT_ENV}を調整してください。",
-            file=sys.stderr,
+            f"未完了です。必要に応じて{_GIT_TIMEOUT_ENV}を調整してください。"
         )
+        print(timeout_message, file=sys.stderr)
+        _last_stderr_tail = sync_report.truncate_tail(f"{stderr}\n{timeout_message}")
         logger.error(
             "stage終了: %d/%d git pull exit=1 timeout=%s duration=%.3f", step_no, total, timeout, time.monotonic() - started_at
         )
@@ -248,6 +285,7 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     if stderr:
         stream = sys.stdout if process.returncode == 0 else sys.stderr
         stream.write(stderr)
+        _last_stderr_tail = sync_report.truncate_tail(stderr)
     logger.info(
         "stage終了: %d/%d git pull exit=%d duration=%.3f", step_no, total, process.returncode, time.monotonic() - started_at
     )
@@ -418,10 +456,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
-    global _current_run_id, _persistent_log_ready  # noqa: PLW0603
+    global _current_run_id, _persistent_log_ready, _current_stage_title, _last_stderr_tail  # noqa: PLW0603
     _parse_args(argv)
     _current_run_id = f"{time.time_ns()}-{os.getpid()}"
+    _current_stage_title = None
+    _last_stderr_tail = None
     log_handler = _configure_persistent_log(_current_run_id)
+    sync_report.write_start(_current_run_id, sync_report.now_text())
     logger.info("update-dotfiles開始: root=%s", _DOTFILES_ROOT)
     try:
         try:
@@ -429,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as error:
             logger.error("git timeout設定が不正: %s", error)
             print(error, file=sys.stderr)
+            _last_stderr_tail = sync_report.truncate_tail(str(error))
             return _finish(2)
         total = 5
         lock_dir = _LOCK_PATH.parent
@@ -482,11 +524,12 @@ def main(argv: list[str] | None = None) -> int:
                     return _finish(returncode)
         except filelock.Timeout:
             logger.exception("update-dotfilesロック取得失敗")
-            print(
+            lock_message = (
                 f"ロック取得に失敗しました（{_LOCK_TIMEOUT_SEC:.0f}秒待機後もタイムアウト）。"
-                "他のupdate-dotfiles実行の完了を待って再実行してください。",
-                file=sys.stderr,
+                "他のupdate-dotfiles実行の完了を待って再実行してください。"
             )
+            print(lock_message, file=sys.stderr)
+            _last_stderr_tail = sync_report.truncate_tail(lock_message)
             return _finish(1)
         return _finish(0)
     finally:
@@ -495,6 +538,8 @@ def main(argv: list[str] | None = None) -> int:
             log_handler.close()
         _current_run_id = None
         _persistent_log_ready = False
+        _current_stage_title = None
+        _last_stderr_tail = None
 
 
 if __name__ == "__main__":

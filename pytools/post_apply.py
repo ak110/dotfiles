@@ -10,6 +10,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -51,7 +52,7 @@ from pytools._internal import (
     warm_agents_server,
     warmup_hook_scripts,
 )
-from scripts import sync_codex_plugin_manifests
+from scripts import sync_codex_plugin_manifests, sync_report
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,11 @@ _UPDATE_LOG_PATH = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=F
 _UPDATE_RUN_ID_ENV = "UPDATE_DOTFILES_RUN_ID"
 _UPDATE_LOG_MAX_BYTES = 2 * 1024 * 1024
 _UPDATE_LOG_BACKUP_COUNT = 3
+
+
+def _run_id() -> str:
+    """`update-dotfiles`が渡した実行識別子を返す。単独実行では自プロセスから組み立てる。"""
+    return os.environ.get(_UPDATE_RUN_ID_ENV, f"post-apply-{os.getpid()}")
 
 
 class _BelowWarningFilter(logging.Filter):
@@ -82,7 +88,7 @@ def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setLevel(logging.WARNING)
     stderr_handler.setFormatter(formatter)
-    run_id = os.environ.get(_UPDATE_RUN_ID_ENV, f"post-apply-{os.getpid()}")
+    run_id = _run_id()
     handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
     persistent_log_ready = False
     try:
@@ -274,6 +280,9 @@ class _StepResult:
     ok: bool
     changed: bool
     notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
+    # 失敗の内容は同期結果の記録へ残すため、ログ出力とは別に保持する。
+    reason: str | None = None
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -371,6 +380,7 @@ def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
         notices = _pytools_install_notices() + [notice for result in results for notice in result.notices]
+        _record_sync_report(updated=updated, skipped=skipped, failed=failed, notices=notices)
         # logger.info("") だと format により末尾空白が付与されるため、stdout に直接出力する。
         print(flush=True)
         logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
@@ -389,6 +399,30 @@ def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None
         root_logger.setLevel(previous_level)
         for handler in current_handlers:
             handler.close()
+
+
+def _record_sync_report(
+    *,
+    updated: list[_StepResult],
+    skipped: list[_StepResult],
+    failed: list[_StepResult],
+    notices: list[post_apply_outcome.PostApplyNotice],
+) -> None:
+    """post-apply段の結果を同期結果の記録へ残す。
+
+    次に起動するコーディングエージェントが、失敗したステップと例外の内容から
+    AWIの処理を完遂できるかを判定するための入力とする。
+    """
+    sync_report.write_post_apply(
+        _run_id(),
+        {
+            "updated": len(updated),
+            "skipped": len(skipped),
+            "failed": len(failed),
+            "failed_steps": [{"name": result.name, "reason": result.reason, "detail": result.detail} for result in failed],
+            "notices": list(dict.fromkeys(notice.message for notice in notices)),
+        },
+    )
 
 
 def _print_plugin_recommendations(recommendations: list[str]) -> None:
@@ -470,9 +504,16 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
     started_at = time.monotonic()
     try:
         ret = step.run()
-    except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
+    except Exception as error:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
         logger.exception("    %s: 失敗", step.name)
-        return _StepResult(name=step.name, ok=False, changed=False), [], time.monotonic() - started_at
+        failure = _StepResult(
+            name=step.name,
+            ok=False,
+            changed=False,
+            reason=f"{type(error).__name__}: {error}",
+            detail=sync_report.truncate_tail(traceback.format_exc()),
+        )
+        return failure, [], time.monotonic() - started_at
     notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
     recommendations: list[str] = []
     if isinstance(ret, post_apply_outcome.PostApplyOutcome):
