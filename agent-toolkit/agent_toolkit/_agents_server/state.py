@@ -13,6 +13,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Literal
 
 from agent_toolkit._agents_server import session_registry, tool_names
+from agent_toolkit._common import message_format
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
@@ -66,6 +67,19 @@ def _read_prompt(name: str) -> str:
     return _read_share(name).split("\n\n", maxsplit=1)[1]
 
 
+NORMATIVE_ELEMENT = "normative-context"
+NORMATIVE_SOURCE = "agent-toolkit"
+
+
+def _normative(body: str, *, kind: str) -> str:
+    """System promptへ渡す本文へ、生成主体と種別を示す境界を付ける。
+
+    委譲先のsystem promptは、ホストの既定の指示と同じ経路で実行主体へ届く。
+    本リポジトリが生成した範囲を受信側が判別できるよう、他の自動注入経路と同じ形式で囲む。
+    """
+    return message_format.xml_message(NORMATIVE_ELEMENT, body, {"source": NORMATIVE_SOURCE, "kind": kind})
+
+
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
 SUBAGENT_RULES = _read_share("rules-subagent.md")
 CLAUDE_CODE_SUBAGENT_RULES = _read_share("rules-subagent.claude-code.md")
@@ -73,11 +87,14 @@ CLAUDE_CODE_SUBAGENT_RULES = _read_share("rules-subagent.claude-code.md")
 # 起動経路の別を実行主体が観測できないため、規範が主体別に定める条文を適用できる状態を明示の指示で成立させる。
 # Codexの`developerInstructions`はdeveloper roleメッセージとして注入され、既定の指示を置換しない。
 DELEGATE_NOTICE = _read_prompt("agents-server-delegate-notice.md")
-DELEGATE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-delegate.md')}\n\n{SUBAGENT_RULES}"
-CLAUDE_DELEGATE_SYSTEM_PROMPT = f"{DELEGATE_SYSTEM_PROMPT}\n\n{CLAUDE_CODE_SUBAGENT_RULES}"
-EXPLORE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}"
-SHELL_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}"
-WRITE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}"
+_DELEGATE_ROLE = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-delegate.md')}", kind="delegate")
+DELEGATE_SYSTEM_PROMPT = f"{_DELEGATE_ROLE}\n\n{_normative(SUBAGENT_RULES, kind='rules-subagent')}"
+CLAUDE_DELEGATE_SYSTEM_PROMPT = (
+    f"{_DELEGATE_ROLE}\n\n{_normative(f'{SUBAGENT_RULES}\n\n{CLAUDE_CODE_SUBAGENT_RULES}', kind='rules-subagent')}"
+)
+EXPLORE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}", kind="explore")
+SHELL_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}", kind="shell")
+WRITE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}", kind="write")
 ModelCandidate = tuple[str, str, str]
 LaunchKind = Literal["delegate", "explore", "shell", "write"]
 # 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
@@ -87,7 +104,7 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "shell": SHELL_SYSTEM_PROMPT,
     "write": WRITE_SYSTEM_PROMPT,
 }
-AUTO_RESUME_NOTICE = _read_prompt("agents-server-auto-resume.md")
+AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), kind="auto-resume")
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()

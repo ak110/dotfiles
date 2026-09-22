@@ -3222,6 +3222,7 @@ def _user_candidate_exclusion(
             "[COMPACTION RECOVERY]",
             "This session is being continued",
             "<normative-context",
+            "<agent-toolkit-hook-message",
             "<task-notification>",
             "<command-name>",
             "<local-command-caveat>",

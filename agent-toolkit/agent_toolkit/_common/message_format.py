@@ -13,6 +13,13 @@ import secrets
 from collections.abc import Mapping
 from xml.sax.saxutils import quoteattr
 
+FORWARDED_USER_INPUT_ELEMENT = "forwarded-user-input"
+"""自動生成本文の内側で、ユーザー自身が入力した範囲を囲む要素。
+
+受信側はこの要素の内側だけをユーザーの発話として扱う。配送経路ごとに別の綴りを持つと、
+受信側の判定が経路ごとに分かれるため、要素名を本モジュールで1つに保つ。
+"""
+
 
 def xml_message(element: str, body: str, attributes: Mapping[str, str]) -> str:
     """自動生成メッセージへnonce付きXML配送境界を付与する。"""

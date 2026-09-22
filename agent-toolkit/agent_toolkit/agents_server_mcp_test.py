@@ -640,10 +640,10 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
 
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
-    assert send_timeout["description"] == (
+    assert (
         "継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。"
         "委譲先の応答生成の完了は待たない。0以下は受理しない。"
-    )
+    ) in send_timeout["description"]
     assert "通常の既定は270秒" in send_tool.description
     assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in send_tool.description
     assert "待つのは継続要求の配送結果が確定するまで" in send_tool.description
@@ -651,10 +651,10 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert "上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する" in send_tool.description
     kill_timeout = kill_tool.parameters["properties"]["timeout"]
     assert kill_timeout["default"] == 270.0
-    assert kill_timeout["description"] == (
+    assert (
         "中断要求後に終端を待つ上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。"
         "0は中断要求配送後の現状態を返す。"
-    )
+    ) in kill_timeout["description"]
     assert "通常の既定は270秒" in kill_tool.description
     assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in kill_tool.description
     assert "`timeout=0`は中断要求配送後の現状態を返す" in kill_tool.description

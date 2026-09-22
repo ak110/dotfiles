@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import claude_common, setup_codex_links
+from pytools._internal import claude_common, setup_codex_links, sync_agent_toolkit_rules
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
@@ -219,6 +219,41 @@ def test_returns_false_when_dotfiles_root_unresolved(
     monkeypatch.setattr(setup_codex_links, "CODEX_HOME", tmp_path / ".codex")
 
     assert setup_codex_links.run() is False
+
+
+def test_run_leaves_the_rules_destination_to_the_rules_sync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """ルールの配布先はリンクの対象から外れ、同期処理が書いた本文のまま残る。
+
+    `pytools/post_apply.py`はルールの同期の直後にリンクの同期を実行する。
+    ルールがリンクの対象へ戻ると、リンクの同期が同じ配布先を扱おうとして警告を残し、
+    配布経路が同期とリンクの2つへ分かれる。post-applyと同じ順序で両方を実行し、
+    配布先に対する警告が無いことと、境界標識付きの本文が残ることを確かめる。
+    """
+    dotfiles_root = tmp_path / "dotfiles"
+    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: dotfiles_root)
+    monkeypatch.setattr(claude_common, "CLAUDE_HOME", tmp_path / "home" / ".claude")
+    codex_home = tmp_path / "home" / ".codex"
+    monkeypatch.setattr(sync_agent_toolkit_rules, "CODEX_HOME", codex_home)
+    monkeypatch.setattr(setup_codex_links, "CODEX_HOME", codex_home)
+    rules_src = dotfiles_root / "agent-toolkit" / "rules"
+    rules_src.mkdir(parents=True)
+    (rules_src / "01-agent.md").write_text("条文\n", encoding="utf-8")
+
+    assert sync_agent_toolkit_rules.run() is True
+    rules_dest = codex_home / "agent-toolkit" / "rules"
+    with caplog.at_level(logging.WARNING):
+        setup_codex_links.run()
+
+    assert str(rules_dest) not in caplog.text
+    assert not rules_dest.is_symlink()
+    distributed = (rules_dest / "01-agent.md").read_text(encoding="utf-8")
+    assert distributed.startswith(f"<{sync_agent_toolkit_rules.NORMATIVE_ELEMENT} ")
+    assert distributed.endswith(f"</{sync_agent_toolkit_rules.NORMATIVE_ELEMENT}>\n")
+    assert "条文" in distributed
 
 
 def test_windows_recreates_link_when_junction_like_dangling(

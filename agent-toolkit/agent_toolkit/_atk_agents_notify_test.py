@@ -2,12 +2,28 @@
 
 import json
 import pathlib
+import re
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._atk import config
+
+_NOTICE_TAG_PATTERN = re.compile(
+    r'\A<cross-session-message from="delegate:(?P<sender>[^"]+)" composed-by="caller"'
+    r' nonce="(?P<nonce>[0-9a-f]{16})">\n'
+    r"(?P<body>.*)\n</cross-session-message>\Z",
+    re.DOTALL,
+)
+
+
+def _notice_body(delivered: str) -> str:
+    """通知本文の出所標識を検証し、囲まれた逐語の本文を返す。"""
+    matched = _NOTICE_TAG_PATTERN.fullmatch(delivered)
+    assert matched is not None, delivered
+    assert matched["nonce"] not in matched["body"]
+    return matched["body"]
 
 
 @pytest.fixture(name="notify_environment")
@@ -38,7 +54,7 @@ def test_agents_notify_preserves_body_exactly(
     assert payload["version"] == 1
     assert payload["session_id"] == "child-session"
     assert isinstance(payload["sent_at"], str)
-    assert payload["body"] == body
+    assert _notice_body(payload["body"]) == body
     assert raw_payload.endswith("\n")
     assert raw_payload.count("\n") == 1
     captured = capsys.readouterr()
@@ -58,7 +74,7 @@ def test_agents_notify_reads_body_file(
         atk.main(["agents", "notify", "--body-file", str(body_path)])
 
     payload = json.loads(next(notify_environment.glob("child-session.*.json")).read_text(encoding="utf-8"))
-    assert payload["body"] == "本文\r\n"
+    assert _notice_body(payload["body"]) == "本文\r\n"
 
 
 def test_agents_notify_reads_shell_metacharacters_from_body_file(
@@ -74,7 +90,7 @@ def test_agents_notify_reads_shell_metacharacters_from_body_file(
         atk.main(["agents", "notify", "--body-file", str(body_path)])
 
     payload = json.loads(next(notify_environment.glob("child-session.*.json")).read_text(encoding="utf-8"))
-    assert payload["body"] == body
+    assert _notice_body(payload["body"]) == body
 
 
 def test_agents_notify_rejects_missing_delegated_identity(

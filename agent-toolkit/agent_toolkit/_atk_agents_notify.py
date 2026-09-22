@@ -12,6 +12,10 @@ from collections.abc import Mapping
 
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.message_format import xml_message
+
+DELIVERY_ELEMENT = "cross-session-message"
+COMPOSED_BY_CALLER = "caller"
 
 
 def send_notification(
@@ -32,13 +36,19 @@ def send_notification(
 
     directory = status_file.notices_directory(identity.root_session_id, state_root)
     directory.mkdir(parents=True, exist_ok=True)
+    # 本文は委譲元の会話文脈へ入るため、配送元と作成主体を示す境界で囲む。
+    delivery_body = xml_message(
+        DELIVERY_ELEMENT,
+        body,
+        {"from": f"delegate:{identity.host_session_id}", "composed-by": COMPOSED_BY_CALLER},
+    )
     payload = (
         json.dumps(
             {
                 "version": 1,
                 "session_id": identity.host_session_id,
                 "sent_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                "body": body,
+                "body": delivery_body,
             },
             ensure_ascii=False,
         )

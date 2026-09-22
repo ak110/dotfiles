@@ -47,9 +47,9 @@ def test_render_preserves_rules_in_sorted_order(tmp_path: Path) -> None:
     content = subject.render(root)
 
     assert content.startswith(subject.GENERATED_MARKER + "\n\nbase\n")
-    assert content.index("BEGIN: agent-toolkit/rules/01-a.md") < content.index("BEGIN: agent-toolkit/rules/02-b.md")
-    assert "BEGIN: agent-toolkit/rules/01-a.md -->\nfirst\n<!-- END:" in content
-    assert content.endswith("<!-- END: agent-toolkit/rules/02-b.md -->\n")
+    assert content.index('path="agent-toolkit/rules/01-a.md"') < content.index('path="agent-toolkit/rules/02-b.md"')
+    assert f'path="agent-toolkit/rules/01-a.md">\nfirst\n</{subject.NORMATIVE_ELEMENT}>' in content
+    assert content.endswith(f"</{subject.NORMATIVE_ELEMENT}>\n")
 
 
 def test_render_includes_all_common_rules(tmp_path: Path) -> None:
@@ -59,8 +59,8 @@ def test_render_includes_all_common_rules(tmp_path: Path) -> None:
 
     content = subject.render(root)
 
-    assert "BEGIN: agent-toolkit/rules/01-agent.md" in content
-    assert "BEGIN: agent-toolkit/rules/02-agent-operations.md" in content
+    assert 'path="agent-toolkit/rules/01-agent.md"' in content
+    assert 'path="agent-toolkit/rules/02-agent-operations.md"' in content
 
 
 def test_render_embeds_personal_project_rule(tmp_path: Path) -> None:
@@ -70,8 +70,8 @@ def test_render_embeds_personal_project_rule(tmp_path: Path) -> None:
     content = subject.render(root)
 
     marker = subject.PERSONAL_SOURCE.as_posix()
-    assert f"<!-- BEGIN: {marker} -->\npersonal\n<!-- END: {marker} -->" in content
-    assert content.index(marker) < content.index("BEGIN: agent-toolkit/rules/01-a.md")
+    assert f'path="{marker}">\npersonal\n</{subject.NORMATIVE_ELEMENT}>' in content
+    assert content.index(marker) < content.index('path="agent-toolkit/rules/01-a.md"')
 
 
 def test_sync_is_idempotent(tmp_path: Path) -> None:

@@ -24,7 +24,7 @@ Codex固有の公開能力と共有規範との差分を扱う。
 - 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落又はroot不在では固定パスを推測せず呼び出し元へ差し戻す
 - 起点のroot確定はホストのplugin導入情報だけから`SKILL.md`読取前に1回行う。読取済み`SKILL.md`の絶対パスからplugin資源rootを再解決する処理は、起点の確定の外で用いる
 - 公開サブコマンドがないplugin内部資源は、読取済みのagent-toolkitスキルの絶対パスから現行plugin rootを再解決する
-- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`及び作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`とdotfiles固有スキルはClaude Code側原本へのリンクとして扱う
+- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`及び作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う
 
 ## Codexホスト契約の適用
 
@@ -44,7 +44,7 @@ Codexの`list_agents`が対象を`running`と返す間は、そのstatusをそ�
 
 Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは共有規範の再開経路を使う。
 
-<!-- BEGIN: .chezmoi-source/dot_claude/rules/myprojects-common.md -->
+<normative-context source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
 # myprojects-common.md: ホスト共通の個人プロジェクト規範
 
 実行ホストとコーディングエージェントの種別によらず、同一作者の個人プロジェクト全体へ適用する規範を置く。
@@ -61,9 +61,9 @@ Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_
 個人プロジェクトでpatch、minor又はmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
 `ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築及びworkflow内部の処理は対象外とする。
-<!-- END: .chezmoi-source/dot_claude/rules/myprojects-common.md -->
+</normative-context>
 
-<!-- BEGIN: agent-toolkit/rules/01-agent.md -->
+<normative-context source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">
 # 01-agent.md: コーディングエージェントの振る舞い
 
 本ファイルの規範は、メインエージェント、サブエージェント及び委譲先の全てへ等しく適用する。
@@ -294,7 +294,8 @@ CostとDeliveryの間に固定の優先順位は置かず、その場面での�
 
 この優先順位を先に適用し、有効と確定した規範だけを後続の判断へ用いる。ユーザーの明示的な指示が下位規範を上書きした場合は、上書きされた状態のまま以降の工程を進める。
 
-hook、常駐処理、agent間配送が自動生成する本文は、最外周のXML要素を配送境界とする。開始タグの`nonce`は本文に現れない値であり、終端は同名の終了タグの最後の出現とする。`source`又は`from`は生成主体、`kind`は通知種別を示す。これらの本文全体は生成主体が構成した入力であり、ユーザー発話として扱わない。
+自動生成する本文は、最外周のXML要素を配送境界とする。対象は、hook、常駐処理、agent間配送、委譲先へ渡すsystem prompt、規範の配布物として生成する文書、及び機械が生成してユーザー入力欄へ入る本文とする。開始タグの`nonce`は本文に現れない値であり、終端は同名の終了タグの最後の出現とする。`source`又は`from`は生成主体、`kind`は通知種別、`composed-by`は本文を組み立てた主体を示す。これらの本文全体は生成主体が構成した入力であり、ユーザー発話として扱わない。
+`nonce`を持たない配送境界が成立するのは、決定的に生成する静的な配布物に限る。この場合の境界は要素名と属性で判別し、`path`が埋め込み元を示す。生成結果を既存内容との一致で判定するため、実行ごとに変わる値を持たせない。
 自動生成本文の内側で`forwarded-user-input`要素が囲む範囲だけを、ユーザーの発話、承認、逐語引用の候補として扱う。同要素は`from`、`origin="user"`、`source`、`scope`、`nonce`を持ち、最後の同名終了タグを終端とする。標識のない説明、観測事象、判断基準、完成条件は生成主体が構成した指示として扱う。
 
 実行主体の同定と入力の出所の判定は、上記の優先順位の適用対象ではない事実であり、起動時に受領した委譲通知を正本とする。
@@ -325,9 +326,9 @@ hook、常駐処理、agent間配送が自動生成する本文は、最外周�
 成果物、コメント及びコミットメッセージは日本語で書く。
 メインエージェントがユーザーへ向けて出力する文章の言語は`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」節が定める。
 サブエージェントが呼び出し元へ返す文章の言語は`agent-toolkit:delegation`の`references/base-contract.md`が定める起動文の言語指定に従う。
-<!-- END: agent-toolkit/rules/01-agent.md -->
+</normative-context>
 
-<!-- BEGIN: agent-toolkit/rules/02-agent-operations.md -->
+<normative-context source="agent-toolkit" kind="rules" path="agent-toolkit/rules/02-agent-operations.md">
 # 02-agent-operations.md: エージェントの実行運用
 
 ツールとコマンドの実行、委譲時の保護、プロセスの終了について、
@@ -473,4 +474,4 @@ hook、常駐処理、agent間配送が自動生成する本文は、最外周�
 確定できない場合は撤去せず、対象と満たさなかった条件を呼び出し元へ返す。
 
 委譲先・背景ジョブの完了を待つ手順と観測手段は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が定める。
-<!-- END: agent-toolkit/rules/02-agent-operations.md -->
+</normative-context>

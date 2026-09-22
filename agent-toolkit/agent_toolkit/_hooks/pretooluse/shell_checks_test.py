@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import textwrap
 import time
+import uuid
 from collections.abc import Callable
 
 import pytest
@@ -612,11 +613,14 @@ class TestIssSidechainProbe:
         blocked_tmpdir = tmp_path / "not-a-directory"
         blocked_tmpdir.write_text("x", encoding="utf-8")
         env = {"TMPDIR": str(blocked_tmpdir), "TEMP": str(blocked_tmpdir), "TMP": str(blocked_tmpdir)}
+        # 一時領域を壊す検体のため、セッション状態は実行環境側の領域へ書かれる。同じ識別子を使うと、
+        # 過去の実行が残した記録で反復検知が先に成立し、本検体が対象の処理へ到達しない。
+        session_id = f"probe-oserror-{uuid.uuid4().hex[:8]}"
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "os-error-probe", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
-                "session_id": "probe-oserror",
+                "session_id": session_id,
                 "isSidechain": True,
             },
             env_overrides=env,

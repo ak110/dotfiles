@@ -28,6 +28,10 @@ TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
 CODEX_CONFIG = Path("scripts/codex_config.toml")
 GENERATED_MARKER = "<!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->"
+# 常時読み込まれる規範の配布物へ付ける境界。決定的に生成するためnonceを持たない。
+NORMATIVE_ELEMENT = "normative-context"
+NORMATIVE_SOURCE = "agent-toolkit"
+NORMATIVE_KIND = "rules"
 
 
 def render(root: Path = REPO_ROOT) -> str:
@@ -40,10 +44,18 @@ def render(root: Path = REPO_ROOT) -> str:
 
 
 def _embedded_section(root: Path, relative: Path) -> list[str]:
-    """埋め込み元のパスを示すマーカーの間に本文を配置する。"""
+    """生成主体、種別及び埋め込み元のパスを示す境界の間に本文を配置する。
+
+    生成結果は既存内容との一致で冪等性を判定するため、実行ごとに変わるnonceを持たせない。
+    境界は要素名と属性で判別し、埋め込み元のパスがその配送単位を示す。
+    """
     marker = relative.as_posix()
     body = (root / relative).read_text(encoding="utf-8").rstrip("\n")
-    return ["", f"<!-- BEGIN: {marker} -->", body, f"<!-- END: {marker} -->"]
+    if body.startswith(f"<{NORMATIVE_ELEMENT}"):
+        # 配布元が既に境界を持つ本文は、重ねて囲まずそのまま埋め込む。
+        return ["", body]
+    opening = f'<{NORMATIVE_ELEMENT} source="{NORMATIVE_SOURCE}" kind="{NORMATIVE_KIND}" path="{marker}">'
+    return ["", opening, body, f"</{NORMATIVE_ELEMENT}>"]
 
 
 def _codex_limits(root: Path) -> tuple[int, float]:

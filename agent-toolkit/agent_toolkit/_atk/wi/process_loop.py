@@ -27,7 +27,7 @@ from agent_toolkit._atk.wi import alerts as _alerts
 from agent_toolkit._atk.wi import auto_resume as _auto_resume
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi.common import _count_pending_entries, _pull, _repo_lock
-from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATE_PROCESSING
+from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY, WI_STATE_INBOX, WI_STATE_PROCESSING
 from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import console_title as _console_title
@@ -587,7 +587,7 @@ def _build_process_loop_prompt() -> str:
     コマンドとして解釈するため、本文全体を囲むとコマンドとして成立しない。
     """
     goal = _automated_prompt.wrap(
-        "`agent-toolkit:process-wi`を完遂してください。",
+        PROCESS_WI_GOAL_BODY,
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind=_automated_prompt.KIND_GOAL,
     )

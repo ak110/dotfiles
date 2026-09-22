@@ -13,7 +13,8 @@ import re
 SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
 
 _DELIVERY_TAG_PATTERN = re.compile(
-    r'\A<cross-session-message from="(?P<sender>[^"]+)" nonce="(?P<nonce>[0-9a-f]{16})">\n'
+    r'\A<cross-session-message from="(?P<sender>[^"]+)" composed-by="(?P<composed_by>[^"]+)"'
+    r' nonce="(?P<nonce>[0-9a-f]{16})">\n'
     r"(?P<body>.*)\n</cross-session-message>\Z",
     re.DOTALL,
 )

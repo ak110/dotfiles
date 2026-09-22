@@ -22,7 +22,7 @@ Codex固有の公開能力と共有規範との差分を扱う。
 - 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落又はroot不在では固定パスを推測せず呼び出し元へ差し戻す
 - 起点のroot確定はホストのplugin導入情報だけから`SKILL.md`読取前に1回行う。読取済み`SKILL.md`の絶対パスからplugin資源rootを再解決する処理は、起点の確定の外で用いる
 - 公開サブコマンドがないplugin内部資源は、読取済みのagent-toolkitスキルの絶対パスから現行plugin rootを再解決する
-- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`及び作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`とdotfiles固有スキルはClaude Code側原本へのリンクとして扱う
+- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`及び作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う
 
 ## Codexホスト契約の適用
 
