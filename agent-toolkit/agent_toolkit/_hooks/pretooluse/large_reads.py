@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import pathlib
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from agent_toolkit._hooks import bash_command_parser
 from agent_toolkit._hooks.notice import _WARN_TAG, block_formatter, formatter
@@ -20,6 +21,14 @@ _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
 _NON_LINE_ORIENTED_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".pdf", ".png", ".webp"})
 _block_notice = block_formatter("agent-toolkit/pretooluse")
 _llm_notice = formatter("agent-toolkit/pretooluse")
+
+
+@dataclass(frozen=True)
+class LargeReadResult:
+    """Read入力の補正結果、又は補正では上限内へ収まらない場合の遮断理由。"""
+
+    updated_input: dict | None
+    notice: str
 
 
 def _positive_threshold(environment_name: str, default: int) -> int:
@@ -59,6 +68,20 @@ def _file_measurement(path: pathlib.Path) -> tuple[int, int] | None:
         return line_count, path.stat().st_size
     except OSError:
         return None
+
+
+def _prefix_byte_count(path: pathlib.Path, line_limit: int) -> int | None:
+    """先頭から指定行数までをReadで取得した場合のバイト数を返す。"""
+    byte_count = 0
+    try:
+        with path.open("rb") as source:
+            for index, line in enumerate(source):
+                if index >= line_limit:
+                    break
+                byte_count += len(line)
+    except OSError:
+        return None
+    return byte_count
 
 
 def _is_non_line_oriented(path: pathlib.Path) -> bool:
@@ -127,11 +150,12 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, int, int]
     )
 
 
-def check_large_read(tool_input: dict, cwd: str) -> tuple[dict, str] | None:
-    """範囲指定のないReadが大容量ファイルを対象とする場合に、補正後の入力と通知を返す。
+def check_large_read(tool_input: dict, cwd: str) -> LargeReadResult | None:
+    """範囲指定のないReadが大容量ファイルを対象とする場合に、補正又は遮断の結果を返す。
 
     代替の入力は判定の時点で一意に算出できるため、遮断して同じ操作の再発行を求めず、
-    先頭の閾値行へ補正して通す。残りの範囲は通知本文が示す。
+    先頭の閾値行がバイト閾値以下なら補正して通す。補正範囲もバイト閾値を超える場合は、
+    行単位のReadでは上限内へ収まらないため遮断し、Bashでのバイト単位分割又は探索委譲を案内する。
     行数を取得量の指標とする判定は、`Read`が対象を行の列として提示する場合にだけ成立する。
     行の列として提示しない形式では、補正しても取得量が変わらないため判定の対象から外す。
     Bashの全文取得は当該形式も行の列として直列化するため`check_large_bash_read`が扱う。
@@ -151,6 +175,20 @@ def check_large_read(tool_input: dict, cwd: str) -> tuple[dict, str] | None:
     if line_count <= _line_threshold() and byte_count <= _byte_threshold():
         return None
     threshold = _line_threshold()
+    prefix_byte_count = _prefix_byte_count(path, threshold)
+    if prefix_byte_count is None:
+        return None
+    if prefix_byte_count > _byte_threshold():
+        notice = _block_notice(
+            f"先頭{threshold}行が{prefix_byte_count}バイトとなり、補正後もバイト閾値"
+            f"{_byte_threshold()}を超えるためReadを遮断した: {path}",
+            fix=(
+                "Bashでファイルをバイト単位に分割して取得する。"
+                "agents_serverのstart_exploreへ"
+                f"質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。"
+            ),
+        )
+        return LargeReadResult(updated_input=None, notice=notice)
     corrected = dict(tool_input)
     corrected["offset"] = 1
     corrected["limit"] = threshold
@@ -162,7 +200,7 @@ def check_large_read(tool_input: dict, cwd: str) -> tuple[dict, str] | None:
         tag=_WARN_TAG,
         removable_cause=True,
     )
-    return corrected, notice
+    return LargeReadResult(updated_input=corrected, notice=notice)
 
 
 def check_large_bash_read(command: str, cwd: str) -> str | None:

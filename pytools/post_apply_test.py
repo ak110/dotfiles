@@ -671,6 +671,13 @@ class TestDefaultSteps:
         assert names.count(agy_name) == 1
         assert names.index(agy_name) == names.index("Claude Code CLI の導入と更新") + 1
 
+    def test_herdr_cli_step_follows_agy_cli(self) -> None:
+        """Herdr CLIの導入と更新を他のCLI準備に続けて1回登録する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        herdr_name = "Herdr CLI の導入と更新"
+        assert names.count(herdr_name) == 1
+        assert names.index(herdr_name) == names.index("Antigravity CLI の導入") + 1
+
     def test_codex_plugin_step_order(self):
         """Codex pluginは正本からsnapshotを生成した後に導入する。"""
         names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
@@ -700,6 +707,8 @@ class TestDefaultSteps:
             codex_name,
             remove_name,
             claude_name,
+            "Antigravity CLI の導入",
+            "Herdr CLI の導入と更新",
             "agent-toolkit ルールの同期",
             "Codex リンクの同期",
             "Claude Code plugin のインストール",

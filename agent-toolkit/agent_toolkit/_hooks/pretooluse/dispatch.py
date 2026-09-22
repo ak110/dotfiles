@@ -428,7 +428,10 @@ def main(payload_text: str) -> int:
             return exit_with(2)
         large_read_fix = check_large_read(tool_input, cwd)
         if large_read_fix is not None:
-            corrected_input, large_read_notice = large_read_fix
+            if large_read_fix.updated_input is None:
+                print(large_read_fix.notice, file=sys.stderr)
+                return exit_with(2)
+            corrected_input = large_read_fix.updated_input
             record_atk_help_paths_from_read(corrected_input, cwd, session_id)
             emit_json(
                 {
@@ -436,7 +439,7 @@ def main(payload_text: str) -> int:
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
                         "updatedInput": corrected_input,
-                        "additionalContext": format_warning_context([*pending_notices, large_read_notice]),
+                        "additionalContext": format_warning_context([*pending_notices, large_read_fix.notice]),
                     }
                 }
             )

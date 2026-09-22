@@ -23,7 +23,8 @@ def test_read_corrects_large_file_without_range(tmp_path: pathlib.Path) -> None:
     corrected = check_large_read({"file_path": str(path)}, str(tmp_path))
 
     assert corrected is not None
-    tool_input, _notice = corrected
+    tool_input = corrected.updated_input
+    assert tool_input is not None
     assert tool_input["offset"] == 1
     assert tool_input["limit"] == 350
     assert tool_input["file_path"] == str(path)
@@ -36,7 +37,7 @@ def test_notice_shows_offset_and_limit_pairs_covering_the_file(tmp_path: pathlib
     corrected = check_large_read({"file_path": str(path)}, str(tmp_path))
 
     assert corrected is not None
-    _tool_input, notice = corrected
+    notice = corrected.notice
     assert "offset=1, limit=350" in notice
     assert "offset=351, limit=272" in notice
 
@@ -128,15 +129,56 @@ def test_threshold_environment_override(tmp_path: pathlib.Path, monkeypatch) -> 
     assert check_large_read({"file_path": str(path)}, str(tmp_path)) is not None
 
 
-def test_read_applies_independent_byte_threshold(tmp_path: pathlib.Path, monkeypatch) -> None:
+def test_dispatch_blocks_read_over_byte_threshold_within_line_threshold(
+    tmp_path: pathlib.Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """行数閾値以内でもバイト閾値を超えるReadを、分割手段の案内とともに遮断する。"""
     path = tmp_path / "long-line.md"
     path.write_text("x" * 101, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+    payload = {
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(path)},
+        "session_id": "large-byte-read",
+        "cwd": str(tmp_path),
+    }
 
-    corrected = check_large_read({"file_path": str(path)}, str(tmp_path))
+    assert pretooluse.main(json.dumps(payload)) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(path) in captured.err
+    assert "101バイト" in captured.err
+    assert "Bash" in captured.err
+    assert "バイト単位" in captured.err
+    assert "start_explore" in captured.err
 
-    assert corrected is not None
-    assert "101バイト" in corrected[1]
+
+def test_dispatch_blocks_read_when_line_and_corrected_range_exceed_thresholds(
+    tmp_path: pathlib.Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """行数超過かつ先頭の補正範囲もバイト超過となるReadを遮断する。"""
+    path = _large_file(tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+    payload = {
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(path)},
+        "session_id": "large-line-and-byte-read",
+        "cwd": str(tmp_path),
+    }
+
+    assert pretooluse.main(json.dumps(payload)) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(path) in captured.err
+    assert "先頭350行" in captured.err
+    assert "1750バイト" in captured.err
+    assert "Bash" in captured.err
+    assert "バイト単位" in captured.err
+    assert "start_explore" in captured.err
 
 
 def test_bash_applies_total_byte_threshold(tmp_path: pathlib.Path, monkeypatch) -> None:
