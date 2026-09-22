@@ -46,7 +46,9 @@ def _matching_current_wait_run(run_directory: pathlib.Path, targets: list[str]) 
     run = _read_json(run_path)
     if run is None or run.get("targets") != targets:
         return None
-    if run.get("status") == "consumed" or (run.get("status") == "published" and run.get("continuable") is True):
+    if run.get("status") in {"foreground-delivered", "consumed"} or (
+        run.get("status") == "published" and run.get("continuable") is True
+    ):
         return None
     return run_path
 
@@ -62,7 +64,7 @@ def _publish_wait_result(
     value = _read_json(run_path) or {}
     value.update(
         {
-            "status": "published",
+            "status": "foreground-delivered",
             "output": output,
             "exit_code": code,
             "stream": stream,
@@ -84,7 +86,11 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
     output = value.get("output")
     code = value.get("exit_code")
     stream = value.get("stream")
-    if value.get("status") != "published" or not isinstance(output, str) or not isinstance(code, int):
+    if (
+        value.get("status") not in {"published", "foreground-delivered"}
+        or not isinstance(output, str)
+        or not isinstance(code, int)
+    ):
         return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8)
     print(output, file=sys.stderr if stream == "stderr" else sys.stdout)
     value["status"] = "consumed"
@@ -138,6 +144,7 @@ def wait_for_result(
     *,
     environment: Mapping[str, str] | None = None,
     state_root: pathlib.Path | None = None,
+    root_session_id: str | None = None,
 ) -> int:
     """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
 
@@ -158,18 +165,18 @@ def wait_for_result(
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
-    root_resolution = status_file.resolve_conversation_root(env, state_root)
-    root_session_id = None if root_resolution is None else root_resolution.root_session_id
+    root_resolution = None if root_session_id is not None else status_file.resolve_conversation_root(env, state_root)
     try:
-        identity = status_file.resolve_status_owner_identity(env, state_root)
+        identity = status_file.resolve_wait_identity(env, root_session_id, state_root)
     except ValueError as error:
-        return _fail(f"agents_serverの状態書込主体を解決できません: {error}", 4)
-    if root_session_id is None or identity is None:
+        return _fail(f"agents_serverの待機ルート又は状態書込主体を解決できません: {error}", 4)
+    if identity is None:
         message = (
             "agents_serverの状態ディレクトリを解決できません。"
             "同じsessionで`atk agents list`と`atk agents wait`を実行してください。"
         )
         return _fail(message, 4)
+    root_session_id = identity.root_session_id
     own_status_path = status_file.status_directory(root_session_id, state_root) / identity.file_name
     result_directory = status_file.results_directory(root_session_id, state_root)
     origins, target_error = _target_origins(

@@ -25,6 +25,10 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     # 保存先は待機の巡回より前に開く。`atk`のmainが`--output-file`を解決してから当該サブコマンドを
     # 実行するため、保存できない指定では結果ファイルと通知ファイルを削除せずに終わる。
     _output_file.add_output_file_arg(wait)
+    wait.add_argument(
+        "--root-session-id",
+        help="agents_serverの起動応答が返した待機ルート。環境からルートを解決できない場合に指定する。",
+    )
     notify = _help.add_command(sub, "notify", **_help.HELP["atk agents notify"])
     notify.set_defaults(error_parser=notify)
     notification_body = notify.add_mutually_exclusive_group(required=True)
@@ -50,7 +54,7 @@ def _dump(payload: Any, environment: Mapping[str, str]) -> str:
 def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None = None) -> int:
     """選択された`agents`サブコマンドを実行する。"""
     if args.agents_subcommand == "wait":
-        return agents_wait.wait_for_result(environment=environment)
+        return agents_wait.wait_for_result(environment=environment, root_session_id=args.root_session_id)
     if args.agents_subcommand == "notify":
         body = args.body
         if args.body_file is not None:

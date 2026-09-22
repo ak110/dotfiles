@@ -1361,6 +1361,45 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
     assert sum(len(candidate["locators"]) for candidate in candidates) == 2
 
 
+def test_candidates_exclude_explicit_help_failure_but_keep_usage_errors() -> None:
+    """明示helpのusageだけを除外し、通常操作とhelp以外の診断は候補へ残す。"""
+    timeline = [
+        {
+            "kind": "failed-tool",
+            "tool": "CommandExecution",
+            "record": "main",
+            "line": 1,
+            "text": "usage: git commit",
+            "diagnostic": "usage: git commit",
+            "command": json.dumps(["git", "commit", "-h"]),
+        },
+        {
+            "kind": "failed-tool",
+            "tool": "CommandExecution",
+            "record": "main",
+            "line": 2,
+            "text": "usage: git commit",
+            "diagnostic": "usage: git commit",
+            "command": json.dumps(["git", "commit"]),
+        },
+        {
+            "kind": "failed-tool",
+            "tool": "CommandExecution",
+            "record": "main",
+            "line": 3,
+            "text": "fatal: repository unavailable",
+            "diagnostic": "fatal: repository unavailable",
+            "command": json.dumps(["git", "commit", "--help"]),
+        },
+    ]
+
+    records = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    candidates = [record for record in records if record["kind"] == "candidate"]
+    assert {locator["line"] for candidate in candidates for locator in candidate["locators"]} == {2, 3}
+    assert records[-1]["excluded"] == {"command-help": 1}
+
+
 def test_codex_failed_commands_without_diagnostic_or_command_use_record_position(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -6603,3 +6642,28 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
         [{"record": "main", "line": 5}],
     ]
     assert candidates[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1, "runtime-meta": 1}
+
+
+def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_intervention() -> None:
+    """先頭スキル要求と対応本文を別区分で除外し、後続の利用者介入を保持する。"""
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
+        {"kind": "user", "record": "main", "line": 2, "text": "$agent-toolkit:process-wi"},
+        {
+            "kind": "user",
+            "record": "main",
+            "line": 3,
+            "text": "<skill>\n<name>agent-toolkit:process-wi</name>\n本文は後段で省略",
+        },
+        {"kind": "user", "record": "main", "line": 4, "text": "途中で方針を変更する"},
+    ]
+
+    records = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    candidates = [record for record in records if record["kind"] == "candidate"]
+    assert [candidate["locators"] for candidate in candidates] == [[{"record": "main", "line": 4}]]
+    assert records[-1]["excluded"] == {
+        "initial-skill-body": 1,
+        "initial-skill-request": 1,
+        "runtime-meta": 1,
+    }

@@ -94,8 +94,9 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     section = _section(reference, _TWO_LAYER_WAIT_HEADING)
     assert {"`functions.exec`", "`atk agents wait`", "`cell_id`", "`functions.wait`"} <= set(re.findall(r"`[^`]+`", section))
     assert "タスク固有timeoutを渡さず" in section
-    assert "別の`atk agents wait`を起動しない" in section
     assert "対象が未終端なら" in section
+    assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進む" in section
+    assert "先行CLIが稼働中にlock競合した後発待機だけが、先行runの本文を1回回収する" in section
 
 
 def test_main_help_does_not_sync(monkeypatch: pytest.MonkeyPatch) -> None:

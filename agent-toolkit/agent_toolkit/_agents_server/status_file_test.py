@@ -183,6 +183,40 @@ def test_conversation_root_resolution_confirms_direct_root_directory(tmp_path: p
     assert resolution.mapping_confirmed is True
 
 
+def test_wait_identity_uses_explicit_existing_root_without_environment(tmp_path: pathlib.Path) -> None:
+    """明示した実在ルートは環境の別名を必要とせずroot書込主体へ解決する。"""
+    subject.status_directory("mcp-root", tmp_path).mkdir(parents=True)
+
+    identity = subject.resolve_wait_identity({}, "mcp-root", tmp_path)
+
+    assert identity == subject.StatusFileIdentity("mcp-root", "root.json", None)
+
+
+@pytest.mark.parametrize("root_session_id", ["../invalid", "missing-root"])
+def test_wait_identity_rejects_invalid_or_missing_explicit_root(
+    tmp_path: pathlib.Path,
+    root_session_id: str,
+) -> None:
+    """不正な形式と実在しない明示ルートを待機対象として受理しない。"""
+    with pytest.raises(ValueError):
+        subject.resolve_wait_identity({}, root_session_id, tmp_path)
+
+
+def test_wait_identity_rejects_explicit_root_different_from_confirmed_conversation(
+    tmp_path: pathlib.Path,
+) -> None:
+    """確認済み会話rootと異なる明示値から別ルートの結果を回収しない。"""
+    subject.status_directory("conversation-root", tmp_path).mkdir(parents=True)
+    subject.status_directory("other-root", tmp_path).mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="一致しません"):
+        subject.resolve_wait_identity(
+            {"CLAUDE_CODE_SESSION_ID": "conversation-root"},
+            "other-root",
+            tmp_path,
+        )
+
+
 def test_conversation_root_resolution_rejects_invalid_alias(tmp_path: pathlib.Path) -> None:
     """不正な索引は現行識別子へ戻し、対応未確認として扱う。"""
     environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}

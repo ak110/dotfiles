@@ -225,16 +225,17 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
 
 
 def test_execution_review_documents_share_initial_review_table_contract() -> None:
-    """実行レビューの親と受信者は初回表の初期化契約を共有する。"""
+    """実行レビュー表は親だけが初期化し、受信者は欠落を差し戻す。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     recipient = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
 
-    documents = (recipient, parent)
-    assert all("atk review-table init" in content for content in documents)
-    assert all("既存の表" in content for content in documents)
-    assert all("表が無い場合" in content or "存在しない場合" in content for content in documents)
-    assert all("再レビュー" in content for content in documents)
+    assert "atk review-table init" in parent
+    assert recipient.count("atk review-table init") == 1
+    assert "レビュー担当は`atk review-table init`を実行しない" in recipient
+    assert "既存の表" in recipient
+    assert "表が無い場合は初期化せず`needs_escalation`で返す" in recipient
+    assert "初回レビューと再レビュー" in recipient
 
 
 def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> None:
