@@ -150,7 +150,8 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
     """起動の応答のうち呼び出し元へ公開する項目を返す。
 
     候補を切り替えて成立した起動だけが、除外した候補と採用した候補を加える。
-    切り替えが起きない起動は`session_id`と`status`の2項目とする。
+    切り替えが起きない起動は`session_id`と`status`を返す。
+    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
     public: dict[str, Any] = {key: response[key] for key in ("session_id", "status")}
     if "root_session_id" in response:
@@ -1972,6 +1973,7 @@ async def start(
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     応答は`session_id`と`status`を含む。候補を切り替えて起動した場合だけ、除外した候補と
     除外の根拠、および採用した`engine`・`model`・`effort`を加える。起動条件の詳細は`show`で取得する。
+    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     `label`は当該sessionの識別名として`show`・`atk agents list`・statuslineへ現れる。
     全候補がengineの可用性を理由として終端した場合は、最後の候補の終端応答を返す。
     全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
@@ -2003,6 +2005,7 @@ async def start_custom(
 
     既存の`.subagent.md`で表現できる作業には使わない。engine、model及びeffortは
     `model_type`から解決し、通常応答は後続の観測に必要な`session_id`と`status`を返す。
+    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     候補を切り替えて起動した場合だけ、除外した候補と採用した候補を加える。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
@@ -2045,6 +2048,7 @@ async def start_explore(
     この目安は、呼び出し元の1リクエストの文脈量147,000トークンと、セッションの残りリクエスト数47を前提とする。
     文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
+    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
     response = await _MANAGER.start_explore(fast, prompt, cwd, label=label)
     return _public_start_response(response)
@@ -2076,6 +2080,7 @@ async def start_shell(
     この目安は、呼び出し元の1リクエストの文脈量147,000トークンと、セッションの残りリクエスト数47を前提とする。
     文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
+    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
     response = await _MANAGER.start_shell(command, cwd, summary_policy, label=label)
     return _public_start_response(response)
@@ -2102,6 +2107,7 @@ async def start_write(
     終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`で受け取る。
     結果が不要なら`kill`で破棄する。
     応答は`start`と同じ項目を含む。
+    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
     response = await _MANAGER.start_write(prompt, cwd, label=label)
     return _public_start_response(response)

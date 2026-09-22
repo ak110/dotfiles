@@ -699,6 +699,11 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert send_tool is not None
 
     assert "`session_id`と`status`" in start_tool.description
+    for tool_name in ("start", "start_custom", "start_explore", "start_shell", "start_write"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert "root sessionの識別子を保持する場合" in tool.description
+        assert "`root_session_id`" in tool.description
     assert "`--" + "turn`へそのまま渡す" not in start_tool.description
     assert "`atk agents wait`" in start_tool.description
     assert "`delivery`" in send_tool.description
