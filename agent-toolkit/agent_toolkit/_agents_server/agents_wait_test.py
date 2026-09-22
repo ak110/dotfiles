@@ -82,6 +82,21 @@ def test_agents_wait_outputs_every_retained_result(
     assert not (wait_environment / "session-2.json").exists()
 
 
+def test_agents_wait_uses_explicit_root_without_environment(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """起動応答のルートを明示すれば環境の別名なしで終端結果を回収できる。"""
+    results = status_file.results_directory("mcp-root", tmp_path)
+    _write_own_status(results, [{"session_id": "session-1"}])
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+
+    assert agents_wait.wait_for_result(environment={}, state_root=tmp_path, root_session_id="mcp-root") == 0
+
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
+
+
 def test_agents_wait_delivers_collected_results_before_reporting_read_failure(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -449,6 +464,21 @@ def test_followers_join_the_same_wait_run(
     assert {"status": "consumed", "run_id": "run-1"} in output
 
 
+def test_published_foreground_result_is_not_selected_by_a_later_sequential_wait(tmp_path: pathlib.Path) -> None:
+    """前景へ配送したrunは、lock競合していない次の待機の再演対象にしない。"""
+    run_directory = tmp_path / "wait-results"
+    run_path = run_directory / "run-1.json"
+    agents_wait._write_json(  # pylint: disable=protected-access
+        run_path,
+        {"run_id": "run-1", "status": "running", "targets": ["session-1"]},
+    )
+    agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
+
+    agents_wait._publish_wait_result(run_path, "completed", 0)  # pylint: disable=protected-access
+
+    assert agents_wait._matching_current_wait_run(run_directory, ["session-1"]) is None  # pylint: disable=protected-access
+
+
 @pytest.mark.parametrize(
     ("status", "expected_code", "expected_stream"),
     [
@@ -484,18 +514,20 @@ def test_later_wait_uses_matching_current_run(
     assert json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8")) == {"run_id": "run-1"}
 
 
+@pytest.mark.parametrize("status", ["consumed", "foreground-delivered"])
 @pytest.mark.parametrize("continuable", [False, True])
 def test_later_wait_starts_new_run_for_consumed_current_run(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    status: str,
     continuable: bool,
 ) -> None:
-    """回収済みの現行runと対象が一致しても新規runを開始する。"""
+    """回収済み又は前景配送済みの現行runと対象が一致しても新規runを開始する。"""
     _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     run_directory, _ = _write_current_wait_run(
         tmp_path,
         target="session-1",
-        status="consumed",
+        status=status,
         continuable=continuable,
     )
 

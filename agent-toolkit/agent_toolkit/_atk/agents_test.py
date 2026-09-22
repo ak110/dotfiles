@@ -18,19 +18,42 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait", "--help"])
 
-    output = capsys.readouterr().out
-    assert "1回の巡回で回収できた全件" in output
-    assert "1件1行のJSON Lines" in output
-    assert "最初の待機で起動中sessionと未回収結果を登録簿へ固定" in output
-    assert "通知だけを回収した場合" in output
-    assert "待機対象の行が現れない応答は当該対象が未終端であることを示す" in output
-    assert "同じターン内に同じコマンドを再発行" in output
-    assert "結果を保持しない`stop`とsession登録簿での喪失確定" in output
-    assert "待機対象登録が破損している場合" in output
-    assert "終端statusでは追加の結果受領操作は不要" in output
-    assert "`--output-file`を指定した場合" in output
-    assert "回収した本文は当該保存先に残る" in output
-    assert "MCPの`list`を1回呼び出してから同じコマンドを再実行" in output
+    output = _without_wrapping(capsys.readouterr().out)
+    expected_fragments = (
+        "1回の巡回で回収できた全件",
+        "1件1行のJSON Lines",
+        "最初の待機で起動中sessionと未回収結果を登録簿へ固定",
+        "通知だけを回収した場合",
+        "待機対象の行が現れない応答は当該対象が未終端であることを示す",
+        "同じターン内に同じコマンドを再発行",
+        "結果を保持しない`stop`とsession登録簿での喪失確定",
+        "待機対象登録が破損している場合",
+        "終端statusでは追加の結果受領操作は不要",
+        "`--output-file`を指定した場合",
+        "回収した本文は当該保存先に残る",
+        "MCPの`list`を1回呼び出してから同じコマンドを再実行",
+        "--root-session-id",
+        "次の逐次待機へ再配送しない",
+    )
+    assert all(_without_wrapping(fragment) in output for fragment in expected_fragments)
+
+
+def test_agents_wait_passes_explicit_root_to_waiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLIの明示ルートを環境変数へ変換せず待機処理へ渡す。"""
+    received: list[str | None] = []
+
+    def fake_wait(**kwargs) -> int:
+        received.append(kwargs["root_session_id"])
+        return 0
+
+    monkeypatch.setattr(_atk_agents.agents_wait, "wait_for_result", fake_wait)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait", "--root-session-id", "mcp-root"])
+
+    assert received == ["mcp-root"]
 
 
 def _without_wrapping(text: str) -> str:

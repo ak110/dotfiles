@@ -660,6 +660,33 @@ def resolve_status_owner_identity(
     return StatusFileIdentity(identity.root_session_id, f"{writer_session_id}.json", writer_session_id)
 
 
+def resolve_wait_identity(
+    environment: Mapping[str, str],
+    explicit_root_session_id: str | None,
+    state_root: pathlib.Path | None = None,
+) -> StatusFileIdentity | None:
+    """待機に使うルートと書込主体を、明示入力を含む単一の契約で解決する。"""
+    inferred = resolve_conversation_root(environment, state_root)
+    identity = resolve_status_owner_identity(environment, state_root)
+    if explicit_root_session_id is None:
+        if identity is None or inferred is None or identity.root_session_id == inferred.root_session_id:
+            return identity
+        return StatusFileIdentity(inferred.root_session_id, identity.file_name, identity.host_session_id)
+    if not valid_session_id(explicit_root_session_id):
+        raise ValueError(f"root_session_idの形式が不正です: {explicit_root_session_id}")
+    if not status_directory(explicit_root_session_id, state_root).is_dir():
+        raise ValueError(f"指定したroot_session_idの状態ディレクトリが存在しません: {explicit_root_session_id}")
+
+    if inferred is not None and inferred.mapping_confirmed and inferred.root_session_id != explicit_root_session_id:
+        raise ValueError(
+            "確認済みの会話rootと指定したroot_session_idが一致しません: "
+            f"conversation={inferred.root_session_id}, explicit={explicit_root_session_id}"
+        )
+    if identity is not None:
+        return StatusFileIdentity(explicit_root_session_id, identity.file_name, identity.host_session_id)
+    return StatusFileIdentity(explicit_root_session_id, "root.json", None)
+
+
 def write_host_alias(
     root_session_id: str,
     writer_session_id: str,

@@ -2873,6 +2873,7 @@ def _candidate_events(
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     seen: set[tuple[str, int, str, str]] = set()
     excluded: collections.Counter[str] = collections.Counter()
+    initial_skill_request, initial_skill_body = _initial_skill_input_locators(timeline)
     first_main_user: tuple[str, int] | None = None
     for event in timeline:
         line = event.get("line")
@@ -2916,10 +2917,21 @@ def _candidate_events(
             text = event.get("text")
             normalized_text = " ".join(text.split()) if isinstance(text, str) else ""
             if candidate_kind == "user-intervention":
-                exclusion = _user_candidate_exclusion(event, record, line, normalized_text, first_main_user)
+                exclusion = _user_candidate_exclusion(
+                    event,
+                    record,
+                    line,
+                    normalized_text,
+                    first_main_user,
+                    initial_skill_request=initial_skill_request,
+                    initial_skill_body=initial_skill_body,
+                )
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
+            if candidate_kind == "command-failure" and _is_help_command_failure(event):
+                excluded["command-help"] += 1
+                continue
             if candidate_kind == "hook-notice":
                 exclusion = _hook_notice_candidate_exclusion(event.get("tag"))
                 if exclusion is not None:
@@ -3180,6 +3192,9 @@ def _user_candidate_exclusion(
     line: int,
     text: str,
     first_main_user: tuple[str, int] | None,
+    *,
+    initial_skill_request: tuple[str, int] | None = None,
+    initial_skill_body: tuple[str, int] | None = None,
 ) -> str | None:
     """構造と固定接頭辞だけで利用者介入ではない入力を分類する。
 
@@ -3195,6 +3210,10 @@ def _user_candidate_exclusion(
         return "delegated-record"
     if event.get("runtime_generated") is True:
         return "runtime-meta"
+    if initial_skill_request == (record, line):
+        return "initial-skill-request"
+    if initial_skill_body == (record, line):
+        return "initial-skill-body"
     if text.startswith("<skill>") and "</skill>" in text:
         return "runtime-inserted"
     if text.startswith(
@@ -3218,6 +3237,55 @@ def _user_candidate_exclusion(
     if first_main_user == (record, line):
         return "initial-request"
     return None
+
+
+def _initial_skill_input_locators(
+    timeline: list[dict[str, Any]],
+) -> tuple[tuple[str, int] | None, tuple[str, int] | None]:
+    """Codexの先頭スキル要求と、直後に挿入された対応本文の位置を返す。"""
+    main_users = [
+        event
+        for event in timeline
+        if event.get("kind") == "user"
+        and event.get("record") == "main"
+        and isinstance(event.get("line"), int)
+        and isinstance(event.get("text"), str)
+        and event.get("runtime_generated") is not True
+    ]
+    if not main_users:
+        return None, None
+    request = main_users[0]
+    request_text = str(request["text"]).strip()
+    if not request_text.startswith("$") or any(character.isspace() for character in request_text):
+        return None, None
+    skill_name = request_text.removeprefix("$")
+    if not skill_name or any(not (character.isalnum() or character in {"-", "_", ":"}) for character in skill_name):
+        return None, None
+    if len(main_users) < 2:
+        return None, None
+    body = main_users[1]
+    body_text = str(body["text"]).lstrip()
+    if not body_text.startswith("<skill>") or f"<name>{skill_name}</name>" not in body_text:
+        return None, None
+    return ("main", int(request["line"])), ("main", int(body["line"]))
+
+
+def _is_help_command_failure(event: dict[str, Any]) -> bool:
+    """変更処理へ到達せずusageを返した明示的なCLIヘルプ取得であるかを返す。"""
+    command_value = event.get("command")
+    diagnostic = event.get("diagnostic")
+    if not isinstance(command_value, str) or not isinstance(diagnostic, str):
+        return False
+    try:
+        command = json.loads(command_value)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(command, list) or not all(isinstance(argument, str) for argument in command):
+        return False
+    if not any(argument in {"-h", "--help"} for argument in command[1:]):
+        return False
+    normalized = diagnostic.casefold()
+    return "usage:" in normalized or "options:" in normalized
 
 
 def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:

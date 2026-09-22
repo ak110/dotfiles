@@ -27,6 +27,8 @@ agents_serverの`start`、`start_explore`、`start_write`及び`start_shell`はC
 
 ## agents_serverの二層待機
 
-`functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返した場合は同じ識別子を`functions.wait`へ渡す。外側のyieldを理由に別の`atk agents wait`を起動しない。CLI自身が待機上限へ達し対象が未終端なら、その結果を確認してから新しい待機を開始する。
+`functions.exec`の内側でagents_serverを起動し、`PostToolUse`がMCP応答を直接観測できない場合は、起動応答の`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。明示入力をランタイム間の識別子の受渡経路とする。CLIは明示した値について、状態ディレクトリの実在と確認済みの会話rootとの一致を検証する。
+
+`functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返した場合は同じ識別子を`functions.wait`へ渡す。CLI自身が待機上限へ達し対象が未終端なら、その結果を確認してから新しい待機を開始する。前景のCLIが本文を返した後の逐次待機は新しいrunへ進む。先行CLIが稼働中にlock競合した後発待機だけが、先行runの本文を1回回収する。
 
 委譲先の成果物側だけを補助観測するときは、`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使う。session自体の稼働確認には起動経路の状態を用いる。

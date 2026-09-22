@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pytools._internal import setup_herdr_cli
+from pytools._internal import post_apply_outcome, setup_herdr_cli
 
 
 def _fake_client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Client:
@@ -66,6 +66,77 @@ def test_run_installs_posix_direct_install(monkeypatch, tmp_path: Path) -> None:
     assert requested == ["https://herdr.dev/install.sh"]
     assert commands[0][0] == "bash"
     assert commands[-1] == [str(launcher), "--version"]
+
+
+def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """セッション離脱後の更新を求める既知診断は、既存版を確認して案内へ変換する。"""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
+    launcher = tmp_path / ".local" / "bin" / "herdr"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+    prepended: list[Path] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        commands.append(command)
+        if command[-1] == "update":
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                "",
+                "update failed: run `herdr update` outside herdr after detaching from the session",
+            )
+        return subprocess.CompletedProcess(command, 0, "herdr 0.9.1", "")
+
+    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", prepended.append)
+
+    result = setup_herdr_cli.run()
+
+    assert result == post_apply_outcome.PostApplyOutcome(
+        changed=False,
+        notices=(
+            post_apply_outcome.PostApplyNotice(
+                message="Herdrセッション内では自己更新できないため、更新を保留しました。",
+                command="herdr update",
+            ),
+        ),
+    )
+    assert commands == [[str(launcher), "update"], [str(launcher), "--version"]]
+    assert prepended == [launcher.parent]
+
+
+def test_run_keeps_deferred_update_fatal_when_existing_launcher_is_unhealthy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """既知の更新制約でも既存版を確認できなければ失敗を上位へ伝える。"""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
+    launcher = tmp_path / ".local" / "bin" / "herdr"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("", encoding="utf-8")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if command[-1] == "update":
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                "",
+                "update failed: run `herdr update` outside herdr after detaching from the session",
+            )
+        return subprocess.CompletedProcess(command, 1, "", "version failed")
+
+    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+
+    with pytest.raises(RuntimeError, match="更新後の確認に失敗"):
+        setup_herdr_cli.run()
 
 
 @pytest.mark.parametrize("use_local_app_data", [False, True])
