@@ -1103,7 +1103,7 @@ class TestLegacyTopLevelCommandAlias:
         assert exc_info.value.code == 0
         root_help = capsys.readouterr().out
         assert "atk mq" not in root_help
-        assert "{wi," in root_help
+        assert "{info,wi," in root_help
 
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["wi", "--help"])
