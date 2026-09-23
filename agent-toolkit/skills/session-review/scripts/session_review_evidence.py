@@ -2787,7 +2787,6 @@ _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
 _HOOK_NOTICE_VARIANT_LIMIT = 5
 _RETURN_STATUS_PREFIX = "status:"
-_UNSUCCESSFUL_RETURN_STATUSES = frozenset({"analysis_failed", "failed"})
 _ESCALATION_RETURN_STATUS = "needs_escalation"
 _CANDIDATE_EVIDENCE_LENGTH = 2000
 _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE = 1
@@ -2860,8 +2859,8 @@ def _candidate_events(
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
     母集団はhook通知、利用者介入、失敗したツール実行、警告及び工程の返却値とする。
-    返却値を含めるのは、`status`で工程の不成立を表す返却が他の4種のいずれにも現れず、
-    差し戻しで停止した工程が候補集合から漏れるためである。
+    返却値を含めるのは、終了状態にかかわらず本文に誤りがある委譲結果も他の事象には現れず、
+    本文の判定前に候補集合から漏れるためである。
 
     同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別又はhookタグが異なる事象を別候補として保持する。同じ位置、候補種別及びhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
@@ -2910,7 +2909,7 @@ def _candidate_events(
         ),
         ("warning", (event for event in warnings if event.get("kind") == "warning")),
         ("escalation", (event for event in timeline if _is_escalation_return(event))),
-        ("delegate-return", (event for event in timeline if _is_unsuccessful_return(event))),
+        ("delegate-return", (event for event in timeline if _is_delegate_return(event))),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -3149,29 +3148,18 @@ def _is_permission_denial(event: dict[str, Any]) -> bool:
     return isinstance(text, str) and _PERMISSION_DENIAL_MARKER in text
 
 
-def _is_unsuccessful_return(event: dict[str, Any]) -> bool:
-    """工程の不成立を表す最終返却、又は返却形式を伴わない最終返却であるかを返す。
+def _is_delegate_return(event: dict[str, Any]) -> bool:
+    """委譲先の空でない最終返却のうち、明示的なエスカレーション以外を返す。
 
     `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
     委譲先の記録では当該委譲先が呼び出し元へ返した返却値に対応する。
-    `status`値の集合は返却値で工程の不成立を表す値とし、差し戻しの返却に限らない。
-    `agents_server`のsessionが`status: failed`で終端した返却も同じ集合で扱う。
-
-    委譲先の記録では、`status`行を持たない最終返却も候補へ含める。当該返却は呼び出し元へ継続の要求を
-    発行させ、工程1件ごとに1往復を失わせるため、候補として現れないと再発防止策の対象から外れる。
-    判定の入力は返却の本文だけとし、終端の`status`が成功であることを除外の根拠にしない。
-    メイン記録の最終出力は呼び出し元へ返す返却ではないため、この扱いの対象から外す。
+    成功の`status`があっても本文に誤りがあり得るため、終了状態で除外しない。
+    メイン記録の最終出力は委譲返却ではない。明示的なエスカレーションは独立した候補へ送る。
     """
-    if event.get("kind") != "final-result":
+    if event.get("kind") != "final-result" or event.get("record") == "main":
         return False
     text = event.get("text")
-    if not isinstance(text, str) or not text.strip():
-        return False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(_RETURN_STATUS_PREFIX):
-            return stripped.removeprefix(_RETURN_STATUS_PREFIX).strip() in _UNSUCCESSFUL_RETURN_STATUSES
-    return event.get("record") != "main"
+    return isinstance(text, str) and bool(text.strip()) and not _is_escalation_return(event)
 
 
 def _is_escalation_return(event: dict[str, Any]) -> bool:

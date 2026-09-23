@@ -35,6 +35,7 @@ import argparse
 import datetime
 import hashlib
 import importlib
+import json
 import math
 import os
 import pathlib
@@ -801,6 +802,12 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         action="store_true",
         help="FILENAMEの元のraw bytesを保ち、--body-fileの本文をUTF-8で末尾へ追記する。UWIは対象外。",
     )
+    edit.add_argument(
+        "--cooldown-until",
+        metavar="DATETIME",
+        default=None,
+        help="inbox・holdの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。空文字列で解除する。",
+    )
     edit.set_defaults(plan_file=None)
     edit.set_defaults(depends_on=None)
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
@@ -978,6 +985,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=False,
         show_help_when_missing=True,
     )
+    _atk_help.add_command(top, "info", **_atk_help.HELP["atk info"])
     wi = _atk_help.add_command(top, "wi", **_atk_help.HELP["atk wi"])
     _build_wi_parser(wi)
     run_script = _atk_help.add_command(top, "run-script", **_atk_help.HELP["atk run-script"])
@@ -1033,6 +1041,25 @@ def format_command_help(command_path: tuple[str, ...]) -> str | None:
             return None
         parser = choices[name]
     return parser.format_help()
+
+
+def _show_info() -> None:
+    """現在の実行文脈とplugin配布元の情報を読み取り専用で表示する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    manifest = plugin_root / "plugin.json"
+    try:
+        version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
+    except (OSError, ValueError, KeyError, TypeError):
+        version = "不明"
+    config_file = _config_cmd._config_file_path()  # pylint: disable=protected-access
+    print(f"作業ディレクトリ: {pathlib.Path.cwd()}")
+    print(f"atk実装: {pathlib.Path(__file__).resolve()}")
+    print(f"起動ファイル: {pathlib.Path(sys.argv[0]).resolve()}")
+    print(f"plugin root: {plugin_root}")
+    print(f"plugin version (plugin.json): {version}")
+    print(f"設定ファイル: {config_file if config_file.is_file() else '未作成'}")
+    print(f"設定ファイル候補: {config_file}")
+    print(f"状態ディレクトリ: {_config_cmd.state_dir()}")
 
 
 def command_option_contract(command_path: tuple[str, ...]) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]] | None:
@@ -1231,6 +1258,9 @@ def main(
     args = parser.parse_args(raw_argv)
     if args._help_parser is not None:
         args._help_parser.print_help()
+        return
+    if args.command == "info":
+        _show_info()
         return
     _normalize_repeatable_wi_filters(args)
     _resolve_wi_target_repo(args, parser)

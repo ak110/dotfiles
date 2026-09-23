@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import pathlib
 from collections.abc import Iterator
 
 import pytest
@@ -11,6 +12,25 @@ from agent_toolkit import atk
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk import outcome as _outcome
+
+
+def test_info_reports_current_environment_without_creating_config(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """診断値の出所と未作成の設定を表示し、状態を変更しない。"""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config.json"
+    monkeypatch.setattr(atk._config_cmd, "_config_file_path", lambda: config)  # pylint: disable=protected-access
+
+    atk.main(["info"])
+
+    output = capsys.readouterr().out
+    assert f"作業ディレクトリ: {tmp_path}" in output
+    assert "plugin version (plugin.json): " in output
+    assert f"設定ファイル候補: {config}" in output
+    assert "設定ファイル: 未作成" in output
+    assert not config.exists()
+
 
 _DESCRIPTION_MARKERS = ("目的:", "利用場面:", "対象と出力:", "前提:", "復元・後始末:")
 

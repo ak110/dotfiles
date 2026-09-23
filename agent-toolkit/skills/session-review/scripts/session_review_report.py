@@ -380,6 +380,8 @@ def render(
             used_analysis_ids.add(analysis_id)
             outcome = str(decision.get("defect", "要処置"))
             analysis_id_text = analysis_id
+        elif disposition == "pending":
+            raise ReportError(f"{locator_text}: 判定が未完了である")
         else:
             raise ReportError(f"{locator_text}: dispositionが不正である")
         summary = _cell_text(str(candidate.get("text", candidate.get("candidate_kind", "候補"))))
@@ -423,7 +425,9 @@ def render(
             "| --- | --- | --- | --- | --- |",
             *analysis_rows,
             "",
-            f"構造検査: 候補{len(candidate_items)}件、locator{len(flattened)}件、過不足0件、重複0件",
+            f"構造検査: 候補{len(candidate_items)}件、欠陥{sum(item['disposition'] == 'analyzed' for item in decisions)}件、"
+            f"非欠陥{sum(item['disposition'] == 'excluded' for item in decisions)}件、"
+            f"locator{len(flattened)}件、過不足0件、重複0件",
             "",
             "## メイン由来の改善点",
             "",

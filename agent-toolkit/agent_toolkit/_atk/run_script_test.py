@@ -72,8 +72,12 @@ def test_session_review_delegate_uses_public_script_entries() -> None:
         elif in_block and line.startswith("atk run-script session-review-"):
             commands.append(shlex.split(line))
 
-    assert {command[2] for command in commands} == {"session-review-evidence", "session-review-report"}
-    assert len(commands) == 5
+    assert {command[2] for command in commands} == {
+        "session-review-evidence",
+        "session-review-decisions",
+        "session-review-report",
+    }
+    assert len(commands) == 6
     for command in commands:
         assert command[:2] == ["atk", "run-script"]
         assert command[3] == "--"

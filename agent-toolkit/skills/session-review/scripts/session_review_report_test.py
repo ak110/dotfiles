@@ -4,6 +4,8 @@ import json
 import pathlib
 
 import pytest
+import session_review_decisions as decisions
+import session_review_evidence as evidence
 import session_review_report as report
 
 
@@ -151,7 +153,7 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     assert "main:2" in content and "一次選別で除外" in content
     assert "main:5" in content and "事前検査不足" in content
     assert content.count("| a1 | 入力不備 | 事前検査不足 | 適用漏れ | 入口で検査する |") == 1
-    assert "候補2件、locator3件、過不足0件、重複0件" in content
+    assert "候補2件、欠陥1件、非欠陥1件、locator3件、過不足0件、重複0件" in content
     assert "- ボトルネック: 完全分析（12.500秒）" in content
     assert "- 削減見込み: 2.500秒（候補集約）" in content
     assert "- 削減不能部分: 人間の判断が必要" in content
@@ -365,7 +367,7 @@ def test_empty_candidates_accept_empty_included_locators(tmp_path: pathlib.Path)
 
     assert report.main(_argv(paths, "generate")) == 0
     assert report.main(_argv(paths, "check")) == 0
-    assert "候補0件、locator0件" in paths[-1].read_text(encoding="utf-8")
+    assert "候補0件、欠陥0件、非欠陥0件、locator0件" in paths[-1].read_text(encoding="utf-8")
 
 
 def test_missing_decision_is_rejected(tmp_path: pathlib.Path) -> None:
@@ -374,6 +376,55 @@ def test_missing_decision_is_rejected(tmp_path: pathlib.Path) -> None:
 
     assert report.main(_argv(paths, "generate")) == 2
     assert not paths[-1].exists()
+
+
+@pytest.mark.parametrize("mode", ["generate", "check"])
+def test_pending_decision_is_rejected(tmp_path: pathlib.Path, mode: str) -> None:
+    paths = _inputs(tmp_path)
+    values = json.loads(paths[1].read_text(encoding="utf-8"))
+    values[0]["disposition"] = "pending"
+    paths[1].write_text(json.dumps(values, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, mode)) == 2
+
+
+def test_successful_delegate_return_reaches_pending_decision_rejection(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """正常終了の委譲返却も候補から一次判定へ進み、未判定なら報告を拒否する。"""
+    paths = _inputs(tmp_path)
+    records = evidence._candidate_events(  # pylint: disable=protected-access
+        [{"kind": "final-result", "record": "agent-1", "line": 7, "text": "status: completed\n誤った内容"}],
+        [],
+        [],
+    )
+    candidates = [item for item in records if item["kind"] == "candidate"]
+    assert len(candidates) == 1
+    assert candidates[0]["candidate_kind"] == "delegate-return"
+    assert records[-1]["included_locators"] == [{"record": "agent-1", "line": 7}]
+    paths[0].write_text("".join(json.dumps(item, ensure_ascii=False) + "\n" for item in records), encoding="utf-8")
+    (tmp_path / "candidate-evidence.jsonl").write_text(
+        json.dumps(
+            {
+                "candidate_id": candidates[0]["candidate_id"],
+                "locators": candidates[0]["locators"],
+                "path": "candidate-evidence/c0001.json",
+                "evidence_count": 1,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert decisions.main(["--bundle", str(tmp_path), "--output", str(paths[1])]) == 0
+    generated = json.loads(paths[1].read_text(encoding="utf-8"))
+    assert generated[0]["candidate_kind"] == "delegate-return"
+    assert generated[0]["disposition"] == "pending"
+    capsys.readouterr()
+    for mode in ("generate", "check"):
+        assert report.main(_argv(paths, mode)) == 2
+        assert "agent-1:7: 判定が未完了である" in capsys.readouterr().err
 
 
 def test_missing_aggregated_locator_is_rejected(tmp_path: pathlib.Path) -> None:
@@ -522,7 +573,7 @@ def test_report_matches_decisions_by_candidate_id_when_locators_overlap(tmp_path
 
     assert report.main(_argv(paths, "generate")) == 0
     assert report.main(_argv(paths, "check")) == 0
-    assert "候補2件、locator2件" in paths[-1].read_text(encoding="utf-8")
+    assert "候補2件、欠陥1件、非欠陥1件、locator2件" in paths[-1].read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("mutation", ("missing", "duplicate"))

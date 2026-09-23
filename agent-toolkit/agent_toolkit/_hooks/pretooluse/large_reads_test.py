@@ -160,7 +160,7 @@ def test_dispatch_blocks_read_when_line_and_corrected_range_exceed_thresholds(
     monkeypatch,
     capsys,
 ) -> None:
-    """行数超過かつ先頭の補正範囲もバイト超過となるReadを遮断する。"""
+    """両閾値を超える場合も、両方に収まる先頭範囲へ補正する。"""
     path = _large_file(tmp_path)
     monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
     payload = {
@@ -170,15 +170,38 @@ def test_dispatch_blocks_read_when_line_and_corrected_range_exceed_thresholds(
         "cwd": str(tmp_path),
     }
 
-    assert pretooluse.main(json.dumps(payload)) == 2
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert str(path) in captured.err
-    assert "先頭350行" in captured.err
-    assert "1750バイト" in captured.err
-    assert "Bash" in captured.err
-    assert "バイト単位" in captured.err
-    assert "start_explore" in captured.err
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert captured["updatedInput"]["offset"] == 1
+    assert captured["updatedInput"]["limit"] == 20
+    assert "offset=21, limit=20" in captured["additionalContext"]
+
+
+def test_byte_only_limit_builds_contiguous_ranges(tmp_path: pathlib.Path, monkeypatch) -> None:
+    """行数が少ない場合も、バイト上限に合わせて全行を分割する。"""
+    path = _large_file(tmp_path, lines=5)
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "10")
+
+    result = check_large_read({"file_path": str(path)}, str(tmp_path))
+
+    assert result is not None
+    assert result.updated_input == {"file_path": str(path), "offset": 1, "limit": 2}
+    assert "offset=3, limit=2" in result.notice
+    assert "offset=5, limit=1" in result.notice
+
+
+def test_oversized_later_line_has_separate_extraction_guidance(tmp_path: pathlib.Path, monkeypatch) -> None:
+    """単一の長行をReadの範囲へ含めず、位置と抽出方法を示す。"""
+    path = tmp_path / "mixed.txt"
+    path.write_text("a\n" + "x" * 101 + "\nb\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+
+    result = check_large_read({"file_path": str(path)}, str(tmp_path))
+
+    assert result is not None
+    assert result.updated_input == {"file_path": str(path), "offset": 1, "limit": 1}
+    assert "2行目（102バイト）は単一行" in result.notice
+    assert "offset=3, limit=1" in result.notice
 
 
 def test_bash_applies_total_byte_threshold(tmp_path: pathlib.Path, monkeypatch) -> None:
