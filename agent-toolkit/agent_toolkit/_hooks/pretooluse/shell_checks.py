@@ -277,24 +277,46 @@ def _rewrite_simple_git_grep(command: str) -> str | None:
         tokens = shlex.split(command, posix=True)
     except ValueError:
         return None
-    if len(tokens) < 4 or tokens[:2] != ["git", "grep"] or "--" in tokens:
+    if len(tokens) < 4 or tokens[:2] != ["git", "grep"]:
         return None
-    pattern = tokens[2]
+    separator_index = tokens.index("--") if "--" in tokens else len(tokens)
+    options_and_pattern = tokens[:separator_index]
+    pathspec = tokens[separator_index:]
+    leading: list[str] = []
+    index = 2
+    while index < len(options_and_pattern):
+        token = options_and_pattern[index]
+        option_name = token.split("=", 1)[0]
+        if token in _GIT_GREP_FLAGS:
+            leading.append(token)
+        elif option_name in _GIT_GREP_VALUED_OPTIONS:
+            leading.append(token)
+            if "=" not in token:
+                if index + 1 >= len(options_and_pattern):
+                    return None
+                index += 1
+                leading.append(options_and_pattern[index])
+        else:
+            break
+        index += 1
+    if index >= len(options_and_pattern):
+        return None
+    pattern = options_and_pattern[index]
     if pattern.startswith("-") or any(character in pattern for character in "$`"):
         return None
     moved: list[str] = []
     rest: list[str] = []
-    index = 3
-    while index < len(tokens):
-        token = tokens[index]
+    index += 1
+    while index < len(options_and_pattern):
+        token = options_and_pattern[index]
         option_name = token.split("=", 1)[0]
         if token in _GIT_GREP_FLAGS:
             moved.append(token)
         elif option_name in _GIT_GREP_VALUED_OPTIONS:
             if "=" in token:
                 moved.append(token)
-            elif index + 1 < len(tokens) and not tokens[index + 1].startswith("-"):
-                moved.extend((token, tokens[index + 1]))
+            elif index + 1 < len(options_and_pattern) and not options_and_pattern[index + 1].startswith("-"):
+                moved.extend((token, options_and_pattern[index + 1]))
                 index += 1
             else:
                 return None
@@ -305,7 +327,7 @@ def _rewrite_simple_git_grep(command: str) -> str | None:
         index += 1
     if not moved:
         return None
-    return shlex.join(["git", "grep", *moved, pattern, *rest])
+    return shlex.join(["git", "grep", *leading, *moved, pattern, *rest, *pathspec])
 
 
 def _single_unquoted_pipe_index(masked: str) -> int | None:
@@ -1389,7 +1411,7 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
     return _llm_notice(
         "明示された検索・読取パスが存在しない。対象: " + "、".join(scan.missing) + "\n"
         "対処: Git管理対象は`rg --files`、属性・ディレクトリ構造は`find`で実体を解決し、実在するパスを指定する。"
-        "不在を確認する意図では、確認を別の呼び出しにするか、絶対パスを渡す`test -e`を使う。",
+        "不在を確認する意図では、対象ごとに別の呼び出しで`test -e <絶対パス>`を実行し、終了コードで判定する。",
         tag=_WARN_TAG,
         removable_cause=True,
     )
@@ -1466,7 +1488,7 @@ def _check_bash_missing_path_operand_loss(command: str, cwd: str) -> str | None:
             fix=(
                 "当該コマンドへ実在するパスを指定するか、当該コマンドを呼び出しから外す。"
                 "引数を失ったコマンドは標準入力を読み、補正前とは異なる成否を返す。"
-                "不在を確認する意図では、確認を別の呼び出しにするか、絶対パスを渡す`test -e`を使う。"
+                "不在を確認する意図では、対象ごとに別の呼び出しで`test -e <絶対パス>`を実行し、終了コードで判定する。"
             ),
         ),
         file=sys.stderr,
@@ -2065,6 +2087,59 @@ _PROCESS_KILL_UNSAFE_MARKERS = frozenset("$`(){}")
 _PROCESS_KILL_LITERAL_SEARCH_COMMANDS = frozenset({"egrep", "fgrep", "grep", "rg"})
 
 
+def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
+    """`git grep`がリテラル検索パターンとして読む引数位置を返す。"""
+    indices: set[int] = set()
+    pattern_seen = False
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            break
+        option_name = token.split("=", 1)[0]
+        if option_name in _GIT_GREP_PATTERN_OPTIONS:
+            pattern_seen = True
+            if "=" in token:
+                indices.add(index)
+            elif index + 1 < len(arguments):
+                index += 1
+                indices.add(index)
+        elif _attached_short_value_option(token, _GIT_GREP_PATTERN_OPTIONS) is not None:
+            pattern_seen = True
+            indices.add(index)
+        elif option_name in _GIT_GREP_PATTERN_FILE_OPTIONS:
+            pattern_seen = True
+            if "=" not in token:
+                index += 1
+        elif _attached_short_value_option(token, _GIT_GREP_PATTERN_FILE_OPTIONS) is not None:
+            pattern_seen = True
+        elif option_name in _GIT_GREP_VALUED_OPTIONS:
+            if "=" not in token:
+                index += 1
+        elif not token.startswith("-") and not pattern_seen:
+            pattern_seen = True
+            indices.add(index)
+        index += 1
+    return indices
+
+
+def _git_log_literal_search_indices(arguments: Sequence[str]) -> set[int]:
+    """`git log`が検索語として読む引数位置を返す。"""
+    indices: set[int] = set()
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            break
+        if token in {"-S", "-G", "--grep"} and index + 1 < len(arguments):
+            index += 1
+            indices.add(index)
+        elif (token.startswith(("-S", "-G")) and len(token) > 2) or token.startswith("--grep="):
+            indices.add(index)
+        index += 1
+    return indices
+
+
 def _has_active_process_kill_syntax(segment: str) -> bool:
     """区間に引用で無効化されていないシェル構文があれば真を返す。"""
     quote: str | None = None
@@ -2099,9 +2174,40 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
         raw_tokens = shlex.split(segment, posix=True)
     except ValueError:
         return True
-    if not raw_tokens or _has_active_process_kill_syntax(segment):
-        return True
+    if not raw_tokens:
+        return False
     command_name = pathlib.PurePosixPath(raw_tokens[0]).name
+    attached_pager_match = command_name == "git" and any(
+        token.startswith("-O") and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:]) for token in raw_tokens
+    )
+    if not attached_pager_match and not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens):
+        return False
+    if _has_active_process_kill_syntax(segment):
+        return True
+    if command_name == "git":
+        parsed_segments = _extract_execution_segments(segment)
+        if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
+            return True
+        subcommand = _git_subcommand_tokens(parsed_segments[0])
+        if subcommand is None or subcommand[0] not in {"grep", "log"}:
+            return True
+        name, arguments = subcommand
+        prefix = raw_tokens[: len(raw_tokens) - len(arguments)]
+        if any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in prefix):
+            return True
+        safe_indices = (
+            _git_grep_literal_pattern_indices(arguments) if name == "grep" else _git_log_literal_search_indices(arguments)
+        )
+        return any(
+            (
+                _PROCESS_KILL_BY_PATTERN_RE.search(token)
+                or name == "grep"
+                and token.startswith("-O")
+                and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:])
+            )
+            and index not in safe_indices
+            for index, token in enumerate(arguments)
+        )
     if command_name not in _PROCESS_KILL_LITERAL_SEARCH_COMMANDS:
         return True
     return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
@@ -2115,7 +2221,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     ヒアドキュメント本文をマスクした文字列を解析し、禁止語が実行位置ではなく、安全な引数位置の
     リテラルだと確定できる区間だけを許可する。
     """
-    matching_segments = [segment for segment in split_bash_segments(command) if _PROCESS_KILL_BY_PATTERN_RE.search(segment)]
+    matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
     if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
         return False
     print(
@@ -4097,8 +4203,36 @@ def _external_command_option_contract(path: tuple[str, ...], session_id: str) ->
     return parsed
 
 
+_GREP_VALUED_SHORT_OPTIONS = frozenset({"-e", "-f", "-m", "-A", "-B", "-C"})
+_GREP_SHORT_FLAGS = frozenset({"-n", "-i", "-r", "-R", "-v", "-w", "-l", "-q", "-c", "-s", "-o", "-h", "-H"})
+
+
+def _ambiguous_grep_short_option(command: str) -> tuple[str, str] | None:
+    """値付き短縮オプションへ既知のフラグを連結した検索コマンドを返す。"""
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        name = pathlib.PurePath(segment.tokens[0]).name
+        if name == "grep":
+            arguments = _argument_tokens(segment)
+            flags = _GREP_SHORT_FLAGS
+        elif name == "git":
+            subcommand = _git_subcommand_tokens(segment)
+            if subcommand is None or subcommand[0] != "grep":
+                continue
+            name = "git grep"
+            arguments = subcommand[1]
+            flags = _GIT_GREP_FLAGS
+        else:
+            continue
+        scan = _scan_accepted_options(arguments, flags, _GREP_VALUED_SHORT_OPTIONS)
+        if scan.ambiguous_option is not None:
+            return name, scan.ambiguous_option
+    return None
+
+
 def _check_bash_external_command_options(command: str, session_id: str) -> str | None:
-    """`rg`が受理しないオプションを実行前に検出する。
+    """検索コマンドの曖昧な連結と`rg`の未受理オプションを検出する。
 
     受理形式は当該コマンドのヘルプから1セッション1回だけ取得して保持する。
     走査は`atk`向けの判定と同じ`_scan_accepted_options`を用い、オプション終端と値引数の位置を反映する。
@@ -4107,6 +4241,16 @@ def _check_bash_external_command_options(command: str, session_id: str) -> str |
     当該配送は対象が増えるたびに実行主体のコンテキストを消費する一方、
     誤りが無い呼び出しでは判断を変えないためである。
     """
+    ambiguous = _ambiguous_grep_short_option(command)
+    if ambiguous is not None:
+        name, token = ambiguous
+        return _llm_notice(
+            f"`{name}`の値付き短縮オプションへ別の短縮フラグを連結した曖昧な形である。"
+            f"`{token[:2]}`は後続の`{token[2:]}`を値として消費する。"
+            f"対象: {token}\n対処: 値付きオプションと各フラグを別の引数へ分ける。",
+            tag=_WARN_TAG,
+            removable_cause=True,
+        )
     if not session_id:
         return None
     for path, arguments in _external_command_targets(command):

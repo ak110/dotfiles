@@ -15,7 +15,6 @@ import subprocess
 import tempfile
 import textwrap
 import time
-import uuid
 from collections.abc import Callable
 
 import pytest
@@ -609,13 +608,11 @@ class TestIssSidechainProbe:
         assert entry["isSidechain"] == "yes"
 
     def test_os_error_is_swallowed_and_execution_continues(self, tmp_path: pathlib.Path):
-        """ログ出力先の書き込みで`OSError`が発生しても例外を送出せず処理を継続する。"""
-        blocked_tmpdir = tmp_path / "not-a-directory"
-        blocked_tmpdir.write_text("x", encoding="utf-8")
-        env = {"TMPDIR": str(blocked_tmpdir), "TEMP": str(blocked_tmpdir), "TMP": str(blocked_tmpdir)}
-        # 一時領域を壊す検体のため、セッション状態は実行環境側の領域へ書かれる。同じ識別子を使うと、
-        # 過去の実行が残した記録で反復検知が先に成立し、本検体が対象の処理へ到達しない。
-        session_id = f"probe-oserror-{uuid.uuid4().hex[:8]}"
+        """ログ出力先をディレクトリにして`OSError`を起こしても処理を継続する。"""
+        env = self._state_env(tmp_path)
+        session_id = "probe-oserror"
+        log_path = self._log_path(tmp_path, session_id)
+        log_path.mkdir()
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -628,6 +625,8 @@ class TestIssSidechainProbe:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert log_path.is_dir()
+        assert not list(log_path.iterdir())
 
     def test_rotates_when_log_exceeds_one_megabyte(self, tmp_path: pathlib.Path):
         """ログファイルが1MB超過時に`_file_lock.rotate_if_needed`経由で`.1`世代ファイルへローテートされる。"""
@@ -962,6 +961,12 @@ class TestBashProcessKillByPattern:
             'grep -n "pkill\\|kill" /tmp/x',
             "rg -n pkill agent-toolkit/",
             "rg -g '*.{md,py}' pkill .",
+            "git grep -n -F 'pkill' -- agent-toolkit",
+            "git log -S 'killall' --oneline",
+            "git -C /tmp grep -n -F 'pkill' -- agent-toolkit",
+            "git -C /tmp log -S 'killall' --oneline",
+            "git grep -e 'pkill' -e 'killall' -- agent-toolkit",
+            "git log --grep='pkill' --oneline",
             "echo killall-report",
             "kill 12345",
             "cat <<'EOF'\npkill -f worker\nEOF",
@@ -988,6 +993,12 @@ class TestBashProcessKillByPattern:
             "echo $(pkill -f worker)",
             "echo $( pkill -f worker )",
             'rg "$(pkill -f worker)" .',
+            'git grep "$(echo pkill)"',
+            "git grep -O'pkill -f worker' needle",
+            "git grep --open-files-in-pager='pkill -f worker' needle",
+            "git -c core.pager='pkill -f worker' grep -O needle",
+            "git -c diff.external='pkill -f worker' log --ext-diff -p",
+            "git -c diff.external='pkill -f worker' log --ext-diff -p -S pkill",
             "echo ok\npkill -f worker",
             "/usr/bin/env pkill -f worker",
             "echo <( pkill -f worker )",
@@ -1247,6 +1258,24 @@ class TestStaticSafetyBlocks:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git grep needle --ignore-case"}})
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == ("git grep --ignore-case needle")
+
+    def test_git_grep_trailing_context_option_preserves_leading_flags_and_pathspec(self, tmp_path: pathlib.Path) -> None:
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / "sample.txt").write_text("before\nfoo\nafter\n", encoding="utf-8")
+        subprocess.run(["git", "add", "sample.txt"], cwd=tmp_path, check=True)
+        command = "git grep -n foo -A 60 -- sample.txt"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        rewritten = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert rewritten == "git grep -n -A 60 foo -- sample.txt"
+        execution = subprocess.run(shlex.split(rewritten), cwd=tmp_path, capture_output=True, text=True, check=False)
+        assert execution.returncode == 0
+        assert execution.stdout == "sample.txt:2:foo\nsample.txt-3-after\n"
+
+    def test_git_grep_unknown_option_is_not_rewritten(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git grep -n foo --unknown -- sample.txt"}})
+        assert result.returncode == 0
+        assert not result.stdout or "updatedInput" not in json.loads(result.stdout).get("hookSpecificOutput", {})
 
     def test_atk_unknown_option_is_blocked(self) -> None:
         """未受理オプションは公開契約から不成立が確定するため遮断する。
@@ -2152,6 +2181,9 @@ class TestTruncationFixKeepsConditionalStructure:
         assert "操作対象の引数が無くなる" in messages
         assert "`wc`" in messages
         assert "absent.txt" in messages
+        assert "対象ごとに別の呼び出し" in messages
+        assert "`test -e <絶対パス>`" in messages
+        assert "終了コード" in messages
 
 
 class TestRecursiveGrepReplacementKeepsOriginalOptions:
@@ -2375,7 +2407,9 @@ class TestBashBoundaryAndPathRegressions:
         messages = _agent_messages(result)
         assert "`rg --files`" in messages
         assert "`find`" in messages
-        assert "`test -e`" in messages
+        assert "`test -e <絶対パス>`" in messages
+        assert "対象ごとに別の呼び出し" in messages
+        assert "終了コード" in messages
 
     @staticmethod
     def test_rg_ambiguous_valued_short_option_warns(tmp_path: pathlib.Path) -> None:
@@ -2390,6 +2424,22 @@ class TestBashBoundaryAndPathRegressions:
             _plan_file_state_env(tmp_path),
         )
         assert "曖昧な形" in _agent_messages(result)
+
+    @staticmethod
+    @pytest.mark.parametrize("command", ["grep -en needle", "git grep -en needle", "grep -mn needle", "git grep -mn needle"])
+    def test_grep_ambiguous_valued_short_option_warns(command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "曖昧な形" in _agent_messages(result)
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "command",
+        ["grep -e n -i needle", "grep -r n", "grep -ni needle", "grep -efoo file", "git grep -e n -i", "git grep -ni needle"],
+    )
+    def test_grep_explicit_values_and_flag_clusters_do_not_warn(command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert "曖昧な形" not in _agent_messages(result)
 
     @staticmethod
     def test_arithmetic_expansion_does_not_warn(tmp_path: pathlib.Path) -> None:

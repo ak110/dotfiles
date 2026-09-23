@@ -27,6 +27,7 @@ def _run(
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if state_dir is not None:
+        state_dir.mkdir(parents=True, exist_ok=True)
         env["TMPDIR"] = str(state_dir)
         env["TEMP"] = str(state_dir)
         env["TMP"] = str(state_dir)
@@ -35,7 +36,6 @@ def _run(
     if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
-            state_dir.mkdir(parents=True, exist_ok=True)
             (state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
                 json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
                 encoding="utf-8",
