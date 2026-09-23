@@ -4,7 +4,7 @@ import json
 import pathlib
 
 import pytest
-import session_review_decisions as decisions
+import session_review_decisions as decision_module
 import session_review_evidence as evidence
 import session_review_report as report
 
@@ -417,7 +417,7 @@ def test_successful_delegate_return_reaches_pending_decision_rejection(
         encoding="utf-8",
     )
 
-    assert decisions.main(["--bundle", str(tmp_path), "--output", str(paths[1])]) == 0
+    assert decision_module.main(["--bundle", str(tmp_path), "--output", str(paths[1])]) == 0
     generated = json.loads(paths[1].read_text(encoding="utf-8"))
     assert generated[0]["candidate_kind"] == "delegate-return"
     assert generated[0]["disposition"] == "pending"
