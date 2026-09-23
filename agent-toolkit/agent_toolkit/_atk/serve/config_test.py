@@ -869,9 +869,7 @@ async def test_serve_shuts_down_on_signal_and_stops_state(
     handlers: dict[int, tuple[typing.Callable[[str], None], str]] = {}
     loop = asyncio.get_running_loop()
 
-    def add_signal_handler(
-        sig: int, callback: typing.Callable[[str], None], signal_name: str, **kwargs: object
-    ) -> None:
+    def add_signal_handler(sig: int, callback: typing.Callable[[str], None], signal_name: str, **kwargs: object) -> None:
         del kwargs
         handlers[sig] = (callback, signal_name)
 
