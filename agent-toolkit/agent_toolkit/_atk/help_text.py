@@ -143,9 +143,14 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi process-loop instruct-cancel",
     },
     "atk plans": {
-        "summary": "計画ファイルの保存と旧保存先からの移行",
-        "description": "目的: 作業rootの計画ファイル又は独立CI実行レビュー表をprivate-notesへ保存し、旧保存先の計画ファイルを現行の保存先へ移行する。\n利用場面: 計画バンドルの保存の契機に達したとき。原因commitに対応する計画契約がない処理のレビュー表を保存するとき。旧保存先の計画ファイルが残る環境で保存先をそろえるとき。契機は起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: 保存と移行はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "summary": "計画ファイルの取得・保存と旧保存先からの移行",
+        "description": "目的: 保存済み計画を作業rootへ取得し、計画ファイル又は独立CI実行レビュー表をprivate-notesへ保存し、旧保存先の計画ファイルを現行の保存先へ移行する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、独立CI実行レビュー表の保存、旧保存先の移行を行うとき。保存の契機は起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: 保存と移行はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
+    },
+    "atk plans checkout": {
+        "summary": "保存済み計画バンドル又は独立CI実行レビュー表を作業rootへ取得する",
+        "description": "目的: 保存済みバンドルを再編集できる状態にする。\n利用場面: 保存後の計画又は独立CI実行レビュー表へ追記するとき。\n対象と出力: private-notesのplans配下から`~/.claude/plans`直下へバンドルを複写し、取得時点を記録する。取得結果のパスを標準出力へ書く。\n前提: PLAN_FILEは保存root相対パスで指定する。作業rootに同名ファイルがある場合は取得しない。\n復元・後始末: 取得後の変更は`atk plans commit`で保存する。取得後の作業バンドルを取り消した場合も同じコマンドで取得記録を回収する。",
+        "epilog": "実行例:\n\n  atk plans checkout 2026/09/01-example-1a2b.md",
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドル又は独立CI実行レビュー表を保存してcommit・pushする",

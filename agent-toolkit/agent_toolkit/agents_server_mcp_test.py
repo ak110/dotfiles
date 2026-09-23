@@ -786,7 +786,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     if task_name == "exec-review.subagent.md":
         return [
             "レビュー基準: 計画",
-            "review_contract: 契約",
+            f"計画ファイル: {root / 'plan.md'}",
             handoff,
         ]
     if task_name == "exec.subagent.md":

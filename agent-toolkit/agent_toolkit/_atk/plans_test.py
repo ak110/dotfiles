@@ -120,6 +120,7 @@ def _prepare_migration(
     legacy.mkdir(parents=True)
     source = legacy / "legacy.md"
     source.write_text(f"legacy: {source}\n", encoding="utf-8")
+    _set_stable_mtime(source)
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
     _init_remote_notes(notes, remote)
@@ -168,6 +169,28 @@ def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) 
     recorded_relative, snapshots = record
     assert recorded_relative == relative
     assert snapshots == {detail.name: detail.read_bytes(), main.name: main.read_bytes()}
+
+
+def test_cli_checkout_edit_and_commit_saved_bundle(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開CLIで保存済み計画を取得し、編集内容を元の保存先へ反映する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-再編集-d4f9.md")
+    saved_main, _ = _create_saved_plan(notes, relative)
+    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["plans", "checkout", relative.as_posix()], home=home)
+
+    working_main = _plan_file.working_plans_root(home) / saved_main.name
+    working_main.write_text("# updated main\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["plans", "commit", saved_main.name, "--skip-push"], home=home)
+
+    assert saved_main.read_text(encoding="utf-8") == "# updated main\n"
+    assert not working_main.exists()
 
 
 def test_checkout_syncs_remote_before_reading_saved_bundle(tmp_path: pathlib.Path) -> None:

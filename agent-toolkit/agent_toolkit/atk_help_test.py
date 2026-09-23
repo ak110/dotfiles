@@ -219,11 +219,11 @@ def test_review_table_init_help_describes_current_review_tables() -> None:
     assert ".plan-review.tsv" not in help_text
 
 
-def test_removed_plan_commands_are_absent_from_help() -> None:
+def test_plan_checkout_and_removed_commands_in_help() -> None:
     commands = {command for command, _parser, _summary in _walk_commands()}
 
     assert "atk wi convert-to-plan" not in commands
-    assert "atk plans checkout" not in commands
+    assert "atk plans checkout" in commands
     assert "atk plans progress" not in commands
     assert "atk plans migrate" not in commands
 

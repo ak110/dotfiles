@@ -92,6 +92,7 @@ baseline作成、push、監視の順で実行する。
    登録猶予は、実行が1件も登録されないまま終わる場合を切り分けるための待機であり、
    判定対象を確定する期限ではない
 4. CI失敗では、最初の失敗jobを検出した時点でrunまたはpipelineとjobの実識別子、失敗ログ及び生成されるartifactを取得する。
+   GitHub Actionsのrunが実行中の場合は、失敗したjobの識別子を使い、`gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs --allow-escape-sequences`で個別ログを取得して証拠領域へ保存する。`gh run view --log-failed`はrunの終端後に用いる。
    同一SHAのローカル再現と原因調査も開始する。
    残りのjob監視を継続し、全jobの終端後に失敗集合、ログ、artifactを再照合して修正範囲を確定する。
    長出力の取得と要約は`agents_server`の`start_shell`へ委譲できる。待機と原因分析は自身で行う

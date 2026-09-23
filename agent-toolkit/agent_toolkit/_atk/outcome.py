@@ -46,6 +46,7 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk wi process-loop abort-cancel",
         "atk wi process-loop instruct",
         "atk wi process-loop instruct-cancel",
+        "atk plans checkout",
         "atk plans commit",
         "atk plans rewrite-references",
         "atk config set",
