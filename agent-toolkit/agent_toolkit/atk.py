@@ -842,6 +842,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         default="all",
         help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
+    _add_source_arg(grep, multiple=True)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
     _output_file.add_output_file_arg(grep)

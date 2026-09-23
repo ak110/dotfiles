@@ -9,6 +9,7 @@ import re
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.common import _iter_entries, _pull_with_recent_reuse, _repo_lock
+from agent_toolkit._atk.wi.formatters import _parse_source, _source_matches
 from agent_toolkit._atk.wi.listing import _answered_matches, _resolve_states
 from agent_toolkit._atk.wi.repo import _resolve_repo_id
 
@@ -17,7 +18,7 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     """grepサブコマンド: 本文全体（frontmatterを含む）を正規表現で検索し、該当行を列挙する。
 
     該当行は`<ファイル名>:<行番号>:<該当行>`形式（git grep準拠の出力形式）で列挙する。
-    行番号はファイル先頭から1始まり。`--type`・`--state`・`--answered`・`--target-repo`は
+    行番号はファイル先頭から1始まり。`--type`・`--state`・`--answered`・`--source`・`--target-repo`は
     `list`サブコマンドと同一の選択肢・既定値を踏襲する。パターンはPythonの正規表現（`re`モジュール）
     として解釈し、`--ignore-case`指定時は大文字小文字を無視する。
     該当0件の場合は1、該当1件以上で0を返す。
@@ -49,6 +50,8 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         args.type,
     ):
         if not _answered_matches(entry_type, text, args.answered):
+            continue
+        if args.source is not None and not any(_source_matches(_parse_source(text), value) for value in args.source):
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             if compiled.search(line):
