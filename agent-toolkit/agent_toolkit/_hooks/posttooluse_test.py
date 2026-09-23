@@ -525,6 +525,50 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pyfltr colloquial /tmp/draft.md",
+        "/tmp/venv/bin/pyfltr colloquial /tmp/draft.md",
+        "python -m pyfltr.colloquial /tmp/draft.md",
+        "/tmp/venv/bin/python -m pyfltr.colloquial /tmp/draft.md",
+        "/usr/bin/rg absent /tmp/draft.md",
+    ],
+)
+def test_boolean_detection_does_not_enable_bash_failure_gate(tmp_path: pathlib.Path, command: str) -> None:
+    """検出の終了コード1が続いても直接Bashの関門を有効にしない。"""
+    session_id = "boolean-detection"
+    payload = {
+        "session_id": session_id,
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "error": "Exit code 1",
+    }
+    for _ in range(2):
+        result = _run(payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert "2回連続" not in result.stdout
+    assert _read_state(tmp_path, session_id).get("bash_failure_gate") is not True
+
+
+def test_non_boolean_failure_still_enables_bash_failure_gate(tmp_path: pathlib.Path) -> None:
+    """通常のBash失敗2回は従来どおり関門を有効にする。"""
+    session_id = "ordinary-failure"
+    payload = {
+        "session_id": session_id,
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {"command": "false"},
+        "error": "Exit code 1",
+    }
+    first = _run(payload, state_dir=tmp_path)
+    second = _run(payload, state_dir=tmp_path)
+    assert first.returncode == second.returncode == 0
+    assert "2回連続" in second.stdout
+    assert _read_state(tmp_path, session_id).get("bash_failure_gate") is True
+
+
 def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:
     """成功したTaskStopの対象記録だけを消費する。"""
     session_id = "task-stop-consume"

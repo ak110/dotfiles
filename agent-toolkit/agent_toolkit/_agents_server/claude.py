@@ -274,7 +274,7 @@ def _build_options(
         "resume": session_id,
         "permission_mode": "auto",
         "env": env,
-        "setting_sources": [] if lightweight else ["user", "project"],
+        "setting_sources": ["user"] if lightweight else ["user", "project"],
         "system_prompt": (
             f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
             if lightweight

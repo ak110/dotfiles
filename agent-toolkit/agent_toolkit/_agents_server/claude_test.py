@@ -133,6 +133,24 @@ def test_build_options_keeps_every_launch_out_of_bypass_modes(monkeypatch: pytes
     assert captured["permission_mode"] == "auto"
 
 
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+def test_build_options_loads_user_hooks_for_every_launch(
+    monkeypatch: pytest.MonkeyPatch,
+    launch_kind: claude.LaunchKind,
+) -> None:
+    """全起動区分でユーザー設定のplugin hookを読み、軽量起動の道具を限定する。"""
+    captured = _capture_options(monkeypatch)
+
+    claude._build_options(  # pylint: disable=protected-access
+        "/tmp", "model", "medium", launch_kind=launch_kind
+    )
+
+    assert captured["setting_sources"] == (["user", "project"] if launch_kind == "delegate" else ["user"])
+    if launch_kind != "delegate":
+        assert captured["skills"] == []
+        assert captured["allowed_tools"] == claude._LAUNCH_ALLOWED_TOOLS[launch_kind]  # pylint: disable=protected-access
+
+
 def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """診断記録の保存先を委譲先CLIの引数として渡す。"""
     captured = _capture_options(monkeypatch)

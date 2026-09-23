@@ -4025,12 +4025,12 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.usefixtures("_owner_session_environment")
 def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
-    """Claude探索起動は設定・スキルを省き、探索用toolと指示を明示する。
+    """Claude探索起動はユーザー設定のhookを読み、探索用toolと指示を明示する。
 
     所有セッションを解決できない環境では当該キーを設定しない。
     """
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="explore")
-    assert options.setting_sources == []
+    assert options.setting_sources == ["user"]
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
@@ -4046,7 +4046,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
 def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: pathlib.Path) -> None:
     """Claude軽量書込は汎用コマンドを許可せず、固定プロンプトと編集toolだけを使う。"""
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="write")
-    assert options.setting_sources == []
+    assert options.setting_sources == ["user"]
     assert options.skills == []
     assert options.system_prompt == f"{state.WRITE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Write", "Edit"}
@@ -4056,7 +4056,7 @@ def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: 
 def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_path: pathlib.Path) -> None:
     """Claudeのシェル実行起動は探索と同じ軽量条件を共有し、実行用toolと指示を選ぶ。"""
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="shell")
-    assert options.setting_sources == []
+    assert options.setting_sources == ["user"]
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",

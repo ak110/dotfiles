@@ -844,6 +844,7 @@ _BOOLEAN_EXIT_CODE_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("egrep",),
     ("fgrep",),
     ("rg",),
+    ("pyfltr",),
 )
 """非エラーの真偽判定を終了コードで表現する公開契約を持つコマンドの実行位置の接頭語。
 
@@ -872,6 +873,9 @@ def _is_boolean_exit_code_command(command: str) -> bool:
     name = _executable_name(tokens[0])
     normalized = (name, *tokens[1:])
     if any(normalized[: len(prefix)] == prefix for prefix in _BOOLEAN_EXIT_CODE_COMMAND_PREFIXES):
+        return True
+    module = tokens[2] if len(tokens) >= 3 and tokens[1] == "-m" else name
+    if module == "pyfltr" or module.startswith("pyfltr."):
         return True
     return name == _DIFF_COMMAND and any(token in _DIFF_BOOLEAN_EXIT_CODE_OPTIONS for token in tokens[1:])
 
