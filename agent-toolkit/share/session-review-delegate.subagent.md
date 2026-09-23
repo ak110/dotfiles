@@ -42,13 +42,16 @@ manifestの`evidence_script`と`report_script`は公開登録名との同一性�
 atk run-script session-review-evidence -- <セッション指定> --observation-boundary <分析境界> --bundle <保存先ディレクトリ>
 atk run-script session-review-evidence -- <セッション指定> --observation-boundary <分析境界> --grep <正規表現> --output-file <保存先ファイル>
 atk run-script session-review-evidence -- <セッション指定> --observation-boundary <分析境界> --detail <記録:行番号> --output-file <保存先ファイル>
+atk run-script session-review-decisions -- --bundle <保存先ディレクトリ> --output <判定JSON>
 ```
+
+bundleの作成後、`atk run-script session-review-decisions -- --bundle <保存先ディレクトリ> --output <判定JSON>`で全候補の一次判定入力を生成する。CLIが返す候補件数と未判定件数を確認する。候補ID、種別、証拠位置、重複関係と個別証拠の所在を保持したまま、各候補の`pending`を`excluded`又は`analyzed`へ変更する。候補の除外は欠陥でない観測根拠を記録した場合に限る。未判定が残る入力は報告の生成と検査の双方で拒否する。
 
 委譲先の内部で生じた事象の原因を求める場合は、対象threadを`stats-agent-thread`が返すthreadの一覧から特定し、そのthreadの記録を`--detail`で取得する。この目的での最初の取得は`--detail`とし、全記録を対象とする`--grep`はその後に必要と判断した場合に発行する。これは努力目標とする。原因が委譲先の起動文にある場合、全記録を対象とする内容検索はその原因を返さず、検索の発行と結果の選別に要した工程が成果へつながらないためである。
 
 ## 問題候補の判別
 
-抽出器が`candidates.jsonl`へ生成した集約候補を単位として一次選別する。各判定は候補の`candidate_id`を参照し、候補側の`locators`を表示へ用いる。infoタグとnoticeタグのhook通知は情報提示だけなので抽出器が機械除外する。block又はwarnのhook通知は発生源ごとに上位5種と代表位置へ限定し、`occurrence_count`と`omitted_locator_count`へ総数を保持する。ユーザー介入、権限拒否、明示的な`needs_escalation`の返却、未解決証拠は全件を保持する。`command-failure`と`tool-failure`は終了コード、コマンド、診断、locatorから恒久対策の要否を判定し、`delegate-return`は通常の不成功返却としてエスカレーションと分ける。除外する候補には観測根拠を付け、不確かな候補は完全分析へ送る。
+抽出器が`candidates.jsonl`へ生成した集約候補を単位として一次選別する。各判定は候補の`candidate_id`を参照し、候補側の`locators`を表示へ用いる。infoタグとnoticeタグのhook通知は情報提示だけなので抽出器が機械除外する。block又はwarnのhook通知は発生源ごとに上位5種と代表位置へ限定し、`occurrence_count`と`omitted_locator_count`へ総数を保持する。ユーザー介入、権限拒否、明示的な`needs_escalation`の返却、未解決証拠は全件を保持する。`command-failure`と`tool-failure`は終了コード、コマンド、診断、locatorから恒久対策の要否を判定する。`delegate-return`は正常終了も本文の判定まで保持し、明示的なエスカレーションと分ける。除外する候補には観測根拠を付け、不確かな候補は完全分析へ送る。
 一次選別のcandidate ID集合が全候補と一致し、各候補の`locators`を平坦化した一意集合が`candidate-summary`の`included_locators`と一致することを`session_review_report.py`で機械検査してから、完全分析する候補の詳細取得を1回へまとめる。`candidate-summary`の`excluded`は種類別の除外件数として報告する。
 各候補の`candidate_id`と`analysis_group_hint`を起点に、同じ原因と対策の変更単位を持つ候補は1つの`analysis_id`を共有する。候補ごとの判定表には全locatorと`analysis_id`を残し、原因と処置は分析表へ`analysis_id`ごとに1回だけ書く。
 blockかwarnを1回以上発火した各発生源には、欠陥判定にかかわらず、規範・判定条件・フック撤去のいずれかの改善提案を最低1件対応付ける。

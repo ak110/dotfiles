@@ -70,6 +70,41 @@ def test_setup_writes_and_applies_unit(tmp_path: pathlib.Path, monkeypatch: typi
     ]
 
 
+def test_setup_records_known_restart_reasons_before_restart(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """設定変更と停止状態の理由をjournalへ記録してから再起動する。"""
+    executable = tmp_path / "tool"
+    executable.write_text("", encoding="utf-8")
+    events: list[tuple[str, str]] = []
+    systemctl_run = _show_aware()
+
+    def run_command(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        events.append(("command", " ".join(command)))
+        return systemctl_run(command, **kwargs)
+
+    def run_journal(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command == ["systemd-cat", "--identifier=tool-setup", "--priority=info"]
+        events.append(("journal", str(kwargs["input"])))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(claude_common, "run_subprocess", run_command)
+    monkeypatch.setattr(systemd_user_unit.subprocess, "run", run_journal)
+    assert systemd_user_unit.setup(
+        unit_path=tmp_path / "tool.service",
+        executable_path=executable,
+        unit_content="unit\n",
+        log_tag="test",
+        service_name="tool.service",
+        restart_needed=True,
+        journal_identifier="tool-setup",
+    )
+    journal_index = next(index for index, event in enumerate(events) if event[0] == "journal")
+    restart_index = next(
+        index for index, event in enumerate(events) if event == ("command", "systemctl --user restart tool.service")
+    )
+    assert journal_index < restart_index
+    assert events[journal_index][1] == ("tool.serviceを再起動します: unit更新, ランチャー更新, 初回有効化, 非稼働\n")
+
+
 def test_setup_skips_missing_executable(tmp_path: pathlib.Path) -> None:
     """実行ファイル不在時は変更しない。"""
     assert not systemd_user_unit.setup(

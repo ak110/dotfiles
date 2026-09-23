@@ -7,9 +7,54 @@ import pathlib
 from typing import Literal
 
 import pytest
+import session_review_decisions as decisions  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+
+def test_decision_skeleton_covers_bundle_candidates(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """候補と証拠索引を結び、重複関係を保持した未判定入力を返す。"""
+    locator = [{"record": "main", "line": 1}]
+    candidates = [
+        {
+            "kind": "candidate",
+            "candidate_id": "c0001",
+            "candidate_kind": "warning",
+            "count": 1,
+            "locators": locator,
+            "analysis_group_hint": ["group"],
+        },
+        {
+            "kind": "candidate",
+            "candidate_id": "c0002",
+            "candidate_kind": "warning",
+            "count": 1,
+            "locators": locator,
+            "analysis_group_hint": ["group"],
+        },
+        {"kind": "candidate-summary", "count": 2, "included_locators": locator, "included_locator_count": 1, "excluded": {}},
+    ]
+    indexes = [
+        {
+            "kind": "candidate-evidence-index",
+            "candidate_id": item["candidate_id"],
+            "locators": locator,
+            "path": f"candidate-evidence/{item['candidate_id']}.json",
+            "evidence_count": 1,
+        }
+        for item in candidates[:2]
+    ]
+    (tmp_path / "candidates.jsonl").write_text("".join(json.dumps(item) + "\n" for item in candidates), encoding="utf-8")
+    (tmp_path / "candidate-evidence.jsonl").write_text("".join(json.dumps(item) + "\n" for item in indexes), encoding="utf-8")
+    output = tmp_path / "decisions.json"
+
+    assert decisions.main(["--bundle", str(tmp_path), "--output", str(output)]) == 0
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert [item["candidate_id"] for item in result] == ["c0001", "c0002"]
+    assert all(item["disposition"] == "pending" for item in result)
+    assert result[0]["related_candidate_ids"] == ["c0002"]
+    assert "候補2件、未判定2件" in capsys.readouterr().out
 
 
 def _execution_tool_use(tool_id: str, name: str = "Bash") -> dict[str, object]:

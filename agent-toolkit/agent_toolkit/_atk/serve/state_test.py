@@ -576,9 +576,19 @@ def test_operations_active_includes_hold_entries_of_both_types(tmp_path: pathlib
     assert {item["state"] for item in entries} == {"hold"}
 
 
-@pytest.mark.parametrize("query", ["本文途中の固有語", "日本語", "EXAMPLE/REPO", "entry.md"])
-def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.Path, query: str) -> None:
-    """`q`は本文途中、Unicode、frontmatter値、ファイル名を大文字小文字を区別せず検索する。"""
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("本文途中の固有語", ["entry.md"]),
+        ("日本語", ["entry.md"]),
+        ("EXAMPLE/REPO", ["entry.md"]),
+        ("entry.md", ["entry.md"]),
+        ("日本語  EXAMPLE/REPO ", ["entry.md"]),
+        ("entry.md other/repo", []),
+    ],
+)
+def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.Path, query: str, expected: list[str]) -> None:
+    """`q`は半角スペース区切りで各語を複数フィールドへAND検索する。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(
@@ -593,7 +603,7 @@ def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.
     result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"q": query})
     assert not warnings
 
-    assert [item["filename"] for item in result] == ["entry.md"]
+    assert [item["filename"] for item in result] == expected
 
 
 @pytest.mark.asyncio
@@ -872,8 +882,8 @@ async def test_serve_tolerates_absent_and_unsupported_signals(
     monkeypatch.delattr(serve.signal, "SIGHUP", raising=False)
     attempted: list[int] = []
 
-    def add_signal_handler(sig: int, callback: typing.Callable[[], None]) -> None:
-        del callback
+    def add_signal_handler(sig: int, callback: typing.Callable[..., None], *args: object) -> None:
+        del callback, args
         attempted.append(sig)
         raise NotImplementedError
 

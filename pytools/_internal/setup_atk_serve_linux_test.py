@@ -166,8 +166,10 @@ class TestRunLauncherDeployment:
             assert kwargs["executable_path"] == launcher
             assert launcher.stat().st_mode & stat.S_IXUSR
             assert kwargs["unit_content"] == setup_atk_serve_linux._UNIT_CONTENT + "# agent-toolkit version: 2.1.0\n"
+            assert "KillMode=control-group\n" in kwargs["unit_content"]
             assert kwargs["service_name"] == "atk-serve.service"
             assert kwargs["restart_needed"] is True
+            assert kwargs["journal_identifier"] == "atk-serve-setup"
             return True
 
         monkeypatch.setattr(claude_common, "atomic_write_text", write)

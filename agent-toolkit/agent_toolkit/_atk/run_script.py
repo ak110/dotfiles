@@ -15,6 +15,7 @@ SCRIPT_PATHS = {
     "completion-report-check": pathlib.Path("skills/completion-report/scripts/check_completion_report.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),
     "session-review-evidence": pathlib.Path("skills/session-review/scripts/session_review_evidence.py"),
+    "session-review-decisions": pathlib.Path("skills/session-review/scripts/session_review_decisions.py"),
     "session-review-prepare": pathlib.Path("skills/session-review/scripts/session_review_prepare.py"),
     "session-review-report": pathlib.Path("skills/session-review/scripts/session_review_report.py"),
     "writing-check-dash": pathlib.Path("skills/writing-standards/scripts/check_dash.py"),

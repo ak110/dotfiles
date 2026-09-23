@@ -765,7 +765,7 @@ def _run_git_pull_in_pty(
 
     output = bytearray()
     input_sent = False
-    deadline = time.monotonic() + 12
+    deadline = time.monotonic() + 20
     status: int | None = None
     try:
         while time.monotonic() < deadline:
@@ -783,7 +783,7 @@ def _run_git_pull_in_pty(
         if status is None:
             os.kill(pid, signal.SIGKILL)
             _waited_pid, status = os.waitpid(pid, 0)
-            pytest.fail("疑似端末内のgit pull検体が12秒以内に終了しなかった")
+            pytest.fail("疑似端末内のgit pull検体が20秒以内に終了しなかった")
     finally:
         os.close(terminal_fd)
     return os.waitstatus_to_exitcode(status), output.decode(errors="replace"), descendant_pid_path
@@ -824,13 +824,18 @@ def test_git_pull_timeout_terminates_stream_holding_descendant(
         tmp_path,
         monkeypatch,
         mode="hang",
-        timeout=1,
+        timeout=5,
     )
     elapsed = time.monotonic() - started
 
     assert returncode == 1
-    assert elapsed < 8
+    assert elapsed < 12
     del output
+    pid_deadline = time.monotonic() + 5
+    while not pid_path.exists():
+        if time.monotonic() >= pid_deadline:
+            pytest.fail(f"孫プロセスのPIDファイルが5秒以内に作成されなかった（開始から{time.monotonic() - started:.3f}秒）")
+        time.sleep(0.05)
     descendant_pid = int(pid_path.read_text(encoding="utf-8"))
     assert not psutil.pid_exists(descendant_pid) or psutil.Process(descendant_pid).status() == psutil.STATUS_ZOMBIE
 

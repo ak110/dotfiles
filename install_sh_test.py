@@ -12,6 +12,7 @@ uvのキャッシュと検証用Pythonは親環境から再利用し、外部到
   にコピーして回避
 - Claude Codeとnpmの導入分岐は成功する代替実行ファイルを`$FAKE_HOME/.local/bin/`に配置して回避
 - Codex CLIの導入分岐は複製したリポジトリ内の導入モジュールをテスト用実装へ置き換えて回避
+- miseのツールチェーン導入は隔離HOME内の代替miseで模擬し、規範配置の検査を維持する
 - systemd user managerは隔離HOME内の代替systemctlで模擬する
 """
 
@@ -61,6 +62,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     _write_fake_cli(local_bin / "claude")
     _write_fake_codex(local_bin / "codex", fake_home, fake_dotfiles)
     _write_fake_npm(local_bin / "npm")
+    _write_fake_mise(local_bin / "mise")
     _write_fake_systemctl(local_bin / "systemctl")
 
     # 3. tmuxプラグインのclone元をローカルミラーへ差し替える（実GitHub依存を回避）。
@@ -208,6 +210,15 @@ def _write_fake_npm(path: pathlib.Path) -> None:
     """Codexのglobal導入先を隔離HOMEへ向けるnpm代替実行ファイルを配置する。"""
     path.write_text(
         '#!/bin/sh\nif [ "$1" = "prefix" ]; then\n    printf "%s\\n" "$HOME/.local"\nfi\nexit 0\n',
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def _write_fake_mise(path: pathlib.Path) -> None:
+    """規範配置と無関係なツールチェーン取得を隔離HOME内で代替する。"""
+    path.write_text(
+        '#!/bin/sh\nif [ "$1" = "ls" ]; then\n    printf \'%s\\n\' \'{"node":[{"version":"lts"}]}\'\nfi\nexit 0\n',
         encoding="utf-8",
     )
     path.chmod(0o755)

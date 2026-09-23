@@ -169,9 +169,11 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _engine_unavailable_reason(session: SessionState) -> str | None:
-    """engineの可用性を理由に失敗した場合だけ、根拠となった識別子を返す。"""
+    """Claude/Codexの可用性失敗とagyの失敗について、除外理由を返す。"""
     if session.status != "failed" or not isinstance(session.error, dict):
         return None
+    if session.engine == "agy":
+        return str(session.error.get("stderr") or session.error.get("message") or "Antigravity CLI failed")
     error_info = session.error.get("codexErrorInfo")
     if error_info in ENGINE_UNAVAILABLE_ERROR_INFO:
         return str(error_info)
@@ -916,9 +918,9 @@ class AgentsServerManager:
     ) -> dict[str, Any]:
         """工程別モデル設定の候補を先頭から試し、起動できたturnを返す。
 
-        起動直後にengineの可用性を理由として終端した候補だけを
-        除外集合へ加えて次候補へ進む。backendの起動例外では候補を進めない。
-        候補を変えても結果が変わらない失敗では候補を進めず、そのまま呼び出し元へ返す。
+        起動直後にengineの可用性を理由として終端した候補とagyの失敗候補を
+        除外集合へ加えて次候補へ進む。agy以外のbackend起動例外では候補を進めない。
+        Claude/Codexで候補を変えても結果が変わらない失敗は、そのまま呼び出し元へ返す。
         候補を除外して後続の候補で成立した場合は、除外した候補と除外の根拠を応答へ加える。
         """
         candidates, excluded = self._resolve_start_candidates(
@@ -936,17 +938,26 @@ class AgentsServerManager:
             if engine not in SUPPORTED_ENGINES:
                 raise ValueError(f"unsupported engine: {engine}")
             _validate_model_effort(model, effort)
-            # backendが資源を作成した後に失敗することもあるため、例外では候補を進めない。
-            session = await self._start_until_initialized(
-                engine,
-                delivery_body,
-                cwd,
-                model,
-                effort,
-                model_type=model_type,
-                launch_kind=launch_kind,
-                excluded_candidates=frozenset(excluded),
-            )
+            try:
+                session = await self._start_until_initialized(
+                    engine,
+                    delivery_body,
+                    cwd,
+                    model,
+                    effort,
+                    model_type=model_type,
+                    launch_kind=launch_kind,
+                    excluded_candidates=frozenset(excluded),
+                )
+            except Exception as exc:
+                if engine != "agy":
+                    raise
+                reason = str(exc) or type(exc).__name__
+                excluded[candidate] = reason
+                unavailable_response = None
+                unavailable_session = None
+                _LOG.warning("agy_start_failed model_type=%s model=%s reason=%s", model_type, model, reason)
+                continue
             session.engine = engine
             if session.status == "starting":
                 session.status = "running"
@@ -1002,6 +1013,7 @@ class AgentsServerManager:
                 await self._abandon_unavailable_session(session)
         if unavailable_response is not None:
             assert unavailable_session is not None
+            unavailable_response["excluded_candidates"] = _excluded_candidate_payload(excluded)
             unavailable_session.label = display_label
             unavailable_session.prompt = prompt
             unavailable_session.announced = True
@@ -1015,7 +1027,7 @@ class AgentsServerManager:
                 unavailable_session.turn_seq,
             )
             return unavailable_response
-        raise RuntimeError(f"no available model candidates: {model_type}")
+        raise RuntimeError(f"no available model candidates: {model_type}; excluded={_excluded_candidate_payload(excluded)}")
 
     async def _start_until_initialized(
         self,
@@ -1032,7 +1044,7 @@ class AgentsServerManager:
         """初期化の上限超過だけを同じ候補で再試行し、全試行の超過を例外で確定する。
 
         上限超過はbackendが当該sessionの資源を解放してから返るため、再試行は新しい起動として成立する。
-        初期化へ到達しない事象は候補のmodelに依存しないため、次候補へは進めず同じ候補で試みる。
+        上限超過が続けば例外を上位へ返し、engineごとの候補切替条件を適用する。
         """
         last_timeout: SessionInitializationTimeoutError | None = None
         timeout_diagnostics: list[str] = []
@@ -1994,16 +2006,18 @@ with warnings.catch_warnings():
     mcp = _AgentsServerFastMCP(
         "agents_server",
         instructions=_schema_text(
-            "CodexまたはClaudeへの非同期委譲。承認操作は公開しない。\n"
+            "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
             "`start`は専用タスク文書、`start_custom`は自由本文からsessionを開始する。"
             "`start_explore`は読み取り専用探索、`start_shell`はコマンド実行、`start_write`は確定済みの軽量書込を委譲する。"
             "終端と結果本文は`atk agents wait`で受け取る。`list`は最小状態、`show`は個別の診断情報を返す。"
             "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
-            "`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
+            "`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`が返した`session_id`と、"
+            "`send_message`で新しい指示を配送したsessionは、"
             "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
-            "engine、model及びeffortは専用タスク文書又は`model_type`と`fast`から本サーバーが工程別モデル設定を解決して決める。"
-            "呼び出し側は指定しない。\n"
+            "`start`はタスク文書に対応する工程別設定を使う。`start_custom`の`model_type`には設定種別か"
+            "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`候補列を渡せる。"
+            "他の起動ツールは各工程の設定を使い、候補列を直接受け取らない。\n"
             "起動時の`label`は当該sessionを人が識別する短い名前とし、`show`・`atk agents list`・statuslineへ現れる。"
             "表記をそろえるため、`start`では担当を表す識別子（`lane-02`など）、"
             "`start_explore`では調べる対象を表す名詞句（`pyfltrの起動形`など）、"
@@ -2047,14 +2061,16 @@ async def start(
     """専用タスク文書と名前付き追加入力から委譲先turnを開始する。
 
     タスク文書を読み、同文書の必須入力名と`extra_params`を照合してから起動する。
+    engine、model、effortはタスク文書に対応する工程別モデル設定から決める。
+    候補列を明示する場合は`start_custom`を使う。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     応答は`session_id`と`status`を含む。候補を切り替えて起動した場合だけ、除外した候補と
     除外の根拠、および採用した`engine`・`model`・`effort`を加える。起動条件の詳細は`show`で取得する。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     `label`は当該sessionの識別名として`show`・`atk agents list`・statuslineへ現れる。
-    全候補がengineの可用性を理由として終端した場合は、最後の候補の終端応答を返す。
-    全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
+    全候補が可用性またはagyのturn失敗で終端した場合は、最後の候補の終端応答を返す。
+    最後のagy候補がbackend開始例外で失敗した場合は、除外理由を含む例外を送出する。
     """
     model_type, prompt = _task_document_request(subagent_md_path, extra_params)
     response = await _MANAGER.start(model_type, prompt, cwd, label=label, composed_by=COMPOSED_BY_AGENTS_SERVER)
@@ -2066,7 +2082,14 @@ async def start_custom(
     prompt: str,
     model_type: Annotated[
         str,
-        Field(description=_parameter_description("工程別モデル設定の種別。専用タスク文書がある場合は`start`を使う。")),
+        Field(
+            description=_parameter_description(
+                "工程別モデル設定の種別（例: `execute`）、またはASCIIカンマ区切りの"
+                "`<claude|codex|agy>:<model>[/<effort>]`候補列。"
+                "例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`。"
+                "候補は先頭から試し、起動可能な候補へ切り替える。専用タスク文書がある場合は`start`を使う。"
+            )
+        ),
     ],
     cwd: str,
     label: Annotated[
@@ -2082,7 +2105,8 @@ async def start_custom(
     """専用タスク文書がない自由な指示本文から委譲先turnを開始する。
 
     既存の`.subagent.md`で表現できる作業には使わない。engine、model及びeffortは
-    `model_type`から解決し、通常応答は後続の観測に必要な`session_id`と`status`を返す。
+    `model_type`の設定種別または直接指定の候補列から解決する。
+    候補は先頭から試し、通常応答は後続の観測に必要な`session_id`と`status`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     候補を切り替えて起動した場合だけ、除外した候補と採用した候補を加える。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
@@ -2117,14 +2141,14 @@ async def start_explore(
 ) -> dict[str, Any]:
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
+    `fast=true`では`explore_fast_model`、`fast=false`では`explore_model`の候補列を使う。
+    候補列の直接入力は受け付けない。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     プロジェクト指示の読込を減らした軽量な起動条件で開始する。
     起動時のシステム指示でファイルを作成、変更及び削除しない契約を委譲先へ課すため、成果ファイルの出力を依頼しない。
-    委譲と直接実行の採算は、追加のツール呼び出しが2回以上必要か、読む対象の合計が4,000トークンを超えるかで判定する。
-    いずれかに当たる調査は本ツールへ委譲し、1回の検索または1ファイルの部分読み取りで確定する調査は自ら実行する。
-    この目安は、呼び出し元の1リクエストの文脈量147,000トークンと、セッションの残りリクエスト数47を前提とする。
-    文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
+    読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を本ツールへ委譲する。
+    委譲すると、呼び出し元の文脈へは結果の要約だけが入る。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
@@ -2155,14 +2179,14 @@ async def start_shell(
 ) -> dict[str, Any]:
     """コマンドを実行して結果を要約する委譲先turnを開始する。
 
-    `start_explore`と同じ軽量な起動条件で開始し、呼び出し元へは終了状態と要約だけを返す。
+    `explore_fast_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
+    候補列の直接入力は受け付けない。
     読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
     委譲と直接実行の採算は、コマンドの出力量で判定する。
     出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドは本ツールへ委譲し、
     1,000トークン未満に収まる見込みのコマンドは自ら実行する。
-    この目安は、呼び出し元の1リクエストの文脈量147,000トークンと、セッションの残りリクエスト数47を前提とする。
-    文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
+    委譲すると、呼び出し元の文脈へは終了状態と要約だけが入る。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
@@ -2187,7 +2211,8 @@ async def start_write(
     """対象と内容が確定済みの小規模な書込を軽量な委譲先で実行する。
 
     設計、調査、レビュー及び公開操作を依頼せず、変更対象と完成形を`prompt`へ明記する。
-    プロジェクト指示の読込を省いた`explore_fast`候補を使い、ファイルの読取・検索・作成・編集だけを許可する。
+    プロジェクト指示の読込を省いた`explore_fast_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。
+    候補列の直接入力は受け付けない。
     終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`で受け取る。
     結果が不要なら`kill`で破棄する。
     応答は`start`と同じ項目を含む。
@@ -2291,6 +2316,7 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
     """1件のsessionについて、文脈復旧又はトラブルシューティング用の詳細を返す。
 
     既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
+    `model_type`は工程別設定の種別名、または`start_custom`へ直接渡した候補列である。
     稼働中の子sessionがある場合は、安定した順序の`live_child_sessions`（`session_id`と`cwd`の対）も返す。
     `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、当該識別子へは追送と打ち切りを発行できない。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号及び解決可能なroot sessionも加える。

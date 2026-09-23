@@ -807,7 +807,7 @@ async def test_manifest_declares_svg_icon(tmp_path: pathlib.Path) -> None:
     assert manifest_response.headers["Cache-Control"] == "no-cache"
     manifest = await manifest_response.get_json()
     assert manifest == {
-        "name": "ワークアイテム",
+        "name": "atk serve",
         "short_name": "atk serve",
         "start_url": "/",
         "scope": "/",
@@ -1163,4 +1163,17 @@ def test_serve_logs_runs_journalctl(monkeypatch: pytest.MonkeyPatch, follow: boo
     monkeypatch.setattr(subprocess, "run", run)
 
     assert serve.show_logs(follow=follow) == 7
-    assert commands == [["journalctl", "--user", "-u", "atk-serve.service", "-n", "100", *(["-f"] if follow else [])]]
+    assert commands == [
+        [
+            "journalctl",
+            "--user",
+            "_SYSTEMD_USER_UNIT=atk-serve.service",
+            "+",
+            "USER_UNIT=atk-serve.service",
+            "+",
+            "SYSLOG_IDENTIFIER=atk-serve-setup",
+            "-n",
+            "100",
+            *(["-f"] if follow else []),
+        ]
+    ]

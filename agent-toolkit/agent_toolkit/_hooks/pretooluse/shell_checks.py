@@ -2645,7 +2645,7 @@ def _check_bash_atk_options(command: str) -> str | None:
         if scan.unknown_option is not None:
             return _llm_notice(
                 f"`atk {' '.join(path)}`が受理しないオプションである。対象: {scan.unknown_option}\n"
-                f"対処: {_format_accepted_option_candidates(scan.unknown_option, flags, valued)}",
+                f"{_format_accepted_option_candidates(scan.unknown_option, flags, valued)}",
                 tag=_WARN_TAG,
                 removable_cause=True,
             )

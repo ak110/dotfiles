@@ -683,6 +683,70 @@ class TestNoninteractiveEdit:
         assert "source: changed" in existing.read_text(encoding="utf-8")
 
 
+class TestCooldownEdit:
+    """再処理抑制期限の設定と解除を状態別に検証する。"""
+
+    @pytest.mark.parametrize("state", ["inbox", "hold"])
+    def test_set_and_clear(
+        self, state: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="本文", source="test")
+        if state == "hold":
+            (notes / state).mkdir(exist_ok=True)
+            path = path.rename(notes / state / path.name)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as set_exit:
+            atk.main(["wi", "edit", "entry.md", "--cooldown-until", "2999-01-01T00:00:00+00:00"], home=tmp_path)
+        assert set_exit.value.code == 0
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["cooldown_until"] == "2999-01-01T00:00:00+00:00"
+        if state == "inbox":
+            capsys.readouterr()
+            with pytest.raises(SystemExit) as listing_exit:
+                atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
+            assert listing_exit.value.code == 0
+            assert "blocked_reason=cooldown-until cooldown_until=2999-01-01T00:00:00+00:00" in capsys.readouterr().out
+
+        with pytest.raises(SystemExit) as clear_exit:
+            atk.main(["wi", "edit", "entry.md", "--cooldown-until", ""], home=tmp_path)
+        assert clear_exit.value.code == 0
+        assert "cooldown_until" not in path.read_text(encoding="utf-8")
+        if state == "inbox":
+            capsys.readouterr()
+            with pytest.raises(SystemExit) as listing_exit:
+                atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
+            assert listing_exit.value.code == 0
+            assert "[inbox/normal/ready]" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("value", ["2026-10-01T12:00:00", "invalid"])
+    def test_rejects_invalid_datetime(self, value: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="本文", source="test")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as failure:
+            atk.main(["wi", "edit", "entry.md", "--cooldown-until", value], home=tmp_path)
+        assert failure.value.code == 1
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_rejects_processing(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="本文", source="test")
+        (notes / "processing").mkdir(exist_ok=True)
+        path = path.rename(notes / "processing" / path.name)
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as failure:
+            atk.main(["wi", "edit", "entry.md", "--cooldown-until", ""], home=tmp_path)
+        assert failure.value.code == 2
+        assert path.read_text(encoding="utf-8") == original
+
+
 class TestEditBodyFile:
     """editサブコマンドの本文ファイル入力を検証する。"""
 

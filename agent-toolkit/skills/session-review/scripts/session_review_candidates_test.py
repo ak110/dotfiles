@@ -212,16 +212,16 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
     ]
 
 
-def test_candidate_events_excludes_delegate_returns_that_report_success() -> None:
-    """工程の成立を表す`status`値の最終返却を候補にしない。"""
+def test_candidate_events_keeps_delegate_returns_that_report_success() -> None:
+    """正常終了でも返却本文の判定へ進めるため、最終返却を候補に含める。"""
     timeline = [
         {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: completed\noutput_file: /tmp/out.md"},
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert not candidates[:-1]
-    assert not candidates[-1]["included_locators"]
+    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"]
+    assert candidates[-1]["included_locators"] == [{"record": "agent-1", "line": 20}]
     assert not candidates[-1]["excluded"]
 
 

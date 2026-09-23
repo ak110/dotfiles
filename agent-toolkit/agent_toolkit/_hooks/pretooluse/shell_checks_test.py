@@ -1964,12 +1964,15 @@ class TestNormViolatingArgumentForms:
         assert "当該の値をオプションで渡す" in messages
         assert "受理するオプションは`--help`を単独で実行して確認する" in messages
 
-    def test_atk_unknown_option_blocks(self, tmp_path: pathlib.Path) -> None:
-        """公開契約が受理しないatkオプションは初回から遮断する。"""
-        result = self._invoke("atk wi list --not-supported", tmp_path)
+    @pytest.mark.parametrize("option", ["--not-supported", "--output-fil"])
+    def test_atk_unknown_option_blocks(self, option: str, tmp_path: pathlib.Path) -> None:
+        """未対応オプションの候補有無にかかわらず、対処ラベルを1回だけ示す。"""
+        result = self._invoke(f"atk wi list {option}", tmp_path)
 
         assert result.returncode == 0
-        assert "受理しないオプション" in _agent_messages(result)
+        message = _agent_messages(result)
+        assert "受理しないオプション" in message
+        assert message.count("対処:") == 1
 
     def test_atk_managed_temp_cleanup_positional_path_blocks(self, tmp_path: pathlib.Path) -> None:
         """managed-temp cleanupへ位置引数のパスを指定した呼び出しを遮断する。"""

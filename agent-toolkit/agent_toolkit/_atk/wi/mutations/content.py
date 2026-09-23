@@ -335,12 +335,36 @@ def _resolve_edit_message(args: argparse.Namespace) -> str | None:
         sys.exit(1)
 
 
+def _apply_cooldown_edit(content: str, value: str) -> str:
+    """再処理抑制期限をfrontmatterへ設定し、空文字列では削除する。"""
+    parsed = _frontmatter.parse_frontmatter(content)
+    if parsed is None:
+        raise WebInputError("frontmatterが破損しているため期限を変更できません")
+    data, body = parsed
+    if value:
+        try:
+            deadline = datetime.datetime.fromisoformat(value)
+        except ValueError as error:
+            raise WebInputError("cooldown_untilはタイムゾーン付きISO 8601日時で指定してください") from error
+        if deadline.tzinfo is None or deadline.utcoffset() is None:
+            raise WebInputError("cooldown_untilはタイムゾーン付きISO 8601日時で指定してください")
+        data["cooldown_until"] = deadline.isoformat()
+    else:
+        data.pop("cooldown_until", None)
+    return _frontmatter.serialize_frontmatter(data, body)
+
+
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """editサブコマンド: `--body-file`又は$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
     """
     message = _resolve_edit_message(args)
+    if args.cooldown_until is not None:
+        if args.filename is None:
+            args.subparser.error("--cooldown-untilではFILENAMEを指定してください。")
+        if args.append or args.plan_file is not None:
+            args.subparser.error("--cooldown-untilは--append・--plan-fileと併用できません。")
     if args.depends_on and args.plan_file is None:
         args.subparser.error("--depends-onは--plan-fileとともに指定してください。")
     if args.plan_file is not None:
@@ -417,7 +441,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if message is not None and _reject_agent_user_comment_message(message):
         sys.exit(1)
     editor = None
-    if message is None:
+    if message is None and args.cooldown_until is None:
         editor = os.environ.get("EDITOR")
         if not editor:
             _outcome.report_failure("$EDITORが未設定のため編集できない。$EDITORを設定するか--body-fileを指定する")
@@ -440,6 +464,11 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _pull(private_notes)
             paths = _resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
+        if args.cooldown_until is not None and path.parent.name == WI_STATE_PROCESSING:
+            _outcome.report_failure(
+                f"processingの項目は再処理抑制期限を変更できない: {path.name}。処理を終えてinbox又はholdへ移してから指定する"
+            )
+            sys.exit(2)
         if path.parent.name == WI_STATE_PROCESSING and is_agent_environment():
             _outcome.report_failure(
                 f"processingの項目はエージェント環境から編集できない: {path.name}。"
@@ -453,18 +482,26 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
     original = _frontmatter.decode_entry_text(snapshot)
     tmp_path: pathlib.Path | None = None
-    if message is None:
+    if message is None and args.cooldown_until is None:
         assert editor is not None
         tmp_path = _copy_to_tempfile(snapshot)
         subprocess.run([editor, str(tmp_path)], check=True)
         edited = tmp_path.read_text(encoding="utf-8")
-    else:
+    elif message is not None:
         try:
             edited = _build_noninteractive_edit_content(path, original, message)
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}")
             sys.exit(1)
         edited = _preserve_agent_user_comment(original, edited)
+    else:
+        edited = original
+    if args.cooldown_until is not None:
+        try:
+            edited = _apply_cooldown_edit(edited, args.cooldown_until)
+        except WebInputError as error:
+            _outcome.report_failure(f"編集を拒否した: {error}")
+            sys.exit(1)
     if edited == original:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)

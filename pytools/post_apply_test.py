@@ -9,6 +9,7 @@ import json
 import logging
 import logging.handlers
 import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -83,6 +84,72 @@ def test_main_help_without_runner_skips_default_steps(
     assert "usage:" in capsys.readouterr().out
     assert not post_apply._UPDATE_LOG_PATH.exists()  # noqa: SLF001
     assert not sync_report_path.exists()
+
+
+def test_linked_worktree_is_rejected_before_any_step_or_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    sync_report_path: Path,
+) -> None:
+    """複製作業ツリーの既定実行は全段と永続記録へ到達しない。"""
+    root = tmp_path / "linked"
+    canonical_root = tmp_path / "main"
+    monkeypatch.setattr(post_apply.claude_common, "find_dotfiles_root", lambda: root)
+
+    def fake_git(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert cmd == ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
+        assert not kwargs
+        return subprocess.CompletedProcess(cmd, 0, f"{canonical_root / '.git'}\n", "")
+
+    def unexpected_run() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
+        pytest.fail("linked worktreeで既定ステップへ到達した")
+
+    monkeypatch.setattr(post_apply.claude_common, "run_subprocess", fake_git)
+    monkeypatch.setattr(post_apply, "run", unexpected_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main([])
+
+    assert exc_info.value.code == 2
+    assert not post_apply._UPDATE_LOG_PATH.exists()  # noqa: SLF001
+    assert not sync_report_path.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(root) in captured.err
+    assert str(canonical_root) in captured.err
+
+
+@pytest.mark.parametrize("allow_non_canonical", [False, True])
+def test_canonical_root_or_explicit_override_runs_steps(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    allow_non_canonical: bool,
+) -> None:
+    """正規ルートと明示解除では既存の全段実行経路へ進む。"""
+    canonical_root = tmp_path / "main"
+    root = tmp_path / "linked" if allow_non_canonical else canonical_root
+    monkeypatch.setattr(post_apply.claude_common, "find_dotfiles_root", lambda: root)
+
+    def fake_git(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert cmd == ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
+        assert not kwargs
+        return subprocess.CompletedProcess(cmd, 0, f"{canonical_root / '.git'}\n", "")
+
+    calls: list[str] = []
+    monkeypatch.setattr(post_apply.claude_common, "run_subprocess", fake_git)
+    monkeypatch.setattr(
+        post_apply,
+        "_DEFAULT_STEPS",
+        [("first", _make_step("first", calls)), ("second", _make_step("second", calls))],
+    )
+    argv = ["--allow-non-canonical-root"] if allow_non_canonical else []
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(argv)
+
+    assert exc_info.value.code == 0
+    assert calls == ["first", "second"]
 
 
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:

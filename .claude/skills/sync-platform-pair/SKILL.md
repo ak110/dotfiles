@@ -3,7 +3,6 @@ name: sync-platform-pair
 description: >
   Linux/Windowsペアファイル（`.sh`と`.cmd`、`.sh`と`.ps1`、
   `.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`など）を編集するときに使う。
-  「ペアファイル編集」「LinuxとWindows両対応」「.cmd更新」「.ps1更新」などのキーワードでも起動する。
 ---
 
 # Linux/Windowsペアファイル編集支援
@@ -61,7 +60,7 @@ Linux側とWindows側で分岐するコードを変更した場合、Windows側�
 1. 「ペアファイルの判別」に従い、対応するもう一方のパスを特定する
 2. 意味的な変更を両方に適用する
 3. プラットフォーム固有の書き方の違いのみ確認する
-4. 可能であれば両方を実行して動作確認する（Linuxでのみ実行可能な環境では最低限syntax check）
+4. 実行できる側を実行して動作確認する（Linuxでのみ実行可能な環境では、Windows側は最低限syntax check）
 5. MCP経由の`run`へ両プラットフォーム側のファイルパスを渡す。
    複数ツールを組み合わせる場合は`commands`で対象を限定する。
    MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う

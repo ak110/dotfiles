@@ -22,6 +22,11 @@ ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、�
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 
 HELP: dict[str, dict[str, str]] = {
+    "atk info": {
+        "summary": "実行環境とpluginの位置・版を表示する",
+        "description": "目的: atkが参照する実行環境を診断する。\n利用場面: 起動したディレクトリ、pluginの版又は設定の所在を確かめるとき。\n対象と出力: 現在ディレクトリ、実行ファイル、plugin rootと版、設定ファイルと状態ディレクトリの所在を標準出力へ書く。\n前提: なし。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "実行例:\n\n  atk info",
+    },
     "atk run-script": {
         "summary": "登録済みplugin内Pythonスクリプトを実行する",
         "description": "目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skill又は規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、標準出力、標準エラー及び終了コードを透過する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",
@@ -40,7 +45,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi list": {
         "summary": "エントリを1件1行で一覧表示する",
         "description": "目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外ではテキスト形式を既定とする。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: 既定でremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": "実行例:\n\n  atk wi list --state=processable",
+        "epilog": "現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を照合する。\n\n実行例:\n\n  atk wi list --state=active\n  atk wi list --state=all",
     },
     "atk wi show": {
         "summary": "指定エントリまたは全件の本文を表示する",
@@ -50,7 +55,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi grep": {
         "summary": "本文を正規表現で検索して該当行を列挙する",
         "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現で検索し、ファイル名、行番号、該当行を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。\n対象と出力: private-notesを読み取り、標準出力へ`<ファイル名>:<行番号>:<該当行>`の形式で書く。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNはPythonのreモジュールが解釈できる正規表現として与える。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": '実行例:\n\n  atk wi grep "worktree-stash" --state=all',
+        "epilog": '現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を照合する。\n\n実行例:\n\n  atk wi grep "worktree-stash" --state=active\n  atk wi grep "worktree-stash" --state=all',
     },
     "atk wi start-processing": {
         "summary": "AWI又はUWIをprocessingへ移して処理中にする",
@@ -89,7 +94,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。非対話で編集する場合は`--body-file`を使う。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文を照合し、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。コーディングエージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。コーディングエージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定又は解除するとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文を照合し、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdだけで使い、タイムゾーン付きISO 8601日時を渡す。空文字列で期限を解除する。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。コーディングエージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。コーディングエージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/tmp/awi-body.md",
     },
     "atk wi set-dependencies": {
@@ -168,8 +173,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
-        "summary": "ワークアイテムWeb UIを起動し、そのログを表示する",
-        "description": "目的: private-notesのキューをブラウザーから閲覧して操作するWebサーバーを起動し、運用ログを参照する。\n利用場面: ユーザーがAWIの投入、編集、採否をブラウザーで行うとき、又は障害を調査するとき。\n対象と出力: 通常は指定したホストとポートで待機し、private-notesを読み書きする。`logs`はuser serviceのjournal直近100行を表示し、`--follow`では追従する。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、設定ファイルの順に解決する。ログ表示にはjournalctlが必要である。\n復元・後始末: 停止は当該プロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
+        "summary": "atk serveを起動し、そのログを表示する",
+        "description": "目的: ワークアイテム、計画ファイル、セッションをブラウザーから扱うWebサーバーを起動し、運用ログを参照する。\n利用場面: ユーザーがAWIの投入、編集、採否、計画ファイルとセッションの閲覧をブラウザーで行うとき、又は障害を調査するとき。\n対象と出力: 通常は指定したホストとポートで待機し、private-notesを読み書きする。`logs`はuser serviceのjournal直近100行を表示し、`--follow`では追従する。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、設定ファイルの順に解決する。ログ表示にはjournalctlが必要である。\n復元・後始末: 停止は当該プロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
         "epilog": "実行例:\n\n  atk serve --port=28766\n  atk serve logs --follow",
     },
     "atk config": {

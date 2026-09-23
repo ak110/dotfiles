@@ -303,6 +303,8 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 ## post-applyテンプレートのキャッシュ
 
 `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる。
+`dotfiles-post-apply`は主作業ツリーからの実行を既定とする。linked worktreeから起動すると、利用者全体の設定が複製を指さないよう、どの後処理も始めず終了コード2で停止する。
+複製からの実行が必要な場合は`dotfiles-post-apply --allow-non-canonical-root`で明示的に解除する。この指定では利用者全体の設定が実行した複製を参照する。
 
 - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
 - 期待シムは`pyproject.toml`の`[project.scripts]`から両テンプレートが展開時に導出する。定数の手動更新は不要とする

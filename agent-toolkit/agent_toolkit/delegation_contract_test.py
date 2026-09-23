@@ -236,6 +236,40 @@ def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> Non
     assert all("不一致" in content and "充足済み" in content and "巻戻し" in content for content in (picker, lane, review))
 
 
+def test_picker_explanation_contract_covers_questions_without_state_changes() -> None:
+    """選定理由の説明は4場面を扱い、選定結果とキュー状態を維持する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    question_route = parent.split("## 選定理由への質問\n", maxsplit=1)[1]
+    explanation = picker.split("## 選定理由の説明\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+
+    assert all(
+        value in question_route
+        for value in ("説明対象の選定結果ファイル", "選定理由への質問", "元のpickerが終端していても", "新しい担当")
+    )
+    assert "start_explore" in question_route and "session_id" in question_route
+    assert "選定結果の出力先ファイル" not in question_route
+    mode_inputs = ("説明モード", "説明対象の選定結果ファイル", "選定理由への質問")
+    picker_inputs = picker.split("## 入力\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    parent_fields = re.findall(r"^- `([^`]+)`: ", question_route, flags=re.MULTILINE)
+    child_contract = picker_inputs.split("説明モードの必須入力は", maxsplit=1)[1].split("とする。", maxsplit=1)[0]
+    child_fields = [value.split(":", maxsplit=1)[0] for value in re.findall(r"`([^`]+)`", child_contract)]
+    assert tuple(parent_fields) == tuple(child_fields) == mode_inputs
+    assert "選定モードへ適用" in picker_inputs and "説明モードの必須入力" in picker_inputs
+    assert "出力先ファイルと引き継ぎ記録先は選定モード専用" in picker_inputs
+    assert "「入力」と「選定理由の説明」を読んで適用" in question_route
+    assert "ツール戻り値で1回だけ返却" in explanation
+    assert "3行形式は選定モード専用" in explanation
+    assert all(value in explanation for value in ("選定結果に含まれるWI", "decision", "WI本文"))
+    assert all(value in explanation for value in ("含まれないWI", "atk wi show", "--skip-pull", "判断材料"))
+    assert all(value in explanation for value in ("質問が複数件", "対象ごと", "本文上の根拠"))
+    assert all(value in explanation for value in ("読み取り専用コマンド", "着手前と終了後", "WI状態", "レーン割当"))
+    assert not re.search(r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explanation)
+    assert "pick-wi.parent.md" in lanes and "包含理由、除外理由" in lanes
+
+
 def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
     """委譲先の確認事項は標識へ保存せず確定時点でメインへ通知する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]

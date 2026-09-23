@@ -154,12 +154,8 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 
 ### 背景ジョブ完了通知と実プロセスの終了順
 
-2026-09-21に、Claude Codeの背景ジョブ完了通知が届いた後も、同じ`atk agents wait`の実プロセスが稼働している事例を観測した。
-通知後に`ps -eo pid,etimes,args`を実行し、PID 3566782、3566794及び3566974の同じ待機が経過時間155秒で残っていることを確認した。
-旧実装では、この状態で後続の`atk agents wait`を発行すると、待機所有権が残っているため終了コード8になり得た。
-同じ処理回の背景タスク`bjhq8zib4`では、警告1行だけを持つ1回目の`completed`通知後に後続の待機が終了コード8を返した。
-呼び出し元が待機と照会を発行せずターンを終えた後、同じ背景タスクが結果本文を伴う2回目の`completed`通知を送った。
-現行実装では、後続の待機は先行するrun識別子を固定し、lock解放後に先行待機が保存した本文と終了コードを回収する。旧形式のrun記録を伴わないlockだけを観測した場合に限り、終了コード8で診断する。
+背景ジョブの完了通知が届いた後も、同じ`atk agents wait`の実プロセスが残ることがある。後続の待機は先行するrun識別子を固定し、lock解放後に先行待機が保存した本文と終了コードを回収する。run記録を伴わないlockだけを観測した場合に限り、終了コード8で診断する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日」にある。
 待機所有権の衝突後の工程は`waiting-and-monitoring.md`「待機区間の構成」を正本とする。
 
 ### 完了通知と中継の実行順
@@ -169,10 +165,7 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 `Agent`ツールで新規起動した子の完了通知は起動元へ届く。
 `SendMessage`で継続した相手の完了通知は送信元へ届かず、最上位セッションへ届く。
 したがって`SendMessage`で継続した工程は、最上位セッションが手順4のとおり中継した場合に再開する。
-Claude Code 2.1.251で実測した。
-委譲の調整を担うサブエージェントが`SendMessage`で子へ継続指示を送って待機表明で終えたとき、その子の完了通知は送信元のtranscriptへ現れなかった。
-同じ調整役が`Agent`ツールで起動した子の完了通知は現れた。
-再検証は、調整役のtranscriptに現れる`task-notification`の件数を起動手段別に数える。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：2026年8月」にある。
 
 1. 起動元は`Agent`の戻り値から直接の子のagent IDを保持し、宛先の作成にはこの保持したIDだけを用いる。
 2. 委譲先は通常完了報告をツール戻り値で1回だけ返す。到達可能な返信識別子を保持する場合に限り、想定外事象の即時報告を`SendMessage`で送る。
@@ -208,11 +201,8 @@ Claude Code 2.1.251で実測した。
 - `tail -n 1`など出力ファイルの末尾標識照会は、取得時点が中間ターン境界へ一致し得るため、`ListAgents`または完了通知と併用して完了を判定する
 - 完了報告を受け取って停止済みの識別子でも、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合は、
   継続直前に再取得した実効`engine`・`model`・`effort`が現在のthreadの起動時と一致するときに限り`SendMessage`で再開してよい。
-  Claude Code 2.1.241で、同一セッション内の起動元が保持した機械可読識別子を再開対象へ用いた構成では、再開後の完了報告を起動元が受け取れることを実測した。
-  再確認では`claude --version`で前提版数を記録し、完了通知に含まれる識別子と`SendMessage`の終了状態を照合する。
-  Claude Code 2.1.241で実測した設定は、対象キーを含まない一時JSONを`--settings`へ指定した。
-  `--setting-sources project,local`でユーザー設定を読み込まず、プロセス側で`env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`を前置した
-  初期化イベントで`SendMessage`と`ListAgents`の公開を確認し、両toolの実呼び出しが成功した。
+  同一セッション内の起動元が保持した機械可読識別子で再開した場合、再開後の完了報告を起動元が受け取れる。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」にある。
   完了通知の受領主体はproviderと構成へ依存するため、最上位と直接の親のいずれも標準配送先として固定しない
   同一セッション内の起動結果IDへの`SendMessage`成功と、送信後に対応する完了通知を受け取れた場合だけ、その継続経路を成立と判定する。
   3階層以上の多段委譲で再開後の完了報告がどこへ配送されるかは未検証である。

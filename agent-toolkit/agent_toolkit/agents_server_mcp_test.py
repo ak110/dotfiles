@@ -413,6 +413,10 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     custom_tool = subject.mcp._tool_manager.get_tool("start_custom")
     assert custom_tool is not None
     assert {"prompt", "model_type", "cwd", "label"} == custom_tool.parameters["properties"].keys()
+    model_type_description = custom_tool.parameters["properties"]["model_type"]["description"]
+    assert "<claude|codex|agy>:<model>[/<effort>]" in model_type_description
+    assert "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium" in model_type_description
+    assert "候補は先頭から試し" in model_type_description
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
     assert {"prompt", "cwd", "fast", "label"} == explore_tool.parameters["properties"].keys()
@@ -427,6 +431,16 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
         assert tool.parameters["properties"]["label"]["default"] is None
     for tool in (start_tool, custom_tool, explore_tool):
         assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
+    assert "タスク文書に対応する工程別モデル設定" in start_tool.description
+    for tool in (explore_tool, shell_tool, write_tool):
+        assert "候補列の直接入力は受け付けない" in tool.description
+    assert "`explore_fast_model`" in explore_tool.description
+    assert "`explore_model`" in explore_tool.description
+    assert "`explore_fast_model`" in shell_tool.description
+    assert "`explore_fast_model`" in write_tool.description
+    show_tool = subject.mcp._tool_manager.get_tool("show")
+    assert show_tool is not None
+    assert "`model_type`は工程別設定の種別名、または`start_custom`へ直接渡した候補列" in show_tool.description
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
     assert kill_tool is not None
     assert kill_tool.parameters["properties"]["stop"]["default"] is False
@@ -618,14 +632,13 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
     assert all({"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"} for item in listed)
 
 
-def test_delegation_break_even_guidance_is_available_before_calling() -> None:
-    """探索委譲とシェル実行委譲の説明が、委譲と直接実行の採算の目安と前提を示す。"""
+def test_delegation_result_scope_is_available_before_calling() -> None:
+    """探索委譲とシェル実行委譲の説明が、呼び出し元へ届く結果の範囲を示す。"""
     for tool_name in ("start_explore", "start_shell"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
-        assert "4,000トークン" in tool.description
-        assert "147,000トークン" in tool.description
-        assert "セッションの残りリクエスト数47" in tool.description
+        assert "呼び出し元の文脈へは" in tool.description
+        assert "147,000トークン" not in tool.description
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
@@ -1204,6 +1217,104 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
     assert response["model"] == "second"
     assert response["status"] == "running"
     assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
+
+
+@pytest.mark.asyncio
+async def test_agy_init_failure_advances_direct_candidate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """agyがinit前に標準エラー付きで終了しても、直接指定した次候補へ進む。"""
+    manager, claude = _manager_with_fake("claude")
+    agy = FakeBackend(manager.sessions, "agy")
+    start_mock = AsyncMock(side_effect=RuntimeError("Antigravity CLI ended before the init event: stderr=model unavailable"))
+    monkeypatch.setattr(agy, "start", start_mock)
+    _install_backend(manager, "agy", agy)
+
+    response = await manager.start("agy:gemini-3.8-flash/medium,claude:opus[1m]/medium", "調査", str(tmp_path))
+
+    assert start_mock.await_count == 1
+    assert claude.start_calls == [("opus[1m]", "medium", "delegate")]
+    assert response["engine"] == "claude"
+    assert response["excluded_candidates"] == [
+        {
+            "engine": "agy",
+            "model": "gemini-3.8-flash",
+            "effort": "medium",
+            "reason": "Antigravity CLI ended before the init event: stderr=model unavailable",
+        }
+    ]
+    assert set(manager.sessions) == {"claude-session"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        ({"message": "agy result failed"}, "agy result failed"),
+        ({"message": "agy process failed", "stderr": "rate limit"}, "rate limit"),
+    ],
+)
+async def test_agy_failed_turn_advances_config_candidate(
+    error: dict[str, str],
+    reason: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """agyのresult失敗とstderr付き失敗を、設定候補でも除外する。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda _model_type: [("agy", "gemini-3.8-flash", "medium"), ("claude", "opus[1m]", "medium")],
+    )
+    manager, claude = _manager_with_fake("claude")
+    agy = UnavailableStartBackend(manager.sessions, "agy", error)
+    _install_backend(manager, "agy", agy)
+
+    response = await manager.start("execute", "調査", str(tmp_path))
+
+    assert agy.release_calls == ["agy-session"]
+    assert claude.start_calls == [("opus[1m]", "medium", "delegate")]
+    assert response["excluded_candidates"] == [
+        {"engine": "agy", "model": "gemini-3.8-flash", "effort": "medium", "reason": reason}
+    ]
+    assert set(manager.sessions) == {"claude-session"}
+
+
+@pytest.mark.asyncio
+async def test_agy_init_failure_reports_reason_when_candidates_exhausted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """最後のagy候補がinit前に失敗した場合も、根拠を呼び出し元へ返す。"""
+    manager = subject.AgentsServerManager()
+    agy = FakeBackend(manager.sessions, "agy")
+    monkeypatch.setattr(agy, "start", AsyncMock(side_effect=RuntimeError("stderr=model unavailable")))
+    _install_backend(manager, "agy", agy)
+
+    with pytest.raises(RuntimeError, match="stderr=model unavailable"):
+        await manager.start("agy:gemini-3.8-flash/medium", "調査", str(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_agy_exhaustion_does_not_return_abandoned_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """失敗終端の後にinit前例外が続いた場合は、放棄済みsessionを返さない。"""
+    manager = subject.AgentsServerManager()
+    agy = UnavailableStartBackend(manager.sessions, "agy", {"message": "first failed"})
+    original_start = agy.start
+
+    async def start_or_raise(*args: Any, **kwargs: Any) -> subject.SessionState:
+        if args[2] == "second":
+            raise RuntimeError("stderr=second failed")
+        return await original_start(*args, **kwargs)
+
+    monkeypatch.setattr(agy, "start", start_or_raise)
+    _install_backend(manager, "agy", agy)
+
+    with pytest.raises(RuntimeError, match="stderr=second failed") as exc_info:
+        await manager.start("agy:first/medium,agy:second/medium", "調査", str(tmp_path))
+
+    assert "first failed" in str(exc_info.value)
+    assert agy.release_calls == ["agy-session"]
+    assert not manager.sessions
 
 
 @pytest.mark.asyncio

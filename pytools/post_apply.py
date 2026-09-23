@@ -21,6 +21,7 @@ import platformdirs
 
 from pytools import update_ssh_config
 from pytools._internal import (
+    claude_common,
     cleanup_paths,
     cleanup_user_path,
     install_claude_plugins,
@@ -377,7 +378,32 @@ def main(
 ) -> None:
     """エントリポイント。"""
     parser = argparse.ArgumentParser(description="chezmoi apply後のdotfiles設定を更新する。")
-    parser.parse_args([] if runner is not None and argv is None else argv)
+    parser.add_argument(
+        "--allow-non-canonical-root",
+        action="store_true",
+        help="linked worktreeからの実行を明示的に許可する",
+    )
+    args = parser.parse_args([] if runner is not None and argv is None else argv)
+    if runner is None:
+        root = claude_common.find_dotfiles_root()
+        if root is None:
+            print("dotfilesの実行ルートを特定できませんでした。", file=sys.stderr)
+            sys.exit(2)
+        git_result = claude_common.run_subprocess(
+            ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
+        )
+        if git_result is None or git_result.returncode != 0:
+            detail = claude_common.format_cli_error(git_result)
+            print(f"正規のdotfilesルートを特定できませんでした: {root}: {detail}", file=sys.stderr)
+            sys.exit(2)
+        canonical_root = Path(git_result.stdout.strip()).parent
+        if root != canonical_root and not args.allow_non_canonical_root:
+            print(
+                f"複製作業ツリーからの実行を停止しました: 検出したルート: {root}; "
+                f"正規ルート: {canonical_root}。実行する場合は--allow-non-canonical-rootを指定してください。",
+                file=sys.stderr,
+            )
+            sys.exit(2)
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     previous_handlers, previous_level, persistent_log_ready = _configure_logging()
     try:

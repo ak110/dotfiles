@@ -2,7 +2,7 @@
 name: export-session
 description: >
   Claude Codeのセッション履歴をmarkdownにエクスポートする。
-  「セッションをエクスポート」「会話履歴を保存」「セッション履歴をmarkdownに」「この会話を出力」などのキーワードで使用する
+  セッション履歴（会話ログ）をmarkdownに出力・保存する依頼で使う
 ---
 
 # セッション履歴のmarkdownエクスポート

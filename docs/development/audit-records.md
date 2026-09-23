@@ -1,14 +1,38 @@
 # 監査記録
 
-## プロジェクト指示のAGENTS.md対応：2026年9月20日
-
-2026年9月20日、Claude Code v2.1.277の公式リリースノート<https://github.com/anthropics/claude-code/releases/tag/v2.1.277>で、`CLAUDE.md`が無いプロジェクトで`AGENTS.md`を読む機能が追加されたことを確認した。再検証は同バージョンのリリースノートを読み、`AGENTS.md`対応の記載を確認する。
-
 本ファイルは、`agent-toolkit`の規範文書とタスク文書が持つ条文のうち、対象の挙動を実測して確定したものについて、実測した日付、観測した版数及び再検証の手段を保持する。
 条文の側には観測事象だけを置き、本ファイルのH2見出しで索引する。
 条文が前提とする挙動と異なる観測を得た場合は、当該条文が指すH2見出しを読み、記載された手段で再検証してから条文の失効を判定する。
 H2見出しは索引元の条文が指す文字列と一致させる。索引元の条文を移設し、又は索引元の節名を改める改訂では、同じ改訂で本ファイルのH2見出しと索引元の参照を併せて改める。
 本ファイルは`agent-toolkit`の配布物に含まれない。索引を辿れるのは、本リポジトリの作業ツリーを持つ主体に限る。
+
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日
+
+2026-09-21に、Claude Codeの背景ジョブ完了通知が届いた後も、同じ`atk agents wait`の実プロセスが稼働している事例を観測した。
+通知後に`ps -eo pid,etimes,args`を実行し、PID 3566782、3566794及び3566974の同じ待機が経過時間155秒で残っていることを確認した。
+旧実装では、この状態で後続の`atk agents wait`を発行すると、待機所有権が残っているため終了コード8になり得た。
+同じ処理回の背景タスク`bjhq8zib4`では、警告1行だけを持つ1回目の`completed`通知後に後続の待機が終了コード8を返した。
+呼び出し元が待機と照会を発行せずターンを終えた後、同じ背景タスクが結果本文を伴う2回目の`completed`通知を送った。
+再検証は背景タスクの通知と`ps -eo pid,etimes,args`の結果を突き合わせ、同じ待機プロセスの生存と後続の`atk agents wait`の終了コードを確認する。
+
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：2026年8月
+
+Claude Code 2.1.251で実測した。
+委譲の調整を担うサブエージェントが`SendMessage`で子へ継続指示を送って待機表明で終えたとき、その子の完了通知は送信元のtranscriptへ現れなかった。
+同じ調整役が`Agent`ツールで起動した子の完了通知は現れた。
+再検証は、調整役のtranscriptに現れる`task-notification`の件数を起動手段別に数える。
+
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月
+
+Claude Code 2.1.241で、同一セッション内の起動元が保持した機械可読識別子を再開対象へ用いた構成では、再開後の完了報告を起動元が受け取れることを実測した。
+再確認では`claude --version`で前提版数を記録し、完了通知に含まれる識別子と`SendMessage`の終了状態を照合する。
+Claude Code 2.1.241で実測した設定は、対象キーを含まない一時JSONを`--settings`へ指定した。
+`--setting-sources project,local`でユーザー設定を読み込まず、プロセス側で`env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`を前置した。
+初期化イベントで`SendMessage`と`ListAgents`の公開を確認し、両toolの実呼び出しが成功した。
+
+## プロジェクト指示のAGENTS.md対応：2026年9月20日
+
+2026年9月20日、Claude Code v2.1.277の公式リリースノート<https://github.com/anthropics/claude-code/releases/tag/v2.1.277>で、`CLAUDE.md`が無いプロジェクトで`AGENTS.md`を読む機能が追加されたことを確認した。再検証は同バージョンのリリースノートを読み、`AGENTS.md`対応の記載を確認する。
 
 ## docs/development/design.md：Claude CodeとCodexの規範配置：2026年9月13日
 
@@ -278,6 +302,17 @@ error: invalid model selection (--model "gemini-3.8-flash" --effort ""): --model
 同じ呼び出しへ`--effort low`を加えると終了コード0で終わり、標準出力へ`OK`だけを書いた。
 この実測により、`--model`へベース名を渡し`--effort`を別に渡す`agent_toolkit/_agents_server/antigravity.py`の`build_command`の形が、現行版で成立することを確認した。
 再検証は、`agy models`の出力から完全スラッグの接尾辞の有無を確認し、`agy -p 'reply with OK only' --model <ベース名>`を`--effort`の有無で1回ずつ実行して終了コードと標準エラーを比べる。
+
+2026年9月23日、Antigravity CLI 1.2.9で非対話実行の時間指定を確認した。
+`agy --help`の`--print-timeout`は既定値を`0s`と示す。`--print-timeout 3600`は単位不足として拒否された。
+次のコマンドは終了コード0となり、`init`、`step_update`、`result`のイベントを返した。
+
+```sh
+agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-format stream-json --print-timeout 3600s
+```
+
+2026年9月24日の同版の出力では、`result`イベントの`status`と`response`は内側の`result`オブジェクトにあり、状態値は`SUCCESS`、本文は`OK`であった。作業ツリーの`start_custom`で同じ候補を起動した結果もagyのsessionが`completed`となり、待機応答の本文に`OK`を受け取った。
+再検証は`agy --version`で版数を記録し、同じ指示で`--print-timeout`を`3600`と`3600s`へ変えて終了コード、標準エラー及びイベント種別を照合する。
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：Codexネイティブ委譲の入力境界：2026年9月21日
 

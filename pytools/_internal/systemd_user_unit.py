@@ -3,6 +3,7 @@
 import getpass
 import logging
 import pathlib
+import subprocess
 import time
 
 from pytools._internal import claude_common, log_format
@@ -51,6 +52,7 @@ def setup(
     log_tag: str,
     service_name: str,
     restart_needed: bool = False,
+    journal_identifier: str | None = None,
 ) -> bool:
     """unitを配置し、変更又は停止したサービスを再起動する。
 
@@ -81,6 +83,31 @@ def setup(
         raise SetupError(f"{service_name}の稼働状態を取得できません")
     needs_restart = changed or restart_needed or enabled.returncode != 0 or active.returncode != 0
     if needs_restart:
+        reasons = []
+        if changed:
+            reasons.append("unit更新")
+        if restart_needed:
+            reasons.append("ランチャー更新")
+        if enabled.returncode != 0:
+            reasons.append("初回有効化")
+        if active.returncode != 0:
+            reasons.append("非稼働")
+        if journal_identifier is not None:
+            message = f"{service_name}を再起動します: {', '.join(reasons)}"
+            try:
+                journal_result = subprocess.run(
+                    ["systemd-cat", f"--identifier={journal_identifier}", "--priority=info"],
+                    input=f"{message}\n",
+                    capture_output=True,
+                    text=True,
+                    timeout=5.0,
+                    check=False,
+                )
+            except (OSError, subprocess.SubprocessError) as error:
+                logger.warning(log_format.format_status(log_tag, f"再起動理由をjournalへ記録できません: {error}"))
+            else:
+                if journal_result.returncode != 0:
+                    logger.warning(log_format.format_status(log_tag, "再起動理由をjournalへ記録できません"))
         commands.append((["systemctl", "--user", "restart", service_name], 30.0, "restart"))
     # systemctlの失敗は後続の常駐確認を無意味にする（旧プロセスがactiveのまま残ると
     # NRestartsも変化せず成功と誤判定するため）。失敗した時点で例外を送出して打ち切る。
