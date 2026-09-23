@@ -3,12 +3,75 @@
 import logging
 import os
 import subprocess
+import types
 from pathlib import Path
 
+import httpx
 import psutil
 import pytest
 
 from pytools._internal import setup_cli_common
+
+
+@pytest.mark.parametrize(
+    ("platform", "explicit_ca", "uses_system_store"),
+    [("win32", False, True), ("win32", True, False), ("linux", False, False)],
+)
+def test_official_installer_uses_platform_trust_and_explicit_ca(
+    monkeypatch: pytest.MonkeyPatch, platform: str, explicit_ca: bool, uses_system_store: bool
+) -> None:
+    """Windowsの既定信頼源と明示CAを分け、取得後の実行経路を維持する。"""
+    monkeypatch.setattr(setup_cli_common, "sys", types.SimpleNamespace(platform=platform))
+    if explicit_ca:
+        monkeypatch.setenv("SSL_CERT_FILE", "/example/custom-ca.pem")
+    else:
+        monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+        monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    context = object()
+    context_calls: list[bool] = []
+
+    def default_context() -> object:
+        context_calls.append(True)
+        return context
+
+    monkeypatch.setattr(setup_cli_common.ssl, "create_default_context", default_context)
+    options: list[dict[str, object]] = []
+    requested: list[str] = []
+
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            options.append(kwargs)
+
+        def get(self, url: str) -> httpx.Response:
+            requested.append(url)
+            return httpx.Response(200, content=b"installer", request=httpx.Request("GET", url))
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(setup_cli_common.httpx, "Client", Client)
+    commands: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", run)
+    result, reason = setup_cli_common.run_official_installer(
+        None,
+        posix_url="https://example.test/install.sh",
+        windows_url="https://example.test/install.ps1",
+        tag="test",
+        timeout=5.0,
+    )
+
+    assert result is not None and result.returncode == 0
+    assert reason == ""
+    assert options[0]["verify"] is (context if uses_system_store else True)
+    assert len(context_calls) == int(uses_system_store)
+    assert requested == ["https://example.test/install.ps1" if platform == "win32" else "https://example.test/install.sh"]
+    assert commands[0][0] == ("pwsh" if platform == "win32" else "bash")
 
 
 def test_prepend_path_moves_existing_entry_to_front(monkeypatch, tmp_path: Path) -> None:
