@@ -135,13 +135,16 @@ def reject_reserved_uwi_markup(body: str) -> None:
     警告ではなく拒否とする（既存の非ブロッキング警告`warn_question_quality`は無視された実績がある）。
     CLIとWeb UIの双方が`add_entries`を経由するため、本検査1箇所で両経路を覆う。
     """
+    violations: list[str] = []
     if ANSWER_MARKER in body:
-        raise WebInputError("UWI本文に回答欄マーカーが含まれています。本文には質問内容のみを書いてください")
+        violations.append("回答欄マーカー")
     for line in body.splitlines():
         if line.strip() in _RESERVED_MARKUP_HEADINGS:
-            raise WebInputError(
-                f"UWI本文にツールが自動付与する見出し（{line.strip()}）が含まれています。本文には質問内容のみを書いてください"
-            )
+            violations.append(f"見出し（{line.strip()}）")
+    if violations:
+        raise WebInputError(
+            f"UWI本文にツールが自動付与する要素が含まれています: {', '.join(violations)}。本文には質問内容のみを書いてください"
+        )
 
 
 def warn_question_quality(filename: str, message: str, question_type: str | None) -> None:

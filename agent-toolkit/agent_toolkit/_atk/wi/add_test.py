@@ -156,6 +156,28 @@ def test_add_dry_run_rejects_invalid_input(
     assert not list((notes / "inbox").iterdir())
 
 
+def test_add_dry_run_reports_all_reserved_uwi_markup(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """UWI本文の予約要素を一度のdry-runで全て報告する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    body = f"どちらの案を採用しますか？\n{uwi_module.ANSWER_MARKER}\n{uwi_module.QUESTION_HEADING}\n{uwi_module.ANSWER_HEADING}"
+    args = _cmd_add_args(tmp_path, body, entry_type=WI_TYPE_UWI, dry_run=True)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(args, notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "回答欄マーカー" in error
+    assert "見出し（## 質問）" in error
+    assert "見出し（## 回答）" in error
+    assert not list((notes / "inbox").iterdir())
+
+
 def test_add_dry_run_rejects_agent_awi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

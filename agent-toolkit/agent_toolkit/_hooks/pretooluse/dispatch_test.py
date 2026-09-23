@@ -1343,6 +1343,7 @@ class TestUserFacingTypoCheck:
             ("模型定義", "モデル定義"),
             ("行动", "行動"),
             ("挺動", "挙動"),
+            ("追踡", "追跡"),
         ],
     )
     def test_typo_in_user_facing_text_warns(self, detected: str, replacement: str) -> None:
@@ -1355,6 +1356,11 @@ class TestUserFacingTypoCheck:
         result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "番面遷移を実装する。"}})
         assert result.returncode == 0
         assert "誤字候補" in _additional_context(result)
+
+    def test_corrected_spelling_does_not_warn(self) -> None:
+        result = _run(_user_facing_payload("question", "追跡の説明を確認してください。"))
+        assert result.returncode == 0
+        assert "誤字候補" not in _additional_context(result)
 
     def test_typo_warning_remains_when_colloquial_text_is_present(self, deny_substring: str) -> None:
         """口語表現と誤字を同時に含む本文でも誤字警告を返す。"""
