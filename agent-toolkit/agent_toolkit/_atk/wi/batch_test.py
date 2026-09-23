@@ -632,12 +632,11 @@ def test_show_all_output_round_trips_into_another_repository(
     monkeypatch.setattr(add_module, "_resolve_repo_id", lambda value, **_kwargs: value)
     generated = add_module.add_entries(
         source_notes,
-        messages=["AWI本文", f"---\nsource: session-review\n---\n\n{AGENT_AWI_BODY}\n"],
+        messages=["AWI本文", f"---\nsource: session-review\nscope_alignment: sha256:old\n---\n\n{AGENT_AWI_BODY}\n"],
         target_repo="github.com/example/foo",
         source=None,
         now=_FIXED_DT,
         target_commit="b" * 40,
-        scope_aligned=True,
     )
     originals = {name: (source_notes / "inbox" / name).read_text(encoding="utf-8") for name in generated}
 

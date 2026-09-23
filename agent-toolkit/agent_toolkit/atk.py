@@ -410,15 +410,6 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
     )
     add.add_argument(
-        "--scope-aligned",
-        action="store_true",
-        default=None,
-        help=(
-            "sourceを持つ通常AWIの反映内容と反映先・適用範囲・完成条件を照合済みであることを示す。"
-            "CLIは3節の現行本文に結び付くscope_alignmentをfrontmatterへ保存する。"
-        ),
-    )
-    add.add_argument(
         "--origin-locator",
         metavar="LOCATOR",
         type=_origin_locator_type,
@@ -1188,7 +1179,6 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--depends-on", args.depends_on),
                 ("--target-repo", args.target_repo),
                 ("--source", args.source),
-                ("--scope-aligned", args.scope_aligned),
                 ("--origin-locator", args.origin_locator),
                 ("REPO_PATH", args.repo_path_override),
             )

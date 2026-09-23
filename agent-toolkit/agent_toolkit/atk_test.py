@@ -2071,7 +2071,7 @@ class TestAddFrontmatterOverride:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         message = f"---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\n{_wi_bodies.AGENT_AWI_BODY}"
-        argv = ["wi", "add", str(myrepo), "--source", "cli-source", "--scope-aligned", *_body_file_args(tmp_path, message)]
+        argv = ["wi", "add", str(myrepo), "--source", "cli-source", *_body_file_args(tmp_path, message)]
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(argv, home=tmp_path, now=_FIXED_DT)
@@ -2138,7 +2138,6 @@ class TestAddFrontmatterOverride:
                     str(myrepo),
                     "--source",
                     "cli-source",
-                    "--scope-aligned",
                     *_body_file_args(tmp_path, message),
                 ],
                 home=tmp_path,
