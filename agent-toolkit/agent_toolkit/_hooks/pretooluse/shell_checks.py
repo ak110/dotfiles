@@ -861,7 +861,12 @@ def _check_bash_truncation_autofix_repeat(command: str, session_id: str) -> str 
     切り詰めとして返さないため、検出回数へ算入されず遮断もされない。
     """
     segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    if not any(_split_simple_truncation(segment) is not None for segment in segments):
+    detected = [
+        (index, split[1])
+        for index, segment in enumerate(segments, start=1)
+        if (split := _split_simple_truncation(segment)) is not None
+    ]
+    if not detected:
         return None
     if not _record_repeat_detection(session_id, _TRUNCATION_AUTOFIX_REPEAT_KEY):
         return None
@@ -869,9 +874,10 @@ def _check_bash_truncation_autofix_repeat(command: str, session_id: str) -> str 
     fix = _OUTPUT_TRUNCATION_AVOIDANCE
     if alternatives:
         fix = "補正対象の用途に対応する指定: " + "、".join(alternatives) + "。" + fix
+    targets = "、".join(f"第{index}直列区間の`{shlex.join(tokens)}`" for index, tokens in detected)
     print(
         _block_notice(
-            "blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。",
+            f"blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。対象: {targets}。",
             fix=fix,
         ),
         file=sys.stderr,

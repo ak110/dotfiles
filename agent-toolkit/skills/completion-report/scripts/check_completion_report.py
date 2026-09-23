@@ -7,17 +7,18 @@ import pathlib
 import re
 import sys
 
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
+
 STAGES = ("work-complete", "review-result")
 REVIEW_STATES = ("success", "not-run", "failed")
 SKIP_REASONS = {
     "not-run": "成果を再利用したため起動省略",
-    "failed": "分析失敗のためUWIへ記録",
+    "failed": "分析失敗のため欠陥AWIへ記録",
 }
 
 
 def _headings(text: str, level: int) -> list[str]:
-    marker = "#" * level
-    return re.findall(rf"(?m)^{marker} (.+)$", text)
+    return [title for _, title in top_level_atx_headings(text, level)]
 
 
 def validate_report(text: str, stage: str, review_state: str | None = None) -> list[str]:

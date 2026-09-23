@@ -8,33 +8,20 @@
 呼び出し側が行を切り出す場合も、同じ正規化を経た本文へ`token.map`を適用する。
 """
 
-import markdown_it
 from markdown_it.token import Token
 
 from agent_toolkit._atk.wi import frontmatter
-
-_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+from agent_toolkit._common.markdown_headings import parse_headings, top_level_atx_headings
 
 
 def parse_h2_headings(text: str) -> list[tuple[Token, str]]:
     """H2の開きtokenと見出し本文を、本文へ現れる順で対応付けて返す。"""
-    tokens = _MARKDOWN.parse(frontmatter.normalize_newlines(text))
-    headings: list[tuple[Token, str]] = []
-    for index, token in enumerate(tokens[:-1]):
-        if token.type != "heading_open" or token.tag != "h2" or token.map is None:
-            continue
-        inline = tokens[index + 1]
-        if inline.type != "inline":
-            continue
-        headings.append((token, inline.content))
-    return headings
+    return parse_headings(frontmatter.normalize_newlines(text), 2)
 
 
 def contains_h2(text: str) -> bool:
     """コードフェンス外のH2見出しを含むか返す。"""
-    return any(
-        token.type == "heading_open" and token.tag == "h2" for token in _MARKDOWN.parse(frontmatter.normalize_newlines(text))
-    )
+    return bool(parse_h2_headings(text))
 
 
 def h2_sections(text: str) -> list[tuple[str, bool]]:
@@ -48,9 +35,7 @@ def h2_sections(text: str) -> list[tuple[str, bool]]:
     lines = normalized.split("\n")
     # 次の見出しまでを本文とするため、境界の探索もトップレベルのATX H2だけに限る。
     # 引用や箇条書きの内側にあるH2を境界へ含めると、節の本文の範囲が当該行で終わり、非空の判定を誤る。
-    toplevel = [
-        (token, content) for token, content in parse_h2_headings(normalized) if token.level == 0 and token.markup == "##"
-    ]
+    toplevel = top_level_atx_headings(normalized, 2)
     sections: list[tuple[str, bool]] = []
     for index, (token, content) in enumerate(toplevel):
         assert token.map is not None

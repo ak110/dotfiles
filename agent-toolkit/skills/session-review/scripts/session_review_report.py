@@ -11,6 +11,8 @@ import pathlib
 import sys
 from typing import Any
 
+from agent_toolkit._common.markdown_headings import normalize_newlines, top_level_atx_headings
+
 TIMING_CATEGORIES = (
     "preparation",
     "rule-stop",
@@ -265,14 +267,16 @@ def _timing_rows(timings: dict[str, dict[str, Any]]) -> tuple[list[str], dict[st
 
 def _section_body(content: str, heading: str) -> str:
     """指定したH2の本文を次のH2直前まで返す。"""
-    lines = content.splitlines()
-    marker = f"## {heading}"
-    try:
-        start = lines.index(marker) + 1
-    except ValueError as error:
-        raise ReportError(f"報告に見出しがない: {marker}") from error
-    end = next((index for index in range(start, len(lines)) if lines[index].startswith("## ")), len(lines))
-    return "\n".join(lines[start:end]).strip()
+    lines = normalize_newlines(content).split("\n")
+    headings = top_level_atx_headings(content, 2)
+    for index, (token, title) in enumerate(headings):
+        if title != heading:
+            continue
+        assert token.map is not None
+        following = headings[index + 1][0] if index + 1 < len(headings) else None
+        end = following.map[0] if following is not None and following.map is not None else len(lines)
+        return "\n".join(lines[token.map[1] : end]).strip()
+    raise ReportError(f"報告に見出しがない: ## {heading}")
 
 
 def _check_rendered_report(content: str, expected: str) -> None:
@@ -280,7 +284,7 @@ def _check_rendered_report(content: str, expected: str) -> None:
     lines = content.splitlines()
     if not lines or lines[0] != "# セッション振り返り":
         raise ReportError("報告のH1が不正である")
-    headings = tuple(line.removeprefix("## ") for line in lines if line.startswith("## "))
+    headings = tuple(title for _, title in top_level_atx_headings(content, 2))
     if headings != REPORT_H2_HEADINGS:
         raise ReportError(f"報告のH2が規定の順序と一致しない: {headings!r}")
     for heading in _GENERATED_SECTION_HEADINGS:

@@ -206,6 +206,28 @@ def test_check_accepts_delegate_authored_section_content(tmp_path: pathlib.Path)
     assert report.main(_argv(paths, "check")) == 0
 
 
+@pytest.mark.parametrize("fence", ["````", "~~~", "~~~~"])
+def test_report_ignores_h2_inside_fenced_section_body(tmp_path: pathlib.Path, fence: str) -> None:
+    paths = _inputs(tmp_path)
+    sections = tmp_path / "sections.json"
+    body = f"{fence}markdown\n## 起草中のWI見出し\n{fence}"
+    sections.write_text(json.dumps({"対象セッション": body}, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main([*_argv(paths, "generate"), "--sections", str(sections)]) == 0
+    assert report.main([*_argv(paths, "check"), "--sections", str(sections)]) == 0
+    assert report._section_body(paths[-1].read_text(encoding="utf-8"), "対象セッション") == body  # pylint: disable=protected-access  # noqa: SLF001
+
+
+def test_check_rejects_generated_body_edit_after_fenced_h2(tmp_path: pathlib.Path) -> None:
+    paths = _inputs(tmp_path)
+    assert report.main(_argv(paths, "generate")) == 0
+    content = paths[-1].read_text(encoding="utf-8")
+    content = content.replace("## 対象セッション\n", "## 対象セッション\n\n````\n## 起草中\n````\n", 1)
+    paths[-1].write_text(content.replace("一次選別で除外", "除外済み", 1), encoding="utf-8")
+
+    assert report.main(_argv(paths, "check")) == 2
+
+
 @pytest.mark.parametrize(
     "mutate",
     (

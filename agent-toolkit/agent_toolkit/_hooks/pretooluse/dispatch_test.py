@@ -1344,6 +1344,7 @@ class TestUserFacingTypoCheck:
             ("行动", "行動"),
             ("挺動", "挙動"),
             ("追踡", "追跡"),
+            ("撃去", "撤去"),
         ],
     )
     def test_typo_in_user_facing_text_warns(self, detected: str, replacement: str) -> None:

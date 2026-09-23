@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 try:
     from agent_toolkit._common.atomic_file import atomic_write
+    from agent_toolkit._common.markdown_headings import top_level_atx_headings
     from agent_toolkit._plan import structure as _plan_format
 except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
@@ -66,24 +67,22 @@ def append_progress_log(
         raise ProgressLogError("計画ファイルをUTF-8として読めません") from error
 
     lines = content.splitlines(keepends=True)
-    headings = [
-        index
-        for index, line in enumerate(lines)
-        if line.rstrip("\r\n").startswith("## ") and line.rstrip("\r\n")[3:] in _heading_names()
-    ]
-    if len(headings) != 1:
-        raise ProgressLogError(f"進捗ログ見出しは1件必要です（実際={len(headings)}件）")
+    headings = top_level_atx_headings(content, 2)
+    matches = [index for index, (_, title) in enumerate(headings) if title in _heading_names()]
+    if len(matches) != 1:
+        raise ProgressLogError(f"進捗ログ見出しは1件必要です（実際={len(matches)}件）")
 
     try:
         _plan_format.progress_log_rows(content)
     except ValueError as error:
         raise ProgressLogError(str(error)) from error
 
-    section_start = headings[0] + 1
-    section_end = next(
-        (index for index in range(section_start, len(lines)) if lines[index].rstrip("\r\n").startswith("## ")),
-        len(lines),
-    )
+    position = matches[0]
+    token = headings[position][0]
+    assert token.map is not None
+    section_start = token.map[1]
+    following = headings[position + 1][0] if position + 1 < len(headings) else None
+    section_end = following.map[0] if following is not None and following.map is not None else len(lines)
     header_text = "| " + " | ".join(_plan_format.PLAN_PROGRESS_TABLE_HEADER) + " |"
     table_headers = [index for index in range(section_start, section_end) if lines[index].rstrip("\r\n").strip() == header_text]
     if len(table_headers) != 1:

@@ -1353,10 +1353,11 @@ class TestBashOutputTruncationRepetition:
         session_id = "truncation-same-kind"
         assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
 
-        result = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+        result = self._invoke("ls -1 /tmp; ls -1 /var | head -5", session_id, tmp_path)
 
         assert result.returncode == 2
         assert "同じセッションで再び検出した" in result.stderr
+        assert "第2直列区間の`head -5`" in result.stderr
 
     def test_other_truncation_command_is_also_blocked_as_a_repeat(self, tmp_path: pathlib.Path) -> None:
         """切り詰めコマンドの表記が変わっても同じ判定種別として2回目に数える。"""

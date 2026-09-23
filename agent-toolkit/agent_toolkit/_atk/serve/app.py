@@ -35,6 +35,7 @@ from agent_toolkit._atk.wi import mutations as awi_mutations
 from agent_toolkit._atk.wi import repo as awi_repo
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
 from agent_toolkit._atk.wi import uwi as uwi_mutations
+from agent_toolkit._common.markdown_headings import normalize_newlines, top_level_atx_headings
 from agent_toolkit._git import remote as _git_remote
 
 type JsonObject = dict[str, typing.Any]
@@ -96,16 +97,18 @@ def _resolve_states(status: str) -> tuple[str, ...]:
 
 def _terminal_processing_time(text: str) -> datetime.datetime | None:
     """最後の処理結果に保存された処理日時をUTCで返す。"""
-    lines = text.splitlines()
-    headings = [index for index, line in enumerate(lines) if line == "## 処理結果"]
-    if not headings:
+    lines = normalize_newlines(text).split("\n")
+    headings = top_level_atx_headings(text, 2)
+    matching = [index for index, (_, title) in enumerate(headings) if title == "処理結果"]
+    if not matching:
         return None
+    position = matching[-1]
+    token = headings[position][0]
+    assert token.map is not None
+    following = headings[position + 1][0] if position + 1 < len(headings) else None
+    end = following.map[0] if following is not None and following.map is not None else len(lines)
     prefix = "- 処理日時: "
-    section: list[str] = []
-    for line in lines[headings[-1] + 1 :]:
-        if line.startswith("## "):
-            break
-        section.append(line)
+    section = lines[token.map[1] : end]
     timestamps = [line.removeprefix(prefix) for line in section if line.startswith(prefix)]
     if len(timestamps) != 1:
         return None

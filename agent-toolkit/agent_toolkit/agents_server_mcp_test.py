@@ -857,6 +857,14 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     assert subject._validate_required_prompt_inputs(task_document, extra_params) is None
 
 
+def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    task_document = tmp_path / "task.subagent.md"
+    task_document.write_text("````text\n## 入力\n````\n\n## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    monkeypatch.setattr(subject, "_is_agent_toolkit_task_document", lambda _path: True)
+
+    assert subject._validate_required_prompt_inputs(task_document, {"対象": "value"}) is None
+
+
 @pytest.mark.asyncio
 async def test_start_rejects_exec_prompt_without_handoff_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """startは引き継ぎ記録先だけを欠く実装起動文をbackendへ渡さない。"""

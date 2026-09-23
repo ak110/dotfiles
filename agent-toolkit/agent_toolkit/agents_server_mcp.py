@@ -57,6 +57,7 @@ from agent_toolkit._agents_server.state import (
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._hooks.message_format import xml_message
 
 try:
@@ -269,13 +270,16 @@ def _validate_required_prompt_inputs(task_document: pathlib.Path, extra_params: 
         document_lines = task_document.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
-    try:
-        input_heading = document_lines.index("## 入力")
-    except ValueError:
+    headings = top_level_atx_headings("\n".join(document_lines), 2)
+    inputs = [index for index, (_, title) in enumerate(headings) if title == "入力"]
+    if not inputs:
         return f"必須入力検査を実施できません: タスク文書に## 入力がありません: {task_document}"
-    section = document_lines[input_heading + 1 :]
-    next_heading = next((index for index, line in enumerate(section) if line.startswith("## ")), len(section))
-    section = section[:next_heading]
+    position = inputs[0]
+    token = headings[position][0]
+    assert token.map is not None
+    following = headings[position + 1][0] if position + 1 < len(headings) else None
+    end = following.map[0] if following is not None and following.map is not None else len(document_lines)
+    section = document_lines[token.map[1] : end]
     try:
         fence = section.index("```text")
         marker = section[fence + 1]

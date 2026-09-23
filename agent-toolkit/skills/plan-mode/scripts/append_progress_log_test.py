@@ -59,6 +59,16 @@ def test_escapes_table_cells(tmp_path: pathlib.Path) -> None:
     assert r"工程\|A<br>B | 結果\\値\|C" in path.read_text(encoding="utf-8")
 
 
+def test_ignores_progress_heading_inside_code_fence(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "plan.md"
+    path.write_text("# 計画\n\n````markdown\n## 進捗ログ\n````\n\n" + _plan().removeprefix("# 計画\n\n"), encoding="utf-8")
+    now = datetime.datetime(2026, 9, 20, 3, 34, tzinfo=datetime.UTC)
+
+    append_progress_log.append_progress_log(path, "工程", "成功", clock=lambda: now)
+
+    assert path.read_text(encoding="utf-8").endswith("| 2026-09-20 03:34 | 工程 | 成功 |\n")
+
+
 @pytest.mark.parametrize(
     "content",
     [

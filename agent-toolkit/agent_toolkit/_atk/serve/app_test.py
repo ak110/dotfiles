@@ -985,7 +985,9 @@ def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> No
     _write_repo_entry(tmp_path, "rejected", "e.md", "github.com/x/rejected-only")
     recent = tmp_path / "adopted" / "d.md"
     recent.write_text(
-        recent.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 処理日時: 2026-09-06T12:00:00+00:00\n", encoding="utf-8"
+        recent.read_text(encoding="utf-8")
+        + "\n## 処理結果\n\n````markdown\n## 起草中の節\n````\n- 処理日時: 2026-09-06T12:00:00+00:00\n",
+        encoding="utf-8",
     )
     old = tmp_path / "rejected" / "e.md"
     old.write_text(
