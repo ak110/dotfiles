@@ -2093,7 +2093,7 @@ async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
     _publish_recovered_session(monkeypatch, tmp_path, "child-b", "completed")
     manager, _ = _manager_with_fake("codex")
     parent = subject.SessionState("parent", str(tmp_path), engine="codex")
-    parent.live_child_session_ids.update({"child-b", "child-a", "child-unknown"})
+    parent.live_child_session_ids.update({"child-b", "child-a", "child-unknown", "child!invalid"})
     no_child = subject.SessionState("no-child", str(tmp_path), engine="codex")
     terminal = subject.SessionState("terminal", str(tmp_path), engine="codex")
     terminal.live_child_session_ids.add("child-terminal")
@@ -2112,7 +2112,7 @@ async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
         {"session_id": "child-a", "cwd": str(tmp_path)},
         {"session_id": "child-b", "cwd": str(tmp_path)},
     ]
-    assert parent_detail["live_child_session_ids_without_cwd"] == ["child-unknown"]
+    assert parent_detail["live_child_session_ids_without_cwd"] == ["child!invalid", "child-unknown"]
     assert "live_child_sessions" not in manager.show_session(no_child.session_id)
     assert "live_child_sessions" not in manager.show_session(terminal.session_id)
     await manager.close()

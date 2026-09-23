@@ -12,7 +12,6 @@ from agent_toolkit._hooks.session_state import update_state
 _FINGERPRINT_KEY = "pretool_last_call_fingerprint"
 _COUNT_KEY = "pretool_last_call_count"
 _BLOCK_AT = 10
-_SUMMARY_LIMIT = 500
 _block_notice = block_formatter("agent-toolkit/pretooluse/repeat-guard")
 
 
@@ -27,14 +26,6 @@ def _canonical_call(tool_name: str, tool_input: dict) -> str | None:
         )
     except (TypeError, ValueError):
         return None
-
-
-def _summarize(canonical: str) -> str:
-    """通知用に入力を固定長へ縮約する。"""
-    if len(canonical) <= _SUMMARY_LIMIT:
-        return canonical
-    digest = hashlib.sha256(canonical.encode()).hexdigest()[:12]
-    return f"{canonical[:_SUMMARY_LIMIT]}… (sha256:{digest})"
 
 
 def check_repeated_tool_call(session_id: str, tool_name: str, tool_input: dict) -> bool:
@@ -62,7 +53,7 @@ def check_repeated_tool_call(session_id: str, tool_name: str, tool_input: dict) 
         return False
     print(
         _block_notice(
-            f"blocked: 同一のツール呼び出しが{_BLOCK_AT}回連続した。入力: {_summarize(canonical)}",
+            f"blocked: {tool_name}の同一呼び出しが{_BLOCK_AT}回連続した。",
             fix="同じ結果を再取得せず、直前の結果を使うか、状態を進める異なる操作を実行する。",
         ),
         file=sys.stderr,

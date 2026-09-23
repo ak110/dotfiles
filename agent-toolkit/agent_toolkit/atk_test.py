@@ -509,6 +509,32 @@ class TestWaitScheduleParser:
         warning_lines = [line for line in capsys.readouterr().err.splitlines() if "登録を持たない管理対象" in line]
         assert len(warning_lines) == 1
 
+    def test_unregistered_managed_temp_warning_survives_state_update_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """状態更新がコールバックへ到達しなくても未登録候補を警告する。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda: (tmp_path / "orphan",))
+
+        def fail_update(_session_id: str, _mutator) -> bool:
+            return False
+
+        monkeypatch.setattr(_session_state, "update_state", fail_update)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "fixed-subcommand-output\n"
+        assert "登録を持たない管理対象が1件ある" in captured.err
+
     def test_managed_temp_list_reports_unregistered_paths(
         self,
         monkeypatch: pytest.MonkeyPatch,

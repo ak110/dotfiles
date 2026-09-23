@@ -108,11 +108,12 @@ def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bo
         return bool(candidates)
     source = "\0".join(str(path) for path in candidates)
     fingerprint = hashlib.sha256(source.encode()).hexdigest()
-    should_warn = False
+    should_warn = bool(candidates)
 
     def _claim(current: dict) -> dict | None:
         nonlocal should_warn
         if current.get(_UNREGISTERED_TEMP_FINGERPRINT_KEY) == fingerprint:
+            should_warn = False
             return None
         current[_UNREGISTERED_TEMP_FINGERPRINT_KEY] = fingerprint
         should_warn = bool(candidates)

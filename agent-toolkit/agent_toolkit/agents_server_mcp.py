@@ -735,7 +735,11 @@ class AgentsServerManager:
             resolved: list[dict[str, str]] = []
             unresolved: list[str] = []
             for child_session_id in sorted(session.live_child_session_ids):
-                resume_info = session_registry.resolve(child_session_id).resume_info
+                try:
+                    resume_info = session_registry.resolve(child_session_id).resume_info
+                except Exception:
+                    unresolved.append(child_session_id)
+                    continue
                 child_cwd = resume_info.cwd if resume_info is not None else ""
                 if child_cwd:
                     resolved.append({"session_id": child_session_id, "cwd": child_cwd})

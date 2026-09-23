@@ -408,7 +408,7 @@ def resolve_conversation_root(
     try:
         payload = json.loads(alias_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
-        direct = not alias_present and status_directory(current_session_id, state_root).is_dir()
+        direct = status_directory(current_session_id, state_root).is_dir()
         return ConversationRootResolution(
             current_session_id=current_session_id,
             root_session_id=current_session_id,
@@ -425,10 +425,14 @@ def resolve_conversation_root(
     ):
         alias_valid = True
         mapping_confirmed = status_directory(root_session_id, state_root).is_dir()
-        resolved_root_session_id = root_session_id if mapping_confirmed else current_session_id
+        if mapping_confirmed:
+            resolved_root_session_id = root_session_id
+        else:
+            mapping_confirmed = status_directory(current_session_id, state_root).is_dir()
+            resolved_root_session_id = current_session_id
     else:
         alias_valid = False
-        mapping_confirmed = False
+        mapping_confirmed = status_directory(current_session_id, state_root).is_dir()
         resolved_root_session_id = current_session_id
     return ConversationRootResolution(
         current_session_id=current_session_id,
