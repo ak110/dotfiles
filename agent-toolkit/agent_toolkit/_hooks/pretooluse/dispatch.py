@@ -182,7 +182,6 @@ if TYPE_CHECKING:
         _record_iss_sidechain_probe,
         _reset_plan_mode_state,
     )
-    from agent_toolkit._hooks.pretooluse.repeat_guard import check_repeated_tool_call
     from agent_toolkit._hooks.pretooluse.content_checks import (
         _check_direct_agent_toolkit_edits_after_plan_mode,
         _check_edit_boundary_resolution,
@@ -199,6 +198,7 @@ if TYPE_CHECKING:
         _check_bash_agent_toolkit_version_bump,
         _check_bash_amend_rebase_without_log,
         _check_bash_bulk_stage_with_unedited_files,
+        _check_bash_commit_attribution,
         _check_bash_git_commit,
         _check_bash_git_log_decorate,
         _check_bash_git_push_after_amend_with_dirty_status,
@@ -353,9 +353,6 @@ def main(payload_text: str) -> int:
             print("\n".join(pending_notices), file=sys.stderr)
             pending_notices.clear()
         return code
-
-    if check_repeated_tool_call(session_id, tool_name, tool_input):
-        return exit_with(2)
 
     # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）。
     # 呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する
@@ -538,6 +535,7 @@ def _handle_bash_tool(
     if (
         (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
         or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
+        or _check_bash_commit_attribution(command, cwd)
         or _check_bash_process_kill_by_pattern(command)
     ):
         return 2
@@ -668,7 +666,7 @@ def _handle_user_facing_text_tool(
     ユーザーへ直接到達する本文を対象とする検査は、当該本文をユーザー自身が読んで誤りを指摘できるため、
     第1段の復元できない結果に当たらない。遮断すると当該ターンの入力と作業を失わせたうえで
     同じ確認の再発行を要するため、文字化け、日本語以外の文字の混入及び誤字のいずれも警告で返す。
-    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    判定の根拠は`agent-toolkit:hook-implementation`の`references/claude-hooks.md`
     「遮断・警告フックの成立条件」が定める。
     """
     warnings: list[str] = []

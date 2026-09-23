@@ -186,21 +186,3 @@ class TestCodexApplyPatchRecording:
             result = _run(_codex_payload(patch_text, tmp_path, session_id), state_dir=tmp_path)
             assert ("書き込み後の検査を実行する" in result.stdout) is expected
             assert _read_state(tmp_path, session_id).get("current_plan_file_path") is not None
-
-    def test_conditional_prohibition_check_targets_existing_files_only(self, tmp_path: pathlib.Path) -> None:
-        """適用後に存在する対象だけを事後文書検査へ渡す。"""
-        sid = "codex-prohibition"
-        repo = tmp_path / "repo"
-        rules = repo / "agent-toolkit" / "rules"
-        rules.mkdir(parents=True)
-        (rules / "present.md").write_text("検証した状態でcommitしない\n", encoding="utf-8")
-        patch_text = _patch(
-            "*** Update File: agent-toolkit/rules/present.md\n@@\n-旧\n+新\n",
-            "*** Delete File: agent-toolkit/rules/removed.md\n",
-        )
-
-        result = _run(_codex_payload(patch_text, repo, sid), state_dir=tmp_path)
-
-        assert result.returncode == 0
-        assert "条件付き禁止形" in result.stdout
-        assert "removed.md" not in result.stdout

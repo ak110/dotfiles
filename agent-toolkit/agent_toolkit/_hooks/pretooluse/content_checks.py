@@ -180,7 +180,7 @@ def _check_edit_operation_blocks(
 ) -> bool:
     """1操作分の遮断検査を実行する。
 
-    ファイルへの書き込みは再編集で復元できるため、`references/claude-hooks.md`
+    ファイルへの書き込みは再編集で復元できるため、`agent-toolkit:hook-implementation`
     「遮断・警告フックの成立条件」の第1段により、編集内容を対象とする検査は警告へ移した。
     秘匿値ファイルの編集だけは、値がログとトランスクリプトへ複写された後に取り消せないため遮断を維持する。
     """
@@ -295,7 +295,6 @@ def _collect_edit_operation_warnings(
             _check_manifest(tool_name, fields, display_path),
             _check_home_path(tool_name, fields, display_path),
             colloquial_warning,
-            _check_style_negation(tool_name, operation, display_path),
         )
         if warning is not None
     )
@@ -912,54 +911,6 @@ def _check_colloquial(
     )
 
 
-# --- 「Xを根拠にYしない」形式の増加検出 (warn, FB10) ---
-
-# 誤読リスクのある禁止規定形式。
-# 「Xでなければ`Y`してよい」と誤読される可能性があるため、全称否定形への書き換えを推奨する。
-_STYLE_NEGATION_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"([^、\s]{1,20})を根拠に([^、\s]{1,20})しない"),
-    re.compile(r"([^、\s]{1,20})を理由に([^、\s]{1,20})しない"),
-)
-
-
-def _is_style_negation_target_doc(file_path: str) -> bool:
-    """対象ドキュメント（コーディングエージェント向け文書判定対象と同一の判定基準）への編集かを判定する。"""
-    return _plan_format.is_agent_doc_target_file(file_path)
-
-
-def _count_style_negation_matches(text: str) -> int:
-    """`_STYLE_NEGATION_PATTERNS`の総マッチ件数を返す。"""
-    return sum(len(pattern.findall(text)) for pattern in _STYLE_NEGATION_PATTERNS)
-
-
-def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperation, file_path: str) -> str | None:
-    """『Xを根拠にYしない』『Xを理由にYしない』形式の増加を検出したら警告本文を返す（warn）。
-
-    全文を書き込む操作（Claudeの`Write`、Codex patchの`*** Add File:`）は変更後全文の
-    マッチ件数が1件以上であれば警告する。断片単位の操作（ClaudeのEdit・MultiEdit、
-    Codex patchの`*** Update File:`）は断片ごとに変更前後の件数を比較し、増加時のみ警告する
-    （既存文字列の保持時は件数同数で誤検出しない）。
-    """
-    if not _is_style_negation_target_doc(file_path):
-        return None
-    if operation.is_whole_write:
-        increased = _count_style_negation_matches(operation.whole_after_text or "") > 0
-    else:
-        increased = any(
-            _count_style_negation_matches(fragment.after) > _count_style_negation_matches(fragment.before)
-            for fragment in operation.fragments
-        )
-    if not increased:
-        return None
-    return _llm_notice(
-        f"{tool_name}による編集で「`X`を根拠に`Y`しない」「`X`を理由に`Y`しない」形のメタ規範表現が増加した。"
-        f"対象: {file_path}。この形は「`X`でなければ`Y`してよい」と読み違えられる。"
-        "全称否定形（「いかなる理由（例: `X`）があっても`Y`しない」）への書き換えを検討する。",
-        tag=_WARN_TAG,
-        removable_cause=True,
-    )
-
-
 # frontmatter区間（`^---$`〜`^---$`）の抽出用。
 _FRONTMATTER_BLOCK_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
 
@@ -1259,7 +1210,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     対象外パスへの編集時もカウンタをリセットする。
     カウンタ2件目以降で警告本文を返して進行を継続する。
     計画を経ない編集はファイルの再編集で復元できるため、
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
+    `agent-toolkit:hook-implementation`の「遮断・警告フックの成立条件」の第1段により遮断しない。
 
     Returns:
         （block判定, 通知本文またはNone）のタプル。第1要素は常に偽を返す。

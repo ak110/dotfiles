@@ -11,9 +11,9 @@ from agent_toolkit._agents_server import status_file
 from agent_toolkit._atk import config
 
 _NOTICE_TAG_PATTERN = re.compile(
-    r'\A<cross-session-message from="delegate:(?P<sender>[^"]+)" composed-by="caller"'
-    r' nonce="(?P<nonce>[0-9a-f]{16})">\n'
-    r"(?P<body>.*)\n</cross-session-message>\Z",
+    r'\A<agent-toolkit-auto-inserted from="delegate:(?P<sender>[^"]+)" composed-by="caller"'
+    r' source="agent-toolkit/agents-notify" kind="agent-delivery" nonce="(?P<nonce>[0-9a-f]{16})">\n'
+    r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
     re.DOTALL,
 )
 

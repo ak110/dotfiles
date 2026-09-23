@@ -12,12 +12,12 @@ LLM宛て出力は生成主体、種別及び配送単位を属性に持つXML�
 hook以外の経路も同じ実装を経由するため、包装の実装を層の順序で最も前にある`_common`へ置く。
 
 フィールドの詳細と規約の背景は
-`agent-toolkit/skills/writing-standards/references/claude-hooks.md`を参照する。
+`agent-toolkit/skills/hook-implementation/references/claude-hooks.md`を参照する。
 """
 
-from agent_toolkit._common.message_format import xml_message
+from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, xml_message
 
-NOTICE_ELEMENT = "agent-toolkit-hook-message"
+NOTICE_ELEMENT = AUTO_INSERTED_ELEMENT
 
 __all__ = ["NOTICE_ELEMENT", "llm_notice", "xml_message"]
 
@@ -31,11 +31,4 @@ def llm_notice(body: str, hook_id: str, *, tag: str = "") -> str:
         tag: `warn`等のメッセージ種別。空値は`notice`として出力する。
     """
     kind = tag or "notice"
-    return xml_message(
-        NOTICE_ELEMENT,
-        body,
-        {
-            "source": hook_id,
-            "kind": kind,
-        },
-    )
+    return auto_message(body, source=hook_id, kind=kind)

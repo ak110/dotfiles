@@ -1583,7 +1583,7 @@ class TestPlanFilePostWriteNotice:
         message = payload["hookSpecificOutput"]["additionalContext"]
         assert "書き込み後の検査" in message
         assert "check_plan_file.py" in message
-        assert '<agent-toolkit-hook-message source="agent-toolkit/posttooluse"' in message
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/posttooluse"' in message
 
     def test_plan_file_write_notice_is_executable_as_written(self, tmp_path: pathlib.Path) -> None:
         """案内文がそのまま実行できる形であること。

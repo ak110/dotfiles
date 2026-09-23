@@ -376,6 +376,36 @@ def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
     return records, broken
 
 
+def record_events(engine: str, records: typing.Iterable[dict[str, typing.Any]]) -> list[SessionEvent]:
+    """保存済み記録を件数制限のない表示イベントへ変換する。"""
+    if engine == "claude":
+        return _claude_events(records)[0]
+    if engine == "codex":
+        return _codex_events(records)[0]
+    if engine == "agy":
+        events = []
+        for record in records:
+            kind = record.get("type") or record.get("event")
+            if not isinstance(kind, str):
+                continue
+            body = record.get(kind)
+            if not isinstance(body, dict):
+                body = record
+            detail = next(
+                (
+                    body[key]
+                    for key in ("response", "text", "text_delta", "message", "summary")
+                    if isinstance(body.get(key), str)
+                ),
+                None,
+            )
+            if kind == "init" and detail is None:
+                detail = record.get("conversation_id")
+            events.append(SessionEvent(kind=kind, timestamp=None, text=detail))
+        return events
+    raise ValueError(f"unsupported engine: {engine}")
+
+
 def build_detail(
     engine: str,
     records: list[dict[str, typing.Any]],

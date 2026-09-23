@@ -67,7 +67,7 @@ def _read_prompt(name: str) -> str:
     return _read_share(name).split("\n\n", maxsplit=1)[1]
 
 
-NORMATIVE_ELEMENT = "normative-context"
+NORMATIVE_ELEMENT = message_format.AUTO_INSERTED_ELEMENT
 NORMATIVE_SOURCE = "agent-toolkit"
 
 
@@ -77,7 +77,7 @@ def _normative(body: str, *, kind: str) -> str:
     委譲先のsystem promptは、ホストの既定の指示と同じ経路で実行主体へ届く。
     本リポジトリが生成した範囲を受信側が判別できるよう、他の自動注入経路と同じ形式で囲む。
     """
-    return message_format.xml_message(NORMATIVE_ELEMENT, body, {"source": NORMATIVE_SOURCE, "kind": kind})
+    return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。

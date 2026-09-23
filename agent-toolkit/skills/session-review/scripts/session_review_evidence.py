@@ -43,7 +43,7 @@ _OMISSION_MARK = "…[省略]"
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
     r"\s*(?:\d+\t)?(?:"
-    r'<agent-toolkit-hook-message\s+source="[^"]+"\s+kind="(?:warn|warning)"[^>]*>|'
+    r'<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)\s+source="[^"]+"\s+kind="(?:warn|warning)"[^>]*>|'
     r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
     r"⚠(?:\s+|\s*[:：])"
     r")|"
@@ -91,9 +91,10 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
 
 
 _HOOK_NOTICE_MARKER = re.compile(
-    r'(?:<agent-toolkit-hook-message\s+source="(?P<hook_xml>[^"]+)"\s+kind="(?P<tag_xml>[^"]+)"[^>]*>|'
+    r'(?:<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)\s+source="(?P<hook_xml>[^"]+)"\s+kind="(?P<tag_xml>[^"]+)"[^>]*>|'
     r"\[auto-generated:\s*(?P<hook_legacy>[^\]]*?)\s*\](?:\s*\[(?P<tag_legacy>[^\]]*)\])?)"
 )
+_HOOK_XML_END_TAGS = ("</agent-toolkit-auto-inserted>", "</agent-toolkit-hook-message>")
 _CANDIDATE_KIND_LENGTH = 80
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
@@ -2052,8 +2053,10 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
             and xml_marker.group("tag_xml") in _STRUCTURED_WARNING_VALUES
         ):
             warning_body = normalized_text[xml_marker.end() :].strip()
-            if warning_body.endswith("</agent-toolkit-hook-message>"):
-                warning_body = warning_body[: -len("</agent-toolkit-hook-message>")].rstrip()
+            for end_tag in _HOOK_XML_END_TAGS:
+                if warning_body.endswith(end_tag):
+                    warning_body = warning_body[: -len(end_tag)].rstrip()
+                    break
             if warning_body and not _WARNING_ABSENCE_PATTERN.fullmatch(warning_body) and warning_body not in seen:
                 seen.add(warning_body)
                 result.append(warning_body)
@@ -2292,8 +2295,10 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
     matched = _HOOK_NOTICE_MARKER.match(normalized)
     hook = matched.group("hook_xml") or matched.group("hook_legacy") if matched is not None else None
     text = normalized[matched.end() :].strip() if matched is not None else normalized
-    if text.endswith("</agent-toolkit-hook-message>"):
-        text = text[: -len("</agent-toolkit-hook-message>")].rstrip()
+    for end_tag in _HOOK_XML_END_TAGS:
+        if text.endswith(end_tag):
+            text = text[: -len(end_tag)].rstrip()
+            break
     kind_text = _normalize_candidate_kind_text(text)
     tags = _hook_notice_tags(normalized, matched)
     if not tags:
@@ -2945,6 +2950,9 @@ def _candidate_events(
             if candidate_kind == "command-failure" and _is_help_command_failure(event):
                 excluded["command-help"] += 1
                 continue
+            if candidate_kind == "command-failure" and _is_normal_negative_result(event):
+                excluded["normal-negative-result"] += 1
+                continue
             if candidate_kind == "hook-notice":
                 exclusion = _hook_notice_candidate_exclusion(event.get("tag"))
                 if exclusion is not None:
@@ -3226,6 +3234,7 @@ def _user_candidate_exclusion(
             "[COMPACTION RECOVERY]",
             "This session is being continued",
             "<normative-context",
+            "<agent-toolkit-auto-inserted",
             "<agent-toolkit-hook-message",
             "<task-notification>",
             "<command-name>",
@@ -3291,6 +3300,50 @@ def _is_help_command_failure(event: dict[str, Any]) -> bool:
         return False
     normalized = diagnostic.casefold()
     return "usage:" in normalized or "options:" in normalized
+
+
+def _is_normal_negative_result(event: dict[str, Any]) -> bool:
+    """読取専用の述語が診断なしで偽を返した事象を区分する。"""
+    if event.get("exit_code") != 1 or str(event.get("diagnostic", "")).strip():
+        return False
+    command_value = event.get("command")
+    if not isinstance(command_value, str):
+        return False
+    try:
+        args = json.loads(command_value)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(args, list) or not args or not all(isinstance(arg, str) for arg in args):
+        return False
+    executable = Path(args[0]).name
+    if executable in {"bash", "sh", "zsh"}:
+        if len(args) < 3 or args[1] not in {"-c", "-lc"}:
+            return False
+        try:
+            args = shlex.split(args[2])
+        except ValueError:
+            return False
+        if not args or any(token in {";", "&&", "||", "|", ">", "<"} for token in args):
+            return False
+        executable = Path(args[0]).name
+    if executable in {"rg", "grep", "git-grep"}:
+        return True
+    if executable in {"test", "["}:
+        return any(flag in args for flag in ("-e", "-f", "-d", "-L"))
+    if executable == "command":
+        return len(args) >= 3 and args[1] == "-v"
+    if executable == "cmp":
+        return "-s" in args or "--silent" in args
+    if executable != "git":
+        return False
+    git_args = args[1:]
+    while git_args and git_args[0] == "-C" and len(git_args) >= 2:
+        git_args = git_args[2:]
+    if not git_args:
+        return False
+    if git_args[0] == "grep":
+        return True
+    return git_args[0] == "merge-base" and "--is-ancestor" in git_args[1:]
 
 
 def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[str, Any]) -> bool:

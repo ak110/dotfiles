@@ -110,6 +110,13 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
     return root / "agents-server" / root_session_id
 
 
+def session_log_path(root_session_id: str, session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """Antigravityの公開JSONイベントを保持するsession別JSONLのパスを返す。"""
+    if not valid_session_id(root_session_id) or not valid_session_id(session_id):
+        raise ValueError("invalid session identifier")
+    return status_directory(root_session_id, state_root) / "logs" / f"{session_id}.jsonl"
+
+
 def list_status_files(root_session_id: str, state_root: pathlib.Path | None = None) -> list[pathlib.Path]:
     """書込主体ごとの状態ファイルを絶対パスの安定順で返す。
 

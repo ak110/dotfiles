@@ -71,7 +71,7 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
     assert decision["reason"].startswith(
-        '<agent-toolkit-hook-message source="agent-toolkit/subagent-stop" kind="block" nonce="'
+        '<agent-toolkit-auto-inserted source="agent-toolkit/subagent-stop" kind="block" nonce="'
     )
     assert "\n停止する前に" in decision["reason"]
     assert "Fix: 空でない完了報告を書いてから、あらためて停止する。" in decision["reason"]

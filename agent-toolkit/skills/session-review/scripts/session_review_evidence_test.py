@@ -1358,9 +1358,9 @@ def test_codex_failed_command_keeps_structured_command_and_exit_code(tmp_path: p
 @pytest.mark.parametrize(
     ("commands", "diagnostics", "expected_candidates"),
     (
-        ([["rg", "-F", "one"], ["rg", "-F", "two"]], ["", ""], 2),
-        ([["test", "-e", "/one"], ["test", "-e", "/two"]], ["", ""], 2),
-        ([["rg", "-F", "one"], ["rg", "-F", "one"]], ["", ""], 1),
+        ([["rg", "-F", "one"], ["rg", "-F", "two"]], ["", ""], 0),
+        ([["test", "-e", "/one"], ["test", "-e", "/two"]], ["", ""], 0),
+        ([["rg", "-F", "one"], ["rg", "-F", "one"]], ["", ""], 0),
         ([["tool", "one"], ["tool", "two"]], ["same diagnostic", "same diagnostic"], 1),
         ([["tool", "one"], ["tool", "two"]], ["first diagnostic", "second diagnostic"], 2),
     ),
@@ -1372,7 +1372,7 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
     diagnostics: list[str],
     expected_candidates: int,
 ) -> None:
-    """診断が無い失敗だけはコマンド単位とし、診断があれば既存軸で集約する。"""
+    """正常な偽判定は除外し、診断を伴う失敗を既存軸で集約する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1401,9 +1401,10 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
     candidates = [record for record in records if record["kind"] == "candidate"]
 
     assert len(candidates) == expected_candidates
-    assert {candidate["candidate_kind"] for candidate in candidates} == {"command-failure"}
-    assert sum(candidate["count"] for candidate in candidates) == 2
-    assert sum(len(candidate["locators"]) for candidate in candidates) == 2
+    if expected_candidates:
+        assert {candidate["candidate_kind"] for candidate in candidates} == {"command-failure"}
+        assert sum(candidate["count"] for candidate in candidates) == 2
+        assert sum(len(candidate["locators"]) for candidate in candidates) == 2
 
 
 def test_candidates_exclude_explicit_help_failure_but_keep_usage_errors() -> None:
@@ -1443,6 +1444,37 @@ def test_candidates_exclude_explicit_help_failure_but_keep_usage_errors() -> Non
     candidates = [record for record in records if record["kind"] == "candidate"]
     assert {locator["line"] for candidate in candidates for locator in candidate["locators"]} == {2, 3}
     assert records[-1]["excluded"] == {"command-help": 1}
+
+
+def test_candidates_exclude_normal_negative_results_but_keep_diagnostics() -> None:
+    """述語の偽を件数へ分け、受理形式や対象の異常は候補へ残す。"""
+    commands = [
+        (["git", "grep", "missing"], ""),
+        (["rg", "missing", "."], ""),
+        (["bash", "-lc", "test -e /missing"], ""),
+        (["git", "merge-base", "--is-ancestor", "A", "B"], ""),
+        (["git", "grep", "missing"], "fatal: repository unavailable"),
+        (["cp", "source", "target"], ""),
+    ]
+    timeline = [
+        {
+            "kind": "failed-tool",
+            "tool": "CommandExecution",
+            "record": "main",
+            "line": index,
+            "text": diagnostic or "CommandExecution failed",
+            "diagnostic": diagnostic,
+            "exit_code": 1,
+            "command": json.dumps(command),
+        }
+        for index, (command, diagnostic) in enumerate(commands, start=1)
+    ]
+
+    records = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    candidates = [record for record in records if record["kind"] == "candidate"]
+    assert {locator["line"] for candidate in candidates for locator in candidate["locators"]} == {5, 6}
+    assert records[-1]["excluded"] == {"normal-negative-result": 4}
 
 
 def test_codex_failed_commands_without_diagnostic_or_command_use_record_position(
@@ -1733,16 +1765,14 @@ def test_warn_keeps_hook_marker_in_hook_record(
     assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": notice}]
 
 
+@pytest.mark.parametrize("element", ["agent-toolkit-hook-message", "agent-toolkit-auto-inserted"])
 def test_warn_keeps_xml_hook_marker_in_hook_record(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    element: str,
 ) -> None:
     """XML境界のwarn通知を実行時警告として返す。"""
-    notice = (
-        '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n'
-        "実行時の警告\n"
-        "</agent-toolkit-hook-message>"
-    )
+    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n実行時の警告\n</{element}>'
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1762,16 +1792,14 @@ def test_warn_keeps_xml_hook_marker_in_hook_record(
     assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "実行時の警告"}]
 
 
+@pytest.mark.parametrize("element", ["agent-toolkit-hook-message", "agent-toolkit-auto-inserted"])
 def test_hook_notices_mode_parses_xml_boundary_without_closing_tag(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    element: str,
 ) -> None:
     """XML境界の属性と本文を分類し、閉じタグを種別本文から除く。"""
-    notice = (
-        '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n'
-        "入力を補正した\n"
-        "</agent-toolkit-hook-message>"
-    )
+    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n入力を補正した\n</{element}>'
     transcript = _write_transcript(
         tmp_path,
         [

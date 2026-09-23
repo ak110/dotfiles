@@ -17,8 +17,8 @@ from agent_toolkit._hooks.message_format import llm_notice
 def test_llm_notice_wraps_body_with_xml_boundary(tag: str, expected_kind: str) -> None:
     """タグ有無にかかわらず出所、種別、nonce及び本文を保つ。"""
     notice = llm_notice("本文", "agent-toolkit/example", tag=tag)
-    assert notice.startswith(f'<agent-toolkit-hook-message source="agent-toolkit/example" kind="{expected_kind}" nonce="')
-    assert notice.endswith("\n本文\n</agent-toolkit-hook-message>")
+    assert notice.startswith(f'<agent-toolkit-auto-inserted source="agent-toolkit/example" kind="{expected_kind}" nonce="')
+    assert notice.endswith("\n本文\n</agent-toolkit-auto-inserted>")
 
 
 def test_llm_notice_escapes_attribute_values() -> None:

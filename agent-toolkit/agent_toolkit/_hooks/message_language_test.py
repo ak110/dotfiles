@@ -51,12 +51,6 @@ _LATIN_RE = re.compile(r"[A-Za-z]")
 # 全テンプレートへ同じ日本語判定を適用する。
 _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
-        "pretooluse.py:1053 本文",
-        "{tool_name}による編集で「`X`を根拠に`Y`しない」「`X`を理由に`Y`しない」形のメタ規範表現が増加した。"
-        "対象: {file_path}。この形は「`X`でなければ`Y`してよい」と読み違えられる。"
-        "全称否定形（「いかなる理由（例: `X`）があっても`Y`しない」）への書き換えを検討する。",
-    ),
-    (
         "pretooluse.py:1158 本文",
         "規範文書の本文が持つ節参照が実在しない可能性がある（{tool_name}、対象: {file_path}）: "
         "{'; '.join(reasons)}。参照先のファイルと節名が一致することを確認する。",
@@ -397,7 +391,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
 
 def _is_japanese_notice(text: str) -> bool:
     """通知の自然言語部分が日本語だけで構成される場合に真を返す。"""
-    body = re.sub(r"</?agent-toolkit-hook-message(?:\s[^>]*)?>", "", text)
+    body = re.sub(r"</?agent-toolkit-auto-inserted(?:\s[^>]*)?>", "", text)
     body = re.sub(r"(?m)^\s*(?:warn|warning|block|blocked):\s*", "", body)
     body = re.sub(r"(?m)^\s*Fix:\s*", "", body)
     body = re.sub(r"\{[^{}]*\}", "", body)

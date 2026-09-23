@@ -222,7 +222,7 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 
 Claude Codeで未完了の委譲又は背景処理を待つ実行主体は、機械的な完了通知を待機解除の既定手段としたまま、`CronCreate`、`CronList`及び`CronDelete`が現在の実行主体へ公開される場合だけ定期再確認を併用する。一般の委譲待機では`/loop`専用の`ScheduleWakeup`を使用しない。
 
-装着の時点は、そのセッションで最初の委譲先又は背景ジョブを起動する直前とする。メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行する。標準出力のcron式を変更せず`CronCreate`へ渡す。promptの1行目は`[agent-toolkit/periodic-recheck]`だけの行とする。この行はUserPromptSubmitフックが機械注入ターンを判定する入力であり、リテラルをそのまま保つ。resume後の所有task照合も、この標識の完全一致を判定手段とする。待機対象を正本から列挙する手段、対象ごとの成果物を決める方法及び動的に解決したパスを渡す`atk watch`のコマンド形も含める。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程をpromptへ埋め込まず、`recur=true`で1件だけ作成する。作成結果のtask IDはprompt外で保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。
+装着の時点は、そのセッションで最初の委譲先又は背景ジョブを起動する直前とする。メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行する。標準出力のcron式を変更せず`CronCreate`へ渡す。promptの1行目は`<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">`だけの行とする。この行はUserPromptSubmitフックが機械注入ターンを判定する入力であり、リテラルをそのまま保つ。resume後の所有task照合も、この標識の完全一致を判定手段とする。待機対象を正本から列挙する手段、対象ごとの成果物を決める方法及び動的に解決したパスを渡す`atk watch`のコマンド形も含める。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程をpromptへ埋め込まず、`recur=true`で1件だけ作成する。作成結果のtask IDはprompt外で保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。
 
 5フィールドのcron式は作成時刻からの相対周期ではなく壁時計を基準とし、REPLがidleのときだけ発火して実行中のクエリへ割り込まない。再帰taskは7日で自動失効し、発火時刻には決定論的なjitterが加わり得る。これらの制約は`CronCreate`のtool定義で確認する。
 

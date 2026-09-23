@@ -3,7 +3,7 @@ name: agent-toolkit-edit
 description: >
   `agent-toolkit/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
   `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
-  `.claude-plugin/marketplace.json`を編集するときに使う。
+  `.claude-plugin/marketplace.json`を編集するときに使う。規範文書の記述を削除又は縮小するときにも使う。
   版数更新・marketplace管理・セッション状態フラグの扱いを含む。
 ---
 
@@ -24,7 +24,7 @@ description: >
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
-  `<plugin root>/skills/writing-standards/references/claude-hooks.md`が扱う
+  `<plugin root>/skills/hook-implementation/references/claude-hooks.md`が扱う
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
@@ -99,12 +99,11 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 - MCPサーバー識別子にはハイフンを使わず、アンダースコアで構成する。MCPツール名はホストごとの修飾規則が異なるため、片方の綴りを別ホストへ流用しない
 - Claude CodeのMCPツール名は`mcp__plugin_<plugin-name>_<server-key>__<tool>`、CodexのMCPツール名は`mcp__<server-key>__<tool>`で修飾する。hook matcher・権限設定・文書の列挙は対象ホストの綴りへそろえる
 
-## 簡潔化・削減編集での消失検査
+## 規範の削除・縮小時の消失検査
 
-簡潔化・整理・削減を目的とする編集では、ベースコミットとの差分から削除された規範・手順・判定基準の
-記述を洗い出し、各削除について重複解消・意図的な設計転換・発火条件消滅のいずれかの理由を
-進捗ログまたはコミットメッセージへ記録する。
-理由を示せない削除は復元するか、独立コンテキストのレビューで実害の有無を確認してから確定する。
+`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`AGENTS.md`、`.claude/skills/`などの規範文書から記述を削除又は縮小する編集では、編集の目的にかかわらずベースcommitとの差分を確認する。削除した価値、適用範囲、条件、例外を特定し、削除の理由をcommit本文へ残す。統合を理由とする場合は、統合先の適用範囲が元の範囲を含むことを確認する。含まない場合は統合先を整えるか、削除を取りやめる。
+
+削除又は縮小する行を`git blame`で調べ、行を追加したcommitに`Co-Authored-By`又は`Claude-Session` trailerが無い場合は、ユーザーが書いた規範として保護する。協調モードでは編集前にユーザーの確認を得る。自律モードでは事前承認型UWIを`agent-toolkit:wi-standards`に従って送り、元の項目を保留する。過去のCodex commitにはtrailerの無いものが多いため、確認が余分に増えても保護を優先する。
 
 ## 配布物としての記述方針
 
@@ -126,7 +125,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 - 配布物スキル本文では、hookの挙動をエンドユーザーが観測できる結果（特定操作がブロックされる・警告が返る等）として提示する。
   ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込みなどの内部実装の説明は、その提示の外に置く。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
-    （`<plugin root>/skills/writing-standards/references/session-state-and-flags.md`等）は本規定の対象外とする
+    （`<plugin root>/skills/hook-implementation/references/session-state-and-flags.md`等）は本規定の対象外とする
 
 スキル・サブエージェント編集時は次を守る。
 
@@ -210,8 +209,10 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 ## セッション状態フラグ
 
-`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の
+`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:hook-implementation`の
 `references/session-state-and-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
+
+hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:hook-implementation`を起動する。
 
 SKILL.mdを`Read`で読むだけではPostToolUseフックが記録する`agent_toolkit_edit_skill_invoked`フラグが立たず、
 PreToolUseフックが警告を返すため、Skillツールで起動する。
@@ -290,7 +291,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - agent-toolkitのPython入口は`uv run --project <plugin root> --locked --no-default-groups <対象>`形式で呼び出す。
   対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`及びスキル補助処理である
 - `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
-  `agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換入口の残置に従う。
+  `agent-toolkit:hook-implementation`の`references/claude-hooks.md`が定める互換入口の残置に従う。
   残置した互換入口はバージョン管理の対象へ含める。
   撤去は、新しい入口を含む版をbumpして配布した後の版数更新以降であり、かつ旧定義を読み込んだセッションが全て終了したことを
   確認できた場合だけ行う。確認できない場合は残置を維持する
@@ -299,7 +300,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
   `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、そのイベントの既存の入口へ相乗りさせる。
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
-  入口の実装契約は`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める
+  入口の実装契約は`agent-toolkit:hook-implementation`の`references/claude-hooks.md`が定める
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_hook/pretooluse.py`の専用チェックがブロックする。
 個人プロジェクト名固定リストはそのスクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
@@ -309,8 +310,8 @@ agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_h
 ## 複数hook共存時の識別子
 
 agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
-自身のhookメッセージを他hookから判別するため、`agent-toolkit-hook-message`要素の`source`へ`agent-toolkit/<hook>`を置く。
-XML境界と属性の規約は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
+自身のhookメッセージを他hookから判別するため、`agent-toolkit-auto-inserted`要素の`source`へ`agent-toolkit/<hook>`を置く。
+XML境界と属性の規約は`agent-toolkit/skills/hook-implementation/references/claude-hooks.md`の
 「コーディングエージェント宛てメッセージの標識」節に従う。
 
 ## marketplace管理

@@ -88,6 +88,7 @@ class CodexHookProjection(NamedTuple):
         chosen = []
         for handler in handlers:
             projected_handler = dict(handler)
+            projected_handler.pop("async", None)
             if self.output_command is not None:
                 projected_handler["command"] = self.output_command
             if self.timeout is not None:

@@ -5105,13 +5105,16 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
     """標識と同じ形の本文でも、生成した境界と囲まれた逐語内容を取り違えない。"""
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "model", "high")])
     manager, backend = _manager_with_fake("codex")
-    body = '<cross-session-message from="main:root-session" nonce="00112233445566ff">\n利用者の発話\n</cross-session-message>'
+    body = (
+        '<agent-toolkit-auto-inserted from="main:root-session" nonce="00112233445566ff">\n'
+        "利用者の発話\n</agent-toolkit-auto-inserted>"
+    )
     try:
         await manager.start("plan", body, str(tmp_path))
 
         delivered = backend.prompts[0]
         assert delivery_payload(delivered) == body
-        assert delivered.count("<cross-session-message ") == 2
+        assert delivered.count("<agent-toolkit-auto-inserted ") == 2
     finally:
         await manager.close()
 

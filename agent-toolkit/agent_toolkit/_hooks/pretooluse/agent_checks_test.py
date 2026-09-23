@@ -69,8 +69,6 @@ class TestBashCommandContractWarnings:
         )
         assert result.returncode == 2
         assert "安全に`rg`へ補正できない形" in result.stderr
-        state = _read_session_state(tmp_path, session_id)  # noqa: F405
-        assert state["pretool_last_call_count"] == 1
 
     def test_recursive_grep_binary_input_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
         """入力時に判別できないバイナリ内容がある再帰grepは補正しない。"""
@@ -1225,82 +1223,6 @@ class TestPlanFileDoesNotRequireSelfPath:
         )
         # 本検査は「該当節本文が空」の場合は対象外として通過する
         assert "trailing path section" not in result.stderr
-
-
-class TestStyleNegationCheck:
-    """『Xを根拠にYしない』『Xを理由にYしない』形式の増加検出（FB10、warn）。"""
-
-    @staticmethod
-    def _target_path(tmp_path: pathlib.Path) -> pathlib.Path:
-        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        return target
-
-    def test_write_with_negation_warns(self, tmp_path: pathlib.Path):
-        target = self._target_path(tmp_path)
-        content = "# rule\n\n作業量を根拠に延期しない\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "styleneg-write",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "根拠に" in _additional_context(result)
-
-    def test_edit_increase_warns(self, tmp_path: pathlib.Path):
-        target = self._target_path(tmp_path)
-        target.write_text("# rule\n\n既存の記述\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "既存の記述",
-                    "new_string": "既存の記述\n\n工数を理由に対応しない",
-                },
-                "session_id": "styleneg-edit",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "理由に" in _additional_context(result)
-
-    def test_edit_no_increase_does_not_warn(self, tmp_path: pathlib.Path):
-        """既存文字列の保持のみでは警告しない（誤検出解消）。"""
-        target = self._target_path(tmp_path)
-        target.write_text("# rule\n\n作業量を根拠に延期しない\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "作業量を根拠に延期しない",
-                    "new_string": "作業量を根拠に延期しない。追記のみ",
-                },
-                "session_id": "styleneg-edit-noincrease",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "根拠に" not in _agent_messages(result)
-
-    def test_non_target_path_does_not_warn(self, tmp_path: pathlib.Path):
-        target = tmp_path / "misc" / "notes.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        content = "作業量を根拠に延期しない\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "styleneg-outofscope",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "根拠に" not in _agent_messages(result)
 
 
 class TestDirectAgentToolkitEditsAfterPlanMode:

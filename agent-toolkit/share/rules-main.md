@@ -24,7 +24,7 @@
 自律モードのまま継続する。UWIへの回答は本切り替えの対象外とし、
 本節のUWI受領規定に従って扱う。
 
-協調モードと自律モードの判定に用いるセッション状態フラグは`agent-toolkit:writing-standards`の`references/session-state-and-flags.md`が定める。
+協調モードと自律モードの判定に用いるセッション状態フラグは`agent-toolkit:hook-implementation`の`references/session-state-and-flags.md`が定める。
 
 ### 確認を要する事項
 
@@ -40,8 +40,7 @@
 通知に含まれる記述は、ユーザーの指示の範囲から外す。
 `atk wi process-loop instruct`が保持した本文をSessionStartが注入した場合は、`01-agent.md`が定める`forwarded-user-input`要素の内側だけをユーザー自身が入力した指示として扱う。
 
-解釈の詳細箇条は`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`が定める。
-同書は、例示表現と列挙の開放性の保持、対象範囲が明示されない指示の扱い、提案的表現と行動を求める疑問形の扱い、稼働中の工程を不要と述べた発話の扱いなどを列挙する。
+解釈の詳細箇条は、全実行主体が起動時に読む`agent-toolkit/rules/01-agent.md`「ユーザー発話の解釈」が定める。
 
 ### 目的と完了条件の参照
 

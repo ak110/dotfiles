@@ -16,7 +16,7 @@ auto modeのカスタムルールを追加・編集する手順は`agent-toolkit
 PreToolUseフックの`permissionDecision: "allow"`より前にpermissions評価が確定する。
 このため、拒否ルールに該当する対象は、許可の追加ではなく拒否ルール自体の見直しで解消する。
 
-permissions設定による確認ダイアログが対象の場合は本書の範囲の外とし、`agent-toolkit:writing-standards`の`references/claude-hooks.md`の「PermissionRequest」に従う。
+permissions設定による確認ダイアログが対象の場合は本書の範囲の外とし、`agent-toolkit:hook-implementation`の`references/claude-hooks.md`の「PermissionRequest」に従う。
 
 ## 既知の誤拒否パターンと対応
 

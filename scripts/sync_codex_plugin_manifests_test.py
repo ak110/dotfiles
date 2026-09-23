@@ -86,7 +86,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                     ],
                     "SessionEnd": [
                         {
-                            "hooks": [{"type": "command", "command": subject.CODEX_SESSION_END_COMMAND}],
+                            "hooks": [{"type": "command", "command": subject.CODEX_SESSION_END_COMMAND, "async": True}],
                         }
                     ],
                     "PermissionRequest": [

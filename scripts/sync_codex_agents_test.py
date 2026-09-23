@@ -192,9 +192,9 @@ def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> 
 @pytest.mark.parametrize(
     ("body", "wrapped"),
     [
-        ('<normative-context source="x" kind="y" path="z">\nbody\n</normative-context>', False),
-        ("<normative-context>\nbody\n</normative-context>", False),
-        ('<normative-contextual source="x">\nbody\n</normative-contextual>', True),
+        ('<agent-toolkit-auto-inserted source="x" kind="y" path="z">\nbody\n</agent-toolkit-auto-inserted>', False),
+        ("<agent-toolkit-auto-inserted>\nbody\n</agent-toolkit-auto-inserted>", False),
+        ('<agent-toolkit-auto-inserted-extra source="x">\nbody\n</agent-toolkit-auto-inserted-extra>', True),
         ("plain body", True),
     ],
 )

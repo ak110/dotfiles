@@ -208,9 +208,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wait-schedule --request-bucket=main",
     },
     "atk agents": {
-        "summary": "委譲sessionの待機・通知・一覧・詳細表示を行う",
+        "summary": "委譲sessionの待機・通知・一覧・詳細・記録表示を行う",
         "description": "目的: `agents_server`が保持する委譲sessionをCLIから待機、通知又は診断する。\n利用場面: 背景ジョブでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`は結果受領の正規経路、`notify`は実行中通知、`list`と`show`は共有状態ファイルの診断経路として動作する。\n前提: `wait`と`notify`は対象sessionと同じルートセッションで実行する。直接端末の`list`は有効な全ルートを統合し、`show`はsession IDが一意な場合に所有ルートを解決する。\n復元・後始末: `wait`が回収した結果ファイルと通知ファイルは削除される。追加の結果受領操作は不要である。",
-        "epilog": "実行例:\n\n  atk agents wait\n  atk agents list\n  atk agents show <session_id>",
+        "epilog": "実行例:\n\n  atk agents wait\n  atk agents list\n  atk agents show <session_id>\n  atk agents logs <session_id> --follow",
     },
     "atk agents wait": {
         "summary": "委譲先sessionの終端結果と実行中通知を待って回収できた全件を出力する",
@@ -224,13 +224,18 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを詳しい状態とともに一覧表示する",
-        "description": "目的: 同じルートセッション配下の委譲sessionを診断できる形で一覧表示する。\n利用場面: 識別子を失ったsessionの回復又は残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読み、session一覧を単一のJSON文書として標準出力へ書く。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。\n前提: 対象と同じルートセッションで実行する。既定では未回収結果を持たない終端済みsessionを除く。会話rootとの対応を確認できず一覧が空の場合は、CLIが解決したrootを標準エラーへ書き、MCPの`list`を1回呼び出してから同じコマンドを再実行するよう案内する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復又は残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では全rootのClaude Code・Codex識別子を見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。\n前提: 既定では未回収結果を持たない終端済みsessionを除く。エージェント環境で会話rootとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
     },
     "atk agents show": {
         "summary": "指定した委譲sessionの詳しい状態を表示する",
         "description": "目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデル又は停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents show <session_id>",
+    },
+    "atk agents logs": {
+        "summary": "指定sessionの会話記録を表示・追尾する",
+        "description": "目的: 委譲sessionの発話と操作を時系列で読む。\n利用場面: 一覧からsessionを選んで進行状況を調べるとき。\n対象と出力: Claude Code・Codexの保存記録、又はagents_serverが保存したAntigravityのJSON出力を読み、時刻、種別、本文を表示する。`--follow`を指定すると新着行を表示し続ける。\n前提: 指定sessionのローカル記録が存在し、読取権限を持つ。終了にはCtrl-Cを使う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "実行例:\n\n  atk agents logs <session_id>\n  atk agents logs <session_id> --follow",
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",

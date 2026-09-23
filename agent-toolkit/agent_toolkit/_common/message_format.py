@@ -13,6 +13,7 @@ import secrets
 from collections.abc import Mapping
 from xml.sax.saxutils import quoteattr
 
+AUTO_INSERTED_ELEMENT = "agent-toolkit-auto-inserted"
 FORWARDED_USER_INPUT_ELEMENT = "forwarded-user-input"
 """自動生成本文の内側で、ユーザー自身が入力した範囲を囲む要素。
 
@@ -29,3 +30,8 @@ def xml_message(element: str, body: str, attributes: Mapping[str, str]) -> str:
     values = {**attributes, "nonce": nonce}
     serialized = "".join(f" {name}={quoteattr(value)}" for name, value in values.items())
     return f"<{element}{serialized}>\n{body}\n</{element}>"
+
+
+def auto_message(body: str, *, source: str, kind: str, attributes: Mapping[str, str] | None = None) -> str:
+    """自動挿入本文へ共通の境界と出所を付ける。"""
+    return xml_message(AUTO_INSERTED_ELEMENT, body, {**(attributes or {}), "source": source, "kind": kind})

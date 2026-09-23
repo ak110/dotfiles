@@ -140,7 +140,7 @@ class TestCommitResolution:
         result = (notes / destination / "awi.md").read_text(encoding="utf-8")
         assert f"- 対応commit作成者日時: {self._AUTHOR_DATE}" in result
         assert f"- 対応commit件名: {self._SUBJECT}" in result
-        assert full_oid not in result
+        assert f"- 対応commit: {full_oid}" in result
 
     def test_matching_worktree_records_stable_metadata(
         self,
@@ -176,7 +176,7 @@ class TestCommitResolution:
         result = (notes / "adopted/awi.md").read_text(encoding="utf-8")
         assert f"- 対応commit作成者日時: {self._AUTHOR_DATE}" in result
         assert f"- 対応commit件名: {self._SUBJECT}" in result
-        assert full_oid not in result
+        assert f"- 対応commit: {full_oid}" in result
 
     @pytest.mark.parametrize("revision", ["missing", "--not-an-option", "blob"])
     def test_invalid_revision_stops_before_mutation(
@@ -301,7 +301,7 @@ class TestCommitResolution:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """履歴書換えでOIDが変わっても同じ作成者日時と件名を安定識別情報として得る。"""
+        """履歴書換え前後のOIDを区別し、作成者日時と件名も記録する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "before.md")
         _write_awi_file(notes, "after.md")
@@ -335,10 +335,10 @@ class TestCommitResolution:
         after = (notes / "adopted/after.md").read_text(encoding="utf-8")
 
         assert full_oids["before"] != full_oids["after"]
-        for content in (before, after):
+        for revision, content in (("before", before), ("after", after)):
+            assert f"- 対応commit: {full_oids[revision]}" in content
             assert f"- 対応commit作成者日時: {self._AUTHOR_DATE}" in content
             assert f"- 対応commit件名: {self._SUBJECT}" in content
-            assert not any(oid in content for oid in full_oids.values())
 
 
 def test_set_dependencies_updates_normal_awi_without_converting_plan(

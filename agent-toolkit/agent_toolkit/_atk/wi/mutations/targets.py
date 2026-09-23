@@ -240,7 +240,7 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetad
             f"対応commitの作成者日時と件名を取得できない: {local_worktree} ({revision})。revisionの指定を見直す"
         )
         sys.exit(2)
-    return _CommitMetadata(author_date=author_date, subject=subject)
+    return _CommitMetadata(oid=commit, author_date=author_date, subject=subject)
 
 
 def _commit_values_by_path(

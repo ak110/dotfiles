@@ -118,59 +118,6 @@ class TestCodexApplyPatchEditChecks:
         assert result.returncode == 0
 
 
-class TestStyleNegationAcrossHosts:
-    """否定規定表現の判定単位がホストごとの契約どおりであること。"""
-
-    @staticmethod
-    def _rule_path(tmp_path: pathlib.Path) -> pathlib.Path:
-        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        return target
-
-    def test_multiedit_warns_even_when_file_total_is_unchanged(self, tmp_path: pathlib.Path) -> None:
-        """追加と削除がファイル全体で相殺するMultiEditでも追加した編集単位を警告する。"""
-        target = self._rule_path(tmp_path)
-        target.write_text("# rule\n\n作業量を根拠に延期しない\n\n別の記述\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "edits": [
-                        {"old_string": "作業量を根拠に延期しない", "new_string": "作業量に応じて計画を見直す"},
-                        {"old_string": "別の記述", "new_string": "工数を理由に対応しない"},
-                    ],
-                },
-                "session_id": "styleneg-multiedit",
-            },
-        )
-
-        assert result.returncode == 0
-        assert "理由に" in _additional_context(result)
-
-    def test_codex_add_file_uses_whole_text(self, tmp_path: pathlib.Path) -> None:
-        """Codexの追加は追加全文の件数で判定する。"""
-        patch_text = _patch("*** Add File: agent-toolkit/rules/test-rule.md\n+# rule\n+\n+作業量を根拠に延期しない\n")
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 0
-        assert "根拠に" in _additional_context(result)
-
-    def test_codex_update_preserving_existing_phrase_does_not_warn(self, tmp_path: pathlib.Path) -> None:
-        """Codexの更新は断片ごとの増加で判定し、既存表現の保持では警告しない。"""
-        target = self._rule_path(tmp_path)
-        target.write_text("# rule\n\n作業量を根拠に延期しない\n", encoding="utf-8")
-        patch_text = _patch(
-            "*** Update File: agent-toolkit/rules/test-rule.md\n@@\n"
-            "-作業量を根拠に延期しない\n"
-            "+作業量を根拠に延期しない。追記のみ\n"
-        )
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 0
-        assert "根拠に" not in _agent_messages(result)
-
-
 class TestCodexBashCheckSelection:
     """同一のBash入力に対するホスト別の検査集合。"""
 
@@ -206,8 +153,9 @@ class TestCodexBashCheckSelection:
         subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
         env = _plan_file_state_env(tmp_path)
         _write_session_state(tmp_path, "commit-host", {"git_log_checked": {str(repo): True}})
-        claude = _run(self._payload("git commit -m x", repo, "commit-host", codex=False), env_overrides=env)
-        codex = _run(self._payload("git commit -m x", repo, "commit-host", codex=True), env_overrides=env)
+        command = "git commit -m x -m 'Co-Authored-By: Test <noreply@openai.com>'"
+        claude = _run(self._payload(command, repo, "commit-host", codex=False), env_overrides=env)
+        codex = _run(self._payload(command, repo, "commit-host", codex=True), env_overrides=env)
 
         assert "テストを実行せずにcommit" in _additional_context(claude)
         assert "テストを実行せずにcommit" not in _agent_messages(codex)
