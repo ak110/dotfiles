@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """証拠bundleから全候補を含む未判定の一次判定入力を生成する。"""
 
 from __future__ import annotations

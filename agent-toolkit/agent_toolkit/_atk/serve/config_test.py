@@ -856,19 +856,24 @@ async def test_safe_base_path_rejects_value_that_proxy_fix_accepts(tmp_path: pat
     assert 'const BASE_PATH="";' in js_body
 
 
+@pytest.mark.parametrize("received_signal", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP])
 @pytest.mark.asyncio
 async def test_serve_shuts_down_on_signal_and_stops_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    received_signal: signal.Signals,
 ) -> None:
     """シグナル集約でshutdown_triggerが解除され、停止時にstateを止める。"""
     stopped: list[str] = []
     _stub_state(monkeypatch, tmp_path, stopped)
-    handlers: dict[int, typing.Callable[[], None]] = {}
+    handlers: dict[int, tuple[typing.Callable[[str], None], str]] = {}
     loop = asyncio.get_running_loop()
 
-    def add_signal_handler(sig: int, callback: typing.Callable[[], None]) -> None:
-        handlers[sig] = callback
+    def add_signal_handler(
+        sig: int, callback: typing.Callable[[str], None], signal_name: str, **kwargs: object
+    ) -> None:
+        del kwargs
+        handlers[sig] = (callback, signal_name)
 
     monkeypatch.setattr(loop, "add_signal_handler", add_signal_handler)
     observed: dict[str, object] = {}
@@ -879,7 +884,8 @@ async def test_serve_shuts_down_on_signal_and_stops_state(
         observed["graceful_timeout"] = hypercorn_config.graceful_timeout
         observed["accesslog"] = hypercorn_config.accesslog
         # シグナル受信を模擬してshutdown_triggerを解除する。
-        handlers[signal.SIGTERM]()
+        callback, signal_name = handlers[received_signal]
+        callback(signal_name)
         await shutdown_trigger()
 
     monkeypatch.setattr(serve.hypercorn.asyncio, "serve", fake_serve)
