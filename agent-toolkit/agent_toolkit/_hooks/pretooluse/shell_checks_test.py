@@ -1284,8 +1284,8 @@ class TestStaticSafetyBlocks:
         受理集合の全体は判定を変えないまま実行主体のコンテキストを占めるため載せない。
         """
         result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
-        assert result.returncode == 2
-        messages = result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
         assert "--not-supported" in messages
         assert "接頭辞が一致する受理オプション: --no-json" in messages
         assert "当該サブコマンドが受理するオプション: " not in messages
@@ -1878,8 +1878,8 @@ class TestNormViolatingArgumentForms:
         値をオプションで渡す対処が成立するため、本検体の対象から外れる。
         """
         result = self._invoke("atk wi pull extra", tmp_path)
-        assert result.returncode == 2
-        messages = result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
         assert "位置引数を受理しない" in messages
         assert "引数を付けずに再発行する" in messages
         assert "当該の値をオプションで渡す" not in messages
@@ -1947,8 +1947,8 @@ class TestNormViolatingArgumentForms:
     def test_unknown_atk_subcommand_blocks(self, tmp_path: pathlib.Path) -> None:
         """実在しないサブコマンドを遮断し、親コマンドが受理する一覧と要約を示す。"""
         result = self._invoke("atk not-a-subcommand", tmp_path)
-        assert result.returncode == 2
-        messages = result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
         assert "実在しないサブコマンド" in messages
         assert "- wi: " in messages
 
@@ -1958,8 +1958,8 @@ class TestNormViolatingArgumentForms:
         オプションを受理するサブコマンドでは、オプションで渡す対処と受理形式の確定手段を示す。
         """
         result = self._invoke("atk wi list 20260101-000000-001.md", tmp_path)
-        assert result.returncode == 2
-        messages = result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
         assert "位置引数を受理しない" in messages
         assert "当該の値をオプションで渡す" in messages
         assert "受理するオプションは`--help`を単独で実行して確認する" in messages
@@ -1968,15 +1968,15 @@ class TestNormViolatingArgumentForms:
         """公開契約が受理しないatkオプションは初回から遮断する。"""
         result = self._invoke("atk wi list --not-supported", tmp_path)
 
-        assert result.returncode == 2
-        assert "受理しないオプション" in result.stderr
+        assert result.returncode == 0
+        assert "受理しないオプション" in _agent_messages(result)
 
     def test_atk_managed_temp_cleanup_positional_path_blocks(self, tmp_path: pathlib.Path) -> None:
         """managed-temp cleanupへ位置引数のパスを指定した呼び出しを遮断する。"""
         result = self._invoke("atk managed-temp cleanup /tmp/example", tmp_path)
 
-        assert result.returncode == 2
-        assert "位置引数を受理しない" in result.stderr
+        assert result.returncode == 0
+        assert "位置引数を受理しない" in _agent_messages(result)
 
     def test_atk_subcommand_with_positionals_is_silent(self, tmp_path: pathlib.Path) -> None:
         """位置引数を受理するサブコマンドの正常な実行は検出しない。"""
@@ -1990,8 +1990,8 @@ class TestNormViolatingArgumentForms:
         受理形式の判定は下位サブコマンドを位置引数として表現するため、当該判定へ委ねると実態と異なる本文が返る。
         """
         result = self._invoke("atk config list", tmp_path)
-        assert result.returncode == 2
-        messages = result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
         assert "実在しないサブコマンド" in messages
         assert "- show: " in messages
         assert "位置引数を受理しない" not in messages
@@ -2308,10 +2308,10 @@ class TestBashGitGrepBasicAlternation:
 
     @staticmethod
     def test_alternation_without_pattern_type_is_blocked(tmp_path: pathlib.Path) -> None:
-        """代替表現を含み種別を指定しない呼び出しを遮断する。"""
+        """代替表現を含み種別を指定しない呼び出しを警告する。"""
         command = "git grep -n " + shlex.quote("def a\\|def b") + " -- app"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
-        assert result.returncode == 2
+        assert result.returncode == 0
         messages = _agent_messages(result)
         assert "基本正規表現は当該表記を選択として解釈しない" in messages
         assert "`-E`を明示" in messages

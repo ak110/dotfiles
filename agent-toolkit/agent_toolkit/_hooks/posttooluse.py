@@ -3,6 +3,8 @@ r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録と
 Bash / Write / Edit / MultiEdit / apply_patch / Skill / Read / Agent / Taskの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
 PreToolUseやStopフックが参照して警告・提案の判定に使う。
+本モジュールは実行後の観測と警告だけを行い、遮断経路を持たない。
+除去可能な警告が反復しても、完了済みのツール操作を遡って遮断しない。
 
 編集入力は`_hook_tool_input`が共通の操作記録へ正規化する。
 Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終了コードを取得できないため、

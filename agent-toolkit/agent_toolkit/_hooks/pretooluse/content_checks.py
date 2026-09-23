@@ -8,6 +8,9 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
+遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
+又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
+除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
 
 統合しているチェック:
 
@@ -27,7 +30,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
 
-- 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
+- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
+- 委譲先へ渡す絶対`cwd`と対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 wait:
@@ -64,7 +68,7 @@ Write / Edit / MultiEdit / apply_patch:
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - シークレット / 鍵ファイルの直接編集 (block)
-- Pythonと計画Markdownの末尾へ混入したツール境界タグの検出 (block)
+- Pythonと計画Markdownの末尾へ混入したツール境界タグは後続編集で除去できるため警告 (warn)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -180,20 +184,8 @@ def _check_edit_operation_blocks(
     「遮断・警告フックの成立条件」の第1段により、編集内容を対象とする検査は警告へ移した。
     秘匿値ファイルの編集だけは、値がログとトランスクリプトへ複写された後に取り消せないため遮断を維持する。
     """
-    if any(_check_secrets(tool_name, path) for path in operation.display_paths):
-        return True
-    if materialized is None or not _is_trailing_tool_boundary_target(operation.path):
-        return False
-    if _TRAILING_TOOL_BOUNDARY_RE.search(materialized.after_image) is None:
-        return False
-    print(
-        _block_notice(
-            f"blocked: `{operation.display_path}`の末尾にツール境界タグ`</content>`と`</invoke>`が混入している。",
-            fix="末尾のツール境界タグを削除してから編集を再実行する。",
-        ),
-        file=sys.stderr,
-    )
-    return True
+    del materialized
+    return any(_check_secrets(tool_name, path) for path in operation.display_paths)
 
 
 _TRAILING_TOOL_BOUNDARY_RE = re.compile(r"</content>\s*</invoke>\s*\Z")
@@ -263,6 +255,19 @@ def _collect_edit_operation_warnings(
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
     display_path = operation.display_path
     image = _materialize_cached(operation, index, images)
+    if (
+        image is not None
+        and _is_trailing_tool_boundary_target(operation.path)
+        and _TRAILING_TOOL_BOUNDARY_RE.search(image.after_image) is not None
+    ):
+        boundary_warning = _llm_notice(
+            f"warn: `{display_path}`の末尾にツール境界タグ`</content>`と`</invoke>`が混入している。"
+            "末尾のツール境界タグを削除する。",
+            tag=_WARN_TAG,
+            removable_cause=True,
+        )
+    else:
+        boundary_warning = None
     if image is None:
         colloquial_warning = next(
             (
@@ -282,6 +287,8 @@ def _collect_edit_operation_warnings(
 
     # 断片入力を使う検査。
     warnings = _collect_edit_operation_degraded_warnings(tool_name, operation)
+    if boundary_warning is not None:
+        warnings.append(boundary_warning)
     warnings.extend(
         warning
         for warning in (

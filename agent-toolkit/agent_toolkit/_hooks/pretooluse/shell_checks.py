@@ -8,6 +8,9 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
+遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
+又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
+除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
 
 統合しているチェック:
 
@@ -26,7 +29,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
 
-- 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
+- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
+- 委譲先へ渡す絶対`cwd`と対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 wait:
@@ -37,7 +41,8 @@ Bash:
 
 - 多段シェルへのコード文字列と`.env`内容出力の遮断 (block)
 - `python`の`-c`へ渡す複数文のコードと構文として成立しないコードの遮断 (block)
-- 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
+- 単純な明示パスの不存在は警告し、反復で対象集合の欠落を繰り返す場合に遮断 (warn/block)
+- `atk`が受理しないオプション・位置引数・サブコマンドはツール自身が拒否できるため警告 (warn)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
@@ -951,7 +956,9 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
     summary = "\n".join(summary_parts) if summary_parts else None
     if missing_fix is not None:
         # 実在しないパスの除去は呼び出しの対象集合そのものを狭めるため、是正を要する通知として返す。
-        return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True, summary=summary)
+        return rewritten_command, _llm_notice(
+            body, tag=_WARN_TAG, removable_cause=True, escalate_on_repeat=True, summary=summary
+        )
     # 残る補正は、補正前の呼び出しが要求した結果をそのまま当該呼び出しへ返す。
     # 実行主体の是正を要さないため、振り返りの問題候補へ残らない情報提示のタグで返す。
     return rewritten_command, _llm_notice(body, tag="notice", summary=summary)
@@ -1420,6 +1427,7 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
         "不在を確認する意図では、対象ごとに別の呼び出しで`test -e <絶対パス>`を実行し、終了コードで判定する。",
         tag=_WARN_TAG,
         removable_cause=True,
+        escalate_on_repeat=True,
     )
 
 
@@ -2611,7 +2619,7 @@ _ATK_HELP_ONLY_FLAGS: frozenset[str] = frozenset({"-h", "--help"})
 def _check_bash_atk_options(command: str) -> str | None:
     """公開済み最下層`atk`サブコマンドの受理形式に一致しない引数を実行前に検出する。
 
-    公開契約から不成立が確定する呼び出しは、同じ失敗を実行させず遮断する。
+    公開契約から不成立が確定しても、引数の誤りは後から是正できるため警告する。
     通知本文は当該判定が保持する受理形式から組み立て、受理形式に応じて対処を切り替える。
     受理形式から導かない固定の対処文は、引数を受理しないサブコマンドで実行できない案内になる。
     認識できた経路の直下に当該階層が受理しないサブコマンドがある呼び出しは、
@@ -2635,14 +2643,12 @@ def _check_bash_atk_options(command: str) -> str | None:
         arguments = list(_argument_tokens(segment, 1 + len(path)))
         scan = _scan_accepted_options(arguments, flags, valued)
         if scan.unknown_option is not None:
-            print(
-                _block_notice(
-                    f"`atk {' '.join(path)}`が受理しないオプションである。対象: {scan.unknown_option}",
-                    fix=_format_accepted_option_candidates(scan.unknown_option, flags, valued),
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"`atk {' '.join(path)}`が受理しないオプションである。対象: {scan.unknown_option}\n"
+                f"対処: {_format_accepted_option_candidates(scan.unknown_option, flags, valued)}",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return "block"
         if not positionals and scan.positionals:
             accepts_no_arguments = not valued and set(flags) <= _ATK_HELP_ONLY_FLAGS
             remedy = (
@@ -2651,14 +2657,11 @@ def _check_bash_atk_options(command: str) -> str | None:
                 else "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。"
                 "受理するオプションは`--help`を単独で実行して確認する。"
             )
-            print(
-                _block_notice(
-                    f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(scan.positionals)}",
-                    fix=remedy.removeprefix("対処: "),
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(scan.positionals)}\n{remedy}",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return "block"
     return None
 
 
@@ -3174,6 +3177,7 @@ def _check_bash_output_status_after_truncation(command: str) -> str | None:
                 "`head`・`tail`の終了状態を示す。出力を切り詰める前に対象コマンドの終了状態を保持する。",
                 tag=_WARN_TAG,
                 removable_cause=True,
+                escalate_on_repeat=True,
             )
     return None
 
@@ -3716,16 +3720,14 @@ def _check_bash_git_grep_pattern_type(command: str) -> str | None:
         if pattern is not None and not any(character in _GIT_GREP_BASIC_REGEXP_METACHARACTERS for character in pattern):
             continue
         if pattern is not None and _GIT_GREP_BASIC_ALTERNATION in pattern:
-            print(
-                _block_notice(
-                    "block: `git grep`が種別を指定せず、patternへ"
-                    f"`{_GIT_GREP_BASIC_ALTERNATION}`を含んでいる。"
-                    "基本正規表現は当該表記を選択として解釈しないため、この呼び出しは意図した一致を返さない。",
-                    fix=_GIT_GREP_BASIC_ALTERNATION_FIX,
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                "`git grep`が種別を指定せず、patternへ"
+                f"`{_GIT_GREP_BASIC_ALTERNATION}`を含んでいる。"
+                "基本正規表現は当該表記を選択として解釈しないため、この呼び出しは意図した一致を返さない。\n"
+                f"対処: {_GIT_GREP_BASIC_ALTERNATION_FIX}",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return "block"
         return _llm_notice(
             "`git grep`が固定文字列・拡張正規表現・Perl互換正規表現のいずれの種別も指定していない。\n"
             "対処: 検索意図に応じて`-F`・`-E`・`-P`のいずれかを明示し、"
@@ -3965,15 +3967,12 @@ def _check_bash_unknown_atk_subcommand(command: str) -> str | None:
         catalog = _atk_subcommand_catalog(prefix)
         listed = "\n".join(f"- {name}: {summary}" for name, summary in catalog)
         label = f"`atk {' '.join(prefix)}`" if prefix else "`atk`"
-        print(
-            _block_notice(
-                f"{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
-                f"{label}が受理するサブコマンド:\n{listed}",
-                fix="上記のいずれかへ修正する。",
-            ),
-            file=sys.stderr,
+        return _llm_notice(
+            f"{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
+            f"{label}が受理するサブコマンド:\n{listed}\n対処: 上記のいずれかへ修正する。",
+            tag=_WARN_TAG,
+            removable_cause=True,
         )
-        return "block"
     return None
 
 

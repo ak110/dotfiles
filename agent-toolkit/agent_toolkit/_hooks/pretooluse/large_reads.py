@@ -1,4 +1,8 @@
-"""大量の全文取得を分割読取又は軽量委譲へ誘導する。"""
+"""大量の全文取得を分割読取又は軽量委譲へ誘導する。
+
+上限超過の取得は返却本文の欠落を招くため遮断する。補正後も反復する警告は
+母集団欠落を再発させるため遮断へ昇格する。
+"""
 
 from __future__ import annotations
 
@@ -199,6 +203,7 @@ def check_large_read(tool_input: dict, cwd: str) -> LargeReadResult | None:
         f"agents_serverのstart_exploreへ質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。",
         tag=_WARN_TAG,
         removable_cause=True,
+        escalate_on_repeat=True,
     )
     return LargeReadResult(updated_input=corrected, notice=notice)
 

@@ -49,6 +49,7 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
         *,
         tag: str = default_tag,
         removable_cause: bool | None = None,
+        escalate_on_repeat: bool = False,
         summary: str | None = None,
     ) -> str:
         frame = inspect.currentframe()
@@ -63,6 +64,7 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
                 cause=cause,
                 session_id=session_id if isinstance(session_id, str) else "",
                 removable_cause=removable_cause,
+                escalate_on_repeat=escalate_on_repeat,
                 summary=summary,
             )
         if summary is not None:
@@ -95,8 +97,7 @@ def block_formatter(hook_id: str) -> Callable[..., str]:
 def warning_formatter(hook_id: str) -> Callable[..., str]:
     """`hook_id`を固定し、`warn_notice_counts`で原因別反復を集約する整形関数を返す。
 
-    `removable_cause`が偽でも件数は集計し、受領側が除去できない原因へ
-    原因の除去を求める反復注記だけを省く。
+    `removable_cause`は反復注記の可否、`escalate_on_repeat`は遮断の可否を表す。
     """
 
     def format_warning(
@@ -105,11 +106,14 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
         cause: str,
         session_id: str,
         removable_cause: bool,
+        escalate_on_repeat: bool = False,
         summary: str | None = None,
     ) -> str:
+        if escalate_on_repeat and not removable_cause:
+            raise ValueError("反復遮断には除去可能な原因が必要である")
         count = _increment_warn_notice_count(session_id, f"{hook_id}|{cause}")
         removable_count = _increment_warn_notice_count(session_id, f"{hook_id}|{cause}|removable") if removable_cause else 0
-        if removable_count >= _WARN_REPEAT_THRESHOLD:
+        if escalate_on_repeat and removable_count >= _WARN_REPEAT_THRESHOLD:
             reason, fix = _warning_body_and_fix(body)
             block = block_formatter(hook_id)(
                 f"{reason}\nこの通知は同一セッションで{removable_count}件目である。同じ原因の操作を遮断した。",
@@ -119,6 +123,8 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
             if isinstance(blocks, list):
                 blocks.append(block)
             body = f"{body}\nこの通知は同一セッションで{removable_count}件目である。原因を除去してから続行する。"
+        elif removable_count >= _WARN_REPEAT_THRESHOLD:
+            body = f"{body}\nこの通知は同一セッションで{removable_count}件目である。"
         if summary is not None and count >= 2:
             # 1件目で判断材料は到達済みであり、2件目以降は対象と件数だけを返す。
             return _message_format.llm_notice(

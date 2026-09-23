@@ -27,6 +27,21 @@ from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 
+@pytest.mark.parametrize("tool_input", [{"session_id": "owned"}, {"prompt": "続行する"}])
+def test_agents_server_missing_required_input_warns(tool_input: dict[str, str], tmp_path: pathlib.Path) -> None:
+    """必須値を欠く継続入力はツールの検証へ渡し、遮断しない。"""
+    result = _run(
+        {
+            "tool_name": "mcp__agents_server__send_message",
+            "tool_input": tool_input,
+            "session_id": "missing-input",
+            "cwd": str(tmp_path),
+        }
+    )
+    assert result.returncode == 0
+    assert "空でない" in _agent_messages(result)
+
+
 class TestBashCommandContractWarnings:
     """Bash入力の検索・直列実行・ヘルプ取得契約を検証する。"""
 
@@ -1426,7 +1441,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert "計画ファイルを作成しないまま" in _agent_messages(blocked)
 
     def test_third_target_edit_warns(self, tmp_path: pathlib.Path):
-        """同じ原因の警告2件目以降を遮断し、検出条件は従来と同じ件数で成立する。"""
+        """同じ原因の警告が続いても編集を通し、検出条件は従来の件数で成立する。"""
         sid = "direct-edit-block"
         self._write_flag_state(tmp_path, sid)
         env = self._state_env(tmp_path)
@@ -1448,7 +1463,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 assert result.returncode == 0
                 assert "計画ファイルを作成しないまま" in _agent_messages(result)
             else:
-                assert result.returncode == 2
+                assert result.returncode == 0
                 assert "計画ファイルを作成しないまま" in _agent_messages(result)
 
     def test_counter_advances_after_third_target_edit(self, tmp_path: pathlib.Path):
@@ -1467,7 +1482,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 },
                 env_overrides=env,
             )
-            assert result.returncode == (2 if edit_name == "baz/SKILL.md" else 0)
+            assert result.returncode == 0
         third = self._target(tmp_path, "baz/SKILL.md")
         retried = _run(
             {
