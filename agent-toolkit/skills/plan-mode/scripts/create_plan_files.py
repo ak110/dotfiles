@@ -74,14 +74,14 @@ def _validate_plan_name(plan_name: str) -> str:
 
 
 def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | None = None) -> str:
-    """`lane-NN`とUTC時刻からprocess-wi用の正規stemを返す。"""
+    """`lane-NN`と実行環境のローカル時刻からprocess-wi用の正規stemを返す。"""
     match = _PROCESS_LANE_PATTERN.fullmatch(lane_identifier)
     if match is None:
         raise ValueError("レーン識別子は`lane-NN`の2桁形式で指定してください")
-    current = datetime.datetime.now(datetime.UTC) if now is None else now
+    current = datetime.datetime.now().astimezone() if now is None else now
     if current.tzinfo is None:
         raise ValueError("計画名の生成時刻にはタイムゾーンが必要です")
-    return f"{current.astimezone(datetime.UTC):%d-%H%M}_process-wi_レーン{match.group('number')}"
+    return f"{current.astimezone():%d-%H%M}_process-wi_レーン{match.group('number')}"
 
 
 def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> str:

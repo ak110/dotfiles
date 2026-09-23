@@ -239,10 +239,26 @@ def test_candidate_events_includes_delegate_returns_without_status_line() -> Non
 
 def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None:
     """同じ理由の差し戻しを1候補へ集約し、理由が異なる差し戻しを別の候補へ分ける。"""
+    shared_prefix = "確認に必要な条件 " * 15
     timeline = [
-        {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: needs_escalation\nreason: 認可の不足"},
-        {"kind": "final-result", "record": "agent-2", "line": 30, "text": "status: needs_escalation\nreason: 認可の不足"},
-        {"kind": "final-result", "record": "agent-3", "line": 40, "text": "status: needs_escalation\nreason: 入力の欠落"},
+        {
+            "kind": "final-result",
+            "record": "agent-1",
+            "line": 20,
+            "text": f"status: needs_escalation\nreason: {shared_prefix}認可の不足",
+        },
+        {
+            "kind": "final-result",
+            "record": "agent-2",
+            "line": 30,
+            "text": f"status: needs_escalation\nreason: {shared_prefix}認可の不足",
+        },
+        {
+            "kind": "final-result",
+            "record": "agent-3",
+            "line": 40,
+            "text": f"status: needs_escalation\nreason: {shared_prefix}入力の欠落",
+        },
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
@@ -250,6 +266,34 @@ def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None
     assert sorted(candidate["count"] for candidate in candidates[:-1]) == [1, 2]
     assert candidates[-1]["count"] == 2
     assert candidates[-1]["included_locator_count"] == 3
+
+
+def test_candidate_events_separates_block_reasons_after_shared_long_prefix() -> None:
+    """定型接頭辞が同じblock通知も、理由が異なれば別候補へ分ける。"""
+    prefix = "処理対象の検査 " * 15
+    notices = [
+        {
+            "kind": "hook-notice",
+            "record": "main",
+            "line": line,
+            "text": f"{prefix} block: {reason}",
+            "hook": "agent-toolkit/pretooluse",
+            "hook_name": "PreToolUse:Bash",
+            "tag": "block",
+        }
+        for line, reason in [
+            (10, "対象ファイルが未読"),
+            (11, "対象ファイルが未読"),
+            (12, "対象の書込権限がない"),
+            (13, ""),
+        ]
+    ]
+
+    candidates = evidence._candidate_events([], [], notices)  # pylint: disable=protected-access
+
+    assert sorted(candidate["occurrence_count"] for candidate in candidates[:-1]) == [1, 1, 2]
+    assert candidates[-1]["count"] == 3
+    assert {candidate["locators"][0]["line"] for candidate in candidates[:-1]} == {10, 12, 13}
 
 
 def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> None:

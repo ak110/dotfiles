@@ -5,6 +5,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
+import time
 
 import create_plan_files
 import pytest
@@ -298,11 +299,12 @@ def test_documented_bug_reference_is_accepted_without_substitution(repo: pathlib
     assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
 
 
-def test_process_lane_plan_name_uses_utc_and_two_digit_lane() -> None:
-    """process-wiのstemをUTC時刻と2桁レーン番号から生成する。"""
+def test_process_lane_plan_name_uses_local_time_and_two_digit_lane() -> None:
+    """process-wiのstemを実行環境のローカル時刻と2桁レーン番号から生成する。"""
     now = datetime.datetime(2026, 9, 14, 23, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
 
-    assert create_plan_files.process_lane_plan_name("lane-02", now=now) == "14-1405_process-wi_レーン02"
+    expected = time.strftime("%d-%H%M", time.localtime(now.timestamp()))
+    assert create_plan_files.process_lane_plan_name("lane-02", now=now) == f"{expected}_process-wi_レーン02"
 
 
 @pytest.mark.parametrize("lane", ["lane-2", "lane-002", "02", "lane-aa"])

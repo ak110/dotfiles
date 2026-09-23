@@ -2664,7 +2664,8 @@ def _tool_hint(entry: dict[str, Any]) -> str | None:
     item = payload.get("item") if isinstance(payload, dict) else None
     command = item.get("command") if isinstance(item, dict) else None
     if isinstance(command, list) and command:
-        return _clip(" ".join(part for part in command if isinstance(part, str)).splitlines()[0])
+        text = " ".join(part for part in command if isinstance(part, str)).strip()
+        return _clip(text.splitlines()[0]) if text else None
     return None
 
 
@@ -2976,7 +2977,9 @@ def _candidate_events(
             "kind": "candidate",
             "candidate_id": f"c{index:04d}",
             "candidate_kind": key[0],
-            "analysis_group_hint": list(key[1:-1] if len(key) > 2 else key[1:]),
+            "analysis_group_hint": list(
+                key[1:] if key[0] in {"escalation", "hook-notice"} else key[1:-1] if len(key) > 2 else key[1:]
+            ),
             "event_key": list(key[1:]),
             "count": len(locators),
             "locators": locators,
@@ -3298,6 +3301,22 @@ def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
     return len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}
 
 
+def _candidate_mechanism(candidate_kind: str, event: dict[str, Any]) -> str:
+    """定型接頭辞の後にある原因を候補キーの追加軸として返す。"""
+    raw = event.get("text")
+    if not isinstance(raw, str):
+        return ""
+    if candidate_kind == "escalation":
+        reason = next((line.partition(":")[2].strip() for line in raw.splitlines() if line.startswith("reason:")), "")
+    elif candidate_kind == "hook-notice" and event.get("tag") == "block":
+        marker = re.search(r"\b(?:blocked|block):\s*", raw, flags=re.IGNORECASE)
+        detail = raw[marker.end() :].strip() if marker else ""
+        reason = detail.splitlines()[0].split("。", 1)[0].strip() if detail else ""
+    else:
+        return ""
+    return _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(reason.split()))
+
+
 def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
     """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。
 
@@ -3312,6 +3331,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             "" if tag in {"block", "warn"} else str(event.get("hook_name", "")),
             tag,
             _normalize_hook_candidate_text(normalized_text),
+            _candidate_mechanism(candidate_kind, event),
         )
     if candidate_kind == "command-failure":
         if event.get("tool") == "CommandExecution":
@@ -3332,6 +3352,8 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         raw_text = event.get("text")
         first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""
         return candidate_kind, _normalize_candidate_kind_text(first_line)
+    if candidate_kind == "escalation":
+        return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 
 
