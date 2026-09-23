@@ -158,11 +158,36 @@ function Install-CodexPlugin {
     $expectedVersion = Get-CodexExpectedPluginVersion
     $beforeState = Get-CodexPluginState
     if ($null -eq $beforeState) { throw 'Codex plugin更新前の状態を確認できません。' }
+    $binDir = Join-Path $HOME '.local/bin'
+    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+    $hookWrapper = Join-Path $binDir 'atk-hook.cmd'
+    $firstHookTransition = -not (Test-Path -LiteralPath $hookWrapper -PathType Leaf)
+    $downloadRoot = $baseUrl -replace '/agent-toolkit/rules/?$', ''
+    Invoke-Download "$downloadRoot/bin/atk-hook" (Join-Path $binDir 'atk-hook')
+    Invoke-Download "$downloadRoot/bin/atk-hook.cmd" $hookWrapper
+    $oldCache = $null
+    $savedCache = $null
+    if ($firstHookTransition -and $beforeState.Present -and $beforeState.Version) {
+        $oldCache = Join-Path $codexPluginCacheRoot $beforeState.Version
+        if (Test-Path -LiteralPath $oldCache -PathType Container) {
+            $savedCache = Join-Path $env:TEMP ("atk-hook-migration." + [IO.Path]::GetRandomFileName())
+            Copy-Item -LiteralPath $oldCache -Destination $savedCache -Recurse -Force
+        }
+    }
     Invoke-RequiredNativeCommand codex @('plugin', 'add', $codexPluginId, '--json')
+    if ($savedCache) {
+        if (-not (Test-Path -LiteralPath $oldCache -PathType Container)) {
+            Copy-Item -LiteralPath $savedCache -Destination $oldCache -Recurse -Force
+        }
+        Remove-Item -LiteralPath $savedCache -Recurse -Force
+    }
     $afterState = Get-CodexPluginState
     $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState
     if ($null -eq $afterState -or -not $afterState.Present -or -not $afterState.Enabled -or $afterState.Version -ne $expectedVersion) {
         throw 'Codex plugin更新後の状態が期待値と一致しません。'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $codexPluginCacheRoot "$expectedVersion/agent_toolkit/hook.py") -PathType Leaf)) {
+        throw 'Codex plugin更新後のhook実体を確認できません。'
     }
     Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
 }

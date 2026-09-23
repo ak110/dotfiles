@@ -7,7 +7,9 @@ import logging
 import os
 import queue
 import re
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -325,6 +327,27 @@ def _verify_expected_state(plugin_id: str, version: str) -> None:
         raise RuntimeError("Codex plugin更新後の状態が期待値と一致しない")
 
 
+def _hook_bin() -> Path:
+    return Path.home() / ".local" / "bin"
+
+
+def _install_hook_wrapper(root: Path) -> bool:
+    """plugin有効化前に安定したhook入口をPATH上へ配置する。"""
+    changed = False
+    for name in ("atk-hook", "atk-hook.cmd") if os.name == "nt" else ("atk-hook",):
+        source = root / "bin" / name
+        destination = _hook_bin() / name
+        data = source.read_bytes()
+        if destination.is_file() and destination.read_bytes() == data:
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+        if name == "atk-hook":
+            destination.chmod(0o755)
+        changed = True
+    return changed
+
+
 def _sync_local_plugin(
     root: Path,
     marketplace_name: str,
@@ -335,15 +358,31 @@ def _sync_local_plugin(
 ) -> bool:
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("enabled") is not True or current.get("version") != version
+    wrapper = _hook_bin() / ("atk-hook.cmd" if os.name == "nt" else "atk-hook")
+    first_transition = not wrapper.exists()
+    wrapper_changed = _install_hook_wrapper(root)
     if needs_plugin_add:
-        if not _command(["plugin", "add", plugin_id]):
-            raise RuntimeError("Codex plugin addに失敗")
+        old_cache = None
+        if first_transition and current is not None and isinstance(current.get("version"), str):
+            old_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / current["version"]
+        with tempfile.TemporaryDirectory(prefix="atk-hook-migration-") as temporary:
+            saved = Path(temporary) / "old-plugin"
+            if old_cache is not None and old_cache.is_dir():
+                shutil.copytree(old_cache, saved)
+            if not _command(["plugin", "add", plugin_id]):
+                raise RuntimeError("Codex plugin addに失敗")
+            if old_cache is not None and saved.is_dir() and not old_cache.exists():
+                old_cache.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(saved, old_cache)
         _verify_expected_state(plugin_id, version)
+        new_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / version
+        if not (new_cache / "agent_toolkit" / "hook.py").is_file():
+            raise RuntimeError("Codex plugin更新後のhook実体を確認できない")
         if _hook_trust_notice_required(_hooks_list()):
             notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
         _restart_daemon_after_plugin_update(notices)
     removed_legacy_links = _remove_legacy_links(root)
-    return needs_plugin_add or removed_legacy_links
+    return needs_plugin_add or wrapper_changed or removed_legacy_links
 
 
 def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:

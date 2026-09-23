@@ -201,29 +201,29 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             "PreToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": subject.CODEX_PRE_TOOL_USE_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook pretooluse"}],
                 }
             ],
             "PostToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": subject.CODEX_POST_TOOL_USE_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook posttooluse"}],
                 }
             ],
             "PermissionRequest": [
                 {
                     "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": subject.CODEX_PERMISSION_REQUEST_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook permissionrequest_codex"}],
                 }
             ],
             "UserPromptSubmit": [
                 {
-                    "hooks": [{"type": "command", "command": subject.CODEX_USER_PROMPT_SUBMIT_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook user_prompt_submit"}],
                 }
             ],
             "SubagentStop": [
                 {
-                    "hooks": [{"type": "command", "command": subject.CODEX_SUBAGENT_STOP_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook subagent_stop_advisor"}],
                 }
             ],
             "SessionEnd": [
@@ -231,7 +231,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": subject.CODEX_SESSION_END_COMMAND,
+                            "command": "atk-hook session_end_cleanup",
                             "timeout": subject.CODEX_SESSION_END_TIMEOUT_SECONDS,
                         }
                     ],
@@ -242,7 +242,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": subject.CODEX_RULES_CONTEXT_CODEX_COMMAND,
+                            "command": "atk-hook rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ],
@@ -253,7 +253,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": subject.CODEX_RULES_CONTEXT_CODEX_COMMAND,
+                            "command": "atk-hook rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ]
@@ -262,9 +262,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
         }
     }
     assert len(generated_hooks["hooks"]) == 8
-    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"].endswith(
-        "/agent_toolkit/hook.py rules_context_codex"
-    )
+    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == "atk-hook rules_context_codex"
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 

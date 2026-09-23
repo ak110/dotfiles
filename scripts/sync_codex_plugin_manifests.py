@@ -47,6 +47,10 @@ def _hook_command(name: str) -> str:
     )
 
 
+def _codex_hook_command(name: str) -> str:
+    return f"atk-hook {name}"
+
+
 CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
 CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
 CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
@@ -54,7 +58,6 @@ CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
 CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
 CODEX_SESSION_END_COMMAND = _hook_command("session_end_cleanup")
 CODEX_RULES_CONTEXT_COMMAND = _hook_command("rules_context")
-CODEX_RULES_CONTEXT_CODEX_COMMAND = _hook_command("rules_context_codex")
 
 # CodexのSessionEndは同期実行のため上限が短い。投影時に明示して超過を避ける。
 CODEX_SESSION_END_TIMEOUT_SECONDS = 3
@@ -101,30 +104,40 @@ class CodexHookProjection(NamedTuple):
 CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "SessionStart": CodexHookProjection(
         (CODEX_RULES_CONTEXT_COMMAND,),
-        output_command=CODEX_RULES_CONTEXT_CODEX_COMMAND,
+        output_command=_codex_hook_command("rules_context_codex"),
         additional_context_limit=0,
     ),
     "SubagentStart": CodexHookProjection(
         (CODEX_RULES_CONTEXT_COMMAND,),
-        output_command=CODEX_RULES_CONTEXT_CODEX_COMMAND,
+        output_command=_codex_hook_command("rules_context_codex"),
         additional_context_limit=0,
     ),
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
+        output_command=_codex_hook_command("pretooluse"),
         matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_write|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
+        output_command=_codex_hook_command("posttooluse"),
         matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_write|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "PermissionRequest": CodexHookProjection(
         (_hook_command("permissionrequest"),),
         matcher="Bash",
-        output_command=CODEX_PERMISSION_REQUEST_COMMAND,
+        output_command=_codex_hook_command("permissionrequest_codex"),
     ),
-    "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
-    "SubagentStop": CodexHookProjection((CODEX_SUBAGENT_STOP_COMMAND,)),
-    "SessionEnd": CodexHookProjection((CODEX_SESSION_END_COMMAND,), timeout=CODEX_SESSION_END_TIMEOUT_SECONDS),
+    "UserPromptSubmit": CodexHookProjection(
+        (CODEX_USER_PROMPT_SUBMIT_COMMAND,), output_command=_codex_hook_command("user_prompt_submit")
+    ),
+    "SubagentStop": CodexHookProjection(
+        (CODEX_SUBAGENT_STOP_COMMAND,), output_command=_codex_hook_command("subagent_stop_advisor")
+    ),
+    "SessionEnd": CodexHookProjection(
+        (CODEX_SESSION_END_COMMAND,),
+        timeout=CODEX_SESSION_END_TIMEOUT_SECONDS,
+        output_command=_codex_hook_command("session_end_cleanup"),
+    ),
 }
 # Codex 0.147.0が発火するhookイベント。handlerを持たないイベントは生成しない。
 CODEX_EVENTS = {

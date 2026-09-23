@@ -76,8 +76,11 @@ daemonが停止中の場合、pluginが無変更の場合及びmarketplace登録
 再起動に失敗した場合は終了コードをupdate-dotfilesログへ記録し、手動再起動の案内へ戻る。
 自動再起動により、Codex plugin又はremote-controlを利用する実行中セッションの接続が切断される可能性があるため、当該セッションを終了できる時点でだけ有効にする。
 
-プラグインの実体導入とversion別cacheの管理はCodex公式CLIへ委ねる。
-インストーラーは`codex plugin add`後に導入済みversionと有効状態を検証し、旧version名のリンクや互換台帳を独自に作成しない。
+Codex hookはPATH上の`~/.local/bin/atk-hook`（Windowsでは`atk-hook.cmd`）から起動する。
+この入口は`codex plugin list --json`に示された有効な現行版を毎回解決し、イベント名、標準入出力及び終了状態をhook本体へ渡す。
+インストーラーは`codex plugin add`より先に入口を配置し、導入後に現行版のhook実体を検査する。
+初回切替時に限り、更新前の版付きhookコマンドを保持したセッションのために旧キャッシュを一時退避し、CLIが削除した場合は復元する。以降の更新に旧版保存台帳は設けない。
+プラグインの通常のversion別cache管理はCodex公式CLIへ委ねる。
 既定動作では更新中のセッションを作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
 
 再起動案内は、ローカルと外部のいずれかのプラグインを実際に追加または更新し、daemonの稼働状態を確認できた場合だけ表示される。

@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""導入済みCodex pluginの現行版からhookを起動する。"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    """plugin一覧を正本としてhookへ引数と入出力を引き継ぐ。"""
+    if len(sys.argv) != 2:
+        print("usage: atk-hook EVENT", file=sys.stderr)
+        return 2
+    result = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        print(result.stderr or "Codex plugin一覧を取得できません", file=sys.stderr)
+        return 1
+    try:
+        installed = json.loads(result.stdout)["installed"]
+        matches = [item for item in installed if item.get("pluginId") == "agent-toolkit@ak110-dotfiles"]
+        if len(matches) != 1 or matches[0].get("enabled") is not True:
+            raise ValueError("agent-toolkitが有効ではありません")
+        item = matches[0]
+        plugin_root = (
+            Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+            / "plugins" / "cache" / item["marketplaceName"] / item["name"] / item["version"]
+        )
+        hook = plugin_root / "agent_toolkit" / "hook.py"
+        if not hook.is_file():
+            raise ValueError(f"Codex hook実体がありません: {hook}")
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    return subprocess.call(
+        ["uv", "run", "--project", str(plugin_root), "--locked", "--no-default-groups", str(hook), sys.argv[1]]
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
