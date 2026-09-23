@@ -24,9 +24,9 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 - 専用agent定義がある作業をClaude Codeで実行する場合は、その定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
 - Claude Codeからの委譲は`agents_server`を既定とする。「工程別モデル設定」の表が定めるキーを持つ工程は同表のeffortを渡す。`Agent`ツールにはeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合に`Agent`ツールへ自動で切り替える経路は設けず、その工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。`Agent`ツールを使うのは、前項が定める専用agent定義がある作業と、ユーザー又は上位主体の明示指示があった場合に限る
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`・`send_message`・`kill`・`list`・`show`・`stop`の実在ツールとスキーマを確認する。確認後に初回開始または継続開始を選ぶ
-  - `<役割名>.subagent.md`がある新規開始は`start(subagent_md_path, extra_params, cwd)`を使う。`subagent_md_path`へその絶対パス、`extra_params`へ同文書が要求する名前付き入力、`cwd`へ作業ディレクトリの絶対パスを渡す。サーバーはその文書を読み、必須入力を検証し、工程別モデル設定を解決する。自由本文から開始する場合だけ`start_custom(prompt, model_type, cwd)`を使う。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない。いずれの応答も`session_id`と`status`だけを返す。起動条件の詳細が必要な場合は`show`で取得する
-  - `start`・`start_explore`・`start_write`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンでその作業を観測する主体が残らない
-  - 起動直後にモデル実行環境の可用性で終端した候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ再起動を重ねない
+  - `<役割名>.subagent.md`がある新規開始は`start(subagent_md_path, extra_params, cwd)`を使う。`subagent_md_path`へその絶対パス、`extra_params`へ同文書が要求する名前付き入力、`cwd`へ作業ディレクトリの絶対パスを渡す。サーバーはその文書を読み、必須入力を検証し、工程別モデル設定を解決する。自由本文から開始する場合だけ`start_custom(prompt, model_type, cwd)`を使う。`model_type`には設定種別か直接指定の候補列を渡せる。`start`はタスク文書に対応する設定からengine、model、effortを決める。いずれの通常応答も`session_id`と`status`を返し、候補を切り替えた場合は除外理由と採用候補も返す。起動条件の詳細が必要な場合は`show`で取得する
+  - `start`・`start_custom`・`start_explore`・`start_write`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`atk agents wait`を開始して観測する。結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンでその作業を観測する主体が残らない
+  - 起動直後にモデル実行環境の可用性で終端した候補と、起動またはturnが失敗したagy候補は、サーバーが除外集合へ加えて次候補で起動する。全候補が起動不能な場合は除外理由を確認し、同じ起動条件で再起動を重ねない
   - 起動後の実行中にモデル実行環境の可用性に起因する失敗を観測した場合は、`<役割名>.subagent.md`を用いる作業では同じ`subagent_md_path`と`extra_params`で`start`を、自由本文の作業では同じ`model_type`で`start_custom`を呼び直す。呼び出し側はsession識別子を渡さない。可用性を理由として終端したsessionの採用候補をサーバーが起動条件ごとに保持し、次の起動で除外集合の初期値へ充てるためである。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionは、この再起動の対象の外に置く。同じ起動条件で2回続けて可用性の失敗を観測した場合は再起動を重ねず、委譲せずに自ら実施できる場合は自ら実施し、委譲が成立しなければ工程を進められない場合はその工程を`needs_escalation`または未完了として呼び出し元へ返す
   - 起動ツールが`no model candidates remain for model_type: <model_type>`を返した場合は、サーバーによる自動除外と持ち越し除外の累積でその起動条件の候補が尽きた状態であり、設定の不備ではない。この場合は同じ起動条件を再発行せず、次の手段を選ぶ。委譲せずにその作業を自ら実施できる場合は自ら実施し、委譲が成立しなければ工程を進められない場合はその工程を`needs_escalation`または未完了として呼び出し元へ返す。設定キーと実行環境は現行のまま保つ
   - 調査だけを委譲する場合は`start_explore(prompt, cwd)`を使う。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、プロジェクト指示の読込を減らした軽量な起動条件で開始する。`fast`の既定は真であり、軽量側の候補で判断材料が不足する調査だけ偽を指定する。委譲先は起動時のシステム指示でファイルを作成、変更、削除しない取り決めを受け取るため、結論と根拠を完了報告で受け取る形にする。成果をファイルへ残す調査は`start`で起動し、書込先とする管理対象一時領域の絶対パスを`prompt`へ渡す。委譲先は、検索と読取について件数上限、容量超過、期限超過のいずれかに達した場合に、その事実と到達した上限を報告へ含める取り決めも受け取る。この記載を含む報告の結果は、網羅性、件数及び不在の判断の外に置く
@@ -65,23 +65,23 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 `<役割名>.subagent.md`を使う各工程の起動文書は、`subagent_md_path`へ渡す文書をその起動節へ明記する。起動する主体は、その起動節が明記したパスをそのまま使う。自由本文へ`start_custom`を使う工程は、その工程が渡す`model_type`の値を起動節へ明記する。
 現に保存されているキーと実効値は`atk config show`で確認する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、その設定キーと候補を標準エラーへ警告として書く。
 
-設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
-1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試し、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
+設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`、`codex`または`agy`とする。
+1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で、agyは起動・turnの失敗で次の候補へ進む。
 上表の未設定時の実効値は、いずれのキーも`codex:gpt-5.6-sol/medium`の1候補とする。effort省略時は`medium`とする。
 モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ候補ごとの警告を表示するが、新モデルの利用を妨げないため受理する。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、そのキーの実効値を環境変数の値とする。
 環境変数は保存済みの設定より優先し、`atk config set`は保存先だけを更新する。
 
-`model_type`へは、上表のキー名から`_model`を除いた種別に加えて、設定値と同じ書式の候補列を直接渡せる。
+`start_custom`の`model_type`へは、上表のキー名から`_model`を除いた種別に加えて、設定値と同じ書式のASCIIカンマ区切り候補列を直接渡せる。
+例えば`agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`を渡すと、先頭から試し、agyの起動またはturnが失敗した場合は除外理由とともに次候補へ進む。
 直接渡した場合、サーバーは工程別モデル設定を読まず、渡した候補列をそのまま候補として使う。
 実験と障害時の回避で一時的に別のengine又はmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
 
-1. `agents_server`経路では、`<役割名>.subagent.md`を`start`へ、自由本文と表の`model_type`を`start_custom`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
+1. `agents_server`経路では、`<役割名>.subagent.md`を`start`へ、自由本文と設定種別または直接候補列を`start_custom`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
 2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合はその工程を`needs_escalation`または未完了として返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
-3. `agents_server`の起動応答は`session_id`と`status`だけを含む。採用した`model_type`、`engine`、`model`及び`effort`を記録する必要がある場合は、返された`session_id`を`show`へ渡して取得する。
-4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、その工程を`needs_escalation`または未完了として返す。
-   `engine=claude`の工程も、置換せずそのまま`needs_escalation`または未完了で返す。
+3. `agents_server`の通常の起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。採用した`model_type`、`engine`、`model`及び`effort`を記録する必要がある場合は、返された`session_id`を`show`へ渡して取得する。`show`の`model_type`は設定種別か`start_custom`へ渡した候補列である。
+4. サーバーが候補列を使い尽くした場合、呼び出し側は設定外のengineへ自動切替せず、その工程を`needs_escalation`または未完了として返す。
 5. レーン担当とCI修正担当は、前の担当の識別子を再利用せず新規threadで起動する。
    レビュー修正は手順6の継続条件でレーン担当の継続かレビュー修正担当の新規起動を確定する。
    Codexで元担当を持たないレーン担当かCI修正担当の新規threadを起動する場合は、工程別モデル設定の通常起動契約に従う。

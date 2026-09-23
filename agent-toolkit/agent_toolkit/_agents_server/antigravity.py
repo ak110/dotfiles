@@ -5,7 +5,7 @@ Antigravity CLIは非対話モードに常駐プロトコルを持たず、`-p`�
 `--output-format stream-json`が返す`init`・`step_update`・`result`の各イベントを読み、
 `SessionState`へ反映する責務をこのモジュールが持つ。
 
-当該engineはモデルを明示指定したときだけ選ぶ用途限定の経路であり、候補列のフォールバックの対象にしない。
+当該engineも候補列で選択し、起動やturnの失敗時には次の候補へ切り替える。
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def build_command(
     conversation_id: str | None,
 ) -> list[str]:
     """`agy`の非対話実行のコマンド列を組む。"""
-    command = [_COMMAND, "-p", prompt, "--output-format", "stream-json", "--print-timeout", str(_PRINT_TIMEOUT_SECONDS)]
+    command = [_COMMAND, "-p", prompt, "--output-format", "stream-json", "--print-timeout", f"{_PRINT_TIMEOUT_SECONDS}s"]
     if model is not None:
         command += ["--model", model]
     if effort is not None:
@@ -78,7 +78,7 @@ def _child_env() -> dict[str, str]:
 
 def _event_text(payload: dict[str, Any]) -> str:
     """イベントが持つ表示用の本文を返す。"""
-    for key in ("response", "text", "message", "summary"):
+    for key in ("response", "text", "text_delta", "message", "summary"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value
@@ -305,6 +305,9 @@ class AntigravityManager:
                 if payload is None:
                     continue
                 kind = payload.get("type") or payload.get("event")
+                event_body = payload.get(kind) if isinstance(kind, str) else None
+                if not isinstance(event_body, dict):
+                    event_body = payload
                 if kind == "init" and session is None:
                     session = self._create_session(
                         payload,
@@ -323,12 +326,12 @@ class AntigravityManager:
                     if not initialized.done():
                         initialized.set_result(session)
                 elif kind == "step_update" and session is not None:
-                    text = _event_text(payload)
+                    text = _event_text(event_body)
                     if text:
                         session.set_progress(text)
                         await self._notify_waiters()
                 elif kind == "result" and session is not None:
-                    _finalize_turn(session, result_values(session, payload))
+                    _finalize_turn(session, result_values(session, event_body))
                     finalized = True
                     await self._notify_waiters()
             stderr_text = await _read_stderr(process)
@@ -425,7 +428,8 @@ def decode_event(line: bytes) -> dict[str, Any] | None:
 
 def result_values(session: SessionState, payload: dict[str, Any]) -> dict[str, Any]:
     """`result`イベントを終端結果へ変換する。"""
-    status = payload.get("status")
+    raw_status = payload.get("status")
+    status = raw_status.lower() if isinstance(raw_status, str) else raw_status
     agent_message = _event_text(payload) or session.agent_message
     if status in {"completed", "success", "ok"} and agent_message.strip():
         return {"status": "completed", "agent_message": agent_message, "error": None}

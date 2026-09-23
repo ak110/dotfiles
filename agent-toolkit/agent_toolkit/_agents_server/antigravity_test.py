@@ -19,9 +19,9 @@ import sys
 args = sys.argv[1:]
 conversation = args[args.index("--conversation") + 1] if "--conversation" in args else "conv-1"
 prompt = args[args.index("-p") + 1]
-print(json.dumps({{"type": "init", "conversation_id": conversation}}), flush=True)
-print(json.dumps({{"type": "step_update", "text": "調査中"}}), flush=True)
-print(json.dumps({{"type": "result", "status": "completed", "response": prompt[-20:]}}), flush=True)
+print(json.dumps({{"event": "init", "conversation_id": conversation, "init": {{"model": "gemini-3.8-flash"}}}}), flush=True)
+print(json.dumps({{"event": "step_update", "step_update": {{"text_delta": "調査中"}}}}), flush=True)
+print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": prompt[-20:]}}}}), flush=True)
 """
 
 
@@ -48,7 +48,7 @@ def test_build_command_passes_model_effort_and_conversation() -> None:
     assert command[command.index("--conversation") + 1] == "conv-1"
     assert "--dangerously-skip-permissions" in command
     # 非対話実行の既定の上限は5分であり、1turnがこれを超えるため明示する。
-    assert int(command[command.index("--print-timeout") + 1]) > 300
+    assert command[command.index("--print-timeout") + 1] == "3600s"
 
 
 def test_build_command_omits_absent_options() -> None:
@@ -64,6 +64,7 @@ def test_build_command_omits_absent_options() -> None:
     ("payload", "expected_status"),
     [
         ({"status": "completed", "response": "整えた"}, "completed"),
+        ({"status": "SUCCESS", "response": "整えた"}, "completed"),
         ({"status": "interrupted"}, "interrupted"),
         ({"status": "failed", "error": {"message": "利用上限"}}, "failed"),
         ({"status": "completed"}, "failed"),
