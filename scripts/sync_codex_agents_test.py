@@ -185,3 +185,24 @@ def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> 
             skill_root = subject.REPO_ROOT / "agent-toolkit/skills" / skill_name
             assert (skill_root / "SKILL.md").is_file(), skill_name
             assert (skill_root / reference).is_file(), reference
+
+
+@pytest.mark.parametrize(
+    ("body", "wrapped"),
+    [
+        ('<normative-context source="x" kind="y" path="z">\nbody\n</normative-context>', False),
+        ("<normative-context>\nbody\n</normative-context>", False),
+        ('<normative-contextual source="x">\nbody\n</normative-contextual>', True),
+        ("plain body", True),
+    ],
+)
+def test_embedded_section_detects_boundary_by_exact_element_name(tmp_path: Path, body: str, wrapped: bool) -> None:
+    """要素名が完全一致する本文だけを境界付きとみなし、別要素の本文は境界で囲む。"""
+    relative = Path("agent-toolkit/rules/00-sample.md")
+    (tmp_path / relative).parent.mkdir(parents=True)
+    (tmp_path / relative).write_text(body + "\n", encoding="utf-8")
+
+    section = subject._embedded_section(tmp_path, relative)  # pylint: disable=protected-access
+
+    assert (len(section) == 4) is wrapped
+    assert section[-1] == (f"</{subject.NORMATIVE_ELEMENT}>" if wrapped else body)
