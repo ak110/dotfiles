@@ -794,8 +794,16 @@ class TestTestExecution:
         [
             "Command running in background with ID: bg-task-1. Output is being written to: /tmp/bg-task-1.output",
             {"stdout": "Command running in background with ID: bg-task-1.", "stderr": ""},
+            {
+                "backgroundTaskId": "bg-task-1",
+                "interrupted": False,
+                "isImage": False,
+                "noOutputExpected": False,
+                "stderr": "",
+                "stdout": "",
+            },
         ],
-        ids=["text", "structured"],
+        ids=["text", "text-fields", "structured"],
     )
     def test_background_command_records_task_id(self, tmp_path: pathlib.Path, tool_response: object):
         """背景実行の応答から取得したタスクIDを自セッションの起動記録として保存する。"""
@@ -847,7 +855,14 @@ class TestTestExecution:
                 "hook_event_name": "PostToolUseFailure",
                 "tool_name": "Bash",
                 "tool_input": {"command": "sleep 120", "run_in_background": True},
-                "tool_response": "Command running in background with ID: bg-task-failed. Exit code 1",
+                "tool_response": {
+                    "backgroundTaskId": "bg-task-failed",
+                    "interrupted": False,
+                    "isImage": False,
+                    "noOutputExpected": False,
+                    "stderr": "",
+                    "stdout": "",
+                },
             },
             state_dir=tmp_path,
         )

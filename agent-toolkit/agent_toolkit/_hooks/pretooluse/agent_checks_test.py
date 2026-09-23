@@ -1011,6 +1011,38 @@ class TestTaskStopBlock:
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, tool_input).returncode == 0
 
+    @pytest.mark.parametrize("event_name", ["PostToolUse", "PostToolUseFailure"])
+    def test_structured_background_response_allows_only_its_task_stop(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        event_name: str,
+    ) -> None:
+        """構造化応答から記録した所有IDだけを同じセッションの停止対象として通す。"""
+        session_id = f"task-stop-structured-{event_name}"
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": event_name,
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": {
+                    "backgroundTaskId": "bg-task-1",
+                    "interrupted": False,
+                    "isImage": False,
+                    "noOutputExpected": False,
+                    "stderr": "",
+                    "stdout": "",
+                },
+            },
+            state_dir,
+        )
+
+        assert recorded.returncode == 0
+        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bg-task-1"]
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
+
     def test_other_task_is_blocked_even_with_recorded_background_tasks(
         self,
         state_dir: dict[str, str],

@@ -25,6 +25,24 @@ def test_task_output_from_explicit_and_host_background_responses() -> None:
     assert subject.task_output_from_response(timeout_response) == ("timeout-1", "/tmp/timeout-1.output")
 
 
+def test_structured_task_id_requires_an_actual_output_path() -> None:
+    """構造化IDだけを含む実応答では、出力先の対応表を作成しない。"""
+    response = {
+        "backgroundTaskId": "bg-1",
+        "interrupted": False,
+        "isImage": False,
+        "noOutputExpected": False,
+        "stderr": "",
+        "stdout": "",
+    }
+
+    assert subject.task_output_from_response(response) is None
+    assert subject.task_output_from_response({**response, "stdout": "Output is being written to: /tmp/bg-1.output"}) == (
+        "bg-1",
+        "/tmp/bg-1.output",
+    )
+
+
 def test_posttooluse_records_task_output_mapping(monkeypatch) -> None:
     """PostToolUseは応答中のタスクIDと出力先を同じ状態キーへ保存する。"""
     state: dict = {}

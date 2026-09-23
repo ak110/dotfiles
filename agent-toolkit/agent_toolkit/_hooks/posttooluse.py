@@ -879,6 +879,9 @@ def _background_task_id_from_response(value: object) -> str | None:
         match = _BACKGROUND_TASK_ID_RE.search(value)
         return match.group(1) if match is not None else None
     if isinstance(value, dict):
+        structured_id = value.get("backgroundTaskId")
+        if isinstance(structured_id, str) and structured_id:
+            return structured_id
         nested_values: list[object] = list(value.values())
     elif isinstance(value, list):
         nested_values = list(value)
