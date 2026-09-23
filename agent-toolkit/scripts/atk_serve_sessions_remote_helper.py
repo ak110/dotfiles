@@ -201,7 +201,10 @@ def _is_safe_record_path(raw: str) -> bool:
 
     上位ディレクトリへの参照と対象外の接尾辞を拒否し、いずれかの保存先の配下だけを受理する。
     """
-    if not raw or ".." in pathlib.PurePosixPath(raw).parts:
+    if not raw:
+        return False
+    pure_path = pathlib.PureWindowsPath(raw) if "\\" in raw else pathlib.PurePosixPath(raw)
+    if not pure_path.is_absolute() or ".." in pure_path.parts:
         return False
     if not raw.endswith(_CLAUDE_SUFFIX):
         return False

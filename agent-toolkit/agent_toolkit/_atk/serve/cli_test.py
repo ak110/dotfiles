@@ -1148,3 +1148,19 @@ async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_revi
     )
     assert held.status_code == 200
     assert user_comment.extract_user_comment(held_path.read_text(encoding="utf-8")) == "保留中のコメント"
+
+
+@pytest.mark.parametrize("follow", [False, True])
+def test_serve_logs_runs_journalctl(monkeypatch: pytest.MonkeyPatch, follow: bool) -> None:
+    """表示範囲と追従指定をjournalctlへ渡し、終了状態を返す。"""
+    commands: list[list[str]] = []
+
+    def run(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+        assert check is False
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 7)
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert serve.show_logs(follow=follow) == 7
+    assert commands == [["journalctl", "--user", "-u", "atk-serve.service", "-n", "100", *(["-f"] if follow else [])]]

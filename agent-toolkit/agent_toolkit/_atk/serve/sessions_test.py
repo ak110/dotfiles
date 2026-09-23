@@ -341,7 +341,10 @@ def test_local_record_path_outside_the_roots_is_rejected(tmp_path: pathlib.Path)
         ("/home/aki/.claude/projects/../../etc/a.jsonl", False),
         ("/home/aki/.claude/projects/p/a.txt", False),
         ("", False),
-        ("C:\\Users\\aki\\a.jsonl", False),
+        ("C:\\Users\\aki\\a.jsonl", True),
+        ("C:\\Users\\aki\\..\\outside.jsonl", False),
+        ("C:\\Users\\aki\\a.txt", False),
+        ("relative\\a.jsonl", False),
     ],
 )
 def test_remote_record_path_is_validated_before_ssh(raw: str, expected: bool) -> None:
@@ -638,16 +641,20 @@ async def test_remote_call_uses_rpc_when_connected(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    "record_path", ["/home/aki/.claude/projects/p/abc.jsonl", "C:\\Users\\aki\\.claude\\projects\\p\\abc.jsonl"]
+)
+async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path, record_path: str) -> None:
     """リモートの記録も同じ表示モデルへ正規化する。"""
     text = json.dumps({"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "やあ"}}) + "\n"
     runner, calls = _runner_returning({"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii")})
     context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
 
-    detail = await sessions.session_detail(context, "claude", "remote-host", "/home/aki/.claude/projects/p/abc.jsonl")
+    detail = await sessions.session_detail(context, "claude", "remote-host", record_path)
 
     assert detail["host"] == "remote-host"
     assert detail["session_id"] == "abc"
+    assert detail["path"] == record_path
     assert [event["text"] for event in detail["events"]] == ["やあ"]
     assert calls[0][1] == "read"
 

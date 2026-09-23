@@ -643,7 +643,7 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
     return detail
 
 
-def _detail_project(engine: str, records: list[dict[str, typing.Any]], path: pathlib.Path) -> str | None:
+def _detail_project(engine: str, records: list[dict[str, typing.Any]], path: pathlib.PurePath) -> str | None:
     """記録から作業ディレクトリを取り出す。持たない場合はディレクトリ名で代替する。"""
     if engine == "codex":
         cwd = _codex_metadata(records).get("cwd")
@@ -920,9 +920,10 @@ def is_safe_remote_record_path(raw: str) -> bool:
     上位ディレクトリへの参照と対象外の接尾辞を拒否する。
     リモート側でも同じ検証を行うが、サーバー側で先に拒否することで不要なSSH呼び出しを避ける。
     """
-    if not raw or "\\" in raw or not raw.endswith(RECORD_SUFFIX):
+    if not raw or not raw.endswith(RECORD_SUFFIX):
         return False
-    return ".." not in pathlib.PurePosixPath(raw).parts
+    path = pathlib.PureWindowsPath(raw) if "\\" in raw else pathlib.PurePosixPath(raw)
+    return path.is_absolute() and ".." not in path.parts
 
 
 async def _remote_call(context: SessionsContext, host: str, op: str, args: dict[str, typing.Any]) -> dict[str, typing.Any]:
@@ -1037,11 +1038,12 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
     detail = build_detail(
         engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=subagents_unavailable
     )
-    detail["session_id"] = pathlib.PurePosixPath(path).stem
+    pure_path = pathlib.PureWindowsPath(path) if "\\" in path else pathlib.PurePosixPath(path)
+    detail["session_id"] = pure_path.stem
     detail["host"] = host
     detail["path"] = path
     detail["started_at"] = _started_at(engine, records)
-    detail["project"] = _detail_project(engine, records, pathlib.Path(path))
+    detail["project"] = _detail_project(engine, records, pure_path)
     return detail
 
 

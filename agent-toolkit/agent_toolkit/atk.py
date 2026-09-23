@@ -985,6 +985,8 @@ def _build_parser() -> argparse.ArgumentParser:
     plans = _atk_help.add_command(top, "plans", **_atk_help.HELP["atk plans"])
     _plans.build_parser(plans)
     serve = _atk_help.add_command(top, "serve", **_atk_help.HELP["atk serve"])
+    serve.add_argument("serve_action", nargs="?", choices=("logs",), help="user serviceのjournalを表示")
+    serve.add_argument("-f", "--follow", action="store_true", help="直近100行を表示して追従")
     serve.add_argument(
         "--host",
         default=None,
@@ -1302,6 +1304,10 @@ def main(
         home = pathlib.Path.home()
     if args.command == "serve":
         _serve = importlib.import_module("agent_toolkit._atk.serve.cli")
+        if args.serve_action == "logs":
+            sys.exit(_serve.show_logs(follow=args.follow))
+        if args.follow:
+            parser.error("--followは`atk serve logs`で指定してください。")
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
     if args.command == "managed-temp":

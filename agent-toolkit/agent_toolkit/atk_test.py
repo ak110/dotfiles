@@ -1201,6 +1201,25 @@ class TestServeParser:
         assert error.value.code == 0
         assert calls == [{"host": "127.0.0.2", "port": 28766, "home": tmp_path}]
 
+    @pytest.mark.parametrize("follow_flag", ["-f", "--follow"])
+    def test_logs_dispatches_follow(self, monkeypatch: pytest.MonkeyPatch, follow_flag: str) -> None:
+        """logsの短縮形と長い形をjournal表示へ渡す。"""
+        calls: list[bool] = []
+        serve = types.ModuleType("agent_toolkit._atk.serve.cli")
+
+        def show_logs(*, follow: bool) -> int:
+            calls.append(follow)
+            return 0
+
+        serve.__dict__["show_logs"] = show_logs
+        monkeypatch.setitem(sys.modules, "agent_toolkit._atk.serve.cli", serve)
+
+        with pytest.raises(SystemExit) as error:
+            atk.main(["serve", "logs", follow_flag])
+
+        assert error.value.code == 0
+        assert calls == [True]
+
     def test_non_serve_import_does_not_load_serve_dependencies(self) -> None:
         """fresh processでatkを読み込んでもserve実装を解決しない。"""
         script_dir = pathlib.Path(atk.__file__).resolve().parent
