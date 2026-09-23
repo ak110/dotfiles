@@ -165,6 +165,7 @@ def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture:
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.PIPE,
             encoding="utf-8",
+            errors="replace",
             env=_child_env(),
         )
     except OSError as error:
@@ -251,6 +252,7 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding="utf-8",
+            errors="replace",
             env=_child_env(),
         )
     except OSError as error:
@@ -299,6 +301,7 @@ def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         encoding="utf-8",
+        errors="replace",
         env=_child_env(),
     )
 
@@ -358,6 +361,7 @@ def _save_worktree(label: str) -> str | None:
             check=False,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
             env=_child_env(),
         )
     except OSError as error:

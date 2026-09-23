@@ -21,6 +21,31 @@ def _write_completion_stub(path: pathlib.Path, *, fails: bool = False) -> None:
     path.chmod(0o755)
 
 
+def test_claude_wrapper_preserves_exit_without_screen_commands(tmp_path: pathlib.Path) -> None:
+    """Claude終了後に画面操作を行わず、本体の終了状態を返す。"""
+    home = tmp_path / "home"
+    bin_dir = home / ".local/bin"
+    bin_dir.mkdir(parents=True)
+    claude = bin_dir / "claude"
+    claude.write_text('#!/bin/sh\nprintf "claude:%s\\n" "$1"\nexit "$2"\n', encoding="utf-8")
+    claude.chmod(0o755)
+    for name in ("c", "clear", "reset"):
+        stub = bin_dir / name
+        stub.write_text(f'#!/bin/sh\nprintf "screen:{name}\\n"\n', encoding="utf-8")
+        stub.chmod(0o755)
+    for code in (0, 7):
+        result = subprocess.run(
+            ["/bin/bash", "--noprofile", "--norc", "-i", "-c", '. "$1"\nclaude argument "$2"', "bash", str(BASHRC), str(code)],
+            capture_output=True,
+            text=True,
+            env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", "TERM": "dumb"},
+            check=False,
+        )
+        assert result.returncode == code
+        assert "claude:argument" in result.stdout
+        assert "screen:" not in result.stdout
+
+
 def test_completion_generation_is_cached_and_disables_mise_auto_install(tmp_path: pathlib.Path) -> None:
     """補完生成を必要時だけ実行し、miseの暗黙導入を開始しない。"""
     home = tmp_path / "home"

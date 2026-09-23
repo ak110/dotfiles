@@ -404,6 +404,20 @@ def test_run_step_decodes_utf8_bytes(capsys: pytest.CaptureFixture[str]) -> None
     assert capsys.readouterr().err == "警告—"
 
 
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_run_step_preserves_exit_and_non_utf8_diagnostic(capsys: pytest.CaptureFixture[str], exit_code: int) -> None:
+    code = "import sys; sys.stderr.buffer.write(b'diagnostic: \\x93'); sys.exit(int(sys.argv[1]))"
+
+    returncode, output = update_dotfiles._run_step(  # pylint: disable=protected-access
+        3, 4, "test", [sys.executable, "-c", code, str(exit_code)], capture=True
+    )
+
+    assert returncode == exit_code
+    assert output == ""
+    assert "diagnostic: �" in capsys.readouterr().err
+    assert update_dotfiles._last_stderr_tail == "diagnostic: �"  # pylint: disable=protected-access
+
+
 def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """既存の環境変数が保持される。"""
     monkeypatch.setenv("UPDATE_DOTFILES_TEST_SENTINEL", "preserved")

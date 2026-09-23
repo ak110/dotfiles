@@ -61,24 +61,23 @@ def test_model_entrypoint_forwards_arguments_unchanged(
 
 
 @pytest.mark.parametrize(
-    ("argv", "return_code", "stdout_tty", "stderr_tty", "clear_bin", "clears"),
+    ("argv", "return_code", "stdout_tty", "stderr_tty", "clear_bin"),
     [
-        ([], 0, True, True, "c", True),
-        (["prompt"], 0, True, True, "c", True),
-        (["--help"], 0, True, True, "c", False),
-        ([], 1, True, True, "c", False),
-        ([], 0, False, True, "c", False),
-        ([], 0, True, False, "c", False),
-        ([], 0, True, True, None, False),
+        ([], 0, True, True, "c"),
+        (["prompt"], 0, True, True, "c"),
+        (["--help"], 0, True, True, "c"),
+        ([], 1, True, True, "c"),
+        ([], 0, False, True, "c"),
+        ([], 0, True, False, "c"),
+        ([], 0, True, True, None),
     ],
 )
-def test_clear_conditions(
+def test_launch_does_not_clear_terminal(
     argv: list[str],
     return_code: int,
     stdout_tty: bool,
     stderr_tty: bool,
     clear_bin: str | None,
-    clears: bool,
     tmp_path: pathlib.Path,
 ) -> None:
     commands: list[list[str]] = []
@@ -107,7 +106,7 @@ def test_clear_conditions(
     )
 
     assert result == return_code
-    assert (["c"] in commands) is clears
+    assert commands == [["claude", "--model=test", *argv]]
 
 
 def test_resolve_claude_bin_prefers_user_install_on_all_platforms(

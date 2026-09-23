@@ -14,7 +14,6 @@ from typing import NoReturn
 from pytools._internal import claude_common
 from pytools._internal.cli import enable_completion
 
-_NON_INTERACTIVE_OPTIONS = frozenset(("--help", "-h", "--version", "-v", "--print", "-p"))
 _LONG_OPTION_PATTERN = re.compile(r"(?<!\S)(--[A-Za-z0-9][A-Za-z0-9-]*)")
 
 type CommandResolver = Callable[[str], str | None]
@@ -90,13 +89,8 @@ def _run_claude(
         print("claudeコマンドが見つかりません。", file=sys.stderr)
         return 127
 
-    interactive = not any(arg in _NON_INTERACTIVE_OPTIONS for arg in argv)
-    return_code = run([claude_bin, *model_args, *argv])
-    if interactive and return_code == 0 and isatty(1) and isatty(2):
-        clear_bin = which("c")
-        if clear_bin is not None:
-            run([clear_bin])
-    return return_code
+    del which, isatty
+    return run([claude_bin, *model_args, *argv])
 
 
 def _main(
