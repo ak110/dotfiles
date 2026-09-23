@@ -30,6 +30,19 @@ class SetupError(RuntimeError):
     """サービスが常駐状態に至らなかったことを表す。"""
 
 
+def _ensure_unit_content(unit_path: pathlib.Path, unit_content: str, log_tag: str) -> bool:
+    """unit本文が異なる場合だけ配置し、変更の有無を返す。"""
+    try:
+        existing = unit_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing = None
+    if existing == unit_content:
+        return False
+    claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
+    logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
+    return True
+
+
 def setup(
     *,
     unit_path: pathlib.Path,
@@ -51,15 +64,7 @@ def setup(
     if not executable_path.is_file():
         logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
         return False
-    changed = False
-    try:
-        existing = unit_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        existing = None
-    if existing != unit_content:
-        claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
-        logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
-        changed = True
+    changed = _ensure_unit_content(unit_path, unit_content, log_tag)
     commands: list[tuple[list[str], float, str]] = []
     if changed:
         reload_result = claude_common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=15.0, tag=log_tag)
@@ -132,13 +137,7 @@ def setup_timer(
         (service_unit_path, service_unit_content),
         (timer_unit_path, timer_unit_content),
     ):
-        try:
-            existing = unit_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            existing = None
-        if existing != unit_content:
-            claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
-            logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
+        if _ensure_unit_content(unit_path, unit_content, log_tag):
             changed = True
 
     commands: list[tuple[list[str], float, str]] = []
