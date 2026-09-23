@@ -40,6 +40,9 @@ let targetRepoRequestGeneration = 0;
 let knownUwiRequestGeneration = 0;
 let listLoadingVisible = false;
 let listRequestPending = false;
+let userListOperationGeneration = 0;
+let userListOperationPending = false;
+let externalListReloadPending = false;
 let pendingListAnnouncement = false;
 let detailRefreshRequired = false;
 let deleteDialogEntrySnapshot = '';
@@ -420,9 +423,34 @@ function captureListLoadingView() {
 }
 
 function renderListLoading(view = captureListLoadingView()) {
-  view.indicator.hidden = !listLoadingVisible;
-  view.list.setAttribute('aria-busy', String(listRequestPending));
+  view.indicator.hidden = !(listLoadingVisible || userListOperationPending);
+  view.list.setAttribute('aria-busy', String(listRequestPending || userListOperationPending));
   renderPagination(view);
+}
+
+function beginUserListOperation() {
+  userListOperationPending = true;
+  renderListLoading();
+  return ++userListOperationGeneration;
+}
+
+function endUserListOperation(generation) {
+  if (generation !== userListOperationGeneration) return;
+  userListOperationPending = false;
+  renderListLoading();
+  if (externalListReloadPending) {
+    externalListReloadPending = false;
+    void reloadFromExternalChange();
+  }
+}
+
+function isCurrentUserListOperation(generation) {
+  return generation === userListOperationGeneration;
+}
+
+function cancelSearchTimer() {
+  if (searchTimer !== null) clearTimeout(searchTimer);
+  searchTimer = null;
 }
 
 function beginListRequest(view, showLoading = true) {
@@ -444,8 +472,8 @@ function renderPagination(view = captureListLoadingView()) {
   const page = pagination.page || currentPage;
   const pageCount = pagination.page_count || 1;
   status.textContent = `ページ ${page} / ${pageCount}（全${pagination.total_count}件）`;
-  previous.disabled = listRequestPending || page <= 1;
-  next.disabled = listRequestPending || page >= pageCount;
+  previous.disabled = listRequestPending || userListOperationPending || page <= 1;
+  next.disabled = listRequestPending || userListOperationPending || page >= pageCount;
   previous.setAttribute('aria-label', `前のページ（現在${page}ページ）`);
   next.setAttribute('aria-label', `次のページ（現在${page}ページ）`);
 }
@@ -621,7 +649,9 @@ function syncFilterDependencies() {
   byId('answer-filter').disabled = awiOnly;
 }
 
-async function clearFilters({load = true} = {}) {
+async function clearFilters() {
+  cancelSearchTimer();
+  const operation = beginUserListOperation();
   byId('search-input').value = '';
   byId('kind-filter').value = 'all';
   byId('state-filter').value = 'active';
@@ -631,9 +661,12 @@ async function clearFilters({load = true} = {}) {
   currentPage = 1;
   pagination.page = 1;
   syncFilterDependencies();
-  if (load) {
+  try {
     await (loadTargetRepos());
+    if (!isCurrentUserListOperation(operation)) return;
     await (loadEntries({announce: true}));
+  } finally {
+    endUserListOperation(operation);
   }
 }
 
@@ -1226,9 +1259,7 @@ async function createEntry(event) {
       container: byId('create-form'), button: byId('create-submit-button'), busyLabel: '追加中'
     }, () => api(isBatch ? '/api/entries/batch' : '/api/entries', {method: 'POST', body: JSON.stringify(payload)})));
     closeDialog(byId('create-dialog'));
-    await (clearFilters({load: false}));
-    await (loadTargetRepos());
-    await (loadEntries({announce: true}));
+    await (clearFilters());
     deliverOperationMessage(createResultMessage(isBatch, result));
   } catch (error) {
     deliverOperationMessage(`項目を追加できませんでした。 ${error.message}`, true);
@@ -1300,50 +1331,71 @@ async function deleteEntry(event) {
 
 async function synchronizeAndLoad() {
   const payload = {};
-  const generation = ++listRequestGeneration;
-  const loadingView = captureListLoadingView();
-  beginListRequest(loadingView);
+  cancelSearchTimer();
+  const operation = beginUserListOperation();
   setTextMessage('sync-result', '');
   try {
     await (runPending('sync', {
       container: document.querySelector('.app-header'), button: byId('refresh-button'), busyLabel: '同期中'
-    }, () => api('/api/sync', {method: 'POST', body: JSON.stringify(payload)})));
-    setTextMessage('sync-result', 'Git同期が完了しました。');
-  } catch (error) {
-    setTextMessage('sync-result', `Git同期に失敗しました。ローカル内容を表示中です。 ${error.message}`);
-  }
-  try {
-    await (loadTargetRepos());
-    await (loadEntries({announce: true}));
+    }, async () => {
+      let syncFailure = null;
+      try {
+        await api('/api/sync', {method: 'POST', body: JSON.stringify(payload)});
+      } catch (error) {
+        syncFailure = error;
+      }
+      await loadTargetRepos();
+      if (!isCurrentUserListOperation(operation)) return;
+      await loadEntries({announce: true});
+      if (!isCurrentUserListOperation(operation)) return;
+      setTextMessage('sync-result', syncFailure
+        ? `Git同期に失敗しました。ローカル内容を表示中です。 ${syncFailure.message}`
+        : 'Git同期が完了しました。');
+    }));
   } finally {
-    endListRequest(loadingView, generation);
+    endUserListOperation(operation);
   }
 }
 
 async function handleFilterChange({reloadRepos = false} = {}) {
+  cancelSearchTimer();
+  const operation = beginUserListOperation();
   currentPage = 1;
   pagination.page = 1;
   syncFilterDependencies();
   const requestedState = byId('state-filter').value;
-  if (reloadRepos) {
-    const requestedTarget = byId('target-filter').value;
-    const entriesRequest = loadEntries({announce: true});
-    const loaded = await (loadTargetRepos());
-    await entriesRequest;
-    if ((!loaded && byId('state-filter').value !== requestedState)) return;
-    if (loaded && requestedTarget && byId('target-filter').value !== requestedTarget) {
-      await (loadEntries({announce: true}));
+  try {
+    if (reloadRepos) {
+      const requestedTarget = byId('target-filter').value;
+      const entriesRequest = loadEntries({announce: true});
+      const loaded = await (loadTargetRepos());
+      await entriesRequest;
+      if (!isCurrentUserListOperation(operation)) return;
+      if ((!loaded && byId('state-filter').value !== requestedState)) return;
+      if (loaded && requestedTarget && byId('target-filter').value !== requestedTarget) {
+        await (loadEntries({announce: true}));
+      }
+      return;
     }
-    return;
+    await (loadEntries({announce: true}));
+  } finally {
+    endUserListOperation(operation);
   }
-  await (loadEntries({announce: true}));
 }
 
 async function reloadFromExternalChange() {
   void refreshKnownUwis({notify: true}).catch((error) => {
     setGlobalError(error.message);
   });
+  if (userListOperationPending) {
+    externalListReloadPending = true;
+    return;
+  }
   await (loadTargetRepos());
+  if (userListOperationPending) {
+    externalListReloadPending = true;
+    return;
+  }
   await (loadEntries({announce: false, showLoading: false}));
   await (reloadOpenDetailFromExternalChange());
 }
@@ -1388,11 +1440,13 @@ function bindEvents() {
   byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('search-input').addEventListener('input', () => {
-    if (searchTimer !== null) clearTimeout(searchTimer);
+    cancelSearchTimer();
+    const operation = beginUserListOperation();
     currentPage = 1;
     pagination.page = 1;
     searchTimer = setTimeout(() => {
-      loadEntries({announce: true});
+      searchTimer = null;
+      void loadEntries({announce: true}).finally(() => endUserListOperation(operation));
     }, 250);
   });
   byId('edit-button').addEventListener('click', enterEdit);

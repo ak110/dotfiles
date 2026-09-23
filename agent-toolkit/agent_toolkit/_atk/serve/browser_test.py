@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextlib
 import dataclasses
+import functools
 import json
 import os
 import socket
@@ -29,6 +30,17 @@ _MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min
 _SERVER_START_TIMEOUT_SEC = 10.0
 _SAVE_RELEASE_DELAY_SEC = 1.0
 _LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
+
+
+async def _hold_route(
+    route: playwright.async_api.Route,
+    *,
+    started: asyncio.Event,
+    release: asyncio.Event,
+) -> None:
+    started.set()
+    await release.wait()
+    await route.continue_()
 
 
 def _browser_tests_enabled() -> bool:
@@ -1356,6 +1368,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     await playwright.async_api.expect(page.locator('#target-filter option[value="example/repo"]')).to_have_count(1)
     await _open_filters(page)
     first_started = asyncio.Event()
+    second_started = asyncio.Event()
     release_first = asyncio.Event()
     request_count = 0
 
@@ -1365,6 +1378,8 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
         if request_count == 1:
             first_started.set()
             await release_first.wait()
+        else:
+            second_started.set()
         await route.continue_()
 
     await page.route("**/api/repos?status=active", delay_first_repo_request)
@@ -1379,6 +1394,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     finally:
         release_first.set()
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
+    await asyncio.wait_for(second_started.wait(), timeout=5)
     assert request_count == 2
 
 
@@ -2830,6 +2846,91 @@ async def test_manual_sync_refreshes_work_items_without_page_reload(browser_harn
 
 
 @pytest.mark.asyncio
+async def test_manual_sync_stays_busy_until_entries_render(browser_harness: _BrowserHarness) -> None:
+    """一覧の新着が描画されるまで同期ボタンと結果表示を完了させない。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    (browser_harness.root / "inbox" / "delayed-sync.md").write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\n---\n\n遅延した同期結果\n",
+        encoding="utf-8",
+    )
+    entries_started = asyncio.Event()
+    release_entries = asyncio.Event()
+
+    await page.route("**/api/entries?*", functools.partial(_hold_route, started=entries_started, release=release_entries))
+    try:
+        await page.locator("#refresh-button").click()
+        await asyncio.wait_for(entries_started.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+        await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "true")
+        await playwright.async_api.expect(page.locator("#refresh-button")).to_be_disabled()
+        await playwright.async_api.expect(page.locator("#sync-result")).to_have_text("")
+        await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/delayed-sync.md"]')).to_have_count(0)
+    finally:
+        release_entries.set()
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/delayed-sync.md"]')).to_be_visible()
+    await playwright.async_api.expect(page.locator("#sync-result")).to_have_text("Git同期が完了しました。")
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
+    await playwright.async_api.expect(page.locator("#refresh-button")).to_be_enabled()
+
+
+@pytest.mark.asyncio
+async def test_clear_filters_stays_busy_through_repos_and_entries(browser_harness: _BrowserHarness) -> None:
+    """条件クリア後の候補取得と一覧取得の両方を処理中として表示する。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_filters(page)
+    repos_started = asyncio.Event()
+    release_repos = asyncio.Event()
+    entries_started = asyncio.Event()
+    release_entries = asyncio.Event()
+
+    await page.route("**/api/repos?*", functools.partial(_hold_route, started=repos_started, release=release_repos))
+    await page.route("**/api/entries?*", functools.partial(_hold_route, started=entries_started, release=release_entries))
+    try:
+        await page.locator("#clear-filters-button").click()
+        await asyncio.wait_for(repos_started.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+        await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "true")
+        release_repos.set()
+        await asyncio.wait_for(entries_started.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+        await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "true")
+    finally:
+        release_repos.set()
+        release_entries.set()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
+
+
+@pytest.mark.asyncio
+async def test_search_stays_busy_during_debounce_and_entries(browser_harness: _BrowserHarness) -> None:
+    """検索入力直後から遅延取得の描画完了まで処理中を保つ。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    entries_started = asyncio.Event()
+    release_entries = asyncio.Event()
+
+    await page.route("**/api/entries?*", functools.partial(_hold_route, started=entries_started, release=release_entries))
+    try:
+        await page.locator("#search-input").fill("awi")
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+        await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "true")
+        await asyncio.wait_for(entries_started.wait(), timeout=5)
+        browser_harness.current_state.publish()
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+        await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "true")
+    finally:
+        release_entries.set()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
+
+
+@pytest.mark.asyncio
 async def test_slow_work_item_filter_and_plan_preview_show_loading(
     screen_harness: _ScreenHarness,
 ) -> None:
@@ -2912,6 +3013,8 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
 
     for path, screen in (("/", "#screen-wi"), ("/plans", "#screen-plans"), ("/sessions", "#screen-sessions")):
         await harness.page.goto(harness.base_url + path)
+        if path == "/":
+            await playwright.async_api.expect(harness.page.locator("#sync-result")).to_contain_text("完了")
         header = harness.page.locator(f"{screen} .app-header")
         await header.wait_for(state="visible")
         header_box = await header.bounding_box()
