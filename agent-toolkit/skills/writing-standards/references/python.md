@@ -207,7 +207,7 @@
 
 ## pyfltrの起動形
 
-- 名前が確定した検査コマンドの有効状態、実行器、実効コマンドライン及び実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`を正本とする。未知のコマンド名の探索、pyfltrの導入及び検査の実行には、それぞれの目的に対応する既存の入口を使う
+- 名前が確定した検査コマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`を正本とする。未知のコマンド名の探索、pyfltrの導入及び検査の実行には、それぞれの目的に対応する既存の入口を使う
 - pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
 - project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
 - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する

@@ -123,8 +123,8 @@ def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path)
     assert "ヘルプ出力を観測していない" not in result.stderr
 
 
-def test_second_removable_warning_blocks_with_count_and_fix(tmp_path: pathlib.Path) -> None:
-    """同一原因の2件目は、累積件数と解消手段を添えて同種操作を遮断する。"""
+def test_second_removable_warning_continues_with_count_and_fix(tmp_path: pathlib.Path) -> None:
+    """同一原因の2件目も、累積件数と解消手段を添えて通過させる。"""
     payload = {
         "tool_name": "Bash",
         "tool_input": {"command": "rg keyword ~/.local"},
@@ -136,18 +136,19 @@ def test_second_removable_warning_blocks_with_count_and_fix(tmp_path: pathlib.Pa
     second = _run(payload, env_overrides=environment)
 
     assert first.returncode == 0
-    assert second.returncode == 2
-    assert "この通知は同一セッションで2件目である" in second.stderr
-    assert "Fix: この通知が挙げた原因を除去してから同じ操作を実行する。" in second.stderr
-    assert "対象ディレクトリを狭め" in second.stderr
+    assert second.returncode == 0
+    context = _additional_context(second)
+    assert "この通知は同一セッションで2件目である" in context
+    assert "対象ディレクトリを狭め" in context
+    assert second.stderr == ""
 
 
-def test_irremovable_warning_does_not_advance_removable_block_threshold(
+def test_irremovable_warning_does_not_advance_removable_repeat_count(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """除去不能警告の後も、除去可能警告の初回を通し、2回目を遮断する。"""
+    """除去不能警告の後も、除去可能警告の2回目だけに反復注記を付ける。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
 
     def emit_controlled_warning(
@@ -160,11 +161,12 @@ def test_irremovable_warning_does_not_advance_removable_block_threshold(
         is_codex: bool,
     ) -> int:
         del is_codex
-        pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
+        notice = pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
             "controlled warning\n対処: retry",
             tag=pretooluse._WARN_TAG,  # noqa: SLF001  # pylint: disable=protected-access
             removable_cause=bool(tool_input["removable"]),
         )
+        _emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}})
         return 0
 
     monkeypatch.setattr(pretooluse, "_handle_edit_tool", emit_controlled_warning)
@@ -187,8 +189,9 @@ def test_irremovable_warning_does_not_advance_removable_block_threshold(
     captured = capsys.readouterr()
     assert irremovable == 0
     assert first_removable == 0
-    assert second_removable == 2
-    assert "この通知は同一セッションで2件目である" in captured.err
+    assert second_removable == 0
+    assert "この通知は同一セッションで2件目である" in captured.out
+    assert captured.err == ""
 
 
 class TestMojibakeCheck:
