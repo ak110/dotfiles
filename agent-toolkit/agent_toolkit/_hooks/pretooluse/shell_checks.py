@@ -2882,27 +2882,6 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
     return "block"
 
 
-def _check_bash_help_with_execution(command: str) -> str | None:
-    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を検出する。
-
-    `-h`は実行ファイルごとに意味が異なるためヘルプ指定として扱わない。
-    ヘルプ取得だけを並べた呼び出しは、警告が求める実行の分離を適用する区間を持たないため対象にしない。
-    通した場合の結果は受理形式の確定が同じ呼び出しの内側へ入ることに限り、復元できるため警告で返す。
-    """
-    segments = [segment for segment in _extract_execution_segments(command) if segment.resolved and segment.tokens]
-    names = [pathlib.PurePosixPath(segment.tokens[0]).name for segment in segments]
-    help_names = {name for name, segment in zip(names, segments, strict=True) if _segment_is_help_only(segment)}
-    non_help_names = {name for name, segment in zip(names, segments, strict=True) if not _segment_is_help_only(segment)}
-    if help_names & non_help_names:
-        return _llm_notice(
-            "同じシェル呼び出しの中でヘルプの取得と同じ実行ファイルの実行が並んでいる。\n"
-            "対処: 先にヘルプだけを実行して受理形式を確定し、実行は別の呼び出しへ分ける。",
-            tag=_WARN_TAG,
-            removable_cause=True,
-        )
-    return None
-
-
 def _tee_operand_is_non_regular_file(token: str) -> bool:
     """`tee`のoperandが既知の特殊出力先または既存の非通常ファイルかを返す。"""
     normalized = token.rstrip("/")

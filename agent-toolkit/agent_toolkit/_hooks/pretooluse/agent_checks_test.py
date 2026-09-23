@@ -133,30 +133,6 @@ class TestBashCommandContractWarnings:
             assert result.returncode == 0
             assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
 
-    @pytest.mark.parametrize("command", ["atk --help; atk wi list", "atk wi --help && atk wi show a.md"])
-    def test_help_with_same_executable_warns(self, command: str) -> None:
-        """格下げ後も検出条件は同じで、実行を止めずに警告だけを返す。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        messages = _agent_messages(result)
-        assert "ヘルプの取得と同じ実行ファイル" in messages
-        assert "先にヘルプだけを実行" in messages
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "grep -h foo a.txt; grep -h bar b.txt",
-            "atk --help",
-            "atk wi list",
-            "atk --help; atk agents --help",
-            "uvx pyfltr grep --help && echo ===== && uvx pyfltr replace --help",
-        ],
-    )
-    def test_help_single_or_short_option_forms_are_silent(self, command: str) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "ヘルプ取得と同じ実行ファイル" not in _agent_messages(result)
-
 
 class TestBashOutputTruncationWarning:
     """`Bash`経由の検証コマンド出力切り詰めを補正する。"""
