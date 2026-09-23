@@ -154,7 +154,7 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
             "--working-tree",
             str(subject.REPO_ROOT),
         ],
-        input='model = "gpt-test"\nproject_doc_max_bytes = 1\ntool_output_token_limit = 2\n',
+        input=('model = "gpt-test"\nproject_doc_max_bytes = 1\ntool_output_token_limit = 2\n[features]\nuser_feature = true\n'),
         capture_output=True,
         text=True,
         check=False,
@@ -165,6 +165,8 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
     assert rendered["project_doc_max_bytes"] == 262144
     assert rendered["tool_output_token_limit"] == 20000
     assert rendered["model"] == "gpt-test"
+    assert rendered["features"]["reasoning_effort_override"] is True
+    assert rendered["features"]["user_feature"] is True
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:
