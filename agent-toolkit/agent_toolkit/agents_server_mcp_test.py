@@ -618,14 +618,13 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
     assert all({"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"} for item in listed)
 
 
-def test_delegation_break_even_guidance_is_available_before_calling() -> None:
-    """探索委譲とシェル実行委譲の説明が、委譲と直接実行の採算の目安と前提を示す。"""
+def test_delegation_result_scope_is_available_before_calling() -> None:
+    """探索委譲とシェル実行委譲の説明が、呼び出し元へ届く結果の範囲を示す。"""
     for tool_name in ("start_explore", "start_shell"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
-        assert "4,000トークン" in tool.description
-        assert "147,000トークン" in tool.description
-        assert "セッションの残りリクエスト数47" in tool.description
+        assert "呼び出し元の文脈へは" in tool.description
+        assert "147,000トークン" not in tool.description
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:

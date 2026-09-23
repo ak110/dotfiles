@@ -4,7 +4,7 @@ description: >
   `agent-toolkit/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
   `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
   `.claude-plugin/marketplace.json`を編集するときに使う。
-  「agent-toolkit編集」「version bump」「marketplace管理」「セッション状態フラグ」などのキーワードでも起動する。
+  版数更新・marketplace管理・セッション状態フラグの扱いを含む。
 ---
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）

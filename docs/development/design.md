@@ -105,6 +105,8 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 
 ## agents_server MCPの委譲経路
 
+動的に生成する通知・委譲本文の`nonce`は、外側のXML配送境界を本文中の同名タグから識別するために使う。生成時に本文へ現れない値を選び、受信側は開始タグの値と最後の同名終了タグで境界を確定する。静的な配布文書は本文が決定的なため`nonce`を付けない。常時読む説明には、その判断時に必要な契約だけを置き、実測値と変更経緯は監査記録へ置く。
+
 `agents_server`は、Claude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
 `start`の`model_type`に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
 共有のsession状態機械、待機通知及び結果配送境界へ接続する。Codex backendは公式stdio App Serverを

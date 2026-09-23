@@ -1,6 +1,6 @@
 interface:
   display_name: "single-lane-process"
-  short_description: "既存方針から一意に定まる作業項目を計画なしで実装する"
+  short_description: "作業項目をレーンへ分けず、メインが主作業ツリーで計画・実装・レビューまで行う"
 
 policy:
   allow_implicit_invocation: false
