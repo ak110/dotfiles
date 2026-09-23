@@ -4,6 +4,7 @@
 特定ホストでのみsystemd user serviceユニットをべき等に配置・有効化する。
 """
 
+import json
 import logging
 import pathlib
 import stat
@@ -52,10 +53,10 @@ WantedBy=default.target
 
 
 def run() -> bool:
-    """`atk serve`の systemd 自動起動セットアップと restart を行う (Linux + euryale のみ)。
+    """`atk serve`の systemd 自動起動状態を整える (Linux + euryale のみ)。
 
     Returns:
-        セットアップまたは restart を実施した場合 True、ホスト不一致・非 Linux・
+        対象ホストで状態を確認した場合 True、ホスト不一致・非 Linux・
         uv 又は dotfiles ルートを解決できず何もしなかった場合 False。
 
     Raises:
@@ -77,16 +78,22 @@ def run() -> bool:
 
     launcher = _launcher_path()
     content = _LAUNCHER_TEMPLATE.format(uv=uv, dotfiles=dotfiles)
-    if _read_text(launcher) != content:
+    launcher_changed = _read_text(launcher) != content
+    if launcher_changed:
         claude_common.atomic_write_text(launcher, content, mode=0o755, tag="atk-serve")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
+    plugin_manifest = dotfiles / "agent-toolkit" / ".claude-plugin" / "plugin.json"
+    plugin_version = json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"]
+    # 配布版の変更をunit本文へ反映し、稼働中プロセスも新しいplugin実装へ切り替える。
+    unit_content = f"{_UNIT_CONTENT}# agent-toolkit version: {plugin_version}\n"
     return systemd_user_unit.setup(
         unit_path=_unit_path(),
         executable_path=launcher,
-        unit_content=_UNIT_CONTENT,
+        unit_content=unit_content,
         log_tag="atk-serve",
         service_name=_SERVICE_UNIT,
+        restart_needed=launcher_changed,
     )
 
 

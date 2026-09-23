@@ -15,6 +15,7 @@
 工程は準備manifest、分析境界、bundle、候補証拠、既存キュー照合、判定、分析、timings、報告生成、構造検査の順で進める。この順序が依存関係の最短経路であり、前段の出力を持たない工程を先に始めない。
 
 受領した`準備manifest`の絶対パスから保存済みの1行JSONを最初に1回読み、以降はそこに含まれる値を個別に解決し直さない。担当は`session_review_prepare.py`を実行しない。manifestは抽出器と報告生成器の絶対パス、plugin root、対象リポジトリ、管理対象一時領域、証拠束の出力先、観測境界及び対象リポジトリ固有の振り返り参照文書の絶対パスを持つ。参照文書が`null`の場合は、そのリポジトリに固有の観点と所要時間目標が無いものとして進める。所要時間目標は参照文書から読み取る。
+manifestの`evidence_script`と`report_script`は公開登録名との同一性を照合した結果として保持する。補助処理の実行対象は現在のagent-toolkit環境の`atk run-script session-review-evidence --`と`atk run-script session-review-report --`の登録名とする。引数の受理形式は、それぞれの公開入口へ`--help`を渡して確認する。実装ファイルの実行権や作業リポジトリのPython環境には依存しない。
 
 準備manifestの取得後、bundleの実行前に`<管理対象一時領域>/main-observations.md`を読む。空ファイルは受領件数0件として扱う。各項目を抽出候補へ突合し、成果の`## メイン由来の改善点`へファイルの絶対パス、受領件数及び項目ごとの統合先`analysis_id`又は独立分析の結果を書く。
 
@@ -33,7 +34,15 @@
 
 保存した証拠ファイルへ照会する際は、必要な区間、識別子及びフィールドを先に列挙し、同種の照会を1回へまとめる。対象の列挙に必要な情報がまだ無い場合は、その情報も同じ照会へ含める（努力目標。保存後の読取を対象ごとに反復する往復を減らす）。取得範囲の決定は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
 
-初回bundleの直前に現在時刻を分析境界として記録する。準備manifestの`observation_boundary`は準備資源の作成時刻として追加ユーザー発話の再照合に用い、初回bundleの終端には分析境界を`--observation-boundary`へ渡す。`--bundle`へ管理対象一時領域を渡した集約実行を1回行い、`candidates.jsonl`と、候補ごとの証拠の索引である`candidate-evidence.jsonl`を読む。索引の各行は候補ID、証拠件数、個別ファイルの相対パス、総文字数を持つ。完全分析へ送る候補については、索引の相対パスが指す`candidate-evidence/<candidate_id>.json`だけを読む。一次選別で除外した候補と、既存キュー項目が事象、原因及び完成条件を全て覆う候補の個別ファイルは読まない。個別ファイルが完全分析に不足する候補だけ、必要な`--grep`と`--detail`をそれぞれ1回へまとめる。全実行へ`--observation-boundary`と`--output-file`を付け、実行ごとに異なる領域内ファイルへ保存する。Codexのthread IDでは`--codex-thread-id`を用いる。読取は必要な範囲へ限定し、全量ファイルの読取は個別に必要と判断した場合に限る。
+初回bundleの直前に現在時刻を分析境界として記録する。準備manifestの`observation_boundary`は準備資源の作成時刻として追加ユーザー発話の再照合に用い、初回bundleの終端には分析境界を`--observation-boundary`へ渡す。`--bundle`へ管理対象一時領域を渡した集約実行を1回行い、`candidates.jsonl`と、候補ごとの証拠の索引である`candidate-evidence.jsonl`を読む。索引の各行は候補ID、証拠件数、個別ファイルの相対パス、総文字数を持つ。完全分析へ送る候補については、索引の相対パスが指す`candidate-evidence/<candidate_id>.json`だけを読む。一次選別で除外した候補と、既存キュー項目が事象、原因及び完成条件を全て覆う候補の個別ファイルは読まない。個別ファイルが完全分析に不足する候補だけ、必要な`--grep`と`--detail`をそれぞれ1回へまとめる。各照会へ`--observation-boundary`を付け、bundle以外の照会は`--output-file`で実行ごとに異なる領域内ファイルへ保存する。Codexのthread IDでは`--codex-thread-id`を用いる。読取は必要な範囲へ限定し、全量ファイルの読取は個別に必要と判断した場合に限る。
+
+初回と追加照会の起動形は次のとおりとする。`<セッション指定>`にはClaude Codeのtranscript絶対パス又は`--codex-thread-id <識別子>`を渡し、保存先は受領した管理対象一時領域の内側へ置く。
+
+```text
+atk run-script session-review-evidence -- <セッション指定> --observation-boundary <分析境界> --bundle <保存先ディレクトリ>
+atk run-script session-review-evidence -- <セッション指定> --observation-boundary <分析境界> --grep <正規表現> --output-file <保存先ファイル>
+atk run-script session-review-evidence -- <セッション指定> --observation-boundary <分析境界> --detail <記録:行番号> --output-file <保存先ファイル>
+```
 
 委譲先の内部で生じた事象の原因を求める場合は、対象threadを`stats-agent-thread`が返すthreadの一覧から特定し、そのthreadの記録を`--detail`で取得する。この目的での最初の取得は`--detail`とし、全記録を対象とする`--grep`はその後に必要と判断した場合に発行する。これは努力目標とする。原因が委譲先の起動文にある場合、全記録を対象とする内容検索はその原因を返さず、検索の発行と結果の選別に要した工程が成果へつながらないためである。
 
@@ -47,6 +56,7 @@ blockかwarnを1回以上発火した各発生源には、欠陥判定にかか�
 対象セッション自身の常駐処理、再開機構、実行環境が生成した定時promptは、role、イベント種別と起動経路で識別して利用者入力から除く。
 過去に不採用が確定した案は、新しい観測か要件変更を対応付けられた場合に限り提案集合へ加える。
 抽出、一次選別、完全分析、既存キュー項目との照合、報告生成及び構造検査の開始と終了を記録し、同じスクリプトで工程別の所要時間を算出する。
+timingsをJSONへ記録し、後述する報告の`generate`と`check`へ同じ入力として渡す。
 報告の見出しと表の骨格、locatorの対応は補助スクリプトから生成し、同じスクリプトで最終構造を検査する。意味判断は`agent-toolkit:session-review`の各節に従って行う。
 
 ## 既存キュー項目との照合
@@ -61,11 +71,18 @@ blockかwarnを1回以上発火した各発生源には、欠陥判定にかか�
 
 ## 出力
 
-同じ時点で、観測できた区間と観測できない区間、律速区間、削減できると判定した区間、削減できないと判定した区間、分解できない区間、典拠を、`session_review_report.py --help`が示すschemaのJSONへ書く。観測区間は準備、規範適用による停止、委譲先実行、親による検収を区別する。律速区間の秒数、短縮見込み、削減できない根拠、分解できない秒数と区間、並びに各値を確定した抽出器のイベント種別と値を必須とする。短縮後の比較には、短縮前と同じ観測済み区間IDだけを指定する。
+同じ時点で、観測できた区間と観測できない区間、律速区間、削減できると判定した区間、削減できないと判定した区間、分解できない区間、典拠を、`atk run-script session-review-report -- --help`が示すschemaのJSONへ書く。観測区間は準備、規範適用による停止、委譲先実行、親による検収を区別する。律速区間の秒数、短縮見込み、削減できない根拠、分解できない秒数と区間、並びに各値を確定した抽出器のイベント種別と値を必須とする。短縮後の比較には、短縮前と同じ観測済み区間IDだけを指定する。
 区間の網羅分割と、秒数の合計を`elapsed_seconds`へ一致させる検査は置かない。
 
-出力先ファイルは`session_review_report.py`の`generate`で生成する。`## 対象セッション`、`## メイン由来の改善点`、`## 規範適用による停止`、`## 登録したキュー項目`及び`## 未確認範囲`の本文は、節名をキーとするJSONへ書いて`--sections`へ渡す。所要時間JSONは`--duration-analysis`へ渡す。生成後に本文を部分編集で足さず、同じ入力で`check`を実行して構造を検査する。生成器が観測できた区間と不明区間の表の直後に、同じ観測済み区間集合だけを用いた短縮後の所要時間と180秒目標との比較、又は比較未確定の理由を決定的に生成し、検査器が同じ入力から照合する。
+出力先ファイルは`atk run-script session-review-report -- generate`で生成する。`## 対象セッション`、`## メイン由来の改善点`、`## 規範適用による停止`、`## 登録したキュー項目`及び`## 未確認範囲`の本文は、節名をキーとするJSONへ書いて`--sections`へ渡す。所要時間JSONは`--duration-analysis`へ渡す。生成後に本文を部分編集で足さず、同じ入力で`check`を実行して構造を検査する。生成器が観測できた区間と不明区間の表の直後に、同じ観測済み区間集合だけを用いた短縮後の所要時間と180秒目標との比較、又は比較未確定の理由を決定的に生成し、検査器が同じ入力から照合する。
 `--sections`へ渡す本文のコードフェンス内にあるH2は、報告の節見出しとして数えない。H2を含むWI起草本文は管理対象一時領域の個別ファイルへ保存し、節本文からその絶対パスを参照する。
+
+生成と検査には同じ入力ファイルを渡し、公開登録名から起動する。
+
+```text
+atk run-script session-review-report -- generate --candidates <候補ファイル> --decisions <判定JSON> --analyses <分析JSON> --timings <区間JSON> --duration-analysis <所要時間JSON> --sections <節JSON> --output <出力先ファイル>
+atk run-script session-review-report -- check --candidates <候補ファイル> --decisions <判定JSON> --analyses <分析JSON> --timings <区間JSON> --duration-analysis <所要時間JSON> --sections <節JSON> --output <出力先ファイル>
+```
 
 出力先ファイルへ次のH2をこの順で置く。
 

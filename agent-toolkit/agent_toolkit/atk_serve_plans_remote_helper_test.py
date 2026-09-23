@@ -1,6 +1,6 @@
 import importlib.util
-import os
 import pathlib
+import subprocess
 
 import pytest
 
@@ -23,21 +23,20 @@ def test_working_root_excludes_removed_attachments(tmp_path: pathlib.Path, name:
     assert helper._is_target_path(path, root, helper.NEW_SOURCE_ID)  # pylint: disable=protected-access
 
 
-@pytest.mark.parametrize("delay", [5, 8])
 def test_resolve_private_notes_waits_for_atk_startup(
-    delay: int,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     private_notes = tmp_path / "private-notes"
-    executable = tmp_path / "atk"
-    executable.write_text(
-        f"#!/bin/sh\nsleep {delay}\nprintf '%s\\n' '{private_notes}'\n",
-        encoding="utf-8",
-    )
-    executable.chmod(0o755)
-    monkeypatch.setattr(helper, "_atk_executable", lambda: os.fspath(executable))
+    monkeypatch.setattr(helper, "_atk_executable", lambda: "/tmp/atk")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command == ["/tmp/atk", "config", "get", "private_notes"]
+        assert isinstance(kwargs["timeout"], int) and kwargs["timeout"] > 8
+        return subprocess.CompletedProcess(command, 0, f"{private_notes}\n", "")
+
+    monkeypatch.setattr(helper.subprocess, "run", run)
 
     path, warning = helper._resolve_private_notes_result()  # pylint: disable=protected-access
 

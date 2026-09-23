@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 
@@ -56,6 +57,27 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
     assert run_script.dispatch(argparse.Namespace(script_name="session-review-evidence", script_args=["--", *script_args])) == 0
 
     assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
+
+
+def test_session_review_delegate_uses_public_script_entries() -> None:
+    """委譲手順の実行例が登録済み入口を使い、実装ファイルを直接起動しない。"""
+    task_file = run_script.PLUGIN_ROOT / "share" / "session-review-delegate.subagent.md"
+    commands: list[list[str]] = []
+    in_block = False
+    for line in task_file.read_text(encoding="utf-8").splitlines():
+        if line == "```text":
+            in_block = True
+        elif line == "```":
+            in_block = False
+        elif in_block and line.startswith("atk run-script session-review-"):
+            commands.append(shlex.split(line))
+
+    assert {command[2] for command in commands} == {"session-review-evidence", "session-review-report"}
+    assert len(commands) == 5
+    for command in commands:
+        assert command[:2] == ["atk", "run-script"]
+        assert command[3] == "--"
+        assert run_script.registered_script_path(command[2]).is_file()
 
 
 def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest.MonkeyPatch) -> None:
