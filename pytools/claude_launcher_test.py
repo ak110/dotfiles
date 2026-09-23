@@ -140,6 +140,107 @@ def test_missing_claude_returns_127(capsys: pytest.CaptureFixture[str], tmp_path
     assert capsys.readouterr().err == "claudeコマンドが見つかりません。\n"
 
 
+@pytest.mark.parametrize(
+    ("entrypoint", "model_args", "command_name"),
+    [
+        (claude_launcher.main_sonnet, ["--permission-mode=auto", "--model=sonnet[1m]"], "claude"),
+        (claude_launcher.main_opus, ["--permission-mode=auto", "--model=opus[1m]"], "claude"),
+        (
+            claude_launcher.main_fable,
+            ["--permission-mode=auto", "--model=fable", "--fallback-model=opus[1m]"],
+            "claude",
+        ),
+        (claude_launcher.main_astra, ["-m", "gpt-6-astra"], "codex"),
+        (claude_launcher.main_sol, ["-m", "gpt-5.6-sol"], "codex"),
+        (claude_launcher.main_terra, ["-m", "gpt-5.6-terra"], "codex"),
+    ],
+)
+def test_posix_launch_replaces_process_with_command_name(
+    entrypoint: Entrypoint,
+    model_args: list[str],
+    command_name: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, list[str]]] = []
+    command_path = tmp_path / command_name
+
+    def execv(path: str, arguments: list[str]) -> NoReturn:
+        calls.append((path, arguments))
+        raise SystemExit(0)
+
+    monkeypatch.setattr(claude_launcher.os, "execv", execv)
+    with pytest.raises(SystemExit, match="0"):
+        entrypoint(
+            ["--version", "追加引数"],
+            os_name="posix",
+            home=tmp_path,
+            resolve=lambda _name, _preferred: command_path,
+            run=lambda _: pytest.fail("子プロセスは起動されない"),
+        )
+
+    assert calls == [(str(command_path), [command_name, *model_args, "--version", "追加引数"])]
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "model"),
+    [
+        (claude_launcher.main_astra, "gpt-6-astra"),
+        (claude_launcher.main_sol, "gpt-5.6-sol"),
+        (claude_launcher.main_terra, "gpt-5.6-terra"),
+    ],
+)
+def test_codex_entrypoint_windows_forwards_arguments_and_exit_code(
+    entrypoint: Entrypoint,
+    model: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    commands: list[list[str]] = []
+
+    def run(command: list[str]) -> int:
+        commands.append(command)
+        return 23
+
+    with pytest.raises(SystemExit, match="23"):
+        entrypoint(
+            ["--version", "追加引数"],
+            os_name="nt",
+            home=tmp_path,
+            resolve=lambda _name, _preferred: pathlib.Path("codex.exe"),
+            run=run,
+        )
+
+    assert commands == [["codex.exe", "-m", model, "--version", "追加引数"]]
+
+
+def test_codex_missing_returns_127(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
+    with pytest.raises(SystemExit, match="127"):
+        claude_launcher.main_astra(
+            [],
+            os_name="nt",
+            home=tmp_path,
+            resolve=lambda _name, _preferred: None,
+            run=lambda _: pytest.fail("コマンドは実行されない"),
+        )
+
+    assert capsys.readouterr().err == "codexコマンドが見つかりません。\n"
+
+
+def test_executable_search_keeps_symlink_path(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binary = tmp_path / "binary"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    link = tmp_path / "claude"
+    link.symlink_to(binary)
+    monkeypatch.setattr(claude_launcher.claude_common, "mise_shim_directories", set)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert claude_launcher._resolve_executable("claude", ()) == link
+
+
 def test_get_claude_options_extracts_long_options() -> None:
     result = subprocess.CompletedProcess(
         args=["claude", "--help"],
