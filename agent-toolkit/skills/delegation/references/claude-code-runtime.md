@@ -31,7 +31,7 @@ Claude Codeから委譲を起動する直前に本文書を全文読む。
 agent定義の`tools`は実行可能性ではなく許可の上限を示すため、`ListAgents`の許可と実行時提供を混同しない。
 
 `agents_server`の`start`は`setting_sources`へ`user`と`project`を渡すため、ユーザー設定、プロジェクト設定及び有効なプラグインのフックを読み込む。
-`start_explore`と`start_shell`は`setting_sources`を空にして、固定の軽量起動文だけを渡す。
+`start_explore`、`start_shell`、`start_write`は`setting_sources`へ`user`を渡し、ユーザー設定で有効なプラグインのフックを読み込む。起動文と利用可能なツールは軽量起動用の固定値を使う。
 通常起動のClaude委譲先には、`agents_server`が`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/rules-subagent.claude-code.md`をシステム指示へ連結する。
 `Agent`ツールのサブエージェントには、`SubagentStart`フックが同じ2ファイルを文脈へ追加する。
 
