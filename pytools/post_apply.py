@@ -3,6 +3,7 @@
 各ステップは独立して動作し、途中で失敗しても他のステップは継続する。
 """
 
+import argparse
 import io
 import logging
 import logging.handlers
@@ -369,8 +370,14 @@ _DEFAULT_STEPS: list[_StepSpec] = [
 ]
 
 
-def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None) -> None:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None,
+) -> None:
     """エントリポイント。"""
+    parser = argparse.ArgumentParser(description="chezmoi apply後のdotfiles設定を更新する。")
+    parser.parse_args([] if runner is not None and argv is None else argv)
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     previous_handlers, previous_level, persistent_log_ready = _configure_logging()
     try:

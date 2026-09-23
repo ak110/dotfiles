@@ -1,9 +1,58 @@
 """update_ssh_configモジュールのテスト。"""
 
 import sys
+from pathlib import Path
 
+import pytest
+
+from pytools import update_ssh_config
 from pytools._internal import claude_common as _claude_common
 from pytools.update_ssh_config import _ensure_trailing_newline, _extract_key_data
+
+
+@pytest.mark.parametrize(("argv", "exit_code"), [(["--help"], 0), (["--unknown"], 2)])
+def test_main_rejects_nondefault_arguments_before_ssh_update(
+    argv: list[str], exit_code: int, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """確認引数と未知引数ではSSHファイルを更新しない。"""
+    config = tmp_path / "config"
+    config.write_text("before\n", encoding="utf-8")
+
+    def run() -> bool:
+        config.write_text("after\n", encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(update_ssh_config, "run", run)
+    with pytest.raises(SystemExit) as exc_info:
+        update_ssh_config.main(argv)
+
+    assert exc_info.value.code == exit_code
+    assert config.read_text(encoding="utf-8") == "before\n"
+    captured = capsys.readouterr()
+    if exit_code == 0:
+        assert "usage:" in captured.out
+        assert captured.err == ""
+    else:
+        assert "usage:" in captured.err
+        assert "unrecognized arguments" in captured.err
+
+
+def test_main_without_arguments_updates_ssh_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """引数なしの公開入口は既存の更新処理を実行する。"""
+    called = False
+
+    def run() -> bool:
+        nonlocal called
+        called = True
+        return False
+
+    monkeypatch.setattr(update_ssh_config, "run", run)
+    monkeypatch.setattr(update_ssh_config.sys, "argv", ["update-ssh-config"])
+    with pytest.raises(SystemExit) as exc_info:
+        update_ssh_config.main()
+
+    assert exc_info.value.code == 0
+    assert called
 
 
 class TestExtractKeyData:

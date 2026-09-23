@@ -36,6 +36,55 @@ def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Pat
     return report_path
 
 
+@pytest.mark.parametrize(("argv", "exit_code"), [(["--help"], 0), (["--unknown"], 2)])
+def test_main_rejects_nondefault_arguments_before_side_effects(
+    argv: list[str],
+    exit_code: int,
+    capsys: pytest.CaptureFixture[str],
+    sync_report_path: Path,
+) -> None:
+    """確認引数と未知引数は更新処理や永続記録へ到達しない。"""
+    called = False
+
+    def runner() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
+        nonlocal called
+        called = True
+        return [], []
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(argv, runner=runner)
+
+    assert exc_info.value.code == exit_code
+    assert not called
+    assert not post_apply._UPDATE_LOG_PATH.exists()  # noqa: SLF001
+    assert not sync_report_path.exists()
+    captured = capsys.readouterr()
+    if exit_code == 0:
+        assert "usage:" in captured.out
+        assert captured.err == ""
+    else:
+        assert "usage:" in captured.err
+        assert "unrecognized arguments" in captured.err
+
+
+def test_main_help_without_runner_skips_default_steps(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], sync_report_path: Path
+) -> None:
+    """公開CLIと同じ引数形で既定ステップを起動しない。"""
+
+    def unexpected_run() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
+        pytest.fail("--helpで既定ステップへ到達した")
+
+    monkeypatch.setattr(post_apply, "run", unexpected_run)
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(["--help"])
+
+    assert exc_info.value.code == 0
+    assert "usage:" in capsys.readouterr().out
+    assert not post_apply._UPDATE_LOG_PATH.exists()  # noqa: SLF001
+    assert not sync_report_path.exists()
+
+
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:
     """失敗したステップの名前、例外の内容、tracebackの末尾を同期結果の記録へ残す。"""
     steps = [("success", lambda: True), ("failure", lambda: (_ for _ in ()).throw(RuntimeError("boom")))]
