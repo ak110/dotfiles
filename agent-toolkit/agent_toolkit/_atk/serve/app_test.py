@@ -274,7 +274,7 @@ process.stdout.write(JSON.stringify({putUrls, state: savedState, open: elements[
 
 
 def test_assets_clear_self_write_sse_alert_after_save_and_answer_success() -> None:
-    """保存・回答の応答前にSSEが届いても、成功後は競合警告を残さず、回答成功では詳細を閉じる。"""
+    """保存・回答の応答前にSSEが届いても、回答成功後は詳細から採用へ進める。"""
     result = _run_node_ui(
         """
 async function runSave() {
@@ -376,9 +376,9 @@ process.stdout.write(JSON.stringify({saved, answered}));
         "answered": {
             "during": warning,
             "after": "",
-            "status": "",
-            "toast": "inbox/question.mdへ回答しました。",
-            "open": False,
+            "status": "inbox/question.mdへ回答しました。",
+            "toast": "inbox/entry.mdを保存しました。",
+            "open": True,
             "mode": "view",
         },
     }
@@ -453,6 +453,34 @@ async def test_sse_heartbeat(tmp_path: pathlib.Path) -> None:
     events = state.ServeState(tmp_path).events(heartbeat=0.001)
     assert await anext(events) == ": heartbeat\n\n"
     await events.aclose()
+
+
+@pytest.mark.asyncio
+async def test_wi_mutation_logs_operation_without_body(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """成功と入力エラーを記録し、編集本文がログに含まれないことを検証する。"""
+    operations = serve_app.Operations(tmp_path)
+    monkeypatch.setattr(operations, "edit", lambda *_args: True)
+    monkeypatch.setattr(operations, "transition", lambda _action, filenames, **_kwargs: filenames)
+    app = serve_app.create_app(
+        tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path), operations=operations
+    )
+    client = app.test_client()
+
+    with caplog.at_level("INFO", logger=serve_app.logger.name):
+        edit = await client.put("/api/entries/inbox/entry.md", json={"content": "秘匿本文", "expected_content": "旧本文"})
+        transition = await client.post("/api/entries/hold", json={"filenames": ["entry.md"]})
+        invalid = await client.put("/api/entries/inbox/entry.md", json={"content": ""})
+        invalid_transition = await client.post("/api/entries/hold", json={"filenames": ["entry.md"], "bogus": True})
+
+    assert [response.status_code for response in (edit, transition, invalid, invalid_transition)] == [200, 200, 400, 400]
+    messages = "\n".join(record.message for record in caplog.records if record.name == serve_app.logger.name)
+    assert "WI更新: 操作=edit_entry 対象=entry.md 結果=True" in messages
+    assert "WI更新: 操作=hold 対象=entry.md 結果=完了" in messages
+    assert "WI更新失敗: 操作=edit_entry 対象=entry.md HTTP=400" in messages
+    assert "WI更新失敗: 操作=hold 対象=entry.md HTTP=400" in messages
+    assert "秘匿本文" not in messages
 
 
 @pytest.mark.asyncio

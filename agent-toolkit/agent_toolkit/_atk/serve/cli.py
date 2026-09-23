@@ -22,7 +22,17 @@ logger = logging.getLogger(__name__)
 
 def show_logs(*, follow: bool = False) -> int:
     """Atk serveのuser serviceに属するjournalを表示する。"""
-    command = ["journalctl", "--user", "-u", "atk-serve.service", "-n", "100"]
+    command = [
+        "journalctl",
+        "--user",
+        "_SYSTEMD_USER_UNIT=atk-serve.service",
+        "+",
+        "USER_UNIT=atk-serve.service",
+        "+",
+        "SYSLOG_IDENTIFIER=atk-serve-setup",
+        "-n",
+        "100",
+    ]
     if follow:
         command.append("-f")
     try:
@@ -52,12 +62,17 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
 
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()
+
+    def request_shutdown(signal_name: str) -> None:
+        logger.info("atk serveの停止シグナルを受信しました: %s", signal_name)
+        shutdown_event.set()
+
     for signal_name in ("SIGINT", "SIGTERM", "SIGHUP"):
         received = getattr(signal, signal_name, None)
         if received is None:
             continue
         with contextlib.suppress(NotImplementedError):
-            loop.add_signal_handler(received, shutdown_event.set)
+            loop.add_signal_handler(received, request_shutdown, signal_name)
 
     async def shutdown_trigger() -> None:
         await shutdown_event.wait()
@@ -91,6 +106,6 @@ def run(*, host: str | None = None, port: int | None = None, home: pathlib.Path 
     resolved_home = pathlib.Path.home() if home is None else home
     private_notes = common.ensure_environment(resolved_home)
     config = _atk_serve_config.resolve_config(host=host, port=port)
-    logger.info("ワークアイテムWeb UIを http://%s:%s/ で配信します", config.host, config.port)
+    logger.info("atk serveを http://%s:%s/ で配信します", config.host, config.port)
     with _console_title.console_title(build_console_title()):
         asyncio.run(_serve(private_notes, config))

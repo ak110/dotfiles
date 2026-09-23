@@ -9,6 +9,7 @@ import datetime
 import functools
 import html
 import json
+import logging
 import math
 import pathlib
 import re
@@ -55,6 +56,7 @@ _RECENT_REPO_RETENTION = datetime.timedelta(days=7)
 Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
+logger = logging.getLogger(__name__)
 # エンドユーザーが記述する注記記法を注記として描画する。
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(mdit_py_plugins.footnote.footnote_plugin)
 
@@ -418,7 +420,7 @@ class Operations:
         answered_filter = filters.get("answered", "all")
         plan_filter = filters.get("plan", "all")
         target_repo_filter = filters.get("target_repo")
-        query = filters.get("q", "").casefold()
+        query_terms = [term for term in filters.get("q", "").casefold().split(" ") if term]
         states = _resolve_states(status_filter)
         resolver_cache: dict[str, str | None] = {}
         canonical_target_repo = (
@@ -461,7 +463,8 @@ class Operations:
             if filters.get("source_kind") and _source_kind(item["source"]) != filters["source_kind"]:
                 continue
             searchable = (indexed.text, indexed.path.name, item["target_repo"], item["source"])
-            if query and not any(query in str(value or "").casefold() for value in searchable):
+            search_values = [str(value or "").casefold() for value in searchable]
+            if not all(any(term in value for value in search_values) for term in query_terms):
                 continue
             result.append(item)
         unanswered_uwi_items = sorted(
@@ -871,7 +874,7 @@ def _register_shell_routes(app: quart.Quart) -> None:
         base_path = _safe_base_path(quart.request.root_path)
         root_url = f"{base_path}/"
         body = {
-            "name": "ワークアイテム",
+            "name": "atk serve",
             "short_name": "atk serve",
             "start_url": root_url,
             "scope": root_url,
@@ -1279,6 +1282,35 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
 def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     """編集・投入・ユーザーコメント・回答・状態遷移ルートを登録する。"""
     ops, workers = runtime.operations, runtime.workers
+
+    @app.after_request
+    async def log_wi_mutation(response: quart.Response) -> quart.Response:
+        path = quart.request.path
+        if quart.request.method not in {"POST", "PUT"} or not (path == "/api/entries" or path.startswith("/api/entries/")):
+            return response
+        operation = quart.request.endpoint or "unknown"
+        request_data = await quart.request.get_json(silent=True)
+        filename = (quart.request.view_args or {}).get("filename")
+        if filename is None and isinstance(request_data, dict):
+            filename = request_data.get("filename")
+        request_targets = [filename] if isinstance(filename, str) else []
+        if not request_targets and isinstance(request_data, dict) and isinstance(request_data.get("filenames"), list):
+            request_targets = [name for name in request_data["filenames"] if isinstance(name, str)]
+        if response.status_code >= 400:
+            logger.warning(
+                "WI更新失敗: 操作=%s 対象=%s HTTP=%s",
+                operation,
+                ", ".join(request_targets) or "-",
+                response.status_code,
+            )
+            return response
+        result = await response.get_json()
+        filenames = result.get("filenames") if isinstance(result, dict) else None
+        if filenames is None:
+            filenames = request_targets
+        outcome = result.get("changed", "完了") if isinstance(result, dict) else "完了"
+        logger.info("WI更新: 操作=%s 対象=%s 結果=%s", operation, ", ".join(filenames) or "-", outcome)
+        return response
 
     @app.put("/api/entries/<state_name>/<filename>")
     async def edit_entry(state_name: str, filename: str) -> quart.Response:

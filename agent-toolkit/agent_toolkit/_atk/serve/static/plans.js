@@ -576,7 +576,6 @@ async function openFile(host, path, source) {
   selectedHost = host;
   selectedSource = source || "";
   selectedPath = path;
-  document.title = host + ": " + path;
   const selected = source
     ? files.find(f => f.host === host && fileSource(f) === selectedSource && f.path === path)
     : files.find(f => f.host === host && f.path === path);

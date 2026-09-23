@@ -3,12 +3,6 @@
 window.__atkScreens = window.__atkScreens || {};
 
 (() => {
-  const SCREEN_TITLES = {
-    wi: "ワークアイテム",
-    plans: "計画ファイル",
-    sessions: "セッション",
-  };
-
   function screenNameFromUrl(url) {
     const path = new URL(url, location.href).pathname.replace(/\/$/, "");
     if (path.endsWith("/plans")) return "plans";
@@ -18,7 +12,6 @@ window.__atkScreens = window.__atkScreens || {};
 
   function showScreen(name) {
     document.body.dataset.screen = name;
-    document.title = SCREEN_TITLES[name];
     for (const screen of document.querySelectorAll(".screen")) {
       screen.hidden = screen.id !== `screen-${name}`;
     }

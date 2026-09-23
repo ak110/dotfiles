@@ -117,6 +117,10 @@ class _BrowserOperations(serve_app.Operations):
         filenames: list[str],
         **kwargs: Any,
     ) -> list[str]:
+        if action == "adopt" and self.persist_mutations:
+            source = kwargs.get("state") or "inbox"
+            for filename in filenames:
+                (self.private_notes / source / filename).rename(self.private_notes / "adopted" / filename)
         if action == "remove":
             self.remove_calls += 1
             if self.persist_mutations:
@@ -671,6 +675,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await empty_dialog.locator("#detail-content table.frontmatter").count() == 0
     await page.keyboard.press("Escape")
 
+    harness.operations.enable_file_mutations()
     row = await _open_question(page)
     dialog = page.get_by_role("dialog", name="詳細")
     await dialog.get_by_role("button", name="回答", exact=True).click()
@@ -681,8 +686,9 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await answer.fill("Aを補足")
     assert await answer.input_value() == "Aを補足"
     await dialog.get_by_role("button", name="回答を保存").click()
-    await dialog.wait_for(state="hidden")
-    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await dialog.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    assert await dialog.get_by_role("button", name="採用").is_visible()
+    await page.keyboard.press("Escape")
     await playwright.async_api.expect(row).to_be_focused()
     assert harness.operations.answer_calls == 1
 
@@ -761,6 +767,35 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#entry-list .entry-select").filter(has_text="sse.md").wait_for(state="visible")
     await playwright.async_api.expect(page.locator('#target-filter option[value="sse/repo"]')).to_have_count(1)
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("1件を表示")
+
+
+@pytest.mark.asyncio
+async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _BrowserHarness) -> None:
+    """1択の事後承認型UWIは回答後に同じ詳細から採用できる。"""
+    harness = browser_harness
+    filename = "one-choice.md"
+    (harness.root / "inbox" / filename).write_text(
+        "---\ntype: uwi\ntarget_repo: example/repo\nquestion_type: choice\n"
+        "choices: 問題がある（是正内容をこの欄へ書いてください）\n---\n\n"
+        "## 質問\n\n問題はありますか？\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n",
+        encoding="utf-8",
+    )
+    harness.operations.enable_file_mutations()
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator(f'.entry-select[data-key="inbox/{filename}"]').click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.get_by_role("button", name="回答", exact=True).click()
+    await detail.get_by_role("button", name="問題がある（是正内容をこの欄へ書いてください）").click()
+    await detail.locator("#answer-input").fill("問題がある。是正内容を確認しました。")
+    await detail.get_by_role("button", name="回答を保存").click()
+    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await playwright.async_api.expect(detail).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("回答済み")
+    await detail.get_by_role("button", name="採用").click()
+    await page.get_by_role("status").filter(has_text="採用しました").wait_for(state="visible")
+    assert (harness.root / "adopted" / filename).exists()
+    assert not (harness.root / "inbox" / filename).exists()
 
 
 @pytest.mark.asyncio
@@ -1088,7 +1123,7 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
 async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """回答条件からの除外、削除、0件化後も操作可能な一覧要素へ戻る。"""
+    """回答後の詳細を閉じたときや削除・0件化後に操作可能な一覧要素へ戻る。"""
     harness = browser_harness
     page = harness.page
     harness.operations.enable_file_mutations()
@@ -1104,7 +1139,8 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await detail.get_by_role("button", name="回答", exact=True).click()
     await detail.locator("#answer-input").fill("回答済みにする")
     await detail.get_by_role("button", name="回答を保存").click()
-    await detail.wait_for(state="hidden")
+    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await page.keyboard.press("Escape")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await playwright.async_api.expect(page.locator("#empty-clear-button")).to_be_focused()
 
@@ -1256,9 +1292,9 @@ async def test_self_write_sse_alert_clears_after_save_and_answer_success(
         await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible", timeout=4_000)
     finally:
         release_answer_response.set()
-    await detail.wait_for(state="hidden")
-    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     await page.unroute("**/api/entries/answer", delay_answer_response)
+    await page.keyboard.press("Escape")
     await question_row.click()
     await detail.wait_for(state="visible")
     async with page.expect_response(
@@ -1376,11 +1412,11 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
     answer_payload = answer_request.post_data_json
     assert isinstance(answer_payload, dict)
     assert answer_payload["state"] == "inbox"
-    await detail.wait_for(state="hidden")
-    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     assert (harness.root / "inbox/answer-same.md").read_text(encoding="utf-8").endswith("未処理側だけへの回答\n")
     assert (processing / "answer-same.md").read_text(encoding="utf-8") == uwi_content
 
+    await page.keyboard.press("Escape")
     remove_row = page.locator('.entry-select[data-key="inbox/remove-same.md"]')
     await remove_row.click()
     await detail.get_by_role("button", name="削除").click()
@@ -2243,6 +2279,7 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    assert await page.title() == "atk serve"
     assert await page.evaluate("() => window.__atkReloadMarker") == "kept"
     assert await page.evaluate("() => location.pathname") == "/plans"
 
@@ -2664,6 +2701,7 @@ async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> Non
     ):
         await harness.page.goto(harness.base_url + path)
         await harness.page.locator(selector).first.wait_for(state="visible")
+        assert await harness.page.title() == "atk serve"
 
 
 @pytest.mark.asyncio
@@ -2731,6 +2769,46 @@ async def test_initial_sync_shows_work_item_loading(browser_harness: _BrowserHar
         release_sync.set()
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_external_work_item_refresh_keeps_loading_hidden(browser_harness: _BrowserHarness) -> None:
+    """SSEによる背景更新は既存一覧を保ち、読み込み表示を点滅させない。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await page.evaluate(
+        """() => {
+          window.loadingShown = 0;
+          const indicator = document.getElementById('loading-indicator');
+          new MutationObserver(() => { if (!indicator.hidden) window.loadingShown += 1; })
+            .observe(indicator, {attributes: true, attributeFilter: ['hidden']});
+        }"""
+    )
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+
+    async def delay_background_entries(route: playwright.async_api.Route) -> None:
+        if "status=active" in route.request.url:
+            fetch_started.set()
+            await release_fetch.wait()
+        await route.continue_()
+
+    await page.route("**/api/entries?*", delay_background_entries)
+    (harness.root / "inbox" / "background.md").write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\n---\n\n背景更新\n",
+        encoding="utf-8",
+    )
+    harness.current_state.publish()
+    try:
+        await asyncio.wait_for(fetch_started.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+        await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/awi.md"]')).to_be_visible()
+    finally:
+        release_fetch.set()
+    await page.locator('.entry-select[data-key="inbox/background.md"]').wait_for(state="visible")
+    assert await page.evaluate("window.loadingShown") == 0
 
 
 @pytest.mark.asyncio
@@ -3452,24 +3530,24 @@ async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarn
 
     await harness.page.locator('a[data-plan-path="plan.detail.md"]').click()
     await harness.page.get_by_role("heading", name="詳細ページ").wait_for(state="visible")
-    assert await harness.page.title() == "browser-test: plan.detail.md"
+    assert await harness.page.title() == "atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.bugs.md"]').click()
     await harness.page.get_by_role("heading", name="バグページ").wait_for(state="visible")
-    assert await harness.page.title() == "browser-test: plan.bugs.md"
+    assert await harness.page.title() == "atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.plan-review.tsv"]').click()
     await harness.page.get_by_role("columnheader", name="ラウンド").wait_for(state="visible")
     await harness.page.get_by_role("cell", name="implementation-review").wait_for(state="visible")
-    assert await harness.page.title() == "browser-test: plan.plan-review.tsv"
+    assert await harness.page.title() == "atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.exec-review.tsv"]').click()
     await harness.page.get_by_role("columnheader", name="対応不要理由").wait_for(state="visible")
-    assert await harness.page.title() == "browser-test: plan.exec-review.tsv"
+    assert await harness.page.title() == "atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.md"]').click()
     await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
-    assert await harness.page.title() == "browser-test: plan.md"
+    assert await harness.page.title() == "atk serve"
 
 
 @pytest.mark.asyncio
@@ -3602,7 +3680,7 @@ async def test_later_file_selection_wins_when_first_response_arrives_last(
     await harness.page.evaluate(
         "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     )
-    await harness.page.wait_for_function("document.title === 'browser-test: second.md'")
+    await harness.page.wait_for_function("document.title === 'atk serve'")
 
     assert await harness.page.get_by_role("heading", name="後の選択").is_visible()
     assert not await harness.page.get_by_role("heading", name="先の選択").is_visible()
@@ -3659,7 +3737,7 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
         "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     )
 
-    assert await harness.page.title() == "browser-test: second.md"
+    assert await harness.page.title() == "atk serve"
     assert not await harness.page.locator("#copy-btn").is_disabled()
     assert not await harness.page.locator("#copy-path-btn").is_disabled()
     assert await harness.page.locator("#meta-mobile .meta-path").text_content() == "second.md"

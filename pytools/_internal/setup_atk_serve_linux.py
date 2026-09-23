@@ -44,7 +44,7 @@ Type=simple
 {systemd_user_unit.USER_UNIT_PATH_ENVIRONMENT}ExecStart=%h/.local/bin/atk-serve
 Restart=on-failure
 RestartSec=5
-KillMode=mixed
+KillMode=control-group
 TimeoutStopSec=10
 
 [Install]
@@ -94,6 +94,7 @@ def run() -> bool:
         log_tag="atk-serve",
         service_name=_SERVICE_UNIT,
         restart_needed=launcher_changed,
+        journal_identifier="atk-serve-setup",
     )
 
 
