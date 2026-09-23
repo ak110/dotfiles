@@ -114,6 +114,9 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
                 (session for session in _load_sessions(resolved) if session.get("session_id") == args.session_id),
                 None,
             )
+            root_session_id = resolved
+    if selected is None and root_session_id is not None:
+        selected = _retained_session(root_session_id, args.session_id)
     if selected is None:
         print(f"unknown session: {args.session_id}", file=sys.stderr)
         return 2
@@ -231,6 +234,25 @@ def _show_logs(session_id: str, *, follow: bool) -> int:
     except KeyboardInterrupt:
         pass
     return 0
+
+
+def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] | None:
+    """表示期限を過ぎた未回収結果を同じ会話rootから表示する。"""
+    result = status_file.read_retained_result(root_session_id, session_id)
+    if result is None:
+        return None
+    stored = result.get("session")
+    session = dict(stored) if isinstance(stored, dict) and stored.get("session_id") == session_id else {}
+    session.update(
+        session_id=session_id,
+        status=result["status"],
+        owner_status_file=result.get("owner_status_file"),
+        result_available=True,
+    )
+    if "agent_message" in result:
+        session["agent_message"] = result["agent_message"]
+    _add_output_activity(session)
+    return session
 
 
 def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:

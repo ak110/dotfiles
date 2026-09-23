@@ -172,6 +172,56 @@ def test_agents_show_selects_one_session(capsys: pytest.CaptureFixture[str]) -> 
 
 
 @pytest.mark.usefixtures("session_environment")
+def test_agents_show_finds_uncollected_result_after_status_expires(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """期限後に状態一覧から消えたsessionも保存済みの起動情報と結果を返す。"""
+    root = status_file.status_directory("root-session", tmp_path)
+    (root / "root.json").write_text('{"version": 1, "sessions": []}', encoding="utf-8")
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(exist_ok=True)
+    (results / "nested.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "agent_message": "完了",
+                "turn_seq": 3,
+                "owner_status_file": "writer.json",
+                "session": {"session_id": "nested", "prompt": "調査せよ", "cwd": "/worktree"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", "nested"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["session_id"] == "nested"
+    assert payload["status"] == "completed"
+    assert payload["prompt"] == "調査せよ"
+    assert payload["agent_message"] == "完了"
+    assert payload["owner_status_file"] == "writer.json"
+
+    (results / "nested.json").write_text(
+        json.dumps({"status": "completed", "agent_message": "完了", "owner_status_file": "writer.json"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", "nested"])
+    prior_result = json.loads(capsys.readouterr().out)
+    assert prior_result["session_id"] == "nested"
+    assert prior_result["status"] == "completed"
+    assert "prompt" not in prior_result
+
+    (results / "nested.json").unlink()
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", "show", "nested"])
+    assert capsys.readouterr().err == "unknown session: nested\n"
+
+
+@pytest.mark.usefixtures("session_environment")
 def test_agents_list_shows_tree_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
