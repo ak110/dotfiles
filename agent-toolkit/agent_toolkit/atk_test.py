@@ -1020,13 +1020,12 @@ def test_wi_pull_uses_lock_and_suppresses_entry_notification(
     "argv",
     [
         ["wi", "convert-to-plan", "awi.md", "--plan-file", "/tmp/plan.md"],
-        ["plans", "checkout", "2026/09/09-example-1a2b.md"],
         ["plans", "progress", "2026/09/09-example-1a2b.md"],
         ["plans", "migrate"],
     ],
 )
 def test_removed_plan_mutation_commands_are_rejected(argv: list[str]) -> None:
-    """旧計画を変換・再開・更新する公開サブコマンドを受理しない。"""
+    """廃止された計画変換・更新コマンドを受理しない。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(argv)
