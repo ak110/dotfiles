@@ -34,8 +34,9 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
     assert rules_context.ASK_USER_QUESTION_CHECKLIST in output
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
-    assert output.count('<normative-context source="agent-toolkit">') == 1
-    assert output.count("</normative-context>") == 1
+    assert output.count(f"<{rules_context.NORMATIVE_ELEMENT} ") == 1
+    assert output.count(f"</{rules_context.NORMATIVE_ELEMENT}>") == 1
+    assert f'kind="{rules_context.NORMATIVE_KIND_MAIN}"' in output
 
 
 @pytest.mark.parametrize(
@@ -83,7 +84,7 @@ def test_session_start_main_places_response_language_notice_first(
 
     assert notice_index < output.index(rules_context.QUALITY_CHECKPOINT_NOTICE)
     assert notice_index < output.index(rules_context.ASK_USER_QUESTION_CHECKLIST)
-    assert notice_index < output.index('<normative-context source="agent-toolkit">')
+    assert notice_index < output.index(f"<{rules_context.NORMATIVE_ELEMENT} ")
 
 
 def test_response_language_notice_absent_for_delegates(

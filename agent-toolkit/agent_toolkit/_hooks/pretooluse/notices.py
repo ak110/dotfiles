@@ -26,7 +26,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
 
-- 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
+- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
+- 委譲先へ渡す絶対`cwd`と対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 wait:

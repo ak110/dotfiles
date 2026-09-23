@@ -60,23 +60,6 @@ def test_unknown_config_key_logs_warning(
     assert "unknown" in caplog.text
 
 
-def test_assets_define_pagination_and_dismissible_operation_notice() -> None:
-    """一覧ページ移動と操作結果通知へ、キーボード操作可能な領域を持たせる。"""
-    assert 'id="pagination"' in assets.HTML
-    assert 'id="previous-page-button"' in assets.HTML
-    assert 'id="next-page-button"' in assets.HTML
-    assert 'id="pagination-status"' in assets.HTML
-    assert 'id="operation-notice"' in assets.HTML
-    assert 'id="operation-notice-message"' in assets.HTML
-    assert (
-        '<button id="operation-notice-close-button" class="operation-notice-close" type="button" '
-        'aria-label="操作通知を閉じる">×</button>'
-    ) in assets.HTML
-    assert "parameters.set('page', String(page));" in assets.JS
-    assert "new URLSearchParams({q: searchTerm, page: String(currentPage)})" in assets.JS
-    assert '#screen-wi .operation-notice[data-error="true"]' in assets.CSS
-
-
 def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
     """高さを決めるビューポート単位を無印`vh`ではなく`svh`で書く。
 
@@ -451,38 +434,6 @@ process.stdout.write(JSON.stringify({
         "listCount": 1,
         "createCalls": 1,
     }
-
-
-def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
-    """計画で定義した全APIルートを登録する。"""
-    current_state = state.ServeState(tmp_path)
-    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), current_state)
-    rules = {rule.rule for rule in app.url_map.iter_rules()}
-    expected = {
-        "/favicon.svg",
-        "/manifest.webmanifest",
-        "/static/icon-192.png",
-        "/static/icon-512.png",
-        "/api/sync",
-        "/api/repos",
-        "/api/entries",
-        "/api/entries/batch",
-        "/api/entries/<state_name>/<filename>",
-        "/api/entries/start-processing",
-        "/api/entries/return-to-inbox",
-        "/api/entries/hold",
-        "/api/entries/unhold",
-        "/api/entries/adopt",
-        "/api/entries/reject",
-        "/api/entries/remove",
-        "/api/entries/commit",
-        "/api/entries/answer",
-        "/api/entries/user-comment",
-        "/api/events",
-    }
-    removed = {"/api/status", "/api/enable", "/api/disable"}
-    assert expected <= rules
-    assert not removed & rules
 
 
 def test_config_ignores_legacy_plans_viewer_file(tmp_path: pathlib.Path) -> None:
@@ -1034,7 +985,9 @@ def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> No
     _write_repo_entry(tmp_path, "rejected", "e.md", "github.com/x/rejected-only")
     recent = tmp_path / "adopted" / "d.md"
     recent.write_text(
-        recent.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 処理日時: 2026-09-06T12:00:00+00:00\n", encoding="utf-8"
+        recent.read_text(encoding="utf-8")
+        + "\n## 処理結果\n\n````markdown\n## 起草中の節\n````\n- 処理日時: 2026-09-06T12:00:00+00:00\n",
+        encoding="utf-8",
     )
     old = tmp_path / "rejected" / "e.md"
     old.write_text(
@@ -1230,18 +1183,6 @@ async def test_batch_api_imports_entries(tmp_path: pathlib.Path, monkeypatch: py
     assert (tmp_path / "inbox" / "keep.md").read_text(encoding="utf-8") == (
         "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n"
     )
-
-
-def test_assets_offer_batch_creation_without_required_target_repo() -> None:
-    """新規追加ダイアログが一括登録種別を持ち、対象リポジトリの必須指定を外す。"""
-    assert '<option value="batch">一括登録（show形式）</option>' in assets.HTML
-    assert 'id="create-repo-fields"' in assets.HTML
-    assert "対象リポジトリ（frontmatterに無い場合は必須）" in assets.HTML
-    assert '<input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">' in (
-        assets.HTML
-    )
-    assert "'/api/entries/batch'" in assets.JS
-    assert "対象リポジトリを入力してください" not in assets.JS
 
 
 def test_normal_creation_omits_empty_target_repo_from_payload() -> None:

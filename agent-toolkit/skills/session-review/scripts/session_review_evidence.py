@@ -2664,7 +2664,8 @@ def _tool_hint(entry: dict[str, Any]) -> str | None:
     item = payload.get("item") if isinstance(payload, dict) else None
     command = item.get("command") if isinstance(item, dict) else None
     if isinstance(command, list) and command:
-        return _clip(" ".join(part for part in command if isinstance(part, str)).splitlines()[0])
+        text = " ".join(part for part in command if isinstance(part, str)).strip()
+        return _clip(text.splitlines()[0]) if text else None
     return None
 
 
@@ -2862,7 +2863,7 @@ def _candidate_events(
     返却値を含めるのは、`status`で工程の不成立を表す返却が他の4種のいずれにも現れず、
     差し戻しで停止した工程が候補集合から漏れるためである。
 
-    同じ位置でも候補種別又はhookタグが異なる事象は別候補として保持する。同じ位置、候補種別及びhookタグの
+    同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別又はhookタグが異なる事象を別候補として保持する。同じ位置、候補種別及びhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
     `tool-failure`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
 
@@ -2873,6 +2874,14 @@ def _candidate_events(
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     seen: set[tuple[str, int, str, str]] = set()
     excluded: collections.Counter[str] = collections.Counter()
+    notices_by_locator: dict[tuple[str, int], list[dict[str, Any]]] = collections.defaultdict(list)
+    for notice in hook_notices:
+        if (
+            notice.get("kind") == "hook-notice"
+            and isinstance(notice.get("record"), str)
+            and isinstance(notice.get("line"), int)
+        ):
+            notices_by_locator[(notice["record"], notice["line"])].append(notice)
     initial_skill_request, initial_skill_body = _initial_skill_input_locators(timeline)
     first_main_user: tuple[str, int] | None = None
     for event in timeline:
@@ -2916,6 +2925,11 @@ def _candidate_events(
             seen.add(identity)
             text = event.get("text")
             normalized_text = " ".join(text.split()) if isinstance(text, str) else ""
+            if candidate_kind in {"warning", "tool-failure"} and any(
+                _same_hook_event(candidate_kind, event, notice) for notice in notices_by_locator.get((record, line), [])
+            ):
+                excluded["hook-notice-represented"] += 1
+                continue
             if candidate_kind == "user-intervention":
                 exclusion = _user_candidate_exclusion(
                     event,
@@ -2976,7 +2990,9 @@ def _candidate_events(
             "kind": "candidate",
             "candidate_id": f"c{index:04d}",
             "candidate_kind": key[0],
-            "analysis_group_hint": list(key[1:-1] if len(key) > 2 else key[1:]),
+            "analysis_group_hint": list(
+                key[1:] if key[0] in {"escalation", "hook-notice", "tool-failure"} else key[1:-1] if len(key) > 2 else key[1:]
+            ),
             "event_key": list(key[1:]),
             "count": len(locators),
             "locators": locators,
@@ -3222,6 +3238,7 @@ def _user_candidate_exclusion(
             "[COMPACTION RECOVERY]",
             "This session is being continued",
             "<normative-context",
+            "<agent-toolkit-hook-message",
             "<task-notification>",
             "<command-name>",
             "<local-command-caveat>",
@@ -3288,6 +3305,19 @@ def _is_help_command_failure(event: dict[str, Any]) -> bool:
     return "usage:" in normalized or "options:" in normalized
 
 
+def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[str, Any]) -> bool:
+    """同じ記録位置の警告又は失敗が構造化hook通知から生じたかを返す。"""
+    text = event.get("text")
+    notice_text = notice.get("text")
+    if not isinstance(text, str) or not isinstance(notice_text, str):
+        return False
+    if candidate_kind == "warning":
+        normalized = " ".join(text.split())
+        return bool(normalized) and normalized in " ".join(notice_text.split())
+    hook_name = notice.get("hook_name")
+    return isinstance(hook_name, str) and bool(hook_name) and text.startswith(hook_name) and "hook error:" in text
+
+
 def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
     """発生源ごとの上位種への限定を適用する候補キーかを返す。
 
@@ -3295,6 +3325,22 @@ def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
     タグの位置を参照する前に種別と軸の数を確認する。
     """
     return len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}
+
+
+def _candidate_mechanism(candidate_kind: str, event: dict[str, Any]) -> str:
+    """定型接頭辞の後にある原因を候補キーの追加軸として返す。"""
+    raw = event.get("text")
+    if not isinstance(raw, str):
+        return ""
+    if candidate_kind == "escalation":
+        reason = next((line.partition(":")[2].strip() for line in raw.splitlines() if line.startswith("reason:")), "")
+    elif candidate_kind == "hook-notice" and event.get("tag") == "block":
+        marker = re.search(r"\b(?:blocked|block):\s*", raw, flags=re.IGNORECASE)
+        detail = raw[marker.end() :].strip() if marker else ""
+        reason = detail.splitlines()[0].split("。", 1)[0].strip() if detail else ""
+    else:
+        return ""
+    return _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(reason.split()))
 
 
 def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
@@ -3311,6 +3357,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             "" if tag in {"block", "warn"} else str(event.get("hook_name", "")),
             tag,
             _normalize_hook_candidate_text(normalized_text),
+            _candidate_mechanism(candidate_kind, event),
         )
     if candidate_kind == "command-failure":
         if event.get("tool") == "CommandExecution":
@@ -3331,6 +3378,19 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         raw_text = event.get("text")
         first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""
         return candidate_kind, _normalize_candidate_kind_text(first_line)
+    if candidate_kind == "tool-failure":
+        raw_text = event.get("text")
+        if isinstance(raw_text, str) and "hook error:" in raw_text:
+            source, _, body = raw_text.partition("hook error:")
+            normalized_body = _HOOK_FAILURE_PREFIX.sub("", raw_text, count=1)
+            if normalized_body == raw_text:
+                normalized_body = body.strip()
+            normalized_body = _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(normalized_body.split()))
+            return candidate_kind, source.strip(), str(event.get("kind", "")), normalized_body
+        first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""
+        return candidate_kind, _normalize_candidate_kind_text(first_line)
+    if candidate_kind == "escalation":
+        return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 
 

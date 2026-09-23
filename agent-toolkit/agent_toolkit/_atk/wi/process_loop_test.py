@@ -30,6 +30,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common import automated_prompt as _automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import inherited_venv as _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
@@ -833,9 +834,11 @@ class TestProcessLoopPromptAndEnv:
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
     def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:
-        """新規セッションの目的文がスキルの完遂だけを伝えること。"""
+        """新規セッションの目的文がスキルの完遂だけを伝え、機械生成の境界標識を持つこと。"""
         prompt = _process_loop._build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
-        assert prompt == "/goal `agent-toolkit:process-wi`を完遂してください。"
+        assert prompt.startswith("/goal ")
+        assert "`agent-toolkit:process-wi`を完遂してください。" in prompt
+        assert _automated_prompt.contains(prompt)
         assert "agent-toolkit:exit-session" not in prompt
 
         forbidden_details = (
@@ -1771,28 +1774,17 @@ class TestProcessLoopSessionPreparation:
         assert not _PULL_PRIVATE_NOTES_IMPL(tmp_path)
         assert "remote同期に失敗（子セッションを起動せず待機します）: rebase中" in capsys.readouterr().err
 
-    @pytest.mark.parametrize("failure", ["missing", "exit"])
-    def test_update_failure_does_not_repull_or_start_session(
+    def test_missing_update_command_does_not_repull_or_start_session(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
-        failure: str,
     ) -> None:
-        """更新コマンドの未解決又は失敗時は再pullへ進まずFalseを返すこと。"""
-        monkeypatch.setattr(
-            _process_loop,
-            "_resolve_executable",
-            lambda _name: None if failure == "missing" else "update-dotfiles",
-        )
-        monkeypatch.setattr(
-            subprocess,
-            "run",
-            lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 1),
-        )
+        """更新コマンドが未解決なら再pullへ進まず子セッションも起動しないこと。"""
+        monkeypatch.setattr(_process_loop, "_resolve_executable", lambda _name: None)
         monkeypatch.setattr(
             _process_loop,
             "_pull_private_notes",
-            lambda _path: pytest.fail("更新失敗後は再pullしないこと"),
+            lambda _path: pytest.fail("更新コマンド未解決では再pullしないこと"),
         )
 
         assert _process_loop._update_before_session(  # pylint: disable=protected-access  # noqa: SLF001
@@ -1802,6 +1794,30 @@ class TestProcessLoopSessionPreparation:
             ["atk"],
             {},
         ) == (False, False)
+
+    def test_update_failure_still_starts_session_and_reports_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """更新が非0で終了しても再pullへ進み、子セッションを起動できる状態を返すこと。"""
+        monkeypatch.setattr(_process_loop, "_resolve_executable", lambda _name: "update-dotfiles")
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 1),
+        )
+        monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
+
+        assert _process_loop._update_before_session(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path,
+            None,
+            None,
+            ["atk"],
+            {},
+        ) == (True, False)
+        assert "exit code 1" in capsys.readouterr().err
 
     def test_initial_ready_session_runs_pull_update_repull_before_codex(
         self,

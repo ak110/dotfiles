@@ -18,13 +18,15 @@ from agent_toolkit._atk.serve.sessions import (
     default_claude_home,
     default_codex_home,
 )
+from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 
 # Claude Codeのハーネスが、Skillツール起動の`tool_result`として記録する起動確認文言。
 _CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
 _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 
-# `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す起動プロンプト本文。
+# `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す起動プロンプトの本体。
+# 起動プロンプトは`/goal`とautomated-prompt要素の境界を伴うため、本体だけを判定に用いる。
 #
 # 完全一致ではなく包含で判定する。2026年9月10日の実測（監査記録参照）で、当該プロンプト本文の
 # 完全一致は実記録2169件に対して0件だった。記録される`text`は実行環境が挿入する前置き
@@ -33,7 +35,7 @@ _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 # レコードを持つセッションを候補とすることであり、包含判定で当該契約を満たす。
 # 監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日」にある。
-_CODEX_PROCESS_WI_PROMPT = "/goal `agent-toolkit:process-wi`を完遂してください。"
+_CODEX_PROCESS_WI_PROMPT = PROCESS_WI_GOAL_BODY
 
 _TEXT_EXCERPT_LIMIT = 200
 

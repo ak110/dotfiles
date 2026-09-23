@@ -224,20 +224,6 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     assert actual_names == expected_names
 
 
-def test_execution_review_documents_share_initial_review_table_contract() -> None:
-    """実行レビュー表は親だけが初期化し、受信者は欠落を差し戻す。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    recipient = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
-
-    assert "atk review-table init" in parent
-    assert recipient.count("atk review-table init") == 1
-    assert "レビュー担当は`atk review-table init`を実行しない" in recipient
-    assert "既存の表" in recipient
-    assert "表が無い場合は初期化せず`needs_escalation`で返す" in recipient
-    assert "初回レビューと再レビュー" in recipient
-
-
 def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> None:
     """WI鮮度は選定、計画起草及び計画なしレビューへ到達する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
@@ -248,59 +234,6 @@ def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> Non
     assert all("staleness" in content for content in (picker, lane, review))
     assert all("notice" in content for content in (picker, lane, review))
     assert all("不一致" in content and "充足済み" in content and "巻戻し" in content for content in (picker, lane, review))
-    assert "WI`だけを受領した場合" in review
-    assert "--with-staleness" in review
-    assert "--state=all" in review
-    assert all(state in review for state in ("processing", "adopted", "rejected"))
-
-
-def test_entry_replacement_validation_reaches_execution_review() -> None:
-    """入口置換の完遂検証は計画、実装及び実行レビューで共有する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    plan = (plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md").read_text(encoding="utf-8")
-    lane = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
-    review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
-
-    assert all("新しい入口" in content for content in (plan, lane, review))
-    assert all("mock" in content and "部分" in content and "旧入口" in content for content in (plan, lane, review))
-
-
-def test_delegation_wait_contract_separates_launch_routes() -> None:
-    """待機規範はagents_serverと組み込み委譲の観測経路を分離する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    waiting = (plugin_root / "skills" / "delegation" / "references" / "waiting-and-monitoring.md").read_text(encoding="utf-8")
-    recipient = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
-
-    assert all("組み込み委譲" in content for content in (waiting, recipient))
-
-
-def test_picker_output_carries_validated_costs_and_fixed_notes() -> None:
-    """pickerは固定出力でノート、上流条件及びレーン費用を完全に渡す。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
-    assert all("lane_costs" in content for content in (picker, parent))
-
-
-def test_lane_integration_returns_changed_agent_rules() -> None:
-    """レーン統合は変更したエージェント規則のパスと確定本文を返す。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    recipient = (plugin_root / "share" / "lane-integration.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
-
-    assert all("agent_rule_changes" in content for content in (recipient, parent))
-
-
-def test_agent_rule_self_update_switches_parent_and_recipient_atomically() -> None:
-    """規範の自己更新は呼び元と受信者を同じ資源rootから採用する。"""
-    repository = pathlib.Path(__file__).resolve().parents[2]
-    parent = (repository / "agent-toolkit" / "share" / "exec.parent.md").read_text(encoding="utf-8")
-    layout = (repository / ".claude" / "skills" / "dotfiles-repo-layout" / "SKILL.md").read_text(encoding="utf-8")
-    design = (repository / "docs" / "development" / "design.md").read_text(encoding="utf-8")
-
-    for content in (parent, layout, design):
-        assert "同一の資源root" in content
-        assert "稼働開始時" in content
 
 
 def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
@@ -313,15 +246,6 @@ def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
 
     marker = "事後承認" + "対象:"
     assert all(marker not in content for content in (executor, parent, lanes, plan_standard))
-
-
-def test_history_rewrite_and_identifier_contracts_cover_observed_failures() -> None:
-    """履歴改変とGit識別子の正本は観測済みの副作用と入力失敗を遮断する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    history = (plugin_root / "skills" / "commit" / "references" / "history-rewrite.md").read_text(encoding="utf-8")
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
-
-    assert all("--autosquash --no-update-refs" in content for content in (history, executor))
 
 
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:

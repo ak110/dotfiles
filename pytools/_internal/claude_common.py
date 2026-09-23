@@ -34,14 +34,7 @@ MARKETPLACE_NAME = "ak110-dotfiles"
 CLAUDE_TIMEOUT = 30
 PLUGIN_OPERATION_TIMEOUT = 300
 
-# バランスモード・AWI蓄積等、特定ホストでのみ有効化する機能が共有する対象ホスト一覧。
-TARGET_HOSTS: tuple[str, ...] = ("stheno", "circe", "circe-container", "euryale", "euryale-container")
 _EURYALE_HOSTNAME = "euryale"
-
-
-def is_target_host(hostname: str) -> bool:
-    """ホスト名が`TARGET_HOSTS`に含まれるかを判定する（大文字小文字無視・FQDN接尾辞除去）。"""
-    return hostname.lower().split(".")[0] in TARGET_HOSTS
 
 
 def is_euryale() -> bool:

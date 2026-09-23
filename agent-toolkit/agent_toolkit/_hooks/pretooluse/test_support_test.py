@@ -231,6 +231,7 @@ def _plan_file_state_env(
     tmp_path: pathlib.Path,
     home_dir: pathlib.Path | None = None,
 ) -> dict[str, str]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
     if home_dir is not None:
         env["HOME"] = str(home_dir)

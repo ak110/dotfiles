@@ -8,10 +8,16 @@ import sys
 import tempfile
 from pathlib import Path
 
+from agent_toolkit._common import automated_prompt, message_format
+
 from pytools._internal import claude_common
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
+
+# 生成した指示の出所と種別。agent-toolkitは本パッケージの依存であり通常のimportで解決する。
+_PROMPT_SOURCE = "dotfiles/claude-commit"
+_PROMPT_KIND = "commit-request"
 
 _DEFAULT_FORMAT = """\
 Conventional Commits形式、日本語で記述すること。
@@ -236,11 +242,26 @@ def _build_prompt(
         lines.append("")
         lines.append("実際にコミットはしないでください。実行するコミットメッセージを表示するだけにしてください。")
 
-    if additional_prompt:
-        lines.append("")
-        lines.append(f"# ユーザーによる追加の指示\n{additional_prompt}")
-
-    return "\n".join(lines)
+    # 生成した指示とユーザーが渡した追加指示を、それぞれの出所を示す境界で分けて囲む。
+    # 包装はagent-toolkitの共通実装を経由し、本リポジトリの他の自動注入経路と同じ形式へそろえる。
+    generated = automated_prompt.wrap(
+        "\n".join(lines),
+        source=_PROMPT_SOURCE,
+        kind=_PROMPT_KIND,
+    )
+    if not additional_prompt:
+        return generated
+    forwarded = message_format.xml_message(
+        message_format.FORWARDED_USER_INPUT_ELEMENT,
+        additional_prompt,
+        {
+            "from": _PROMPT_SOURCE,
+            "origin": "user",
+            "source": "--prompt",
+            "scope": "element body",
+        },
+    )
+    return f"{generated}\n\n{forwarded}"
 
 
 def _run_claude(prompt: str, *, git_root: Path, model: str, effort: str | None) -> None:

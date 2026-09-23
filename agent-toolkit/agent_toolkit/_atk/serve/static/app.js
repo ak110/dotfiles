@@ -17,7 +17,6 @@ const SEARCH_FALLBACK_NOTICE =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
   'フィルターの選択値は変更していません。';
 const ENTRY_PAGE_SIZE = 100;
-const LIST_LOADING_DELAY_MS = 500;
 const TARGET_REPO_DISPLAY_LENGTH = 20;
 const METADATA_FIELDS = [
   ['kind', '種別'],
@@ -39,7 +38,6 @@ let detailSessionGeneration = 0;
 let listRequestGeneration = 0;
 let targetRepoRequestGeneration = 0;
 let knownUwiRequestGeneration = 0;
-let listLoadingTimer = null;
 let listLoadingVisible = false;
 let listRequestPending = false;
 let pendingListAnnouncement = false;
@@ -427,23 +425,14 @@ function renderListLoading(view = captureListLoadingView()) {
   renderPagination(view);
 }
 
-function beginListRequest(view, generation) {
-  if (listLoadingTimer !== null) clearTimeout(listLoadingTimer);
+function beginListRequest(view) {
   listRequestPending = true;
-  listLoadingVisible = false;
-  listLoadingTimer = setTimeout(() => {
-    if (generation !== listRequestGeneration) return;
-    listLoadingTimer = null;
-    listLoadingVisible = true;
-    renderListLoading(view);
-  }, LIST_LOADING_DELAY_MS);
+  listLoadingVisible = true;
   renderListLoading(view);
 }
 
 function endListRequest(view, generation) {
   if (generation !== listRequestGeneration) return;
-  if (listLoadingTimer !== null) clearTimeout(listLoadingTimer);
-  listLoadingTimer = null;
   listLoadingVisible = false;
   listRequestPending = false;
   renderListLoading(view);
@@ -502,7 +491,7 @@ async function loadEntries({announce = false} = {}) {
   const canSearchFallback = searchTerm !== '' && hasSearchFallbackFilters(query);
   const generation = ++listRequestGeneration;
   const loadingView = captureListLoadingView();
-  beginListRequest(loadingView, generation);
+  beginListRequest(loadingView);
   const pending = (async () => {
     try {
       const payload = await api(`/api/entries?${query.toString()}`);
@@ -1306,6 +1295,9 @@ async function deleteEntry(event) {
 
 async function synchronizeAndLoad() {
   const payload = {};
+  const generation = ++listRequestGeneration;
+  const loadingView = captureListLoadingView();
+  beginListRequest(loadingView);
   setTextMessage('sync-result', '');
   try {
     await (runPending('sync', {
@@ -1315,8 +1307,12 @@ async function synchronizeAndLoad() {
   } catch (error) {
     setTextMessage('sync-result', `Git同期に失敗しました。ローカル内容を表示中です。 ${error.message}`);
   }
-  await (loadTargetRepos());
-  await (loadEntries({announce: true}));
+  try {
+    await (loadTargetRepos());
+    await (loadEntries({announce: true}));
+  } finally {
+    endListRequest(loadingView, generation);
+  }
 }
 
 async function handleFilterChange({reloadRepos = false} = {}) {

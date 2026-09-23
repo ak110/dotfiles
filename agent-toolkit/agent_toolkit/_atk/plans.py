@@ -53,6 +53,12 @@ def build_parser(parser) -> None:
         required=False,
         show_help_when_missing=True,
     )
+    checkout_parser = _atk_help.add_command(sub, "checkout", **_atk_help.HELP["atk plans checkout"])
+    checkout_parser.add_argument(
+        "plan_file",
+        metavar="PLAN_FILE",
+        help="保存root相対の計画メインファイル、または独立CI実行レビュー表のパス",
+    )
     commit_parser = _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk plans commit"])
     commit_parser.add_argument(
         "plan_file",
@@ -735,7 +741,10 @@ def commit_plan(
             _plan_file.remove_owner_record(working_main)
             return {"plan_file": relative_main.as_posix(), "paths": (), "message": ""}
     elif working_relative is not None and not working_bundle:
-        raise _common.WebInputError(f"指定した作業中の計画バンドルが見つかりません: {working_relative}")
+        raise _common.WebInputError(
+            f"指定した作業中の計画バンドルが見つかりません: {working_relative}。"
+            "保存済みの場合は`atk plans checkout <保存root相対パス>`で取得してください"
+        )
     if checkout_record is None and working_relative is not None and working_bundle:
         working_main = _plan_file.working_plans_root(home) / working_relative
         date = _birth_date(working_main).split("/")
@@ -1508,6 +1517,11 @@ def _git_head(private_notes: pathlib.Path) -> str:
 
 def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     """`atk plans`のサブコマンドを実行する。"""
+    if args.plans_subcommand == "checkout":
+        paths = checkout_plan(private_notes, args.plan_file, home=home)
+        main = next(path for path in paths if path.name == pathlib.Path(args.plan_file).name)
+        _outcome.report_success(f"保存済みバンドルを作業rootへ取得した: {main}")
+        return 0
     if args.plans_subcommand == "commit":
         result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
         action = "commitした" if args.skip_push else "commit・pushした"

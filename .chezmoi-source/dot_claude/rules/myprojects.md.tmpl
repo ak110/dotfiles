@@ -1,8 +1,9 @@
+<normative-context source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects.md.tmpl">
 # myprojects.md
 {{- $hostname := lower .chezmoi.hostname }}
 {{/*
   stheno: gv, lcの2プロジェクトのみ存在するWindows環境
-  circe/circe-container: 全プロジェクト存在するLinux環境
+  euryale/euryale-container: 全プロジェクト存在するLinux環境
 */}}
 {{- if eq $hostname "stheno" }}
 
@@ -14,7 +15,7 @@
 開発言語は異なるが、ツールチェインやドキュメント構成は極力揃える方針とする。
 片方を変更する場合、もう片方への変更要否を確認し、必要ならユーザーへ提案する。
 
-{{- else if has $hostname (list "circe" "circe-container") }}
+{{- else if has $hostname (list "euryale" "euryale-container") }}
 
 ## プロジェクト間の同期
 
@@ -40,3 +41,4 @@
 | `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows | このPCでは開発できない（ドキュメント修正等は可能）。文書生成・文書lintでpnpm併用 |
 
 {{- end }}
+</normative-context>

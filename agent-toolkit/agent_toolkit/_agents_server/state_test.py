@@ -36,21 +36,19 @@ def test_launch_prompts_load_shared_documents() -> None:
 
     assert notice == state.DELEGATE_NOTICE
     for kind, document in _LAUNCH_DOCUMENTS.items():
-        expected = f"{notice}\n{_shared_document_body(document)}"
-        if kind == "delegate":
-            expected = f"{expected}\n\n{state.SUBAGENT_RULES}"
-        assert state.LAUNCH_SYSTEM_PROMPTS[kind] == expected, kind
-    assert _shared_document_body("agents-server-auto-resume.md") == state.AUTO_RESUME_NOTICE
-    assert not any(
-        prompt.startswith("# ")
-        for prompt in (state.DELEGATE_NOTICE, *state.LAUNCH_SYSTEM_PROMPTS.values(), state.AUTO_RESUME_NOTICE)
-    )
+        prompt = state.LAUNCH_SYSTEM_PROMPTS[kind]
+        assert f"{notice}\n{_shared_document_body(document)}" in prompt, kind
+        assert (state.SUBAGENT_RULES in prompt) is (kind == "delegate"), kind
+    assert _shared_document_body("agents-server-auto-resume.md") in state.AUTO_RESUME_NOTICE
 
 
-def test_claude_delegate_adds_claude_specific_subagent_rules() -> None:
-    """Claude通常起動だけがClaude固有の委譲先規範を追加する。"""
-    assert state.CLAUDE_CODE_SUBAGENT_RULES not in state.DELEGATE_SYSTEM_PROMPT
-    assert state.CLAUDE_DELEGATE_SYSTEM_PROMPT.endswith(state.CLAUDE_CODE_SUBAGENT_RULES)
+def test_launch_prompts_carry_normative_boundaries() -> None:
+    """system指示の各区分が、生成主体と種別を示す境界を持つこと。"""
+    for kind, prompt in state.LAUNCH_SYSTEM_PROMPTS.items():
+        assert f'<{state.NORMATIVE_ELEMENT} source="{state.NORMATIVE_SOURCE}" kind="{kind}"' in prompt, kind
+        assert prompt.endswith(f"</{state.NORMATIVE_ELEMENT}>"), kind
+    assert state.AUTO_RESUME_NOTICE.startswith(f"<{state.NORMATIVE_ELEMENT} ")
+    assert 'kind="rules-subagent"' in state.DELEGATE_SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])

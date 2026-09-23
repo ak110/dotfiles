@@ -539,8 +539,10 @@ def test_response_language_escalated_body_is_japanese(tmp_path: pathlib.Path) ->
     assert _run(payload, tmp_path).returncode == 0
     _write_english_transcript(tmp_path, "message-2")
     result = _run(payload, tmp_path)
-    assert result.returncode == 2
-    assert _is_japanese_notice(result.stderr)
+    assert result.returncode == 0
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "この通知は同一セッションで2件目である" in context
+    assert _is_japanese_notice(context)
 
 
 def test_user_prompt_verification_notice_is_japanese(tmp_path: pathlib.Path) -> None:

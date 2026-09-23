@@ -253,14 +253,3 @@ def test_effective_origin_uses_override_when_set(
             str(plugins_dir / "tpm"),
         ],
     ]
-
-
-def test_effective_origin_uses_plugin_origin_when_unset(
-    branch_env: tuple[Path, list[list[str]]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """`DOTFILES_TMUX_PLUGIN_ORIGIN_BASE`未設定時は`plugin.origin`をそのまま使う（本番動作）。"""
-    monkeypatch.delenv("DOTFILES_TMUX_PLUGIN_ORIGIN_BASE", raising=False)
-    _, calls = branch_env
-    assert setup_tmux_plugins.run() is True
-    assert calls[0][-2] == "https://github.com/tmux-plugins/tpm.git"

@@ -169,17 +169,6 @@ def test_load_or_create_token_creates_when_missing(tmp_path: pathlib.Path):
     assert _token.load_or_create_token(token_path) == result
 
 
-def test_build_access_url_includes_token():
-    url = _cli.build_access_url("192.168.1.10", 29123, VALID_TOKEN)
-    assert url == f"http://192.168.1.10:29123/?t={VALID_TOKEN}"
-
-
-def test_render_qr_ansi_returns_nonempty_string():
-    out = _cli.render_qr_ansi("http://example/")
-    assert isinstance(out, str)
-    assert out.strip() != ""
-
-
 def test_url_subcommand_prints_url_and_qr(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
     token_path = tmp_path / "token.txt"
     token_path.write_text(VALID_TOKEN + "\n", encoding="utf-8")

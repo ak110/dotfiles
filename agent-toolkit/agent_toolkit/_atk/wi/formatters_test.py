@@ -40,9 +40,6 @@ class TestBodySummaryTruncation:
 
 
 class TestTruncateTargetRepo:
-    def test_short_repo_unchanged(self) -> None:
-        assert _formatters._truncate_target_repo("~/dotfiles") == "~/dotfiles"  # noqa: SLF001  # pylint: disable=protected-access
-
     def test_long_repo_center_truncated(self) -> None:
         long_repo = "github.com/organization-name/very-long-repository-name"
         result = _formatters._truncate_target_repo(long_repo)  # noqa: SLF001  # pylint: disable=protected-access

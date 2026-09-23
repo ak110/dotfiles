@@ -30,11 +30,11 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 
 @pytest.mark.parametrize("suffix", [".py", ".md"])
-def test_trailing_tool_boundary_tags_are_blocked(
+def test_trailing_tool_boundary_tags_warn(
     suffix: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Pythonと計画Markdownの末尾へ混入したツール境界タグを遮断する。"""
+    """Pythonと計画Markdownの末尾へ混入したツール境界タグを警告する。"""
     if suffix == ".md":
         target = tmp_path / ".claude/plans/example.md"
         target.parent.mkdir(parents=True)
@@ -48,8 +48,8 @@ def test_trailing_tool_boundary_tags_are_blocked(
         },
         env_overrides={"HOME": str(tmp_path)},
     )
-    assert result.returncode == 2
-    assert "ツール境界タグ" in result.stderr
+    assert result.returncode == 0
+    assert "ツール境界タグ" in result.stdout
 
 
 def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: pathlib.Path) -> None:
@@ -204,7 +204,7 @@ class TestLanguageEscalation:
         assert "evaluate relevance" not in ctx
 
     def test_second_english_escalates_body(self, tmp_path: pathlib.Path):
-        """2回連続英語で、強い本文のblock通知へ切り替える。
+        """2回連続英語でもツールを通し、強い本文の警告へ切り替える。
 
         検出した回の応答は既にユーザーへ届いており、当該ツール呼び出しを止めても当該応答は戻らない。
         """
@@ -215,8 +215,8 @@ class TestLanguageEscalation:
         assert r1.returncode == 0
         # 2回目: 強い本文へ切り替え
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 2
-        ctx = r2.stderr
+        assert r2.returncode == 0
+        ctx = _additional_context(r2)
         assert "2ターン連続" in ctx
         assert "evaluate relevance" not in ctx
 
@@ -228,10 +228,10 @@ class TestLanguageEscalation:
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         # 2回目: 日本語 → pass（カウンタリセット）
         self._invoke(tmp_path, env, sid, "これは日本語の応答です。" * 5, msg_id="m2")
-        # 3回目: 英語 → 連続回数は1へ戻るが、同じ原因の2件目の警告なのでblock
+        # 3回目: 英語 → 連続回数は1へ戻り、警告する
         r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
-        assert r3.returncode == 2
-        ctx = r3.stderr
+        assert r3.returncode == 0
+        ctx = _additional_context(r3)
         assert "英語主体" in ctx
         assert "2ターン連続" not in ctx
 
@@ -254,11 +254,11 @@ class TestLanguageEscalation:
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         # 2回目: 強い本文
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 2
+        assert r2.returncode == 0
         # 3回目: 再び強い本文（カウンタが1に設定されているため、次の英語で再度≧2）
         r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
-        assert r3.returncode == 2
-        assert "2ターン連続" in r3.stderr
+        assert r3.returncode == 0
+        assert "2ターン連続" in _additional_context(r3)
 
     @pytest.mark.parametrize(
         ("text", "expected_count", "expected_returncode"),
@@ -302,13 +302,13 @@ class TestLanguageEscalation:
         assert "evaluate relevance" not in ctx
 
     def test_escalated_body_has_suffix(self, tmp_path: pathlib.Path):
-        """強い本文へ切り替えたblock通知がXML境界で閉じる。"""
+        """強い本文へ切り替えた警告がXML境界で閉じる。"""
         env = self._state_env(tmp_path)
         sid = "esc-suffix-block"
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 2
-        ctx = r2.stderr
+        assert r2.returncode == 0
+        ctx = _additional_context(r2)
         assert ctx.rstrip().endswith("</agent-toolkit-hook-message>")
         assert "evaluate relevance" not in ctx
 

@@ -2711,10 +2711,51 @@ async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _
 
 
 @pytest.mark.asyncio
-async def test_slow_work_item_filter_and_plan_preview_show_delayed_loading(
+async def test_initial_sync_shows_work_item_loading(browser_harness: _BrowserHarness) -> None:
+    """初回同期の応答待ちから一覧の処理中表示が続くことを検証する。"""
+    page = browser_harness.page
+    sync_started = asyncio.Event()
+    release_sync = asyncio.Event()
+
+    async def delay_sync(route: playwright.async_api.Route) -> None:
+        sync_started.set()
+        await release_sync.wait()
+        await route.continue_()
+
+    await page.route("**/api/sync", delay_sync)
+    try:
+        await page.goto(browser_harness.base_url + "/")
+        await asyncio.wait_for(sync_started.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+    finally:
+        release_sync.set()
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_manual_sync_refreshes_work_items_without_page_reload(browser_harness: _BrowserHarness) -> None:
+    """同期後の一覧取得で新着がページ再読込なしに現れる。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    navigation_count = await page.evaluate("performance.getEntriesByType('navigation').length")
+    (browser_harness.root / "inbox" / "new-item.md").write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n新着の本文\n",
+        encoding="utf-8",
+    )
+
+    await page.locator("#refresh-button").click()
+
+    await page.locator('.entry-select[data-key="inbox/new-item.md"]').wait_for(state="visible")
+    assert await page.evaluate("performance.getEntriesByType('navigation').length") == navigation_count
+
+
+@pytest.mark.asyncio
+async def test_slow_work_item_filter_and_plan_preview_show_loading(
     screen_harness: _ScreenHarness,
 ) -> None:
-    """WI一覧と計画プレビューは500ms超の最新要求だけ処理中表示を行う。"""
+    """WI一覧と計画プレビューの処理中表示を確認する。"""
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -2727,7 +2768,6 @@ async def test_slow_work_item_filter_and_plan_preview_show_delayed_loading(
 
     await page.route("**/api/entries**", delay_entries)
     await page.locator("#state-filter").select_option("adopted")
-    await page.wait_for_timeout(550)
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
     await page.locator('.entry-select[data-key="adopted/adopted.md"]').wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()

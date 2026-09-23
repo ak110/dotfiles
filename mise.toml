@@ -32,5 +32,5 @@ run = [
     "env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras",
     "prek install -c .pre-commit-config.yaml",
     "git config --local commit.template .gitmessage",
-    "uv tool install --editable .",
+    "uv tool install --overrides agent-toolkit/uv-overrides.txt --editable .",
 ]

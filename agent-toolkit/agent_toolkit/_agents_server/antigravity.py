@@ -44,7 +44,8 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
     """起動条件の種別に応じたシステム指示を返す。
 
     Antigravity CLIの非対話モードはシステム指示の専用オプションを持たないため、
-    当該指示は本文の先頭へ置いて渡す。
+    当該指示は本文の先頭へ置いて渡す。1つのメッセージへ配送本文と同居するため、
+    受信側が両者を区別できるよう、システム指示側は`state.py`が付ける境界を保ったまま渡す。
     """
     return f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
 

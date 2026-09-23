@@ -8,6 +8,9 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
+遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
+又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
+除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
 
 統合しているチェック:
 
@@ -26,7 +29,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
 
-- 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
+- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
+- 委譲先へ渡す絶対`cwd`と対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 wait:
@@ -37,7 +41,8 @@ Bash:
 
 - 多段シェルへのコード文字列と`.env`内容出力の遮断 (block)
 - `python`の`-c`へ渡す複数文のコードと構文として成立しないコードの遮断 (block)
-- 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
+- 単純な明示パスの不存在は警告し、反復で対象集合の欠落を繰り返す場合に遮断 (warn/block)
+- `atk`が受理しないオプション・位置引数・サブコマンドはツール自身が拒否できるため警告 (warn)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
@@ -277,24 +282,46 @@ def _rewrite_simple_git_grep(command: str) -> str | None:
         tokens = shlex.split(command, posix=True)
     except ValueError:
         return None
-    if len(tokens) < 4 or tokens[:2] != ["git", "grep"] or "--" in tokens:
+    if len(tokens) < 4 or tokens[:2] != ["git", "grep"]:
         return None
-    pattern = tokens[2]
+    separator_index = tokens.index("--") if "--" in tokens else len(tokens)
+    options_and_pattern = tokens[:separator_index]
+    pathspec = tokens[separator_index:]
+    leading: list[str] = []
+    index = 2
+    while index < len(options_and_pattern):
+        token = options_and_pattern[index]
+        option_name = token.split("=", 1)[0]
+        if token in _GIT_GREP_FLAGS:
+            leading.append(token)
+        elif option_name in _GIT_GREP_VALUED_OPTIONS:
+            leading.append(token)
+            if "=" not in token:
+                if index + 1 >= len(options_and_pattern):
+                    return None
+                index += 1
+                leading.append(options_and_pattern[index])
+        else:
+            break
+        index += 1
+    if index >= len(options_and_pattern):
+        return None
+    pattern = options_and_pattern[index]
     if pattern.startswith("-") or any(character in pattern for character in "$`"):
         return None
     moved: list[str] = []
     rest: list[str] = []
-    index = 3
-    while index < len(tokens):
-        token = tokens[index]
+    index += 1
+    while index < len(options_and_pattern):
+        token = options_and_pattern[index]
         option_name = token.split("=", 1)[0]
         if token in _GIT_GREP_FLAGS:
             moved.append(token)
         elif option_name in _GIT_GREP_VALUED_OPTIONS:
             if "=" in token:
                 moved.append(token)
-            elif index + 1 < len(tokens) and not tokens[index + 1].startswith("-"):
-                moved.extend((token, tokens[index + 1]))
+            elif index + 1 < len(options_and_pattern) and not options_and_pattern[index + 1].startswith("-"):
+                moved.extend((token, options_and_pattern[index + 1]))
                 index += 1
             else:
                 return None
@@ -305,7 +332,7 @@ def _rewrite_simple_git_grep(command: str) -> str | None:
         index += 1
     if not moved:
         return None
-    return shlex.join(["git", "grep", *moved, pattern, *rest])
+    return shlex.join(["git", "grep", *leading, *moved, pattern, *rest, *pathspec])
 
 
 def _single_unquoted_pipe_index(masked: str) -> int | None:
@@ -839,7 +866,12 @@ def _check_bash_truncation_autofix_repeat(command: str, session_id: str) -> str 
     切り詰めとして返さないため、検出回数へ算入されず遮断もされない。
     """
     segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    if not any(_split_simple_truncation(segment) is not None for segment in segments):
+    detected = [
+        (index, split[1])
+        for index, segment in enumerate(segments, start=1)
+        if (split := _split_simple_truncation(segment)) is not None
+    ]
+    if not detected:
         return None
     if not _record_repeat_detection(session_id, _TRUNCATION_AUTOFIX_REPEAT_KEY):
         return None
@@ -847,9 +879,10 @@ def _check_bash_truncation_autofix_repeat(command: str, session_id: str) -> str 
     fix = _OUTPUT_TRUNCATION_AVOIDANCE
     if alternatives:
         fix = "補正対象の用途に対応する指定: " + "、".join(alternatives) + "。" + fix
+    targets = "、".join(f"第{index}直列区間の`{shlex.join(tokens)}`" for index, tokens in detected)
     print(
         _block_notice(
-            "blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。",
+            f"blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。対象: {targets}。",
             fix=fix,
         ),
         file=sys.stderr,
@@ -923,7 +956,9 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
     summary = "\n".join(summary_parts) if summary_parts else None
     if missing_fix is not None:
         # 実在しないパスの除去は呼び出しの対象集合そのものを狭めるため、是正を要する通知として返す。
-        return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True, summary=summary)
+        return rewritten_command, _llm_notice(
+            body, tag=_WARN_TAG, removable_cause=True, escalate_on_repeat=True, summary=summary
+        )
     # 残る補正は、補正前の呼び出しが要求した結果をそのまま当該呼び出しへ返す。
     # 実行主体の是正を要さないため、振り返りの問題候補へ残らない情報提示のタグで返す。
     return rewritten_command, _llm_notice(body, tag="notice", summary=summary)
@@ -1389,9 +1424,10 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
     return _llm_notice(
         "明示された検索・読取パスが存在しない。対象: " + "、".join(scan.missing) + "\n"
         "対処: Git管理対象は`rg --files`、属性・ディレクトリ構造は`find`で実体を解決し、実在するパスを指定する。"
-        "不在を確認する意図では、確認を別の呼び出しにするか、絶対パスを渡す`test -e`を使う。",
+        "不在を確認する意図では、対象ごとに別の呼び出しで`test -e <絶対パス>`を実行し、終了コードで判定する。",
         tag=_WARN_TAG,
         removable_cause=True,
+        escalate_on_repeat=True,
     )
 
 
@@ -1466,7 +1502,7 @@ def _check_bash_missing_path_operand_loss(command: str, cwd: str) -> str | None:
             fix=(
                 "当該コマンドへ実在するパスを指定するか、当該コマンドを呼び出しから外す。"
                 "引数を失ったコマンドは標準入力を読み、補正前とは異なる成否を返す。"
-                "不在を確認する意図では、確認を別の呼び出しにするか、絶対パスを渡す`test -e`を使う。"
+                "不在を確認する意図では、対象ごとに別の呼び出しで`test -e <絶対パス>`を実行し、終了コードで判定する。"
             ),
         ),
         file=sys.stderr,
@@ -2065,6 +2101,59 @@ _PROCESS_KILL_UNSAFE_MARKERS = frozenset("$`(){}")
 _PROCESS_KILL_LITERAL_SEARCH_COMMANDS = frozenset({"egrep", "fgrep", "grep", "rg"})
 
 
+def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
+    """`git grep`がリテラル検索パターンとして読む引数位置を返す。"""
+    indices: set[int] = set()
+    pattern_seen = False
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            break
+        option_name = token.split("=", 1)[0]
+        if option_name in _GIT_GREP_PATTERN_OPTIONS:
+            pattern_seen = True
+            if "=" in token:
+                indices.add(index)
+            elif index + 1 < len(arguments):
+                index += 1
+                indices.add(index)
+        elif _attached_short_value_option(token, _GIT_GREP_PATTERN_OPTIONS) is not None:
+            pattern_seen = True
+            indices.add(index)
+        elif option_name in _GIT_GREP_PATTERN_FILE_OPTIONS:
+            pattern_seen = True
+            if "=" not in token:
+                index += 1
+        elif _attached_short_value_option(token, _GIT_GREP_PATTERN_FILE_OPTIONS) is not None:
+            pattern_seen = True
+        elif option_name in _GIT_GREP_VALUED_OPTIONS:
+            if "=" not in token:
+                index += 1
+        elif not token.startswith("-") and not pattern_seen:
+            pattern_seen = True
+            indices.add(index)
+        index += 1
+    return indices
+
+
+def _git_log_literal_search_indices(arguments: Sequence[str]) -> set[int]:
+    """`git log`が検索語として読む引数位置を返す。"""
+    indices: set[int] = set()
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            break
+        if token in {"-S", "-G", "--grep"} and index + 1 < len(arguments):
+            index += 1
+            indices.add(index)
+        elif (token.startswith(("-S", "-G")) and len(token) > 2) or token.startswith("--grep="):
+            indices.add(index)
+        index += 1
+    return indices
+
+
 def _has_active_process_kill_syntax(segment: str) -> bool:
     """区間に引用で無効化されていないシェル構文があれば真を返す。"""
     quote: str | None = None
@@ -2099,9 +2188,40 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
         raw_tokens = shlex.split(segment, posix=True)
     except ValueError:
         return True
-    if not raw_tokens or _has_active_process_kill_syntax(segment):
-        return True
+    if not raw_tokens:
+        return False
     command_name = pathlib.PurePosixPath(raw_tokens[0]).name
+    attached_pager_match = command_name == "git" and any(
+        token.startswith("-O") and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:]) for token in raw_tokens
+    )
+    if not attached_pager_match and not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens):
+        return False
+    if _has_active_process_kill_syntax(segment):
+        return True
+    if command_name == "git":
+        parsed_segments = _extract_execution_segments(segment)
+        if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
+            return True
+        subcommand = _git_subcommand_tokens(parsed_segments[0])
+        if subcommand is None or subcommand[0] not in {"grep", "log"}:
+            return True
+        name, arguments = subcommand
+        prefix = raw_tokens[: len(raw_tokens) - len(arguments)]
+        if any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in prefix):
+            return True
+        safe_indices = (
+            _git_grep_literal_pattern_indices(arguments) if name == "grep" else _git_log_literal_search_indices(arguments)
+        )
+        return any(
+            (
+                _PROCESS_KILL_BY_PATTERN_RE.search(token)
+                or name == "grep"
+                and token.startswith("-O")
+                and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:])
+            )
+            and index not in safe_indices
+            for index, token in enumerate(arguments)
+        )
     if command_name not in _PROCESS_KILL_LITERAL_SEARCH_COMMANDS:
         return True
     return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
@@ -2115,7 +2235,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     ヒアドキュメント本文をマスクした文字列を解析し、禁止語が実行位置ではなく、安全な引数位置の
     リテラルだと確定できる区間だけを許可する。
     """
-    matching_segments = [segment for segment in split_bash_segments(command) if _PROCESS_KILL_BY_PATTERN_RE.search(segment)]
+    matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
     if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
         return False
     print(
@@ -2499,7 +2619,7 @@ _ATK_HELP_ONLY_FLAGS: frozenset[str] = frozenset({"-h", "--help"})
 def _check_bash_atk_options(command: str) -> str | None:
     """公開済み最下層`atk`サブコマンドの受理形式に一致しない引数を実行前に検出する。
 
-    公開契約から不成立が確定する呼び出しは、同じ失敗を実行させず遮断する。
+    公開契約から不成立が確定しても、引数の誤りは後から是正できるため警告する。
     通知本文は当該判定が保持する受理形式から組み立て、受理形式に応じて対処を切り替える。
     受理形式から導かない固定の対処文は、引数を受理しないサブコマンドで実行できない案内になる。
     認識できた経路の直下に当該階層が受理しないサブコマンドがある呼び出しは、
@@ -2523,14 +2643,12 @@ def _check_bash_atk_options(command: str) -> str | None:
         arguments = list(_argument_tokens(segment, 1 + len(path)))
         scan = _scan_accepted_options(arguments, flags, valued)
         if scan.unknown_option is not None:
-            print(
-                _block_notice(
-                    f"`atk {' '.join(path)}`が受理しないオプションである。対象: {scan.unknown_option}",
-                    fix=_format_accepted_option_candidates(scan.unknown_option, flags, valued),
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"`atk {' '.join(path)}`が受理しないオプションである。対象: {scan.unknown_option}\n"
+                f"対処: {_format_accepted_option_candidates(scan.unknown_option, flags, valued)}",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return "block"
         if not positionals and scan.positionals:
             accepts_no_arguments = not valued and set(flags) <= _ATK_HELP_ONLY_FLAGS
             remedy = (
@@ -2539,14 +2657,11 @@ def _check_bash_atk_options(command: str) -> str | None:
                 else "対処: 当該の値をオプションで渡すか、位置引数を受理するサブコマンドへ変更する。"
                 "受理するオプションは`--help`を単独で実行して確認する。"
             )
-            print(
-                _block_notice(
-                    f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(scan.positionals)}",
-                    fix=remedy.removeprefix("対処: "),
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"`atk {' '.join(path)}`は位置引数を受理しない。対象: {'、'.join(scan.positionals)}\n{remedy}",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return "block"
     return None
 
 
@@ -2768,27 +2883,6 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
         file=sys.stderr,
     )
     return "block"
-
-
-def _check_bash_help_with_execution(command: str) -> str | None:
-    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を検出する。
-
-    `-h`は実行ファイルごとに意味が異なるためヘルプ指定として扱わない。
-    ヘルプ取得だけを並べた呼び出しは、警告が求める実行の分離を適用する区間を持たないため対象にしない。
-    通した場合の結果は受理形式の確定が同じ呼び出しの内側へ入ることに限り、復元できるため警告で返す。
-    """
-    segments = [segment for segment in _extract_execution_segments(command) if segment.resolved and segment.tokens]
-    names = [pathlib.PurePosixPath(segment.tokens[0]).name for segment in segments]
-    help_names = {name for name, segment in zip(names, segments, strict=True) if _segment_is_help_only(segment)}
-    non_help_names = {name for name, segment in zip(names, segments, strict=True) if not _segment_is_help_only(segment)}
-    if help_names & non_help_names:
-        return _llm_notice(
-            "同じシェル呼び出しの中でヘルプの取得と同じ実行ファイルの実行が並んでいる。\n"
-            "対処: 先にヘルプだけを実行して受理形式を確定し、実行は別の呼び出しへ分ける。",
-            tag=_WARN_TAG,
-            removable_cause=True,
-        )
-    return None
 
 
 def _tee_operand_is_non_regular_file(token: str) -> bool:
@@ -3083,6 +3177,7 @@ def _check_bash_output_status_after_truncation(command: str) -> str | None:
                 "`head`・`tail`の終了状態を示す。出力を切り詰める前に対象コマンドの終了状態を保持する。",
                 tag=_WARN_TAG,
                 removable_cause=True,
+                escalate_on_repeat=True,
             )
     return None
 
@@ -3625,16 +3720,14 @@ def _check_bash_git_grep_pattern_type(command: str) -> str | None:
         if pattern is not None and not any(character in _GIT_GREP_BASIC_REGEXP_METACHARACTERS for character in pattern):
             continue
         if pattern is not None and _GIT_GREP_BASIC_ALTERNATION in pattern:
-            print(
-                _block_notice(
-                    "block: `git grep`が種別を指定せず、patternへ"
-                    f"`{_GIT_GREP_BASIC_ALTERNATION}`を含んでいる。"
-                    "基本正規表現は当該表記を選択として解釈しないため、この呼び出しは意図した一致を返さない。",
-                    fix=_GIT_GREP_BASIC_ALTERNATION_FIX,
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                "`git grep`が種別を指定せず、patternへ"
+                f"`{_GIT_GREP_BASIC_ALTERNATION}`を含んでいる。"
+                "基本正規表現は当該表記を選択として解釈しないため、この呼び出しは意図した一致を返さない。\n"
+                f"対処: {_GIT_GREP_BASIC_ALTERNATION_FIX}",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return "block"
         return _llm_notice(
             "`git grep`が固定文字列・拡張正規表現・Perl互換正規表現のいずれの種別も指定していない。\n"
             "対処: 検索意図に応じて`-F`・`-E`・`-P`のいずれかを明示し、"
@@ -3874,15 +3967,12 @@ def _check_bash_unknown_atk_subcommand(command: str) -> str | None:
         catalog = _atk_subcommand_catalog(prefix)
         listed = "\n".join(f"- {name}: {summary}" for name, summary in catalog)
         label = f"`atk {' '.join(prefix)}`" if prefix else "`atk`"
-        print(
-            _block_notice(
-                f"{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
-                f"{label}が受理するサブコマンド:\n{listed}",
-                fix="上記のいずれかへ修正する。",
-            ),
-            file=sys.stderr,
+        return _llm_notice(
+            f"{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n"
+            f"{label}が受理するサブコマンド:\n{listed}\n対処: 上記のいずれかへ修正する。",
+            tag=_WARN_TAG,
+            removable_cause=True,
         )
-        return "block"
     return None
 
 
@@ -4097,8 +4187,36 @@ def _external_command_option_contract(path: tuple[str, ...], session_id: str) ->
     return parsed
 
 
+_GREP_VALUED_SHORT_OPTIONS = frozenset({"-e", "-f", "-m", "-A", "-B", "-C"})
+_GREP_SHORT_FLAGS = frozenset({"-n", "-i", "-r", "-R", "-v", "-w", "-l", "-q", "-c", "-s", "-o", "-h", "-H"})
+
+
+def _ambiguous_grep_short_option(command: str) -> tuple[str, str] | None:
+    """値付き短縮オプションへ既知のフラグを連結した検索コマンドを返す。"""
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        name = pathlib.PurePath(segment.tokens[0]).name
+        if name == "grep":
+            arguments = _argument_tokens(segment)
+            flags = _GREP_SHORT_FLAGS
+        elif name == "git":
+            subcommand = _git_subcommand_tokens(segment)
+            if subcommand is None or subcommand[0] != "grep":
+                continue
+            name = "git grep"
+            arguments = subcommand[1]
+            flags = _GIT_GREP_FLAGS
+        else:
+            continue
+        scan = _scan_accepted_options(arguments, flags, _GREP_VALUED_SHORT_OPTIONS)
+        if scan.ambiguous_option is not None:
+            return name, scan.ambiguous_option
+    return None
+
+
 def _check_bash_external_command_options(command: str, session_id: str) -> str | None:
-    """`rg`が受理しないオプションを実行前に検出する。
+    """検索コマンドの曖昧な連結と`rg`の未受理オプションを検出する。
 
     受理形式は当該コマンドのヘルプから1セッション1回だけ取得して保持する。
     走査は`atk`向けの判定と同じ`_scan_accepted_options`を用い、オプション終端と値引数の位置を反映する。
@@ -4107,6 +4225,16 @@ def _check_bash_external_command_options(command: str, session_id: str) -> str |
     当該配送は対象が増えるたびに実行主体のコンテキストを消費する一方、
     誤りが無い呼び出しでは判断を変えないためである。
     """
+    ambiguous = _ambiguous_grep_short_option(command)
+    if ambiguous is not None:
+        name, token = ambiguous
+        return _llm_notice(
+            f"`{name}`の値付き短縮オプションへ別の短縮フラグを連結した曖昧な形である。"
+            f"`{token[:2]}`は後続の`{token[2:]}`を値として消費する。"
+            f"対象: {token}\n対処: 値付きオプションと各フラグを別の引数へ分ける。",
+            tag=_WARN_TAG,
+            removable_cause=True,
+        )
     if not session_id:
         return None
     for path, arguments in _external_command_targets(command):

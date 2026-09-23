@@ -77,25 +77,30 @@ def test_agent_wi_adopted_action_accepts_rederived_scope() -> None:
 
 
 @pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
-def test_human_readable_user_origin_applies_general_decision_rule(decision: str) -> None:
-    """一般由来は採用だけハイフンとし、ほかの採否では理由を要求する。"""
-    root = "-" if decision == "採用" else "実施しない範囲と理由。"
+def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
+    """ユーザー指示由来は採否によらず原文の分解結果を要求する。
+
+    分解結果を持たない行は新規作成と改訂の経路で失敗させるため、移行の指摘として積む。
+    """
     original = _plan_fixture.USER_ACTION_ROW
+    decomposed = "原文の「公開契約を直して」が示す要求単位は1つであり、例示の範囲を閉じずに実施範囲とする。"
     accepted = _HUMAN_MAIN_CONTENT.replace(
         original,
-        f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | {root} |",
+        f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | {decomposed} |",
         1,
     )
-    assert not _plan_format.check_plan_main_structure(accepted)[1]
+    notices: list[str] = []
+    assert not _plan_format.check_plan_main_structure(accepted, origin_notices=notices)[1]
+    assert not notices
 
-    invalid_root = "理由がある。" if decision == "採用" else "-"
     rejected = _HUMAN_MAIN_CONTENT.replace(
         original,
-        f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | {invalid_root} |",
+        f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | - |",
         1,
     )
-    errors = _plan_format.check_plan_main_structure(rejected)[1]
-    assert any("`根拠`" in error for error in errors), errors
+    notices = []
+    assert not _plan_format.check_plan_main_structure(rejected, origin_notices=notices)[1]
+    assert any("分解結果" in notice for notice in notices), notices
 
 
 def test_human_readable_history_rejects_internal_identifier() -> None:

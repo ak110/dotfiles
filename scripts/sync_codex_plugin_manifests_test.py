@@ -201,29 +201,29 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             "PreToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": subject.CODEX_PRE_TOOL_USE_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook pretooluse"}],
                 }
             ],
             "PostToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": subject.CODEX_POST_TOOL_USE_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook posttooluse"}],
                 }
             ],
             "PermissionRequest": [
                 {
                     "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": subject.CODEX_PERMISSION_REQUEST_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook permissionrequest_codex"}],
                 }
             ],
             "UserPromptSubmit": [
                 {
-                    "hooks": [{"type": "command", "command": subject.CODEX_USER_PROMPT_SUBMIT_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook user_prompt_submit"}],
                 }
             ],
             "SubagentStop": [
                 {
-                    "hooks": [{"type": "command", "command": subject.CODEX_SUBAGENT_STOP_COMMAND}],
+                    "hooks": [{"type": "command", "command": "atk-hook subagent_stop_advisor"}],
                 }
             ],
             "SessionEnd": [
@@ -231,7 +231,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": subject.CODEX_SESSION_END_COMMAND,
+                            "command": "atk-hook session_end_cleanup",
                             "timeout": subject.CODEX_SESSION_END_TIMEOUT_SECONDS,
                         }
                     ],
@@ -242,7 +242,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": subject.CODEX_RULES_CONTEXT_CODEX_COMMAND,
+                            "command": "atk-hook rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ],
@@ -253,7 +253,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": subject.CODEX_RULES_CONTEXT_CODEX_COMMAND,
+                            "command": "atk-hook rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ]
@@ -262,9 +262,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
         }
     }
     assert len(generated_hooks["hooks"]) == 8
-    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"].endswith(
-        "/agent_toolkit/hook.py rules_context_codex"
-    )
+    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == "atk-hook rules_context_codex"
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
@@ -637,13 +635,69 @@ def test_optional_output_without_source_is_stale_and_sync_removes_it(
     assert subject.check(manifest_root) is True
 
 
-def test_main_check_exit_codes(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_check_exit_codes(
+    manifest_root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
     subject.sync(manifest_root)
 
     assert subject.main(["--check"]) == 0
+    assert capsys.readouterr().err == ""
     (manifest_root / subject.PLUGIN_TARGET).write_text("{}", encoding="utf-8")
     assert subject.main(["--check"]) == 1
+    assert f"{subject.PLUGIN_TARGET}: 内容差" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("kind", ["欠落", "余剰", "内容差"])
+def test_check_reports_normal_output_difference_without_repairing(
+    manifest_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+) -> None:
+    """通常派生物の差を相対パスと種類で表示し、検査で修復しない。"""
+    monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
+    subject.sync(manifest_root)
+    target = manifest_root / (subject.HOOKS_TARGET if kind == "余剰" else subject.PLUGIN_TARGET)
+    if kind == "欠落":
+        target.unlink()
+    elif kind == "余剰":
+        (manifest_root / subject.HOOKS_SOURCE).unlink()
+    else:
+        target.write_text("{}", encoding="utf-8")
+    before = target.read_bytes() if target.exists() else None
+
+    assert subject.main(["--check"]) == 1
+
+    assert f"{target.relative_to(manifest_root)}: {kind}" in capsys.readouterr().err
+    assert (target.read_bytes() if target.exists() else None) == before
+
+
+@pytest.mark.parametrize("kind", ["欠落", "余剰", "内容差", "mode差"])
+def test_check_reports_codex_root_difference_without_repairing(
+    manifest_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+) -> None:
+    """Codex専用rootの差を相対パスと種類で表示し、検査で修復しない。"""
+    monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
+    subject.sync(manifest_root)
+    target = manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET / ("extra.md" if kind == "余剰" else "GENERATED.md")
+    if kind == "欠落":
+        target.unlink()
+    elif kind == "余剰":
+        target.write_text("extra", encoding="utf-8")
+    elif kind == "内容差":
+        target.write_text("wrong", encoding="utf-8")
+    else:
+        target.chmod(0o600)
+    before = (target.read_bytes() if target.exists() else None, target.stat().st_mode if target.exists() else None)
+
+    assert subject.main(["--check"]) == 1
+
+    assert f"{target.relative_to(manifest_root)}: {kind}" in capsys.readouterr().err
+    assert (target.read_bytes() if target.exists() else None, target.stat().st_mode if target.exists() else None) == before
 
 
 def test_main_without_arguments_synchronizes_outputs(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:

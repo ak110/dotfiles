@@ -147,6 +147,7 @@ if TYPE_CHECKING:
         PLAN_REQUIREMENT_ID_PATTERN,
         PLAN_REQUIREMENT_TABLE_HEADER,
         PLAN_TWO_FILE_MAIN_H2_ORDER,
+        PLAN_USER_INSTRUCTION_ORIGIN,
         PLAN_VERIFICATION_TABLE_HEADER,
         PLAN_VERIFICATION_TABLE_ROWS,
         PLAN_WI_ANSWER_HEADING,
@@ -1174,6 +1175,12 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
     根拠とするため照合の対象から除く。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
     採用行の根拠が`-`の場合は`origin_notices`を渡した場合だけ移行の指摘を積む。
     改名前の由来は読み取り互換で受理する。
+
+    人間由来の2区分（`人間由来のWI`と`ユーザー指示`）は、採否にかかわらず原文の要求単位ごとの
+    分解結果を`根拠`へ必要とする。`根拠`が`-`である行は`origin_notices`へ積み、
+    新規作成と改訂の検査だけが失敗する。分解結果を持たない計画は、原文が示した集合と
+    成果物が扱う集合との差を誰も観測できないためである。
+    既に保存した計画を読み取りだけで検査する経路は、同じ指摘を警告として扱う。
     """
     errors: list[str] = []
     if not table.rows:
@@ -1247,6 +1254,12 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                         )
                 else:
                     errors.append(f"`## {PLAN_H2_ACTION}`の採用以外の`根拠`は理由を自足して記載する: {root}")
+        elif wi_origin_kind == PLAN_HUMAN_WI_ORIGIN or canonical_origin == PLAN_USER_INSTRUCTION_ORIGIN:
+            if (not root or root == "-") and origin_notices is not None:
+                origin_notices.append(
+                    f"`## {PLAN_H2_ACTION}`の人間由来行の`根拠`へ、原文の要求単位ごとの分解結果と採否を記載する:"
+                    f" {table.row_location(index)}"
+                )
         elif decision == "採用":
             if root != "-":
                 errors.append(f"`## {PLAN_H2_ACTION}`の採用行の`根拠`は`-`にする: {root}")

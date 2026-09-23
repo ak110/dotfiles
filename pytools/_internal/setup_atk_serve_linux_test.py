@@ -23,16 +23,11 @@ def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) 
     uv = tmp_path / ".local" / "bin" / "uv"
     uv.parent.mkdir(parents=True, exist_ok=True)
     uv.touch()
+    plugin_manifest = tmp_path / "agent-toolkit" / ".claude-plugin" / "plugin.json"
+    plugin_manifest.parent.mkdir(parents=True)
+    plugin_manifest.write_text('{"version": "2.1.0"}', encoding="utf-8")
     monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: uv)
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
-
-
-def test_unit_excludes_host_specific_args() -> None:
-    """ユニット本文が待受アドレス・ポートを固定しないことを検証する。"""
-    assert systemd_user_unit.USER_UNIT_PATH_ENVIRONMENT in setup_atk_serve_linux._UNIT_CONTENT
-    assert "ExecStart=%h/.local/bin/atk-serve\n" in setup_atk_serve_linux._UNIT_CONTENT
-    assert "--host" not in setup_atk_serve_linux._UNIT_CONTENT
-    assert "--port" not in setup_atk_serve_linux._UNIT_CONTENT
 
 
 class TestRunPlatformGuard:
@@ -170,8 +165,9 @@ class TestRunLauncherDeployment:
             events.append("unit")
             assert kwargs["executable_path"] == launcher
             assert launcher.stat().st_mode & stat.S_IXUSR
-            assert kwargs["unit_content"] == setup_atk_serve_linux._UNIT_CONTENT
+            assert kwargs["unit_content"] == setup_atk_serve_linux._UNIT_CONTENT + "# agent-toolkit version: 2.1.0\n"
             assert kwargs["service_name"] == "atk-serve.service"
+            assert kwargs["restart_needed"] is True
             return True
 
         monkeypatch.setattr(claude_common, "atomic_write_text", write)
@@ -202,8 +198,33 @@ class TestRunLauncherDeployment:
             raise AssertionError("一致するランチャーを書き直した")
 
         monkeypatch.setattr(claude_common, "atomic_write_text", unexpected_write)
-        monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
+
+        def setup(**kwargs: typing.Any) -> bool:
+            assert kwargs["restart_needed"] is False
+            return True
+
+        monkeypatch.setattr(systemd_user_unit, "setup", setup)
         assert setup_atk_serve_linux.run()
+
+    def test_plugin_version_changes_unit_content(
+        self,
+        prepared: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """plugin版の更新をunit差分として渡し、共通処理の再起動判定へつなぐ。"""
+        observed: list[str] = []
+
+        def setup(**kwargs: typing.Any) -> bool:
+            observed.append(kwargs["unit_content"])
+            return True
+
+        monkeypatch.setattr(systemd_user_unit, "setup", setup)
+        assert setup_atk_serve_linux.run()
+        manifest = prepared / "agent-toolkit" / ".claude-plugin" / "plugin.json"
+        manifest.write_text('{"version": "2.1.1"}', encoding="utf-8")
+        assert setup_atk_serve_linux.run()
+        assert observed[0] != observed[1]
+        assert observed[1].endswith("# agent-toolkit version: 2.1.1\n")
 
     def test_launcher_invokes_worktree_project_without_plugin_cache(
         self,

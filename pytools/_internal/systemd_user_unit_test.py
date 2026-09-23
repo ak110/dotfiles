@@ -19,21 +19,23 @@ def _no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(systemd_user_unit, "_CONFIRM_SECONDS", 0.0)
 
 
-def _show_aware(stdout: str = "Linger=yes", returncode: int = 0):
+def _show_aware(stdout: str = "Linger=yes", returncode: int = 0, *, stable: bool = False):
     """showコマンドへ常駐状態を返すrun_subprocess stubを生成する。"""
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
         if "show" in command and "--property=ActiveState" in command:
             return subprocess.CompletedProcess(command, 0, _ACTIVE_SHOW, "")
+        if command[2] in {"is-enabled", "is-active"}:
+            return subprocess.CompletedProcess(command, 0 if stable else 1, "", "")
         return subprocess.CompletedProcess(command, returncode, stdout, "")
 
     return run
 
 
-def _recording(commands: list[list[str]]):
+def _recording(commands: list[list[str]], *, stable: bool = False):
     """呼び出し履歴を記録しつつ常駐状態を返すstubを生成する。"""
-    inner = _show_aware()
+    inner = _show_aware(stable=stable)
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         commands.append(command)
@@ -59,8 +61,10 @@ def test_setup_writes_and_applies_unit(tmp_path: pathlib.Path, monkeypatch: typi
         service_name="tool.service",
     )
     assert unit.read_text(encoding="utf-8") == "unit\n"
-    assert commands[:3] == [
+    assert commands[:5] == [
         ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "is-enabled", "tool.service"],
+        ["systemctl", "--user", "is-active", "tool.service"],
         ["systemctl", "--user", "enable", "tool.service"],
         ["systemctl", "--user", "restart", "tool.service"],
     ]
@@ -89,7 +93,7 @@ def test_setup_does_not_rewrite_matching_unit(tmp_path: pathlib.Path, monkeypatc
         del args, kwargs
         raise AssertionError("一致するunitを書き直した")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands))
+    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands, stable=True))
     monkeypatch.setattr(claude_common, "atomic_write_text", unexpected_write)
     assert systemd_user_unit.setup(
         unit_path=unit,
@@ -98,10 +102,59 @@ def test_setup_does_not_rewrite_matching_unit(tmp_path: pathlib.Path, monkeypatc
         log_tag="test",
         service_name="tool.service",
     )
-    assert commands[:2] == [
-        ["systemctl", "--user", "enable", "tool.service"],
-        ["systemctl", "--user", "restart", "tool.service"],
+    assert commands == [
+        ["systemctl", "--user", "is-enabled", "tool.service"],
+        ["systemctl", "--user", "is-active", "tool.service"],
+        ["loginctl", "show-user", systemd_user_unit.getpass.getuser(), "--property=Linger"],
     ]
+
+
+@pytest.mark.parametrize(
+    ("enabled", "active", "restart_needed", "expected_actions"),
+    [
+        (False, True, False, ["enable", "restart"]),
+        (True, False, False, ["restart"]),
+        (True, True, True, ["restart"]),
+    ],
+)
+def test_setup_repairs_service_state_or_launcher_change(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
+    active: bool,
+    restart_needed: bool,
+    expected_actions: list[str],
+) -> None:
+    """unit一致時も無効・停止・ランチャー変更には再起動で追随する。"""
+    executable = tmp_path / "tool"
+    executable.write_text("", encoding="utf-8")
+    unit = tmp_path / "tool.service"
+    unit.write_text("unit\n", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        commands.append(command)
+        if command[2] == "is-enabled":
+            return subprocess.CompletedProcess(command, 0 if enabled else 1, "", "")
+        if command[2] == "is-active":
+            return subprocess.CompletedProcess(command, 0 if active else 3, "", "")
+        if "show" in command and "--property=ActiveState" in command:
+            return subprocess.CompletedProcess(command, 0, _ACTIVE_SHOW, "")
+        return subprocess.CompletedProcess(command, 0, "Linger=yes", "")
+
+    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    assert systemd_user_unit.setup(
+        unit_path=unit,
+        executable_path=executable,
+        unit_content="unit\n",
+        log_tag="test",
+        service_name="tool.service",
+        restart_needed=restart_needed,
+    )
+    actions = [command[2] for command in commands if command[2] in {"enable", "restart"}]
+    assert actions == expected_actions
+    assert any("--property=ActiveState" in command for command in commands)
 
 
 def test_setup_uses_atomic_write(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
@@ -150,6 +203,8 @@ def test_setup_raises_for_systemctl_failures(
         if "show" in command and "--property=ActiveState" in command:
             show_calls.append(command)
             return subprocess.CompletedProcess(command, 0, _ACTIVE_SHOW, "")
+        if command[2] in {"is-enabled", "is-active"}:
+            return subprocess.CompletedProcess(command, 1, "", "")
         label = command[2] if command[:2] == ["systemctl", "--user"] else "loginctl"
         code = return_value if label == failed_label else 0
         return subprocess.CompletedProcess(command, code, "Linger=yes", "")

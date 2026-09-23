@@ -7,13 +7,15 @@ import asyncio
 import contextlib
 import dataclasses
 import datetime
+import inspect
 import json
 import logging
 import os
 import pathlib
 import re
+import typing
 import warnings
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from typing import Annotated, Any, cast
 from uuid import UUID
 
@@ -22,6 +24,7 @@ from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStre
 from mcp.server.fastmcp import FastMCP
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
+from mcp.types import Icon, ToolAnnotations
 from pydantic import Field
 
 from agent_toolkit._agents_server import antigravity as antigravity_backend
@@ -54,6 +57,7 @@ from agent_toolkit._agents_server.state import (
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._hooks.message_format import xml_message
 
 try:
@@ -199,6 +203,32 @@ def _elapsed_seconds(started_at_value: str) -> int | None:
     return max(0, int(datetime.datetime.now(tz=started_at.tzinfo).timestamp() - started_at.timestamp()))
 
 
+# 配送本文を組み立てた主体。呼び出し元のエージェントと本サーバーを区別する。
+COMPOSED_BY_CALLER = "caller"
+COMPOSED_BY_AGENTS_SERVER = "agents-server"
+
+# MCPのスキーマとして実行ホストのsystem promptへ入る本文の境界。
+_NORMATIVE_ELEMENT = "normative-context"
+_NORMATIVE_SOURCE = "agent-toolkit/agents-server"
+_KIND_MCP_INSTRUCTIONS = "mcp-instructions"
+_KIND_MCP_TOOL = "mcp-tool"
+_KIND_MCP_PARAMETER = "mcp-parameter"
+
+
+def _schema_text(body: str, *, kind: str) -> str:
+    """MCPのスキーマへ載る本文へ、生成主体と種別を示す境界を付ける。
+
+    サーバーの説明文とツールの説明文は、呼び出し側のホストがsystem promptへ自動的に載せる。
+    受信したエージェントが本リポジトリの生成物と判別できるよう、他の自動注入経路と同じ形式で囲む。
+    """
+    return xml_message(_NORMATIVE_ELEMENT, body, {"source": _NORMATIVE_SOURCE, "kind": kind})
+
+
+def _parameter_description(body: str) -> str:
+    """ツールの引数の説明文へ境界を付ける。"""
+    return _schema_text(body, kind=_KIND_MCP_PARAMETER)
+
+
 def _shell_prompt(command: str, summary_policy: str) -> str:
     """コマンドと要約方針を、シェル実行委譲先への指示本文へ組み立てる。"""
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
@@ -214,8 +244,12 @@ def _delivery_sender_label() -> str:
     return f"delegate:{identity.host_session_id}"
 
 
-def _wrap_delivery_body(body: str) -> str:
-    """委譲先へ配送する本文を、呼び出し元が作成した配送であることを示す標識で囲む。
+def _wrap_delivery_body(body: str, *, composed_by: str = COMPOSED_BY_CALLER) -> str:
+    """委譲先へ配送する本文を、配送元と本文の作成主体を示す標識で囲む。
+
+    `from`は配送を発行したsessionを示し、`composed-by`は本文を組み立てた主体を示す。
+    タスク文書の読み込み指示、シェル実行の依頼文、自動再開の継続指示は、呼び出し元ではなく
+    本サーバーが組み立てるため、受信側が両者を取り違えないよう作成主体を分けて示す。
 
     2つの前提に依存する。第1に`nonce`が本文へ出現しないこと、第2に`from`が示す
     session識別子が属性値へそのまま置ける文字だけで構成されることである。
@@ -225,7 +259,7 @@ def _wrap_delivery_body(body: str) -> str:
     受信側の解釈は`agent-toolkit/share/rules-subagent.md`「受領した本文の出所」が定める。
     """
     sender = _delivery_sender_label()
-    return xml_message("cross-session-message", body, {"from": sender})
+    return xml_message("cross-session-message", body, {"from": sender, "composed-by": composed_by})
 
 
 def _validate_required_prompt_inputs(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> str | None:
@@ -236,13 +270,16 @@ def _validate_required_prompt_inputs(task_document: pathlib.Path, extra_params: 
         document_lines = task_document.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
-    try:
-        input_heading = document_lines.index("## 入力")
-    except ValueError:
+    headings = top_level_atx_headings("\n".join(document_lines), 2)
+    inputs = [index for index, (_, title) in enumerate(headings) if title == "入力"]
+    if not inputs:
         return f"必須入力検査を実施できません: タスク文書に## 入力がありません: {task_document}"
-    section = document_lines[input_heading + 1 :]
-    next_heading = next((index for index, line in enumerate(section) if line.startswith("## ")), len(section))
-    section = section[:next_heading]
+    position = inputs[0]
+    token = headings[position][0]
+    assert token.map is not None
+    following = headings[position + 1][0] if position + 1 < len(headings) else None
+    end = following.map[0] if following is not None and following.map is not None else len(document_lines)
+    section = document_lines[token.map[1] : end]
     try:
         fence = section.index("```text")
         marker = section[fence + 1]
@@ -698,7 +735,11 @@ class AgentsServerManager:
             resolved: list[dict[str, str]] = []
             unresolved: list[str] = []
             for child_session_id in sorted(session.live_child_session_ids):
-                resume_info = session_registry.resolve(child_session_id).resume_info
+                try:
+                    resume_info = session_registry.resolve(child_session_id).resume_info
+                except Exception:
+                    unresolved.append(child_session_id)
+                    continue
                 child_cwd = resume_info.cwd if resume_info is not None else ""
                 if child_cwd:
                     resolved.append({"session_id": child_session_id, "cwd": child_cwd})
@@ -871,6 +912,7 @@ class AgentsServerManager:
         *,
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
+        composed_by: str = COMPOSED_BY_CALLER,
     ) -> dict[str, Any]:
         """工程別モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -888,7 +930,7 @@ class AgentsServerManager:
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
         display_label = _resolve_display_label(label, prompt)
-        delivery_body = _wrap_delivery_body(prompt)
+        delivery_body = _wrap_delivery_body(prompt, composed_by=composed_by)
         for candidate_index, candidate in enumerate(candidates):
             engine, model, effort = candidate
             if engine not in SUPPORTED_ENGINES:
@@ -1098,6 +1140,7 @@ class AgentsServerManager:
             cwd,
             launch_kind="shell",
             label=_resolve_display_label(label, command),
+            composed_by=COMPOSED_BY_AGENTS_SERVER,
         )
 
     async def start_write(self, prompt: str, cwd: str, *, label: str | None = None) -> dict[str, Any]:
@@ -1294,7 +1337,8 @@ class AgentsServerManager:
             prompt = _wrap_delivery_body(
                 "あなたが`agents_server`で起動した次のsessionは終端した。\n"
                 f"終端したsession: {', '.join(identifiers)}\n"
-                "各sessionの結果を確認し、所定の返却形式を返せ。"
+                "各sessionの結果を確認し、所定の返却形式を返せ。",
+                composed_by=COMPOSED_BY_AGENTS_SERVER,
             )
             session.auto_resume_consumed = True
             pending_result = session.pending_result
@@ -1873,7 +1917,36 @@ class _InitializationLoggingSendStream(ObjectSendStream[SessionMessage]):
 
 
 class _AgentsServerFastMCP(FastMCP[Any]):
-    """stdio上のinitialize節目を診断ログへ残すFastMCP。"""
+    """stdio上のinitialize節目を診断ログへ残し、ツールの説明文へ境界を付けるFastMCP。"""
+
+    @typing.override
+    def add_tool(  # noqa: PLR0913 -- 上位の署名をそのまま受け取る
+        self,
+        fn: Callable[..., Any],
+        name: str | None = None,
+        title: str | None = None,
+        description: str | None = None,
+        annotations: ToolAnnotations | None = None,
+        icons: list[Icon] | None = None,
+        meta: dict[str, Any] | None = None,
+        structured_output: bool | None = None,
+    ) -> None:
+        """ツールの説明文へ境界を付けて登録する。
+
+        説明文は実行ホストがスキーマとしてsystem promptへ載せる。登録の1箇所で囲むことで、
+        ツールごとの書き分けを増やさずに全てのツールへ同じ境界を付ける。
+        """
+        resolved = description if description is not None else inspect.getdoc(fn) or ""
+        super().add_tool(
+            fn,
+            name,
+            title,
+            _schema_text(resolved, kind=_KIND_MCP_TOOL),
+            annotations,
+            icons,
+            meta,
+            structured_output,
+        )
 
     async def run_stdio_async(self) -> None:
         tracker = _InitializationLogTracker()
@@ -1920,7 +1993,7 @@ with warnings.catch_warnings():
         warnings.simplefilter("ignore", IncompleteFieldDefinitionWarning)
     mcp = _AgentsServerFastMCP(
         "agents_server",
-        instructions=(
+        instructions=_schema_text(
             "CodexまたはClaudeへの非同期委譲。承認操作は公開しない。\n"
             "`start`は専用タスク文書、`start_custom`は自由本文からsessionを開始する。"
             "`start_explore`は読み取り専用探索、`start_shell`はコマンド実行、`start_write`は確定済みの軽量書込を委譲する。"
@@ -1934,7 +2007,8 @@ with warnings.catch_warnings():
             "起動時の`label`は当該sessionを人が識別する短い名前とし、`show`・`atk agents list`・statuslineへ現れる。"
             "表記をそろえるため、`start`では担当を表す識別子（`lane-02`など）、"
             "`start_explore`では調べる対象を表す名詞句（`pyfltrの起動形`など）、"
-            "`start_shell`では実行するコマンドのように、当該sessionの役割を最短で表す語を渡す。"
+            "`start_shell`では実行するコマンドのように、当該sessionの役割を最短で表す語を渡す。",
+            kind=_KIND_MCP_INSTRUCTIONS,
         ),
         lifespan=_mcp_lifespan,
     )
@@ -1945,7 +2019,7 @@ async def start(
     subagent_md_path: Annotated[
         str,
         Field(
-            description=(
+            description=_parameter_description(
                 "受信側の起動・返却契約を保持するagent-toolkitの`.subagent.md`絶対パス。"
                 "自由な本文を渡す場合は`start_custom`を使う。"
             )
@@ -1953,13 +2027,17 @@ async def start(
     ],
     extra_params: Annotated[
         dict[str, str],
-        Field(description="タスク文書の必須入力名をキーとする追加パラメータ。固有の補足は`追加指示`へ渡す。"),
+        Field(
+            description=_parameter_description(
+                "タスク文書の必須入力名をキーとする追加パラメータ。固有の補足は`追加指示`へ渡す。"
+            )
+        ),
     ],
     cwd: str,
     label: Annotated[
         str | None,
         Field(
-            description=(
+            description=_parameter_description(
                 "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
                 "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
             )
@@ -1979,7 +2057,7 @@ async def start(
     全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
     """
     model_type, prompt = _task_document_request(subagent_md_path, extra_params)
-    response = await _MANAGER.start(model_type, prompt, cwd, label=label)
+    response = await _MANAGER.start(model_type, prompt, cwd, label=label, composed_by=COMPOSED_BY_AGENTS_SERVER)
     return _public_start_response(response)
 
 
@@ -1988,13 +2066,13 @@ async def start_custom(
     prompt: str,
     model_type: Annotated[
         str,
-        Field(description="工程別モデル設定の種別。専用タスク文書がある場合は`start`を使う。"),
+        Field(description=_parameter_description("工程別モデル設定の種別。専用タスク文書がある場合は`start`を使う。")),
     ],
     cwd: str,
     label: Annotated[
         str | None,
         Field(
-            description=(
+            description=_parameter_description(
                 "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
                 "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
             )
@@ -2021,7 +2099,7 @@ async def start_explore(
     fast: Annotated[
         bool,
         Field(
-            description=(
+            description=_parameter_description(
                 "`false`は`explore_model`、`true`は`explore_fast_model`の設定を候補列として使う。"
                 "既定の`true`のまま使い、軽量側の候補では判断材料が不足する調査だけ`false`を指定する。"
             )
@@ -2030,7 +2108,7 @@ async def start_explore(
     label: Annotated[
         str | None,
         Field(
-            description=(
+            description=_parameter_description(
                 "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
                 "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
             )
@@ -2056,13 +2134,19 @@ async def start_explore(
 
 @mcp.tool(name="start_shell", structured_output=True)
 async def start_shell(
-    command: Annotated[str, Field(description="実行するコマンド。委譲先がシェルで実行する。")],
-    cwd: Annotated[str, Field(description="実行時の作業ディレクトリ。既存ディレクトリの絶対パスとする。")],
-    summary_policy: Annotated[str, Field(description="結果の要約方針。報告へ含める値と粒度を書く。")],
+    command: Annotated[str, Field(description=_parameter_description("実行するコマンド。委譲先がシェルで実行する。"))],
+    cwd: Annotated[
+        str,
+        Field(description=_parameter_description("実行時の作業ディレクトリ。既存ディレクトリの絶対パスとする。")),
+    ],
+    summary_policy: Annotated[
+        str,
+        Field(description=_parameter_description("結果の要約方針。報告へ含める値と粒度を書く。")),
+    ],
     label: Annotated[
         str | None,
         Field(
-            description=(
+            description=_parameter_description(
                 "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
                 "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
             )
@@ -2093,7 +2177,7 @@ async def start_write(
     label: Annotated[
         str | None,
         Field(
-            description=(
+            description=_parameter_description(
                 "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
                 "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
             )
@@ -2120,7 +2204,11 @@ async def send_message(
     timeout: Annotated[
         float,
         Field(
-            description="継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。委譲先の応答生成の完了は待たない。0以下は受理しない。"
+            description=_parameter_description(
+                "継続要求の配送結果が確定するまでの待機上限秒数。"
+                "固有のtimeout要件がなければ引数を省略して通常既定を使う。"
+                "委譲先の応答生成の完了は待たない。0以下は受理しない。"
+            )
         ),
     ] = DEFAULT_SEND_MESSAGE_TIMEOUT,
 ) -> dict[str, Any]:
@@ -2146,12 +2234,16 @@ async def kill(
     timeout: Annotated[
         float,
         Field(
-            description="中断要求後に終端を待つ上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。0は中断要求配送後の現状態を返す。"
+            description=_parameter_description(
+                "中断要求後に終端を待つ上限秒数。"
+                "固有のtimeout要件がなければ引数を省略して通常既定を使う。"
+                "0は中断要求配送後の現状態を返す。"
+            )
         ),
     ] = DEFAULT_KILL_TIMEOUT,
     stop: Annotated[
         bool,
-        Field(description="終端結果を返した応答に限り、同じsessionを応答後に破棄する。"),
+        Field(description=_parameter_description("終端結果を返した応答に限り、同じsessionを応答後に破棄する。")),
     ] = False,
 ) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終端を待つ。

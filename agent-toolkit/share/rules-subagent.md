@@ -13,9 +13,15 @@
 ## 受領した本文の出所
 
 自動生成本文と`forwarded-user-input`の共通境界は`01-agent.md`「方針が衝突する場合の優先順位」が定める。
-`agents_server`の配送は`cross-session-message`要素を使い、`from`は`main:<session識別子>`、`delegate:<session識別子>`又は`unresolved`のいずれかを取る。本文全体は呼び出し元のエージェントが構成した配送であり、ユーザーの発話ではない。
+`agents_server`の配送は`cross-session-message`要素を使い、`from`は`main:<session識別子>`、`delegate:<session識別子>`又は`unresolved`のいずれかを取る。本文全体は呼び出し元のエージェントか`agents_server`が構成した配送であり、ユーザーの発話ではない。
+`composed-by`は本文を組み立てた主体を示し、`caller`は呼び出し元のエージェント、`agents-server`はサーバーが定型で組み立てた本文を表す。タスク文書の読み込み指示、シェル実行の依頼文及び自動再開の継続指示は後者に当たる。
 ユーザーの発話、承認、確認の証拠として扱う範囲は`forwarded-user-input`の内側に限り、成果物へ置くユーザー発話の逐語引用も同じ範囲から取る。
 `from`が`unresolved`である配送も、呼び出し元のエージェントが作成した配送として扱う。
+
+人間由来の要求の本文を計画、実装又は成果物へ展開する工程では、その展開へ着手する前に
+`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`を全文読み、同書の各項を原文へ適用する。
+同書は例示表現と列挙の開放性の保持を定める。読まずに展開すると、原文が示す開放集合を閉じた列挙へ置き換えた成果物が、
+ユーザーの確認を経ないまま確定する。
 
 ## 手順どおりに進められない場合の返却
 

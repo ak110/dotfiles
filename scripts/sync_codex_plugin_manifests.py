@@ -47,6 +47,10 @@ def _hook_command(name: str) -> str:
     )
 
 
+def _codex_hook_command(name: str) -> str:
+    return f"atk-hook {name}"
+
+
 CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
 CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
 CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
@@ -54,7 +58,6 @@ CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
 CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
 CODEX_SESSION_END_COMMAND = _hook_command("session_end_cleanup")
 CODEX_RULES_CONTEXT_COMMAND = _hook_command("rules_context")
-CODEX_RULES_CONTEXT_CODEX_COMMAND = _hook_command("rules_context_codex")
 
 # CodexのSessionEndは同期実行のため上限が短い。投影時に明示して超過を避ける。
 CODEX_SESSION_END_TIMEOUT_SECONDS = 3
@@ -101,30 +104,40 @@ class CodexHookProjection(NamedTuple):
 CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "SessionStart": CodexHookProjection(
         (CODEX_RULES_CONTEXT_COMMAND,),
-        output_command=CODEX_RULES_CONTEXT_CODEX_COMMAND,
+        output_command=_codex_hook_command("rules_context_codex"),
         additional_context_limit=0,
     ),
     "SubagentStart": CodexHookProjection(
         (CODEX_RULES_CONTEXT_COMMAND,),
-        output_command=CODEX_RULES_CONTEXT_CODEX_COMMAND,
+        output_command=_codex_hook_command("rules_context_codex"),
         additional_context_limit=0,
     ),
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
+        output_command=_codex_hook_command("pretooluse"),
         matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_write|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
+        output_command=_codex_hook_command("posttooluse"),
         matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_write|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "PermissionRequest": CodexHookProjection(
         (_hook_command("permissionrequest"),),
         matcher="Bash",
-        output_command=CODEX_PERMISSION_REQUEST_COMMAND,
+        output_command=_codex_hook_command("permissionrequest_codex"),
     ),
-    "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
-    "SubagentStop": CodexHookProjection((CODEX_SUBAGENT_STOP_COMMAND,)),
-    "SessionEnd": CodexHookProjection((CODEX_SESSION_END_COMMAND,), timeout=CODEX_SESSION_END_TIMEOUT_SECONDS),
+    "UserPromptSubmit": CodexHookProjection(
+        (CODEX_USER_PROMPT_SUBMIT_COMMAND,), output_command=_codex_hook_command("user_prompt_submit")
+    ),
+    "SubagentStop": CodexHookProjection(
+        (CODEX_SUBAGENT_STOP_COMMAND,), output_command=_codex_hook_command("subagent_stop_advisor")
+    ),
+    "SessionEnd": CodexHookProjection(
+        (CODEX_SESSION_END_COMMAND,),
+        timeout=CODEX_SESSION_END_TIMEOUT_SECONDS,
+        output_command=_codex_hook_command("session_end_cleanup"),
+    ),
 }
 # Codex 0.147.0が発火するhookイベント。handlerを持たないイベントは生成しない。
 CODEX_EVENTS = {
@@ -339,10 +352,22 @@ def _existing_outputs(root: Path, expected: dict[Path, str]) -> dict[Path, str]:
     return {path: (root / path).read_text(encoding="utf-8") for path in paths if (root / path).exists()}
 
 
+def _output_difference_details(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[tuple[Path, str], ...]:
+    """通常の派生JSONについて、対象と不一致の種類を返す。"""
+    differences = []
+    for path in sorted(set(expected) | set(existing), key=str):
+        if path not in existing:
+            differences.append((path, "欠落"))
+        elif path not in expected:
+            differences.append((path, "余剰"))
+        elif expected[path] != existing[path]:
+            differences.append((path, "内容差"))
+    return tuple(differences)
+
+
 def _differences(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[Path, ...]:
-    """期待集合と現存集合の内容差、欠落、optional targetの残存を返す。"""
-    paths = set(expected) | OPTIONAL_TARGETS
-    return tuple(sorted((path for path in paths if expected.get(path) != existing.get(path)), key=str))
+    """通常の派生JSONで同期を要するパスを返す。"""
+    return tuple(path for path, _kind in _output_difference_details(expected, existing))
 
 
 def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tuple[bytes, int]]:
@@ -380,17 +405,33 @@ def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tu
     return outputs
 
 
-def _codex_root_differences(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[Path, ...]:
-    """Codex専用rootの欠落、余剰、内容差、symlink及びmode差を返す。"""
+def _codex_root_difference_details(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[tuple[Path, str], ...]:
+    """Codex専用rootについて、相対パスと不一致の種類を返す。"""
     target_root = root / CODEX_PLUGIN_ROOT_TARGET
     existing = {path.relative_to(target_root) for path in target_root.rglob("*") if path.is_file() or path.is_symlink()}
-    stale = existing ^ set(expected)
-    for relative in existing & set(expected):
+    differences = []
+    for relative in sorted(existing | set(expected), key=str):
+        if relative not in existing:
+            differences.append((relative, "欠落"))
+            continue
+        if relative not in expected:
+            differences.append((relative, "余剰"))
+            continue
         path = target_root / relative
         content, mode = expected[relative]
-        if path.is_symlink() or path.read_bytes() != content or stat.S_IMODE(path.stat().st_mode) != mode:
-            stale.add(relative)
-    return tuple(sorted(stale, key=str))
+        if path.is_symlink():
+            differences.append((relative, "mode差"))
+            continue
+        if path.read_bytes() != content:
+            differences.append((relative, "内容差"))
+        if stat.S_IMODE(path.stat().st_mode) != mode:
+            differences.append((relative, "mode差"))
+    return tuple(differences)
+
+
+def _codex_root_differences(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[Path, ...]:
+    """Codex専用rootで同期を要するパスを返す。"""
+    return tuple(dict.fromkeys(path for path, _kind in _codex_root_difference_details(root, expected)))
 
 
 def _sync_codex_root(root: Path, expected: dict[Path, tuple[bytes, int]]) -> bool:
@@ -432,9 +473,16 @@ def sync(root: Path = REPO_ROOT) -> bool:
 
 def check(root: Path = REPO_ROOT) -> bool:
     """派生JSONを変更せず、期待内容と一致する場合は`True`を返す。"""
+    return not _check_diagnostics(root)
+
+
+def _check_diagnostics(root: Path) -> tuple[str, ...]:
+    """検査対象の相対パスと差の種類を、派生物を書き換えずに組み立てる。"""
     expected = _outputs(root)
-    return not _differences(expected, _existing_outputs(root, expected)) and not _codex_root_differences(
-        root, _codex_root_outputs(root, expected)
+    normal = _output_difference_details(expected, _existing_outputs(root, expected))
+    codex = _codex_root_difference_details(root, _codex_root_outputs(root, expected))
+    return tuple(f"{path}: {kind}" for path, kind in normal) + tuple(
+        f"{CODEX_PLUGIN_ROOT_TARGET / path}: {kind}" for path, kind in codex
     )
 
 
@@ -444,7 +492,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="派生JSONを変更せず整合性だけを検査する")
     args = parser.parse_args(argv)
     if args.check:
-        return 0 if check(REPO_ROOT) else 1
+        diagnostics = _check_diagnostics(REPO_ROOT)
+        for diagnostic in diagnostics:
+            print(diagnostic, file=sys.stderr)
+        return 1 if diagnostics else 0
     sync(REPO_ROOT)
     return 0
 

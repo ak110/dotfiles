@@ -23,12 +23,16 @@ def _state(monkeypatch: pytest.MonkeyPatch) -> dict:
     return current
 
 
-def test_blocks_tenth_identical_call(state: dict, capsys: pytest.CaptureFixture[str]) -> None:
-    """同じツール名と入力は9回まで通し、10回目を遮断する。"""
+@pytest.mark.parametrize("tool_input", [{"path": "private-input-value"}, {"command": "private-input-value"}])
+def test_blocks_tenth_identical_call(state: dict, capsys: pytest.CaptureFixture[str], tool_input: dict[str, str]) -> None:
+    """10回目の遮断でツール名と対処を示し、入力本文を再掲しない。"""
     del state
-    results = [repeat_guard.check_repeated_tool_call("session", "Read", {"path": "a"}) for _ in range(10)]
+    results = [repeat_guard.check_repeated_tool_call("session", "Read", tool_input) for _ in range(10)]
     assert results == [False] * 9 + [True]
-    assert "10回連続" in capsys.readouterr().err
+    notice = capsys.readouterr().err
+    assert "Readの同一呼び出しが10回連続" in notice
+    assert "状態を進める異なる操作" in notice
+    assert "private-input-value" not in notice
 
 
 def test_different_call_resets_count(state: dict) -> None:

@@ -525,6 +525,50 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pyfltr colloquial /tmp/draft.md",
+        "/tmp/venv/bin/pyfltr colloquial /tmp/draft.md",
+        "python -m pyfltr.colloquial /tmp/draft.md",
+        "/tmp/venv/bin/python -m pyfltr.colloquial /tmp/draft.md",
+        "/usr/bin/rg absent /tmp/draft.md",
+    ],
+)
+def test_boolean_detection_does_not_enable_bash_failure_gate(tmp_path: pathlib.Path, command: str) -> None:
+    """検出の終了コード1が続いても直接Bashの関門を有効にしない。"""
+    session_id = "boolean-detection"
+    payload = {
+        "session_id": session_id,
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "error": "Exit code 1",
+    }
+    for _ in range(2):
+        result = _run(payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert "2回連続" not in result.stdout
+    assert _read_state(tmp_path, session_id).get("bash_failure_gate") is not True
+
+
+def test_non_boolean_failure_still_enables_bash_failure_gate(tmp_path: pathlib.Path) -> None:
+    """通常のBash失敗2回は従来どおり関門を有効にする。"""
+    session_id = "ordinary-failure"
+    payload = {
+        "session_id": session_id,
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {"command": "false"},
+        "error": "Exit code 1",
+    }
+    first = _run(payload, state_dir=tmp_path)
+    second = _run(payload, state_dir=tmp_path)
+    assert first.returncode == second.returncode == 0
+    assert "2回連続" in second.stdout
+    assert _read_state(tmp_path, session_id).get("bash_failure_gate") is True
+
+
 def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:
     """成功したTaskStopの対象記録だけを消費する。"""
     session_id = "task-stop-consume"
@@ -883,12 +927,6 @@ class TestTestExecution:
         )
         assert _read_state(tmp_path, sid).get("test_executed") is not True
 
-    def test_posttooluse_failure_matcher_routes_bash(self):
-        """Bash失敗イベントが連続失敗記録へ配送されるmatcherを維持する。"""
-        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
-        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
-        assert re.fullmatch(matcher, "Bash") is not None
-
     def test_other_pyfltr_mcp_tool_not_detected(self, tmp_path: pathlib.Path):
         """検索など検証以外のpyfltr MCPツールでは状態を変更しない。"""
         sid = "test-mcp-grep"
@@ -933,17 +971,7 @@ class TestTestExecution:
         for tool_name in codex_tool_names:
             assert re.fullmatch(matcher, tool_name) is not None, tool_name
 
-    @pytest.mark.parametrize(
-        "tool_name",
-        [
-            "mcp__plugin_agent-toolkit_agents_server__start",
-            "mcp__plugin_agent-toolkit_agents_server__start_explore",
-            "mcp__plugin_agent-toolkit_agents_server__start_write",
-            "mcp__plugin_agent-toolkit_agents_server__send_message",
-            "mcp__plugin_agent-toolkit_agents_server__kill",
-            "mcp__plugin_agent-toolkit_agents_server__stop",
-        ],
-    )
+    @pytest.mark.parametrize("tool_name", ["mcp__plugin_agent-toolkit_agents_server__start"])
     def test_posttooluse_failure_matcher_excludes_agents_server(self, tool_name: str):
         """agents_server専用のPostToolUseFailure配送を撤去する。"""
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))

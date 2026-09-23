@@ -365,10 +365,13 @@ _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS: dict[str, str] = {
     alias: canonical for canonical, aliases in PLAN_WI_ORIGIN_ALIASES.items() for alias in aliases
 }
 
+PLAN_USER_INSTRUCTION_ORIGIN: str = "ユーザー指示"
+"""ユーザー自身の発話から確定した実施内容の由来の区分。"""
+
 PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
     PLAN_HUMAN_WI_ORIGIN,
     PLAN_AGENT_WI_ORIGIN,
-    "ユーザー指示",
+    PLAN_USER_INSTRUCTION_ORIGIN,
     "エージェント提案",
 )
 PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>[1-9][0-9]*)ラウンド$")

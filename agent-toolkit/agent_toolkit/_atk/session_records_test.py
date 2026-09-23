@@ -139,8 +139,8 @@ class TestInvokedProcessWi:
         直接的原因: 一方だけを変更すると判定が無効化されるため、双方の一致を検査で固定する。
         """
         assert (
-            process_loop._build_process_loop_prompt()  # pylint: disable=protected-access
-            == session_records._CODEX_PROCESS_WI_PROMPT  # pylint: disable=protected-access
+            session_records._CODEX_PROCESS_WI_PROMPT  # pylint: disable=protected-access
+            in process_loop._build_process_loop_prompt()  # pylint: disable=protected-access
         )
 
     def test_missing_marker_returns_false(self, tmp_path: pathlib.Path) -> None:

@@ -1,7 +1,7 @@
 """atk (agent-toolkit `atk wi`) のgrepサブコマンドのテスト。
 
 本文全体（frontmatter含む）の正規表現検索・大文字小文字無視・各種フィルター
-（target-repo・type・status・answered）・該当0件時のexit 1・不正な正規表現時のexit 2の
+（target-repo・type・status・answered・source）・該当0件時のexit 1・不正な正規表現時のexit 2の
 単体テストを集約する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
@@ -168,6 +168,43 @@ class TestGrepIgnoreCase:
 
 class TestGrepFilters:
     """grepサブコマンド: 各フィルターが`list`と同じ意味で作用すること。"""
+
+    def test_adopted_session_review_search_limits_entries_before_matching(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """終端済み振り返りの検索対象は状態・投入元・対象リポジトリの積集合となる。"""
+        notes = _setup_notes(tmp_path)
+        adopted_dir = notes / "adopted"
+        adopted_dir.mkdir()
+        for filename, source, repo in (
+            ("matched.md", "session-review", "github.com/example/foo"),
+            ("other-source.md", "manual", "github.com/example/foo"),
+            ("other-repo.md", "session-review", "github.com/example/other"),
+        ):
+            path = _write_awi_file(notes, filename, target_repo=repo, body="shared phrase", source=source)
+            path.rename(adopted_dir / filename)
+        _write_awi_file(notes, "active.md", body="shared phrase", source="session-review")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "wi",
+                    "grep",
+                    "shared phrase",
+                    "--state=adopted",
+                    "--source=session-review",
+                    "--target-repo=github.com/example/foo",
+                    "--skip-pull",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out.strip() == "matched.md:7:shared phrase"
 
     def test_type_filter_limits_to_awi(
         self,

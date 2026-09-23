@@ -2,6 +2,9 @@
 
 import json
 import logging
+import runpy
+import subprocess
+import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -75,9 +78,19 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "agent-toolkit/agent_toolkit/hook.py").write_text("source", encoding="utf-8")
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")
+    (root / "bin").mkdir()
+    (root / "bin/atk-hook").write_text("hook wrapper", encoding="utf-8")
+    (root / "bin/atk-hook.cmd").write_text("hook wrapper cmd", encoding="utf-8")
+    current_hook = tmp_path / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/hook.py"
+    current_hook.parent.mkdir(parents=True)
+    current_hook.write_text("hook", encoding="utf-8")
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
     monkeypatch.setattr(install_codex_plugins.claude_common, "resolve_executable", lambda _name: Path("codex"))
     monkeypatch.setattr(install_codex_plugins, "CODEX_HOME", tmp_path / ".codex")
+    monkeypatch.setattr(install_codex_plugins, "_hook_bin", lambda: tmp_path / ".local/bin")
+    hook_bin = tmp_path / ".local/bin"
+    hook_bin.mkdir(parents=True)
+    (hook_bin / "atk-hook").write_text("hook wrapper", encoding="utf-8")
     monkeypatch.delenv("CODEX_HOME", raising=False)
     return root
 
@@ -158,6 +171,77 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
     assert (cache_entry / "marker").read_text(encoding="utf-8") == "keep"
+
+
+def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """初回切替では入口を先に置き、CLIが除去した旧hook実体を復元する。"""
+    wrapper = install_codex_plugins._hook_bin() / "atk-hook"  # pylint: disable=protected-access
+    wrapper.unlink()
+    previous = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
+    previous.mkdir(parents=True)
+    (previous / "hook.py").write_text("previous", encoding="utf-8")
+    _set_json_responses(
+        monkeypatch,
+        [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()],
+    )
+
+    def command(args: list[str]) -> bool:
+        if args[:2] == ["plugin", "add"]:
+            assert wrapper.read_text(encoding="utf-8") == "hook wrapper"
+            (previous / "hook.py").unlink()
+            previous.rmdir()
+        return True
+
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert (previous / "hook.py").read_text(encoding="utf-8") == "previous"
+
+
+def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """入口は現行版を解決してイベントと子hookの終了状態を渡す。"""
+    del plugin_env
+    wrapper = Path(__file__).resolve().parents[2] / "bin/atk-hook"
+    calls: list[list[str]] = []
+    monkeypatch.setenv("CODEX_HOME", str(install_codex_plugins.CODEX_HOME))
+    monkeypatch.setattr(sys, "argv", [str(wrapper), "pretooluse"])
+
+    def run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            json.dumps(
+                {
+                    "installed": [
+                        {
+                            "pluginId": "agent-toolkit@ak110-dotfiles",
+                            "name": "agent-toolkit",
+                            "marketplaceName": "ak110-dotfiles",
+                            "version": "1.2.3",
+                            "enabled": True,
+                        }
+                    ]
+                }
+            ),
+            "",
+        )
+
+    def call(args: list[str]) -> int:
+        calls.append(args)
+        return 7
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "call", call)
+
+    with pytest.raises(SystemExit, match="7"):
+        runpy.run_path(str(wrapper), run_name="__main__")
+
+    assert calls[0] == ["codex", "plugin", "list", "--json"]
+    assert calls[1][-1] == "pretooluse"
+    assert calls[1][-2].endswith("/agent_toolkit/hook.py")
 
 
 @pytest.mark.parametrize(

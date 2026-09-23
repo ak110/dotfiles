@@ -22,8 +22,9 @@ _LINKS: dict[str, str] = {
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
     "skills/ak110-projects-operations": ".chezmoi-source/dot_claude/skills/ak110-projects-operations",
     "docs": ".chezmoi-source/dot_claude/docs",
-    "agent-toolkit/rules": "agent-toolkit/rules",
 }
+# `agent-toolkit/rules`は配布先で境界標識を付けた本文へ書き換えるため、
+# リンクではなく`sync_agent_toolkit_rules`の同期で配る。
 
 
 def run() -> bool:

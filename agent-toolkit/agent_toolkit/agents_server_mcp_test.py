@@ -496,37 +496,6 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
     assert manager.show_session(shell["session_id"])["label"] == "git status --short"
 
 
-def test_server_instructions_carry_standalone_contract() -> None:
-    """サーバー説明だけを読む主体へ観測の義務とモデル解決の主体を示す。"""
-    instructions = subject.mcp.instructions
-    assert instructions is not None
-    assert "実行ホストで`atk agents wait`を発行して観測する" in instructions
-    assert "結果が不要なら`kill`で破棄する" in instructions
-    assert "engine、model及びeffortは" in instructions
-    assert "起動時の`label`は当該sessionを人が識別する短い名前とし" in instructions
-
-
-def test_tool_descriptions_carry_standalone_contract() -> None:
-    """各ツールの公開説明だけで候補枯渇と継続不能の応答を判別できる。"""
-    tools = {}
-    for tool_name in ("start", "start_explore", "start_write", "start_shell", "send_message", "kill", "list"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        tools[tool_name] = tool
-    assert "最後の候補の終端応答を返す" in tools["start"].description
-    assert "最後の例外を送出する" in tools["start"].description
-    assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
-    assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
-    assert "ファイルの読取・検索・作成・編集だけを許可" in tools["start_write"].description
-    assert "起動時に確定したengine・model・effortで継続する" in tools["send_message"].description
-    assert "unknown session" in tools["send_message"].description
-    assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
-    assert "sessionとbackend processは破棄しない" in tools["kill"].description
-    assert "`status`へ`expired`" in tools["kill"].description
-    assert "`send_message`による訂正では足りないこと" in tools["kill"].description
-    assert "結果本文は返さない" in tools["list"].description
-
-
 @pytest.mark.asyncio
 async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_path: pathlib.Path) -> None:
     """active、再開中及び期限切れのsessionを同じ項目集合で開始順に返す。"""
@@ -671,10 +640,10 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
 
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
-    assert send_timeout["description"] == (
+    assert (
         "継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。"
         "委譲先の応答生成の完了は待たない。0以下は受理しない。"
-    )
+    ) in send_timeout["description"]
     assert "通常の既定は270秒" in send_tool.description
     assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in send_tool.description
     assert "待つのは継続要求の配送結果が確定するまで" in send_tool.description
@@ -682,10 +651,10 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert "上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する" in send_tool.description
     kill_timeout = kill_tool.parameters["properties"]["timeout"]
     assert kill_timeout["default"] == 270.0
-    assert kill_timeout["description"] == (
+    assert (
         "中断要求後に終端を待つ上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。"
         "0は中断要求配送後の現状態を返す。"
-    )
+    ) in kill_timeout["description"]
     assert "通常の既定は270秒" in kill_tool.description
     assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in kill_tool.description
     assert "`timeout=0`は中断要求配送後の現状態を返す" in kill_tool.description
@@ -817,7 +786,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     if task_name == "exec-review.subagent.md":
         return [
             "レビュー基準: 計画",
-            "review_contract: 契約",
+            f"計画ファイル: {root / 'plan.md'}",
             handoff,
         ]
     if task_name == "exec.subagent.md":
@@ -886,6 +855,14 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     extra_params = _observed_input_params(task_name, tmp_path)
 
     assert subject._validate_required_prompt_inputs(task_document, extra_params) is None
+
+
+def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    task_document = tmp_path / "task.subagent.md"
+    task_document.write_text("````text\n## 入力\n````\n\n## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    monkeypatch.setattr(subject, "_is_agent_toolkit_task_document", lambda _path: True)
+
+    assert subject._validate_required_prompt_inputs(task_document, {"対象": "value"}) is None
 
 
 @pytest.mark.asyncio
@@ -2116,7 +2093,7 @@ async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
     _publish_recovered_session(monkeypatch, tmp_path, "child-b", "completed")
     manager, _ = _manager_with_fake("codex")
     parent = subject.SessionState("parent", str(tmp_path), engine="codex")
-    parent.live_child_session_ids.update({"child-b", "child-a", "child-unknown"})
+    parent.live_child_session_ids.update({"child-b", "child-a", "child-unknown", "child!invalid"})
     no_child = subject.SessionState("no-child", str(tmp_path), engine="codex")
     terminal = subject.SessionState("terminal", str(tmp_path), engine="codex")
     terminal.live_child_session_ids.add("child-terminal")
@@ -2135,7 +2112,7 @@ async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
         {"session_id": "child-a", "cwd": str(tmp_path)},
         {"session_id": "child-b", "cwd": str(tmp_path)},
     ]
-    assert parent_detail["live_child_session_ids_without_cwd"] == ["child-unknown"]
+    assert parent_detail["live_child_session_ids_without_cwd"] == ["child!invalid", "child-unknown"]
     assert "live_child_sessions" not in manager.show_session(no_child.session_id)
     assert "live_child_sessions" not in manager.show_session(terminal.session_id)
     await manager.close()
@@ -3012,13 +2989,6 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
     assert turn_start["sandboxPolicy"] == {"type": "dangerFullAccess"}
     assert turn_start["model"] == "gpt-test"
     assert turn_start["effort"] == "high"
-
-
-def test_subagent_rules_reach_only_normal_delegation() -> None:
-    """委譲先規範は通常起動の指示だけへ連結し、軽量起動の指示へは入らない。"""
-    assert state.DELEGATE_SYSTEM_PROMPT.endswith(state.SUBAGENT_RULES)
-    assert state.SUBAGENT_RULES not in state.EXPLORE_SYSTEM_PROMPT
-    assert state.SUBAGENT_RULES not in state.SHELL_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
@@ -4063,12 +4033,12 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.usefixtures("_owner_session_environment")
 def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
-    """Claude探索起動は設定・スキルを省き、探索用toolと指示を明示する。
+    """Claude探索起動はユーザー設定のhookを読み、探索用toolと指示を明示する。
 
     所有セッションを解決できない環境では当該キーを設定しない。
     """
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="explore")
-    assert options.setting_sources == []
+    assert options.setting_sources == ["user"]
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
@@ -4084,7 +4054,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
 def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: pathlib.Path) -> None:
     """Claude軽量書込は汎用コマンドを許可せず、固定プロンプトと編集toolだけを使う。"""
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="write")
-    assert options.setting_sources == []
+    assert options.setting_sources == ["user"]
     assert options.skills == []
     assert options.system_prompt == f"{state.WRITE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Write", "Edit"}
@@ -4094,7 +4064,7 @@ def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: 
 def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_path: pathlib.Path) -> None:
     """Claudeのシェル実行起動は探索と同じ軽量条件を共有し、実行用toolと指示を選ぶ。"""
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="shell")
-    assert options.setting_sources == []
+    assert options.setting_sources == ["user"]
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",

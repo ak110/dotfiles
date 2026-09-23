@@ -8,7 +8,12 @@
 
 - importについて
   - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない）
-  - `import xxx as yyy`の別名は`np`など広く定着した略称、名前衝突回避、互換API差し替えに限る
+  - `import xxx as yyy`の別名は、元の名前より読みやすいか実行上の必要性がある場合に使う
+    <例>
+    広く定着した略称としての`np`
+    名前衝突の回避
+    互換APIの差し替え
+    </例>
   - 可能な限りトップレベルでimportする（循環参照や初期化順による問題を避ける場合に限りブロック内も可）
     - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
      （片方を関数内importにするのも局所対処であり、恒常化は避ける）
@@ -202,6 +207,7 @@
 
 ## pyfltrの起動形
 
+- 名前が確定した検査コマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`を正本とする。未知のコマンド名の探索、pyfltrの導入及び検査の実行には、それぞれの目的に対応する既存の入口を使う
 - pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
 - project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
 - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する

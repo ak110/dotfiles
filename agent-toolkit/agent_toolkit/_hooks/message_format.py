@@ -8,27 +8,18 @@ PostToolUseで`decision: "block"`を返す場合の`reason`はblock理由とし�
 `systemMessage`はユーザー向け情報通知専用でLLMに届かない。
 
 LLM宛て出力は生成主体、種別及び配送単位を属性に持つXML要素で囲む。
-本文に開始タグが現れても、nonceと最後の終了タグから配送境界を確定できる。
+包装の実装は`agent_toolkit._common.message_format`が持ち、本モジュールはhookの経路向けに再公開する。
+hook以外の経路も同じ実装を経由するため、包装の実装を層の順序で最も前にある`_common`へ置く。
 
 フィールドの詳細と規約の背景は
 `agent-toolkit/skills/writing-standards/references/claude-hooks.md`を参照する。
 """
 
-import secrets
-from collections.abc import Mapping
-from xml.sax.saxutils import quoteattr
+from agent_toolkit._common.message_format import xml_message
 
 NOTICE_ELEMENT = "agent-toolkit-hook-message"
 
-
-def xml_message(element: str, body: str, attributes: Mapping[str, str]) -> str:
-    """自動生成メッセージへnonce付きXML配送境界を付与する。"""
-    nonce = secrets.token_hex(8)
-    while nonce in body:
-        nonce = secrets.token_hex(8)
-    values = {**attributes, "nonce": nonce}
-    serialized = "".join(f" {name}={quoteattr(value)}" for name, value in values.items())
-    return f"<{element}{serialized}>\n{body}\n</{element}>"
+__all__ = ["NOTICE_ELEMENT", "llm_notice", "xml_message"]
 
 
 def llm_notice(body: str, hook_id: str, *, tag: str = "") -> str:

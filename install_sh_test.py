@@ -2,8 +2,8 @@
 
 隔離 `$HOME` に現在のリポジトリを複製して install.sh を実行し、chezmoi による
 デプロイが行われることを検証する。隔離の対象は `$HOME` と `PATH` であり、外部到達性は
-遮断しない。install.sh 配下の `uv tool install` は PyPI と python-build-standalone へ
-実際に到達するため、外部到達性設定（プロキシ変数）は親環境から引き継ぐ。
+遮断しない。install.sh 配下の `uv tool install` は PyPI へ到達できる状態を保つ。
+uvのキャッシュと検証用Pythonは親環境から再利用し、外部到達性設定（プロキシ変数）も引き継ぐ。
 
 到達先を差し替えられる分岐は、次の手段で実 GitHub・実 HTTP への依存を除く。
 
@@ -12,6 +12,7 @@
   にコピーして回避
 - Claude Codeとnpmの導入分岐は成功する代替実行ファイルを`$FAKE_HOME/.local/bin/`に配置して回避
 - Codex CLIの導入分岐は複製したリポジトリ内の導入モジュールをテスト用実装へ置き換えて回避
+- systemd user managerは隔離HOME内の代替systemctlで模擬する
 """
 
 import http.server
@@ -21,6 +22,7 @@ import pathlib
 import shutil
 import socketserver
 import subprocess
+import sys
 import threading
 import typing
 
@@ -48,15 +50,18 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     # 後続のPATHへ解決されず、pytools導入とルール配布が無言でスキップされる。
     chezmoi_bin = shutil.which("chezmoi")
     assert chezmoi_bin is not None
-    uv_bin = shutil.which("uv")
-    assert uv_bin is not None
     local_bin = fake_home / ".local" / "bin"
     local_bin.mkdir(parents=True)
+    isolated_path = f"{local_bin}:/usr/bin:/bin:/usr/local/bin"
+    uv_bin = _usable_uv_binary(fake_home, isolated_path)
+    uv_cache_dir = subprocess.run([str(uv_bin), "cache", "dir"], check=True, capture_output=True, text=True).stdout.strip()
+    assert pathlib.Path(uv_cache_dir).is_absolute()
     shutil.copy2(chezmoi_bin, local_bin / "chezmoi")
     shutil.copy2(uv_bin, local_bin / "uv")
     _write_fake_cli(local_bin / "claude")
     _write_fake_codex(local_bin / "codex", fake_home, fake_dotfiles)
     _write_fake_npm(local_bin / "npm")
+    _write_fake_systemctl(local_bin / "systemctl")
 
     # 3. tmuxプラグインのclone元をローカルミラーへ差し替える（実GitHub依存を回避）。
     # 戻り値のコミットSHAは末尾のアサーションで実際のclone結果と照合する。
@@ -76,8 +81,10 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
         try:
             env = {
                 "HOME": str(fake_home),
-                "PATH": f"{local_bin}:/usr/bin:/bin:/usr/local/bin",
+                "PATH": isolated_path,
                 "LANG": "C.UTF-8",
+                "UV_CACHE_DIR": uv_cache_dir,
+                "UV_PYTHON": sys.executable,
                 "DOTFILES_TMUX_PLUGIN_ORIGIN_BASE": f"file://{mirror_base}",
                 "DOTFILES_STATUSLINE_DOWNLOAD_URL": f"http://127.0.0.1:{port}/binary",
                 **_external_reachability_env(),
@@ -85,7 +92,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
             completed = subprocess.run(
                 ["bash", str(INSTALL_SH)],
                 env=env,
-                check=True,
+                check=False,
                 capture_output=True,
                 encoding="utf-8",
                 errors="replace",
@@ -94,12 +101,16 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
             httpd.shutdown()
             thread.join()
 
-    # install.shは配下の処理の失敗を縮退して終了コード0で終わるため、
-    # 後段のassertが失敗した場合に原因の段を特定できるよう実行時の出力を保存する。
+    # install.shは配下の一部失敗を縮退して終了コード0で終わるため、
+    # 終了コードと後段のassertの双方で原因の段を特定できるよう実行時の出力を保存する。
     stdout_log = tmp_path / "install-sh.stdout.log"
     stderr_log = tmp_path / "install-sh.stderr.log"
     stdout_log.write_text(completed.stdout, encoding="utf-8")
     stderr_log.write_text(completed.stderr, encoding="utf-8")
+    assert completed.returncode == 0, (
+        f"install.shが終了コード{completed.returncode}で失敗した。"
+        f"\n標準出力末尾: {completed.stdout[-2500:]}\n標準エラー末尾: {completed.stderr[-2500:]}"
+    )
 
     # 5. ルールファイルがデプロイされていること。
     # rules側の配布対象は生成一覧を正本とし、POSIX版とWindows版の完全一致を検査する。
@@ -133,6 +144,24 @@ def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
         return [n for n in names if n in {".venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".git"}]
 
     shutil.copytree(src, dst, ignore=_ignore, symlinks=True)
+
+
+def _usable_uv_binary(home: pathlib.Path, isolated_path: str) -> pathlib.Path:
+    """隔離HOMEでも動くuv本体をPATHの候補から選ぶ。"""
+    env = {"HOME": str(home), "PATH": isolated_path, "LANG": "C.UTF-8"}
+    for directory in os.get_exec_path():
+        candidate = (pathlib.Path(directory) / "uv").absolute()
+        if not candidate.is_file() or not os.access(candidate, os.X_OK):
+            continue
+        try:
+            result = subprocess.run(
+                [str(candidate), "--version"], env=env, capture_output=True, text=True, timeout=5, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0 and result.stdout.startswith("uv "):
+            return candidate
+    raise AssertionError("隔離HOMEで起動できるuv実行ファイルが見つからない")
 
 
 def _disable_codex_cli_setup(repo: pathlib.Path) -> None:
@@ -184,6 +213,15 @@ def _write_fake_npm(path: pathlib.Path) -> None:
     path.chmod(0o755)
 
 
+def _write_fake_systemctl(path: pathlib.Path) -> None:
+    """隔離HOMEにuser busがなくてもサービス・タイマー配置を検証できるようにする。"""
+    path.write_text(
+        '#!/bin/sh\nif [ "$2" = "show" ]; then\n    printf "ActiveState=active\\nNRestarts=0\\n"\nfi\nexit 0\n',
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
 def _make_git_mirror(base: pathlib.Path, rel_path: str, *, tag: str | None) -> str:
     """`base/rel_path`へ最小構成のgitリポジトリを作成し、コミットSHAを返す。
 
@@ -209,8 +247,8 @@ def _make_git_mirror(base: pathlib.Path, rel_path: str, *, tag: str | None) -> s
 def _external_reachability_env() -> dict[str, str]:
     """親環境にある外部到達性設定だけを取り出して返す。
 
-    install.sh配下の`uv tool install`はPyPIとpython-build-standaloneへ実際に到達するため、
-    プロキシ経由でのみ外部へ到達するホストでは当該設定なしにインタープリターを取得できない。
+    install.sh配下の`uv tool install`はPyPIへの接続を要する場合があるため、
+    プロキシ経由でのみ外部へ到達するホストでは当該設定を引き継ぐ。
     存在しない変数は追加しないため、直接到達できるホストへ渡す環境は変わらない。
     HOMEやXDG_*を含む親環境全体は引き継がない（隔離の漏れが実HOMEへの書き込みとして現れるため）。
     """

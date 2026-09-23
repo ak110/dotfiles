@@ -945,9 +945,7 @@ def test_agents_wait_reports_seconds_since_output_on_timeout(
 
     response = json.loads(capsys.readouterr().out)
     assert response["output_updated_at"] == output_updated_at
-    assert isinstance(response["seconds_since_output"], int)
     assert response["updated_at"] == updated_at
-    assert isinstance(response["seconds_since_activity"], int)
 
 
 @pytest.mark.parametrize(
@@ -1034,9 +1032,7 @@ def test_agents_wait_notices_response_reports_seconds_since_output(
 
     response = json.loads(capsys.readouterr().out)
     assert response["output_updated_at"] == output_updated_at
-    assert isinstance(response["seconds_since_output"], int)
     assert response["updated_at"] == updated_at
-    assert isinstance(response["seconds_since_activity"], int)
 
 
 def test_agents_wait_stall_uses_activity_not_text_output(

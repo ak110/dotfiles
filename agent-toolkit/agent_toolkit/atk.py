@@ -108,11 +108,12 @@ def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bo
         return bool(candidates)
     source = "\0".join(str(path) for path in candidates)
     fingerprint = hashlib.sha256(source.encode()).hexdigest()
-    should_warn = False
+    should_warn = bool(candidates)
 
     def _claim(current: dict) -> dict | None:
         nonlocal should_warn
         if current.get(_UNREGISTERED_TEMP_FINGERPRINT_KEY) == fingerprint:
+            should_warn = False
             return None
         current[_UNREGISTERED_TEMP_FINGERPRINT_KEY] = fingerprint
         should_warn = bool(candidates)
@@ -407,15 +408,6 @@ def _add_wi_add_parser(sub: Any) -> None:
             "投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: "
             "session-review・alert-monitor・agent・human・plan）。"
             "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
-        ),
-    )
-    add.add_argument(
-        "--scope-aligned",
-        action="store_true",
-        default=None,
-        help=(
-            "sourceを持つ通常AWIの反映内容と反映先・適用範囲・完成条件を照合済みであることを示す。"
-            "CLIは3節の現行本文に結び付くscope_alignmentをfrontmatterへ保存する。"
         ),
     )
     add.add_argument(
@@ -850,6 +842,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         default="all",
         help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
+    _add_source_arg(grep, multiple=True)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
     _output_file.add_output_file_arg(grep)
@@ -992,6 +985,8 @@ def _build_parser() -> argparse.ArgumentParser:
     plans = _atk_help.add_command(top, "plans", **_atk_help.HELP["atk plans"])
     _plans.build_parser(plans)
     serve = _atk_help.add_command(top, "serve", **_atk_help.HELP["atk serve"])
+    serve.add_argument("serve_action", nargs="?", choices=("logs",), help="user serviceのjournalを表示")
+    serve.add_argument("-f", "--follow", action="store_true", help="直近100行を表示して追従")
     serve.add_argument(
         "--host",
         default=None,
@@ -1188,7 +1183,6 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--depends-on", args.depends_on),
                 ("--target-repo", args.target_repo),
                 ("--source", args.source),
-                ("--scope-aligned", args.scope_aligned),
                 ("--origin-locator", args.origin_locator),
                 ("REPO_PATH", args.repo_path_override),
             )
@@ -1310,6 +1304,10 @@ def main(
         home = pathlib.Path.home()
     if args.command == "serve":
         _serve = importlib.import_module("agent_toolkit._atk.serve.cli")
+        if args.serve_action == "logs":
+            sys.exit(_serve.show_logs(follow=args.follow))
+        if args.follow:
+            parser.error("--followは`atk serve logs`で指定してください。")
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
     if args.command == "managed-temp":

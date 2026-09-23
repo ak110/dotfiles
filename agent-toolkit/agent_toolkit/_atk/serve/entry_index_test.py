@@ -1,7 +1,9 @@
 """ワークアイテム一覧のプロセス内索引のテスト。"""
 
+import contextlib
 import os
 import pathlib
+import types
 import typing
 
 import pytest
@@ -133,16 +135,42 @@ def test_operations_entries_and_target_repos_share_index(
     assert parse_calls == 0
 
 
-def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(tmp_path: pathlib.Path) -> None:
+def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """秒単位の更新日時が同じでもナノ秒値の変化で本文を更新する。"""
     path = _write_entry(tmp_path, "inbox", "entry.md", "変更前")
+    original_stat = pathlib.Path.stat
+    original_scandir = os.scandir
+    file_stat = path.stat()
+    reported_mtime_ns = file_stat.st_mtime_ns // 1_000_000_000 * 1_000_000_000 + 1
+
+    def reported_stat(*_args: typing.Any, **_kwargs: typing.Any) -> types.SimpleNamespace:
+        return types.SimpleNamespace(
+            st_mtime_ns=reported_mtime_ns,
+            st_mtime=reported_mtime_ns / 1_000_000_000,
+            st_size=file_stat.st_size,
+        )
+
+    def path_stat(candidate: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        if candidate == path:
+            return reported_stat()
+        return original_stat(candidate, *args, **kwargs)
+
+    @contextlib.contextmanager
+    def scandir(directory: pathlib.Path) -> typing.Iterator[list[types.SimpleNamespace]]:
+        with original_scandir(directory) as entries:
+            yield [types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat) for entry in entries]
+
+    monkeypatch.setattr(pathlib.Path, "stat", path_stat)
+    monkeypatch.setattr(os, "scandir", scandir)
     index = entry_index.EntryIndex(tmp_path)
     first, _warnings = index.scan(("inbox",))
-    before = path.stat()
     replacement = first[0].text.replace("変更前", "変更後")
-    assert len(replacement.encode()) == before.st_size
+    assert len(replacement.encode()) == file_stat.st_size
     path.write_text(replacement, encoding="utf-8")
-    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1))
+    reported_mtime_ns += 1
 
     second, warnings = index.scan(("inbox",))
 

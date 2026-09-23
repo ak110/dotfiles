@@ -27,8 +27,9 @@ from agent_toolkit._atk.wi import alerts as _alerts
 from agent_toolkit._atk.wi import auto_resume as _auto_resume
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi.common import _count_pending_entries, _pull, _repo_lock
-from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATE_PROCESSING
+from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY, WI_STATE_INBOX, WI_STATE_PROCESSING
 from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
+from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
@@ -83,7 +84,12 @@ _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
-_AVAILABILITY_PROBE_PROMPT = "応答できる場合はOKだけを返してください。"
+# 受領した委譲先がユーザー自身の発話と区別できるよう、境界標識で囲んで渡す。
+_AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
+    "応答できる場合はOKだけを返してください。",
+    source=_automated_prompt.SOURCE_PROCESS_LOOP,
+    kind=_automated_prompt.KIND_AVAILABILITY_PROBE,
+)
 
 # 端末が連続するBELを1回へまとめないよう、鳴動の間に置く待機秒。
 _ABORT_BELL_INTERVAL_SEC = 0.1
@@ -575,8 +581,17 @@ def _build_process_loop_prompt() -> str:
     処理対象は`_run_process_session`が子セッションの作業ディレクトリとして渡す経路で伝わる。
     `atk wi`の各サブコマンドは`--target-repo`を省略した場合に作業ディレクトリから対象
     リポジトリを解決するため、目的文へ処理対象を書く必要はない。
+
+    目的文は境界標識で囲み、受領した子セッションがユーザー自身の発話と区別できる形にする。
+    標識は`/goal`の引数の位置へ置く。ホストは1行目の先頭にあるスラッシュコマンドだけを
+    コマンドとして解釈するため、本文全体を囲むとコマンドとして成立しない。
     """
-    return "/goal `agent-toolkit:process-wi`を完遂してください。"
+    goal = _automated_prompt.wrap(
+        PROCESS_WI_GOAL_BODY,
+        source=_automated_prompt.SOURCE_PROCESS_LOOP,
+        kind=_automated_prompt.KIND_GOAL,
+    )
+    return f"/goal {goal}"
 
 
 def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
@@ -1010,6 +1025,11 @@ def _update_before_session(
 
     戻り値は、子セッションを起動できるかと`update-dotfiles`が成功したかの組とする。
     更新による再起動先には一回限りの指定を渡し、同じ上流状態への開始前更新を抑止する。
+
+    同期が非0で終了した場合も子セッションを起動する。同期の終了コードは、失敗した段の種類、
+    失敗の回復可能性及びAWIの内容のいずれも表さないため、消化を止める判定の根拠から外す。
+    判定は、同期処理が残す構造化された記録を子セッション側のエージェントが読んで行う。
+    同期処理そのものを起動できない場合だけは、判定材料となる記録も生じないため待機を続ける。
     """
     executable = _resolve_executable("update-dotfiles")
     if executable is None:
@@ -1017,12 +1037,13 @@ def _update_before_session(
         return False, False
     result = subprocess.run([executable], check=False, env=env)
     _console_title.set_console_title("atk wi process-loop")
-    if result.returncode != 0:
+    update_succeeded = result.returncode == 0
+    if not update_succeeded:
         print(
-            f"update-dotfilesに失敗しました（exit code {result.returncode}）。子セッションを起動せず待機します。",
+            f"update-dotfilesに失敗しました（exit code {result.returncode}）。"
+            "同期結果の記録を子セッションが判定するため、子セッションの起動は続行します。",
             file=sys.stderr,
         )
-        return False, False
     if dotfiles_root is not None and startup_hash is not None:
         current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
         if current_hash != startup_hash:
@@ -1032,9 +1053,9 @@ def _update_before_session(
                 argv,
                 dotfiles_root,
                 mise_refreshed=mark_mise_refreshed,
-                dotfiles_updated=True,
+                dotfiles_updated=update_succeeded,
             )
-    return _pull_private_notes(private_notes), True
+    return _pull_private_notes(private_notes), update_succeeded
 
 
 def _prepare_session_target(

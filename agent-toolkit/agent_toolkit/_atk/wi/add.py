@@ -6,7 +6,6 @@
 
 import argparse
 import datetime
-import hashlib
 import json
 import pathlib
 import re
@@ -161,60 +160,6 @@ _REQUIRED_AWI_HEADINGS: tuple[str, ...] = (
 
 _AWI_HEADING_ORDER: tuple[str, ...] = (*_REQUIRED_AWI_HEADINGS, "ユーザー指摘の逐語引用")
 """同じ規範が定めるH2の並び順。`ユーザー指摘の逐語引用`は条件付きで必須なため順序の判定にだけ用いる。"""
-_SCOPE_ALIGNMENT_HEADINGS = ("反映内容と反映先", "適用範囲", "完成条件")
-_SCOPE_ALIGNMENT_PREFIX = "sha256:"
-
-
-def _scope_alignment_digest(body: str) -> str:
-    """対象集合を記述する3節の現行本文に結び付くdigestを返す。"""
-    normalized = _frontmatter.normalize_newlines(body)
-    lines = normalized.split("\n")
-    headings = [
-        (token, name) for token, name in _headings.parse_h2_headings(normalized) if token.level == 0 and token.markup == "##"
-    ]
-    sections: dict[str, str] = {}
-    for index, (token, name) in enumerate(headings):
-        if name not in _SCOPE_ALIGNMENT_HEADINGS:
-            continue
-        if name in sections:
-            raise WebInputError(f"対象集合の照合対象H2が重複しています: {name}")
-        assert token.map is not None
-        next_token = headings[index + 1][0] if index + 1 < len(headings) else None
-        end = next_token.map[0] if next_token is not None and next_token.map is not None else len(lines)
-        sections[name] = "\n".join(lines[token.map[1] : end]).strip()
-    missing = [heading for heading in _SCOPE_ALIGNMENT_HEADINGS if not sections.get(heading)]
-    if missing:
-        raise WebInputError(f"対象集合の照合対象H2がありません: {'、'.join(missing)}")
-    canonical = json.dumps(
-        [(heading, sections[heading]) for heading in _SCOPE_ALIGNMENT_HEADINGS],
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    return _SCOPE_ALIGNMENT_PREFIX + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def _require_agent_scope_alignment(
-    body: str,
-    frontmatter: dict[str, object],
-    *,
-    entry_type: str,
-    source: str | None,
-    plan_file: str | None,
-    scope_aligned: bool,
-) -> None:
-    """エージェント由来通常AWIの照合記録を検証し、現在本文のdigestへ確定する。"""
-    raw_source = frontmatter.get("source", source)
-    item_source = raw_source if isinstance(raw_source, str) else source
-    if entry_type != WI_TYPE_AWI or plan_file is not None or not item_source:
-        return
-    current = _scope_alignment_digest(body)
-    recorded = frontmatter.get("scope_alignment")
-    if scope_aligned:
-        frontmatter["scope_alignment"] = current
-        return
-    if recorded != current:
-        reason = "記録がありません" if recorded is None else "記録が現在本文と一致しません"
-        raise WebInputError(f"対象集合の照合済み記録を確認できません: {reason}。3節を照合して--scope-alignedを指定してください")
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -335,7 +280,6 @@ _RESERVED_FRONTMATTER_KEYS = (
     "reservation",
     "reservation_companion",
     "target_commit_history",
-    "scope_alignment",
 )
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
@@ -415,8 +359,6 @@ def _add_entries_locked(
             frontmatter_data["target_commit"] = target_commit
         if item_source:
             frontmatter_data["source"] = item_source
-        if isinstance(frontmatter.get("scope_alignment"), str):
-            frontmatter_data["scope_alignment"] = frontmatter["scope_alignment"]
         if isinstance(origin_session, str) and origin_session and isinstance(origin_locator, str) and origin_locator:
             frontmatter_data["origin_session"] = origin_session
             frontmatter_data["origin_locator"] = origin_locator
@@ -464,7 +406,6 @@ def add_entries(
     depends_on: tuple[str, ...] = (),
     lock_timeout: float = -1,
     saved_details: dict[str, dict[str, object | None]] | None = None,
-    scope_aligned: bool = False,
 ) -> list[str]:
     """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
 
@@ -484,7 +425,6 @@ def add_entries(
         target_commit=target_commit,
         plan_file=plan_file,
         source=source,
-        scope_aligned=scope_aligned,
     )
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
@@ -533,7 +473,6 @@ def _validate_add_entries(
     target_commit: str | None,
     plan_file: str | None,
     source: str | None = None,
-    scope_aligned: bool = False,
 ) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
     """保存前の入力検証を行い、正規化済みの値を返す。"""
     if not messages:
@@ -569,14 +508,6 @@ def _validate_add_entries(
             entry_type=entry_type,
             source=source,
             plan_file=plan_file,
-        )
-        _require_agent_scope_alignment(
-            body,
-            frontmatter,
-            entry_type=entry_type,
-            source=source,
-            plan_file=plan_file,
-            scope_aligned=scope_aligned,
         )
     if normalized_target_repo is None:
         _verify_frontmatter_target_repos(parsed_messages)
@@ -706,7 +637,6 @@ def _cmd_add(
                 target_commit=target_commit,
                 plan_file=args.plan_file,
                 source=args.source,
-                scope_aligned=bool(args.scope_aligned),
             )
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
@@ -726,7 +656,6 @@ def _cmd_add(
             plan_file=args.plan_file,
             depends_on=canonical_dependencies,
             saved_details=saved_details,
-            scope_aligned=bool(args.scope_aligned),
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error}")

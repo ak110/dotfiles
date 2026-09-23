@@ -132,7 +132,12 @@ colloquial-check = true
 # サブプロジェクト側の設定にagent-doc-toneの定義が無いと当該配下を丸ごとスキップする。
 # 母集団はルートとagent-toolkit/にまたがるため、本コマンドだけサブプロジェクト分割を無効にする。
 agent-doc-tone-subproject-aware = false
-markdownlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
+# 配布先で常時読み込まれる規範は、配送境界を示すXML要素で本文全体を囲む。
+# 当該要素が先頭行と末尾行を占め、先頭行を見出しに限る規則とインラインHTMLを禁じる規則へ抵触する。
+markdownlint-exclude = [
+    ".chezmoi-source/dot_codex/AGENTS.md",
+    ".chezmoi-source/dot_claude/rules/myprojects-common.md",
+]
 textlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-args = ["--cache"]
 lychee-exclude = [

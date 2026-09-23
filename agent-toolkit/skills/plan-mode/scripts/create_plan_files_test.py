@@ -5,6 +5,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
+import time
 
 import create_plan_files
 import pytest
@@ -76,7 +77,7 @@ def _source(
 
 | 実施内容 | 由来 | 採否 | 根拠 |
 | --- | --- | --- | --- |
-| 公開契約を更新する | ユーザー指示 | 採用 | - |
+| 公開契約を更新する | ユーザー指示 | 採用 | 原文の要求単位は1件であり、開放性を保ったまま実施範囲とする。 |
 
 ## 要件・外部仕様
 
@@ -298,11 +299,12 @@ def test_documented_bug_reference_is_accepted_without_substitution(repo: pathlib
     assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
 
 
-def test_process_lane_plan_name_uses_utc_and_two_digit_lane() -> None:
-    """process-wiのstemをUTC時刻と2桁レーン番号から生成する。"""
+def test_process_lane_plan_name_uses_local_time_and_two_digit_lane() -> None:
+    """process-wiのstemを実行環境のローカル時刻と2桁レーン番号から生成する。"""
     now = datetime.datetime(2026, 9, 14, 23, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
 
-    assert create_plan_files.process_lane_plan_name("lane-02", now=now) == "14-1405_process-wi_レーン02"
+    expected = time.strftime("%d-%H%M", time.localtime(now.timestamp()))
+    assert create_plan_files.process_lane_plan_name("lane-02", now=now) == f"{expected}_process-wi_レーン02"
 
 
 @pytest.mark.parametrize("lane", ["lane-2", "lane-002", "02", "lane-aa"])
@@ -348,23 +350,6 @@ def _lane_plan_creation_step() -> str:
     step_start = content.index("\n5. ") + 1
     step_end = content.index("\n6. ", step_start)
     return content[step_start:step_end]
-
-
-def test_process_lane_task_prepares_sources_before_creation() -> None:
-    """レーン手順は本文の保存を作成処理より前へ置く。"""
-    step = _lane_plan_creation_step()
-
-    assert step.index("管理対象一時領域のファイルへ保存する") < step.index("atk run-script plan-create")
-
-
-def test_process_lane_task_checks_plan_tables_before_commits() -> None:
-    """実装手順はcommit単位の照合と最終commit前の全行確認を区別する。"""
-    task_path = pathlib.Path(__file__).resolve().parents[3] / "share/exec.subagent.md"
-    content = task_path.read_text(encoding="utf-8")
-
-    assert "当該commitの実装単位" in content
-    assert "最後の実装commitの直前" in content
-    assert all(value in content for value in ("### 恒久化", "### リファクタリング"))
 
 
 @pytest.mark.parametrize("bug", [False, True])

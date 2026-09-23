@@ -341,7 +341,10 @@ def test_local_record_path_outside_the_roots_is_rejected(tmp_path: pathlib.Path)
         ("/home/aki/.claude/projects/../../etc/a.jsonl", False),
         ("/home/aki/.claude/projects/p/a.txt", False),
         ("", False),
-        ("C:\\Users\\aki\\a.jsonl", False),
+        ("C:\\Users\\aki\\a.jsonl", True),
+        ("C:\\Users\\aki\\..\\outside.jsonl", False),
+        ("C:\\Users\\aki\\a.txt", False),
+        ("relative\\a.jsonl", False),
     ],
 )
 def test_remote_record_path_is_validated_before_ssh(raw: str, expected: bool) -> None:
@@ -404,7 +407,7 @@ async def test_remote_entries_are_merged_into_the_listing(tmp_path: pathlib.Path
             ],
         }
     )
-    context = _context(tmp_path, remote_hosts=["circe"], ssh_runner=runner)
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
 
     entries, warnings = await sessions.list_sessions(context)
 
@@ -415,13 +418,13 @@ async def test_remote_entries_are_merged_into_the_listing(tmp_path: pathlib.Path
     ]
     assert {(entry.host, entry.session_id) for entry in entries} == {
         ("local-host", "11111111-2222-3333-4444-555555555555"),
-        ("circe", "remote-session"),
+        ("remote-host", "remote-session"),
     }
-    remote = next(entry for entry in entries if entry.host == "circe")
+    remote = next(entry for entry in entries if entry.host == "remote-host")
     assert remote.cwd == "/srv/work"
     assert remote.first_user_message == "リモートの最初の発話"
     assert remote.started_at == "2026-09-02T00:00:00Z"
-    assert calls == [("circe", "list", [])]
+    assert calls == [("remote-host", "list", [])]
 
 
 def test_listing_uses_only_the_first_line_of_the_first_user_message(tmp_path: pathlib.Path) -> None:
@@ -589,34 +592,36 @@ async def test_long_stderr_keeps_the_tail_in_the_warning(tmp_path: pathlib.Path,
 @pytest.mark.asyncio
 async def test_host_status_reports_connection_state(tmp_path: pathlib.Path) -> None:
     """ホストごとの接続状態を返す。ローカルは常に接続済みとする。"""
-    context = _context(tmp_path, remote_hosts=["circe"])
+    context = _context(tmp_path, remote_hosts=["remote-host"])
 
-    assert await sessions.host_status(context) == {"local-host": "connected", "circe": "connecting"}
+    assert await sessions.host_status(context) == {"local-host": "connected", "remote-host": "connecting"}
 
     async with context.state.lock:
-        context.state.host_status["circe"] = "disconnected"
-    assert (await sessions.host_status(context))["circe"] == "disconnected"
+        context.state.host_status["remote-host"] = "disconnected"
+    assert (await sessions.host_status(context))["remote-host"] == "disconnected"
 
 
 @pytest.mark.asyncio
 async def test_remote_call_falls_back_to_single_ssh(tmp_path: pathlib.Path) -> None:
     """常駐RPCが未接続・失敗・エラー応答の場合は単発SSHへ切り替える。"""
     runner, calls = _runner_returning({"ok": True, "entries": []})
-    context = _context(tmp_path, remote_hosts=["circe"], ssh_runner=runner)
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
 
     # 未接続。
     disconnected = _FakeRpcClient(connected=False, response={"ok": True, "entries": []})
-    context.state.clients["circe"] = typing.cast(typing.Any, disconnected)
-    assert await sessions._remote_call(context, "circe", "list", {}) == {"ok": True, "entries": []}
+    context.state.clients["remote-host"] = typing.cast(typing.Any, disconnected)
+    assert await sessions._remote_call(context, "remote-host", "list", {}) == {"ok": True, "entries": []}
     # RPCが例外で失敗。
-    context.state.clients["circe"] = typing.cast(typing.Any, _FakeRpcClient(connected=True, response=RuntimeError("切断")))
-    assert await sessions._remote_call(context, "circe", "list", {}) == {"ok": True, "entries": []}
+    context.state.clients["remote-host"] = typing.cast(
+        typing.Any, _FakeRpcClient(connected=True, response=RuntimeError("切断"))
+    )
+    assert await sessions._remote_call(context, "remote-host", "list", {}) == {"ok": True, "entries": []}
     # RPCがエラー応答を返した。
     failing = _FakeRpcClient(connected=True, response={"ok": False, "error": "no such file"})
-    context.state.clients["circe"] = typing.cast(typing.Any, failing)
-    assert await sessions._remote_call(context, "circe", "list", {}) == {"ok": True, "entries": []}
+    context.state.clients["remote-host"] = typing.cast(typing.Any, failing)
+    assert await sessions._remote_call(context, "remote-host", "list", {}) == {"ok": True, "entries": []}
 
-    assert calls == [("circe", "list", []), ("circe", "list", []), ("circe", "list", [])]
+    assert calls == [("remote-host", "list", []), ("remote-host", "list", []), ("remote-host", "list", [])]
     assert failing.calls == [("list", {})]
 
 
@@ -624,11 +629,11 @@ async def test_remote_call_falls_back_to_single_ssh(tmp_path: pathlib.Path) -> N
 async def test_remote_call_uses_rpc_when_connected(tmp_path: pathlib.Path) -> None:
     """常駐RPCが応答する場合は単発SSHを起動しない。"""
     runner, calls = _runner_returning({"ok": True, "entries": []})
-    context = _context(tmp_path, remote_hosts=["circe"], ssh_runner=runner)
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
     client = _FakeRpcClient(connected=True, response={"ok": True, "entries": [{"path": "/x.jsonl"}]})
-    context.state.clients["circe"] = typing.cast(typing.Any, client)
+    context.state.clients["remote-host"] = typing.cast(typing.Any, client)
 
-    payload = await sessions._remote_call(context, "circe", "list", {})
+    payload = await sessions._remote_call(context, "remote-host", "list", {})
 
     assert payload["entries"] == [{"path": "/x.jsonl"}]
     assert not calls
@@ -636,16 +641,20 @@ async def test_remote_call_uses_rpc_when_connected(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    "record_path", ["/home/aki/.claude/projects/p/abc.jsonl", "C:\\Users\\aki\\.claude\\projects\\p\\abc.jsonl"]
+)
+async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path, record_path: str) -> None:
     """リモートの記録も同じ表示モデルへ正規化する。"""
     text = json.dumps({"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "やあ"}}) + "\n"
     runner, calls = _runner_returning({"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii")})
-    context = _context(tmp_path, remote_hosts=["circe"], ssh_runner=runner)
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
 
-    detail = await sessions.session_detail(context, "claude", "circe", "/home/aki/.claude/projects/p/abc.jsonl")
+    detail = await sessions.session_detail(context, "claude", "remote-host", record_path)
 
-    assert detail["host"] == "circe"
+    assert detail["host"] == "remote-host"
     assert detail["session_id"] == "abc"
+    assert detail["path"] == record_path
     assert [event["text"] for event in detail["events"]] == ["やあ"]
     assert calls[0][1] == "read"
 
@@ -667,8 +676,8 @@ async def test_remote_subagents_are_listed_or_reported_as_unavailable(tmp_path: 
 
     async def detail_for(payload: dict[str, typing.Any]) -> dict[str, typing.Any]:
         runner, _ = _runner_returning(payload)
-        context = _context(tmp_path, remote_hosts=["circe"], ssh_runner=runner)
-        return await sessions.session_detail(context, "claude", "circe", "/home/aki/.claude/projects/p/abc.jsonl")
+        context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+        return await sessions.session_detail(context, "claude", "remote-host", "/home/aki/.claude/projects/p/abc.jsonl")
 
     listed = await detail_for({"ok": True, "data": data, "subagents": [subagent]})
     assert listed["subagents"] == [subagent]
@@ -689,12 +698,12 @@ async def test_remote_subagents_are_listed_or_reported_as_unavailable(tmp_path: 
 async def test_unknown_engine_or_host_is_not_found(tmp_path: pathlib.Path) -> None:
     """未知の実行系・ホスト・危険なパスは詳細を返さない。"""
     runner, _ = _runner_returning({"ok": True, "data": ""})
-    context = _context(tmp_path, remote_hosts=["circe"], ssh_runner=runner)
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
 
     for engine, host, path in (
-        ("gemini", "circe", "/a.jsonl"),
+        ("gemini", "remote-host", "/a.jsonl"),
         ("claude", "unknown", "/a.jsonl"),
-        ("claude", "circe", "/home/aki/../etc/a.jsonl"),
+        ("claude", "remote-host", "/home/aki/../etc/a.jsonl"),
     ):
         with pytest.raises(sessions.SessionNotFoundError):
             await sessions.session_detail(context, engine, host, path)

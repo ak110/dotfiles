@@ -509,6 +509,32 @@ class TestWaitScheduleParser:
         warning_lines = [line for line in capsys.readouterr().err.splitlines() if "登録を持たない管理対象" in line]
         assert len(warning_lines) == 1
 
+    def test_unregistered_managed_temp_warning_survives_state_update_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """状態更新がコールバックへ到達しなくても未登録候補を警告する。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda: (tmp_path / "orphan",))
+
+        def fail_update(_session_id: str, _mutator) -> bool:
+            return False
+
+        monkeypatch.setattr(_session_state, "update_state", fail_update)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "fixed-subcommand-output\n"
+        assert "登録を持たない管理対象が1件ある" in captured.err
+
     def test_managed_temp_list_reports_unregistered_paths(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1020,13 +1046,12 @@ def test_wi_pull_uses_lock_and_suppresses_entry_notification(
     "argv",
     [
         ["wi", "convert-to-plan", "awi.md", "--plan-file", "/tmp/plan.md"],
-        ["plans", "checkout", "2026/09/09-example-1a2b.md"],
         ["plans", "progress", "2026/09/09-example-1a2b.md"],
         ["plans", "migrate"],
     ],
 )
 def test_removed_plan_mutation_commands_are_rejected(argv: list[str]) -> None:
-    """旧計画を変換・再開・更新する公開サブコマンドを受理しない。"""
+    """廃止された計画変換・更新コマンドを受理しない。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(argv)
@@ -1175,6 +1200,25 @@ class TestServeParser:
             atk.main(["serve", "--host", "127.0.0.2", "--port", "28766"], home=tmp_path)
         assert error.value.code == 0
         assert calls == [{"host": "127.0.0.2", "port": 28766, "home": tmp_path}]
+
+    @pytest.mark.parametrize("follow_flag", ["-f", "--follow"])
+    def test_logs_dispatches_follow(self, monkeypatch: pytest.MonkeyPatch, follow_flag: str) -> None:
+        """logsの短縮形と長い形をjournal表示へ渡す。"""
+        calls: list[bool] = []
+        serve = types.ModuleType("agent_toolkit._atk.serve.cli")
+
+        def show_logs(*, follow: bool) -> int:
+            calls.append(follow)
+            return 0
+
+        serve.__dict__["show_logs"] = show_logs
+        monkeypatch.setitem(sys.modules, "agent_toolkit._atk.serve.cli", serve)
+
+        with pytest.raises(SystemExit) as error:
+            atk.main(["serve", "logs", follow_flag])
+
+        assert error.value.code == 0
+        assert calls == [True]
 
     def test_non_serve_import_does_not_load_serve_dependencies(self) -> None:
         """fresh processでatkを読み込んでもserve実装を解決しない。"""
@@ -2071,7 +2115,7 @@ class TestAddFrontmatterOverride:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         message = f"---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\n{_wi_bodies.AGENT_AWI_BODY}"
-        argv = ["wi", "add", str(myrepo), "--source", "cli-source", "--scope-aligned", *_body_file_args(tmp_path, message)]
+        argv = ["wi", "add", str(myrepo), "--source", "cli-source", *_body_file_args(tmp_path, message)]
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(argv, home=tmp_path, now=_FIXED_DT)
@@ -2138,7 +2182,6 @@ class TestAddFrontmatterOverride:
                     str(myrepo),
                     "--source",
                     "cli-source",
-                    "--scope-aligned",
                     *_body_file_args(tmp_path, message),
                 ],
                 home=tmp_path,

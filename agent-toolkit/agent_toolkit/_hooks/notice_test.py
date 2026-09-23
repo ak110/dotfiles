@@ -31,9 +31,13 @@ def test_warning_formatter_requests_block_from_second_notice(monkeypatch: pytest
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_warning = warning_formatter("test/hook")
 
-    format_warning("warning\n対処: retry", cause="same-cause", session_id="session-1", removable_cause=True)
+    format_warning(
+        "warning\n対処: retry", cause="same-cause", session_id="session-1", removable_cause=True, escalate_on_repeat=True
+    )
     first_blocks = consume_warning_blocks()
-    format_warning("warning\n対処: retry", cause="same-cause", session_id="session-1", removable_cause=True)
+    format_warning(
+        "warning\n対処: retry", cause="same-cause", session_id="session-1", removable_cause=True, escalate_on_repeat=True
+    )
     second_blocks = consume_warning_blocks()
 
     assert not first_blocks
@@ -47,9 +51,9 @@ def test_warning_formatter_block_fix_without_marker(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_warning = warning_formatter("test/hook")
 
-    format_warning("警告本文", cause="no-marker", session_id="session-1", removable_cause=True)
+    format_warning("警告本文", cause="no-marker", session_id="session-1", removable_cause=True, escalate_on_repeat=True)
     consume_warning_blocks()
-    format_warning("警告本文", cause="no-marker", session_id="session-1", removable_cause=True)
+    format_warning("警告本文", cause="no-marker", session_id="session-1", removable_cause=True, escalate_on_repeat=True)
     blocks = consume_warning_blocks()
 
     assert len(blocks) == 1
@@ -86,7 +90,8 @@ def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: 
 
     messages = [format_warning("warning", cause="fixed-cause", session_id="session-1", removable_cause=False) for _ in range(3)]
     removable_messages = [
-        format_warning("warning", cause="other-cause", session_id="session-1", removable_cause=True) for _ in range(3)
+        format_warning("warning", cause="other-cause", session_id="session-1", removable_cause=True, escalate_on_repeat=True)
+        for _ in range(3)
     ]
 
     assert all("この通知は同一セッションで" not in message for message in messages)
@@ -94,6 +99,17 @@ def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: 
     assert all("この通知は同一セッションで" in message for message in removable_messages[1:])
     assert len(consume_warning_blocks()) == 2
     assert read_state("session-1")["warn_notice_counts"]["test/hook|fixed-cause"] == 3
+
+
+def test_removable_warning_does_not_escalate_without_explicit_choice(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """是正可能な警告でも反復遮断は既定で無効にする。"""
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    format_warning = warning_formatter("test/hook")
+
+    messages = [format_warning("警告本文", cause="same", session_id="session-1", removable_cause=True) for _ in range(2)]
+
+    assert "2件目" in messages[1]
+    assert not consume_warning_blocks()
 
 
 def test_formatter_rejects_warn_without_removability() -> None:

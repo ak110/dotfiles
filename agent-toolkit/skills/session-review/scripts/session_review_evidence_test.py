@@ -6644,6 +6644,29 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
     assert candidates[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1, "runtime-meta": 1}
 
 
+def test_candidates_exclude_boundary_marked_injections() -> None:
+    """属性を伴う境界標識付きの自動注入本文を、実行環境の挿入として除外する。"""
+    normative = (
+        '<normative-context source="agent-toolkit" kind="rules-main" nonce="0123456789abcdef">\n条文\n</normative-context>'
+    )
+    hook_notice = (
+        '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice" nonce="fedcba9876543210">\n'
+        "注記\n</agent-toolkit-hook-message>"
+    )
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": normative},
+        {"kind": "user", "record": "main", "line": 2, "text": hook_notice},
+        {"kind": "user", "record": "main", "line": 3, "text": "最初の依頼"},
+        {"kind": "user", "record": "main", "line": 4, "text": "後続の訂正"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    items = [item for item in candidates if item["kind"] == "candidate"]
+    assert [item["locators"] for item in items] == [[{"record": "main", "line": 4}]]
+    assert candidates[-1]["excluded"]["runtime-inserted"] == 2
+
+
 def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_intervention() -> None:
     """先頭スキル要求と対応本文を別区分で除外し、後続の利用者介入を保持する。"""
     timeline = [

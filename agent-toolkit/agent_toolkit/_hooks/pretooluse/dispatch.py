@@ -8,6 +8,9 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
+遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
+又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
+除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
 
 統合しているチェック:
 
@@ -28,7 +31,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / start_shell / send_message / kill / list:
 
-- `send_message`・`kill`のprompt/sessionと所有記録の検査 (block)
+- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
+- 対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 Bash:
@@ -66,7 +70,7 @@ Read / Write / Edit / MultiEdit / apply_patch:
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - `.env`系のReadとシークレット・鍵ファイルの直接編集 (block)
-- Pythonと計画Markdownの末尾へ混入したツール境界タグの検出 (block)
+- Pythonと計画Markdownの末尾へ混入したツール境界タグは後続編集で除去できるため警告 (warn)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -215,7 +219,6 @@ if TYPE_CHECKING:
         _check_bash_unknown_atk_subcommand,
         _check_bash_unquoted_shell_metacharacter,
         _check_bash_unresolved_git_object,
-        _check_bash_help_with_execution,
         _check_bash_env_full_read,
         _check_bash_missing_path_operand_loss,
         _check_bash_nested_code_string,
@@ -460,10 +463,21 @@ def _handle_agents_server_tool(
 ) -> int:
     """agents_serverの開始点・観測点を分離して検査する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
-    if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS and _check_agents_server_continuation_input(
-        session_id, tool_input, tool_name
-    ):
-        return 2
+    if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS:
+        continuation = _check_agents_server_continuation_input(session_id, tool_input, tool_name)
+        if continuation is True:
+            return 2
+        if isinstance(continuation, str):
+            emit_json(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "additionalContext": continuation,
+                    }
+                }
+            )
+            return 0
     emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})
     return 0
 
@@ -553,15 +567,10 @@ def _handle_bash_tool(
                         "対処: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。",
                         tag=_WARN_TAG,
                         removable_cause=True,
+                        escalate_on_repeat=True,
                     )
                 )
     git_grep_pattern_type_result = _check_bash_git_grep_pattern_type(command)
-    if git_grep_pattern_type_result == "block":
-        return 2
-    if _check_bash_atk_options(command) == "block":
-        return 2
-    if _check_bash_unknown_atk_subcommand(command) == "block":
-        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
@@ -572,9 +581,10 @@ def _handle_bash_tool(
         _check_bash_atk_help_observation(command, session_id),
         _check_bash_external_command_options(command, session_id),
         _check_bash_uv_run_python(command, cwd),
-        _check_bash_help_with_execution(command),
         _check_bash_explicit_path_exists(command, cwd),
         git_grep_pattern_type_result,
+        _check_bash_atk_options(command),
+        _check_bash_unknown_atk_subcommand(command),
         _check_bash_unquoted_shell_metacharacter(command),
         _check_bash_unresolved_git_object(command, cwd),
         _check_bash_rg_multiline_pattern(command),

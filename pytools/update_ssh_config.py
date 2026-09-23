@@ -5,10 +5,12 @@
   既存にない鍵のみ追加する (既存の鍵は削除しない)
 """
 
+import argparse
 import logging
 import re
 import shutil
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from pytools._internal import claude_common, log_format
@@ -21,8 +23,10 @@ logger = logging.getLogger(__name__)
 _KEY_PATTERN = re.compile(r"(?:ssh-\S+|ecdsa-\S+|sk-\S+)\s+([A-Za-z0-9+/=]{32,})")
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """SSHのconfigとauthorized_keysを生成・更新するエントリポイント。"""
+    parser = argparse.ArgumentParser(description="SSHのconfigとauthorized_keysを更新する。")
+    parser.parse_args(argv)
     setup_logging()
     run()
     sys.exit(0)

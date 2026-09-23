@@ -8,6 +8,9 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
+遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
+又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
+除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
 
 統合しているチェック:
 
@@ -26,7 +29,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
 
-- 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
+- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
+- 委譲先へ渡す絶対`cwd`と対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 wait:

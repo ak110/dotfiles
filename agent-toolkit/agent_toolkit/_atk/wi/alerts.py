@@ -388,6 +388,5 @@ def check_and_submit_alerts(
         target_repo=repo_id,
         source="alert-monitor",
         now=now,
-        scope_aligned=True,
     )
     return len(generated)

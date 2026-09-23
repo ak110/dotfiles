@@ -88,7 +88,7 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 @pytest.fixture(name="rules_url", scope="module")
 def rules_url_fixture() -> typing.Iterator[str]:
-    handler = functools.partial(_QuietHandler, directory=str(RULES_SRC))
+    handler = functools.partial(_QuietHandler, directory=str(REPO_ROOT))
 
     class _Server(socketserver.TCPServer):
         allow_reuse_address = True
@@ -98,7 +98,7 @@ def rules_url_fixture() -> typing.Iterator[str]:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{port}"
+            yield f"http://127.0.0.1:{port}/agent-toolkit/rules"
         finally:
             server.shutdown()
             thread.join()
@@ -339,6 +339,10 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
     result = _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
     assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == (RULES_SRC / "01-agent.md").read_text(encoding="utf-8")
+    if kind == "sh":
+        hook_wrapper = home / ".local" / "bin" / "atk-hook"
+        assert hook_wrapper.read_bytes() == (REPO_ROOT / "bin" / "atk-hook").read_bytes()
+        assert hook_wrapper.stat().st_mode & stat.S_IXUSR
     assert not legacy_dir.exists()
     assert not (rules_dir / "obsolete.md").exists()
     joined = "\n".join(_log_lines(stub_log))
@@ -409,8 +413,10 @@ def test_restart_notice_requires_codex_plugin_state_change(
 
 
 @pytest.mark.parametrize("kind", _runners())
-def test_plugin_update_does_not_restore_old_cache_path(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """更新で削除された旧version名を復元せず公式CLIの現versionだけを維持する。"""
+def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
+    kind: str, tmp_path: pathlib.Path, rules_url: str
+) -> None:
+    """初回のラッパー配置では旧プラグイン実体を保持し、互換リンクは復元しない。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = tmp_path / "custom-codex"
@@ -432,9 +438,8 @@ def test_plugin_update_does_not_restore_old_cache_path(kind: str, tmp_path: path
     )
 
     assert not (codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions").exists()
-    for version in ("1.2.1", "1.2.2"):
-        old_path = cache_root / version
-        assert not old_path.exists()
+    assert not old_compat.is_symlink()
+    assert (cache_root / "1.2.2" / "scripts" / "hook.py").read_text(encoding="utf-8") == "old hook\n"
 
 
 @pytest.mark.parametrize("kind", _runners())
@@ -793,7 +798,7 @@ def test_propagates_required_setup_failures(
         pytest.param("claude plugin marketplace update", False, False, id="before-codex-plugin"),
         pytest.param("codex plugin marketplace upgrade", False, False, id="marketplace-upgrade"),
         pytest.param("codex plugin add", False, False, id="plugin-add"),
-        pytest.param("__never_match__", True, True, id="after-plugin-atk-wrapper"),
+        pytest.param("__never_match__", True, False, id="before-plugin-atk-wrapper"),
     ],
 )
 def test_notice_contract_by_failure_stage(

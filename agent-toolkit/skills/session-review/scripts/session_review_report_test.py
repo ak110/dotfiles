@@ -206,6 +206,28 @@ def test_check_accepts_delegate_authored_section_content(tmp_path: pathlib.Path)
     assert report.main(_argv(paths, "check")) == 0
 
 
+@pytest.mark.parametrize("fence", ["````", "~~~", "~~~~"])
+def test_report_ignores_h2_inside_fenced_section_body(tmp_path: pathlib.Path, fence: str) -> None:
+    paths = _inputs(tmp_path)
+    sections = tmp_path / "sections.json"
+    body = f"{fence}markdown\n## 起草中のWI見出し\n{fence}"
+    sections.write_text(json.dumps({"対象セッション": body}, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main([*_argv(paths, "generate"), "--sections", str(sections)]) == 0
+    assert report.main([*_argv(paths, "check"), "--sections", str(sections)]) == 0
+    assert report._section_body(paths[-1].read_text(encoding="utf-8"), "対象セッション") == body  # pylint: disable=protected-access  # noqa: SLF001
+
+
+def test_check_rejects_generated_body_edit_after_fenced_h2(tmp_path: pathlib.Path) -> None:
+    paths = _inputs(tmp_path)
+    assert report.main(_argv(paths, "generate")) == 0
+    content = paths[-1].read_text(encoding="utf-8")
+    content = content.replace("## 対象セッション\n", "## 対象セッション\n\n````\n## 起草中\n````\n", 1)
+    paths[-1].write_text(content.replace("一次選別で除外", "除外済み", 1), encoding="utf-8")
+
+    assert report.main(_argv(paths, "check")) == 2
+
+
 @pytest.mark.parametrize(
     "mutate",
     (
@@ -389,23 +411,6 @@ def test_incorrect_candidate_count_is_rejected(tmp_path: pathlib.Path) -> None:
 
     assert report.main(_argv(paths, "generate")) == 2
     assert not paths[-1].exists()
-
-
-def test_input_structure_help_matches_the_accepted_forms() -> None:
-    """`--help`の入力JSONの構造が、実装が受理する型と値をそのまま示す。
-
-    ヘルプと実装が別々に構造を保持するため、一致を固定しないと
-    ヘルプどおりに組み立てた入力が型の検査で失敗し、報告生成の再実行が生じる。
-    """
-    help_text = report._INPUT_STRUCTURE_HELP  # pylint: disable=protected-access  # noqa: SLF001
-
-    assert "--analyses: 分析の識別子をキーとするJSON object" in help_text
-    assert "--timings: 区間IDをキーとするJSON object" in help_text
-    assert "--duration-analysis: 次のキーを持つJSON object" in help_text
-    assert "candidate_id: candidates.jsonlの候補を参照する識別子" in help_text
-    assert "`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する" in help_text
-    assert "reason: `excluded`で必須" in help_text
-    assert "analysis_id: `analyzed`で必須" in help_text
 
 
 @pytest.mark.parametrize(

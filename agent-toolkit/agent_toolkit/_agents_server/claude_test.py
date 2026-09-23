@@ -120,11 +120,7 @@ def _capture_options(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     return captured
 
 
-@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
-def test_build_options_keeps_every_launch_out_of_bypass_modes(
-    monkeypatch: pytest.MonkeyPatch,
-    launch_kind: str,
-) -> None:
+def test_build_options_keeps_every_launch_out_of_bypass_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     """起動区分によらずbypass系以外の権限モードで起動する。
 
     bypass系の受信側はセッション間メッセージを保留するため、起動したセッションが初期化を完了できない。
@@ -132,9 +128,27 @@ def test_build_options_keeps_every_launch_out_of_bypass_modes(
     captured = _capture_options(monkeypatch)
 
     # 受理しない値を意図的に渡す検体のため、静的な型判定の対象から外す。
-    claude._build_options("/tmp", "model", "medium", launch_kind=launch_kind)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]  # pylint: disable=protected-access
+    claude._build_options("/tmp", "model", "medium", launch_kind="delegate")  # pylint: disable=protected-access
 
     assert captured["permission_mode"] == "auto"
+
+
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+def test_build_options_loads_user_hooks_for_every_launch(
+    monkeypatch: pytest.MonkeyPatch,
+    launch_kind: claude.LaunchKind,
+) -> None:
+    """全起動区分でユーザー設定のplugin hookを読み、軽量起動の道具を限定する。"""
+    captured = _capture_options(monkeypatch)
+
+    claude._build_options(  # pylint: disable=protected-access
+        "/tmp", "model", "medium", launch_kind=launch_kind
+    )
+
+    assert captured["setting_sources"] == (["user", "project"] if launch_kind == "delegate" else ["user"])
+    if launch_kind != "delegate":
+        assert captured["skills"] == []
+        assert captured["allowed_tools"] == claude._LAUNCH_ALLOWED_TOOLS[launch_kind]  # pylint: disable=protected-access
 
 
 def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

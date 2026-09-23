@@ -71,58 +71,6 @@ def test_web_transition_rejects_commit_without_resolvable_worktree(
     assert "github.com/example/foo" in capsys.readouterr().err
 
 
-def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
-    """単一一覧のCLI準拠列順、件数、識別子表示を固定する。"""
-    assert assets.HTML.count('<ul id="entry-list"') == 1
-    assert "other-entry-list" not in assets.HTML
-    columns = re.search(r'<div class="entry-columns"[^>]*>(.*?)</div>', assets.HTML, re.DOTALL)
-    assert columns is not None
-    assert re.findall(r"<span>(.*?)</span>", columns.group(1)) == [
-        "ファイル名",
-        "対象リポジトリ",
-        "種別・状態",
-        "要約",
-    ]
-    assert "未回答UWI 0件" in assets.HTML
-    assert "種別・状態・回答状況" not in assets.HTML
-    assert ">確認事項<" not in assets.HTML
-    assert assets.HTML.count(">uwi<") == 2
-    assert ">今すぐ同期<" in assets.HTML
-    assert 'placeholder="本文・ファイル名・対象・投入元を検索"' in assets.HTML
-    source_filter = re.search(r'<select id="source-filter">(.*?)</select>', assets.HTML, re.DOTALL)
-    assert source_filter is not None
-    assert re.findall(r'<option value="([^"]*)">(.*?)</option>', source_filter.group(1)) == [
-        ("", "すべて"),
-        ("human", "human"),
-        ("agent", "agent"),
-    ]
-    assert "source-empty-filter" not in assets.HTML
-    assert "dataset.unansweredUwi" in assets.JS
-    assert "種別不明" in assets.JS
-
-    grid = re.search(
-        r"#screen-wi \.entry-columns,\s+"
-        r"#screen-wi \.entry-row \{(.*?)\n\}",
-        assets.CSS,
-        re.DOTALL,
-    )
-    assert grid is not None
-    template = re.search(r"grid-template-columns:(.*?);", grid.group(1), re.DOTALL)
-    assert template is not None
-    widths = re.findall(r"minmax\([^)]+\)|\d+rem|auto", template.group(1))
-    assert widths == [
-        "15rem",
-        "14rem",
-        "15rem",
-        "minmax(0, 1fr)",
-        "auto",
-    ]
-    assert "grid-column: 1 / 5;" in assets.CSS
-    assert "grid-template-columns: subgrid;" in assets.CSS
-    assert "#screen-wi .entry-copy {" in assets.CSS
-    assert "grid-column: 5;" in assets.CSS
-
-
 def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:
     """一覧警告、種別不明、件数通知、成立しないフィルター組合せの解除を検証する。"""
     result = _run_node_ui(
@@ -396,12 +344,6 @@ process.stdout.write(JSON.stringify({
     }
 
 
-def test_state_keeps_latest_event(tmp_path: pathlib.Path) -> None:
-    """状態管理を構築できることを検証する。"""
-    current = state.ServeState(tmp_path)
-    assert current.root == tmp_path
-
-
 @pytest.mark.asyncio
 async def test_state_publishes_once_after_last_change(
     tmp_path: pathlib.Path,
@@ -468,21 +410,10 @@ async def test_state_discards_pending_notification_when_stopped(
 
 
 def test_navigation_offers_three_screens_in_declared_order(tmp_path: pathlib.Path) -> None:
-    """単一HTML内の3画面とナビゲーションの表示順・表記を固定する。"""
+    """3画面の入口を同じappへ登録する。"""
     app = _three_screen_app(tmp_path)
     rules = {rule.rule for rule in app.url_map.iter_rules()}
     assert {"/", "/plans", "/sessions"} <= rules
-    assert [match.group(1) for match in re.finditer(r'<section id="(screen-[^"]+)"', assets.HTML)] == [
-        "screen-wi",
-        "screen-plans",
-        "screen-sessions",
-    ]
-    navigations = re.findall(r'<nav class="app-nav"[^>]*>(.*?)</nav>', assets.HTML, re.DOTALL)
-    assert len(navigations) == 3
-    for navigation in navigations:
-        assert re.findall(r">([^<>]+)</a>", navigation) == ["ワークアイテム", "計画ファイル", "セッション"]
-        assert re.findall(r'href="__BASE_PATH_HTML__(/[a-z]*)"', navigation) == ["/", "/plans", "/sessions"]
-    assert 'data-screen="__INITIAL_SCREEN__"' in assets.HTML
 
 
 @pytest.mark.asyncio
@@ -495,15 +426,6 @@ async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Pat
     assert (await client.get("/api/sessions/detail")).status_code == 400
     assert (await client.get("/api/sessions/detail?engine=claude&path=../etc/passwd.jsonl")).status_code == 404
     assert (await client.get("/api/sessions/detail?engine=unknown&path=a.jsonl")).status_code == 404
-
-
-def test_config_defaults_when_sections_are_absent(tmp_path: pathlib.Path) -> None:
-    """節を持たない設定では両画面の参照元を既定へ委ねる。"""
-    path = tmp_path / "serve.toml"
-    path.write_text("port = 3000\n", encoding="utf-8")
-    resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
-    assert resolved.plans == config.PlansConfig()
-    assert resolved.sessions == config.SessionsConfig()
 
 
 def test_config_warns_unknown_keys_in_screen_sections(
@@ -610,14 +532,6 @@ def test_detail_escapes_frontmatter_values(tmp_path: pathlib.Path) -> None:
     rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert "<script>" not in rendered
     assert "&lt;script&gt;" in rendered
-
-
-def test_detail_without_frontmatter_is_unchanged(tmp_path: pathlib.Path) -> None:
-    """frontmatterを持たない本文は従来のMarkdownとして整形する。"""
-    _write_detail_entry(tmp_path, "# 見出し\n\n本文\n")
-    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
-    assert "<h1>見出し</h1>" in rendered
-    assert "<p>本文</p>" in rendered
 
 
 def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

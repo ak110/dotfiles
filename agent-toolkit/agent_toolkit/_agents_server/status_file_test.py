@@ -233,6 +233,35 @@ def test_conversation_root_resolution_rejects_invalid_alias(tmp_path: pathlib.Pa
     assert resolution.mapping_confirmed is False
 
 
+@pytest.mark.parametrize(
+    ("alias_text", "alias_valid"),
+    [
+        ("{", False),
+        ("{}", False),
+        (json.dumps({"version": 1, "root_session_id": "missing-root"}), True),
+    ],
+)
+def test_conversation_root_resolution_confirms_direct_root_after_alias_failure(
+    tmp_path: pathlib.Path, alias_text: str, alias_valid: bool
+) -> None:
+    """索引を解釈できない場合も現行sessionの状態ディレクトリで対応を確認する。"""
+    environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
+    subject.status_directory("current-session", tmp_path).mkdir(parents=True)
+    aliases = subject.aliases_directory(tmp_path)
+    aliases.mkdir(parents=True)
+    (aliases / "current-session.json").write_text(alias_text, encoding="utf-8")
+
+    resolution = subject.resolve_conversation_root(environment, tmp_path)
+
+    assert resolution == subject.ConversationRootResolution(
+        current_session_id="current-session",
+        root_session_id="current-session",
+        alias_present=True,
+        alias_valid=alias_valid,
+        mapping_confirmed=True,
+    )
+
+
 def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib.Path) -> None:
     """索引更新時に参照先ディレクトリを失った既存索引を回収する。"""
     subject.status_directory("root-session", tmp_path).mkdir(parents=True)

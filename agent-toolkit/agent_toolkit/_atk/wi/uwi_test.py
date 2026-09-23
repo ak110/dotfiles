@@ -1457,3 +1457,25 @@ def test_reject_reserved_uwi_markup_allows_plain_body() -> None:
 def test_reject_reserved_uwi_markup_ignores_inline_heading_text() -> None:
     """行頭以外に現れる見出し相当の文字列は拒否対象としない。"""
     uwi_module.reject_reserved_uwi_markup(f"本文中で`{uwi_module.ANSWER_HEADING}`という語に言及するだけの記述は許容しますか？")
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (uwi_module.ANSWER_MARKER, ["回答欄マーカー"]),
+        (uwi_module.QUESTION_HEADING, ["見出し（## 質問）"]),
+        (
+            f"{uwi_module.ANSWER_MARKER}\n{uwi_module.QUESTION_HEADING}\n{uwi_module.ANSWER_HEADING}",
+            ["回答欄マーカー", "見出し（## 質問）", "見出し（## 回答）"],
+        ),
+        (f"{uwi_module.ANSWER_HEADING}\n{uwi_module.ANSWER_HEADING}", ["見出し（## 回答）", "見出し（## 回答）"]),
+    ],
+)
+def test_reject_reserved_uwi_markup_reports_every_violation(body: str, expected: list[str]) -> None:
+    """予約要素を最後まで走査し、検出順に同じ入力エラーへ列挙する。"""
+    with pytest.raises(uwi_module.WebInputError) as exc_info:
+        uwi_module.reject_reserved_uwi_markup(body)
+    message = str(exc_info.value)
+    assert message.count("見出し（## 回答）") == expected.count("見出し（## 回答）")
+    assert all(item in message for item in expected)
+    assert message.endswith("本文には質問内容のみを書いてください")

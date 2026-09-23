@@ -92,6 +92,7 @@
 レビュー指摘への修正は、ラウンド番号によらず指摘ごとにfixup commitを作成し、元commitの7文字以上の一意な短縮OIDへ対応付ける。そのラウンドへ帰属する全てのfixupを作成し終えた時点で、そのラウンドのautosquashを1回実行する。autosquashの単位は`agent-toolkit:commit`の`references/history-rewrite.md`「修正方法の選択」が定めるものとし、同じ単位への実行は1回に限る。
 
 autosquashの前に、対象worktreeがcleanであり、rewrite対象がpushされておらず、rewrite対象を操作直前に解決したOID集合がそのレーンのcommitだけであることを確認する。この確認はラウンドごとに行う。
+書換えコマンドとは別の呼び出しで、対象worktreeを作業ディレクトリとして`git log --oneline --decorate -n 20`を実行し、対象commitの状態を確認する。
 
 `git -c sequence.editor=: rebase -i --autosquash --no-update-refs <起点OID>`を実行し、競合が無いことを確認する。競合時は作業を止め、競合対象と中断状態を`needs_escalation`で返す。fixup先が直前の1commitに限られ、autosquashを要しない場合は、同じ安全条件を確認したうえで`git commit --amend`を用いてよい。
 

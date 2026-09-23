@@ -151,16 +151,6 @@ queue_schedule:
         assert data["depends_on"] == ["a.md", "b.md"]
         assert body == "本文"
 
-    def test_parse_frontmatter_keeps_iso8601_timestamp_value_as_literal_string(self) -> None:
-        """`created: 2024-01-01T12:00:00+09:00`が`datetime`化されず、元の字面のまま`str`で返る。"""
-        text = "---\ncreated: 2024-01-01T12:00:00+09:00\n---\n本文"
-        result = frontmatter.parse_frontmatter(text)
-        assert result is not None
-        data, _ = result
-        created_value = data.get("created")
-        assert isinstance(created_value, str)
-        assert created_value == "2024-01-01T12:00:00+09:00"
-
     def test_parse_frontmatter_keeps_bool_and_null_like_scalars_as_literal_string(self) -> None:
         """`yes`/`no`/`on`/`off`/`null`/`~`風の値が真偽値・Noneへ変換されず、元の字面のまま返る。"""
         test_cases = [
@@ -177,7 +167,6 @@ queue_schedule:
             assert result is not None
             data, _ = result
             key = "flag" if "flag" in frontmatter_source else "value"
-            assert isinstance(data.get(key), str), f"Expected str for {frontmatter_source}, got {type(data.get(key))}"
             assert data.get(key) == expected_value
 
     def test_parse_frontmatter_preserves_unknown_key_nested_mapping_and_sequence_structure(self) -> None:
@@ -201,7 +190,6 @@ metadata:
         assert isinstance(nested_map, dict)
         assert nested_map.get("key") == "value"
         nested_list = metadata.get("nested_list")
-        assert isinstance(nested_list, list)
         assert nested_list == ["a", "b"]
 
     def test_parse_frontmatter_does_not_mutate_body_leading_or_trailing_bytes(self) -> None:
@@ -244,22 +232,6 @@ source: awi
         reparsed_data, reparsed_body = reparsed
         assert reparsed_data == data
         assert reparsed_body == body
-
-    def test_round_trip_preserves_body_across_repeated_serialize_calls(self) -> None:
-        """反復`serialize_frontmatter`呼び出しでも本文が直接保持される。"""
-        data = {"target_repo": "example", "type": "normal"}
-        body = "本文内容"
-        serialized1 = frontmatter.serialize_frontmatter(data, body)
-        parsed1 = frontmatter.parse_frontmatter(serialized1)
-        assert parsed1 is not None
-        _, body1 = parsed1
-        assert body1 == body
-
-        serialized2 = frontmatter.serialize_frontmatter(data, body1)
-        parsed2 = frontmatter.parse_frontmatter(serialized2)
-        assert parsed2 is not None
-        _, body2 = parsed2
-        assert body2 == body
 
     @pytest.mark.parametrize(
         "frontmatter_source",

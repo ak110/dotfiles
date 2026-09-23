@@ -75,28 +75,6 @@ def test_text_assets_are_bundled_as_plugin_files() -> None:
     for filename, content in expected.items():
         bundled = (static_dir / filename).read_text(encoding="utf-8")
         assert (bundled if filename == "app.js" else bundled.removesuffix("\n")) == content
-    assert 'const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";' in assets.PLANS_JS
-    assert 'const MERMAID_CDN_INTEGRITY = "sha384-' in assets.PLANS_JS
-    assert "script.src = MERMAID_CDN_URL;" in assets.PLANS_JS
-    assert "script.integrity = MERMAID_CDN_INTEGRITY;" in assets.PLANS_JS
-    assert 'script.crossOrigin = "anonymous";' in assets.PLANS_JS
-
-
-def test_assets_define_all_operation_lifecycles_and_message_regions() -> None:
-    """6更新操作を共通pending処理へ接続し、結果領域を操作場所ごとに持つ。"""
-    assert "async function runPending(" in assets.JS
-    for key in ("'sync'", "'save'", "'answer'", "'user-comment'", "'create'", "'delete'"):
-        assert f"runPending({key}" in assets.JS
-    assert "payload" in assets.JS.partition("async function runPending")[0] or "payload" in assets.JS
-    assert ".filter(control => !control.classList.contains('dialog-close'))" in assets.JS
-    assert "pendingOperations.has(key)" in assets.JS
-    assert "finally {" in assets.JS
-    for dialog_name in ("detail", "create", "delete"):
-        assert f'id="{dialog_name}-alert"' in assets.HTML
-        assert f'id="{dialog_name}-status"' in assets.HTML
-    assert 'id="result-status"' in assets.HTML
-    assert 'id="list-warning"' in assets.HTML
-    assert "showError('')" not in assets.JS
 
 
 def test_assets_global_error_focuses_refresh_after_synchronization() -> None:
@@ -438,32 +416,6 @@ async def test_state_ignores_pending_timer_cancelled_by_deadline(
     await asyncio.sleep(0)
 
     assert not published
-
-
-def test_plan_and_session_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
-    """計画ファイル画面とセッション画面のAPI・SSE経路を登録する。"""
-    app = _three_screen_app(tmp_path)
-    rules = {rule.rule for rule in app.url_map.iter_rules()}
-    expected = {
-        "/api/plans/files",
-        "/api/plans/file",
-        "/api/plans/raw",
-        "/api/plans/search",
-        "/api/plans/host-status",
-        "/api/plans/host-info",
-        "/api/plans/root-info",
-        "/api/plans/root-status",
-        "/api/plans/events",
-        "/api/sessions/list",
-        "/api/sessions/detail",
-        "/api/sessions/host-status",
-        "/api/sessions/events",
-        "/static/plans.js",
-        "/static/sessions.js",
-    }
-    assert expected <= rules
-    # SSEは画面ごとに分ける。単一経路へまとめると別画面の更新でも再読込することになる。
-    assert "/api/events" in rules
 
 
 @pytest.mark.asyncio
@@ -845,15 +797,6 @@ async def test_web_add_mutations_reject_null_target_repo(
     assert "target_repo" in (await response.get_json())["error"]
 
 
-def test_create_app_keeps_resolved_config(tmp_path: pathlib.Path) -> None:
-    """解決済み設定と状態をapp.configへ保持する。"""
-    resolved = config.ServeConfig("127.0.0.1", 28766)
-    current_state = state.ServeState(tmp_path)
-    app = serve_app.create_app(tmp_path, resolved, current_state)
-    assert app.config["SERVE_CONFIG"] == resolved
-    assert app.config["SERVE_STATE"] is current_state
-
-
 @pytest.mark.asyncio
 async def test_manifest_declares_svg_icon(tmp_path: pathlib.Path) -> None:
     """manifestのiconsがSVG1件を宣言し、従来のPNGも引き続き配信する。"""
@@ -1205,3 +1148,19 @@ async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_revi
     )
     assert held.status_code == 200
     assert user_comment.extract_user_comment(held_path.read_text(encoding="utf-8")) == "保留中のコメント"
+
+
+@pytest.mark.parametrize("follow", [False, True])
+def test_serve_logs_runs_journalctl(monkeypatch: pytest.MonkeyPatch, follow: bool) -> None:
+    """表示範囲と追従指定をjournalctlへ渡し、終了状態を返す。"""
+    commands: list[list[str]] = []
+
+    def run(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+        assert check is False
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 7)
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert serve.show_logs(follow=follow) == 7
+    assert commands == [["journalctl", "--user", "-u", "atk-serve.service", "-n", "100", *(["-f"] if follow else [])]]

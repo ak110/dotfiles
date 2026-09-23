@@ -5,6 +5,8 @@ import contextlib
 import logging
 import pathlib
 import signal
+import subprocess
+import sys
 
 import hypercorn.asyncio
 import hypercorn.config
@@ -16,6 +18,18 @@ from agent_toolkit._atk.wi import common
 from agent_toolkit._common import console_title as _console_title
 
 logger = logging.getLogger(__name__)
+
+
+def show_logs(*, follow: bool = False) -> int:
+    """Atk serveのuser serviceに属するjournalを表示する。"""
+    command = ["journalctl", "--user", "-u", "atk-serve.service", "-n", "100"]
+    if follow:
+        command.append("-f")
+    try:
+        return subprocess.run(command, check=False).returncode
+    except OSError as error:
+        print(f"atk serveのログを開けません: {error}", file=sys.stderr)
+        return 1
 
 
 async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeConfig) -> None:

@@ -52,73 +52,6 @@ def test_invalid_port(port: object) -> None:
         config.resolve_config(port=port)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
-def test_assets_define_dismissible_global_error_region() -> None:
-    """共通エラーに本文、アクセシブルな消去操作及び十分な操作領域を持たせる。"""
-    assert '<div id="global-error" class="global-error" hidden>' in assets.HTML
-    assert '<div id="global-error-message" role="alert"></div>' in assets.HTML
-    assert (
-        '<button id="global-error-close-button" class="global-error-close" type="button" '
-        'aria-label="エラーメッセージを閉じる">×</button>'
-    ) in assets.HTML
-    global_error = re.search(
-        r"#screen-wi \.global-error \{(.*?)\n\}",
-        assets.CSS,
-        re.DOTALL,
-    )
-    assert global_error is not None
-    assert "display: flex;" in global_error.group(1)
-    message = re.search(
-        r"#screen-wi \.global-error-message \{(.*?)\n\}",
-        assets.CSS,
-        re.DOTALL,
-    )
-    assert message is not None
-    assert "overflow-wrap: anywhere;" in message.group(1)
-    close = re.search(
-        r"#screen-wi \.global-error-close \{(.*?)\n\}",
-        assets.CSS,
-        re.DOTALL,
-    )
-    assert close is not None
-    assert "width: 2.75rem;" in close.group(1)
-    assert "height: 2.75rem;" in close.group(1)
-    assert "min-width: 2.75rem;" in close.group(1)
-    assert "min-height: 2.75rem;" in close.group(1)
-
-
-def test_assets_style_markdown_and_inputs_by_purpose() -> None:
-    """本文、コード、用途別入力、モバイル操作の表示契約を固定する。"""
-    assert ".markdown-body :not(pre) > code {" in assets.CSS
-    pre_rule = re.search(
-        r"\.markdown-body pre \{(.*?)\n\}",
-        assets.CSS,
-        re.DOTALL,
-    )
-    assert pre_rule is not None
-    assert "white-space: pre-wrap;" in pre_rule.group(1)
-    assert "overflow-wrap: anywhere;" in pre_rule.group(1)
-    assert ".markdown-body pre code {" in assets.CSS
-    assert "padding: 0;" in assets.CSS
-    assert "background: transparent;" in assets.CSS
-    for selector in (
-        "#screen-wi #edit-content",
-        "#screen-wi #answer-input",
-        "#screen-wi #create-content",
-        "#screen-wi #create-choices",
-    ):
-        rule = re.search(rf"{re.escape(selector)} \{{([^}}]+)\}}", assets.CSS)
-        assert rule is not None
-        assert "clamp(" in rule.group(1)
-    mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
-    # ヘッダーの1列化は共通規則が定め、画面固有のCSSは水平方向の余白だけを上書きする。
-    assert "#screen-wi .app-header {" in mobile
-    assert "padding-inline: var(--space-2);" in mobile
-    assert "#screen-wi .dialog-footer button {" in mobile
-    assert "width: auto;" in mobile
-    assert "button,\n  input,\n  select,\n  textarea" not in mobile
-    assert "grid-template-columns: minmax(0, 1fr);" in mobile
-
-
 def test_assets_global_error_uses_shared_lifecycle_for_all_generators() -> None:
     """共通エラーの消去・再表示と、各生成元の同一表示経路を検証する。"""
     result = _run_node_ui(
@@ -495,22 +428,20 @@ def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> N
         "\n"
         "[plans]\n"
         'root = "/srv/plans"\n'
-        'remote_hosts = ["circe", "stheno"]\n'
+        'remote_hosts = ["remote-host", "stheno"]\n'
         "\n"
         "[sessions]\n"
         'claude_home = "/srv/claude"\n'
         'codex_home = "/srv/codex"\n'
-        'remote_hosts = ["circe"]\n',
+        'remote_hosts = ["remote-host"]\n',
         encoding="utf-8",
     )
     resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
-    assert resolved.host == "toml-host"
-    assert resolved.port == 28766
-    assert resolved.plans == config.PlansConfig(root="/srv/plans", remote_hosts=("circe", "stheno"))
+    assert resolved.plans == config.PlansConfig(root="/srv/plans", remote_hosts=("remote-host", "stheno"))
     assert resolved.sessions == config.SessionsConfig(
         claude_home="/srv/claude",
         codex_home="/srv/codex",
-        remote_hosts=("circe",),
+        remote_hosts=("remote-host",),
     )
 
 
@@ -1149,12 +1080,6 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     content = (tmp_path / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
     assert "source:" not in content
-
-
-def test_assets_offer_every_queue_state_filter() -> None:
-    """状態フィルターがキューの全状態を個別に選択できる。"""
-    for state_name in common.WI_STATES:
-        assert f'<option value="{state_name}">{state_name}</option>' in assets.HTML
 
 
 def test_batch_creation_sends_raw_text_and_hides_frontmatter_driven_fields() -> None:

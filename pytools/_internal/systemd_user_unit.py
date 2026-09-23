@@ -30,6 +30,19 @@ class SetupError(RuntimeError):
     """サービスが常駐状態に至らなかったことを表す。"""
 
 
+def _ensure_unit_content(unit_path: pathlib.Path, unit_content: str, log_tag: str) -> bool:
+    """unit本文が異なる場合だけ配置し、変更の有無を返す。"""
+    try:
+        existing = unit_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing = None
+    if existing == unit_content:
+        return False
+    claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
+    logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
+    return True
+
+
 def setup(
     *,
     unit_path: pathlib.Path,
@@ -37,11 +50,12 @@ def setup(
     unit_content: str,
     log_tag: str,
     service_name: str,
+    restart_needed: bool = False,
 ) -> bool:
-    """unitを配置し、サービスを有効化して再起動する。
+    """unitを配置し、変更又は停止したサービスを再起動する。
 
     Returns:
-        実行ファイル不在で何もしなかった場合False、unit配置とrestartを実施した場合True。
+        実行ファイル不在で何もしなかった場合False、設定を確認した場合True。
 
     Raises:
         SetupError: systemctl呼び出しが失敗した場合、
@@ -50,24 +64,24 @@ def setup(
     if not executable_path.is_file():
         logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
         return False
-    changed = False
-    try:
-        existing = unit_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        existing = None
-    if existing != unit_content:
-        claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
-        logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
-        changed = True
+    changed = _ensure_unit_content(unit_path, unit_content, log_tag)
     commands: list[tuple[list[str], float, str]] = []
     if changed:
-        commands.append((["systemctl", "--user", "daemon-reload"], 15.0, "daemon-reload"))
-    commands.extend(
-        [
-            (["systemctl", "--user", "enable", service_name], 15.0, "enable"),
-            (["systemctl", "--user", "restart", service_name], 30.0, "restart"),
-        ]
-    )
+        reload_result = claude_common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=15.0, tag=log_tag)
+        if reload_result is None or reload_result.returncode != 0:
+            return_code = reload_result.returncode if reload_result is not None else "N/A"
+            raise SetupError(f"{service_name}のdaemon-reloadに失敗しました (exit {return_code})")
+    enabled = claude_common.run_subprocess(["systemctl", "--user", "is-enabled", service_name], timeout=15.0, tag=log_tag)
+    if enabled is None:
+        raise SetupError(f"{service_name}の有効状態を取得できません")
+    if enabled.returncode != 0:
+        commands.append((["systemctl", "--user", "enable", service_name], 15.0, "enable"))
+    active = claude_common.run_subprocess(["systemctl", "--user", "is-active", service_name], timeout=15.0, tag=log_tag)
+    if active is None:
+        raise SetupError(f"{service_name}の稼働状態を取得できません")
+    needs_restart = changed or restart_needed or enabled.returncode != 0 or active.returncode != 0
+    if needs_restart:
+        commands.append((["systemctl", "--user", "restart", service_name], 30.0, "restart"))
     # systemctlの失敗は後続の常駐確認を無意味にする（旧プロセスがactiveのまま残ると
     # NRestartsも変化せず成功と誤判定するため）。失敗した時点で例外を送出して打ち切る。
     for command, timeout, label in commands:
@@ -75,7 +89,8 @@ def setup(
         if result is None or result.returncode != 0:
             return_code = result.returncode if result is not None else "N/A"
             raise SetupError(f"{service_name}の{label}に失敗しました (exit {return_code})")
-    _wait_until_running(service_name=service_name, log_tag=log_tag)
+    if needs_restart:
+        _wait_until_running(service_name=service_name, log_tag=log_tag)
     user = getpass.getuser()
     result = claude_common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
     if result is None:
@@ -122,13 +137,7 @@ def setup_timer(
         (service_unit_path, service_unit_content),
         (timer_unit_path, timer_unit_content),
     ):
-        try:
-            existing = unit_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            existing = None
-        if existing != unit_content:
-            claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
-            logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
+        if _ensure_unit_content(unit_path, unit_content, log_tag):
             changed = True
 
     commands: list[tuple[list[str], float, str]] = []

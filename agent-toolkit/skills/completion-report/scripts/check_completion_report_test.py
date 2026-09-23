@@ -44,7 +44,7 @@ FAILED = """## 振り返り結果報告
 
 ### 振り返り
 
-- session-review未実施: 分析失敗のためUWIへ記録 20260922-000000-001.md
+- session-review未実施: 分析失敗のため欠陥AWIへ記録 20260922-000000-001.md
 """
 
 
@@ -59,6 +59,11 @@ FAILED = """## 振り返り結果報告
 )
 def test_accepts_each_report_stage_without_rewriting(text: str, stage: str, state: str | None) -> None:
     assert SUBJECT.validate_report(text, stage, state) == []
+
+
+def test_heading_in_code_fence_does_not_change_report_structure() -> None:
+    text = WORK_COMPLETE.replace("完了した。", "完了した。\n\n````markdown\n## 起草中の見出し\n### 草案\n````", 1)
+    assert SUBJECT.validate_report(text, "work-complete") == []
 
 
 def test_main_outputs_the_input_without_rewriting(
@@ -140,7 +145,7 @@ def test_main_rejects_invalid_stage_state_combination(
             id="exclusive",
         ),
         pytest.param(
-            NOT_RUN.replace("成果を再利用したため起動省略", "分析失敗のためUWIへ記録"),
+            NOT_RUN.replace("成果を再利用したため起動省略", "分析失敗のため欠陥AWIへ記録"),
             "review-result",
             "not-run",
             "対応",

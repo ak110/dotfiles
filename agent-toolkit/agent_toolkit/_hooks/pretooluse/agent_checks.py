@@ -8,6 +8,9 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
+遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
+又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
+除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
 
 統合しているチェック:
 
@@ -26,7 +29,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / start_write / send_message / kill:
 
-- 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
+- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
+- 委譲先へ渡す絶対`cwd`と対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 Bash:
@@ -437,30 +441,29 @@ def _record_iss_sidechain_probe(
         pass
 
 
-def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> bool:
-    """`send_message`・`kill`の入力と保存済みcwdを検査する。"""
+def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> bool | str:
+    """`send_message`・`kill`の入力と保存済みcwdを検査する。
+
+    必須値の欠落はツール自身が拒否する可逆な入力不成立として警告する。
+    停止対象のcwd記録の欠落は所有を確認できないため遮断する。
+    """
     display_name = tool_name.rsplit("__", 1)[-1]
     if tool_name in _AGENTS_SERVER_SEND_TOOLS:
         prompt = tool_input.get("prompt")
         if not isinstance(prompt, str) or not prompt.strip():
-            print(
-                _block_notice(
-                    f"blocked: {display_name}には空でない`prompt`が必要である。",
-                    fix="空でない`prompt`を指定して再実行する。",
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"warn: {display_name}には空でない`prompt`が必要である。空でない`prompt`を指定して再実行する。",
+                tag=_WARN_TAG,
+                removable_cause=True,
             )
-            return True
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
-        print(
-            _block_notice(
-                f"blocked: {display_name}には空でない`session_id`が必要である。",
-                fix="codex_startが返した`session_id`を使うか、codex_startで新しいセッションを開始する。",
-            ),
-            file=sys.stderr,
+        return _llm_notice(
+            f"warn: {display_name}には空でない`session_id`が必要である。"
+            "codex_startが返した`session_id`を使うか、codex_startで新しいセッションを開始する。",
+            tag=_WARN_TAG,
+            removable_cause=True,
         )
-        return True
     state = read_state(session_id)
     cwd_map = state.get(_AGENTS_SERVER_SESSION_CWD_KEY)
     if not isinstance(cwd_map, dict) or not isinstance(cwd_map.get(remote_session_id), str):
