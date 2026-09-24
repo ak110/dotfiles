@@ -254,6 +254,15 @@ PLAN_LEGACY_PERMANENCE_H3: tuple[str, ...] = ("類似見直し",)
 PLAN_METADATA_H3: str = "計画メタ情報"
 PLAN_EXCLUSION_H3: str = "合意済みの除外・保持"
 PLAN_IMPLEMENTATION_UNITS_H3: str = "実装単位"
+PLAN_ACCEPTANCE_H3: str = "受入シナリオ"
+PLAN_ACCEPTANCE_TABLE_HEADER: tuple[str, ...] = (
+    "シナリオ",
+    "由来",
+    "利用者と入口",
+    "操作",
+    "期待結果",
+    "検体",
+)
 
 PLAN_METADATA_FIELDS: tuple[str, ...] = ("起動経路", "対象リポジトリ", "作業種別", "ベースコミット")
 """計画メタ情報の正規形が持つ項目と順序（旧形式単一ファイル・新書式計画ファイル（詳細）は本4項目のみ）。"""
@@ -437,8 +446,10 @@ PLAN_VERIFICATION_TABLE_HEADER: tuple[str, ...] = ("区分", "検証コマンド
 PLAN_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("レーン内検証", "統合後検証")
 """`## 検証区分`が持つ固定2行2列表。行は`レーン内検証`・`統合後検証`の順で固定する。"""
 
-PLAN_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("近接検証", "全体検証")
-"""現行の`## 検証`が持つ固定2行。"""
+PLAN_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("近接検証",)
+"""現行の`## 検証`が持つ固定行。"""
+PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("近接検証", "全体検証")
+"""進行中の既存計画を読む場合だけ受理する行。"""
 
 PLAN_MATERIAL_TABLE_HEADER: tuple[str, ...] = ("素材ID", "種別", "キューID", "投入元", "引用範囲")
 PLAN_REQUIREMENT_TABLE_HEADER: tuple[str, ...] = (

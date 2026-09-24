@@ -5,6 +5,7 @@ from xml.etree import ElementTree as ET
 import pytest
 
 from agent_toolkit._hooks.message_format import llm_notice
+from agent_toolkit._testing.helpers import auto_message_opening_attributes
 
 
 @pytest.mark.parametrize(
@@ -17,7 +18,7 @@ from agent_toolkit._hooks.message_format import llm_notice
 def test_llm_notice_wraps_body_with_xml_boundary(tag: str, expected_kind: str) -> None:
     """タグ有無にかかわらず出所、種別及び本文を保つ。"""
     notice = llm_notice("本文", "agent-toolkit/example", tag=tag)
-    assert notice.startswith(f'<agent-toolkit-auto-inserted source="agent-toolkit/example" kind="{expected_kind}">')
+    assert auto_message_opening_attributes(notice) == {"source": "agent-toolkit/example", "kind": expected_kind}
     assert notice.endswith("\n本文\n</agent-toolkit-auto-inserted>")
 
 

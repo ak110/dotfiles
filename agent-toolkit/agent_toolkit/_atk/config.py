@@ -32,21 +32,22 @@ _MODEL_SETTING_CATEGORIES = {
 }
 # 用途区分はcodexとclaudeの候補を1組で持つ。片方のengineだけ段位を変える要求は、
 # 既存区分の値を書き換えず、新しい用途区分を追加して表現する。
+# 各区分の段位はskills/delegation/references/runtime-routing.md「代替時の組合せの目安」に従う。
 _CATEGORY_ENGINE_MODELS = {
     "上位": {
-        "codex": "codex:gpt-5.6-sol/medium",
+        "codex": "codex:gpt-6-sol/medium",
         "claude": "claude:opus[1m]/medium",
     },
     "軽量": {
-        "codex": "codex:gpt-5.6-terra/medium",
+        "codex": "codex:gpt-6-luna/xhigh",
         "claude": "claude:sonnet[1m]/medium",
     },
     "探索上位": {
-        "codex": "codex:gpt-5.6-terra/medium",
+        "codex": "codex:gpt-6-luna/xhigh",
         "claude": "claude:opus[1m]/medium",
     },
     "探索軽量": {
-        "codex": "codex:gpt-5.6-luna/medium",
+        "codex": "codex:gpt-6-luna/medium",
         "claude": "claude:sonnet[1m]/medium",
     },
 }
@@ -70,13 +71,16 @@ def _preset_settings(preset: str) -> dict[str, str]:
     return settings
 
 
-_MUTABLE_KEY_DEFAULTS = _preset_settings("codex-balanced")
+_MUTABLE_KEY_DEFAULTS = {
+    **_preset_settings("codex-balanced"),
+    "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
+}
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
-    "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]"}),
-    "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"}),
+    "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]", "claude-opus-5-5"}),
+    "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}),
     # Antigravity CLIの`--model`は、`agy models`が返す推論の深さ込みの完全スラッグと、
     # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。
     # 実測の日付と再検証手段は`docs/development/audit-records.md`の
@@ -284,7 +288,7 @@ def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
             available = sorted(item.removesuffix("_model") for item in _MUTABLE_KEY_DEFAULTS if item.endswith("_model"))
             raise ValueError(
                 f"unknown model_type: {model_type} "
-                f"(available: {', '.join(available)}; or pass candidates like codex:gpt-5.6-sol/medium)"
+                f"(available: {', '.join(available)}; or pass candidates like codex:gpt-6-sol/medium)"
             ) from error
     return parse_stage_model_candidates(resolve_mutable_setting(key))
 

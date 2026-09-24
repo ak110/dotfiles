@@ -17,14 +17,11 @@ import pytest
 
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     STALE_STATE_MAX_AGE_SECONDS,
-    bash_failure_gate_is_active,
     claim_session_title,
     clear_session_state,
     delete_state,
     inherit_state_from_transcript,
     read_state,
-    record_bash_failure,
-    reset_bash_failure_sequence,
     state_path,
     sweep_stale_states,
     title_state_path,
@@ -460,20 +457,6 @@ class TestClearSessionState:
     def test_invalid_session_ids_fail(self) -> None:
         assert clear_session_state("") is False
         assert clear_session_state(cast(str, 123)) is False
-
-
-class TestBashRepetitionState:
-    """Bash反復検査の状態を汎用警告カウンターから独立して保持する。"""
-
-    def test_same_failure_activates_gate_and_reset_can_clear_it(self) -> None:
-        assert record_bash_failure("sid", 17) is False
-        assert record_bash_failure("sid", 17) is True
-        assert bash_failure_gate_is_active("sid") is True
-
-        reset_bash_failure_sequence("sid", clear_gate=True)
-
-        assert bash_failure_gate_is_active("sid") is False
-        assert "bash_failure_streak" not in read_state("sid")
 
 
 def test_session_state_persists_plan_flags() -> None:

@@ -18,6 +18,7 @@ Codexのpatch構文はシェル構文として評価せず、公式の`*** Begin
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import pathlib
 
 # Codexの編集ツール名。matcher上は`Edit`・`Write`の別名に一致するが、payloadの`tool_name`は本名で届く。
@@ -42,6 +43,25 @@ _ADD_PREFIX = "*** Add File: "
 _UPDATE_PREFIX = "*** Update File: "
 _DELETE_PREFIX = "*** Delete File: "
 _MOVE_PREFIX = "*** Move to: "
+
+_ALWAYS_LOADED_RULES = frozenset(
+    {
+        "rules/01-agent.md",
+        "rules/02-agent-operations.md",
+        "share/rules-main.md",
+        "share/rules-main.claude-code.md",
+        "share/rules-subagent.md",
+    }
+)
+
+
+def is_always_loaded_rule(path: str) -> bool:
+    """編集対象がプラグイン原本の常時規範5ファイルかを判定する。"""
+    try:
+        relative = pathlib.Path(path).resolve().relative_to(pathlib.Path(__file__).resolve().parents[2])
+    except ValueError:
+        return False
+    return relative.as_posix() in _ALWAYS_LOADED_RULES
 
 
 def is_codex_payload(payload: object) -> bool:
@@ -111,6 +131,16 @@ class MaterializedEdit:
     operation: EditOperation
     before_image: str
     after_image: str
+
+
+def added_text(image: MaterializedEdit) -> str:
+    """編集前後の全文像から追加・置換された行だけを返す。"""
+    before = image.before_image.splitlines(keepends=True)
+    after = image.after_image.splitlines(keepends=True)
+    matcher = difflib.SequenceMatcher(a=before, b=after, autojunk=False)
+    return "".join(
+        "".join(after[start:end]) for kind, _, _, start, end in matcher.get_opcodes() if kind in {"insert", "replace"}
+    )
 
 
 def parse_operations(tool_name: str, tool_input: object, cwd: str) -> list[EditOperation] | None:

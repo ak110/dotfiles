@@ -13,12 +13,26 @@ import re
 SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
 
 _DELIVERY_TAG_PATTERN = re.compile(
-    r'\A<agent-toolkit-auto-inserted from="(?P<sender>[^"]+)" composed-by="(?P<composed_by>[^"]+)"'
-    r' source="agent-toolkit/agents-server" kind="agent-delivery"'
-    r">\n"
+    r"\A<agent-toolkit-auto-inserted"
+    r'(?=[^>]*\sfrom="(?P<sender>[^"]+)")'
+    r'(?=[^>]*\scomposed-by="(?P<composed_by>[^"]+)")'
+    r'(?=[^>]*\ssource="agent-toolkit/agents-server")'
+    r'(?=[^>]*\skind="agent-delivery")[^>]*>\n'
     r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
     re.DOTALL,
 )
+_AUTO_OPENING_PATTERN = re.compile(r'<agent-toolkit-auto-inserted(?P<attributes>(?:\s+[a-z][a-z-]*="[^"]*")*)>')
+_AUTO_ATTRIBUTE_PATTERN = re.compile(r'\s+([a-z][a-z-]*)="([^"]*)"')
+
+
+def auto_message_opening_attributes(text: str) -> dict[str, str]:
+    """自動挿入本文の開始タグから属性を名前で取得する。"""
+    opening = _AUTO_OPENING_PATTERN.search(text)
+    assert opening is not None, text
+    pairs = _AUTO_ATTRIBUTE_PATTERN.findall(opening["attributes"])
+    attributes = dict(pairs)
+    assert len(attributes) == len(pairs), text
+    return attributes
 
 
 def delivery_payload(delivered: str) -> str:

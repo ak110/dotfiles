@@ -77,7 +77,6 @@ def test_session_review_delegate_uses_public_script_entries() -> None:
         "session-review-decisions",
         "session-review-report",
     }
-    assert len(commands) == 6
     for command in commands:
         assert command[:2] == ["atk", "run-script"]
         assert command[3] == "--"

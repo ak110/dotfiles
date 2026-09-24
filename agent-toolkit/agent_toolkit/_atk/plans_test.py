@@ -1360,7 +1360,11 @@ def _saved_plan_with_references(notes: pathlib.Path, stem: str = "01-参照表�
     return main, detail
 
 
-def test_rewrite_references_replaces_only_matching_stem(tmp_path: pathlib.Path) -> None:
+def test_rewrite_references_replaces_only_matching_stem(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """当該計画のstemに一致する参照だけを新しい参照値へ書き換える。"""
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
@@ -1371,10 +1375,11 @@ def test_rewrite_references_replaces_only_matching_stem(tmp_path: pathlib.Path) 
     _git(notes, "commit", "-m", "add saved plan")
     _git(notes, "push")
 
-    result = _atk_plans.rewrite_plan_references(notes)
+    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["plans", "rewrite-references"], home=tmp_path / "home")
 
-    assert result["plans"] == 2, result
-    assert result["references"] == 3, result
+    assert "付属ファイル参照を書き換えた: 2件（参照: 3件）" in capsys.readouterr().out
     prefix = _plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX
     assert f"{prefix}{stem}.norm-texts.md" in main.read_text(encoding="utf-8")
     detail_text = detail.read_text(encoding="utf-8")

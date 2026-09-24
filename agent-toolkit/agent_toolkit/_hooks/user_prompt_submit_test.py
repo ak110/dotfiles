@@ -23,10 +23,11 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
 _NOTICE_PATTERN = re.compile(
-    r'<agent-toolkit-auto-inserted source="agent-toolkit/user_prompt_submit" kind="notice">\n'
-    r"(?P<body>.*?)\n</agent-toolkit-auto-inserted>",
-    re.DOTALL,
+    r"<agent-toolkit-auto-inserted"
+    r'(?=[^>]*\ssource="agent-toolkit/user_prompt_submit")'
+    r'(?=[^>]*\skind="notice")[^>]*>\n',
 )
+_NOTICE_BOUNDARY_PATTERN = re.compile(r"</?agent-toolkit-auto-inserted\b[^>]*>")
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "直前の発話から、当該発話が主張する事実と是正を求めている対象を列挙し、"
     "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
@@ -39,9 +40,60 @@ _EXPECTED_VERIFICATION_NOTICE_BODY = (
 
 def _notice_bodies(context: str) -> list[str]:
     """結合された通知を分解し、標準XML境界を検証した本文の並びを返す。"""
-    matches = list(_NOTICE_PATTERN.finditer(context))
-    assert matches
-    return [match.group("body") for match in matches]
+    bodies: list[str] = []
+    depth = 0
+    body_start = 0
+    for boundary in _NOTICE_BOUNDARY_PATTERN.finditer(context):
+        if boundary.group().startswith("</"):
+            assert depth > 0
+            depth -= 1
+            if depth == 0:
+                assert context[boundary.start() - 1] == "\n"
+                bodies.append(context[body_start : boundary.start() - 1])
+            continue
+        if depth == 0:
+            opening = _NOTICE_PATTERN.match(context, boundary.start())
+            assert opening is not None and opening.end() == boundary.end() + 1
+            body_start = opening.end()
+        depth += 1
+    assert depth == 0 and bodies
+    return bodies
+
+
+def test_notice_bodies_preserves_outer_body_with_reordered_attributes() -> None:
+    """別順の開始タグと入れ子の本文を外側の境界ごとに読む。"""
+    first = (
+        '<agent-toolkit-auto-inserted kind="notice" source="agent-toolkit/user_prompt_submit">\n'
+        '<agent-toolkit-auto-inserted source="inner" kind="notice">内側</agent-toolkit-auto-inserted>\n'
+        "</agent-toolkit-auto-inserted>"
+    )
+    second = (
+        '<agent-toolkit-auto-inserted source="agent-toolkit/user_prompt_submit" kind="notice">\n'
+        "次\n</agent-toolkit-auto-inserted>"
+    )
+    assert _notice_bodies(f"{first}\n{second}") == [
+        '<agent-toolkit-auto-inserted source="inner" kind="notice">内側</agent-toolkit-auto-inserted>',
+        "次",
+    ]
+
+
+@pytest.mark.parametrize(
+    "opening,closing",
+    [
+        ('<other source="agent-toolkit/user_prompt_submit" kind="notice">', "</other>"),
+        ('<agent-toolkit-auto-inserted kind="notice">', "</agent-toolkit-auto-inserted>"),
+        ('<agent-toolkit-auto-inserted source="wrong" kind="notice">', "</agent-toolkit-auto-inserted>"),
+        (
+            '<agent-toolkit-auto-inserted source="agent-toolkit/user_prompt_submit" kind="wrong">',
+            "</agent-toolkit-auto-inserted>",
+        ),
+        ('<agent-toolkit-auto-inserted source="agent-toolkit/user_prompt_submit" kind="notice">', "</other>"),
+    ],
+)
+def test_notice_bodies_rejects_invalid_boundary(opening: str, closing: str) -> None:
+    """要素名、必要属性と終了タグが違う本文を拒否する。"""
+    with pytest.raises(AssertionError):
+        _notice_bodies(f"{opening}\n本文\n{closing}")
 
 
 def _session_title(result: subprocess.CompletedProcess[str]) -> str | None:
@@ -90,7 +142,12 @@ class TestMachineInjectedTurn:
             ({"source": "system"}, "状況を確認する。", {}),
             ({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n稼働状況を確認する。", {}),
             ({}, "<task-notification>完了</task-notification>", {}),
-            ({}, '<cross-session-message from="main:x">継続</cross-session-message>', {}),
+            (
+                {},
+                '<agent-toolkit-auto-inserted source="agent-toolkit/process-loop" kind="goal">'
+                "継続</agent-toolkit-auto-inserted>",
+                {},
+            ),
         ],
     )
     def test_no_notice_and_no_timestamp(
@@ -195,6 +252,16 @@ class TestNonMatchingPrompts:
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
+
+    @pytest.mark.parametrize(
+        "prompt", ["<cross-session-message>継続</cross-session-message>", "<automated-prompt>継続</automated-prompt>"]
+    )
+    def test_old_wrappers_are_not_machine_turns(self, tmp_path: pathlib.Path, prompt: str):
+        sid = "old-wrapper"
+        result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
 
     def test_unrelated_slash_is_treated_as_user_utterance(self, tmp_path: pathlib.Path):
         """対応スキル以外のスラッシュコマンドもユーザー自身の発話として注記の対象にする。"""

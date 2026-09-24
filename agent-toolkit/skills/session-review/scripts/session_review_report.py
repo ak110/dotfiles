@@ -26,7 +26,7 @@ REPORT_H2_HEADINGS = (
     "対象セッション",
     "問題候補の判定記録",
     "メイン由来の改善点",
-    "規範適用による停止",
+    "規範適用による目的逸脱",
     "所要時間の内訳と改善提案",
     "登録したキュー項目",
     "未確認範囲",
@@ -35,7 +35,7 @@ _GENERATED_SECTION_HEADINGS = ("問題候補の判定記録", "所要時間の�
 FREE_SECTION_HEADINGS = (
     "対象セッション",
     "メイン由来の改善点",
-    "規範適用による停止",
+    "規範適用による目的逸脱",
     "登録したキュー項目",
     "未確認範囲",
 )
@@ -454,9 +454,9 @@ def render(
             "## メイン由来の改善点",
             "",
             *_section_lines(sections, "メイン由来の改善点"),
-            "## 規範適用による停止",
+            "## 規範適用による目的逸脱",
             "",
-            *_section_lines(sections, "規範適用による停止"),
+            *_section_lines(sections, "規範適用による目的逸脱"),
             "## 所要時間の内訳と改善提案",
             "",
             "| 区間 | 区分 | 秒 | 典拠・未観測理由 |",
@@ -516,6 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         content = render(_load_jsonl(args.candidates), decisions, analyses, timings, duration_analysis, sections)
         if args.mode == "generate":
             args.output.write_text(content, encoding="utf-8")
+            _check_rendered_report(args.output.read_text(encoding="utf-8"), content)
         elif not args.output.is_file():
             raise ReportError("報告ファイルが存在しない")
         else:

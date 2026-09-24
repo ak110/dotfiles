@@ -7,7 +7,6 @@ import pytest
 
 from pytools import update_ssh_config
 from pytools._internal import claude_common as _claude_common
-from pytools.update_ssh_config import _ensure_trailing_newline, _extract_key_data
 
 
 @pytest.mark.parametrize(("argv", "exit_code"), [(["--help"], 0), (["--unknown"], 2)])
@@ -55,49 +54,56 @@ def test_main_without_arguments_updates_ssh_config(monkeypatch: pytest.MonkeyPat
     assert called
 
 
-class TestExtractKeyData:
-    """_extract_key_dataのテスト。"""
-
-    def test_ed25519_key(self):
-        line = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyData12345678901234567890 user@host"
-        assert _extract_key_data(line) == "AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyData12345678901234567890"
-
-    def test_rsa_key(self):
-        line = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC1234567890abcdef user@host"
-        assert _extract_key_data(line) == "AAAAB3NzaC1yc2EAAAADAQABAAABgQC1234567890abcdef"
-
-    def test_key_with_options(self):
-        line = 'command="/usr/bin/false" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyData12345678901234567890 user@host'
-        assert _extract_key_data(line) == "AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyData12345678901234567890"
-
-    def test_comment_line(self):
-        assert _extract_key_data("# This is a comment") is None
-
-    def test_empty_line(self):
-        assert _extract_key_data("") is None
-
-    def test_whitespace_only(self):
-        assert _extract_key_data("   ") is None
-
-    def test_ecdsa_key(self):
-        line = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTZAAAAIbmlzdHAyNTY= user@host"
-        assert _extract_key_data(line) == "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTZAAAAIbmlzdHAyNTY="
+def _run_public_update(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    ssh_dir = tmp_path / ".ssh"
+    (ssh_dir / "conf.d").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    with pytest.raises(SystemExit) as result:
+        update_ssh_config.main([])
+    assert result.value.code == 0
+    return ssh_dir
 
 
-class TestEnsureTrailingNewline:
-    """_ensure_trailing_newlineのテスト。"""
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        (
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyData12345678901234567890 user@host",
+            True,
+        ),
+        ("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC1234567890abcdef user@host", True),
+        (
+            'command="/usr/bin/false" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyData12345678901234567890 user@host',
+            True,
+        ),
+        ("# This is a comment", False),
+        ("", False),
+        ("   ", False),
+        ("ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTZAAAAIbmlzdHAyNTY= user@host", True),
+    ],
+)
+def test_public_update_adds_only_key_lines(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str, expected: bool) -> None:
+    """公開コマンドは有効な鍵行だけをauthorized_keysへ追加する。"""
+    ssh_dir = tmp_path / ".ssh"
+    (ssh_dir / "conf.d").mkdir(parents=True)
+    (ssh_dir / "conf.d" / "authorized_keys").write_text(line, encoding="utf-8")
 
-    def test_without_newline(self):
-        assert _ensure_trailing_newline("text") == "text\n"
+    _run_public_update(tmp_path, monkeypatch)
 
-    def test_with_newline(self):
-        assert _ensure_trailing_newline("text\n") == "text\n"
+    target = ssh_dir / "authorized_keys"
+    assert (target.read_text(encoding="utf-8") if target.exists() else "") == (f"{line}\n" if expected else "")
 
-    def test_empty_string(self):
-        assert _ensure_trailing_newline("") == "\n"
 
-    def test_multiple_newlines(self):
-        assert _ensure_trailing_newline("text\n\n") == "text\n\n"
+@pytest.mark.parametrize("content", ["text", "text\n", "", "text\n\n"])
+def test_public_update_preserves_config_newline_boundary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str) -> None:
+    """公開コマンドはconf.d本文を末尾改行付きで結合する。"""
+    ssh_dir = tmp_path / ".ssh"
+    (ssh_dir / "conf.d").mkdir(parents=True)
+    (ssh_dir / "conf.d" / "example.conf").write_text(content, encoding="utf-8")
+
+    _run_public_update(tmp_path, monkeypatch)
+
+    assert (ssh_dir / "config").read_text(encoding="utf-8") == (content if content.endswith("\n") else content + "\n")
 
 
 class TestAtomicWriteText:
@@ -131,10 +137,7 @@ class TestAtomicWriteText:
 class TestGenerateAuthorizedKeys:
     """authorized_keys生成の結合テスト。"""
 
-    def test_merges_keys(self, tmp_path):
-        # pytools.update_ssh_config の private 関数のため、テストファイル内に局所importする。
-        from pytools.update_ssh_config import _generate_authorized_keys  # pylint: disable=import-outside-toplevel
-
+    def test_merges_keys(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         ssh_dir = tmp_path / ".ssh"
         ssh_dir.mkdir()
         conf_d = ssh_dir / "conf.d"
@@ -150,7 +153,7 @@ class TestGenerateAuthorizedKeys:
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINewKeyData9876543210zyxwvutsrqpon new@host\n",
             encoding="utf-8",
         )
-        _generate_authorized_keys(ssh_dir)
+        _run_public_update(tmp_path, monkeypatch)
         content = (ssh_dir / "authorized_keys").read_text(encoding="utf-8")
         lines = [line for line in content.splitlines() if line.strip()]
         # 既存1鍵 + 新規1鍵 = 2鍵

@@ -31,6 +31,7 @@ PRのheadはGitHub設定で`develop`だけに制限しない。
 通常のリリースでは`develop`から`master`へのPRを使用し、明示的なマージ依頼を受領したエージェントと、前項の条件が成立した`agent-toolkit:process-wi`のメインだけがマージ後の同期と検収を担当する。
 単なるPRの存在検出をマージ依頼として扱わない。
 リリースの成立条件はリモートのbranch、CI及び必要なReleaseとし、ローカル作業ツリーのclean状態とローカル`develop`の位置を成立条件にしない。
+ここでのCIはマージ前にPR headで成功を確認する必須checkを指す。マージ後のmaster pushと、同期後のdevelop pushに対するCIは待機しない（2026年9月24日、利用者指示）。`master`へは`develop`からだけマージするため、マージコミットの中身は検収済みのPR headと同じであり、待機しても同じ中身の再検査を待つだけになるためである。statuslineのReleaseを要する場合のmaster CIの結論は、Release runの検収で確かめる。
 ローカル作業ツリーがcleanで安全にfast-forwardできる場合だけローカル`develop`も同期し、それ以外は同期を省略して既存の未コミット差分とローカルbranchへ書き込まない。いずれの経路でもローカルの状態をリリースの成否判定に用いず、完了報告でリモートの完了とローカル`develop`を同期したかどうかを区別して示す。
 リリースの成否判定とは別に、`agent-toolkit:process-wi`のセッション終端ではベースbranchの公開状態（現在branch、作業ツリーのclean、リモート追跡refへのahead、中断状態）を観測する（2026年9月、利用者指示）。未公開のcommitを残した終了が常駐ループの開始前更新を停止させたためであり、解消できない場合はUWIへ引き継ぐ。
 `agent-toolkit:process-wi`では、自動コードレビュー監査を選定工程の開始時に起動してレーン工程と並行して進め、公開工程の開始より前に処置を確定する。公開工程では終端担当による公開とCI確認を1回だけ実施する。終端担当の起動後に生じた是正commitはローカルの`develop`へ保持し、次のセッションの公開工程で公開する。セッション振り返りは`agent-toolkit:completion-report`から起動し、当該セッション自身を対象として終了時に完了する（2026年9月、利用者指示。2026年9月14日、利用者指示により振り返りを自セッションの終端へ一本化した）。
@@ -45,6 +46,8 @@ statusline（`rust/claude-statusline/`配下）を変更した場合は、その
 branchの公開又はCIが失敗した場合は`master`を保持し、同じcommitをref又は7文字以上の一意な短縮OIDで再確認してから再開する。
 
 ## WIキューの運用
+
+WI作成、計画、実行、実行後レビューは、それぞれ要求と完成条件の確定、実装境界と受入シナリオの設計、公開入口からの検体を含む実装、意図・回帰・過剰設計の独立検収を担う。前工程の出口を後工程の入力とし、同じ判断を後工程で起草し直さない。詳細な工程契約は`agent-toolkit/share/workflow-phases.md`を正本とする。全体検査とCIは個別WIの完成条件ではなく公開工程の検収で判定する（2026年9月24日、利用者指示）。
 
 現行の正本は`agent-toolkit:wi-standards`、`agent-toolkit:process-wi`、
 `agent-toolkit/share/`配下のpickerのタスク文書、`agent-toolkit:plan-mode`の計画ファイル基準及び

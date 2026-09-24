@@ -11,8 +11,11 @@ from agent_toolkit._agents_server import status_file
 from agent_toolkit._atk import config
 
 _NOTICE_TAG_PATTERN = re.compile(
-    r'\A<agent-toolkit-auto-inserted from="delegate:(?P<sender>[^"]+)" composed-by="caller"'
-    r' source="agent-toolkit/agents-notify" kind="agent-delivery">\n'
+    r"\A<agent-toolkit-auto-inserted"
+    r'(?=[^>]*\sfrom="delegate:(?P<sender>[^"]+)")'
+    r'(?=[^>]*\scomposed-by="caller")'
+    r'(?=[^>]*\ssource="agent-toolkit/agents-notify")'
+    r'(?=[^>]*\skind="agent-delivery")[^>]*>\n'
     r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
     re.DOTALL,
 )
@@ -23,6 +26,55 @@ def _notice_body(delivered: str) -> str:
     matched = _NOTICE_TAG_PATTERN.fullmatch(delivered)
     assert matched is not None, delivered
     return matched["body"]
+
+
+def test_notice_body_accepts_reordered_attributes_and_outer_body() -> None:
+    """必要属性の順序が変わっても最後の終了タグまで本文を保つ。"""
+    body = '<agent-toolkit-auto-inserted source="inner" kind="notice">内側</agent-toolkit-auto-inserted>\r\n次の行'
+    delivered = (
+        '<agent-toolkit-auto-inserted kind="agent-delivery" source="agent-toolkit/agents-notify"'
+        ' composed-by="caller" from="delegate:child">\n'
+        f"{body}\n</agent-toolkit-auto-inserted>"
+    )
+    assert _notice_body(delivered) == body
+
+
+@pytest.mark.parametrize(
+    "opening,closing",
+    [
+        (
+            '<other from="delegate:child" composed-by="caller" source="agent-toolkit/agents-notify" kind="agent-delivery">',
+            "</other>",
+        ),
+        (
+            '<agent-toolkit-auto-inserted from="delegate:child" source="agent-toolkit/agents-notify" kind="agent-delivery">',
+            "</agent-toolkit-auto-inserted>",
+        ),
+        (
+            '<agent-toolkit-auto-inserted from="main:child" composed-by="caller"'
+            ' source="agent-toolkit/agents-notify" kind="agent-delivery">',
+            "</agent-toolkit-auto-inserted>",
+        ),
+        (
+            '<agent-toolkit-auto-inserted from="delegate:child" composed-by="caller" source="wrong" kind="agent-delivery">',
+            "</agent-toolkit-auto-inserted>",
+        ),
+        (
+            '<agent-toolkit-auto-inserted from="delegate:child" composed-by="caller"'
+            ' source="agent-toolkit/agents-notify" kind="wrong">',
+            "</agent-toolkit-auto-inserted>",
+        ),
+        (
+            '<agent-toolkit-auto-inserted from="delegate:child" composed-by="caller"'
+            ' source="agent-toolkit/agents-notify" kind="agent-delivery">',
+            "</other>",
+        ),
+    ],
+)
+def test_notice_body_rejects_invalid_boundary(opening: str, closing: str) -> None:
+    """要素名、必要属性と外側の終了タグの相違を拒否する。"""
+    with pytest.raises(AssertionError):
+        _notice_body(f"{opening}\n本文\n{closing}")
 
 
 @pytest.fixture(name="notify_environment")

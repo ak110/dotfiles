@@ -181,7 +181,7 @@ def _require_agent_awi_sections(
     source: str | None,
     plan_file: str | None,
 ) -> None:
-    """エージェント由来の通常AWIが必須H2を全件持ち、規定順序に従うことを検証する。
+    """`source`を持つ通常AWIが必須H2を全件持ち、規定順序に従うことを検証する。
 
     不足と順序の不一致は1件の例外へまとめて返す。
     1件ずつ返すと、起草側が本文を書き直して再投入する往復が不足節の件数だけ生じるためである。
@@ -284,15 +284,14 @@ _RESERVED_FRONTMATTER_KEYS = (
 )
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
-出力frontmatterはここに列挙したキーを必ず単一の値へ確定させ、入力メッセージのfrontmatterへ
+出力frontmatterはCLIが生成するキーを単一の値へ確定させ、入力メッセージのfrontmatterへ
 同名キーが含まれていても`frontmatter_data.update()`による辞書更新で
 入力値を除外する。このうち`target_repo`・`source`は明示された入力側の値を
 CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
 保存する。
 `type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
-`origin_session`・`origin_locator`はWIを投入したセッションとユーザー発話の所在を対応付ける
-CLI管理の識別情報として予約する。
+`origin_session`・`origin_locator`は旧形式のキーとして予約し、新規投入時に引き継がない。
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
 `reservation`・`reservation_companion`・`target_commit_history`はユーザーによる直接指定を禁止し、
 CLIが管理する識別情報、依存、修復UWI、旧形式の内部metadataとして予約する。
@@ -310,8 +309,6 @@ def _add_entries_locked(
     scope: str | None,
     question_type: str | None,
     choices: str | None,
-    origin_session: str | None = None,
-    origin_locator: str | None = None,
     target_commit: str | None = None,
     plan_file: str | None = None,
     repair_targets: list[str | None] | None = None,
@@ -360,9 +357,6 @@ def _add_entries_locked(
             frontmatter_data["target_commit"] = target_commit
         if item_source:
             frontmatter_data["source"] = item_source
-        if isinstance(origin_session, str) and origin_session and isinstance(origin_locator, str) and origin_locator:
-            frontmatter_data["origin_session"] = origin_session
-            frontmatter_data["origin_locator"] = origin_locator
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
         if entry_type != WI_TYPE_AWI:
             if scope:
@@ -400,8 +394,6 @@ def add_entries(
     scope: str | None = None,
     question_type: str | None = None,
     choices: str | None = None,
-    origin_session: str | None = None,
-    origin_locator: str | None = None,
     target_commit: str | None = None,
     plan_file: str | None = None,
     depends_on: tuple[str, ...] = (),
@@ -439,8 +431,6 @@ def add_entries(
             scope=scope,
             question_type=question_type,
             choices=choices,
-            origin_session=origin_session,
-            origin_locator=origin_locator,
             target_commit=target_commit,
             plan_file=stored_plan_file,
             depends_on=depends_on,
@@ -661,8 +651,6 @@ def _cmd_add(
             scope=args.scope,
             question_type=args.question_type,
             choices=args.choices,
-            origin_session=_plan_file.resolve_owner_session_id(),
-            origin_locator=args.origin_locator,
             target_commit=target_commit,
             plan_file=args.plan_file,
             depends_on=canonical_dependencies,

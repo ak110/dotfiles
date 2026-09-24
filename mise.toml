@@ -12,6 +12,12 @@ typos = "latest"
 version = "latest"
 symlink_bins = true
 
+[tools."github:lycheeverse/lychee"]
+version = "latest"
+
+[tools."github:lycheeverse/lychee".platforms]
+linux-x64 = { asset_pattern = "lychee-x86_64-unknown-linux-musl.tar.gz" }
+
 # rustはrustupのツールチェーンへのsymlinkとして導入される。symlinkで導入済みの版は
 # `latest`のような曖昧な版指定の解決でmise.lockの確定バージョンより優先されるため、
 # lockの版が導入されず、lock自体も導入済みの版へ書き換えられる。版を明示してこの解決経路を

@@ -1169,9 +1169,9 @@ class AgentsServerManager:
         )
 
     async def start_write(self, prompt: str, cwd: str, *, label: str | None = None) -> dict[str, Any]:
-        """対象と内容が確定済みの軽量な書込turnを開始する。"""
+        """対象、読者、事実と根拠が確定済みの文章起草・書込turnを開始する。"""
         return await self.start(
-            "explore_fast",
+            "write",
             prompt,
             cwd,
             launch_kind="write",
@@ -2223,10 +2223,10 @@ async def start_write(
         ),
     ] = None,
 ) -> dict[str, Any]:
-    """対象と内容が確定済みの小規模な書込を軽量な委譲先で実行する。
+    """確定済みの文章起草と小規模な定型書込を委譲する。
 
-    設計、調査、レビュー及び公開操作を依頼せず、変更対象と完成形を`prompt`へ明記する。
-    プロジェクト指示の読込を省いた`explore_fast_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。
+    設計、調査、レビュー及び公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。
+    読者が異なる文章は別の依頼にする。プロジェクト指示の読込を省いた`write_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。
     候補列の直接入力は受け付けない。
     終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`で受け取る。
     結果が不要なら`kill`で破棄する。

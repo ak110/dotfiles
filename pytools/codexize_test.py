@@ -1,9 +1,12 @@
 """codexizeモジュールのテスト。"""
 
 import os
+import sys
 from pathlib import Path
 
-from pytools.codexize import _codexize
+import pytest
+
+from pytools import codexize
 
 _INSTRUCTIONS = "# プロジェクト指示\n"
 
@@ -17,15 +20,23 @@ def _setup_dir(tmp_path: Path) -> Path:
     return target
 
 
+def _run_codexize(monkeypatch: pytest.MonkeyPatch, target: Path, *, clean: bool = False) -> None:
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(sys, "argv", ["codexize", *(["--clean"] if clean else [])])
+    with pytest.raises(SystemExit) as result:
+        codexize.main()
+    assert result.value.code == 0
+
+
 class TestCodexize:
     """`codexize`実行による状態遷移。"""
 
-    def test_migrates_instructions_and_links_skills(self, tmp_path: Path) -> None:
+    def test_migrates_instructions_and_links_skills(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CLAUDE.md単体をAGENTS.mdへ移し、共有スキルへリンクする。"""
         target = _setup_dir(tmp_path)
         (target / "CLAUDE.md").write_text(_INSTRUCTIONS, encoding="utf-8")
 
-        _codexize(target)
+        _run_codexize(monkeypatch, target)
 
         assert (target / "AGENTS.md").read_text(encoding="utf-8") == _INSTRUCTIONS
         assert not (target / "CLAUDE.md").exists()
@@ -33,23 +44,23 @@ class TestCodexize:
         assert skills_link.is_symlink()
         assert os.readlink(skills_link) == "../.claude/skills"
 
-    def test_removes_adapter_and_is_idempotent(self, tmp_path: Path) -> None:
+    def test_removes_adapter_and_is_idempotent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """AGENTS.mdと既知アダプターはAGENTS.md単体へ収束する。"""
         target = _setup_dir(tmp_path)
         (target / "AGENTS.md").write_text(_INSTRUCTIONS, encoding="utf-8")
         (target / "CLAUDE.md").write_text("# CLAUDE.md\n\n@AGENTS.md\n", encoding="utf-8")
 
-        _codexize(target)
-        _codexize(target)
+        _run_codexize(monkeypatch, target)
+        _run_codexize(monkeypatch, target)
 
         assert (target / "AGENTS.md").read_text(encoding="utf-8") == _INSTRUCTIONS
         assert not (target / "CLAUDE.md").exists()
 
-    def test_both_missing_still_links_skills(self, tmp_path: Path) -> None:
+    def test_both_missing_still_links_skills(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """指示ファイルが無いプロジェクトでも共有スキルは設定する。"""
         target = _setup_dir(tmp_path)
 
-        _codexize(target)
+        _run_codexize(monkeypatch, target)
 
         assert (target / ".agents" / "skills").is_symlink()
         assert not (target / "AGENTS.md").exists()
@@ -59,7 +70,7 @@ class TestCodexize:
 class TestClean:
     """`--clean`による状態遷移。"""
 
-    def test_removes_only_skills_link(self, tmp_path: Path) -> None:
+    def test_removes_only_skills_link(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """--cleanは共有スキルリンクだけを削除し、指示ファイルを保つ。"""
         target = _setup_dir(tmp_path)
         (target / "AGENTS.md").write_text(_INSTRUCTIONS, encoding="utf-8")
@@ -68,7 +79,7 @@ class TestClean:
         skills_link.parent.mkdir()
         skills_link.symlink_to("../.claude/skills")
 
-        _codexize(target, clean=True)
+        _run_codexize(monkeypatch, target, clean=True)
 
         assert not (target / ".agents").exists()
         assert (target / "AGENTS.md").read_text(encoding="utf-8") == _INSTRUCTIONS

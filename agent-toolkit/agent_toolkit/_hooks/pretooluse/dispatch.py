@@ -48,7 +48,7 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は警告 (auto-fix/warn)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は遮断 (auto-fix/block)
 - 除外設定を持たない単純な再帰`grep`の`rg`への補正 (auto-fix)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
@@ -152,7 +152,6 @@ from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_w
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    bash_failure_gate_is_active,
     read_state,
     update_state,
 )
@@ -215,7 +214,6 @@ if TYPE_CHECKING:
         _check_bash_git_grep_pattern_type,
         _check_bash_option_terminator_missing,
         _check_bash_redirect_parent_exists,
-        _check_bash_rg_multiline_pattern,
         _check_bash_unknown_atk_subcommand,
         _check_bash_unquoted_shell_metacharacter,
         _check_bash_unresolved_git_object,
@@ -230,7 +228,6 @@ if TYPE_CHECKING:
         _check_bash_recursive_home_search,
         _check_bash_foreground_loop_wait,
         _check_bash_sleep_poll_pattern,
-        _check_bash_truncation_autofix_repeat,
         _check_bash_unbounded_home_traversal,
         _check_bash_unbounded_root_traversal,
         _check_bash_uv_run_python,
@@ -449,7 +446,9 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return exit_with(0)
 
-    return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex))
+    return exit_with(
+        _handle_edit_tool(session_id, tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex)
+    )
 
 
 def _handle_agents_server_tool(
@@ -503,17 +502,6 @@ def _handle_bash_tool(
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
     warnings: list[str] = []
-    if bash_failure_gate_is_active(session_id):
-        # 通した場合の結果は同じ失敗の反復に限り、作業ツリーへ副作用を残さないため警告で返す。
-        warnings.append(
-            _llm_notice(
-                "同じ終了コードによるBash失敗が連続している。\n"
-                "対処: 原因調査と次のコマンド実行をagents_serverのstart_shellへ分離する。"
-                "start_shellが成功すると連続失敗の状態を解除し、その後は直接Bashを再開できる。",
-                tag=_WARN_TAG,
-                removable_cause=True,
-            )
-        )
     large_read_notice = check_large_bash_read(command, cwd)
     if large_read_notice is not None:
         print(large_read_notice, file=sys.stderr)
@@ -527,14 +515,14 @@ def _handle_bash_tool(
         warnings.append(sleep_poll_result)
     if _check_bash_missing_path_operand_loss(command, cwd) == "block":
         return 2
-    if _check_bash_truncation_autofix_repeat(command, session_id) == "block":
-        return 2
     auto_fix = _autofix_bash_command(command, cwd, session_id)
     if auto_fix is not None:
         command, auto_fix_notice = auto_fix
         tool_input = dict(tool_input)
         tool_input["command"] = command
         warnings.append(auto_fix_notice)
+    if _check_bash_uv_run_python(command, cwd) == "block":
+        return 2
     if (
         (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
         or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
@@ -581,14 +569,12 @@ def _handle_bash_tool(
         recursive_grep_result,
         _check_bash_atk_help_observation(command, session_id),
         _check_bash_external_command_options(command, session_id),
-        _check_bash_uv_run_python(command, cwd),
         _check_bash_explicit_path_exists(command, cwd),
         git_grep_pattern_type_result,
         _check_bash_atk_options(command),
         _check_bash_unknown_atk_subcommand(command),
         _check_bash_unquoted_shell_metacharacter(command),
         _check_bash_unresolved_git_object(command, cwd),
-        _check_bash_rg_multiline_pattern(command),
         _check_bash_option_terminator_missing(command, cwd),
         _check_bash_redirect_parent_exists(command, cwd),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
@@ -696,6 +682,7 @@ def _handle_user_facing_text_tool(
 
 
 def _handle_edit_tool(
+    session_id: str,
     tool_name: str,
     tool_input: dict,
     cwd: str,
@@ -718,6 +705,28 @@ def _handle_edit_tool(
     for index, operation in enumerate(operations):
         if _check_edit_operation_blocks(tool_name, operation, _materialize_cached(operation, index, images)):
             return 2
+    before_sizes: dict[str, int] = {}
+    added_texts: dict[str, str] = {}
+    for index, operation in enumerate(operations):
+        if not operation.exists_after_apply or not _hook_tool_input.is_always_loaded_rule(operation.path):
+            continue
+        try:
+            before_sizes.setdefault(operation.path, pathlib.Path(operation.path).stat().st_size)
+        except FileNotFoundError:
+            before_sizes.setdefault(operation.path, 0)
+        except OSError:
+            continue
+        image = _materialize_cached(operation, index, images)
+        if image is not None:
+            added_texts[operation.path] = _hook_tool_input.added_text(image)
+    if session_id and before_sizes:
+
+        def _record_sizes(state: dict) -> dict:
+            state["always_loaded_rule_before_sizes"] = before_sizes
+            state["always_loaded_rule_added_texts"] = added_texts
+            return state
+
+        update_state(session_id, _record_sizes)
     warnings: list[str] = []
     boundary_warning = _check_edit_boundary_resolution(tool_name, operations)
     if boundary_warning is not None:

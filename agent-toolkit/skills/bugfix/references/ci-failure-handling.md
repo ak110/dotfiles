@@ -42,10 +42,8 @@ formatter未適用・単純なテスト期待値の未追随など）と確定�
 対処選択肢を決める前に、CI失敗の性質を実測で分類する。
 
 - 監視で取得したrun IDまたはpipeline ID・job IDを引き継ぎ、全体の実行状態を確認してから失敗ジョブのログを取得する
-  - GitHubではrunが終端する前は`gh run view <run-id> --log-failed`を実行せず、job IDを使うAPI、annotation又は失敗テスト名から取得できる証拠を暫定保存する。run終端後に同コマンドでrun単位の失敗ログを取得し、暫定保存した証拠と失敗job集合の完全性を照合する
-  - GitLabでは`glab ci list --sha=<sha> -F json`でpipeline IDを取得する。
-    取得したIDを`glab ci get -p <pipeline-id> --with-job-details`へ渡し、
-    失敗したjobを`glab ci trace <job>`へ渡す
+  - GitHubではrunの終端前にjob IDを使うAPI、annotation又は失敗テスト名から証拠を暫定保存する。終端後にrun単位の失敗ログを取得し、暫定証拠と失敗job集合の完全性を照合する
+  - GitLabでは対象SHAに対応するpipeline IDから失敗jobとそのtraceへ到達する。`gh`と`glab`の受理形式は実行直前のヘルプで確定する
 - artifactが生成されるジョブでは、VRT差分画像やtest-resultsなどのartifactも取得する
 - 取得したログとartifactを読み取り、失敗の性質を目視で確認する
 - 同一SHAでローカル再現を試し、再現可否を確認する
@@ -148,7 +146,7 @@ VRTベースライン再生成とマスク追加では、VRT固有差分分類�
 | specまたはtestの`.skip`・`xfail` | 適用可能な分類なし | すべての分類 | テスト修正または実装修正を適用する |
 | `allow_failure: true`の付与 | 適用可能な分類なし | すべての分類 | 原因を除去する |
 | 依存バージョンピン | 環境起因で、ライブラリのバージョン差が原因と実測で確定した場合に限る | その他の分類 | 自セッションと無関係な場合はユーザー確認を得る。該当ライブラリの仕様変更へ追随する |
-| 変更差分がない`CI trigger`空コミットの再push | 適用可能な分類なし | すべての分類 | 非決定性の疑いがある場合は`gh run rerun`または`glab ci retry`で1回だけ再実行する |
+| 変更差分がない`CI trigger`空コミットの再push | 適用可能な分類なし | すべての分類 | 非決定性の疑いがある場合は提供CLIで対象jobを1回だけ再実行する |
 
 ジョブ除外・テスト除外・失敗許容化は、`agent-toolkit:commit`にある
 CI設定側の抑制に関する具体的な禁止条件へ該当する。

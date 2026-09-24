@@ -262,9 +262,6 @@ def test_session_start_provides_one_session_scoped_managed_temp(
 
 
 def test_rules_files_have_no_role_specific_sentences() -> None:
-    allowed = {
-        "- サブエージェントは細かく分け過ぎない（起動するごとに固定コストがあるため）",
-    }
     pattern = re.compile(r"^(?:- |\d+\. )?(?:委譲先|サブエージェント|メインエージェント)は")
     actual = {
         line
@@ -272,7 +269,7 @@ def test_rules_files_have_no_role_specific_sentences() -> None:
         for line in path.read_text(encoding="utf-8").splitlines()
         if pattern.match(line)
     }
-    assert actual == allowed
+    assert not actual
 
 
 def test_rules_files_have_no_main_only_capabilities() -> None:

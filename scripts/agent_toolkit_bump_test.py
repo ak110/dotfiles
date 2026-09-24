@@ -141,9 +141,11 @@ class TestWriteVersion:
         marketplace_manifest.write_text(json.dumps({"plugins": []}) + "\n", encoding="utf-8")
         monkeypatch.setattr(bump, "_PLUGIN_MANIFEST", plugin_manifest)
         monkeypatch.setattr(bump, "_MARKETPLACE_MANIFEST", marketplace_manifest)
+        monkeypatch.setattr(bump, "_read_current_version", lambda: "0.1.0")
+        monkeypatch.setattr(bump, "resolve_base_version", lambda: ("0.1.0", "origin/main"))
 
         with pytest.raises(RuntimeError):
-            bump._write_version("0.1.1")  # pylint: disable=protected-access  # noqa: SLF001
+            bump.main(["patch"])
 
         assert json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"] == "0.1.0"
 

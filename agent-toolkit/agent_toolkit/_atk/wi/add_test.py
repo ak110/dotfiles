@@ -61,7 +61,6 @@ def _cmd_add_args(
     entry_type: str = "awi",
     plan_file: str | None = None,
     dry_run: bool = False,
-    origin_locator: str | None = None,
     depends_on: list[str] | None = None,
 ) -> argparse.Namespace:
     """`_cmd_add`の単体テストへ必要な引数を返す。"""
@@ -74,7 +73,6 @@ def _cmd_add_args(
         type=entry_type,
         depends_on=depends_on or [],
         source=source,
-        origin_locator=origin_locator,
         scope=None,
         question_type="free-form" if entry_type == WI_TYPE_UWI else None,
         choices=None,
@@ -82,6 +80,34 @@ def _cmd_add_args(
         dry_run=dry_run,
         subparser=None,
     )
+
+
+def _run_public_add(
+    args: argparse.Namespace,
+    notes: pathlib.Path,
+    now: object,
+    home: pathlib.Path,
+) -> None:
+    """公開CLIで同じWI投入を実行する。"""
+    del notes, now
+    argv = ["wi", "add", "--target-repo", args.target_repo]
+    for body_file in args.body_file:
+        argv.extend(("--body-file", body_file))
+    if args.type != "awi":
+        argv.extend(("--type", args.type))
+    if args.question_type is not None:
+        argv.extend(("--question-type", args.question_type))
+    if args.source is not None:
+        argv.extend(("--source", args.source))
+    for dependency in args.depends_on:
+        argv.extend(("--depends-on", dependency))
+    if args.dry_run:
+        argv.append("--dry-run")
+    try:
+        atk.main(argv, home=home, now=_FIXED_DT)
+    except SystemExit as error:
+        if error.code != 0:
+            raise
 
 
 def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -123,7 +149,7 @@ def test_add_dry_run_validates_without_side_effects(
     monkeypatch.setattr(add_module, "_pull", reject_side_effect)
     monkeypatch.setattr(add_module, "_commit_and_push", reject_side_effect)
 
-    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", dry_run=True), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, "本文", dry_run=True), notes, _FIXED_DT, tmp_path)
 
     after_head = subprocess.run(
         ["git", "-C", str(notes), "rev-parse", "HEAD"],
@@ -142,17 +168,17 @@ def test_add_dry_run_rejects_invalid_input(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--dry-run`は実登録と同じ入力エラーを終了コード1で返す。"""
+    """`--dry-run`も必須の選択肢を欠く指定を公開CLIで拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "質問", entry_type=WI_TYPE_UWI, dry_run=True)
     args.question_type = "choice"
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(args, notes, _FIXED_DT, tmp_path)
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
 
-    assert exc_info.value.code == 1
-    assert "choice形式にはchoicesが必要です" in capsys.readouterr().err
+    assert exc_info.value.code == 2
+    assert "--question-type=choice のときは --choices" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
 
 
@@ -168,7 +194,7 @@ def test_add_dry_run_reports_all_reserved_uwi_markup(
     args = _cmd_add_args(tmp_path, body, entry_type=WI_TYPE_UWI, dry_run=True)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(args, notes, _FIXED_DT, tmp_path)
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
@@ -200,7 +226,7 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
     errors: list[str] = []
     for dry_run in (True, False):
         with pytest.raises(SystemExit) as exc_info:
-            add_module._cmd_add(
+            _run_public_add(
                 _cmd_add_args(tmp_path, "本文", source="test", dry_run=dry_run),
                 notes,
                 _FIXED_DT,
@@ -233,7 +259,7 @@ def test_add_dry_run_reports_style_warnings_with_section_errors(
     body = "本文\u2014説明"
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+        _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
@@ -285,7 +311,7 @@ def test_cmd_add_rejects_agent_awi_missing_one_required_section(
     _patch_cmd_add_operations(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(
+        _run_public_add(
             _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲"), source="test"),
             notes,
             _FIXED_DT,
@@ -309,7 +335,7 @@ def test_cmd_add_lists_every_missing_required_section_at_once(
     _patch_cmd_add_operations(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(
+        _run_public_add(
             _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲", "完成条件"), source="test"),
             notes,
             _FIXED_DT,
@@ -334,7 +360,7 @@ def test_cmd_add_rejects_agent_awi_with_unordered_required_sections(
     message = "本文\n\n" + "\n\n".join(sections)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
@@ -356,7 +382,7 @@ def test_cmd_add_reports_missing_and_unordered_sections_together(
     message = "本文\n\n" + "\n\n".join(sections)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
@@ -376,7 +402,7 @@ def test_cmd_add_rejects_agent_awi_with_empty_required_section(
     message = _AGENT_AWI_BODY.replace("## 実現性\n対象実装を確認済み", "## 実現性\n")
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
@@ -400,7 +426,7 @@ def test_cmd_add_rejects_agent_awi_with_feasibility_only_in_code_fence(
 
     message = f"{_agent_awi_body_without('実現性')}\n\n{opening_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
@@ -428,7 +454,7 @@ def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
         f"{opening_fence}\nコード例\n{non_closing_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
     )
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
@@ -446,7 +472,7 @@ def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
     sections = _AGENT_AWI_SECTIONS.split("\n\n")
     sections[2] = "```markdown\n## 実現性\n見かけだけ\n````\n" + sections[2]
     message = "本文\n\n" + "\n\n".join(sections)
-    add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
@@ -459,7 +485,7 @@ def test_cmd_add_accepts_agent_awi_with_all_required_sections(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    add_module._cmd_add(
+    _run_public_add(
         _cmd_add_args(tmp_path, _AGENT_AWI_BODY, source="test"),
         notes,
         _FIXED_DT,
@@ -478,7 +504,7 @@ def test_cmd_add_accepts_agent_awi_without_alignment_record(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    add_module._cmd_add(_cmd_add_args(tmp_path, _AGENT_AWI_BODY, source="test"), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, _AGENT_AWI_BODY, source="test"), notes, _FIXED_DT, tmp_path)
     assert "scope_alignment" not in next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
     assert "1件をinboxへ投入した" in capsys.readouterr().out
 
@@ -492,7 +518,7 @@ def test_cmd_add_preserves_explicit_alignment_frontmatter(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = f"---\nscope_alignment: old-value\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
-    add_module._cmd_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
     saved_path = next((notes / "inbox").iterdir())
     saved = saved_path.read_text(encoding="utf-8")
     assert "scope_alignment: old-value" in saved
@@ -525,7 +551,7 @@ def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quot
         "## 実現性\n対象実装を確認済み",
         "## 実現性\n\n> ## 引用した規範の見出し\n>\n> 対象実装を確認済み",
     )
-    add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
@@ -538,32 +564,25 @@ def test_cmd_add_accepts_human_awi_without_required_sections(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    add_module._cmd_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
-def test_cmd_add_saves_resolved_origin_session_with_locator(
+def test_cmd_add_omits_origin_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`_cmd_add`は実行環境から解決したセッションとlocatorの組を保存する。"""
+    """`_cmd_add`は由来メタデータを新規作成しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    monkeypatch.setattr(add_module._plan_file, "resolve_owner_session_id", lambda: "session-123")
-
-    add_module._cmd_add(
-        _cmd_add_args(tmp_path, "本文", origin_locator="rollout-456:17"),
-        notes,
-        _FIXED_DT,
-        tmp_path,
-    )
+    _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
     saved = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
     parsed = frontmatter.parse_frontmatter(saved)
     assert parsed is not None
-    assert parsed[0]["origin_session"] == "session-123"
-    assert parsed[0]["origin_locator"] == "rollout-456:17"
+    assert "origin_session" not in parsed[0]
+    assert "origin_locator" not in parsed[0]
 
 
 def test_cmd_add_rejects_missing_source_in_agent_environment(
@@ -577,7 +596,7 @@ def test_cmd_add_rejects_missing_source_in_agent_environment(
     monkeypatch.setenv("AI_AGENT", "1")
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
+        _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert not list((notes / "inbox").iterdir())
@@ -594,7 +613,7 @@ def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
     monkeypatch.setenv("AI_AGENT", "1")
     message = f"---\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
 
-    add_module._cmd_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
@@ -607,7 +626,7 @@ def test_cmd_add_accepts_uwi_without_required_sections(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    add_module._cmd_add(
+    _run_public_add(
         _cmd_add_args(tmp_path, "質問本文", source="test", entry_type=WI_TYPE_UWI),
         notes,
         _FIXED_DT,
@@ -886,72 +905,6 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
     assert content.index("source: alert-monitor") < content.index("alert_keys: github-run:1")
 
 
-def test_flat_add_operation_saves_complete_origin_pair(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """origin_sessionとorigin_locatorの両方が非空の投入では対として保存する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-
-    generated = add_module.add_entries(
-        notes,
-        messages=[_AGENT_AWI_BODY],
-        target_repo="github.com/example/repo",
-        source="session-review",
-        origin_session="session-123",
-        origin_locator="rollout-456:17",
-        now=_FIXED_DT,
-    )
-
-    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
-    assert parsed is not None
-    assert list(parsed[0])[:5] == [
-        "target_repo",
-        "type",
-        "source",
-        "origin_session",
-        "origin_locator",
-    ]
-    assert parsed[0]["origin_session"] == "session-123"
-    assert parsed[0]["origin_locator"] == "rollout-456:17"
-
-
-@pytest.mark.parametrize(
-    ("origin_session", "origin_locator"),
-    [
-        ("session-123", None),
-        (None, "rollout-456:17"),
-        ("", "rollout-456:17"),
-        ("session-123", ""),
-    ],
-)
-def test_flat_add_operation_omits_partial_origin_pair(
-    origin_session: str | None,
-    origin_locator: str | None,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """origin_sessionとorigin_locatorのいずれかが無い投入では両方を保存しない。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        origin_session=origin_session,
-        origin_locator=origin_locator,
-        now=_FIXED_DT,
-    )
-
-    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
-    assert parsed is not None
-    assert "origin_session" not in parsed[0]
-    assert "origin_locator" not in parsed[0]
-
-
 def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_repository_transfer(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1153,7 +1106,7 @@ def test_add_warns_for_missing_dependency_and_keeps_registering(
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
 
-    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", depends_on=["absent.md"]), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, "本文", depends_on=["absent.md"]), notes, _FIXED_DT, tmp_path)
 
     captured = capsys.readouterr()
     generated = sorted(path.name for path in (notes / "inbox").iterdir() if path.suffix == ".md")
@@ -1175,7 +1128,7 @@ def test_add_does_not_warn_for_existing_dependency(
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
 
-    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", depends_on=["present.md"]), notes, _FIXED_DT, tmp_path)
+    _run_public_add(_cmd_add_args(tmp_path, "本文", depends_on=["present.md"]), notes, _FIXED_DT, tmp_path)
 
     assert capsys.readouterr().err == ""
 

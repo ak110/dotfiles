@@ -66,7 +66,7 @@ class TestManagedTempPosix:
         assert target.parent == tmp_path / "managed-temp"
         assert stat.S_IMODE(target.stat().st_mode) == 0o700
         assert subject.validate_managed_temp(target) == target
-        assert subject._load_private_json(subject._registry_path(target))["awis"] == [
+        assert subject.list_managed_temp(prefix="plan-review-snapshot")[0]["awis"] == [
             "20260830-061344-001.md",
             "20260830-143611-001.md",
         ]

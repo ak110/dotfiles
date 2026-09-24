@@ -114,7 +114,6 @@ PROGRESS_ROW: str = "| 2026-08-09 12:00 | 実装 | 成功。 |\n"
 CURRENT_VERIFICATION_TABLE: str = (
     f"{_header_row(_plan_format.PLAN_VERIFICATION_TABLE_HEADER)}\n"
     f"| {_plan_format.PLAN_CURRENT_VERIFICATION_TABLE_ROWS[0]} | {VERIFICATION_COMMAND} |\n"
-    f"| {_plan_format.PLAN_CURRENT_VERIFICATION_TABLE_ROWS[1]} | {INTEGRATION_COMMAND} |\n"
 )
 
 PERMANENCE_ROW: str = "| 更新経路を恒久化する | エージェント提案詳細 | 対象ファイル | 後続の更新でも参照するため。 |"
@@ -205,6 +204,11 @@ def current_plan(
 ## {_plan_format.PLAN_H2_REQUIREMENTS}
 
 公開契約の判定を更新し、対象の検査で結果を確認する。
+
+### {_plan_format.PLAN_ACCEPTANCE_H3}
+
+{_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)}
+| 公開契約の判定 | ユーザー指示 | 利用者と公開入口 | 判定を実行する | 更新後の結果を得る | 公開入口の検体 |
 
 ## {_plan_format.PLAN_H2_CURRENT_PERMANENCE}
 
