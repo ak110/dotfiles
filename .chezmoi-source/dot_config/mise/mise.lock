@@ -173,7 +173,7 @@ backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 
 [[tools."npm:aws-cdk"]]
-version = "2.1141.0"
+version = "2.1142.0"
 backend = "npm:aws-cdk"
 specifiers = ["latest"]
 
