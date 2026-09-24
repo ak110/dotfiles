@@ -847,7 +847,8 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         return [
             "レビュー対象: "
             f"{root / 'draft-1.md'} (対象リポジトリ: {root}; ユーザー原文: {root / 'user-input.md'})\n"
-            f"{root / 'draft-2.md'} (対象リポジトリ: {root})"
+            f"{root / 'draft-2.md'} (対象リポジトリ: {root})",
+            handoff,
         ]
     raise ValueError(f"未対応のタスク文書: {task_name}")
 
