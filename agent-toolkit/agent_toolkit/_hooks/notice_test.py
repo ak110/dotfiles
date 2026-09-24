@@ -4,6 +4,7 @@ import pytest
 
 from agent_toolkit._hooks.notice import block_formatter, consume_warning_blocks, formatter, warning_formatter
 from agent_toolkit._hooks.session_state import read_state
+from agent_toolkit._testing.helpers import auto_message_opening_attributes
 
 
 @pytest.mark.parametrize("fix", ["", " ", "\t"])
@@ -21,7 +22,7 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
 
     message = format_block("blocked", fix="retry")
 
-    assert message.startswith('<agent-toolkit-auto-inserted source="test/hook" kind="block">')
+    assert auto_message_opening_attributes(message) == {"source": "test/hook", "kind": "block"}
     assert "\nblocked\nFix: retry\n" in message
     assert message.endswith("</agent-toolkit-auto-inserted>")
 

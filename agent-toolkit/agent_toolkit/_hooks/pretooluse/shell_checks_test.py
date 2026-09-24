@@ -26,7 +26,7 @@ from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, auto_message_opening_attributes
 
 
 class TestBashUvRunPythonBlock:
@@ -118,7 +118,7 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 0
         messages = _agent_messages(result)
-        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in messages
+        assert auto_message_opening_attributes(messages)["source"] == "agent-toolkit/pretooluse"
         assert "uv run python" in messages
 
     def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
@@ -946,7 +946,7 @@ class TestBashProcessKillByPattern:
     def test_blocks(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
-        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in result.stderr
+        assert auto_message_opening_attributes(result.stderr)["source"] == "agent-toolkit/pretooluse"
 
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})

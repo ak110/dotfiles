@@ -26,7 +26,7 @@ from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, auto_message_opening_attributes
 
 
 @pytest.mark.parametrize("suffix", [".py", ".md"])
@@ -420,7 +420,7 @@ class TestBashSleepPollPattern:
         )
         assert second.returncode == 2
         assert "完了通知" in second.stderr
-        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in second.stderr
+        assert auto_message_opening_attributes(second.stderr)["source"] == "agent-toolkit/pretooluse"
         assert "`sleep`を単独で実行" in second.stderr
         assert "02-agent-operations.md" in second.stderr
 
@@ -689,9 +689,8 @@ class TestBashGitCommitWarning:
         if expect_warn:
             output = json.loads(result.stdout)
             assert "permissionDecision" not in output["hookSpecificOutput"]
-            assert self._has_additional_context(
-                result, '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn"'
-            )
+            context = output["hookSpecificOutput"]["additionalContext"]
+            assert auto_message_opening_attributes(context) == {"source": "agent-toolkit/pretooluse", "kind": "warn"}
             assert self._has_additional_context(result, "テストを実行せずにcommit")
             assert self._has_additional_context(result, "</agent-toolkit-auto-inserted>")
         else:

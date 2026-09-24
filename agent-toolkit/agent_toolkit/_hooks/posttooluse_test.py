@@ -26,7 +26,7 @@ from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server import agents_wait
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
+from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
@@ -1598,7 +1598,7 @@ class TestPlanFilePostWriteNotice:
         message = payload["hookSpecificOutput"]["additionalContext"]
         assert "書き込み後の検査" in message
         assert "check_plan_file.py" in message
-        assert '<agent-toolkit-auto-inserted source="agent-toolkit/posttooluse"' in message
+        assert auto_message_opening_attributes(message)["source"] == "agent-toolkit/posttooluse"
 
     def test_plan_file_write_notice_is_executable_as_written(self, tmp_path: pathlib.Path) -> None:
         """案内文がそのまま実行できる形であること。

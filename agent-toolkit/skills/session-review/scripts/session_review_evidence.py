@@ -43,7 +43,8 @@ _OMISSION_MARK = "…[省略]"
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
     r"\s*(?:\d+\t)?(?:"
-    r'<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)\s+source="[^"]+"\s+kind="(?:warn|warning)"[^>]*>|'
+    r"<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
+    r'(?=[^>]*\ssource="[^"]+")(?=[^>]*\skind="(?:warn|warning)")[^>]*>|'
     r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
     r"⚠(?:\s+|\s*[:：])"
     r")|"
@@ -91,7 +92,8 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
 
 
 _HOOK_NOTICE_MARKER = re.compile(
-    r'(?:<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)\s+source="(?P<hook_xml>[^"]+)"\s+kind="(?P<tag_xml>[^"]+)"[^>]*>|'
+    r"(?:<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
+    r'(?=[^>]*\ssource="(?P<hook_xml>[^"]+)")(?=[^>]*\skind="(?P<tag_xml>[^"]+)")[^>]*>|'
     r"\[auto-generated:\s*(?P<hook_legacy>[^\]]*?)\s*\](?:\s*\[(?P<tag_legacy>[^\]]*)\])?)"
 )
 _HOOK_XML_END_TAGS = ("</agent-toolkit-auto-inserted>", "</agent-toolkit-hook-message>")

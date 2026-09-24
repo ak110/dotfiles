@@ -8,6 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import subagent_stop_advisor as advisor
+from agent_toolkit._testing.helpers import auto_message_opening_attributes
 
 
 def _minimal_report() -> str:
@@ -70,7 +71,10 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
 
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
-    assert decision["reason"].startswith('<agent-toolkit-auto-inserted source="agent-toolkit/subagent-stop" kind="block">')
+    assert auto_message_opening_attributes(decision["reason"]) == {
+        "source": "agent-toolkit/subagent-stop",
+        "kind": "block",
+    }
     assert "\n停止する前に" in decision["reason"]
     assert "Fix: 空でない完了報告を書いてから、あらためて停止する。" in decision["reason"]
 

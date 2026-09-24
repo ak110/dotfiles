@@ -1835,13 +1835,18 @@ def test_warn_keeps_hook_marker_in_hook_record(
 
 
 @pytest.mark.parametrize("element", ["agent-toolkit-hook-message", "agent-toolkit-auto-inserted"])
+@pytest.mark.parametrize(
+    "attributes",
+    ['source="agent-toolkit/pretooluse" kind="warn"', 'kind="warn" source="agent-toolkit/pretooluse"'],
+)
 def test_warn_keeps_xml_hook_marker_in_hook_record(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     element: str,
+    attributes: str,
 ) -> None:
     """XML境界のwarn通知を実行時警告として返す。"""
-    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn">\n実行時の警告\n</{element}>'
+    notice = f"<{element} {attributes}>\n実行時の警告\n</{element}>"
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1862,13 +1867,18 @@ def test_warn_keeps_xml_hook_marker_in_hook_record(
 
 
 @pytest.mark.parametrize("element", ["agent-toolkit-hook-message", "agent-toolkit-auto-inserted"])
+@pytest.mark.parametrize(
+    "attributes",
+    ['source="agent-toolkit/pretooluse" kind="warn"', 'kind="warn" source="agent-toolkit/pretooluse"'],
+)
 def test_hook_notices_mode_parses_xml_boundary_without_closing_tag(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     element: str,
+    attributes: str,
 ) -> None:
     """XML境界の属性と本文を分類し、閉じタグを種別本文から除く。"""
-    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn">\n入力を補正した\n</{element}>'
+    notice = f"<{element} {attributes}>\n入力を補正した\n</{element}>"
     transcript = _write_transcript(
         tmp_path,
         [
@@ -5703,11 +5713,11 @@ def test_hook_notices_mode_ignores_nested_delivery_and_deduplicates_same_call(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     body = (
-        '<agent-toolkit-auto-inserted source="hook/a" kind="notice">参考</agent-toolkit-auto-inserted>'
-        '<agent-toolkit-auto-inserted source="hook/b" kind="warn">理由B'
-        '<agent-toolkit-auto-inserted source="agent-toolkit" kind="rules-main">規範</agent-toolkit-auto-inserted>'
+        '<agent-toolkit-auto-inserted kind="notice" source="hook/a">参考</agent-toolkit-auto-inserted>'
+        '<agent-toolkit-auto-inserted kind="warn" source="hook/b">理由B'
+        '<agent-toolkit-auto-inserted kind="rules-main" source="agent-toolkit">規範</agent-toolkit-auto-inserted>'
         "</agent-toolkit-auto-inserted>"
-        '<agent-toolkit-auto-inserted source="hook/c" kind="block">理由C</agent-toolkit-auto-inserted>'
+        '<agent-toolkit-auto-inserted kind="block" source="hook/c">理由C</agent-toolkit-auto-inserted>'
     )
     transcript = _write_transcript(
         tmp_path,
