@@ -35,12 +35,6 @@
 
 tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終了する。フラグファイルはchezmoi管理対象外でホスト固有運用とする。
 
-## 対話シェル起動時のUWI未回答表示
-
-対話シェル起動時に`atk wi list --type=uwi --answered=no --skip-pull`を自動実行し、未回答UWIを1件1行で画面へ通知する。
-`--skip-pull`でログイン時のリポジトリアクセスを避け、0件時は出力なしで終了する。
-実行条件は、対話シェルかつ`atk`コマンド存在（`command -v atk`）とする。
-
 ## Claude Code入力待ちの通知ベル
 
 Linuxでは、Claude Codeの入力待ち時に端末ベルを送出するフックを

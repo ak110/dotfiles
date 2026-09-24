@@ -21,6 +21,28 @@ def _write_completion_stub(path: pathlib.Path, *, fails: bool = False) -> None:
     path.chmod(0o755)
 
 
+def test_interactive_startup_does_not_list_work_items(tmp_path: pathlib.Path) -> None:
+    """対話シェルの起動時にWI一覧を取得しない。"""
+    home = tmp_path / "home"
+    bin_dir = home / ".local/bin"
+    bin_dir.mkdir(parents=True)
+    call_log = home / "atk-calls"
+    atk_stub = bin_dir / "atk"
+    atk_stub.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$ATK_CALL_LOG"\n', encoding="utf-8")
+    atk_stub.chmod(0o755)
+
+    completed = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-i", "-c", '. "$1"', "bash", str(BASHRC)],
+        capture_output=True,
+        text=True,
+        env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", "TERM": "dumb", "ATK_CALL_LOG": str(call_log)},
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert not call_log.exists()
+
+
 def test_claude_wrapper_preserves_exit_without_screen_commands(tmp_path: pathlib.Path) -> None:
     """Claude終了後に画面操作を行わず、本体の終了状態を返す。"""
     home = tmp_path / "home"
