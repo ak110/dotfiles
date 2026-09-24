@@ -335,7 +335,7 @@ main > .toolbar {
 }
 #screen-wi .app-layout {
   display: grid;
-  grid-template-columns: minmax(15rem, 0.24fr) minmax(0, 1fr);
+  grid-template-columns: minmax(22rem, 0.28fr) minmax(0, 1fr);
   gap: var(--space-3);
   width: min(1800px, 100%);
   margin: 0 auto;

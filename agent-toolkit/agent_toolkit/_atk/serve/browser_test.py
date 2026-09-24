@@ -4013,13 +4013,16 @@ async def test_work_item_filter_fit_order_and_computed_contrast(browser_harness:
       const row = document.querySelector('#entry-list .entry-select');
       return {
         fits: select.clientWidth >= valueWidth + 32,
+        clientWidth: select.clientWidth,
+        valueWidth,
+        sidebarWidth: select.closest('.filters').clientWidth,
         labelAbove: label.getBoundingClientRect().bottom <= select.getBoundingClientRect().top,
         filterBeforeList: Boolean(search.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING),
         textContrast: contrast(getComputedStyle(secondary).color, getComputedStyle(secondary.closest('.card')).backgroundColor),
         borderContrast: contrast(getComputedStyle(select).borderTopColor, getComputedStyle(select).backgroundColor)
       };
     }""")
-    assert metrics["fits"] and metrics["labelAbove"] and metrics["filterBeforeList"]
+    assert metrics["fits"] and metrics["labelAbove"] and metrics["filterBeforeList"], metrics
     assert metrics["textContrast"] >= 4.5
     assert metrics["borderContrast"] >= 3
 
