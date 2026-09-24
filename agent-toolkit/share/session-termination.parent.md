@@ -66,4 +66,5 @@
 ```
 
 全ての照合が成立した後は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節へ戻る。
-同節が定めるベースbranchの公開状態の再観測、`agent-toolkit:completion-report`による報告及び`atk agents-exit-session`の実行を実施する。
+検収した公開状態の4項目を同節へ渡す。間に主作業ツリー若しくは対象refの変更又は外部更新が観測された場合は、同節に従って現在状態を取得し直す。
+続けて`agent-toolkit:completion-report`による報告及び`atk agents-exit-session`の実行を実施する。

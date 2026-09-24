@@ -40,25 +40,29 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 
    明示経路ではremote、source、完全なdestination refをすべて書く。
    pushへ進むのは、いずれの経路でも拒否と失敗予定のrefが無い場合に限る
-4. SessionStartが管理対象一時領域を通知している場合は、
+
+呼び出し元が当該pushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
+CIを判定する場合は、次の3工程で監視用の証拠を作成する。
+
+1. SessionStartが管理対象一時領域を通知している場合は、
    `atk managed-temp create --prefix ci-evidence --session-root <通知された絶対パス>`を単独で実行する。
    通知が無い場合は`atk managed-temp create --prefix ci-evidence`を単独で実行する。
    標準出力の絶対パスと独立登録の有無を保持し、pushごとに別の領域を使う
-5. 削除refを除き、更新refごとにsource refを1件確定する。
+2. 削除refを除き、更新refごとにsource refを1件確定する。
    手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
    `--source-ref`へ渡すのはこの左辺だけとし、refspecの右辺`<destination>`、destination ref、remote-tracking refは別の値として扱う。
    baseline作成時に補助スクリプトがsource refをcommitへ再帰的にpeelし、完全長commit SHAを保存する
    - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
    - pushできるのはcommitへpeelできるrefに限る。peelできないrefではbaseline作成が失敗する
    - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
-6. 読み込んだ本文書の絶対パスからplugin rootを確定する。
+3. 読み込んだ本文書の絶対パスからplugin rootを確定する。
    確定した各`(destination ref, source ref)`について、push前に`uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py`を
-   `--write-baseline <手順4で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。
+   `--write-baseline <この節の第1工程で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。
    `wait_ci.py`は直前のコマンドで確定したパスにあり、
    `<plugin-root>/skills/commit/scripts/`には無い
 
-baseline作成、push、監視の順で実行する。
-いずれの実行でも`--repo`、`--forge`、`--ref`、`--source-ref`をすべて指定する。
+CIを判定する場合はbaseline作成、push、監視の順で実行する。
+baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`をすべて指定する。
 `--repo`にはリポジトリ識別子（`owner/repo`、またはホストを含むURL）を渡す。作業ツリーなどのローカルパスは別の入力として扱う。
 引数の詳細は`--help`で確認する。
 単一refと複数refのいずれでも、GitHubとGitLabの両方で、選定済みforgeを`--forge <github|gitlab>`へ明示する。
@@ -68,8 +72,7 @@ baseline作成、push、監視の順で実行する。
 
 1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する。
    明示経路では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
-2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
-   - 呼び出し元がCI通過の判定をこのセッションで行わないと明示した場合は、`--baseline`を実行せずに後始末へ進む
+2. CI通過をこのセッションで判定する場合は、push成功後に保存した各baselineに対して同スクリプトを`--baseline`付きで実行する。判定しない場合はpushの終了状態を確認して後始末へ進む
    - GitHub Actionsでは、対象workflowの直近の成功runを
      `gh run list --limit <取得件数> --json startedAt,updatedAt,workflowName,conclusion`で取得する
    - `updatedAt - startedAt`の実績へ登録猶予と変動分の余裕を加えて総待機時間を決める
@@ -82,7 +85,7 @@ baseline作成、push、監視の順で実行する。
    - baseline経路はpush前に存在した実行IDを除外するため、自身のpushにより新しく登録された実行だけを判定対象とする
    - GitLab経路では、親pipelineに加えて同一projectのbridgeが再帰的に指すdownstream pipelineとそのジョブを判定対象とし、入れ子の下流も親の待機結果へ反映する
    - 別projectのdownstream pipelineは対象外とする
-3. 全対象が終了コード0で完了した場合だけCI通過と判定する。
+3. CIを判定する場合は、全対象が終了コード0で完了した場合だけCI通過と判定する。
    終了コードの意味は後掲の表に従う。
    出力が空の場合や成功完了マーカーが無い場合は未判定として実測へ切り替える。
    判定対象はbaselineへ保存した完全長SHAに対する実行とし、source refがpush後に進んだ場合も同じSHAで判定する。
