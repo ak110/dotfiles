@@ -21,6 +21,21 @@ from pytools._internal import claude_common, log_format
 logger = logging.getLogger(__name__)
 
 
+def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
+    """明示CAを優先し、Windowsの既定ではOSの信頼済みCAを使う。"""
+    explicit_ca = os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR")
+    return ssl.create_default_context() if windows and not explicit_ca else True
+
+
+def find_powershell() -> str:
+    """利用できるPowerShell 7又はWindows PowerShellを返す。"""
+    for name in ("pwsh", "powershell"):
+        executable = shutil.which(name)
+        if executable is not None:
+            return executable
+    raise RuntimeError("公式インストーラーを実行できるPowerShellが見つからない")
+
+
 def run_official_installer(
     client: httpx.Client | None,
     *,
@@ -42,16 +57,16 @@ def run_official_installer(
     try:
         if active_client is None:
             # 明示CAはHTTPXの環境変数処理へ渡し、それ以外のWindowsではOSの信頼済みCAを使う。
-            explicit_ca = os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR")
-            verify = ssl.create_default_context() if windows and not explicit_ca else True
-            active_client = httpx.Client(timeout=http_timeout, follow_redirects=True, verify=verify)
+            active_client = httpx.Client(
+                timeout=http_timeout, follow_redirects=True, verify=installer_ssl_verify(windows=windows)
+            )
         response = active_client.get(windows_url if windows else posix_url)
         response.raise_for_status()
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".ps1" if windows else ".sh", delete=False) as temp:
             temp.write(response.content)
             temp_path = Path(temp.name)
         command = (
-            ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+            [find_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
             if windows
             else ["bash", str(temp_path)]
         )

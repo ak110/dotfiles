@@ -50,6 +50,7 @@ def test_official_installer_uses_platform_trust_and_explicit_ca(
             pass
 
     monkeypatch.setattr(setup_cli_common.httpx, "Client", Client)
+    monkeypatch.setattr(setup_cli_common.shutil, "which", lambda name: "/usr/bin/pwsh" if name == "pwsh" else None)
     commands: list[list[str]] = []
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -71,7 +72,22 @@ def test_official_installer_uses_platform_trust_and_explicit_ca(
     assert options[0]["verify"] is (context if uses_system_store else True)
     assert len(context_calls) == int(uses_system_store)
     assert requested == ["https://example.test/install.ps1" if platform == "win32" else "https://example.test/install.sh"]
-    assert commands[0][0] == ("pwsh" if platform == "win32" else "bash")
+    assert commands[0][0] == ("/usr/bin/pwsh" if platform == "win32" else "bash")
+
+
+def test_find_powershell_uses_windows_powershell_when_pwsh_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        setup_cli_common.shutil, "which", lambda name: "C:/Windows/powershell.exe" if name == "powershell" else None
+    )
+
+    assert setup_cli_common.find_powershell() == "C:/Windows/powershell.exe"
+
+
+def test_find_powershell_reports_missing_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(setup_cli_common.shutil, "which", lambda _name: None)
+
+    with pytest.raises(RuntimeError, match="PowerShellが見つからない"):
+        setup_cli_common.find_powershell()
 
 
 def test_prepend_path_moves_existing_entry_to_front(monkeypatch, tmp_path: Path) -> None:
