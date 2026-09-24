@@ -69,6 +69,7 @@ _GIT_TIMEOUT_DEFAULT_SEC = 600
 _GIT_OUTPUT_RECOVERY_TIMEOUT_SEC = 30
 _PROCESS_TREE_WAIT_TIMEOUT_SEC = 5
 _GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
+_LOG_STAGE_TOTAL = 5
 
 logger = logging.getLogger(__name__)
 _current_run_id: str | None = None
@@ -147,20 +148,29 @@ def _child_env() -> dict[str, str]:
 
 
 def _run_step(
-    step_no: int, total: int, title: str, argv: list[str], *, capture: bool = False, show_heading: bool = True
+    step_no: int,
+    total: int,
+    title: str,
+    argv: list[str],
+    *,
+    capture: bool = False,
+    show_heading: bool = True,
+    log_step_no: int | None = None,
 ) -> tuple[int, str]:
-    """1段を実行し見出しを表示する。`capture=True`時のみ標準出力を文字列で返す。
+    """1段を実行し、画面と診断ログへそれぞれの段番号を記録する。
 
     `capture=False`の段でも標準エラーだけは取得し、段の終了後に親の標準エラーへ転送する。
     同期結果の記録へ失敗した段の標準エラーを残すためである。進捗を表す標準出力は取得せず、
     子プロセスの出力先を親から引き継いだまま保つ。
+    `capture=True`時のみ標準出力を文字列で返す。
     """
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
     _current_stage_title = title
     _last_stderr_tail = None
+    log_step_no = step_no if log_step_no is None else log_step_no
     if show_heading:
         print(f"=== [{step_no}/{total}] {title} ===")
-    logger.info("stage開始: %d/%d %s", step_no, total, title)
+    logger.info("stage開始: %d/%d %s", log_step_no, _LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
     try:
         result = subprocess.run(
@@ -174,12 +184,17 @@ def _run_step(
             env=_child_env(),
         )
     except OSError as error:
-        logger.exception("stage起動失敗: %d/%d %s", step_no, total, title)
+        logger.exception("stage起動失敗: %d/%d %s", log_step_no, _LOG_STAGE_TOTAL, title)
         print(f"{title}を開始できませんでした: {error}", file=sys.stderr)
         _last_stderr_tail = sync_report.truncate_tail(str(error))
         return 1, ""
     logger.info(
-        "stage終了: %d/%d %s exit=%d duration=%.3f", step_no, total, title, result.returncode, time.monotonic() - started_at
+        "stage終了: %d/%d %s exit=%d duration=%.3f",
+        log_step_no,
+        _LOG_STAGE_TOTAL,
+        title,
+        result.returncode,
+        time.monotonic() - started_at,
     )
     if result.stderr:
         sys.stderr.write(result.stderr)
@@ -237,7 +252,7 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     _current_stage_title = "git pull"
     _last_stderr_tail = None
     print(f"=== [{step_no}/{total}] git pull ===")
-    logger.info("stage開始: %d/%d git pull", step_no, total)
+    logger.info("stage開始: %d/%d git pull", step_no, _LOG_STAGE_TOTAL)
     started_at = time.monotonic()
     # 上限超過時に子孫を列挙してから直接子を回収するため、プロセスを明示的に保持する。
     try:
@@ -261,7 +276,7 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
             env=_child_env(),
         )
     except OSError as error:
-        logger.exception("stage起動失敗: %d/%d git pull", step_no, total)
+        logger.exception("stage起動失敗: %d/%d git pull", step_no, _LOG_STAGE_TOTAL)
         print(f"git pullを開始できませんでした: {error}", file=sys.stderr)
         _last_stderr_tail = sync_report.truncate_tail(str(error))
         return 1
@@ -284,7 +299,11 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
         print(timeout_message, file=sys.stderr)
         _last_stderr_tail = sync_report.truncate_tail(f"{stderr}\n{timeout_message}")
         logger.error(
-            "stage終了: %d/%d git pull exit=1 timeout=%s duration=%.3f", step_no, total, timeout, time.monotonic() - started_at
+            "stage終了: %d/%d git pull exit=1 timeout=%s duration=%.3f",
+            step_no,
+            _LOG_STAGE_TOTAL,
+            timeout,
+            time.monotonic() - started_at,
         )
         return 1
     if stdout:
@@ -294,7 +313,11 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
         stream.write(stderr)
         _last_stderr_tail = sync_report.truncate_tail(stderr)
     logger.info(
-        "stage終了: %d/%d git pull exit=%d duration=%.3f", step_no, total, process.returncode, time.monotonic() - started_at
+        "stage終了: %d/%d git pull exit=%d duration=%.3f",
+        step_no,
+        _LOG_STAGE_TOTAL,
+        process.returncode,
+        time.monotonic() - started_at,
     )
     return process.returncode
 
@@ -531,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
                     total,
                     "chezmoi apply (post-apply実行)",
                     ["chezmoi", "apply", "--force"],
+                    log_step_no=_LOG_STAGE_TOTAL,
                 )
                 if returncode != 0:
                     return _finish(returncode)

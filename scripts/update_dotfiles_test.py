@@ -455,7 +455,9 @@ def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch,
 class TestFiveStepsInOrder:
     """diffを含む5処理が順に呼ばれ、成功時にexit code 0を返すことを検証する。"""
 
-    def test_all_steps_succeed(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    def test_all_steps_succeed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         monkeypatch.setattr(
@@ -482,10 +484,23 @@ class TestFiveStepsInOrder:
         assert "--force" in calls[4]
         log_text = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
         assert "update-dotfiles開始" in log_text
-        assert "stage開始: 4/4 chezmoi apply" in log_text
+        expected_stages = [
+            "1/5 git pull",
+            "2/5 chezmoi init (テンプレート再展開)",
+            "3/5 chezmoi status (apply予定のファイル)",
+            "4/5 chezmoi diff (上書き前の差分)",
+            "5/5 chezmoi apply (post-apply実行)",
+        ]
+        assert [line.partition("stage開始: ")[2] for line in log_text.splitlines() if "stage開始: " in line] == expected_stages
+        assert [
+            line.partition("stage終了: ")[2].partition(" exit=")[0] for line in log_text.splitlines() if "stage終了: " in line
+        ] == expected_stages
         assert "update-dotfiles終了: exit=0" in log_text
         assert "private-status-value" not in log_text
         assert "private-diff-value" in log_text
+        output = capsys.readouterr().out
+        assert "=== [4/4] chezmoi apply" in output
+        assert "=== [4/4] chezmoi diff" not in output
 
     def test_diff_precedes_forced_apply(
         self,
@@ -611,6 +626,50 @@ class TestSyncReport:
         assert report["exit_code"] == 5
         assert "chezmoi apply" in report["failed_stage"]
         assert "対象ツールの導入に失敗しました" in report["stderr_tail"]
+
+    @pytest.mark.parametrize(
+        ("failed_command", "log_stage", "stage_title"),
+        [
+            ("git", "1/5", "git pull"),
+            ("init", "2/5", "chezmoi init (テンプレート再展開)"),
+            ("status", "3/5", "chezmoi status (apply予定のファイル)"),
+            ("diff", "4/5", "chezmoi diff (上書き前の差分)"),
+            ("apply", "5/5", "chezmoi apply (post-apply実行)"),
+        ],
+    )
+    def test_launch_failure_keeps_log_stage_and_report_title(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        sync_report_path: pathlib.Path,
+        failed_command: str,
+        log_stage: str,
+        stage_title: str,
+    ) -> None:
+        calls: list[list[str]] = []
+        successful_popen = _fake_popen({}, calls)
+
+        def popen(argv: list[str], **kwargs: object) -> _FakePopen:
+            if failed_command == "git":
+                raise OSError("起動不能")
+            return successful_popen(argv, **kwargs)
+
+        successful_run = _fake_run({}, calls)
+
+        def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if argv[1] == failed_command:
+                raise OSError("起動不能")
+            return successful_run(argv, **kwargs)
+
+        monkeypatch.setattr(subprocess, "Popen", popen)
+        monkeypatch.setattr(subprocess, "run", run)
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 1
+        log_text = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+        assert f"stage起動失敗: {log_stage} {stage_title}" in log_text
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert report["failed_stage"] == stage_title
 
 
 class TestCapturedStderr:
