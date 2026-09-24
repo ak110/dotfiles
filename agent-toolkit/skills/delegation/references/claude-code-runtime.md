@@ -8,8 +8,8 @@ Claude Codeから委譲を起動する直前に本文書を全文読む。
 - `subagent_type`を選ぶ根拠が無い場合は汎用エージェント（`claude`）、複数ディレクトリ・複数ファイルに跨る
   横断調査・横断置換には`Explore`または並列`Agent`を使う。共通規範の「役割種別」は`subagent_type`で判定する
 - `Agent`ツールの`run_in_background`は既定で背景実行とし、`false`を明示した場合だけ前景で実行する。既定値と受理可否は起動直前にツールスキーマで確認する
-- モデル区分は軽量モデルを`haiku`、標準モデルを`sonnet`、上位モデルを`opus`とし、
-  共通規範の難易度区分をこの3区分へ対応付ける
+- モデル区分は軽量を`sonnet`、標準を用途に応じて`opus`又は`sonnet`、上位を`opus`とする。
+  段位とeffortの対応は`references/runtime-routing.md`「代替時の組合せの目安」を正本とする
 - Agentツールの呼び出しには`effort`に相当するパラメーターが無いため、推論の深さはエージェント定義の
   frontmatterで確定し、`model`を指定する場合は`effort`も併記する。
   `Explore`・`claude`のようにfrontmatterを持たずこの値も受け取らない経路では、モデルの明示だけを行う

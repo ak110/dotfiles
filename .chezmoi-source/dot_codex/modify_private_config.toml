@@ -6,6 +6,8 @@
 {{- end -}}
 {{- $config = setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes $config -}}
 {{- $config = setValueAtPath "tool_output_token_limit" $codexConfig.tool_output_token_limit $config -}}
+{{- $config = setValueAtPath "model_context_window" 1000000 $config -}}
+{{- $config = setValueAtPath "model_auto_compact_token_limit" 900000 $config -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
 {{- $config = setValueAtPath "model_reasoning_summary" "auto" $config -}}

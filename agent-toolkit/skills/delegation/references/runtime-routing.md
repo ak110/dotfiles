@@ -67,7 +67,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`、`codex`または`agy`とする。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で、agyは起動・turnの失敗で次の候補へ進む。
-上表の未設定時の実効値は、いずれのキーも`codex:gpt-5.6-sol/medium`の1候補とする。effort省略時は`medium`とする。
+上表の未設定時の実効値は、`codex-balanced`プリセットが各キーに割り当てる候補列とする。effort省略時は`medium`とする。
 モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ候補ごとの警告を表示するが、新モデルの利用を妨げないため受理する。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、そのキーの実効値を環境変数の値とする。
@@ -170,11 +170,12 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 
 | レベル | `codex` | `claude` |
 | --- | --- | --- |
-| 上位 | `gpt-5.6-sol` | `opus` |
-| 中位 | `gpt-5.6-terra` | `sonnet` |
-| 軽量 | `gpt-5.6-luna` | `haiku` |
+| 上位 | `gpt-6-sol/medium` | `opus/medium` |
+| 中位 | `gpt-6-luna/xhigh` | 用途に応じて`opus/medium`又は`sonnet/medium` |
+| 軽量 | `gpt-6-luna/medium` | `sonnet/medium` |
 
-- 同じ行の`codex`と`claude`の組合せを同等とみなす。effortはいずれも`medium`を第一候補とする
+- 同じ行の`codex`と`claude`の組合せを代替候補とみなし、effortは表の値を用いる
+- gpt-6世代に`terra`はなく、現行の`haiku`は旧世代に属する。新世代の軽量モデルが利用可能になった時点で軽量の行を見直す
 - 代替起動では、まず同じ行のもう一方のengineを試す（起動順の正本は「工程別モデル設定」の代替起動の規定とする）
 - 上位の行を既定とし、中位・軽量の行は内容が確定済みで低リスクな機械作業に限って選ぶ
 - レビュー工程では上位の行だけを用いる

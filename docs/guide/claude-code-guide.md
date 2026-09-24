@@ -215,7 +215,7 @@ atk wi process-loop
 Codexへ切り替える場合は、設定を保存してから起動する。設定は以後の起動へ適用される。
 
 ```bash
-atk config set orchestrate_model codex:gpt-5.6-sol/medium
+atk config set orchestrate_model codex:gpt-6-sol/medium
 atk wi process-loop
 ```
 

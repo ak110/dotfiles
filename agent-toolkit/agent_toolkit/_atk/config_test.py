@@ -22,19 +22,19 @@ _EXPECTED_CATEGORIES = {
 }
 _EXPECTED_MODELS = {
     "探索上位": {
-        "codex": "codex:gpt-5.6-terra/medium",
+        "codex": "codex:gpt-6-luna/xhigh",
         "claude": "claude:opus[1m]/medium",
     },
     "探索軽量": {
-        "codex": "codex:gpt-5.6-luna/medium",
+        "codex": "codex:gpt-6-luna/medium",
         "claude": "claude:sonnet[1m]/medium",
     },
     "上位": {
-        "codex": "codex:gpt-5.6-sol/medium",
+        "codex": "codex:gpt-6-sol/medium",
         "claude": "claude:opus[1m]/medium",
     },
     "軽量": {
-        "codex": "codex:gpt-5.6-terra/medium",
+        "codex": "codex:gpt-6-luna/xhigh",
         "claude": "claude:sonnet[1m]/medium",
     },
 }
@@ -211,9 +211,9 @@ class TestConfigGet:
     @pytest.mark.parametrize(
         ("key", "expected"),
         [
-            ("execute_model", "codex:gpt-5.6-sol/medium,claude:opus[1m]/medium"),
-            ("execute_review_model", "codex:gpt-5.6-terra/medium,claude:sonnet[1m]/medium"),
-            ("session_review_model", "codex:gpt-5.6-sol/medium,claude:opus[1m]/medium"),
+            ("execute_model", "codex:gpt-6-sol/medium,claude:opus[1m]/medium"),
+            ("execute_review_model", "codex:gpt-6-luna/xhigh,claude:sonnet[1m]/medium"),
+            ("session_review_model", "codex:gpt-6-sol/medium,claude:opus[1m]/medium"),
         ],
     )
     def test_get_execute_model_defaults(
@@ -232,7 +232,7 @@ class TestConfigGet:
             atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "claude:opus[1m]/medium,codex:gpt-5.6-sol/medium\n"
+        assert capsys.readouterr().out == "claude:opus[1m]/medium,codex:gpt-6-sol/medium\n"
 
     def test_get_multiple_keys_in_requested_order(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """複数キーの値を指定順に1行ずつ出力する。"""
@@ -326,7 +326,7 @@ class TestConfigGet:
             atk.main(["config", "get", "execute_model"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium,claude:opus[1m]/medium\n"
+        assert capsys.readouterr().out == "codex:gpt-6-sol/medium,claude:opus[1m]/medium\n"
 
     def test_immutable_environment_name_does_not_override_private_notes(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -409,7 +409,10 @@ class TestConfigSet:
     """`atk config set`の変更可能設定更新を検証する。"""
 
     @pytest.mark.parametrize("key", ["execute_model", "execute_review_model"])
-    @pytest.mark.parametrize("value", ["codex:gpt-5.6-sol/medium", "claude:sonnet", "claude:opus/high"])
+    @pytest.mark.parametrize(
+        "value",
+        ["codex:gpt-6-sol/medium", "codex:gpt-6-luna/xhigh", "codex:gpt-5.6-sol/medium", "claude:sonnet", "claude:opus/high"],
+    )
     def test_set_stage_model_persists_and_is_read_back(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, value: str
     ) -> None:
@@ -585,12 +588,12 @@ class TestConfigSet:
     def test_resolve_model_candidates_maps_model_type_and_rejects_unknown(self) -> None:
         """model_typeを対応設定の候補へ解決し、未知値は両方の受理形式を示して拒否する。"""
         assert config_module.resolve_model_candidates("explore_fast") == [
-            ("codex", "gpt-5.6-luna", "medium"),
+            ("codex", "gpt-6-luna", "medium"),
             ("claude", "sonnet[1m]", "medium"),
         ]
         with pytest.raises(ValueError, match=r"unknown model_type: no-such.*execute_review.*explore_fast"):
             config_module.resolve_model_candidates("no-such")
-        with pytest.raises(ValueError, match=r"or pass candidates like codex:gpt-5\.6-sol/medium"):
+        with pytest.raises(ValueError, match=r"or pass candidates like codex:gpt-6-sol/medium"):
             config_module.resolve_model_candidates("no-such")
 
     def test_resolve_model_candidates_accepts_direct_candidates(self, tmp_path: pathlib.Path) -> None:
