@@ -1195,8 +1195,8 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 - C: `agent-toolkit/share/rules-main.md`「協調と自律」
 - M: `agent-toolkit/skills/plan-mode/SKILL.md`「進め方」
 - W: `agent-toolkit/skills/writing-standards/references/writing.md`「日本語の書き方」
-- S: `agent-toolkit/skills/writing-standards/references/security.md`「秘匿値ファイルの取り扱い」
-- R: `agent-toolkit/skills/writing-standards/references/search.md`「検索手段の選定と出力量の制御」
+- S: `agent-toolkit/share/security.md`「秘匿値ファイルの取り扱い」
+- R: `agent-toolkit/share/search.md`「検索手段の選定と出力量の制御」
 - G: `agent-toolkit/skills/commit/SKILL.md`「通常commit」と同スキルの`references/history-rewrite.md`「履歴書換え」
 - A: `agent-toolkit/skills/writing-standards/references/agent-documents-additions.md`「規範追記時の判定」
 - T: `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」

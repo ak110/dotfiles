@@ -20,17 +20,17 @@ payload設計は、上記の一次資料が示す仕様から確定する。
   スキル本文から実行するコマンドには、読み込んだSKILL.mdの絶対パスから確定したplugin rootを用いる
 - Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。
   信頼するまではCodexがそのフックをスキップする
-- 呼出主体の判別: サブエージェントの呼び出しとメイン会話を区別する場合は共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指すため判別に利用できない。サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/hook-implementation/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある
+- 呼出主体の判別: サブエージェントの呼び出しとメイン会話を区別する場合は共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指すため判別に利用できない。サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある
 - そのターンの地の文の可視性: `PreToolUse`の発火時点では、そのツール呼び出しと同じアシスタントターンのテキストブロックが`transcript_path`のJSONLへ未書き込みである。
   思考ブロックとツール呼び出しだけのターンも記録されるため、直前の1ターンだけを判定対象にすると地の文を取得できない。
   そのターンの地の文を入力とする判定を`PreToolUse`へ置かない。
   直近の地の文を対象とする判定では、テキストブロックを持たないターンを走査の対象から除いて遡る。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/hook-implementation/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
   auto modeでのブロック等はPermissionDeniedフックが処理する。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/hook-implementation/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある
 - CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
   出力文字列だけが届くため、状態記録の条件からコマンドの成否を外す。
   `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる。
@@ -110,7 +110,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 これらのイベントの`matcher`は3通りに解釈する。`"*"`、空文字列及びキーの省略は全ツールへ一致する。英数字、`_`、`-`、空白、`,`、`|`だけからなる値は、`|`又は`,`で区切ったツール名の完全一致とする。それ以外の文字を含む値は、先頭と末尾を固定しないJavaScriptの正規表現として評価する。
 全ツールへ一致させる登録には`"*"`を書き、新規記述で用いる表記をこの1つに限る。ツール名で`matcher`を評価しないイベントでは`matcher`キーを省く。
 一次資料は公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Matcher patterns`節とする。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/hook-implementation/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
 
 - 個別の早期returnガード: `matcher`を広げた場合、hookスクリプト側で`tool_name`を
   確認し対象外を早期returnすることで処理コストと誤検出を抑える
@@ -159,7 +159,7 @@ Claude Codeが表示する`Stop hook error: JSON validation failed`は、プロ�
 モデルの応答をJSONとして解析できなかった場合に出る。この表示が出る経路はプロンプト型hookの評価器に限る。
 `/goal`はセッションの範囲で有効なプロンプト型Stop hookを登録する。
 `/goal`を設定したセッションでは、その表示がコマンド型hookの出力形式とは無関係に現れる。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/hook-implementation/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日」にある。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日」にある。
 
 PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。これらのイベントでは、`additionalContext`はターン継続を強制しない。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。

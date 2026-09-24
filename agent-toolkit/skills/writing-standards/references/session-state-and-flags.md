@@ -4,10 +4,6 @@
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
 計画名の再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`へ分離する。
 
-フックがセッション状態の不足を理由にブロックした場合は、状態ファイルを`Read`して
-その状態と他の記録済み状態を実測する。
-記録契機が発生していない場合は、同じ委譲の再実行以外の対処を選ぶ（努力目標）。
-
 ## 状態ファイルの設計
 
 Claude CodeまたはCodexのhook間で情報を共有する場合、セッション単位の状態ファイルを使う。

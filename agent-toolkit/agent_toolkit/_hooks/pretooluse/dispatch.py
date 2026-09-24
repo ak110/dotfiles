@@ -666,7 +666,7 @@ def _handle_user_facing_text_tool(
     ユーザーへ直接到達する本文を対象とする検査は、当該本文をユーザー自身が読んで誤りを指摘できるため、
     第1段の復元できない結果に当たらない。遮断すると当該ターンの入力と作業を失わせたうえで
     同じ確認の再発行を要するため、文字化け、日本語以外の文字の混入及び誤字のいずれも警告で返す。
-    判定の根拠は`agent-toolkit:hook-implementation`の`references/claude-hooks.md`
+    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
     「遮断・警告フックの成立条件」が定める。
     """
     warnings: list[str] = []

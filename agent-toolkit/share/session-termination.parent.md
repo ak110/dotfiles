@@ -29,7 +29,7 @@
 - `検証・CI方針`: 通常は`通常`。`agent-toolkit:process-wi`の「局所変更の即時公開」が成立する場合だけ`即時対応`
 - `近接検証結果`: `即時対応`では成功したコマンドと終了コード。`通常`では`なし`
 - `後続処置AWI`: 未完了の独立した後続処置を登録した場合はそのAWIのファイル名。それ以外は`なし`
-- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収は`agent-toolkit:writing-standards`の`references/managed-temp.md`に従う
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収は`agent-toolkit/share/managed-temp.md`に従う
 
 対象リポジトリ、ベースbranch名、プロジェクト規範は受信者が`cwd`とGitから解決する。権限は受信者の固定タスク契約を用いる。直前push OID、固有の終端工程及び延期adoptの既定値は`なし`とし、既定値と一致する行は省く。
 

@@ -15,8 +15,7 @@ Claude Codeは対話、フック、ルールの読み込み、作業全体の統
    各言語のモダンなイディオム・禁止パターン・セキュリティ注意点・テスト方針を明示し品質水準を維持する
 3. 知識の補完: LLMの学習データに含まれない情報を補う。
    Claude Code関連の仕様は改訂が頻繁なため、`agent-toolkit:writing-standards`の
-   `references/agent-skills.md`と`agent-toolkit:hook-implementation`の
-   `references/claude-hooks.md`で現行仕様を参照できるようにする。
+   `references/agent-skills.md`と`references/claude-hooks.md`で現行仕様を参照できるようにする。
    個人製作のツール（pytilpackなど）は学習データに含まれないため、
    `agent-toolkit:pytilpack-usage`等でリファレンスを提供する
 

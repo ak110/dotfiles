@@ -173,7 +173,7 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
 
     検出した回の応答は既にユーザーへ届いており、当該ツール呼び出しを止めても当該応答は戻らない。
     以降の応答を日本語へ切り替えることで是正できるため、
-    `agent-toolkit:hook-implementation`の「遮断・警告フックの成立条件」の第1段により遮断しない。
+    `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
 
     セッション状態キー:
     - english_warning_count: 連続英語ターンのカウンタ（int）

@@ -7,7 +7,6 @@ description: >
   AWI・UWIの本文起草時、成果物へ書く事実主張の裏付け調査時、ホスト機能の可否・入出力契約の調査時、
   セッション記録（`~/.claude/projects`配下）の集計・分析時も呼び出す。
   規範・基準・手順・目標値の妥当性、到達性、有無、置き場所を確認する場面でも呼び出す。
-  formatter・linter・testerその他の品質検査を起動する時も呼び出す。
   理解のためコードを読むだけの場合はトリガー不要。
 # 編集時の注意点:
 # 著者向けの品質基準だけを扱い、レビュー担当とレビューイーの判断指針はreview-standardsを正本とする。
@@ -16,10 +15,10 @@ description: >
 
 # 成果物の品質基準
 
-本スキルは、ドキュメント、コード及びコーディングエージェント向け文書を書く主体へ品質基準を提供する。
+本スキルは、ドキュメント、コード及びコーディングエージェント向け文書を書く主体へ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、実行主体別のルールと各作業のスキルが定める。
 着手する作業に該当する参照資料を全文読み、そのすべてを適用する。
 本スキルが「<条件>のとき: <参照先>」の形で挙げる参照先は、その条件が成立した時点で全文読む。条件は起動時だけでなく作業の途中でも成立するため、成立を判定してから読み、読む前にその条件が成立する操作へ着手しない。
-条件付きの参照先を読まずに操作へ進むと、その参照先が定める手段の選定と出力量の制御が発動しない。
+条件付きの参照先を読まずに操作へ進むと、その参照先が定める品質基準を適用できない。
 レビュー担当とレビューイーの判断基準は`agent-toolkit:review-standards`が定める。
 計画ファイルの成果物契約は`agent-toolkit:plan-mode`が定め、本スキルの対象外とする。
 
@@ -77,9 +76,6 @@ description: >
 - テストコードを書く時、及び条件分岐と判定条件を新設又は変更する時: `references/testing.md`
 - 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`
-- 管理対象一時領域を扱う時: `references/managed-temp.md`
-- リポジトリ内を検索する時: `references/search.md`
-- 秘匿値ファイルを扱う時: `references/security.md`
 
 ## コーディングエージェント向け文書の編集時に読む資料
 
@@ -93,13 +89,9 @@ description: >
 
 - スキル編集（公式リファレンスの参照先を含む）: `references/agent-skills.md`
 - サブエージェント定義ファイルの編集、及びサブエージェントが関与する手順の作成・改訂: `references/sub-agents.md`
-- hook編集、及びhookのエンドユーザー向けメッセージの新設・改訂: `references/agent-skills.md`を読み、`agent-toolkit:hook-implementation`を起動する
-- auto modeのカスタムルール編集: `references/auto-mode.md`と`references/agent-skills.md`を読み、`agent-toolkit:hook-implementation`を起動する。権限拒否に遭遇した場面の手順は`agent-toolkit:confirmation-and-uwi`が扱う
-- セッション状態フラグを扱う編集: `agent-toolkit:hook-implementation`を起動する
+- hook編集、及びhookのエンドユーザー向けメッセージの新設・改訂: `references/agent-skills.md`と`references/claude-hooks.md`。セッション状態ファイル又はフラグを扱う場合は`references/session-state-and-flags.md`も読む
+- auto modeのカスタムルール編集: `references/auto-mode.md`と`references/agent-skills.md`。hookを編集する場合は`references/claude-hooks.md`も読む。権限拒否に遭遇した場面の手順は`agent-toolkit:confirmation-and-uwi`が扱う
+- セッション状態ファイル又はフラグを扱う編集: `references/session-state-and-flags.md`。hookの実装も編集する場合は`references/claude-hooks.md`も読む
 - セッション記録の集計・分析: `references/session-records.md`
 - 機械チェックスクリプトの新設・改修: `references/check-script-design.md`
 - 規範文書へ新しい規定を追記する場面、及び文書の記述量を管理する場面: `references/agent-documents-additions.md`
-
-## 品質検査の実行時に読む資料
-
-- formatter、linter、tester又はプロジェクト固有の検査を起動する時点: `references/check-execution.md`

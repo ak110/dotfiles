@@ -180,7 +180,7 @@ def _check_edit_operation_blocks(
 ) -> bool:
     """1操作分の遮断検査を実行する。
 
-    ファイルへの書き込みは再編集で復元できるため、`agent-toolkit:hook-implementation`
+    ファイルへの書き込みは再編集で復元できるため、`agent-toolkit:writing-standards`の`references/claude-hooks.md`
     「遮断・警告フックの成立条件」の第1段により、編集内容を対象とする検査は警告へ移した。
     秘匿値ファイルの編集だけは、値がログとトランスクリプトへ複写された後に取り消せないため遮断を維持する。
     """
@@ -1210,7 +1210,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     対象外パスへの編集時もカウンタをリセットする。
     カウンタ2件目以降で警告本文を返して進行を継続する。
     計画を経ない編集はファイルの再編集で復元できるため、
-    `agent-toolkit:hook-implementation`の「遮断・警告フックの成立条件」の第1段により遮断しない。
+    `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
 
     Returns:
         （block判定, 通知本文またはNone）のタプル。第1要素は常に偽を返す。

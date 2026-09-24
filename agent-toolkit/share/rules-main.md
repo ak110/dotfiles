@@ -24,7 +24,7 @@
 自律モードのまま継続する。UWIへの回答は本切り替えの対象外とし、
 本節のUWI受領規定に従って扱う。
 
-協調モードと自律モードの判定に用いるセッション状態フラグは`agent-toolkit:hook-implementation`の`references/session-state-and-flags.md`が定める。
+協調モードと自律モードの判定に用いるセッション状態フラグは`agent-toolkit:writing-standards`の`references/session-state-and-flags.md`が定める。
 
 ### 確認を要する事項
 

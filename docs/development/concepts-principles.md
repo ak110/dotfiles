@@ -193,7 +193,7 @@
   手順文書への記載で置き換えた事象に由来する）。
   同じ制約を`AskUserQuestion`の本文へ適用する検査が再び置かれたため撤去した（2026年9月16日、利用者指示）。
   当該制約とユーザー向け提示本文の扱いの正本は
-  `agent-toolkit/skills/hook-implementation/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある
+  `agent-toolkit/skills/writing-standards/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある
 
 ## 概念設計と最小実装の優先順位
 

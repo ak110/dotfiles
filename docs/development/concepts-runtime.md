@@ -55,7 +55,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 - フックのblockは、通した場合の結果を復元できない操作にだけ用いる。
   再編集又は再実行で是正できる操作にはwarnを用いる。
   blockは当該ターンの入力と作業を失わせ、同じ操作の再実行を要するためである。
-  現行の正本は`agent-toolkit/skills/hook-implementation/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある（2026年9月15日、利用者指示）
+  現行の正本は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある（2026年9月15日、利用者指示）
 - ユーザーへ提示する本文そのものを入力とするフックの判定は、遮断せず警告で返す。
   `AskUserQuestion`の質問と選択肢、`ExitPlanMode`の計画本文が当該本文に当たる。
   ユーザーが読んで誤りを指摘できるため、遮断は是正の往復だけを増やす

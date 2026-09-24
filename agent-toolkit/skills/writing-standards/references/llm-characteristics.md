@@ -52,7 +52,7 @@
 - 途中で採用した仮説へ後続の探索が偏りやすい。
   原因実証と反証候補の確認は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`が定める
 - 開いたファイル・検索結果などの可視範囲を全体と誤認し、未探索領域を見落としやすい。
-  網羅性の判定は`references/investigation.md`と`references/search.md`が定める
+  網羅性の判定は`references/investigation.md`と`agent-toolkit/share/search.md`が定める
 - 既存コードの慣習・技術的負債を仕様と誤認して模倣することも、
   一般論を固有事情のあるプロジェクトへ持ち込みすぎることもある。
   維持する契約と実態の照合は`agent-toolkit:review-standards`が定める
