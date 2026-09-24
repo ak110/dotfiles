@@ -115,13 +115,9 @@ git fetch origin master
 git rev-parse --short=7 origin/master
 ```
 
-push前に管理対象一時領域を作成し、`origin/develop`のCI runをbaselineへ保存する。
-実行順序はbaseline作成、同期pushの順で固定する。push後に同期先のrefを再取得して、develop CIの待機を省略できるか判定する。
-`--repo`、`--forge`、`--ref`及び`--source-ref`は毎回明示する。
 `origin/develop`の更新はローカルbranchを操作元にせず、`origin/master`と宛先refを明示したrefspecでpushする。
 
 ```sh
-uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/agent_toolkit/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha origin/master
 git push origin origin/master:refs/heads/develop
 git fetch origin develop master
 git rev-parse --short=7 origin/develop
@@ -149,32 +145,10 @@ git -C <develop worktreeの絶対パス> rev-parse --short=7 develop
 実行後に対象worktreeで取得した`develop`が`origin/master`の短縮OIDと一致することを確認する。
 再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略する。対象worktreeと既存の未コミット差分に加え、ローカルbranchも変更せずリモートの完遂を維持する。完了報告には、省略した条件と対象worktreeの絶対パスを記録する。ローカル`develop`の短縮OIDと`origin/master`の短縮OIDも記録する。
 
-develop CIの待機を省略できるのは、既に検収済みのcommitと対象refのcommitが同一であり、かつ対象branch固有の検査が無いことを現行のワークフロー定義から確認できる場合に限る。
-いずれかを確認できない場合は、develop push前のbaselineを用いる既存の待機経路をそのまま実行する。
-必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`が同じcommitを指す最終照合は毎回実施する。
-
-```sh
-# 省略条件が成立しない場合だけ実行する。
-uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/agent_toolkit/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha origin/master --timeout 1800
-```
-
-master CIの待機も同じ条件で省略できる。次の3つをすべて確認できる場合に限り、いずれか1つでも確認できない場合は後段の待機経路をそのまま実行する。
-
-- マージコミットのツリーがPR headのツリーと同一であり、そのhead commitを対象とするCI runが`success`で完了している
-- 「条件付きRelease検収」の判定で、Release検収が不要である。Release検収を要する差分がある場合はmaster CIの成功が後続工程の前提になる
-- 現行のワークフロー定義に、master向けにだけ実行されるjob、追加検査及び外部検査がない
-
-master pushのCIは、`origin/master`、`push` event及び`master` head branchに一致するrunを一覧から特定する。
-`gh run list --commit`へ渡す値は、外部インターフェースが要求するため`origin/master`から操作直前に完全OIDへ解決し、その呼び出しだけに用いる。
-runの完全なdatabase IDを取得した後、公式CLIで待機する。
-
-```sh
-gh run list --repo ak110/dotfiles --workflow CI --commit <origin/masterから操作直前に解決した完全OID> --json databaseId,event,headBranch,headSha,status,conclusion,url
-gh run watch <run ID> --repo ak110/dotfiles --compact --exit-status
-```
-
-run登録前は読み取り専用の一覧取得を継続する。
-CI待機には前掲の公式CLIを用い、自作のshell sleep loopはその手段から外す。
+マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。
+`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前の検査で必須checkの成功を確認したPR headのツリーと同じになる。同期で`develop`へ載るのも同じマージコミットである。
+両pushのCIは同じ中身の再検査になり、待機しても完了までの時間が延びるだけである。
+`Release statusLine`はmaster pushのCI成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論は「条件付きRelease検収」が待つRelease runの成否で確かめる。
 
 ## 条件付きRelease検収
 

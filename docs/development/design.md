@@ -1700,10 +1700,9 @@ GitHubのruleset API仕様は、2026年8月26日時点の[Rulesets REST API](htt
 workflowの`workflow_run`入力境界は、同日時点の[workflow_runイベント仕様](https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#workflow_run)を参照する。
 
 PRマージ後は、`origin/master`をマージコミットの正本として保持し、`git rev-parse --short=7 origin/master`で人間可読の識別子を取得する。
-その後にpush前のCI baselineを保存し、`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。ローカルbranchを`origin/develop`更新の操作元にしない。
-develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。commit不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commit照合は省略しない。
-同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であり、develop固有検査には含めない。CI定義が変化した場合は省略条件を再判定する。
-待機する場合、runが登録される前は読み取りだけを継続し、自作のshell sleep loopを追加しない。
+その後に`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。ローカルbranchを`origin/develop`更新の操作元にしない。
+マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前に必須checkの成功を確認したPR headのツリーと同じになり、developへ載るのも同じマージコミットである。両pushのCIは同じ中身の再検査であり、待機してもリリースの完了時刻が後ろへずれる以外の効果が無い（2026年9月24日、利用者指示）。以前は「commitが同一」「ツリーが同一」などの省略条件を個別に判定していたが、マージコミットをdevelopへ同期した直後にdevelop側の条件が成立せず、同じ中身のCIを待つ事象が起きたため撤去した。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commit照合は省略しない。Release runはmaster CIの成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論はRelease runの検収で確かめる。
+同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。
 
 `origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub Release及びLinux・Windows assetを検収する。`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。
 statuslineの差分がない場合はRelease成果物を検収しない。
