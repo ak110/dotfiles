@@ -13,10 +13,10 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
 
 本スキルは、調査から計画ファイルの作成、実装及び起動経路別の終端までの工程制御を定める。
 計画工程と直接起動時の実行工程の責務は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
-計画ファイルの成果物契約は`references/plan-file-standards.md`、実装と実行レビューの内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書を正本とする。
+計画ファイルの成果物契約は`references/plan-file-standards.md`、WI本文の要求と由来は`agent-toolkit:wi-standards`、実装と実行レビューの内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書を正本とする。
 計画は要件・外部仕様の水準で書き、レビューは実装後の実行レビューだけで行う。計画の起草者が続けて実装し、実行レビューは要件・外部仕様の水準を対象とする。
 
-ユーザーが`agent-toolkit:plan-mode`を直接起動した場合は、`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返す。
+確認要否、質問の経路とUWIへの退避は`agent-toolkit:confirmation-and-uwi`を正本とする。ユーザーが`agent-toolkit:plan-mode`を直接起動した場合は、`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返す。
 起動プロンプトが起動経路として`agent-toolkit:process-wi`を明示している場合は、認識の違いで要件又は結果が変わる未確定事項だけをUWIへ登録する。
 `references/grilling.md`は直接起動のための手順として扱う。
 `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を受け取ったレーン担当として起動された場合は、同書の完了報告が定めるエスカレーションで確認事項を呼び出し元へ返し、回答を受け取ってから工程を続ける。UWIの登録は呼び出し元が行う。

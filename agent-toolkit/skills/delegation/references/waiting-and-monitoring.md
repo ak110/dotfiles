@@ -55,8 +55,8 @@
   発動条件は`agent-toolkit/share/rules-main.claude-code.md`の`/goal`の条項を正本とする
 - 待機表明で終端した委譲先が再開する契機は、その委譲先の起動経路で異なる。
   実行環境の`Agent`ツールで起動したサブエージェントは、背景ジョブの完了通知で再開する。
-  `agents_server`の`start`、`start_explore`及び`start_shell`で起動した委譲先は、呼び出し元のサブエージェントではなく独立したセッションとして動く。
-  そのセッションが`agents_server`の`start`、`start_explore`又は`start_shell`で別のsessionを起動した場合は、ClaudeとCodexの両backendがツール結果の`session_id`を追跡する。
+  `agents_server`で起動した委譲先は、呼び出し元のサブエージェントではなく独立したセッションとして動く。
+  そのセッションが別の`agents_server` sessionを起動した場合は、ClaudeとCodexの両backendがツール結果の識別子を追跡する。
   managerの常駐監視は全ての追跡対象が終端するまで最初の結果を保留し、終端した識別子を示す継続指示で同じsessionをそのターンにつき一度だけ自動的に再開する。
   Claude backendでは、背景実行したシェルのコマンド、背景で起動したAgent委譲、及び背景へ移行したMCPツールの呼び出しも、Claude Codeの完了通知による自動再開の対象になる。
   自動再開が働くのは背景タスクを起動した場合に限る。背景タスクを起動せずに待機を表明した場合の待機対象の完了確認と再開指示は、呼び出し元が行う
@@ -144,7 +144,7 @@ CIの完了、デプロイの反映など、外部サービスの状態が変わ
   終端したturnは子の完了後に新しいturnを開始しないためであり、呼び出し元は前項に従って継続を要求する。
   本項は自動再開を持たない実行経路へ適用する。`agents_server`の両backendは、同じsessionが`agents_server`で起動した子の生存中はそのsessionの終端結果を保留するため、この経路では終端statusが返らない。
 - 完了通知が到達しない場合は、単純に待ち直さず`停滞の検知と巻き取り`へ進む。
-  調査は対象の実体を直接照会するコマンド（`ps -p <PID>`・`gh run list --commit <SHA>`等）で行う。
+  調査では保持した識別子で対象の実体を直接照会する。
 
 ### Codex互換実行の稼働中turn
 

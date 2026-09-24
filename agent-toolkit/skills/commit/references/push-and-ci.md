@@ -72,9 +72,9 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 
 1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する。
    明示経路では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
-2. CI通過をこのセッションで判定する場合は、push成功後に保存した各baselineに対して同スクリプトを`--baseline`付きで実行する。判定しない場合はpushの終了状態を確認して後始末へ進む
-   - GitHub Actionsでは、対象workflowの直近の成功runを
-     `gh run list --limit <取得件数> --json startedAt,updatedAt,workflowName,conclusion`で取得する
+2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
+   - CI通過をこのセッションで判定しない場合は、`--baseline`を実行せずに後始末へ進む
+   - GitHub Actionsでは、対象workflowの直近の成功runから開始時刻と終了時刻を取得する。`gh`の入力と出力形式は実行直前のヘルプで確定する
    - `updatedAt - startedAt`の実績へ登録猶予と変動分の余裕を加えて総待機時間を決める
    - 対象workflowの成功runが取得できない場合と実績を算出できない場合は270秒を使う
    - baselineごとに確定した総待機時間を指定して1回だけ起動する
@@ -95,13 +95,11 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
    登録猶予は、実行が1件も登録されないまま終わる場合を切り分けるための待機であり、
    判定対象を確定する期限ではない
 4. CI失敗では、最初の失敗jobを検出した時点でrunまたはpipelineとjobの実識別子、失敗ログ及び生成されるartifactを取得する。
-   GitHub Actionsのrunが実行中の場合は、失敗したjobの識別子を使い、`gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs --allow-escape-sequences`で個別ログを取得して証拠領域へ保存する。`gh run view --log-failed`はrunの終端後に用いる。
+   GitHub Actionsのrunが実行中の場合は、失敗したjobの識別子を使って個別ログを取得し、証拠領域へ保存する。run全体の失敗ログは終端後に取得する。`gh`の受理形式は各操作の直前にヘルプで確定する。
    同一SHAのローカル再現と原因調査も開始する。
    残りのjob監視を継続し、全jobの終端後に失敗集合、ログ、artifactを再照合して修正範囲を確定する。
    長出力の取得と要約は`agents_server`の`start_shell`へ委譲できる。待機と原因分析は自身で行う
-5. 証拠取得後に`agent-toolkit:bugfix`を起動し、
-   同スキルのCI失敗分析契約で帰属と原因を分類する。
-   自セッション帰属または帰属未確定なら、直接的原因の明白さを問わず拡張原因分析経路を適用する
+5. 証拠取得後に`agent-toolkit:bugfix`を起動し、同スキルのCI失敗分析契約で帰属、原因及び拡張原因分析の要否を判定する
 6. CI失敗の修正は、同じbranchへの通常commitとして追加する。push済みcommitへのamend、fixup、rebaseその他の履歴書き換えと、force pushは修正手段の外に置く
 7. 診断目的で対象jobを再実行した後も、保存済みの同一baselineに対して`wait_ci.py --baseline`を再起動し、待機はこのスクリプトへ委ねる。自作の待機ループは、baselineが定める判定対象を再現しないため、待機の手段の外に置く。
    許容された再実行後も失敗が残る場合は、CI未通過を終端状態として確定する。

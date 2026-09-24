@@ -7,7 +7,7 @@ description: >
 # AWIのレーン処理
 
 選定時に固定したAWIをレーンへ分け、各レーンの同じ担当threadが計画の起草から統合までを担う。メインは選定、計画境界の確認、実行レビューの調整、公開工程及びセッション終端を担う。
-AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本スキルの実行中は自律モードとする。
+AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認経路は`agent-toolkit:confirmation-and-uwi`を正本とする。本スキルの実行中は自律モードとする。
 
 ## 用語
 
@@ -83,5 +83,5 @@ pickerと並行して、対象がGitHub上にある場合は`references/github-c
 
 ## 終端
 
-選定、レーン又は公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:wi-standards`に従ってUWIへ記録し、その回答を得るまで進められないAWIを`atk wi hold`で保留する。
+選定、レーン又は公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:confirmation-and-uwi`の経路でUWIへ退避し、WIの状態は`agent-toolkit:wi-standards`に従って`atk wi hold`で保留する。
 通常の完了報告は`agent-toolkit:completion-report`に従う。本スキルの工程で生じたcommitは、公開工程で反映してから完了を報告する。

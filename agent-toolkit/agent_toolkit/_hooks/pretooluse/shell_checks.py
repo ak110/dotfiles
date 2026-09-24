@@ -53,7 +53,7 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は警告 (auto-fix/warn)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は遮断 (auto-fix/block)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
@@ -109,13 +109,11 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING
 
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
-from agent_toolkit._atk import managed_temp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
@@ -141,7 +139,6 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
     CwdResolution,
     GitEvent,
-    QuotingScanner,
     extract_git_events,
     resolve_cwd_change,
     resolve_execution_segment,
@@ -335,40 +332,6 @@ def _rewrite_simple_git_grep(command: str) -> str | None:
     return shlex.join(["git", "grep", *leading, *moved, pattern, *rest, *pathspec])
 
 
-def _single_unquoted_pipe_index(masked: str) -> int | None:
-    """引用の外側に単独のパイプ演算子がちょうど1つある場合に、その位置を返す。
-
-    `|&`・`||`・`;`・`&&`・改行のいずれかが引用の外側にある入力と、引用の外側のパイプが
-    1つでない入力はNoneを返す。引用が閉じない入力もNoneを返す。
-    入力はheredoc本文をマスクした文字列とし、当該マスクは文字位置を保つため、
-    返す位置は元のコマンド文字列へそのまま適用できる。
-    """
-    positions: list[int] = []
-    nested = _bash_command_parser.nested_shell_positions(masked)
-    scanner = QuotingScanner(masked)
-    while scanner.index < len(masked):
-        if scanner.consume_quoted():
-            continue
-        index = scanner.index
-        if index in nested:
-            scanner.index += 1
-            continue
-        char = masked[index]
-        if char in {"'", '"'}:
-            scanner.enter_quote(char)
-            continue
-        if char == "\n" or char == ";" or masked.startswith("&&", index):
-            return None
-        if masked.startswith("||", index) or masked.startswith("|&", index):
-            return None
-        if char == "|":
-            positions.append(index)
-        scanner.index += 1
-    if scanner.quote is not None or len(positions) != 1:
-        return None
-    return positions[0]
-
-
 # --- 外部コマンドと`atk`が共有する受理形式の走査 ---
 
 
@@ -503,430 +466,43 @@ def _format_accepted_option_candidates(token: str, flags: Iterable[str], valued:
     )
 
 
-def _is_truncation_exempt_producer(producer: str) -> bool:
-    """規範が切り詰め禁止の対象外と定める取得かを返す。
-
-    ヘルプ表示は出力量が入力に依存せず上限を持ち、`atk`のサブコマンドは自身の標準出力の量を
-    公開契約として制御する。`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」は
-    この2つを切り詰め禁止の対象外と定めるため、補正も反復の計数も行わない。
-    """
-    try:
-        tokens = shlex.split(producer, posix=True)
-    except ValueError:
-        return False
-    if not tokens:
-        return False
-    if pathlib.PurePosixPath(tokens[0]).name == "atk":
-        return True
-    return any(token in {"--help", "-h"} for token in tokens[1:])
-
-
-def _split_simple_truncation(command: str) -> tuple[str, tuple[str, ...]] | None:
-    """単純な1段パイプのうち後段が切り詰めコマンドである場合だけ分割する。
-
-    パイプ演算子の判定と分割位置は引用を考慮した走査で求める。
-    検索patternなどの引数の内側にあるパイプ文字を演算子として数えると、
-    当該呼び出しが切り詰めの補正の対象から外れる。
-    後段のトークン列をそのまま返すため、補正側は当該トークン列へ保存先を操作対象として渡し、
-    補正前のコマンドが要求した範囲を同じ呼び出しの結果へ返せる。
-    """
-    masked = _bash_command_parser.mask_heredoc_bodies(command)
-    pipe_index = _single_unquoted_pipe_index(masked)
-    if pipe_index is None:
-        return None
-    producer = command[:pipe_index].strip()
-    consumer = command[pipe_index + 1 :].strip()
-    if _is_truncation_exempt_producer(producer):
-        return None
-    try:
-        consumer_tokens = shlex.split(consumer, posix=True)
-    except ValueError:
-        return None
-    if not producer or not consumer_tokens:
-        return None
-    name = pathlib.PurePosixPath(consumer_tokens[0]).name
-    if name in {"head", "tail"}:
-        return producer, tuple(consumer_tokens)
-    if name in _GREP_COMMANDS and any(
-        token == "-m" or token.startswith("-m") or token == "--max-count" or token.startswith("--max-count=")
-        for token in consumer_tokens[1:]
-    ):
-        return producer, tuple(consumer_tokens)
-    return None
-
-
-_TRUNCATION_CONSUMER_VALUE_OPTIONS: frozenset[str] = frozenset(
-    {"-n", "-c", "-m", "-e", "-f", "--lines", "--bytes", "--max-count", "--regexp", "--file"}
-)
-"""切り詰めconsumerのうち、直後のトークンを値として取るオプション。
-
-値を密着させた形（`-n5`・`-m1`）と`=`で連結した形は同じトークンの内側に値を持つため、
-走査は当該トークン1つだけを消費し、直後のトークンを値として扱わない。
-"""
-_TRUNCATION_CONSUMER_PATTERN_OPTIONS: frozenset[str] = frozenset({"-e", "-f", "--regexp", "--file"})
-"""grep系のpatternを位置引数以外の場所で受け取るオプション。"""
-
-
-def _truncation_consumer_operands(tokens: Sequence[str]) -> tuple[str, ...]:
-    """切り詰めconsumerが既に持つ操作対象の位置引数を返す。
-
-    grep系では先頭の非オプショントークンがpatternであり操作対象に当たらない。
-    `-`と`/dev/stdin`は標準入力を指す操作対象であり、保存先を渡す形へ書き換えられないため対象に含める。
-    """
-    name = pathlib.PurePosixPath(tokens[0]).name
-    pattern_pending = name in _GREP_COMMANDS
-    operands: list[str] = []
-    option_terminator = False
-    index = 1
-    while index < len(tokens):
-        token = tokens[index]
-        if not option_terminator and token == "--":
-            option_terminator = True
-            index += 1
-            continue
-        if not option_terminator and token.startswith("-") and token != "-":
-            option_name = token.split("=", 1)[0]
-            if option_name in _TRUNCATION_CONSUMER_PATTERN_OPTIONS or _attached_short_value_option(
-                token, _TRUNCATION_CONSUMER_PATTERN_OPTIONS
-            ):
-                pattern_pending = False
-            if option_name in _TRUNCATION_CONSUMER_VALUE_OPTIONS and token == option_name:
-                index += 2
-                continue
-            index += 1
-            continue
-        if pattern_pending:
-            pattern_pending = False
-            index += 1
-            continue
-        operands.append(token)
-        index += 1
-    return tuple(operands)
-
-
-@dataclasses.dataclass(frozen=True)
-class _TruncationFix:
-    """切り詰めの補正が1つの直列区間へ適用した内容。
-
-    通知本文が是正の対象を一意に示すため、検出した直列区間と当該区間で切り詰めと判定した
-    コマンドの表記を保持する。
-    """
-
-    position: int
-    """当該呼び出しの何番目の直列区間か。1から数える。"""
-
-    segment: str
-    """検出の対象とした直列区間のコマンド文字列。"""
-
-    truncation_command: str
-    """当該区間で切り詰めと判定したコマンドの表記。"""
-
-    log_path: str
-    """標準出力の保存先の絶対パス。"""
-
-    stderr_merged: bool
-    """保存先へ標準エラーも入るか。producerが`2>&1`を末尾に持つ場合に真とする。"""
-
-    read_back: bool
-    """補正後のコマンドが保存先からconsumerの要求範囲を読み戻すか。"""
-
-
-_STDERR_DUPLICATION_SUFFIX = "2>&1"
-
-
-def _autofix_bash_segment(
-    command: str,
-    cwd: str,
-    session_id: str,
-    *,
-    inside_conditional: bool = False,
-) -> tuple[str, list[str], _TruncationFix | None] | None:
-    """1つの直列区間にある競合しない補正を適用する。
-
-    戻り値の3つ目は、切り詰めを補正した場合の適用内容とする。`position`は呼び出し元が確定する。
-    切り詰めの通知は呼び出し全体の構成に依存するため、本関数では組み立てず`_autofix_bash_command`が生成する。
-
-    切り詰めの補正は、保存先を操作対象としてconsumerへ渡す読み戻しを加え、補正前のコマンドが
-    要求した範囲を同じ呼び出しの結果へ返す。読み戻しを加える区間の保存先は上書きとする。
-    consumerが操作対象を既に持ち読み戻しへ書き換えられない区間だけ、保存先を追記とする。
-    追記は当該区間がループ本体で反復される場合に各反復の出力を残すが、読み戻しと併用すると
-    consumerが累積した内容を読み、反復ごとの範囲を返さなくなる。
-    保存先は補正1回ごとに一意であるため、追記でも別の呼び出しの内容は混ざらない。
-    """
-    truncation = _split_simple_truncation(command)
-    producer = truncation[0] if truncation is not None else command
-    rewritten = _rewrite_simple_uv_script(producer, cwd) or producer
+def _autofix_bash_segment(command: str, cwd: str) -> tuple[str, list[str]] | None:
+    """単純な直列区間に適用できる入力補正を返す。"""
+    rewritten = _rewrite_simple_uv_script(command, cwd) or command
     notices: list[str] = []
-    if rewritten != producer:
+    if rewritten != command:
         notices.append("安全に一意変換できるコマンド入力を推奨形へ補正した。")
     git_grep_rewritten = _rewrite_simple_git_grep(rewritten)
     if git_grep_rewritten is not None:
         rewritten = git_grep_rewritten
         notices.append("`git grep`のパターン後方にある既知オプションを受理位置へ移した。")
-    fix: _TruncationFix | None = None
-    if truncation is not None:
-        if not session_id:
-            return None
-        try:
-            session_temp = managed_temp.create_managed_temp("session", session_id=session_id)
-        except (managed_temp.ManagedTempError, OSError):
-            return None
-        consumer_tokens = truncation[1]
-        read_back = not _truncation_consumer_operands(consumer_tokens)
-        log_path = str(session_temp / f"bash-output-{time.time_ns()}.log")
-        redirection = ">" if read_back else ">>"
-        # `2>&1`はその時点の標準出力の宛先を標準エラーへ複製する。保存先への
-        # リダイレクトを当該冗長化の後方へ置くと、標準エラーは元の宛先のまま残る。
-        stderr_merged = rewritten.rstrip().endswith(_STDERR_DUPLICATION_SUFFIX)
-        if stderr_merged:
-            body = rewritten.rstrip()[: -len(_STDERR_DUPLICATION_SUFFIX)].rstrip()
-            rewritten = f"{body} {redirection} {shlex.quote(log_path)} {_STDERR_DUPLICATION_SUFFIX}"
-        else:
-            rewritten = f"{rewritten} {redirection} {shlex.quote(log_path)}"
-        if read_back:
-            rewritten = f"{rewritten}; {shlex.join([*consumer_tokens, log_path])}"
-            if inside_conditional:
-                # `||`と`&&`の被演算子の内側では、読み戻しを同じ被演算子の内側へ留める。
-                # 外側の`;`区間へ移すと、読み戻しが条件によらず実行されて成否が変わる。
-                rewritten = f"{{ {rewritten}; }}"
-        fix = _TruncationFix(
-            position=0,
-            segment=command,
-            truncation_command=pathlib.PurePosixPath(consumer_tokens[0]).name,
-            log_path=log_path,
-            stderr_merged=stderr_merged,
-            read_back=read_back,
-        )
     if rewritten == command:
         return None
-    return rewritten, notices, fix
+    return rewritten, notices
 
 
-def _format_truncation_autofix_notice(saved: list[_TruncationFix], *, total_segments: int) -> str:
-    """切り詰め補正の通知本文を、補正対象の直列区間と保存先の対応として組み立てる。
-
-    実行主体が是正の対象を特定できるよう、検出した直列区間と当該区間で切り詰めと判定した
-    コマンドの表記を区間ごとに示す。
-    実行主体が受け取る結果の変化も本文へ示す。
-    読み戻しを加えた区間と加えていない区間で、当該呼び出しの結果に何が返るかの案内を分ける。
-    """
-    lines = [
-        f"- 第{fix.position}直列区間 `{fix.segment}`: 切り詰めと判定したコマンドは`{fix.truncation_command}`。"
-        f"{'標準出力と標準エラー' if fix.stderr_merged else '標準出力'}を`{fix.log_path}`へ保存し、"
-        f"{'当該保存先を操作対象として同じコマンドへ渡した' if fix.read_back else '当該保存先へ追記した'}"
-        for fix in saved
-    ]
-    read_back = [fix for fix in saved if fix.read_back]
-    appended = [fix for fix in saved if not fix.read_back]
-    messages = ["切り詰め処理を除去し、標準出力の全量を保存先へ補正した。", *lines]
-    if read_back:
-        messages.append(
-            "読み戻しを加えた区間は、補正前のコマンドが要求した範囲を当該呼び出しの結果へ返す。全量は保存先に残る。"
-        )
-    if appended:
-        if len(appended) >= total_segments:
-            messages.append("当該呼び出しは標準出力を返さない。")
-        else:
-            messages.append("切り詰めを含まない直列区間の標準出力は当該呼び出しの結果へ残る。")
-        messages.append("読み戻しを加えていない区間がループ本体で反復される場合、反復ごとの出力は同じ保存先へ追記される。")
-        messages.append("保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている。")
-    if any(not fix.stderr_merged for fix in saved):
-        messages.append("標準エラーを保存先へ向けていない区間の標準エラーは、当該呼び出しの結果へ残る。")
-    alternatives = _truncated_command_alternatives(saved)
-    if alternatives:
-        messages.append("補正対象のコマンドに対応する指定: " + "、".join(alternatives))
-    messages.append(f"切り詰めを含まない書き方: {_OUTPUT_TRUNCATION_AVOIDANCE}")
-    messages.append("同じセッションで次に同種の切り詰め指定を検出した場合は、補正せず実行前に遮断する。")
-    return "\n".join(messages)
-
-
-_COMMAND_SPECIFIC_LIMITATIONS: dict[str, str] = {
-    "git": "`git grep`は一致件数を`-c`、一致ファイル名を`-l`で返す",
-    "ls": "`ls`は対象のディレクトリとglobで走査範囲を限定する",
-    "rg": "`rg`は一致件数を`-c`、一致ファイル名を`-l`で返す",
-    "grep": "`grep`は一致件数を`-c`、一致ファイル名を`-l`で返す",
-    "find": "`find`は`-maxdepth`と述語で走査範囲を限定する",
-}
-"""補正対象の直列区間の先頭コマンドごとの、出力量を制御する指定。
-
-一般的な方針だけを示す通知は、同じ組み立ての反復を止めない。
-"""
-
-
-def _truncation_count(tokens: Sequence[str]) -> int | None:
-    """`head`又は`tail`の件数指定を静的に解決できる場合だけ返す。"""
-    for index, token in enumerate(tokens[1:], start=1):
-        if token == "-n" and index + 1 < len(tokens):
-            value = tokens[index + 1]
-        elif re.fullmatch(r"-[0-9]+", token):
-            value = token[1:]
-        else:
-            continue
-        return int(value)
-    return None
-
-
-def _is_managed_truncation_log(path: str) -> bool:
-    """hookが全量保存先として生成した管理対象ログのパスなら真を返す。"""
-    candidate = pathlib.Path(path)
-    if not candidate.is_absolute() or not candidate.name.startswith("bash-output-") or candidate.suffix != ".log":
-        return False
-    try:
-        managed_temp.validate_managed_temp(candidate.parent)
-    except (managed_temp.ManagedTempError, OSError):
-        return False
-    return candidate.is_file()
-
-
-def _specific_truncation_alternative(segment: str) -> str | None:
-    """検出した用途から一意に組み立てられる、切り詰めを含まない代替を返す。"""
-    split = _split_simple_truncation(segment)
-    if split is None:
-        return None
-    producer, consumer = split
-    try:
-        producer_tokens = shlex.split(producer)
-    except ValueError:
-        return None
-    if not producer_tokens or not consumer:
-        return None
-    producer_name = pathlib.PurePath(producer_tokens[0]).name
-    consumer_name = pathlib.PurePath(consumer[0]).name
-    operands = [token for token in producer_tokens[1:] if not token.startswith("-")]
-    count = _truncation_count(consumer)
-    if producer_name == "cat" and consumer_name == "tail" and len(operands) == 1 and _is_managed_truncation_log(operands[0]):
-        direct = shlex.join([*consumer, operands[0]])
-        return f"保存済みログの終端確認は`{direct}`を直接実行する"
-    if (
-        producer_name == "ls"
-        and consumer_name == "head"
-        and count == 1
-        and "-d" in producer_tokens
-        and len(operands) == 1
-        and not any(character in operands[0] for character in "*?[]{}")
-    ):
-        return f'対象の存在確認は`test -e {shlex.quote(operands[0])}; echo "test_e_rc=$?"`を実行する'
-    if producer_name == "find" and consumer_name == "head" and count == 1:
-        direct = shlex.join([*producer_tokens, "-print", "-quit"])
-        return f"単一対象の選択はproducer自身の終了条件を使い、`{direct}`を実行する"
-    return None
-
-
-def _truncated_command_alternatives_for_segments(segments: Sequence[str]) -> list[str]:
-    """補正対象の直列区間へ対応する代替を、具体形から一般形の順で返す。"""
-    alternatives: list[str] = []
-    for segment in segments:
-        specific = _specific_truncation_alternative(segment)
-        if specific is not None and specific not in alternatives:
-            alternatives.append(specific)
-        for token in segment.split():
-            hint = _COMMAND_SPECIFIC_LIMITATIONS.get(pathlib.PurePath(token).name)
-            if hint is not None and hint not in alternatives:
-                alternatives.append(hint)
-    return alternatives
-
-
-def _truncated_command_alternatives(saved: Sequence[_TruncationFix]) -> list[str]:
-    """補正対象の直列区間へ対応する代替を、重複なく返す。"""
-    return _truncated_command_alternatives_for_segments([fix.segment for fix in saved])
-
-
-_OUTPUT_TRUNCATION_AVOIDANCE = (
-    "当該コマンド自身が提供する対象の限定、件数指定、要約指定又は構造化条件で出力量を制御する。"
-    "制御できない場合は標準出力をファイルへリダイレクトして全量を保存し、"
-    "保存済みファイルから必要な範囲だけを行数指定又は構造化条件で読む。"
-    "分離実行を利用できる場合は、読み取り専用の探索をagents_serverのstart_explore、"
-    "コマンド実行をstart_shellへ分離してもよい。"
-    "判定条件の正本は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」とする。"
-)
-"""切り詰めを含む呼び出しを組み直す手段。
-
-補正の通知と、`_check_bash_truncation_autofix_repeat`の遮断の通知が本定数を参照する。
-同一セッションの初回は補正して実行を通し、2回目以降は補正せず遮断するため、
-いずれの通知も本定数が示す形への組み替えを求める。
-保存と再読の形と、コマンド自身の限定指定はこの検査の判定条件に一致しないため、
-分離実行を利用できない実行主体も当該本文だけで切り詰めを含まない形へ到達できる。
-"""
-
-
-_TRUNCATION_AUTOFIX_REPEAT_KEY = "truncation_autofix_detected"
-"""切り詰め補正の検出をセッション単位で数えるキー。
-
-検索語と対象パスの違いで初回へ戻さないため、判定の種別だけをキーとする。
-"""
-
-
-def _check_bash_truncation_autofix_repeat(command: str, session_id: str) -> str | None:
-    """規範が禁じる切り詰め指定を、同じセッションの2回目以降は補正せず遮断する。
-
-    初回は補正して実行を通し、次回から遮断する旨を補正の通知本文が示す。
-    補正は不成立な入力を成功する入力へ変換するため、反復も許すと実行主体が入力を改めないまま
-    同じ保存と読み戻しを繰り返す。
-    `_is_truncation_exempt_producer`が対象外と判定した取得は、`_split_simple_truncation`が
-    切り詰めとして返さないため、検出回数へ算入されず遮断もされない。
-    """
-    segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    detected = [
-        (index, split[1])
-        for index, segment in enumerate(segments, start=1)
-        if (split := _split_simple_truncation(segment)) is not None
-    ]
-    if not detected:
-        return None
-    if not _record_repeat_detection(session_id, _TRUNCATION_AUTOFIX_REPEAT_KEY):
-        return None
-    alternatives = _truncated_command_alternatives_for_segments(segments)
-    fix = _OUTPUT_TRUNCATION_AVOIDANCE
-    if alternatives:
-        fix = "補正対象の用途に対応する指定: " + "、".join(alternatives) + "。" + fix
-    targets = "、".join(f"第{index}直列区間の`{shlex.join(tokens)}`" for index, tokens in detected)
-    print(
-        _block_notice(
-            f"blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。対象: {targets}。",
-            fix=fix,
-        ),
-        file=sys.stderr,
-    )
-    return "block"
-
-
-def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str, str] | None:
-    """安全に一意変換できるBash入力を補正し、補正後入力と通知を返す。
-
-    実在しないパスの除去を先に適用し、その結果へ直列区間ごとの補正を適用する。
-    区間ごとの補正は保存先のリダイレクトを挿入するため、先に適用すると当該保存先が
-    実在しないパスの候補として現れる。
-    """
+def _autofix_bash_command(command: str, cwd: str, _session_id: str) -> tuple[str, str] | None:
+    """安全に一意変換できるBash入力を補正し、補正後入力と通知を返す。"""
     notices: list[str] = []
-    summary_parts: list[str] = []
     command_after_path_fix = command
     missing_fix = _autofix_missing_paths(command, cwd)
     if missing_fix is not None:
         command_after_path_fix, removed = missing_fix
-        missing_notice = "実在しない検索・読取パスを当該呼び出しの対象から除いた。除いた対象: " + "、".join(removed)
-        notices.append(missing_notice)
-        # この文面は除去の対象だけを示すため、2件目以降の要旨も同じ文面で成立する。
-        summary_parts.append(missing_notice)
+        notices.append("実在しない検索・読取パスを当該呼び出しの対象から除いた。除いた対象: " + "、".join(removed))
     segments = _split_serial_shell_commands(command_after_path_fix, separators=_STATUS_SHELL_SEPARATORS)
     replacements: list[tuple[int, int, str]] = []
-    saved: list[_TruncationFix] = []
     cursor = 0
-    for index, segment in enumerate(segments, start=1):
+    for segment in segments:
         start = command_after_path_fix.find(segment, cursor)
         if start < 0:
             return None
         cursor = start + len(segment)
-        preceding = command_after_path_fix[:start].rstrip()
-        following = command_after_path_fix[cursor:].lstrip()
-        inside_conditional = preceding.endswith(("||", "&&")) or following.startswith(("||", "&&"))
-        fixed = _autofix_bash_segment(segment, cwd, session_id, inside_conditional=inside_conditional)
+        fixed = _autofix_bash_segment(segment, cwd)
         if fixed is None:
             continue
-        rewritten, segment_notices, fix = fixed
+        rewritten, segment_notices = fixed
         replacements.append((start, cursor, rewritten))
         notices.extend(segment_notices)
-        if fix is not None:
-            saved.append(dataclasses.replace(fix, position=index))
     if not replacements and missing_fix is None:
         return None
     rewritten_command = command_after_path_fix
@@ -947,30 +523,12 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         return None
     if syntax.returncode != 0:
         return None
-    unique_notices = list(dict.fromkeys(notices))
-    body = " ".join(unique_notices)
-    if saved:
-        truncation_notice = _format_truncation_autofix_notice(saved, total_segments=len(segments))
-        body = f"{body}\n{truncation_notice}" if body else truncation_notice
-        summary_parts.append(_format_truncation_autofix_summary(saved))
-    summary = "\n".join(summary_parts) if summary_parts else None
+    body = " ".join(dict.fromkeys(notices))
     if missing_fix is not None:
-        # 実在しないパスの除去は呼び出しの対象集合そのものを狭めるため、是正を要する通知として返す。
         return rewritten_command, _llm_notice(
-            body, tag=_WARN_TAG, removable_cause=True, escalate_on_repeat=True, summary=summary
+            body, tag=_WARN_TAG, removable_cause=True, escalate_on_repeat=True, summary=notices[0]
         )
-    # 残る補正は、補正前の呼び出しが要求した結果をそのまま当該呼び出しへ返す。
-    # 実行主体の是正を要さないため、振り返りの問題候補へ残らない情報提示のタグで返す。
-    return rewritten_command, _llm_notice(body, tag="notice", summary=summary)
-
-
-def _format_truncation_autofix_summary(saved: Sequence[_TruncationFix]) -> str:
-    """2件目以降の通知へ用いる要旨を、補正の対象と保存先だけで組み立てる。
-
-    理由の説明、書き方の案内及び判定条件の所在は1件目の本文が既に届けているため、要旨から外す。
-    """
-    targets = "、".join(f"第{fix.position}直列区間の`{fix.truncation_command}`→`{fix.log_path}`" for fix in saved)
-    return f"切り詰め処理を除去し、標準出力の全量を保存先へ補正した。対象: {targets}"
+    return rewritten_command, _llm_notice(body, tag="notice")
 
 
 _TEMP_FILE_SAVE_PHRASE = "管理対象一時領域のファイルへ保存する"
@@ -1545,11 +1103,7 @@ _PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project(?:\.[\w\-]+)?\]
 
 
 def _check_bash_uv_run_python(command: str, cwd: str) -> str | None:
-    """`uv run python <path>`形式の起動を非Pythonプロジェクトで検出して警告する。
-
-    判定詳細は本関数の冒頭コメントを参照する。
-    通した場合の結果はプロジェクト解決の失敗による終了に限り、作業ツリーへ副作用を残さないため警告で返す。
-    """
+    """非Pythonプロジェクトでの`uv run python`を補正できない場合に遮断する。"""
     segments = split_bash_segments(command)
     current_cwd = CwdResolution(cwd, bool(cwd))
     for segment in segments:
@@ -1567,11 +1121,11 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> str | None:
             if not has_script_or_no_project and (
                 directory_or_project_overridden or not current_cwd.resolved or not _cwd_in_python_project(current_cwd.path)
             ):
-                return _llm_notice(
-                    f"{_UV_RUN_PYTHON_BLOCK_MSG}\n対処: {_UV_RUN_PYTHON_FIX}",
-                    tag=_WARN_TAG,
-                    removable_cause=True,
+                print(
+                    _block_notice(_UV_RUN_PYTHON_BLOCK_MSG, fix=_UV_RUN_PYTHON_FIX),
+                    file=sys.stderr,
                 )
+                return "block"
     return None
 
 
@@ -3142,7 +2696,11 @@ def _pipeline_truncation_detections(pipeline: Sequence[_ExecutionSegment]) -> li
             continue
         if any(_tee_saves_to_file(item) for item in following[:truncation_index]):
             continue
-        detections.append((segment.tokens[0], following[truncation_index].tokens[0]))
+        required_command = next(
+            (" ".join(prefix) for prefix in _COMPLETE_OUTPUT_COMMAND_PREFIXES if _segment_starts_with(segment, prefix)),
+            segment.tokens[0],
+        )
+        detections.append((required_command, following[truncation_index].tokens[0]))
     return detections
 
 
@@ -3954,25 +3512,6 @@ def _check_bash_unresolved_git_object(command: str, cwd: str) -> str | None:
                     tag=_WARN_TAG,
                     removable_cause=True,
                 )
-    return None
-
-
-def _check_bash_rg_multiline_pattern(command: str) -> str | None:
-    """改行を含むpatternへ複数行モードを指定していない`rg`の呼び出しを検出する。"""
-    for segment in _extract_execution_segments(command):
-        if not segment.resolved or not segment.tokens:
-            continue
-        if pathlib.PurePath(segment.tokens[0]).name != "rg":
-            continue
-        arguments = without_shell_redirections(segment.tokens[1:])
-        if any(token in {"-U", "--multiline"} for token in arguments):
-            continue
-        if any("\\n" in token and not token.startswith("-") for token in arguments):
-            return _llm_notice(
-                "`rg`のpatternへ`\\n`を含めているが、複数行モードを指定していない。\n対処: `-U`又は`--multiline`を指定する。",
-                tag=_WARN_TAG,
-                removable_cause=True,
-            )
     return None
 
 

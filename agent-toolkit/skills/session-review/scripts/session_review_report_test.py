@@ -218,7 +218,7 @@ def test_check_accepts_delegate_authored_section_content(tmp_path: pathlib.Path)
     assert report.main(_argv(paths, "generate")) == 0
     content = paths[-1].read_text(encoding="utf-8")
     content = content.replace("## 対象セッション\n", "## 対象セッション\n\n対象ID: session-1\n", 1)
-    content = content.replace("## 規範適用による停止\n", "## 規範適用による停止\n\n停止なし。\n", 1)
+    content = content.replace("## 規範適用による目的逸脱\n", "## 規範適用による目的逸脱\n\n該当なし。\n", 1)
     paths[-1].write_text(content, encoding="utf-8")
 
     assert report.main(_argv(paths, "check")) == 0

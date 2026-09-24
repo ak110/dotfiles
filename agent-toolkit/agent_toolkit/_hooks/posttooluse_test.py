@@ -35,6 +35,63 @@ _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" /
 _PYFLTR_RUN_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run"
 
 
+@pytest.mark.parametrize(
+    ("before_size", "expected_warning"),
+    [(1, True), (1000, False)],
+)
+def test_always_loaded_rule_size_warning_uses_edit_before_size(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    before_size: int,
+    expected_warning: bool,
+) -> None:
+    """編集前の記録と適用後の実ファイルで増加を判定する。"""
+    path = tmp_path / "01-agent.md"
+    content = "- 条件A\n- 条件B\n- 条件C\n"
+    path.write_text(content, encoding="utf-8")
+    state = {"always_loaded_rule_before_sizes": {str(path): before_size}}
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "read_state", lambda _session: state)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda _session, change: change(state))
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._hook_tool_input, "is_always_loaded_rule", lambda candidate: candidate == str(path))
+    notices: list[str] = []
+
+    _POSTTOOLUSE_MODULE._handle_edit_tool(
+        "session", "Write", {"file_path": str(path), "content": content}, str(tmp_path), notices
+    )
+
+    assert bool(notices) is expected_warning
+    if expected_warning:
+        assert "総量を減らす統合" in notices[0]
+    assert "always_loaded_rule_before_sizes" not in state
+
+
+@pytest.mark.parametrize("tool_name", ["Write", "Edit"])
+def test_always_loaded_rule_style_warning_survives_file_shrink(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, tool_name: str
+) -> None:
+    """様式の警告は総量増加の有無と独立して発行する。"""
+    path = tmp_path / "01-agent.md"
+    path.write_text("短い本文\n", encoding="utf-8")
+    state = {
+        "always_loaded_rule_before_sizes": {str(path): 1000},
+        "always_loaded_rule_added_texts": {str(path): "ただしA。A、B及びC。"},
+    }
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "read_state", lambda _session: state)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda _session, change: change(state))
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._hook_tool_input, "is_always_loaded_rule", lambda candidate: candidate == str(path))
+    tool_input = {"file_path": str(path), "content": "短い本文\n"}
+    if tool_name == "Edit":
+        tool_input = {"file_path": str(path), "old_string": "旧", "new_string": "短い本文"}
+    notices: list[str] = []
+
+    _POSTTOOLUSE_MODULE._handle_edit_tool("session", tool_name, tool_input, str(tmp_path), notices)
+
+    assert len(notices) == 1
+    assert "限定・例外の文1件" in notices[0]
+    assert "3項目以上の列挙1件" in notices[0]
+    assert "always_loaded_rule_added_texts" not in state
+
+
 @functools.cache
 def _load_posttooluse_module() -> types.ModuleType:
     """`scripts/posttooluse.py`を`importlib`で動的にインポートする。
@@ -523,50 +580,6 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
         input=json.dumps(payload, ensure_ascii=False),
         env=env,
     )
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        "pyfltr colloquial /tmp/draft.md",
-        "/tmp/venv/bin/pyfltr colloquial /tmp/draft.md",
-        "python -m pyfltr.colloquial /tmp/draft.md",
-        "/tmp/venv/bin/python -m pyfltr.colloquial /tmp/draft.md",
-        "/usr/bin/rg absent /tmp/draft.md",
-    ],
-)
-def test_boolean_detection_does_not_enable_bash_failure_gate(tmp_path: pathlib.Path, command: str) -> None:
-    """検出の終了コード1が続いても直接Bashの関門を有効にしない。"""
-    session_id = "boolean-detection"
-    payload = {
-        "session_id": session_id,
-        "hook_event_name": "PostToolUseFailure",
-        "tool_name": "Bash",
-        "tool_input": {"command": command},
-        "error": "Exit code 1",
-    }
-    for _ in range(2):
-        result = _run(payload, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "2回連続" not in result.stdout
-    assert _read_state(tmp_path, session_id).get("bash_failure_gate") is not True
-
-
-def test_non_boolean_failure_still_enables_bash_failure_gate(tmp_path: pathlib.Path) -> None:
-    """通常のBash失敗2回は従来どおり関門を有効にする。"""
-    session_id = "ordinary-failure"
-    payload = {
-        "session_id": session_id,
-        "hook_event_name": "PostToolUseFailure",
-        "tool_name": "Bash",
-        "tool_input": {"command": "false"},
-        "error": "Exit code 1",
-    }
-    first = _run(payload, state_dir=tmp_path)
-    second = _run(payload, state_dir=tmp_path)
-    assert first.returncode == second.returncode == 0
-    assert "2回連続" in second.stdout
-    assert _read_state(tmp_path, session_id).get("bash_failure_gate") is True
 
 
 def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:

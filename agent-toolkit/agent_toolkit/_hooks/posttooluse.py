@@ -29,8 +29,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 10. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 11. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
-12. PostToolUseFailure: Bashの同一終了コードの連続失敗だけを記録。非エラーの真偽判定を終了コードで
-    表現する公開契約を持つコマンドの終了は記録の対象から外す。その他は状態を変更せず終了
+12. PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
 13. PermissionDenied: 状態を変更せず終了
 14. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 15. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
@@ -91,8 +90,6 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: 
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
     record_atk_help_paths,
-    record_bash_failure,
-    reset_bash_failure_sequence,
     update_state,
 )
 from agent_toolkit._hooks.task_stop_state import consume_completion, target_ids  # noqa: E402
@@ -794,66 +791,6 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
     return payload, session_id, tool_name, tool_input, cwd, event_name
 
 
-_BASH_FAILURE_EXIT_CODE_PATTERN = re.compile(r"^Exit code ([0-9]+)$")
-
-
-_BOOLEAN_EXIT_CODE_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
-    ("atk", "wi", "grep"),
-    ("atk", "mq", "grep"),
-    ("git", "grep"),
-    ("grep",),
-    ("egrep",),
-    ("fgrep",),
-    ("rg",),
-    ("pyfltr",),
-)
-"""非エラーの真偽判定を終了コードで表現する公開契約を持つコマンドの実行位置の接頭語。
-
-集合へ加える判定の基準は、当該コマンドが該当0件などの非エラーの結果を非0の終了コードで表す契約を
-公開するかとする。`atk wi grep`の当該契約は`agent_toolkit/_atk/wi/grep.py`のdocstringが定め、
-`grep`系と`rg`は一致0件を終了コード1で表す。
-当該コマンドの終了を連続失敗として記録すると、読み取り専用の検索が0件で続いた区間で
-直接Bashの遮断が成立する。
-"""
-_DIFF_COMMAND = "diff"
-_DIFF_BOOLEAN_EXIT_CODE_OPTIONS: frozenset[str] = frozenset({"-q", "--quiet", "--brief"})
-"""`diff`が差分の有無を終了コードで表す指定。当該指定では差分ありの終了コード1が非エラーの結果である。"""
-
-
-def _is_boolean_exit_code_command(command: str) -> bool:
-    """Bash入力が、非エラーの真偽判定を終了コードで表すコマンド1件だけであるかを返す。
-
-    実行位置が1つであり、当該実行位置が当該契約を持つ場合だけ真を返す。
-    複数の実行位置を持つ入力では、どの位置が非0で終了したかを失敗payloadから確定できず、
-    当該契約を持たないコマンドの失敗を記録から外し得るためである。
-    """
-    segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
-    if len(segments) != 1:
-        return False
-    tokens = segments[0].tokens
-    name = _executable_name(tokens[0])
-    normalized = (name, *tokens[1:])
-    if any(normalized[: len(prefix)] == prefix for prefix in _BOOLEAN_EXIT_CODE_COMMAND_PREFIXES):
-        return True
-    module = tokens[2] if len(tokens) >= 3 and tokens[1] == "-m" else name
-    if module == "pyfltr" or module.startswith("pyfltr."):
-        return True
-    return name == _DIFF_COMMAND and any(token in _DIFF_BOOLEAN_EXIT_CODE_OPTIONS for token in tokens[1:])
-
-
-def _bash_failure_exit_code(payload: dict) -> int | None:
-    """公式の失敗payloadから分類可能なBash終了コードを返す。"""
-    if payload.get("is_interrupt") is True:
-        return None
-    error = payload.get("error")
-    if not isinstance(error, str):
-        return None
-    lines = error.splitlines()
-    first_line = lines[0] if lines else ""
-    match = _BASH_FAILURE_EXIT_CODE_PATTERN.fullmatch(first_line)
-    return int(match.group(1)) if match is not None else None
-
-
 def _record_test_executed(session_id: str) -> None:
     """Pyfltr MCPの成功を検証実行済みとして記録する。"""
 
@@ -990,7 +927,7 @@ def _handle_edit_tool(
 
     ClaudeのWrite・Edit・MultiEditとCodexの成功した`apply_patch`を
     `_hook_tool_input`が共通の操作記録へ変換する。
-    本フックは適用後に呼ばれるため変更前後像を再構築せず、操作記録のパスだけを状態へ記録する。
+    常時規範ではPreToolUseが記録した編集前のバイト数と適用後の実ファイルを比較する。
     実ファイルの読み込みを伴う文書検査は、適用後に存在する対象（追加・更新・移動先）へ限定する。
     """
     operations = _hook_tool_input.parse_operations(tool_name, tool_input, cwd)
@@ -998,16 +935,63 @@ def _handle_edit_tool(
         return
     state = read_state(session_id)
     plan_mode_invoked = bool(state.get("plan_mode_skill_invoked", False))
+    before_sizes = state.get("always_loaded_rule_before_sizes")
+    before_sizes = before_sizes if isinstance(before_sizes, dict) else {}
+    added_texts = state.get("always_loaded_rule_added_texts")
+    added_texts = added_texts if isinstance(added_texts, dict) else {}
     for operation in operations:
         for display_path in operation.display_paths:
             _record_edited_file(session_id, display_path)
         if not operation.exists_after_apply:
             continue
+        if _hook_tool_input.is_always_loaded_rule(operation.path):
+            before_size = before_sizes.get(operation.path)
+            try:
+                after_size = pathlib.Path(operation.path).stat().st_size
+            except OSError:
+                after_size = None
+            if isinstance(before_size, int) and after_size is not None and after_size > before_size:
+                notices.append(
+                    _llm_notice(
+                        f"常時規範のバイト数が{before_size}から{after_size}へ{after_size - before_size}増加した。"
+                        "逐語要件、硬いゲート、同一ファイルの総量を減らす統合のどれに当たるか確認する。",
+                        tag=_WARN_TAG,
+                        removable_cause=False,
+                    )
+                )
+            additions = added_texts.get(operation.path)
+            if isinstance(additions, str) and additions:
+                sentences = [part.strip() for part in re.split(r"[。\n]", additions) if part.strip()]
+                restricted = [
+                    part
+                    for part in sentences
+                    if any(word in part for word in ("ただし", "除く", "限る", "限り", "対象外", "以外"))
+                ]
+                enumerated = [part for part in sentences if part.count("、") + part.count("及び") >= 2]
+                if restricted or enumerated:
+                    sample = (restricted or enumerated)[0][:80]
+                    notices.append(
+                        _llm_notice(
+                            f"常時規範の追加文に限定・例外の文{len(restricted)}件、3項目以上の列挙{len(enumerated)}件を検出した。"
+                            f"検出文: {sample}。条文様式は`agent-toolkit/rules/01-agent.md`「規定の区分と標示」を確認する。"
+                            "警告閾値の実測は`docs/development/audit-records.md`に記録する。",
+                            tag=_WARN_TAG,
+                            removable_cause=False,
+                        )
+                    )
         display_path = operation.display_path
         if is_plan_main_file(display_path):
             _record_plan_file(session_id, display_path)
         if plan_mode_invoked and is_plan_component_file(display_path) and operation.is_whole_write:
             notices.append(_plan_file_check_notice(_plan_main_path_for(display_path), cwd))
+    if before_sizes:
+
+        def _clear_sizes(current_state: dict) -> dict:
+            current_state.pop("always_loaded_rule_before_sizes", None)
+            current_state.pop("always_loaded_rule_added_texts", None)
+            return current_state
+
+        update_state(session_id, _clear_sizes)
 
 
 def _plan_main_path_for(display_path: str) -> str:
@@ -1111,22 +1095,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
             if failed_task_id is not None:
                 _record_background_task_id(session_id, failed_task_id)
-        exit_code = _bash_failure_exit_code(payload)
-        failed_command = tool_input.get("command")
-        # 非エラーの真偽判定を終了コードで表すコマンドの終了は実行の失敗ではないため、
-        # 連続失敗の記録対象から外し、連続性も解除する。
-        if exit_code is None or (isinstance(failed_command, str) and _is_boolean_exit_code_command(failed_command)):
-            reset_bash_failure_sequence(session_id)
-        elif record_bash_failure(session_id, exit_code):
-            notices.append(
-                _llm_notice(
-                    f"同じ終了コード{exit_code}でBashが2回連続して失敗した。"
-                    "次の直接Bash実行を遮断する。原因調査とコマンド実行はagents_serverのstart_shellへ分離する。"
-                    "start_shellが成功すると連続失敗の状態を解除し、その後は直接Bashを再開できる。",
-                    tag=_WARN_TAG,
-                    removable_cause=False,
-                )
-            )
         return 0
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
@@ -1207,8 +1175,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             )
             if warning is not None:
                 notices.append(_llm_notice(warning, tag=_WARN_TAG, removable_cause=False))
-            if operation == "start_shell":
-                reset_bash_failure_sequence(session_id, clear_gate=True)
         elif operation == "stop":
             _remove_agents_server_session_record(session_id, remote_session_id)
         else:
@@ -1241,11 +1207,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
-    # 直接Bashの成功は、連続失敗の通知が求める是正の完了を示す最も一般的な観測である。
-    # 解除の契機を分離実行の成功だけに限ると、原因を除去して直接実行を継続した主体へ、
-    # 当該セッションの残余で同じ警告が付き続ける。
-    reset_bash_failure_sequence(session_id, clear_gate=True)
-
     if tool_input.get("run_in_background"):
         task_id = _background_task_id_from_response(payload.get("tool_response"))
         if task_id is not None:

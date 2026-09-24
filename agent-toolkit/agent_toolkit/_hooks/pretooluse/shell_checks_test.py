@@ -92,14 +92,14 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
         assert result.returncode == 0
 
-    def test_nearest_non_python_project_warns_despite_ancestor_project(self, tmp_path: pathlib.Path) -> None:
+    def test_nearest_non_python_project_blocks_despite_ancestor_project(self, tmp_path: pathlib.Path) -> None:
         """直近が`[tool.uv]`のみなら祖先に`[project]`があっても検出する。"""
         self._make_python_project(tmp_path)
         cwd = self._make_child_directory(tmp_path)
         self._make_non_python_project(cwd)
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
     def test_non_python_project_script_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
         """単純なスクリプトパス形を`uv run --script`へ補正する。"""
@@ -109,17 +109,13 @@ class TestBashUvRunPythonBlock:
         output = json.loads(result.stdout)["hookSpecificOutput"]
         assert output["updatedInput"]["command"] == "uv run --script /tmp/foo.py --flag 'two words'"
 
-    def test_non_python_project_inline_code_is_warned(self, tmp_path: pathlib.Path) -> None:
-        """安全にスクリプト形へ直せないインラインコード形は警告する。
-
-        通した場合の結果はプロジェクト解決の失敗による終了に限り、復元できる。
-        """
+    def test_non_python_project_inline_code_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """単純なスクリプト形へ直せない入力は副作用を防ぐため遮断する。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python -c 'print(1)'", cwd)
-        assert result.returncode == 0
-        messages = _agent_messages(result)
-        assert auto_message_opening_attributes(messages)["source"] == "agent-toolkit/pretooluse"
-        assert "uv run python" in messages
+        assert result.returncode == 2
+        assert auto_message_opening_attributes(result.stderr)["source"] == "agent-toolkit/pretooluse"
+        assert "uv run python" in result.stderr
 
     def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
         """pyproject.tomlが無いcwdでも単純なスクリプトパス形を補正する。"""
@@ -127,19 +123,19 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == "uv run --script /tmp/foo.py"
 
-    def test_script_after_python_warned(self, tmp_path: pathlib.Path):
+    def test_script_after_python_blocked(self, tmp_path: pathlib.Path):
         """`uv run python --script s.py`は`--script`がpythonの引数となるため例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --script s.py", cwd)
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
-    def test_no_project_after_python_warned(self, tmp_path: pathlib.Path):
+    def test_no_project_after_python_blocked(self, tmp_path: pathlib.Path):
         """`uv run python --no-project s.py`は同上の理由で例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --no-project s.py", cwd)
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
     def test_cd_to_python_project_allowed(self, tmp_path: pathlib.Path) -> None:
         """静的に解決できる`cd`先がPythonプロジェクトなら許容する。"""
@@ -177,38 +173,38 @@ class TestBashUvRunPythonBlock:
             f"cd {target} && uv run --script /tmp/foo.py"
         )
 
-    def test_unresolved_cd_warns(self, tmp_path: pathlib.Path) -> None:
+    def test_unresolved_cd_blocks(self, tmp_path: pathlib.Path) -> None:
         """shell展開を含む`cd`は、payload cwdがPythonプロジェクトでも検出する。"""
         payload_cwd = self._make_python_project(tmp_path)
         result = self._invoke('cd "$TARGET" && uv run python /tmp/foo.py', payload_cwd)
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
-    def test_pushd_then_uv_run_warned(self, tmp_path: pathlib.Path):
+    def test_pushd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("pushd /tmp && uv run python /tmp/foo.py", cwd)
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
-    def test_uv_directory_option_warned(self, tmp_path: pathlib.Path):
+    def test_uv_directory_option_blocked(self, tmp_path: pathlib.Path):
         """`uv --directory`はプロジェクト解決対象をpayload cwdから外すため検出対象。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv --directory /tmp run python /tmp/foo.py", cwd)
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
-    def test_uv_project_global_option_warned(self, tmp_path: pathlib.Path):
+    def test_uv_project_global_option_blocked(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv --project /tmp run python /tmp/foo.py", cwd)
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
-    def test_uv_run_project_option_warned(self, tmp_path: pathlib.Path):
+    def test_uv_run_project_option_blocked(self, tmp_path: pathlib.Path):
         """runサブコマンドオプション位置の`--project=`も検出対象。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv run --project=/tmp python /tmp/foo.py", cwd)
-        assert result.returncode == 0
-        assert "uv run python" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
 
     def test_cd_with_no_project_allowed(self, tmp_path: pathlib.Path):
         """cwd変更があっても`--no-project`例外が優先するため許容する。"""
@@ -1328,242 +1324,47 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 0
 
 
-class TestBashOutputTruncationRepetition:
-    """Bash出力の切り詰め補正を、同一セッションの初回だけ通し2回目から遮断する。"""
+class TestBashOutputPreview:
+    """再取得できる出力の先頭確認は入力を変えずに通す。"""
 
     @staticmethod
-    def _invoke(command: str, session_id: str, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
-        return _run(
-            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
-            _plan_file_state_env(tmp_path),
-        )
-
-    def _saved_truncation_log(self, tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
-        """公開入口の補正が生成した保存先へ、実行後相当の内容を置いて返す。"""
-        result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
-        assert result.returncode == 0
-        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        producer, separator, _consumer = corrected.partition("; ")
-        assert separator == "; "
-        tokens = shlex.split(producer)
-        saved_path = pathlib.Path(tokens[tokens.index(">") + 1])
-        saved_path.write_text("saved output\n", encoding="utf-8")
-        return saved_path
-
-    def test_same_kind_is_blocked_from_the_second_call(self, tmp_path: pathlib.Path) -> None:
-        """検索語と対象パスを変えた同種の指定も2回目として遮断する。"""
-        session_id = "truncation-same-kind"
-        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
-
-        result = self._invoke("ls -1 /tmp; ls -1 /var | head -5", session_id, tmp_path)
-
-        assert result.returncode == 2
-        assert "同じセッションで再び検出した" in result.stderr
-        assert "第2直列区間の`head -5`" in result.stderr
-
-    def test_other_truncation_command_is_also_blocked_as_a_repeat(self, tmp_path: pathlib.Path) -> None:
-        """切り詰めコマンドの表記が変わっても同じ判定種別として2回目に数える。"""
-        session_id = "truncation-other-command"
-        assert self._invoke("ls -1 /tmp | head -5", session_id, tmp_path).returncode == 0
-
-        assert self._invoke("ls -1 /tmp | tail -5", session_id, tmp_path).returncode == 2
-
-    def test_first_notice_announces_the_next_block(self, tmp_path: pathlib.Path) -> None:
-        """初回の補正の通知が、次回から遮断する旨を示す。"""
-        result = self._invoke("ls -1 /tmp | head -5", "truncation-announce", tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "補正せず実行前に遮断する" in context
-
-    def test_atk_output_and_help_are_not_corrected(self, tmp_path: pathlib.Path) -> None:
-        """規範が対象外と定めるヘルプ取得と`atk`の出力では補正が発火しない。"""
-        for command in ("atk wi list --help | head -50", "atk wi list | head -50", "git log --help | head -20"):
-            result = self._invoke(command, f"truncation-exempt-{hash(command)}", tmp_path)
-            assert result.returncode == 0
-            assert "切り詰め処理を除去し" not in result.stdout
-
-    def test_exempt_calls_do_not_consume_the_first_detection(self, tmp_path: pathlib.Path) -> None:
-        """対象外の取得は検出回数へ算入せず、後続の初回の補正を遮断へ変えない。"""
-        session_id = "truncation-exempt-count"
-        assert self._invoke("atk wi list --help | head -50", session_id, tmp_path).returncode == 0
-        assert self._invoke("git log --help | head -20", session_id, tmp_path).returncode == 0
-
-        result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
-
-        assert result.returncode == 0
-        assert "切り詰め処理を除去し" in json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-
-    def test_repository_file_search_is_still_corrected(self, tmp_path: pathlib.Path) -> None:
-        """作業ツリー内のファイルを件数指定で初回取得する呼び出しでは補正が発火する。"""
-        target = tmp_path / "present.txt"
-        target.write_text("needle\n", encoding="utf-8")
-
-        result = self._invoke(f"rg needle {target} | head -5", "truncation-repo-search", tmp_path)
-
-        assert result.returncode == 0
-        assert "切り詰め処理を除去し" in json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-
-    def test_autofix_notice_is_tagged_as_informational(self, tmp_path: pathlib.Path) -> None:
-        """補正が成立した通知は`notice`タグで発行し、是正を要する`warn`と区別する。
-
-        補正は補正前の呼び出しが要求した結果をそのまま返すため、実行主体の是正を要さない。
-        `warn`のまま発行すると、振り返りの抽出器が当該通知を問題候補として保持する。
-        """
-        result = self._invoke("ls -1 /tmp | head -5", "truncation-notice-tag", tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert 'kind="notice"' in context
-        assert 'kind="warn"' not in context
-
-    def test_autofix_notice_shows_the_returned_range_and_the_avoidance_body(self, tmp_path: pathlib.Path) -> None:
-        """補正の通知が、当該呼び出しへ返る範囲と、切り詰めを含まない書き方を示す。"""
-        session_id = "truncation-autofix-body"
-
-        result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "補正前のコマンドが要求した範囲を当該呼び出しの結果へ返す" in context
-        avoidance = shell_checks._OUTPUT_TRUNCATION_AVOIDANCE  # pylint: disable=protected-access  # noqa: SLF001
-        assert avoidance in context
-
     @pytest.mark.parametrize(
-        ("command", "expected"),
+        "command",
         [
-            ("ls -d /tmp/example | head -1", '`test -e /tmp/example; echo "test_e_rc=$?"`'),
-            ("find /tmp -name '*.log' | head -1", "`find /tmp -name '*.log' -print -quit`"),
+            "cat /etc/hostname | head -5",
+            "zcat /dev/null | head -5",
+            "git log --decorate -5 | head -3",
+            "ls -1 /tmp | head -5",
+            "rg -n needle /etc/hostname | head -5",
+            "yes | head -5",
+            "git status --short | tail -5",
         ],
     )
-    def test_autofix_notice_gives_an_executable_use_specific_alternative(
-        self,
-        tmp_path: pathlib.Path,
-        command: str,
-        expected: str,
-    ) -> None:
-        """初回通知が検出用途に対応する、切り詰めを含まない具体形を示す。"""
-        result = self._invoke(command, f"truncation-specific-{expected}", tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert expected in context
-
-    def test_saved_log_tail_gets_an_executable_use_specific_alternative(self, tmp_path: pathlib.Path) -> None:
-        """hookが全量保存した実在ログだけは、直接`tail`する案を示す。"""
-        saved_path = self._saved_truncation_log(tmp_path, "truncation-saved-tail-seed")
-        command = f"cat {shlex.quote(str(saved_path))} | tail -20"
-
-        result = self._invoke(command, "truncation-saved-tail", tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert f"`tail -20 {saved_path}`" in context
-
-    def test_saved_log_tail_alternative_is_allowed(self, tmp_path: pathlib.Path) -> None:
-        """通知が示す保存済みログの末尾取得は切り詰め補正の対象にしない。"""
-        result = self._invoke("tail -20 /tmp/run.log", "truncation-direct-tail", tmp_path)
-
-        assert result.returncode == 0
-        assert "切り詰め処理を除去し" not in result.stdout
-
-    def test_unsaved_cat_tail_uses_only_the_general_alternative(self, tmp_path: pathlib.Path) -> None:
-        """保存済み出力と識別できない入力を直接`tail`する案は示さない。"""
-        result = self._invoke("cat /tmp/run.log | tail -20", "truncation-unsaved-tail", tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "`tail -20 /tmp/run.log`" not in context
-        assert shell_checks._OUTPUT_TRUNCATION_AVOIDANCE in context  # pylint: disable=protected-access  # noqa: SLF001
-
-    def test_repeat_block_keeps_the_use_specific_alternative(self, tmp_path: pathlib.Path) -> None:
-        """2回目の遮断通知にも、その呼び出しに対応する具体的な代替を示す。"""
-        session_id = "truncation-repeat-specific"
-        saved_path = self._saved_truncation_log(tmp_path, session_id)
-
-        result = self._invoke(
-            f"cat {shlex.quote(str(saved_path))} | tail -20",
-            session_id,
-            tmp_path,
-        )
-
-        assert result.returncode == 2
-        assert f"`tail -20 {saved_path}`" in result.stderr
-
-    def test_quoted_pipe_in_an_argument_is_corrected(self, tmp_path: pathlib.Path) -> None:
-        """引用の内側にあるパイプ文字を演算子として数えず、切り詰めを補正する。"""
-        session_id = "truncation-quoted-pipe"
-
-        result = self._invoke("rg -l 'alpha|beta' --glob '!*.lock' | head -20", session_id, tmp_path)
-
-        assert result.returncode == 0
-        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        producer, separator, consumer = corrected.partition("; ")
-        assert separator == "; "
-        assert producer.startswith("rg -l 'alpha|beta' --glob '!*.lock' > ")
-        assert consumer.startswith("head -20 ")
-
-    def test_stderr_duplication_is_kept_after_the_save_target(self, tmp_path: pathlib.Path) -> None:
-        """`2>&1`を末尾に持つ呼び出しでは、保存先へのリダイレクトを当該冗長化の前へ置く。
-
-        後方へ連結すると、標準エラーは元の標準出力の宛先へ複製され、保存先へ入らない。
-        """
-        session_id = "truncation-stderr-merge"
-
-        result = self._invoke("ls -1 /tmp 2>&1 | head -5", session_id, tmp_path)
-
-        assert result.returncode == 0
-        payload = json.loads(result.stdout)["hookSpecificOutput"]
-        corrected = payload["updatedInput"]["command"]
-        match = re.search(r"> (\S+) 2>&1; head -5 (\S+)$", corrected)
-        assert match is not None
-        assert match.group(1) == match.group(2)
-        assert "標準出力と標準エラー" in payload["additionalContext"]
-
-    def test_loop_body_read_back_returns_each_iteration(self, tmp_path: pathlib.Path) -> None:
-        """ループ本体の補正でも、反復ごとにconsumerが当該反復の出力を読む形へ補正する。
-
-        保存先の読み戻しを持たない補正では、反復が同じ保存先を上書きし、
-        最後の1件の内容だけが残って当該呼び出しの観測目的へ達しない。
-        """
-        session_id = "truncation-loop-body"
-
-        result = self._invoke("for f in a b; do atk wi show $f | grep -m1 '^# '; done", session_id, tmp_path)
-
-        assert result.returncode == 0
-        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        assert "| grep" not in corrected
-        match = re.search(r"do atk wi show \$f > (\S+); grep -m1 '\^# ' (\S+); done$", corrected)
-        assert match is not None
-        assert match.group(1) == match.group(2)
-
-    def test_loop_body_append_keeps_every_iteration(self, tmp_path: pathlib.Path) -> None:
-        """consumerが操作対象を持つ区間がループ本体にある場合は、反復ごとの出力を保存先へ追記する。
-
-        上書きにすると、反復が同じ保存先を上書きして最後の1件の内容だけが残る。
-        """
-        session_id = "truncation-loop-append"
-
-        result = self._invoke("for f in a b; do ls -1 $f | grep -m1 needle -; done", session_id, tmp_path)
-
-        assert result.returncode == 0
-        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        assert re.search(r"do ls -1 \$f >> \S+; done$", corrected) is not None
-
-    def test_autofix_notice_identifies_the_detected_segment(self, tmp_path: pathlib.Path) -> None:
-        """補正の通知が、検出した直列区間と切り詰めと判定したコマンドの表記を示す。"""
-        session_id = "truncation-detected-segment"
-
-        result = self._invoke("ls -1 /tmp; ls -1 /var | head -5", session_id, tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "第2直列区間" in context
-        assert "切り詰めと判定したコマンドは`head`" in context
+    def test_preview_is_not_rewritten_or_blocked(command: str, tmp_path: pathlib.Path) -> None:
+        for _ in range(2):
+            result = _run(
+                {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "preview-repeat"},
+                _plan_file_state_env(tmp_path),
+            )
+            assert result.returncode == 0
+            assert "updatedInput" not in json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
 
 
 class TestBashOutputTruncationBlockNotice:
     """全量観測が必要な出力の切り詰めを遮断する通知本文が、是正の対象を一意に示す。"""
+
+    def test_wi_show_full_output_is_blocked_when_truncated(self, tmp_path: pathlib.Path) -> None:
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi show 20260101-000000-001.md | head -5"},
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "全量観測が必要なコマンドは`atk wi show`" in result.stderr
 
     def test_block_notice_identifies_the_detected_segment(self, tmp_path: pathlib.Path) -> None:
         """遮断の通知が、検出した直列区間と切り詰めと判定したコマンドの表記を示す。
@@ -1940,16 +1741,6 @@ class TestNormViolatingArgumentForms:
         assert result.returncode == 0
         assert "オプション終端" not in _agent_messages(result)
 
-    def test_rg_newline_pattern_without_multiline_warns(self, tmp_path: pathlib.Path) -> None:
-        result = self._invoke(r"rg 'a\nb' .", tmp_path)
-        assert result.returncode == 0
-        assert "複数行モード" in _agent_messages(result)
-
-    def test_rg_newline_pattern_with_multiline_is_silent(self, tmp_path: pathlib.Path) -> None:
-        result = self._invoke(r"rg -U 'a\nb' .", tmp_path)
-        assert result.returncode == 0
-        assert "複数行モード" not in _agent_messages(result)
-
     def test_unknown_atk_subcommand_blocks(self, tmp_path: pathlib.Path) -> None:
         """実在しないサブコマンドを遮断し、親コマンドが受理する一覧と要約を示す。"""
         result = self._invoke("atk not-a-subcommand", tmp_path)
@@ -2140,35 +1931,8 @@ class TestNormViolatingArgumentForms:
         assert "-n" in contract["flags"]
 
 
-class TestTruncationFixKeepsConditionalStructure:
-    """切り詰め補正が`||`と`&&`の条件構造を保つこと。
-
-    読み戻しを被演算子の外側の`;`区間へ移すと、補正前と異なる成否を返す。
-    """
-
-    @staticmethod
-    def test_read_back_stays_inside_the_conditional(tmp_path: pathlib.Path) -> None:
-        """`A || B | head -N`では読み戻しが`||`の右辺の内側に留まる。"""
-        existing = tmp_path / "docs"
-        existing.mkdir()
-        command = f"test -f {tmp_path / 'absent.txt'} || ls -la {existing} | head -40"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": command},
-                "session_id": "conditional-truncation",
-                "cwd": str(tmp_path),
-            },
-            _plan_file_state_env(tmp_path),
-        )
-
-        assert result.returncode == 0
-        corrected = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        left, separator, right = corrected.partition("|| ")
-        assert separator == "|| "
-        assert "head -40 " not in left
-        assert right.startswith("{ ")
-        assert right.rstrip().endswith("; }")
+class TestMissingPathFixKeepsConditionalStructure:
+    """不存在パスを除くと操作対象がなくなる入力を遮断する。"""
 
     @staticmethod
     def test_missing_path_removal_losing_all_operands_is_blocked(tmp_path: pathlib.Path) -> None:
@@ -2514,18 +2278,6 @@ class TestRepeatedNoticeSummary:
             {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "session_id": session_id},
             _plan_file_state_env(tmp_path),
         )
-
-    def test_summary_keeps_removed_paths_beside_the_truncation_target(self, tmp_path: pathlib.Path) -> None:
-        """補正が同時に成立した2件目では、除いたパスと切り詰めの対象をどちらも残す。"""
-        (tmp_path / "present.txt").write_text("needle\n", encoding="utf-8")
-        session_id = "autofix-summary-both"
-        assert "absent-a.txt" in _agent_messages(self._invoke("rg needle absent-a.txt present.txt", session_id, tmp_path))
-
-        second = _agent_messages(self._invoke("rg needle absent-b.txt present.txt | head -5", session_id, tmp_path))
-
-        assert "absent-b.txt" in second
-        assert "切り詰め処理を除去し" in second
-        assert "この通知は同一セッションで2件目である" in second
 
     def test_missing_path_notice_drops_the_repeat_instruction(self, tmp_path: pathlib.Path) -> None:
         """実在しないパスの除去では、2件目から除いた対象と件数だけを残す。"""
