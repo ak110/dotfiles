@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # AWIの単一レーン処理
 
-メインがAWIを取得し、同じ処理回で計画、実装、実行レビュー及び終端を行う。選定と実装を委譲して並列化する場合は`../process-wi/SKILL.md`を使う。本スキルの実行中は自律モードとし、WIの共通契約は`../wi-standards/SKILL.md`を正本とする。
+メインがAWIを取得し、計画、実装、実行レビュー、終端を同じ処理回で行う。選定と実装を委譲して並列化する場合は`../process-wi/SKILL.md`を使う。本スキルの実行中は自律モードとし、WIの共通契約は`../wi-standards/SKILL.md`を正本とする。
 WI作成、計画、実行及び実行後レビューの責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 ## process-wi契約の読み替え
