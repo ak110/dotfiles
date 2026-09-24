@@ -68,7 +68,7 @@ class TestGitCommitVerificationNotice:
         return _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "git commit -m 'sample'"},
+                "tool_input": {"command": "git commit -m 'sample\n\nCo-Authored-By: Test <noreply@example.com>'"},
                 "session_id": session_id,
             },
             env_overrides=_plan_file_state_env(tmp_path),
@@ -116,6 +116,35 @@ class TestGitCommitVerificationNotice:
         _write_session_state(tmp_path, session_id, {"test_executed": False})
 
         assert self._WARNING in _additional_context(self._commit(tmp_path, session_id))
+
+
+# pylint: disable=protected-access
+class TestCommitAttribution:
+    """新規メッセージの帰属漏れと対象外の形式を検証する。"""
+
+    def test_message_without_trailer_is_blocked(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(pretooluse, "_attribution_explicitly_disabled", lambda _cwd: False)
+        assert pretooluse._check_bash_commit_attribution("git commit -m 'sample'", str(tmp_path)) is True
+
+    def test_message_with_trailer_passes(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(pretooluse, "_attribution_explicitly_disabled", lambda _cwd: False)
+        command = "git commit -m 'sample\n\nCo-Authored-By: Test <noreply@example.com>'"
+        assert pretooluse._check_bash_commit_attribution(command, str(tmp_path)) is False
+
+    def test_file_message_and_reused_message(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(pretooluse, "_attribution_explicitly_disabled", lambda _cwd: False)
+        message = tmp_path / "message.txt"
+        message.write_text("sample\n", encoding="utf-8")
+        assert pretooluse._check_bash_commit_attribution(f"git commit -F {message}", str(tmp_path)) is True
+        assert pretooluse._check_bash_commit_attribution("git commit --amend --no-edit", str(tmp_path)) is False
+        assert pretooluse._check_bash_commit_attribution("git commit --fixup=HEAD", str(tmp_path)) is False
+
+    def test_explicitly_disabled_setting_passes(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(pretooluse, "_attribution_explicitly_disabled", lambda _cwd: True)
+        assert pretooluse._check_bash_commit_attribution("git commit -m 'sample'", str(tmp_path)) is False
+
+
+# pylint: enable=protected-access
 
 
 class TestManifestSsot:

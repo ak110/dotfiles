@@ -78,8 +78,8 @@ awi_references: []
 
 初回の新規起動ではレビュー基準と`引き継ぎ記録先`、計画外の条項がある場合は検査済み`review_contract`の絶対パスを`extra_params`へ追加する。`引き継ぎ記録先`の値は、その委譲で初めて渡すため絶対パスへ`（新規）`を続けた値とする。
 
-指摘への修正は、そのworktreeを所有する主体が実施する。起動経路ごとの主体と反復の調整は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`が定める。同じthreadを継続する経路では`レビュー指摘の対応をせよ`と`round: <ラウンド番号>`の2行を送り、新しい修正担当を起動しない。
-同じthreadを継続できない場合は`agent-toolkit:delegation`のSKILL.mdの`## 継続と新規起動`に従い、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`## 入力`と同じ形式で新しいレーン担当を起動する。このとき`担当種別`を`レビュー修正担当`とし、`再開位置`へ作業rootの計画ファイルの絶対パスを渡す。
+指摘への修正は、そのworktreeを所有する主体が実施する。起動経路ごとの主体と反復の調整は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`が定める。同じthreadを継続する経路では`レビュー指摘の対応をせよ`、`round: <ラウンド番号>`、`レビュー指摘管理表: <絶対パス>`を送り、新しい修正担当を起動しない。
+同じthreadを継続できない場合は`agent-toolkit:delegation`のSKILL.mdの`## 継続と新規起動`に従い、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`## 入力`と同じ形式で新しいレーン担当を起動する。このとき`担当種別`を`レビュー修正担当`とし、`再開位置`へ作業rootの計画ファイルの絶対パス、`レビュー指摘管理表`へ管理表の絶対パスを渡す。
 修正する主体はレビュー表とworktreeの実体から指摘の採否、対象の実装commit及び修正方針を確定する。採否の基準、履歴統合、履歴書換え証拠の保存と回復は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」、履歴書換えの遮断は`agent-toolkit:commit`の履歴書換え契約を正本とする。
 メインがレビュー指摘管理表を読むラウンドは`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の「応答済みの判定」が定める範囲に限る。指摘の採否と実装commitへの対応付けに加えて、成果物、Git状態、検証結果の検収も修正する主体が担う
 （努力目標。メインが同じ検収を重ねると、修正1件ごとにメインのコンテキストへ成果物の全体が載る）。

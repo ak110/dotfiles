@@ -89,7 +89,7 @@ def _file_fields(label: str, path: pathlib.Path, now: datetime.datetime) -> list
         text = path.read_text(encoding="utf-8", errors="replace")
         mtime = path.stat().st_mtime
     except FileNotFoundError:
-        return [f"{label}.state=absent", f"{label}.lines=NA", f"{label}.age=NA"]
+        return [f"{label}.lines=NA", f"{label}.age=NA"]
     except OSError:
         return [f"{label}.lines={_ERROR_VALUE}", f"{label}.age={_ERROR_VALUE}"]
     age = max(0, int(now.timestamp() - mtime))

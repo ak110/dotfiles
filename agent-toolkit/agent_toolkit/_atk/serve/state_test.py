@@ -1005,7 +1005,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_keep_user_filter_load_when_same_state_sse_supersedes_repo_request() -> None:
-    """同一状態の後発SSEが候補要求を失効させても利用者の一覧通知を維持する。"""
+    """利用者の候補要求中に届いたSSEを保留し、一覧通知を維持する。"""
     result = _run_node_ui(
         """
 const repoResolvers = [];
@@ -1030,15 +1030,17 @@ const user = handleFilterChange({reloadRepos: true});
 await Promise.resolve();
 const sse = reloadFromExternalChange();
 await Promise.resolve();
-repoResolvers[1]({
-  ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})
-});
-await Promise.resolve();
+const repoCountDuringUser = repoResolvers.length;
 repoResolvers[0]({
   ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})
 });
 await Promise.all([user, sse]);
+repoResolvers[1]({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})
+});
+await new Promise(resolve => setImmediate(resolve));
 process.stdout.write(JSON.stringify({
+  repoCountDuringUser,
   listUrls,
   status: elements['result-status'].textContent,
   rows: entries.map(entry => entry.filename)
@@ -1046,8 +1048,10 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
+        "repoCountDuringUser": 1,
         "listUrls": [
             "/atk/api/entries?type=awi&status=active&answered=all&page=1",
+            "/atk/api/entries?type=uwi&status=all&answered=all",
             "/atk/api/entries?type=uwi&status=all&answered=all",
             "/atk/api/entries?type=awi&status=active&answered=all&page=1",
         ],

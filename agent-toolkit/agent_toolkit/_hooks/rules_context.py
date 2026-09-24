@@ -2,8 +2,8 @@
 
 委譲先の判定は`_common.delegated_session`を正本とする。
 
-出力する本文は区分ごとに境界を持つ。注記は`agent-toolkit-hook-message`、規範は`normative-context`、
-常駐処理が渡した追加指示は`forwarded-user-input`で囲む。受信側が区分ごとに生成主体と種別を
+出力する自動挿入本文は`agent-toolkit-auto-inserted`で囲む。常駐処理が渡したユーザー自身の入力は
+`forwarded-user-input`で囲む。受信側が区分ごとに生成主体と種別を
 判別できるようにするためであり、区分ごとに囲んだ本文を全体で重ねて囲まない。
 
 Claude Codeはhook 1件の出力を10,000文字で切り詰める。条文の欠落を防ぐため、
@@ -47,7 +47,7 @@ SESSION_TEMP_PREFIX = "session"
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
 # 実行主体へ常時読み込ませる規範の境界。種別で読み手を区別する。
-NORMATIVE_ELEMENT = "normative-context"
+NORMATIVE_ELEMENT = message_format.AUTO_INSERTED_ELEMENT
 NORMATIVE_SOURCE = "agent-toolkit"
 NORMATIVE_KIND_MAIN = "rules-main"
 NORMATIVE_KIND_SUBAGENT = "rules-subagent"
@@ -96,7 +96,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
 
 def _normative_context(body: str, *, kind: str) -> str:
     """規範本文へ生成主体と種別を持つ境界を付ける。"""
-    return xml_message(NORMATIVE_ELEMENT, body, {"source": NORMATIVE_SOURCE, "kind": kind})
+    return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
 def compose_subagent_start(*, host: str) -> str:

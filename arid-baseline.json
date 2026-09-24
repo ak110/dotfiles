@@ -996,20 +996,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:d1a1cd2338775578967c31fdfdb7e7e23f035457163952bd0958cfae481a8a9b",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_hooks/posttooluse_conditional_prohibition_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/agent_toolkit/_hooks/posttooluse_session_edited_files_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:d25e9fd1842615cd27df451b3e31dcc7a0defd775f9797f840d683f2d435c363",
       "lines": 12,
       "occurrences": [

@@ -89,7 +89,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py session_end_cleanup"
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py session_end_cleanup",
+            "async": true
           }
         ]
       }

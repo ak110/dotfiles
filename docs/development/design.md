@@ -105,7 +105,7 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 
 ## agents_server MCPの委譲経路
 
-動的に生成する通知・委譲本文の`nonce`は、外側のXML配送境界を本文中の同名タグから識別するために使う。生成時に本文へ現れない値を選び、受信側は開始タグの値と最後の同名終了タグで境界を確定する。静的な配布文書は本文が決定的なため`nonce`を付けない。常時読む説明には、その判断時に必要な契約だけを置き、実測値と変更経緯は監査記録へ置く。
+動的に生成する通知・委譲本文と静的な配布文書は、最初のXML開始タグと最後の同名終了タグで配送境界を確定する。出所と用途は開始タグの属性で示す。常時読む説明には、その判断時に必要な契約だけを置き、実測値と変更経緯は監査記録へ置く。
 
 `agents_server`は、Claude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
 `start`の`model_type`に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
@@ -235,6 +235,12 @@ backend側で個別に取り除く案が成立しないことにある。同じ�
 Antigravity CLIの非対話モードは常駐プロトコルを持たず、`-p`で渡した1件の指示を処理して終わるため、
 turnごとにプロセスを起動し、継続は`--conversation <会話識別子>`を付けた新しい実行とする。
 session識別子は`--output-format stream-json`が返す`init`イベントの会話識別子とする。
+
+人が`atk agents list`から選んだsessionの進行を読むため、backendは解析済みの公開JSONイベントを
+ルートsessionの状態ディレクトリ内にある`logs/<session-id>.jsonl`へ順に追記する。
+`atk agents logs`はClaude Code・Codexの既存記録と同じ表示経路で読み、`--follow`では追記分を表示する。
+保持と期限回収は状態ディレクトリの7日契約に従う。
+Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力には使わない。
 
 工程別モデル設定とpresetへは加えない。
 `_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
@@ -1179,7 +1185,7 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 
 ### warn・block検査の全件照合（2026年9月23日）
 
-判定モジュールが通知整形関数へ渡すwarn・blockの対を、通知式の呼び出し位置で列挙した。条件は同じ行の関数とその分岐、通知は表中の本文の冒頭又は式で特定する。式が変数の場合も、当該位置の代入元が通知本文である。各行のパスから`agent-toolkit/agent_toolkit/_hooks/`を省略した。84件は現行実装に残る対であり、撤去した1件を後掲する。
+判定モジュールが通知整形関数へ渡すwarn・blockの対を、通知式の呼び出し位置で列挙した。条件は同じ行の関数とその分岐、通知は表中の本文の冒頭又は式で特定する。式が変数の場合も、当該位置の代入元が通知本文である。各行のパスから`agent-toolkit/agent_toolkit/_hooks/`を省略した。文体表現だけを検出する2件と同一呼び出しを10回で遮断する1件を2026年9月24日に撤去した。後者は回数だけでは契約違反を確定できず、正当な再試行も止めるためである。表の行番号は当初の調査時点の位置である。
 
 条文欄の略号は次の所在を表す。Xは統治する規範条文が無く、実装またはホストの入出力契約が判定の正本である。
 
@@ -1189,8 +1195,8 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 - C: `agent-toolkit/share/rules-main.md`「協調と自律」
 - M: `agent-toolkit/skills/plan-mode/SKILL.md`「進め方」
 - W: `agent-toolkit/skills/writing-standards/references/writing.md`「日本語の書き方」
-- S: `agent-toolkit/skills/writing-standards/references/security.md`「秘匿値ファイルの取り扱い」
-- R: `agent-toolkit/skills/writing-standards/references/search.md`「検索手段の選定と出力量の制御」
+- S: `agent-toolkit/share/security.md`「秘匿値ファイルの取り扱い」
+- R: `agent-toolkit/share/search.md`「検索手段の選定と出力量の制御」
 - G: `agent-toolkit/skills/commit/SKILL.md`「通常commit」と同スキルの`references/history-rewrite.md`「履歴書換え」
 - A: `agent-toolkit/skills/writing-standards/references/agent-documents-additions.md`「規範追記時の判定」
 - T: `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」
@@ -1202,7 +1208,6 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 | `autonomous_exit.py:104` `evaluate` | 常駐セッションで必須の終了操作を欠く遮断 | P | 維持：終了契機と実行履歴の照合が必要 |
 | `pending_question_advisor.py:145` `evaluate` | 地の文に質問を残した終了の遮断 | C | 維持：終了時の発話本文との照合が必要 |
 | `plan_save_advisor.py:100` `evaluate` | f'当該セッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n保存の契機に達したバンドルだけをatk plans commit <計画… | M | 維持：計画バンドルの実在確認が必要 |
-| `posttooluse.py:1059` `_append_conditional_prohibition_notice` | 規範文書へ増えた条件付き禁止形への警告 | X | 維持：適用後の実ファイルの読取が必要 |
 | `posttooluse.py:1171` `_dispatch` | f'同じ終了コード{exit_code}でBashが2回連続して失敗した。次の直接Bash実行を遮断する。原因調査とコマンド実行はagents_serverのstart_… | X | 維持：実際のツール応答と状態の照合が必要 |
 | `posttooluse.py:1220` `_dispatch` | f"warn: listの応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持：実際のツール応答と状態の照合が必要 |
 | `posttooluse.py:1235` `_dispatch` | f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持：実際のツール応答と状態の照合が必要 |
@@ -1225,7 +1230,6 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 | `pretooluse/content_checks.py:714` `_check_home_path` | f'{tool_name}.{field}にホームディレクトリの絶対パス（{home}）を検出した。版管理対象のファイルでは、環境依存のパスを避けるため~、$HOME、ま… | X | 維持：書込断片と既存本文の機械照合が必要 |
 | `pretooluse/content_checks.py:797` `check_user_facing_typo` | f'{tool_name}が渡すユーザー向け本文に誤字候補を検出した。一致: {len(matches)}件（{listed}）。{terms}変換誤りかどうかを本文の文… | W | 維持：書込断片と既存本文の機械照合が必要 |
 | `pretooluse/content_checks.py:897` `_check_colloquial` | f"{tool_name}が書き込む変更行に口語的な日本語表現を検出した。{_colloquial_hit_summary(hits)}{_plugin_resource… | W | 維持：書込断片と既存本文の機械照合が必要 |
-| `pretooluse/content_checks.py:947` `_check_style_negation` | f'{tool_name}による編集で「Xを根拠にYしない」「Xを理由にYしない」形のメタ規範表現が増加した。対象: {file_path}。この形は「XでなければYして… | W | 維持：書込断片と既存本文の機械照合が必要 |
 | `pretooluse/content_checks.py:1069` `_check_body_section_reference_exists` | f"規範文書の本文が持つ節参照が実在しない可能性がある（{tool_name}、対象: {file_path}）: {'; '.join(reasons)}。参照先のファ… | A | 維持：書込断片と既存本文の機械照合が必要 |
 | `pretooluse/content_checks.py:1123` `_check_plan_mode_skill_first` | 'warning: agent-toolkit:plan-modeスキルを起動せずに計画ファイルを編集している。自身で計画を起草する場合は、同スキルを起動し、計画ファイル… | M | 維持：書込断片と既存本文の機械照合が必要 |
 | `pretooluse/content_checks.py:1314` `_check_direct_agent_toolkit_edits_after_plan_mode` | f'plan-modeスキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とするWrite・Edit・MultiEditを{new_count… | M | 維持：書込断片と既存本文の機械照合が必要 |
@@ -1245,7 +1249,6 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 | `pretooluse/large_reads.py:146` `_large_multi_read_notice` | 複数ファイルの合計が閾値を超える全文取得の遮断 | O | 維持：行数・バイト数の実測が必要 |
 | `pretooluse/large_reads.py:182` `check_large_read` | f'先頭{threshold}行が{prefix_byte_count}バイトとなり、補正後もバイト閾値{_byte_threshold()}を超えるためReadを遮断し… | O | 維持：行数・バイト数の実測が必要 |
 | `pretooluse/large_reads.py:195` `check_large_read` | 全文取得の先頭範囲への補正 | O | 維持：行数・バイト数の実測が必要 |
-| `pretooluse/repeat_guard.py:55` `check_repeated_tool_call` | f'blocked: {tool_name}の同一呼び出しが{_BLOCK_AT}回連続した。' | O | 維持：同一呼び出しの連続回数の実測が必要 |
 | `pretooluse/shell_checks.py:873` `_check_bash_truncation_autofix_repeat` | 'blocked: 規範が禁じる初回取得の件数限定を、同じセッションで再び検出した。' | O | 維持：シェル入力の分割・対象の実測が必要 |
 | `pretooluse/shell_checks.py:948` `_autofix_bash_command` | 不在パスを補正した際の対象集合の縮小警告 | O | 維持：補正前後の対象集合の照合が必要 |
 | `pretooluse/shell_checks.py:1006` `_check_bash_nested_code_string` | 'blocked: 別のシェルへ-cでコード文字列を渡す入力は、引用を2段以上で解釈する。' | O | 維持：シェル入力の分割・対象の実測が必要 |
@@ -1282,6 +1285,8 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 | `pretooluse/shell_checks.py:4251` `_check_bash_external_command_options` | f"{' '.join(path)}が受理しないオプションである。対象: {scan.unknown_option}\n{_format_accepted_option_… | O | 維持：シェル入力の分割・対象の実測が必要 |
 | `subagent_stop_advisor.py:43` `main` | '停止する前に、空でない完了報告を出力する。呼び出し元は遮断された報告本文を保持しない。' | D | 維持：完了報告の実在確認が必要 |
 | `termination_order_advisor.py:203` `evaluate` | '\n\n'.join(missing_bodies) | D | 維持：終了工程の実行記録との照合が必要 |
+
+2026年9月24日の再照合では、`content_checks.py`の`_check_style_negation`と`posttooluse.py`の`_check_conditional_prohibition`を撤去した。いずれも語形だけから誤読を推定し、実際に意味の取り違えが起きた対象を検出していなかった。書き手が条文の価値、条件と結果を照合する文書作成規範で判断でき、hookの実行時入力が加える固有の判断材料もなかった。文体警告の関数と検体を除き、他の書込時検査とhook登録は保った。
 
 `shell_checks.py`の`_check_bash_help_with_execution`が発した「同じ呼び出しでヘルプ取得と対象の実行を並べた」警告は撤去した。`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」へ、ヘルプを単独で取得し、結果を読んでから実行を組み立てる順序を明記した。規範は全実行主体が起動時に読むため、この順序を呼び出しの組立時に想起できる見込みがある。対象のBashイベントは他の検査も利用するため、`hooks.json`と`hooks.codex.json`の登録は残る。
 

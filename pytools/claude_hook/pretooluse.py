@@ -44,7 +44,7 @@ from agent_toolkit._plan.structure import (
     is_agent_doc_target_file,
 )
 
-# このスクリプトのhook識別子。`agent-toolkit-hook-message`要素の`source`属性に展開される。
+# このスクリプトのhook識別子。`agent-toolkit-auto-inserted`要素の`source`属性に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
 
 _CLAUDE_LOCAL_MD = "CLAUDE.local.md"

@@ -44,7 +44,7 @@ def test_split_sentences_excludes_non_prose_blocks() -> None:
 
 
 def test_metrics_count_each_indicator(tmp_path: pathlib.Path) -> None:
-    """否定形終端・「当該」・2種の文型をそれぞれ数える。"""
+    """否定形終端と「当該」をそれぞれ数える。"""
     text = "当該対象は変更しない。当該値を根拠にしない。当該条件だけを判定しない。肯定形の文である。\n"
 
     metrics = check_agent_doc_tone.Metrics(_write(tmp_path, text), text)
@@ -52,8 +52,6 @@ def test_metrics_count_each_indicator(tmp_path: pathlib.Path) -> None:
     assert metrics.sentences == 4
     assert metrics.negative_endings == 3
     assert metrics.subject_words == 3
-    assert metrics.ground_negations == 1
-    assert metrics.only_negations == 1
 
 
 def test_short_document_skips_ratio_thresholds(tmp_path: pathlib.Path) -> None:
@@ -78,26 +76,15 @@ def test_ratio_thresholds_apply_to_long_document(tmp_path: pathlib.Path) -> None
     assert any("「当該」の出現率" in problem for problem in problems)
 
 
-def test_pattern_thresholds_apply_regardless_of_length(tmp_path: pathlib.Path) -> None:
-    """2種の文型は文数によらず0件を要求する。"""
-    text = "その値を根拠にしない。\n"
-
-    metrics = check_agent_doc_tone.Metrics(_write(tmp_path, text), text)
-    problems = metrics.violations()
-
-    assert metrics.sentences == 1
-    assert problems == ["「〜を根拠にしない」型 1件（上限 0件）"]
-
-
 def test_main_reports_violation_and_returns_one(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """閾値を超えたファイルを標準出力へ書いて終了コード1で終わる。"""
-    path = _write(tmp_path, "その値を根拠にしない。\n")
+    path = _write(tmp_path, "当該対象は変更しない。" * 20)
 
     assert check_agent_doc_tone.main([str(path)]) == 1
 
     captured = capsys.readouterr().out
     assert str(path) in captured
-    assert "「〜を根拠にしない」型" in captured
+    assert "否定形終端率" in captured
 
 
 def test_main_accepts_compliant_document(tmp_path: pathlib.Path) -> None:
@@ -108,14 +95,14 @@ def test_main_accepts_compliant_document(tmp_path: pathlib.Path) -> None:
 
 
 def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--report`は判定せず、5指標とファイル名を表で出力する。"""
+    """`--report`は判定せず、3指標とファイル名を表で出力する。"""
     path = _write(tmp_path, "その値を根拠にしない。\n")
 
     assert check_agent_doc_tone.main(["--report", str(path)]) == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0].split("\t") == ["文数", "否定形終端", "当該", "根拠型", "だけ型", "ファイル"]
-    assert lines[1].split("\t") == ["1", "1", "0", "1", "0", str(path)]
+    assert lines[0].split("\t") == ["文数", "否定形終端", "当該", "ファイル"]
+    assert lines[1].split("\t") == ["1", "1", "0", str(path)]
 
 
 def test_excluded_paths_are_skipped(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

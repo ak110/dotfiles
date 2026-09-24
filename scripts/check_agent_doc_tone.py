@@ -5,21 +5,18 @@
 # ///
 r"""コーディングエージェント向け文書の文体の密度を測る。
 
-読み手は文脈にある文体を再生産するため、否定形の宣言、法令調の語及び定型の否定文型が多い文書は、
+読み手は文脈にある文体を再生産するため、否定形の宣言や法令調の語が多い文書は、
 それを読んだ主体の成果物へ同じ文体と範囲外の追加要素を持ち込む。
 本スクリプトは当該密度をファイル単位で数え、閾値を超えたファイルを報告する。
 
-指標は次の5つとする。
+指標は次の3つとする。
 
 - 文数
 - 否定形で終わる文の数
 - 「当該」の出現数
-- 「〜を根拠にしない」型の数
-- 「〜だけを…しない」型の数
 
 閾値は、Codexを使う前のClaude由来commitが追加した文の水準に置く。
 否定形終端率は8%、「当該」の出現率（出現数÷文数）は3%とし、文数が20以上のファイルへ適用する。
-2種の文型は文数によらず0件とする。
 """
 
 from __future__ import annotations
@@ -40,11 +37,6 @@ _INLINE_CODE_PLACEHOLDER = "コード"
 
 _NEGATIVE_ENDING_PATTERN = re.compile(r"(ない|せず|ず|しません|ません)[。）」]*\s*$")
 _SUBJECT_WORD = "当該"
-_GROUND_NEGATION_PATTERN = re.compile(
-    r"(根拠|典拠|裏付け|判断材料|入力|前提|契機|基準|代用|代替|代わり|対象|理由|認可|承認|終端|完了)"
-    r"(と|に|へ)(は)?(しない|用いない|数えない|扱わない|代えない|置かない)"
-)
-_ONLY_NEGATION_PATTERN = re.compile(r"だけ(を|で|は).{0,20}(しない|用いない|扱わない|判定しない|確定しない|断定しない)")
 
 _MIN_SENTENCES_FOR_RATIO = 20
 _MAX_NEGATIVE_ENDING_RATIO = 0.08
@@ -114,8 +106,6 @@ class Metrics:
         self.sentences = len(sentences)
         self.negative_endings = sum(1 for sentence in sentences if _NEGATIVE_ENDING_PATTERN.search(sentence))
         self.subject_words = text.count(_SUBJECT_WORD)
-        self.ground_negations = sum(len(_GROUND_NEGATION_PATTERN.findall(sentence)) for sentence in sentences)
-        self.only_negations = sum(len(_ONLY_NEGATION_PATTERN.findall(sentence)) for sentence in sentences)
 
     @property
     def negative_ending_ratio(self) -> float:
@@ -141,10 +131,6 @@ class Metrics:
                     f"「当該」の出現率 {self.subject_word_ratio:.1%}（上限 {_MAX_SUBJECT_WORD_RATIO:.0%}、"
                     f"{self.subject_words}回/{self.sentences}文）"
                 )
-        if self.ground_negations:
-            problems.append(f"「〜を根拠にしない」型 {self.ground_negations}件（上限 0件）")
-        if self.only_negations:
-            problems.append(f"「〜だけを…しない」型 {self.only_negations}件（上限 0件）")
         return problems
 
 
@@ -156,7 +142,7 @@ def _is_excluded(path: pathlib.Path) -> bool:
 
 def _print_report(metrics: list[Metrics]) -> None:
     """全ファイルの指標を表で標準出力へ書く。"""
-    header = ("文数", "否定形終端", "当該", "根拠型", "だけ型", "ファイル")
+    header = ("文数", "否定形終端", "当該", "ファイル")
     print("\t".join(header))
     for metric in metrics:
         print(
@@ -165,8 +151,6 @@ def _print_report(metrics: list[Metrics]) -> None:
                     str(metric.sentences),
                     str(metric.negative_endings),
                     str(metric.subject_words),
-                    str(metric.ground_negations),
-                    str(metric.only_negations),
                     str(metric.path),
                 )
             )

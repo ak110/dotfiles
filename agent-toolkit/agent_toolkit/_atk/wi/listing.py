@@ -17,7 +17,6 @@ from agent_toolkit._atk.wi.common import (
     WI_ACTIVE_STATES,
     WI_PROCESSABLE_STATES,
     WI_STATES,
-    WI_TYPE_AWI,
     WI_TYPE_UWI,
     WI_TYPES,
     ReadinessResult,
@@ -151,11 +150,11 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
 
 def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:
     """選択済みエントリを`atk wi list`の1件1行形式で出力する。"""
-    for header_type in WI_TYPES:
-        group = [entry for entry in selected if entry[4] == header_type or (header_type == WI_TYPE_AWI and entry[4] is None)]
+    for header_type in (*WI_TYPES, None):
+        group = [entry for entry in selected if entry[4] == header_type]
         if not group:
             continue
-        print(f"# {header_type}")
+        print(f"# {header_type or 'unknown'}")
         for path, target_repo, text, state, entry_type in sorted(group, key=lambda entry: entry[0].name):
             parsed = parse_frontmatter(text)
             plan_file = parsed[0].get("plan_file") if parsed is not None else None
@@ -183,7 +182,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
                 else None
             )
-            reason_suffix = f" blocked_reason={reason}" if reason is not None else ""
+            reason_suffix = f" blocked_reason={reason}" if reason is not None and reason != "frontmatter-broken" else ""
             if reason == "cooldown-until":
                 cooldown_until = dict(readiness.cooldown_values)[path.name]
                 reason_suffix += f" cooldown_until={cooldown_until}"
@@ -231,18 +230,17 @@ def _print_json_entries(
     """選択済みエントリを端末幅に依存しないJSON Linesで出力する。"""
     now = staleness_now or datetime.datetime.now(datetime.UTC)
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
-        actual_type = entry_type or WI_TYPE_AWI
         state_readiness = _state_readiness(state, path.name, readiness)
-        answered = actual_type == WI_TYPE_UWI and _is_uwi_answered(text)
+        answered = entry_type == WI_TYPE_UWI and _is_uwi_answered(text)
         reason = (
             _blocked_reason(readiness, path.name)
-            if state_readiness == "blocked" and (actual_type != WI_TYPE_UWI or answered)
+            if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
             else None
         )
-        summary = _uwi_body_summary(text, sys.maxsize) if actual_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
-        record = {
+        summary = _uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
+        record: dict[str, object] = {
             "filename": path.name,
-            "type": actual_type,
+            "type": entry_type,
             "target_repo": target_repo,
             "state": state,
             "ready": state in WI_PROCESSABLE_STATES and path.name in readiness.ready,

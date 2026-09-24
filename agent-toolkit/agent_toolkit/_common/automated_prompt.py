@@ -9,7 +9,7 @@
 
 from agent_toolkit._common import message_format
 
-ELEMENT = "automated-prompt"
+ELEMENT = message_format.AUTO_INSERTED_ELEMENT
 SOURCE_PROCESS_LOOP = "agent-toolkit/process-loop"
 KIND_GOAL = "goal"
 KIND_AVAILABILITY_PROBE = "availability-probe"
@@ -19,7 +19,7 @@ _OPENING_TAG = f"<{ELEMENT}"
 
 def wrap(body: str, *, source: str, kind: str) -> str:
     """本文へ境界標識を付ける。"""
-    return message_format.xml_message(ELEMENT, body, {"source": source, "kind": kind})
+    return message_format.auto_message(body, source=source, kind=kind)
 
 
 def contains(prompt: str) -> bool:

@@ -110,6 +110,13 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
     return root / "agents-server" / root_session_id
 
 
+def session_log_path(root_session_id: str, session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """Antigravityの公開JSONイベントを保持するsession別JSONLのパスを返す。"""
+    if not valid_session_id(root_session_id) or not valid_session_id(session_id):
+        raise ValueError("invalid session identifier")
+    return status_directory(root_session_id, state_root) / "logs" / f"{session_id}.jsonl"
+
+
 def list_status_files(root_session_id: str, state_root: pathlib.Path | None = None) -> list[pathlib.Path]:
     """書込主体ごとの状態ファイルを絶対パスの安定順で返す。
 
@@ -213,6 +220,9 @@ def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path |
         return None
     matches: list[str] = []
     for root_session_id in list_root_session_ids(state_root):
+        if read_retained_result(root_session_id, session_id, state_root) is not None:
+            matches.append(root_session_id)
+            continue
         for path in list_status_files(root_session_id, state_root):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -497,6 +507,22 @@ def results_directory(root_session_id: str, state_root: pathlib.Path | None = No
     return status_directory(root_session_id, state_root) / "results"
 
 
+def read_retained_result(
+    root_session_id: str, session_id: str, state_root: pathlib.Path | None = None
+) -> dict[str, Any] | None:
+    """同じ会話rootの未回収終端結果を削除せずに読む。"""
+    if not valid_session_id(session_id):
+        return None
+    path = results_directory(root_session_id, state_root) / f"{session_id}.json"
+    try:
+        payload: Any = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("status") not in TERMINAL_STATUSES:
+        return None
+    return payload
+
+
 def take_result(
     root_session_id: str,
     session_id: str,
@@ -534,6 +560,7 @@ def take_result(
                 collector,
             )
             payload.pop("owner_status_file", None)
+            payload.pop("session", None)
             return payload, None
         finally:
             release_lock(lock_file)
@@ -635,7 +662,7 @@ def resolve_status_owner_identity(
     try:
         paths = tuple(hosts_directory(identity.root_session_id, state_root).iterdir())
     except FileNotFoundError:
-        return identity
+        paths = ()
     except OSError as error:
         raise ValueError(f"書込主体索引を読めません: {error}") from error
 
@@ -653,6 +680,14 @@ def resolve_status_owner_identity(
             and payload.get("host_session_id") == identity.host_session_id
         ):
             writers.append(path.stem)
+    if not writers:
+        for path in list_status_files(identity.root_session_id, state_root):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict) and payload.get("host_session_id") == identity.host_session_id:
+                writers.append(path.stem)
     if not writers:
         return identity
     if len(writers) != 1:
@@ -963,6 +998,7 @@ class StatusFileWriter:
         assert session.retention_deadline is not None
         payload = terminal_result_payload(session)
         payload["owner_status_file"] = self._identity.file_name
+        payload["session"] = _serialize_retained_session(session)
         directory = results_directory(self._identity.root_session_id, self._state_root)
         atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
         self._published_results.add(session.session_id)
@@ -977,18 +1013,32 @@ class StatusFileWriter:
         if results.exists() and not any(results.iterdir()):
             results.rmdir()
         cutoff = datetime.datetime.now(datetime.UTC).timestamp() - RESULT_RETENTION_SECONDS
-        directories = (
-            notices_directory(self.root_session_id, self._state_root),
-            hosts_directory(self.root_session_id, self._state_root),
-        )
-        for directory in directories:
-            if not directory.exists():
-                continue
-            for path in directory.iterdir():
+        notices = notices_directory(self.root_session_id, self._state_root)
+        if notices.exists():
+            for path in notices.iterdir():
                 if path.is_file() and path.stat().st_mtime < cutoff:
                     path.unlink()
-            if not any(directory.iterdir()):
-                directory.rmdir()
+            if not any(notices.iterdir()):
+                notices.rmdir()
+        hosts = hosts_directory(self.root_session_id, self._state_root)
+        if hosts.exists():
+            retained_owners = {
+                payload.get("owner_status_file")
+                for path in results.glob("*.json")
+                if (payload := read_retained_result(self.root_session_id, path.stem, self._state_root)) is not None
+            }
+            for path in hosts.iterdir():
+                if not path.is_file() or path.stat().st_mtime >= cutoff:
+                    continue
+                owner = path.name
+                if owner in retained_owners or (self._directory / owner).is_file():
+                    continue
+                targets = wait_targets_directory(self.root_session_id, owner, self._state_root)
+                if targets.is_dir() and any(targets.glob("*.json")):
+                    continue
+                path.unlink()
+            if not any(hosts.iterdir()):
+                hosts.rmdir()
 
     def _resolve_host_session_id(self) -> str | None:
         """書込主体に対応する起動元threadを一度だけ状態ファイルへ射影する。"""
@@ -1043,6 +1093,15 @@ class StatusFileWriter:
 
 def _serialize_session(session: SessionState) -> dict[str, Any]:
     return {
+        **_serialize_retained_session(session),
+        "progress": session.progress,
+        "last_action": session.last_action,
+    }
+
+
+def _serialize_retained_session(session: SessionState | SessionResumeState) -> dict[str, Any]:
+    """表示期限後もCLIの詳細表示へ必要な起動情報を結果と共に残す。"""
+    return {
         "session_id": session.session_id,
         "cwd": session.cwd,
         "engine": session.engine,
@@ -1052,8 +1111,6 @@ def _serialize_session(session: SessionState) -> dict[str, Any]:
         "launch_kind": session.launch_kind,
         "prompt": session.prompt,
         "status": session.status,
-        "progress": session.progress,
-        "last_action": session.last_action,
         "label": session.label,
         "started_at": session.started_at,
         "updated_at": session.updated_at,

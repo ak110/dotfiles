@@ -270,7 +270,7 @@ def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
     root = status_file.status_directory("root-session", tmp_path)
     root.mkdir(parents=True)
     (root / "writer-session.json").write_text(
-        json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
+        json.dumps({"version": 1, "host_session_id": "codex-thread", "sessions": [{"session_id": "remote-session"}]}),
         encoding="utf-8",
     )
     status_file.write_host_alias("root-session", "writer-session", "codex-thread", tmp_path)
@@ -286,6 +286,7 @@ def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
         json.dumps({"status": "completed", "owner_status_file": "writer-session.json"}),
         encoding="utf-8",
     )
+    (status_file.hosts_directory("root-session", tmp_path) / "writer-session.json").unlink()
 
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 0
     assert json.loads(capsys.readouterr().out) == {"session_id": "remote-session", "status": "completed"}

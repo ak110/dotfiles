@@ -32,10 +32,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 12. PostToolUseFailure: Bashの同一終了コードの連続失敗だけを記録。非エラーの真偽判定を終了コードで
     表現する公開契約を持つコマンドの終了は記録の対象から外す。その他は状態を変更せず終了
 13. PermissionDenied: 状態を変更せず終了
-14. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
-    `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-15. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
-16. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
+14. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
+15. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`又は`atk run-script plan-create`のBash標準出力）
 """
 
@@ -90,10 +88,6 @@ from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
-from agent_toolkit._hooks.reference_notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    REFERENCE_NOTICE_BODY,
-    REFERENCE_NOTICE_TAG,
-)
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
     record_atk_help_paths,
@@ -109,7 +103,6 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
     is_plan_component_file,
     is_plan_main_file,
 )
-from agent_toolkit._plan.structure import is_agent_facing_md  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: enable=wrong-import-position,import-error
 
@@ -309,40 +302,6 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_SHOW_
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
-
-
-# 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
-# 「Xした状態でYしない」形式は「Xでなければ`Y`してよい」と誤読され得るため、
-# 全称否定形（「いかなる理由があっても`Y`しない」）または肯定的完遂義務への
-# 書き換えを促す。初期段階の限定的なパターンであり、将来の検出範囲拡張は拡張候補とする。
-# 全角鍵括弧・バッククォート囲みの引用文脈（他ファイル節名・識別子・規範文言の引用）は
-# 照合前に無害化する。本実装は行番号算出（`content`上のオフセットをそのまま使う）を成立させるため文字数を保ったまま
-# 改行以外を空白へ置換する（除去着想のみ同関数を参考にし、実装は異なる）。
-_CONDITIONAL_PROHIBITION_RE = re.compile(r"[^\n]{1,30}?した状態で[^\n]{0,30}?(しない|禁止)")
-_CONDITIONAL_PROHIBITION_KAKKO_RE = re.compile(r"「[^」]*」|『[^』]*』")
-_CONDITIONAL_PROHIBITION_BACKTICK_RE = re.compile(r"`[^`\n]+`")
-
-
-def _blank_out_preserving_length(match: re.Match[str]) -> str:
-    """マッチ区間を、改行はそのまま・それ以外は半角空白へ置換し文字数を保つ。"""
-    return "".join(ch if ch == "\n" else " " for ch in match.group())
-
-
-def _check_conditional_prohibition(file_path: pathlib.Path, content: str) -> list[str]:
-    """条件付き禁止形（「〜した状態で…しない/禁止」）を警告として検出する。"""
-    excluded = _CONDITIONAL_PROHIBITION_BACKTICK_RE.sub(
-        _blank_out_preserving_length,
-        _CONDITIONAL_PROHIBITION_KAKKO_RE.sub(_blank_out_preserving_length, content),
-    )
-    warnings: list[str] = []
-    for m in _CONDITIONAL_PROHIBITION_RE.finditer(excluded):
-        line_num = content[: m.start()].count("\n") + 1
-        warnings.append(
-            f"{file_path}:{line_num}: 条件付き禁止形（「〜した状態で…しない」）を検出。"
-            f"全称否定形（「いかなる理由（例: X）があっても...しない」）"
-            f"または肯定的完遂義務への書き換えを検討する"
-        )
-    return warnings
 
 
 # --- plan file形式検査の定数 ---
@@ -920,6 +879,9 @@ def _background_task_id_from_response(value: object) -> str | None:
         match = _BACKGROUND_TASK_ID_RE.search(value)
         return match.group(1) if match is not None else None
     if isinstance(value, dict):
+        structured_id = value.get("backgroundTaskId")
+        if isinstance(structured_id, str) and structured_id:
+            return structured_id
         nested_values: list[object] = list(value.values())
     elif isinstance(value, list):
         nested_values = list(value)
@@ -1044,21 +1006,8 @@ def _handle_edit_tool(
         display_path = operation.display_path
         if is_plan_main_file(display_path):
             _record_plan_file(session_id, display_path)
-        if is_agent_facing_md(display_path):
-            _append_conditional_prohibition_notice(operation.path, display_path, notices)
         if plan_mode_invoked and is_plan_component_file(display_path) and operation.is_whole_write:
             notices.append(_plan_file_check_notice(_plan_main_path_for(display_path), cwd))
-
-
-def _append_conditional_prohibition_notice(read_path: str, display_path: str, notices: list[str]) -> None:
-    """適用後の実ファイルを読み、条件付き禁止形の警告があれば通知へ加える。"""
-    try:
-        content = pathlib.Path(read_path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError, ValueError):
-        return
-    warnings = _check_conditional_prohibition(pathlib.Path(display_path), content)
-    if warnings:
-        notices.append(_llm_notice("\n".join(warnings), tag=_WARN_TAG, removable_cause=True))
 
 
 def _plan_main_path_for(display_path: str) -> str:
@@ -1188,9 +1137,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
-
-    if tool_name == "AskUserQuestion" and not _hook_tool_input.is_codex_payload(payload):
-        notices.append(_llm_notice(REFERENCE_NOTICE_BODY, tag=REFERENCE_NOTICE_TAG))
 
     # pyfltr MCPのrunはPostToolUseへ到達した時点で成功済みである。
     # CLI経由と同じ検証完了契約として記録し、コミット前の未検証警告を抑制する。

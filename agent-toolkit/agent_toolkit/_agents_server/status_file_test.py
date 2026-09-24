@@ -366,6 +366,17 @@ def test_resolve_status_owner_identity_keeps_unindexed_identity(tmp_path: pathli
     )
 
 
+def test_resolve_status_owner_identity_recovers_from_live_status_file(tmp_path: pathlib.Path) -> None:
+    """索引が失われても、起動元threadを記録した状態から書込主体を一意に復元する。"""
+    root = subject.status_directory("root", tmp_path)
+    root.mkdir(parents=True)
+    (root / "writer.json").write_text('{"version": 1, "host_session_id": "thread", "sessions": []}', encoding="utf-8")
+
+    assert subject.resolve_status_owner_identity(
+        {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}, tmp_path
+    ) == subject.StatusFileIdentity("root", "writer.json", "writer")
+
+
 def test_resolve_status_owner_identity_rejects_ambiguous_aliases(tmp_path: pathlib.Path) -> None:
     """同じthreadへ複数の書込主体が対応する索引を推測で選ばない。"""
     environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}
@@ -423,6 +434,39 @@ async def test_hosts_entries_are_removed_after_retention(tmp_path: pathlib.Path)
     assert not host_path.exists()
     assert not host_path.parent.exists()
     writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_host_alias_outlives_uncollected_nested_result(tmp_path: pathlib.Path) -> None:
+    """別書込主体の起動が古い索引を回収しても、複数turn後の結果の所有者を失わない。"""
+    subject.write_host_alias("root", "writer", "thread", tmp_path)
+    host_path = subject.hosts_directory("root", tmp_path) / "writer.json"
+    stale_at = datetime.datetime.now(datetime.UTC).timestamp() - state.RESULT_RETENTION_SECONDS - 1
+    os.utime(host_path, (stale_at, stale_at))
+    results = subject.results_directory("root", tmp_path)
+    results.mkdir(exist_ok=True)
+    result_path = results / "nested.json"
+    result_path.write_text(
+        json.dumps({"status": "completed", "agent_message": "完了", "turn_seq": 3, "owner_status_file": "writer.json"}),
+        encoding="utf-8",
+    )
+    other = subject.StatusFileWriter(
+        {}, subject.StatusFileIdentity("root", "other.json", "other"), state_root=tmp_path, aggregate_seconds=0
+    )
+
+    other.activate()
+
+    assert host_path.exists()
+    assert subject.resolve_wait_identity(
+        {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}, None, tmp_path
+    ) == subject.StatusFileIdentity("root", "writer.json", "writer")
+    assert subject.take_result("root", "nested", "writer.json", collector="test", state_root=tmp_path)[0] == {
+        "status": "completed",
+        "agent_message": "完了",
+        "turn_seq": 3,
+    }
+    other.deactivate()
+    assert not host_path.exists()
 
 
 def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

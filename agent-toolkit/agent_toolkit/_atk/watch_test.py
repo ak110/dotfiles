@@ -126,7 +126,7 @@ class TestWatch:
         exit_code = _run_watch(["--file", str(missing)])
 
         assert exit_code == 0
-        assert capsys.readouterr().out == "now=03:04:05 missing.state=absent missing.lines=NA missing.age=NA\n"
+        assert capsys.readouterr().out == "now=03:04:05 missing.lines=NA missing.age=NA\n"
 
     def test_file_read_error_remains_an_error(
         self,
@@ -198,7 +198,7 @@ class TestWatch:
         assert exit_code == 1
         assert capsys.readouterr().out == (
             "now=03:04:05 existing.lines=1 existing.age=10s "
-            "missing.state=absent missing.lines=NA missing.age=NA "
+            "missing.lines=NA missing.age=NA "
             "unreadable.lines=ERR unreadable.age=ERR\n"
         )
 

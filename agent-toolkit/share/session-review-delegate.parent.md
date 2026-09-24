@@ -32,7 +32,7 @@
 - 対象セッションの識別子: Claude Codeでは準備工程が返した`transcript_path`の拡張子を除いたファイル名、Codexでは`codex_thread_id`の値とする
 - 準備manifest: 準備工程が返した`manifest_path`の絶対パスとする
 - 出力先ファイル: 準備manifestの`output_file`の絶対パスとする
-- 引き継ぎ記録先: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収は`agent-toolkit:writing-standards`の`references/managed-temp.md`に従う
+- 引き継ぎ記録先: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収は`agent-toolkit/share/managed-temp.md`に従う
 
 起動経路は固定タスク契約、抽出器、対象リポジトリ、管理対象一時領域及び観測境界は準備manifest、プロジェクト規範は`cwd`から振り返り担当が解決するため、名前付き入力は前記の5項目に限る。
 

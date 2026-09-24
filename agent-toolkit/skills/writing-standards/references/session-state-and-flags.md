@@ -4,10 +4,6 @@
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
 計画名の再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`へ分離する。
 
-フックがセッション状態の不足を理由にブロックした場合は、状態ファイルを`Read`して
-その状態と他の記録済み状態を実測する。
-記録契機が発生していない場合は、同じ委譲の再実行以外の対処を選ぶ（努力目標）。
-
 ## 状態ファイルの設計
 
 Claude CodeまたはCodexのhook間で情報を共有する場合、セッション単位の状態ファイルを使う。
@@ -107,12 +103,11 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間で照合指示の注入要否を判定する入力として読む。
   記録と注入の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力したスラッシュコマンドも対象に含め、機械注入ターンは対象の外に置く。
-  機械注入ターンの判定入力は5系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`[agent-toolkit/periodic-recheck]`だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`又は`<cross-session-message`で始まること。第5に`prompt`の1行目が`<automated-prompt`要素の開始タグを含むこと。
+  機械注入ターンの判定入力は5系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">`だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`又は旧形式の`<cross-session-message`で始まること。第5に`prompt`の1行目が`<agent-toolkit-auto-inserted`要素の開始タグを含むこと。
   セッション終了まで保持し、リセット経路は設けない
 
 ## 通知反復系
 
-- `pretool_last_call_fingerprint`・`pretool_last_call_count`: PreToolUseが任意ツールのツール名とJSON入力を正規化した指紋及び同一指紋の連続数を記録する。異なる指紋で連続数を1へ戻し、10回目以降の同一呼び出しを遮断する。寿命はセッション状態ファイルと同じとする
 - `unregistered_managed_temp_fingerprint`: `atk`の共通入口が、登録を持たない管理対象の絶対パス集合を安定順で正規化した指紋を記録する。同じセッションで同じ集合を報告済みの場合は警告を省略し、集合が変化した場合は再度警告する。寿命はセッション状態ファイルと同じとする
 - `warn_notice_counts`: `warn`区分の通知を生成した検査の原因識別子ごとの累積件数を記録する。
   キーは`<hook_id>|<原因識別子>`、値はそのセッションでの発生件数とする。

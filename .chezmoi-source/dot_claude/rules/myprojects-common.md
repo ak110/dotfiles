@@ -1,4 +1,4 @@
-<normative-context source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
+<agent-toolkit-auto-inserted source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
 # myprojects-common.md: ホスト共通の個人プロジェクト規範
 
 実行ホストとコーディングエージェントの種別によらず、同一作者の個人プロジェクト全体へ適用する規範を置く。
@@ -15,4 +15,4 @@
 個人プロジェクトでpatch、minor又はmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
 `ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築及びworkflow内部の処理は対象外とする。
-</normative-context>
+</agent-toolkit-auto-inserted>

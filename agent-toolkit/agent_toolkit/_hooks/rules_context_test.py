@@ -34,9 +34,15 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
     assert rules_context.ASK_USER_QUESTION_CHECKLIST in output
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
-    assert output.count(f"<{rules_context.NORMATIVE_ELEMENT} ") == 1
-    assert output.count(f"</{rules_context.NORMATIVE_ELEMENT}>") == 1
-    assert f'kind="{rules_context.NORMATIVE_KIND_MAIN}"' in output
+    normative_start = (
+        f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
+        f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
+    )
+    assert output.count(normative_start) == 1
+    assert output.endswith(f"</{rules_context.NORMATIVE_ELEMENT}>")
+    normative_body = output.split(normative_start, maxsplit=1)[1]
+    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in normative_body
+    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in normative_body
 
 
 @pytest.mark.parametrize(
@@ -84,7 +90,10 @@ def test_session_start_main_places_response_language_notice_first(
 
     assert notice_index < output.index(rules_context.QUALITY_CHECKPOINT_NOTICE)
     assert notice_index < output.index(rules_context.ASK_USER_QUESTION_CHECKLIST)
-    assert notice_index < output.index(f"<{rules_context.NORMATIVE_ELEMENT} ")
+    assert notice_index < output.index(
+        f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
+        f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
+    )
 
 
 def test_response_language_notice_absent_for_delegates(

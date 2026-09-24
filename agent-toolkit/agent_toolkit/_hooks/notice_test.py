@@ -21,9 +21,9 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
 
     message = format_block("blocked", fix="retry")
 
-    assert message.startswith('<agent-toolkit-hook-message source="test/hook" kind="block" nonce="')
+    assert message.startswith('<agent-toolkit-auto-inserted source="test/hook" kind="block">')
     assert "\nblocked\nFix: retry\n" in message
-    assert message.endswith("</agent-toolkit-hook-message>")
+    assert message.endswith("</agent-toolkit-auto-inserted>")
 
 
 def test_warning_formatter_requests_block_from_second_notice(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -84,7 +84,7 @@ def test_warning_formatter_separates_causes_and_sessions(monkeypatch: pytest.Mon
 
 
 def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    """除去できない原因では件数を集計しても反復注記を付けない。"""
+    """除去できない原因でも反復本文を短くし、遮断はしない。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_warning = warning_formatter("test/hook")
 
@@ -94,7 +94,8 @@ def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: 
         for _ in range(3)
     ]
 
-    assert all("この通知は同一セッションで" not in message for message in messages)
+    assert "この通知は同一セッションで" not in messages[0]
+    assert all("この通知は同一セッションで" in message for message in messages[1:])
     assert "この通知は同一セッションで" not in removable_messages[0]
     assert all("この通知は同一セッションで" in message for message in removable_messages[1:])
     assert len(consume_warning_blocks()) == 2
@@ -104,6 +105,7 @@ def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: 
 def test_removable_warning_does_not_escalate_without_explicit_choice(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """是正可能な警告でも反復遮断は既定で無効にする。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    consume_warning_blocks()
     format_warning = warning_formatter("test/hook")
 
     messages = [format_warning("警告本文", cause="same", session_id="session-1", removable_cause=True) for _ in range(2)]

@@ -213,10 +213,10 @@ class TestMojibakeCheck:
         context = _additional_context(result)
         assert "U+FFFD" in context
         # コーディングエージェント宛てメッセージ規約: XMLの開始境界と終了境界が付与されていること。
-        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse"' in context
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in context
         assert 'kind="warn"' in context
         assert "対処: U+FFFDを意図した文字へ置き換えて再実行する" in context
-        assert context.endswith("</agent-toolkit-hook-message>")
+        assert context.endswith("</agent-toolkit-auto-inserted>")
 
     def test_edit_with_mojibake(self):
         result = _run(
@@ -972,7 +972,7 @@ class TestColloquialCheck:
         assert "口語的な日本語表現" in _additional_context(result)
         assert "一致: 1件（行1、列4）" in _additional_context(result)
         assert "検出箇所を含む文全体" in _additional_context(result)
-        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn"' in _additional_context(result)
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn"' in _additional_context(result)
         assert content_checks.colloquial_detected_terms_text([deny_substring]) in _agent_messages(result)
 
     def test_lists_every_match_position_within_limit(self, deny_substring: str):
@@ -1576,7 +1576,7 @@ class TestPlanModeSkillFirstCheck:
         assert "成果物と根拠から一意に定まる値だけを訂正" in messages
         assert "`plan-mode`をやり直さずに続行" in messages
         assert "訂正内容と根拠を`## 変更履歴`へ記録" in messages
-        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn"' in messages
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn"' in messages
         assert "計画ファイルを編集している" in _additional_context(result)
         assert "計画ファイルを編集している" not in result.stderr
 
@@ -1961,7 +1961,7 @@ class TestResponseLanguageCheck:
         output = json.loads(result.stdout)
         assert "permissionDecision" not in output["hookSpecificOutput"]
         ctx = _additional_context(result)
-        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn"' in ctx
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn"' in ctx
         assert "英語主体" in ctx
         assert "evaluate relevance" not in ctx
 

@@ -118,7 +118,7 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 0
         messages = _agent_messages(result)
-        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse"' in messages
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in messages
         assert "uv run python" in messages
 
     def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
@@ -796,6 +796,8 @@ class TestBashAgentToolkitVersionBump:
 
     @staticmethod
     def _invoke(command: str, cwd: str) -> subprocess.CompletedProcess[str]:
+        if command.startswith("git commit ") or " && git commit " in command:
+            command += " -m 'Co-Authored-By: Test <noreply@openai.com>'"
         return _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd, "session_id": "vb-test"})
 
     @staticmethod
@@ -944,7 +946,7 @@ class TestBashProcessKillByPattern:
     def test_blocks(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
-        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse"' in result.stderr
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in result.stderr
 
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
@@ -1926,7 +1928,11 @@ class TestNormViolatingArgumentForms:
 
     @pytest.mark.parametrize(
         "command",
-        ["git commit -m -weird.txt", "git config -weird.txt", "git push -weird.txt"],
+        [
+            "git commit -m -weird.txt -m 'Co-Authored-By: Test <noreply@openai.com>'",
+            "git config -weird.txt",
+            "git push -weird.txt",
+        ],
     )
     def test_option_terminator_is_silent_for_non_revision_subcommand(self, command: str, tmp_path: pathlib.Path) -> None:
         """revisionを受け取らない`git`サブコマンドは対象外とする。"""

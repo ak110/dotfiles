@@ -534,11 +534,33 @@ class TestListMalformedFrontmatter:
         assert exc_info.value.code == expected_exit
         captured = capsys.readouterr()
         if expected_exit == 0:
+            assert captured.out.startswith("# unknown\n")
             assert "[inbox/frontmatter-broken/blocked]" in captured.out
+            assert "blocked_reason=frontmatter-broken" not in captured.out
             assert not captured.err
         else:
             assert not captured.out
             assert "frontmatterのtypeが不正または欠落" in captured.err
+
+    @pytest.mark.parametrize("content", ["本文のみ\n", "---\ncreated: 2024\n本文\n"])
+    def test_malformed_frontmatter_json_type_is_null(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        content: str,
+    ) -> None:
+        notes = _setup_notes(tmp_path)
+        (notes / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--json"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        record = json.loads(capsys.readouterr().out)
+        assert record["type"] is None
+        assert record["blocked_reason"] == "frontmatter-broken"
 
 
 class TestListMultipleRepos:

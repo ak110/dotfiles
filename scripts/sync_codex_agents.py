@@ -28,8 +28,8 @@ TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
 CODEX_CONFIG = Path("scripts/codex_config.toml")
 GENERATED_MARKER = "<!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->"
-# 常時読み込まれる規範の配布物へ付ける境界。決定的に生成するためnonceを持たない。
-NORMATIVE_ELEMENT = "normative-context"
+# 常時読み込まれる規範の配布物へ付ける境界。
+NORMATIVE_ELEMENT = "agent-toolkit-auto-inserted"
 NORMATIVE_SOURCE = "agent-toolkit"
 NORMATIVE_KIND = "rules"
 
@@ -46,7 +46,7 @@ def render(root: Path = REPO_ROOT) -> str:
 def _has_normative_boundary(body: str) -> bool:
     """本文の先頭が境界の開始タグかを、要素名の完全一致で判定する。
 
-    接頭辞の一致だけでは`<normative-contextual ...>`のような別要素も境界と判定し、
+    接頭辞の一致だけでは`<agent-toolkit-auto-inserted-extra ...>`のような別要素も境界と判定し、
     境界を持たない本文がそのまま埋め込まれる。
     """
     prefix = f"<{NORMATIVE_ELEMENT}"
@@ -59,7 +59,6 @@ def _has_normative_boundary(body: str) -> bool:
 def _embedded_section(root: Path, relative: Path) -> list[str]:
     """生成主体、種別及び埋め込み元のパスを示す境界の間に本文を配置する。
 
-    生成結果は既存内容との一致で冪等性を判定するため、実行ごとに変わるnonceを持たせない。
     境界は要素名と属性で判別し、埋め込み元のパスがその配送単位を示す。
     """
     marker = relative.as_posix()

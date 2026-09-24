@@ -15,9 +15,10 @@ import contextlib
 import json
 import logging
 import os
+import pathlib
 from typing import Any
 
-from agent_toolkit._agents_server import process_tree
+from agent_toolkit._agents_server import process_tree, status_file
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
     AUTO_RESUME_NOTICE,
@@ -93,10 +94,12 @@ class AntigravityManager:
         sessions: dict[str, SessionState] | None = None,
         condition: asyncio.Condition | None = None,
         publish_registry: bool = False,
+        log_directory: pathlib.Path | None = None,
     ) -> None:
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
         self._publish_registry = publish_registry
+        self._log_directory = log_directory
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._processes: dict[str, asyncio.subprocess.Process] = {}
@@ -325,7 +328,9 @@ class AntigravityManager:
                     session.touch()
                     if not initialized.done():
                         initialized.set_result(session)
-                elif kind == "step_update" and session is not None:
+                if session is not None:
+                    self._append_event(session.session_id, payload)
+                if kind == "step_update" and session is not None:
                     text = _event_text(event_body)
                     if text:
                         session.set_progress(text)
@@ -354,6 +359,18 @@ class AntigravityManager:
                 await _terminate(process)
             if session is not None:
                 self._processes.pop(session.session_id, None)
+
+    def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
+        """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""
+        if self._log_directory is None:
+            return
+        if not status_file.valid_session_id(session_id):
+            raise ValueError(f"invalid Antigravity session_id: {session_id}")
+        self._log_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path = self._log_directory / f"{session_id}.jsonl"
+        descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+        with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
         self.sessions[session.session_id] = session

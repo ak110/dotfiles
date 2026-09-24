@@ -298,7 +298,7 @@ class TestLanguageEscalation:
         assert result.returncode == 0
         ctx = _additional_context(result)
         assert ctx  # 警告が出ていること
-        assert ctx.endswith("</agent-toolkit-hook-message>")
+        assert ctx.endswith("</agent-toolkit-auto-inserted>")
         assert "evaluate relevance" not in ctx
 
     def test_escalated_body_has_suffix(self, tmp_path: pathlib.Path):
@@ -309,7 +309,7 @@ class TestLanguageEscalation:
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
         assert r2.returncode == 0
         ctx = _additional_context(r2)
-        assert ctx.rstrip().endswith("</agent-toolkit-hook-message>")
+        assert ctx.rstrip().endswith("</agent-toolkit-auto-inserted>")
         assert "evaluate relevance" not in ctx
 
 
@@ -421,7 +421,7 @@ class TestBashSleepPollPattern:
         )
         assert second.returncode == 2
         assert "完了通知" in second.stderr
-        assert '<agent-toolkit-hook-message source="agent-toolkit/pretooluse"' in second.stderr
+        assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in second.stderr
         assert "`sleep`を単独で実行" in second.stderr
         assert "02-agent-operations.md" in second.stderr
 
@@ -542,6 +542,8 @@ class TestBashGitCommitWarning:
         env: dict[str, str],
         cwd: str = "",
     ) -> subprocess.CompletedProcess[str]:
+        if command.startswith(("git commit ", "git -C ")) or " && git commit " in command:
+            command += " -m 'Co-Authored-By: Test <noreply@openai.com>'"
         payload: dict = {
             "tool_name": "Bash",
             "tool_input": {"command": command},
@@ -668,10 +670,10 @@ class TestBashGitCommitWarning:
             output = json.loads(result.stdout)
             assert "permissionDecision" not in output["hookSpecificOutput"]
             assert self._has_additional_context(
-                result, '<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn"'
+                result, '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn"'
             )
             assert self._has_additional_context(result, "テストを実行せずにcommit")
-            assert self._has_additional_context(result, "</agent-toolkit-hook-message>")
+            assert self._has_additional_context(result, "</agent-toolkit-auto-inserted>")
         else:
             assert result.stdout == ""
 
@@ -1031,13 +1033,13 @@ def test_verified_managed_temp_git_repository_exclusion(
     """真正な管理対象かつremote無しの場合だけ3種のGit検査を除外する。"""
     repo = _make_managed_temp_git_case(tmp_path, monkeypatch, condition)
     commands = {
-        "commit": f"git -C {repo} commit -m 'x'",
+        "commit": f"git -C {repo} commit -m 'x' -m 'Co-Authored-By: Model <noreply@example.com>'",
         "amend": f"git -C {repo} commit --amend --no-edit",
         "rebase": f"git -C {repo} rebase main",
     }
     if condition == "unresolved-cwd":
         commands = {
-            "commit": 'cd "$TARGET" && git commit -m "x"',
+            "commit": 'cd "$TARGET" && git commit -m "x" -m "Co-Authored-By: Model <noreply@example.com>"',
             "amend": 'cd "$TARGET" && git commit --amend --no-edit',
             "rebase": 'cd "$TARGET" && git rebase main',
         }
@@ -1187,7 +1189,8 @@ class TestBashBulkStageWithUneditedFiles:
             "commit-a-untracked",
             {"session_edited_files": [], "test_executed": True},
         )
-        result = self._invoke("git commit -a -m x", "commit-a-untracked", state_dir, cwd=str(repo))
+        command = "git commit -a -m x -m 'Co-Authored-By: Model <noreply@example.com>'"
+        result = self._invoke(command, "commit-a-untracked", state_dir, cwd=str(repo))
         self._assert_no_warn(result)
 
     def test_no_warn_when_only_edited_files_changed(

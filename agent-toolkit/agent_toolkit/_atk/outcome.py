@@ -85,6 +85,7 @@ READ_ONLY_COMMANDS = frozenset(
         "atk config get",
         "atk agents wait",
         "atk agents list",
+        "atk agents logs",
         "atk agents show",
         "atk managed-temp list",
         "atk review-table show",

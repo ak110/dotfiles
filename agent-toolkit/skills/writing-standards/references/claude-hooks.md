@@ -289,7 +289,8 @@ Stop・SubagentStopの`additionalContext`と`decision: "block"`の違いは、`a
 値はそのタスクを生成した機能を示す。
 この配列は、セッションが完了した状態と、背景の作業による再開を待って停止している状態とをフックが区別する用途で使う。
 `PostToolUse`は背景実行への移行の時点で発火する。そのジョブの完了時に再発火する旨の記載は公式ドキュメントに無い。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：Stop/SubagentStopフックの再帰呼び出し対策：2026年9月4日」にある。
+監査記録は`docs/development/audit-records.md`にある。
+該当する見出しは「Stop/SubagentStopフックの再帰呼び出し対策：2026年9月4日」である。
 現行版の入力に`background_tasks`が現れない場合は本項を失効させ、その版の観測として書き直す。
 
 CodexのStopは`decision: "block"`と`reason`で同一ターンを継続し、許可時は空のJSONオブジェクトを返す。
@@ -326,16 +327,16 @@ hookメッセージの目的はコーディングエージェントが参照先�
 ## コーディングエージェント宛てメッセージの標識
 
 コーディングエージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）は、
-`agent-toolkit-hook-message`要素で全体を囲む。`source`へ`<plugin>/<hook>`、`kind`へ通知種別、`nonce`へ本文に現れない配送単位を置く。
+`agent-toolkit-auto-inserted`要素で全体を囲む。`source`へ`<plugin>/<hook>`、`kind`へ通知種別を置く。
 hookの出力はユーザー発言と同じ形で会話コンテキストに注入されるため、機械判定できる境界と出所を設ける。
 
 種別は受領した主体が通知の原因を除去できるかで選ぶ。除去できる事象には`warn`、発話ごとの定型の配送には`notice`、遮断には`block`を使う。
 振り返りの証拠抽出器は`info`又は`notice`を持つhook通知を問題候補から除く。原因も対策も持たない通知へ`warn`を指定すると、候補の判定工程が発話のたびに生じる。
 
 ```xml
-<agent-toolkit-hook-message source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">
+<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">
 detected ...
-</agent-toolkit-hook-message>
+</agent-toolkit-auto-inserted>
 ```
 
 `systemMessage` / `stopReason` などコーディングエージェントに届かないフィールドや、
@@ -343,17 +344,14 @@ detected ...
 
 ### hook以外の経路の要素
 
-自動生成する本文はhook以外の経路も同じ形式の境界を持つ。要素名は経路の種別ごとに分け、属性は`source`、`kind`及び`nonce`とする。
+自動生成する本文はhook以外の経路も`agent-toolkit-auto-inserted`で囲む。`source`と`kind`で生成主体と用途を区別し、agent間の配送では`from`と`composed-by`も残す。最初の開始タグと最後の同名終了タグで境界を確定する。
 
 | 要素 | 対象の本文 |
 | --- | --- |
-| `agent-toolkit-hook-message` | hookがコーディングエージェントへ返す通知 |
-| `normative-context` | 実行主体へ常時読み込ませる規範と役割説明 |
-| `forwarded-user-input` | 常駐処理が保持したユーザー自身の入力 |
-| `cross-session-message` | agent間の配送本文 |
-| `automated-prompt` | 機械が生成してユーザー入力欄へ入る本文 |
+| `agent-toolkit-auto-inserted` | hook通知、規範、agent間配送、機械生成の入力 |
+| `forwarded-user-input` | 自動生成本文の中に保持したユーザー自身の入力 |
 
-`automated-prompt`で囲んだ本文は、ユーザー発話の解釈規範を再読させる注記の対象から外れる。
+機械が生成した本文は、ユーザー発話の解釈規範を再読させる注記の対象から外れる。
 スラッシュコマンドはホストが1行目の先頭でだけ解釈するため、コマンドを伴う本文では引数の位置へ標識を置く。
 
 ### ヘルパー関数

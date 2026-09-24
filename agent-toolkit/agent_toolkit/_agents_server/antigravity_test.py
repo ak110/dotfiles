@@ -1,6 +1,7 @@
 """Antigravity CLI backendのコマンド構築とstream-jsonの消費を検証する。"""
 
 import asyncio
+import json
 import os
 import pathlib
 import stat
@@ -133,6 +134,31 @@ def test_send_message_starts_a_new_turn_on_the_same_conversation(
     assert session.session_id == "conv-1"
     assert session.turn_seq == 2
     assert session.agent_message.endswith("続けて短くして")
+
+
+def test_stream_events_are_saved_across_turns(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開JSON出力を保存し、継続したturnを同じ記録へ追記する。"""
+    _install_fake_agy(tmp_path, monkeypatch)
+    log_directory = tmp_path / "logs"
+
+    async def scenario() -> None:
+        manager = antigravity.AntigravityManager(log_directory=log_directory)
+        session = await manager.start("最初の依頼", str(tmp_path))
+        while not session.terminal:
+            await asyncio.sleep(0.02)
+        await manager.send_message(session, "次の依頼")
+        while not session.terminal:
+            await asyncio.sleep(0.02)
+        await manager.close()
+
+    asyncio.run(scenario())
+
+    records = [json.loads(line) for line in (log_directory / "conv-1.jsonl").read_text().splitlines()]
+    assert [record["event"] for record in records] == ["init", "step_update", "result"] * 2
+    assert records[2]["result"]["response"].endswith("最初の依頼")
+    assert records[5]["result"]["response"].endswith("次の依頼")
+    assert stat.S_IMODE(log_directory.stat().st_mode) == 0o700
+    assert stat.S_IMODE((log_directory / "conv-1.jsonl").stat().st_mode) == 0o600
 
 
 def test_send_message_rejects_an_unfinished_turn() -> None:

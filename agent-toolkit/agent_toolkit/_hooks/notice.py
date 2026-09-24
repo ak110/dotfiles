@@ -41,6 +41,18 @@ def _warning_body_and_fix(body: str) -> tuple[str, str]:
     return body, _GENERIC_FIX
 
 
+def _repeat_summary(body: str) -> str:
+    """反復通知から対象、保存先と次の操作に必要な行を残す。"""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if not lines:
+        return "同じ原因の通知が再発した。"
+    selected = [lines[0]]
+    for line in lines[1:]:
+        if line.startswith(("対象:", "保存先:", "対処:", "Fix:")) and line not in selected:
+            selected.append(line)
+    return "\n".join(selected)
+
+
 def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
     """`hook_id`と既定タグを固定した通知整形関数を返す。"""
 
@@ -67,7 +79,7 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
                 escalate_on_repeat=escalate_on_repeat,
                 summary=summary,
             )
-        if summary is not None:
+        if summary is not None or body:
             # 1件目で判断材料は到達済みであり、2件目以降は対象と件数だけを返す。
             # 反復の集約はタグの重大度と独立の性質であるため、warn以外のタグでも同じ扱いにする。
             session_id = _warning_context.get("session_id")
@@ -76,7 +88,7 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
                 f"{hook_id}|{cause}",
             )
             if count >= 2:
-                body = f"{summary}\nこの通知は同一セッションで{count}件目である。"
+                body = f"{summary or _repeat_summary(body)}\nこの通知は同一セッションで{count}件目である。"
         return _message_format.llm_notice(body, hook_id, tag=tag)
 
     return format_notice
@@ -125,10 +137,10 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
             body = f"{body}\nこの通知は同一セッションで{removable_count}件目である。原因を除去してから続行する。"
         elif removable_count >= _WARN_REPEAT_THRESHOLD:
             body = f"{body}\nこの通知は同一セッションで{removable_count}件目である。"
-        if summary is not None and count >= 2:
+        if count >= 2:
             # 1件目で判断材料は到達済みであり、2件目以降は対象と件数だけを返す。
             return _message_format.llm_notice(
-                f"{summary}\nこの通知は同一セッションで{count}件目である。",
+                f"{summary or _repeat_summary(body)}\nこの通知は同一セッションで{count}件目である。",
                 hook_id,
                 tag=_WARN_TAG,
             )

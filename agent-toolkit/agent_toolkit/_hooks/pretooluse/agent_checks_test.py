@@ -9,7 +9,6 @@ import ast
 import json
 import os
 import pathlib
-import re
 import subprocess
 import tempfile
 import textwrap
@@ -69,8 +68,6 @@ class TestBashCommandContractWarnings:
         )
         assert result.returncode == 2
         assert "安全に`rg`へ補正できない形" in result.stderr
-        state = _read_session_state(tmp_path, session_id)  # noqa: F405
-        assert state["pretool_last_call_count"] == 1
 
     def test_recursive_grep_binary_input_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
         """入力時に判別できないバイナリ内容がある再帰grepは補正しない。"""
@@ -948,9 +945,7 @@ class TestTaskStopBlock:
 
         assert first.returncode == 2
         assert second.returncode == 2
-        assert re.sub(r'nonce="[^"]+"', 'nonce="<nonce>"', first.stderr) == re.sub(
-            r'nonce="[^"]+"', 'nonce="<nonce>"', second.stderr
-        )
+        assert first.stderr == second.stderr
         assert "所有記録に一致する識別子" in first.stderr
         assert "対象別の停滞検知完了記録を作成" in first.stderr
         assert "再実行すると続行できる" not in first.stderr
@@ -1012,6 +1007,38 @@ class TestTaskStopBlock:
         session_id = f"task-stop-self-{label}"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, tool_input).returncode == 0
+
+    @pytest.mark.parametrize("event_name", ["PostToolUse", "PostToolUseFailure"])
+    def test_structured_background_response_allows_only_its_task_stop(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        event_name: str,
+    ) -> None:
+        """構造化応答から記録した所有IDだけを同じセッションの停止対象として通す。"""
+        session_id = f"task-stop-structured-{event_name}"
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": event_name,
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": {
+                    "backgroundTaskId": "bg-task-1",
+                    "interrupted": False,
+                    "isImage": False,
+                    "noOutputExpected": False,
+                    "stderr": "",
+                    "stdout": "",
+                },
+            },
+            state_dir,
+        )
+
+        assert recorded.returncode == 0
+        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bg-task-1"]
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
 
     def test_other_task_is_blocked_even_with_recorded_background_tasks(
         self,
@@ -1225,82 +1252,6 @@ class TestPlanFileDoesNotRequireSelfPath:
         )
         # 本検査は「該当節本文が空」の場合は対象外として通過する
         assert "trailing path section" not in result.stderr
-
-
-class TestStyleNegationCheck:
-    """『Xを根拠にYしない』『Xを理由にYしない』形式の増加検出（FB10、warn）。"""
-
-    @staticmethod
-    def _target_path(tmp_path: pathlib.Path) -> pathlib.Path:
-        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        return target
-
-    def test_write_with_negation_warns(self, tmp_path: pathlib.Path):
-        target = self._target_path(tmp_path)
-        content = "# rule\n\n作業量を根拠に延期しない\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "styleneg-write",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "根拠に" in _additional_context(result)
-
-    def test_edit_increase_warns(self, tmp_path: pathlib.Path):
-        target = self._target_path(tmp_path)
-        target.write_text("# rule\n\n既存の記述\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "既存の記述",
-                    "new_string": "既存の記述\n\n工数を理由に対応しない",
-                },
-                "session_id": "styleneg-edit",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "理由に" in _additional_context(result)
-
-    def test_edit_no_increase_does_not_warn(self, tmp_path: pathlib.Path):
-        """既存文字列の保持のみでは警告しない（誤検出解消）。"""
-        target = self._target_path(tmp_path)
-        target.write_text("# rule\n\n作業量を根拠に延期しない\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "作業量を根拠に延期しない",
-                    "new_string": "作業量を根拠に延期しない。追記のみ",
-                },
-                "session_id": "styleneg-edit-noincrease",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "根拠に" not in _agent_messages(result)
-
-    def test_non_target_path_does_not_warn(self, tmp_path: pathlib.Path):
-        target = tmp_path / "misc" / "notes.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        content = "作業量を根拠に延期しない\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "styleneg-outofscope",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "根拠に" not in _agent_messages(result)
 
 
 class TestDirectAgentToolkitEditsAfterPlanMode:

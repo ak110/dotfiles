@@ -58,7 +58,7 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
-from agent_toolkit._hooks.message_format import xml_message
+from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 
 try:
     from pydantic_settings.exceptions import IncompleteFieldDefinitionWarning
@@ -210,7 +210,7 @@ COMPOSED_BY_CALLER = "caller"
 COMPOSED_BY_AGENTS_SERVER = "agents-server"
 
 # MCPのスキーマとして実行ホストのsystem promptへ入る本文の境界。
-_NORMATIVE_ELEMENT = "normative-context"
+_NORMATIVE_ELEMENT = AUTO_INSERTED_ELEMENT
 _NORMATIVE_SOURCE = "agent-toolkit/agents-server"
 _KIND_MCP_INSTRUCTIONS = "mcp-instructions"
 _KIND_MCP_TOOL = "mcp-tool"
@@ -223,7 +223,7 @@ def _schema_text(body: str, *, kind: str) -> str:
     サーバーの説明文とツールの説明文は、呼び出し側のホストがsystem promptへ自動的に載せる。
     受信したエージェントが本リポジトリの生成物と判別できるよう、他の自動注入経路と同じ形式で囲む。
     """
-    return xml_message(_NORMATIVE_ELEMENT, body, {"source": _NORMATIVE_SOURCE, "kind": kind})
+    return auto_message(body, source=_NORMATIVE_SOURCE, kind=kind)
 
 
 def _parameter_description(body: str) -> str:
@@ -253,15 +253,17 @@ def _wrap_delivery_body(body: str, *, composed_by: str = COMPOSED_BY_CALLER) -> 
     タスク文書の読み込み指示、シェル実行の依頼文、自動再開の継続指示は、呼び出し元ではなく
     本サーバーが組み立てるため、受信側が両者を取り違えないよう作成主体を分けて示す。
 
-    2つの前提に依存する。第1に`nonce`が本文へ出現しないこと、第2に`from`が示す
-    session識別子が属性値へそのまま置ける文字だけで構成されることである。
-    前者が崩れると受信側が本文中の文字列を配送の境界と取り違え、
-    後者が崩れると開始タグの属性が閉じずに標識全体が本文として読まれる。
-    いずれの場合も、呼び出し元が構成した指示がユーザー発話として扱われる。
+    `from`が示すsession識別子はXML属性値へエスケープして置く。
+    配送境界は最初の開始タグと最後の同名終了タグで確定する。
     受信側の解釈は`agent-toolkit/share/rules-subagent.md`「受領した本文の出所」が定める。
     """
     sender = _delivery_sender_label()
-    return xml_message("cross-session-message", body, {"from": sender, "composed-by": composed_by})
+    return auto_message(
+        body,
+        source="agent-toolkit/agents-server",
+        kind="agent-delivery",
+        attributes={"from": sender, "composed-by": composed_by},
+    )
 
 
 def _validate_required_prompt_inputs(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> str | None:
@@ -414,6 +416,7 @@ class AgentsServerManager:
                     self.sessions,
                     self._condition,
                     publish_registry=True,
+                    log_directory=self._status_writer.path.parent / "logs" if self._status_writer is not None else None,
                 )
             return self._agy
         raise ValueError(f"unsupported engine: {engine}")

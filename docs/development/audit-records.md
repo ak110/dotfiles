@@ -189,6 +189,12 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節及び`SubagentStop`節で前段の入力仕様を確認した。同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
 
+## agent-toolkit/hooks/hooks.json：SessionEndの非同期化：2026年9月24日
+
+Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2回起動した。debugログはどちらも`SessionEnd:other`を非同期hookとして登録し、予算を`600000ms`と記録した。hookの完了状態は2回とも0で、事前に各セッションIDへ登録した管理対象一時領域は終了後に実在しなかった。標準エラーは空で、debugログにも`Hook cancelled`は現れなかった。CLI本体は2回とも終了コード143で、経過時間は11.60秒と16.45秒だったため、全プラグイン構成での通常応答の完了は未確認である。非同期hookの実行時間もdebugログからは分離できない。
+
+同日、`hooks.json`のSessionEnd登録と同じコマンド・`async: true`だけを一時設定へ写し、`--setting-sources ''`と`--settings`で指定した`claude -p`を実行した。CLIは終了コード0で、結果JSONは`terminal_reason: completed`、`result: OK`だった。標準エラーは空で、debugログに`Hook cancelled`はなく、`SessionEnd:other`を非同期hookとして登録した記録、`600000ms`の予算及び完了状態0があった。同一`session_id`で事前登録した管理対象一時領域は、CLI終了後に実在しなかった。この検収はSessionEnd単独構成の正常終了を示す。全プラグイン構成を用いた同日の追加試行も終了コード143だったため、その正常終了は引き続き未確認である。再検証は、`claude -p`へ同じSessionEnd設定、専用の`--session-id`、`--debug-file`を指定し、CLIの終了コードと結果JSON、同IDで作成した領域の終了後の実在、標準エラー、debugログの登録・完了状態・予算・`Hook cancelled`の有無を照合する。
+
 ## agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日
 
 2026年9月16日、公開直後の新バージョンを待つ目安1日の典拠を実測した。`.chezmoi-source/dot_config/uv/uv.toml`は`exclude-newer = "1 day"`を持ち、同ファイルのコメントが公開後24時間未満のパッケージを除外する目的を示す。再検証は同ファイルの当該キーの値を取得する。再検証の契機は当該設定値の変更とする。
@@ -312,6 +318,7 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 ```
 
 2026年9月24日の同版の出力では、`result`イベントの`status`と`response`は内側の`result`オブジェクトにあり、状態値は`SUCCESS`、本文は`OK`であった。作業ツリーの`start_custom`で同じ候補を起動した結果もagyのsessionが`completed`となり、待機応答の本文に`OK`を受け取った。
+同日、同版へ「検証完了」とだけ答える指示を与えた。`--output-format stream-json --print-timeout 120s --model gemini-3.8-flash --effort low --mode plan --disable-slash-commands`で実行すると、終了コード0で5行のJSONLを返した。イベントは`init`が1行、`step_update`が3行、`result`が1行で、最後の`result.response`は`検証完了`だった。`step_update`の2行には`text_delta`があり、公開ストリームに表示用の本文が含まれることを確認した。標準エラーは1行で、slash command expansionを無効にした状態では`--mode plan`が適用されない旨を示した。
 再検証は`agy --version`で版数を記録し、同じ指示で`--print-timeout`を`3600`と`3600s`へ変えて終了コード、標準エラー及びイベント種別を照合する。
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：Codexネイティブ委譲の入力境界：2026年9月21日

@@ -483,6 +483,100 @@ def _check_bash_bulk_stage_with_unedited_files(
 # --- Bash: git commit未検証警告 ---
 
 
+def _attribution_explicitly_disabled(cwd: str) -> bool:
+    """Claude Codeの設定にcommit帰属を無効化する明示値があるかを返す。"""
+    root = _git_status.get_worktree_root(cwd)
+    paths = [pathlib.Path.home() / ".claude" / "settings.json"]
+    if root is not None:
+        paths.extend(pathlib.Path(root) / ".claude" / name for name in ("settings.json", "settings.local.json"))
+    for path in paths:
+        try:
+            settings = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(settings, dict):
+            continue
+        attribution = settings.get("attribution")
+        if isinstance(attribution, dict) and attribution.get("commit") == "":
+            return True
+        if "attribution" not in settings and settings.get("includeCoAuthoredBy") is False:
+            return True
+    return False
+
+
+def _commit_message_from_args(args: list[str], cwd: str) -> str | None:
+    """新しいcommitメッセージを与える引数から本文を取り出す。"""
+    if any(
+        arg in {"--no-edit", "-C", "--reuse-message", "--fixup", "--squash"}
+        or arg.startswith(("--reuse-message=", "--fixup=", "--squash="))
+        or (arg.startswith("-C") and len(arg) > 2)
+        for arg in args
+    ):
+        return None
+    messages: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            break
+        if arg in {"-m", "--message", "-F", "--file"}:
+            if index + 1 >= len(args):
+                return ""
+            value = args[index + 1]
+            index += 2
+        elif arg.startswith("--message=") or arg.startswith("--file="):
+            value = arg.split("=", 1)[1]
+            arg = arg.split("=", 1)[0]
+            index += 1
+        elif arg.startswith("-m") and len(arg) > 2:
+            value = arg[2:]
+            arg = "-m"
+            index += 1
+        elif arg.startswith("-F") and len(arg) > 2:
+            value = arg[2:]
+            arg = "-F"
+            index += 1
+        else:
+            index += 1
+            continue
+        if arg in {"-F", "--file"}:
+            if value == "-":
+                return ""
+            path = pathlib.Path(value)
+            if not path.is_absolute():
+                path = pathlib.Path(cwd) / path
+            try:
+                value = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                return ""
+        messages.append(value)
+    return "\n\n".join(messages) if messages else None
+
+
+def _check_bash_commit_attribution(command: str, cwd: str) -> bool:
+    """新しいメッセージを与えるcommitで帰属trailerが欠けた場合に遮断する。"""
+    for event in extract_git_events(command, cwd):
+        if event.subcommand != "commit" or not event.cwd_resolved:
+            continue
+        message = _commit_message_from_args(event.subcommand_args, event.cwd)
+        if message is None or _attribution_explicitly_disabled(event.cwd):
+            continue
+        if re.search(r"(?im)^Co-Authored-By:\s+\S", message):
+            continue
+        print(
+            _block_notice(
+                "git commitのメッセージにCo-Authored-Byがありません。",
+                fix=(
+                    "agent-toolkit:commitの「コミットメッセージとリリース」に従い、"
+                    "`Co-Authored-By: <実行中のモデルの表示名> <noreply@<モデル提供元のドメイン>>`を末尾へ追加する。"
+                ),
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
+
+
 _GIT_COMMIT_INCLUDE_WORKTREE_FLAGS: frozenset[str] = frozenset({"--all"})
 
 

@@ -1001,7 +1001,7 @@ _BLOCKED_CHAIN_ARTIFACT_GUIDANCE = (
 def _check_bash_nested_code_string(command: str) -> bool:
     """別のシェルへコード文字列を渡す多段の引用解釈を遮断する。
 
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断を維持する。
+    `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断を維持する。
     段ごとの展開規則が重なると、実行主体が渡した入力とは異なるコマンドが成立し、
     当該コマンドが削除、上書き、外部送信などの復元できない操作を含み得るためである。
     """
@@ -1073,7 +1073,7 @@ def _check_bash_python_code_string(command: str) -> bool:
 
     `agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」は、複数行のコードを
     評価用引数へ埋め込むことを既定で従う規定として禁じる。
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断する。
+    `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段で復元できないと判定して遮断する。
     コマンド文字列とコードの引用境界が重なるとコードの改行が失われ、後続の文が前の文へ連結された
     別のコードが成立する。当該コードが削除、上書きなどの復元できない操作を含み得るためである。
     単一の文だけを渡す呼び出しは、引用境界が重なっても実行されるコードが変わらないため対象にしない。
@@ -1414,7 +1414,7 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
     補正後の入力が本判定へ渡るため、本判定は補正が成立しない呼び出しだけを警告する。
     不在のパスは実行位置ごとに全件を列挙し、複数パスを渡した呼び出しの是正が1回で済む形にする。
     通した場合の結果は当該コマンドが不在のパスで失敗することに限り、作業ツリーへ副作用を残さない。
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、警告で返す。
+    `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、警告で返す。
     """
     if not cwd:
         return None

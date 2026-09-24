@@ -68,7 +68,7 @@ def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.Cap
 
     output = _without_wrapping(capsys.readouterr().out)
     assert _without_wrapping("各sessionへ起動文を含めず、起動文は`atk agents show`が返す。") in output
-    assert _without_wrapping("MCPの`list`を1回呼び出してから同じコマンドを再実行") in output
+    assert _without_wrapping("MCPの`list`を1回呼び出してから再実行") in output
 
 
 @pytest.fixture
@@ -105,8 +105,11 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
 
 
 @pytest.mark.usefixtures("session_environment")
-def test_agents_list_returns_diagnostic_fields_without_prompt(capsys: pytest.CaptureFixture[str]) -> None:
+def test_agents_list_returns_diagnostic_fields_without_prompt(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """listは診断用の項目を返し、起動文だけを除く。"""
+    monkeypatch.setenv("AI_AGENT", "1")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
 
@@ -169,11 +172,61 @@ def test_agents_show_selects_one_session(capsys: pytest.CaptureFixture[str]) -> 
 
 
 @pytest.mark.usefixtures("session_environment")
-def test_agents_list_indents_output_outside_agent_environment(
+def test_agents_show_finds_uncollected_result_after_status_expires(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """期限後に状態一覧から消えたsessionも保存済みの起動情報と結果を返す。"""
+    root = status_file.status_directory("root-session", tmp_path)
+    (root / "root.json").write_text('{"version": 1, "sessions": []}', encoding="utf-8")
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(exist_ok=True)
+    (results / "nested.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "agent_message": "完了",
+                "turn_seq": 3,
+                "owner_status_file": "writer.json",
+                "session": {"session_id": "nested", "prompt": "調査せよ", "cwd": "/worktree"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", "nested"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["session_id"] == "nested"
+    assert payload["status"] == "completed"
+    assert payload["prompt"] == "調査せよ"
+    assert payload["agent_message"] == "完了"
+    assert payload["owner_status_file"] == "writer.json"
+
+    (results / "nested.json").write_text(
+        json.dumps({"status": "completed", "agent_message": "完了", "owner_status_file": "writer.json"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", "nested"])
+    prior_result = json.loads(capsys.readouterr().out)
+    assert prior_result["session_id"] == "nested"
+    assert prior_result["status"] == "completed"
+    assert "prompt" not in prior_result
+
+    (results / "nested.json").unlink()
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", "show", "nested"])
+    assert capsys.readouterr().err == "unknown session: nested\n"
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_list_shows_tree_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人間が読む環境では一覧を字下げしたJSONで書き、非ASCII文字をそのまま残したうえで起動文を除く。"""
+    """人間が読む環境ではrootとsessionの関係を表示し、起動文を除く。"""
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
 
@@ -182,10 +235,11 @@ def test_agents_list_indents_output_outside_agent_environment(
 
     output = capsys.readouterr().out
     assert len(output.splitlines()) > 1
-    assert '"session_id": "session-1"' in output
+    assert "root root-session" in output
+    assert "└─ session-1" in output
     assert "調査レーン" in output
     assert "調査せよ" not in output
-    assert json.loads(output)["sessions"][0]["session_id"] == "session-1"
+    assert "running" in output
 
 
 @pytest.mark.parametrize("environment_name", environment.AGENT_ENVIRONMENT_VARIABLES)
@@ -219,12 +273,12 @@ def test_agents_show_rejects_unknown_session(capsys: pytest.CaptureFixture[str])
     assert capsys.readouterr().err == "unknown session: missing\n"
 
 
-def test_agents_list_without_conversation_root_does_not_cross_root_boundaries(
+def test_agents_list_without_conversation_root_shows_all_roots(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """会話識別子のない直接端末では他のrootのsessionを表示しない。"""
+    """会話識別子のない直接端末では全rootのsessionを表示する。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
@@ -251,8 +305,11 @@ def test_agents_list_without_conversation_root_does_not_cross_root_boundaries(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
 
-    payload = json.loads(capsys.readouterr().out)
-    assert payload == {"sessions": []}
+    output = capsys.readouterr().out
+    assert "root root-a" in output
+    assert "root root-b" in output
+    assert "session-a" in output
+    assert "session-b" in output
 
 
 def test_agents_list_reports_unconfirmed_conversation_root(
@@ -262,6 +319,7 @@ def test_agents_list_reports_unconfirmed_conversation_root(
 ) -> None:
     """対応未確認の空一覧は成功扱いせず、MCP一覧による復旧を案内する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
+    monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
@@ -283,6 +341,7 @@ def test_agents_list_returns_empty_for_confirmed_root(
 ) -> None:
     """現行識別子自身の状態ディレクトリを確認できれば空一覧を通常結果として返す。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
+    monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
@@ -301,6 +360,7 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
 ) -> None:
     """明示的な別名索引のrootだけを読み、別rootのsessionを混在させない。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
+    monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
@@ -323,3 +383,74 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
 
     payload = json.loads(capsys.readouterr().out)
     assert [session["session_id"] for session in payload["sessions"]] == ["session-a"]
+
+
+def test_agents_logs_reads_claude_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """一覧の識別子から既存のClaude Code記録を時系列で読める。"""
+    project = tmp_path / "projects" / "sample"
+    project.mkdir(parents=True)
+    (project / "session-1.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "timestamp": "2026-09-24T00:00:00Z",
+                "message": {"content": [{"type": "text", "text": "調査して"}]},
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "session-1"])
+
+    assert "[2026-09-24T00:00:00Z] user: 調査して" in capsys.readouterr().out
+
+
+def test_agents_logs_reports_missing_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """存在しない記録は識別子を添えて報告する。"""
+    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", "logs", "missing"])
+
+    assert "missing" in capsys.readouterr().err
+
+
+def test_agents_logs_reads_and_follows_antigravity_events(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Antigravityの保存済み出力と、その後に追記された行を順に表示する。"""
+    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    path = status_file.session_log_path("root-1", "agy-1", tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"event": "init", "conversation_id": "agy-1"}) + "\n", encoding="utf-8")
+    sleeps = 0
+
+    def append_then_stop(_seconds: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 1:
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"event": "step_update", "step_update": {"text_delta": "調査中"}}) + "\n")
+        else:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(_atk_agents.time, "sleep", append_then_stop)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "agy-1", "--follow"])
+
+    output = capsys.readouterr().out
+    assert "init: agy-1" in output
+    assert "step_update: 調査中" in output

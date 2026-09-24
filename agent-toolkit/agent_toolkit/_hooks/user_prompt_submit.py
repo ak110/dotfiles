@@ -60,10 +60,6 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_WI_SKILL_NAMES,
 )
-from agent_toolkit._hooks.reference_notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    REFERENCE_NOTICE_BODY,
-    REFERENCE_NOTICE_TAG,
-)
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     claim_session_title,
     read_state,
@@ -97,7 +93,7 @@ _LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<(?:task-notification|cross-session-message)\b")
-PERIODIC_RECHECK_MARKER = "[agent-toolkit/periodic-recheck]"
+PERIODIC_RECHECK_MARKER = '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
 """定期再確認のpromptの1行目へ置く役割標識。
 
 `agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」が
@@ -114,7 +110,7 @@ _VERIFICATION_NOTICE_BODY = (
     "照合できない場合は同意も変更もしない。"
     "いずれも含まないと判定した発話では、照合を要さないと判断して次の工程へ進む。"
     "稼働中の依頼がある場合は、元の依頼の目的と未完了工程を照合してから次に実行する工程を確定する。"
-    "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
+    "同じ論点で修正が続く場合は意図と要件への影響を照合し、確定できないときだけ確認経路へ送る。"
 )
 """照合要求の注記の本文。
 
@@ -261,10 +257,8 @@ def main(payload_text: str) -> int:
     is_normal_prompt = not machine_injected
     # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
     notices: list[str] = []
-    if is_normal_prompt:
-        notices.append(_llm_notice(REFERENCE_NOTICE_BODY, tag=REFERENCE_NOTICE_TAG))
-        if _claim_verification_notice(session_id, time.time()):
-            notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
+    if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
+        notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     additional_context = "\n".join(notices) if notices else None
 
     if first_line.startswith(command_prefix):

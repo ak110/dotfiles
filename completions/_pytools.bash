@@ -27,6 +27,7 @@ _python_argcomplete() {
 }
 
 complete -o nospace -o default -o bashdefault -F _python_argcomplete EcoUtilities
+complete -o nospace -o default -o bashdefault -F _python_argcomplete astra
 complete -o nospace -o default -o bashdefault -F _python_argcomplete ccommit
 complete -o nospace -o default -o bashdefault -F _python_argcomplete check-image-sizes
 complete -o nospace -o default -o bashdefault -F _python_argcomplete claude-session-export
@@ -51,5 +52,7 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete randfile
 complete -o nospace -o default -o bashdefault -F _python_argcomplete releaser
 complete -o nospace -o default -o bashdefault -F _python_argcomplete rename2hash
 complete -o nospace -o default -o bashdefault -F _python_argcomplete repack-archive
+complete -o nospace -o default -o bashdefault -F _python_argcomplete sol
 complete -o nospace -o default -o bashdefault -F _python_argcomplete sonnet
+complete -o nospace -o default -o bashdefault -F _python_argcomplete terra
 complete -o nospace -o default -o bashdefault -F _python_argcomplete touch-file

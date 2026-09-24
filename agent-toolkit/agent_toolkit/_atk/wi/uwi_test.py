@@ -1013,7 +1013,7 @@ class TestUwiAdopt:
         content = (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
         assert f"- 対応commit作成者日時: {author_date}" in content
         assert f"- 対応commit件名: {subject}" in content
-        assert full_oid not in content
+        assert f"- 対応commit: {full_oid}" in content
 
     def test_multiple_files_adopted_single_commit(
         self,

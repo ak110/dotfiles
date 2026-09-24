@@ -12,4 +12,4 @@
 
 ## pyfltrの起動形
 
-pyfltrの起動形は`python.md`の「pyfltrの起動形」が定める。
+pyfltrの起動形は`agent-toolkit/skills/writing-standards/references/python.md`の「pyfltrの起動形」が定める。

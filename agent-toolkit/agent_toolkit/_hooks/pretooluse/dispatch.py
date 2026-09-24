@@ -182,7 +182,6 @@ if TYPE_CHECKING:
         _record_iss_sidechain_probe,
         _reset_plan_mode_state,
     )
-    from agent_toolkit._hooks.pretooluse.repeat_guard import check_repeated_tool_call
     from agent_toolkit._hooks.pretooluse.content_checks import (
         _check_direct_agent_toolkit_edits_after_plan_mode,
         _check_edit_boundary_resolution,
@@ -199,6 +198,7 @@ if TYPE_CHECKING:
         _check_bash_agent_toolkit_version_bump,
         _check_bash_amend_rebase_without_log,
         _check_bash_bulk_stage_with_unedited_files,
+        _check_bash_commit_attribution,
         _check_bash_git_commit,
         _check_bash_git_log_decorate,
         _check_bash_git_push_after_amend_with_dirty_status,
@@ -353,9 +353,6 @@ def main(payload_text: str) -> int:
             print("\n".join(pending_notices), file=sys.stderr)
             pending_notices.clear()
         return code
-
-    if check_repeated_tool_call(session_id, tool_name, tool_input):
-        return exit_with(2)
 
     # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）。
     # 呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する
@@ -538,6 +535,7 @@ def _handle_bash_tool(
     if (
         (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
         or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
+        or _check_bash_commit_attribution(command, cwd)
         or _check_bash_process_kill_by_pattern(command)
     ):
         return 2
