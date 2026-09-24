@@ -203,7 +203,7 @@ Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2�
 
 先の終了コード143は、検証元から継承した`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`による。再現試行の`strace`はagent-toolkitのStop hookの子プロセスからCLI本体への`SIGTERM`送信を記録した。debugログにも無進捗判定と常駐ループへの中断要求があり、SessionEnd hook自体は完了状態0だった。
 
-常駐ループ用の環境変数を外して同じ全プラグイン構成を実行すると、CLIは7秒で終了コード0となった。結果JSONは`terminal_reason: completed`、`result: OK`、`is_error: false`を返した。標準エラーは空で、debugログは`SessionEnd:other`を非同期hookとして登録し、予算`600000ms`と完了状態0を記録した。`Hook cancelled`はdebugログと標準エラーの双方に無かった。同じ`session_id`で事前登録した管理対象一時領域は終了後に実在せず、`atk managed-temp list --prefix sessionend-probe`も該当0件を返した。再検証では常駐ループ用の環境変数を検証用CLIへ継承させない。
+常駐ループ用の環境変数を外し、同じ全プラグイン構成でCLIを起動すると、7秒で終了コード0となった。結果JSONは`terminal_reason: completed`、`result: OK`、`is_error: false`を返した。標準エラーは空で、debugログは`SessionEnd:other`を非同期hookとして登録し、予算`600000ms`と完了状態0を記録した。`Hook cancelled`はdebugログと標準エラーの双方に無かった。同じ`session_id`で事前登録した管理対象一時領域は終了後に実在せず、`atk managed-temp list --prefix sessionend-probe`も該当0件を返した。再検証では常駐ループ用の環境変数を検証用CLIへ継承させない。
 
 ## agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日
 

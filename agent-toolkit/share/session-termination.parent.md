@@ -59,11 +59,11 @@
 - `deferred_adopted`のファイル名集合を、起動時にOID又は空文字列を対応付けた延期`adopt`対象の集合と、空集合の場合も含めて比較する。後続処置AWIだけを渡して延期`adopt`が空なら`[]`だけを受理する。同じAWI名が両入力にある場合も、延期`adopt`側の明示入力で照合する
 - 延期`adopt`対象がある場合だけ、集合一致の後に全対象のファイル名を渡して`atk wi show <ファイル名>... --target-repo=<対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行が全件`adopted`であることを確認する。状態フォルダーの全件取得は、終端項目が累積し続けるため使わない。出力量を抑える場合は`--output-file`へこの工程が所有する管理対象一時領域の絶対パスを渡し、保存したファイルの見出し行を読む
 
-<例>
+```text
 後続処置AWI=A.md、延期adoptなし: `deferred_adopted: []`。
 後続処置AWI=A.md、延期adopt=A.mdとOIDの組: `deferred_adopted: ["A.md"]`。
 後続処置AWIなし、延期adopt=B.mdと空文字列の組: `deferred_adopted: ["B.md"]`。
-</例>
+```
 
 全ての照合が成立した後は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節へ戻る。
 同節が定めるベースbranchの公開状態の再観測、`agent-toolkit:completion-report`による報告及び`atk agents-exit-session`の実行を実施する。

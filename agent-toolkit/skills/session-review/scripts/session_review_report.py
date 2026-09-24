@@ -183,9 +183,7 @@ def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) 
         raise ReportError("所要時間分析のbottleneckが不正である")
     if not isinstance(target_reduction, dict) or set(target_reduction) != {"seconds", "basis"}:
         raise ReportError("所要時間分析のtarget_session_reductionが不正である")
-    if review_reduction_present and (
-        not isinstance(review_reduction, dict) or set(review_reduction) != {"seconds", "basis"}
-    ):
+    if review_reduction_present and (not isinstance(review_reduction, dict) or set(review_reduction) != {"seconds", "basis"}):
         raise ReportError("所要時間分析のreview_process_reductionが不正である")
     if not isinstance(extractor_event, dict) or set(extractor_event) != {"kind", "value"}:
         raise ReportError("所要時間分析のextractor_eventが不正である")

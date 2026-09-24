@@ -70,38 +70,72 @@ class TestExtractExecutionSegments:
     """助言・状態記録が共有するBash実行位置の抽出。"""
 
     @pytest.mark.parametrize(
-        ("command", "expected"),
+        ("command", "expected", "raw"),
         [
-            ("/repo/create_plan_files.py a b", ("/repo/create_plan_files.py", "a", "b")),
+            (
+                "/repo/create_plan_files.py a b",
+                ("/repo/create_plan_files.py", "a", "b"),
+                ("/repo/create_plan_files.py", "a", "b"),
+            ),
             (
                 "uv run --no-project --script /repo/create_plan_files.py a b",
                 ("/repo/create_plan_files.py", "a", "b"),
+                ("uv", "run", "--no-project", "--script", "/repo/create_plan_files.py", "a", "b"),
             ),
-            ("echo create_plan_files.py", ("echo", "create_plan_files.py")),
+            ("echo create_plan_files.py", ("echo", "create_plan_files.py"), ("echo", "create_plan_files.py")),
         ],
     )
-    def test_execution_position_is_resolved(self, command: str, expected: tuple[str, ...]) -> None:
-        assert extract_execution_segments(command) == [ExecutionSegment(expected, True, False)]
+    def test_execution_position_is_resolved(self, command: str, expected: tuple[str, ...], raw: tuple[str, ...]) -> None:
+        assert extract_execution_segments(command) == [ExecutionSegment(expected, True, False, raw)]
 
     def test_shell_command_is_expanded_once(self) -> None:
         segments = extract_execution_segments("bash -lc 'uv run --script /repo/create_plan_files.py'")
-        assert segments == [ExecutionSegment(("/repo/create_plan_files.py",), True, False)]
+        assert segments == [
+            ExecutionSegment(
+                ("/repo/create_plan_files.py",),
+                True,
+                False,
+                ("uv", "run", "--script", "/repo/create_plan_files.py"),
+            )
+        ]
 
     def test_agent_toolkit_project_entry_is_identified(self) -> None:
         command = "uv run --project /repo/agent-toolkit --locked --no-default-groups /repo/agent-toolkit/agent_toolkit/hook.py"
         assert extract_execution_segments(command) == [
-            ExecutionSegment(("/repo/agent-toolkit/agent_toolkit/hook.py",), True, True)
+            ExecutionSegment(
+                ("/repo/agent-toolkit/agent_toolkit/hook.py",),
+                True,
+                True,
+                (
+                    "uv",
+                    "run",
+                    "--project",
+                    "/repo/agent-toolkit",
+                    "--locked",
+                    "--no-default-groups",
+                    "/repo/agent-toolkit/agent_toolkit/hook.py",
+                ),
+            )
         ]
 
     @pytest.mark.parametrize("name", ("atk_serve_plans_remote_helper.py", "atk_serve_sessions_remote_helper.py"))
     def test_remote_helper_script_is_identified(self, name: str) -> None:
         command = f"uv run --no-project --script /repo/agent-toolkit/scripts/{name}"
-        assert extract_execution_segments(command) == [ExecutionSegment((f"/repo/agent-toolkit/scripts/{name}",), True, True)]
+        assert extract_execution_segments(command) == [
+            ExecutionSegment(
+                (f"/repo/agent-toolkit/scripts/{name}",),
+                True,
+                True,
+                ("uv", "run", "--no-project", "--script", f"/repo/agent-toolkit/scripts/{name}"),
+            )
+        ]
 
     def test_other_agent_toolkit_pep723_script_is_not_identified(self) -> None:
         script = f"/repo/{_TOOLKIT_PREFIX}/scripts/other.py"
         command = f"uv run --no-project --script {script}"
-        assert extract_execution_segments(command) == [ExecutionSegment((script,), True, False)]
+        assert extract_execution_segments(command) == [
+            ExecutionSegment((script,), True, False, ("uv", "run", "--no-project", "--script", script))
+        ]
 
 
 @pytest.mark.parametrize(

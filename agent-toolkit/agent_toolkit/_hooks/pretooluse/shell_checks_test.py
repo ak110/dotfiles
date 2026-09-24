@@ -2419,7 +2419,7 @@ class TestBashBoundaryAndPathRegressions:
         scan = shell_checks._scan_explicit_paths(  # pylint: disable=protected-access
             "xargs -P 2 printf; wc -l unknown.txt", str(tmp_path)
         )
-        assert scan.missing == ()
+        assert not scan.missing
 
     @staticmethod
     @pytest.mark.parametrize(
