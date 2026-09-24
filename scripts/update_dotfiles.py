@@ -7,7 +7,8 @@ r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 
 `chezmoi git pull --rebase` → `chezmoi init`（テンプレート再展開） →
 `chezmoi status`（apply予定ファイルの表示） → `chezmoi diff --no-pager` →
-`chezmoi apply --force`の5段を、プロセス間排他ロック下で直列実行する。
+`chezmoi apply --force`を、プロセス間排他ロック下で直列実行する。
+画面には4段の進捗を示し、diffの詳細は永続ログへ記録する。
 pull又は退避復元が競合した場合は、元HEADと未コミット内容を専用参照へ保存し、
 設定済み上流へ作業branchを合わせて更新を継続する。
 
@@ -133,6 +134,7 @@ def _child_env() -> dict[str, str]:
     env.pop("VIRTUAL_ENV", None)
     env.pop("VIRTUAL_ENV_PROMPT", None)
     env["MISE_AUTO_INSTALL"] = "0"
+    env["PYTHONIOENCODING"] = "utf-8:replace"
     if _current_run_id is not None:
         env[_RUN_ID_ENV] = _current_run_id
     user_bin = str(pathlib.Path.home() / ".local" / "bin")
@@ -144,7 +146,9 @@ def _child_env() -> dict[str, str]:
     return env
 
 
-def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture: bool = False) -> tuple[int, str]:
+def _run_step(
+    step_no: int, total: int, title: str, argv: list[str], *, capture: bool = False, show_heading: bool = True
+) -> tuple[int, str]:
     """1段を実行し見出しを表示する。`capture=True`時のみ標準出力を文字列で返す。
 
     `capture=False`の段でも標準エラーだけは取得し、段の終了後に親の標準エラーへ転送する。
@@ -154,7 +158,8 @@ def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture:
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
     _current_stage_title = title
     _last_stderr_tail = None
-    print(f"=== [{step_no}/{total}] {title} ===")
+    if show_heading:
+        print(f"=== [{step_no}/{total}] {title} ===")
     logger.info("stage開始: %d/%d %s", step_no, total, title)
     started_at = time.monotonic()
     try:
@@ -469,6 +474,9 @@ def main(argv: list[str] | None = None) -> int:
     sync_report.write_start(_current_run_id, sync_report.now_text())
     logger.info("update-dotfiles開始: root=%s", _DOTFILES_ROOT)
     try:
+        if log_handler is None:
+            _last_stderr_tail = "永続ログを開始できない"
+            return _finish(1)
         try:
             git_timeout = _git_timeout()
         except ValueError as error:
@@ -476,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
             print(error, file=sys.stderr)
             _last_stderr_tail = sync_report.truncate_tail(str(error))
             return _finish(2)
-        total = 5
+        total = 4
         lock_dir = _LOCK_PATH.parent
         lock_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -512,9 +520,9 @@ def main(argv: list[str] | None = None) -> int:
                     "chezmoi diff (上書き前の差分)",
                     ["chezmoi", "diff", "--no-pager"],
                     capture=True,
+                    show_heading=False,
                 )
-                if diff_output:
-                    sys.stdout.write(diff_output)
+                logger.info("chezmoi diffの出力:\n%s", diff_output)
                 if returncode != 0:
                     return _finish(returncode)
 

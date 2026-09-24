@@ -101,6 +101,8 @@ class Element {{
     children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(true); }});
     this.children = children;
   }}
+  contains(node) {{ return this === node || this.children.some(child => child.contains?.(node)); }}
+  closest() {{ return null; }}
   setAttribute(name, value) {{ this.attributes[name] = String(value); }}
   getAttribute(name) {{ return this.attributes[name] ?? null; }}
   removeAttribute(name) {{ delete this.attributes[name]; }}
@@ -116,8 +118,7 @@ class Element {{
   }}
 }}
 const ids = [
-  'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
-  'global-error-message', 'global-error-close-button',
+  'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button',
   'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
   'target-filter', 'source-filter', 'entry-count',
   'result-status', 'list-warning', 'list-fallback-notice', 'loading-indicator', 'entry-list', 'empty-state',
@@ -144,6 +145,7 @@ const ids = [
 ];
 const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
 elements['toast'] = elements['operation-notice-message'];
+elements['operation-notice'].append(elements['operation-notice-message'], elements['operation-notice-close-button']);
 elements['operation-notice-close-button'].setAttribute('aria-label', '操作通知を閉じる');
 elements['kind-filter'].value = 'all';
 elements['state-filter'].value = 'active';
@@ -189,6 +191,7 @@ globalThis.document = {{
 }};
 globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
 globalThis.window = globalThis;
+globalThis.confirm = () => true;
 globalThis.setTimeout = () => 1;
 globalThis.clearTimeout = () => undefined;
 globalThis.EventSource = class {{
@@ -208,9 +211,10 @@ eval({json.dumps(executable)});
         input=script,
         text=True,
         capture_output=True,
-        check=True,
+        check=False,
         env=_HOST_ENVIRON,
     )
+    assert completed.returncode == 0, completed.stderr
     return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))
 
 

@@ -40,10 +40,12 @@ CodexのPostToolUseフックは、所有session識別子があり環境変数か
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`系と`list`の応答が明示する`root_session_id`を使う） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
 | 委譲先CLI自身の診断記録 | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成、初期化完了後の改名と、保持世代を超えた記録の削除） |
+| Antigravityの公開イベントログ | `<状態ディレクトリ>/logs/<session_id>.jsonl` | セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
 | engineの可用性を理由に除外した候補 | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
 
 状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
 診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
+Antigravityのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。
 
 索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
 MCPサーバーは`start`系と`list`の応答へ、自身の状態ファイル書込先である`root_session_id`を明示する。`list`はsession一覧が空でも同じ項目を返す。PostToolUseフックは応答の当該項目を索引へ直接書き、子session識別子から状態ディレクトリを逆引きしない。

@@ -228,6 +228,7 @@ if TYPE_CHECKING:
         _check_bash_python_code_string,
         _check_bash_recursive_grep_without_exclusion,
         _check_bash_recursive_home_search,
+        _check_bash_foreground_loop_wait,
         _check_bash_sleep_poll_pattern,
         _check_bash_truncation_autofix_repeat,
         _check_bash_unbounded_home_traversal,
@@ -516,6 +517,8 @@ def _handle_bash_tool(
     large_read_notice = check_large_bash_read(command, cwd)
     if large_read_notice is not None:
         print(large_read_notice, file=sys.stderr)
+        return 2
+    if _check_bash_foreground_loop_wait(command, bool(tool_input.get("run_in_background"))) == "block":
         return 2
     sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, bool(tool_input.get("run_in_background")))
     if sleep_poll_result == "block":

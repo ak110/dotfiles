@@ -76,6 +76,9 @@ description: >
 - テストコードを書く時、及び条件分岐と判定条件を新設又は変更する時: `references/testing.md`
 - 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`
+- エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画又はレビューをする時: `references/ui-ux.md`
+- 前項の画面をHTML、CSS、JavaScriptで実装又はレビューする時: `references/ui-ux-web-rules.md`
+- 前々項の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約又は多言語表示を含む時: `references/ui-ux-patterns.md`
 
 ## コーディングエージェント向け文書の編集時に読む資料
 

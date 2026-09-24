@@ -38,6 +38,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
     _setup_notes,
     _write_awi_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
@@ -54,6 +55,27 @@ def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, appe
     if append:
         args.append("--append")
     return [*args, "--body-file", str(body_path)]
+
+
+def test_edit_reports_style_warning_with_new_section_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """整った通常AWIを不完全な本文へ変更するとき警告と構造エラーを返す。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "entry.md", body=AGENT_AWI_BODY, source="test")
+    original = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(_edit_body_args(tmp_path, "entry.md", "本文\u2014補足"), home=tmp_path)
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "警告: 本文:2:3: ダッシュ" in error
+    assert "必須節" in error
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

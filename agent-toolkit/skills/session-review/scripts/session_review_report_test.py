@@ -110,7 +110,7 @@ def _inputs(
         json.dumps(
             {
                 "bottleneck": {"interval": "完全分析", "seconds": 12.5},
-                "reduction": {"seconds": 2.5, "basis": "候補集約"},
+                "target_session_reduction": {"seconds": 2.5, "basis": "候補集約"},
                 "non_reducible_reason": "人間の判断が必要",
                 "unmeasured_intervals": [{"interval": "外部待機", "reason": "記録に時刻が無い"}],
                 "extractor_event": {"kind": "failed-tool", "value": "CommandExecution"},
@@ -155,13 +155,13 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     assert content.count("| a1 | 入力不備 | 事前検査不足 | 適用漏れ | 入口で検査する |") == 1
     assert "候補2件、欠陥1件、非欠陥1件、locator3件、過不足0件、重複0件" in content
     assert "- ボトルネック: 完全分析（12.500秒）" in content
-    assert "- 削減見込み: 2.500秒（候補集約）" in content
+    assert "- 対象セッションの削減見込み: 2.500秒（候補集約）" in content
     assert "- 削減不能部分: 人間の判断が必要" in content
     assert "- 未計測区間: 外部待機（記録に時刻が無い）" in content
     assert "- 抽出器イベント: failed-tool=CommandExecution" in content
     assert "| parent-review | parent-review | 不明 | 親記録: 終了時刻が記録されていない |" in content
     assert "- 比較対象区間: prepare、delegate" in content
-    assert "- 180秒目標との比較: 同一区間集合の改善後見込み2.500秒、目標を177.500秒下回る" in content
+    assert "- 180秒目標との比較: 同一区間集合の観測時間5.000秒、目標を175.000秒下回る" in content
     assert (
         tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS
     )
@@ -469,7 +469,9 @@ def test_incorrect_candidate_count_is_rejected(tmp_path: pathlib.Path) -> None:
     (
         ("bottleneck", {"interval": "", "seconds": 1}),
         ("bottleneck", {"interval": "区間", "seconds": True}),
-        ("reduction", {"seconds": -1, "basis": "根拠"}),
+        ("target_session_reduction", {"seconds": -1, "basis": "根拠"}),
+        ("review_process_reduction", {"seconds": -1, "basis": "根拠"}),
+        ("review_process_reduction", None),
         ("non_reducible_reason", ""),
         ("unmeasured_intervals", [{"interval": "区間"}]),
         ("extractor_event", {"kind": "failed-tool", "value": ""}),
@@ -530,12 +532,37 @@ def test_comparison_uses_only_the_declared_observed_population(tmp_path: pathlib
     paths = _inputs(tmp_path)
     duration_analysis = json.loads(paths[4].read_text(encoding="utf-8"))
     duration_analysis["comparison_intervals"] = ["delegate"]
-    duration_analysis["reduction"]["seconds"] = 1.0
+    duration_analysis["review_process_reduction"] = {"seconds": 1.0, "basis": "抽出の短縮"}
     paths[4].write_text(json.dumps(duration_analysis, ensure_ascii=False), encoding="utf-8")
 
     assert report.main(_argv(paths, "generate")) == 0
     content = paths[-1].read_text(encoding="utf-8")
     assert "同一区間集合の改善後見込み3.000秒" in content
+
+
+def test_target_session_reduction_does_not_reduce_review_duration(tmp_path: pathlib.Path) -> None:
+    """対象セッションの短縮見込みを振り返り工程の比較から差し引かない。"""
+    paths = _inputs(tmp_path)
+    duration_analysis = json.loads(paths[4].read_text(encoding="utf-8"))
+    duration_analysis["target_session_reduction"]["seconds"] = 100.0
+    paths[4].write_text(json.dumps(duration_analysis, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 0
+    content = paths[-1].read_text(encoding="utf-8")
+    assert "対象セッションの削減見込み: 100.000秒" in content
+    assert "振り返り工程の削減見込み: 指定なし" in content
+    assert "同一区間集合の観測時間5.000秒" in content
+
+
+def test_review_reduction_cannot_exceed_observed_comparison(tmp_path: pathlib.Path) -> None:
+    """振り返り工程の短縮見込みは観測済み区間の合計までに限る。"""
+    paths = _inputs(tmp_path)
+    duration_analysis = json.loads(paths[4].read_text(encoding="utf-8"))
+    duration_analysis["review_process_reduction"] = {"seconds": 6.0, "basis": "抽出の短縮"}
+    paths[4].write_text(json.dumps(duration_analysis, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 2
+    assert not paths[-1].exists()
 
 
 def test_uncertain_candidate_cannot_be_excluded_without_reason(tmp_path: pathlib.Path) -> None:

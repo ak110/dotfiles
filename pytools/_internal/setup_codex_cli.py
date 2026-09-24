@@ -96,9 +96,14 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
     公式インストーラーは未導入なら新規導入、導入済みなら更新として同じ処理経路を使うため、
     導入済み判定による分岐を設けない。
     """
-    executable = _find_powershell() if sys.platform == "win32" else "sh"
+    windows = sys.platform == "win32"
+    executable = setup_cli_common.find_powershell() if windows else "sh"
     owns_client = client is None
-    active_client = client or httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True)
+    active_client = client or httpx.Client(
+        timeout=_HTTP_TIMEOUT,
+        follow_redirects=True,
+        verify=setup_cli_common.installer_ssl_verify(windows=windows),
+    )
     suffix = ".ps1" if sys.platform == "win32" else ".sh"
     url = "https://chatgpt.com/codex/install.ps1" if sys.platform == "win32" else "https://chatgpt.com/codex/install.sh"
     temp_path: Path | None = None
@@ -142,15 +147,6 @@ def _installer_path() -> str:
         entry for entry in inherited_entries if entry and entry != visible_bin and shutil.which("codex", path=entry) is None
     ]
     return os.pathsep.join([visible_bin, *retained_entries])
-
-
-def _find_powershell() -> str:
-    """PowerShell 7を優先し、利用可能なPowerShell実行ファイルを返す。"""
-    for name in ("pwsh", "powershell"):
-        executable = shutil.which(name)
-        if executable is not None:
-            return executable
-    raise RuntimeError("Codexの公式インストーラーを実行できるPowerShellが見つからない")
 
 
 def _get_installer(client: httpx.Client, url: str) -> httpx.Response:

@@ -489,14 +489,14 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
 
 @pytest.mark.asyncio
 async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harness: _BrowserHarness) -> None:
-    """390px幅でもフィルターを開いて示し、各項目を2段で描画する。"""
+    """390px幅では一覧を先に示し、各項目を2段で描画する。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
     row = page.locator("#entry-list .entry-row").first
     await row.wait_for(state="visible")
 
-    assert await page.locator(".filters details").evaluate("element => element.open")
+    assert not await page.locator(".filters details").evaluate("element => element.open")
     cells = row.locator(".entry-cell")
     pseudo_content = await cells.evaluate_all(
         "elements => elements.map(element => getComputedStyle(element, '::before').content)"
@@ -523,9 +523,9 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
-    error_region = page.locator("#global-error")
-    error_message = page.locator("#global-error-message")
-    close_button = page.get_by_role("button", name="エラーメッセージを閉じる")
+    error_region = page.locator("#operation-notice")
+    error_message = page.locator("#operation-notice-message")
+    close_button = page.get_by_role("button", name="操作通知を閉じる")
 
     async def fail_first_list_request(route: playwright.async_api.Route) -> None:
         await route.fulfill(
@@ -538,13 +538,10 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
     await page.locator("#refresh-button").click()
     await playwright.async_api.expect(error_message).to_have_text("一覧取得失敗")
     await playwright.async_api.expect(error_region).to_be_visible()
-    await page.locator("#refresh-button").focus()
-    await page.keyboard.press("Tab")
-    await page.keyboard.press("Tab")
+    await close_button.focus()
     await playwright.async_api.expect(close_button).to_be_focused()
     await page.keyboard.press("Enter")
     await playwright.async_api.expect(error_region).to_be_hidden()
-    await playwright.async_api.expect(error_message).to_have_text("")
     await playwright.async_api.expect(page.locator("#refresh-button")).to_be_focused()
     await page.unroute("**/api/entries?*", fail_first_list_request)
 
@@ -562,8 +559,8 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
     metrics = await error_region.evaluate(
         """element => {
-          const message = document.getElementById('global-error-message').getBoundingClientRect();
-          const close = document.getElementById('global-error-close-button').getBoundingClientRect();
+          const message = document.getElementById('operation-notice-message').getBoundingClientRect();
+          const close = document.getElementById('operation-notice-close-button').getBoundingClientRect();
           return {
             scrollWidth: document.documentElement.scrollWidth,
             viewportWidth: window.innerWidth,
@@ -594,7 +591,7 @@ async def test_global_error_closed_during_sync_restores_refresh_focus(
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     refresh_button = page.locator("#refresh-button")
-    close_button = page.get_by_role("button", name="エラーメッセージを閉じる")
+    close_button = page.get_by_role("button", name="操作通知を閉じる")
 
     sync_started = asyncio.Event()
     release_sync = asyncio.Event()
@@ -620,12 +617,12 @@ async def test_global_error_closed_during_sync_restores_refresh_focus(
     await page.route("**/api/entries?*", fail_entries)
     # 種別フィルターの変更経路を、値を変えずに起動する。
     await page.locator("#kind-filter").dispatch_event("change")
-    await playwright.async_api.expect(page.locator("#global-error")).to_be_visible()
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_visible()
     await page.unroute("**/api/entries?*", fail_entries)
 
     await close_button.focus()
     await close_button.click()
-    await playwright.async_api.expect(page.locator("#global-error")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
     await playwright.async_api.expect(refresh_button).to_be_disabled()
 
     release_sync.set()
@@ -673,9 +670,9 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator('#entry-list .entry-select[data-kind="unknown"]').count() == 1
 
     awi_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="awi.md")
-    assert await awi_row.locator(".entry-kind").text_content() == "awi"
+    assert await awi_row.locator(".entry-kind").text_content() == "作業項目"
     assert await awi_row.locator(".plan-badge").text_content() == "plan"
-    assert await awi_row.locator(".state-badge").text_content() == "inbox"
+    assert await awi_row.locator(".state-badge").text_content() == "未処理"
     assert await awi_row.locator(".filename-cell").text_content() == "awi.md"
     assert await awi_row.locator(".summary-cell").text_content() == "編集対象の本文"
 
@@ -726,7 +723,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#kind-filter").select_option("awi")
     await playwright.async_api.expect(page.locator("#answer-filter")).to_be_disabled()
     assert await page.locator("#answer-filter").input_value() == "all"
-    assert await page.locator("#source-filter option").all_text_contents() == ["すべて", "human", "agent"]
+    assert await page.locator("#source-filter option").all_text_contents() == ["すべて", "人間", "エージェント"]
     async with page.expect_response(
         lambda response: response.url.endswith("/api/entries?type=awi&status=active&answered=all&source_kind=agent&page=1")
     ):
@@ -903,14 +900,14 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認事項 / 未処理")
     await detail.get_by_role("button", name="回答を変更", exact=True).click()
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
 
     await page.locator("#state-filter").select_option("all")
     await page.locator('.entry-select[data-key="adopted/adopted.md"]').click()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 採用済み")
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_visible()
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_have_text("この項目は編集と回答の対象外です。")
     await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
@@ -954,7 +951,7 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
 
     await page.locator('.entry-select[data-key="rejected/rejected.md"]').click()
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_hidden()
-    await playwright.async_api.expect(detail.get_by_role("button", name="inboxへ戻す", exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.get_by_role("button", name="受信へ戻す", exact=True)).to_be_visible()
 
 
 @pytest.mark.asyncio
@@ -1190,10 +1187,10 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     processing_row = page.locator('.entry-select[data-key="processing/same.md"]')
     await processing_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 処理中")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
     harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 処理中")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
 
     await detail.get_by_role("button", name="編集", exact=True).click()
@@ -1222,7 +1219,7 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     moving.rename(moved)
     harness.current_state.publish()
     await delete_dialog.wait_for(state="hidden")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 処理中")
     await playwright.async_api.expect(detail.locator("#detail-dialog-body")).to_be_focused()
 
     await detail.get_by_role("button", name="削除").click()
@@ -1364,7 +1361,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#result-status")).to_have_text("4件を表示")
+    await playwright.async_api.expect(page.locator("#result-status")).to_have_text("")
     await playwright.async_api.expect(page.locator('#target-filter option[value="example/repo"]')).to_have_count(1)
     await _open_filters(page)
     first_started = asyncio.Event()
@@ -1501,7 +1498,10 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         assert await field.input_value() == user_input
         await playwright.async_api.expect(detail.get_by_role("button", name=submit_name, exact=True)).to_be_disabled()
         await page.unroute(mutation_pattern, fail_mutation)
-        await page.keyboard.press("Escape")
+        async with page.expect_event("dialog") as confirmation:
+            press = asyncio.create_task(page.keyboard.press("Escape"))
+        await (await confirmation.value).accept()
+        await press
 
     await exercise(
         "inbox/awi.md",
@@ -2295,7 +2295,7 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    assert await page.title() == "atk serve"
+    assert await page.title() == "計画ファイル - atk serve"
     assert await page.evaluate("() => window.__atkReloadMarker") == "kept"
     assert await page.evaluate("() => location.pathname") == "/plans"
 
@@ -2422,7 +2422,8 @@ async def test_initial_screen_request_does_not_block_other_screen_prefetch(
     try:
         await harness.page.goto(harness.base_url + "/sessions")
         await playwright.async_api.expect(harness.page.locator("#screen-sessions")).to_be_visible()
-        await asyncio.wait_for(asyncio.gather(sync_requested.wait(), plans_requested.wait()), timeout=5)
+        await asyncio.wait_for(plans_requested.wait(), timeout=5)
+        assert not sync_requested.is_set()
     finally:
         sessions_release.set()
         await asyncio.wait_for(sessions_handled.wait(), timeout=5)
@@ -2703,6 +2704,9 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
     await row.locator(".entry-copy").click()
 
     assert await page.evaluate("() => navigator.clipboard.readText()") == f"{filename} {summary}"
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
+    await playwright.async_api.expect(page.locator("#result-status")).to_contain_text("コピーしました")
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピー", timeout=4000)
     assert await page.locator("#detail-dialog").evaluate("element => element.open") is False
 
 
@@ -2717,7 +2721,14 @@ async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> Non
     ):
         await harness.page.goto(harness.base_url + path)
         await harness.page.locator(selector).first.wait_for(state="visible")
-        assert await harness.page.title() == "atk serve"
+        assert (
+            await harness.page.title()
+            == {
+                "/": "ワークアイテム - atk serve",
+                "/plans": "計画ファイル - atk serve",
+                "/sessions": "セッション - atk serve",
+            }[path]
+        )
 
 
 @pytest.mark.asyncio
@@ -2766,25 +2777,27 @@ async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _
 
 @pytest.mark.asyncio
 async def test_initial_sync_shows_work_item_loading(browser_harness: _BrowserHarness) -> None:
-    """初回同期の応答待ちから一覧の処理中表示が続くことを検証する。"""
+    """初回表示はGit同期を待たず、一覧取得中だけナビゲーションへ表示する。"""
     page = browser_harness.page
-    sync_started = asyncio.Event()
-    release_sync = asyncio.Event()
+    entries_started = asyncio.Event()
+    release_entries = asyncio.Event()
+    sync_calls: list[str] = []
 
-    async def delay_sync(route: playwright.async_api.Route) -> None:
-        sync_started.set()
-        await release_sync.wait()
+    async def track_sync(route: playwright.async_api.Route) -> None:
+        sync_calls.append(route.request.url)
         await route.continue_()
 
-    await page.route("**/api/sync", delay_sync)
+    await page.route("**/api/sync", track_sync)
+    await page.route("**/api/entries?*", functools.partial(_hold_route, started=entries_started, release=release_entries))
     try:
         await page.goto(browser_harness.base_url + "/")
-        await asyncio.wait_for(sync_started.wait(), timeout=5)
+        await asyncio.wait_for(entries_started.wait(), timeout=5)
         await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
     finally:
-        release_sync.set()
+        release_entries.set()
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    assert not sync_calls
 
 
 @pytest.mark.asyncio
@@ -2865,12 +2878,12 @@ async def test_manual_sync_stays_busy_until_entries_render(browser_harness: _Bro
         await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
         await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "true")
         await playwright.async_api.expect(page.locator("#refresh-button")).to_be_disabled()
-        await playwright.async_api.expect(page.locator("#sync-result")).to_have_text("")
+        await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
         await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/delayed-sync.md"]')).to_have_count(0)
     finally:
         release_entries.set()
     await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/delayed-sync.md"]')).to_be_visible()
-    await playwright.async_api.expect(page.locator("#sync-result")).to_have_text("Git同期が完了しました。")
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
     await playwright.async_api.expect(page.locator("#refresh-button")).to_be_enabled()
@@ -3013,8 +3026,6 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
 
     for path, screen in (("/", "#screen-wi"), ("/plans", "#screen-plans"), ("/sessions", "#screen-sessions")):
         await harness.page.goto(harness.base_url + path)
-        if path == "/":
-            await playwright.async_api.expect(harness.page.locator("#sync-result")).to_contain_text("完了")
         header = harness.page.locator(f"{screen} .app-header")
         await header.wait_for(state="visible")
         header_box = await header.bounding_box()
@@ -3239,7 +3250,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "invalid-json" not in await broken_summary.inner_text()
 
     await harness.page.locator("#sessions-filter").fill("Claudeの発話")
-    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
+    await harness.page.locator('#sessions .session-item[data-engine="claude"]').wait_for(state="visible")
     assert await harness.page.locator('#sessions .session-item[data-engine="claude"]').count() == 1
 
     await harness.page.locator("#sessions-filter").fill("/home/aki/proj")
@@ -3247,7 +3258,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert await harness.page.locator('#sessions .session-item[data-engine="claude"]').count() == 1
 
     await harness.page.locator("#sessions-filter").fill("browser-test")
-    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
+    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 3")
 
     await harness.page.locator("#sessions-filter").fill("")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
@@ -3364,6 +3375,7 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
     page = screen_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#plans-menu-btn").click()
     await page.locator("#files .file").first.click()
     await page.locator("#preview h1").wait_for(state="visible")
 
@@ -3384,7 +3396,7 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
 
 @pytest.mark.asyncio
 async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness: _ScreenHarness) -> None:
-    """700・701・768pxでは一覧を初期表示し、769pxから通常配置へ戻す。"""
+    """700・701・768pxでは一覧をメニューで開き、769pxから通常配置へ戻す。"""
     page = screen_harness.page
     for width in (700, 701, 768, 769):
         mobile = width <= 768
@@ -3392,8 +3404,10 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
         await page.goto(screen_harness.base_url + "/plans")
         await page.locator("#files .file").first.wait_for(state="visible")
-        assert await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')") is mobile
+        assert not await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')")
         if mobile:
+            await page.locator("#plans-menu-btn").click()
+            assert await page.locator("#plans-menu-btn").get_attribute("aria-expanded") == "true"
             assert await page.locator("#copy-btn .short-label").is_visible()
             assert not await page.locator("#copy-btn .wide-label").is_visible()
             assert (
@@ -3408,7 +3422,9 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
         await page.goto(screen_harness.base_url + "/sessions")
         await page.locator("#sessions .session-item").first.wait_for(state="visible")
-        assert await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')") is mobile
+        assert not await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')")
+        if mobile:
+            await page.locator("#sessions-menu-btn").click()
         await page.locator("#sessions .session-item").first.click()
         await page.locator("#detail .event").first.wait_for(state="visible")
         assert not await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')")
@@ -3633,24 +3649,24 @@ async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarn
 
     await harness.page.locator('a[data-plan-path="plan.detail.md"]').click()
     await harness.page.get_by_role("heading", name="詳細ページ").wait_for(state="visible")
-    assert await harness.page.title() == "atk serve"
+    assert await harness.page.title() == "計画ファイル - atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.bugs.md"]').click()
     await harness.page.get_by_role("heading", name="バグページ").wait_for(state="visible")
-    assert await harness.page.title() == "atk serve"
+    assert await harness.page.title() == "計画ファイル - atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.plan-review.tsv"]').click()
     await harness.page.get_by_role("columnheader", name="ラウンド").wait_for(state="visible")
     await harness.page.get_by_role("cell", name="implementation-review").wait_for(state="visible")
-    assert await harness.page.title() == "atk serve"
+    assert await harness.page.title() == "計画ファイル - atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.exec-review.tsv"]').click()
     await harness.page.get_by_role("columnheader", name="対応不要理由").wait_for(state="visible")
-    assert await harness.page.title() == "atk serve"
+    assert await harness.page.title() == "計画ファイル - atk serve"
 
     await harness.page.locator('a[data-plan-path="plan.md"]').click()
     await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
-    assert await harness.page.title() == "atk serve"
+    assert await harness.page.title() == "計画ファイル - atk serve"
 
 
 @pytest.mark.asyncio
@@ -3783,7 +3799,7 @@ async def test_later_file_selection_wins_when_first_response_arrives_last(
     await harness.page.evaluate(
         "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     )
-    await harness.page.wait_for_function("document.title === 'atk serve'")
+    await harness.page.wait_for_function("document.title === '計画ファイル - atk serve'")
 
     assert await harness.page.get_by_role("heading", name="後の選択").is_visible()
     assert not await harness.page.get_by_role("heading", name="先の選択").is_visible()
@@ -3840,7 +3856,7 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
         "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     )
 
-    assert await harness.page.title() == "atk serve"
+    assert await harness.page.title() == "計画ファイル - atk serve"
     assert not await harness.page.locator("#copy-btn").is_disabled()
     assert not await harness.page.locator("#copy-path-btn").is_disabled()
     assert await harness.page.locator("#meta-mobile .meta-path").text_content() == "second.md"
@@ -3911,3 +3927,166 @@ async def test_forwarded_prefix_uses_cdn_for_mermaid(screen_harness: _ScreenHarn
         assert _MERMAID_CDN_URL in harness.requests
     finally:
         await harness.page.unroute(route_pattern, add_forwarded_prefix)
+
+
+@pytest.mark.asyncio
+async def test_session_tree_expands_one_branch_and_retains_keyboard_focus(screen_harness: _ScreenHarness) -> None:
+    """親の展開操作で子だけを表示し、子の選択後もフォーカスを維持する。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    rows = page.locator("#sessions .session-tree-row")
+    await playwright.async_api.expect(rows).to_have_count(2)
+    parent = rows.filter(has=page.locator('.session-item[data-engine="claude"]'))
+    toggle = parent.locator(".session-tree-toggle")
+    await toggle.focus()
+    await page.keyboard.press("Enter")
+    await playwright.async_api.expect(toggle).to_have_attribute("aria-expanded", "true")
+    await playwright.async_api.expect(rows).to_have_count(3)
+    child = rows.filter(has=page.locator('.session-item[data-path$="agent-first.jsonl"]'))
+    await playwright.async_api.expect(child).to_have_attribute("aria-level", "2")
+    child_button = child.locator(".session-item")
+    await child_button.focus()
+    await page.keyboard.press("Enter")
+    await playwright.async_api.expect(child_button).to_be_focused()
+    await playwright.async_api.expect(child_button).to_have_attribute("aria-current", "true")
+    await toggle.focus()
+    await page.keyboard.press("Enter")
+    await playwright.async_api.expect(toggle).to_have_attribute("aria-expanded", "false")
+    await playwright.async_api.expect(rows).to_have_count(2)
+
+
+@pytest.mark.asyncio
+async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
+    """狭幅の一覧は閉じた状態でTab対象から外れ、開閉と画面切替の焦点を保つ。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 320, "height": 720})
+    await page.emulate_media(reduced_motion="reduce")
+    await page.goto(screen_harness.base_url + "/plans")
+    for name, heading in (("plans", "計画ファイル"), ("sessions", "セッション")):
+        if name == "sessions":
+            await page.locator('#screen-plans nav.app-nav a[href$="/sessions"]').click()
+            await playwright.async_api.expect(page.locator("#screen-sessions h1")).to_be_focused()
+        assert await page.title() == f"{heading} - atk serve"
+        sidebar = page.locator(f"#{name}-sidebar")
+        menu = page.locator(f"#{name}-menu-btn")
+        search = page.locator(f"#{name}-filter")
+        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
+        assert await search.get_attribute("id") == await page.get_by_label(f"{heading}を検索").get_attribute("id")
+        await menu.click()
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
+        await playwright.async_api.expect(search).to_be_focused()
+        await page.keyboard.press("Escape")
+        await playwright.async_api.expect(menu).to_be_focused()
+        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
+        await page.evaluate("() => window.scrollTo(0, 0)")
+        duration = await menu.evaluate("element => getComputedStyle(element).transitionDuration")
+        assert duration == "0s"
+
+
+@pytest.mark.asyncio
+async def test_work_item_filter_fit_order_and_computed_contrast(browser_harness: _BrowserHarness) -> None:
+    """標準幅でフィルター値が収まり、操作順と文字・入力境界のコントラストを保つ。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 1280, "height": 800})
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    metrics = await page.evaluate("""() => {
+      const select = document.querySelector('#state-filter');
+      const label = document.querySelector('label[for="state-filter"]');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.font = getComputedStyle(select).font;
+      const valueWidth = ctx.measureText(select.selectedOptions[0].textContent).width;
+      const rgb = value => value.match(/[\\d.]+/g).slice(0, 3).map(Number);
+      const luminance = value => rgb(value).map(channel => {
+        const v = channel / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+      const contrast = (first, second) => {
+        const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+      };
+      const secondary = document.querySelector('#entry-count');
+      const search = document.querySelector('#search-input');
+      const row = document.querySelector('#entry-list .entry-select');
+      return {
+        fits: select.clientWidth >= valueWidth + 32,
+        clientWidth: select.clientWidth,
+        valueWidth,
+        sidebarWidth: select.closest('.filters').clientWidth,
+        labelAbove: label.getBoundingClientRect().bottom <= select.getBoundingClientRect().top,
+        filterBeforeList: Boolean(search.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING),
+        textContrast: contrast(getComputedStyle(secondary).color, getComputedStyle(secondary.closest('.card')).backgroundColor),
+        borderContrast: contrast(getComputedStyle(select).borderTopColor, getComputedStyle(select).backgroundColor)
+      };
+    }""")
+    assert metrics["fits"] and metrics["labelAbove"] and metrics["filterBeforeList"], metrics
+    assert metrics["textContrast"] >= 4.5
+    assert metrics["borderContrast"] >= 3
+
+
+@pytest.mark.asyncio
+async def test_changed_detail_inputs_confirm_discard_and_unchanged_input_closes(browser_harness: _BrowserHarness) -> None:
+    """変更済みの編集・回答・コメント入力を閉じる際は破棄確認を表示し、取消時に入力を保持する。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    detail = page.get_by_role("dialog", name="詳細")
+
+    await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
+    await detail.get_by_role("button", name="編集", exact=True).click()
+    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(detail).to_be_hidden()
+
+    for key, mode, field_id in (
+        ("inbox/awi.md", "編集", "edit-content"),
+        ("inbox/question.md", "回答", "answer-input"),
+        ("inbox/awi.md", "ユーザーコメント", "user-comment-input"),
+    ):
+        await page.locator(f'.entry-select[data-key="{key}"]').click()
+        await detail.get_by_role("button", name=mode, exact=True).click()
+        field = detail.locator(f"#{field_id}")
+        await field.fill((await field.input_value()) + "変更")
+        async with page.expect_event("dialog") as confirmation:
+            press = asyncio.create_task(page.keyboard.press("Escape"))
+        prompt = await confirmation.value
+        assert prompt.message == "変更した入力を破棄しますか？"
+        await prompt.dismiss()
+        await press
+        await playwright.async_api.expect(detail).to_be_visible()
+        assert (await field.input_value()).endswith("変更")
+        async with page.expect_event("dialog") as confirmation:
+            click = asyncio.create_task(detail.locator("#detail-close-button").click())
+        await (await confirmation.value).accept()
+        await click
+        await playwright.async_api.expect(detail).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_plan_and_session_lists_expand_after_hundred_items(
+    screen_harness: _ScreenHarness,
+    tmp_path: Path,
+) -> None:
+    """50件は全件表示し、100件を超えた一覧だけスクロールに応じて追加描画する。"""
+    page = screen_harness.page
+    for index in range(49):
+        (screen_harness.root / f"bulk-{index:03d}.md").write_text(f"# 計画 {index}\n", encoding="utf-8")
+    await page.goto(screen_harness.base_url + "/plans")
+    await playwright.async_api.expect(page.locator("#files .file")).to_have_count(50)
+    for index in range(49, 110):
+        (screen_harness.root / f"bulk-{index:03d}.md").write_text(f"# 計画 {index}\n", encoding="utf-8")
+    await page.reload()
+    await playwright.async_api.expect(page.locator("#files .file")).to_have_count(100)
+    await page.locator("#files-sentinel").scroll_into_view_if_needed()
+    await playwright.async_api.expect(page.locator("#files .file")).to_have_count(111)
+
+    project = tmp_path / "claude" / "projects" / "bulk"
+    project.mkdir(parents=True)
+    for index in range(110):
+        record = {"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"content": f"会話 {index}"}}
+        (project / f"bulk-{index:03d}.jsonl").write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    await page.goto(screen_harness.base_url + "/sessions")
+    await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(100)
+    await page.locator("#sessions-sentinel").scroll_into_view_if_needed()
+    await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(112)

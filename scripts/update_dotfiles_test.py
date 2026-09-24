@@ -1,6 +1,6 @@
 """`scripts/update_dotfiles.py`のテスト。
 
-通常5段の直列実行順序・fail-fast・排他ロック・標準ストリームを検証する。
+通常4段の表示順序・fail-fast・排他ロック・標準ストリームを検証する。
 """
 
 # pylint: disable=protected-access
@@ -453,7 +453,7 @@ def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch,
 
 
 class TestFiveStepsInOrder:
-    """5段が順に呼ばれ、成功時にexit code 0を返すことを検証する。"""
+    """diffを含む5処理が順に呼ばれ、成功時にexit code 0を返すことを検証する。"""
 
     def test_all_steps_succeed(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         calls: list[list[str]] = []
@@ -482,10 +482,10 @@ class TestFiveStepsInOrder:
         assert "--force" in calls[4]
         log_text = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
         assert "update-dotfiles開始" in log_text
-        assert "stage開始: 5/5 chezmoi apply" in log_text
+        assert "stage開始: 4/4 chezmoi apply" in log_text
         assert "update-dotfiles終了: exit=0" in log_text
         assert "private-status-value" not in log_text
-        assert "private-diff-value" not in log_text
+        assert "private-diff-value" in log_text
 
     def test_diff_precedes_forced_apply(
         self,
@@ -507,9 +507,28 @@ class TestFiveStepsInOrder:
         assert calls[3] == ["chezmoi", "diff", "--no-pager"]
         assert calls[4] == ["chezmoi", "apply", "--force"]
         captured = capsys.readouterr()
-        assert "=== [4/5] chezmoi diff" in captured.out
-        assert "diff output\n" in captured.out
+        assert "chezmoi diff" not in captured.out
+        assert "diff output\n" not in captured.out
+        assert "=== [4/4] chezmoi apply" in captured.out
+        assert "diff output\n" in update_dotfiles._LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
         assert not captured.err
+
+
+def test_child_python_output_uses_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PYTHONIOENCODING", "cp932")
+
+    assert update_dotfiles._child_env()["PYTHONIOENCODING"] == "utf-8:replace"  # noqa: SLF001
+
+
+def test_missing_persistent_log_stops_before_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(update_dotfiles, "_configure_persistent_log", lambda _run_id: None)
+    monkeypatch.setattr(
+        update_dotfiles,
+        "_update_git_with_recovery",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("更新を開始してはならない")),
+    )
+
+    assert update_dotfiles.main() == 1
 
 
 class TestStepFailureStopsExecution:

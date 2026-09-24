@@ -28,6 +28,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import bulk as _bulk
+from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
@@ -518,6 +519,37 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             tmp_path.unlink(missing_ok=True)
         _outcome.report_failure(f"編集を拒否した: {error}")
         sys.exit(1)
+    if message is not None:
+        parsed = _frontmatter.parse_frontmatter(edited)
+        if parsed is not None:
+            frontmatter, body = parsed
+            for warning in _style_diagnostics.warnings_for_body(body):
+                print(f"警告: {warning}", file=sys.stderr)
+            original_parsed = _frontmatter.parse_frontmatter(original)
+            if original_parsed is not None and isinstance(original_parsed[0].get("source"), str):
+                original_frontmatter, original_body = original_parsed
+                try:
+                    _add._require_agent_awi_sections(  # pylint: disable=protected-access
+                        original_body,
+                        original_frontmatter,
+                        entry_type=WI_TYPE_AWI,
+                        source=None,
+                        plan_file=args.plan_file,
+                    )
+                except WebInputError:
+                    pass  # 既存の旧書式の編集では本文の表記診断だけを行う。
+                else:
+                    try:
+                        _add._require_agent_awi_sections(  # pylint: disable=protected-access
+                            body,
+                            frontmatter,
+                            entry_type=WI_TYPE_AWI,
+                            source=None,
+                            plan_file=args.plan_file,
+                        )
+                    except WebInputError as error:
+                        _outcome.report_failure(f"編集を拒否した: {error}")
+                        sys.exit(1)
     finalized_content: dict[str, str] = {}
     try:
         edit_entry_content(

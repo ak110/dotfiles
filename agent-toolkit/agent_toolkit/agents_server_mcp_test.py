@@ -800,6 +800,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         return [
             "レビュー基準: 計画",
             f"計画ファイル: {root / 'plan.md'}",
+            f"完成条件証拠: {root / 'completion-evidence.json'}",
             handoff,
         ]
     if task_name == "exec.subagent.md":
@@ -842,6 +843,13 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         ]
     if task_name == "add-wi.subagent.md":
         return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
+    if task_name == "wi-draft-review.subagent.md":
+        return [
+            "レビュー対象: "
+            f"{root / 'draft-1.md'} (対象リポジトリ: {root}; ユーザー原文: {root / 'user-input.md'})\n"
+            f"{root / 'draft-2.md'} (対象リポジトリ: {root})",
+            handoff,
+        ]
     raise ValueError(f"未対応のタスク文書: {task_name}")
 
 
@@ -860,6 +868,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
         "pick-wi.subagent.md",
         "session-review-delegate.subagent.md",
         "session-termination.subagent.md",
+        "wi-draft-review.subagent.md",
     ],
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
@@ -868,6 +877,31 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     extra_params = _observed_input_params(task_name, tmp_path)
 
     assert subject._validate_required_prompt_inputs(task_document, extra_params) is None
+
+
+@pytest.mark.asyncio
+async def test_wi_draft_review_uses_review_model_and_embeds_document(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """複数の通常AWIを原文の所在とChallenger契約付きで一度に起動する。"""
+    task_document = subject._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    response = await subject.start(str(task_document), _observed_input_params(task_document.name, tmp_path), str(tmp_path))
+
+    assert response == {"session_id": "session", "status": "running"}
+    manager.start.assert_awaited_once()
+    model_type, prompt, cwd = manager.start.await_args.args
+    assert model_type == "execute_review"
+    assert cwd == str(tmp_path)
+    assert "## 検証" in prompt
+    assert "references/reviewer.md" in prompt
+    assert "手順7" in prompt
+    assert str(tmp_path / "draft-1.md") in prompt
+    assert str(tmp_path / "draft-2.md") in prompt
+    assert str(tmp_path / "user-input.md") in prompt
+    assert str(task_document) in prompt
 
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -5864,15 +5898,16 @@ async def test_start_accepts_task_document_path_with_spaces(
 
     assert response == {"session_id": "session", "status": "running"}
     manager.start.assert_awaited_once()
+    assert str(task_document) in manager.start.await_args.args[1]
+    assert "必須入力名: 対象" in manager.start.await_args.args[1]
 
 
 @pytest.mark.asyncio
-async def test_start_warns_and_continues_when_task_document_cannot_be_read(
+async def test_start_rejects_task_document_that_cannot_be_read(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """実在確認後に読取不能となった文書は警告してbackendを起動する。"""
+    """実在確認後に読取不能となった文書ではbackendを起動しない。"""
     task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
     manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -5895,11 +5930,10 @@ async def test_start_warns_and_continues_when_task_document_cannot_be_read(
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
 
-    with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
-        response = await subject.start(str(task_document), {}, str(tmp_path))
+    with pytest.raises(ValueError, match="タスク文書をUTF-8で読めません"):
+        await subject.start(str(task_document), {}, str(tmp_path))
 
-    assert response == {"session_id": "session", "status": "running"}
-    assert "タスク文書をUTF-8で読めません" in caplog.text
+    manager.start.assert_not_awaited()
 
 
 def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_path: pathlib.Path) -> None:

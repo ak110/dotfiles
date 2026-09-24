@@ -15,6 +15,7 @@ import datetime
 import logging
 import os
 import pathlib
+import shutil
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
@@ -289,6 +290,8 @@ def _build_options(
         options["stderr"] = stderr
     if debug_file is not None:
         options["extra_args"] = {"debug-file": str(debug_file)}
+    if (cli_path := shutil.which("claude")) is not None:
+        options["cli_path"] = cli_path
     if (settings := _parent_settings()) is not None:
         options["settings"] = settings
     if lightweight:

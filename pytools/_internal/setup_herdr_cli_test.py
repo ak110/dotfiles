@@ -148,6 +148,7 @@ def test_run_installs_windows_direct_install(
     """Windowsでは安定互換パスを対象にPowerShellで公式インストーラーを実行する。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "win32")
+    monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "find_powershell", lambda: "pwsh")
     local_app_data = tmp_path / "custom-local" if use_local_app_data else tmp_path / "AppData" / "Local"
     if use_local_app_data:
         monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))

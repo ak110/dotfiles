@@ -92,15 +92,16 @@ fetchHandler = async url => {
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})};
 };
+elements['refresh-button'].focus();
 const synchronization = elements['refresh-button'].listeners.click();
 await Promise.resolve();
 const disabled = elements['refresh-button'].disabled;
 const duplicateSynchronization = elements['refresh-button'].listeners.click();
 setGlobalError('同期中の外部更新失敗');
-elements['global-error-close-button'].focus();
-elements['global-error-close-button'].listeners.click();
+elements['operation-notice-close-button'].focus();
+elements['operation-notice-close-button'].listeners.click();
 const during = {
-  hidden: elements['global-error'].hidden,
+  hidden: elements['operation-notice'].hidden,
   focused
 };
 releaseSync();
@@ -112,7 +113,7 @@ process.stdout.write(JSON.stringify({
   after: {
     disabled: elements['refresh-button'].disabled,
     focused,
-    hidden: elements['global-error'].hidden
+    hidden: elements['operation-notice'].hidden
   }
 }));
 """
@@ -120,7 +121,7 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "disabled": True,
         "syncCalls": 1,
-        "during": {"hidden": True, "focused": "global-error-close-button"},
+        "during": {"hidden": True, "focused": "operation-notice-close-button"},
         "after": {"disabled": False, "focused": "refresh-button", "hidden": True},
     }
 
@@ -145,7 +146,7 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
-        "heading": "uwi / adopted",
+        "heading": "確認事項 / 採用済み",
         "metadata": [
             "回答状況:回答済み",
             "対象リポジトリ:example/repo",
@@ -277,7 +278,7 @@ process.stdout.write(JSON.stringify({
             "state": "processing",
             "focused": "detail-dialog-body",
         },
-        "reopened": {"state": "awi / processing", "forceVisible": True},
+        "reopened": {"state": "作業項目 / 処理中", "forceVisible": True},
         "missing": {
             "detailOpen": False,
             "deleteOpen": False,

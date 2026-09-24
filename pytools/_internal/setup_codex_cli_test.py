@@ -98,6 +98,41 @@ def _forbid_migration(monkeypatch) -> None:
     )
 
 
+def test_installer_uses_common_windows_trust_source(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _isolate(monkeypatch, tmp_path, "win32")
+    trust = object()
+    verify_calls: list[bool] = []
+    options: list[dict[str, object]] = []
+
+    def verify(*, windows: bool) -> object:
+        verify_calls.append(windows)
+        return trust
+
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            options.append(kwargs)
+
+        def get(self, url: str) -> httpx.Response:
+            return httpx.Response(200, content=b"installer", request=httpx.Request("GET", url))
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "installer_ssl_verify", verify)
+    monkeypatch.setattr(setup_codex_cli.httpx, "Client", Client)
+    monkeypatch.setattr(
+        setup_codex_cli.claude_common,
+        "run_subprocess",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "", ""),
+    )
+
+    result = setup_codex_cli._run_installer(None)  # noqa: SLF001  # pylint: disable=protected-access
+
+    assert result is not None and result.returncode == 0
+    assert options[0]["verify"] is trust
+    assert verify_calls == [True]
+
+
 def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Path) -> None:
     _isolate(monkeypatch, tmp_path, "linux")
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"

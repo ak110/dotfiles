@@ -15,6 +15,7 @@ import sys
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
+from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
@@ -580,6 +581,8 @@ def _cmd_add(
         if message is None:
             sys.exit(1)
         messages = [message]
+    validation_errors: list[str] = []
+    style_warnings: list[str] = []
     for message in messages:
         try:
             if is_agent_environment() and _user_comment.has_reserved_heading(message):
@@ -590,24 +593,32 @@ def _cmd_add(
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             _require_agent_source(frontmatter, args.source)
-            _require_agent_awi_sections(
-                body,
-                frontmatter,
-                entry_type=args.type,
-                source=args.source,
-                plan_file=args.plan_file,
-            )
+            style_warnings.extend(_style_diagnostics.warnings_for_body(body))
+            try:
+                _require_agent_awi_sections(
+                    body,
+                    frontmatter,
+                    entry_type=args.type,
+                    source=args.source,
+                    plan_file=args.plan_file,
+                )
+            except WebInputError as error:
+                validation_errors.append(str(error))
         except WebInputError as error:
             if str(error) == _EMPTY_AWI_ERROR:
                 preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
-                _outcome.report_failure(
+                validation_errors.append(
                     "投入を拒否した: 本文が実質空である"
                     "（空文字・空白のみ・箇条書きマーカー単独文字のいずれか）。"
                     f"該当メッセージの先頭: {preview}。本文を書いてから再投入する"
                 )
             else:
-                _outcome.report_failure(f"投入を拒否した: {error}")
-            sys.exit(1)
+                validation_errors.append(str(error))
+    for warning in style_warnings:
+        print(f"警告: {warning}", file=sys.stderr)
+    if validation_errors:
+        _outcome.report_failure("投入を拒否した: " + "\n".join(validation_errors))
+        sys.exit(1)
     if args.type == WI_TYPE_UWI and args.depends_on:
         _outcome.report_failure("投入を拒否した: --depends-onは--type=awiでのみ指定できる")
         sys.exit(1)

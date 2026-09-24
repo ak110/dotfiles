@@ -120,7 +120,7 @@ function isMobileViewport() {
 }
 
 function setDrawerOpen(open) {
-  document.getElementById("screen-plans").classList.toggle("drawer-open", open);
+  window.__atkDrawer.set("plans", open);
 }
 
 function updateMetaMobile() {
@@ -220,6 +220,8 @@ function createFileItem(file) {
 function updateFileItem(item, file) {
   // 既存ノードのテキスト・クラス・バッジを最新値で上書きする。
   item.className = "file" + (isSelected(file) ? " active" : "");
+  if (isSelected(file)) item.setAttribute("aria-current", "true");
+  else item.removeAttribute("aria-current");
   item.href = filePageUrl(file.host, file.path, fileSource(file));
   const name = item.querySelector(".name");
   if (name) name.textContent = file.path;
@@ -291,6 +293,12 @@ function renderFiles() {
   updateNavButtons();
   updateMetaMobile();
   renderRootWarnings();
+  const empty = document.getElementById("plans-empty");
+  empty.hidden = visibleFiles.length > 0;
+  empty.querySelector("p").textContent = files.length === 0
+    ? `計画ファイルがありません。対象root: ${Object.values(ROOT_DIRS).flatMap(value => typeof value === "string" ? [value] : Object.values(value || {})).join("、")}`
+    : "一致する計画ファイルはありません。";
+  empty.querySelector("button").hidden = !document.getElementById("plans-filter").value;
 }
 
 function renderRootWarnings() {
@@ -334,9 +342,24 @@ function setupSentinelObserver() {
 }
 
 async function refreshFiles() {
-  const res = await (fetch(BASE_PATH + "/api/plans/files"));
-  files = await (res.json());
-  renderFiles();
+  const errorBox = document.getElementById("plans-list-error");
+  try {
+    const res = await fetch(BASE_PATH + "/api/plans/files");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    files = await res.json();
+    errorBox.hidden = true;
+    renderFiles();
+  } catch (error) {
+    errorBox.replaceChildren();
+    const message = document.createElement("span");
+    message.textContent = `計画ファイルの一覧を取得できません: ${error.message} `;
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "再読み込み";
+    retry.addEventListener("click", refreshFiles);
+    errorBox.append(message, retry);
+    errorBox.hidden = false;
+  }
 }
 
 async function searchFullText(query, generation) {
@@ -549,6 +572,20 @@ function endPreviewLoading(generation) {
   document.getElementById("preview").setAttribute("aria-busy", "false");
 }
 
+function showPreviewError(message, retry) {
+  const preview = document.getElementById("preview");
+  preview.replaceChildren();
+  const alert = document.createElement("div");
+  alert.setAttribute("role", "alert");
+  alert.textContent = `計画ファイルの本文を取得できません: ${message} `;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "再読み込み";
+  button.addEventListener("click", retry);
+  alert.append(button);
+  preview.append(alert);
+}
+
 async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("#screen-plans main");
@@ -559,12 +596,14 @@ async function updatePreview() {
     const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (generation !== previewGeneration) return;
     if (!res.ok) {
-      document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
+      showPreviewError(`HTTP ${res.status}`, () => { void updatePreview(); });
       return;
     }
     const html = await (res.text());
     if (generation !== previewGeneration) return;
     await (applyPreviewHtml(html, scrollTop, generation));
+  } catch (error) {
+    if (generation === previewGeneration) showPreviewError(error.message, () => { void updatePreview(); });
   } finally {
     endPreviewLoading(generation);
   }
@@ -597,13 +636,15 @@ async function openFile(host, path, source) {
     const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
     if (generation !== previewGeneration) return;
     if (!res.ok) {
-      document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
+      showPreviewError(`HTTP ${res.status}`, () => { void openFile(host, path, source); });
       if (main) main.scrollTop = 0;
       return;
     }
     const html = await (res.text());
     if (generation !== previewGeneration) return;
     await (applyPreviewHtml(html, 0, generation));
+  } catch (error) {
+    if (generation === previewGeneration) showPreviewError(error.message, () => { void openFile(host, path, source); });
   } finally {
     endPreviewLoading(generation);
   }
@@ -799,6 +840,11 @@ function bindScreenEvents() {
     setDrawerOpen(!document.getElementById("screen-plans").classList.contains("drawer-open"));
   });
   document.getElementById("plans-drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("plans-clear-filter").addEventListener("click", () => {
+    document.getElementById("plans-filter").value = "";
+    scheduleFullTextSearch();
+    document.getElementById("plans-filter").focus();
+  });
   document.getElementById("preview").addEventListener("click", (event) => {
     // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけが選択経路になる。
     // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
@@ -839,15 +885,14 @@ async function init() {
   await (refreshHostInfo());
   await (refreshRootStatus());
   await (refreshFiles());
+  eventSource = connectEvents();
   if (location.pathname === `${BASE_PATH}/plans`) {
     await restoreFileFromUrl();
   } else if (files.length > 0 && !isMobileViewport()) {
     await openFile(files[0].host, files[0].path, fileSource(files[0]));
   }
-  setDrawerOpen(isMobileViewport());
+  setDrawerOpen(false);
   setupSentinelObserver();
-
-  eventSource = connectEvents();
 }
 
 window.__atkScreens = window.__atkScreens || {};

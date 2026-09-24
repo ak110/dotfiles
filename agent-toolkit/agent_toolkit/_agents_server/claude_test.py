@@ -161,6 +161,18 @@ def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch,
     assert captured["extra_args"] == {"debug-file": str(debug_file)}
 
 
+@pytest.mark.parametrize("cli_path", ["/opt/claude/bin/claude", None])
+def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, cli_path: str | None) -> None:
+    """PATHで見つかったCLIだけをSDKへ渡す。"""
+    captured = _capture_options(monkeypatch)
+    monkeypatch.setattr(claude.shutil, "which", lambda _name: cli_path)
+
+    claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
+
+    assert captured.get("cli_path") == cli_path
+    assert ("cli_path" in captured) is (cli_path is not None)
+
+
 def test_build_options_omits_debug_file_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     """保存先を指定しない起動では診断記録の引数を渡さない。"""
     captured = _capture_options(monkeypatch)

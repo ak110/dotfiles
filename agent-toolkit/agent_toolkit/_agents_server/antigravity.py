@@ -366,11 +366,14 @@ class AntigravityManager:
             return
         if not status_file.valid_session_id(session_id):
             raise ValueError(f"invalid Antigravity session_id: {session_id}")
-        self._log_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        path = self._log_directory / f"{session_id}.jsonl"
-        descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
-        with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
-            stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        try:
+            self._log_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path = self._log_directory / f"{session_id}.jsonl"
+            descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+            with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
+                stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except OSError:
+            _LOG.warning("Antigravityイベントログへの書き込みに失敗した: %s", session_id, exc_info=True)
 
     def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
         self.sessions[session.session_id] = session

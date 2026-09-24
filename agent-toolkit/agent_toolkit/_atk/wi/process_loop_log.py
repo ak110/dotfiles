@@ -38,6 +38,10 @@ def log_path() -> Path:
     return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-wi.log"
 
 
+if __name__ == "__main__":
+    print(log_path())
+
+
 def abort_path() -> Path:
     """`atk wi process-loop`の中断要求を保持する状態ファイルのパスを返す。
 

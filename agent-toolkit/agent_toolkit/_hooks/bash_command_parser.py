@@ -287,11 +287,13 @@ class ExecutionSegment:
 
     `resolved`が偽の区間では`tokens`を空とし、助言用検査は当該区間で検出しない。
     `is_agent_toolkit_script`はagent-toolkit配下の配布検査スクリプトを表す。
+    `raw_tokens`は、実行位置が未確定の区間でリダイレクト先を解析するため、元のトークン列を保持する。
     """
 
     tokens: tuple[str, ...]
     resolved: bool
     is_agent_toolkit_script: bool = False
+    raw_tokens: tuple[str, ...] = ()
 
 
 def _split_bash_pipelines(command: str) -> list[list[str]]:
@@ -380,7 +382,7 @@ def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> lis
         except ValueError:
             current.append(ExecutionSegment((), False))
             continue
-        segment = resolve_execution_segment(tokens)
+        segment = dataclasses.replace(resolve_execution_segment(tokens), raw_tokens=tuple(tokens))
         shell_argument = _shell_c_argument(segment.tokens) if segment.resolved else None
         if shell_argument is None:
             current.append(segment)

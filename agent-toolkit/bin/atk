@@ -22,6 +22,24 @@ fi
 # 受け渡しファイルを削除し、実体は監督者を失ったまま動作を継続する。
 SPEC="$(mktemp)"
 trap 'rm -f "${SPEC}"' EXIT
+LOG="$(uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT_DIR}/agent_toolkit/_atk/wi/process_loop_log.py")"
+mkdir -p "$(dirname "${LOG}")"
+received_signal="none"
+log_launcher() {
+    if ! printf '%s event=launcher_%s pid=%s status=%s signal=%s\n' \
+        "$(date '+%Y-%m-%dT%H:%M:%S')" "$1" "$$" "$2" "${received_signal}" >>"${LOG}"; then
+        printf 'process-loop監督ログへ記録できません: %s\n' "${LOG}" >&2
+    fi
+}
+finish_launcher() {
+    status=$?
+    log_launcher exit "${status}"
+    rm -f "${SPEC}"
+}
+trap finish_launcher EXIT
+trap 'received_signal=HUP; exit 129' HUP
+trap 'received_signal=INT; exit 130' INT
+trap 'received_signal=TERM; exit 143' TERM
 export AGENT_TOOLKIT_RESTART_SPEC="${SPEC}"
 args=("$@")
 while :; do
@@ -29,6 +47,7 @@ while :; do
     status=0
     SCRIPT_DIR="$(cd "$(dirname "${SCRIPT}")/.." && pwd)"
     uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "${args[@]}" || status=$?
+    log_launcher child_end "${status}"
     if [ "${status}" -ne 75 ]; then
         exit "${status}"
     fi
@@ -39,8 +58,10 @@ while :; do
     done <"${SPEC}"
     # 先頭要素は次に起動するスクリプトパスであり、空の場合は再起動先を決められない。
     if [ "${#next[@]}" -lt 1 ] || [ -z "${next[0]}" ]; then
+        log_launcher restart_spec_missing "${status}"
         exit "${status}"
     fi
+    log_launcher restart "${status}"
     SCRIPT="${next[0]}"
     args=("${next[@]:1}")
 done

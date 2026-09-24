@@ -877,6 +877,13 @@ def _apply_observation_boundary(records: list[_Record], boundary: datetime.datet
     return [record for record in records if (timestamp := _record_timestamp(record)) is None or timestamp <= boundary]
 
 
+def _started_after_boundary(records: list[_Record], boundary: datetime.datetime) -> bool:
+    """記録の最初の時刻が観測境界より後かを返す。"""
+    timestamps = [_record_timestamp(record) for record in records]
+    known = [timestamp for timestamp in timestamps if timestamp is not None]
+    return bool(known) and min(known) > boundary
+
+
 def _elapsed_until_event(records: list[_Record], until_text: str) -> dict[str, Any] | str:
     """最初の記録から指定時刻までの経過時間イベント又はエラー文を返す。"""
     try:
@@ -1289,6 +1296,7 @@ def _collect_records(
     transcript_path: str,
     main_records: list[_Record],
     codex_home: str | None = None,
+    boundary: datetime.datetime | None = None,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_path = Path(transcript_path)
@@ -1314,12 +1322,16 @@ def _collect_records(
         agents_server_call_ids = _agents_server_call_ids(source.records)
         unresolved_delegation_calls: set[str] = set()
         for subagent in _subagent_records(source):
+            if boundary is not None and _started_after_boundary(subagent.records, boundary):
+                continue
             resolved = subagent.path.resolve()
             if resolved in seen_paths:
                 continue
             seen_paths.add(resolved)
             collected.append(subagent)
         for record in source.records:
+            if boundary is not None and (timestamp := _record_timestamp(record)) is not None and timestamp > boundary:
+                continue
             thread_ids = _thread_ids_from_record(record, agents_server_call_ids)
             call_id = _delegation_output_call_id(record, agents_server_call_ids)
             if call_id and not thread_ids and call_id not in unresolved_delegation_calls:
@@ -3973,7 +3985,7 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
     if boundary is not None:
         records = _apply_observation_boundary(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
-    collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home)
+    collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home, boundary)
     compaction_record_dir = (
         Path(args.compaction_record_dir)
         if args.compaction_record_dir is not None

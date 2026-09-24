@@ -75,12 +75,12 @@ fetchHandler = async url => {
 const synchronization = elements['refresh-button'].listeners.click();
 await Promise.resolve();
 setGlobalError('同期中の外部更新失敗');
-elements['global-error-close-button'].focus();
-elements['global-error-close-button'].listeners.click();
+elements['operation-notice-close-button'].focus();
+elements['operation-notice-close-button'].listeners.click();
 elements['search-input'].focus();
 releaseSync();
 await synchronization;
-process.stdout.write(JSON.stringify({focused, hidden: elements['global-error'].hidden}));
+process.stdout.write(JSON.stringify({focused, hidden: elements['operation-notice'].hidden}));
 """
     )
     assert result == {"focused": "search-input", "hidden": True}
@@ -252,7 +252,7 @@ process.stdout.write(JSON.stringify({
   ambiguous: {
     detailOpen: elements['detail-dialog'].open,
     currentEntryIsNull: currentEntry === null,
-    error: elements['global-error-message'].textContent
+    error: elements['operation-notice-message'].textContent
   }
 }));
 """

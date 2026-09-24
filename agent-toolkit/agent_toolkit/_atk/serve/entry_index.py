@@ -21,6 +21,7 @@ class IndexedEntry:
     state: str
     path: pathlib.Path
     text: str
+    text_folded: str
     metadata: dict[str, typing.Any]
     kind: str | None
     updated_at: str
@@ -31,6 +32,7 @@ class _ParsedFile:
     """状態ディレクトリに依存しないファイル単位の解析結果。"""
 
     text: str
+    text_folded: str
     metadata: dict[str, typing.Any]
     kind: str | None
 
@@ -95,7 +97,7 @@ class EntryIndex:
                     parsed_frontmatter = frontmatter.parse_frontmatter(text)
                     metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
                     kind = common.entry_type_from_metadata(path, metadata) if parsed_frontmatter is not None else None
-                    parsed = _ParsedFile(text=text, metadata=metadata, kind=kind)
+                    parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, kind=kind)
                     cached = _CacheEntry(mtime_ns=file_stat.st_mtime_ns, size=file_stat.st_size, parsed=parsed)
                 try:
                     current_stat = path.stat()
@@ -112,6 +114,7 @@ class EntryIndex:
                         state=state,
                         path=path,
                         text=cached.parsed.text,
+                        text_folded=cached.parsed.text_folded,
                         metadata=cached.parsed.metadata,
                         kind=cached.parsed.kind,
                         updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),

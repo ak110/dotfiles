@@ -11,9 +11,17 @@ PRが存在するという観測を起動の契機から外し、前記2つの�
 
 ## 失敗時の共通規定
 
-いずれの工程が失敗した場合も、成立済みの外部状態を保持し、失敗した工程、外部状態、run URL及び再開点を報告して停止する。
-自動再試行、auto-merge、自動修復、自動rollbackは、いずれもこの処置の外に置く。
-無人の再試行と巻き戻しは、GitHubの公開状態を利用者が観測しないまま変えるためである。
+CIとRelease以外の工程が失敗した場合は、成立済みの外部状態を保持し、失敗した工程、外部状態、run URL及び再開点を報告して停止する。PR作成・マージ操作の再試行とauto-merge、自動修復、自動rollbackは行わない。
+
+CIとReleaseのrunが失敗した場合は、run全体の終端と失敗ログを確認し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「再現性」に従って原因を分類する。ネットワーク断、配布元のタイムアウト、レート制限、ランナー障害など、ログで外部一時要因を疑える場合は、同書の広域障害確認を済ませてから、同じ原因につき失敗jobを一度だけ再実行する。
+
+```sh
+gh run view <失敗したrun ID> --repo ak110/dotfiles --log-failed
+gh run rerun <失敗したrun ID> --repo ak110/dotfiles --failed
+gh run watch <失敗したrun ID> --repo ak110/dotfiles --compact --exit-status
+```
+
+再実行後のログと結果で検収を続ける。再失敗、又は初回ログで外部一時要因を疑えない場合は、成立済みの外部状態、失敗工程、run URL及び再開点を報告して停止する。ログを取得できない場合も、元のrunの失敗を保持して停止する。
 
 ## 対象の選択
 
@@ -64,7 +72,7 @@ git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD origin/de
 gh pr checks <PR番号またはURL> --repo ak110/dotfiles --required --watch --fail-fast
 ```
 
-必須checkの失敗、mergeableでない状態、PR head OIDの変化又は検査対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
+必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。mergeableでない状態、PR head OIDの変化又は検査対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
 
 ## レビューコメントの確認
 
@@ -187,7 +195,7 @@ gh release view statusline-v<version> --repo ak110/dotfiles --json assets,tagNam
 gh api repos/ak110/dotfiles/git/ref/tags/statusline-v<version> --jq .object.sha
 ```
 
-Release run、tag、Release又はassetの検収に失敗した場合は、外部状態、失敗工程、run URL及び再開点を報告する。
+Release runの失敗は「失敗時の共通規定」を適用する。tag、Release又はassetの検収に失敗した場合は、外部状態、失敗工程、run URL及び再開点を報告する。
 
 ## マージ後に到着したレビューの確認
 
@@ -235,12 +243,4 @@ git status --short
 `git status --short`の出力は合否判定に使わず、完了報告へ添える現状の情報として扱う。
 完了報告では、リモートの完了と、ローカル`develop`を同期したかどうかを区別して示す。
 
-マージ後のCI又はReleaseが失敗した場合は、待機終了後の診断で次の読み取りコマンドを使って詳細ログを取得する。
-
-```sh
-gh run view <失敗したrun ID> --repo ak110/dotfiles --log-failed
-```
-
-詳細ログを取得できない場合も、元のCI又はReleaseの失敗を失敗工程として保持し、ログ取得の失敗を併記する。
-
-マージ後のCI又はReleaseが失敗した場合も、成立済みの外部状態、失敗した工程、run URL及び再開点を報告して停止する。
+マージ後のCI又はReleaseが失敗した場合は、待機終了後に「失敗時の共通規定」で診断し、必要なら再実行する。再実行後も失敗した場合は、成立済みの外部状態、失敗した工程、run URL及び再開点を報告して停止する。

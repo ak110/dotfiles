@@ -85,12 +85,12 @@ fetchHandler = async url => {
 refreshKnownUwis = async () => { throw new Error('外部更新失敗'); };
 await reloadFromExternalChange();
 await Promise.resolve();
-const reloadError = elements['global-error-message'].textContent;
+const reloadError = elements['operation-notice-message'].textContent;
 setGlobalError('');
 refreshKnownUwis = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
-process.stdout.write(JSON.stringify({reloadError, initializationError: elements['global-error-message'].textContent}));
+process.stdout.write(JSON.stringify({reloadError, initializationError: elements['operation-notice-message'].textContent}));
 """
     )
     assert result == {"reloadError": "外部更新失敗", "initializationError": "初期化失敗"}
@@ -110,21 +110,21 @@ fetchHandler = async url => {
 const synchronization = elements['refresh-button'].listeners.click();
 await Promise.resolve();
 setGlobalError('同期中の最初のエラー');
-elements['global-error-close-button'].focus();
-elements['global-error-close-button'].listeners.click();
+elements['operation-notice-close-button'].focus();
+elements['operation-notice-close-button'].listeners.click();
 setGlobalError('同期中の後続エラー');
-elements['global-error-close-button'].focus();
+elements['operation-notice-close-button'].focus();
 releaseSync();
 await synchronization;
 process.stdout.write(JSON.stringify({
   focused,
-  hidden: elements['global-error'].hidden,
-  message: elements['global-error-message'].textContent
+  hidden: elements['operation-notice'].hidden,
+  message: elements['operation-notice-message'].textContent
 }));
 """
     )
     assert result == {
-        "focused": "global-error-close-button",
+        "focused": "operation-notice-close-button",
         "hidden": False,
         "message": "同期中の後続エラー",
     }
@@ -1108,7 +1108,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_discard_stale_search_fallback_error_without_overwriting_global_error() -> None:
-    """失効した補助検索のエラーが後発要求のglobal-errorを上書きしない。"""
+    """失効した補助検索のエラーが後発要求の操作通知を上書きしない。"""
     result = _run_node_ui(
         """
 let rejectFallback;
@@ -1135,7 +1135,7 @@ await fallbackReady;
 elements['search-input'].value = 'new';
 const newRequest = loadEntries({announce: true});
 await newRequest;
-elements['global-error'].textContent = '後発要求のエラー';
+elements['operation-notice'].textContent = '後発要求のエラー';
 rejectFallback(new Error('失効した補助検索エラー'));
 await oldRequest;
 process.stdout.write(JSON.stringify({
@@ -1143,7 +1143,7 @@ process.stdout.write(JSON.stringify({
   state: entries[0]?.state,
   notice: elements['list-fallback-notice'].textContent,
   status: elements['result-status'].textContent,
-  error: elements['global-error'].textContent
+  error: elements['operation-notice'].textContent
 }));
 """
     )
@@ -1179,7 +1179,7 @@ rejectAdopted(new Error('旧要求の失敗'));
 await stale;
 process.stdout.write(JSON.stringify({
   candidates: elements['target-filter'].children.map(option => option.value),
-  error: elements['global-error-message'].textContent
+  error: elements['operation-notice-message'].textContent
 }));
 """
     )

@@ -73,6 +73,10 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月14日、Git 2.43.0で実測した。公式`git-rev-parse`文書は`--short=<length>`を、少なくとも指定長を持つ一意な接頭辞と定める。`core.abbrev`を設定していない対象HEADでは`git rev-parse --short HEAD`が9文字、`git rev-parse --short=7 HEAD`が7文字を返した。`grep.lineNumber=true`を指定した`git grep -h -m 1 -F -e <固定文字列> -- AGENTS.md`は`3:<本文>`を返し、同じ検索へ`--no-line-number`を指定すると`<本文>`だけを返した。再検証は、`git config --get core.abbrev`の設定有無を記録し、同じHEADに対する`git rev-parse --short HEAD`と`git rev-parse --short=7 HEAD`の文字数を比較し、後者が7文字以上で一意に解決できることを確認する。続けて`git -c grep.lineNumber=true grep -h -m 1 -F -e <固定文字列> -- <追跡ファイル>`と、`-h`を`--no-line-number`へ置き換えた検索の出力を比較する。
 
+## agent-toolkit/rules/02-agent-operations.md：testの終了状態の表示：2026年9月24日
+
+2026年9月24日、Claude Code 2.1.280のBashツールでは、実在するパスと存在しないパスへの`test -e`がともに`(Bash completed with no output)`を返した。同日のAWI `20260924-032304-001`が両呼び出しを記録する。bash 5.2.15で`test -e /dev/null; echo "test_e_rc=$?"`は標準出力へ`test_e_rc=0`を返し、存在しない`/dev/__agent_toolkit_audit_absent__`では`test_e_rc=1`を返した。再検証はClaude CodeのBashツールで同じ2種類のパスへ`test -e`と表示付きの起動形をそれぞれ渡し、ツール表示と標準出力の値を対比する。
+
 ## agent-toolkit/skills/commit/references/git-identifier.md：revision件数とshell引用：2026年9月20日
 
 2026年9月20日、Git 2.43.0で`git rev-parse --short=7 HEAD HEAD~1`が標準エラーへ`fatal: Needed a single revision`を書いて終了コード128となることを確認した。PowerShell 7.6.0では、未引用の`git rev-parse --verify HEAD^{commit}`が同じエラーと終了コード128を返し、単一引用符で囲んだ`git rev-parse --verify 'HEAD^{commit}'`が完全OIDと終了コード0を返した。再検証は、同じrepositoryで1件と2件のrevisionを渡した`--short=7`の終了状態を比較し、PowerShellでpeel式の引用有無によるGitの受理結果を比較する。
@@ -194,6 +198,12 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2回起動した。debugログはどちらも`SessionEnd:other`を非同期hookとして登録し、予算を`600000ms`と記録した。hookの完了状態は2回とも0で、事前に各セッションIDへ登録した管理対象一時領域は終了後に実在しなかった。標準エラーは空で、debugログにも`Hook cancelled`は現れなかった。CLI本体は2回とも終了コード143で、経過時間は11.60秒と16.45秒だったため、全プラグイン構成での通常応答の完了は未確認である。非同期hookの実行時間もdebugログからは分離できない。
 
 同日、`hooks.json`のSessionEnd登録と同じコマンド・`async: true`だけを一時設定へ写し、`--setting-sources ''`と`--settings`で指定した`claude -p`を実行した。CLIは終了コード0で、結果JSONは`terminal_reason: completed`、`result: OK`だった。標準エラーは空で、debugログに`Hook cancelled`はなく、`SessionEnd:other`を非同期hookとして登録した記録、`600000ms`の予算及び完了状態0があった。同一`session_id`で事前登録した管理対象一時領域は、CLI終了後に実在しなかった。この検収はSessionEnd単独構成の正常終了を示す。全プラグイン構成を用いた同日の追加試行も終了コード143だったため、その正常終了は引き続き未確認である。再検証は、`claude -p`へ同じSessionEnd設定、専用の`--session-id`、`--debug-file`を指定し、CLIの終了コードと結果JSON、同IDで作成した領域の終了後の実在、標準エラー、debugログの登録・完了状態・予算・`Hook cancelled`の有無を照合する。
+
+2026年9月24日、Claude Code 2.1.281を作業ツリーのagent-toolkitを`--plugin-dir`で読み込む全プラグイン構成で再検証した。`claude -p`に専用の`--session-id`、`--debug-file`、`--output-format json`を指定し、標準入力を`/dev/null`へ接続した。外側に時間制限は設けなかった。
+
+先の終了コード143は、検証元から継承した`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`による。再現試行の`strace`はagent-toolkitのStop hookの子プロセスからCLI本体への`SIGTERM`送信を記録した。debugログにも無進捗判定と常駐ループへの中断要求があり、SessionEnd hook自体は完了状態0だった。
+
+常駐ループ用の環境変数を外し、同じ全プラグイン構成でCLIを起動すると、7秒で終了コード0となった。結果JSONは`terminal_reason: completed`、`result: OK`、`is_error: false`を返した。標準エラーは空で、debugログは`SessionEnd:other`を非同期hookとして登録し、予算`600000ms`と完了状態0を記録した。`Hook cancelled`はdebugログと標準エラーの双方に無かった。同じ`session_id`で事前登録した管理対象一時領域は終了後に実在せず、`atk managed-temp list --prefix sessionend-probe`も該当0件を返した。再検証では常駐ループ用の環境変数を検証用CLIへ継承させない。
 
 ## agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日
 

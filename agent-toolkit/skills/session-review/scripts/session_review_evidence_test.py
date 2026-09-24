@@ -747,7 +747,7 @@ def test_observation_boundary_does_not_apply_to_delegate_records(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """親記録の境界より後に終端した委譲先記録を除外しない。"""
+    """境界前に始まった委譲先の終了記録を保持し、後発の委譲先を除く。"""
     transcript = _write_transcript(
         tmp_path,
         [_timestamped_entry("2026-09-01T00:00:01Z", "親記録")],
@@ -755,13 +755,50 @@ def test_observation_boundary_does_not_apply_to_delegate_records(
     _write_subagent(
         transcript.with_suffix("") / "subagents",
         "agent-child",
-        [_timestamped_entry("2026-09-01T00:00:03Z", "境界後の委譲先記録")],
+        [
+            _timestamped_entry("2026-09-01T00:00:01Z", "境界前の委譲先記録"),
+            _timestamped_entry("2026-09-01T00:00:03Z", "境界後の委譲先結果"),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-review",
+        [
+            _timestamped_entry("2026-09-01T00:00:04Z", "後発の振り返り失敗"),
+            _hook_attachment(
+                {
+                    "type": "hook_system_message",
+                    "hookName": "After",
+                    "toolUseID": "review",
+                    "content": "[auto-generated: test/review][warn] 後発の振り返り失敗",
+                }
+            )
+            | {"timestamp": "2026-09-01T00:00:05Z"},
+        ],
     )
 
-    assert evidence.main([str(transcript), "--observation-boundary", "2026-09-01T00:00:02Z"]) == 0
+    base = [str(transcript), "--observation-boundary", "2026-09-01T00:00:02Z"]
+    assert evidence.main(base) == 0
 
     events = _read_jsonl(capsys, raw=True)
-    assert next(event for event in events if event["record"] == "agent-child")["text"] == "境界後の委譲先記録"
+    assert [event["text"] for event in events if event["record"] == "agent-child"] == [
+        "境界前の委譲先記録",
+        "境界後の委譲先結果",
+    ]
+    assert all(event["record"] != "agent-review" for event in events)
+
+    assert evidence.main([*base, "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+    assert evidence.main([*base, "--grep", "後発"]) == 0
+    assert _read_jsonl(capsys)[-1] == {"kind": "summary", "count": 0}
+    assert evidence.main([*base, "--stats"]) == 0
+    assert [event["agent"] for event in _events_by_kind(_read_jsonl(capsys), "stats-subagent")] == ["agent-child"]
+
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    assert evidence.main([*base, "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys)
+    assert "後発の振り返り失敗" not in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8")
 
 
 def test_without_observation_boundary_output_is_unchanged(

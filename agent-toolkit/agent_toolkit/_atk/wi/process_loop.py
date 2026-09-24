@@ -164,6 +164,7 @@ def _consume_process_loop_abort() -> bool:
     abort_path = _process_loop_abort_path()
     if not abort_path.exists():
         return False
+    _process_loop_log.append("abort_consumed", path=str(abort_path))
     for bell_index in range(3):
         print("\a", end="", file=sys.stderr, flush=True)
         if bell_index < 2:
@@ -875,11 +876,18 @@ def _restart_process_loop(
     )
     spec_path = os.environ.get(_RESTART_SPEC_ENV)
     if spec_path:
-        pathlib.Path(spec_path).write_text("\n".join([str(script), *rest]) + "\n", encoding="utf-8")
+        try:
+            pathlib.Path(spec_path).write_text("\n".join([str(script), *rest]) + "\n", encoding="utf-8")
+        except OSError as error:
+            _process_loop_log.append("restart_spec_write_failed", error=type(error).__name__, detail=str(error))
+            raise
+        _process_loop_log.append("restart_request", method="launcher", code=_RESTART_EXIT_CODE, script=str(script))
         sys.exit(_RESTART_EXIT_CODE)
     executable = _resolve_executable("uv")
     if executable is None:
+        _process_loop_log.append("restart_unavailable", reason="uv_missing")
         return
+    _process_loop_log.append("restart_request", method="exec", script=str(script))
     restart_argv = [
         executable,
         "run",
@@ -1116,13 +1124,17 @@ def _run_process_session(
     instruction = _process_loop_log.consume_instructions()
     if instruction:
         launch_env[_PROCESS_LOOP_INSTRUCTION_ENV] = instruction
-    result = subprocess.run(
-        session_argv,
-        check=False,
-        env=launch_env,
-        cwd=session_path,
-        creationflags=_session_creation_flags(orchestrator),
-    )
+    try:
+        result = subprocess.run(
+            session_argv,
+            check=False,
+            env=launch_env,
+            cwd=session_path,
+            creationflags=_session_creation_flags(orchestrator),
+        )
+    except OSError as error:
+        _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
+        raise
     _reset_console()
     _console_title.set_console_title("atk wi process-loop")
     _process_loop_log.append(
@@ -1130,11 +1142,15 @@ def _run_process_session(
         elapsed_sec=round(time.monotonic() - session_started_at, 3),
         returncode=result.returncode,
     )
-    if not _is_normal_session_exit(orchestrator, result.returncode, platform=os.name):
+    normal_exit = _is_normal_session_exit(orchestrator, result.returncode, platform=os.name)
+    _process_loop_log.append("session_classified", normal=normal_exit, returncode=result.returncode)
+    if not normal_exit:
         _exit_abnormal_session(orchestrator, result.returncode)
     if _consume_process_loop_abort():
+        _process_loop_log.append("loop_exit", reason="abort")
         return True
     if args.no_update:
+        _process_loop_log.append("loop_continue", reason="no_update")
         return False
     print("process-loopを再起動します。")
     _restart_process_loop(

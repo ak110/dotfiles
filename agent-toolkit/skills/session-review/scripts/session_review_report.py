@@ -66,7 +66,8 @@ _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
 
 --duration-analysis: 次のキーを持つJSON object。
   bottleneck: `interval`（非空文字列）と`seconds`（0以上の有限な数値）を持つJSON object
-  reduction: `seconds`（0以上の有限な数値）と`basis`（非空文字列）を持つJSON object
+  target_session_reduction: 対象セッションの短縮見込み。`seconds`（0以上の有限な数値）と`basis`（非空文字列）を持つJSON object
+  review_process_reduction: 振り返り工程の短縮見込み。同じ構造のJSON object。指定しない場合は観測時間をそのまま比較する
   non_reducible_reason: 削減できない区間又は理由を示す非空文字列
   unmeasured_intervals: `interval`と`reason`を非空文字列で持つJSON objectの配列
   extractor_event: `kind`と`value`を非空文字列で持つJSON object
@@ -161,23 +162,29 @@ def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) 
     """構造化された所要時間分析を検証し、固定順のMarkdown行へ変換する。"""
     expected = {
         "bottleneck",
-        "reduction",
+        "target_session_reduction",
         "non_reducible_reason",
         "unmeasured_intervals",
         "extractor_event",
         "comparison_intervals",
     }
-    if set(value) != expected:
-        raise ReportError(f"所要時間分析のキーが不正である: {sorted(set(value) ^ expected)}")
+    allowed = expected | {"review_process_reduction"}
+    invalid_keys = (expected - set(value)) | (set(value) - allowed)
+    if invalid_keys:
+        raise ReportError(f"所要時間分析のキーが不正である: {sorted(invalid_keys)}")
     bottleneck = value["bottleneck"]
-    reduction = value["reduction"]
+    target_reduction = value["target_session_reduction"]
+    review_reduction_present = "review_process_reduction" in value
+    review_reduction = value.get("review_process_reduction")
     extractor_event = value["extractor_event"]
     unmeasured = value["unmeasured_intervals"]
     comparison_intervals = value["comparison_intervals"]
     if not isinstance(bottleneck, dict) or set(bottleneck) != {"interval", "seconds"}:
         raise ReportError("所要時間分析のbottleneckが不正である")
-    if not isinstance(reduction, dict) or set(reduction) != {"seconds", "basis"}:
-        raise ReportError("所要時間分析のreductionが不正である")
+    if not isinstance(target_reduction, dict) or set(target_reduction) != {"seconds", "basis"}:
+        raise ReportError("所要時間分析のtarget_session_reductionが不正である")
+    if review_reduction_present and (not isinstance(review_reduction, dict) or set(review_reduction) != {"seconds", "basis"}):
+        raise ReportError("所要時間分析のreview_process_reductionが不正である")
     if not isinstance(extractor_event, dict) or set(extractor_event) != {"kind", "value"}:
         raise ReportError("所要時間分析のextractor_eventが不正である")
     if not isinstance(unmeasured, list):
@@ -190,7 +197,19 @@ def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) 
     ):
         raise ReportError("所要時間分析のcomparison_intervalsは重複のない非空文字列配列で指定する")
     bottleneck_seconds = _nonnegative_number(bottleneck["seconds"], "bottleneck.seconds")
-    reduction_seconds = _nonnegative_number(reduction["seconds"], "reduction.seconds")
+    target_reduction_seconds = _nonnegative_number(target_reduction["seconds"], "target_session_reduction.seconds")
+    target_reduction_basis = _nonempty_string(target_reduction["basis"], "target_session_reduction.basis")
+    review_reduction_seconds = (
+        _nonnegative_number(review_reduction["seconds"], "review_process_reduction.seconds")
+        if review_reduction is not None
+        else 0.0
+    )
+    review_reduction_line = (
+        f"- 振り返り工程の削減見込み: {review_reduction_seconds:.3f}秒"
+        f"（{_nonempty_string(review_reduction['basis'], 'review_process_reduction.basis')}）"
+        if review_reduction is not None
+        else "- 振り返り工程の削減見込み: 指定なし"
+    )
     unmeasured_texts: list[str] = []
     for index, interval in enumerate(unmeasured):
         if not isinstance(interval, dict) or set(interval) != {"interval", "reason"}:
@@ -204,7 +223,8 @@ def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) 
         comparison_line = f"- 180秒目標との比較: 未確定（未観測区間: {'、'.join(missing_comparison)}）"
         return [
             f"- ボトルネック: {_nonempty_string(bottleneck['interval'], 'bottleneck.interval')}（{bottleneck_seconds:.3f}秒）",
-            f"- 削減見込み: {reduction_seconds:.3f}秒（{_nonempty_string(reduction['basis'], 'reduction.basis')}）",
+            f"- 対象セッションの削減見込み: {target_reduction_seconds:.3f}秒（{target_reduction_basis}）",
+            review_reduction_line,
             f"- 削減不能部分: {_nonempty_string(value['non_reducible_reason'], 'non_reducible_reason')}",
             f"- 未計測区間: {'、'.join(unmeasured_texts) if unmeasured_texts else 'なし'}",
             f"- 抽出器イベント: {_nonempty_string(extractor_event['kind'], 'extractor_event.kind')}="
@@ -212,9 +232,9 @@ def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) 
             comparison_line,
         ]
     measured_seconds = sum(measured[interval] for interval in comparison_intervals)
-    if reduction_seconds > measured_seconds:
-        raise ReportError("所要時間分析のreduction.secondsが比較対象区間の合計を超える")
-    estimated_seconds = measured_seconds - reduction_seconds
+    if review_reduction_seconds > measured_seconds:
+        raise ReportError("所要時間分析のreview_process_reduction.secondsが比較対象区間の合計を超える")
+    estimated_seconds = measured_seconds - review_reduction_seconds
     difference = estimated_seconds - DURATION_TARGET_SECONDS
     comparison = (
         f"目標を{abs(difference):.3f}秒下回る"
@@ -223,15 +243,17 @@ def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) 
         if difference > 0
         else "目標と一致する"
     )
+    comparison_basis = "改善後見込み" if review_reduction is not None else "観測時間"
     return [
         f"- ボトルネック: {_nonempty_string(bottleneck['interval'], 'bottleneck.interval')}（{bottleneck_seconds:.3f}秒）",
-        f"- 削減見込み: {reduction_seconds:.3f}秒（{_nonempty_string(reduction['basis'], 'reduction.basis')}）",
+        f"- 対象セッションの削減見込み: {target_reduction_seconds:.3f}秒（{target_reduction_basis}）",
+        review_reduction_line,
         f"- 削減不能部分: {_nonempty_string(value['non_reducible_reason'], 'non_reducible_reason')}",
         f"- 未計測区間: {'、'.join(unmeasured_texts) if unmeasured_texts else 'なし'}",
         f"- 抽出器イベント: {_nonempty_string(extractor_event['kind'], 'extractor_event.kind')}="
         f"{_nonempty_string(extractor_event['value'], 'extractor_event.value')}",
         f"- 比較対象区間: {'、'.join(comparison_intervals)}",
-        f"- 180秒目標との比較: 同一区間集合の改善後見込み{estimated_seconds:.3f}秒、{comparison}",
+        f"- 180秒目標との比較: 同一区間集合の{comparison_basis}{estimated_seconds:.3f}秒、{comparison}",
     ]
 
 
