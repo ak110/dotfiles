@@ -412,7 +412,7 @@ class Operations:
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。
 
-        未回答UWIを先頭に置き、残りは種別を混在させてファイル名の降順とする。
+        種別と回答状況を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
         kind_filter = filters.get("type", "all")
@@ -430,26 +430,21 @@ class Operations:
         for indexed in indexed_entries:
             if kind_filter not in ("all", indexed.kind):
                 continue
-            item = _entry(
-                indexed.path,
-                indexed.kind or "unknown",
-                indexed.state,
-                indexed.text,
-                indexed.metadata,
-                indexed.updated_at,
-            )
-            if plan_filter != "all" and item["plan"] != (plan_filter == "plan"):
+            metadata = indexed.metadata
+            is_plan = indexed.kind == common.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str)
+            if plan_filter != "all" and is_plan != (plan_filter == "plan"):
                 continue
-            if answered_filter == "yes" and item["answered"] is not True:
-                continue
-            if answered_filter == "no" and item["answered"] is not False:
-                continue
-            if filters.get("source_empty") == "true":
-                source = item["source"]
-                if not (source is None or isinstance(source, str) and not source.strip()):
+            if answered_filter != "all":
+                answered = common.is_uwi_answered(indexed.text) if indexed.kind == common.WI_TYPE_UWI else None
+                if answered_filter == "yes" and answered is not True:
                     continue
+                if answered_filter == "no" and answered is not False:
+                    continue
+            source = _json_compatible(metadata.get("source"))
+            if filters.get("source_empty") == "true" and not (source is None or isinstance(source, str) and not source.strip()):
+                continue
+            item_target_repo = _json_compatible(metadata.get("target_repo"))
             if target_repo_filter is not None:
-                item_target_repo = item["target_repo"]
                 if not isinstance(item_target_repo, str):
                     continue
                 # 正規化は旧パス形とURL形の統合にだけ用い、解決不能な保存値は原値で照合する。
@@ -458,26 +453,29 @@ class Operations:
                         continue
                 elif _git_remote.canonical_repo(item_target_repo, resolver_cache) != canonical_target_repo:
                     continue
-            if filters.get("source") and item["source"] != filters["source"]:
+            if filters.get("source") and source != filters["source"]:
                 continue
-            if filters.get("source_kind") and _source_kind(item["source"]) != filters["source_kind"]:
+            if filters.get("source_kind") and _source_kind(source) != filters["source_kind"]:
                 continue
-            searchable = (indexed.text, indexed.path.name, item["target_repo"], item["source"])
-            search_values = [str(value or "").casefold() for value in searchable]
-            if not all(any(term in value for value in search_values) for term in query_terms):
-                continue
+            if query_terms:
+                search_values = (
+                    indexed.text_folded,
+                    indexed.path.name.casefold(),
+                    str(item_target_repo or "").casefold(),
+                    str(source or "").casefold(),
+                )
+                if not all(any(term in value for value in search_values) for term in query_terms):
+                    continue
+            item = _entry(
+                indexed.path,
+                indexed.kind or "unknown",
+                indexed.state,
+                indexed.text,
+                metadata,
+                indexed.updated_at,
+            )
             result.append(item)
-        unanswered_uwi_items = sorted(
-            [item for item in result if item["kind"] == common.WI_TYPE_UWI and item["answered"] is False],
-            key=lambda item: str(item["filename"]),
-            reverse=True,
-        )
-        other_items = sorted(
-            [item for item in result if not (item["kind"] == common.WI_TYPE_UWI and item["answered"] is False)],
-            key=lambda item: str(item["filename"]),
-            reverse=True,
-        )
-        return unanswered_uwi_items + other_items, warnings
+        return sorted(result, key=lambda item: str(item["filename"]), reverse=True), warnings
 
     def entries_with_warnings(
         self,
@@ -490,6 +488,14 @@ class Operations:
         if state not in _ENTRY_STATES:
             raise common.WebInputError("stateが不正です")
         path = common.validate_filename(filename, self.private_notes / state)
+        if not path.is_file():
+            candidates = []
+            for current_state in _ENTRY_STATES:
+                candidate = common.validate_filename(filename, self.private_notes / current_state)
+                if candidate.is_file():
+                    candidates.append((current_state, candidate))
+            if len(candidates) == 1:
+                state, path = candidates[0]
         try:
             text = path.read_text(encoding="utf-8")
             parsed = frontmatter.parse_frontmatter(text)
@@ -1056,7 +1062,8 @@ def _register_session_routes(
     @app.get("/api/sessions/list")
     async def sessions_list() -> quart.Response:
         entries, warnings = await serve_sessions.list_sessions(context)
-        return _json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings})
+        roots = [str(context.claude_home / "projects"), str(context.codex_home / "sessions")]
+        return _json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings, "roots": roots})
 
     @app.get("/api/sessions/detail")
     async def sessions_detail() -> quart.Response:

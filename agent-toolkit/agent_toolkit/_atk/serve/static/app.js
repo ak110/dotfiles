@@ -4,7 +4,7 @@
 (() => {
 const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
-const KIND_LABELS = {awi: 'AWI', uwi: 'UWI', unknown: '種別不明'};
+const KIND_LABELS = {awi: '作業項目', uwi: '確認事項', unknown: '種別不明'};
 const STATE_LABELS = {
   inbox: '未処理', processing: '処理中', hold: '保留',
   adopted: '採用済み', rejected: '不採用'
@@ -55,6 +55,9 @@ const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
 let refreshFocusRequested = false;
+let noticeTimer = null;
+let noticeOrigin = null;
+let lastFocusedElement = null;
 
 const byId = id => document.getElementById(id);
 const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
@@ -88,8 +91,8 @@ function setTextMessage(id, message) {
 
 function setGlobalError(message) {
   refreshFocusRequested = false;
-  byId('global-error-message').textContent = message;
-  byId('global-error').hidden = !message;
+  if (message) showToast(message, true);
+  else closeOperationNotice();
 }
 
 function focusRefreshButton() {
@@ -117,16 +120,24 @@ function clearDialogMessages(dialogName) {
 
 function showToast(message, isError = false) {
   const notice = byId('operation-notice');
+  clearTimeout(noticeTimer);
+  noticeOrigin = document.activeElement === document.body ? lastFocusedElement : document.activeElement;
   byId('operation-notice-message').textContent = message;
   notice.dataset.error = String(isError);
   notice.setAttribute('role', isError ? 'alert' : 'status');
   notice.setAttribute('aria-live', isError ? 'assertive' : 'polite');
   notice.hidden = false;
+  if (!isError) noticeTimer = setTimeout(() => { notice.hidden = true; }, 6000);
 }
 
 function closeOperationNotice() {
+  clearTimeout(noticeTimer);
   byId('operation-notice').hidden = true;
-  focusRefreshButton();
+  if (noticeOrigin?.isConnected) {
+    if (noticeOrigin === byId('refresh-button')) focusRefreshButton();
+    else if (!noticeOrigin.disabled) noticeOrigin.focus();
+  }
+  noticeOrigin = null;
 }
 
 function topmostDialog() {
@@ -288,12 +299,12 @@ function renderEntry(entry) {
   const status = appendCell(button, 'status-cell');
   const kind = document.createElement('span');
   kind.className = 'entry-kind';
-  kind.textContent = entry.kind || 'unknown';
+  kind.textContent = KIND_LABELS[entry.kind] || KIND_LABELS.unknown;
   status.append(kind);
   const badge = document.createElement('span');
   badge.className = 'state-badge';
   badge.dataset.state = entry.state;
-  badge.textContent = entry.state || 'unknown';
+  badge.textContent = STATE_LABELS[entry.state] || '状態不明';
   status.append(badge);
   if (entry.plan) {
     const plan = document.createElement('span');
@@ -307,10 +318,11 @@ function renderEntry(entry) {
     attention.textContent = '未回答';
     status.append(attention);
   }
-  appendTextCell(button, 'summary-cell', entry.summary);
+  appendTextCell(button, 'summary-cell', entry.summary || entry.filename);
   button.setAttribute(
     'aria-label',
-    [entry.filename, entry.target_repo || '対象なし', entry.kind || 'unknown', entry.state || 'unknown',
+    [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
+      STATE_LABELS[entry.state] || '状態不明',
       entry.plan ? 'plan' : '',
       unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
@@ -328,6 +340,9 @@ function renderEntry(entry) {
   copy.addEventListener('click', async () => {
       try {
       await (navigator.clipboard.writeText(`${entry.filename} ${entry.summary || ''}`));
+      copy.textContent = 'コピーしました';
+      byId('result-status').textContent = `${entry.filename}をコピーしました。`;
+      setTimeout(() => { if (copy.isConnected) copy.textContent = 'コピー'; }, 2000);
     } catch (error) {
       setGlobalError(`コピーに失敗しました。 ${error.message}`);
     }
@@ -778,6 +793,7 @@ function setDetailMode(mode) {
   byId('save-user-comment-button').hidden = !commenting;
   syncDetailMutationAvailability();
   byId('edit-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
+  byId('adopt-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
   if (!editing) setFieldError(byId('edit-content'), byId('edit-content-error'), '');
   if (!answering) setFieldError(byId('answer-input'), byId('answer-input-error'), '');
   if (!commenting) setFieldError(byId('user-comment-input'), byId('user-comment-input-error'), '');
@@ -820,7 +836,7 @@ function displayEntry(entry) {
   setTextMessage('detail-alert', '');
   byId('detail-view').hidden = false;
   byId('detail-filename').textContent = entry.filename;
-  byId('detail-state').textContent = `${entry.kind || 'unknown'} / ${entry.state || 'unknown'}`;
+  byId('detail-state').textContent = `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[entry.state] || '状態不明'}`;
   byId('detail-state').dataset.state = entry.state;
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
@@ -839,13 +855,24 @@ async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) 
   detailOrigin = origin || document.activeElement;
   detailOriginKey = entryKey(entry);
   clearDialogMessages('detail');
+  const pendingRow = origin?.closest('.entry-row');
+  if (pendingRow) {
+    pendingRow.setAttribute('aria-busy', 'true');
+    pendingRow.classList.add('is-pending');
+  }
   try {
     const payload = await api(`/api/entries/${encodeURIComponent(entry.state)}/${encodeURIComponent(entry.filename)}`);
     if (!requestIsCurrent()) return;
     displayEntry(payload.entry);
     openDetailDialog(detailOrigin);
+    if (payload.entry.state !== entry.state) void loadEntries({showLoading: false});
   } catch (error) {
     if (requestIsCurrent() && !(ignoreNotFound && error.status === 404)) setGlobalError(error.message);
+  } finally {
+    if (pendingRow) {
+      pendingRow.removeAttribute('aria-busy');
+      pendingRow.classList.remove('is-pending');
+    }
   }
 }
 
@@ -872,11 +899,18 @@ function reportExternalDetailFailure(error, deleteConfirmationInvalidated) {
   setTextMessage('detail-alert', `${error.message}${recovery}`);
 }
 
-function closeDetailDialog({updateUrl = true} = {}) {
+function closeDetailDialog({updateUrl = true, force = false} = {}) {
   const detailDialog = byId('detail-dialog');
   const deleteDialog = byId('delete-dialog');
   const hadOpenDialog = detailDialog.open || deleteDialog.open;
   if (!hadOpenDialog && !currentEntry) return;
+  if (!force) {
+    const mode = currentDetailMode();
+    const changed = mode === 'edit' && byId('edit-content').value !== currentEntry?.content ||
+      mode === 'answer' && byId('answer-input').value !== (currentEntry?.answer || '') ||
+      mode === 'user-comment' && byId('user-comment-input').value !== (currentEntry?.user_comment || '');
+    if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
+  }
   const returnTarget = detailReturnTarget();
   detailRequestGeneration += 1;
   detailSessionGeneration += 1;
@@ -972,7 +1006,7 @@ async function reloadOpenDetailFromExternalChange() {
     resolvedEntry = candidates[0] || null;
   }
   if (!resolvedEntry) {
-    closeDetailDialog();
+    closeDetailDialog({force: true});
     return;
   }
   const detailChanged = entryKey(resolvedEntry) !== entryKey(currentEntry) ||
@@ -1076,7 +1110,7 @@ async function saveEntry() {
     // 本文編集の保存確定後は詳細を閉じて一覧へ戻す。保存中に別項目へ切り替えた場合は閉じない。
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
-      closeDetailDialog();
+      closeDetailDialog({force: true});
     }
     deliverOperationMessage(`${key}を保存しました。`);
   } catch (error) {
@@ -1148,7 +1182,7 @@ async function saveUserComment() {
     await (loadEntries());
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
-      closeDetailDialog();
+      closeDetailDialog({force: true});
     }
     deliverOperationMessage(`${key}のユーザーコメントを保存しました。`);
   } catch (error) {
@@ -1175,7 +1209,7 @@ async function transitionDetail(action) {
       container: byId('detail-shell'), button: byId(`${action}-button`), busyLabel: '処理中'
     }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)})));
     await (loadEntries());
-    if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog();
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog({force: true});
     const label = {
       adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
     }[action];
@@ -1272,7 +1306,7 @@ function openDeleteDialog() {
   deleteDialogEntrySnapshot = deleteEntrySnapshot(currentEntry);
   clearDialogMessages('delete');
   byId('delete-target').textContent = currentEntry.filename;
-  byId('delete-state').textContent = `${currentEntry.kind || 'unknown'} / ${currentEntry.state || 'unknown'}`;
+  byId('delete-state').textContent = `${KIND_LABELS[currentEntry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[currentEntry.state] || '状態不明'}`;
   byId('delete-state').dataset.state = currentEntry.state;
   byId('delete-target-repo').textContent = currentEntry.target_repo || '—';
   byId('delete-summary').textContent = currentEntry.summary || '—';
@@ -1306,7 +1340,7 @@ async function deleteEntry(event) {
     if (byId('delete-dialog').open) closeDeleteDialog();
     await (loadEntries());
     if (!entries.some(entry => entryKey(entry) === key)) {
-      if (byId('detail-dialog').open || currentEntry) closeDetailDialog();
+      if (byId('detail-dialog').open || currentEntry) closeDetailDialog({force: true});
       else detailReturnTarget().focus();
     } else {
       byId('edit-button').hidden = true;
@@ -1333,7 +1367,6 @@ async function synchronizeAndLoad() {
   const payload = {};
   cancelSearchTimer();
   const operation = beginUserListOperation();
-  setTextMessage('sync-result', '');
   try {
     await (runPending('sync', {
       container: document.querySelector('.app-header'), button: byId('refresh-button'), busyLabel: '同期中'
@@ -1348,9 +1381,7 @@ async function synchronizeAndLoad() {
       if (!isCurrentUserListOperation(operation)) return;
       await loadEntries({announce: true});
       if (!isCurrentUserListOperation(operation)) return;
-      setTextMessage('sync-result', syncFailure
-        ? `Git同期に失敗しました。ローカル内容を表示中です。 ${syncFailure.message}`
-        : 'Git同期が完了しました。');
+      if (syncFailure) setGlobalError(`Git同期に失敗しました。ローカル内容を表示中です。 ${syncFailure.message}`);
     }));
   } finally {
     endUserListOperation(operation);
@@ -1410,17 +1441,14 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
   });
 }
 
-function handleFocusIn() {
+function handleFocusIn(event) {
+  if (!byId('operation-notice').contains(event.target)) lastFocusedElement = event.target;
   refreshFocusRequested = false;
 }
 
 function bindEvents() {
   document.addEventListener('focusin', handleFocusIn);
   globalThis.addEventListener?.('popstate', () => { void restoreEntryFromUrl(); });
-  byId('global-error-close-button').addEventListener('click', () => {
-    setGlobalError('');
-    focusRefreshButton();
-  });
   byId('operation-notice-close-button').addEventListener('click', closeOperationNotice);
   byId('previous-page-button').addEventListener('click', () => { void movePage(-1); });
   byId('next-page-button').addEventListener('click', () => { void movePage(1); });
@@ -1487,7 +1515,7 @@ function initializeApp() {
   });
   syncFilterDependencies();
   syncNotificationButton();
-  initialization = synchronizeAndLoad()
+  initialization = Promise.all([loadEntries(), loadTargetRepos()])
     .then(() => refreshKnownUwis({notify: false}))
     .catch((error) => {
       setGlobalError(error.message);
@@ -1496,6 +1524,9 @@ function initializeApp() {
 
 async function init() {
   bindEvents();
+  if (window.matchMedia('(max-width: 700px)').matches) {
+    document.querySelector('#screen-wi .filters details').open = false;
+  }
   document.addEventListener('focusin', handleFocusIn);
   initializeApp();
   await initialization;

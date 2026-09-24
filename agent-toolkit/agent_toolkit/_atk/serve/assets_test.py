@@ -122,10 +122,10 @@ process.stdout.write(JSON.stringify({
         "count": "3件（未回答UWI 1件）",
         "warning": "一覧から除外したファイル: bad.md（UTF-8として読み取れません）",
         "announced": "3件を表示",
-        "kindState": ["awi", "inbox", "plan"],
+        "kindState": ["作業項目", "未処理", "plan"],
         "targetLabel": "github.co…itory-name",
         "targetAria": "対象リポジトリ: github.com/example/a-very-long-repository-name",
-        "rowAria": "f.md、github.com/example/a-very-long-repository-name、awi、inbox、plan、本文",
+        "rowAria": "f.md、github.com/example/a-very-long-repository-name、作業項目、未処理、plan、本文",
         "summary": "本文",
         "sseStatus": "変更しない",
         "answerValue": "all",
@@ -161,7 +161,7 @@ const items = elements['detail-metadata'].children.map(item => ({
 process.stdout.write(JSON.stringify({items, heading: elements['detail-state'].textContent}));
 """
     )
-    assert result["heading"] == "awi / inbox"
+    assert result["heading"] == "作業項目 / 未処理"
     assert [item["label"] for item in result["items"]] == [
         "対象リポジトリ",
         "投入元",
@@ -948,7 +948,7 @@ await handleFilterChange({reloadRepos: true});
 process.stdout.write(JSON.stringify({
   listUrls,
   rows: entries.map(entry => entry.filename),
-  error: elements['global-error-message'].textContent
+  error: elements['operation-notice-message'].textContent
 }));
 """
     )

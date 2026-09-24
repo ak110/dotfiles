@@ -13,16 +13,16 @@
   <section id="screen-wi" class="screen" __WI_HIDDEN__>
   <header class="app-header">
     <div class="header-title">
-      <h1>ワークアイテム</h1>
+      <h1 tabindex="-1">ワークアイテム</h1>
       <span id="connection-status" class="connection-status" role="status">接続中</span>
     </div>
     <nav class="app-nav" aria-label="画面">
       <a href="__BASE_PATH_HTML__/" aria-current="page">ワークアイテム</a>
       <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
       <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+      <span id="loading-indicator" class="nav-loading" role="status" hidden>読み込み中</span>
     </nav>
     <div class="header-actions">
-      <span id="sync-result" class="secondary-text" role="status"></span>
       <button id="notification-button" class="button-secondary" type="button" hidden>通知を有効化</button>
       <button id="refresh-button" class="button-secondary" type="button">今すぐ同期</button>
       <button id="create-button" class="button-primary" type="button">新規追加</button>
@@ -30,12 +30,58 @@
   </header>
 
   <div class="wi-screen-scroll">
-  <div id="global-error" class="global-error" hidden>
-    <div id="global-error-message" role="alert"></div>
-    <button id="global-error-close-button" class="global-error-close" type="button" aria-label="エラーメッセージを閉じる">×</button>
-  </div>
-
   <main class="app-layout">
+    <aside class="filters card" aria-label="フィルター条件">
+      <details open>
+        <summary>フィルター</summary>
+        <div class="filters-body">
+          <div class="pane-heading">
+            <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
+          </div>
+          <label for="search-input">検索</label>
+          <input id="search-input" type="search" placeholder="本文・ファイル名・対象・投入元を検索">
+
+          <div class="filter-grid">
+            <label for="kind-filter">種別</label>
+            <select id="kind-filter">
+              <option value="all">すべて</option>
+              <option value="awi">作業項目</option>
+              <option value="uwi">確認事項</option>
+            </select>
+            <label for="state-filter">状態</label>
+            <select id="state-filter">
+              <option value="active">進行中（受信・処理中・保留）</option>
+              <option value="processable">処理可能（受信）</option>
+              <option value="all">すべて</option>
+              <option value="inbox">受信</option>
+              <option value="processing">処理中</option>
+              <option value="hold">保留</option>
+              <option value="adopted">採用</option>
+              <option value="rejected">却下</option>
+            </select>
+            <label for="answer-filter">回答状況</label>
+            <select id="answer-filter">
+              <option value="all">すべて</option>
+              <option value="no">未回答</option>
+              <option value="yes">回答済み</option>
+            </select>
+          </div>
+
+          <section class="additional-filters" aria-label="追加のフィルター条件">
+            <div class="filter-grid">
+              <label for="target-filter">対象リポジトリ</label>
+              <select id="target-filter"><option value="">すべて</option></select>
+              <label for="source-filter">投入元</label>
+              <select id="source-filter">
+                <option value="">すべて</option>
+                <option value="human">人間</option>
+                <option value="agent">エージェント</option>
+              </select>
+            </div>
+          </section>
+        </div>
+      </details>
+    </aside>
     <section class="entry-pane card" aria-labelledby="entry-heading">
       <div class="pane-heading">
         <h2 id="entry-heading">一覧</h2>
@@ -44,7 +90,6 @@
       <div id="list-fallback-notice" class="list-fallback-notice" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
       <div id="list-warning" class="list-warning" role="alert" hidden></div>
-      <div id="loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
       <div class="entry-columns" aria-hidden="true">
         <span>ファイル名</span>
         <span>対象リポジトリ</span>
@@ -65,60 +110,9 @@
       </div>
     </section>
 
-    <aside class="filters card" aria-label="フィルター条件">
-      <details open>
-        <summary>フィルター</summary>
-        <div class="filters-body">
-          <div class="pane-heading">
-            <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
-          </div>
-          <label for="search-input">検索</label>
-          <input id="search-input" type="search" placeholder="本文・ファイル名・対象・投入元を検索">
-
-          <div class="filter-grid">
-            <label for="kind-filter">種別</label>
-            <select id="kind-filter">
-              <option value="all">all</option>
-              <option value="awi">awi</option>
-              <option value="uwi">uwi</option>
-            </select>
-            <label for="state-filter">状態</label>
-            <select id="state-filter">
-              <option value="active">active</option>
-              <option value="processable">processable</option>
-              <option value="all">all</option>
-              <option value="inbox">inbox</option>
-              <option value="processing">processing</option>
-              <option value="hold">hold</option>
-              <option value="adopted">adopted</option>
-              <option value="rejected">rejected</option>
-            </select>
-            <label for="answer-filter">回答状況</label>
-            <select id="answer-filter">
-              <option value="all">すべて</option>
-              <option value="no">未回答</option>
-              <option value="yes">回答済み</option>
-            </select>
-          </div>
-
-          <section class="additional-filters" aria-label="追加のフィルター条件">
-            <div class="filter-grid">
-              <label for="target-filter">対象リポジトリ</label>
-              <select id="target-filter"><option value="">すべて</option></select>
-              <label for="source-filter">投入元</label>
-              <select id="source-filter">
-                <option value="">すべて</option>
-                <option value="human">human</option>
-                <option value="agent">agent</option>
-              </select>
-            </div>
-          </section>
-        </div>
-      </details>
-    </aside>
   </main>
 
-  <!-- ダイアログ内は確定操作と［×］だけを置き、終了時の一時入力は破棄する。 -->
+  <!-- ダイアログ内は確定操作と［×］だけを置く。変更した一時入力は閉じる前に破棄を確認する。 -->
   <dialog id="detail-dialog" class="dialog-shell detail-dialog" aria-labelledby="detail-heading">
     <article id="detail-shell" class="dialog-frame">
       <header class="dialog-header">
@@ -167,13 +161,15 @@
         </section>
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer">
+        <div class="detail-footer-delete">
+          <button id="delete-button" class="button-danger" type="button">削除</button>
+        </div>
         <div class="detail-footer-left">
           <button id="adopt-button" class="button-primary" type="button" hidden>採用</button>
           <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
           <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
           <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
-          <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>inboxへ戻す</button>
-          <button id="delete-button" class="button-danger" type="button">削除</button>
+          <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
         </div>
         <div class="detail-footer-right">
           <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
@@ -271,7 +267,7 @@
 
   <section id="screen-plans" class="screen" __PLANS_HIDDEN__>
     <header class="app-header">
-      <div class="header-title"><h1>計画ファイル</h1></div>
+      <div class="header-title"><h1 tabindex="-1">計画ファイル</h1></div>
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
@@ -279,18 +275,21 @@
       </nav>
     </header>
     <div id="plans-app">
-      <aside>
+      <aside id="plans-sidebar">
         <div class="toolbar">
-          <input id="plans-filter" placeholder="検索...">
+          <label class="visually-hidden" for="plans-filter">計画ファイルを検索</label>
+          <input id="plans-filter" type="search" placeholder="検索...">
           <span id="search-status" role="status"></span>
         </div>
-        <div id="root-warnings" role="status" hidden></div>
+        <div id="root-warnings" role="alert" hidden></div>
+        <div id="plans-list-error" role="alert" hidden></div>
+        <div id="plans-empty" class="empty-state" hidden><p>該当する計画ファイルがありません。</p><button id="plans-clear-filter" type="button">検索をクリア</button></div>
         <div id="files"></div>
         <div id="files-sentinel" hidden></div>
       </aside>
       <main>
         <div class="toolbar">
-          <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="ファイル一覧を開く">&#9776;</button>
+          <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="ファイル一覧を開く" aria-controls="plans-sidebar" aria-expanded="false">&#9776;</button>
           <span class="spacer"></span>
           <button id="copy-btn" class="button-secondary" type="button" disabled><span class="wide-label">Markdownをコピー</span><span class="short-label">本文</span></button>
           <button id="copy-path-btn" class="button-secondary" type="button" disabled><span class="wide-label">計画ファイルのパスをコピー</span><span class="short-label">パス</span></button>
@@ -307,7 +306,7 @@
 
   <section id="screen-sessions" class="screen" __SESSIONS_HIDDEN__>
     <header class="app-header">
-      <div class="header-title"><h1>セッション</h1></div>
+      <div class="header-title"><h1 tabindex="-1">セッション</h1></div>
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
@@ -315,16 +314,20 @@
       </nav>
     </header>
     <div id="sessions-app">
-      <aside>
+      <aside id="sessions-sidebar">
         <div class="toolbar">
-          <input id="sessions-filter" placeholder="ホスト・作業ディレクトリ・識別子・パスを検索">
+          <label class="visually-hidden" for="sessions-filter">セッションを検索</label>
+          <input id="sessions-filter" type="search" placeholder="ホスト・作業ディレクトリ・識別子・パスを検索">
         </div>
-        <div id="warnings" role="status" hidden></div>
+        <div id="warnings" role="alert" hidden></div>
+        <div id="sessions-list-error" role="alert" hidden></div>
+        <div id="sessions-empty" class="empty-state" hidden><p>該当するセッションがありません。</p><button id="sessions-clear-filter" type="button">検索をクリア</button></div>
         <div id="sessions"></div>
+        <div id="sessions-sentinel" hidden></div>
       </aside>
       <main>
         <div class="toolbar">
-          <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧を開く">&#9776;</button>
+          <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧を開く" aria-controls="sessions-sidebar" aria-expanded="false">&#9776;</button>
           <span id="detail-title" class="detail-title"></span>
           <span class="spacer"></span>
           <span id="detail-usage" class="secondary-text"></span>

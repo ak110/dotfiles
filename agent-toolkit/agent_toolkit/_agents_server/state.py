@@ -52,6 +52,7 @@ TASK_MODEL_TYPES = {
     "pick-wi.subagent.md": "pick_wi",
     "session-review-delegate.subagent.md": "session_review",
     "session-termination.subagent.md": "execute",
+    "usability-review.subagent.md": "execute_review",
     "wi-draft-review.subagent.md": "execute_review",
 }
 """専用タスク文書名と工程別モデル設定の対応。"""

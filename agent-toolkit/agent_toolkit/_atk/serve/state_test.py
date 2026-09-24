@@ -57,38 +57,39 @@ def test_assets_global_error_uses_shared_lifecycle_for_all_generators() -> None:
     result = _run_node_ui(
         """
 bindEvents();
+elements['refresh-button'].focus();
 setGlobalError('最初のエラー');
 const shown = {
-  message: elements['global-error-message'].textContent,
-  hidden: elements['global-error'].hidden
+  message: elements['operation-notice-message'].textContent,
+  hidden: elements['operation-notice'].hidden
 };
-elements['global-error-close-button'].listeners.click();
+elements['operation-notice-close-button'].listeners.click();
 const cleared = {
-  message: elements['global-error-message'].textContent,
-  hidden: elements['global-error'].hidden,
+  message: elements['operation-notice-message'].textContent,
+  hidden: elements['operation-notice'].hidden,
   focused
 };
 setGlobalError('後続のエラー');
 const redisplayed = {
-  message: elements['global-error-message'].textContent,
-  hidden: elements['global-error'].hidden
+  message: elements['operation-notice-message'].textContent,
+  hidden: elements['operation-notice'].hidden
 };
 const failures = [];
 fetchHandler = async () => ({
   ok: false, status: 500, statusText: 'Error', json: async () => ({error: '一覧取得失敗'})
 });
 await loadEntries();
-failures.push(elements['global-error-message'].textContent);
+failures.push(elements['operation-notice-message'].textContent);
 fetchHandler = async () => ({
   ok: false, status: 500, statusText: 'Error', json: async () => ({error: '対象取得失敗'})
 });
 await loadTargetRepos();
-failures.push(elements['global-error-message'].textContent);
+failures.push(elements['operation-notice-message'].textContent);
 fetchHandler = async () => ({
   ok: false, status: 500, statusText: 'Error', json: async () => ({error: '詳細取得失敗'})
 });
 await selectEntry({state: 'inbox', filename: 'detail.md'}, new Element('detail-origin', 'BUTTON'));
-failures.push(elements['global-error-message'].textContent);
+failures.push(elements['operation-notice-message'].textContent);
 const ambiguous = {
   kind: 'awi', state: 'processing', filename: 'ambiguous.md', content: '本文', body_html: '<p>本文</p>',
   frontmatter_entries: []
@@ -107,26 +108,26 @@ fetchHandler = async url => {
   return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
 };
 await reloadOpenDetailFromExternalChange();
-failures.push(elements['global-error-message'].textContent);
+failures.push(elements['operation-notice-message'].textContent);
 refreshKnownUwis = async () => { throw new Error('SSE更新失敗'); };
 fetchHandler = async () => ({
   ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})
 });
 await reloadFromExternalChange();
 await Promise.resolve();
-failures.push(elements['global-error-message'].textContent);
+failures.push(elements['operation-notice-message'].textContent);
 deliverOperationMessage('ダイアログ外失敗', true);
 failures.push(elements['operation-notice-message'].textContent);
 refreshKnownUwis = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
-failures.push(elements['global-error-message'].textContent);
+failures.push(elements['operation-notice-message'].textContent);
 process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
 """
     )
     assert result == {
         "shown": {"message": "最初のエラー", "hidden": False},
-        "cleared": {"message": "", "hidden": True, "focused": "refresh-button"},
+        "cleared": {"message": "最初のエラー", "hidden": True, "focused": "refresh-button"},
         "redisplayed": {"message": "後続のエラー", "hidden": False},
         "failures": [
             "一覧取得失敗",
@@ -718,8 +719,8 @@ async def test_edit_and_answer_apis_detect_external_changes(
     assert uwi_path.read_text(encoding="utf-8").endswith("従来形式からの回答\n")
 
 
-def test_operations_sort_entries_with_unanswered_uwi_then_mixed_remaining(tmp_path: pathlib.Path) -> None:
-    """一覧は未回答UWIを先頭に置き、残りを種別混在のファイル名降順で返す。"""
+def test_operations_sort_entries_by_filename_across_kinds(tmp_path: pathlib.Path) -> None:
+    """一覧は種別と回答状況にかかわらずファイル名降順で返す。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     # ファイル名の昇順でファイルを作成
@@ -755,16 +756,15 @@ def test_operations_sort_entries_with_unanswered_uwi_then_mixed_remaining(tmp_pa
     filenames = [item["filename"] for item in result]
 
     assert filenames == [
-        "a-unanswered-uwi.md",
         "z-awi.md",
         "z-answered-uwi.md",
         "m-answered-uwi.md",
         "d-awi.md",
+        "a-unanswered-uwi.md",
         "a-awi.md",
     ]
     # 種別の確認
-    assert result[0]["kind"] == "uwi"
-    assert [item["kind"] for item in result[1:]] == ["awi", "uwi", "uwi", "awi", "awi"]
+    assert [item["kind"] for item in result] == ["awi", "uwi", "uwi", "awi", "uwi", "awi"]
 
 
 def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -977,19 +977,19 @@ fetchHandler = async url => {
 };
 await loadEntries({announce: true});
 const shown = {
-  message: elements['global-error-message'].textContent,
-  hidden: elements['global-error'].hidden
+  message: elements['operation-notice-message'].textContent,
+  hidden: elements['operation-notice'].hidden
 };
-elements['global-error-close-button'].focus();
-elements['global-error-close-button'].listeners.click();
+elements['operation-notice-close-button'].focus();
+elements['operation-notice-close-button'].listeners.click();
 process.stdout.write(JSON.stringify({
   rows: entries.map(entry => entry.filename),
   notice: elements['list-fallback-notice'].textContent,
   status: elements['result-status'].textContent,
   shown,
   cleared: {
-    message: elements['global-error-message'].textContent,
-    hidden: elements['global-error'].hidden,
+    message: elements['operation-notice-message'].textContent,
+    hidden: elements['operation-notice'].hidden,
     focused
   }
 }));
@@ -1000,7 +1000,7 @@ process.stdout.write(JSON.stringify({
         "notice": "",
         "status": "一致する項目はありません",
         "shown": {"message": "補助検索に失敗", "hidden": False},
-        "cleared": {"message": "", "hidden": True, "focused": "refresh-button"},
+        "cleared": {"message": "補助検索に失敗", "hidden": True, "focused": "operation-notice-close-button"},
     }
 
 

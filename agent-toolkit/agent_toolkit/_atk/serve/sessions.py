@@ -23,10 +23,9 @@ import subprocess
 import typing
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
+from agent_toolkit._atk.serve import session_delegations
 
 logger = logging.getLogger(__name__)
-
-# 配布物独立性を保つため同等機能を独立実装する。
 
 RECORD_SUFFIX = ".jsonl"
 CODEX_ROLLOUT_PREFIX = "rollout-"
@@ -86,6 +85,7 @@ class SessionSummary:
     updated_at: str | None
     size: int | None
     warning: str | None = None
+    parent_path: str | None = None
 
     def to_json(self) -> dict[str, typing.Any]:
         """JSON応答向けの辞書へ変換する。"""
@@ -607,8 +607,7 @@ def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) ->
 def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     """ローカルの保存済みセッションを開始日時の新しい順に返す。
 
-    Claude Codeは深さ2（`<project>/<session-uuid>.jsonl`）をセッション本体とし、
-    深さ4のサブエージェント記録は一覧へ含めない。
+    Claude Codeはセッション本体と、metadataで親子を確定できるサブエージェントを含める。
     Codexは`<CODEX_HOME>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`を対象とする。
     """
     entries: list[SessionSummary] = []
@@ -620,11 +619,40 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
             for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
                 if path.is_file():
                     entries.append(_local_entry(path, "claude", path.stem, context.hostname))
+                    subagents = _claude_subagents(path) or []
+                    agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
+                    for item in subagents:
+                        child_path = item["path"]
+                        if not child_path:
+                            continue
+                        parent_id = item.get("parent_agent_id")
+                        parent_path = (
+                            agent_paths.get(parent_id) or agent_paths.get(f"agent-{parent_id}")
+                            if isinstance(parent_id, str)
+                            else None
+                        )
+                        if parent_path is None and item.get("spawn_depth") == 1:
+                            parent_path = str(path)
+                        if parent_path is None:
+                            continue
+                        child = _local_entry(pathlib.Path(child_path), "claude", item["agent_id"], context.hostname)
+                        entries.append(dataclasses.replace(child, parent_path=parent_path))
     sessions = context.codex_home / "sessions"
     if sessions.is_dir():
         for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
             if path.is_file():
                 entries.append(_local_entry(path, "codex", codex_session_id(path), context.hostname))
+    by_id: dict[str, list[SessionSummary]] = {}
+    for entry in entries:
+        by_id.setdefault(entry.session_id, []).append(entry)
+    parents = {entry.path: entry for entry in entries if entry.parent_path is None}
+    links: dict[str, str] = {}
+    for parent in parents.values():
+        for child_id in session_delegations.delegated_session_ids(pathlib.Path(parent.path), parent.engine):
+            matches = [entry for entry in by_id.get(child_id, []) if entry.path != parent.path]
+            if len(matches) == 1:
+                links[matches[0].path] = parent.path
+    entries = [dataclasses.replace(entry, parent_path=links.get(entry.path, entry.parent_path)) for entry in entries]
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
     return entries[:MAX_LIST_ENTRIES]
 
@@ -1006,6 +1034,7 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
                 updated_at=_isoformat(item["updated_at"]) if isinstance(item.get("updated_at"), (int, float)) else None,
                 size=item.get("size") if isinstance(item.get("size"), int) else None,
                 warning=item.get("warning") if isinstance(item.get("warning"), str) else None,
+                parent_path=item.get("parent_path") if isinstance(item.get("parent_path"), str) else None,
             )
         )
     return entries, None

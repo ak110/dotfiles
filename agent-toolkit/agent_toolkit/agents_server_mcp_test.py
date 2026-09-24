@@ -800,6 +800,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         return [
             "レビュー基準: 計画",
             f"計画ファイル: {root / 'plan.md'}",
+            f"完成条件証拠: {root / 'completion-evidence.json'}",
             handoff,
         ]
     if task_name == "exec.subagent.md":

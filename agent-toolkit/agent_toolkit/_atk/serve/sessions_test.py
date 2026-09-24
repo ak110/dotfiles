@@ -159,6 +159,75 @@ def test_listing_sorts_by_started_at_with_missing_values_last(tmp_path: pathlib.
     assert [entry.session_id for entry in entries] == ["newer", "older", "missing"]
 
 
+def test_listing_links_recorded_delegation_and_metadata_levels(tmp_path: pathlib.Path) -> None:
+    """起動結果とmetadataで確定した親・子・孫を一覧へ返し、欠落した記録を除外する。"""
+    project = tmp_path / "claude" / "projects" / "repo"
+    parent = _write(
+        project / "parent.jsonl",
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-01T00:00:00Z",
+                "message": {
+                    "content": [{"type": "tool_use", "id": "call-1", "name": "mcp__agents_server__start", "input": {}}]
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-01T00:00:01Z",
+                "mcpMeta": {"structuredContent": {"threadId": "child"}},
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "起動"}]},
+            },
+        ],
+    )
+    child = _write(
+        project / "child.jsonl", [{"type": "user", "timestamp": "2026-09-01T00:00:02Z", "message": {"content": "子"}}]
+    )
+    grandchild = _write(
+        child.with_suffix("") / "subagents" / "agent-grandchild.jsonl",
+        [{"type": "user", "timestamp": "2026-09-01T00:00:03Z", "message": {"content": "孫"}}],
+    )
+    grandchild.with_suffix(".meta.json").write_text(json.dumps({"spawnDepth": 1}), encoding="utf-8")
+    _write(project / "unrelated.jsonl", [{"type": "user", "timestamp": "2026-09-01T00:00:04Z", "message": {"content": "別件"}}])
+
+    entries = {entry.path: entry for entry in sessions.list_local_sessions(_context(tmp_path))}
+
+    assert entries[str(child)].parent_path == str(parent)
+    assert entries[str(grandchild)].parent_path == str(child)
+    assert entries[str(project / "unrelated.jsonl")].parent_path is None
+    grandchild.unlink()
+    entries = {entry.path: entry for entry in sessions.list_local_sessions(_context(tmp_path))}
+    assert str(grandchild) not in entries
+
+
+def test_listing_links_codex_start_result_to_claude_child(tmp_path: pathlib.Path) -> None:
+    """Codex起動結果が指す実在するClaudeセッションだけを結ぶ。"""
+    parent = _codex_record(tmp_path)
+    records = [json.loads(line) for line in parent.read_text(encoding="utf-8").splitlines()]
+    records.extend(
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "custom_tool_call", "call_id": "delegate", "name": "mcp__agents_server__start_explore"},
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "delegate",
+                    "output": {"session_id": "11111111-2222-3333-4444-555555555555"},
+                },
+            },
+        ]
+    )
+    _write(parent, records)
+    child = _claude_record(tmp_path)
+
+    entries = {entry.path: entry for entry in sessions.list_local_sessions(_context(tmp_path))}
+
+    assert entries[str(child)].parent_path == str(parent)
+
+
 def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     """Claude Codeの詳細は思考・ツール呼び出しと結果・圧縮境界・使用量を時系列に返す。"""
     path = _claude_record(tmp_path)
@@ -512,6 +581,43 @@ def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: path
     assert entries[str(codex)]["started_at"] == "2026-09-06T00:00:00Z"
     assert [entry["path"] for entry in json.loads(result.stdout)["entries"]] == [str(codex), str(claude)]
     assert all("project" not in entry for entry in entries.values())
+
+
+def test_remote_helper_listing_links_recorded_delegation(tmp_path: pathlib.Path) -> None:
+    """リモート補助も起動結果に現れる実在する子を親へ結ぶ。"""
+    project = tmp_path / ".claude" / "projects" / "repo"
+    parent = _write(
+        project / "parent.jsonl",
+        [
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "tool_use", "name": "mcp__agents_server__start", "id": "call"}]},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"session_id": "child"},
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "call", "content": "起動"}]},
+            },
+        ],
+    )
+    child = _write(project / "child.jsonl", [{"type": "user", "message": {"content": "子"}}])
+    environment = os.environ.copy()
+    environment.update({"HOME": str(tmp_path), "CODEX_HOME": str(tmp_path / "codex")})
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"),
+            "list",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    entries = {entry["path"]: entry for entry in json.loads(result.stdout)["entries"]}
+
+    assert entries[str(child)]["parent_path"] == str(parent)
 
 
 @pytest.mark.asyncio

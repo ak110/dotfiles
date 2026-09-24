@@ -9,8 +9,8 @@
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 
 保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`を正本とし、
-サーバー側`_atk/serve/sessions.py`と同じ規約で解決する
-（SSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
+サーバー側`_atk/serve/sessions.py`と同じ規約で解決する。
+子セッションの解析は、同じリポジトリの共通モジュールを読み込む。
 """
 
 import base64
@@ -21,6 +21,9 @@ import socket
 import sys
 import threading
 import typing
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from agent_toolkit._atk.serve import session_delegations  # noqa: E402  # pylint: disable=wrong-import-position
 
 # 1件の記録から取得する最大バイト数。過大な記録の全文転送により接続が占有される事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
@@ -190,8 +193,35 @@ def _list_payload() -> dict[str, typing.Any]:
     entries: list[dict[str, typing.Any]] = []
     for path in _iter_claude_records():
         entries.append(_entry(path, "claude", path.stem))
+        subagents = _subagents(path)
+        agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
+        for item in subagents:
+            child_path = item["path"]
+            if not child_path:
+                continue
+            parent_id = item.get("parent_agent_id")
+            parent_path = (
+                agent_paths.get(parent_id) or agent_paths.get(f"agent-{parent_id}") if isinstance(parent_id, str) else None
+            )
+            if parent_path is None and item.get("spawn_depth") == 1:
+                parent_path = str(path)
+            if parent_path is None:
+                continue
+            child = _entry(pathlib.Path(child_path), "claude", item["agent_id"])
+            child["parent_path"] = parent_path
+            entries.append(child)
     for path in _iter_codex_records():
         entries.append(_entry(path, "codex", _codex_session_id(path)))
+    by_id: dict[str, list[dict[str, typing.Any]]] = {}
+    for entry in entries:
+        by_id.setdefault(entry["session_id"], []).append(entry)
+    for parent in entries:
+        if parent.get("parent_path") or not isinstance(parent.get("path"), str):
+            continue
+        for child_id in session_delegations.delegated_session_ids(pathlib.Path(parent["path"]), parent["engine"]):
+            matches = [entry for entry in by_id.get(child_id, []) if entry.get("path") != parent["path"]]
+            if len(matches) == 1:
+                matches[0]["parent_path"] = parent["path"]
     entries.sort(key=lambda item: item["started_at"] or "", reverse=True)
     return {"host": socket.gethostname(), "entries": entries[:MAX_LIST_ENTRIES]}
 

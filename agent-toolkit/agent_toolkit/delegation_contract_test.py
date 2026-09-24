@@ -230,10 +230,12 @@ def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> Non
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     lane = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+    criteria = (plugin_root / "skills" / "review-standards" / "references" / "reviewer.md").read_text(encoding="utf-8")
 
     assert all("staleness" in content for content in (picker, lane, review))
-    assert all("notice" in content for content in (picker, lane, review))
-    assert all("不一致" in content and "充足済み" in content and "巻戻し" in content for content in (picker, lane, review))
+    assert all("notice" in content for content in (picker, lane, criteria))
+    assert all("不一致" in content and "充足済み" in content and "巻戻し" in content for content in (picker, lane, criteria))
+    assert "reviewer.md" in review
 
 
 def test_picker_explanation_contract_covers_questions_without_state_changes() -> None:

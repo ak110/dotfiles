@@ -19,8 +19,13 @@ const KIND_LABELS = {
 };
 
 let sessions = [];
+let sessionRoots = [];
 let selected = null;
 let queryText = "";
+let visibleLimit = 100;
+let filterTimer = null;
+const expandedKeys = new Set();
+let visibleSessions = [];
 // サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元の記録を古い順に保持して戻れるようにする。
 let parentTrail = [];
 // 初期化後は文書とともに維持するSSE購読。
@@ -48,7 +53,11 @@ function formatTime(value) {
 }
 
 function setDrawerOpen(open) {
-  document.getElementById("screen-sessions").classList.toggle("drawer-open", open);
+  window.__atkDrawer.set("sessions", open);
+}
+
+function sessionKey(entry) {
+  return JSON.stringify([entry.host, entry.engine, entry.path]);
 }
 
 function matchesFilter(entry) {
@@ -60,19 +69,67 @@ function matchesFilter(entry) {
   return haystack.includes(queryText);
 }
 
+function treeRows() {
+  const byKey = new Map(sessions.map(entry => [sessionKey(entry), entry]));
+  const children = new Map();
+  const roots = [];
+  for (const entry of sessions) {
+    const parent = entry.parent_path && byKey.get(JSON.stringify([entry.host, entry.engine, entry.parent_path]));
+    if (!parent || parent === entry) roots.push(entry);
+    else {
+      const key = sessionKey(parent);
+      if (!children.has(key)) children.set(key, []);
+      children.get(key).push(entry);
+    }
+  }
+  const hasMatch = (entry, visiting = new Set()) => {
+    const key = sessionKey(entry);
+    if (visiting.has(key)) return false;
+    visiting.add(key);
+    return matchesFilter(entry) || (children.get(key) || []).some(child => hasMatch(child, new Set(visiting)));
+  };
+  const rows = [];
+  const walk = (entry, level, visiting = new Set()) => {
+    const key = sessionKey(entry);
+    if (visiting.has(key) || !hasMatch(entry)) return;
+    visiting.add(key);
+    rows.push({entry, level, childCount: (children.get(key) || []).length});
+    if (expandedKeys.has(key) || queryText) {
+      for (const child of children.get(key) || []) walk(child, level + 1, new Set(visiting));
+    }
+  };
+  for (const root of roots) walk(root, 1);
+  return rows;
+}
+
 function renderList() {
-  const visible = sessions.filter(matchesFilter);
-  listEl.replaceChildren();
-  for (const entry of visible) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "session-item";
+  const rows = treeRows();
+  visibleSessions = rows.map(row => row.entry);
+  const existing = new Map([...listEl.children].filter(node => node.dataset.key).map(node => [node.dataset.key, node]));
+  let cursor = listEl.firstChild;
+  for (const {entry, level, childCount} of rows.slice(0, visibleLimit)) {
+    const key = sessionKey(entry);
+    let row = existing.get(key);
+    if (row) existing.delete(key);
+    else {
+      row = document.createElement("div");
+      row.className = "session-tree-row";
+      row.dataset.key = key;
+    }
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", String(level));
+    row.style.paddingInlineStart = `${(level - 1) * 16}px`;
+    let item = row.querySelector(".session-item");
+    if (!item) {
+      item = document.createElement("button");
+      item.type = "button";
+      item.className = "session-item";
+    }
     item.dataset.host = entry.host;
     item.dataset.engine = entry.engine;
     item.dataset.path = entry.path;
-    if (selected && selected.host === entry.host && selected.engine === entry.engine && selected.path === entry.path) {
-      item.setAttribute("aria-current", "true");
-    }
+    if (selected && sessionKey(selected) === key) item.setAttribute("aria-current", "true");
+    else item.removeAttribute("aria-current");
 
     const cwd = document.createElement("div");
     cwd.className = "session-cwd";
@@ -85,7 +142,7 @@ function renderList() {
     const startedAt = document.createElement("span");
     startedAt.textContent = formatTime(entry.started_at);
     meta.append(host, startedAt);
-    item.append(cwd, meta);
+    item.replaceChildren(cwd, meta);
 
     if (entry.warning) {
       const warning = document.createElement("div");
@@ -93,13 +150,41 @@ function renderList() {
       warning.textContent = entry.warning;
       item.append(warning);
     }
-    listEl.append(item);
+    let toggle = row.querySelector(".session-tree-toggle");
+    if (childCount) {
+      if (!toggle) {
+        toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "session-tree-toggle";
+        toggle.addEventListener("click", () => {
+          if (expandedKeys.has(key)) expandedKeys.delete(key);
+          else expandedKeys.add(key);
+          renderList();
+          listEl.querySelector(`[data-key="${CSS.escape(key)}"] .session-tree-toggle`)?.focus();
+        });
+        row.insertBefore(toggle, row.firstChild);
+      }
+      toggle.textContent = expandedKeys.has(key) ? "−" : "+";
+      toggle.setAttribute("aria-label", `${entry.session_id}の子セッションを${expandedKeys.has(key) ? "折り畳む" : "展開する"}`);
+      toggle.setAttribute("aria-expanded", String(expandedKeys.has(key)));
+    } else if (toggle) toggle.remove();
+    if (item.parentNode !== row) row.append(item);
+    if (row === cursor) cursor = row.nextSibling;
+    else listEl.insertBefore(row, cursor);
   }
+  for (const node of existing.values()) node.remove();
+  document.getElementById("sessions-empty").hidden = rows.length !== 0;
+  const empty = document.getElementById("sessions-empty");
+  empty.querySelector("p").textContent = sessions.length === 0
+    ? `セッション記録がありません。対象root: ${sessionRoots.join("、")}`
+    : "一致するセッションはありません。";
+  empty.querySelector("button").hidden = !queryText;
+  document.getElementById("sessions-sentinel").hidden = rows.length <= visibleLimit;
   updateNavButtons();
 }
 
 function updateNavButtons() {
-  const visible = sessions.filter(matchesFilter);
+  const visible = visibleSessions;
   const index = selected
     ? visible.findIndex((entry) => entry.host === selected.host && entry.engine === selected.engine && entry.path === selected.path)
     : -1;
@@ -108,7 +193,7 @@ function updateNavButtons() {
 }
 
 function navigateRelative(delta) {
-  const visible = sessions.filter(matchesFilter);
+  const visible = visibleSessions;
   const index = selected
     ? visible.findIndex((entry) => entry.host === selected.host && entry.engine === selected.engine && entry.path === selected.path)
     : -1;
@@ -135,11 +220,33 @@ async function loadList() {
     const response = await (fetch(BASE_PATH + "/api/sessions/list"));
     if (!response.ok) throw new Error(`一覧を取得できません (${response.status})`);
     const payload = await (response.json());
+    const previousKeys = new Set(sessions.map(sessionKey));
     sessions = payload.sessions || [];
+    const currentKeys = new Set(sessions.map(sessionKey));
+    for (const key of expandedKeys) if (!currentKeys.has(key)) expandedKeys.delete(key);
+    if (selected && previousKeys.has(sessionKey(selected)) && !currentKeys.has(sessionKey(selected))) {
+      selected = null;
+      parentTrail = [];
+      detailTitleEl.textContent = "";
+      detailUsageEl.textContent = "";
+      detailEl.textContent = "選択したセッション記録は見つかりません。";
+      if (location.pathname.endsWith("/sessions") && location.search) history.replaceState({atkSession: true}, "", location.pathname);
+    }
+    sessionRoots = payload.roots || [];
     renderWarnings(payload.warnings);
+    document.getElementById("sessions-list-error").hidden = true;
     renderList();
   } catch (error) {
-    showWarnings([String(error)]);
+    const box = document.getElementById("sessions-list-error");
+    box.replaceChildren();
+    const message = document.createElement("span");
+    message.textContent = `セッション一覧を取得できません: ${error.message} `;
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "再読み込み";
+    retry.addEventListener("click", loadList);
+    box.append(message, retry);
+    box.hidden = false;
   }
 }
 
@@ -299,8 +406,20 @@ function renderDetail(detail) {
     detailEl.append(broken);
   }
 
-  for (const event of detail.events) {
+  for (const event of detail.events.slice(0, 100)) {
     detailEl.append(renderEvent(event));
+  }
+  let rendered = 100;
+  if (detail.events.length > rendered) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.textContent = "さらに100件表示";
+    more.addEventListener("click", () => {
+      for (const event of detail.events.slice(rendered, rendered + 100)) detailEl.insertBefore(renderEvent(event), more);
+      rendered += 100;
+      more.hidden = rendered >= detail.events.length;
+    });
+    detailEl.append(more);
   }
 
   if (detail.truncated_events > 0) {
@@ -312,8 +431,13 @@ function renderDetail(detail) {
 }
 
 // `trail`は開こうとする記録の呼び出し元を古い順に並べる。左ペインから選んだ記録には呼び出し元が無いため既定は空とする。
-async function openSession(host, engine, path, trail = []) {
+async function openSession(host, engine, path, trail = [], updateUrl = true) {
   selected = { host, engine, path };
+  if (updateUrl && location.pathname.endsWith("/sessions")) {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({host, engine, path}).toString();
+    history.pushState({atkSession: true}, "", url);
+  }
   parentTrail = trail;
   renderList();
   detailEl.replaceChildren();
@@ -326,7 +450,16 @@ async function openSession(host, engine, path, trail = []) {
     renderDetail(detail);
   } catch (error) {
     detailTitleEl.textContent = "";
-    detailEl.textContent = String(error);
+    detailEl.replaceChildren();
+    const alert = document.createElement("div");
+    alert.setAttribute("role", "alert");
+    alert.textContent = `セッションの詳細を取得できません: ${error.message} `;
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "再読み込み";
+    retry.addEventListener("click", () => openSession(host, engine, path, trail, false));
+    alert.append(retry);
+    detailEl.append(alert);
   }
   setDrawerOpen(false);
 }
@@ -350,8 +483,12 @@ async function init() {
   detailUsageEl = document.getElementById("detail-usage");
   filterEl = document.getElementById("sessions-filter");
   filterEl.addEventListener("input", () => {
-    queryText = filterEl.value.trim().toLowerCase();
-    renderList();
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => {
+      queryText = filterEl.value.trim().toLowerCase();
+      visibleLimit = 100;
+      renderList();
+    }, 300);
   });
   listEl.addEventListener("click", (event) => {
     const item = event.target.closest(".session-item");
@@ -362,14 +499,38 @@ async function init() {
     setDrawerOpen(!document.getElementById("screen-sessions").classList.contains("drawer-open"));
   });
   document.getElementById("sessions-drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("sessions-clear-filter").addEventListener("click", () => {
+    filterEl.value = "";
+    queryText = "";
+    visibleLimit = 100;
+    renderList();
+    filterEl.focus();
+  });
+  new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting) && visibleLimit < treeRows().length) {
+      visibleLimit += 100;
+      renderList();
+    }
+  }, {root: document.querySelector("#sessions-app > aside"), rootMargin: "400px"})
+    .observe(document.getElementById("sessions-sentinel"));
+  window.addEventListener("popstate", () => {
+    if (!location.pathname.endsWith("/sessions")) return;
+    const params = new URLSearchParams(location.search);
+    const entry = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
+    if (entry) void openSession(entry.host, entry.engine, entry.path, [], false);
+  });
   document.getElementById("sessions-prev-btn").addEventListener("click", () => navigateRelative(-1));
   document.getElementById("sessions-next-btn").addEventListener("click", () => navigateRelative(1));
   await loadList();
+  const params = new URLSearchParams(location.search);
+  const fromUrl = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
   const mobile = window.matchMedia("(max-width: 768px)").matches;
-  if (!selected && sessions.length > 0 && !mobile) {
-    await openSession(sessions[0].host, sessions[0].engine, sessions[0].path);
+  if (fromUrl) {
+    await openSession(fromUrl.host, fromUrl.engine, fromUrl.path, [], false);
+  } else if (!selected && sessions.length > 0 && !mobile) {
+    await openSession(sessions[0].host, sessions[0].engine, sessions[0].path, [], false);
   }
-  setDrawerOpen(mobile);
+  setDrawerOpen(false);
   subscribeEvents();
 }
 
