@@ -81,6 +81,7 @@ def test_run_installs_with_powershell_file(monkeypatch, tmp_path: Path) -> None:
     launcher = tmp_path / ".local" / "bin" / "claude.exe"
     calls: list[list[str]] = []
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "win32")
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "find_powershell", lambda: "pwsh")
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "prepend_path", lambda path: None)
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
@@ -110,6 +111,7 @@ def test_windows_install_prepends_canonical_path_before_noncanonical(monkeypatch
     noncanonical.mkdir()
     monkeypatch.setenv("PATH", str(noncanonical))
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "win32")
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "find_powershell", lambda: "pwsh")
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
 

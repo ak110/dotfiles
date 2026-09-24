@@ -65,6 +65,7 @@ def test_run_installs_with_powershell_file_on_windows(monkeypatch, tmp_path: Pat
     """Windowsではローカル配下のランチャーを対象とし、PowerShellでインストーラーを実行する。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_agy_cli.sys, "platform", "win32")
+    monkeypatch.setattr(setup_agy_cli.setup_cli_common, "find_powershell", lambda: "pwsh")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     launcher = tmp_path / "AppData" / "Local" / "agy" / "bin" / "agy.exe"
     requested: list[str] = []
