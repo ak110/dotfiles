@@ -82,9 +82,7 @@ def _run_public_update(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         ("ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTZAAAAIbmlzdHAyNTY= user@host", True),
     ],
 )
-def test_public_update_adds_only_key_lines(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str, expected: bool
-) -> None:
+def test_public_update_adds_only_key_lines(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str, expected: bool) -> None:
     """公開コマンドは有効な鍵行だけをauthorized_keysへ追加する。"""
     ssh_dir = tmp_path / ".ssh"
     (ssh_dir / "conf.d").mkdir(parents=True)
@@ -97,9 +95,7 @@ def test_public_update_adds_only_key_lines(
 
 
 @pytest.mark.parametrize("content", ["text", "text\n", "", "text\n\n"])
-def test_public_update_preserves_config_newline_boundary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
-) -> None:
+def test_public_update_preserves_config_newline_boundary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str) -> None:
     """公開コマンドはconf.d本文を末尾改行付きで結合する。"""
     ssh_dir = tmp_path / ".ssh"
     (ssh_dir / "conf.d").mkdir(parents=True)

@@ -583,19 +583,11 @@ def test_sync_replaces_stale_outputs(manifest_root: Path) -> None:
 def test_check_accepts_current_outputs_without_changes(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
     assert subject.main([]) == 0
-    before = {
-        path.relative_to(manifest_root): path.read_bytes()
-        for path in manifest_root.rglob("*")
-        if path.is_file()
-    }
+    before = {path.relative_to(manifest_root): path.read_bytes() for path in manifest_root.rglob("*") if path.is_file()}
 
     assert subject.main(["--check"]) == 0
 
-    after = {
-        path.relative_to(manifest_root): path.read_bytes()
-        for path in manifest_root.rglob("*")
-        if path.is_file()
-    }
+    after = {path.relative_to(manifest_root): path.read_bytes() for path in manifest_root.rglob("*") if path.is_file()}
     assert after == before
 
 

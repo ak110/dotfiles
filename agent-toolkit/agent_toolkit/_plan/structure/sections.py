@@ -1874,20 +1874,19 @@ def check_plan_single_file_structure(
         verification_start, verification_end = heading_subtree_range(headings, verification_index)
         verification_tables = extract_tables(lines_within(body, verification_start, verification_end))
     legacy_verification = any(
-        table.header == PLAN_VERIFICATION_TABLE_HEADER
-        and table.row_labels() == PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS
+        table.header == PLAN_VERIFICATION_TABLE_HEADER and table.row_labels() == PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS
         for table in verification_tables
     )
 
     requirements_index = find_heading_index(headings, 2, PLAN_H2_REQUIREMENTS)
-    acceptance_index = next(
-        (
-            index
-            for index, heading in child_headings(headings, requirements_index, 3)
-            if heading.text == PLAN_ACCEPTANCE_H3
-        ),
-        None,
-    ) if requirements_index is not None else None
+    acceptance_index = (
+        next(
+            (index for index, heading in child_headings(headings, requirements_index, 3) if heading.text == PLAN_ACCEPTANCE_H3),
+            None,
+        )
+        if requirements_index is not None
+        else None
+    )
     if acceptance_index is None:
         if not legacy_verification:
             errors.append(f"`## {PLAN_H2_REQUIREMENTS}`に`### {PLAN_ACCEPTANCE_H3}`が必要")
@@ -1901,8 +1900,7 @@ def check_plan_single_file_structure(
             for action_table in extract_tables(lines_within(body, action_start, action_end)):
                 if action_table.header == PLAN_HUMAN_ACTION_TABLE_HEADER:
                     has_adopted_action = any(
-                        len(row) == len(action_table.header) and row[2] in ("採用", "部分採用")
-                        for row in action_table.rows
+                        len(row) == len(action_table.header) and row[2] in ("採用", "部分採用") for row in action_table.rows
                     )
                     break
         if has_adopted_action:
