@@ -199,6 +199,12 @@ Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2�
 
 同日、`hooks.json`のSessionEnd登録と同じコマンド・`async: true`だけを一時設定へ写し、`--setting-sources ''`と`--settings`で指定した`claude -p`を実行した。CLIは終了コード0で、結果JSONは`terminal_reason: completed`、`result: OK`だった。標準エラーは空で、debugログに`Hook cancelled`はなく、`SessionEnd:other`を非同期hookとして登録した記録、`600000ms`の予算及び完了状態0があった。同一`session_id`で事前登録した管理対象一時領域は、CLI終了後に実在しなかった。この検収はSessionEnd単独構成の正常終了を示す。全プラグイン構成を用いた同日の追加試行も終了コード143だったため、その正常終了は引き続き未確認である。再検証は、`claude -p`へ同じSessionEnd設定、専用の`--session-id`、`--debug-file`を指定し、CLIの終了コードと結果JSON、同IDで作成した領域の終了後の実在、標準エラー、debugログの登録・完了状態・予算・`Hook cancelled`の有無を照合する。
 
+2026年9月24日、Claude Code 2.1.281を作業ツリーのagent-toolkitを`--plugin-dir`で読み込む全プラグイン構成で再検証した。`claude -p`に専用の`--session-id`、`--debug-file`、`--output-format json`を指定し、標準入力を`/dev/null`へ接続した。外側に時間制限は設けなかった。
+
+先の終了コード143は、検証元から継承した`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`による。再現試行の`strace`はagent-toolkitのStop hookの子プロセスからCLI本体への`SIGTERM`送信を記録した。debugログにも無進捗判定と常駐ループへの中断要求があり、SessionEnd hook自体は完了状態0だった。
+
+常駐ループ用の環境変数を外して同じ全プラグイン構成を実行すると、CLIは7秒で終了コード0となった。結果JSONは`terminal_reason: completed`、`result: OK`、`is_error: false`を返した。標準エラーは空で、debugログは`SessionEnd:other`を非同期hookとして登録し、予算`600000ms`と完了状態0を記録した。`Hook cancelled`はdebugログと標準エラーの双方に無かった。同じ`session_id`で事前登録した管理対象一時領域は終了後に実在せず、`atk managed-temp list --prefix sessionend-probe`も該当0件を返した。再検証では常駐ループ用の環境変数を検証用CLIへ継承させない。
+
 ## agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日
 
 2026年9月16日、公開直後の新バージョンを待つ目安1日の典拠を実測した。`.chezmoi-source/dot_config/uv/uv.toml`は`exclude-newer = "1 day"`を持ち、同ファイルのコメントが公開後24時間未満のパッケージを除外する目的を示す。再検証は同ファイルの当該キーの値を取得する。再検証の契機は当該設定値の変更とする。
