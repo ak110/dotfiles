@@ -516,6 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         content = render(_load_jsonl(args.candidates), decisions, analyses, timings, duration_analysis, sections)
         if args.mode == "generate":
             args.output.write_text(content, encoding="utf-8")
+            _check_rendered_report(args.output.read_text(encoding="utf-8"), content)
         elif not args.output.is_file():
             raise ReportError("報告ファイルが存在しない")
         else:

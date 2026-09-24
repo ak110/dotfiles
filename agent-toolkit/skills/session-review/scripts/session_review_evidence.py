@@ -95,6 +95,7 @@ _HOOK_NOTICE_MARKER = re.compile(
     r"\[auto-generated:\s*(?P<hook_legacy>[^\]]*?)\s*\](?:\s*\[(?P<tag_legacy>[^\]]*)\])?)"
 )
 _HOOK_XML_END_TAGS = ("</agent-toolkit-auto-inserted>", "</agent-toolkit-hook-message>")
+_HOOK_XML_END_MARKER = re.compile(r"</(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)>")
 _CANDIDATE_KIND_LENGTH = 80
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
@@ -466,9 +467,24 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
     """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
     pending_claude_questions: dict[str, _PendingQuestion] = {}
+    tool_uses: dict[str, tuple[str, str]] = {}
     subagent_record = _is_subagent_record(entries)
     for line, entry in zip(lines, entries, strict=True):
+        message = entry.get("message")
+        if isinstance(message, dict) and entry.get("type") == "assistant":
+            content = message.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                        tool_uses[block["id"]] = (
+                            str(block.get("name", "")),
+                            json.dumps(block.get("input"), ensure_ascii=False, sort_keys=True),
+                        )
         for event in _claude_entry_events(entry, line, pending_claude_questions, subagent_record):
+            if event.get("kind") == "failed-tool":
+                tool_name, operation = tool_uses.get(str(event.get("tool", "")), ("", ""))
+                event["tool_name"] = tool_name
+                event["operation"] = operation
             event.setdefault("line", line)
             _set_entry_timestamp(event, entry)
             events.append(event)
@@ -2291,47 +2307,45 @@ def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
 
 
 def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
-    """通知本文を、hook識別子・タグ・正規化した種別へ分解する。空の本文は`None`を返す。
-
-    標識を持たない本文は識別子とタグを`None`とし、発動元と種別だけで分類する。
-    1つの本文が複数の標識を持つ場合は、標識ごとに別の分類軸を返す。
-    最も重い標識だけを採用すると、同じ本文が発火した他の標識が発生源として数えられない。
-    種別は、標識を除いた本文の連続する空白を単一の空白へ正規化し、
-    対象パスや識別子などの可変部を固定の記号へ置換した先頭一定長とする。
-    可変部を残すと同種の通知が複数の種別へ分かれ、
-    長さが不足すると別判定の通知が同一種別へ統合されるため、長さは実測に基づいて確定する。
-    """
-    normalized = " ".join(body.split())
-    if not normalized:
+    """外側の通知境界ごとに発動元、重要度及び本文を返す。"""
+    if not body.strip():
         return []
-    matched = _HOOK_NOTICE_MARKER.match(normalized)
-    hook = matched.group("hook_xml") or matched.group("hook_legacy") if matched is not None else None
-    text = normalized[matched.end() :].strip() if matched is not None else normalized
-    for end_tag in _HOOK_XML_END_TAGS:
-        if text.endswith(end_tag):
-            text = text[: -len(end_tag)].rstrip()
-            break
-    kind_text = _normalize_candidate_kind_text(text)
-    tags = _hook_notice_tags(normalized, matched)
-    if not tags:
-        return [_HookNoticeKey(hook or None, hook_name, None, kind_text)]
-    return [_HookNoticeKey(hook or None, hook_name, tag, kind_text) for tag in tags]
+    openings = list(_HOOK_NOTICE_MARKER.finditer(body))
+    if not openings:
+        return [_HookNoticeKey(None, hook_name, None, _normalize_candidate_kind_text(body))]
+    boundaries = sorted(
+        [*openings, *_HOOK_XML_END_MARKER.finditer(body)],
+        key=lambda marker: marker.start(),
+    )
+    keys: list[_HookNoticeKey] = []
+    outer: re.Match[str] | None = None
+    depth = 0
 
+    def append_notice(marker: re.Match[str], end: int) -> None:
+        source = marker.group("hook_xml") or marker.group("hook_legacy")
+        tag = marker.group("tag_xml") or marker.group("tag_legacy")
+        text = body[marker.end() : end]
+        keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _normalize_candidate_kind_text(text)))
 
-def _hook_notice_tags(normalized: str, matched: re.Match[str] | None) -> list[str]:
-    """本文に現れる標識を出現順で重複なく返す。
-
-    標識を持たない本文は空のリストを返す。
-    """
-    tags: list[str] = []
-    for found in _HOOK_NOTICE_MARKER.finditer(normalized):
-        tag = found.group("tag_xml") or found.group("tag_legacy")
-        if tag and tag not in tags:
-            tags.append(tag)
-    if tags:
-        return tags
-    fallback = (matched.group("tag_xml") or matched.group("tag_legacy")) if matched is not None else None
-    return [fallback] if fallback else []
+    for marker in boundaries:
+        if marker.re is _HOOK_XML_END_MARKER:
+            if depth:
+                depth -= 1
+                if not depth and outer is not None:
+                    append_notice(outer, marker.start())
+                    outer = None
+            continue
+        if depth:
+            if marker.group("hook_xml") is not None:
+                depth += 1
+            continue
+        if outer is not None:
+            append_notice(outer, marker.start())
+        outer = marker
+        depth = 1 if marker.group("hook_xml") is not None else 0
+    if outer is not None:
+        append_notice(outer, len(body))
+    return keys
 
 
 def _normalize_candidate_kind_text(text: str) -> str:
@@ -2903,14 +2917,9 @@ def _candidate_events(
     for event in timeline:
         line = event.get("line")
         text = event.get("text")
-        if (
-            event.get("kind") == "user"
-            and event.get("record") == "main"
-            and isinstance(line, int)
-            and isinstance(text, str)
-            and _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None
-        ):
-            first_main_user = ("main", line)
+        if event.get("kind") == "user" and event.get("record") == "main" and isinstance(line, int) and isinstance(text, str):
+            if _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None:
+                first_main_user = ("main", line)
             break
     sources = (
         ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
@@ -3440,8 +3449,12 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
                 normalized_body = body.strip()
             normalized_body = _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(normalized_body.split()))
             return candidate_kind, source.strip(), str(event.get("kind", "")), normalized_body
-        first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""
-        return candidate_kind, _normalize_candidate_kind_text(first_line)
+        diagnostic = (
+            _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(_EXIT_CODE_PREFIX.sub("", raw_text).split()))
+            if isinstance(raw_text, str)
+            else ""
+        )
+        return candidate_kind, str(event.get("tool_name", "")), str(event.get("operation", "")), diagnostic
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
@@ -3781,12 +3794,14 @@ def _build_parser() -> argparse.ArgumentParser:
     catalog_group.add_argument(
         "--catalog-claude-project",
         metavar="DIR",
-        help="指定したClaude projectディレクトリ内だけを走査し、比較用の親セッションカタログを返す。",
+        help="指定したClaude projectディレクトリ内だけを走査し、比較用の親セッションカタログを返す。"
+        "`--since`と`--observation-boundary`が必須。",
     )
     catalog_group.add_argument(
         "--catalog-codex-history",
         metavar="DIR",
-        help="指定したCodex履歴ディレクトリ内だけを走査し、比較用の親セッションカタログを返す。",
+        help="指定したCodex履歴ディレクトリ内だけを走査し、比較用の親セッションカタログを返す。"
+        "`--since`と`--observation-boundary`が必須。",
     )
     parser.add_argument(
         "--compaction-record-dir",
@@ -3845,7 +3860,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--user-events",
         action="store_true",
-        help="`--since`より後から観測境界までのメイン記録にある利用者イベントだけを照会する。",
+        help="`--since`より後から観測境界までのメイン記録にある利用者イベントだけを照会する。`--since`が必須。",
     )
     parser.add_argument(
         "--since",

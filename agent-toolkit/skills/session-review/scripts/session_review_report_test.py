@@ -144,6 +144,22 @@ def _argv(
     ]
 
 
+def test_generate_checks_saved_body_without_second_cli_call(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    paths = _inputs(tmp_path)
+    checked: list[tuple[str, str]] = []
+    original = report._check_rendered_report  # pylint: disable=protected-access
+
+    def record_check(saved: str, expected: str) -> None:
+        checked.append((saved, expected))
+        original(saved, expected)
+
+    monkeypatch.setattr(report, "_check_rendered_report", record_check)
+
+    assert report.main(_argv(paths, "generate")) == 0
+    assert len(checked) == 1
+    assert checked[0] == (paths[-1].read_text(encoding="utf-8"), checked[0][0])
+
+
 def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> None:
     paths = _inputs(tmp_path)
 

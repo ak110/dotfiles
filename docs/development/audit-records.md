@@ -335,3 +335,8 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 
 2026年9月21日、Codex CLI 0.155.1で実測した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動した検体では共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
 再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力する検体と、`_agents_server/state.py`の通常・軽量promptの検体を実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範及び軽量経路の境界を照合する。
+
+## agent-toolkit/rules/01-agent.md：自動挿入本文の配送境界：2026年9月25日
+
+2026年9月25日、Claude Code 2.1.281で新しいセッション`0b228cab-e106-4b5e-805b-f5e88320691c`を起動し、`--include-hook-events --output-format stream-json`でhook応答を保存した。SessionStartの`additionalContext`は`<agent-toolkit-auto-inserted source="agent-toolkit/rules_context" kind="notice">`で始まった。存在しないパスを指定したBash検索に対するPreToolUseの`additionalContext`は、`<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">`で始まった。両応答の`exit_code`は0だった。検証用セッションはhook応答を得た後に中断したため、セッション全体の完了結果はこの観測の根拠に含めない。
+再検証では、同版以降で`--include-hook-events`を付けて新しいセッションを起動する。SessionStartと、存在しない検索パスへのPreToolUseの`hook_response.output`を読む。各応答の外側境界にある`source`と`kind`を照合する。

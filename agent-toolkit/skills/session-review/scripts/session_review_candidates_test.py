@@ -156,7 +156,7 @@ def test_candidate_events_classifies_auto_mode_denial_as_permission_denial() -> 
     for candidate in candidates[:-1]:
         by_kind.setdefault(candidate["candidate_kind"], []).extend(candidate["locators"])
     assert by_kind["permission-denial"] == [{"record": "main", "line": 2}]
-    assert by_kind["tool-failure"] == [{"record": "main", "line": 5}, {"record": "main", "line": 2}]
+    assert {item["line"] for item in by_kind["tool-failure"]} == {2, 5}
 
 
 def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
@@ -304,7 +304,7 @@ def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> N
     """
     timeline = [
         {"kind": "failed-tool", "record": "main", "line": 2, "tool": "Bash", "text": "失敗A\n詳細1"},
-        {"kind": "failed-tool", "record": "main", "line": 5, "tool": "Bash", "text": "失敗A\n詳細2"},
+        {"kind": "failed-tool", "record": "main", "line": 5, "tool": "Bash", "text": "失敗A\n詳細1"},
     ]
     warnings = [
         {"kind": "warning", "record": "main", "line": 7, "text": "警告  A"},
@@ -408,3 +408,73 @@ def test_candidate_events_counts_only_identical_candidate_identity_as_duplicate(
 
     assert len(candidates[:-1]) == 1
     assert candidates[-1]["excluded"] == {"duplicate-candidate": 1}
+
+
+def test_first_human_message_after_automated_start_is_intervention() -> None:
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": "<agent-toolkit-auto-inserted>自動起動"},
+        {"kind": "user", "record": "main", "line": 2, "text": "人間の指摘"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert candidates[0]["locators"] == [{"record": "main", "line": 2}]
+    assert candidates[-1]["excluded"] == {"runtime-inserted": 1}
+
+
+def test_failed_tools_distinguish_operation_and_full_diagnostic() -> None:
+    timeline = [
+        {
+            "kind": "failed-tool",
+            "record": "main",
+            "line": 2,
+            "text": "Exit code 1\n原因A",
+            "tool_name": "Bash",
+            "operation": "cmd A",
+        },
+        {
+            "kind": "failed-tool",
+            "record": "main",
+            "line": 3,
+            "text": "Exit code 1\n原因B",
+            "tool_name": "Bash",
+            "operation": "cmd A",
+        },
+        {
+            "kind": "failed-tool",
+            "record": "main",
+            "line": 4,
+            "text": "Exit code 1\n原因A",
+            "tool_name": "Bash",
+            "operation": "cmd B",
+        },
+        {
+            "kind": "failed-tool",
+            "record": "main",
+            "line": 5,
+            "text": "Exit code 1\n原因A",
+            "tool_name": "Bash",
+            "operation": "cmd A",
+        },
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert sorted(candidate["count"] for candidate in candidates[:-1]) == [1, 1, 2]
+    assert candidates[-1]["included_locators"] == [{"record": "main", "line": line} for line in (2, 3, 4, 5)]
+
+
+def test_hook_notice_keeps_outer_reasons_and_ignores_nested_delivery_tag() -> None:
+    body = (
+        '<agent-toolkit-auto-inserted source="hook/a" kind="notice">参考</agent-toolkit-auto-inserted>'
+        '<agent-toolkit-auto-inserted source="hook/b" kind="warn">理由B'
+        '<agent-toolkit-auto-inserted source="agent-toolkit" kind="rules-main">規範</agent-toolkit-auto-inserted>'
+        "</agent-toolkit-auto-inserted>"
+        '<agent-toolkit-auto-inserted source="hook/c" kind="block">理由C</agent-toolkit-auto-inserted>'
+    )
+
+    keys = evidence._hook_notice_keys(body, "PreToolUse:Bash")  # pylint: disable=protected-access
+
+    assert [(key.hook, key.tag) for key in keys] == [("hook/a", "notice"), ("hook/b", "warn"), ("hook/c", "block")]
+    assert [key.kind_text for key in keys][0] == "参考"
+    assert [key.kind_text for key in keys][2] == "理由C"

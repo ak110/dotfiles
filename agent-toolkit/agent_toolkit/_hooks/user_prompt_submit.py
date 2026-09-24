@@ -32,8 +32,8 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 1. payloadの`source`が存在し、値が`user`以外であること
 2. `prompt`の1行目が`[agent-toolkit/periodic-recheck]`だけの行であること
 3. 委譲先として起動されていること
-4. `prompt`が`<task-notification`又は`<cross-session-message`で始まること
-5. `prompt`の1行目が`<automated-prompt`要素の開始タグを含むこと
+4. `prompt`が`<task-notification`で始まること
+5. `prompt`の1行目が`<agent-toolkit-auto-inserted`要素の開始タグを含むこと
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -92,7 +92,7 @@ _LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
-_HARNESS_MESSAGE_RE = re.compile(r"^\s*<(?:task-notification|cross-session-message)\b")
+_HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
 PERIODIC_RECHECK_MARKER = '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
 """定期再確認のpromptの1行目へ置く役割標識。
 

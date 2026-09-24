@@ -186,6 +186,38 @@ def test_excludes_normal_tool_output_and_clips_failed_output(tmp_path: pathlib.P
     assert events[0]["text"].endswith("…[省略]")
 
 
+def test_claude_failed_tool_keeps_corresponding_operation(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": "call-1", "name": "Bash", "input": {"command": "rg foo"}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": "Exit code 1\n原因A"},
+                    ],
+                },
+            },
+        ],
+    )
+
+    failed = [event for event in evidence.load_and_extract(str(transcript)) if event["kind"] == "failed-tool"]
+
+    assert len(failed) == 1
+    assert failed[0]["tool_name"] == "Bash"
+    assert json.loads(failed[0]["operation"]) == {"command": "rg foo"}
+
+
 def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_path: pathlib.Path) -> None:
     """Claudeの質問回答だけを質問順の単一userイベントへ変換する。"""
     transcript = _write_transcript(
@@ -5662,7 +5694,42 @@ def test_hook_notices_mode_counts_each_marker_of_a_multi_marker_body(
 
     events = _read_jsonl(capsys)
     assert sorted(event["tag"] for event in events[:-1]) == ["block", "warn"]
+    assert {event["kind_text"] for event in events[:-1]} == {"入力を補正した", "固定待機を検出した"}
     assert events[-1] == {"kind": "summary", "count": 2}
+
+
+def test_hook_notices_mode_ignores_nested_delivery_and_deduplicates_same_call(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    body = (
+        '<agent-toolkit-auto-inserted source="hook/a" kind="notice">参考</agent-toolkit-auto-inserted>'
+        '<agent-toolkit-auto-inserted source="hook/b" kind="warn">理由B'
+        '<agent-toolkit-auto-inserted source="agent-toolkit" kind="rules-main">規範</agent-toolkit-auto-inserted>'
+        "</agent-toolkit-auto-inserted>"
+        '<agent-toolkit-auto-inserted source="hook/c" kind="block">理由C</agent-toolkit-auto-inserted>'
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {"type": "hook_additional_context", "hookName": "PreToolUse:Bash", "toolUseID": "call-1", "content": [body]}
+            ),
+            _hook_attachment(
+                {"type": "hook_additional_context", "hookName": "PreToolUse:Bash", "toolUseID": "call-1", "content": [body]}
+            ),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [(event["hook"], event["tag"], event["count"]) for event in events[:-1]] == [
+        ("hook/a", "notice", 1),
+        ("hook/b", "warn", 1),
+        ("hook/c", "block", 1),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 3}
 
 
 def test_hook_notices_mode_merges_kinds_differing_only_by_variable_parts(
@@ -6513,6 +6580,8 @@ def test_help_uses_one_claude_only_limitation_note(monkeypatch: pytest.MonkeyPat
     assert raised.value.code == 0
     assert help_text.count(note) == 3
     assert "Codexスレッド別集計はClaude Code形式" not in help_text
+    assert "`--since`が必須" in help_text
+    assert help_text.count("`--since`と`--observation-boundary`が必須") == 2
 
 
 def test_hook_record_scan_tolerates_non_string_type_values(
@@ -6747,11 +6816,8 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     items = [item for item in candidates if item["kind"] == "candidate"]
-    assert [item["locators"] for item in items] == [
-        [{"record": "main", "line": 4}],
-        [{"record": "main", "line": 5}],
-    ]
-    assert candidates[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1, "runtime-meta": 1}
+    assert sorted(item["locators"][0]["line"] for item in items) == [3, 4, 5]
+    assert candidates[-1]["excluded"] == {"runtime-inserted": 1, "runtime-meta": 1}
 
 
 def test_candidates_exclude_boundary_marked_injections() -> None:
@@ -6770,7 +6836,7 @@ def test_candidates_exclude_boundary_marked_injections() -> None:
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     items = [item for item in candidates if item["kind"] == "candidate"]
-    assert [item["locators"] for item in items] == [[{"record": "main", "line": 4}]]
+    assert sorted(item["locators"][0]["line"] for item in items) == [3, 4]
     assert candidates[-1]["excluded"]["runtime-inserted"] == 2
 
 

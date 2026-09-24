@@ -90,7 +90,12 @@ class TestMachineInjectedTurn:
             ({"source": "system"}, "状況を確認する。", {}),
             ({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n稼働状況を確認する。", {}),
             ({}, "<task-notification>完了</task-notification>", {}),
-            ({}, '<cross-session-message from="main:x">継続</cross-session-message>', {}),
+            (
+                {},
+                '<agent-toolkit-auto-inserted source="agent-toolkit/process-loop" kind="goal">'
+                "継続</agent-toolkit-auto-inserted>",
+                {},
+            ),
         ],
     )
     def test_no_notice_and_no_timestamp(
@@ -195,6 +200,16 @@ class TestNonMatchingPrompts:
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
         assert set(state) == {"last_user_prompt_at"}
+
+    @pytest.mark.parametrize(
+        "prompt", ["<cross-session-message>継続</cross-session-message>", "<automated-prompt>継続</automated-prompt>"]
+    )
+    def test_old_wrappers_are_not_machine_turns(self, tmp_path: pathlib.Path, prompt: str):
+        sid = "old-wrapper"
+        result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
 
     def test_unrelated_slash_is_treated_as_user_utterance(self, tmp_path: pathlib.Path):
         """対応スキル以外のスラッシュコマンドもユーザー自身の発話として注記の対象にする。"""
