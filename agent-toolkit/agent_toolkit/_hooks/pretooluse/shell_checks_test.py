@@ -2408,18 +2408,27 @@ class TestBashBoundaryAndPathRegressions:
         ],
     )
     def test_unresolved_producer_redirection_creates_later_input(producer: str, tmp_path: pathlib.Path) -> None:
-        scan = shell_checks._scan_explicit_paths(  # pylint: disable=protected-access
-            f"{producer}; wc -l result.txt missing.txt", str(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"{producer}; wc -l result.txt missing.txt"},
+                "cwd": str(tmp_path),
+            }
         )
-        assert "result.txt" in scan.present
-        assert scan.missing == ("missing.txt",)
+        messages = _agent_messages(result)
+        assert "missing.txt" in messages
+        assert "result.txt" not in messages
 
     @staticmethod
     def test_unresolved_producer_without_static_target_suppresses_missing_warning(tmp_path: pathlib.Path) -> None:
-        scan = shell_checks._scan_explicit_paths(  # pylint: disable=protected-access
-            "xargs -P 2 printf; wc -l unknown.txt", str(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "xargs -P 2 printf; wc -l unknown.txt"},
+                "cwd": str(tmp_path),
+            }
         )
-        assert not scan.missing
+        assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
 
     @staticmethod
     @pytest.mark.parametrize(

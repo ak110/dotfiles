@@ -12,6 +12,7 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本ス
 ## 用語
 
 本スキルが扱う主要用語を次のとおり定める。詳細は各用語が挙げる正本が定める。
+WI作成、計画、実行及び実行後レビューの責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`を正本とする。
 
 - **メイン**: `agent-toolkit/rules/01-agent.md`が定めるメインエージェントの短縮呼称
 - **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める

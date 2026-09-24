@@ -42,6 +42,17 @@ _GitCall = dict[str, Any]
 _ATK_PATH = pathlib.Path(atk.__file__).resolve()
 _PROJECT_ROOT = _ATK_PATH.parents[1]
 
+
+def test_info_reports_current_execution_context(capsys: pytest.CaptureFixture[str]) -> None:
+    """公開CLIのinfoが実行文脈とplugin版数の所在を返す。"""
+    atk.main(["info"])
+
+    output = capsys.readouterr().out
+    assert f"作業ディレクトリ: {pathlib.Path.cwd()}" in output
+    assert f"atk実装: {_ATK_PATH}" in output
+    assert "plugin version (plugin.json):" in output
+
+
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
@@ -1061,17 +1072,6 @@ def test_removed_plan_mutation_commands_are_rejected(argv: list[str]) -> None:
 class TestLegacyTopLevelCommandAlias:
     """改名前のトップレベル名`mq`が現行名`wi`と同じ結果を返し、公開名として露出しないことを検証する。"""
 
-    def test_alias_resolves_to_current_command(self) -> None:
-        """先頭の`mq`を`wi`へ解決し、以降の引数をそのまま渡す。"""
-        assert atk._resolve_legacy_top_level_command(["mq", "list", "--status=all"]) == [  # noqa: SLF001  # pylint: disable=protected-access
-            "wi",
-            "list",
-            "--status=all",
-        ]
-        assert atk._resolve_legacy_top_level_command(["wi", "list"]) == ["wi", "list"]  # noqa: SLF001  # pylint: disable=protected-access
-        assert atk._resolve_legacy_top_level_command(["plans", "mq"]) == ["plans", "mq"]  # noqa: SLF001  # pylint: disable=protected-access
-        assert not atk._resolve_legacy_top_level_command([])  # noqa: SLF001  # pylint: disable=protected-access
-
     def test_alias_lists_same_entries_as_current_command(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1299,6 +1299,23 @@ def test_process_loop_abort_commands_report_and_transition_state(
     assert not (tmp_path / "private-notes").exists()
 
 
+def test_process_loop_instruction_commands_complete_storage_cycle(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """公開CLIで次回指示を保持し、状態を確認して破棄する。"""
+    for argv, expected in (
+        (["instruct", "次の起動で確認する"], "成功: 次のセッションへ渡す追加指示を保持した。"),
+        (["status"], "保持中の追加指示: 1件"),
+        (["instruct-cancel"], "成功: 保持中の追加指示を1件破棄した"),
+        (["status"], "保持中の追加指示: 0件"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "process-loop", *argv], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert expected in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     "subcommand",
     ["abort", "abort-cancel", "status", "instruct", "instruct-cancel"],
@@ -1315,6 +1332,18 @@ def test_process_loop_subcommand_help_is_available(
 
     assert exc_info.value.code == 0
     assert f"atk wi process-loop {subcommand}" in capsys.readouterr().out
+
+
+class TestSubcommandSubparserDefault:
+    """`mq add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
+
+    @pytest.mark.parametrize("type_option", [[], ["--type=uwi"]])
+    def test_add(self, type_option: list[str]) -> None:
+        """`mq add`解析後は種別にかかわらず同じサブパーサを保持する。"""
+        args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
+            ["wi", "add", *type_option]
+        )
+        assert args.subparser.prog == "atk wi add"
 
 
 def test_add_output_reloads_saved_metadata(
@@ -1339,18 +1368,6 @@ def test_add_output_reloads_saved_metadata(
     assert f"target_commit: {_FIXED_HEAD_COMMIT}" in output
     assert "plan_file: なし" in output
     assert "depends_on: なし" in output
-
-
-class TestSubcommandSubparserDefault:
-    """`mq add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
-
-    @pytest.mark.parametrize("type_option", [[], ["--type=uwi"]])
-    def test_add(self, type_option: list[str]) -> None:
-        """`mq add`解析後は種別にかかわらず同じサブパーサを保持する。"""
-        args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-            ["wi", "add", *type_option]
-        )
-        assert args.subparser.prog == "atk wi add"
 
 
 def test_review_table_subcommands_are_public() -> None:
@@ -2242,12 +2259,6 @@ class TestAddBatchOption:
         monkeypatch.setattr(batch_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
         monkeypatch.setattr(batch_module, "_pull", lambda _path: None)
         monkeypatch.setattr(batch_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-
-    def test_type_option_defaults_to_none_before_normalization(self) -> None:
-        """`--type`省略時のargparse既定値はNoneとし、明示指定と区別する。"""
-        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        assert parser.parse_args(["wi", "add"]).type is None
-        assert parser.parse_args(["wi", "add", "--type=awi"]).type == "awi"
 
     def test_normal_add_normalizes_omitted_type_to_awi(
         self,

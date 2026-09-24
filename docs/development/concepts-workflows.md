@@ -47,6 +47,8 @@ branchの公開又はCIが失敗した場合は`master`を保持し、同じcomm
 
 ## WIキューの運用
 
+WI作成、計画、実行、実行後レビューは、それぞれ要求と完成条件の確定、実装境界と受入シナリオの設計、公開入口からの検体を含む実装、意図・回帰・過剰設計の独立検収を担う。前工程の出口を後工程の入力とし、同じ判断を後工程で起草し直さない。詳細な工程契約は`agent-toolkit/share/workflow-phases.md`を正本とする。全体検査とCIは個別WIの完成条件ではなく公開工程の検収で判定する（2026年9月24日、利用者指示）。
+
 現行の正本は`agent-toolkit:wi-standards`、`agent-toolkit:process-wi`、
 `agent-toolkit/share/`配下のpickerのタスク文書、`agent-toolkit:plan-mode`の計画ファイル基準及び
 [design.md](design.md)にある。

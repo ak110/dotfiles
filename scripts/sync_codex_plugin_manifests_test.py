@@ -580,20 +580,21 @@ def test_sync_replaces_stale_outputs(manifest_root: Path) -> None:
     assert json.loads(stale_hooks.read_text(encoding="utf-8"))["hooks"]["PermissionRequest"][0]["matcher"] == "Bash"
 
 
-def test_check_accepts_current_outputs_without_changes(manifest_root: Path) -> None:
-    subject.sync(manifest_root)
+def test_check_accepts_current_outputs_without_changes(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
+    assert subject.main([]) == 0
     before = {
-        path: (manifest_root / path).read_text(encoding="utf-8")
-        for path in (*subject._outputs(manifest_root), *subject.OPTIONAL_TARGETS)  # pylint: disable=protected-access
-        if (manifest_root / path).exists()
+        path.relative_to(manifest_root): path.read_bytes()
+        for path in manifest_root.rglob("*")
+        if path.is_file()
     }
 
-    assert subject.check(manifest_root) is True
+    assert subject.main(["--check"]) == 0
 
     after = {
-        path: (manifest_root / path).read_text(encoding="utf-8")
-        for path in (*subject._outputs(manifest_root), *subject.OPTIONAL_TARGETS)  # pylint: disable=protected-access
-        if (manifest_root / path).exists()
+        path.relative_to(manifest_root): path.read_bytes()
+        for path in manifest_root.rglob("*")
+        if path.is_file()
     }
     assert after == before
 

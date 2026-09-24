@@ -8,6 +8,7 @@ disable-model-invocation: true
 # AWIの単一レーン処理
 
 メインがAWIを取得し、同じ処理回で計画、実装、実行レビュー及び終端を行う。選定と実装を委譲して並列化する場合は`../process-wi/SKILL.md`を使う。本スキルの実行中は自律モードとし、WIの共通契約は`../wi-standards/SKILL.md`を正本とする。
+WI作成、計画、実行及び実行後レビューの責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 ## process-wi契約の読み替え
 
@@ -42,7 +43,7 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 1. processable一覧と各WI本文を取得する。同じ時点で`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo>`を実行し、回答済みUWIを取得する。回答が作業を求めないUWIは、実装へ着手する前に`atk wi adopt`で終端する。回答が是正や保留中の元項目での作業を求めるUWIは、回答を作業要求として処理回の固定集合へ加える。UWI本文が保留中の元項目のファイル名を示す場合は、元項目を`atk wi unhold`で`inbox`へ戻して同じ固定集合へ加える。残る全項目を直接実装又は計画へ分ける。処理対象に依存が未達の項目が含まれる場合は、依存元を同じ処理回の集合へ加えるかを「確認を要する事項」の経路へ送る。確認を経ずに依存元を加えることと、依存未達の項目を集合から黙って外すことのいずれも選ばない。各WIについて、正本ファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パス及びそのworktreeで解決した処理開始時のHEADの7文字以上の一意な短縮OIDを対応付ける。対応付けた`target_repo`を使って対象を`processing`へ移し、対応表と集合を固定する。
 2. 以降の`atk wi`操作は対応表の`target_repo`を使い、Gitの起点比較、実装、検証、commit及びレビューは対応表のworktreeと処理開始OIDを使う。別のworktree又は複製元のHEADを代用しない。
 3. 計画対象がある場合は`agent-toolkit:plan-mode`のSKILL.mdと計画ファイル基準を全文読み、対象worktreeごとの部分集合を各1つの計画ファイルへ起草する。計画メタ情報の対象リポジトリと構造検査の`--work-dir`には、その部分集合のworktreeを使う。作成と構造検査は同基準が定める経路で行う。
-4. 対応表が示すworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。近接検証を実行し、`agent-toolkit:commit`に従ってcommitする。互いに依存しない対象worktreeの部分集合は並行してよいが、各worktreeへ書き込む主体はメイン1つのまま保つ。
+4. 対応表が示すworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。計画の`### 受入シナリオ`に対応する公開入口経由の結合・E2E検体を実装単位へ含め、近接検証で実行してシナリオ別の検体名と合否を記録する。手動観測では入力と結果を管理対象一時領域へ保存する。直接実装対象もWIの利用者と入口から同じ検体を選ぶ。`agent-toolkit:commit`に従ってcommitする。互いに依存しない対象worktreeの部分集合は並行してよいが、各worktreeへ書き込む主体はメイン1つのまま保つ。
 5. 対象worktreeごとに1件の実行レビューを`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動する。そのworktreeに計画対象がある場合は対応する計画ファイルの絶対パスを渡し、直接実装対象がある場合は対応するWIの記録を渡す。両方がある場合は同じ起動文へ渡す。計画対象が無い場合は、そのworktreeで解決した処理開始OIDを渡す。レビュー起動時の`cwd`、処理開始OID、レビュー表及びレビュー基準には同じ部分集合の値だけを使う。
 6. 対象worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させる。修正はメインが行い、同じ起点OIDとレビュー表を継続する。
 7. 各計画について`atk run-script plan-progress --`で完了判定を`## 進捗ログ`へ記録し、構造検査の成功を確認してから計画バンドルを保存する。

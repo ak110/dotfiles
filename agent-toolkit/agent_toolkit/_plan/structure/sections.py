@@ -57,6 +57,8 @@ if TYPE_CHECKING:
         PLAN_ACTION_NON_ADOPTED_DECISIONS,
         PLAN_ACTION_RELATIONS,
         PLAN_ACTION_TABLE_HEADER,
+        PLAN_ACCEPTANCE_H3,
+        PLAN_ACCEPTANCE_TABLE_HEADER,
         PLAN_AGENT_WI_ORIGIN,
         PLAN_BUG_CAUSE_TABLE_HEADER,
         PLAN_BUG_CAUSE_TABLE_ROWS,
@@ -65,6 +67,7 @@ if TYPE_CHECKING:
         PLAN_BUG_TABLE_HEADER,
         PLAN_BUG_TABLE_ROWS,
         PLAN_CURRENT_VERIFICATION_TABLE_ROWS,
+        PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS,
         PLAN_DETAIL_H2_ORDER,
         PLAN_DETAIL_SUFFIX,
         PLAN_EXCLUSION_H3,
@@ -1865,6 +1868,56 @@ def check_plan_single_file_structure(
 
     errors.extend(_check_nonempty_section(body, headings, PLAN_H2_REQUIREMENTS))
 
+    verification_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_VERIFICATION)
+    verification_tables = []
+    if verification_index is not None:
+        verification_start, verification_end = heading_subtree_range(headings, verification_index)
+        verification_tables = extract_tables(lines_within(body, verification_start, verification_end))
+    legacy_verification = any(
+        table.header == PLAN_VERIFICATION_TABLE_HEADER
+        and table.row_labels() == PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS
+        for table in verification_tables
+    )
+
+    requirements_index = find_heading_index(headings, 2, PLAN_H2_REQUIREMENTS)
+    acceptance_index = next(
+        (
+            index
+            for index, heading in child_headings(headings, requirements_index, 3)
+            if heading.text == PLAN_ACCEPTANCE_H3
+        ),
+        None,
+    ) if requirements_index is not None else None
+    if acceptance_index is None:
+        if not legacy_verification:
+            errors.append(f"`## {PLAN_H2_REQUIREMENTS}`に`### {PLAN_ACCEPTANCE_H3}`が必要")
+    else:
+        start, end = heading_subtree_range(headings, acceptance_index)
+        acceptance_lines = lines_within(body, start, end)
+        acceptance_tables = extract_tables(acceptance_lines)
+        has_adopted_action = False
+        if action_index is not None:
+            action_start, action_end = heading_subtree_range(headings, action_index)
+            for action_table in extract_tables(lines_within(body, action_start, action_end)):
+                if action_table.header == PLAN_HUMAN_ACTION_TABLE_HEADER:
+                    has_adopted_action = any(
+                        len(row) == len(action_table.header) and row[2] in ("採用", "部分採用")
+                        for row in action_table.rows
+                    )
+                    break
+        if has_adopted_action:
+            table = next((item for item in acceptance_tables if item.header == PLAN_ACCEPTANCE_TABLE_HEADER), None)
+            if table is None or not table.rows:
+                errors.append(f"`### {PLAN_ACCEPTANCE_H3}`には{list(PLAN_ACCEPTANCE_TABLE_HEADER)}の表が必要")
+            else:
+                for row_index, row in enumerate(table.rows):
+                    if len(row) != len(PLAN_ACCEPTANCE_TABLE_HEADER) or any(not cell for cell in row):
+                        errors.append(
+                            f"`### {PLAN_ACCEPTANCE_H3}`に空セル又は列数不一致がある: {table.row_location(row_index)}"
+                        )
+        elif [line.strip() for _lineno, line in acceptance_lines if line.strip()] != ["なし"]:
+            errors.append(f"採用行が無い場合は`### {PLAN_ACCEPTANCE_H3}`の本文を`なし`にする")
+
     permanence_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_PERMANENCE)
     if permanence_index is not None:
         errors.extend(
@@ -1888,14 +1941,14 @@ def check_plan_single_file_structure(
         )
     )
 
-    verification_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_VERIFICATION)
     if verification_index is not None:
-        start, end = heading_subtree_range(headings, verification_index)
-        table = _find_table_with_rows(extract_tables(lines_within(body, start, end)), PLAN_CURRENT_VERIFICATION_TABLE_ROWS)
+        table = _find_table_with_rows(verification_tables, PLAN_CURRENT_VERIFICATION_TABLE_ROWS)
+        if table is None:
+            table = _find_table_with_rows(verification_tables, PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS)
         if table is None or table.header != PLAN_VERIFICATION_TABLE_HEADER:
             errors.append(
                 f"`## {PLAN_H2_CURRENT_VERIFICATION}`は{list(PLAN_VERIFICATION_TABLE_HEADER)}の2列と"
-                f"固定2行（{list(PLAN_CURRENT_VERIFICATION_TABLE_ROWS)}）の表にする"
+                f"固定行（{list(PLAN_CURRENT_VERIFICATION_TABLE_ROWS)}）の表にする"
             )
         else:
             for index, row in enumerate(table.rows):

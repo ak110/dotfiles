@@ -5,8 +5,7 @@ Claude Codeから委譲を起動する直前に本文書を全文読む。
 
 ## 起動パラメーター
 
-- `subagent_type`を選ぶ根拠が無い場合は汎用エージェント（`claude`）、複数ディレクトリ・複数ファイルに跨る
-  横断調査・横断置換には`Explore`または並列`Agent`を使う。共通規範の「役割種別」は`subagent_type`で判定する
+- 委譲経路を`runtime-routing.md`で選んでから起動パラメーターを決める。本節の`subagent_type`と`model`は`Agent`を選んだ場合だけに適用し、横断調査の通常経路は`agents_server`の読み取り専用探索とする。`Agent`を選び`subagent_type`を選ぶ根拠が無い場合は汎用エージェント（`claude`）を使う。共通規範の「役割種別」は`subagent_type`で判定する
 - `Agent`ツールの`run_in_background`は既定で背景実行とし、`false`を明示した場合だけ前景で実行する。既定値と受理可否は起動直前にツールスキーマで確認する
 - モデル区分は軽量を`sonnet`、標準を用途に応じて`opus`又は`sonnet`、上位を`opus`とする。
   段位とeffortの対応は`references/runtime-routing.md`「代替時の組合せの目安」を正本とする
@@ -44,6 +43,8 @@ agent定義の`tools`は実行可能性ではなく許可の上限を示すた�
 | 同一セッション内の親子委譲 | `Agent`の起動結果が返すagent ID | 現在の実行主体へ`SendMessage`が公開され、対象IDが同じ委譲ツリーで有効 | `### 完了通知と中継の実行順`に従う |
 | Agent Teams | team member名など機能が定める識別子 | 機能が有効で、必要なtoolの公開と呼び出しが成功する | 本文書では設定を変更せず、同一セッション内の親子委譲へ読み替えない |
 | 独立セッション間通信 | capability discoveryが返す機械可読識別子 | providerが機能を提供し、`ListAgents`と`SendMessage`の実呼び出しが成功する | 未対応providerでは依存せず、代替機構を追加しない |
+
+稼働中の独立セッションへ直ちに依頼する場合は、利用可能な宛先列挙と通信手段から到達先を確定して送る。到達できない場合は未達を依頼元へ報告する。`atk wi process-loop instruct`は次回起動時に読む指示を保存する入口であり、稼働中セッションへの即時配送の結果として扱わない。この使い分けはprocess-loop以外の独立セッションにも適用する。
 
 宛先には起動結果のagent ID、hostが明示する機械可読reply address、条件付きの`senderTaskId`だけを用いる。
 `senderTaskId`はhostが値を提示し、対象環境で到達を確認できる場合だけ返信識別子として用いる。
@@ -202,6 +203,7 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 - 完了報告を受け取って停止済みの識別子でも、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合は、
   継続直前に再取得した実効`engine`・`model`・`effort`が現在のthreadの起動時と一致するときに限り`SendMessage`で再開してよい。
   同一セッション内の起動元が保持した機械可読識別子で再開した場合、再開後の完了報告を起動元が受け取れる。
+  継続の配送本文には、継続前に作成又は読んだファイルも書込直前に現行本文を取得する条件を含める。受信側は継続前に保持した本文を編集入力にせず、対象の現行本文を取得してから編集する。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」にある。
   完了通知の受領主体はproviderと構成へ依存するため、最上位と直接の親のいずれも標準配送先として固定しない
   同一セッション内の起動結果IDへの`SendMessage`成功と、送信後に対応する完了通知を受け取れた場合だけ、その継続経路を成立と判定する。

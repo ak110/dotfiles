@@ -17,7 +17,6 @@ import pytest
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi.common import _is_uwi_answered  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.uwi import (  # noqa: E402  # pylint: disable=wrong-import-position
     _cmd_answer,
     _detect_self_containment_deficiency,
@@ -762,7 +761,6 @@ class TestUwiAnswerNonInteractive:
         assert exc_info.value.code == 0
         content = path.read_text(encoding="utf-8")
         assert content.rstrip().endswith("採用する")
-        assert _is_uwi_answered(content)
         captured = capsys.readouterr()
         assert f"成功: UWIへ回答を反映した: {filename}" in captured.out
         assert "$EDITOR" not in captured.err

@@ -119,11 +119,22 @@ async def test_writer_logs_result_write_and_delete_without_body(
     assert "秘密の結果本文" not in caplog.text
 
 
-def test_serialize_session_includes_updated_at(tmp_path: pathlib.Path) -> None:
+@pytest.mark.asyncio
+async def test_status_file_includes_updated_at(tmp_path: pathlib.Path) -> None:
     """状態ファイルのsession射影は最終活動時刻を含む。"""
     session = state.SessionState("session-1", str(tmp_path))
+    session.announced = True
+    writer = subject.StatusFileWriter(
+        {session.session_id: session},
+        subject.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
 
-    assert subject._serialize_session(session)["updated_at"] == session.updated_at
+    writer.activate()
+    saved = json.loads(writer.path.read_text(encoding="utf-8"))
+
+    assert saved["sessions"][0]["updated_at"] == session.updated_at
+    writer.deactivate()
 
 
 @pytest.mark.parametrize(

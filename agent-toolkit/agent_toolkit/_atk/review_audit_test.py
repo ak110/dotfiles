@@ -1,11 +1,11 @@
 """自動コードレビュー監査の判定済み記録を検証する。"""
 
-import argparse
 import json
 import pathlib
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._atk import review_audit
 
 
@@ -20,8 +20,10 @@ def _record_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
 
 
 def _dispatch(subcommand: str, repository: str, *identifiers: str) -> int:
-    args = argparse.Namespace(review_audit_subcommand=subcommand, repo=repository, identifiers=list(identifiers))
-    return review_audit.dispatch(args)
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-audit", subcommand, "--repo", repository, *identifiers])
+    assert isinstance(exc_info.value.code, int)
+    return exc_info.value.code
 
 
 def test_list_returns_nothing_for_unrecorded_repository(capsys: pytest.CaptureFixture[str]) -> None:
@@ -67,15 +69,15 @@ def test_mark_keeps_other_repository_records(
 
 
 @pytest.mark.parametrize("repository", ("owner", "owner/repo/extra", ""))
-def test_invalid_repository_is_rejected(repository: str) -> None:
-    with pytest.raises(ValueError, match="<owner>/<repo>"):
-        _dispatch("list", repository)
+def test_invalid_repository_is_rejected(repository: str, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _dispatch("list", repository) == 1
+    assert "<owner>/<repo>" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("identifier", ("0", "-1", "abc"))
-def test_non_positive_id_is_rejected(identifier: str) -> None:
-    with pytest.raises(ValueError, match="正の整数"):
-        _dispatch("mark", "owner/repo", identifier)
+def test_non_positive_id_is_rejected(identifier: str, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _dispatch("mark", "owner/repo", identifier) == 1
+    assert "正の整数" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("content", ("{broken", "[]"))

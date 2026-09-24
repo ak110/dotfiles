@@ -198,13 +198,22 @@ def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> 
         ("plain body", True),
     ],
 )
-def test_embedded_section_detects_boundary_by_exact_element_name(tmp_path: Path, body: str, wrapped: bool) -> None:
+def test_embedded_section_detects_boundary_by_exact_element_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, wrapped: bool
+) -> None:
     """要素名が完全一致する本文だけを境界付きとみなし、別要素の本文は境界で囲む。"""
+    root = _root(tmp_path)
     relative = Path("agent-toolkit/rules/00-sample.md")
-    (tmp_path / relative).parent.mkdir(parents=True)
-    (tmp_path / relative).write_text(body + "\n", encoding="utf-8")
+    (root / relative).write_text(body + "\n", encoding="utf-8")
 
-    section = subject._embedded_section(tmp_path, relative)  # pylint: disable=protected-access
+    original_sync = subject.sync
+    monkeypatch.setattr(subject, "sync", lambda: original_sync(root))
+    assert subject.main([]) == 0
+    rendered = (root / subject.TARGET).read_text(encoding="utf-8")
+    sample = rendered.split('path="agent-toolkit/rules/00-sample.md">', 1)[-1]
 
-    assert (len(section) == 4) is wrapped
-    assert section[-1] == (f"</{subject.NORMATIVE_ELEMENT}>" if wrapped else body)
+    if wrapped:
+        assert sample.startswith(f"\n{body}\n</{subject.NORMATIVE_ELEMENT}>")
+    else:
+        assert f"\n{body}\n" in rendered
+        assert 'path="agent-toolkit/rules/00-sample.md">' not in rendered

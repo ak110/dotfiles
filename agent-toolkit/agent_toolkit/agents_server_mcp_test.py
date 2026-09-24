@@ -437,7 +437,8 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     assert "`explore_fast_model`" in explore_tool.description
     assert "`explore_model`" in explore_tool.description
     assert "`explore_fast_model`" in shell_tool.description
-    assert "`explore_fast_model`" in write_tool.description
+    assert "`write_model`" in write_tool.description
+    assert "文章起草" in write_tool.description
     show_tool = subject.mcp._tool_manager.get_tool("show")
     assert show_tool is not None
     assert "`model_type`は工程別設定の種別名、または`start_custom`へ直接渡した候補列" in show_tool.description
@@ -1023,6 +1024,7 @@ async def test_success_response_key_sets_for_all_tools(
     assert started.keys() == start_keys
     assert explored.keys() == start_keys
     assert written.keys() == start_keys
+    assert written["model_type"] == "write"
     assert shelled.keys() == start_keys
 
     session_id = str(started["session_id"])

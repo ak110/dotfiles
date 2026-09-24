@@ -71,12 +71,15 @@ def _preset_settings(preset: str) -> dict[str, str]:
     return settings
 
 
-_MUTABLE_KEY_DEFAULTS = _preset_settings("codex-balanced")
+_MUTABLE_KEY_DEFAULTS = {
+    **_preset_settings("codex-balanced"),
+    "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
+}
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
-    "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]"}),
+    "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]", "claude-opus-5-5"}),
     "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}),
     # Antigravity CLIの`--model`は、`agy models`が返す推論の深さ込みの完全スラッグと、
     # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。

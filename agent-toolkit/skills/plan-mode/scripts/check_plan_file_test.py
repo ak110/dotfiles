@@ -566,6 +566,47 @@ def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> Non
     assert not warnings, warnings
 
 
+def test_rejects_missing_acceptance_scenario_for_adopted_plan(repo: tuple[pathlib.Path, str]) -> None:
+    """採用行がある新書式計画は受入表を必須とする。"""
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    start = content.index("### 受入シナリオ\n")
+    end = content.index("## 恒久化・リファクタリング\n", start)
+
+    errors, _warnings = _check(work_dir, content[:start] + content[end:])
+
+    assert any("### 受入シナリオ" in error for error in errors), errors
+
+
+def test_accepts_none_acceptance_scenario_without_adopted_action(repo: tuple[pathlib.Path, str]) -> None:
+    """採用行が無い計画は受入シナリオを`なし`として受理する。"""
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    content = content.replace(_plan_fixture.USER_ACTION_ROW, _plan_fixture.USER_ACTION_ROW.replace("| 採用 |", "| 不採用 |"))
+    start = content.index("### 受入シナリオ\n")
+    end = content.index("## 恒久化・リファクタリング\n", start)
+    content = content[:start] + "### 受入シナリオ\n\nなし\n\n" + content[end:]
+
+    errors, warnings = _check(work_dir, content)
+
+    assert not errors, errors
+    assert not warnings, warnings
+
+
+def test_accepts_legacy_verification_without_acceptance_scenario(repo: tuple[pathlib.Path, str]) -> None:
+    """進行中の旧2行計画は受入表なしでも読み取れる。"""
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    start = content.index("### 受入シナリオ\n")
+    end = content.index("## 恒久化・リファクタリング\n", start)
+    legacy = content[:start] + content[end:]
+    legacy = legacy.replace("| 近接検証 | `pytest` |", "| 近接検証 | `pytest` |\n| 全体検証 | `make test` |", 1)
+
+    errors, _warnings = _check(work_dir, legacy)
+
+    assert not errors, errors
+
+
 def test_current_plan_legacy_refactoring_table_is_migration_only(repo: tuple[pathlib.Path, str]) -> None:
     """旧リファクタリング表は読取時に警告し、新規作成・改訂では拒否する。"""
     work_dir, _base = repo
@@ -596,12 +637,7 @@ def test_current_plan_legacy_refactoring_table_is_migration_only(repo: tuple[pat
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [
-        (
-            "## 要件・外部仕様\n\n公開契約の判定を更新し、対象の検査で結果を確認する。",
-            "## 要件・外部仕様",
-            "`## 要件・外部仕様`を空にしない",
-        ),
-        ("| 近接検証 |", "| レーン内検証 |", "固定2行"),
+        ("| 近接検証 |", "| レーン内検証 |", "固定行"),
         ("### リファクタリング", "### 自由見出し", "固定見出し"),
         ("対象の公開契約を更新する。", "#### 深い見出し", "H4以深"),
     ],

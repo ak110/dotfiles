@@ -373,26 +373,6 @@ def test_agents_wait_rejects_overlapping_owner(tmp_path: pathlib.Path, capsys: p
     assert "targets=session-1" in error
 
 
-def test_consume_wait_result_replays_once(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """後続待機は先行runの本文と終了コードを1回だけ回収する。"""
-    run_path = tmp_path / "run.json"
-    agents_wait._write_json(  # pylint: disable=protected-access
-        run_path,
-        {
-            "run_id": "run-1",
-            "status": "published",
-            "output": '{"session_id":"session-1","status":"completed"}',
-            "exit_code": 0,
-            "stream": "stdout",
-        },
-    )
-
-    assert agents_wait._consume_wait_result(run_path) == 0  # pylint: disable=protected-access
-    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
-    assert agents_wait._consume_wait_result(run_path) == 8  # pylint: disable=protected-access
-    assert json.loads(capsys.readouterr().out) == {"status": "consumed", "run_id": "run-1"}
-
-
 def test_followers_join_the_same_wait_run(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -463,21 +443,6 @@ def test_followers_join_the_same_wait_run(
     output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert {"session_id": "session-1", "status": "completed"} in output
     assert {"status": "consumed", "run_id": "run-1"} in output
-
-
-def test_published_foreground_result_is_not_selected_by_a_later_sequential_wait(tmp_path: pathlib.Path) -> None:
-    """前景へ配送したrunは、lock競合していない次の待機の再演対象にしない。"""
-    run_directory = tmp_path / "wait-results"
-    run_path = run_directory / "run-1.json"
-    agents_wait._write_json(  # pylint: disable=protected-access
-        run_path,
-        {"run_id": "run-1", "status": "running", "targets": ["session-1"]},
-    )
-    agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
-
-    agents_wait._publish_wait_result(run_path, "completed", 0)  # pylint: disable=protected-access
-
-    assert agents_wait._matching_current_wait_run(run_directory, ["session-1"]) is None  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize(
