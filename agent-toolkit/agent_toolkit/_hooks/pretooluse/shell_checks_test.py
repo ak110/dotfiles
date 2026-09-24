@@ -1432,7 +1432,7 @@ class TestBashOutputTruncationRepetition:
     @pytest.mark.parametrize(
         ("command", "expected"),
         [
-            ("ls -d /tmp/example | head -1", "`test -e /tmp/example`"),
+            ("ls -d /tmp/example | head -1", '`test -e /tmp/example; echo "test_e_rc=$?"`'),
             ("find /tmp -name '*.log' | head -1", "`find /tmp -name '*.log' -print -quit`"),
         ],
     )
@@ -2192,8 +2192,8 @@ class TestTruncationFixKeepsConditionalStructure:
         assert "`wc`" in messages
         assert "absent.txt" in messages
         assert "対象ごとに別の呼び出し" in messages
-        assert "`test -e <絶対パス>`" in messages
-        assert "終了コード" in messages
+        assert '`test -e <絶対パス>; echo "test_e_rc=$?"`' in messages
+        assert "表示された値" in messages
 
 
 class TestRecursiveGrepReplacementKeepsOriginalOptions:
@@ -2401,6 +2401,28 @@ class TestBashBoundaryAndPathRegressions:
 
     @staticmethod
     @pytest.mark.parametrize(
+        "producer",
+        [
+            "printf x | xargs -P 2 printf > result.txt",
+            "xargs -P 2 printf $(printf x) > result.txt",
+        ],
+    )
+    def test_unresolved_producer_redirection_creates_later_input(producer: str, tmp_path: pathlib.Path) -> None:
+        scan = shell_checks._scan_explicit_paths(  # pylint: disable=protected-access
+            f"{producer}; wc -l result.txt missing.txt", str(tmp_path)
+        )
+        assert "result.txt" in scan.present
+        assert scan.missing == ("missing.txt",)
+
+    @staticmethod
+    def test_unresolved_producer_without_static_target_suppresses_missing_warning(tmp_path: pathlib.Path) -> None:
+        scan = shell_checks._scan_explicit_paths(  # pylint: disable=protected-access
+            "xargs -P 2 printf; wc -l unknown.txt", str(tmp_path)
+        )
+        assert scan.missing == ()
+
+    @staticmethod
+    @pytest.mark.parametrize(
         "command",
         [
             "atk wi list --output-file report.txt; wc -l report.txt",
@@ -2417,9 +2439,9 @@ class TestBashBoundaryAndPathRegressions:
         messages = _agent_messages(result)
         assert "`rg --files`" in messages
         assert "`find`" in messages
-        assert "`test -e <絶対パス>`" in messages
+        assert '`test -e <絶対パス>; echo "test_e_rc=$?"`' in messages
         assert "対象ごとに別の呼び出し" in messages
-        assert "終了コード" in messages
+        assert "表示された値" in messages
 
     @staticmethod
     def test_rg_ambiguous_valued_short_option_warns(tmp_path: pathlib.Path) -> None:

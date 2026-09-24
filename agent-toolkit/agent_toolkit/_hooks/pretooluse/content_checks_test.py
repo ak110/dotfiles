@@ -388,7 +388,6 @@ class TestBashSleepPollPattern:
             ("while :; do sleep 60; git status --short; done", "sleep-poll-first-25"),
             ("for item in a b; do sleep 60; git status --short; done", "sleep-poll-first-26"),
             # 条件式が読み取り専用の状態確認であるループは、本体の待機だけで反復ポーリングになる。
-            ("while pgrep -f make; do sleep 5; done", "sleep-poll-first-27"),
             ("sleep 5; pgrep -f make", "sleep-poll-first-28"),
         ],
     )
@@ -424,6 +423,27 @@ class TestBashSleepPollPattern:
         assert '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse"' in second.stderr
         assert "`sleep`を単独で実行" in second.stderr
         assert "02-agent-operations.md" in second.stderr
+
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            (
+                "until [ -e /tmp/claude-1029/project/session/tasks/bt1hjc14j.output ]; do sleep 10; done",
+                "完了通知",
+            ),
+            ("while pgrep -f make; do sleep 5; done", "コマンド行に一致"),
+            ("until ! pkill -f make; do sleep 5; done", "コマンド行に一致"),
+        ],
+    )
+    def test_foreground_loop_with_task_output_or_self_matching_process_search_is_blocked(
+        self, command: str, expected: str, tmp_path: pathlib.Path
+    ) -> None:
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "foreground-loop-hazard"},
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert expected in result.stderr
 
     @pytest.mark.parametrize(
         ("command", "session_id"),

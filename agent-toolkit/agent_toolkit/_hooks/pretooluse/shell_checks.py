@@ -805,7 +805,7 @@ def _specific_truncation_alternative(segment: str) -> str | None:
         and len(operands) == 1
         and not any(character in operands[0] for character in "*?[]{}")
     ):
-        return f"対象の存在確認は`test -e {shlex.quote(operands[0])}`を実行する"
+        return f'対象の存在確認は`test -e {shlex.quote(operands[0])}; echo "test_e_rc=$?"`を実行する'
     if producer_name == "find" and consumer_name == "head" and count == 1:
         direct = shlex.join([*producer_tokens, "-print", "-quit"])
         return f"単一対象の選択はproducer自身の終了条件を使い、`{direct}`を実行する"
@@ -1375,8 +1375,18 @@ def _scan_explicit_paths(command: str, cwd: str) -> _ExplicitPathScan:
     present: list[str] = []
     created: set[pathlib.Path] = set()
     current = CwdResolution(cwd, True)
+    unknown_output = False
     for segment in _extract_execution_segments(command):
         if not segment.resolved or not segment.tokens:
+            base = current.path if current.resolved and current.path else cwd
+            write_targets = shell_redirection_targets(segment.raw_tokens)
+            for target in write_targets:
+                if any(character in target for character in "*$?[]{}~`"):
+                    continue
+                target_path = pathlib.Path(target)
+                created.add(target_path if target_path.is_absolute() else pathlib.Path(base) / target_path)
+            if not write_targets:
+                unknown_output = True
             continue
         cwd_change = resolve_cwd_change(list(segment.tokens), current)
         if cwd_change is not None:
@@ -1396,7 +1406,7 @@ def _scan_explicit_paths(command: str, cwd: str) -> _ExplicitPathScan:
                 if candidate not in present:
                     present.append(candidate)
                 continue
-            if candidate not in missing:
+            if not unknown_output and candidate not in missing:
                 missing.append(candidate)
         write_targets = list(shell_redirection_targets(segment.tokens)) + _command_write_targets(segment)
         for target in write_targets:
@@ -1424,7 +1434,8 @@ def _check_bash_explicit_path_exists(command: str, cwd: str) -> str | None:
     return _llm_notice(
         "明示された検索・読取パスが存在しない。対象: " + "、".join(scan.missing) + "\n"
         "対処: Git管理対象は`rg --files`、属性・ディレクトリ構造は`find`で実体を解決し、実在するパスを指定する。"
-        "不在を確認する意図では、対象ごとに別の呼び出しで`test -e <絶対パス>`を実行し、終了コードで判定する。",
+        "不在を確認する意図では、対象ごとに別の呼び出しで"
+        '`test -e <絶対パス>; echo "test_e_rc=$?"`を実行し、表示された値で判定する。',
         tag=_WARN_TAG,
         removable_cause=True,
         escalate_on_repeat=True,
@@ -1502,7 +1513,8 @@ def _check_bash_missing_path_operand_loss(command: str, cwd: str) -> str | None:
             fix=(
                 "当該コマンドへ実在するパスを指定するか、当該コマンドを呼び出しから外す。"
                 "引数を失ったコマンドは標準入力を読み、補正前とは異なる成否を返す。"
-                "不在を確認する意図では、対象ごとに別の呼び出しで`test -e <絶対パス>`を実行し、終了コードで判定する。"
+                "不在を確認する意図では、対象ごとに別の呼び出しで"
+                '`test -e <絶対パス>; echo "test_e_rc=$?"`を実行し、表示された値で判定する。'
             ),
         ),
         file=sys.stderr,
@@ -2021,6 +2033,62 @@ def _has_foreground_sleep_wait(segments: list[str]) -> bool:
         )
         for index in range(len(segments) - 1)
     )
+
+
+_BACKGROUND_TASK_OUTPUT_RE = re.compile(r"/tmp/claude-\d+/[^\s;]+/tasks/[A-Za-z0-9_-]+\.output(?:\b|$)")
+
+
+def _check_bash_foreground_loop_wait(command: str, run_in_background: bool) -> str | None:
+    """完了通知又は自己一致で待機が終わらない前景ループを遮断する。"""
+    if run_in_background:
+        return None
+    segments = _split_serial_shell_commands(command)
+    for index, segment in enumerate(segments):
+        tokens = _command_tokens(segment) or []
+        if not tokens or tokens[0] not in {"until", "while"}:
+            continue
+        condition_parts = [segment]
+        for following in segments[index + 1 :]:
+            following_tokens = _command_tokens(following) or []
+            if following_tokens and following_tokens[0] == "do":
+                break
+            condition_parts.append(following)
+        condition = "; ".join(condition_parts)
+        if _BACKGROUND_TASK_OUTPUT_RE.search(condition):
+            print(
+                _block_notice(
+                    "block: Claude Codeの背景タスク出力を前景ループで待機している。",
+                    fix="当該背景タスクの完了通知を再開契機とし、前景で待機しない。",
+                ),
+                file=sys.stderr,
+            )
+            return "block"
+        for part in condition_parts:
+            part_tokens = _command_tokens(part) or []
+            for process_command in ("pgrep", "pkill"):
+                if process_command not in part_tokens:
+                    continue
+                position = part_tokens.index(process_command)
+                arguments = part_tokens[position + 1 :]
+                if "-f" not in arguments:
+                    continue
+                pattern_index = arguments.index("-f") + 1
+                if pattern_index >= len(arguments):
+                    continue
+                try:
+                    self_match = re.search(arguments[pattern_index], command) is not None
+                except re.error:
+                    self_match = False
+                if self_match:
+                    print(
+                        _block_notice(
+                            f"block: `{process_command} -f`のパターンが前景ループ自身のコマンド行に一致する。",
+                            fix="完了通知、又は所有するPIDを指定した待機へ置き換える。",
+                        ),
+                        file=sys.stderr,
+                    )
+                    return "block"
+    return None
 
 
 def _record_repeat_detection(session_id: str, key: str) -> bool:
