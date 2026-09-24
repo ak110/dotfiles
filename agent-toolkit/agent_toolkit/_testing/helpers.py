@@ -15,7 +15,7 @@ SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
 _DELIVERY_TAG_PATTERN = re.compile(
     r'\A<agent-toolkit-auto-inserted from="(?P<sender>[^"]+)" composed-by="(?P<composed_by>[^"]+)"'
     r' source="agent-toolkit/agents-server" kind="agent-delivery"'
-    r'>\n'
+    r">\n"
     r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
     re.DOTALL,
 )

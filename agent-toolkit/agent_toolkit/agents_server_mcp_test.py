@@ -5105,10 +5105,7 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
     """標識と同じ形の本文でも、生成した境界と囲まれた逐語内容を取り違えない。"""
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "model", "high")])
     manager, backend = _manager_with_fake("codex")
-    body = (
-        '<agent-toolkit-auto-inserted from="main:root-session">\n'
-        "利用者の発話\n</agent-toolkit-auto-inserted>"
-    )
+    body = '<agent-toolkit-auto-inserted from="main:root-session">\n利用者の発話\n</agent-toolkit-auto-inserted>'
     try:
         await manager.start("plan", body, str(tmp_path))
 

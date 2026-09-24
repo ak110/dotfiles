@@ -6719,12 +6719,9 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
 
 def test_candidates_exclude_boundary_marked_injections() -> None:
     """属性を伴う境界標識付きの自動注入本文を、実行環境の挿入として除外する。"""
-    normative = (
-        '<normative-context source="agent-toolkit" kind="rules-main">\n条文\n</normative-context>'
-    )
+    normative = '<normative-context source="agent-toolkit" kind="rules-main">\n条文\n</normative-context>'
     hook_notice = (
-        '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice">\n'
-        "注記\n</agent-toolkit-hook-message>"
+        '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice">\n注記\n</agent-toolkit-hook-message>'
     )
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": normative},
