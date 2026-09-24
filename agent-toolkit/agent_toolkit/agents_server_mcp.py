@@ -266,14 +266,20 @@ def _wrap_delivery_body(body: str, *, composed_by: str = COMPOSED_BY_CALLER) -> 
     )
 
 
-def _validate_required_prompt_inputs(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> str | None:
+def _validate_required_prompt_inputs(
+    task_document: pathlib.Path,
+    extra_params: Mapping[str, str],
+    document_text: str | None = None,
+) -> str | None:
     """タスク文書の必須入力名を名前付き追加入力と照合する。"""
     if not _is_agent_toolkit_task_document(task_document):
         return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
-    try:
-        document_lines = task_document.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as error:
-        return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
+    if document_text is None:
+        try:
+            document_text = task_document.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
+    document_lines = document_text.splitlines()
     headings = top_level_atx_headings("\n".join(document_lines), 2)
     inputs = [index for index, (_, title) in enumerate(headings) if title == "入力"]
     if not inputs:
@@ -322,10 +328,14 @@ def _task_document_request(
         raise ValueError("extra_params contains an invalid input name")
     if any(not isinstance(value, str) for value in extra_params.values()):
         raise ValueError("extra_params values must be strings")
-    prompt_lines = [f"{task_document} の手順を実行せよ。", "追加指示:"]
+    try:
+        document_text = task_document.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"タスク文書をUTF-8で読めません: {task_document}: {error}") from error
+    prompt_lines = [f"次のタスク文書の手順を実行せよ（出所: {task_document}）。", document_text, "追加指示:"]
     prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
     prompt = "\n".join(prompt_lines)
-    warning = _validate_required_prompt_inputs(task_document, extra_params)
+    warning = _validate_required_prompt_inputs(task_document, extra_params, document_text)
     if warning is not None:
         _LOG.warning("%s", warning)
     return model_type, prompt
@@ -2012,7 +2022,9 @@ with warnings.catch_warnings():
             "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
             "`start`は専用タスク文書、`start_custom`は自由本文からsessionを開始する。"
             "`start_explore`は読み取り専用探索、`start_shell`はコマンド実行、`start_write`は確定済みの軽量書込を委譲する。"
-            "終端と結果本文は`atk agents wait`で受け取る。`list`は最小状態、`show`は個別の診断情報を返す。"
+            "終端と結果本文は`atk agents wait --output-file <絶対パス>`で受け取る。"
+            "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待つ。"
+            "`list`は最小状態、`show`は個別の診断情報を返す。"
             "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
             "`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`が返した`session_id`と、"
             "`send_message`で新しい指示を配送したsessionは、"
@@ -2063,7 +2075,7 @@ async def start(
 ) -> dict[str, Any]:
     """専用タスク文書と名前付き追加入力から委譲先turnを開始する。
 
-    タスク文書を読み、同文書の必須入力名と`extra_params`を照合してから起動する。
+    タスク文書を読み、同文書の必須入力名と`extra_params`を照合し、文書本文と出所を起動文へ含めてから起動する。
     engine、model、effortはタスク文書に対応する工程別モデル設定から決める。
     候補列を明示する場合は`start_custom`を使う。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。

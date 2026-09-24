@@ -11,6 +11,7 @@
 import argparse
 import contextlib
 import pathlib
+import re
 import subprocess
 from collections.abc import Callable, Iterator
 from typing import Any, cast
@@ -20,7 +21,10 @@ import pytest
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import (
+    frontmatter,  # noqa: E402  # pylint: disable=wrong-import-position
+    style_diagnostics,  # noqa: E402  # pylint: disable=wrong-import-position
+)
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.common import WI_TYPE_UWI, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
@@ -216,6 +220,45 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
         text=True,
     ).stdout
     assert after_head == before_head
+
+
+def test_add_dry_run_reports_style_warnings_with_section_errors(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """必須節の欠落と表記警告を1回の検査で示す。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    body = "本文\u2014説明"
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "警告: 本文:1:3: ダッシュ" in error
+    assert "必須節" in error
+
+
+def test_style_diagnostics_skips_fenced_code() -> None:
+    """WI本文のコードフェンスはダッシュ警告の対象外とする。"""
+    warnings = style_diagnostics.warnings_for_body("```text\n\u2014\n```\n説明\u2014追加")
+
+    assert warnings == ["本文:4:3: ダッシュ —"]
+
+
+def test_style_diagnostics_reports_colloquial_location(monkeypatch: pytest.MonkeyPatch) -> None:
+    """口語辞書の検出結果を本文の行番号付き警告へ変換する。"""
+
+    def fake_patterns(path: pathlib.Path) -> list[tuple[re.Pattern[str], str | None]]:
+        if path == style_diagnostics.colloquial.DENY_PATH:
+            return [(re.compile("口語"), "書き言葉")]
+        return []
+
+    monkeypatch.setattr(style_diagnostics.colloquial, "load_patterns", fake_patterns)
+
+    assert style_diagnostics.warnings_for_body("説明\n口語") == ["本文:2:1: 口語表現 口語（候補: 書き言葉）"]
 
 
 def test_add_dry_run_rejects_batch(

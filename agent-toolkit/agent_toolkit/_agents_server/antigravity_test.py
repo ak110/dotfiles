@@ -161,6 +161,44 @@ def test_stream_events_are_saved_across_turns(tmp_path: pathlib.Path, monkeypatc
     assert stat.S_IMODE((log_directory / "conv-1.jsonl").stat().st_mode) == 0o600
 
 
+def test_event_log_write_failure_does_not_fail_session(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """イベントログの書込失敗を警告し、resultの終端処理を続ける。"""
+    _install_fake_agy(tmp_path, monkeypatch)
+    log_directory = tmp_path / "logs"
+
+    original_mkdir = pathlib.Path.mkdir
+
+    def fail_mkdir(
+        path: pathlib.Path,
+        mode: int = 0o777,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> None:
+        if path == log_directory:
+            raise OSError("disk full")
+        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", fail_mkdir)
+
+    async def scenario() -> shared_state.SessionState:
+        manager = antigravity.AntigravityManager(log_directory=log_directory)
+        session = await manager.start("依頼", str(tmp_path))
+        while not session.terminal:
+            await asyncio.sleep(0.02)
+        await manager.close()
+        return session
+
+    with caplog.at_level("WARNING", logger="agent-toolkit.agents-server.antigravity"):
+        session = asyncio.run(scenario())
+
+    assert session.status == "completed"
+    assert "イベントログへの書き込みに失敗" in caplog.text
+
+
 def test_send_message_rejects_an_unfinished_turn() -> None:
     """実行中のturnへの継続は受理しない。"""
     session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy", status="running")
