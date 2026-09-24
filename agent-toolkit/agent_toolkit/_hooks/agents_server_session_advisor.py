@@ -163,7 +163,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     body = f"{_WARNING_BODY}\n対象session: {', '.join(pending_session_ids)}"
-    return "notify", _notice(body, removable_cause=True)
+    return "notify", _notice(body, removable_cause=True, summary=body)
 
 
 def main(payload_text: str) -> int:
