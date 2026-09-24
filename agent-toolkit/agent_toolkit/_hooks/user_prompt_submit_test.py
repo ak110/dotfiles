@@ -23,7 +23,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
 _NOTICE_PATTERN = re.compile(
-    r'<agent-toolkit-auto-inserted source="agent-toolkit/user_prompt_submit" kind="notice" nonce="[^"]+">\n'
+    r'<agent-toolkit-auto-inserted source="agent-toolkit/user_prompt_submit" kind="notice">\n'
     r"(?P<body>.*?)\n</agent-toolkit-auto-inserted>",
     re.DOTALL,
 )
@@ -90,7 +90,7 @@ class TestMachineInjectedTurn:
             ({"source": "system"}, "状況を確認する。", {}),
             ({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n稼働状況を確認する。", {}),
             ({}, "<task-notification>完了</task-notification>", {}),
-            ({}, '<cross-session-message from="main:x" nonce="n">継続</cross-session-message>', {}),
+            ({}, '<cross-session-message from="main:x">継続</cross-session-message>', {}),
         ],
     )
     def test_no_notice_and_no_timestamp(

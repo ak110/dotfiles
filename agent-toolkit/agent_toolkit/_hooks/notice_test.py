@@ -21,7 +21,7 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
 
     message = format_block("blocked", fix="retry")
 
-    assert message.startswith('<agent-toolkit-auto-inserted source="test/hook" kind="block" nonce="')
+    assert message.startswith('<agent-toolkit-auto-inserted source="test/hook" kind="block">')
     assert "\nblocked\nFix: retry\n" in message
     assert message.endswith("</agent-toolkit-auto-inserted>")
 

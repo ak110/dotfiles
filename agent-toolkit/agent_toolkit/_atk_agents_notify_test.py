@@ -12,7 +12,7 @@ from agent_toolkit._atk import config
 
 _NOTICE_TAG_PATTERN = re.compile(
     r'\A<agent-toolkit-auto-inserted from="delegate:(?P<sender>[^"]+)" composed-by="caller"'
-    r' source="agent-toolkit/agents-notify" kind="agent-delivery" nonce="(?P<nonce>[0-9a-f]{16})">\n'
+    r' source="agent-toolkit/agents-notify" kind="agent-delivery">\n'
     r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
     re.DOTALL,
 )
@@ -22,7 +22,6 @@ def _notice_body(delivered: str) -> str:
     """通知本文の出所標識を検証し、囲まれた逐語の本文を返す。"""
     matched = _NOTICE_TAG_PATTERN.fullmatch(delivered)
     assert matched is not None, delivered
-    assert matched["nonce"] not in matched["body"]
     return matched["body"]
 
 

@@ -85,7 +85,7 @@ class TestEntrypointExceptionStages:
 
         assert result.returncode == 0
         assert result.stdout == "{}\n"
-        assert result.stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn" nonce="')
+        assert result.stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn">')
         assert f"\n[{subcommand}] 想定外エラー: ImportError: main failure" in result.stderr
         assert "Traceback (most recent call last):" in result.stderr
 
@@ -128,7 +128,7 @@ class TestEntrypointExceptionStages:
         )
         assert result.returncode == 0
         assert not result.stdout
-        assert result.stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn" nonce="')
+        assert result.stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn">')
         assert "\n[pretooluse] 想定外エラー: RuntimeError: boom" in result.stderr
         assert "Traceback (most recent call last):" in result.stderr
 
@@ -151,7 +151,7 @@ class TestEntrypointExceptionStages:
         )
         assert result.returncode == 0
         assert not result.stdout
-        assert result.stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn" nonce="')
+        assert result.stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn">')
         assert f"\n[{subcommand}] 想定外エラー: RuntimeError: boom" in result.stderr
 
 
@@ -223,7 +223,7 @@ class TestStandardInputAndPayloadDump:
         stderr = result.stderr.decode("utf-8")
         assert result.returncode == 0
         assert not result.stdout
-        assert stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn" nonce="')
+        assert stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn">')
         assert "\nhook定義と実装が不整合:" in stderr
         assert "stop_advisor" in stderr
         assert "|".join(sorted(_SUBCOMMANDS)) in stderr
@@ -239,7 +239,7 @@ class TestStandardInputAndPayloadDump:
         assert result.returncode == 0
         assert not result.stdout
         stderr = result.stderr.decode("utf-8")
-        assert stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn" nonce="')
+        assert stderr.startswith('<agent-toolkit-auto-inserted source="agent-toolkit/hook" kind="warn">')
         assert "\nusage: hook.py <" in stderr
 
     def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:

@@ -327,14 +327,14 @@ hookメッセージの目的はコーディングエージェントが参照先�
 ## コーディングエージェント宛てメッセージの標識
 
 コーディングエージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）は、
-`agent-toolkit-auto-inserted`要素で全体を囲む。`source`へ`<plugin>/<hook>`、`kind`へ通知種別、`nonce`へ本文に現れない配送単位を置く。
+`agent-toolkit-auto-inserted`要素で全体を囲む。`source`へ`<plugin>/<hook>`、`kind`へ通知種別を置く。
 hookの出力はユーザー発言と同じ形で会話コンテキストに注入されるため、機械判定できる境界と出所を設ける。
 
 種別は受領した主体が通知の原因を除去できるかで選ぶ。除去できる事象には`warn`、発話ごとの定型の配送には`notice`、遮断には`block`を使う。
 振り返りの証拠抽出器は`info`又は`notice`を持つhook通知を問題候補から除く。原因も対策も持たない通知へ`warn`を指定すると、候補の判定工程が発話のたびに生じる。
 
 ```xml
-<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">
+<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">
 detected ...
 </agent-toolkit-auto-inserted>
 ```
@@ -344,7 +344,7 @@ detected ...
 
 ### hook以外の経路の要素
 
-自動生成する本文はhook以外の経路も`agent-toolkit-auto-inserted`で囲む。`source`と`kind`で生成主体と用途を区別し、agent間の配送では`from`と`composed-by`も残す。定期再確認の固定開始タグと決定的に生成する配布物は`nonce`を持たない。
+自動生成する本文はhook以外の経路も`agent-toolkit-auto-inserted`で囲む。`source`と`kind`で生成主体と用途を区別し、agent間の配送では`from`と`composed-by`も残す。最初の開始タグと最後の同名終了タグで境界を確定する。
 
 | 要素 | 対象の本文 |
 | --- | --- |

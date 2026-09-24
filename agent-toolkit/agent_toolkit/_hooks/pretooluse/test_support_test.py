@@ -46,7 +46,7 @@ _SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("exec-review.subagent.md",)
 
 
-_NOTICE_PREFIX = '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn" nonce="'
+_NOTICE_PREFIX = '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
 
 
 _NOTICE_SUFFIX = "</agent-toolkit-auto-inserted>"

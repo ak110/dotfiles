@@ -1772,7 +1772,7 @@ def test_warn_keeps_xml_hook_marker_in_hook_record(
     element: str,
 ) -> None:
     """XML境界のwarn通知を実行時警告として返す。"""
-    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n実行時の警告\n</{element}>'
+    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn">\n実行時の警告\n</{element}>'
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1799,7 +1799,7 @@ def test_hook_notices_mode_parses_xml_boundary_without_closing_tag(
     element: str,
 ) -> None:
     """XML境界の属性と本文を分類し、閉じタグを種別本文から除く。"""
-    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn" nonce="0123456789abcdef">\n入力を補正した\n</{element}>'
+    notice = f'<{element} source="agent-toolkit/pretooluse" kind="warn">\n入力を補正した\n</{element}>'
     transcript = _write_transcript(
         tmp_path,
         [
@@ -6720,10 +6720,10 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
 def test_candidates_exclude_boundary_marked_injections() -> None:
     """属性を伴う境界標識付きの自動注入本文を、実行環境の挿入として除外する。"""
     normative = (
-        '<normative-context source="agent-toolkit" kind="rules-main" nonce="0123456789abcdef">\n条文\n</normative-context>'
+        '<normative-context source="agent-toolkit" kind="rules-main">\n条文\n</normative-context>'
     )
     hook_notice = (
-        '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice" nonce="fedcba9876543210">\n'
+        '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice">\n'
         "注記\n</agent-toolkit-hook-message>"
     )
     timeline = [

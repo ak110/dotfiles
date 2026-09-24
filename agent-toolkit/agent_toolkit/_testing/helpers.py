@@ -15,7 +15,7 @@ SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
 _DELIVERY_TAG_PATTERN = re.compile(
     r'\A<agent-toolkit-auto-inserted from="(?P<sender>[^"]+)" composed-by="(?P<composed_by>[^"]+)"'
     r' source="agent-toolkit/agents-server" kind="agent-delivery"'
-    r' nonce="(?P<nonce>[0-9a-f]{16})">\n'
+    r'>\n'
     r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
     re.DOTALL,
 )
@@ -25,7 +25,6 @@ def delivery_payload(delivered: str) -> str:
     """agents_serverが配送した本文の出所標識を検証し、囲まれた逐語の本文を返す。"""
     matched = _DELIVERY_TAG_PATTERN.fullmatch(delivered)
     assert matched is not None, delivered
-    assert matched["nonce"] not in matched["body"]
     return matched["body"]
 
 

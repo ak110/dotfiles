@@ -9,7 +9,6 @@ import ast
 import json
 import os
 import pathlib
-import re
 import subprocess
 import tempfile
 import textwrap
@@ -946,9 +945,7 @@ class TestTaskStopBlock:
 
         assert first.returncode == 2
         assert second.returncode == 2
-        assert re.sub(r'nonce="[^"]+"', 'nonce="<nonce>"', first.stderr) == re.sub(
-            r'nonce="[^"]+"', 'nonce="<nonce>"', second.stderr
-        )
+        assert first.stderr == second.stderr
         assert "所有記録に一致する識別子" in first.stderr
         assert "対象別の停滞検知完了記録を作成" in first.stderr
         assert "再実行すると続行できる" not in first.stderr

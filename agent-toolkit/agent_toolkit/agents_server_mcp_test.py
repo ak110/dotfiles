@@ -5106,7 +5106,7 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "model", "high")])
     manager, backend = _manager_with_fake("codex")
     body = (
-        '<agent-toolkit-auto-inserted from="main:root-session" nonce="00112233445566ff">\n'
+        '<agent-toolkit-auto-inserted from="main:root-session">\n'
         "利用者の発話\n</agent-toolkit-auto-inserted>"
     )
     try:
