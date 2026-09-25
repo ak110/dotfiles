@@ -5,10 +5,13 @@ AWI/`uwi`一覧出力・各種フィルター（target-repo・source・type・st
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import contextlib
 import datetime
+import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -78,7 +81,7 @@ def test_repeatable_filters_use_or_within_kind_and_and_across_kinds(
                 "--answered=yes",
                 "--source=agent",
                 "--source=human",
-                "--no-json",
+                "--no-jsonl",
             ],
             home=tmp_path,
         )
@@ -555,7 +558,7 @@ class TestListMalformedFrontmatter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--json"], home=tmp_path)
+            atk.main(["wi", "list", "--jsonl"], home=tmp_path)
 
         assert exc_info.value.code == 0
         record = json.loads(capsys.readouterr().out)
@@ -1166,7 +1169,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--status=active", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--status=active", "--no-jsonl"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1236,7 +1239,7 @@ class TestListStatusFilter:
     def test_state_and_status_resolve_to_the_same_filter(self, argv: list[str]) -> None:
         """状態フィルターを`--state`と`--status`のどちらの綴りでも同じ値へ解決する。
 
-        キューの語彙は状態ディレクトリ、`WI_STATES`、`wi list --json`の`state`のいずれも`state`であり、
+        キューの語彙は状態ディレクトリ、`WI_STATES`、`wi list --jsonl`の`state`のいずれも`state`であり、
         `atk wi return-to-inbox`と`atk wi rm`も`--state`を受理する。
         フィルター側が`--status`だけを受理すると、語彙どおりに組み立てた実行が終了コード2で終わる。
         """
@@ -1349,7 +1352,7 @@ class TestListJson:
         monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((40, 24)))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--json"], home=tmp_path)
+            atk.main(["wi", "list", "--jsonl"], home=tmp_path)
 
         assert exc_info.value.code == 0
         record = json.loads(capsys.readouterr().out)
@@ -1384,7 +1387,7 @@ class TestListJson:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "list", "--json", "--skip-pull", "--target-repo=github.com/example/foo"],
+                ["wi", "list", "--jsonl", "--skip-pull", "--target-repo=github.com/example/foo"],
                 home=tmp_path,
             )
 
@@ -1408,7 +1411,7 @@ class TestListJson:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--json", "--count"], home=tmp_path)
+            atk.main(["wi", "list", "--jsonl", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 2
         assert "not allowed with argument" in capsys.readouterr().err
@@ -1446,7 +1449,7 @@ class TestListJson:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as text_exit:
-            atk.main(["wi", "list", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--no-jsonl"], home=tmp_path)
         assert text_exit.value.code == 0
         assert capsys.readouterr().out.startswith("# awi\n")
 
@@ -1479,7 +1482,7 @@ def test_list_summary_only_outputs_filename_and_summary(
     assert "a-uwi.md" in captured.err
 
 
-@pytest.mark.parametrize("other_output", ["--count", "--json"])
+@pytest.mark.parametrize("other_output", ["--count", "--jsonl"])
 def test_list_summary_only_conflicts_with_other_output_options(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1491,6 +1494,35 @@ def test_list_summary_only_conflicts_with_other_output_options(
 
     assert exc_info.value.code == 2
     assert "not allowed with argument" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("legacy_option", ["--json", "--no-json"])
+def test_list_rejects_legacy_json_option_names(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    legacy_option: str,
+) -> None:
+    """旧名は出力形式を誤読させるため、新名の省略形としても受理しない。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "list", legacy_option], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    assert legacy_option in capsys.readouterr().err
+
+
+def test_list_help_names_json_lines_options() -> None:
+    """ヘルプは出力形式を表す新名だけを示し、旧名を独立したオプションとして示さない。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    stdout = io.StringIO()
+
+    with contextlib.redirect_stdout(stdout), pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["wi", "list", "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = stdout.getvalue()
+    assert "--jsonl" in help_text
+    assert "--no-jsonl" in help_text
+    assert re.search(r"--(?:no-)?json(?![A-Za-z])", help_text) is None
 
 
 class TestMultipleFiltersCombinedAsAnd:

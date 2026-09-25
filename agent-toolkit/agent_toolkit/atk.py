@@ -422,7 +422,9 @@ def _add_wi_add_parser(sub: Any) -> None:
 
 def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
-    list_ = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk wi list"])
+    # 旧名`--json`・`--no-json`が改名後の`--jsonl`・`--no-jsonl`の省略形として受理され続けないよう、
+    # 省略形照合を無効にする。
+    list_ = _atk_help.add_command(sub, "list", allow_abbrev=False, **_atk_help.HELP["atk wi list"])
     _add_target_repo_arg(list_, multiple=True, allow_all=True)
     list_.add_argument(
         "--type",
@@ -464,12 +466,12 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="ファイル名と要約だけを持つ1件1行のJSON Lines形式で出力する。",
     )
     output.add_argument(
-        "--json",
+        "--jsonl",
         action="store_true",
         help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
     )
     output.add_argument(
-        "--no-json",
+        "--no-jsonl",
         action="store_true",
         help="JSON Linesの既定を無効にし、従来のテキスト形式で出力する。",
     )

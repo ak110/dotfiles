@@ -1088,12 +1088,12 @@ class TestLegacyTopLevelCommandAlias:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--no-json", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--no-jsonl", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         current_output = capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--no-json", "--skip-pull"], home=tmp_path)
+            atk.main(["mq", "list", "--no-jsonl", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == current_output
         assert "fb-001.md" in current_output

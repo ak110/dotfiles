@@ -1324,7 +1324,7 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "--not-supported" in messages
-        assert "接頭辞が一致する受理オプション: --no-json" in messages
+        assert "接頭辞が一致する受理オプション: --no-jsonl" in messages
         assert "当該サブコマンドが受理するオプション: " not in messages
 
     @pytest.mark.parametrize("command", ["sh -c 'echo ok'", "su -c 'echo ok'", "ssh host 'echo ok'"])

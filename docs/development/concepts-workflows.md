@@ -76,7 +76,7 @@ AWIはユーザーとエージェントが非同期に共有する人間向け�
 - `hold`は`inbox`・`processing`・終端状態から移動し、`unhold`では`inbox`へ戻す。保留元を推測して`processing`へ戻す経路は設けない。終端状態からの再開では旧処理結果を除き、過去の採否を現在の結果として残さない。`hold`は自動処理からの除外だけを意味し、編集、UWI回答、ユーザーコメント、採用、不採用及び削除は`inbox`と同じ条件で許可する（2026年9月25日、利用者指示）
 - 項目の削除は、明示`state`として`inbox`・`processing`・`hold`に加えて終端状態（`adopted`・`rejected`）も受理する。エージェントが自身の誤りで投入した項目を`atk serve`の画面から片付けられるようにするためであり、`processing`の削除保護は維持する
 - エージェントが実行してよい遷移は`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終端、及び`adopted`・`rejected`から`inbox`又は`hold`への差し戻しとする（2026年9月25日、利用者指示）。ユーザーはブラウザーUIから任意の状態へ遷移させられる。本文の編集は保存状態によらず行える（2026年9月、利用者指示。規範の不具合で操作不能に陥る事故を避けるため、状態による編集の制限を増やさない）
-- `atk wi list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-json`でテキスト表示へ戻す。`--json`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
+- `atk wi list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-jsonl`でテキスト表示へ戻す。`--jsonl`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
 - `atk wi list`のテキスト表示はstdoutがTTYの場合だけ端末幅に応じて短縮し、非TTYでは`target_repo`と要約を全文で保持する。人間TTYの幅適応は維持する
 - `atk`の出力形式は、人間が読む経路とエージェントが読む経路で分ける。`atk agents list`と`atk agents show`は、`atk wi list`の既定出力形式と同じ判定でエージェント環境を識別し、エージェント環境では空白を含めない1行、それ以外では字下げしたJSONを書く。1件1行のJSON Linesを公開契約とする`atk agents wait`は当該分岐の対象にしない（2026年9月15日、利用者指示）
 - `atk`のサブコマンドは自身の標準出力の量を公開契約として制御し、呼び出し側はリダイレクト保存と再読を経由せず1回で呼ぶ。全量が大きくなる取得は`--output-file`と対象の限定オプションで制御する。`atk agents list`は稼働状況の把握に用いない起動文を既定の出力から外し、起動文は`atk agents show`が返す（2026年9月16日、利用者指示）。現行の正本は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」にある

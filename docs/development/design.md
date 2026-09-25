@@ -62,7 +62,9 @@ pickerはAWI本文と対象実装を調査し、レーン分割とレーン内�
 
 ### 一覧出力
 
-`atk wi list`は、`AI_AGENT`、`CODEX_CI`、`CLAUDECODE`、`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力する。`--json`はJSON Lines、`--no-json`は従来のテキスト表示、`--count`は件数だけの表示として優先する。この既定変更は`list`だけに適用し、`show`、状態遷移及び編集CLIの既存テキスト出力は変更しない。
+`atk wi list`は、`AI_AGENT`、`CODEX_CI`、`CLAUDECODE`、`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力する。`--jsonl`はJSON Lines、`--no-jsonl`は従来のテキスト表示、`--count`は件数だけの表示として優先する。
+旧名の`--json`は単一のJSON配列と誤読されたため`--jsonl`へ改名し、旧名が新名の省略形として受理され続けないよう`list`だけ省略形照合を無効にする。
+この既定変更は`list`だけに適用し、`show`、状態遷移及び編集CLIの既存テキスト出力は変更しない。
 
 テキスト表示の`target_repo`と要約は、stdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
 
