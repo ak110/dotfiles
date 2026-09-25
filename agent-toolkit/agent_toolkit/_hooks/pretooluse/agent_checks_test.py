@@ -700,7 +700,7 @@ class TestBashOutputTruncationWarning:
     @pytest.mark.parametrize(
         "command",
         [
-            "sudo sh -c 'pytest -q | head -5'",
+            "env sh -c 'pytest -q | head -5'",
             "pytest -q 2>&1 | head -5",
             "pytest -q; pytest -q | head -5",
             "sh -c 'pytest -q' | head -5",
