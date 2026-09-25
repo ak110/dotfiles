@@ -857,16 +857,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
             "メイン計画ファイル名: plan.md",
             "AWI終端区分: 20260101-000000-001.md=adopt",
         ]
-    if task_name == "session-review-delegate.subagent.md":
-        return [
-            "対象セッションの実行系: codex",
-            "対象セッションの識別子: 00000000-0000-0000-0000-000000000000",
-            f"準備manifest: {root / 'prepare-manifest.json'}",
-            f"管理対象一時領域: {root / 'managed-temp'}",
-            "観測境界: 2026-01-01T00:00:00Z",
-            f"出力先ファイル: {root / 'session-review.md'}",
-            handoff,
-        ]
     if task_name == "session-termination.subagent.md":
         return [
             "bump種別: bump不要",
@@ -900,7 +890,6 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
         "exec.subagent.md",
         "lane-integration.subagent.md",
         "pick-wi.subagent.md",
-        "session-review-delegate.subagent.md",
         "session-termination.subagent.md",
         "wi-draft-review.subagent.md",
     ],

@@ -29,7 +29,6 @@ _MODEL_SETTING_CATEGORIES = {
     "pick_wi_model": "軽量",
     "execute_model": "上位",
     "execute_review_model": "軽量",
-    "session_review_model": "上位",
     "orchestrate_model": "上位",
 }
 # 用途区分はcodexとclaudeの候補を1組で持ち、各engineの選定値とプリセットの順序を分けて管理する。

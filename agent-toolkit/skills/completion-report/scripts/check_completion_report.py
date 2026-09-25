@@ -11,6 +11,8 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
 STAGES = ("work-complete", "review-result")
 REVIEW_STATES = ("success", "not-run", "failed")
+REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- メイン由来の改善点: ", "- 所要時間: ")
+"""振り返りが正常完了した報告が持つ要約行の接頭辞。値は準備スクリプトの出力から転記する。"""
 SKIP_REASONS = {
     "not-run": "成果を再利用したため起動省略",
     "failed": "分析失敗のため欠陥AWIへ記録",
@@ -50,6 +52,14 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
         errors.append("### 投入したWIに1件以上の箇条書きを置く")
     if stage == "review-result" and review_state == "success" and "### 対策として投入したWI\n\n- " not in text:
         errors.append("### 対策として投入したWIに1件以上の箇条書きを置く")
+
+    if stage == "review-result" and review_state == "success":
+        lines = text.splitlines()
+        errors.extend(
+            f"振り返り成功時は`{prefix.strip()}`で始まる要約行を1件置く"
+            for prefix in REVIEW_SUMMARY_PREFIXES
+            if sum(1 for line in lines if line.startswith(prefix)) != 1
+        )
 
     skip_matches = re.findall(r"(?m)^- session-review未実施: (.+)$", text)
     if stage == "work-complete" and skip_matches:

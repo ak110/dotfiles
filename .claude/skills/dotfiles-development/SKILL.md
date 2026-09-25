@@ -61,7 +61,7 @@ description: >
 
 ## 振り返りの参照文書
 
-`agent-toolkit:session-review`が読む本リポジトリ固有の参照文書は、Claude Codeでは`~/.claude/docs/session-review-dotfiles.md`とする。
+`agent-toolkit:session-review`の振り返り素材AWIを処理するレーンが読む本リポジトリ固有の参照文書は、Claude Codeでは`~/.claude/docs/session-review-dotfiles.md`とする。
 Codexでは`~/.codex/docs/session-review-dotfiles.md`とする。
 同文書はセッションの所要時間目標と本リポジトリ固有の振り返り観点を保持する。
 配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。

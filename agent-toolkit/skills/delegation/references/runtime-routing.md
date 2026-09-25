@@ -46,9 +46,8 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `pick_wi_model` | WIの選定とレーン分け | `agent-toolkit:process-wi`のメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_model` | 計画起草、実装、近接検証、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入、`agent-toolkit:process-wi`の自動コードレビュー監査及び同スキルの公開工程の終端工程 | レーン担当、レビュー修正担当、CI修正担当、即時対応、マージなしの統合、上流AWI投入、自動コードレビュー監査又は公開工程の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実行レビュー | 実行レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `session_review_model` | セッション振り返りの問題候補の抽出と振り返り全体 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 
-上表が対応工程を定めるのは`pick_wi`、`execute`、`execute_review`及び`session_review`である。`orchestrate`は`atk wi process-loop`の新しいセッションに使い、本節の委譲工程では選ばない。各工程の起動文書と設定種別は、その工程の起動節に明記する。
+上表が対応工程を定めるのは`pick_wi`、`execute`及び`execute_review`である。`orchestrate`は`atk wi process-loop`の新しいセッションに使い、本節の委譲工程では選ばない。各工程の起動文書と設定種別は、その工程の起動節に明記する。
 保存値と実行時に解決した候補は`atk config show`のキー行と`<キー>.resolved`行で区別する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、その設定キーと候補を標準エラーへ警告として書く。
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`、`codex`または`agy`とする。

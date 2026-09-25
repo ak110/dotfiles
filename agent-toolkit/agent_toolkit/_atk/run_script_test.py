@@ -59,21 +59,26 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
     assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
 
 
-def test_session_review_delegate_uses_public_script_entries() -> None:
-    """委譲手順の実行例が登録済み入口を使い、実装ファイルを直接起動しない。"""
-    task_file = run_script.PLUGIN_ROOT / "share" / "session-review-delegate.subagent.md"
+def test_session_review_documents_use_public_script_entries() -> None:
+    """振り返りの手順書の実行例が登録済み入口を使い、実装ファイルを直接起動しない。"""
+    documents = (
+        run_script.PLUGIN_ROOT / "skills" / "session-review" / "SKILL.md",
+        run_script.PLUGIN_ROOT / "skills" / "session-review" / "references" / "lane-processing.md",
+    )
     commands: list[list[str]] = []
-    in_block = False
-    for line in task_file.read_text(encoding="utf-8").splitlines():
-        if line == "```text":
-            in_block = True
-        elif line == "```":
-            in_block = False
-        elif in_block and line.startswith("atk run-script session-review-"):
-            commands.append(shlex.split(line))
+    for document in documents:
+        in_block = False
+        for line in document.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped == "```text":
+                in_block = True
+            elif stripped == "```":
+                in_block = False
+            elif in_block and stripped.startswith("atk run-script session-review-"):
+                commands.append(shlex.split(stripped))
 
     assert {command[2] for command in commands} == {
-        "session-review-evidence",
+        "session-review-prepare",
         "session-review-decisions",
         "session-review-report",
     }

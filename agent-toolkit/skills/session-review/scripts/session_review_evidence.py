@@ -2178,7 +2178,10 @@ def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[
     matched = 0
     for record in _scannable_records(records):
         matched_lines = _matched_lines(record.entry, pattern)
-        events.extend({"kind": "match", "line": record.line, "text": _clip(line_text)} for line_text in matched_lines)
+        events.extend(
+            {"kind": "match", "line": record.line, "timestamp": _entry_timestamp(record.entry), "text": _clip(line_text)}
+            for line_text in matched_lines
+        )
         matched += 1 if matched_lines else 0
     events.append({"kind": "summary", "count": matched})
     return events
@@ -2533,15 +2536,17 @@ def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dic
     return events, 0
 
 
-def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any]]:
+def _entry_detail_events(line: int, entry: dict[str, Any], *, limit: int = _MAX_DETAIL_LENGTH) -> list[dict[str, Any]]:
     """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。
 
     クリップの上限はエントリ全体で共有し、ブロックの出現順に予算を配分する。
     予算超過で省略が生じたエントリは、当該エントリの全イベントへ`omitted`を付ける。
     予算が尽きた後の本文は空文字列となるため、この標識が無ければ
     空の出力が元から空だったのか省略の結果なのかを判別できない。
+    各イベントは元エントリの`timestamp`を持ち、区間境界の時刻を元記録を読み直さずに確定できるようにする。
     """
-    budget = _DetailBudget(_MAX_DETAIL_LENGTH)
+    budget = _DetailBudget(limit)
+    timestamp = _entry_timestamp(entry)
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     events: list[dict[str, Any]] = []
@@ -2554,6 +2559,7 @@ def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any
                     {
                         "kind": "detail",
                         "line": line,
+                        "timestamp": timestamp,
                         "name": str(block.get("name", "")),
                         "input": _clip_structure(block.get("input"), budget),
                     }
@@ -2563,16 +2569,30 @@ def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any
                     {
                         "kind": "detail",
                         "line": line,
+                        "timestamp": timestamp,
                         "tool": str(block.get("tool_use_id", "")),
                         "text": budget.clip(_tool_result_body(block, entry)),
                     }
                 )
     if not events:
-        events = [{"kind": "detail", "line": line, "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2))}]
+        events = [
+            {
+                "kind": "detail",
+                "line": line,
+                "timestamp": timestamp,
+                "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2)),
+            }
+        ]
     if budget.omitted:
         for event in events:
             event["omitted"] = True
     return events
+
+
+def _entry_timestamp(entry: dict[str, Any]) -> str | None:
+    """元記録行の時刻を返す。時刻を持たないエントリは`None`とする。"""
+    timestamp = entry.get("timestamp")
+    return timestamp if isinstance(timestamp, str) else None
 
 
 def _tool_result_body(block: dict[str, Any], entry: dict[str, Any]) -> str:
@@ -2822,6 +2842,17 @@ _HOOK_NOTICE_VARIANT_LIMIT = 5
 _RETURN_STATUS_PREFIX = "status:"
 _ESCALATION_RETURN_STATUS = "needs_escalation"
 _CANDIDATE_EVIDENCE_LENGTH = 2000
+UNTRUNCATED_EVIDENCE_KINDS = frozenset(
+    {"user-intervention", "command-failure", "tool-failure", "delegate-return", "escalation"}
+)
+"""個別証拠の本文を切り詰めない候補種別。
+
+これらの本文は後続の分析主体が元記録を開かずに判断するための一次資料であり、切り詰めると
+裏取りのために元記録を読み直す工程が生じる。hook通知など定型本文の種別だけに上限を残す。
+"""
+_TOOL_USE_EVIDENCE_KINDS = frozenset({"hook-notice", "command-failure", "tool-failure", "permission-denial"})
+"""個別証拠へ対象のツール呼び出しの入力を加える候補種別。"""
+_HOOK_NOTICE_CANDIDATE_TAGS = frozenset({"block", "warn"})
 _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE = 1
 
 
@@ -3095,11 +3126,14 @@ def _candidate_evidence_events(
         record, line = event.get("record"), event.get("line")
         if isinstance(record, str) and isinstance(line, int):
             indexed.setdefault((record, line), []).append(event)
+    tool_uses = _tool_use_index(collected)
     evidence: list[dict[str, Any]] = []
     for candidate in candidates:
         if candidate.get("kind") != "candidate":
             continue
-        budget = _DetailBudget(_CANDIDATE_EVIDENCE_LENGTH)
+        untruncated = candidate["candidate_kind"] in UNTRUNCATED_EVIDENCE_KINDS
+        text_limit = sys.maxsize if untruncated else _CANDIDATE_EVIDENCE_LENGTH
+        budget = _DetailBudget(text_limit)
         details: list[dict[str, Any]] = []
         source_chars = 0
         for locator in candidate["locators"]:
@@ -3108,8 +3142,14 @@ def _candidate_evidence_events(
             if raw_entry is not None:
                 source_chars += len(json.dumps(raw_entry, ensure_ascii=False))
                 details.extend(
-                    _clip_structure({"record": key[0], **event}, budget) for event in _entry_detail_events(key[1], raw_entry)
+                    _clip_structure({"record": key[0], **event}, budget)
+                    for event in _entry_detail_events(key[1], raw_entry, limit=text_limit)
                 )
+                if candidate["candidate_kind"] in _TOOL_USE_EVIDENCE_KINDS:
+                    for call_id in _evidence_call_ids(raw_entry):
+                        tool_use = tool_uses.get((key[0], call_id))
+                        if tool_use is not None:
+                            details.append(_clip_structure({"record": key[0], **tool_use}, budget))
             else:
                 for event in indexed.get(key, ()):  # 同一位置の別走査結果も保持する。
                     detail = {"kind": str(event.get("kind", "")), "record": key[0], "line": key[1]}
@@ -3157,7 +3197,7 @@ def _candidate_evidence_events(
             "analysis_group_hint": candidate["analysis_group_hint"],
             "locators": candidate["locators"],
             "source_chars": source_chars,
-            "text_limit": _CANDIDATE_EVIDENCE_LENGTH,
+            "text_limit": None if untruncated else _CANDIDATE_EVIDENCE_LENGTH,
             "user_context_limit_per_side": _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE,
             "events": details,
         }
@@ -3165,6 +3205,56 @@ def _candidate_evidence_events(
             item["omitted"] = True
         evidence.append(item)
     return evidence
+
+
+def _tool_use_index(collected: list[_CollectedRecord]) -> dict[tuple[str, str], dict[str, Any]]:
+    """記録ごとに、呼び出し識別子からツール呼び出しの入力と記録位置を引ける索引を作成する。
+
+    hook通知と失敗したツール結果は呼び出し識別子だけを持ち、対象のコマンドは別の行にある。
+    Claude Codeは`tool_use`ブロックの`id`、Codexは`function_call`等の`call_id`で対応付ける。
+    """
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in collected:
+        for record in item.records:
+            message = record.entry.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                        index[(item.record_id, block["id"])] = {
+                            "kind": "tool-use",
+                            "line": record.line,
+                            "timestamp": _entry_timestamp(record.entry),
+                            "name": str(block.get("name", "")),
+                            "input": block.get("input"),
+                        }
+            payload = record.entry.get("payload")
+            if (
+                isinstance(payload, dict)
+                and payload.get("type") in {"function_call", "custom_tool_call"}
+                and isinstance(payload.get("call_id"), str)
+            ):
+                index[(item.record_id, payload["call_id"])] = {
+                    "kind": "tool-use",
+                    "line": record.line,
+                    "timestamp": _entry_timestamp(record.entry),
+                    "name": str(payload.get("name", "")),
+                    "input": payload.get("arguments", payload.get("input")),
+                }
+    return index
+
+
+def _evidence_call_ids(entry: dict[str, Any]) -> list[str]:
+    """候補の記録行が参照する呼び出し識別子を出現順に重複なく返す。"""
+    call_ids: list[str] = []
+    for hook_record in _hook_records(entry):
+        tool_use_id = hook_record.get("toolUseID")
+        if isinstance(tool_use_id, str) and tool_use_id not in call_ids:
+            call_ids.append(tool_use_id)
+    for call_id in sorted(_result_call_ids(entry)):
+        if call_id not in call_ids:
+            call_ids.append(call_id)
+    return call_ids
 
 
 def _is_permission_denial(event: dict[str, Any]) -> bool:
@@ -3210,15 +3300,18 @@ def _is_escalation_return(event: dict[str, Any]) -> bool:
 def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
     """是正を求めない区分のhook通知を問題候補から除く場合に、除外の種別名を返す。
 
-    区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
     この判定は、是正を求める通知が`block`又は`warn`の区分を必ず持つという前提へ依存する。
-    当該前提が崩れると、是正を求める通知が候補集合から漏れる。
+    残す区分を列挙するのは、規範の注入や配送の種別のように是正の要否と無関係な値を`kind`へ持つ出力が
+    今後追加されても、既知値の列挙から漏れて是正要求として扱われないようにするためである。
+    区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
     """
+    if tag in _HOOK_NOTICE_CANDIDATE_TAGS:
+        return None
     if tag in {"info", "notice"}:
         return "hook-notice-informational"
     if tag is None:
         return "hook-notice-untagged"
-    return None
+    return "hook-notice-context"
 
 
 def _user_candidate_exclusion(
@@ -3835,7 +3928,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REGEX",
         help="エントリ内の全本文（hook通知を含む。管理用フィールドと"
         "本スクリプト自身の実行記録は除く）を正規表現で検索し、"
-        "一致行と一致エントリ数を照会する。",
+        "一致行と一致エントリ数を照会する。各一致行は元記録行の時刻`timestamp`（無ければnull）を持つ。",
     )
     parser.add_argument(
         "--detail",
@@ -3844,6 +3937,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="RECORD:LINE",
         help="指定した<記録>:<行番号>（数値だけならメイン記録）のエントリの詳細（tool_useの入力全体・tool_result本文。"
         "本文が退避されている場合はツール実行結果側の本文）を照会する。複数指定ではオプションを繰り返す。"
+        "各イベントは元記録行の時刻`timestamp`（無ければnull）を持つ。"
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
     )
     parser.add_argument(
