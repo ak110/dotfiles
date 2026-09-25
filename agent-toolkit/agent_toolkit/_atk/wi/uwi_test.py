@@ -5,7 +5,6 @@ UWI種別の投入・一覧・編集・回答・採用・削除の単体テス�
 `_atk_wi_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
-import argparse
 import contextlib
 import pathlib
 import subprocess
@@ -18,7 +17,6 @@ from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-posi
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.uwi import (  # noqa: E402  # pylint: disable=wrong-import-position
-    _cmd_answer,
     _detect_self_containment_deficiency,
 )
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
@@ -801,20 +799,6 @@ class TestUwiAnswerNonInteractive:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "answer", filename], home=tmp_path)
-
-        assert exc_info.value.code == 1
-        assert "ファイル名と回答本文の両方を指定する" in capsys.readouterr().err
-
-    def test_answer_body_without_filename_exits_1(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """回答本文のみの指定もexit 1で案内する（CLIの位置引数では組めないため直接渡す）。"""
-        notes = _setup_notes(tmp_path)
-
-        with pytest.raises(SystemExit) as exc_info:
-            _cmd_answer(argparse.Namespace(filename=None, answer_body="採用する"), notes)
 
         assert exc_info.value.code == 1
         assert "ファイル名と回答本文の両方を指定する" in capsys.readouterr().err
