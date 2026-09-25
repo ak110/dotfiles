@@ -71,14 +71,15 @@ _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>"
 _MCP_BACKGROUND_TASK_PATTERNS = (
     re.compile(r"moved to the background as task\s+(\S+)"),
     re.compile(r"timed out[^\n]{0,160}?\bID:\s*(\S+)"),
+    re.compile(r"did not complete within its [^\n]{1,40} timeout and was moved to the background\s*\(ID:\s*(\S+)"),
 )
 """背景移行通知が識別子を示す形。
 
-第1はMCP呼び出しの移行通知、第2は実行ホストが実行時間の上限により`Bash`のジョブを
+第1はMCP呼び出しの移行通知、第2・第3は実行ホストが実行時間の上限により`Bash`のジョブを
 背景へ移した通知である。いずれも自身の呼び出しが返した識別子であり、
 `agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」が停止を許容する所有の根拠に当たる。
 
-第2の判定へ`timed out`を必須とするのは、`run_in_background`を指定しない前景実行の応答が
+第2・第3の判定へ実行上限による移行を示す文面を必須とするのは、`run_in_background`を指定しない前景実行の応答が
 `running in background with ID:`の形で識別子を返す場合と区別するためである。
 前景実行の応答を所有記録へ加えると、起動していない対象の停止が通る。
 """
