@@ -11,8 +11,6 @@ import time
 
 import pytest
 
-from agent_toolkit._atk import managed_temp
-from agent_toolkit._hooks import session_end_cleanup
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
@@ -260,11 +258,15 @@ def test_delete_failure_is_reported_and_fails_open(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.parametrize("reason", [None, "clear", "prompt_input_exit", "logout", "other"])
-def test_session_scoped_managed_temp_is_removed_for_every_reason(
+def test_session_scoped_managed_temp_survives_session_end(
     tmp_path: pathlib.Path,
     reason: str | None,
 ) -> None:
-    """SessionEndは終了理由によらずセッション単位の領域を回収する。"""
+    """SessionEndは終了理由によらずセッション単位の領域を残し、再開したセッションが同じ領域を再利用できる。
+
+    `agents_server`経由のsessionはturnごとにSessionEndが発火するため、ここで削除すると後続のturnと
+    委譲先が成果物を読めなくなる。回収は最終更新から7日の掃引に委ねる。
+    """
     env = os.environ.copy()
     env.update(
         {
@@ -274,43 +276,28 @@ def test_session_scoped_managed_temp_is_removed_for_every_reason(
             "XDG_STATE_HOME": str(tmp_path / "state"),
         }
     )
-    created = subprocess.run(
-        [
-            sys.executable,
-            str(_MANAGED_TEMP_SCRIPT),
-            "create",
-            "--prefix",
-            "session",
-            "--session-id",
-            "target",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+
+    def managed_temp_command(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(_MANAGED_TEMP_SCRIPT), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+
+    created = managed_temp_command("create", "--prefix", "session", "--session-id", "target")
+    assert created.returncode == 0, created.stderr
     target = pathlib.Path(created.stdout.strip())
+    (target / "handoff.md").write_text("記録", encoding="utf-8")
 
     result = _run(_session_end("target", reason=reason), tmp_path)
 
-    assert created.returncode == 0, created.stderr
     assert result.returncode == 0
-    assert not target.exists()
-
-
-def test_managed_temp_cleanup_failure_is_reported_and_fails_open(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """領域の回収失敗を標準エラーへ報告してSessionEndを通過させる。"""
-
-    def fail_cleanup(*_args: object, **_kwargs: object) -> None:
-        raise managed_temp.ManagedTempError("cleanup failed")
-
-    monkeypatch.setattr(session_end_cleanup.managed_temp, "cleanup_managed_temp", fail_cleanup)
-    monkeypatch.setattr(session_end_cleanup, "sweep_stale_states", lambda **_kwargs: None)
-
-    assert session_end_cleanup.main(_session_end("target", reason="logout")) == 0
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "セッション単位の管理対象一時領域を回収できませんでした" in captured.err
+    assert (target / "handoff.md").read_text(encoding="utf-8") == "記録"
+    listed = managed_temp_command("list", "--prefix", "session")
+    assert listed.returncode == 0, listed.stderr
+    assert [json.loads(line)["path"] for line in listed.stdout.splitlines()] == [str(target)]
+    resumed = managed_temp_command("create", "--prefix", "session", "--session-id", "target")
+    assert resumed.returncode == 0, resumed.stderr
+    assert resumed.stdout.strip() == str(target)
