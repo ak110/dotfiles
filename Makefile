@@ -59,7 +59,7 @@ setup-pwsh:
 	sudo apt-get update
 	sudo apt-get install --yes wget apt-transport-https software-properties-common
 	. /etc/os-release && \
-	    wget --quiet "https://packages.microsoft.com/config/ubuntu/$$VERSION_ID/packages-microsoft-prod.deb" && \
+	    wget --quiet "https://packages.microsoft.com/config/$$ID/$$VERSION_ID/packages-microsoft-prod.deb" && \
 	    sudo dpkg --install packages-microsoft-prod.deb && \
 	    rm packages-microsoft-prod.deb
 	sudo apt-get update

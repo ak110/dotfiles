@@ -13,13 +13,22 @@ _STUB_COMMANDS = ("uv", "sudo", "apt-get", "dpkg", "wget", "pwsh", "rm")
 
 
 def _make_stubbed_setup(
-    tmp_path: pathlib.Path, target: str, agent_variable: str | None = None
+    tmp_path: pathlib.Path,
+    target: str,
+    agent_variable: str | None = None,
+    os_release: tuple[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     """複製したMakefileを隔離PATHで起動し、危険な実コマンドへの到達を防ぐ。"""
     make_path = shutil.which("make")
     assert make_path is not None
     makefile = tmp_path / "Makefile"
-    makefile.write_text((_REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8"), encoding="utf-8")
+    makefile_content = (_REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    if os_release is not None:
+        distribution, version = os_release
+        (tmp_path / "os-release").write_text(f"ID={distribution}\nVERSION_ID={version}\n", encoding="utf-8")
+        assert makefile_content.count(". /etc/os-release") == 1
+        makefile_content = makefile_content.replace(". /etc/os-release", ". ./os-release", 1)
+    makefile.write_text(makefile_content, encoding="utf-8")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log_path = tmp_path / "called.txt"
@@ -72,6 +81,14 @@ def test_human_setup_targets_reach_recipe(tmp_path: pathlib.Path, target: str, e
     result, calls = _make_stubbed_setup(tmp_path, target)
     assert result.returncode == 0, result.stderr
     assert all(any(call.startswith(expected) for call in calls) for expected in expected_commands)
+
+
+@pytest.mark.parametrize(("distribution", "version"), (("ubuntu", "24.04"), ("debian", "12")))
+def test_setup_pwsh_selects_distribution_repository(tmp_path: pathlib.Path, distribution: str, version: str) -> None:
+    """OSごとのMicrosoftリポジトリ設定を、ホストを変更せずに選ぶ。"""
+    result, calls = _make_stubbed_setup(tmp_path, "setup-pwsh", os_release=(distribution, version))
+    assert result.returncode == 0, result.stderr
+    assert f"wget --quiet https://packages.microsoft.com/config/{distribution}/{version}/packages-microsoft-prod.deb" in calls
 
 
 def test_browser_test_entry_unchanged(tmp_path: pathlib.Path) -> None:
