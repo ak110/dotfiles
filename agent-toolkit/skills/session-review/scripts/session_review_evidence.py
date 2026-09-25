@@ -2123,8 +2123,20 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
                 seen.add(warning_body)
                 result.append(warning_body)
             continue
+        # コマンドが表示した文書のコードフェンス内は過去の出力の引用であり、実行時の警告ではない。
+        # hook記録と構造化された警告値は文書の表示を含まないため、この判定の外に置く。
+        skip_fenced = marker_only and not from_hook_record
+        in_fence = False
         for line in text.splitlines():
             stripped = line.strip()
+            if skip_fenced:
+                numbered_line = _LINE_NUMBER_PREFIX.match(line)
+                unnumbered = (numbered_line.group(1) if numbered_line else line).strip()
+                if unnumbered.startswith(("```", "~~~")):
+                    in_fence = not in_fence
+                    continue
+                if in_fence:
+                    continue
             if not stripped or not (not marker_only or _WARNING_LINE_PATTERN.search(line)):
                 continue
             if _HOOK_NOTICE_MARKER.search(line) and not from_hook_record:

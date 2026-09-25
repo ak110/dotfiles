@@ -1885,6 +1885,54 @@ def test_warn_keeps_command_output_warning(
     assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: build failed"}]
 
 
+def test_warn_excludes_quoted_warning_inside_code_fence_of_command_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """コマンドが表示した文書のコードフェンス内の警告は、実行時警告として扱わない。
+
+    `sed`や`cat -n`で振り返り素材などのMarkdownを表示すると、過去の警告の引用がフェンス内に現れる。
+    これを候補にすると、対象セッションで発生していない警告が素材へ載る。フェンス外の警告は保持する。
+    """
+    shown_document = "\n".join(
+        [
+            "### c0071 warning",
+            "```text",
+            "warn: 一括stageに編集記録が無いファイルが含まれている",
+            "```",
+            "  12\t~~~",
+            "  13\twarning: 行番号付きで表示した引用",
+            "  14\t~~~",
+            "warning: 表示の後に出た実行時警告",
+        ]
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "id": "call-1", "input": {"command": "sed -n '1,9p' a.md"}}
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": shown_document}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert [event["text"] for event in _read_jsonl(capsys)] == ["warning: 表示の後に出た実行時警告"]
+
+
 def test_warn_excludes_absence_statement(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
