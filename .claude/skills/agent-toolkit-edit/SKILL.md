@@ -169,7 +169,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/agent_toolkit/_hooks/pretooluse/git_checks_test.py`の`TestManifestSsot`が検査し、`uv run --frozen pyfltr run`で自動的に失敗する。
+整合性は`agent-toolkit/agent_toolkit/manifest_ssot_test.py`が検査し、`uv run --frozen pyfltr run`で自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。変更は正本の更新と生成器の実行で行う。

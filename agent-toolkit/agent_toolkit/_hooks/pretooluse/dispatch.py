@@ -6,28 +6,17 @@ r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
 warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を載せつつ処理を継続する
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
-auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
-関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
-遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
-又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
-除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
+遮断は不可逆な操作とデータ破損を生む入力に限定し、後続の編集で復元できる結果は警告する。
 
 統合しているチェック:
 
 任意ツール:
 
-- 同一のツール名とJSON入力が10回連続した場合の遮断 (block)
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
-- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
-- 質問本文・選択肢が指す`atk`サブコマンドの公開契約が未観測の場合の検査 (block)
-- plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
-- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続の警告 (warn)
 
-固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
-計画メタ情報の4項目と記法、計画単位のエージェント提案詳細表（5項目）を含む
-フェンス整合、参照実在は
-`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
-本フックでは扱わない。
+AskUserQuestion / ExitPlanMode:
+
+- ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 
 mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / start_shell / send_message / kill / list:
 
@@ -37,85 +26,43 @@ mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / s
 
 Bash:
 
-- 多段シェルへのコード文字列と`.env`内容出力の遮断 (block)
-- 単純な明示パスの不存在と`atk`未対応オプションの警告 (warn)
-- 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
-- 350行を超える通常ファイルの静的に確定できる全文取得の遮断 (block)
-- 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
-- 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
-- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の補正又は遮断 (auto-fix/block)
-- 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
+- Codexで350行又は16KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
-- git amend / rebase直前に`git log`未確認のブロック (block)
-- git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は遮断 (auto-fix/block)
-- 除外設定を持たない単純な再帰`grep`の`rg`への補正 (auto-fix)
-- `git commit`未検証警告 (warn)
-- `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
-- `git log --decorate`の自動付与 (auto-fix)
-- `codex exec`の未決事項念押し (warn)
-- 一括ステージ実行時の自セッション編集対象外ファイル警告 (warn)
+- 未完了の背景タスクが書き込む出力ファイルの読取の警告 (warn)
 
 Skill:
 
-- `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
+- `agent-toolkit:plan-mode`起動時の前の計画ファイルのパスの消去 (side-effect)
 
 TaskStop:
 
 - 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の遮断 (block)
 
-Read / Write / Edit / MultiEdit / apply_patch:
+Write / Edit / MultiEdit / apply_patch:
 
-- 文字化け（U+FFFD）検出 (warn。ユーザーが直接読む本文はblock)
+- 文字化け（U+FFFD）検出 (warn)
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
 - lockfile / 生成物ディレクトリの直接編集 (warn)
-- `.env`系のReadとシークレット・鍵ファイルの直接編集 (block)
-- Pythonと計画Markdownの末尾へ混入したツール境界タグは後続編集で除去できるため警告 (warn)
+- Pythonと計画Markdownの末尾へ混入したツール境界タグ (warn)
 - manifestファイルの手編集 (warn)
-- ホームディレクトリの絶対パス混入 (warn)
-- 口語的な日本語表現の混入 (warn)
-- 「Xを根拠にYしない」「Xを理由にYしない」形式のメタ規範文言の増加 (warn)
-- .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
-- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (warn。ユーザーが直接読む本文はblock)
-- .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
-- 複数断片の全境界が現在内容へ一意に解決できるかの検査 (warn)
-- `atk`の公開契約の正本を取得した範囲にある`atk`サブコマンド経路の観測記録 (side-effect)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
-block系checkの検査対象は「新規に書き込まれる側」（変更後断片）を基本とする。
-変更前断片は既存内容の修正・削除を妨げないため単独では検査対象としない。
 
 ホスト差の扱い:
 
 - 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、検査本体はホストを区別しない
 - 非空文字列の`turn_id`をCodex判定の正本とし、payload読込直後に一度だけ判定する
-- Bashの終了コードを取得できないCodexでは、成功状態を前提とするamend・rebase、push、commitの各検査を実行しない
-- 外部ファイル解決を伴うfrontmatter同期注記・本文節参照の検査と、PowerShellの改行検査はClaude入力へ限定する
+- 大量読取の遮断はCodexだけへ適用し、PowerShellの改行検査はClaudeの`Write`へ限定する
 - 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
 """
 
 from __future__ import annotations
 
-import datetime
-import importlib
 import json
-import os
-import pathlib
-import re
-import shlex
-import subprocess
 import sys
-import tempfile
-import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
-
-from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    locked_rotate_and_append as _locked_rotate_and_append,
-)
-from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import (
@@ -125,119 +72,49 @@ from agent_toolkit._hooks import (
     bash_command_parser as _bash_command_parser,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
-    response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._hooks import (
-    scratchpad_path as _scratchpad_path,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._hooks import transcript as _transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _GLOBAL_OPTIONS_WITH_VALUE,
-    _GLOBAL_OPTIONS_WITHOUT_VALUE,
-    CwdResolution,
-    GitEvent,
-    extract_git_events,
-    resolve_cwd_change,
-    resolve_execution_segment,
-    split_bash_segments,
 )
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id  # noqa: E402
 
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
-from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
-from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    read_state,
-    update_state,
-)
+from agent_toolkit._hooks.session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     format_warning_context,
 )
-from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
     is_plan_component_file,
-    is_plan_handoff_file,
 )
 
 if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.agent_checks import (
         _AGENTS_SERVER_KILL_TOOLS,
         _AGENTS_SERVER_SEND_TOOLS,
-        _AGENTS_SERVER_START_TOOLS,
         _AGENTS_SERVER_TOOL_NAMES,
         _PLAN_MODE_SKILL_NAMES,
         _check_agents_server_continuation_input,
-        _check_generic_agent_preference,
-        _check_sendmessage_agent_type_recipient,
         _check_task_stop,
-        _check_webfetch_verbatim_request,
+        _clear_current_plan_file_path,
         _handle_language_check,
         _record_iss_sidechain_probe,
-        _reset_plan_mode_state,
     )
     from agent_toolkit._hooks.pretooluse.content_checks import (
-        _check_direct_agent_toolkit_edits_after_plan_mode,
-        _check_edit_boundary_resolution,
-        _check_edit_operation_blocks,
-        _check_plan_mode_skill_first,
-        _check_secret_read,
         _collect_edit_operation_warnings,
-        _warn_foreign_script_mixin,
         _warn_mojibake,
-        check_user_facing_typo,
-        record_atk_help_paths_from_read,
     )
-    from agent_toolkit._hooks.pretooluse.git_checks import (
-        _check_bash_agent_toolkit_version_bump,
-        _check_bash_amend_rebase_without_log,
-        _check_bash_bulk_stage_with_unedited_files,
-        _check_bash_commit_attribution,
-        _check_bash_git_commit,
-        _check_bash_git_log_decorate,
-        _check_bash_git_push_after_amend_with_dirty_status,
+    from agent_toolkit._hooks.pretooluse.large_reads import (
+        check_large_bash_read,
     )
-    from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read, check_large_read
-    from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+    from agent_toolkit._hooks.pretooluse.notices import (
+        _llm_notice,
+    )
     from agent_toolkit._hooks.pretooluse.shell_checks import (
-        _autofix_bash_command,
-        _check_bash_codex_exec,
-        _check_bash_atk_help_observation,
-        _check_bash_atk_options,
-        _check_bash_external_command_options,
-        _check_bash_explicit_path_exists,
-        _check_bash_git_grep_pattern_type,
-        _check_bash_option_terminator_missing,
-        _check_bash_redirect_parent_exists,
-        _check_bash_unknown_atk_subcommand,
-        _check_bash_unquoted_shell_metacharacter,
-        _check_bash_unresolved_git_object,
-        _check_bash_env_full_read,
-        _check_bash_missing_path_operand_loss,
-        _check_bash_nested_code_string,
-        _check_bash_output_status_after_truncation,
-        _check_bash_output_truncation,
         _check_bash_process_kill_by_pattern,
-        _check_bash_python_code_string,
-        _check_bash_recursive_grep_without_exclusion,
-        _check_bash_recursive_home_search,
-        _check_bash_foreground_loop_wait,
-        _check_bash_sleep_poll_pattern,
-        _check_bash_unbounded_home_traversal,
-        _check_bash_unbounded_root_traversal,
-        _check_bash_uv_run_python,
     )
 
 _ExecutionSegment = _bash_command_parser.ExecutionSegment
-_extract_execution_pipelines = _bash_command_parser.extract_execution_pipelines
 _extract_execution_segments = _bash_command_parser.extract_execution_segments
-_has_uv_terminal_option = _bash_command_parser.has_uv_terminal_option
-_is_python_token = _bash_command_parser.is_python_token
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
@@ -247,29 +124,6 @@ def _is_plan_file_or_adjunct(file_path: str) -> bool:
     """計画ファイル（メイン）・計画ファイル（バグ）の場合に真を返す。"""
     return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
 
-
-def _is_claude_job_file(file_path: str) -> bool:
-    """Claude Codeが生成するセッション作業領域配下の場合に真を返す。"""
-    try:
-        target = pathlib.Path(file_path).expanduser().resolve(strict=False)
-        jobs = (pathlib.Path.home() / ".claude" / "jobs").resolve(strict=False)
-        return target.is_relative_to(jobs) and target != jobs
-    except (OSError, ValueError):
-        return False
-
-
-# 日本語の文字（ひらがな・カタカナ・CJK統合漢字）。
-_JAPANESE_SCRIPT_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
-# 日本語文中への混入を検出する他言語の文字。
-# ハングル字母（U+1100-U+11FF）・ハングル互換字母（U+3130-U+318F）・ハングル音節（U+AC00-U+D7A3）・
-# 半角ハングル（U+FFA0-U+FFDC）・キリル文字（U+0400-U+04FF）・キリル補助（U+0500-U+052F）を対象とする。
-# U+5199は日本語でも用いるため、既存の監査可能な文字列からコンパイル前に除く。
-_FOREIGN_SCRIPT_RE = re.compile(
-    (
-        "[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-\uffdc\u0400-\u04ff\u0500-\u052f"
-        "动为发应对实现进过这选项认证结问题处术统规读写义误该让还]"
-    ).replace("\u5199", "")
-)
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
 
@@ -352,29 +206,14 @@ def main(payload_text: str) -> int:
             pending_notices.clear()
         return code
 
-    # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）。
-    # 呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する
-    plan_mode_notice = _check_plan_mode_skill_first(tool_name, tool_input, session_id)
-    if plan_mode_notice is not None:
-        pending_notices.append(plan_mode_notice)
-
-    # plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続を警告
-    _, direct_edit_notice = _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id)
-    if direct_edit_notice is not None:
-        pending_notices.append(direct_edit_notice)
-
-    # plan file編集前の必須リファレンス未読の場合は警告（降格）
-
-    # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
-
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
 
-    # Skill: plan-mode起動時は計画単位の状態をリセットする。
+    # Skill: plan-mode起動時は前の計画のパスを消去し、UserPromptSubmitが前の計画名を表示し続けないようにする。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
-            _reset_plan_mode_state(session_id)
+            _clear_current_plan_file_path(session_id)
         flush_pending_notices()
         return exit_with(0)
 
@@ -399,56 +238,7 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return exit_with(0)
 
-    if tool_name == "WebFetch":
-        notice = _check_webfetch_verbatim_request(tool_input)
-        if notice is not None:
-            pending_notices.append(notice)
-        flush_pending_notices()
-        return exit_with(0)
-
-    if tool_name == "SendMessage":
-        notice = _check_sendmessage_agent_type_recipient(tool_input)
-        if notice is not None:
-            pending_notices.append(notice)
-        flush_pending_notices()
-        return exit_with(0)
-
-    if tool_name in {"Agent", "Task"}:
-        notice = _check_generic_agent_preference(tool_input)
-        if notice is not None:
-            pending_notices.append(notice)
-        flush_pending_notices()
-        return exit_with(0)
-
-    if tool_name == "Read":
-        file_path = tool_input.get("file_path", "")
-        if isinstance(file_path, str) and _check_secret_read(file_path):
-            return exit_with(2)
-        large_read_fix = check_large_read(tool_input, cwd, is_codex=is_codex)
-        if large_read_fix is not None:
-            if large_read_fix.updated_input is None:
-                print(large_read_fix.notice, file=sys.stderr)
-                return exit_with(2)
-            corrected_input = large_read_fix.updated_input
-            record_atk_help_paths_from_read(corrected_input, cwd, session_id)
-            emit_json(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "permissionDecision": "allow",
-                        "updatedInput": corrected_input,
-                        "additionalContext": format_warning_context([*pending_notices, large_read_fix.notice]),
-                    }
-                }
-            )
-            return exit_with(0)
-        record_atk_help_paths_from_read(tool_input, cwd, session_id)
-        flush_pending_notices()
-        return exit_with(0)
-
-    return exit_with(
-        _handle_edit_tool(session_id, tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex)
-    )
+    return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices))
 
 
 def _handle_agents_server_tool(
@@ -488,12 +278,10 @@ def _handle_bash_tool(
     *,
     is_codex: bool,
 ) -> int:
-    """Bashコマンドの遮断・警告・引数補正を処理する。
+    """Bashコマンドの遮断と警告を処理する。
 
-    Bashの終了コードを取得できないCodexでは、成功状態の生産者が存在しない検査
-    （amend・rebase前の`git log`確認、push前のdirty検査、commit前の検証確認）を実行しない。
-    現在の入力とcwdだけで判定する検査、PreToolUse自身が記録するsleep poll検査、
-    成功した編集が記録する`session_edited_files`を使う一括stage警告は両ホストで共有する。
+    Codexの大量読取の遮断、パターン一致によるプロセス終了の遮断、
+    未完了の背景タスクが書き込む出力ファイルの読取の警告を扱う。
     """
     command = tool_input.get("command")
     if not isinstance(command, str):
@@ -501,45 +289,13 @@ def _handle_bash_tool(
         return 0
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-    warnings: list[str] = []
     large_read_notice = check_large_bash_read(command, cwd, is_codex=is_codex)
     if large_read_notice is not None:
         print(large_read_notice, file=sys.stderr)
         return 2
-    if _check_bash_foreground_loop_wait(command, bool(tool_input.get("run_in_background"))) == "block":
+    if _check_bash_process_kill_by_pattern(command):
         return 2
-    sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, bool(tool_input.get("run_in_background")))
-    if sleep_poll_result == "block":
-        return 2
-    if sleep_poll_result is not None:
-        warnings.append(sleep_poll_result)
-    if _check_bash_missing_path_operand_loss(command, cwd) == "block":
-        return 2
-    auto_fix = _autofix_bash_command(command, cwd, session_id)
-    if auto_fix is not None:
-        command, auto_fix_notice = auto_fix
-        tool_input = dict(tool_input)
-        tool_input["command"] = command
-        warnings.append(auto_fix_notice)
-    if _check_bash_uv_run_python(command, cwd) == "block":
-        return 2
-    if (
-        (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
-        or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
-        or _check_bash_commit_attribution(command, cwd)
-        or _check_bash_process_kill_by_pattern(command)
-    ):
-        return 2
-    truncation_result = _check_bash_output_truncation(command, session_id)
-    if truncation_result == "block":
-        return 2
-    if _check_bash_nested_code_string(command) or _check_bash_python_code_string(command) or _check_bash_env_full_read(command):
-        return 2
-    recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
-    if recursive_grep_result == "block":
-        return 2
-    if _check_bash_unbounded_root_traversal(command) == "block":
-        return 2
+    warnings: list[str] = []
     transcript_path = payload.get("transcript_path")
     if isinstance(transcript_path, str) and transcript_path:
         state = read_state(session_id)
@@ -559,48 +315,6 @@ def _handle_bash_tool(
                         escalate_on_repeat=True,
                     )
                 )
-    git_grep_pattern_type_result = _check_bash_git_grep_pattern_type(command)
-    for warning in (
-        _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
-        truncation_result,
-        _check_bash_output_status_after_truncation(command),
-        _check_bash_recursive_home_search(command),
-        _check_bash_unbounded_home_traversal(command),
-        recursive_grep_result,
-        _check_bash_atk_help_observation(command, session_id),
-        _check_bash_external_command_options(command, session_id),
-        _check_bash_explicit_path_exists(command, cwd),
-        git_grep_pattern_type_result,
-        _check_bash_atk_options(command),
-        _check_bash_unknown_atk_subcommand(command),
-        _check_bash_unquoted_shell_metacharacter(command),
-        _check_bash_unresolved_git_object(command, cwd),
-        _check_bash_option_terminator_missing(command, cwd),
-        _check_bash_redirect_parent_exists(command, cwd),
-        None if is_codex else _check_bash_git_commit(command, session_id, cwd),
-        _check_bash_agent_toolkit_version_bump(command, cwd),
-        _check_bash_codex_exec(command),
-    ):
-        if warning is not None:
-            warnings.append(warning)
-    result = _check_bash_git_log_decorate(command, tool_input)
-    if result is not None:
-        if warnings:
-            _append_additional_context(result, format_warning_context(warnings))
-        emit_json(result)
-        return 0
-    if auto_fix is not None:
-        emit_json(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "allow",
-                    "updatedInput": tool_input,
-                    "additionalContext": format_warning_context(warnings),
-                }
-            }
-        )
-        return 0
     if warnings:
         emit_json(
             {
@@ -650,31 +364,22 @@ def _handle_user_facing_text_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文へ言語品質検査と誤字検査を適用し、いずれも警告として返す。
+    """質問・計画本文へ文字化け検査を適用し、警告として返す。
 
-    ユーザーへ直接到達する本文を対象とする検査は、当該本文をユーザー自身が読んで誤りを指摘できるため、
-    第1段の復元できない結果に当たらない。遮断すると当該ターンの入力と作業を失わせたうえで
-    同じ確認の再発行を要するため、文字化け、日本語以外の文字の混入及び誤字のいずれも警告で返す。
+    ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
+    遮断すると当該ターンの入力と作業を失わせたうえで同じ確認の再発行を要するため、警告で返す。
     判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
     「遮断・警告フックの成立条件」が定める。
     """
-    warnings: list[str] = []
-    fields = _user_facing_text_fields(tool_name, tool_input)
-    for warning in (
-        _warn_mojibake(tool_name, fields),
-        _warn_foreign_script_mixin(tool_name, fields),
-        check_user_facing_typo(tool_name, fields),
-    ):
-        if warning is not None:
-            warnings.append(warning)
-    if not warnings:
+    warning = _warn_mojibake(tool_name, _user_facing_text_fields(tool_name, tool_input))
+    if warning is None:
         flush_warning()
     else:
         emit_json(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
-                    "additionalContext": format_warning_context(warnings),
+                    "additionalContext": format_warning_context([warning]),
                 }
             }
         )
@@ -682,57 +387,26 @@ def _handle_user_facing_text_tool(
 
 
 def _handle_edit_tool(
-    session_id: str,
     tool_name: str,
     tool_input: dict,
     cwd: str,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
-    *,
-    is_codex: bool,
 ) -> int:
-    """共通編集単位ごとに遮断検査と警告検査を処理する。
+    """共通編集単位ごとに警告検査を処理する。
 
     ClaudeのWrite・Edit・MultiEditとCodexの`apply_patch`を`_hook_tool_input`が
     同一の操作記録へ変換するため、検査本体はホストを区別しない。
-    複数対象・複数検査の警告は1つの`additionalContext`へ結合し、遮断は最初の違反で返す。
+    複数対象・複数検査の警告は1つの`additionalContext`へ結合する。
     """
     operations = _hook_tool_input.parse_operations(tool_name, tool_input, cwd)
     if operations is None:
         flush_warning()
         return 0
     images: dict[int, _hook_tool_input.MaterializedEdit | None] = {}
-    for index, operation in enumerate(operations):
-        if _check_edit_operation_blocks(tool_name, operation, _materialize_cached(operation, index, images)):
-            return 2
-    before_sizes: dict[str, int] = {}
-    added_texts: dict[str, str] = {}
-    for index, operation in enumerate(operations):
-        if not operation.exists_after_apply or not _hook_tool_input.is_always_loaded_rule(operation.path):
-            continue
-        try:
-            before_sizes.setdefault(operation.path, pathlib.Path(operation.path).stat().st_size)
-        except FileNotFoundError:
-            before_sizes.setdefault(operation.path, 0)
-        except OSError:
-            continue
-        image = _materialize_cached(operation, index, images)
-        if image is not None:
-            added_texts[operation.path] = _hook_tool_input.added_text(image)
-    if session_id and before_sizes:
-
-        def _record_sizes(state: dict) -> dict:
-            state["always_loaded_rule_before_sizes"] = before_sizes
-            state["always_loaded_rule_added_texts"] = added_texts
-            return state
-
-        update_state(session_id, _record_sizes)
     warnings: list[str] = []
-    boundary_warning = _check_edit_boundary_resolution(tool_name, operations)
-    if boundary_warning is not None:
-        warnings.append(boundary_warning)
     for index, operation in enumerate(operations):
-        warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images, is_codex=is_codex))
+        warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images))
     if warnings:
         emit_json(
             {
@@ -756,20 +430,3 @@ def _materialize_cached(
     if index not in images:
         images[index] = _hook_tool_input.materialize(operation)
     return images[index]
-
-
-def _append_additional_context(result: dict, suffix: str) -> None:
-    """既存JSON結果の`hookSpecificOutput.additionalContext`末尾へ警告本文を追記する。
-
-    `hookSpecificOutput`が無い・`additionalContext`が文字列でない場合は新規に設定する。
-    既存内容との境界には空行を出力する。
-    """
-    hook_specific = result.get("hookSpecificOutput")
-    if not isinstance(hook_specific, dict):
-        hook_specific = {"hookEventName": "PreToolUse"}
-        result["hookSpecificOutput"] = hook_specific
-    existing = hook_specific.get("additionalContext")
-    if isinstance(existing, str) and existing:
-        hook_specific["additionalContext"] = f"{existing}\n\n{suffix}"
-    else:
-        hook_specific["additionalContext"] = suffix

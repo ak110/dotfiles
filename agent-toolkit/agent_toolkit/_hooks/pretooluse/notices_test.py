@@ -32,41 +32,18 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 class TestCodexApplyPatchEditChecks:
     """Codexの`apply_patch`入力に対する共通編集検査。"""
 
-    def test_add_file_warns_colloquial_with_detected_term(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
-        """追加全文の口語表現を警告し、検出語を示す。"""
-        patch_text = _patch(f"*** Add File: docs/note.md\n+概要は{deny_substring}該当する。\n")
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 0
-        assert "colloquial" in _additional_context(result)
-        assert content_checks.colloquial_detected_terms_text([deny_substring]) in _agent_messages(result)
-
-    def test_removed_lines_only_do_not_warn(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
-        """削除行だけに該当表現があるpatchは警告しない。"""
-        target = tmp_path / "docs" / "note.md"
-        target.parent.mkdir(parents=True)
-        target.write_text(f"前文\n概要は{deny_substring}該当する。\n後文\n", encoding="utf-8")
-        patch_text = _patch(
-            f"*** Update File: docs/note.md\n@@\n 前文\n-概要は{deny_substring}該当する。\n+概要は条件に該当する。\n 後文\n"
-        )
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 0
-        assert "colloquial" not in _agent_messages(result)
-
     def test_multiple_warnings_are_merged_into_single_json(self, tmp_path: pathlib.Path) -> None:
         """同一入力の初回警告と反復警告を単一のJSONへまとめる。"""
-        home = str(pathlib.Path.home())
         patch_text = _patch(
-            f"*** Add File: src/one.py\n+first = '{home}/a'\n",
-            f"*** Add File: src/two.py\n+second = '{home}/b'\n",
+            "*** Add File: one/uv.lock\n+version = 1\n",
+            "*** Add File: two/uv.lock\n+version = 1\n",
         )
         result = _run(_codex_payload(patch_text, tmp_path))
 
         assert result.returncode == 0
         assert len(result.stdout.strip().splitlines()) == 1
         context = _additional_context(result)
-        assert context.count("ホームディレクトリの絶対パス") == 2
+        assert context.count("uv add") == 2
         assert "この通知は同一セッションで2件目である" in context
         assert result.stderr == ""
 
@@ -84,20 +61,6 @@ class TestCodexApplyPatchEditChecks:
 
         assert result.returncode == 0
         assert result.stdout == ""
-
-    def test_plan_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
-        """計画ファイルではCodexの`apply_patch`でも口語警告を出力しない。"""
-        home = tmp_path / "home"
-        plan = _make_plan_file(home, "codex-colloquial.md")
-        relative = pathlib.Path(plan).relative_to(home)
-        patch_text = _patch(f"*** Update File: {relative.as_posix()}\n@@\n-# t\n+概要は{deny_substring}該当する。\n")
-        result = _run(
-            _codex_payload(patch_text, home),
-            env_overrides=_plan_file_state_env(tmp_path, home),
-        )
-        assert result.returncode == 0
-        assert "colloquial" not in _agent_messages(result)
-        assert result.stderr == ""
 
     def test_lockfile_path_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
         """patchの対象パス判定は既存のパターン検査を共有する。"""
@@ -132,59 +95,6 @@ class TestCodexBashCheckSelection:
         if codex:
             payload["turn_id"] = "turn-1"
         return payload
-
-    def test_amend_without_git_log_is_claude_only(self, tmp_path: pathlib.Path) -> None:
-        """`git log`成功状態に依存するamend検査はCodexで起動しない。"""
-        env = _plan_file_state_env(tmp_path)
-        _write_session_state(tmp_path, "amend-host", {})
-        claude = _run(self._payload("git commit --amend", tmp_path, "amend-host", codex=False), env_overrides=env)
-        codex = _run(self._payload("git commit --amend", tmp_path, "amend-host", codex=True), env_overrides=env)
-
-        assert claude.returncode == 2
-        assert codex.returncode == 0
-
-    def test_commit_verification_warning_is_claude_only(self, tmp_path: pathlib.Path) -> None:
-        """検証実行状態に依存するcommit警告はCodexで起動しない。"""
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        _init_git_repo(repo)
-        _git_commit_initial(repo, {"app.py": "x = 1\n"})
-        (repo / "app.py").write_text("x = 2\n", encoding="utf-8")
-        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
-        env = _plan_file_state_env(tmp_path)
-        _write_session_state(tmp_path, "commit-host", {"git_log_checked": {str(repo): True}})
-        command = "git commit -m x -m 'Co-Authored-By: Test <noreply@openai.com>'"
-        claude = _run(self._payload(command, repo, "commit-host", codex=False), env_overrides=env)
-        codex = _run(self._payload(command, repo, "commit-host", codex=True), env_overrides=env)
-
-        assert "テストを実行せずにcommit" in _additional_context(claude)
-        assert "テストを実行せずにcommit" not in _agent_messages(codex)
-
-    def test_bulk_stage_warning_is_shared(self, tmp_path: pathlib.Path) -> None:
-        """成功した編集が記録する状態による一括stage警告は両ホストで動作する。"""
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        _init_git_repo(repo)
-        _git_commit_initial(repo, {"tracked.txt": "初期値\n"})
-        (repo / "tracked.txt").write_text("更新\n", encoding="utf-8")
-        _write_session_state(tmp_path, "bulk-codex", {"session_edited_files": []})
-        result = _run(
-            self._payload("git add -A", repo, "bulk-codex", codex=True),
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-
-        assert result.returncode == 0
-        assert "一括`stage`" in _additional_context(result)
-
-    def test_input_only_checks_are_shared(self, tmp_path: pathlib.Path) -> None:
-        """現在入力だけで判定する入力補正は両ホストで動作する。"""
-        rewritten = _run(self._payload("uv run python script.py", tmp_path, "codex-uv", codex=True))
-        decorated = _run(self._payload("git log --oneline", tmp_path, "codex-log", codex=True))
-
-        assert rewritten.returncode == 0
-        assert json.loads(rewritten.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == "uv run --script script.py"
-        assert decorated.returncode == 0
-        assert "--decorate" in json.loads(decorated.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
 
     def test_transcript_language_check_is_claude_only(self, tmp_path: pathlib.Path) -> None:
         """transcript由来の言語検査はCodexで起動しない。"""

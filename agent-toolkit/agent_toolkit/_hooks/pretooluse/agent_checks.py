@@ -1,110 +1,19 @@
 # ruff: noqa: F401,F821,I001
 # pylint: disable=unused-import,used-before-assignment,wrong-import-order
-r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
-
-任意ツールの実行前に以下のチェックを順に実行する。
-block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
-warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を載せつつ処理を継続する
-（exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
-auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
-関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
-遮断は秘密の露出、所有不明の終了、対象集合や実行コードの不可逆な変化、
-又は処理停止を生む入力に限定する。可逆な編集やCLI形式の不一致は警告する。
-除去可能な原因への反復注記は継続し、欠落した取得結果を反復する場合だけ遮断へ昇格する。
-
-統合しているチェック:
-
-任意ツール:
-
-- メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
-- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
-- plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
-- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続の警告 (warn)
-
-固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
-計画メタ情報の4項目と記法、計画単位のエージェント提案詳細表（5項目）を含む
-フェンス整合、参照実在は
-`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
-本フックでは扱わない。
-
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / start_write / send_message / kill:
-
-- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
-- 委譲先へ渡す絶対`cwd`と対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
-- 全チェック通過時の強制承認 (auto-approve)
-
-Bash:
-
-- 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
-- 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
-- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
-- 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
-- パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
-- git amend / rebase直前に`git log`未確認のブロック (block)
-- git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は遮断 (auto-fix/block)
-- `git commit`未検証警告 (warn)
-- `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
-- `git log --decorate`の自動付与 (auto-fix)
-- `codex exec`の未決事項念押し (warn)
-- 一括ステージ実行時の自セッション編集対象外ファイル警告 (warn)
-
-Skill:
-
-- `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
-
-Agent / Task:
-
-- 汎用の組み込み種別を起動する際の`agents_server`優先経路の案内 (warn)
-
-TaskStop:
-
-- 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
-
-Write / Edit / MultiEdit / apply_patch:
-
-- 文字化け（U+FFFD）検出 (warn。ユーザーが直接読む本文はblock)
-- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
-- lockfile / 生成物ディレクトリの直接編集 (warn)
-- シークレット / 鍵ファイルの直接編集 (block)
-- manifestファイルの手編集 (warn)
-- ホームディレクトリの絶対パス混入 (warn)
-- 口語的な日本語表現の混入 (warn)
-- 「Xを根拠にYしない」「Xを理由にYしない」形式のメタ規範文言の増加 (warn)
-- .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
-- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (warn。ユーザーが直接読む本文はblock)
-- .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
-
-各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
-block系checkの検査対象は「新規に書き込まれる側」（変更後断片）を基本とする。
-変更前断片は既存内容の修正・削除を妨げないため単独では検査対象としない。
-
-ホスト差の扱い:
-
-- 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、検査本体はホストを区別しない
-- 非空文字列の`turn_id`をCodex判定の正本とし、payload読込直後に一度だけ判定する
-- Bashの終了コードを取得できないCodexでは、成功状態を前提とするamend・rebase、push、commitの各検査を実行しない
-- 外部ファイル解決を伴うfrontmatter同期注記・本文節参照の検査と、PowerShellの改行検査はClaude入力へ限定する
-- 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
-"""
+r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_server及びplan-mode起動を扱う検査。"""
 
 from __future__ import annotations
 
 import datetime
-import importlib
 import json
 import os
 import pathlib
 import re
-import shlex
-import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -112,55 +21,29 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
-from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position
-from agent_toolkit._hooks import (
-    bash_command_parser as _bash_command_parser,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
 from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
     response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._hooks import (
-    scratchpad_path as _scratchpad_path,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._hooks import (
-    tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._hooks import transcript as _transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _GLOBAL_OPTIONS_WITH_VALUE,
-    _GLOBAL_OPTIONS_WITHOUT_VALUE,
-    CwdResolution,
-    GitEvent,
-    extract_git_events,
-    resolve_cwd_change,
-    resolve_execution_segment,
-    split_bash_segments,
-)
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import _WARN_TAG  # noqa: E402
 
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
-from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
     update_state,
 )
 from agent_toolkit._hooks.task_stop_state import has_recent_completion, target_ids  # noqa: E402
-from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    is_plan_adjunct_file,
-    is_plan_component_file,
-)
 
 if TYPE_CHECKING:
-    from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+    from agent_toolkit._hooks.pretooluse.notices import (
+        _block_notice,
+        _llm_notice,
+    )
 
 
 def _handle_language_check(payload: dict, session_id: str) -> str | None:
@@ -263,6 +146,7 @@ _AGENTS_SERVER_TOOL_NAMES = (
     _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_LIST_TOOLS
 )
 
+
 # hooks.json・hooks.codex.jsonのPreToolUse matcherが被覆すべきagents_serverツール名の全体。
 # 一致検査（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
 AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
@@ -273,60 +157,6 @@ _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
 _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
-_WEBFETCH_VERBATIM_RE = re.compile(
-    r"(?:全文|原文|そのまま|逐語|引用|verbatim|word[ -]for[ -]word)",
-    re.IGNORECASE,
-)
-
-
-def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
-    """WebFetchへ逐語再現を要求する入力を検出して警告する。"""
-    prompt = tool_input.get("prompt")
-    if not isinstance(prompt, str) or _WEBFETCH_VERBATIM_RE.search(prompt) is None:
-        return None
-    return _llm_notice(
-        "WebFetchは要約モデルを経由するため、その出力は逐語引用の根拠にならない。"
-        "逐語で引用する場合は、同じURLの生データをagent-toolkitの管理対象一時領域へ保存し、"
-        "保存した本文から該当箇所だけを引用する。",
-        tag="notice",
-    )
-
-
-def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
-    """SendMessageの宛先にエージェント種別名を指定した場合に警告する。
-
-    実行環境が渡す呼び出し元識別子は`uds:/tmp/cc-socks/1939480.sock`のように
-    経路の区切りを持つ一方、`plugin-dev:skill-reviewer`のようなエージェント種別名は
-    経路の区切りを持たない。警告本文が前者への送信を解消手段として指示するため、
-    経路の区切りを含む宛先は警告しない。
-    """
-    recipient = tool_input.get("to")
-    if not isinstance(recipient, str) or ":" not in recipient or "/" in recipient:
-        return None
-    return _llm_notice(
-        "エージェント種別名はSendMessageの到達可能な宛先ではない。"
-        "通常の完了報告はツール結果として1回返し、即時通知は実行環境が渡した呼び出し元識別子へだけ送る。",
-        tag=_WARN_TAG,
-        removable_cause=True,
-    )
-
-
-_GENERIC_AGENT_TYPES = frozenset({"Explore", "general-purpose", "Plan"})
-
-
-def _check_generic_agent_preference(tool_input: dict) -> str | None:
-    """汎用の組み込みAgent種別に`agents_server`の優先経路を案内する。
-
-    PreToolUse入力から`agents_server`の利用可否を判定できないため抑止状態を持たず、
-    対象となる各呼び出しへ案内を返す。
-    """
-    subagent_type = tool_input.get("subagent_type")
-    if not isinstance(subagent_type, str) or subagent_type not in _GENERIC_AGENT_TYPES:
-        return None
-    return _llm_notice(
-        "汎用Agentより`agents_server`を優先する。読み取り専用探索には`start_explore`、自由形式の委譲には`start_custom`を使う。",
-        tag="notice",
-    )
 
 
 # --- TaskStop: 初回遮断と再実行窓 ---
@@ -382,28 +212,21 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     return True
 
 
-def _reset_plan_mode_state(session_id: str) -> None:
-    """plan-mode起動時に計画単位の状態をリセットする。"""
+def _clear_current_plan_file_path(session_id: str) -> None:
+    """plan-mode起動時に前の計画ファイルのパスを消去する。
+
+    UserPromptSubmitが同じキーから計画名を`sessionTitle`へ出力するため、
+    新しい計画を始めた後に前の計画名を出力し続けないようにする。
+    """
     if not session_id:
         return
 
-    def _reset(current: dict) -> dict | None:
-        changed = False
-        if current.pop("current_plan_file_path", None) is not None:
-            changed = True
-        # 直接編集連続checkの状態も新計画へ持ち越さない。
-        if current.get("plan_file_written", False):
-            current["plan_file_written"] = False
-            changed = True
-        if current.get("direct_agent_toolkit_edit_count", 0) != 0:
-            current["direct_agent_toolkit_edit_count"] = 0
-            changed = True
-        if current.get("last_agent_toolkit_edit_path") is not None:
-            current["last_agent_toolkit_edit_path"] = None
-            changed = True
-        return current if changed else None
+    def _clear(current: dict) -> dict | None:
+        if current.pop("current_plan_file_path", None) is None:
+            return None
+        return current
 
-    update_state(session_id, _reset)
+    update_state(session_id, _clear)
 
 
 # --- Codex App Server: isSidechainプローブ ---

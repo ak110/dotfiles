@@ -1,38 +1,28 @@
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
-Bash / Write / Edit / MultiEdit / apply_patch / Skill / Read / Agent / Taskの実行後に
+Bash / Write / Edit / MultiEdit / apply_patch / Skill / Agent / Task / agents_server MCPの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
-PreToolUseやStopフックが参照して警告・提案の判定に使う。
+PreToolUse、UserPromptSubmit及びStopフックが参照して判定に使う。
 本モジュールは実行後の観測と警告だけを行い、遮断経路を持たない。
-除去可能な警告が反復しても、完了済みのツール操作を遡って遮断しない。
 
 編集入力は`_hook_tool_input`が共通の操作記録へ正規化する。
-Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終了コードを取得できないため、
-`git log`確認・amend・push・検証実行の成功状態を記録しない。
+Codexでは成功した`apply_patch`だけが本フックへ届く。
 
 検出対象:
 
-1. テスト実行 (Bash / pyfltr MCPの`run`)
-2. git log確認状態の記録・リセット (Bash: logで記録、対象コミットの親子関係が
-   変化する操作＝commit/rebase/resetでリセット)
-3. plan file（計画作業root `~/.claude/plans/` または
+1. plan file（計画作業root `~/.claude/plans/` または
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
-4. plan-modeスキル呼び出し検出 (Skill)
-5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
-6. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
-7. exit-session起動検知による`autonomous_exit_invoked`の記録と
+2. plan-modeスキル呼び出し検出 (Skill)
+3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
+4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
+5. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)
-8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
-   （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
-9. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
-   （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
-10. `git commit --amend` / `git commit --fixup` 成功時のcwd別
-    `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
-11. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
-12. PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
-13. PermissionDenied: 状態を変更せず終了
-14. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
-15. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
+6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
+   （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
+7. PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
+8. PermissionDenied: 状態を変更せず終了
+9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
+10. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`又は`atk run-script plan-create`のBash標準出力）
 """
 
@@ -59,7 +49,6 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     background_task_outputs as _background_task_outputs,
 )
@@ -77,8 +66,6 @@ from agent_toolkit._hooks.agent_id import (  # noqa: E402  # pylint: disable=wro
 from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     ExecutionSegment,
     extract_execution_segments,
-    extract_git_events,
-    without_shell_redirections,
 )
 from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _WARN_TAG,
@@ -89,7 +76,6 @@ from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
-    record_atk_help_paths,
     update_state,
 )
 from agent_toolkit._hooks.task_stop_state import consume_completion, target_ids  # noqa: E402
@@ -106,15 +92,6 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/posttooluse"
 
-# agent-toolkitプラグインに同梱するpyfltr MCPの検証実行ツール名。
-# hooks/hooks.jsonのPostToolUse matcherと同一値を保つ。
-# 本値はpyfltrが公開するMCPツール名と完全一致でなければ当該検査が発動しない。
-# MCPサーバーは`.mcp.json`が指定する版の下限だけを持ち、実際に解決される版は実行環境の
-# uvxのキャッシュが決めるため、pyfltr側の改名から当該キャッシュが更新されるまでの間は
-# 当該検査が発動しない期間が生じる（改名時の実測では、最新版が3.18.0の時点で
-# `uvx --from "pyfltr>=3.17.8" pyfltr --version`が3.17.10を返した）。
-_PYFLTR_RUN_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run"
-
 _llm_notice = _notice_formatter(_HOOK_ID)
 
 
@@ -129,10 +106,6 @@ _COMMAND_PREFIX_PATTERN = re.compile(r"(\A|[;&|])(\s*)(?:[A-Za-z_]\w*=\S*\s+|tim
 def _strip_command_prefixes(command: str) -> str:
     """コマンド先頭・セグメント区切り直後の環境変数代入と時間制限の接頭辞を除去する。
 
-    用途: git操作検出が`timeout 600 git log ...`のような接頭辞付きコマンドのサブコマンドを取得できず、
-    確認済みでも未確認として警告される問題に追従する。
-    実行位置のトークン列を入力とする検査（検証コマンドの検出など）は同じ接頭辞を自ら解決するため、
-    本関数の適用結果に依存しない。
     適用範囲: Bashコマンド文字列。`KEY=VALUE`と`timeout <時間>`の単純形式のみを対象とし、
     クォート内に空白を含む値・`env`コマンド経由・行継続バックスラッシュ・
     `timeout`のオプション付き形式（`-k 10s 600`等、引数の境界を字句だけで確定できない）は対象外とする。
@@ -140,129 +113,9 @@ def _strip_command_prefixes(command: str) -> str:
     return _COMMAND_PREFIX_PATTERN.sub(r"\1\2", command)
 
 
-# --- テスト実行検出 ---
-
-_PYFLTR_VERIFY_SUBCOMMAND_HEADS: frozenset[str] = frozenset({"run", "ci", "fast", "agent"})
-"""検証を実行する`pyfltr`のサブコマンドの先頭語。
-
-`run-for-agent`のようなハイフン区切りのサブコマンドを含めるため、先頭語で照合する。
-`list-runs`・`show-run`のように実行済みrunを参照するだけのサブコマンドは先頭語が一致せず対象外となる。
-"""
-
-_PRECOMMIT_EXECUTABLES: frozenset[str] = frozenset({"pre-commit", "prek"})
-
-_TASK_RUNNERS_WITHOUT_SUBCOMMAND: frozenset[str] = frozenset({"make", "just", "task"})
-"""実行ファイル名の直後にアクション名を取るタスクランナー。"""
-
-_TASK_RUNNERS_WITH_OPTIONAL_RUN: frozenset[str] = frozenset({"npm", "pnpm", "yarn"})
-"""アクション名の前の`run`を省略できるタスクランナー。"""
-
-_TASK_RUNNER_VERIFY_KEYWORDS: tuple[str, ...] = ("test", "check", "validate")
-"""タスクランナーのアクション名を検証の実行と判定する語。
-
-`ci-local-check`・`test-browser`・`e2etest`のような複合名を検出するため、アクション名との完全一致ではなく
-部分一致で照合する。検出漏れは検証済みのcommitへ誤った警告を返す側の誤りであり、
-本判定では当該方向の誤りを優先して避ける。
-"""
-
-
 def _executable_name(token: str) -> str:
     """実行トークンからディレクトリ部分を除いた実行ファイル名を返す。"""
     return token.replace("\\", "/").rsplit("/", 1)[-1]
-
-
-def _operand_index(tokens: tuple[str, ...], start: int) -> int | None:
-    """`start`以降で最初にオプションでないトークンの添字を返す。無い場合はNoneを返す。"""
-    for index in range(start, len(tokens)):
-        if not tokens[index].startswith("-"):
-            return index
-    return None
-
-
-def _is_verification_invocation(tokens: tuple[str, ...]) -> bool:
-    """実行位置のトークン列が検証コマンドの起動であるかを返す。
-
-    入力は`resolve_execution_segment`が`uv run`・`uvx`・`timeout`・環境変数代入などの実行前置語を
-    解決した後のトークン列とする。前置語のオプションの部分集合を列挙した文字列一致で判定しないため、
-    `uv run --no-sync pyfltr run-for-agent`のように列挙外のオプションを伴う正規の起動も検出する。
-    `uv run --with pytest python -c ...`のようにオプションの値へ検証コマンド名が現れる形は、
-    実行位置が`python`に解決されるため検出しない。
-    """
-    if not tokens:
-        return False
-    executable = _executable_name(tokens[0])
-    if executable == "pytest":
-        return True
-    operand = _operand_index(tokens, 1)
-    if executable == "pyfltr":
-        return operand is not None and tokens[operand].split("-", 1)[0] in _PYFLTR_VERIFY_SUBCOMMAND_HEADS
-    if executable in _PRECOMMIT_EXECUTABLES:
-        return operand is not None and tokens[operand] == "run"
-    if executable == "cargo":
-        return operand is not None and tokens[operand] == "test"
-    return _is_task_runner_verification(executable, tokens, operand)
-
-
-def _is_task_runner_verification(executable: str, tokens: tuple[str, ...], operand: int | None) -> bool:
-    """タスクランナー経由の検証アクションの起動であるかを返す。"""
-    if executable in _TASK_RUNNERS_WITH_OPTIONAL_RUN:
-        if operand is not None and tokens[operand] == "run":
-            operand = _operand_index(tokens, operand + 1)
-    elif executable == "mise":
-        if operand is None or tokens[operand] != "run":
-            return False
-        operand = _operand_index(tokens, operand + 1)
-    elif executable not in _TASK_RUNNERS_WITHOUT_SUBCOMMAND:
-        return False
-    if operand is None:
-        return False
-    return any(keyword in tokens[operand] for keyword in _TASK_RUNNER_VERIFY_KEYWORDS)
-
-
-def _has_verification_invocation(command: str) -> bool:
-    """Bashコマンドの実行位置のいずれかが検証コマンドの起動であるかを返す。"""
-    return any(
-        segment.resolved and _is_verification_invocation(segment.tokens) for segment in extract_execution_segments(command)
-    )
-
-
-# --- git関連サブコマンドの分類 ---
-
-# git_log_checked をリセットするサブコマンド（対象コミットの親子関係が変化する操作に限定する。
-# `push`は既存コミットを送出するのみで親子関係を変えないためリセット対象から除外する）。
-_GIT_LOG_RESET_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "rebase", "reset"})
-
-
-def _set_amend_pending_status_check(state: dict, cwd: str) -> dict | None:
-    """Git commit --amend / --fixup 成功時にcwd別フラグを設定する。既にTrueならNoneを返す（冪等）。"""
-    flags = state.get(_git_status.AMEND_PENDING_FLAG_KEY)
-    if not isinstance(flags, dict):
-        flags = {}
-    if flags.get(cwd, False):
-        return None
-    flags[cwd] = True
-    state[_git_status.AMEND_PENDING_FLAG_KEY] = flags
-    return state
-
-
-def _reset_amend_pending_status_check(state: dict, cwd: str) -> dict | None:
-    """該当cwdでpush前検査を通過した時点、またはpush成功時にフラグを解除する。既にFalseならNoneを返す（冪等）。"""
-    flags = state.get(_git_status.AMEND_PENDING_FLAG_KEY)
-    if not isinstance(flags, dict) or not flags.get(cwd, False):
-        return None
-    flags[cwd] = False
-    state[_git_status.AMEND_PENDING_FLAG_KEY] = flags
-    return state
-
-
-def _git_commit_is_amend_or_fixup(args: list[str]) -> bool:
-    """`git commit`のサブコマンド引数列から`--amend` / `--fixup=<sha>` / `--fixup <sha>`を検出する。"""
-    for tok in args:
-        if tok == "--amend":
-            return True
-        if tok == "--fixup" or tok.startswith("--fixup="):
-            return True
-    return False
 
 
 # --- plan-modeスキル呼び出し検出 ---
@@ -668,20 +521,6 @@ def _is_agents_wait_invocation(tokens: tuple[str, ...]) -> bool:
     return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1:3] == ("agents", "wait")
 
 
-def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
-    """実行トークン列から公開済みの最下層`atk`サブコマンド経路を返す。"""
-    if len(tokens) < 2 or pathlib.PurePath(tokens[0]).name not in {"atk", "atk.py"}:
-        return None
-    from agent_toolkit._atk.help_text import HELP  # pylint: disable=import-outside-toplevel
-
-    arguments = tuple("wi" if index == 0 and value == "mq" else value for index, value in enumerate(tokens[1:]))
-    paths = (tuple(key.split()[1:]) for key in HELP if key.startswith("atk "))
-    return next(
-        (path for path in sorted(paths, key=len, reverse=True) if arguments[: len(path)] == path),
-        None,
-    )
-
-
 def _response_texts(value: object) -> list[str]:
     """Bash応答から標準出力相当の文字列を再帰的に抽出する。"""
     if isinstance(value, str):
@@ -709,21 +548,8 @@ def _response_has_exit_invocation(value: object) -> bool:
 
 
 def _record_bash_response_state(session_id: str, command: str, tool_response: object) -> None:
-    """成功したBash応答を使い、ヘルプ観測と終了CLI起動を記録する。"""
+    """成功したBash応答を使い、終了CLI起動と計画ファイル作成を記録する。"""
     segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
-    help_paths: list[str] = []
-    for segment in segments:
-        path = _recognized_atk_command_path(segment.tokens)
-        arguments = without_shell_redirections(segment.tokens[1:])
-        if path is None or "--help" not in arguments:
-            continue
-        if arguments != (*path, "--help"):
-            continue
-        normalized = " ".join(path)
-        if normalized not in help_paths:
-            help_paths.append(normalized)
-    if help_paths:
-        record_atk_help_paths(session_id, help_paths)
     exit_invoked = any(
         pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"} and segment.tokens[1:] == ("agents-exit-session",)
         for segment in segments
@@ -789,18 +615,6 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
     return payload, session_id, tool_name, tool_input, cwd, event_name
-
-
-def _record_test_executed(session_id: str) -> None:
-    """Pyfltr MCPの成功を検証実行済みとして記録する。"""
-
-    def _set_test_executed(state: dict) -> dict | None:
-        if state.get("test_executed", False):
-            return None
-        state["test_executed"] = True
-        return state
-
-    update_state(session_id, _set_test_executed)
 
 
 _BACKGROUND_TASK_ID_RE = re.compile(r"running in background with ID:\s*([\w-]+)")
@@ -888,22 +702,6 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
         update_state(session_id, _set_process_wi_invoked)
 
 
-def _record_edited_file(session_id: str, file_path: str) -> None:
-    """自セッションで編集したファイルを重複なしで記録する。"""
-    if not file_path:
-        return
-
-    def _append_edited_file(current_state: dict) -> dict | None:
-        edited = current_state.get("session_edited_files", [])
-        if not isinstance(edited, list) or file_path in edited:
-            return None
-        edited.append(file_path)
-        current_state["session_edited_files"] = edited
-        return current_state
-
-    update_state(session_id, _append_edited_file)
-
-
 def _record_plan_file(session_id: str, file_path: str) -> None:
     """現在の計画ファイルを記録する。"""
 
@@ -923,75 +721,24 @@ def _handle_edit_tool(
     cwd: str,
     notices: list[str],
 ) -> None:
-    """編集成功後の状態記録と文書検査を処理する。
+    """編集成功後の計画ファイル記録と計画構造検査の案内を処理する。
 
     ClaudeのWrite・Edit・MultiEditとCodexの成功した`apply_patch`を
     `_hook_tool_input`が共通の操作記録へ変換する。
-    常時規範ではPreToolUseが記録した編集前のバイト数と適用後の実ファイルを比較する。
-    実ファイルの読み込みを伴う文書検査は、適用後に存在する対象（追加・更新・移動先）へ限定する。
+    実ファイルの読み込みを伴う処理は、適用後に存在する対象（追加・更新・移動先）へ限定する。
     """
     operations = _hook_tool_input.parse_operations(tool_name, tool_input, cwd)
     if operations is None:
         return
-    state = read_state(session_id)
-    plan_mode_invoked = bool(state.get("plan_mode_skill_invoked", False))
-    before_sizes = state.get("always_loaded_rule_before_sizes")
-    before_sizes = before_sizes if isinstance(before_sizes, dict) else {}
-    added_texts = state.get("always_loaded_rule_added_texts")
-    added_texts = added_texts if isinstance(added_texts, dict) else {}
+    plan_mode_invoked = bool(read_state(session_id).get("plan_mode_skill_invoked", False))
     for operation in operations:
-        for display_path in operation.display_paths:
-            _record_edited_file(session_id, display_path)
         if not operation.exists_after_apply:
             continue
-        if _hook_tool_input.is_always_loaded_rule(operation.path):
-            before_size = before_sizes.get(operation.path)
-            try:
-                after_size = pathlib.Path(operation.path).stat().st_size
-            except OSError:
-                after_size = None
-            if isinstance(before_size, int) and after_size is not None and after_size > before_size:
-                notices.append(
-                    _llm_notice(
-                        f"常時規範のバイト数が{before_size}から{after_size}へ{after_size - before_size}増加した。"
-                        "逐語要件、硬いゲート、同一ファイルの総量を減らす統合のどれに当たるか確認する。",
-                        tag=_WARN_TAG,
-                        removable_cause=False,
-                    )
-                )
-            additions = added_texts.get(operation.path)
-            if isinstance(additions, str) and additions:
-                sentences = [part.strip() for part in re.split(r"[。\n]", additions) if part.strip()]
-                restricted = [
-                    part
-                    for part in sentences
-                    if any(word in part for word in ("ただし", "除く", "限る", "限り", "対象外", "以外"))
-                ]
-                enumerated = [part for part in sentences if part.count("、") + part.count("及び") >= 2]
-                if restricted or enumerated:
-                    sample = (restricted or enumerated)[0][:80]
-                    notices.append(
-                        _llm_notice(
-                            f"常時規範の追加文に限定・例外の文{len(restricted)}件、3項目以上の列挙{len(enumerated)}件を検出した。"
-                            f"検出文: {sample}。条文様式は`agent-toolkit/rules/01-agent.md`「規定の区分と標示」を確認する。"
-                            "警告閾値の実測は`docs/development/audit-records.md`に記録する。",
-                            tag=_WARN_TAG,
-                            removable_cause=False,
-                        )
-                    )
         display_path = operation.display_path
         if is_plan_main_file(display_path):
             _record_plan_file(session_id, display_path)
         if plan_mode_invoked and is_plan_component_file(display_path) and operation.is_whole_write:
             notices.append(_plan_file_check_notice(_plan_main_path_for(display_path), cwd))
-    if before_sizes:
-
-        def _clear_sizes(current_state: dict) -> dict:
-            current_state.pop("always_loaded_rule_before_sizes", None)
-            current_state.pop("always_loaded_rule_added_texts", None)
-            return current_state
-
-        update_state(session_id, _clear_sizes)
 
 
 def _plan_main_path_for(display_path: str) -> str:
@@ -1015,63 +762,9 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     )
 
 
-def _handle_bash_tool(
-    session_id: str,
-    command: str,
-    cwd: str,
-    *,
-    owner_agent_id: str,
-    record_success_dependent_state: bool,
-) -> None:
-    """成功したBashコマンドから検証・git状態を更新する。"""
-    command = _strip_command_prefixes(command)
-    _record_agents_wait_observation_attempt(session_id, command, owner_agent_id)
-    if not record_success_dependent_state:
-        return
-    git_events = extract_git_events(command, cwd)
-
-    def _apply_bash_updates(state: dict) -> dict | None:
-        changed = False
-        if not state.get("test_executed", False) and _has_verification_invocation(command):
-            state["test_executed"] = True
-            changed = True
-        log_state = state.get("git_log_checked")
-        log_modified = False
-        for event in git_events:
-            if not event.cwd_resolved:
-                continue
-            if event.subcommand == "log":
-                if event.cwd:
-                    if not isinstance(log_state, dict):
-                        log_state = {}
-                    if not log_state.get(event.cwd, False):
-                        log_state[event.cwd] = True
-                        log_modified = True
-            elif event.subcommand in _GIT_LOG_RESET_SUBCOMMANDS:
-                if isinstance(log_state, dict):
-                    if event.cwd and event.cwd in log_state:
-                        del log_state[event.cwd]
-                        log_modified = True
-                elif log_state:
-                    log_state = False
-                    log_modified = True
-        if log_modified:
-            state["git_log_checked"] = log_state
-            changed = True
-        for event in git_events:
-            if not event.cwd_resolved:
-                continue
-            if event.subcommand == "commit" and _git_commit_is_amend_or_fixup(event.subcommand_args):
-                changed = _set_amend_pending_status_check(state, event.cwd) is not None or changed
-            elif (
-                event.subcommand == "push"
-                and _git_status.git_push_is_real_send(event.subcommand_args)
-                and _reset_amend_pending_status_check(state, event.cwd) is not None
-            ):
-                changed = True
-        return state if changed else None
-
-    update_state(session_id, _apply_bash_updates)
+def _handle_bash_tool(session_id: str, command: str, *, owner_agent_id: str) -> None:
+    """成功したBashコマンドから`atk agents wait`の観測の試みを記録する。"""
+    _record_agents_wait_observation_attempt(session_id, _strip_command_prefixes(command), owner_agent_id)
 
 
 def _dispatch(payload_text: str, notices: list[str]) -> int:
@@ -1105,12 +798,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
-
-    # pyfltr MCPのrunはPostToolUseへ到達した時点で成功済みである。
-    # CLI経由と同じ検証完了契約として記録し、コミット前の未検証警告を抑制する。
-    if tool_name == _PYFLTR_RUN_TOOL_NAME:
-        _record_test_executed(session_id)
-        return 0
 
     # Skill: plan-modeスキル呼び出し検出とprocess-wi起動検出
     if tool_name == "Skill":
@@ -1196,9 +883,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         consume_completion(session_id, target_ids(tool_input))
         return 0
 
-    # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
-    # git_log_checkedをリセットしない（リセット対象は`_GIT_LOG_RESET_SUBCOMMANDS`が定める
-    # commit / rebase / resetのみとする）。
     if tool_name in ("Write", "Edit", "MultiEdit", _hook_tool_input.CODEX_APPLY_PATCH_TOOL):
         _handle_edit_tool(session_id, tool_name, tool_input, cwd, notices)
         return 0
@@ -1212,14 +896,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if task_id is not None:
             _record_background_task_id(session_id, task_id)
 
-    turn_id = payload.get("turn_id")
-    _handle_bash_tool(
-        session_id,
-        command,
-        cwd,
-        owner_agent_id=resolve_hook_agent_id(payload),
-        record_success_dependent_state=not (isinstance(turn_id, str) and bool(turn_id)),
-    )
+    _handle_bash_tool(session_id, command, owner_agent_id=resolve_hook_agent_id(payload))
     _record_bash_response_state(session_id, command, payload.get("tool_response"))
     return 0
 
