@@ -86,7 +86,8 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
     理由文字列は「一時識別子の単独使用」・「本文が短すぎる」・「判定根拠語彙の欠落」の
     3種を返す。判定は上記順序でショートサーキットする。
     """
-    identifier_pattern = re.compile(r"(?:fb|Q|FB)\s?\d{2,}")
+    # commit OIDなど英数字列の途中にある`fb67`等を一時識別子と誤認しないよう、前後を英数字以外に限る。
+    identifier_pattern = re.compile(r"(?<![0-9A-Za-z])(?:fb|Q|FB)\s?\d{2,}(?![0-9A-Za-z])")
     context_words = (
         "のため",
         "という",
