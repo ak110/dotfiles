@@ -52,7 +52,7 @@ _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
   disposition: 判定の区分。`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する
   reason: `excluded`で必須。欠陥でないと判定した根拠の文字列
   analysis_id: `analyzed`で必須。参照する分析の識別子の文字列
-  defect: `analyzed`で任意。判定結果として表へ書く値。省略時は`要処置`とする
+  defect: `analyzed`で必須。`欠陥`又は`非欠陥`のいずれかを指定する
 
 --analyses: 分析の識別子をキーとするJSON object。値は次のキーを持つJSON object。
   {ANALYSIS_FIELDS[0]}: 直接的原因
@@ -376,6 +376,9 @@ def render(
         raise ReportError("candidate-summaryのlocator件数が一致しない")
     candidate_rows: list[str] = []
     used_analysis_ids: set[str] = set()
+    analyzed_count = 0
+    excluded_count = 0
+    defect_count = 0
     for candidate in candidate_items:
         candidate_id = str(candidate["candidate_id"])
         locators = _locators(candidate)
@@ -388,6 +391,7 @@ def render(
                 raise ReportError(f"{locator_text}: 一次選別の除外理由がない")
             outcome = f"一次選別で除外: {reason}"
             analysis_id_text = "-"
+            excluded_count += 1
         elif disposition == "analyzed":
             analysis_id = decision.get("analysis_id")
             analysis = analyses.get(analysis_id) if isinstance(analysis_id, str) else None
@@ -400,8 +404,13 @@ def render(
                 raise ReportError(f"{locator_text}: 完全分析の必須欄がない: {missing_fields}")
             assert isinstance(analysis_id, str)
             used_analysis_ids.add(analysis_id)
-            outcome = str(decision.get("defect", "要処置"))
+            defect = decision.get("defect")
+            if defect not in ("欠陥", "非欠陥"):
+                raise ReportError(f"{locator_text}: defectは欠陥又は非欠陥で指定する")
+            outcome = defect
             analysis_id_text = analysis_id
+            analyzed_count += 1
+            defect_count += defect == "欠陥"
         elif disposition == "pending":
             raise ReportError(f"{locator_text}: 判定が未完了である")
         else:
@@ -447,8 +456,8 @@ def render(
             "| --- | --- | --- | --- | --- |",
             *analysis_rows,
             "",
-            f"構造検査: 候補{len(candidate_items)}件、欠陥{sum(item['disposition'] == 'analyzed' for item in decisions)}件、"
-            f"非欠陥{sum(item['disposition'] == 'excluded' for item in decisions)}件、"
+            f"構造検査: 候補{len(candidate_items)}件、分析件数{analyzed_count}件、"
+            f"一次選別で除外した件数{excluded_count}件、欠陥{defect_count}件、"
             f"locator{len(flattened)}件、過不足0件、重複0件",
             "",
             "## メイン由来の改善点",
