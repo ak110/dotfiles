@@ -39,23 +39,13 @@ setup:
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
 # ChromiumとLinuxのシステム依存を初期環境へ導入
-define guard-agent-system-setup
-	@if [ "$${AI_AGENT+x}" = x ] || [ "$${CODEX_CI+x}" = x ] || \
-	   [ "$${CLAUDECODE+x}" = x ] || [ "$${CURSOR_AGENT+x}" = x ]; then \
-		echo "エージェント環境ではOS初期導入を実行できない。利用者が自分の端末で実施する。" >&2; \
-		exit 1; \
-	fi
-endef
-
 setup-browser:
-	$(guard-agent-system-setup)
 	uv run playwright install --with-deps chromium
 
 # Ubuntu/Debian へ pwsh + PSScriptAnalyzer を一括インストールする。
 # prek の PSScriptAnalyzer / chezmoi template check (.ps1.tmpl) を
 # ローカルでも実行可能にするための開発者向けターゲット。
 setup-pwsh:
-	$(guard-agent-system-setup)
 	sudo apt-get update
 	sudo apt-get install --yes wget apt-transport-https software-properties-common
 	. /etc/os-release && \

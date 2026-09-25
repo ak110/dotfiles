@@ -228,7 +228,6 @@ if TYPE_CHECKING:
         _check_bash_recursive_home_search,
         _check_bash_foreground_loop_wait,
         _check_bash_sleep_poll_pattern,
-        _check_bash_system_change,
         _check_bash_unbounded_home_traversal,
         _check_bash_unbounded_root_traversal,
         _check_bash_uv_run_python,
@@ -530,8 +529,6 @@ def _handle_bash_tool(
         or _check_bash_commit_attribution(command, cwd)
         or _check_bash_process_kill_by_pattern(command)
     ):
-        return 2
-    if _check_bash_system_change(command):
         return 2
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":

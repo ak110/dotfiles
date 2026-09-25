@@ -1050,66 +1050,6 @@ class TestBashProcessKillByPattern:
         assert "パターン一致によるプロセス終了" in result.stderr
 
 
-class TestSystemChangeCommandBlock:
-    """エージェントのBash入力を実行前に拒否し、利用者への操作案内を返す。"""
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "sudo apt-get install chromium",
-            "sudo dpkg --install package.deb",
-            "sudo dpkg --audit",
-            "sudo sh -c 'echo ok'",
-            "env FOO=1 sudo -n true",
-            "env -u FOO sudo -n true",
-            "FOO=1 sudo -n true",
-            "if sudo -n true; then echo ok; fi",
-            "echo $(sudo dpkg --audit)",
-            'echo "$(sudo dpkg --audit)"',
-            "apt-get install chromium",
-            "apt-get update",
-            "if apt-get update; then echo ok; fi",
-            "dpkg --install package.deb",
-            "dnf upgrade",
-            "apk add chromium",
-            "brew uninstall chromium",
-            "pacman -Syu",
-            "rpm --erase package",
-            "uv run playwright install --with-deps chromium",
-            "npx playwright install --with-deps chromium",
-            "playwright install-deps chromium",
-            "make setup-browser",
-            "make -C /tmp setup-pwsh",
-            "if make setup-browser; then echo ok; fi",
-            "echo ok; make setup-browser",
-        ],
-    )
-    def test_blocks_before_command_execution(self, command: str) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 2
-        assert "利用者が自分の端末で" in result.stderr
-        assert auto_message_opening_attributes(result.stderr)["kind"] == "block"
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "echo sudo apt-get install chromium",
-            "echo '$(sudo dpkg --audit)'",
-            "rg -n -F 'sudo apt-get install' Makefile",
-            "make setup",
-            "make test-browser",
-            "uv run playwright install chromium",
-            "apt-get --help",
-            "dpkg --audit",
-            "pacman -Ss chromium",
-            "cat <<'EOF'\nsudo apt-get install chromium\nEOF",
-        ],
-    )
-    def test_allows_commands_without_system_change(self, command: str) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-
-
 class TestBashBlockBeforeAccumulatedWarnings:
     """Bashハンドラーは警告条件との同居時も遮断検査を優先する。"""
 
