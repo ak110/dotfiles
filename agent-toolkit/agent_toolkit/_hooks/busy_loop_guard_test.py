@@ -68,8 +68,11 @@ def _tool_use_entry() -> dict:
     }
 
 
-def _payload(transcript_path: str) -> str:
-    return json.dumps({"session_id": _SESSION_ID, "transcript_path": transcript_path}, ensure_ascii=False)
+def _payload(transcript_path: str, *, agent_id: str | None = None) -> str:
+    payload = {"session_id": _SESSION_ID, "transcript_path": transcript_path}
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _turn(tmp_path: pathlib.Path, index: int, entries: list[dict]) -> tuple[str, str]:
@@ -166,6 +169,31 @@ def test_delegated_session_is_skipped(
         decision, _ = _turn(tmp_path, index, entries)
         assert decision == "approve"
 
+    assert calls == {"abort": 0, "terminate": 0}
+
+
+def test_native_subagent_stop_does_not_abort_parent_loop(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
+    """親の常駐環境を継承するネイティブ委譲先は親の中断要求を作成しない。"""
+    entries: list[dict] = []
+    for index in range(3):
+        entries = [*entries, _text_entry()]
+        transcript_path = _write_transcript(tmp_path, f"native-stop-{index}.jsonl", entries)
+        result = stop.evaluate(_payload(transcript_path, agent_id="agent-review"))
+        assert validate_hook_output("Stop", result) == []
+        assert result.get("decision") != "block"
+
+    assert calls == {"abort": 0, "terminate": 0}
+    assert "stop_no_tool_turn_count" not in read_state(_SESSION_ID)
+
+
+def test_native_subagent_question_does_not_block_parent_loop(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
+    """最上位向けの確認フックは委譲先の差し戻し質問を遮断しない。"""
+    transcript_path = _write_transcript(tmp_path, "native-question.jsonl", [_text_entry("どちらを選びますか？")])
+
+    result = stop.evaluate(_payload(transcript_path, agent_id="agent-review"))
+
+    assert validate_hook_output("Stop", result) == []
+    assert result.get("decision") != "block"
     assert calls == {"abort": 0, "terminate": 0}
 
 

@@ -8,13 +8,14 @@ r"""計画作業rootに残る計画バンドルの保存確認Stopフック。
 実行レビューの収束有無は会話の意味に属し、フックが受け取るStop payloadと計画ファイルからは判定できない。
 そのため、フックは実行できる処置の有無を根拠に終了を遮断せず、通知を受領した実行主体へ判断を委ねる。
 
-委譲先での実行可否: 委譲先は委譲元が所有する計画バンドルを保存できないため、環境変数による除外が必要である。
+委譲先での実行可否: 委譲先は委譲元が所有する計画バンドルを保存できないため、hook入力と環境印で除外する。
 """
 
 import json
 import os
 import pathlib
 
+from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.session_state import read_state, update_state
@@ -23,7 +24,6 @@ from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_ses
 from agent_toolkit._plan.locations import is_plan_main_file, read_owner_session_id, working_plans_root
 
 _HOOK_ID = "agent-toolkit/plan_save_advisor"
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _ENV_PROCESS_LOOP_SESSION = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _NOTIFIED_STATE_KEY = "working_plan_save_notified"
@@ -67,7 +67,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     session_id, payload = resolved
     set_warning_session_id(session_id)
 
-    if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
+    if not is_main_agent_context(payload):
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
 

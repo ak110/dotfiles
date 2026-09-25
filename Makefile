@@ -22,6 +22,10 @@ update-mise-locks:
 	mise lock --bump --platform linux-x64,windows-x64
 	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" mise upgrade --bump dotnet
 	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" mise lock --global --bump --platform linux-x64,windows-x64
+	# miseが生成する`.mise/locks`をchezmoiの`dot_mise/locks`へ移し、配布先の参照先へ届くようにする。
+	rm -rf .chezmoi-source/dot_config/mise/dot_mise/locks
+	mv .chezmoi-source/dot_config/mise/.mise/locks .chezmoi-source/dot_config/mise/dot_mise/locks
+	rmdir .chezmoi-source/dot_config/mise/.mise
 
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:

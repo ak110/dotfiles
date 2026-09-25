@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import pathlib
+import shutil
 import sys
 import time
 import uuid
@@ -26,7 +27,7 @@ def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Pa
 
 def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n")
+    atomic_write(path, json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n", fsync=True)
 
 
 def _read_json(path: pathlib.Path) -> dict[str, Any] | None:
@@ -44,13 +45,23 @@ def _matching_current_wait_run(run_directory: pathlib.Path, targets: list[str]) 
         return None
     run_path = run_directory / f"{run_id}.json"
     run = _read_json(run_path)
+    if run is not None and run.get("status") in {"running", "published"} and not isinstance(run.get("targets"), list):
+        return None
     if run is None or run.get("targets") != targets:
         return None
     if run.get("status") in {"foreground-delivered", "consumed"} or (
         run.get("status") == "published" and run.get("continuable") is True
     ):
         return None
-    return run_path
+    return run_path if run.get("status") in {"running", "published"} else None
+
+
+def _stashed_wait_targets(run_path: pathlib.Path) -> set[str]:
+    """回収途中に原本から移した結果と通知のsessionを返す。"""
+    stash = run_path.with_suffix("")
+    result_ids = {path.stem for path in (stash / "results").glob("*.json")}
+    notice_ids = {path.name.split(".", 1)[0] for path in (stash / "notices").glob("*.json")}
+    return {session_id for session_id in result_ids | notice_ids if status_file.valid_session_id(session_id)}
 
 
 def _publish_wait_result(
@@ -64,16 +75,30 @@ def _publish_wait_result(
     value = _read_json(run_path) or {}
     value.update(
         {
-            "status": "foreground-delivered",
+            "status": "published",
             "output": output,
             "exit_code": code,
             "stream": stream,
-            "continuable": continuable,
+            "continuable": False,
         }
     )
     _write_json(run_path, value)
-    print(output, file=sys.stderr if stream == "stderr" else sys.stdout)
+    print(output, file=sys.stderr if stream == "stderr" else sys.stdout, flush=True)
+    value["status"] = "foreground-delivered"
+    value["continuable"] = continuable
+    _write_json(run_path, value)
+    _remove_wait_stash(run_path)
     return code
+
+
+def _remove_wait_stash(run_path: pathlib.Path) -> None:
+    """公開済みrunの回復用退避物を回収する。"""
+    try:
+        shutil.rmtree(run_path.with_suffix(""))
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        _LOG.warning("wait退避物を回収できませんでした: path=%s error=%s", run_path.with_suffix(""), exc)
 
 
 def _consume_wait_result(run_path: pathlib.Path) -> int:
@@ -92,9 +117,10 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
         or not isinstance(code, int)
     ):
         return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8)
-    print(output, file=sys.stderr if stream == "stderr" else sys.stdout)
+    print(output, file=sys.stderr if stream == "stderr" else sys.stdout, flush=True)
     value["status"] = "consumed"
     _write_json(run_path, value)
+    _remove_wait_stash(run_path)
     return code
 
 
@@ -179,6 +205,7 @@ def wait_for_result(
     root_session_id = identity.root_session_id
     own_status_path = status_file.status_directory(root_session_id, state_root) / identity.file_name
     result_directory = status_file.results_directory(root_session_id, state_root)
+    run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
     origins, target_error = _target_origins(
         own_status_path,
         result_directory,
@@ -188,6 +215,21 @@ def wait_for_result(
     )
     if target_error is not None:
         return _fail(*target_error)
+    current = _read_json(run_directory / "current.json")
+    current_id = current.get("run_id") if current is not None else None
+    current_run_path = run_directory / f"{current_id}.json" if isinstance(current_id, str) else None
+    current_run = _read_json(current_run_path) if current_run_path is not None else None
+    if current_run is not None and current_run.get("status") in {"running", "published"}:
+        recorded_targets = current_run.get("targets")
+        if (
+            isinstance(recorded_targets, list)
+            and current_run_path is not None
+            and all(isinstance(session_id, str) and status_file.valid_session_id(session_id) for session_id in recorded_targets)
+        ):
+            stashed = _stashed_wait_targets(current_run_path)
+            if set(origins) | stashed == set(recorded_targets):
+                for session_id in stashed:
+                    origins.setdefault(session_id, set()).add("run")
     ordered_ids = sorted(origins)
     own_sessions = _read_sessions(own_status_path)
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
@@ -232,22 +274,26 @@ def wait_for_result(
             acquire_lock(lock_file, blocking=True)
             owns_lock = True
             return _consume_wait_result(run_path)
-        run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
         current_run_path = _matching_current_wait_run(run_directory, ordered_ids)
         if current_run_path is not None:
-            return _consume_wait_result(current_run_path)
-        run_id = uuid.uuid4().hex
-        run_path = run_directory / f"{run_id}.json"
-        _write_json(
-            run_path,
-            {
-                "run_id": run_id,
-                "status": "running",
-                "targets": ordered_ids,
-                "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
-            },
-        )
-        _write_json(run_directory / "current.json", {"run_id": run_id})
+            recorded = _read_json(current_run_path)
+            if recorded is not None and recorded.get("status") == "running":
+                run_path = current_run_path
+            else:
+                return _consume_wait_result(current_run_path)
+        else:
+            run_id = uuid.uuid4().hex
+            run_path = run_directory / f"{run_id}.json"
+            _write_json(
+                run_path,
+                {
+                    "run_id": run_id,
+                    "status": "running",
+                    "targets": ordered_ids,
+                    "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                },
+            )
+            _write_json(run_directory / "current.json", {"run_id": run_id})
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         started_at = time.monotonic()
@@ -267,6 +313,9 @@ def wait_for_result(
                 ordered_ids.append(session_id)
                 ordered_ids.sort()
                 status_file.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
+                recorded = _read_json(run_path) or {}
+                recorded["targets"] = ordered_ids
+                _write_json(run_path, recorded)
                 _LOG.info(
                     "wait_target_added session_id=%s origins=%s",
                     session_id,
@@ -283,11 +332,17 @@ def wait_for_result(
                     identity.file_name,
                     collector="atk-agents-wait",
                     state_root=state_root,
+                    stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
                 )
                 if read_error is not None:
                     read_failure = (f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
                     break
-                notices = status_file.take_notices(root_session_id, session_id, state_root)
+                notices = status_file.take_notices(
+                    root_session_id,
+                    session_id,
+                    state_root,
+                    stash_directory=run_path.with_suffix("") / "notices",
+                )
                 if result is not None:
                     result["session_id"] = session_id
                     if notices:

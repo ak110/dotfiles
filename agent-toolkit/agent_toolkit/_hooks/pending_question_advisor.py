@@ -12,22 +12,20 @@
 判断を求めていない応答が遮断された場合は、当該問いかけを本文から除いて応答を
 書き直すことで通過する。
 
-委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、環境変数による除外が必要である。
+委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、hook入力と環境印で除外する。
 """
 
 import json
-import os
 import re
 from collections.abc import Iterator
 
 from agent_toolkit._hooks import transcript as _transcript
+from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.stop_gate import append_stop_log
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "agent-toolkit/pending_question_advisor"
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
-
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
 # フェンス付きコードブロック・インラインコード・URL・行頭が`>`の引用行。
@@ -128,7 +126,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     session_id, payload = resolved
 
-    if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
+    if not is_main_agent_context(payload):
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
 

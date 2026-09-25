@@ -24,6 +24,16 @@ version = "lychee-v0.24.2"
 backend = "github:lycheeverse/lychee"
 specifiers = ["latest"]
 
+[tools."github:lycheeverse/lychee"."platforms.windows-x64"]
+checksum = "sha256:32975d1493ee1a975d6bb41e4fb56fe419cb442ded628bb772ba2e614acfacad"
+url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/lycheeverse/lychee/releases/assets/409959491"
+
+[[tools."github:lycheeverse/lychee"]]
+version = "lychee-v0.24.2"
+backend = "github:lycheeverse/lychee"
+specifiers = ["latest"]
+
 [tools."github:lycheeverse/lychee".options]
 asset_pattern = "lychee-x86_64-unknown-linux-musl.tar.gz"
 
@@ -31,16 +41,6 @@ asset_pattern = "lychee-x86_64-unknown-linux-musl.tar.gz"
 checksum = "sha256:73657a111819a30c47c08352896796f23d64e4eb2b3ed39b6d32149241566fc5"
 url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/lycheeverse/lychee/releases/assets/409959271"
-
-[[tools."github:lycheeverse/lychee"]]
-version = "lychee-v0.24.2"
-backend = "github:lycheeverse/lychee"
-specifiers = ["latest"]
-
-[tools."github:lycheeverse/lychee"."platforms.windows-x64"]
-checksum = "sha256:32975d1493ee1a975d6bb41e4fb56fe419cb442ded628bb772ba2e614acfacad"
-url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/lycheeverse/lychee/releases/assets/409959491"
 
 [[tools.pinact]]
 version = "5.0.0"

@@ -1230,3 +1230,26 @@ def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> N
         collector="test",
         state_root=tmp_path,
     ) == (None, None)
+
+
+def test_take_result_keeps_other_owner_result(tmp_path: pathlib.Path) -> None:
+    """CLI用退避先を指定しても別の書込主体の結果は移動しない。"""
+    result_path = subject.results_directory("root-session", tmp_path) / "child-session.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(json.dumps({"status": "completed", "owner_status_file": "delegate.json"}), encoding="utf-8")
+    stash_path = tmp_path / "wait-run" / "results" / "child-session.json"
+    writer = subject.StatusFileWriter({}, subject.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path)
+
+    assert subject.take_result(
+        "root-session", "child-session", "root.json", collector="cli", state_root=tmp_path, stash_path=stash_path
+    ) == (None, None)
+    assert not stash_path.exists()
+    assert result_path.exists()
+    assert writer.take_result("child-session", collector="mcp-wait") == (None, None)
+    assert result_path.exists()
+
+    owner = subject.StatusFileWriter(
+        {}, subject.StatusFileIdentity("root-session", "delegate.json", "delegate"), state_root=tmp_path
+    )
+    assert owner.take_result("child-session", collector="mcp-wait") == ({"status": "completed"}, None)
+    assert not result_path.exists()

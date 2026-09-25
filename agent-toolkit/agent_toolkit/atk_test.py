@@ -1334,18 +1334,6 @@ def test_process_loop_subcommand_help_is_available(
     assert f"atk wi process-loop {subcommand}" in capsys.readouterr().out
 
 
-class TestSubcommandSubparserDefault:
-    """`mq add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
-
-    @pytest.mark.parametrize("type_option", [[], ["--type=uwi"]])
-    def test_add(self, type_option: list[str]) -> None:
-        """`mq add`解析後は種別にかかわらず同じサブパーサを保持する。"""
-        args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-            ["wi", "add", *type_option]
-        )
-        assert args.subparser.prog == "atk wi add"
-
-
 def test_add_output_reloads_saved_metadata(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

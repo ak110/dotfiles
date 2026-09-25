@@ -23,7 +23,7 @@
 
 Stopの戻り値は`approve`とし、ターンの継続は強制しない。
 
-委譲先での実行可否: 環境変数の判定により委譲先では何もしない。
+委譲先での実行可否: hook入力と委譲先の環境印で判定し、委譲先では何もしない。
 """
 
 import json
@@ -31,6 +31,7 @@ import os
 
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
+from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import (
     append_stop_log,
@@ -45,9 +46,6 @@ _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 
 # 更新中に旧process-loopと併存するため受理する移行互換名。
 _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
-
-# agents_serverから起動された委譲先セッションであることを示す環境変数名。
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 # 停止工程へ進む連続無進捗ターン数。
 _THRESHOLD = 3
@@ -78,11 +76,11 @@ def _store(session_id: str, count: int, observed: int) -> None:
     update_state(session_id, _update)
 
 
-def _is_target_session() -> bool:
+def _is_target_session(payload: dict) -> bool:
     """常駐ループの最上位セッションである場合に真を返す。"""
     if os.environ.get(_ENV_REQUIRED) != "1" and os.environ.get(_LEGACY_ENV_REQUIRED) != "1":
         return False
-    return os.environ.get(_ENV_DELEGATED_SESSION) != "1"
+    return is_main_agent_context(payload)
 
 
 def _halt(session_id: str, count: int) -> str:
@@ -114,7 +112,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     session_id, payload = resolved
 
-    if not _is_target_session():
+    if not _is_target_session(payload):
         append_stop_log(session_id, "approve_busy_loop_not_applicable", {})
         return "approve", ""
 
