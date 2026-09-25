@@ -123,7 +123,7 @@ function renderList() {
     if (!item) {
       item = document.createElement("button");
       item.type = "button";
-      item.className = "session-item";
+      item.className = "session-item pane-item";
     }
     item.dataset.host = entry.host;
     item.dataset.engine = entry.engine;
@@ -132,11 +132,11 @@ function renderList() {
     else item.removeAttribute("aria-current");
 
     const cwd = document.createElement("div");
-    cwd.className = "session-cwd";
+    cwd.className = "session-cwd pane-item-title";
     cwd.textContent = entry.cwd || "(作業ディレクトリ不明)";
 
     const meta = document.createElement("div");
-    meta.className = "session-meta";
+    meta.className = "session-meta pane-item-meta";
     const host = document.createElement("span");
     host.textContent = entry.host;
     const startedAt = document.createElement("span");

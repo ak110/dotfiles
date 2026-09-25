@@ -842,6 +842,13 @@ function displayEntry(entry) {
   if (entrySelectionFromUrl()) history.replaceState({atkEntry: true}, '', entryPageUrl(entry));
 }
 
+// 一覧の行と開いている詳細の対象は、外部操作で移動・削除され得る。移動はサーバーが全状態から最新の状態を
+// 探して返すため、詳細APIの404は削除済みを意味する。利用者へ再操作を求めず、削除済みの通知と一覧の更新を行う。
+function reportDeletedEntry(filename, {reloadList = true} = {}) {
+  deliverOperationMessage(`${filename}は削除されたため表示できません。一覧を更新しました。`);
+  if (reloadList) void reloadFromExternalChange();
+}
+
 async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) {
   const requestGeneration = ++detailRequestGeneration;
   const sessionGeneration = ++detailSessionGeneration;
@@ -863,7 +870,12 @@ async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) 
     openDetailDialog(detailOrigin);
     if (payload.entry.state !== entry.state) void loadEntries({showLoading: false});
   } catch (error) {
-    if (requestIsCurrent() && !(ignoreNotFound && error.status === 404)) setGlobalError(error.message);
+    if (!requestIsCurrent()) return;
+    if (error.status === 404) {
+      if (!ignoreNotFound) reportDeletedEntry(entry.filename);
+      return;
+    }
+    setGlobalError(error.message);
   } finally {
     if (pendingRow) {
       pendingRow.removeAttribute('aria-busy');
@@ -1008,6 +1020,7 @@ async function reloadOpenDetailFromExternalChange() {
   }
   if (!resolvedEntry) {
     closeDetailDialog({force: true});
+    reportDeletedEntry(filename, {reloadList: false});
     return;
   }
   const detailChanged = entryKey(resolvedEntry) !== entryKey(currentEntry) ||
