@@ -140,7 +140,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi process-loop instruct": {
         "summary": "次に起動する1セッションへ渡す追加指示を保持する",
         "description": "目的: 常駐処理が次に起動する1セッションだけへ、利用者の追加指示を届ける。\n利用場面: 反復の合間に、そのセッションに限って方針を伝えるとき。\n対象と出力: 追加指示の状態ファイルへ本文を追記し、保持中の件数を標準出力へ書く。保持済みの本文と完全一致する投入は追記せず、変更が無い旨を書く。\n前提: 常駐処理と同じ利用者の状態ディレクトリを使う。保持中の合計が上限を超える投入は非0で終了する。\n復元・後始末: 保持は`atk wi process-loop instruct-cancel`で破棄できる。セッションの起動時にも消費されて消える。",
-        "epilog": "実行例:\n\n  atk wi process-loop instruct 'まず既存の検体を読んでから実装する'",
+        "epilog": "実行例:\n\n  atk wi process-loop instruct 'まず既存のテストコードを読んでから実装する'",
     },
     "atk wi process-loop instruct-cancel": {
         "summary": "保持中の追加指示を破棄する",

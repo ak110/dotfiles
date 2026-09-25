@@ -24,7 +24,7 @@ _STREAM_END = object()
 # 状態遷移の観測は経過時間で打ち切る。反復回数で打ち切ると、CPU競合時に
 # 実時間の待機量が不足して自動再開の送信前に打ち切られる。
 _STATE_TIMEOUT = 10.0
-# 自動再開を観測する検体では、_STATE_TIMEOUTより長い待機上限をmanager.waitへ与える。
+# 自動再開を観測するテストでは、_STATE_TIMEOUTより長い待機上限をmanager.waitへ与える。
 # 観測前にwaitが期限切れになると自動再開の送信自体が発生しない。
 _RESUME_WAIT_TIMEOUT = 30.0
 
@@ -182,7 +182,7 @@ async def _await_state(predicate: Any, timeout: float = _STATE_TIMEOUT) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_session_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """各検体のsession登録簿を一時ディレクトリへ隔離する。"""
+    """各テストのsession登録簿を一時ディレクトリへ隔離する。"""
     monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
 
 

@@ -129,7 +129,7 @@ async def test_retention_expiry_removes_record(
 
 
 class _ReleaseOnlyBackend:
-    """自動再開の配送とbackend資源の解放だけを受け取る検体用backend。"""
+    """自動再開の配送とbackend資源の解放だけを受け取るテスト用backend。"""
 
     async def send_message(self, session: state.SessionState, prompt: str) -> dict[str, object]:
         del session, prompt

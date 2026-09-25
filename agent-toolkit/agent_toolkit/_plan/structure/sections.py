@@ -21,7 +21,7 @@ PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果�
 - 正規表現は原文の内容照合に限定し、列数は区切り記号で分割した要素数から計算する
 
 各検査関数のdocstringへ担当する検査、受け取るトークン範囲、段落内の候補条件を記載する。
-検査項目を追加する場合は、次の構文境界を含む共通コーパスへ検体を追加してから実装する。
+検査項目を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
 - インデント、コードブロック内の記述、見出しの閉じ記号
 - 表の外側パイプの省略、表トークンになる列数不一致、段落へ変換される列数不一致
 - 同名節の重複、親節の違い
@@ -109,6 +109,7 @@ if TYPE_CHECKING:
         PLAN_IMPLEMENTATION_UNIT_ID_PATTERN,
         PLAN_IMPLEMENTATION_UNITS_H3,
         PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER,
         PLAN_LEGACY_ACTION_TABLE_HEADER,
         PLAN_LEGACY_AGENT_FEEDBACK_ORIGIN,
         PLAN_LEGACY_BUG_TABLE_ROWS,
@@ -916,6 +917,12 @@ def has_legacy_refactoring_table(content: str) -> bool:
     return any(
         table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_LEGACY_REFACTORING_TABLE_ROWS for table in tables
     )
+
+
+def has_legacy_acceptance_table(content: str) -> bool:
+    """改名前の列名を持つ受入シナリオ表が本文にある場合に真を返す。"""
+    tables = extract_tables(list(iter_markdown_body_lines(content)))
+    return any(table.header == PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER for table in tables)
 
 
 def _check_h1(headings: list[PlanHeading]) -> list[str]:
@@ -1904,7 +1911,14 @@ def check_plan_single_file_structure(
                     )
                     break
         if has_adopted_action:
-            table = next((item for item in acceptance_tables if item.header == PLAN_ACCEPTANCE_TABLE_HEADER), None)
+            table = next(
+                (
+                    item
+                    for item in acceptance_tables
+                    if item.header in (PLAN_ACCEPTANCE_TABLE_HEADER, PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER)
+                ),
+                None,
+            )
             if table is None or not table.rows:
                 errors.append(f"`### {PLAN_ACCEPTANCE_H3}`には{list(PLAN_ACCEPTANCE_TABLE_HEADER)}の表が必要")
             else:

@@ -336,7 +336,7 @@ def _short_start_availability_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _immediate_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機上限の導出を省き、未終端sessionの待機で検体を待たせない。
+    """待機上限の導出を省き、未終端sessionの待機でテストを待たせない。
 
     `wait`は待機上限を入力として受け取らないため、上限の導出だけをテスト用の値へ差し替える。
     """

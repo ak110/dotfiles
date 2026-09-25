@@ -22,12 +22,12 @@ def _replace_checks(monkeypatch: pytest.MonkeyPatch, results: dict[str, tuple[st
 
 
 def _state_path(directory: pathlib.Path, session_id: str) -> pathlib.Path:
-    """検体のセッション状態ファイルを返す。"""
+    """テスト用のセッション状態ファイルを返す。"""
     return directory / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
 
 
 def _read_state(directory: pathlib.Path, session_id: str) -> dict:
-    """検体のセッション状態を返す。"""
+    """テスト用のセッション状態を返す。"""
     return json.loads(_state_path(directory, session_id).read_text(encoding="utf-8"))
 
 

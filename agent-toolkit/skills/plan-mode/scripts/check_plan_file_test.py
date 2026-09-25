@@ -505,7 +505,7 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
     assert not errors, errors
-    # 旧二ファイル形式の検体は付属ファイル参照を絶対パスで持つため、バグ対応でだけ当該移行警告が加わる。
+    # 旧二ファイル形式のテスト入力は付属ファイル参照を絶対パスで持つため、バグ対応でだけ当該移行警告が加わる。
     expected = (
         ["計画本文の付属ファイル参照が旧表記である。新規作成・改訂では`~/.claude/plans/<ファイル名>`へ移行する"] if bug else []
     )
@@ -632,6 +632,64 @@ def test_current_plan_legacy_refactoring_table_is_migration_only(repo: tuple[pat
     assert message in read_warnings
     assert message in create_errors
     assert message not in create_warnings
+
+
+def _acceptance_header_row(header: tuple[str, ...]) -> str:
+    """受入シナリオ表の見出し行を返す。"""
+    return f"| {' | '.join(header)} |"
+
+
+def test_current_plan_acceptance_table_accepts_new_header(repo: tuple[pathlib.Path, str]) -> None:
+    """現行の列名を持つ受入シナリオ表は新規作成・改訂の検査でも移行警告の対象にならない。"""
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    path = work_dir / "acceptance.md"
+    path.write_text(content, encoding="utf-8")
+
+    errors, warnings = check_plan_file.check(path, work_dir, reject_migration_warnings=True)
+
+    assert _acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER) in content
+    assert _plan_format.PLAN_ACCEPTANCE_TABLE_HEADER[-1] == "テスト"
+    assert not errors, errors
+    assert not any("受入シナリオ表" in warning for warning in warnings), warnings
+
+
+def test_current_plan_legacy_acceptance_header_is_migration_only(repo: tuple[pathlib.Path, str]) -> None:
+    """改名前の列名を持つ受入シナリオ表は読取時に警告して受理し、新規作成・改訂では拒否する。"""
+    work_dir, _base = repo
+    new_header = _acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
+    legacy_header = _acceptance_header_row(_plan_format.PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER)
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(new_header, legacy_header, 1)
+    path = work_dir / "legacy-acceptance.md"
+    path.write_text(content, encoding="utf-8")
+
+    read_errors, read_warnings = check_plan_file.check(path, work_dir)
+    create_errors, _create_warnings = check_plan_file.check(path, work_dir, reject_migration_warnings=True)
+
+    assert legacy_header in content
+    assert not read_errors, read_errors
+    assert any("受入シナリオ表の列名が旧形式" in warning for warning in read_warnings), read_warnings
+    assert any("受入シナリオ表の列名が旧形式" in error for error in create_errors), create_errors
+
+
+def test_current_plan_legacy_acceptance_table_still_requires_filled_cells(repo: tuple[pathlib.Path, str]) -> None:
+    """改名前の列名の表も現行の表と同じく空セルを拒否する。"""
+    work_dir, _base = repo
+    new_header = _acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
+    legacy_header = _acceptance_header_row(_plan_format.PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER)
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(new_header, legacy_header, 1)
+    lines = content.splitlines(keepends=True)
+    row_index = next(index for index, line in enumerate(lines) if line.startswith(legacy_header)) + 2
+    cells = lines[row_index].rstrip("\n").split(" | ")
+    cells[-1] = " |"
+    lines[row_index] = " | ".join(cells) + "\n"
+    content = "".join(lines)
+    path = work_dir / "legacy-acceptance-empty.md"
+    path.write_text(content, encoding="utf-8")
+
+    errors, _warnings = check_plan_file.check(path, work_dir)
+
+    assert any("空セル又は列数不一致" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(

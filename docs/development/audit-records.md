@@ -157,9 +157,9 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月14日
 
-2026年9月14日、`atk agents wait`が通知だけを返した後に状態投影を削除し、同じコマンドを再発行してから終端結果を公開すると、書込主体別の待機対象登録簿から同じsessionを復元して終端結果を回収することを検体で実測した。結果を保持しない`stop`、session登録簿の`missing`、破損した待機対象登録の各経路で、回収不能と確定した待機対象を解放することも検体で実測した。
+2026年9月14日、`atk agents wait`が通知だけを返した後に状態投影を削除し、同じコマンドを再発行してから終端結果を公開すると、書込主体別の待機対象登録簿から同じsessionを復元して終端結果を回収することをテストで実測した。結果を保持しない`stop`、session登録簿の`missing`、破損した待機対象登録の各経路で、回収不能と確定した待機対象を解放することもテストで実測した。
 
-再検証では`agents_wait_test.py`の登録簿検体3件と、`agents_server_mcp_test.py`の`test_stop_releases_wait_target_before_waiting_for_new_result`を実行する。通知後の再発行で同じ`session_id`の終端結果が返ることを確認する。明示破棄又は喪失確定後は、旧sessionが待機対象に残らないことも確認する。
+再検証では`agents_wait_test.py`の登録簿のテスト3件と、`agents_server_mcp_test.py`の`test_stop_releases_wait_target_before_waiting_for_new_result`を実行する。通知後の再発行で同じ`session_id`の終端結果が返ることを確認する。明示破棄又は喪失確定後は、旧sessionが待機対象に残らないことも確認する。
 
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日
 
@@ -252,13 +252,13 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 
 ## agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
-本表は2026年9月5日に実測した。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つの検体を作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`で検査した。
+本表は2026年9月5日に実測した。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つのサンプルファイルを作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`で検査した。
 
 ```text
 警告を出すと思う。
 ```
 
-地の文では口語表現チェックとtextlintの弱い表現がいずれも検出され、引用ブロックではtextlintの弱い表現だけが検出され、フェンス付きコードブロックではいずれも検出されなかった。em-dash（U+2014）を含む同じ形の検体を`scripts/check_dash.py`で検査したところ、引用ブロックでは検出され、フェンス付きコードブロックでは検出されなかった。再検証は同じ3つの検体を再度作成し、同じ検査で検出の有無を対にして確認する。
+地の文では口語表現チェックとtextlintの弱い表現がいずれも検出され、引用ブロックではtextlintの弱い表現だけが検出され、フェンス付きコードブロックではいずれも検出されなかった。em-dash（U+2014）を含む同じ形のサンプルを`scripts/check_dash.py`で検査したところ、引用ブロックでは検出され、フェンス付きコードブロックでは検出されなかった。再検証は同じ3つのサンプルファイルを再度作成し、同じ検査で検出の有無を対にして確認する。
 
 ## agent-toolkit/skills/writing-standards/references/session-records.md：H1直下：2026年9月2日
 
@@ -272,9 +272,9 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 
 2026年9月14日、SQLAlchemy 2.0.52の公式文書で、既定構成の`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
 2026年9月13日のAWIは、SQLAlchemy 2.0.51を使うアプリケーションで、保留中のUPDATEが一意制約へ違反する経路と、保留中のINSERTが`NOT NULL`制約へ違反する経路を実測した記録を持つ。
-同記録では、autoflushの無効化が同じ処理単位で追加した設定を読む検体を失敗させ、入力検証前の無条件な問い合わせが`Session`未開始の検体を失敗させた。
+同記録では、autoflushの無効化が同じ処理単位で追加した設定を読むテストを失敗させ、入力検証前の無条件な問い合わせが`Session`未開始のテストを失敗させた。
 再検証では、SQLAlchemy 2.0系の公式文書にある`Session Basics`の`Flushing`節と`Session.flush()`のAPI説明を確認する。
-あわせて、保留中のUPDATEとINSERTの後にORMへ問い合わせる検体で、問い合わせ前に各制約違反が送出されることを確認する。
+あわせて、保留中のUPDATEとINSERTの後にORMへ問い合わせるテストで、問い合わせ前に各制約違反が送出されることを確認する。
 問い合わせを属性代入前かつ入力検証後へ移し、保留変更の反映が必要な箇所だけ明示的にflushした状態で、入力エラーと同じ処理単位の読み取りを対にして確認する。
 
 ## agent-toolkit/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日
@@ -337,8 +337,8 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：Codexネイティブ委譲の入力境界：2026年9月21日
 
-2026年9月21日、Codex CLI 0.155.1で実測した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動した検体では共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
-再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力する検体と、`_agents_server/state.py`の通常・軽量promptの検体を実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範及び軽量経路の境界を照合する。
+2026年9月21日、Codex CLI 0.155.1で実測した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動したテストでは共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
+再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力するテストと、`_agents_server/state.py`の通常・軽量promptのテストを実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範及び軽量経路の境界を照合する。
 
 ## agent-toolkit/rules/01-agent.md：自動挿入本文の配送境界：2026年9月25日
 

@@ -168,7 +168,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
 
 
 def _write_pair(root: pathlib.Path, *, parent_body: str, required_name: str = "対象リポジトリ") -> None:
-    """単一の委譲関係を持つ検体を書く。"""
+    """単一の委譲関係を持つテスト入力を書く。"""
     root.mkdir(parents=True, exist_ok=True)
     (root / "task.parent.md").write_text(parent_body, encoding="utf-8")
     (root / "task.subagent.md").write_text(
@@ -178,7 +178,7 @@ def _write_pair(root: pathlib.Path, *, parent_body: str, required_name: str = "�
 
 
 def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker: str = "") -> str:
-    """正規の起動対象ブロックを持つ呼び元検体を返す。"""
+    """正規の起動対象ブロックを持つ呼び元のテスト入力を返す。"""
     return f"# 呼び元\n\n```text\n{marker}\n```\n{after_marker}\n## 起動\n\n対象リポジトリ: 値\n"
 
 

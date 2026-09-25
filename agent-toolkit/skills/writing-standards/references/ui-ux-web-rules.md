@@ -1,6 +1,6 @@
 # Web画面の実装とレビューで確認する規則
 
-本書は、HTML、CSS、JavaScriptでエンドユーザー向け画面を実装又はレビューする主体が、コードから判定できる条件を扱う。利用者の操作で生じる結果の正しさはE2E検体で、操作の分かりやすさは`ui-ux.md`「完了前の実描画確認」とユーザビリティレビューで確かめる。
+本書は、HTML、CSS、JavaScriptでエンドユーザー向け画面を実装又はレビューする主体が、コードから判定できる条件を扱う。利用者の操作で生じる結果の正しさはE2Eテストで、操作の分かりやすさは`ui-ux.md`「完了前の実描画確認」とユーザビリティレビューで確かめる。
 
 主な参考資料: [Vercel Web Interface Guidelinesの取得時点の原文](https://github.com/vercel-labs/web-interface-guidelines/blob/e3d624baaf29dc1fc645aff3e38f03e564d2d6b1/command.md)（commit `e3d624baaf29dc1fc645aff3e38f03e564d2d6b1`）。原文を実行時に再取得せず、本書の規則を判定へ使う。英語の文章表記に固有の規則は日本語画面の判定対象から外す。
 

@@ -3426,18 +3426,18 @@ def test_instruction_append_rejects_duplicate_and_over_limit(monkeypatch, tmp_pa
     """完全一致の再投入は追記せず、上限超過の投入は拒否する。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
 
-    assert process_loop_log.append_instruction("既存の検体を先に読む") == (
+    assert process_loop_log.append_instruction("既存のテストコードを先に読む") == (
         True,
         "保持中の追加指示は1件である",
     )
-    appended, summary = process_loop_log.append_instruction("既存の検体を先に読む")
+    appended, summary = process_loop_log.append_instruction("既存のテストコードを先に読む")
     assert appended is False
     assert summary == "同じ本文が保持済みである"
 
     appended, summary = process_loop_log.append_instruction("あ" * process_loop_log.INSTRUCTION_MAX_CHARS)
     assert appended is False
     assert "上限" in summary
-    assert process_loop_log.read_instructions() == ["既存の検体を先に読む"]
+    assert process_loop_log.read_instructions() == ["既存のテストコードを先に読む"]
 
 
 def test_instructions_are_consumed_once(monkeypatch, tmp_path) -> None:
@@ -3471,7 +3471,7 @@ def test_instruction_is_consumed_only_when_a_session_launches(
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    process_loop_log.append_instruction("既存の検体を先に読む")
+    process_loop_log.append_instruction("既存のテストコードを先に読む")
     claude_calls: list[dict[str, Any]] = []
     monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
 
@@ -3498,9 +3498,9 @@ def test_instruction_is_consumed_only_when_a_session_launches(
         atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
     assert exc_info.value.code == 0
-    assert held_during_wait[0] == ["既存の検体を先に読む"]
+    assert held_during_wait[0] == ["既存のテストコードを先に読む"]
     assert len(claude_calls) == 1
     launch_env = cast(dict[str, str], claude_calls[0]["env"])
-    assert launch_env[_PROCESS_LOOP_INSTRUCTION_ENV] == "既存の検体を先に読む"
+    assert launch_env[_PROCESS_LOOP_INSTRUCTION_ENV] == "既存のテストコードを先に読む"
     assert held_during_wait[1] == []
     assert process_loop_log.read_instructions() == []

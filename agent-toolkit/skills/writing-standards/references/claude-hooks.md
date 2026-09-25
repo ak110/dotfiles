@@ -149,7 +149,7 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 イベントごとの出力契約の機械検査は`agent-toolkit/agent_toolkit/_hooks/output_contract.py`を正本とする。
 同ファイルは公式のHooksリファレンスが定める契約をJSON Schemaで保持する。
 `agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が登録済みの全hookの出力をその契約へ照合する。
-フックを追加又は変更する場合は、その契約と検体を同じ変更単位で更新する。
+フックを追加又は変更する場合は、その契約とテストを同じ変更単位で更新する。
 
 Claude Codeが表示する`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器が
 モデルの応答をJSONとして解析できなかった場合に出る。この表示が出る経路はプロンプト型hookの評価器に限る。

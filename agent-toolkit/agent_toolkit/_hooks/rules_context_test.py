@@ -315,7 +315,7 @@ def test_session_start_injects_process_loop_instruction(
     """常駐処理が渡した追加指示をメインへ注入し、委譲先へは注入しない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "既存の検体を先に読む")
+    monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "既存のテストコードを先に読む")
     monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
 
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -326,7 +326,7 @@ def test_session_start_injects_process_loop_instruction(
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-2"}))
     delegated_output = _output(capsys)
 
-    assert "既存の検体を先に読む" in main_output
+    assert "既存のテストコードを先に読む" in main_output
     assert f"<{rules_context.PROCESS_LOOP_INSTRUCTION_ELEMENT} " in main_output
     assert 'origin="user"' in main_output
-    assert "既存の検体を先に読む" not in delegated_output
+    assert "既存のテストコードを先に読む" not in delegated_output

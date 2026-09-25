@@ -861,13 +861,13 @@ def _run_git_pull_in_pty(
         if status is None:
             os.kill(pid, signal.SIGKILL)
             _waited_pid, status = os.waitpid(pid, 0)
-            pytest.fail("疑似端末内のgit pull検体が20秒以内に終了しなかった")
+            pytest.fail("疑似端末内のgit pullテストが20秒以内に終了しなかった")
     finally:
         os.close(terminal_fd)
     return os.waitstatus_to_exitcode(status), output.decode(errors="replace"), descendant_pid_path
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="ptyと/dev/ttyを使用するLinux検体")
+@pytest.mark.skipif(sys.platform == "win32", reason="ptyと/dev/ttyを使用するLinux専用のテスト")
 @pytest.mark.parametrize("timeout", [30, None])
 def test_git_pull_preserves_terminal_interaction(
     monkeypatch: pytest.MonkeyPatch,
@@ -876,7 +876,7 @@ def test_git_pull_preserves_terminal_interaction(
 ) -> None:
     """上限の有無にかかわらず、子が制御端末から入力を受け取る。
 
-    上限ありの検体は上限の到達ではなく端末入力の受け渡しを検査するため、
+    上限ありのテストは上限の到達ではなく端末入力の受け渡しを検査するため、
     並行実行の負荷でも到達しない秒数を渡す。上限の到達側は
     `test_git_pull_timeout_terminates_stream_holding_descendant`が検査する。
     """
@@ -891,7 +891,7 @@ def test_git_pull_preserves_terminal_interaction(
     assert "passphrase:" in output
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="ptyを使用するLinux検体")
+@pytest.mark.skipif(sys.platform == "win32", reason="ptyを使用するLinux専用のテスト")
 def test_git_pull_timeout_terminates_stream_holding_descendant(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

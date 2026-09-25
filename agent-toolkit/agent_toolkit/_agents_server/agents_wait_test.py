@@ -1295,7 +1295,7 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
     state_root = wait_environment.parents[2]
     status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     session_registry.publish("session-1", terminal=False, state_root=state_root)
-    # 上限到達による終了と区別するため、待機上限を検体の実行時間より十分大きくする。
+    # 上限到達による終了と区別するため、待機上限をテストの実行時間より十分大きくする。
     monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 3600.0)
     sleeps: list[float] = []
 
