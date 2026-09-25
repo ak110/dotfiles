@@ -6164,6 +6164,44 @@ def test_claude_subagent_record_keeps_normal_entries(tmp_path: pathlib.Path) -> 
     assert [event["text"] for event in events] == ["委譲された依頼", "実装を完了した"]
 
 
+def test_claude_subagent_handback_message_becomes_final_result(tmp_path: pathlib.Path) -> None:
+    """`SubagentHandback`で渡した報告本文を最終結果とし、送信後の定型文を最終結果にしない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "委譲された依頼"}},
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_1",
+                            "name": "SubagentHandback",
+                            "input": {"message": "判定: 適合\n根拠: 全行を確認した"},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Report delivered."}]},
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [(event["kind"], event["text"]) for event in events] == [
+        ("user", "委譲された依頼"),
+        ("final-result", "判定: 適合\n根拠: 全行を確認した"),
+        ("assistant", "Report delivered."),
+    ]
+
+
 def test_claude_main_record_keeps_only_completion_from_subagent_entries(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
