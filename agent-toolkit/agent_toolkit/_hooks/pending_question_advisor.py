@@ -5,6 +5,8 @@
 判断を求める場面で`AskUserQuestion`を使う規定は規範が定めるが、自身の応答が
 当該場面に当たるかの分類は誤りやすいため、機械的な検出を置く。
 判定は疑問符で終わる文と、判断を促す定型表現を含む文の2条件とする。
+定型表現より前に条件節（`〜場合は`など）を持つ文は、条件が成立したときの手順の案内であり
+判断を求めていないため、定型表現の条件から外す。
 疑問符は直後に語が続かない場合だけ文末として扱うため、`〜ですか？と尋ねられた`のように
 語句の内側にある疑問符は遮断の対象にならない。
 コードブロック、インラインコード、URL及び行頭が`>`の引用行は地の文から除くため、
@@ -49,6 +51,10 @@ _REQUEST_EXPRESSIONS = (
     "選んでください",
 )
 
+# 定型表現より前にあれば、その文を条件付きの手順の案内とみなす条件節の標識。
+# 「6.12で起動しなかった場合は、…を選んでください。」は判断要求ではない。
+_CONDITION_MARKERS = ("場合は", "場合、", "ときは", "たら、")
+
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 
 # hookメッセージ英語規定（agent-toolkit/skills/writing-standards/references/claude-hooks.md）の例外。
@@ -92,9 +98,18 @@ def _asks_user(plain_text: str) -> bool:
             continue
         if sentence.endswith(("？", "?")):
             return True
-        if any(expression in sentence for expression in _REQUEST_EXPRESSIONS):
+        if any(_is_unconditional_request(sentence, expression) for expression in _REQUEST_EXPRESSIONS):
             return True
     return False
+
+
+def _is_unconditional_request(sentence: str, expression: str) -> bool:
+    """文が定型表現を含み、その表現より前に条件節の標識を持たないかを返す。"""
+    position = sentence.find(expression)
+    if position < 0:
+        return False
+    preceding = sentence[:position]
+    return not any(marker in preceding for marker in _CONDITION_MARKERS)
 
 
 def _latest_response(transcript_path: str) -> tuple[str, bool]:
