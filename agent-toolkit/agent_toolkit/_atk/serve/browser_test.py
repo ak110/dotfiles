@@ -2826,6 +2826,37 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
 
 
 @pytest.mark.asyncio
+async def test_entry_copy_label_survives_list_reload(screen_harness: _ScreenHarness) -> None:
+    """コピー表示の期間中に一覧の再読込が完了しても、同じ項目のボタンは表示を保ち、期間の終わりに戻る。
+
+    再読込は利用者の操作と無関係な契機（ウィンドウのfocus、SSEの変更通知）でも起きるため、
+    一覧取得の応答を保留してクリックを再描画より先に起こし、再描画後の新しいボタンの表示を確かめる。
+    """
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    row = page.locator("#entry-list .entry-row").first
+    await row.locator(".entry-copy").wait_for(state="visible")
+    release = asyncio.Event()
+
+    async def hold_list_request(route: playwright.async_api.Route) -> None:
+        await release.wait()
+        await route.continue_()
+
+    await page.route("**/api/entries?*", hold_list_request)
+    await row.locator(".entry-copy").evaluate("element => { element.dataset.beforeReload = 'true'; }")
+    await page.evaluate("() => window.dispatchEvent(new Event('focus'))")
+    await row.locator(".entry-copy").click()
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
+
+    release.set()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-copy[data-before-reload]")).to_have_count(0)
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピー", timeout=4000)
+    await page.unroute("**/api/entries?*", hold_list_request)
+
+
+@pytest.mark.asyncio
 async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> None:
     """3画面のURLへ直接アクセスしても各画面が描画される。"""
     harness = screen_harness

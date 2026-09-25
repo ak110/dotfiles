@@ -271,6 +271,10 @@ function entrySelectionFromUrl() {
   return state && filename ? {state, filename} : null;
 }
 
+// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は行の要素ではなく項目の識別子に対応付けて保持する。
+const COPIED_LABEL_MS = 2000;
+const copiedLabelDeadlines = new Map();
+
 function renderEntry(entry) {
   const item = document.createElement('li');
   item.className = 'entry-row';
@@ -328,14 +332,24 @@ function renderEntry(entry) {
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.className = 'entry-copy button-secondary';
-  copy.textContent = 'コピー';
+  const key = entryKey(entry);
+  copy.dataset.key = key;
+  copy.textContent = (copiedLabelDeadlines.get(key) ?? 0) > Date.now() ? 'コピーしました' : 'コピー';
   copy.setAttribute('aria-label', `${entry.filename}の要約をコピー`);
   copy.addEventListener('click', async () => {
-      try {
+    try {
       await (navigator.clipboard.writeText(`${entry.filename} ${entry.summary || ''}`));
+      const deadline = Date.now() + COPIED_LABEL_MS;
+      copiedLabelDeadlines.set(key, deadline);
       copy.textContent = 'コピーしました';
       byId('result-status').textContent = `${entry.filename}をコピーしました。`;
-      setTimeout(() => { if (copy.isConnected) copy.textContent = 'コピー'; }, 2000);
+      setTimeout(() => {
+        // 同じ項目を再度コピーした場合は、後のクリックの期限で戻す。
+        if (copiedLabelDeadlines.get(key) !== deadline) return;
+        copiedLabelDeadlines.delete(key);
+        const current = document.querySelector(`#entry-list .entry-copy[data-key="${CSS.escape(key)}"]`);
+        if (current) current.textContent = 'コピー';
+      }, COPIED_LABEL_MS);
     } catch (error) {
       setGlobalError(`コピーに失敗しました。 ${error.message}`);
     }
