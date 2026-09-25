@@ -103,7 +103,8 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 
 `agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`AGENTS.md`、`.claude/skills/`などの規範文書から記述を削除又は縮小する編集では、編集の目的にかかわらずベースcommitとの差分を確認する。削除した価値、適用範囲、条件、例外を特定し、削除の理由をcommit本文へ残す。統合を理由とする場合は、統合先の適用範囲が元の範囲を含むことを確認する。含まない場合は統合先を整えるか、削除を取りやめる。
 
-削除又は縮小する行を`git blame`で調べ、行を追加したcommitに`Co-Authored-By`又は`Claude-Session` trailerが無い場合は、ユーザーが書いた規範として保護する。協調モードでは編集前にユーザーの確認を得る。自律モードでは事前承認型UWIを`agent-toolkit:wi-standards`に従って送り、元の項目を保留する。過去のCodex commitにはtrailerの無いものが多いため、確認が余分に増えても保護を優先する。
+削除又は縮小する行を`git blame`で調べ、行を追加したcommitに`Co-Authored-By`又は`Claude-Session` trailerが無い場合は、作者を確定できない規範として、ユーザーが書いた規範と同じく保護する。協調モードでは編集前にユーザーの確認を得る。自律モードでは事前承認型UWIを`agent-toolkit:wi-standards`に従って送り、元の項目を保留する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、確認が余分に増えても保護を優先する。
+trailerの有無だけでは作者を確定できないため、報告、AWI本文及び判断の根拠では、そのcommitをユーザーのcommitと断定しない。
 
 ## 配布物としての記述方針
 
