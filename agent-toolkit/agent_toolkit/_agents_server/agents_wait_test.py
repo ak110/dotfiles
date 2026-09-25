@@ -347,6 +347,49 @@ def _write_current_wait_run(
     return run_directory, run_path
 
 
+def _observe_two_waiters(monkeypatch: pytest.MonkeyPatch) -> tuple[Callable[..., None], threading.Event]:
+    """2件の後続waitがlock競合へ到達した時点を通知する。"""
+    original_acquire = agents_wait.acquire_lock
+    followers_waiting = threading.Event()
+    count_lock = threading.Lock()
+    failed_nonblocking = 0
+
+    def observe_acquire(lock_file, *, blocking: bool):
+        nonlocal failed_nonblocking
+        try:
+            return original_acquire(lock_file, blocking=blocking)
+        except OSError:
+            if not blocking:
+                with count_lock:
+                    failed_nonblocking += 1
+                    if failed_nonblocking == 2:
+                        followers_waiting.set()
+            raise
+
+    monkeypatch.setattr(agents_wait, "acquire_lock", observe_acquire)
+    return original_acquire, followers_waiting
+
+
+def _interrupt_after_published(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """run記録の公開後、前景出力の前に待機を中断する。"""
+    original_write = agents_wait._write_json  # pylint: disable=protected-access
+
+    def interrupt_publication(path: pathlib.Path, value: dict[str, object]) -> None:
+        original_write(path, value)
+        if value.get("status") == "published":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(agents_wait, "_write_json", interrupt_publication)
+    with pytest.raises(KeyboardInterrupt):
+        agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
+    monkeypatch.setattr(agents_wait, "_write_json", original_write)
+    assert not capsys.readouterr().out
+
+
 def _wait_while_owner_is_locked(tmp_path: pathlib.Path, own_session_id: str) -> int:
     """別実行が同じ書込主体の待機所有権を保持する状態で待機を発行する。"""
     _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": own_session_id}])
@@ -395,24 +438,7 @@ def test_followers_join_the_same_wait_run(
     )
     agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
 
-    original_acquire = agents_wait.acquire_lock
-    followers_waiting = threading.Event()
-    count_lock = threading.Lock()
-    failed_nonblocking = 0
-
-    def observe_acquire(lock_file, *, blocking: bool):
-        nonlocal failed_nonblocking
-        try:
-            return original_acquire(lock_file, blocking=blocking)
-        except OSError:
-            if not blocking:
-                with count_lock:
-                    failed_nonblocking += 1
-                    if failed_nonblocking == 2:
-                        followers_waiting.set()
-            raise
-
-    monkeypatch.setattr(agents_wait, "acquire_lock", observe_acquire)
+    original_acquire, followers_waiting = _observe_two_waiters(monkeypatch)
     results: list[int] = []
 
     def follow() -> None:
@@ -472,24 +498,7 @@ def test_wait_replays_follower_output_after_interrupt(
         original_write(path, value)
 
     monkeypatch.setattr(agents_wait, "_write_json", interrupt_first_consume)
-    original_acquire = agents_wait.acquire_lock
-    followers_waiting = threading.Event()
-    count_lock = threading.Lock()
-    failed_nonblocking = 0
-
-    def observe_acquire(lock_file, *, blocking: bool):
-        nonlocal failed_nonblocking
-        try:
-            return original_acquire(lock_file, blocking=blocking)
-        except OSError:
-            if not blocking:
-                with count_lock:
-                    failed_nonblocking += 1
-                    if failed_nonblocking == 2:
-                        followers_waiting.set()
-            raise
-
-    monkeypatch.setattr(agents_wait, "acquire_lock", observe_acquire)
+    original_acquire, followers_waiting = _observe_two_waiters(monkeypatch)
     outcomes: list[int | str] = []
 
     def follow() -> None:
@@ -650,18 +659,7 @@ def test_wait_replays_published_run_after_publication_interrupt(
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True)
     (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
-    original_write = agents_wait._write_json  # pylint: disable=protected-access
-
-    def interrupt_publication(path: pathlib.Path, value: dict[str, object]) -> None:
-        original_write(path, value)
-        if value.get("status") == "published":
-            raise KeyboardInterrupt
-
-    monkeypatch.setattr(agents_wait, "_write_json", interrupt_publication)
-    with pytest.raises(KeyboardInterrupt):
-        agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
-    monkeypatch.setattr(agents_wait, "_write_json", original_write)
-    assert not capsys.readouterr().out
+    _interrupt_after_published(monkeypatch, tmp_path, capsys)
     assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
 
     assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
@@ -681,18 +679,7 @@ def test_wait_replays_published_notice_after_publication_interrupt(
         json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}),
         encoding="utf-8",
     )
-    original_write = agents_wait._write_json  # pylint: disable=protected-access
-
-    def interrupt_publication(path: pathlib.Path, value: dict[str, object]) -> None:
-        original_write(path, value)
-        if value.get("status") == "published":
-            raise KeyboardInterrupt
-
-    monkeypatch.setattr(agents_wait, "_write_json", interrupt_publication)
-    with pytest.raises(KeyboardInterrupt):
-        agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
-    monkeypatch.setattr(agents_wait, "_write_json", original_write)
-    assert not capsys.readouterr().out
+    _interrupt_after_published(monkeypatch, tmp_path, capsys)
 
     assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
     assert json.loads(capsys.readouterr().out) == {
