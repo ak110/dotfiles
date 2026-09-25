@@ -321,6 +321,7 @@ def _summary(value: object) -> str:
 def build_material(
     *,
     session_label: str,
+    session_reference: str,
     target_repo: pathlib.Path | None,
     candidates: list[dict[str, Any]],
     evidence_by_id: dict[str, dict[str, Any]],
@@ -382,9 +383,11 @@ def build_material(
             "## 参考情報",
             "",
             f"- 振り返りの参照文書: {f'`{reference_document}`' if reference_document is not None else 'なし'}",
-            f"- 対象セッション: {session_label}",
+            f"- 対象セッション: {session_reference}",
             f"- 準備時刻: {prepared_at}",
-            "- 処理側はこれらを開かずに判断できる。参照文書は対象リポジトリ固有の振り返り観点と所要時間目標を持つ場合に読む",
+            "- 処理側は通常これらを開かずに判断できる。対象セッションの記録は、素材で直接原因を確定できない候補に限り"
+            "抽出器`session-review-evidence`の`--grep`と`--detail`で照会する。"
+            "参照文書は対象リポジトリ固有の振り返り観点と所要時間目標を持つ場合に読む",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -453,9 +456,16 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     prepared_at = current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     session_label = f"Claude Code {transcript_path.stem}" if transcript_path is not None else f"Codex {args.codex_thread_id}"
+    # 抽出器の`--transcript`と`--codex-thread-id`へそのまま渡せる値を参考情報へ載せる。
+    session_reference = (
+        f"Claude Code（transcript: `{transcript_path}`）"
+        if transcript_path is not None
+        else f"Codex（thread ID: `{args.codex_thread_id}`）"
+    )
     observations = observations_path.read_text(encoding="utf-8")
     material = build_material(
         session_label=session_label,
+        session_reference=session_reference,
         target_repo=target_repo,
         candidates=candidates,
         evidence_by_id=evidence_by_id,
