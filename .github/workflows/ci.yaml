@@ -277,8 +277,10 @@ jobs:
           # 除外する（ccを含むRustビルドツールチェーンをcontainer imageに追加せずに済む）
           SKIP: cargo-fmt,cargo-clippy
         # claude CLIのCI導入はminimum-release-age機構とメタデータ欠落で安定しないため、
-        # Claude plugin manifest検査だけを無効化する。
-        run: pyfltr ci --disable=claude-plugin-validate
+        # Claude plugin manifest検査を無効化する。
+        # statusline-versionは浅いcheckoutではmasterとの共通祖先を解決できず、同じ判定を
+        # statusline-version jobが所有するため無効化する。
+        run: pyfltr ci --disable=claude-plugin-validate,statusline-version
 
       - name: Prune uv cache for CI
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
@@ -383,60 +385,4 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CURRENT_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          if [ -n "$BASE_SHA" ]; then
-            base_sha="$BASE_SHA"
-          else
-            git fetch --no-tags origin master
-            base_sha=$(git merge-base FETCH_HEAD "$CURRENT_SHA")
-          fi
-
-          if git diff --quiet "$base_sha" "$CURRENT_SHA" -- rust/claude-statusline/; then
-            echo "statuslineの変更がないため、版数検査を省略する。"
-            exit 0
-          fi
-
-          read_version() {
-            python3 - "$1" <<'PY'
-          import sys
-          import tomllib
-
-          with open(sys.argv[1], "rb") as stream:
-              print(tomllib.load(stream)["package"]["version"])
-          PY
-          }
-
-          base_manifest=$(mktemp)
-          trap 'rm -f -- "$base_manifest"' EXIT
-          git show "$base_sha:rust/claude-statusline/Cargo.toml" > "$base_manifest"
-          base_version=$(read_version "$base_manifest")
-          current_version=$(read_version rust/claude-statusline/Cargo.toml)
-
-          if [ "$base_version" = "$current_version" ]; then
-            echo "statuslineの変更にはCargo.tomlの版数更新が必要である。" >&2
-            exit 1
-          fi
-
-          mise exec -- cargo metadata \
-            --locked \
-            --no-deps \
-            --format-version=1 \
-            --manifest-path rust/claude-statusline/Cargo.toml \
-            >/dev/null
-
-          tag="statusline-v$current_version"
-          tag_status=0
-          git ls-remote --exit-code --refs origin "refs/tags/$tag" >/dev/null 2>&1 || tag_status=$?
-          case "$tag_status" in
-            0)
-              echo "statuslineの版数に対応する既存タグがある: $tag" >&2
-              exit 1
-              ;;
-            2) ;;
-            *)
-              echo "statuslineのタグ照会に失敗した: $tag" >&2
-              exit "$tag_status"
-              ;;
-          esac
+        run: python3 scripts/check_statusline_version.py

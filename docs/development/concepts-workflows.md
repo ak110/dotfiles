@@ -36,7 +36,7 @@ PRのheadはGitHub設定で`develop`だけに制限しない。
 リリースの成否判定とは別に、`agent-toolkit:process-wi`のセッション終端ではベースbranchの公開状態（現在branch、作業ツリーのclean、リモート追跡refへのahead、中断状態）を観測する（2026年9月、利用者指示）。未公開のcommitを残した終了が常駐ループの開始前更新を停止させたためであり、解消できない場合はUWIへ引き継ぐ。
 `agent-toolkit:process-wi`では、自動コードレビュー監査を選定工程の開始時に起動してレーン工程と並行して進め、公開工程の開始より前に処置を確定する。公開工程では終端担当による公開とCI確認を1回だけ実施する。終端担当の起動後に生じた是正commitはローカルの`develop`へ保持し、次のセッションの公開工程で公開する。セッション振り返りは`agent-toolkit:completion-report`から起動し、当該セッション自身を対象として終了時に完了する（2026年9月、利用者指示。2026年9月14日、利用者指示により振り返りを自セッションの終端へ一本化した）。
 
-statusline（`rust/claude-statusline/`配下）を変更した場合は、その版数更新を`develop`をpushする時点までに行う。変更がない場合は版数を更新しない。更新忘れは`develop`へのpushとリリースPRの双方で実行されるCIの`statusline-version` jobが検出する。
+statusline（`rust/claude-statusline/`配下）を変更した場合は、その版数更新を`develop`をpushする時点までに行う。変更がない場合は版数を更新しない。変更の対象は`rust/claude-statusline/`配下の全ファイルの差分であり、`src/*.rs`の`mod tests`内のテストコードとテスト入力、`Cargo.lock`だけの変更も含む。版数の更新を忘れたcommitは、pyfltrの`statusline-version`（レーンの近接検証と公開前のローカル検証）と、`develop`へのpushとリリースPRの双方で実行されるCIの`statusline-version` jobが検出する。この規定は2026年9月26日にテスト入力だけの変更で版数を据え置いたcommitがpush後のCIまで検出されなかった観測に由来する。
 `master`のCIが成功したマージコミットに対してだけタグ、Linux・Windowsバイナリ及びGitHub Releaseを作成する。
 マージ後のCI又はReleaseが失敗した場合は外部状態、失敗工程、run URL及び再開点を報告し、状態を自動で巻き戻さない。
 
