@@ -315,7 +315,7 @@ def _apply_transition(
         sys.exit(2)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
     for path in paths:
-        if action == "return-to-inbox":
+        if action == "return-to-inbox" or (action == "hold" and path.parent.name in {WI_STATE_ADOPTED, WI_STATE_REJECTED}):
             _strip_result_section(path)
         if action in {"adopt", "reject"}:
             _stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
@@ -353,6 +353,7 @@ def transition_entries(
     cooldown_days: int | None = None,
     local_worktree: pathlib.Path | None = None,
     skip_push: bool = False,
+    skip_remote_sync: bool = False,
     actor_is_agent: bool = False,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移又は削除を実行する。
@@ -372,9 +373,10 @@ def transition_entries(
     inbox_dir = private_notes / WI_STATE_INBOX
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
-        if not skip_push:
-            _push_pending_commits(private_notes)
-        _pull(private_notes)
+        if not skip_remote_sync:
+            if not skip_push:
+                _push_pending_commits(private_notes)
+            _pull(private_notes)
         missing_is_conflict = action == "remove" and expected_content is not None
         paths = _resolve_transition_paths(
             private_notes,
@@ -412,7 +414,7 @@ def transition_entries(
             private_notes,
             _transition_commit_message(action, len(paths), note),
             list(WI_STATES),
-            skip_push=skip_push,
+            skip_push=skip_push or skip_remote_sync,
         )
     return [path.name for path in paths]
 
@@ -580,7 +582,7 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
 
 
 def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """holdサブコマンド: 処理可能な項目をholdへ移動する。"""
+    """holdサブコマンド: 処理可能又は終端した項目をholdへ移動する。"""
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="hold")
         if filenames:
@@ -593,6 +595,7 @@ def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
         filenames=args.filenames,
         now=now,
         target_repo=args.target_repo,
+        state=args.state,
     )
     _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
 

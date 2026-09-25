@@ -59,7 +59,8 @@ def test_transition_explicit_state_contract_matches_web_operations() -> None:
     """Web操作が明示できる状態集合を操作別契約として固定する。"""
     assert common.TRANSITION_EXPLICIT_STATES == {
         "start-processing": ("hold",),
-        "return-to-inbox": ("rejected",),
+        "return-to-inbox": ("rejected", "adopted"),
+        "hold": ("rejected", "adopted"),
         "adopt": ("hold",),
         "reject": ("inbox", "hold"),
         "remove": ("inbox", "processing", "hold", "adopted", "rejected"),

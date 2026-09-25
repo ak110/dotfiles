@@ -190,6 +190,7 @@ def edit_entry_content(
     lock_timeout: float = -1,
     expected_content: str | None = None,
     finalized_content: dict[str, str] | None = None,
+    skip_remote_sync: bool = False,
 ) -> bool:
     """平引数でAWI本文を更新する。
 
@@ -210,6 +211,7 @@ def edit_entry_content(
         commit_message="chore: edit wi item",
         content_transformer=_invalidate_repo_bound_metadata,
         finalized_content=finalized_content,
+        skip_remote_sync=skip_remote_sync,
     )
 
 

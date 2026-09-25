@@ -4,13 +4,14 @@
 (() => {
 const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
-const KIND_LABELS = {awi: '作業項目', uwi: '確認事項', unknown: '種別不明'};
+const KIND_LABELS = {awi: 'awi', uwi: 'uwi', unknown: 'unknown'};
 const STATE_LABELS = {
-  inbox: '未処理', processing: '処理中', hold: '保留',
-  adopted: '採用済み', rejected: '不採用'
+  inbox: 'inbox', processing: 'processing', hold: 'hold',
+  adopted: 'adopted', rejected: 'rejected'
 };
 const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
 const MUTABLE_STATES = new Set(['inbox', 'processing', 'hold']);
+const TERMINAL_STATES = new Set(['adopted', 'rejected']);
 const DELETABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
 const SEARCH_FALLBACK_NOTICE =
@@ -18,15 +19,6 @@ const SEARCH_FALLBACK_NOTICE =
   'フィルターの選択値は変更していません。';
 const ENTRY_PAGE_SIZE = 100;
 const TARGET_REPO_DISPLAY_LENGTH = 20;
-const METADATA_FIELDS = [
-  ['kind', '種別'],
-  ['state', '状態'],
-  ['answered', '回答状況'],
-  ['target_repo', '対象リポジトリ'],
-  ['source', '投入元'],
-  ['updated_at', '更新日時']
-];
-const FRONTMATTER_LABELS = {target_repo: '対象リポジトリ', source: '投入元'};
 const FRONTMATTER_EXCLUDED_KEYS = new Set(['type', 'origin_session', 'origin_locator']);
 
 let entries = [];
@@ -40,6 +32,7 @@ let targetRepoRequestGeneration = 0;
 let knownUwiRequestGeneration = 0;
 let listLoadingVisible = false;
 let listRequestPending = false;
+let detailRequestPending = false;
 let userListOperationGeneration = 0;
 let userListOperationPending = false;
 let externalListReloadPending = false;
@@ -121,7 +114,8 @@ function clearDialogMessages(dialogName) {
 function showToast(message, isError = false) {
   const notice = byId('operation-notice');
   clearTimeout(noticeTimer);
-  noticeOrigin = document.activeElement === document.body ? lastFocusedElement : document.activeElement;
+  noticeOrigin = isError && pendingOperations.has('sync') ? byId('refresh-button') :
+    (document.activeElement === document.body ? lastFocusedElement : document.activeElement);
   byId('operation-notice-message').textContent = message;
   notice.dataset.error = String(isError);
   notice.setAttribute('role', isError ? 'alert' : 'status');
@@ -133,10 +127,9 @@ function showToast(message, isError = false) {
 function closeOperationNotice() {
   clearTimeout(noticeTimer);
   byId('operation-notice').hidden = true;
-  if (noticeOrigin?.isConnected) {
-    if (noticeOrigin === byId('refresh-button')) focusRefreshButton();
-    else if (!noticeOrigin.disabled) noticeOrigin.focus();
-  }
+  const returnTarget = noticeOrigin?.isConnected && !noticeOrigin.disabled ? noticeOrigin : byId('refresh-button');
+  if (returnTarget === byId('refresh-button')) focusRefreshButton();
+  else returnTarget.focus();
   noticeOrigin = null;
 }
 
@@ -294,7 +287,7 @@ function renderEntry(entry) {
   const targetRepo = appendTextCell(button, 'target-repo-cell', targetRepoDisplay(entry.target_repo));
   if (entry.target_repo) {
     targetRepo.title = entry.target_repo;
-    targetRepo.setAttribute('aria-label', `対象リポジトリ: ${entry.target_repo}`);
+    targetRepo.setAttribute('aria-label', `target-repo: ${entry.target_repo}`);
   }
   const status = appendCell(button, 'status-cell');
   const kind = document.createElement('span');
@@ -304,7 +297,7 @@ function renderEntry(entry) {
   const badge = document.createElement('span');
   badge.className = 'state-badge';
   badge.dataset.state = entry.state;
-  badge.textContent = STATE_LABELS[entry.state] || '状態不明';
+  badge.textContent = STATE_LABELS[entry.state] || 'unknown';
   status.append(badge);
   if (entry.plan) {
     const plan = document.createElement('span');
@@ -322,7 +315,7 @@ function renderEntry(entry) {
   button.setAttribute(
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
-      STATE_LABELS[entry.state] || '状態不明',
+      STATE_LABELS[entry.state] || 'unknown',
       entry.plan ? 'plan' : '',
       unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
@@ -395,7 +388,12 @@ function renderWarnings(warnings) {
 
 function renderList(warnings = [], announce = false, searchFallback = false) {
   const list = byId('entry-list');
+  const focusedKey = document.activeElement?.classList?.contains('entry-select')
+    ? document.activeElement.dataset.key : null;
   list.replaceChildren(...entries.map(renderEntry));
+  if (focusedKey) {
+    (entryButtonForKey(focusedKey) || list.querySelector('.entry-select') || byId('empty-clear-button')).focus();
+  }
   const unanswered = entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
   byId('entry-count').textContent = `${entries.length}件（未回答UWI ${unanswered}件）`;
   renderPagination();
@@ -438,7 +436,7 @@ function captureListLoadingView() {
 }
 
 function renderListLoading(view = captureListLoadingView()) {
-  view.indicator.hidden = !(listLoadingVisible || userListOperationPending);
+  view.indicator.hidden = !(listLoadingVisible || userListOperationPending || detailRequestPending);
   view.list.setAttribute('aria-busy', String(listRequestPending || userListOperationPending));
   renderPagination(view);
 }
@@ -642,7 +640,7 @@ async function loadTargetRepos() {
     if (generation !== targetRepoRequestGeneration ||
         byId('state-filter').value !== requestedState) return false;
     const repos = Array.isArray(payload.repos) ? payload.repos : [];
-    replaceOptions(byId('target-filter'), repos, 'すべて');
+    replaceOptions(byId('target-filter'), repos, 'all');
     const datalist = byId('repo-options');
     datalist.replaceChildren(...repos.map(value => {
       const option = document.createElement('option');
@@ -748,18 +746,15 @@ function renderMetadata(entry) {
   const metadata = byId('detail-metadata');
   metadata.replaceChildren();
   if (entry.answered === true || entry.answered === false) {
-    appendMetadataItem(metadata, '回答状況', entry.answered ? '回答済み' : '未回答');
+    appendMetadataItem(metadata, 'answered', entry.answered ? 'yes' : 'no');
   }
   for (const item of metadataEntries(entry)) {
     const key = item.key;
     if (key?.type === 'str' && FRONTMATTER_EXCLUDED_KEYS.has(key.value)) continue;
-    const keyValue = key?.type === 'str' ? key.value : undefined;
-    const label = keyValue !== undefined && Object.prototype.hasOwnProperty.call(FRONTMATTER_LABELS, keyValue)
-      ? FRONTMATTER_LABELS[keyValue] : formatMetadataKey(key);
-    appendMetadataItem(metadata, label, item.value);
+    appendMetadataItem(metadata, formatMetadataKey(key), item.value);
   }
   const parts = formatDateParts(entry.updated_at);
-  appendMetadataItem(metadata, '更新日時', parts.time ? `${parts.date} ${parts.time}` : parts.date);
+  appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
 }
 
 function setDetailMode(mode) {
@@ -772,7 +767,7 @@ function setDetailMode(mode) {
   const mutable = currentEntry && MUTABLE_STATES.has(currentEntry.state);
   const deletable = currentEntry && DELETABLE_STATES.has(currentEntry.state);
   const held = currentEntry?.state === 'hold';
-  const rejected = currentEntry?.state === 'rejected';
+  const terminal = currentEntry && TERMINAL_STATES.has(currentEntry.state);
   byId('edit-panel').hidden = !editing;
   byId('answer-panel').hidden = !answering;
   byId('user-comment-panel').hidden = !commenting;
@@ -784,9 +779,9 @@ function setDetailMode(mode) {
   byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
   byId('adopt-button').hidden = mutating || !mutable;
   byId('reject-button').hidden = mutating || !mutable || currentEntry.kind !== 'awi';
-  byId('hold-button').hidden = mutating || !processable;
+  byId('hold-button').hidden = mutating || !(processable || terminal);
   byId('unhold-button').hidden = mutating || !held;
-  byId('return-to-inbox-button').hidden = mutating || !rejected;
+  byId('return-to-inbox-button').hidden = mutating || !terminal;
   byId('delete-button').hidden = mutating || !deletable;
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
@@ -836,7 +831,7 @@ function displayEntry(entry) {
   setTextMessage('detail-alert', '');
   byId('detail-view').hidden = false;
   byId('detail-filename').textContent = entry.filename;
-  byId('detail-state').textContent = `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[entry.state] || '状態不明'}`;
+  byId('detail-state').textContent = `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[entry.state] || 'unknown'}`;
   byId('detail-state').dataset.state = entry.state;
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
@@ -855,10 +850,11 @@ async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) 
   detailOrigin = origin || document.activeElement;
   detailOriginKey = entryKey(entry);
   clearDialogMessages('detail');
+  detailRequestPending = true;
+  renderListLoading();
   const pendingRow = origin?.closest('.entry-row');
   if (pendingRow) {
     pendingRow.setAttribute('aria-busy', 'true');
-    pendingRow.classList.add('is-pending');
   }
   try {
     const payload = await api(`/api/entries/${encodeURIComponent(entry.state)}/${encodeURIComponent(entry.filename)}`);
@@ -871,7 +867,10 @@ async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) 
   } finally {
     if (pendingRow) {
       pendingRow.removeAttribute('aria-busy');
-      pendingRow.classList.remove('is-pending');
+    }
+    if (requestIsCurrent()) {
+      detailRequestPending = false;
+      renderListLoading();
     }
   }
 }
@@ -914,6 +913,8 @@ function closeDetailDialog({updateUrl = true, force = false} = {}) {
   const returnTarget = detailReturnTarget();
   detailRequestGeneration += 1;
   detailSessionGeneration += 1;
+  detailRequestPending = false;
+  renderListLoading();
   closeDeleteDialog({restoreFocus: false});
   closeDialog(detailDialog, {restoreFocus: false});
   currentEntry = null;
@@ -1091,6 +1092,19 @@ function mutationFailureMessage(key, failure, error) {
   return `${failure} ${recovery}`;
 }
 
+function finishDetailMutation(key, sessionGeneration, message) {
+  const sameDetail = byId('detail-dialog').open && entryKey(currentEntry) === key &&
+    sessionGeneration === detailSessionGeneration;
+  if (sameDetail) closeDetailDialog({force: true});
+  void loadEntries({showLoading: false}).then(() => {
+    if (!sameDetail || document.activeElement !== document.body) return;
+    (entryButtonForKey(key) || document.querySelector('.entry-select') ||
+      (!byId('empty-clear-button').hidden && byId('empty-clear-button')) || byId('search-input')).focus();
+  });
+  if (sameDetail) deliverOperationMessage(message);
+  else showToast(message);
+}
+
 async function saveEntry() {
   if (!currentEntry || detailRefreshRequired) return;
   const content = byId('edit-content').value;
@@ -1106,13 +1120,7 @@ async function saveEntry() {
     }, () => api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`, {
       method: 'PUT', body: JSON.stringify(payload)
     })));
-    await (loadEntries());
-    // 本文編集の保存確定後は詳細を閉じて一覧へ戻す。保存中に別項目へ切り替えた場合は閉じない。
-    if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
-        sessionGeneration === detailSessionGeneration) {
-      closeDetailDialog({force: true});
-    }
-    deliverOperationMessage(`${key}を保存しました。`);
+    finishDetailMutation(key, sessionGeneration, `${key}を保存しました。`);
   } catch (error) {
     const failure = `${key}を保存できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
@@ -1138,17 +1146,7 @@ async function saveAnswer() {
     await (runPending('answer', {
       container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
     }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)})));
-    await (loadEntries());
-    if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
-        sessionGeneration === detailSessionGeneration) {
-      setDetailMode('view');
-      await (reloadOpenDetailFromExternalChange());
-    }
-    if (sessionGeneration === detailSessionGeneration) {
-      deliverOperationMessage(`${key}へ回答しました。`);
-    } else {
-      showToast(`${key}へ回答しました。`);
-    }
+    finishDetailMutation(key, sessionGeneration, `${key}へ回答しました。`);
   } catch (error) {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
     if (sessionGeneration === detailSessionGeneration) {
@@ -1179,12 +1177,7 @@ async function saveUserComment() {
     await (runPending('user-comment', {
       container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
     }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)})));
-    await (loadEntries());
-    if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
-        sessionGeneration === detailSessionGeneration) {
-      closeDetailDialog({force: true});
-    }
-    deliverOperationMessage(`${key}のユーザーコメントを保存しました。`);
+    finishDetailMutation(key, sessionGeneration, `${key}のユーザーコメントを保存しました。`);
   } catch (error) {
     if (error.payload?.code === 'edit_conflict' &&
         await (reloadUserCommentAfterConflict(key, sessionGeneration))) return;
@@ -1195,12 +1188,15 @@ async function saveUserComment() {
 
 async function transitionDetail(action) {
   if (!currentEntry || detailRefreshRequired) return;
+  const terminal = TERMINAL_STATES.has(currentEntry.state);
   const allowed = action === 'unhold' ? currentEntry.state === 'hold' :
-    action === 'return-to-inbox' ? currentEntry.state === 'rejected' : MUTABLE_STATES.has(currentEntry.state);
+    action === 'return-to-inbox' ? terminal :
+      action === 'hold' ? PROCESSABLE_STATES.has(currentEntry.state) || terminal : MUTABLE_STATES.has(currentEntry.state);
   if (!allowed || (action === 'reject' && currentEntry.kind !== 'awi')) return;
   const key = entryKey(currentEntry);
+  const sessionGeneration = detailSessionGeneration;
   const payload = {filenames: [currentEntry.filename]};
-  if (action === 'return-to-inbox') payload.state = 'rejected';
+  if (terminal && (action === 'return-to-inbox' || action === 'hold')) payload.state = currentEntry.state;
   if ((action === 'adopt' || action === 'reject') && currentEntry.state === 'hold') payload.state = 'hold';
   const note = byId('decision-note').value.trim();
   if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
@@ -1208,12 +1204,10 @@ async function transitionDetail(action) {
     await (runPending(`transition-${action}`, {
       container: byId('detail-shell'), button: byId(`${action}-button`), busyLabel: '処理中'
     }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)})));
-    await (loadEntries());
-    if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog({force: true});
     const label = {
       adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
     }[action];
-    deliverOperationMessage(`${key}を${label}しました。`);
+    finishDetailMutation(key, sessionGeneration, `${key}を${label}しました。`);
   } catch (error) {
     deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
   }
@@ -1306,7 +1300,7 @@ function openDeleteDialog() {
   deleteDialogEntrySnapshot = deleteEntrySnapshot(currentEntry);
   clearDialogMessages('delete');
   byId('delete-target').textContent = currentEntry.filename;
-  byId('delete-state').textContent = `${KIND_LABELS[currentEntry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[currentEntry.state] || '状態不明'}`;
+  byId('delete-state').textContent = `${KIND_LABELS[currentEntry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[currentEntry.state] || 'unknown'}`;
   byId('delete-state').dataset.state = currentEntry.state;
   byId('delete-target-repo').textContent = currentEntry.target_repo || '—';
   byId('delete-summary').textContent = currentEntry.summary || '—';
@@ -1505,13 +1499,35 @@ let eventSource = null;
 function initializeApp() {
   eventSource = new EventSource(BASE_PATH + '/api/events');
   eventSource.addEventListener('open', () => {
-    byId('connection-status').textContent = '自動更新に接続済み';
+    if (byId('connection-status').dataset.syncFailed !== 'true') {
+      byId('connection-status').hidden = true;
+      byId('connection-status').textContent = '';
+    }
+    void initialization.then(async () => {
+      await reloadFromExternalChange();
+      byId('connection-status').dataset.connected = 'true';
+    });
   });
   eventSource.addEventListener('error', () => {
+    byId('connection-status').dataset.connected = 'false';
+    if (byId('connection-status').dataset.syncFailed === 'true') return;
     byId('connection-status').textContent = '自動更新を再接続中';
+    byId('connection-status').hidden = false;
   });
   eventSource.addEventListener('changed', () => {
     void initialization.then(() => reloadFromExternalChange());
+  });
+  eventSource.addEventListener('sync-error', () => {
+    const status = byId('connection-status');
+    status.dataset.syncFailed = 'true';
+    status.textContent = 'Git同期に失敗しました。今すぐ同期で再試行してください。';
+    status.hidden = false;
+  });
+  eventSource.addEventListener('sync-ok', () => {
+    const status = byId('connection-status');
+    status.dataset.syncFailed = 'false';
+    status.textContent = '';
+    status.hidden = true;
   });
   syncFilterDependencies();
   syncNotificationButton();
@@ -1524,6 +1540,7 @@ function initializeApp() {
 
 async function init() {
   bindEvents();
+  window.addEventListener('focus', () => { void initialization.then(() => reloadFromExternalChange()); });
   if (window.matchMedia('(max-width: 700px)').matches) {
     document.querySelector('#screen-wi .filters details').open = false;
   }

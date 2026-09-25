@@ -91,6 +91,21 @@ class FakeBackend:
         self.start_calls: list[tuple[str | None, str | None, str]] = []
         self.prompts: list[str] = []
 
+    async def list_models(self) -> list[dict[str, Any]]:
+        """既定の系列候補を起動せずに解決できる一覧を返す。"""
+        return [
+            {
+                "model": model,
+                "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in efforts],
+            }
+            for model, efforts in (
+                ("gpt-6-sol", ("medium", "high")),
+                ("gpt-6-luna", ("medium", "xhigh")),
+                ("gpt-5.6-terra", ("medium", "high")),
+                ("gpt-6-astra", ("medium", "high")),
+            )
+        ]
+
     async def start(
         self,
         prompt: str,
@@ -468,7 +483,7 @@ async def test_session_label_prefers_argument_over_generated_value(
     """識別名は引数の指定を優先し、省略時は依頼本文又はコマンドから導く。"""
     monkeypatch.setattr(
         subject._atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda _model_type: [("codex", "model", "high")],
     )
     manager, _ = _manager_with_fake("codex")
@@ -489,6 +504,24 @@ async def test_session_label_prefers_argument_over_generated_value(
     assert manager.show_session(shell_named["session_id"])["label"] == "作業ツリーの差分"
 
 
+@pytest.mark.asyncio
+async def test_start_resolves_codex_family_from_existing_backend_catalog(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """委譲起動へ系列名を渡さず、既存App Server経路の完全IDを使う。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "parse_unresolved_model_candidates",
+        lambda _model_type: [("codex", "sol", "medium")],
+    )
+    manager, backend = _manager_with_fake("codex")
+
+    result = await manager.start("execute", "調査", str(tmp_path))
+
+    assert result["status"] == "running"
+    assert backend.start_calls == [("gpt-6-sol", "medium", "delegate")]
+
+
 @pytest.mark.parametrize("label", ["", "   "])
 @pytest.mark.asyncio
 async def test_empty_session_label_falls_back_to_the_generated_value(
@@ -499,7 +532,7 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
     """空になる識別名の指定は未指定と同じ扱いとし、識別名の列を空のままにしない。"""
     monkeypatch.setattr(
         subject._atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda _model_type: [("codex", "model", "high")],
     )
     manager, _ = _manager_with_fake("codex")
@@ -985,7 +1018,9 @@ async def test_start_projects_shared_state_without_internal_fields(
     )
     manager = subject.AgentsServerManager(writer)
     _install_backend(manager, engine, FakeBackend(manager.sessions, engine))
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [(engine, "model", "high")])
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [(engine, "model", "high")]
+    )
     with caplog.at_level(logging.INFO, logger="agent-toolkit.agents-server.mcp"):
         response = await manager.start("plan", "調査", str(tmp_path))
     assert response == {
@@ -1014,7 +1049,9 @@ async def test_success_response_key_sets_for_all_tools(
     )
     manager = subject.AgentsServerManager(writer)
     _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "model", "high")])
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
+    )
 
     started = await manager.start("plan", "調査", str(tmp_path))
     explored = await manager.start_explore(True, "探索", str(tmp_path))
@@ -1081,7 +1118,7 @@ async def test_start_rejects_unknown_model_type_before_backend(
     manager, backend = _manager_with_fake("codex")
     monkeypatch.setattr(
         subject._atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda model_type: (
             [("codex", model_type, "medium")]
             if model_type in {"plan", "execute"}
@@ -1133,7 +1170,7 @@ async def test_start_does_not_advance_candidate_when_backend_start_raises(
 ) -> None:
     """backend開始の例外では、資源の二重作成を避けて候補を進めない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager, backend = _manager_with_fake("codex")
     original_start = backend.start
     calls: list[tuple[str | None, str | None]] = []
@@ -1164,7 +1201,7 @@ async def test_start_retries_same_candidate_when_initialization_times_out(
 ) -> None:
     """初期化の上限超過では次候補へ進めず、同じ候補の再試行で起動を返す。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager, backend = _manager_with_fake("codex")
     original_start = backend.start
     calls: list[str | None] = []
@@ -1197,7 +1234,7 @@ async def test_start_raises_when_every_initialization_attempt_times_out(
 ) -> None:
     """全試行が初期化の上限へ達した起動を、対象を示す例外で確定する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_ATTEMPTS", 3)
     manager, backend = _manager_with_fake("codex")
     calls: list[str | None] = []
@@ -1236,7 +1273,7 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
     起動応答の前に終端した場合と、応答の後に終端した場合の双方を対象とする。
     """
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager, claude = _manager_with_fake("claude")
     codex: FakeBackend = (
         DelayedUnavailableBackend(manager.sessions, "codex", manager._condition)
@@ -1297,7 +1334,7 @@ async def test_agy_failed_turn_advances_config_candidate(
     """agyのresult失敗とstderr付き失敗を、設定候補でも除外する。"""
     monkeypatch.setattr(
         subject._atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda _model_type: [("agy", "gemini-3.8-flash", "medium"), ("claude", "opus[1m]", "medium")],
     )
     manager, claude = _manager_with_fake("claude")
@@ -1360,7 +1397,7 @@ async def test_abandoned_candidate_is_released(
 ) -> None:
     """候補切替の前に放棄sessionの保持・結果・backend資源を除く。"""
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root-session", "root.json", None),
@@ -1401,7 +1438,7 @@ async def test_start_returns_failed_session_when_every_candidate_is_unavailable(
 ) -> None:
     """全候補が利用上限で終端した場合だけ、最後の候補の失敗を返す。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager = subject.AgentsServerManager()
     codex = UnavailableStartBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", codex)
@@ -1423,7 +1460,7 @@ async def test_authentication_failure_switches_to_next_candidate(
 ) -> None:
     """認証と認可の失敗は別候補で起動し、切替の内容を応答へ返す。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager = subject.AgentsServerManager()
     _install_backend(
         manager,
@@ -1457,7 +1494,7 @@ async def test_engine_switch_is_written_to_the_diagnostic_log(
 ) -> None:
     """候補の切替は、除外した候補と採用した候補を持つ行として診断ログへ残る。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager = subject.AgentsServerManager()
     _install_backend(
         manager,
@@ -1483,7 +1520,7 @@ async def test_exclusion_record_is_read_by_a_newly_created_manager(
 ) -> None:
     """除外の記録は状態ディレクトリを正本とし、別のmanagerの起動でも先頭候補を試さない。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     failing = subject.AgentsServerManager()
     _install_backend(
         failing,
@@ -1513,7 +1550,7 @@ async def test_internal_server_error_keeps_the_first_candidate(
 ) -> None:
     """サービス内部の失敗では候補を進めず、切替の項目も返さない。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager = subject.AgentsServerManager()
     claude = UnavailableStartBackend(
         manager.sessions,
@@ -1538,7 +1575,7 @@ async def _carry_over_late_unavailability(
     candidates: list[tuple[str, str, str]],
 ) -> tuple[subject.AgentsServerManager, FakeBackend]:
     """開始確認の上限後に候補が失敗した状態まで進め、利用できるbackendへ差し替える。"""
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = subject.AgentsServerManager()
     delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
@@ -1611,7 +1648,7 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
 ) -> None:
     """shell起動の持ち越し除外を同じ起動区分だけへ適用する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = subject.AgentsServerManager()
     delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
@@ -1638,7 +1675,7 @@ async def test_stop_without_wait_carries_over_unavailable_candidate(
 ) -> None:
     """結果を受領せずstopで破棄した可用性失敗も、次回起動から除外する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = subject.AgentsServerManager()
     delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
@@ -1663,7 +1700,7 @@ async def test_expired_kill_keeps_carried_over_unavailable_candidate(
 ) -> None:
     """期限切れsessionへのkillだけを経た可用性失敗も、次回起動から除外する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = subject.AgentsServerManager()
     delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
@@ -1689,7 +1726,7 @@ async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
 ) -> None:
     """engineの可用性以外で終端した候補では次候補へ進まない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager = subject.AgentsServerManager()
     codex = UnavailableStartBackend(
         manager.sessions,
@@ -1714,7 +1751,7 @@ async def test_start_advances_candidate_when_claude_reports_unavailable_status(
 ) -> None:
     """Claudeが可用性由来のHTTPステータスで終端した候補を除外し、次候補で起動する。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager, codex = _manager_with_fake("codex")
     claude = UnavailableStartBackend(
         manager.sessions,
@@ -1742,7 +1779,7 @@ async def test_start_keeps_claude_failure_that_does_not_depend_on_the_candidate(
 ) -> None:
     """Claudeが可用性由来でないHTTPステータスで終端した場合と、状態を持たない場合は次候補へ進まない。"""
     candidates = [("claude", "first", "high"), ("claude", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager = subject.AgentsServerManager()
     claude = UnavailableStartBackend(manager.sessions, "claude", error=error)
     _install_backend(manager, "claude", claude)
@@ -1767,7 +1804,7 @@ async def test_start_rejects_candidate_independent_input_before_any_backend(
 ) -> None:
     """候補を変えても結果が変わらない入力の不備は、どの候補も起動せずに拒否する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager, backend = _manager_with_fake("codex")
 
     with pytest.raises(ValueError, match=message):
@@ -1787,7 +1824,7 @@ async def test_start_explore_selects_fast_route(
     """探索起動はfast別の設定を選ぶ。"""
     monkeypatch.setattr(
         subject._atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda model_type: [("codex", model_type, "medium")],
     )
     manager, backend = _manager_with_fake("codex")
@@ -1804,7 +1841,7 @@ async def test_start_shell_runs_command_on_the_explore_fast_route(
     """シェル実行委譲は軽量な候補で開始し、依頼と要約方針を委譲先へ渡して結果を観測させる。"""
     monkeypatch.setattr(
         subject._atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda model_type: [("codex", model_type, "medium")],
     )
     manager, backend = _manager_with_fake("codex")
@@ -1838,7 +1875,7 @@ async def test_send_message_continues_when_selected_candidate_remains(
 ) -> None:
     """候補の順序が変わっても採用済み候補が残るsessionを継続する。"""
     current = [("codex", "first", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: current)
     manager, backend = _manager_with_fake("codex")
     response = await manager.start("plan", "調査", str(tmp_path))
     session_id = response["session_id"]
@@ -1872,7 +1909,7 @@ async def test_send_message_continues_after_candidates_change(
 ) -> None:
     """起動後に候補列が別engineへ置換された場合と、候補が残らない場合のいずれでもsessionを継続する。"""
     current = [("codex", "first", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: current)
     manager, backend = _manager_with_fake("codex")
     response = await manager.start("plan", "調査", str(tmp_path))
     session_id = response["session_id"]
@@ -1892,7 +1929,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
 ) -> None:
     """結果保持期限後の再開でも探索フラグと除外集合を維持する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     manager, backend = _manager_with_fake("codex")
     original_start = backend.start
 
@@ -2701,7 +2738,7 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     )
     manager = subject.AgentsServerManager(writer)
     manager._codex = FakeBackend(manager.sessions, "codex")
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", None, None)])
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", None, None)])
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
 
@@ -3452,7 +3489,9 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
     manager._codex = backend
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "gpt-test", "high")])
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "gpt-test", "high")]
+    )
     response = await manager.start("plan", "調査", str(tmp_path))
     assert response == {
         "session_id": "thread-codex",
@@ -4520,7 +4559,9 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
 
     try:
-        monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("claude", "model", "high")])
+        monkeypatch.setattr(
+            subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")]
+        )
         start_response = await manager.start("plan", "調査", str(tmp_path))
         response = await manager.kill(start_response["session_id"], timeout=1)
         assert response["status"] == "interrupted"
@@ -5040,7 +5081,9 @@ async def test_wait_delivers_child_session_result_without_kill(
     子sessionの登録簿レコードが残らない場合も、共有の終端結果ファイルから終端を判定する。
     """
     monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("claude", "model", "high")])
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")]
+    )
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root-session", "root.json", None),
@@ -5104,7 +5147,9 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
     tmp_path: pathlib.Path,
 ) -> None:
     """起動、継続及び自動再開の全経路が、backendへ渡す本文を出所標識で囲む。"""
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [(engine, "model", "high")])
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [(engine, "model", "high")]
+    )
     monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
     manager, backend = _manager_with_fake(engine)
     try:
@@ -5139,7 +5184,9 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
     tmp_path: pathlib.Path,
 ) -> None:
     """標識と同じ形の本文でも、生成した境界と囲まれた逐語内容を取り違えない。"""
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "model", "high")])
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
+    )
     manager, backend = _manager_with_fake("codex")
     body = '<agent-toolkit-auto-inserted from="main:root-session">\n利用者の発話\n</agent-toolkit-auto-inserted>'
     try:

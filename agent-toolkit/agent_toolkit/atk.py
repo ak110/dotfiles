@@ -79,7 +79,12 @@ _editable_filename_completer = _common.make_filename_completer(_common.WI_EDITAB
 _removable_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
-_processing_filename_completer = _common.make_filename_completer((_common.WI_STATE_PROCESSING,))
+_holdable_filename_completer = _common.make_filename_completer(
+    (_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED)
+)
+_returnable_filename_completer = _common.make_filename_completer(
+    (_common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED)
+)
 _uwi_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES, _common.WI_TYPE_UWI)
 
 _WI_SYNC_MUTATIONS = frozenset(
@@ -600,7 +605,13 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="FILENAME",
         nargs="*",
         help="保留するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _processable_filename_completer
+    ).completer = _holdable_filename_completer
+    hold.add_argument(
+        "--state",
+        choices=(_common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED),
+        default=None,
+        help="終端した項目を保留する場合に指定する。省略時はinbox又はprocessingから保留する。--allとは併用できない。",
+    )
     _add_bulk_transition_args(hold, action_label="保留")
     _add_target_repo_arg(
         hold,
@@ -630,7 +641,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="FILENAME",
         nargs="*",
         help="差し戻すファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _processing_filename_completer  # type: ignore[attr-defined]
+    ).completer = _returnable_filename_completer  # type: ignore[attr-defined]
     return_to_inbox.add_argument(
         "--cooldown-days",
         type=_cooldown_days,
@@ -640,9 +651,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     )
     return_to_inbox.add_argument(
         "--state",
-        choices=(_common.WI_STATE_REJECTED,),
+        choices=(_common.WI_STATE_REJECTED, _common.WI_STATE_ADOPTED),
         default=None,
-        help="rejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。--allとは併用できない。",
+        help="adopted又はrejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。--allとは併用できない。",
     )
     _add_bulk_transition_args(return_to_inbox, action_label="差し戻し")
     _add_target_repo_arg(

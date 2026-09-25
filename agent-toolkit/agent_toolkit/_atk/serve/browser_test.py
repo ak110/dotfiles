@@ -129,6 +129,14 @@ class _BrowserOperations(serve_app.Operations):
         filenames: list[str],
         **kwargs: Any,
     ) -> list[str]:
+        if action in {"hold", "unhold", "return-to-inbox"} and self.persist_mutations:
+            source = kwargs.get("state") or (
+                "hold" if action == "unhold" else "processing" if action == "return-to-inbox" else "inbox"
+            )
+            destination = "hold" if action == "hold" else "inbox"
+            (self.private_notes / destination).mkdir(exist_ok=True)
+            for filename in filenames:
+                (self.private_notes / source / filename).rename(self.private_notes / destination / filename)
         if action == "adopt" and self.persist_mutations:
             source = kwargs.get("state") or "inbox"
             for filename in filenames:
@@ -495,13 +503,14 @@ async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harnes
     await page.goto(browser_harness.base_url + "/")
     row = page.locator("#entry-list .entry-row").first
     await row.wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
 
     assert not await page.locator(".filters details").evaluate("element => element.open")
     cells = row.locator(".entry-cell")
-    pseudo_content = await cells.evaluate_all(
-        "elements => elements.map(element => getComputedStyle(element, '::before').content)"
+    pseudo_display = await cells.evaluate_all(
+        "elements => elements.map(element => getComputedStyle(element, '::before').display)"
     )
-    assert pseudo_content == ["none"] * await cells.count()
+    assert pseudo_display == ["none"] * await cells.count()
     summary_box = await row.locator(".summary-cell").bounding_box()
     status_box = await row.locator(".status-cell").bounding_box()
     row_box = await row.bounding_box()
@@ -523,6 +532,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     error_region = page.locator("#operation-notice")
     error_message = page.locator("#operation-notice-message")
     close_button = page.get_by_role("button", name="操作通知を閉じる")
@@ -538,12 +548,12 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
     await page.locator("#refresh-button").click()
     await playwright.async_api.expect(error_message).to_have_text("一覧取得失敗")
     await playwright.async_api.expect(error_region).to_be_visible()
+    await page.unroute("**/api/entries?*", fail_first_list_request)
     await close_button.focus()
     await playwright.async_api.expect(close_button).to_be_focused()
     await page.keyboard.press("Enter")
     await playwright.async_api.expect(error_region).to_be_hidden()
     await playwright.async_api.expect(page.locator("#refresh-button")).to_be_focused()
-    await page.unroute("**/api/entries?*", fail_first_list_request)
 
     async def fail_second_list_request(route: playwright.async_api.Route) -> None:
         await route.fulfill(
@@ -670,9 +680,9 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator('#entry-list .entry-select[data-kind="unknown"]').count() == 1
 
     awi_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="awi.md")
-    assert await awi_row.locator(".entry-kind").text_content() == "作業項目"
+    assert await awi_row.locator(".entry-kind").text_content() == "awi"
     assert await awi_row.locator(".plan-badge").text_content() == "plan"
-    assert await awi_row.locator(".state-badge").text_content() == "未処理"
+    assert await awi_row.locator(".state-badge").text_content() == "inbox"
     assert await awi_row.locator(".filename-cell").text_content() == "awi.md"
     assert await awi_row.locator(".summary-cell").text_content() == "編集対象の本文"
 
@@ -695,9 +705,8 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await answer.fill("Aを補足")
     assert await answer.input_value() == "Aを補足"
     await dialog.get_by_role("button", name="回答を保存").click()
-    await dialog.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
-    assert await dialog.get_by_role("button", name="採用").is_visible()
-    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(dialog).to_be_hidden()
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     await playwright.async_api.expect(row).to_be_focused()
     assert harness.operations.answer_calls == 1
 
@@ -723,7 +732,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#kind-filter").select_option("awi")
     await playwright.async_api.expect(page.locator("#answer-filter")).to_be_disabled()
     assert await page.locator("#answer-filter").input_value() == "all"
-    assert await page.locator("#source-filter option").all_text_contents() == ["すべて", "人間", "エージェント"]
+    assert await page.locator("#source-filter option").all_text_contents() == ["all", "human", "agent"]
     async with page.expect_response(
         lambda response: response.url.endswith("/api/entries?type=awi&status=active&answered=all&source_kind=agent&page=1")
     ):
@@ -741,7 +750,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#target-filter").select_option("example/repo")
     await page.locator("#state-filter").select_option("adopted")
     await playwright.async_api.expect(page.locator("#target-filter")).to_have_value("")
-    assert await page.locator("#target-filter option").all_text_contents() == ["すべて", "adopted/repo"]
+    assert await page.locator("#target-filter option").all_text_contents() == ["all", "adopted/repo"]
     await page.locator("#entry-list .entry-select").filter(has_text="adopted.md").wait_for(state="visible")
 
     async with page.expect_response(
@@ -766,7 +775,8 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
     await playwright.async_api.expect(awi_row).to_be_visible()
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("1件を表示")
-    await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_be_hidden()
     (harness.root / "inbox" / "sse.md").write_text(
         "---\ntype: awi\ntarget_repo: sse/repo\nsource: browser\n---\n\n編集対象の外部追加\n",
         encoding="utf-8",
@@ -780,7 +790,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
 
 @pytest.mark.asyncio
 async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _BrowserHarness) -> None:
-    """1択の事後承認型UWIは回答後に同じ詳細から採用できる。"""
+    """回答後は詳細を閉じ、再び開いて採用できる。"""
     harness = browser_harness
     filename = "one-choice.md"
     (harness.root / "inbox" / filename).write_text(
@@ -798,9 +808,11 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
     await detail.get_by_role("button", name="問題がある（是正内容をこの欄へ書いてください）").click()
     await detail.locator("#answer-input").fill("問題がある。是正内容を確認しました。")
     await detail.get_by_role("button", name="回答を保存").click()
-    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
-    await playwright.async_api.expect(detail).to_be_visible()
-    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("回答済み")
+    await playwright.async_api.expect(detail).to_be_hidden()
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await page.locator(f'.entry-select[data-key="inbox/{filename}"]').click()
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("answered")
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("yes")
     await detail.get_by_role("button", name="採用").click()
     await page.get_by_role("status").filter(has_text="採用しました").wait_for(state="visible")
     assert (harness.root / "adopted" / filename).exists()
@@ -900,19 +912,21 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認事項 / 未処理")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
     await detail.get_by_role("button", name="回答を変更", exact=True).click()
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
 
     await page.locator("#state-filter").select_option("all")
     await page.locator('.entry-select[data-key="adopted/adopted.md"]').click()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 採用済み")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_visible()
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_have_text("この項目は編集と回答の対象外です。")
     await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#delete-button")).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#hold-button")).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#return-to-inbox-button")).to_be_visible()
 
 
 @pytest.mark.asyncio
@@ -952,6 +966,49 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
     await page.locator('.entry-select[data-key="rejected/rejected.md"]').click()
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_hidden()
     await playwright.async_api.expect(detail.get_by_role("button", name="受信へ戻す", exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#hold-button")).to_be_visible()
+
+
+@pytest.mark.asyncio
+async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harness: _BrowserHarness) -> None:
+    """両終端状態のWIを画面から再開・保留・削除し、結果まで確認する。"""
+    harness = browser_harness
+    harness.operations.persist_mutations = True
+    page = harness.page
+    delete_paths = {}
+    for state in ("adopted", "rejected"):
+        path = harness.root / state / f"delete-{state}.md"
+        path.write_text(f"---\ntype: awi\ntarget_repo: example/repo\n---\n\n{state}の削除対象\n", encoding="utf-8")
+        delete_paths[state] = path
+    await page.goto(harness.base_url + "/")
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option("all")
+
+    await page.locator('.entry-select[data-key="adopted/adopted.md"]').click()
+    await page.locator("#hold-button").click()
+    await playwright.async_api.expect(page.get_by_role("dialog", name="詳細")).to_be_hidden()
+    await page.locator('.entry-select[data-key="hold/adopted.md"]').wait_for(state="visible")
+
+    await page.locator('.entry-select[data-key="rejected/rejected.md"]').click()
+    await page.locator("#return-to-inbox-button").click()
+    await playwright.async_api.expect(page.get_by_role("dialog", name="詳細")).to_be_hidden()
+    await page.locator('.entry-select[data-key="inbox/rejected.md"]').wait_for(state="visible")
+
+    detail = page.get_by_role("dialog", name="詳細")
+    delete_dialog = page.get_by_role("dialog", name="削除の確認")
+    for state, path in delete_paths.items():
+        row = page.locator(f'.entry-select[data-key="{state}/{path.name}"]')
+        await row.click()
+        await detail.get_by_role("button", name="削除", exact=True).click()
+        await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text(f"awi / {state}")
+        async with page.expect_request("**/api/entries/remove") as request_info:
+            await delete_dialog.get_by_role("button", name="削除する").click()
+        payload = (await request_info.value).post_data_json
+        assert isinstance(payload, dict)
+        assert payload["state"] == state
+        await delete_dialog.wait_for(state="hidden")
+        await playwright.async_api.expect(row).to_have_count(0)
+        assert not path.exists()
 
 
 @pytest.mark.asyncio
@@ -1137,7 +1194,8 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     page = harness.page
     harness.operations.enable_file_mutations()
     await page.goto(harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_be_hidden()
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await _open_filters(page)
 
@@ -1148,7 +1206,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await detail.get_by_role("button", name="回答", exact=True).click()
     await detail.locator("#answer-input").fill("回答済みにする")
     await detail.get_by_role("button", name="回答を保存").click()
-    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     await page.keyboard.press("Escape")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await playwright.async_api.expect(page.locator("#empty-clear-button")).to_be_focused()
@@ -1182,15 +1240,16 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     processing_same.write_text("---\ntype: awi\n---\n\n処理中の同名本文\n", encoding="utf-8")
     moving.write_text("---\ntype: awi\n---\n\n移動対象\n", encoding="utf-8")
     await page.goto(harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_be_hidden()
 
     processing_row = page.locator('.entry-select[data-key="processing/same.md"]')
     await processing_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 処理中")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
     harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 処理中")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
 
     await detail.get_by_role("button", name="編集", exact=True).click()
@@ -1219,7 +1278,7 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     moving.rename(moved)
     harness.current_state.publish()
     await delete_dialog.wait_for(state="hidden")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("作業項目 / 処理中")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
     await playwright.async_api.expect(detail.locator("#detail-dialog-body")).to_be_focused()
 
     await detail.get_by_role("button", name="削除").click()
@@ -1240,7 +1299,8 @@ async def test_self_write_sse_alert_clears_after_save_and_answer_success(
     page = harness.page
     harness.operations.enable_file_mutations()
     await page.goto(harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_be_hidden()
 
     awi_row = page.locator('.entry-select[data-key="inbox/awi.md"]')
     await awi_row.click()
@@ -1301,7 +1361,7 @@ async def test_self_write_sse_alert_clears_after_save_and_answer_success(
         await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible", timeout=4_000)
     finally:
         release_answer_response.set()
-    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     await page.unroute("**/api/entries/answer", delay_answer_response)
     await page.keyboard.press("Escape")
     await question_row.click()
@@ -1425,7 +1485,7 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
     answer_payload = answer_request.post_data_json
     assert isinstance(answer_payload, dict)
     assert answer_payload["state"] == "inbox"
-    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     assert (harness.root / "inbox/answer-same.md").read_text(encoding="utf-8").endswith("未処理側だけへの回答\n")
     assert (processing / "answer-same.md").read_text(encoding="utf-8") == uwi_content
 
@@ -1824,6 +1884,7 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
         encoding="utf-8",
     )
     await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     detail = page.get_by_role("dialog", name="詳細")
     await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
     await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
@@ -1835,7 +1896,7 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
     path.replace(processing / path.name)
     harness.current_state.publish()
 
-    await detail.get_by_role("alert").filter(has_text="処理中へ移動したため").wait_for(state="visible")
+    await detail.get_by_role("alert").filter(has_text="processingへ移動したため").wait_for(state="visible")
     await playwright.async_api.expect(detail).to_be_visible()
     await playwright.async_api.expect(comment_input).to_have_value("processing移動後も保持する入力")
     await playwright.async_api.expect(comment_input).to_be_focused()
@@ -1877,8 +1938,20 @@ class _ScreenHarness:
 
     async def notify_file_update(self, markdown: str) -> None:
         """計画ファイルを書き換え、更新通知を配信する。"""
+        for _ in range(100):
+            if self.plans_state.subscribers:
+                break
+            await asyncio.sleep(0.01)
+        assert self.plans_state.subscribers
+        if self.plans_state.debounce_task is not None:
+            await self.plans_state.debounce_task
+        previous_mtime_ns = self.plan_path.stat().st_mtime_ns
         self.plan_path.write_text(markdown, encoding="utf-8")
+        updated = self.plan_path.stat()
+        os.utime(self.plan_path, ns=(updated.st_atime_ns, max(updated.st_mtime_ns, previous_mtime_ns + 1_000_000_000)))
         await serve_plans.schedule_broadcast(self.plans_state)
+        if self.plans_state.debounce_task is not None:
+            await self.plans_state.debounce_task
 
 
 @dataclasses.dataclass
@@ -2801,6 +2874,85 @@ async def test_initial_sync_shows_work_item_loading(browser_harness: _BrowserHar
 
 
 @pytest.mark.asyncio
+async def test_detail_loading_keeps_list_and_navigation_positions(browser_harness: _BrowserHarness) -> None:
+    """詳細取得中のアイコンをナビゲーション内の左右列境界へ置き、リンクと一覧を動かさない。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 1440, "height": 1000})
+    await page.goto(browser_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    entry = page.locator('.entry-select[data-key="inbox/awi.md"]')
+    await entry.wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
+    nav = page.locator("#screen-wi .app-nav a")
+    before_nav = await nav.evaluate_all(
+        "links => links.map(link => [link.getBoundingClientRect().x, link.getBoundingClientRect().y])"
+    )
+    before_row = await entry.bounding_box()
+    assert before_row is not None
+    started = asyncio.Event()
+    release = asyncio.Event()
+    await page.route("**/api/entries/inbox/awi.md", functools.partial(_hold_route, started=started, release=release))
+    try:
+        await entry.click()
+        await asyncio.wait_for(started.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+        spinner = await page.locator("#loading-indicator").bounding_box()
+        filters = await page.locator("#screen-wi .filters").bounding_box()
+        pane = await page.locator("#screen-wi .entry-pane").bounding_box()
+        assert spinner is not None and filters is not None and pane is not None
+        spinner_center = spinner["x"] + spinner["width"] / 2
+        assert filters["x"] + filters["width"] <= spinner_center <= pane["x"]
+        # 未定義の色変数を参照すると枠線を描画しないため、位置に加えて描画される状態も確認する。
+        spinner_visible = await page.locator("#loading-indicator").evaluate(
+            "element => { const style = getComputedStyle(element, '::before'); "
+            "return style.borderRightStyle !== 'none' && parseFloat(style.borderRightWidth) > 0 "
+            "&& style.animationName !== 'none'; }"
+        )
+        assert spinner_visible
+        assert (
+            await nav.evaluate_all(
+                "links => links.map(link => [link.getBoundingClientRect().x, link.getBoundingClientRect().y])"
+            )
+            == before_nav
+        )
+        assert await entry.bounding_box() == before_row
+    finally:
+        release.set()
+    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_work_item_focus_recovers_change_without_sse_event(browser_harness: _BrowserHarness) -> None:
+    """SSE通知を受信できなかった場合も、フォーカス復帰時に一覧を再取得する。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator('.entry-select[data-key="inbox/awi.md"]').wait_for(state="visible")
+    (harness.root / "inbox" / "missed.md").write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\n---\n\n切断中の変更\n", encoding="utf-8"
+    )
+    await page.evaluate("window.dispatchEvent(new Event('focus'))")
+    await page.locator('.entry-select[data-key="inbox/missed.md"]').wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_background_sync_failure_offers_retry_in_browser(browser_harness: _BrowserHarness) -> None:
+    """定期同期の失敗を通知し、次の成功時に案内を閉じる。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator('.entry-select[data-key="inbox/awi.md"]').wait_for(state="visible")
+    harness.current_state.publish("sync-error")
+    status = page.locator("#connection-status")
+    await playwright.async_api.expect(status).to_contain_text("今すぐ同期")
+    await playwright.async_api.expect(status).to_be_visible()
+    harness.current_state.publish("sync-ok")
+    await playwright.async_api.expect(status).to_be_hidden()
+
+
+@pytest.mark.asyncio
 async def test_external_work_item_refresh_keeps_loading_hidden(browser_harness: _BrowserHarness) -> None:
     """SSEによる背景更新は既存一覧を保ち、読み込み表示を点滅させない。"""
     harness = browser_harness
@@ -2863,6 +3015,7 @@ async def test_manual_sync_stays_busy_until_entries_render(browser_harness: _Bro
     """一覧の新着が描画されるまで同期ボタンと結果表示を完了させない。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     (browser_harness.root / "inbox" / "delayed-sync.md").write_text(
         "---\ntype: awi\ntarget_repo: example/repo\n---\n\n遅延した同期結果\n",
@@ -2951,6 +3104,7 @@ async def test_slow_work_item_filter_and_plan_preview_show_loading(
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await _open_filters(page)
 
     async def delay_entries(route: playwright.async_api.Route) -> None:
@@ -3375,7 +3529,9 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
     page = screen_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#files .file").first.wait_for(state="visible")
     await page.locator("#plans-menu-btn").click()
+    await playwright.async_api.expect(page.locator("#plans-menu-btn")).to_have_attribute("aria-expanded", "true")
     await page.locator("#files .file").first.click()
     await page.locator("#preview h1").wait_for(state="visible")
 

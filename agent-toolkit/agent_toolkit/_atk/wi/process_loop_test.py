@@ -31,6 +31,7 @@ from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  #
 from agent_toolkit._atk.wi import process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import automated_prompt as _automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
@@ -50,6 +51,11 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
     monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
+    monkeypatch.setattr(
+        codex_models,
+        "list_models",
+        lambda: [{"model": "gpt-6-sol", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]}],
+    )
     monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "1h")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -1095,6 +1101,7 @@ class TestProcessLoopPromptAndEnv:
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """全候補が不成立なら本作業を起動せず、最後の非0終了コードで終了する。"""
         _setup_notes(tmp_path)
@@ -1110,7 +1117,7 @@ class TestProcessLoopPromptAndEnv:
                 return subprocess.CompletedProcess(cmd, 7, "", "failure")
             if cmd[:2] == ["codex", "exec"]:
                 probes.append(cmd)
-                return subprocess.CompletedProcess(cmd, 9, "", "failure")
+                return subprocess.CompletedProcess(cmd, 9, "", "model gpt-5.6-sol does not support medium effort")
             if cmd[:1] in (["claude"], ["codex"]):
                 sessions.append(cmd)
             return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
@@ -1124,6 +1131,10 @@ class TestProcessLoopPromptAndEnv:
         assert exc_info.value.code == 9
         assert len(probes) == 2
         assert not sessions
+        diagnostic = capsys.readouterr().err
+        assert "codex:gpt-5.6-sol/medium" in diagnostic
+        assert "model gpt-5.6-sol does not support medium effort" in diagnostic
+        assert "原因: exit code 9; engine診断:" in diagnostic
 
     def test_unstartable_candidate_falls_back_to_next_engine(
         self,
@@ -1549,7 +1560,11 @@ class TestProcessLoopPromptAndEnv:
 
     @pytest.mark.parametrize(
         ("config_value", "expected_model", "expected_effort"),
-        [("codex:gpt-5.6-sol/medium", "gpt-5.6-sol", "medium"), ("codex:gpt-5.6-sol/high", "gpt-5.6-sol", "high")],
+        [
+            ("codex:gpt-5.6-sol/medium", "gpt-5.6-sol", "medium"),
+            ("codex:gpt-5.6-sol/high", "gpt-5.6-sol", "high"),
+            ("codex:sol/medium", "gpt-6-sol", "medium"),
+        ],
     )
     def test_codex_new_session_uses_interactive_cli(
         self,

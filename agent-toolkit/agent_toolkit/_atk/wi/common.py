@@ -965,6 +965,16 @@ def pull_if_stale(private_notes: pathlib.Path) -> bool:
     return True
 
 
+def synchronize(private_notes: pathlib.Path, *, only_if_stale: bool = False, lock_timeout: float = -1) -> bool:
+    """Web操作が残したcommitをpushし、必要なremote差分を取得する。"""
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _push_pending_commits(private_notes)
+        if only_if_stale:
+            return pull_if_stale(private_notes)
+        _pull(private_notes)
+        return True
+
+
 def _pulled_recently(private_notes: pathlib.Path) -> bool:
     """直近の成功済み同期を再利用できる状態かを返す。
 

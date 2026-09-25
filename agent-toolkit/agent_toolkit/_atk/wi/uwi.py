@@ -235,6 +235,7 @@ def answer_uwi(
     state: str | None = None,
     lock_timeout: float = -1,
     expected_content: str | None = None,
+    skip_remote_sync: bool = False,
 ) -> bool:
     """平引数でUWI回答欄を更新する。対象はinbox・processing・holdのUWIに限る。
 
@@ -243,7 +244,8 @@ def answer_uwi(
     if not answer.strip():
         raise WebInputError("回答本文が空です")
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _pull(private_notes)
+        if not skip_remote_sync:
+            _pull(private_notes)
         try:
             path = _resolve_active_entry(private_notes, filename, state)
         except FileNotFoundError as error:
@@ -275,9 +277,11 @@ def answer_uwi(
         if destination is not None:
             _stamp_result(path, outcome=WI_STATE_ADOPTED, now=datetime.datetime.now(datetime.UTC))
             shutil.move(path, destination)
-            _commit_and_push(private_notes, "chore: answer and adopt uwi item", list(WI_STATES))
+            _commit_and_push(private_notes, "chore: answer and adopt uwi item", list(WI_STATES), skip_push=skip_remote_sync)
         else:
-            _commit_and_push(private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))])
+            _commit_and_push(
+                private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))], skip_push=skip_remote_sync
+            )
     return True
 
 

@@ -78,6 +78,38 @@ def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
     assert (notes / "processing/entry.md").is_file()
 
 
+@pytest.mark.parametrize("terminal_state", ["adopted", "rejected"])
+@pytest.mark.parametrize("action", ["return-to-inbox", "hold"])
+def test_agent_reopens_terminal_entry_without_old_result(
+    terminal_state: str,
+    action: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """誤終端した項目をCLIから再開し、旧結果を次の処理へ持ち込まない。"""
+    notes = _setup_notes(tmp_path)
+    source = _write_awi_file(notes, "entry.md")
+    source.write_text(source.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 誤った終端\n", encoding="utf-8")
+    terminal = notes / terminal_state / source.name
+    terminal.parent.mkdir(exist_ok=True)
+    source.replace(terminal)
+    monkeypatch.setenv("AI_AGENT", "1")
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as first:
+        atk.main(["wi", action, source.name, f"--state={terminal_state}"], home=tmp_path)
+    assert first.value.code == 0
+    destination = notes / ("hold" if action == "hold" else "inbox") / source.name
+    assert destination.is_file()
+    assert "## 処理結果" not in destination.read_text(encoding="utf-8")
+
+    if action == "hold":
+        with pytest.raises(SystemExit) as second:
+            atk.main(["wi", "unhold", source.name], home=tmp_path)
+        assert second.value.code == 0
+        assert (notes / "inbox" / source.name).is_file()
+
+
 @pytest.mark.parametrize("state", ["processing", "inbox", "hold", "adopted", "rejected"])
 @pytest.mark.parametrize("explicit_state", [False, True], ids=["implicit", "explicit"])
 def test_user_can_remove_individual_entry_from_every_state(

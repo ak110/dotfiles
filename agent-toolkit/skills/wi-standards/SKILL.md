@@ -226,10 +226,12 @@ UWIの`## 回答`節とAWIの`## ユーザーコメント`節はユーザーだ�
 | `processing`→`rejected` | `atk wi reject` | `agent-toolkit:process-wi`のレーンが、計画工程で確定した全要求の不採用についてメインが確認を終えた後に遷移させる |
 | `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のpickerが、是正を求める回答が保存された事後承認型UWIと、回答が保留中の元項目での作業を求める事前承認型UWIを、当該作業を実施するレーンの対象として遷移させる |
 | `processing`→`inbox` | `atk wi return-to-inbox` | 上流リポジトリへ投入したAWIの終端を待つ項目を`inbox`へ戻す。手順は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める |
+| `adopted`又は`rejected`→`inbox` | `atk wi return-to-inbox --state=<終端状態>` | 誤って終端した項目を再処理へ戻す主体が、旧処理結果を除いて再開する |
+| `adopted`又は`rejected`→`hold` | `atk wi hold --state=<終端状態>` | 誤って終端した項目を確認や修正の間は自動処理から除外する主体が、旧処理結果を除いて保留する |
 
 回答済みUWIが指す元項目が既に`inbox`で`ready=true`なら、pickerは`unhold`せず開始時の候補を使う。`hold`の元項目だけを`unhold`で戻し、両経路ともUWIと元項目を同じレーンへ一度ずつ割り当てる。
 
-`inbox`と`hold`の項目は`atk wi rm`で削除できる。本文の編集は`inbox`、`processing`、`hold`の各状態で行える。
+エージェントは`inbox`と`hold`の項目を`atk wi rm`で削除できる。ユーザーはブラウザーUIから終端項目も削除できる。本文の編集は`inbox`、`processing`、`hold`の各状態で行える。
 投入済み項目の本文を修正する主体は、その項目の修正が必要と判断した時点で`atk wi hold`を実行する。調査・ユーザーとの認識合わせ・本文の起草は保留の後に行う。保存本文の照合を終えた時点で`atk wi unhold`を実行する。常駐する`atk wi process-loop`が、修正の必要が判明した後の本文を取得することを防ぐためである。書き換えの直前に保留して直後に解除する順序では、修正が必要と判断してから本文を確定するまでの区間が保護されない。
 投入済み項目の妥当性について対象と根拠を持つ具体的な疑義を受領した場合も、調査の前に`atk wi hold`で保護する。正しい要求と確認できた場合は必要な修正と保存本文の照合後に`atk wi unhold`で戻し、誤投入と確認できた場合は`atk wi rm`で削除する。
 

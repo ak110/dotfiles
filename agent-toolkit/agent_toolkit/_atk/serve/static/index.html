@@ -14,13 +14,13 @@
   <header class="app-header">
     <div class="header-title">
       <h1 tabindex="-1">ワークアイテム</h1>
-      <span id="connection-status" class="connection-status" role="status">接続中</span>
+      <span id="connection-status" class="connection-status" role="status" hidden></span>
     </div>
     <nav class="app-nav" aria-label="画面">
       <a href="__BASE_PATH_HTML__/" aria-current="page">ワークアイテム</a>
       <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
       <a href="__BASE_PATH_HTML__/sessions">セッション</a>
-      <span id="loading-indicator" class="nav-loading" role="status" hidden>読み込み中</span>
+      <span class="nav-loading-slot"><span id="loading-indicator" class="nav-loading" role="status" hidden><span class="visually-hidden">読み込み中</span></span></span>
     </nav>
     <div class="header-actions">
       <button id="notification-button" class="button-secondary" type="button" hidden>通知を有効化</button>
@@ -39,43 +39,43 @@
             <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
           </div>
           <label for="search-input">検索</label>
-          <input id="search-input" type="search" placeholder="本文・ファイル名・対象・投入元を検索">
+          <input id="search-input" type="search" placeholder="本文・ファイル名・target-repo・sourceを検索">
 
           <div class="filter-grid">
-            <label for="kind-filter">種別</label>
+            <label for="kind-filter">type</label>
             <select id="kind-filter">
-              <option value="all">すべて</option>
-              <option value="awi">作業項目</option>
-              <option value="uwi">確認事項</option>
+              <option value="all">all</option>
+              <option value="awi">awi</option>
+              <option value="uwi">uwi</option>
             </select>
-            <label for="state-filter">状態</label>
+            <label for="state-filter">state</label>
             <select id="state-filter">
-              <option value="active">進行中（受信・処理中・保留）</option>
-              <option value="processable">処理可能（受信）</option>
-              <option value="all">すべて</option>
-              <option value="inbox">受信</option>
-              <option value="processing">処理中</option>
-              <option value="hold">保留</option>
-              <option value="adopted">採用</option>
-              <option value="rejected">却下</option>
+              <option value="active">active</option>
+              <option value="processable">processable</option>
+              <option value="all">all</option>
+              <option value="inbox">inbox</option>
+              <option value="processing">processing</option>
+              <option value="hold">hold</option>
+              <option value="adopted">adopted</option>
+              <option value="rejected">rejected</option>
             </select>
-            <label for="answer-filter">回答状況</label>
+            <label for="answer-filter">answered</label>
             <select id="answer-filter">
-              <option value="all">すべて</option>
-              <option value="no">未回答</option>
-              <option value="yes">回答済み</option>
+              <option value="all">all</option>
+              <option value="no">no</option>
+              <option value="yes">yes</option>
             </select>
           </div>
 
           <section class="additional-filters" aria-label="追加のフィルター条件">
             <div class="filter-grid">
-              <label for="target-filter">対象リポジトリ</label>
-              <select id="target-filter"><option value="">すべて</option></select>
-              <label for="source-filter">投入元</label>
+              <label for="target-filter">target-repo</label>
+              <select id="target-filter"><option value="">all</option></select>
+              <label for="source-filter">source kind</label>
               <select id="source-filter">
-                <option value="">すべて</option>
-                <option value="human">人間</option>
-                <option value="agent">エージェント</option>
+                <option value="">all</option>
+                <option value="human">human</option>
+                <option value="agent">agent</option>
               </select>
             </div>
           </section>
@@ -92,8 +92,8 @@
       <div id="list-warning" class="list-warning" role="alert" hidden></div>
       <div class="entry-columns" aria-hidden="true">
         <span>ファイル名</span>
-        <span>対象リポジトリ</span>
-        <span>種別・状態</span>
+        <span>target-repo</span>
+        <span>type・state</span>
         <span>要約</span>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
@@ -203,7 +203,7 @@
           <textarea id="create-content" name="message" aria-describedby="create-content-error" required></textarea>
           <p id="create-content-error" class="inline-error" hidden></p>
           <div id="create-repo-fields" class="dialog-form-fields">
-            <label for="create-target">対象リポジトリ（frontmatterに無い場合は必須）</label>
+            <label for="create-target">target-repo（frontmatterに無い場合は必須）</label>
             <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">
             <datalist id="repo-options"></datalist>
             <p id="create-target-error" class="inline-error" hidden></p>
@@ -242,8 +242,8 @@
         <div id="delete-status" class="dialog-message success-message" role="status" hidden></div>
         <dl class="metadata">
           <dt>対象</dt><dd id="delete-target"></dd>
-          <dt>状態</dt><dd><span id="delete-state" class="state-badge"></span></dd>
-          <dt>対象リポジトリ</dt><dd id="delete-target-repo"></dd>
+          <dt>state</dt><dd><span id="delete-state" class="state-badge"></span></dd>
+          <dt>target-repo</dt><dd id="delete-target-repo"></dd>
           <dt>要約</dt><dd id="delete-summary"></dd>
         </dl>
         <label id="force-delete-row" class="force-confirmation" hidden>

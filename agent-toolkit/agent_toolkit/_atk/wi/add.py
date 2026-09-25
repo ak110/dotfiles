@@ -399,6 +399,7 @@ def add_entries(
     depends_on: tuple[str, ...] = (),
     lock_timeout: float = -1,
     saved_details: dict[str, dict[str, object | None]] | None = None,
+    skip_remote_sync: bool = False,
 ) -> list[str]:
     """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
 
@@ -420,7 +421,8 @@ def add_entries(
         source=source,
     )
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _pull(private_notes)
+        if not skip_remote_sync:
+            _pull(private_notes)
         written = _add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
@@ -441,6 +443,7 @@ def add_entries(
             private_notes,
             f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
             [WI_STATE_INBOX],
+            skip_push=skip_remote_sync,
         )
         if saved_details is not None:
             saved_details.update(

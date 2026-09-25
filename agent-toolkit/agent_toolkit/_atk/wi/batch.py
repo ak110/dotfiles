@@ -361,6 +361,7 @@ def add_batch_entries(
     texts: list[str],
     now: datetime.datetime,
     lock_timeout: float = -1,
+    skip_remote_sync: bool = False,
 ) -> tuple[list[tuple[str, str]], list[str], list[str]]:
     """`show`形式のテキスト群を解析し、全エントリをinboxへ原文保持で取り込む。
 
@@ -381,7 +382,8 @@ def add_batch_entries(
     for entry in entries:
         validate_filename(entry.original_name, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _pull(private_notes)
+        if not skip_remote_sync:
+            _pull(private_notes)
         case_sensitive = is_case_sensitive(inbox_dir)
         counts = collections.Counter(comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries)
         duplicated = sorted(
@@ -423,6 +425,7 @@ def add_batch_entries(
                 private_notes,
                 f"chore: add {count} imported {'item' if count == 1 else 'items'}",
                 [WI_STATE_INBOX],
+                skip_push=skip_remote_sync,
             )
     mapping = [(entry.original_name, assignments[entry.original_name]) for entry in imported]
     return mapping, [entry.original_name for entry in entries if entry.original_name in skipped], warnings

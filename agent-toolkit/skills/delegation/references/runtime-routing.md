@@ -49,12 +49,12 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `session_review_model` | セッション振り返りの問題候補の抽出と振り返り全体 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 
 上表が対応工程を定めるのは`pick_wi`、`execute`、`execute_review`及び`session_review`である。`orchestrate`は`atk wi process-loop`の新しいセッションに使い、本節の委譲工程では選ばない。各工程の起動文書と設定種別は、その工程の起動節に明記する。
-現に保存されているキーと実効値は`atk config show`で確認する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、その設定キーと候補を標準エラーへ警告として書く。
+保存値と実行時に解決した候補は`atk config show`のキー行と`<キー>.resolved`行で区別する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、その設定キーと候補を標準エラーへ警告として書く。
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`、`codex`または`agy`とする。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で、agyは起動・turnの失敗で次の候補へ進む。
 上表の未設定時の実効値は、`codex-balanced`プリセットが各キーに割り当てる候補列とする。effort省略時は`medium`とする。
-モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
+`codex:astra`、`codex:sol`、`codex:terra`、`codex:luna`は、Codex App Serverの`model/list`を全ページ取得し、表示対象の同系列で数値バージョンが最新の完全IDへ起動時に解決する。選んだモデルが指定effortを受理しない場合、系列が一覧に無い場合又は一覧取得に失敗した場合は理由を示して停止し、推測したIDや旧版への暗黙の置換は行わない。モデルの試行起動は解決の手段に使わない。バージョン付きのCodex完全IDは固定指定として保持する。Claudeとagyの候補、及びCodex完全IDの実行時の受理可否は各engineへ委ねる。
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ候補ごとの警告を表示するが、新モデルの利用を妨げないため受理する。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、そのキーの実効値を環境変数の値とする。
 環境変数は保存済みの設定より優先し、`atk config set`は保存先だけを更新する。
@@ -65,7 +65,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 実験と障害時の回避で一時的に別のengine又はmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
 
 1. `agents_server`経路では、`<役割名>.subagent.md`を`start`へ、自由本文と設定種別または直接候補列を`start_custom`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
-2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合はその工程を`needs_escalation`または未完了として返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
+2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、系列名を完全IDへ解決済みの候補列から先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合はその工程を`needs_escalation`または未完了として返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
 3. `agents_server`の通常の起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。採用した`model_type`、`engine`、`model`及び`effort`を記録する必要がある場合は、返された`session_id`を`show`へ渡して取得する。`show`の`model_type`は設定種別か`start_custom`へ渡した候補列である。
 4. サーバーが候補列を使い尽くした場合、呼び出し側は設定外のengineへ自動切替せず、その工程を`needs_escalation`または未完了として返す。
 5. レーン担当とCI修正担当は、前の担当の識別子を再利用せず新規threadで起動する。
@@ -157,11 +157,11 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 | レベル | `codex` | `claude` |
 | --- | --- | --- |
 | 上位 | `gpt-6-sol/medium` | `opus/medium` |
-| 中位 | `gpt-6-luna/xhigh` | 用途に応じて`opus/medium`又は`sonnet/medium` |
+| 中位 | `terra/medium` | 用途に応じて`opus/medium`又は`sonnet/medium` |
 | 軽量 | `gpt-6-luna/medium` | `sonnet/medium` |
 
 - 同じ行の`codex`と`claude`の組合せを代替候補とみなし、effortは表の値を用いる
-- gpt-6世代に`terra`はなく、現行の`haiku`は旧世代に属する。新世代の軽量モデルが利用可能になった時点で軽量の行を見直す
+- `terra`は系列名として指定し、その時点で利用可能な同系列の最新版へ解決する。Codexの各行で世代をそろえる前提は置かない。現行の`haiku`は旧世代に属し、新世代の軽量モデルが利用可能になった時点で軽量の行を見直す
 - 代替起動では、まず同じ行のもう一方のengineを試す（起動順の正本は「工程別モデル設定」の代替起動の規定とする）
 - 上位の行を既定とし、中位・軽量の行は内容が確定済みで低リスクな機械作業に限って選ぶ
 - レビュー工程では上位の行だけを用いる
