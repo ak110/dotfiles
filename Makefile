@@ -39,8 +39,10 @@ setup:
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
 # ChromiumとLinuxのシステム依存を初期環境へ導入
+# ルートとagent-toolkitは別々のuv.lockを持ちplaywrightの版が異なり得るため、両方の環境の版に対応するChromiumを導入する
 setup-browser:
 	uv run playwright install --with-deps chromium
+	uv run --project agent-toolkit playwright install chromium
 
 # Ubuntu/Debian へ pwsh + PSScriptAnalyzer を一括インストールする。
 # prek の PSScriptAnalyzer / chezmoi template check (.ps1.tmpl) を
@@ -70,6 +72,7 @@ test:
 # 実ブラウザーテストを日常実行
 test-browser:
 	uv run playwright install chromium
+	uv run --project agent-toolkit playwright install chromium
 	AGENT_TOOLKIT_SERVE_BROWSER_TESTS=1 \
 		uv run pytest agent-toolkit/agent_toolkit/_atk/serve/browser_test.py \
 		-o addopts='' -p no:cacheprovider
