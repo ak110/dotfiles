@@ -530,8 +530,9 @@ def take_result(
     *,
     collector: str,
     state_root: pathlib.Path | None = None,
+    stash_path: pathlib.Path | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """所有者を照合し、終端結果を1つの排他区間で読み取って回収する。"""
+    """所有者を照合し、CLI用の退避先があれば保存後に原本を回収する。"""
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
     directory = results_directory(root_session_id, state_root)
@@ -541,8 +542,9 @@ def take_result(
         acquire_lock(lock_file, blocking=True)
         try:
             path = directory / f"{session_id}.json"
+            source = stash_path if stash_path is not None and stash_path.is_file() else path
             try:
-                payload: Any = json.loads(path.read_text(encoding="utf-8"))
+                payload: Any = json.loads(source.read_text(encoding="utf-8"))
             except FileNotFoundError:
                 return None, None
             except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -552,13 +554,25 @@ def take_result(
             recorded_owner = payload.get("owner_status_file")
             if recorded_owner != owner_status_file and not (recorded_owner is None and owner_status_file == "root.json"):
                 return None, None
-            path.unlink()
-            _LOG.info(
-                "result_deleted session_id=%s writer=%s collector=%s",
-                session_id,
-                owner_status_file,
-                collector,
-            )
+            if source == path and stash_path is not None:
+                atomic_write(stash_path, json.dumps(payload, ensure_ascii=False) + "\n", fsync=True)
+            if path.is_file():
+                if source == path:
+                    path.unlink()
+                else:
+                    try:
+                        original = json.loads(path.read_text(encoding="utf-8"))
+                    except (OSError, UnicodeError, json.JSONDecodeError):
+                        original = None
+                    if original == payload:
+                        path.unlink()
+                if not path.is_file():
+                    _LOG.info(
+                        "result_deleted session_id=%s writer=%s collector=%s",
+                        session_id,
+                        owner_status_file,
+                        collector,
+                    )
             payload.pop("owner_status_file", None)
             payload.pop("session", None)
             return payload, None
@@ -746,23 +760,40 @@ def take_notices(
     root_session_id: str,
     session_id: str,
     state_root: pathlib.Path | None = None,
+    *,
+    stash_directory: pathlib.Path | None = None,
 ) -> list[dict[str, str]]:
     """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
     directory = notices_directory(root_session_id, state_root)
     try:
         paths = tuple(directory.iterdir())
     except FileNotFoundError:
-        return []
+        paths = ()
+    stashed: dict[str, pathlib.Path] = {}
+    if stash_directory is not None:
+        with contextlib.suppress(FileNotFoundError):
+            stashed = {
+                path.name: path
+                for path in stash_directory.iterdir()
+                if path.is_file() and path.suffix == ".json" and path.name.startswith(f"{session_id}.")
+            }
     matched: list[tuple[str, str, dict[str, str]]] = []
-    for path in paths:
+    for path in (*stashed.values(), *paths):
         if not path.is_file() or path.suffix != ".json":
+            continue
+        if path.parent == directory and path.name in stashed:
+            path.unlink(missing_ok=True)
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             if path.name.startswith(f"{session_id}."):
-                path.unlink(missing_ok=True)
-                matched.append(("", path.name, {"sent_at": "", "body": f"破損した上り通知を削除しました: {path}: {exc}"}))
+                notice = {"sent_at": "", "body": f"破損した上り通知を削除しました: {directory / path.name}: {exc}"}
+                if stash_directory is not None and path.parent == directory:
+                    atomic_write(stash_directory / path.name, json.dumps({"version": 1, "session_id": session_id, **notice}))
+                if path.parent == directory:
+                    path.unlink(missing_ok=True)
+                matched.append(("", path.name, notice))
             continue
         if (
             not isinstance(payload, dict)
@@ -772,18 +803,24 @@ def take_notices(
             or not isinstance(payload.get("body"), str)
         ):
             if path.name.startswith(f"{session_id}."):
-                path.unlink(missing_ok=True)
-                matched.append(
-                    ("", path.name, {"sent_at": "", "body": f"破損した上り通知を削除しました: {path}: 必須項目が不正です"})
-                )
+                notice = {"sent_at": "", "body": f"破損した上り通知を削除しました: {directory / path.name}: 必須項目が不正です"}
+                if stash_directory is not None and path.parent == directory:
+                    atomic_write(stash_directory / path.name, json.dumps({"version": 1, "session_id": session_id, **notice}))
+                if path.parent == directory:
+                    path.unlink(missing_ok=True)
+                matched.append(("", path.name, notice))
             continue
         notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
+        if stash_directory is not None and path.parent == directory:
+            atomic_write(stash_directory / path.name, json.dumps(payload, ensure_ascii=False) + "\n", fsync=True)
         matched.append((payload["sent_at"], path.name, notice))
     matched.sort(key=lambda item: (item[0], item[1]))
     taken: list[dict[str, str]] = []
     for _sent_at, file_name, notice in matched:
-        if notice["sent_at"] == "":
+        if notice["sent_at"] == "" or stash_directory is not None:
             taken.append(notice)
+            if stash_directory is not None:
+                (directory / file_name).unlink(missing_ok=True)
             continue
         try:
             (directory / file_name).unlink()

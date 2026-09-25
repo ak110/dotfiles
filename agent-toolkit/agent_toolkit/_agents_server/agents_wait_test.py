@@ -445,11 +445,90 @@ def test_followers_join_the_same_wait_run(
     assert {"status": "consumed", "run_id": "run-1"} in output
 
 
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_wait_replays_follower_output_after_interrupt(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    stream: str,
+) -> None:
+    """後続waitがflush後に停止しても、lock待ちの別waitが本文を回収する。"""
+    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="foreground-delivered")
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run["stream"] = stream
+    agents_wait._write_json(run_path, run)  # pylint: disable=protected-access
+    lock_path = _wait_lock_path(tmp_path)
+    lock_path.parent.mkdir(parents=True)
+
+    original_write = agents_wait._write_json  # pylint: disable=protected-access
+    interrupted = False
+
+    def interrupt_first_consume(path: pathlib.Path, value: dict[str, object]) -> None:
+        nonlocal interrupted
+        if value.get("status") == "consumed" and not interrupted:
+            interrupted = True
+            raise KeyboardInterrupt
+        original_write(path, value)
+
+    monkeypatch.setattr(agents_wait, "_write_json", interrupt_first_consume)
+    original_acquire = agents_wait.acquire_lock
+    followers_waiting = threading.Event()
+    count_lock = threading.Lock()
+    failed_nonblocking = 0
+
+    def observe_acquire(lock_file, *, blocking: bool):
+        nonlocal failed_nonblocking
+        try:
+            return original_acquire(lock_file, blocking=blocking)
+        except OSError:
+            if not blocking:
+                with count_lock:
+                    failed_nonblocking += 1
+                    if failed_nonblocking == 2:
+                        followers_waiting.set()
+            raise
+
+    monkeypatch.setattr(agents_wait, "acquire_lock", observe_acquire)
+    outcomes: list[int | str] = []
+
+    def follow() -> None:
+        try:
+            outcomes.append(
+                agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
+            )
+        except KeyboardInterrupt:
+            outcomes.append("interrupted")
+
+    with lock_path.open("a+b") as lock_file:
+        original_acquire(lock_file, blocking=False)
+        try:
+            followers = [threading.Thread(target=follow) for _ in range(2)]
+            for follower in followers:
+                follower.start()
+            assert followers_waiting.wait(timeout=5)
+        finally:
+            release_lock(lock_file)
+        for follower in followers:
+            follower.join(timeout=5)
+            assert not follower.is_alive()
+
+    assert outcomes.count("interrupted") == 1
+    assert outcomes.count(0) == 1
+    captured = capsys.readouterr()
+    delivered = captured.err if stream == "stderr" else captured.out
+    assert [json.loads(line) for line in delivered.splitlines()] == [
+        {"session_id": "session-1", "status": "completed"},
+        {"session_id": "session-1", "status": "completed"},
+    ]
+    assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "consumed"
+
+
 @pytest.mark.parametrize(
     ("status", "expected_code", "expected_stream"),
     [
         ("published", 0, "stdout"),
-        ("running", 8, "stderr"),
+        ("running", 3, "stdout"),
     ],
 )
 def test_later_wait_uses_matching_current_run(
@@ -459,7 +538,7 @@ def test_later_wait_uses_matching_current_run(
     expected_code: int,
     expected_stream: str,
 ) -> None:
-    """lock解放後の後続waitは対象が一致する先行runの状態を返す。"""
+    """公開済みrunは回収し、残存する未公開runは待機を再開する。"""
     _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     run_directory, run_path = _write_current_wait_run(tmp_path, target="session-1", status=status)
 
@@ -476,8 +555,196 @@ def test_later_wait_uses_matching_current_run(
         assert json.loads(output) == {"session_id": "session-1", "status": "completed"}
         assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "consumed"
     else:
-        assert "先行する待機の終端結果が公開されていません" in output
+        assert json.loads(output) == {"session_id": "session-1", "status": "running"}
     assert json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8")) == {"run_id": "run-1"}
+
+
+def test_wait_recovers_abandoned_run(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """先行プロセスがいない未公開runから終端結果を回収する。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    _write_own_status(results, [{"session_id": "session-1"}])
+    _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
+    results.mkdir(parents=True)
+    (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
+    assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "foreground-delivered"
+
+
+@pytest.mark.parametrize("original_exists", [False, True])
+def test_wait_recovers_claimed_result_once(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    original_exists: bool,
+) -> None:
+    """退避済み結果を原本の有無によらず1回だけ公開する。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    status_path = _write_own_status(results, [{"session_id": "session-1"}])
+    _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
+    results.mkdir(parents=True)
+    result_path = results / "session-1.json"
+    result_path.write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+    stash_path = run_path.with_suffix("") / "results" / "session-1.json"
+    claimed, error = status_file.take_result(
+        "root-session", "session-1", "root.json", collector="test", state_root=tmp_path, stash_path=stash_path
+    )
+    assert claimed == {"status": "completed"}
+    assert error is None
+    assert stash_path.exists()
+    if original_exists:
+        result_path.write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+    else:
+        status_path.unlink()
+
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        {"session_id": "session-1", "status": "completed"}
+    ]
+    assert not result_path.exists()
+
+
+@pytest.mark.parametrize("original_exists", [False, True])
+def test_wait_recovers_claimed_notice_once(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    original_exists: bool,
+) -> None:
+    """退避済み通知を原本の有無によらず1回だけ公開する。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    _write_own_status(results, [{"session_id": "session-1"}])
+    _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
+    notices = status_file.notices_directory("root-session", tmp_path)
+    notices.mkdir()
+    notice_path = notices / "session-1.1.json"
+    payload = {"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}
+    notice_path.write_text(json.dumps(payload), encoding="utf-8")
+    stash_directory = run_path.with_suffix("") / "notices"
+    assert status_file.take_notices("root-session", "session-1", tmp_path, stash_directory=stash_directory) == [
+        {"sent_at": payload["sent_at"], "body": payload["body"]}
+    ]
+    if original_exists:
+        notice_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        {
+            "session_id": "session-1",
+            "status": "running",
+            "notices": [{"sent_at": payload["sent_at"], "body": payload["body"]}],
+        }
+    ]
+    assert not notice_path.exists()
+
+
+def test_wait_replays_published_run_after_publication_interrupt(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run記録の確定後、標準出力への配送前に中断しても本文を再取得する。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    _write_own_status(results, [{"session_id": "session-1"}])
+    results.mkdir(parents=True)
+    (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+    original_write = agents_wait._write_json  # pylint: disable=protected-access
+
+    def interrupt_publication(path: pathlib.Path, value: dict[str, object]) -> None:
+        original_write(path, value)
+        if value.get("status") == "published":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(agents_wait, "_write_json", interrupt_publication)
+    with pytest.raises(KeyboardInterrupt):
+        agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
+    monkeypatch.setattr(agents_wait, "_write_json", original_write)
+    assert not capsys.readouterr().out
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
+
+
+def test_wait_replays_published_notice_after_publication_interrupt(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """通知だけを持つ公開済みrunも前景配送前の中断から再演する。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    _write_own_status(results, [{"session_id": "session-1"}])
+    notices = status_file.notices_directory("root-session", tmp_path)
+    notices.mkdir()
+    (notices / "session-1.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}),
+        encoding="utf-8",
+    )
+    original_write = agents_wait._write_json  # pylint: disable=protected-access
+
+    def interrupt_publication(path: pathlib.Path, value: dict[str, object]) -> None:
+        original_write(path, value)
+        if value.get("status") == "published":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(agents_wait, "_write_json", interrupt_publication)
+    with pytest.raises(KeyboardInterrupt):
+        agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
+    monkeypatch.setattr(agents_wait, "_write_json", original_write)
+    assert not capsys.readouterr().out
+
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "session_id": "session-1",
+        "status": "running",
+        "notices": [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}],
+    }
+
+
+def test_wait_replays_flushed_result_after_interrupt(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """flush後の中断では結果と通知を次の発行で1回再出力する。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    _write_own_status(results, [{"session_id": "session-1"}])
+    results.mkdir(parents=True)
+    (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+    notices = status_file.notices_directory("root-session", tmp_path)
+    notices.mkdir()
+    (notices / "session-1.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}),
+        encoding="utf-8",
+    )
+    original_write = agents_wait._write_json  # pylint: disable=protected-access
+
+    def interrupt_after_flush(path: pathlib.Path, value: dict[str, object]) -> None:
+        if value.get("status") == "foreground-delivered":
+            raise KeyboardInterrupt
+        original_write(path, value)
+
+    monkeypatch.setattr(agents_wait, "_write_json", interrupt_after_flush)
+    with pytest.raises(KeyboardInterrupt):
+        agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
+    first = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert first == [
+        {
+            "session_id": "session-1",
+            "status": "completed",
+            "notices": [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}],
+        }
+    ]
+
+    monkeypatch.setattr(agents_wait, "_write_json", original_write)
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == first
+    run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
+    current = json.loads((run_directory / "current.json").read_text(encoding="utf-8"))
+    run_path = run_directory / f"{current['run_id']}.json"
+    assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "consumed"
+    assert not run_path.with_suffix("").exists()
 
 
 @pytest.mark.parametrize("status", ["consumed", "foreground-delivered"])
@@ -509,13 +776,15 @@ def test_later_wait_starts_new_run_for_consumed_current_run(
     assert current["run_id"] != "run-1"
 
 
+@pytest.mark.parametrize("status", ["consumed", "running", "published"])
 def test_later_wait_starts_new_run_for_changed_targets(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    status: str,
 ) -> None:
-    """対象が変わった後続waitは回収済みの先行runではなく新規runを開始する。"""
+    """対象が変わった後続waitは先行runではなく新規runを開始する。"""
     _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-2"}])
-    run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status="consumed")
+    run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status=status)
 
     assert (
         agents_wait.wait_for_result(
@@ -525,6 +794,21 @@ def test_later_wait_starts_new_run_for_changed_targets(
         == 3
     )
     assert json.loads(capsys.readouterr().out) == {"session_id": "session-2", "status": "running"}
+    current = json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8"))
+    assert current["run_id"] != "run-1"
+
+
+def test_later_wait_starts_new_run_for_continuable_published_run(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """継続可能な公開runの旧出力を再演せず、新しい待機を開始する。"""
+    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status="published", continuable=True)
+
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 3
+
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "running"}
     current = json.loads(run_directory.joinpath("current.json").read_text(encoding="utf-8"))
     assert current["run_id"] != "run-1"
 
