@@ -416,7 +416,7 @@ def _record_iss_sidechain_probe(
 ) -> None:
     """多重ネスト構成でのisSidechain実値採取用のデバッグログ記録。
 
-    暫定機構: fb7 (20260719-074241-001.md) の実サンプル採取が目的。
+    暫定機構: fb7 の実サンプル採取が目的。
     十分なサンプルが集まり代替判定機構が実装された時点で本ヘルパーは削除する。
     ログ出力先はtempfile.gettempdir()起点でsession_id単位に分離する
     （_stop_gate.pyの_stop_log_path先例に揃える）。
