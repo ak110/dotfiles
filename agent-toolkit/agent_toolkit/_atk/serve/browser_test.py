@@ -2810,6 +2810,7 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
     """一覧のコピー操作はファイル名と要約を写し、詳細選択を発生させない。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator("#entry-list .entry-row").first
     await row.locator(".entry-copy").wait_for(state="visible")
     filename = await row.locator(".filename-cell").inner_text()
