@@ -53,6 +53,7 @@ def _make_stubbed_setup(
     return result, calls
 
 
+@pytest.mark.skipif(shutil.which("make") is None, reason="make未インストール")
 @pytest.mark.parametrize(("distribution", "version"), (("ubuntu", "24.04"), ("debian", "12")))
 def test_setup_pwsh_selects_distribution_repository(tmp_path: pathlib.Path, distribution: str, version: str) -> None:
     """OSごとのMicrosoftリポジトリ設定を、ホストを変更せずに選ぶ。"""
