@@ -273,11 +273,18 @@ def wait_for_result(
             run_path = run_directory / f"{run_id}.json"
             acquire_lock(lock_file, blocking=True)
             owns_lock = True
-            return _consume_wait_result(run_path)
-        current_run_path = _matching_current_wait_run(run_directory, ordered_ids)
+        current_run_path = run_path if run_path is not None else _matching_current_wait_run(run_directory, ordered_ids)
         if current_run_path is not None:
             recorded = _read_json(current_run_path)
             if recorded is not None and recorded.get("status") == "running":
+                if run_path is not None:
+                    recorded_targets = recorded.get("targets")
+                    if not isinstance(recorded_targets, list) or any(
+                        not isinstance(session_id, str) or not status_file.valid_session_id(session_id)
+                        for session_id in recorded_targets
+                    ):
+                        return _consume_wait_result(current_run_path)
+                    ordered_ids = sorted(set(ordered_ids) | set(recorded_targets) | _stashed_wait_targets(current_run_path))
                 run_path = current_run_path
             else:
                 return _consume_wait_result(current_run_path)

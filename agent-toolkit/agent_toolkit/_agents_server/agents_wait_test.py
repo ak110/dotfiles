@@ -347,8 +347,8 @@ def _write_current_wait_run(
     return run_directory, run_path
 
 
-def _observe_two_waiters(monkeypatch: pytest.MonkeyPatch) -> tuple[Callable[..., None], threading.Event]:
-    """2件の後続waitがlock競合へ到達した時点を通知する。"""
+def _observe_waiters(monkeypatch: pytest.MonkeyPatch, expected_count: int) -> tuple[Callable[..., None], threading.Event]:
+    """指定件数の後続waitがlock競合へ到達した時点を通知する。"""
     original_acquire = agents_wait.acquire_lock
     followers_waiting = threading.Event()
     count_lock = threading.Lock()
@@ -362,12 +362,78 @@ def _observe_two_waiters(monkeypatch: pytest.MonkeyPatch) -> tuple[Callable[...,
             if not blocking:
                 with count_lock:
                     failed_nonblocking += 1
-                    if failed_nonblocking == 2:
+                    if failed_nonblocking == expected_count:
                         followers_waiting.set()
             raise
 
     monkeypatch.setattr(agents_wait, "acquire_lock", observe_acquire)
     return original_acquire, followers_waiting
+
+
+def _run_contended_wait(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prepare: Callable[[pathlib.Path, pathlib.Path], None] | None = None,
+) -> int:
+    """後発待機がlockに並んだ後、未公開runを残して所有権を渡す。"""
+    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
+    original_acquire, follower_waiting = _observe_waiters(monkeypatch, 1)
+    lock_path = _wait_lock_path(tmp_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    outcomes: list[int] = []
+
+    def follow() -> None:
+        outcomes.append(
+            agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
+        )
+
+    with lock_path.open("a+b") as lock_file:
+        original_acquire(lock_file, blocking=False)
+        follower = threading.Thread(target=follow)
+        try:
+            follower.start()
+            assert follower_waiting.wait(timeout=5)
+            if prepare is not None:
+                prepare(tmp_path, run_path)
+        finally:
+            release_lock(lock_file)
+        follower.join(timeout=5)
+        assert not follower.is_alive()
+    assert len(outcomes) == 1
+    return outcomes[0]
+
+
+def _leave_result_original(tmp_path: pathlib.Path, _run_path: pathlib.Path) -> None:
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+
+
+def _stash_result(tmp_path: pathlib.Path, run_path: pathlib.Path) -> None:
+    _leave_result_original(tmp_path, run_path)
+    claimed, error = status_file.take_result(
+        "root-session",
+        "session-1",
+        "root.json",
+        collector="test",
+        state_root=tmp_path,
+        stash_path=run_path.with_suffix("") / "results" / "session-1.json",
+    )
+    assert claimed == {"status": "completed"}
+    assert error is None
+
+
+def _stash_notice(tmp_path: pathlib.Path, run_path: pathlib.Path) -> None:
+    notices = status_file.notices_directory("root-session", tmp_path)
+    notices.mkdir()
+    (notices / "session-1.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}),
+        encoding="utf-8",
+    )
+    assert status_file.take_notices(
+        "root-session", "session-1", tmp_path, stash_directory=run_path.with_suffix("") / "notices"
+    ) == [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}]
 
 
 def _interrupt_after_published(
@@ -438,7 +504,7 @@ def test_followers_join_the_same_wait_run(
     )
     agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
 
-    original_acquire, followers_waiting = _observe_two_waiters(monkeypatch)
+    original_acquire, followers_waiting = _observe_waiters(monkeypatch, 2)
     results: list[int] = []
 
     def follow() -> None:
@@ -498,7 +564,7 @@ def test_wait_replays_follower_output_after_interrupt(
         original_write(path, value)
 
     monkeypatch.setattr(agents_wait, "_write_json", interrupt_first_consume)
-    original_acquire, followers_waiting = _observe_two_waiters(monkeypatch)
+    original_acquire, followers_waiting = _observe_waiters(monkeypatch, 2)
     outcomes: list[int | str] = []
 
     def follow() -> None:
@@ -531,6 +597,82 @@ def test_wait_replays_follower_output_after_interrupt(
         {"session_id": "session-1", "status": "completed"},
     ]
     assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "consumed"
+
+
+@pytest.mark.parametrize(
+    ("prepare", "expected"),
+    [
+        (_leave_result_original, {"session_id": "session-1", "status": "completed"}),
+        (_stash_result, {"session_id": "session-1", "status": "completed"}),
+        (
+            _stash_notice,
+            {
+                "session_id": "session-1",
+                "status": "running",
+                "notices": [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}],
+            },
+        ),
+    ],
+    ids=["original-result", "stashed-result", "stashed-notice"],
+)
+def test_wait_recovers_contended_running_run(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    prepare: Callable[[pathlib.Path, pathlib.Path], None],
+    expected: dict[str, object],
+) -> None:
+    """lock待ち中の未公開runから原本又は退避済みの本文を配送する。"""
+    assert _run_contended_wait(tmp_path, monkeypatch, prepare) == 0
+
+    captured = capsys.readouterr()
+    assert [json.loads(line) for line in captured.out.splitlines()] == [expected]
+    assert not captured.err
+
+
+def test_wait_continues_after_contended_owner_aborts(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """lock取得後も待機を続け、後から届く終端結果を受け取る。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(results))
+
+    assert _run_contended_wait(tmp_path, monkeypatch) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
+
+
+def test_wait_recovers_target_added_during_lock_contention(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """先行待機がlock保持中に加えた対象と退避結果を引き継ぐ。"""
+
+    def add_target(state_root: pathlib.Path, run_path: pathlib.Path) -> None:
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        run["targets"] = ["session-1", "session-2"]
+        agents_wait._write_json(run_path, run)  # pylint: disable=protected-access
+        results = status_file.results_directory("root-session", state_root)
+        results.mkdir(parents=True, exist_ok=True)
+        (results / "session-2.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+        claimed, error = status_file.take_result(
+            "root-session",
+            "session-2",
+            "root.json",
+            collector="test",
+            state_root=state_root,
+            stash_path=run_path.with_suffix("") / "results" / "session-2.json",
+        )
+        assert claimed == {"status": "completed"}
+        assert error is None
+
+    assert _run_contended_wait(tmp_path, monkeypatch, add_target) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-2", "status": "completed"}
 
 
 @pytest.mark.parametrize(
