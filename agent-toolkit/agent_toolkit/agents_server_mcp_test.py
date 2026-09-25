@@ -2011,6 +2011,37 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
 
 @pytest.mark.asyncio
+async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib.Path) -> None:
+    """再開したsessionは最初の開始時刻を保ち、状態ファイルへturnの開始時刻と別に書く。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "claude")
+    _install_backend(manager, "claude", backend)
+    writer.activate()
+    session = subject.SessionState("created-session", str(tmp_path), engine="claude", turn_seq=2)
+    session.created_at = "2026-09-25T21:58:13+00:00"
+    _complete(session, message="前のturn")
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+    manager.sessions[session.session_id] = session
+
+    assert await manager.send_message("created-session", "続行") == {"delivery": "reply_started"}
+    writer.flush()
+
+    resumed = manager.sessions["created-session"]
+    assert resumed.created_at == "2026-09-25T21:58:13+00:00"
+    projected = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    entry = next(item for item in projected if item["session_id"] == "created-session")
+    assert entry["created_at"] == "2026-09-25T21:58:13+00:00"
+    assert entry["started_at"] != entry["created_at"]
+    await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_owner_gone_resume_removes_previous_result_file(tmp_path: pathlib.Path) -> None:
     """所有主体終了による再開は新しいturnの開始時に旧結果を削除する。"""
     writer = status_file.StatusFileWriter(
@@ -4711,6 +4742,7 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
             effort=None,
             engine="claude",
             label=session.label,
+            created_at=session.created_at,
             started_at=session.started_at,
             updated_at=session.updated_at,
             turn_seq=session.turn_seq,

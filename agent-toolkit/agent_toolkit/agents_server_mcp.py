@@ -538,6 +538,7 @@ class AgentsServerManager:
             engine=info.engine,
             model_type=info.model_type,
             launch_kind=info.launch_kind,
+            created_at=info.created_at,
             turn_seq=persisted_result["turn_seq"] if persisted_result is not None else info.turn_seq,
             status=persisted_result["status"] if persisted_result is not None else info.status,
             agent_message=persisted_result["agent_message"] if persisted_result is not None else "",
@@ -1484,6 +1485,8 @@ class AgentsServerManager:
                 excluded_candidates=resume_state.excluded_candidates,
                 turn_seq=resume_state.turn_seq,
             )
+            if resume_state.created_at is not None:
+                session.created_at = resume_state.created_at
             if self._status_writer is not None:
                 self._status_writer.delete_result(session_id, collector="send-message")
             if session.status == "starting":
@@ -1585,6 +1588,8 @@ class AgentsServerManager:
                 announced=True,
                 turn_seq=resume_state.turn_seq + 1,
             )
+            if resume_state.created_at is not None:
+                session.created_at = resume_state.created_at
             self.sessions[session.session_id] = session
         self.expired_sessions.pop(session.session_id, None)
         if self._pending_resumes.get(session.session_id) is pending:

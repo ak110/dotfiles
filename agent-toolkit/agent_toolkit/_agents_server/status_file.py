@@ -1149,6 +1149,7 @@ def _serialize_retained_session(session: SessionState | SessionResumeState) -> d
         "prompt": session.prompt,
         "status": session.status,
         "label": session.label,
+        "created_at": session.created_at,
         "started_at": session.started_at,
         "updated_at": session.updated_at,
         "output_updated_at": session.output_updated_at,

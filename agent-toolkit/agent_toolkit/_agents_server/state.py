@@ -344,6 +344,9 @@ class SessionState:
     label: str = ""
     prompt: str = ""
     announced: bool = False
+    # sessionを最初に開始した時刻。turnごとに更新する`started_at`とは別に保持し、再開後も引き継ぐ。
+    # レーン稼働時間のようにsession全体の経過を測る呼び出し元が起点として読む。
+    created_at: str = dataclasses.field(default_factory=_utc_now)
     started_at: str = dataclasses.field(default_factory=_utc_now)
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     turn_seq: int = 0
@@ -514,6 +517,7 @@ class SessionState:
                 model_type=self.model_type,
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
+                created_at=self.created_at,
                 status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
             )
             self._published_registry_terminal = registry_terminal
@@ -571,6 +575,8 @@ class SessionResumeState:
     launch_kind: LaunchKind = "delegate"
     label: str = ""
     prompt: str = ""
+    # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
+    created_at: str | None = None
     started_at: str = dataclasses.field(default_factory=_utc_now)
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     output_updated_at: str | None = None
@@ -593,6 +599,7 @@ class SessionResumeState:
             launch_kind=session.launch_kind,
             label=session.label,
             prompt=session.prompt,
+            created_at=session.created_at,
             started_at=session.started_at,
             updated_at=session.updated_at,
             output_updated_at=session.output_updated_at,

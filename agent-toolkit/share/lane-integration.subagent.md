@@ -34,7 +34,7 @@
 ## 計画最終化
 
 計画メタ情報が示す対象リポジトリの専用worktreeが実在することを確認する。回収済みなら計画メタ情報を書き換えず、回収順序の違反を`needs_escalation`で返す。計画作業rootに対象バンドルがなく保存済みの場合は、保存root相対パスを特定し、`atk plans checkout <保存root相対パス>`で取得する。同worktreeをcwdとして、`atk run-script plan-progress --`で計画ファイルの`## 進捗ログ`へ、統合区分、統合先branch、`merged_head`、実行レビューの収束及びAWI終端前の状態を追記する。
-同じ追記へ当該レーンの稼働時間も記録する。値はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とし、書式は`agent-toolkit:plan-mode`の計画ファイル基準が定める。開始時刻は`atk agents list`の出力のうち`label`がレーン識別子と一致する自sessionの`started_at`から取得する。
+同じ追記へ当該レーンの稼働時間も記録する。値はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とし、書式は`agent-toolkit:plan-mode`の計画ファイル基準が定める。開始時刻は`atk agents list`の出力のうち`label`がレーン識別子と一致する自sessionの`created_at`から取得する。`started_at`はturnごとに更新されるため起点に用いない。`created_at`を持たない行（旧版のagents_serverが書いた状態）では`started_at`を起点とし、秒数に続けて「（最後のturnの開始からの下限値）」と書く。
 この記録は次の処理回の選定工程がレーン配分の見込みを導く入力になる。記録が無いと、見込みと実績の乖離がそのまま待ち時間として残る。rebaseを実行した場合は、rebase前後の専用branchの7文字以上の一意な短縮OIDの対応も同じ追記へ含める。
 同じ専用worktreeをcwdとして`atk run-script plan-check -- --reject-migration-warnings --work-dir <計画メタ情報の対象リポジトリ> <計画ファイルの絶対パス>`を単独実行し、終了コード0と警告の不在を確認する。統合先worktreeと専用worktreeが異なる場合も、この2コマンドでは専用worktreeをcwdとして維持する。
 続けて、`atk plans commit`が作業計画rootを解決する契約に従うcwdで`atk plans commit <メイン計画ファイル名>`を単独実行し、成功の報告と警告の不在を確認する。

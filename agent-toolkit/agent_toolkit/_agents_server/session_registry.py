@@ -39,6 +39,8 @@ class ResumeInfo:
     launch_kind: Literal["delegate", "explore", "shell", "write"]
     turn_seq: int
     status: Literal["starting", "running", "completed", "failed", "interrupted"]
+    # 項目を持たない旧形式のレコードでは`None`とする。
+    created_at: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -67,6 +69,7 @@ def publish(
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
     status: Literal["starting", "running", "completed", "failed", "interrupted"] | None = None,
+    created_at: str | None = None,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。"""
@@ -90,6 +93,8 @@ def publish(
         "status": status,
         "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
     }
+    if created_at is not None:
+        payload["created_at"] = created_at
     path = registry_directory(state_root) / f"{session_id}.json"
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
@@ -165,4 +170,5 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         launch_kind=launch_kind,
         turn_seq=payload["turn_seq"],
         status=status,
+        created_at=payload.get("created_at") if isinstance(payload.get("created_at"), str) else None,
     )
