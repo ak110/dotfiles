@@ -1,5 +1,6 @@
 """pytools._internal.setup_herdr_cliのテスト。"""
 
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -149,6 +150,7 @@ def test_run_installs_windows_direct_install(
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "win32")
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "find_powershell", lambda: "pwsh")
+    monkeypatch.setenv("CURL_HOME", str(tmp_path / "original-curl-home"))
     local_app_data = tmp_path / "custom-local" if use_local_app_data else tmp_path / "AppData" / "Local"
     if use_local_app_data:
         monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
@@ -157,17 +159,24 @@ def test_run_installs_windows_direct_install(
     launcher = local_app_data / "Programs" / "Herdr" / "bin" / "herdr.exe"
     requested: list[str] = []
     commands: list[list[str]] = []
+    installer_curl_home: list[Path] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requested.append(str(request.url))
         return httpx.Response(200, content=b"Write-Host")
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        del kwargs
         commands.append(command)
         if command[0] == "pwsh":
+            env_overrides = kwargs["env_overrides"]
+            assert isinstance(env_overrides, dict)
+            curl_home = Path(env_overrides["CURL_HOME"])
+            installer_curl_home.append(curl_home)
+            assert (curl_home / ".curlrc").read_text(encoding="ascii") == "ssl-revoke-best-effort\n"
             launcher.parent.mkdir(parents=True)
             launcher.write_text("", encoding="utf-8")
+        else:
+            assert kwargs.get("env_overrides") is None
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
     monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
@@ -179,6 +188,9 @@ def test_run_installs_windows_direct_install(
     assert requested == ["https://herdr.dev/install.ps1"]
     assert commands[0][:2] == ["pwsh", "-NoProfile"]
     assert commands[-1] == [str(launcher), "--version"]
+    assert len(installer_curl_home) == 1
+    assert not installer_curl_home[0].exists()
+    assert os.environ["CURL_HOME"] == str(tmp_path / "original-curl-home")
 
 
 def test_run_raises_when_installer_is_unreachable(monkeypatch, tmp_path: Path) -> None:

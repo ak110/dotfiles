@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import locale
 import logging
 import os
 import re
@@ -44,6 +45,7 @@ def run_official_installer(
     tag: str,
     timeout: float,
     http_timeout: float = 30.0,
+    env_overrides: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str] | None, str]:
     """公式インストーラーを取得して実行し、結果と失敗の理由を返す。
 
@@ -65,12 +67,17 @@ def run_official_installer(
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".ps1" if windows else ".sh", delete=False) as temp:
             temp.write(response.content)
             temp_path = Path(temp.name)
-        command = (
-            [find_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
-            if windows
-            else ["bash", str(temp_path)]
-        )
-        return claude_common.run_subprocess(command, timeout=timeout, tag=tag), ""
+        if windows:
+            powershell = find_powershell()
+            command = [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+            # Windows PowerShell 5.1の出力はロケールのコードページで受け取る。
+            output_encoding = locale.getpreferredencoding(False) if Path(powershell).stem.lower() == "powershell" else "utf-8"
+        else:
+            command = ["bash", str(temp_path)]
+            output_encoding = "utf-8"
+        return claude_common.run_subprocess(
+            command, timeout=timeout, tag=tag, env_overrides=env_overrides, encoding=output_encoding
+        ), ""
     except (httpx.HTTPError, OSError) as error:
         reason = f"公式インストーラーの取得に失敗: {error}"
         if windows and "CERTIFICATE_VERIFY_FAILED" in str(error):

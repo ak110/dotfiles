@@ -137,8 +137,9 @@ def run_subprocess(
     cwd: Path | None = None,
     tag: str | None = None,
     env_overrides: dict[str, str] | None = None,
+    encoding: str = "utf-8",
 ) -> subprocess.CompletedProcess[str] | None:
-    """サブプロセスをUTF-8 + `errors="replace"` で実行する共通ラッパー。
+    """サブプロセスを指定エンコーディング + `errors="replace"` で実行する共通ラッパー。
 
     タイムアウト・OSError・SubprocessError を吸収して None を返す。非ゼロ終了は
     そのまま呼び出し元に返す。`tag` を指定すると失敗時のログラベルに使用する。
@@ -164,7 +165,7 @@ def run_subprocess(
             text=True,
             check=False,
             timeout=timeout,
-            encoding="utf-8",
+            encoding=encoding,
             errors="replace",
             cwd=cwd,
             stdin=subprocess.DEVNULL,

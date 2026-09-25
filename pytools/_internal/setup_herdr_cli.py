@@ -1,8 +1,10 @@
 """Herdr公式直接インストール版を導入または更新する。"""
 
+import contextlib
 import logging
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import httpx
@@ -51,13 +53,22 @@ def run(client: httpx.Client | None = None) -> bool | post_apply_outcome.PostApp
             and _DETACHED_UPDATE_MARKER in update_error
         )
     else:
-        result, reason = setup_cli_common.run_official_installer(
-            client,
-            posix_url=_POSIX_INSTALLER_URL,
-            windows_url=_WINDOWS_INSTALLER_URL,
-            tag=_TAG,
-            timeout=_COMMAND_TIMEOUT,
-        )
+        env_overrides: dict[str, str] | None = None
+        with contextlib.ExitStack() as stack:
+            if sys.platform == "win32":
+                # curlはCURL_HOMEを最初に調べ、公式インストーラーは`-q`を付けない。
+                # この子プロセスだけに失効確認先の不達を許す設定を渡し、終了時に除去する。
+                curl_home = stack.enter_context(tempfile.TemporaryDirectory(prefix="herdr-curl-"))
+                (Path(curl_home) / ".curlrc").write_text("ssl-revoke-best-effort\n", encoding="ascii")
+                env_overrides = {"CURL_HOME": curl_home}
+            result, reason = setup_cli_common.run_official_installer(
+                client,
+                posix_url=_POSIX_INSTALLER_URL,
+                windows_url=_WINDOWS_INSTALLER_URL,
+                tag=_TAG,
+                timeout=_COMMAND_TIMEOUT,
+                env_overrides=env_overrides,
+            )
         if reason:
             logger.warning(log_format.format_status(_TAG, reason))
             raise RuntimeError("公式インストーラーの取得に失敗")
