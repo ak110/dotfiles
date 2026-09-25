@@ -446,27 +446,46 @@ async def test_wait_accumulates_unobserved_child_sessions_across_auto_resumes(
 
 
 @pytest.mark.asyncio
-async def test_wait_returns_result_without_child_sessions(
+async def test_wait_returns_last_result_after_chained_auto_resumes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """背景taskだけで保留した結果はtask終端後に返す。"""
-    client = ControlledClaudeClient("claude-no-child")
+    """再開turnが背景taskを残して終わる間は結果を返さず、最後の再開turnの結果だけを返す。
+
+    最後のtaskの終端から再開turnの結果までの間に待機の刻みが到来しても、保留中の結果を確定しない。
+    """
+    client = ControlledClaudeClient("claude-chain")
     manager, backend = _manager(client, monkeypatch)
     try:
         session = await _start(manager, tmp_path, monkeypatch)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         client.emit(TaskStartedMessage("task-1"))
-        client.emit(ResultMessage("孫なしの結果"))
+        client.emit(ResultMessage("待機中: task-1"))
         await _await_state(lambda: session.awaiting_auto_resume)
-        client.emit(TaskUpdatedMessage("task-1", "completed"))
 
+        client.emit(TaskNotificationMessage("task-1", "completed"))
+        client.emit(TaskStartedMessage("task-2"))
+        client.emit(ResultMessage("待機中: task-2", origin={"kind": "task-notification"}))
+        await _await_state(
+            lambda: session.live_task_ids == {"task-2"}
+            and session.pending_result is not None
+            and session.pending_result["agent_message"] == "待機中: task-2"
+        )
+        assert wait_task.done() is False
+
+        client.emit(TaskNotificationMessage("task-2", "completed"))
+        await _await_state(lambda: not session.live_task_ids)
+        # 自動再開の監視と待機は0.1秒刻みで保留中の結果を判定するため、刻みを複数回経過させる。
+        await asyncio.sleep(0.35)
+        assert wait_task.done() is False
+        assert session.awaiting_auto_resume is True
+
+        client.emit(ResultMessage("最終結果", origin={"kind": "task-notification"}))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert "error" not in result
-        assert session.awaiting_auto_resume is False
-        assert not session.live_child_session_ids
+        assert result["agent_message"] == "最終結果"
+        assert session.auto_resume_consumed is True
     finally:
         await backend.close()
 

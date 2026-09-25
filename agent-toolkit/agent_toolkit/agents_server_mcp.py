@@ -1401,10 +1401,12 @@ class AgentsServerManager:
                 self._status_writer.delete_result(session.session_id, collector="auto-resume")
             return
 
-        if not has_pending_auto_resume_targets(session):
+        # 保留対象が背景taskの終端だけで消えた場合は確定しない。backendは当該終端に続く再開turnの結果で
+        # 保留中の結果を差し替えるため、ここで確定すると再開turnの結果より先に待機表明の結果を公開してしまう。
+        # この場合の確定は再開turnの結果か保留期限の経過に委ねる。
+        if not has_pending_auto_resume_targets(session) and unobserved:
             finalize_pending_result(session)
-            if unobserved:
-                record_unobserved_sessions(session, unobserved)
+            record_unobserved_sessions(session, unobserved)
             return
 
         deadline = session.auto_resume_deadline
