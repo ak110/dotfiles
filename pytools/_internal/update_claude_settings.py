@@ -70,6 +70,12 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     # 2026-09: dotfiles固有hookをpytoolsのconsole scriptへ移したため旧共通入口を除去
     "dotfiles/scripts/claude_hook.py",
     "dotfiles\\scripts\\claude_hook.py",
+    # 2026-09: console scriptの不在時に通過させる`command -v`前置を持たない旧形式を除去する。
+    # 管理対象の除去は現行コマンド文字列との完全一致で行うため、旧形式が現行形式と並んで二重に実行されていた。
+    "sh -c 'dotfiles-claude-hook ",
+    # 2026-09: 参照文書の読取とスキル起動の記録を読む検査を撤去したため、個人用PostToolUseを除去する
+    "dotfiles-claude-hook posttooluse",
+    "claude-hook-posttooluse.ps1",
 )
 
 # settings.json の env 配下から除去するキー。
