@@ -704,6 +704,8 @@ def consume_claude_agents_server_message(session: SessionState, message: Any) ->
             if normalized is not None:
                 arguments = dict(tool_input) if isinstance(tool_input, Mapping) else {}
                 session.child_tool_uses[tool_use_id] = (normalized, arguments)
+            elif tool_name == "Bash" and _is_agents_wait_command(tool_input):
+                session.child_tool_uses[tool_use_id] = (_AGENTS_WAIT_TOOL_USE, {})
             continue
 
         tool_use_id = _block_value(block, "tool_use_id")
@@ -712,6 +714,9 @@ def consume_claude_agents_server_message(session: SessionState, message: Any) ->
         session.record_tool_use_end(tool_use_id)
         tool_use = session.child_tool_uses.pop(tool_use_id, None)
         if tool_use is None:
+            continue
+        if tool_use[0] == _AGENTS_WAIT_TOOL_USE:
+            consume_agents_wait_output(session, _tool_result_text(_block_value(block, "content")))
             continue
         result = _structured_tool_result(_block_value(block, "content"))
         if result is not None:
@@ -740,6 +745,71 @@ def consume_agents_server_tool_result(
         # 当該レコードは孫sessionを所有する別プロセスが持つため、観測側は削除しない。
         session.live_child_session_ids.discard(session_id)
         session.terminal_child_session_ids.add(session_id)
+
+
+# 委譲先がBashで実行した`atk agents wait`の呼び出しを`child_tool_uses`で識別する名前。
+# agents_serverのツール名と衝突しない値とする。
+_AGENTS_WAIT_TOOL_USE = "atk agents wait"
+# `atk agents wait --output-file`が標準出力へ書く保存先の行。
+_AGENTS_WAIT_SAVED_PREFIX = "保存先: "
+
+
+def _is_agents_wait_command(tool_input: Any) -> bool:
+    command = tool_input.get("command") if isinstance(tool_input, Mapping) else None
+    return isinstance(command, str) and "atk agents wait" in command
+
+
+def _tool_result_text(value: Any) -> str:
+    """ツール結果の本文を文字列として連結する。"""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        text = value.get("text")
+        if isinstance(text, str):
+            return text
+        return _tool_result_text(value.get("content"))
+    if isinstance(value, list | tuple):
+        return "\n".join(_tool_result_text(item) for item in value)
+    return ""
+
+
+def _collected_session_ids(text: str) -> set[str]:
+    """`atk agents wait`のJSON Lines出力から、終端結果を回収したsession識別子を返す。"""
+    collected: set[str] = set()
+    for line in text.splitlines():
+        try:
+            payload: Any = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(payload, dict)
+            and isinstance(payload.get("session_id"), str)
+            and payload.get("status") in TERMINAL_STATUSES
+        ):
+            collected.add(payload["session_id"])
+    return collected
+
+
+def consume_agents_wait_output(session: SessionState, text: str) -> None:
+    """委譲先が`atk agents wait`で終端結果を回収した孫sessionを自動再開の追跡から外す。
+
+    回収済みの結果は再配送されないため、当該sessionの終端を理由に委譲先を再開させると、
+    委譲先は受け取り済みの結果について同じ報告を返し直すだけのturnを費やす。
+    回収の根拠は待機コマンドが返したJSON Linesとし、`--output-file`の場合は標準出力が示す保存先を読む。
+    結果ファイルの不在は公開前の状態と区別できないため、回収の根拠に用いない。
+    """
+    collected = _collected_session_ids(text)
+    for line in text.splitlines():
+        if not line.startswith(_AGENTS_WAIT_SAVED_PREFIX):
+            continue
+        try:
+            collected |= _collected_session_ids(
+                pathlib.Path(line.removeprefix(_AGENTS_WAIT_SAVED_PREFIX).strip()).read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError):
+            continue
+    session.live_child_session_ids.difference_update(collected)
+    session.terminal_child_session_ids.difference_update(collected)
 
 
 def finalize_pending_result(session: SessionState, *, touch: bool = True) -> None:

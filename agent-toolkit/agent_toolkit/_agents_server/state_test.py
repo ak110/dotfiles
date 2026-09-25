@@ -1,6 +1,7 @@
 """agents_server共有プロンプトと状態遷移の契約を検証する。"""
 
 import logging
+import pathlib
 
 import pytest
 
@@ -67,6 +68,87 @@ def test_child_session_is_tracked_for_every_host_tool_name_form(namespace: str) 
 
     assert session.live_child_session_ids == {"child-1"}
     assert state.has_pending_auto_resume_targets(session)
+
+
+def _start_child(session: state.SessionState, tool_use_id: str, child_id: str) -> None:
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": tool_use_id, "name": "mcp__agents_server__start_explore", "input": {"prompt": "調査"}}]},
+    )
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"tool_use_id": tool_use_id, "content": {"session_id": child_id, "status": "running"}}]},
+    )
+
+
+def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets() -> None:
+    """委譲先が`atk agents wait`で回収した孫sessionは、終端を理由とする自動再開の対象から外れる。"""
+    session = state.SessionState("parent-1", "/tmp")
+    _start_child(session, "toolu_1", "child-1")
+    _start_child(session, "toolu_2", "child-2")
+
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_3", "name": "Bash", "input": {"command": "atk agents wait"}}]},
+    )
+    state.consume_claude_agents_server_message(
+        session,
+        {
+            "content": [
+                {
+                    "tool_use_id": "toolu_3",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": '{"session_id": "child-1", "status": "completed", "agent_message": "完了"}\n'
+                            '{"session_id": "child-2", "status": "running", "notices": []}',
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    # 実行中通知だけを返したsessionは回収済みではないため、追跡を続ける。
+    assert session.live_child_session_ids == {"child-2"}
+    assert state.has_pending_auto_resume_targets(session)
+
+
+def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Path) -> None:
+    """`--output-file`で保存した待機結果も回収の根拠として読む。"""
+    session = state.SessionState("parent-1", "/tmp")
+    _start_child(session, "toolu_1", "child-1")
+    output = tmp_path / "wait.jsonl"
+    output.write_text('{"session_id": "child-1", "status": "failed", "agent_message": ""}\n', encoding="utf-8")
+
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": f"atk agents wait --output-file {output}"}}]},
+    )
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"tool_use_id": "toolu_2", "content": f"保存先: {output}\n行数: 1"}]},
+    )
+
+    assert not session.live_child_session_ids
+    assert not state.has_pending_auto_resume_targets(session)
+
+
+def test_unrelated_bash_output_does_not_release_child_session() -> None:
+    """`atk agents wait`以外のBash出力に同じJSON行が現れても、追跡対象を変えない。"""
+    session = state.SessionState("parent-1", "/tmp")
+    _start_child(session, "toolu_1", "child-1")
+
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": "cat result.jsonl"}}]},
+    )
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"tool_use_id": "toolu_2", "content": '{"session_id": "child-1", "status": "completed"}'}]},
+    )
+
+    assert session.live_child_session_ids == {"child-1"}
 
 
 def test_pending_tool_uses_track_tools_outside_agents_server() -> None:

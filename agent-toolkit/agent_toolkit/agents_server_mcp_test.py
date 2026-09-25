@@ -475,6 +475,15 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
         assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
+def test_start_tool_descriptions_show_agents_wait_invocation() -> None:
+    """開始ツールの公開説明が、待機コマンドの形と`session_id`を引数に渡さないことを示す。"""
+    for tool_name in ("start", "start_custom", "start_explore", "start_write", "start_shell"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert "`atk agents wait --output-file <絶対パス>`" in tool.description, tool_name
+        assert "`atk agents wait`は`session_id`を引数に取らず" in tool.description, tool_name
+
+
 @pytest.mark.asyncio
 async def test_session_label_prefers_argument_over_generated_value(
     monkeypatch: pytest.MonkeyPatch,

@@ -2085,7 +2085,9 @@ async def start(
     engine、model、effortはタスク文書に対応する工程別モデル設定から決める。
     候補列を明示する場合は`start_custom`を使う。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    結果が不要なら`kill`で破棄する。
+    `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     応答は`session_id`と`status`を含む。候補を切り替えて起動した場合だけ、除外した候補と
     除外の根拠、および採用した`engine`・`model`・`effort`を加える。起動条件の詳細は`show`で取得する。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
@@ -2130,7 +2132,9 @@ async def start_custom(
     候補は先頭から試し、通常応答は後続の観測に必要な`session_id`と`status`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     候補を切り替えて起動した場合だけ、除外した候補と採用した候補を加える。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    結果が不要なら`kill`で破棄する。
+    `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     """
     response = await _MANAGER.start(model_type, prompt, cwd, label=label)
@@ -2165,7 +2169,9 @@ async def start_explore(
     `fast=true`では`explore_fast_model`、`fast=false`では`explore_model`の候補列を使う。
     候補列の直接入力は受け付けない。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    結果が不要なら`kill`で破棄する。
+    `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     プロジェクト指示の読込を減らした軽量な起動条件で開始する。
     起動時のシステム指示でファイルを作成、変更及び削除しない契約を委譲先へ課すため、成果ファイルの出力を依頼しない。
     読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を本ツールへ委譲する。
@@ -2203,7 +2209,9 @@ async def start_shell(
     `explore_fast_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
     候補列の直接入力は受け付けない。
     読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を開始して観測するか、結果が不要なら`kill`で破棄する。
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    結果が不要なら`kill`で破棄する。
+    `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     委譲と直接実行の採算は、コマンドの出力量で判定する。
     出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドは本ツールへ委譲し、
     1,000トークン未満に収まる見込みのコマンドは自ら実行する。
@@ -2234,7 +2242,8 @@ async def start_write(
     設計、調査、レビュー及び公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。
     読者が異なる文章は別の依頼にする。プロジェクト指示の読込を省いた`write_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。
     候補列の直接入力は受け付けない。
-    終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`で受け取る。
+    終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait --output-file <絶対パス>`で受け取る。
+    `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     結果が不要なら`kill`で破棄する。
     応答は`start`と同じ項目を含む。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
