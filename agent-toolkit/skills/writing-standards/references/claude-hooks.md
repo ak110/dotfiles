@@ -33,11 +33,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある
 - CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
   出力文字列だけが届くため、状態記録の条件からコマンドの成否を外す。
-  `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる。
-  失敗したシェル実行でPostToolUseが発火するかは未検証とする。
-  再検証は、通常起動のCodexセッションで失敗するシェル実行を1回行い、
-  同じ状態ファイルの`test_executed`と`git_log_checked`の変化を確認する。
-  発火の有無によらず終了コードが届かないため、成否を前提とする記録はClaude Codeに限る
+  `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる
 - Bashコマンドを対象とする検査は、コマンド文字列全体への部分一致で発火させず、
   区間分割とトークン化により対象が実行位置にある場合だけ発火させる
   （検索語・引数として名前が現れるだけの読み取り操作を検出しないため）。

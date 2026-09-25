@@ -343,20 +343,4 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 ## agent-toolkit/rules/01-agent.md：自動挿入本文の配送境界：2026年9月25日
 
 2026年9月25日、Claude Code 2.1.281で新しいセッション`0b228cab-e106-4b5e-805b-f5e88320691c`を起動し、`--include-hook-events --output-format stream-json`でhook応答を保存した。SessionStartの`additionalContext`は`<agent-toolkit-auto-inserted source="agent-toolkit/rules_context" kind="notice">`で始まった。存在しないパスを指定したBash検索に対するPreToolUseの`additionalContext`は、`<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">`で始まった。両応答の`exit_code`は0だった。検証用セッションはhook応答を得た後に中断したため、セッション全体の完了結果はこの観測の根拠に含めない。
-再検証では、同版以降で`--include-hook-events`を付けて新しいセッションを起動する。SessionStartと、存在しない検索パスへのPreToolUseの`hook_response.output`を読む。各応答の外側境界にある`source`と`kind`を照合する。
-
-## agent-toolkit/agent_toolkit/_hooks/posttooluse.py：常時規範の編集警告：2026年9月25日
-
-2026年9月24日の調査では、セッション記録36件にある是正発話24件を、手順の省略10件、手順への固執4件、規範追記の書き過ぎ4件、その他6件に分類した。省略の代表例は`~/.claude/projects/-home-aki-dotfiles--claude-worktrees-process-loop/3586311b-7fa0-44dc-bfbc-71d7aedd7255.jsonl:3249`にある。固執の代表例は`~/.claude/projects/-home-aki-glatasks/71ab73b7-3efa-472a-b4ed-1faf456a6dfa.jsonl:2495`にある。規範への追記を制限する条件と、手順の目的照合を改める判断材料とした。再検証では`atk run-script session-review-evidence -- --user-events`の分類結果と代表位置を照合する。
-
-2026年9月25日、このworktreeの開始時HEADと編集後の常時規範5ファイルをUTF-8で計測した。各値は「バイト数、限定・例外語を含む文の数、3項目以上の列挙を含む文の数」である。文は句点か改行で区切り、限定・例外語は「ただし」「除く」「限る」「限り」「対象外」「以外」、列挙は「、」と「及び」の合計2個以上で判定した。
-
-| ファイル | 開始時HEAD | 編集後 |
-| --- | --- | --- |
-| `rules/01-agent.md` | 45,463、17、137 | 12,742、3、38 |
-| `rules/02-agent-operations.md` | 27,387、10、79 | 9,776、1、17 |
-| `share/rules-main.md` | 10,192、5、23 | 3,944、0、12 |
-| `share/rules-main.claude-code.md` | 2,966、1、4 | 1,448、1、0 |
-| `share/rules-subagent.md` | 13,855、5、30 | 5,638、0、9 |
-
-編集前後の総量増加は1バイトから警告する。様式は、追加または置換した行に限定・例外文か3項目以上の列挙が1件以上あると警告する。既存文書に該当する文が多く、全文の再検査では同じ警告を繰り返すため、PreToolUseが編集前後の差分行を記録し、PostToolUseが成功後に追加行だけを数える。警告は操作を遮断しない。再検証では`git show HEAD:<対象パス>`と作業ツリーの同じファイルをUTF-8で読み、記載した文の区切りと語集合で計数する。EditとWriteの増加・縮小はhook検体で比較する。
+再検証では、同版以降で`--include-hook-events`を付けて新しいセッションを起動する。SessionStartと、`uv.lock`を`Write`で書き込むPreToolUseの`hook_response.output`を読む（存在しないパスへの警告は2026年9月26日に撤去した）。各応答の外側境界にある`source`と`kind`を照合する。

@@ -340,8 +340,8 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
-| plugin `PreToolUse/pretooluse` | 編集内容とコマンドの事前検査。文字化け・他言語文字の混入・LF改行のみの`.ps1`書き込み・lockfileやシークレットの直接編集・codexサンドボックス指定の弱体化をブロックし、口語表現・ホーム絶対パスの混入・自動生成manifestの手編集を警告する。ユーザーが直接読む質問本文と計画本文にも同じ本文検査を適用し、当該2ツールでは口語表現も遮断し、あわせて誤字の辞書による警告を返す。Bashではパターン一致によるプロセス終了、`sleep`直後の状態確認連結と除外指定の無い再帰`grep`を同一セッション内の再検出でブロックする。全量観測が必要な検証・状態変更・照合の出力切り詰めを遮断し、反復可能な出力の先頭確認は許す。高容量のユーザー領域を無限定に対象とする再帰検索・状態を変更するコマンドの出力を限定する指定と他コマンドとの連結・version未更新・未検証コミット・一括ステージ・`codex exec`前の未決事項を警告し、`git log`へ`--decorate`を自動挿入する | 対応 | 部分対応。編集検査は口語表現・文字化け・他言語文字・ホーム絶対パス・lockfile・シークレット・manifest・サンドボックス保護に対応する。`.ps1`改行、frontmatter同期注記と本文節参照の実在検証はpatch入力から判定できないため非対応。ユーザーが直接読む本文の検査は、対応する入力を持たないため非対応。Bash検査は現在の入力とcwdだけで判定するものと、編集成功状態による一括ステージ警告に対応する。コマンドの終了コードを取得できないため、`git log`確認・amend後の状態・検証実行に依存する検査は非対応 |
-| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みUWIの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
+| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に検査する。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取を警告する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集検査は文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文の検査と応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する |
+| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・背景タスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後の構造検査を案内し、回答済みUWIを通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と構造検査の案内、`agents_server` sessionの状態記録に対応する |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`及び圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は品質想起通知も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
@@ -354,7 +354,6 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前検査 | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
-| 個人設定 `PostToolUse/posttooluse` | 参照文書へのReadとスキル起動をセッション状態へ記録する | 対応 | 非対応。同上 |
 
 Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では品質想起通知も追加する。
 pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする8イベントの定義を確認して信頼する。

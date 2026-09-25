@@ -216,8 +216,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:writing-standards`を起動する。
 
-SKILL.mdを`Read`で読むだけではPostToolUseフックが記録する`agent_toolkit_edit_skill_invoked`フラグが立たず、
-PreToolUseフックが警告を返すため、Skillツールで起動する。
+本スキルはSkillツールで起動する。
 
 ## 権限設定の配置
 

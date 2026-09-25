@@ -1196,9 +1196,26 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 成果物の直接検査、必要なスキルの起動記録、危険な操作の抑止及び終了前の未完了通知を、対応するイベントで実行する。
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
-### warn・block検査の全件照合（2026年9月25日）
+### warn・block検査の全件照合（2026年9月26日）
 
-判定モジュールが通知整形関数へ渡すwarn・blockの対を、通知式の呼び出し位置で列挙した。条件は同じ行の関数とその分岐、通知は表中の本文の冒頭又は式で特定する。式が変数の場合も、当該位置の代入元が通知本文である。各行のパスから`agent-toolkit/agent_toolkit/_hooks/`を省略した。文体表現だけを検出する2件と同一呼び出しを10回で遮断する1件を2026年9月24日に撤去した。後者は回数だけでは契約違反を確定できず、正当な再試行も止めるためである。行番号は改訂で変わるため、表は関数名で通知位置を特定する。2026年9月25日の再照合ではBashの連続失敗ゲートを撤去した。2026年9月26日には、利用者の確認を経ずに追加された特権操作・パッケージ変更のBash入力の遮断を利用者指示により撤去した。
+hookの検査は、通した場合に元へ戻せない結果を防ぐものだけを残す。
+残す対象は、不可逆な操作の防止、データ破損の防止、常駐運用の終端保証、規範の配送と権限の自動許可である。
+英語応答警告はこの基準の外側で利用者が残すと確定した。
+規範の想起、CLI形式の事前検出又は文体の検出を目的とする検査は、コマンドの失敗や再編集で戻せる文面のような可逆な失敗を防ぐに留まる。こうした検査はhookに置かず、規範、レビュー及び`pyfltr`・CIの機械検査で扱う。
+hookの静的な解析はシェル構文、作業ディレクトリの遷移、ホストの通知挙動を完全には再現できない。そのため可逆な失敗を防ぐ検査は正当な操作を遮断・警告し、個別の是正を積み重ねる構造になる。
+秘匿ファイルの読取と編集はauto mode classifierと権限設定が担う（2026年9月26日、利用者指示）。
+
+不可逆は、操作の後に対象の公開仕様が定める手段で元の状態へ戻せないことを指す。
+判定は、操作の種類の名前や過去の分類表の語ではなく、その手段の有無を公開仕様で確かめて行う。
+例えば、Gitの履歴書換えは`git reflog`と`git reset`で元のcommitへ戻せるため可逆である。
+パッケージの削除は、設定ファイルを残す`remove`と残さない`purge`で結果が分かれる。
+2026年9月25日の照合表は、実行時の入力を測れるという事実を存続の理由とし、Git履歴の検査を復元手段を確かめずに「取り消し難」と分類していた。
+
+2026年9月26日の見直しで、同25日の照合表79行のうち55行の検査を撤去した。
+表に載っていなかったPreToolUseの7検査も撤去した。対象は、Co-Authored-Byの遮断、`git log`への`--decorate`の自動付与、前景ループ待機、`codex exec`の念押し、WebFetchの逐語要求、汎用Agentの選択及びSendMessageの宛先である。
+dotfiles個人用hookの7検査のうち5検査も撤去した。
+個人用hookに残るのは、PowerShellの必須ディレクティブ欠落と配布物へのdotfiles固有名混入の警告である。
+各行のパスから`agent-toolkit/agent_toolkit/_hooks/`を省略し、行番号は改訂で変わるため関数名で通知位置を特定する。
 
 条文欄の略号は次の所在を表す。Xは統治する規範条文が無く、実装またはホストの入出力契約が判定の正本である。
 
@@ -1207,101 +1224,35 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 - P: `agent-toolkit/skills/process-wi/SKILL.md`「終端」
 - C: `agent-toolkit/share/rules-main.md`「協調と自律」
 - M: `agent-toolkit/skills/plan-mode/SKILL.md`「進め方」
-- W: `agent-toolkit/skills/writing-standards/references/writing.md`「日本語の書き方」
-- S: `agent-toolkit:secret-files`「秘匿値ファイルの取り扱い」
-- R: `agent-toolkit:search`「検索手段の選定と出力量の制御」
-- G: `agent-toolkit/skills/commit/SKILL.md`「通常commit」と同スキルの`references/history-rewrite.md`「履歴書換え」
-- A: `agent-toolkit/skills/writing-standards/references/agent-documents-additions.md`「規範追記時の判定」
-- T: `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」
+- W: `agent-toolkit/rules/01-agent.md`「使用言語」
 - X: 該当条文なし
 
 | 条件と通知位置 | 防ぐ契約違反と通知の要旨 | 条文 | 存続区分と実装経路 |
 | --- | --- | --- | --- |
-| `agents_server_session_advisor.py` `evaluate` | 未観測の子sessionを残した終了への警告 | D | 維持（技術的不成立）：所有する子sessionがrunningのままStopへ進むと、終了報告が子の結果を含まない。状態記録とStop入力の照合を実装・検体で確認 |
-| `autonomous_exit.py` `evaluate` | 常駐セッションで必須の終了操作を欠く遮断 | P | 維持（技術的不成立）：常駐ループが終了操作を欠くと実行主体が残り、次の周期へ移れない。Stop入力と起動記録の照合を実装で確認 |
-| `pending_question_advisor.py` `evaluate` | 地の文に質問を残した終了の遮断 | C | 維持（元要件）：確認経路を経ない質問を地の文へ置いたまま終了する入力をStop時に検出する。協調モードの確認契約に対応 |
+| `agents_server_session_advisor.py` `evaluate` | 未観測の子sessionを残した終了への警告 | D | 維持（常駐運用の終端保証）：所有する子sessionがrunningのままStopへ進むと、終了報告が子の結果を含まない。状態記録とStop入力の照合を実装・検体で確認 |
+| `autonomous_exit.py` `evaluate` | 常駐セッションで必須の終了操作を欠く遮断 | P | 維持（常駐運用の終端保証）：常駐ループが終了操作を欠くと実行主体が残り、次の周期へ移れない。Stop入力と起動記録の照合を実装で確認 |
+| `pending_question_advisor.py` `evaluate` | 地の文に質問を残した終了の遮断 | C | 維持（常駐運用の終端保証）：確認経路を経ない質問を地の文へ置いたまま終了すると、回答を受け取る経路が残らない。Stop入力の判定を実装で確認 |
 | `plan_save_advisor.py` `evaluate` | f'当該セッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n保存の契機に達したバンドルだけをatk plans commit <計画… | M | 維持（データ破損）：保存契機後も所有する計画バンドルが作業rootに残ると、後続の読込先へ版が反映されない。バンドル実在分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | f"warn: listの応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（技術的不成立）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できない。応答の必須fieldと記録分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（技術的不成立）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できない。応答の必須fieldと記録分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | 起動応答をsession状態へ記録できない警告 | X | 維持（技術的不成立）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できない。応答の必須fieldと記録分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | 継続応答をsession状態へ記録できない警告 | X | 維持（技術的不成立）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できない。応答の必須fieldと記録分岐を実装で確認 |
-| `posttooluse.py` `_handle_edit_tool` | 常時規範の編集後バイト数が編集前より増加した警告 | A | 維持（元要件）：AWI 20260924-174508-001の増加観測に対応。PreToolUseの編集前値と編集後のファイルを照合する分岐を実装・検体で確認 |
-| `posttooluse.py` `_handle_edit_tool` | 常時規範の追加文に限定・例外または3項目以上の列挙がある警告 | A | 維持（元要件）：同AWIの条件警告に対応。追加行の条件表現と列挙長を照合する分岐を実装・検体で確認 |
-| `pretooluse/agent_checks.py` `_check_sendmessage_agent_type_recipient` | 'エージェント種別名はSendMessageの到達可能な宛先ではない。通常の完了報告はツール結果として1回返し、即時通知は実行環境が渡した呼び出し元識別子へだけ送る。' | D | 維持（技術的不成立）：種別名を宛先にするとSendMessageが到達可能なsessionを解決できない。宛先の型検査を実装で確認 |
-| `pretooluse/agent_checks.py` `_check_task_stop` | f"blocked: TaskStop。現在のセッションには、指定した対象の所有記録も停滞検知完了記録も無い。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、… | D | 維持（取り消し難）：所有記録のないTaskStopは他主体の背景処理を停止し得る。所有状態と対象IDの照合を実装で確認 |
-| `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないpromptが必要である。' | D | 維持（技術的不成立）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力の検査分岐を実装で確認 |
-| `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないsession_idが必要である。' | D | 維持（技術的不成立）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力の検査分岐を実装で確認 |
-| `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}は、session_idに対応する絶対cwdが保存されていないため続行できない。' | D | 維持（技術的不成立）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力の検査分岐を実装で確認 |
-| `pretooluse/content_checks.py` `_collect_edit_operation_warnings` | ファイル末尾のツール境界タグ混入を警告 | X | 維持（公開契約破壊）：編集本文へツール境界タグが混入するとPython又は計画本文に制御文字列が残る。編集後の像と対象パスの照合を実装で確認 |
-| `pretooluse/content_checks.py` `_check_edit_boundary_resolution` | 複数断片の境界を一意に解決できない警告 | O | 維持（技術的不成立）：一致しない境界の編集は実行ホストが適用できない。複数断片と現行本文の照合を実装で確認 |
-| `pretooluse/content_checks.py` `_warn_foreign_script_mixin` | f'{body}\n対処: {fix}' | W | 維持（元要件）：文書の文字種混入を編集入力で検出する。writing-standardsの日本語本文規定に対応 |
-| `pretooluse/content_checks.py` `_warn_mojibake` | f'{body}\n対処: {fix}' | W | 維持（公開契約破壊）：編集行の文字化けが利用者向け本文へそのまま配布される。文字列検出分岐を実装で確認 |
-| `pretooluse/content_checks.py` `_check_ps1_eol` | f'{tool_name}.{field}にLFだけの内容を検出した。この書き込みではUTF-8 BOMが失われて日本語が文字化けし、.gitattributesの*.p… | X | 維持（公開契約破壊）：PowerShell配布ファイルのBOM・改行喪失で日本語と実行形式が変わる。書込対象と改行の照合を実装で確認 |
+| `posttooluse.py` `_dispatch` | f"warn: listの応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `posttooluse.py` `_dispatch` | f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `posttooluse.py` `_dispatch` | 起動応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `posttooluse.py` `_dispatch` | 継続応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `pretooluse/agent_checks.py` `_check_task_stop` | f"blocked: TaskStop。現在のセッションには、指定した対象の所有記録も停滞検知完了記録も無い。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、… | D | 維持（不可逆）：所有記録のないTaskStopは他主体の背景処理を停止し、停止した処理は元へ戻せない。所有状態と対象IDの照合を実装で確認 |
+| `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないpromptが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力の検査分岐を実装で確認 |
+| `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないsession_idが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力の検査分岐を実装で確認 |
+| `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}は、session_idに対応する絶対cwdが保存されていないため続行できない。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力の検査分岐を実装で確認 |
+| `pretooluse/content_checks.py` `_collect_edit_operation_warnings` | ファイル末尾のツール境界タグ混入を警告 | X | 維持（データ破損）：編集本文へツール境界タグが混入するとPython又は計画本文に制御文字列が残る。編集後の像と対象パスの照合を実装で確認 |
+| `pretooluse/content_checks.py` `_warn_mojibake` | f'{body}\n対処: {fix}' | X | 維持（データ破損）：編集行の文字化けは元の文字を復元できないまま利用者向け本文へ配布される。文字列検出分岐を実装で確認 |
+| `pretooluse/content_checks.py` `_check_ps1_eol` | f'{tool_name}.{field}にLFだけの内容を検出した。この書き込みではUTF-8 BOMが失われて日本語が文字化けし、.gitattributesの*.p… | X | 維持（データ破損）：PowerShell配布ファイルのBOM・改行喪失で日本語と実行形式が変わる。書込対象と改行の照合を実装で確認 |
 | `pretooluse/content_checks.py` `_check_lockfiles` | f'{tool_name}による{label}の直接編集を検出した。対象: {file_path}\n対処: {fix}' | X | 維持（データ破損）：生成lockfileの直接編集は解決済み依存の整合を失う。対象パスと生成経路の分岐を実装で確認 |
-| `pretooluse/content_checks.py` `_check_secrets` | f'blocked: {tool_name}によるシークレット・鍵ファイルの直接編集は禁止されている。誤編集はサービス停止や情報漏洩を招く。対象: {file_path}… | S | 維持（セキュリティ欠陥）：鍵・シークレットの直接編集は秘密値をリポジトリへ残し得る。対象パス照合を実装で確認 |
-| `pretooluse/content_checks.py` `_check_secret_read` | f'blocked: Readによる.env系ファイルの全文又は範囲読取は禁止されている。対象: {file_path}' | S | 維持（セキュリティ欠陥）：.envの読取は秘密値をツール出力へ露出させる。Read対象の判定を実装で確認 |
-| `pretooluse/content_checks.py` `_check_manifest` | f'{tool_name}で{label}の依存の節を編集しようとしている。{hint}' | X | 維持（公開契約破壊）：依存manifestの手編集で生成先と配布値がずれる。対象の依存節判定を実装で確認 |
-| `pretooluse/content_checks.py` `_check_home_path` | f'{tool_name}.{field}にホームディレクトリの絶対パス（{home}）を検出した。版管理対象のファイルでは、環境依存のパスを避けるため~、$HOME、ま… | X | 維持（技術的不成立）：個人home絶対パスを配布文書へ埋めると別環境で参照先が存在しない。書込対象とhomeの照合を実装で確認 |
-| `pretooluse/content_checks.py` `check_user_facing_typo` | f'{tool_name}が渡すユーザー向け本文に誤字候補を検出した。一致: {len(matches)}件（{listed}）。{terms}変換誤りかどうかを本文の文… | W | 維持（元要件）：ユーザー向け本文の既知の変換誤りを送信前に候補として示す。writing-standardsの表記規定に対応 |
-| `pretooluse/content_checks.py` `_check_colloquial` | f"{tool_name}が書き込む変更行に口語的な日本語表現を検出した。{_colloquial_hit_summary(hits)}{_plugin_resource… | W | 維持（元要件）：変更行の口語表現を候補として示す。writing-standardsの書き言葉規定に対応 |
-| `pretooluse/content_checks.py` `_check_body_section_reference_exists` | f"規範文書の本文が持つ節参照が実在しない可能性がある（{tool_name}、対象: {file_path}）: {'; '.join(reasons)}。参照先のファ… | A | 維持（技術的不成立）：規範本文が不存在の節を参照すると、読者が指示の正本へ到達できない。参照先照合を実装で確認 |
-| `pretooluse/content_checks.py` `_check_plan_mode_skill_first` | 'warning: agent-toolkit:plan-modeスキルを起動せずに計画ファイルを編集している。自身で計画を起草する場合は、同スキルを起動し、計画ファイル… | M | 維持（元要件）：計画編集の前にplan-modeを起動する入口契約へ対応。編集対象と起動記録の分岐を実装で確認 |
-| `pretooluse/content_checks.py` `_check_direct_agent_toolkit_edits_after_plan_mode` | f'plan-modeスキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とするWrite・Edit・MultiEditを{new_count… | M | 維持（元要件）：計画作成前の直接編集を検出する。plan-modeの工程順へ対応し、編集回数の状態分岐を実装で確認 |
-| `pretooluse/content_checks.py` `_check_direct_agent_toolkit_edits_after_plan_mode` | f'plan-modeスキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とするWrite・Edit・MultiEditを{new_count… | M | 維持（元要件）：計画作成前の直接編集を検出する。plan-modeの工程順へ対応し、編集回数の状態分岐を実装で確認 |
-| `pretooluse/dispatch.py` `main` | language_warning_body | W | 維持（元要件）：ユーザー向け発話の書き言葉規定へ対応。発話入力から言語警告を組み立てる分岐を実装で確認 |
+| `pretooluse/content_checks.py` `_check_manifest` | f'{tool_name}で{label}の依存の節を編集しようとしている。{hint}' | X | 維持（データ破損）：依存manifestの手編集で生成先と配布値がずれる。対象の依存節判定を実装で確認 |
+| `pretooluse/dispatch.py` `main` | language_warning_body | W | 維持（利用者確定）：英語応答警告は存廃基準の外側で利用者が残すと確定した。発話入力から言語警告を組み立てる分岐を実装で確認 |
 | `pretooluse/dispatch.py` `_handle_bash_tool` | '未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。\n対処: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了の背景タスクが書くファイルを読むと途中の内容を結果と誤認する。対象出力とタスク状態の照合を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_amend_rebase_without_log` | reason | G | 維持（取り消し難）：対象commit未確認のamend・rebaseは別主体の履歴を改変し得る。対象OIDとlog確認状態の分岐を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_amend_rebase_without_log` | f'blocked: {op}。amend・rebaseの前にcommitの状態を確認する必要がある。' | G | 維持（取り消し難）：対象commit未確認のamend・rebaseは別主体の履歴を改変し得る。対象OIDとlog確認状態の分岐を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_git_push_after_amend_with_dirty_status` | reason | G | 維持（取り消し難）：amend後の未コミット差分を残してpushすると内容が公開履歴へ含まれない。dirty状態照合を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_git_push_after_amend_with_dirty_status` | f'blocked: {event.cwd}に追跡対象の未コミット変更が残ったまま、git commit --amend・--fixupの後にgit pushしようとして… | G | 維持（取り消し難）：amend後の未コミット差分を残してpushすると内容が公開履歴へ含まれない。dirty状態照合を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_bulk_stage_with_unedited_files` | f'warn: 一括stageに、当該セッションのファイル編集ツールによる編集記録が無いファイルが含まれている。シェルコマンドや生成器が変更したファイルは記録されないため… | G | 維持（取り消し難）：一括stageに担当外の差分が混じると次のcommitへ取り込まれる。編集記録とstage候補の照合を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_git_commit` | 'テストを実行せずにcommitしようとしている。agent-toolkit:commitの「通常commit」が定めるcommit直前の確認に従い、先にテストを実行する… | G | 維持（元要件）：commit前の近接検証契約へ対応。検証実行の記録をcommit入力と照合する分岐を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_git_commit` | 'テストを実行せずにcommitしようとしている。agent-toolkit:commitの「通常commit」が定めるcommit直前の確認に従い、先にテストを実行する… | G | 維持（元要件）：commit前の近接検証契約へ対応。検証実行の記録をcommit入力と照合する分岐を実装で確認 |
-| `pretooluse/git_checks.py` `_check_bash_agent_toolkit_version_bump` | 'agent-toolkit配下のファイルがstageされているが、当該commitと未push範囲でagent-toolkit/.claude-plugin/plugi… | T | 維持（公開契約破壊）：plugin本体変更と版数の不一致で利用者側の更新経路が変更を認識しない。stage集合と版数を実装で照合 |
-| `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Claude Codeのエージェント向け文書を対象外とし、Codexと通常ファイルでは維持する。Claude CodeのBashは上限超過の全量をファイルへ退避する。対象ファイルの行・バイト実測を実装・検体で確認 |
-| `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Claude Codeではエージェント向け文書を合計から除き、通常ファイルだけで判定する。Codexでは全対象の合計判定を維持する。混在入力を検体で確認 |
-| `pretooluse/large_reads.py` `check_large_read` | Readの先頭1行がバイト閾値を超えた場合だけ遮断 | O | Claude Codeのエージェント向け文書は対象外とする。通常ファイルでは1行の範囲取得でも受領上限を超えるため維持する。先頭行のバイト実測を検体で確認 |
-| `pretooluse/large_reads.py` `check_large_read` | 大容量Readを先頭範囲へ補正して警告 | O | Claude Codeのエージェント向け文書はホスト自身の`PARTIAL view`通知と続きの範囲案内を用いる。通常ファイルでは補正入力と残りの範囲を示す分岐を維持する |
-| `pretooluse/shell_checks.py` `_autofix_bash_command` | 不在パスを補正した際の対象集合の縮小警告 | O | 維持（データ破損）：不在パスを除いた補正が操作対象の集合を縮めると別の対象へ作用する。補正前後の引数比較を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_nested_code_string` | 'blocked: 別のシェルへ-cでコード文字列を渡す入力は、引用を2段以上で解釈する。' | O | 維持（技術的不成立）：二段シェルの引用が分割され、意図したコードが実行されない。入力の構文検査を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_nested_code_string` | 'blocked: su -cへコード文字列を渡す入力は、引用を2段以上で解釈する。' | O | 維持（技術的不成立）：二段シェルの引用が分割され、意図したコードが実行されない。入力の構文検査を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_nested_code_string` | 'blocked: sshへ引用したコード文字列を渡す入力は、ローカルと接続先で引用を解釈する。' | O | 維持（技術的不成立）：二段シェルの引用が分割され、意図したコードが実行されない。入力の構文検査を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_python_code_string` | f'blocked: pythonの-cへ渡すコードが{reason}。コマンド文字列とコードの引用境界が重なると、コードの改行が失われる。' | O | 維持（技術的不成立）：複数文の-c入力が引用で改変され、コードが成立しない。入力構文検査を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_env_full_read` | f'blocked: {name}による.env系ファイルの内容出力は禁止されている。対象: {token}' | S | 維持（セキュリティ欠陥）：.envをBashで表示すると秘密値がツール出力へ現れる。コマンドと対象パスの照合を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_explicit_path_exists` | '明示された検索・読取パスが存在しない。対象: ' + '、'.join(scan.missing) + '\n対処: Git管理対象はrg --files、属性・ディレ… | O | 維持（技術的不成立）：不在パスを入力にすると検索・読取の対象へ到達しない。操作対象の実在判定を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_missing_path_operand_loss` | f"block: 実在しないパスを除くと操作対象の引数が無くなるコマンドがある。対象のコマンド: {'、'.join((f'{name}' for name in los… | O | 維持（データ破損）：不在パスの除去で引数が空になるとコマンドの既定対象へ作用し得る。補正後の対象集合判定を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_uv_run_python` | 非Pythonプロジェクトでの`uv run python`を補正又は遮断 | O | 維持（データ破損・取り消し難）：誤った起動形で`.venv`と`uv.lock`が作成され、作業ツリーの管理対象が変わり得る。`--script`・`--no-project`・Pythonプロジェクトの分岐を検体で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_sleep_poll_pattern` | 'block: 前景のsleepに別のコマンドが続く呼び出しを、当該セッションで再び検出した。' | O | 維持（元要件）：背景ジョブの公開待機経路を使う規定へ対応。前景sleepと後段コマンドの反復入力を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_sleep_poll_pattern` | f'warn: 前景のsleepの後に別のコマンドが続いており、反復ポーリングになる可能性がある。\n{guidance}' | O | 維持（元要件）：背景ジョブの公開待機経路を使う規定へ対応。前景sleepと後段コマンドの反復入力を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（取り消し難）：pkill・killallのパターン一致は所有外プロセスを終了し得る。終了対象の指定形を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_atk_help_observation` | f'atkサブコマンドのヘルプを生成できない: {error}\n対処: atk <サブコマンド> --helpを単独で実行して受理形式を確認する。' | O | 維持（技術的不成立）：help未確認のサブコマンドは受理形式を確定できず実行が失敗し得る。CLIのhelp解決分岐を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_atk_help_observation` | 'atkサブコマンドのヘルプ定義を解決できない。\n対処: atk <サブコマンド> --helpを単独で実行して受理形式を確認する。' | O | 維持（技術的不成立）：help未確認のサブコマンドは受理形式を確定できず実行が失敗し得る。CLIのhelp解決分岐を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_atk_options` | f"atk {' '.join(path)}が受理しないオプションである。対象: {scan.unknown_option}" | O | 維持（技術的不成立）：未知のoption・余剰位置引数はatkが受理せず実行できない。コマンド木との照合を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_atk_options` | f"atk {' '.join(path)}は位置引数を受理しない。対象: {'、'.join(scan.positionals)}" | O | 維持（技術的不成立）：未知のoption・余剰位置引数はatkが受理せず実行できない。コマンド木との照合を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_recursive_grep_without_exclusion` | f'block: 除外設定を反映しない再帰grepを、安全にrgへ補正できない形でディレクトリへ実行している。{described}' | R | 維持（セキュリティ欠陥）：除外設定を無視する再帰grepは秘匿値ファイルを検索出力へ含め得る。対象ディレクトリとoptionを実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_output_truncation` | 'block: 全量観測が必要なコマンドの実行出力をtail・head・grepなどで限定している。\n' + '\n'.join(detected) | O | 維持（技術的不成立）：全量が必要な検証・状態照合を切り詰めると完了状態を判定できない。対象コマンドの判定を実装・検体で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_output_status_after_truncation` | 切り詰めたパイプラインで対象コマンドの終了状態を失う警告 | O | 維持（技術的不成立）：パイプ末尾の取得結果だけでは前段の終了コードを失う。パイプ構造の解析を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_recursive_home_search` | 'warn: 再帰検索が大容量のユーザーディレクトリを対象としている。対象ディレクトリを狭め、不要領域を除外し、検索対象と出力に上限を設けるか、rg・再帰grepを使う前… | R | 維持（元要件）：検索対象を先に限定する規範へ対応。home全体を対象とする検索引数を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_unbounded_home_traversal` | 'warn: 除外設定を持たない走査コマンドが大容量のユーザーディレクトリを無限定に走査している。findでは-pruneと-maxdepthで対象集合を先に限定し、ファ… | R | 維持（元要件）：検索対象を先に限定する規範へ対応。home全体の走査引数を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_unbounded_root_traversal` | 'block: 走査範囲を限定しないfindをファイルシステムの根から実行している。' | R | 維持（技術的不成立）：root全体の無限定findは完了まで到達できない可能性がある。find対象の構文検査を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_git_grep_pattern_type` | f'block: git grepが種別を指定せず、patternへ{_GIT_GREP_BASIC_ALTERNATION}を含んでいる。基本正規表現は当該表記を選択と… | R | 維持（技術的不成立）：未指定の基本正規表現は選択記号を別の意味へ解釈し検索結果を欠く。実際のgit grep解釈と入力検査を照合 |
-| `pretooluse/shell_checks.py` `_check_bash_git_grep_pattern_type` | 'git grepが固定文字列・拡張正規表現・Perl互換正規表現のいずれの種別も指定していない。\n対処: 検索意図に応じて-F・-E・-Pのいずれかを明示し、オプショ… | R | 維持（技術的不成立）：未指定の基本正規表現は選択記号を別の意味へ解釈し検索結果を欠く。実際のgit grep解釈と入力検査を照合 |
-| `pretooluse/shell_checks.py` `_check_bash_unquoted_shell_metacharacter` | f"""語の内側に引用されていないシェルメタ文字がある。対象の文字: {detected}\n対処: 当該引数を$'...'のANSI-Cクォートで囲むか、変数へ代入して… | O | 維持（データ破損）：未引用メタ文字は別コマンドやリダイレクトとなり対象を書き換え得る。入力トークンの検査を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_unresolved_git_object` | f'対象リポジトリで解決できないGit objectのOIDを渡している。対象: {oid}\n対処: 当該操作の直前に対象リポジトリでgit rev-parseによりr… | G | 維持（取り消し難）：別リポジトリのOIDを使う履歴操作は対象commitを誤る。cwd別objectの解決を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_unknown_atk_subcommand` | f'{label}のコマンド木に実在しないサブコマンドを指定している。対象: {candidate}\n{label}が受理するサブコマンド:\n{listed}' | O | 維持（技術的不成立）：存在しないサブコマンドを渡すと所期の操作が成立しない。コマンド木との照合を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_option_terminator_missing` | f'ハイフンで始まるデータをオプション終端なしで渡している。対象: {token}\n対処: 当該コマンドが提供するオプション終端--を、データの直前へ置く。' | O | 維持（データ破損）：ハイフン始まりのデータをoptionとして誤解釈すると別の対象へ作用し得る。引数境界の判定を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_redirect_parent_exists` | f'出力リダイレクト先の親ディレクトリが存在しない。解決した出力先: {resolved}\n不在の親ディレクトリ: {parent}\n対処: 実在するディレクトリ配下… | O | 維持（技術的不成立）：不在の親ディレクトリへのリダイレクトは出力ファイルを作成できない。親パスの存在判定を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_external_command_options` | f'{name}の値付き短縮オプションへ別の短縮フラグを連結した曖昧な形である。{token[:2]}は後続の{token[2:]}を値として消費する。対象: {toke… | O | 維持（技術的不成立）：値付き短縮optionの曖昧形や未知optionは別の値を消費してCLI実行を変える。option定義との照合を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_external_command_options` | f"{' '.join(path)}の値付き短縮オプションへ別の短縮フラグを連結した曖昧な形である。対象: {scan.ambiguous_option}\n対処: 値付… | O | 維持（技術的不成立）：値付き短縮optionの曖昧形や未知optionは別の値を消費してCLI実行を変える。option定義との照合を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_external_command_options` | f"{' '.join(path)}が受理しないオプションである。対象: {scan.unknown_option}\n{_format_accepted_option_… | O | 維持（技術的不成立）：値付き短縮optionの曖昧形や未知optionは別の値を消費してCLI実行を変える。option定義との照合を実装で確認 |
-| `subagent_stop_advisor.py` `main` | '停止する前に、空でない完了報告を出力する。呼び出し元は遮断された報告本文を保持しない。' | D | 維持（技術的不成立）：空の完了報告で停止すると呼び出し元に結果が届かない。出力本文の有無を実装で確認 |
-| `termination_order_advisor.py` `evaluate` | '\n\n'.join(missing_bodies) | D | 維持（技術的不成立）：終端順序の未実行で外部処理と記録が未完となる。順序入力と実行済み記録の照合を実装で確認 |
-
-2026年9月24日の再照合では、`content_checks.py`の`_check_style_negation`と`posttooluse.py`の`_check_conditional_prohibition`を撤去した。いずれも語形だけから誤読を推定し、実際に意味の取り違えが起きた対象を検出していなかった。書き手が条文の価値、条件と結果を照合する文書作成規範で判断でき、hookの実行時入力が加える固有の判断材料もなかった。文体警告の関数と検体を除き、他の書込時検査とhook登録は保った。
-
-`shell_checks.py`の`_check_bash_help_with_execution`が発した「同じ呼び出しでヘルプ取得と対象の実行を並べた」警告は撤去した。`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」へ、ヘルプを単独で取得し、結果を読んでから実行を組み立てる順序を明記した。規範は全実行主体が起動時に読むため、この順序を呼び出しの組立時に想起できる見込みがある。対象のBashイベントは他の検査も利用するため、`hooks.json`と`hooks.codex.json`の登録は残る。
-
-2026年9月25日、初回取得を対象にした汎用の切り詰め補正と反復遮断を撤去した。再取得できるファイル、履歴及び一覧の先頭確認は認め、プレビューを全量・件数・不在の証拠に使わない。全量を必要とする検証・状態変更・照合の遮断と、切り詰めで終了状態を失う警告は残す。表の維持行は、実行時の入力を測れるという事実だけで必要とは判定しない。各検査の元の要求、守る価値、実際に防ぐ誤りを個別に照合する。
+| `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：Codexのシェル出力の上限を超えた取得は本文を欠落させ、欠落した範囲を回復できない。Claude Codeはホストが`PARTIAL view`又は退避ファイルを返し残りを続けて取得できるため対象外とする。対象ファイルの行・バイト実測を実装・検体で確認 |
+| `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：複数ファイルの合計が上限を超える取得も同じく本文を欠落させる。合計判定を検体で確認 |
+| `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（不可逆）：pkill・killallのパターン一致は所有外プロセスを終了し、終了したプロセスは元へ戻せない。終了対象の指定形を実装で確認 |
+| `subagent_stop_advisor.py` `main` | '停止する前に、空でない完了報告を出力する。呼び出し元は遮断された報告本文を保持しない。' | D | 維持（常駐運用の終端保証）：空の完了報告で停止すると呼び出し元に結果が届かない。出力本文の有無を実装で確認 |
+| `termination_order_advisor.py` `evaluate` | '\n\n'.join(missing_bodies) | D | 維持（常駐運用の終端保証）：終端順序の未実行で外部処理と記録が未完となる。順序入力と実行済み記録の照合を実装で確認 |
 
 Stopの登録は共通入口1件とする。
 共通入口から、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。
@@ -1400,13 +1351,11 @@ patch全体を仮想ファイルシステムへ展開する案も、同一patch�
 可用性に起因する正当な代替であるClaude経路の起動まで遮断され、代替の候補が残らない。
 経路の逸脱は、代替時に記録する観測した失敗と実際に用いた組合せから事後に判定する。
 
-ユーザー発話への応答契約の注入と、ユーザーが読む本文より長い地の文の警告は、規範の文面だけでは適用されない事象への機械的な補強として置く。
-前者はUserPromptSubmitで、直前の通常発話からの経過時間が閾値以上の入力へだけ`additionalContext`を返す。
-後者はPreToolUseで、`AskUserQuestion`と`ExitPlanMode`の直前の地の文がユーザーの読む本文より長い場合に警告する。
+ユーザー発話への応答契約の注入は、規範の文面だけでは適用されない事象への機械的な補強として置く。
+UserPromptSubmitで、直前の通常発話からの経過時間が閾値以上の入力へだけ`additionalContext`を返す。
 
 知識境界は次のとおりとする。
 注入する応答契約の本文は`agent-toolkit/rules/01-agent.md`が定める規範の要約であり、フックは当該本文を保持するだけで、発話が是正要求かどうかを判定しない。
-地の文長の比較は文字数だけを入力とし、地の文が判断材料かどうかも、ユーザーが読む本文が自己完結しているかも判定しない。
 
 Stopの共通入口は、判定の集約に加えて連続blockの上限を管理する。
 `stop_hook_active`が真の再入で各判定が無条件approveへ遷移する案は、遮断の機会を1回で消費し、別の判定が当該機会を使った後は同じセッションで二度と発火しないため採らない。
@@ -1421,53 +1370,6 @@ Stopの共通入口は、判定の集約に加えて連続blockの上限を管�
 フックが会話の意味を判断する責務境界を越え、判別の誤りが注入の欠落として観測されないため採らない。
 もう1つは、経過時間を条件にせず全ての通常発話へ注入する案である。
 同じ本文が毎回のコンテキストへ載り、規範を想起させる便益に対して常時の消費が見合わないため採らない。
-
-### Bash入力の安全な自動補正
-
-PreToolUseは、誤りの修正先を入力だけから一意に確定できる単純なBash入力を`updatedInput`で補正する。
-Bashの区間分割と補正位置の判定は、引用、heredoc、置換構文、サブシェル、バッククォート及び制御構造を
-考慮するトップレベル境界を共有する。未エスケープ改行は外側の区間を分け、入れ子の内側の演算子は
-外側の境界にしない。補正後の入力はBashの構文検査を通過した場合だけ返し、構文を確認できない入力は変更しない。
-対象は、非Pythonプロジェクトでの`uv run python <script>`、`git grep`のパターン後方にある
-既知オプションの位置補正、読み取り入力から実在しない明示パスを除いても対象が残る場合の補正である。
-単純なスクリプト起動は`uv run --script <script>`へ補正し、それ以外の誤った起動形は遮断する。全量観測を要する検証・状態変更・
-照合コマンドの出力を途中で切り詰める入力は遮断し、反復可能な出力の先頭確認は通す。
-
-明示パスの実在判定はローカルパスだけを対象とし、URIを除外する。同じBash入力の区間間で引き渡す
-作成予定のパスは、リダイレクト又はコマンドの出力オプションから静的に確定できる値に限る。
-動的な書込先まで作成予定と推定すると、不在の真陽性を失うためである。実在しない明示パスは、
-コマンド自身の可逆な失敗で利用者が是正できる場合は警告に留める。全ての不在を遮断する案は、
-不在確認という正当な用途も停止させ、復元可能性に基づくフックの応答水準を越えるため採用しない。
-
-実行位置を解決できない区間でも、parserは元のトークン列を保持する。PreToolUseは静的な出力リダイレクト先だけを後段の作成済み集合へ渡す。出力先が確定しない場合は後段の不在警告を控える。未解決区間を走査から省く案は、先行する出力ファイルを存在しないと誤判定するため採用しない。背景タスクの出力ファイルを条件に持つ前景ループと、自己のコマンド行に一致する`pgrep -f`・`pkill -f`のループは、一般のsleep警告とは別に入力時点で遮断する。完了通知と所有PIDの待機が成立する対象に汎用のファイル待機を一律適用する案は、通常のmarker待機も遮断するため採用しない。
-
-除外設定の無い再帰`grep`は、検索対象の内容、ファイル種別及びリンク構造がBash入力に現れないため、
-`rg`と出力及び終了状態が同値になる入力集合を構文だけから確定できない。PreToolUseは当該入力を補正せず初回から遮断する。
-
-クォートや制御演算子を含み語の境界を確定できない入力、意味が一致するオプション対応を確定できない入力、
-複数の補正が競合する入力は変更しない。これらには既存の遮断又は警告を適用する。
-安全側の非補正を、解析不能な入力を推測で書き換える経路へ変えないためである。
-
-### 全文読解の成立検査
-
-規範が全文読解を要求する文書について、読解の観測と実行主体への想起を2点で補助する。
-第1に、dotfiles個人用のPostToolUseは`docs/development/concepts.md`と`incidents.md`に対する
-`offset`と`limit`を持たないReadだけを、呼出主体のsession IDへ対応する状態へ記録する。
-PreToolUseは同じチェックアウトのコーディングエージェント向け文書を編集する直前に記録を参照し、
-未読文書があれば警告する。規範は実際の編集主体が同じ実行コンテキストで全文を読むことを要求し、
-要約、見出し一覧、部分読取及び別主体の読取結果を代替として認めない。
-同名文書を持つ別チェックアウトの記録は、絶対パスの一致で除外する。
-個人用フックを配布しないCodexでも規範は同じであり、機械警告だけをClaude Code固有の補助とする。
-第2に、実行レビュー担当は、基準文書の読取で切り詰めの通知を受領した場合に、当該事実と全文読解の成否を完了報告の1行として返す。
-呼び出し元は当該行が未到達を示す場合に当該ラウンドを収束させない。
-
-知識境界は次のとおりとする。
-警告の対象とする工程境界と読解を要求する文書の対応はフックが持ち、全文読解を要求する条文そのものは各規範文書が持つ。
-切り詰めの受領はレビュー担当だけが観測できるため、当該事実の申告はレビュー担当が担い、ラウンドの遷移は`agent-toolkit/share/review-loop-coordination.md`が担う。
-
-`AskUserQuestion`のたびに`judgment-details.md`の全文読取を要求して遮断する案は、通常の確認手順自体を
-恒常的に停止させる一方、読取事実から判断品質を確定できないため撤去した。確認前の読解要件はスキル規範が担う。
-パスへの言及、Bash経由の読取及び部分読取を観測とする案は、全文への到達を判定できないため採らない。
 
 ### hook出力契約の機械検査
 
@@ -1496,7 +1398,7 @@ hookの実装は契約を参照せず、テストだけが両者を突き合わ�
 ## セッション状態の共有
 
 独立プロセスとして動くフック間では、セッション識別子ごとの状態ファイルで単純な観測結果を共有する。
-状態は、スキル起動や検査実施など、後続判定に必要な小さな観測値に限定する。
+状態は、スキル起動や背景タスクの起動など、後続判定に必要な小さな観測値に限定する。
 更新は排他ロック下で実行し、原子的な置換で保存する。
 この構造により、並列に発火したフックが互いの記録を失わず、再開したセッションでも必要な判定を継続できる。
 
@@ -1519,24 +1421,16 @@ hookの実装は契約を参照せず、テストだけが両者を突き合わ�
 回収は終了イベントを発したセッション自身を除いて実施し、会話が破棄された場合だけ当該セッションの状態を削除する。
 計画名の記録を通常状態の例外キーとして期限回収時に残す案は、異なる寿命と排他責務を同じファイルへ混在させるため採用しない。
 
-## AWI由来の知見と編集前警告
+## AWI由来の知見の集約
 
 過去のAWIから確定した方針・意向は[concepts.md](concepts.md)へ、
 再発防止の判断材料となる事故・欠陥は[incidents.md](incidents.md)へ集約する。
 コーディングエージェント向け文書の編集規範は、両文書を編集前に参照し、
 新たな事故又は確定した意向が生じた場合に対応する文書を更新するよう求める。
+参照の時機は`.claude/skills/agent-toolkit-edit/SKILL.md`などの編集スキルの工程が定め、フックでは観測しない。
+未読の警告は規範の想起を目的とし、読了の事実から理解の成否を判定できないため、2026年9月26日に撤去した。
 
-個人フックは、PostToolUseで両文書へのReadをセッション状態へ記録する。
-PreToolUseはdotfiles本体又はそのworktreeでコーディングエージェント向け文書を編集する際、
-同じチェックアウト内の両文書が未参照であれば警告する。
-文書が方針と経緯を保持し、規範が参照時機を定め、フックが実際のツール呼び出しを観測する構造である。
-
-フックはReadの実行と編集対象のパスだけを知り、全文読解や編集内容の妥当性を判定しない。
-部分読解も参照記録として扱い、警告は編集を停止しない。
 時系列の全件一覧は判断材料を探しにくくするため採用せず、主題別のコンセプト集と事故区分別の事例集に整理する。
-常時警告する案は参照後も同じ通知が残るため採用せず、ブロックする案は内容を判定できないフックの責務を超えるため採用しない。
-任意のリポジトリを対象にする案はdotfiles固有文書が存在しない環境へ警告するため採用しない。
-チェックアウトの絶対パスを固定する案はworktreeでの編集を識別できないため、フックはGit管理領域の帰属と同一ルートで編集対象を対応付ける。
 
 ## 管理対象一時領域
 
@@ -1981,9 +1875,9 @@ pytestの既定のimport modeでは、パッケージに属するテストはパ
 ## 通知本文の仕様と規範文書長の追随検出
 
 目的は、`agent-toolkit`の通知本文と常時読み込む規範文書を変更した主体が、変更の時点で追随すべき対象を把握できるようにすることである。当該変更が触れていない検体と上限が全体検査で失敗する事象を、統合の後ではなく編集の時点へ移す。
-構造の理由は、同じ外部仕様を固定する箇所を1つの正本へ集約し、正本を経由しない固定を機械検査で拒否する点にある。口語表現検査の通知が検出語を示す部分は`agent-toolkit/agent_toolkit/_hooks/pretooluse/content_checks.py`の`colloquial_detected_terms_text`を正本とする。誤字検査の通知が誤字候補を示す部分は同ファイルの`typo_detected_terms_text`を正本とする。`_hooks/`配下の検体が同じ見出し語を直接書くことは`content_checks_test.py`の契約テストが拒否し、同テストは両方の見出し語を母集団とする。誤字の語彙は`agent-toolkit/agent_toolkit/_hooks/pretooluse/typo_words.txt`へ置き、口語表現の辞書と同じくソースコードへ埋め込まない。ユーザーが直接読む本文への検査は`dispatch.py`の`_handle_user_facing_text_tool`へ集約する。適用対象は同ファイルの`_USER_FACING_TEXT_TOOL_NAMES`を唯一の正本とする。
+構造の理由は、同じ外部仕様を固定する箇所を1つの正本へ集約する点にある。ユーザーが直接読む本文への検査は`agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py`の`_handle_user_facing_text_tool`へ集約する。適用対象は同ファイルの`_USER_FACING_TEXT_TOOL_NAMES`を唯一の正本とする。
 規範文書の合計長は、上限の超過を検出した時点で文書ごとの長さと超過分を失敗本文へ示す。当該本文は`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が組み立てる。
-知識境界として、通知本文の文言は`content_checks.py`が持ち、当該文言を固定してよい箇所の判定は`content_checks_test.py`が持つ。上限値は`rules_context.py`の`CLAUDE_CODE_OUTPUT_LIMIT`が持ち、超過時の診断本文は検査側が持つ。
+知識境界として、上限値は`rules_context.py`の`CLAUDE_CODE_OUTPUT_LIMIT`が持ち、超過時の診断本文は検査側が持つ。
 却下した代替案は、相反する期待を持つ検体の組を検体の意味から機械的に検出する案と、規範文書の編集時点で上限までの残量を示す案である。前者は検体の意味解析を要して成立を確認できず、後者は規範文書の編集を検出する経路の特定を要するため採用しない。
 
 ## WIの前提鮮度

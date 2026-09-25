@@ -78,7 +78,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   autosquashを実行するのは、期待件名と一致した場合に限る。一致しない場合は`## 失敗時の扱い`に従う
 - 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash --no-update-refs <base>`で行う
   （`<base>`は対象コミットの親以前を指す）。
-  fixupの作成は履歴確認の記録をリセットするため、autosquashの直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独のBash呼び出しで再度実行する
+  autosquashの直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独のBash呼び出しで再度実行する
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する帰属情報を統合後に1回だけ残す
 
@@ -105,7 +105,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 判定には`git for-each-ref`の出力を使う。`git log --decorate`はref先端にしか装飾を付けず、対象コミットが先端より前の祖先である場合を検出できない。
 amendとfixupの対象は、プッシュ未了のコミットに限る。公開済みの履歴を書き換えると、そのコミットを取得済みの他の作業ツリーとCIの参照が解決できなくなる。
 
-amend・fixupの直後は、`git status --short`で追跡ファイルに未コミット差分が無いことを確認してからpushする（差分が残るpushは遮断される）。
+amend・fixupの直後は、`git status --short`で追跡ファイルに未コミット差分が無いことを確認してからpushする。
 
 ## 操作前後の確認
 
