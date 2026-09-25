@@ -1236,13 +1236,9 @@ def test_take_result_keeps_other_owner_result(tmp_path: pathlib.Path) -> None:
     """CLI用退避先を指定しても別の書込主体の結果は移動しない。"""
     result_path = subject.results_directory("root-session", tmp_path) / "child-session.json"
     result_path.parent.mkdir(parents=True)
-    result_path.write_text(
-        json.dumps({"status": "completed", "owner_status_file": "delegate.json"}), encoding="utf-8"
-    )
+    result_path.write_text(json.dumps({"status": "completed", "owner_status_file": "delegate.json"}), encoding="utf-8")
     stash_path = tmp_path / "wait-run" / "results" / "child-session.json"
-    writer = subject.StatusFileWriter(
-        {}, subject.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path
-    )
+    writer = subject.StatusFileWriter({}, subject.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path)
 
     assert subject.take_result(
         "root-session", "child-session", "root.json", collector="cli", state_root=tmp_path, stash_path=stash_path
