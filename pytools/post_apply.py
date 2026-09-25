@@ -29,6 +29,7 @@ from pytools._internal import (
     install_libarchive_windows,
     log_format,
     post_apply_outcome,
+    prune_claude_plugin_cache,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
     restore_codex_logs_linux,
@@ -365,6 +366,8 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("Codex 診断ログの通常ストレージ復元 (Linux)", restore_codex_logs_linux.run),
     _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
     _StepSpec("Claude Code plugin のインストール", install_claude_plugins.run),
+    # installed_plugins.json が更新後の版を指してから現行版を判定するため、導入処理の直後に置く。
+    _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run),
     _StepSpec("Codex plugin snapshot の生成", sync_codex_plugin_manifests.sync),
     _StepSpec("Codex plugin のインストール", install_codex_plugins.run),
     _StepSpec("agents_serverのuv環境ウォームアップ", warm_agents_server.run, background=True),

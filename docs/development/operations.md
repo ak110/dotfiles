@@ -311,6 +311,22 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 - 更新対象の実行ファイル・DLL・仮想環境を、所有しないか復元できないプロセスが保持する場合は、次回への延期、既存版の温存、補助更新の非致命化から処置を選ぶ。
   補助更新の失敗を主目的の更新停止条件にしない
 
+## Claude Code plugin cacheの旧版削除
+
+Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<marketplace>/<name>/<version>/`を新設するだけで、旧版を削除しない。
+`claude plugin`にもキャッシュ整理のサブコマンドは無く、2026年9月26日のeuryaleではagent-toolkitだけで75版（約3.9GB）が残っていた。
+`post_apply`の「Claude Code plugin cacheの旧版削除」工程（`pytools/_internal/prune_claude_plugin_cache.py`）がこれを整理する。
+
+- 対象は`~/.claude/plugins/installed_plugins.json`に載っているmarketplaceとpluginの組だけとし、`installPath`が指す現行版は削除しない
+- 非現行版は、導入時刻の順で次に新しい版（後継）の導入から7日が経過した後に削除する。後継の無い版は残す
+  - 起動中のClaude Codeセッションは起動時に解決した版ディレクトリを`hooks.json`と`.mcp.json`から参照し続けるため、即時に削除するとそのセッションのhookとMCPが失敗する。7日はその参照が残る期間を見込んだ猶予である
+- 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる
+  - 版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。`plugin.json`のmtimeは版の順序と一致する
+  - `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、版名ではなく導入時刻で後継を決める
+  - `plugin.json`を欠く不完全な版は版ディレクトリのmtimeで代替する
+- `installPath`の更新後に判定するため、工程は「Claude Code pluginのインストール」の直後に置く
+- `~/.codex/plugins/cache`は導入処理が1版だけを保持するため対象外とする。シンボリックリンクとディレクトリジャンクションは辿らず削除しない
+
 ## chezmoiの命名規則（早見表）
 
 `.chezmoi-source/`配下のファイル名は以下の代表規則で`~/`配下にデプロイされる。

@@ -881,6 +881,13 @@ class TestDefaultSteps:
         assert "claude-statusline バイナリの取得" in names
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
 
+    def test_plugin_cache_prune_follows_claude_plugin_install(self) -> None:
+        """plugin cacheの旧版削除は、導入処理が現行版を更新した直後に1回だけ実行する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        prune_name = "Claude Code plugin cache の旧版削除"
+        assert names.count(prune_name) == 1
+        assert names.index(prune_name) == names.index("Claude Code plugin のインストール") + 1
+
     def test_agy_cli_step_follows_claude_code_cli(self):
         """Antigravity CLIの導入をClaude Code CLIの直後に1回登録する。"""
         names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
