@@ -9,6 +9,7 @@ import sys
 
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
+    "agent-doc-changes": pathlib.Path("skills/plan-mode/scripts/list_agent_doc_changes.py"),
     "plan-create": pathlib.Path("skills/plan-mode/scripts/create_plan_files.py"),
     "plan-check": pathlib.Path("skills/plan-mode/scripts/check_plan_file.py"),
     "plan-progress": pathlib.Path("skills/plan-mode/scripts/append_progress_log.py"),
