@@ -517,19 +517,19 @@ class PlanFileError(Exception):
         self.message = message
 
 
-async def resolve_text_and_mtime(
+async def resolve_text(
     context: PlansContext,
     host: str,
     source_id: str,
     rel: str,
-) -> tuple[str, float | None]:
-    """ファイル本文と`mtime_epoch`を取得する。取得できない場合は`PlanFileError`を送出する。"""
+) -> str:
+    """ファイル本文を取得する。取得できない場合は`PlanFileError`を送出する。"""
     if host == context.hostname:
         spec = next((item for item in context.roots if item.source_id == source_id), None)
         target = resolve_under_root(spec.path, rel, spec.source_id) if spec is not None else None
         if target is None:
             raise PlanFileError(404, "not found")
-        return await asyncio.to_thread(_read_with_mtime, target)
+        return await asyncio.to_thread(_read_text, target)
     if not is_safe_remote_relpath(rel):
         raise PlanFileError(400, "invalid path")
     watcher = context.state.remote_watchers.get(host)
@@ -540,27 +540,22 @@ async def resolve_text_and_mtime(
         raise PlanFileError(404, "not found") from error
 
 
-def _read_with_mtime(path: pathlib.Path) -> tuple[str, float]:
-    """ファイル本文と更新日時を連続して取得する。"""
-    data = path.read_text(encoding="utf-8", errors="replace")
-    return data, path.stat().st_mtime
+def _read_text(path: pathlib.Path) -> str:
+    """ファイル本文を取得する。"""
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 async def render_file_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:
     """計画ファイルの表示用HTMLを、付属計画リンクを先頭へ付けて返す。"""
-    text, mtime = await resolve_text_and_mtime(context, host, source_id, rel)
-    # `mtime`が取れた場合のみキャッシュを参照する。リモート応答にmtimeが欠落した場合は
-    # 古い結果を返さないよう安全側に倒してバイパスする。
-    cache_key: MarkdownCacheKey | None = None
-    if mtime is not None:
-        cache_key = (host, source_id, rel, mtime) if source_id else (host, rel, mtime)
-    rendered: str | None = None
-    if cache_key is not None:
-        rendered = context.markdown_cache.get(cache_key)
+    text = await resolve_text(context, host, source_id, rel)
+    # 本文の同一性は取得した本文のダイジェストで判定する。更新時刻は同じ時刻刻み内の
+    # 連続した書き換えで変わらないため、キーへ使うと古い描画結果を返す。
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    cache_key: MarkdownCacheKey = (host, source_id, rel, digest)
+    rendered = context.markdown_cache.get(cache_key)
     if rendered is None:
         rendered = review_table_html(text) if is_review_table_path(rel) else markdown_to_html(text, context.renderer)
-        if cache_key is not None:
-            context.markdown_cache.put(cache_key, rendered)
+        context.markdown_cache.put(cache_key, rendered)
     # 付属計画リンクは応答組み立て層で付与する。本文変換とそのキャッシュへ混ぜると、
     # 付属計画の出現・消失のたびに本文HTMLキャッシュを無効化する必要が生じるため。
     return await plan_links_html(context, host, source_id, rel) + rendered

@@ -167,7 +167,7 @@ if TYPE_CHECKING:
         _oldest_host_per_file,
         _plan_exists,
         _plan_paths,
-        _read_with_mtime,
+        _read_text,
         _scan_local_root,
         _search_remote,
         all_entries,
@@ -177,7 +177,7 @@ if TYPE_CHECKING:
         plan_links_html,
         render_file_html,
         resolve_source_id,
-        resolve_text_and_mtime,
+        resolve_text,
         review_table_html,
         search_entries,
         start_local_watchers,
@@ -265,17 +265,14 @@ def markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) 
     return md.render(text)
 
 
-# 単一root互換時のキーは(host, path, mtime_epoch)、複数root時は(host, source_id, path, mtime_epoch)。
-# `mtime_epoch`がキーに含まれるため、ファイル更新時は自動的に新しいエントリとなり明示的な無効化は不要。
-type MarkdownCacheKey = tuple[str, str, float] | tuple[str, str, str, float]
+# キーは(host, source_id, path, 本文のSHA-256)。本文が変われば新しいエントリとなるため明示的な無効化は不要。
+type MarkdownCacheKey = tuple[str, str, str, str]
 
 
 class MarkdownCache:
     """Markdownレンダリング結果のLRUキャッシュ。
 
-    リモート分は`fetch_remote_file`が本文と同時取得した`mtime_epoch`をそのまま使うことで、
-    watch通知の遅延に左右されず整合する。
-    `mtime_epoch`が`None`の場合、呼び出し側はキャッシュをバイパスする（本クラスは`None`を扱わない）。
+    キーへ取得済み本文のダイジェストを含めるため、更新時刻やwatch通知の遅延に左右されず本文と整合する。
     """
 
     def __init__(

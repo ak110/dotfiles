@@ -19,7 +19,10 @@ let files = [];
 let selectedHost = null;
 let selectedSource = "";
 let selectedPath = null;
-let selectedMtime = null;
+// 図の描画まで完了した直近のプレビューHTML。再同期で同じHTMLを受け取った場合は再描画を省き、
+// 開いた要素・描画済みの図・スクロール位置を保つ。描画が後続の世代に中断された場合は`null`のままとし、
+// 次の再同期で描画し直す。
+let appliedPreviewHtml = null;
 // ホスト別の接続状態。connected / connecting / disconnected。
 let hostStatus = {};
 // ホスト・保存元別のroot警告。source IDは表示せず、利用者が復旧判断できる本文だけを表示する。
@@ -450,11 +453,13 @@ async function applyPreviewHtml(html, scrollTop, generation) {
   revokePreviewObjectUrls();
   const preview = document.getElementById("preview");
   preview.innerHTML = html;
+  appliedPreviewHtml = null;
   for (const link of preview.querySelectorAll("a[data-plan-path]")) {
     link.href = filePageUrl(selectedHost, link.dataset.planPath, selectedSource);
   }
   await (renderDiagrams(preview, generation));
   if (generation !== previewGeneration) return;
+  appliedPreviewHtml = html;
   const main = document.querySelector("#screen-plans main");
   if (main) main.scrollTop = scrollTop;
 }
@@ -575,6 +580,7 @@ function endPreviewLoading(generation) {
 function showPreviewError(message, retry) {
   const preview = document.getElementById("preview");
   preview.replaceChildren();
+  appliedPreviewHtml = null;
   const alert = document.createElement("div");
   alert.setAttribute("role", "alert");
   alert.textContent = `計画ファイルの本文を取得できません: ${message} `;
@@ -601,6 +607,7 @@ async function updatePreview() {
     }
     const html = await (res.text());
     if (generation !== previewGeneration) return;
+    if (html === appliedPreviewHtml) return;
     await (applyPreviewHtml(html, scrollTop, generation));
   } catch (error) {
     if (generation === previewGeneration) showPreviewError(error.message, () => { void updatePreview(); });
@@ -622,7 +629,6 @@ async function openFile(host, path, source) {
   if (fileSelectionFromUrl()) {
     history.replaceState({atkPlan: true}, "", filePageUrl(host, path, selectedSource));
   }
-  selectedMtime = selected ? selected.mtime_epoch : null;
   document.getElementById("copy-btn").disabled = false;
   // 選択rootの情報未取得（リモート接続確立前）はdisabled維持する。
   updateCopyPathButton(host, selectedSource);
@@ -653,11 +659,9 @@ async function openFile(host, path, source) {
 async function resyncFromServer() {
   await (refreshFiles());
   if (!selectedPath || !selectedHost) return;
-  const current = files.find(f => isSelected(f));
-  if (current && current.mtime_epoch !== selectedMtime) {
-    selectedMtime = current.mtime_epoch;
-    await (updatePreview());
-  }
+  // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
+  // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
+  if (files.some(f => isSelected(f))) await (updatePreview());
 }
 
 async function copySelectedRaw() {

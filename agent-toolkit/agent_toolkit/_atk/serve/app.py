@@ -995,7 +995,7 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
         # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため経路を分離する。
         host, source_id, rel = _plan_request_target(context)
         try:
-            text, _mtime = await serve_plans.resolve_text_and_mtime(context, host, source_id, rel)
+            text = await serve_plans.resolve_text(context, host, source_id, rel)
         except serve_plans.PlanFileError as error:
             return _no_store(error.message, "text/plain; charset=utf-8", status=error.status)
         content_type = "text/plain; charset=utf-8" if serve_plans.is_review_table_path(rel) else "text/markdown; charset=utf-8"

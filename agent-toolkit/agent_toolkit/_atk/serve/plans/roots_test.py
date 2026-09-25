@@ -107,11 +107,11 @@ async def test_stop_local_watchers_releases_observer(tmp_path: pathlib.Path, ind
 async def test_remote_file_is_read_through_rpc_when_connected() -> None:
     """常駐RPCを利用できる場合は単発SSHを起動しない。"""
     runner, calls = _runner_returning(_read_payload("fallback"))
-    watcher = _FakeWatcher(connected=True, response=_read_payload("rpc", 2_000.0))
+    watcher = _FakeWatcher(connected=True, response=_read_payload("rpc"))
 
-    text, mtime = await plans.fetch_remote_file("remote-host", "p.md", runner, typing.cast(typing.Any, watcher))
+    text = await plans.fetch_remote_file("remote-host", "p.md", runner, typing.cast(typing.Any, watcher))
 
-    assert (text, mtime) == ("rpc", 2_000.0)
+    assert text == "rpc"
     assert not calls
     assert watcher.calls[0][0] == "read"
 
@@ -125,6 +125,6 @@ async def test_missing_local_file_is_reported_as_not_found(tmp_path: pathlib.Pat
     context = _context(root)
 
     with pytest.raises(plans.PlanFileError) as error:
-        await plans.resolve_text_and_mtime(context, "local-host", "", "missing.md")
+        await plans.resolve_text(context, "local-host", "", "missing.md")
 
     assert error.value.status == 404

@@ -3628,6 +3628,44 @@ async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness
 
 
 @pytest.mark.asyncio
+async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenHarness) -> None:
+    """更新時刻を変えない連続書き換えでも、SSE通知後に新しい本文と図を表示する。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/plans")
+    await harness.page.locator("#preview h1", has_text="初回").wait_for()
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    fixed_stat = harness.plan_path.stat()
+
+    async def rewrite_keeping_mtime(markdown: str) -> None:
+        # 同じ時刻刻み内の連続書き換えを、実行速度に依存せず再現するため更新時刻を初回の値へ戻す。
+        harness.plan_path.write_text(markdown, encoding="utf-8")
+        os.utime(harness.plan_path, ns=(fixed_stat.st_atime_ns, fixed_stat.st_mtime_ns))
+        assert harness.plan_path.stat().st_mtime_ns == fixed_stat.st_mtime_ns
+        await serve_plans.schedule_broadcast(harness.plans_state)
+
+    await rewrite_keeping_mtime(_valid_diagram_markdown("更新1"))
+    await harness.page.locator("#preview h1", has_text="更新1").wait_for()
+    first_image = harness.page.locator("#preview .diagram-svg img")
+    await first_image.wait_for(state="visible")
+    first_blob_url = await first_image.get_attribute("src")
+    assert first_blob_url is not None
+
+    await rewrite_keeping_mtime(_valid_diagram_markdown("更新2"))
+    await harness.page.locator("#preview h1", has_text="更新2").wait_for()
+    assert await harness.page.locator("#preview h1").all_inner_texts() == ["更新2"]
+    await playwright.async_api.expect(harness.page.locator("#preview .diagram-mermaid svg")).to_contain_text("更新2")
+    current_image = harness.page.locator("#preview .diagram-svg img")
+    await current_image.wait_for(state="visible")
+    assert await current_image.evaluate("(image) => image.complete && image.naturalWidth > 0")
+    assert "更新2" in (await harness.page.locator("#preview .diagram-svg .diagram-source pre").text_content() or "")
+    current_blob_url = await current_image.get_attribute("src")
+    assert current_blob_url is not None
+    assert current_blob_url != first_blob_url
+    assert not await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", first_blob_url)
+    assert await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", current_blob_url)
+
+
+@pytest.mark.asyncio
 async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarness) -> None:
     """左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。"""
     harness = screen_harness
