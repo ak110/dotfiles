@@ -929,7 +929,7 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 
 振り返り担当は他の委譲先を起動せず抽出器を直接実行する。1件が対象セッション全体を1回だけ解析するため、個別起動による分析対象の重複と欠落を防ぐ。抽出、判定及び原因の確定を複数の委譲先へ分ける形は、分けた工程の入力をメインが中継することになり、メインのコンテキストを圧迫するため採用しない。成果の量は候補数に比例するため、成果はメインが所有する管理対象一時領域のファイルへ書き、ツール戻り値には`status`、出力先の絶対パスと行数だけを返す。
 
-メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。同スキルは振り返り前の作業結果を`work-complete`段階、振り返り結果を`review-result`段階として別々に検査し、両方の検査完了後に1回だけ順序どおり出力する。`review-result`段階は`success`、`not-run`又は`failed`の状態を必須入力とし、成功時は対策として投入したWI、未実施時と失敗時は理由を固定見出しで検査する。検査前の作業結果をユーザーへ出力する案は、振り返り結果を同じ応答へ確実に含められないため採用しない。同スキルは常に`agent-toolkit:session-review`を起動する。工程番号は各工程の入力が揃う順序を示し、振り返りの成果へ依存しない必須是正レーンは振り返りの稼働中も開始する。個別スキルは共通形式を持たない。
+メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。同スキルは振り返り前の作業結果を`work-complete`段階、振り返り結果を`review-result`段階として別々に検査する。作業完了報告は検査直後に出力して同じ応答で振り返りを起動し、振り返り結果報告は担当の終端後の応答で出力する。2026年9月25日のユーザー指示により、元作業の完了通知を振り返りの待機より先に置く順序を採用した。`review-result`段階は`success`、`not-run`又は`failed`の状態を必須入力とし、成功時は対策として投入したWI、未実施時と失敗時は理由を固定見出しで検査する。同スキルは常に`agent-toolkit:session-review`を起動する。工程番号は各工程の入力が揃う順序を示し、振り返りの成果へ依存しない必須是正レーンは振り返りの稼働中も開始する。個別スキルは共通形式を持たない。
 
 工程別モデル設定は特定のagent名ではなく、委譲する工程に適用する。
 委譲主体は各起動の直前に設定を解決し、実行系に対応する起動ツールまで同じ判断として確定する。
@@ -1253,10 +1253,10 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 | `pretooluse/git_checks.py` `_check_bash_git_commit` | 'テストを実行せずにcommitしようとしている。agent-toolkit:commitの「通常commit」が定めるcommit直前の確認に従い、先にテストを実行する… | G | 維持（元要件）：commit前の近接検証契約へ対応。検証実行の記録をcommit入力と照合する分岐を実装で確認 |
 | `pretooluse/git_checks.py` `_check_bash_git_commit` | 'テストを実行せずにcommitしようとしている。agent-toolkit:commitの「通常commit」が定めるcommit直前の確認に従い、先にテストを実行する… | G | 維持（元要件）：commit前の近接検証契約へ対応。検証実行の記録をcommit入力と照合する分岐を実装で確認 |
 | `pretooluse/git_checks.py` `_check_bash_agent_toolkit_version_bump` | 'agent-toolkit配下のファイルがstageされているが、当該commitと未push範囲でagent-toolkit/.claude-plugin/plugi… | T | 維持（公開契約破壊）：plugin本体変更と版数の不一致で利用者側の更新経路が変更を認識しない。stage集合と版数を実装で照合 |
-| `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | 維持（技術的不成立）：Bashの全量出力は受領上限で切り詰められ得る。対象ファイルの行・バイト実測を実装・検体で確認 |
-| `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | 維持（技術的不成立）：合計出力量が受領上限を超える。複数対象の行・バイト集計を実装・検体で確認 |
-| `pretooluse/large_reads.py` `check_large_read` | Readの先頭1行がバイト閾値を超えた場合だけ遮断 | O | 維持（技術的不成立）：1行の範囲取得でも受領上限を超える。先頭行のバイト実測を実装・検体で確認 |
-| `pretooluse/large_reads.py` `check_large_read` | 大容量Readを先頭範囲へ補正して警告 | O | 維持（技術的不成立）：先頭だけ届いた結果を全文と誤認し得る。補正入力と残りの範囲を示す分岐を実装・検体で確認 |
+| `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Claude Codeのエージェント向け文書を対象外とし、Codexと通常ファイルでは維持する。Claude CodeのBashは上限超過の全量をファイルへ退避する。対象ファイルの行・バイト実測を実装・検体で確認 |
+| `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Claude Codeではエージェント向け文書を合計から除き、通常ファイルだけで判定する。Codexでは全対象の合計判定を維持する。混在入力を検体で確認 |
+| `pretooluse/large_reads.py` `check_large_read` | Readの先頭1行がバイト閾値を超えた場合だけ遮断 | O | Claude Codeのエージェント向け文書は対象外とする。通常ファイルでは1行の範囲取得でも受領上限を超えるため維持する。先頭行のバイト実測を検体で確認 |
+| `pretooluse/large_reads.py` `check_large_read` | 大容量Readを先頭範囲へ補正して警告 | O | Claude Codeのエージェント向け文書はホスト自身の`PARTIAL view`通知と続きの範囲案内を用いる。通常ファイルでは補正入力と残りの範囲を示す分岐を維持する |
 | `pretooluse/shell_checks.py` `_autofix_bash_command` | 不在パスを補正した際の対象集合の縮小警告 | O | 維持（データ破損）：不在パスを除いた補正が操作対象の集合を縮めると別の対象へ作用する。補正前後の引数比較を実装で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_nested_code_string` | 'blocked: 別のシェルへ-cでコード文字列を渡す入力は、引用を2段以上で解釈する。' | O | 維持（技術的不成立）：二段シェルの引用が分割され、意図したコードが実行されない。入力の構文検査を実装で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_nested_code_string` | 'blocked: su -cへコード文字列を渡す入力は、引用を2段以上で解釈する。' | O | 維持（技術的不成立）：二段シェルの引用が分割され、意図したコードが実行されない。入力の構文検査を実装で確認 |
@@ -1724,7 +1724,7 @@ pushの前に実行した検証が失敗した場合はCI修正と同じ経路�
 
 状態を問わず全件を毎回取得する案は、Pull Request数に比例するinline commentの照会を削減できないため採用しない。
 
-終端担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは当該セッションを対象とする`agent-toolkit:session-review`を起動し、固有成果と振り返り結果を1回だけ固定報告してから、`atk agents-exit-session`を単独で実行する。各工程は同じ完了本文を再生成しない。
+終端担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは元作業の完了報告を先に出力し、当該セッションを対象とする`agent-toolkit:session-review`を起動する。担当の終端後の応答で振り返り結果を報告し、続けて`atk agents-exit-session`を単独で実行する。各工程は同じ完了本文を再生成しない。
 
 終端担当の起動後に生じた是正commitはローカルのベースbranchへ保持し、終端担当を再起動しない。次のセッションの公開工程は初回の終端担当で当該commitを公開し、ベースbranchのHEADについてCIを確認する。
 
