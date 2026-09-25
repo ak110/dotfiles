@@ -202,6 +202,57 @@ class TestTaskStopBlock:
         assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
         assert self._invoke(session_id, state_dir, {"task_id": "bgm3jt6xn"}).returncode == 0
 
+    def test_structured_timeout_response_allows_only_its_task_stop(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`run_in_background`なしのBashが時間切れで背景へ移った構造化応答も所有記録へ渡す。"""
+        session_id = "task-stop-structured-timeout"
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "rg -c pattern | sort"},
+                "tool_response": {
+                    "backgroundTaskId": "bo9oa1l0a",
+                    "timedOutAfterMs": 120000,
+                    "interrupted": False,
+                    "isImage": False,
+                    "noOutputExpected": False,
+                    "stderr": "",
+                    "stdout": "",
+                },
+            },
+            state_dir,
+        )
+
+        assert recorded.returncode == 0
+        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bo9oa1l0a"]
+        assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
+        assert self._invoke(session_id, state_dir, {"task_id": "bo9oa1l0a"}).returncode == 0
+
+    def test_foreground_output_mentioning_background_id_is_not_ownership(
+        self,
+        state_dir: dict[str, str],
+    ) -> None:
+        """前景実行の出力本文に背景起動の文言が現れても所有記録にしない。"""
+        session_id = "task-stop-foreground-text"
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "cat log.txt"},
+                "tool_response": {"stdout": "Command running in background with ID: other-task", "stderr": ""},
+            },
+            state_dir,
+        )
+
+        assert recorded.returncode == 0
+        assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
+
     def test_other_task_is_blocked_even_with_recorded_background_tasks(
         self,
         state_dir: dict[str, str],

@@ -12,6 +12,7 @@ PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し
 第3に、`kill`は結果を意図的に破棄するため同じ状態を解消する。
 第4に、直前の応答が`待機中: <当該session識別子>`の形で当該sessionを待機対象として指す場合は、
 自動再開が当該sessionの結果を受け取る経路が成立しているため解消する。
+本フックは当該sessionの記録を解消済みとして保存し、自動再開で結果を受け取った後のturnの終了でも警告しない。
 この4項は、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が正しい終端として許容する形を被覆する契約を持つ。
 当該規範が許容する終端の形を変える改訂では、同じ変更単位で本列挙と`evaluate`の除外条件を追随させる。
 実行環境が待機・中断を背景タスクへ移し、
@@ -35,7 +36,7 @@ from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.session_state import read_state
+from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import parse_stop_session
 
 _HOOK_ID = "agent-toolkit/agents_server_session_advisor"
@@ -144,6 +145,32 @@ def _declared_waiting_target_ids(last_assistant_message: object) -> set[str]:
     return targets
 
 
+def _resolve_declared_sessions(session_id: str, owner_agent_id: str, declared: set[str]) -> None:
+    """待機表明が指すsessionの観測待ちを解消済みとして保存する。
+
+    表明の時点で自動再開が結果を受け取る経路が成立するため、以降のturnの終了では同じsessionを警告しない。
+    `send_message`が新しい作業を配送した場合はPostToolUseが観測待ちへ戻す。
+    """
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.get(_SESSION_STATE_KEY)
+        if not isinstance(sessions, dict):
+            return None
+        changed = False
+        for target in declared:
+            record = sessions.get(target)
+            if (
+                isinstance(record, dict)
+                and record.get("owner_agent_id") == owner_agent_id
+                and record.get("pending_observation") is True
+            ):
+                record["pending_observation"] = False
+                changed = True
+        return state if changed else None
+
+    update_state(session_id, _mutator)
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     """未観測作業の判定結果と、警告する場合の本文を返す。"""
     resolved = parse_stop_session(payload_text, lambda: None)
@@ -157,7 +184,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     owner_agent_id = resolve_hook_agent_id(payload)
     pending_session_ids = _pending_session_ids(read_state(session_id), owner_agent_id)
     observed = _actively_waited_session_ids(pending_session_ids)
-    observed |= _declared_waiting_target_ids(payload.get("last_assistant_message"))
+    declared = _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)
+    if declared:
+        _resolve_declared_sessions(session_id, owner_agent_id, declared)
+    observed |= declared
     pending_session_ids = [item for item in pending_session_ids if item not in observed]
     if not pending_session_ids:
         return "approve", ""
