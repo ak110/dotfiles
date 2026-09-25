@@ -18,6 +18,18 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 
 レーン担当の起動前に`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`を全文読み、pickerの固定出力ファイルとレーン識別子を含む同書所定の入力を渡す。AWI名、`project_notes`及び上流投入の各値はレーン担当が固定出力から自レーンのdecisionを読んで取得するため、起動文と`固有指示`へは再掲しない。要求単位の由来はレーン担当が計画の起草時にAWI本文とfrontmatterから判定し、計画の`由来`欄へ書く。メインと統合担当は由来を再判定せず、確定済みの採否と終端区分を用いる。新規レーンの`再開位置`は`なし`とする。レーン担当の稼働中に専用worktreeへ書き込む主体は、レーン担当だけとする。
 
+## 上流投入
+
+メインはレーン担当を起動する前に、pickerの`upstream_submission`が`なし`以外の全項目の上流投入を、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の上流投入経路で1件の投入担当へまとめて委譲する。起動、渡す入力（`元項目`と`投入条件`を含む）、検収は同書に従い、投入済みの上流項目は要求ごとの返却値`filename`で識別する。レーンより先に投入するのは、`混在`の項目で上流へ渡した要求をレーン担当が計画の採用範囲から除くためである。
+
+`上流要求だけ`（`lane`が`なし`）の項目は、投入結果に応じて次のとおり扱う。
+
+- `completed`の要求がある場合: レーンを起こさず、全`filename`を`atk wi set-dependencies`で元項目の`depends_on`へ加え、`atk wi return-to-inbox`で`inbox`へ戻す
+- 全要求が`condition_not_met`の場合: 未実在の依存先を加えず、条件不成立の実測を外部操作の結果として確認して元項目を終端する
+- `needs_escalation`の要求がある場合: `add-wi.parent.md`「受領と検収」に従い、元項目の状態を変えず、阻害条件の解消まで保留する
+
+`混在`の項目では、投入結果（要求、投入先、`filename`、`result`）を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`上流投入結果`としてレーン担当の起動入力へ加える。レーン担当は投入済みの要求を計画の採用範囲から除く。`completed`の要求がある項目は、統合指示の`AWI終端区分`へ`終端しない`として渡して統合（ffマージ）の後も`adopt`の対象から外し、統合の検収後にメインが全`filename`を元項目の`depends_on`へ加えて`inbox`へ戻す。全要求が`condition_not_met`の項目は通常のレーン終端を適用する。`needs_escalation`の要求を含む項目は、`add-wi.parent.md`「受領と検収」に従い、阻害条件の解消まで元項目の状態を保ってレーンの起動を保留する。
+
 ## 処理中に確定した必須是正レーン
 
 `../SKILL.md`「即時対応」の判定で即時対応が必要と確定し、本文、実現性、完成条件が確定したAWIを保存した場合だけ、固定済み選定集合へ是正レーンとして追加する。追加できるのはこの条件を満たすAWIに限り、通常の新着AWI、未回答UWI、要求が未確定の項目は固定集合の外に置く。ready一覧も選定時の内容のまま扱う。
@@ -80,7 +92,12 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 
 `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従い、同じレーン担当threadへ統合指示を送る。マージありでは専用branchをベースbranchへfast-forwardし、マージなしではベースbranchを現在の状態のまま保つ。計画最終化とAWI終端も同じthreadが行う。
 
-統合結果のOID、計画保存及びAWI終端を検収した後、レーン担当の終端と外部プロセスの終了を確認する。専用worktreeと管理対象一時領域は、それらを入力とする全工程が完了してから作成時の管理経路で回収する。
+統合結果のOID、計画保存及びAWI終端を検収した後、レーン担当の終端と外部プロセスの終了を確認する。専用worktree、専用branch、レーン用の管理対象一時領域は、それらを入力とする全工程が完了してから、メインが「レーンと資源」で記録した値を使って次の手順で回収する。レーン担当の作業ディレクトリは回収対象のworktreeの内側にあるため、回収はメインが自ら行う。
+
+- `マージあり`: `git -C <統合先worktree> symbolic-ref --short HEAD`が統合先branchと一致することを照合する。`git -C <対象リポジトリ> worktree remove <専用worktree>`を専用branchの削除より先に実行する。続けて`git -C <統合先worktree> merge-base --is-ancestor <専用branch> <統合先branch>`の終了コード0で到達を確認し、`git -C <統合先worktree> branch -D <専用branch>`で削除する。削除には到達確認を経た`-D`だけを使う。専用branchにupstreamが設定されている場合、`-d`はローカルのマージ先ではなくupstreamを基準に統合を判定し、push前の統合を未統合として拒否する。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日」にある
+- `マージなし`: 専用worktreeで`git status --porcelain=v1`の出力が空であり、`git symbolic-ref --short HEAD`が専用branch名、`git rev-parse HEAD`が作成時HEADと一致することを照合する。`git -C <対象リポジトリ> worktree remove <専用worktree>`の後に、`git -C <対象リポジトリ> update-ref -d refs/heads/<専用branch> <作成時HEADの完全OID>`で作成時から更新されていない専用branchだけを削除する。作成時HEADは記録した短縮OIDを操作の直前に`git rev-parse --verify <短縮OID>^{commit}`で完全OIDへ解決して渡す
+
+worktreeとbranchの削除後に、`atk managed-temp cleanup --path <レーン用の管理対象一時領域>`でその領域を削除する。削除の完了は各コマンドの終了コード0と成功の報告で判定する。照合の不一致又は削除の失敗を観測した場合は以降の資源を削除せず、記録値と観測値の差分と残存対象を`agent-toolkit:wi-standards`に従ってWIへ登録し、他のレーンを続ける。
 
 ## 中断レーンの再開
 
