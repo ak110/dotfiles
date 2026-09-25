@@ -24,7 +24,7 @@
 
 - `投入する要求`: 要求ごとの識別子、投入先の対象リポジトリ、種別、要求の趣旨、投入前に確定すべき事項、及び保持している場合のユーザー発話の逐語本文と出所
 - 上流投入の要求では、`元項目`（元項目のAWIファイル名）と`投入条件`も渡す。`upstream_target_repo`が複数の投入先を含む場合は、元項目と投入先の組へ展開する
-- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収は`agent-toolkit/share/managed-temp.md`に従う
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収では`agent-toolkit:managed-temp`をSkill機能で起動する
 
 ## 受領と検収
 

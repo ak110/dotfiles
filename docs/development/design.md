@@ -1210,8 +1210,8 @@ Makefileだけに置く案は直接の特権命令を見逃すため、観測で
 - C: `agent-toolkit/share/rules-main.md`「協調と自律」
 - M: `agent-toolkit/skills/plan-mode/SKILL.md`「進め方」
 - W: `agent-toolkit/skills/writing-standards/references/writing.md`「日本語の書き方」
-- S: `agent-toolkit/share/security.md`「秘匿値ファイルの取り扱い」
-- R: `agent-toolkit/share/search.md`「検索手段の選定と出力量の制御」
+- S: `agent-toolkit:secret-files`「秘匿値ファイルの取り扱い」
+- R: `agent-toolkit:search`「検索手段の選定と出力量の制御」
 - G: `agent-toolkit/skills/commit/SKILL.md`「通常commit」と同スキルの`references/history-rewrite.md`「履歴書換え」
 - A: `agent-toolkit/skills/writing-standards/references/agent-documents-additions.md`「規範追記時の判定」
 - T: `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」
@@ -1883,6 +1883,12 @@ UWI終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 
 スキル本体の共有規範を`references/`配下へ移す統合では、`references/`配下の資料が互いに規範を委ねる状態が構造的に生じる。このため、資料間の委譲は`SKILL.md`が同じ読込条件で併読を定める兄弟資料に限って認め、併読を定めない兄弟資料へは規範を委ねない。委譲の可否を決める責務は`SKILL.md`の読込条件が持ち、委ねる側と委ねられる側を同じ工程へ並べる。
 移設対象の全参照を各資料へ自己完結させる案は採用しない。同じ規範本文を複数の資料へ複製することになり、正本の単一性を失うためである。
+
+## 場面別手順と外部投稿前レビュー
+
+管理対象一時領域、品質検査、検索及び秘匿値ファイルの手順は、それぞれ`agent-toolkit:managed-temp`、`agent-toolkit:check-execution`、`agent-toolkit:search`、`agent-toolkit:secret-files`が所有する。実行時に必要な場面を各スキルの`description`で示す。手順本文を場面別スキルにまとめ、常時規範から長文を読む工程を減らす。委譲の親子契約は前節の境界に従って引き続き`share/`へ置く。スキル起動の判定は`description`に依存するため、常時規範からの決定的な読込契機は持たない。
+
+第三者が読む外部サービスへ起草した文面を投稿する前には`agent-toolkit:external-write-review`を用いる。投稿する主体が文面、投稿先、目的と根拠の所在を確定し、読み取り専用の探索担当へ文脈を持たない読者の観点で照合を依頼する。探索担当は文面の採否と投稿認可を持たず、投稿主体が指摘を反映して送信する。投稿先ごとにレビュー手順を複製する案と常時規範から別の`share/`手順を読む案は、同じ判断の保守先と読込量を増やすため採用しない。
 
 ## atk serveの画面統合
 

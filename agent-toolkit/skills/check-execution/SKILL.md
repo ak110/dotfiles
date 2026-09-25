@@ -1,6 +1,12 @@
+---
+name: check-execution
+description: >
+  formatter、linter、tester又はプロジェクト固有の検査を起動する直前に起動する。
+---
+
 # 品質検査の実行
 
-本書は、formatter、linter、tester及びプロジェクト固有の検査を起動する主体へ、起動手段の選び方を定める。
+本スキルは、formatter、linter、tester及びプロジェクト固有の検査を起動する主体へ、起動手段の選び方を提供する。
 各ツールの受理形式、出力形式、個別の対処は、当該ツールのヘルプ、MCPツールのスキーマ、公式ドキュメントを正本とする。
 
 ## 統合実行ツール経由の起動
@@ -12,4 +18,4 @@
 
 ## pyfltrの起動形
 
-pyfltrの起動形は`agent-toolkit/skills/writing-standards/references/python.md`の「pyfltrの起動形」が定める。
+pyfltrの起動形は`agent-toolkit:writing-standards`の`references/python.md`「pyfltrの起動形」が定める。
