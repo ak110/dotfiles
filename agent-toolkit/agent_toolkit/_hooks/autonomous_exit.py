@@ -12,7 +12,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 判定順序は以下のとおり。
 
 1. 新旧いずれのセッション識別子も`"1"`でない: 常駐ループ外のセッションのため無条件approve
-2. 委譲先セッションの印が`"1"`: 常駐ループの最上位ではないため無条件approve
+2. hookの呼出主体が最上位でない: 常駐ループの最上位ではないため無条件approve
 3. `is_pending_async_work`が真: 非同期処理又は未回収の終端結果が残るためapprove
 4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
 5. 上記いずれでもない: blockして順序制約の再促文を返す
@@ -25,12 +25,13 @@ LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で
 常時ログへ記録する。
 
-委譲先での実行可否: 委譲先は最上位セッションの終了工程を実行できないため、環境変数による除外が必要である。
+委譲先での実行可否: 委譲先は最上位セッションの終了工程を実行できないため、hook入力と環境印で除外する。
 """
 
 import json
 import os
 
+from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.session_state import read_state
 from agent_toolkit._hooks.stop_gate import append_stop_log, is_pending_async_work
@@ -44,9 +45,6 @@ _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 
 # 更新中に旧process-loopと併存するため受理する移行互換名。
 _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
-
-# agents_serverから起動された委譲先セッションであることを示す環境変数名。
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 # PostToolUse（`posttooluse.py`）が`atk agents-exit-session`の応答検出時に
 # セッション状態へ記録するフラグ名。
@@ -80,7 +78,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_no_env", {})
         return "approve", ""
 
-    if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
+    if not is_main_agent_context(payload):
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
 

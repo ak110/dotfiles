@@ -115,6 +115,7 @@ def test_absent_working_root_approves(tmp_path: pathlib.Path) -> None:
         ({"working_plan_save_notified": True}, {}, {}),
         ({}, {"background_tasks": [{"type": "subagent", "id": "pending"}]}, {}),
         ({}, {}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
+        ({}, {"agent_id": "agent-native"}, {}),
         ({}, {}, {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1"}),
         ({}, {}, {"DOTFILES_AUTONOMOUS_EXIT_REQUIRED": "1"}),
     ],

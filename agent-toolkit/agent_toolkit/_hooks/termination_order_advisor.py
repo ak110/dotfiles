@@ -18,13 +18,13 @@ transcriptのSkillの成功結果とBashツール起動記録から判定する�
 継続中の非同期作業がある場合は`is_pending_async_work`の判定を維持し、遮断しない。
 セッション記録（transcript）を読み取れない場合も遮断せず、Stop判定ログへ検査不能を記録する。
 
-委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順を検査対象としないため、環境変数による除外が必要である。
+委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順を検査対象としないため、hook入力と環境印で除外する。
 """
 
 import json
-import os
 import pathlib
 
+from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.stop_gate import (
@@ -37,9 +37,6 @@ from agent_toolkit._hooks.stop_gate import (
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "agent-toolkit/termination_order_advisor"
-
-# agents_serverから起動された委譲先セッションであることを示す環境変数名。
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 # 表示用の代表名（`agent-toolkit:`修飾つき）と、プレフィックス付き・素の両表記を受理する名前集合の対。
 # 代表名はアルファベット順による自動選出ではなく明示指定とする
@@ -163,7 +160,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_not_reentrant", {})
         return "approve", ""
 
-    if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
+    if not is_main_agent_context(payload):
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
 

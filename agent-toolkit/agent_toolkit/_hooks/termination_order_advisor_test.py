@@ -85,15 +85,16 @@ def _async_wait_entry(*, tool_use_id: str = "toolu_async") -> dict:
     }
 
 
-def _payload(session_id: str, transcript_path: str, *, stop_hook_active: bool = True) -> str:
-    return json.dumps(
-        {
-            "session_id": session_id,
-            "transcript_path": transcript_path,
-            "stop_hook_active": stop_hook_active,
-            "background_tasks": [],
-        }
-    )
+def _payload(session_id: str, transcript_path: str, *, stop_hook_active: bool = True, agent_id: str | None = None) -> str:
+    payload = {
+        "session_id": session_id,
+        "transcript_path": transcript_path,
+        "stop_hook_active": stop_hook_active,
+        "background_tasks": [],
+    }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
+    return json.dumps(payload)
 
 
 def _clear_caches() -> None:
@@ -241,6 +242,26 @@ def test_approves_delegated_session(
     transcript = _write_transcript(tmp_path, [_skill_entry("agent-toolkit:process-wi")])
 
     decision, body = termination_order_advisor.evaluate(_payload("sess-delegated", str(transcript)))
+
+    assert (decision, body) == ("approve", "")
+
+
+def test_approves_native_subagent_even_when_parent_termination_is_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """親のprocess-wi起動記録を共有する委譲先へ終了工程を要求しない。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    _clear_caches()
+    transcript = _write_transcript(
+        tmp_path,
+        [_skill_entry("agent-toolkit:process-wi"), _tool_result_entry("toolu_skill")],
+    )
+
+    decision, body = termination_order_advisor.evaluate(
+        _payload("sess-native", str(transcript), agent_id="agent-review"),
+    )
 
     assert (decision, body) == ("approve", "")
 
