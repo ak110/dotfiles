@@ -1,6 +1,7 @@
 """ワークアイテム一覧のプロセス内索引のテスト。"""
 
 import contextlib
+import datetime
 import os
 import pathlib
 import time
@@ -302,3 +303,67 @@ async def test_entries_and_repos_api_reflect_same_size_rewrite_within_mtime_prec
     assert stale_search["entries"] == []
     assert [item["target_repo"] for item in fresh_search["entries"]] == ["example/bbbb"]
     assert repos["repos"] == ["example/bbbb"]
+
+
+def test_switching_states_keeps_index_of_unscanned_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """一覧の状態をactiveとadoptedで交互に切り替えても、走査していない状態の索引を保持して再利用する。"""
+    _age(_write_entry(tmp_path, "inbox", "active.md", "本文"))
+    _age(_write_entry(tmp_path, "adopted", "done.md", "本文"))
+    operations = serve_app.Operations(tmp_path)
+    operations.entries_with_warnings({"status": "adopted"})
+    operations.entries_with_warnings({"status": "active"})
+    parse_calls = 0
+    original_parse = entry_index.frontmatter.parse_frontmatter
+
+    def counting_parse(text: str) -> tuple[dict[str, typing.Any], str] | None:
+        nonlocal parse_calls
+        parse_calls += 1
+        return original_parse(text)
+
+    monkeypatch.setattr(entry_index.frontmatter, "parse_frontmatter", counting_parse)
+
+    adopted, _warnings = operations.entries_with_warnings({"status": "adopted"})
+    active, _warnings = operations.entries_with_warnings({"status": "active"})
+
+    assert [entry["filename"] for entry in adopted] == ["done.md"]
+    assert [entry["filename"] for entry in active] == ["active.md"]
+    assert parse_calls == 0
+
+
+def test_target_repos_does_not_reparse_terminal_entries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """直近7日の終端項目の判定は、変更の無いファイルの処理日時を再解析せず、境界より十分前に更新したファイルを解析しない。"""
+    now = datetime.datetime.now(datetime.UTC)
+    recent = _write_entry(
+        tmp_path,
+        "adopted",
+        "recent.md",
+        f"本文\n\n## 処理結果\n\n- 処理日時: {(now - datetime.timedelta(days=1)).isoformat()}\n",
+    )
+    _age(recent)
+    old = _write_entry(
+        tmp_path,
+        "rejected",
+        "old.md",
+        f"本文\n\n## 処理結果\n\n- 処理日時: {(now - datetime.timedelta(days=30)).isoformat()}\n",
+    )
+    old_ns = time.time_ns() - 30 * 24 * 3600 * 1_000_000_000
+    os.utime(old, ns=(old_ns, old_ns))
+    operations = serve_app.Operations(tmp_path)
+    heading_calls: list[str] = []
+    original_headings = serve_app.top_level_atx_headings
+
+    def counting_headings(text: str, level: int) -> typing.Any:
+        heading_calls.append(text)
+        return original_headings(text, level)
+
+    monkeypatch.setattr(serve_app, "top_level_atx_headings", counting_headings)
+
+    assert operations.target_repos("active") == ["example/recent.md"]
+    assert operations.target_repos("active") == ["example/recent.md"]
+    assert len(heading_calls) == 1

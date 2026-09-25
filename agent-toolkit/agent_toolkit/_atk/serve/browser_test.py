@@ -3244,6 +3244,51 @@ async def test_header_navigation_is_centered_on_three_screens(screen_harness: _S
         assert abs((box["x"] + box["width"] / 2) - viewport_width / 2) <= 1, path
 
 
+_NAV_LINK_METRICS = """links => links.map(link => {
+  const rect = link.getBoundingClientRect();
+  const style = getComputedStyle(link);
+  return {
+    x: Math.round(rect.x * 100) / 100,
+    y: Math.round(rect.y * 100) / 100,
+    width: Math.round(rect.width * 100) / 100,
+    height: Math.round(rect.height * 100) / 100,
+    style: [style.fontFamily, style.fontSize, style.fontWeight, style.lineHeight, style.padding,
+      style.borderWidth, style.boxSizing].join('|'),
+  };
+})"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
+async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHarness, width: int) -> None:
+    """3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさ及び算出スタイルが一致する。
+
+    navの箱の中心だけを比べると、画面固有の要素がnavの内側でリンク群をずらしても検出できないため、
+    リンク単位で比べる。現在の画面の強調が字幅を変える場合もここで検出する。
+    """
+    page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 800})
+    links = page.locator(".screen:not([hidden]) nav.app-nav a")
+
+    direct: dict[str, object] = {}
+    for path in ("/", "/plans", "/sessions"):
+        await page.goto(screen_harness.base_url + path)
+        await links.first.wait_for(state="visible")
+        direct[path] = await links.evaluate_all(_NAV_LINK_METRICS)
+    assert direct["/plans"] == direct["/"]
+    assert direct["/sessions"] == direct["/"]
+
+    clicked: dict[str, object] = {}
+    await page.goto(screen_harness.base_url + "/")
+    for name, path in (("計画ファイル", "/plans"), ("セッション", "/sessions"), ("ワークアイテム", "/")):
+        await page.locator(".screen:not([hidden]) nav.app-nav").get_by_role("link", name=name).click()
+        await playwright.async_api.expect(
+            page.locator('.screen:not([hidden]) nav.app-nav a[aria-current="page"]')
+        ).to_have_text(name)
+        clicked[path] = await links.evaluate_all(_NAV_LINK_METRICS)
+    assert clicked == direct
+
+
 @pytest.mark.asyncio
 async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """3画面のヘッダーの高さと文字サイズがそろい、折り返しが起きる幅でも見出しとナビゲーションの大きさと水平位置がそろう。"""
