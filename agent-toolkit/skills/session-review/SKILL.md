@@ -1,8 +1,8 @@
 ---
 name: session-review
 description: >
-  最上位セッションのメインエージェントが、ユーザーの手動起動又は
-  agent-toolkit:completion-reportからの明示呼び出しで起動する。
+  最上位セッションのメインエージェントが、ユーザーの手動起動、agent-toolkit:completion-reportからの
+  明示呼び出し又はagent-toolkit:process-wiの公開工程からの明示呼び出しで起動する。
 ---
 
 # セッション振り返り
