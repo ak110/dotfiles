@@ -809,7 +809,7 @@ class TestBashGitLogDecorate:
                 'git show --format="git log" && git log -3',
                 'git show --format="git log" && git log --decorate -3',
             ),
-            ("sudo git log --decorate; git log -3", "sudo git log --decorate; git log --decorate -3"),
+            ("env git log --decorate; git log -3", "env git log --decorate; git log --decorate -3"),
             ("git -C /tmp log --decorate; git log -3", "git -C /tmp log --decorate; git log --decorate -3"),
             ("git log --decorate=full", None),
             ("git -C /tmp log -3", "git -C /tmp log --decorate -3"),
