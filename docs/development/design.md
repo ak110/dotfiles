@@ -1191,6 +1191,13 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 成果物の直接検査、必要なスキルの起動記録、危険な操作の抑止及び終了前の未完了通知を、対応するイベントで実行する。
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
+OS初期導入は、エージェントが明示した命令をPreToolUseのBash入力検査で拒否する。
+フックは`bash_command_parser.py`の実行区間を使い、検索語や引用文と実行命令を区別する。
+一方、`make`が起動した子プロセスはPreToolUseへ現れないため、dotfilesの`setup-browser`と`setup-pwsh`は
+`agent_toolkit/_atk/environment.py`と同じ環境変数の設定有無をレシピの先頭で調べる。
+利用者自身の端末では導入レシピへ進める。フックだけにガードを置く案は子プロセスを見逃し、
+Makefileだけに置く案は直接の特権命令を見逃すため、観測できる2つの入口でそれぞれ判定する。
+
 ### warn・block検査の全件照合（2026年9月25日）
 
 判定モジュールが通知整形関数へ渡すwarn・blockの対を、通知式の呼び出し位置で列挙した。条件は同じ行の関数とその分岐、通知は表中の本文の冒頭又は式で特定する。式が変数の場合も、当該位置の代入元が通知本文である。各行のパスから`agent-toolkit/agent_toolkit/_hooks/`を省略した。文体表現だけを検出する2件と同一呼び出しを10回で遮断する1件を2026年9月24日に撤去した。後者は回数だけでは契約違反を確定できず、正当な再試行も止めるためである。行番号は改訂で変わるため、表は関数名で通知位置を特定する。2026年9月25日の再照合ではBashの連続失敗ゲートを撤去した。
@@ -1269,6 +1276,7 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 | `pretooluse/shell_checks.py` `_check_bash_sleep_poll_pattern` | 'block: 前景のsleepに別のコマンドが続く呼び出しを、当該セッションで再び検出した。' | O | 維持（元要件）：背景ジョブの公開待機経路を使う規定へ対応。前景sleepと後段コマンドの反復入力を実装で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_sleep_poll_pattern` | f'warn: 前景のsleepの後に別のコマンドが続いており、反復ポーリングになる可能性がある。\n{guidance}' | O | 維持（元要件）：背景ジョブの公開待機経路を使う規定へ対応。前景sleepと後段コマンドの反復入力を実装で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（取り消し難）：pkill・killallのパターン一致は所有外プロセスを終了し得る。終了対象の指定形を実装で確認 |
+| `pretooluse/shell_checks.py` `_check_bash_system_change` | 特権操作・システムパッケージ変更・Playwrightのシステム依存導入・初期導入targetをBash入力で拒否する | X | 維持（取り消し難）：OSパッケージ又は`/etc`の変更が他の作業へ波及する。実行位置と引用文の区別、拒否理由の配送を公開入口の検体で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_atk_help_observation` | f'atkサブコマンドのヘルプを生成できない: {error}\n対処: atk <サブコマンド> --helpを単独で実行して受理形式を確認する。' | O | 維持（技術的不成立）：help未確認のサブコマンドは受理形式を確定できず実行が失敗し得る。CLIのhelp解決分岐を実装で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_atk_help_observation` | 'atkサブコマンドのヘルプ定義を解決できない。\n対処: atk <サブコマンド> --helpを単独で実行して受理形式を確認する。' | O | 維持（技術的不成立）：help未確認のサブコマンドは受理形式を確定できず実行が失敗し得る。CLIのhelp解決分岐を実装で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_atk_options` | f"atk {' '.join(path)}が受理しないオプションである。対象: {scan.unknown_option}" | O | 維持（技術的不成立）：未知のoption・余剰位置引数はatkが受理せず実行できない。コマンド木との照合を実装で確認 |

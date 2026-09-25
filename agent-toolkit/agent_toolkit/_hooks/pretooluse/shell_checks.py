@@ -1870,6 +1870,132 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     return True
 
 
+# --- Bash: エージェントからのOS初期導入・特権操作の遮断 ---
+
+_SYSTEM_PACKAGE_OPERATIONS: dict[str, frozenset[str]] = {
+    "apt": frozenset({"install", "reinstall", "remove", "purge", "update", "upgrade", "full-upgrade", "autoremove"}),
+    "apt-get": frozenset(
+        {"install", "reinstall", "remove", "purge", "update", "upgrade", "dist-upgrade", "autoremove", "build-dep"}
+    ),
+    "dpkg": frozenset({"-i", "--install", "-r", "--remove", "-P", "--purge", "--configure", "--unpack"}),
+    "dnf": frozenset(
+        {"install", "reinstall", "remove", "erase", "update", "upgrade", "distro-sync", "groupinstall", "groupremove"}
+    ),
+    "yum": frozenset({"install", "reinstall", "remove", "erase", "update", "upgrade", "groupinstall", "groupremove"}),
+    "apk": frozenset({"add", "del", "update", "upgrade"}),
+    "zypper": frozenset({"install", "in", "remove", "rm", "update", "up", "dist-upgrade", "dup"}),
+    "brew": frozenset({"install", "reinstall", "uninstall", "remove", "update", "upgrade"}),
+    "rpm": frozenset({"-i", "--install", "-U", "--upgrade", "-F", "--freshen", "-e", "--erase"}),
+    "snap": frozenset({"install", "remove", "refresh"}),
+    "flatpak": frozenset({"install", "uninstall", "update", "repair"}),
+}
+
+
+def _raw_starts_sudo(raw: tuple[str, ...]) -> bool:
+    """実行前置語の後に置かれた`sudo`を、sudo自身のオプションより前に検出する。"""
+    if not raw:
+        return False
+    index = 0
+    while index < len(raw):
+        token = raw[index]
+        if re.match(r"^[A-Za-z_]\w*=", token):
+            index += 1
+            continue
+        name = pathlib.PurePosixPath(token.lstrip("(")).name
+        if name == "sudo":
+            return True
+        if name == "env":
+            index += 1
+            while index < len(raw):
+                option = raw[index]
+                if option in {"-u", "--unset", "-C", "--chdir"} and index + 1 < len(raw):
+                    index += 2
+                elif "=" in option or option in {"-i", "--ignore-environment", "--"}:
+                    index += 1
+                else:
+                    break
+            continue
+        if name in {"command", "nohup", "xargs", "if", "then", "do", "while", "until", "!"}:
+            index += 1
+            continue
+        if name == "timeout" and index + 1 < len(raw):
+            index += 2
+            continue
+        break
+    return False
+
+
+def _system_change_reason(segment: _ExecutionSegment) -> str | None:
+    """解析済みの実行区間から、利用者のOS初期導入に属する命令を特定する。"""
+    raw = segment.raw_tokens
+    if _raw_starts_sudo(raw):
+        return "`sudo`による特権操作"
+    if not segment.resolved or not segment.tokens:
+        return None
+    tokens = segment.tokens
+    prefix = raw[: len(raw) - len(tokens)] if len(raw) >= len(tokens) else ()
+    if any(pathlib.PurePosixPath(token).name == "sudo" for token in prefix):
+        return "`sudo`による特権操作"
+    while tokens and tokens[0] in {"if", "then", "do", "while", "until", "!"}:
+        tokens = tokens[1:]
+    if not tokens:
+        return None
+    name = pathlib.PurePosixPath(tokens[0]).name
+    arguments = tokens[1:]
+    if name == "sudo":
+        return "`sudo`による特権操作"
+    if name in _SYSTEM_PACKAGE_OPERATIONS and any(argument in _SYSTEM_PACKAGE_OPERATIONS[name] for argument in arguments):
+        return f"`{name}`によるシステムパッケージの変更"
+    if name == "pacman" and any(
+        argument in {"--sync", "--remove", "--upgrade"}
+        or argument.startswith(("-S", "-R", "-U"))
+        and not argument.startswith("-Ss")
+        for argument in arguments
+    ):
+        return "`pacman`によるシステムパッケージの変更"
+    if name == "make" and {"setup-browser", "setup-pwsh"}.intersection(
+        _make_targets(dataclasses.replace(segment, tokens=tokens))
+    ):
+        return "`make`のOS初期導入target"
+    if name in {"playwright", "npx", "npm", "pnpm", "yarn"}:
+        if any(tokens[index : index + 2] == ("playwright", "install-deps") for index in range(len(tokens) - 1)):
+            return "Playwrightのシステム依存導入"
+        if "--with-deps" in tokens and any(
+            tokens[index : index + 2] == ("playwright", "install") for index in range(len(tokens) - 1)
+        ):
+            return "Playwrightのシステム依存導入"
+    return None
+
+
+def _check_bash_system_change(command: str) -> bool:
+    """明示的な特権操作とOSパッケージ変更をBash実行前に遮断する。
+
+    システム変更は同じターンで復元できない。既存のBash実行区間解析を使い、
+    コマンド名が単なる検索語や引用された説明に現れる入力は通過させる。
+    """
+    segments = _extract_execution_segments(command)
+    nested_sudo = re.search(r"(?:\$\(\s*|`\s*)sudo(?:\s|\))", command)
+    reason = "`sudo`による特権操作" if nested_sudo is not None and _has_active_process_kill_syntax(command) else None
+    for source in split_bash_segments(command):
+        try:
+            raw = shlex.split(source, posix=True)
+        except ValueError:
+            continue
+        segments.append(dataclasses.replace(resolve_execution_segment(raw), raw_tokens=tuple(raw)))
+    if reason is None:
+        reason = next((found for segment in segments if (found := _system_change_reason(segment)) is not None), None)
+    if reason is None:
+        return False
+    print(
+        _block_notice(
+            f"blocked: {reason}はエージェントから開始できない。",
+            fix="システム依存の導入が必要なら、未実施の検証と不足する前提を報告し、利用者が自分の端末で初期導入する。",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
 # --- Bash: 全量観測が必要なコマンド出力の切り詰め検出 ---
 
 _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
