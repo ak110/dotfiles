@@ -1331,7 +1331,7 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
     monkeypatch.setattr(
         uwi_module,
         "_commit_and_push",
-        lambda _notes, message, paths: commits.append((message, list(paths))),
+        lambda _notes, message, paths, **_kwargs: commits.append((message, list(paths))),
     )
     path = notes / "inbox/post-approval.md"
     path.write_text(

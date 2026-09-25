@@ -46,7 +46,7 @@ async def test_live_launch_waits_for_automatic_resume(
             monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(
         _atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda _model_type: [("claude", "sonnet[1m]", "medium")],
     )
     try:

@@ -453,34 +453,19 @@ async def test_cancelled_sync_request_does_not_cancel_shared_sync(
 ) -> None:
     """開始要求のキャンセル後も共有同期が継続し、別要求へ同じ結果を返す。"""
     operations = serve_app.Operations(tmp_path)
-    started = threading.Event()
-    release = threading.Event()
-    calls = 0
-
-    def sync() -> bool:
-        nonlocal calls
-        calls += 1
-        started.set()
-        release.wait()
-        return True
-
+    sync = _BlockingSync()
     monkeypatch.setattr(operations, "sync", sync)
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        state.ServeState(tmp_path),
-        operations=operations,
-    )
+    app = _sync_app(tmp_path, operations)
     first = asyncio.create_task(app.test_client().post("/api/sync"))
-    await asyncio.to_thread(started.wait)
+    await asyncio.to_thread(sync.started.wait)
     first.cancel()
     with pytest.raises(asyncio.CancelledError):
         await first
     second = asyncio.create_task(app.test_client().post("/api/sync"))
     await asyncio.sleep(0)
-    release.set()
+    sync.release.set()
     response = await second
-    assert calls == 1
+    assert sync.calls == 1
     assert await response.get_json() == {"synced": True}
 
 
@@ -901,20 +886,21 @@ async def test_serve_tolerates_absent_and_unsupported_signals(
 
 
 def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """利用者の明示的な同期はレート制限を経由せず毎回pullする。"""
+    """利用者の明示的な同期はレート制限を経由せず、毎回未送信commitをpushしてからpullする。"""
     calls: list[str] = []
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    monkeypatch.setattr(common, "repo_lock", lock)
-    monkeypatch.setattr(common, "pull", _recorder(calls, "pull", result=None))
+    monkeypatch.setattr(common, "_repo_lock", lock)
+    monkeypatch.setattr(common, "_push_pending_commits", _recorder(calls, "push", result=None))
+    monkeypatch.setattr(common, "_pull", _recorder(calls, "pull", result=None))
     monkeypatch.setattr(common, "pull_if_stale", _recorder(calls, "pull_if_stale", result=True))
     operations = serve_app.Operations(tmp_path)
     assert operations.sync() is True
     assert operations.sync() is True
-    assert calls == ["pull", "pull"]
+    assert calls == ["push", "pull", "push", "pull"]
 
 
 def test_assets_clear_selected_target_repo_when_absent_from_choices() -> None:
@@ -1000,7 +986,7 @@ process.stdout.write(JSON.stringify({
         "notice": "",
         "status": "一致する項目はありません",
         "shown": {"message": "補助検索に失敗", "hidden": False},
-        "cleared": {"message": "補助検索に失敗", "hidden": True, "focused": "operation-notice-close-button"},
+        "cleared": {"message": "補助検索に失敗", "hidden": True, "focused": "refresh-button"},
     }
 
 

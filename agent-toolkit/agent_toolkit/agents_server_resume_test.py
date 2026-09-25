@@ -163,7 +163,7 @@ async def _start(
     monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.01)
     monkeypatch.setattr(
         subject._atk_config,
-        "resolve_model_candidates",
+        "parse_unresolved_model_candidates",
         lambda _model_type: [("claude", "model", "high")],
     )
     response = await manager.start("plan", "調査", str(tmp_path))

@@ -489,31 +489,15 @@ async def test_concurrent_sync_requests_share_one_pull(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """同時同期要求は未送信commitの反映とpullを1回だけ実行する。"""
-    operations = serve_app.Operations(tmp_path)
-    started = threading.Event()
-    release = threading.Event()
-    calls = 0
-
-    def synchronize(_path: pathlib.Path, **_kwargs: object) -> bool:
-        nonlocal calls
-        calls += 1
-        started.set()
-        release.wait()
-        return True
-
+    synchronize = _BlockingSync()
     monkeypatch.setattr(common, "synchronize", synchronize)
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        state.ServeState(tmp_path),
-        operations=operations,
-    )
+    app = _sync_app(tmp_path, serve_app.Operations(tmp_path))
     tasks = [asyncio.create_task(app.test_client().post("/api/sync")) for _ in range(4)]
-    await asyncio.to_thread(started.wait)
+    await asyncio.to_thread(synchronize.started.wait)
     await asyncio.sleep(0)
-    release.set()
+    synchronize.release.set()
     responses = await asyncio.gather(*tasks)
-    assert calls == 1
+    assert synchronize.calls == 1
     assert [await response.get_json() for response in responses] == [{"synced": True}] * 4
 
 
