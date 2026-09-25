@@ -48,7 +48,7 @@ Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参�
 
 ### GitHubトークンの設定（任意）
 
-mise経由でインストールされる一部ツール（`jq`・`actionlint`・`pinact`など）は、
+mise経由でインストールされる一部ツール（`jq`・`actionlint`・`pinact`など）では
 aquaがGitHub artifact attestations検証のために`api.github.com`へアクセスする。
 未認証では1時間あたり60リクエストのIPベース制限があり、`update-dotfiles`実行時に
 `API rate limit exceeded`で失敗することがあり、OSに依存せず発生し得る。
@@ -139,6 +139,6 @@ statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CL
 
 ## ドキュメント
 
-- [docs/index.md](docs/index.md): ドキュメント入口
+- [docs/index.md](docs/index.md): ドキュメントの総合案内
 - [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）
 - [docs/development/development.md](docs/development/development.md): 開発者向け

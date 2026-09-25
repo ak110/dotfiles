@@ -10,7 +10,7 @@ description: >
 ## 適用条件
 
 本リポジトリでLinux/Windowsのペアファイルのいずれかを編集するときに適用する。該当の判定は後掲のファイル名規則で行う。
-両側をそろえて変更する。片方だけの変更は配布経路の一方を不整合にする。
+両側をそろえて変更する。片方だけの変更は配布先の一方を不整合にする。
 
 ## ペアファイルの判別
 
@@ -40,16 +40,16 @@ description: >
 記述作法は`<plugin root>/skills/writing-standards/references/bash.md`に従う。
 ただし`.sh.tmpl`では既存スクリプトに合わせて`set -eux`を使う。
 
-## ローカル検査とCIジョブの対応
+## ローカルで実行するlintとCIジョブの対応
 
 `make test`が実行するツール集合は、CIの`python-lint (3.14)`ジョブが実行する集合とほぼ同じである。
 CIが`claude-plugin-validate`を無効化する点だけが異なる。
-次の検査はローカルの`make test`では実行されず、それぞれの経路で実行する。
+次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する。
 
 - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
 - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
 - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
-- `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検査
+- `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
 - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されず、CIの`test-windows`ジョブが検証する。

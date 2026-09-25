@@ -1,6 +1,6 @@
 # Python記述スタイル
 
-本書は、Pythonのコードとテストコードの記述スタイル基準と、静的解析及びpyfltrの起動形の扱いを定める。
+本書はPythonのコードとテストコードの記述スタイル基準と、静的解析及びpyfltrの起動形の扱いを定める。
 
 ## 言語スタイル
 
@@ -8,7 +8,7 @@
 
 - importについて
   - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない）
-  - `import xxx as yyy`の別名は、元の名前より読みやすいか実行上の必要性がある場合に使う
+  - `import xxx as yyy`の別名は元の名前より読みやすいか実行上の必要性がある場合に使う
     <例>
     広く定着した略称としての`np`
     名前衝突の回避
@@ -45,7 +45,7 @@
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
 - `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
   - 数値型を厳格に限定するときは`type(x) is int`または`isinstance(x, int) and not isinstance(x, bool)`で除外する
-  - `isinstance(value, type(reference))`形式の型一致チェックでも、`reference`が`int`値のときに`bool`が素通りする
+  - `isinstance(value, type(reference))`形式の型一致チェックでも、`reference`が`int`値のときに`bool`値も一致と判定される
 
 ### 入力検証とセキュリティ
 
@@ -66,7 +66,7 @@
 
 - 構文の互換範囲: 構文は、公開互換性として宣言された全対応版（`requires-python`等）で受理されることを
   確認する。固定された開発・実行版での受理は、この判定の入力の外に置く
-- agent-toolkit配下のPython入口は、自身のplugin rootを
+- agent-toolkit配下で起動するPythonスクリプトやモジュールは、自身のplugin rootを
   `uv run --project <plugin root> --locked --no-default-groups <対象>`へ指定して起動する。
   SSH先で動く`agent-toolkit/scripts/`のリモート補助処理だけは独立したPEP 723スクリプトとして起動する
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
@@ -79,7 +79,7 @@
     - 該当Pythonが利用環境に無いと`error: No interpreter found for Python <ver>`で失敗する
     - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で明示指定する
   - `uv run --script`のvenvキャッシュはスクリプトパスに依存し得る。
-    Linux・uv 0.12.3の実測では、依存メタデータが同一でもパスが異なるスクリプトはvenvを再構築した。
+    Linux・uv 0.12.3で実際に動かしたところ、依存メタデータが同一でもパスが異なるスクリプトはvenvを再構築した。
     パッケージ・解決結果のキャッシュは共有され、ウォーム状態での再構築は1秒未満だった。
     公式資料はキャッシュキーを規定していない。
     hook等の制限時間内実行が必要なスクリプトを事前ウォームアップする場合は、
@@ -87,7 +87,7 @@
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
   - `appname`単独指定は不可
-  - Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、
+  - Windowsでは`appauthor`が省略されると、既定の動作として`appname`と同じ値が補完され、
     配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
@@ -98,12 +98,12 @@
   同じ綴りが別の概念へ既に割り当てられている場合は、そのパーサーを共通登録の対象から外すか、新しいオプションへ別名を選ぶ。
   同じ名前空間への重複登録は、起動時のオプション衝突を招く
 - `argparse`で`action="append"`を使う場合の既定値は`default=None`にする
-  - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が破綻する
+  - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が合わず例外になる
   - list（例: `[]`）を渡すと毎回初期要素として混入する
   - 環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、`None`なら環境変数から初期化、それ以外はそのまま使う
-- `argparse`のオプションへ後から解決経路（環境変数・設定ファイル等）を追加する場合も、
+- `argparse`のオプションへ後から値の解決元（環境変数・設定ファイル等）を追加する場合も、
   `add_argument`の`type`引数（`type=int`・`type=float`等）は維持する
-  - `type`を外して全経路を文字列で受け取り後段で変換する設計に変更すると、
+  - `type`を外して全解決元の値を文字列で受け取り後段で変換する設計に変更すると、
     CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
   - 既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
     parse段階の型変換と既定値解決を分離する
@@ -151,8 +151,8 @@
   `use-implicit-booleaness-not-comparison`で警告されるため、`assert not x`と書く
   - 中身まで含めた比較が必要な場合は`assert x == [expected]`のように具体的な期待値を書く
 - 大規模テストスイートを対象とするプロジェクトでは`pyfltr`の`command-timeout`を延伸する
-  - 具体値・延伸判定・実測手順は各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ
-    実測ベースで記録し、そこをSSOTとする（本ファイル側の数値記載はしない）
+  - 具体値・延伸判定・計測手順は各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ
+    実際の計測結果に基づいて記録し、そこをSSOTとする（本ファイル側の数値記載はしない）
   - `command-timeout`の既定値と挙動仕様は<https://ak110.github.io/pyfltr/llms.txt>から現行版の該当ページを取得して確認する
 
 ### Fixtureのコーディングルール
@@ -180,9 +180,9 @@
   POSIX系設定ディレクトリ変数（`HOME`・`XDG_CONFIG_HOME`・`XDG_CACHE_HOME`・`XDG_DATA_HOME`等）。
   Windows系設定ディレクトリ変数（`LOCALAPPDATA`・`APPDATA`・`USERPROFILE`・`PROGRAMDATA`等）。
   `platformdirs`が参照し得る全変数を含める
-- 設定経路を1本でも漏らすと開発者ホームの実設定を読み込んでしまうため、
-  そのCLIの設定解決経路をプラットフォーム横断で洗い出してから一括で隔離するfixtureに集約する。
-  そのCLIが特定OS専用でも、テスト実行環境のOSと参照変数のOSが一致しない場合に隔離漏れが発生する
+- 設定の読込元を1つでも隔離し損ねると開発者ホームの実設定を読み込んでしまうため、
+  そのCLIが設定を読む場所をプラットフォーム横断で洗い出してから一括で隔離するfixtureに集約する。
+  そのCLIが特定OS専用でも、テスト実行環境のOSと参照変数のOSが一致しない場合に隔離されない変数が残る
 - 隔離fixtureは`autouse=True`でそのテストモジュールに適用するか、
   `@pytest.mark.usefixtures(...)`で明示適用する
 
@@ -193,8 +193,8 @@
 - 代用関数のシグネチャは末尾に`**kwargs`を含め、対象APIへのキーワード引数追加に追従できるようにする
   - 追加される引数名が事前に分かる場合は`<name>: object = None`形式の引数を併用してもよい
 - 対象APIへ引数を委譲する代用関数の`*args`・`**kwargs`の型注釈は`typing.Any`を使う
-  - 委譲先の呼び出し（`original_save(self, *args, **kwargs)`等）で型検査器が型不一致を報告するため
-  - 該当検査器: pyright（`reportArgumentType`）・ty（`invalid-argument-type`）・mypy（`arg-type`）
+  - 委譲先の呼び出し（`original_save(self, *args, **kwargs)`等）で型チェッカーが型不一致を報告するため
+  - 該当する型チェッカー: pyright（`reportArgumentType`）・ty（`invalid-argument-type`）・mypy（`arg-type`）
   - 引数を委譲せず即`raise`等の単純なモックは`object`型でもよい
 
 ### ロギング出力の検証
@@ -207,7 +207,7 @@
 
 ## pyfltrの起動形
 
-- 名前が確定した検査コマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`を正本とする。未知のコマンド名の探索、pyfltrの導入及び検査の実行には、それぞれの目的に対応する既存の入口を使う
+- 名前が確定したチェックコマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`の説明に従う。未知のコマンド名の探索、pyfltrの導入及びチェックの実行には、それぞれの目的に対応する既存の呼び出し手段（CLI・MCPツールなど）を使う
 - pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
 - project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
 - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する

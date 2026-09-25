@@ -32,15 +32,15 @@
   - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`
 
-判断に迷ったら「他者の環境で直接実行されるか」で切り分ける。prek経由でしか動かないなら`scripts/`が適切。
+判断に迷ったら「他者の環境で直接実行されるか」を基準に決める。prek経由でしか動かないなら`scripts/`が適切。
 
 単純なコマンドラッパーのペアは`scripts/new-bin-cmd.py <name> <command...>`で生成できる。
 `bin/<name>`と`bin/<name>.cmd`を生成する。
 
 `bin/`直下のスクリプトを追加・移設・削除する際は、以下を同時に見直す。
 
-- Linuxの配布経路: `.bashrc`のPATH追加行
-- Windowsの配布経路: `pytools/_internal/setup_bin_path.py`によるユーザーPATH追記
+- Linuxの配布設定: `.bashrc`のPATH追加行
+- Windowsの配布設定: `pytools/_internal/setup_bin_path.py`によるユーザーPATH追記
 - `.github/workflows/ci.yaml`の「主要ファイルの存在確認」ステップ
 
 新しいOS別`run_*`スクリプトを追加する場合は`.chezmoiignore`にも除外エントリを追加。
@@ -82,49 +82,49 @@ uv run --frozen pyfltr fast                             # 高速ツールと生�
 `agent-toolkit/`はAgent Plugins、Claude Code、Codexが共有するプラグインルートである。
 `skills/`の実体を3形式で共有し、形式ごとのmanifestとMCP設定だけを分ける。
 
-| 対象 | 役割と生成経路 |
+| 対象 | 役割と生成方法 |
 | --- | --- |
-| `.claude-plugin/plugin.json`・`.mcp.json` | Claude Code向け設定であり、metadataとClaude専用を含むMCP server定義の正本 |
-| `plugin.json`・`.mcp.codex.json`・`mcp.json` | Agent Plugins v1向け生成物。正本から共有許可済みserverだけを固定schemaへ写像する |
-| `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。正本から許可済みの要素だけを写像する |
+| `.claude-plugin/plugin.json`・`.mcp.json` | Claude Code向け設定であり、metadataとClaude専用を含むMCP server定義の大元 |
+| `plugin.json`・`.mcp.codex.json`・`mcp.json` | Agent Plugins v1向け生成物。大元の設定から共有許可済みserverだけを固定schemaへ写像する |
+| `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。大元の設定から許可済みの要素だけを写像する |
 | `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 
 `scripts/sync_codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を同期する。
-Codex向け`agents_server`は、plugin rootを作業ディレクトリに固定した`uv run --project . --locked --no-default-groups agent_toolkit/agents_server_mcp.py`として生成する。Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
+Codex向け`agents_server`はplugin rootを作業ディレクトリに固定した`uv run --project . --locked --no-default-groups agent_toolkit/agents_server_mcp.py`として生成する。Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
 
-agent-toolkitには、公開互換入口である`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
+agent-toolkitには、公開互換インストーラーである`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
 chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照を維持するため、インストーラーと
 `docs/guide/claude-code-guide.md`の名前はClaude Code・Codex統合後も変更しない。
 
-| 経路 | マーケットプレイス | 設定対象 |
+| 導入方法 | マーケットプレイス | 設定対象 |
 | --- | --- | --- |
 | 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、共有`agents_server` MCP、`atk` |
-| dotfiles `post_apply` | ローカル生成物 | 単体経路の対象に加え、Codex向け`AGENTS.md`と共有リンク |
+| dotfiles `post_apply` | ローカル生成物 | 単体導入の対象に加え、Codex向け`AGENTS.md`と共有リンク |
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
-  Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
+  Claude Code向けmanifestを元にして`scripts/sync_generated_files.py`で生成する
 - `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のrulesだけをリンクする
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
 ### agents_server MCPの配置と寿命
 
-共有MCP設定の正本が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py`を
+共有MCP設定の大元が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py`を
 plugin rootを`uv run --project`へ指定し、lockfileを固定して起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
 Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
 
 公開APIは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つに固定する。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、
-工程別モデル設定の候補列からengine、model及びeffortを解決し、完了を待たず`session_id`を返す。`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は、実行ホストが1回のツール呼び出しへ課す上限を超えない値としてサーバーが確定する。Claude Codeを確認できないホストでは270秒とし、Claude Codeではプロンプトキャッシュの保持期間から導出して`5m`で270秒、`1h`で1740秒とする。委譲先として起動されたセッションでは240秒を上限とする。
+工程別モデル設定の候補列からengine、model及びeffortを解決し、完了を待たず`session_id`を返す。`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストが1回のツール呼び出しへ課す上限を超えない値としてサーバーが確定する。Claude Codeを確認できないホストでは270秒とし、Claude Codeではプロンプトキャッシュの保持期間から導出して`5m`で270秒、`1h`で1740秒とする。委譲先として起動されたセッションでは240秒を上限とする。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 timeout超過時もsessionとbackend processを強制終了せず、同じsessionへ`wait`または終端後の`send_message`を続けられる。終端結果は30分保持し、期限切れ後は結果本文を破棄して再開用の最小状態だけを残す。保持期限の経過とsessionを所有する実行主体の終了はいずれも暗黙再開の契機とし、同じ`send_message`がCodexの`thread/resume`又はClaude Agent SDKの`resume`を内部で使って会話を再開する。
-`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。`stop(session_id)`は保持中で終端済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。実行中turnを持つsessionは拒否する。`wait`と`kill`は既定`false`の`stop`引数を持ち、`true`では終端結果を返した応答に限って同じsessionを破棄する。破棄したsessionへの`send_message`は、保持期限の経過後と同じく保持済みの実効条件から暗黙再開する。
+`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。`stop(session_id)`は保持中で終端済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。実行中turnを持つsessionは拒否する。`wait`と`kill`は既定`false`の`stop`引数を持ち、`true`では終端結果を返した応答に限って同じsessionを破棄する。破棄したsessionへの`send_message`は保持期限の経過後と同じく保持済みの実効条件から暗黙再開する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。
 プラグイン配置の寿命に依存するローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
-Claude Agent SDKはCodex専用経路の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
+Claude Agent SDKはCodex実行時の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
 プラグイン導入後のウォームアップは、同じplugin root指定の起動形へ`--check-dependencies`を渡し、
 PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外部Claude/Codex sessionは開始しない。
 

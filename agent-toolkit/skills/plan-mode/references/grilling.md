@@ -1,7 +1,7 @@
 # grilling
 
 `agent-toolkit:plan-mode`の直接起動で実装前の共通理解へ到達し、`agent-toolkit:add-awi-by-user`の起動でAWI投入前の共通理解へ到達するためのユーザー確認手順。
-`agent-toolkit:process-wi`の経路と、レーン担当としての起動では、確認事項の扱いを`../SKILL.md`が定める手順に従って進める。
+`agent-toolkit:process-wi`での実行と、レーン担当としての起動では、確認事項の扱いを`../SKILL.md`が定める手順に従って進める。
 
 ## 確認対象
 
@@ -19,7 +19,7 @@
 
 ## 質問表示
 
-実行環境の構造化質問で提示する。Claude Codeでは`AskUserQuestion`を使い、Codexでは`agent-toolkit/share/rules-main.codex.md`が定める経路を使う。
+実行環境の構造化質問で提示する。Claude Codeでは`AskUserQuestion`を使い、Codexでは`agent-toolkit/share/rules-main.codex.md`が定める手段を使う。
 利用できる構造化質問が無い場合だけ、`agent-toolkit:confirmation-and-uwi`の`references/codex-format.md`が定める固定形式で提示する。
 質問を提示したら、そのラウンドの回答を待ってから次のラウンドへ進む。
 
@@ -37,5 +37,5 @@
   - **最有力の対案**: <選ばなかった中で最も有力だった案>
 ````
 
-この報告は承認を求めるものではないため、追加承認を待たず次の工程へ進む。次の工程は、`agent-toolkit:plan-mode`では計画ファイルの起草、`agent-toolkit:add-awi-by-user`ではAWI本文の起草とする。
+この報告は承認を求めるものではないため、追加承認を待たず次の工程へ進む。次の工程は`agent-toolkit:plan-mode`では計画ファイルの起草、`agent-toolkit:add-awi-by-user`ではAWI本文の起草とする。
 ユーザーが後から異論を示した場合は、その判断と依存する後続判断を更新する。

@@ -23,14 +23,14 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
 性質上、頻繁な改訂が発生する。
 
-agent-toolkitはルールファイル、共有正本、Codex専用生成rootで構成される。
+agent-toolkitはルールファイル、共通のプラグインパッケージ、Codex専用生成rootで構成される。
 
 - ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
 - Agent Plugins: `agent-toolkit/`をパッケージルートとして扱う。
   Agent Plugins仕様の範囲で利用できるスキルとpyfltr MCPを提供する
 - Claude Code: `agent-toolkit/`を参照し、Claude固有のmanifest、ルール、フック、実行資源を利用する
-- Codex: `agent-toolkit/`を正本として生成した`agent-toolkit-codex/`を参照する。
+- Codex: `agent-toolkit/`を元に生成した`agent-toolkit-codex/`を参照する。
   Agent Plugins用のroot manifestを除外し、Codex固有manifestから同じskill、ルール、フック、実行資源へ到達する
 
 Codex専用rootはCodex 0.154.0のsnapshotへ全資源を含めるため、相対シンボリックリンクを使わない。
@@ -104,14 +104,14 @@ agent-toolkitプラグイン、共有`agents_server` MCP、`atk`ラッパーが�
 2. Claude Codeルールを原子的に配置する
 3. Claude Codeのマーケットプレイスとプラグインを設定する
 4. Codexのマーケットプレイスとプラグインを設定する
-5. User scopeに残る旧Codex MCPの完全一致定義を照合し、該当時だけ移行する
+5. User scopeに残る旧Codex MCPの完全一致定義を確認し、該当時だけ移行する
 6. `atk`ラッパーを配置する
 
 新しいMCPサーバーはplugin内の共有`agents_server`であり、User scopeへ登録しない。
-インストーラーと`chezmoi apply`後処理は、過去の手順で登録されたUser scope
-`codex`が`codex mcp-server`の完全一致定義である場合だけ、直前に再照合して削除する。
+インストーラーと`chezmoi apply`後処理は過去の手順で登録されたUser scope
+`codex`が`codex mcp-server`の完全一致定義である場合だけ、直前に再確認して削除する。
 追加フィールド、別のcommand・args・timeout、Local・Project scopeの設定は変更しない。
-plugin更新だけの経路では外部設定を変更せず、必要な場合は診断と手動削除手順を表示する。
+plugin更新だけの処理では外部設定を変更せず、必要な場合は診断と手動削除手順を表示する。
 
 ## 設定確認
 
@@ -130,13 +130,13 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
 応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
 `start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、既定は`true`とする。
-`start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検査コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は、委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
+`start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
-`send_message`は、起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、呼び出し側は検収済み状態を渡して新規起動する。
+`send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、呼び出し側は検収済み状態を渡して新規起動する。
 `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。保持していた`session_id`の回復と、並行する委譲先の残作業の把握に使う。
 `stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`wait`は引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。
-`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は、実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
+`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
 終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
@@ -147,7 +147,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、`atk config show`と`atk config get`が当該値を返し、
 委譲の起動でも当該値を使う。環境変数は保存済みの設定より優先し、当該変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
-`atk config apply-preset <プリセット名>`は、工程別モデル設定の10キーを1回の実行で一括保存する。
+`atk config apply-preset <プリセット名>`は工程別モデル設定の10キーを1回の実行で一括保存する。
 受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
 プリセット名を省略した実行と未知の名前を指定した実行は終了コード2で終わり、利用できるプリセット名を表示する。
 設定を保存していない環境の既定値は`codex-balanced`と同じ候補列とする。
@@ -228,26 +228,26 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk wi pr
 AWIが常時発生しないリポジトリでは、常駐実行を起動せず、数件のAWIがたまった時点で
 `/agent-toolkit:single-lane-process`を手動で起動してまとめて処理する。
 起動したセッションの中で、調査から実装、レビュー、公開までが進む。
-計画を要するAWIが混ざる場合も、同じ処理回で計画の作成から実装まで進む。
+計画を要するAWIが含まれる場合も、同じ処理回で計画の作成から実装まで進む。
 複数の対象リポジトリを扱う処理回では、計画と実行レビューを対象worktreeごとに分ける。同じ対象worktreeの計画対象と直接実装対象は、同じ実行レビューでまとめて確認する。
 
 自律型とまとめ処理型は、AWIの発生頻度と常駐実行の要否で選ぶ。
 常駐実行を動かし続けるだけのAWIが継続して発生する場合は自律型を選ぶ。
 数日に数件の頻度でしか発生しない場合はまとめ処理型を選ぶ。
 
-### 登録経路
+### 登録方法
 
-登録経路は、要求が既に確定しているか、対話で確定する必要があるかで選ぶ。
+登録方法は要求が既に確定しているか、対話で確定する必要があるかで選ぶ。
 一括での移行・復元は`atk serve`の新規追加ダイアログでも種別「一括登録（show形式）」から実行できる。
 AWIは人間向けの作業要求であり、実装を伴う場合はレーン担当が計画を作成して実装し、その後に実行レビューを行う。
 
-| 登録経路 | 選ぶ場面 |
+| 登録方法 | 選ぶ場面 |
 | --- | --- |
 | `atk wi add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
 | `atk wi add --batch` | 別環境の`atk wi show --all`の出力を複数件まとめて移行・復元したい |
 | `/agent-toolkit:add-awi-by-user` | 依頼内容を対話で確定してから登録したい |
 
-`atk wi reject`は、process-loopが要求の全てを不採用と確定した場合だけに使用する。
+`atk wi reject`はprocess-loopが要求の全てを不採用と確定した場合だけに使用する。
 採用内容を統合した元項目又は別リポジトリへ移管した元項目は、統合先又は移管先をnoteへ記録して`atk wi rm --force`で除去する。
 技術的な失敗、入力不足及び外部条件待ちは、不採用にせずactive項目として保持する。ユーザーの回答を待つ項目は`atk wi hold`で保留し、回答後に`atk wi unhold`で自動処理へ戻す。
 
@@ -281,12 +281,12 @@ atk wi answer <UWIファイル名> '<回答本文>'
 
 ## 運用と保守
 
-計画作成・実装・レビューではCodex経路を標準とする。Codexが一時的に利用できない場合だけ、
-Claude Codeのサブエージェントを回復経路として使用する。
+計画作成・実装・レビューではCodexの利用を標準とする。Codexが一時的に利用できない場合だけ、
+Claude Codeのサブエージェントを代替として使用する。
 
 更新時はクイックスタートのインストーラーを再実行する。アンインストール時は双方のプラグインを除去し、
 `~/.claude/rules/agent-toolkit/`と生成された`atk`ラッパーを削除する。plugin更新だけでは旧Codex MCPを
-自動削除しない。単体インストーラーまたは`chezmoi apply`後処理では、完全一致した旧User scope定義だけを移行する。
+自動削除しない。単体インストーラーまたは`chezmoi apply`後処理では完全一致した旧User scope定義だけを移行する。
 
 自動登録に失敗した場合は、設定ファイルのJSON構造を修復してから次の診断・復旧コマンドを実行する。
 
@@ -296,7 +296,7 @@ claude mcp remove --scope user codex
 ```
 
 上記の削除は、`claude mcp get codex`で旧`codex mcp-server`定義を確認した場合だけ実行する。
-custom定義を削除する場合は利用者が内容を確認してから明示的に実行する。2時間のtimeoutは新経路へ引き継がない。
+custom定義を削除する場合は利用者が内容を確認してから明示的に実行する。2時間のtimeoutは新しい設定へ引き継がない。
 
 ```bash
 chezmoi apply
@@ -330,40 +330,40 @@ dotfiles配布利用者は`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPAT
 
 agent-toolkitプラグインはpyfltrのMCPサーバーを同梱する。
 プラグインを導入するとClaude CodeとCodexの双方で自動的に利用可能になり、
-検査の実行・横断検索・横断置換・実行履歴の参照をシェルを経由せずに呼び出せる。
+lintやテストの実行・横断検索・横断置換・実行履歴の参照をシェルを経由せずに呼び出せる。
 サーバーは`uvx`でpyfltrを取得して起動するため、pyfltr自体の事前インストールは要らない。
 
 agent-toolkitは以下のフックを常時有効化する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
 `個人設定`はdotfiles利用者の`~/.claude/settings.json`へ配布される分を指す。
-Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の実機検査で確認した範囲を示す。
+Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の実機検証で確認した範囲を示す。
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
-| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に検査する。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取を警告する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集検査は文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文の検査と応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する |
-| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・背景タスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後の構造検査を案内し、回答済みUWIを通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と構造検査の案内、`agents_server` sessionの状態記録に対応する |
+| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取を警告する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する |
+| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・背景タスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、回答済みUWIを通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録に対応する |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`及び圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は品質想起通知も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`及び問いかけに関する終了判定を行う | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
+| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |
-| 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前検査 | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
+| 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前のチェック | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
 
 Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では品質想起通知も追加する。
 pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする8イベントの定義を確認して信頼する。
 登録集合は`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`SubagentStop`、`SessionEnd`である。
-登録が0件の場合は信頼操作へ進まず、Codex専用rootのmanifest選択を検査する。信頼前は登録済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
+登録が0件の場合は信頼操作へ進まず、Codex専用rootのmanifest選択を確認する。信頼前は登録済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
 信頼後に新しいセッションを開始し、最初の応答の前に自動生成通知が現れることを確認する。
 
 ### 計画ファイルの作業領域と実行レビュー後の保存
 
-新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次の作業rootへ1ファイルとして保存する。
+新規計画は`agent-toolkit:plan-mode`が内部の保存処理を使って次の作業rootへ1ファイルとして保存する。
 
 ```text
 ~/.claude/plans/dd-HHmm_<日本語の簡潔な名詞>.md
@@ -381,16 +381,16 @@ atk plans commit dd-HHmm_<名詞>.md
 
 `atk plans commit`は同じstemの計画、バグ調査ファイル及び実行レビュー表を、計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
 pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
-計画作成基準と可搬参照の検査は`agent-toolkit:plan-mode`の`plan-file-standards.md`を正本とする。
+計画作成基準と可搬参照のチェックは`agent-toolkit:plan-mode`の`plan-file-standards.md`が定める。
 
-計画ファイルと計画運用に関する検査は、上表の`PreToolUse`・`PostToolUse`が扱う。
+計画ファイルと計画運用に関するチェックは、上表の`PreToolUse`・`PostToolUse`が扱う。
 
 - 計画ファイルは1ファイル構成とする
 - 新規の固定H2は`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`、`## 検証`、`## 終端工程`及び`## 進捗ログ`とする
-- 変更履歴のユーザー発言は`### ユーザー発言<連番>`の見出しと逐語コードブロックで検査する
+- 変更履歴のユーザー発言は`### ユーザー発言<連番>`の見出しと逐語コードブロックでチェックする
 - 進捗ログは実装工程の記録だけを収め、新規作成では内容行を持つ本文を受理しない
-- バグ対応では計画メタ情報の`計画ファイル（バグ）`行が参照する別ファイルの原因分析表と固定の調査表を検査する
-- 計画変更履歴、進捗ログ及びレビュー指摘管理表は用途別に保持し、件数又はラウンド数を相互照合しない
+- バグ対応では計画メタ情報の`計画ファイル（バグ）`行が参照する別ファイルの原因分析表と固定の調査表をチェックする
+- 計画変更履歴、進捗ログ及びレビュー指摘管理表は用途別に保持し、件数又はラウンド数を相互に比較しない
 - 計画実装では、メインセッションがレーン担当と単一の読み取り専用実行レビュー担当を直接管理する。
   各レビューラウンドはラウンド番号と指摘件数だけを返し、第2ラウンド以降はメインがレビュー指摘管理表を確認して介入する。
   メインがマージを許可した後は、最後のレーン担当が最新ベースへのrebase、必要な競合記録と再レビュー、ffマージ、`adopt`及び後始末までを担当する
@@ -401,8 +401,8 @@ Claude Codeで有効化する。
 応答の冒頭が英語の談話標識であるとき、日本語文字の比率が閾値未満のときに返す。
 英単語が1語だけの記述は、識別子やコマンド名の単独提示と区別できないため警告しない。
 同じ警告が日本語の応答を経ずに2回続いたときは、ツール呼び出しをブロックする。
-単発の委譲は常設規範の基本委譲契約を適用し、経路選択、継続、停滞検知又は複数主体調整が必要な場合だけ
-`agent-toolkit:delegation`の経路固有契約を適用する。
+単発の委譲は常設規範の基本委譲契約を適用し、起動方式の選択、継続、停滞検知又は複数主体調整が必要な場合だけ
+`agent-toolkit:delegation`の起動方式ごとの契約を適用する。
 
 ### オンデマンドのスキル
 
@@ -411,14 +411,14 @@ Claude Codeで有効化する。
 - `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、コーディングエージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
 - `agent-toolkit:bugfix`: バグ対応時の2系統4段階の原因分析、類似見直し、対策・横展開・再発防止の判断基準
-- `agent-toolkit:delegation`: 経路選択、継続、停滞検知又は複数主体調整が必要な高度な委譲の手順。
-  自動的に適用せず、対象工程が高度な経路条件を持つ場合にだけ読み込む
+- `agent-toolkit:delegation`: 起動方式の選択、継続、停滞検知又は複数主体調整が必要な高度な委譲の手順。
+  自動的に適用せず、対象工程が高度な委譲の条件を持つ場合にだけ読み込む
 - `agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の実行レビューを含む実行引き継ぎ
-  - 計画確定時は計画構造検査で固定H2と表、計画メタ情報、見出し階層、参照実在を確認する
+  - 計画確定時は計画構造の自動チェックで固定H2と表、計画メタ情報、見出し階層、参照実在を確認する
   - 利用者発言は`## 変更履歴`、実装時の進捗は`## 進捗ログ`へ記録する
   - 実行レビューでは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`をレビュー担当が作成・更新し、全ラウンドで同じ表を使う
   - バグ対応計画は計画メタ情報の固定記法から判定し、計画ファイル（バグ）の原因分析表と固定の調査表で両要因を分析し、原因起点の類似見直し、対策・横展開・再発防止を記録する
-  - 変更履歴は見出しごとの記録でレビュー指摘をラウンド単位に集約し、指摘原文・個別採否・対応内容はレビュー指摘管理表を正本とする
+  - 変更履歴は見出しごとの記録でレビュー指摘をラウンド単位に集約し、指摘原文・個別採否・対応内容はレビュー指摘管理表へ記録し、変更履歴には書かない
   - 進捗ログは日時・完了した工程・結果の3列表で実装工程の作業状況を追跡し、異常終了からの再開に使う
 - `agent-toolkit:review-standards`: レビュー担当とレビューイーの判断基準。
   レビュー担当にはコードレビュー・ドキュメントレビューの実施基準を、レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領したレビューイーには修正要否の立証、安全な修正、自己点検と公開可能性の検証基準を与える

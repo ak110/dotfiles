@@ -13,7 +13,7 @@
   既存の見出し配下への規範文追記・条件補強・例示追加など）
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・description変更・節新設など、規模の大きい変更
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がある場合だけ実行する
-  （規定の正本は`agent-toolkit:commit`の`references/push-and-ci.md`「リリースバージョン指定」）
+  （規定は`agent-toolkit:commit`の`references/push-and-ci.md`「リリースバージョン指定」が定める）
 - 現行版が`major.minor.patch`の数値3要素で表せない非SemVerの場合は、文字列の辞書順・
   桁数・接尾辞からPATCH/MINOR/MAJORを推測せず、プロジェクト固有の対応表又はユーザーの
   明示指定がある場合だけその区分を適用する。
@@ -22,17 +22,17 @@
 ## 競合解決と統合後の確認
 
 rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`の数値タプルが大きい方を採用する。
-採用値を正本2ファイル（`agent-toolkit/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`）へ反映する。
+採用値を定義元2ファイル（`agent-toolkit/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`）へ反映する。
 反映後に`scripts/sync_codex_plugin_manifests.py`でAgent Plugins・Codex向け派生manifestを同期し、
-`scripts/sync_codex_plugin_manifests.py --check`で派生物を変更せず整合性を検査する。
-検査は最新なら終了コード0、不整合なら終了コード1、引数誤用なら終了コード2とする。
-同スクリプトが正本間の`version`と`description`の一致と派生manifestの内容一致をまとめて判定するため、
-派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値を突き合わせず、同スクリプトの実行で確認を終える。
+`scripts/sync_codex_plugin_manifests.py --check`で派生物を変更せず整合性を確かめる。
+終了コードは最新なら0、不整合なら1、引数誤用なら2とする。
+同スクリプトが定義元ファイル間の`version`と`description`の一致と派生manifestの内容一致をまとめて判定するため、
+派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値の比較を個別に行わず、同スクリプトの実行で確認を終える。
 
-rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の正本の`version`値を比較する。
+rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の定義元ファイルの`version`値を比較する。
 自分の未公開コミットにエンドユーザーの振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
 統合後の版を基準として「判定基準」節に従うbumpを再実行する
-（別の作業が同じ版へ先にbumpし、Gitが非競合として統合した場合の配信漏れを防ぐ）。
+（別の作業が同じ版へ先にbumpし、Gitが非競合として統合したときに配信されない事態を防ぐ）。
 
 ## 未プッシュ範囲での統合
 
@@ -40,7 +40,7 @@ rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの
 未プッシュ範囲では後続編集ごとに追加bumpせず、格上げが必要な場合だけ上位種別を指定する。
 `git push`実行後の追加commitは新たな未プッシュ範囲として扱い、エンドユーザー振る舞い変更を含む場合は再度bumpする。
 
-## Codex導入後のroot再照合
+## Codex導入後のrootの再確認
 
 Codexプラグインの導入版が変わった場合、保持済みのplugin rootを再利用せず再解決する。
 `codex plugin list --json`の`pluginId == "agent-toolkit@ak110-dotfiles"`項目から現行の導入版を取得し、
@@ -60,27 +60,27 @@ plugin cache directory配下の新versionのrootを解決し直す。
 具体的なversion数値は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
 実装フェーズでは検証より前に`scripts/agent_toolkit_bump.py {種別}`を実行する
 （既存bumpとの統合はツール側が吸収する）。bump不要の場合は`## 要件・外部仕様`へ`bump不要`と根拠を記載する。
-version bumpを伴う計画では、Claude Code向け正本2ファイルを`## 要件・外部仕様`の変更説明へ含める。
+version bumpを伴う計画では、Claude Code向けの定義元2ファイルを`## 要件・外部仕様`の変更説明へ含める。
 正式な生成コマンドと生成器出力との一致確認は`## 検証`へ記載する。
-生成コマンドが扱う派生manifestは、version・description欄の有無や実際の差分有無を問わず変更説明へ重複して含めず、正本2ファイルだけを記載する。
+生成コマンドが扱う派生manifestは、version・description欄の有無や実際の差分有無を問わず変更説明へ重複して含めず、定義元の2ファイルだけを記載する。
 派生manifestの完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
 Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
-正本更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で非変更検査する。
+定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で差分が生じないことを確かめる。
 bumpの完了条件は、実装開始時点の版との増加比較で判定せず、
-公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、及び正本2ファイルと派生manifestの`version`が一致することで判定する。
+公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、及び定義元2ファイルと派生manifestの`version`が一致することで判定する。
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
 複数レーンを並列実装するAWI処理では、各レーンはbump種別（`bump不要`を含む）と選定根拠、MAJORの場合は認可根拠を計画へ記録するに留める。
 メインが本規定の適用対象となるレーンの記録から最も上位の種別を確定し、全レーンのマージ後に1回だけ実行する。
 統合ブランチのpush前に上流進行を観測してrebaseした場合は、
-rebase後の公開済み統合先と正本のversionを「競合解決と統合後の確認」節の基準で再比較する。
+rebase後の公開済み統合先と手元の定義元ファイルのversionを「競合解決と統合後の確認」節の基準で再比較する。
 未公開の振る舞い変更が公開済みと同じversionのまま残る場合は、メインが再bumpとmanifest同期を行う。
 
-## 新規CLI公開時の疎通経路確認
+## 新規CLI公開時の疎通確認
 
 配布物プラグインで新規CLI・新規コマンド・新規ラッパースクリプトを公開する変更を対象とする計画では、
-計画の`## 要件・外部仕様`にエンドユーザー環境での疎通経路を含める。
-疎通経路は、インストールスクリプト・post-apply処理・PATH配置手法・bash補完登録・Windowsペアファイル同期を対象とする。
-判断基準は、プラグイン単体のエンドユーザーがPATH追加・環境変数の設定以外の追加設定なしで新CLIを起動できるかとする。
+計画の`## 要件・外部仕様`に、エンドユーザー環境で新CLIを起動できるまでの導入手順を含める。
+対象はインストールスクリプト・post-apply処理・PATH配置手法・bash補完登録・Windowsペアファイル同期とする。
+判断基準はプラグイン単体のエンドユーザーがPATH追加・環境変数の設定以外の追加設定なしで新CLIを起動できるかとする。
 プラグインの`bin/`配下CLIの実配置先はバージョン付きcache directoryとなる。
 このため、dotfiles配布のエンドユーザーは`.bashrc`のPATH追加、プラグイン単体のエンドユーザーは
 `install-claude.sh`/`install-claude.ps1`が配置する動的解決ラッパーで吸収する。

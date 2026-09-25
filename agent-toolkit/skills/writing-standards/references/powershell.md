@@ -1,6 +1,6 @@
 # PowerShell記述スタイル
 
-本書は、PowerShellスクリプトの記述スタイル基準と、Windows PowerShell 5.1互換を保つための注意点を定める。
+本書はPowerShellスクリプトの記述スタイル基準と、Windows PowerShell 5.1互換を保つための注意点を定める。
 
 - Claude Codeツールの挙動と注意点
   - EditツールはCRLF改行とUTF-8 BOMを透過的に維持する。既存ファイルの編集はEditを使う
@@ -32,7 +32,7 @@
   - PowerShell 5.1のCOM遅延バインディングでは型変換エラーやDISP_E_TYPEMISMATCH（HRESULT `0x80020005`）が返ることがある
     - エラー例: `型 "int" の "2" 値を型 "Object" に変換できません`
   - `Type.InvokeMember`・`[Type]::Missing`による省略引数補完・C#の`dynamic`は
-    同じ遅延バインディング経路を経由するため同様に失敗する
+    同じ遅延バインディングの仕組みを経由するため同様に失敗する
   - Office等のPIA（Primary Interop Assembly）が利用可能な場合は早期バインディングへ切り替える
     - `Add-Type -ReferencedAssemblies @('Microsoft.Office.Interop.PowerPoint', 'Office')`で
       C#ヘルパーを動的コンパイルし、PIA型へキャストして呼び出す

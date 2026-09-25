@@ -43,7 +43,7 @@ tmux内では`monitor-bell`（既定有効）がwindowへベルフラグを設�
 catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベルアイコンが表示される。
 
 - フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないため、JSON出力の
-  `terminalSequence`フィールドでBELを返し、Claude Code自身の端末書き込み経路で送出させる
+  `terminalSequence`フィールドでBELを返し、Claude Code自身の端末への書き込みで送出させる
   （公式仕様でtmux内動作が明記されている。対話セッションで画面表示中のみ送出される）
 - 質問（AskUserQuestion）は`PreToolUse`のツール名matcherで表示と同時に確定的に鳴らす。
   許可待ち等は`Notification`の入力待ち系4種別（`permission_prompt`・`elicitation_dialog`・
@@ -56,7 +56,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
   背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の判定を用いる。
   他のStop系フックがターン継続をblockした場合は、当該ターンの終了前にベルが鳴る
-- Windowsはtmux運用外のため、ベルの各経路は`share/claude_settings_json_managed.win32.json`へ追加しない
+- Windowsはtmux運用外のため、ベルの各設定は`share/claude_settings_json_managed.win32.json`へ追加しない
 - `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
   `@catppuccin_window_flags_icon_format`をベル分岐だけへ上書きし、表示対象をベルアイコンに限定する
 - tmux本体はアタッチ済みセッションの現在のwindowへベルフラグを設定しないため、
@@ -91,22 +91,22 @@ Windowsはtmux運用外のため対象外とする。
 
 ## 質問・ダイアログのタイムアウトの配布
 
-Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は、`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
+Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
 `askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
 `askUserQuestionTimeout`による自動継続は、Remote Controlのbridgeが接続したセッションではarmedされない。
 ダイアログの内部表現が持つ`hasExternalRacer`がbridgeの接続で真になり、自動継続のarmed条件が当該値の否定を含むためである。
 `~/.claude/settings.json`は`remoteControlAtStartup`が真であり、対話TUIのセッションはこの条件へ該当する。
 armedされた場合の中止条件はタイマー発火以降のユーザー操作と端末フォーカスの保持であり、端末とtmuxのアクティブペインにフォーカスが当たっている間は自動継続しない。
 `dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
-既定値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3経路だけであり、当該質問の転送経路はいずれにも該当しない。
+既定値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけであり、当該質問の転送はいずれにも該当しない。
 このため`atk wi process-loop`のClaude起動は`--settings`へ`remoteControlAtStartup`の偽を渡し、常駐実行のセッションでbridgeを接続しない。
 常駐実行のセッションでは別端末からの回答ができなくなるが、質問待ちに上限を与える利益を優先する。
 本節の記述は2026年9月7日にClaude Code 2.1.263のバイナリを実読して確定した。
-再検証では、バイナリから`hasExternalRacer`を設定する箇所と、当該値の否定を含む自動継続のarmed条件を読む。続けて`dialogExpiry`の既定値を解決する関数の呼び出し元を列挙し、当該質問の転送経路が含まれないことを確認する。
+再検証ではバイナリから`hasExternalRacer`を設定する箇所と、当該値の否定を含む自動継続のarmed条件を読む。続けて`dialogExpiry`の既定値を解決する関数の呼び出し元を列挙し、当該質問の転送が含まれないことを確認する。
 
-本節が記録する配布の事実が規範の判断へ及ぼす帰結は、[concepts.md](concepts.md)の「確認・合意の運用」が保持する。
+本節が記録する配布の事実が規範の判断へ及ぼす影響は、[concepts.md](concepts.md)の「確認・合意の運用」が保持する。
 
-`dialogExpiry`の対象は、リモートクライアントへ転送された権限ダイアログとユーザーダイアログが回答を待って駐留できる上限、
+`dialogExpiry`の対象はリモートクライアントへ転送された権限ダイアログとユーザーダイアログが回答を待って駐留できる上限、
 及びHELD状態のcross-sessionメッセージが承認を待つ時間である。
 上限を超えるとキャンセル又は拒否付きのdropへ解決するため、エージェントは期限切れと実利用者の拒否を区別できない。
 リモートクライアントが接続していないローカル専用の権限プロンプトは影響を受けない。
@@ -123,11 +123,11 @@ TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔�
 CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。
 Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
 `CLAUDE_STREAM_IDLE_TIMEOUT_MS`及び`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
-該当する障害を実測した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
+該当する障害を確認した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
 
 ## mise latestの非ログイン再評価
 
-dotfilesリポジトリを対象とする`atk wi process-loop`は、miseの`latest`指定ツールを非ログイン経路で再評価する。
+dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`指定ツールを非ログインシェルから再評価する。
 手動起動時に`mise install --quiet`を一度実行し、その成否後から24時間ごとに待機ループの復帰時に再実行する。
 
 `update-dotfiles`が成功した場合は、その完了時から24時間を数え直す。
@@ -160,7 +160,7 @@ working treeにだけ定義したツールが更新を繰り返しても未導�
 
 ## claude-statuslineの開発版導入
 
-`chezmoi apply`の後処理は、`CHEZMOI_WORKING_TREE`がGit作業ツリーを指す場合に対象を判定する。
+`chezmoi apply`の後処理は`CHEZMOI_WORKING_TREE`がGit作業ツリーを指す場合に対象を判定する。
 現在のブランチが`develop`で、`rust/claude-statusline/`に`origin/master`との差分がある場合は、解決済みのmiseから開発版をビルドする。
 差分にはコミット済み、ステージ済み、未ステージの変更と、Gitのignore対象外である同じパス配下の未追跡ファイルを含める。
 
@@ -181,18 +181,18 @@ Linuxのpost-apply処理は、旧機構が`/dev/shm/codex-<UID>-<ファイル名
 Codexが停止中であり、ホームディレクトリ側の3ファイルが旧機構の正確なリンク又は欠落状態である場合だけ復元する。
 復元した実行では共有メモリー側を保持し、後続のpost-apply実行で3ファイルの内容一致を確認してから回収する。
 
-ホームディレクトリ側と共有メモリー側のDB、WAL、SHMが1件でも異なる場合は、自動的に正本を選択しない。
+ホームディレクトリ側と共有メモリー側のDB、WAL、SHMが1件でも異なる場合は、自動的にどちらか一方を選択しない。
 共有メモリー側の集合を`~/.codex/logs_2-restore-conflict-<集合SHA-256>/`へ保存し、復元未完了を警告する。
 競合スナップショットは所有者だけが参照できる手動復旧用データであり、post-apply処理は削除しない。
 利用者が次の手順を完了するまで保持する。
 
-1. Codexを停止したまま、`~/.codex/`、`/dev/shm/codex-<UID>-*`、競合スナップショットの3集合を照合する
+1. Codexを停止したまま、`~/.codex/`、`/dev/shm/codex-<UID>-*`、競合スナップショットの3集合を比べる
 2. SQLiteのDB、WAL、SHMを一組として復旧し、通常ストレージ側の内容を検証する
 3. 復旧結果を確認した後に限り、共有メモリー側の旧`target`と競合スナップショットを手動で回収する
 
 ## Codexの実験的コンテキスト管理
 
-`.chezmoi-source/dot_codex/modify_private_config.toml`は、Codex設定の
+`.chezmoi-source/dot_codex/modify_private_config.toml`はCodex設定の
 `features.context_management.experimental_mode`を`true`に設定する。
 2026年9月6日に`codex-cli 0.153.4`の`codex features list`で、有効化前の値が`false`であることを確認した。
 
@@ -206,7 +206,7 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 有効化後の比較値は未計測である。本節の値は有効化前の基準だけを表す。
 計測は次の手順で行う。
 まず`~/.claude/projects/`配下から`agent-toolkit:process-wi`のメインセッション記録を1件選ぶ。
-選定条件は、最初のレコードの`timestamp`が有効化commit`248ec7cec313fe36d5a0210b561656340e4dc3c4`の
+選定条件は最初のレコードの`timestamp`が有効化commit`248ec7cec313fe36d5a0210b561656340e4dc3c4`の
 commit時刻（2026-09-06T14:57:05Z）より後であり、かつ当該セッションが終端済みであることとする。
 次に以下を実行する。
 
@@ -238,17 +238,17 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
   - `ExecStart`を絶対パスで書いても、起動されたプログラムが実行ファイル名で解決する外部コマンドには及ばない
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
-  - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを焼き込めない
+  - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを固定で書き込めない
   - ランチャーは`~/dotfiles/agent-toolkit`の`agent_toolkit/atk.py`を絶対パスで直接参照し、プラグインキャッシュの配置に依存しない
   - `uv`はサービス実行環境のPATHに無いため、導入時に解決した絶対パスをランチャーへ埋め込む
     - 解決順序は`~/.local/bin/uv`（公式インストーラーの導入先）、次にPATH探索とし、
       いずれも得られない場合は設定を見送る
     - miseのshimはサービス実行環境でバージョン未解決となり起動しないため優先しない
-  - 本経路は2026年7月27日（1116f984）まで`~/.local/bin/atk`へランチャーを生成しており、改名時に旧名が残存した。
+  - このランチャー生成処理は2026年7月27日（1116f984）まで`~/.local/bin/atk`へランチャーを生成しており、改名時に旧名が残存した。
     `post_apply`の旧配布物削除がこの旧ランチャーと`atk.cmd`を除去し、dotfilesホストの`atk`を作業ツリー版へ解決させる
-  - `install-claude.sh`もプラグイン単体利用者向けに同じ`~/.local/bin/atk`へ別系統のラッパーを生成するが、dotfilesホストでは実行しない前提であり、本経路とは無関係
+  - `install-claude.sh`もプラグイン単体利用者向けに同じ`~/.local/bin/atk`へ別系統のラッパーを生成するが、dotfilesホストでは実行しない前提であり、この生成処理とは無関係
 - 導入処理はrestart後に常駐を確認し、起動しない場合は失敗として`update-dotfiles`の出力へ表示する
-- 旧計画ビューアーの`claude-plans-viewer.service`は、導入処理が停止と無効化に成功した場合だけunitファイルを削除する
+- 旧計画ビューアーの`claude-plans-viewer.service`は導入処理が停止と無効化に成功した場合だけunitファイルを削除する
   - 停止できない場合はunitファイルを残して警告を記録し、後続の配置は続行する
 - lingerが無効な場合はログアウトで停止する
   - 常駐させるには`sudo loginctl enable-linger <user>`を手動実行する
@@ -261,7 +261,7 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 2. `/cpv/`を残す場合、`https://tqzh.tk/cpv/`は`atk serve`のWI画面を表示する。
    計画ファイル画面は同じベースパス配下の`/cpv/plans`となる
 3. `/cpv/`を削除する場合、利用者は`https://tqzh.tk/atk/plans`へ移動する。
-   既存の`/atk/`利用者の経路と表示は変わらない
+   既存の`/atk/`利用者のアクセス先と表示は変わらない
 4. `sudo apachectl configtest`で構文を確認してから`sudo systemctl reload apache2`を実行する
 
 ## euryaleでの上流更新の自動反映
@@ -318,7 +318,7 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 `post_apply`の「Claude Code plugin cacheの旧版削除」工程（`pytools/_internal/prune_claude_plugin_cache.py`）がこれを整理する。
 
 - 対象は`~/.claude/plugins/installed_plugins.json`に載っているmarketplaceとpluginの組だけとし、`installPath`が指す現行版は削除しない
-- 非現行版は、導入時刻の順で次に新しい版（後継）の導入から7日が経過した後に削除する。後継の無い版は残す
+- 現行でない版は、導入時刻の順で次に新しい版（後継）の導入から7日が経過した後に削除する。後継の無い版は残す
   - 起動中のClaude Codeセッションは起動時に解決した版ディレクトリを`hooks.json`と`.mcp.json`から参照し続けるため、即時に削除するとそのセッションのhookとMCPが失敗する。7日はその参照が残る期間を見込んだ猶予である
 - 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる
   - 版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。`plugin.json`のmtimeは版の順序と一致する
@@ -341,8 +341,8 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 
 ## 日次リリースの自動実施
 
-dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
-実行時の正本は`dotfiles-release`スキルであり、判定条件、評価の時点及び実施手順は同スキルが定める。
+dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
+実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点及び実施手順は同スキルが定める。
 本節は当該運用を導入した経緯と根拠を記録する。
 
 判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日の利用者指示による。

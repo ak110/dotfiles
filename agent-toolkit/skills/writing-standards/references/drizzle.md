@@ -1,6 +1,6 @@
 # Drizzle ORM／Drizzle Kit記述スタイル
 
-本書は、Drizzle ORMとDrizzle Kitを用いる実装の記述スタイル基準を定める。
+本書はDrizzle ORMとDrizzle Kitを用いる実装の記述スタイル基準を定める。
 対象バージョン: drizzle-orm/drizzle-kit 0.x系（参考実利用バージョン: drizzle-orm 0.45・drizzle-kit 0.31）。公式ドキュメントは<https://orm.drizzle.team/docs/overview>を参照する。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/drizzle.md：H1直下：2026年9月16日」にある。
 
@@ -8,7 +8,7 @@
 
 - スキーマは`sqliteTable`/`pgTable`等のテーブル定義関数で宣言し、型はコードから推論させる（手書きの型定義との二重管理による乖離を防ぐため）
 - 行の型は`typeof table.$inferSelect`・`typeof table.$inferInsert`で取得する（別途importが不要なため）
-- テーブル数が増える場合はスキーマを複数ファイルに分割し、`drizzle.config.ts`の`schema`にディレクトリを指定する（Drizzle Kitがディレクトリを再帰走査するため、機能単位で分けてもmigration生成は破綻しない）
+- テーブル数が増える場合はスキーマを複数ファイルに分割し、`drizzle.config.ts`の`schema`にディレクトリを指定する（Drizzle Kitがディレクトリを再帰走査するため、機能単位で分けてもmigration生成は正常に動作する）
 - リレーションは`relations()`ヘルパーで明示的に宣言する（Relational Query APIがリレーション定義を前提とするため）
 
 ## マイグレーション運用

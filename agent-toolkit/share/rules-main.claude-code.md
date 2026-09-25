@@ -1,6 +1,6 @@
 # rules-main.claude-code.md: Claude Codeのメインエージェントだけに適用する規範
 
-本書はClaude Codeのメインに適用する。共通判断は`01-agent.md`と`02-agent-operations.md`を正本とする。
+本書はClaude Codeのメインに適用する。共通判断は`01-agent.md`と`02-agent-operations.md`に従う。
 
 ## ツールAPIと権限
 

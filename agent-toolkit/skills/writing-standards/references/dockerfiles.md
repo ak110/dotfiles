@@ -1,6 +1,6 @@
 # Dockerfile記述スタイル
 
-本書は、Dockerfileの記述スタイル基準を定める。
+本書はDockerfileの記述スタイル基準を定める。
 
 ## 基本
 
