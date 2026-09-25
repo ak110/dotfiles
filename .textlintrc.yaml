@@ -39,6 +39,13 @@ rules:
     # writing-standards本文の「見出しは名詞句で書く」規定と重複するため無効化する
     "1.1.2.見出し": false
   ja-no-abusage: true
+  preset-ai-words-ja:
+    # 言い換えの適否は文脈ごとに書き手が判断するため、検査を止めない警告として扱う
+    no-ai-words:
+      severity: warning
+    # プリセットの説明と異なりpresetの有効化だけで動作し、severityを明示しないとerrorのまま残る
+    no-short-topic-comma:
+      severity: warning
   # コーディングエージェントのコンテキスト汚染対策として独自強化する辞書を読み込む
   prh:
     rulePaths:
