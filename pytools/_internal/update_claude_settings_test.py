@@ -90,6 +90,13 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, {"dialogExpiry": "5m"})
         assert result["dialogExpiry"] == "never"
 
+    def test_managed_env_keeps_bash_working_dir_at_project(self, tmp_path: Path):
+        """配布原本はBash呼び出し間の作業ディレクトリ持ち越しを止める環境変数を既存のenvへ加える。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"env": {"FOO": "bar"}})
+        assert result["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] == "1"
+        assert result["env"]["FOO"] == "bar"
+
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
         """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {

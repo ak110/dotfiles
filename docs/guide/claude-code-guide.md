@@ -160,6 +160,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 - `autoMemoryEnabled`: `false`（自動メモリー機能を無効化）
 - `showClearContextOnPlanAccept`: `true`（plan mode承認時にコンテキストクリアの選択肢を表示）
+- `env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR`: `"1"`（Bash呼び出しごとに作業ディレクトリをプロジェクトへ戻す）
 - `env.CLAUDE_CODE_NO_FLICKER`: `"1"`（画面のちらつきを抑制）
 - `permissions`: 許可・拒否するツールやパターンを記述
  （[例](https://github.com/ak110/dotfiles/blob/master/share/claude_settings_json_managed.json)）

@@ -25,6 +25,7 @@
     "superpowers@claude-plugins-official": false
   },
   "env": {
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
     "CLAUDE_CODE_ENABLE_AUTO_MODE": "1",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "5",
     "CLAUDE_CODE_NO_FLICKER": "1",
