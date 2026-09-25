@@ -63,8 +63,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
     "atk wi hold": {
-        "summary": "inboxまたはprocessingの項目を保留する",
-        "description": "目的: inbox又はprocessingの項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで当該項目を処理させないとき。確認の回答を得られず当該項目を進められないとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
+        "summary": "inbox・processing又は終端した項目を保留する",
+        "description": "目的: 項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで処理させないとき。誤って終端した項目を回答待ちにするとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。終端からの移動では旧処理結果を除く。\n前提: 対象がinbox又はprocessingにあること。adopted又はrejectedから移す場合は`--state`を指定する。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
         "epilog": "実行例:\n\n  atk wi hold 20260901-072734-001.md",
     },
     "atk wi unhold": {
@@ -73,18 +73,18 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi unhold 20260901-072734-001.md",
     },
     "atk wi return-to-inbox": {
-        "summary": "processingまたはrejectedの項目をinboxへ戻す",
-        "description": "目的: processing又はrejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。不採用とした項目をUWIの回答により再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、commitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。rejectedから戻す場合は`--state=rejected`を指定する。\n復元・後始末: 処理を再開する場合は`atk wi start-processing`を使う。",
+        "summary": "processing又は終端した項目をinboxへ戻す",
+        "description": "目的: processing・adopted・rejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。誤って終端した項目を再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、終端からの移動では旧処理結果を除いてcommitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。adopted又はrejectedから戻す場合は対応する`--state`を指定する。\n復元・後始末: 処理を再開する場合は`atk wi start-processing`を使う。",
         "epilog": "実行例:\n\n  atk wi return-to-inbox 20260901-072734-001.md --cooldown-days=3",
     },
     "atk wi adopt": {
         "summary": "採用として終端し対応結果を記録する",
-        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの作成者日時・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`又は`--note-file`の内容と、`--commit`で指定したcommitの作成者日時・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの作成者日時・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`又は`--note-file`の内容と、`--commit`で指定したcommitの作成者日時・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
         "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"',
     },
     "atk wi reject": {
         "summary": "不採用として終端し理由を記録する",
-        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox又はprocessingからrejectedへファイルを移動する。`--note`又は`--note-file`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。",
+        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox又はprocessingからrejectedへファイルを移動する。`--note`又は`--note-file`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=rejected`で再処理へ戻す。",
         "epilog": '実行例:\n\n  atk wi reject 20260901-072734-001.md --note="現行実装で解消済み"',
     },
     "atk wi rm": {
@@ -184,22 +184,22 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config show": {
         "summary": "XDG関連パスと工程別モデル設定を一覧表示する（既定動作）",
-        "description": "目的: XDG関連パスと工程別モデル設定の解決結果を`<キー>: <値>`の形式で一覧表示し、工程別モデル設定の候補のうちモデル名とeffortのいずれかが主に使う値の一覧に無いものを警告する。\n利用場面: 現在の設定を確認するとき。設定値が参照先の改名又は廃止へ追随しているかを、委譲先の起動より前に検査するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧を書き、標準エラーへ警告を書く。設定は変更しない。警告の有無にかかわらず終了コードは0とする。\n前提: 設定ファイルが未作成の場合も既定値を表示する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: XDG関連パスと工程別モデル設定の保存値を`<キー>: <値>`、実行時のモデル解決値を`<キー>.resolved: <値>`で表示する。参考一覧外のモデル名・effortは警告する。\n利用場面: 現在の設定とCodex系列名の解決結果を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、Codex系列名があればApp Serverのmodel/listを取得する。標準出力へ一覧、標準エラーへ警告を書く。一覧取得又は系列解決の失敗は終了コード2で理由を示す。設定は変更しない。\n前提: 設定ファイルが未作成の場合も既定値を表示する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
     "atk config get": {
         "summary": "1件以上の設定値を取得する",
-        "description": "目的: 指定した1件以上の設定キーの解決値を、指定した順に1行ずつ値だけで出力する。\n利用場面: シェルのコマンド置換から`private_notes`などの解決値を取得するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ値だけを書く。未知のキーを指定した場合は終了コード2を返す。\n前提: KEYは`atk config show`が出力するキーと同じ名前で指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 指定した設定キーの実効値を指定順に1行ずつ出力する。Codex系列名はmodel/listで完全IDへ解決する。\n利用場面: 委譲起動へモデル候補を渡すときや、シェルから`private_notes`などの解決値を取得するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ値だけを書く。未知のキー、モデル一覧取得又は系列解決の失敗は終了コード2で理由を示す。\n前提: KEYは`atk config show`が出力するキーと同じ名前で指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config get private_notes",
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 工程別のモデルと推論の深さを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位の単一値であり、全てのセッションが共有する。\n前提: KEYは変更できるキー、VALUEは`<claude|codex|agy>:<モデル>[/<effort>]`の形式で指定する。複数の候補はASCIIカンマ区切りで並べる。\n復元・後始末: 元の値へ戻す場合は、同じコマンドで以前の値を設定する。並行して稼働するセッションへも新しい値が波及する。",
-        "epilog": "実行例:\n\n  atk config set execute_model codex:gpt-6-sol/medium",
+        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 工程別のモデルと推論の深さを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位の単一値であり、全てのセッションが共有する。\n前提: KEYは変更できるキー、VALUEは`<claude|codex|agy>:<モデル>[/<effort>]`の形式で指定する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。複数候補はASCIIカンマ区切りで並べる。\n復元・後始末: 元の値へ戻す場合は、同じコマンドで以前の値を設定する。並行して稼働するセッションへも新しい値が波及する。",
+        "epilog": "実行例:\n\n  atk config set execute_model codex:sol/medium",
     },
     "atk config apply-preset": {
         "summary": "工程別モデル設定をプリセットから一括保存する",
-        "description": "目的: 工程別モデル設定の10キーを1回の実行で一括保存する。\n利用場面: 主に使うengineをcodex又はclaudeへ切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`へ10キーを保存し、保存した各キーと値を標準出力へ表示する。\n前提: プリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかを指定する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。",
+        "description": "目的: 工程別モデル設定の対象キーを1回の実行で一括保存する。\n利用場面: 主に使うengineをcodex又はclaudeへ切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`へ工程別候補を保存し、保存した各キーと値を標準出力へ表示する。Codex候補は系列名で保存する。\n前提: プリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかを指定する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。",
         "epilog": "実行例:\n\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {

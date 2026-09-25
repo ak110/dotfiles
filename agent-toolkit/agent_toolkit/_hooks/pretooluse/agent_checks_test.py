@@ -700,7 +700,7 @@ class TestBashOutputTruncationWarning:
     @pytest.mark.parametrize(
         "command",
         [
-            "sudo sh -c 'pytest -q | head -5'",
+            "env sh -c 'pytest -q | head -5'",
             "pytest -q 2>&1 | head -5",
             "pytest -q; pytest -q | head -5",
             "sh -c 'pytest -q' | head -5",
@@ -928,6 +928,28 @@ class TestTaskStopBlock:
         assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bg-task-1"]
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
+
+    def test_timeout_notice_allows_only_its_task_stop(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """実行上限による背景移行通知を所有記録から停止許可まで渡す。"""
+        session_id = "task-stop-timeout-notice"
+        notice = "Command did not complete within its 15s timeout and was moved to the background (ID: bgm3jt6xn)."
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 120"},
+                "tool_response": notice,
+            },
+            state_dir,
+        )
+        assert recorded.returncode == 0
+        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bgm3jt6xn"]
+        assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
+        assert self._invoke(session_id, state_dir, {"task_id": "bgm3jt6xn"}).returncode == 0
 
     def test_other_task_is_blocked_even_with_recorded_background_tasks(
         self,

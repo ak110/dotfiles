@@ -86,7 +86,8 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
     理由文字列は「一時識別子の単独使用」・「本文が短すぎる」・「判定根拠語彙の欠落」の
     3種を返す。判定は上記順序でショートサーキットする。
     """
-    identifier_pattern = re.compile(r"(?:fb|Q|FB)\s?\d{2,}")
+    # commit OIDなど英数字列の途中にある`fb67`等を一時識別子と誤認しないよう、前後を英数字以外に限る。
+    identifier_pattern = re.compile(r"(?<![0-9A-Za-z])(?:fb|Q|FB)\s?\d{2,}(?![0-9A-Za-z])")
     context_words = (
         "のため",
         "という",
@@ -234,6 +235,7 @@ def answer_uwi(
     state: str | None = None,
     lock_timeout: float = -1,
     expected_content: str | None = None,
+    skip_remote_sync: bool = False,
 ) -> bool:
     """平引数でUWI回答欄を更新する。対象はinbox・processing・holdのUWIに限る。
 
@@ -242,7 +244,8 @@ def answer_uwi(
     if not answer.strip():
         raise WebInputError("回答本文が空です")
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _pull(private_notes)
+        if not skip_remote_sync:
+            _pull(private_notes)
         try:
             path = _resolve_active_entry(private_notes, filename, state)
         except FileNotFoundError as error:
@@ -274,9 +277,11 @@ def answer_uwi(
         if destination is not None:
             _stamp_result(path, outcome=WI_STATE_ADOPTED, now=datetime.datetime.now(datetime.UTC))
             shutil.move(path, destination)
-            _commit_and_push(private_notes, "chore: answer and adopt uwi item", list(WI_STATES))
+            _commit_and_push(private_notes, "chore: answer and adopt uwi item", list(WI_STATES), skip_push=skip_remote_sync)
         else:
-            _commit_and_push(private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))])
+            _commit_and_push(
+                private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))], skip_push=skip_remote_sync
+            )
     return True
 
 

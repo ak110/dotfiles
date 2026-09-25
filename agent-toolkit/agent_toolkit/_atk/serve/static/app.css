@@ -309,10 +309,37 @@ main > .toolbar {
   top: 0;
   z-index: 1;
 }
+#screen-wi .nav-loading-slot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-inline-start: auto;
+}
 #screen-wi .nav-loading {
-  min-width: 7rem;
-  color: var(--color-muted);
-  text-align: center;
+  /* 左欄は幅22rem以上、残り幅との比は0.28:1。両欄の間へアイコンを置く。 */
+  position: absolute;
+  top: 50%;
+  left: calc(max(0px, (100% - 1800px) / 2) + var(--space-3) + clamp(22rem, calc(21.875vw - 0.65625rem), 23.953125rem) - 1px);
+  transform: translateY(-50%);
+}
+#screen-wi .nav-loading::before {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--color-secondary-text);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  content: "";
+}
+@media (max-width: 1179px) {
+  /* 中央のリンクと境界位置が重なる幅では、予約済みのナビゲーション枠を使う。 */
+  #screen-wi .nav-loading {
+    position: static;
+    transform: none;
+  }
 }
 #screen-wi .list-warning {
   margin-top: var(--space-3);
@@ -616,16 +643,6 @@ main > .toolbar {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-#screen-wi .entry-row.is-pending .entry-select::after {
-  content: "";
-  width: 1rem;
-  height: 1rem;
-  border: 0.15rem solid var(--color-border);
-  border-top-color: var(--color-primary);
-  border-radius: 50%;
-  animation: wi-pending-spin 0.8s linear infinite;
-}
-@keyframes wi-pending-spin { to { transform: rotate(360deg); } }
 #screen-wi .detail-title-row {
   justify-content: space-between;
 }

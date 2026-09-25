@@ -1,4 +1,4 @@
-"""watchdogの変更通知をSSE購読者へ中継する。"""
+"""WIの変更と同期結果をSSE購読者へ中継する。"""
 
 import asyncio
 import collections.abc
@@ -148,17 +148,17 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         """Markdown移動を購読者へ通知する。"""
         self._publish_markdown_change(event)
 
-    def publish(self) -> None:
-        """最新変更通知を全購読者へ配信する。"""
+    def publish(self, event: str = "changed") -> None:
+        """WIの変更又は同期結果を全購読者へ配信する。"""
         for queue in tuple(self._queues):
             if queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):
                     queue.get_nowait()
-            queue.put_nowait("changed")
+            queue.put_nowait(event)
 
     async def events(self, *, heartbeat: float = 15.0):
         """SSE形式の変更イベントとheartbeatを生成する。"""
-        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=1)
+        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)
         self._queues.add(queue)
         try:
             while True:

@@ -154,6 +154,16 @@ class TestDetectSelfContainmentDeficiency:
         assert len(body.strip()) >= 100
         assert _detect_self_containment_deficiency(body) == "一時識別子の単独使用"
 
+    def test_commit_oid_substring_not_flagged(self) -> None:
+        """commit OIDの途中に現れる`fb67`は一時識別子として扱わない。"""
+        body = (
+            "あああああああああああああああああああああああああああああああ"
+            "`afb67cd`いいいいいいいいいいいいいいいいいいいいいいいいいいいいいい"
+            "理由はうううううううううううううううううううううううううううううう"
+        )
+        assert len(body.strip()) >= 100
+        assert _detect_self_containment_deficiency(body) is None
+
 
 class TestCmdUwiAddSelfContainmentWarning:
     """UWI投入: 自己完結性ヒューリスティック警告と疑問文警告の併存を検証する。"""
@@ -1321,7 +1331,7 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
     monkeypatch.setattr(
         uwi_module,
         "_commit_and_push",
-        lambda _notes, message, paths: commits.append((message, list(paths))),
+        lambda _notes, message, paths, **_kwargs: commits.append((message, list(paths))),
     )
     path = notes / "inbox/post-approval.md"
     path.write_text(

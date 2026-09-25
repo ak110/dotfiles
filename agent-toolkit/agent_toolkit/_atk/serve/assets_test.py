@@ -122,10 +122,10 @@ process.stdout.write(JSON.stringify({
         "count": "3件（未回答UWI 1件）",
         "warning": "一覧から除外したファイル: bad.md（UTF-8として読み取れません）",
         "announced": "3件を表示",
-        "kindState": ["作業項目", "未処理", "plan"],
+        "kindState": ["awi", "inbox", "plan"],
         "targetLabel": "github.co…itory-name",
-        "targetAria": "対象リポジトリ: github.com/example/a-very-long-repository-name",
-        "rowAria": "f.md、github.com/example/a-very-long-repository-name、作業項目、未処理、plan、本文",
+        "targetAria": "target-repo: github.com/example/a-very-long-repository-name",
+        "rowAria": "f.md、github.com/example/a-very-long-repository-name、awi、inbox、plan、本文",
         "summary": "本文",
         "sseStatus": "変更しない",
         "answerValue": "all",
@@ -161,16 +161,16 @@ const items = elements['detail-metadata'].children.map(item => ({
 process.stdout.write(JSON.stringify({items, heading: elements['detail-state'].textContent}));
 """
     )
-    assert result["heading"] == "作業項目 / 未処理"
+    assert result["heading"] == "awi / inbox"
     assert [item["label"] for item in result["items"]] == [
-        "対象リポジトリ",
-        "投入元",
+        "target_repo",
+        "source",
         "priority",
         "int: 1",
         "1",
         "nested",
         "values",
-        "更新日時",
+        "updated_at",
     ]
     assert [item["className"] for item in result["items"]] == ["metadata-item"] * 8
     assert result["items"][0]["value"] == "example/repo"
@@ -920,7 +920,7 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result["filterValues"] == ["", "github.com/x/alpha", "github.com/x/beta"]
-    assert result["filterLabels"][0] == "すべて"
+    assert result["filterLabels"][0] == "all"
     assert result["datalistValues"] == ["github.com/x/alpha", "github.com/x/beta"]
 
 

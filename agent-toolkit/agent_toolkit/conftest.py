@@ -8,6 +8,8 @@ from collections.abc import Callable
 
 import pytest
 
+from agent_toolkit._common import codex_models
+
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
 _GIT_IDENTITY_NAME = "test"
 _GIT_IDENTITY_EMAIL = "test@example.invalid"
@@ -175,6 +177,26 @@ def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _fixed_codex_model_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codexの利用可能モデル一覧を固定値へ差し替え、実行環境の`codex` CLIの有無に依存しない結果にする。
+
+    工程別モデル設定の既定値はCodexの系列名を含み、系列の解決は`codex app-server`を起動して一覧を取得する。
+    `codex`を導入していない継続的インテグレーションでは解決が失敗し、設定の解決を経由する
+    process-loopなどのテストが対象外の理由で失敗する。一覧の内容や取得失敗を検証するテストは、
+    モジュール側のfixtureやテスト内で改めて差し替える。子プロセスへは本差し替えが及ばないため、
+    `atk`を別プロセスで起動するテストは系列名を含まない値を`AGENT_TOOLKIT_CONFIG_<キー>`で与える。
+    """
+    catalog = [
+        {
+            "model": f"gpt-6-{family}",
+            "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in ("low", "medium", "high", "xhigh")],
+        }
+        for family in sorted(codex_models.FAMILIES)
+    ]
+    monkeypatch.setattr(codex_models, "list_models", lambda: catalog)
 
 
 @pytest.fixture(autouse=True)

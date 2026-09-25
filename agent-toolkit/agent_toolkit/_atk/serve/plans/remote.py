@@ -152,7 +152,7 @@ if TYPE_CHECKING:
         _oldest_host_per_file,
         _plan_exists,
         _plan_paths,
-        _read_with_mtime,
+        _read_text,
         _scan_local_root,
         _search_remote,
         all_entries,
@@ -162,7 +162,7 @@ if TYPE_CHECKING:
         plan_links_html,
         render_file_html,
         resolve_source_id,
-        resolve_text_and_mtime,
+        resolve_text,
         review_table_html,
         search_entries,
         start_local_watchers,
@@ -262,17 +262,10 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     return proc.stdout.decode("utf-8")
 
 
-def _decode_read_payload(payload: typing.Mapping[str, typing.Any]) -> tuple[str, float | None]:
-    """`read`応答辞書（RPC・fallback共通）から`(本文, mtime_epoch)`を取り出す。
-
-    `mtime_epoch`は応答に含まれない場合や数値でない場合に`None`を返す。
-    その場合、呼び出し側はMarkdownキャッシュを安全側に倒してバイパスする。
-    """
+def _decode_read_payload(payload: typing.Mapping[str, typing.Any]) -> str:
+    """`read`応答辞書（RPC・fallback共通）から本文を取り出す。"""
     data_b64 = str(payload["data"])
-    text = base64.b64decode(data_b64).decode("utf-8", errors="replace")
-    raw_mtime = payload.get("mtime_epoch")
-    mtime = float(raw_mtime) if isinstance(raw_mtime, (int, float)) else None
-    return text, mtime
+    return base64.b64decode(data_b64).decode("utf-8", errors="replace")
 
 
 async def fetch_remote_file(
@@ -282,12 +275,11 @@ async def fetch_remote_file(
     watcher: RemoteWatcher | None = None,
     *,
     source_id: str = "",
-) -> tuple[str, float | None]:
-    """リモートホストの指定ファイル本文と取得時点の`mtime_epoch`を返す。
+) -> str:
+    """リモートホストの指定ファイル本文を返す。
 
     `watcher`が渡され、対応する常駐SSH接続が`connected`状態にあればRPC経由で読み取る。
     未接続・タイムアウト・例外などRPC不可状態では`ssh_runner`経由のfallbackへ切り替える。
-    本文と`mtime_epoch`は同一読み取り処理から取り出すため、watch通知の遅延に左右されず整合する。
     """
     rel_b64 = base64.b64encode(rel.encode("utf-8")).decode("ascii")
     request_args: dict[str, str] = {"path": rel_b64}

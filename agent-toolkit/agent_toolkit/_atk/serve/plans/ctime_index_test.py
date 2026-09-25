@@ -117,7 +117,7 @@ async def test_remote_file_falls_back_to_single_ssh(response: typing.Any) -> Non
     runner, calls = _runner_returning(_read_payload("fallback"))
     watcher = None if response is None else _FakeWatcher(connected=True, response=response)
 
-    text, _ = await plans.fetch_remote_file("remote-host", "p.md", runner, typing.cast(typing.Any, watcher))
+    text = await plans.fetch_remote_file("remote-host", "p.md", runner, typing.cast(typing.Any, watcher))
 
     assert text == "fallback"
     assert [call[0:2] for call in calls] == [("remote-host", "read")]

@@ -46,6 +46,7 @@ from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import
     consume_agents_server_tool_result,
 )
 from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
+from agent_toolkit._common import codex_models
 from agent_toolkit._plan import locations as _plan_file  # pylint: disable=wrong-import-position
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -579,6 +580,11 @@ class AppServerManager:
                     self.client = None
                 raise
             return client
+
+    async def list_models(self) -> list[dict[str, Any]]:
+        """既存のApp Server接続から表示対象の全モデルページを取得する。"""
+        client = await self._ensure_client()
+        return await codex_models.fetch_catalog(client.request)
 
     async def start(
         self,

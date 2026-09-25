@@ -1,7 +1,15 @@
 """ワークアイテム一覧向けのプロセス内索引。
 
-索引は実パス、更新時刻（ナノ秒）及びファイルサイズが一致する間だけ解析結果を再利用する。
-いずれかが変わったファイルは次の走査で読み直し、走査対象から消えたファイルは索引から除く。
+索引は、実パス、更新時刻（ナノ秒）及びファイルサイズが一致し、かつその解析結果が信用できる場合だけ再利用する。
+解析結果が信用できるのは、解析した走査の開始時刻がファイルの更新時刻より2秒以上後である場合とする。
+いずれかを満たさないファイルは次の走査で読み直し、走査対象から消えたファイルは索引から除く。
+
+`st_mtime_ns`の単位はナノ秒でも、値の精度はファイルシステムが決める（ext3などは1秒、FATは2秒）。
+秒単位の精度では、同じ秒の中で同じサイズのまま本文を書き換えると更新時刻もサイズも変わらないため、
+更新時刻とサイズの一致だけでは書き換えを区別できない。
+更新から2秒以内に読んだ解析結果は信用せずに次の走査で読み直し、書き換えが止まって2秒が過ぎた後に
+読み直した解析結果から再利用する。追加で読み直すのは更新から2秒以内のファイルだけであり、
+変更の無いファイルを読み直さない高速化は維持する。
 """
 
 import dataclasses
@@ -9,9 +17,13 @@ import datetime
 import os
 import pathlib
 import threading
+import time
 import typing
 
 from agent_toolkit._atk.wi import common, frontmatter
+
+_TRUSTED_AGE_NS = 2_000_000_000
+"""解析結果を信用するために必要な、走査開始時刻と更新時刻の差。秒単位の精度とFATの2秒精度を覆う。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -44,6 +56,8 @@ class _CacheEntry:
     mtime_ns: int
     size: int
     parsed: _ParsedFile
+    trusted: bool
+    """更新時刻の精度の範囲外で解析したため、無効化キーの一致だけで再利用できるか。"""
 
 
 class EntryIndex:
@@ -63,6 +77,8 @@ class EntryIndex:
         result: list[IndexedEntry] = []
         warnings: list[dict[str, str]] = []
         next_cache: dict[pathlib.Path, _CacheEntry] = {}
+        # ファイルのstatより前に取得し、解析結果の信用判定を保守的にする。
+        scan_started_ns = time.time_ns()
         for state in states:
             directory = self._private_notes / state
             try:
@@ -83,7 +99,11 @@ class EntryIndex:
                     warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
                     continue
                 cached = self._cache.get(real_path)
-                if cached is None or (cached.mtime_ns, cached.size) != (file_stat.st_mtime_ns, file_stat.st_size):
+                if (
+                    cached is None
+                    or not cached.trusted
+                    or (cached.mtime_ns, cached.size) != (file_stat.st_mtime_ns, file_stat.st_size)
+                ):
                     try:
                         text = path.read_text(encoding="utf-8")
                     except FileNotFoundError:
@@ -98,7 +118,12 @@ class EntryIndex:
                     metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
                     kind = common.entry_type_from_metadata(path, metadata) if parsed_frontmatter is not None else None
                     parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, kind=kind)
-                    cached = _CacheEntry(mtime_ns=file_stat.st_mtime_ns, size=file_stat.st_size, parsed=parsed)
+                    cached = _CacheEntry(
+                        mtime_ns=file_stat.st_mtime_ns,
+                        size=file_stat.st_size,
+                        parsed=parsed,
+                        trusted=scan_started_ns - file_stat.st_mtime_ns >= _TRUSTED_AGE_NS,
+                    )
                 try:
                     current_stat = path.stat()
                 except FileNotFoundError:

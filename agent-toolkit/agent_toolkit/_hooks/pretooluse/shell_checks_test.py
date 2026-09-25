@@ -206,6 +206,45 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 2
         assert "uv run python" in result.stderr
 
+    @pytest.mark.parametrize(
+        "command_template",
+        [
+            "uv --project {project} run python -c 'print(1)'",
+            "uv run --project={project} python -c 'print(1)'",
+            "uv run --directory {parent} --project project python -c 'print(1)'",
+            "uv run --directory {project} python -c 'print(1)'",
+        ],
+    )
+    def test_existing_project_override_is_allowed(self, command_template: str, tmp_path: pathlib.Path) -> None:
+        """別のcwdにある実在Pythonプロジェクトの明示指定は通す。"""
+        payload_cwd = tmp_path / "payload"
+        payload_cwd.mkdir()
+        project = tmp_path / "project"
+        project.mkdir()
+        self._make_python_project(project)
+        command = command_template.format(project=project, parent=tmp_path)
+        assert self._invoke(command, str(payload_cwd)).returncode == 0
+
+    def test_unresolved_project_override_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """指定先を静的に解決できないときはcwdのプロジェクトへ退避しない。"""
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke('uv run --project="$TARGET" python -c "print(1)"', cwd)
+        assert result.returncode == 2
+
+    def test_unresolved_directory_is_blocked_even_with_absolute_project(self, tmp_path: pathlib.Path) -> None:
+        """作業位置が未解決なら絶対project指定だけではuv呼び出しを許可しない。"""
+        project = tmp_path / "project"
+        project.mkdir()
+        self._make_python_project(project)
+        command = f'uv run --directory="$TARGET" --project={project} python -c "print(1)"'
+        assert self._invoke(command, str(tmp_path)).returncode == 2
+
+    def test_project_subtable_without_project_section_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """`[project]`本体のない下位表はPythonプロジェクトの根拠にしない。"""
+        (tmp_path / "pyproject.toml").write_text("[project.optional-dependencies]\n", encoding="utf-8")
+        result = self._invoke("uv run --project . python -c 'print(1)'", str(tmp_path))
+        assert result.returncode == 2
+
     def test_cd_with_no_project_allowed(self, tmp_path: pathlib.Path):
         """cwd変更があっても`--no-project`例外が優先するため許容する。"""
         cwd = self._make_python_project(tmp_path)

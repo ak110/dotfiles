@@ -55,6 +55,7 @@ from agent_toolkit._agents_server.state import (
     selected_candidate,
 )
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
@@ -861,7 +862,7 @@ class AgentsServerManager:
             "start a new session with the verified state"
         )
 
-    def _resolve_start_candidates(
+    async def _resolve_start_candidates(
         self,
         model_type: str,
         *,
@@ -872,7 +873,10 @@ class AgentsServerManager:
         除外中の候補は状態ディレクトリの記録を正本として読む。
         除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
         """
-        candidates = _atk_config.resolve_model_candidates(model_type)
+        candidates = _atk_config.parse_unresolved_model_candidates(model_type)
+        if codex_models.needs_catalog(candidates):
+            catalog = await self._backend("codex").list_models()
+            candidates = codex_models.resolve_candidates(candidates, catalog)
         if not candidates:
             raise ValueError(f"no model candidates remain for model_type: {model_type}")
         recorded = status_file.load_unavailable_candidates(
@@ -936,12 +940,12 @@ class AgentsServerManager:
         Claude/Codexで候補を変えても結果が変わらない失敗は、そのまま呼び出し元へ返す。
         候補を除外して後続の候補で成立した場合は、除外した候補と除外の根拠を応答へ加える。
         """
-        candidates, excluded = self._resolve_start_candidates(
+        _validate_prompt(prompt)
+        _validate_cwd(cwd)
+        candidates, excluded = await self._resolve_start_candidates(
             model_type,
             launch_kind=launch_kind,
         )
-        _validate_prompt(prompt)
-        _validate_cwd(cwd)
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
         display_label = _resolve_display_label(label, prompt)

@@ -50,20 +50,53 @@ def test_read_allows_explicit_range(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_and_bash_apply_threshold_to_mandatory_documents(tmp_path: pathlib.Path) -> None:
-    """必須文書も通常ファイルと同じ閾値で分割する。"""
+    """Claude Codeの規範は通し、Codexでは分割へ誘導する。"""
     paths = [
         _large_file(tmp_path, "AGENTS.md"),
         _large_file(tmp_path, "CLAUDE.md"),
-        _large_file(tmp_path, "SKILL.md"),
         _large_file(tmp_path / "agent-toolkit" / "rules", "01-agent.md"),
-        _large_file(tmp_path / "agent-toolkit" / "skills", "workflow.md"),
+        _large_file(tmp_path / "agent-toolkit" / "skills" / "workflow", "SKILL.md"),
     ]
 
     for path in paths:
-        assert check_large_read({"file_path": str(path)}, str(tmp_path)) is not None
-        notice = check_large_bash_read(f"cat {path}", str(tmp_path))
+        assert check_large_read({"file_path": str(path)}, str(tmp_path)) is None
+        assert check_large_bash_read(f"cat {path}", str(tmp_path)) is None
+        assert check_large_read({"file_path": str(path)}, str(tmp_path), is_codex=True) is not None
+        notice = check_large_bash_read(f"cat {path}", str(tmp_path), is_codex=True)
         assert notice is not None
         assert "offset=1, limit=350" in notice
+
+
+def test_bash_mixed_agent_document_only_measures_other_files(tmp_path: pathlib.Path) -> None:
+    document = _large_file(tmp_path, "AGENTS.md")
+    small = _large_file(tmp_path, "small.txt", lines=1)
+    large = _large_file(tmp_path, "large.txt")
+
+    assert check_large_bash_read(f"cat {document} {small}", str(tmp_path)) is None
+    notice = check_large_bash_read(f"cat {document} {large}", str(tmp_path))
+    assert notice is not None
+    assert str(large) in notice
+    assert str(document) not in notice
+
+
+@pytest.mark.parametrize("change", ["cd", "pushd"])
+@pytest.mark.parametrize("separator", ["&&", ";"])
+def test_bash_resolves_relative_path_after_cwd_change(tmp_path: pathlib.Path, change: str, separator: str) -> None:
+    target = _large_file(tmp_path / "nested", "large.txt")
+
+    notice = check_large_bash_read(f"{change} {target.parent} {separator} cat {target.name}", str(tmp_path))
+
+    assert notice is not None
+    assert str(target) in notice
+
+
+def test_bash_unresolved_cwd_change_uses_payload_cwd(tmp_path: pathlib.Path) -> None:
+    target = _large_file(tmp_path)
+
+    notice = check_large_bash_read('cd "$DIR" && cat large.txt', str(tmp_path))
+
+    assert notice is not None
+    assert str(target) in notice
 
 
 def test_read_allows_non_line_oriented_formats(tmp_path: pathlib.Path) -> None:
@@ -256,3 +289,45 @@ def test_dispatch_still_blocks_bash_full_read(tmp_path: pathlib.Path, capsys) ->
 
     assert pretooluse.main(json.dumps(payload)) == 2
     assert str(path) in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("tool_name", ["Read", "Bash"])
+def test_dispatch_host_distinguishes_agent_document(tmp_path: pathlib.Path, capsys, tool_name: str) -> None:
+    path = _large_file(tmp_path, "AGENTS.md")
+    tool_input = {"file_path": str(path)} if tool_name == "Read" else {"command": f"cat {path}"}
+    payload = {
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "session_id": "large-agent-document",
+        "cwd": str(tmp_path),
+    }
+
+    assert pretooluse.main(json.dumps(payload)) == 0
+    claude_output = capsys.readouterr()
+    assert str(path) not in claude_output.err
+    assert "updatedInput" not in claude_output.out
+
+    payload["turn_id"] = "codex-turn"
+    expected_code = 2 if tool_name == "Bash" else 0
+    assert pretooluse.main(json.dumps(payload)) == expected_code
+    captured = capsys.readouterr()
+    if tool_name == "Bash":
+        assert str(path) in captured.err
+    else:
+        assert "updatedInput" in captured.out
+
+
+@pytest.mark.parametrize("turn_id", [None, "codex-turn"])
+def test_dispatch_blocks_large_relative_read_after_cd(tmp_path: pathlib.Path, capsys, turn_id: str | None) -> None:
+    target = _large_file(tmp_path / "nested", "large.txt")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": f"cd {target.parent} && cat {target.name}"},
+        "session_id": "large-relative-read",
+        "cwd": str(tmp_path),
+    }
+    if turn_id is not None:
+        payload["turn_id"] = turn_id
+
+    assert pretooluse.main(json.dumps(payload)) == 2
+    assert str(target) in capsys.readouterr().err

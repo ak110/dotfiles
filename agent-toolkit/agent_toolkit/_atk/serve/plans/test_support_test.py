@@ -74,12 +74,9 @@ class _FakeWatcher:
         return self._response
 
 
-def _read_payload(text: str, mtime: float | None = 1_000.0) -> dict[str, typing.Any]:
+def _read_payload(text: str) -> dict[str, typing.Any]:
     """リモートヘルパーの`read`応答を組み立てる。"""
-    payload: dict[str, typing.Any] = {"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii")}
-    if mtime is not None:
-        payload["mtime_epoch"] = mtime
-    return payload
+    return {"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii")}
 
 
 def _runner_returning(payload: dict[str, typing.Any]) -> tuple[plans.SshRunner, list[tuple[str, str, list[str]]]]:

@@ -23,6 +23,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
@@ -170,6 +171,9 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     os.close(read_fd)
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+    # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
+    for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
+        env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = "claude:opus/medium"
     # Gitの作業ツリー外で起動し、`--target-repo`の既定解決が対象を限定しない状態にする。
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],

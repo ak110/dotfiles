@@ -32,7 +32,7 @@
 - 対象セッションの識別子: Claude Codeでは準備工程が返した`transcript_path`の拡張子を除いたファイル名、Codexでは`codex_thread_id`の値とする
 - 準備manifest: 準備工程が返した`manifest_path`の絶対パスとする
 - 出力先ファイル: 準備manifestの`output_file`の絶対パスとする
-- 引き継ぎ記録先: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収は`agent-toolkit/share/managed-temp.md`に従う
+- 引き継ぎ記録先: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パスへ`（新規）`を続けた値。領域の作成と回収では`agent-toolkit:managed-temp`をSkill機能で起動する
 
 起動経路は固定タスク契約、抽出器、対象リポジトリ、管理対象一時領域及び観測境界は準備manifest、プロジェクト規範は`cwd`から振り返り担当が解決するため、名前付き入力は前記の5項目に限る。
 
@@ -43,6 +43,7 @@
 ## 受領
 
 振り返り担当は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`が定める形式で返す。メインは`output_file`が起動文の絶対パスと一致することを確認し、そのファイルを読む。`completed`の場合は、成果ファイルの`## 対象セッション`、`## 問題候補の判定記録`、`## メイン由来の改善点`、`## 規範適用による目的逸脱`、`## 所要時間の内訳と改善提案`、`## 登録したキュー項目`及び`## 未確認範囲`の全節を検収する。
+欠陥と判定された各候補では、`処置`に根本原因へ対応する再発防止策の実装済み成果物と終了状態、又は根本原因と必要な全処置を覆うactiveなAWIがあることを独立に確認する。AWIを根拠とする場合は`atk wi show`で本文とactive状態を照合する。既存規範を守るという宣言だけの報告と、処置の実体が欠ける報告は`completed`として受理せず、同じ振り返り担当へ不足した原因分析と処置の確定を返す。
 
 `needs_escalation`の場合は、返された確認事項を確認し、回答を得られない場合はUWIを登録する。
 回答を得た場合は回答を、得られない場合はUWIの正本ファイル名を同じsessionへ配送する。

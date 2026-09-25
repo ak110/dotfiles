@@ -12,12 +12,14 @@ import os
 import pathlib
 import re
 import sys
-from typing import cast
+from collections.abc import Iterable
+from typing import Any, cast
 
 import platformdirs
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import codex_models
 
 _CONFIG_FILENAME = "config.json"
 
@@ -30,24 +32,23 @@ _MODEL_SETTING_CATEGORIES = {
     "session_review_model": "上位",
     "orchestrate_model": "上位",
 }
-# 用途区分はcodexとclaudeの候補を1組で持つ。片方のengineだけ段位を変える要求は、
-# 既存区分の値を書き換えず、新しい用途区分を追加して表現する。
+# 用途区分はcodexとclaudeの候補を1組で持ち、各engineの選定値とプリセットの順序を分けて管理する。
 # 各区分の段位はskills/delegation/references/runtime-routing.md「代替時の組合せの目安」に従う。
 _CATEGORY_ENGINE_MODELS = {
     "上位": {
-        "codex": "codex:gpt-6-sol/medium",
+        "codex": "codex:sol/medium",
         "claude": "claude:opus[1m]/medium",
     },
     "軽量": {
-        "codex": "codex:gpt-6-luna/xhigh",
+        "codex": "codex:terra/medium",
         "claude": "claude:sonnet[1m]/medium",
     },
     "探索上位": {
-        "codex": "codex:gpt-6-luna/xhigh",
+        "codex": "codex:terra/medium",
         "claude": "claude:opus[1m]/medium",
     },
     "探索軽量": {
-        "codex": "codex:gpt-6-luna/medium",
+        "codex": "codex:luna/medium",
         "claude": "claude:sonnet[1m]/medium",
     },
 }
@@ -80,7 +81,9 @@ _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
     "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]", "claude-opus-5-5"}),
-    "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}),
+    "codex": frozenset(
+        {"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", *codex_models.FAMILIES}
+    ),
     # Antigravity CLIの`--model`は、`agy models`が返す推論の深さ込みの完全スラッグと、
     # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。
     # 実測の日付と再検証手段は`docs/development/audit-records.md`の
@@ -201,10 +204,13 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 
 def _cmd_config_show(home: pathlib.Path) -> None:
-    """showサブコマンド: 解決済み設定を一覧表示する。"""
-    for key, value in _resolved_settings(home).items():
+    """showサブコマンド: 保存値と実行時の解決値を区別して表示する。"""
+    settings = _resolved_settings(home)
+    catalog = _catalog_for_values(settings[key] for key in _MUTABLE_KEY_DEFAULTS)
+    for key, value in settings.items():
         print(f"{key}: {value}")
         if key in _MUTABLE_KEY_DEFAULTS:
+            print(f"{key}.resolved: {_resolved_candidate_string(value, catalog)}")
             for warning in _stage_model_candidate_warnings(key, value):
                 _outcome.report_warning(warning)
 
@@ -219,8 +225,9 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
             f"未知の設定キーを指定した: {', '.join(unknown_keys)}。利用可能なキーから選び直す: {', '.join(sorted(settings))}"
         )
         sys.exit(2)
+    catalog = _catalog_for_values(settings[key] for key in requested_keys if key in _MUTABLE_KEY_DEFAULTS)
     for key in requested_keys:
-        print(settings[key])
+        print(_resolved_candidate_string(settings[key], catalog) if key in _MUTABLE_KEY_DEFAULTS else settings[key])
 
 
 def _cmd_config_set(args: argparse.Namespace) -> None:
@@ -275,8 +282,25 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
     ]
 
 
-def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
-    """model_typeに対応する工程別モデル設定を候補の3つ組として返す。
+def _catalog_for_values(values: Iterable[str]) -> list[dict[str, Any]]:
+    """系列指定がある場合だけApp Serverへモデル一覧を要求する。"""
+    candidates = [candidate for value in values for candidate in parse_stage_model_candidates(value)]
+    return codex_models.list_models() if codex_models.needs_catalog(candidates) else []
+
+
+def _resolved_candidate_string(value: str, catalog: list[dict[str, Any]]) -> str:
+    parsed = parse_stage_model_candidates(value)
+    resolved = codex_models.resolve_candidates(parsed, catalog)
+    return ",".join(
+        f"{engine}:{selected_model}/{effort}" if model != selected_model else original
+        for original, (engine, model, effort), (_selected_engine, selected_model, _selected_effort) in zip(
+            value.split(","), parsed, resolved, strict=True
+        )
+    )
+
+
+def parse_unresolved_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
+    """model_typeに対応する保存値を候補の3つ組として返す。
 
     設定値と同じ書式の候補列を受け取った場合は設定を読まず、当該候補列をそのまま分解して返す。
     """
@@ -291,6 +315,15 @@ def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
                 f"(available: {', '.join(available)}; or pass candidates like codex:gpt-6-sol/medium)"
             ) from error
     return parse_stage_model_candidates(resolve_mutable_setting(key))
+
+
+def resolve_model_candidates(model_type: str, *, catalog: list[dict[str, Any]] | None = None) -> list[tuple[str, str, str]]:
+    """Codex系列名を実行時の完全IDへ解決して工程別候補を返す。"""
+    candidates = parse_unresolved_model_candidates(model_type)
+    if codex_models.needs_catalog(candidates):
+        active_catalog = catalog if catalog is not None else codex_models.list_models()
+        return codex_models.resolve_candidates(candidates, active_catalog)
+    return candidates
 
 
 def build_parser(config: argparse.ArgumentParser) -> None:

@@ -49,10 +49,36 @@ def test_windows_post_apply_final_condition_has_branch_local_order() -> None:
         "    # dotfiles-post-apply は chezmoi から独立した CLI のため、workingTree を環境変数で渡す",
         "    $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'",
         "    & $postApplyBin",
+        "    exit $LASTEXITCODE",
         "} else {",
         '    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ"',
         "}",
     ]
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が見つからない")
+def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
+    """post-applyが失敗したとき、Windowsテンプレートの最終分岐も非0で終了する。"""
+    powershell = POWERSHELL
+    assert powershell is not None
+    post_apply = tmp_path / "failing-post-apply.ps1"
+    post_apply.write_text("exit 23\n", encoding="utf-8-sig")
+    text = _read(WINDOWS_TEMPLATE)
+    final_start = text.rindex("$postApplyBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-post-apply.exe'")
+    final_block = text[final_start:]
+    assignment = final_block.splitlines()[0]
+    escaped_path = str(post_apply).replace("'", "''")
+    final_block = final_block.replace(assignment, f"$postApplyBin = '{escaped_path}'", 1)
+    runner = tmp_path / "run-post-apply.ps1"
+    runner.write_text(final_block, encoding="utf-8-sig")
+
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 23, result.stderr
 
 
 def test_windows_media_remote_has_pre_post_apply_fallback() -> None:

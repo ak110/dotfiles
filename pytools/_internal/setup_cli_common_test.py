@@ -83,6 +83,37 @@ def test_find_powershell_uses_windows_powershell_when_pwsh_is_missing(monkeypatc
     assert setup_cli_common.find_powershell() == "C:/Windows/powershell.exe"
 
 
+def test_official_installer_decodes_windows_powershell_with_local_code_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PowerShell 5.1の日本語診断だけロケールのコードページで受け取る。"""
+    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
+    monkeypatch.setattr(setup_cli_common, "find_powershell", lambda: "C:/Windows/powershell.exe")
+    monkeypatch.setattr(setup_cli_common.locale, "getpreferredencoding", lambda _setlocale: "cp932")
+    observed: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"Write-Host", request=request)
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command[0] == "C:/Windows/powershell.exe"
+        observed.append(str(kwargs["encoding"]))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", run)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result, reason = setup_cli_common.run_official_installer(
+            client,
+            posix_url="https://example.test/install.sh",
+            windows_url="https://example.test/install.ps1",
+            tag="test",
+            timeout=5.0,
+        )
+    assert result is not None and result.returncode == 0
+    assert reason == ""
+    assert observed == ["cp932"]
+
+
 def test_find_powershell_reports_missing_command(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(setup_cli_common.shutil, "which", lambda _name: None)
 

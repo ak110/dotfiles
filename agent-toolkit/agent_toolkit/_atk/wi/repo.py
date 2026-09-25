@@ -240,6 +240,7 @@ def edit_entry(
     content_validator: typing.Callable[[str, str], None] | None = None,
     content_transformer: typing.Callable[[str, str], str] | None = None,
     finalized_content: dict[str, str] | None = None,
+    skip_remote_sync: bool = False,
 ) -> bool:
     """AWI・UWI共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
@@ -251,8 +252,9 @@ def edit_entry(
     呼び出し元が保存本文との一致判定へ用いる。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
-        _pull(private_notes)
+        if not skip_remote_sync:
+            _push_pending_commits(private_notes)
+            _pull(private_notes)
         path = _validate_filename(filename, directory)
         if not path.is_file():
             raise FileNotFoundError(filename)
@@ -280,7 +282,7 @@ def edit_entry(
             )
             sys.exit(2)
         _frontmatter.write_entry_text(path, content)
-        _commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))])
+        _commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))], skip_push=skip_remote_sync)
     return True
 
 

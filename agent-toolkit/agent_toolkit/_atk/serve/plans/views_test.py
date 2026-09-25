@@ -145,7 +145,41 @@ async def test_remote_path_outside_the_root_is_rejected_before_ssh(
     context = _context(root, remote_hosts=["remote-host"], ssh_runner=runner)
 
     with pytest.raises(plans.PlanFileError) as error:
-        await plans.resolve_text_and_mtime(context, "remote-host", "", "../secret.md")
+        await plans.resolve_text(context, "remote-host", "", "../secret.md")
 
     assert error.value.status == 400
     assert not calls
+
+
+@pytest.mark.asyncio
+async def test_render_file_html_keys_cache_by_text_digest(
+    tmp_path: pathlib.Path,
+    index_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同じ更新時刻の書き換えでも新しい本文を描画し、同じ本文では描画結果を再利用する。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    context = _context(root)
+    rendered_texts: list[str] = []
+    original = plans.markdown_to_html
+
+    def counting_markdown_to_html(text: str, renderer: typing.Any = None) -> str:
+        rendered_texts.append(text)
+        return original(text, renderer)
+
+    monkeypatch.setattr(plans, "markdown_to_html", counting_markdown_to_html)
+    source_id = context.roots[0].source_id
+    _plan(root, "plan.md", "# 変更前\n", mtime=3_000.0)
+    before = await plans.render_file_html(context, "local-host", source_id, "plan.md")
+
+    _plan(root, "plan.md", "# 変更後\n", mtime=3_000.0)
+    after = await plans.render_file_html(context, "local-host", source_id, "plan.md")
+    again = await plans.render_file_html(context, "local-host", source_id, "plan.md")
+
+    assert "変更前" in before
+    assert "変更後" in after
+    assert "変更前" not in after
+    assert again == after
+    assert rendered_texts == ["# 変更前\n", "# 変更後\n"]

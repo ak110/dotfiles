@@ -860,11 +860,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     manager = agents_server_mcp.AgentsServerManager(writer)
     backend = _FakeStatusBackend(manager.sessions)
     manager._codex = backend
-    monkeypatch.setattr(
-        agents_server_mcp._atk_config,
-        "resolve_model_candidates",
-        lambda _model_type: [("codex", "gpt-5.6-terra", "medium")],
-    )
+    _use_candidates(monkeypatch, ("codex", "gpt-5.6-terra", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
 
@@ -901,11 +897,7 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
     manager = agents_server_mcp.AgentsServerManager(writer)
     backend = _FakeStatusBackend(manager.sessions)
     manager._codex = backend
-    monkeypatch.setattr(
-        agents_server_mcp._atk_config,
-        "resolve_model_candidates",
-        lambda _model_type: [("codex", "model", "medium")],
-    )
+    _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
     started = await manager.start("execute", "実装", str(tmp_path))
@@ -944,11 +936,7 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
         else _UnavailableStatusBackend(manager.sessions, unavailable_models={"first"})
     )
     manager._codex = backend
-    monkeypatch.setattr(
-        agents_server_mcp._atk_config,
-        "resolve_model_candidates",
-        lambda _model_type: [("codex", "first", "high"), ("codex", "second", "high")],
-    )
+    _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
     monkeypatch.setattr(agents_server_mcp, "START_AVAILABILITY_TIMEOUT", 0.01)
     writer.activate()
 
@@ -971,11 +959,7 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
     manager = agents_server_mcp.AgentsServerManager(writer)
     backend = _UnavailableStatusBackend(manager.sessions, unavailable_models={"first", "second"})
     manager._codex = backend
-    monkeypatch.setattr(
-        agents_server_mcp._atk_config,
-        "resolve_model_candidates",
-        lambda _model_type: [("codex", "first", "high"), ("codex", "second", "high")],
-    )
+    _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
 
@@ -999,11 +983,7 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
     manager = agents_server_mcp.AgentsServerManager(writer)
     backend = _FakeStatusBackend(manager.sessions)
     manager._codex = backend
-    monkeypatch.setattr(
-        agents_server_mcp._atk_config,
-        "resolve_model_candidates",
-        lambda _model_type: [("codex", "model", "medium")],
-    )
+    _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
     killed = await manager.start("execute", "kill対象", str(tmp_path))
@@ -1034,17 +1014,20 @@ async def test_manager_without_writer_does_not_create_status_files(
     """書込主体が無効なmanagerはsession開始後も状態ファイルを作成しない。"""
     manager = agents_server_mcp.AgentsServerManager(None)
     manager._codex = _FakeStatusBackend(manager.sessions)
-    monkeypatch.setattr(
-        agents_server_mcp._atk_config,
-        "resolve_model_candidates",
-        lambda _model_type: [("codex", "model", "medium")],
-    )
+    _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
 
     await manager.start("execute", "実装", str(tmp_path))
 
     assert not list(tmp_path.rglob("*.json"))
     await manager.close()
+
+
+def _use_candidates(monkeypatch: pytest.MonkeyPatch, *candidates: tuple[str, str, str]) -> None:
+    """session開始時に解決するモデル候補列を固定する。"""
+    monkeypatch.setattr(
+        agents_server_mcp._atk_config, "parse_unresolved_model_candidates", lambda _model_type: list(candidates)
+    )
 
 
 def _status_writer(tmp_path: pathlib.Path) -> subject.StatusFileWriter:

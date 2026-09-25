@@ -424,7 +424,7 @@ def main(payload_text: str) -> int:
         file_path = tool_input.get("file_path", "")
         if isinstance(file_path, str) and _check_secret_read(file_path):
             return exit_with(2)
-        large_read_fix = check_large_read(tool_input, cwd)
+        large_read_fix = check_large_read(tool_input, cwd, is_codex=is_codex)
         if large_read_fix is not None:
             if large_read_fix.updated_input is None:
                 print(large_read_fix.notice, file=sys.stderr)
@@ -502,7 +502,7 @@ def _handle_bash_tool(
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
     warnings: list[str] = []
-    large_read_notice = check_large_bash_read(command, cwd)
+    large_read_notice = check_large_bash_read(command, cwd, is_codex=is_codex)
     if large_read_notice is not None:
         print(large_read_notice, file=sys.stderr)
         return 2

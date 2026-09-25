@@ -629,19 +629,9 @@ def _resolve_target(source_or_rel_b64: str, rel_b64: str | None = None) -> pathl
 
 
 def _read_payload(source_or_rel_b64: str, rel_b64: str | None = None) -> dict[str, typing.Any]:
-    """指定相対パスのファイル本文と`mtime_epoch`をRPC応答用辞書として返す。
-
-    `read_bytes`と`stat`を続けて呼ぶことで、本文と取得時点のmtimeをペアで取得する。
-    呼び出し側はこの`mtime_epoch`をMarkdownキャッシュキーへ使い、watch通知の遅延に
-    左右されず正確性を担保できる。
-    """
+    """指定相対パスのファイル本文をRPC応答用辞書として返す。"""
     target = _resolve_target(source_or_rel_b64, rel_b64)
-    data = target.read_bytes()
-    st = target.stat()
-    return {
-        "data": base64.b64encode(data).decode("ascii"),
-        "mtime_epoch": st.st_mtime,
-    }
+    return {"data": base64.b64encode(target.read_bytes()).decode("ascii")}
 
 
 def _search_payload(query_b64: str, source_id: str | None = None) -> dict[str, typing.Any]:
@@ -680,10 +670,10 @@ def _list_files() -> None:
 
 
 def _read_file(source_or_rel_b64: str, rel_b64: str | None = None) -> None:
-    """`read`サブコマンド: 指定相対パスのファイル本文と`mtime_epoch`をJSON文字列でstdoutへ出力する。
+    """`read`サブコマンド: 指定相対パスのファイル本文をJSON文字列でstdoutへ出力する。
 
     応答形式（fallback経路用、単発SSH呼び出し）:
-        {"data":"<base64本文>", "mtime_epoch":<float>}
+        {"data":"<base64本文>"}
     """
     json.dump(_read_payload(source_or_rel_b64, rel_b64), sys.stdout, ensure_ascii=False)
 
@@ -891,7 +881,7 @@ def _serve() -> int:
         リクエスト（stdin）: {"id":<int>, "op":"read", "path":"<base64>"}
                             または{"id":<int>, "op":"search", "query":"<base64>"}
         応答（stdout）:
-            成功: {"type":"response", "id":<int>, "ok":true, "data":"<base64本文>", "mtime_epoch":<float>}
+            成功: {"type":"response", "id":<int>, "ok":true, "data":"<base64本文>"}
             失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
     """
     stop_event = threading.Event()

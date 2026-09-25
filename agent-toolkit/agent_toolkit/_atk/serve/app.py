@@ -532,13 +532,11 @@ class Operations:
             raise FileNotFoundError(filename) from error
 
     def sync(self) -> bool:
-        """リポジトリを明示的に同期する。
+        """未送信commitをpushし、リポジトリを明示的に同期する。
 
         ユーザーの操作に対応する経路であるため、直近のpullからの経過時間によらず毎回実行する。
         """
-        with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
-            common.pull(self.private_notes)
-        return True
+        return common.synchronize(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
     def background_sync(self) -> bool:
         """定期更新としてリポジトリを同期し、実際にpullしたかを返す。
@@ -547,8 +545,7 @@ class Operations:
         当該周期を見送り、次周期で再試行する。
         """
         try:
-            with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
-                return common.pull_if_stale(self.private_notes)
+            return common.synchronize(self.private_notes, only_if_stale=True, lock_timeout=_WEB_LOCK_TIMEOUT)
         except filelock.Timeout:
             return False
 
@@ -592,6 +589,7 @@ class Operations:
                 content=content,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
                 expected_content=expected_content,
+                skip_remote_sync=True,
             )
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
@@ -627,6 +625,7 @@ class Operations:
                 content=updated,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
                 expected_content=expected_content,
+                skip_remote_sync=True,
             )
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
@@ -674,6 +673,7 @@ class Operations:
             question_type=question_type,
             choices=",".join(choices) if choices else None,
             lock_timeout=_WEB_LOCK_TIMEOUT,
+            skip_remote_sync=True,
         )
 
     def add_batch(self, text: str) -> dict[str, object]:
@@ -687,6 +687,7 @@ class Operations:
             texts=[text],
             now=datetime.datetime.now(),
             lock_timeout=_WEB_LOCK_TIMEOUT,
+            skip_remote_sync=True,
         )
         return {
             "filenames": [saved for _original, saved in mapping],
@@ -710,6 +711,7 @@ class Operations:
             state=state,
             lock_timeout=_WEB_LOCK_TIMEOUT,
             expected_content=expected_content,
+            skip_remote_sync=True,
         )
 
     def transition(
@@ -742,6 +744,7 @@ class Operations:
                 force=force,
                 state=state,
                 expected_content=expected_content,
+                skip_remote_sync=True,
             )
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
@@ -754,9 +757,10 @@ class Operations:
 class _ServeRuntime:
     """Webハンドラ間で共有する操作・ワーカー・同期タスクを保持する。"""
 
-    def __init__(self, operations: Operations, workers: BoundedWorkers) -> None:
+    def __init__(self, operations: Operations, workers: BoundedWorkers, state: serve_state.ServeState) -> None:
         self.operations = operations
         self.workers = workers
+        self.state = state
         self.sync_task: asyncio.Task[bool] | None = None
         self.background_task: asyncio.Task[None] | None = None
 
@@ -766,7 +770,9 @@ class _ServeRuntime:
             self.sync_task = asyncio.create_task(self.workers.run(self.operations.sync))
         current = self.sync_task
         try:
-            return await asyncio.shield(current)
+            result = await asyncio.shield(current)
+            self.state.publish("sync-ok")
+            return result
         finally:
             if current.done() and self.sync_task is current:
                 self.sync_task = None
@@ -776,9 +782,11 @@ class _ServeRuntime:
         while True:
             await asyncio.sleep(_BACKGROUND_SYNC_INTERVAL_SECONDS)
             try:
-                await self.workers.run(self.operations.background_sync)
-            except Exception:  # pylint: disable=broad-exception-caught
-                continue
+                if await self.workers.run(self.operations.background_sync):
+                    self.state.publish("sync-ok")
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                logger.warning("WIの定期Git同期に失敗しました: %s", error)
+                self.state.publish("sync-error")
 
 
 def _register_error_handlers(app: quart.Quart) -> None:
@@ -995,7 +1003,7 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
         # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため経路を分離する。
         host, source_id, rel = _plan_request_target(context)
         try:
-            text, _mtime = await serve_plans.resolve_text_and_mtime(context, host, source_id, rel)
+            text = await serve_plans.resolve_text(context, host, source_id, rel)
         except serve_plans.PlanFileError as error:
             return _no_store(error.message, "text/plain; charset=utf-8", status=error.status)
         content_type = "text/plain; charset=utf-8" if serve_plans.is_review_table_path(rel) else "text/markdown; charset=utf-8"
@@ -1421,7 +1429,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     transition_specs = {
         "start-processing": {"filenames", "target_repo", "state"},
         "return-to-inbox": {"filenames", "target_repo", "state"},
-        "hold": {"filenames", "target_repo"},
+        "hold": {"filenames", "target_repo", "state"},
         "unhold": {"filenames", "target_repo"},
         "adopt": {"filenames", "note", "commit", "target_repo", "state"},
         "reject": {"filenames", "note", "commit", "target_repo", "state"},
@@ -1489,7 +1497,7 @@ def create_app(
     app = quart.Quart(__name__)
     app.config["SERVE_CONFIG"] = config
     app.config["SERVE_STATE"] = state
-    runtime = _ServeRuntime(operations or Operations(private_notes), BoundedWorkers(worker_limit))
+    runtime = _ServeRuntime(operations or Operations(private_notes), BoundedWorkers(worker_limit), state)
     plans = plans_context if plans_context is not None else _plans_context(config)
     sessions = sessions_context if sessions_context is not None else _sessions_context(config)
     app.config["PLANS_CONTEXT"] = plans

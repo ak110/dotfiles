@@ -274,7 +274,7 @@ process.stdout.write(JSON.stringify({putUrls, state: savedState, open: elements[
 
 
 def test_assets_clear_self_write_sse_alert_after_save_and_answer_success() -> None:
-    """保存・回答の応答前にSSEが届いても、回答成功後は詳細から採用へ進める。"""
+    """保存・回答の応答前にSSEが届いても、成功後は詳細を閉じる。"""
     result = _run_node_ui(
         """
 async function runSave() {
@@ -376,9 +376,9 @@ process.stdout.write(JSON.stringify({saved, answered}));
         "answered": {
             "during": warning,
             "after": "",
-            "status": "inbox/question.mdへ回答しました。",
-            "toast": "inbox/entry.mdを保存しました。",
-            "open": True,
+            "status": "",
+            "toast": "inbox/question.mdへ回答しました。",
+            "open": False,
             "mode": "view",
         },
     }
@@ -488,37 +488,57 @@ async def test_concurrent_sync_requests_share_one_pull(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """同時同期要求は1回のpull結果を共有する。"""
-    operations = serve_app.Operations(tmp_path)
-    started = threading.Event()
-    release = threading.Event()
-    calls = 0
-
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    def pull(_path: pathlib.Path) -> None:
-        nonlocal calls
-        calls += 1
-        started.set()
-        release.wait()
-
-    monkeypatch.setattr(common, "repo_lock", lock)
-    monkeypatch.setattr(common, "pull", pull)
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        state.ServeState(tmp_path),
-        operations=operations,
-    )
+    """同時同期要求は未送信commitの反映とpullを1回だけ実行する。"""
+    synchronize = _BlockingSync()
+    monkeypatch.setattr(common, "synchronize", synchronize)
+    app = _sync_app(tmp_path, serve_app.Operations(tmp_path))
     tasks = [asyncio.create_task(app.test_client().post("/api/sync")) for _ in range(4)]
-    await asyncio.to_thread(started.wait)
+    await asyncio.to_thread(synchronize.started.wait)
     await asyncio.sleep(0)
-    release.set()
+    synchronize.release.set()
     responses = await asyncio.gather(*tasks)
-    assert calls == 1
+    assert synchronize.calls == 1
     assert [await response.get_json() for response in responses] == [{"synced": True}] * 4
+
+
+@pytest.mark.asyncio
+async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Path) -> None:
+    """画面の連続編集はremoteの応答を待たず、明示同期で両commitを反映する。"""
+    remote = tmp_path / "remote.git"
+    notes = tmp_path / "private-notes"
+
+    def git(*args: str, cwd: pathlib.Path = tmp_path) -> str:
+        result = subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+        return result.stdout.strip()
+
+    git("init", "--bare", "--initial-branch=main", str(remote))
+    git("clone", str(remote), str(notes))
+    git("config", "user.name", "Test", cwd=notes)
+    git("config", "user.email", "test@example.com", cwd=notes)
+    inbox = notes / "inbox"
+    inbox.mkdir()
+    original = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n元の本文\n"
+    first_content = original.replace("元の本文", "最初の編集")
+    second_content = original.replace("元の本文", "次の編集")
+    (inbox / "entry.md").write_text(original, encoding="utf-8")
+    git("add", ".", cwd=notes)
+    git("commit", "-m", "seed", cwd=notes)
+    git("push", "-u", "origin", "main", cwd=notes)
+    remote_before = git("--git-dir", str(remote), "rev-parse", "refs/heads/main")
+    app = serve_app.create_app(notes, config.ServeConfig("127.0.0.1", 28766), state.ServeState(notes))
+    client = app.test_client()
+
+    for previous, updated in ((original, first_content), (first_content, second_content)):
+        response = await client.put("/api/entries/inbox/entry.md", json={"content": updated, "expected_content": previous})
+        assert response.status_code == 200
+    assert (inbox / "entry.md").read_text(encoding="utf-8") == second_content
+    assert git("--git-dir", str(remote), "rev-parse", "refs/heads/main") == remote_before
+    assert git("rev-parse", "HEAD", cwd=notes) != remote_before
+
+    response = await client.post("/api/sync", json={})
+    assert response.status_code == 200
+    assert await response.get_json() == {"synced": True}
+    assert git("--git-dir", str(remote), "rev-parse", "refs/heads/main") == git("rev-parse", "HEAD", cwd=notes)
 
 
 def test_operations_read_legacy_type_values_as_current_kinds(tmp_path: pathlib.Path) -> None:
@@ -810,14 +830,18 @@ async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
 
 
 @pytest.mark.asyncio
-async def test_answer_and_remove_apis_return_edit_conflict_when_pull_moves_target(
+async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_change_moves_target(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """pullで取得時の状態から移動した回答・削除対象を409競合として保全する。"""
+    """別主体が移動した回答・削除対象を409競合として保全する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        if answer_inbox.exists():
+            answer_inbox.rename(processing / answer_inbox.name)
+        elif remove_inbox.exists():
+            remove_inbox.rename(processing / remove_inbox.name)
         yield
 
     for module in (common, serve_app.awi_mutations, serve_app.uwi_mutations):
@@ -838,14 +862,6 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_pull_moves_targe
     answer_inbox.write_text(uwi_content, encoding="utf-8")
     remove_inbox.write_text(awi_content, encoding="utf-8")
 
-    def move_during_pull(_path: pathlib.Path) -> None:
-        if answer_inbox.exists():
-            answer_inbox.rename(processing / answer_inbox.name)
-        elif remove_inbox.exists():
-            remove_inbox.rename(processing / remove_inbox.name)
-
-    monkeypatch.setattr(serve_app.awi_mutations, "_pull", move_during_pull)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_pull", move_during_pull)
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -1027,26 +1043,28 @@ def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> No
     assert operations.target_repos("adopted") == ["github.com/x/adopted-only"]
 
 
-def test_background_sync_respects_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """定期更新はレート制限に従い、ロック競合時は当該周期を見送る。"""
+def test_background_sync_uses_stale_sync_and_skips_lock_conflict(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """定期更新は鮮度判定付き同期を使い、ロック競合時は当該周期を見送る。"""
     calls: list[str] = []
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
+    def synchronize(_path: pathlib.Path, *, only_if_stale: bool, **_kwargs: object) -> bool:
+        assert only_if_stale
+        calls.append("sync")
+        return False
 
-    monkeypatch.setattr(common, "repo_lock", lock)
-    monkeypatch.setattr(common, "pull_if_stale", _recorder(calls, "pull_if_stale", result=False))
+    monkeypatch.setattr(common, "synchronize", synchronize)
     operations = serve_app.Operations(tmp_path)
     assert operations.background_sync() is False
-    assert calls == ["pull_if_stale"]
+    assert calls == ["sync"]
 
-    def conflicting_lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def conflicting_sync(_path: pathlib.Path, **_kwargs: object) -> bool:
         raise filelock.Timeout("lock")
 
-    monkeypatch.setattr(common, "repo_lock", conflicting_lock)
+    monkeypatch.setattr(common, "synchronize", conflicting_sync)
     assert operations.background_sync() is False
-    assert calls == ["pull_if_stale"]
+    assert calls == ["sync"]
 
 
 def test_assets_keep_choices_when_repos_request_fails() -> None:

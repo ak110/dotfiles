@@ -44,7 +44,7 @@ def _patch_repo_operations(monkeypatch: pytest.MonkeyPatch, module: types.Module
 
     monkeypatch.setattr(module, "_repo_lock", lock)
     monkeypatch.setattr(module, "_pull", lambda _path: None)
-    monkeypatch.setattr(module, "_commit_and_push", lambda _path, message, _rel: messages.append(message))
+    monkeypatch.setattr(module, "_commit_and_push", lambda _path, message, _rel, **_kwargs: messages.append(message))
     return messages
 
 

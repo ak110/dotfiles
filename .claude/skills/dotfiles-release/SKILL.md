@@ -17,7 +17,7 @@ description: >
   - `agent-toolkit:process-wi`では、次の条件が成立する場合に`develop`から`master`へのリリースPRを作成し、マージまで実施する。判定と実施はメインが担う。導入の経緯と根拠は[日次リリースの自動実施](../../../docs/development/operations.md#日次リリースの自動実施)にある
     - 実施条件: 公開工程のpushとCI成功を確認した後、`agent-toolkit:commit`のGit識別子規定に従って`origin/develop`と`origin/master`を解決し、両者のcommitが異なる
     - 条件が成立しない場合は両branchが同じcommitを指す旨を報告し、PRを作成しない
-    - 実施する場合は、同じheadとbaseのopen PRを調べる。1件ならそのPRを再利用し、0件なら管理対象一時領域へPR本文を保存して作成する。複数件の場合は対象を推測せず、候補の番号とURLを報告して停止する。タイトルには当該セッションの変更の主題を1文で書く。本文は`agent-toolkit:writing-standards`「人間向け文章の共通規定」に従う。`gh`の受理形式は操作直前のヘルプで確定する
+    - 実施する場合は、同じheadとbaseのopen PRを調べる。1件ならそのPRを再利用する。0件なら管理対象一時領域へPR本文を保存し、投稿の直前に`agent-toolkit:external-write-review`をSkill機能で起動してから作成する。複数件の場合は対象を推測せず、候補の番号とURLを報告して停止する。タイトルには当該セッションの変更の主題を1文で書く。本文は`agent-toolkit:writing-standards`「人間向け文章の共通規定」に従う。`gh`の受理形式は操作直前のヘルプで確定する
 
     - 続けて、既存又は新規PRの完全なURLを指定して`merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
     - PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する

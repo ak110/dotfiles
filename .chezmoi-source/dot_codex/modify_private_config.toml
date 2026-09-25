@@ -4,19 +4,29 @@
 {{- if ne (trim .chezmoi.stdin) "" -}}
 {{-   $config = fromToml .chezmoi.stdin -}}
 {{- end -}}
+{{- /* CodexとAGENTS.mdへ渡す文書量の上限は共有設定を正本にする。 */ -}}
 {{- $config = setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes $config -}}
 {{- $config = setValueAtPath "tool_output_token_limit" $codexConfig.tool_output_token_limit $config -}}
+{{- /* 長い作業セッションを扱うため、コンテキストと自動圧縮の境界を明示する。 */ -}}
 {{- $config = setValueAtPath "model_context_window" 1000000 $config -}}
 {{- $config = setValueAtPath "model_auto_compact_token_limit" 900000 $config -}}
+{{- /* 権限判定と実行範囲はCodexの自動レビュー経路へ委ねる。 */ -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
+{{- /* 推論の要約を自動表示し、診断に必要な内容を隠さない。 */ -}}
 {{- $config = setValueAtPath "model_reasoning_summary" "auto" $config -}}
 {{- $config = setValueAtPath "hide_agent_reasoning" false $config -}}
+{{- /* 実験的なコンテキスト管理と工程ごとのeffort指定を利用する。 */ -}}
 {{- $config = setValueAtPath "features.context_management.experimental_mode" true $config -}}
 {{- $config = setValueAtPath "features.reasoning_effort_override" true $config -}}
+{{- /* process-wiの並列レーンを制約しないためのスレッド上限。 */ -}}
 {{- $config = setValueAtPath "agents.max_concurrent_threads_per_session" 100 $config -}}
+{{- /* 委譲先のモデルは工程側が選ぶため、ユーザー設定の固定値を残さない。 */ -}}
 {{- $config = deleteValueAtPath "agents.default_subagent_model" $config -}}
 {{- $config = deleteValueAtPath "agents.default_subagent_reasoning_effort" $config -}}
+{{- /* プラグイン内MCPはツールごとの承認設定を尊重する。 */ -}}
 {{- $config = setValueAtPath "plugins.agent-toolkit@ak110-dotfiles.mcp_servers.pyfltr.default_tools_approval_mode" "approve" $config -}}
 {{- $config = setValueAtPath "plugins.agent-toolkit@ak110-dotfiles.mcp_servers.agents_server.default_tools_approval_mode" "approve" $config -}}
+{{- /* 開発中フラグの既知の警告だけを抑え、機能自体の設定は維持する。 */ -}}
+{{- $config = setValueAtPath "suppress_unstable_features_warning" true $config -}}
 {{ toToml $config }}

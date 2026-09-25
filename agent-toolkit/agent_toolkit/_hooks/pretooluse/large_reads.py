@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from agent_toolkit._hooks import bash_command_parser
 from agent_toolkit._hooks.notice import _WARN_TAG, block_formatter, formatter
+from agent_toolkit._plan import structure as _plan_format
 
 _DEFAULT_LINE_THRESHOLD = 350
 # 1回の応答へ収まる実効上限を超える前に、バイト数でも分割へ誘導する。
@@ -162,7 +163,7 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     )
 
 
-def check_large_read(tool_input: dict, cwd: str) -> LargeReadResult | None:
+def check_large_read(tool_input: dict, cwd: str, *, is_codex: bool = False) -> LargeReadResult | None:
     """範囲指定のないReadが大容量ファイルを対象とする場合に、補正又は遮断の結果を返す。
 
     代替の入力は判定の時点で一意に算出できるため、遮断して同じ操作の再発行を求めず、
@@ -178,6 +179,8 @@ def check_large_read(tool_input: dict, cwd: str) -> LargeReadResult | None:
     if not isinstance(file_path, str) or not file_path:
         return None
     path = _resolve_path(file_path, cwd)
+    if not is_codex and _plan_format.is_agent_doc_target_file(path):
+        return None
     if _is_non_line_oriented(path):
         return None
     plan = _measure_and_plan(path)
@@ -211,19 +214,29 @@ def check_large_read(tool_input: dict, cwd: str) -> LargeReadResult | None:
     return LargeReadResult(updated_input=corrected, notice=notice)
 
 
-def check_large_bash_read(command: str, cwd: str) -> str | None:
+def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
     """パイプ・リダイレクトを持たない単純なBash全文取得だけを遮断する。"""
+    current = bash_command_parser.CwdResolution(cwd, bool(cwd))
     for pipeline in bash_command_parser.extract_execution_pipelines(command):
         if len(pipeline) != 1 or not pipeline[0].resolved:
             continue
-        operands = _full_read_operands(pipeline[0].tokens)
+        tokens = pipeline[0].tokens
+        cwd_change = bash_command_parser.resolve_cwd_change(list(tokens), current)
+        if cwd_change is not None:
+            current = cwd_change
+            continue
+        operands = _full_read_operands(tokens)
         if not operands:
             continue
-        path_counts = tuple(
-            (path, measurement)
-            for operand in operands
-            if (measurement := _measure_and_plan(path := _resolve_path(operand, cwd))) is not None
-        )
+        base = current.path if current.resolved and current.path else cwd
+        path_counts: list[tuple[pathlib.Path, _ReadPlan]] = []
+        for operand in operands:
+            path = _resolve_path(operand, base)
+            if not is_codex and _plan_format.is_agent_doc_target_file(path):
+                continue
+            measurement = _measure_and_plan(path)
+            if measurement is not None:
+                path_counts.append((path, measurement))
         if not path_counts:
             continue
         line_threshold = _line_threshold()

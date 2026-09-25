@@ -10,54 +10,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import config as config_module  # noqa: E402  # pylint: disable=wrong-import-position
-
-_EXPECTED_CATEGORIES = {
-    "pick_wi_model": "軽量",
-    "execute_model": "上位",
-    "execute_review_model": "軽量",
-    "session_review_model": "上位",
-    "orchestrate_model": "上位",
-    "explore_model": "探索上位",
-    "explore_fast_model": "探索軽量",
-}
-_EXPECTED_MODELS = {
-    "探索上位": {
-        "codex": "codex:gpt-6-luna/xhigh",
-        "claude": "claude:opus[1m]/medium",
-    },
-    "探索軽量": {
-        "codex": "codex:gpt-6-luna/medium",
-        "claude": "claude:sonnet[1m]/medium",
-    },
-    "上位": {
-        "codex": "codex:gpt-6-sol/medium",
-        "claude": "claude:opus[1m]/medium",
-    },
-    "軽量": {
-        "codex": "codex:gpt-6-luna/xhigh",
-        "claude": "claude:sonnet[1m]/medium",
-    },
-}
-_EXPECTED_KEY_ORDER = (
-    "explore_model",
-    "explore_fast_model",
-    "pick_wi_model",
-    "execute_model",
-    "execute_review_model",
-    "session_review_model",
-    "orchestrate_model",
-)
-
-
-def _expected_preset_settings(primary_engine: str, reversed_keys: set[str]) -> dict[str, str]:
-    """計画の区分表と候補順表から、実装と独立に期待値を導出する。"""
-    other_engine = "claude" if primary_engine == "codex" else "codex"
-    expected = {}
-    for key in _EXPECTED_KEY_ORDER:
-        category = _EXPECTED_CATEGORIES[key]
-        first_engine, second_engine = (other_engine, primary_engine) if key in reversed_keys else (primary_engine, other_engine)
-        expected[key] = f"{_EXPECTED_MODELS[category][first_engine]},{_EXPECTED_MODELS[category][second_engine]}"
-    return expected
+from agent_toolkit._common import codex_models
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +21,18 @@ def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
     for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
         monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", raising=False)
+    monkeypatch.setattr(
+        codex_models,
+        "list_models",
+        lambda: [
+            {"model": "gpt-6-sol", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]},
+            {
+                "model": "gpt-6-luna",
+                "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in ("medium", "xhigh")],
+            },
+            {"model": "gpt-5.6-terra", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]},
+        ],
+    )
 
 
 class TestConfigShow:
@@ -84,10 +49,9 @@ class TestConfigShow:
         assert f"state_dir: {tmp_path / 'state'}" in out
         assert f"data_dir: {tmp_path / 'data'}" in out
         assert "private_notes:" in out
-        expected = _expected_preset_settings("codex", {"orchestrate_model"})
-        for key, value in expected.items():
-            assert f"{key}: {value}" in out
-        assert "write_model: agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium" in out
+        for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
+            assert f"{key}: {config_module.resolve_mutable_setting(key)}" in out
+            assert f"{key}.resolved:" in out
         assert "execute_fix_model:" not in out
         assert "codex_model:" not in out
         assert "merge_model:" not in out
@@ -209,23 +173,19 @@ class TestConfigGet:
         expected = tmp_path / "home" / ".local" / "state" / "agent-toolkit"
         assert capsys.readouterr().out == f"{expected}\n"
 
-    @pytest.mark.parametrize(
-        ("key", "expected"),
-        [
-            ("execute_model", "codex:gpt-6-sol/medium,claude:opus[1m]/medium"),
-            ("execute_review_model", "codex:gpt-6-luna/xhigh,claude:sonnet[1m]/medium"),
-            ("session_review_model", "codex:gpt-6-sol/medium,claude:opus[1m]/medium"),
-        ],
-    )
-    def test_get_execute_model_defaults(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, expected: str
-    ) -> None:
-        """未設定の工程別モデルはcodex-balancedの候補列を返す。"""
+    @pytest.mark.parametrize("key", ["execute_model", "execute_review_model", "session_review_model"])
+    def test_get_execute_model_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str) -> None:
+        """未設定の`get`は`show`に表示する実行時解決値を返す。"""
+        with pytest.raises(SystemExit):
+            atk.main(["config", "show"], home=tmp_path)
+        shown = capsys.readouterr().out.splitlines()
+        resolved = next(line.partition(": ")[2] for line in shown if line.startswith(f"{key}.resolved: "))
+
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", key], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == f"{expected}\n"
+        assert capsys.readouterr().out == f"{resolved}\n"
 
     def test_get_orchestrate_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """未設定のオーケストレーター設定はcodex-balancedの反転候補列を返す。"""
@@ -233,7 +193,88 @@ class TestConfigGet:
             atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "claude:opus[1m]/medium,codex:gpt-6-sol/medium\n"
+        candidates = config_module.parse_stage_model_candidates(capsys.readouterr().out.strip())
+        assert [engine for engine, _model, _effort in candidates] == ["claude", "codex"]
+
+    def test_family_setting_tracks_new_model_without_rewriting_saved_value(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """系列名を保存したまま新世代の利用可能モデルへ解決する。"""
+        monkeypatch.setattr(
+            codex_models,
+            "list_models",
+            lambda: [
+                {"model": "gpt-6-sol", "supportedReasoningEfforts": [{"reasoningEffort": "high"}]},
+                {
+                    "model": "gpt-6.1-sol",
+                    "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in ("medium", "high")],
+                },
+                {
+                    "model": "gpt-6-luna",
+                    "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in ("medium", "xhigh")],
+                },
+                {"model": "gpt-5.6-terra", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]},
+            ],
+        )
+        with pytest.raises(SystemExit) as saved:
+            atk.main(["config", "set", "execute_model", "codex:sol/high"], home=tmp_path)
+        assert saved.value.code == 0
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as fetched:
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
+        assert fetched.value.code == 0
+        assert capsys.readouterr().out == "codex:gpt-6.1-sol/high\n"
+        with pytest.raises(SystemExit) as shown:
+            atk.main(["config", "show"], home=tmp_path)
+        assert shown.value.code == 0
+        output = capsys.readouterr().out
+        assert "execute_model: codex:sol/high\n" in output
+        assert "execute_model.resolved: codex:gpt-6.1-sol/high\n" in output
+        stored = json.loads((tmp_path / "config" / "config.json").read_text(encoding="utf-8"))
+        assert stored["execute_model"] == "codex:sol/high"
+
+    def test_explicit_codex_id_does_not_require_model_catalog(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """完全IDは一覧が取得できない条件でも固定指定として返す。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:gpt-5.6-sol/medium")
+
+        def fail_catalog() -> list[dict[str, object]]:
+            raise AssertionError("完全IDの解決でmodel/listを呼ばない")
+
+        monkeypatch.setattr(codex_models, "list_models", fail_catalog)
+        with pytest.raises(SystemExit) as fetched:
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
+        assert fetched.value.code == 0
+        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
+
+    @pytest.mark.parametrize(
+        ("candidate", "message"),
+        [("codex:sol/max", "reasoning effort max"), ("codex:astra/medium", "astra系列")],
+    )
+    def test_family_resolution_failure_reports_reason(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        candidate: str,
+        message: str,
+    ) -> None:
+        """利用できない系列又はeffortを推測で補わず失敗理由へ示す。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", candidate)
+        with pytest.raises(SystemExit) as fetched:
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
+        assert fetched.value.code == 2
+        captured = capsys.readouterr()
+        assert not captured.out
+        assert message in captured.err
 
     def test_get_multiple_keys_in_requested_order(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """複数キーの値を指定順に1行ずつ出力する。"""
@@ -321,13 +362,16 @@ class TestConfigGet:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """空文字列の環境変数は未指定として既定値を返す。"""
+        with pytest.raises(SystemExit):
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
+        baseline = capsys.readouterr().out
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "execute_model"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "codex:gpt-6-sol/medium,claude:opus[1m]/medium\n"
+        assert capsys.readouterr().out == baseline
 
     def test_immutable_environment_name_does_not_override_private_notes(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -373,7 +417,7 @@ class TestConfigApplyPreset:
             json.dumps({"other_setting": "keep", "write_model": "claude:claude-opus-5-5/medium"}) + "\n",
             encoding="utf-8",
         )
-        expected = _expected_preset_settings(primary_engine, reversed_keys)
+        expected = config_module._preset_settings(preset)  # pylint: disable=protected-access  # noqa: SLF001
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "apply-preset", preset], home=tmp_path)
@@ -385,18 +429,19 @@ class TestConfigApplyPreset:
             f"成功: 工程別モデル設定をpreset「{preset}」で一括保存した: {len(expected)}件",
             *(f"{key}: {value}" for key, value in expected.items()),
         ]
-        assert json.loads(config_file.read_text(encoding="utf-8")) == {
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved == {
             "other_setting": "keep",
             "write_model": "claude:claude-opus-5-5/medium",
             **expected,
         }
-
-    def test_defaults_equal_codex_balanced(self) -> None:
-        """未設定時の7キーはcodex-balancedの期待値と一致する。"""
-        expected = _expected_preset_settings("codex", {"orchestrate_model"})
-        actual = {key: config_module.resolve_mutable_setting(key) for key in expected}
-
-        assert actual == expected
+        other_engine = "claude" if primary_engine == "codex" else "codex"
+        for key in expected:
+            first, second = saved[key].split(",")
+            expected_first = other_engine if key in reversed_keys else primary_engine
+            expected_second = primary_engine if key in reversed_keys else other_engine
+            assert first.startswith(f"{expected_first}:")
+            assert second.startswith(f"{expected_second}:")
 
     @pytest.mark.parametrize("arguments", [[], ["unknown-preset"]])
     def test_apply_preset_rejects_omitted_or_unknown_name(

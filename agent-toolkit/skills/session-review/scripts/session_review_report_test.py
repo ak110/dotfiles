@@ -58,7 +58,7 @@ def _inputs(
                     "disposition": "excluded",
                     "reason": "期待された通知",
                 },
-                {"candidate_id": "c0002", "disposition": "analyzed", "analysis_id": "a1"},
+                {"candidate_id": "c0002", "disposition": "analyzed", "analysis_id": "a1", "defect": "欠陥"},
             ],
             ensure_ascii=False,
         ),
@@ -169,7 +169,7 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     assert "main:2" in content and "一次選別で除外" in content
     assert "main:5" in content and "事前検査不足" in content
     assert content.count("| a1 | 入力不備 | 事前検査不足 | 適用漏れ | 入口で検査する |") == 1
-    assert "候補2件、欠陥1件、非欠陥1件、locator3件、過不足0件、重複0件" in content
+    assert "候補2件、分析件数1件、一次選別で除外した件数1件、欠陥1件、locator3件、過不足0件、重複0件" in content
     assert "- ボトルネック: 完全分析（12.500秒）" in content
     assert "- 対象セッションの削減見込み: 2.500秒（候補集約）" in content
     assert "- 削減不能部分: 人間の判断が必要" in content
@@ -181,6 +181,55 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     assert (
         tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS
     )
+
+
+def test_analyzed_nondefect_is_counted_as_analysis_only(tmp_path: pathlib.Path) -> None:
+    """欠陥と非欠陥を完全分析しても欠陥だけを数える。"""
+    paths = _inputs(tmp_path)
+    candidates = [json.loads(line) for line in paths[0].read_text(encoding="utf-8").splitlines()]
+    candidates.insert(
+        -1,
+        {
+            "kind": "candidate",
+            "candidate_id": "c0003",
+            "locators": [{"record": "main", "line": 6}],
+            "count": 1,
+            "candidate_kind": "failure",
+            "text": "別の失敗",
+        },
+    )
+    candidates[-1]["count"] = 3
+    candidates[-1]["included_locator_count"] = 4
+    candidates[-1]["included_locators"].append({"record": "main", "line": 6})
+    paths[0].write_text("\n".join(json.dumps(item, ensure_ascii=False) for item in candidates) + "\n", encoding="utf-8")
+    decisions = json.loads(paths[1].read_text(encoding="utf-8"))
+    decisions[1]["defect"] = "非欠陥"
+    decisions.append({"candidate_id": "c0003", "disposition": "analyzed", "analysis_id": "a2", "defect": "欠陥"})
+    paths[1].write_text(json.dumps(decisions, ensure_ascii=False), encoding="utf-8")
+    analyses = json.loads(paths[2].read_text(encoding="utf-8"))
+    analyses["a2"] = analyses["a1"]
+    paths[2].write_text(json.dumps(analyses, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 0
+    assert report.main(_argv(paths, "check")) == 0
+    content = paths[-1].read_text(encoding="utf-8")
+    assert "候補3件、分析件数2件、一次選別で除外した件数1件、欠陥1件" in content
+    assert "| main:5 失敗 | 非欠陥 | a1 |" in content
+
+
+@pytest.mark.parametrize("defect", (None, "要処置", "欠陥または改善対象", 1))
+def test_analyzed_candidate_rejects_unclassified_defect(tmp_path: pathlib.Path, defect: object) -> None:
+    """欠陥分類が曖昧な入力では件数を生成しない。"""
+    paths = _inputs(tmp_path)
+    decisions = json.loads(paths[1].read_text(encoding="utf-8"))
+    if defect is None:
+        decisions[1].pop("defect")
+    else:
+        decisions[1]["defect"] = defect
+    paths[1].write_text(json.dumps(decisions, ensure_ascii=False), encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 2
+    assert not paths[-1].exists()
 
 
 def test_sections_input_fills_every_free_section(tmp_path: pathlib.Path) -> None:
@@ -383,7 +432,7 @@ def test_empty_candidates_accept_empty_included_locators(tmp_path: pathlib.Path)
 
     assert report.main(_argv(paths, "generate")) == 0
     assert report.main(_argv(paths, "check")) == 0
-    assert "候補0件、欠陥0件、非欠陥0件、locator0件" in paths[-1].read_text(encoding="utf-8")
+    assert "候補0件、分析件数0件、一次選別で除外した件数0件、欠陥0件、locator0件" in paths[-1].read_text(encoding="utf-8")
 
 
 def test_missing_decision_is_rejected(tmp_path: pathlib.Path) -> None:
@@ -616,7 +665,7 @@ def test_report_matches_decisions_by_candidate_id_when_locators_overlap(tmp_path
 
     assert report.main(_argv(paths, "generate")) == 0
     assert report.main(_argv(paths, "check")) == 0
-    assert "候補2件、欠陥1件、非欠陥1件、locator2件" in paths[-1].read_text(encoding="utf-8")
+    assert "候補2件、分析件数1件、一次選別で除外した件数1件、欠陥1件、locator2件" in paths[-1].read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("mutation", ("missing", "duplicate"))

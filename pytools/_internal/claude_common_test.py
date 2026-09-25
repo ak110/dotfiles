@@ -177,6 +177,14 @@ class TestEnsureFlagFilePresent:
 class TestRunSubprocess:
     """``run_subprocess`` が ``subprocess.run`` へ渡す引数の検証。"""
 
+    def test_explicit_code_page_preserves_powershell_diagnostic(self) -> None:
+        """PowerShell 5.1相当のCP932診断を文字化けさせずに受け取る。"""
+        message = "失効の関数は証明書の失効を確認できませんでした。"
+        script = f"import sys; sys.stderr.buffer.write({message!r}.encode('cp932'))"
+        result = claude_common.run_subprocess([sys.executable, "-c", script], encoding="cp932")
+        assert result is not None and result.returncode == 0
+        assert result.stderr == message
+
     def test_stdin_is_devnull_and_env_inherits_when_no_overrides(
         self,
         monkeypatch: pytest.MonkeyPatch,

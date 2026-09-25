@@ -1,7 +1,7 @@
 ---
 name: dotfiles-development
 description: >
-  dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make test-browser`を
+  dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make setup-pwsh`・`make test-browser`を
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、
   mise trustを要する作業ツリーと状態ディレクトリを扱うとき、commit typeを判定するとき、
   `agent-toolkit:session-review`の参照文書の位置を確認するときに起動する。
@@ -17,7 +17,7 @@ description: >
 - `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新、prek autoupdate、mise lock、pinactアクション更新及び全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体検査が必要な場合の実行方法: `make test`
-  - 全体検査の起動には`agent-toolkit/share/check-execution.md`を読み、`agents_server`の`start_shell`へ`make test`を渡す。委譲先の出力保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
+  - 全体検査の起動には`agent-toolkit:check-execution`をSkill機能で起動し、`agents_server`の`start_shell`へ`make test`を渡す。委譲先の出力保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
   - `make test`（`uv run --frozen pyfltr run --no-fix`）はlintで自動修正しない。
     ただしpyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は
     `--no-fix`を付けても対象ファイルを書き換え、書き換えた場合も終了コード0で成功扱いになる。
@@ -52,8 +52,9 @@ description: >
     測る指標と閾値は`scripts/check_agent_doc_tone.py`のdocstringを正本とする。
     報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
     指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる
-- 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
-  OSパッケージの導入には権限が必要となる場合がある
+- 新規Linux環境では、利用者が自分の端末から`make setup-browser`でChromiumとシステム依存を初期導入する。
+  Ubuntu/DebianでPowerShell検証が必要な場合も、利用者が自分の端末から`make setup-pwsh`で初期導入する
+- エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
   実ブラウザーテストを変更した場合は`make test-browser`を実行する
 - コミットメッセージtypeの判定例: [commit-types.md](../../../docs/development/commit-types.md)

@@ -214,7 +214,8 @@ _UV_RUN_PYTHON_FIX = (
     "`uv run --script <パス>`を使うか、実行可能なshebangを直接呼び出す。"
     "カレントディレクトリのプロジェクト解決を省く場合は`uv run --no-project python ...`を使う。"
     "いずれでもない場合は、カレントディレクトリまたはその祖先で最初に見つかる`pyproject.toml`が"
-    "`[project]`節を持つディレクトリで実行する。静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。"
+    "`[project]`節を持つディレクトリで実行するか、`--project`へ当該ディレクトリを指定する。"
+    "静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。"
     "作業ディレクトリの変更に未解決のシェル展開があると、プロジェクト種別を確認できないため遮断する。"
 )
 
@@ -1099,7 +1100,7 @@ def _autofix_missing_paths(command: str, cwd: str) -> tuple[str, tuple[str, ...]
 
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
-_PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project(?:\.[\w\-]+)?\]\s*$")
+_PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project\]\s*$")
 
 
 def _check_bash_uv_run_python(command: str, cwd: str) -> str | None:
@@ -1117,10 +1118,14 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> str | None:
             continue
         info = _parse_uv_run_python(tokens)
         if info is not None:
-            has_script_or_no_project, directory_or_project_overridden = info
-            if not has_script_or_no_project and (
-                directory_or_project_overridden or not current_cwd.resolved or not _cwd_in_python_project(current_cwd.path)
-            ):
+            has_script_or_no_project, _overridden, project_value, directory_value = info
+            project_directory = current_cwd.path if current_cwd.resolved else ""
+            if directory_value is not None:
+                project_directory = _resolve_uv_option_directory(directory_value, project_directory)
+            directory_invalid = directory_value is not None and not project_directory
+            if project_value is not None:
+                project_directory = _resolve_uv_option_directory(project_value, project_directory)
+            if not has_script_or_no_project and (directory_invalid or not _cwd_in_python_project(project_directory)):
                 print(
                     _block_notice(_UV_RUN_PYTHON_BLOCK_MSG, fix=_UV_RUN_PYTHON_FIX),
                     file=sys.stderr,
@@ -1137,10 +1142,10 @@ def _skip_env_assignments(tokens: list[str], start: int) -> int:
     return i
 
 
-def _parse_uv_run_python(tokens: list[str]) -> tuple[bool, bool] | None:
+def _parse_uv_run_python(tokens: list[str]) -> tuple[bool, bool, str | None, str | None] | None:
     """`uv [...] run [...] python`構造をtokensから検出する。
 
-    構造を検出した場合は`(has_script_or_no_project, directory_or_project_overridden)`を返す。
+    構造を検出した場合は例外指定、上書き指定、project値、directory値を返す。
     対象構造でなければNoneを返す。
     `--script` / `--no-project`は`uv`トークンと`python`トークンの間に
     出現する場合のみ「uv runのオプション」として扱う（`python`以降に書かれた
@@ -1162,12 +1167,43 @@ def _parse_uv_run_python(tokens: list[str]) -> tuple[bool, bool] | None:
         return None
     has_script_or_no_project = False
     directory_or_project_overridden = False
-    for tok in tokens[uv_idx + 1 : python_idx]:
+    project_value: str | None = None
+    directory_value: str | None = None
+    option_tokens = tokens[uv_idx + 1 : python_idx]
+    index = 0
+    while index < len(option_tokens):
+        tok = option_tokens[index]
         if tok in ("--script", "--no-project"):
             has_script_or_no_project = True
-        elif tok in ("--directory", "--project") or tok.startswith("--directory=") or tok.startswith("--project="):
+        elif tok in ("--directory", "--project"):
             directory_or_project_overridden = True
-    return has_script_or_no_project, directory_or_project_overridden
+            value = option_tokens[index + 1] if index + 1 < len(option_tokens) else ""
+            if tok == "--project":
+                project_value = value
+            else:
+                directory_value = value
+            index += 1
+        elif tok.startswith("--directory=") or tok.startswith("--project="):
+            directory_or_project_overridden = True
+            option, value = tok.split("=", 1)
+            if option == "--project":
+                project_value = value
+            else:
+                directory_value = value
+        index += 1
+    return has_script_or_no_project, directory_or_project_overridden, project_value, directory_value
+
+
+def _resolve_uv_option_directory(value: str, base: str) -> str:
+    """静的に解決できるuvのディレクトリ指定だけを実効位置へ反映する。"""
+    if not value or any(character in value for character in "*$?[]{}~`"):
+        return ""
+    path = pathlib.Path(value)
+    if not path.is_absolute():
+        if not base:
+            return ""
+        path = pathlib.Path(base) / path
+    return str(path) if path.is_dir() else ""
 
 
 def _cwd_in_python_project(cwd: str) -> bool:

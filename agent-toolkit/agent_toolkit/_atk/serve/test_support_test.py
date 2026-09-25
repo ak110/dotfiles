@@ -248,6 +248,31 @@ def _three_screen_app(tmp_path: pathlib.Path) -> typing.Any:
     )
 
 
+class _BlockingSync:
+    """同期処理の代替。呼び出し回数を数え、テストが解放するまで完了しない。"""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+
+    def __call__(self, *_args: object, **_kwargs: object) -> bool:
+        self.calls += 1
+        self.started.set()
+        self.release.wait()
+        return True
+
+
+def _sync_app(tmp_path: pathlib.Path, operations: serve_app.Operations) -> typing.Any:
+    """同期APIの検証用に、指定した操作を使うアプリを生成する。"""
+    return serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        operations=operations,
+    )
+
+
 def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:
     """詳細表示テスト用の入力ファイルを作成する。"""
     inbox = tmp_path / "inbox"
@@ -332,6 +357,7 @@ def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
 
 __all__ = [
     "_BATCH_TEXT",
+    "_BlockingSync",
     "_FakeTimer",
     "_HOST_ENVIRON",
     "_patch_batch_repo_operations",
@@ -340,6 +366,7 @@ __all__ = [
     "_run_node_ui",
     "_session_review_awi",
     "_stub_state",
+    "_sync_app",
     "_three_screen_app",
     "_write_detail_entry",
     "_write_repo_entry",

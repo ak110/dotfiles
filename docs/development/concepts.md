@@ -28,6 +28,11 @@
 
 ## [規範文書の書き方](concepts-principles.md#規範文書の書き方)
 
+## 場面別手順の配置
+
+実行時の正本は`agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」と各スキルに置く。
+エージェントが特定の場面で従う手順は、常時規範の短い箇条と`share/`の長文を組み合わせず、標準のスキルへ置く（2026年9月25日の利用者指示）。
+
 ## [複数環境での利用](concepts-workflows.md#複数環境での利用)
 
 ## [developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)

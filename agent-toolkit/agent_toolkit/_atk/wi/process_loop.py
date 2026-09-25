@@ -616,7 +616,11 @@ def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
             file=sys.stderr,
         )
         sys.exit(2)
-    return _config.parse_stage_model_candidates(value)
+    try:
+        return _config.resolve_model_candidates("orchestrate")
+    except ValueError as error:
+        print(f"orchestrate_modelのCodexモデル解決に失敗しました（設定値: {value}）。{error}", file=sys.stderr)
+        sys.exit(2)
 
 
 def _availability_probe_argv(orchestrator: str, model: str, effort: str) -> list[str]:
@@ -644,7 +648,7 @@ def _select_available_orchestrator(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path
 ) -> tuple[str, str, str]:
     """候補を先頭から事前検査し、最初に可用な3つ組を返す。"""
-    last_failure = (candidates[-1][0], 1)
+    last_failure = (candidates[-1][0], 1, "")
     for orchestrator, model, effort in candidates:
         candidate = f"{orchestrator}:{model}/{effort}"
         try:
@@ -660,7 +664,7 @@ def _select_available_orchestrator(
             )
         except OSError as error:
             _console_title.set_console_title("atk wi process-loop")
-            last_failure = (orchestrator, 1)
+            last_failure = (orchestrator, 1, f"engineを起動できません: {error}")
             print(
                 f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
                 file=sys.stderr,
@@ -673,8 +677,10 @@ def _select_available_orchestrator(
             print(f"本作業へ採用するモデル候補: {candidate}")
             return orchestrator, model, effort
         failure_code = result.returncode or 1
-        last_failure = (orchestrator, failure_code)
+        diagnostic = (result.stderr or "").strip()
         reason = "engineがeffortを無視しました" if ignored_effort else f"exit code {result.returncode}"
+        reason = f"{reason}; engine診断: {diagnostic}" if diagnostic else f"{reason}; engineの診断出力はありません"
+        last_failure = (orchestrator, failure_code, reason)
         print(f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}", file=sys.stderr)
     _exit_abnormal_session(*last_failure)
     raise AssertionError("到達不能")
@@ -729,9 +735,10 @@ def _is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str
     return returncode in _CODEX_NORMAL_EXIT_CODES_POSIX
 
 
-def _exit_abnormal_session(orchestrator: str, returncode: int) -> None:
+def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "") -> None:
     """既存のセッション異常終了メッセージを出力し、同じ終了コードで終了する。"""
-    print(f"{orchestrator}がexit code {returncode}で異常終了しました。", file=sys.stderr)
+    suffix = f" 原因: {detail}" if detail else ""
+    print(f"{orchestrator}がexit code {returncode}で異常終了しました。{suffix}", file=sys.stderr)
     sys.exit(returncode)
 
 
