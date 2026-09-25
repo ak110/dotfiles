@@ -26,3 +26,5 @@
 ## [並行実行の競合](incidents-workflows.md#並行実行の競合)
 
 ## [フック・セッション状態の不全](incidents-runtime.md#フック・セッション状態の不全)
+
+## [配布物の改名・廃止に伴う旧生成物の残存](incidents-runtime.md#配布物の改名・廃止に伴う旧生成物の残存)

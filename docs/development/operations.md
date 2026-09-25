@@ -239,12 +239,14 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
   - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを焼き込めない
-  - ランチャーが最新バージョンの`agent_toolkit/atk.py`を実行時に解決する
+  - ランチャーは`~/dotfiles/agent-toolkit`の`agent_toolkit/atk.py`を絶対パスで直接参照し、プラグインキャッシュの配置に依存しない
   - `uv`はサービス実行環境のPATHに無いため、導入時に解決した絶対パスをランチャーへ埋め込む
     - 解決順序は`~/.local/bin/uv`（公式インストーラーの導入先）、次にPATH探索とし、
       いずれも得られない場合は設定を見送る
     - miseのshimはサービス実行環境でバージョン未解決となり起動しないため優先しない
-  - `~/.local/bin/atk`は`install-claude.sh`が生成する別系統のラッパーで、本経路とは無関係
+  - 本経路は2026年7月27日（1116f984）まで`~/.local/bin/atk`へランチャーを生成しており、改名時に旧名が残存した。
+    `post_apply`の旧配布物削除がこの旧ランチャーと`atk.cmd`を除去し、dotfilesホストの`atk`を作業ツリー版へ解決させる
+  - `install-claude.sh`もプラグイン単体利用者向けに同じ`~/.local/bin/atk`へ別系統のラッパーを生成するが、dotfilesホストでは実行しない前提であり、本経路とは無関係
 - 導入処理はrestart後に常駐を確認し、起動しない場合は失敗として`update-dotfiles`の出力へ表示する
 - 旧計画ビューアーの`claude-plans-viewer.service`は、導入処理が停止と無効化に成功した場合だけunitファイルを削除する
   - 停止できない場合はunitファイルを残して警告を記録し、後続の配置は続行する

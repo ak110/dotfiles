@@ -184,3 +184,14 @@
 - 2026年9月22日: Codexから起動したMCPプロセスへownerとhostの識別子が届かず、起動したsessionがCLIの一覧と待機から観測できなかった。
   直接原因: 状態writerを無効化し、CLI側は補完のため全ルートを走査していた。
   対策: 当該プロセスだけの衝突しないルートを生成し、公開応答と確認済みaliasで同じ会話へ接続する。CLIの全ルート走査は撤去する
+
+## 配布物の改名・廃止に伴う旧生成物の残存
+
+- 2026年9月26日: euryaleで`atk --help`の起動に約2.9秒かかった。
+  PATHの先頭側にある`~/.local/bin/atk`が作業ツリー版`~/dotfiles/agent-toolkit/bin/atk`を覆い隠し、プラグインキャッシュ全体を`find`で走査してから実体を起動していた。
+  同ファイルは2026年7月26日に`atk serve`常駐用ランチャーとして生成され、翌日の改名から2か月間残存した。
+  直接原因: 15c2e214が`~/.local/bin/atk`へ生成したランチャーを1116f984で`~/.local/bin/atk-serve`へ改名した際、旧名の削除を`post_apply`の旧配布物削除へ加えなかった。
+  旧配布物削除の規定は`.chezmoi-source/`配下のファイルだけを対象とし、`post_apply`の工程が生成するファイルを含まなかった。
+  同じ原因で、廃止した工程が配置した`~/.config/agent-toolkit/feedback-inbox.enabled`と`review-balance-mode.claude-heavy`も残存していた。
+  対策: 3件の旧生成物（`atk.cmd`を含む）を`pytools/post_apply.py`の`_REMOVED_PATHS`へ登録する。
+  `pytools-edit`スキルの実装規約へ、工程が配置するファイルの配置先を改名又は工程を廃止する場合に旧パスを登録する規定を加える
