@@ -331,8 +331,7 @@ def wait_for_result(
                 and not current_origins
                 and not _stashed_wait_targets(run_path)
                 and all(
-                    session_registry.resolve(session_id, state_root=state_root).state
-                    is session_registry.Resolution.TERMINAL
+                    session_registry.resolve(session_id, state_root=state_root).state is session_registry.Resolution.TERMINAL
                     for session_id in ordered_ids
                 )
             ):

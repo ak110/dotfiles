@@ -467,9 +467,11 @@ async def test_wait_returns_last_result_after_chained_auto_resumes(
         client.emit(TaskStartedMessage("task-2"))
         client.emit(ResultMessage("待機中: task-2", origin={"kind": "task-notification"}))
         await _await_state(
-            lambda: session.live_task_ids == {"task-2"}
-            and session.pending_result is not None
-            and session.pending_result["agent_message"] == "待機中: task-2"
+            lambda: (
+                session.live_task_ids == {"task-2"}
+                and session.pending_result is not None
+                and session.pending_result["agent_message"] == "待機中: task-2"
+            )
         )
         assert wait_task.done() is False
 
