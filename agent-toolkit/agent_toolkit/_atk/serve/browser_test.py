@@ -1750,7 +1750,7 @@ async def _release_save_after_delay(release: threading.Event) -> None:
     """一定時間の経過後に保存処理を解放する。
 
     保存が即座に完了する場合、前段の通知が残存したまま待機が成立する欠陥があっても、
-    本文の読み取りは保存の完了後に到達し、検体は通過する。解放を遅延させると、
+    本文の読み取りは保存の完了後に到達し、テストは通過する。解放を遅延させると、
     保存の完了を待たない待機条件は実行速度によらず失敗として現れる。
     """
     await asyncio.sleep(_SAVE_RELEASE_DELAY_SEC)
@@ -1901,6 +1901,47 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
     await playwright.async_api.expect(comment_input).to_have_value("processing移動後も保持する入力")
     await playwright.async_api.expect(comment_input).to_be_focused()
     await playwright.async_api.expect(detail.locator("#save-user-comment-button")).to_be_disabled()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("external_change", ["delete", "move"])
+async def test_selecting_deleted_entry_refreshes_list_without_error(
+    browser_harness: _BrowserHarness,
+    external_change: str,
+) -> None:
+    """一覧表示後に外部で削除・移動された行を選んでも、エラーを表示せず最新状態を示して一覧を更新する。"""
+    harness = browser_harness
+    page = harness.page
+    path = harness.root / "inbox" / "stale.md"
+    path.write_text("---\ntype: awi\ntarget_repo: example/repo\n---\n\n外部で変わる本文\n", encoding="utf-8")
+    await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    stale_row = page.locator('.entry-select[data-key="inbox/stale.md"]')
+    await stale_row.wait_for(state="visible")
+
+    # SSEの変更通知を発行せず、一覧が古いままの状態で行を選ぶ。
+    if external_change == "delete":
+        path.unlink()
+    else:
+        processing = harness.root / "processing"
+        processing.mkdir(exist_ok=True)
+        path.replace(processing / path.name)
+    await stale_row.click()
+
+    notice = page.locator("#operation-notice")
+    detail = page.get_by_role("dialog", name="詳細")
+    if external_change == "delete":
+        await playwright.async_api.expect(page.locator("#operation-notice-message")).to_have_text(
+            "stale.mdは削除されたため表示できません。一覧を更新しました。"
+        )
+        await playwright.async_api.expect(notice).to_have_attribute("data-error", "false")
+        await playwright.async_api.expect(detail).to_be_hidden()
+        await playwright.async_api.expect(page.locator('.entry-select[data-key$="/stale.md"]')).to_have_count(0)
+    else:
+        await playwright.async_api.expect(detail).to_be_visible()
+        await playwright.async_api.expect(detail.locator("#detail-state")).to_have_attribute("data-state", "processing")
+        await playwright.async_api.expect(notice).to_be_hidden()
+        await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/stale.md"]')).to_have_count(0)
 
 
 # --------------------------------------------------------------------------------------
@@ -2562,7 +2603,7 @@ async def test_session_list_omits_message_preview(screen_harness: _ScreenHarness
     child_classes = await first_item.locator(":scope > *").evaluate_all(
         "elements => elements.map(element => element.className)"
     )
-    assert child_classes == ["session-cwd", "session-meta"]
+    assert child_classes == ["session-cwd pane-item-title", "session-meta pane-item-meta"]
 
 
 @pytest.mark.asyncio
@@ -2769,6 +2810,7 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
     """一覧のコピー操作はファイル名と要約を写し、詳細選択を発生させない。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator("#entry-list .entry-row").first
     await row.locator(".entry-copy").wait_for(state="visible")
     filename = await row.locator(".filename-cell").inner_text()
@@ -3338,6 +3380,81 @@ async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _
     disabled = await previous_button.evaluate("(element) => getComputedStyle(element).opacity")
     assert float(enabled) == 1
     assert float(disabled) < 1
+
+
+@pytest.mark.asyncio
+async def test_sidebar_items_share_style_between_plans_and_sessions(screen_harness: _ScreenHarness) -> None:
+    """計画ファイル画面とセッション画面の左ペイン項目を、同じ共通クラスと算出スタイルで描画する。"""
+    harness = screen_harness
+    page = harness.page
+    item_properties = [
+        "borderTopLeftRadius",
+        "borderTopRightRadius",
+        "borderBottomLeftRadius",
+        "borderBottomRightRadius",
+        "paddingTop",
+        "paddingRight",
+        "paddingBottom",
+        "paddingLeft",
+        "backgroundColor",
+        "boxShadow",
+        "borderTopWidth",
+        "borderLeftWidth",
+        "textAlign",
+    ]
+    text_properties = ["fontSize", "fontWeight", "color", "marginTop"]
+    script = """(element, names) => {
+      const pick = (target, keys) => Object.fromEntries(keys.map((key) => [key, getComputedStyle(target)[key]]));
+      const row = element.closest('.session-tree-row') || element;
+      return {
+        classes: [...element.classList].filter((name) => name.startsWith('pane-')),
+        item: pick(element, names.item),
+        title: pick(element.querySelector('.pane-item-title'), names.text),
+        meta: pick(element.querySelector('.pane-item-meta'), names.text),
+        separator: getComputedStyle(row).borderBottomWidth,
+      };
+    }"""
+    names = {"item": item_properties, "text": text_properties}
+    styles = {}
+    for path, selector in (
+        ("/plans", '#files .file[aria-current="true"]'),
+        ("/sessions", '#sessions .session-item[aria-current="true"]'),
+    ):
+        await page.goto(harness.base_url + path)
+        if path == "/sessions":
+            await page.locator("#sessions .session-item").first.click()
+        item = page.locator(selector).first
+        await item.wait_for(state="visible")
+        # hoverの背景と選択の背景を区別せず比べるため、ポインターを項目の外へ置く。
+        await page.mouse.move(0, 0)
+        styles[path] = await item.evaluate(script, names)
+
+    assert styles["/plans"]["classes"] == ["pane-item"]
+    assert styles["/sessions"] == styles["/plans"]
+    assert styles["/plans"]["item"]["borderTopLeftRadius"] == "0px"
+
+
+@pytest.mark.asyncio
+async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarness) -> None:
+    """一覧表示後に削除された計画ファイルを選ぶと、再試行を求めず移動又は削除済みを示して一覧を更新する。"""
+    harness = screen_harness
+    page = harness.page
+    # 更新通知の購読を止め、削除後も一覧が古いままの状態で項目を選ぶ。
+    await page.route("**/api/plans/events", lambda route: route.abort())
+    await page.goto(harness.base_url + "/plans")
+    item = page.locator("#files .file", has_text="plan.md")
+    await item.wait_for(state="visible")
+
+    harness.plan_path.unlink()
+    await item.click()
+
+    preview = page.locator("#preview")
+    await playwright.async_api.expect(preview.get_by_role("status")).to_have_text(
+        "選択した計画ファイルは移動又は削除されたため表示できません。一覧を更新しました。"
+    )
+    await playwright.async_api.expect(preview.get_by_role("button", name="再読み込み")).to_have_count(0)
+    await playwright.async_api.expect(page.locator("#files .file")).to_have_count(0)
+    await playwright.async_api.expect(page.locator("#copy-btn")).to_be_disabled()
 
 
 @pytest.mark.asyncio

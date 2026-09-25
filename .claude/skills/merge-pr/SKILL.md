@@ -31,11 +31,11 @@ PR番号又はPR URLが指定された場合は、その対象を読み取る。
 引数省略時の一覧は`develop`から`master`への候補だけを対象にする。
 GitHubの設定でhead branchを`develop`だけに制限する操作は行わず、現在の設定のまま維持する。
 
-## マージ前の検査
+## マージ前の確認
 
 `git fetch origin develop master`でremote-tracking refを更新し、`origin/develop`とPR番号から操作直前に取得した`headRefOid`が同じcommitを指すことを確認する。
 PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeableが成立していなければならない。
-マージの前提はこれらのリモート側の条件とする。作業ツリーのclean、現在branch及びローカル`develop`の位置は、この前提から外す。
+マージの前提はこれらのリモート側の条件とする。作業ツリーのclean、現在branch及びローカル`develop`の位置はこの前提から外す。
 マージの続行は、リモート側の条件の成立だけで判定する。
 
 ローカル`develop`を同期するかどうかは、マージの前提とは分けて判定する。まず次の読み取りコマンドで全worktreeを取得し、`branch refs/heads/develop`を持つblockを抽出する。
@@ -53,13 +53,13 @@ git -C <develop worktreeの絶対パス> rev-parse --short=7 origin/develop
 git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD origin/develop
 ```
 
-次の条件を全て満たす場合だけ、マージ後にそのworktreeでローカル`develop`の同期を試みる。`git status --porcelain`の出力が空であり、現在branchが`develop`であることを条件とする。rebase・merge・cherry-pickの中断状態が無く、`git merge-base --is-ancestor HEAD origin/develop`が終了コード0を返すことも条件とする。中断状態は、対象worktreeに対応するGit管理領域の`rebase-merge`、`rebase-apply`、`MERGE_HEAD`と`CHERRY_PICK_HEAD`の実在で判定する。
+次の条件を全て満たす場合だけ、マージ後にそのworktreeでローカル`develop`の同期を試みる。`git status --porcelain`の出力が空であり、現在branchが`develop`であることを条件とする。rebase・merge・cherry-pickの中断状態が無く、`git merge-base --is-ancestor HEAD origin/develop`が終了コード0を返すことも条件とする。中断状態は対象worktreeに対応するGit管理領域の`rebase-merge`、`rebase-apply`、`MERGE_HEAD`と`CHERRY_PICK_HEAD`の実在で判定する。
 いずれかを満たさない場合は、対象worktreeとローカル`develop`に加え、既存の未コミット差分も変更せず保持する。リモートだけでリリースを完遂する。
 この判定はマージ前時点の見込みであり、同期を実行してよいかはマージ後に同じ観点を再取得して確定する。
 
 必須checkは`gh`が返す当該PRの終了状態まで待つ。待機と必須checkの指定形式は実行直前のヘルプで確定する。
 
-必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。mergeableでない状態、PR head OIDの変化又は検査対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
+必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。mergeableでない状態、PR head OIDの変化又は確認対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
 
 ## レビューコメントの確認
 
@@ -73,12 +73,12 @@ git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD origin/de
 次セッション以降へ回す指摘だけをAWIへ登録する。
 成立しない指摘は登録せず、判定の根拠を報告へ残す。
 全指摘の判定、必要な同一セッションの是正及びAWI登録を完了してからマージへ進む。
-同一セッションで是正した場合は、PR番号から修正後のPR headを再取得し、新たな検査対象として「マージ前の検査」を再実行する。
+同一セッションで是正した場合は、PR番号から修正後のPR headを再取得し、新たな確認対象として「マージ前の確認」を再実行する。
 検収は修正後のPR headに対する必須check成功とhead OIDの一致で行い、修正前の必須check成功はその根拠から外す。
 
 ## PRのマージ
 
-レビューコメントの確認と必須checkが完了した後にPR番号から`headRefOid`を再取得し、検査対象のcommitと一致することを確認する。
+レビューコメントの確認と必須checkが完了した後にPR番号から`headRefOid`を再取得し、確認対象のcommitと一致することを確認する。
 一致しない場合は外部状態と再開点を報告して停止する。
 マージ操作では操作直前に取得したhead OIDを原子的な一致条件に使い、明示的なマージコミットを作成する。自動マージとbranch削除は指定しない。`gh`がこの条件を受理する形式は実行直前のヘルプで確定する。条件を保証できない場合はマージを実行しない。
 
@@ -87,7 +87,7 @@ git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD origin/de
 ## マージ後のbranch同期とCI
 
 マージ後に`origin/master`をfetchし、PR番号から操作直前に取得した`mergeCommit.oid`が同じcommitを指すことを確認する。
-`mergeCommit.oid`はこの照合だけに使い、以降のGit操作は`origin/master`を正本とする。
+`mergeCommit.oid`はこの一致確認だけに使い、以降のGit操作は`origin/master`を基準にする。
 
 ```sh
 git fetch origin master
@@ -125,8 +125,8 @@ git -C <develop worktreeの絶対パス> rev-parse --short=7 develop
 再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略する。対象worktreeと既存の未コミット差分に加え、ローカルbranchも変更せずリモートの完遂を維持する。完了報告には、省略した条件と対象worktreeの絶対パスを記録する。ローカル`develop`の短縮OIDと`origin/master`の短縮OIDも記録する。
 
 マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。
-`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前の検査で必須checkの成功を確認したPR headのツリーと同じになる。同期で`develop`へ載るのも同じマージコミットである。
-両pushのCIは同じ中身の再検査になり、待機しても完了までの時間が延びるだけである。
+`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前の確認で必須checkの成功を確認したPR headのツリーと同じになる。同期で`develop`へ載るのも同じマージコミットである。
+両pushのCIは同じ中身の再実行になり、待機しても完了までの時間が延びるだけである。
 `Release statusLine`はmaster pushのCI成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論は「条件付きRelease検収」が待つRelease runの成否で確かめる。
 
 ## 条件付きRelease検収
@@ -151,7 +151,7 @@ GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待�
 「マージ後のbranch同期とCI」と「条件付きRelease検収」を終えた時点で、対象PRのCopilot由来のreview本文とreview threadを1回取得する。
 
 取得、判定、GitHubへの記録及び判定済みの記録は
-`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`を正本とし、対象をそのPRへ限定して適用する。
+`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が定める手順に従い、対象をそのPRへ限定して適用する。
 本節が扱うのはこの1回の取得までとし、新しいレビューの生成の要求と到着の能動的な待機はその外に置く。
 その時点で未到着のレビューは、`agent-toolkit:process-wi`の選定工程が全Pull Requestを対象に実行する監査が次回以降に拾うため、本節で取得を繰り返さない。
 
@@ -165,13 +165,13 @@ GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待�
 
 `agent-toolkit:process-wi`の終端から本スキルを実行した場合に限り、マージの完遂後に同じセッションで`develop`へ加えた変更は、
 pushの完了とCI runの起動をもってその変更の公開工程を終え、CIの完了を待たない。
-その変更は次回のリリースPRの「マージ前の検査」が必須checkの完了を待つ対象へ入り、
+その変更は次回のリリースPRの「マージ前の確認」が必須checkの完了を待つ対象へ入り、
 `master`は必須CIを通過したマージコミットだけで更新されるため、その時点でCIの結論を確定しなくても未検証の変更は`develop`に留まる。
-省略するのはCIの完了待ちだけとし、変更に対応する近接検査は通常どおり成功させてからpushする。
+省略するのはCIの完了待ちだけとし、変更に対応する近接検証は通常どおり成功させてからpushする。
 省略したCIのrun URLは完了報告へ残す。
 
 本節の適用範囲はマージの完遂後に`develop`へ加えた変更とし、本スキルのマージ工程はその外に置く。
-「マージ前の検査」と「マージ後のbranch同期とCI」が定めるCIの検収は、それぞれの節の条件のまま維持する。
+「マージ前の確認」と「マージ後のbranch同期とCI」が定めるCIの検収は、それぞれの節の条件のまま維持する。
 
 ## 完了条件と失敗時の扱い
 
@@ -187,7 +187,7 @@ git status --short
 あわせて「マージ後に到着したレビューの確認」を1回実施し、取得した指摘の分類と処置を確定していることを完了条件とする。
 マージの完遂後に`develop`へ加えた変更のCI完了待ちは、「マージ後に`develop`へ加えた変更のCI確認」の条件が成立する場合に完了条件から外す。
 ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も`origin/master`の短縮OIDと一致することを確認する。
-完了条件はリモートの状態で判定し、ローカルの作業ツリーとローカルbranchの状態はその判定から外す。同期を実施した経路ではローカル`develop`の参照を更新し、同期を省略した経路では本手順がローカルへ書き込まないため、待機中に利用者が加えた変更もそのまま残る。
+完了条件はリモートの状態で判定し、ローカルの作業ツリーとローカルbranchの状態はその判定から外す。同期を実施した場合はローカル`develop`の参照を更新し、同期を省略した場合は本手順がローカルへ書き込まないため、待機中に利用者が加えた変更もそのまま残る。
 `git status --short`の出力は合否判定に使わず、完了報告へ添える現状の情報として扱う。
 完了報告では、リモートの完了と、ローカル`develop`を同期したかどうかを区別して示す。
 

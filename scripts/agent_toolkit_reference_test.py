@@ -2,7 +2,7 @@
 
 `git ls-files`を入力にすることで、通常の検索が省く隠しディレクトリも対象に含める。
 検査対象は`.json`・`.md`・`.py`であり、`install-claude.sh`と`install-claude.ps1`は含まない。
-このファイル自身も走査対象となるため、欠損参照の検体は接頭辞から組み立てる。
+このファイル自身も走査対象となるため、欠損参照のテスト入力は接頭辞から組み立てる。
 """
 
 from __future__ import annotations

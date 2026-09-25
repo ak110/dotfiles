@@ -110,7 +110,7 @@ def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
     - `args.answered`が`"all"`または`"no"`
     - `args.source`が`None`（source指定時は出力が部分集合になり得るため対象外）
     """
-    emits_json = getattr(args, "json", False) or (is_agent_environment() and not getattr(args, "no_json", False))
+    emits_json = getattr(args, "jsonl", False) or (is_agent_environment() and not getattr(args, "no_jsonl", False))
     return (
         not args.count
         and not getattr(args, "summary_only", False)
@@ -301,7 +301,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _print_summary_entries(selected)
         return
 
-    if getattr(args, "json", False) or (is_agent_environment() and not getattr(args, "no_json", False)):
+    if getattr(args, "jsonl", False) or (is_agent_environment() and not getattr(args, "no_jsonl", False)):
         _print_json_entries(selected, readiness, include_staleness=getattr(args, "with_staleness", False))
         return
 

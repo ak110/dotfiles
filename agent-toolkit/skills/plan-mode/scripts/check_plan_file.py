@@ -268,6 +268,14 @@ def _legacy_refactoring_warnings(text: str) -> list[_ClassifiedWarning]:
     ]
 
 
+def _legacy_acceptance_warnings(text: str) -> list[_ClassifiedWarning]:
+    """改名前の列名を持つ受入シナリオ表を現行の列名へ移行するwarningを返す。"""
+    if not _plan_format.has_legacy_acceptance_table(text):
+        return []
+    header = "`, `".join(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
+    return [("migration", f"受入シナリオ表の列名が旧形式である。新規作成・改訂では`{header}`の6列表へ移行する")]
+
+
 def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
     """新書式で旧見出し別名を使っている場合の移行warningを返す。"""
     if not _plan_format.is_canonical_main_format(text):
@@ -455,6 +463,7 @@ def _check_single_file_format(
     errors.extend(bug_errors)
     warnings.extend(bug_warnings)
     warnings.extend(_legacy_refactoring_warnings(text))
+    warnings.extend(_legacy_acceptance_warnings(text))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(text.splitlines()))
     return errors, warnings

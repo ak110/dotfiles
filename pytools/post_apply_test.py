@@ -279,6 +279,67 @@ def test_removes_legacy_plans_viewer_config_and_shim() -> None:
         assert not [path for path in paths if "claude-plans-viewer.service" in path.name]
 
 
+def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
+    """作業ツリー版を覆い隠す旧atkランチャーを登録し、現行のサービス用・hook用ラッパーは登録しない。"""
+    local_bin = post_apply._REMOVED_PATHS[Path.home() / ".local" / "bin"]  # noqa: SLF001
+    assert Path("atk") in local_bin
+    assert Path("atk.cmd") in local_bin
+    for kept in ("atk-serve", "atk-hook", "atk-hook.cmd"):
+        assert Path(kept) not in local_bin
+
+
+def test_removes_flag_files_of_retired_steps_but_keeps_current_config() -> None:
+    """廃止した工程のフラグファイルを登録し、現行のagent-toolkit設定は登録しない。"""
+    config = post_apply._REMOVED_PATHS[Path.home() / ".config"]  # noqa: SLF001
+    assert Path("agent-toolkit/feedback-inbox.enabled") in config
+    assert Path("agent-toolkit/review-balance-mode.claude-heavy") in config
+    for kept in ("agent-toolkit/config.json", "agent-toolkit/serve.toml"):
+        assert Path(kept) not in config
+
+
+@pytest.mark.parametrize(
+    ("base", "removed", "kept"),
+    [
+        (
+            Path(".local") / "bin",
+            ("atk", "atk.cmd"),
+            ("atk-serve", "atk-hook", "atk-hook.cmd", "uv"),
+        ),
+        (
+            Path(".config"),
+            ("agent-toolkit/feedback-inbox.enabled", "agent-toolkit/review-balance-mode.claude-heavy"),
+            ("agent-toolkit/config.json", "agent-toolkit/serve.toml"),
+        ),
+    ],
+)
+def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    base: Path,
+    removed: tuple[str, ...],
+    kept: tuple[str, ...],
+) -> None:
+    """実際の登録内容を一時ホームへ適用し、旧生成物だけが削除されることを確かめる。"""
+    registered = post_apply._REMOVED_PATHS[Path.home() / base]  # noqa: SLF001
+    home_dir = tmp_path / "home"
+    target_dir = home_dir / base
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {target_dir: registered})
+    monkeypatch.setattr(post_apply, "_REMOVED_PATHS_IF_CONTENT", {})
+    for name in (*removed, *kept):
+        (target_dir / name).parent.mkdir(parents=True, exist_ok=True)
+        (target_dir / name).write_text("x\n", encoding="utf-8")
+
+    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+
+    assert changed is True
+    for name in removed:
+        assert not (target_dir / name).exists()
+    for name in kept:
+        assert (target_dir / name).is_file()
+
+
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
     paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
@@ -819,6 +880,13 @@ class TestDefaultSteps:
         names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert "claude-statusline バイナリの取得" in names
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
+
+    def test_plugin_cache_prune_follows_claude_plugin_install(self) -> None:
+        """plugin cacheの旧版削除は、導入処理が現行版を更新した直後に1回だけ実行する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        prune_name = "Claude Code plugin cache の旧版削除"
+        assert names.count(prune_name) == 1
+        assert names.index(prune_name) == names.index("Claude Code plugin のインストール") + 1
 
     def test_agy_cli_step_follows_claude_code_cli(self):
         """Antigravity CLIの導入をClaude Code CLIの直後に1回登録する。"""

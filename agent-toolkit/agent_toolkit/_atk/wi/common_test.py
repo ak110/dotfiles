@@ -727,46 +727,6 @@ class TestReadiness:
         assert unreferenced not in reads
 
 
-class TestWarnSpaceSeparatedOption:
-    """空白区切りオプションの検出条件を検証する。"""
-
-    @pytest.mark.parametrize(
-        "top_command,subcommand",
-        [("wi", "adopt"), ("wi", "reject"), ("wi", "adopt")],
-    )
-    @pytest.mark.parametrize("option", ["--note", "--commit"])
-    def test_warns_for_target_subcommands(
-        self,
-        top_command: str,
-        subcommand: str,
-        option: str,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """対象サブコマンドの空白区切り指定では推奨形式を警告する。"""
-        _common.warn_space_separated_option([top_command, subcommand, "item.md", option, "value"])
-
-        assert capsys.readouterr().err == f"警告: {option}は{option}=VALUE形式で渡す。\n"
-
-    @pytest.mark.parametrize(
-        "argv",
-        [
-            ["wi", "add", "/repo", "adopt", "--note", "value"],
-            ["wi", "adopt", "item.md", "--note=value"],
-            ["wi", "adopt", "item.md", "--note", "value=with-equals"],
-            ["wi", "adopt", "item.md", "--note", "--target-repo=example/repo"],
-        ],
-    )
-    def test_does_not_warn_for_excluded_forms(
-        self,
-        argv: list[str],
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """対象外サブコマンド・等号形式・次オプションでは警告しない。"""
-        _common.warn_space_separated_option(argv)
-
-        assert not capsys.readouterr().err
-
-
 class TestNotifyUnansweredUwisIfAny:
     """未回答UWI通知の件数・フィルター・形式を検証する。"""
 

@@ -10,7 +10,7 @@
 同期調査と依存更新の要否の判定結果は、当該セッションの後続の工程へ渡す。
 起動名はClaude Codeでは`/ak110-projects-operations`、Codexでは`ak110-projects-operations`とする。
 
-## 個人プロジェクトのリリース入口
+## 個人プロジェクトのリリース開始手順
 
 個人プロジェクトでpatch、minor又はmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
 `ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。

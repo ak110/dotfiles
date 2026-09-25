@@ -24,7 +24,7 @@ probe未実行、読取失敗又は値の不一致は停止不能として扱う
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
 終了対象を確認できない環境では対話UIに終了案内を表示し、利用者が`/exit`を入力すると親の監視ループへ戻る。
 終了時の`atk agents-exit-session`は起動時の分岐値を再利用せず、停止要求直前に終了対象を新規識別する。
-表示済みPIDの開始時刻と実行ファイルのデバイス・inodeが再照合で一致した場合だけCodexを停止する。
+表示済みPIDの開始時刻と実行ファイルのデバイス・inodeが再確認で一致した場合だけCodexを停止する。
 
 初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
 `update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。
@@ -38,15 +38,15 @@ Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCo
 
 ## プラグイン更新の反映
 
-dotfilesはClaude Code・Agent Plugins向けの`agent-toolkit/`を正本とし、Codex向けには`agent-toolkit-codex/`を生成する。
+dotfilesはClaude Code・Agent Plugins向けの`agent-toolkit/`を元にし、Codex向けには`agent-toolkit-codex/`を生成する。
 Codex専用rootは、Agent Plugins用の直下`plugin.json`と`mcp.json`を除き、`.codex-plugin/plugin.json`、hook、skill、Python実装、lockfileその他の実行資源を通常ファイルとして含む。
 Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、専用rootは相対シンボリックリンクを含めない。
 `.agents/plugins/marketplace.json`だけが`./agent-toolkit-codex`を参照し、Claude CodeとAgent Pluginsは引き続き`agent-toolkit/`を参照する。
 `agent-toolkit-codex/`はGitで追跡せず、`update-dotfiles`のpost-applyがCodex plugin導入の直前に生成する。
-手動で再生成する場合は`scripts/sync_codex_plugin_manifests.py`を実行し、`--check`で正本との一致を確認する。
+手動で再生成する場合は`scripts/sync_codex_plugin_manifests.py`を実行し、`--check`で大元の定義との一致を確認する。
 生成に失敗した場合はpost-applyが非0で終了し、失敗したstep名と詳細を更新logへ記録する。
 
-`update-dotfiles`は未導入、disabled又はversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再検査する。
+`update-dotfiles`は未導入、disabled又はversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
 `codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
 
@@ -57,7 +57,7 @@ codex app-server daemon restart
 公開インストーラーでは、プラグイン追加または`atk`配置が失敗した場合も、エラーの後の最終行へ
 必要な再起動コマンドを表示し、非0の終了状態を維持する。`agents_server` MCPの登録や
 `~/.claude.json`のUser scope設定は行わない。
-既定では進行中のセッションを保護するため、app-server daemonを自動再起動しない。
+通常は進行中のセッションを保護するため、app-server daemonを自動再起動しない。
 `update-dotfiles`によるagent-toolkitの追加・更新後に稼働中daemonを自動再起動する場合は、実行環境へ次の設定を明示する。
 
 ```bash
@@ -77,8 +77,8 @@ daemonが停止中の場合、pluginが無変更の場合及びmarketplace登録
 自動再起動により、Codex plugin又はremote-controlを利用する実行中セッションの接続が切断される可能性があるため、当該セッションを終了できる時点でだけ有効にする。
 
 Codex hookはPATH上の`~/.local/bin/atk-hook`（Windowsでは`atk-hook.cmd`）から起動する。
-この入口は`codex plugin list --json`に示された有効な現行版を毎回解決し、イベント名、標準入出力及び終了状態をhook本体へ渡す。
-インストーラーは`codex plugin add`より先に入口を配置し、導入後に現行版のhook実体を検査する。
+このコマンドは`codex plugin list --json`に示された有効な現行版を毎回解決し、イベント名、標準入出力及び終了状態をhook本体へ渡す。
+インストーラーは`codex plugin add`より先にこのコマンドを配置し、導入後に現行版のhook実体を確認する。
 初回切替時に限り、更新前の版付きhookコマンドを保持したセッションのために旧キャッシュを一時退避し、CLIが削除した場合は復元する。以降の更新に旧版保存台帳は設けない。
 プラグインの通常のversion別cache管理はCodex公式CLIへ委ねる。
 既定動作では更新中のセッションを作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
@@ -97,7 +97,7 @@ CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
 公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つである。`start`、`start_explore`及び`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、
-完了を待たず`session_id`を返す。`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は、実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`list`で当該sessionの`status`を確認し、`wait`を再発行する。
+完了を待たず`session_id`を返す。`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`list`で当該sessionの`status`を確認し、`wait`を再発行する。
 `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
@@ -111,7 +111,7 @@ backendから承認・入力・認証・attestationなどの非対話要求を�
 ### フックの信頼確認
 
 Codexはplugin同梱フックの定義が変わると、利用者が再び信頼するまで当該フックをスキップする。
-更新処理は先にapp-serverの`hooks/list`で登録状態を検査する。次の8イベントがすべて登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で定義を確認して信頼する案内を表示する。
+更新処理は先にapp-serverの`hooks/list`で登録状態を確認する。次の8イベントがすべて登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で定義を確認して信頼する案内を表示する。
 登録が0件又は不足している場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
 信頼後に新しいセッションを開始し、SessionStartの規範注入を確認する。
 再信頼の操作だけではSessionStartの規範注入を検収できない。
@@ -131,9 +131,9 @@ Codexはplugin同梱フックの定義が変わると、利用者が再び信頼
 [Claude Code利用ガイド](claude-code-guide.md)の「常時有効な仕組み」にある対応表を参照する。
 
 表示内容を確認してフックを信頼する。
-信頼後の`PreToolUse`は、`apply_patch`の変更内容に口語的な日本語表現が含まれる場合、
-検出語そのものを表示せず正式な書き言葉への書き直しを促す通知を返す。
-動作を確かめる場合は、口語的な言い回しを含む短い変更を`apply_patch`で適用し、通知の有無を確認する。
+信頼後の`PreToolUse`は`apply_patch`が`uv.lock`などのlockfileを直接編集する場合、
+`uv add`などのパッケージ管理ツールでの更新を促す通知を返す。
+動作を確かめる場合は、`uv.lock`へ1行を加える変更を`apply_patch`で適用し、通知の有無を確認する。
 Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
 
 ## Codex CLI本体
@@ -169,14 +169,14 @@ WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版�
 - `~/.codex/skills/*`: `.chezmoi-source/dot_claude/skills/*`のうちdotfiles固有のグローバルスキルへのシンボリックリンク。agent-toolkit skillsはCodex plugin marketplace経由で配布する
 - プロジェクト直下の`.agents/skills`: プロジェクト専用スキルディレクトリへのシンボリックリンク
 
-CodexとClaude Code 2.1.277以上は、プロジェクト指示の正本として`AGENTS.md`を共用できる。
-そのため、常時ロードの入口は`AGENTS.md`へ集約し、本文は原本ファイルを参照する形にする。
-ファイルコピーで同期すると改訂漏れが発生するため、共有対象はリンクで配布する。
+CodexとClaude Code 2.1.277以上は、プロジェクト指示の基準として`AGENTS.md`を共用できる。
+そのため、常時読み込む設定は`AGENTS.md`へ集約し、本文は原本ファイルを参照する形にする。
+ファイルコピーで同期すると一部のコピーに更新が反映されないため、共有対象はリンクで配布する。
 chezmoiの`symlink_`はWindowsで特権不足により失敗するため採用しない。
 代わりに`chezmoi apply`後処理（`pytools.post_apply`）の専用ステップがリンクを生成する。
 Linux/macOSではシンボリックリンク、Windowsではディレクトリジャンクションを使う。
 
-プロジェクト直下の`.claude/rules/`と`.claude/skills/`は、Claude Codeでは自動ロード・自動検出される。
+プロジェクト直下の`.claude/rules/`と`.claude/skills/`はClaude Codeでは自動ロード・自動検出される。
 Codexでは同じ挙動を前提にできないため、Codex側のプロジェクト専用スキルは`.agents/skills/`へ配置する。
 `.claude/skills/`の原本を再利用する場合も、コピーせず`.agents/skills -> .claude/skills`のシンボリックリンクにする。
 `.claude/rules/`はCodex側に対応する専用ディレクトリへ移さず、`~/.codex/AGENTS.md`から該当ファイルを読むよう指示する。
@@ -186,5 +186,5 @@ agent-toolkitのMarkdownルールは`~/.codex/agent-toolkit/rules`に配置す�
 
 プロジェクト固有設定は、原則として`AGENTS.md`を実体ファイル、
 `CLAUDE.md`アダプターは配置せず、`AGENTS.md`単一実体に統一する。
-両方を実体ファイルとすることで、コピー欠落やシンボリックリンク非対応環境での事故を回避する。
+両方を実体ファイルとすることで、コピー欠落やシンボリックリンク非対応環境での障害を回避する。
 Codex専用の差分が必要な場合のみ、`AGENTS.md`本体に分岐記述を追加する。

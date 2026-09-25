@@ -618,7 +618,7 @@ class TestUwiList:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=uwi", "--answered", "no", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered", "no", "--no-jsonl"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"

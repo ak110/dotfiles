@@ -37,7 +37,7 @@ def test_debug_file_keeps_its_name_when_renaming_is_rejected(tmp_path: pathlib.P
 
 
 class _SilentClient:
-    """接続を保ったままinitメッセージを送らないSDKクライアントの検体。
+    """接続を保ったままinitメッセージを送らないSDKクライアントのスタブ。
 
     切断でCLIの子プロセスを終了する実クライアントの契約を模す。
     実クライアントは取り消された実行での切断で当該終了処理へ到達しないため、
@@ -127,7 +127,7 @@ def test_build_options_keeps_every_launch_out_of_bypass_modes(monkeypatch: pytes
     """
     captured = _capture_options(monkeypatch)
 
-    # 受理しない値を意図的に渡す検体のため、静的な型判定の対象から外す。
+    # 受理しない値を意図的に渡すテストのため、静的な型判定の対象から外す。
     claude._build_options("/tmp", "model", "medium", launch_kind="delegate")  # pylint: disable=protected-access
 
     assert captured["permission_mode"] == "auto"

@@ -124,6 +124,15 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
     return code
 
 
+def _absent_targets_message(owner_status_file: str) -> str:
+    """待機対象の不在を理由とする終了の本文を返す。"""
+    return (
+        "待機対象の登録が0件で、保持中のsessionも0件です。"
+        "委譲先を起動してから`atk agents wait`を実行してください: "
+        f"owner={owner_status_file}"
+    )
+
+
 def _fail(message: str, code: int, *, session_id: str | None = None) -> int:
     """標準エラーへ理由を出力してから非0の終了コードで異常終了する。
 
@@ -151,8 +160,11 @@ def _target_origins(
     registered_ids, registry_error = status_file.read_wait_targets(root_session_id, owner_status_file, state_root)
     if registry_error is not None:
         return {}, (f"待機対象登録簿を読めません: {registry_error}", 9)
+    # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終端を示す場合に結果が生じないため解放する。
+    # 終端の公開から結果ファイルの書込までの間は状態ファイルに行が残るため、回収前の対象を解放しない。
+    releasable = {session_registry.Resolution.MISSING, session_registry.Resolution.TERMINAL}
     for session_id in set(registered_ids) - listed_ids - result_ids:
-        if session_registry.resolve(session_id, state_root=state_root).state is session_registry.Resolution.MISSING:
+        if session_registry.resolve(session_id, state_root=state_root).state in releasable:
             status_file.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
     origins: dict[str, set[str]] = {}
@@ -188,6 +200,7 @@ def wait_for_result(
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
     待機対象の登録も、`starting`を含む保持中sessionも0件の場合は、待機しても回収対象が生じないため、
     両方の不在を理由として標準エラーへ書き、即座に非0で終わる。
+    待機中に全対象が登録簿で終端を示したまま結果も状態も残さなくなった場合も、回収途中の退避物が無ければ同じ理由で終わる。
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
@@ -238,12 +251,7 @@ def wait_for_result(
                 status_file.unconfirmed_root_recovery_message(root_resolution, "atk agents wait"),
                 4,
             )
-        return _fail(
-            "待機対象の登録が0件で、保持中のsessionも0件です。"
-            "委譲先を起動してから`atk agents wait`を実行してください: "
-            f"owner={identity.file_name}",
-            10,
-        )
+        return _fail(_absent_targets_message(identity.file_name), 10)
     _LOG.info(
         "wait_start targets=%s origins=%s",
         ",".join(ordered_ids) or "none",
@@ -316,6 +324,19 @@ def wait_for_result(
             if target_error is not None:
                 message, code = target_error
                 return _publish_wait_result(run_path, message, code, stream="stderr")
+            # 待機中の対象不在は、全対象の登録簿が終端を示す場合だけ確定する。
+            # 状態投影の消失と登録簿の不在は待機開始後の喪失の根拠にしないため、その場合は待機上限まで待つ。
+            if (
+                ordered_ids
+                and not current_origins
+                and not _stashed_wait_targets(run_path)
+                and all(
+                    session_registry.resolve(session_id, state_root=state_root).state is session_registry.Resolution.TERMINAL
+                    for session_id in ordered_ids
+                )
+            ):
+                _LOG.info("wait_return reason=absent owner=%s", identity.file_name)
+                return _publish_wait_result(run_path, _absent_targets_message(identity.file_name), 10, stream="stderr")
             for session_id in sorted(set(current_origins) - set(ordered_ids)):
                 ordered_ids.append(session_id)
                 ordered_ids.sort()

@@ -1088,12 +1088,12 @@ class TestLegacyTopLevelCommandAlias:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--no-json", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--no-jsonl", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         current_output = capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--no-json", "--skip-pull"], home=tmp_path)
+            atk.main(["mq", "list", "--no-jsonl", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == current_output
         assert "fb-001.md" in current_output
@@ -1558,22 +1558,42 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
     assert "implementation-reviewはexec-reviewとして読み取る" in error
 
 
-class TestSpaceSeparatedOptionWarning:
-    """mainがparse前に空白区切りオプションを警告することを検証する。"""
+class TestSpaceSeparatedOptionWithoutWarning:
+    """受理に成功した空白区切りの値付きオプションへ形式の警告を出力しない。
 
-    @pytest.mark.parametrize(
-        "top_command,subcommand",
-        [("wi", "adopt"), ("wi", "reject"), ("wi", "adopt")],
-    )
-    def test_warns_before_argument_error(self, top_command: str, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
-        with pytest.raises(SystemExit):
-            atk.main([top_command, subcommand, "missing.md", "--note", "memo"])
-        assert "警告: --noteは--note=VALUE形式で渡す。" in capsys.readouterr().err
+    空白区切りの値もargparseが正しく受理するため、警告は呼び出しの結果と後続の操作を変えない。
+    推奨形式の案内はヘルプだけが担う。
+    """
 
-    def test_does_not_warn_for_equals_form(self, capsys: pytest.CaptureFixture[str]) -> None:
-        with pytest.raises(SystemExit):
-            atk.main(["wi", "adopt", "missing.md", "--note=memo"])
-        assert "警告:" not in capsys.readouterr().err
+    @pytest.mark.parametrize("subcommand", ("adopt", "reject"))
+    def test_successful_space_separated_call_emits_no_format_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        subcommand: str,
+    ) -> None:
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "fb-001.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", subcommand, "fb-001.md", "--note", "memo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "VALUE形式" not in capsys.readouterr().err
+
+    @pytest.mark.parametrize("subcommand", ("adopt", "reject"))
+    def test_help_keeps_recommended_equals_form(self, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["wi", subcommand, "--help"])
+
+        assert exc_info.value.code == 0
+        help_text = capsys.readouterr().out
+        assert "--note=VALUE形式で渡すことを推奨" in help_text
+        assert "--commit=VALUE形式で渡すことを推奨" in help_text
 
 
 class TestUnansweredUwiNotification:

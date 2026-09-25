@@ -173,7 +173,7 @@ class TestConfigGet:
         expected = tmp_path / "home" / ".local" / "state" / "agent-toolkit"
         assert capsys.readouterr().out == f"{expected}\n"
 
-    @pytest.mark.parametrize("key", ["execute_model", "execute_review_model", "session_review_model"])
+    @pytest.mark.parametrize("key", ["execute_model", "execute_review_model"])
     def test_get_execute_model_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str) -> None:
         """未設定の`get`は`show`に表示する実行時解決値を返す。"""
         with pytest.raises(SystemExit):
@@ -293,7 +293,6 @@ class TestConfigGet:
         captured = capsys.readouterr()
         assert not captured.out
         assert "execute_model" in captured.err
-        assert "session_review_model" in captured.err
         assert "execute_fix_model" not in captured.err
 
     def test_get_known_and_unknown_keys_is_atomic(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -305,7 +304,6 @@ class TestConfigGet:
         captured = capsys.readouterr()
         assert not captured.out
         assert "execute_model" in captured.err
-        assert "session_review_model" in captured.err
         assert "execute_fix_model" not in captured.err
 
     def test_environment_override_applies_to_get_and_show_then_restores_saved_value(
@@ -526,6 +524,28 @@ class TestConfigSet:
         assert capsys.readouterr().err == "設定は保存します。\n"
         assert json.loads(config_file.read_text(encoding="utf-8")) == {
             "other_setting": "keep",
+            "execute_model": "codex:gpt-5.6-terra/medium",
+        }
+
+    def test_retired_session_review_model_in_saved_config_is_ignored(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """撤去した`session_review_model`が保存済みでも、表示と変更は失敗せず、値は未知キーとして残る。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps({"session_review_model": "claude:opus/medium"}) + "\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "show"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert "session_review_model" not in capsys.readouterr().out
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "execute_model", "codex:gpt-5.6-terra/medium"], home=tmp_path)
+        assert exc_info.value.code == 0
+        capsys.readouterr()
+        assert json.loads(config_file.read_text(encoding="utf-8")) == {
+            "session_review_model": "claude:opus/medium",
             "execute_model": "codex:gpt-5.6-terra/medium",
         }
 

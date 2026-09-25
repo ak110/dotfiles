@@ -7,54 +7,9 @@ import pathlib
 from typing import Literal
 
 import pytest
-import session_review_decisions as decisions  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-
-
-def test_decision_skeleton_covers_bundle_candidates(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """候補と証拠索引を結び、重複関係を保持した未判定入力を返す。"""
-    locator = [{"record": "main", "line": 1}]
-    candidates = [
-        {
-            "kind": "candidate",
-            "candidate_id": "c0001",
-            "candidate_kind": "warning",
-            "count": 1,
-            "locators": locator,
-            "analysis_group_hint": ["group"],
-        },
-        {
-            "kind": "candidate",
-            "candidate_id": "c0002",
-            "candidate_kind": "warning",
-            "count": 1,
-            "locators": locator,
-            "analysis_group_hint": ["group"],
-        },
-        {"kind": "candidate-summary", "count": 2, "included_locators": locator, "included_locator_count": 1, "excluded": {}},
-    ]
-    indexes = [
-        {
-            "kind": "candidate-evidence-index",
-            "candidate_id": item["candidate_id"],
-            "locators": locator,
-            "path": f"candidate-evidence/{item['candidate_id']}.json",
-            "evidence_count": 1,
-        }
-        for item in candidates[:2]
-    ]
-    (tmp_path / "candidates.jsonl").write_text("".join(json.dumps(item) + "\n" for item in candidates), encoding="utf-8")
-    (tmp_path / "candidate-evidence.jsonl").write_text("".join(json.dumps(item) + "\n" for item in indexes), encoding="utf-8")
-    output = tmp_path / "decisions.json"
-
-    assert decisions.main(["--bundle", str(tmp_path), "--output", str(output)]) == 0
-    result = json.loads(output.read_text(encoding="utf-8"))
-    assert [item["candidate_id"] for item in result] == ["c0001", "c0002"]
-    assert all(item["disposition"] == "pending" for item in result)
-    assert result[0]["related_candidate_ids"] == ["c0002"]
-    assert "候補2件、未判定2件" in capsys.readouterr().out
 
 
 def _execution_tool_use(tool_id: str, name: str = "Bash") -> dict[str, object]:
@@ -766,6 +721,7 @@ def test_observation_boundary_keeps_original_line_numbers(
         {
             "kind": "detail",
             "line": 2,
+            "timestamp": "2026-09-01T00:00:01Z",
             "text": json.dumps(
                 _timestamped_entry("2026-09-01T00:00:01Z", "保持する元の2行目"),
                 ensure_ascii=False,
@@ -2622,7 +2578,7 @@ def test_warn_mode_accepts_codex_custom_tool_call_output_structured_warning(
 
     assert evidence.main([str(transcript), "--grep", "引数内の警告"]) == 0
     assert _read_jsonl(capsys) == [
-        {"kind": "match", "line": 1, "text": '{"warning_message": "引数内の警告"}'},
+        {"kind": "match", "line": 1, "timestamp": None, "text": '{"warning_message": "引数内の警告"}'},
         {"kind": "summary", "count": 1},
     ]
 
@@ -2810,7 +2766,7 @@ def test_warn_mode_ignores_warning_markers_and_structured_json_in_inputs_but_gre
 
     assert evidence.main([str(transcript), "--grep", grep_pattern]) == 0
     assert _read_jsonl(capsys) == [
-        {"kind": "match", "line": 1, "text": expected_text},
+        {"kind": "match", "line": 1, "timestamp": None, "text": expected_text},
         {"kind": "summary", "count": 1},
     ]
 
@@ -3022,13 +2978,15 @@ def test_query_modes_normalize_line_number_prefix_across_body_fields(
 
     events = _read_jsonl(capsys)
     expected_text = "warning: 同じ本文" if option == "--warn" else "12\twarning: 同じ本文"
-    expected_event = {
+    expected_event: dict[str, object] = {
         "kind": "warning" if option == "--warn" else "match",
         "line": 2,
         "text": expected_text,
     }
     if option == "--warn":
         expected_event["tool"] = "call-1"
+    else:
+        expected_event["timestamp"] = None
     assert events[0] == expected_event
     if option == "--grep":
         assert events[-1] == {"kind": "summary", "count": 1}
@@ -3085,7 +3043,7 @@ def test_grep_mode_searches_tool_use_result_output(
 
     events = _read_jsonl(capsys)
     assert [event["kind"] for event in events] == ["match", "summary"]
-    assert events[0] == {"kind": "match", "line": 1, "text": "退避された本文の照合語"}
+    assert events[0] == {"kind": "match", "line": 1, "timestamp": None, "text": "退避された本文の照合語"}
     assert events[-1]["count"] == 1
 
 
@@ -3290,7 +3248,7 @@ def test_query_modes_ignore_structural_values_of_codex_envelopes(
 
     assert evidence.main([str(transcript), "--grep", "done"]) == 0
     assert _read_jsonl(capsys) == [
-        {"kind": "match", "line": 1, "text": "done"},
+        {"kind": "match", "line": 1, "timestamp": None, "text": "done"},
         {"kind": "summary", "count": 1},
     ]
 
@@ -3318,7 +3276,7 @@ def test_grep_mode_searches_nested_values_under_management_named_keys(
 
     events = _read_jsonl(capsys)
     assert events == [
-        {"kind": "match", "line": 1, "text": "needle-value"},
+        {"kind": "match", "line": 1, "timestamp": None, "text": "needle-value"},
         {"kind": "summary", "count": 1},
     ]
 
@@ -3372,7 +3330,7 @@ def test_detail_mode_keeps_tool_use_input_shapes_and_result_body(
     assert events[0]["input"] == {"command": "atk wi list", "n": 1}
     assert events[1]["input"] == {"file_path": "/tmp/x.md"}
     assert events[2]["input"] == {"prompt": "依頼本文"}
-    assert events[3] == {"kind": "detail", "line": 2, "tool": "c1", "text": "結果本文"}
+    assert events[3] == {"kind": "detail", "line": 2, "timestamp": None, "tool": "c1", "text": "結果本文"}
 
 
 @pytest.mark.parametrize(
@@ -3414,7 +3372,9 @@ def test_detail_mode_returns_persisted_body_from_tool_use_result(
 
     assert evidence.main([str(transcript), "--detail", "2"]) == 0
 
-    assert _read_jsonl(capsys) == [{"kind": "detail", "line": 2, "tool": "c1", "text": "warning: real output"}]
+    assert _read_jsonl(capsys) == [
+        {"kind": "detail", "line": 2, "timestamp": None, "tool": "c1", "text": "warning: real output"}
+    ]
 
 
 def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
@@ -5410,6 +5370,7 @@ def _hook_attachment(attachment: dict) -> dict:
             {
                 "kind": "detail",
                 "line": 4,
+                "timestamp": None,
                 "tool": "call-1",
                 "text": "warning: successful command warning",
             },
@@ -5509,7 +5470,7 @@ def test_multi_line_detail_query_keeps_each_problem_locator_stable(
     assert first == second
     assert [second[locator["event_index"]] for locator in locators] == first
     assert [event["line"] for event in second] == [1, 1, 2]
-    assert second[2] == {"kind": "detail", "line": 2, "tool": "call-1", "text": "別イベント"}
+    assert second[2] == {"kind": "detail", "line": 2, "timestamp": None, "tool": "call-1", "text": "別イベント"}
     assert query == "--detail 1 --detail 2"
     assert "別イベント" not in query
     assert all(set(locator) == {"event_index"} for locator in locators)
@@ -5879,7 +5840,9 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     candidate_evidence = [json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8")) for item in evidence_index]
     assert [item["candidate_id"] for item in candidate_evidence] == ["c0001", "c0002"]
     assert all(item["events"] for item in candidate_evidence)
-    assert all(item["text_limit"] == 2000 and item["user_context_limit_per_side"] == 1 for item in candidate_evidence)
+    # 失敗したツール結果の本文は切り詰めず、実行時警告など定型本文の種別だけに上限を残す。
+    assert [item["text_limit"] for item in candidate_evidence] == [None, 2000]
+    assert all(item["user_context_limit_per_side"] == 1 for item in candidate_evidence)
     assert all(item["source_chars"] > 0 for item in candidate_evidence)
     assert {
         "kind": "bundle-file",
@@ -6873,3 +6836,147 @@ def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_interv
         "initial-skill-request": 1,
         "runtime-meta": 1,
     }
+
+
+def _bundle_candidates_and_evidence(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], entries: list[dict]
+) -> tuple[list[dict], dict[str, dict]]:
+    """transcriptから`--bundle`を実行し、候補の行と候補ID別の個別証拠を返す。"""
+    transcript = _write_transcript(tmp_path, entries)
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    capsys.readouterr()
+    candidates = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    items = {
+        item["candidate_id"]: json.loads(
+            (bundle_dir / "candidate-evidence" / f"{item['candidate_id']}.json").read_text("utf-8")
+        )
+        for item in candidates
+        if item["kind"] == "candidate"
+    }
+    return candidates, items
+
+
+def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """PreToolUseのwarn候補の個別証拠が、同じ呼び出し識別子のコマンドと記録位置を持つ。
+
+    hook実行記録だけでは警告の対象を特定できず、分析主体が元記録を検索し直すことになる。
+    """
+    candidates, items = _bundle_candidates_and_evidence(
+        tmp_path,
+        capsys,
+        [
+            {"type": "user", "message": {"role": "user", "content": "初期要求"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-25T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Bash",
+                            "id": "toolu_target",
+                            "input": {"command": "find . -name '*.md'", "description": "Markdownを探す"},
+                        }
+                    ],
+                },
+            },
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "toolu_target",
+                    "content": ["[auto-generated: agent-toolkit/pretooluse][warn] warn: 検索対象を限定する"],
+                }
+            ),
+        ],
+    )
+
+    hook_candidates = [item for item in candidates if item.get("candidate_kind") == "hook-notice"]
+    assert len(hook_candidates) == 1
+    tool_uses = [event for event in items[hook_candidates[0]["candidate_id"]]["events"] if event["kind"] == "tool-use"]
+    assert tool_uses == [
+        {
+            "record": "main",
+            "kind": "tool-use",
+            "line": 2,
+            "timestamp": "2026-09-25T00:00:01Z",
+            "name": "Bash",
+            "input": {"command": "find . -name '*.md'", "description": "Markdownを探す"},
+        }
+    ]
+
+
+def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """block又はwarn以外の区分を持つhook出力は候補へ残らず、区分の種類によらず除外件数へ計上される。"""
+    candidates, _ = _bundle_candidates_and_evidence(
+        tmp_path,
+        capsys,
+        [
+            {"type": "user", "message": {"role": "user", "content": "初期要求"}},
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "SessionStart",
+                    "content": [
+                        '<agent-toolkit-auto-inserted source="agent-toolkit" kind="rules-main">\n# 規範\n'
+                        "</agent-toolkit-auto-inserted>"
+                    ],
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "SubagentStart",
+                    "content": [
+                        '<agent-toolkit-auto-inserted source="agent-toolkit" kind="auto-resume">\n再開\n'
+                        "</agent-toolkit-auto-inserted>"
+                    ],
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "content": [
+                        '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="block">\nblock: 停止\n'
+                        "</agent-toolkit-auto-inserted>"
+                    ],
+                }
+            ),
+        ],
+    )
+
+    hook_candidates = [item for item in candidates if item.get("candidate_kind") == "hook-notice"]
+    assert [item["locators"] for item in hook_candidates] == [[{"record": "main", "line": 4}]]
+    assert candidates[-1]["excluded"]["hook-notice-context"] == 2
+
+
+def test_detail_and_grep_include_timestamp(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`--detail`と`--grep`の各イベントが元記録行の時刻を持ち、時刻の無い行では`null`となる。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-25T01:02:03Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "needle"}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "needle結果"}]},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--detail", "1", "--detail", "2"]) == 0
+    assert [event["timestamp"] for event in _read_jsonl(capsys)] == ["2026-09-25T01:02:03Z", None]
+
+    assert evidence.main([str(transcript), "--grep", "needle"]) == 0
+    matches = [event for event in _read_jsonl(capsys) if event["kind"] == "match"]
+    assert [(event["line"], event["timestamp"]) for event in matches] == [(1, "2026-09-25T01:02:03Z"), (2, None)]

@@ -6,7 +6,7 @@ version: 1
 rules:
   - expected: ユーザー
     patterns:
-      - /ユーザ(?![ー名ID])/
+      - /ユーザ(?![ー名ID]|ビリティ)/
   - expected: サーバー
     patterns:
       - /サーバ(?![ーレ])/

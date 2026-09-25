@@ -29,6 +29,7 @@ from pytools._internal import (
     install_libarchive_windows,
     log_format,
     post_apply_outcome,
+    prune_claude_plugin_cache,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
     restore_codex_logs_linux,
@@ -211,6 +212,11 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("pyfltr/config.toml"),
         # 計画ファイル閲覧は atk serve へ統合した。設定は ~/.config/agent-toolkit/serve.toml へ移した。
         Path("pytools/claude-plans-viewer.toml"),
+        # 廃止した工程が配置したフラグファイル。いずれも廃止時に削除登録がなく残存していた。
+        # feedback-inbox.enabled は setup_feedback_inbox（d08f8d5b で廃止）、
+        # review-balance-mode.claude-heavy は setup_review_balance_mode（4c53faaa で廃止）が配置した。
+        Path("agent-toolkit/feedback-inbox.enabled"),
+        Path("agent-toolkit/review-balance-mode.claude-heavy"),
     ],
     Path.home() / ".ipython": [
         Path("profile_default/startup/README"),
@@ -257,6 +263,14 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 計画ファイル閲覧は atk serve へ統合したため、旧 CLI の配布先を除去する。
         Path("claude-plans-viewer"),
         Path("claude-plans-viewer.exe"),
+        # 15c2e214 が atk serve 常駐用に生成したランチャー ~/.local/bin/atk は、1116f984 で
+        # ~/.local/bin/atk-serve へ改名した際に旧名の削除が漏れて残存していた。
+        # dotfiles ホストでは ~/dotfiles/agent-toolkit/bin（Linux は .chezmoi-source/dot_bashrc、
+        # Windows は pytools/_internal/setup_bin_path.py）が PATH へ登録されるため、PATH の先頭側にある
+        # ~/.local/bin 配下の atk は作業ツリー版を覆い隠す。atk.cmd は install-claude.ps1 が同じ位置へ
+        # 生成する Windows 版ラッパーであり、同じ理由で除去する。atk-serve と atk-hook は対象外とする。
+        Path("atk"),
+        Path("atk.cmd"),
     ],
 }
 
@@ -352,6 +366,8 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("Codex 診断ログの通常ストレージ復元 (Linux)", restore_codex_logs_linux.run),
     _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
     _StepSpec("Claude Code plugin のインストール", install_claude_plugins.run),
+    # installed_plugins.json が更新後の版を指してから現行版を判定するため、導入処理の直後に置く。
+    _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run),
     _StepSpec("Codex plugin snapshot の生成", sync_codex_plugin_manifests.sync),
     _StepSpec("Codex plugin のインストール", install_codex_plugins.run),
     _StepSpec("agents_serverのuv環境ウォームアップ", warm_agents_server.run, background=True),

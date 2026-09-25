@@ -25,6 +25,7 @@ _LEGACY_UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / 
 # uv は systemd user service の PATH に存在しないため、導入時に解決した絶対パスを埋め込む。
 # ~/.local/bin/atk は install-claude.sh がプラグイン単体利用者向けに生成するラッパーで
 # 内容が競合するため、本モジュールはサービス専用の別名を用いる。
+# dotfiles ホストでは post_apply の旧配布物削除が ~/.local/bin/atk を除去する。
 _LAUNCHER_TEMPLATE = """#!/bin/sh
 set -eu
 exec "{uv}" run --project "{dotfiles}/agent-toolkit" --locked --no-default-groups \\

@@ -1136,43 +1136,66 @@ main > .toolbar {
   display: grid;
   grid-template-columns: var(--two-pane-sidebar-width) 1fr;
 }
-#screen-plans :is(aside) {
+/* 計画ファイル画面とセッション画面の左ペインは、枠・検索欄・項目の見た目をここで共有する。
+   画面ごとに規則を複製すると片方だけの変更で見た目がずれるため、画面固有の規則には構造上の差だけを置く。 */
+.pane-sidebar {
   border-right: 1px solid var(--color-border);
   overflow: auto;
   background: var(--color-background);
   padding: 0;
 }
-#screen-plans :is(aside) .toolbar {
+.pane-sidebar .toolbar {
   position: sticky;
   top: 0;
   background: var(--color-background);
   padding: 10px;
   border-bottom: 1px solid var(--color-border);
 }
-#screen-plans :is(aside) input {
+.pane-sidebar input {
   width: 100%;
   box-sizing: border-box;
   padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
 }
-#screen-plans .file {
+/* セッション画面の項目はbutton要素のため、全体のbutton規則の角丸・枠・背景をここで打ち消す。 */
+.pane-item {
   display: block;
   box-sizing: border-box;
   width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 10px 12px;
+  border: 0;
   border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
   color: inherit;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
   cursor: pointer;
 }
-#screen-plans .file:hover,
-#screen-plans .file.active {
+.pane-item:hover,
+.pane-item[aria-current="true"] {
   background: #eef2ff;
 }
-#screen-plans .file[aria-current="true"] {
+.pane-item[aria-current="true"] {
   box-shadow: inset 0.25rem 0 var(--color-primary);
   border-color: var(--color-primary);
+}
+.pane-item-title {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pane-item-meta {
+  margin-top: 4px;
+  font-size: var(--font-size-small);
+  color: var(--color-secondary-text);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
 /* 末尾の段階展開トリガー。`hidden`属性付与時は完全非表示、外したときは高さ1pxの不可視ブロックとして
       IntersectionObserverの可視化検出に使う。一覧の行高に影響を与えない。 */
@@ -1180,19 +1203,6 @@ main > .toolbar {
   height: 1px;
   margin: 0;
   padding: 0;
-}
-#screen-plans .name {
-  font-size: var(--font-size-small);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-#screen-plans .meta {
-  margin-top: 4px;
-  font-size: var(--font-size-small);
-  color: var(--color-secondary-text);
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
 }
 #screen-plans .meta .host {
   overflow-wrap: anywhere;
@@ -1396,25 +1406,6 @@ main > .toolbar {
   display: grid;
   grid-template-columns: var(--two-pane-sidebar-width) 1fr;
 }
-#screen-sessions :is(aside) {
-  border-right: 1px solid var(--color-border);
-  overflow: auto;
-  background: var(--color-background);
-}
-#screen-sessions :is(aside) .toolbar {
-  position: sticky;
-  top: 0;
-  background: var(--color-background);
-  padding: 10px;
-  border-bottom: 1px solid var(--color-border);
-}
-#screen-sessions :is(aside) input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-}
 #screen-sessions #warnings {
   margin: 8px 10px;
   padding: 8px;
@@ -1423,21 +1414,17 @@ main > .toolbar {
   background: #fdf6e3;
   font-size: calc(var(--font-size-base) * 0.95);
 }
-#screen-sessions .session-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 8px 10px;
-  border: none;
-  border-bottom: 1px solid #eceff3;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-}
+/* 区切り線は木構造の行が1本だけ持ち、行内の項目は下線を持たない。 */
 #screen-sessions .session-tree-row {
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--color-border);
+}
+#screen-sessions .session-tree-row .pane-item {
+  border-bottom: 0;
+}
+#screen-sessions .session-tree-row:has(> .pane-item[aria-current="true"]) {
+  border-bottom-color: var(--color-primary);
 }
 #screen-sessions .session-tree-toggle {
   flex: 0 0 2rem;
@@ -1450,30 +1437,10 @@ main > .toolbar {
   min-width: 0;
   flex: 1;
 }
-#screen-sessions .session-item:hover {
-  background: #eef2ff;
-}
-#screen-sessions .session-item[aria-current="true"] {
-  background: #e0e7ff;
-  box-shadow: inset 0.25rem 0 var(--color-primary);
-  border-color: var(--color-primary);
-}
 #screen-sessions .session-item .session-cwd {
-  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-#screen-sessions .session-item .session-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--color-secondary-text);
-  font-size: var(--font-size-small);
-}
-#screen-sessions .session-item .session-cwd {
-  font-size: calc(var(--font-size-base) * 0.8125);
-  font-weight: 600;
 }
 #screen-sessions .session-item .session-warning {
   color: #b45309;

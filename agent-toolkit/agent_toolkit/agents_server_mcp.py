@@ -1401,10 +1401,12 @@ class AgentsServerManager:
                 self._status_writer.delete_result(session.session_id, collector="auto-resume")
             return
 
-        if not has_pending_auto_resume_targets(session):
+        # 保留対象が背景taskの終端だけで消えた場合は確定しない。backendは当該終端に続く再開turnの結果で
+        # 保留中の結果を差し替えるため、ここで確定すると再開turnの結果より先に待機表明の結果を公開してしまう。
+        # この場合の確定は再開turnの結果か保留期限の経過に委ねる。
+        if not has_pending_auto_resume_targets(session) and unobserved:
             finalize_pending_result(session)
-            if unobserved:
-                record_unobserved_sessions(session, unobserved)
+            record_unobserved_sessions(session, unobserved)
             return
 
         deadline = session.auto_resume_deadline
@@ -2264,6 +2266,13 @@ async def send_message(
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
     応答は`delivery`だけを含む。直前の終端結果は`atk agents wait`で受領する。
+    `delivery`の値は次のとおりである。
+    `steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
+    委譲先が単一の長時間コマンドを実行している間はturnの区切りに達しないため、指示はキューに残る。
+    到達は、`show`が返す`seconds_since_activity`と`active_tool_uses`の変化で判定する。
+    `reply_started`は終端済みsessionで新しいturnを開始したことを示す。
+    `reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
+    いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
     sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
@@ -2336,7 +2345,15 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
 
     既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
     `model_type`は工程別設定の種別名、または`start_custom`へ直接渡した候補列である。
-    稼働中の子sessionがある場合は、安定した順序の`live_child_sessions`（`session_id`と`cwd`の対）も返す。
+    停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の疑いはこの値で判定する。
+    `seconds_since_output`は最新のテキスト出力からの経過秒数である。
+    テキスト出力だけが止まり活動が続いている状態は長時間のコマンドの実行中であり、停滞ではない。
+    `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻及び入力の要約を返す。
+    前回の照会と同じ呼び出しが同じ開始時刻で続いている場合も、長時間のコマンドの実行中として扱う。
+    `status`が`running`で、このsessionが`start`系ツールで起動し終端をまだ観測していない子sessionがある場合は、
+    安定した順序の`live_child_sessions`（`session_id`と`cwd`の対）を返す。
+    この一覧は子の終端を観測するまで残るため、子が稼働中である根拠にしない。
+    子の状態は、子の`session_id`を渡した`show`の`status`と`seconds_since_activity`で判定する。
     `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、当該識別子へは追送と打ち切りを発行できない。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号及び解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。

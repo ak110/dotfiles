@@ -1,7 +1,7 @@
-"""大量の全文取得を分割読取又は軽量委譲へ誘導する。
+"""CodexのBashによる大量の全文取得を分割読取又は軽量委譲へ誘導する。
 
-上限超過の取得は返却本文の欠落を招くため遮断する。補正後も反復する警告は
-母集団欠落を再発させるため遮断へ昇格する。
+Codexではシェル出力の上限を超えた取得が返却本文の欠落を招き、欠落した範囲を回復できないため遮断する。
+Claude Codeはホストが上限超過を`PARTIAL view`又は退避ファイルとして返し、残りを続けて取得できるため対象外とする。
 """
 
 from __future__ import annotations
@@ -12,8 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from agent_toolkit._hooks import bash_command_parser
-from agent_toolkit._hooks.notice import _WARN_TAG, block_formatter, formatter
-from agent_toolkit._plan import structure as _plan_format
+from agent_toolkit._hooks.notice import block_formatter
 
 _DEFAULT_LINE_THRESHOLD = 350
 # 1回の応答へ収まる実効上限を超える前に、バイト数でも分割へ誘導する。
@@ -21,19 +20,7 @@ _DEFAULT_BYTE_THRESHOLD = 16 * 1024
 _LINE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_LINES"
 _BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
-# `Read`が行の列ではない形（画像の視覚提示、PDFのページ単位）で提示する形式。
-# 当該形式では改行バイトの個数が取得量に対応せず、`offset`と`limit`も取得量を変えない。
-_NON_LINE_ORIENTED_SUFFIXES = frozenset({".bmp", ".gif", ".jpeg", ".jpg", ".pdf", ".png", ".webp"})
 _block_notice = block_formatter("agent-toolkit/pretooluse")
-_llm_notice = formatter("agent-toolkit/pretooluse")
-
-
-@dataclass(frozen=True)
-class LargeReadResult:
-    """Read入力の補正結果、又は補正では上限内へ収まらない場合の遮断理由。"""
-
-    updated_input: dict | None
-    notice: str
 
 
 def _positive_threshold(environment_name: str, default: int) -> int:
@@ -94,11 +81,6 @@ def _measure_and_plan(path: pathlib.Path) -> _ReadPlan | None:
     if count:
         ranges.append((start, count))
     return _ReadPlan(line_count, byte_count, tuple(ranges), tuple(oversized))
-
-
-def _is_non_line_oriented(path: pathlib.Path) -> bool:
-    """`Read`が行の列として提示しない形式であるかを返す。"""
-    return path.suffix.lower() in _NON_LINE_ORIENTED_SUFFIXES
 
 
 def _resolve_path(value: str, cwd: str) -> pathlib.Path:
@@ -163,59 +145,10 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     )
 
 
-def check_large_read(tool_input: dict, cwd: str, *, is_codex: bool = False) -> LargeReadResult | None:
-    """範囲指定のないReadが大容量ファイルを対象とする場合に、補正又は遮断の結果を返す。
-
-    代替の入力は判定の時点で一意に算出できるため、遮断して同じ操作の再発行を求めず、
-    先頭の閾値行がバイト閾値以下なら補正して通す。補正範囲もバイト閾値を超える場合は、
-    行単位のReadでは上限内へ収まらないため遮断し、Bashでのバイト単位分割又は探索委譲を案内する。
-    行数を取得量の指標とする判定は、`Read`が対象を行の列として提示する場合にだけ成立する。
-    行の列として提示しない形式では、補正しても取得量が変わらないため判定の対象から外す。
-    Bashの全文取得は当該形式も行の列として直列化するため`check_large_bash_read`が扱う。
-    """
-    if tool_input.get("offset") is not None or tool_input.get("limit") is not None:
-        return None
-    file_path = tool_input.get("file_path")
-    if not isinstance(file_path, str) or not file_path:
-        return None
-    path = _resolve_path(file_path, cwd)
-    if not is_codex and _plan_format.is_agent_doc_target_file(path):
-        return None
-    if _is_non_line_oriented(path):
-        return None
-    plan = _measure_and_plan(path)
-    if plan is None:
-        return None
-    if plan.line_count <= _line_threshold() and plan.byte_count <= _byte_threshold():
-        return None
-    if not plan.ranges or plan.ranges[0][0] != 1:
-        notice = _block_notice(
-            f"先頭1行が{plan.oversized_lines[0][1]}バイトとなり、バイト閾値"
-            f"{_byte_threshold()}を超えるためReadを遮断した: {path}",
-            fix=(
-                f"Bashで当該行をバイト単位又は構造化して取得する。残りの範囲: {_offset_limit_plan(plan)}。"
-                "agents_serverのstart_exploreへ"
-                f"質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。"
-            ),
-        )
-        return LargeReadResult(updated_input=None, notice=notice)
-    corrected = dict(tool_input)
-    corrected["offset"] = 1
-    corrected["limit"] = plan.ranges[0][1]
-    notice = _llm_notice(
-        f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を先頭{plan.ranges[0][1]}行へ補正した"
-        f"（閾値: {_line_threshold()}行又は{_byte_threshold()}バイト）: {path}\n"
-        f"範囲は次の組で取得する: {_offset_limit_plan(plan)}。\n"
-        f"agents_serverのstart_exploreへ質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。",
-        tag=_WARN_TAG,
-        removable_cause=True,
-        escalate_on_repeat=True,
-    )
-    return LargeReadResult(updated_input=corrected, notice=notice)
-
-
 def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
-    """パイプ・リダイレクトを持たない単純なBash全文取得だけを遮断する。"""
+    """Codexでパイプ・リダイレクトを持たない単純なBash全文取得だけを遮断する。"""
+    if not is_codex:
+        return None
     current = bash_command_parser.CwdResolution(cwd, bool(cwd))
     for pipeline in bash_command_parser.extract_execution_pipelines(command):
         if len(pipeline) != 1 or not pipeline[0].resolved:
@@ -232,8 +165,6 @@ def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> 
         path_counts: list[tuple[pathlib.Path, _ReadPlan]] = []
         for operand in operands:
             path = _resolve_path(operand, base)
-            if not is_codex and _plan_format.is_agent_doc_target_file(path):
-                continue
             measurement = _measure_and_plan(path)
             if measurement is not None:
                 path_counts.append((path, measurement))

@@ -90,6 +90,7 @@ textlint-packages = [
     "textlint-rule-ja-no-abusage",
     # コーディングエージェントのコンテキスト汚染対策として独自強化する辞書を追加する
     "textlint-rule-prh",
+    "textlint-rule-preset-ai-words-ja",
 ]
 
 [tool.pylint."messages control"]

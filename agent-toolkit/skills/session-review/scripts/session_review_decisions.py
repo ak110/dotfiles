@@ -1,72 +1,84 @@
-"""証拠bundleから全候補を含む未判定の一次判定入力を生成する。"""
+"""振り返り素材AWIの本文から、全候補を含む未判定の判定入力を生成する。
+
+素材AWIを取得した後続セッションには準備時の証拠bundleが残らないため、候補集合の正本は素材AWIの
+`## 問題候補`節とする。同節の候補見出しの形式は準備スクリプトが生成し、本モジュールが読む。
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import pathlib
+import re
 import sys
 from typing import Any
 
+CANDIDATES_HEADING = "## 問題候補"
+"""素材AWIで候補を列挙するH2見出し。"""
 
-def _read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
-    values = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-    if any(not isinstance(value, dict) for value in values):
-        raise ValueError(f"JSON object以外の行がある: {path}")
-    return values
+CANDIDATE_HEADING_FORMAT = "### {candidate_id} {candidate_kind}"
+"""候補ごとのH3見出しの書式。準備スクリプトはこの書式で見出しを生成する。"""
+
+_CANDIDATE_HEADING = re.compile(r"^### (c\d{4,}) ([a-z][a-z-]*)$")
+_FENCE = re.compile(r"^(`{3,}|~{3,})")
 
 
-def build_decisions(bundle: pathlib.Path) -> list[dict[str, Any]]:
-    """候補、証拠索引及び重複集計を候補単位へ結合する。"""
-    candidates = _read_jsonl(bundle / "candidates.jsonl")
-    indexes = _read_jsonl(bundle / "candidate-evidence.jsonl")
-    items = [item for item in candidates if item.get("kind") == "candidate"]
-    summaries = [item for item in candidates if item.get("kind") == "candidate-summary"]
-    if len(summaries) != 1 or summaries[0].get("count") != len(items):
-        raise ValueError("候補件数とcandidate-summaryが一致しない")
-    by_id = {item.get("candidate_id"): item for item in items}
-    index_by_id = {item.get("candidate_id"): item for item in indexes}
-    if len(by_id) != len(items) or len(index_by_id) != len(indexes) or by_id.keys() != index_by_id.keys():
-        raise ValueError("候補と証拠索引のIDが一致しない")
-    groups: dict[str, list[str]] = {}
-    for item in items:
-        key = json.dumps(item.get("analysis_group_hint"), ensure_ascii=False, sort_keys=True)
-        groups.setdefault(key, []).append(item["candidate_id"])
-    decisions: list[dict[str, Any]] = []
-    for item in items:
-        candidate_id = item["candidate_id"]
-        index = index_by_id[candidate_id]
-        key = json.dumps(item.get("analysis_group_hint"), ensure_ascii=False, sort_keys=True)
-        if index.get("locators") != item.get("locators"):
-            raise ValueError(f"候補と証拠索引の位置が一致しない: {candidate_id}")
-        decisions.append(
-            {
-                "candidate_id": candidate_id,
-                "candidate_kind": item["candidate_kind"],
-                "locators": item["locators"],
-                "analysis_group_hint": item["analysis_group_hint"],
-                "related_candidate_ids": [other for other in groups[key] if other != candidate_id],
-                "occurrence_count": item.get("occurrence_count", item["count"]),
-                "omitted_locator_count": item.get("omitted_locator_count", 0),
-                "evidence_path": index["path"],
-                "evidence_count": index["evidence_count"],
-                "disposition": "pending",
-            }
-        )
-    return decisions
+def parse_material_candidates(text: str) -> list[dict[str, str]]:
+    """素材AWIの本文から候補IDと候補種別を出現順に返す。
+
+    逐語本文はフェンスで囲まれるため、フェンスの内側の行は見出しとして扱わない。
+    `## 問題候補`節が無い本文、形式外のH3又はIDの重複は`ValueError`とする。
+    候補が0件の本文は、メイン由来の改善点だけを扱う素材として空のリストを返す。
+    """
+    candidates: list[dict[str, str]] = []
+    in_section = False
+    found_section = False
+    fence: str | None = None
+    for line in text.splitlines():
+        if fence is not None:
+            if line.startswith(fence) and not line[len(fence) :].strip():
+                fence = None
+            continue
+        if opening := _FENCE.match(line):
+            fence = opening.group(1)
+            continue
+        if line.startswith("## "):
+            in_section = line.rstrip() == CANDIDATES_HEADING
+            found_section = found_section or in_section
+            continue
+        if not in_section or not line.startswith("### "):
+            continue
+        matched = _CANDIDATE_HEADING.match(line.rstrip())
+        if matched is None:
+            raise ValueError(f"候補見出しの形式が不正: {line}")
+        candidates.append({"candidate_id": matched.group(1), "candidate_kind": matched.group(2)})
+    if not found_section:
+        raise ValueError(f"素材AWIに{CANDIDATES_HEADING}節が無い")
+    identifiers = [item["candidate_id"] for item in candidates]
+    duplicated = sorted({identifier for identifier in identifiers if identifiers.count(identifier) > 1})
+    if duplicated:
+        raise ValueError(f"候補IDが重複している: {', '.join(duplicated)}")
+    return candidates
+
+
+def build_decisions(material: pathlib.Path) -> list[dict[str, Any]]:
+    """素材AWIの全候補を未判定状態の判定入力へ変換する。"""
+    return [
+        {**candidate, "disposition": "pending"} for candidate in parse_material_candidates(material.read_text(encoding="utf-8"))
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
-    """一次判定JSONを保存し、候補と未判定の件数を表示する。"""
+    """判定入力のJSONを保存し、候補と未判定の件数を表示する。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bundle", type=pathlib.Path, required=True, help="証拠bundleの絶対ディレクトリ")
-    parser.add_argument("--output", type=pathlib.Path, required=True, help="一次判定JSONの絶対パス")
+    parser.add_argument("--material", type=pathlib.Path, required=True, help="振り返り素材AWIの本文ファイルの絶対パス")
+    parser.add_argument("--output", type=pathlib.Path, required=True, help="判定JSONの保存先の絶対パス")
     args = parser.parse_args(argv)
     try:
-        decisions = build_decisions(args.bundle)
+        decisions = build_decisions(args.material)
         args.output.write_text(json.dumps(decisions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        print(f"一次判定入力を生成できない: {error}", file=sys.stderr)
+    except (OSError, ValueError) as error:
+        print(f"判定入力を生成できない: {error}", file=sys.stderr)
         return 2
     print(f"候補{len(decisions)}件、未判定{len(decisions)}件: {args.output}")
     return 0

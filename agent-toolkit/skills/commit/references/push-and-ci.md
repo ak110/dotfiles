@@ -5,16 +5,16 @@
 プロジェクト方針が無い場合は次の基準を用いる。
 
 - ユーザーが明示したバージョン区分（MAJOR、MINOR、PATCH）を最優先とする
-- MAJORリリースはユーザーの明示指示がある場合に限る。MAJORは互換破壊の外部宣言であり、`agent-toolkit/rules/01-agent.md`「協調と自律」の確認要否第2段階が定める承認対象に当たる
+- MAJORリリースはユーザーの明示指示がある場合に限る。MAJORは互換破壊の外部宣言であり、`agent-toolkit:confirmation-and-uwi`の`references/judgment.md`「認可を要する操作」が定める承認対象に当たる
 - 現行版が数値3要素のSemVerでない場合は、プロジェクトの対応表又はユーザーが明示した区分から区分を決める。いずれも無い場合はバージョンを変更せず、判定不能の根拠を報告する。文字列の辞書順と桁数は区分の判定材料から外れる
 
 実際にpushする直前に本文書を全文読む。push主体がpush先、更新ref、基準情報、CI監視、
 証拠用一時領域のライフサイクルを所有する。通常commit、stage、messageは親スキル、
-CI失敗の帰属と原因分析は`../../bugfix/SKILL.md`を正本とする。
+CI失敗の帰属と原因分析は`../../bugfix/SKILL.md`に従う。
 
-## ローカル検査とCIジョブの対応
+## ローカルで実行するlintとCIジョブの対応
 
-push前に対象プロジェクトのCI定義を読み、ローカルで実行した全体検査が対応するジョブと、ローカルでは実行されないジョブを確定する。
+push前に対象プロジェクトのCI定義を読み、ローカルで実行した全体検証が対応するジョブと、ローカルでは実行されないジョブを確定する。
 別のOS、別の言語バージョン、実機に依存する資源などが、ローカルでは実行されないジョブが検証する条件に当たる。
 変更対象がこの条件を含む場合は、条件をローカルで検証できる形へ変えてからpushする。
 形を変えられない場合は、CIの結果を待つ工程を見込む。
@@ -28,18 +28,18 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 2. `git fetch`後に上流との差分を双方向で確認する。上流が進んでいる場合は追随後に検証をやり直す
 3. `git remote -v`、`git branch --show-current`、有効なpush設定から、承認済みのremoteとdestinationを確認する。
    最初に引数なし`git push --dry-run --porcelain`を実行する。
-   引数なし経路が失敗するか意図したrefspecを示さない場合は、
+   引数なしの実行が失敗するか意図したrefspecを示さない場合は、
    `git push --dry-run --porcelain <remote> <source>:<destination>`を実行する。
-   次の表で経路を選ぶ
+   次の表で方式を選ぶ
 
-   | 引数なしdry-runの結果 | 明示dry-runの結果 | 選ぶ経路 |
+   | 引数なしdry-runの結果 | 明示dry-runの結果 | 選ぶ方式 |
    | --- | --- | --- |
-   | 成功し、全status lineが承認済みremote・destinationへの意図したrefspecを示す | 実行不要 | 標準経路 |
-   | 失敗、または意図したrefspecを示さない | 成功し、remoteとdestinationが承認範囲と完全一致 | 明示経路 |
+   | 成功し、全status lineが承認済みremote・destinationへの意図したrefspecを示す | 実行不要 | 標準指定 |
+   | 失敗、または意図したrefspecを示さない | 成功し、remoteとdestinationが承認範囲と完全一致 | 明示指定 |
    | 失敗、または意図したrefspecを示さない | 上記以外 | pushしない |
 
-   明示経路ではremote、source、完全なdestination refをすべて書く。
-   pushへ進むのは、いずれの経路でも拒否と失敗予定のrefが無い場合に限る
+   明示指定ではremote、source、完全なdestination refをすべて書く。
+   pushへ進むのは、いずれの方式でも拒否と失敗予定のrefが無い場合に限る
 
 呼び出し元が当該pushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
 CIを判定する場合は、次の3工程で監視用の証拠を作成する。
@@ -70,8 +70,8 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 
 ## pushと監視
 
-1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する。
-   明示経路では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
+1. 標準指定ではremote名とbranch名を明示せず`git push`を単独で実行する。
+   明示指定では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
 2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
    - CI通過をこのセッションで判定しない場合は、`--baseline`を実行せずに後始末へ進む
    - GitHub Actionsでは、対象workflowの直近の成功runから開始時刻と終了時刻を取得する。`gh`の入力と出力形式は実行直前のヘルプで確定する
@@ -82,22 +82,22 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
    - 起動した処理は同じprocessのまま維持する。進捗表示のために短い`--timeout`の別processへ分割する形と、実行中のplugin root更新を契機に置換する形は、いずれも判定対象の実行を取りこぼす
    - push前のbaselineが無い場合又は別の主体がpushしたcommitを待つ場合は、対象の40桁の完全長commit SHAを
      `--wait-sha`へ渡す。この起動形は対象SHAの全実行を判定対象とする
-   - baseline経路はpush前に存在した実行IDを除外するため、自身のpushにより新しく登録された実行だけを判定対象とする
-   - GitLab経路では、親pipelineに加えて同一projectのbridgeが再帰的に指すdownstream pipelineとそのジョブを判定対象とし、入れ子の下流も親の待機結果へ反映する
+   - baseline方式はpush前に存在した実行IDを除外するため、自身のpushにより新しく登録された実行だけを判定対象とする
+   - GitLabでは、親pipelineに加えて同一projectのbridgeが再帰的に指すdownstream pipelineとそのジョブを判定対象とし、入れ子の下流も親の待機結果へ反映する
    - 別projectのdownstream pipelineは対象外とする
 3. CIを判定する場合は、全対象が終了コード0で完了した場合だけCI通過と判定する。
    終了コードの意味は後掲の表に従う。
-   出力が空の場合や成功完了マーカーが無い場合は未判定として実測へ切り替える。
+   出力が空の場合や成功完了マーカーが無い場合は未判定として直接の確認へ切り替える。
    判定対象はbaselineへ保存した完全長SHAに対する実行とし、source refがpush後に進んだ場合も同じSHAで判定する。
    GitHubでpushへ帰属しない自動更新として除外するのは、`event`が`dynamic`かつworkflow名が`Dependabot Updates`である実行に限る。
    同名workflowの手動実行と、他workflowの`dynamic`実行は判定対象へ含める。
    登録猶予の終了後に登録された実行も判定対象に含む。
-   登録猶予は、実行が1件も登録されないまま終わる場合を切り分けるための待機であり、
+   登録猶予は、実行が1件も登録されないまま終わる場合を区別するための待機であり、
    判定対象を確定する期限ではない
 4. CI失敗では、最初の失敗jobを検出した時点でrunまたはpipelineとjobの実識別子、失敗ログ及び生成されるartifactを取得する。
    GitHub Actionsのrunが実行中の場合は、失敗したjobの識別子を使って個別ログを取得し、証拠領域へ保存する。run全体の失敗ログは終端後に取得する。`gh`の受理形式は各操作の直前にヘルプで確定する。
    同一SHAのローカル再現と原因調査も開始する。
-   残りのjob監視を継続し、全jobの終端後に失敗集合、ログ、artifactを再照合して修正範囲を確定する。
+   残りのjob監視を継続し、全jobの終端後に失敗集合、ログ、artifactを改めて確認して修正範囲を確定する。
    長出力の取得と要約は`agents_server`の`start_shell`へ委譲できる。待機と原因分析は自身で行う
 5. 証拠取得後に`agent-toolkit:bugfix`を起動し、同スキルのCI失敗分析契約で帰属、原因及び拡張原因分析の要否を判定する
 6. CI失敗の修正は、同じbranchへの通常commitとして追加する。push済みcommitへのamend、fixup、rebaseその他の履歴書き換えと、force pushは修正手段の外に置く

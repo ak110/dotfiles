@@ -17,11 +17,10 @@ import pathlib
 import sys
 import traceback
 
-_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "stop_bell"})
+_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "stop_bell"})
 
 _MODULE_NAMES: dict[str, str] = {
     "pretooluse": "pytools.claude_hook.pretooluse",
-    "posttooluse": "pytools.claude_hook.posttooluse",
     "stop_bell": "pytools.claude_hook.stop_bell",
 }
 

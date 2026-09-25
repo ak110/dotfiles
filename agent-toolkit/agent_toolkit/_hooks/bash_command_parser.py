@@ -1,12 +1,8 @@
-"""Bashコマンドの実行位置とgit呼び出しイベントを抽出するヘルパー。
+"""Bashコマンドの区間と実行位置を抽出するヘルパー。
 
-`;`・`&&`・`||`・`|`・`&`で区切られたセグメントを順に評価し、`cd`・`pushd`で
-現在ディレクトリを追跡しながら、各git呼び出しごとに`GitEvent`を返す。
-`git -C <dir>`の相対パスは出現時点の現在cwdを基点に正規化する。
-
+`;`・`&&`・`||`・`|`・`&`で区切られたセグメントを分割し、実行前置語を解決した実行位置のトークン列を返す。
+`cd`・`pushd`による現在ディレクトリの変化も解決する。
 シェル展開を含むcwdは静的に解決できないため、解決不能として明示する。
-
-`pretooluse` / `posttooluse`の両方が同一の実行位置とイベント列を消費する形に統一している。
 """
 
 from __future__ import annotations
@@ -78,57 +74,9 @@ _EXEC_PREFIX_WITHOUT_OPTIONS: frozenset[str] = frozenset({"command", "nohup", "u
 _TIMEOUT_DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
 
 _SHELL_TOKENS: frozenset[str] = frozenset({"sh", "bash"})
-_SHELL_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|<<<|<<|>>|<>|>&|<&|>\||>|<)")
-_WRITE_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|>>|<>|>&|>\||>)")
-"""宛先へ書き込むリダイレクト指定。`_SHELL_REDIRECTION_PATTERN`の部分集合とする。"""
 
 _UV_TERMINAL_OPTIONS: frozenset[str] = frozenset({"--help", "-h", "--version", "-V"})
 """後続の指定を実行しない終端オプション。走査中のコマンド自身を実行位置として確定する。"""
-
-
-def without_shell_redirections(tokens: Sequence[str]) -> tuple[str, ...]:
-    """シェルのリダイレクト指定と、その分離された宛先を除いたトークン列を返す。"""
-    retained: list[str] = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        match = _SHELL_REDIRECTION_PATTERN.match(token)
-        if match is None:
-            retained.append(token)
-            index += 1
-            continue
-        index += 1
-        if match.end() == len(token) and index < len(tokens):
-            index += 1
-    return tuple(retained)
-
-
-def shell_redirection_targets(tokens: Sequence[str]) -> tuple[str, ...]:
-    """出力リダイレクトが書き込み先とするトークンを、`without_shell_redirections`と同じ走査で返す。
-
-    当該区間の実行により作成されるパスを呼び出し側が確定するために用いる。
-    入力リダイレクトは書き込みを伴わないため対象から外し、ファイル記述子を指す数字だけの宛先も除く。
-    """
-    targets: list[str] = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        match = _SHELL_REDIRECTION_PATTERN.match(token)
-        if match is None:
-            index += 1
-            continue
-        write_match = _WRITE_REDIRECTION_PATTERN.match(token)
-        if match.end() == len(token):
-            index += 1
-            if index < len(tokens):
-                if write_match is not None:
-                    targets.append(tokens[index])
-                index += 1
-            continue
-        if write_match is not None:
-            targets.append(token[write_match.end() :])
-        index += 1
-    return tuple(target for target in targets if target and not target.isdigit())
 
 
 _UV_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
@@ -596,33 +544,6 @@ class CwdResolution:
     unresolved_expression: str | None = None
 
 
-@dataclasses.dataclass(frozen=True)
-class GitEvent:
-    """Bashコマンド内の1回のgit呼び出しを表す。
-
-    属性:
-
-    - `subcommand`: gitのサブコマンド名（`log`・`commit`・`rebase`・`push`等）。
-      サブコマンドに到達せずグローバルオプションのみで終わる場合は空文字列。
-    - `cwd`: そのgit呼び出しの実効作業ディレクトリ。`cd`・`pushd`・`git -C`の
-      効果を反映した、解決済みのパスを保持する。解決不能な場合は空文字列。
-    - `cwd_resolved`: `cwd`が実効作業ディレクトリとして解決済みなら真。
-      `cd`・`pushd`・`git -C`の引数にシェル展開が含まれる場合や、初期cwdが不明な場合は偽。
-      解決不能なイベントでは、消費側がpayloadのcwdへ戻って状態を参照しない。
-    - `unresolved_expression`: cwdを解決不能にした式。式以外の理由で解決不能な場合と
-      解決済みの場合は`None`。
-    - `global_options`: サブコマンド前に出現したgitのグローバルオプションのトークン列。
-    - `subcommand_args`: サブコマンド名以降のトークン列。
-    """
-
-    subcommand: str
-    cwd: str
-    global_options: list[str]
-    subcommand_args: list[str]
-    cwd_resolved: bool = True
-    unresolved_expression: str | None = None
-
-
 @dataclasses.dataclass
 class QuotingScanner:
     """引用とエスケープの状態を保ちながらシェル文字列を1文字ずつ走査する。
@@ -934,39 +855,6 @@ def split_bash_segments(command: str) -> list[str]:
     return [s.strip() for s in segments if s.strip()]
 
 
-def extract_git_events(command: str, payload_cwd: str) -> list[GitEvent]:
-    """Bashコマンドからgit呼び出しイベント列を抽出する。
-
-    `payload_cwd`を初期cwdとして`split_bash_segments`の結果を順に評価する。
-    `cd`・`pushd`が先頭にあるセグメントでは現在cwdを更新する。
-    `popd`はスタックを静的に追跡できないためcwdを解決不能にする。
-    先頭が`git`のセグメントでは`GitEvent`を1件記録する。
-    その他のコマンドは現在cwdに影響を与えない。
-
-    `shlex.split`で解釈不能なセグメント（クォート閉じ忘れ等）は無視する。
-    """
-    events: list[GitEvent] = []
-    current_cwd = CwdResolution(payload_cwd, bool(payload_cwd))
-    for segment in split_bash_segments(command):
-        try:
-            tokens = shlex.split(segment, posix=True)
-        except ValueError:
-            continue
-        start = _skip_env_assignments(tokens, 0)
-        if start >= len(tokens):
-            continue
-        head = tokens[start]
-        cwd_change = resolve_cwd_change(tokens, current_cwd)
-        if cwd_change is not None:
-            current_cwd = cwd_change
-            continue
-        if head == "git":
-            event = _parse_git_call(tokens[start:], current_cwd)
-            if event is not None:
-                events.append(event)
-    return events
-
-
 def _skip_env_assignments(tokens: list[str], start: int) -> int:
     """先頭の`KEY=VALUE`形式の環境変数代入をスキップした次の位置を返す。"""
     i = start
@@ -1036,62 +924,3 @@ def _normalize_relative(target: str, current_cwd: CwdResolution) -> CwdResolutio
     if not current_cwd.resolved:
         return CwdResolution("", False, current_cwd.unresolved_expression)
     return CwdResolution(os.path.normpath(os.path.join(current_cwd.path, target)), True)
-
-
-def _parse_git_call(tokens: list[str], current_cwd: CwdResolution) -> GitEvent | None:
-    """`git ...`形式のトークン列を解析してGitEventを返す。
-
-    `tokens[0]`は`git`である前提。グローバルオプションを順次解釈して`-C`の効果を
-    実効cwdへ反映し、最初に登場したオプション以外のトークンをサブコマンドとして扱う。
-    サブコマンドに到達せず終わった場合は`subcommand`が空文字列のGitEventを返す。
-    未知のオプション・形式は中断してその時点のGitEventを返す。
-    """
-    if not tokens or tokens[0] != "git":
-        return None
-    global_options: list[str] = []
-    effective_cwd = current_cwd
-    i = 1
-    while i < len(tokens):
-        token = tokens[i]
-        if token.startswith("--") and "=" in token:
-            key, _, value = token.partition("=")
-            if key in _GLOBAL_OPTIONS_WITH_VALUE:
-                global_options.append(token)
-                # `--git-dir` / `--work-tree` 等は実効cwdに直接影響しないため値を記録するのみ。
-                i += 1
-                continue
-            if key in _GLOBAL_OPTIONS_WITHOUT_VALUE:
-                # 値を持たないはずのオプションに`=`が付く場合は未知扱い。
-                break
-            break
-        if token in _GLOBAL_OPTIONS_WITH_VALUE:
-            if i + 1 >= len(tokens):
-                break
-            value = tokens[i + 1]
-            global_options.append(token)
-            global_options.append(value)
-            if token == "-C":
-                effective_cwd = _normalize_relative(value, effective_cwd)
-            i += 2
-            continue
-        if token in _GLOBAL_OPTIONS_WITHOUT_VALUE:
-            global_options.append(token)
-            i += 1
-            continue
-        # サブコマンド到達。
-        return GitEvent(
-            subcommand=token,
-            cwd=effective_cwd.path,
-            global_options=global_options,
-            subcommand_args=list(tokens[i + 1 :]),
-            cwd_resolved=effective_cwd.resolved,
-            unresolved_expression=effective_cwd.unresolved_expression,
-        )
-    return GitEvent(
-        subcommand="",
-        cwd=effective_cwd.path,
-        global_options=global_options,
-        subcommand_args=[],
-        cwd_resolved=effective_cwd.resolved,
-        unresolved_expression=effective_cwd.unresolved_expression,
-    )

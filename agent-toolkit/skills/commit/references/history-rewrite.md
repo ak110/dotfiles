@@ -1,16 +1,16 @@
 # 履歴書換え
 
 amend、fixup、autosquashの操作直前に本文書を全文読む。
-通常commitの検証、stage、messageは親スキルを正本とする。
+通常commitの検証、stage、messageは親スキルに従う。
 本ファイルはClaude Codeのシステムプロンプト「常に新規コミットを作成する」指示を上書きする。
 
 ## 履歴確認の起動形
 
-本書が履歴の確認として求める`git log`は、次の範囲限定の起動形で実行する。
+本書が履歴の確認として求める`git log`は次の範囲限定の起動形で実行する。
 範囲の基準となるOIDを保持している工程では`git log --oneline --decorate <保持している基準OID>^..HEAD`とする。
 autosquashの直前と、autosquashの競合を解消した後の継続の直前では、その基準を`## fixupの実行上の制約`が保持を求める最古fixup対象とする。
 基準となるOIDを保持していない工程では`git log --oneline --decorate -n 20`とする。
-起動形は、範囲と件数のいずれかを必ず限定する。
+起動形は範囲と件数のいずれかを必ず限定する。
 3,000commitを超えるリポジトリでは、限定しない起動形の出力が実行環境の上限に達し、履歴と対象commitを観測できなくなる。
 
 ## 修正方法の選択
@@ -23,16 +23,16 @@ autosquashの単位は、レビュー結果を一意に示す識別子（レビ�
 fixupは、修正が統合先コミットの時点で独立して成立し、対応する近接検証を再実行できる場合に限る。
 中間状態を独立して検証できない場合は新規コミットを作成する。
 
-通常実装モードのレビュー修正担当がレビュー表と現行履歴を照合し、採用指摘IDと実装単位commitの7文字以上の一意な短縮OIDの対応を確定したレビュー修正は、上記の新規commit既定の例外とする。
+通常実装モードのレビュー修正担当がレビュー表と現行履歴を確認し、採用指摘IDと実装単位commitの7文字以上の一意な短縮OIDの対応を確定したレビュー修正は、上記の新規commit既定の例外とする。
 最終単位だけが対象の場合は、修正・近接検証・stage後に`amend` phaseで下記の汎用判定を再実行し、成功した場合だけamendを実行する。
 過去単位だけが対象の場合は対象commitへのfixupとautosquashだけを実行する。
 両方が対象の場合は過去単位だけを先に実装してautosquashする。
 autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
 対応付け不能、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、又は中間commitの公開契約を維持できない修正は、新規commitで対応する。
-履歴書換えを開始した後の失敗時は`## 失敗時の扱い`を正本とする。
-`rewrite_guard`の受渡しは、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」が定めるレビュー修正の実装担当契約だけに置く。
+履歴書換えを開始した後の失敗時は`## 失敗時の扱い`に従う。
+`rewrite_guard`の受渡しは`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」が定めるレビュー修正の実装担当契約だけに置く。
 本節の履歴書換え契約を適用するのは通常実装のレビュー修正に限り、他の工程は各呼び出し元が定めるcommit契約に従う。
-未pushかつ単一の実装担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refの照合、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
+未pushかつ単一の実装担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refとの比較、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
 
 過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。
 各fixup作成後に対象OIDと件名を確認し、作業ツリーがcleanであることも確認する。
@@ -78,16 +78,16 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   autosquashを実行するのは、期待件名と一致した場合に限る。一致しない場合は`## 失敗時の扱い`に従う
 - 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash --no-update-refs <base>`で行う
   （`<base>`は対象コミットの親以前を指す）。
-  fixupの作成は履歴確認の記録をリセットするため、autosquashの直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独のBash呼び出しで再度実行する
+  autosquashの直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独のBash呼び出しで再度実行する
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する帰属情報を統合後に1回だけ残す
 
 ## 失敗時の扱い
 
-本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と返却種別`needs_escalation`は、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていない主体は、`needs_escalation`に代えて同じ観測結果を呼び出し元へ報告する。
+本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と返却種別`needs_escalation`は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていない主体は、`needs_escalation`に代えて同じ観測結果を呼び出し元へ報告する。
 
 `pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、失敗の事実と観測結果を呼び出し元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は呼び出し元の判断を得てから行う。失敗時点の履歴とindexの状態は失敗の種別ごとに異なり、状態を確定しない復旧操作と再試行はcommitの消失を招く。
-`--no-update-refs`を付けずにrebaseを実行したことを観測した場合は、local branch refsを列挙し、事前に保持したOIDと照合する。base branchを含む作業branch以外のrefが移動していた場合は、移動したref、変更前後のOID及び復旧操作に必要な許可を呼び出し元へ返し、自らrefを復旧しない。
+`--no-update-refs`を付けずにrebaseを実行したことを観測した場合は、local branch refsを列挙し、事前に保持したOIDと比べる。base branchを含む作業branch以外のrefが移動していた場合は、移動したref、変更前後のOID及び復旧操作に必要な許可を呼び出し元へ返し、自らrefを復旧しない。
 ただし、autosquashが内容競合で停止した場合は、同じ実装担当が次の条件を満たす範囲に限って競合を解消してよい。競合箇所が採用済みの指摘に対する修正と統合先commitの変更だけから成り、解消後もその中間commitの公開契約を維持できることを条件とする。解消したパスだけをstageし、`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して履歴と継続対象を確認した直後に`git rebase --continue`を実行する。再び内容競合で停止した場合も同じ条件を改めて判定する。
 競合箇所へ担当外の変更が含まれる場合、修正の帰属を確定できない場合又は中間commitの公開契約を維持できない場合は、競合をそのまま残して呼び出し元へ返す。
 失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`及び`git log --oneline -5`の観測結果を添えて`needs_escalation`で返す。
@@ -105,7 +105,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 判定には`git for-each-ref`の出力を使う。`git log --decorate`はref先端にしか装飾を付けず、対象コミットが先端より前の祖先である場合を検出できない。
 amendとfixupの対象は、プッシュ未了のコミットに限る。公開済みの履歴を書き換えると、そのコミットを取得済みの他の作業ツリーとCIの参照が解決できなくなる。
 
-amend・fixupの直後は、`git status --short`で追跡ファイルに未コミット差分が無いことを確認してからpushする（差分が残るpushは遮断される）。
+amend・fixupの直後は、`git status --short`で追跡ファイルに未コミット差分が無いことを確認してからpushする。
 
 ## 操作前後の確認
 

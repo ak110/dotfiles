@@ -8,8 +8,8 @@ description: >
 
 # dotfilesのリリース運用
 
-本スキルは、本リポジトリの`develop`と`master`のリリース運用と、日次リリースの判定手順を提供する。
-検査と整形の手順は`dotfiles-development`が扱う。
+本スキルは本リポジトリの`develop`と`master`のリリース運用と、日次リリースの判定手順を提供する。
+テストや整形の手順は`dotfiles-development`が扱う。
 
 ## developとmasterのリリース運用
 
@@ -21,6 +21,6 @@ description: >
 
     - 続けて、既存又は新規PRの完全なURLを指定して`merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
     - PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する
-  - それ以外の経路では、リリースPRの作成を手動で行う。PRのマージ後は`merge-pr`の手順で同期、CI及び必要なReleaseを検収する
-  - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はリリース経路によらず必要であり、更新漏れは`develop`へのpushで実行されるCIの`statusline-version` jobが検出する
+  - それ以外の方法で作業する場合は、リリースPRの作成を手動で行う。PRのマージ後は`merge-pr`の手順で同期、CI及び必要なReleaseを検収する
+  - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はどの手順でリリースする場合でも必要であり、更新し忘れた場合は`develop`へのpushで実行されるCIの`statusline-version` jobが検出する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](../../../docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design.md#developとmasterのbranchリリース設計)を参照する

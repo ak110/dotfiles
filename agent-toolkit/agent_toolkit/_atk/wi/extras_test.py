@@ -428,7 +428,7 @@ class TestListAwiStatusActive:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=awi", "--status=active", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--status=active", "--no-jsonl"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -459,12 +459,12 @@ class TestListAwiStatusActive:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--no-jsonl"], home=tmp_path)
         assert exc_info.value.code == 0
         default_out = capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--status=active", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--status=active", "--no-jsonl"], home=tmp_path)
         assert exc_info.value.code == 0
         active_out = capsys.readouterr().out
 
@@ -497,7 +497,7 @@ class TestListAwiStatusRejected:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=awi", "--status=rejected", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--status=rejected", "--no-jsonl"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()

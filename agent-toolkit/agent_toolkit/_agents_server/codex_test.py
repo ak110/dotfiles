@@ -17,7 +17,7 @@ from agent_toolkit._plan import locations as plan_file
 
 
 class _ThreadStartClient:
-    """thread/startの入力を保持して固定threadを返す検体。"""
+    """thread/startの入力を保持して固定threadを返すスタブ。"""
 
     def __init__(self) -> None:
         self.params: dict[str, Any] | None = None
@@ -29,7 +29,7 @@ class _ThreadStartClient:
 
 
 class _SilentClient:
-    """要求を受理したまま応答を返さないApp Serverクライアントの検体。"""
+    """要求を受理したまま応答を返さないApp Serverクライアントのスタブ。"""
 
     async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         del method, params  # noqa
@@ -38,7 +38,7 @@ class _SilentClient:
 
 
 class _HangingStream:
-    """行を返さないまま待機し続けるストリームの検体。"""
+    """行を返さないまま待機し続けるストリームのスタブ。"""
 
     async def readline(self) -> bytes:
         await asyncio.Event().wait()
@@ -46,7 +46,7 @@ class _HangingStream:
 
 
 class _AcceptingStdin:
-    """書き込みを受理するだけのstdinの検体。"""
+    """書き込みを受理するだけのstdinのスタブ。"""
 
     def write(self, data: bytes) -> None:
         del data  # noqa
@@ -56,7 +56,7 @@ class _AcceptingStdin:
 
 
 class _DisconnectedStdin:
-    """書込時に接続断を返すstdinの検体。"""
+    """書込時に接続断を返すstdinのスタブ。"""
 
     def write(self, data: bytes) -> None:
         del data  # noqa
@@ -67,7 +67,7 @@ class _DisconnectedStdin:
 
 
 class _SilentProcess:
-    """起動後にJSON-RPC応答を返さない子プロセスの検体。"""
+    """起動後にJSON-RPC応答を返さない子プロセスのスタブ。"""
 
     def __init__(self) -> None:
         self.stdin = _AcceptingStdin()
@@ -92,7 +92,7 @@ async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
     client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
     process = _SilentProcess()
     process.__dict__["stdin"] = _DisconnectedStdin()
-    # 実プロセスの代わりに検体用の二重を割り当てるため、静的な型判定の対象から外す。
+    # 実プロセスの代わりにテスト用の代替オブジェクトを割り当てるため、静的な型判定の対象から外す。
     client.process = process  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
     client._initialization_stage = "initialized_sent"
     client._stderr_text = "network unavailable"
@@ -112,7 +112,7 @@ async def _ignore_message(message: dict[str, Any]) -> None:
 
 
 class _InspectableAppServerManager(subject.AppServerManager):
-    """通知入力を検体へ公開する。"""
+    """通知入力をテストへ公開する。"""
 
     async def handle_notification(self, message: dict[str, Any]) -> None:
         await self._handle_notification(message)

@@ -3,12 +3,11 @@
 from agent_toolkit._hooks.pretooluse import agent_checks as _agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks as _content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as _dispatch
-from agent_toolkit._hooks.pretooluse import git_checks as _git_checks
 from agent_toolkit._hooks.pretooluse import large_reads as _large_reads
 from agent_toolkit._hooks.pretooluse import notices as _notices
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 
-_MODULES = (_notices, _dispatch, _content_checks, _git_checks, _large_reads, _shell_checks, _agent_checks)
+_MODULES = (_notices, _dispatch, _content_checks, _large_reads, _shell_checks, _agent_checks)
 
 for _target in _MODULES:
     for _source in _MODULES:

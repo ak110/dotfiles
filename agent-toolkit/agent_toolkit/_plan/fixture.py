@@ -1,9 +1,9 @@
-"""計画本文の検体を`_plan_format`の構造定数から組み立てる。
+"""計画本文のテスト入力を`_plan_format`の構造定数から組み立てる。
 
 計画ファイル（メイン）、計画ファイル（詳細）、計画ファイル（バグ）の正常系本文を書式ごとに1箇所で組み立て、
 固定H2名、表の列名及び表の行名を構造定数から導出する。
 書式の改訂で追随が必要な値を本ファイルへ集約し、各テストが同じ値を文字列リテラルとして個別に持たない状態を保つ。
-違反検体は、本ファイルが公開する行・表・見出しの定数を用いた置換で各テストが組み立てる。
+違反を含むテスト入力は、本ファイルが公開する行・表・見出しの定数を用いた置換で各テストが組み立てる。
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ REFACTORING_TABLE: str = f"{_header_row(_plan_format.PLAN_REFACTORING_TABLE_HEAD
 LEGACY_SIMILAR_REVIEW_SECTION: str = (
     f"### {_plan_format.PLAN_LEGACY_PERMANENCE_H3[0]}\n\n{rows_table(('母集団', '点検観点', '該当箇所'))}\n\n"
 )
-"""廃止済みのH3を持つ既存計画を再現する節。読み取り互換の検体だけに使う。"""
+"""廃止済みのH3を持つ既存計画を再現する節。読み取り互換のテストだけに使う。"""
 
 
 def _permanence_sections(*, refactoring: str = REFACTORING_TABLE, legacy_similar_review: bool = False) -> str:
@@ -208,7 +208,7 @@ def current_plan(
 ### {_plan_format.PLAN_ACCEPTANCE_H3}
 
 {_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)}
-| 公開契約の判定 | ユーザー指示 | 利用者と公開入口 | 判定を実行する | 更新後の結果を得る | 公開入口の検体 |
+| 公開契約の判定 | ユーザー指示 | 利用者と公開入口 | 判定を実行する | 更新後の結果を得る | 公開入口のテスト |
 
 ## {_plan_format.PLAN_H2_CURRENT_PERMANENCE}
 
@@ -331,7 +331,7 @@ def human_detail(*, bug_section: str = "", legacy_similar_review: bool = False) 
 """
 
 
-# --- 旧二ファイル形式（ID表）の検体 ---
+# --- 旧二ファイル形式（ID表）のテスト入力 ---
 
 TWO_FILE_ACTION_ROW: str = "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |"
 TWO_FILE_ACTION_TABLE: str = "\n".join([_header_row(_plan_format.PLAN_ACTION_TABLE_HEADER), TWO_FILE_ACTION_ROW])
@@ -377,7 +377,7 @@ def two_file_main(
     detail_name: str = "sample.detail.md",
     work_type: str = "通常変更",
 ) -> str:
-    """旧二ファイル形式の計画ファイル（メイン）を返す。読み取り互換の検体に使う。"""
+    """旧二ファイル形式の計画ファイル（メイン）を返す。読み取り互換のテストに使う。"""
     materials = _materials_section(materials=MATERIAL_ROWS[:1], requirements=(TWO_FILE_REQUIREMENT_ROW,))
     return f"""# 計画の主題
 
@@ -445,7 +445,7 @@ def to_canonical_main(content: str) -> str:
     )
 
 
-# --- 旧単一ファイル形式の検体 ---
+# --- 旧単一ファイル形式のテスト入力 ---
 
 EXCLUSION_ROWS: tuple[str, ...] = (
     "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |",
@@ -465,11 +465,11 @@ def single_file_plan(
     bug: bool = False,
     exclusions: bool = True,
 ) -> str:
-    """旧単一ファイル形式の計画本文を返す。読み取り互換の検体に使う。"""
+    """旧単一ファイル形式の計画本文を返す。読み取り互換のテストに使う。"""
     work_type = "バグ対応" if bug else "通常変更"
     materials = _materials_section(materials=MATERIAL_ROWS, requirements=REQUIREMENT_ROWS)
     exclusion = EXCLUSION_SECTION if exclusions else ""
-    # 除外・保持表を置かない検体では、当該表でだけ被覆していた採用要求の参照を`根拠`へ移して被覆を保つ。
+    # 除外・保持表を置かないテスト入力では、当該表でだけ被覆していた採用要求の参照を`根拠`へ移して被覆を保つ。
     action_table = (
         TWO_FILE_ACTION_TABLE
         if exclusions

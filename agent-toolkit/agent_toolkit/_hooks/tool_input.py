@@ -18,7 +18,6 @@ Codexのpatch構文はシェル構文として評価せず、公式の`*** Begin
 from __future__ import annotations
 
 import dataclasses
-import difflib
 import pathlib
 
 # Codexの編集ツール名。matcher上は`Edit`・`Write`の別名に一致するが、payloadの`tool_name`は本名で届く。
@@ -43,25 +42,6 @@ _ADD_PREFIX = "*** Add File: "
 _UPDATE_PREFIX = "*** Update File: "
 _DELETE_PREFIX = "*** Delete File: "
 _MOVE_PREFIX = "*** Move to: "
-
-_ALWAYS_LOADED_RULES = frozenset(
-    {
-        "rules/01-agent.md",
-        "rules/02-agent-operations.md",
-        "share/rules-main.md",
-        "share/rules-main.claude-code.md",
-        "share/rules-subagent.md",
-    }
-)
-
-
-def is_always_loaded_rule(path: str) -> bool:
-    """編集対象がプラグイン原本の常時規範5ファイルかを判定する。"""
-    try:
-        relative = pathlib.Path(path).resolve().relative_to(pathlib.Path(__file__).resolve().parents[2])
-    except ValueError:
-        return False
-    return relative.as_posix() in _ALWAYS_LOADED_RULES
 
 
 def is_codex_payload(payload: object) -> bool:
@@ -133,16 +113,6 @@ class MaterializedEdit:
     after_image: str
 
 
-def added_text(image: MaterializedEdit) -> str:
-    """編集前後の全文像から追加・置換された行だけを返す。"""
-    before = image.before_image.splitlines(keepends=True)
-    after = image.after_image.splitlines(keepends=True)
-    matcher = difflib.SequenceMatcher(a=before, b=after, autojunk=False)
-    return "".join(
-        "".join(after[start:end]) for kind, _, _, start, end in matcher.get_opcodes() if kind in {"insert", "replace"}
-    )
-
-
 def parse_operations(tool_name: str, tool_input: object, cwd: str) -> list[EditOperation] | None:
     """編集ツール入力を操作記録の一覧へ変換する。
 
@@ -197,46 +167,6 @@ def materialize(operation: EditOperation) -> MaterializedEdit | None:
     if after is None:
         return None
     return MaterializedEdit(operation, before, after)
-
-
-def unresolved_fragment_labels(operation: EditOperation) -> tuple[str, ...] | None:
-    """現在内容へ一意に適用できない全断片のラベルを返す。
-
-    行単位断片を含む全断片について、境界の欠落と非一意を判定する。
-    入力または対象内容から判定できない操作はNoneを返して遮断対象から除く。
-    """
-    if operation.is_whole_write or operation.kind == KIND_DELETE or not operation.fragments:
-        return None
-    if any(fragment.before == "" for fragment in operation.fragments):
-        return None
-    read_path = operation.source_path if operation.kind == KIND_MOVE else operation.path
-    current = _read_text(read_path)
-    if current is None:
-        return None
-
-    unresolved: list[str] = []
-    if not operation.line_based:
-        for fragment in operation.fragments:
-            count = current.count(fragment.before)
-            if count == 0 or (not fragment.replace_all and count > 1):
-                unresolved.append(fragment.label)
-                continue
-            current = current.replace(fragment.before, fragment.after, -1 if fragment.replace_all else 1)
-        return tuple(unresolved)
-
-    lines = current.split("\n")
-    position = 0
-    for fragment in operation.fragments:
-        before_lines = fragment.before.split("\n")
-        indices = _find_sublist_indices(lines, before_lines, position)
-        if len(indices) != 1:
-            unresolved.append(fragment.label)
-            continue
-        index = indices[0]
-        after_lines = fragment.after.split("\n") if fragment.after else []
-        lines = lines[:index] + after_lines + lines[index + len(before_lines) :]
-        position = index + len(after_lines)
-    return tuple(unresolved)
 
 
 def _read_text(path: str | None) -> str | None:
@@ -524,13 +454,6 @@ def _find_sublist(lines: list[str], target: list[str], start: int) -> int | None
         if lines[index : index + len(target)] == target:
             return index
     return None
-
-
-def _find_sublist_indices(lines: list[str], target: list[str], start: int) -> list[int]:
-    """開始位置以降でtargetが一致する全ての開始位置を返す。"""
-    if not target or len(target) > len(lines):
-        return []
-    return [index for index in range(start, len(lines) - len(target) + 1) if lines[index : index + len(target)] == target]
 
 
 def _resolve(path: str, cwd: str) -> str:

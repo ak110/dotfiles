@@ -50,7 +50,6 @@ TASK_MODEL_TYPES = {
     "exec.subagent.md": "execute",
     "lane-integration.subagent.md": "execute",
     "pick-wi.subagent.md": "pick_wi",
-    "session-review-delegate.subagent.md": "session_review",
     "session-termination.subagent.md": "execute",
     "usability-review.subagent.md": "execute_review",
     "wi-draft-review.subagent.md": "execute_review",

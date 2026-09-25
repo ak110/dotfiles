@@ -54,7 +54,7 @@ def _context(root: pathlib.Path, **kwargs: typing.Any) -> plans.PlansContext:
 
 
 class _FakeWatcher:
-    """常駐SSH接続のRPCを差し替える検体。"""
+    """常駐SSH接続のRPCを差し替えるスタブ。"""
 
     def __init__(self, *, connected: bool, response: typing.Any) -> None:
         self._connected = connected

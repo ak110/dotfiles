@@ -315,7 +315,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
         ["codex", "--version"], capture_output=True, check=True, text=True
     ).stdout.strip()
     if version != "codex-cli 0.154.0":
-        pytest.skip(f"Codex 0.154.0専用検体: {version}")
+        pytest.skip(f"Codex 0.154.0専用のテスト: {version}")
 
     expected = {event[0].lower() + event[1:] for event in subject.CODEX_HOOK_ALLOWLIST}
     observed: list[set[str]] = []

@@ -26,7 +26,9 @@ WORK_COMPLETE = """## 作業完了報告
 
 SUCCESS = """## 振り返り結果報告
 
-- 判定記録: 候補0件 (欠陥0件 / 非欠陥0件)
+- 候補: 3件 (user-intervention 1件 / tool-failure 2件)
+- メイン由来の改善点: 1件
+- 所要時間: 1234秒 (素材作成時点)
 
 ### 対策として投入したWI
 
@@ -158,7 +160,14 @@ def test_main_rejects_invalid_stage_state_combination(
         pytest.param(WORK_COMPLETE, "work-complete", "success", "指定しない", id="state-unexpected"),
         pytest.param(WORK_COMPLETE + "\n## 作業完了報告\n", "work-complete", None, "H2", id="duplicate-h2"),
         pytest.param(
-            SUCCESS.replace("- 判定記録:", "- 成果ファイル: /tmp/x\n- 判定記録:"),
+            SUCCESS.replace("- メイン由来の改善点: 1件\n", ""),
+            "review-result",
+            "success",
+            "`- メイン由来の改善点:`で始まる要約行",
+            id="summary-missing",
+        ),
+        pytest.param(
+            SUCCESS.replace("- 候補:", "- 成果ファイル: /tmp/x\n- 候補:"),
             "review-result",
             "success",
             "成果ファイル",

@@ -90,6 +90,13 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, {"dialogExpiry": "5m"})
         assert result["dialogExpiry"] == "never"
 
+    def test_managed_env_keeps_bash_working_dir_at_project(self, tmp_path: Path):
+        """配布原本はBash呼び出し間の作業ディレクトリ持ち越しを止める環境変数を既存のenvへ加える。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"env": {"FOO": "bar"}})
+        assert result["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] == "1"
+        assert result["env"]["FOO"] == "bar"
+
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
         """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {
@@ -250,8 +257,6 @@ class TestProductionManagedSettings:
             ("PreToolUse", 0, 0),
             ("PreToolUse", 1, 0),
             ("PreToolUse", 2, 2),
-            ("PostToolUse", 1, 0),
-            ("PostToolUse", 2, 0),
             ("Stop", 1, 0),
             ("Stop", 2, 0),
         ],
@@ -295,12 +300,11 @@ class TestProductionManagedSettings:
         assert result.returncode == expected_exit_code
         expected_subcommand = {
             "PreToolUse": "pretooluse",
-            "PostToolUse": "posttooluse",
             "Stop": "stop_bell",
         }[event]
         assert args_path.read_text(encoding="utf-8") == expected_subcommand
 
-    @pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse", "Stop"])
+    @pytest.mark.parametrize("event", ["PreToolUse", "Stop"])
     def test_posix_hook_commands_allow_missing_console_script(self, tmp_path: Path, event: str) -> None:
         """POSIX個人hookはconsole scriptが存在しない場合も通過させる。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(".posix.json")
@@ -330,7 +334,7 @@ class TestProductionManagedSettings:
         assert b"\n" not in raw.replace(b"\r\n", b"")
 
     def test_windows_posttooluse_script_uses_bom_and_crlf(self):
-        """PostToolUse用PowerShellスクリプトはBOM付きUTF-8とCRLF改行で書く。"""
+        """PostToolUseの互換入口のPowerShellスクリプトもBOM付きUTF-8とCRLF改行で書く。"""
         raw = _PROD_POSTTOOLUSE_SCRIPT.read_bytes()
         assert raw.startswith(b"\xef\xbb\xbf")
         assert b"\r\n" in raw
@@ -418,7 +422,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
 
     @pytest.mark.parametrize("hook_exit_code", [0, 1, 2])
     def test_windows_posttooluse_command_always_succeeds(self, tmp_path: Path, hook_exit_code: int) -> None:
-        """WindowsのPostToolUseはconsole scriptの終了コードを通過させない。"""
+        """撤去前の設定が起動するPostToolUseの互換入口は、console scriptの有無によらず正常終了する。"""
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
@@ -435,7 +439,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
         assert result.returncode == 0
 
     def test_windows_posttooluse_command_allows_missing_console_script(self, tmp_path: Path) -> None:
-        """WindowsのPostToolUseはconsole scriptが存在しない場合も通過させる。"""
+        """PostToolUseの互換入口は、console scriptが存在しない場合も出力なしで正常終了する。"""
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
@@ -477,13 +481,72 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
             for hook in group["hooks"]
             if hook.get("type") == "command"
         ]
-        assert len(commands) == 2
-        assert any(
-            '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"' in command for command in commands
+        assert len(commands) == 1
+        assert '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"' in commands[0]
+
+    def test_posix_personal_hooks_converge_to_single_current_registration(self, tmp_path: Path) -> None:
+        """旧形式と現行形式が併存する設定へ適用すると、個人hookは現行形式1件ずつになりPostToolUseは残らない。"""
+        current = json.loads(_PROD_MANAGED_SETTINGS.with_suffix(".posix.json").read_text(encoding="utf-8"))["hooks"]
+        current_commands = {
+            event: next(
+                hook["command"]
+                for group in current[event]
+                for hook in group["hooks"]
+                if "dotfiles-claude-hook" in hook["command"]
+            )
+            for event in ("PreToolUse", "Stop")
+        }
+        existing_hooks = {
+            "PreToolUse": [
+                {
+                    "matcher": "Write|Edit|MultiEdit",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "sh -c 'dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'",
+                        }
+                    ],
+                },
+                {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": current_commands["PreToolUse"]}]},
+            ],
+            "PostToolUse": [
+                {
+                    "matcher": "Skill|Read",
+                    "hooks": [{"type": "command", "command": "sh -c 'dotfiles-claude-hook posttooluse; exit 0'"}],
+                },
+                {
+                    "matcher": "Skill|Read",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": (
+                                "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; "
+                                "dotfiles-claude-hook posttooluse; exit 0'"
+                            ),
+                        }
+                    ],
+                },
+            ],
+            "Stop": [
+                {"hooks": [{"type": "command", "command": "sh -c 'dotfiles-claude-hook stop_bell; exit 0'"}]},
+                {"hooks": [{"type": "command", "command": current_commands["Stop"]}]},
+            ],
+        }
+        target_path = tmp_path / "settings.json"
+        target_path.write_text(json.dumps({"hooks": existing_hooks}), encoding="utf-8")
+
+        update_claude_settings(
+            _PROD_MANAGED_SETTINGS, target_path, overrides=[_PROD_MANAGED_SETTINGS.with_suffix(".posix.json")]
         )
-        assert any(
-            '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-posttooluse.ps1"' in command for command in commands
-        )
+
+        hooks = json.loads(target_path.read_text(encoding="utf-8"))["hooks"]
+        personal = {
+            event: [hook["command"] for group in groups for hook in group["hooks"] if "dotfiles-claude-hook" in hook["command"]]
+            for event, groups in hooks.items()
+        }
+        assert personal["PreToolUse"] == [current_commands["PreToolUse"]]
+        assert personal["Stop"] == [current_commands["Stop"]]
+        assert not personal.get("PostToolUse")
 
 
 class TestUpdateClaudeConfig:

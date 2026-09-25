@@ -168,7 +168,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
 
 
 def _write_pair(root: pathlib.Path, *, parent_body: str, required_name: str = "対象リポジトリ") -> None:
-    """単一の委譲関係を持つ検体を書く。"""
+    """単一の委譲関係を持つテスト入力を書く。"""
     root.mkdir(parents=True, exist_ok=True)
     (root / "task.parent.md").write_text(parent_body, encoding="utf-8")
     (root / "task.subagent.md").write_text(
@@ -178,7 +178,7 @@ def _write_pair(root: pathlib.Path, *, parent_body: str, required_name: str = "�
 
 
 def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker: str = "") -> str:
-    """正規の起動対象ブロックを持つ呼び元検体を返す。"""
+    """正規の起動対象ブロックを持つ呼び元のテスト入力を返す。"""
     return f"# 呼び元\n\n```text\n{marker}\n```\n{after_marker}\n## 起動\n\n対象リポジトリ: 値\n"
 
 
@@ -282,6 +282,60 @@ def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
 
     marker = "事後承認" + "対象:"
     assert all(marker not in content for content in (executor, parent, lanes, plan_standard))
+
+
+def _h2_section(content: str, heading: str) -> str:
+    """指定したH2見出しの本文を次のH2見出しの直前まで返す。"""
+    return content.split(f"\n## {heading}\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+
+
+def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
+    """履歴書換え契約が参照するphase名は、レーン担当の契約がphase表で定義する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    rewrite = (plugin_root / "skills" / "commit" / "references" / "history-rewrite.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    failure = _h2_section(rewrite, "失敗時の扱い")
+    referenced = re.findall(r"`([a-z_]+)`", failure.split("の各phase名", maxsplit=1)[0])
+    defined = re.findall(r"^\| `([a-z_]+)` \|", _h2_section(executor, "レビュー修正の履歴統合"), flags=re.MULTILINE)
+
+    assert referenced
+    assert set(referenced) <= set(defined)
+
+
+def test_review_fix_completion_values_match_receiver() -> None:
+    """実行レビューの呼び出し元が分岐に使う完了値を、レビュー修正の担当が返却値として定める。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    review_parent = (plugin_root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    expected = set(re.findall(r"`(対応完了[^`]*)`", review_parent))
+    returned = set(re.findall(r"`(対応完了[^`]*)`", _h2_section(executor, "レビュー修正の履歴統合")))
+
+    assert expected
+    assert expected <= returned
+
+
+def test_lane_contract_section_references_exist() -> None:
+    """レーン担当の契約の節を指す参照は、実在するH2見出しを指す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    headings = set(re.findall(r"^## (.+)$", executor, flags=re.MULTILINE))
+    referenced: set[str] = set()
+    for path in plugin_root.rglob("*.md"):
+        referenced.update(re.findall(r"exec\.subagent\.md`?「([^」]+)」", path.read_text(encoding="utf-8")))
+
+    assert referenced
+    assert referenced <= headings
+
+
+def test_lane_launch_inputs_reach_lane_owner() -> None:
+    """レーン担当の起動で渡す名前付き入力は、全てレーン担当の契約が扱う。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    inputs = re.findall(r"^- `([^`]+)`: ", _h2_section(parent, "入力"), flags=re.MULTILINE)
+
+    assert "上流投入結果" in inputs
+    assert not [name for name in inputs if name not in executor]
 
 
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:

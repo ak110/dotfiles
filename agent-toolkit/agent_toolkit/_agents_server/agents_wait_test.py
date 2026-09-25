@@ -1266,6 +1266,57 @@ def test_agents_wait_releases_registered_session_missing_from_registry(
     assert error is None
 
 
+def test_agents_wait_releases_registered_session_terminal_in_registry(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """登録簿が終端を示し、結果も状態ファイルの行も無い待機対象を解放して待たずに終える。"""
+    state_root = wait_environment.parents[2]
+    status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
+    session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+
+    with pytest.raises(SystemExit, match="10"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "待機対象の登録が0件" in captured.err
+    retained, error = status_file.read_wait_targets("root-session", "root.json", state_root)
+    assert retained == set()
+    assert error is None
+
+
+def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """待機中に唯一の対象が結果を残さず終端した場合は、待機上限を待たずに対象不在で終える。"""
+    state_root = wait_environment.parents[2]
+    status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
+    session_registry.publish("session-1", terminal=False, state_root=state_root)
+    # 上限到達による終了と区別するため、待機上限をテストの実行時間より十分大きくする。
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 3600.0)
+    sleeps: list[float] = []
+
+    def terminate_on_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+
+    monkeypatch.setattr(agents_wait.time, "sleep", terminate_on_sleep)
+
+    with pytest.raises(SystemExit, match="10"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "待機対象の登録が0件" in captured.err
+    assert len(sleeps) == 1
+    retained, error = status_file.read_wait_targets("root-session", "root.json", state_root)
+    assert retained == set()
+    assert error is None
+
+
 def test_agents_wait_collects_registered_terminal_result_and_releases_target(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

@@ -200,9 +200,9 @@ function createFileItem(file) {
   const item = document.createElement("a");
   item.dataset.key = fileKey(file);
   const name = document.createElement("div");
-  name.className = "name";
+  name.className = "name pane-item-title";
   const meta = document.createElement("div");
-  meta.className = "meta";
+  meta.className = "meta pane-item-meta";
   const hostSpan = document.createElement("span");
   hostSpan.className = "host";
   const ctimeSpan = document.createElement("span");
@@ -222,7 +222,7 @@ function createFileItem(file) {
 
 function updateFileItem(item, file) {
   // 既存ノードのテキスト・クラス・バッジを最新値で上書きする。
-  item.className = "file" + (isSelected(file) ? " active" : "");
+  item.className = "file pane-item";
   if (isSelected(file)) item.setAttribute("aria-current", "true");
   else item.removeAttribute("aria-current");
   item.href = filePageUrl(file.host, file.path, fileSource(file));
@@ -592,6 +592,25 @@ function showPreviewError(message, retry) {
   preview.append(alert);
 }
 
+// 一覧の項目は外部操作（計画の保存による別rootへの移動や削除）で消え得る。同じ対象を再試行しても到達しないため、
+// 選択を解除して移動又は削除済みを伝え、一覧を取り直す。
+function showMissingSelection() {
+  selectedHost = null;
+  selectedSource = "";
+  selectedPath = null;
+  document.getElementById("copy-btn").disabled = true;
+  document.getElementById("copy-path-btn").disabled = true;
+  if (fileSelectionFromUrl()) history.replaceState({atkPlan: true}, "", `${BASE_PATH}/plans`);
+  const preview = document.getElementById("preview");
+  preview.replaceChildren();
+  appliedPreviewHtml = null;
+  const status = document.createElement("div");
+  status.setAttribute("role", "status");
+  status.textContent = "選択した計画ファイルは移動又は削除されたため表示できません。一覧を更新しました。";
+  preview.append(status);
+  void refreshFiles();
+}
+
 async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("#screen-plans main");
@@ -641,6 +660,11 @@ async function openFile(host, path, source) {
   try {
     const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
     if (generation !== previewGeneration) return;
+    if (res.status === 404) {
+      showMissingSelection();
+      if (main) main.scrollTop = 0;
+      return;
+    }
     if (!res.ok) {
       showPreviewError(`HTTP ${res.status}`, () => { void openFile(host, path, source); });
       if (main) main.scrollTop = 0;

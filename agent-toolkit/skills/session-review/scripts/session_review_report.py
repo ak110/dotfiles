@@ -1,487 +1,249 @@
 #!/usr/bin/env python3
-"""session-reviewの一次選別結果から報告を決定的に生成し、構造を検査する。"""
+"""振り返り素材AWIの判定結果から、項目専用の事後承認型UWIの本文を決定的に生成し、入力を検査する。
+
+素材AWIを処理したレーンは、候補ごとの問題、原因、対策、再発防止策及び見送りの理由を
+ユーザーが読んで可否を判断できる形でまとめて届ける。本スクリプトはその本文の骨格を生成し、
+候補集合の過不足、未判定の残存、除外と非欠陥判定の根拠、再発防止策の実体を機械的に検査する。
+"""
 
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
-import math
 import pathlib
 import sys
 from typing import Any
 
-from agent_toolkit._common.markdown_headings import normalize_newlines, top_level_atx_headings
+import session_review_decisions  # pylint: disable=import-error
 
-TIMING_CATEGORIES = (
-    "preparation",
-    "rule-stop",
-    "delegate-runtime",
-    "parent-review",
-)
-ANALYSIS_FIELDS = ("direct_cause", "root_cause", "rule_gap", "action")
-DURATION_TARGET_SECONDS = 180.0
-SUMMARY_MAX_CHARS = 200
-REPORT_H2_HEADINGS = (
-    "対象セッション",
-    "問題候補の判定記録",
-    "メイン由来の改善点",
-    "規範適用による目的逸脱",
-    "所要時間の内訳と改善提案",
-    "登録したキュー項目",
-    "未確認範囲",
-)
-_GENERATED_SECTION_HEADINGS = ("問題候補の判定記録", "所要時間の内訳と改善提案")
-FREE_SECTION_HEADINGS = (
-    "対象セッション",
-    "メイン由来の改善点",
-    "規範適用による目的逸脱",
-    "登録したキュー項目",
-    "未確認範囲",
-)
-"""自由記述の本文を入力から受け取る節。
+ANALYSIS_TEXT_FIELDS = ("observation", "root_cause", "measures")
+"""分析が必ず持つ文字列の欄。問題の観測事象、確定した原因、実施した対策の順とする。"""
 
-表を機械生成する2節を除く全てとする。
-本文を入力として渡せる節を限ると、残る節は生成後の部分編集で埋めることになり、
-報告1件ごとに編集の往復が生じる。
+PREVENTION_KINDS = {
+    "implemented": "実装済み",
+    "active-awi": "未完了のAWI",
+    "uwi": "確認中のUWI",
+}
+"""再発防止策の実体の種別と、UWI本文での表示名。"""
+
+USER_INTERVENTION_KIND = "user-intervention"
+
+USER_INTERVENTION_EXCLUSIONS = {
+    "single-inquiry": "単発の照会",
+    "non-changing-request": "判断を変えない追加要求",
+    "unexplained-refusal": "理由の無い拒否・中断",
+}
+"""ユーザー介入の候補を除外できる区分と表示名。
+
+ユーザー介入は従来の判断を是正した事象であり、原則として再発防止策を要する。
+除外できるのは是正を含まないことを介入本文又は直後の発話の有無で示せる区分に限る。
 """
+
+SECTION_KEYS = ("メイン由来の改善点", "所要時間", "規範適用による目的逸脱")
+"""`--sections`で受理する節名。いずれも省略できる。"""
+
+CHOICES = ("その対応で問題無い", "問題がある")
+"""事後承認型UWIの選択肢。`atk wi add --choices`へ同じ順で渡す。"""
+
 _INPUT_STRUCTURE_HELP = f"""入力JSONの構造:
 
---decisions: 候補ごとの判定を並べたJSON配列。各要素は次のキーを持つJSON object。
-  candidate_id: candidates.jsonlの候補を参照する識別子
-  disposition: 判定の区分。`excluded`（一次選別で除外）又は`analyzed`（完全分析へ送る）の2つだけを受理する
-  reason: `excluded`で必須。欠陥でないと判定した根拠の文字列
-  analysis_id: `analyzed`で必須。参照する分析の識別子の文字列
-  defect: `analyzed`で必須。`欠陥`又は`非欠陥`のいずれかを指定する
+--decisions: 候補ごとの判定を並べたJSON配列。`session-review-decisions`の出力を起点に、各要素の`disposition`を確定する。
+  candidate_id: 素材AWIの候補ID
+  candidate_kind: 素材AWIの候補種別（生成された値をそのまま保持する）
+  disposition: `excluded`（一次選別で除外）又は`analyzed`（分析した）。`pending`が残る入力は受理しない
+  reason: `excluded`で必須。除外の根拠
+  exclusion_category: 候補種別`{USER_INTERVENTION_KIND}`の`excluded`で必須。
+                      {"、".join(f"`{key}`（{label}）" for key, label in USER_INTERVENTION_EXCLUSIONS.items())}のいずれか。
+                      `reason`には介入本文の該当箇所、又は直後の発話の本文とその不在を根拠として書く
+  analysis_id: `analyzed`で必須。参照する分析の識別子
+  defect: `analyzed`で必須。`欠陥`又は`非欠陥`。候補種別`{USER_INTERVENTION_KIND}`は`欠陥`だけを受理する
 
 --analyses: 分析の識別子をキーとするJSON object。値は次のキーを持つJSON object。
-  {ANALYSIS_FIELDS[0]}: 直接的原因
-  {ANALYSIS_FIELDS[1]}: 根本原因
-  {ANALYSIS_FIELDS[2]}: 規範の欠落
-  {ANALYSIS_FIELDS[3]}: 確定した処置
+  {ANALYSIS_TEXT_FIELDS[0]}: 問題の観測事象
+  {ANALYSIS_TEXT_FIELDS[1]}: 確定した原因
+  {ANALYSIS_TEXT_FIELDS[2]}: 実施した対策。欠陥でない場合はその判断の根拠
+  prevention: 再発防止策の実体の配列。各要素は
+              `kind`（{"、".join(f"`{key}`（{label}）" for key, label in PREVENTION_KINDS.items())}）、
+              `ref`（成果物の識別子、AWI又はUWIのファイル名）、`summary`（再発防止策の内容）を持つ。
+              `欠陥`の候補又は候補種別`{USER_INTERVENTION_KIND}`の候補を含む分析では1件以上を必須とする
+  artifacts: 変更した成果物の識別子の配列。`欠陥`の候補を含む分析では1件以上を必須とする
 
---timings: 区間IDをキーとするJSON object。値は`category`（{"、".join(TIMING_CATEGORIES)}のいずれか）と
-           `source`（典拠）を持ち、観測できた区間では`started_at`と`finished_at`をISO 8601の文字列で、
-           観測できない区間では`unknown_reason`を非空文字列で持つ。
-
---duration-analysis: 次のキーを持つJSON object。
-  bottleneck: `interval`（非空文字列）と`seconds`（0以上の有限な数値）を持つJSON object
-  target_session_reduction: 対象セッションの短縮見込み。`seconds`（0以上の有限な数値）と`basis`（非空文字列）を持つJSON object
-  review_process_reduction: 振り返り工程の短縮見込み。同じ構造のJSON object。指定しない場合は観測時間をそのまま比較する
-  non_reducible_reason: 削減できない区間又は理由を示す非空文字列
-  unmeasured_intervals: `interval`と`reason`を非空文字列で持つJSON objectの配列
-  extractor_event: `kind`と`value`を非空文字列で持つJSON object
-  comparison_intervals: 短縮前後の比較へ用いる観測済み区間IDの配列
-
---sections: 節名をキーとするJSON object。値はその節へ置くMarkdown本文の文字列。
-            受理する節名は{"、".join(FREE_SECTION_HEADINGS)}の5つとする。
-            省略した節と空文字列の節は本文を持たない節として生成する。
+--sections: 節名をキーとするJSON object。値はその節の本文の文字列。{"、".join(SECTION_KEYS)}を受理し、いずれも省略できる。
 """
-"""`--help`へ示す入力JSONの構造。
-
-消費側が構造を確定するために実装を読む往復を除く。
-"""
+"""`--help`へ示す入力JSONの構造。消費側が構造を確定するために実装を読む往復を除く。"""
 
 
 class ReportError(ValueError):
-    """入力又は報告構造が契約を満たさない。"""
+    """入力が契約を満たさない。検査で見つかった不足の全件を保持する。"""
+
+    def __init__(self, problems: list[str]) -> None:
+        super().__init__("\n".join(problems))
+        self.problems = problems
 
 
-def _cell_text(text: str) -> str:
-    """表のセルへ収まる1行の要約を返す。"""
-    collapsed = " ".join(text.split()).replace("|", "\\|")
-    if len(collapsed) > SUMMARY_MAX_CHARS:
-        collapsed = collapsed[:SUMMARY_MAX_CHARS] + "…"
-    return collapsed
+def _one_line(text: str) -> str:
+    """改行と連続空白を1つの空白へ畳み、箇条書きの1項目へ収める。"""
+    return " ".join(text.split())
 
 
-def _load_json(path: pathlib.Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+def _nonempty(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
-def _load_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
-    values: list[dict[str, Any]] = []
-    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        value = json.loads(line)
-        if not isinstance(value, dict):
-            raise ReportError(f"{path}:{line_no}: JSON objectではない")
-        values.append(value)
-    return values
+def _material_title(material: str) -> str:
+    for line in material.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    raise ReportError(["素材AWIにH1が無い"])
 
 
-def _locators(value: dict[str, Any]) -> tuple[tuple[str, int], ...]:
-    raw_locators = value.get("locators")
-    if not isinstance(raw_locators, list) or not raw_locators:
-        raise ReportError("候補又は判定にlocatorsがない")
-    locators: list[tuple[str, int]] = []
-    for locator in raw_locators:
-        if not isinstance(locator, dict):
-            raise ReportError("locatorがJSON objectではない")
-        record, line = locator.get("record"), locator.get("line")
-        if not isinstance(record, str) or not isinstance(line, int):
-            raise ReportError("locatorにrecordとlineがない")
-        locators.append((record, line))
-    if locators != sorted(set(locators)):
-        raise ReportError("locatorsが安定順でないか重複している")
-    return tuple(locators)
-
-
-def _seconds(value: dict[str, Any], phase: str) -> float:
-    try:
-        started = dt.datetime.fromisoformat(value["started_at"])
-        finished = dt.datetime.fromisoformat(value["finished_at"])
-    except (KeyError, TypeError, ValueError) as error:
-        raise ReportError(f"{phase}の開始・終了時刻が不正である") from error
-    seconds = (finished - started).total_seconds()
-    if seconds < 0:
-        raise ReportError(f"{phase}の終了時刻が開始時刻より前である")
-    return seconds
-
-
-def _nonempty_string(value: Any, field: str) -> str:
-    """非空文字列を返し、型又は空値を拒否する。"""
-    if not isinstance(value, str) or not value.strip():
-        raise ReportError(f"所要時間分析の{field}は非空文字列で指定する")
-    return value.strip()
-
-
-def _nonnegative_number(value: Any, field: str) -> float:
-    """boolを除く0以上の有限な数値をfloatで返す。"""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ReportError(f"所要時間分析の{field}は0以上の有限な数値で指定する")
-    try:
-        number = float(value)
-    except OverflowError as error:
-        raise ReportError(f"所要時間分析の{field}は0以上の有限な数値で指定する") from error
-    if not math.isfinite(number) or number < 0:
-        raise ReportError(f"所要時間分析の{field}は0以上の有限な数値で指定する")
-    return number
-
-
-def _duration_analysis_lines(value: dict[str, Any], measured: dict[str, float]) -> list[str]:
-    """構造化された所要時間分析を検証し、固定順のMarkdown行へ変換する。"""
-    expected = {
-        "bottleneck",
-        "target_session_reduction",
-        "non_reducible_reason",
-        "unmeasured_intervals",
-        "extractor_event",
-        "comparison_intervals",
-    }
-    allowed = expected | {"review_process_reduction"}
-    invalid_keys = (expected - set(value)) | (set(value) - allowed)
-    if invalid_keys:
-        raise ReportError(f"所要時間分析のキーが不正である: {sorted(invalid_keys)}")
-    bottleneck = value["bottleneck"]
-    target_reduction = value["target_session_reduction"]
-    review_reduction_present = "review_process_reduction" in value
-    review_reduction = value.get("review_process_reduction")
-    extractor_event = value["extractor_event"]
-    unmeasured = value["unmeasured_intervals"]
-    comparison_intervals = value["comparison_intervals"]
-    if not isinstance(bottleneck, dict) or set(bottleneck) != {"interval", "seconds"}:
-        raise ReportError("所要時間分析のbottleneckが不正である")
-    if not isinstance(target_reduction, dict) or set(target_reduction) != {"seconds", "basis"}:
-        raise ReportError("所要時間分析のtarget_session_reductionが不正である")
-    if review_reduction_present and (not isinstance(review_reduction, dict) or set(review_reduction) != {"seconds", "basis"}):
-        raise ReportError("所要時間分析のreview_process_reductionが不正である")
-    if not isinstance(extractor_event, dict) or set(extractor_event) != {"kind", "value"}:
-        raise ReportError("所要時間分析のextractor_eventが不正である")
-    if not isinstance(unmeasured, list):
-        raise ReportError("所要時間分析のunmeasured_intervalsは配列で指定する")
-    if (
-        not isinstance(comparison_intervals, list)
-        or not comparison_intervals
-        or any(not isinstance(interval, str) or not interval for interval in comparison_intervals)
-        or len(set(comparison_intervals)) != len(comparison_intervals)
-    ):
-        raise ReportError("所要時間分析のcomparison_intervalsは重複のない非空文字列配列で指定する")
-    bottleneck_seconds = _nonnegative_number(bottleneck["seconds"], "bottleneck.seconds")
-    target_reduction_seconds = _nonnegative_number(target_reduction["seconds"], "target_session_reduction.seconds")
-    target_reduction_basis = _nonempty_string(target_reduction["basis"], "target_session_reduction.basis")
-    review_reduction_seconds = (
-        _nonnegative_number(review_reduction["seconds"], "review_process_reduction.seconds")
-        if review_reduction is not None
-        else 0.0
-    )
-    review_reduction_line = (
-        f"- 振り返り工程の削減見込み: {review_reduction_seconds:.3f}秒"
-        f"（{_nonempty_string(review_reduction['basis'], 'review_process_reduction.basis')}）"
-        if review_reduction is not None
-        else "- 振り返り工程の削減見込み: 指定なし"
-    )
-    unmeasured_texts: list[str] = []
-    for index, interval in enumerate(unmeasured):
-        if not isinstance(interval, dict) or set(interval) != {"interval", "reason"}:
-            raise ReportError(f"所要時間分析のunmeasured_intervals[{index}]が不正である")
-        unmeasured_texts.append(
-            f"{_nonempty_string(interval['interval'], f'unmeasured_intervals[{index}].interval')}"
-            f"（{_nonempty_string(interval['reason'], f'unmeasured_intervals[{index}].reason')}）"
-        )
-    missing_comparison = [interval for interval in comparison_intervals if interval not in measured]
-    if missing_comparison:
-        comparison_line = f"- 180秒目標との比較: 未確定（未観測区間: {'、'.join(missing_comparison)}）"
-        return [
-            f"- ボトルネック: {_nonempty_string(bottleneck['interval'], 'bottleneck.interval')}（{bottleneck_seconds:.3f}秒）",
-            f"- 対象セッションの削減見込み: {target_reduction_seconds:.3f}秒（{target_reduction_basis}）",
-            review_reduction_line,
-            f"- 削減不能部分: {_nonempty_string(value['non_reducible_reason'], 'non_reducible_reason')}",
-            f"- 未計測区間: {'、'.join(unmeasured_texts) if unmeasured_texts else 'なし'}",
-            f"- 抽出器イベント: {_nonempty_string(extractor_event['kind'], 'extractor_event.kind')}="
-            f"{_nonempty_string(extractor_event['value'], 'extractor_event.value')}",
-            comparison_line,
-        ]
-    measured_seconds = sum(measured[interval] for interval in comparison_intervals)
-    if review_reduction_seconds > measured_seconds:
-        raise ReportError("所要時間分析のreview_process_reduction.secondsが比較対象区間の合計を超える")
-    estimated_seconds = measured_seconds - review_reduction_seconds
-    difference = estimated_seconds - DURATION_TARGET_SECONDS
-    comparison = (
-        f"目標を{abs(difference):.3f}秒下回る"
-        if difference < 0
-        else f"目標を{difference:.3f}秒上回る"
-        if difference > 0
-        else "目標と一致する"
-    )
-    comparison_basis = "改善後見込み" if review_reduction is not None else "観測時間"
-    return [
-        f"- ボトルネック: {_nonempty_string(bottleneck['interval'], 'bottleneck.interval')}（{bottleneck_seconds:.3f}秒）",
-        f"- 対象セッションの削減見込み: {target_reduction_seconds:.3f}秒（{target_reduction_basis}）",
-        review_reduction_line,
-        f"- 削減不能部分: {_nonempty_string(value['non_reducible_reason'], 'non_reducible_reason')}",
-        f"- 未計測区間: {'、'.join(unmeasured_texts) if unmeasured_texts else 'なし'}",
-        f"- 抽出器イベント: {_nonempty_string(extractor_event['kind'], 'extractor_event.kind')}="
-        f"{_nonempty_string(extractor_event['value'], 'extractor_event.value')}",
-        f"- 比較対象区間: {'、'.join(comparison_intervals)}",
-        f"- 180秒目標との比較: 同一区間集合の{comparison_basis}{estimated_seconds:.3f}秒、{comparison}",
-    ]
-
-
-def _timing_rows(timings: dict[str, dict[str, Any]]) -> tuple[list[str], dict[str, float]]:
-    """任意個の観測区間と未観測区間を検証して表へ変換する。"""
-    if not timings:
-        raise ReportError("工程時刻は1区間以上を含める")
-    rows: list[str] = []
-    measured: dict[str, float] = {}
-    for interval_id, value in timings.items():
-        if not isinstance(interval_id, str) or not interval_id or not isinstance(value, dict):
-            raise ReportError("工程時刻の区間ID又は値が不正である")
-        category = value.get("category")
-        source = value.get("source")
-        if category not in TIMING_CATEGORIES:
-            raise ReportError(f"{interval_id}のcategoryが不正である")
-        source_text = _nonempty_string(source, f"timings.{interval_id}.source")
-        timestamp_keys = {"started_at", "finished_at"}
-        has_timestamps = timestamp_keys <= set(value)
-        has_unknown = "unknown_reason" in value
-        expected_keys = {"category", "source"} | (timestamp_keys if has_timestamps else {"unknown_reason"})
-        if has_timestamps == has_unknown or set(value) != expected_keys:
-            raise ReportError(f"{interval_id}は時刻の組又はunknown_reasonの一方だけを持つ")
-        if has_timestamps:
-            seconds = _seconds(value, interval_id)
-            measured[interval_id] = seconds
-            rows.append(f"| {interval_id} | {category} | {seconds:.3f} | {source_text} |")
-        else:
-            reason = _nonempty_string(value["unknown_reason"], f"timings.{interval_id}.unknown_reason")
-            rows.append(f"| {interval_id} | {category} | 不明 | {source_text}: {reason} |")
-    return rows, measured
-
-
-def _section_body(content: str, heading: str) -> str:
-    """指定したH2の本文を次のH2直前まで返す。"""
-    lines = normalize_newlines(content).split("\n")
-    headings = top_level_atx_headings(content, 2)
-    for index, (token, title) in enumerate(headings):
-        if title != heading:
+def validate(
+    candidates: list[dict[str, str]], decisions: list[Any], analyses: dict[str, Any], sections: dict[str, Any]
+) -> list[str]:
+    """入力の不足を全件返す。空のリストは入力が契約を満たすことを示す。"""
+    problems: list[str] = []
+    kinds = {item["candidate_id"]: item["candidate_kind"] for item in candidates}
+    seen: list[str] = []
+    analysis_members: dict[str, list[tuple[str, str]]] = {}
+    for index, decision in enumerate(decisions):
+        if not isinstance(decision, dict):
+            problems.append(f"判定{index + 1}件目がJSON objectではない")
             continue
-        assert token.map is not None
-        following = headings[index + 1][0] if index + 1 < len(headings) else None
-        end = following.map[0] if following is not None and following.map is not None else len(lines)
-        return "\n".join(lines[token.map[1] : end]).strip()
-    raise ReportError(f"報告に見出しがない: ## {heading}")
-
-
-def _check_rendered_report(content: str, expected: str) -> None:
-    """6節の順序と機械生成部分を検査し、各節への担当記述を許容する。"""
-    lines = content.splitlines()
-    if not lines or lines[0] != "# セッション振り返り":
-        raise ReportError("報告のH1が不正である")
-    headings = tuple(title for _, title in top_level_atx_headings(content, 2))
-    if headings != REPORT_H2_HEADINGS:
-        raise ReportError(f"報告のH2が規定の順序と一致しない: {headings!r}")
-    for heading in _GENERATED_SECTION_HEADINGS:
-        expected_body = _section_body(expected, heading)
-        if expected_body not in _section_body(content, heading):
-            raise ReportError(f"機械生成部分が入力と一致しない: ## {heading}")
-
-
-def _section_lines(sections: dict[str, str], heading: str) -> list[str]:
-    """節ごとの自由記述本文を、本文と後続の空行の並びで返す。"""
-    body = sections.get(heading, "").strip()
-    return [body, ""] if body else []
-
-
-def render(
-    candidates: list[dict[str, Any]],
-    decisions: list[dict[str, Any]],
-    analyses: dict[str, dict[str, Any]],
-    timings: dict[str, dict[str, Any]],
-    duration_analysis: dict[str, Any],
-    sections: dict[str, str] | None = None,
-) -> str:
-    """全候補を過不足なく含むMarkdown報告を返す。"""
-    sections = sections or {}
-    unknown = sorted(set(sections) - set(FREE_SECTION_HEADINGS))
-    if unknown:
-        raise ReportError(f"受理しない節名がある: {unknown}")
-    if any(not isinstance(body, str) for body in sections.values()):
-        raise ReportError("節の本文が文字列ではない")
-    summaries = [item for item in candidates if item.get("kind") == "candidate-summary"]
-    candidate_items = [item for item in candidates if item.get("kind") == "candidate"]
-    if len(summaries) != 1 or len(candidate_items) + 1 != len(candidates):
-        raise ReportError("候補入力はcandidateと末尾のcandidate-summaryだけを含める")
-    candidate_by_id: dict[str, dict[str, Any]] = {}
-    for candidate in candidate_items:
-        candidate_id = candidate.get("candidate_id")
-        if not isinstance(candidate_id, str) or not candidate_id or candidate_id in candidate_by_id:
-            raise ReportError("候補candidate_idがないか重複している")
-        candidate_by_id[candidate_id] = candidate
-    for candidate in candidate_items:
-        locators = _locators(candidate)
-        if candidate.get("count") != len(locators):
-            raise ReportError("候補countがlocatorsの件数と一致しない")
-    decision_by_id: dict[str, dict[str, Any]] = {}
-    for decision in decisions:
         candidate_id = decision.get("candidate_id")
-        if not isinstance(candidate_id, str) or not candidate_id or candidate_id in decision_by_id:
-            raise ReportError("判定candidate_idがないか重複している")
-        decision_by_id[candidate_id] = decision
-    if decision_by_id.keys() != candidate_by_id.keys():
-        missing = sorted(candidate_by_id.keys() - decision_by_id.keys())
-        extra = sorted(decision_by_id.keys() - candidate_by_id.keys())
-        raise ReportError(f"候補と判定が一致しない: missing={missing}, extra={extra}")
-    flattened = sorted({locator for candidate in candidate_items for locator in _locators(candidate)})
-    if flattened:
-        summary_locators = _locators({"locators": summaries[0].get("included_locators")})
-    else:
-        included_locators = summaries[0].get("included_locators")
-        if not isinstance(included_locators, list) or included_locators:
-            raise ReportError("候補0件のincluded_locatorsは空listでなければならない")
-        summary_locators = ()
-    if tuple(flattened) != summary_locators:
-        raise ReportError("集約候補の全locatorが一次選別集合と一致しない")
-    if summaries[0].get("count") != len(candidate_items):
-        raise ReportError("candidate-summaryのcountが候補件数と一致しない")
-    if summaries[0].get("included_locator_count") != len(flattened):
-        raise ReportError("candidate-summaryのlocator件数が一致しない")
-    candidate_rows: list[str] = []
-    used_analysis_ids: set[str] = set()
-    analyzed_count = 0
-    excluded_count = 0
-    defect_count = 0
-    for candidate in candidate_items:
-        candidate_id = str(candidate["candidate_id"])
-        locators = _locators(candidate)
-        locator_text = ", ".join(f"{record}:{line}" for record, line in locators)
-        decision = decision_by_id[candidate_id]
+        if candidate_id not in kinds:
+            problems.append(f"素材AWIに無い候補IDの判定がある: {candidate_id}")
+            continue
+        if candidate_id in seen:
+            problems.append(f"{candidate_id}: 判定が重複している")
+            continue
+        seen.append(candidate_id)
+        kind = kinds[candidate_id]
         disposition = decision.get("disposition")
         if disposition == "excluded":
-            reason = decision.get("reason")
-            if not isinstance(reason, str) or not reason.strip():
-                raise ReportError(f"{locator_text}: 一次選別の除外理由がない")
-            outcome = f"一次選別で除外: {reason}"
-            analysis_id_text = "-"
-            excluded_count += 1
+            if not _nonempty(decision.get("reason")):
+                problems.append(f"{candidate_id}: 除外の根拠`reason`が無い")
+            if kind == USER_INTERVENTION_KIND and decision.get("exclusion_category") not in USER_INTERVENTION_EXCLUSIONS:
+                problems.append(
+                    f"{candidate_id}: ユーザー介入の除外区分`exclusion_category`が"
+                    f"{'、'.join(USER_INTERVENTION_EXCLUSIONS)}のいずれでもない"
+                    "（「ユーザーの選好」「追加要件」「既存規範で扱える」は除外の根拠にならない）"
+                )
         elif disposition == "analyzed":
             analysis_id = decision.get("analysis_id")
-            analysis = analyses.get(analysis_id) if isinstance(analysis_id, str) else None
-            if not isinstance(analysis, dict):
-                raise ReportError(f"{locator_text}: 完全分析が見つからない")
-            missing_fields = [
-                field for field in ANALYSIS_FIELDS if not isinstance(analysis.get(field), str) or not analysis[field].strip()
-            ]
-            if missing_fields:
-                raise ReportError(f"{locator_text}: 完全分析の必須欄がない: {missing_fields}")
-            assert isinstance(analysis_id, str)
-            used_analysis_ids.add(analysis_id)
             defect = decision.get("defect")
-            if defect not in ("欠陥", "非欠陥"):
-                raise ReportError(f"{locator_text}: defectは欠陥又は非欠陥で指定する")
-            outcome = defect
-            analysis_id_text = analysis_id
-            analyzed_count += 1
-            defect_count += defect == "欠陥"
+            if not _nonempty(analysis_id):
+                problems.append(f"{candidate_id}: 分析の識別子`analysis_id`が無い")
+            elif analysis_id not in analyses:
+                problems.append(f"{candidate_id}: 分析`{analysis_id}`が`--analyses`に無い")
+            if defect not in {"欠陥", "非欠陥"}:
+                problems.append(f"{candidate_id}: `defect`が`欠陥`又は`非欠陥`ではない")
+            elif kind == USER_INTERVENTION_KIND and defect != "欠陥":
+                problems.append(f"{candidate_id}: ユーザー介入を分析した候補は`欠陥`として再発防止策を対応付ける")
+            if _nonempty(analysis_id) and isinstance(defect, str):
+                analysis_members.setdefault(str(analysis_id), []).append((kind, defect))
         elif disposition == "pending":
-            raise ReportError(f"{locator_text}: 判定が未完了である")
+            problems.append(f"{candidate_id}: 未判定のまま残っている")
         else:
-            raise ReportError(f"{locator_text}: dispositionが不正である")
-        summary = _cell_text(str(candidate.get("text", candidate.get("candidate_kind", "候補"))))
-        occurrence_count = candidate.get("occurrence_count")
-        omitted_locator_count = candidate.get("omitted_locator_count")
-        if isinstance(occurrence_count, int) and isinstance(omitted_locator_count, int):
-            summary += f"（発生{occurrence_count}件、代表位置{len(locators)}件、省略{omitted_locator_count}件）"
-        candidate_rows.append("| " + " | ".join((f"{locator_text} {summary}", outcome, analysis_id_text)) + " |")
-
-    analysis_rows = [
-        "| "
-        + " | ".join(
-            (
-                analysis_id,
-                _cell_text(analyses[analysis_id]["direct_cause"]),
-                _cell_text(analyses[analysis_id]["root_cause"]),
-                _cell_text(analyses[analysis_id]["rule_gap"]),
-                _cell_text(analyses[analysis_id]["action"]),
-            )
+            problems.append(f"{candidate_id}: `disposition`が`excluded`又は`analyzed`ではない")
+    problems.extend(f"{candidate_id}: 判定が無い" for candidate_id in kinds if candidate_id not in seen)
+    for analysis_id, members in analysis_members.items():
+        analysis = analyses.get(analysis_id)
+        if not isinstance(analysis, dict):
+            continue
+        problems.extend(
+            f"分析{analysis_id}: `{field}`が無い" for field in ANALYSIS_TEXT_FIELDS if not _nonempty(analysis.get(field))
         )
-        + " |"
-        for analysis_id in sorted(used_analysis_ids)
-    ]
+        needs_prevention = any(defect == "欠陥" or kind == USER_INTERVENTION_KIND for kind, defect in members)
+        problems.extend(_prevention_problems(analysis_id, analysis.get("prevention"), required=needs_prevention))
+        artifacts = analysis.get("artifacts", [])
+        if not isinstance(artifacts, list) or not all(_nonempty(item) for item in artifacts):
+            problems.append(f"分析{analysis_id}: `artifacts`が文字列の配列ではない")
+        elif any(defect == "欠陥" for _, defect in members) and not artifacts:
+            problems.append(f"分析{analysis_id}: 欠陥の候補へ対応する変更した成果物`artifacts`が無い")
+    unknown_sections = sorted(set(sections) - set(SECTION_KEYS))
+    if unknown_sections:
+        problems.append(f"受理しない節名がある: {', '.join(unknown_sections)}")
+    problems.extend(f"節{key}: 本文が文字列ではない" for key, value in sections.items() if not isinstance(value, str))
+    return problems
 
-    timing_rows, measured = _timing_rows(timings)
-    duration_lines = _duration_analysis_lines(duration_analysis, measured)
-    return "\n".join(
-        [
-            "# セッション振り返り",
-            "",
-            "## 対象セッション",
-            "",
-            *_section_lines(sections, "対象セッション"),
-            "## 問題候補の判定記録",
-            "",
-            "| 候補 | 判定 | 分析ID |",
-            "| --- | --- | --- |",
-            *candidate_rows,
-            "",
-            "| 分析ID | 直接的原因 | 根本原因 | 既存規範が適用されなかった理由 | 処置 |",
-            "| --- | --- | --- | --- | --- |",
-            *analysis_rows,
-            "",
-            f"構造検査: 候補{len(candidate_items)}件、分析件数{analyzed_count}件、"
-            f"一次選別で除外した件数{excluded_count}件、欠陥{defect_count}件、"
-            f"locator{len(flattened)}件、過不足0件、重複0件",
-            "",
-            "## メイン由来の改善点",
-            "",
-            *_section_lines(sections, "メイン由来の改善点"),
-            "## 規範適用による目的逸脱",
-            "",
-            *_section_lines(sections, "規範適用による目的逸脱"),
-            "## 所要時間の内訳と改善提案",
-            "",
-            "| 区間 | 区分 | 秒 | 典拠・未観測理由 |",
-            "| --- | --- | ---: | --- |",
-            *timing_rows,
-            "",
-            *duration_lines,
-            "",
-            "## 登録したキュー項目",
-            "",
-            *_section_lines(sections, "登録したキュー項目"),
-            "## 未確認範囲",
-            "",
-            *_section_lines(sections, "未確認範囲"),
-        ]
-    )
+
+def _prevention_problems(analysis_id: str, prevention: Any, *, required: bool) -> list[str]:
+    if prevention is None:
+        prevention = []
+    if not isinstance(prevention, list):
+        return [f"分析{analysis_id}: `prevention`が配列ではない"]
+    problems = [
+        f"分析{analysis_id}: 再発防止策{index + 1}件目の`kind`・`ref`・`summary`が不正"
+        for index, item in enumerate(prevention)
+        if not isinstance(item, dict)
+        or item.get("kind") not in PREVENTION_KINDS
+        or not _nonempty(item.get("ref"))
+        or not _nonempty(item.get("summary"))
+    ]
+    if required and not prevention:
+        problems.append(
+            f"分析{analysis_id}: 再発防止策の実体`prevention`が無い"
+            f"（{'、'.join(PREVENTION_KINDS.values())}のいずれかを対応付ける）"
+        )
+    return problems
+
+
+def render(material: str, decisions: list[dict[str, Any]], analyses: dict[str, Any], sections: dict[str, str]) -> str:
+    """検査済みの入力から事後承認型UWIの質問本文を生成する。"""
+    title = _material_title(material)
+    by_analysis: dict[str, list[dict[str, Any]]] = {}
+    skipped: list[dict[str, Any]] = []
+    for decision in decisions:
+        if decision["disposition"] == "analyzed" and decision["defect"] == "欠陥":
+            by_analysis.setdefault(decision["analysis_id"], []).append(decision)
+        else:
+            skipped.append(decision)
+    lines = [
+        f"振り返り素材「{title}」の候補に対して実施した対策と、見送った候補の判断は、この内容で問題ありませんか？",
+        "",
+        "## 選択肢と帰結",
+        "",
+        f"- {CHOICES[0]}: 実施した対策と見送りの判断をそのまま維持し、この確認を終えます。",
+        f"- {CHOICES[1]}: 回答欄へ、是正を望む候補と望む対応を書いてください。後続の処理で是正します。",
+        "",
+        "## 判断材料",
+        "",
+        f"候補{len(decisions)}件のうち、対策を実施した候補は{len(decisions) - len(skipped)}件、"
+        f"見送った候補は{len(skipped)}件です。",
+    ]
+    for number, (analysis_id, members) in enumerate(by_analysis.items(), start=1):
+        analysis = analyses[analysis_id]
+        candidate_ids = "、".join(f"{item['candidate_id']}（{item['candidate_kind']}）" for item in members)
+        lines.extend(
+            [
+                "",
+                f"- 対策{number}: 候補{candidate_ids}",
+                f"  - 問題: {_one_line(analysis['observation'])}",
+                f"  - 原因: {_one_line(analysis['root_cause'])}",
+                f"  - 対策: {_one_line(analysis['measures'])}",
+            ]
+        )
+        lines.extend(
+            f"  - 再発防止策: {_one_line(item['summary'])}（{PREVENTION_KINDS[item['kind']]}: {item['ref']}）"
+            for item in analysis.get("prevention", [])
+        )
+        lines.append(f"  - 変更した成果物: {'、'.join(analysis.get('artifacts', []))}")
+    if skipped:
+        lines.extend(["", "見送った候補とその理由は次のとおりです。", ""])
+        for decision in skipped:
+            label = f"{decision['candidate_id']}（{decision['candidate_kind']}）"
+            if decision["disposition"] == "excluded":
+                category = USER_INTERVENTION_EXCLUSIONS.get(decision.get("exclusion_category", ""))
+                prefix = f"{category}として除外" if category else "除外"
+                lines.append(f"- {label}: {prefix}。{_one_line(decision['reason'])}")
+            else:
+                reason = _one_line(analyses[decision["analysis_id"]]["measures"])
+                lines.append(f"- {label}: 欠陥ではないと判断。{reason}")
+    for key in SECTION_KEYS:
+        body = sections.get(key, "")
+        if body.strip():
+            lines.extend(["", f"{key}: {_one_line(body)}"])
+    return "\n".join(lines) + "\n"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -489,50 +251,50 @@ def _parser() -> argparse.ArgumentParser:
     parser.formatter_class = argparse.RawDescriptionHelpFormatter
     parser.epilog = _INPUT_STRUCTURE_HELP
     parser.add_argument("mode", choices=("generate", "check"))
-    parser.add_argument("--candidates", type=pathlib.Path, required=True, help="抽出器が出力したcandidates.jsonlの絶対パス")
+    parser.add_argument("--material", type=pathlib.Path, required=True, help="振り返り素材AWIの本文ファイルの絶対パス")
     parser.add_argument("--decisions", type=pathlib.Path, required=True, help="候補ごとの判定を並べたJSONの絶対パス")
-    parser.add_argument("--analyses", type=pathlib.Path, required=True, help="分析IDごとの原因分析を並べたJSONの絶対パス")
-    parser.add_argument("--timings", type=pathlib.Path, required=True, help="工程ごとの開始と終了を並べたJSONの絶対パス")
-    parser.add_argument(
-        "--duration-analysis",
-        type=pathlib.Path,
-        required=True,
-        help="所要時間分析の構造化JSONの絶対パス",
-    )
-    parser.add_argument("--sections", type=pathlib.Path, help="節ごとの自由記述本文を並べたJSONの絶対パス")
-    parser.add_argument("--output", type=pathlib.Path, required=True, help="生成する報告の絶対パス")
+    parser.add_argument("--analyses", type=pathlib.Path, required=True, help="分析IDごとの原因と対策を並べたJSONの絶対パス")
+    parser.add_argument("--sections", type=pathlib.Path, help="節ごとの本文を並べたJSONの絶対パス")
+    parser.add_argument("--output", type=pathlib.Path, required=True, help="生成するUWI本文ファイルの絶対パス")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """報告を決定的に生成するか、保存済み報告の構造と内容を検査する。"""
+    """UWI本文を生成するか、保存済み本文を同じ入力から照合する。
+
+    入力の不足は全件を標準エラーへ示して終了コード1、入力ファイルの読み込み又はJSONの解析に失敗した場合は終了コード2とする。
+    """
     args = _parser().parse_args(argv)
     try:
-        decisions = _load_json(args.decisions)
-        analyses = _load_json(args.analyses)
-        timings = _load_json(args.timings)
-        duration_analysis = _load_json(args.duration_analysis)
-        sections = _load_json(args.sections) if args.sections is not None else {}
-        if (
-            not isinstance(decisions, list)
-            or not isinstance(analyses, dict)
-            or not isinstance(timings, dict)
-            or not isinstance(duration_analysis, dict)
-        ):
-            raise ReportError("判定・分析・工程時刻・所要時間分析のJSON型が不正である")
-        if not isinstance(sections, dict):
-            raise ReportError("節の本文のJSON型が不正である")
-        content = render(_load_jsonl(args.candidates), decisions, analyses, timings, duration_analysis, sections)
-        if args.mode == "generate":
-            args.output.write_text(content, encoding="utf-8")
-            _check_rendered_report(args.output.read_text(encoding="utf-8"), content)
-        elif not args.output.is_file():
-            raise ReportError("報告ファイルが存在しない")
-        else:
-            _check_rendered_report(args.output.read_text(encoding="utf-8"), content)
-    except (OSError, json.JSONDecodeError, ReportError) as error:
-        print(error, file=sys.stderr)
+        material = args.material.read_text(encoding="utf-8")
+        candidates = session_review_decisions.parse_material_candidates(material)
+        decisions = json.loads(args.decisions.read_text(encoding="utf-8"))
+        analyses = json.loads(args.analyses.read_text(encoding="utf-8"))
+        sections = json.loads(args.sections.read_text(encoding="utf-8")) if args.sections is not None else {}
+    except (OSError, json.JSONDecodeError, ValueError) as error:
+        print(f"入力の読み込みに失敗した: {error}", file=sys.stderr)
         return 2
+    if not isinstance(decisions, list) or not isinstance(analyses, dict) or not isinstance(sections, dict):
+        print("入力の型が不正: 判定は配列、分析と節はJSON objectとする", file=sys.stderr)
+        return 2
+    problems = validate(candidates, decisions, analyses, sections)
+    if problems:
+        print(f"入力が契約を満たさない（{len(problems)}件）:", file=sys.stderr)
+        for problem in problems:
+            print(f"- {problem}", file=sys.stderr)
+        return 1
+    try:
+        content = render(material, decisions, analyses, sections)
+    except ReportError as error:
+        print(error, file=sys.stderr)
+        return 1
+    if args.mode == "generate":
+        args.output.write_text(content, encoding="utf-8")
+        print(f"生成した: {args.output}")
+        return 0
+    if not args.output.is_file() or args.output.read_text(encoding="utf-8") != content:
+        print(f"保存済み本文が同じ入力から生成した本文と一致しない: {args.output}", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -224,7 +224,7 @@ def _user_sendmessage_bg_resume_current_entry(
 
     `toolUseResult`が`resumedAgentId`と`Resuming agent <id>`形式の`message`を持ち、
     tool_result本文が旧マーカーを含まない実記録の形式を再現する。
-    `resumed_agent_id`へ非文字列を渡すと構造化フィールド判定が成立しない検体になり、
+    `resumed_agent_id`へ非文字列を渡すと構造化フィールド判定が成立しないテスト入力になり、
     `resume_text`を渡すとtool_result本文を差し替えられる。
     """
     body = resume_text if resume_text is not None else f"Resuming agent {resumed_agent_id}"

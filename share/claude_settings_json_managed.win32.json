@@ -12,17 +12,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Skill|Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"__HOME__\\dotfiles\\scripts\\claude-hook-posttooluse.ps1\""
-          }
-        ]
-      }
     ]
   },
   "statusLine": {

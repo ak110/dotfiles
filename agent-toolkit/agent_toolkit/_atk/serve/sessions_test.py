@@ -422,7 +422,7 @@ def test_remote_record_path_is_validated_before_ssh(raw: str, expected: bool) ->
 
 
 class _FakeRpcClient:
-    """常駐RPCの接続状態と応答を差し替える検体。"""
+    """常駐RPCの接続状態と応答を差し替えるスタブ。"""
 
     def __init__(self, *, connected: bool, response: typing.Any) -> None:
         self._connected = connected

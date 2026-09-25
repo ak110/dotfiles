@@ -23,7 +23,7 @@ import json
 import pathlib
 import tempfile
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from typing import TextIO
 
 from agent_toolkit._common.atomic_file import atomic_write as _atomic_write
@@ -37,7 +37,6 @@ _TITLE_DIRECTORY_NAME = "claude-agent-toolkit-session-title"
 _SESSION_TITLE_KEY = "last_hook_session_title"
 _INHERITED_FROM_SESSION_KEY = "inherited_from_session_id"
 _WARN_NOTICE_COUNTS_KEY = "warn_notice_counts"
-_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
 _TRANSCRIPT_SESSION_ID_KEYS = ("sessionId", "session_id")
 
 STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
@@ -264,57 +263,6 @@ def increment_warn_notice_count(session_id: str, key: str) -> int:
 
     update_state(session_id, _increment)
     return count
-
-
-def observed_atk_help_paths(session_id: str) -> set[str]:
-    """当該セッションで公開契約を観測済みの`atk`サブコマンド経路を返す。
-
-    経路は`atk`を除いたサブコマンド名を半角空白で連結した文字列とする。
-    PreToolUseの案内、PostToolUseのヘルプ実行の記録及び確認の発行前の検査が同じ集合を共有し、
-    同じ公開契約を同一セッションで繰り返し提示しない。
-    """
-    recorded = read_state(session_id).get(_ATK_HELP_OBSERVED_KEY)
-    if not isinstance(recorded, list):
-        return set()
-    return {value for value in recorded if isinstance(value, str)}
-
-
-def record_atk_help_paths(session_id: str, paths: Sequence[str]) -> bool:
-    """`atk`サブコマンド経路を観測済みとして追記し、追記したかを返す。"""
-    added = False
-
-    def _record(current: dict) -> dict | None:
-        nonlocal added
-        recorded = current.get(_ATK_HELP_OBSERVED_KEY)
-        observed = [value for value in recorded if isinstance(value, str)] if isinstance(recorded, list) else []
-        additions = [value for value in paths if value not in observed]
-        added = bool(additions)
-        if not added:
-            return None
-        current[_ATK_HELP_OBSERVED_KEY] = [*observed, *additions]
-        return current
-
-    update_state(session_id, _record)
-    return added
-
-
-def mark_plan_written(session_id: str) -> None:
-    """計画ファイルの作成を記録し、`agent-toolkit`配下の直接編集の連続カウンタをリセットする。"""
-
-    def _mark(current: dict) -> dict | None:
-        changed = False
-        if not current.get("plan_file_written", False):
-            current["plan_file_written"] = True
-            changed = True
-        if current.get("direct_agent_toolkit_edit_count", 0) != 0:
-            current["direct_agent_toolkit_edit_count"] = 0
-            changed = True
-        if current.get("last_agent_toolkit_edit_path") is not None:
-            current["last_agent_toolkit_edit_path"] = None
-            changed = True
-        return current if changed else None
-
-    update_state(session_id, _mark)
 
 
 def claim_session_title(session_id: str, title: str) -> bool:

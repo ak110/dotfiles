@@ -27,7 +27,7 @@ print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response
 
 
 def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """PATHの先頭へstream-jsonを返す`agy`の検体を置く。"""
+    """PATHの先頭へstream-jsonを返す`agy`のスタブを置く。"""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "agy"

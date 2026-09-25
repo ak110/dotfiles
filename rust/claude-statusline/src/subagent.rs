@@ -594,7 +594,7 @@ mod tests {
             "columns": 50,
             "tasks": [
                 {"id": "t1", "name": "impl", "description": "English description", "status": "running"},
-                {"id": "t2", "name": "実装", "description": "日本語の長い説明を確実に切り詰めるため十分な長さを持たせた検体", "status": "running"},
+                {"id": "t2", "name": "実装", "description": "日本語の長い説明を確実に切り詰めるため十分な長さを持たせたテスト入力", "status": "running"},
                 {"id": "t3", "name": "review", "description": "短い説明", "tokenCount": 1500, "status": "running"}
             ]
         });

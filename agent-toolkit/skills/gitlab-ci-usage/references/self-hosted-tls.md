@@ -12,7 +12,7 @@ pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリ�
 
 この設定はTLS検証をスキップするためMITM耐性を下げる。
 
-`glab`自体が機能しない場合に限り、`curl -k`によるAPI直呼び出しを代替経路とする。
+`glab`自体が機能しない場合に限り、`curl -k`でAPIを直接呼び出す。
 
 ```text
 curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \

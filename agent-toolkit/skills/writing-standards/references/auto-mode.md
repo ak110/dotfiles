@@ -4,7 +4,7 @@
 拒否に遭遇したときの行動手順は`agent-toolkit:confirmation-and-uwi`の`references/permission-denial.md`が定める。
 
 auto modeはユーザー環境の`~/.claude/settings.json`の`autoMode.allow`配列に自然言語の許可指示を追加できる。
-`allow`・`soft_deny`・`hard_deny`・`environment`の各配列は、設定するとその区分のデフォルト一覧を置き換える。
+`allow`・`soft_deny`・`hard_deny`・`environment`の各配列は設定するとその区分のデフォルト一覧を置き換える。
 デフォルトを維持したまま追加するには、配列へリテラル文字列`"$defaults"`を含める。
 `allow`の許可指示はデフォルトの`soft_deny`判定を上書きする。
 区分外のキー（`allowMode`等）は無効であり、実在は公式スキーマ（`$schema`のURL）で確認する。
@@ -14,7 +14,7 @@ auto modeはユーザー環境の`~/.claude/settings.json`の`autoMode.allow`配
 auto modeは次の4区分でルールを判定する。
 
 - `allow`: 明示的に許可する操作
-- `soft_deny`: 既定では拒否するが、ユーザー指示や文脈で`clears`される操作
+- `soft_deny`: 標準では拒否するが、ユーザー指示や文脈で`clears`される操作
 - `hard_deny`: いかなる場合も拒否する操作
 - `environment`: 信頼境界（リポジトリ・ドメイン・バケット・サービス）の定義
 
@@ -36,7 +36,7 @@ auto modeは次の4区分でルールを判定する。
 5. `claude auto-mode critique`を実行して結果を点検する。指摘の全件採用を必須とせず、`agent-toolkit:review-standards`が定める問題と手段の比例性で採否を決める。
 
 配布元の`autoMode.allow`からラベルごと廃止したルールは、ユーザー環境の設定に残る。
-配列のunionマージは配布元からの削除を反映しないため、廃止したラベルの旧文面を除去する経路を配布処理へ登録する。
+配列のunionマージは配布元からの削除を反映しないため、廃止したラベルの旧文面を除去する処理を配布処理へ登録する。
 
 ## カスタムルール記述の注意点
 
@@ -49,5 +49,5 @@ auto modeは次の4区分でルールを判定する。
   - 対象の記述を狭めると、手順どおりの操作が拒否されて工程が止まる。対象は実際に行う操作の範囲で書く
 - カスタムルールが上書きする範囲は`soft_deny`までとし、デフォルトの`hard_deny`領域はそのまま維持する（auto modeの安全境界を保つため）
 - 信頼対象（個人リポジトリ・信頼ドメイン等）を参照するallowルールは、`autoMode.environment`の信頼境界宣言と整合させる
-- `claude auto-mode critique`の出力は非決定的で、末尾が欠落する場合を実測している（exit 0のまま文中切断）。
+- `claude auto-mode critique`の出力は非決定的で、末尾が欠落する場合が観測されている（exit 0のまま文中切断）。
   出力はファイルへ保存して欠落の有無を確認し、欠落時は再実行で補完する

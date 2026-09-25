@@ -1,4 +1,4 @@
-"""Codex App Serverのモデル一覧と系列指定の契約検体。"""
+"""Codex App Serverのモデル一覧と系列指定の契約テスト。"""
 
 from typing import Any
 

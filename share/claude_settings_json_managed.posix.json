@@ -33,17 +33,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "Skill|Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; dotfiles-claude-hook posttooluse; exit 0'"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

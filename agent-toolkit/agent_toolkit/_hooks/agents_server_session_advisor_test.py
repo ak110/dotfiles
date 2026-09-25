@@ -18,7 +18,7 @@ _WARNING_BODY = (
 
 
 def _environment(state_directory: pathlib.Path) -> dict[str, str]:
-    """セッション状態を検体ごとに分離する環境を返す。"""
+    """セッション状態をテストごとに分離する環境を返す。"""
     env = os.environ.copy()
     env.update({"TMPDIR": str(state_directory), "TEMP": str(state_directory), "TMP": str(state_directory)})
     return env

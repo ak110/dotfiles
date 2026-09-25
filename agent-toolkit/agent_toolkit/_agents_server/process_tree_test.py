@@ -1,7 +1,7 @@
 """`process_tree`の子孫回収を、実際に起動したプロセスで検証する。
 
 `psutil`の戻り値を模擬すると、列挙の起点と終了要求の順序という本質的な契約を検査できない。
-このため検体は実プロセスを起動し、回収後の生存状態で判定する。
+このためテストは実プロセスを起動し、回収後の生存状態で判定する。
 """
 
 import contextlib
@@ -38,7 +38,7 @@ def _spawn_parent(child_source: str) -> subprocess.Popen:
 
 
 def _force_stop(process: subprocess.Popen) -> None:
-    """検体の後始末として、起点プロセスとその時点の子孫を終了させる。"""
+    """テストの後始末として、起点プロセスとその時点の子孫を終了させる。"""
     with contextlib.suppress(psutil.Error, OSError):
         for child in psutil.Process(process.pid).children(recursive=True):
             with contextlib.suppress(psutil.Error, OSError):

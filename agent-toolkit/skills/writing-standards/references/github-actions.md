@@ -1,6 +1,6 @@
 # GitHub Actionsワークフロー記述スタイル
 
-本書は、GitHub Actionsのワークフロー定義の記述スタイル基準を定める。
+本書はGitHub Actionsのワークフロー定義の記述スタイル基準を定める。
 
 ## 基本
 

@@ -21,9 +21,6 @@ try:
     from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         file_lock as _file_lock,
     )
-    from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        session_state as _session_state,
-    )
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
     )
@@ -247,26 +244,6 @@ def _check_structure(
         )
 
 
-def _record_plan_written_state() -> None:
-    """計画ファイルの確定を、連続直接編集検査が読むセッション状態へ記録する。
-
-    当該検査は`plan_file_written`が偽である間だけ`agent-toolkit`配下への連続した直接編集を数え、
-    3件目を遮断する。正規の計画作成経路である本処理が当該項目を設定しないと、
-    手順どおり計画を作成した実行主体が3ファイル目の編集で遮断される。
-    設定する3項目と値は、当該検査と共有する`_session_state.mark_plan_written()`が定める。
-
-    セッション識別子は`CLAUDE_CODE_SESSION_ID`だけを読む。
-    `_plan_file.resolve_owner_session_id()`は`AGENT_TOOLKIT_OWNER_SESSION`を優先するため、
-    委譲先で実行すると委譲元の識別子を返し、別セッションの状態を書き換える。
-    当該環境変数を持たない実行環境では記録を書かず、計画の作成は成功として扱う。
-    """
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if not session_id:
-        return
-
-    _session_state.mark_plan_written(session_id)
-
-
 def _finalize_candidate(
     directory: pathlib.Path,
     plans_root: pathlib.Path,
@@ -310,7 +287,6 @@ def _finalize_candidate(
         _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
         _plan_file.record_plan_owner(main_path)
-        _record_plan_written_state()
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
         for path, identity, content in reversed(owned):

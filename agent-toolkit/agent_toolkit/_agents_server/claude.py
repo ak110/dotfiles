@@ -721,14 +721,14 @@ class ClaudeServerManager:
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
                             result = self._result_values(session, message)
-                            if getattr(message, "origin", None) == {"kind": "task-notification"}:
-                                session.auto_resume_consumed = True
-                                self._finalize_turn(session, result)
-                                iterator = None
-                            elif shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+                            # 自動再開したturnも背景作業を残して待機を表明し得るため、`origin`によらず保留を判定する。
+                            # 確定後は以後のメッセージを読まないため、ここで確定すると後続の自動再開turnの結果を失う。
+                            if shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                                 shared_state.begin_auto_resume_wait(session, result)
                                 session.touch()
                             else:
+                                if getattr(message, "origin", None) == {"kind": "task-notification"}:
+                                    session.auto_resume_consumed = True
                                 self._finalize_turn(session, result)
                                 iterator = None
                             await self._notify_waiters()
