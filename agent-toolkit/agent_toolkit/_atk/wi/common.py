@@ -97,13 +97,6 @@ __all__ = [
 ]
 
 
-_SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
-    "wi": frozenset(("adopt", "reject", "rm")),
-    "mq": frozenset(("adopt", "reject", "rm")),
-}
-_SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
-
-
 @dataclasses.dataclass(frozen=True)
 class _CommitMetadata:
     """WIの処理結果へ保存するcommit識別情報。"""
@@ -123,34 +116,6 @@ def is_existing_dir(path: pathlib.Path) -> bool:
         return path.is_dir()
     except OSError:
         return False
-
-
-def warn_space_separated_option(argv: list[str]) -> None:
-    """後始末サブコマンドの値付きオプションが空白区切りの場合に警告する。"""
-    top_command = None
-    top_index = None
-    for cmd in ("wi", "mq"):
-        try:
-            top_index = argv.index(cmd)
-            top_command = cmd
-            break
-        except ValueError:
-            continue
-    if top_command is None or top_index is None:
-        return
-    subcommand_index = top_index + 1
-    try:
-        subcommand = argv[subcommand_index]
-    except IndexError:
-        return
-    if subcommand not in _SPACE_SEPARATED_OPTION_SUBCOMMANDS.get(top_command, frozenset()):
-        return
-    for index, arg in enumerate(argv[subcommand_index + 1 :], start=subcommand_index + 1):
-        if arg not in _SPACE_SEPARATED_OPTIONS or index + 1 >= len(argv):
-            continue
-        value = argv[index + 1]
-        if not value.startswith("--") and "=" not in value:
-            _outcome.report_warning(f"{arg}は{arg}=VALUE形式で渡す。")
 
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:

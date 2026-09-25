@@ -1249,7 +1249,6 @@ def main(
 
     argcomplete.autocomplete(parser)
     raw_argv = argv if argv is not None else sys.argv[1:]
-    _common.warn_space_separated_option(raw_argv)
     raw_argv = _resolve_legacy_top_level_command(raw_argv)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
     args = parser.parse_args(raw_argv)
