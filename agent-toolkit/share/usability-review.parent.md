@@ -8,13 +8,14 @@
 
 ## 起動
 
-対象worktreeを対象リポジトリの作業ツリーから確定し、その絶対パスを`agents_server`の`start`の`cwd`へ渡す。`subagent_md_path`には同じplugin rootの`share/usability-review.subagent.md`の絶対パスを渡す。`agent-toolkit:delegation`の送信契約に従い、次の名前付き入力を`extra_params`へ渡す。
+対象worktreeを対象リポジトリの作業ツリーから確定する。
+同じplugin rootの`share/usability-review.subagent.md`をタスク文書起動（`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」）で起動し、`cwd`はその絶対パスとする。`extra_params`へは次の名前付き入力を渡す。
 
 - 対象worktree: `cwd`と同じ絶対パス。
 - 変更画面: 差分が変更した画面のパス又はURLと、操作で表示する状態へ到達する手順。
 - 主要シナリオ: 計画又はWIが指定する利用者の作業の流れと、そこで確かめるUX上の観点。受入シナリオの期待結果を判定基準として渡さず、データの反映や操作の成否といった機能の正しさを確かめる項目も含めない。
 - 検証環境: 対象プロジェクトの手順から確定したローカル起動形又は127.0.0.1の稼働中URL。
-- 引き継ぎ記録先: セッション領域（`agent-toolkit:managed-temp`）の直下に新規作成するファイルの絶対パス。初回は値へ`（新規）`を続ける。
+- 引き継ぎ記録先: 値は`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」が指す`引き継ぎ記録先`の書式に従う。
 - round: 初回は1、同じ担当への再判定では直前の番号に1を足す。
 - レーン識別子: レーンの作業を対象とする起動に限り、そのレーンの識別子。session識別名を`<レーン識別子>-usability-review`にする。
 
