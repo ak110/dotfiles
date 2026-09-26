@@ -23,6 +23,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk import help_text as _ATK_HELP_SOURCE
+from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -247,7 +248,8 @@ class TestPs1EolCheck:
         assert "LFだけの内容" in context
         assert "UTF-8 BOMが失われて日本語が文字化け" in context
         assert "*.ps1 text eol=crlf" in context
-        assert "対処: 既存ファイルにはEditツールを使う" in context
+        assert "「書込ツールの改行・BOM保全」に従う" in context
+        assert "既存ファイルにはEditツールを使い" in context
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -860,3 +862,50 @@ class TestRemovedChecksAreSilent:
             assert result.returncode == 0, payload
             assert result.stdout == "", payload
             assert result.stderr == "", payload
+
+
+class TestLanguageReinjection:
+    """Claude Codeのメインセッションで、直前の注入から10回目のツール呼び出しへ日本語の応答指示を添える。
+
+    間隔10回は、2026-09-22以降のClaude Codeメイン記録で、セッション開始又は会話圧縮から最初の英語検知通知までの
+    ツール呼び出し回数が中央値20回、下位30%が11回だった集計に基づく。
+    委譲先とCodexは応答をユーザーが直接読まないため添えない。
+    """
+
+    _MAIN_ENV = {"AGENT_TOOLKIT_DELEGATED_SESSION": "0", "AGENT_TOOLKIT_OWNER_SESSION": ""}
+
+    def _contexts(self, tmp_path: pathlib.Path, extra_payload: dict, extra_env: dict[str, str]) -> list[str]:
+        env = {**_plan_file_state_env(tmp_path), **self._MAIN_ENV, **extra_env}
+        payload = {
+            "session_id": "language-reinjection",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(tmp_path / "missing.txt")},
+            **extra_payload,
+        }
+        contexts = []
+        for _ in range(agent_checks.LANGUAGE_REINJECTION_INTERVAL + 1):
+            result = _run(payload, env_overrides=env)
+            assert result.returncode == 0, result.stderr
+            contexts.append(_additional_context(result))
+        return contexts
+
+    def test_main_session_receives_notice_on_interval(self, tmp_path: pathlib.Path) -> None:
+        contexts = self._contexts(tmp_path, {}, {})
+        notice = rules_context.RESPONSE_LANGUAGE_NOTICE
+        interval = agent_checks.LANGUAGE_REINJECTION_INTERVAL
+        assert [notice in context for context in contexts] == [False] * (interval - 1) + [True, False]
+
+    @pytest.mark.parametrize(
+        ("extra_payload", "extra_env"),
+        [
+            ({}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
+            ({"agent_id": "subagent-1"}, {}),
+            ({"turn_id": "codex-turn"}, {}),
+        ],
+        ids=["agents-server-delegate", "claude-subagent", "codex"],
+    )
+    def test_delegates_and_codex_do_not_receive_notice(
+        self, tmp_path: pathlib.Path, extra_payload: dict, extra_env: dict[str, str]
+    ) -> None:
+        contexts = self._contexts(tmp_path, extra_payload, extra_env)
+        assert all(rules_context.RESPONSE_LANGUAGE_NOTICE not in context for context in contexts)

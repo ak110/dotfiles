@@ -125,15 +125,45 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 
 ## リリース運用
 
-`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは、通常の手順として`releaser <patch|minor|major>`エージェントを起動する。
-`releaser`は対象リポジトリの`AGENTS.md`を読み、同リポジトリが定める公開手順を実行して完了まで検収する。
-`gh workflow run release.yaml`などの低水準コマンドは、`releaser`の内部実装又は人間が手動で補助する場合にだけ用いる。
-引数を省略した`releaser`はヘルプと未リリースコミットの一覧を表示し、リリースを起動しないため、未リリース分の確認に使う。
-バージョン区分は次のとおりとする。
+`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは、ユーザーの恒常的な認可に基づき、エージェントが要否とバージョン区分を判断して実施する。
+この認可は`agent-toolkit:process-wi`の手動起動と`atk wi process-loop`による自動常駐起動のどちらにも適用し、リリースのたびのユーザー確認とUWIは省く。
+リリースworkflowを持たない`dotfiles`（`develop`から`master`へのマージは`dotfiles-release`が扱う）と`smpr`は対象外とし、リリースworkflowを持ったプロジェクトは対象へ加える。
+
+### 実施時機と前提
+
+一連の作業の公開（pushとCI成功）が終わった時点でリリース要否を判定する。
+`agent-toolkit:process-wi`では、公開工程の終端担当が返却し、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」の成立を確認した後、`agent-toolkit:completion-report`の起動前に判定する。
+process-wi以外の作業でも、作業の変更をpushしてCI成功を確認した時点で同じく判定する。
+
+ローカルのベースbranchが既定branchであり、未pushのcommitと未コミットの変更が無いことを実施の前提とする。
+前提が成立しない場合はリリースせず、その理由を完了報告へ含める。`releaser`は未pushのcommitをpushするため、この前提でpushの所有者を保つ。
+
+### 判定
+
+判定対象は引数なしの`releaser`が表示する`<直近のリリースタグ>..HEAD`の未リリースcommit全体とする。各commitは差分の内容で判定し、commit typeは補助の手掛かりに留める。
+
+エンドユーザー影響がある変更は、利用者がリリースされた配布物を通じて観測する挙動や内容を変える変更である。
+配布されるコード（CLI・公開API・設定の既定値・画面を含む）の変更と、配布物に同梱されて公開される利用者向け文書（PyPIの説明になるREADMEなど）の変更が該当する。
+実行時依存の版指定の更新（`pyproject.toml`の`dependencies`、`package.json`の`dependencies`など）はエンドユーザー影響の対象外とする。
+テスト、CIとworkflow、開発手順と開発用ツールの設定（`Makefile`・`mise.toml`・pre-commit・lint設定）の変更も対象外とする。
+エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・`.claude/`配下）、開発者向け文書（`docs/development/`）、開発専用のロックファイル更新も同じく対象外とする。
+docsサイトは`master`へのpushで`docs.yaml`が公開するため、docsサイトだけの変更も対象外とする。
+いずれとも判別できない変更は、配布物に含まれて利用者から観測できるかで判定する。
+
+### 実施
+
+該当する変更が1件以上ある場合だけ、次のバージョン区分からエージェントが区分を決め、`releaser <patch|minor|major>`を実行して完了まで検収する。
+0件の場合はリリースせず、リリースしなかったことと理由を完了報告へ含める。
 
 - バグ修正・軽微な機能追加: パッチ
 - ある程度大きい機能追加や変更: マイナー
 - 大規模な機能追加など: メジャー
+
+`releaser`はdotfilesの`pytools/releaser.py`が提供するコマンドである。
+既定branchの確認、未コミット変更の確認、未pushのcommitのpush、CI完了待機、`release.yaml`のworkflow_dispatch起動、runの監視、originの取得と上流branchへのfast-forwardによるローカルの最新化を行う。
+引数を省略した`releaser`はヘルプと未リリースコミットの一覧を表示するだけで終わる。
+`gh workflow run release.yaml`などの低水準コマンドは、`releaser`の内部実装又は人間が手動で補助する場合にだけ用いる。
+`releaser`はCI待機とリリースworkflowの監視で長時間かかるため、前景の実行時間上限を超える場合は背景実行か委譲で実行し、終了状態を観測してから報告する。
 
 ## 足回りファイルの推奨設定維持
 
@@ -141,17 +171,12 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 `.pre-commit-config.yaml`・`.github/workflows/`配下はpyfltr配布の推奨ガイドに揃える。
 推奨ガイドは`~/pyfltr/docs/guide/recommended.md`と`~/pyfltr/docs/guide/recommended-nonpython.md`である。
 
-- 推奨設定を独自判断で緩和しない（ruff・pylint・textlint等のignore追加、lint設定の弱体化）
-  - 緩和を提案する場合は、ignore追加のメリットとデメリットを比較した文面案を提示してユーザーの合意を得る
-- プロジェクト固有事情で推奨から逸脱する設定を導入する場合、該当箇所に理由を述べたコメントを直接記述する
-- lint違反が出た場合は根本原因（コード側）を修正する。設定でのignore追加は避ける
-- 推奨ガイド自体の改訂が必要と判断した場合は、「追従作業と複数リポジトリ横断投入」節に従って`~/pyfltr`向けのAWIを先に投入する
-  - 各プロジェクトへの反映はその改訂の後に行う
+- lint違反への対応と推奨設定の緩和は、`agent-toolkit:writing-standards`の`references/implementation-time.md`「lintと機械チェック」の原則に従う。設定の緩和（ruff・pylint・textlint等の設定ファイルへのignore追加、lint設定の弱体化）は根本原因の修正と行単位の無視で足りない場合に限る慎重な手段とする。推奨から逸脱する設定を導入する場合は、該当箇所に理由を述べたコメントを直接記述する
+- 推奨ガイド自体の改訂を要する場合の投入順は「追従作業と複数リポジトリ横断投入」節に従う
 
 ## 変更時の同期対象マトリクス
 
 変更内容に応じて確認すべきプロジェクトを示す。
-プロジェクト名とローカルパスの対応はコンテキスト上のローカル指示から取得する。
 
 | 変更内容 | dotfiles | pyfltr | pytilpack | smpr | glatasks | gv | lc |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -178,7 +203,6 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 「前提」節の対象プロジェクト一覧を候補集合とする。
 判定手順で列挙した適用前提を、各候補の現物を観測して確かめるか、明文化された方針と比べる。
 適用前提が成立したプロジェクトだけを★相当の必須確認へ進める。
-対象範囲外の変更は現行の除外規定どおり確認不要とする。
 
 `commit.template設定`はsetupタスク（`make setup`または`mise run setup`）から
 `git config --local commit.template .gitmessage`を呼ぶ実装を指す。
@@ -205,11 +229,8 @@ README.md・AGENTS.md・docs/development/development.mdの標準章構成・共�
 
 ### ドキュメント・運用方針
 
-- ツールチェイン周りの修正では、「足回りファイルの推奨設定維持」節が挙げる推奨ガイドのメンテナンスも確認する（気付きにくい）
 - 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を
   発見したらdotfiles側を修正する（マスター）
-- README.md・AGENTS.md・docs/development/development.md間で、
-  共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
@@ -245,13 +266,11 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 
 - CI workflowのLinuxジョブはpyfltr公式イメージの`container:`実行を方針とし、
   container適用対象・キャッシュ方式の具体は各リポジトリの`.github/workflows/**`をSSOTとして揃える
-- リリース手段とバージョン区分は本スキル「リリース運用」節を参照する
 
 以下4点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
 
-- container化ジョブではuv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、
-  `pinact run --check`を直接呼び出せる。
-  ただしGitHub Actionsのピン留め確認には独立したstepを置かず、pyfltrの組み込みlinter`pinact`へ任せる。
+- container化ジョブではuv / pnpm / Node.js / miseのセットアップステップを省く。
+  GitHub Actionsのピン留め確認には独立したstepを置かず、pyfltrの組み込みlinter`pinact`へ任せる。
   `pinact`は`pyproject.toml`の`[tool.pyfltr]`が持つ`preset = "latest"`で有効になり、CIの`ci.yaml`が実行する`pyfltr ci`と、push前に実行する`pyfltr run`・`pyfltr fast`（prekのpre-commitを含む）のいずれにも含まれるため、独立したstepは同じ確認の重複になる。
   Pythonバージョンマトリクスは
   `env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。

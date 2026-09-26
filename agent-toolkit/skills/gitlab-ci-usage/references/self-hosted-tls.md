@@ -12,7 +12,7 @@ pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリ�
 
 この設定はTLS検証をスキップするためMITM耐性を下げる。
 
-`glab`自体が機能しない場合に限り、`curl -k`でAPIを直接呼び出す。
+CI待機（`wait_ci.py`）がCLIの失敗を示す終了コード3を返した後に限り、状態の照会と証拠の取得のために`curl -k`でAPIを直接呼び出す。
 
 ```text
 curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
@@ -22,9 +22,8 @@ curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
 ```
 
 pipeline一覧と対象pipelineごとのjob一覧は、応答が100件未満になるまで`page`を増やして全ページ取得する。
-`allow_failure`が`false`の`failed` jobを1件検出するか、対象pipelineがすべて完了するまでpollingする。
-取得済みjobがすべて成功していてもpipelineが未完了なら待機を続ける。全て不可能な場合は
-ユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）。
+待機の終端は`agent-toolkit:commit`の`references/push-and-ci.md`が定める終端状態で確定する。
+CI通過を確認しないで進めるのは、呼び出し元が同書の定める「当該pushのCI通過をこのセッションで判定しない」旨を明示した場合に限る。
 
 `curl -k`も同じくTLS検証をスキップする。認証トークン漏洩防止のため、
 トークンは環境変数経由で渡し、コマンド履歴に残さない運用とする。

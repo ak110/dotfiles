@@ -25,7 +25,7 @@ description: >
   - 配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント
   - 全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`AGENTS.md`もロードする
-   （Claude Code 2.1.277以上は`AGENTS.md`を直接読む）
+   （Claude Codeは`AGENTS.md`を直接読む。観測記録は`docs/development/audit-records.md`の「プロジェクト指示のAGENTS.md対応：2026年9月20日」にある）
 
 各ファイル群の対象読者と役割。
 

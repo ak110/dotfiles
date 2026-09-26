@@ -170,7 +170,7 @@ function Install-CodexPlugin {
     if ($firstHookTransition -and $beforeState.Present -and $beforeState.Version) {
         $oldCache = Join-Path $codexPluginCacheRoot $beforeState.Version
         if (Test-Path -LiteralPath $oldCache -PathType Container) {
-            $savedCache = Join-Path $env:TEMP ("atk-hook-migration." + [IO.Path]::GetRandomFileName())
+            $savedCache = Join-Path ([System.IO.Path]::GetTempPath()) ("atk-hook-migration." + [IO.Path]::GetRandomFileName())
             Copy-Item -LiteralPath $oldCache -Destination $savedCache -Recurse -Force
         }
     }

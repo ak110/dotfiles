@@ -14,8 +14,6 @@ description: >
 
 ## 検証
 
-作業が一段落したら、対象に近いformat、lint、testを実行し、警告ゼロを確認してからコミットする。
-検証コマンドの出力は切り詰めず、長大な出力は管理対象一時領域へ保存して必要箇所を抽出する。
 全コミットの完了後に計画全体を最終検証し、レビューへ進む。
 
 ## 通常commit
@@ -28,11 +26,10 @@ description: >
 指定された場合だけcommitできる。`git push`は委譲先へ明示された場合を除き呼び出し元が所有する。
 
 別セッションが同一リポジトリへコミットしうる前提で作業する。
-編集の直前に対象ファイルを再取得し、コミットの前に基準コミットを再確認する（努力目標）。
+コミットの前に基準コミットを再確認する（努力目標）。
 再確認した基準コミットのOIDが記録時と異なる場合の続行可否は、`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」節で判定する。
-ステージする対象は自セッションの担当範囲に限る。
+ステージする対象は自セッションの担当範囲に限り、ユーザーの未コミット変更はそのまま残す。
 他セッションの未完成の変更を巻き込むとコミットが技術的に成立しない。
-対象リポジトリの指定は`references/git-identifier.md`に従う。
 
 commit直前に次を実施する。
 
@@ -43,17 +40,14 @@ commit直前に次を実施する。
 5. stage済みの変更がAWI採用を反映するかを判定し、該当する場合は「コミットメッセージとリリース」節が要求する`再発予防:`行をメッセージへ含める
 6. 本文又はtrailerを持つコミットメッセージでは、第2行が空行であることを確認する。件名だけのメッセージでは本項を適用しない
 
-ユーザーの未コミット変更はそのまま残し、自セッションの担当範囲だけをcommitへ含める。`--no-verify`の適用条件は、pre-commitのstashが競合し、かつ対象ファイルを正式な手順で検証済みであることとする。検証省略とhook失敗の回避は、この条件の外に置く。
+`--no-verify`の適用条件は、pre-commitのstashが競合し、かつ対象ファイルを正式な手順で検証済みであることとする。検証省略とhook失敗の回避は、この条件の外に置く。
 
 ## 条件付き手順
 
 - 本スキルの起動時に`agent-toolkit/skills/commit/references/git-identifier.md`を全文読む
-- amend、fixup、autosquashを行う直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
-- 実際にpushする直前に`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
-- CI失敗を扱う直前に`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
+- amend、fixup、autosquash、rebase又はpush済み判定の直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
+- 実際にpushする直前又はリリース操作に着手する時点で`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
 - 計画実装の履歴契約を扱う時は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を全文読む
-- push済みcommitへのamend、fixup、rebaseの扱いと、push済み判定の手段は
-  `agent-toolkit/skills/commit/references/history-rewrite.md`「プッシュ済み判定」が定める
 - push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルのCI失敗契約で原因を分析する
 
 ## 作業用ブランチと退避物の削除
@@ -121,7 +115,6 @@ commit直前に次を実施する。
     対象を一意に特定できる語を選ぶ。曖昧な一般名詞への機械的な置換は、対象の特定を妨げる
   - 例: 開発者向けリポジトリの読者はmiseを直接設定するため、「ツール管理器」への言い換えは対象の特定を妨げる。
     `commit.template`はエンドユーザーが操作しない内部キーであるため、「コミットメッセージ雛形」へ言い換える
-  - scopeはリリースノートへの転記時に省略される場合があるため、省略しても対象が伝わるdescriptionにする
 - 計画ファイルにコミットメッセージ案を書く時点でも上記基準でセルフチェックする
 - 本文（body）は任意。記載する場合の読み手、粒度、分量及び構造は`agent-toolkit:writing-standards`「人間向け文章の共通規定」に従う
 - コミット帰属文字列は、ユーザーの明示指示、明文化されたプロジェクト方針、
@@ -137,5 +130,3 @@ AWI採用（`atk wi adopt`起因）を反映するコミットは、本文（bod
 計画が計画ファイル（バグ）を参照する場合は、同ファイルのバグ単位ごとの`再発防止策`を読み、
 各処置と本文の「再発予防:」行が一対一で対応することをcommit確定前に検収する。
 対応する行が無い処置が残る場合は、その処置に対応する行を追加してからcommitする。
-
-リリース操作に着手する時点で`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読み、同文書のリリース手順を適用する。

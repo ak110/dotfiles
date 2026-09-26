@@ -96,7 +96,9 @@ if TYPE_CHECKING:
         _check_agents_server_continuation_input,
         _check_task_stop,
         _clear_current_plan_file_path,
+        _advance_language_reinjection,
         _handle_language_check,
+        _rules_context,
         _record_iss_sidechain_probe,
     )
     from agent_toolkit._hooks.pretooluse.content_checks import (
@@ -168,6 +170,9 @@ def main(payload_text: str) -> int:
     pending_notices: list[str] = []
     if language_warning_body is not None:
         pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG, removable_cause=True))
+    # Claude Codeのメインセッションでは一定間隔で日本語の応答指示を文脈の近くへ置き直す。
+    if not is_codex and _advance_language_reinjection(payload, session_id):
+        pending_notices.append(_llm_notice(_rules_context.RESPONSE_LANGUAGE_NOTICE))
 
     def emit_json(result: dict) -> None:
         hook_output = result.get("hookSpecificOutput")

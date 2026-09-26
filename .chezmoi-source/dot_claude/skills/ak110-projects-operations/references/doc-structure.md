@@ -16,7 +16,7 @@
 
 ## AGENTS.mdの標準章構成
 
-Claude Code 2.1.277以上とCodexが共通で読む`AGENTS.md`に本章構成を適用する。
+Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する。観測記録は`docs/development/audit-records.md`の「プロジェクト指示のAGENTS.md対応：2026年9月20日」にある。
 
 1. プロジェクト概要パラグラフ（必須）
 2. 開発手順（必須）

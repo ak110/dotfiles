@@ -113,6 +113,10 @@ _REQUIRED_INPUT_LINE_FORMAT = (
 )
 
 
+# タスク文書の本文がプラグインルートを参照するときの変数名。
+_PLUGIN_ROOT_VARIABLE = "${CLAUDE_PLUGIN_ROOT}"
+
+
 def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
     """agent-toolkit pluginのshare直下にあるタスク文書だけを受理する。"""
     if path.parent.name != "share":
@@ -337,7 +341,7 @@ def _wrap_delivery_body(body: str, *, composed_by: str = COMPOSED_BY_CALLER) -> 
 
     `from`が示すsession識別子はXML属性値へエスケープして置く。
     配送境界は最初の開始タグと最後の同名終了タグで確定する。
-    受信側の解釈は`agent-toolkit/share/rules-subagent.md`「受領した本文の出所」が定める。
+    受信側の解釈は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」が定める。
     """
     sender = _delivery_sender_label()
     return auto_message(
@@ -414,6 +418,9 @@ def _task_document_request(
         document_text = task_document.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         raise ValueError(f"タスク文書をUTF-8で読めません: {task_document}: {error}") from error
+    # 委譲先は配送された本文だけを読むため、プラグインルートの変数を配送側で解決する。
+    # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
+    document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     prompt_lines = [f"次のタスク文書の手順を実行せよ（出所: {task_document}）。", document_text, "追加指示:"]
     prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
     prompt = "\n".join(prompt_lines)

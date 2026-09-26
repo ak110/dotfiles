@@ -35,13 +35,10 @@
    （sleepループはflakyテストの主要因となるため）
   - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`でcompile-timeに行う
    （Rust 1.79+）。実行時テストにはしない
-- 対象プロジェクトの`rust-version`・editionで利用できる機能は公式リリースノートで確認する
-  <https://doc.rust-lang.org/releases.html>
 
 ## テストコード（統合テスト）
 
 クレート直下の`tests/`ディレクトリ配下に置く統合テスト向けの方針。
-inline単体テストは上記「言語スタイル」節の方針に従う。
 
 - パラメーター化テストは`rstest`の`#[rstest]` + `#[case]`を使う
 - プロパティベースの網羅検証が有効な場合は`proptest`を検討する

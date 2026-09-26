@@ -42,15 +42,7 @@ description: >
 
 ## ローカルで実行するlintとCIジョブの対応
 
-`make test`が実行するツール集合は、CIの`python-lint (3.14)`ジョブが実行する集合とほぼ同じである。
-CIが`claude-plugin-validate`を無効化する点だけが異なる。
-次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する。
-
-- `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
-- `test-linux`ジョブ: `install.sh`とchezmoiの実適用
-- `python-lint (3.13)`ジョブ: Python 3.13でのpytest
-- `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
-- `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
+ローカルの`make test`で実行されないCIジョブは`dotfiles-development`「開発手順」の全体検証の項が挙げる。
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されず、CIの`test-windows`ジョブが検証する。
 `agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
@@ -61,7 +53,5 @@ Linux側とWindows側で分岐するコードを変更した場合、Windows側�
 2. 意味的な変更を両方に適用する
 3. プラットフォーム固有の書き方の違いのみ確認する
 4. 実行できる側を実行して動作確認する（Linuxでのみ実行可能な環境では、Windows側は最低限syntax check）
-5. MCP経由の`run`へ両プラットフォーム側のファイルパスを渡す。
-   複数ツールを組み合わせる場合は`commands`で対象を限定する。
-   MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う
+5. `dotfiles-development`「開発手順」の特定ファイルに限定する実行形へ、両プラットフォーム側のファイルパスを渡す
 6. コミットメッセージにペアを両方記載する

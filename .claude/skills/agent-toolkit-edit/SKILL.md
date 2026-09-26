@@ -17,7 +17,6 @@ description: >
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く
   （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
-  - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範とホスト別規範
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
@@ -29,8 +28,7 @@ description: >
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
 
-- 常時自動ロードしたい一般指針はルールファイルへ置く
-- 特定タスクでのみ必要な指針はスキル本体に残す
+- 常時ロードする指針と特定タスクでのみ必要な指針の振り分けは`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」に従う
 - 配置先は規範の成立条件が依存する対象で判定し、表層識別子はその判定の入力から外す
 - プロジェクト固有のツール、データ、命名、CI、運用手順へ依存する内容はプロジェクト側へ置く
 - 固有要素を同種の任意要素へ置換しても判定基準、工程順序、停止条件が成立する内容だけを配布物候補とする
@@ -82,17 +80,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 
 ### atk serveの静的資産
 
-`agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する場合は次の3点を守る。
-
-- 書体、文字サイズ、行の高さ、字間及び文字色は`:root`のカスタムプロパティーと`body`で一元定義し、
-  `#screen-wi`・`#screen-plans`・`#screen-sessions`のIDセレクター配下でこれらを再定義しない
-- `#screen-*`のIDセレクター直下へ、本文の装飾を担う裸のタグセレクター
-  （`a`・`h1`から`h6`・`p`・`ul`・`ol`・`li`・`hr`・`blockquote`・`code`・`pre`・`table`・`thead`・`th`・`td`・`img`・`strong`）を書かない。
-  Markdown本文とセッション本文向けの装飾は、本文コンテナー用クラス`.markdown-body`を経由してだけ適用する。
-  画面の骨組みを選ぶ`main`・`aside`と入力要素を選ぶ`input`・`select`・`textarea`・`dialog`は
-  前項が挙げる5つの宣言を持つ場合だけ本項の対象とする
-- 共有シェル要素（`.app-header`・`.app-nav`・共通ダイアログ・`main > .toolbar`）は3画面で同一の規則を共有し、
-  画面別の上書きを水平方向の余白だけに限る
+`agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する場合は、着手前に`references/atk-serve-static.md`を全文読む。
 
 ### MCPサーバー識別子とホスト別ツール名
 
@@ -151,17 +139,13 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 ## スキル間の連携
 
-`agent-toolkit:plan-mode`から作業を開始した場合は、承認後にメインがカレントディレクトリで直接実装する。
-工程の詳細は各スキルが定める。
-
 `agent-toolkit/skills/single-lane-process/`配下以外の`agent-toolkit/`配下の規範文書は、`single-lane-process`を名指ししない。共通契約と`agent-toolkit:process-wi`側は読み替え先を知らない一方向の依存とし、`single-lane-process`側から共通契約を参照して上書きを定める。利用者が起動名を知る必要がある`docs/`配下の案内と方針記録は対象外とする。
 
 ## バージョン更新
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
-全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
-`.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
+全レーン後に版数を更新する時点と`references/version-bump.md`の手順へ入る前には、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に`references/version-bump.md`の「plan modeでの取り扱い」節を読み、
 `## 要件・外部仕様`へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
@@ -194,9 +178,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
-  計画の`## 要件・外部仕様`へ編集する元のルールファイルだけを変更説明として記載する。
-  `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は`## 検証`へ記載し、
-  自動生成先は変更対象の説明へ重複して記載しない
+  計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の記載規則に従い、生成コマンドは`uv run python scripts/sync_generated_files.py`とする
 - `agent-toolkit/share/rules-main.md`とホスト別の`rules-main.*.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hook及びagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_serverでの委譲へ共有規範を配らない境界も検体で保持する。
   バージョン更新の規定は適用する
 - 計画ファイルの見出し、固定H3及び表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が定める。
@@ -215,8 +197,6 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 `agent-toolkit:writing-standards`は文章・コードの作成基準を持ち、hook実装の基準もここに含む。エージェントの行動自体の規範は、実行主体別ルール又は作業別スキルに置く。
 
 hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:writing-standards`を起動する。
-
-本スキルはSkillツールで起動する。
 
 ## 権限設定の配置
 
@@ -264,12 +244,9 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
-3. `scripts/sync_codex_plugin_manifests.py`を実行してAgent Plugins・Codex向け派生JSONを同期する
-4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
-5. MCP経由の`run`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
-   `["."]`を渡し、SSOTテストを含む全テストが成功することを確認する。
-   必要に応じて`commands`配列でSSOTテストなど特定ツールを指定する。
-   MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う
+3. Agent Plugins・Codex向け派生JSONを「バージョン更新」節の生成器で同期する
+4. `docs/guide/claude-code-guide.md`のチェック内容リストは「同期先ドキュメント」節に従って更新する
+5. `dotfiles-development`「開発手順」の特定ファイルに限定する実行形で、SSOTテストを含むテストが成功することを確認する
 6. 変更をコミットする
 
 ## フック実装の配置先（個人フックと配布物）
@@ -290,7 +267,8 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
   汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け。
   配置した場合は「バージョン更新」節の手順に従う
 - agent-toolkitの公開スクリプトは`uv run --project <plugin root> --locked --no-default-groups <対象>`形式で呼び出す。
-  対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`及びスキル補助処理である
+  対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`及びスキル補助処理である。
+  SSH先で動く`agent-toolkit/scripts/`のリモート補助処理だけは独立したPEP 723スクリプトとして起動する
 - `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
   `agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換スクリプトの残置に従う。
   残置した互換スクリプトはバージョン管理の対象へ含める。

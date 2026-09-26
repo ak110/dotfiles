@@ -9,8 +9,8 @@
 ```
 
 `実行レビュー済みHEAD`は`統合区分`が`マージあり`の場合は実行レビューが収束したラウンドのレビュー対象HEADの7文字以上の一意な短縮OID、`マージなし`の場合は`なし`を受領する。
-固有の終端順序がある場合はAWIごとの対象と時機も受領する。`引き継ぎ記録先`はレーン担当の起動時に受領した値を継続し、統合指示からは受領しない。作業対象リポジトリではcommitとffマージを行えるが直接pushは行わず、直接pushは呼び出し元が別の工程で行う。キュー管理リポジトリの`atk plans commit`と`atk wi`は通常の公開を用いる。リポジトリの指定がない操作禁止とキュー管理リポジトリの通常公開の関係を一意に解釈できない場合は、対象リポジトリを呼び出し元へ確認する。通常の統合書込先は受領した統合先worktreeとする。統合先との組合せだけで生じた近接検証の失敗は、手順9に従って専用worktreeで是正する。
-`マージあり`では`完成条件証拠`として収束した実行レビューが返したJSONの絶対パスを追加で受領する。統合開始時に読み、採用予定のAWIについて、要求固有の完成条件と`wi_conditions`の対応、元のユーザー発言の要求単位と`user_requirements`の対応、各行の判定と証拠の参照可能性を確認する。元のユーザー発言の要求単位は逐語引用、ユーザーコメント及びUWI回答から取得し、各単位の`達成`を採用終端の条件とする。統合時に`adopt`するAWIの要求固有の完成条件も全て`達成`を要する。延期`adopt`のAWIでは、受領した終端区分が後続工程と検収時機を明示する条件だけ、統合時の`未達`又は`証拠不足`を許容する。その他の条件は`達成`を要し、延期条件と後続工程の対応を確認できない場合はマージを保留する。延期対象は統合時に終端せず、`deferred_adopt_commits`で終端担当へ渡す。版数更新の完成条件は、全レーン統合後に終端担当が版数、派生manifest及び公開結果を検収してから`adopt`する。リポジトリ全体の自動チェックとCIの成功も公開工程で判定する。許容した延期条件以外に不足、未達又は証拠不足があればマージとAWI終端へ進まず、不足したAWIと条件又は要求単位を`reason:`へ書いて返す。
+固有の終端順序がある場合はAWIごとの対象と時機も受領する。`引き継ぎ記録先`はレーン担当の起動時に受領した値を継続し、統合指示からは受領しない。通常の統合書込先は受領した統合先worktreeとする。統合先との組合せだけで生じた近接検証の失敗は、手順9に従って専用worktreeで是正する。
+`マージあり`では`完成条件証拠`として収束した実行レビューが返したJSONの絶対パスを追加で受領する。統合開始時に読み、採用予定のAWIについて統合時の完成条件判定（`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」）を適用する。元のユーザー発言の要求単位は逐語引用、ユーザーコメント、UWI回答から取得する。延期条件と後続工程の対応を確認できない場合はマージを保留する。延期対象は統合時に終端せず、`deferred_adopt_commits`で終端担当へ渡す。版数更新の完成条件は、全レーン統合後に終端担当が版数、派生manifest及び公開結果を検収してから`adopt`する。リポジトリ全体の自動チェックとCIの成功は公開工程判定（`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`）に従う。許容した延期条件以外に不足、未達又は証拠不足があればマージとAWI終端へ進まず、不足したAWIと条件又は要求単位を`reason:`へ書いて返す。
 
 ## マージありの統合
 
@@ -19,7 +19,7 @@
 3. 統合先branchの現在HEADの7文字以上の一意な短縮OIDと、`git merge-base <専用branch> <統合先branch>`で得たrebase前のベースOIDを取得する。
 4. 専用branchのHEADが統合先branchの現在HEADの子孫である場合（`git merge-base --is-ancestor <統合先branchの現在HEAD> <専用branchのHEAD>`が終了コード0）は、rebaseせず手順10へ進む。
 5. 子孫でない場合は、rebaseの前に、専用branchが統合先branchの現在HEADより先に持つ全commitが未pushであることを`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の手段で確認する。1件でもpush済みの場合はrebaseせず、そのcommitの短縮OIDを`reason:`へ書いて`needs_escalation`で返す。
-6. 未pushを確認した場合は、rebase前の専用branchのHEADの7文字以上の一意な短縮OIDを`引き継ぎ記録先`へ記録する。書換えコマンドとは別の呼び出しで、専用worktreeを作業ディレクトリとして`git log --oneline --decorate -n 20`を実行し、対象commitの状態を確認する。続けて同じworktreeで`git rebase <統合先branchの現在HEAD>`を実行し、専用branchを統合先branchの現在HEADの上へ載せ替える。rebaseの対象は専用worktree内の専用branchに限り、統合先branchと他のレーンの専用branchはそのまま保つ。
+6. 未pushを確認した場合は、rebase前の専用branchのHEADの7文字以上の一意な短縮OIDを`引き継ぎ記録先`へ記録する。書換えコマンドとは別の呼び出しで、専用worktreeを作業ディレクトリとして`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を実行し、対象commitの状態を確認する。続けて同じworktreeで`git rebase <統合先branchの現在HEAD>`を実行し、専用branchを統合先branchの現在HEADの上へ載せ替える。rebaseの対象は専用worktree内の専用branchに限り、統合先branchと他のレーンの専用branchはそのまま保つ。
 7. rebaseが競合で停止した場合は、`git rebase --abort`と`git rebase --continue`のいずれも自ら実行せず、rebaseを進行中のまま保持して`needs_escalation`で返す。`reason:`へ、競合したファイルのリポジトリ相対パス、専用worktreeの絶対パス、及びそのworktreeがrebase進行中である旨を書く。競合の解消と再レビューの指示はメインが所有する。メインから競合の解消指示を受領した場合は、競合を解消して解消したパスだけをstageする。続けて`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を単独で実行し、`git rebase --continue`でrebaseを完了させる。競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`で実行レビューの指摘管理表へ1行登録し、同じ行へ`atk review-table respond`で解消内容を応答として記録する。その後、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」が定める完了値を返す。統合指示を再び受領した場合は手順1から実施する。
 8. rebaseが成功した場合は、`git range-diff <rebase前のベースOID>..<rebase前の専用branchのHEAD> <統合先branchの現在HEAD>..<rebase後の専用branchのHEAD>`を実行する。全commitが1対1で対応し、かつ内容が変化していないこと（各行の対応記号が`=`であること）を確認する。対応の欠落、追加、又は内容の変化を観測した場合は手順9へ進まず、`git range-diff`の該当行を`reason:`へ書いて`needs_escalation`で返す。
 9. 計画ファイルの`## 検証`の`近接検証`行のコマンドを、rebase後の専用branchのHEADで再実行し、終了コード0と警告の不在を確認する。失敗がレビュー済みHEADでは再現せず、統合先との組合せだけで生じた場合は、失敗契約の送信側、受信側、実装及びテストを列挙したうえで、専用worktreeへ是正commitを記録する。近接検証を再実行して成功と警告の不在を確認し、commitと検証の証拠を`needs_escalation`でメインへ返す。メインの差分確認と再指示後に手順10へ進む。レビュー済みHEADでも再現する失敗又は認可範囲外の変更を要する失敗は、コマンド、出力及び阻害条件を`reason:`へ書いて返す。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。
@@ -41,7 +41,7 @@
 
 ## AWI行の終端
 
-要求単位の由来を再判定せず、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、要求を反映したcommitの完全OIDを`--commit`へ渡す。複数commitに分かれる場合は全OIDと対応する要求単位を`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。既存実装で充足済みで実装差分が無い項目は`--commit`を省き、根拠をメモへ残す。固有の終端工程後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。その項目を`inbox`へ戻す操作はメインが行う。
+由来の確定時点（`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「入力」）に従い、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、adoptのcommit対応付け（`agent-toolkit:wi-standards`「状態と依存」の遷移表）に従う。複数commitのメモは`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。固有の終端工程後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。その項目を`inbox`へ戻す操作はメインが行う。
 
 各状態変更コマンドは単独実行し、成功の報告、対象の完全識別子及び警告の不在で完了を判定する。同じ状態を別コマンドで取得し直さない。
 

@@ -33,13 +33,13 @@
 
 ローカルで実行する全体検証と統合後にだけ成立する検証項目は、`agents_server`の`start_shell`へ、対象リポジトリを`cwd`、コマンドを変更せず`command`として渡す。出力を切り詰める指定を加えず、渡すコマンドはそのままの形とする。呼び出し前に管理対象一時領域を確保し、`summary_policy`へその領域内の標準出力・標準エラーの保存先を絶対パスで渡す。委譲先には両方を保存して必要な範囲を読ませ、終了コード、終了シグナル、警告行、標準エラーの失敗行、両保存先及び切り詰めの有無を返させる。返却パスが渡した領域内に実在することを確認し、保存済みの全量から終了コード0と警告の不在を検収する。失敗時は次節へ進み、修正後は失敗した検証と修正が影響し得る検証項目だけを再実行する。
 
-ベースbranchへpushする差分の有無を確定し、差分がある場合だけpushする。`検証・CI方針`が`通常`の場合はCI照会の直前に対象リポジトリで`git rev-parse --verify <revision>^{commit}`を実行する。終了コード0と、標準出力が空でない1行だけであることを確認する。その行が40桁か64桁の小文字16進数であることも確認し、その標準出力と同じ完全OIDを外部APIへ渡してCIを確認する。外部APIへ渡す値は、この実行が返した完全OIDとする。本手順の適用範囲は、外部APIが完全OIDを要求する操作に限定する。差分が無い場合は現在HEADのCI結論を1回確定する。CIと同値と判定した全体検証の結論はこのCI結果で確定する。`即時対応`の場合は同じcommitに対応するCIの起動とrun URLを確認した時点で待機を終える。成功か失敗かの判定は待機終了後の状態として残す。
+ベースbranchへpushする差分の有無を確定し、差分がある場合だけpushする。`検証・CI方針`が`通常`の場合はCI照会の直前に対象リポジトリで`git rev-parse --verify <revision>^{commit}`を実行する。終了コード0と、標準出力が空でない1行だけであることを確認する。その行が40桁か64桁の小文字16進数であることも確認し、その標準出力と同じ完全OIDを外部APIへ渡してCIを確認する。本手順の適用範囲は、外部APIが完全OIDを要求する操作に限定する。差分が無い場合は現在HEADのCI結論を1回確定する。CIと同値と判定した全体検証の結論はこのCI結果で確定する。`即時対応`の場合は同じcommitに対応するCIの起動とrun URLを確認した時点で待機を終える。成功か失敗かの判定は待機終了後の状態として残す。
 
-pushとCI確認後、`git -C <対象リポジトリの絶対パス> status --porcelain=v2 --branch`から`# branch.head`のベースbranch一致、非`#`行0件、`# branch.ab`のahead値`+0`を確認する。追跡refが無く`# branch.ab`を取得できない場合は公開済みと判定しない。`git -C <対象リポジトリの絶対パス> status`からrebase・merge・cherry-pickの進行中を示す表示が無いことも確認する。成立しない項目は同じ公開手順で解消して再観測し、解消できない場合は`base_branch_state`へ挙げる。
+pushとCI確認後、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を観測する。成立しない項目は同じ公開手順で解消して再観測し、解消できない場合は`base_branch_state`へ挙げる。
 
 ## 検証又はCIの失敗
 
-最初の失敗からCI成功又は本タスクの終端までを同一の失敗処理とする。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装及び期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
+最初の失敗からCI成功又は本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装及び期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 
 修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、push及びCI確認を再判定する。
 

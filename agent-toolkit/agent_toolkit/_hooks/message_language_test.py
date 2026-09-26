@@ -82,8 +82,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
         "進行が遅いことや非効率に見"
         "えることだけでは停止の指示にならない。"
         "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
-        "ユーザーの介入があった場合は、既定では稼働中の委譲先へ追加指示を送る。停止するのは、当該介入が委譲範囲または前提を無効にし、"
-        "継続すると誤った成果物が確定する場合に限る。詳細は`agent-toolkit:delegation`「継続と新規起動」が定める。",
+        "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
     ),
     (
         "pretooluse.py:1588 解消手段",
@@ -136,7 +135,12 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
         "pretooluse.py:2568 本文",
         "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
     ),
-    ("pretooluse.py:2568 解消手段", "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"),
+    (
+        "pretooluse.py:2568 解消手段",
+        "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
+        "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
+        "`p[k]ill`のように文字クラスで書く。",
+    ),
     (
         "pretooluse.py:_UV_RUN_PYTHON_BLOCK_MSG 本文",
         "blocked: `python`トークンの前に`--script`も`--no-project`も指定しない`uv run python`呼び出しである"
@@ -321,11 +325,8 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("posttooluse.py:686 本文", "warn: {display_name}の応答に{', '.join(missing)}が欠けているか不正である。"),
     (
         "_hooks/rules_context.py:QUALITY_CHECKPOINT_NOTICE",
-        "本来のユーザーから見"
-        "える目的を明示に保つ。要求されたシナリオに十分な最小限の設計を選ぶ。"
-        "エージェント向けの会話上の誘導と、成果物へ残す恒久的な文脈を分け、会話限りの指示を成果物へ持ち込まない。"
-        "要件を満たせない場合は明示的に失敗させる。裏付けの無いフォールバック・旧経路・互換経路は保持せず除去する。"
-        "`AGENTS.md`と`agent-toolkit`のルールを正本として扱う。",
+        "会話圧縮後は`01-agent.md`「行動と手順の目的」に従い、目的と承認状態を記録された計画やキュー項目から復元する。"
+        "会話限定の指示を成果物へ混入させない。",
     ),
     (
         "autonomous_exit.py:108 解消手段",
@@ -363,15 +364,15 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     (
         "_response_language_check.py:BLOCK_BODY",
-        "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、日本語での応答に切り替えること。",
+        "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、"
+        "訂正や謝罪を宣言せず、次の応答の冒頭から`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い日本語で書くこと。",
     ),
     (
         "_response_language_check.py:WARNING_BODY",
         "直前のアシスタント応答の地の文が英語主体と判定された。地の文が日本語主体でも、"
         "冒頭が`Now`・`Next`・`Then`などの英語の語で始まる応答は同じ判定になる。"
-        "ユーザーは英語の発話を読まないため、次の応答は冒頭の1文から日本語で書くこと。"
-        "`01-agent.md`に従い、進捗報告・判断・ステータス更新をツール呼び出し前後の短文ステータスも含めて日本語で記述すること。"
-        "日本語で応答し直せば、以後のターンはこの検査によって遮断されない。",
+        "ユーザーは英語の発話を読まないため、次の応答は訂正や謝罪を宣言せず、冒頭の1文から日本語で書くこと。"
+        "`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い、進捗報告・判断・ステータス更新をツール呼び出し前後の短文ステータスも含めて日本語で記述すること。",
     ),
     (
         "pending_question_advisor.py:BLOCK_BODY",

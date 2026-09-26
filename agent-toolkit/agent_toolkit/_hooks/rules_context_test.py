@@ -11,7 +11,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._hooks import rules_context, rules_context_codex
+from agent_toolkit._hooks import rules_context, rules_context_codex, session_state
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -32,7 +32,6 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
-    assert rules_context.ASK_USER_QUESTION_CHECKLIST in output
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
     normative_start = (
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
@@ -89,7 +88,6 @@ def test_session_start_main_places_response_language_notice_first(
     notice_index = output.index(rules_context.RESPONSE_LANGUAGE_NOTICE)
 
     assert notice_index < output.index(rules_context.QUALITY_CHECKPOINT_NOTICE)
-    assert notice_index < output.index(rules_context.ASK_USER_QUESTION_CHECKLIST)
     assert notice_index < output.index(
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
         f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
@@ -394,3 +392,23 @@ def test_subagent_start_without_parent_session_temp_omits_notice(
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "no-parent-area"}))
 
     assert "このセッションの管理対象一時領域" not in _output(capsys)
+
+
+def test_session_start_resets_language_reinjection_count(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """メインのSessionStartが日本語の応答指示を注入した時点で、再注入までの呼び出し回数を0へ戻す。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    def _no_session_temp(*_args: object, **_kwargs: object) -> pathlib.Path:
+        raise OSError("テストではセッション領域を作成しない")
+
+    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", _no_session_temp)
+    session_state.update_state("reset-target", lambda current: {**current, rules_context.LANGUAGE_REINJECTION_COUNT_KEY: 7})
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "reset-target"}))
+
+    assert rules_context.RESPONSE_LANGUAGE_NOTICE in _output(capsys)
+    assert session_state.read_state("reset-target")[rules_context.LANGUAGE_REINJECTION_COUNT_KEY] == 0

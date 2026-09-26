@@ -28,8 +28,8 @@ description: >
   （CIチェックアウトやエンドユーザー環境で`$HOME`と`~/dotfiles`が一致しない場合にimportに失敗するため）
 - `pytools/_internal/claude_common.py`は共通基盤モジュール（`find_dotfiles_root()`・`run_subprocess()`・
   `atomic_write_*()`等）を提供する。新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける
-- `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。UTF-8前提のEdit/Writeツールでは
-  文字化けや破損のリスクがあるため、ASCIIのみの修正は`sed -i`で対応する
+- `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。書込ツールで扱う手段は`agent-toolkit:writing-standards`の
+  `references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCIIのみの修正は`sed -i`で対応する
 - 非ASCIIを標準出力又は標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどのランタイム既定エンコーディングへ依存すると、日本語の最初の出力でCLIが停止するためである
 - ストリームの再構成を経由しないログと標準出力のメッセージは、WindowsのCP932で符号化できる範囲に収める。可否は`str.encode("cp932")`の成否で判定する。漢字にもU+20BB7のように符号化できないものがあり、em dash・en dash・`✓`・`•`も符号化できない
 - `pytools/post_apply.py`のステップが外部ツールの不在で当該ステップ全体をスキップする場合は、当該ツールを同じステップ又は先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。

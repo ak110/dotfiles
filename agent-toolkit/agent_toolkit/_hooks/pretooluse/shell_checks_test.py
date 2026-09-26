@@ -503,6 +503,9 @@ class TestBashProcessKillByPattern:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert auto_message_opening_attributes(result.stderr)["source"] == "agent-toolkit/pretooluse"
+        # 遮断本文が示す検索語の書き方は、同じ検査を通過する形である
+        assert "`git log -S`" in result.stderr
+        assert "`p[k]ill`" in result.stderr
 
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
@@ -525,6 +528,8 @@ class TestBashProcessKillByPattern:
             "git -C /tmp log -S 'killall' --oneline",
             "git grep -e 'pkill' -e 'killall' -- agent-toolkit",
             "git log --grep='pkill' --oneline",
+            "git log -S pkill --oneline",
+            "rg -n 'p[k]ill' agent-toolkit/",
             "echo killall-report",
             "kill 12345",
             "cat <<'EOF'\npkill -f worker\nEOF",

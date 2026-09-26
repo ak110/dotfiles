@@ -606,9 +606,14 @@ def _watch_run(
 
 
 def _sync_local_repo() -> None:
+    """originだけを取得し、上流branchへfast-forwardする。
+
+    `fetch.all`が有効なリポジトリでは引数なしの`git fetch`・`git pull`が全リモートを取得するため、
+    到達できない追加リモートがあるとリリース完了後の同期だけが失敗する。取得先をoriginへ限定する。
+    """
     logger.info("ローカルリポジトリを最新化する。")
-    subprocess.run(["git", "fetch", "--tags", "--prune"], check=True)
-    subprocess.run(["git", "pull", "--ff-only"], check=True)
+    subprocess.run(["git", "fetch", "origin", "--tags", "--prune"], check=True)
+    subprocess.run(["git", "merge", "--ff-only", "@{upstream}"], check=True)
 
 
 if __name__ == "__main__":

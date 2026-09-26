@@ -6055,6 +6055,33 @@ async def test_start_accepts_task_document_path_with_spaces(
 
 
 @pytest.mark.asyncio
+async def test_start_expands_plugin_root_variable_in_task_document(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """startはタスク文書本文のプラグインルート変数を、そのタスク文書が属するプラグインルートへ展開して配送する。"""
+    plugin_root = tmp_path / "plugin root"
+    task_document = plugin_root / "share" / "task.subagent.md"
+    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document.parent.mkdir()
+    # 配布物の参照実在検査が欠損参照として検出しないよう、変数を接頭辞から組み立てる
+    plugin_root_variable = "${CLAUDE_PLUGIN_" + "ROOT}"
+    task_document.write_text(f"手順: `{plugin_root_variable}/share/other.parent.md`を読む。\n", encoding="utf-8")
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+
+    await subject.start(str(task_document), {"補足": "${CLAUDE_PLUGIN_ROOT}"}, str(tmp_path))
+
+    prompt = manager.start.await_args.args[1]
+    assert f"`{plugin_root.resolve()}/share/other.parent.md`を読む。" in prompt
+    # 追加指示は呼び出し元の本文のまま配送する
+    assert prompt.endswith("補足: ${CLAUDE_PLUGIN_ROOT}")
+
+
+@pytest.mark.asyncio
 async def test_start_rejects_task_document_that_cannot_be_read(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -102,13 +102,10 @@ class TestTaskStopBlock:
         assert "references/waiting-and-monitoring.md" in stderr
         assert "「停滞の検知と巻き取り」節" in stderr
 
-    def test_block_message_defaults_to_additional_instructions_and_limits_stopping(self, state_dir: dict[str, str]) -> None:
-        """遮断文面が利用者介入時の追加指示既定と停止限定条件を示す。"""
+    def test_block_message_refers_user_intervention_to_owner_section(self, state_dir: dict[str, str]) -> None:
+        """遮断文面が利用者介入時の扱いを所有者の節（delegation「継続と新規起動」）へ委ねる。"""
         stderr = self._invoke("task-stop-message-route", state_dir).stderr
-        assert "既定では稼働中の委譲先へ追加指示" in stderr
-        assert "委譲範囲または前提を無効" in stderr
-        assert "継続すると誤った成果物が確定" in stderr
-        assert "`agent-toolkit:delegation`「継続と新規起動」" in stderr
+        assert "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める" in stderr
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),

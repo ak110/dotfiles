@@ -1,6 +1,6 @@
 # Python記述スタイル
 
-本書はPythonのコードとテストコードの記述スタイル基準と、静的解析及びpyfltrの起動形の扱いを定める。
+本書はPythonのコードとテストコードの記述スタイル基準と、静的解析の扱いを定める。
 
 ## 言語スタイル
 
@@ -54,21 +54,12 @@
   - 評価系は`eval()`／`exec()`／`compile()`であり、`ast.literal_eval()`や専用パーサーで代替する
   - 安全でない復元は`pickle`／`shelve`と`yaml.load()`であり、`json`／`msgpack`／`yaml.safe_load()`で代替する
   - `subprocess`は引数をリスト形式で渡し、`shell=True`を避ける
-  - `subprocess.run(..., capture_output=True)`の戻り値`proc.stdout`は静的解析（ty/mypy）で
-    `bytes | None`寄りに推論されるため、`.decode("utf-8")`で警告が出る
-    - 使う前に`assert isinstance(proc.stdout, bytes)`で型を限定すると以降の解析が通る
-    - `text=True`を指定する場合は`str`に推論されるが、`None`の可能性が残るため同様に限定する
   - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
   - 一時ファイルは`tempfile`モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
   - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は`secrets`モジュールを使う
 
 ### 実行環境
 
-- 構文の互換範囲: 構文は、公開互換性として宣言された全対応版（`requires-python`等）で受理されることを
-  確認する。固定された開発・実行版での受理は、この判定の入力の外に置く
-- agent-toolkit配下で起動するPythonスクリプトやモジュールは、自身のplugin rootを
-  `uv run --project <plugin root> --locked --no-default-groups <対象>`へ指定して起動する。
-  SSH先で動く`agent-toolkit/scripts/`のリモート補助処理だけは独立したPEP 723スクリプトとして起動する
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
   - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
     プロジェクトをインストール対象として扱う
@@ -79,11 +70,14 @@
     - 該当Pythonが利用環境に無いと`error: No interpreter found for Python <ver>`で失敗する
     - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で明示指定する
   - `uv run --script`のvenvキャッシュはスクリプトパスに依存し得る。
-    Linux・uv 0.12.3で実際に動かしたところ、依存メタデータが同一でもパスが異なるスクリプトはvenvを再構築した。
-    パッケージ・解決結果のキャッシュは共有され、ウォーム状態での再構築は1秒未満だった。
+    依存メタデータが同一でもパスが異なるスクリプトはvenvを再構築し、パッケージ・解決結果のキャッシュは共有される。
     公式資料はキャッシュキーを規定していない。
     hook等の制限時間内実行が必要なスクリプトを事前ウォームアップする場合は、
-    パス非依存を前提にせず、実行時に参照される実パスを対象にする
+    パス非依存を前提にせず、実行時に参照される実パスを対象にする。
+    観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日」にある
+- project lockfileを使う`uv run`では、lockfileを更新しない指定（`--frozen`又は`--locked`）を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
+- PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけlockfileを更新しない指定を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
+- script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してからlockfileを更新しない指定を付ける
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
   - `appname`単独指定は不可
@@ -116,9 +110,11 @@
 
 ## 静的解析の誤検出と抑制
 
-- Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使う
-  - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使う
-  - `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるため最終手段とする
+- lint指摘への対応は`implementation-time.md`「lintと機械チェック」に従う。Pythonでは`mypy`・`pyright`・`pylint`などが同じ箇所を重複検出することが多く、無視コメントがチェッカーごとに入り乱れるため、`assert`や`del`などの通常の構文で解消できる場合はそちらを選ぶ
+- `subprocess.run(..., capture_output=True)`の戻り値`proc.stdout`は静的解析（ty/mypy）で
+  `bytes | None`寄りに推論されるため、`.decode("utf-8")`で警告が出る
+  - 使う前に`assert isinstance(proc.stdout, bytes)`で型を限定すると以降の解析が通る
+  - `text=True`を指定する場合は`str`に推論されるが、`None`の可能性が残るため同様に限定する
 - 動的に`sys.path.insert()`してから内部モジュールをimportする箇所では、
   pylintは`wrong-import-position`に加えて`import-error`も誤発火する。
   抑制コメントは`# pylint: disable=wrong-import-position,import-error`の両方併記とする
@@ -205,15 +201,6 @@
 - 対処: 検証対象loggerへ記録蓄積用の`logging.Handler`サブクラスを直接追加し、
   fixture終了時に`removeHandler`で取り除くパターンが安定する
 
-## pyfltrの起動形
-
-- 名前が確定したチェックコマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`の説明に従う。未知のコマンド名の探索、pyfltrの導入及びチェックの実行には、それぞれの目的に対応する既存の呼び出し手段（CLI・MCPツールなど）を使う
-- pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
-- project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
-- PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
-- script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してから`--frozen`を指定する
-- サブコマンドの使い分け、オプションの受理形式、JSONL出力のレコード種別とフィールドの解釈、失敗ツールの再実行手段、ツール解決の失敗への対処は、`pyfltr <サブコマンド> --help`の出力とMCPツールのスキーマで確認する。これらが扱わない設定リファレンスと新規プロジェクトへの導入手順は<https://ak110.github.io/pyfltr/llms.txt>を取得し、そのページからたどって参照する
-
 ## 参照情報
 
 対象コードのPythonバージョンが該当PEPの導入バージョン以上の場合、その構文は正規構文であり、指摘の対象の外に置く。
@@ -234,7 +221,5 @@ PEP 758の`as`節使用時は従来通り括弧必須とする（`except (ValueE
 
 ## 新しいPythonバージョンの機能
 
-- 対象プロジェクトの`requires-python`で利用できる機能は公式のWhat's Newで確認する
-  <https://docs.python.org/3/whatsnew/index.html>
 - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）自体は注入対策にならない。
   安全性は後段のレンダラやAPI側に依存するため、SQL／HTML生成では対応レンダラと組み合わせて使う

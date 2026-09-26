@@ -6,7 +6,7 @@
   - CP932で記述する
     - cmd.exeのバッチファイルパーサーはシステムACP（日本語WindowsではCP932）で動作する
     - `chcp 65001`が変更するのはコンソールI/Oのコードページであり、パーサーはシステムACPのまま動作する
-  - Claude CodeのRead/Edit/WriteはUTF-8前提のため、CP932ファイルを直接扱えない
+  - Claude Codeの書込ツールで非UTF-8とCRLFのファイルを扱う共通の手段は`encoding.md`「書込ツールの改行・BOM保全」に従う。CP932ファイルは次の手順で扱う
     - `git show`もCP932バイト列をそのまま出力するため回避策にならない
     - iconv経由で操作する
       - 読み取り: `iconv -f cp932 -t utf-8 file.cmd`
@@ -19,8 +19,7 @@
       - 行追加は「直前行＋`\r\n`＋新規行＋`\r\n`」のパターンで`old`の末尾に`b'\r\n'`を含めて置換するとCRLFを維持できる
 - 改行コード
   - CRLFが必須。`.gitattributes`で`*.cmd text eol=crlf`を設定する
-  - Writeツールは常にLFで書くため、新規作成後にBashで`sed -i 's/$/\r/' file.cmd`を実行してCRLFに変換する（iconv変換後に実施）
-  - EditツールはCRLFを透過的に維持するが、CP932ファイルにはEditを直接使用できない
+  - Writeで新規作成した場合は、iconv変換後にBashで`sed -i 's/$/\r/' file.cmd`を実行してCRLFに変換する
 - 基本構造
   - `@echo off`でコマンドエコーを無効化する
   - `setlocal`/`endlocal`で環境変数のスコープを制御する

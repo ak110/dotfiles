@@ -7,8 +7,6 @@
 
 - `null`は使わず`undefined`を使い、APIから`null`が返される場合は`?? undefined`で変換する
  （「値がない」表現を1つに統一するため）
-- 対象プロジェクトのTypeScriptバージョンで利用できる機能は公式リリースノートで確認する
-  <https://www.typescriptlang.org/docs/handbook/release-notes/overview.html>
 
 ## 非同期処理
 

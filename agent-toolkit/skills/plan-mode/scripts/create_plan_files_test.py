@@ -299,9 +299,10 @@ def _lane_plan_creation_step() -> str:
     """レーン担当が読む計画作成手順の本文を返す。"""
     task_path = pathlib.Path(__file__).resolve().parents[3] / "share/exec.subagent.md"
     content = task_path.read_text(encoding="utf-8")
-    step_start = content.index("\n5. ") + 1
-    step_end = content.index("\n6. ", step_start)
-    return content[step_start:step_end]
+    steps = re.split(r"\n(?=\d+\. )", content)
+    matches = [step for step in steps if re.match(r"\d+\. ", step) and "plan-create" in step]
+    assert len(matches) == 1
+    return matches[0]
 
 
 @pytest.mark.parametrize("bug", [False, True])

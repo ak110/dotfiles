@@ -8,13 +8,12 @@ process-wiのメインが、処理対象の選定、処理開始、及び選定�
 
 ## 起動
 
-メインはキュー一覧とAWI本文の取得をpickerへ委ね、`agents_server`の`start`でpickerを1件起動する。
-`subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`を解決した絶対パスを渡す。
-`extra_params`には次の名前付き入力、`cwd`には対象リポジトリの絶対パスを渡す。
+メインはキュー一覧とAWI本文の取得をpickerへ委ね、タスク文書起動（`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」）でpickerを1件起動する。
+`cwd`は対象リポジトリの絶対パスとし、`extra_params`には次の名前付き入力を渡す。
 セッション領域（`agent-toolkit:managed-temp`）の直下の`pick-wi.yaml`を出力先とする。
 
 - `選定結果の出力先ファイル`: 絶対パス
-- `引き継ぎ記録先`: 管理対象一時領域内の絶対パスへ`（新規）`を続けた値
+- `引き継ぎ記録先`: 値は`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」が指す`引き継ぎ記録先`の書式に従う
 - ユーザーが処理対象を明示した場合はそのファイル名一覧
 
 ユーザー指定がある場合もpickerを起動する。本文取得、依存順、レーン分け及び再開位置はpickerが担う。

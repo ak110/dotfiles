@@ -70,6 +70,4 @@ submissions:
 全要求の`result`が`completed`又は`condition_not_met`の場合だけ全体の`status`を`completed`とし、1件以上が`needs_escalation`の場合は全体も`needs_escalation`とする。
 `filename`、`条件判定`及び`阻害要因`は値が既定値と一致する場合にその行を出力しない。呼び出し元は行の不在をその既定値として解釈し、欠落の判定の対象から外す。
 
-この形式は`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が定める「返却形式の文面だけを出力し、地の文を加えない」規定の対象内であり、指定形式の一部として返す。
-
-実行中に想定外の結果を観測し、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が定める即時報告の対象としなかった場合と、その即時報告をいずれの手段でも送れなかった場合は、本節が定める返却形式の末尾へ`想定外事象: <事象と対処>`の1行を追加する。この1行は本節が返却値を限定する記述より優先する。
+想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

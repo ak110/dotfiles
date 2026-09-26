@@ -14,7 +14,6 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 payload設計は、上記の一次資料が示す仕様から確定する。
 
 - 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutにホスト別契約の応答JSONを出力する。exit codeは0で正常完了とする
-  - stderr経由の表示はexit 2との組合せで使う代替手段
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeランタイムが現プラグインのルートディレクトリに置換する組み込み変数である。
   Codexもplugin hookの`command`内では互換変数として置換する。通常のCodexスキル実行では置換されないため、
   スキル本文から実行するコマンドには、読み込んだSKILL.mdの絶対パスから確定したplugin rootを用いる
@@ -26,7 +25,6 @@ payload設計は、上記の一次資料が示す仕様から確定する。
   そのターンの地の文を入力とする判定を`PreToolUse`へ置かない。
   直近の地の文を対象とする判定では、テキストブロックを持たないターンを走査の対象から除いて遡る。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある
-- 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
   auto modeでのブロック等はPermissionDeniedフックが処理する。
@@ -156,7 +154,7 @@ Claude Codeが表示する`Stop hook error: JSON validation failed`はプロン�
 `/goal`を設定したセッションでは、その表示がコマンド型hookの出力形式とは無関係に現れる。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日」にある。
 
-PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。これらのイベントでは、`additionalContext`はターン継続を強制しない。
+PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。各フィールドがターン継続を強制するかは後掲の表に従う。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使う。決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象は対象の外に置く。
 Stop/SubagentStopでそのターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
@@ -164,19 +162,20 @@ Stop/SubagentStopでそのターン継続を強制する用途は、エラーと
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | AWIを渡す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
+| `hookSpecificOutput.additionalContext` | コーディングエージェント | 行動を促す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
 | `reason` | コーディングエージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
 | `permissionDecisionReason` | deny時はコーディングエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
 | `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
 | `decision.*` | PermissionRequest専用 | 許可・拒否の決定。`hookSpecificOutput`直下に置く |
 
+deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届くため、重複表示を避けて片方に統一する。
+
 `decision: "block"`の挙動はイベント別に異なる。
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
-PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。Stop/SubagentStopでは`additionalContext`単独でもターン継続を強制する。
+PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。継続強制の有無は前掲の表に従う。
 
 - block通知は`_hooks.notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`fix`が空文字列または空白文字だけの場合は`ValueError`となる
 - block本文の構成はこの整形関数に限る（独自の整形関数では解消手段の欠落を機械的に検出できなくなるため）
-- PreToolUse・PostToolUseのblockはその操作の中止で場面が解消するため、Stop系の成立条件の規定は適用しない
 
 警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する。
 決定を省略すると通常の権限フローが適用され、警告表示とは独立に許可プロンプトが出る。
@@ -195,7 +194,7 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 `agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新及び一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
 PreToolUseの処理は、`send_message`・`kill`の保存済みsessionのチェックまでとし、開始ツールの入力妥当性検証は実行基盤へ委ねる。入力の実行権限値はそのまま渡す。
 `wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
-PostToolUseは成功した開始ツール（`start`・`start_explore`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
+PostToolUseは成功した開始ツール（`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
 旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` の用途は移行説明と保護対象の識別に限る。
 
 エージェントへ特定の行動・引数を要求するblock又はwarnは、要求する要件を実行主体が発火前に読み得る規範文書（常時ロードのルール、またはその作業で起動されるスキルの本文・参照文書）へ明示する。要件の初出は、その規範文書側に置く。
@@ -205,7 +204,6 @@ Claude CodeとCodexの双方に対応するフックでは、ホスト固有の�
 
 blockするチェックは規範の読み込み不足や手順の取り違えを実行主体へ通知する目的で設計する。
 新設するチェックの目的はこの通知に限る。別ツール経由の書き換えやフック自身への変更など、迂回手段の網羅的な遮断は目的の外に置く。
-block文面には検出した原因と、遮断を解除して続行する承認済みの手順を示す。
 
 ### PermissionRequest
 
@@ -242,7 +240,7 @@ Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得
 - 判定手順を本文へ持つ注記は、同一セッションの直前の通常発話からの経過時間を状態として保持し、閾値以上経過した通常発話にだけ返す。
   初回の通常発話はその注記の対象から除くが、経過時間の基準となる時刻を記録する
 
-初回を含む通常発話ではその時刻を更新する。注記の記録と注入の対象は通常発話に限り、ハーネスが挿入した通知及びコマンド起動は対象の外に置く。
+初回を含む通常発話ではその時刻を更新する。注記の記録と注入の対象は通常発話とし、ユーザーが入力したスラッシュコマンドで始まる発話を含める。ハーネスが挿入した通知と機械注入のターンは対象の外に置く。
 成立した注記が複数ある場合は、1つの`additionalContext`へ結合して返す。
 この注入はホストを問わず有効であり、Codex payloadでも同じ`additionalContext`を返す。
 
@@ -264,8 +262,7 @@ Stop/SubagentStopの`decision: "block"`は対象主体が同一ターン内の�
 上限に達すると警告とともにフックの判定が無視されてターンが終了する。
 上限値は`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`環境変数で変更できる。
 
-Stop・SubagentStopの`additionalContext`と`decision: "block"`の違いは`additionalContext`がフックの想定内の助言としてtranscriptへ表示され、フックのエラー通知を伴わない点である。
-いずれも`stop_hook_active`と連続継続上限による同じループ保護を通るため、前段の原則として従う規定を両通知形式へ等しく適用し、対象主体が同一ターン内の行動で解消できる条件だけを警告と遮断の条件にする。
+Stop・SubagentStopの`additionalContext`と`decision: "block"`の違いは`additionalContext`がフックの想定内の助言としてtranscriptへ表示され、フックのエラー通知を伴わない点である。前段の同一ターン内で解消できる条件の規定は両形式へ適用する。
 
 ターン終了の言語的判定（完了文言・質問・待機表明の判別）をフック側のコードで
 正規表現等により行うと誤検知が生じやすい。
