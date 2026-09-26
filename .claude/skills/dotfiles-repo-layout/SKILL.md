@@ -1,7 +1,7 @@
 ---
 name: dotfiles-repo-layout
 description: >
-  dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.config/`）の対応を
+  dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.gemini/`・`~/.config/`）の対応を
   判定するとき、ファイルの削除と改名で`pytools/post_apply.py`の`_REMOVED_PATHS`と
   `setup_codex_links.py`の`_LINKS`を扱うとき、dotfiles利用者・agent-toolkit利用者・全プロジェクト編集者・
   dotfiles編集者のどのロール向けのファイル群かを判定するとき、`AGENTS.md`・`agent-toolkit/rules/`・
@@ -58,11 +58,13 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
   - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-main.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`及び`agent-toolkit/rules/`配下の共有規範から
     `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、変更は生成元へ行う（手動編集は生成差分で上書きされて消失する）
-  - 共有ルール・スキルは`setup_codex_links.py`が
-    `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
-    （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション。
-    chezmoiの`symlink_`はWindowsで特権不足により失敗するため未使用）
+  - `setup_codex_links.py`が`~/.codex/`から`.chezmoi-source/dot_claude/`配下の共有スキルと`docs`の原本へリンクを生成する
+    - リンクはLinux/macOSではシンボリックリンク、Windowsではディレクトリジャンクションとする
+    - chezmoiの`symlink_`はWindowsで特権不足により失敗するため使わない
+  - `agent-toolkit/rules/`は配布先で境界標識を付けた本文へ書き換えるためリンクせず、
+    `sync_agent_toolkit_rules.py`が`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`へ同期する
   - `~/.codex/skills`にはグローバルに使うスキルだけを置く
+- `.chezmoi-source/dot_gemini/`: Antigravity CLI向けの配布元。`~/.gemini/`へデプロイする（`GEMINI.md`と`antigravity-cli/skills/`）
 - `.chezmoi-source/dot_config/`: XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元
   - ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_config/<tool>/`
 - `.chezmoi-source/`配下のファイルを削除・改名した場合、配布先の除去は`pytools/post_apply.py`の`_REMOVED_PATHS`への追記で行う。

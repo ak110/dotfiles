@@ -6,14 +6,14 @@
 
 ## 観測できる記録の所在
 
-状態ディレクトリの絶対パスは`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
+診断ログのディレクトリの絶対パスは`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
 同関数は`platformdirs`の`user_state_dir("agent-toolkit", appauthor=False)`が返す値を用いる。
 Claude Codeの作業ディレクトリのスラッグは、そのディレクトリの絶対パスのうちパス区切りと記号をハイフンへ置換した文字列である。
 
 | 記録 | 所在の組み立て方 | 読み取れる事実 |
 | --- | --- | --- |
-| `agents_server`の診断ログ | 状態ディレクトリ直下の`agents-server.log`。`RotatingFileHandler`が世代管理する | 起動ごとの`engine`、`launch_kind`、`model_type`、初期化の成否と再試行、sessionの状態遷移 |
-| 委譲先のCLIの診断ログ | 状態ディレクトリ直下の`delegate-debug`配下。ファイル名はUTC時刻、session識別子、`launch_kind`をハイフンで連ねた`.log`。session識別子は初期化の完了時に名前へ入るため、初期化へ到達しなかった起動の記録はその部分を持たない。保持世代を超えた記録は次の起動時に削除される | SessionStart hookの完了、MCPサーバーの接続、機能フラグの取得、skillsの送信、`[engine] turn 1 start`への到達、セッション間メッセージの保留 |
+| `agents_server`の診断ログ | 診断ログのディレクトリ直下の`agents-server.log`。`RotatingFileHandler`が世代管理する | 起動ごとの`engine`、`launch_kind`、`model_type`、初期化の成否と再試行、sessionの状態遷移 |
+| 委譲先のCLIの診断ログ | 診断ログのディレクトリ直下の`delegate-debug`配下。ファイル名はUTC時刻、session識別子、`launch_kind`をハイフンで連ねた`.log`。session識別子は初期化の完了時に名前へ入るため、初期化へ到達しなかった起動の記録はその部分を持たない。保持世代を超えた記録は次の起動時に削除される | SessionStart hookの完了、MCPサーバーの接続、機能フラグの取得、skillsの送信、`[engine] turn 1 start`への到達、セッション間メッセージの保留 |
 | Claude Codeが委譲先ごとに残すMCPサーバー接続ログ | Claude CLIのキャッシュディレクトリ配下の`<作業ディレクトリのスラッグ>/mcp-logs-<サーバー名>/<起動時刻>.jsonl`。Windowsでは`%LOCALAPPDATA%\claude-cli-nodejs\Cache`がそのキャッシュディレクトリとなる | 委譲先が起動した各MCPサーバーの接続完了時刻と接続の失敗 |
 | 委譲先のセッションのトランスクリプト | `~/.claude/projects/<作業ディレクトリのスラッグ>/<session識別子>.jsonl` | 委譲先が受け取った指示と返した応答。初期化を完了しなかった委譲先はこのファイルを作成しないため、不在そのものが初期化未到達の証拠になる |
 | Claude CodeのMCP接続失敗の記録 | 設定ディレクトリ直下の`mcp-needs-auth-cache.json` | プラグインのstdioサーバーの接続失敗とその時刻。記録がある間（15分）は、同じホストの全Claude Codeプロセスが同じ設定のサーバーへ接続せず、デバッグログにも接続試行が現れない |

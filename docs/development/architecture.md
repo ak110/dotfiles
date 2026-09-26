@@ -7,6 +7,7 @@
 - `.chezmoi-source/`内がchezmoiのソースディレクトリ（`dot_`プレフィックス→`~/.*`にデプロイ）
 - `.chezmoi-source/dot_claude/`: Claude Code用のユーザー設定。`~/.claude/`へデプロイする
 - `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。`~/.codex/`へデプロイする
+- `.chezmoi-source/dot_gemini/`: Antigravity CLI用のユーザー設定（`GEMINI.md`と`antigravity-cli/skills/`）。`~/.gemini/`へデプロイする
 - `pytools/`: Pythonコマンドラインツール群（`uv tool install`でインストール）
 - `rust/`: Rust製コマンドラインツール群（CIでビルドしGitHub Releaseへ配布）
 - `scripts/`: リポジトリ内部から呼ばれるスクリプト置き場（prek・Makefile・Claude Codeフック等。配布対象外）
@@ -104,7 +105,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを元にして`scripts/sync_generated_files.py`で生成する
-- `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のrulesだけをリンクする
+- `setup_codex_links.py`はdotfiles固有スキルと`docs`だけをリンクする。`agent-toolkit/rules/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
