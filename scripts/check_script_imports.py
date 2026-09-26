@@ -20,6 +20,10 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   層の順序に反する絶対importと、非テストモジュールから`_testing`へのimportを検出する
 - 対象種別4: `agent-toolkit/agent_toolkit/`と`agent-toolkit/skills/*/scripts/`を走査し、
   uvプロジェクトへ集約したPythonからPEP 723宣言が除去されていることを検査する
+- 対象種別5: `agent-toolkit/agent_toolkit/`直下の`*.py`（`*_test.py`を除く）が、配布物の外部から
+  絶対パスで解決される公開スクリプトと`__init__.py`・`conftest.py`だけであることを検査する。
+  対象種別3は責務別サブパッケージだけを走査するため、層に収まらない実装モジュールを直下へ置くと
+  層の検査を経ずに配置の規定から外れる
 
 スクリプトをimportまたは実行する方式は採らない。生成処理・ファイル書き込みなどの副作用を
 実行し得るうえ、`--help`への対応も保証されていないため。
@@ -50,6 +54,10 @@ _PYPROJECT_PATH = _REPO_ROOT / "pyproject.toml"
 _SHEBANG = "#!/usr/bin/env -S uv run --script"
 _DEPENDENCY_IMPORT_NAMES = {"markdown-it-py": "markdown_it", "pyyaml": "yaml"}
 _LAYER_ORDER = ("_common", "_git", "_plan", "_atk", "_agents_server", "_hooks")
+# 直下へ置ける名前。公開スクリプトの集合は`.claude/skills/agent-toolkit-edit/SKILL.md`「scripts配下の配置」が定める。
+_AGENT_TOOLKIT_ROOT_MODULES = frozenset(
+    {"hook.py", "atk.py", "agents_server_mcp.py", "wait_ci.py", "_managed_temp.py", "__init__.py", "conftest.py"}
+)
 
 # PEP 723インラインメタデータブロックの抽出パターン（公式仕様のリファレンス実装に準拠）。
 _PEP723_BLOCK_RE = re.compile(r"(?m)^# /// (?P<type>[A-Za-z0-9-]+)$\s(?P<content>(?:^#(?:| .*)$\s)+)^# ///$")
@@ -377,6 +385,16 @@ def _check_agent_toolkit_layers() -> list[str]:
     return problems
 
 
+def _check_agent_toolkit_root_modules() -> list[str]:
+    """`agent-toolkit/agent_toolkit/`直下に置かれた公開スクリプト以外のモジュールを返す。"""
+    scripts_root = _REPO_ROOT / "agent-toolkit/agent_toolkit"
+    return [
+        f"{_display_path(path)}: 公開スクリプト以外のモジュールが直下にある（責務別サブパッケージへ置く）"
+        for path in sorted(scripts_root.glob("*.py"))
+        if not path.name.endswith("_test.py") and path.name not in _AGENT_TOOLKIT_ROOT_MODULES
+    ]
+
+
 def _check_project_modules_have_no_pep723() -> list[str]:
     """uvプロジェクトで動くPythonモジュールにPEP 723宣言が残っていないことを検査する。"""
     roots = (
@@ -452,6 +470,7 @@ def main() -> int:
         _check_script_directories()
         + _check_project_scripts()
         + _check_agent_toolkit_layers()
+        + _check_agent_toolkit_root_modules()
         + _check_project_modules_have_no_pep723()
     )
     for problem in problems:

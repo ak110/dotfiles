@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import agent_toolkit._atk_agents as atk_agents
+import agent_toolkit._agents_server.commands as atk_agents
 import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file, tool_names
 from agent_toolkit._agents_server import claude as claude_backend

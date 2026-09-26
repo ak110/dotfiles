@@ -100,6 +100,28 @@ def test_nested_layer_import_rules(
     assert check_script_imports.main() == expected
 
 
+def test_private_module_directly_under_agent_toolkit_is_reported(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """直下へ公開スクリプト以外の実装モジュールを置くとexit 1で、そのファイル名を報告する。"""
+    scripts_root = _isolate_repo_root / "agent-toolkit/agent_toolkit"
+    (scripts_root / "atk.py").write_text("", encoding="utf-8")
+    (scripts_root / "_feature.py").write_text("", encoding="utf-8")
+
+    assert check_script_imports.main() == 1
+    assert "agent-toolkit/agent_toolkit/_feature.py" in capsys.readouterr().err
+
+
+def test_public_scripts_and_tests_directly_under_agent_toolkit_are_accepted(_isolate_repo_root: pathlib.Path) -> None:
+    """直下が公開スクリプト・`__init__.py`・`conftest.py`・テストだけならexit 0。"""
+    scripts_root = _isolate_repo_root / "agent-toolkit/agent_toolkit"
+    for name in ("hook.py", "atk.py", "agents_server_mcp.py", "wait_ci.py", "_managed_temp.py", "__init__.py", "conftest.py"):
+        (scripts_root / name).write_text("", encoding="utf-8")
+    (scripts_root / "atk_test.py").write_text("", encoding="utf-8")
+
+    assert check_script_imports.main() == 0
+
+
 def test_unresolvable_import_reports_script_and_module(
     _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

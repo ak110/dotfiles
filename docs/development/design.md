@@ -1883,6 +1883,8 @@ SSEは`/api/events`（AWI）、`/api/plans/events`（計画ファイル）、`/a
 `scripts/check_script_imports.py`は`sys.path.insert`の静的評価と絶対importの解決によりPEP 723スクリプトのimport到達性を確かめる。
 同スクリプトは相対importを解析の対象にしないため、相対importへ変えると検証の網羅性が失われる。
 同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportも検出して失敗する。
+同スクリプトは`agent-toolkit/agent_toolkit/`直下に公開スクリプト、`__init__.py`、`conftest.py`及びテスト以外のモジュールがある場合も失敗する。
+層の順序の判定はサブパッケージだけを走査するため、層に収まらないimportを持つモジュールを直下へ置くと、直下の配置の規定から外れても検出されない。
 
 モジュール名からは所属を表す接頭辞を除く。
 ただしPythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
