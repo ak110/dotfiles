@@ -165,3 +165,52 @@ def test_record_watch_detects_records_under_roots_created_after_start(tmp_path: 
         assert not collector.refreshed
     finally:
         watch.stop()
+
+
+def test_record_watch_stops_refreshing_on_unrelated_directories_after_root_creation(tmp_path: pathlib.Path) -> None:
+    """rootの作成後は、祖先直下の無関係なディレクトリ作成で一覧の再取得を通知しない。"""
+    collector = _Collector()
+    tracker = _tracker(tmp_path, collector)
+    (tmp_path / "claude").mkdir()
+    watch = session_watch.RecordWatch(tracker)
+    watch.start()
+    try:
+        (tmp_path / "claude" / "projects").mkdir()
+        assert collector.wait(lambda: collector.refreshed)
+        # debounce中に保留した通知の送出を待ってから消去する。
+        time.sleep(0.2)
+        collector.flushes.clear()
+
+        (tmp_path / "claude" / "unrelated").mkdir()
+
+        # debounce（0.01秒）の数十倍待っても再取得の通知は届かない。
+        assert not collector.wait(lambda: collector.refreshed, timeout=0.5)
+    finally:
+        watch.stop()
+
+
+def test_record_watch_keeps_shared_ancestor_while_another_root_is_missing(tmp_path: pathlib.Path) -> None:
+    """同じ祖先を共有する片方のrootだけを作成しても、もう片方のrootの作成と記録の追加を検知する。"""
+    collector = _Collector()
+    tracker = _tracker(tmp_path, collector)
+    watch = session_watch.RecordWatch(tracker)
+    watch.start()
+    try:
+        (tmp_path / "claude" / "projects").mkdir(parents=True)
+        assert collector.wait(lambda: collector.refreshed)
+        time.sleep(0.2)
+        collector.flushes.clear()
+
+        path = _write(
+            tmp_path / "codex" / "sessions" / "2026" / "rollout-x.jsonl",
+            [{"type": "response_item", "payload": {"role": "user", "content": []}}],
+        )
+        assert collector.wait(lambda: collector.refreshed)
+        collector.flushes.clear()
+        tracker.prime(str(path), True)
+
+        _write(path, [{"type": "response_item", "payload": {"role": "assistant", "content": []}}], append=True)
+
+        assert collector.wait(lambda: ("codex", str(path)) in collector.records)
+    finally:
+        watch.stop()

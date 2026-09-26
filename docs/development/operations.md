@@ -355,4 +355,4 @@ dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工�
 2026年9月15日に当該条件の評価時点を公開工程から選定工程の完了へ前倒しした是正も、同じ原因への対処であった。
 当該是正は入力を取得する時点を早めただけであり、入力がセッションの外側から変わる性質そのものは残っていた。
 
-auto-merge、マージ失敗後の自動再試行及び自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts.md#developとmasterのリリース運用)が記録する利用者指示による。
+auto-merge、マージ失敗後の自動再試行及び自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)が記録する利用者指示による。

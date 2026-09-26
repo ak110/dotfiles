@@ -376,7 +376,7 @@ class TestNonMatchingPrompts:
 
 
 class TestVerificationNoticeInjection:
-    """通常発話へ返す参照注記と照合注記の注入契約を検証する。"""
+    """通常発話へ返す照合注記の注入契約を検証する。"""
 
     @staticmethod
     def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:

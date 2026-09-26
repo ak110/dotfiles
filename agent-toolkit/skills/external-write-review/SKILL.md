@@ -29,7 +29,7 @@ git pushとコミットメッセージは`agent-toolkit:commit`、WI本文は`${
 委譲先として投稿する主体も、同じ担当内の独立した確認を読み取り専用の子探索へ分ける。
 
 レビュー担当には、文脈を持たない読者が目的と変更理由を理解できるか、文面の事実主張が渡した根拠と一致するかを確認させる。
-あわせて、AWI・UWIのファイル名、セッション識別子、手元だけのパスなどの内部識別子と秘匿値の混入、及び`agent-toolkit:writing-standards`「人間向け文章の共通規定」が求めるPR・MR説明の粒度を確認させる。
+あわせて、AWI・UWIのファイル名、セッション識別子、手元だけのパスなどの内部識別子と秘匿値の混入、及び`agent-toolkit:writing-standards`の`references/writing.md`「人間向け文章の共通規定」が求めるPR・MR説明の粒度を確認させる。
 結果は`atk agents wait --output-file <絶対パス>`で保存して受け取り、起動したsessionの終端を確認する。
 投稿する主体は`agent-toolkit:review-standards`の`references/reviewee.md`に従って指摘の採否を確定し、採用した指摘を文面へ反映してから投稿する。
 レビューは投稿前に1回実施し、反映後の再レビューを自動で繰り返さない。

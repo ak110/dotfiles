@@ -1,7 +1,7 @@
 ---
 name: dotfiles-repo-layout
 description: >
-  dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.config/`）の対応を
+  dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.gemini/`・`~/.config/`）の対応を
   判定するとき、ファイルの削除と改名で`pytools/post_apply.py`の`_REMOVED_PATHS`と
   `setup_codex_links.py`の`_LINKS`を扱うとき、dotfiles利用者・agent-toolkit利用者・全プロジェクト編集者・
   dotfiles編集者のどのロール向けのファイル群かを判定するとき、`AGENTS.md`・`agent-toolkit/rules/`・
@@ -25,7 +25,7 @@ description: >
   - 配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント
   - 全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`AGENTS.md`もロードする
-   （Claude Codeは`AGENTS.md`を直接読む。観測記録は`docs/development/audit-records.md`の「プロジェクト指示のAGENTS.md対応：2026年9月20日」にある）
+   （Claude Codeは`CLAUDE.md`と`CLAUDE.local.md`が無いプロジェクトで`AGENTS.md`を直接読む。観測記録は`docs/development/audit-records.md`の「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」にある）
 
 各ファイル群の対象読者と役割。
 
@@ -58,11 +58,13 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
   - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-main.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`及び`agent-toolkit/rules/`配下の共有規範から
     `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、変更は生成元へ行う（手動編集は生成差分で上書きされて消失する）
-  - 共有ルール・スキルは`setup_codex_links.py`が
-    `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
-    （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション。
-    chezmoiの`symlink_`はWindowsで特権不足により失敗するため未使用）
+  - `setup_codex_links.py`が`~/.codex/`から`.chezmoi-source/dot_claude/`配下の共有スキルと`docs`の原本へリンクを生成する
+    - リンクはLinux/macOSではシンボリックリンク、Windowsではディレクトリジャンクションとする
+    - chezmoiの`symlink_`はWindowsで特権不足により失敗するため使わない
+  - `agent-toolkit/rules/`は配布先で境界標識を付けた本文へ書き換えるためリンクせず、
+    `sync_agent_toolkit_rules.py`が`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`へ同期する
   - `~/.codex/skills`にはグローバルに使うスキルだけを置く
+- `.chezmoi-source/dot_gemini/`: Antigravity CLI向けの配布元。`~/.gemini/`へデプロイする（`GEMINI.md`と`antigravity-cli/skills/`）
 - `.chezmoi-source/dot_config/`: XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元
   - ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_config/<tool>/`
 - `.chezmoi-source/`配下のファイルを削除・改名した場合、配布先の除去は`pytools/post_apply.py`の`_REMOVED_PATHS`への追記で行う。
@@ -70,7 +72,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
   改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
   旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
 - `AGENTS.md`（本リポジトリルート）: dotfiles編集者向けの案内文書。Claude Code／Codex双方がここを読む
-  - `CLAUDE.md`は置かず、ホスト共通で`AGENTS.md`に従う
+  - `CLAUDE.md`は置かず、ホスト共通で`AGENTS.md`に従う。手元に`CLAUDE.local.md`を置く場合は`claudize`が追跡対象外のアダプターを置く
 
 ## 変更後の規範の自セッション適用
 

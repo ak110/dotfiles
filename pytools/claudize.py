@@ -3,7 +3,11 @@
 
 配布元ディレクトリ（`agent-toolkit/rules/`）の内容を
 プロジェクト配下の`.claude/rules/agent-toolkit/`へ完全に同期する。
-通常実行ではプロジェクト指示を`AGENTS.md`実体へ統一する。
+通常実行ではプロジェクト指示の本文を`AGENTS.md`実体へ統一する。
+Claude Codeは`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まない。
+このため`CLAUDE.local.md`を置いたプロジェクトに限り、`@AGENTS.md`を取り込む`CLAUDE.md`アダプターを置き、
+リポジトリの`info/exclude`で追跡対象から外す。アダプターは個人用の`CLAUDE.local.md`に付随する手元の設定であり、
+リポジトリへは入れない。
 """
 
 import argparse
@@ -13,6 +17,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from pytools._internal.claude_common import run_subprocess
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
@@ -24,6 +29,9 @@ _RULES_DIRNAME = "agent-toolkit"
 _DOTFILES_ROOT = Path(__file__).resolve().parents[1]
 _AGENTS_MD = "AGENTS.md"
 _CLAUDE_MD = "CLAUDE.md"
+_CLAUDE_LOCAL_MD = "CLAUDE.local.md"
+# 見出しを付けるのは、1行だけの本文がmarkdownlintのMD041（先頭行の見出し）で失敗するため。
+_CLAUDE_ADAPTER = "# CLAUDE.md\n\n@AGENTS.md\n"
 
 
 def main() -> None:
@@ -76,40 +84,70 @@ def claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> No
 
 
 def migrate_project_instructions(target_dir: Path) -> None:
-    """プロジェクト指示を`AGENTS.md`単一実体へ安全に収束させる。"""
+    """プロジェクト指示の本文を`AGENTS.md`実体へ収束させ、`CLAUDE.local.md`がある場合だけアダプターを置く。"""
     agents_md = target_dir / _AGENTS_MD
     claude_md = target_dir / _CLAUDE_MD
     agents_kind = _classify_instruction_path(agents_md, expected_target=_CLAUDE_MD)
     claude_kind = _classify_instruction_path(claude_md, expected_target=_AGENTS_MD)
+    has_local = (target_dir / _CLAUDE_LOCAL_MD).exists()
 
+    if agents_kind == "missing" and claude_kind == "missing":
+        logger.info("維持: プロジェクト指示ファイルの変更なし")
+        return
     if agents_kind == "missing" and claude_kind == "regular_file":
         claude_md.rename(agents_md)
         logger.info("移行: %s を %s へリネーム", claude_md, agents_md)
-        return
-    if agents_kind == "expected_symlink" and claude_kind == "regular_file":
+        claude_kind = "missing"
+    elif agents_kind == "expected_symlink" and claude_kind == "regular_file":
         agents_md.unlink()
         claude_md.rename(agents_md)
         logger.info("移行: %s の旧リンクを撤去し %s を実体化", agents_md, agents_md)
-        return
-    if agents_kind == "regular_file" and claude_kind in {"adapter", "expected_symlink"}:
+        claude_kind = "missing"
+    elif agents_kind == "regular_file" and (claude_kind == "expected_symlink" or (claude_kind == "adapter" and not has_local)):
         claude_md.unlink()
         logger.info("削除: %s（AGENTS.mdへ統一）", claude_md)
-        return
-    if (agents_kind, claude_kind) in {
-        ("regular_file", "missing"),
-        ("missing", "missing"),
-    }:
-        logger.info("維持: プロジェクト指示ファイルの変更なし")
-        return
+        claude_kind = "missing"
+    elif not (agents_kind == "regular_file" and claude_kind in {"missing", "adapter"}):
+        logger.error(
+            "自動移行対象外の指示ファイル状態: %s=%s, %s=%s",
+            agents_md,
+            agents_kind,
+            claude_md,
+            claude_kind,
+        )
+        sys.exit(1)
 
-    logger.error(
-        "自動移行対象外の指示ファイル状態: %s=%s, %s=%s",
-        agents_md,
-        agents_kind,
-        claude_md,
-        claude_kind,
+    if not has_local:
+        return
+    if claude_kind == "missing":
+        claude_md.write_text(_CLAUDE_ADAPTER, encoding="utf-8", newline="\n")
+        logger.info("作成: %s（CLAUDE.local.mdがあるためAGENTS.mdを取り込むアダプターを置く）", claude_md)
+    _exclude_from_git(target_dir, claude_md)
+
+
+def _exclude_from_git(target_dir: Path, path: Path) -> None:
+    """`path`をリポジトリの`info/exclude`へルートからのパスで重複なく加える。Git管理外では何もしない。
+
+    `info/exclude`はlinked worktreeを含む全worktreeで共有するGit共通dir側へ置く。
+    """
+    toplevel = run_subprocess(["git", "-C", str(target_dir), "rev-parse", "--show-toplevel"], tag="claudize")
+    common_dir = run_subprocess(
+        ["git", "-C", str(target_dir), "rev-parse", "--path-format=absolute", "--git-common-dir"], tag="claudize"
     )
-    sys.exit(1)
+    if toplevel is None or common_dir is None or toplevel.returncode != 0 or common_dir.returncode != 0:
+        logger.info("除外設定なし: %s はGitの作業ツリー外", target_dir)
+        return
+    root = Path(toplevel.stdout.strip()).resolve()
+    pattern = "/" + path.resolve().relative_to(root).as_posix()
+    exclude = Path(common_dir.stdout.strip()) / "info" / "exclude"
+    text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    if pattern in (line.strip() for line in text.splitlines()):
+        return
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    separator = "" if not text or text.endswith("\n") else "\n"
+    with exclude.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write(f"{separator}{pattern}\n")
+    logger.info("除外: %s へ %s を追加", exclude, pattern)
 
 
 def _classify_instruction_path(path: Path, *, expected_target: str) -> str:

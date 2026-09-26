@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import agent_toolkit._atk_agents as atk_agents
+import agent_toolkit._agents_server.commands as atk_agents
 import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file, tool_names
 from agent_toolkit._agents_server import claude as claude_backend
@@ -457,6 +457,24 @@ def test_start_operations_match_registered_start_tools() -> None:
     non_start_operations = {"send_message", "kill", "list", "show", "stop"}
     registered = set(subject.mcp._tool_manager._tools)
     assert registered - non_start_operations == tool_names.START_OPERATIONS
+
+
+def test_start_tools_describe_cwd_condition() -> None:
+    """全ての起動ツールのスキーマが、起動処理の検査する`cwd`の条件（既存ディレクトリの絶対パス）を示す。
+
+    起動ツールを追加して`cwd`の説明を付け忘れた変更も失敗させる。
+    `start_shell`はシェルの作業ディレクトリとして独自の説明を持ち、他の起動ツールは説明を共有する。
+    """
+    descriptions = {}
+    for name in tool_names.START_OPERATIONS:
+        tool = subject.mcp._tool_manager.get_tool(name)
+        assert tool is not None
+        description = tool.parameters["properties"]["cwd"].get("description", "")
+        assert "既存ディレクトリの絶対パス" in description, name
+        descriptions[name] = description
+    assert "実行時の作業ディレクトリ" in descriptions.pop("start_shell")
+    assert len(set(descriptions.values())) == 1
+    assert "委譲先の作業ディレクトリ" in next(iter(descriptions.values()))
 
 
 def test_public_tools_separate_task_document_and_custom_start() -> None:

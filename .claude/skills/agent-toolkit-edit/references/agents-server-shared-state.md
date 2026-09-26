@@ -10,7 +10,7 @@
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
 | MCPサーバー | `agent-toolkit/agent_toolkit/agents_server_mcp.py` | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
-| `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
+| `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
 | フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py` | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 | statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 
@@ -41,7 +41,7 @@ CodexのPostToolUseフックは、所有session識別子があり環境変数か
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`系と`list`の応答が明示する`root_session_id`を使う） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
 | 委譲先CLI自身の診断記録 | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成、初期化完了後の改名と、保持世代を超えた記録の削除） |
-| Antigravityの公開イベントログ | `<状態ディレクトリ>/logs/<session_id>.jsonl` | セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
+| Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、session-reviewの証拠抽出器、セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
 | engineの可用性を理由に除外した候補 | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
 
 sessionの`created_at`は最初の開始時刻で、turnごとに更新する`started_at`と別に保持する。MCPサーバーのメモリーを基準とし、状態ファイルとsession登録簿へ射影する。再開したsessionは登録簿又は退避した再開情報の値を引き継ぐ。項目を持たない旧形式の登録簿から再開した場合は再開時刻から数え直す。

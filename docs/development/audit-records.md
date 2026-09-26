@@ -34,6 +34,20 @@ Claude Code 2.1.241で検証した設定は、対象キーを含まない一時J
 
 2026年9月20日、Claude Code v2.1.277の公式リリースノート<https://github.com/anthropics/claude-code/releases/tag/v2.1.277>で、`CLAUDE.md`が無いプロジェクトで`AGENTS.md`を読む機能が追加されたことを確認した。再検証は同バージョンのリリースノートを読み、`AGENTS.md`対応の記載を確認する。
 
+## プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日
+
+2026年9月26日、Claude Codeの公式文書<https://code.claude.com/docs/en/memory.md>で、既定の設定では`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まないことを確認した。
+該当する記載は次のとおりである。
+
+```text
+Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instructions in a project that relies on `AGENTS.md` stops Claude from reading `AGENTS.md` for you.
+```
+
+同日、Claude Code 2.1.283の`claude -p --model haiku`で観測した。
+合言葉を書いた`AGENTS.md`と`CLAUDE.local.md`だけを置いたディレクトリでは、合言葉を答えなかった。
+`claudize`が置く`# CLAUDE.md`と`@AGENTS.md`の2行のアダプターを加えると、合言葉を答えた。
+再検証は同じ構成の一時ディレクトリで、アダプターの有無ごとに`claude -p`へ合言葉を尋ねる。
+
 ## docs/development/design.md：Claude CodeとCodexの規範配置：2026年9月13日
 
 2026年9月13日、Codex CLI 0.154.0でローカルmarketplaceを隔離`CODEX_HOME`へ導入して検証した。`agent-toolkit/`直下にAgent Plugins用`plugin.json`がある構成では、`.codex-plugin/plugin.json`のhook定義よりroot manifestが優先され、app-serverの`hooks/list`は0件を返した。root manifestを除いたwrapperから相対シンボリックリンクでhook・skill・実行資源へ接続した構成では、公式CLIのsnapshotに`.codex-plugin`だけが残り、リンク先は含まれなかった。全資源を通常ファイルとして含む`agent-toolkit-codex/`では、`hooks/list`が8イベントを返した。対象は`sessionStart`、`subagentStart`、`preToolUse`、`postToolUse`、`permissionRequest`、`userPromptSubmit`、`subagentStop`、`sessionEnd`である。project trustの有無で登録集合は変わらなかった。再検証ではCodex CLI 0.154.0で`scripts/sync_codex_plugin_manifests_test.py::test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。隔離した2つの`CODEX_HOME`における登録集合、SessionStartの管理一時領域生成、SessionEndの回収を確認する。

@@ -101,7 +101,7 @@ class TestCodexMcpExecution:
         return _plan_file_state_env(tmp_path)
 
     def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str]):
-        """sandbox未指定の場合は`danger-full-access`へ自動補正する。"""
+        """sandbox未指定の開始ツール呼び出しは入力を補正せずに通過させる。"""
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -117,7 +117,7 @@ class TestCodexMcpExecution:
 
     @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
     def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str]):
-        """`danger-full-access`以外のsandbox指定は自動補正する。"""
+        """`danger-full-access`以外のsandbox指定も入力を補正せずに通過させる。"""
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -132,7 +132,7 @@ class TestCodexMcpExecution:
         assert "systemMessage" not in out
 
     def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str]):
-        """サブエージェント内部からの呼び出しでもsandboxを自動補正する。"""
+        """サブエージェント内部からの呼び出しでもsandbox指定を補正せずに通過させる。"""
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",

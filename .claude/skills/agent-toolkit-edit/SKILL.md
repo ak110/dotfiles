@@ -297,7 +297,7 @@ XML境界と属性の規約は`agent-toolkit/skills/writing-standards/references
 
 `update-dotfiles`（`chezmoi apply`後処理）はClaude Code向けagent-toolkitプラグインを自動インストール・更新する。
 処理は`pytools/_internal/install_claude_plugins.py`が担う。
-dotfiles固有スキルとplugin非対応のagents・rulesは、`post_apply`の専用ステップで原本へリンクする。
+`agent-toolkit/rules/`は`post_apply`の`sync_agent_toolkit_rules`が配布先へ同期し、Codex向けのdotfiles固有スキルと`docs`は`setup_codex_links`が原本へリンクする。
 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する
 （`python`の明示が必須。起動形の詳細は`docs/development/operations.md`を参照）。
 marketplaceの配布方式は次のとおり。

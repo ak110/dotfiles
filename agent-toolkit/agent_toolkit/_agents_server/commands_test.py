@@ -7,10 +7,11 @@ import pathlib
 
 import pytest
 
-from agent_toolkit import _atk_agents, atk
+from agent_toolkit import atk
+from agent_toolkit._agents_server import commands
 from agent_toolkit._atk import config, environment
 
-status_file = _atk_agents.status_file
+status_file = commands.status_file
 
 
 def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureFixture[str]) -> None:
@@ -48,7 +49,7 @@ def test_agents_wait_passes_explicit_root_to_waiter(
         received.append(kwargs["root_session_id"])
         return 0
 
-    monkeypatch.setattr(_atk_agents.agents_wait, "wait_for_result", fake_wait)
+    monkeypatch.setattr(commands.agents_wait, "wait_for_result", fake_wait)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait", "--root-session-id", "mcp-root"])
@@ -403,8 +404,8 @@ def test_agents_logs_reads_claude_record(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", "session-1"])
@@ -416,8 +417,8 @@ def test_agents_logs_reports_missing_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """存在しない記録は識別子を添えて報告する。"""
-    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "logs", "missing"])
@@ -445,8 +446,8 @@ def test_agents_logs_shows_first_of_ambiguous_codex_records(
             + "\n",
             encoding="utf-8",
         )
-    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path / "claude")
-    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "state")
 
     with pytest.raises(SystemExit, match="0"):
@@ -461,8 +462,8 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Antigravityの保存済み出力と、その後に追記された行を順に表示する。"""
-    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
     path = status_file.session_log_path("root-1", "agy-1", tmp_path)
     path.parent.mkdir(parents=True)
@@ -478,7 +479,7 @@ def test_agents_logs_reads_and_follows_antigravity_events(
         else:
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(_atk_agents.time, "sleep", append_then_stop)
+    monkeypatch.setattr(commands.time, "sleep", append_then_stop)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", "agy-1", "--follow"])

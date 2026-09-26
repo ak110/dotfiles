@@ -45,7 +45,7 @@ import sys
 from typing import Any
 
 # pylint: disable=wrong-import-position,protected-access
-from agent_toolkit import _atk_agents as _agents  # noqa: E402
+from agent_toolkit._agents_server import commands as _agents  # noqa: E402
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
 from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402

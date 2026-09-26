@@ -13,11 +13,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import agents_wait, record_paths, state, status_file
+from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.serve import sessions as session_records
-from agent_toolkit._atk_agents_notify import send_notification
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:

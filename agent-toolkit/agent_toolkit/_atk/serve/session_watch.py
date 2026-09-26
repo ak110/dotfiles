@@ -254,6 +254,8 @@ class RecordWatch:
 
     rootが起動時に存在しない場合は、存在する最も近い祖先を非再帰で監視し、
     ディレクトリの作成を契機に監視の登録をやり直す。監視の開始後に作成したrootの記録も検知するためである。
+    登録をやり直すたびに、どの未作成rootの祖先でもなくなった非再帰の監視を外す。
+    残すと祖先直下の無関係なディレクトリ作成が一覧の再取得通知になるためである。
     """
 
     def __init__(self, tracker: RecordChangeTracker) -> None:
@@ -296,8 +298,9 @@ class RecordWatch:
         self._observer = None
 
     def _schedule_roots(self) -> None:
-        """各rootを再帰で、存在しないrootは最も近い祖先を非再帰で監視へ登録する。"""
+        """各rootを再帰で、存在しないrootは最も近い祖先を非再帰で監視へ登録し、不要になった祖先の監視を外す。"""
         with self._lock:
+            ancestors: set[str] = set()
             for root, _engine in self.tracker.roots:
                 key = str(root)
                 if key in self._recursive:
@@ -311,6 +314,12 @@ class RecordWatch:
                     ancestor = ancestor.parent
                 if ancestor.is_dir():
                     self._add_watch(str(ancestor), recursive=False)
+                    ancestors.add(str(ancestor))
+            for path, watch in list(self._watches.items()):
+                if watch.is_recursive or path in self._recursive or path in ancestors:
+                    continue
+                self._observer.unschedule(watch)
+                del self._watches[path]
 
     def _add_watch(self, path: str, *, recursive: bool) -> None:
         existing = self._watches.get(path)
