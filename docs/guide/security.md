@@ -9,7 +9,11 @@
 | ツール | 設定 | スコープ |
 | ------------------------ | ----------------------------------- | --------------------------------------- |
 | uv（uvx含む） | `exclude-newer = "1 day"` | グローバル（`~/.config/uv/uv.toml`） |
-| npm / pnpm（pnpx含む） | `minimum-release-age=1440`（1日） | グローバル（`~/.npmrc`） |
+| npm（npx含む） | `min-release-age=1`（日数。1日） | グローバル（`~/.npmrc`） |
+| pnpm（pnpx含む） | `minimum-release-age=1440`（分。1日） | pnpmのグローバル設定（`pnpm config set --location global`） |
+
+npmとpnpmは公開待機のキー名と単位が異なるため、設定先を分けている。
+pnpmのグローバル設定は、`update-dotfiles`の実行時にpnpmが導入済みの場合だけ設定される。
 
 一時的に無効化する場合は以下のコマンドを実行。
 
@@ -17,8 +21,10 @@
 # uv
 uv pip install --exclude-newer=0seconds <package>
 
-# npm / pnpm
-npm install --minimum-release-age=0 <package>
+# npm
+npm install --min-release-age=0 <package>
+
+# pnpm
 pnpm install --config.minimum-release-age=0 <package>
 ```
 
