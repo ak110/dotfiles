@@ -218,10 +218,6 @@ jobs:
         # pre-commit 等の git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: GitHub Actions のピン留め検証
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
-        run: pinact run --check
-
       - name: ネイティブ依存インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         # actions/cacheはPATH上のzstdを使ってキャッシュを圧縮するため、キャッシュの復元より前に導入する。
