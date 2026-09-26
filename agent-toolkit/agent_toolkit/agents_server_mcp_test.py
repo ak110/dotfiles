@@ -233,6 +233,26 @@ class DelayedUnavailableBackend(FakeBackend):
             self._condition.notify_all()
 
 
+class OutputObservedBackend(FakeBackend):
+    """起動応答を返した後にモデル出力を受信し、終端しないまま実行を続ける偽バックエンド。"""
+
+    def __init__(self, sessions: dict[str, subject.SessionState], engine: str, condition: asyncio.Condition) -> None:
+        super().__init__(sessions, engine)
+        self._condition = condition
+        self.pending: list[asyncio.Task[None]] = []
+
+    async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await super().start(*args, **kwargs)
+        self.pending.append(asyncio.create_task(self._observe_output(session)))
+        return session
+
+    async def _observe_output(self, session: subject.SessionState) -> None:
+        await asyncio.sleep(0.01)
+        session.model_output_observed = True
+        async with self._condition:
+            self._condition.notify_all()
+
+
 class BlockingInterruptBackend(FakeBackend):
     """中断要求の配送を解除イベントまで停止する偽バックエンド。"""
 
@@ -1565,6 +1585,31 @@ async def test_internal_server_error_keeps_the_first_candidate(
     assert response["engine"] == "claude"
     assert not codex.start_calls
     assert "excluded_candidates" not in subject._public_start_response(response)
+
+
+@pytest.mark.asyncio
+async def test_start_returns_running_once_model_output_is_observed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """終端しないsessionでも、最初のモデル出力を観測した時点で上限を待たずに実行中として返す。"""
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "only", "high")]
+    )
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 5.0)
+    manager = subject.AgentsServerManager()
+    backend = OutputObservedBackend(manager.sessions, "codex", manager._condition)
+    _install_backend(manager, "codex", backend)
+    loop = asyncio.get_running_loop()
+
+    started = loop.time()
+    response = await manager.start("plan", "調査", str(tmp_path))
+    elapsed = loop.time() - started
+    await asyncio.gather(*backend.pending)
+
+    assert response["status"] == "running"
+    assert elapsed < 1.0
+    assert backend.start_calls == [("only", "high", "delegate")]
 
 
 async def _carry_over_late_unavailability(

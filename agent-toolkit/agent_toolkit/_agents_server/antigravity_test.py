@@ -209,3 +209,68 @@ def test_send_message_rejects_an_unfinished_turn() -> None:
             await manager.send_message(session, "続けて")
 
     asyncio.run(scenario())
+
+
+_GATED_AGY = """#!{python}
+import json
+import pathlib
+import sys
+import time
+
+gate_dir = pathlib.Path({gate_dir!r})
+
+
+def emit(payload):
+    print(json.dumps(payload), flush=True)
+
+
+def wait_for(name):
+    while not (gate_dir / name).exists():
+        time.sleep(0.01)
+
+
+emit({{"event": "init", "conversation_id": "conv-1", "init": {{"model": "gemini-3.8-flash"}}}})
+for step_type in ("user_input", "system_message", "error_message"):
+    emit({{"event": "step_update", "step_update": {{"conversation_id": "conv-1", "state": "DONE", "step_type": step_type}}}})
+wait_for("output")
+emit({{"event": "step_update", "step_update": {{"conversation_id": "conv-1", "state": "DONE", "step_type": "agent_response"}}}})
+wait_for("finish")
+emit({{"event": "result", "result": {{"status": "SUCCESS", "response": "完了"}}}})
+"""
+
+
+def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """可用性失敗の前に届く種別は出力に数えず、本文キーの無い`agent_response`で待機側へ通知する。"""
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "agy"
+    fake.write_text(_GATED_AGY.format(python=sys.executable, gate_dir=str(gate_dir)), encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    log_directory = tmp_path / "logs"
+
+    async def scenario() -> tuple[bool, bool]:
+        condition = asyncio.Condition()
+        manager = antigravity.AntigravityManager(condition=condition, log_directory=log_directory)
+        session = await manager.start("調査して", str(tmp_path))
+        log_file = log_directory / "conv-1.jsonl"
+        # 記録の追記とその行の処理は同じ同期区間で行われるため、4行目の出現は3件の`step_update`の処理済みを示す。
+        while not log_file.exists() or len(log_file.read_text(encoding="utf-8").splitlines()) < 4:
+            await asyncio.sleep(0.01)
+        before_output = session.model_output_observed
+        (gate_dir / "output").touch()
+        async with condition:
+            await asyncio.wait_for(condition.wait_for(lambda: session.model_output_observed), timeout=10)
+        after_output = session.model_output_observed
+        (gate_dir / "finish").touch()
+        while not session.terminal:
+            await asyncio.sleep(0.02)
+        await manager.close()
+        return before_output, after_output
+
+    before_output, after_output = asyncio.run(scenario())
+
+    assert not before_output
+    assert after_output

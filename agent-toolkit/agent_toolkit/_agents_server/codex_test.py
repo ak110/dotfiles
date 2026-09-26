@@ -132,6 +132,32 @@ def _completed_turn(session: shared_state.SessionState) -> dict[str, Any]:
     }
 
 
+def _item_started(session: shared_state.SessionState, item_type: str) -> dict[str, Any]:
+    return {
+        "method": "item/started",
+        "params": {
+            "threadId": session.session_id,
+            "turnId": session.turn_id,
+            "item": {"id": f"item-{item_type}", "type": item_type},
+        },
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("output_type", ["reasoning", "agentMessage"])
+async def test_model_output_is_observed_only_after_non_input_item(tmp_path: pathlib.Path, output_type: str) -> None:
+    """入力の記録である`userMessage`ではモデル出力を観測済みにせず、モデル由来のitemで観測済みにする。"""
+    session = shared_state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager = _InspectableAppServerManager({session.session_id: session})
+
+    await manager.handle_notification(_item_started(session, "userMessage"))
+    after_input = session.model_output_observed
+    await manager.handle_notification(_item_started(session, output_type))
+
+    assert not after_input
+    assert session.model_output_observed
+
+
 @pytest.mark.asyncio
 async def test_completed_turn_with_unobserved_child_is_published_immediately(tmp_path: pathlib.Path) -> None:
     """未観測の子sessionを記録し、Codexのturn終端結果を直ちに公開する。"""

@@ -238,6 +238,22 @@ def test_assistant_message_with_text_updates_both_activity_and_output() -> None:
     assert session.last_action == "調査を続ける"
 
 
+def test_only_assistant_messages_without_api_error_count_as_model_output() -> None:
+    """API失敗の合成メッセージではモデル出力を観測済みにせず、通常のassistantメッセージで観測済みにする。"""
+    session = shared_state.SessionState("session-1", "/tmp")
+    api_error = types.SimpleNamespace(
+        content=[types.SimpleNamespace(text="API Error: 429 rate limit")],
+        error="rate_limit",
+    )
+
+    claude.consume_assistant_message(session, api_error)
+    after_error = session.model_output_observed
+    claude.consume_assistant_message(session, types.SimpleNamespace(content=[], error=None))
+
+    assert not after_error
+    assert session.model_output_observed
+
+
 def test_initialization_diagnostic_identifies_received_messages() -> None:
     """初期化診断は受信メッセージを種別だけでなく内容で識別できる形で保持する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access

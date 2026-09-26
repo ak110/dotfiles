@@ -370,6 +370,10 @@ class SessionState:
     interrupt_requested: bool = False
     turn_completed: bool = False
     failure_pending_completion: bool = False
+    # モデル由来の出力（テキスト、思考、ツール呼び出し）を1回以上受信したか。
+    # engineの可用性失敗は最初のモデル出力より前に生じるため、`start`はこの値で起動直後の終端待ちを打ち切る。
+    # `start`は新しいsessionだけを待つため、turnごとに初期化しない。
+    model_output_observed: bool = False
     # Claude backendの背景タスクだけを表し、Codex backendでは値を持たない。
     live_task_ids: set[str] = dataclasses.field(default_factory=set)
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)

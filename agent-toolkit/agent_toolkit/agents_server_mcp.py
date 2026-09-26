@@ -75,6 +75,7 @@ REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"
 # Codex CLI 0.152.0で利用上限に達した状態のturnは、backendの起動応答から3.84〜4.27秒後に
 # `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
 # 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終端までの経過を測る。
+# 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
 START_AVAILABILITY_TIMEOUT = 15.0
 # engineの可用性に起因し、別候補なら結果が変わり得る失敗の識別子。
 # `codex app-server generate-json-schema`が出力する`CodexErrorInfo`列挙のうち、
@@ -1125,14 +1126,16 @@ class AgentsServerManager:
     async def _await_start_outcome(self, session: SessionState) -> None:
         """起動直後の可用性失敗を確定するため、上限付きで終端を待つ。
 
-        上限内に終端しないsessionは通常の実行中として扱い、以降は`atk agents wait`が観測する。
+        engineの可用性失敗は最初のモデル出力より前に生じるため、モデル出力を観測した時点で待機を打ち切る。
+        上限内に終端もモデル出力もしないsessionと、打ち切ったsessionは通常の実行中として扱い、
+        以降は`atk agents wait`が観測する。
         """
-        if session.result_available:
+        if session.result_available or session.model_output_observed:
             return
         with contextlib.suppress(TimeoutError):
             async with self._condition:
                 await asyncio.wait_for(
-                    self._condition.wait_for(lambda: session.result_available),
+                    self._condition.wait_for(lambda: session.result_available or session.model_output_observed),
                     timeout=START_AVAILABILITY_TIMEOUT,
                 )
 

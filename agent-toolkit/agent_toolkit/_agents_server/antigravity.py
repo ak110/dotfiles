@@ -39,6 +39,9 @@ _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 # 非対話実行の既定の上限は5分であり、委譲先の1turnはこれを超える。
 _PRINT_TIMEOUT_SECONDS = 3600
 _STDERR_LIMIT_CHARS = 4000
+# モデル出力に数える`step_update`の種別。agy 1.2.11の記録では、利用上限の失敗は
+# `user_input`・`error_message`・`system_message`を経て`result`で終端し、この2種別を含まなかった。
+_MODEL_OUTPUT_STEP_TYPES = frozenset({"agent_response", "tool"})
 
 
 def _system_prompt(launch_kind: LaunchKind) -> str:
@@ -334,6 +337,11 @@ class AntigravityManager:
                     text = _event_text(event_body)
                     if text:
                         session.set_progress(text)
+                    # 実際の`agent_response`と`tool`は本文キーを持たないため、本文の有無と別に通知する。
+                    output_step = event_body.get("step_type") in _MODEL_OUTPUT_STEP_TYPES
+                    if output_step:
+                        session.model_output_observed = True
+                    if text or output_step:
                         await self._notify_waiters()
                 elif kind == "result" and session is not None:
                     _finalize_turn(session, result_values(session, event_body))
