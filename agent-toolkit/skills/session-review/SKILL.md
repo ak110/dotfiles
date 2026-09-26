@@ -32,7 +32,7 @@ description: >
 2. `conversation.md`を読み、セッション全体の流れを振り返る。探す対象は遠回り、手戻り、同じ論点の反復、ユーザーによる是正、時間を費やした工程である。推測で組んだコマンドの試行錯誤、同じ資料の読み直し、採用した設計の書き直し、規範の解釈へ費やした工程、委譲先への指示不足による手戻りは標識を残さず候補に現れないため、会話の流れから探す。会話圧縮で自身のコンテキストから失われた区間も、会話の流れから読む。`reference_document`が値を持つ場合は、その文書を全文読み、対象リポジトリ固有の振り返り観点と所要時間目標を解決する。
 3. `candidates.md`と会話の流れから問題を選別し、`agent-toolkit:bugfix`を適用して原因と対策を1案へ確定する。判断基準は`references/analysis.md`を全文読んで適用する。確定に証拠の全文が要る候補だけ、候補一覧が示す記録位置を抽出器の`--detail`へ渡すか、`--grep`で照会する。所要時間の分析には`stats.md`を使う。
 4. 確定した対策を`agent-toolkit:wi-standards`の通常AWIとして起草する。同じ振り返りで確定した全本文を`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md`のChallengerレビュー1回へまとめ、`atk wi add --source session-review`で投入する。
-5. 結果を`agent-toolkit:completion-report`の振り返り結果報告へ渡す。作業ディレクトリは回収しない。
+5. 結果を`agent-toolkit:completion-report`の振り返り結果報告へ渡す。
 
 振り返り工程の所要時間目標は300秒とする。計測範囲は本スキルの起動から、振り返り結果報告の出力までとする。目標は完了条件の外に置き、超過は次の振り返りの所要時間の分析で改善の起点として扱う。
 
