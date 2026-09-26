@@ -97,6 +97,13 @@ class TestUpdateClaudeSettings:
         assert result["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] == "1"
         assert result["env"]["FOO"] == "bar"
 
+    def test_managed_env_directs_playwright_mcp_output_under_home(self, tmp_path: Path):
+        """配布原本はPlaywright MCPの自動命名の出力先を作業ツリーの外（ホーム配下のキャッシュ）へ向ける。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"env": {"FOO": "bar"}})
+        assert result["env"]["PLAYWRIGHT_MCP_OUTPUT_DIR"] == f"{Path.home().as_posix()}/.cache/playwright-mcp"
+        assert result["env"]["FOO"] == "bar"
+
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
         """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {

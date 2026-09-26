@@ -163,6 +163,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 - `showClearContextOnPlanAccept`: `true`（plan mode承認時にコンテキストクリアの選択肢を表示）
 - `env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR`: `"1"`（Bash呼び出しごとに作業ディレクトリをプロジェクトへ戻す）
 - `env.CLAUDE_CODE_NO_FLICKER`: `"1"`（画面のちらつきを抑制）
+- `env.PLAYWRIGHT_MCP_OUTPUT_DIR`: ホーム配下の`.cache/playwright-mcp`の絶対パス（Playwright MCPが作業中のリポジトリへ`.playwright-mcp/`を残さないようにする）
 - `permissions`: 許可・拒否するツールやパターンを記述
  （[例](https://github.com/ak110/dotfiles/blob/master/share/claude_settings_json_managed.json)）
 
