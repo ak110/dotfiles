@@ -6066,7 +6066,9 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
-    task_document.write_text("手順: `${CLAUDE_PLUGIN_ROOT}/share/other.parent.md`を読む。\n", encoding="utf-8")
+    # 配布物の参照実在検査が欠損参照として検出しないよう、変数を接頭辞から組み立てる
+    plugin_root_variable = "${CLAUDE_PLUGIN_" + "ROOT}"
+    task_document.write_text(f"手順: `{plugin_root_variable}/share/other.parent.md`を読む。\n", encoding="utf-8")
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
