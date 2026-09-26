@@ -160,7 +160,7 @@ docsサイトは`master`へのpushで`docs.yaml`が公開するため、docsサ�
 - 大規模な機能追加など: メジャー
 
 `releaser`はdotfilesの`pytools/releaser.py`が提供するコマンドである。
-既定branchの確認、未コミット変更の確認、未pushのcommitのpush、CI完了待機、`release.yaml`のworkflow_dispatch起動、runの監視、ローカルの`git pull --ff-only`を行う。
+既定branchの確認、未コミット変更の確認、未pushのcommitのpush、CI完了待機、`release.yaml`のworkflow_dispatch起動、runの監視、originの取得と上流branchへのfast-forwardによるローカルの最新化を行う。
 引数を省略した`releaser`はヘルプと未リリースコミットの一覧を表示するだけで終わる。
 `gh workflow run release.yaml`などの低水準コマンドは、`releaser`の内部実装又は人間が手動で補助する場合にだけ用いる。
 `releaser`はCI待機とリリースworkflowの監視で長時間かかるため、前景の実行時間上限を超える場合は背景実行か委譲で実行し、終了状態を観測してから報告する。

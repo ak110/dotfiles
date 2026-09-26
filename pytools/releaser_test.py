@@ -15,6 +15,7 @@ from pytools.releaser import (
     _list_runs_for_commit,
     _ReleaserError,
     _run_release_flow,
+    _sync_local_repo,
     _validate_release_workflow_dict,
     _watch_run,
     main,
@@ -390,3 +391,28 @@ def _make_commit(path: Path, message: str) -> None:
         ["git", "-C", str(path), "commit", "--allow-empty", "-m", message],
         check=True,
     )
+
+
+def test_sync_local_repo_ignores_unreachable_extra_remote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`fetch.all`が有効で到達できない追加リモートがあっても、originから上流branchへfast-forwardする。"""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "master", str(origin)], check=True)
+    upstream_work = tmp_path / "upstream-work"
+    _setup_git_repo(upstream_work)
+    _make_commit(upstream_work, "first")
+    subprocess.run(["git", "-C", str(upstream_work), "push", "-q", str(origin), "master"], check=True)
+    local = tmp_path / "local"
+    subprocess.run(["git", "clone", "-q", str(origin), str(local)], check=True)
+    subprocess.run(["git", "-C", str(local), "config", "fetch.all", "true"], check=True)
+    subprocess.run(["git", "-C", str(local), "remote", "add", "offline", str(tmp_path / "missing.git")], check=True)
+    _make_commit(upstream_work, "second")
+    subprocess.run(["git", "-C", str(upstream_work), "push", "-q", str(origin), "master"], check=True)
+    monkeypatch.chdir(local)
+
+    _sync_local_repo()
+
+    local_head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout
+    origin_head = subprocess.run(
+        ["git", "-C", str(origin), "rev-parse", "master"], capture_output=True, text=True, check=True
+    ).stdout
+    assert local_head == origin_head
