@@ -290,7 +290,8 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
   汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け。
   配置した場合は「バージョン更新」節の手順に従う
 - agent-toolkitの公開スクリプトは`uv run --project <plugin root> --locked --no-default-groups <対象>`形式で呼び出す。
-  対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`及びスキル補助処理である
+  対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`及びスキル補助処理である。
+  SSH先で動く`agent-toolkit/scripts/`のリモート補助処理だけは独立したPEP 723スクリプトとして起動する
 - `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
   `agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換スクリプトの残置に従う。
   残置した互換スクリプトはバージョン管理の対象へ含める。

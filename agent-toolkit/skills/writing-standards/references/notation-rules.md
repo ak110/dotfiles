@@ -17,7 +17,7 @@ textlintの`preset-jtf-style`でチェックされる項目は同プリセット
 
 ## 口語表現チェック
 
-恒久成果物にはpyfltrの有効なチェック定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。`<pyfltrの起動形>`は`python.md`の「pyfltrの起動形」に従って解決する。
+恒久成果物にはpyfltrの有効なチェック定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。`<pyfltrの起動形>`は`agent-toolkit:check-execution`の「pyfltrの起動形」に従って解決する。
 
 ```sh
 <pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>

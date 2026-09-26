@@ -1,6 +1,6 @@
 # Python記述スタイル
 
-本書はPythonのコードとテストコードの記述スタイル基準と、静的解析及びpyfltrの起動形の扱いを定める。
+本書はPythonのコードとテストコードの記述スタイル基準と、静的解析の扱いを定める。
 
 ## 言語スタイル
 
@@ -64,11 +64,6 @@
 
 ### 実行環境
 
-- 構文の互換範囲: 構文は、公開互換性として宣言された全対応版（`requires-python`等）で受理されることを
-  確認する。固定された開発・実行版での受理は、この判定の入力の外に置く
-- agent-toolkit配下で起動するPythonスクリプトやモジュールは、自身のplugin rootを
-  `uv run --project <plugin root> --locked --no-default-groups <対象>`へ指定して起動する。
-  SSH先で動く`agent-toolkit/scripts/`のリモート補助処理だけは独立したPEP 723スクリプトとして起動する
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
   - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
     プロジェクトをインストール対象として扱う
@@ -206,12 +201,6 @@
 - 対処: 検証対象loggerへ記録蓄積用の`logging.Handler`サブクラスを直接追加し、
   fixture終了時に`removeHandler`で取り除くパターンが安定する
 
-## pyfltrの起動形
-
-- 名前が確定したチェックコマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`の説明に従う。未知のコマンド名の探索、pyfltrの導入及びチェックの実行には、それぞれの目的に対応する既存の呼び出し手段（CLI・MCPツールなど）を使う
-- pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
-- サブコマンドの使い分け、オプションの受理形式、JSONL出力のレコード種別とフィールドの解釈、失敗ツールの再実行手段、ツール解決の失敗への対処は、`pyfltr <サブコマンド> --help`の出力とMCPツールのスキーマで確認する。これらが扱わない設定リファレンスと新規プロジェクトへの導入手順は<https://ak110.github.io/pyfltr/llms.txt>を取得し、そのページからたどって参照する
-
 ## 参照情報
 
 対象コードのPythonバージョンが該当PEPの導入バージョン以上の場合、その構文は正規構文であり、指摘の対象の外に置く。
@@ -232,7 +221,5 @@ PEP 758の`as`節使用時は従来通り括弧必須とする（`except (ValueE
 
 ## 新しいPythonバージョンの機能
 
-- 対象プロジェクトの`requires-python`で利用できる機能は公式のWhat's Newで確認する
-  <https://docs.python.org/3/whatsnew/index.html>
 - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）自体は注入対策にならない。
   安全性は後段のレンダラやAPI側に依存するため、SQL／HTML生成では対応レンダラと組み合わせて使う

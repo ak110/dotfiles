@@ -30,7 +30,15 @@
 | PowerShell | 該当なし | PSScriptAnalyzer |
 
 公開互換性として宣言した範囲で利用できる新しい言語機能を積極的に使う。
-利用可否は対象プロジェクトの言語バージョンと公式リリースノートで確認する。
+利用可否は対象プロジェクトの言語バージョン（Pythonの`requires-python`、TypeScriptのバージョン、Rustの`rust-version`・edition、C#の`LangVersion`・`TargetFramework`など）と公式リリースノートで確認する。
+確認先は次のとおりとする。
+
+- Python: <https://docs.python.org/3/whatsnew/index.html>
+- TypeScript: <https://www.typescriptlang.org/docs/handbook/release-notes/overview.html>
+- Rust: <https://doc.rust-lang.org/releases.html>
+- C#: <https://learn.microsoft.com/dotnet/csharp/whats-new/>
+
+構文は公開互換性として宣言された全対応版で受理されることを確認する。固定された開発・実行版での受理は、この判定の入力の外に置く。
 標準ライブラリで代替できる外部依存は排除する。
 プロジェクト固有の規約はそのプロジェクトの`CLAUDE.md`・`.claude/rules/`へ置く。
 
