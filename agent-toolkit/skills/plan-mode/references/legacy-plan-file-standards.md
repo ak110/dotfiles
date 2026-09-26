@@ -55,6 +55,6 @@ detailが実在しない場合は旧単一ファイル形式としてチェッ�
 ## 現行規範の所在
 
 旧形式の列名に紐づかない規範は現行書式側に従う。
-実施内容の記載粒度、採否の値、ユーザー合意に合っているかの確認、参照元検索と計上は`plan-file-standards.md`が、ユーザー発話の解釈は`agent-toolkit/share/rules-main.md`が定める。
+実施内容の記載粒度、採否の値、ユーザー合意に合っているかの確認、参照元検索と計上は`plan-file-standards.md`が、ユーザー発話の解釈は`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`が定める。
 旧書式では`plan-file-standards.md`が指す計上先を`## 実装資料`のファイル群別の変更説明と`## 完了条件`へ読み替える。
 レビュー指摘管理表の列契約は`agent-toolkit/agent_toolkit/_atk/review_table.py`とそのテストが定める。
