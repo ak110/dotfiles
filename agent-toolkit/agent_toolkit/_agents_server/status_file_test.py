@@ -429,6 +429,31 @@ async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_api_error_record_reaches_status_file_without_activity(tmp_path: pathlib.Path) -> None:
+    """API失敗の診断は活動時刻を変えず、CLIが読む状態ファイルへ届く。"""
+    session = state.SessionState("claude-session", str(tmp_path), engine="claude", announced=True)
+    session.updated_at = "2000-01-01T00:00:00+00:00"
+    writer = subject.StatusFileWriter(
+        {session.session_id: session},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    writer.activate()
+
+    session.record_api_error("rate_limit_error", 429)
+    writer.flush()
+
+    payload = json.loads(writer.path.read_text(encoding="utf-8"))
+    recorded = payload["sessions"][0]
+    assert recorded["updated_at"] == "2000-01-01T00:00:00+00:00"
+    assert recorded["api_error"]["type"] == "rate_limit_error"
+    assert recorded["api_error"]["http_status"] == 429
+    assert recorded["api_error"]["count"] == 1
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
 async def test_hosts_entries_are_removed_after_retention(tmp_path: pathlib.Path) -> None:
     """保持期限を過ぎた書込主体索引をactivate時に回収する。"""
     host_path = subject.hosts_directory("root", tmp_path) / "writer.json"

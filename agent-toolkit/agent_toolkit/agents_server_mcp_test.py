@@ -2307,6 +2307,34 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
 
 
 @pytest.mark.asyncio
+async def test_claude_api_error_is_visible_in_show_and_list(tmp_path: pathlib.Path) -> None:
+    """ClaudeのAPI失敗を両公開経路へ示し、再試行と回復を区別できる。"""
+    manager, _ = _manager_with_fake("claude")
+    session = subject.SessionState("claude-session", str(tmp_path), engine="claude")
+    session.updated_at = "2000-01-01T00:00:00+00:00"
+    manager.sessions[session.session_id] = session
+    failure = SimpleNamespace(content=[SimpleNamespace(text="API Error: 429 rate limit")], error="rate_limit")
+
+    claude_backend.consume_assistant_message(session, failure)
+    claude_backend.consume_assistant_message(session, failure)
+    shown = manager.show_session(session.session_id)
+    listed = manager.list_sessions()["sessions"][0]
+
+    assert shown["api_error"]["type"] == "rate_limit_error"
+    assert shown["api_error"]["http_status"] == 429
+    assert shown["api_error"]["count"] == 2
+    assert shown["api_error"]["elapsed_seconds"] >= 0
+    assert listed["api_error"] == shown["api_error"]
+    assert shown["seconds_since_activity"] >= subject.state.STALL_NOTICE_SECONDS
+    assert listed["seconds_since_activity"] >= subject.state.STALL_NOTICE_SECONDS
+
+    claude_backend.consume_assistant_message(session, SimpleNamespace(content=[], error=None))
+
+    assert "api_error" not in manager.show_session(session.session_id)
+    assert "api_error" not in manager.list_sessions()["sessions"][0]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("updated_at", "expected_stalled"),
     [("2000-01-01T00:00:00+00:00", True), ("2099-01-01T00:00:00+00:00", False)],

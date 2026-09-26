@@ -258,6 +258,35 @@ def test_only_assistant_messages_without_api_error_count_as_model_output() -> No
     assert session.model_output_observed
 
 
+def test_api_error_does_not_advance_activity() -> None:
+    """API失敗の再試行はモデル活動でなく、正常メッセージで失敗記録が消える。"""
+    session = shared_state.SessionState("session-1", "/tmp")
+    session.updated_at = "2000-01-01T00:00:00+00:00"
+    failure = types.SimpleNamespace(
+        content=[types.SimpleNamespace(text="API Error: 429 rate limit")],
+        error="rate_limit",
+    )
+
+    claude.consume_assistant_message(session, failure)
+    claude.consume_assistant_message(session, failure)
+
+    assert session.updated_at == "2000-01-01T00:00:00+00:00"
+    assert session.output_updated_at is None
+    assert session.api_error is not None
+    assert session.api_error["count"] == 2
+    assert session.api_error["type"] == "rate_limit_error"
+    assert session.api_error["http_status"] == 429
+
+    claude.consume_assistant_message(session, types.SimpleNamespace(content=[], error="rate_limit"))
+    assert session.api_error["http_status"] == 429
+    assert session.api_error["count"] == 3
+
+    claude.consume_assistant_message(session, types.SimpleNamespace(content=[], error=None))
+
+    assert session.api_error is None
+    assert session.updated_at != "2000-01-01T00:00:00+00:00"
+
+
 def test_initialization_diagnostic_identifies_received_messages() -> None:
     """初期化診断は受信メッセージを種別だけでなく内容で識別できる形で保持する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access

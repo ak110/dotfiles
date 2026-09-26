@@ -283,5 +283,6 @@ def _add_output_activity(session: dict[str, Any]) -> None:
         updated_at=updated_at if isinstance(updated_at, str) else None,
         output_updated_at=output_updated_at if isinstance(output_updated_at, str) else None,
         started_at=started_at if isinstance(started_at, str) else None,
+        api_error=session.get("api_error") if isinstance(session.get("api_error"), dict) else None,
     )
     session.update(activity)

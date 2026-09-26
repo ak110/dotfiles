@@ -42,6 +42,15 @@ struct Session {
     last_action: String,
     label: String,
     started_at: String,
+    api_error: Option<ApiError>,
+}
+
+#[derive(Debug)]
+struct ApiError {
+    error_type: String,
+    http_status: Option<u64>,
+    first_at: String,
+    count: u64,
 }
 
 #[derive(Debug)]
@@ -200,9 +209,41 @@ fn parse_session(value: &Value) -> Option<Session> {
         last_action: absent_as_empty_string(object, "last_action")?,
         label: required_string(object, "label")?,
         started_at: required_string(object, "started_at")?,
+        api_error: object.get("api_error").and_then(parse_api_error),
     };
     DateTime::parse_from_rfc3339(&session.started_at).ok()?;
     Some(session)
+}
+
+fn parse_api_error(value: &Value) -> Option<ApiError> {
+    let object = value.as_object()?;
+    let error_type = object.get("type")?.as_str()?;
+    if error_type.is_empty() {
+        return None;
+    }
+    let http_status = match object.get("http_status")? {
+        Value::Null => None,
+        Value::Number(number) => {
+            let status = number.as_u64()?;
+            if !(100..=599).contains(&status) {
+                return None;
+            }
+            Some(status)
+        }
+        _ => return None,
+    };
+    let first_at = object.get("first_at")?.as_str()?;
+    DateTime::parse_from_rfc3339(first_at).ok()?;
+    let count = object.get("count")?.as_u64()?;
+    if count == 0 {
+        return None;
+    }
+    Some(ApiError {
+        error_type: error_type.to_string(),
+        http_status,
+        first_at: first_at.to_string(),
+        count,
+    })
 }
 
 fn required_string(object: &Map<String, Value>, key: &str) -> Option<String> {
@@ -239,27 +280,45 @@ pub(crate) fn render_state_files(
         .map(|(item, name)| {
             // 最後に観測した行動を優先する。テキスト出力の無い区間でもツール名が進み、
             // 稼働しているかを1行で読み取れる。
-            let description = if item.session.last_action.is_empty() {
-                &item.session.progress
+            let api_error = if item.session.engine == "claude" && item.session.status == "running" {
+                item.session.api_error.as_ref()
             } else {
-                &item.session.last_action
+                None
+            };
+            let description = if let Some(api_error) = api_error {
+                format!("API再試行 {}", api_error.error_type)
+            } else if item.session.last_action.is_empty() {
+                item.session.progress.clone()
+            } else {
+                item.session.last_action.clone()
             };
             let mut right_parts = Vec::new();
-            if label_width > 0 {
+            if api_error.is_none() && label_width > 0 {
                 let fitted = truncate(&item.session.label, label_width);
                 let pad = label_width.saturating_sub(display_width(&fitted));
                 right_parts.push(format!("{fitted}{}", " ".repeat(pad)));
             }
-            let started_at = Value::String(item.session.started_at.clone());
-            if let Some(elapsed) = format_elapsed(Some(&started_at), now) {
-                right_parts.push(elapsed);
-            }
-            if !item.session.status.is_empty() {
-                right_parts.push(item.session.status.clone());
+            if let Some(api_error) = api_error {
+                let status = api_error
+                    .http_status
+                    .map_or_else(|| "?".to_string(), |value| value.to_string());
+                right_parts.push(format!("HTTP {status}"));
+                let first_at = Value::String(api_error.first_at.clone());
+                right_parts
+                    .push(format_elapsed(Some(&first_at), now).unwrap_or_else(|| "?".to_string()));
+                right_parts.push(format!("{}回", api_error.count));
+            } else {
+                let started_at = Value::String(item.session.started_at.clone());
+                if let Some(elapsed) = format_elapsed(Some(&started_at), now) {
+                    right_parts.push(elapsed);
+                }
+                if !item.session.status.is_empty() {
+                    right_parts.push(item.session.status.clone());
+                }
             }
             render_line(
                 &name,
-                &normalize_description(description),
+                &normalize_description(&description),
                 &right_parts,
                 columns,
                 name_width,
@@ -627,6 +686,63 @@ mod tests {
         assert!(lines[1].contains("latest progress"), "{lines:?}");
         assert!(!lines[2].contains("Bash"), "{lines:?}");
         assert!(!lines[2].contains("latest progress"), "{lines:?}");
+    }
+
+    #[test]
+    fn rendering_api_error_from_state_file_shows_retry_and_recovers() {
+        let mut retrying = session(
+            "retrying",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("latest progress", "lane-01"),
+            "2025-12-31T23:59:00+00:00",
+        );
+        retrying["last_action"] = Value::String("Bash".to_string());
+        retrying["api_error"] = serde_json::json!({
+            "type": "rate_limit_error",
+            "http_status": 429,
+            "first_at": "2025-12-31T23:59:20+00:00",
+            "count": 3,
+        });
+        let mut recovered = retrying.clone();
+        recovered.as_object_mut().unwrap().remove("api_error");
+        let mut other_engine = retrying.clone();
+        other_engine["engine"] = Value::String("codex".to_string());
+        let mut terminal = retrying.clone();
+        terminal["status"] = Value::String("completed".to_string());
+        let mut malformed = retrying.clone();
+        malformed["api_error"]["count"] = Value::String("3".to_string());
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let files = [
+            state_file("retrying.json", Value::Null, serde_json::json!([retrying])),
+            state_file(
+                "recovered.json",
+                Value::Null,
+                serde_json::json!([recovered]),
+            ),
+            state_file("other.json", Value::Null, serde_json::json!([other_engine])),
+            state_file("terminal.json", Value::Null, serde_json::json!([terminal])),
+            state_file(
+                "malformed.json",
+                Value::Null,
+                serde_json::json!([malformed]),
+            ),
+        ];
+        let lines = render_state_files(&files, 80, now);
+
+        assert_eq!(lines.len(), 5);
+        assert!(lines[0].contains("API再試行 rate_limit_error"));
+        assert!(lines[0].contains("HTTP 429"));
+        assert!(lines[0].contains("40s"));
+        assert!(lines[0].contains("3回"));
+        assert!(lines.iter().all(|line| display_width(line) <= 80));
+        assert!(!lines[0].contains("Bash"));
+        assert!(lines[1..].iter().all(|line| !line.contains("API再試行")));
+        assert!(lines[1..].iter().all(|line| line.contains("Bash")));
     }
 
     #[test]
