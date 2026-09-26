@@ -2,6 +2,8 @@
 
 本書はエンドユーザーが操作する画面を計画、作成、変更又はレビューする主体が使う共通基準を定める。最初に利用者の目的、主要な操作、既存のデザインシステムを調べ、操作から結果までの流れを定める。
 
+画面の判断は本書（共通）と`ui-ux-patterns.md`（主題別）が持ち、`ui-ux-web-rules.md`はHTML・CSS・JavaScriptでその判断を満たす手段とコードから判定できる条件だけを持つ。この分担を「画面基準の3層」と呼ぶ。
+
 参考資料: [frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill)、[ux-designer-skill](https://github.com/szilu/ux-designer-skill)、[Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines)。これらの要点を日本語の判断基準へ再構成した。個別の数値は末尾の一次資料を典拠とする。
 
 ## 判断の順序
