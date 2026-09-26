@@ -126,7 +126,8 @@ const ids = [
   'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
   'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
   'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
-  'decision-panel', 'decision-note', 'adopt-button', 'reject-button', 'hold-button', 'unhold-button',
+  'decision-panel', 'decision-heading', 'decision-note', 'confirm-adopt-button', 'confirm-reject-button',
+  'adopt-button', 'reject-button', 'hold-button', 'unhold-button',
   'return-to-inbox-button',
   'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
   'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
@@ -159,7 +160,7 @@ globalThis.controlGroups = {{
     elements['hold-button'], elements['unhold-button'], elements['return-to-inbox-button'], elements['decision-note'],
     elements['edit-content'], elements['save-entry-button'],
     elements['answer-input'], elements['save-answer-button'], elements['user-comment-input'],
-    elements['save-user-comment-button']
+    elements['save-user-comment-button'], elements['confirm-adopt-button'], elements['confirm-reject-button']
   ],
   'create-form': [
     elements['create-close-button'], elements['create-kind'], elements['create-content'],

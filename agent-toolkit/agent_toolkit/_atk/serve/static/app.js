@@ -775,7 +775,8 @@ function setDetailMode(mode) {
   const editing = mode === 'edit';
   const answering = mode === 'answer';
   const commenting = mode === 'user-comment';
-  const mutating = editing || answering || commenting;
+  const decisionAction = mode === 'decide-adopt' ? 'adopt' : mode === 'decide-reject' ? 'reject' : '';
+  const mutating = editing || answering || commenting || decisionAction !== '';
   const unansweredUwi = currentEntry?.kind === 'uwi' && currentEntry.answered === false;
   const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
   const mutable = currentEntry && MUTABLE_STATES.has(currentEntry.state);
@@ -785,7 +786,10 @@ function setDetailMode(mode) {
   byId('edit-panel').hidden = !editing;
   byId('answer-panel').hidden = !answering;
   byId('user-comment-panel').hidden = !commenting;
-  byId('decision-panel').hidden = mutating || !mutable;
+  // 採否のメモは採用・却下の操作モードでだけ表示し、閲覧中の本文とユーザーコメントの欄から分ける。
+  byId('decision-panel').hidden = decisionAction === '';
+  byId('decision-panel').dataset.action = decisionAction;
+  if (decisionAction) byId('decision-heading').textContent = decisionAction === 'adopt' ? '採用' : '却下';
   byId('edit-button').hidden = mutating || !mutable;
   byId('answer-button').hidden = mutating || !currentEntry ||
     currentEntry.kind !== 'uwi' || !mutable;
@@ -800,6 +804,8 @@ function setDetailMode(mode) {
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
   byId('save-user-comment-button').hidden = !commenting;
+  byId('confirm-adopt-button').hidden = decisionAction !== 'adopt';
+  byId('confirm-reject-button').hidden = decisionAction !== 'reject';
   syncDetailMutationAvailability();
   byId('edit-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
   byId('adopt-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
@@ -812,7 +818,8 @@ function syncDetailMutationAvailability() {
   for (const id of [
     'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
     'save-entry-button', 'save-answer-button', 'save-user-comment-button',
-    'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button'
+    'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button',
+    'confirm-adopt-button', 'confirm-reject-button'
   ]) {
     const button = byId(id);
     const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
@@ -933,7 +940,8 @@ function closeDetailDialog({updateUrl = true, force = false} = {}) {
     const mode = currentDetailMode();
     const changed = mode === 'edit' && byId('edit-content').value !== currentEntry?.content ||
       mode === 'answer' && byId('answer-input').value !== (currentEntry?.answer || '') ||
-      mode === 'user-comment' && byId('user-comment-input').value !== (currentEntry?.user_comment || '');
+      mode === 'user-comment' && byId('user-comment-input').value !== (currentEntry?.user_comment || '') ||
+      mode.startsWith('decide-') && byId('decision-note').value !== '';
     if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
   }
   const returnTarget = detailReturnTarget();
@@ -969,6 +977,7 @@ function currentDetailMode() {
   if (!byId('edit-panel').hidden) return 'edit';
   if (!byId('answer-panel').hidden) return 'answer';
   if (!byId('user-comment-panel').hidden) return 'user-comment';
+  if (!byId('decision-panel').hidden) return `decide-${byId('decision-panel').dataset.action}`;
   return 'view';
 }
 
@@ -1089,6 +1098,14 @@ function enterUserComment() {
   byId('user-comment-input').value = currentEntry.user_comment || '';
   setDetailMode('user-comment');
   byId('user-comment-input').focus();
+}
+
+function enterDecision(action) {
+  if (!currentEntry || detailRefreshRequired || !MUTABLE_STATES.has(currentEntry.state)) return;
+  if (action === 'reject' && currentEntry.kind !== 'awi') return;
+  byId('decision-note').value = '';
+  setDetailMode(`decide-${action}`);
+  byId('decision-note').focus();
 }
 
 async function reloadUserCommentAfterConflict(key, sessionGeneration) {
@@ -1229,7 +1246,9 @@ async function transitionDetail(action) {
   if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
   try {
     await (runPending(`transition-${action}`, {
-      container: byId('detail-shell'), button: byId(`${action}-button`), busyLabel: '処理中'
+      container: byId('detail-shell'),
+      button: byId(action === 'adopt' || action === 'reject' ? `confirm-${action}-button` : `${action}-button`),
+      busyLabel: '処理中'
     }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)})));
     const label = {
       adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
@@ -1504,8 +1523,10 @@ function bindEvents() {
   byId('save-entry-button').addEventListener('click', saveEntry);
   byId('save-answer-button').addEventListener('click', saveAnswer);
   byId('save-user-comment-button').addEventListener('click', saveUserComment);
-  byId('adopt-button').addEventListener('click', () => { void transitionDetail('adopt'); });
-  byId('reject-button').addEventListener('click', () => { void transitionDetail('reject'); });
+  byId('adopt-button').addEventListener('click', () => enterDecision('adopt'));
+  byId('reject-button').addEventListener('click', () => enterDecision('reject'));
+  byId('confirm-adopt-button').addEventListener('click', () => { void transitionDetail('adopt'); });
+  byId('confirm-reject-button').addEventListener('click', () => { void transitionDetail('reject'); });
   byId('hold-button').addEventListener('click', () => { void transitionDetail('hold'); });
   byId('unhold-button').addEventListener('click', () => { void transitionDetail('unhold'); });
   byId('return-to-inbox-button').addEventListener('click', () => { void transitionDetail('return-to-inbox'); });

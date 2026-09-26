@@ -73,6 +73,7 @@ class _BrowserOperations(serve_app.Operations):
         self.remove_release = threading.Event()
         self.remove_release.set()
         self.remove_calls = 0
+        self.last_transition: tuple[str, list[str], str | None] | None = None
         self.persist_mutations = False
         self.add_calls: list[dict[str, Any]] = []
         self.batch_calls: list[str] = []
@@ -129,6 +130,7 @@ class _BrowserOperations(serve_app.Operations):
         filenames: list[str],
         **kwargs: Any,
     ) -> list[str]:
+        self.last_transition = (action, filenames, kwargs.get("note"))
         if action in {"hold", "unhold", "return-to-inbox"} and self.persist_mutations:
             source = kwargs.get("state") or (
                 "hold" if action == "unhold" else "processing" if action == "return-to-inbox" else "inbox"
@@ -813,8 +815,15 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
     await page.locator(f'.entry-select[data-key="inbox/{filename}"]').click()
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("answered")
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("yes")
-    await detail.get_by_role("button", name="採用").click()
+    await playwright.async_api.expect(detail.locator("#decision-panel")).to_be_hidden()
+    await detail.get_by_role("button", name="採用", exact=True).click()
+    note = detail.get_by_label("メモ（任意）")
+    await playwright.async_api.expect(note).to_be_focused()
+    await playwright.async_api.expect(detail.get_by_role("button", name="保留", exact=True)).to_be_hidden()
+    await note.fill("回答どおり採用する")
+    await detail.get_by_role("button", name="採用を確定").click()
     await page.get_by_role("status").filter(has_text="採用しました").wait_for(state="visible")
+    assert harness.operations.last_transition == ("adopt", [filename], "回答どおり採用する")
     assert (harness.root / "adopted" / filename).exists()
     assert not (harness.root / "inbox" / filename).exists()
 

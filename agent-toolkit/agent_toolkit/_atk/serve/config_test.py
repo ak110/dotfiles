@@ -189,6 +189,58 @@ process.stdout.write(JSON.stringify({visibility, sent}));
     }
 
 
+def test_assets_decision_note_is_shown_only_in_adopt_and_reject_modes() -> None:
+    """採否のメモ欄は閲覧中に隠し、採用・却下の操作モードでだけ表示して確定ボタンで送信する。"""
+    result = _run_node_ui(
+        """
+const entry = {
+  kind: 'awi', state: 'inbox', filename: 'entry.md', answered: null, summary: '対象', target_repo: 'example/repo',
+  content: '本文', body_html: '<p>本文</p>', frontmatter_entries: []
+};
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})
+});
+displayEntry(entry);
+const view = {
+  panel: !elements['decision-panel'].hidden,
+  adopt: !elements['adopt-button'].hidden,
+  confirmAdopt: !elements['confirm-adopt-button'].hidden
+};
+const modes = {};
+const sent = {};
+for (const action of ['adopt', 'reject']) {
+  displayEntry(entry);
+  enterDecision(action);
+  modes[action] = {
+    panel: !elements['decision-panel'].hidden,
+    heading: elements['decision-heading'].textContent,
+    focused: globalThis.focused,
+    confirm: !elements[`confirm-${action}-button`].hidden,
+    otherButtons: ['adopt-button', 'reject-button', 'hold-button', 'edit-button', 'delete-button',
+      'user-comment-button'].filter(id => !elements[id].hidden)
+  };
+  elements['decision-note'].value = `  ${action}のメモ  `;
+  fetchCalls.length = 0;
+  await transitionDetail(action);
+  const call = fetchCalls.find(item => item.url.endsWith(`/api/entries/${action}`));
+  sent[action] = JSON.parse(call.options.body);
+}
+process.stdout.write(JSON.stringify({view, modes, sent}));
+"""
+    )
+    assert result == {
+        "view": {"panel": False, "adopt": True, "confirmAdopt": False},
+        "modes": {
+            "adopt": {"panel": True, "heading": "採用", "focused": "decision-note", "confirm": True, "otherButtons": []},
+            "reject": {"panel": True, "heading": "却下", "focused": "decision-note", "confirm": True, "otherButtons": []},
+        },
+        "sent": {
+            "adopt": {"filenames": ["entry.md"], "note": "adoptのメモ"},
+            "reject": {"filenames": ["entry.md"], "note": "rejectのメモ"},
+        },
+    }
+
+
 def test_assets_sse_detail_prefers_exact_identity_and_only_tracks_unique_move() -> None:
     """SSE詳細は複合キーを優先し、404後の一意な移動だけを追跡する。"""
     result = _run_node_ui(
