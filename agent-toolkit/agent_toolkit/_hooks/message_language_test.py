@@ -82,8 +82,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
         "進行が遅いことや非効率に見"
         "えることだけでは停止の指示にならない。"
         "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
-        "ユーザーの介入があった場合は、既定では稼働中の委譲先へ追加指示を送る。停止するのは、当該介入が委譲範囲または前提を無効にし、"
-        "継続すると誤った成果物が確定する場合に限る。詳細は`agent-toolkit:delegation`「継続と新規起動」が定める。",
+        "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
     ),
     (
         "pretooluse.py:1588 解消手段",
@@ -321,11 +320,8 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("posttooluse.py:686 本文", "warn: {display_name}の応答に{', '.join(missing)}が欠けているか不正である。"),
     (
         "_hooks/rules_context.py:QUALITY_CHECKPOINT_NOTICE",
-        "本来のユーザーから見"
-        "える目的を明示に保つ。要求されたシナリオに十分な最小限の設計を選ぶ。"
-        "エージェント向けの会話上の誘導と、成果物へ残す恒久的な文脈を分け、会話限りの指示を成果物へ持ち込まない。"
-        "要件を満たせない場合は明示的に失敗させる。裏付けの無いフォールバック・旧経路・互換経路は保持せず除去する。"
-        "`AGENTS.md`と`agent-toolkit`のルールを正本として扱う。",
+        "会話圧縮後は`01-agent.md`「行動と手順の目的」に従い、目的と承認状態を記録された計画やキュー項目から復元する。"
+        "会話限定の指示を成果物へ混入させない。",
     ),
     (
         "autonomous_exit.py:108 解消手段",

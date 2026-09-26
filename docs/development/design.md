@@ -1074,7 +1074,7 @@ autosquash成功後は実装担当が`git rev-parse --short=7 HEAD`で取得し�
 実行環境が委譲元の起動文を`user` roleで配送しても、そのtransport上のroleは人間の発話者を証明しない。
 直接対話で受領した実際の利用者メッセージと、委譲元が人間由来として出所と引用範囲を明示した素材だけを利用者指示及び合意へ分類する。
 委譲元は起動命令と人間由来の素材を区別する。当該区別を成立させる基準は受信側にある。
-配送本文の出所判定は`agent-toolkit/share/rules-subagent.md`の「受領した本文の出所」節が担う。
+配送本文の出所判定は`agent-toolkit/rules/01-agent.md`の「方針が衝突する場合の優先順位」節が担う。
 計画への由来記録は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の`由来`区分が担う。
 実行レビュー担当への受け渡しは`agent-toolkit/share/exec-review.parent.md`の「`review_contract`の生成」節が担う。
 起動命令を利用者合意へ昇格させた差分は、`agent-toolkit/share/exec-review.subagent.md`の種類2（認可された対象、範囲又は外部可視の結果からの逸脱）と種類7（自動チェックでは検出できない執筆規範又はプロジェクト規範への違反）で指摘する。独立した指摘種類は新設しない。

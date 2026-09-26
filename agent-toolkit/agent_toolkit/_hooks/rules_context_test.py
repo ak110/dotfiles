@@ -32,7 +32,6 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
-    assert rules_context.ASK_USER_QUESTION_CHECKLIST in output
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
     normative_start = (
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
@@ -89,7 +88,6 @@ def test_session_start_main_places_response_language_notice_first(
     notice_index = output.index(rules_context.RESPONSE_LANGUAGE_NOTICE)
 
     assert notice_index < output.index(rules_context.QUALITY_CHECKPOINT_NOTICE)
-    assert notice_index < output.index(rules_context.ASK_USER_QUESTION_CHECKLIST)
     assert notice_index < output.index(
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
         f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'

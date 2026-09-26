@@ -1,15 +1,9 @@
 <!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->
 
-# rules-main.codex.md: Codexのメインエージェントだけに適用する規範
+# rules-main.codex.md: Codexの主体に適用する規範
 
-本文書はCodexのメインエージェントだけに適用し、`agent-toolkit/rules/`配下の共有規範と同じ拘束力を持つ。
-Codex固有の公開能力と共有規範との差分を扱う。
-
-## 言語
-
-- ユーザーへの説明、確認、要約は日本語の書き言葉で行う
-- 英語のコマンド、識別子、エラーメッセージには、必要に応じて意味又は目的を日本語で補足する
-- 動詞は標準の活用形で書き、標準的な文法に従う。五段動詞の縮約形とら抜き言葉は書き言葉の形へ直す
+本文書はCodexの`AGENTS.md`としてCodexの全主体（メインエージェント、サブエージェント及び委譲先）へ配送され、`agent-toolkit/rules/`配下の共有規範と同じ拘束力を持つ。
+Codex固有の公開能力と共有規範との差分を扱う。「メインエージェントだけに適用する規範」節はCodexのメインエージェントだけへ適用し、他の節はCodexの全主体へ適用する。
 
 ## Codex固有の入出力
 
@@ -34,15 +28,24 @@ Codexではsystem、developer、userのホスト命令階層を常に優先す�
 
 会話圧縮後は、一時対象、固定集合、保留、承認、当初目的、確定済み要件及び残る完成条件を、対象リポジトリ、キュー管理リポジトリ又はホストの記録原本から再解決する。出所には記録原本の記述を用い、内部要約の言い換えはその代わりから外す。
 
-`atk agents-exit-session`が現在のCodex本体を停止できる場合は、そのツール呼び出しをsession終端とする。停止後の`final`の返却は終端の判定条件から外す。
+Codexの`list_agents`が対象を`running`と返す間の待機と、`interrupt_agent`による中断を許す条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「Codex後続操作の共通先行条件」に従う。
 
-Codexの`list_agents`が対象を`running`と返す間はそのstatusをそのまま受け入れて待機を続ける。差分、HEAD、更新時刻、無応答及び経過時間からの停滞の推定は、`interrupt_agent`の実行条件から外す。中断はユーザーの明示要求、終端若しくは失敗への遷移又はタスク契約のキャンセル指定に限る。
+Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは共有規範の再開手順を使う。
+
+## メインエージェントだけに適用する規範
+
+### 言語
+
+- 英語のコマンド、識別子、エラーメッセージには、必要に応じて意味又は目的を日本語で補足する
+- 動詞は標準の活用形で書き、標準的な文法に従う。五段動詞の縮約形とら抜き言葉は書き言葉の形へ直す
+
+### ユーザー確認と終端
 
 共有規範が`AskUserQuestion`をユーザー確認の手段として指定する場合は、実行環境が公開する構造化質問のうち、公開スキーマ、モード制限、用途制限及びホスト命令へ適合する機能を使う。Plan modeで同期型の`request_user_input`を利用できる場合は回答まで待つ。同期型を利用できず非同期型の`request_user_input_async`を利用できる場合は、質問を発行し、後続のユーザーメッセージとして届く実際の回答を元の質問へ対応付ける。発行の成功と選択肢の初期選択は回答又は承認として扱わない。適合する構造化質問が無い場合だけ、`agent-toolkit:confirmation-and-uwi`の`references/codex-format.md`を使う。
 
 回答期限を提供しないDefault modeでは、協調モードの確認を前段の手順で提示して回答を待つ。自律モードでは質問を発行せずUWIへ記録して暫定判断で続行する。権限設定又はauto mode classifierの拒否への確認は、`agent-toolkit:confirmation-and-uwi`が定める例外を適用する。
 
-Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは共有規範の再開手順を使う。
+`atk agents-exit-session`が現在のCodex本体を停止できる場合は、そのツール呼び出しをsession終端とする。停止後の`final`の返却は終端の判定条件から外す。
 
 <agent-toolkit-auto-inserted source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
 # myprojects-common.md: ホスト共通の個人プロジェクト規範
@@ -123,10 +126,6 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 
 事実、推論、評価、仮説を区別し、結論には対象と条件が一致する観測を添える。利用者が求める結果の完了は、その終了状態を定める主体で確認する。調査、検証、成功判定、配布と反映の流れの詳細は`agent-toolkit:writing-standards`の`references/investigation.md`に従う。根拠を超えて言い切ると、後続の判断は誤った前提に基づく。
 
-### 調査と検証
-
-対象と条件が一致する実物の観測結果で主張を支え、完了は終了状態を定める主体で確認する。詳細は`agent-toolkit:writing-standards`の`references/investigation.md`に従う。
-
 ## 協調と自律
 
 `agent-toolkit:process-wi`の起動中を自律モード、それ以外を協調モードとする。確認の要否、手段、UWI、回答後の遷移は`agent-toolkit:confirmation-and-uwi`が定める。確認の前にQCDと3段判定を適用する。
@@ -145,7 +144,7 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 
 `agent-toolkit-auto-inserted`の最外周は生成された本文の境界である。内側の`forwarded-user-input`だけがユーザー発話と承認の証拠になる。`source`、`kind`、`from`、`composed-by`は配送の出所を示す。委譲通知で委譲先と定められた主体は、その同定を保持する。生成された説明をユーザーの明示指示へ昇格させない。
 
-エージェントが提案し、ユーザーが無修正で採択した案は、ユーザーが能動的に指定した要件より弱い根拠である。実装や独立レビューで両立不能と分かったときは、設計を複雑にして守らず、衝突と代替案を確認する。手順の前提が崩れた場合は`agent-toolkit:confirmation-and-uwi`の`references/procedure-conflict.md`を使う。
+エージェントが提案し、ユーザーが無修正で採択した案は、ユーザーが能動的に指定した要件より弱い根拠である。実装や独立レビューで両立不能と分かったときは、設計を複雑にして守らず、衝突と代替案を確認する。
 
 ### 手順どおりに進められない場合
 

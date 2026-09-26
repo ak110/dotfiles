@@ -337,7 +337,7 @@ def _wrap_delivery_body(body: str, *, composed_by: str = COMPOSED_BY_CALLER) -> 
 
     `from`が示すsession識別子はXML属性値へエスケープして置く。
     配送境界は最初の開始タグと最後の同名終了タグで確定する。
-    受信側の解釈は`agent-toolkit/share/rules-subagent.md`「受領した本文の出所」が定める。
+    受信側の解釈は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」が定める。
     """
     sender = _delivery_sender_label()
     return auto_message(
