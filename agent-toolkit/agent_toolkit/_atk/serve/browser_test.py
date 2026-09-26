@@ -4547,6 +4547,8 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
             }
         )
     _append_jsonl(path, records)
+    # 記録の作成による一覧の再取得の通知は、画面を開く前に配信を終えさせ、追記の検証へ混ぜない。
+    await asyncio.sleep(1.5)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
     events = page.locator("#detail details.event")
