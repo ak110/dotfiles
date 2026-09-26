@@ -387,6 +387,25 @@ def test_agent_document_target_paths() -> None:
     assert not _plan_format.is_agent_doc_target_file("pytools/example.py")
 
 
+@pytest.mark.parametrize("layer", (_TOOLKIT_PREFIX, "project/.claude", ".claude"))
+@pytest.mark.parametrize(
+    "kind_path",
+    ("rules/example.md", "skills/example/SKILL.md", "skills/example/references/detail.md", "agents/example.md"),
+)
+def test_agent_document_target_covers_every_layer_and_kind(layer: str, kind_path: str) -> None:
+    """ルール・SKILL.md・references・サブエージェント定義を、配布物と任意プロジェクトの両層で判定する。
+
+    ある種類を片方の層へだけ加えると、レーン統合の`agent_rule_changes`から他方の層の同じ種類が漏れる。
+    """
+    assert _plan_format.is_agent_doc_target_file(f"{layer}/{kind_path}")
+
+
+@pytest.mark.parametrize("path", ("AGENTS.md", "CLAUDE.md", "project/AGENTS.md", "project/CLAUDE.md"))
+def test_agent_document_target_includes_project_instruction_files(path: str) -> None:
+    """プロジェクト指示ファイルは配置ディレクトリによらず判定する。"""
+    assert _plan_format.is_agent_doc_target_file(path)
+
+
 def test_main_structure_requires_none_when_no_agent_proposal_exists() -> None:
     """提案行が無い判断節へ任意の説明文を置かない。"""
     judgment = f"## {_plan_format.PLAN_H2_AGENT_JUDGMENT}"

@@ -47,7 +47,7 @@
 
 ## 出力
 
-統合差分のエージェント向け文書の変更パスは、統合先worktreeで`atk run-script agent-doc-changes -- <手順3で取得した統合先branchの統合前HEAD> <merged_head>`を単独実行し、終了コード0で得た標準出力のJSON配列をそのまま返す。対象集合には`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、`.claude/skills/`を含む。`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`agent-toolkit/agents/`、hook関連文書も含む。通常コードと履歴文書は対象外とする。`マージなし`の統合では空配列とする。
+統合差分のエージェント向け文書の変更パスは、統合先worktreeで`atk run-script agent-doc-changes -- <手順3で取得した統合先branchの統合前HEAD> <merged_head>`を単独実行し、終了コード0で得た標準出力のJSON配列をそのまま返す。対象集合は同コマンドの判定に従う。プロジェクト側は`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、`.claude/skills/`の`SKILL.md`と`references/`、`.claude/agents/`を含む。配布物側は`agent-toolkit/rules/`、`agent-toolkit/skills/`の`SKILL.md`と`references/`、`agent-toolkit/agents/`、`agent-toolkit/share/`を含む。chezmoiの配布元である`.chezmoi-source/dot_claude/rules/`と`.chezmoi-source/dot_claude/skills/`（`.md.tmpl`を含む）も含む。通常コードと履歴文書は対象外とする。`マージなし`の統合では空配列とする。
 同じレーンの統合を再び行う場合（統合指示の再受領、競合解消後の再統合など）は、前回までに返した`agent_rule_changes`の要素と今回の出力の和集合を、重複を除いて返す。メインはこの値でレーン全体の規範変更を再取得するため、今回の統合前HEADから数えた差分だけを返すと、前回統合した規範文書が再取得から漏れる。そのため、`agent_rule_changes`を返すたびに、その値を引き継ぎ記録先へ記録する。
 
 次の形式だけを返す。

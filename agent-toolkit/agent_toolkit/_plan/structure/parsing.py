@@ -477,6 +477,8 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)\.claude/rules/.+\.md$"),
     re.compile(r"(^|/)\.claude/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)\.claude/skills/[^/]+/references/.+\.md$"),
+    # サブエージェント定義も`agent-toolkit/agents/`と同じ種類としてプロジェクト側の層で判定する。
+    re.compile(r"(^|/)\.claude/agents/.+\.md$"),
 )
 # basenameで照合するコーディングエージェント向け文書判定対象ファイル名。
 # ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
@@ -486,12 +488,16 @@ AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"
 def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     """パス文字列がコーディングエージェント向け文書判定対象かを判定する。
 
-    `agent-toolkit/agent_toolkit/_hooks/pretooluse/`と`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が
-    参照する対象パス判定のSSOTとする。
+    実行時の利用者は`agent-toolkit/skills/plan-mode/scripts/list_agent_doc_changes.py`
+    （`atk run-script agent-doc-changes`）であり、
+    レーン統合の`agent_rule_changes`の対象集合を定める。
+    対象集合は`agent-toolkit:writing-standards`の成果物種別表が定めるコーディングエージェント向け文書
+    （`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）と
+    `agent-toolkit/share/`のタスク文書とし、chezmoiの配布元にあるルールとスキルも含む。
+    種類ごとに`agent-toolkit/`直下とプロジェクトの`.claude/`直下の両方の層を判定する。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
     `is_agent_facing_md`とは判定対象範囲が異なる。
-    利用箇所ごとに対象範囲を調整し、連続直接編集の抑止検査はプロジェクト固有文書を独自に除外する。
     """
     normalized = str(file_path).replace("\\", "/")
     if not normalized:
