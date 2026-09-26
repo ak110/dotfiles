@@ -3,7 +3,9 @@
 
 配布元ディレクトリ（`agent-toolkit/rules/`）の内容を
 プロジェクト配下の`.claude/rules/agent-toolkit/`へ完全に同期する。
-通常実行ではプロジェクト指示を`AGENTS.md`実体へ統一する。
+通常実行ではプロジェクト指示の本文を`AGENTS.md`実体へ統一し、`CLAUDE.md`は`@AGENTS.md`を取り込むアダプターとして置く。
+Claude Codeは`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まないため、
+個人用の`CLAUDE.local.md`を後から置いても`AGENTS.md`が読まれ続けるようアダプターを常設する。
 """
 
 import argparse
@@ -24,6 +26,8 @@ _RULES_DIRNAME = "agent-toolkit"
 _DOTFILES_ROOT = Path(__file__).resolve().parents[1]
 _AGENTS_MD = "AGENTS.md"
 _CLAUDE_MD = "CLAUDE.md"
+# 見出しを付けるのは、1行だけの本文がmarkdownlintのMD041（先頭行の見出し）で失敗するため。
+_CLAUDE_ADAPTER = "# CLAUDE.md\n\n@AGENTS.md\n"
 
 
 def main() -> None:
@@ -76,40 +80,37 @@ def claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> No
 
 
 def migrate_project_instructions(target_dir: Path) -> None:
-    """プロジェクト指示を`AGENTS.md`単一実体へ安全に収束させる。"""
+    """プロジェクト指示の本文を`AGENTS.md`実体へ収束させ、`CLAUDE.md`アダプターを置く。"""
     agents_md = target_dir / _AGENTS_MD
     claude_md = target_dir / _CLAUDE_MD
     agents_kind = _classify_instruction_path(agents_md, expected_target=_CLAUDE_MD)
     claude_kind = _classify_instruction_path(claude_md, expected_target=_AGENTS_MD)
 
+    if (agents_kind, claude_kind) in {("regular_file", "adapter"), ("missing", "missing")}:
+        logger.info("維持: プロジェクト指示ファイルの変更なし")
+        return
     if agents_kind == "missing" and claude_kind == "regular_file":
         claude_md.rename(agents_md)
         logger.info("移行: %s を %s へリネーム", claude_md, agents_md)
-        return
-    if agents_kind == "expected_symlink" and claude_kind == "regular_file":
+    elif agents_kind == "expected_symlink" and claude_kind == "regular_file":
         agents_md.unlink()
         claude_md.rename(agents_md)
         logger.info("移行: %s の旧リンクを撤去し %s を実体化", agents_md, agents_md)
-        return
-    if agents_kind == "regular_file" and claude_kind in {"adapter", "expected_symlink"}:
+    elif agents_kind == "regular_file" and claude_kind == "expected_symlink":
         claude_md.unlink()
-        logger.info("削除: %s（AGENTS.mdへ統一）", claude_md)
-        return
-    if (agents_kind, claude_kind) in {
-        ("regular_file", "missing"),
-        ("missing", "missing"),
-    }:
-        logger.info("維持: プロジェクト指示ファイルの変更なし")
-        return
+        logger.info("撤去: %s（AGENTS.mdへのリンクをアダプターへ置き換える）", claude_md)
+    elif not (agents_kind == "regular_file" and claude_kind == "missing"):
+        logger.error(
+            "自動移行対象外の指示ファイル状態: %s=%s, %s=%s",
+            agents_md,
+            agents_kind,
+            claude_md,
+            claude_kind,
+        )
+        sys.exit(1)
 
-    logger.error(
-        "自動移行対象外の指示ファイル状態: %s=%s, %s=%s",
-        agents_md,
-        agents_kind,
-        claude_md,
-        claude_kind,
-    )
-    sys.exit(1)
+    claude_md.write_text(_CLAUDE_ADAPTER, encoding="utf-8", newline="\n")
+    logger.info("作成: %s（AGENTS.mdを取り込むアダプター）", claude_md)
 
 
 def _classify_instruction_path(path: Path, *, expected_target: str) -> str:

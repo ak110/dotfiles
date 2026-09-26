@@ -184,7 +184,9 @@ Codexでは同じ挙動を前提にできないため、Codex側のプロジェ�
 `~/.codex/rules`はCodexの承認ルール用ディレクトリであり、Claude CodeのMarkdownルールとは互換性がない。
 agent-toolkitのMarkdownルールは`~/.codex/agent-toolkit/rules`に配置する。
 
-プロジェクト固有設定は、原則として`AGENTS.md`を実体ファイル、
-`CLAUDE.md`アダプターは配置せず、`AGENTS.md`単一実体に統一する。
-両方を実体ファイルとすることで、コピー欠落やシンボリックリンク非対応環境での障害を回避する。
+プロジェクト固有設定は、本文を`AGENTS.md`の実体ファイルへ置き、
+`CLAUDE.md`は`@AGENTS.md`を取り込むだけのアダプターとする。`claudize`と`codexize`はこの構成へ収束させる。
+Claude Codeは`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まないため、
+個人用の`CLAUDE.local.md`を置いたプロジェクトでも`AGENTS.md`が読まれるよう、アダプターを常に置く。
+アダプターも実体ファイルとすることで、シンボリックリンク非対応環境での障害を回避する。
 Codex専用の差分が必要な場合のみ、`AGENTS.md`本体に分岐記述を追加する。

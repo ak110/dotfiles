@@ -1,7 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
 """Codex向けに`AGENTS.md`実体と共有スキルへ収束させるコマンド。
 
-cwd直下のプロジェクト指示をAGENTS.mdの実体ファイルへ統一する。
+cwd直下のプロジェクト指示を`claudize`と同じ規則でAGENTS.mdの実体ファイルへ統一し、`CLAUDE.md`アダプターを置く。
 あわせて`.claude/skills`が存在する場合は`.agents/skills -> ../.claude/skills`の
 シンボリックリンクを冪等に作成する。
 
