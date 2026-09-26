@@ -59,6 +59,14 @@ Web UIはエンドユーザーが画面を閲覧する前提のため短く取�
 _PROCESSED_TIME_CLOCK_MARGIN = datetime.timedelta(days=1)
 _PROCESSED_AT_KEY = "terminal_processing_time"
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
+SSE_HEARTBEAT_SEC = 15.0
+"""3画面のSSEがheartbeatを送る間隔。
+
+中継するリバースプロキシの無通信タイムアウト（Apacheの既定は300秒）より十分短く保つ。
+heartbeatはスクリプトから観測できる名前付きイベントで送り、ブラウザーが無通信を判定する根拠とする。
+"""
+SSE_STALL_SEC = SSE_HEARTBEAT_SEC * 3
+"""ブラウザーがSSEを再接続するまでの無通信時間。heartbeat 3回分の欠落を接続の停止とみなす。"""
 logger = logging.getLogger(__name__)
 # エンドユーザーが記述する注記記法を注記として描画する。
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(mdit_py_plugins.footnote.footnote_plugin)
@@ -859,6 +867,7 @@ def _render_index(
             "__SESSIONS_BOOTSTRAP_JSON__",
             json.dumps({"base_path": base_path}, ensure_ascii=False).replace("</", "<\\/"),
         )
+        .replace("__SSE_BOOTSTRAP_JSON__", json.dumps({"stall_ms": int(SSE_STALL_SEC * 1000)}))
     )
 
 
@@ -1020,22 +1029,42 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
 
     @app.get("/api/plans/events")
     async def plans_events() -> quart.Response:
-        @pytilpack.sse.generator()
-        async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
-            queue = await serve_plans.subscribe(context.state)
-            try:
-                while True:
-                    message = await queue.get()
-                    # クライアントの`onmessage`が受け取るよう、event名を付けずdataのみで配信する。
-                    yield pytilpack.sse.SSE(data=message)
-            finally:
-                await serve_plans.unsubscribe(context.state, queue)
-
-        return quart.Response(
-            generate(),
-            content_type="text/event-stream",
-            headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
+        return _subscription_stream(
+            functools.partial(serve_plans.subscribe, context.state),
+            functools.partial(serve_plans.unsubscribe, context.state),
         )
+
+
+def _subscription_stream(
+    subscribe: typing.Callable[[], typing.Awaitable[asyncio.Queue[str]]],
+    unsubscribe: typing.Callable[[asyncio.Queue[str]], typing.Awaitable[None]],
+) -> quart.Response:
+    """購読キューの通知をSSEで配信し、通知の無い間は名前付きのheartbeatを送る応答を返す。
+
+    通知はクライアントの`onmessage`が受け取るよう、event名を付けずdataのみで配信する。
+    heartbeatは`event: heartbeat`とし、`onmessage`へ届かないため再取得を起こさない。
+    `pytilpack.sse.generator`のコメント行のkeep-aliveは、内側が間隔内に送るため発生しない。
+    """
+
+    @pytilpack.sse.generator()
+    async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
+        queue = await subscribe()
+        try:
+            while True:
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=SSE_HEARTBEAT_SEC)
+                except TimeoutError:
+                    yield pytilpack.sse.SSE(event="heartbeat", data="{}")
+                    continue
+                yield pytilpack.sse.SSE(data=message)
+        finally:
+            await unsubscribe(queue)
+
+    return quart.Response(
+        generate(),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
+    )
 
 
 def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, str]:
@@ -1104,20 +1133,9 @@ def _register_session_routes(
 
     @app.get("/api/sessions/events")
     async def sessions_events() -> quart.Response:
-        @pytilpack.sse.generator()
-        async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
-            queue = await serve_sessions.subscribe(context.state)
-            try:
-                while True:
-                    message = await queue.get()
-                    yield pytilpack.sse.SSE(data=message)
-            finally:
-                await serve_sessions.unsubscribe(context.state, queue)
-
-        return quart.Response(
-            generate(),
-            content_type="text/event-stream",
-            headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
+        return _subscription_stream(
+            functools.partial(serve_sessions.subscribe, context.state),
+            functools.partial(serve_sessions.unsubscribe, context.state),
         )
 
 
@@ -1258,7 +1276,7 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     @app.get("/api/events")
     async def events() -> quart.Response:
         current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
-        return quart.Response(current_state.events(), content_type="text/event-stream")
+        return quart.Response(current_state.events(heartbeat=SSE_HEARTBEAT_SEC), content_type="text/event-stream")
 
 
 async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[str]) -> quart.Response:

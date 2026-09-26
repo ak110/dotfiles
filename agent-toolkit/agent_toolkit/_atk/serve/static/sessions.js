@@ -573,18 +573,31 @@ function handleSseMessage(event) {
     return;
   }
   if (message?.type === "refresh") {
-    void loadList().then(() => refreshSelectedDetail());
+    void resyncFromServer();
   } else if (message?.type === "record" && isSelected(message.host, message.engine, message.path)) {
     void refreshSelectedDetail();
   }
 }
 
+// 確立時（初回・自動再接続・無通信後の再接続）は、接続していない間の変更を取り込むため一覧と選択中の記録を取り直す。
+// 初回の確立は`init`の初期取得の直後に起きるため取り直しを省く。
 function subscribeEvents() {
-  eventSource = new EventSource(BASE_PATH + "/api/sessions/events");
-  eventSource.onmessage = handleSseMessage;
-  eventSource.onerror = () => {
-    // EventSourceはブラウザが自動再接続する。切断中の一覧は次の再接続で更新される。
-  };
+  let firstOpen = true;
+  eventSource = window.__atkSse.connect(BASE_PATH + "/api/sessions/events", {
+    open: () => {
+      if (firstOpen) {
+        firstOpen = false;
+        return;
+      }
+      void resyncFromServer();
+    },
+    message: handleSseMessage,
+  });
+}
+
+async function resyncFromServer() {
+  await loadList();
+  await refreshSelectedDetail();
 }
 
 async function init() {
@@ -649,6 +662,13 @@ async function init() {
   }
   setDrawerOpen(false);
   subscribeEvents();
+  // タブが表示された状態へ戻った時点で取り直す。バックグラウンドのタブでは通知の処理が遅れるためである。
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void resyncFromServer();
+  });
+  // bfcacheへ入る前に接続を閉じ、復帰時に再接続する。再接続した接続の確立時に取り直す。
+  window.addEventListener("pagehide", () => { eventSource?.close(); });
+  window.addEventListener("pageshow", (event) => { if (event.persisted) eventSource?.reopen(); });
 }
 
 window.__atkScreens = window.__atkScreens || {};

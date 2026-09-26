@@ -4673,3 +4673,111 @@ async def test_session_without_user_message_appears_after_first_message(
     await playwright.async_api.expect(items).to_have_count(4, timeout=5000)
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-claude")
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-codex")
+
+
+# 3画面のSSEの購読先と、再同期で取り直す一覧APIの対応。
+_SCREEN_STREAMS = {
+    "wi": ("/api/events", "/api/entries"),
+    "plans": ("/api/plans/events", "/api/plans/files"),
+    "sessions": ("/api/sessions/events", "/api/sessions/list"),
+}
+
+
+def _request_count(harness: _ScreenHarness, path: str) -> int:
+    return sum(1 for url in harness.requests if urllib.parse.urlsplit(url).path == path)
+
+
+async def _wait_until(predicate: Any, timeout: float = 10.0) -> bool:
+    """条件が成立するまで短い間隔で待つ。"""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if predicate():
+            return True
+        await asyncio.sleep(0.05)
+    return bool(predicate())
+
+
+async def _open_all_screens(harness: _ScreenHarness) -> None:
+    """3画面を初期化し、各画面のSSE購読と初期取得が済むまで待つ。"""
+    await harness.page.goto(harness.base_url + "/sessions")
+    await playwright.async_api.expect(harness.page.locator("#sessions .session-item")).to_have_count(2)
+    assert await _wait_until(
+        lambda: all(
+            _request_count(harness, events) >= 1 and _request_count(harness, listing) >= 1
+            for events, listing in _SCREEN_STREAMS.values()
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_silent_sse_is_reconnected_and_lists_are_refetched(
+    screen_harness: _ScreenHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """通知もheartbeatも届かない時間が閾値を超えると、3画面とも再接続して一覧を取り直す。"""
+    monkeypatch.setattr(serve_app, "SSE_HEARTBEAT_SEC", 3600.0)
+    monkeypatch.setattr(serve_app, "SSE_STALL_SEC", 1.0)
+    await _open_all_screens(screen_harness)
+    before = {
+        name: (_request_count(screen_harness, stream), _request_count(screen_harness, listing))
+        for name, (stream, listing) in _SCREEN_STREAMS.items()
+    }
+
+    for name, (events, listing) in _SCREEN_STREAMS.items():
+        assert await _wait_until(
+            lambda events=events, listing=listing, name=name: (
+                _request_count(screen_harness, events) > before[name][0]
+                and _request_count(screen_harness, listing) > before[name][1]
+            )
+        ), name
+
+
+@pytest.mark.asyncio
+async def test_regular_heartbeat_keeps_sse_without_refetching(
+    screen_harness: _ScreenHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """heartbeatが届き続ける間は、閾値を超えて待っても再接続も一覧の再取得も起きない。"""
+    monkeypatch.setattr(serve_app, "SSE_HEARTBEAT_SEC", 0.2)
+    monkeypatch.setattr(serve_app, "SSE_STALL_SEC", 1.0)
+    await _open_all_screens(screen_harness)
+    await asyncio.sleep(0.5)
+    before = {path: _request_count(screen_harness, path) for pair in _SCREEN_STREAMS.values() for path in pair}
+
+    await asyncio.sleep(3.0)
+
+    assert {path: _request_count(screen_harness, path) for path in before} == before
+
+
+@pytest.mark.asyncio
+async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harness: _ScreenHarness) -> None:
+    """タブが表示へ戻るとWI画面とセッション画面が一覧を取り直し、bfcacheからの復帰では再接続する。"""
+    page = screen_harness.page
+    await _open_all_screens(screen_harness)
+    await asyncio.sleep(0.5)
+    lists = {name: _request_count(screen_harness, _SCREEN_STREAMS[name][1]) for name in ("wi", "sessions")}
+
+    await page.evaluate(
+        """() => {
+            Object.defineProperty(document, "visibilityState", {value: "visible", configurable: true});
+            document.dispatchEvent(new Event("visibilitychange"));
+        }"""
+    )
+
+    for name, count in lists.items():
+        assert await _wait_until(
+            lambda name=name, count=count: _request_count(screen_harness, _SCREEN_STREAMS[name][1]) > count
+        ), name
+
+    events = {name: _request_count(screen_harness, stream) for name, (stream, _listing) in _SCREEN_STREAMS.items()}
+    await page.evaluate(
+        """() => {
+            window.dispatchEvent(new PageTransitionEvent("pagehide", {persisted: true}));
+            window.dispatchEvent(new PageTransitionEvent("pageshow", {persisted: true}));
+        }"""
+    )
+
+    for name, count in events.items():
+        assert await _wait_until(
+            lambda name=name, count=count: _request_count(screen_harness, _SCREEN_STREAMS[name][0]) > count
+        ), name

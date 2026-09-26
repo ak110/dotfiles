@@ -199,6 +199,14 @@ globalThis.EventSource = class {{
   constructor(url) {{ this.url = url; this.listeners = {{}}; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
 }};
+// 共通シェルのSSE購読の代替。画面が登録するイベントの処理を`EventSource`の代替へそのまま登録する。
+globalThis.__atkSse = {{
+  connect(url, handlers) {{
+    const source = new EventSource(url);
+    for (const [name, handler] of Object.entries(handlers)) source.addEventListener(name, handler);
+    return {{close() {{}}, reopen() {{}}, source}};
+  }}
+}};
 const fetchCalls = [];
 let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: [], warnings: []}})}});
 globalThis.fetch = async (url, options = {{}}) => {{

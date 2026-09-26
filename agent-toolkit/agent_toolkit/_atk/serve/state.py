@@ -157,7 +157,11 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             queue.put_nowait(event)
 
     async def events(self, *, heartbeat: float = 15.0):
-        """SSE形式の変更イベントとheartbeatを生成する。"""
+        """SSE形式の変更イベントとheartbeatを生成する。
+
+        heartbeatはコメント行ではなく名前付きイベントで送る。ブラウザーの`EventSource`はコメント行を
+        スクリプトへ渡さないため、名前付きイベントにしないとクライアントが無通信を判定できない。
+        """
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)
         self._queues.add(queue)
         try:
@@ -166,6 +170,6 @@ class ServeState(watchdog.events.FileSystemEventHandler):
                     event = await asyncio.wait_for(queue.get(), timeout=heartbeat)
                     yield f"event: {event}\ndata: {{}}\n\n"
                 except TimeoutError:
-                    yield ": heartbeat\n\n"
+                    yield "event: heartbeat\ndata: {}\n\n"
         finally:
             self._queues.discard(queue)
