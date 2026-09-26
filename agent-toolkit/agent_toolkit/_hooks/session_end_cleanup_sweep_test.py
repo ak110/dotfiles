@@ -14,7 +14,6 @@ def test_session_end_continues_when_shared_state_sweep_fails(monkeypatch) -> Non
         "sweep_stale_shared_state",
         lambda **_kwargs: (_ for _ in ()).throw(OSError("x")),
     )
-    monkeypatch.setattr(session_end_cleanup.managed_temp, "cleanup_managed_temp", lambda **_kwargs: None)
     monkeypatch.setattr(session_end_cleanup, "sweep_stale_states", lambda **_kwargs: None)
 
     result = session_end_cleanup.main(json.dumps({"hook_event_name": "SessionEnd", "session_id": "current"}))
