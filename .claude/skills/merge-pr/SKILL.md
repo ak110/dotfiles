@@ -131,7 +131,8 @@ git -C <develop worktreeの絶対パス> rev-parse --short=7 develop
 マージコミットの第一親との差分を読み取り、`rust/claude-statusline/`の変更有無を判定する。
 変更がない場合はRelease検収を省略する。
 
-変更がある場合は、同じ`origin/master`を対象とする`Release statusLine` runを完全なdatabase IDで特定して待機する。
+変更がある場合は、`origin/master`の完全OIDに対応する`Release statusLine` runを候補とし、各候補を完全なdatabase IDで特定してジョブの状態を調べる。`prepare`が省略されずに実行されたrunを検収対象として終端まで待つ。`gate`以外のジョブが全て省略されたrunは対象から外し、次のrunを待つ。候補の`prepare`が未確定の間は、実行又は省略が確定するまで観測する。
+masterへのpushのCIを別に待機する工程は加えず、検収対象のRelease runの成否でmaster CIの結論を確かめる。master CIの失敗で対象のrunが作成されない場合は「失敗時の共通規定」に従う。
 その後、manifestの版数に対応する`statusline-v<version>` tagが`origin/master`を指すことを確認する。
 GitHub Releaseの存在と、次の既存asset名を確認する。
 
