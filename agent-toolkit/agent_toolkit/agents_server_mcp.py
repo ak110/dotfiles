@@ -261,6 +261,10 @@ def _common_argument_description(name: str, tool_specific: str) -> str:
     return _parameter_description(f"{tool_specific}{_COMMON_ARGUMENT_REFERENCE.format(name=name)}")
 
 
+# `start_shell`以外の起動ツールが共有する`cwd`の説明。受理条件は起動処理の`_validate_cwd`が検査する条件と一致させる。
+_DELEGATE_CWD_DESCRIPTION = _parameter_description("委譲先の作業ディレクトリ。既存ディレクトリの絶対パスとする。")
+
+
 def _label_description(tool_specific: str) -> str:
     """label引数の説明を、ツール固有の形式・既定値と`instructions`への参照から組み立てる。"""
     return _common_argument_description("label", tool_specific)
@@ -2192,7 +2196,7 @@ async def start(
             )
         ),
     ],
-    cwd: str,
+    cwd: Annotated[str, Field(description=_DELEGATE_CWD_DESCRIPTION)],
     label: Annotated[
         str | None,
         Field(
@@ -2240,7 +2244,7 @@ async def start_custom(
         str,
         Field(description=_model_type_description("必須。専用タスク文書がある場合は`start`を使う。")),
     ],
-    cwd: str,
+    cwd: Annotated[str, Field(description=_DELEGATE_CWD_DESCRIPTION)],
     label: Annotated[
         str | None,
         Field(description=_label_description("省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。")),
@@ -2265,7 +2269,7 @@ async def start_custom(
 @mcp.tool(name="start_explore", structured_output=True)
 async def start_explore(
     prompt: str,
-    cwd: str,
+    cwd: Annotated[str, Field(description=_DELEGATE_CWD_DESCRIPTION)],
     fast: Annotated[
         bool,
         Field(
@@ -2357,7 +2361,7 @@ async def start_shell(
 @mcp.tool(name="start_write", structured_output=True)
 async def start_write(
     prompt: str,
-    cwd: str,
+    cwd: Annotated[str, Field(description=_DELEGATE_CWD_DESCRIPTION)],
     label: Annotated[
         str | None,
         Field(description=_label_description("形式は`write-<起草対象を示す1〜2語>`。省略時は`write`。")),

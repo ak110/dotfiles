@@ -459,6 +459,24 @@ def test_start_operations_match_registered_start_tools() -> None:
     assert registered - non_start_operations == tool_names.START_OPERATIONS
 
 
+def test_start_tools_describe_cwd_condition() -> None:
+    """全ての起動ツールのスキーマが、起動処理の検査する`cwd`の条件（既存ディレクトリの絶対パス）を示す。
+
+    起動ツールを追加して`cwd`の説明を付け忘れた変更も失敗させる。
+    `start_shell`はシェルの作業ディレクトリとして独自の説明を持ち、他の起動ツールは説明を共有する。
+    """
+    descriptions = {}
+    for name in tool_names.START_OPERATIONS:
+        tool = subject.mcp._tool_manager.get_tool(name)
+        assert tool is not None
+        description = tool.parameters["properties"]["cwd"].get("description", "")
+        assert "既存ディレクトリの絶対パス" in description, name
+        descriptions[name] = description
+    assert "実行時の作業ディレクトリ" in descriptions.pop("start_shell")
+    assert len(set(descriptions.values())) == 1
+    assert "委譲先の作業ディレクトリ" in next(iter(descriptions.values()))
+
+
 def test_public_tools_separate_task_document_and_custom_start() -> None:
     """専用タスク文書と自由本文の公開入力を別ツールへ分離する。"""
     assert set(subject.mcp._tool_manager._tools) == {
