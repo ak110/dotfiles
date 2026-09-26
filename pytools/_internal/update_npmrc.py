@@ -65,8 +65,11 @@ def _update_npmrc(path: Path) -> bool:
         logger.info(log_format.format_status(short, f"{_NPM_LINE} は既に設定済み"))
         return False
     path.write_text(new_content, encoding="utf-8")
-    state = "作成し" if not existed else ""
-    logger.info(log_format.format_status(short, f"{state}{_NPM_LINE} を設定しました"))
+    if existed:
+        logger.info(log_format.format_status(short, f"{_NPM_LINE} を設定しました"))
+    else:
+        # 「作成し」の目的語をファイルにするため`<対象>: <状態>`の形を使わず、字下げだけを`format_status`とそろえる。
+        logger.info(f"    {short} を作成し {_NPM_LINE} を設定しました")
     return True
 
 

@@ -1,5 +1,6 @@
 """pytools._internal.update_npmrc のテスト。"""
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -67,6 +68,22 @@ class TestUpdateNpmrc:
         mtime_before = path.stat().st_mtime_ns
         assert run(path) is False
         assert path.stat().st_mtime_ns == mtime_before
+
+    def test_create_log_names_file_as_object(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """新規作成時のログは、作成したファイルを目的語にした1文になる。"""
+        path = tmp_path / ".npmrc"
+        with caplog.at_level(logging.INFO, logger=update_npmrc.__name__):
+            run(path)
+        assert f"    {path} を作成し min-release-age=1 を設定しました" in caplog.messages
+
+    def test_update_log_keeps_status_format(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """既存ファイルの更新時のログは`<対象>: <状態>`の形のままで、作成の語を含まない。"""
+        path = tmp_path / ".npmrc"
+        path.write_text("min-release-age=7\n", encoding="utf-8")
+        with caplog.at_level(logging.INFO, logger=update_npmrc.__name__):
+            run(path)
+        assert f"    {path}: min-release-age=1 を設定しました" in caplog.messages
+        assert not any("作成" in message for message in caplog.messages)
 
     def test_missing_trailing_newline(self, tmp_path: Path):
         """既存ファイルの末尾改行が無くても正しく追記される。"""
