@@ -77,6 +77,7 @@ REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"
 # `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
 # 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終端までの経過を測る。
 # 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
+# Claudeでは、失敗した要求が始めないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
 START_AVAILABILITY_TIMEOUT = 15.0
 # engineの可用性に起因し、別候補なら結果が変わり得る失敗の識別子。
 # `codex app-server generate-json-schema`が出力する`CodexErrorInfo`列挙のうち、
@@ -1215,6 +1216,7 @@ class AgentsServerManager:
         """起動直後の可用性失敗を確定するため、上限付きで終端を待つ。
 
         engineの可用性失敗は最初のモデル出力より前に生じるため、モデル出力を観測した時点で待機を打ち切る。
+        Claudeでは、APIの応答開始（`message_start`）をモデル出力の観測とする。
         上限内に終端もモデル出力もしないsessionと、打ち切ったsessionは通常の実行中として扱い、
         以降は`atk agents wait`が観測する。
         """

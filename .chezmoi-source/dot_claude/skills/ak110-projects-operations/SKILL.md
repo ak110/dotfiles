@@ -218,6 +218,9 @@ docsサイトは`master`へのpushで`docs.yaml`が公開するため、docsサ�
   ドキュメントを生成するため、ソース変更でもdocs workflowが起動する必要がある
 - Dependabot alertsの有効・無効（dotfiles・GLATasksは有効、pytilpackは無効）:
   pytilpackはライブラリであり、ロックファイルが開発専用のため利用者の実行環境への脆弱性の影響が限定的である
+- dotfilesの`AGENTS.md`に「開発手順」「注意点」章なし（dotfilesのみ）: dotfilesの`AGENTS.md`は概要と参照先の案内だけへ縮約し、
+  開発手順と注意点を`.claude/skills/`配下のスキルへ置くため、
+  [references/doc-structure.md](references/doc-structure.md)の`AGENTS.md`必須章のうちこの2章を適用対象から外す
 
 ## ドキュメント章構成の統一
 
@@ -236,8 +239,6 @@ README.md・AGENTS.md・docs/development/development.mdの標準章構成・共�
 
 - Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能
 - Makefileではなく`mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
-- `package.json`の`lint`/`lint:fix`スクリプトは`AGENTS.md`もtextlint/markdownlint-cli2対象に含める
-  - 新規Node系プロジェクトでも同様に設定する
 - cargo-denyの導入は`taiki-e/install-action@v2`と`with: tool: cargo-deny`を用い、
   actionをpinactのハッシュピン対象にする。
   `taiki-e/install-action@cargo-deny`のshort-handを維持する場合だけ、そのactionを`.pinact.yaml`の
@@ -253,14 +254,22 @@ Linux環境で`cargo check`・`cargo clippy`・`cargo test`がビルド段階で
 Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで対処する。
 
 - Windows実機で`cargo`系チェックを実行してからpushする
-- `SKIP=pyfltr`でcargo系チェックを含むhookを無効化してコミットし、cargo対象外の変更パスへ`uvx pyfltr run`を実行する
+- `SKIP=pyfltr`でcargo系チェックを含むhookを無効化してコミットし、cargo対象外の変更パスへ`uvx --exclude-newer-package pyfltr=false pyfltr run`を実行する
 - 該当コードを`#[cfg(windows)]`ガードで囲み、Linux向けビルド対象外にする
 
 ### prek / pyfltr / ビルド関連
 
 - 全プロジェクトでprekフレームワークにより`pyfltr fast`が実行される
   - `markdownlint-fast`／`textlint-fast`によりmd変更時のlintが軽量に実行される
-  - `~/dotfiles`はdev依存へ固定した`uv run --frozen pyfltr fast`を呼び出し、その他のプロジェクトは`uvx pyfltr fast`を呼び出す
+  - `~/dotfiles`はdev依存へ固定した`uv run --frozen pyfltr fast`を、`~/pyfltr`は自身を`uv run`で呼び出す。
+    その他のプロジェクトは`uvx --exclude-newer-package pyfltr=false pyfltr fast`を呼び出す。
+    公開直後のpyfltrを公開待機の対象から外して使うための作者個人の対処であり、pyfltrの推奨ガイドが示す呼び出し形はそのまま保つ。
+    例外の指定先はコマンドラインに限り、グローバルのuv設定（`~/.config/uv/uv.toml`）は対象外とする。利用者設定の例外は各プロジェクトの`uv.lock`（`[options.exclude-newer-package]`）へ入り、
+    追跡ロックの再現性を損なうためである。コマンドラインで指定した例外は`uvx`の一時環境だけに適用され、プロジェクトの`uv.lock`は元のまま残る
+- 文書lint（textlint、markdownlint、prettier）はpyfltr経由（miseタスク、prekのhook、CI）で行い、`AGENTS.md`を含む文書をpyfltrの対象集合でチェックする
+  - `package.json`の`scripts`へ、pyfltrと別に文書lintを動かすスクリプト（`lint`、`lint:fix`など）を置かない。
+    起動するコマンドごとに対象集合が分かれ、一方の結果だけでは他方の対象にある警告が漏れるためである
+  - 新規Node系プロジェクトでも同じとする。pyfltrがlintツールを`node_modules/.bin/`から起動する設定では、`devDependencies`のlintパッケージは残す
 
 ### CI / リリース関連
 

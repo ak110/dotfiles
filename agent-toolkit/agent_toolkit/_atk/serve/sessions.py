@@ -23,7 +23,7 @@ import subprocess
 import typing
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._atk.serve import session_delegations
+from agent_toolkit._atk.serve import session_delegations, session_watch
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,8 @@ CODEX_ROLLOUT_PREFIX = "rollout-"
 MAX_LIST_ENTRIES = 2000
 # 1件の記録から取得する最大バイト数。過大な記録の全文読み込みにより応答が滞る事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
+# SSE購読者ごとの未配信通知の上限。超えた場合は一覧の再取得を促す1件へまとめる。
+SUBSCRIBER_QUEUE_SIZE = 16
 # 詳細が返すイベントの最大件数。上限を超えた分は応答へ含めず、除外した件数を別項目として返す。
 MAX_DETAIL_EVENTS = 5000
 
@@ -485,6 +487,8 @@ class SessionsState:
     host_status: dict[str, str] = dataclasses.field(default_factory=dict)
     clients: dict[str, "RemoteSessionClient"] = dataclasses.field(default_factory=dict)
     tasks: list[asyncio.Task[None]] = dataclasses.field(default_factory=list)
+    # ローカルの記録rootの変更監視。`start_local_watch`が生成する。
+    record_watch: session_watch.RecordWatch | None = None
 
 
 def create_context(
@@ -514,72 +518,13 @@ def create_context(
     )
 
 
-def _first_line(value: typing.Any) -> str | None:
-    """本文として解釈できる値の先頭1行を返す。"""
-    text = _as_text(value)
-    if text is None:
-        return None
-    lines = text.splitlines()
-    return lines[0] if lines else None
-
-
-def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None, str | None]:
-    """一覧の識別に使う作業ディレクトリ、最初の発話及び開始日時を先頭から取得する。"""
-    cwd: str | None = None
-    first_user_message: str | None = None
-    first_user_seen = False
-    started_at: str | None = None
-    first_timestamp: str | None = None
-    try:
-        with path.open(encoding="utf-8", errors="replace") as stream:
-            for line in stream:
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(record, dict):
-                    continue
-                if first_timestamp is None and isinstance(record.get("timestamp"), str):
-                    first_timestamp = record["timestamp"]
-                if engine == "claude":
-                    if started_at is None:
-                        started_at = first_timestamp
-                    if cwd is None and isinstance(record.get("cwd"), str):
-                        cwd = record["cwd"]
-                    if not first_user_seen and record.get("type") == "user":
-                        first_user_seen = True
-                        message = record.get("message")
-                        if isinstance(message, dict):
-                            first_user_message = _first_line(message.get("content"))
-                else:
-                    payload = record.get("payload")
-                    if not isinstance(payload, dict):
-                        continue
-                    if (
-                        started_at is None
-                        and record.get("type") == "session_meta"
-                        and isinstance(payload.get("timestamp"), str)
-                    ):
-                        started_at = payload["timestamp"]
-                    if cwd is None and record.get("type") == "session_meta" and isinstance(payload.get("cwd"), str):
-                        cwd = payload["cwd"]
-                    if not first_user_seen and payload.get("role") == "user":
-                        first_user_seen = True
-                        first_user_message = _first_line(payload.get("content"))
-                if cwd is not None and first_user_seen and started_at is not None:
-                    break
-    except OSError:
-        pass
-    return cwd, first_user_message, started_at or first_timestamp
-
-
-def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) -> SessionSummary:
-    """ローカルの記録1件を一覧の項目へ変換する。"""
-    cwd, first_user_message, started_at = _summary_fields(path, engine)
+def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) -> tuple[SessionSummary, bool | None]:
+    """ローカルの記録1件を一覧の項目へ変換し、ユーザー発話の有無とともに返す。"""
+    cwd, first_user_message, started_at, has_user = session_watch.summary_fields(path, engine)
     try:
         st = path.stat()
     except OSError as error:
-        return SessionSummary(
+        summary = SessionSummary(
             engine=engine,
             host=host,
             cwd=cwd,
@@ -591,7 +536,8 @@ def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) ->
             size=None,
             warning=f"記録の情報を取得できません: {error}",
         )
-    return SessionSummary(
+        return summary, has_user
+    summary = SessionSummary(
         engine=engine,
         host=host,
         cwd=cwd,
@@ -602,6 +548,7 @@ def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) ->
         updated_at=_isoformat(st.st_mtime),
         size=st.st_size,
     )
+    return summary, has_user
 
 
 def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
@@ -609,8 +556,10 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
 
     Claude Codeはセッション本体と、metadataで親子を確定できるサブエージェントを含める。
     Codexは`<CODEX_HOME>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`を対象とする。
+    ユーザー発話の記録行を持たない記録は、件数上限による切り詰めより前に除外する。
+    変更監視が動いている場合は、判定した発話の有無を監視側の判定へ引き継ぐ。
     """
-    entries: list[SessionSummary] = []
+    collected: list[tuple[SessionSummary, bool | None]] = []
     projects = context.claude_home / "projects"
     if projects.is_dir():
         for project_dir in projects.iterdir():
@@ -618,7 +567,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
                 continue
             for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
                 if path.is_file():
-                    entries.append(_local_entry(path, "claude", path.stem, context.hostname))
+                    collected.append(_local_entry(path, "claude", path.stem, context.hostname))
                     subagents = _claude_subagents(path) or []
                     agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
                     for item in subagents:
@@ -635,13 +584,22 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
                             parent_path = str(path)
                         if parent_path is None:
                             continue
-                        child = _local_entry(pathlib.Path(child_path), "claude", item["agent_id"], context.hostname)
-                        entries.append(dataclasses.replace(child, parent_path=parent_path))
+                        child, child_has_user = _local_entry(
+                            pathlib.Path(child_path), "claude", item["agent_id"], context.hostname
+                        )
+                        collected.append((dataclasses.replace(child, parent_path=parent_path), child_has_user))
     sessions = context.codex_home / "sessions"
     if sessions.is_dir():
         for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
             if path.is_file():
-                entries.append(_local_entry(path, "codex", codex_session_id(path), context.hostname))
+                collected.append(_local_entry(path, "codex", codex_session_id(path), context.hostname))
+    watch = context.state.record_watch
+    if watch is not None:
+        for entry, has_user in collected:
+            if has_user is not None:
+                watch.tracker.prime(entry.path, has_user)
+    # 読めずに判定できなかった記録（`None`）は警告とともに一覧へ残す。
+    entries = [entry for entry, has_user in collected if has_user is not False]
     by_id: dict[str, list[SessionSummary]] = {}
     for entry in entries:
         by_id.setdefault(entry.session_id, []).append(entry)
@@ -728,6 +686,8 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
         "uv",
         "run",
         "--no-project",
+        "--with",
+        '"watchdog>=6.0.0"',
         "python",
         "-c",
         f'"{REMOTE_BOOTSTRAP}"',
@@ -882,7 +842,7 @@ class RemoteSessionClient:
             await task
 
     async def _process_stream(self, stream: asyncio.StreamReader) -> None:
-        """行ストリームを読み、`ready`で接続確立、`response`でRPCを解決する。"""
+        """行ストリームを読み、`ready`で接続確立、`response`でRPCを解決し、変更通知をSSEへ中継する。"""
         while True:
             try:
                 chunk = await stream.readline()
@@ -908,6 +868,8 @@ class RemoteSessionClient:
                 continue
             if event.get("type") == "response":
                 self._resolve_response(event)
+                continue
+            await _relay_remote_notification(self.state, self.host, event)
 
     def _resolve_response(self, event: dict[str, typing.Any]) -> None:
         req_id = event.get("id")
@@ -1132,7 +1094,7 @@ async def stop_remote_clients(context: SessionsContext) -> None:
 
 async def subscribe(state: SessionsState) -> asyncio.Queue[str]:
     """SSE購読キューを生成して登録し返す。"""
-    queue: asyncio.Queue[str] = asyncio.Queue(maxsize=1)
+    queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
     async with state.lock:
         state.subscribers.add(queue)
     return queue
@@ -1147,12 +1109,87 @@ async def unsubscribe(state: SessionsState, queue: asyncio.Queue[str]) -> None:
 async def deliver_refresh(state: SessionsState) -> None:
     """全購読者へ一覧の再取得を促す通知を配信する。
 
-    キューが既に満杯の場合は新規通知を破棄する（既に未配信の通知があるため、
-    クライアントは次に取り出した時点で最新化される）。
+    未配信の通知は破棄して一覧の再取得の1件だけを残す。
+    一覧の再取得は選択中の記録の再取得も伴うため、破棄した通知の内容を含み、同じ通知も重ねない。
     """
     payload = json.dumps({"type": "refresh"}, ensure_ascii=False)
     async with state.lock:
         targets = list(state.subscribers)
     for queue in targets:
-        with contextlib.suppress(asyncio.QueueFull):
+        while not queue.empty():
+            queue.get_nowait()
+        queue.put_nowait(payload)
+
+
+async def deliver_record(state: SessionsState, host: str, engine: str, path: str) -> None:
+    """全購読者へ記録1件の更新を配信する。
+
+    一覧の再取得を促す通知と異なり、選択中の記録を開いている購読者だけが詳細を再取得する。
+    キューが満杯の場合は未配信の通知を破棄し、一覧の再取得を促す通知へ置き換える。
+    一覧の再取得は選択中の記録の再取得も伴うため、破棄した更新を補える。
+    """
+    payload = json.dumps(
+        {"type": session_watch.RECORD_TYPE, "host": host, "engine": engine, "path": path},
+        ensure_ascii=False,
+    )
+    async with state.lock:
+        targets = list(state.subscribers)
+    for queue in targets:
+        try:
             queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            while not queue.empty():
+                queue.get_nowait()
+            queue.put_nowait(json.dumps({"type": "refresh"}, ensure_ascii=False))
+
+
+async def _relay_remote_notification(state: SessionsState, host: str, event: dict[str, typing.Any]) -> None:
+    """リモートヘルパーの変更通知をSSEへ中継する。未知の型は無視する。"""
+    kind = event.get("type")
+    if kind == session_watch.REFRESH_TYPE:
+        await deliver_refresh(state)
+        return
+    if kind == session_watch.RECORD_TYPE:
+        engine = event.get("engine")
+        path = event.get("path")
+        if isinstance(engine, str) and isinstance(path, str):
+            await deliver_record(state, host, engine, path)
+
+
+def start_local_watch(context: SessionsContext) -> None:
+    """ローカルの記録rootの変更監視を開始する。
+
+    監視は一覧の再取得と記録1件の更新の2種類の通知を、イベントループ上の購読者へ中継する。
+    """
+    loop = asyncio.get_running_loop()
+
+    def on_flush(refresh: bool, records: list[tuple[str, str]]) -> None:
+        async def deliver() -> None:
+            if refresh:
+                await deliver_refresh(context.state)
+            for engine, path in records:
+                await deliver_record(context.state, context.hostname, engine, path)
+
+        with contextlib.suppress(RuntimeError):
+            asyncio.run_coroutine_threadsafe(deliver(), loop)
+
+    tracker = session_watch.RecordChangeTracker(
+        [(context.claude_home / "projects", "claude"), (context.codex_home / "sessions", "codex")],
+        on_flush,
+    )
+    watch = session_watch.RecordWatch(tracker)
+    try:
+        watch.start()
+    except OSError as error:
+        logger.warning("セッション記録の監視を開始できません: %s", error)
+        return
+    context.state.record_watch = watch
+
+
+def stop_local_watch(context: SessionsContext) -> None:
+    """ローカルの記録rootの変更監視を終了させる。"""
+    watch = context.state.record_watch
+    if watch is None:
+        return
+    context.state.record_watch = None
+    watch.stop()

@@ -2,6 +2,68 @@
 // 全画面は同じ文書に常駐し、画面登録契約は初期化処理だけを公開する。
 window.__atkScreens = window.__atkScreens || {};
 
+// 3画面のSSE購読の共通処理。接続の確立、heartbeat、通知のいずれも届かない時間が閾値を超えたら再接続する。
+// サーバーのheartbeatはスクリプトから観測できる名前付きイベント`heartbeat`で届く。
+// コメント行のheartbeatは`EventSource`がスクリプトへ渡さないため、接続が途中で止まっても検知できない。
+// 閾値はサーバーがheartbeat間隔の3回分として`sse-bootstrap`へ埋め込む。
+window.__atkSse = (() => {
+  const DEFAULT_STALL_MS = 45000;
+
+  function stallMs() {
+    const bootstrap = document.getElementById("sse-bootstrap");
+    const value = bootstrap ? JSON.parse(bootstrap.textContent).stall_ms : undefined;
+    return Number.isFinite(value) && value > 0 ? value : DEFAULT_STALL_MS;
+  }
+
+  // `handlers`は`open`・`message`・`error`と、画面が受け取る名前付きイベント名から処理への対応を持つ。
+  // 再接続した接続でも同じ処理を登録し、確立時の`open`で各画面が再同期する。
+  function connect(url, handlers) {
+    const limit = stallMs();
+    let source = null;
+    let lastSeen = 0;
+    let timer = null;
+    const touch = () => { lastSeen = Date.now(); };
+
+    function open() {
+      source = new EventSource(url);
+      touch();
+      source.addEventListener("heartbeat", touch);
+      for (const [name, handler] of Object.entries(handlers)) {
+        source.addEventListener(name, (event) => {
+          if (name !== "error") touch();
+          handler(event);
+        });
+      }
+    }
+
+    function check() {
+      if (!source) return;
+      if (source.readyState === EventSource.CLOSED || Date.now() - lastSeen > limit) {
+        source.close();
+        open();
+      }
+    }
+
+    function close() {
+      clearInterval(timer);
+      timer = null;
+      if (source) source.close();
+      source = null;
+    }
+
+    function start() {
+      if (source) return;
+      open();
+      timer = setInterval(check, Math.max(100, Math.min(5000, limit / 3)));
+    }
+
+    start();
+    return {close, reopen: start};
+  }
+
+  return {connect};
+})();
+
 window.__atkDrawer = {
   set(screenName, open) {
     const screen = document.getElementById(`screen-${screenName}`);

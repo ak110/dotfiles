@@ -48,7 +48,7 @@ description: >
   （`pytools/`・`scripts/`・`agent-toolkit/`配下いずれも同方式）
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
-  共通化が必要な場合は`agent-toolkit/scripts/`配下に独自ヘルパーを置く
+  共通化が必要な場合は`agent-toolkit-edit`スキル「scripts配下の配置」節が定めるテスト専用パッケージへ置く
 - `pytools`パッケージ配布物にテストコードを含めないため、
   `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する
 - `scripts/`配下はpytestのprependモードで`sys.path`へ自動追加されるためテストから直接importできる。

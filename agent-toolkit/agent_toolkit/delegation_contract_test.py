@@ -272,6 +272,20 @@ def test_picker_explanation_contract_covers_questions_without_state_changes() ->
     assert "pick-wi.parent.md" in lanes and "包含理由、除外理由" in lanes
 
 
+def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
+    """pickerが出力する先行レーンの項目を、受領検収とレーンの開始順が同じ名前で読む。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    output_format = _h2_section(picker, "出力").split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    lane_cost_fields = re.findall(r"^  ([a-z_]+):", output_format.split("lane_costs:\n", maxsplit=1)[1], flags=re.MULTILINE)
+
+    assert "after_lanes" in lane_cost_fields
+    assert "`after_lanes`" in _h2_section(parent, "出力の受領")
+    assert "`after_lanes`" in _h2_section(lanes, "レーンと資源")
+
+
 def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
     """委譲先の確認事項は標識へ保存せず確定時点でメインへ通知する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]

@@ -277,7 +277,8 @@ def test_style_diagnostics_skips_fenced_code() -> None:
 def test_style_diagnostics_reports_colloquial_location(monkeypatch: pytest.MonkeyPatch) -> None:
     """口語辞書の検出結果を本文の行番号付き警告へ変換する。"""
 
-    def fake_patterns(path: pathlib.Path) -> list[tuple[re.Pattern[str], str | None]]:
+    def fake_patterns(path: pathlib.Path, **kwargs: object) -> list[tuple[re.Pattern[str], str | None]]:
+        del kwargs
         if path == style_diagnostics.colloquial.DENY_PATH:
             return [(re.compile("口語"), "書き言葉")]
         return []
@@ -285,6 +286,24 @@ def test_style_diagnostics_reports_colloquial_location(monkeypatch: pytest.Monke
     monkeypatch.setattr(style_diagnostics.colloquial, "load_patterns", fake_patterns)
 
     assert style_diagnostics.warnings_for_body("説明\n口語") == ["本文:2:1: 口語表現 口語（候補: 書き言葉）"]
+
+
+def test_add_dry_run_does_not_report_kanji_compound_as_colloquial(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """漢語複合語の末尾は口語表現として警告せず、単独の口語表現は警告する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    # 単独の口語表現はリポジトリの口語表現チェックも報告するため、テスト入力ではエスケープで書く。
+    colloquial = "\u6765\u3044"
+    body = f"設定を将来いずれかが持った場合に備える。\nすぐ{colloquial}。\n"
+
+    _run_public_add(_cmd_add_args(tmp_path, body, dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    colloquial_warnings = [line for line in capsys.readouterr().err.splitlines() if "口語表現" in line]
+    assert colloquial_warnings == [f"警告: 本文:2:3: 口語表現 {colloquial}（候補: 具体的な発生源と動作を記す）"]
 
 
 def test_add_dry_run_rejects_batch(

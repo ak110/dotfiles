@@ -274,6 +274,8 @@ def _build_options(
         "effort": cast(_EffortLevel, effort),
         "resume": session_id,
         "permission_mode": "auto",
+        # 起動直後の可用性待機をAPIの応答開始（`message_start`）で打ち切るため、部分出力のイベントを受け取る。
+        "include_partial_messages": True,
         "env": env,
         "setting_sources": ["user"] if lightweight else ["user", "project"],
         "system_prompt": (
@@ -327,6 +329,8 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
 
     API失敗（429など）は`error`付きの合成メッセージとして`ResultMessage`より前に届くため、
     モデル出力の観測から除く。数えると、可用性失敗を確定する前に`start`の終端待ちを打ち切る。
+    正常な起動では、完成したassistantメッセージより先に届くAPIの応答開始（`message_start`）で
+    観測済みになる。完成したメッセージは思考と最初の内容ブロックの生成が終わるまで届かない。
     """
     if getattr(message, "error", None) is None:
         session.model_output_observed = True
@@ -711,6 +715,13 @@ class ClaudeServerManager:
                         elif name == "AssistantMessage" and session is not None:
                             consume_assistant_message(session, message)
                             await self._notify_waiters()
+                        elif name == "StreamEvent" and session is not None:
+                            # 失敗した要求はストリーミング応答を始めないため、応答開始を可用性の確定点とする。
+                            # それ以外の部分出力は完成したメッセージで反映されるため読み捨てる。
+                            event = getattr(message, "event", None)
+                            if isinstance(event, dict) and event.get("type") == "message_start":
+                                session.model_output_observed = True
+                                await self._notify_waiters()
                         elif name == "UserMessage" and session is not None:
                             shared_state.consume_claude_agents_server_message(session, message)
                             session.touch()

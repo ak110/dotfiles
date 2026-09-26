@@ -15,7 +15,7 @@ description: >
 
 ## 開発手順
 
-- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新、prek autoupdate、mise lock、pinactアクション更新及び全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
+- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新及び全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体の自動チェックが必要な場合の実行方法: `make test`
   - 全体の自動チェックを起動する際は`agent-toolkit:check-execution`をSkill機能で起動し、`agents_server`の`start_shell`へ`make test`を渡す。委譲先の出力保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
@@ -37,10 +37,10 @@ description: >
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する近接検証を先に実行する。公開前の全体検証はCIへ委ね、ローカルでは次の3件を実行する。CIの成功を確認して全体検証の結論を確定する
-    - CIが実行しないチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
+    - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
     - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの近接検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
     - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず、`agent-toolkit/`を含むリポジトリ全体を対象にする。名前を削除・改名したモジュールに追随していない未変更のテストや呼び出し元は、変更ファイルだけを対象とする近接検証では検出できないため、Pythonファイルを変更するレーンでは、計画担当が計画の`近接検証`行へ含める。あわせてaridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
-    - `make test`が実行するツール集合はCIの`python-lint (3.14)`ジョブとほぼ同じで、CIが`claude-plugin-validate`を無効化する点だけが異なる。
+    - `make test`が実行するツール集合はCIの`python-lint (3.14)`ジョブとほぼ同じである。差分は同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
       次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
       - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
       - `test-linux`ジョブ: `install.sh`とchezmoiの実適用

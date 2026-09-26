@@ -38,7 +38,7 @@ description: >
 ## Bash / `.sh.tmpl` 側の対応
 
 記述作法は`<plugin root>/skills/writing-standards/references/bash.md`に従う。
-ただし`.sh.tmpl`では既存スクリプトに合わせて`set -eux`を使う。
+ただし`.sh.tmpl`の`set`のオプションは既存の`.chezmoi-source/run_after_post-apply.sh.tmpl`に合わせる。
 
 ## ローカルで実行するlintとCIジョブの対応
 

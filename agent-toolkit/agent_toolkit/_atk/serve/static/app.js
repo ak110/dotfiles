@@ -1541,42 +1541,47 @@ function bindEvents() {
 }
 
 let initialization = Promise.resolve();
-// 初期化後は文書とともに維持するSSE購読。
+// 初期化後は文書とともに維持するSSE購読。無通信の検知と再接続は共通シェルの`__atkSse`が担う。
 let eventSource = null;
 
+function connectEvents() {
+  return window.__atkSse.connect(BASE_PATH + '/api/events', {
+    open: () => {
+      if (byId('connection-status').dataset.syncFailed !== 'true') {
+        byId('connection-status').hidden = true;
+        byId('connection-status').textContent = '';
+      }
+      void initialization.then(async () => {
+        await reloadFromExternalChange();
+        byId('connection-status').dataset.connected = 'true';
+      });
+    },
+    error: () => {
+      byId('connection-status').dataset.connected = 'false';
+      if (byId('connection-status').dataset.syncFailed === 'true') return;
+      byId('connection-status').textContent = '自動更新を再接続中';
+      byId('connection-status').hidden = false;
+    },
+    changed: () => {
+      void initialization.then(() => reloadFromExternalChange());
+    },
+    'sync-error': () => {
+      const status = byId('connection-status');
+      status.dataset.syncFailed = 'true';
+      status.textContent = 'Git同期に失敗しました。今すぐ同期で再試行してください。';
+      status.hidden = false;
+    },
+    'sync-ok': () => {
+      const status = byId('connection-status');
+      status.dataset.syncFailed = 'false';
+      status.textContent = '';
+      status.hidden = true;
+    },
+  });
+}
+
 function initializeApp() {
-  eventSource = new EventSource(BASE_PATH + '/api/events');
-  eventSource.addEventListener('open', () => {
-    if (byId('connection-status').dataset.syncFailed !== 'true') {
-      byId('connection-status').hidden = true;
-      byId('connection-status').textContent = '';
-    }
-    void initialization.then(async () => {
-      await reloadFromExternalChange();
-      byId('connection-status').dataset.connected = 'true';
-    });
-  });
-  eventSource.addEventListener('error', () => {
-    byId('connection-status').dataset.connected = 'false';
-    if (byId('connection-status').dataset.syncFailed === 'true') return;
-    byId('connection-status').textContent = '自動更新を再接続中';
-    byId('connection-status').hidden = false;
-  });
-  eventSource.addEventListener('changed', () => {
-    void initialization.then(() => reloadFromExternalChange());
-  });
-  eventSource.addEventListener('sync-error', () => {
-    const status = byId('connection-status');
-    status.dataset.syncFailed = 'true';
-    status.textContent = 'Git同期に失敗しました。今すぐ同期で再試行してください。';
-    status.hidden = false;
-  });
-  eventSource.addEventListener('sync-ok', () => {
-    const status = byId('connection-status');
-    status.dataset.syncFailed = 'false';
-    status.textContent = '';
-    status.hidden = true;
-  });
+  eventSource = connectEvents();
   syncFilterDependencies();
   syncNotificationButton();
   initialization = Promise.all([loadEntries(), loadTargetRepos()])
@@ -1589,6 +1594,13 @@ function initializeApp() {
 async function init() {
   bindEvents();
   window.addEventListener('focus', () => { void initialization.then(() => reloadFromExternalChange()); });
+  // タブが表示された状態へ戻ってもウィンドウのフォーカスが変わらない場合があるため、可視化でも取り直す。
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void initialization.then(() => reloadFromExternalChange());
+  });
+  // bfcacheへ入る前に接続を閉じ、復帰時に再接続する。再接続した接続の確立時に一覧を取り直す。
+  window.addEventListener('pagehide', () => { eventSource?.close(); });
+  window.addEventListener('pageshow', (event) => { if (event.persisted) eventSource?.reopen(); });
   if (window.matchMedia('(max-width: 700px)').matches) {
     document.querySelector('#screen-wi .filters details').open = false;
   }

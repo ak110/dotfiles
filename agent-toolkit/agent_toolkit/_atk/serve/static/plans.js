@@ -805,31 +805,26 @@ async function handleSseMessage(event) {
 }
 
 function connectEvents() {
-  const es = new EventSource(BASE_PATH + "/api/plans/events");
-  // EventSourceは接続断後にブラウザが自動再接続するが、再接続中に発生したSSEイベントは
-  // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
-  es.onopen = async () => {
-    await (refreshHostStatus());
-    await (refreshHostInfo());
-    await (refreshRootStatus());
-    await (resyncFromServer());
-  };
-  es.onmessage = (event) => { void handleSseMessage(event); };
-  return es;
+  // 接続断後の自動再接続と無通信時の再接続の間に発生したSSEイベントは取り逃される。
+  // 初回・自動再接続・無通信後の再接続のいずれでも確立時にホスト状態とファイル一覧を強制再同期する。
+  return window.__atkSse.connect(BASE_PATH + "/api/plans/events", {
+    open: async () => {
+      await (refreshHostStatus());
+      await (refreshHostInfo());
+      await (refreshRootStatus());
+      await (resyncFromServer());
+    },
+    message: (event) => { void handleSseMessage(event); },
+  });
 }
 
 // bfcache復帰後も自動反映を維持するため、`pagehide`で能動的にcloseし`pageshow`で再接続する。
 function handlePageHide() {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
+  eventSource?.close();
 }
 
 function handlePageShow(event) {
-  if (event.persisted && !eventSource) {
-    eventSource = connectEvents();
-  }
+  if (event.persisted) eventSource?.reopen();
 }
 
 // 強制再同期の本体。ホスト別接続状態とファイル一覧を順に取り直し、即時に追従させる。

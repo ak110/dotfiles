@@ -25,8 +25,7 @@ Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する�
    プロジェクトの実情に応じて「実装上の不変条件」「コーディング規約」のいずれか一方のみの章名で記述してよい）
 5. サブエージェント・スキル連携（任意）
 6. 注意点（必須）
-7. プロジェクト固有章（任意。
-   dotfilesの「Claude Codeフック実装の配置先」「marketplace管理」「固有差分」など）
+7. プロジェクト固有章（任意）
 
 ## docs/development/development.mdの標準章構成
 
@@ -38,7 +37,7 @@ Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する�
    glatasksのDocker構成・CI/CD・バックアップとリストア、lcのAnalyzerルールの導入・.NET SDKの更新・環境制限など）
 6. リリース手順（リリースサイクルを持つプロジェクトのみ）
 
-「開発コマンド」章にチェック実行コマンド（`make test`・`uvx pyfltr run <path>`等）を内包する。
+「開発コマンド」章にチェック実行コマンド（`make test`・`uvx --exclude-newer-package pyfltr=false pyfltr run <path>`等）を内包する。
 
 「サプライチェーン攻撃対策」章ではロック尊重・公開待機・ピン留め運用の3点を要約として書き、
 脆弱性検知を設ける場合はこれを加えた4点を要約として書く。以下の必須事項を共通文面で揃える。
