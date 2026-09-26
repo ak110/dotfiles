@@ -349,7 +349,11 @@ def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> No
     """記録が持たない情報は0や空文字列で補わず、取得不能として返す。"""
     path = _write(
         tmp_path / "claude" / "projects" / "proj" / "abc.jsonl",
-        [{"type": "assistant", "message": {"content": [{"type": "text", "text": "やあ"}]}}],
+        [
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "やあ"}]}},
+            # 本文を持たない形式のユーザー発話。発話は持つため一覧へ載り、最初の発話は取得不能となる。
+            {"type": "user", "message": {"content": [{"type": "tool_result", "content": "結果"}]}},
+        ],
     )
 
     detail = sessions.read_local_detail(_context(tmp_path), "claude", str(path))
@@ -823,10 +827,11 @@ async def test_refresh_notification_is_delivered_to_subscribers(tmp_path: pathli
     try:
         await sessions.deliver_refresh(context.state)
         assert json.loads(await asyncio.wait_for(queue.get(), timeout=1)) == {"type": "refresh"}
-        # キューが満杯の間は新規通知を破棄し、配信で待たない。
+        # 未配信の通知がある間に重ねて配信しても、一覧の再取得は1件にまとまり、配信で待たない。
         await sessions.deliver_refresh(context.state)
         await sessions.deliver_refresh(context.state)
         assert json.loads(await asyncio.wait_for(queue.get(), timeout=1)) == {"type": "refresh"}
+        assert queue.empty()
     finally:
         await sessions.unsubscribe(context.state, queue)
     assert context.state.subscribers == set()
@@ -836,3 +841,157 @@ def test_local_hostname_must_not_collide_with_remote_hosts(tmp_path: pathlib.Pat
     """ローカルホスト名とリモートホスト名の重複は起動時に拒絶する。"""
     with pytest.raises(ValueError):
         _context(tmp_path, remote_hosts=["local-host"])
+
+
+def _no_user_corpus(root: pathlib.Path) -> dict[str, pathlib.Path]:
+    """発話を持つ記録と持たない記録（Claude Code本体・サブエージェント・Codex）を作成する。"""
+    projects = root / ".claude" / "projects" / "repo"
+    spoken = _write(projects / "spoken.jsonl", [{"type": "user", "message": {"content": "やあ"}}])
+    silent = _write(projects / "silent.jsonl", [{"type": "permission-mode"}, {"type": "system", "subtype": "x"}])
+    subagents = spoken.with_suffix("") / "subagents"
+    _write(subagents / "agent-a.jsonl", [{"type": "assistant", "message": {"content": "作業"}}])
+    (subagents / "agent-a.meta.json").write_text(json.dumps({"spawnDepth": 1}), encoding="utf-8")
+    codex_day = root / "codex-home" / "sessions" / "2026" / "09" / "26"
+    codex_silent = _write(codex_day / "rollout-silent.jsonl", [{"type": "session_meta", "payload": {"cwd": "/w"}}])
+    codex_spoken = _write(
+        codex_day / "rollout-spoken.jsonl",
+        [{"type": "session_meta", "payload": {"cwd": "/w"}}, {"type": "response_item", "payload": {"role": "user"}}],
+    )
+    return {
+        "spoken": spoken,
+        "silent": silent,
+        "subagent": subagents / "agent-a.jsonl",
+        "codex_silent": codex_silent,
+        "codex_spoken": codex_spoken,
+    }
+
+
+def _helper_list(root: pathlib.Path) -> list[dict[str, typing.Any]]:
+    """リモート補助の一覧を、`root`を家ディレクトリとして取得する。"""
+    environment = os.environ.copy()
+    environment.update({"HOME": str(root), "CODEX_HOME": str(root / "codex-home")})
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"),
+            "list",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    return json.loads(result.stdout)["entries"]
+
+
+def test_records_without_user_message_are_excluded_until_the_first_message(tmp_path: pathlib.Path) -> None:
+    """ユーザー発話の記録行を持たない記録は一覧から外し、発話が追記されると一覧へ載せる。"""
+    corpus = _no_user_corpus(tmp_path)
+    context = sessions.create_context(
+        hostname="local-host", claude_home=tmp_path / ".claude", codex_home=tmp_path / "codex-home"
+    )
+
+    listed = {entry.path for entry in sessions.list_local_sessions(context)}
+    assert listed == {str(corpus["spoken"]), str(corpus["codex_spoken"])}
+
+    _write(corpus["silent"], [{"type": "permission-mode"}, {"type": "user", "message": {"content": "今から"}}])
+    _write(corpus["subagent"], [{"type": "user", "message": {"content": "指示"}}])
+    listed = {entry.path for entry in sessions.list_local_sessions(context)}
+    assert {str(corpus["silent"]), str(corpus["subagent"])} <= listed
+
+
+def test_exclusion_happens_before_the_listing_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """除外した記録で件数上限の枠を消費しない。"""
+    projects = tmp_path / "claude" / "projects" / "repo"
+    for index in range(3):
+        _write(projects / f"silent-{index}.jsonl", [{"type": "mode", "timestamp": f"2026-09-26T00:00:0{index}Z"}])
+    spoken = _write(projects / "spoken.jsonl", [{"type": "user", "timestamp": "2026-01-01T00:00:00Z"}])
+    monkeypatch.setattr(sessions, "MAX_LIST_ENTRIES", 1)
+
+    assert [entry.path for entry in sessions.list_local_sessions(_context(tmp_path))] == [str(spoken)]
+
+
+def test_remote_helper_applies_the_same_exclusion_as_the_local_listing(tmp_path: pathlib.Path) -> None:
+    """リモート補助の一覧も同じ基準で除外し、ローカルの一覧と同じ記録の集合を返す。"""
+    corpus = _no_user_corpus(tmp_path)
+    context = sessions.create_context(
+        hostname="local-host", claude_home=tmp_path / ".claude", codex_home=tmp_path / "codex-home"
+    )
+
+    remote = {entry["path"] for entry in _helper_list(tmp_path)}
+    local = {entry.path for entry in sessions.list_local_sessions(context)}
+
+    assert remote == local == {str(corpus["spoken"]), str(corpus["codex_spoken"])}
+    assert all("has_user_message" not in entry for entry in _helper_list(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_entries_from_an_old_remote_helper_are_not_excluded(tmp_path: pathlib.Path) -> None:
+    """判定材料を返さない旧版のリモート補助の項目は、最初の発話がnullでも除外しない。"""
+    runner, _ = _runner_returning(
+        {"ok": True, "entries": [{"engine": "codex", "path": "/r/rollout-x.jsonl", "first_user_message": None}]}
+    )
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+
+    entries, _warnings = await sessions.list_sessions(context)
+
+    assert [(entry.host, entry.path) for entry in entries] == [("remote-host", "/r/rollout-x.jsonl")]
+
+
+@pytest.mark.asyncio
+async def test_remote_change_notifications_are_relayed_to_subscribers(tmp_path: pathlib.Path) -> None:
+    """リモート補助の変更通知を、ホスト名を付けてSSE購読者へ中継する。"""
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    client = sessions.RemoteSessionClient("remote-host", context.state)
+    queue = await sessions.subscribe(context.state)
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"ready","host":"remote-host"}\n{"type":"record","engine":"claude","path":"/r/a.jsonl"}\n{"type":"unknown"}\n'
+    )
+    stream.feed_eof()
+
+    await client._process_stream(stream)
+
+    assert json.loads(queue.get_nowait()) == {
+        "type": "record",
+        "host": "remote-host",
+        "engine": "claude",
+        "path": "/r/a.jsonl",
+    }
+    assert queue.empty()
+    stream = asyncio.StreamReader()
+    stream.feed_data(b'{"type":"refresh"}\n')
+    stream.feed_eof()
+    await client._process_stream(stream)
+    assert json.loads(queue.get_nowait()) == {"type": "refresh"}
+
+
+def test_remote_helper_is_started_with_watchdog() -> None:
+    """常駐接続のリモート補助は変更監視に使うwatchdogを伴って起動する。"""
+    argv = sessions._build_remote_command_argv("serve", [])
+
+    assert argv[argv.index("--with") + 1] == '"watchdog>=6.0.0"'
+
+
+@pytest.mark.asyncio
+async def test_local_watch_notifies_new_records_and_appends(tmp_path: pathlib.Path) -> None:
+    """ローカルの記録の追加で一覧の再取得を、一覧に載る記録への追記で記録1件の更新を通知する。"""
+    context = _context(tmp_path)
+    sessions.start_local_watch(context)
+    queue = await sessions.subscribe(context.state)
+    try:
+        path = _write(tmp_path / "claude" / "projects" / "repo" / "new.jsonl", [{"type": "user", "message": {"content": "a"}}])
+        assert json.loads(await asyncio.wait_for(queue.get(), timeout=5)) == {"type": "refresh"}
+        await asyncio.to_thread(sessions.list_local_sessions, context)
+        while not queue.empty():
+            queue.get_nowait()
+
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"type": "assistant", "message": {"content": "b"}}) + "\n")
+
+        message = json.loads(await asyncio.wait_for(queue.get(), timeout=5))
+        assert message == {"type": "record", "host": "local-host", "engine": "claude", "path": str(path)}
+    finally:
+        await sessions.unsubscribe(context.state, queue)
+        sessions.stop_local_watch(context)
+    assert context.state.record_watch is None

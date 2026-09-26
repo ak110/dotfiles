@@ -1134,11 +1134,13 @@ def _register_lifecycle(
         runtime.background_task = asyncio.create_task(runtime.background_sync_loop())
         serve_plans.start_local_watchers(plans)
         serve_plans.start_remote_watchers(plans)
+        serve_sessions.start_local_watch(sessions)
         serve_sessions.start_remote_clients(sessions)
 
     @app.after_serving
     async def stop_background_tasks() -> None:
         await serve_sessions.stop_remote_clients(sessions)
+        serve_sessions.stop_local_watch(sessions)
         await serve_plans.stop_remote_watchers(plans)
         serve_plans.stop_local_watchers(plans)
         if runtime.background_task is None:

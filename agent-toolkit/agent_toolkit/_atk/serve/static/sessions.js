@@ -30,6 +30,16 @@ let visibleSessions = [];
 let parentTrail = [];
 // 初期化後は文書とともに維持するSSE購読。
 let eventSource = null;
+// 詳細の取得の世代。選択の切り替えや再取得の後に届いた古い応答を反映しないために使う。
+let detailGeneration = 0;
+// 右ペインへ描画済みのイベント件数。「さらに100件表示」で増え、追記の反映後も保つ。
+let renderedCount = 100;
+const DETAIL_PAGE_SIZE = 100;
+// 右ペインに表示中の記録と、利用者が末尾より上を読んでいる間に届いた未読のイベント件数。
+let currentDetail = null;
+let unseenEventCount = 0;
+// 末尾からこの距離以内を読んでいれば末尾を読んでいるとみなし、追記に合わせて末尾へ追従する。
+const FOLLOW_TAIL_PX = 48;
 
 // 画面DOMの参照は初回の`init`で確定する。
 let listEl = null;
@@ -176,7 +186,7 @@ function renderList() {
   document.getElementById("sessions-empty").hidden = rows.length !== 0;
   const empty = document.getElementById("sessions-empty");
   empty.querySelector("p").textContent = sessions.length === 0
-    ? `セッション記録がありません。対象root: ${sessionRoots.join("、")}`
+    ? `ユーザーの発話を含むセッション記録はまだありません。発話が保存された記録は自動で一覧へ加わります。対象root: ${sessionRoots.join("、")}`
     : "一致するセッションはありません。";
   empty.querySelector("button").hidden = !queryText;
   document.getElementById("sessions-sentinel").hidden = rows.length <= visibleLimit;
@@ -282,9 +292,10 @@ function toolInputSummary(event) {
   return Object.values(input).find((value) => typeof value === "string") || "";
 }
 
-function renderEvent(event) {
+function renderEvent(event, index) {
   const block = document.createElement("details");
   block.className = `event kind-${event.kind}`;
+  block.dataset.eventIndex = String(index);
   block.open = event.kind === "user" || event.kind === "assistant" || event.kind === "developer";
   if (!block.open) {
     block.dataset.exclusiveEvent = "true";
@@ -374,7 +385,18 @@ function renderBack() {
   return button;
 }
 
-function renderDetail(detail) {
+// 追記の反映で描き直す前に、展開中のイベント、表示件数、スクロール位置を控える。
+// イベントは記録の先頭からの順で並び、追記で既存の位置は変わらないため、位置を識別に使う。
+function captureDetailState() {
+  const openStates = new Map();
+  for (const block of detailEl.querySelectorAll("details[data-event-index]")) {
+    openStates.set(block.dataset.eventIndex, block.open);
+  }
+  return {openStates, renderedCount, scrollTop: detailEl.parentElement.scrollTop};
+}
+
+function renderDetail(detail, preserved = null) {
+  currentDetail = detail;
   detailTitleEl.textContent = `${ENGINE_LABELS[detail.engine] || detail.engine} / ${detail.host} / ${detail.project || "(プロジェクト不明)"}`;
   detailUsageEl.textContent = usageText(detail.usage);
   // 子要素だけを差し替えるため、本文装飾を担う`#detail`自身のmarkdown-bodyクラスは保持される。
@@ -406,18 +428,23 @@ function renderDetail(detail) {
     detailEl.append(broken);
   }
 
-  for (const event of detail.events.slice(0, 100)) {
-    detailEl.append(renderEvent(event));
-  }
-  let rendered = 100;
-  if (detail.events.length > rendered) {
+  renderedCount = preserved ? preserved.renderedCount : DETAIL_PAGE_SIZE;
+  detail.events.slice(0, renderedCount).forEach((event, index) => {
+    const block = renderEvent(event, index);
+    const open = preserved?.openStates.get(String(index));
+    if (open !== undefined) block.open = open;
+    detailEl.append(block);
+  });
+  if (detail.events.length > renderedCount) {
     const more = document.createElement("button");
     more.type = "button";
     more.textContent = "さらに100件表示";
     more.addEventListener("click", () => {
-      for (const event of detail.events.slice(rendered, rendered + 100)) detailEl.insertBefore(renderEvent(event), more);
-      rendered += 100;
-      more.hidden = rendered >= detail.events.length;
+      detail.events.slice(renderedCount, renderedCount + DETAIL_PAGE_SIZE).forEach((event, offset) => {
+        detailEl.insertBefore(renderEvent(event, renderedCount + offset), more);
+      });
+      renderedCount += DETAIL_PAGE_SIZE;
+      more.hidden = renderedCount >= detail.events.length;
     });
     detailEl.append(more);
   }
@@ -427,6 +454,72 @@ function renderDetail(detail) {
     truncated.className = "secondary-text";
     truncated.textContent = `表示上限を超えた${detail.truncated_events}件は表示していません`;
     detailEl.append(truncated);
+  }
+  if (preserved) detailEl.parentElement.scrollTop = preserved.scrollTop;
+}
+
+function isSelected(host, engine, path) {
+  return Boolean(selected) && selected.host === host && selected.engine === engine && selected.path === path;
+}
+
+function detailScroller() {
+  return detailEl.parentElement;
+}
+
+// 描画済みのイベントが記録の末尾までそろい、スクロールが末尾近くにある状態を「末尾を読んでいる」とする。
+function isReadingTail() {
+  if (!currentDetail || renderedCount < currentDetail.events.length) return false;
+  const scroller = detailScroller();
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= FOLLOW_TAIL_PX;
+}
+
+// 末尾より上を読んでいる間に届いたイベントを件数で知らせ、末尾へ移る操作を示す。
+function updateNewEventsNotice() {
+  const button = document.getElementById("sessions-new-events-btn");
+  button.hidden = unseenEventCount === 0;
+  button.textContent = unseenEventCount === 0 ? "" : `新しいイベントが${unseenEventCount}件あります。末尾へ移動`;
+}
+
+function clearNewEventsNotice() {
+  unseenEventCount = 0;
+  updateNewEventsNotice();
+}
+
+// 未描画のイベントも描画してから末尾へ移る。
+function jumpToLatestEvents() {
+  if (currentDetail && renderedCount < currentDetail.events.length) {
+    renderDetail(currentDetail, {...captureDetailState(), renderedCount: currentDetail.events.length});
+  }
+  const scroller = detailScroller();
+  scroller.scrollTop = scroller.scrollHeight;
+  clearNewEventsNotice();
+}
+
+// 選択中の記録を取り直し、表示状態を保ったまま描き直す。取得に失敗した場合は現在の表示を残す。
+// 末尾を読んでいた場合は追記の末尾へ追従し、それ以外は位置を保って新着の件数を通知欄へ表示する。
+async function refreshSelectedDetail() {
+  if (!selected) return;
+  const {host, engine, path} = selected;
+  const generation = ++detailGeneration;
+  try {
+    const response = await fetch(`${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`);
+    if (!response.ok) return;
+    const detail = await response.json();
+    if (generation !== detailGeneration || !isSelected(host, engine, path)) return;
+    const previousCount = currentDetail ? currentDetail.events.length : detail.events.length;
+    const readingTail = isReadingTail();
+    renderDetail(detail, {...captureDetailState(), renderedCount: readingTail ? detail.events.length : renderedCount});
+    const added = detail.events.length - previousCount;
+    if (added <= 0) return;
+    if (readingTail) {
+      const scroller = detailScroller();
+      scroller.scrollTop = scroller.scrollHeight;
+    } else {
+      unseenEventCount += added;
+      updateNewEventsNotice();
+    }
+  } catch (_) {
+    // 一時的な取得失敗では現在の表示を残し、次の通知か再接続で取り直す。
   }
 }
 
@@ -439,16 +532,22 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
     history.pushState({atkSession: true}, "", url);
   }
   parentTrail = trail;
+  currentDetail = null;
+  clearNewEventsNotice();
   renderList();
   detailEl.replaceChildren();
   detailTitleEl.textContent = "読み込み中...";
   const query = new URLSearchParams({ host, engine, path });
+  const generation = ++detailGeneration;
   try {
     const response = await (fetch(`${BASE_PATH}/api/sessions/detail?${query.toString()}`));
     if (!response.ok) throw new Error(`記録を取得できません (${response.status})`);
     const detail = await (response.json());
+    if (generation !== detailGeneration) return;
     renderDetail(detail);
+    detailEl.parentElement.scrollTop = 0;
   } catch (error) {
+    if (generation !== detailGeneration) return;
     detailTitleEl.textContent = "";
     detailEl.replaceChildren();
     const alert = document.createElement("div");
@@ -464,11 +563,25 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
   setDrawerOpen(false);
 }
 
+// 通知は2種類ある。`refresh`は一覧の再取得を促し、選択中の記録も取り直す。
+// `record`は記録1件の更新を示し、選択中の記録と一致する場合だけ右ペインを取り直す。
+function handleSseMessage(event) {
+  let message = null;
+  try {
+    message = JSON.parse(event.data);
+  } catch (_) {
+    return;
+  }
+  if (message?.type === "refresh") {
+    void loadList().then(() => refreshSelectedDetail());
+  } else if (message?.type === "record" && isSelected(message.host, message.engine, message.path)) {
+    void refreshSelectedDetail();
+  }
+}
+
 function subscribeEvents() {
   eventSource = new EventSource(BASE_PATH + "/api/sessions/events");
-  eventSource.onmessage = () => {
-    loadList();
-  };
+  eventSource.onmessage = handleSseMessage;
   eventSource.onerror = () => {
     // EventSourceはブラウザが自動再接続する。切断中の一覧は次の再接続で更新される。
   };
@@ -519,6 +632,10 @@ async function init() {
     const entry = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
     if (entry) void openSession(entry.host, entry.engine, entry.path, [], false);
   });
+  document.getElementById("sessions-new-events-btn").addEventListener("click", jumpToLatestEvents);
+  detailScroller().addEventListener("scroll", () => {
+    if (unseenEventCount > 0 && isReadingTail()) clearNewEventsNotice();
+  }, {passive: true});
   document.getElementById("sessions-prev-btn").addEventListener("click", () => navigateRelative(-1));
   document.getElementById("sessions-next-btn").addEventListener("click", () => navigateRelative(1));
   await loadList();

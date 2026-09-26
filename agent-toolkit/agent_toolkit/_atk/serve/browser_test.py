@@ -7,6 +7,7 @@ import dataclasses
 import functools
 import json
 import os
+import shutil
 import socket
 import threading
 import urllib.parse
@@ -4486,3 +4487,187 @@ async def test_plan_and_session_lists_expand_after_hundred_items(
     await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(100)
     await page.locator("#sessions-sentinel").scroll_into_view_if_needed()
     await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(112)
+
+
+def _append_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    """JSON Linesの記録へ行を追記する。記録が無ければ作成する。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.writelines(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
+
+
+def _session_list_requests(harness: _ScreenHarness) -> int:
+    return sum(1 for url in harness.requests if "/api/sessions/list" in url)
+
+
+@pytest.mark.asyncio
+async def test_session_list_updates_when_records_are_added(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
+    """画面を開いたまま保存された新しい記録が、再読み込みせずに左ペインへ現れる。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    items = page.locator("#sessions .session-item")
+    await playwright.async_api.expect(items).to_have_count(2)
+
+    _append_jsonl(
+        tmp_path / "claude" / "projects" / "-home-aki-added" / "added-claude.jsonl",
+        [{"type": "user", "timestamp": "2026-09-03T00:00:00Z", "cwd": "/home/aki/added-claude", "message": {"content": "a"}}],
+    )
+    _append_jsonl(
+        tmp_path / "codex" / "sessions" / "2026" / "09" / "03" / "rollout-2026-09-03T00-00-00-added.jsonl",
+        [
+            {"type": "session_meta", "payload": {"cwd": "/home/aki/added-codex", "timestamp": "2026-09-03T00:00:01Z"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": "b"}]}},
+        ],
+    )
+
+    await playwright.async_api.expect(items).to_have_count(4, timeout=5000)
+    listing = page.locator("#sessions")
+    await playwright.async_api.expect(listing).to_contain_text("/home/aki/added-claude")
+    await playwright.async_api.expect(listing).to_contain_text("/home/aki/added-codex")
+
+
+@pytest.mark.asyncio
+async def test_session_detail_follows_appended_events_and_keeps_view_state(
+    screen_harness: _ScreenHarness,
+    tmp_path: Path,
+) -> None:
+    """開いている記録への追記が右ペインへ現れ、開閉・表示件数・スクロール位置を保ち、一覧は再取得しない。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 1280, "height": 600})
+    path = tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl"
+    records: list[dict[str, Any]] = [
+        {"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/long", "message": {"content": "開始"}}
+    ]
+    for index in range(150):
+        records.append(
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-04T00:00:01Z",
+                "message": {"content": [{"type": "thinking", "thinking": f"思考{index}"}]},
+            }
+        )
+    _append_jsonl(path, records)
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
+    events = page.locator("#detail details.event")
+    await playwright.async_api.expect(events).to_have_count(100)
+    await page.get_by_role("button", name="さらに100件表示").click()
+    await playwright.async_api.expect(events).to_have_count(151)
+    # 最初から展開されるユーザー発話を閉じ、折りたたまれた思考を1件開く。
+    await events.nth(0).locator("summary").click()
+    await events.nth(120).locator("summary").click()
+    await playwright.async_api.expect(events.nth(120)).to_have_attribute("open", "")
+    scroll_top = await page.evaluate(
+        "() => { const main = document.querySelector('#screen-sessions main'); main.scrollTop = 1500; return main.scrollTop; }"
+    )
+    assert scroll_top > 0
+    list_requests = _session_list_requests(screen_harness)
+
+    _append_jsonl(
+        path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-04T00:00:02Z",
+                "message": {"content": [{"type": "text", "text": "追記されたイベント"}]},
+            }
+        ],
+    )
+
+    await playwright.async_api.expect(events).to_have_count(152, timeout=5000)
+    await playwright.async_api.expect(page.locator("#detail")).to_contain_text("追記されたイベント")
+    assert not await events.nth(0).evaluate("element => element.open")
+    assert await events.nth(120).evaluate("element => element.open")
+    assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
+    await asyncio.sleep(1.0)
+    assert _session_list_requests(screen_harness) == list_requests
+
+    # 末尾より上を読んでいる間に届いたイベントは件数で知らせ、その操作で末尾へ移る。
+    notice = page.get_by_role("button", name="新しいイベントが1件あります。末尾へ移動")
+    await playwright.async_api.expect(notice).to_be_visible()
+    await notice.click()
+    await playwright.async_api.expect(notice).to_be_hidden()
+    assert await page.evaluate(_DETAIL_DISTANCE_FROM_END_JS) <= 1
+
+
+# 右ペインのスクロール位置から末尾までの距離（px）を返す。
+_DETAIL_DISTANCE_FROM_END_JS = (
+    "() => { const main = document.querySelector('#screen-sessions main');"
+    " return main.scrollHeight - main.scrollTop - main.clientHeight; }"
+)
+
+
+@pytest.mark.asyncio
+async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
+    screen_harness: _ScreenHarness,
+    tmp_path: Path,
+) -> None:
+    """末尾を読んでいる間の追記では新着の通知を表示せず、追記した末尾へ追従する。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 1280, "height": 600})
+    path = tmp_path / "claude" / "projects" / "-home-aki-tail" / "tail.jsonl"
+    records: list[dict[str, Any]] = [
+        {"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/tail", "message": {"content": "開始"}}
+    ]
+    records += [
+        {"type": "assistant", "timestamp": "2026-09-04T00:00:01Z", "message": {"content": f"応答{index}"}}
+        for index in range(40)
+    ]
+    _append_jsonl(path, records)
+    await asyncio.sleep(1.5)
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator("#sessions .session-item", has_text="/home/aki/tail").click()
+    events = page.locator("#detail details.event")
+    await playwright.async_api.expect(events).to_have_count(41)
+    await page.evaluate(
+        "() => { const main = document.querySelector('#screen-sessions main'); main.scrollTop = main.scrollHeight; }"
+    )
+
+    _append_jsonl(path, [{"type": "assistant", "timestamp": "2026-09-04T00:00:02Z", "message": {"content": "末尾の追記"}}])
+
+    await playwright.async_api.expect(events).to_have_count(42, timeout=5000)
+    await page.wait_for_function(f"({_DETAIL_DISTANCE_FROM_END_JS})() <= 1")
+    await playwright.async_api.expect(page.locator("#sessions-new-events-btn")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_session_empty_state_distinguishes_records_without_user_messages(
+    screen_harness: _ScreenHarness,
+    tmp_path: Path,
+) -> None:
+    """発話を含む記録が1件も無いときは、記録の不在ではなく発話を含む記録が無いことと、自動で加わることを示す。"""
+    shutil.rmtree(tmp_path / "claude")
+    shutil.rmtree(tmp_path / "codex")
+    _append_jsonl(tmp_path / "claude" / "projects" / "-home-aki-silent" / "silent.jsonl", [{"type": "permission-mode"}])
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+
+    empty = page.locator("#sessions-empty")
+    await playwright.async_api.expect(empty).to_be_visible()
+    await playwright.async_api.expect(empty).to_contain_text("ユーザーの発話を含むセッション記録はまだありません")
+    await playwright.async_api.expect(empty).to_contain_text("自動で一覧へ加わります")
+
+
+@pytest.mark.asyncio
+async def test_session_without_user_message_appears_after_first_message(
+    screen_harness: _ScreenHarness,
+    tmp_path: Path,
+) -> None:
+    """ユーザー発話を持たない記録は一覧に現れず、発話が追記されると再読み込みせずに現れる。"""
+    silent_claude = tmp_path / "claude" / "projects" / "-home-aki-silent" / "silent.jsonl"
+    _append_jsonl(silent_claude, [{"type": "permission-mode", "cwd": "/home/aki/silent-claude"}])
+    silent_codex = tmp_path / "codex" / "sessions" / "2026" / "09" / "05" / "rollout-2026-09-05T00-00-00-silent.jsonl"
+    _append_jsonl(silent_codex, [{"type": "session_meta", "payload": {"cwd": "/home/aki/silent-codex"}}])
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    items = page.locator("#sessions .session-item")
+    await playwright.async_api.expect(items).to_have_count(2)
+    listing = page.locator("#sessions")
+    await playwright.async_api.expect(listing).not_to_contain_text("/home/aki/silent")
+
+    _append_jsonl(silent_claude, [{"type": "user", "timestamp": "2026-09-05T00:00:00Z", "message": {"content": "今から"}}])
+    _append_jsonl(silent_codex, [{"type": "response_item", "payload": {"type": "message", "role": "user", "content": []}}])
+
+    await playwright.async_api.expect(items).to_have_count(4, timeout=5000)
+    await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-claude")
+    await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-codex")

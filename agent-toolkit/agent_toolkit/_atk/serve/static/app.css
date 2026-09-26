@@ -1520,6 +1520,24 @@ main > .toolbar {
 #screen-sessions .detail-back {
   margin-bottom: 10px;
 }
+/* 一覧が空のときの案内。対象rootの長いパスも枠内で折り返す。 */
+#screen-sessions #sessions-empty {
+  padding: var(--space-3);
+  color: var(--color-secondary-text);
+  overflow-wrap: anywhere;
+}
+/* 末尾より上を読んでいる間に届いたイベントの通知。右ペインの下端へ留め、本文の位置を動かさない。 */
+#screen-sessions .new-events-notice {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+#screen-sessions .new-events-notice button {
+  margin: 8px;
+  pointer-events: auto;
+}
 #screen-sessions .subagents {
   margin-bottom: 10px;
   border: 1px solid #e6e6e6;

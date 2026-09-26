@@ -7,13 +7,16 @@
 操作種別はargvで受け取る（`list`・`read`・`serve`）。
 `list`は保存済みセッションの一覧を、`read`は1件の記録本文とサブエージェント記録の一覧をJSONで返す。
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
+`serve`は記録のrootの変更も監視し、一覧の再取得と記録1件の更新の通知を同じstdoutへ行で書く。
 
 保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`を正本とし、
 サーバー側`_atk/serve/sessions.py`と同じ規約で解決する。
-子セッションの解析は、同じリポジトリの共通モジュールを読み込む。
+子セッションの解析と、一覧の判定・変更監視は、同じリポジトリの共通モジュールを読み込む。
+ユーザー発話の記録行を持たない記録は一覧から除外する。
 """
 
 import base64
+import contextlib
 import json
 import os
 import pathlib
@@ -23,7 +26,10 @@ import threading
 import typing
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from agent_toolkit._atk.serve import session_delegations  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-import-position
+    session_delegations,
+    session_watch,
+)
 
 # 1件の記録から取得する最大バイト数。過大な記録の全文転送により接続が占有される事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
@@ -85,80 +91,12 @@ def _codex_session_id(path: pathlib.Path) -> str:
     return "-".join(parts[-5:]) if len(parts) >= 5 else stem
 
 
-def _as_text(value: typing.Any) -> str | None:
-    """記録の本文欄を表示用の文字列へ正規化する。"""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        parts = [
-            block["text"] for block in value if isinstance(block, dict) and isinstance(block.get("text"), str) and block["text"]
-        ]
-        return "\n".join(parts) if parts else None
-    return None
-
-
-def _first_line(value: typing.Any) -> str | None:
-    """本文として解釈できる値の先頭1行を返す。"""
-    text = _as_text(value)
-    if text is None:
-        return None
-    lines = text.splitlines()
-    return lines[0] if lines else None
-
-
-def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None, str | None]:
-    """一覧の識別に使う作業ディレクトリ、最初の発話及び開始日時を先頭から取得する。"""
-    cwd: str | None = None
-    first_user_message: str | None = None
-    first_user_seen = False
-    started_at: str | None = None
-    first_timestamp: str | None = None
-    try:
-        with path.open(encoding="utf-8", errors="replace") as stream:
-            for line in stream:
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(record, dict):
-                    continue
-                if first_timestamp is None and isinstance(record.get("timestamp"), str):
-                    first_timestamp = record["timestamp"]
-                if engine == "claude":
-                    if started_at is None:
-                        started_at = first_timestamp
-                    if cwd is None and isinstance(record.get("cwd"), str):
-                        cwd = record["cwd"]
-                    if not first_user_seen and record.get("type") == "user":
-                        first_user_seen = True
-                        message = record.get("message")
-                        if isinstance(message, dict):
-                            first_user_message = _first_line(message.get("content"))
-                else:
-                    payload = record.get("payload")
-                    if not isinstance(payload, dict):
-                        continue
-                    if (
-                        started_at is None
-                        and record.get("type") == "session_meta"
-                        and isinstance(payload.get("timestamp"), str)
-                    ):
-                        started_at = payload["timestamp"]
-                    if cwd is None and record.get("type") == "session_meta" and isinstance(payload.get("cwd"), str):
-                        cwd = payload["cwd"]
-                    if not first_user_seen and payload.get("role") == "user":
-                        first_user_seen = True
-                        first_user_message = _first_line(payload.get("content"))
-                if cwd is not None and first_user_seen and started_at is not None:
-                    break
-    except OSError:
-        pass
-    return cwd, first_user_message, started_at or first_timestamp
-
-
 def _entry(path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing.Any]:
-    """一覧の1件を組み立てる。読み取れない情報は`None`のままとする。"""
-    cwd, first_user_message, started_at = _summary_fields(path, engine)
+    """一覧の1件を組み立てる。読み取れない情報は`None`のままとする。
+
+    `has_user_message`は一覧からの除外の判定材料であり、`_list_payload`が応答から取り除く。
+    """
+    cwd, first_user_message, started_at, has_user = session_watch.summary_fields(path, engine)
     try:
         st = path.stat()
         size = st.st_size
@@ -174,6 +112,7 @@ def _entry(path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing
             "started_at": started_at,
             "updated_at": None,
             "warning": f"記録の情報を取得できません: {error}",
+            "has_user_message": has_user,
         }
     return {
         "engine": engine,
@@ -185,11 +124,16 @@ def _entry(path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing
         "started_at": started_at,
         "updated_at": updated_at,
         "warning": None,
+        "has_user_message": has_user,
     }
 
 
-def _list_payload() -> dict[str, typing.Any]:
-    """ローカルの保存済みセッション一覧を返す。"""
+def _list_payload(tracker: session_watch.RecordChangeTracker | None = None) -> dict[str, typing.Any]:
+    """ローカルの保存済みセッション一覧を返す。
+
+    ユーザー発話の記録行を持たない記録は、件数上限による切り詰めより前に除外する。
+    `tracker`を渡した場合は、判定した発話の有無を変更監視の判定へ引き継ぐ。
+    """
     entries: list[dict[str, typing.Any]] = []
     for path in _iter_claude_records():
         entries.append(_entry(path, "claude", path.stem))
@@ -212,6 +156,15 @@ def _list_payload() -> dict[str, typing.Any]:
             entries.append(child)
     for path in _iter_codex_records():
         entries.append(_entry(path, "codex", _codex_session_id(path)))
+    kept: list[dict[str, typing.Any]] = []
+    for entry in entries:
+        has_user = entry.pop("has_user_message")
+        if tracker is not None and has_user is not None and isinstance(entry.get("path"), str):
+            tracker.prime(entry["path"], has_user)
+        # 読めずに判定できなかった記録（`None`）は警告とともに一覧へ残す。
+        if has_user is not False:
+            kept.append(entry)
+    entries = kept
     by_id: dict[str, list[dict[str, typing.Any]]] = {}
     for entry in entries:
         by_id.setdefault(entry["session_id"], []).append(entry)
@@ -313,7 +266,9 @@ def _emit(payload: dict[str, typing.Any]) -> None:
         sys.stdout.flush()
 
 
-def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
+def _handle_request(
+    req: dict[str, typing.Any], tracker: session_watch.RecordChangeTracker | None = None
+) -> dict[str, typing.Any]:
     """RPCリクエストを処理して応答辞書を返す。"""
     req_id = req.get("id")
     op = req.get("op")
@@ -321,7 +276,7 @@ def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
         return {"type": "response", "id": -1, "ok": False, "error": "invalid id"}
     try:
         if op == "list":
-            return {"type": "response", "id": req_id, "ok": True, **_list_payload()}
+            return {"type": "response", "id": req_id, "ok": True, **_list_payload(tracker)}
         if op == "read":
             return {"type": "response", "id": req_id, "ok": True, **_read_payload(str(req.get("path", "")))}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
@@ -329,8 +284,32 @@ def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
         return {"type": "response", "id": req_id, "ok": False, "error": f"{type(error).__name__}: {error}"}
 
 
+def _start_watch() -> tuple[session_watch.RecordWatch | None, session_watch.RecordChangeTracker]:
+    """記録のrootの変更監視を開始する。監視を開始できない場合もRPCは続ける。"""
+
+    def on_flush(refresh: bool, records: list[tuple[str, str]]) -> None:
+        # SSH接続の切断後の通知は届け先が無いため破棄する。RPCの読み取り側が切断を検知して終了する。
+        with contextlib.suppress(OSError):
+            if refresh:
+                _emit({"type": session_watch.REFRESH_TYPE})
+            for engine, path in records:
+                _emit({"type": session_watch.RECORD_TYPE, "engine": engine, "path": path})
+
+    tracker = session_watch.RecordChangeTracker(
+        [(_claude_home() / "projects", "claude"), (_codex_home() / "sessions", "codex")],
+        on_flush,
+    )
+    watch = session_watch.RecordWatch(tracker)
+    try:
+        watch.start()
+    except (ImportError, OSError) as error:
+        sys.stderr.write(f"warn: session record watch unavailable: {error}\n")
+        return None, tracker
+    return watch, tracker
+
+
 def _serve() -> int:
-    """stdinの行区切りJSONリクエストへ応答する常駐モード。
+    """stdinの行区切りJSONリクエストへ応答し、記録の変更を通知する常駐モード。
 
     RPCプロトコル（行区切りJSON）:
         リクエスト（stdin）: {"id":<int>, "op":"list"}
@@ -338,22 +317,30 @@ def _serve() -> int:
         応答（stdout）:
             成功: {"type":"response", "id":<int>, "ok":true, ...}
             失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
+        変更通知（stdout）:
+            一覧の再取得: {"type":"refresh"}
+            記録1件の更新: {"type":"record", "engine":"claude"|"codex", "path":"<絶対パス>"}
     起動直後に`{"type":"ready","host":...}`を1行出力し、呼び出し側の接続確立の契機とする。
     """
+    watch, tracker = _start_watch()
     _emit({"type": "ready", "host": socket.gethostname()})
-    for raw in sys.stdin:
-        line = raw.strip()
-        if not line:
-            continue
-        try:
-            req = json.loads(line)
-        except json.JSONDecodeError as error:
-            _emit({"type": "response", "id": -1, "ok": False, "error": f"json: {error}"})
-            continue
-        try:
-            _emit(_handle_request(req))
-        except BrokenPipeError:
-            return 0
+    try:
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError as error:
+                _emit({"type": "response", "id": -1, "ok": False, "error": f"json: {error}"})
+                continue
+            try:
+                _emit(_handle_request(req, tracker))
+            except BrokenPipeError:
+                return 0
+    finally:
+        if watch is not None:
+            watch.stop()
     return 0
 
 
