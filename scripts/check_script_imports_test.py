@@ -106,10 +106,12 @@ def test_private_module_directly_under_agent_toolkit_is_reported(
     """直下へ公開スクリプト以外の実装モジュールを置くとexit 1で、そのファイル名を報告する。"""
     scripts_root = _isolate_repo_root / "agent-toolkit/agent_toolkit"
     (scripts_root / "atk.py").write_text("", encoding="utf-8")
-    (scripts_root / "_feature.py").write_text("", encoding="utf-8")
+    private_module = scripts_root / "_feature.py"
+    private_module.write_text("", encoding="utf-8")
 
     assert check_script_imports.main() == 1
-    assert "agent-toolkit/agent_toolkit/_feature.py" in capsys.readouterr().err
+    # 期待値をパスのリテラルで書くと、参照解決テストが実在しないパスへの参照として収集する
+    assert private_module.relative_to(_isolate_repo_root).as_posix() in capsys.readouterr().err
 
 
 def test_public_scripts_and_tests_directly_under_agent_toolkit_are_accepted(_isolate_repo_root: pathlib.Path) -> None:
