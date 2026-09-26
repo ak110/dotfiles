@@ -20,6 +20,7 @@ import json
 import os
 import pathlib
 
+from agent_toolkit._common.process_loop_session import is_process_loop_session
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -29,8 +30,6 @@ from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_ses
 from agent_toolkit._plan.locations import is_plan_main_file, read_owner_session_id, working_plans_root
 
 _HOOK_ID = "agent-toolkit/plan_save_advisor"
-_ENV_PROCESS_LOOP_SESSION = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-_LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _NOTIFIED_STATE_KEY = "working_plan_save_notified"
 _PROCESS_WI_STATE_KEY = "process_wi_skill_invoked"
 
@@ -77,7 +76,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
 
-    if os.environ.get(_ENV_PROCESS_LOOP_SESSION) == "1" or os.environ.get(_LEGACY_ENV_PROCESS_LOOP_SESSION) == "1":
+    if is_process_loop_session(session_id, os.environ):
         append_stop_log(session_id, "approve_process_loop_session", {})
         return "approve", ""
 

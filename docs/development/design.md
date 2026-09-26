@@ -308,6 +308,7 @@ MCPの`list`は通常時の3項目の公開契約を保つため、`stalled`を`
 このため`agents_server`はルートセッションごとのディレクトリへ生存中のsessionの状態ファイルを出力し、`claude-statusline`の`statusline`モードがセッション行の次の行以降へ1 sessionを1行で表示する。
 
 Claude backendが受け取るAPI失敗の合成assistantメッセージはモデルの活動を示さないため、`updated_at`を進めない。失敗の種別、取得できたHTTPステータス、連続失敗の初回時刻と件数だけをsessionに保持し、状態ファイルへ射影する。`show`と`list`は共通の射影から失敗の経過秒を算出し、通常のassistantメッセージで記録を削除する。これにより、再試行の受信で活動経過が短く表示される状態を防ぐ。親プロセスや外部ログから再試行を推定する案は、sessionの受信境界で既に失敗の種別を得られるため採用しない。
+429の再試行中は同じsessionの終端又は正常なモデル出力を待つ。`seconds_since_activity`はモデル活動がない間に増えるが、`api_error`が429を示す間はその値だけで委譲先を停止しない。診断の可視化と委譲先の置換を別の判断に分けることで、利用枠の回復後に同じ実行を継続できる余地を残す。
 
 状態ファイルは`atk config get state_dir`が返すディレクトリ配下の`agents-server/<ルートセッション識別子>/<書込主体>.json`とする。終端結果の未回収判定は、結果ファイルを扱える処理では公開済み・回収済み・未公開を区別する共通述語で行い、状態ファイルを記述できない処理だけは内部の配送済み状態へ縮退する。各書込主体は自身の状態ファイルと対応する一時ファイルだけを削除し、共有する終端結果と通知は保持期限を超えたものだけを回収する。別の書込主体の表示、未回収の終端結果、上り通知を起動または終了時の初期化で削除する案は、同じルートに属する並行した委譲の観測を失わせるため採用しない。
 ルートセッション識別子は`AGENT_TOOLKIT_OWNER_SESSION`、無ければMCPサーバー起動時の`CLAUDE_CODE_SESSION_ID`から取る。`CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。Claude Codeが同一プロセスのままsession識別子を切り替えると、長命なMCPサーバーだけが起動時の値を保持し、statuslineが受け取る入力JSONの`session_id`と一致しなくなる。このため同じディレクトリ配下ではなく`agents-server/aliases/<現行のsession識別子>.json`へ索引を置き、statuslineと`atk agents wait`は当該索引を経てルートセッション識別子を解決する。`atk agents notify`は所有者sessionを直接解決する方式を保ち、索引を読まない。MCPサーバーは`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`と`list`の応答に、自身の状態ファイル書込先として解決した`root_session_id`を含める。`list`は保持sessionが0件でも当該項目を返す。PostToolUseフックは応答項目を索引の書込先として直接使う。状態ファイルは1秒単位で集約され、応答直後には起動したsessionが未反映であり得るため、状態ディレクトリの走査による逆引きは行わない。CLIの`list`と`wait`は索引又は現行識別子自身の状態ディレクトリで会話rootとの対応を確認する。対応未確認かつ対象0件ではCLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行するよう案内する。対応確認済みの空状態は通常の空状態として扱う。却下した代替案は、両側がClaude Codeプロセスの識別子を環境変数から解決する案と、鍵を作業ディレクトリへ変える案である。前者はMCPサーバープロセスに`CLAUDE_PID`が渡らないため成立せず、後者は同じディレクトリで複数の会話を同時に動かすと会話ごとの行を区別できないため採用しない。共有状態ごとの基準となる記録と、それを読み書きする処理の対応は`.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md`が定める。
@@ -513,6 +514,10 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
 `atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
+
+## process-loopの会話IDによる識別
+
+常駐処理がClaude会話を新規に起動するときは`--session-id`で会話IDを指定し、同じIDを子環境へ渡す。ID指定の再開では指定値を渡す。hookは環境印とhook入力の`session_id`の一致から対象会話を決める。入れ子の`claude`は環境印を継承する一方で会話IDが異なるため、常駐本体の終了保証と空転ガードの対象にならない。IDを指定しない再開では起動側が対象IDを渡せないため、環境印による従来の判定を保つ。親プロセスの探索はプロセス階層とOSへの依存を増やし、hook入力に既にある会話IDより間接的な判定になるため採用しない。
 
 ## process-loopの中断要求
 

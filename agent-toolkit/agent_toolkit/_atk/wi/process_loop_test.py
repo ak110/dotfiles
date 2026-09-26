@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from typing import Any, NoReturn, cast
 
@@ -37,7 +38,7 @@ from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402 
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-_LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _PULL_PRIVATE_NOTES_IMPL = _process_loop._pull_private_notes  # pylint: disable=protected-access  # noqa: SLF001
@@ -483,7 +484,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setenv("AGENT_TOOLKIT_RESTART_SPEC", str(tmp_path / "restart-spec"))
         monkeypatch.setenv("CLAUDE_CODE_DEBUG_LOGS_DIR", str(tmp_path / "ignored-debug.log"))
         monkeypatch.setenv(_PROCESS_LOOP_SESSION_ENV, "new-original")
-        monkeypatch.setenv(_LEGACY_PROCESS_LOOP_SESSION_ENV, "legacy-original")
+        monkeypatch.setenv(_PROCESS_LOOP_SESSION_ID_ENV, "stale-original")
         monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "5m")
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
         closed_descriptors: list[int] = []
@@ -537,7 +538,7 @@ class TestProcessLoopPromptAndEnv:
         assert debug_log.parent == tmp_path / ".claude" / "debug"
         if os.name != "nt":
             assert stat.S_IMODE(debug_log.stat().st_mode) == 0o600
-        assert command[4:11] == [
+        assert command[4:6] + command[8:13] == [
             "--settings",
             '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
@@ -547,8 +548,11 @@ class TestProcessLoopPromptAndEnv:
             "medium",
         ]
         assert "--autocompact" not in command
+        assert "--session-id" in command
+        session_id = command[command.index("--session-id") + 1]
+        assert uuid.UUID(session_id).version == 4
         assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ENV] == "1"
-        assert claude_calls[0]["env"][_LEGACY_PROCESS_LOOP_SESSION_ENV] == "1"
+        assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ID_ENV] == session_id
         assert "AGENT_TOOLKIT_RESTART_SPEC" not in claude_calls[0]["env"]
         assert len(wait_calls) == 2
         captured = capsys.readouterr()
@@ -556,7 +560,7 @@ class TestProcessLoopPromptAndEnv:
         assert f"Claude hook診断ログ: {debug_log}" in captured.out
         assert closed_descriptors == hook_descriptors
         assert os.environ[_PROCESS_LOOP_SESSION_ENV] == "new-original"
-        assert os.environ[_LEGACY_PROCESS_LOOP_SESSION_ENV] == "legacy-original"
+        assert os.environ[_PROCESS_LOOP_SESSION_ID_ENV] == "stale-original"
         with pytest.raises(OSError):
             os.fstat(closed_descriptors[0])
 
@@ -721,7 +725,7 @@ class TestProcessLoopPromptAndEnv:
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.delenv(_PROCESS_LOOP_SESSION_ENV, raising=False)
-        monkeypatch.delenv(_LEGACY_PROCESS_LOOP_SESSION_ENV, raising=False)
+        monkeypatch.delenv(_PROCESS_LOOP_SESSION_ID_ENV, raising=False)
         monkeypatch.delenv("CLAUDE_CONFIG_DIR")
         monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: tmp_path))
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
@@ -742,7 +746,7 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 1
         assert _hook_debug_log(claude_calls[0]["cmd"]).parent == tmp_path / ".claude" / "debug"
         assert _PROCESS_LOOP_SESSION_ENV not in os.environ
-        assert _LEGACY_PROCESS_LOOP_SESSION_ENV not in os.environ
+        assert _PROCESS_LOOP_SESSION_ID_ENV not in os.environ
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIXの権限設定失敗時だけに適用する契約")
     def test_hook_debug_log_descriptor_closes_when_permission_setting_fails(
@@ -824,7 +828,10 @@ class TestProcessLoopPromptAndEnv:
         assert "VIRTUAL_ENV" not in claude_calls[0]["env"]
         assert claude_calls[0]["env"]["PATH"] == os.pathsep.join(("/usr/local/bin", "/usr/bin"))
         assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ENV] == "1"
-        assert claude_calls[0]["env"][_LEGACY_PROCESS_LOOP_SESSION_ENV] == "1"
+        assert (
+            claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ID_ENV]
+            == claude_calls[0]["cmd"][claude_calls[0]["cmd"].index("--session-id") + 1]
+        )
 
     def test_empty_path_entries_are_preserved(self) -> None:
         """`PATH`の空要素を除去対象に含めないこと。
@@ -928,7 +935,7 @@ class TestProcessLoopPromptAndEnv:
         assert probe_calls[0][2:6] == ["--model", expected_model, "--effort", expected_effort]
         command = claude_calls[0]["cmd"]
         _hook_debug_log(command)
-        assert command[4:11] == [
+        assert command[4:6] + command[8:13] == [
             "--settings",
             '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
@@ -1318,7 +1325,8 @@ class TestProcessLoopPromptAndEnv:
             "medium",
             "--resume",
         ]
-        assert second_command[4:11] == [
+        assert _PROCESS_LOOP_SESSION_ID_ENV not in claude_calls[0]["env"]
+        assert second_command[4:6] + second_command[8:13] == [
             "--settings",
             '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
@@ -1330,6 +1338,7 @@ class TestProcessLoopPromptAndEnv:
         assert "--resume" not in second_command
         assert "--continue" not in second_command
         assert second_command[-1].startswith("/goal ")
+        assert claude_calls[1]["env"][_PROCESS_LOOP_SESSION_ID_ENV] == second_command[second_command.index("--session-id") + 1]
 
     @pytest.mark.parametrize("resume_argv", [["--resume=session-id"], ["--resume", "session-id"]])
     def test_resume_session_id_is_normalized(
@@ -1371,7 +1380,8 @@ class TestProcessLoopPromptAndEnv:
             "medium",
             "--resume=session-id",
         ]
-        assert second_command[4:11] == [
+        assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ID_ENV] == "session-id"
+        assert second_command[4:6] + second_command[8:13] == [
             "--settings",
             '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
@@ -1381,6 +1391,7 @@ class TestProcessLoopPromptAndEnv:
             "medium",
         ]
         assert second_command[-1].startswith("/goal ")
+        assert claude_calls[1]["env"][_PROCESS_LOOP_SESSION_ID_ENV] == second_command[second_command.index("--session-id") + 1]
 
     def test_dotfiles_resume_defers_worktree_until_next_session(
         self,

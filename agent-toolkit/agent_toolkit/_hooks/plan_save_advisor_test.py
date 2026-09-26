@@ -40,7 +40,7 @@ def _run(
     for name in (
         "AGENT_TOOLKIT_DELEGATED_SESSION",
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
-        "DOTFILES_AUTONOMOUS_EXIT_REQUIRED",
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
         "AGENT_TOOLKIT_OWNER_SESSION",
         "CLAUDE_CODE_SESSION_ID",
     ):
@@ -117,7 +117,7 @@ def test_absent_working_root_approves(tmp_path: pathlib.Path) -> None:
         ({}, {}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
         ({}, {"agent_id": "agent-native"}, {}),
         ({}, {}, {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1"}),
-        ({}, {}, {"DOTFILES_AUTONOMOUS_EXIT_REQUIRED": "1"}),
+        ({}, {}, {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": "suppressed"}),
     ],
 )
 def test_suppression_conditions_approve(
@@ -144,6 +144,26 @@ def test_suppression_conditions_approve(
     )
 
     assert not _decision(result)
+
+
+def test_nested_process_loop_session_is_not_suppressed(tmp_path: pathlib.Path) -> None:
+    """親会話の環境印を継承した別会話には計画保存通知を出す。"""
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    plan = plans / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    _plan_file.write_owner_record(plan, session_id="nested")
+    transcript = _write_transcript(tmp_path, [])
+    result = _decision(
+        _run(
+            _payload("nested", transcript),
+            state_dir=tmp_path,
+            home=home,
+            extra_env={"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": "parent"},
+        )
+    )
+    assert result["hookSpecificOutput"]["hookEventName"] == "Stop"
 
 
 def test_stop_hook_active_still_notifies(tmp_path: pathlib.Path) -> None:

@@ -15,7 +15,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _wri
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-_LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_ENV_SESSION_ID = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 
@@ -68,7 +68,7 @@ def _run(
     env["HOME"] = str(state_dir)
     env["USERPROFILE"] = str(state_dir)
     env.pop(_ENV_REQUIRED, None)
-    env.pop(_LEGACY_ENV_REQUIRED, None)
+    env.pop(_ENV_SESSION_ID, None)
     env.pop(_ENV_DELEGATED_SESSION, None)
     if required_env is not None:
         env[required_env] = "1"
@@ -230,13 +230,23 @@ class TestBlockCondition:
         assert "本判定の入力は" in reason
         assert "どの工程が未完了かは判定していない" in reason
 
-    def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
-        """旧process-loopの移行互換名だけが設定された場合もblockする。"""
+    def test_nested_session_id_approves(self, tmp_path: pathlib.Path):
+        """親の印を継承した別会話は終了工程で遮断しない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
-            {"session_id": "legacy-env", "transcript_path": str(transcript)},
+            {"session_id": "nested", "transcript_path": str(transcript)},
             state_dir=tmp_path,
-            required_env=_LEGACY_ENV_REQUIRED,
+            extra_env={_ENV_SESSION_ID: "parent"},
+        )
+        assert "decision" not in _parse_decision(result)
+
+    def test_matching_session_id_blocks(self, tmp_path: pathlib.Path):
+        """親会話のIDが一致すれば終了工程を適用する。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "parent", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+            extra_env={_ENV_SESSION_ID: "parent"},
         )
         assert _parse_decision(result).get("decision") == "block"
 

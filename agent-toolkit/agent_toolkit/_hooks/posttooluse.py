@@ -453,7 +453,7 @@ def _log_tracked_session_end(session_id: str, structured: dict, remote_session_i
     record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
     model_type = record.get("model_type") if isinstance(record, dict) else None
     if model_type in _TRACKED_MODEL_TYPES:
-        _process_loop_log.append("subagent_end", type=model_type)
+        _process_loop_log.append("subagent_end", session_id=session_id, type=model_type)
 
 
 def _clear_agents_server_pending_observation(session_id: str, owner_agent_id: str) -> None:
@@ -862,7 +862,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             _record_agents_server_root_alias(session_id, structured)
             model_type = _agents_server_model_type(tool_input, operation)
             if model_type in _TRACKED_MODEL_TYPES:
-                _process_loop_log.append("subagent_start", type=model_type)
+                _process_loop_log.append("subagent_start", session_id=session_id, type=model_type)
             warning = _record_agents_server_session_state(
                 session_id,
                 structured,
