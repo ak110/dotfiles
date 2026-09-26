@@ -6271,12 +6271,12 @@ def test_claude_subagent_handback_message_becomes_final_result(tmp_path: pathlib
 
 
 def _bundle_delegate_return_texts(tmp_path: pathlib.Path, delegate_entries: list[dict[str, object]]) -> list[str]:
-    """委譲先記録を1件持つtranscriptから`--bundle`で候補を生成し、`delegate-return`候補の本文を返す。"""
+    """委譲先記録を1件持つtranscriptから`--bundle`で候補を生成し、`delegate-return`候補と`escalation`候補の本文を返す。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}])
     subagents = transcript.with_suffix("") / "subagents"
     subagents.mkdir(parents=True)
     (subagents / "agent-delegate.jsonl").write_text(
-        "\n".join(json.dumps({"isSidechain": True, **entry}, ensure_ascii=False) for entry in delegate_entries) + "\n",
+        "\n".join(json.dumps({**entry, "isSidechain": True}, ensure_ascii=False) for entry in delegate_entries) + "\n",
         encoding="utf-8",
     )
     bundle_dir = tmp_path / "bundle"
