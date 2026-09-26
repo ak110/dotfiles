@@ -1828,3 +1828,20 @@ class TestRemovedRecordsAreAbsent:
             assert result.stdout == ""
         state = _read_state(tmp_path, sid)
         assert not [key for key in self._REMOVED_KEYS if key in state]
+
+
+@pytest.mark.parametrize(
+    ("operation", "tool_input", "expected"),
+    (
+        ("start_write", {"prompt": "起草する", "cwd": "/tmp/x"}, "write"),
+        ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "explore_fast"),
+        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "explore_fast"),
+        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x", "fast": False}, "explore"),
+    ),
+)
+def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str) -> None:
+    """記録する工程種別は、サーバーが各起動ツールの省略時に使う種別と一致する。
+
+    `start_write`の既定は`write`であり、`start_shell`と同じ`explore_fast`を記録すると工程の集計が別種別へ混ざる。
+    """
+    assert _POSTTOOLUSE_MODULE._agents_server_model_type(tool_input, operation) == expected

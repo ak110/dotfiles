@@ -34,7 +34,7 @@
 ## 計画最終化
 
 計画メタ情報が示す対象リポジトリの専用worktreeが実在することを確認する。回収済みなら計画メタ情報を書き換えず、回収順序の違反を`needs_escalation`で返す。計画作業rootに対象バンドルがなく保存済みの場合は、保存root相対パスを特定し、`atk plans checkout <保存root相対パス>`で取得する。同worktreeをcwdとして、`atk run-script plan-progress --`で計画ファイルの`## 進捗ログ`へ、統合区分、統合先branch、`merged_head`、実行レビューの収束及びAWI終端前の状態を追記する。
-同じ追記へ当該レーンの稼働時間も記録する。値はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とし、書式は`agent-toolkit:plan-mode`の計画ファイル基準が定める。開始時刻は`atk agents list`の出力のうち`label`がレーン識別子と一致する自sessionの`created_at`から取得する。`started_at`はturnごとに更新されるため起点に用いない。`created_at`を持たない行（旧版のagents_serverが書いた状態）では`started_at`を起点とし、秒数に続けて「（最後のturnの開始からの下限値）」と書く。
+同じ追記へ当該レーンの稼働時間も記録する。値はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とし、書式は`agent-toolkit:plan-mode`の計画ファイル基準が定める。開始時刻は`atk agents list`の出力のうち`label`が`<レーン識別子>-exec`と一致する自sessionの`created_at`から取得する。`started_at`はturnごとに更新されるため起点に用いない。`created_at`を持たない行（旧版のagents_serverが書いた状態）では`started_at`を起点とし、秒数に続けて「（最後のturnの開始からの下限値）」と書く。
 この記録は次の処理回の選定工程がレーン配分の見込みを導く入力になる。記録が無いと、見込みと実績の乖離がそのまま待ち時間として残る。rebaseを実行した場合は、rebase前後の専用branchの7文字以上の一意な短縮OIDの対応も同じ追記へ含める。
 同じ専用worktreeをcwdとして`atk run-script plan-check -- --reject-migration-warnings --work-dir <計画メタ情報の対象リポジトリ> <計画ファイルの絶対パス>`を単独実行し、終了コード0と警告の不在を確認する。統合先worktreeと専用worktreeが異なる場合も、この2コマンドでは専用worktreeをcwdとして維持する。
 続けて、`atk plans commit`が作業計画rootを解決する契約に従うcwdで`atk plans commit <メイン計画ファイル名>`を単独実行し、成功の報告と警告の不在を確認する。
@@ -47,7 +47,7 @@
 
 ## 出力
 
-統合差分のエージェント向け文書の変更パスは、統合先worktreeで`atk run-script agent-doc-changes -- <手順3で取得した統合先branchの統合前HEAD> <merged_head>`を単独実行し、終了コード0で得た標準出力のJSON配列をそのまま返す。対象集合には`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、`.claude/skills/`を含む。`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`agent-toolkit/agents/`、hook関連文書も含む。通常コードと履歴文書は対象外とする。`マージなし`の統合では空配列とする。
+統合差分のエージェント向け文書の変更パスは、統合先worktreeで`atk run-script agent-doc-changes -- <手順3で取得した統合先branchの統合前HEAD> <merged_head>`を単独実行し、終了コード0で得た標準出力のJSON配列をそのまま返す。対象集合は同コマンドの判定に従う。プロジェクト側は`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、`.claude/skills/`の`SKILL.md`と`references/`、`.claude/agents/`を含む。配布物側は`agent-toolkit/rules/`、`agent-toolkit/skills/`の`SKILL.md`と`references/`、`agent-toolkit/agents/`、`agent-toolkit/share/`を含む。chezmoiの配布元である`.chezmoi-source/dot_claude/rules/`と`.chezmoi-source/dot_claude/skills/`（`.md.tmpl`を含む）も含む。通常コードと履歴文書は対象外とする。`マージなし`の統合では空配列とする。
 同じレーンの統合を再び行う場合（統合指示の再受領、競合解消後の再統合など）は、前回までに返した`agent_rule_changes`の要素と今回の出力の和集合を、重複を除いて返す。メインはこの値でレーン全体の規範変更を再取得するため、今回の統合前HEADから数えた差分だけを返すと、前回統合した規範文書が再取得から漏れる。そのため、`agent_rule_changes`を返すたびに、その値を引き継ぎ記録先へ記録する。
 
 次の形式だけを返す。

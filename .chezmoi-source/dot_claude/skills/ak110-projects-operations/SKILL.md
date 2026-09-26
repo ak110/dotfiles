@@ -117,6 +117,9 @@ description: >
 到達しうるか否かで扱いを分ける。到達しうる場合は利用者環境で成立している欠陥として同一セッション内で是正し、
 開発環境のロックファイル内に閉じる場合は更新を巻き戻して独立したAWIとして登録してよい。
 
+`agent-toolkit:process-wi`でレーンへ依存更新を委ねる場合は、レーンの起動文の固有指示へ、依存更新後の検証が失敗した場合の前段の扱いと「足回りファイルの推奨設定維持」の適用を含める。
+本スキルを起動するのはメインだけであり、要否の判定結果だけを渡すと、レーンは失敗を据え置く判断や推奨設定の緩和を本スキルの規定と比べずに選ぶ。
+
 破壊的変更の波及判定では、上限の記載があっても破壊を生じる版がその範囲に含まれる場合は波及すると判定する。
 Cargoの既定のキャレット要件のように上限が常に存在する記法があるため、上限の有無そのものを判定基準に含めない。
 
@@ -247,7 +250,10 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 以下4点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
 
 - container化ジョブではuv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、
-  `pinact run --check`を直接呼び出せる。Pythonバージョンマトリクスは
+  `pinact run --check`を直接呼び出せる。
+  ただしGitHub Actionsのピン留め確認には独立したstepを置かず、pyfltrの組み込みlinter`pinact`へ任せる。
+  `pinact`は`pyproject.toml`の`[tool.pyfltr]`が持つ`preset = "latest"`で有効になり、CIの`ci.yaml`が実行する`pyfltr ci`と、push前に実行する`pyfltr run`・`pyfltr fast`（prekのpre-commitを含む）のいずれにも含まれるため、独立したstepは同じ確認の重複になる。
+  Pythonバージョンマトリクスは
   `env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
   `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）

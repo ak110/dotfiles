@@ -111,6 +111,7 @@ if TYPE_CHECKING:
     )
     from agent_toolkit._hooks.pretooluse.shell_checks import (
         _check_bash_process_kill_by_pattern,
+        _warn_git_rev_parse_short_multiple,
     )
 
 _ExecutionSegment = _bash_command_parser.ExecutionSegment
@@ -296,6 +297,9 @@ def _handle_bash_tool(
     if _check_bash_process_kill_by_pattern(command):
         return 2
     warnings: list[str] = []
+    rev_parse_warning = _warn_git_rev_parse_short_multiple(command)
+    if rev_parse_warning is not None:
+        warnings.append(rev_parse_warning)
     transcript_path = payload.get("transcript_path")
     if isinstance(transcript_path, str) and transcript_path:
         state = read_state(session_id)

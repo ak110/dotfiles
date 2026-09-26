@@ -1,83 +1,31 @@
-"""振り返り素材AWIを生成して投入する準備スクリプトを、公開入口から利用シナリオで検証する。"""
+"""振り返りの入力（会話の流れ、問題候補の一覧、セッション統計）を書く準備スクリプトを、公開入口から利用シナリオで検証する。"""
 
 from __future__ import annotations
 
 import datetime
 import json
-import os
 import pathlib
 import subprocess
 
 import pytest
-import session_review_decisions as decisions_module  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import session_review_report as report  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
-_ORIGINAL_PATH = os.environ.get("PATH", "")
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
+_LANGUAGE_NOTICE = (
+    '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
+    "直前のアシスタント応答の地の文が英語主体と判定された。次の応答は日本語で書くこと。</agent-toolkit-auto-inserted>"
+)
 
 
-def _install_atk_stub(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, add_fails: bool = False) -> pathlib.Path:
-    """`wi list`と`wi add`の呼び出しを記録する`atk`スタブをPATHの先頭へ置き、記録先を返す。"""
-    executable_dir = tmp_path / "bin"
-    executable_dir.mkdir()
-    executable = executable_dir / "atk"
-    executable.write_text(
-        """#!/usr/bin/env python3
-import json
-import os
-import pathlib
-import sys
-
-arguments = sys.argv[1:]
-log_path = pathlib.Path(os.environ["ATK_STUB_LOG"])
-record = {"arguments": arguments}
-if arguments[:2] == ["wi", "add"]:
-    body_file = arguments[arguments.index("--body-file") + 1]
-    record["body"] = pathlib.Path(body_file).read_text(encoding="utf-8")
-with log_path.open("a", encoding="utf-8") as stream:
-    stream.write(json.dumps(record, ensure_ascii=False) + "\\n")
-if arguments[:2] == ["wi", "list"]:
-    if "--state=active" in arguments:
-        print(json.dumps({"filename": "20260901-000000-001.md", "summary": "既存の要求"}, ensure_ascii=False))
-    raise SystemExit(0)
-if arguments[:2] == ["wi", "add"]:
-    if os.environ.get("ATK_STUB_ADD_FAILS") == "1":
-        print("失敗: 投入を拒否した", file=sys.stderr)
-        raise SystemExit(1)
-    if "--dry-run" in arguments:
-        print("成功: 投入前の検証が成立した（--dry-runのため保存していない）")
-        raise SystemExit(0)
-    print("成功: 1件をinboxへ投入した")
-    print("  ~/private-notes/wi/inbox/20260906-123456-001.md")
-    raise SystemExit(0)
-raise SystemExit(9)
-""",
-        encoding="utf-8",
-    )
-    executable.chmod(0o755)
-    log_path = tmp_path / "atk-calls.jsonl"
-    log_path.write_text("", encoding="utf-8")
-    monkeypatch.setenv("PATH", f"{executable_dir}{os.pathsep}{_ORIGINAL_PATH}")
-    monkeypatch.setenv("ATK_STUB_LOG", str(log_path))
-    monkeypatch.setenv("ATK_STUB_ADD_FAILS", "1" if add_fails else "0")
-    return log_path
-
-
-def _calls(log_path: pathlib.Path) -> list[dict]:
-    return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
-
-
-def _work_dir(tmp_path: pathlib.Path, observations: str = "- 同じ資料を2回読み直した（調査工程）\n") -> pathlib.Path:
+def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     work_dir = tmp_path / "work"
     work_dir.mkdir()
-    (work_dir / prepare.MAIN_OBSERVATIONS_FILENAME).write_text(observations, encoding="utf-8")
     return work_dir
 
 
 def _write_claude_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
-    """初期要求、失敗したコマンド、2000文字を超えるユーザー介入を持つtranscriptを書き込む。"""
+    """初期要求、英語の状況説明と言語判定の通知、失敗したコマンド、2000文字を超えるユーザー介入を持つtranscriptを書き込む。"""
     entries = [
         {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
         {
@@ -85,7 +33,20 @@ def _write_claude_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
             "timestamp": "2026-09-06T12:00:10Z",
             "message": {
                 "role": "assistant",
-                "content": [{"type": "tool_use", "name": "Bash", "id": "toolu_fail", "input": {"command": "make lint"}}],
+                "content": [
+                    {"type": "text", "text": "I will run the linter now."},
+                    {"type": "tool_use", "name": "Bash", "id": "toolu_fail", "input": {"command": "make lint"}},
+                ],
+            },
+        },
+        {
+            "type": "attachment",
+            "timestamp": "2026-09-06T12:00:11Z",
+            "attachment": {
+                "type": "hook_additional_context",
+                "hookName": "PreToolUse:Bash",
+                "toolUseID": "toolu_fail",
+                "content": [_LANGUAGE_NOTICE],
             },
         },
         {
@@ -118,196 +79,92 @@ def _git_repository(path: pathlib.Path) -> pathlib.Path:
     return path
 
 
-def test_prepare_submits_material_awi_claude(
+def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Claude Codeの記録から素材AWIを1回投入し、投入結果と件数を1行JSONで返す。"""
-    log_path = _install_atk_stub(monkeypatch, tmp_path)
-    work_dir = _work_dir(tmp_path)
-    target_repo = _git_repository(tmp_path / "repo")
+    """1回の実行で3つの文書を作業ディレクトリへ書き、所在と件数を1行JSONで返し、キューを変更しない。
 
-    exit_code = prepare.main(
-        [
-            "--transcript",
-            str(_write_claude_transcript(tmp_path)),
-            "--work-dir",
-            str(work_dir),
-            "--target-repo",
-            str(target_repo),
-        ],
-        now=_FIXED_NOW,
-    )
+    振り返りはメインが同じセッション内で分析するため、準備スクリプトがAWIを投入するとキューへ未分析の項目が残る。
+    `atk`を起動できない環境でも成功することで、キュー操作を呼ばないことを確かめる。
+    """
+    monkeypatch.setenv("PATH", str(tmp_path / "no-atk"))
+    work_dir = _work_dir(tmp_path)
+    transcript = _write_claude_transcript(tmp_path)
+
+    exit_code = prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)], now=_FIXED_NOW)
 
     assert exit_code == 0
     stdout = capsys.readouterr().out
     assert len(stdout.splitlines()) == 1
     record = json.loads(stdout)
-    assert record["submitted"] is True
-    assert record["awi_filename"] == "20260906-123456-001.md"
-    assert record["candidate_counts"] == {"tool-failure": 1, "user-intervention": 1}
-    assert record["candidate_total"] == 2
-    assert record["main_observation_count"] == 1
+    assert record["candidate_counts"] == {"hook-notice": 1, "tool-failure": 1, "user-intervention": 1}
+    assert record["candidate_total"] == 3
+    assert record["utterance_counts"] == {"user": 2, "assistant": 1}
     assert record["elapsed_seconds"] == 60
-    adds = [call for call in _calls(log_path) if call["arguments"][:2] == ["wi", "add"]]
-    assert len(adds) == 1
-    assert adds[0]["arguments"][2:4] == ["--source", "session-review"]
-    assert f"--target-repo={target_repo.resolve()}" in adds[0]["arguments"]
-    assert "--dry-run" not in adds[0]["arguments"]
-    assert adds[0]["body"] == pathlib.Path(record["material_path"]).read_text(encoding="utf-8")
+    assert record["prepared_at"] == "2026-09-06T12:34:56Z"
+    assert record["reference_document"] is None
+    for key in ("conversation_path", "candidates_path", "stats_path"):
+        assert pathlib.Path(record[key]).parent == work_dir
+        assert pathlib.Path(record[key]).is_file()
+
+    conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
+    assert "初期要求" in conversation
+    assert "I will run the linter now." in conversation
+    assert "agent-toolkit-auto-inserted" not in conversation
+    assert "Error: 検査に失敗した" not in conversation
+    # 1000字を超える介入は先頭と末尾だけを載せ、全文を照会する記録位置を示す。
+    assert _LONG_INTERVENTION not in conversation
+    assert _LONG_INTERVENTION[:500] in conversation
+    assert _LONG_INTERVENTION[-500:] in conversation
+    assert "全文は記録位置main:5" in conversation
+    assert f"atk run-script session-review-evidence -- {transcript.resolve()} --detail <記録位置>" in conversation
+
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    assert "- 候補: 3件（hook-notice 1件、tool-failure 1件、user-intervention 1件）" in candidates
+    assert "  - 記録位置: main:3" in candidates
+    assert "  - 対象: Bash make lint" in candidates
+    # hook通知の是非は通知が判定した応答を読まないと判断できないため、直前のアシスタント発話を添える。
+    assert "  - 直前のアシスタント発話: I will run the linter now." in candidates
+    # 利用者の是正は要約すると趣旨が変わるため全文を載せる。
+    assert _LONG_INTERVENTION in candidates
+    assert "直前と直後のユーザー発話" not in candidates
+
+    stats = pathlib.Path(record["stats_path"]).read_text(encoding="utf-8")
+    assert "- 経過秒: 60秒（セッションの最初の記録から準備時点まで）" in stats
+    assert not list(work_dir.glob("*material*"))
 
 
-def test_material_body_contract(
+def test_prepare_reads_codex_thread(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """素材AWIは元記録を開かずに判定できる本文を持ち、記録位置を持たず、レーンの判定入力と報告生成へそのまま渡せる。"""
-    _install_atk_stub(monkeypatch, tmp_path)
-    work_dir = _work_dir(tmp_path)
-    target_repo = _git_repository(tmp_path / "repo")
-    transcript = _write_claude_transcript(tmp_path)
-
-    assert (
-        prepare.main(
-            [
-                "--transcript",
-                str(transcript),
-                "--work-dir",
-                str(work_dir),
-                "--target-repo",
-                str(target_repo),
-                "--dry-run",
-            ],
-            now=_FIXED_NOW,
-        )
-        == 0
-    )
-    record = json.loads(capsys.readouterr().out)
-    assert record["submitted"] is False
-    assert record["awi_filename"] is None
-    material_path = pathlib.Path(record["material_path"])
-    body = material_path.read_text(encoding="utf-8")
-
-    headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == [
-        "## 反映内容と反映先",
-        "## 適用範囲",
-        "## 実現性",
-        "## 完成条件",
-        "## 問題候補",
-        "## メイン由来の改善点",
-        "## セッション統計",
-        "## 既存キュー項目",
-        "## 参考情報",
-    ]
-    assert _LONG_INTERVENTION in body
-    assert "Error: 検査に失敗した" in body
-    assert '"command": "make lint"' in body
-    assert "- 同じ資料を2回読み直した（調査工程）" in body
-    assert "- 20260901-000000-001.md: 既存の要求" in body
-    assert "main:" not in body
-    assert "analysis_group_hint" not in body
-    assert "candidate-evidence" not in body
-    assert "make test" not in body
-    # 素材で直接原因を確定できない候補の照会に使うため、抽出器へ渡せるtranscriptの絶対パスを参考情報へ載せる。
-    reference = body.split("## 参考情報", 1)[1]
-    assert f"`{transcript.resolve()}`" in reference
-
-    decisions_path = tmp_path / "decisions.json"
-    assert decisions_module.main(["--material", str(material_path), "--output", str(decisions_path)]) == 0
-    pending = json.loads(decisions_path.read_text(encoding="utf-8"))
-    decided = [
-        {**item, "disposition": "excluded", "reason": "検査の失敗は同じ工程で修正済み"}
-        if item["candidate_kind"] == "tool-failure"
-        else {**item, "disposition": "analyzed", "analysis_id": "a1", "defect": "欠陥"}
-        for item in pending
-    ]
-    decisions_path.write_text(json.dumps(decided, ensure_ascii=False), encoding="utf-8")
-    analyses = tmp_path / "analyses.json"
-    analyses.write_text(
-        json.dumps(
-            {
-                "a1": {
-                    "observation": "対象の範囲をユーザーが是正した",
-                    "root_cause": "開放列挙を閉じた",
-                    "measures": "全件を処理した",
-                    "prevention": [{"kind": "implemented", "ref": "commit abc1234", "summary": "確認対象へ加えた"}],
-                    "artifacts": ["agent-toolkit/rules/01-agent.md"],
-                }
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    uwi = tmp_path / "uwi.md"
-    capsys.readouterr()
-    arguments = [
-        "--material",
-        str(material_path),
-        "--decisions",
-        str(decisions_path),
-        "--analyses",
-        str(analyses),
-        "--output",
-        str(uwi),
-    ]
-    assert report.main(["generate", *arguments]) == 0
-    assert report.main(["check", *arguments]) == 0
-
-
-def test_prepare_submits_material_awi_codex(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Codexのthread IDからも同じ経路で素材AWIを投入する。候補が無くても改善点があれば投入する。"""
-    log_path = _install_atk_stub(monkeypatch, tmp_path)
+    """Codexのthread IDからも同じ文書を書き、全文を照会するコマンドをthread IDの形で示す。"""
     codex_home = tmp_path / "codex-home"
     rollout_dir = codex_home / "sessions" / "2026" / "09" / "06"
     rollout_dir.mkdir(parents=True)
     thread_id = "019900aa-bbbb-7ccc-8ddd-eeeeeeeeeeee"
     (rollout_dir / f"rollout-test-{thread_id}.jsonl").write_text(
-        json.dumps({"timestamp": "2026-09-06T12:00:00Z", "payload": {"type": "token_count", "info": None}}) + "\n",
+        json.dumps(
+            {
+                "timestamp": "2026-09-06T12:00:00Z",
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    work_dir = _work_dir(tmp_path)
-    target_repo = _git_repository(tmp_path / "repo")
 
-    exit_code = prepare.main(
-        ["--codex-thread-id", thread_id, "--work-dir", str(work_dir), "--target-repo", str(target_repo)], now=_FIXED_NOW
-    )
+    exit_code = prepare.main(["--codex-thread-id", thread_id, "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
 
     assert exit_code == 0, capsys.readouterr().err
     record = json.loads(capsys.readouterr().out)
-    assert record["submitted"] is True
     assert record["candidate_total"] == 0
-    adds = [call for call in _calls(log_path) if call["arguments"][:2] == ["wi", "add"]]
-    assert len(adds) == 1
-    assert f"# セッションCodex {thread_id}の振り返り素材" in adds[0]["body"]
-    assert f"thread ID: `{thread_id}`" in adds[0]["body"].split("## 参考情報", 1)[1]
-
-
-def test_prepare_skips_submission_without_material(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """候補も改善点も無いセッションでは投入せず、省略の理由を返す。対象リポジトリの無い準備も投入しない。"""
-    log_path = _install_atk_stub(monkeypatch, tmp_path)
-    transcript = tmp_path / "empty.jsonl"
-    transcript.write_text(
-        json.dumps({"type": "user", "message": {"role": "user", "content": "初期要求"}}) + "\n", encoding="utf-8"
-    )
-    target_repo = _git_repository(tmp_path / "repo")
-    work_dir = _work_dir(tmp_path, observations="")
-
-    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir), "--target-repo", str(target_repo)]) == 0
-    record = json.loads(capsys.readouterr().out)
-    assert (record["submitted"], record["skipped_reason"]) == (False, "no-candidates")
-    assert not [call for call in _calls(log_path) if call["arguments"][:2] == ["wi", "add"]]
-
-    other = tmp_path / "other"
-    other.mkdir()
-    assert prepare.main(["--transcript", str(_write_claude_transcript(other)), "--work-dir", str(_work_dir(other))]) == 0
-    record = json.loads(capsys.readouterr().out)
-    assert record["submitted"] is False
-    assert pathlib.Path(record["material_path"]).is_file()
-    assert not [call for call in _calls(log_path) if call["arguments"][:2] == ["wi", "add"]]
+    assert record["utterance_counts"] == {"user": 1, "assistant": 0}
+    conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
+    assert f"--codex-thread-id {thread_id} --detail <記録位置>" in conversation
+    assert "抽出器が問題候補を返さなかった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("linked_worktree", [False, True])
@@ -318,8 +175,7 @@ def test_prepare_resolves_reference_document_from_main_worktree_name(
     *,
     linked_worktree: bool,
 ) -> None:
-    """通常checkoutとlinked worktreeは同じ参照文書へ解決し、素材AWIの参考情報へ載せる。"""
-    _install_atk_stub(monkeypatch, tmp_path)
+    """通常checkoutとlinked worktreeは同じ参照文書へ解決し、JSONの`reference_document`で返す。"""
     main_worktree = _git_repository(tmp_path / "dotfiles")
     target_repo = main_worktree
     if linked_worktree:
@@ -351,35 +207,23 @@ def test_prepare_resolves_reference_document_from_main_worktree_name(
     )
 
     record = json.loads(capsys.readouterr().out)
-    assert f"- 振り返りの参照文書: `{document}`" in pathlib.Path(record["material_path"]).read_text(encoding="utf-8")
+    assert record["reference_document"] == str(document)
 
 
 def test_prepare_reports_missing_items(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記録、改善点のファイル、抽出器の同一性又は投入が成立しない場合は、不足項目を返して標準出力を空に保つ。"""
-    log_path = _install_atk_stub(monkeypatch, tmp_path, add_fails=True)
+    """記録、作業ディレクトリ又は抽出器の同一性が成立しない場合は、不足項目を返して標準出力を空に保つ。"""
     transcript = _write_claude_transcript(tmp_path)
     work_dir = _work_dir(tmp_path)
-    target_repo = _git_repository(tmp_path / "repo")
 
     assert prepare.main(["--transcript", str(tmp_path / "missing.jsonl"), "--work-dir", str(work_dir)]) == 2
     captured = capsys.readouterr()
     assert (captured.out, captured.err) == ("", "不足: transcript_path\n")
 
-    bare = tmp_path / "bare"
-    bare.mkdir()
-    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(bare)]) == 2
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(tmp_path / "absent")]) == 2
     captured = capsys.readouterr()
-    assert not captured.out
-    assert captured.err.startswith("不足: main-observations\n")
-
-    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir), "--target-repo", str(target_repo)]) == 2
-    captured = capsys.readouterr()
-    assert not captured.out
-    assert captured.err.startswith("不足: atk wi add\n")
-    assert "投入を拒否した" in captured.err
-    assert len([call for call in _calls(log_path) if call["arguments"][:2] == ["wi", "add"]]) == 1
+    assert (captured.out, captured.err) == ("", "不足: work_dir\n")
 
     monkeypatch.setattr(prepare, "__file__", str(tmp_path / "detached" / "session_review_prepare.py"))
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)]) == 2

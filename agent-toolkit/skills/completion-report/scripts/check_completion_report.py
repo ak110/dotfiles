@@ -11,8 +11,11 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
 STAGES = ("work-complete", "review-result")
 REVIEW_STATES = ("success", "not-run", "failed")
-REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- メイン由来の改善点: ", "- 所要時間: ")
+REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- 所要時間: ")
 """振り返りが正常完了した報告が持つ要約行の接頭辞。値は準備スクリプトの出力から転記する。"""
+REVIEW_SUCCESS_SECTIONS = ("確定した問題と対策", "対策を見送った問題")
+"""振り返りが正常完了した報告のH3。確定した問題ごとの対策と、対策を見送った問題とその理由を読めるようにする。"""
+_WI_FILENAME = re.compile(r"\b\d{8}-\d{6}-\d{3}\.md\b")
 SKIP_REASONS = {
     "not-run": "成果を再利用したため起動省略",
     "failed": "分析失敗のため欠陥AWIへ記録",
@@ -21,6 +24,19 @@ SKIP_REASONS = {
 
 def _headings(text: str, level: int) -> list[str]:
     return [title for _, title in top_level_atx_headings(text, level)]
+
+
+def _section_items(text: str, title: str) -> list[str]:
+    """指定したH3の直下にある箇条書きの行を返す。"""
+    items: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if line.startswith("#"):
+            inside = line == f"### {title}"
+            continue
+        if inside and line.startswith("- "):
+            items.append(line)
+    return items
 
 
 def validate_report(text: str, stage: str, review_state: str | None = None) -> list[str]:
@@ -42,7 +58,7 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
     if stage == "work-complete":
         expected_h3 = ["成果", "投入したWI"]
     elif review_state == "success":
-        expected_h3 = ["対策として投入したWI"]
+        expected_h3 = list(REVIEW_SUCCESS_SECTIONS)
     else:
         expected_h3 = ["振り返り"]
     if h3 != expected_h3:
@@ -50,8 +66,17 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
 
     if stage == "work-complete" and "### 投入したWI\n\n- " not in text:
         errors.append("### 投入したWIに1件以上の箇条書きを置く")
-    if stage == "review-result" and review_state == "success" and "### 対策として投入したWI\n\n- " not in text:
-        errors.append("### 対策として投入したWIに1件以上の箇条書きを置く")
+    if stage == "review-result" and review_state == "success":
+        for title in REVIEW_SUCCESS_SECTIONS:
+            items = _section_items(text, title)
+            if not items:
+                errors.append(f"### {title}に1件以上の箇条書きを置く（該当なしは`- なし`）")
+            elif title == REVIEW_SUCCESS_SECTIONS[0]:
+                errors.extend(
+                    f"### {title}の各行へ対策として投入したAWIのファイル名を書く: {item}"
+                    for item in items
+                    if item != "- なし" and not _WI_FILENAME.search(item)
+                )
 
     if stage == "review-result" and review_state == "success":
         lines = text.splitlines()

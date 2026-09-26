@@ -443,7 +443,7 @@ def _github_ci_configured(repository: str, sha: str, subprocess_timeout: float) 
     return False
 
 
-def _resolve_forge(explicit: str, repository: str) -> str | None:
+def _resolve_forge(explicit: str, repository: str, cwd: pathlib.Path | None = None) -> str | None:
     """対象forgeを`github`または`gitlab`へ解決する。判別できない場合は`None`を返す。
 
     `explicit`が`auto`以外ならその値をそのまま返す。
@@ -452,22 +452,57 @@ def _resolve_forge(explicit: str, repository: str) -> str | None:
     `gitlab`と完全一致すればGitLabとする。`github.com`とGitHub Enterprise Serverの
     標準的なホスト名（`github.<自社ドメイン>`）が前者に該当する。
     部分一致で判定すると`notgithub.example.com`のような無関係なホストを誤分類するため、ラベル単位の完全一致とする。
-    ホストを含まない短縮repositoryと未知の私設ホストは、`--forge`の明示指定が必要となる。
+    ホストを含まない`owner/repo`形式は`--repo`が受理する形式であるため、作業ディレクトリ（`cwd`）の
+    Git remoteのうちproject pathが一致するURLのホストで判別する。一致するremoteが無い場合と、
+    一致したremoteのホストが異なるforgeへ分かれる場合、及び未知の私設ホストは、`--forge`の明示指定が必要となる。
     """
     if explicit != "auto":
         return explicit
     try:
-        hostname = _parse_repository(repository).hostname
+        target = _parse_repository(repository)
     except RunListError:
         return None
-    if hostname is None:
-        return None
+    if target.hostname is not None:
+        return _forge_from_hostname(target.hostname)
+    forges = {_forge_from_hostname(hostname) for hostname in _remote_hostnames(target.project_path, cwd)}
+    return forges.pop() if len(forges) == 1 else None
+
+
+def _forge_from_hostname(hostname: str) -> str | None:
+    """ホスト名のラベルから`github`・`gitlab`を判別する。"""
     labels = hostname.lower().split(".")
     if "github" in labels:
         return "github"
     if "gitlab" in labels:
         return "gitlab"
     return None
+
+
+def _remote_hostnames(project_path: str, cwd: pathlib.Path | None) -> list[str]:
+    """`cwd`のGit remoteのうち、project pathが一致するURLのホスト名を返す。取得できない場合は空とする。"""
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get-regexp", r"^remote\..*\.url$"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    hostnames: list[str] = []
+    for line in result.stdout.splitlines():
+        _, _, url = line.partition(" ")
+        try:
+            remote = _parse_repository(url)
+        except RunListError:
+            continue
+        if remote.hostname is not None and remote.project_path.lower() == project_path.lower():
+            hostnames.append(remote.hostname)
+    return hostnames
 
 
 def _default_run_list_fn(
@@ -1120,7 +1155,7 @@ def main(argv: list[str] | None = None) -> int:
         "--forge",
         choices=("auto", "github", "gitlab"),
         default="auto",
-        help="対象ホスティング種別（既定auto。--repoのホストから自動判定）",
+        help="対象ホスティング種別（既定auto。--repoのホスト、ホストを含まない場合は作業ディレクトリのGit remoteから自動判定）",
     )
     parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時にsource refの後続run成功を追跡")
     args = parser.parse_args(argv)
@@ -1128,7 +1163,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--wait-shaと--shaは同時に指定できません")
     forge = _resolve_forge(args.forge, args.repo)
     if forge is None:
-        print("[wait_ci] 対象forgeを--repoから判別できない。--forgeで明示指定する", file=sys.stderr)
+        print(
+            "[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない。--forgeで明示指定する", file=sys.stderr
+        )
         return EXIT_GH_ERROR
     if args.write_baseline is not None:
         revision = args.sha if args.sha is not None else args.source_ref

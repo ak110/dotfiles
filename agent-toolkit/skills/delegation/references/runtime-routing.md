@@ -59,13 +59,14 @@ session未生成かつ元担当不在を実際に確認できない場合は、�
 環境変数は保存済みの設定より優先し、`atk config set`は保存先だけを更新する。
 
 `start_custom`の`model_type`へは上表のキー名から`_model`を除いた種別に加えて、設定値と同じ書式のASCIIカンマ区切り候補列を直接渡せる。
+`start`・`start_explore`・`start_shell`・`start_write`も省略可能な`model_type`へ同じ値を受け付け、指定時は各ツールの工程別設定の代わりにその値を使う。起動区分（読取専用などの起動条件）は各ツール固有のまま変わらない。
 例えば`agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`を渡すと、先頭から試し、agyの起動またはturnが失敗した場合は除外理由とともに次候補へ進む。
 直接渡した場合、サーバーは工程別モデル設定を読まず、渡した候補列をそのまま候補として使う。
 実験と障害時の回避で一時的に別のengine又はmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
 
 1. `agents_server`では`<役割名>.subagent.md`を`start`へ、自由本文と設定種別または直接候補列を`start_custom`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
 2. `Agent`ツールを使う場合は、起動直前に`atk config get <キー>`を実行し、系列名を完全IDへ解決済みの候補列から先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合はその工程を`needs_escalation`または未完了として返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
-3. `agents_server`の通常の起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。採用した`model_type`、`engine`、`model`及び`effort`を記録する必要がある場合は、返された`session_id`を`show`へ渡して取得する。`show`の`model_type`は設定種別か`start_custom`へ渡した候補列である。
+3. `agents_server`の通常の起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。採用した`model_type`、`engine`、`model`及び`effort`を記録する必要がある場合は、返された`session_id`を`show`へ渡して取得する。`show`の`model_type`は設定種別か、起動ツールの`model_type`へ渡した候補列である。
 4. サーバーが候補列を使い尽くした場合、呼び出し側は設定外のengineへ自動切替せず、その工程を`needs_escalation`または未完了として返す。
 5. レーン担当とCI修正担当は、前の担当の識別子を再利用せず新規threadで起動する。
    レビュー修正は手順6の継続条件でレーン担当の継続かレビュー修正担当の新規起動を確定する。

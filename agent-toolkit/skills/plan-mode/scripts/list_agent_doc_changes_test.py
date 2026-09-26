@@ -79,6 +79,18 @@ def test_lists_only_agent_documents_changed_between_revisions(
     ]
 
 
+def test_lists_project_subagent_definition(repository: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """プロジェクト直下のサブエージェント定義の変更を規範変更として返す。"""
+    base = _commit_all(repository, "base")
+    _write(repository / ".claude" / "agents" / "reviewer.md", "レビュー担当\n")
+    target = _commit_all(repository, "change")
+
+    code, out, err = _run(capsys, "--repo", str(repository), base, target)
+
+    assert (code, err) == (0, "")
+    assert json.loads(out) == [".claude/agents/reviewer.md"]
+
+
 def test_prints_empty_array_without_agent_document_changes(
     repository: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

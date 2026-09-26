@@ -27,12 +27,15 @@ WORK_COMPLETE = """## 作業完了報告
 SUCCESS = """## 振り返り結果報告
 
 - 候補: 3件 (user-intervention 1件 / tool-failure 2件)
-- メイン由来の改善点: 1件
-- 所要時間: 1234秒 (素材作成時点)
+- 所要時間: 1234秒 (準備時点)
 
-### 対策として投入したWI
+### 確定した問題と対策
 
-- なし
+- 対象範囲をユーザーが是正した: 確認の手順へ範囲の確認を加える（20260926-120000-001.md: 対象範囲を確認してから着手する）
+
+### 対策を見送った問題
+
+- 検索の一致0件で失敗扱いになった: 同じ呼び出しで目的を達し、対策の費用に見合わない
 """
 
 NOT_RUN = """## 振り返り結果報告
@@ -55,6 +58,13 @@ FAILED = """## 振り返り結果報告
     [
         pytest.param(WORK_COMPLETE, "work-complete", None, id="work-complete"),
         pytest.param(SUCCESS, "review-result", "success", id="success"),
+        pytest.param(
+            "## 振り返り結果報告\n\n- 候補: 0件\n- 所要時間: 12秒 (準備時点)\n\n"
+            "### 確定した問題と対策\n\n- なし\n\n### 対策を見送った問題\n\n- なし\n",
+            "review-result",
+            "success",
+            id="success-none",
+        ),
         pytest.param(NOT_RUN, "review-result", "not-run", id="not-run"),
         pytest.param(FAILED, "review-result", "failed", id="failed"),
     ],
@@ -160,11 +170,33 @@ def test_main_rejects_invalid_stage_state_combination(
         pytest.param(WORK_COMPLETE, "work-complete", "success", "指定しない", id="state-unexpected"),
         pytest.param(WORK_COMPLETE + "\n## 作業完了報告\n", "work-complete", None, "H2", id="duplicate-h2"),
         pytest.param(
-            SUCCESS.replace("- メイン由来の改善点: 1件\n", ""),
+            SUCCESS.replace("- 所要時間: 1234秒 (準備時点)\n", ""),
             "review-result",
             "success",
-            "`- メイン由来の改善点:`で始まる要約行",
+            "`- 所要時間:`で始まる要約行",
             id="summary-missing",
+        ),
+        pytest.param(
+            SUCCESS.replace("（20260926-120000-001.md: 対象範囲を確認してから着手する）", ""),
+            "review-result",
+            "success",
+            "AWIのファイル名",
+            id="measure-without-awi",
+        ),
+        pytest.param(
+            SUCCESS.replace("- 検索の一致0件で失敗扱いになった: 同じ呼び出しで目的を達し、対策の費用に見合わない\n", ""),
+            "review-result",
+            "success",
+            "対策を見送った問題に1件以上",
+            id="unaddressed-missing",
+        ),
+        pytest.param(
+            SUCCESS.split("### 確定した問題と対策", maxsplit=1)[0]
+            + "### 対策として投入したWI\n\n- 20260926-120000-001.md: 素材\n",
+            "review-result",
+            "success",
+            "H3",
+            id="legacy-format",
         ),
         pytest.param(
             SUCCESS.replace("- 候補:", "- 成果ファイル: /tmp/x\n- 候補:"),

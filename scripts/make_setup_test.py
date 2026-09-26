@@ -54,9 +54,16 @@ def _make_stubbed_setup(
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make未インストール")
-@pytest.mark.parametrize(("distribution", "version"), (("ubuntu", "24.04"), ("debian", "12")))
+@pytest.mark.parametrize(("distribution", "version"), (("ubuntu", "24.04"), ("debian", "12"), ("debian", "13")))
 def test_setup_pwsh_selects_distribution_repository(tmp_path: pathlib.Path, distribution: str, version: str) -> None:
     """OSごとのMicrosoftリポジトリ設定を、ホストを変更せずに選ぶ。"""
     result, calls = _make_stubbed_setup(tmp_path, "setup-pwsh", os_release=(distribution, version))
     assert result.returncode == 0, result.stderr
     assert f"wget --quiet https://packages.microsoft.com/config/{distribution}/{version}/packages-microsoft-prod.deb" in calls
+    # Debian 13のリポジトリに存在しないパッケージと移行用のダミーパッケージを導入対象へ含めない
+    install_calls = [call for call in calls if "apt-get install" in call]
+    assert install_calls
+    for call in install_calls:
+        packages = call.split()
+        assert "software-properties-common" not in packages
+        assert "apt-transport-https" not in packages

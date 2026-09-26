@@ -130,6 +130,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
 応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
 `start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、既定は`true`とする。
+`start`・`start_explore`・`start_shell`・`start_write`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別又は候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
 `start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
 `send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、呼び出し側は検収済み状態を渡して新規起動する。
@@ -434,7 +435,7 @@ Claude Codeで有効化する。
 - `atk agents-exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求するCLI。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する
-- `agent-toolkit:session-review`: 当該セッション全体の問題候補を列挙し、原因と恒久対策を確定する。手動又は`agent-toolkit:completion-report`から起動し、1件のサブエージェントが全工程を担う
+- `agent-toolkit:session-review`: 当該セッションの会話の流れと問題候補から原因と恒久対策を確定し、対策を作業依頼（AWI）として投入する。手動又は`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 
 ## 更新方法
 

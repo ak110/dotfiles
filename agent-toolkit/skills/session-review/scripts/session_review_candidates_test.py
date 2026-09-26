@@ -216,9 +216,16 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
 
 
 def test_candidate_events_excludes_delegate_returns_that_only_report_success() -> None:
-    """成功の定型形式だけの返却を除外し、想定外事象、未解決の指摘、不適合の判定及び自由記述を持つ返却は残す。"""
+    """正常な完了だけを示す返却を除外し、想定外事象、未解決の指摘、不適合の判定及び自由記述を持つ返却は残す。
+
+    前置きの文に続けて`status: completed`を返す形も、1回の配送で終えた委譲先では正常な完了として除く。
+    この形は振り返りの候補の大半を占めた雑音である。
+    再開された委譲先の前置き付きの返却は、受け取り済みの報告を返し直した異常を前置きで述べた実例があるため残す。
+    """
     excluded_texts = [
         "status: completed\noutput_file: /tmp/out.md",
+        "受け取り済みの結果を返し直す。\nstatus: completed\nunresolved: 0",
+        "Review complete with no unresolved issues found. Final output:\n\nstatus: completed\nunresolved: 0",
         "status: completed\nreviewed_head: abc1234\nunresolved: 0",
         "```text\n統合完了\nmerged_head: abc1234\n```",
         "実装完了\n検証結果: 終了コード0、警告なし",
@@ -231,17 +238,69 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
         "判定1: 適合\n判定2: 不適合。参照先の見出しが無い",
         "## 判定結果: 一部不適合\n根拠を示す",
         "調査結果を報告する。対象の関数は3件だった。",
-        "受け取り済みの結果を返し直す。\nstatus: completed\nunresolved: 0",
+        "前置き\nstatus: completed\nunresolved: 1",
     ]
+    resumed_preface = (
+        "I already retrieved all results. The completion report stands as issued.\n\nstatus: completed\nunresolved: 0"
+    )
     timeline = [
         {"kind": "final-result", "record": f"agent-{index}", "line": 10, "text": text}
         for index, text in enumerate([*excluded_texts, *kept_texts])
     ]
+    timeline.extend(
+        [
+            {"kind": "user", "record": "agent-resumed", "line": 1, "text": "レビューを依頼する"},
+            {"kind": "user", "record": "agent-resumed", "line": 8, "text": "再開の指示"},
+            {"kind": "final-result", "record": "agent-resumed", "line": 10, "text": resumed_preface},
+        ]
+    )
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert sorted(candidate["text"] for candidate in candidates[:-1]) == sorted(kept_texts)
-    assert candidates[-1]["excluded"] == {"normal-delegate-return": len(excluded_texts)}
+    assert sorted(candidate["text"] for candidate in candidates[:-1]) == sorted([*kept_texts, resumed_preface])
+    assert candidates[-1]["excluded"] == {"delegated-record": 2, "normal-delegate-return": len(excluded_texts)}
+
+
+def test_candidate_events_excludes_successful_shell_delegation_returns() -> None:
+    """コマンド実行の委譲で、報告した終了コードが全て0で失敗・警告・診断が無い返却だけを除く。
+
+    シェル実行の委譲は自由記述で結果を返すため、終了コードと件数の記述から成否を判定する。
+    非0の終了コード、1件以上の失敗・警告・診断、終了コードの記述が無い返却、及びシェル実行でない委譲の
+    同じ本文は、本文の判断を要するため残す。
+    """
+    delivery = (
+        "<agent-toolkit-auto-inserted> 次のコマンドを実行し、結果を報告せよ。"
+        " 実行するコマンド: make test </agent-toolkit-auto-inserted>"
+    )
+    returns = {
+        "shell-ok-1": '- 終了コード: `0`（正常終了）\n- 警告行・失敗行: なし（`failed":0`, `warning":0`, `diagnostics":0`）',
+        "shell-ok-2": "- 終了コード: `exit=0`\n- pyfltrサマリー: 失敗0件・警告0件、`diagnostics` = 0件",
+        "shell-nonzero": "- 終了コード: 1\n- 失敗行: test_x",
+        "shell-warning": "- 終了コード: 0\n- 警告: 2件",
+        "shell-diagnostics": '- exit=0\n- summary: {"diagnostics":3}',
+        "shell-no-code": "実行しました。問題はありませんでした。",
+        "shell-unexpected": "- 終了コード: 0\n想定外事象: 初回は権限不足で失敗し、再実行した",
+    }
+    timeline: list[dict[str, object]] = []
+    for record, text in returns.items():
+        timeline.append({"kind": "user", "record": record, "line": 1, "text": delivery})
+        timeline.append({"kind": "final-result", "record": record, "line": 5, "text": text})
+    timeline.append({"kind": "user", "record": "not-shell", "line": 1, "text": "調査を依頼する"})
+    timeline.append({"kind": "final-result", "record": "not-shell", "line": 5, "text": returns["shell-ok-1"]})
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    kept = sorted(locator["record"] for candidate in candidates[:-1] for locator in candidate["locators"])
+    assert kept == ["not-shell", "shell-diagnostics", "shell-no-code", "shell-nonzero", "shell-unexpected", "shell-warning"]
+    assert candidates[-1]["excluded"]["normal-delegate-return"] == 2
+
+
+def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
+    """シェル実行の委譲の判定に使う冒頭の文が、agents_serverが委譲先へ渡す指示本文と一致する。"""
+    from agent_toolkit import agents_server_mcp  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    prompt = agents_server_mcp._shell_prompt("true", "終了コードを返す")  # pylint: disable=protected-access
+    assert prompt.startswith(evidence._SHELL_DELEGATION_MARKER)  # pylint: disable=protected-access
 
 
 def test_delegate_completion_values_are_defined_by_task_documents() -> None:
@@ -615,7 +674,10 @@ def _bash_failure(line: int, command: str, text: str = "Exit code 1") -> dict[st
 
 
 def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash() -> None:
-    """単一の検索が出力なしで一致0件を返した結果を除き、連結・パイプ・出力を伴う失敗と別の終了コードは残す。"""
+    """検索が出力なしで一致0件を返した結果を除き、パイプ以外の連結・出力を伴う失敗と別の終了コードは残す。
+
+    パイプラインは最終段が検索で終了コード1、又は検索を起動する`xargs`で終了コード123の場合を一致0件とする。
+    """
     timeline = [
         _bash_failure(1, "rg -n -F 'a|b' agent-toolkit"),
         _bash_failure(2, "git grep -n -F needle -- docs"),
@@ -625,13 +687,19 @@ def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash(
         _bash_failure(6, "rg -n needle docs && echo found"),
         _bash_failure(7, "rg -n needle docs", "Exit code 2\nrg: docs: No such file or directory"),
         _bash_failure(8, "python3 check.py"),
+        _bash_failure(9, "fd -e md . docs | xargs -r rg -n -F needle", "Exit code 123"),
+        _bash_failure(10, "git ls-files -z | xargs -0 grep -n needle", "Exit code 123"),
+        _bash_failure(11, "cat notes.txt | rg -n needle"),
+        _bash_failure(12, "fd -e tmp . | xargs rm", "Exit code 123"),
+        _bash_failure(13, "rg -l needle | xargs cat", "Exit code 123"),
+        _bash_failure(14, "rg -n needle docs || true", "Exit code 123"),
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     kept_lines = sorted(locator["line"] for candidate in candidates[:-1] for locator in candidate["locators"])
-    assert kept_lines == [4, 5, 6, 7, 8]
-    assert candidates[-1]["excluded"] == {"normal-negative-result": 3}
+    assert kept_lines == [4, 5, 6, 7, 8, 12, 13, 14]
+    assert candidates[-1]["excluded"] == {"normal-negative-result": 6}
 
 
 def test_candidate_events_does_not_spend_hook_budget_on_repeat_summaries() -> None:
@@ -663,3 +731,25 @@ def test_candidate_events_does_not_spend_hook_budget_on_repeat_summaries() -> No
     texts = {candidate["text"] for candidate in candidates[:-1]}
     assert "別の検査Dに該当した。" in texts
     assert "対象のファイルの全文取得を先頭の範囲へ補正した。" not in texts
+
+
+def test_candidate_events_excludes_wi_body_style_diagnostics() -> None:
+    """`atk wi add`・`edit`の本文表記診断の警告を除き、同じ語を含む別の警告は残す。
+
+    表記診断は起草者が保存前に処置する警告で、振り返りで判定すべき事象を持たない。
+    """
+    warnings = [
+        {
+            "kind": "warning",
+            "record": "main",
+            "line": 1,
+            "text": "警告: 本文:80:88: 口語表現 例示語（候補: 置換語）",
+        },
+        {"kind": "warning", "record": "main", "line": 2, "text": "警告: 本文:3:5: ダッシュ —"},
+        {"kind": "warning", "record": "main", "line": 3, "text": "警告: 設定キー`model`の候補はありません。本文:1:1の口語表現"},
+    ]
+
+    candidates = evidence._candidate_events([], warnings, [])  # pylint: disable=protected-access
+
+    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
+    assert candidates[-1]["excluded"] == {"wi-style-diagnostic": 2}

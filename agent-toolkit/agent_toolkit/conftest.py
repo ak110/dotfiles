@@ -9,6 +9,7 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit._common import codex_models
+from agent_toolkit._hooks import notice
 
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
 _GIT_IDENTITY_NAME = "test"
@@ -177,6 +178,18 @@ def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_warning_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """通知の反復計数に使う`notice`モジュールの大域状態を各テストの開始時に初期状態へ戻す。
+
+    本番の各hookは別プロセスで起動するため、この状態は起動ごとに初期値から始まる。
+    同じプロセスで複数のテストを実行すると、先行テストが`set_warning_session_id`で設定した
+    セッションIDが残り、後続テストの通知が反復として計数されて要約形へ置き換わる。
+    結果が実行順序とworkerへの割り振りで変わるため、テストごとに初期値の辞書へ差し替える。
+    """
+    monkeypatch.setattr(notice, "_warning_context", {"session_id": "", "blocks": []})
 
 
 @pytest.fixture(autouse=True)

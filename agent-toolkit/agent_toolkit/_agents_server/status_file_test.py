@@ -870,7 +870,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     writer.flush()
     payload = json.loads(writer.path.read_text(encoding="utf-8"))
     assert [item["launch_kind"] for item in payload["sessions"]] == ["delegate", "explore", "shell"]
-    assert [item["label"] for item in payload["sessions"]] == ["実装を開始", "調査する", "pytest -q"]
+    assert [item["label"] for item in payload["sessions"]] == ["実装を開始", "explore", "shell-pytest"]
 
     session = manager.sessions[started["session_id"]]
     session.status = "completed"

@@ -49,7 +49,7 @@ setup-browser:
 # ローカルでも実行可能にするための開発者向けターゲット。
 setup-pwsh:
 	sudo apt-get update
-	sudo apt-get install --yes wget apt-transport-https software-properties-common
+	sudo apt-get install --yes wget
 	. /etc/os-release && \
 	    wget --quiet "https://packages.microsoft.com/config/$$ID/$$VERSION_ID/packages-microsoft-prod.deb" && \
 	    sudo dpkg --install packages-microsoft-prod.deb && \

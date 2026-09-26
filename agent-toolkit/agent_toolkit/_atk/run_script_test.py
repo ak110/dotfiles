@@ -61,10 +61,7 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
 
 def test_session_review_documents_use_public_script_entries() -> None:
     """振り返りの手順書の実行例が登録済み入口を使い、実装ファイルを直接起動しない。"""
-    documents = (
-        run_script.PLUGIN_ROOT / "skills" / "session-review" / "SKILL.md",
-        run_script.PLUGIN_ROOT / "skills" / "session-review" / "references" / "lane-processing.md",
-    )
+    documents = (run_script.PLUGIN_ROOT / "skills" / "session-review" / "SKILL.md",)
     commands: list[list[str]] = []
     for document in documents:
         in_block = False
@@ -77,15 +74,25 @@ def test_session_review_documents_use_public_script_entries() -> None:
             elif in_block and stripped.startswith("atk run-script session-review-"):
                 commands.append(shlex.split(stripped))
 
-    assert {command[2] for command in commands} == {
-        "session-review-prepare",
-        "session-review-decisions",
-        "session-review-report",
-    }
+    assert {command[2] for command in commands} == {"session-review-prepare"}
     for command in commands:
         assert command[:2] == ["atk", "run-script"]
         assert command[3] == "--"
         assert run_script.registered_script_path(command[2]).is_file()
+
+
+@pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report"])
+def test_removed_session_review_entries_are_rejected(script_name: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """振り返りの判定入力と報告の生成器として撤去した入口を指定すると、未知の公開名として拒否する。"""
+    parser = argparse.ArgumentParser()
+    run_script.build_parser(parser)
+
+    with pytest.raises(SystemExit) as raised:
+        parser.parse_args([script_name])
+
+    assert raised.value.code == 2
+    assert script_name in capsys.readouterr().err
+    assert "session-review-prepare" in run_script.SCRIPT_PATHS
 
 
 def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest.MonkeyPatch) -> None:

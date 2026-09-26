@@ -19,6 +19,9 @@ process-wiのメインが、処理対象の選定、処理開始、及び選定�
 
 ユーザー指定がある場合もpickerを起動する。本文取得、依存順、レーン分け及び再開位置はpickerが担う。
 
+`start`の前に、対象リポジトリがmiseの設定ファイルを持ち、対象リポジトリで実行した`mise trust --show`が`untrusted`を示す場合は`mise trust <対象リポジトリの絶対パス>`を実行する。
+未trustの設定があると委譲先がプラグインのMCPサーバーとhookを起動できず、`agents_server`は事前確認の失敗としてpickerを起動しない。準備の範囲は`agent-toolkit/skills/process-wi/references/run-lanes.md`「レーンと資源」が専用worktreeへ行うmise trustと同じとする。
+
 ## 出力の受領
 
 pickerから`status`、`output_file`及び`lines`の3行を受領し、出力先が起動時の絶対パスと一致することを確認して本文を読む。各decisionの項目を`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`の`## 出力`が定める項目、既定値、省略規則と比べて検収する。

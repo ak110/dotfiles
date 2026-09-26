@@ -330,3 +330,67 @@ def test_session_start_injects_process_loop_instruction(
     assert f"<{rules_context.PROCESS_LOOP_INSTRUCTION_ELEMENT} " in main_output
     assert 'origin="user"' in main_output
     assert "既存のテストコードを先に読む" not in delegated_output
+
+
+def test_session_start_temp_notice_names_tmp_and_delegation(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """SessionStartの領域通知は、`/tmp`を使わずこの領域へ置く行動と、委譲先へ所在を渡す行動を示す。
+
+    所在だけの通知では一時ファイルの置き場所を選ぶ時点で想起されず、`/tmp`へ置いた一時ファイルの削除が
+    権限判定に拒否される事象が起きた。
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-2"}))
+    output = _output(capsys)
+    entries = managed_temp.list_managed_temp(session_id="session-2")
+
+    assert f"このセッションの管理対象一時領域: {entries[0]['path']}" in output
+    assert "一時ファイルは`/tmp`ではなくこの領域の直下へ置く" in output
+    assert "サブエージェントへ委ねる場合は、この絶対パスを起動文へ渡す" in output
+
+
+def test_subagent_start_notifies_existing_session_temp_without_creating(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """SubagentStartは親のSessionStartが作成した領域を新たに作成せずに解決し、SessionStartと同じ所在と行動を通知する。
+
+    Agentツールのサブエージェントへ所在が届かないと、委譲元が起動文へ渡し忘れた場合に`/tmp`が選ばれる。
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-3"}))
+    _output(capsys)
+    session_root = managed_temp.list_managed_temp(session_id="session-3")[0]["path"]
+    monkeypatch.setattr(
+        rules_context.managed_temp,
+        "create_managed_temp",
+        lambda *_args, **_kwargs: pytest.fail("SubagentStartで領域を作成した"),
+    )
+
+    rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "session-3"}))
+    output = _output(capsys)
+
+    assert f"このセッションの管理対象一時領域: {session_root}" in output
+    assert "一時ファイルは`/tmp`ではなくこの領域の直下へ置く" in output
+    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
+
+
+def test_subagent_start_without_parent_session_temp_omits_notice(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """親の領域が無い場合は領域の通知を加えない。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+
+    rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "no-parent-area"}))
+
+    assert "このセッションの管理対象一時領域" not in _output(capsys)
