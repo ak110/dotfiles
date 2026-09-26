@@ -601,3 +601,37 @@ class TestBashHeredocLiteralExclusion:
             _plan_file_state_env(tmp_path),
         )
         assert result.returncode == 2
+
+
+class TestBashGitRevParseShortMultiple:
+    """`git rev-parse --short`へ複数のrevisionを渡すコマンドの警告（warn）。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git rev-parse --short=7 af6889b HEAD",
+            "git rev-parse --short origin/develop origin/master",
+            "git -C /tmp/repo rev-parse --short=7 HEAD~1 HEAD",
+            "cd /tmp/repo && git rev-parse --verify --short=7 main develop",
+        ],
+    )
+    def test_warns_multiple_revisions(self, command: str):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "`git rev-parse --short`へ2つのrevision" in context
+        assert "`git rev-parse --short=7 <revision>`" in context
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git rev-parse --short=7 HEAD",
+            "git rev-parse HEAD~1 HEAD",
+            "git rev-parse --short=7 HEAD -- path/file",
+            "git log --oneline HEAD~1 HEAD",
+        ],
+    )
+    def test_single_revision_or_other_command_not_warned(self, command: str):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "git rev-parse --short" not in result.stdout

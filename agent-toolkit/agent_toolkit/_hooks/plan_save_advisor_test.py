@@ -243,3 +243,26 @@ def test_unreadable_owner_record_approves(tmp_path: pathlib.Path, record: str) -
     result = _run(_payload("current", transcript), state_dir=tmp_path, home=home)
 
     assert not _decision(result)
+
+
+def test_process_wi_running_defers_notice_until_flag_is_reset(tmp_path: pathlib.Path) -> None:
+    """process-wiの起動中は通知も通知済みの記録もせず、起動フラグが偽へ戻った後のStopで通知する。
+
+    レーンの稼働中にメインが待機のためターンを終えた時点では、レーンの計画は保存の契機に達していない。
+    """
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    plan = plans / "26-1103_process-wi_レーン01.md"
+    plan.write_text("# lane\n", encoding="utf-8")
+    transcript = _write_transcript(tmp_path, [])
+    session_id = "process-wi-main"
+    _plan_file.write_owner_record(plan, session_id=session_id)
+    _write_state(tmp_path, session_id, {"process_wi_skill_invoked": True})
+
+    running = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
+    _write_state(tmp_path, session_id, {"process_wi_skill_invoked": False})
+    finished = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
+
+    assert not running
+    assert str(plan) in finished["hookSpecificOutput"]["additionalContext"]

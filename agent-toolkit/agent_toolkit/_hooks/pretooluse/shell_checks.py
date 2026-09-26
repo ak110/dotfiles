@@ -29,7 +29,9 @@ if TYPE_CHECKING:
     )
     from agent_toolkit._hooks.pretooluse.notices import (
         _block_notice,
+        _llm_notice,
     )
+    from agent_toolkit._hooks.notice import _WARN_TAG
 
 
 # --- Bash: パターン一致によるプロセス終了の検出 ---
@@ -233,3 +235,48 @@ def _git_subcommand_tokens(segment: _ExecutionSegment) -> tuple[str, tuple[str, 
 
 _GIT_GREP_PATTERN_OPTIONS: frozenset[str] = frozenset({"-e", "--regexp"})
 _GIT_GREP_PATTERN_FILE_OPTIONS: frozenset[str] = frozenset({"-f", "--file"})
+
+
+# --- Bash: `git rev-parse --short`への複数revision ---
+
+
+def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
+    """`git rev-parse`の引数が`--short`を持つ場合に、revisionとして渡された引数を返す。
+
+    `--`以降はパスとして扱い、revisionに数えない。`--short`を持たない場合はNoneを返す。
+    """
+    has_short = False
+    revisions: list[str] = []
+    for token in arguments:
+        if token == "--":
+            break
+        if token == "--short" or token.startswith("--short="):
+            has_short = True
+            continue
+        if token.startswith("-"):
+            continue
+        revisions.append(token)
+    return revisions if has_short else None
+
+
+def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
+    """`git rev-parse --short`へ2つ以上のrevisionを渡すコマンドへ警告本文を返す。
+
+    同コマンドは1回に1つのrevisionだけを受理し、複数を渡すと`fatal: Needed a single revision`で失敗する。
+    条文で定めた後も同じ失敗が反復したため、実行の直前に判定する。
+    結果は再実行で是正できるため、遮断せず警告に留める。
+    """
+    for segment in _extract_execution_segments(command):
+        subcommand = _git_subcommand_tokens(segment)
+        if subcommand is None or subcommand[0] != "rev-parse":
+            continue
+        revisions = _rev_parse_short_revisions(subcommand[1])
+        if revisions is not None and len(revisions) >= 2:
+            return _llm_notice(
+                f"`git rev-parse --short`へ{len(revisions)}つのrevision（{'、'.join(revisions)}）を渡している。"
+                "同コマンドは1回に1つのrevisionだけを受理し、`fatal: Needed a single revision`で失敗する。\n"
+                "対処: revisionごとに`git rev-parse --short=7 <revision>`を個別に実行し、入力と出力の対応を保つ。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
+    return None

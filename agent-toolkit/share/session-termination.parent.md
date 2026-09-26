@@ -39,7 +39,7 @@
 `終端完了`に続く8行を受領し、次のとおり確認する。確認の入力は受領した8行と現在のGit状態とし、成果物と実装差分の再読解をしない。`deferred_adopted`の値はJSON parserで文字列配列として検証し、不正JSON、配列以外又は文字列以外の要素を返却契約の不成立とする。いずれかが一致しない場合は同じ終端担当へ差し戻す。
 
 - `git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
-- 通常公開の全体検証を次の条件で確認する。`検証・CI方針`が`通常`の場合、`overall_verification`が`CI判定`又は`ローカル成功`のいずれかだけである。`CI判定`では全体検証とCIの同値性が成立した根拠を`terminal_steps`が挙げる。`ローカル成功`では対象リポジトリのタスクランナーが定める全体検証を1回実行した結果を同じ行が挙げる。統合後にだけ成立する検証項目を実行した場合は、その項目名、終了コード及び警告の有無も`terminal_steps`が挙げる
+- 通常公開の全体検証を次の条件で確認する。`検証・CI方針`が`通常`の場合、`overall_verification`が`CI判定`又は`ローカル成功`のいずれかだけである。`terminal_steps`が`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「出力」の同項目が定める記載条件を満たす
 - 通常公開のCI結果を次の条件で確認する。`検証・CI方針`が`通常`の場合、`ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
 - 即時対応方針では、`検証・CI方針`が`即時対応`である
 - 即時対応の返却を次の条件で確認する。`検証・CI方針`が`即時対応`の場合、`overall_verification`が起動時に渡した近接検証の成功を挙げ、`ci_result`が`待機省略`とCIのrun URLを挙げ、`terminal_steps`が省略した全体検証と後続処置AWIを挙げる

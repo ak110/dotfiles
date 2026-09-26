@@ -8,6 +8,11 @@ r"""計画作業rootに残る計画バンドルの保存確認Stopフック。
 実行レビューの収束有無は会話の意味に属し、フックが受け取るStop payloadと計画ファイルからは判定できない。
 そのため、フックは実行できる処置の有無を根拠に終了を遮断せず、通知を受領した実行主体へ判断を委ねる。
 
+`agent-toolkit:process-wi`の起動中（セッション状態の`process_wi_skill_invoked`が真）は通知しない。
+同スキルの計画はレーン担当が統合時に保存し、メインはレーンの稼働中も待機のためにターンを終えるため、
+稼働中のレーンの計画を保存対象として通知すると、保存の契機に達していない計画への判断をメインへ求めることになる。
+同フラグは`atk agents-exit-session`の実行で偽へ戻るため、終了時点で残る計画はその後のStopで通知する。
+
 委譲先での実行可否: 委譲先は委譲元が所有する計画バンドルを保存できないため、hook入力と環境印で除外する。
 """
 
@@ -27,6 +32,7 @@ _HOOK_ID = "agent-toolkit/plan_save_advisor"
 _ENV_PROCESS_LOOP_SESSION = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _NOTIFIED_STATE_KEY = "working_plan_save_notified"
+_PROCESS_WI_STATE_KEY = "process_wi_skill_invoked"
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
@@ -86,6 +92,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     state = read_state(session_id)
+    if state.get(_PROCESS_WI_STATE_KEY) is True:
+        append_stop_log(session_id, "approve_process_wi_running", {})
+        return "approve", ""
     if state.get(_NOTIFIED_STATE_KEY) is True:
         append_stop_log(session_id, "approve_already_notified", {})
         return "approve", ""

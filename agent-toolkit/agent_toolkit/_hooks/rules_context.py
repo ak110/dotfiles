@@ -99,6 +99,37 @@ def _normative_context(body: str, *, kind: str) -> str:
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
+def session_temp_notice(session_temp: pathlib.Path | str) -> str:
+    """セッション領域の所在と、一時ファイルの置き場所を選ぶ時点で従う行動を対にした通知本文を返す。
+
+    所在だけを示す通知では、一時ファイルを作成する時点で`/tmp`が選ばれ、後始末の削除が権限判定に拒否された。
+    置き場所の選択と結び付く語（`/tmp`）と、委譲先へ所在を渡す行動を同じ本文へ置く。
+    """
+    return (
+        f"このセッションの管理対象一時領域: {session_temp}\n"
+        "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
+        "一時ファイルを作成する作業をサブエージェントへ委ねる場合は、この絶対パスを起動文へ渡す。"
+    )
+
+
+def _existing_session_temp(session_id: object) -> str | None:
+    """SessionStartが作成済みのセッション領域を、新たに作成せずに解決する。
+
+    サブエージェントは親と同じsession_idを受け取るため、親のセッション領域を同じ所在として通知できる。
+    SubagentStartでは領域を作成しない。親のSessionStartが作成していない場合は通知しない。
+    """
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    try:
+        entries = managed_temp.list_managed_temp(SESSION_TEMP_PREFIX, session_id=session_id)
+    except (managed_temp.ManagedTempError, OSError):
+        return None
+    if not entries:
+        return None
+    path = entries[-1].get("path")
+    return path if isinstance(path, str) else None
+
+
 def compose_subagent_start(*, host: str) -> str:
     """SubagentStartへ追加する本文を返す。"""
     parts = [SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")]
@@ -136,10 +167,13 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             except (managed_temp.ManagedTempError, OSError):
                 pass
             else:
-                temp_context = _llm_notice(f"このセッションの管理対象一時領域: {session_temp}")
+                temp_context = _llm_notice(session_temp_notice(session_temp))
                 content = f"{content}\n\n{temp_context}" if content else temp_context
     elif event_name == "SubagentStart":
         content = compose_subagent_start(host=host)
+        session_temp = _existing_session_temp(payload.get("session_id"))
+        if session_temp is not None:
+            content = f"{content}\n\n{_llm_notice(session_temp_notice(session_temp))}"
     else:
         raise ValueError("hook_event_nameはSessionStart又はSubagentStartである必要がある")
 
