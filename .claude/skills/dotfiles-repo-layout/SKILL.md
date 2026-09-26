@@ -25,7 +25,7 @@ description: >
   - 配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント
   - 全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`AGENTS.md`もロードする
-   （Claude Codeは`@AGENTS.md`だけを持つ`CLAUDE.md`アダプター経由で`AGENTS.md`を読む。観測記録は`docs/development/audit-records.md`の「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」にある）
+   （Claude Codeは`CLAUDE.md`と`CLAUDE.local.md`が無いプロジェクトで`AGENTS.md`を直接読む。観測記録は`docs/development/audit-records.md`の「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」にある）
 
 各ファイル群の対象読者と役割。
 
@@ -72,7 +72,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
   改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
   旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
 - `AGENTS.md`（本リポジトリルート）: dotfiles編集者向けの案内文書。Claude Code／Codex双方がここを読む
-  - `CLAUDE.md`は`@AGENTS.md`を取り込むだけのアダプターとし、本文はホスト共通で`AGENTS.md`に置く
+  - `CLAUDE.md`は置かず、ホスト共通で`AGENTS.md`に従う。手元に`CLAUDE.local.md`を置く場合は`claudize`が追跡対象外のアダプターを置く
 
 ## 変更後の規範の自セッション適用
 

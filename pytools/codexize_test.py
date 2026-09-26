@@ -9,7 +9,6 @@ import pytest
 from pytools import codexize
 
 _INSTRUCTIONS = "# プロジェクト指示\n"
-_ADAPTER = "# CLAUDE.md\n\n@AGENTS.md\n"
 
 
 def _setup_dir(tmp_path: Path) -> Path:
@@ -33,29 +32,29 @@ class TestCodexize:
     """`codexize`実行による状態遷移。"""
 
     def test_migrates_instructions_and_links_skills(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """CLAUDE.md単体をAGENTS.mdへ移してアダプターを置き、共有スキルへリンクする。"""
+        """CLAUDE.md単体をAGENTS.mdへ移し、共有スキルへリンクする。"""
         target = _setup_dir(tmp_path)
         (target / "CLAUDE.md").write_text(_INSTRUCTIONS, encoding="utf-8")
 
         _run_codexize(monkeypatch, target)
 
         assert (target / "AGENTS.md").read_text(encoding="utf-8") == _INSTRUCTIONS
-        assert (target / "CLAUDE.md").read_text(encoding="utf-8") == _ADAPTER
+        assert not (target / "CLAUDE.md").exists()
         skills_link = target / ".agents" / "skills"
         assert skills_link.is_symlink()
         assert os.readlink(skills_link) == "../.claude/skills"
 
-    def test_keeps_adapter_and_is_idempotent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """AGENTS.mdと既知アダプターの組は再実行しても変わらない。"""
+    def test_removes_adapter_and_is_idempotent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AGENTS.mdと既知アダプターはAGENTS.md単体へ収束する。"""
         target = _setup_dir(tmp_path)
         (target / "AGENTS.md").write_text(_INSTRUCTIONS, encoding="utf-8")
-        (target / "CLAUDE.md").write_text(_ADAPTER, encoding="utf-8")
+        (target / "CLAUDE.md").write_text("# CLAUDE.md\n\n@AGENTS.md\n", encoding="utf-8")
 
         _run_codexize(monkeypatch, target)
         _run_codexize(monkeypatch, target)
 
         assert (target / "AGENTS.md").read_text(encoding="utf-8") == _INSTRUCTIONS
-        assert (target / "CLAUDE.md").read_text(encoding="utf-8") == _ADAPTER
+        assert not (target / "CLAUDE.md").exists()
 
     def test_both_missing_still_links_skills(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """指示ファイルが無いプロジェクトでも共有スキルは設定する。"""
