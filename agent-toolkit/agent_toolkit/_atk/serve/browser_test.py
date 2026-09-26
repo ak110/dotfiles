@@ -2474,14 +2474,20 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
 
 @pytest.mark.asyncio
 async def test_navigation_uses_one_stylesheet(screen_harness: _ScreenHarness) -> None:
-    """3画面を1つの有効なスタイルシートで描画する。"""
+    """図の追加スタイルがあっても3画面で有効なapp.cssを1枚だけ共有する。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/")
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
 
-    assert await page.evaluate("() => document.styleSheets.length === 1 && !document.styleSheets[0].disabled")
+    await page.add_style_tag(content=":root { --diagram-style-test: 1; }")
+    assert await page.evaluate(
+        """() => {
+          const appSheets = [...document.styleSheets].filter(sheet => sheet.href?.endsWith('/static/app.css'));
+          return appSheets.length === 1 && !appSheets[0].disabled;
+        }"""
+    )
 
 
 @pytest.mark.asyncio
