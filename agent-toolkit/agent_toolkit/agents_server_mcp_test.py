@@ -30,6 +30,26 @@ from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._testing.helpers import delivery_payload
 
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
+_REAL_PLUGIN_PREFLIGHT = subject._check_plugin_commands_sync
+_REAL_PLUGIN_PREFLIGHT_ASYNC = subject._check_plugin_commands
+
+
+async def _skipped_plugin_preflight(_cwd: str) -> None:
+    """事前確認を省く。イベントループへ制御を返さず、従来の起動と再開の順序を保つ。"""
+
+
+@pytest.fixture(autouse=True)
+def _skip_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動と再開の事前確認を既定で省き、実コマンドの所要時間とスレッド切替を各テストの時間制約へ持ち込まない。
+
+    事前確認そのものを検査するテストは`_use_real_plugin_preflight`で実装へ戻す。
+    """
+    monkeypatch.setattr(subject, "_check_plugin_commands", _skipped_plugin_preflight)
+
+
+def _use_real_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """事前確認を実装どおりに実行させる。"""
+    monkeypatch.setattr(subject, "_check_plugin_commands", _REAL_PLUGIN_PREFLIGHT_ASYNC)
 
 
 @pytest.fixture(autouse=True)
@@ -443,32 +463,37 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
     properties = start_tool.parameters["properties"]
-    assert {"subagent_md_path", "extra_params", "cwd", "label"} == properties.keys()
+    assert {"subagent_md_path", "extra_params", "cwd", "label", "model_type"} == properties.keys()
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     custom_tool = subject.mcp._tool_manager.get_tool("start_custom")
     assert custom_tool is not None
     assert {"prompt", "model_type", "cwd", "label"} == custom_tool.parameters["properties"].keys()
     model_type_description = custom_tool.parameters["properties"]["model_type"]["description"]
-    assert "<claude|codex|agy>:<model>[/<effort>]" in model_type_description
-    assert "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium" in model_type_description
-    assert "候補は先頭から試し" in model_type_description
+    assert "必須" in model_type_description
+    assert "共通引数`model_type`" in model_type_description
+    instructions = subject.mcp.instructions or ""
+    assert "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium" in instructions
+    assert "候補は先頭から試し" in instructions
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
-    assert {"prompt", "cwd", "fast", "label"} == explore_tool.parameters["properties"].keys()
+    assert {"prompt", "cwd", "fast", "label", "model_type"} == explore_tool.parameters["properties"].keys()
     assert explore_tool.parameters["properties"]["fast"]["default"] is True
     shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
     assert shell_tool is not None
-    assert {"command", "cwd", "summary_policy", "label"} == shell_tool.parameters["properties"].keys()
+    assert {"command", "cwd", "summary_policy", "label", "model_type"} == shell_tool.parameters["properties"].keys()
     write_tool = subject.mcp._tool_manager.get_tool("start_write")
     assert write_tool is not None
-    assert {"prompt", "cwd", "label"} == write_tool.parameters["properties"].keys()
+    assert {"prompt", "cwd", "label", "model_type"} == write_tool.parameters["properties"].keys()
     for tool in (start_tool, custom_tool, explore_tool, shell_tool, write_tool):
         assert tool.parameters["properties"]["label"]["default"] is None
     for tool in (start_tool, custom_tool, explore_tool):
         assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
     assert "タスク文書に対応する工程別モデル設定" in start_tool.description
-    for tool in (explore_tool, shell_tool, write_tool):
-        assert "候補列の直接入力は受け付けない" in tool.description
+    for tool in (start_tool, explore_tool, shell_tool, write_tool):
+        override = tool.parameters["properties"]["model_type"]
+        assert override["default"] is None
+        assert "省略時は" in override["description"]
+        assert "共通引数`model_type`" in override["description"]
     assert "`explore_fast_model`" in explore_tool.description
     assert "`explore_model`" in explore_tool.description
     assert "`explore_fast_model`" in shell_tool.description
@@ -476,7 +501,7 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     assert "文章起草" in write_tool.description
     show_tool = subject.mcp._tool_manager.get_tool("show")
     assert show_tool is not None
-    assert "`model_type`は工程別設定の種別名、または`start_custom`へ直接渡した候補列" in show_tool.description
+    assert "`model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列" in show_tool.description
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
     assert kill_tool is not None
     assert kill_tool.parameters["properties"]["stop"]["default"] is False
@@ -509,7 +534,7 @@ async def test_session_label_prefers_argument_over_generated_value(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """識別名は引数の指定を優先し、省略時は依頼本文又はコマンドから導く。"""
+    """識別名は引数の指定を優先し、省略時は依頼本文又はコマンド名から導く。"""
     monkeypatch.setattr(
         subject._atk_config,
         "parse_unresolved_model_candidates",
@@ -529,7 +554,7 @@ async def test_session_label_prefers_argument_over_generated_value(
 
     assert manager.show_session(named["session_id"])["label"] == "lane-02"
     assert manager.show_session(unnamed["session_id"])["label"] == "対象の調査"
-    assert manager.show_session(shell_default["session_id"])["label"] == "git status --short"
+    assert manager.show_session(shell_default["session_id"])["label"] == "shell-git"
     assert manager.show_session(shell_named["session_id"])["label"] == "作業ツリーの差分"
 
 
@@ -570,7 +595,7 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
     shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
 
     assert manager.show_session(started["session_id"])["label"] == "対象の調査"
-    assert manager.show_session(shell["session_id"])["label"] == "git status --short"
+    assert manager.show_session(shell["session_id"])["label"] == "shell-git"
 
 
 @pytest.mark.asyncio
@@ -752,7 +777,7 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert "`--" + "turn`へそのまま渡す" not in start_tool.description
     assert "`atk agents wait`" in start_tool.description
     assert "`delivery`" in send_tool.description
-    assert "`previous_result`" not in send_tool.description
+    assert "`previous_result`" in send_tool.description
     assert "`--" + "turn`へそのまま渡す" not in send_tool.description
 
 
@@ -853,7 +878,10 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "status": "running",
         "root_session_id": "root",
     }
-    assert await subject.send_message("session", "続行") == {"delivery": "replied"}
+    assert await subject.send_message("session", "続行") == {
+        "delivery": "replied",
+        "previous_result": {"status": "completed"},
+    }
 
 
 def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
@@ -6116,3 +6144,240 @@ def test_initialization_failure_resolves_before_host_moves_call_to_background() 
     """
     failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
     assert failure_path + subject.START_AVAILABILITY_TIMEOUT < state.HOST_BACKGROUND_THRESHOLD_SECONDS
+
+
+def _recording_candidates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """候補列の解決へ渡った`model_type`を記録し、常に同じ候補を返す。"""
+    requested: list[str] = []
+
+    def fake_parse(model_type: str) -> list[tuple[str, str, str]]:
+        requested.append(model_type)
+        return [("codex", "model", "high")]
+
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", fake_parse)
+    return requested
+
+
+@pytest.mark.asyncio
+async def test_start_tools_accept_model_type_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`model_type`を渡した起動は工程別設定の代わりにその値を使い、各ツール固有の起動区分を保つ。"""
+    requested = _recording_candidates(monkeypatch)
+    manager, _ = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    override = "codex:model/high"
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+
+    responses = {
+        "delegate": await subject.start(
+            str(task_document), _observed_input_params(task_document.name, tmp_path), str(tmp_path), model_type=override
+        ),
+        "explore": await subject.start_explore("調査", str(tmp_path), fast=False, model_type=override),
+        "shell": await subject.start_shell("make test", str(tmp_path), "終了状態", model_type=override),
+        "write": await subject.start_write("起草", str(tmp_path), model_type=override),
+    }
+
+    assert requested == [override] * 4
+    for launch_kind, response in responses.items():
+        shown = manager.show_session(response["session_id"])
+        assert shown["model_type"] == override
+        assert shown["launch_kind"] == launch_kind
+
+
+@pytest.mark.asyncio
+async def test_start_tools_use_task_settings_without_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`model_type`を省略した起動は各ツールの工程別設定を使う。"""
+    requested = _recording_candidates(monkeypatch)
+    manager, _ = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    await subject.start_explore("調査", str(tmp_path))
+    await subject.start_explore("調査", str(tmp_path), fast=False)
+    await subject.start_shell("make test", str(tmp_path), "終了状態")
+    await subject.start_write("起草", str(tmp_path))
+
+    assert requested == ["explore_fast", "explore", "explore_fast", "write"]
+
+
+@pytest.mark.asyncio
+async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """label省略時は凡例どおりの識別名を生成し、明示したlabelはその値を使う。"""
+    _recording_candidates(monkeypatch)
+    manager, _ = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    exec_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    exec_params = {**_observed_input_params(exec_document.name, tmp_path), "レーン識別子": "lane-01"}
+    pick_document = subject._SHARE_DIRECTORY / "pick-wi.subagent.md"
+    pick_params = _observed_input_params(pick_document.name, tmp_path)
+
+    labels = {
+        "lane": await subject.start(str(exec_document), exec_params, str(tmp_path)),
+        "pick": await subject.start(str(pick_document), pick_params, str(tmp_path)),
+        "named": await subject.start(str(pick_document), pick_params, str(tmp_path), label="pick-wi-gv"),
+        "blank": await subject.start(str(pick_document), pick_params, str(tmp_path), label="   "),
+        "shell": await subject.start_shell("make test", str(tmp_path), "終了状態"),
+        "shell_path": await subject.start_shell("/usr/bin/git status", str(tmp_path), "終了状態"),
+        "explore": await subject.start_explore("調査\n詳細", str(tmp_path)),
+        "write": await subject.start_write("起草\n詳細", str(tmp_path)),
+    }
+
+    shown = {key: manager.show_session(response["session_id"])["label"] for key, response in labels.items()}
+    assert shown == {
+        "lane": "lane-01-exec",
+        "pick": "pick-wi",
+        "named": "pick-wi-gv",
+        "blank": "pick-wi",
+        "shell": "shell-make",
+        "shell_path": "shell-git",
+        "explore": "explore",
+        "write": "write",
+    }
+
+
+def test_label_legend_in_instructions() -> None:
+    """共通引数の説明をサーバーの`instructions`へ1か所にまとめ、各ツールの説明は固有の既定値と参照だけにする。"""
+    instructions = subject.mcp.instructions or ""
+    for fragment in (
+        "共通引数`model_type`",
+        "`<claude|codex|agy>:<model>[/<effort>]`",
+        "`atk config set`",
+        "共通引数`label`",
+        "`<レーン識別子>-<タスク文書名>`",
+        "`<レビュー対象を表す語>-review`",
+        "`explore-<調査対象を示す1〜2語>`",
+        "`shell-<コマンド名など1〜2語>`",
+        "`write-<起草対象を示す1〜2語>`",
+        "labelを明示して起動する",
+    ):
+        assert fragment in instructions, fragment
+    specific = {
+        "start": "`<レーン識別子>-<タスク文書名>`",
+        "start_custom": "依頼本文の先頭",
+        "start_explore": "`explore-<調査対象を示す1〜2語>`",
+        "start_shell": "`shell-<コマンド名など1〜2語>`",
+        "start_write": "`write-<起草対象を示す1〜2語>`",
+    }
+    descriptions = []
+    for tool_name, fragment in specific.items():
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        description = tool.parameters["properties"]["label"]["description"]
+        assert "共通引数`label`" in description, tool_name
+        assert "`show`・`atk agents list`・statuslineへ現れる" not in description, tool_name
+        assert fragment in description, tool_name
+        descriptions.append(description)
+    assert len(set(descriptions)) == len(descriptions)
+
+
+def test_preflight_covers_plugin_launch_commands() -> None:
+    """事前確認は、プラグインのMCP設定とhookが委譲先で起動するコマンドの先頭語を全て含む。
+
+    起動コマンドを追加した変更で事前確認が漏れると、未trustの設定などで起動が失敗する状態を
+    子の起動前に検出できず、ホスト共通の接続失敗記録を生じさせる。
+    """
+    plugin_root = pathlib.Path(subject.__file__).resolve().parent.parent
+    launch_words: set[str] = set()
+
+    def collect(node: Any) -> None:
+        if isinstance(node, dict):
+            command = node.get("command")
+            if isinstance(command, str) and command.strip():
+                launch_words.add(command.split()[0])
+            for value in node.values():
+                collect(value)
+        elif isinstance(node, list):
+            for value in node:
+                collect(value)
+
+    for name in (".mcp.json", ".mcp.codex.json", "mcp.json", "hooks/hooks.json"):
+        collect(json.loads((plugin_root / name).read_text(encoding="utf-8")))
+
+    assert launch_words
+    assert launch_words <= {command[0] for command in subject.PREFLIGHT_COMMANDS}
+
+
+def _write_failing_uv(bin_dir: pathlib.Path) -> None:
+    """未trustのmise shimと同じく、標準エラーへ理由を書いて終了コード1で終わる`uv`・`uvx`を置く。"""
+    bin_dir.mkdir()
+    for name in ("uv", "uvx"):
+        path = bin_dir / name
+        path.write_text("#!/bin/sh\necho 'mise ERROR Config files in ./mise.toml are not trusted.' >&2\nexit 1\n")
+        path.chmod(0o755)
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """起動コマンドが失敗する作業ディレクトリでは子を起動せず、cwdと標準エラーを含む例外を返す。"""
+    _use_real_plugin_preflight(monkeypatch)
+    _recording_candidates(monkeypatch)
+    bin_dir = tmp_path / "bin"
+    _write_failing_uv(bin_dir)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    with pytest.raises(ValueError) as raised:
+        await subject.start_explore("調査", str(workdir))
+
+    message = str(raised.value)
+    assert f"cwd={workdir}" in message
+    assert "command=uv --version" in message
+    assert "exit_code=1" in message
+    assert "not trusted" in message
+    assert not backend.start_calls
+    assert not manager.sessions
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """終端済みsessionの再開でも、起動コマンドが失敗する作業ディレクトリでは委譲先を再開しない。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("saved-session", str(tmp_path), engine="codex", turn_seq=1)
+    _complete(session, message="前のturn")
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+    manager.sessions[session.session_id] = session
+    _use_real_plugin_preflight(monkeypatch)
+    bin_dir = tmp_path / "bin"
+    _write_failing_uv(bin_dir)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    with pytest.raises(ValueError, match="プラグインの起動コマンドが失敗"):
+        await manager.send_message("saved-session", "続行")
+
+    assert not backend.resume_calls
+
+
+def test_preflight_passes_where_plugin_commands_succeed(tmp_path: pathlib.Path) -> None:
+    """起動コマンドが成功する作業ディレクトリでは事前確認を通過する。"""
+    if shutil.which("uv") is None or shutil.which("uvx") is None:
+        pytest.skip("uv又はuvxが未導入")
+    _REAL_PLUGIN_PREFLIGHT(str(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """未回収の結果を持つ終端済みsessionへ送ると、MCPの応答がその結果を返す。"""
+    manager, _ = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _complete(session, message="計画作成完了")
+    manager.sessions[session.session_id] = session
+
+    response = await subject.send_message(session.session_id, "実装開始")
+
+    assert response == {
+        "delivery": "reply_started",
+        "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
+    }
+
+
+def test_model_type_descriptions_reference_instructions() -> None:
+    """model_typeの書式と用途は`instructions`だけが持ち、各ツールの説明は既定値と参照だけにする。"""
+    for tool_name in ("start", "start_custom", "start_explore", "start_shell", "start_write"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        description = tool.parameters["properties"]["model_type"]["description"]
+        assert "共通引数`model_type`" in description, tool_name
+        assert "<claude|codex|agy>" not in description, tool_name
+        assert "`atk config set`" not in description, tool_name

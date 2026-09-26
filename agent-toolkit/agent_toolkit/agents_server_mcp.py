@@ -13,6 +13,7 @@ import logging
 import os
 import pathlib
 import re
+import subprocess
 import typing
 import warnings
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
@@ -92,6 +93,18 @@ _REQUIRED_INPUT_PREFIX = "必須入力名: "
 _REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 _TASK_MODEL_TYPES = state.TASK_MODEL_TYPES
+_TASK_DOCUMENT_SUFFIX = ".subagent.md"
+# 委譲先のClaude Code・Codexがプラグインを起動するコマンド。MCP設定（`.mcp.json`・`.mcp.codex.json`・`mcp.json`）の
+# `command`と`hooks/hooks.json`のhookの先頭語、及びCodexのhook起動器が内部で呼ぶ`uv run`を覆う。
+# 委譲先は同じPATHと作業ディレクトリからこれらを解決するため、作業ディレクトリの設定（未trustのmise設定など）で
+# 失敗する状態を子の起動前に検出する。起動後に失敗すると、Claude Codeはプラグインの接続失敗をホスト共通の記録へ残し、
+# 同じ設定のサーバーへの接続を15分間試みない。
+PREFLIGHT_COMMANDS: tuple[tuple[str, ...], ...] = (("uv", "--version"), ("uvx", "--version"))
+# 事前確認の1コマンドあたりの上限秒数。成功時の実測は2コマンドの連続実行で約0.14秒である。
+PREFLIGHT_TIMEOUT = 20.0
+# start系の起動ツールが共通して受け取る引数の説明はサーバーの`instructions`へ1か所だけ置き、
+# 各ツールの引数説明にはツール固有の既定値と、この参照文だけを書く。
+_COMMON_ARGUMENT_REFERENCE = "意味と書式はサーバーの`instructions`の共通引数`{name}`の説明に従う。"
 
 # 検査が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
 _REQUIRED_INPUT_LINE_FORMAT = (
@@ -236,6 +249,73 @@ def _parameter_description(body: str) -> str:
 def _shell_prompt(command: str, summary_policy: str) -> str:
     """コマンドと要約方針を、シェル実行委譲先への指示本文へ組み立てる。"""
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
+
+
+def _common_argument_description(name: str, tool_specific: str) -> str:
+    """共通引数の説明を、ツール固有の既定値と`instructions`への参照から組み立てる。"""
+    return _parameter_description(f"{tool_specific}{_COMMON_ARGUMENT_REFERENCE.format(name=name)}")
+
+
+def _label_description(tool_specific: str) -> str:
+    """label引数の説明を、ツール固有の形式・既定値と`instructions`への参照から組み立てる。"""
+    return _common_argument_description("label", tool_specific)
+
+
+def _model_type_description(tool_specific: str) -> str:
+    """model_type引数の説明を、ツール固有の既定値と`instructions`への参照から組み立てる。"""
+    return _common_argument_description("model_type", tool_specific)
+
+
+def _task_document_label(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:
+    """`start`のlabel省略時の識別名をタスク文書名とレーン識別子から組み立てる。"""
+    name = pathlib.PurePath(subagent_md_path).name.removesuffix(_TASK_DOCUMENT_SUFFIX)
+    lane = extra_params.get("レーン識別子", "").strip()
+    return f"{lane}-{name}" if lane else name
+
+
+def _shell_default_label(command: str) -> str:
+    """`start_shell`のlabel省略時の識別名を、コマンドの最初の語のbasenameから組み立てる。"""
+    words = command.split()
+    return f"shell-{pathlib.PurePath(words[0]).name}" if words else "shell"
+
+
+def _run_preflight_command(command: tuple[str, ...], cwd: str) -> str | None:
+    """1件の事前確認コマンドを実行し、失敗時は失敗内容の説明を返す。"""
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=PREFLIGHT_TIMEOUT,
+            check=False,
+        )
+    except FileNotFoundError:
+        return f"command={' '.join(command)} error=実行ファイルが見つからない"
+    except subprocess.TimeoutExpired:
+        return f"command={' '.join(command)} error={PREFLIGHT_TIMEOUT:g}秒以内に終了しない"
+    if completed.returncode != 0:
+        return f"command={' '.join(command)} exit_code={completed.returncode} stderr={completed.stderr.strip()}"
+    return None
+
+
+def _check_plugin_commands_sync(cwd: str) -> None:
+    """委譲先の作業ディレクトリでプラグインの起動コマンドが動くことを確かめる。"""
+    for command in PREFLIGHT_COMMANDS:
+        failure = _run_preflight_command(command, cwd)
+        if failure is not None:
+            raise ValueError(
+                "委譲先の作業ディレクトリでプラグインの起動コマンドが失敗したため委譲先を起動しない: "
+                f"cwd={cwd} {failure}。"
+                "未trustのmise設定が原因の場合は、呼び出し元で`mise trust`の要否を判断してから再実行する。"
+            )
+
+
+async def _check_plugin_commands(cwd: str) -> None:
+    """事前確認をイベントループの外で実行する。"""
+    await asyncio.to_thread(_check_plugin_commands_sync, cwd)
 
 
 def _delivery_sender_label() -> str:
@@ -944,6 +1024,7 @@ class AgentsServerManager:
         """
         _validate_prompt(prompt)
         _validate_cwd(cwd)
+        await _check_plugin_commands(cwd)
         candidates, excluded = await self._resolve_start_candidates(
             model_type,
             launch_kind=launch_kind,
@@ -1146,15 +1227,17 @@ class AgentsServerManager:
         cwd: str,
         *,
         label: str | None = None,
+        model_type: str | None = None,
     ) -> dict[str, Any]:
-        """探索専用の軽量な起動条件でturnを開始する。"""
-        model_type = "explore_fast" if fast else "explore"
+        """探索専用の軽量な起動条件でturnを開始する。`model_type`の指定時は`fast`を参照しない。"""
+        if model_type is None:
+            model_type = "explore_fast" if fast else "explore"
         return await self.start(
             model_type,
             prompt,
             cwd,
             launch_kind="explore",
-            label=label,
+            label=_resolve_display_label(label, "explore"),
         )
 
     async def start_shell(
@@ -1164,26 +1247,34 @@ class AgentsServerManager:
         summary_policy: str,
         *,
         label: str | None = None,
+        model_type: str | None = None,
     ) -> dict[str, Any]:
         """コマンド実行専用の軽量な起動条件でturnを開始する。"""
         _validate_shell_request(command, summary_policy)
         return await self.start(
-            "explore_fast",
+            model_type or "explore_fast",
             _shell_prompt(command, summary_policy),
             cwd,
             launch_kind="shell",
-            label=_resolve_display_label(label, command),
+            label=_resolve_display_label(label, _shell_default_label(command)),
             composed_by=COMPOSED_BY_AGENTS_SERVER,
         )
 
-    async def start_write(self, prompt: str, cwd: str, *, label: str | None = None) -> dict[str, Any]:
+    async def start_write(
+        self,
+        prompt: str,
+        cwd: str,
+        *,
+        label: str | None = None,
+        model_type: str | None = None,
+    ) -> dict[str, Any]:
         """対象、読者、事実と根拠が確定済みの文章起草・書込turnを開始する。"""
         return await self.start(
-            "write",
+            model_type or "write",
             prompt,
             cwd,
             launch_kind="write",
-            label=label,
+            label=_resolve_display_label(label, "write"),
         )
 
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
@@ -1477,6 +1568,7 @@ class AgentsServerManager:
         session_id = resume_state.session_id
         backend = self._backend(resume_state.engine)
         try:
+            await _check_plugin_commands(resume_state.cwd)
             session = await backend.resume(
                 session_id,
                 prompt,
@@ -2044,13 +2136,28 @@ with warnings.catch_warnings():
             "`send_message`で新しい指示を配送したsessionは、"
             "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
-            "`start`はタスク文書に対応する工程別設定を使う。`start_custom`の`model_type`には設定種別か"
-            "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`候補列を渡せる。"
-            "他の起動ツールは各工程の設定を使い、候補列を直接受け取らない。\n"
-            "起動時の`label`は当該sessionを人が識別する短い名前とし、`show`・`atk agents list`・statuslineへ現れる。"
-            "表記をそろえるため、`start`では担当を表す識別子（`lane-02`など）、"
-            "`start_explore`では調べる対象を表す名詞句（`pyfltrの起動形`など）、"
-            "`start_shell`では実行するコマンドのように、当該sessionの役割を最短で表す語を渡す。",
+            "start系の起動ツール（`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`）は、"
+            "次の共通引数を同じ意味で受け取る。各ツールの引数説明にはツール固有の既定値だけを書く。\n"
+            "共通引数`model_type`: 工程別モデル設定の種別（例: `execute`）、又はASCIIカンマ区切りの"
+            "`<claude|codex|agy>:<model>[/<effort>]`候補列（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）。"
+            "候補は先頭から試し、起動可能な候補へ切り替える。"
+            "`start_custom`では必須とする。他の起動ツールでは省略可能で、省略時は各ツールの工程別設定を使い、"
+            "指定時はその値で一時的に上書きする。恒常的な変更は`atk config set`で行う。\n"
+            "共通引数`label`: 当該sessionを人が識別する短い名前とし、`show`・`atk agents list`・statuslineへ現れる。"
+            "全起動ツールで次の凡例に従う。`<…1〜2語>`は英小文字・数字・日本語の語をハイフンで連結した1〜2語とし、"
+            "依頼本文や文章をそのまま使わない。\n"
+            "| 起動 | 形式 | 例 |\n"
+            "| --- | --- | --- |\n"
+            "| `start`（省略時はサーバーが生成） | `extra_params`に`レーン識別子`があれば`<レーン識別子>-<タスク文書名>`、"
+            "無ければ`<タスク文書名>`。タスク文書名はファイル名から`.subagent.md`を除いた名前 | "
+            "`lane-01-exec`、`lane-01-exec-review`、`pick-wi` |\n"
+            "| レビューを目的とする`start_explore`又は`start_custom` | `<レビュー対象を表す語>-review` | `pr-body-review` |\n"
+            "| `start_explore`（レビュー以外） | `explore-<調査対象を示す1〜2語>` | `explore-pyfltr` |\n"
+            "| `start_shell` | `shell-<コマンド名など1〜2語>` | `shell-make-test` |\n"
+            "| `start_write` | `write-<起草対象を示す1〜2語>` | `write-awi` |\n"
+            "| `start_custom`（レビュー以外） | 役割を表す短い語 | `audit` |\n"
+            "`start_explore`・`start_shell`・`start_write`はlabelを明示して起動する。"
+            "省略時の既定値（`explore`、`shell-<コマンド名>`、`write`）だけでは同じ種別のsessionを区別できないためである。",
             kind=_KIND_MCP_INSTRUCTIONS,
         ),
         lifespan=_mcp_lifespan,
@@ -2080,18 +2187,21 @@ async def start(
     label: Annotated[
         str | None,
         Field(
-            description=_parameter_description(
-                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
-                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            description=_label_description(
+                "省略時は`extra_params`の`レーン識別子`とタスク文書名から`<レーン識別子>-<タスク文書名>`"
+                "（`レーン識別子`が無ければ`<タスク文書名>`）を生成する。"
             )
         ),
+    ] = None,
+    model_type: Annotated[
+        str | None,
+        Field(description=_model_type_description("省略時はタスク文書に対応する工程別設定を使う。")),
     ] = None,
 ) -> dict[str, Any]:
     """専用タスク文書と名前付き追加入力から委譲先turnを開始する。
 
     タスク文書を読み、同文書の必須入力名と`extra_params`を照合し、文書本文と出所を起動文へ含めてから起動する。
-    engine、model、effortはタスク文書に対応する工程別モデル設定から決める。
-    候補列を明示する場合は`start_custom`を使う。
+    engine、model、effortはタスク文書に対応する工程別モデル設定から決め、`model_type`を指定した場合はその値から決める。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
     結果が不要なら`kill`で破棄する。
@@ -2103,8 +2213,14 @@ async def start(
     全候補が可用性またはagyのturn失敗で終端した場合は、最後の候補の終端応答を返す。
     最後のagy候補がbackend開始例外で失敗した場合は、除外理由を含む例外を送出する。
     """
-    model_type, prompt = _task_document_request(subagent_md_path, extra_params)
-    response = await _MANAGER.start(model_type, prompt, cwd, label=label, composed_by=COMPOSED_BY_AGENTS_SERVER)
+    task_model_type, prompt = _task_document_request(subagent_md_path, extra_params)
+    response = await _MANAGER.start(
+        model_type or task_model_type,
+        prompt,
+        cwd,
+        label=_resolve_display_label(label, _task_document_label(subagent_md_path, extra_params)),
+        composed_by=COMPOSED_BY_AGENTS_SERVER,
+    )
     return _public_start_response(response)
 
 
@@ -2113,24 +2229,12 @@ async def start_custom(
     prompt: str,
     model_type: Annotated[
         str,
-        Field(
-            description=_parameter_description(
-                "工程別モデル設定の種別（例: `execute`）、またはASCIIカンマ区切りの"
-                "`<claude|codex|agy>:<model>[/<effort>]`候補列。"
-                "例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`。"
-                "候補は先頭から試し、起動可能な候補へ切り替える。専用タスク文書がある場合は`start`を使う。"
-            )
-        ),
+        Field(description=_model_type_description("必須。専用タスク文書がある場合は`start`を使う。")),
     ],
     cwd: str,
     label: Annotated[
         str | None,
-        Field(
-            description=_parameter_description(
-                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
-                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
-            )
-        ),
+        Field(description=_label_description("省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。")),
     ] = None,
 ) -> dict[str, Any]:
     """専用タスク文書がない自由な指示本文から委譲先turnを開始する。
@@ -2165,9 +2269,16 @@ async def start_explore(
     label: Annotated[
         str | None,
         Field(
-            description=_parameter_description(
-                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
-                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            description=_label_description(
+                "形式は`explore-<調査対象を示す1〜2語>`、レビューでは`<レビュー対象を表す語>-review`。省略時は`explore`。"
+            )
+        ),
+    ] = None,
+    model_type: Annotated[
+        str | None,
+        Field(
+            description=_model_type_description(
+                "省略時は`fast`に応じて`explore_fast`又は`explore`の設定を使う。指定時は`fast`を参照しない。"
             )
         ),
     ] = None,
@@ -2175,7 +2286,7 @@ async def start_explore(
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
     `fast=true`では`explore_fast_model`、`fast=false`では`explore_model`の候補列を使う。
-    候補列の直接入力は受け付けない。
+    `model_type`を指定した場合は`fast`を参照せず、その値から候補列を決める。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
     結果が不要なら`kill`で破棄する。
@@ -2187,7 +2298,7 @@ async def start_explore(
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
-    response = await _MANAGER.start_explore(fast, prompt, cwd, label=label)
+    response = await _MANAGER.start_explore(fast, prompt, cwd, label=label, model_type=model_type)
     return _public_start_response(response)
 
 
@@ -2205,17 +2316,20 @@ async def start_shell(
     label: Annotated[
         str | None,
         Field(
-            description=_parameter_description(
-                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
-                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
+            description=_label_description(
+                "形式は`shell-<コマンド名など1〜2語>`。省略時は`shell-<コマンドの最初の語のbasename>`。"
             )
         ),
+    ] = None,
+    model_type: Annotated[
+        str | None,
+        Field(description=_model_type_description("省略時は`explore_fast`の設定を使う。")),
     ] = None,
 ) -> dict[str, Any]:
     """コマンドを実行して結果を要約する委譲先turnを開始する。
 
     `explore_fast_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
-    候補列の直接入力は受け付けない。
+    `model_type`を指定した場合はその値から候補列を決める。
     読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
     結果が不要なら`kill`で破棄する。
@@ -2227,7 +2341,7 @@ async def start_shell(
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
-    response = await _MANAGER.start_shell(command, cwd, summary_policy, label=label)
+    response = await _MANAGER.start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
     return _public_start_response(response)
 
 
@@ -2237,26 +2351,25 @@ async def start_write(
     cwd: str,
     label: Annotated[
         str | None,
-        Field(
-            description=_parameter_description(
-                "当該sessionを人が識別する短い名前。`show`と`atk agents list`の応答とstatuslineへ現れる。"
-                "省略時は依頼本文の先頭にある空でない1行を正規化した値を用いる。"
-            )
-        ),
+        Field(description=_label_description("形式は`write-<起草対象を示す1〜2語>`。省略時は`write`。")),
+    ] = None,
+    model_type: Annotated[
+        str | None,
+        Field(description=_model_type_description("省略時は`write`の設定を使う。")),
     ] = None,
 ) -> dict[str, Any]:
     """確定済みの文章起草と小規模な定型書込を委譲する。
 
     設計、調査、レビュー及び公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。
     読者が異なる文章は別の依頼にする。プロジェクト指示の読込を省いた`write_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。
-    候補列の直接入力は受け付けない。
+    `model_type`を指定した場合はその値から候補列を決める。
     終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait --output-file <絶対パス>`で受け取る。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     結果が不要なら`kill`で破棄する。
     応答は`start`と同じ項目を含む。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
-    response = await _MANAGER.start_write(prompt, cwd, label=label)
+    response = await _MANAGER.start_write(prompt, cwd, label=label, model_type=model_type)
     return _public_start_response(response)
 
 
@@ -2282,7 +2395,10 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`だけを含む。直前の終端結果は`atk agents wait`で受領する。
+    応答は`delivery`を含む。終端済みsessionの未回収の終端結果を消費して新しいturnを開始した場合は、
+    その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
+    消費した結果は`atk agents wait`で受領できないため、呼び出し元は同じ応答から受け取る。
+    回収済みの結果は含めない。
     `delivery`の値は次のとおりである。
     `steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
     委譲先が単一の長時間コマンドを実行している間はturnの区切りに達しないため、指示はキューに残る。
@@ -2295,7 +2411,11 @@ async def send_message(
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
     response = await _MANAGER.send_message(session_id, prompt, timeout)
-    return {"delivery": response["delivery"]}
+    public: dict[str, Any] = {"delivery": response["delivery"]}
+    previous_result = response.get("previous_result")
+    if previous_result:
+        public["previous_result"] = previous_result
+    return public
 
 
 @mcp.tool(name="kill", structured_output=True)
@@ -2361,7 +2481,7 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
     """1件のsessionについて、文脈復旧又はトラブルシューティング用の詳細を返す。
 
     既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
-    `model_type`は工程別設定の種別名、または`start_custom`へ直接渡した候補列である。
+    `model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列である。
     停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の疑いはこの値で判定する。
     `seconds_since_output`は最新のテキスト出力からの経過秒数である。
     テキスト出力だけが止まり活動が続いている状態は長時間のコマンドの実行中であり、停滞ではない。
