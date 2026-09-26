@@ -16,7 +16,7 @@
 
 ## AGENTS.mdの標準章構成
 
-Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する。Claude Codeへは`claudize`が置く`@AGENTS.md`の`CLAUDE.md`アダプターを通して読ませるため、`CLAUDE.md`へ本文を書かない。観測記録はdotfilesリポジトリの`docs/development/audit-records.md`の「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」にある。
+Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する。Claude Codeへはリポジトリ直下の`CLAUDE.md`アダプター（`# CLAUDE.md`と`@AGENTS.md`の2行。`claudize`が生成する形と同じ）を通して読ませ、本文は`AGENTS.md`だけへ書く。観測記録はdotfilesリポジトリの`docs/development/audit-records.md`の「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」にある。
 
 1. プロジェクト概要パラグラフ（必須）
 2. 開発手順（必須）
