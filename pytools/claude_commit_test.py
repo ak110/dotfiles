@@ -1,9 +1,57 @@
 """claude_commitモジュールのテスト。"""
 
+import subprocess
+import sys
+import typing
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from pytools import claude_commit
 from pytools.claude_commit import _DEFAULT_FORMAT, _build_prompt, _get_format_instructions
+
+_FAKE_CLAUDE = Path("/fake/bin/claude")
+
+
+class TestEffortOption:
+    """`--effort`がclaude CLIの受理する値を受け付けてclaudeへ渡すことのテスト。"""
+
+    def test_effort_xhigh_is_passed_to_claude(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`--effort xhigh`を拒否せず、claudeの起動引数へ`--effort=xhigh`として渡す。"""
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["claude-commit", "--effort", "xhigh", "--dry-run"])
+        monkeypatch.setattr(claude_commit.claude_common, "resolve_executable", _resolve_fake_claude)
+        claude_calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def run(cmd: list[str], *args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess:
+            if cmd[0] == str(_FAKE_CLAUDE):
+                claude_calls.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0)
+            return real_run(cmd, *args, check=kwargs.pop("check", False), **kwargs)
+
+        monkeypatch.setattr(claude_commit.subprocess, "run", run)
+        with pytest.raises(SystemExit) as exc_info:
+            claude_commit.main()
+        assert exc_info.value.code == 0
+        assert len(claude_calls) == 1
+        assert "--effort=xhigh" in claude_calls[0]
+
+    def test_help_lists_xhigh_effort(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+        """`--help`が`--effort`の選択肢に`xhigh`を示す。"""
+        monkeypatch.setattr(sys, "argv", ["claude-commit", "--help"])
+        with pytest.raises(SystemExit) as exc_info:
+            claude_commit.main()
+        assert exc_info.value.code == 0
+        assert "xhigh" in capsys.readouterr().out
+
+
+def _resolve_fake_claude(name: str, **kwargs: object) -> Path:
+    del name, kwargs
+    return _FAKE_CLAUDE
 
 
 class TestBuildPrompt:

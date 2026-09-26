@@ -46,7 +46,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--effort",
-        choices=["low", "medium", "high", "max"],
+        choices=["low", "medium", "high", "xhigh", "max"],
         help="思考レベル。",
     )
     parser.add_argument(
