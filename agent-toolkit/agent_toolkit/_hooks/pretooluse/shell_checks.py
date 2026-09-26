@@ -204,7 +204,11 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     print(
         _block_notice(
             "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
-            fix="自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。",
+            fix=(
+                "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
+                "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
+                "`p[k]ill`のように文字クラスで書く。"
+            ),
         ),
         file=sys.stderr,
     )

@@ -135,7 +135,12 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
         "pretooluse.py:2568 本文",
         "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
     ),
-    ("pretooluse.py:2568 解消手段", "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"),
+    (
+        "pretooluse.py:2568 解消手段",
+        "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
+        "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
+        "`p[k]ill`のように文字クラスで書く。",
+    ),
     (
         "pretooluse.py:_UV_RUN_PYTHON_BLOCK_MSG 本文",
         "blocked: `python`トークンの前に`--script`も`--no-project`も指定しない`uv run python`呼び出しである"
