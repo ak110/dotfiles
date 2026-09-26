@@ -44,10 +44,7 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 呼び出し元が当該pushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
 CIを判定する場合は、次の3工程で監視用の証拠を作成する。
 
-1. SessionStartが管理対象一時領域を通知している場合は、
-   `atk managed-temp create --prefix ci-evidence --session-root <通知された絶対パス>`を単独で実行する。
-   通知が無い場合は`atk managed-temp create --prefix ci-evidence`を単独で実行する。
-   標準出力の絶対パスと独立登録の有無を保持し、pushごとに別の領域を使う
+1. セッション領域（`agent-toolkit:managed-temp`）の中へ、pushごとに別のディレクトリを作成し、その絶対パスを保持する
 2. 削除refを除き、更新refごとにsource refを1件確定する。
    手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
    `--source-ref`へ渡すのはこの左辺だけとし、refspecの右辺`<destination>`、destination ref、remote-tracking refは別の値として扱う。
@@ -128,13 +125,5 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 ## 後始末
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
-独立登録した各領域に対し、plan mode外で次を単独実行し、終了コード0を確認する。
-終了コード0は対象パスの除去完了を含意するため、この確認だけで除去を判定する。
-セッションrootの子領域はセッション終了時の回収へ委ね、個別のcleanupを省く。
-
-```text
-atk managed-temp cleanup --path <保持した絶対パス>
-```
-
-追加pushでは新しい領域とbaselineを作成する。次の操作、保持理由、正確なパスを記録した
-再試行中状態だけは終端まで保持できる。
+監視用の証拠を置いたディレクトリはセッション領域の自動削除へ委ね、個別に回収しない。
+追加pushでは新しいディレクトリとbaselineを作成する。

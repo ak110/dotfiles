@@ -475,6 +475,15 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
         assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
+def test_start_tool_descriptions_show_agents_wait_invocation() -> None:
+    """開始ツールの公開説明が、待機コマンドの形と`session_id`を引数に渡さないことを示す。"""
+    for tool_name in ("start", "start_custom", "start_explore", "start_write", "start_shell"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert "`atk agents wait --output-file <絶対パス>`" in tool.description, tool_name
+        assert "`atk agents wait`は`session_id`を引数に取らず" in tool.description, tool_name
+
+
 @pytest.mark.asyncio
 async def test_session_label_prefers_argument_over_generated_value(
     monkeypatch: pytest.MonkeyPatch,
@@ -1998,6 +2007,37 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
     result = json.loads(capsys.readouterr().out)
     assert result["agent_message"] == "再開結果"
     assert result["turn_seq"] == 5
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib.Path) -> None:
+    """再開したsessionは最初の開始時刻を保ち、状態ファイルへturnの開始時刻と別に書く。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "claude")
+    _install_backend(manager, "claude", backend)
+    writer.activate()
+    session = subject.SessionState("created-session", str(tmp_path), engine="claude", turn_seq=2)
+    session.created_at = "2026-09-25T21:58:13+00:00"
+    _complete(session, message="前のturn")
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+    manager.sessions[session.session_id] = session
+
+    assert await manager.send_message("created-session", "続行") == {"delivery": "reply_started"}
+    writer.flush()
+
+    resumed = manager.sessions["created-session"]
+    assert resumed.created_at == "2026-09-25T21:58:13+00:00"
+    projected = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    entry = next(item for item in projected if item["session_id"] == "created-session")
+    assert entry["created_at"] == "2026-09-25T21:58:13+00:00"
+    assert entry["started_at"] != entry["created_at"]
     await manager.close()
 
 
@@ -4702,6 +4742,7 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
             effort=None,
             engine="claude",
             label=session.label,
+            created_at=session.created_at,
             started_at=session.started_at,
             updated_at=session.updated_at,
             turn_seq=session.turn_seq,

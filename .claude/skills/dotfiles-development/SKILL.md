@@ -3,7 +3,8 @@ name: dotfiles-development
 description: >
   dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make setup-pwsh`・`make test-browser`を
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、
-  mise trustを要する作業ツリーと状態ディレクトリを扱うとき、commit typeを判定するとき、
+  mise trustを要する作業ツリーと状態ディレクトリを扱うとき、専用worktreeの変更を`atk`で動かすとき、
+  画面を実描画で確かめるとき、commit typeを判定するとき、
   `agent-toolkit:session-review`の参照文書の位置を確認するときに起動する。
 ---
 
@@ -36,7 +37,7 @@ description: >
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する近接検証を先に実行する。公開前の全体検証はCIへ委ね、ローカルでは次の2件を実行する。CIの成功を確認して全体検証の結論を確定する
-    - CIが実行しないチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate`
+    - CIが実行しないチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
     - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの近接検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
   - ユーザーが局所変更の即時公開を明示した場合だけ、即時公開では現在の対象に対応する近接検証の成功を条件として、全体検証とCI成功の待機を省略できる。未完了の類似見直し、横展開又は再発防止がある場合だけ後続処置AWIを登録し、即時修正と同じ要求を複製しない。push後はCIの起動とrun URLを確認し、省略した検証、未確定のCI、run URL及び後続処置AWIを報告する
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
@@ -57,6 +58,14 @@ description: >
 - エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
   実ブラウザーテストを変更した場合は`make test-browser`を実行する
+- 専用worktreeの変更を`atk`で動かす場合（`atk serve`で画面を確かめる場合を含む）は、
+  `<worktreeの絶対パス>/agent-toolkit/bin/atk`を絶対パスで起動する。
+  `agent-toolkit`は`atk`のconsole scriptを持たないため、`uv run atk`とPATH上の`atk`は複製元の
+  `/home/aki/dotfiles/agent-toolkit/bin/atk`へ解決され、複製元のコードが動く。
+  uvが`VIRTUAL_ENV=... does not match the project environment path /home/aki/dotfiles/agent-toolkit/.venv`と警告した場合は、
+  この取り違えが起きている
+- 画面の実描画には、ブラウザー操作ツールに加えて直下環境のPython版Playwright（`uv run --frozen python`から`playwright`を使うスクリプト）を使える。
+  ブラウザー本体は`make setup-browser`が導入し、導入済みの版は`~/.cache/ms-playwright`で確かめる
 - コミットメッセージtypeの判定例: [commit-types.md](../../../docs/development/commit-types.md)
 
 ## 振り返りの参照文書

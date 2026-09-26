@@ -127,6 +127,14 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .app-header .app-nav { grid-column: 2; }
 
+/* WI画面の読み込み表示のような画面固有の要素がナビゲーションの幅を変えると、中央寄せしたリンク群の位置が
+   画面ごとにずれる。画面固有の要素はリンクの配置の外へ置き、寸法の算出方法も3画面でそろえる。 */
+.app-header,
+.app-header * {
+  box-sizing: border-box;
+}
+
+
 .app-header .header-actions {
   grid-column: 3;
   display: flex;
@@ -178,10 +186,10 @@ main > .toolbar {
   background: rgb(0 0 0 / 0.06);
 }
 
+/* 太字は字幅を変え、現在の画面によって後続のリンクがずれるため、背景と枠線だけで現在の画面を示す。 */
 .app-nav a[aria-current="page"] {
   background: rgb(0 0 0 / 0.08);
-  border-color: rgb(0 0 0 / 0.18);
-  font-weight: 600;
+  border-color: rgb(0 0 0 / 0.32);
 }
 
 @media (max-width: 700px) {
@@ -309,13 +317,9 @@ main > .toolbar {
   top: 0;
   z-index: 1;
 }
+/* 広い幅ではスピナーをヘッダー基準の絶対位置へ置くため、枠自体はナビゲーションの幅を占めない。 */
 #screen-wi .nav-loading-slot {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 1.5rem;
-  height: 1.5rem;
-  margin-inline-start: auto;
+  display: contents;
 }
 #screen-wi .nav-loading {
   /* 左欄は幅22rem以上、残り幅との比は0.28:1。両欄の間へアイコンを置く。 */
@@ -335,9 +339,33 @@ main > .toolbar {
   content: "";
 }
 @media (max-width: 1179px) {
-  /* 中央のリンクと境界位置が重なる幅では、予約済みのナビゲーション枠を使う。 */
+  /* 中央のリンクと境界位置が重なる幅では、リンク群の右隣の枠へ置く。枠はリンクの配置の外に置き、
+     ナビゲーションの幅と中央寄せの位置を変えない。広い幅ではスピナーの位置の基準がヘッダーであるため、
+     ナビゲーションを位置の基準にするのはこの幅に限る。 */
+  .app-header .app-nav { position: relative; }
+
+  #screen-wi .nav-loading-slot {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: calc(100% + 4px);
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    transform: translateY(-50%);
+  }
+
   #screen-wi .nav-loading {
     position: static;
+    transform: none;
+  }
+}
+
+@media (max-width: 700px) {
+  /* 1列表示ではナビゲーションが列の幅いっぱいに広がるため、枠をリンク群の後ろの流れへ戻す。 */
+  #screen-wi .nav-loading-slot {
+    position: static;
+    margin-inline-start: auto;
     transform: none;
   }
 }

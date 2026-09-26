@@ -5,6 +5,8 @@ import os
 import pathlib
 import subprocess
 
+import pytest
+
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import _write_transcript
 
@@ -61,6 +63,26 @@ def test_blocks_when_plain_text_requests_instruction(tmp_path: pathlib.Path) -> 
     result = _decision(_run({"session_id": "request", "transcript_path": str(transcript)}, state_dir=tmp_path))
 
     assert result["decision"] == "block"
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        # 条件節の後の依頼表現は、条件が成立したときの手順の案内であり判断を求めていない
+        ("再起動しました。6.12で起動しなかった場合は、Advanced optionsから5.10を選んでください。", False),
+        ("設定を反映しました。再起動後に失敗した場合はお知らせください。", False),
+        # 条件節の無い依頼文は、疑問語の有無によらず判断を求める文として遮断する
+        ("候補を3つ挙げました。以下から選んでください。", True),
+        ("2案を比較しました。どちらの方式にするか選んでください。", True),
+    ],
+)
+def test_request_expression_after_condition_clause_is_not_a_question(tmp_path: pathlib.Path, text: str, blocked: bool) -> None:
+    """依頼表現より前に条件節を持つ文だけを判断要求から外す。"""
+    transcript = _transcript_with_response(tmp_path, text)
+
+    result = _decision(_run({"session_id": "conditional", "transcript_path": str(transcript)}, state_dir=tmp_path))
+
+    assert (result.get("decision") == "block") is blocked
 
 
 def test_allows_delegated_session_to_return_question(tmp_path: pathlib.Path) -> None:

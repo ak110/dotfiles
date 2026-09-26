@@ -120,6 +120,12 @@ def test_statusline_version_develop_push_reaches_version_check(
 ) -> None:
     """developへのpushではmasterとの共通祖先を解決し、statuslineの変更有無を検査する。"""
     checkout, current_sha = _create_statusline_repository(tmp_path, statusline_changed=statusline_changed)
+    # stepはリポジトリ直下の判定スクリプトを相対パスで呼ぶため、検査対象の複製へ同じ位置で置く。
+    scripts = checkout / "scripts"
+    scripts.mkdir()
+    (scripts / "check_statusline_version.py").write_bytes(
+        (_REPOSITORY_ROOT / "scripts" / "check_statusline_version.py").read_bytes()
+    )
     step = next(step for step in _steps(_statusline_job(workflow_data)) if step.get("name") == "statuslineの版数とタグを検査")
     script = step["run"]
     assert isinstance(script, str)

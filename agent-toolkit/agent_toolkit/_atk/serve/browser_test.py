@@ -2826,6 +2826,37 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
 
 
 @pytest.mark.asyncio
+async def test_entry_copy_label_survives_list_reload(screen_harness: _ScreenHarness) -> None:
+    """コピー表示の期間中に一覧の再読込が完了しても、同じ項目のボタンは表示を保ち、期間の終わりに戻る。
+
+    再読込は利用者の操作と無関係な契機（ウィンドウのfocus、SSEの変更通知）でも起きるため、
+    一覧取得の応答を保留してクリックを再描画より先に起こし、再描画後の新しいボタンの表示を確かめる。
+    """
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    row = page.locator("#entry-list .entry-row").first
+    await row.locator(".entry-copy").wait_for(state="visible")
+    release = asyncio.Event()
+
+    async def hold_list_request(route: playwright.async_api.Route) -> None:
+        await release.wait()
+        await route.continue_()
+
+    await page.route("**/api/entries?*", hold_list_request)
+    await row.locator(".entry-copy").evaluate("element => { element.dataset.beforeReload = 'true'; }")
+    await page.evaluate("() => window.dispatchEvent(new Event('focus'))")
+    await row.locator(".entry-copy").click()
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
+
+    release.set()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-copy[data-before-reload]")).to_have_count(0)
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
+    await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピー", timeout=4000)
+    await page.unroute("**/api/entries?*", hold_list_request)
+
+
+@pytest.mark.asyncio
 async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> None:
     """3画面のURLへ直接アクセスしても各画面が描画される。"""
     harness = screen_harness
@@ -3211,6 +3242,51 @@ async def test_header_navigation_is_centered_on_three_screens(screen_harness: _S
         viewport_width = await harness.page.evaluate("document.documentElement.clientWidth")
         # 小数の丸めだけを許容し、片側へ寄る配置を検出する。
         assert abs((box["x"] + box["width"] / 2) - viewport_width / 2) <= 1, path
+
+
+_NAV_LINK_METRICS = """links => links.map(link => {
+  const rect = link.getBoundingClientRect();
+  const style = getComputedStyle(link);
+  return {
+    x: Math.round(rect.x * 100) / 100,
+    y: Math.round(rect.y * 100) / 100,
+    width: Math.round(rect.width * 100) / 100,
+    height: Math.round(rect.height * 100) / 100,
+    style: [style.fontFamily, style.fontSize, style.fontWeight, style.lineHeight, style.padding,
+      style.borderWidth, style.boxSizing].join('|'),
+  };
+})"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
+async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHarness, width: int) -> None:
+    """3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさ及び算出スタイルが一致する。
+
+    navの箱の中心だけを比べると、画面固有の要素がnavの内側でリンク群をずらしても検出できないため、
+    リンク単位で比べる。現在の画面の強調が字幅を変える場合もここで検出する。
+    """
+    page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 800})
+    links = page.locator(".screen:not([hidden]) nav.app-nav a")
+
+    direct: dict[str, object] = {}
+    for path in ("/", "/plans", "/sessions"):
+        await page.goto(screen_harness.base_url + path)
+        await links.first.wait_for(state="visible")
+        direct[path] = await links.evaluate_all(_NAV_LINK_METRICS)
+    assert direct["/plans"] == direct["/"]
+    assert direct["/sessions"] == direct["/"]
+
+    clicked: dict[str, object] = {}
+    await page.goto(screen_harness.base_url + "/")
+    for name, path in (("計画ファイル", "/plans"), ("セッション", "/sessions"), ("ワークアイテム", "/")):
+        await page.locator(".screen:not([hidden]) nav.app-nav").get_by_role("link", name=name).click()
+        await playwright.async_api.expect(
+            page.locator('.screen:not([hidden]) nav.app-nav a[aria-current="page"]')
+        ).to_have_text(name)
+        clicked[path] = await links.evaluate_all(_NAV_LINK_METRICS)
+    assert clicked == direct
 
 
 @pytest.mark.asyncio

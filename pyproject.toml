@@ -135,6 +135,9 @@ colloquial-check = true
 # サブプロジェクト側の設定にagent-doc-toneの定義が無いと当該配下を丸ごとスキップする。
 # 母集団はルートとagent-toolkit/にまたがるため、本コマンドだけサブプロジェクト分割を無効にする。
 agent-doc-tone-subproject-aware = false
+# rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
+# サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
+statusline-version-subproject-aware = false
 # 配布先で常時読み込まれる規範は、配送境界を示すXML要素で本文全体を囲む。
 # 当該要素が先頭行と末尾行を占め、先頭行を見出しに限る規則とインラインHTMLを禁じる規則へ抵触する。
 markdownlint-exclude = [
@@ -269,6 +272,15 @@ targets = [
     ".agents/skills/*/*.md",
     ".agents/skills/*/*/*.md",
 ]
+
+[tool.pyfltr.custom-commands.statusline-version]
+type = "linter"
+path = "scripts/check_statusline_version.py"
+pass-filenames = false
+# prekのpre-commitが実行する`pyfltr fast`で版数更新前の途中commitを遮断しないよう、fastにしない。
+# レーンの近接検証（`pyfltr run <変更ファイル>`）と公開前の「CIが実行しないチェック」で起動する。
+# pyfltrのPath.matchは`**`を任意階層として扱わないため、Git管理下にある深さを明示する。
+targets = ["rust/claude-statusline/*", "rust/claude-statusline/src/*"]
 
 [tool.pylint."messages control"]
 disable = [

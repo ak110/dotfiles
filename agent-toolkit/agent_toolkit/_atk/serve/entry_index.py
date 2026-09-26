@@ -10,6 +10,11 @@
 更新から2秒以内に読んだ解析結果は信用せずに次の走査で読み直し、書き換えが止まって2秒が過ぎた後に
 読み直した解析結果から再利用する。追加で読み直すのは更新から2秒以内のファイルだけであり、
 変更の無いファイルを読み直さない高速化は維持する。
+
+索引は状態ディレクトリごとに保持し、走査した状態の分だけを差し替える。activeとadoptedのように
+異なる状態を交互に走査しても、走査していない状態の索引は保持する。
+本文から導く値のうち計算の重いもの（終端項目の処理日時など）は、解析結果ごとの`derived`へ
+呼び出し側が保存し、ファイルが変わらない限り再計算しない。
 """
 
 import dataclasses
@@ -37,6 +42,8 @@ class IndexedEntry:
     metadata: dict[str, typing.Any]
     kind: str | None
     updated_at: str
+    derived: dict[str, typing.Any]
+    """本文から導いた値の保存先。同じ解析結果を再利用する間は同じ辞書を共有する。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -47,6 +54,7 @@ class _ParsedFile:
     text_folded: str
     metadata: dict[str, typing.Any]
     kind: str | None
+    derived: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,7 +73,7 @@ class EntryIndex:
 
     def __init__(self, private_notes: pathlib.Path) -> None:
         self._private_notes = private_notes
-        self._cache: dict[pathlib.Path, _CacheEntry] = {}
+        self._cache: dict[str, dict[pathlib.Path, _CacheEntry]] = {}
         self._lock = threading.Lock()
 
     def scan(self, states: typing.Iterable[str]) -> tuple[list[IndexedEntry], list[dict[str, str]]]:
@@ -76,10 +84,12 @@ class EntryIndex:
     def _scan_locked(self, states: typing.Iterable[str]) -> tuple[list[IndexedEntry], list[dict[str, str]]]:
         result: list[IndexedEntry] = []
         warnings: list[dict[str, str]] = []
-        next_cache: dict[pathlib.Path, _CacheEntry] = {}
         # ファイルのstatより前に取得し、解析結果の信用判定を保守的にする。
         scan_started_ns = time.time_ns()
         for state in states:
+            previous_cache = self._cache.get(state, {})
+            next_cache: dict[pathlib.Path, _CacheEntry] = {}
+            self._cache[state] = next_cache
             directory = self._private_notes / state
             try:
                 with os.scandir(directory) as iterator:
@@ -98,7 +108,7 @@ class EntryIndex:
                 except OSError:
                     warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
                     continue
-                cached = self._cache.get(real_path)
+                cached = previous_cache.get(real_path)
                 if (
                     cached is None
                     or not cached.trusted
@@ -143,7 +153,7 @@ class EntryIndex:
                         metadata=cached.parsed.metadata,
                         kind=cached.parsed.kind,
                         updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
+                        derived=cached.parsed.derived,
                     )
                 )
-        self._cache = next_cache
         return result, warnings

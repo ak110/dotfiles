@@ -40,6 +40,8 @@ except ImportError as _import_error:
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
+# Claude Codeのサブエージェントが報告本文を呼び出し元へ渡すツールの名前。
+_HANDBACK_TOOL = "SubagentHandback"
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
     r"\s*(?:\d+\t)?(?:"
@@ -578,6 +580,11 @@ def _claude_entry_events(
                 event = _event("assistant", text)
                 if event:
                     events.append(event)
+            for text in _handback_messages(message.get("content")):
+                event = _event("assistant", text)
+                if event:
+                    event["handback"] = True
+                    events.append(event)
 
     completion = _completion_event(entry)
     if completion:
@@ -759,12 +766,37 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
     return event
 
 
+def _handback_messages(content: Any) -> list[str]:
+    """Claude Codeのサブエージェントが`SubagentHandback`で呼び出し元へ渡した報告本文を返す。"""
+    if not isinstance(content, list):
+        return []
+    messages: list[str] = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_use" or block.get("name") != _HANDBACK_TOOL:
+            continue
+        block_input = block.get("input")
+        message = block_input.get("message") if isinstance(block_input, dict) else None
+        if isinstance(message, str):
+            messages.append(message)
+    return messages
+
+
 def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """最終結果への置換と連番付けを行う。"""
-    for event in reversed(events):
-        if event["kind"] == "assistant" and event.get("phase") != "commentary":
-            event["kind"] = "final-result"
-            break
+    """最終結果への置換と連番付けを行う。
+
+    Claude Codeのサブエージェントは報告本文を`SubagentHandback`の引数で渡し、その後に定型文だけを書く。
+    同呼び出しを持つ記録では、最後の同呼び出しの本文を最終結果とする。
+    """
+    handbacks = [event for event in events if event.get("handback")]
+    if handbacks:
+        handbacks[-1]["kind"] = "final-result"
+    else:
+        for event in reversed(events):
+            if event["kind"] == "assistant" and event.get("phase") != "commentary":
+                event["kind"] = "final-result"
+                break
+    for event in events:
+        event.pop("handback", None)
     for sequence, event in enumerate(events, start=1):
         event["sequence"] = sequence
     return events
@@ -2091,8 +2123,20 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
                 seen.add(warning_body)
                 result.append(warning_body)
             continue
+        # コマンドが表示した文書のコードフェンス内は過去の出力の引用であり、実行時の警告ではない。
+        # hook記録と構造化された警告値は文書の表示を含まないため、この判定の外に置く。
+        skip_fenced = marker_only and not from_hook_record
+        in_fence = False
         for line in text.splitlines():
             stripped = line.strip()
+            if skip_fenced:
+                numbered_line = _LINE_NUMBER_PREFIX.match(line)
+                unnumbered = (numbered_line.group(1) if numbered_line else line).strip()
+                if unnumbered.startswith(("```", "~~~")):
+                    in_fence = not in_fence
+                    continue
+                if in_fence:
+                    continue
             if not stripped or not (not marker_only or _WARNING_LINE_PATTERN.search(line)):
                 continue
             if _HOOK_NOTICE_MARKER.search(line) and not from_hook_record:

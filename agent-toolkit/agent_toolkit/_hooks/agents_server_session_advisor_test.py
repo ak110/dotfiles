@@ -344,6 +344,20 @@ def test_waiting_declaration_for_the_session_satisfies_observation(tmp_path: pat
     assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}") == ""
 
 
+def test_waiting_declaration_resolves_later_stops_until_new_work(tmp_path: pathlib.Path) -> None:
+    """待機表明で解消したsessionは、自動再開で受け取った後の終了でも警告せず、新しい作業の配送で再び警告する。"""
+    local_session_id = "waiting-declared-later"
+    remote_session_id = "remote-waiting-declared-later"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+
+    assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}") == ""
+    assert _run_stop(tmp_path, local_session_id, last_assistant_message="実装完了\n検証結果: 終了コード0") == ""
+
+    _record_send_message(tmp_path, local_session_id, remote_session_id)
+
+    assert _WARNING_BODY in _run_stop(tmp_path, local_session_id, last_assistant_message="実装完了")
+
+
 def test_waiting_declaration_for_another_session_still_warns(tmp_path: pathlib.Path) -> None:
     """待機表明が別のsessionを指す場合は未観測のsessionを警告する。"""
     local_session_id = "waiting-other"

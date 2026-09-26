@@ -24,6 +24,7 @@ def test_custom_linter_paths_and_filename_contracts() -> None:
         "powershell-analyzer": True,
         "claude-plugin-validate": True,
         "agent-doc-tone": True,
+        "statusline-version": False,
     }
     for name, pass_filenames in expected.items():
         definition = commands[name]

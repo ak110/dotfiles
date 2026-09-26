@@ -57,7 +57,7 @@ AWIが明示するPR又はMR、release、tag、配布等のうち、起動文で
 
 ```text
 終端完了
-overall_verification: <通常は「CI判定」又は「ローカル成功」のいずれかだけ。即時対応は近接検証のコマンドと終了コード>
+overall_verification: <通常は、全体検査をローカルで実行せずCIの結果で判定した場合は「CI判定」、タスクランナーが定める全体検査をローカルで実行した場合は「ローカル成功」。即時対応は近接検証のコマンドと終了コード>
 ci_verified_head: <CI対象commitの7文字以上の一意な短縮OID>
 final_branch_head: <ベースbranchの追跡refが指す7文字以上の一意な短縮OID>
 ci_result: <通常は成功又は失敗。即時対応は「待機省略」とrun URL>

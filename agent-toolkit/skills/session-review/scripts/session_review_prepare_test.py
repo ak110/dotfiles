@@ -163,12 +163,13 @@ def test_material_body_contract(
     _install_atk_stub(monkeypatch, tmp_path)
     work_dir = _work_dir(tmp_path)
     target_repo = _git_repository(tmp_path / "repo")
+    transcript = _write_claude_transcript(tmp_path)
 
     assert (
         prepare.main(
             [
                 "--transcript",
-                str(_write_claude_transcript(tmp_path)),
+                str(transcript),
                 "--work-dir",
                 str(work_dir),
                 "--target-repo",
@@ -206,6 +207,9 @@ def test_material_body_contract(
     assert "analysis_group_hint" not in body
     assert "candidate-evidence" not in body
     assert "make test" not in body
+    # 素材で直接原因を確定できない候補の照会に使うため、抽出器へ渡せるtranscriptの絶対パスを参考情報へ載せる。
+    reference = body.split("## 参考情報", 1)[1]
+    assert f"`{transcript.resolve()}`" in reference
 
     decisions_path = tmp_path / "decisions.json"
     assert decisions_module.main(["--material", str(material_path), "--output", str(decisions_path)]) == 0
@@ -277,6 +281,7 @@ def test_prepare_submits_material_awi_codex(
     adds = [call for call in _calls(log_path) if call["arguments"][:2] == ["wi", "add"]]
     assert len(adds) == 1
     assert f"# セッションCodex {thread_id}の振り返り素材" in adds[0]["body"]
+    assert f"thread ID: `{thread_id}`" in adds[0]["body"].split("## 参考情報", 1)[1]
 
 
 def test_prepare_skips_submission_without_material(

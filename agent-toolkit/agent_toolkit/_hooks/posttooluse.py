@@ -645,6 +645,17 @@ def _background_task_id_from_response(value: object) -> str | None:
     return None
 
 
+def _structured_background_task_id(value: object) -> str | None:
+    """Bash応答の最上位にある構造化`backgroundTaskId`を返す。
+
+    前景実行の出力本文に同じ文言が現れても所有の根拠にしないため、本文の文字列照合は行わない。
+    """
+    if not isinstance(value, dict):
+        return None
+    task_id = value.get("backgroundTaskId")
+    return task_id if isinstance(task_id, str) and task_id else None
+
+
 def _record_background_task_id(session_id: str, task_id: str) -> None:
     """自セッションのツール呼び出しが返した背景タスクのIDを記録する。
 
@@ -893,8 +904,12 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         return 0
     if tool_input.get("run_in_background"):
         task_id = _background_task_id_from_response(payload.get("tool_response"))
-        if task_id is not None:
-            _record_background_task_id(session_id, task_id)
+    else:
+        # 実行上限に達した前景のBashを実行ホストが背景へ移した場合も、応答は構造化`backgroundTaskId`を返す。
+        # 当該タスクは自セッションが起動したものであり、TaskStopの所有判定へ含める。
+        task_id = _structured_background_task_id(payload.get("tool_response"))
+    if task_id is not None:
+        _record_background_task_id(session_id, task_id)
 
     _handle_bash_tool(session_id, command, owner_agent_id=resolve_hook_agent_id(payload))
     _record_bash_response_state(session_id, command, payload.get("tool_response"))

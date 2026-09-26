@@ -1,8 +1,8 @@
 ---
 name: session-review
 description: >
-  最上位セッションのメインエージェントが、ユーザーの手動起動又は
-  agent-toolkit:completion-reportからの明示呼び出しで起動する。
+  最上位セッションのメインエージェントが、ユーザーの手動起動、agent-toolkit:completion-reportからの
+  明示呼び出し又はagent-toolkit:process-wiの公開工程からの明示呼び出しで起動する。
 ---
 
 # セッション振り返り
@@ -18,21 +18,21 @@ description: >
 
 ## 工程
 
-1. `atk managed-temp create --prefix session-review`で作業領域を作成し、その直下の`main-observations.md`へ、自身のコンテキストから探した改善点を列挙する。
+1. セッション領域（`agent-toolkit:managed-temp`）の中へ、実行ごとに異なる名前（`session-review-<準備時刻>`など）の作業ディレクトリを作成し、その直下の`main-observations.md`へ、自身のコンテキストから探した改善点を列挙する。同じセッションで振り返りを再実行した場合に前回の素材を上書きしないよう、名前を実行ごとに変える。
    機械的な抽出は標識を残す事象だけを対象とする。推測で組んだコマンドの試行錯誤、同じ資料の読み直し、採用した設計の書き直し、規範の解釈へ費やした工程、委譲先への指示不足による手戻りは候補に現れず、観測できるのはその判断を下したメイン自身のコンテキストだけである。
    探す対象はそのセッション全体とし、観点を問わず探す。抽出器が拾う事象と重複してよい。改善点は行頭を`-`とした1項目1行で書き、その改善で防げる事象と、その事象が生じた工程を書く。記録位置の特定は任意とする。
-   会話圧縮でコンテキストから失われた区間がある場合は、その区間を列挙の対象外とした旨を同じファイルへ書く。列挙が0件の場合は空ファイルを作成する。
+   会話圧縮でコンテキストから失われた区間がある場合は、その区間を列挙の対象外とした旨を同じファイルへ書く。対象外とするのはメイン自身の列挙だけであり、その区間の事象は機械的な抽出と、素材を処理するレーンの原因分析の対象に残る。列挙が0件の場合は空ファイルを作成する。
 2. 準備スクリプトを次のいずれか1つの形で1回実行する。Claude Codeで把握している現在のtranscript絶対パスを`--transcript`へ渡し、Codexでは`CODEX_THREAD_ID`を`--codex-thread-id`へ渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
 
    ```text
-   atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --work-dir <作業領域の絶対パス> --target-repo <対象リポジトリの絶対パス>
-   atk run-script session-review-prepare -- --codex-thread-id <thread ID> --work-dir <作業領域の絶対パス> --target-repo <対象リポジトリの絶対パス>
+   atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>
+   atk run-script session-review-prepare -- --codex-thread-id <thread ID> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>
    ```
 
    準備スクリプトは証拠抽出、統計と既存キュー項目の取得、素材AWI本文の生成及び`atk wi add --source session-review`による投入までを行い、標準出力の1行JSONへ結果を返す。
    JSONは`submitted`、`awi_filename`、`material_path`、`candidate_total`、`candidate_counts`（候補種別ごとの件数）、`main_observation_count`、`elapsed_seconds`、`compaction_count`を持つ。候補も改善点も無い場合は投入せず、`skipped_reason`へ理由を返す。`--target-repo`を省いた場合は本文を`material_path`へ生成し、投入は省く。
    終了コードが0でない場合と、標準出力が1行のJSONではない場合は`## 分析失敗`へ進む。
-3. JSONの値を`agent-toolkit:completion-report`の振り返り結果報告へ反映する。報告の出力後に作業領域を`atk managed-temp cleanup --path <作業領域の絶対パス>`で回収する。
+3. JSONの値を`agent-toolkit:completion-report`の振り返り結果報告へ反映する。作業ディレクトリは回収しない。
 
 振り返り工程の所要時間目標は300秒とする。計測範囲は本スキルの起動から、素材AWIの投入成功と振り返り結果報告の出力までとする。目標は完了条件の外に置き、超過は素材AWIを処理するレーンの所要時間の分析で改善の起点として扱う。
 
@@ -47,7 +47,7 @@ description: >
 - `## メイン由来の改善点`: `main-observations.md`の全文
 - `## セッション統計`: 経過秒、律速区間、コンパクションの回数と秒、agent thread別の経過秒と応答回数、遅い呼び出しの上位
 - `## 既存キュー項目`: 対象リポジトリの未終端の項目、採用済みの振り返り由来の項目及び回答済みのUWIのファイル名と要約
-- `## 参考情報`: 対象リポジトリ固有の振り返り参照文書の絶対パス、対象セッションの実行系と識別子、準備時刻
+- `## 参考情報`: 対象リポジトリ固有の振り返り参照文書の絶対パス、対象セッションの実行系と記録の所在（抽出器へ渡せるClaude Codeのtranscriptの絶対パス又はCodexのthread ID）、準備時刻。処理側は通常これらを開かず、素材で直接原因を確定できない候補に限り記録を照会する
 
 `## 反映内容と反映先`は処理手順を定める`references/lane-processing.md`の絶対パスと対象リポジトリを示し、`## 完成条件`は全候補の判定、再発防止策の対応付け及び項目専用の事後承認型UWIの投入とする。
 候補は抽出器が生成する。抽出器は対象セッション自身の常駐処理、再開機構、実行環境が生成した定時prompt、委譲先の入力、初期要求、提示した選択肢をそのまま選んだ確認への回答を利用者介入の候補から除き、block又はwarn以外の区分を持つhook出力を候補から除く。選択肢のいずれとも一致しない回答と自由記述を伴う回答は候補に残す。

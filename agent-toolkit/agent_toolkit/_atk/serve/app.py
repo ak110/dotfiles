@@ -55,6 +55,9 @@ _RECENT_REPO_RETENTION = datetime.timedelta(days=7)
 `atk wi process-loop`が10分間隔で更新する先例に対し、
 Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
+# 別のホストで記録した処理日時と、このホストのファイル更新時刻の時計のずれを吸収する余裕。
+_PROCESSED_TIME_CLOCK_MARGIN = datetime.timedelta(days=1)
+_PROCESSED_AT_KEY = "terminal_processing_time"
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
 logger = logging.getLogger(__name__)
 # エンドユーザーが記述する注記記法を注記として描画する。
@@ -564,7 +567,13 @@ class Operations:
         cutoff = current_time - _RECENT_REPO_RETENTION
         for indexed in indexed_entries:
             if status == "active" and indexed.state not in common.WI_ACTIVE_STATES:
-                processed_at = _terminal_processing_time(indexed.text)
+                # 処理日時は書込時に記録されるため、ファイルの更新時刻より後にならない。
+                # 更新時刻が境界より十分前の終端項目は本文を解析せずに除く。
+                if datetime.datetime.fromisoformat(indexed.updated_at) < cutoff - _PROCESSED_TIME_CLOCK_MARGIN:
+                    continue
+                if _PROCESSED_AT_KEY not in indexed.derived:
+                    indexed.derived[_PROCESSED_AT_KEY] = _terminal_processing_time(indexed.text)
+                processed_at = indexed.derived[_PROCESSED_AT_KEY]
                 if processed_at is None or not cutoff <= processed_at <= current_time:
                     continue
             target_repo = indexed.metadata.get("target_repo")
