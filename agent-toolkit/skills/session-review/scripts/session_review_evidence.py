@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 try:
+    from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
     from agent_toolkit._atk import config as _atk_config
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
@@ -920,10 +921,9 @@ _THREAD_ID_KEYS = ("session_id", "sessionId", "threadId", "conversationId")
 # 新しい委譲記録の発見元は子sessionを生成する起動ツールに限る。
 # 既存session操作と外側実行セルの入力文字列は、新しい委譲の証拠にならない。
 _AGENTS_SERVER_TOOL_NAMES = frozenset(
-    {
-        *(f"mcp__plugin_agent-toolkit_agents_server__{name}" for name in ("start", "start_explore", "start_shell")),
-        *(f"mcp__agents_server__{name}" for name in ("start", "start_explore", "start_shell")),
-    }
+    f"{namespace}{name}"
+    for namespace in _agents_server_tool_names.MCP_NAMESPACES
+    for name in _agents_server_tool_names.START_OPERATIONS
 )
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
 

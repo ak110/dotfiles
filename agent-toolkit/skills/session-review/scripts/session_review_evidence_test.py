@@ -4165,6 +4165,65 @@ def test_stats_resolves_claude_session_from_codex_rollout_tool_result(
     assert _events_by_kind(events, "stats-total")[0]["agent_thread_counts"] == {"claude": 1}
 
 
+def test_collect_includes_start_custom_and_start_write_delegates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`start_custom`と`start_write`で起動した委譲先も収集し、記録の無い委譲先は`unresolved-record`にする。"""
+    custom_session = "claude-session-custom-1111"
+    write_session = "agy-session-write-2222"
+    home = tmp_path / "home"
+    custom_transcript = home / ".claude" / "projects" / "repo" / f"{custom_session}.jsonl"
+    custom_transcript.parent.mkdir(parents=True)
+    delegate_request = {
+        "type": "user",
+        "timestamp": "2026-08-19T00:00:01Z",
+        "message": {"role": "user", "content": "委譲先への依頼"},
+    }
+    custom_transcript.write_text(
+        json.dumps(delegate_request)
+        + "\n"
+        + json.dumps(_assistant_usage_entry("2026-08-19T00:00:02Z", "custom-message", _usage(4, 5)))
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_tool_use_entry(
+                "2026-08-19T00:00:00Z",
+                "call-custom",
+                custom_session,
+                tool_name="mcp__plugin_agent-toolkit_agents_server__start_custom",
+            ),
+            _codex_tool_result_entry("2026-08-19T00:00:01Z", "call-custom", custom_session, engine=None),
+            _codex_tool_use_entry(
+                "2026-08-19T00:00:03Z",
+                "call-write",
+                write_session,
+                tool_name="mcp__plugin_agent-toolkit_agents_server__start_write",
+            ),
+            _codex_tool_result_entry("2026-08-19T00:00:04Z", "call-write", write_session, engine=None),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    stats_events = _read_jsonl(capsys, raw=True)
+    assert [event["session_id"] for event in _events_by_kind(stats_events, "stats-agent-thread")] == [custom_session]
+    assert _events_by_kind(stats_events, "unresolved-record") == [
+        {"kind": "unresolved-record", "record": write_session, "line": 4}
+    ]
+
+    assert evidence.main([str(transcript)]) == 0
+    default_events = _read_jsonl(capsys, raw=True)
+    assert f"claude:{custom_session}" in {event.get("record") for event in default_events}
+    assert _events_by_kind(default_events, "unresolved-record") == [
+        {"kind": "unresolved-record", "record": write_session, "line": 4}
+    ]
+
+
 def test_collect_resolves_codex_agents_server_delegations(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
