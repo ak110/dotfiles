@@ -64,7 +64,6 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 通知本文が指示する処置を特定の主体種別又は作業ツリー種別だけが実行できる場合は、その種別の判定を発火条件へ含める。
 主体種別はhook payloadの`agent_id`と委譲先セッションの環境変数、作業ツリー種別はGitへの照会から確定する。
 判定を省くと、その処置の権限も所有も持たない主体が通知を受け取り、呼び出し元への差し戻しだけで終わる工程が発火のたびに生じる。
-同じ要因で、回答済みUWIの反映を指示する通知とversion bumpを指示する警告が、いずれも処置できない委譲先とレーン用worktreeへ届いた。
 判定入力を解決できない場合は、その通知を出力する側へ倒す。
 
 遮断してよいのは、その操作を通すと復元できない結果が残り、かつ実行主体が同じターンで`fix`の文面どおりに再実行して是正できる場合に限る。
@@ -195,7 +194,6 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 PreToolUseの処理は、`send_message`・`kill`の保存済みsessionのチェックまでとし、開始ツールの入力妥当性検証は実行基盤へ委ねる。入力の実行権限値はそのまま渡す。
 `wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
 PostToolUseは成功した開始ツール（`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
-旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` の用途は移行説明と保護対象の識別に限る。
 
 エージェントへ特定の行動・引数を要求するblock又はwarnは、要求する要件を実行主体が発火前に読み得る規範文書（常時ロードのルール、またはその作業で起動されるスキルの本文・参照文書）へ明示する。要件の初出は、その規範文書側に置く。
 全てのblockとwarnは、対象環境で文書化済みの正式コマンド形（スキル・`AGENTS.md`・タスクランナー定義が指定する起動形）への発動有無を確認し、規範どおりの通常操作では発火しない判定条件にする。
@@ -299,6 +297,9 @@ Codex rolloutのtranscript形式は安定インターフェースではないた
   起動側の処理へ渡す一時ファイルのパス
 - `AGENT_TOOLKIT_DELEGATED_SESSION`: 委譲先として起動したセッションであることを示す印。常駐実行の終了保証を最上位セッションへ限定する判定に使う
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得又は作成した計画バンドルの所有として記録する、委譲元セッションの識別子。`agents_server`が起動した子だけが持つため、Codex backendの委譲先を含めてメイン向け規範の追加を省く判定にも使う
+- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションであることを示す印（値`1`）。セッション終了コマンドを起動せずに終えるターンの検知（`autonomous_exit`）、無進捗の反復の検知と停止（`busy_loop_guard`）、計画保存の通知の抑止（`plan_save_advisor`）、セッション名の固定値（`user_prompt_submit`）の判定に使う
+- `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインのセッション開始時の文脈へ置く
+- `AGENT_TOOLKIT_LARGE_READ_LINES`・`AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBashによる全文取得を分割読取へ誘導する`pretooluse/large_reads`の行数とバイト数の閾値。正の整数だけを採用し、それ以外は既定値を使う
 
 ## メッセージの記述言語
 

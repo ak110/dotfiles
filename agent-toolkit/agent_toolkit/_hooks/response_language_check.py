@@ -49,7 +49,7 @@ _MACHINE_IDENTIFIER_PATTERN = re.compile(
 )
 
 # 機械可読な返却行。小文字のsnake_case識別子だけの行と、当該識別子をキーとする`<キー>: <値>`行を対象とする。
-# `agent-toolkit/rules/02-agent-operations.md`「委譲時の厳守事項」は、委譲先がチェックポイント又は
+# `agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」は、委譲先がチェックポイント又は
 # 完了報告でターンを終える場合に指定形式の文面だけを出力し地の文を加えないことを求める。
 # 当該形式（`status: checkpoint`などのcheckpointブロック、`merged_head:`などの統合結果、
 # `needs_escalation`の単独返却）は英字だけで構成されるため、地の文へ残すと英語応答と判定され、
