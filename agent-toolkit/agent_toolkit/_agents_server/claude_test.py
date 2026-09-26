@@ -138,7 +138,10 @@ def test_build_options_loads_user_hooks_for_every_launch(
     monkeypatch: pytest.MonkeyPatch,
     launch_kind: claude.LaunchKind,
 ) -> None:
-    """全起動区分でユーザー設定のplugin hookを読み、軽量起動の道具を限定する。"""
+    """全起動区分でユーザー設定のplugin hookを読み、軽量起動の道具を限定し、部分出力を受け取る。
+
+    部分出力を受け取らないと、`start`の可用性待機を打ち切るAPIの応答開始が届かない。
+    """
     captured = _capture_options(monkeypatch)
 
     claude._build_options(  # pylint: disable=protected-access
@@ -146,6 +149,7 @@ def test_build_options_loads_user_hooks_for_every_launch(
     )
 
     assert captured["setting_sources"] == (["user", "project"] if launch_kind == "delegate" else ["user"])
+    assert captured["include_partial_messages"] is True
     if launch_kind != "delegate":
         assert captured["skills"] == []
         assert captured["allowed_tools"] == claude._LAUNCH_ALLOWED_TOOLS[launch_kind]  # pylint: disable=protected-access

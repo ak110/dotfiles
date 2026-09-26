@@ -358,7 +358,9 @@ def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[su
     return manager, backend
 
 
-def _install_backend(manager: subject.AgentsServerManager, engine: str, backend: FakeBackend) -> None:
+def _install_backend(
+    manager: subject.AgentsServerManager, engine: str, backend: FakeBackend | claude_backend.ClaudeServerManager
+) -> None:
     """指定engineのバックエンドを差し替える。"""
     if engine == "codex":
         manager._codex = backend
@@ -3838,6 +3840,21 @@ class MultipleBlockAssistantMessage:
         self.content = [SimpleNamespace(text=text) for text in texts]
 
 
+class StreamEvent:
+    """Claude SDKの部分出力イベントの偽型。"""
+
+    def __init__(self, event_type: str) -> None:
+        self.event = {"type": event_type}
+
+
+class ErrorAssistantMessage(AssistantMessage):
+    """API失敗を表すClaude assistantメッセージの偽型。"""
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.error = "rate_limit"
+
+
 class ResultMessage:
     """Claude SDK resultメッセージの偽型。"""
 
@@ -3892,6 +3909,20 @@ class DelayedClaudeClient(FakeClaudeClient):
                 if index:
                     await asyncio.sleep(0.08)
                 yield message
+
+        return stream()
+
+
+class OpenStreamClaudeClient(FakeClaudeClient):
+    """指定したメッセージを返した後、結果を返さずにstreamを開いたまま保つ偽クライアント。"""
+
+    def receive_messages(self):
+        messages = self.streams.pop(0)
+
+        async def stream():
+            for message in messages:
+                yield message
+            await asyncio.Event().wait()
 
         return stream()
 
@@ -4692,6 +4723,59 @@ async def test_claude_message_gap_does_not_cancel_stream(monkeypatch: pytest.Mon
     finally:
         await manager.close()
     assert client.disconnected is True
+
+
+async def _start_claude_until_available(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    messages: list[Any],
+    availability_timeout: float,
+) -> tuple[dict[str, Any], float, bool]:
+    """指定メッセージの後に結果を返さないClaude sessionを`start`で起動し、応答、所要秒数、モデル出力の観測を返す。"""
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", availability_timeout)
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")]
+    )
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    client = OpenStreamClaudeClient([messages])
+    manager = subject.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
+    _install_backend(manager, "claude", backend)
+    loop = asyncio.get_running_loop()
+    try:
+        started = loop.time()
+        response = await manager.start("plan", "調査", str(tmp_path))
+        elapsed = loop.time() - started
+        return response, elapsed, backend.sessions[response["session_id"]].model_output_observed
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_start_returns_on_message_start(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """APIの応答開始を受信した時点で、完成したメッセージを待たずに`start`の可用性待機を終える。"""
+    response, elapsed, observed = await _start_claude_until_available(
+        monkeypatch, tmp_path, [SystemMessage("claude-streaming"), StreamEvent("message_start")], 5.0
+    )
+
+    assert response["session_id"] == "claude-streaming"
+    assert elapsed < 2.0
+    assert observed
+
+
+@pytest.mark.asyncio
+async def test_claude_start_ignores_non_start_stream_events(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """応答開始以外の部分出力とAPI失敗のメッセージでは、可用性待機を上限まで続ける。"""
+    messages = [
+        SystemMessage("claude-unstarted"),
+        StreamEvent("content_block_delta"),
+        ErrorAssistantMessage("API Error: 429 rate limit"),
+    ]
+    response, elapsed, observed = await _start_claude_until_available(monkeypatch, tmp_path, messages, 0.3)
+
+    assert response["session_id"] == "claude-unstarted"
+    assert elapsed >= 0.3
+    assert not observed
 
 
 @pytest.mark.asyncio
