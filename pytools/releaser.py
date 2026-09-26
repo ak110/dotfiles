@@ -606,13 +606,27 @@ def _watch_run(
 
 
 def _sync_local_repo() -> None:
-    """originだけを取得し、上流branchへfast-forwardする。
+    """現在branchのupstreamが属するリモートだけを取得し、上流branchへfast-forwardする。
 
     `fetch.all`が有効なリポジトリでは引数なしの`git fetch`・`git pull`が全リモートを取得するため、
-    到達できない追加リモートがあるとリリース完了後の同期だけが失敗する。取得先をoriginへ限定する。
+    到達できない追加リモートがあるとリリース完了後の同期だけが失敗する。取得先はリモートを明示して1つに限定する。
+    限定先は`@{upstream}`と同じ`branch.<branch>.remote`から求める。固定名で取得すると、upstreamが別のリモートを
+    指す構成では取得されない古い追跡参照へのfast-forwardが成功扱いで終わり、ローカルが最新化されない。
     """
     logger.info("ローカルリポジトリを最新化する。")
-    subprocess.run(["git", "fetch", "origin", "--tags", "--prune"], check=True)
+    branch = _get_current_branch()
+    result = subprocess.run(
+        ["git", "config", "--get", f"branch.{branch}.remote"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    remote = result.stdout.strip()
+    if result.returncode != 0 or not remote:
+        raise _ReleaserError(f"ブランチ '{branch}' に上流ブランチが設定されていないため、ローカルリポジトリを同期できません。")
+    subprocess.run(["git", "fetch", remote, "--tags", "--prune"], check=True)
     subprocess.run(["git", "merge", "--ff-only", "@{upstream}"], check=True)
 
 
