@@ -15,7 +15,7 @@ description: >
 
 ## 開発手順
 
-- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新、prek autoupdate、mise lock、pinactアクション更新及び全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
+- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新及び全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体の自動チェックが必要な場合の実行方法: `make test`
   - 全体の自動チェックを起動する際は`agent-toolkit:check-execution`をSkill機能で起動し、`agents_server`の`start_shell`へ`make test`を渡す。委譲先の出力保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する

@@ -8,6 +8,7 @@ help:
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	env --unset=UV_FROZEN uv sync --upgrade --all-groups --all-extras
+	env --unset=UV_FROZEN uv lock --upgrade --project agent-toolkit
 	mise exec -- prek autoupdate
 	$(MAKE) update-mise-locks
 	$(MAKE) update-actions
