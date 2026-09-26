@@ -6315,12 +6315,85 @@ def test_bundle_keeps_final_text_of_finished_delegate(
                 "type": "user",
                 "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}]},
             },
-            _assistant_text("status: completed\noutput_file: /tmp/out.md"),
+            _assistant_text("調査結果を報告する。\n対象の関数は3件だった。"),
         ],
     )
     capsys.readouterr()
 
-    assert texts == ["status: completed\noutput_file: /tmp/out.md"]
+    assert texts == ["調査結果を報告する。\n対象の関数は3件だった。"]
+
+
+@pytest.mark.parametrize(
+    ("final_text", "expected"),
+    [
+        ("status: completed\noutput_file: /tmp/out.md", []),
+        (
+            "統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した",
+            ["統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した"],
+        ),
+    ],
+)
+def test_bundle_excludes_delegate_returns_that_only_report_success(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    final_text: str,
+    expected: list[str],
+) -> None:
+    """`--bundle`の候補から成功の定型形式だけの返却を除き、想定外事象を持つ定型返却は残す。"""
+    texts = _bundle_delegate_return_texts(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "委譲された依頼"}},
+            _assistant_text(final_text),
+        ],
+    )
+    capsys.readouterr()
+
+    assert texts == expected
+
+
+def test_bundle_reports_hook_blocked_tool_call_as_hook_notice(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """hookが遮断したツール呼び出しの失敗を、`--bundle`の候補でhook通知として発生源と区分を付けて返す。"""
+    blocked = (
+        "PreToolUse:TaskStop hook error: [uv run hook.py pretooluse]: "
+        '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="block">'
+        "blocked: 所有記録の無いタスクの停止</agent-toolkit-auto-inserted>"
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "call-1", "name": "TaskStop", "input": {"task_id": "t1"}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": blocked}],
+                },
+            },
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    capsys.readouterr()
+
+    records = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    candidates = [record for record in records if record["kind"] == "candidate"]
+    assert [(record["candidate_kind"], record["event_key"][0], record["event_key"][2]) for record in candidates] == [
+        ("hook-notice", "agent-toolkit/pretooluse", "block")
+    ]
+    assert "所有記録の無いタスクの停止" in candidates[0]["text"]
 
 
 def test_claude_main_record_keeps_only_completion_from_subagent_entries(tmp_path: pathlib.Path) -> None:

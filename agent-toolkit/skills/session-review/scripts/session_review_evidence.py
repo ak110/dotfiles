@@ -103,10 +103,13 @@ _HOOK_XML_END_MARKER = re.compile(r"</(?:agent-toolkit-auto-inserted|agent-toolk
 _CANDIDATE_KIND_LENGTH = 80
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
-# 本文の可変部（語頭から始まるパスと、UWI識別子・行番号・トークン数などの数値）。種別キーの分裂を防ぐため置換する。
+# 本文の可変部（語頭から始まるパス、session識別子などのUUID、UWI識別子・行番号・トークン数などの数値）。
+# 種別キーの分裂を防ぐため置換する。UUIDは英字を含み数値の置換だけでは1件ごとに別の種別へ分かれるため、数値より先に置換する。
 # パスは語頭に限定するが、数値列は語頭・語中を問わず置換するため、`github.com/ak110/dotfiles`のような
 # 固定の識別子も数値部分が置換される。
-_CANDIDATE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
+_CANDIDATE_VARIABLE = re.compile(
+    r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b|\d+"""
+)
 _CANDIDATE_VARIABLE_PLACEHOLDER = "<var>"
 _HOOK_FAILURE_PREFIX = re.compile(r"^[^\r\n]*?\bhook error:\s*\[[^\r\n]*?\]:\s*", re.IGNORECASE)
 _EXIT_CODE_PREFIX = re.compile(r"^Exit code\s+\d+\s*(?:\r?\n)+", re.IGNORECASE)
@@ -2383,7 +2386,7 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
     def append_notice(marker: re.Match[str], end: int) -> None:
         source = marker.group("hook_xml") or marker.group("hook_legacy")
         tag = marker.group("tag_xml") or marker.group("tag_legacy")
-        text = body[marker.end() : end]
+        text = _HOOK_REPEAT_ANNOTATION.sub("", body[marker.end() : end])
         keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _normalize_candidate_kind_text(text)))
 
     for marker in boundaries:
@@ -2907,6 +2910,17 @@ UNTRUNCATED_EVIDENCE_KINDS = frozenset(
 _TOOL_USE_EVIDENCE_KINDS = frozenset({"hook-notice", "command-failure", "tool-failure", "permission-denial"})
 """個別証拠へ対象のツール呼び出しの入力を加える候補種別。"""
 _HOOK_NOTICE_CANDIDATE_TAGS = frozenset({"block", "warn"})
+_HOOK_ORIGIN_MIN_MATCH_LENGTH = 20
+"""hook通知の本文どうしを前方一致で照合するときに一致を求める最小の文字数。短い定型句だけの一致で別の通知を同一視しないための下限とする。"""
+_HOOK_REPEAT_ANNOTATION = re.compile(r"この通知は同一セッションで\d+件目である。[^\n]*")
+"""hookの通知基盤が2件目以降の通知へ付ける反復注記。件数は原因を区別しないため、種類の本文から除く。"""
+_DELEGATE_COMPLETION_VALUES = frozenset(
+    {"計画作成完了", "実装完了", "対応完了", "対応完了（再レビュー不要）", "統合完了", "終端完了"}
+)
+"""委譲先のタスク文書が成功の完了値として定める固定の先頭行。各値が`agent-toolkit/share/`のタスク文書に現れることをテストが確かめる。"""
+_UNEXPECTED_EVENT_PREFIXES = ("想定外事象:", "想定外事象：")
+_VERDICT_LINE = re.compile(r"^(?:#+\s*)?(?:\*\*)?\s*判定[^:：]{0,30}[:：]\s*(?:\*\*)?\s*(?P<value>\S.*)$")
+_SHELL_OPERATOR_CHARS = frozenset(";&|<>()")
 _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE = 1
 
 
@@ -2977,15 +2991,18 @@ def _candidate_events(
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
     母集団はhook通知、利用者介入、失敗したツール実行、警告及び工程の返却値とする。
-    返却値を含めるのは、終了状態にかかわらず本文に誤りがある委譲結果も他の事象には現れず、
-    本文の判定前に候補集合から漏れるためである。
+    返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合から漏れるためである。
+    成功の定型形式だけで構成され、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
 
     同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別又はhookタグが異なる事象を別候補として保持する。同じ位置、候補種別及びhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
     `tool-failure`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
 
-    候補件数の削減は、正規化した本文での集約と、利用者介入ではない入力の除外だけで行う。
-    `hook-notice`の既存の限定を除いて件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
+    候補件数の削減は、正規化した本文での集約と、恒久対策の要否が記録の構造から定まる事象の除外だけで行う。
+    除外するのは、利用者介入ではない入力、成功の定型形式だけの委譲返却、検索の一致0件などの正常な否定結果である。
+    hookの標識を持つツール失敗と、hook通知と同じ本文の警告は、hook通知として発生源別の上限の対象にする。
+    上限は発生源と区分の組ごとに適用し、フック名のツール部分ごとに最多の種類を残して、件数の少ないツールの通知も候補に残す。
+    それ以外に件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
     判定表の位置の集合の一致を求めるため、位置を失う削減は当該検査と両立しない。
     """
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
@@ -2999,6 +3016,11 @@ def _candidate_events(
             and isinstance(notice.get("line"), int)
         ):
             notices_by_locator[(notice["record"], notice["line"])].append(notice)
+    hook_notice_origins = [
+        notice
+        for notice in hook_notices
+        if notice.get("kind") == "hook-notice" and notice.get("tag") in _HOOK_NOTICE_CANDIDATE_TAGS
+    ]
     initial_skill_request, initial_skill_body = _initial_skill_input_locators(timeline)
     first_main_user: tuple[str, int] | None = None
     for event in timeline:
@@ -3042,6 +3064,18 @@ def _candidate_events(
             ):
                 excluded["hook-notice-represented"] += 1
                 continue
+            if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(event):
+                excluded["normal-negative-result"] += 1
+                continue
+            if candidate_kind == "delegate-return" and _is_normal_delegate_return(event):
+                excluded["normal-delegate-return"] += 1
+                continue
+            event_kind = candidate_kind
+            if candidate_kind in {"warning", "tool-failure"}:
+                hook_event = _hook_originated_event(candidate_kind, event, hook_notice_origins)
+                if hook_event is not None:
+                    event_kind, event = "hook-notice", hook_event
+                    normalized_text = " ".join(str(event["text"]).split())
             if candidate_kind == "user-intervention":
                 exclusion = _user_candidate_exclusion(
                     event,
@@ -3061,12 +3095,12 @@ def _candidate_events(
             if candidate_kind == "command-failure" and _is_normal_negative_result(event):
                 excluded["normal-negative-result"] += 1
                 continue
-            if candidate_kind == "hook-notice":
+            if event_kind == "hook-notice":
                 exclusion = _hook_notice_candidate_exclusion(event.get("tag"))
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
-            key = _candidate_key(candidate_kind, event, normalized_text)
+            key = _candidate_key(event_kind, event, normalized_text)
             groups.setdefault(key, []).append(event)
 
     selected_groups: list[tuple[tuple[str, ...], list[dict[str, Any]], int, int]] = []
@@ -3078,8 +3112,9 @@ def _candidate_events(
             selected_groups.append((key, events, len(events), 0))
     for variants in bounded_hook_groups.values():
         ranked = sorted(variants, key=lambda item: (-len(item[1]), item[0]))
+        kept = _bounded_hook_variant_indexes(ranked)
         for index, (key, events) in enumerate(ranked):
-            if index >= _HOOK_NOTICE_VARIANT_LIMIT:
+            if index not in kept:
                 excluded["hook-notice-detail-budget"] += len(events)
                 continue
             representative = min(events, key=lambda event: (str(event["record"]), int(event["line"])))
@@ -3328,7 +3363,7 @@ def _is_delegate_return(event: dict[str, Any]) -> bool:
 
     `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
     委譲先の記録では当該委譲先が呼び出し元へ返した返却値に対応する。
-    成功の`status`があっても本文に誤りがあり得るため、終了状態で除外しない。
+    成功の定型形式だけの返却の除外は、`_is_normal_delegate_return`が候補の集約時に行う。
     メイン記録の最終出力は委譲返却ではない。明示的なエスカレーションは独立した候補へ送る。
     """
     if event.get("kind") != "final-result" or event.get("record") == "main":
@@ -3495,7 +3530,38 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
             return False
         if not args or any(token in {";", "&&", "||", "|", ">", "<"} for token in args):
             return False
-        executable = Path(args[0]).name
+    return _is_negative_predicate(args)
+
+
+def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
+    """Claude CodeのBashで、単一の読取専用の述語が出力なしで偽を返した事象を区分する。
+
+    Claude Codeは終了コード1の出力なしの結果を`Exit code 1`だけの失敗として記録する。
+    連結、パイプ及びリダイレクトを含むコマンドは、どの段が偽を返したかを本文から確定できないため残す。
+    """
+    if event.get("tool_name") != "Bash" or str(event.get("text", "")).strip() != "Exit code 1":
+        return False
+    try:
+        operation = json.loads(str(event.get("operation", "")))
+    except json.JSONDecodeError:
+        return False
+    command = operation.get("command") if isinstance(operation, dict) else None
+    if not isinstance(command, str):
+        return False
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        args = list(lexer)
+    except ValueError:
+        return False
+    if not args or any(set(token) <= _SHELL_OPERATOR_CHARS for token in args):
+        return False
+    return _is_negative_predicate(args)
+
+
+def _is_negative_predicate(args: list[str]) -> bool:
+    """引数列が、偽の結果を終了コード1で返す読取専用の述語であるかを返す。"""
+    executable = Path(args[0]).name
     if executable in {"rg", "grep", "git-grep"}:
         return True
     if executable in {"test", "["}:
@@ -3514,6 +3580,107 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
     if git_args[0] == "grep":
         return True
     return git_args[0] == "merge-base" and "--is-ancestor" in git_args[1:]
+
+
+def _is_normal_delegate_return(event: dict[str, Any]) -> bool:
+    """想定外事象を持たず、成功の定型形式だけを示す委譲返却であるかを返す。
+
+    成功の定型形式は、`status: completed`で始まり未解決の指摘が0件の返却、タスク文書が定める完了値で始まる返却、
+    及び全ての判定が適合又は合格の返却とする。定型形式の前に自由記述を置いた返却は、定型形式の外で
+    想定外の事象を述べている場合があるため残す。委譲先は想定外の事象を`想定外事象:`行で返すため、
+    この行を持つ返却と、定型形式に当たらない自由記述の返却は候補に残す。
+    """
+    text = event.get("text")
+    if not isinstance(text, str):
+        return False
+    lines = [line.strip() for line in text.splitlines()]
+    if any(line.startswith(_UNEXPECTED_EVENT_PREFIXES) for line in lines):
+        return False
+    body = [line for line in lines if line and not line.startswith("```")]
+    if not body:
+        return False
+    if body[0] == "status: completed":
+        unresolved = [line.partition(":")[2].strip() for line in body if line.startswith("unresolved:")]
+        return all(value == "0" for value in unresolved)
+    if body[0] in _DELEGATE_COMPLETION_VALUES:
+        return True
+    verdicts = [match.group("value") for line in body if (match := _VERDICT_LINE.match(line)) is not None]
+    if not verdicts or "不適合" in text or "不合格" in text:
+        return False
+    return all(value.startswith(("適合", "合格")) for value in verdicts)
+
+
+def _hook_originated_event(
+    candidate_kind: str,
+    event: dict[str, Any],
+    hook_notices: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """hookが出力したと記録から判定できる失敗又は警告を、hook通知の候補イベントへ変換して返す。
+
+    ツール失敗は本文が`<フック名> hook error:`で始まり、通知の標識が`block`又は`warn`の区分を持つ場合に変換する。
+    警告は本文が同じセッションのhook通知の本文と一致する場合に、その通知の発生源と区分で変換する。
+    変換しない場合は`None`を返す。
+    """
+    text = event.get("text")
+    if not isinstance(text, str):
+        return None
+    if candidate_kind == "tool-failure":
+        hook_name, separator, _ = text.partition(" hook error:")
+        if not separator:
+            return None
+        body = _HOOK_FAILURE_PREFIX.sub("", text, count=1)
+        for key in _hook_notice_keys(body, hook_name.strip() or None):
+            if key.hook and key.tag in _HOOK_NOTICE_CANDIDATE_TAGS:
+                return {
+                    **event,
+                    "kind": "hook-notice",
+                    "text": key.kind_text,
+                    "hook": key.hook,
+                    "hook_name": key.hook_name,
+                    "tag": key.tag,
+                }
+        return None
+    normalized = _normalize_candidate_kind_text(text)
+    for notice in hook_notices:
+        notice_text = str(notice.get("text", ""))
+        if _same_hook_notice_text(normalized, notice_text):
+            return {
+                **event,
+                "kind": "hook-notice",
+                "text": notice_text,
+                "hook": notice.get("hook"),
+                "hook_name": notice.get("hook_name"),
+                "tag": notice.get("tag"),
+            }
+    return None
+
+
+def _bounded_hook_variant_indexes(ranked: list[tuple[tuple[str, ...], list[dict[str, Any]]]]) -> set[int]:
+    """発生源と区分が同じhook通知の種類のうち、候補に残す種類の順位を返す。
+
+    発生件数の多い順に上限数まで残す。同じ通知の2件目以降は1件目の本文の要約で届き、別の種類になるため、
+    残した種類と遮断理由が同じで本文が前方一致する種類は、同じ通知として上限を消費させずに省く。
+    加えて、フック名のツール部分ごとに最多の種類を1件ずつ残し、件数の少ないツールの通知も
+    他のツールの多数の通知とともに候補に残す。
+    """
+    kept: set[int] = set()
+    kept_keys: list[tuple[str, ...]] = []
+    seen_tools: set[str] = set()
+    for index, (key, events) in enumerate(ranked):
+        if any(key[5] == kept_key[5] and _same_hook_notice_text(key[4], kept_key[4]) for kept_key in kept_keys):
+            continue
+        tools = {str(event.get("hook_name") or "").partition(":")[2] for event in events}
+        if len(kept) < _HOOK_NOTICE_VARIANT_LIMIT or not tools <= seen_tools:
+            kept.add(index)
+            kept_keys.append(key)
+            seen_tools |= tools
+    return kept
+
+
+def _same_hook_notice_text(left: str, right: str) -> bool:
+    """正規化したhook通知本文の一方が他方の前方部分であるかを返す。"""
+    length = min(len(left), len(right))
+    return length >= _HOOK_ORIGIN_MIN_MATCH_LENGTH and left[:length] == right[:length]
 
 
 def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[str, Any]) -> bool:
