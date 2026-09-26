@@ -125,15 +125,45 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 
 ## リリース運用
 
-`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは、通常の手順として`releaser <patch|minor|major>`エージェントを起動する。
-`releaser`は対象リポジトリの`AGENTS.md`を読み、同リポジトリが定める公開手順を実行して完了まで検収する。
-`gh workflow run release.yaml`などの低水準コマンドは、`releaser`の内部実装又は人間が手動で補助する場合にだけ用いる。
-引数を省略した`releaser`はヘルプと未リリースコミットの一覧を表示し、リリースを起動しないため、未リリース分の確認に使う。
-バージョン区分は次のとおりとする。
+`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは、ユーザーの恒常的な認可に基づき、エージェントが要否とバージョン区分を判断して実施する。
+この認可は`agent-toolkit:process-wi`の手動起動と`atk wi process-loop`による自動常駐起動のどちらにも適用し、リリースのたびのユーザー確認とUWIは省く。
+リリースworkflowを持たない`dotfiles`（`develop`から`master`へのマージは`dotfiles-release`が扱う）と`smpr`は対象外とし、リリースworkflowを持ったプロジェクトは対象へ加える。
+
+### 実施時機と前提
+
+一連の作業の公開（pushとCI成功）が終わった時点でリリース要否を判定する。
+`agent-toolkit:process-wi`では、公開工程の終端担当が返却し、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」の成立を確認した後、`agent-toolkit:completion-report`の起動前に判定する。
+process-wi以外の作業でも、作業の変更をpushしてCI成功を確認した時点で同じく判定する。
+
+ローカルのベースbranchが既定branchであり、未pushのcommitと未コミットの変更が無いことを実施の前提とする。
+前提が成立しない場合はリリースせず、その理由を完了報告へ含める。`releaser`は未pushのcommitをpushするため、この前提でpushの所有者を保つ。
+
+### 判定
+
+判定対象は引数なしの`releaser`が表示する`<直近のリリースタグ>..HEAD`の未リリースcommit全体とする。各commitは差分の内容で判定し、commit typeは補助の手掛かりに留める。
+
+エンドユーザー影響がある変更は、利用者がリリースされた配布物を通じて観測する挙動や内容を変える変更である。
+配布されるコード（CLI・公開API・設定の既定値・画面を含む）の変更と、配布物に同梱されて公開される利用者向け文書（PyPIの説明になるREADMEなど）の変更が該当する。
+実行時依存の版指定の更新（`pyproject.toml`の`dependencies`、`package.json`の`dependencies`など）はエンドユーザー影響の対象外とする。
+テスト、CIとworkflow、開発手順と開発用ツールの設定（`Makefile`・`mise.toml`・pre-commit・lint設定）の変更も対象外とする。
+エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・`.claude/`配下）、開発者向け文書（`docs/development/`）、開発専用のロックファイル更新も同じく対象外とする。
+docsサイトは`master`へのpushで`docs.yaml`が公開するため、docsサイトだけの変更も対象外とする。
+いずれとも判別できない変更は、配布物に含まれて利用者から観測できるかで判定する。
+
+### 実施
+
+該当する変更が1件以上ある場合だけ、次のバージョン区分からエージェントが区分を決め、`releaser <patch|minor|major>`を実行して完了まで検収する。
+0件の場合はリリースせず、リリースしなかったことと理由を完了報告へ含める。
 
 - バグ修正・軽微な機能追加: パッチ
 - ある程度大きい機能追加や変更: マイナー
 - 大規模な機能追加など: メジャー
+
+`releaser`はdotfilesの`pytools/releaser.py`が提供するコマンドである。
+既定branchの確認、未コミット変更の確認、未pushのcommitのpush、CI完了待機、`release.yaml`のworkflow_dispatch起動、runの監視、ローカルの`git pull --ff-only`を行う。
+引数を省略した`releaser`はヘルプと未リリースコミットの一覧を表示するだけで終わる。
+`gh workflow run release.yaml`などの低水準コマンドは、`releaser`の内部実装又は人間が手動で補助する場合にだけ用いる。
+`releaser`はCI待機とリリースworkflowの監視で長時間かかるため、前景の実行時間上限を超える場合は背景実行か委譲で実行し、終了状態を観測してから報告する。
 
 ## 足回りファイルの推奨設定維持
 
