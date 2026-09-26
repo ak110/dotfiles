@@ -2,6 +2,7 @@
 
 `git ls-files`を入力にすることで、通常の検索が省く隠しディレクトリも対象に含める。
 検査対象は`.json`・`.md`・`.py`であり、`install-claude.sh`と`install-claude.ps1`は含まない。
+規範Markdownが`` `<パス>.md` ``の直後に「<名前>」で節を指す参照は、参照先に同じ名前が残ることも検査する。
 このファイル自身も走査対象となるため、欠損参照のテスト入力は接頭辞から組み立てる。
 """
 
@@ -248,3 +249,125 @@ def test_incident_history_rejects_different_unresolved_references(tmp_path: path
     assert missing_path in formatted
     assert replaced in formatted
     assert str(source) in formatted
+
+
+# 見出し名で節を指す参照を検査する規範Markdownの範囲。
+_NORMATIVE_MARKDOWN_PREFIXES = (
+    f"{_PLUGIN_PREFIX}/rules/",
+    f"{_PLUGIN_PREFIX}/skills/",
+    f"{_PLUGIN_PREFIX}/share/",
+    ".claude/skills/",
+    ".chezmoi-source/dot_claude/",
+)
+_PLUGIN_ROOT_VARIABLES = ("${CLAUDE_PLUGIN_ROOT}/", "${PLUGIN_ROOT}/", "<plugin root>/")
+_HEADING_REFERENCE_PATTERN = re.compile(
+    rf"(?:{_PLUGIN_PREFIX}:(?P<skill>[A-Za-z0-9_-]+)`?の)?`(?P<path>[^`\s]+?\.md)`(?:の)?「(?P<name>[^」\n]+)」"
+)
+
+
+def _normative_markdown_paths(sources: list[pathlib.Path]) -> list[pathlib.Path]:
+    """追跡ファイルのうち見出し名参照を検査する規範Markdownを返す。"""
+    return [
+        path
+        for path in sources
+        if path.suffix == ".md" and (path.as_posix() == "AGENTS.md" or path.as_posix().startswith(_NORMATIVE_MARKDOWN_PREFIXES))
+    ]
+
+
+def _resolve_heading_reference_target(
+    root: pathlib.Path,
+    source: pathlib.Path,
+    skill: str | None,
+    reference: str,
+    markdown_paths: list[pathlib.Path],
+) -> pathlib.Path | None:
+    """参照が一意に指すMarkdownを返す。一意に決まらない参照は検査の対象外としてNoneを返す。"""
+    for variable in _PLUGIN_ROOT_VARIABLES:
+        reference = reference.replace(variable, f"{_PLUGIN_PREFIX}/")
+    if skill:
+        bases = [pathlib.Path(_PLUGIN_PREFIX, "skills", skill), pathlib.Path(_PLUGIN_PREFIX, "skills")]
+    else:
+        bases = [pathlib.Path("."), *source.parents]
+    for base in bases:
+        candidate = root / base / reference
+        if candidate.is_file():
+            return candidate
+    if skill:
+        return None
+    suffix_matches = [path for path in markdown_paths if path.as_posix().endswith(f"/{reference}")]
+    return root / suffix_matches[0] if len(suffix_matches) == 1 else None
+
+
+def _unresolved_heading_references(
+    root: pathlib.Path,
+    sources: list[pathlib.Path],
+    markdown_paths: list[pathlib.Path],
+) -> list[tuple[str, pathlib.Path]]:
+    """参照先に同名の見出しも本文の文字列も無い見出し名参照を、参照と参照元の対で返す。"""
+    unresolved: list[tuple[str, pathlib.Path]] = []
+    for source in sources:
+        content = (root / source).read_text(encoding="utf-8")
+        for match in _HEADING_REFERENCE_PATTERN.finditer(content):
+            target = _resolve_heading_reference_target(root, source, match.group("skill"), match.group("path"), markdown_paths)
+            if target is None:
+                continue
+            if match.group("name") not in target.read_text(encoding="utf-8"):
+                unresolved.append((f"{match.group('path')}「{match.group('name')}」", source))
+    return unresolved
+
+
+def test_normative_heading_references_resolve() -> None:
+    """規範Markdownの見出し名参照が、参照先に残る見出し又は本文の文字列へ解決する。"""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    tracked = _tracked_source_paths(root)
+    markdown_paths = [path for path in tracked if path.suffix == ".md"]
+    sources = _normative_markdown_paths(tracked)
+    assert any(path.as_posix().startswith(".claude/skills/") for path in sources)
+    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    assert not unresolved, _format_unresolved(unresolved)
+
+
+def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:
+    """参照先の見出しを削除すると、その見出しを名前で指す全ての参照を未解決として報告する。"""
+    rules = tmp_path / _PLUGIN_PREFIX / "rules" / "01-agent.md"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("# 規範\n\n### 調査と検証\n\n観測で主張を支える。\n", encoding="utf-8")
+    skill = pathlib.Path(_PLUGIN_PREFIX, "skills", "sample", "SKILL.md")
+    (tmp_path / skill).parent.mkdir(parents=True)
+    (tmp_path / skill).write_text(
+        "\n".join(
+            [
+                f"`{_PLUGIN_PREFIX}/rules/01-agent.md`「調査と検証」に従う。",
+                f"`{_PLUGIN_PREFIX}/rules/01-agent.md`の「調査と検証」を読む。",
+                "`${CLAUDE_PLUGIN_ROOT}/rules/01-agent.md`「調査と検証」を参照する。",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    sources = [skill]
+    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "rules", "01-agent.md"), skill]
+    assert not _unresolved_heading_references(tmp_path, sources, markdown_paths)
+
+    rules.write_text("# 規範\n\n観測で主張を支える。\n", encoding="utf-8")
+    unresolved = _unresolved_heading_references(tmp_path, sources, markdown_paths)
+    assert [source for _, source in unresolved] == [skill] * 3
+    assert all(reference.endswith("「調査と検証」") for reference, _ in unresolved)
+
+
+def test_heading_reference_resolves_skill_qualified_path(tmp_path: pathlib.Path) -> None:
+    """スキル名で修飾した参照資料のパスを、そのスキルの配下で解決する。"""
+    target = tmp_path / _PLUGIN_PREFIX / "skills" / "commit" / "references" / "push-and-ci.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("## 公開状態の4項目\n", encoding="utf-8")
+    source = pathlib.Path(".claude", "skills", "sample", "SKILL.md")
+    (tmp_path / source).parent.mkdir(parents=True)
+    (tmp_path / source).write_text(
+        f"`{_PLUGIN_PREFIX}:commit`の`references/push-and-ci.md`「公開状態の4項目」と「存在しない節」\n"
+        f"`{_PLUGIN_PREFIX}:commit`の`references/push-and-ci.md`「存在しない節」\n",
+        encoding="utf-8",
+    )
+    markdown_paths = [target.relative_to(tmp_path), source]
+
+    assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [
+        ("references/push-and-ci.md「存在しない節」", source)
+    ]
