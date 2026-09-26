@@ -1,4 +1,4 @@
-"""Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
+"""Claude CodeとCodexのtranscript、及び委譲先のAntigravityログから振り返り用の時系列証拠を抽出し、照会する。
 
 既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`の照会モードは、抽出結果に無い詳細をtranscriptから
@@ -24,10 +24,12 @@ import os
 import re
 import shlex
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple, cast
 
 try:
+    from agent_toolkit._agents_server import record_paths as _record_paths
     from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
     from agent_toolkit._atk import config as _atk_config
 except ImportError as _import_error:
@@ -190,7 +192,7 @@ _BODY_KEYS = frozenset(
         "prompt",
     }
 )
-_Runtime = Literal["claude", "codex"]
+_Runtime = Literal["claude", "codex", "agy"]
 
 
 class _Record(NamedTuple):
@@ -762,6 +764,87 @@ def _codex_entry_events(
     return events
 
 
+# Antigravity（agy）の委譲先ログは、agents_serverが公開JSONイベントを1行ずつ保存したものである。
+_AGY_EVENT_TYPES = frozenset({"init", "step_update", "result"})
+
+
+def _extract_agy(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
+    """Antigravityの委譲先ログを共通イベントへ変換する。
+
+    ログは時刻を持たないため、各イベントの`timestamp`はnullになる。
+    委譲先がさらに起動した孫（`invoke_subagent`・`call_mcp_tool`など）は、利用者が網羅の対象から外したため
+    失敗した場合を除いて事象へ写さず、委譲先の発見元にもしない。
+    """
+    events: list[dict[str, Any]] = []
+    for line, entry in zip(lines, entries, strict=True):
+        for event in _agy_entry_events(entry):
+            event.setdefault("line", line)
+            _set_entry_timestamp(event, entry)
+            events.append(event)
+    return events
+
+
+def _agy_entry_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """agyの1イベントから、ツール失敗・エラー報告・失敗終端・返却本文の共通イベントを取得する。"""
+    event_type = entry.get("event")
+    body = entry.get(event_type) if isinstance(event_type, str) else None
+    if not isinstance(body, dict):
+        return []
+    events: list[dict[str, Any]] = []
+    if event_type == "step_update":
+        step_type = body.get("step_type")
+        if step_type == "error_message":
+            # agyはエラー報告のステップへ本文を持たせないため、ステップの位置だけを示す。
+            event = _event(
+                "failed-tool", f"agyの委譲先がエラーを報告した（step_index: {body.get('step_index')}）", tool="error_message"
+            )
+            if event:
+                event["tool_name"] = "error_message"
+                events.append(event)
+        elif step_type == "tool" and body.get("state") != "ACTIVE":
+            tool_info = body.get("tool_info")
+            error = tool_info.get("error") if isinstance(tool_info, dict) else None
+            # 終了したツールステップは、`ERROR`状態に加えて`DONE`状態でも`tool_info.error`で失敗を表す。
+            if body.get("state") == "ERROR" or error is not None:
+                message = error.get("message") if isinstance(error, dict) else None
+                if isinstance(message, str) and message.strip():
+                    text = message
+                elif error is not None:
+                    text = json.dumps(error, ensure_ascii=False)
+                else:
+                    text = "tool step failed"
+                tool_name = str(body.get("tool_name") or "")
+                event = _event("failed-tool", text, tool=tool_name)
+                if event:
+                    event["tool_name"] = tool_name
+                    parameters = tool_info.get("parameters") if isinstance(tool_info, dict) else None
+                    event["operation"] = json.dumps(parameters, ensure_ascii=False, sort_keys=True)
+                    events.append(event)
+    elif event_type == "result":
+        status = body.get("status")
+        if status != "SUCCESS":
+            error = body.get("error")
+            detail = error if isinstance(error, str) else json.dumps(error, ensure_ascii=False) if error is not None else ""
+            event = _event("failed-tool", f"status: {status}\n{detail}".strip(), tool="result")
+            if event:
+                event["tool_name"] = "result"
+                events.append(event)
+        response = body.get("response")
+        if isinstance(response, str):
+            event = _event("assistant", response)
+            if event:
+                events.append(event)
+    return events
+
+
+RUNTIME_EXTRACTORS: dict[str, Callable[[list[dict[str, Any]], list[int]], list[dict[str, Any]]]] = {
+    "claude": _extract_claude,
+    "codex": _extract_codex,
+    "agy": _extract_agy,
+}
+"""実行系ごとの時系列への変換。キーの集合は抽出器が変換できる実行系を表す。"""
+
+
 def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
     """完了したCodexコマンド実行から証拠となるイベントだけを取得する。"""
     item = payload.get("item")
@@ -840,6 +923,8 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
 
 def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
     """transcriptのエントリ形式から手動構文を解釈する実行系を返す。"""
+    if entries and all(entry.get("event") in _AGY_EVENT_TYPES for entry in entries):
+        return "agy"
     entry_types = {entry.get("type") for entry in entries}
     if entry_types & {"response_item", "event_msg"}:
         return "codex"
@@ -857,7 +942,7 @@ def _extract_for_runtime(
 ) -> list[dict[str, Any]]:
     """確定したruntimeに対応する共通イベントへ変換する。"""
     numbers = lines if lines is not None else list(range(1, len(entries) + 1))
-    return _extract_codex(entries, numbers) if runtime == "codex" else _extract_claude(entries, numbers)
+    return RUNTIME_EXTRACTORS[runtime](entries, numbers)
 
 
 def _fallback() -> list[dict[str, Any]]:
@@ -1037,6 +1122,35 @@ def _latest_claude_usages(records: list[_Record]) -> list[tuple[_Record, dict[st
     return list(latest.values())
 
 
+def _agy_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
+    """Antigravityの応答ステップの`usage`を、Claude形式の4成分へ正規化して返す。
+
+    agyの`usage`は`input_tokens`へキャッシュ読取を含めず、`output_tokens`へ思考分を含める
+    （実測: `total_tokens`は`input_tokens`と`output_tokens`の和に一致する）。キャッシュ作成の成分は持たないため0とする。
+    同じ応答の`usage`は完了した`agent_response`ステップだけが持つため、各ステップを1回ずつ数える。
+    """
+    usages: list[tuple[_Record, dict[str, int]]] = []
+    for record in records:
+        step = record.entry.get("step_update")
+        if not isinstance(step, dict) or step.get("step_type") != "agent_response":
+            continue
+        usage = step.get("usage")
+        if not isinstance(usage, dict):
+            continue
+        usages.append(
+            (
+                record,
+                {
+                    "input_tokens": _token_value(usage.get("input_tokens")),
+                    "output_tokens": _token_value(usage.get("output_tokens")),
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": _token_value(usage.get("cache_read_tokens")),
+                },
+            )
+        )
+    return usages
+
+
 def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
     """各`token_count`レコードの`info.last_token_usage`（1リクエストの実消費）を返す。
 
@@ -1090,8 +1204,8 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
         summary["end"] = last_record.entry["timestamp"]
         summary["elapsed_seconds"] = int((last_timestamp - first_timestamp).total_seconds())
 
-    if runtime == "claude":
-        usages = _latest_claude_usages(records)
+    if runtime in {"claude", "agy"}:
+        usages = _latest_claude_usages(records) if runtime == "claude" else _agy_token_usages(records)
         if not usages:
             return summary
         tokens: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
@@ -1164,26 +1278,21 @@ def _agents_server_call_ids(records: list[_Record]) -> set[str]:
 def _thread_ids_from_record(
     record: _Record,
     agents_server_call_ids: set[str],
-) -> list[tuple[_Runtime | None, str]]:
-    """Claude transcriptとCodex rolloutからsession識別子と実行系ヒントを抽出する。"""
+) -> list[str]:
+    """Claude transcriptとCodex rolloutから委譲先のsession識別子を抽出する。
+
+    識別子は実行系をまたいで一意であるため、呼び出しに現れる実行系の指定は取り出さない。
+    """
     entry = record.entry
-    found: list[tuple[_Runtime | None, str]] = [("codex", thread_id) for thread_id in _native_agent_thread_ids(entry)]
+    found: list[str] = list(_native_agent_thread_ids(entry))
 
     def add_mapping(value: Any) -> None:
         mapping = value if isinstance(value, dict) else _json_object(value)
         if not isinstance(mapping, dict):
             return
         session_id = _thread_id_from_mapping(mapping)
-        if not session_id:
-            return
-        engine = mapping.get("engine")
-        if engine == "claude":
-            chosen_engine: _Runtime | None = "claude"
-        elif engine == "codex":
-            chosen_engine = "codex"
-        else:
-            chosen_engine = None
-        found.append((chosen_engine, session_id))
+        if session_id:
+            found.append(session_id)
 
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
@@ -1283,14 +1392,6 @@ def _rollout_candidates(thread_id: str, codex_home: Path) -> list[Path]:
     )
 
 
-def _rollout_path(thread_id: str, codex_home: str | None = None) -> Path | None:
-    """Thread IDへ一意に対応するrolloutを返し、0件又は複数件ではNoneを返す。"""
-    try:
-        return _resolve_codex_transcript(thread_id, codex_home)
-    except ValueError:
-        return None
-
-
 def _resolve_codex_transcript(thread_id: str, codex_home: str | None = None) -> Path:
     """Codex thread IDから親transcriptの正本を1件解決する。
 
@@ -1306,26 +1407,18 @@ def _resolve_codex_transcript(thread_id: str, codex_home: str | None = None) -> 
     return candidates[0]
 
 
-def _claude_transcript_path(session_id: str) -> Path | None:
-    """Claude Code transcriptのsession_idに対応するJSONLを探す。"""
-    projects = Path.home() / ".claude" / "projects"
-    candidates = sorted(projects.glob(f"**/{session_id}.jsonl"))
-    return candidates[0] if candidates else None
+def _session_path(session_id: str, codex_home: str | None = None) -> tuple[Path, _Runtime] | None:
+    """委譲先の記録を`atk agents logs`と共有する解決処理で探し、記録と実行系を返す。
 
-
-def _session_path(
-    engine: _Runtime | None,
-    session_id: str,
-    codex_home: str | None = None,
-) -> tuple[Path, _Runtime] | None:
-    """実行系ヒントを優先して両方の記録正本を探索する。"""
-    runtimes: tuple[_Runtime, _Runtime]
-    runtimes = ("claude", "codex") if engine == "claude" else ("codex", "claude")
-    for runtime in runtimes:
-        path = _rollout_path(session_id, codex_home) if runtime == "codex" else _claude_transcript_path(session_id)
-        if path is not None:
-            return path, runtime
-    return None
+    Codexの記録が複数一致する場合は、別の委譲先の記録を混入させないよう解決できない扱いとする。
+    """
+    found = _record_paths.find_session_record(session_id, codex_home=_codex_home(codex_home))
+    if found is None or found.engine not in RUNTIME_EXTRACTORS:
+        return None
+    first, *others = found.paths
+    if found.engine == "codex" and others:
+        return None
+    return first, cast(_Runtime, found.engine)
 
 
 def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
@@ -1421,11 +1514,11 @@ def _collect_records(
                 and not thread_ids
             ):
                 unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
-            for engine, session_id in thread_ids:
+            for session_id in thread_ids:
                 if session_id in seen_sessions:
                     continue
                 seen_sessions.add(session_id)
-                resolved_session = _session_path(engine, session_id, codex_home)
+                resolved_session = _session_path(session_id, codex_home)
                 if resolved_session is None:
                     unresolved.append(_UnresolvedRecord(session_id, record.line))
                     continue
@@ -1562,8 +1655,8 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
 
 def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
-    if runtime == "claude":
-        usages = _latest_claude_usages(records)
+    if runtime in {"claude", "agy"}:
+        usages = _latest_claude_usages(records) if runtime == "claude" else _agy_token_usages(records)
         for record, tokens in usages:
             candidates.append(
                 {
@@ -4096,6 +4189,21 @@ def _catalog_family_tokens(family: list[_CollectedRecord]) -> dict[str, int] | s
     return total if found else "unknown"
 
 
+def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
+    """走査rootの外にあるAntigravityの委譲先ログを、カタログの子として読み込む。
+
+    agyの委譲先の記録はClaude CodeとCodexの履歴ディレクトリに置かれないため、走査rootだけからは子を引けない。
+    ClaudeとCodexの子は指定root内だけの比較一覧という前提を保つため、走査rootの記録からだけ引く。
+    """
+    found = _record_paths.find_session_record(session_id)
+    if found is None or found.engine != "agy":
+        return None
+    records = _load_records(str(found.paths[0]))
+    if records is None:
+        return None
+    return _CollectedRecord(session_id, found.paths[0], records, "agy", None, None, None, "session")
+
+
 def _catalog_events(
     root: Path,
     runtime: _Runtime,
@@ -4132,10 +4240,13 @@ def _catalog_events(
     children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
     referenced: set[str] = set()
     unresolved_references: set[tuple[str, str]] = set()
-    for session_id, item in loaded.items():
+    for session_id, item in list(loaded.items()):
         call_ids = _agents_server_call_ids(item.records)
         for record in item.records:
-            for _, child_id in _thread_ids_from_record(record, call_ids):
+            for child_id in _thread_ids_from_record(record, call_ids):
+                if child_id not in loaded and (agy_child := _catalog_agy_child(child_id)) is not None:
+                    loaded[child_id] = agy_child
+                    children[child_id] = []
                 if child_id in loaded:
                     if child_id not in children[session_id]:
                         children[session_id].append(child_id)

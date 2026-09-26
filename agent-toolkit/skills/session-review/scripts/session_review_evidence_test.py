@@ -9,6 +9,7 @@ from typing import Literal
 import pytest
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
+from agent_toolkit import agents_server_mcp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -4224,6 +4225,199 @@ def test_collect_includes_start_custom_and_start_write_delegates(
     ]
 
 
+_AGY_ROOT_SESSION = "0741ee80-54a0-44b4-a070-e288e4a71dc0"
+
+
+def _agy_delegation_transcript(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
+    """`start_write`でagyの委譲先を起動したClaude transcriptを作成する。"""
+    return _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-09-26T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _codex_tool_use_entry(
+                "2026-09-26T00:00:01Z",
+                "call-agy",
+                session_id,
+                tool_name="mcp__plugin_agent-toolkit_agents_server__start_write",
+            ),
+            _codex_tool_result_entry("2026-09-26T00:00:02Z", "call-agy", session_id, engine=None),
+        ],
+    )
+
+
+def _write_agy_log(state_home: pathlib.Path, session_id: str, events: list[dict]) -> None:
+    """agents_serverが保存する位置へagyの委譲先ログを書く。"""
+    _write_jsonl(state_home / "agent-toolkit" / "agents-server" / _AGY_ROOT_SESSION / "logs" / f"{session_id}.jsonl", events)
+
+
+def _agy_step(step_index: int, step_type: str, state: str, **fields: object) -> dict:
+    return {
+        "event": "step_update",
+        "step_update": {
+            "conversation_id": "agy",
+            "step_index": step_index,
+            "state": state,
+            "step_type": step_type,
+            **fields,
+        },
+    }
+
+
+def test_agy_delegate_failures_become_candidates_and_stats(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """agyの委譲先の失敗したツール、エラー報告及び失敗終端が候補へ現れ、件数とトークン数が集計へ現れる。"""
+    session_id = "a9244465-1577-44a9-a7b0-500b1f976b0e"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    run_command = {"CommandLine": "npx textlint README.md"}
+    _write_agy_log(
+        tmp_path / "state",
+        session_id,
+        [
+            {"event": "init", "conversation_id": session_id, "init": {"model": "gemini", "cwd": "/work"}},
+            _agy_step(
+                1, "tool", "ACTIVE", tool_name="run_command", tool_info={"name": "run_command", "parameters": run_command}
+            ),
+            _agy_step(
+                1,
+                "tool",
+                "ERROR",
+                tool_name="run_command",
+                tool_info={
+                    "name": "run_command",
+                    "parameters": run_command,
+                    "error": {"type": "TOOL_ERROR", "message": "sandbox server did not answer Run within 30s"},
+                },
+            ),
+            _agy_step(
+                2,
+                "tool",
+                "DONE",
+                tool_name="view_file",
+                tool_info={"name": "view_file", "parameters": {"AbsolutePath": "/work/a.md"}, "output": "本文"},
+            ),
+            _agy_step(3, "error_message", "DONE"),
+            _agy_step(
+                4,
+                "agent_response",
+                "DONE",
+                usage={"input_tokens": 100, "output_tokens": 20, "cache_read_tokens": 300, "total_tokens": 120},
+            ),
+            {
+                "event": "result",
+                "result": {
+                    "conversation_id": session_id,
+                    "status": "ERROR",
+                    "error": "Individual quota reached.",
+                    "response": "",
+                },
+            },
+        ],
+    )
+    transcript = _agy_delegation_transcript(tmp_path, session_id)
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys, raw=True)
+    candidates = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    failures = [
+        item["locators"] for item in candidates if item["kind"] == "candidate" and item["candidate_kind"] == "tool-failure"
+    ]
+    record_id = f"agy:{session_id}"
+    assert sorted(locator["line"] for locators in failures for locator in locators if locator["record"] == record_id) == [
+        3,
+        5,
+        7,
+    ]
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    stats = _read_jsonl(capsys, raw=True)
+    thread = _events_by_kind(stats, "stats-agent-thread")[0]
+    assert (thread["engine"], thread["session_id"]) == ("agy", session_id)
+    assert thread["tokens"] == {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 300,
+    }
+    total = _events_by_kind(stats, "stats-total")[0]
+    assert total["agent_thread_counts"] == {"agy": 1}
+    assert total["tokens"]["cache_read_input_tokens"] == 300
+    assert not _events_by_kind(stats, "unresolved-record")
+
+
+def test_agy_delegate_without_log_is_unresolved_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """状態ディレクトリにログが無いagyの委譲先は、記録を解決できない委譲先として報告する。"""
+    session_id = "b9244465-1577-44a9-a7b0-500b1f976b0e"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    transcript = _agy_delegation_transcript(tmp_path, session_id)
+
+    assert evidence.main([str(transcript)]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert _events_by_kind(events, "unresolved-record") == [{"kind": "unresolved-record", "record": session_id, "line": 3}]
+
+
+def test_agy_grandchild_launch_is_neither_detected_nor_collected(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """agyの委譲先が孫を起動しても、孫の記録を探さず、未解決の委譲としても報告しない。"""
+    session_id = "c9244465-1577-44a9-a7b0-500b1f976b0e"
+    grandchild = "d9244465-1577-44a9-a7b0-500b1f976b0e"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    _write_agy_log(
+        tmp_path / "state",
+        session_id,
+        [
+            _agy_step(
+                1,
+                "tool",
+                "DONE",
+                tool_name="invoke_subagent",
+                tool_info={"name": "invoke_subagent", "parameters": {"Prompt": "調査"}, "output": {"session_id": grandchild}},
+            ),
+            _agy_step(
+                2,
+                "tool",
+                "DONE",
+                tool_name="call_mcp_tool",
+                tool_info={
+                    "name": "call_mcp_tool",
+                    "parameters": {"ServerName": "agents_server", "ToolName": "start"},
+                    "output": json.dumps({"session_id": grandchild}),
+                },
+            ),
+            {"event": "result", "result": {"conversation_id": session_id, "status": "SUCCESS", "response": "完了した"}},
+        ],
+    )
+    transcript = _agy_delegation_transcript(tmp_path, session_id)
+
+    assert evidence.main([str(transcript)]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert f"agy:{session_id}" in {event.get("record") for event in events}
+    assert not _events_by_kind(events, "unresolved-record")
+    assert not _events_by_kind(events, "unresolved-delegation")
+    assert grandchild not in json.dumps(events, ensure_ascii=False)
+
+
+def test_extractor_runtimes_match_supported_engines() -> None:
+    """抽出器が時系列へ変換できる実行系は、agents_serverが起動できる実行系と一致する。
+
+    実行系を追加して変換を追随させないと、その実行系の委譲先の記録は候補と集計へ現れない。
+    """
+    assert set(evidence.RUNTIME_EXTRACTORS) == agents_server_mcp.SUPPORTED_ENGINES
+
+
 def test_collect_resolves_codex_agents_server_delegations(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -7022,6 +7216,61 @@ def test_catalog_claude_project_aggregates_traceable_descendants_without_leaving
     assert parent["successful_wi_operations"][0]["operation"] == "get"
     assert summary["parent_record_count"] == 1
     assert summary["unresolved_record_count"] == 1
+
+
+def test_catalog_counts_agy_children(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """走査rootの外にあるagyの委譲先ログを親の子孫数とトークンへ含め、未解決の参照に数えない。"""
+    child_id = "e9244465-1577-44a9-a7b0-500b1f976b0e"
+    root = tmp_path / "project"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    _write_jsonl(
+        root / "parent-session.jsonl",
+        [
+            {"type": "user", "timestamp": "2026-09-10T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _codex_tool_use_entry(
+                "2026-09-10T00:00:01Z",
+                "call-agy",
+                child_id,
+                tool_name="mcp__plugin_agent-toolkit_agents_server__start_write",
+            ),
+            _codex_tool_result_entry("2026-09-10T00:00:02Z", "call-agy", child_id, engine=None),
+        ],
+    )
+    _write_agy_log(
+        tmp_path / "state",
+        child_id,
+        [
+            _agy_step(
+                1,
+                "agent_response",
+                "DONE",
+                usage={"input_tokens": 7, "output_tokens": 3, "cache_read_tokens": 11, "total_tokens": 10},
+            )
+        ],
+    )
+
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(root),
+                "--since",
+                "2026-09-09T00:00:00Z",
+                "--observation-boundary",
+                "2026-09-11T00:00:00Z",
+            ]
+        )
+        == 0
+    )
+    parent, summary = _read_jsonl(capsys, raw=True)
+    assert parent["session_id"] == "parent-session"
+    assert parent["descendant_count"] == 1
+    assert parent["tokens"]["cache_read_input_tokens"] == 11
+    assert summary["unresolved_record_count"] == 0
 
 
 def test_catalog_codex_history_reports_unknown_fields_and_successful_wi_operation(

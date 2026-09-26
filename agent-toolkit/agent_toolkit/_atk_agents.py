@@ -7,13 +7,12 @@ import datetime
 import json
 import os
 import pathlib
-import re
 import sys
 import time
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import agents_wait, state, status_file
+from agent_toolkit._agents_server import agents_wait, record_paths, state, status_file
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.environment import is_agent_environment
@@ -178,36 +177,14 @@ def _append_children(
             _append_children(children, session_id, next_prefix, visited | {session_id}, attached, lines)
 
 
-def _record_path(session_id: str) -> tuple[str, pathlib.Path] | None:
-    """既存のClaude Code・Codex記録から識別子が一致する1件を探す。"""
-    if re.fullmatch(r"[A-Za-z0-9_-]+", session_id) is None:
-        return None
-    claude_projects = session_records.default_claude_home() / "projects"
-    if claude_projects.is_dir():
-        for project in claude_projects.iterdir():
-            if project.is_dir():
-                path = project / f"{session_id}.jsonl"
-                if path.is_file():
-                    return "claude", path
-    codex_sessions = session_records.default_codex_home() / "sessions"
-    if codex_sessions.is_dir():
-        for path in codex_sessions.glob(f"*/*/*/rollout-*-{session_id}.jsonl"):
-            if path.is_file() and session_records.codex_session_id(path) == session_id:
-                return "codex", path
-    for root_session_id in status_file.list_root_session_ids():
-        path = status_file.session_log_path(root_session_id, session_id)
-        if path.is_file():
-            return "agy", path
-    return None
-
-
 def _show_logs(session_id: str, *, follow: bool) -> int:
     """保存済みの会話記録を表示し、指定時は追尾する。"""
-    selected = _record_path(session_id)
+    selected = record_paths.find_session_record(session_id)
     if selected is None:
         print(f"sessionの記録が見つかりません: {session_id}", file=sys.stderr)
         return 2
-    engine, path = selected
+    # 同じ実行系で複数の記録が一致した場合は先頭を表示する。
+    engine, path = selected.engine, selected.paths[0]
     try:
         with path.open(encoding="utf-8") as stream:
             pending = ""
