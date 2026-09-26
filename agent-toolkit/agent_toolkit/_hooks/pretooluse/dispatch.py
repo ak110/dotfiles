@@ -72,6 +72,9 @@ from agent_toolkit._hooks import (
     bash_command_parser as _bash_command_parser,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
+    message_format as _message_format,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 
@@ -109,6 +112,7 @@ if TYPE_CHECKING:
         check_large_bash_read,
     )
     from agent_toolkit._hooks.pretooluse.notices import (
+        _HOOK_ID,
         _llm_notice,
     )
     from agent_toolkit._hooks.pretooluse.shell_checks import (
@@ -172,7 +176,7 @@ def main(payload_text: str) -> int:
         pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG, removable_cause=True))
     # Claude Codeのメインセッションでは一定間隔で日本語の応答指示を文脈の近くへ置き直す。
     if not is_codex and _advance_language_reinjection(payload, session_id):
-        pending_notices.append(_llm_notice(_rules_context.RESPONSE_LANGUAGE_NOTICE))
+        pending_notices.append(_message_format.llm_notice(_rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE, _HOOK_ID))
 
     def emit_json(result: dict) -> None:
         hook_output = result.get("hookSpecificOutput")

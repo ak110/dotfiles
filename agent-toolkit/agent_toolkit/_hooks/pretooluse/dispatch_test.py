@@ -891,9 +891,19 @@ class TestLanguageReinjection:
 
     def test_main_session_receives_notice_on_interval(self, tmp_path: pathlib.Path) -> None:
         contexts = self._contexts(tmp_path, {}, {})
-        notice = rules_context.RESPONSE_LANGUAGE_NOTICE
+        notice = rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE
         interval = agent_checks.LANGUAGE_REINJECTION_INTERVAL
         assert [notice in context for context in contexts] == [False] * (interval - 1) + [True, False]
+        assert all(rules_context.RESPONSE_LANGUAGE_NOTICE not in context for context in contexts)
+
+    def test_repeated_reinjection_has_no_repeat_count(self, tmp_path: pathlib.Path) -> None:
+        """定期の再注入は違反の通知ではないため、2周目以降も同じ本文を件数なしで届ける。"""
+        interval = agent_checks.LANGUAGE_REINJECTION_INTERVAL
+        contexts = self._contexts(tmp_path, {}, {}) + self._contexts(tmp_path, {}, {})
+        injected = [context for context in contexts if rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE in context]
+        assert len(injected) == len(contexts) // interval
+        assert len(injected) >= 2
+        assert all("件目" not in context for context in injected)
 
     @pytest.mark.parametrize(
         ("extra_payload", "extra_env"),
@@ -908,4 +918,4 @@ class TestLanguageReinjection:
         self, tmp_path: pathlib.Path, extra_payload: dict, extra_env: dict[str, str]
     ) -> None:
         contexts = self._contexts(tmp_path, extra_payload, extra_env)
-        assert all(rules_context.RESPONSE_LANGUAGE_NOTICE not in context for context in contexts)
+        assert all(rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE not in context for context in contexts)

@@ -28,8 +28,12 @@ _HOOK_ID = "agent-toolkit/rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
 RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書く。"
-# `RESPONSE_LANGUAGE_NOTICE`を直前に注入してからのツール呼び出し回数を保持するセッション状態キー。
-# PreToolUseが間隔に達した呼び出しで同じ1行を再注入し、SessionStartが注入した時点で0へ戻す。
+# 会話の途中で再注入する1行。英語化はツール呼び出し直前の短いステータス行で起きやすいため、その行を名指す。
+# 定期の注入であり違反の通知ではないため、反復件数を付けずに整形する。
+RESPONSE_LANGUAGE_REINJECTION_NOTICE = "ユーザーへ向けた地の文は、ツール呼び出し前の短いステータス行も含めて日本語で書く。"
+# 日本語の応答指示を直前に注入してからのツール呼び出し回数を保持するセッション状態キー。
+# PreToolUseが間隔に達した呼び出しで`RESPONSE_LANGUAGE_REINJECTION_NOTICE`を注入し、
+# SessionStartが`RESPONSE_LANGUAGE_NOTICE`を注入した時点で0へ戻す。
 LANGUAGE_REINJECTION_COUNT_KEY = "language_reinjection_count"
 QUALITY_CHECKPOINT_NOTICE = (
     "会話圧縮後は`01-agent.md`「行動と手順の目的」に従い、目的と承認状態を記録された計画やキュー項目から復元する。"
