@@ -1,7 +1,7 @@
 """Markdownの地の文・見出し中のダッシュ系禁止文字を検査する独立スクリプト。
 
-writing-standards SKILL.mdの「emダッシュ・horizontal bar・2倍ダッシュは
-日本語の地の文・見出しで使わない」規定を機械化する。
+writing-standardsの`references/notation-rules.md`が定める、日本語の地の文や見出しで
+ダッシュ記号（emダッシュ・horizontal bar・2倍ダッシュ）を避ける規定を機械化する。
 検出対象はU+2014（EM DASH）・U+2015（HORIZONTAL BAR）・U+2500の2連続（2倍ダッシュ）。
 コードブロック内（フェンス形式・インデント形式）・インラインコード内・URL内は除外する。
 """

@@ -36,13 +36,12 @@ uv run --frozen python -c 'print(__import__("pyfltr.colloquial.check", fromlist=
 依存に持たない場合は、同じPythonの式を`uvx --from pyfltr python -c`へ渡して解決する。環境ごとに変わる`site-packages`の絶対パスを規範へ固定しない。
 
 起草の後に前掲のCLI形式でチェックして検出箇所を解消する。
-WI本文を`atk wi add`又は`atk wi edit --body-file`で渡す場合は、保存前の診断を用いる。WI本文に対する前掲CLIの手動実行は要しない。
 
 対象ファイルがチェック設定を持つプロジェクトの外側にある場合は、設定を持つプロジェクトの絶対パスを
 `--work-dir`へ渡し、`--allow-external-paths`を併用する。
 
 ```sh
-uv run --frozen pyfltr run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <検査設定を持つプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
+<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <検査設定を持つプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
 ```
 
 この手順でも、JSONLの`header`レコードと各commandレコードで対象ファイルへの到達を判定する。

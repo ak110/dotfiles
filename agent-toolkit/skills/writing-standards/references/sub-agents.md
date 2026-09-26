@@ -60,7 +60,6 @@ frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agent
 
 ## 委譲文書の責務分離
 
-- 委譲元は委譲手順、入力資料、制約、返却物、検収条件を定める。委譲先固有の作業手順は委譲先の文書が持つ
 - named agentは調整責務と受信形式を定め、呼び出し時には所定のタスク文書のパスと、後掲の起動入力の規定が渡すことを許す値だけを受け取る
 - 受信するタスク文書は実施内容、対象、必要な作成・レビューの規範スキル、検証、返却形式を定める
 - 受信するタスク文書は、完了報告と作成する成果物の言語を日本語とする条件を含める
@@ -81,11 +80,11 @@ frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agent
 `model`・`tools`の理由はそのサブエージェントの実態（選択したモデル種別、除外したツール集合）と
 整合する形で書き、整合する理由を記述できない場合は既定値を採用する。
 
-`skills`が注入したスキル本文には、所在ディレクトリの絶対パスの表示が付随する
-（公式ドキュメントに記載のない、実環境で観測された挙動。サブエージェント記録で確認済み）。
+`skills`が注入したスキル本文には、所在ディレクトリの絶対パスの表示が付随する。
 プラグイン内の他ファイルを参照する定義は、この所在から確定したplugin rootの相対パスで解決する。
 スキル配下の`references/`は`skills`の宣言では読み込まれないため、
 必要な参照文書は定義本文から明示的に`Read`する。
+観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：frontmatter：2026年8月19日」にある。
 
 ## コンテキスト境界
 
@@ -105,7 +104,9 @@ Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns
 - 呼び出し元が読み込むメモリー階層（`CLAUDE.md`・プロジェクトルールなど）
 - 親セッションの開始時点で取得したGitステータス（作業ディレクトリがGitリポジトリでない場合と、`includeGitInstructions`が`false`の場合は付かない）
 - `skills`で宣言したスキルの全文
-- `main`とセッション内の他の名前付きエージェントを列挙した名簿（その定義の`tools`が`SendMessage`を含み、ほかに名前付きのエージェントが1つ以上ある場合に付く。Claude Code v2.1.206以降）
+- `main`とセッション内の他の名前付きエージェントを列挙した名簿（その定義の`tools`が`SendMessage`を含み、ほかに名前付きのエージェントが1つ以上ある場合に付く）
+
+名簿の観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日」にある。
 
 呼び出し元は定義本文を読まないまま起動プロンプトを組み立てる。
 起動に必要な入力の項目は、定義本文ではなく呼び出し元側の手順へ書く。
