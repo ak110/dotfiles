@@ -23,4 +23,4 @@ description: >
     - PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する
   - それ以外の方法で作業する場合は、リリースPRの作成を手動で行う。PRのマージ後は`merge-pr`の手順で同期、CI及び必要なReleaseを検収する
   - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はどの手順でリリースする場合でも必要である。対象は`rust/claude-statusline/`配下の全ファイルの差分であり、`src/*.rs`の`mod tests`内のテストコードとテスト入力だけの変更や`Cargo.lock`だけの変更も含む。`release-statusline.yaml`は差分のあるマージに対して`statusline-v<version>`タグを作成するため、版数を据え置くと既存タグと衝突する。版数を更新し忘れた場合は、レーンの近接検証と公開前のローカル検証で起動するpyfltrの`statusline-version`と、`develop`へのpushで実行されるCIの`statusline-version` jobの双方がそれを検出する
-  - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](../../../docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design.md#developとmasterのbranchリリース設計)を参照する
+  - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design.md#developとmasterのbranchリリース設計)を参照する

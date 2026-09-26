@@ -35,7 +35,7 @@ description: >
 - `pytools/post_apply.py`のステップが外部ツールの不在で当該ステップ全体をスキップする場合は、当該ツールを同じステップ又は先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
   利用者が導入先を選ぶアプリケーションは、この対象から外す
 - `pytools/post_apply.py`の工程が配置するファイル（ランチャー、フラグファイル、unitなど）の配置先を改名する場合と工程を廃止する場合は、同じ変更で旧パスを`_REMOVED_PATHS`へ登録する。利用者が編集し得るファイルは`_REMOVED_PATHS_IF_CONTENT`へ登録する。
-  工程の生成物はchezmoiの管理外であり、登録しないと旧生成物が配布先に残り続ける（PATH先頭の旧ランチャーが作業ツリー版の`atk`を2か月覆い隠した事例がある）
+  工程の生成物はchezmoiの管理外であり、登録しないと旧生成物が配布先に残り続ける
 - `rust/`配下の配置の単位は`rust/<クレート名>/`のCargoクレートとする。
   記述作法は`agent-toolkit:writing-standards`の`references/rust.md`が定める。
   `make test`は`rust/`配下を対象に含まないため、変更したクレートで`cargo fmt --check`、`cargo clippy`及び`cargo test`を近接検証として実行する。
