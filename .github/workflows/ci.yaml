@@ -194,7 +194,7 @@ jobs:
       # サプライチェーン攻撃対策: uv が lockfile を常に尊重する
       UV_FROZEN: "1"
       UV_PYTHON: ${{ matrix.python-version }}
-      # mise・pinact 等が GitHub API を呼び出す際のレート制限（403）回避。
+      # mise 等が GitHub API を呼び出す際のレート制限（403）回避。
       # container job では明示しないと secrets.GITHUB_TOKEN がコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
     steps:

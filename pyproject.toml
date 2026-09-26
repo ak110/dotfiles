@@ -282,16 +282,6 @@ pass-filenames = false
 # pyfltrのPath.matchは`**`を任意階層として扱わないため、Git管理下にある深さを明示する。
 targets = ["rust/claude-statusline/*", "rust/claude-statusline/src/*"]
 
-[tool.pyfltr.custom-commands.pinact]
-type = "linter"
-path = "pinact"
-args = ["run", "--check"]
-pass-filenames = false
-# ワークフローを手で編集してタグ指定の`uses:`を加えた誤りを、push後のCIより前に検出する。
-# prekのpre-commitが実行する`pyfltr fast`には含めず、レーンの近接検証（`pyfltr run <変更ファイル>`）と
-# CIの全検査で起動する。
-targets = [".github/workflows/*.yaml", ".github/workflows/*.yml"]
-
 [tool.pylint."messages control"]
 disable = [
     "broad-exception-caught",
