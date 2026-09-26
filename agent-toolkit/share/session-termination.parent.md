@@ -18,7 +18,6 @@
 
 全レーンの終端を確認し、対象リポジトリの主作業ツリーへ書き込む主体が自身だけであることを確定してから起動する。
 起動時の`cwd`が対象リポジトリの主作業ツリーであり、現在branchが公開対象のベースbranchであることも確認する。
-必須入力の項目名は`bump種別`、`検証・CI方針`、`近接検証結果`、`後続処置AWI`及び`引き継ぎ記録先`とする。これらが起動文にそろっていることと、絶対パスで示す入力が実在することを確認する。
 
 ## 渡す入力
 
@@ -41,7 +40,6 @@
 - `git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
 - 通常公開の全体検証を次の条件で確認する。`検証・CI方針`が`通常`の場合、`overall_verification`が`CI判定`又は`ローカル成功`のいずれかだけである。`terminal_steps`が`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「出力」の同項目が定める記載条件を満たす
 - 通常公開のCI結果を次の条件で確認する。`検証・CI方針`が`通常`の場合、`ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
-- 即時対応方針では、`検証・CI方針`が`即時対応`である
 - 即時対応の返却を次の条件で確認する。`検証・CI方針`が`即時対応`の場合、`overall_verification`が起動時に渡した近接検証の成功を挙げ、`ci_result`が`待機省略`とCIのrun URLを挙げ、`terminal_steps`が省略した全体検証と後続処置AWIを挙げる
 - `ci_verified_head`と`final_branch_head`が異なり、`final_branch_head`自体のCI成功を前項で検収していない場合は、両方を7文字以上の一意な短縮OIDのまま対象リポジトリのGitコマンドへ渡す。
   `final_branch_head`がマージcommitなら、第1親を`<final_branch_head>^1`として参照し、
@@ -51,9 +49,7 @@
   いずれもそのOIDの集合が、`terminal_steps`が挙げる生成commitを操作直前に解決したOIDの集合と過不足なく一致することを確認する。
   この代替確認が示すのは差分commitの集合の一致までとし、`final_branch_head`のCI成功の判定は前段の条件で行う
 - `base_branch_state`が`公開済み`である
-  - `git -C <対象リポジトリの絶対パス> status --porcelain=v2 --branch`を実行する。`# branch.head`の値がベースbranch名と一致し、`#`で始まらない行が0件であり、`# branch.ab`のahead値が`+0`であることを確認する。追跡refが無く`# branch.ab`を取得できない場合は、公開済みと判定しない
-  - `git -C <対象リポジトリの絶対パス> status`を実行し、rebase・merge・cherry-pickの進行中を示す表示が無いことを確認する。以上の4項目を現在のGit状態から再取得して全て成立させる。`.git`内部のパス探索と複数のrefを1回へ渡す`git rev-parse --short`を、これら4項目の取得に使わない
-  - 現在状態の判定は、この再取得の結果で行う。終端担当が返した`base_branch_state`は再取得の代わりから外す
+  - `agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。終端担当が返した`base_branch_state`は再取得の代わりから外す
   - 同じ終端担当への差し戻しでも`公開済み`にならない場合は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節が定めるUWIの登録へ送る
 - `version`が`bump不要`でない場合は、対象リポジトリの版数規範が定める定義ファイルの版数がその値と一致する
 - `terminal_steps`が、起動文で終端担当の実行対象とした固有の終端工程を過不足なく挙げる。並行開始する工程の完了は、その担当主体の返却から別に検収する
