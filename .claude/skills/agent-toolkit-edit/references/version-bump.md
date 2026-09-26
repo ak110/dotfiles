@@ -62,8 +62,9 @@ plugin cache directory配下の新versionのrootを解決し直す。
 （既存bumpとの統合はツール側が吸収する）。bump不要の場合は`## 要件・外部仕様`へ`bump不要`と根拠を記載する。
 version bumpを伴う計画では、Claude Code向けの定義元2ファイルを`## 要件・外部仕様`の変更説明へ含める。
 正式な生成コマンドと生成器出力との一致確認は`## 検証`へ記載する。
-生成コマンドが扱う派生manifestは、version・description欄の有無や実際の差分有無を問わず変更説明へ重複して含めず、定義元の2ファイルだけを記載する。
-派生manifestの完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
+生成コマンドが扱う派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など生成器の出力全般）は、変更説明へ重複して含めない。
+version・description欄の有無や実際の差分有無を問わず、定義元のファイルだけを記載する。
+派生物の完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
 Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
 定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で差分が生じないことを確かめる。
 bumpの完了条件は、実装開始時点の版との増加比較で判定せず、

@@ -142,13 +142,11 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 推奨ガイドは`~/pyfltr/docs/guide/recommended.md`と`~/pyfltr/docs/guide/recommended-nonpython.md`である。
 
 - lint違反への対応と推奨設定の緩和は、`agent-toolkit:writing-standards`の`references/implementation-time.md`「lintと機械チェック」の原則に従う。設定の緩和（ruff・pylint・textlint等の設定ファイルへのignore追加、lint設定の弱体化）は根本原因の修正と行単位の無視で足りない場合に限る慎重な手段とする。推奨から逸脱する設定を導入する場合は、該当箇所に理由を述べたコメントを直接記述する
-- 推奨ガイド自体の改訂が必要と判断した場合は、「追従作業と複数リポジトリ横断投入」節に従って`~/pyfltr`向けのAWIを先に投入する
-  - 各プロジェクトへの反映はその改訂の後に行う
+- 推奨ガイド自体の改訂を要する場合の投入順は「追従作業と複数リポジトリ横断投入」節に従う
 
 ## 変更時の同期対象マトリクス
 
 変更内容に応じて確認すべきプロジェクトを示す。
-プロジェクト名とローカルパスの対応はコンテキスト上のローカル指示から取得する。
 
 | 変更内容 | dotfiles | pyfltr | pytilpack | smpr | glatasks | gv | lc |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -175,7 +173,6 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 「前提」節の対象プロジェクト一覧を候補集合とする。
 判定手順で列挙した適用前提を、各候補の現物を観測して確かめるか、明文化された方針と比べる。
 適用前提が成立したプロジェクトだけを★相当の必須確認へ進める。
-対象範囲外の変更は現行の除外規定どおり確認不要とする。
 
 `commit.template設定`はsetupタスク（`make setup`または`mise run setup`）から
 `git config --local commit.template .gitmessage`を呼ぶ実装を指す。
@@ -202,11 +199,8 @@ README.md・AGENTS.md・docs/development/development.mdの標準章構成・共�
 
 ### ドキュメント・運用方針
 
-- ツールチェイン周りの修正では、「足回りファイルの推奨設定維持」節が挙げる推奨ガイドのメンテナンスも確認する（気付きにくい）
 - 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を
   発見したらdotfiles側を修正する（マスター）
-- README.md・AGENTS.md・docs/development/development.md間で、
-  共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
@@ -242,7 +236,6 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 
 - CI workflowのLinuxジョブはpyfltr公式イメージの`container:`実行を方針とし、
   container適用対象・キャッシュ方式の具体は各リポジトリの`.github/workflows/**`をSSOTとして揃える
-- リリース手段とバージョン区分は本スキル「リリース運用」節を参照する
 
 以下4点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
 

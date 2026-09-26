@@ -40,7 +40,14 @@ description: >
     - CIが実行しないチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
     - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの近接検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
     - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず、`agent-toolkit/`を含むリポジトリ全体を対象にする。名前を削除・改名したモジュールに追随していない未変更のテストや呼び出し元は、変更ファイルだけを対象とする近接検証では検出できないため、Pythonファイルを変更するレーンでは、計画担当が計画の`近接検証`行へ含める。あわせてaridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
-  - ユーザーが局所変更の即時公開を明示した場合だけ、即時公開では現在の対象に対応する近接検証の成功を条件として、全体検証とCI成功の待機を省略できる。未完了の類似見直し、横展開又は再発防止がある場合だけ後続処置AWIを登録し、即時修正と同じ要求を複製しない。push後はCIの起動とrun URLを確認し、省略した検証、未確定のCI、run URL及び後続処置AWIを報告する
+    - `make test`が実行するツール集合はCIの`python-lint (3.14)`ジョブとほぼ同じで、CIが`claude-plugin-validate`を無効化する点だけが異なる。
+      次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
+      - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
+      - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
+      - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
+      - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
+      - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
+  - 局所変更の即時公開は`agent-toolkit:process-wi`「局所変更の即時公開」に従う
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
     - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する
