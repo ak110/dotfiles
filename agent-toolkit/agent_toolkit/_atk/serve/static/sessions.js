@@ -160,9 +160,12 @@ function renderList() {
       warning.textContent = entry.warning;
       item.append(warning);
     }
-    let toggle = row.querySelector(".session-tree-toggle");
+    // 子の無い行にも同じ幅の開閉欄を置き、子の有無で項目の開始位置がずれないようにする。
+    // 子の無い行の「−」は展開できる子が無いことを示す表示であり、操作対象にしない。
+    let toggle = row.querySelector(".session-tree-toggle, .session-tree-leaf");
     if (childCount) {
-      if (!toggle) {
+      if (!toggle || toggle.tagName !== "BUTTON") {
+        toggle?.remove();
         toggle = document.createElement("button");
         toggle.type = "button";
         toggle.className = "session-tree-toggle";
@@ -177,7 +180,14 @@ function renderList() {
       toggle.textContent = expandedKeys.has(key) ? "−" : "+";
       toggle.setAttribute("aria-label", `${entry.session_id}の子セッションを${expandedKeys.has(key) ? "折り畳む" : "展開する"}`);
       toggle.setAttribute("aria-expanded", String(expandedKeys.has(key)));
-    } else if (toggle) toggle.remove();
+    } else if (!toggle || toggle.tagName === "BUTTON") {
+      toggle?.remove();
+      toggle = document.createElement("span");
+      toggle.className = "session-tree-leaf";
+      toggle.textContent = "−";
+      toggle.setAttribute("aria-hidden", "true");
+      row.insertBefore(toggle, row.firstChild);
+    }
     if (item.parentNode !== row) row.append(item);
     if (row === cursor) cursor = row.nextSibling;
     else listEl.insertBefore(row, cursor);

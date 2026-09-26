@@ -425,6 +425,38 @@ def test_agents_logs_reports_missing_record(
     assert "missing" in capsys.readouterr().err
 
 
+def test_agents_logs_shows_first_of_ambiguous_codex_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Codexの記録が複数一致する識別子でも、従来どおり先頭の記録を表示する。"""
+    thread_id = "55555555-5555-4555-8555-555555555555"
+    for day, text in (("01", "先頭の記録"), ("02", "後続の記録")):
+        rollout = tmp_path / "sessions" / "2026" / "09" / day / f"rollout-2026-09-{day}T00-00-00-{thread_id}.jsonl"
+        rollout.parent.mkdir(parents=True)
+        rollout.write_text(
+            json.dumps(
+                {
+                    "type": "response_item",
+                    "timestamp": f"2026-09-{day}T00:00:00Z",
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(_atk_agents.session_records, "default_claude_home", lambda: tmp_path / "claude")
+    monkeypatch.setattr(_atk_agents.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "state")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", thread_id])
+
+    output = capsys.readouterr().out
+    assert "先頭の記録" in output
+    assert "後続の記録" not in output
+
+
 def test_agents_logs_reads_and_follows_antigravity_events(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

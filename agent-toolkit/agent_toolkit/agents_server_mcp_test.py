@@ -24,7 +24,7 @@ import pytest
 
 import agent_toolkit._atk_agents as atk_agents
 import agent_toolkit.agents_server_mcp as subject
-from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file
+from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file, tool_names
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._testing.helpers import delivery_payload
@@ -446,6 +446,17 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         text=True,
     )
     assert check.returncode == 0, check.stderr
+
+
+def test_start_operations_match_registered_start_tools() -> None:
+    """子sessionを生成する登録ツールの集合が、判定箇所の参照する起動ツールの正本と一致する。
+
+    起動ツールを追加して正本を更新しない変更では、証拠抽出器やフックがその委譲を認識しない。
+    未分類のツールを登録した変更も、子sessionを生成するかの分類を求めるため失敗させる。
+    """
+    non_start_operations = {"send_message", "kill", "list", "show", "stop"}
+    registered = set(subject.mcp._tool_manager._tools)
+    assert registered - non_start_operations == tool_names.START_OPERATIONS
 
 
 def test_public_tools_separate_task_document_and_custom_start() -> None:

@@ -131,7 +131,7 @@ _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
-_AGENTS_SERVER_START_OPERATIONS = frozenset(("start", "start_custom", "start_explore", "start_write", "start_shell"))
+_AGENTS_SERVER_START_OPERATIONS = _agents_server_tool_names.START_OPERATIONS
 _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in _AGENTS_SERVER_START_OPERATIONS
 )

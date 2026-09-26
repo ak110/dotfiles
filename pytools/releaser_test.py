@@ -416,3 +416,47 @@ def test_sync_local_repo_ignores_unreachable_extra_remote(tmp_path: Path, monkey
         ["git", "-C", str(origin), "rev-parse", "master"], capture_output=True, text=True, check=True
     ).stdout
     assert local_head == origin_head
+
+
+def test_sync_local_repo_fetches_upstream_remote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """upstreamがorigin以外のリモートを指す場合も、そのリモートを取得して上流branchへfast-forwardする。"""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "master", str(origin)], check=True)
+    upstream = tmp_path / "up.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "master", str(upstream)], check=True)
+    work = tmp_path / "work"
+    _setup_git_repo(work)
+    _make_commit(work, "first")
+    for remote in (origin, upstream):
+        subprocess.run(["git", "-C", str(work), "push", "-q", str(remote), "master"], check=True)
+    local = tmp_path / "local"
+    subprocess.run(["git", "clone", "-q", str(origin), str(local)], check=True)
+    subprocess.run(["git", "-C", str(local), "remote", "add", "upstream", str(upstream)], check=True)
+    subprocess.run(["git", "-C", str(local), "fetch", "-q", "upstream"], check=True)
+    subprocess.run(["git", "-C", str(local), "branch", "-q", "--set-upstream-to=upstream/master", "master"], check=True)
+    # 新しいcommitはupstream側だけに置き、originを取得しても追跡参照が進まない構成にする。
+    _make_commit(work, "second")
+    subprocess.run(["git", "-C", str(work), "push", "-q", str(upstream), "master"], check=True)
+    monkeypatch.chdir(local)
+
+    _sync_local_repo()
+
+    local_head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout
+    upstream_head = subprocess.run(
+        ["git", "-C", str(upstream), "rev-parse", "master"], capture_output=True, text=True, check=True
+    ).stdout
+    assert local_head == upstream_head
+
+
+def test_sync_local_repo_without_upstream_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """upstreamが未設定のbranchでは、取得とfast-forwardを行わずに同期できない理由を示して終える。"""
+    local = tmp_path / "local"
+    _setup_git_repo(local)
+    _make_commit(local, "first")
+    head = subprocess.run(["git", "-C", str(local), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout
+    monkeypatch.chdir(local)
+
+    with pytest.raises(_ReleaserError, match="上流ブランチが設定されていない"):
+        _sync_local_repo()
+
+    assert subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout == head
