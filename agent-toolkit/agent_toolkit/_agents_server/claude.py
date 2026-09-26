@@ -324,7 +324,12 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
     正常なsessionへ停滞の印が付き、呼び出し元が不要な催促と巻き取りへ進む。
     ツール呼び出しの記録はテキストの反映後に行う。同じメッセージがテキストと
     ツール呼び出しの両方を持つ場合、後に発行したツール呼び出しを最後の行動とするためである。
+
+    API失敗（429など）は`error`付きの合成メッセージとして`ResultMessage`より前に届くため、
+    モデル出力の観測から除く。数えると、可用性失敗を確定する前に`start`の終端待ちを打ち切る。
     """
+    if getattr(message, "error", None) is None:
+        session.model_output_observed = True
     text = _assistant_text(message)
     if text.strip():
         session.agent_message = text

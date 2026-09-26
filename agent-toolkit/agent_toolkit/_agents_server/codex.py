@@ -66,6 +66,10 @@ APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT = 1.0
 STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
 # 複製へ持ち込まない対象。仮想環境とバイトコードは複製先で再生成され、Git履歴は起動へ要らない。
 STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
+# `item/started`のうちモデル出力に数えないitem種別。
+# `userMessage`はモデル呼び出しより前に届く入力の記録で、利用上限の失敗はその後に起こり得る。
+# codex-cli 0.157.0の通常のturnでは`userMessage`の後に`reasoning`が届いた（2026年9月26日に実測）。
+_NON_MODEL_OUTPUT_ITEM_TYPES = frozenset({"userMessage", "hookPrompt", "contextCompaction"})
 
 _stable_plugin_roots: dict[Path, Path] = {}
 
@@ -1085,6 +1089,8 @@ class AppServerManager:
             item = params.get("item")
             session.record_current_item_start(item if isinstance(item, dict) else None)
             if isinstance(item, dict):
+                if item.get("type") not in _NON_MODEL_OUTPUT_ITEM_TYPES:
+                    session.model_output_observed = True
                 if item.get("type") == "fileChange":
                     session.diff_changed = True
                 item_id = item.get("id")
