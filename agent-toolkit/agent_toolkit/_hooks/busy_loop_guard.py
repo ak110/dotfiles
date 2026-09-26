@@ -5,8 +5,7 @@
 利用者が介入するまでトークンを消費し続ける。本判定はこの反復を検知し、常駐処理へ中断を要求したうえで
 当該セッションへ終了要求を送る。
 
-適用対象は環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`（移行互換名`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`）の
-最上位セッションに限り、委譲先セッションと対話セッションは対象の外に置く。
+適用対象は常駐処理が起動した会話IDを持つ最上位セッションに限り、委譲先セッションと対話セッションは対象の外に置く。
 
 無進捗ターンは、前回のStop判定から今回のStop判定までに会話記録へ加わったエントリの中に、
 自セッションのツール呼び出しが1件も無いターンとする。連続回数が`_THRESHOLD`へ達した時点で停止工程へ進む。
@@ -31,6 +30,7 @@ import os
 
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
+from agent_toolkit._common.process_loop_session import is_process_loop_session
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import (
@@ -40,12 +40,6 @@ from agent_toolkit._hooks.stop_gate import (
     read_transcript_entries_cached,
 )
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
-
-# 常駐ループから起動されたセッションであることを示す環境変数名。
-_ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-
-# 更新中に旧process-loopと併存するため受理する移行互換名。
-_LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
 # 停止工程へ進む連続無進捗ターン数。
 _THRESHOLD = 3
@@ -76,11 +70,9 @@ def _store(session_id: str, count: int, observed: int) -> None:
     update_state(session_id, _update)
 
 
-def _is_target_session(payload: dict) -> bool:
+def _is_target_session(session_id: str, payload: dict) -> bool:
     """常駐ループの最上位セッションである場合に真を返す。"""
-    if os.environ.get(_ENV_REQUIRED) != "1" and os.environ.get(_LEGACY_ENV_REQUIRED) != "1":
-        return False
-    return is_main_agent_context(payload)
+    return is_process_loop_session(session_id, os.environ) and is_main_agent_context(payload)
 
 
 def _halt(session_id: str, count: int) -> str:
@@ -112,7 +104,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     session_id, payload = resolved
 
-    if not _is_target_session(payload):
+    if not _is_target_session(session_id, payload):
         append_stop_log(session_id, "approve_busy_loop_not_applicable", {})
         return "approve", ""
 

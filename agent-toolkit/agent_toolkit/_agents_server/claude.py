@@ -15,6 +15,7 @@ import datetime
 import logging
 import os
 import pathlib
+import re
 import shutil
 from collections.abc import Callable
 from typing import Any, Literal, cast
@@ -322,18 +323,29 @@ def _assistant_text(message: Any) -> str:
 def consume_assistant_message(session: SessionState, message: Any) -> None:
     """assistantメッセージをsessionの共有状態へ反映する。
 
-    テキストの有無によらず活動時刻を進める。進めないと、ツール呼び出しだけを長時間続ける
-    正常なsessionへ停滞の印が付き、呼び出し元が不要な催促と巻き取りへ進む。
+    正常なメッセージではテキストの有無によらず活動時刻を進める。進めないと、ツール呼び出しだけを長時間続ける
+    sessionへ停滞の印が付き、呼び出し元が不要な催促と巻き取りへ進む。
     ツール呼び出しの記録はテキストの反映後に行う。同じメッセージがテキストと
     ツール呼び出しの両方を持つ場合、後に発行したツール呼び出しを最後の行動とするためである。
 
     API失敗（429など）は`error`付きの合成メッセージとして`ResultMessage`より前に届くため、
-    モデル出力の観測から除く。数えると、可用性失敗を確定する前に`start`の終端待ちを打ち切る。
+    モデル出力と活動時刻の更新から除く。数えると、可用性失敗を確定する前に`start`の終端待ちを打ち切り、
+    再試行が続く間も停滞を検出できなくなる。
     正常な起動では、完成したassistantメッセージより先に届くAPIの応答開始（`message_start`）で
     観測済みになる。完成したメッセージは思考と最初の内容ブロックの生成が終わるまで届かない。
     """
-    if getattr(message, "error", None) is None:
-        session.model_output_observed = True
+    error = getattr(message, "error", None)
+    if error is not None:
+        detail = _assistant_text(message)
+        status_match = re.search(r"\bAPI Error:\s*(\d{3})\b", detail)
+        status = int(status_match.group(1)) if status_match is not None else None
+        if status is None and error == "rate_limit":
+            status = 429
+        error_type = "rate_limit_error" if error == "rate_limit" else str(error)
+        session.record_api_error(error_type, status)
+        return
+    session.api_error = None
+    session.model_output_observed = True
     text = _assistant_text(message)
     if text.strip():
         session.agent_message = text

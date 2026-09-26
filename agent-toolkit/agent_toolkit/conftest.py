@@ -166,7 +166,7 @@ def _clear_process_loop_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     標識の有無で分岐する動作を検証するテストは自身で`setenv`する。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
-    monkeypatch.delenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
 
 
 @pytest.fixture(autouse=True)

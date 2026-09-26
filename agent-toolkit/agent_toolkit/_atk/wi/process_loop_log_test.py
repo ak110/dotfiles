@@ -21,6 +21,7 @@ def _redirect_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 def _enable_autonomous_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     """既定で`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`を設定する（`TestNoop`では個別に上書きする）。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
 
 
 class TestAppend:
@@ -63,6 +64,16 @@ class TestNoop:
         monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "0")
         _process_loop_log.append("session_start")
         assert not _process_loop_log.log_path().exists()
+
+    def test_nested_session_id_does_not_write(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "parent")
+        _process_loop_log.append("subagent_start", session_id="nested")
+        assert not _process_loop_log.log_path().exists()
+
+    def test_matching_session_id_writes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "parent")
+        _process_loop_log.append("subagent_start", session_id="parent")
+        assert "event=subagent_start" in _process_loop_log.log_path().read_text(encoding="utf-8")
 
 
 class TestRotation:

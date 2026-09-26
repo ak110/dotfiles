@@ -296,7 +296,7 @@ Antigravity CLIが渡すJSONはClaude CodeのstatusLine入力と項目が完全�
 
 `atk agents list`と`atk agents show`、およびMCPの`list`は停滞の判定を表す`stalled`を返していた。
 当該値は同じ応答が返す`seconds_since_activity`と定数の閾値の比較だけで再現できるため、公開出力から撤去した。
-MCPの`list`は3項目の公開契約を保つため、`stalled`を`seconds_since_activity`へ置き換えた。
+MCPの`list`は通常時の3項目の公開契約を保つため、`stalled`を`seconds_since_activity`へ置き換えた。ClaudeのAPI失敗を再試行している間だけ、一次情報から算出した`api_error`も返す。
 
 導出できる項目を公開出力へ置くと、同じ判定を定める箇所が生成側と呼び出し側の2つに分かれる。
 閾値を変えた時点で両者が食い違い、どちらが現在の判定かを呼び出し元が確定できない。
@@ -306,6 +306,9 @@ MCPの`list`は3項目の公開契約を保つため、`stalled`を`seconds_sinc
 
 `agents_server`が`start`・`start_explore`・`start_write`・`start_shell`で起動したsessionは、Claude CodeのUIでは`atk agents wait`の応答が届くまで状態を観測できない。
 このため`agents_server`はルートセッションごとのディレクトリへ生存中のsessionの状態ファイルを出力し、`claude-statusline`の`statusline`モードがセッション行の次の行以降へ1 sessionを1行で表示する。
+
+Claude backendが受け取るAPI失敗の合成assistantメッセージはモデルの活動を示さないため、`updated_at`を進めない。失敗の種別、取得できたHTTPステータス、連続失敗の初回時刻と件数だけをsessionに保持し、状態ファイルへ射影する。`show`と`list`は共通の射影から失敗の経過秒を算出し、通常のassistantメッセージで記録を削除する。これにより、再試行の受信で活動経過が短く表示される状態を防ぐ。親プロセスや外部ログから再試行を推定する案は、sessionの受信境界で既に失敗の種別を得られるため採用しない。
+429の再試行中は同じsessionの終端又は正常なモデル出力を待つ。`seconds_since_activity`はモデル活動がない間に増えるが、`api_error`が429を示す間はその値だけで委譲先を停止しない。診断の可視化と委譲先の置換を別の判断に分けることで、利用枠の回復後に同じ実行を継続できる余地を残す。
 
 状態ファイルは`atk config get state_dir`が返すディレクトリ配下の`agents-server/<ルートセッション識別子>/<書込主体>.json`とする。終端結果の未回収判定は、結果ファイルを扱える処理では公開済み・回収済み・未公開を区別する共通述語で行い、状態ファイルを記述できない処理だけは内部の配送済み状態へ縮退する。各書込主体は自身の状態ファイルと対応する一時ファイルだけを削除し、共有する終端結果と通知は保持期限を超えたものだけを回収する。別の書込主体の表示、未回収の終端結果、上り通知を起動または終了時の初期化で削除する案は、同じルートに属する並行した委譲の観測を失わせるため採用しない。
 ルートセッション識別子は`AGENT_TOOLKIT_OWNER_SESSION`、無ければMCPサーバー起動時の`CLAUDE_CODE_SESSION_ID`から取る。`CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。Claude Codeが同一プロセスのままsession識別子を切り替えると、長命なMCPサーバーだけが起動時の値を保持し、statuslineが受け取る入力JSONの`session_id`と一致しなくなる。このため同じディレクトリ配下ではなく`agents-server/aliases/<現行のsession識別子>.json`へ索引を置き、statuslineと`atk agents wait`は当該索引を経てルートセッション識別子を解決する。`atk agents notify`は所有者sessionを直接解決する方式を保ち、索引を読まない。MCPサーバーは`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`と`list`の応答に、自身の状態ファイル書込先として解決した`root_session_id`を含める。`list`は保持sessionが0件でも当該項目を返す。PostToolUseフックは応答項目を索引の書込先として直接使う。状態ファイルは1秒単位で集約され、応答直後には起動したsessionが未反映であり得るため、状態ディレクトリの走査による逆引きは行わない。CLIの`list`と`wait`は索引又は現行識別子自身の状態ディレクトリで会話rootとの対応を確認する。対応未確認かつ対象0件ではCLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行するよう案内する。対応確認済みの空状態は通常の空状態として扱う。却下した代替案は、両側がClaude Codeプロセスの識別子を環境変数から解決する案と、鍵を作業ディレクトリへ変える案である。前者はMCPサーバープロセスに`CLAUDE_PID`が渡らないため成立せず、後者は同じディレクトリで複数の会話を同時に動かすと会話ごとの行を区別できないため採用しない。共有状態ごとの基準となる記録と、それを読み書きする処理の対応は`.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md`が定める。
@@ -341,7 +344,7 @@ Claude Codeのstatuslineはメッセージ到着などのイベントでだけ�
 配布設定の`statusLine`へ`refreshInterval`を置き、待機中も経過時間と終端を反映する。
 行の整形幅は、取得した端末幅からClaude Codeがstatuslineの描画へ確保する4セルを差し引いた値とする。4セルは各行の先頭へ付く2セルの字下げと、行末へ残す2セルである。差し引く値が実際の確保幅より小さいと、整形した行が溢れ、Claude Codeが行末を切り詰めて右寄せした経過時間と状態を欠く。確保幅は描画された行の表示幅（曖昧幅を1セルとして数えた値）と、statuslineの実行時に観測できる`COLUMNS`の値との差で求める。整形処理は右寄せ要素を整形幅の右端へ置くため、整形幅が実際の確保幅を超えた分は必ず右寄せ要素から失われる。このため、確保幅の値を単体テストの期待値としてだけ固定せず、描画された行の表示幅と`COLUMNS`の差を求め直す手順を確保幅の導出根拠とする。
 
-各行の説明欄は、最後に観測した行動を表す`last_action`を優先し、当該値が空の場合だけ`progress`、いずれも空の場合は`label`を表示する。
+Claudeの稼働中sessionに`api_error`がある行では説明欄へAPI失敗の種別、右端へHTTPステータス・失敗開始からの経過・件数を表示する。限られた表示幅で診断を読めるよう、この間は通常の識別名・session開始からの経過・status表示を診断項目へ譲る。`api_error`が無い行の説明欄は、最後に観測した行動を表す`last_action`を優先し、当該値が空の場合だけ`progress`、いずれも空の場合は`label`を表示する。
 `last_action`はassistantのテキスト出力ではその抜粋、ツール呼び出しではツール名と当該呼び出しの入力を1行へ要約した値、Codex backendでは進行中itemの種別と同じ規則で要約したitemの入力を持つ。
 入力の要約は、各項目を`<key>=<値>`の形でkeyの受信順に並べ、文字列以外の値をJSONへ直列化し、改行と連続する空白を1個の空白へ畳んだうえで200文字を超える分を省略記号付きで切り詰めた値とする。Codexのitemでは、`show`が別項目として返す`type`と`id`を要約から除く。
 `show`が返す未完了のツール呼び出しの項目も同じ要約を`detail`として持つ。
@@ -511,6 +514,10 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
 `atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
+
+## process-loopの会話IDによる識別
+
+常駐処理がClaude会話を新規に起動するときは`--session-id`で会話IDを指定し、同じIDを子環境へ渡す。ID指定の再開では指定値を渡す。hookは環境印とhook入力の`session_id`の一致から対象会話を決める。入れ子の`claude`は環境印を継承する一方で会話IDが異なるため、常駐本体の終了保証と空転ガードの対象にならない。IDを指定しない再開では起動側が対象IDを渡せないため、環境印による従来の判定を保つ。親プロセスの探索はプロセス階層とOSへの依存を増やし、hook入力に既にある会話IDより間接的な判定になるため採用しない。
 
 ## process-loopの中断要求
 

@@ -1129,11 +1129,14 @@ class StatusFileWriter:
 
 
 def _serialize_session(session: SessionState) -> dict[str, Any]:
-    return {
+    serialized = {
         **_serialize_retained_session(session),
         "progress": session.progress,
         "last_action": session.last_action,
     }
+    if session.status == "running" and session.api_error is not None:
+        serialized["api_error"] = session.api_error
+    return serialized
 
 
 def _serialize_retained_session(session: SessionState | SessionResumeState) -> dict[str, Any]:

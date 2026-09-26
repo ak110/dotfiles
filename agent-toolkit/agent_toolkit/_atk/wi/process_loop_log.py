@@ -21,8 +21,8 @@ from pathlib import Path
 import platformdirs
 
 from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_rotate_and_append
+from agent_toolkit._common.process_loop_session import is_process_loop_session
 
-_ENABLE_ENV_VAR = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _MAX_BYTES = 1_000_000
 _ABORT_FILENAME = "process-wi-abort"
 _INSTRUCTION_FILENAME = "process-wi-instructions"
@@ -122,19 +122,14 @@ def consume_instructions() -> str:
     return INSTRUCTION_SEPARATOR.join(items)
 
 
-def _is_enabled() -> bool:
-    """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`のセッションでのみ真を返す。"""
-    return os.environ.get(_ENABLE_ENV_VAR) == "1"
-
-
-def append(event: str, **fields: object) -> None:
+def append(event: str, *, session_id: str | None = None, **fields: object) -> None:
     """観測イベントを1行追記する。
 
     `AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`未設定のセッションではno-opとする。
     出力形式: `<ISO8601> event=<name> k=v k=v ...`。
     書き込み失敗（権限不足等）は呼び出し元の動作へ影響させないため無視する。
     """
-    if not _is_enabled():
+    if not is_process_loop_session(session_id, os.environ):
         return
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
     rendered = " ".join(f"{key}={value}" for key, value in fields.items())

@@ -167,6 +167,8 @@ def _listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
     public = {"session_id": session["session_id"], "status": session["status"]}
     if "seconds_since_activity" in session:
         public["seconds_since_activity"] = session["seconds_since_activity"]
+    if "api_error" in session:
+        public["api_error"] = session["api_error"]
     return public
 
 
@@ -714,6 +716,7 @@ class AgentsServerManager:
                 updated_at=session.updated_at,
                 output_updated_at=session.output_updated_at,
                 started_at=session.started_at,
+                api_error=getattr(session, "api_error", None) if status == "running" else None,
             )
         )
         return listed
@@ -833,6 +836,7 @@ class AgentsServerManager:
             updated_at=session.updated_at,
             output_updated_at=session.output_updated_at,
             started_at=session.started_at,
+            api_error=getattr(session, "api_error", None) if status == "running" else None,
         )
         response.update(activity)
         if status == "running" and isinstance(session, SessionState):
@@ -2480,6 +2484,7 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
 
     所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
     各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
+    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒及び件数を返し、モデル出力が止まっていることを示す。
     起動条件は`show`で取得する。
     結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
     既定では未回収結果を持たない終端済み又は`expired`のsessionを除き、除いた件数を`omitted`へ返す。
@@ -2496,6 +2501,7 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
     既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
     `model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列である。
     停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の疑いはこの値で判定する。
+    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒及び件数を返し、モデル出力が止まっていることを示す。
     `seconds_since_output`は最新のテキスト出力からの経過秒数である。
     テキスト出力だけが止まり活動が続いている状態は長時間のコマンドの実行中であり、停滞ではない。
     `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻及び入力の要約を返す。

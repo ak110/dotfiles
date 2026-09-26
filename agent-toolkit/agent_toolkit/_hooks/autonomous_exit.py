@@ -1,8 +1,7 @@
 r"""agent-toolkit pluginの自律終了Stopフック。
 
-環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`または移行互換名
-`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`が設定されたセッションを対象とする。
-本フックは環境変数印を検出したセッションに限り、`atk agents-exit-session`の
+環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と、起動側が渡したセッションIDに
+一致する会話を対象とする。本フックは対象セッションに限り、`atk agents-exit-session`の
 起動漏れを検知して当該ターンの継続をblockし再促する。
 
 `atk agents-exit-session`起動の記録はpluginのPostToolUse
@@ -11,7 +10,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 判定順序は以下のとおり。
 
-1. 新旧いずれのセッション識別子も`"1"`でない: 常駐ループ外のセッションのため無条件approve
+1. 常駐処理が起動した会話でない: 常駐ループ外のセッションのため無条件approve
 2. hookの呼出主体が最上位でない: 常駐ループの最上位ではないため無条件approve
 3. `is_pending_async_work`が真: 非同期処理又は未回収の終端結果が残るためapprove
 4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
@@ -31,6 +30,7 @@ LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 import json
 import os
 
+from agent_toolkit._common.process_loop_session import is_process_loop_session
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.session_state import read_state
@@ -39,12 +39,6 @@ from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_ses
 
 # このスクリプトのhook識別子。
 _HOOK_ID = "agent-toolkit/autonomous_exit"
-
-# 常駐ループから起動されたセッションであることを示す環境変数名。
-_ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-
-# 更新中に旧process-loopと併存するため受理する移行互換名。
-_LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
 # PostToolUse（`posttooluse.py`）が`atk agents-exit-session`の応答検出時に
 # セッション状態へ記録するフラグ名。
@@ -74,7 +68,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     session_id, payload = resolved
 
     # 常駐ループ外のセッションでは本hookの誘導対象外とする。
-    if os.environ.get(_ENV_REQUIRED) != "1" and os.environ.get(_LEGACY_ENV_REQUIRED) != "1":
+    if not is_process_loop_session(session_id, os.environ):
         append_stop_log(session_id, "approve_no_env", {})
         return "approve", ""
 

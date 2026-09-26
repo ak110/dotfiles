@@ -43,8 +43,11 @@ import re
 import time
 
 from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._common.delegated_session import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    is_delegated,
+from agent_toolkit._common.delegated_session import (
+    is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._common.process_loop_session import (
+    is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -79,10 +82,6 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
 # スラッシュコマンド起動時にも検出できるように、フルネームと短縮名の両方を含む拡張集合を組み立てる。
 _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
-
-# process-loop起動セッションであることを示す環境変数名（`autonomous_exit.py`と同じ）。
-_ENV_PROCESS_LOOP_SESSION = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-_LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
 # ホスト判定後の手動コマンドから<name>を抽出する。
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
@@ -174,7 +173,7 @@ def _fixed_session_title(session_id: str) -> str | None:
     両条件が真の場合はprocess-loopを優先する。計画ファイルstemと同じく、
     `claim_session_title`を介してセッションごとに一度だけ確定する。
     """
-    if os.environ.get(_ENV_PROCESS_LOOP_SESSION) == "1" or os.environ.get(_LEGACY_ENV_PROCESS_LOOP_SESSION) == "1":
+    if is_process_loop_session(session_id, os.environ):
         title = "process-loop"
     elif read_state(session_id).get("process_wi_skill_invoked") is True:
         title = "process-wi"

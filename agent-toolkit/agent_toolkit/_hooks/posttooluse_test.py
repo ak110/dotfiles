@@ -1730,12 +1730,15 @@ class TestAgentsServerProcessLoopLog:
         observe_tool: str = "kill",
         final_status: str = "completed",
         enable_env: bool = True,
+        expected_session_id: str | None = None,
     ) -> str:
         xdg_state_home = tmp_path / "xdg-state"
         extra_env = {
             "XDG_STATE_HOME": str(xdg_state_home),
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1" if enable_env else "",
         }
+        if expected_session_id is not None:
+            extra_env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"] = expected_session_id
         sid = "process-loop"
         remote_session_id = "thread-process-loop"
         _run(
@@ -1787,6 +1790,16 @@ class TestAgentsServerProcessLoopLog:
     def test_disabled_env_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
         """process-loop起動セッション以外では記録しない。"""
         assert self._run_session(tmp_path, model_type="execute", enable_env=False) == ""
+
+    def test_nested_session_id_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
+        """別会話が親の環境印を継承しても常駐ログへ書かない。"""
+        assert self._run_session(tmp_path, model_type="execute", expected_session_id="parent") == ""
+
+    def test_matching_session_id_logs(self, tmp_path: pathlib.Path) -> None:
+        """親会話のIDに一致すると起動と終端を記録する。"""
+        text = self._run_session(tmp_path, model_type="execute", expected_session_id="process-loop")
+        assert "event=subagent_start" in text
+        assert "event=subagent_end" in text
 
 
 class TestRemovedRecordsAreAbsent:

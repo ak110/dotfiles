@@ -178,13 +178,12 @@ def test_stop_evaluations_scan_transcript_once(
 ) -> None:
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setenv("TEMP", str(tmp_path))
     monkeypatch.setenv("TMP", str(tmp_path))
     plan_save_advisor = importlib.import_module("agent_toolkit._hooks.plan_save_advisor")
-    monkeypatch.setattr(plan_save_advisor, "_ENV_PROCESS_LOOP_SESSION", "UNSET_PROCESS_LOOP")
-    monkeypatch.setattr(plan_save_advisor, "_LEGACY_ENV_PROCESS_LOOP_SESSION", "UNSET_LEGACY_PROCESS_LOOP")
+    monkeypatch.setattr(plan_save_advisor, "is_process_loop_session", lambda *_args: False)
     monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
     transcript = _write_transcript(tmp_path, [])
     payload = json.dumps(

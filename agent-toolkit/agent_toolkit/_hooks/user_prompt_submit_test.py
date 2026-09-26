@@ -866,15 +866,18 @@ class TestFixedSessionTitle:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-loop"
 
-    def test_legacy_process_loop_env_emits_fixed_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """移行互換名`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`でも固定値`process-loop`を出力する。"""
-        sid = "fixed-title-process-loop-legacy"
-        monkeypatch.setenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", "1")
+    def test_nested_process_loop_env_does_not_emit_fixed_title(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """親の環境印を継承した別会話は固定値`process-loop`を出力しない。"""
+        sid = "fixed-title-nested"
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "parent")
 
         result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-loop"
+        assert _session_title(result) != "process-loop"
 
     def test_process_loop_env_takes_priority_over_process_wi_flag(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

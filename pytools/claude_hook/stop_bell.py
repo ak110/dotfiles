@@ -25,6 +25,7 @@ r"""Claude Code Stopフック: 応答終了で入力待ちになったときに�
 import json
 import os
 
+from agent_toolkit._common.process_loop_session import is_process_loop_session
 from agent_toolkit._hooks.stop_gate import (
     append_stop_log,
     is_pending_async_work,
@@ -32,12 +33,6 @@ from agent_toolkit._hooks.stop_gate import (
 from agent_toolkit._hooks.stop_gate import (
     parse_stop_session as _parse_stop_session,
 )
-
-# 常駐ループから起動されたセッションであることを示す環境変数名。
-_ENV_PROCESS_LOOP = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-
-# 更新中に旧process-loopと併存するため受理する移行互換名。
-_LEGACY_ENV_PROCESS_LOOP = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
 # 端末ベル（BEL）の制御文字。
 _BELL = "\a"
@@ -67,7 +62,7 @@ def main(payload_text: str) -> int:
         _approve()
         return 0
 
-    if os.environ.get(_ENV_PROCESS_LOOP) == "1" or os.environ.get(_LEGACY_ENV_PROCESS_LOOP) == "1":
+    if is_process_loop_session(session_id, os.environ):
         append_stop_log(session_id, "silent_autonomous_session", {})
         _approve()
         return 0

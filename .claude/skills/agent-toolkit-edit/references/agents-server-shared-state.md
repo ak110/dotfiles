@@ -46,6 +46,8 @@ CodexのPostToolUseフックは、所有session識別子があり環境変数か
 
 sessionの`created_at`は最初の開始時刻で、turnごとに更新する`started_at`と別に保持する。MCPサーバーのメモリーを基準とし、状態ファイルとsession登録簿へ射影する。再開したsessionは登録簿又は退避した再開情報の値を引き継ぐ。項目を持たない旧形式の登録簿から再開した場合は再開時刻から数え直す。
 
+ClaudeのAPI失敗が連続する間の`api_error`はMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。生のエラー本文は共有状態へ保存しない。
+
 状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
 診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
 Antigravityのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。

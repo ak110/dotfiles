@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import typing
+import uuid
 
 import watchdog.events
 import watchdog.observers
@@ -73,11 +74,11 @@ _RESTART_SPEC_ENV = "AGENT_TOOLKIT_RESTART_SPEC"
 # ランチャーへ再起動を要求する終了コード。
 _RESTART_EXIT_CODE = 75
 
-# process-loopセッションを識別する正本と、更新中に旧Stop hookと併存するための移行互換名。
+# process-loopが起動した会話を環境印と会話IDで識別する。
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
+_PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 # 次に起動する1セッションだけへ渡す利用者の追加指示。SessionStart hookが本文を注入する。
 _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
-_LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数の契約を検査できるよう値を固定する。
@@ -216,6 +217,8 @@ def _session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.n
 def _availability_probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
     """可用性判定をprocess-loop最上位の終了強制から除外した子環境を返す。"""
     probe_env = _session_env(env, orchestrator)
+    probe_env.pop(_PROCESS_LOOP_SESSION_ENV, None)
+    probe_env.pop(_PROCESS_LOOP_SESSION_ID_ENV, None)
     probe_env[_DELEGATED_SESSION_ENV] = "1"
     return probe_env
 
@@ -697,6 +700,7 @@ def _build_session_argv(
     resume_pending: bool,
 ) -> tuple[list[str], pathlib.Path | None]:
     """選択したオーケストレーターの対話セッション用argvを構築する。"""
+    env.pop(_PROCESS_LOOP_SESSION_ID_ENV, None)
     if orchestrator == "claude":
         hook_debug_log = _create_hook_debug_log(env)
         argv = [
@@ -710,7 +714,12 @@ def _build_session_argv(
         if resume_pending:
             argv.extend(("--model", model, "--effort", effort))
             argv.append("--resume" if not args.resume else f"--resume={args.resume}")
+            if args.resume:
+                env[_PROCESS_LOOP_SESSION_ID_ENV] = args.resume
         else:
+            session_id = str(uuid.uuid4())
+            env[_PROCESS_LOOP_SESSION_ID_ENV] = session_id
+            argv.extend(("--session-id", session_id))
             argv.extend(("--permission-mode=auto", "--model", model, "--effort", effort, prompt))
         return argv, hook_debug_log
 
@@ -1274,10 +1283,10 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
     previous_env_values = {
         _PROCESS_LOOP_SESSION_ENV: os.environ.get(_PROCESS_LOOP_SESSION_ENV),
-        _LEGACY_PROCESS_LOOP_SESSION_ENV: os.environ.get(_LEGACY_PROCESS_LOOP_SESSION_ENV),
+        _PROCESS_LOOP_SESSION_ID_ENV: os.environ.get(_PROCESS_LOOP_SESSION_ID_ENV),
     }
     os.environ[_PROCESS_LOOP_SESSION_ENV] = "1"
-    os.environ[_LEGACY_PROCESS_LOOP_SESSION_ENV] = "1"
+    os.environ.pop(_PROCESS_LOOP_SESSION_ID_ENV, None)
     env = _child_env()
     resume_pending = args.resume is not None
     refresh_before_session = not args.internal_dotfiles_updated

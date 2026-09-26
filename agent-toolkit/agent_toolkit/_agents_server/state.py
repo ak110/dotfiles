@@ -298,6 +298,7 @@ def activity_projection(
     updated_at: str | None,
     output_updated_at: str | None,
     started_at: str | None,
+    api_error: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """活動とテキスト出力の各時刻からの経過、及び停滞の印を公開項目へ射影する。
 
@@ -318,6 +319,16 @@ def activity_projection(
         "output_updated_at": output_updated_at,
         "seconds_since_output": elapsed_seconds(output_updated_at or started_at),
     }
+    if api_error is not None:
+        first_at = api_error.get("first_at")
+        elapsed = elapsed_seconds(first_at) if isinstance(first_at, str) else None
+        if elapsed is not None:
+            projection["api_error"] = {
+                "type": api_error.get("type"),
+                "http_status": api_error.get("http_status"),
+                "elapsed_seconds": elapsed,
+                "count": api_error.get("count"),
+            }
     return projection
 
 
@@ -396,6 +407,7 @@ class SessionState:
     finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     output_updated_at: str | None = None
+    api_error: dict[str, Any] | None = None
     # backend資源の解放期限。未回収の終端結果はこの期限を過ぎても保持する。
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
@@ -487,6 +499,18 @@ class SessionState:
         self._progress_text = ""
         self.progress_items.clear()
         self.output_updated_at = None
+        self.api_error = None
+
+    def record_api_error(self, error_type: str, http_status: int | None) -> None:
+        """連続するAPI失敗を記録し、活動時刻を変えずに状態の読者へ通知する。"""
+        if self.api_error is None:
+            self.api_error = {"type": error_type, "http_status": http_status, "first_at": _utc_now(), "count": 1}
+        else:
+            self.api_error["type"] = error_type
+            self.api_error["http_status"] = http_status
+            self.api_error["count"] += 1
+        for listener in tuple(_TOUCH_LISTENERS):
+            listener()
 
     def touch(self) -> None:
         """状態の更新時刻を現在時刻へ更新する。

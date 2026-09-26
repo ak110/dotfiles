@@ -89,7 +89,7 @@ def _build_fixture(
         for name in (
             "AGENT_TOOLKIT_DELEGATED_SESSION",
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
-            "DOTFILES_AUTONOMOUS_EXIT_REQUIRED",
+            "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
         ):
             env.pop(name, None)
     elif fixture_name == "subagent_stop_advisor":

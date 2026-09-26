@@ -17,6 +17,7 @@ from agent_toolkit._hooks.output_contract import validate_hook_output
 from agent_toolkit._hooks.session_state import read_state
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
+_ENV_SESSION_ID = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _SESSION_ID = "session-busy-loop"
 
@@ -33,6 +34,7 @@ def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str,
     """状態ファイルの位置を隔離し、停止工程の呼び出し回数を記録する。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv(_ENV_REQUIRED, "1")
+    monkeypatch.delenv(_ENV_SESSION_ID, raising=False)
     monkeypatch.delenv(_ENV_DELEGATED_SESSION, raising=False)
     monkeypatch.setattr(stop_gate, "is_pending_async_work", lambda *args, **kwargs: False)
     recorded = {"abort": 0, "terminate": 0}
@@ -154,6 +156,23 @@ def test_non_process_loop_session_is_skipped(
 
     assert calls == {"abort": 0, "terminate": 0}
     assert "stop_no_tool_turn_count" not in read_state(_SESSION_ID)
+
+
+def test_nested_session_id_is_skipped(tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch) -> None:
+    """別会話IDへ伝播した環境印では親の空転処理を動かさない。"""
+    monkeypatch.setenv(_ENV_SESSION_ID, "parent")
+    for index in range(4):
+        _turn(tmp_path, index, [_text_entry()])
+    assert calls == {"abort": 0, "terminate": 0}
+    assert "stop_no_tool_turn_count" not in read_state(_SESSION_ID)
+
+
+def test_matching_session_id_is_counted(tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch) -> None:
+    """会話IDが一致した場合は親の空転判定を続ける。"""
+    monkeypatch.setenv(_ENV_SESSION_ID, _SESSION_ID)
+    _turn(tmp_path, 0, [_text_entry()])
+    assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 1
+    assert calls == {"abort": 0, "terminate": 0}
 
 
 def test_delegated_session_is_skipped(

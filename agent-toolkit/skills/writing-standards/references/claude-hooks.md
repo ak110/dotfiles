@@ -297,7 +297,8 @@ Codex rolloutのtranscript形式は安定インターフェースではないた
   起動側の処理へ渡す一時ファイルのパス
 - `AGENT_TOOLKIT_DELEGATED_SESSION`: 委譲先として起動したセッションであることを示す印。常駐実行の終了保証を最上位セッションへ限定する判定に使う
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得又は作成した計画バンドルの所有として記録する、委譲元セッションの識別子。`agents_server`が起動した子だけが持つため、Codex backendの委譲先を含めてメイン向け規範の追加を省く判定にも使う
-- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションであることを示す印（値`1`）。セッション終了コマンドを起動せずに終えるターンの検知（`autonomous_exit`）、無進捗の反復の検知と停止（`busy_loop_guard`）、計画保存の通知の抑止（`plan_save_advisor`）、セッション名の固定値（`user_prompt_submit`）の判定に使う
+- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションの印（値`1`）。常駐用hookは次項のIDがある場合、印に加えてhook入力の会話IDとの一致を確認する。IDを指定しない再開では印だけで判定する
+- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: 常駐処理がClaude会話の新規起動又はID指定再開で子へ渡す会話ID。hook入力の`session_id`と比べ、環境印を継承した入れ子の別会話を自律終了、空転ガード、計画保存通知、セッション名及び観測ログの対象から外す
 - `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインのセッション開始時の文脈へ置く
 - `AGENT_TOOLKIT_LARGE_READ_LINES`・`AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBashによる全文取得を分割読取へ誘導する`pretooluse/large_reads`の行数とバイト数の閾値。正の整数だけを採用し、それ以外は既定値を使う
 

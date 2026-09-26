@@ -15,7 +15,7 @@ from agent_toolkit._testing import fork_runner as _fork_runner
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
 
 _ENV_PROCESS_LOOP = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-_LEGACY_ENV_PROCESS_LOOP = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_ENV_SESSION_ID = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 
 _BELL = "\a"
 
@@ -64,6 +64,7 @@ def _run(
     *,
     state_dir: pathlib.Path,
     process_loop_env: str | None = None,
+    expected_session_id: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
@@ -71,9 +72,11 @@ def _run(
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
     env.pop(_ENV_PROCESS_LOOP, None)
-    env.pop(_LEGACY_ENV_PROCESS_LOOP, None)
+    env.pop(_ENV_SESSION_ID, None)
     if process_loop_env is not None:
         env[process_loop_env] = "1"
+    if expected_session_id is not None:
+        env[_ENV_SESSION_ID] = expected_session_id
     return _fork_runner.run_script(_SCRIPT, argv=("stop_bell",), input=text, env=env)
 
 
@@ -119,15 +122,27 @@ class TestSilentConditions:
         )
         assert "terminalSequence" not in _output(result)
 
-    def test_legacy_process_loop_env_is_silent(self, tmp_path: pathlib.Path):
-        """旧process-loopの移行互換名だけが設定された場合も鳴らさない。"""
+    def test_matching_session_id_is_silent(self, tmp_path: pathlib.Path):
+        """常駐本体の会話IDが一致した場合はベルを鳴らさない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
-            {"session_id": "legacy-autonomous", "transcript_path": str(transcript)},
+            {"session_id": "parent", "transcript_path": str(transcript)},
             state_dir=tmp_path,
-            process_loop_env=_LEGACY_ENV_PROCESS_LOOP,
+            process_loop_env=_ENV_PROCESS_LOOP,
+            expected_session_id="parent",
         )
         assert "terminalSequence" not in _output(result)
+
+    def test_nested_session_id_rings(self, tmp_path: pathlib.Path):
+        """入れ子会話は親の印を継承してもベルを鳴らす。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
+        result = _run(
+            {"session_id": "nested", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+            process_loop_env=_ENV_PROCESS_LOOP,
+            expected_session_id="parent",
+        )
+        assert _output(result).get("terminalSequence") == _BELL
 
     def test_pending_async_work_is_silent(self, tmp_path: pathlib.Path):
         """直前ターンの最後のtool_useが非同期待機系 → 待機の継続のため鳴らさない。"""
