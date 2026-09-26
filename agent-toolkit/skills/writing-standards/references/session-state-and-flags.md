@@ -64,6 +64,9 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `english_warning_msg_id`: 同フックが、直前に通知したアシスタント応答のmessage IDを記録する。
   同じ応答に対する重複した通知と連続ターン数の二重加算を抑止する入力として同フックが読む。
   セッション終了まで保持し、リセット処理は設けない
+- `language_reinjection_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、Claude Codeのメインセッションで直前に日本語の応答指示を注入してからのツール呼び出し回数を記録する。
+  同フックが再注入の間隔の判定に読み、間隔に達した呼び出しで指示を添えて0へ戻す。`agent-toolkit/agent_toolkit/_hooks/rules_context.py`もSessionStartで同じ指示を注入した時点で0へ戻す。
+  委譲先とCodexでは記録しない。セッション終了まで保持する
 
 ## plan系
 

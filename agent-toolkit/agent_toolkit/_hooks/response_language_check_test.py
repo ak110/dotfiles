@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from agent_toolkit._hooks.response_language_check import CheckOutcome, check_text, detailed_check
+from agent_toolkit._hooks.response_language_check import BLOCK_BODY, WARNING_BODY, CheckOutcome, check_text, detailed_check
 from agent_toolkit._testing.helpers import _write_transcript
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
@@ -351,7 +351,17 @@ class TestWarningBody:
         _, body = check_text("Now、調査を続ける。")
         assert body is not None
         assert "などの英語の語で始まる応答は同じ判定になる" in body
-        assert "次の応答は冒頭の1文から日本語で書くこと" in body
+        assert "冒頭の1文から日本語で書くこと" in body
+
+    @pytest.mark.parametrize("notice_body", [WARNING_BODY, BLOCK_BODY])
+    def test_bodies_do_not_ask_for_reply_or_correction_statement(self, notice_body):
+        """警告と強い本文は、応答し直しと訂正の宣言を求めず、次の応答を日本語で書く操作だけを示す。
+
+        応答し直しを求める本文を受領した実行主体は、通知への返信や訂正の宣言をユーザー向けの応答へ書いた。
+        """
+        assert "訂正や謝罪を宣言せず" in notice_body
+        assert "応答し直" not in notice_body
+        assert "遮断されない" not in notice_body
 
 
 class TestDiscourseMarker:

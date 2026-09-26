@@ -22,11 +22,15 @@ from agent_toolkit._common import message_format
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._hooks.message_format import xml_message
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+from agent_toolkit._hooks.session_state import update_state
 
 _HOOK_ID = "agent-toolkit/rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
 RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書く。"
+# `RESPONSE_LANGUAGE_NOTICE`を直前に注入してからのツール呼び出し回数を保持するセッション状態キー。
+# PreToolUseが間隔に達した呼び出しで同じ1行を再注入し、SessionStartが注入した時点で0へ戻す。
+LANGUAGE_REINJECTION_COUNT_KEY = "language_reinjection_count"
 QUALITY_CHECKPOINT_NOTICE = (
     "会話圧縮後は`01-agent.md`「行動と手順の目的」に従い、目的と承認状態を記録された計画やキュー項目から復元する。"
     "会話限定の指示を成果物へ混入させない。"
@@ -87,6 +91,18 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     if normative_parts:
         parts.append(_normative_context("\n\n".join(normative_parts), kind=NORMATIVE_KIND_MAIN))
     return "\n\n".join(parts) or None
+
+
+def reset_language_reinjection_count(session_id: str) -> None:
+    """`RESPONSE_LANGUAGE_NOTICE`を注入した時点で、再注入までのツール呼び出し回数を0へ戻す。"""
+
+    def _reset(current: dict) -> dict | None:
+        if current.get(LANGUAGE_REINJECTION_COUNT_KEY, 0) == 0:
+            return None
+        current[LANGUAGE_REINJECTION_COUNT_KEY] = 0
+        return current
+
+    update_state(session_id, _reset)
 
 
 def _normative_context(body: str, *, kind: str) -> str:
@@ -151,9 +167,12 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
-        content = compose_session_start(source, delegated=is_delegated(os.environ), host=host)
+        delegated = is_delegated(os.environ)
+        content = compose_session_start(source, delegated=delegated, host=host)
         session_id = payload.get("session_id")
         if isinstance(session_id, str) and session_id:
+            if not delegated:
+                reset_language_reinjection_count(session_id)
             try:
                 session_temp = managed_temp.create_managed_temp(
                     SESSION_TEMP_PREFIX,

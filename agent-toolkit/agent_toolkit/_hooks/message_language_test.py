@@ -360,15 +360,14 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "_response_language_check.py:BLOCK_BODY",
         "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、"
-        "`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い日本語での応答に切り替えること。",
+        "訂正や謝罪を宣言せず、次の応答の冒頭から`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い日本語で書くこと。",
     ),
     (
         "_response_language_check.py:WARNING_BODY",
         "直前のアシスタント応答の地の文が英語主体と判定された。地の文が日本語主体でも、"
         "冒頭が`Now`・`Next`・`Then`などの英語の語で始まる応答は同じ判定になる。"
-        "ユーザーは英語の発話を読まないため、次の応答は冒頭の1文から日本語で書くこと。"
-        "`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い、進捗報告・判断・ステータス更新をツール呼び出し前後の短文ステータスも含めて日本語で記述すること。"
-        "日本語で応答し直せば、以後のターンはこの検査によって遮断されない。",
+        "ユーザーは英語の発話を読まないため、次の応答は訂正や謝罪を宣言せず、冒頭の1文から日本語で書くこと。"
+        "`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い、進捗報告・判断・ステータス更新をツール呼び出し前後の短文ステータスも含めて日本語で記述すること。",
     ),
     (
         "pending_question_advisor.py:BLOCK_BODY",

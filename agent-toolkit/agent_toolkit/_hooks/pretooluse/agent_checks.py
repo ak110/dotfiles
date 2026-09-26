@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._common.delegated_session import is_delegated  # noqa: E402
 from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -28,6 +29,9 @@ from agent_toolkit._hooks import (
 )
 from agent_toolkit._hooks import (
     response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._hooks import (
+    rules_context as _rules_context,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -130,6 +134,43 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
         return _response_language_check.BLOCK_BODY
 
     return body
+
+
+# 日本語の応答指示を再注入するツール呼び出しの間隔。
+# 2026-09-22以降のClaude Codeメイン記録で、セッション開始又は会話圧縮から最初の英語検知通知までの
+# ツール呼び出し回数は55件で中央値20回、下位20%が7回、下位30%が11回だった。
+# 10回ごとの注入は最初の英語化の約7割より前に日本語の指示を文脈の近くへ置き、注入は1行のため文脈の消費は小さい。
+LANGUAGE_REINJECTION_INTERVAL = 10
+
+
+def _advance_language_reinjection(payload: dict, session_id: str) -> bool:
+    """メインセッションのツール呼び出しを数え、再注入の間隔に達した呼び出しで真を返す。
+
+    委譲先（agents_serverの委譲先セッションと`agent_id`を持つサブエージェント）とセッション識別を
+    確定できない呼び出しでは数えない。Codexの除外は呼び出し元が判定する。
+    間隔に達した呼び出しでは回数を0へ戻す。SessionStartの注入時も`rules_context`が0へ戻す。
+    """
+    if not session_id or is_delegated(os.environ):
+        return False
+    if payload.get("agent_id") or payload.get("isSidechain") is True:
+        return False
+    reached = False
+    key = _rules_context.LANGUAGE_REINJECTION_COUNT_KEY
+
+    def _advance(current: dict) -> dict | None:
+        nonlocal reached
+        count = current.get(key, 0)
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            count = 0
+        count += 1
+        if count >= LANGUAGE_REINJECTION_INTERVAL:
+            reached = True
+            count = 0
+        current[key] = count
+        return current
+
+    update_state(session_id, _advance)
+    return reached
 
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
