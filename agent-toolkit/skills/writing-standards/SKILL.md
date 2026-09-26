@@ -31,7 +31,7 @@ description: >
 | --- | --- |
 | 人間が読む文章（Markdown・README・技術文書・API文書、コメント、AWI・UWIの本文） | `references/writing.md` |
 | コード・テストコード | `references/writing.md` |
-| コーディングエージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`） | `references/writing.md`、`references/agent-documents-basics.md` |
+| コーディングエージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`） | 後掲「コーディングエージェント向け文書の編集時に読む資料」に従う |
 
 ## 文章の作成時に読む資料
 

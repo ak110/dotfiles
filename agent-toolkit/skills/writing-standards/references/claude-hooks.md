@@ -195,7 +195,7 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 `agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新及び一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
 PreToolUseの処理は、`send_message`・`kill`の保存済みsessionのチェックまでとし、開始ツールの入力妥当性検証は実行基盤へ委ねる。入力の実行権限値はそのまま渡す。
 `wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
-PostToolUseは成功した開始ツール（`start`・`start_explore`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
+PostToolUseは成功した開始ツール（`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
 旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` の用途は移行説明と保護対象の識別に限る。
 
 エージェントへ特定の行動・引数を要求するblock又はwarnは、要求する要件を実行主体が発火前に読み得る規範文書（常時ロードのルール、またはその作業で起動されるスキルの本文・参照文書）へ明示する。要件の初出は、その規範文書側に置く。
@@ -242,7 +242,7 @@ Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得
 - 判定手順を本文へ持つ注記は、同一セッションの直前の通常発話からの経過時間を状態として保持し、閾値以上経過した通常発話にだけ返す。
   初回の通常発話はその注記の対象から除くが、経過時間の基準となる時刻を記録する
 
-初回を含む通常発話ではその時刻を更新する。注記の記録と注入の対象は通常発話に限り、ハーネスが挿入した通知及びコマンド起動は対象の外に置く。
+初回を含む通常発話ではその時刻を更新する。注記の記録と注入の対象は通常発話とし、ユーザーが入力したスラッシュコマンドで始まる発話を含める。ハーネスが挿入した通知と機械注入のターンは対象の外に置く。
 成立した注記が複数ある場合は、1つの`additionalContext`へ結合して返す。
 この注入はホストを問わず有効であり、Codex payloadでも同じ`additionalContext`を返す。
 

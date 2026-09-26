@@ -84,6 +84,9 @@
     公式資料はキャッシュキーを規定していない。
     hook等の制限時間内実行が必要なスクリプトを事前ウォームアップする場合は、
     パス非依存を前提にせず、実行時に参照される実パスを対象にする
+- project lockfileを使う`uv run`では、lockfileを更新しない指定（`--frozen`又は`--locked`）を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
+- PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけlockfileを更新しない指定を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
+- script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してからlockfileを更新しない指定を付ける
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
   - `appname`単独指定は不可
@@ -116,9 +119,7 @@
 
 ## 静的解析の誤検出と抑制
 
-- Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使う
-  - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使う
-  - `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるため最終手段とする
+- lint指摘への対応は`implementation-time.md`「lintと機械チェック」に従う。Pythonでは`mypy`・`pyright`・`pylint`などが同じ箇所を重複検出することが多く、無視コメントがチェッカーごとに入り乱れるため、`assert`や`del`などの通常の構文で解消できる場合はそちらを選ぶ
 - 動的に`sys.path.insert()`してから内部モジュールをimportする箇所では、
   pylintは`wrong-import-position`に加えて`import-error`も誤発火する。
   抑制コメントは`# pylint: disable=wrong-import-position,import-error`の両方併記とする
@@ -209,9 +210,6 @@
 
 - 名前が確定したチェックコマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`の説明に従う。未知のコマンド名の探索、pyfltrの導入及びチェックの実行には、それぞれの目的に対応する既存の呼び出し手段（CLI・MCPツールなど）を使う
 - pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
-- project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
-- PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
-- script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してから`--frozen`を指定する
 - サブコマンドの使い分け、オプションの受理形式、JSONL出力のレコード種別とフィールドの解釈、失敗ツールの再実行手段、ツール解決の失敗への対処は、`pyfltr <サブコマンド> --help`の出力とMCPツールのスキーマで確認する。これらが扱わない設定リファレンスと新規プロジェクトへの導入手順は<https://ak110.github.io/pyfltr/llms.txt>を取得し、そのページからたどって参照する
 
 ## 参照情報

@@ -141,10 +141,7 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 `.pre-commit-config.yaml`・`.github/workflows/`配下はpyfltr配布の推奨ガイドに揃える。
 推奨ガイドは`~/pyfltr/docs/guide/recommended.md`と`~/pyfltr/docs/guide/recommended-nonpython.md`である。
 
-- 推奨設定を独自判断で緩和しない（ruff・pylint・textlint等のignore追加、lint設定の弱体化）
-  - 緩和を提案する場合は、ignore追加のメリットとデメリットを比較した文面案を提示してユーザーの合意を得る
-- プロジェクト固有事情で推奨から逸脱する設定を導入する場合、該当箇所に理由を述べたコメントを直接記述する
-- lint違反が出た場合は根本原因（コード側）を修正する。設定でのignore追加は避ける
+- lint違反への対応と推奨設定の緩和は、`agent-toolkit:writing-standards`の`references/implementation-time.md`「lintと機械チェック」の原則に従う。設定の緩和（ruff・pylint・textlint等の設定ファイルへのignore追加、lint設定の弱体化）は根本原因の修正と行単位の無視で足りない場合に限る慎重な手段とする。推奨から逸脱する設定を導入する場合は、該当箇所に理由を述べたコメントを直接記述する
 - 推奨ガイド自体の改訂が必要と判断した場合は、「追従作業と複数リポジトリ横断投入」節に従って`~/pyfltr`向けのAWIを先に投入する
   - 各プロジェクトへの反映はその改訂の後に行う
 

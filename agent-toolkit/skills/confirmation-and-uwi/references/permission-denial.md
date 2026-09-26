@@ -27,7 +27,7 @@ permissions設定による確認ダイアログが対象の場合は本書の範
 
 ## 既知の誤拒否パターンと対応
 
-次の表は拒否に遭遇した場合に適用を検討する対応の対応付けとする。
+次の表はdotfilesの管理設定`claude_settings_json_managed.json`を導入した環境で拒否に遭遇した場合に適用を検討する対応の対応付けとする。
 観測日付と対象版数の記録を持たないため、適用の前に実行中の環境で拒否メッセージ本文と分類名を取得して該当を確認する。
 分類名は`claude auto-mode defaults`の出力で確認できる区分を指す。
 
@@ -43,7 +43,7 @@ permissions設定による確認ダイアログが対象の場合は本書の範
 | 常時読み込む規範ファイル（`~/.claude/rules/`配下など）の編集 | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
 | 規範の配布元となる利用者本人のリポジトリへの読み取り | Self Modification | 同じルールが値を変更しない参照を対象に含む |
 
-- 許可ルールはremoteのホスト、由来及び所有者による限定を置かず、操作の種別と除外条件で対象を決める。方針の出所は`docs/development/concepts-governance.md`にある
+- 許可ルールはremoteのホスト、由来及び所有者による限定を置かず、操作の種別と除外条件で対象を決める。方針の出所は、dotfilesリポジトリを利用する場合の`docs/development/concepts-governance.md`にある
 - 必須レビュー・必須チェックの迂回形態（`--admin`・`--force`等）と、リポジトリ又は組織のチェック設定を変える操作は許可の範囲の外にあり、CI Bypass領域のまま残る
 - リリースワークフロー起動の拒否本文には分類名が現れないため、`Production Deploy`は既定の`soft_deny`との対応から見た有力候補に留まる
 - 分類名を取得できない場合は、拒否メッセージ本文を根拠として後掲のユーザー確認へ進む。`claude auto-mode defaults`自体が拒否された場合も同じ扱いとする
