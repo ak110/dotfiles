@@ -1463,6 +1463,15 @@ main > .toolbar {
   border-radius: 0;
   background: transparent;
 }
+/* 子の無い行の開閉欄は、開閉ボタンと同じ幅で「−」を中央に置く。
+   展開済みの開閉ボタンの「−」と見分けられるよう、無効ボタンと同じ不透明度で薄く表示する。 */
+#screen-sessions .session-tree-leaf {
+  flex: 0 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+}
 #screen-sessions .session-tree-row .session-item {
   min-width: 0;
   flex: 1;
