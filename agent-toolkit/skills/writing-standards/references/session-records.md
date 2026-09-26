@@ -54,7 +54,7 @@ Codexでスキルの起動を判定する場合は、そのスキルの起動を
 
 セッション記録から集計したトークン量、リクエスト数又は所要時間を成果物へ書く場合と利用者へ提示する場合は、抽出器の出力を典拠とする。
 抽出器は`atk run-script session-review-evidence -- <引数>`とする。
-振り返りの全候補は同抽出器の`--bundle`が生成する`candidates.jsonl`から取り、振り返り素材AWIの判定結果からの事後承認型UWI本文の生成と形式の確認には`atk run-script session-review-report -- <引数>`を用いる。
+振り返りの全候補は同抽出器の`--bundle`が生成する`candidates.jsonl`から取る。`agent-toolkit:session-review`の準備スクリプトはこれを問題候補の一覧へ整形する。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付けて実行する。
 自作の集計は典拠の対象の外に置く。
 Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。抽出器はこの重複を最後の`usage`だけへ畳み込んだ値を返す。

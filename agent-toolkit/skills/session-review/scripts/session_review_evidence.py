@@ -3,8 +3,8 @@
 既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
-`--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査を1回の記録読み込みでまとめて行い、
-走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
+`--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補及び会話の流れの抽出を
+1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import collections
 import contextlib
+import contextvars
 import datetime
 import json
 import os
@@ -220,12 +221,20 @@ class _UnresolvedRecord(NamedTuple):
     kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
 
 
-def _clip(text: str, limit: int = _MAX_TEXT_LENGTH) -> str:
+_TEXT_LIMIT: contextvars.ContextVar[int | None] = contextvars.ContextVar("_TEXT_LIMIT", default=_MAX_TEXT_LENGTH)
+"""`_clip`が上限を省略された場合に使う本文の上限。`None`は切り詰めないことを表す。
+
+会話の流れは発話の全文から先頭と末尾を切り出すため、イベントの生成を共有しつつ上限だけを外す。
+"""
+
+
+def _clip(text: str, limit: int | None = None) -> str:
     """証拠の意味を保ったまま巨大な本文を制限する。"""
     normalized = text.strip()
-    if len(normalized) <= limit:
+    effective = _TEXT_LIMIT.get() if limit is None else limit
+    if effective is None or len(normalized) <= effective:
         return normalized
-    return normalized[:limit] + _OMISSION_MARK
+    return normalized[:effective] + _OMISSION_MARK
 
 
 class _DetailBudget:
@@ -2589,11 +2598,13 @@ def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dic
         entry = index.get(number)
         if entry is None:
             return [{"kind": "error", "text": f"行番号{number}は範囲外"}], 2
-        events.extend(_entry_detail_events(number, entry))
+        events.extend(_entry_detail_events(number, entry, full_message_text=True))
     return events, 0
 
 
-def _entry_detail_events(line: int, entry: dict[str, Any], *, limit: int = _MAX_DETAIL_LENGTH) -> list[dict[str, Any]]:
+def _entry_detail_events(
+    line: int, entry: dict[str, Any], *, limit: int = _MAX_DETAIL_LENGTH, full_message_text: bool = False
+) -> list[dict[str, Any]]:
     """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。
 
     クリップの上限はエントリ全体で共有し、ブロックの出現順に予算を配分する。
@@ -2601,12 +2612,20 @@ def _entry_detail_events(line: int, entry: dict[str, Any], *, limit: int = _MAX_
     予算が尽きた後の本文は空文字列となるため、この標識が無ければ
     空の出力が元から空だったのか省略の結果なのかを判別できない。
     各イベントは元エントリの`timestamp`を持ち、区間境界の時刻を元記録を読み直さずに確定できるようにする。
+
+    `full_message_text`では、利用者とアシスタントの発話本文（テキスト要素）を予算の外で切り詰めずに先頭へ返す。
+    会話の流れは長い発話の先頭と末尾だけを載せて記録位置を添えるため、その位置の照会で全文へ到達できる必要がある。
     """
     budget = _DetailBudget(limit)
     timestamp = _entry_timestamp(entry)
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     events: list[dict[str, Any]] = []
+    if full_message_text:
+        events.extend(
+            {"kind": "detail", "line": line, "timestamp": timestamp, "role": role, "text": text}
+            for role, text in _message_texts(entry)
+        )
     if isinstance(content, list):
         for block in content:
             if not isinstance(block, dict):
@@ -2644,6 +2663,26 @@ def _entry_detail_events(line: int, entry: dict[str, Any], *, limit: int = _MAX_
         for event in events:
             event["omitted"] = True
     return events
+
+
+def _message_texts(entry: dict[str, Any]) -> list[tuple[str, str]]:
+    """利用者又はアシスタントのメッセージのエントリから、役割とテキスト要素の本文を出現順に返す。"""
+    message = entry.get("message")
+    if (
+        isinstance(message, dict)
+        and entry.get("type") in {"user", "assistant"}
+        and message.get("role") in {"user", "assistant"}
+    ):
+        return [(str(message["role"]), text) for text in _text_blocks(message.get("content")) if text.strip()]
+    payload = entry.get("payload")
+    if (
+        entry.get("type") == "response_item"
+        and isinstance(payload, dict)
+        and payload.get("type") == "message"
+        and payload.get("role") in {"user", "assistant"}
+    ):
+        return [(str(payload["role"]), text) for text in _codex_text_blocks(payload.get("content")) if text.strip()]
+    return []
 
 
 def _entry_timestamp(entry: dict[str, Any]) -> str | None:
@@ -2845,6 +2884,49 @@ def _user_events_since(collected: list[_CollectedRecord], since: datetime.dateti
     return events
 
 
+def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """メイン記録の利用者発話とアシスタント発話を、切り詰めずに時系列で返す。
+
+    振り返りでセッション全体の流れ（遠回り、手戻り、同じ論点の反復、利用者による是正）を読むための入力とする。
+    自動挿入本文、実行環境が生成した本文、スキル本文の展開、hookの追加コンテキスト、ツール呼び出しとツール結果は除く。
+    確認への回答（`質問: … 回答: …`）と初期要求は利用者の入力として残す。
+    委譲先の内部は問題候補の側で扱うため、メイン記録だけを対象とする。
+    """
+    main_record = next((item for item in collected if item.record_id == "main"), None)
+    if main_record is None:
+        return []
+    token = _TEXT_LIMIT.set(None)
+    try:
+        events = _extract_records(main_record.records)
+    finally:
+        _TEXT_LIMIT.reset(token)
+    utterances: list[dict[str, Any]] = []
+    for event in events:
+        kind = event.get("kind")
+        text = event.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        if kind == "user":
+            if event.get("runtime_generated") is True or _is_runtime_inserted_text(text):
+                continue
+            role = "user"
+        elif kind in {"assistant", "final-result"}:
+            role = "assistant"
+        else:
+            continue
+        utterances.append(
+            {
+                "kind": "utterance",
+                "role": role,
+                "record": "main",
+                "line": event.get("line"),
+                "timestamp": event.get("timestamp"),
+                "text": text,
+            }
+        )
+    return utterances
+
+
 def _grep_collection_events(
     collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], pattern: re.Pattern[str]
 ) -> list[dict[str, Any]]:
@@ -2889,6 +2971,7 @@ _BUNDLE_SCAN_FILENAMES = (
     "hook-notices.jsonl",
     "candidates.jsonl",
     "candidate-evidence.jsonl",
+    "conversation.jsonl",
 )
 _BUNDLE_BODY_KINDS = frozenset({"failed-tool", "agent-completion", "final-result"})
 _BUNDLE_LOCATOR_ONLY_KINDS = frozenset({"user"})
@@ -2904,7 +2987,7 @@ UNTRUNCATED_EVIDENCE_KINDS = frozenset(
 )
 """個別証拠の本文を切り詰めない候補種別。
 
-これらの本文は後続の分析主体が元記録を開かずに判断するための一次資料であり、切り詰めると
+これらの本文は振り返りの分析主体が原因を判断するための一次資料であり、切り詰めると
 裏取りのために元記録を読み直す工程が生じる。hook通知など定型本文の種別だけに上限を残す。
 """
 _TOOL_USE_EVIDENCE_KINDS = frozenset({"hook-notice", "command-failure", "tool-failure", "permission-denial"})
@@ -2921,7 +3004,15 @@ _DELEGATE_COMPLETION_VALUES = frozenset(
 _UNEXPECTED_EVENT_PREFIXES = ("想定外事象:", "想定外事象：")
 _VERDICT_LINE = re.compile(r"^(?:#+\s*)?(?:\*\*)?\s*判定[^:：]{0,30}[:：]\s*(?:\*\*)?\s*(?P<value>\S.*)$")
 _SHELL_OPERATOR_CHARS = frozenset(";&|<>()")
-_CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE = 1
+_SHELL_DELEGATION_MARKER = "次のコマンドを実行し、結果を報告せよ。"
+"""`agents_server`の`start_shell`が委譲先へ渡す指示本文の冒頭の文。値が同サーバーの指示本文と一致することをテストが確かめる。"""
+_REPORTED_EXIT_CODE = re.compile(r"(?:終了コード|exit(?:[_ ]?code)?|(?<![A-Za-z])rc)[^0-9\n]{0,15}?(\d+)", re.IGNORECASE)
+_REPORTED_NONZERO_COUNT = re.compile(
+    r"(?:(?:failed|warnings?|diagnostics)[\"'`]*\s*[:=]\s*[1-9])|(?:(?:失敗|警告|診断)[^0-9\n]{0,10}?[1-9][0-9]*\s*件)",
+    re.IGNORECASE,
+)
+_WI_STYLE_DIAGNOSTIC = re.compile(r"^警告: 本文:\d+:\d+: (?:口語表現|ダッシュ) ")
+"""`atk wi add`・`atk wi edit`が保存前に表示する本文の表記診断の書式。起草者が保存前の本文で処置する警告に当たる。"""
 
 
 def _bundle_events(
@@ -2953,7 +3044,7 @@ def _bundle_events(
         resolved, _candidate_evidence_events(collected, candidates, timeline, warnings, hook_notices)
     )
     events: list[dict[str, Any]] = []
-    scans = (timeline, warnings, stats, hook_notices, candidates, candidate_evidence)
+    scans = (timeline, warnings, stats, hook_notices, candidates, candidate_evidence, _conversation_events(collected))
     for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, scans, strict=True):
         path = resolved / filename
         path.write_text(
@@ -2992,14 +3083,15 @@ def _candidate_events(
 
     母集団はhook通知、利用者介入、失敗したツール実行、警告及び工程の返却値とする。
     返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合から漏れるためである。
-    成功の定型形式だけで構成され、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
+    正常な完了だけを示し、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
 
     同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別又はhookタグが異なる事象を別候補として保持する。同じ位置、候補種別及びhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
     `tool-failure`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
 
     候補件数の削減は、正規化した本文での集約と、恒久対策の要否が記録の構造から定まる事象の除外だけで行う。
-    除外するのは、利用者介入ではない入力、成功の定型形式だけの委譲返却、検索の一致0件などの正常な否定結果である。
+    除外するのは、利用者介入ではない入力、正常な完了だけの委譲返却、検索の一致0件などの正常な否定結果、
+    及び起草者が保存前に処置するWI本文の表記診断の警告である。
     hookの標識を持つツール失敗と、hook通知と同じ本文の警告は、hook通知として発生源別の上限の対象にする。
     上限は発生源と区分の組ごとに適用し、フック名のツール部分ごとに最多の種類を残して、件数の少ないツールの通知も候補に残す。
     それ以外に件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
@@ -3022,6 +3114,7 @@ def _candidate_events(
         if notice.get("kind") == "hook-notice" and notice.get("tag") in _HOOK_NOTICE_CANDIDATE_TAGS
     ]
     initial_skill_request, initial_skill_body = _initial_skill_input_locators(timeline)
+    shell_records, resumed_records = _delegation_record_kinds(timeline)
     first_main_user: tuple[str, int] | None = None
     for event in timeline:
         line = event.get("line")
@@ -3067,8 +3160,13 @@ def _candidate_events(
             if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(event):
                 excluded["normal-negative-result"] += 1
                 continue
-            if candidate_kind == "delegate-return" and _is_normal_delegate_return(event):
+            if candidate_kind == "delegate-return" and _is_normal_delegate_return(
+                event, shell=record in shell_records, resumed=record in resumed_records
+            ):
                 excluded["normal-delegate-return"] += 1
+                continue
+            if candidate_kind == "warning" and _WI_STYLE_DIAGNOSTIC.match(normalized_text):
+                excluded["wi-style-diagnostic"] += 1
                 continue
             event_kind = candidate_kind
             if candidate_kind in {"warning", "tool-failure"}:
@@ -3249,28 +3347,6 @@ def _candidate_evidence_events(
                         source_chars += len(event["text"])
                         detail["text"] = budget.clip(event["text"])
                     details.append(detail)
-            user_context = [
-                event
-                for event in timeline
-                if event.get("kind") == "user" and event.get("record") == key[0] and isinstance(event.get("line"), int)
-            ]
-            before = sorted(
-                (event for event in user_context if int(event["line"]) < key[1]), key=lambda event: -int(event["line"])
-            )
-            after = sorted(
-                (event for event in user_context if int(event["line"]) > key[1]), key=lambda event: int(event["line"])
-            )
-            for direction, neighbors in (("before", before), ("after", after)):
-                for event in neighbors[:_CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE]:
-                    details.append(
-                        {
-                            "kind": "user-context",
-                            "direction": direction,
-                            "record": key[0],
-                            "line": int(event["line"]),
-                            "text": budget.clip(str(event.get("text", ""))),
-                        }
-                    )
         if not details:
             details.append(
                 {
@@ -3287,7 +3363,6 @@ def _candidate_evidence_events(
             "locators": candidate["locators"],
             "source_chars": source_chars,
             "text_limit": None if untruncated else _CANDIDATE_EVIDENCE_LENGTH,
-            "user_context_limit_per_side": _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE,
             "events": details,
         }
         if budget.omitted:
@@ -3431,31 +3506,44 @@ def _user_candidate_exclusion(
         return "initial-skill-request"
     if initial_skill_body == (record, line):
         return "initial-skill-body"
-    if text.startswith("<skill>") and "</skill>" in text:
-        return "runtime-inserted"
-    if text.startswith(
-        (
-            "<system-reminder>",
-            "[COMPACTION RECOVERY]",
-            "This session is being continued",
-            "<normative-context",
-            "<agent-toolkit-auto-inserted",
-            "<agent-toolkit-hook-message",
-            "<task-notification>",
-            "<command-name>",
-            "<local-command-caveat>",
-            "<local-command-stdout>",
-            "A session-scoped Stop hook is now active",
-            "Goal check-in:",
-            "Stop hook feedback:",
-        ),
-    ):
+    if _is_runtime_inserted_text(text):
         return "runtime-inserted"
     if text.startswith("質問:") and "回答:" in text:
         return None if event.get("answer_intervention") is True else "question-answer"
     if first_main_user == (record, line):
         return "initial-request"
     return None
+
+
+_RUNTIME_INSERTED_PREFIXES = (
+    "<system-reminder>",
+    "[COMPACTION RECOVERY]",
+    "This session is being continued",
+    "<normative-context",
+    "<agent-toolkit-auto-inserted",
+    "<agent-toolkit-hook-message",
+    "<task-notification>",
+    "<command-name>",
+    "<local-command-caveat>",
+    "<local-command-stdout>",
+    "A session-scoped Stop hook is now active",
+    "Goal check-in:",
+    "Stop hook feedback:",
+    "# AGENTS.md instructions",
+    "<environment_context>",
+)
+"""実行環境、hook及び委譲の配送が利用者のロールへ挿入する本文の先頭に現れる固定文字列。実記録から採取した。"""
+
+
+def _is_runtime_inserted_text(text: str) -> bool:
+    """利用者のロールを持つ本文が、利用者の発話ではなく実行環境などの挿入本文であるかを返す。
+
+    利用者介入の候補の除外と会話の流れの抽出が同じ判定を使い、片方だけに配送本文が残らないようにする。
+    """
+    stripped = text.lstrip()
+    if stripped.startswith("<skill>") and "</skill>" in stripped:
+        return True
+    return stripped.startswith(_RUNTIME_INSERTED_PREFIXES)
 
 
 def _initial_skill_input_locators(
@@ -3509,7 +3597,8 @@ def _is_help_command_failure(event: dict[str, Any]) -> bool:
 
 def _is_normal_negative_result(event: dict[str, Any]) -> bool:
     """読取専用の述語が診断なしで偽を返した事象を区分する。"""
-    if event.get("exit_code") != 1 or str(event.get("diagnostic", "")).strip():
+    exit_code = event.get("exit_code")
+    if not isinstance(exit_code, int) or str(event.get("diagnostic", "")).strip():
         return False
     command_value = event.get("command")
     if not isinstance(command_value, str):
@@ -3524,22 +3613,19 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
     if executable in {"bash", "sh", "zsh"}:
         if len(args) < 3 or args[1] not in {"-c", "-lc"}:
             return False
-        try:
-            args = shlex.split(args[2])
-        except ValueError:
-            return False
-        if not args or any(token in {";", "&&", "||", "|", ">", "<"} for token in args):
-            return False
-    return _is_negative_predicate(args)
+        tokens = _shell_command_tokens(args[2])
+        return tokens is not None and _is_negative_search_command(tokens, exit_code)
+    return exit_code == 1 and _is_negative_predicate(args)
 
 
 def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
-    """Claude CodeのBashで、単一の読取専用の述語が出力なしで偽を返した事象を区分する。
+    """Claude CodeのBashで、読取専用の述語又は検索が出力なしで偽を返した事象を区分する。
 
-    Claude Codeは終了コード1の出力なしの結果を`Exit code 1`だけの失敗として記録する。
-    連結、パイプ及びリダイレクトを含むコマンドは、どの段が偽を返したかを本文から確定できないため残す。
+    Claude Codeは出力の無い非0終了を`Exit code <N>`だけの失敗として記録する。
+    パイプ以外の連結とリダイレクトを含むコマンドは、どの段が偽を返したかを本文から確定できないため残す。
     """
-    if event.get("tool_name") != "Bash" or str(event.get("text", "")).strip() != "Exit code 1":
+    matched = re.fullmatch(r"Exit code (\d+)", str(event.get("text", "")).strip())
+    if event.get("tool_name") != "Bash" or matched is None:
         return False
     try:
         operation = json.loads(str(event.get("operation", "")))
@@ -3548,15 +3634,47 @@ def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
     command = operation.get("command") if isinstance(operation, dict) else None
     if not isinstance(command, str):
         return False
+    tokens = _shell_command_tokens(command)
+    return tokens is not None and _is_negative_search_command(tokens, int(matched.group(1)))
+
+
+def _shell_command_tokens(command: str) -> list[str] | None:
+    """シェルのコマンド文字列を、演算子を独立した要素とする語の列へ分解する。解釈できない場合は`None`を返す。"""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     try:
-        args = list(lexer)
+        tokens = list(lexer)
     except ValueError:
+        return None
+    return tokens or None
+
+
+def _is_negative_search_command(tokens: list[str], exit_code: int) -> bool:
+    """出力の無い非0終了が、検索の一致0件という正常な否定結果に当たるかを返す。
+
+    演算子はパイプ（`|`）だけを許し、パイプラインの終了コードを決める最終段で判定する。
+    最終段が読取専用の述語で終了コード1、又は最終段が検索を起動する`xargs`で終了コード123
+    （起動したコマンドのいずれかが1から125で終わったことを表す）の場合を一致0件とする。
+    """
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if set(token) <= _SHELL_OPERATOR_CHARS:
+            if token != "|":
+                return False
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    if any(not segment for segment in segments):
         return False
-    if not args or any(set(token) <= _SHELL_OPERATOR_CHARS for token in args):
-        return False
-    return _is_negative_predicate(args)
+    last = segments[-1]
+    if exit_code == 1:
+        return _is_negative_predicate(last)
+    if exit_code == 123 and Path(last[0]).name == "xargs":
+        start = next(
+            (index for index, token in enumerate(last[1:], start=1) if Path(token).name in {"rg", "grep", "git"}), None
+        )
+        return start is not None and _is_negative_predicate(last[start:])
+    return False
 
 
 def _is_negative_predicate(args: list[str]) -> bool:
@@ -3582,13 +3700,16 @@ def _is_negative_predicate(args: list[str]) -> bool:
     return git_args[0] == "merge-base" and "--is-ancestor" in git_args[1:]
 
 
-def _is_normal_delegate_return(event: dict[str, Any]) -> bool:
-    """想定外事象を持たず、成功の定型形式だけを示す委譲返却であるかを返す。
+def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, resumed: bool = False) -> bool:
+    """想定外事象を持たず、正常な完了だけを示す委譲返却であるかを返す。
 
-    成功の定型形式は、`status: completed`で始まり未解決の指摘が0件の返却、タスク文書が定める完了値で始まる返却、
-    及び全ての判定が適合又は合格の返却とする。定型形式の前に自由記述を置いた返却は、定型形式の外で
-    想定外の事象を述べている場合があるため残す。委譲先は想定外の事象を`想定外事象:`行で返すため、
-    この行を持つ返却と、定型形式に当たらない自由記述の返却は候補に残す。
+    正常な完了は、`status: completed`の行を持ち未解決の指摘が0件の返却、タスク文書が定める完了値で始まる返却、
+    全ての判定が適合又は合格の返却、及びコマンド実行の委譲（`shell`）で報告した終了コードが全て0で
+    失敗・警告・診断の件数に1以上が無い返却とする。
+    `status: completed`の前に置いた前置きの文は、1回の配送で終えた委譲先に限って正常な完了に含める。
+    再開された委譲先（`resumed`）の前置きは、受け取り済みの報告の返し直しのような異常を述べる場合があるためである。
+    委譲先は想定外の事象を`想定外事象:`行で返すため、この行を持つ返却と、調査結果のような
+    自由記述の返却は、本文の意味の判断を要するため候補に残す。
     """
     text = event.get("text")
     if not isinstance(text, str):
@@ -3599,15 +3720,34 @@ def _is_normal_delegate_return(event: dict[str, Any]) -> bool:
     body = [line for line in lines if line and not line.startswith("```")]
     if not body:
         return False
-    if body[0] == "status: completed":
+    if body[0] == "status: completed" or ("status: completed" in body and not resumed):
         unresolved = [line.partition(":")[2].strip() for line in body if line.startswith("unresolved:")]
         return all(value == "0" for value in unresolved)
     if body[0] in _DELEGATE_COMPLETION_VALUES:
         return True
+    if shell:
+        exit_codes = [int(match.group(1)) for match in _REPORTED_EXIT_CODE.finditer(text)]
+        return bool(exit_codes) and all(code == 0 for code in exit_codes) and not _REPORTED_NONZERO_COUNT.search(text)
     verdicts = [match.group("value") for line in body if (match := _VERDICT_LINE.match(line)) is not None]
     if not verdicts or "不適合" in text or "不合格" in text:
         return False
     return all(value.startswith(("適合", "合格")) for value in verdicts)
+
+
+def _delegation_record_kinds(timeline: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
+    """コマンド実行の委譲（`start_shell`）を受け取った委譲先と、再開された委譲先の記録IDを返す。
+
+    委譲先の記録の利用者ロールの本文は、呼び出し元から配送された指示本文である。
+    最初の本文でコマンド実行の委譲かを判定し、2件以上ある記録を再開されたものとする。
+    """
+    user_texts: dict[str, list[str]] = collections.defaultdict(list)
+    for event in timeline:
+        record, text = event.get("record"), event.get("text")
+        if event.get("kind") == "user" and isinstance(record, str) and record != "main" and isinstance(text, str):
+            user_texts[record].append(text)
+    shell = {record for record, texts in user_texts.items() if _SHELL_DELEGATION_MARKER in texts[0]}
+    resumed = {record for record, texts in user_texts.items() if len(texts) >= 2}
+    return shell, resumed
 
 
 def _hook_originated_event(
@@ -4157,7 +4297,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="RECORD:LINE",
         help="指定した<記録>:<行番号>（数値だけならメイン記録）のエントリの詳細（tool_useの入力全体・tool_result本文。"
-        "本文が退避されている場合はツール実行結果側の本文）を照会する。複数指定ではオプションを繰り返す。"
+        "本文が退避されている場合はツール実行結果側の本文）を照会する。利用者とアシスタントの発話本文は切り詰めずに返す。"
+        "複数指定ではオプションを繰り返す。"
         "各イベントは元記録行の時刻`timestamp`（無ければnull）を持つ。"
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
     )
@@ -4187,8 +4328,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--bundle",
         metavar="DIR",
-        help="通常表示、`--warn`、`--stats`及び`--hook-notices`の走査を1回の記録読み込みで行い、"
-        "走査ごとの全量を指定したディレクトリ配下のファイルへ書く。"
+        help="通常表示、`--warn`、`--stats`及び`--hook-notices`の走査と、問題候補と会話の流れ（メイン記録の発話）の抽出を"
+        "1回の記録読み込みで行い、走査ごとの全量を指定したディレクトリ配下のファイルへ書く。"
         "標準出力へは、走査ごとのファイルの絶対パスとイベント件数、通常表示のイベント種別ごとの件数、"
         "問題候補の特定に用いるイベントの位置と本文の冒頭、及び警告の種別ごとの件数を返す。"
         "集計と通知の走査の全量は保存先のファイルから読む。"

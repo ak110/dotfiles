@@ -722,11 +722,8 @@ def test_observation_boundary_keeps_original_line_numbers(
             "kind": "detail",
             "line": 2,
             "timestamp": "2026-09-01T00:00:01Z",
-            "text": json.dumps(
-                _timestamped_entry("2026-09-01T00:00:01Z", "保持する元の2行目"),
-                ensure_ascii=False,
-                indent=2,
-            ),
+            "role": "user",
+            "text": "保持する元の2行目",
         }
     ]
 
@@ -1891,8 +1888,8 @@ def test_warn_excludes_quoted_warning_inside_code_fence_of_command_output(
 ) -> None:
     """コマンドが表示した文書のコードフェンス内の警告は、実行時警告として扱わない。
 
-    `sed`や`cat -n`で振り返り素材などのMarkdownを表示すると、過去の警告の引用がフェンス内に現れる。
-    これを候補にすると、対象セッションで発生していない警告が素材へ載る。フェンス外の警告は保持する。
+    `sed`や`cat -n`で過去の振り返りのAWIなどのMarkdownを表示すると、過去の警告の引用がフェンス内に現れる。
+    これを候補にすると、対象セッションで発生していない警告が候補一覧へ載る。フェンス外の警告は保持する。
     """
     shown_document = "\n".join(
         [
@@ -5890,7 +5887,6 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     assert all(item["events"] for item in candidate_evidence)
     # 失敗したツール結果の本文は切り詰めず、実行時警告など定型本文の種別だけに上限を残す。
     assert [item["text_limit"] for item in candidate_evidence] == [None, 2000]
-    assert all(item["user_context_limit_per_side"] == 1 for item in candidate_evidence)
     assert all(item["source_chars"] > 0 for item in candidate_evidence)
     assert {
         "kind": "bundle-file",
@@ -6112,44 +6108,68 @@ def test_candidate_evidence_file_holds_only_its_own_candidate(
         assert all(event.get("record") is not None for event in body["events"])
 
 
-def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
+def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """候補の直前と直後の双方に利用者介入がある場合、両側をそれぞれ上限まで証拠へ残す。"""
+    """会話の流れはメイン記録の利用者発話とアシスタント発話だけを全文で載せ、記録位置の`--detail`で全文を返す。
+
+    振り返りは会話の流れからセッション全体の遠回りや是正を探すため、配送本文、実行環境の挿入、
+    スキル展開、ツール呼び出しとツール結果が混ざると利用者の発話と区別できなくなる。
+    長い発話は会話の流れの表示で先頭と末尾だけになるため、記録位置の照会が全文を返す必要がある。
+    """
+    long_reply = "長い応答の先頭。" + "あ" * 1500 + "長い応答の末尾。"
     transcript = _write_transcript(
         tmp_path,
         [
-            {"type": "user", "message": {"role": "user", "content": "最初の依頼"}},
-            {"type": "user", "message": {"role": "user", "content": "直前の介入"}},
+            {"type": "user", "message": {"role": "user", "content": "振り返りを速くしたい"}},
             {
                 "type": "user",
                 "message": {
                     "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": "失敗"}],
+                    "content": '<agent-toolkit-auto-inserted kind="notice">配送</agent-toolkit-auto-inserted>',
                 },
             },
-            {"type": "user", "message": {"role": "user", "content": "直後の介入"}},
+            {"type": "user", "isMeta": True, "message": {"role": "user", "content": "実行環境の注記"}},
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "text", "text": "Base directory for this skill: /x"}]},
+            },
+            {"type": "user", "message": {"role": "user", "content": "<system-reminder>注入</system-reminder>"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "調べます。"},
+                        {"type": "tool_use", "id": "call-1", "name": "Bash", "input": {"command": "ls"}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "a.txt"}]},
+            },
+            {"type": "user", "message": {"role": "user", "content": "全文抽出すべきでは？"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": long_reply}]}},
         ],
     )
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
 
     assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
-
     capsys.readouterr()
-    evidence_index = [
-        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+
+    conversation = [json.loads(line) for line in (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [(item["role"], item["line"], item["text"]) for item in conversation] == [
+        ("user", 1, "振り返りを速くしたい"),
+        ("assistant", 6, "調べます。"),
+        ("user", 8, "全文抽出すべきでは？"),
+        ("assistant", 9, long_reply),
     ]
-    candidate_evidence = [json.loads((bundle_dir / item["path"]).read_text(encoding="utf-8")) for item in evidence_index]
-    contexts = [
-        (event["direction"], event["line"], event["text"])
-        for item in candidate_evidence
-        for event in item["events"]
-        if event["kind"] == "user-context"
-    ]
-    assert ("before", 2, "直前の介入") in contexts
-    assert ("after", 4, "直後の介入") in contexts
+
+    assert evidence.main([str(transcript), "--detail", "main:9"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "detail", "line": 9, "timestamp": None, "role": "assistant", "text": long_reply}]
 
 
 @pytest.mark.parametrize("existing", [False, True])

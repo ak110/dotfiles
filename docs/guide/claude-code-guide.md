@@ -435,7 +435,7 @@ Claude Codeで有効化する。
 - `atk agents-exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求するCLI。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する
-- `agent-toolkit:session-review`: 当該セッション全体の問題候補を列挙し、原因と恒久対策を確定する。手動又は`agent-toolkit:completion-report`から起動し、1件のサブエージェントが全工程を担う
+- `agent-toolkit:session-review`: 当該セッションの会話の流れと問題候補から原因と恒久対策を確定し、対策を作業依頼（AWI）として投入する。手動又は`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 
 ## 更新方法
 

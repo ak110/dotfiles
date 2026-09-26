@@ -1,9 +1,8 @@
-"""セッション振り返りの証拠を抽出し、振り返り素材AWIを生成して投入する。
+"""セッション振り返りの入力を抽出し、会話の流れ、問題候補の一覧及びセッション統計を作業ディレクトリへ書く。
 
-1回の実行で、証拠bundleの抽出、統計と既存キュー項目の取得、メイン由来の改善点の取込、
-素材AWI本文の生成及び`atk wi add`による投入までを行い、結果を1行のJSONで返す。
-候補の判定、原因分析と対策は素材AWIを取得した後続セッションのレーンが担うため、
-本文は元のセッション記録を開かずに判断できる情報に限って載せる。
+1回の実行で証拠bundleを抽出し、メインが同じセッション内で読む3つの文書を書いて、所在と件数を1行のJSONで返す。
+原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
+候補一覧は1候補を1行の要約と記録位置で示し、全文が要る候補だけをメインが抽出器の`--detail`で照会する。
 
 本スクリプトは検査スクリプトではなくデータ取得ツールであるため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -20,32 +19,30 @@ import io
 import json
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 from typing import Any
 
-import session_review_decisions  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
 
 from agent_toolkit._atk import run_script
 
-MAIN_OBSERVATIONS_FILENAME = "main-observations.md"
-"""メインが自身のコンテキストから列挙した改善点を置くファイル名。作業領域の直下に置く。"""
+CONVERSATION_FILENAME = "conversation.md"
+CANDIDATES_FILENAME = "candidates.md"
+STATS_FILENAME = "stats.md"
 
-MATERIAL_FILENAME = "material.md"
-LANE_PROCESSING_DOCUMENT = pathlib.Path("skills/session-review/references/lane-processing.md")
-"""素材AWIを処理する手順の正本。plugin rootからの相対パス。"""
+_UTTERANCE_FULL_LIMIT = 1000
+_UTTERANCE_EDGE_LENGTH = 500
+"""会話の流れへ全文を載せる発話の上限と、それを超える発話で載せる先頭・末尾の文字数。
 
-_SLOW_CALL_LIMIT = 10
-_ADOPTED_LIST_LIMIT = 30
-"""素材へ載せる採用済みの振り返り由来の項目の件数。
-
-採用済み項目は運用とともに増え続け、全件を載せると素材の大半を一覧が占める。
-反復の判定に要るのは近い時期の項目であり、それより前の項目は処理側が`atk wi grep`で検索する。
+実測では自動挿入本文を除いた発話の大半が1000字以下で、超える発話は記録あたり0〜2件だった。
+流れをたどるには先頭と末尾で足り、全文が要る発話は記録位置から照会する。
 """
-_SUMMARY_MAX_CHARS = 120
-_ADD_SUCCESS_PATH = re.compile(r"^\s+\S*?([^/\s]+\.md)$")
+_SUMMARY_LENGTH = 200
+"""候補一覧の1行の要約、対象のツール呼び出し及び直前のアシスタント発話へ載せる文字数。"""
+_SLOW_CALL_LIMIT = 10
+_FULL_TEXT_KINDS = frozenset({"user-intervention", "escalation"})
+"""候補一覧へ本文の全文を載せる候補種別。利用者の是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -58,15 +55,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--work-dir",
         metavar="PATH",
         required=True,
-        help=f"メインが作成した管理対象一時領域の絶対パス。直下に{MAIN_OBSERVATIONS_FILENAME}を置いてから起動する。",
+        help="メインが作成した管理対象一時領域の絶対パス。3つの文書と証拠bundleをこの直下へ書く。",
     )
     parser.add_argument(
-        "--target-repo", metavar="PATH", help="振り返り対象のリポジトリ。省略時は素材AWIを生成するが投入しない。"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="`atk wi add --dry-run`で素材AWIの受理だけを検証し、キューを変更しない。",
+        "--target-repo",
+        metavar="PATH",
+        help="振り返り対象のリポジトリ。対象リポジトリ固有の振り返り参照文書の解決に使う。",
     )
     return parser
 
@@ -77,21 +71,6 @@ def _missing(item: str, detail: str | None = None) -> int:
     if detail:
         print(detail, file=sys.stderr)
     return 2
-
-
-def _run_atk(executable: str, arguments: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """`atk`を実行し、起動できない場合は`None`を返す。"""
-    try:
-        return subprocess.run(
-            [executable, *arguments],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
-    except OSError:
-        return None
 
 
 def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pathlib.Path | None:
@@ -135,27 +114,45 @@ def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> s
     return None if exit_code == 0 else captured.getvalue() or f"抽出器の終了コード: {exit_code}"
 
 
-def _queue_lists(executable: str, target_repo: pathlib.Path) -> dict[str, list[dict[str, str]]] | str:
-    """素材AWIへ載せる既存キュー項目の一覧を取得する。失敗時は診断の文字列を返す。"""
-    queries = {
-        "active": ["--state=active"],
-        "adopted-session-review": ["--state=adopted", "--source=session-review"],
-        "answered-uwi": ["--type=uwi", "--answered=yes"],
-    }
-    lists: dict[str, list[dict[str, str]]] = {}
-    for name, options in queries.items():
-        result = _run_atk(executable, ["wi", "list", f"--target-repo={target_repo}", *options, "--summary-only", "--skip-pull"])
-        if result is None or result.returncode != 0:
-            return f"atk wi list {' '.join(options)}: {result.stderr if result is not None else '起動できない'}"
-        lists[name] = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-    return lists
-
-
 def _fence(body: str, info: str = "text") -> list[str]:
     """本文中のバッククォート連続より長いフェンスで囲み、本文中の見出しを見出しとして扱わせない。"""
     longest = max((len(run) for run in re.findall(r"`+", body)), default=0)
     fence = "`" * max(3, longest + 1)
     return [f"{fence}{info}", body.rstrip("\n"), fence]
+
+
+def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
+    """空白を正規化した先頭の文字列を返す。"""
+    normalized = " ".join(text.split())
+    return normalized if len(normalized) <= limit else normalized[:limit] + "…"
+
+
+def _conversation_document(utterances: list[dict[str, Any]], detail_command: str) -> str:
+    """会話の流れを、発話ごとの役割、時刻、記録位置と本文で組み立てる。"""
+    lines = [
+        "# 会話の流れ",
+        "",
+        "メイン記録の利用者発話とアシスタント発話を時系列で並べる。自動挿入本文、実行環境の挿入、スキル展開、"
+        f"ツール呼び出しとツール結果は含まない。{_UTTERANCE_FULL_LIMIT}字を超える発話は先頭と末尾の"
+        f"{_UTTERANCE_EDGE_LENGTH}字ずつを載せる。全文は`{detail_command} --detail <記録位置>`で取得する。",
+    ]
+    if not utterances:
+        lines.extend(["", "発話は0件である。"])
+    for item in utterances:
+        role = "利用者" if item["role"] == "user" else "アシスタント"
+        locator = f"{item['record']}:{item['line']}"
+        text = str(item["text"]).strip()
+        lines.extend(["", f"## {role}（{item.get('timestamp') or '時刻なし'}、{locator}）", ""])
+        if len(text) > _UTTERANCE_FULL_LIMIT:
+            omitted = len(text) - 2 * _UTTERANCE_EDGE_LENGTH
+            body = (
+                f"{text[:_UTTERANCE_EDGE_LENGTH]}\n…（中間の{omitted}字を省略。全文は記録位置{locator}）…\n"
+                f"{text[-_UTTERANCE_EDGE_LENGTH:]}"
+            )
+        else:
+            body = text
+        lines.extend(_fence(body))
+    return "\n".join(lines) + "\n"
 
 
 def _readable_entry_text(text: str) -> str:
@@ -198,63 +195,93 @@ def _text_parts(value: Any) -> list[str]:
     return []
 
 
-def _candidate_lines(candidate: dict[str, Any], evidence: dict[str, Any]) -> list[str]:
-    """候補1件の見出し、発生件数、逐語本文、対象のツール呼び出し及び前後のユーザー発話を組み立てる。
+def _tool_use_summary(event: dict[str, Any]) -> str:
+    """対象のツール呼び出しを、ツール名と入力の要約1行で表す。"""
+    tool_input = event.get("input")
+    if isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str):
+        summary = tool_input["command"]
+    else:
+        summary = json.dumps(tool_input, ensure_ascii=False)
+    return f"{event.get('name', '')} {_one_line(summary)}"
 
-    記録位置と集約キーは載せない。これらを載せると、後続の分析主体が裏付けのために元記録を検索し直す契機になる。
+
+def _preceding_assistant_text(timeline: list[dict[str, Any]], record: str, line: int) -> str | None:
+    """同じ記録で指定行以前にある最後のアシスタント発話を返す。"""
+    preceding = [
+        event
+        for event in timeline
+        if event.get("kind") in {"assistant", "final-result"}
+        and event.get("record") == record
+        and isinstance(event.get("line"), int)
+        and int(event["line"]) <= line
+        and isinstance(event.get("text"), str)
+    ]
+    return str(max(preceding, key=lambda event: int(event["line"]))["text"]) if preceding else None
+
+
+def _candidate_lines(candidate: dict[str, Any], evidence: dict[str, Any], timeline: list[dict[str, Any]]) -> list[str]:
+    """候補1件を、1行の要約、記録位置及び判断に要る補足で組み立てる。
+
+    hook通知は通知が判定した入力を読まないと是非を判断できないため、直前のアシスタント発話を添える。
     """
     kind = str(candidate["candidate_kind"])
-    heading = session_review_decisions.CANDIDATE_HEADING_FORMAT.format(
-        candidate_id=candidate["candidate_id"], candidate_kind=kind
-    )
     occurrence = candidate.get("occurrence_count", candidate.get("count", 1))
-    omitted = candidate.get("omitted_locator_count", 0)
-    count_line = f"- 発生件数: {occurrence}件" + (f"（同じ種類の{omitted}件は代表1件で示す）" if omitted else "")
-    lines = ["", heading, "", count_line, ""]
     events = evidence.get("events", [])
-    if kind in session_review_evidence.UNTRUNCATED_EVIDENCE_KINDS:
-        bodies = [
-            _readable_entry_text(str(event["text"]))
-            for event in events
-            if event.get("kind") == "detail" and isinstance(event.get("text"), str) and event["text"].strip()
-        ]
-        bodies.extend(
-            json.dumps(event["input"], ensure_ascii=False, indent=2)
-            for event in events
-            if event.get("kind") == "detail" and "input" in event
-        )
-    else:
-        bodies = []
-    if not bodies and isinstance(candidate.get("text"), str):
-        bodies = [candidate["text"]]
-    lines.append("本文:")
-    lines.append("")
-    lines.extend(_fence("\n\n".join(bodies) if bodies else "（本文なし）"))
-    tool_uses = [event for event in events if event.get("kind") == "tool-use"]
-    if tool_uses:
-        lines.extend(["", "対象のツール呼び出し:", ""])
-        for event in tool_uses:
-            lines.extend(_fence(f"{event.get('name', '')}\n{json.dumps(event.get('input'), ensure_ascii=False, indent=2)}"))
-    contexts = [event for event in events if event.get("kind") == "user-context"]
-    if contexts:
-        lines.extend(["", "直前と直後のユーザー発話:", ""])
-        for event in contexts:
-            label = "直前" if event.get("direction") == "before" else "直後"
-            text = str(event.get("text", "")).strip()
-            lines.append(f"- {label}: {' '.join(text.split()) if text else '（本文なし）'}")
-    if kind == "user-intervention" and not any(event.get("direction") == "after" for event in contexts):
-        lines.append("- 直後: 同じ記録に後続のユーザー発話は無い")
+    bodies = [
+        _readable_entry_text(str(event["text"]))
+        for event in events
+        if event.get("kind") == "detail" and isinstance(event.get("text"), str) and event["text"].strip()
+    ]
+    text = bodies[0] if bodies else str(candidate.get("text", ""))
+    lines = [f"- {candidate['candidate_id']} {kind}（発生{occurrence}件）: {_one_line(text) or '（本文なし）'}"]
+    locators = ", ".join(f"{locator['record']}:{locator['line']}" for locator in candidate["locators"])
+    omitted = candidate.get("omitted_locator_count", 0)
+    lines.append(f"  - 記録位置: {locators}" + (f"（同じ種類の{omitted}件は省略）" if omitted else ""))
+    lines.extend(f"  - 対象: {_tool_use_summary(event)}" for event in events if event.get("kind") == "tool-use")
+    if kind == "hook-notice":
+        first = candidate["locators"][0]
+        preceding = _preceding_assistant_text(timeline, str(first["record"]), int(first["line"]))
+        lines.append(f"  - 直前のアシスタント発話: {_one_line(preceding) if preceding else '（なし）'}")
+    if kind in _FULL_TEXT_KINDS:
+        lines.extend(["", *("  " + line if line else "" for line in _fence("\n\n".join(bodies) if bodies else text)), ""])
     return lines
 
 
-def _stats_lines(stats: list[dict[str, Any]]) -> list[str]:
+def _candidates_document(
+    candidates: list[dict[str, Any]],
+    summary: dict[str, Any],
+    evidence_by_id: dict[str, dict[str, Any]],
+    timeline: list[dict[str, Any]],
+    detail_command: str,
+) -> str:
+    """問題候補の一覧を組み立てる。"""
+    counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
+    count_text = "、".join(f"{kind} {count}件" for kind, count in sorted(counts.items())) or "なし"
+    excluded = summary.get("excluded", {})
+    excluded_text = "、".join(f"{name} {count}件" for name, count in sorted(excluded.items())) or "なし"
+    lines = [
+        "# 問題候補の一覧",
+        "",
+        f"- 候補: {len(candidates)}件（{count_text}）",
+        f"- 抽出器が除外した件数: {excluded_text}",
+        f"- 記録位置の全文は`{detail_command} --detail <記録位置>`で取得する",
+        "",
+    ]
+    if not candidates:
+        lines.append("抽出器が問題候補を返さなかった。")
+    for candidate in candidates:
+        lines.extend(_candidate_lines(candidate, evidence_by_id.get(str(candidate["candidate_id"]), {}), timeline))
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _stats_document(stats: list[dict[str, Any]]) -> str:
+    """セッション統計を組み立てる。"""
     by_kind: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in stats:
         by_kind[str(event.get("kind"))].append(event)
     total = next(iter(by_kind.get("stats-total", [])), {})
     lines = [
-        "",
-        "## セッション統計",
+        "# セッション統計",
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
@@ -286,126 +313,11 @@ def _stats_lines(stats: list[dict[str, Any]]) -> list[str]:
         for item in slow:
             hint = " ".join(str(item.get("hint", "")).split())
             lines.append(f"- {item.get('tool')} {item.get('seconds')}秒" + (f": {hint}" if hint else ""))
-    return lines
-
-
-def _queue_lines(lists: dict[str, list[dict[str, str]]] | None) -> list[str]:
-    lines = ["", "## 既存キュー項目", ""]
-    if lists is None:
-        return [*lines, "対象リポジトリを指定しない準備のため、既存キュー項目を取得していない。"]
-    titles = {
-        "active": "未終端の項目",
-        "adopted-session-review": "採用済みの振り返り由来の項目",
-        "answered-uwi": "回答済みのUWI",
-    }
-    for key, title in titles.items():
-        items = lists.get(key, [])
-        shown = items
-        if key == "adopted-session-review" and len(items) > _ADOPTED_LIST_LIMIT:
-            shown = sorted(items, key=lambda item: str(item.get("filename")))[-_ADOPTED_LIST_LIMIT:]
-            title += (
-                f"のうち新しい{_ADOPTED_LIST_LIMIT}件。"
-                "それより前の項目は`atk wi grep --state=adopted --source=session-review`で検索する"
-            )
-        lines.extend([f"{title}（{len(items)}件）:", ""])
-        lines.extend(f"- {item.get('filename')}: {_summary(item.get('summary', ''))}" for item in shown)
-        lines.append("")
-    return lines[:-1]
-
-
-def _summary(value: object) -> str:
-    text = " ".join(str(value).split())
-    return text if len(text) <= _SUMMARY_MAX_CHARS else text[:_SUMMARY_MAX_CHARS] + "…"
-
-
-def build_material(
-    *,
-    session_label: str,
-    session_reference: str,
-    target_repo: pathlib.Path | None,
-    candidates: list[dict[str, Any]],
-    evidence_by_id: dict[str, dict[str, Any]],
-    stats: list[dict[str, Any]],
-    observations: str,
-    queue_lists: dict[str, list[dict[str, str]]] | None,
-    reference_document: pathlib.Path | None,
-    prepared_at: str,
-) -> str:
-    """振り返り素材AWIの本文を組み立てる。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[3]
-    counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
-    count_text = "、".join(f"{kind} {count}件" for kind, count in sorted(counts.items())) or "なし"
-    observation_count = _observation_count(observations)
-    lines = [
-        f"# セッション{session_label}の振り返り素材を分析し、対策を実装する",
-        "",
-        "対象セッションで抽出した問題候補とメイン由来の改善点について、候補ごとの原因を確定し、対策と再発防止策を実装する。"
-        "本文は準備スクリプトが機械生成した振り返り素材であり、元のセッション記録を開かずに判定と原因分析を完了できる情報を載せる。",
-        "",
-        "## 反映内容と反映先",
-        "",
-        f"`{plugin_root / LANE_PROCESSING_DOCUMENT}`の手順に従い、`## 問題候補`の全候補とメイン由来の改善点を一次選別し、"
-        "原因分析、対策と再発防止策の実装、統合までを本項目の処理で完了する。"
-        "処理の完了時に、候補ごとの問題、原因、対策、再発防止策及び見送りの理由をまとめた事後承認型UWIを1件投入する。"
-        f"対象リポジトリは`{target_repo if target_repo is not None else 'なし'}`とする。",
-        "",
-        "## 適用範囲",
-        "",
-        f"対象セッションで抽出した候補{len(candidates)}件（{count_text}）と、メイン由来の改善点{observation_count}件を扱う。"
-        "誤りの機構が依存する条件と、観測事象と表面構造が異なる該当例は、候補ごとの原因分析で確定する。",
-        "",
-        "## 実現性",
-        "",
-        f"候補、統計及び既存キュー項目の一覧は、準備スクリプトが{prepared_at}に抽出器と`atk wi list`から取得した。"
-        "ユーザー介入、失敗したコマンドの診断、委譲返却及びエスカレーションの本文は切り詰めずに載せ、"
-        "hook通知など定型の本文は通知本文と対象のツール呼び出しで示す。",
-        "",
-        "## 完成条件",
-        "",
-        "- 全候補の判定を`atk run-script session-review-report -- check`が受理する",
-        "- 欠陥と判定した候補とユーザー介入の候補が、実装済みの成果物、未完了のAWI又は確認中のUWIへ"
-        "再発防止策として対応付いている",
-        "- 本項目専用の事後承認型UWIが投入されている",
-        "",
-        session_review_decisions.CANDIDATES_HEADING,
-    ]
-    if not candidates:
-        lines.extend(["", "抽出器が問題候補を返さなかった。"])
-    for candidate in candidates:
-        lines.extend(_candidate_lines(candidate, evidence_by_id.get(str(candidate["candidate_id"]), {})))
-    lines.extend(["", "## メイン由来の改善点", ""])
-    lines.extend(_fence(observations) if observations.strip() else ["メインが列挙した改善点は0件である。"])
-    lines.extend(_stats_lines(stats))
-    lines.extend(_queue_lines(queue_lists))
-    lines.extend(
-        [
-            "",
-            "## 参考情報",
-            "",
-            f"- 振り返りの参照文書: {f'`{reference_document}`' if reference_document is not None else 'なし'}",
-            f"- 対象セッション: {session_reference}",
-            f"- 準備時刻: {prepared_at}",
-            "- 処理側は通常これらを開かずに判断できる。対象セッションの記録は、素材で直接原因を確定できない候補に限り"
-            "抽出器`session-review-evidence`の`--grep`と`--detail`で照会する。"
-            "参照文書は対象リポジトリ固有の振り返り観点と所要時間目標を持つ場合に読む",
-        ]
-    )
     return "\n".join(lines) + "\n"
 
 
-def _observation_count(observations: str) -> int:
-    return sum(1 for line in observations.splitlines() if line.startswith("- "))
-
-
-def _submitted_filename(stdout: str) -> str | None:
-    for line in stdout.splitlines():
-        if matched := _ADD_SUCCESS_PATH.match(line):
-            return matched.group(1)
-    return None
-
-
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
-    """素材AWIを生成して投入し、結果を1行のJSONで出力する。"""
+    """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)
     local_evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
     try:
@@ -418,16 +330,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     work_dir = pathlib.Path(args.work_dir).expanduser()
     if not work_dir.is_absolute() or not work_dir.is_dir():
         return _missing("work_dir")
-    observations_path = work_dir / MAIN_OBSERVATIONS_FILENAME
-    if not observations_path.is_file():
-        return _missing("main-observations", str(observations_path))
     transcript_path = pathlib.Path(args.transcript).expanduser().resolve() if args.transcript is not None else None
     if transcript_path is not None and not transcript_path.is_file():
         return _missing("transcript_path")
     target_repo = pathlib.Path(args.target_repo).expanduser().resolve() if args.target_repo is not None else None
-    executable = shutil.which("atk")
-    if target_repo is not None and executable is None:
-        return _missing("atk")
 
     session_arguments = [str(transcript_path)] if transcript_path is not None else ["--codex-thread-id", args.codex_thread_id]
     bundle_dir = work_dir / "bundle"
@@ -437,7 +343,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     try:
         candidate_rows = _read_jsonl(bundle_dir / "candidates.jsonl")
         stats = _read_jsonl(bundle_dir / "stats.jsonl")
+        timeline = _read_jsonl(bundle_dir / "timeline.jsonl")
+        utterances = _read_jsonl(bundle_dir / "conversation.jsonl")
         candidates = [row for row in candidate_rows if row.get("kind") == "candidate"]
+        summary = next((row for row in candidate_rows if row.get("kind") == "candidate-summary"), {})
         evidence_by_id = {
             str(row["candidate_id"]): json.loads((bundle_dir / row["path"]).read_text(encoding="utf-8"))
             for row in _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
@@ -445,76 +354,37 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     except (OSError, ValueError, KeyError) as error:
         return _missing("bundle", str(error))
 
-    queue_lists: dict[str, list[dict[str, str]]] | None = None
-    if target_repo is not None:
-        assert executable is not None
-        fetched = _queue_lists(executable, target_repo)
-        if isinstance(fetched, str):
-            return _missing("queue_lists", fetched)
-        queue_lists = fetched
-
-    current = now if now is not None else datetime.datetime.now(datetime.UTC)
-    prepared_at = current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    session_label = f"Claude Code {transcript_path.stem}" if transcript_path is not None else f"Codex {args.codex_thread_id}"
-    # 抽出器の`--transcript`と`--codex-thread-id`へそのまま渡せる値を参考情報へ載せる。
-    session_reference = (
-        f"Claude Code（transcript: `{transcript_path}`）"
+    # 抽出器の`--transcript`と`--codex-thread-id`へそのまま渡せる形を、全文を照会するコマンドとして示す。
+    detail_command = (
+        f"atk run-script session-review-evidence -- {transcript_path}"
         if transcript_path is not None
-        else f"Codex（thread ID: `{args.codex_thread_id}`）"
+        else f"atk run-script session-review-evidence -- --codex-thread-id {args.codex_thread_id}"
     )
-    observations = observations_path.read_text(encoding="utf-8")
-    material = build_material(
-        session_label=session_label,
-        session_reference=session_reference,
-        target_repo=target_repo,
-        candidates=candidates,
-        evidence_by_id=evidence_by_id,
-        stats=stats,
-        observations=observations,
-        queue_lists=queue_lists,
-        reference_document=_reference_document(target_repo, codex=args.codex_thread_id is not None),
-        prepared_at=prepared_at,
+    conversation_path = work_dir / CONVERSATION_FILENAME
+    candidates_path = work_dir / CANDIDATES_FILENAME
+    stats_path = work_dir / STATS_FILENAME
+    conversation_path.write_text(_conversation_document(utterances, detail_command), encoding="utf-8")
+    candidates_path.write_text(
+        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command), encoding="utf-8"
     )
-    material_path = work_dir / MATERIAL_FILENAME
-    material_path.write_text(material, encoding="utf-8")
+    stats_path.write_text(_stats_document(stats), encoding="utf-8")
 
-    awi_filename: str | None = None
-    submitted = False
-    # 候補も改善点も無いセッションは分析の対象を持たないため、キューへ空の素材を積まない。
-    has_material = bool(candidates) or _observation_count(observations) > 0
-    if target_repo is not None and has_material:
-        assert executable is not None
-        add_arguments = [
-            "wi",
-            "add",
-            "--source",
-            "session-review",
-            f"--target-repo={target_repo}",
-            "--body-file",
-            str(material_path),
-        ]
-        if args.dry_run:
-            add_arguments.append("--dry-run")
-        result = _run_atk(executable, add_arguments)
-        if result is None or result.returncode != 0:
-            return _missing("atk wi add", result.stderr if result is not None else "起動できない")
-        if not args.dry_run:
-            awi_filename = _submitted_filename(result.stdout)
-            if awi_filename is None:
-                return _missing("awi_filename", result.stdout)
-            submitted = True
-
+    reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
     total = next((event for event in stats if event.get("kind") == "stats-total"), {})
     compaction = next((event for event in stats if event.get("kind") == "stats-compaction-total"), {})
+    current = now if now is not None else datetime.datetime.now(datetime.UTC)
+    role_counts = collections.Counter(str(item["role"]) for item in utterances)
     record = {
         "work_dir": str(work_dir),
-        "material_path": str(material_path),
-        "submitted": submitted,
-        "skipped_reason": None if has_material else "no-candidates",
-        "awi_filename": awi_filename,
+        "conversation_path": str(conversation_path),
+        "candidates_path": str(candidates_path),
+        "stats_path": str(stats_path),
+        "reference_document": str(reference_document) if reference_document is not None else None,
+        "prepared_at": current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "utterance_counts": {"user": role_counts.get("user", 0), "assistant": role_counts.get("assistant", 0)},
         "candidate_total": len(candidates),
         "candidate_counts": dict(sorted(collections.Counter(str(item["candidate_kind"]) for item in candidates).items())),
-        "main_observation_count": _observation_count(observations),
+        "excluded_counts": dict(sorted(summary.get("excluded", {}).items())),
         "elapsed_seconds": total.get("elapsed_seconds"),
         "compaction_count": compaction.get("count", 0),
     }
