@@ -102,12 +102,12 @@
 
 ## レビュー修正の履歴統合
 
-レビュー指摘への修正は、ラウンド番号によらず指摘ごとにfixup commitを作成し、元commitの7文字以上の一意な短縮OIDへ対応付ける。そのラウンドへ帰属する全てのfixupを作成し終えた時点で、そのラウンドのautosquashを1回実行する。autosquashの単位は`agent-toolkit:commit`の`references/history-rewrite.md`「修正方法の選択」が定めるものとし、同じ単位への実行は1回に限る。
+レビュー指摘への修正方法（fixupの作成、元commitへの対応付け及びautosquashの単位と回数）は`agent-toolkit:commit`の`references/history-rewrite.md`「修正方法の選択」に従い、autosquashはラウンドごとに実行する。
 
 autosquashの前に、対象worktreeがcleanであり、rewrite対象がpushされておらず、rewrite対象を操作直前に解決したOID集合がそのレーンのcommitだけであることを確認する。この確認はラウンドごとに行う。
-書換えコマンドとは別の呼び出しで、対象worktreeを作業ディレクトリとして`git log --oneline --decorate -n 20`を実行し、対象commitの状態を確認する。
+書換えコマンドとは別の呼び出しで、対象worktreeを作業ディレクトリとして同`references/history-rewrite.md`「履歴確認の起動形」の`git log`を実行し、対象commitの状態を確認する。
 
-`git -c sequence.editor=: rebase -i --autosquash --no-update-refs <起点OID>`を実行し、競合が無いことを確認する。競合時は作業を止め、競合対象と中断状態を`needs_escalation`で返す。fixup先が直前の1commitに限られ、autosquashを要しない場合は、同じ安全条件を確認したうえで`git commit --amend`を用いてよい。
+autosquashは同`references/history-rewrite.md`「fixupの実行上の制約」の統合の起動形で実行し、競合が無いことを確認する。競合時は作業を止め、競合対象と中断状態を`needs_escalation`で返す。fixup先が直前の1commitに限られ、autosquashを要しない場合は、同じ安全条件を確認したうえで`git commit --amend`を用いてよい。
 
 ラウンドごとのautosquashにより、次のラウンドを開始する時点のrebase範囲には、件名の先頭が`fixup!`・`squash!`・`amend!`のcommitが残らない。同`references/history-rewrite.md`「fixupの実行上の制約」はその件名のcommitが範囲内にある場合にfixupの作成を遮断するため、2ラウンド目以降の修正も本節の手順のままfixupとして作成できる。
 
