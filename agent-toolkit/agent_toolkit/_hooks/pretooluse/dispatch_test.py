@@ -247,7 +247,8 @@ class TestPs1EolCheck:
         assert "LFだけの内容" in context
         assert "UTF-8 BOMが失われて日本語が文字化け" in context
         assert "*.ps1 text eol=crlf" in context
-        assert "対処: 既存ファイルにはEditツールを使う" in context
+        assert "「書込ツールの改行・BOM保全」に従う" in context
+        assert "既存ファイルにはEditツールを使い" in context
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""

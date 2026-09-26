@@ -26,10 +26,7 @@
 - パッケージマネージャーの`exclude-newer`系設定で公開直後のバージョン導入を抑止する
   - uv: `~/.config/uv/uv.toml`に`exclude-newer = "1 day"`
   - pnpm: `pnpm config set minimum-release-age 1440 --global`（分単位）
-- 自リポジトリのパッケージをイメージビルド内で`uv tool install`等する場合、
-  `exclude-newer`設定により直近リリース版が解決できず失敗する。
-  uvでは`exclude-newer-package = { 自パッケージ名 = false }`で例外指定する
- （または環境変数で対象RUNだけ無効化する）
+- 自リポジトリのパッケージをイメージビルド内で`uv tool install`等する場合は、`dependency-management.md`「バージョン指定と更新」の公開待機設定の対処に従う
 
 ## hadolint
 

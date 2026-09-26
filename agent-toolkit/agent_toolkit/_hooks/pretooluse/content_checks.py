@@ -122,8 +122,8 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
             f"`{tool_name}.{field}`にLFだけの内容を検出した。"
             "この書き込みではUTF-8 BOMが失われて日本語が文字化けし、"
             f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}\n"
-            "対処: 既存ファイルにはEditツールを使う（CRLFを透過的に維持する）。"
-            "新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。",
+            "対処は`agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従う。"
+            "既存ファイルにはEditツールを使い、新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。",
             tag=_WARN_TAG,
             removable_cause=True,
         )

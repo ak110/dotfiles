@@ -197,6 +197,10 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節及び`SubagentStop`節で前段の入力仕様を確認した。同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
 
+## agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日
+
+2026年8月17日、Linux・uv 0.12.3で、依存メタデータが同一でパスだけが異なるPEP 723スクリプトを`uv run --script`で実行すると、スクリプトごとにvenvを再構築することを確認した。パッケージと解決結果のキャッシュは共有され、ウォーム状態での再構築は1秒未満だった。再検証は同じ`# /// script`ブロックを持つスクリプトを2つのパスへ置き、`uv --version`を記録したうえで順に実行し、uvのキャッシュディレクトリ配下の環境の数と所要時間を比べる。
+
 ## agent-toolkit/skills/writing-standards/references/sub-agents.md：frontmatter：2026年8月19日
 
 2026年8月19日、`skills`で宣言したスキルの本文がサブエージェントへ注入される際に、所在ディレクトリの絶対パスの表示が付随することをサブエージェントの記録で確認した。公式ドキュメントはこの表示を記載していない。再検証は`skills`を宣言した定義から起動したサブエージェントの記録を読み、注入されたスキル本文の直前又は直後に所在の絶対パスが現れるかを確認する。

@@ -3,12 +3,10 @@
 本書はPowerShellスクリプトの記述スタイル基準と、Windows PowerShell 5.1互換を保つための注意点を定める。
 
 - Claude Codeツールの挙動と注意点
-  - EditツールはCRLF改行とUTF-8 BOMを透過的に維持する。既存ファイルの編集はEditを使う
-  - Writeツールは常にLF改行・BOMなしで書くため、CRLFとBOMが消失する。PS1ファイルにはWriteを使わない
+  - 書込ツールごとの改行・BOMの扱いは`encoding.md`「書込ツールの改行・BOM保全」に従う。PS1ファイルはCRLFとBOMを要するため、既存ファイルはEditで編集し、Writeを使わない
     - agent-toolkitプラグインはPS1へのLF-only書き込みへ警告を返すが書き込み自体は成立するため、Writeで書いた場合はBOMとCRLFを別途復元する
   - 新規ファイル作成時はBashツールでBOM付きCRLFファイルを書く
     - 例: `printf '\xEF\xBB\xBF' > file.ps1 && cat <<'ENDOFPS1' | sed 's/$/\r/' >> file.ps1`
-  - `.gitattributes`の`eol=crlf`は改行のみ管理し、BOMは復元しない。BOM付加は別途必要
 - Windows PowerShell 5.1互換性
   - `.gitattributes`で`*.ps1 text eol=crlf`を設定し、改行をgit側で管理する
   - 非ASCII文字を含むスクリプトはUTF-8 BOM付きで保存する
