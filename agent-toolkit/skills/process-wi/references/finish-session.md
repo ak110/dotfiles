@@ -7,9 +7,9 @@ ready一覧とactive一覧は公開工程の開始時点の内容のまま扱い
 
 ## 他の着手可能な項目が無い処理回の振り返り
 
-公開工程の開始時（次節の短絡の判定より前）に、メインは`atk wi list --state inbox --jsonl --target-repo <対象リポジトリ>`を実行し、`ready`が`true`の行を数える。この行は`atk wi process-loop`が次のセッションを起動する着手可能なAWIと回答済みUWIに当たる。hold中の項目と依存が未解決の項目は数から外す。
+公開工程の開始時（次節の短絡の判定より前）に、メインはそのセッションの対象リポジトリごとに`atk wi list --state inbox --jsonl --target-repo <対象リポジトリ>`を実行し、`ready`が`true`の行を全対象リポジトリの合計で数える。この行は`atk wi process-loop`が次のセッションを起動する着手可能なAWIと回答済みUWIに当たる。hold中の項目と依存が未解決の項目は数から外す。
 
-- 0件の場合は、公開工程へ進む前に`agent-toolkit:session-review`を起動する。振り返りがAWIを投入した場合は、`atk wi start-processing`でそのAWIを`processing`へ移し、`references/run-lanes.md`「処理中に確定した必須是正レーン」の是正レーンとして固定集合へ追加する。そのレーンを統合まで完了させてから次節へ進む。AWIが投入されなかった場合はそのまま次節へ進む。このセッションの振り返りはこの1回とし、`agent-toolkit:completion-report`の手順5ではこの振り返りの結果を振り返り結果報告へ用いる
+- 0件の場合は、公開工程へ進む前に`agent-toolkit:session-review`を起動する。振り返りがAWIを投入した場合は、`atk wi start-processing`でそのAWIを`processing`へ移し、`references/run-lanes.md`「処理中に確定した必須是正レーン」の是正レーンとして固定集合へ追加する。そのレーンを統合まで完了させてから次節へ進む。AWIが投入されなかった場合はそのまま次節へ進む。このセッションの振り返りは対象リポジトリの数によらずこの1回とし、`agent-toolkit:completion-report`の手順5ではこの振り返りの結果を振り返り結果報告へ用いる
 - 1件以上の場合は、公開後の`agent-toolkit:completion-report`で振り返りを起動し、投入したAWIを次のセッションへ渡す。次のセッションは他の項目と一緒にそのAWIを処理するため、振り返りのAWIだけのためのセッションを増やさずに済む
 
 振り返りのAWIを常に次のセッションへ渡すと、そのAWIだけを処理するセッションも終端の振り返りで新しいAWIを投入し、`atk wi process-loop`が自分の出力で次のセッションを起動し続ける。
