@@ -6250,6 +6250,79 @@ def test_claude_subagent_handback_message_becomes_final_result(tmp_path: pathlib
     ]
 
 
+def _bundle_delegate_return_texts(tmp_path: pathlib.Path, delegate_entries: list[dict[str, object]]) -> list[str]:
+    """委譲先記録を1件持つtranscriptから`--bundle`で候補を生成し、`delegate-return`候補の本文を返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}])
+    subagents = transcript.with_suffix("") / "subagents"
+    subagents.mkdir(parents=True)
+    (subagents / "agent-delegate.jsonl").write_text(
+        "\n".join(json.dumps({"isSidechain": True, **entry}, ensure_ascii=False) for entry in delegate_entries) + "\n",
+        encoding="utf-8",
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    records = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    return [
+        record["text"]
+        for record in records
+        if record["kind"] == "candidate" and record["candidate_kind"] in {"delegate-return", "escalation"}
+    ]
+
+
+def _assistant_text(text: str) -> dict[str, object]:
+    return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+
+
+def test_bundle_excludes_interim_text_of_running_delegate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """最後の行動がツール呼び出しである委譲先（抽出時点で稼働中）の途中発話を委譲返却の候補にしない。"""
+    texts = _bundle_delegate_return_texts(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "委譲された依頼"}},
+            _assistant_text("本文の起草に入ります。"),
+            _execution_tool_use("call-1"),
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}]},
+            },
+            _assistant_text("status: needs_escalation\nreason: 途中の見込み"),
+            _execution_tool_use("call-2"),
+        ],
+    )
+    capsys.readouterr()
+
+    assert texts == []
+
+
+def test_bundle_keeps_final_text_of_finished_delegate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """最後の本文の後にツール呼び出しが無い委譲先では、その本文を委譲返却の候補にし、途中発話は候補にしない。"""
+    texts = _bundle_delegate_return_texts(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "委譲された依頼"}},
+            _assistant_text("調査を始めます。"),
+            _execution_tool_use("call-1"),
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}]},
+            },
+            _assistant_text("status: completed\noutput_file: /tmp/out.md"),
+        ],
+    )
+    capsys.readouterr()
+
+    assert texts == ["status: completed\noutput_file: /tmp/out.md"]
+
+
 def test_claude_main_record_keeps_only_completion_from_subagent_entries(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

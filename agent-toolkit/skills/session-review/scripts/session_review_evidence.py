@@ -473,6 +473,7 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
     pending_claude_questions: dict[str, _PendingQuestion] = {}
     tool_uses: dict[str, tuple[str, str]] = {}
     subagent_record = _is_subagent_record(entries)
+    last_tool_use_line: int | None = None
     for line, entry in zip(lines, entries, strict=True):
         message = entry.get("message")
         if isinstance(message, dict) and entry.get("type") == "assistant":
@@ -484,6 +485,8 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
                             str(block.get("name", "")),
                             json.dumps(block.get("input"), ensure_ascii=False, sort_keys=True),
                         )
+                        if block.get("name") != _HANDBACK_TOOL:
+                            last_tool_use_line = line
         for event in _claude_entry_events(entry, line, pending_claude_questions, subagent_record):
             if event.get("kind") == "failed-tool":
                 tool_name, operation = tool_uses.get(str(event.get("tool", "")), ("", ""))
@@ -492,6 +495,13 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
             event.setdefault("line", line)
             _set_entry_timestamp(event, entry)
             events.append(event)
+    # Claude Code形式の本文は途中発話と最終応答を区別する標識を持たない。
+    # 同じエントリ又は後続のエントリにツール呼び出しがある本文は途中発話であり、最後の行動がツール呼び出しである記録
+    # （抽出時点で稼働中の委譲先など）の本文を最終結果として扱わないよう、Codex形式と同じ`commentary`を付ける。
+    if last_tool_use_line is not None:
+        for event in events:
+            if event.get("kind") == "assistant" and not event.get("handback") and event["line"] <= last_tool_use_line:
+                event["phase"] = "commentary"
     return events
 
 
