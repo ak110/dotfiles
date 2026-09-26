@@ -1631,8 +1631,34 @@ class TestResolveForge:
         assert _resolve_forge("auto", "https://notgithub.example.com/o/r.git") is None
 
     @pytest.mark.parametrize("repository", ["owner/repository", "git@git.example.com:o/r.git", "invalid"])
-    def test_auto_returns_none_without_recognized_host(self, repository: str) -> None:
-        assert _resolve_forge("auto", repository) is None
+    def test_auto_returns_none_without_recognized_host(self, repository: str, tmp_path: pathlib.Path) -> None:
+        assert _resolve_forge("auto", repository, cwd=tmp_path) is None
+
+    @pytest.mark.parametrize(
+        ("remotes", "expected"),
+        [
+            pytest.param({"origin": "git@github.com:Owner/Repo.git"}, "github", id="github-ssh"),
+            pytest.param({"origin": "https://gitlab.example.com/owner/repo.git"}, "gitlab", id="gitlab-https"),
+            pytest.param({"origin": "git@github.com:other/repo.git"}, None, id="no-matching-remote"),
+            pytest.param(
+                {"origin": "git@github.com:owner/repo.git", "mirror": "https://gitlab.example.com/owner/repo.git"},
+                None,
+                id="ambiguous-forges",
+            ),
+        ],
+    )
+    def test_auto_resolves_short_repository_from_matching_remote(
+        self, tmp_path: pathlib.Path, remotes: dict[str, str], expected: str | None
+    ) -> None:
+        """`--repo`の`owner/repo`形式は、作業ディレクトリのGit remoteのうちpathが一致するもののホストで判別する。
+
+        手順書どおりの`owner/repo`で`--forge`を省くと必ず終了コード3になる不整合を検出する。
+        一致するremoteが無い場合と、一致したremoteのforgeが分かれる場合は推測せず判別不能とする。
+        """
+        subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
+        for name, url in remotes.items():
+            subprocess.run(["git", "-C", str(tmp_path), "remote", "add", name, url], check=True)
+        assert _resolve_forge("auto", "owner/repo", cwd=tmp_path) == expected
 
 
 class TestNormalizeGitlabPipeline:
