@@ -12,7 +12,9 @@ _URL = re.compile(r"(?:[a-zA-Z][a-zA-Z0-9+.\-]*://|www\.)[^\s)]+")
 def warnings_for_body(body: str) -> list[str]:
     """フェンス内を除いて、本文の行番号付き警告を返す。"""
     warnings: list[str] = []
-    deny = colloquial.load_patterns(colloquial.DENY_PATH)
+    # 漢語複合語の末尾（「将来いずれ」など）を口語表現として報告しないよう、
+    # pyfltr自身の口語表現チェックと同じくdenylistへ漢字の左境界条件を付ける。
+    deny = colloquial.load_patterns(colloquial.DENY_PATH, kanji_left_boundary=True)
     allow = colloquial.load_patterns(colloquial.ALLOW_PATH)
     for line, column, matched, _snippet, replacement in colloquial.scan_text(body, deny, allow):
         suggestion = f"（候補: {replacement}）" if replacement else ""
