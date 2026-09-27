@@ -18,7 +18,8 @@
 1. 判定根拠を常時ログへ記録する
 2. 常駐処理への中断要求を作成し、現反復の終了後に次の反復へ進まない状態にする
 3. 停止の事実を`systemMessage`で利用者へ伝える
-4. 現在の対話CLI本体を再識別し、一致した単一PIDへ終了要求を送る
+4. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
+   それ以外では一致した単一PIDへ終了要求を送る
 
 Stopの戻り値は`approve`とし、ターンの継続は強制しない。
 
@@ -78,17 +79,19 @@ def _is_target_session(session_id: str, payload: dict) -> bool:
 def _halt(session_id: str, count: int) -> str:
     """中断要求の作成と終了要求の送出を行い、利用者へ伝える本文を返す。"""
     abort_path = _process_loop_log.request_abort()
-    status, target = _agents_exit_session.request_termination()
+    status, target = _agents_exit_session.request_termination(session_id=session_id)
     append_stop_log(
         session_id,
         "halt_busy_loop",
         {"count": count, "threshold": _THRESHOLD, "termination": status},
     )
     lines = [
-        f"無進捗のターンが{count}回続いたため、常駐処理の停止とセッションの終了を実行した。",
+        f"無進捗のターンが{count}回続いたため、常駐処理の停止とセッションの終了を要求した。",
         f"常駐処理への中断要求: {abort_path}（解除は`atk wi process-loop abort-cancel`）。",
     ]
-    if status == "terminating" and target is not None:
+    if status == "exit_requested":
+        lines.append("現在のセッションはターン終了後に/exitで終了する。")
+    elif status == "terminating" and target is not None:
         lines.append(f"現在のセッションへ終了要求を送った: {target.host} pid={target.pid}。")
     elif status == "changed":
         lines.append("終了対象が識別後に変化したため、セッションの終了要求は送っていない。")

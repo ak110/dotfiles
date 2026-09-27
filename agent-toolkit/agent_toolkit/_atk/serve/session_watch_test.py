@@ -67,6 +67,28 @@ def test_summary_fields_distinguishes_no_user_record_from_textless_user_message(
     assert session_watch.has_user_message(codex_meta_only, "codex") is False
 
 
+def test_summary_skips_runtime_inserted(tmp_path: pathlib.Path) -> None:
+    """一覧は自動挿入の記録行を最初の発話に選ばない。実発話が無い記録も残す。"""
+    claude_records = [
+        {"type": "user", "isMeta": True, "cwd": "/work", "timestamp": "2026-09-01", "message": {"content": "メタ通知"}},
+        {"type": "user", "message": {"content": "Base directory for this skill: /work"}},
+        {"type": "user", "message": {"content": "本当の発話\n続き"}},
+    ]
+    codex_records = [
+        {"type": "session_meta", "payload": {"cwd": "/work", "timestamp": "2026-09-01"}},
+        {"type": "response_item", "payload": {"role": "user", "content": [{"text": "<skills_instructions>自動本文"}]}},
+        {"type": "response_item", "payload": {"role": "user", "content": [{"text": "Codexの本当の発話"}]}},
+    ]
+    claude = _write(tmp_path / "claude.jsonl", claude_records)
+    codex = _write(tmp_path / "codex.jsonl", codex_records)
+    only_inserted = _write(tmp_path / "inserted.jsonl", claude_records[:2])
+
+    assert session_watch.summary_fields(claude, "claude")[1:4:2] == ("本当の発話", True)
+    assert session_watch.summary_fields(codex, "codex")[1:4:2] == ("Codexの本当の発話", True)
+    assert session_watch.summary_fields(only_inserted, "claude")[1:4:2] == (None, True)
+    assert session_watch.has_user_message(only_inserted, "claude") is True
+
+
 def test_append_to_listed_record_notifies_only_the_record(tmp_path: pathlib.Path) -> None:
     """一覧に載っている記録への追記は記録1件の更新だけを通知し、一覧の再取得を促さない。"""
     collector = _Collector()

@@ -6361,6 +6361,39 @@ def test_candidate_evidence_file_holds_only_its_own_candidate(
         assert all(event.get("record") is not None for event in body["events"])
 
 
+def test_common_runtime_inserted_classifier(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """画面と共有する判定で新しい挿入本文を会話から除き、利用者の入力は残す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "最初の依頼"}},
+            {"type": "user", "message": {"role": "user", "content": "<multi_agent_mode>自動配送"}},
+            {"type": "user", "message": {"role": "user", "content": "<permissions instructions>権限設定"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": (
+                        "You are `/root`, the primary agent in a team of agents collaborating to fulfill the user's goals."
+                    ),
+                },
+            },
+            {"type": "user", "message": {"role": "user", "content": "$agent-toolkit:process-wi"}},
+            {"type": "user", "message": {"role": "user", "content": "後続の利用者発話"}},
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    capsys.readouterr()
+    conversation = [json.loads(line) for line in (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [item["text"] for item in conversation] == ["最初の依頼", "$agent-toolkit:process-wi", "後続の利用者発話"]
+
+
 def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

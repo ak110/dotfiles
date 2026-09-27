@@ -97,6 +97,13 @@ class TestUpdateClaudeSettings:
         assert result["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] == "1"
         assert result["env"]["FOO"] == "bar"
 
+    def test_managed_env_enables_function_hooks(self, tmp_path: Path):
+        """配布原本のFunction hooks有効化が既存設定へ反映される。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"env": {"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "0", "FOO": "bar"}})
+        assert result["env"]["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] == "1"
+        assert result["env"]["FOO"] == "bar"
+
     def test_managed_env_directs_playwright_mcp_output_under_home(self, tmp_path: Path):
         """配布原本はPlaywright MCPの自動命名の出力先を作業ツリーの外（ホーム配下のキャッシュ）へ向ける。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))

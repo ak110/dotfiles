@@ -3695,6 +3695,59 @@ async def test_session_details_use_exclusive_default_closed_sections(screen_harn
 
 
 @pytest.mark.asyncio
+async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> None:
+    """挿入本文だけを閉じ、一覧の検索値と通常発話を保つ。"""
+    records_root = screen_harness.root.parent
+    claude_path = records_root / "claude" / "projects" / "-home-aki-proj" / "11111111-2222-3333-4444-555555555555.jsonl"
+    original_claude = claude_path.read_text(encoding="utf-8")
+    claude_injected = [
+        {"type": "user", "isMeta": True, "message": {"content": "構造標識の自動本文"}},
+        {"type": "user", "message": {"content": [{"type": "text", "text": "Base directory for this skill: /plugin"}]}},
+    ]
+    claude_path.write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in claude_injected) + original_claude,
+        encoding="utf-8",
+    )
+    codex_path = next((records_root / "codex" / "sessions").rglob("rollout-*.jsonl"))
+    original_codex = codex_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    codex_injected = {
+        "type": "response_item",
+        "payload": {"type": "message", "role": "developer", "content": [{"text": "<permissions instructions>自動指示"}]},
+    }
+    codex_path.write_text(
+        original_codex[0] + json.dumps(codex_injected, ensure_ascii=False) + "\n" + "".join(original_codex[1:]),
+        encoding="utf-8",
+    )
+
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    summaries = await page.evaluate("async () => (await (await fetch('/api/sessions/list')).json()).sessions")
+    assert {item["engine"]: item["first_user_message"] for item in summaries} == {
+        "claude": "Claudeの発話",
+        "codex": "Codexの発話",
+    }
+
+    await page.locator('#sessions .session-item[data-engine="claude"]').click()
+    injected = page.locator("#detail .kind-injected")
+    await injected.nth(1).wait_for(state="visible")
+    assert await injected.count() == 2
+    assert not await injected.nth(0).evaluate("element => element.open")
+    assert await page.locator("#detail .kind-user").first.evaluate("element => element.open")
+    assert "自動挿入" in await injected.nth(0).locator("summary").inner_text()
+    await injected.nth(0).locator("summary").click()
+    assert "構造標識の自動本文" in await injected.nth(0).locator("pre").inner_text()
+    await injected.nth(1).locator("summary").click()
+    await playwright.async_api.expect(injected.nth(0)).not_to_have_attribute("open", "")
+    await playwright.async_api.expect(injected.nth(1)).to_have_attribute("open", "")
+
+    await page.locator('#sessions .session-item[data-engine="codex"]').click()
+    codex_injected_section = page.locator("#detail .kind-injected")
+    await codex_injected_section.wait_for(state="visible")
+    assert not await codex_injected_section.evaluate("element => element.open")
+    assert await page.locator("#detail .kind-developer").evaluate("element => element.open")
+
+
+@pytest.mark.asyncio
 async def test_session_details_open_developer_by_default(screen_harness: _ScreenHarness) -> None:
     """利用者、アシスタント及び開発者の本文を既定で開く。"""
     page = screen_harness.page

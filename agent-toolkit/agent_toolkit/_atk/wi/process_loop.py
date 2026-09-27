@@ -45,7 +45,7 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileClosedEvent,
 )
 
-# Claude Codeがexit-sessionスキル経由でSIGTERMにより終了する場合の正常終了集合。
+# Claude Codeの`/exit`経路は0、Function hooksが無い場合のSIGTERM経路は残りの値で正常終了とする。
 _CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 
 # Codexがexit-sessionスキル経由で終了する場合のOS別正常終了集合。

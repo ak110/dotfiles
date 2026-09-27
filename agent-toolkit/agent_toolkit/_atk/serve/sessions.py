@@ -24,6 +24,7 @@ import typing
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_delegations, session_watch
+from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,7 @@ def _claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[lis
         message = record.get("message")
         if kind not in {"user", "assistant"} or not isinstance(message, dict):
             continue
+        runtime_generated = kind == "user" and is_runtime_generated(record)
         usage = message.get("usage") if isinstance(message.get("usage"), dict) else None
         if usage is not None:
             for key in ("input_tokens", "output_tokens"):
@@ -168,12 +170,16 @@ def _claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[lis
                     totals[key] = (totals[key] or 0) + value
         content = message.get("content")
         if not isinstance(content, list):
-            events.append(SessionEvent(kind=kind, timestamp=timestamp, text=_as_text(content), usage=usage))
+            text = _as_text(content)
+            event_kind = (
+                "injected" if kind == "user" and (runtime_generated or text and is_runtime_inserted_text(text)) else kind
+            )
+            events.append(SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage))
             continue
         for block in content:
             if not isinstance(block, dict):
                 continue
-            events.append(_claude_block_event(block, kind, timestamp, usage))
+            events.append(_claude_block_event(block, kind, timestamp, usage, runtime_generated=runtime_generated))
     return events, totals
 
 
@@ -182,6 +188,8 @@ def _claude_block_event(
     kind: str,
     timestamp: str | None,
     usage: dict[str, typing.Any] | None,
+    *,
+    runtime_generated: bool = False,
 ) -> SessionEvent:
     """メッセージの1ブロックを表示モデルのイベントへ変換する。"""
     block_type = block.get("type")
@@ -201,7 +209,13 @@ def _claude_block_event(
             text=_as_text(block.get("content")),
             detail={"is_error": block.get("is_error")} if "is_error" in block else None,
         )
-    return SessionEvent(kind=kind, timestamp=timestamp, text=_as_text(block.get("text")), usage=usage)
+    text = _as_text(block.get("text"))
+    event_kind = (
+        "injected"
+        if kind == "user" and block_type == "text" and (runtime_generated or text and is_runtime_inserted_text(text))
+        else kind
+    )
+    return SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage)
 
 
 def _claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] | None:
@@ -316,7 +330,10 @@ def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) 
         if isinstance(role, str)
         else "assistant"
     )
-    return SessionEvent(kind=kind, timestamp=timestamp, text=_as_text(payload.get("content")))
+    text = _as_text(payload.get("content"))
+    if kind in {"user", "developer"} and text and is_runtime_inserted_text(text):
+        kind = "injected"
+    return SessionEvent(kind=kind, timestamp=timestamp, text=text)
 
 
 def _stringify(value: typing.Any) -> str | None:

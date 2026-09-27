@@ -53,6 +53,10 @@ def _prepare_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pa
     update_dotfiles.parent.mkdir(parents=True)
     update_dotfiles.write_text("", encoding="utf-8")
     monkeypatch.setattr(upstream_update, "_DOTFILES_ROOT", root)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-appdata"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
     return update_dotfiles
 
 
@@ -96,6 +100,118 @@ def test_update_failure_is_propagated(
     monkeypatch.setattr(subprocess, "run", _fake_run(calls, update_returncode=7))
 
     assert upstream_update.main([]) == 7
+    assert calls.count([str(update_dotfiles)]) == 1
+
+
+def test_failed_apply_retries_then_skips(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Git更新後の反映失敗をHEAD一致の次回に再試行し、成功後は省略する。"""
+    update_dotfiles = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, update_returncode=7))
+
+    assert upstream_update.main([]) == 7
+    assert calls.count([str(update_dotfiles)]) == 1
+    assert len(list((tmp_path / "state").rglob("*.pending"))) == 1
+
+    matching_commit = "b" * 40
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _fake_run(calls, remote_commit=matching_commit, local_commit=matching_commit),
+    )
+    assert upstream_update.main([]) == 0
+    assert "未完了のため再試行" in capsys.readouterr().out
+    assert calls.count([str(update_dotfiles)]) == 2
+    assert not list((tmp_path / "state").rglob("*.pending"))
+
+    assert upstream_update.main([]) == 0
+    assert calls.count([str(update_dotfiles)]) == 2
+
+
+def test_pending_state_survives_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """起動例外と中断でも未完了を残し、解除失敗は診断付きで非0にする。"""
+    update_dotfiles = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    original_run = _fake_run(calls)
+
+    def fail_launch(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command == [str(update_dotfiles)]:
+            raise OSError("起動できない")
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fail_launch)
+    assert upstream_update.main([]) == 1
+    assert len(list((tmp_path / "state").rglob("*.pending"))) == 1
+
+    def interrupt(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command == [str(update_dotfiles)]:
+            raise KeyboardInterrupt
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        upstream_update.main([])
+    assert len(list((tmp_path / "state").rglob("*.pending"))) == 1
+
+    matching_commit = "b" * 40
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, remote_commit=matching_commit, local_commit=matching_commit))
+    pending_path = next((tmp_path / "state").rglob("*.pending"))
+    original_unlink = pathlib.Path.unlink
+
+    def fail_clear(path: pathlib.Path, missing_ok: bool = False) -> None:
+        if path == pending_path:
+            raise OSError("解除できない")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", fail_clear)
+    assert upstream_update.main([]) == 1
+    assert "未完了状態を解除できません" in capsys.readouterr().err
+    assert pending_path.exists()
+
+
+def test_pending_state_save_failure_prevents_update(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """未完了を保存できなければ更新を起動せず、利用者へ理由を示す。"""
+    update_dotfiles = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls))
+    original_touch = pathlib.Path.touch
+
+    def fail_save(path: pathlib.Path, mode: int = 0o666, exist_ok: bool = True) -> None:
+        if path.suffix == ".pending":
+            raise OSError("保存できない")
+        original_touch(path, mode=mode, exist_ok=exist_ok)
+
+    monkeypatch.setattr(pathlib.Path, "touch", fail_save)
+
+    assert upstream_update.main([]) == 1
+    assert "未完了状態を保存できません" in capsys.readouterr().err
+    assert [str(update_dotfiles)] not in calls
+
+
+def test_validation_failure_preserves_pending(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """未完了があってもbranchと取得元の検証が失敗すれば更新を実行しない。"""
+    update_dotfiles = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, update_returncode=7))
+    assert upstream_update.main([]) == 7
+    pending = next((tmp_path / "state").rglob("*.pending"))
+
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, branch="feature"))
+    assert upstream_update.main([]) == 1
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, upstream="origin/main"))
+    assert upstream_update.main([]) == 1
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, remote_returncode=2))
+    assert upstream_update.main([]) == 1
+
+    assert pending.exists()
     assert calls.count([str(update_dotfiles)]) == 1
 
 

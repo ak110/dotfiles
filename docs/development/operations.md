@@ -272,11 +272,11 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 - タイマーはsystemdユーザーマネージャーの起動から1分後に初回確認し、以後はserviceが終了してから10分ごとに再実行する
 - serviceは`scripts/update_dotfiles_if_upstream_changed.py`を実行する。当該スクリプトは現在branchが`develop`で
   upstreamが`origin/develop`であることを検証したうえで、`git ls-remote`で取得した`origin/develop`のcommit IDを
-  ローカル`HEAD`と比較する
-  - 一致する場合は何もせず正常終了し、`update-dotfiles`を起動しない
-  - 一致しない場合だけ`bin/update-dotfiles`を絶対パスかつ`--force`付きで起動し、その終了コードを引き継ぐ
-    - euryaleでは利用者が配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する
-  - 作業ツリーのstash、reset及びcleanは行わない。手動実行との重複は`update-dotfiles`の排他ロックへ委ねる
+  ローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
+  - commit IDが一致し未完了状態も無ければ、`update-dotfiles`を起動せず正常終了する
+  - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
+    - euryaleでは利用者が配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`scripts/update_dotfiles.py`が`chezmoi apply`へ渡す
+  - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、reset及びcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
 - systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
   導入時に解決した`uv`と当該スクリプトの絶対パスを埋め込み、あわせて`Environment=PATH`を指定する
   - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する

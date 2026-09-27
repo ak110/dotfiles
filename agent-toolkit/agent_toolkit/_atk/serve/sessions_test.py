@@ -345,6 +345,39 @@ def test_codex_roles_and_compaction_are_preserved(tmp_path: pathlib.Path) -> Non
     assert detail["events"][6]["detail"] == {"window_number": 3}
 
 
+def test_runtime_inserted_events(tmp_path: pathlib.Path) -> None:
+    """挿入本文だけを表示種別へ分け、利用者とツールのイベントを保つ。"""
+    claude = _write(
+        tmp_path / "claude" / "projects" / "p" / "claude.jsonl",
+        [
+            {"type": "user", "isMeta": True, "message": {"content": "構造標識の本文"}},
+            {"type": "user", "message": {"content": [{"type": "text", "text": "  Base directory for this skill: /p"}]}},
+            {"type": "user", "message": {"content": [{"type": "text", "text": "実際の発話"}]}},
+            {"type": "user", "message": {"content": [{"type": "tool_result", "content": "<skills_instructions>"}]}},
+        ],
+    )
+    codex = _write(
+        tmp_path / "codex" / "sessions" / "2026" / "09" / "01" / "rollout-injected.jsonl",
+        [
+            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "<multi_agent_mode>自動本文"}]}},
+            {
+                "type": "response_item",
+                "payload": {"role": "developer", "content": [{"text": "<permissions instructions>自動本文"}]},
+            },
+            {"type": "response_item", "payload": {"role": "developer", "content": [{"text": "通常の開発者本文"}]}},
+            {"type": "response_item", "payload": {"role": "assistant", "content": [{"text": "<multi_agent_mode>引用"}]}},
+            {"type": "response_item", "payload": {"type": "function_call_output", "output": "<multi_agent_mode>結果"}},
+        ],
+    )
+
+    claude_events = sessions.read_local_detail(_context(tmp_path), "claude", str(claude))["events"]
+    codex_events = sessions.read_local_detail(_context(tmp_path), "codex", str(codex))["events"]
+
+    assert [event["kind"] for event in claude_events] == ["injected", "injected", "user", "tool_result"]
+    assert [event["kind"] for event in codex_events] == ["injected", "injected", "developer", "assistant", "tool_result"]
+    assert claude_events[1]["text"] == "  Base directory for this skill: /p"
+
+
 def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> None:
     """記録が持たない情報は0や空文字列で補わず、取得不能として返す。"""
     path = _write(

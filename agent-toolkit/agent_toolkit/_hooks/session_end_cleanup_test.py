@@ -27,6 +27,7 @@ def _run(payload_text: str, state_dir: pathlib.Path) -> subprocess.CompletedProc
             "TEMP": str(state_dir),
             "TMP": str(state_dir),
             "XDG_STATE_HOME": str(state_dir / "state"),
+            "CLAUDE_CONFIG_DIR": str(state_dir / "claude-config"),
         }
     )
     return _fork_runner.run_script(
@@ -137,6 +138,34 @@ def test_stale_state_is_collected_but_its_lock_is_kept(tmp_path: pathlib.Path) -
     assert fresh_lock.exists()
     assert stale_title.exists()
     assert stale_title_lock.exists()
+
+
+def test_function_hook_requests_are_collected_without_breaking_resume(tmp_path: pathlib.Path) -> None:
+    """期限切れの終了要求を回収し、現行IDは再開まで保持してclear時に除く。"""
+    directory = tmp_path / "claude-config" / "agent-toolkit-function-hooks"
+    directory.mkdir(parents=True)
+    stale_marker = directory / "marker-stale.txt"
+    stale_request = directory / "request-stale.txt"
+    own_marker = directory / "marker-target.txt"
+    own_request = directory / "request-target.txt"
+    for path in (stale_marker, stale_request, own_marker, own_request):
+        path.write_text("ready", encoding="utf-8")
+    _set_age(stale_marker, _STALE_AGE_SECONDS)
+    _set_age(stale_request, _STALE_AGE_SECONDS)
+
+    result = _run(_session_end("target", reason="prompt_input_exit"), tmp_path)
+
+    assert result.returncode == 0
+    assert not result.stderr
+    assert not stale_marker.exists()
+    assert not stale_request.exists()
+    assert own_marker.exists()
+    assert own_request.exists()
+
+    cleared = _run(_session_end("target", reason="clear"), tmp_path)
+    assert cleared.returncode == 0
+    assert not own_marker.exists()
+    assert not own_request.exists()
 
 
 def test_fresh_state_keeps_its_old_lock(tmp_path: pathlib.Path) -> None:

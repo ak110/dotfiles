@@ -239,7 +239,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
-        "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude Code又はCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイル及び開始情報を再照合し、一意に識別できる単一PIDだけへ終了を要求する。標準出力へ機械可読な実行記録を返す。\n前提: 利用者入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
+        "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude Code又はCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイル及び開始情報を再照合する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 利用者入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
     },
     "atk managed-temp": {
