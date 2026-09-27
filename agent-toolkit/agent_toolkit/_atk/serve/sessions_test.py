@@ -1010,6 +1010,7 @@ def test_remote_helper_is_started_with_watchdog() -> None:
 async def test_local_watch_notifies_new_records_and_appends(tmp_path: pathlib.Path) -> None:
     """ローカルの記録の追加で一覧の再取得を、一覧に載る記録への追記で記録1件の更新を通知する。"""
     context = _context(tmp_path)
+    (tmp_path / "claude" / "projects").mkdir(parents=True)
     sessions.start_local_watch(context)
     queue = await sessions.subscribe(context.state)
     try:
