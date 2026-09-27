@@ -127,7 +127,7 @@ def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Pa
     )
     state.consume_claude_agents_server_message(
         session,
-        {"content": [{"tool_use_id": "toolu_2", "content": f"保存先: {output}\n行数: 1"}]},
+        {"content": [{"tool_use_id": "toolu_2", "content": f"保存先: {output}\n行数: 1\n終端: 1件"}]},
     )
 
     assert not session.live_child_session_ids

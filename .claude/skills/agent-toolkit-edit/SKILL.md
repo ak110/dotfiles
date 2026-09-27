@@ -165,7 +165,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
 
-- `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」のどちらかで運用形態、登録経路又は回答の流れを変えた場合は、同じ変更単位で他方をそろえる
+`agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」の一方で、運用形態、WIの登録方法、回答の流れのいずれかを変更した場合は、他方も同じ変更単位でそろえる。
 
 - コーディングエージェント向け文書を編集する主体は、編集前に`docs/development/concepts.md`と
   `docs/development/incidents.md`を自身で全文読み、確定済みの方針・障害対策との整合を確認する。

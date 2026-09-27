@@ -31,6 +31,7 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
         "待機対象登録が破損している場合",
         "終端statusでは追加の結果受領操作は不要",
         "`--output-file`を指定した場合",
+        "通知件数と送信元session ID",
         "回収した本文は当該保存先に残る",
         "MCPの`list`を1回呼び出してから同じコマンドを再実行",
         "--root-session-id",
@@ -138,7 +139,7 @@ def test_agents_wait_saves_collected_lines_to_the_output_file(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存先を指定した待機は、回収したJSON Linesを当該ファイルへ残し、標準出力を2行に保つ。
+    """保存先を指定した待機は、終端件数を示し、回収したJSON Linesを当該ファイルへ残す。
 
     保存先を持たない待機では、回収と同時に原本が削除されて本文が標準出力にだけ現れ、
     後続の工程と後続のセッションが当該本文を取得できない。
@@ -155,10 +156,66 @@ def test_agents_wait_saves_collected_lines_to_the_output_file(
         atk.main(["agents", "wait", f"--output-file={destination}"])
 
     output_lines = capsys.readouterr().out.splitlines()
-    assert output_lines == [f"保存先: {destination}", "行数: 1"]
+    assert output_lines == [f"保存先: {destination}", "行数: 1", "終端: 1件"]
     saved = json.loads(destination.read_text(encoding="utf-8").strip())
     assert saved["session_id"] == "session-1"
     assert saved["agent_message"] == "完了"
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_wait_saves_notice_summary(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """通知だけの待機では、送信元と通知件数を保存先を読む前に示す。"""
+    notices = status_file.notices_directory("root-session", tmp_path)
+    notices.mkdir(parents=True)
+    (notices / "session-1.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-28T00:00:00Z", "body": "警告"}),
+        encoding="utf-8",
+    )
+    destination = tmp_path / "notice.jsonl"
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait", f"--output-file={destination}"])
+
+    assert capsys.readouterr().out.splitlines() == [
+        f"保存先: {destination}",
+        "行数: 1",
+        "通知: 1件（session_id: session-1）",
+    ]
+    saved = json.loads(destination.read_text(encoding="utf-8"))
+    assert saved["status"] == "running"
+    assert saved["notices"][0]["body"] == "警告"
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_wait_saves_notice_and_terminal_summary(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """通知を伴う終端結果では、通知数と終端数をともに示す。"""
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True)
+    (results / "session-1.json").write_text(
+        json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "完了"}),
+        encoding="utf-8",
+    )
+    notices = status_file.notices_directory("root-session", tmp_path)
+    notices.mkdir(parents=True)
+    for sequence in (1, 2):
+        (notices / f"session-1.{sequence}.json").write_text(
+            json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-28T00:00:00Z", "body": f"通知{sequence}"}),
+            encoding="utf-8",
+        )
+    destination = tmp_path / "both.jsonl"
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait", f"--output-file={destination}"])
+
+    assert capsys.readouterr().out.splitlines() == [
+        f"保存先: {destination}",
+        "行数: 1",
+        "通知: 2件（session_id: session-1）",
+        "終端: 1件",
+    ]
+    saved = json.loads(destination.read_text(encoding="utf-8"))
+    assert saved["status"] == "completed"
+    assert len(saved["notices"]) == 2
 
 
 @pytest.mark.usefixtures("session_environment")

@@ -56,6 +56,33 @@ def _dump(payload: Any, environment: Mapping[str, str]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+def summarize_saved_wait(path: pathlib.Path) -> None:
+    """保存した待機結果に含まれる通知と終端の内訳を表示する。"""
+    notice_count = 0
+    notice_session_ids: set[str] = set()
+    terminal_count = 0
+    with path.open(encoding="utf-8", newline="") as stream:
+        for line in stream:
+            try:
+                result = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(result, dict):
+                continue
+            notices = result.get("notices")
+            if isinstance(notices, list) and notices:
+                notice_count += len(notices)
+                session_id = result.get("session_id")
+                if isinstance(session_id, str):
+                    notice_session_ids.add(session_id)
+            if result.get("status") in state.TERMINAL_STATUSES:
+                terminal_count += 1
+    if notice_count:
+        print(f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）")
+    if terminal_count:
+        print(f"終端: {terminal_count}件")
+
+
 def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None = None) -> int:
     """選択された`agents`サブコマンドを実行する。"""
     if args.agents_subcommand == "wait":
