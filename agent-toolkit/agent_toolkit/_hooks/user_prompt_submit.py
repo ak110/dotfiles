@@ -1,13 +1,13 @@
 """Claude Code・Codex plugin agent-toolkit: UserPromptSubmitセッション状態記録と応答契約注入。
 
 ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
-Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し、
+Codexは`$agent-toolkit:<name>`・`$<name>`）での実際に可能な手動スキル起動を検出し、
 対応するセッション状態フラグを立てる。
 既存のPostToolUse(Skill)経由の記録では捕捉できない手動起動を補完する。
 
 検出対象スキルと対応フラグ:
 
-- plan-mode → `plan_mode_skill_invoked`
+- Codexのplan-mode → `plan_mode_skill_invoked`
 - process-wi → `process_wi_skill_invoked`
 
 Claude CodeのsessionTitleは、process-loop起動セッションでは`process-loop`、
@@ -264,7 +264,7 @@ def main(payload_text: str) -> int:
 
             # 対応スキル別にフラグを設定する。sessionTitleの固定値判定より先に行い、
             # 当該呼び出しでの起動を同じ応答へ反映できるようにする。
-            if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
+            if is_codex and (name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES):
                 update_state(session_id, _set_plan_mode_invoked)
             if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
                 update_state(session_id, _set_process_wi_invoked)

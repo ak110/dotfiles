@@ -1,5 +1,6 @@
 ---
 name: review-standards
+user-invocable: false
 description: >
   コードレビュー・ドキュメントレビューを実施する時、
   レビュー指摘・改善提案・ユーザーの割り込みや是正要求・想定外の発見を受領して

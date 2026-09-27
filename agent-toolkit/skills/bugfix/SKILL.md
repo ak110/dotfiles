@@ -1,5 +1,6 @@
 ---
 name: bugfix
+user-invocable: false
 description: >
   作業中に発見した問題、対応漏れ、デグレード、バグ及びCI失敗の診断・修正・計画・レビューで起動する。
   拡張原因分析の要否判定、原因分析、類似見直し及び対策・横展開処置・再発防止策の共通契約を提供する。
@@ -16,6 +17,7 @@ description: >
 ## 適用手順
 
 問題を発見した時点で、対処に着手する前に`references/response.md`を全文読む。
+事象がWI処理の工程や運用に関わる場合は、対策を選ぶ前に`agent-toolkit:workflow-overview`を起動する。
 
 1. 後述の「初動と拡張原因分析の判定」を読む
 2. 拡張原因分析の条件に該当する場合だけ、`references/root-cause-analysis.md`を全文読む。

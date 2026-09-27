@@ -1,0 +1,34 @@
+---
+name: workflow-overview
+description: >
+  WI処理の工程や運用に関わる問題の原因分析と対策、運用工程や自動化の変更計画、
+  利用者への運用説明で起動する。キュー、常駐処理、処理回、確認と回答、振り返りからの投入経路を扱う。
+user-invocable: false
+---
+
+# WI処理の運用概要
+
+本スキルは複数のセッションと利用者の操作にまたがるWI処理の全体像を提供する知識スキルである。
+個々の工程の実行契約は各担当スキルと`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`を読む。
+
+## 利用形態と起動主体
+
+- 対話型: 利用者がエージェントへ直接依頼する。メインが必要性を判断して`agent-toolkit:plan-mode`を起動し、協調モードで要件と公開範囲を確認する。
+- 自律型: 利用者が`atk wi process-loop`を起動する。常駐処理が反復ごとに開始前更新と専用worktreeを準備し、子セッションで`agent-toolkit:process-wi`を起動する。子セッションへ渡す起動プロンプトは利用者の発話ではない。子セッションは`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`で起動元を判別する。
+- まとめ処理型: 利用者が`agent-toolkit:single-lane-process`を手動起動し、たまったWIを同じ処理回で扱う。
+
+利用者は`atk wi process-loop abort`で停止を、`atk wi process-loop instruct`で次の1セッションだけへ渡す指示を、`atk wi process-loop status`で状態を確認する。各コマンドの受理形式は`atk wi process-loop --help`と各サブコマンドのヘルプで確認する。
+
+## 登録、回答、振り返り
+
+利用者は`atk wi add`、`agent-toolkit:add-awi-by-user`又は`atk serve`のWI画面から要求を登録する。処理中のエージェントと`agent-toolkit:session-review`もWIを投入する。本文、由来、状態と依存は`agent-toolkit:wi-standards`が定める。
+
+自律モードの確認はUWIへ記録する。利用者は`atk wi answer`又は`atk serve`で回答し、次の処理回のpickerが回答済みUWIと保留中の元項目を取り込む。取り込みと終端は`agent-toolkit:wi-standards`「状態と依存」と`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める。
+
+作業完了後は`agent-toolkit:completion-report`から`agent-toolkit:session-review`が起動する。振り返りが投入したAWIは次のprocess-loopセッションで処理される。
+
+## 運用変更を検討する観点
+
+process-loopが起動したセッション以外では、別セッションのprocess-loopが並行して稼働している前提で対象と状態遷移を調べる。対策を検討するときは、常駐処理、子セッションのメイン、レーン担当、手動起動のセッションのどれに作用するかを特定する。各利用形態から対策へ到達できるか、利用者の操作が増えるかを比べる。
+
+WI作成、計画、実行、実行後レビューの責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`が定める。

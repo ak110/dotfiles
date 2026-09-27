@@ -170,7 +170,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 ### `/config`コマンド
 
 - `Verbose output`: 有効
-- `Default permission mode`: `Plan mode`
+- `Default permission mode`: `Auto mode`
 - `Language`: `Japanese`
 
 ### `/plugin`コマンド
@@ -198,8 +198,8 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 ### 対話型
 
-計画作成のスキル（`/agent-toolkit:plan-mode`）を手動で起動して計画ファイルを作成し、
-内容を確認して承認したうえで実装まで進める。
+エージェントへ作業を直接依頼する。エージェントは必要に応じて計画ファイルを内部資料として作成し、
+着手前の要件と公開範囲の確認を経て、実装、検証、公開まで進める。
 対話の途中で要件が変わる作業や、方針をその場で確定したい作業に向く。
 
 ### 自律型
@@ -369,7 +369,7 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 
 ### 計画ファイルの作業領域と実行レビュー後の保存
 
-新規計画は`agent-toolkit:plan-mode`が内部の保存処理を使って次の作業rootへ1ファイルとして保存する。
+メインが`agent-toolkit:plan-mode`を起動した場合、新規計画は内部の保存処理を使って次の作業rootへ1ファイルとして保存される。
 
 ```text
 ~/.claude/plans/dd-HHmm_<日本語の簡潔な名詞>.md
@@ -412,7 +412,7 @@ Claude Codeで有効化する。
 
 ### オンデマンドのスキル
 
-該当作業に着手したとき自動的にロードされる。Claude Codeは`/`、Codexは`$`を付けて手動でも呼び出せる。
+該当作業に着手したときエージェントが起動する。Claude Codeで`/`を付けて手動起動できるのは、`user-invocable: false`を持たないスキルだけである。Codexの`$`による手動起動はこの設定の対象外とする。
 
 - `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、コーディングエージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
@@ -429,6 +429,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:review-standards`: レビュー担当とレビューイーの判断基準。
   レビュー担当にはコードレビュー・ドキュメントレビューの実施基準を、レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領したレビューイーには修正要否の立証、安全な修正、自己点検と公開可能性の検証基準を与える
 - `agent-toolkit:wi-standards`: AWIとUWIの本文、由来、状態、承認及び投入の共通規範
+- `agent-toolkit:workflow-overview`: 対話型、自律型、まとめ処理型をまたぐWI運用の全体像と、運用変更時に確認する主体・操作・適用先
 - `agent-toolkit:add-awi-by-user`: 利用者向け要件を対話で確定し、AWI又はUWIを手動投入する
 - `agent-toolkit:single-lane-process`: AWIをレーンへ分けずに、1回の処理回で対応する作業ツリーへ実装して終端する。計画を要する項目は同じ処理回で計画の作成から実装まで進め、複数リポジトリでは計画と実行レビューを対象worktreeごとに分ける
 - `agent-toolkit:process-wi`: 選定工程（選定とレーン分け）、レーン工程（並列レーン実行）、公開工程（全レーン後のpush・CI・終了）の3段階でAWIを処理する。

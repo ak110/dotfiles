@@ -1,5 +1,6 @@
 ---
 name: dotfiles-repo-layout
+user-invocable: false
 description: >
   dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.gemini/`・`~/.config/`）の対応を
   判定するとき、ファイルの削除と改名で`pytools/post_apply.py`の`_REMOVED_PATHS`と
