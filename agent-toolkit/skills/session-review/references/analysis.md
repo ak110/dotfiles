@@ -56,7 +56,7 @@
 
 AWIの起草では、`agent-toolkit:wi-standards`の条件付き重複判定に従って未終端の既存項目と比べる。既存項目が問題の事象、原因及び完成条件を全て覆う場合は新しいAWIを投入せず、そのファイル名と対応根拠を振り返り結果報告の「確定した問題と対策」へ書く。一部だけを覆う問題と新しい証拠を持つ問題は、不足分をAWIへ起草する。
 既存規範が適用されなかった問題では、採用済みの振り返り由来の項目との反復を`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「再発防止策の必須性」に従って判定する。反復した問題では、その事実、項目のファイル名、前回採用した再発防止策の段、前回の処置で再発を防げなかった条件をAWIへ書く。
-採用済み項目の本文検索には`atk wi grep <Pythonの正規表現> --state=adopted --source=session-review --target-repo=<対象リポジトリ> --skip-pull`を使い、終了コード1は一致0件として扱う。
+採用済み項目の本文検索には`atk wi grep <Pythonの正規表現> --state=adopted --source=session-review --target-repo=<対象リポジトリの絶対パス> --skip-pull`を使い、終了コード1は一致0件として扱う。
 
 ## 規範適用による目的逸脱
 

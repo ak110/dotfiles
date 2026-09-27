@@ -53,7 +53,7 @@ plugin rootの配置からPython実行ファイルの絶対パスを組み立て
 取得結果のfrontmatterが`type: awi`と`type: uwi`のいずれかである各項目について、本文に記載された要求と完成条件を基準として差分と比べる。
 逐語引用、ユーザーコメント及びUWI回答を持つWIでは、それぞれの発言を要求単位へ分け、元の文面と出所を保持して完成条件と併せて差分と比べる。計画の`## 実施内容`に`ユーザー指示`由来の行がある場合も各要求単位へ分け、WI本文に無い追加要求を同じ差分と比べる。
 `計画`を受領した場合は、計画の`## 変更履歴`から各WIの設計時の`staleness`と条件付き履歴確認の判断を取得する。
-`WI`だけを受領した場合は、対象worktreeを作業ディレクトリとして`atk wi list --state=all --target-repo=<repo-path> --skip-pull --with-staleness`を1回実行する。対象WIと一致する項目の`staleness`を取得する。`processing`、`adopted`、`rejected`を含む項目の状態はレビュー対象を狭める条件に用いない。全状態の一覧へ対象WIが無い場合だけ、推測せず`needs_escalation`で返す。
+`WI`だけを受領した場合は、対象worktreeを作業ディレクトリとして`atk wi list --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を1回実行する。対象WIと一致する項目の`staleness`を取得する。`processing`、`adopted`、`rejected`を含む項目の状態はレビュー対象を狭める条件に用いない。全状態の一覧へ対象WIが無い場合だけ、推測せず`needs_escalation`で返す。
 
 レビュー観点は`agent-toolkit:review-standards`の`references/reviewer.md`「実行レビューの判定」を適用する。
 文章成果物がある場合は第1走査と並行して、読者ごとに読み取り専用の`start_explore`を起動する。各探索には成果物の絶対パス、種別、読者像、読者適合と委譲元・先の役割適合の判定基準を渡す。規範ファイルは渡さず、結果の裏付けを確認して指摘へ統合する。コードコメントは通常の走査で扱う。
