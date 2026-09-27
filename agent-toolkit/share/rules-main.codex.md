@@ -12,7 +12,7 @@ Codex固有の公開能力と共有規範との差分を扱う。「メインエ
 ## Codexのplugin root解決
 
 - agent-toolkitのスキルはplugin marketplaceが導入した実体の`<plugin root>/skills/<スキル名>/SKILL.md`を読む
-- `<plugin root>`は`codex plugin list --json`の`installed`配列から`name`が`agent-toolkit`の要素を選び、Codexホーム、`marketplaceName`、`name`及び`version`から組み立てる。Codexホームは`CODEX_HOME`が設定済みならその値、未設定なら`~/.codex`とする
+- `<plugin root>`は`<Codexホーム>/plugins/cache/<marketplaceName>/<name>/<version>`の書式で組み立てる。`marketplaceName`、`name`及び`version`には`codex plugin list --json`の`installed`配列から`name`が`agent-toolkit`の要素の値を使う。Codexホームは`CODEX_HOME`が設定済みならその値、未設定なら`~/.codex`とする
 - 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落又はroot不在では固定パスを推測せず呼び出し元へ差し戻す
 - 起点のroot確定はホストのplugin導入情報だけから`SKILL.md`読取前に1回行う。読取済み`SKILL.md`の絶対パスからplugin資源rootを再解決する処理は、起点の確定の外で用いる
 - 公開サブコマンドがないplugin内部資源は、読取済みのagent-toolkitスキルの絶対パスから現行plugin rootを再解決する
