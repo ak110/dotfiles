@@ -147,7 +147,7 @@ def test_suppression_conditions_approve(
 
 
 def test_nested_process_loop_session_is_not_suppressed(tmp_path: pathlib.Path) -> None:
-    """親会話の環境印を継承した別会話には計画保存通知を出す。"""
+    """親会話の環境印を継承した別会話にも計画保存を通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
