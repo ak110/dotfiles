@@ -1183,7 +1183,7 @@ class TestAgentsServerSessionState:
                         "engine": "codex",
                         "model": "gpt-test",
                         "effort": "high",
-                        "model_type": "execute",
+                        "model_type": "high_tier",
                     }
                 },
             },
@@ -1772,32 +1772,32 @@ class TestAgentsServerProcessLoopLog:
     @pytest.mark.parametrize("observe_tool", ("kill",))
     def test_terminal_status_logs_start_and_end(self, tmp_path: pathlib.Path, observe_tool: str) -> None:
         """観測対象の工程は起動時刻を記録し、終端した観測で終了時刻を記録する。"""
-        text = self._run_session(tmp_path, model_type="execute", observe_tool=observe_tool)
+        text = self._run_session(tmp_path, model_type="high_tier", observe_tool=observe_tool)
         assert "event=subagent_start" in text
         assert "event=subagent_end" in text
-        assert text.count("type=execute") == 2
+        assert text.count("type=high_tier") == 2
 
     def test_untracked_model_type_is_not_logged(self, tmp_path: pathlib.Path) -> None:
         """探索起動など観測対象外の工程は記録しない。"""
-        assert self._run_session(tmp_path, model_type="explore") == ""
+        assert self._run_session(tmp_path, model_type="low_tier") == ""
 
     def test_running_status_does_not_log_end(self, tmp_path: pathlib.Path) -> None:
         """終端していない観測では終了時刻を記録しない。"""
-        text = self._run_session(tmp_path, model_type="execute", final_status="running")
+        text = self._run_session(tmp_path, model_type="high_tier", final_status="running")
         assert "event=subagent_start" in text
         assert "event=subagent_end" not in text
 
     def test_disabled_env_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
         """process-loop起動セッション以外では記録しない。"""
-        assert self._run_session(tmp_path, model_type="execute", enable_env=False) == ""
+        assert self._run_session(tmp_path, model_type="high_tier", enable_env=False) == ""
 
     def test_nested_session_id_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
         """別会話が親の環境印を継承しても常駐ログへ書かない。"""
-        assert self._run_session(tmp_path, model_type="execute", expected_session_id="parent") == ""
+        assert self._run_session(tmp_path, model_type="high_tier", expected_session_id="parent") == ""
 
     def test_matching_session_id_logs(self, tmp_path: pathlib.Path) -> None:
         """親会話のIDに一致すると起動と終端を記録する。"""
-        text = self._run_session(tmp_path, model_type="execute", expected_session_id="process-loop")
+        text = self._run_session(tmp_path, model_type="high_tier", expected_session_id="process-loop")
         assert "event=subagent_start" in text
         assert "event=subagent_end" in text
 
@@ -1847,14 +1847,14 @@ class TestRemovedRecordsAreAbsent:
     ("operation", "tool_input", "expected"),
     (
         ("start_write", {"prompt": "起草する", "cwd": "/tmp/x"}, "write"),
-        ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "explore_fast"),
-        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "explore_fast"),
-        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x", "fast": False}, "explore"),
+        ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "low_tier"),
+        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
+        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x", "fast": False}, "medium_tier"),
     ),
 )
 def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str) -> None:
     """記録する工程種別は、サーバーが各起動ツールの省略時に使う種別と一致する。
 
-    `start_write`の既定は`write`であり、`start_shell`と同じ`explore_fast`を記録すると工程の集計が別種別へ混ざる。
+    `start_write`の既定は`write`であり、`start_shell`と同じ`low_tier`を記録すると工程の集計が別種別へ混ざる。
     """
     assert _POSTTOOLUSE_MODULE._agents_server_model_type(tool_input, operation) == expected

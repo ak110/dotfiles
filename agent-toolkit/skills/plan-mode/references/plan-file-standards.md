@@ -279,6 +279,7 @@ atk run-script plan-check -- --reject-migration-warnings /absolute/path/to/plan.
 ```
 
 内部scriptを別のPythonから直接起動してplugin packageを解決できない場合は、上記の公開されたコマンドを示して終了コード2で終わる。
+`agent-toolkit:process-wi`のレーンで計画を起草するときは、同じコマンドへ`--selection-file <pickerの選定結果ファイルの絶対パス> --lane <レーン識別子>`を追加する。`plan-check`は当該レーンのWI集合が`関連WI`と一致し、人間由来の実施行に`根拠`が書かれているか確かめる。違いがあればファイル名又は行を示して失敗する。自然言語の分解内容の妥当性は実行レビューで判定する。
 対象リポジトリがセッションの作業ディレクトリと異なる場合は`--work-dir /absolute/path/to/target-repository`を付ける。
 専用worktreeで作業する場合は、そのworktreeを作業ディレクトリとして検証するか、`--work-dir`へそのworktreeの絶対パスを渡す。
 本スクリプトは`--work-dir`が解決するGitルートが計画メタ情報の`対象リポジトリ`と一致するか確かめるため、複製元の作業ツリーから実行するとその確認が成立せず、計画が拒否される。

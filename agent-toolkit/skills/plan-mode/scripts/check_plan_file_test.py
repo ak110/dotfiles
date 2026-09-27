@@ -7,6 +7,7 @@ import sys
 
 import check_plan_file
 import pytest
+import yaml
 
 from agent_toolkit._plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -564,6 +565,59 @@ def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> Non
 
     assert not errors, errors
     assert not warnings, warnings
+
+
+@pytest.mark.parametrize(
+    ("selection", "expected_fragment"),
+    [
+        ("match", None),
+        ("replace", "欠落=['20260831-000000-002.md']"),
+        ("extend", "欠落=['20260831-000000-002.md']"),
+    ],
+)
+def test_lane_selection_checks_related_wi_set(
+    repo: tuple[pathlib.Path, str], selection: str, expected_fragment: str | None
+) -> None:
+    """選定レーンのWI集合を計画メタ情報と照合し、欠落と余剰を示す。"""
+    work_dir, _base = repo
+    filename = _plan_fixture.WI_FILES[0][0]
+    other = "20260831-000000-002.md"
+    selected = {"match": (filename,), "replace": (other,), "extend": (filename, other)}[selection]
+    plan_path = work_dir / "plan.md"
+    plan_path.write_text(
+        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),)), encoding="utf-8"
+    )
+    selection_path = work_dir / "selection.yaml"
+    selection_path.write_text(
+        yaml.safe_dump({"decisions": [{"awi": name, "lane": "lane-01"} for name in selected]}),
+        encoding="utf-8",
+    )
+
+    errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection_path, lane="lane-01")
+
+    if expected_fragment is None:
+        assert not errors, errors
+    else:
+        assert any(expected_fragment in error for error in errors), errors
+        if selection == "replace":
+            assert any(f"余剰=['{filename}']" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("root", ("", "-"))
+def test_lane_selection_rejects_missing_human_reason(repo: tuple[pathlib.Path, str], root: str) -> None:
+    """人間由来の実施行に根拠がない計画は、選定レーン付き検査で失敗する。"""
+    work_dir, _base = repo
+    filename = _plan_fixture.WI_FILES[0][0]
+    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
+    content = content.replace(_plan_fixture.USER_ACTION_REASON, root, 1)
+    plan_path = work_dir / "plan.md"
+    plan_path.write_text(content, encoding="utf-8")
+    selection_path = work_dir / "selection.yaml"
+    selection_path.write_text(yaml.safe_dump({"decisions": [{"awi": filename, "lane": "lane-01"}]}), encoding="utf-8")
+
+    errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection_path, lane="lane-01")
+
+    assert any("人間由来行の根拠がない" in error for error in errors), errors
 
 
 def test_rejects_missing_acceptance_scenario_for_adopted_plan(repo: tuple[pathlib.Path, str]) -> None:

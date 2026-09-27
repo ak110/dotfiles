@@ -298,6 +298,24 @@ def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
     assert all(marker not in content for content in (executor, parent, lanes, plan_standard))
 
 
+def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
+    """計画スキルはレーンの非待機通知を無条件の報告・待機で上書きしない。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plan = (plugin_root / "skills" / "plan-mode" / "SKILL.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    plan_steps = _h2_section(plan, "進め方")
+    lane_row = next(line for line in plan_steps.splitlines() if line.startswith("| `agent-toolkit:process-wi`"))
+    lane_steps = _h2_section(executor, "計画の起草")
+
+    assert "exec.subagent.md" in lane_row and "待機条件" in lane_row
+    assert "計画作成完了" not in lane_row
+    assert "呼び出し元の応答を待って" not in lane_row
+    assert "--selection-file" in lane_steps and "--lane" in lane_steps
+    assert "計画作成完了" in lane_steps
+    assert "計画検査完了" in lane_steps
+    assert "応答を待たず実装へ進む" in lane_steps
+
+
 def _h2_section(content: str, heading: str) -> str:
     """指定したH2見出しの本文を次のH2見出しの直前まで返す。"""
     return content.split(f"\n## {heading}\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]

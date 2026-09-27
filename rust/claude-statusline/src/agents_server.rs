@@ -11,8 +11,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
 use crate::subagent::{
-    display_width, format_elapsed, normalize_description, render_line, short_model_name, truncate,
-    DEFAULT_COLUMNS, NAME_WIDTH_DIVISOR,
+    display_width, format_elapsed, normalize_description, render_line, DEFAULT_COLUMNS,
 };
 
 const STATE_VERSION: u64 = 1;
@@ -20,8 +19,6 @@ const HEARTBEAT_EXPIRY_SECONDS: i64 = 120;
 // Claude Codeの描画は先頭の字下げ2セルと行末の2セルを確保する。
 // 確保幅は描画された行の表示幅とCOLUMNSの差から導出した。
 const STATUSLINE_RESERVED_COLUMNS: usize = 4;
-// 識別名の列は、右端へ並ぶ経過時間とstatusの位置を行ごとにそろえるため上限幅を持つ。
-const LABEL_WIDTH_CAP: usize = 16;
 
 #[derive(Debug)]
 pub(crate) struct StateFile {
@@ -35,7 +32,7 @@ struct Session {
     session_id: String,
     engine: String,
     model: Option<String>,
-    model_type: String,
+    effort: Option<String>,
     launch_kind: String,
     status: String,
     progress: String,
@@ -194,12 +191,13 @@ fn absent_as_empty_string(object: &Map<String, Value>, key: &str) -> Option<Stri
 fn parse_session(value: &Value) -> Option<Session> {
     let object = value.as_object()?;
     let model = optional_string(object, "model")?;
-    optional_string(object, "effort")?;
+    let effort = optional_string(object, "effort")?;
+    required_string(object, "model_type")?;
     let session = Session {
         session_id: required_string(object, "session_id")?,
         engine: required_string(object, "engine")?,
         model,
-        model_type: required_string(object, "model_type")?,
+        effort,
         launch_kind: required_string(object, "launch_kind")?,
         status: required_string(object, "status")?,
         progress: required_string(object, "progress")?,
@@ -261,19 +259,12 @@ pub(crate) fn render_state_files(
         .iter()
         .map(|item| display_name(item.session, item.depth))
         .collect::<Vec<_>>();
-    let cap = columns / NAME_WIDTH_DIVISOR;
+    let cap = columns / 2;
     let name_width = names
         .iter()
         .map(|name| display_width(name).min(cap))
         .max()
         .unwrap_or(0);
-    let label_width = display_sessions
-        .iter()
-        .map(|item| display_width(&item.session.label))
-        .max()
-        .unwrap_or(0)
-        .min(LABEL_WIDTH_CAP);
-
     display_sessions
         .iter()
         .zip(names)
@@ -293,11 +284,6 @@ pub(crate) fn render_state_files(
                 item.session.last_action.clone()
             };
             let mut right_parts = Vec::new();
-            if api_error.is_none() && label_width > 0 {
-                let fitted = truncate(&item.session.label, label_width);
-                let pad = label_width.saturating_sub(display_width(&fitted));
-                right_parts.push(format!("{fitted}{}", " ".repeat(pad)));
-            }
             if let Some(api_error) = api_error {
                 let status = api_error
                     .http_status
@@ -374,24 +360,17 @@ fn append_file_sessions<'a>(
 }
 
 fn display_name(session: &Session, depth: usize) -> String {
-    let name = if session.launch_kind == "delegate" {
-        &session.model_type
-    } else {
+    let name = if session.label.is_empty() {
         &session.launch_kind
+    } else {
+        &session.label
     };
-    let engine = match session.engine.as_str() {
-        "claude" => "Claude",
-        "codex" => "Codex",
-        other => other,
-    };
-    let model = session
-        .model
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .map(short_model_name);
-    let base = match model {
-        Some(model) => format!("{name} ({engine}/{model})"),
-        None => format!("{name} ({engine})"),
+    let base = match session.model.as_deref().filter(|value| !value.is_empty()) {
+        Some(model) => match session.effort.as_deref().filter(|value| !value.is_empty()) {
+            Some(effort) => format!("{name} ({}:{model}/{effort})", session.engine),
+            None => format!("{name} ({}:{model})", session.engine),
+        },
+        None => format!("{name} ({})", session.engine),
     };
     if depth == 0 {
         base
@@ -625,20 +604,43 @@ mod tests {
         let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
             .unwrap()
             .with_timezone(&Utc);
-        let lines = render_state_files(&[grandchild, nested, orphan, root], 100, now);
+        let lines = render_state_files(&[grandchild, nested, orphan, root], 140, now);
 
         assert_eq!(lines.len(), 5);
-        assert!(lines[0].starts_with("impl (Claude/Opus)"));
-        // 識別名の列は上限16セルで切り詰める。
-        assert!(lines[0].contains("implementation …"));
+        assert!(lines[0].starts_with("implementation label (claude:claude-opus-4-8/high)"));
+        assert_eq!(lines[0].matches("implementation label").count(), 1);
         assert!(lines[0].ends_with("45s · running"));
-        assert!(lines[1].starts_with("└ explore (Codex/gpt-5.6-terra)"));
+        assert!(lines[1].starts_with("└ fallback label (codex:gpt-5.6-terra/high)"));
         assert!(lines[1].contains("latest progress"));
-        assert!(lines[2].starts_with("  └ review (Claude/Sonnet)"));
+        assert!(lines[2].starts_with("  └ grandchild label (claude:claude-sonnet-4-6/high)"));
         assert!(lines[2].contains("grandchild label"));
-        assert!(lines[3].starts_with("shell (Claude)"));
-        assert!(lines[4].starts_with("└ shell (Claude)"));
-        assert!(lines.iter().all(|line| display_width(line) <= 100));
+        assert!(lines[3].starts_with("shell label (claude)"));
+        assert!(lines[4].starts_with("└ orphan label (claude)"));
+        assert!(lines.iter().all(|line| display_width(line) <= 140));
+    }
+
+    #[test]
+    fn rendering_uses_configured_model_format_and_shows_label_once() {
+        let mut selected = session(
+            "selected",
+            "codex",
+            Value::String("gpt-5.6-terra".to_string()),
+            ("medium_tier", "delegate"),
+            ("", "pick-wi"),
+            "2025-12-31T23:59:30+00:00",
+        );
+        selected["effort"] = Value::String("medium".to_string());
+        let root = state_file("root.json", Value::Null, serde_json::json!([selected]));
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let lines = render_state_files(&[root], 140, now);
+
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with("pick-wi (codex:gpt-5.6-terra/medium)"));
+        assert_eq!(lines[0].matches("pick-wi").count(), 1);
+        assert!(lines[0].ends_with("30s · running"));
     }
 
     #[test]
@@ -746,7 +748,7 @@ mod tests {
     }
 
     #[test]
-    fn label_column_keeps_fixed_width_left_of_elapsed() {
+    fn label_on_left_keeps_elapsed_at_right() {
         let short = session(
             "short",
             "claude",
@@ -775,8 +777,11 @@ mod tests {
             assert!(line.ends_with("30s · running"), "{lines:?}");
         }
         assert!(lines[0].contains("lane-02"), "{lines:?}");
-        assert!(lines[1].contains('…'), "{lines:?}");
-        assert!(!lines[1].contains("持つセッション"), "{lines:?}");
+        assert!(lines[0].starts_with("lane-02 (claude)"), "{lines:?}");
+        assert!(
+            lines[1].starts_with("とても長い名前を持つセッション (claude)"),
+            "{lines:?}"
+        );
         assert!(lines.iter().all(|line| display_width(line) <= 200));
     }
 
@@ -841,11 +846,11 @@ mod tests {
             .with_timezone(&Utc);
         let lines = render_state_files(&read_state_files(&directory), 100, now);
 
-        assert!(lines[0].starts_with("root (Claude)"));
-        assert!(lines[1].starts_with("└ delegate (Codex)"));
-        assert!(lines[2].starts_with("  └ review (Claude)"));
-        assert!(lines[3].starts_with("└ explore (Codex)"));
-        assert!(lines[4].starts_with("└ shell (Codex)"));
+        assert!(lines[0].starts_with("root (claude)"));
+        assert!(lines[1].starts_with("└ delegate (codex)"));
+        assert!(lines[2].starts_with("  └ grandchild (claude)"));
+        assert!(lines[3].starts_with("└ explore (codex)"));
+        assert!(lines[4].starts_with("└ shell (codex)"));
         fs::remove_dir_all(directory).unwrap();
     }
 

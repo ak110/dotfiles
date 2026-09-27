@@ -45,14 +45,14 @@ SESSION_INITIALIZATION_ATTEMPTS = 2
 WAIT_TIMEOUT_SECONDS = 3600.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
-    "add-wi.subagent.md": "execute",
-    "exec-review.subagent.md": "execute_review",
-    "exec.subagent.md": "execute",
-    "lane-integration.subagent.md": "execute",
-    "pick-wi.subagent.md": "pick_wi",
-    "session-termination.subagent.md": "execute",
-    "usability-review.subagent.md": "execute_review",
-    "wi-draft-review.subagent.md": "execute_review",
+    "add-wi.subagent.md": "high_tier",
+    "exec-review.subagent.md": "medium_tier",
+    "exec.subagent.md": "high_tier",
+    "lane-integration.subagent.md": "high_tier",
+    "pick-wi.subagent.md": "medium_tier",
+    "session-termination.subagent.md": "high_tier",
+    "usability-review.subagent.md": "medium_tier",
+    "wi-draft-review.subagent.md": "medium_tier",
 }
 """専用タスク文書名と工程別モデル設定の対応。"""
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"

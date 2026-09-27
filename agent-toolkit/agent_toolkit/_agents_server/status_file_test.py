@@ -589,7 +589,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
         engine="claude",
         model="sonnet[1m]",
         effort="low",
-        model_type="execute",
+        model_type="high_tier",
         launch_kind="delegate",
         label="実装",
         announced=True,
@@ -889,7 +889,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
 
-    started = await manager.start("execute", "\n  実装を開始\n続き", str(tmp_path))
+    started = await manager.start("high_tier", "\n  実装を開始\n続き", str(tmp_path))
     await manager.start_explore(True, "調査する", str(tmp_path))
     await manager.start_shell("pytest -q", str(tmp_path), "結果を要約")
     writer.flush()
@@ -925,7 +925,7 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
     _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
-    started = await manager.start("execute", "実装", str(tmp_path))
+    started = await manager.start("high_tier", "実装", str(tmp_path))
     session = manager.sessions[started["session_id"]]
     session.status = "completed"
     session.agent_message = "前の結果"
@@ -965,7 +965,7 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
     monkeypatch.setattr(agents_server_mcp, "START_AVAILABILITY_TIMEOUT", 0.01)
     writer.activate()
 
-    response = await manager.start("execute", "実装", str(tmp_path))
+    response = await manager.start("high_tier", "実装", str(tmp_path))
     writer.flush()
 
     sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
@@ -988,7 +988,7 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
 
-    response = await manager.start("execute", "実装", str(tmp_path))
+    response = await manager.start("high_tier", "実装", str(tmp_path))
     writer.flush()
 
     sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
@@ -1011,8 +1011,8 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
     _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
-    killed = await manager.start("execute", "kill対象", str(tmp_path))
-    uncollected = await manager.start("execute", "未回収", str(tmp_path))
+    killed = await manager.start("high_tier", "kill対象", str(tmp_path))
+    uncollected = await manager.start("high_tier", "未回収", str(tmp_path))
     for session_id in (killed["session_id"], uncollected["session_id"]):
         session = manager.sessions[session_id]
         session.status = "completed"
@@ -1042,7 +1042,7 @@ async def test_manager_without_writer_does_not_create_status_files(
     _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
 
-    await manager.start("execute", "実装", str(tmp_path))
+    await manager.start("high_tier", "実装", str(tmp_path))
 
     assert not list(tmp_path.rglob("*.json"))
     await manager.close()

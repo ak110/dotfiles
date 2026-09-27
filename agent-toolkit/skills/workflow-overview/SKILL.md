@@ -13,7 +13,7 @@ user-invocable: false
 
 ## 利用形態と起動主体
 
-- 対話型: 利用者がエージェントへ直接依頼する。メインが必要性を判断して`agent-toolkit:plan-mode`を起動し、協調モードで要件と公開範囲を確認する。
+- 対話型: 利用者がエージェントへ直接依頼する。メインは`agent-toolkit:plan-mode`「計画ファイルの作成要否」で作成を判定し、作成する場合だけ同スキルを起動する。作成を省く変更も協調モードで要件と公開範囲を確認する。
 - 自律型: 利用者が`atk wi process-loop`を起動する。常駐処理が反復ごとに開始前更新と専用worktreeを準備し、子セッションで`agent-toolkit:process-wi`を起動する。子セッションへ渡す起動プロンプトは利用者の発話ではない。子セッションは`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`で起動元を判別する。
 - まとめ処理型: 利用者が`agent-toolkit:single-lane-process`を手動起動し、たまったWIを同じ処理回で扱う。
 

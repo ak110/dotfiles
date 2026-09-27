@@ -292,7 +292,7 @@ class TestTaskStopBlock:
 
 
 class TestExecuteReviewAlternateRouteAllowed:
-    """`execute_review_model`が指すengineによらず実行レビューのAgent起動が通過する。"""
+    """`medium_tier_model`が指すengineによらず実行レビューのAgent起動が通過する。"""
 
     @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
     def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
@@ -308,7 +308,7 @@ class TestExecuteReviewAlternateRouteAllowed:
         )
         assert result.returncode == 0
         assert "blocked:" not in result.stderr
-        assert "execute_review_model" not in result.stderr
+        assert "medium_tier_model" not in result.stderr
 
     def test_claude_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path) -> None:
         result = _run(
