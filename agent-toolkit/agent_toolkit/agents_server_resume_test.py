@@ -194,7 +194,7 @@ def _emit_child_start(client: ControlledClaudeClient, session_id: str) -> None:
                 SimpleNamespace(
                     id="tool-start",
                     name="mcp__agents_server__start",
-                    input={"model_type": "execute"},
+                    input={"model_type": "high_tier"},
                 )
             ]
         )
@@ -270,7 +270,7 @@ async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -
         model="model",
         effort="medium",
         engine="codex",
-        model_type="execute",
+        model_type="high_tier",
         turn_seq=1,
     )
     result_path = status_file.results_directory("root", tmp_path) / f"{source.session_id}.json"
@@ -599,7 +599,7 @@ async def test_codex_child_session_is_published_as_unobserved(
         "codex-parent",
         str(tmp_path),
         engine="codex",
-        model_type="execute",
+        model_type="high_tier",
         turn_seq=1,
         turn_id="turn-1",
     )
@@ -618,7 +618,7 @@ async def test_codex_child_session_is_published_as_unobserved(
                     "type": "mcpToolCall",
                     "server": "agents_server",
                     "tool": "start",
-                    "arguments": {"model_type": "execute"},
+                    "arguments": {"model_type": "high_tier"},
                     "status": "completed",
                     "result": {
                         "content": [],

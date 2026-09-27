@@ -525,9 +525,9 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
         assert override["default"] is None
         assert "省略時は" in override["description"]
         assert "共通引数`model_type`" in override["description"]
-    assert "`explore_fast_model`" in explore_tool.description
-    assert "`explore_model`" in explore_tool.description
-    assert "`explore_fast_model`" in shell_tool.description
+    assert "`low_tier_model`" in explore_tool.description
+    assert "`medium_tier_model`" in explore_tool.description
+    assert "`low_tier_model`" in shell_tool.description
     assert "`write_model`" in write_tool.description
     assert "文章起草" in write_tool.description
     show_tool = subject.mcp._tool_manager.get_tool("show")
@@ -601,7 +601,7 @@ async def test_start_resolves_codex_family_from_existing_backend_catalog(
     )
     manager, backend = _manager_with_fake("codex")
 
-    result = await manager.start("execute", "調査", str(tmp_path))
+    result = await manager.start("high_tier", "調査", str(tmp_path))
 
     assert result["status"] == "running"
     assert backend.start_calls == [("gpt-6-sol", "medium", "delegate")]
@@ -639,7 +639,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
         model="active-model",
         effort="medium",
         engine="codex",
-        model_type="execute",
+        model_type="high_tier",
         label="active",
         started_at="2026-09-06T00:00:02+00:00",
         updated_at="2026-09-06T00:00:05+00:00",
@@ -691,7 +691,9 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
 
     assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
     assert all(
-        {"session_id", "status"} <= set(session) <= {"session_id", "status", "seconds_since_activity"}
+        {"session_id", "status"}
+        <= set(session)
+        <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
         for session in response["sessions"]
     )
     assert response["sessions"][0]["status"] == "expired"
@@ -739,7 +741,7 @@ async def test_list_sessions_omits_terminated_sessions_without_pending_result(
 
 @pytest.mark.asyncio
 async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
-    """一覧は識別子と状態以外の詳細を返さない。"""
+    """一覧は活動時刻を返し、長い識別名などの詳細を返さない。"""
     manager = subject.AgentsServerManager(status_writer=None)
     long_label = subject.SessionState("long", str(tmp_path), label="a" * 101)
     exact_label = subject.SessionState("exact", str(tmp_path), label="b" * 100)
@@ -748,7 +750,12 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
     listed = manager.list_sessions()["sessions"]
 
     assert [item["session_id"] for item in listed] == ["long", "exact"]
-    assert all({"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"} for item in listed)
+    assert all(
+        {"session_id", "status", "started_at", "updated_at"}
+        <= item.keys()
+        <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
+        for item in listed
+    )
 
 
 def test_delegation_result_scope_is_available_before_calling() -> None:
@@ -834,7 +841,7 @@ async def test_start_rejects_prompt_missing_required_input(
         return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
-    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError, match=rf"目的.*{re.escape(str(task_document))}"):
         await subject.start(str(task_document), {"対象": "値"}, str(tmp_path))
@@ -877,7 +884,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "engine": "codex",
         "model": "model",
         "effort": "medium",
-        "model_type": "execute",
+        "model_type": "high_tier",
         "root_session_id": "root",
     }
     manager = SimpleNamespace(
@@ -889,7 +896,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     )
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
-    assert await subject.start_custom("本文", "execute", str(tmp_path)) == {
+    assert await subject.start_custom("本文", "high_tier", str(tmp_path)) == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
@@ -1004,7 +1011,7 @@ async def test_wi_draft_review_uses_review_model_and_embeds_document(
     assert response == {"session_id": "session", "status": "running"}
     manager.start.assert_awaited_once()
     model_type, prompt, cwd = manager.start.await_args.args
-    assert model_type == "execute_review"
+    assert model_type == "medium_tier"
     assert cwd == str(tmp_path)
     assert "## 検証" in prompt
     assert "references/reviewer.md" in prompt
@@ -1063,7 +1070,7 @@ async def test_start_warns_and_continues_without_required_input_marker(
         return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
-    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
         response = await subject.start(str(task_document), {}, str(tmp_path))
@@ -1163,7 +1170,9 @@ async def test_success_response_key_sets_for_all_tools(
     assert listed.keys() == {"sessions", "omitted", "root_session_id"}
     assert listed["root_session_id"] == "root-session"
     assert all(
-        {"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"}
+        {"session_id", "status"}
+        <= item.keys()
+        <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
         for item in listed["sessions"]
     )
 
@@ -1198,7 +1207,7 @@ async def test_start_rejects_unknown_model_type_before_backend(
         "parse_unresolved_model_candidates",
         lambda model_type: (
             [("codex", model_type, "medium")]
-            if model_type in {"plan", "execute"}
+            if model_type in {"plan", "high_tier"}
             else (_ for _ in ()).throw(ValueError("unknown model_type: unknown (available: plan)"))
         ),
     )
@@ -1227,7 +1236,7 @@ async def test_start_is_listed_as_starting_until_backend_initialization_finishes
         return session
 
     monkeypatch.setattr(backend, "start", blocked_start)
-    start_task = asyncio.create_task(manager.start("execute", "調査", str(tmp_path)))
+    start_task = asyncio.create_task(manager.start("high_tier", "調査", str(tmp_path)))
     await registered.wait()
 
     listed = manager.list_sessions()["sessions"]
@@ -1418,7 +1427,7 @@ async def test_agy_failed_turn_advances_config_candidate(
     agy = UnavailableStartBackend(manager.sessions, "agy", error)
     _install_backend(manager, "agy", agy)
 
-    response = await manager.start("execute", "調査", str(tmp_path))
+    response = await manager.start("high_tier", "調査", str(tmp_path))
 
     assert agy.release_calls == ["agy-session"]
     assert claude.start_calls == [("opus[1m]", "medium", "delegate")]
@@ -1931,12 +1940,12 @@ async def test_start_explore_selects_fast_route(
     )
     manager, backend = _manager_with_fake("codex")
     explored = await manager.start_explore(True, "探索", str(tmp_path))
-    assert explored["model_type"] == "explore_fast"
-    assert backend.start_calls[-1] == ("explore_fast", "medium", "explore")
+    assert explored["model_type"] == "low_tier"
+    assert backend.start_calls[-1] == ("low_tier", "medium", "explore")
 
 
 @pytest.mark.asyncio
-async def test_start_shell_runs_command_on_the_explore_fast_route(
+async def test_start_shell_runs_command_on_the_low_tier_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
@@ -1948,8 +1957,8 @@ async def test_start_shell_runs_command_on_the_explore_fast_route(
     )
     manager, backend = _manager_with_fake("codex")
     started = await manager.start_shell("make test", str(tmp_path), "終了状態と警告だけ")
-    assert started["model_type"] == "explore_fast"
-    assert backend.start_calls[-1] == ("explore_fast", "medium", "shell")
+    assert started["model_type"] == "low_tier"
+    assert backend.start_calls[-1] == ("low_tier", "medium", "shell")
     session = manager.sessions[started["session_id"]]
     assert session.launch_kind == "shell"
     _complete(session, message="終了コード0")
@@ -2057,7 +2066,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
 
     resumed = manager.sessions[session.session_id]
     assert response["delivery"] == "reply_started"
-    assert resumed.model_type == "explore"
+    assert resumed.model_type == "medium_tier"
     assert resumed.launch_kind == "explore"
     assert resumed.excluded_candidates == frozenset({candidates[0]})
 
@@ -2903,7 +2912,7 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
 
-    started = await manager.start("execute", "実装", str(tmp_path))
+    started = await manager.start("high_tier", "実装", str(tmp_path))
     session = manager.sessions[started["session_id"]]
     _complete(session, message="結果A")
     writer.flush()
@@ -5338,7 +5347,7 @@ async def test_wait_delivers_child_session_result_without_kill(
     backend = FakeBackend(manager.sessions, "claude")
     _install_backend(manager, "claude", backend)
     writer.activate()
-    started = await manager.start("execute", "委譲する", str(tmp_path))
+    started = await manager.start("high_tier", "委譲する", str(tmp_path))
     delegate = manager.sessions[started["session_id"]]
 
     # 委譲先が別プロセスのMCPサーバーへstart_exploreを発行した状態を模す。
@@ -5907,6 +5916,37 @@ async def test_show_returns_terminal_session_restored_from_registry(
 
 
 @pytest.mark.asyncio
+async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """別Managerが復元したsessionの一覧・詳細は保存時刻を使い、旧記録を照会時刻で補わない。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    owner, _ = _manager_with_fake("codex")
+    session = subject.SessionState("saved-activity", str(tmp_path), engine="codex", publish_registry=True)
+    session.started_at = "2026-09-27T14:38:32+00:00"
+    session.status = "completed"
+    session.turn_completed = True
+    session.touch()
+    owner.sessions[session.session_id] = session
+    session_registry.publish("legacy-activity", terminal=True, cwd=str(tmp_path))
+    observer, _ = _manager_with_fake("codex")
+
+    saved = observer.show_session(session.session_id, verbose=True)
+    legacy = observer.show_session("legacy-activity", verbose=True)
+    listed = {item["session_id"]: item for item in observer.list_sessions(include_terminated=True)["sessions"]}
+
+    assert saved["started_at"] == session.started_at
+    assert saved["updated_at"] == session.updated_at
+    assert legacy["started_at"] is None
+    assert "updated_at" not in legacy
+    assert listed[session.session_id]["updated_at"] == session.updated_at
+    assert "updated_at" not in listed["legacy-activity"]
+    await observer.close()
+    await owner.close()
+
+
+@pytest.mark.asyncio
 async def test_send_message_resumes_stopped_session(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
@@ -6161,7 +6201,7 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
         return {"status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
-    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError) as exc_info:
         await subject.start(str(task_document), {}, str(tmp_path))
@@ -6185,7 +6225,7 @@ async def test_start_accepts_task_document_path_with_spaces(
     task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
-    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     response = await subject.start(str(task_document), {"対象": "値"}, str(tmp_path))
 
@@ -6210,7 +6250,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     task_document.write_text("手順: `${CLAUDE_PLUGIN_ROOT}/share/other.parent.md`を読む。\n", encoding="utf-8")
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
-    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     await subject.start(str(task_document), {"補足": "${CLAUDE_PLUGIN_ROOT}"}, str(tmp_path))
 
@@ -6246,7 +6286,7 @@ async def test_start_rejects_task_document_that_cannot_be_read(
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
     monkeypatch.setattr(subject, "_MANAGER", manager)
-    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError, match="タスク文書をUTF-8で読めません"):
         await subject.start(str(task_document), {}, str(tmp_path))
@@ -6361,7 +6401,7 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
     await subject.start_shell("make test", str(tmp_path), "終了状態")
     await subject.start_write("起草", str(tmp_path))
 
-    assert requested == ["explore_fast", "explore", "explore_fast", "write"]
+    assert requested == ["low_tier", "medium_tier", "low_tier", "write"]
 
 
 @pytest.mark.asyncio

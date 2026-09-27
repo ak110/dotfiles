@@ -12,7 +12,6 @@ import os
 import pathlib
 import re
 import sys
-from collections.abc import Iterable
 from typing import Any, cast
 
 import platformdirs
@@ -24,11 +23,9 @@ from agent_toolkit._common import codex_models
 _CONFIG_FILENAME = "config.json"
 
 _MODEL_SETTING_CATEGORIES = {
-    "explore_model": "探索上位",
-    "explore_fast_model": "探索軽量",
-    "pick_wi_model": "軽量",
-    "execute_model": "上位",
-    "execute_review_model": "軽量",
+    "high_tier_model": "上位",
+    "medium_tier_model": "中位",
+    "low_tier_model": "下位",
     "orchestrate_model": "上位",
 }
 # 用途区分はcodexとclaudeの候補を1組で持ち、各engineの選定値とプリセットの順序を分けて管理する。
@@ -38,15 +35,11 @@ _CATEGORY_ENGINE_MODELS = {
         "codex": "codex:sol/medium",
         "claude": "claude:opus[1m]/medium",
     },
-    "軽量": {
+    "中位": {
         "codex": "codex:terra/medium",
         "claude": "claude:sonnet[1m]/medium",
     },
-    "探索上位": {
-        "codex": "codex:terra/medium",
-        "claude": "claude:opus[1m]/medium",
-    },
-    "探索軽量": {
+    "下位": {
         "codex": "codex:luna/medium",
         "claude": "claude:sonnet[1m]/medium",
     },
@@ -54,7 +47,7 @@ _CATEGORY_ENGINE_MODELS = {
 _PRESET_ENGINE_ORDERS = {
     "codex-balanced": ("codex", frozenset({"orchestrate_model"})),
     "codex-primary": ("codex", frozenset()),
-    "claude-balanced": ("claude", frozenset({"explore_model", "explore_fast_model"})),
+    "claude-balanced": ("claude", frozenset({"medium_tier_model", "low_tier_model"})),
     "claude-primary": ("claude", frozenset()),
 }
 
@@ -203,13 +196,11 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 
 def _cmd_config_show(home: pathlib.Path) -> None:
-    """showサブコマンド: 保存値と実行時の解決値を区別して表示する。"""
+    """showサブコマンド: 設定値を1キー1行で表示する。"""
     settings = _resolved_settings(home)
-    catalog = _catalog_for_values(settings[key] for key in _MUTABLE_KEY_DEFAULTS)
     for key, value in settings.items():
         print(f"{key}: {value}")
         if key in _MUTABLE_KEY_DEFAULTS:
-            print(f"{key}.resolved: {_resolved_candidate_string(value, catalog)}")
             for warning in _stage_model_candidate_warnings(key, value):
                 _outcome.report_warning(warning)
 
@@ -224,9 +215,8 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
             f"未知の設定キーを指定した: {', '.join(unknown_keys)}。利用可能なキーから選び直す: {', '.join(sorted(settings))}"
         )
         sys.exit(2)
-    catalog = _catalog_for_values(settings[key] for key in requested_keys if key in _MUTABLE_KEY_DEFAULTS)
     for key in requested_keys:
-        print(_resolved_candidate_string(settings[key], catalog) if key in _MUTABLE_KEY_DEFAULTS else settings[key])
+        print(settings[key])
 
 
 def _cmd_config_set(args: argparse.Namespace) -> None:
@@ -279,23 +269,6 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
         (engine, model, effort or "medium")
         for engine, model, effort in (_parse_stage_model(candidate) for candidate in value.split(","))
     ]
-
-
-def _catalog_for_values(values: Iterable[str]) -> list[dict[str, Any]]:
-    """系列指定がある場合だけApp Serverへモデル一覧を要求する。"""
-    candidates = [candidate for value in values for candidate in parse_stage_model_candidates(value)]
-    return codex_models.list_models() if codex_models.needs_catalog(candidates) else []
-
-
-def _resolved_candidate_string(value: str, catalog: list[dict[str, Any]]) -> str:
-    parsed = parse_stage_model_candidates(value)
-    resolved = codex_models.resolve_candidates(parsed, catalog)
-    return ",".join(
-        f"{engine}:{selected_model}/{effort}" if model != selected_model else original
-        for original, (engine, model, effort), (_selected_engine, selected_model, _selected_effort) in zip(
-            value.split(","), parsed, resolved, strict=True
-        )
-    )
 
 
 def parse_unresolved_model_candidates(model_type: str) -> list[tuple[str, str, str]]:

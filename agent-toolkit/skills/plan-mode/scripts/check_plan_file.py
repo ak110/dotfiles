@@ -13,6 +13,8 @@ import subprocess
 import sys
 import typing
 
+import yaml
+
 try:
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
@@ -47,6 +49,59 @@ _PLAN_LINE_WARNING_THRESHOLD = 1200
 
 type _WarningKind = typing.Literal["migration", "advisory"]
 type _ClassifiedWarning = tuple[_WarningKind, str]
+
+
+def _check_lane_selection(text: str, selection_file: pathlib.Path, lane: str) -> list[str]:
+    """選定済みWI集合と人間由来行の根拠を計画へ照合する。
+
+    不一致は、割り当てた要求を実行とレビューへ渡せない致命的な問題としてerrorにする。
+    """
+    selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
+    if not isinstance(selection, dict) or not isinstance(selection.get("decisions"), list):
+        raise ValueError("選定結果のdecisionsがYAMLの配列ではない")
+    expected: list[str] = []
+    for decision in selection["decisions"]:
+        if (
+            not isinstance(decision, dict)
+            or not isinstance(decision.get("lane"), str)
+            or not isinstance(decision.get("awi"), str)
+        ):
+            raise ValueError("選定結果のdecisionにawi又はlaneがない")
+        if decision["lane"] == lane:
+            expected.append(decision["awi"])
+    if not expected:
+        raise ValueError(f"選定結果にレーンがない: {lane}")
+    if len(expected) != len(set(expected)):
+        raise ValueError(f"選定結果のレーンにWIが重複する: {lane}")
+
+    metadata, metadata_errors = _plan_format.parse_plan_metadata(text)
+    if metadata_errors:
+        return metadata_errors
+    actual = {filename for filename, _summary in metadata.related_wi} if metadata is not None else set()
+    errors: list[str] = []
+    missing = sorted(set(expected) - actual)
+    extra = sorted(actual - set(expected))
+    if missing or extra:
+        errors.append(f"関連WIとレーン{lane}の選定結果が一致しない: 欠落={missing}, 余剰={extra}")
+
+    headings = _plan_format.extract_headings(text)
+    section_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_ACTION)
+    if section_index is None:
+        return errors
+    start, end = _plan_format.heading_subtree_range(headings, section_index)
+    lines = _plan_format.lines_within(list(_plan_format.iter_markdown_body_lines(text)), start, end)
+    for table in _plan_format.extract_tables(lines):
+        if table.header != _plan_format.PLAN_HUMAN_ACTION_TABLE_HEADER:
+            continue
+        for index, row in enumerate(table.rows):
+            if len(row) != len(table.header):
+                continue
+            origin = row[table.header.index("由来")]
+            if (origin.startswith("人間由来のWI (") or origin == "ユーザー指示") and row[
+                table.header.index("根拠")
+            ].strip() in {"", "-"}:
+                errors.append(f"人間由来行の根拠がない: {table.row_location(index)}")
+    return errors
 
 
 def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
@@ -524,6 +579,8 @@ def check(
     home: pathlib.Path | str | None = None,
     reject_migration_warnings: bool = False,
     reject_progress_log_rows: bool = False,
+    selection_file: pathlib.Path | None = None,
+    lane: str | None = None,
 ) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
@@ -561,6 +618,12 @@ def check(
         else:
             format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
+    if (selection_file is None) != (lane is None):
+        raise ValueError("選定結果ファイルとレーン識別子は組で指定する")
+    if selection_file is not None and lane is not None:
+        if not selection_file.is_absolute() or re.fullmatch(r"lane-\d{2}", lane) is None:
+            raise ValueError("選定結果ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
+        errors.extend(_check_lane_selection(text, selection_file, lane))
     if reject_progress_log_rows and _plan_format.has_progress_log_rows(text):
         errors.append(f"`## {progress_heading}`は起草時に内容行を置かない")
     warnings: list[str] = []
@@ -577,6 +640,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan_file", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
+    parser.add_argument("--selection-file", type=pathlib.Path, help="pickerが保存した選定結果の絶対パス")
+    parser.add_argument("--lane", help="選定結果内のlane-NN形式のレーン識別子")
     parser.add_argument(
         "--reject-migration-warnings",
         action="store_true",
@@ -594,9 +659,11 @@ def main(argv: list[str] | None = None) -> int:
             args.work_dir,
             reject_migration_warnings=args.reject_migration_warnings,
             reject_progress_log_rows=args.reject_progress_log_rows,
+            selection_file=args.selection_file,
+            lane=args.lane,
         )
-    except (OSError, UnicodeDecodeError) as error:
-        print(f"計画ファイルを読み込めない: {error}", file=sys.stderr)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
+        print(f"計画検査の入力を読み込めない: {error}", file=sys.stderr)
         return 2
     for error in errors:
         print(error, file=sys.stderr)

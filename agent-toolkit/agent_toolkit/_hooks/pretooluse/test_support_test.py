@@ -186,7 +186,7 @@ def _stage_model_env(tmp_path: pathlib.Path, value: str) -> dict[str, str]:
     config_dir = config_home / "agent-toolkit"
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text(
-        json.dumps({"execute_review_model": value}),
+        json.dumps({"medium_tier_model": value}),
         encoding="utf-8",
     )
     return {"XDG_CONFIG_HOME": str(config_home)}

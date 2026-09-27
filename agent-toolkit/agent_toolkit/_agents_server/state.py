@@ -45,14 +45,14 @@ SESSION_INITIALIZATION_ATTEMPTS = 2
 WAIT_TIMEOUT_SECONDS = 3600.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
-    "add-wi.subagent.md": "execute",
-    "exec-review.subagent.md": "execute_review",
-    "exec.subagent.md": "execute",
-    "lane-integration.subagent.md": "execute",
-    "pick-wi.subagent.md": "pick_wi",
-    "session-termination.subagent.md": "execute",
-    "usability-review.subagent.md": "execute_review",
-    "wi-draft-review.subagent.md": "execute_review",
+    "add-wi.subagent.md": "high_tier",
+    "exec-review.subagent.md": "medium_tier",
+    "exec.subagent.md": "high_tier",
+    "lane-integration.subagent.md": "high_tier",
+    "pick-wi.subagent.md": "medium_tier",
+    "session-termination.subagent.md": "high_tier",
+    "usability-review.subagent.md": "medium_tier",
+    "wi-draft-review.subagent.md": "medium_tier",
 }
 """専用タスク文書名と工程別モデル設定の対応。"""
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
@@ -547,6 +547,8 @@ class SessionState:
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
                 created_at=self.created_at,
+                started_at=self.started_at,
+                session_updated_at=self.updated_at,
                 status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
             )
             self._published_registry_terminal = registry_terminal
@@ -606,8 +608,8 @@ class SessionResumeState:
     prompt: str = ""
     # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
     created_at: str | None = None
-    started_at: str = dataclasses.field(default_factory=_utc_now)
-    updated_at: str = dataclasses.field(default_factory=_utc_now)
+    started_at: str | None = dataclasses.field(default_factory=_utc_now)
+    updated_at: str | None = dataclasses.field(default_factory=_utc_now)
     output_updated_at: str | None = None
     turn_seq: int = 0
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)

@@ -129,7 +129,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 委譲と当該sessionの管理は`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
 `prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
 応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
-`start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、既定は`true`とする。
+`start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`medium_tier_model`、`fast=true`は`low_tier_model`の設定を使い、既定は`true`とする。
 `start`・`start_explore`・`start_shell`・`start_write`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別又は候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
 `start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
@@ -145,10 +145,22 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 工程別モデル設定の各キーは、`<engine>:<model>[/<effort>]`をASCIIカンマで区切った複数候補を受け取る。
 先頭の候補から順に起動を試み、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
+変更できるキーと対応する起動は次のとおり。
+
+| キー | 対応する起動 |
+| --- | --- |
+| `high_tier_model` | 計画・実装・修正・公開工程の終端・自動コードレビュー監査 |
+| `medium_tier_model` | WI選定・実行レビュー・`start_explore(fast=false)` |
+| `low_tier_model` | `start_explore(fast=true)`・`start_shell` |
+| `write_model` | `start_write` |
+| `orchestrate_model` | `atk wi process-loop` |
+
+`atk config show`はパス4行とモデル設定5行を表示し、`atk config get`はモデル設定値をそのまま返す。
+Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、`atk config show`と`atk config get`が当該値を返し、
 委譲の起動でも当該値を使う。環境変数は保存済みの設定より優先し、当該変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
-`atk config apply-preset <プリセット名>`は工程別モデル設定の10キーを1回の実行で一括保存する。
+`atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`はプリセットの対象外とする。
 受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
 プリセット名を省略した実行と未知の名前を指定した実行は終了コード2で終わり、利用できるプリセット名を表示する。
 設定を保存していない環境の既定値は`codex-balanced`と同じ候補列とする。
@@ -198,7 +210,7 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 ### 対話型
 
-エージェントへ作業を直接依頼する。エージェントは必要に応じて計画ファイルを内部資料として作成し、
+エージェントへ作業を直接依頼する。エージェントは原則として計画ファイルを内部資料として作成する。既存の値や文字列の差し替えだけで完結し、恒久化・リファクタリングの候補が構造上生じない変更だけ作成を省く。
 着手前の要件と公開範囲の確認を経て、実装、検証、公開まで進める。
 対話の途中で要件が変わる作業や、方針をその場で確定したい作業に向く。
 
@@ -242,7 +254,7 @@ AWIが常時発生しないリポジトリでは、常駐実行を起動せず�
 
 登録方法は要求が既に確定しているか、対話で確定する必要があるかで選ぶ。
 一括での移行・復元は`atk serve`の新規追加ダイアログでも種別「一括登録（show形式）」から実行できる。
-AWIは人間向けの作業要求であり、実装を伴う場合はレーン担当が計画を作成して実装し、その後に実行レビューを行う。
+AWIは人間向けの作業要求である。実装を伴うレーンでは、原則として計画を作成する。前述の除外条件に当たるレーンはWIを直接実装する。どちらも実装後に実行レビューを行い、メインの判断を要する場合だけレーン担当が返答を待つ。
 
 | 登録方法 | 選ぶ場面 |
 | --- | --- |
@@ -433,7 +445,8 @@ Claude Codeで有効化する。
 - `agent-toolkit:add-awi-by-user`: 利用者向け要件を対話で確定し、AWI又はUWIを手動投入する
 - `agent-toolkit:single-lane-process`: AWIをレーンへ分けずに、1回の処理回で対応する作業ツリーへ実装して終端する。計画を要する項目は同じ処理回で計画の作成から実装まで進め、複数リポジトリでは計画と実行レビューを対象worktreeごとに分ける
 - `agent-toolkit:process-wi`: 選定工程（選定とレーン分け）、レーン工程（並列レーン実行）、公開工程（全レーン後のpush・CI・終了）の3段階でAWIを処理する。
-  各通常レーンは1つの計画を使い、レーン担当が計画・実装・近接検証を続けて行った後、実行レビューを要求する。
+  計画を要する通常レーンは1つの計画を使い、レーン担当が計画・実装・近接検証を続けて行った後、実行レビューを要求する。
+  計画を省くレーンはWIの要求と完成条件を基準に実装・レビューする。計画がある場合は自動チェックでWI集合の一致と人間由来行の根拠欄を確認する。人間由来の縮小、規範文書の編集、明示禁止条件のいずれかがある場合だけメインの判断を待つ。
   実装不要又はholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
   各レーンはffマージ直後に`adopt`と後始末を完了し、固有指示で延期した項目だけを全レーン後の終端工程で処理する
 - `agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス

@@ -174,6 +174,10 @@ def test_record_watch_detects_records_under_roots_created_after_start(tmp_path: 
     watch = session_watch.RecordWatch(tracker)
     watch.start()
     try:
+        (tmp_path / "claude" / "projects").mkdir()
+        assert collector.wait(lambda: collector.refreshed)
+        collector.flushes.clear()
+
         path = _write(
             tmp_path / "claude" / "projects" / "new-project" / "s.jsonl", [{"type": "user", "message": {"content": "a"}}]
         )
@@ -218,9 +222,19 @@ def test_record_watch_keeps_shared_ancestor_while_another_root_is_missing(tmp_pa
     watch = session_watch.RecordWatch(tracker)
     watch.start()
     try:
-        (tmp_path / "claude" / "projects").mkdir(parents=True)
+        (tmp_path / "claude").mkdir()
+        assert collector.wait(lambda: collector.refreshed)
+        collector.flushes.clear()
+        (tmp_path / "claude" / "projects").mkdir()
         assert collector.wait(lambda: collector.refreshed)
         time.sleep(0.2)
+        collector.flushes.clear()
+
+        (tmp_path / "codex").mkdir()
+        assert collector.wait(lambda: collector.refreshed)
+        collector.flushes.clear()
+        (tmp_path / "codex" / "sessions").mkdir()
+        assert collector.wait(lambda: collector.refreshed)
         collector.flushes.clear()
 
         path = _write(

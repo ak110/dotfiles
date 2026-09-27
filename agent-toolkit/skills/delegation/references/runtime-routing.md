@@ -41,12 +41,13 @@ forkの観測記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`環境 | `claude`環境 |
 | --- | --- | --- | --- | --- |
-| `pick_wi_model` | WIの選定とレーン分け | `agent-toolkit:process-wi`のメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_model` | 計画起草、実装、近接検証、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入、`agent-toolkit:process-wi`の自動コードレビュー監査及び同スキルの公開工程の終端工程 | レーン担当、レビュー修正担当、CI修正担当、即時対応、マージなしの統合、上流AWI投入、自動コードレビュー監査又は公開工程の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_review_model` | 実装後の実行レビュー | 実行レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `high_tier_model` | 計画起草、実装、近接検証、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入、自動コードレビュー監査、公開工程の終端工程 | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `medium_tier_model` | WIの選定とレーン分け、実装後の実行レビュー、`start_explore`の`fast=false` | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `low_tier_model` | `start_explore`の`fast=true`と`start_shell` | 調査又はshellを委譲する主体 | `agents_server` MCP | `agents_server` MCP |
+| `write_model` | `start_write`による文章起草 | 文章を委譲する主体 | `agents_server` MCP | `agents_server` MCP |
+| `orchestrate_model` | `atk wi process-loop`の新しいセッション | 常駐処理 | `atk` | `atk` |
 
-上表が対応工程を定めるのは`pick_wi`、`execute`及び`execute_review`である。`orchestrate`は`atk wi process-loop`の新しいセッションに使い、本節の委譲工程では選ばない。各工程の起動文書と設定種別は、その工程の起動節に明記する。
-保存値と実行時に解決した候補は`atk config show`のキー行と`<キー>.resolved`行で区別する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、その設定キーと候補を標準エラーへ警告として書く。
+各工程の起動文書と段位は、その工程の起動節に明記する。`atk config show`と`atk config get`は設定値を返し、Codex系列名の解決は委譲の起動時に行う。`show`は候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合、その設定キーと候補を標準エラーへ警告として書く。
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`、`codex`または`agy`とする。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で、agyは起動・turnの失敗で次の候補へ進む。
@@ -63,7 +64,7 @@ forkの観測記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 実験と障害時の回避で一時的に別のengine又はmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
 
 1. `agents_server`では`<役割名>.subagent.md`を`start`へ、自由本文と設定種別または直接候補列を`start_custom`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
-2. `Agent`ツールを使う場合は、起動直前に`atk config get <キー>`を実行し、系列名を完全IDへ解決済みの候補列から先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合はその工程を`needs_escalation`または未完了として返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
+2. `Agent`ツールを使う場合は、起動直前に`atk config get <キー>`で設定値を取得し、先頭候補を`engine`、`model`、`effort`へ分解する。effort省略時は`medium`を使う。`engine`部が`claude`でない場合はその工程を`needs_escalation`または未完了として返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
 3. `agents_server`の通常の起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。採用した`model_type`、`engine`、`model`及び`effort`を記録する必要がある場合は、返された`session_id`を`show`へ渡して取得する。`show`の`model_type`は設定種別か、起動ツールの`model_type`へ渡した候補列である。
 4. サーバーが候補列を使い尽くした場合、呼び出し側は設定外のengineへ自動切替せず、その工程を`needs_escalation`または未完了として返す。
 5. レーン担当とCI修正担当は、前の担当の識別子を再利用せず新規threadで起動する。

@@ -51,7 +51,7 @@ async def test_live_launch_waits_for_automatic_resume(
     )
     try:
         if launch_kind == "start":
-            await manager.start("explore_fast", _PROMPT, cwd)
+            await manager.start("low_tier", _PROMPT, cwd)
         elif launch_kind == "start_explore":
             await manager.start_explore(True, _PROMPT, cwd)
         else:

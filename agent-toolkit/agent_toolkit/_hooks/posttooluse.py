@@ -235,11 +235,11 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
         model_type = tool_input.get("model_type")
         return model_type if isinstance(model_type, str) else None
     if operation == "start_explore":
-        return "explore_fast" if tool_input.get("fast", True) else "explore"
+        return "low_tier" if tool_input.get("fast", True) else "medium_tier"
     if operation == "start_write":
         return "write"
     if operation == "start_shell":
-        return "explore_fast"
+        return "low_tier"
     return None
 
 

@@ -165,6 +165,9 @@ def _listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
     停滞の判定は`seconds_since_activity`と閾値の比較で呼び出し元が行うため、判定済みの印を返さない。
     """
     public = {"session_id": session["session_id"], "status": session["status"]}
+    for key in ("started_at", "updated_at"):
+        if key in session:
+            public[key] = session[key]
     if "seconds_since_activity" in session:
         public["seconds_since_activity"] = session["seconds_since_activity"]
     if "api_error" in session:
@@ -218,11 +221,13 @@ def _excluded_candidate_payload(excluded: Mapping[ModelCandidate, str]) -> list[
     ]
 
 
-def _elapsed_seconds(started_at_value: str) -> int | None:
+def _elapsed_seconds(started_at_value: str | None) -> int | None:
     """開始時刻から現在までの経過秒を返す。"""
+    if started_at_value is None:
+        return None
     try:
         started_at = datetime.datetime.fromisoformat(started_at_value)
-    except (TypeError, ValueError):
+    except ValueError:
         return None
     return max(0, int(datetime.datetime.now(tz=started_at.tzinfo).timestamp() - started_at.timestamp()))
 
@@ -634,6 +639,8 @@ class AgentsServerManager:
             model_type=info.model_type,
             launch_kind=info.launch_kind,
             created_at=info.created_at,
+            started_at=info.started_at,
+            updated_at=info.session_updated_at,
             turn_seq=persisted_result["turn_seq"] if persisted_result is not None else info.turn_seq,
             status=persisted_result["status"] if persisted_result is not None else info.status,
             agent_message=persisted_result["agent_message"] if persisted_result is not None else "",
@@ -711,6 +718,8 @@ class AgentsServerManager:
             "label": label,
             "result_available": result_available,
         }
+        if session.started_at is not None:
+            listed["started_at"] = session.started_at
         listed.update(
             state.activity_projection(
                 updated_at=session.updated_at,
@@ -731,7 +740,7 @@ class AgentsServerManager:
             if session.retention_deadline is not None and loop_time >= session.retention_deadline:
                 self._expire_session(session_id)
 
-        listed: dict[str, tuple[str, dict[str, Any]]] = {}
+        listed: dict[str, tuple[str | None, dict[str, Any]]] = {}
         for session in self.sessions.values():
             listed[session.session_id] = (
                 session.started_at,
@@ -774,7 +783,27 @@ class AgentsServerManager:
                     ),
                 ),
             )
-        sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: item[0])]
+        for session in self.stopped_sessions.values():
+            if session_registry.resolve(session.session_id).state is not session_registry.Resolution.TERMINAL:
+                continue
+            listed.setdefault(
+                session.session_id,
+                (
+                    session.started_at,
+                    self._listed_session(
+                        session,
+                        status=session.status,
+                        progress="",
+                        result_available=has_uncollected_result(
+                            session,
+                            None
+                            if self._status_writer is None
+                            else self._status_writer.result_state(session.session_id) == "consumed",
+                        ),
+                    ),
+                ),
+            )
+        sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: (item[0] is None, item[0] or ""))]
         if include_terminated:
             response: dict[str, Any] = {
                 "sessions": [_listed_public_session(session) for session in sessions],
@@ -1248,7 +1277,7 @@ class AgentsServerManager:
     ) -> dict[str, Any]:
         """探索専用の軽量な起動条件でturnを開始する。`model_type`の指定時は`fast`を参照しない。"""
         if model_type is None:
-            model_type = "explore_fast" if fast else "explore"
+            model_type = "low_tier" if fast else "medium_tier"
         return await self.start(
             model_type,
             prompt,
@@ -1269,7 +1298,7 @@ class AgentsServerManager:
         """コマンド実行専用の軽量な起動条件でturnを開始する。"""
         _validate_shell_request(command, summary_policy)
         return await self.start(
-            model_type or "explore_fast",
+            model_type or "low_tier",
             _shell_prompt(command, summary_policy),
             cwd,
             launch_kind="shell",
@@ -2155,7 +2184,7 @@ with warnings.catch_warnings():
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
             "start系の起動ツール（`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`）は、"
             "次の共通引数を同じ意味で受け取る。各ツールの引数説明にはツール固有の既定値だけを書く。\n"
-            "共通引数`model_type`: 工程別モデル設定の種別（例: `execute`）、又はASCIIカンマ区切りの"
+            "共通引数`model_type`: モデル段位の種別（例: `high_tier`）、又はASCIIカンマ区切りの"
             "`<claude|codex|agy>:<model>[/<effort>]`候補列（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）。"
             "候補は先頭から試し、起動可能な候補へ切り替える。"
             "`start_custom`では必須とする。他の起動ツールでは省略可能で、省略時は各ツールの工程別設定を使い、"
@@ -2278,7 +2307,7 @@ async def start_explore(
         bool,
         Field(
             description=_parameter_description(
-                "`false`は`explore_model`、`true`は`explore_fast_model`の設定を候補列として使う。"
+                "`false`は`medium_tier_model`、`true`は`low_tier_model`の設定を候補列として使う。"
                 "既定の`true`のまま使い、軽量側の候補では判断材料が不足する調査だけ`false`を指定する。"
             )
         ),
@@ -2295,14 +2324,14 @@ async def start_explore(
         str | None,
         Field(
             description=_model_type_description(
-                "省略時は`fast`に応じて`explore_fast`又は`explore`の設定を使う。指定時は`fast`を参照しない。"
+                "省略時は`fast`に応じて`low_tier`又は`medium_tier`の設定を使う。指定時は`fast`を参照しない。"
             )
         ),
     ] = None,
 ) -> dict[str, Any]:
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
-    `fast=true`では`explore_fast_model`、`fast=false`では`explore_model`の候補列を使う。
+    `fast=true`では`low_tier_model`、`fast=false`では`medium_tier_model`の候補列を使う。
     `model_type`を指定した場合は`fast`を参照せず、その値から候補列を決める。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
@@ -2340,12 +2369,12 @@ async def start_shell(
     ] = None,
     model_type: Annotated[
         str | None,
-        Field(description=_model_type_description("省略時は`explore_fast`の設定を使う。")),
+        Field(description=_model_type_description("省略時は`low_tier`の設定を使う。")),
     ] = None,
 ) -> dict[str, Any]:
     """コマンドを実行して結果を要約する委譲先turnを開始する。
 
-    `explore_fast_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
+    `low_tier_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
     `model_type`を指定した場合はその値から候補列を決める。
     読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
