@@ -6,6 +6,30 @@
 H2見出しは索引元の条文が指す文字列と一致させる。索引元の条文を移設し、又は索引元の節名を改める改訂では、同じ改訂で本ファイルのH2見出しと索引元の参照を併せて改める。
 本ファイルは`agent-toolkit`の配布物に含まれない。索引を辿れるのは、本リポジトリの作業ツリーを持つ主体に限る。
 
+## agent-toolkit/skills/delegation/references/routing.md：会話を引き継ぐ委譲：2026年9月27日
+
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>「Fork the current conversation」で、forkが親の会話履歴、モデル及びツールを引き継ぎ、背景の再説明を減らす場面と同じ起点から複数案を試す場面に適することを確認した。Codex CLI 0.157.1の`spawn_agent`公開スキーマでは`fork_turns="all"`が全履歴を渡し、モデルとeffortの上書きを受け付けない。再検証は両ホストの公開スキーマと公式資料を読み、通常起動と全履歴forkの入力・モデルの差を比較する。
+
+## agent-toolkit/skills/delegation/references/runtime-routing.md：実行手段：2026年9月27日
+
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で`Agent`の`fork`型を確認した。Codex CLI 0.157.1の`spawn_agent`公開スキーマは`fork_turns`省略又は`"all"`の全履歴forkを示す。再検証は両ホストの起動スキーマを取得し、親のモデルとeffortの継承条件を確かめる。
+
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日
+
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で、forkの背景実行、完了通知、forkからの再委譲制限とfork modeの既定値を確認した。同版の対話セッションで`Agent`を`subagent_type: "fork"`として起動した観測では、`SubagentStart`が委譲先規範を追加した。再検証は対話と`-p`のそれぞれでfork modeを確認し、forkの起動結果、規範の配送及び完了通知を比べる。
+
+## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日
+
+2026-09-27、Codex CLI 0.157.1の`spawn_agent`公開スキーマで`fork_turns`の`none`、`all`、正の整数文字列と、全履歴forkのモデル・reasoning effort継承を確認した。再検証は現行ホストのツールスキーマを取得し、`fork_turns`と上書き引数の相互制約を確かめる。
+
+## agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日
+
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>は通常のサブエージェントを独立文脈、forkを親の会話履歴の継承として区別する。Codex CLI 0.157.1の`spawn_agent`スキーマも`fork_turns`で渡す履歴を選べる。再検証は各ホストの通常起動と全履歴forkの入力契約を比較する。
+
+## agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月27日
+
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>とCodex CLI 0.157.1の`spawn_agent`公開スキーマで、通常起動とforkの履歴入力が異なることを確認した。再検証は同じ起動文で通常起動と全履歴forkを行い、委譲先に渡る会話履歴の有無を比較する。
+
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日
 
 2026-09-21に、Claude Codeの背景ジョブ完了通知が届いた後も、同じ`atk agents wait`の実プロセスが稼働している事例を観測した。

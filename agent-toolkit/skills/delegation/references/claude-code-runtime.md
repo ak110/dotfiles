@@ -7,6 +7,8 @@ Claude Codeから委譲を起動する直前に本文書を全文読む。
 
 Agent機能を使う条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段の選択」に従う。専用agent定義が必要な工程ではその役割を、横断調査では調査に適した役割を選ぶ。モデル、推論の深さ、背景実行及び既定値は、起動時に公開されたスキーマと定義のfrontmatterから確定する。
 
+`routing.md`「会話を引き継ぐ委譲」がforkを選び、fork modeが有効なときは`Agent`へ`subagent_type: "fork"`を渡す。forkは親のモデルと会話履歴を引き継ぎ、背景で実行され、通常の`Agent`の子と同じ完了通知で結果を返す。forkから更にforkは起動できない。対話セッションのfork modeは初期状態で有効だが、`-p`の非対話実行とAgent SDKでは初期状態で無効である。無効な環境では`agents_server`の新規起動を使う。観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日」にある。
+
 ## 実行時能力と通信scope
 
 実行時のtool公開、呼び出し結果及び完了通知の配送はprovider、Claude Code版、設定及び通信scopeの組合せごとに観測し、単一環境の結果を他の環境へ一般化しない。
@@ -66,6 +68,7 @@ agent定義の`tools`は許可の上限を示す。`ListAgents`の許可と実�
 - 専用定義を持たない`claude`と`Explore`の起動文には、完了報告をツール戻り値で返す指示、
   完了報告を`SendMessage`で能動送付しない指示、待機対象の結果を含めて1回で返す指示、
   完了報告を日本語で書く指示を含む
+- forkの起動文にも同じ完了報告の指示を含める。親が保持する背景は再掲せず、`SubagentStart`フックが追加する`rules-subagent.md`と`rules-subagent.claude-code.md`の読込も指示しない
 - 非forkサブエージェントは親セッションが読み込んだCLAUDE.mdとメモリー階層（プロジェクトルールを含む）を初期コンテキストに受け取るが、組み込み`Explore`・`Plan`はこの階層と親セッション開始時のgitステータスを受け取らない。同名のユーザー定義かプロジェクト定義が組み込み定義を上書きした場合は受け取る。この省略は組み込み定義の固定の挙動であり、frontmatterフィールドとエージェント単位設定の対象外である。このため組み込み`Explore`・`Plan`の起動文へは委譲元が読み込んでいる`01-agent.md`の絶対パスを渡し、着手前に全文読むよう指示する。
   サブエージェント向け条文は`SubagentStart`フックが`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/rules-subagent.claude-code.md`を文脈へ追加するため、起動文では読込を指示せずフックへ委ねる。
   即時通知の適用条件、判定順序、手段及び宛先は同規範を単一の根拠とし、起動文からは参照だけを行う

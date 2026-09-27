@@ -88,14 +88,16 @@ frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agent
 
 ## コンテキスト境界
 
-サブエージェントは呼び出し元と別のコンテキストで動作し、引き継ぐ入力は起動プロンプトに限る。
-呼び出し元の会話履歴、呼び出し元が読み込んだファイル、呼び出し元が起動したスキルは、この入力の外側にある。
-サブエージェントとその下位のサブエージェントの間も同じ関係になる。
+通常のサブエージェントは呼び出し元と別のコンテキストで動作し、引き継ぐ入力は起動プロンプトに限る。
+呼び出し元の会話履歴、呼び出し元が読み込んだファイル、呼び出し元が起動したスキルは、この入力の外側にある。ホスト標準のforkは起動時点までの会話履歴も受け取る例外とし、選定条件は`agent-toolkit:delegation`の`references/routing.md`「会話を引き継ぐ委譲」に従う。
+通常のサブエージェントとその下位のサブエージェントの間も同じ関係になる。
 
-起動手段を問わず、委譲元と委譲先の文脈が独立することを前提として手順を設計する。設計時の判定は`agent-toolkit:delegation`の`references/base-contract.md`に従う。
+fork以外の委譲では、委譲元と委譲先の文脈が独立することを前提として手順を設計する。設計時の判定は`agent-toolkit:delegation`の`references/base-contract.md`に従う。
 `agents_server`で起動した委譲先が起動時に受け取るものは、起動プロンプトと、`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める起動条件で決まる。この委譲先が受け取る範囲は、この2つに限る。
 
 Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns`が選ぶ会話履歴、対象worktreeから自動読込される`AGENTS.md`、及び`SubagentStart` hookが追加する委譲先規範を別々の入力として扱う。会話履歴へ規範が含まれることをhook配送の代わりにせず、共通委譲先規範は`rules-subagent.md`を基準となる定義としてCodex hookとagents_serverの通常委譲へ同期する。Claude Code固有の委譲先規範はCodexへ配送せず、軽量な探索・書込・shellの各起動へ共通規範を配送しない契約も維持する。
+
+Codexで前記の選定条件がforkを選ぶ場合は、`spawn_agent`の`fork_turns`を省略するか`"all"`にして親の会話履歴を渡す。観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月27日」にある。
 
 `Agent`ツールで`agents/`配下の定義から起動したサブエージェントが起動時に受け取るものは次のとおりとする。
 
