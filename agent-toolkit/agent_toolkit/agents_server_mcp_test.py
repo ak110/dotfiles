@@ -691,7 +691,9 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
 
     assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
     assert all(
-        {"session_id", "status"} <= set(session) <= {"session_id", "status", "seconds_since_activity"}
+        {"session_id", "status"}
+        <= set(session)
+        <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
         for session in response["sessions"]
     )
     assert response["sessions"][0]["status"] == "expired"
@@ -739,7 +741,7 @@ async def test_list_sessions_omits_terminated_sessions_without_pending_result(
 
 @pytest.mark.asyncio
 async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
-    """一覧は識別子と状態以外の詳細を返さない。"""
+    """一覧は活動時刻を返し、長い識別名などの詳細を返さない。"""
     manager = subject.AgentsServerManager(status_writer=None)
     long_label = subject.SessionState("long", str(tmp_path), label="a" * 101)
     exact_label = subject.SessionState("exact", str(tmp_path), label="b" * 100)
@@ -748,7 +750,12 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
     listed = manager.list_sessions()["sessions"]
 
     assert [item["session_id"] for item in listed] == ["long", "exact"]
-    assert all({"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"} for item in listed)
+    assert all(
+        {"session_id", "status", "started_at", "updated_at"}
+        <= item.keys()
+        <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
+        for item in listed
+    )
 
 
 def test_delegation_result_scope_is_available_before_calling() -> None:
@@ -1163,7 +1170,9 @@ async def test_success_response_key_sets_for_all_tools(
     assert listed.keys() == {"sessions", "omitted", "root_session_id"}
     assert listed["root_session_id"] == "root-session"
     assert all(
-        {"session_id", "status"} <= item.keys() <= {"session_id", "status", "seconds_since_activity"}
+        {"session_id", "status"}
+        <= item.keys()
+        <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
         for item in listed["sessions"]
     )
 
@@ -5904,6 +5913,37 @@ async def test_show_returns_terminal_session_restored_from_registry(
     assert response["session_id"] == session_id
     assert response["status"] == "completed"
     await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """別Managerが復元したsessionの一覧・詳細は保存時刻を使い、旧記録を照会時刻で補わない。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    owner, _ = _manager_with_fake("codex")
+    session = subject.SessionState("saved-activity", str(tmp_path), engine="codex", publish_registry=True)
+    session.started_at = "2026-09-27T14:38:32+00:00"
+    session.status = "completed"
+    session.turn_completed = True
+    session.touch()
+    owner.sessions[session.session_id] = session
+    session_registry.publish("legacy-activity", terminal=True, cwd=str(tmp_path))
+    observer, _ = _manager_with_fake("codex")
+
+    saved = observer.show_session(session.session_id, verbose=True)
+    legacy = observer.show_session("legacy-activity", verbose=True)
+    listed = {item["session_id"]: item for item in observer.list_sessions(include_terminated=True)["sessions"]}
+
+    assert saved["started_at"] == session.started_at
+    assert saved["updated_at"] == session.updated_at
+    assert legacy["started_at"] is None
+    assert "updated_at" not in legacy
+    assert listed[session.session_id]["updated_at"] == session.updated_at
+    assert "updated_at" not in listed["legacy-activity"]
+    await observer.close()
+    await owner.close()
 
 
 @pytest.mark.asyncio

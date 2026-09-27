@@ -32,9 +32,17 @@ def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.TERMINAL
 
 
-def test_resume_info_carries_created_at_and_accepts_legacy_record(tmp_path: pathlib.Path) -> None:
-    """登録簿は最初の開始時刻を再開情報へ渡し、項目の無い旧形式のレコードでは`None`を返す。"""
-    subject.publish("created", terminal=True, cwd=str(tmp_path), created_at="2026-09-25T21:58:13+00:00", state_root=tmp_path)
+def test_resume_info_carries_activity_times_and_accepts_legacy_record(tmp_path: pathlib.Path) -> None:
+    """登録簿はsessionの活動時刻を別欄で渡し、項目の無い旧形式では不明のまま返す。"""
+    subject.publish(
+        "created",
+        terminal=True,
+        cwd=str(tmp_path),
+        created_at="2026-09-25T21:58:13+00:00",
+        started_at="2026-09-27T14:38:32+00:00",
+        session_updated_at="2026-09-27T14:39:16+00:00",
+        state_root=tmp_path,
+    )
     subject.publish("legacy", terminal=True, cwd=str(tmp_path), state_root=tmp_path)
 
     created = subject.resolve("created", state_root=tmp_path).resume_info
@@ -42,8 +50,14 @@ def test_resume_info_carries_created_at_and_accepts_legacy_record(tmp_path: path
 
     assert created is not None
     assert created.created_at == "2026-09-25T21:58:13+00:00"
+    assert created.started_at == "2026-09-27T14:38:32+00:00"
+    assert created.session_updated_at == "2026-09-27T14:39:16+00:00"
+    payload = json.loads((subject.registry_directory(tmp_path) / "created.json").read_text(encoding="utf-8"))
+    assert payload["updated_at"] != created.session_updated_at
     assert legacy is not None
     assert legacy.created_at is None
+    assert legacy.started_at is None
+    assert legacy.session_updated_at is None
 
 
 def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
@@ -91,6 +105,10 @@ async def test_session_state_publishes_state_transitions(
     session.turn_completed = True
     session.touch()
     assert subject.resolve("published-session").state is subject.Resolution.TERMINAL
+    restored = subject.resolve("published-session").resume_info
+    assert restored is not None
+    assert restored.started_at == session.started_at
+    assert restored.session_updated_at == session.updated_at
 
 
 @pytest.mark.asyncio

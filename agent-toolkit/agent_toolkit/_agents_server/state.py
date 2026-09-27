@@ -547,6 +547,8 @@ class SessionState:
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
                 created_at=self.created_at,
+                started_at=self.started_at,
+                session_updated_at=self.updated_at,
                 status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
             )
             self._published_registry_terminal = registry_terminal
@@ -606,8 +608,8 @@ class SessionResumeState:
     prompt: str = ""
     # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
     created_at: str | None = None
-    started_at: str = dataclasses.field(default_factory=_utc_now)
-    updated_at: str = dataclasses.field(default_factory=_utc_now)
+    started_at: str | None = dataclasses.field(default_factory=_utc_now)
+    updated_at: str | None = dataclasses.field(default_factory=_utc_now)
     output_updated_at: str | None = None
     turn_seq: int = 0
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)

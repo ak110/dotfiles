@@ -41,6 +41,8 @@ class ResumeInfo:
     status: Literal["starting", "running", "completed", "failed", "interrupted"]
     # 項目を持たない旧形式のレコードでは`None`とする。
     created_at: str | None = None
+    started_at: str | None = None
+    session_updated_at: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,6 +72,8 @@ def publish(
     turn_seq: int = 0,
     status: Literal["starting", "running", "completed", "failed", "interrupted"] | None = None,
     created_at: str | None = None,
+    started_at: str | None = None,
+    session_updated_at: str | None = None,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。"""
@@ -95,6 +99,10 @@ def publish(
     }
     if created_at is not None:
         payload["created_at"] = created_at
+    if started_at is not None:
+        payload["started_at"] = started_at
+    if session_updated_at is not None:
+        payload["session_updated_at"] = session_updated_at
     path = registry_directory(state_root) / f"{session_id}.json"
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
@@ -171,4 +179,6 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         turn_seq=payload["turn_seq"],
         status=status,
         created_at=payload.get("created_at") if isinstance(payload.get("created_at"), str) else None,
+        started_at=payload.get("started_at") if isinstance(payload.get("started_at"), str) else None,
+        session_updated_at=payload.get("session_updated_at") if isinstance(payload.get("session_updated_at"), str) else None,
     )

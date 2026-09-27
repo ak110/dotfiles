@@ -165,6 +165,9 @@ def _listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
     停滞の判定は`seconds_since_activity`と閾値の比較で呼び出し元が行うため、判定済みの印を返さない。
     """
     public = {"session_id": session["session_id"], "status": session["status"]}
+    for key in ("started_at", "updated_at"):
+        if key in session:
+            public[key] = session[key]
     if "seconds_since_activity" in session:
         public["seconds_since_activity"] = session["seconds_since_activity"]
     if "api_error" in session:
@@ -218,11 +221,13 @@ def _excluded_candidate_payload(excluded: Mapping[ModelCandidate, str]) -> list[
     ]
 
 
-def _elapsed_seconds(started_at_value: str) -> int | None:
+def _elapsed_seconds(started_at_value: str | None) -> int | None:
     """開始時刻から現在までの経過秒を返す。"""
+    if started_at_value is None:
+        return None
     try:
         started_at = datetime.datetime.fromisoformat(started_at_value)
-    except (TypeError, ValueError):
+    except ValueError:
         return None
     return max(0, int(datetime.datetime.now(tz=started_at.tzinfo).timestamp() - started_at.timestamp()))
 
@@ -634,6 +639,8 @@ class AgentsServerManager:
             model_type=info.model_type,
             launch_kind=info.launch_kind,
             created_at=info.created_at,
+            started_at=info.started_at,
+            updated_at=info.session_updated_at,
             turn_seq=persisted_result["turn_seq"] if persisted_result is not None else info.turn_seq,
             status=persisted_result["status"] if persisted_result is not None else info.status,
             agent_message=persisted_result["agent_message"] if persisted_result is not None else "",
@@ -711,6 +718,8 @@ class AgentsServerManager:
             "label": label,
             "result_available": result_available,
         }
+        if session.started_at is not None:
+            listed["started_at"] = session.started_at
         listed.update(
             state.activity_projection(
                 updated_at=session.updated_at,
@@ -731,7 +740,7 @@ class AgentsServerManager:
             if session.retention_deadline is not None and loop_time >= session.retention_deadline:
                 self._expire_session(session_id)
 
-        listed: dict[str, tuple[str, dict[str, Any]]] = {}
+        listed: dict[str, tuple[str | None, dict[str, Any]]] = {}
         for session in self.sessions.values():
             listed[session.session_id] = (
                 session.started_at,
@@ -774,7 +783,27 @@ class AgentsServerManager:
                     ),
                 ),
             )
-        sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: item[0])]
+        for session in self.stopped_sessions.values():
+            if session_registry.resolve(session.session_id).state is not session_registry.Resolution.TERMINAL:
+                continue
+            listed.setdefault(
+                session.session_id,
+                (
+                    session.started_at,
+                    self._listed_session(
+                        session,
+                        status=session.status,
+                        progress="",
+                        result_available=has_uncollected_result(
+                            session,
+                            None
+                            if self._status_writer is None
+                            else self._status_writer.result_state(session.session_id) == "consumed",
+                        ),
+                    ),
+                ),
+            )
+        sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: (item[0] is None, item[0] or ""))]
         if include_terminated:
             response: dict[str, Any] = {
                 "sessions": [_listed_public_session(session) for session in sessions],
