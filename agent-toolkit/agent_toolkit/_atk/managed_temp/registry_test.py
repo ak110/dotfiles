@@ -74,6 +74,80 @@ def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.Mo
     ]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの再起動後のdevice番号を検証する")
+def test_cli_list_accepts_stale_posix_device(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """保存済みdevice番号だけが古い領域をCLIから列挙できる。"""
+    env, state_root = _isolated_cli_environment(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", env["XDG_CACHE_HOME"])
+    monkeypatch.setenv("XDG_STATE_HOME", env["XDG_STATE_HOME"])
+    monkeypatch.setattr(subject, "_state_root_path", lambda: state_root)
+    created = subprocess.run(
+        [sys.executable, str(_SCRIPT), "create", "--prefix", "restart-device"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert created.returncode == 0
+    target = pathlib.Path(created.stdout.strip())
+    current_device = target.stat().st_dev
+
+    def use_old_device(record: dict[str, object]) -> None:
+        identity = record["identity"]
+        assert isinstance(identity, list)
+        identity[0] = current_device + 1
+
+    _replace_records(target, use_old_device)
+    listed = subprocess.run(
+        [sys.executable, str(_SCRIPT), "list", "--prefix", "restart-device"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert listed.returncode == 0
+    assert [json.loads(line)["path"] for line in listed.stdout.splitlines()] == [str(target)]
+    assert "管理情報の内容が一致しない" not in listed.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXのinode照合を検証する")
+def test_cli_list_rejects_changed_inode(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """保存済みinodeが異なる領域はCLIから列挙しない。"""
+    env, state_root = _isolated_cli_environment(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", env["XDG_CACHE_HOME"])
+    monkeypatch.setenv("XDG_STATE_HOME", env["XDG_STATE_HOME"])
+    monkeypatch.setattr(subject, "_state_root_path", lambda: state_root)
+    created = subprocess.run(
+        [sys.executable, str(_SCRIPT), "create", "--prefix", "changed-inode"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert created.returncode == 0
+    target = pathlib.Path(created.stdout.strip())
+    current_inode = target.stat().st_ino
+
+    def use_other_inode(record: dict[str, object]) -> None:
+        identity = record["identity"]
+        assert isinstance(identity, list)
+        identity[1] = current_inode + 1
+
+    _replace_records(target, use_other_inode)
+    listed = subprocess.run(
+        [sys.executable, str(_SCRIPT), "list", "--prefix", "changed-inode"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert listed.returncode == 1
+    assert not listed.stdout
+    assert "管理情報の内容が一致しない" in listed.stderr
+
+
 def test_schema_4_record_remains_valid(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """schema 5の追加後も既存のschema 4レコードを検証できる。"""
     monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
