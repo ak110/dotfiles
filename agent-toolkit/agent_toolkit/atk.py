@@ -1265,7 +1265,8 @@ def main(
     if output_path is not None and not _output_file_active:
         if not output_path.is_absolute():
             args.subparser.error("--output-fileには絶対パスを指定してください。")
-        with _output_file.redirect(output_path):
+        after_save = _agents.summarize_saved_wait if args.command == "agents" and args.agents_subcommand == "wait" else None
+        with _output_file.redirect(output_path, after_save=after_save):
             main(argv, home=home, now=now, _output_file_active=True)
         return
     if now is None:

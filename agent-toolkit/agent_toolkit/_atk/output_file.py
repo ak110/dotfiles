@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import pathlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 
 def add_output_file_arg(parser: argparse.ArgumentParser) -> None:
@@ -15,14 +15,14 @@ def add_output_file_arg(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         type=pathlib.Path,
         default=None,
-        help="標準出力を指定した絶対パスのファイルへ保存し、標準出力へは保存先パスと保存した行数だけを書く。",
+        help="標準出力を指定した絶対パスのファイルへ保存し、保存先パスと保存した行数を表示する。",
     )
     parser.set_defaults(subparser=parser)
 
 
 @contextlib.contextmanager
-def redirect(path: pathlib.Path) -> Iterator[None]:
-    """標準出力をUTF-8ファイルへ保存し、離脱時に保存先と行数を報告する。"""
+def redirect(path: pathlib.Path, *, after_save: Callable[[pathlib.Path], None] | None = None) -> Iterator[None]:
+    """標準出力をUTF-8ファイルへ保存し、離脱時に保存先、行数及び指定された内訳を報告する。"""
     resolved = path.resolve(strict=False)
     stream = resolved.open("w", encoding="utf-8", newline="")
     try:
@@ -36,3 +36,5 @@ def redirect(path: pathlib.Path) -> Iterator[None]:
             line_count = sum(1 for _line in saved_stream)
         print(f"保存先: {resolved}")
         print(f"行数: {line_count}")
+        if after_save is not None:
+            after_save(resolved)
