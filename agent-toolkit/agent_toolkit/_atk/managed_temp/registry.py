@@ -459,25 +459,39 @@ def _records_match(
     *,
     identity: tuple[int, int] | None = None,
 ) -> bool:
+    expected_identity = identity
     if identity is not None:
         try:
-            if _path_identity(path) != identity:
-                return False
+            current_identity = _path_identity(path)
         except (OSError, ManagedTempError):
+            return False
+        if os.name == "posix":
+            if current_identity[1] != identity[1]:
+                return False
+            recorded_identity = registry.get("identity")
+            if (
+                not isinstance(recorded_identity, list)
+                or len(recorded_identity) != 2
+                or any(not isinstance(value, int) or isinstance(value, bool) for value in recorded_identity)
+            ):
+                return False
+            # POSIXのdevice番号は再起動で変わるため、保存済み値を期待レコードへ使う。
+            expected_identity = (recorded_identity[0], identity[1])
+        elif current_identity != identity:
             return False
     nonce = registry.get("nonce")
     schema_version = registry.get("schema_version")
     if not isinstance(schema_version, int) or isinstance(schema_version, bool):
         return False
     if schema_version == 1:
-        expected = _record_base(path, typing.cast(str, nonce), identity=identity)
+        expected = _record_base(path, typing.cast(str, nonce), identity=expected_identity)
         expected["schema_version"] = schema_version
     elif schema_version == 2:
         prefix = registry.get("prefix")
         created_at = registry.get("created_at")
         if not isinstance(prefix, str) or not is_valid_prefix(prefix) or not _is_utc_iso8601(created_at):
             return False
-        expected = _record_base(path, typing.cast(str, nonce), identity=identity)
+        expected = _record_base(path, typing.cast(str, nonce), identity=expected_identity)
         expected.update(
             {
                 "schema_version": schema_version,
@@ -503,7 +517,7 @@ def _records_match(
             prefix=prefix,
             created_at=typing.cast(str, created_at),
             awis=tuple(typing.cast(list[str], awis)),
-            identity=identity,
+            identity=expected_identity,
         )
         expected.pop("session_id")
         expected["schema_version"] = schema_version
@@ -529,7 +543,7 @@ def _records_match(
             created_at=typing.cast(str, created_at),
             awis=tuple(typing.cast(list[str], awis)),
             session_id=session_id,
-            identity=identity,
+            identity=expected_identity,
         )
         if schema_version == 5:
             expected["schema_version"] = 5

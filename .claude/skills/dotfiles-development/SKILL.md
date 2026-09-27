@@ -70,8 +70,8 @@ description: >
 - 専用worktreeの変更を`atk`で動かす場合（`atk serve`で画面を確かめる場合を含む）は、
   `<worktreeの絶対パス>/agent-toolkit/bin/atk`を絶対パスで起動する。
   `agent-toolkit`は`atk`のconsole scriptを持たないため、`uv run atk`とPATH上の`atk`は複製元の
-  `/home/aki/dotfiles/agent-toolkit/bin/atk`へ解決され、複製元のコードが動く。
-  uvが`VIRTUAL_ENV=... does not match the project environment path /home/aki/dotfiles/agent-toolkit/.venv`と警告した場合は、
+  `<複製元の絶対パス>/agent-toolkit/bin/atk`へ解決され、複製元のコードが動く。
+  uvが`VIRTUAL_ENV=... does not match the project environment path <複製元の絶対パス>/agent-toolkit/.venv`と警告した場合は、
   この取り違えが起きている
 - 画面の実描画には、ブラウザー操作ツールに加えて直下環境のPython版Playwright（`uv run --frozen python`から`playwright`を使うスクリプト）を使える。
   ブラウザー本体は`make setup-browser`が導入し、導入済みの版は`~/.cache/ms-playwright`で確かめる

@@ -91,7 +91,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 
 `agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`AGENTS.md`、`.claude/skills/`などの規範文書から記述を削除又は縮小する編集では、編集の目的にかかわらずベースcommitとの差分を確認する。削除した価値、適用範囲、条件、例外を特定し、削除の理由をcommit本文へ残す。統合を理由とする場合は、統合先の適用範囲が元の範囲を含むことを確認する。含まない場合は統合先を整えるか、削除を取りやめる。
 
-削除又は縮小する行を`git blame`で調べ、行を追加したcommitに`Co-Authored-By`又は`Claude-Session` trailerが無い場合は、作者を確定できない規範として、ユーザーが書いた規範と同じく保護する。協調モードでは編集前にユーザーの確認を得る。自律モードでは事前承認型UWIを`agent-toolkit:wi-standards`に従って送り、元の項目を保留する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、確認が余分に増えても保護を優先する。
+削除・縮小する行の初出は、文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で調べる。検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、作者を確定できない規範として、ユーザーが書いた規範と同じく保護する。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない。協調モードでは編集前にユーザーの確認を得る。自律モードでは事前承認型UWIを`agent-toolkit:wi-standards`に従って送り、元の項目を保留する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、確認が余分に増えても保護を優先する。
 trailerの有無だけでは作者を確定できないため、報告、AWI本文及び判断の根拠では、そのcommitをユーザーのcommitと結論づけない。
 
 ## 配布物としての記述方針
@@ -162,12 +162,10 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
 
-- コーディングエージェント向け文書を編集する実際の主体は、編集前に同じ実行コンテキストで
-  `docs/development/concepts.md`と`docs/development/incidents.md`の全文を読み、
-  Claude Codeでは両ファイルへoffsetとlimitを指定しない`Read`を発行する。他の実行ホストでは、
-  そのホストが提供する全文読取手段を使う。
-  確定済みの方針・障害対策との整合を確認する。全文読了の成立条件は編集主体自身による読み取りとし、
-  要約、見出し一覧、部分読取及び別主体の読取結果はその成立条件の外に置く。
+- コーディングエージェント向け文書を編集する主体は、編集前に`docs/development/concepts.md`と
+  `docs/development/incidents.md`を自身で全文読み、確定済みの方針・障害対策との整合を確認する。
+  要約、見出し一覧、部分読取及び別主体の読取結果は全文読了に当たらない。全文取得の手段は
+  `agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
   編集中に新たな障害又は確定した意向が生じた場合は、対応する文書を更新する
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
@@ -251,8 +249,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 ## フック実装の配置先（個人フックと配布物）
 
-本リポジトリでは`claude-code-setup:claude-automation-recommender`が推奨する自動化手段の選定を適用対象外とし、
-`agent-toolkit:writing-standards`の振り分け規定と本節に従う。
+自動化手段の選定は`agent-toolkit:writing-standards`の振り分け規定と本節に従う。
 
 PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
 類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。
@@ -307,7 +304,7 @@ marketplaceの配布方式は次のとおり。
 - ローカル編集の反映: `chezmoi apply`（または`update-dotfiles`）でデプロイし、
   Claude Code再起動か`/reload-plugins`で反映する（version bumpは不要）
 
-Codex向け生成物は`.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`とする。
+Codex向け生成物は`agent-toolkit/.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`とする。
 生成器と生成元の関係は「バージョン更新」節に従う。
 prek経由のpyfltr（書き込みモード）が`sync-generated-files`でCodex向け生成物を毎回再生成する。
 Codex hookの定義は、`scripts/sync_codex_plugin_manifests.py`がイベント名、matcher、入力契約を確認した許可表の分だけを生成する。
