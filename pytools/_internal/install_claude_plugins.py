@@ -38,6 +38,7 @@ _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
         "code-simplifier@claude-plugins-official",
         "commit-commands@claude-plugins-official",
         "code-review@claude-plugins-official",
+        "claude-md-management@claude-plugins-official",
     }
 )
 
@@ -47,7 +48,6 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     {
         "context7@claude-plugins-official",
         "typescript-lsp@claude-plugins-official",
-        "claude-md-management@claude-plugins-official",
         "skill-creator@claude-plugins-official",
     }
 )

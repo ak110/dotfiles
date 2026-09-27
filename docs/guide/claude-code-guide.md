@@ -175,11 +175,12 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 ### `/plugin`コマンド
 
-claude-plugins-officialから以下を導入する。
+claude-plugins-officialのプラグインは次の方針で扱う。
 
 - 推奨: `context7`・`typescript-lsp`（`npm install -g typescript-language-server typescript`が必要）
-- 任意: `claude-md-management`・`skill-creator`
+- 任意: `skill-creator`
 - 無効: `pyright-lsp`（Claude Codeがインストールを推奨するが誤動作が発生するため、インストール後に`Disable`）
+- 無効: `claude-md-management`（`CLAUDE.local.md`を`.claude.local.md`と誤認し、`AGENTS.md`を走査しないため、インストール済みなら自動で無効化）
 
 ### VSCode設定（任意）
 
