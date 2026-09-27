@@ -1,5 +1,6 @@
 ---
 name: search
+user-invocable: false
 description: >
   リポジトリ又はディレクトリのファイル属性と内容を検索する直前に起動する。
 ---

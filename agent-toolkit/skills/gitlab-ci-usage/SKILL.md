@@ -1,5 +1,6 @@
 ---
 name: gitlab-ci-usage
+user-invocable: false
 description: >
   GitLab CI設定のキーワード仕様・典型パターン・lint実行方法を参照するときに起動する。
   `.gitlab-ci.yml`の編集・確認時に起動する。

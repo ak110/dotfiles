@@ -205,23 +205,31 @@ def test_periodic_recheck_marker_matches_the_runtime_document() -> None:
 
 
 class TestSlashCommandDetection:
-    """スラッシュコマンド起動時のセッション状態フラグ書き込み検証。"""
+    """ホストごとの手動起動でセッション状態フラグが実際の起動と一致することを検証する。"""
 
-    def test_detects_full_skill_command_plan_mode(self, tmp_path: pathlib.Path):
+    def test_claude_full_plan_mode_command_does_not_record_invocation(self, tmp_path: pathlib.Path):
         sid = "full-plan-mode"
         result = _run(
             {"session_id": sid, "prompt": "/agent-toolkit:plan-mode"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
 
-    def test_detects_short_skill_command_plan_mode(self, tmp_path: pathlib.Path):
+    def test_claude_short_plan_mode_command_does_not_record_invocation(self, tmp_path: pathlib.Path):
         sid = "short-plan-mode"
         result = _run(
             {"session_id": sid, "prompt": "/plan-mode"},
             state_dir=tmp_path,
         )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
+
+    @pytest.mark.parametrize("prompt", ["$agent-toolkit:plan-mode", "$plan-mode"])
+    def test_codex_plan_mode_command_records_invocation(self, tmp_path: pathlib.Path, prompt: str) -> None:
+        sid = "codex-plan-mode"
+        result = _run({"session_id": sid, "prompt": prompt, "model": "gpt-5"}, state_dir=tmp_path)
+
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is True
 
@@ -508,7 +516,7 @@ class TestVerificationNoticeInjection:
             _EXPECTED_VERIFICATION_NOTICE_BODY,
         ]
         state = _read_state(tmp_path, sid)
-        assert state["plan_mode_skill_invoked"] is True
+        assert state.get("plan_mode_skill_invoked") is None
         assert state["last_user_prompt_at"] > previous
 
     def test_codex_payload_receives_same_notice(self, tmp_path: pathlib.Path) -> None:

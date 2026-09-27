@@ -1,5 +1,6 @@
 ---
 name: pytilpack-usage
+user-invocable: false
 description: >
   pytilpackのモジュール構成・API・extras・CLIの使い方を参照するときに起動する。
   `import pytilpack`を含むコードを読み書きする時に起動する。

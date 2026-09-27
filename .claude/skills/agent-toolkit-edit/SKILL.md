@@ -1,5 +1,6 @@
 ---
 name: agent-toolkit-edit
+user-invocable: false
 description: >
   `agent-toolkit/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
   `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
@@ -8,6 +9,8 @@ description: >
 ---
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）
+
+WI処理の工程や運用を担うスキル、`share/`配下の担当タスク文書又は`atk wi`の実装を編集する場合は、編集前に`agent-toolkit:workflow-overview`を起動し、`docs/guide/claude-code-guide.md`を全文読む。
 
 ## ファイル構成と参照方向
 
@@ -127,7 +130,7 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
 - 相互参照が発生する共通観点は横断スキル配下`references/`へ集約してよい
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
-- 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と`agent-toolkit:plan-mode`の直接起動側の双方を同じ変更単位で更新する。両系統は共通化しておらず、片方だけの改訂は運用差を生む
+- 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と`agent-toolkit:plan-mode`のメインによる起動側の双方を同じ変更単位で更新する。両系統は共通化しておらず、片方だけの改訂は運用差を生む
 
 ### プラグイン内リソースの参照書式
 
@@ -161,6 +164,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 ## 同期先ドキュメント
 
 複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
+
+- `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」のどちらかで運用形態、登録経路又は回答の流れを変えた場合は、同じ変更単位で他方をそろえる
 
 - コーディングエージェント向け文書を編集する主体は、編集前に`docs/development/concepts.md`と
   `docs/development/incidents.md`を自身で全文読み、確定済みの方針・障害対策との整合を確認する。

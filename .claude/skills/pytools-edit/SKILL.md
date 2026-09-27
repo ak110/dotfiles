@@ -1,5 +1,6 @@
 ---
 name: pytools-edit
+user-invocable: false
 description: >
   `pytools/`・`scripts/`・`bin/`・`rust/`配下のコマンドラインツール・スクリプト・hookスクリプトを
   新規作成・編集するときに使う。配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを扱う。

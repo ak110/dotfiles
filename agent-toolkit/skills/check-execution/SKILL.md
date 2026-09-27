@@ -1,5 +1,6 @@
 ---
 name: check-execution
+user-invocable: false
 description: >
   formatter、linter、tester又はプロジェクト固有の検査を起動する直前に起動する。
 ---

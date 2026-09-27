@@ -1,5 +1,6 @@
 ---
 name: secret-files
+user-invocable: false
 description: >
   `.env`、鍵、証明書などの秘匿値を含むファイルを読む又は書き換える直前に起動する。
 ---

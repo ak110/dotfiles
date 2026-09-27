@@ -1,5 +1,6 @@
 ---
 name: writing-standards
+user-invocable: false
 description: >
   ドキュメント・コメント・コード・テストコード・コーディングエージェント向け文書
   （`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）の

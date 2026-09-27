@@ -82,7 +82,7 @@ def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | Non
 
 
 def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> str:
-    """名称又は完全stemを受け取り、直接起動用の正規stemを返す。"""
+    """名称又は完全stemを受け取り、メインによる起動用の正規stemを返す。"""
     name = _validate_plan_name(plan_name)
     if _TIMESTAMPED_NAME_PATTERN.fullmatch(name) is not None:
         return name

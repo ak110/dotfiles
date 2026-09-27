@@ -1,5 +1,6 @@
 ---
 name: merge-pr
+user-invocable: false
 description: 「PRをマージして」などの明示依頼を受領したとき、対象PRを検査し、マージ後のbranch同期、CI及び必要なRelease検収を完遂する
 ---
 

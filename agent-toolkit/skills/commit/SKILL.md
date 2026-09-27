@@ -1,5 +1,6 @@
 ---
 name: commit
+user-invocable: false
 description: >
   git commit作業（通常commit・amend・fixup）に着手する直前、
   またはコミットメッセージ案（計画ファイル・PR説明など）を書く時点で起動する。
@@ -45,6 +46,7 @@ commit時に本来実行されるGit hook又はhook管理ツール内の対象�
 ## 条件付き手順
 
 - 本スキルの起動時に`agent-toolkit/skills/commit/references/git-identifier.md`を全文読む
+- 公開工程に着手する時点で`references/publish.md`を全文読む
 - amend、fixup、autosquash、rebase又はpush済み判定の直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
 - 実際にpushする直前又はリリース操作に着手する時点で`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
 - 計画実装の履歴契約を扱う時は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を全文読む

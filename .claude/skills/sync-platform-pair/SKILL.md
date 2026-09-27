@@ -1,5 +1,6 @@
 ---
 name: sync-platform-pair
+user-invocable: false
 description: >
   Linux/Windowsペアファイル（`.sh`と`.cmd`、`.sh`と`.ps1`、
   `.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`など）を編集するときに使う。

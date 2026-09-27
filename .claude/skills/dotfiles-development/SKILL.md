@@ -1,5 +1,6 @@
 ---
 name: dotfiles-development
+user-invocable: false
 description: >
   dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make setup-pwsh`・`make test-browser`を
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、

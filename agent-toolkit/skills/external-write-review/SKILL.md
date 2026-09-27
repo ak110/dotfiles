@@ -1,5 +1,6 @@
 ---
 name: external-write-review
+user-invocable: false
 description: >
   PR・MR・イシューの作成と本文編集、コメント、レビュー返信、Release本文、チャットやメールへのMCP経由の送信など、第三者が読む外部サービスへエージェントが起草又は加筆した人間向けの文面を送る直前に起動する。
 ---
