@@ -1,7 +1,9 @@
 """atk agents-exit-sessionの本人識別と安全な停止を検証する。"""
 
 import json
+import os
 import pathlib
+import time
 import typing
 
 import psutil
@@ -66,6 +68,77 @@ def test_rechecked_target_is_terminated(
     assert agents_exit_session.main() == 0
     assert killed and killed[0][0] == 123
     assert json.loads(capsys.readouterr().out)["status"] == "terminating"
+
+
+def _claude_target(tmp_path: pathlib.Path) -> agents_exit_session.Target:
+    executable = tmp_path / "claude"
+    executable.write_text("", encoding="utf-8")
+    stat = executable.stat()
+    return agents_exit_session.Target(321, "claude", time.time() - 60, executable, stat.st_dev, stat.st_ino)
+
+
+def test_exit_requested_with_current_marker(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """読込済みのClaude Codeでは停止シグナルを送らずターン後の終了を要求する。"""
+    target = _claude_target(tmp_path)
+    directory = tmp_path / "agent-toolkit-function-hooks"
+    directory.mkdir()
+    (directory / "marker-session-1.txt").write_text("ready", encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-1")
+    monkeypatch.setattr(agents_exit_session, "identify_current_host", lambda: target)
+    monkeypatch.setattr(agents_exit_session, "_same_process", lambda _target: True)
+    monkeypatch.setattr(agents_exit_session.os, "kill", lambda *_args: pytest.fail("停止してはならない"))
+
+    assert agents_exit_session.main() == 0
+
+    output = capsys.readouterr()
+    assert json.loads(output.out)["status"] == "exit_requested"
+    assert "ターンを終えると/exit" in output.err
+    assert (directory / "request-session-1.txt").read_text(encoding="utf-8") == "requested"
+
+
+@pytest.mark.parametrize("session_id", [None, "session-2"])
+def test_missing_marker_or_session_id_keeps_signal_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path, session_id: str | None
+) -> None:
+    """目印かIDを欠くClaude Codeには従来のSIGTERMを送る。"""
+    target = _claude_target(tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    if session_id is None:
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    else:
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+    monkeypatch.setattr(agents_exit_session, "identify_current_host", lambda: target)
+    monkeypatch.setattr(agents_exit_session, "_same_process", lambda _target: True)
+    killed: list[int] = []
+    monkeypatch.setattr(agents_exit_session.os, "kill", lambda pid, _sig: killed.append(pid))
+
+    assert agents_exit_session.main() == 0
+
+    assert killed == [target.pid]
+    assert json.loads(capsys.readouterr().out)["status"] == "terminating"
+
+
+def test_old_marker_from_resume_keeps_signal_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """再開前の目印だけが残るセッションではFunction hooksを有効と見なさない。"""
+    target = _claude_target(tmp_path)
+    directory = tmp_path / "agent-toolkit-function-hooks"
+    directory.mkdir()
+    marker = directory / "marker-session-3.txt"
+    marker.write_text("ready", encoding="utf-8")
+    os.utime(marker, (target.create_time - 1, target.create_time - 1))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-3")
+    monkeypatch.setattr(agents_exit_session, "identify_current_host", lambda: target)
+    monkeypatch.setattr(agents_exit_session, "_same_process", lambda _target: True)
+    killed: list[int] = []
+    monkeypatch.setattr(agents_exit_session.os, "kill", lambda pid, _sig: killed.append(pid))
+
+    assert agents_exit_session.main() == 0
+    assert killed == [target.pid]
+    assert not (directory / "request-session-3.txt").exists()
 
 
 class _FakeProcess:

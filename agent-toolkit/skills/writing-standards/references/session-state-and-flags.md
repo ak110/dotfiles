@@ -4,6 +4,14 @@
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
 計画名の再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`へ分離する。
 
+## Function hooksの終了要求
+
+Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッションIDの読込目印と終了要求を共有する。両側は絶対パスの`CLAUDE_CONFIG_DIR`を優先し、無い場合は`HOME`、次に`USERPROFILE`の`.claude`を使う。その下の`agent-toolkit-function-hooks/`へ`marker-{session_id}.txt`と`request-{session_id}.txt`を置く。セッションIDは英数字、アンダースコア、ハイフンだけを受理する。Python側の一時ディレクトリ解決を共有パスの根拠にしない。
+
+`session.start`は読込目印へ`ready`を書き、終了要求を`consumed`へ初期化する。Pythonは目印の内容が`ready`で、更新時刻が現在のClaude Code本体の開始より後の場合だけ、終了要求へ`requested`を書いて`exit_requested`を返す。`turn.complete`はメインのターンだけでその値を読み、`consumed`へ書き換えた後に`/exit`をキューへ入れる。目印が無い場合とCodexでは、対話CLI本体を従来の方法で終了させる。
+
+通常のSessionEndでは現行セッションの2ファイルを保持し、期限を過ぎた他セッションのファイルを回収する。`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルには前掲の固定値だけを保存し、発話やツール結果は保存しない。
+
 ## 状態ファイルの設計
 
 Claude CodeまたはCodexのhook間で情報を共有する場合、セッション単位の状態ファイルを使う。

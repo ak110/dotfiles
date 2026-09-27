@@ -43,7 +43,8 @@ def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str,
         recorded["abort"] += 1
         return tmp_path / "process-wi-abort"
 
-    def _terminate() -> tuple[str, object]:
+    def _terminate(*, session_id: str) -> tuple[str, object]:
+        assert session_id == _SESSION_ID
         recorded["terminate"] += 1
         return "terminating", _Target()
 
@@ -98,6 +99,28 @@ def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict
     assert "無進捗のターンが3回続いた" in body
     assert "pid=4242" in body
     assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 0
+
+
+def test_halt_requests_function_hook_exit(
+    tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stop hookが会話IDを渡して終了要求を発行し、ターン後の終了を利用者へ伝える。"""
+
+    def _terminate(*, session_id: str) -> tuple[str, object]:
+        assert session_id == _SESSION_ID
+        calls["terminate"] += 1
+        return "exit_requested", _Target()
+
+    monkeypatch.setattr(_agents_exit_session, "request_termination", _terminate)
+    entries: list[dict] = []
+    result: tuple[str, str] = ("", "")
+    for index in range(3):
+        entries = [*entries, _text_entry()]
+        result = _turn(tmp_path, index, entries)
+
+    assert result[0] == "notify_user"
+    assert "ターン終了後に/exit" in result[1]
+    assert calls == {"abort": 1, "terminate": 1}
 
 
 def test_below_threshold_keeps_session(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:

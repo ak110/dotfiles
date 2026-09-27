@@ -13,6 +13,8 @@ import pathlib
 import threading
 import typing
 
+from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
+
 RECORD_SUFFIX = ".jsonl"
 CODEX_ROLLOUT_PREFIX = "rollout-"
 # サブエージェントの記録は同じディレクトリの`*.meta.json`で親子関係を確定するため、その作成と削除も一覧を変える。
@@ -64,6 +66,7 @@ def summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | N
     cwd: str | None = None
     first_user_message: str | None = None
     first_user_seen = False
+    first_visible_user_seen = False
     started_at: str | None = None
     first_timestamp: str | None = None
     try:
@@ -82,11 +85,14 @@ def summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | N
                         started_at = first_timestamp
                     if cwd is None and isinstance(record.get("cwd"), str):
                         cwd = record["cwd"]
-                    if not first_user_seen and _is_user_record(record, engine):
+                    if not first_visible_user_seen and _is_user_record(record, engine):
                         first_user_seen = True
                         message = record.get("message")
-                        if isinstance(message, dict):
-                            first_user_message = _first_line(message.get("content"))
+                        content = message.get("content") if isinstance(message, dict) else None
+                        text = _as_text(content)
+                        if not is_runtime_generated(record) and not (text and is_runtime_inserted_text(text)):
+                            first_visible_user_seen = True
+                            first_user_message = _first_line(content)
                 else:
                     payload = record.get("payload")
                     if not isinstance(payload, dict):
@@ -99,10 +105,14 @@ def summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | N
                         started_at = payload["timestamp"]
                     if cwd is None and record.get("type") == "session_meta" and isinstance(payload.get("cwd"), str):
                         cwd = payload["cwd"]
-                    if not first_user_seen and _is_user_record(record, engine):
+                    if not first_visible_user_seen and _is_user_record(record, engine):
                         first_user_seen = True
-                        first_user_message = _first_line(payload.get("content"))
-                if cwd is not None and first_user_seen and started_at is not None:
+                        content = payload.get("content")
+                        text = _as_text(content)
+                        if not (text and is_runtime_inserted_text(text)):
+                            first_visible_user_seen = True
+                            first_user_message = _first_line(content)
+                if cwd is not None and first_visible_user_seen and started_at is not None:
                     break
     except OSError:
         return cwd, first_user_message, started_at or first_timestamp, None

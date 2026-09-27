@@ -414,9 +414,10 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
                 assert _hook.main(["stop"]) == 0
         return cast(dict[str, Any], json.loads(output.getvalue()))
 
-    def fake_termination() -> tuple[str, None]:
+    def fake_termination(*, session_id: str) -> tuple[str, None]:
+        assert session_id == "loop-stop-integration"
         termination_calls.append("requested")
-        return "unavailable", None
+        return "unsupported", None
 
     monkeypatch.setattr(_agents_exit_session, "request_termination", fake_termination)
 

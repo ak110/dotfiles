@@ -22,6 +22,7 @@ import json
 import sys
 
 from agent_toolkit._agents_server import status_file
+from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     clear_session_state,
     sweep_stale_states,
@@ -53,6 +54,10 @@ def main(payload_text: str) -> int:
         status_file.sweep_stale_shared_state(keep_root_session_id=keep_root_session_id)
     except OSError as error:
         print(f"[session_end_cleanup] agents_server共有状態を期限掃引できませんでした: {error}", file=sys.stderr)
+    try:
+        sweep_function_hook_files(keep_session_id=session_id, clear=payload.get("reason") == _DISCARDED_REASON)
+    except OSError as error:
+        print(f"[session_end_cleanup] Function hooksの終了状態を回収できませんでした: {error}", file=sys.stderr)
     sweep_stale_states(keep_session_id=session_id)
     if payload.get("reason") != _DISCARDED_REASON or session_id is None:
         return 0

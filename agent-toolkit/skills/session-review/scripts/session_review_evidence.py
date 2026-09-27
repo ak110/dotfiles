@@ -32,6 +32,8 @@ try:
     from agent_toolkit._agents_server import record_paths as _record_paths
     from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
     from agent_toolkit._atk import config as _atk_config
+    from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
+    from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
@@ -465,15 +467,6 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
         if "<task-notification>" in text and "<status>completed</status>" in text:
             return _event("agent-completion", text)
     return None
-
-
-def _is_runtime_generated(entry: dict[str, Any]) -> bool:
-    """実行環境が生成したエントリであるかを構造上の標識で返す。
-
-    実行環境は、画像の寸法や出力の切り詰めを伝える注記を利用者のロールを持つエントリへ書き込む。
-    当該注記は本文の形からは利用者の発話と区別できないため、`isMeta`と`turnCompanion`の標識で判別する。
-    """
-    return entry.get("isMeta") is True or entry.get("turnCompanion") is True
 
 
 def _is_subagent_record(entries: list[dict[str, Any]]) -> bool:
@@ -3606,37 +3599,6 @@ def _user_candidate_exclusion(
     if first_main_user == (record, line):
         return "initial-request"
     return None
-
-
-_RUNTIME_INSERTED_PREFIXES = (
-    "<system-reminder>",
-    "[COMPACTION RECOVERY]",
-    "This session is being continued",
-    "<normative-context",
-    "<agent-toolkit-auto-inserted",
-    "<agent-toolkit-hook-message",
-    "<task-notification>",
-    "<command-name>",
-    "<local-command-caveat>",
-    "<local-command-stdout>",
-    "A session-scoped Stop hook is now active",
-    "Goal check-in:",
-    "Stop hook feedback:",
-    "# AGENTS.md instructions",
-    "<environment_context>",
-)
-"""実行環境、hook及び委譲の配送が利用者のロールへ挿入する本文の先頭に現れる固定文字列。実記録から採取した。"""
-
-
-def _is_runtime_inserted_text(text: str) -> bool:
-    """利用者のロールを持つ本文が、利用者の発話ではなく実行環境などの挿入本文であるかを返す。
-
-    利用者介入の候補の除外と会話の流れの抽出が同じ判定を使い、片方だけに配送本文が残らないようにする。
-    """
-    stripped = text.lstrip()
-    if stripped.startswith("<skill>") and "</skill>" in stripped:
-        return True
-    return stripped.startswith(_RUNTIME_INSERTED_PREFIXES)
 
 
 def _initial_skill_input_locators(
