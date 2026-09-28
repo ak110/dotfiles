@@ -167,6 +167,10 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月5日、Fable 5.1で`AskUserQuestion`直前の地の文へ選択肢の前提を置いた回では、ユーザーが当該地の文を読めず判断できないと回答し、確認の再発行を要した。当該回のClaude Codeの版数は記録していない。再検証はモデルと版ごとに、ターン冒頭、ツール呼び出しの間及び`AskUserQuestion`直前の3箇所へ地の文を置き、表示を確認する。
 
+## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月28日
+
+2026年9月28日、Claude Code 2.1.283をtmux内で起動して、複数行の可視本文、Read呼び出し、最後の1行を順に出力するよう指示した。tmux画面とtranscriptの双方へ、4行の本文、ツール呼び出し、最後の本文が同じ順序で現れた。一方、同日の別セッションで実行主体がツール前へ書いたつもりの回答と完了報告は、画面にもtranscriptの`text`にも現れなかった。再検証は新しいClaude Codeセッションへ同じ順序の出力を指示し、画面表示とtranscriptの`text`、`thinking`、`tool_use`を対応付ける。ツール前の複数行本文が可視となることと、拡張思考へ置いた文が可視本文として配送されないことを分けて確認する。
+
 ## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月4日
 
 ```text

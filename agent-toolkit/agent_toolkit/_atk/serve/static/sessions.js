@@ -310,12 +310,6 @@ function renderEvent(event, index) {
   block.open = event.kind === "user" || event.kind === "assistant" || event.kind === "developer";
   if (!block.open) {
     block.dataset.exclusiveEvent = "true";
-    block.addEventListener("toggle", () => {
-      if (!block.open) return;
-      for (const other of detailEl.querySelectorAll('details[data-exclusive-event="true"]')) {
-        if (other !== block) other.open = false;
-      }
-    });
   }
 
   const summary = document.createElement("summary");
@@ -326,6 +320,14 @@ function renderEvent(event, index) {
   time.className = "event-time";
   time.textContent = event.timestamp ? formatTime(event.timestamp) : "時刻なし";
   summary.append(kind, time);
+  if (block.dataset.exclusiveEvent) {
+    summary.addEventListener("click", () => {
+      if (block.open) return;
+      for (const other of detailEl.querySelectorAll('details[data-exclusive-event="true"]')) {
+        if (other !== block) other.open = false;
+      }
+    });
+  }
   if (event.name) {
     const name = document.createElement("span");
     name.textContent = event.name;

@@ -70,6 +70,7 @@ _ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]+")
 # 日本語文字を含まない地の文を英語応答と判定するための英単語数の下限。
 # 1語だけの地の文は識別子・コマンド名の単独提示と区別できないため対象外とする。
 _MIN_ENGLISH_WORD_COUNT = 2
+_MAX_WARNING_EXCERPT_LENGTH = 80
 
 # 地の文の先頭に置かれたら英語応答と判定する談話標識。
 # 閉集合とする理由は、英単語一般を対象とする開いた集合にすると、
@@ -118,11 +119,7 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
         (判定結果, 警告本文またはNone)のタプル。
         SKIPまたはPASSの場合、警告本文はNoneを返す。
     """
-    plain_text = _FENCED_CODE_PATTERN.sub(" ", text)
-    plain_text = _INLINE_CODE_PATTERN.sub(" ", plain_text)
-    plain_text = _URL_PATTERN.sub(" ", plain_text)
-    plain_text = _MACHINE_READABLE_LINE_PATTERN.sub(" ", plain_text)
-    plain_text = _MACHINE_IDENTIFIER_PATTERN.sub(" ", plain_text)
+    plain_text = _plain_text(text)
     japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
     english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
     if _is_english_only(japanese_count, english_word_count):
@@ -134,6 +131,27 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     if _is_below_word_ratio(japanese_count, english_word_count):
         return (CheckOutcome.WARN, WARNING_BODY)
     return (CheckOutcome.PASS, None)
+
+
+def _plain_text(text: str) -> str:
+    """言語判定と警告引用に共通する地の文を返す。"""
+    plain_text = _FENCED_CODE_PATTERN.sub(" ", text)
+    plain_text = _INLINE_CODE_PATTERN.sub(" ", plain_text)
+    plain_text = _URL_PATTERN.sub(" ", plain_text)
+    plain_text = _MACHINE_READABLE_LINE_PATTERN.sub(" ", plain_text)
+    plain_text = _MACHINE_IDENTIFIER_PATTERN.sub(" ", plain_text)
+    return plain_text
+
+
+def _warning_excerpt(plain_text: str) -> str:
+    """判定対象の最初の文を通知に収まる長さで返す。"""
+    without_controls = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", plain_text)
+    normalized = re.sub(r"\s+", " ", without_controls).strip()
+    sentence_end = re.search(r"[.!?。！？](?=\s|$)", normalized)
+    first_sentence = normalized[: sentence_end.end()] if sentence_end else normalized
+    if len(first_sentence) > _MAX_WARNING_EXCERPT_LENGTH:
+        return first_sentence[:_MAX_WARNING_EXCERPT_LENGTH] + "…"
+    return first_sentence
 
 
 def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]:
@@ -153,6 +171,8 @@ def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]
         return (CheckOutcome.SKIP, None, "")
     raw_text, msg_id = _collect_raw_text(transcript_path)
     outcome, body = check_text(raw_text)
+    if outcome is CheckOutcome.WARN and body is not None:
+        body += f"判定対象の冒頭: 「{_warning_excerpt(_plain_text(raw_text))}」"
     return (outcome, body, msg_id)
 
 

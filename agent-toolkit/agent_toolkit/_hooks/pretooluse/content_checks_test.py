@@ -109,10 +109,12 @@ class TestLanguageEscalation:
     def test_first_english_warns(self, tmp_path: pathlib.Path):
         """1回目の英語検出はexit 0 + additionalContextで警告する。"""
         env = self._state_env(tmp_path)
-        result = self._invoke(tmp_path, env, "esc-first", "A" * 100, msg_id="m1")
+        message = "The implementation is still in progress; I'll wait for the completion notice."
+        result = self._invoke(tmp_path, env, "esc-first", message, msg_id="m1")
         assert result.returncode == 0
         ctx = _additional_context(result)
         assert "英語主体" in ctx
+        assert message in ctx
         assert "evaluate relevance" not in ctx
 
     def test_second_english_escalates_body(self, tmp_path: pathlib.Path):
@@ -126,11 +128,30 @@ class TestLanguageEscalation:
         r1 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         assert r1.returncode == 0
         # 2回目: 強い本文へ切り替え
-        r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
+        message = "Meanwhile I'll read the publish-stage steps."
+        r2 = self._invoke(tmp_path, env, sid, message, msg_id="m2")
         assert r2.returncode == 0
         ctx = _additional_context(r2)
         assert "2ターン連続" in ctx
+        assert message in ctx
         assert "evaluate relevance" not in ctx
+
+    def test_control_characters_do_not_reach_either_warning(self, tmp_path: pathlib.Path) -> None:
+        """通常と連続の警告は同じ一行の安全な引用を示す。"""
+        env = self._state_env(tmp_path)
+        session_id = "esc-controls"
+        message = "The process \x1b[2J \x00 \x7f \x9b finished.\nAnother sentence follows."
+
+        first = self._invoke(tmp_path, env, session_id, message, msg_id="m1")
+        second = self._invoke(tmp_path, env, session_id, message, msg_id="m2")
+
+        assert first.returncode == second.returncode == 0
+        for result in (first, second):
+            context = _additional_context(result)
+            excerpt = context.split("判定対象の冒頭: 「", maxsplit=1)[1].split("」", maxsplit=1)[0]
+            assert excerpt == "The process [2J finished."
+            assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
+        assert "2ターン連続" in _additional_context(second)
 
     def test_japanese_resets_counter(self, tmp_path: pathlib.Path):
         """日本語応答が間に入るとカウンタがリセットされる。"""

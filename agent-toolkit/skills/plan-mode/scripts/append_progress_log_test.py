@@ -2,6 +2,7 @@
 
 import datetime
 import pathlib
+import subprocess
 
 import append_progress_log
 import pytest
@@ -115,3 +116,47 @@ def test_writer_failure_keeps_original_file(tmp_path: pathlib.Path) -> None:
         append_progress_log.append_progress_log(path, "工程", "結果", writer=fail_writer)
 
     assert path.read_bytes() == original
+
+
+def test_cli_resolves_start_head_and_rejects_invalid_revision(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開CLIはGitのOIDを記録し、解決不能な値では進捗ログを保つ。"""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "initial",
+        ],
+        check=True,
+    )
+    monkeypatch.chdir(tmp_path)
+    expected = subprocess.run(
+        ["git", "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    path = tmp_path / "plan.md"
+    path.write_text(_plan(), encoding="utf-8")
+
+    assert (
+        append_progress_log.main([str(path), "--completed-step", "開始", "--result", "専用worktree", "--start-head", "HEAD"])
+        == 0
+    )
+    assert f"開始HEAD: {expected}" in path.read_text(encoding="utf-8")
+
+    saved = path.read_bytes()
+    assert (
+        append_progress_log.main(
+            [str(path), "--completed-step", "開始", "--result", "失敗", "--start-head", "missing-revision"]
+        )
+        == 1
+    )
+    assert path.read_bytes() == saved

@@ -1093,6 +1093,52 @@ class TestEditBodyFile:
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
 
+    def test_processing_hold_blocks_agent_replacement_but_allows_append_and_user_edit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """公開CLIのhold経路でも処理中本文を守り、追記と利用者編集を保つ。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        for action in ("start-processing", "hold"):
+            with pytest.raises(SystemExit) as transition:
+                atk.main(["wi", action, "fb-001.md"], home=tmp_path, now=_FIXED_DT)
+            assert transition.value.code == 0
+        path = notes / "hold/fb-001.md"
+        original = path.read_bytes()
+
+        with pytest.raises(SystemExit) as rejected:
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "変更後"), home=tmp_path)
+        assert rejected.value.code == 2
+        assert "processingから保留した項目" in capsys.readouterr().err
+        assert path.read_bytes() == original
+
+        with pytest.raises(SystemExit) as appended:
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "追記", append=True), home=tmp_path)
+        assert appended.value.code == 0
+        assert "追記" in path.read_text(encoding="utf-8")
+
+        for name in _AGENT_ENVIRONMENT_VARIABLES:
+            monkeypatch.delenv(name, raising=False)
+        with pytest.raises(SystemExit) as user_edit:
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "利用者の編集"), home=tmp_path)
+        assert user_edit.value.code == 0
+        assert "held_from_state: processing" in path.read_text(encoding="utf-8")
+
+        monkeypatch.setenv("AI_AGENT", "1")
+        with pytest.raises(SystemExit) as unheld:
+            atk.main(["wi", "unhold", "fb-001.md"], home=tmp_path, now=_FIXED_DT)
+        assert unheld.value.code == 0
+        with pytest.raises(SystemExit) as agent_edit:
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "解除後の編集"), home=tmp_path)
+        assert agent_edit.value.code == 0
+        assert "held_from_state" not in (notes / "inbox/fb-001.md").read_text(encoding="utf-8")
+
     def test_agent_environment_rejects_processing_body_replacement(
         self,
         monkeypatch: pytest.MonkeyPatch,

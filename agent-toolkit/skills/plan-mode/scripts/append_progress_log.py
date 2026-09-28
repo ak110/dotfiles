@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import pathlib
+import subprocess
 import sys
 from collections.abc import Callable
 
@@ -50,15 +51,43 @@ def _heading_names() -> frozenset[str]:
     )
 
 
+def _resolve_start_head(revision: str) -> str:
+    """呼び出しの作業ディレクトリでcommitを解決し、一意な短縮OIDを返す。"""
+    commit = subprocess.run(
+        ["git", "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if commit.returncode != 0 or not commit.stdout.strip():
+        raise ProgressLogError(f"開始HEADをcommitとして解決できません: {revision}: {commit.stderr.strip()}")
+    shortened = subprocess.run(
+        ["git", "rev-parse", "--verify", "--short=7", commit.stdout.strip()],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if shortened.returncode != 0 or not shortened.stdout.strip():
+        raise ProgressLogError(f"開始HEADを短縮できません: {revision}: {shortened.stderr.strip()}")
+    return shortened.stdout.strip()
+
+
 def append_progress_log(
     plan_file: pathlib.Path | str,
     completed_step: str,
     result: str,
     *,
+    start_head: str | None = None,
     clock: Clock = _local_now,
     writer: Callable[[pathlib.Path, str], None] = atomic_write,
 ) -> None:
     """計画の固定3列表へ現在時刻を含む1行だけを原子的に追加する。"""
+    if start_head is not None:
+        result = f"{result}、開始HEAD: {_resolve_start_head(start_head)}"
     path = pathlib.Path(plan_file)
     original = path.read_bytes()
     try:
@@ -118,9 +147,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("plan_file", type=pathlib.Path, help="更新する計画ファイル")
     parser.add_argument("--completed-step", required=True, help="完了した工程")
     parser.add_argument("--result", required=True, help="結果・特記事項")
+    parser.add_argument("--start-head", help="作業ディレクトリでcommitとして解決する開始時HEAD")
     args = parser.parse_args(argv)
     try:
-        append_progress_log(args.plan_file, args.completed_step, args.result)
+        append_progress_log(args.plan_file, args.completed_step, args.result, start_head=args.start_head)
     except (OSError, ProgressLogError, ValueError) as error:
         print(f"進捗ログを更新できません: {error}", file=sys.stderr)
         return 1

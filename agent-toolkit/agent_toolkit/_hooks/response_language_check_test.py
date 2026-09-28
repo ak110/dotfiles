@@ -164,12 +164,40 @@ class TestDetailedCheck:
 
     def test_warn_with_english_text(self, tmp_path: pathlib.Path):
         """英語テキスト50文字以上でWARNを返す。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 50)])
+        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 100)])
         outcome, body, msg_id = detailed_check(path)
         assert outcome is CheckOutcome.WARN
         assert body is not None
         assert "英語主体" in body
+        assert "A" * 80 in body
+        assert "A" * 81 not in body
         assert msg_id == "m1"
+
+    def test_quote_uses_first_plain_sentence(self, tmp_path: pathlib.Path) -> None:
+        """警告はコードを除いた地の文の最初の文だけを示す。"""
+        message = "`hidden secret` Resources collected. Another sentence follows."
+        path = _write_assistant_transcript(tmp_path, [_text_block(message)])
+
+        outcome, body, _ = detailed_check(path)
+
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+        assert "Resources collected." in body
+        assert "hidden secret" not in body
+        assert "Another sentence" not in body
+
+    def test_quote_removes_terminal_controls(self, tmp_path: pathlib.Path) -> None:
+        """判定対象の制御文字を警告本文へ渡さず、引用を一行に保つ。"""
+        message = "The process \x1b[2J \x00 \x7f \x9b finished.\nAnother sentence follows."
+        path = _write_assistant_transcript(tmp_path, [_text_block(message)])
+
+        outcome, body, _ = detailed_check(path)
+
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+        excerpt = body.split("判定対象の冒頭: 「", maxsplit=1)[1].split("」", maxsplit=1)[0]
+        assert excerpt == "The process [2J finished."
+        assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
 
     def test_pass_with_japanese_text(self, tmp_path: pathlib.Path):
         """日本語テキスト50文字以上で比率≧0.30のときPASSを返す。"""
