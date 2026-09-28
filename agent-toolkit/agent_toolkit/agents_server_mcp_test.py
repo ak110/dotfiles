@@ -507,8 +507,7 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     assert "候補は先頭から試し" in instructions
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
-    assert {"prompt", "cwd", "fast", "label", "model_type"} == explore_tool.parameters["properties"].keys()
-    assert explore_tool.parameters["properties"]["fast"]["default"] is True
+    assert {"prompt", "cwd", "label", "model_type"} == explore_tool.parameters["properties"].keys()
     shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
     assert shell_tool is not None
     assert {"command", "cwd", "summary_policy", "label", "model_type"} == shell_tool.parameters["properties"].keys()
@@ -526,7 +525,7 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
         assert "省略時は" in override["description"]
         assert "共通引数`model_type`" in override["description"]
     assert "`low_tier_model`" in explore_tool.description
-    assert "`medium_tier_model`" in explore_tool.description
+    assert "`medium_tier`" in explore_tool.parameters["properties"]["model_type"]["description"]
     assert "`low_tier_model`" in shell_tool.description
     assert "`write_model`" in write_tool.description
     assert "文章起草" in write_tool.description
@@ -1138,7 +1137,7 @@ async def test_success_response_key_sets_for_all_tools(
     )
 
     started = await manager.start("plan", "調査", str(tmp_path))
-    explored = await manager.start_explore(True, "探索", str(tmp_path))
+    explored = await manager.start_explore("探索", str(tmp_path))
     written = await manager.start_write("定型変更", str(tmp_path))
     shelled = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
     start_keys = {"session_id", "status", "engine", "model", "effort", "model_type", "root_session_id"}
@@ -1771,7 +1770,7 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
     available = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", available)
 
-    explored = await manager.start_explore(True, "探索", str(tmp_path))
+    explored = await manager.start_explore("探索", str(tmp_path))
     shell = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
 
     assert explored["model"] == "first"
@@ -1928,18 +1927,18 @@ async def test_start_rejects_candidate_independent_input_before_any_backend(
 
 
 @pytest.mark.asyncio
-async def test_start_explore_selects_fast_route(
+async def test_start_explore_selects_default_low_tier_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """探索起動はfast別の設定を選ぶ。"""
+    """探索起動は既定のlow_tier設定を選ぶ。"""
     monkeypatch.setattr(
         subject._atk_config,
         "parse_unresolved_model_candidates",
         lambda model_type: [("codex", model_type, "medium")],
     )
     manager, backend = _manager_with_fake("codex")
-    explored = await manager.start_explore(True, "探索", str(tmp_path))
+    explored = await manager.start_explore("探索", str(tmp_path))
     assert explored["model_type"] == "low_tier"
     assert backend.start_calls[-1] == ("low_tier", "medium", "explore")
 
@@ -2057,7 +2056,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
         return session
 
     monkeypatch.setattr(backend, "start", fail_first_start)
-    second = await manager.start_explore(False, "探索", str(tmp_path))
+    second = await manager.start_explore("探索", str(tmp_path), model_type="medium_tier")
     session = manager.sessions[second["session_id"]]
     _complete(session)
     session.retention_deadline = asyncio.get_running_loop().time() - 1
@@ -5407,7 +5406,7 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
     manager, backend = _manager_with_fake(engine)
     try:
         started = await manager.start("plan", "起動本文", str(tmp_path))
-        await manager.start_explore(True, "探索本文", str(tmp_path))
+        await manager.start_explore("探索本文", str(tmp_path))
         await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
         session_id = str(started["session_id"])
         await manager.send_message(session_id, "継続本文", timeout=1)
@@ -6377,7 +6376,7 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
         "delegate": await subject.start(
             str(task_document), _observed_input_params(task_document.name, tmp_path), str(tmp_path), model_type=override
         ),
-        "explore": await subject.start_explore("調査", str(tmp_path), fast=False, model_type=override),
+        "explore": await subject.start_explore("調査", str(tmp_path), model_type=override),
         "shell": await subject.start_shell("make test", str(tmp_path), "終了状態", model_type=override),
         "write": await subject.start_write("起草", str(tmp_path), model_type=override),
     }
@@ -6397,7 +6396,7 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
     await subject.start_explore("調査", str(tmp_path))
-    await subject.start_explore("調査", str(tmp_path), fast=False)
+    await subject.start_explore("調査", str(tmp_path), model_type="medium_tier")
     await subject.start_shell("make test", str(tmp_path), "終了状態")
     await subject.start_write("起草", str(tmp_path))
 

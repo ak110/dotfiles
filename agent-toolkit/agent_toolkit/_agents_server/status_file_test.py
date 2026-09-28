@@ -890,7 +890,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     writer.activate()
 
     started = await manager.start("high_tier", "\n  実装を開始\n続き", str(tmp_path))
-    await manager.start_explore(True, "調査する", str(tmp_path))
+    await manager.start_explore("調査する", str(tmp_path))
     await manager.start_shell("pytest -q", str(tmp_path), "結果を要約")
     writer.flush()
     payload = json.loads(writer.path.read_text(encoding="utf-8"))

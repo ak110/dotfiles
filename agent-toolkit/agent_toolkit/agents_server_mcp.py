@@ -1268,18 +1268,15 @@ class AgentsServerManager:
 
     async def start_explore(
         self,
-        fast: bool,
         prompt: str,
         cwd: str,
         *,
         label: str | None = None,
         model_type: str | None = None,
     ) -> dict[str, Any]:
-        """探索専用の軽量な起動条件でturnを開始する。`model_type`の指定時は`fast`を参照しない。"""
-        if model_type is None:
-            model_type = "low_tier" if fast else "medium_tier"
+        """探索専用の軽量な起動条件でturnを開始する。"""
         return await self.start(
-            model_type,
+            model_type or "low_tier",
             prompt,
             cwd,
             launch_kind="explore",
@@ -2303,15 +2300,6 @@ async def start_custom(
 async def start_explore(
     prompt: str,
     cwd: Annotated[str, Field(description=_DELEGATE_CWD_DESCRIPTION)],
-    fast: Annotated[
-        bool,
-        Field(
-            description=_parameter_description(
-                "`false`は`medium_tier_model`、`true`は`low_tier_model`の設定を候補列として使う。"
-                "既定の`true`のまま使い、軽量側の候補では判断材料が不足する調査だけ`false`を指定する。"
-            )
-        ),
-    ] = True,
     label: Annotated[
         str | None,
         Field(
@@ -2324,15 +2312,14 @@ async def start_explore(
         str | None,
         Field(
             description=_model_type_description(
-                "省略時は`fast`に応じて`low_tier`又は`medium_tier`の設定を使う。指定時は`fast`を参照しない。"
+                "省略時は`low_tier`の設定を使う。軽量側の候補では判断材料が不足する調査には`medium_tier`を指定する。"
             )
         ),
     ] = None,
 ) -> dict[str, Any]:
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
-    `fast=true`では`low_tier_model`、`fast=false`では`medium_tier_model`の候補列を使う。
-    `model_type`を指定した場合は`fast`を参照せず、その値から候補列を決める。
+    `model_type`の省略時は`low_tier_model`、指定時はその値の候補列を使う。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
     結果が不要なら`kill`で破棄する。
@@ -2344,7 +2331,7 @@ async def start_explore(
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
-    response = await _MANAGER.start_explore(fast, prompt, cwd, label=label, model_type=model_type)
+    response = await _MANAGER.start_explore(prompt, cwd, label=label, model_type=model_type)
     return _public_start_response(response)
 
 

@@ -51,7 +51,13 @@ type _WarningKind = typing.Literal["migration", "advisory"]
 type _ClassifiedWarning = tuple[_WarningKind, str]
 
 
-def _check_lane_selection(text: str, selection_file: pathlib.Path, lane: str) -> list[str]:
+def _check_lane_selection(
+    text: str,
+    selection_file: pathlib.Path,
+    lane: str,
+    prior_plans: tuple[pathlib.Path, ...],
+    work_dir: pathlib.Path,
+) -> list[str]:
     """選定済みWI集合と人間由来行の根拠を計画へ照合する。
 
     不一致は、割り当てた要求を実行とレビューへ渡せない致命的な問題としてerrorにする。
@@ -77,8 +83,24 @@ def _check_lane_selection(text: str, selection_file: pathlib.Path, lane: str) ->
     metadata, metadata_errors = _plan_format.parse_plan_metadata(text)
     if metadata_errors:
         return metadata_errors
-    actual = {filename for filename, _summary in metadata.related_wi} if metadata is not None else set()
     errors: list[str] = []
+    related = list(metadata.related_wi) if metadata is not None else []
+    for prior_plan in prior_plans:
+        if not prior_plan.is_absolute():
+            raise ValueError(f"先行計画は絶対パスで指定する: {prior_plan}")
+        prior_text = prior_plan.read_text(encoding="utf-8")
+        prior_metadata, prior_errors = _plan_format.parse_plan_metadata(prior_text)
+        if prior_errors or prior_metadata is None:
+            errors.extend(f"先行計画{prior_plan}: {error}" for error in prior_errors or ["計画メタ情報がない"])
+            continue
+        if prior_metadata.values.get("対象リポジトリ") != str(work_dir.resolve()):
+            errors.append(f"先行計画の対象リポジトリが異なる: {prior_plan}")
+        related.extend(prior_metadata.related_wi)
+    filenames = [filename for filename, _summary in related]
+    duplicates = sorted({filename for filename in filenames if filenames.count(filename) > 1})
+    if duplicates:
+        errors.append(f"計画間で関連WIが重複する: {duplicates}")
+    actual = set(filenames)
     missing = sorted(set(expected) - actual)
     extra = sorted(actual - set(expected))
     if missing or extra:
@@ -581,6 +603,7 @@ def check(
     reject_progress_log_rows: bool = False,
     selection_file: pathlib.Path | None = None,
     lane: str | None = None,
+    prior_plans: tuple[pathlib.Path, ...] = (),
 ) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
@@ -620,10 +643,14 @@ def check(
     errors.extend(format_errors)
     if (selection_file is None) != (lane is None):
         raise ValueError("選定結果ファイルとレーン識別子は組で指定する")
+    if prior_plans and selection_file is None:
+        raise ValueError("先行計画は選定結果ファイルとレーン識別子とともに指定する")
     if selection_file is not None and lane is not None:
         if not selection_file.is_absolute() or re.fullmatch(r"lane-\d{2}", lane) is None:
             raise ValueError("選定結果ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
-        errors.extend(_check_lane_selection(text, selection_file, lane))
+        if plan_path in prior_plans or len(prior_plans) != len(set(prior_plans)):
+            raise ValueError("追加計画と先行計画に同じファイルを重複指定できない")
+        errors.extend(_check_lane_selection(text, selection_file, lane, prior_plans, work_dir))
     if reject_progress_log_rows and _plan_format.has_progress_log_rows(text):
         errors.append(f"`## {progress_heading}`は起草時に内容行を置かない")
     warnings: list[str] = []
@@ -643,6 +670,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--selection-file", type=pathlib.Path, help="pickerが保存した選定結果の絶対パス")
     parser.add_argument("--lane", help="選定結果内のlane-NN形式のレーン識別子")
     parser.add_argument(
+        "--prior-plan",
+        action="append",
+        type=pathlib.Path,
+        default=None,
+        help="同じレーンで検査済みの先行計画の絶対パス。全件を反復指定する",
+    )
+    parser.add_argument(
         "--reject-migration-warnings",
         action="store_true",
         help="旧形式からの移行警告をエラーとして扱う",
@@ -661,6 +695,7 @@ def main(argv: list[str] | None = None) -> int:
             reject_progress_log_rows=args.reject_progress_log_rows,
             selection_file=args.selection_file,
             lane=args.lane,
+            prior_plans=tuple(args.prior_plan or ()),
         )
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
         print(f"計画検査の入力を読み込めない: {error}", file=sys.stderr)

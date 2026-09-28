@@ -226,16 +226,18 @@ def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict
 
 def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
     """開始操作の入力から工程別モデル設定の種別を返す。"""
+    model_type = tool_input.get("model_type")
+    if isinstance(model_type, str):
+        return model_type
     if operation == "start":
         task_path = tool_input.get("subagent_md_path")
         return (
             _agents_server_state.TASK_MODEL_TYPES.get(pathlib.PurePath(task_path).name) if isinstance(task_path, str) else None
         )
     if operation == "start_custom":
-        model_type = tool_input.get("model_type")
-        return model_type if isinstance(model_type, str) else None
+        return None
     if operation == "start_explore":
-        return "low_tier" if tool_input.get("fast", True) else "medium_tier"
+        return "low_tier"
     if operation == "start_write":
         return "write"
     if operation == "start_shell":
