@@ -7,8 +7,8 @@ Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿�
 
 ## 対象
 
-Copilot由来のreview本文は、状態（open・closed・merged）を問わず全Pull Requestを対象に取得する。
-inline commentもreview threadも伴わずreview本文だけが到着する場合があり、未解決threadの有無で対象を限定すると、その本文が漏れるためである。
+状態（open・closed・merged）を問わず全Pull Requestのreviewを列挙し、判定対象に残るCopilot由来のreview本文を取得する。
+inline commentもreview threadも伴わずreview本文だけが到着する場合があり、未解決threadの有無で列挙を限定すると、その本文が漏れるためである。
 Copilot由来のinline commentとreview threadは、未解決のreview threadを持つPull Requestだけを対象に取得する。
 解決済みのthreadだけを持つPull Requestは、その時点で未処置のinline commentを持たない。
 要修正としてAWIへ記録した指摘のthreadは未解決のまま残り、以降も対象に入り続ける。
@@ -16,20 +16,20 @@ Copilot由来の判定条件は、authorの`__typename`が`Bot`であること�
 
 ## 取得
 
-Copilot由来のreview本文の取得と、review threadの解決状態による対象判定は、独立した接続として扱い、それぞれpaginationの終端まで取得する。
+全reviewの列挙と、review threadの解決状態による対象判定は、独立した接続として扱い、それぞれpaginationの終端まで取得する。
 いずれの接続も初回は`cursor`を渡さず、`pageInfo.hasNextPage`が真の場合は直前の`pageInfo.endCursor`を`-F cursor=<END_CURSOR>`で渡して偽になるまで取得する。
 Pull Request単位のクエリーは横断クエリーの結果とは独立した取得として扱う。
 
 全Pull Requestの番号、`reviews`の先頭ページ及び`reviewThreads`の先頭ページを、次の横断GraphQLクエリーで取得する。
 
 ```sh
-gh api graphql -F owner=<OWNER> -F name=<REPO> -f query='query($owner:String!,$name:String!,$cursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,after:$cursor,states:[OPEN,CLOSED,MERGED]){nodes{number reviews(first:20){nodes{databaseId body author{__typename login}} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{databaseId author{__typename login}}}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}'
+gh api graphql -F owner=<OWNER> -F name=<REPO> -f query='query($owner:String!,$name:String!,$cursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,after:$cursor,states:[OPEN,CLOSED,MERGED]){nodes{number reviews(first:20){nodes{databaseId author{__typename login}} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{databaseId author{__typename login}}}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}'
 ```
 
-`reviews`の`pageInfo.hasNextPage`が真のPull Requestは、次のクエリーでreview本文を終端まで取得し直す。
+`reviews`の`pageInfo.hasNextPage`が真のPull Requestは、次のクエリーでreviewを終端まで列挙し直す。
 
 ```sh
-gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(first:100,after:$cursor){nodes{databaseId body author{__typename login}} pageInfo{hasNextPage endCursor}}}}}'
+gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(first:100,after:$cursor){nodes{databaseId author{__typename login}} pageInfo{hasNextPage endCursor}}}}}'
 ```
 
 `reviewThreads`の`pageInfo.hasNextPage`が真のPull Requestは、次のクエリーでreview threadを終端まで取得し直す。
@@ -48,13 +48,20 @@ gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($o
 gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/comments?per_page=100'
 ```
 
-監査を完了と判定できるのは、REST APIが終了コード0で終わり、GraphQLの`pageInfo`を取得でき、かつpaginationが終端へ到達した場合とする。
+監査を完了と判定できるのは、実行した全REST APIが終了コード0で終わり、GraphQLの`pageInfo`を取得でき、かつpaginationが終端へ到達した場合とする。
+各ページとREST APIの標準出力は管理対象一時領域の別々のJSONファイルへ保存し、保存したファイルからページの終端、件数及びdatabaseIdを確認する。端末に表示された出力を件数や網羅性の根拠にしない。
 
 ## 判定
 
 判定の前に、`atk review-audit list --repo <OWNER>/<REPO>`で判定済みのreview本文のdatabaseIdを取得する。
-取得したdatabaseIdと一致するCopilot由来のreview本文を判定の対象から除き、除いたdatabaseIdの一覧と件数を呼び出し元へ返す。
-「取得」の手順は本記録の有無で変えず、全Pull Requestのreview本文を毎回取得する。
+列挙した全reviewのdatabaseIdとauthorからCopilot由来のreviewを特定する。判定済みのdatabaseIdと一致するreviewを判定対象から除き、除いたdatabaseIdの一覧と件数を呼び出し元へ返す。全Pull Requestのreviewの列挙は本記録の有無で変えない。
+判定対象に残ったreviewの`<PR>`と`<REVIEW_ID>`へPull Request番号とdatabaseIdを渡し、本文を1件ずつ取得する。実行直前に`gh api --help`で受理形式を確かめ、各応答の`id`が取得予定のdatabaseIdと一致することを確認する。
+
+```sh
+gh api 'repos/{owner}/{repo}/pulls/<PR>/reviews/<REVIEW_ID>' > <管理対象一時領域のJSONファイル>
+```
+
+保存した列挙結果のCopilot由来reviewのID集合を、除外したID集合と本文を取得したID集合へ過不足なく分ける。判定済み本文の取得は行わない。
 
 判定の対象に残った各指摘を現行成果物、過去の採否及び根拠と比べ、要修正、是正済み、根拠付き対応不要のいずれかへ分類する。
 review本文が概要と進行状況だけを述べ、成果物への処置を求める記述を1つも含まない場合は、その本文を指摘なしと分類する。
