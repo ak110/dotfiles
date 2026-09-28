@@ -90,6 +90,7 @@ READ_ONLY_COMMANDS = frozenset(
         "atk managed-temp list",
         "atk review-table show",
         "atk review-audit list",
+        "atk review-audit pending",
         "atk wait-schedule",
         "atk watch",
     }

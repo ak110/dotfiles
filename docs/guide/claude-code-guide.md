@@ -129,7 +129,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 委譲と当該sessionの管理は`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
 `prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
 応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
-`start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`medium_tier_model`、`fast=true`は`low_tier_model`の設定を使い、既定は`true`とする。
+`start_explore`は`prompt`と絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`model_type`の省略時は`low_tier_model`、`medium_tier`の指定時は`medium_tier_model`の設定を使う。
 `start`・`start_explore`・`start_shell`・`start_write`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別又は候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
 `start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
@@ -150,8 +150,8 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 | キー | 対応する起動 |
 | --- | --- |
 | `high_tier_model` | 計画・実装・修正・公開工程の終端・自動コードレビュー監査 |
-| `medium_tier_model` | WI選定・実行レビュー・`start_explore(fast=false)` |
-| `low_tier_model` | `start_explore(fast=true)`・`start_shell` |
+| `medium_tier_model` | WI選定・実行レビュー・`model_type="medium_tier"`を指定した`start_explore` |
+| `low_tier_model` | `start_explore`の既定・`start_shell` |
 | `write_model` | `start_write` |
 | `orchestrate_model` | `atk wi process-loop` |
 

@@ -32,7 +32,7 @@
 
 ローカルの全体検証と統合後の検証は、`agents_server`の`start_shell`へ対象リポジトリを`cwd`、コマンドを変更せず`command`として渡す。管理対象一時領域の標準出力・標準エラー保存先を`summary_policy`へ渡し、委譲先には双方の全量、終了コード、終了シグナル、警告と失敗行、保存先、切り詰めの有無を返させる。呼び出し側は保存先の実在と内容を確かめ、終了コード0と警告の不在を検収する。
 
-失敗した場合は`agent-toolkit:bugfix`で直接的原因を確定し、認可範囲内で是正する。`agent-toolkit:process-wi`の終端担当によるCI修正と返却は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「検証又はCIの失敗」が定める。
+失敗した場合は公開を担う主体が`agent-toolkit:bugfix`をSkill機能で起動し、直接的原因を確定して認可範囲内で是正する。`agent-toolkit:process-wi`の終端担当によるCI修正と返却は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「検証又はCIの失敗」が定める。
 
 ## pushと公開状態
 

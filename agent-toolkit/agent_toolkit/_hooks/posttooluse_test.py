@@ -1849,7 +1849,10 @@ class TestRemovedRecordsAreAbsent:
         ("start_write", {"prompt": "起草する", "cwd": "/tmp/x"}, "write"),
         ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "low_tier"),
         ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
-        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x", "fast": False}, "medium_tier"),
+        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x", "model_type": "medium_tier"}, "medium_tier"),
+        ("start", {"model_type": "medium_tier"}, "medium_tier"),
+        ("start_shell", {"model_type": "medium_tier"}, "medium_tier"),
+        ("start_write", {"model_type": "medium_tier"}, "medium_tier"),
     ),
 )
 def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str) -> None:

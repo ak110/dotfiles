@@ -14,6 +14,7 @@ import contextlib
 import json
 import logging
 import os
+import shlex
 import shutil
 import sys
 import uuid
@@ -1294,6 +1295,18 @@ class AppServerManager:
                 session.plan = [{"text": text, "status": "completed"}]
         elif item_type == "fileChange":
             session.diff_changed = True
+        elif item_type == "commandExecution":
+            command = item.get("command")
+            output = item.get("aggregatedOutput")
+            if item.get("exitCode") == 0 and isinstance(command, str) and isinstance(output, str):
+                try:
+                    arguments = shlex.split(command)
+                except ValueError:
+                    return
+                if len(arguments) >= 3 and Path(arguments[0]).name == "timeout":
+                    arguments = arguments[2:]
+                if len(arguments) >= 3 and Path(arguments[0]).name == "atk" and arguments[1:3] == ["agents", "wait"]:
+                    shared_state.consume_agents_wait_output(session, output)
         elif item_type == "mcpToolCall" and item.get("server") == "agents_server":
             arguments = item.get("arguments")
             result = item.get("result")

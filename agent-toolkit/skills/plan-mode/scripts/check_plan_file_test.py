@@ -603,6 +603,104 @@ def test_lane_selection_checks_related_wi_set(
             assert any(f"余剰=['{filename}']" in error for error in errors), errors
 
 
+@pytest.mark.parametrize(
+    ("prior_count", "selected_extra", "expected_fragment"),
+    (
+        (1, (), None),
+        (2, (), None),
+        (1, ("20260831-000000-004.md",), "欠落=['20260831-000000-004.md']"),
+    ),
+)
+def test_lane_selection_combines_prior_plans(
+    repo: tuple[pathlib.Path, str], prior_count: int, selected_extra: tuple[str, ...], expected_fragment: str | None
+) -> None:
+    """凍結済み計画を再検査せず、追加計画と先行計画の和集合を検査する。"""
+    work_dir, _base = repo
+    names = ("20260831-000000-001.md", "20260831-000000-002.md")
+    current_name = _plan_fixture.WI_FILES[0][0]
+    prior_paths = tuple(work_dir / f"prior-{index}.md" for index in range(prior_count))
+    for index, prior_path in enumerate(prior_paths):
+        prior_path.write_text(
+            _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((names[index], "先行要求"),)),
+            encoding="utf-8",
+        )
+    plan_path = work_dir / "additional.md"
+    plan_path.write_text(
+        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((current_name, "追加要求"),)),
+        encoding="utf-8",
+    )
+    selection_path = work_dir / "selection.yaml"
+    selected = (*names[:prior_count], current_name, *selected_extra)
+    selection_path.write_text(
+        yaml.safe_dump({"decisions": [{"awi": name, "lane": "lane-01"} for name in selected]}), encoding="utf-8"
+    )
+
+    errors, _warnings = check_plan_file.check(
+        plan_path, work_dir, selection_file=selection_path, lane="lane-01", prior_plans=prior_paths
+    )
+
+    if expected_fragment is None:
+        assert not errors, errors
+    else:
+        assert any(expected_fragment in error for error in errors), errors
+
+
+def test_lane_selection_rejects_duplicate_wi_across_plans(repo: tuple[pathlib.Path, str]) -> None:
+    """先行計画と追加計画の重複は、和集合が一致しても拒否する。"""
+    work_dir, _base = repo
+    filename = _plan_fixture.WI_FILES[0][0]
+    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
+    plan_path = work_dir / "additional.md"
+    prior_path = work_dir / "prior.md"
+    plan_path.write_text(content, encoding="utf-8")
+    prior_path.write_text(content, encoding="utf-8")
+    selection_path = work_dir / "selection.yaml"
+    selection_path.write_text(yaml.safe_dump({"decisions": [{"awi": filename, "lane": "lane-01"}]}), encoding="utf-8")
+
+    errors, _warnings = check_plan_file.check(
+        plan_path, work_dir, selection_file=selection_path, lane="lane-01", prior_plans=(prior_path,)
+    )
+
+    assert any("計画間で関連WIが重複する" in error for error in errors), errors
+
+
+def test_cli_accepts_prior_plan_for_added_lane_wi(repo: tuple[pathlib.Path, str]) -> None:
+    """公開CLIから先行計画を併記して追加レーンの全WIを確認できる。"""
+    work_dir, _base = repo
+    prior_name = "20260831-000000-002.md"
+    current_name = _plan_fixture.WI_FILES[0][0]
+    prior_path = work_dir / "prior.md"
+    plan_path = work_dir / "additional.md"
+    prior_path.write_text(
+        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((prior_name, "先行要求"),)), encoding="utf-8"
+    )
+    plan_path.write_text(
+        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((current_name, "追加要求"),)), encoding="utf-8"
+    )
+    selection_path = work_dir / "selection.yaml"
+    selection_path.write_text(
+        yaml.safe_dump({"decisions": [{"awi": name, "lane": "lane-01"} for name in (prior_name, current_name)]}),
+        encoding="utf-8",
+    )
+
+    assert (
+        check_plan_file.main(
+            [
+                "--selection-file",
+                str(selection_path),
+                "--lane",
+                "lane-01",
+                "--prior-plan",
+                str(prior_path),
+                "--work-dir",
+                str(work_dir),
+                str(plan_path),
+            ]
+        )
+        == 0
+    )
+
+
 @pytest.mark.parametrize("root", ("", "-"))
 def test_lane_selection_rejects_missing_human_reason(repo: tuple[pathlib.Path, str], root: str) -> None:
     """人間由来の実施行に根拠がない計画は、選定レーン付き検査で失敗する。"""

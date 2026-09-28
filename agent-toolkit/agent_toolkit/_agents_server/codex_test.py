@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import json
 import pathlib
 import shutil
 from typing import Any
@@ -172,6 +173,42 @@ async def test_completed_turn_with_unobserved_child_is_published_immediately(tmp
     assert session.awaiting_auto_resume is False
     assert session.error == {"unobservedSessions": ["child-1"]}
     assert session.live_child_session_ids == set()
+    await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivery", ("stdout", "output-file", "failure", "unrelated"))
+async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, delivery: str) -> None:
+    """CLI待機が回収した子だけを観測済みにし、失敗時は未観測として残す。"""
+    session = shared_state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    session.live_child_session_ids.add("child-1")
+    manager = _InspectableAppServerManager({session.session_id: session})
+    result = json.dumps({"session_id": "child-1", "status": "completed"}) + "\n"
+    if delivery == "output-file":
+        output_path = tmp_path / "wait-results.jsonl"
+        output_path.write_text(result, encoding="utf-8")
+        output = f"保存先: {output_path}\n"
+    else:
+        output = result
+    command = "atk agents wait"
+    if delivery == "output-file":
+        command = "timeout 300 atk agents wait --output-file " + str(tmp_path / "wait-results.jsonl")
+    if delivery == "unrelated":
+        command = "printf 'unrelated command'"
+    item = {
+        "type": "commandExecution",
+        "id": "wait-command",
+        "command": command,
+        "aggregatedOutput": output,
+        "exitCode": 1 if delivery == "failure" else 0,
+    }
+
+    await manager.handle_notification(
+        {"method": "item/completed", "params": {"threadId": session.session_id, "turnId": session.turn_id, "item": item}}
+    )
+    await manager.handle_notification(_completed_turn(session))
+
+    assert session.error == ({"unobservedSessions": ["child-1"]} if delivery in {"failure", "unrelated"} else None)
     await manager.close()
 
 

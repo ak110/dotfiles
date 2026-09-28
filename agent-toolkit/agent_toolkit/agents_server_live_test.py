@@ -53,7 +53,7 @@ async def test_live_launch_waits_for_automatic_resume(
         if launch_kind == "start":
             await manager.start("low_tier", _PROMPT, cwd)
         elif launch_kind == "start_explore":
-            await manager.start_explore(True, _PROMPT, cwd)
+            await manager.start_explore(_PROMPT, cwd)
         else:
             await manager.start_shell(
                 "sleep 2",

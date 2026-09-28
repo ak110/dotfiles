@@ -67,12 +67,12 @@ WI作成、計画、実行及び実行後レビューの責務と受渡しは`${
 
 1. 直前の同期結果を読み、このセッションでAWIの処理を完遂できるかを判定する。判定の手順は`## 直前の同期結果の検分`が定める。
 2. 対象リポジトリが個人プロジェクトに該当するかの判定手段は`ak110-projects-operations`が定める。該当する場合は同スキルを起動し、同期と依存更新の要否を確定する。
-3. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って監査担当を起動する。
+3. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
 4. `references/run-lanes.md`を全文読み、選定結果から専用worktreeとレーンを作成し、レーン担当を起動する。
 5. 各レーンの計画又は計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`又は`実装なし`を返す。
 6. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
 7. 同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
-8. 全レーンの終端及び監査の処置確定後、`references/finish-session.md`を全文読み、`検証・CI方針`を明示して公開とセッション終端を完遂する。
+8. 全レーンの終端及び起動した監査の処置確定後、`references/finish-session.md`を全文読み、`検証・CI方針`を明示して公開とセッション終端を完遂する。
 
 ## 直前の同期結果の検分
 
@@ -86,9 +86,11 @@ WI作成、計画、実行及び実行後レビューの責務と受渡しは`${
 
 ## 自動コードレビュー監査
 
-pickerと並行して、対象がGitHub上にある場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得する。監査の返却と処置確定を公開工程の開始条件とし、取得は1回で完了とする。新しいレビューの到着は次の処理回の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
+pickerと並行して、対象がGitHub上にある場合は対象リポジトリに`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。標準出力の`counts.reviews`と`counts.threads`がともに0で終了コード0なら監査担当を起動せず、両件数を監査省略の根拠として完了報告へ渡す。いずれかが1件以上なら標準出力のJSONを監査担当へ渡す。コマンドが非0で終わった場合とJSON又は件数を解釈できない場合は、従来どおり監査担当を起動する。
 
-監査担当は`agents_server`の`start_custom`で1件起動し、`model_type`へ`high_tier`を渡す。`cwd`には対象リポジトリの絶対パスを渡し、`prompt`には同書に従って監査を実施する指示と返却する項目を書く。
+監査担当を起動した場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得し、その返却と処置確定を公開工程の開始条件とする。新しいレビューの到着は次の処理回の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
+
+監査担当は`agents_server`の`start_custom`で1件起動し、`model_type`へ`high_tier`を渡す。`cwd`には対象リポジトリの絶対パスを渡し、`prompt`には同書に従って監査を実施する指示と返却する項目を書く。pendingの取得に成功した場合は、そのJSONも渡す。
 
 ## 終端
 

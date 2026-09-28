@@ -36,7 +36,7 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
    - 基準状態と期待値が同じ条件、対象分岐が無効な条件及び成功時に抑制される生出力の不在は識別条件にせず、公開状態又は直接の契約テストを使う
    - 人間の依頼かWIが禁止条件を明示する場合は、その条件と採用する手段を`## 実施内容`の同じ概念行へ書く。禁止条件には、実施しない操作、選択肢から外す機構及び許容しない副作用を含める。メインが同節だけで両者を並べて確認できる計画を確定する
 2. 計画の変更対象又は採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し、`agent-toolkit:confirmation-and-uwi`「確認要否の判定」を適用する。`起動経路`の値ごとの確認の扱いは本書冒頭の確認の段落に従う
-3. `references/plan-file-standards.md`を全文読み、`atk run-script plan-create --`で計画ファイルを作成する。作業種別が`バグ対応`の場合は`agent-toolkit:bugfix`の原因分析契約に従って計画ファイル（バグ）を先に埋める
+3. `references/plan-file-standards.md`を全文読み、`atk run-script plan-create --`で計画ファイルを作成する。作業種別が`バグ対応`の場合は計画担当が`agent-toolkit:bugfix`をSkill機能で起動し、同スキルの原因分析契約に従って計画ファイル（バグ）を先に埋める
 4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。`agent-toolkit:process-wi`のレーン担当は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「計画の起草」が定める選定結果とレーン識別子付きの形で単独実行する。いずれも直接返った終了コード0を確認する
 5. `起動経路`の値に対応する次の1行だけを実施する
 

@@ -16,6 +16,10 @@ Copilot由来の判定条件は、authorの`__typename`が`Bot`であること�
 
 ## 取得
 
+通常の監査は、呼び出し元が渡す`atk review-audit pending --repo <OWNER>/<REPO>`のJSONを入力とする。`reviews`には未判定のCopilot由来reviewのPR番号とdatabaseId、`threads`には未解決のCopilot由来threadを持つPR番号が入る。`counts`は両集合の件数を示す。監査担当は`reviews`の各本文を後掲のREST APIで取得し、`threads`の各PRだけinline commentを取得する。判定済みreviewの除外とpagination終端の確認にはコマンドの成功結果を用いる。
+
+pendingコマンドが失敗して呼び出し元からJSONを受け取れない場合は、以下の横断GraphQLクエリーとPR単位のクエリーを使って監査対象を取得する。失敗時も監査対象を直接取得して判定する。
+
 全reviewの列挙と、review threadの解決状態による対象判定は、独立した接続として扱い、それぞれpaginationの終端まで取得する。
 いずれの接続も初回は`cursor`を渡さず、`pageInfo.hasNextPage`が真の場合は直前の`pageInfo.endCursor`を`-F cursor=<END_CURSOR>`で渡して偽になるまで取得する。
 Pull Request単位のクエリーは横断クエリーの結果とは独立した取得として扱う。
@@ -34,27 +38,26 @@ gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($o
 
 `reviewThreads`の`pageInfo.hasNextPage`が真のPull Requestは、次のクエリーでreview threadを終端まで取得し直す。
 未解決threadの有無は、その取得が終端へ到達した時点で確定する。
-thread内のcomment本文は後掲のREST APIから取得し、GraphQLではthread ID、解決状態及び
-REST commentとの対応に使うdatabaseIdだけを取得する。
-横断クエリーの`comments`のauthorは、Copilot由来の判定にだけ用いる。
+thread内のcomment本文は後掲のREST APIから取得し、GraphQLではthread ID、解決状態、
+REST commentとの対応に使うdatabaseId及び先頭commentのauthorを取得する。
+authorはCopilot由来の判定に用いる。
 
 ```sh
-gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved comments(first:1){nodes{databaseId}}} pageInfo{hasNextPage endCursor}}}}}'
+gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved comments(first:1){nodes{databaseId author{__typename login}}}} pageInfo{hasNextPage endCursor}}}}}'
 ```
 
-両方の接続が終端へ到達した後、未解決のreview threadを持つPull Request番号を`<PR>`へ置換し、inline commentを全ページ取得する。
+GraphQLで代替した場合は両方の接続が終端へ到達した後、未解決のreview threadを持つPull Request番号を`<PR>`へ置換し、inline commentを全ページ取得する。pendingのJSONを受け取った場合は`threads`のPR番号を使う。
 
 ```sh
 gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/comments?per_page=100'
 ```
 
-監査を完了と判定できるのは、実行した全REST APIが終了コード0で終わり、GraphQLの`pageInfo`を取得でき、かつpaginationが終端へ到達した場合とする。
+監査を完了と判定できるのは、実行した全REST APIが終了コード0で終わり、pendingコマンドの成功、またはGraphQLによる代替取得での`pageInfo`取得とpagination終端を確認できた場合とする。
 各ページとREST APIの標準出力は管理対象一時領域の別々のJSONファイルへ保存し、保存したファイルからページの終端、件数及びdatabaseIdを確認する。端末に表示された出力を件数や網羅性の根拠にしない。
 
 ## 判定
 
-判定の前に、`atk review-audit list --repo <OWNER>/<REPO>`で判定済みのreview本文のdatabaseIdを取得する。
-列挙した全reviewのdatabaseIdとauthorからCopilot由来のreviewを特定する。判定済みのdatabaseIdと一致するreviewを判定対象から除き、除いたdatabaseIdの一覧と件数を呼び出し元へ返す。全Pull Requestのreviewの列挙は本記録の有無で変えない。
+pendingのJSONを受け取った場合は、`reviews`の各reviewを判定対象とし、`threads`の各PRをinline commentの取得対象とする。JSONを受け取れずGraphQLで代替した場合だけ、判定前に`atk review-audit list --repo <OWNER>/<REPO>`で判定済みreview本文のdatabaseIdを取得する。この代替手順では列挙した全reviewのdatabaseIdとauthorからCopilot由来のreviewを特定し、判定済みのdatabaseIdと一致するreviewを除く。除いたdatabaseIdの一覧と件数を呼び出し元へ返す。全Pull Requestのreviewの列挙は本記録の有無で変えない。
 判定対象に残ったreviewの`<PR>`と`<REVIEW_ID>`へPull Request番号とdatabaseIdを渡し、本文を1件ずつ取得する。実行直前に`gh api --help`で受理形式を確かめ、各応答の`id`が取得予定のdatabaseIdと一致することを確認する。
 
 ```sh
