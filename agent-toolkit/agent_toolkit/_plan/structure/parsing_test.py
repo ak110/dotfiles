@@ -348,6 +348,16 @@ def test_detail_structure_rejects_invalid_implementation_unit_contract(old: str,
     assert any(message in error for error in errors), errors
 
 
+@pytest.mark.parametrize("content", [_HUMAN_DETAIL_CONTENT, _VALID_DETAIL_CONTENT])
+def test_detail_structure_reads_legacy_verification_column(content: str) -> None:
+    """進行中の二ファイル計画は旧検証列名を読める。"""
+    legacy = content.replace("変更範囲の検証", "近接検証", 1)
+
+    errors = _plan_format.check_plan_detail_structure(legacy, "通常変更")
+
+    assert not errors, errors
+
+
 def test_main_structure_rejects_missing_verification_table() -> None:
     """メイン側の`## 検証区分`は固定2行2列表にする。"""
     content = _VALID_MAIN_CONTENT.replace(

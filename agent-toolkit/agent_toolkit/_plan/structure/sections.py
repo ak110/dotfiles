@@ -67,6 +67,7 @@ if TYPE_CHECKING:
         PLAN_BUG_TABLE_HEADER,
         PLAN_BUG_TABLE_ROWS,
         PLAN_CURRENT_VERIFICATION_TABLE_ROWS,
+        PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS,
         PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS,
         PLAN_DETAIL_H2_ORDER,
         PLAN_DETAIL_SUFFIX,
@@ -1955,6 +1956,8 @@ def check_plan_single_file_structure(
 
     if verification_index is not None:
         table = _find_table_with_rows(verification_tables, PLAN_CURRENT_VERIFICATION_TABLE_ROWS)
+        if table is None:
+            table = _find_table_with_rows(verification_tables, PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS)
         if table is None:
             table = _find_table_with_rows(verification_tables, PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS)
         if table is None or table.header != PLAN_VERIFICATION_TABLE_HEADER:

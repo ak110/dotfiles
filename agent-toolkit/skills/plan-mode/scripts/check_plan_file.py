@@ -444,6 +444,25 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
     return warnings
 
 
+def _legacy_verification_name_warnings(text: str) -> list[_ClassifiedWarning]:
+    """旧検証名の表を読取互換で受理し、改訂時だけ移行を求める。"""
+    tables = _plan_format.extract_tables(list(_plan_format.iter_markdown_body_lines(text)))
+    legacy_headers = (
+        _plan_format.PLAN_LEGACY_CURRENT_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        _plan_format.PLAN_LEGACY_CURRENT_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+    )
+    if any(
+        table.header in legacy_headers
+        or (
+            table.header == _plan_format.PLAN_VERIFICATION_TABLE_HEADER
+            and table.row_labels() == _plan_format.PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS
+        )
+        for table in tables
+    ):
+        return [("migration", "検証名が旧形式である。新規作成・改訂では`変更範囲の検証`へ移行する")]
+    return []
+
+
 def _check_new_format(
     detail_path: pathlib.Path,
     text: str,
@@ -476,6 +495,7 @@ def _check_new_format(
     metadata = parsed.values if parsed is not None else {}
 
     detail_text = detail_path.read_text(encoding="utf-8")
+    warnings.extend(_legacy_verification_name_warnings(detail_text))
     detail_lines = detail_text.splitlines()
     detail_body_start = _plan_format.markdown_body_start_index(detail_text)
     detail_structure_lines = ["" if index < detail_body_start else line for index, line in enumerate(detail_lines)]
@@ -541,6 +561,7 @@ def _check_single_file_format(
     warnings.extend(bug_warnings)
     warnings.extend(_legacy_refactoring_warnings(text))
     warnings.extend(_legacy_acceptance_warnings(text))
+    warnings.extend(_legacy_verification_name_warnings(text))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(text.splitlines()))
     return errors, warnings

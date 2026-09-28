@@ -224,6 +224,12 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 
 隔離したhomeへ計画を保存する。
 
+### 受入シナリオ
+
+| シナリオ | 由来 | 利用者と入口 | 操作 | 期待結果 | テスト |
+| --- | --- | --- | --- | --- | --- |
+| 保存 | ユーザー指示 | 計画作成者と`atk` | 隔離したhomeを渡す | 計画を保存する | 本テスト |
+
 ## 恒久化・リファクタリング
 
 ### 恒久化
@@ -250,8 +256,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 
 | 区分 | 検証コマンド |
 | --- | --- |
-| 近接検証 | `pytest` |
-| 全体検証 | `make test` |
+| 変更範囲の検証 | `pytest` |
 
 ## 終端工程
 

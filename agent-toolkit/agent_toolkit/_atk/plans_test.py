@@ -1743,7 +1743,7 @@ def test_dispatch_rejects_removed_progress_subcommand(
     _write_saved_progress_plan(
         notes,
         relative,
-        "| 2026-09-09 10:00 | 統合順1の実装 | 近接検証が終了コード0 |\n| 2026-09-09 11:00 | 統合順2の実装 | 警告0件 |\n",
+        "| 2026-09-09 10:00 | 統合順1の実装 | 変更範囲の検証が終了コード0 |\n| 2026-09-09 11:00 | 統合順2の実装 | 警告0件 |\n",
     )
     args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
 

@@ -752,11 +752,28 @@ def test_accepts_legacy_verification_without_acceptance_scenario(repo: tuple[pat
     start = content.index("### 受入シナリオ\n")
     end = content.index("## 恒久化・リファクタリング\n", start)
     legacy = content[:start] + content[end:]
-    legacy = legacy.replace("| 近接検証 | `pytest` |", "| 近接検証 | `pytest` |\n| 全体検証 | `make test` |", 1)
+    legacy = legacy.replace("| 変更範囲の検証 | `pytest` |", "| 近接検証 | `pytest` |\n| 全体検証 | `make test` |", 1)
 
     errors, _warnings = _check(work_dir, legacy)
 
     assert not errors, errors
+
+
+def test_legacy_verification_name_is_readable_but_rejected_for_revision(repo: tuple[pathlib.Path, str]) -> None:
+    """進行中の旧名は読めるが、新規作成・改訂では移行を求める。"""
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+        "| 変更範囲の検証 | `pytest` |", "| 近接検証 | `pytest` |", 1
+    )
+    path = work_dir / "plan.md"
+    path.write_text(content, encoding="utf-8")
+
+    errors, warnings = check_plan_file.check(path, work_dir)
+    strict_errors, _strict_warnings = check_plan_file.check(path, work_dir, reject_migration_warnings=True)
+
+    assert not errors, errors
+    assert any("検証名が旧形式" in warning for warning in warnings), warnings
+    assert any("検証名が旧形式" in error for error in strict_errors), strict_errors
 
 
 def test_current_plan_legacy_refactoring_table_is_migration_only(repo: tuple[pathlib.Path, str]) -> None:
@@ -847,7 +864,7 @@ def test_current_plan_legacy_acceptance_table_still_requires_filled_cells(repo: 
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [
-        ("| 近接検証 |", "| レーン内検証 |", "固定行"),
+        ("| 変更範囲の検証 |", "| レーン内検証 |", "固定行"),
         ("### リファクタリング", "### 自由見出し", "固定見出し"),
         ("対象の公開契約を更新する。", "#### 深い見出し", "H4以深"),
     ],

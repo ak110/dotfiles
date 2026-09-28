@@ -115,6 +115,8 @@ if TYPE_CHECKING:
         PLAN_LEGACY_HISTORY_USER_EVENT_PATTERN,
         PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN,
         PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        PLAN_LEGACY_CURRENT_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        PLAN_LEGACY_CURRENT_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
         PLAN_LEGACY_MAIN_H2_ORDER,
         PLAN_LEGACY_PERMANENCE_H3,
         PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS,
@@ -609,6 +611,8 @@ def parse_plan_implementation_units(
         in (
             PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
             PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+            PLAN_LEGACY_CURRENT_IMPLEMENTATION_UNITS_TABLE_HEADER,
+            PLAN_LEGACY_CURRENT_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
             PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER,
         )
     ]
@@ -624,7 +628,10 @@ def parse_plan_implementation_units(
                 f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}"
             )
 
-    is_human = table.header == PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER
+    is_human = table.header in (
+        PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        PLAN_LEGACY_CURRENT_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+    )
     units: list[PlanImplementationUnit] = []
     for row in table.rows:
         if len(row) != len(table.header) or any(not cell for cell in row):

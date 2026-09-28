@@ -8,12 +8,12 @@
 
 | 範囲 | 実施する工程 |
 | --- | --- |
-| commitしない | 実装、近接検証及び必要な生成同期を終え、commitの手前で止める |
+| commitしない | 実装、変更範囲の検証及び必要な生成同期を終え、commitの手前で止める |
 | commitまで | 必要な版数更新と生成同期、検証、commitまで行う |
 | push・CIまで | commitまでの工程に続けてpush、CI確認及び公開状態の確認まで行う |
 | 既存の判断基準どおり | push・CIまでの工程に続けて、プロジェクト規範のリリース判定と認可された固有の終端工程を行う |
 
-`agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`は各スキルが確定した自律モードの公開範囲を用いる。各工程が持つ局所変更の即時公開と即時対応の分岐は、そのスキルの契約に従う。
+`agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`は各スキルが確定した自律モードの公開範囲を用いる。
 
 ## 版数と生成物
 
