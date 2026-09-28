@@ -5,7 +5,8 @@ description: >
   dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.gemini/`・`~/.config/`）の対応を
   判定するとき、ファイルの削除と改名で`pytools/post_apply.py`の`_REMOVED_PATHS`と
   `setup_codex_links.py`の`_LINKS`を扱うとき、dotfiles利用者・agent-toolkit利用者・全プロジェクト編集者・
-  dotfiles編集者のどのロール向けのファイル群かを判定するとき、`AGENTS.md`・`agent-toolkit/rules/`・
+  dotfiles編集者のどのロール向けのファイル群かを判定するとき、`agent-toolkit:process-wi`のpickerが
+  AWIごとの`project_notes`を書くとき、`AGENTS.md`・`agent-toolkit/rules/`・
   `agent-toolkit/skills/`・`agent-toolkit/share/`・`.claude/skills/`の規範をセッション内で変更してから
   自セッションへ適用するとき、規範を変更したセッションで会話圧縮の後に作業を続けるとき、
   及び変更済み又は新設したスキルを起動するときに起動する。
