@@ -357,6 +357,28 @@ def _apply_cooldown_edit(content: str, value: str) -> str:
     return _frontmatter.serialize_frontmatter(data, body)
 
 
+def _reject_agent_processing_edit(path: pathlib.Path, original: str) -> None:
+    """処理中又は処理中から保留したWIの本文置換をエージェントには許さない。"""
+    if not is_agent_environment():
+        return
+    state_label: str | None = None
+    if path.parent.name == WI_STATE_PROCESSING:
+        state_label = "processingの項目"
+    elif path.parent.name == WI_STATE_HOLD:
+        parsed = _frontmatter.parse_frontmatter(original)
+        if parsed is not None and parsed[0].get("held_from_state") == WI_STATE_PROCESSING:
+            state_label = "processingから保留した項目"
+    if state_label is None:
+        return
+    _outcome.report_failure(
+        f"{state_label}はエージェント環境から編集できない: {path.name}。"
+        "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わる。"
+        "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
+        "atk wi edit --appendで追記する"
+    )
+    sys.exit(2)
+
+
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """editサブコマンド: `--body-file`又は$EDITORで対象を編集しcommit・pushする。
 
@@ -411,6 +433,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 sys.exit(2)
             snapshot = snapshot_path.read_text(encoding="utf-8")
             _verify_target_repo_content(snapshot_path, snapshot, target_repo)
+            _reject_agent_processing_edit(snapshot_path, snapshot)
         if _reject_agent_user_comment_message(message):
             sys.exit(1)
         message = _preserve_agent_user_comment(snapshot, message)
@@ -472,17 +495,13 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 f"processingの項目は再処理抑制期限を変更できない: {path.name}。処理を終えてinbox又はholdへ移してから指定する"
             )
             sys.exit(2)
-        if path.parent.name == WI_STATE_PROCESSING and is_agent_environment():
-            _outcome.report_failure(
-                f"processingの項目はエージェント環境から編集できない: {path.name}。"
-                "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わる。"
-                "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
-                "atk wi edit --appendで追記する"
-            )
-            sys.exit(2)
         snapshot = path.read_bytes()
+        original = _frontmatter.decode_entry_text(snapshot)
+        editing_body = message is not None or args.cooldown_until is None
+        if editing_body:
+            _reject_agent_processing_edit(path, original)
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
-        _verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
+        _verify_target_repo_content(path, original, normalized_target_repo)
     original = _frontmatter.decode_entry_text(snapshot)
     tmp_path: pathlib.Path | None = None
     if message is None and args.cooldown_until is None:

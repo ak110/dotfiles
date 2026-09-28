@@ -31,5 +31,5 @@ claude-session-export --project-dir=/path/to/project --latest=3 --output-dir=./e
 詳細（thinkingブロック・サブエージェント含む全セッション一括変換）:
 
 ```bash
-claude-session-export --all --include-thinking --include-subagents --output-dir=~/claude-sessions
+claude-session-export --all --include-thinking --include-subagents --output-dir="$HOME/claude-sessions"
 ```

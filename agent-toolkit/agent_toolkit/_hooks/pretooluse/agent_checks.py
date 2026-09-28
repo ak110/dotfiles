@@ -131,7 +131,8 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
             return current
 
         update_state(session_id, _set_threshold)
-        return _response_language_check.BLOCK_BODY
+        assert body is not None
+        return _response_language_check.BLOCK_BODY + body.removeprefix(_response_language_check.WARNING_BODY)
 
     return body
 
