@@ -16,7 +16,7 @@ from agent_toolkit._hooks.transcript import iter_latest_assistant_text_messages
 
 # プレーンテキストがこの文字数に満たない場合は語数比の判定をスキップする。
 # 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。
-# 日本語文字数0かつ英単語2語以上の地の文へは適用しない。当該入力は日本語が1文字も無く、
+# 日本語文字数0かつ英単語2語以上の地の文へは適用しない。その入力には日本語が1文字も無く、
 # 下限が防ごうとしている誤発火（日本語の短文が英語判定される事態）が原理的に生じないため。
 _MIN_PLAIN_TEXT_LENGTH = 50
 
@@ -35,7 +35,7 @@ _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 # HTTP/HTTPS URL。
 _URL_PATTERN = re.compile(r"https?://\S+")
 
-# 裸の機械識別子。パス、UUID、Git commit ID及びsnake_case識別子は、
+# 裸の機械識別子。パス、UUID、Git commit IDおよびsnake_case識別子は、
 # 日本語の地の文へ値として埋め込まれても英語の散文量を表さないため、語数比の計数から除外する。
 # 通常の英単語まで除外しないよう、パスは区切り文字、commit IDは数字を必須とする。
 _MACHINE_IDENTIFIER_PATTERN = re.compile(
@@ -48,10 +48,10 @@ _MACHINE_IDENTIFIER_PATTERN = re.compile(
     r")"
 )
 
-# 機械可読な返却行。小文字のsnake_case識別子だけの行と、当該識別子をキーとする`<キー>: <値>`行を対象とする。
-# `agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」は、委譲先がチェックポイント又は
+# 機械可読な返却行。小文字のsnake_case識別子だけの行と、その識別子をキーとする`<キー>: <値>`行を対象とする。
+# `agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」は、委譲先がチェックポイントまたは
 # 完了報告でターンを終える場合に指定形式の文面だけを出力し地の文を加えないことを求める。
-# 当該形式（`status: checkpoint`などのcheckpointブロック、`merged_head:`などの統合結果、
+# これらの形式（`status: checkpoint`などのcheckpointブロック、`merged_head:`などの統合結果、
 # `needs_escalation`の単独返却）は英字だけで構成されるため、地の文へ残すと英語応答と判定され、
 # 規定どおりの返却が遮断される。
 # キーを小文字のsnake_caseへ限定するのは、`Summary:`のように大文字で始まる英語の散文を

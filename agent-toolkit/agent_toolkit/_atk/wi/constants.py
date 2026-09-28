@@ -8,7 +8,7 @@
 PROCESS_WI_GOAL_BODY = "`agent-toolkit:process-wi`を完遂してください。"
 """常駐処理が子セッションへ渡す目的文の本体。
 
-起動プロンプトを組み立てる側と、セッション記録から当該セッションを判別する側が同じ値を使う。
+起動プロンプトを組み立てる側と、セッション記録からそのセッションを判別する側が同じ値を使う。
 起動プロンプトは境界標識で囲むため、記録側は本文の包含で判定する。
 """
 
@@ -90,7 +90,7 @@ BULK_SOURCE_STATES = {
     "reject": (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD),
     "remove": WI_USER_REMOVABLE_STATES,
 }
-"""操作ごとの遷移元状態集合。`--all`の候補は当該集合に属する項目だけとする。
+"""操作ごとの遷移元状態集合。`--all`の候補はこの集合に属する項目だけとする。
 
 各値は、個別指定時の暗黙解決が探索する状態と`TRANSITION_EXPLICIT_STATES`が受理する状態の和集合と一致する。
 `remove`だけは呼出主体で値が変わるため、本表は非エージェント環境の値を持ち、
@@ -106,11 +106,11 @@ BULK_ACTION_LABELS = {
     "reject": "不採用",
     "remove": "削除",
 }
-"""一括経路の候補0件、確認及び再照合の各メッセージが使う操作名。"""
+"""一括経路の候補0件、確認および再照合の各メッセージが使う操作名。"""
 
 
 def bulk_source_states(action: str, *, actor_is_agent: bool) -> tuple[str, ...]:
-    """呼出主体を加味した当該操作の遷移元状態集合を返す。"""
+    """呼出主体を加味した、その操作の遷移元状態集合を返す。"""
     if action == "remove":
         return WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
     return BULK_SOURCE_STATES[action]

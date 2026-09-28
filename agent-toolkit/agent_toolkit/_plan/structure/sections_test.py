@@ -323,7 +323,7 @@ def test_structured_material_contract_rejects_duplicate_feedback_queue_id() -> N
 
 @pytest.mark.parametrize("material_type", ["参考素材", "処理対象資料", "起動事実"])
 def test_structured_material_types_may_be_unreferenced(material_type: str) -> None:
-    """参考素材、処理対象資料及び起動事実は要求を直接持たなくても受理する。"""
+    """参考素材、処理対象資料および起動事実は要求を直接持たなくても受理する。"""
     row = {
         "参考素材": "| P-002 | 参考素材 | 非該当 | docs/reference.md | 節1 |",
         "処理対象資料": "| P-002 | 処理対象資料 | 非該当 | input.json | $.items |",
@@ -509,6 +509,6 @@ def test_progress_log_rows_returns_empty_list_for_row_less_table() -> None:
     ],
 )
 def test_progress_log_rows_rejects_broken_structure(content: str, expected: str) -> None:
-    """節、固定表及び列構成のいずれかが成立しない本文を拒否する。"""
+    """節、固定表および列構成のいずれかが成立しない本文を拒否する。"""
     with pytest.raises(ValueError, match=expected):
         _plan_format.progress_log_rows(content)

@@ -53,7 +53,7 @@ dev = [
 
 # pyfltrは`agent-toolkit/`をsubprojectとして分離し、subprojectの設定をリポジトリ直下の`pyproject.toml`とは
 # 独立に解決する。直下の同キーは本subprojectへ届かないため、検査の有無と挙動を決めるキーは本ファイルへも置く。
-# 直下と同じ値にするキーにはその旨を、本subproject固有の値にするキーにはその理由をそれぞれ併記する。
+# 直下と同じ値を指定するキーでは値をそろえたことを示し、本subproject固有の値を指定するキーではその理由を書く。
 [tool.pyfltr]
 preset = "latest"
 python = true

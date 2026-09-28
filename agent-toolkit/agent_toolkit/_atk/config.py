@@ -80,7 +80,7 @@ _KNOWN_MODELS = {
     # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。
     # 実測の日付と再検証手段は`docs/development/audit-records.md`の
     # 「agent-toolkit/agent_toolkit/_atk/config.py：Antigravity CLIのモデル指定」が持つ。
-    # 日本語文書の推敲へ用途を限定するため、一覧は当該用途で使う1件だけとする。
+    # 日本語文書の推敲へ用途を限定するため、一覧はこの用途で使う1件だけとする。
     "agy": frozenset({"gemini-3.8-flash"}),
 }
 _KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
@@ -274,7 +274,7 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
 def parse_unresolved_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
     """model_typeに対応する保存値を候補の3つ組として返す。
 
-    設定値と同じ書式の候補列を受け取った場合は設定を読まず、当該候補列をそのまま分解して返す。
+    設定値と同じ書式の候補列を受け取った場合は設定を読まず、その候補列をそのまま分解して返す。
     """
     key = f"{model_type}_model"
     if key not in _MUTABLE_KEY_DEFAULTS:

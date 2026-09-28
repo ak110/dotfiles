@@ -47,7 +47,7 @@ def ensure_plan_lock_ignored(lock_path: Path) -> bool:
     変更した場合だけ真を返す。
     版管理の対象である`.gitignore`ではなく`info/exclude`へ書くため、除外の保証が
     commitとpushを伴わない。既に`.gitignore`へ同じパターンを持つcloneでも、
-    当該行は除去せずそのまま残す。
+    その行は除去せずそのまま残す。
     """
     resolved_lock = lock_path.expanduser().resolve(strict=False)
     repository = _repository_for_plan_lock(resolved_lock)
@@ -180,7 +180,7 @@ def _timeout_error(error: OSError, *, target: str, elapsed: float) -> OSError:
 def lock_target(fh: IO) -> str:
     """ロック対象を識別できる表現を返す。
 
-    ファイル名を持たないハンドルでは、当該ハンドルを識別できる代替の表現を返す。
+    ファイル名を持たないハンドルでは、そのハンドルを識別できる代替の表現を返す。
     """
     name = getattr(fh, "name", None)
     if isinstance(name, str) and name:
@@ -239,7 +239,7 @@ if os.name == "nt":
         `blocking=True`時、空ファイルでも`LK_LOCK`はブロッキング取得可能。
         `LK_LOCK`は最大10秒で再試行する仕様のため、長時間の競合に備えてOSError時は再試行する。
         再試行は`_WINDOWS_LOCK_TIMEOUT_SECONDS`を上限とし、超えた場合は`OSError`を呼び出し側へ返す。
-        当該`OSError`はロック対象と経過時間を持つ。
+        この`OSError`はロック対象と経過時間を持つ。
         `blocking=False`時は`LK_NBLCK`で即時判定し、取得不能なら`OSError`を送出する。
         """
         fh.seek(0)

@@ -24,8 +24,8 @@ _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 _PLUGIN_OPERATION_TIMEOUT_SEC = claude_common.PLUGIN_OPERATION_TIMEOUT
 
 # plugin cache の version 直下に揃っている必要があるファイル。
-# いずれかが欠けると `uv run --project <キャッシュ>` が当該ディレクトリをプロジェクトとして
-# 解決できず、当該 plugin の入口が import に失敗する。
+# いずれかが欠けると `uv run --project <キャッシュ>` がそのディレクトリをプロジェクトとして
+# 解決できず、対象 plugin の入口が import に失敗する。
 _PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock", ".claude-plugin/plugin.json")
 
 # インストール済みかつ既定で有効なものを `run()` 中に `claude plugin disable` で無効化する。
@@ -676,9 +676,9 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     `claude plugin install/update` は同じ version の plugin を既に導入済みと判定した場合に
     キャッシュを検証せずスキップするため、CLI の終了コード 0 はキャッシュの完全性を含意しない。
     必須ファイルを欠いたまま後続の工程が `uv run --project <キャッシュ>` を実行すると、
-    当該ディレクトリがプロジェクトとして解決されず `ModuleNotFoundError` で終わる。
+    そのディレクトリがプロジェクトとして解決されず `ModuleNotFoundError` で終わる。
 
-    導入先を解決できない場合と、導入先が plugin cache の外にある場合は、検査できなかった旨と
+    導入先を解決できない場合と、導入先が plugin cache の外にある場合は、検査できなかったことと
     探索先を警告して False を返す。導入そのものの欠落は `_verify_target_plugins` が扱うため、
     本関数では新しい失敗経路を増やさない。
     """
@@ -713,7 +713,7 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
         command = f"claude plugin install {name}@{_MARKETPLACE_NAME} --scope=user -y"
         message = (
             f"再インストール後も plugin cache に {', '.join(missing)} がありません: "
-            f"{log_format.home_short(repaired_dir)} (確認手順: 当該ディレクトリを削除して `{command}` を実行する)"
+            f"{log_format.home_short(repaired_dir)} (確認手順: このディレクトリを削除して `{command}` を実行する)"
         )
         logger.error(log_format.format_status(name, message))
         raise RuntimeError(f"{name}: {message}")

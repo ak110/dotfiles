@@ -213,7 +213,7 @@ def test_prepare_resolves_reference_document_from_main_worktree_name(
 def test_prepare_reports_missing_items(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記録、作業ディレクトリ又は抽出器の同一性が成立しない場合は、不足項目を返して標準出力を空に保つ。"""
+    """記録、作業ディレクトリまたは抽出器の同一性が成立しない場合は、不足項目を返して標準出力を空に保つ。"""
     transcript = _write_claude_transcript(tmp_path)
     work_dir = _work_dir(tmp_path)
 

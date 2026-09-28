@@ -25,14 +25,14 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
         "1件1行のJSON Lines",
         "最初の待機で起動中sessionと未回収結果を登録簿へ固定",
         "通知だけを回収した場合",
-        "待機対象の行が現れない応答は当該対象が未終端であることを示す",
+        "待機対象の行が現れない応答は、その対象が未終端であることを示す",
         "同じターン内に同じコマンドを再発行",
         "結果を保持しない`stop`とsession登録簿での喪失確定",
         "待機対象登録が破損している場合",
         "終端statusでは追加の結果受領操作は不要",
         "`--output-file`を指定した場合",
         "通知件数と送信元session ID",
-        "回収した本文は当該保存先に残る",
+        "回収した本文はその保存先に残る",
         "MCPの`list`を1回呼び出してから同じコマンドを再実行",
         "--root-session-id",
         "次の逐次待機へ再配送しない",
@@ -139,10 +139,10 @@ def test_agents_wait_saves_collected_lines_to_the_output_file(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存先を指定した待機は、終端件数を示し、回収したJSON Linesを当該ファイルへ残す。
+    """保存先を指定した待機は、終端件数を示し、回収したJSON Linesを指定したファイルへ残す。
 
     保存先を持たない待機では、回収と同時に原本が削除されて本文が標準出力にだけ現れ、
-    後続の工程と後続のセッションが当該本文を取得できない。
+    後続の工程や後続のセッションがその本文を取得できない。
     """
     results = status_file.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)

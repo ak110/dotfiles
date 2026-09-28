@@ -203,7 +203,7 @@ def convert_directory(
 ) -> ConvertSummary:
     """ディレクトリまたは単一ファイルの画像を変換する。
 
-    ディレクトリを渡した場合は配下を再帰探索する。ファイルを渡した場合は当該1件を処理する。
+    ディレクトリを渡した場合は配下を再帰探索する。ファイルを渡した場合はその1件を処理する。
     `_IGNORE_SUFFIXES`に該当する拡張子はスキップする。
 
     Args:
@@ -303,8 +303,8 @@ def _normalize_mode(img: PIL.Image.Image, output_type: OutputType) -> PIL.Image.
 
     JPEGはアルファチャンネルと4チャンネルの色空間を保存しないため、輝度だけを持つ入力を`L`へ、
     それ以外を`RGB`へ変換する。PNGとWebPでは`_NON_JPEG_TARGET_MODES`へ限定し、透過情報を持つ入力を
-    `LA`又は`RGBA`へ、持たない入力を`L`又は`RGB`へ変換する。
-    16bitの`I;16`と1bitの`1`も当該集合の外にあるため、この変換で8bitの`L`になる。
+    `LA`または`RGBA`へ、持たない入力を`L`または`RGB`へ変換する。
+    16bitの`I;16`と1bitの`1`もこの集合の外にあるため、この変換で8bitの`L`になる。
     """
     if output_type == "jpeg":
         target = "L" if img.mode in _LUMINANCE_MODES else "RGB"

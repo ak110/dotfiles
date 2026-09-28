@@ -149,7 +149,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self._publish_markdown_change(event)
 
     def publish(self, event: str = "changed") -> None:
-        """WIの変更又は同期結果を全購読者へ配信する。"""
+        """WIの変更または同期結果を全購読者へ配信する。"""
         for queue in tuple(self._queues):
             if queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):

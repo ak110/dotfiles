@@ -82,7 +82,7 @@ def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | Non
 
 
 def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> str:
-    """名称又は完全stemを受け取り、メインによる起動用の正規stemを返す。"""
+    """名称または完全stemを受け取り、メインによる起動用の正規stemを返す。"""
     name = _validate_plan_name(plan_name)
     if _TIMESTAMPED_NAME_PATTERN.fullmatch(name) is not None:
         return name
@@ -256,7 +256,7 @@ def _finalize_candidate(
 ) -> tuple[pathlib.Path, ...]:
     """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。
 
-    確定と検査に成功した後、当該計画バンドルの所有セッションと、
+    確定と検査に成功した後、この計画バンドルを所有するセッションと、
     連続直接編集検査が読むセッション状態を記録する。
     所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
     """
@@ -310,7 +310,7 @@ def create_plan_files(
 ) -> tuple[pathlib.Path, ...]:
     """入力本文を計画作業rootへ作成し、確定済みパスを返す。
 
-    ``main_source``及び任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
+    ``main_source``および任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
     private-notesは既存の可搬参照の検査にだけ使い、計画本文は作業rootへ保存する。
     """
     if max_attempts <= 0:
@@ -383,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
     name_group = parser.add_mutually_exclusive_group(required=True)
     name_group.add_argument(
         "--name",
-        help="計画の名称又はdd-HHmm_<名称>形式の完全stem。名称だけの場合はUTCの日時を付ける。",
+        help="計画の名称またはdd-HHmm_<名称>形式の完全stem。名称だけの場合はUTCの日時を付ける。",
     )
     name_group.add_argument(
         "--lane",

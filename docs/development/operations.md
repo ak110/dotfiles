@@ -8,7 +8,7 @@
 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する。
 
 - `uv run scripts/sync_generated_files.py`のようにパスを直接渡すと、
-  当該スクリプトのPEP 723ヘッダーが検出され依存なしの隔離環境で実行される
+  PEP 723ヘッダーの検出により、スクリプトは依存なしの隔離環境で実行される
 - 同スクリプトは`sys.executable`で生成器を子プロセス起動するため、
   隔離環境では子が要求するプロジェクト依存（`pytilpack`等）を解決できず全件失敗する
 - `python`を明示するとスクリプトモードにならずプロジェクト環境で実行される
@@ -55,7 +55,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
 - 応答終了そのものは`Stop`のフック（`pytools/claude_hook/stop_bell.py`）で鳴らす。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
   背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の判定を用いる。
-  他のStop系フックがターン継続をblockした場合は、当該ターンの終了前にベルが鳴る
+  他のStop系フックがターン継続をblockした場合は、ターンが終了する前にベルが鳴る
 - Windowsはtmux運用外のため、ベルの各設定は`share/claude_settings_json_managed.win32.json`へ追加しない
 - `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
   `@catppuccin_window_flags_icon_format`をベル分岐だけへ上書きし、表示対象をベルアイコンに限定する
@@ -94,35 +94,38 @@ Windowsはtmux運用外のため対象外とする。
 Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
 `askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
 `askUserQuestionTimeout`による自動継続は、Remote Controlのbridgeが接続したセッションではarmedされない。
-ダイアログの内部表現が持つ`hasExternalRacer`がbridgeの接続で真になり、自動継続のarmed条件が当該値の否定を含むためである。
+bridgeが接続すると、ダイアログの内部表現が持つ`hasExternalRacer`は真になる。
+自動継続のarmed条件には、この値が偽であることが含まれるためである。
 `~/.claude/settings.json`は`remoteControlAtStartup`が真であり、対話TUIのセッションはこの条件へ該当する。
 armedされた場合の中止条件はタイマー発火以降のユーザー操作と端末フォーカスの保持であり、端末とtmuxのアクティブペインにフォーカスが当たっている間は自動継続しない。
 `dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
-既定値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけであり、当該質問の転送はいずれにも該当しない。
+既定値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけである。
+`AskUserQuestion`の転送はこの3箇所のいずれにも該当しない。
 このため`atk wi process-loop`のClaude起動は`--settings`へ`remoteControlAtStartup`の偽を渡し、常駐実行のセッションでbridgeを接続しない。
 常駐実行のセッションでは別端末からの回答ができなくなるが、質問待ちに上限を与える利益を優先する。
 本節の記述は2026年9月7日にClaude Code 2.1.263のバイナリを実読して確定した。
-再検証ではバイナリから`hasExternalRacer`を設定する箇所と、当該値の否定を含む自動継続のarmed条件を読む。続けて`dialogExpiry`の既定値を解決する関数の呼び出し元を列挙し、当該質問の転送が含まれないことを確認する。
+再検証ではバイナリから`hasExternalRacer`を設定する箇所と、自動継続のarmed条件でこの値が偽であることを要求する箇所を読む。
+続けて`dialogExpiry`の既定値を解決する関数の呼び出し元を列挙し、`AskUserQuestion`の転送が含まれないことを確認する。
 
 本節が記録する配布の事実が規範の判断へ及ぼす影響は、[concepts.md](concepts.md)の「確認・合意の運用」が保持する。
 
 `dialogExpiry`の対象はリモートクライアントへ転送された権限ダイアログとユーザーダイアログが回答を待って駐留できる上限、
-及びHELD状態のcross-sessionメッセージが承認を待つ時間である。
-上限を超えるとキャンセル又は拒否付きのdropへ解決するため、エージェントは期限切れと実利用者の拒否を区別できない。
+およびHELD状態のcross-sessionメッセージが承認を待つ時間である。
+上限を超えるとキャンセルまたは拒否付きのdropへ解決するため、エージェントは期限切れと実利用者の拒否を区別できない。
 リモートクライアントが接続していないローカル専用の権限プロンプトは影響を受けない。
 `~/.claude/settings.json`は`remoteControlAtStartup`が真であり、権限ダイアログが転送されるため、
 既定値の`5m`のままでは離席が5分を超えた時点で自動キャンセルされる。
-環境変数`CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS`を設定した環境では、当該値が設定ファイルの値より優先する。
+環境変数`CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS`を設定した環境では、設定ファイルよりも環境変数の値を優先する。
 
 `atk wi process-loop`のClaude起動だけが`--settings`で両設定の値と`remoteControlAtStartup`を明示する。
 自律実行では無期限の駐留が工程の停止を招くため、配布値の`never`を常駐実行だけ有限値へ上書きする。
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
 TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/agent_toolkit/_common/wait_schedule.py`の
 プロンプトキャッシュTTL判定を用いる。
-利用者が`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、当該指定を判定の入力とする。
+利用者が`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、明示されたTTLを判定に用いる。
 CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。
 Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
-`CLAUDE_STREAM_IDLE_TIMEOUT_MS`及び`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
+`CLAUDE_STREAM_IDLE_TIMEOUT_MS`および`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
 該当する障害を確認した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
 
 ## mise latestの非ログイン再評価
@@ -134,7 +137,7 @@ dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`
 更新成功直後の正常再起動では、1回限りの内部引数を次のプロセスへ渡して起動時の重複実行を省く。
 内部引数は次の再起動引数から除去するため、ランチャー間の受け渡し形式と永続ファイルを追加しない。
 
-`--no-update`指定時、dotfiles以外を対象とする場合、又は`~/dotfiles`を解決できない場合は再評価しない。
+`--no-update`指定時、dotfiles以外を対象とする場合、または`~/dotfiles`を解決できない場合は再評価しない。
 `mise`の終了コードが0以外の場合と600秒でタイムアウトした場合は、結果を標準エラー出力へ警告して常駐処理を続行する。
 ログイン時のシェル初期化処理は`mise install`を実行しない。
 対話シェルの初期化が起動する外部コマンドのうち、miseのshimとして解決され得るものは`MISE_AUTO_INSTALL=false`を与えて起動する。
@@ -155,7 +158,7 @@ working treeにだけ定義したツールが更新を繰り返しても未導�
 保存先は`${XDG_CACHE_HOME:-~/.cache}/dotfiles/bash-completion/<コマンド名>.bash`とする。
 
 キャッシュは、存在しない場合と、生成元の実行ファイルがキャッシュより新しい場合に再生成する。
-生成が失敗した場合はキャッシュを保存せず、当該コマンドの補完を読み込まずに続行する。
+生成に失敗した場合はキャッシュを保存しない。そのコマンドの補完も読み込まずに続行する。
 生成コマンドを変更した場合はキャッシュへ反映されないため、`~/.cache/dotfiles/bash-completion`を削除して再生成する。
 
 ## claude-statuslineの開発版導入
@@ -165,8 +168,8 @@ working treeにだけ定義したツールが更新を繰り返しても未導�
 差分にはコミット済み、ステージ済み、未ステージの変更と、Gitのignore対象外である同じパス配下の未追跡ファイルを含める。
 
 作業ツリーを解決できない場合、Git管理下でない場合、`develop`以外のブランチである場合、差分がない場合、
-又は開発版のビルドに必要なmiseが見つからない場合は、GitHub Releaseから取得する。
-miseが見つからない場合は、その旨を記録してから取得へ切り替える。
+または開発版のビルドに必要なmiseが見つからない場合は、GitHub Releaseから取得する。
+miseが見つからない場合は、開発版のビルドに必要なmiseを利用できないことを記録してから、GitHub Releaseからの取得へ切り替える。
 Gitの状態だけで開発ツリーと判定すると、ビルド手段を持たない環境で同じ状態が成立したときにstatuslineの導入そのものが止まるためである。
 `develop`で`origin/master`を解決できない場合は取得へ切り替えず、後処理を失敗させる。
 ビルド、成果物の読込、既存バイナリの原子的な置換に失敗した場合も、既存バイナリを保持したまま後処理を失敗させる。
@@ -178,7 +181,7 @@ Gitの状態だけで開発ツリーと判定すると、ビルド手段を持�
 ## Codex診断ログの通常ストレージ復元
 
 Linuxのpost-apply処理は、旧機構が`/dev/shm/codex-<UID>-<ファイル名>`へ配置した診断ログDBを`~/.codex/`へ復元する。
-Codexが停止中であり、ホームディレクトリ側の3ファイルが旧機構の正確なリンク又は欠落状態である場合だけ復元する。
+Codexが停止中であり、ホームディレクトリ側の3ファイルが旧機構の正確なリンクまたは欠落状態である場合だけ復元する。
 復元した実行では共有メモリー側を保持し、後続のpost-apply実行で3ファイルの内容一致を確認してから回収する。
 
 ホームディレクトリ側と共有メモリー側のDB、WAL、SHMが1件でも異なる場合は、自動的にどちらか一方を選択しない。
@@ -207,19 +210,19 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 計測は次の手順で行う。
 まず`~/.claude/projects/`配下から`agent-toolkit:process-wi`のメインセッション記録を1件選ぶ。
 選定条件は最初のレコードの`timestamp`が有効化commit`248ec7cec313fe36d5a0210b561656340e4dc3c4`の
-commit時刻（2026-09-06T14:57:05Z）より後であり、かつ当該セッションが終端済みであることとする。
+commit時刻（2026-09-06T14:57:05Z）より後であり、かつ選定対象のセッションが終端済みであることとする。
 次に以下を実行する。
 
 ```sh
-atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
+atk run-script session-review-evidence -- --stats <選んだ記録の絶対パス>
 ```
 
 出力の`stats-compaction-total`の`by_record`から、キーが`codex:`で始まる項目の値の合計を求める。
-当該合計をCodex委譲先のコンパクション回数とする。
-最後に、選んだセッション識別子と当該合計を上記の有効化前の値とともに本節へ追記する。
+この合計がCodex委譲先のコンパクション回数となる。
+最後に、選んだセッション識別子と計算した合計を上記の有効化前の値とともに本節へ追記する。
 2026年9月7日の時点で選定条件を満たすセッションは無い。
 直近の`agent-toolkit:process-wi`セッション`9af72711-b905-4602-b5df-93843ad1af8a`は2026-09-06T14:25:51Zに開始している。
-当該セッションは有効化より前に開始したCodex委譲先を含むため対象にしない。
+このセッションには有効化より前に開始したCodex委譲先が含まれるため、比較対象にしない。
 
 ## 特定ホストでの常駐サービス自動起動
 
@@ -257,7 +260,7 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 （Apacheの設定は本リポジトリの管理対象外のため、`chezmoi apply`では変更されない）。
 
 1. `/cpv/`の`ProxyPass`・`ProxyPassReverse`をポート28765からポート28766へ向け直し、
-   `RequestHeader set X-Forwarded-Prefix /cpv`を維持したまま`/cpv/`を残すか、当該ブロックを削除する
+   `RequestHeader set X-Forwarded-Prefix /cpv`を維持して`/cpv/`を残すか、`/cpv/`の設定ブロックを削除する
 2. `/cpv/`を残す場合、`https://tqzh.tk/cpv/`は`atk serve`のWI画面を表示する。
    計画ファイル画面は同じベースパス配下の`/cpv/plans`となる
 3. `/cpv/`を削除する場合、利用者は`https://tqzh.tk/atk/plans`へ移動する。
@@ -270,18 +273,18 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 タイマーが起動するoneshot service`dotfiles-autoupdate.service`を配置して有効化する。
 
 - タイマーはsystemdユーザーマネージャーの起動から1分後に初回確認し、以後はserviceが終了してから10分ごとに再実行する
-- serviceは`scripts/update_dotfiles_if_upstream_changed.py`を実行する。当該スクリプトは現在branchが`develop`で
-  upstreamが`origin/develop`であることを検証したうえで、`git ls-remote`で取得した`origin/develop`のcommit IDを
-  ローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
+- serviceは`scripts/update_dotfiles_if_upstream_changed.py`を実行する。
+  このスクリプトは現在branchが`develop`で、upstreamが`origin/develop`であることを検証する。
+  そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
   - commit IDが一致し未完了状態も無ければ、`update-dotfiles`を起動せず正常終了する
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
     - euryaleでは利用者が配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`scripts/update_dotfiles.py`が`chezmoi apply`へ渡す
-  - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、reset及びcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
+  - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、resetおよびcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
 - systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
-  導入時に解決した`uv`と当該スクリプトの絶対パスを埋め込み、あわせて`Environment=PATH`を指定する
+  導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
   - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する
   - 指定順は`~/.local/bin`、miseのshims、systemdの既定PATHとし、実体を持つコマンドをshimより優先する
-- GitHubへの接続失敗、対象refの欠落、branch又はupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
+- GitHubへの接続失敗、対象refの欠落、branchまたはupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
   systemdのjournalへ残る。次回のタイマー起動で再試行する
 - dotfilesの作業ツリーに追跡済みの未コミット差分がある場合、`update-dotfiles`の`git pull --rebase`が失敗して
   自動反映は成立しない。差分は手動で整理する
@@ -304,7 +307,7 @@ atk run-script session-review-evidence -- --stats <当該記録の絶対パス>
 
 - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
 - 期待シムは`pyproject.toml`の`[project.scripts]`から両テンプレートが展開時に導出する。定数の手動更新は不要とする
-- 再インストールを延期又は失敗した場合は、テンプレートが当該状態を環境変数で`dotfiles-post-apply`へ渡し、
+- 再インストールを延期した場合や失敗した場合は、テンプレートがその結果を環境変数で`dotfiles-post-apply`へ渡し、
   `update-dotfiles`の最終出力へ案内として表示する
 - Windowsで実行ファイル、DLL、仮想環境などを更新する場合は、対象を保持するプロセスの所有者と再起動可否を更新前に分類する
 - 更新処理が所有し、元の稼働状態へ復元できるプロセスだけを停止する
@@ -342,17 +345,20 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 ## 日次リリースの自動実施
 
 dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
-実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点及び実施手順は同スキルが定める。
-本節は当該運用を導入した経緯と根拠を記録する。
+実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
+本節には日次リリースの自動実施を導入した経緯と根拠を記録する。
 
 判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日の利用者指示による。
-廃止した条件は、WIキュー全体のうち当該セッションが固定した集合を除いた残りが、着手できない項目だけであることを求めていた。
-当該条件が守っていた「固定したAWIの全件が終端してからリリースする」目的は、`agent-toolkit:process-wi`の実行順が公開工程を全レーンの終端後に置くことで成立しており、当該条件を欠いても失われない。
-一方で当該条件の入力は共有キューの現在状態であり、処理回の進行中に`agent-toolkit:session-review`、並行セッション及び利用者が投入する項目で増減する。
-増減した項目は当該セッションの成果と因果を持たないため、当該セッションの成果の完成度とは無関係にリリースが止まった。
+廃止した条件では、WIキュー全体からそのセッションで固定した集合を除き、残った項目がすべて着手できないことを求めていた。
+この条件は「固定したAWIの全件が終端してからリリースする」目的を守るためのものだった。
+`agent-toolkit:process-wi`では公開工程を全レーンの終端後に実施するため、条件を廃止してもこの目的は失われない。
+一方、廃止した条件は共有キューの現在状態を入力としていた。
+この状態は処理回の進行中に`agent-toolkit:session-review`、並行セッションおよび利用者が投入する項目で増減する。
+増減した項目は、そのセッションの成果と因果を持たない。
+それでも、セッションの成果の完成度とは無関係にリリースが止まった。
 2026年9月16日の処理回では、選定時点のdotfiles宛の`inbox`が4件だったのに対し、レーンの統合が終わる時点では17件になっていた。
 
-2026年9月15日に当該条件の評価時点を公開工程から選定工程の完了へ前倒しした是正も、同じ原因への対処であった。
-当該是正は入力を取得する時点を早めただけであり、入力がセッションの外側から変わる性質そのものは残っていた。
+2026年9月15日には、同じ原因に対処するため、廃止した条件の評価時点を公開工程から選定工程の完了へ前倒ししていた。
+この是正では入力を取得する時点だけが早まった。入力がセッションの外側から変わる性質は残っていた。
 
-auto-merge、マージ失敗後の自動再試行及び自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)が記録する利用者指示による。
+auto-merge、マージ失敗後の自動再試行および自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)が記録する利用者指示による。

@@ -48,7 +48,7 @@ from agent_toolkit._plan import locations as _plan_file
 def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
     """保存済みエントリを再読込し、本文の一致を検証したうえで照合用のメタデータを返す。
 
-    `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存経路で本文が欠落又は改変されて
+    `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存経路で本文が欠落または改変されて
     いないことを、呼び出し元が終了状態で確定できるようにする。
     """
     saved_body = _frontmatter.decode_entry_text(path.read_bytes())
@@ -111,7 +111,7 @@ def _missing_dependency_warnings(
     """投入したエントリの依存先のうち、取り込み先に実在しないものを警告文へ列挙する。
 
     依存先が実在しないことを理由に投入を拒否せず、警告を返して登録を続ける。
-    `--depends-on`は当該呼び出しの全エントリへ共通に付くため、エントリと依存先の組ごとに1件返す。
+    `--depends-on`はその呼び出しの全エントリへ共通に付くため、エントリと依存先の組ごとに1件返す。
     判定と文面は`--batch`経路と共有し、両経路で同じ条件の参照へ同じ警告が出る状態を保つ。
     """
     if not dependencies:
@@ -218,7 +218,7 @@ def _require_agent_source(frontmatter: dict[str, object], source: str | None) ->
     item_source = raw_source if isinstance(raw_source, str) else source
     if is_agent_environment() and not item_source:
         raise WebInputError(
-            "エージェント環境ではsourceの明示が必須です。--sourceオプション、又は本文先頭のfrontmatterで指定してください。"
+            "エージェント環境ではsourceの明示が必須です。--sourceオプション、または本文先頭のfrontmatterで指定してください。"
         )
 
 
@@ -542,7 +542,7 @@ def _cmd_add(
 
     対象リポジトリは常にカレントディレクトリから解決する。ただし`mq add`直後のトークンが実在
     ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
-    当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
+    その引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
     `--target-repo`指定時は、レガシーREPO_PATH位置引数が無くfrontmatterにも`target_repo`が
     無い場合のfallback値として使う。
@@ -551,7 +551,7 @@ def _cmd_add(
     remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
     計画実装型の分類は`--plan-file`の指定だけで確定する。
-    `--body-file`を指定した場合は当該ファイルの内容を本文として扱う。
+    `--body-file`を指定した場合はそのファイルの内容を本文として扱う。
     シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
     `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
     """

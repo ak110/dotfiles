@@ -1,4 +1,4 @@
-"""`check_agent_doc_tone.py`の文の抽出、指標の計数及び閾値判定を検証する。"""
+"""`check_agent_doc_tone.py`の文の抽出、指標の計数および閾値判定を検証する。"""
 
 from __future__ import annotations
 

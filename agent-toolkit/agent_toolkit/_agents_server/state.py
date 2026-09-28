@@ -59,7 +59,7 @@ SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 
 
 def _read_share(name: str) -> str:
-    """共有プロンプト又は規範を末尾改行なしで読む。"""
+    """共有プロンプトまたは規範を末尾改行なしで読む。"""
     return (SHARE_DIR / name).read_text(encoding="utf-8").rstrip("\n")
 
 
@@ -260,7 +260,7 @@ def _action_detail(payload: Any, exclude: tuple[str, ...] = ()) -> str:
 
     各項目を`<key>=<値>`の形で並べ、文字列以外の値は区切りに空白を含めないJSONへ直列化する。
     `exclude`には、呼び出し元が別の項目として既に公開しているkeyを渡す。
-    引数、コマンド文字列及びパッチ内容を含めるのは、同じツール名を繰り返す区間では
+    引数、コマンド文字列およびパッチ内容を含めるのは、同じツール名を繰り返す区間では
     ツール名だけの表示が変化せず、稼働中と停止中を区別できないためである。
     """
     if not isinstance(payload, Mapping):
@@ -300,7 +300,7 @@ def activity_projection(
     started_at: str | None,
     api_error: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """活動とテキスト出力の各時刻からの経過、及び停滞の印を公開項目へ射影する。
+    """活動とテキスト出力の各時刻からの経過、および停滞の印を公開項目へ射影する。
 
     停滞の判定入力は活動時刻とする。テキスト出力の時刻を判定入力にすると、
     ツール呼び出しだけを長時間続ける正常なsessionを停滞と判定し、
@@ -391,16 +391,16 @@ class SessionState:
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
-    # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名、当該ブロックを受信した時刻及び入力の1行要約の組とする。
+    # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名、そのブロックを受信した時刻および入力の1行要約の組とする。
     # `child_tool_uses`は`agents_server`のツール呼び出しの引数を孫session追跡のために保持する別の責務を持つため統合しない。
     pending_tool_uses: dict[str, tuple[str, str, str]] = dataclasses.field(default_factory=dict, repr=False)
-    # 最後に観測した行動。assistantのテキスト出力ではその抜粋、ツール呼び出しではツール名又はitem種別と入力の1行要約を持つ。
+    # 最後に観測した行動。assistantのテキスト出力ではその抜粋、ツール呼び出しではツール名またはitem種別と入力の1行要約を持つ。
     # statuslineが、テキスト出力の無い区間でも稼働を表示するための射影元とする。
     last_action: str = ""
     awaiting_auto_resume: bool = False
     # `auto_resume_consumed`は、Claude backendのタスク完了通知による再開と、
     # MCP層が孫sessionの終端を検出して発行する再開の2経路だけが真にする。
-    # Codex backendは終端結果を保留しないため、当該経路へ到達しない。
+    # Codex backendは終端結果を保留しないため、これらの経路へ到達しない。
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
     pending_result: dict[str, Any] | None = None
@@ -472,8 +472,8 @@ class SessionState:
         1回の照会で切り分けられるようにする。
         Claude backendは`tool_use`ブロックの記録から、Codex backendは進行中itemから射影する。
         1つのsessionはいずれか一方のbackendだけを使うため、両者を同じ項目で返す。
-        入力の1行要約は`detail`として載せ、要約が空の場合だけ当該keyを置かない。
-        どのコマンド又はどのファイルで止まっているかは、ツール名とitem種別だけでは判別できないためである。
+        入力の1行要約は`detail`として載せ、要約が空の場合だけこのkeyを置かない。
+        どのコマンドまたはどのファイルで止まっているかは、ツール名とitem種別だけでは判別できないためである。
         """
         if self.current_item is not None and self.current_item_started_at is not None:
             entry: dict[str, str] = {"started_at": self.current_item_started_at}
@@ -515,7 +515,7 @@ class SessionState:
     def touch(self) -> None:
         """状態の更新時刻を現在時刻へ更新する。
 
-        turnの終端結果が確定した時点で、登録済みの終端通知先へ当該sessionを1回だけ渡す。
+        turnの終端結果が確定した時点で、登録済みの終端通知先へこのsessionを1回だけ渡す。
         turnを再開した後の終端では、同じ通知を改めて1回行う。
         """
         self.updated_at = _utc_now()
@@ -656,7 +656,7 @@ def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandi
 
 
 def has_pending_auto_resume_targets(session: SessionState) -> bool:
-    """自動再開が追跡する子session又はClaude taskが残るかを返す。
+    """自動再開が追跡する子sessionまたはClaude taskが残るかを返す。
 
     Claude・Codex backendとMCP層は、開始、解除、再開の全条件で本述語だけを使う。
     """
@@ -780,7 +780,7 @@ def consume_agents_server_tool_result(
     if not isinstance(session_id, str) or not session_id:
         return
     if result.get("status") in TERMINAL_STATUSES | {"expired"}:
-        # 当該レコードは孫sessionを所有する別プロセスが持つため、観測側は削除しない。
+        # このレコードは孫sessionを所有する別プロセスが持つため、観測側は削除しない。
         session.live_child_session_ids.discard(session_id)
         session.terminal_child_session_ids.add(session_id)
 
@@ -831,7 +831,7 @@ def _collected_session_ids(text: str) -> set[str]:
 def consume_agents_wait_output(session: SessionState, text: str) -> None:
     """委譲先が`atk agents wait`で終端結果を回収した孫sessionを自動再開の追跡から外す。
 
-    回収済みの結果は再配送されないため、当該sessionの終端を理由に委譲先を再開させると、
+    回収済みの結果は再配送されないため、そのsessionの終端を理由に委譲先を再開させると、
     委譲先は受け取り済みの結果について同じ報告を返し直すだけのturnを費やす。
     回収の根拠は待機コマンドが返したJSON Linesとし、`--output-file`の場合は標準出力が示す保存先を読む。
     結果ファイルの不在は公開前の状態と区別できないため、回収の根拠に用いない。

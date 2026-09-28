@@ -322,13 +322,13 @@ _EXPECTED_SAVED_MODES = {
 }
 """入力モードと出力形式に対する保存後のモード。
 
-WebPはPillowが保存時にRGB又はRGBAへ変換するため、当該形式の保存後のモードは
+WebPはPillowが保存時にRGBまたはRGBAへ変換するため、保存後のモードが
 `_TARGET_MODES`へ収まることだけを契約とし、本対応表の対象から外す。
 """
 
 
 def _source_path(root: pathlib.Path, mode: str) -> pathlib.Path:
-    """当該モードを保存できる入力ファイルのパスを返す。"""
+    """指定されたモードを保存できる入力ファイルのパスを返す。"""
     if mode == "CMYK":
         return root / "source.jpg"
     if mode == "F":

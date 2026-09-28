@@ -35,7 +35,7 @@
 ## 初期化タイミングとFOUC対策
 
 - Alpineの読み込みスクリプトタグには`defer`属性を付与する（DOM解析完了後に初期化させ、未定義要素への早期アクセスを防ぐため）
-- 外部プラグイン登録・`Alpine.data()`登録・`Alpine.store()`登録は`alpine:init`イベント内で実行する（当該イベントはAlpineが内部初期化を始める直前に発火する。登録が遅れると参照エラーになる）
+- 外部プラグイン登録・`Alpine.data()`登録・`Alpine.store()`登録は`alpine:init`イベント内で実行する（このイベントはAlpineが内部初期化を始める直前に発火する。登録が遅れると参照エラーになる）
 - 初期状態でAlpine未処理のDOMがちらつく場合は対象要素に`x-cloak`属性を付与し、`[x-cloak] { display: none !important; }`をCSSへ用意する（Alpineが初期化完了時に`x-cloak`を除去するため、未処理DOMの一瞬の露出＝FOUCを防げる）
 
 ## ストア（Alpine.store）とコンポーネント間通信

@@ -64,7 +64,7 @@ def _state_prefixed_filename_hint(filename: str) -> str | None:
 
 
 def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """showサブコマンド: `FILENAME...`指定時は当該項目群、`--all`指定時は全件の本文を表示する。
+    """showサブコマンド: `FILENAME...`指定時は指定された項目群、`--all`指定時は全件の本文を表示する。
 
     `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
     `FILENAME`を2件以上指定した場合の区切りは`--all`と同じく各項目の後の空行1行とし、
@@ -79,7 +79,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     ファイル名で一意に指定した項目を候補から外さないよう迂回する）。
     `--all`指定時のAWI・`uwi`双方の走査対象は`--state`と連動する
     （既定`active`はinbox・processing・hold、`processable`はinbox・processing、
-    `all`は5状態フォルダ全連結、個別状態指定は当該状態のみ）。
+    `all`は5状態フォルダ全連結、個別状態指定はその状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。

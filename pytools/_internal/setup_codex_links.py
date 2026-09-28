@@ -59,7 +59,7 @@ def _process_link(dest: Path, target: Path) -> bool:
         )
         return False
     except OSError as error:
-        logger.warning(log_format.format_status("codex links", f"パスの検査又は同期に失敗したためスキップ: {dest}: {error}"))
+        logger.warning(log_format.format_status("codex links", f"パスの検査または同期に失敗したためスキップ: {dest}: {error}"))
         return False
     if not changed:
         return False

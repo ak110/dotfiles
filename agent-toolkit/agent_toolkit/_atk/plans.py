@@ -1,7 +1,7 @@
 """計画ファイルと独立CI実行レビュー表のcheckout・commit、旧保存先からの移行を提供するCLI補助。
 
 checkout記録は取得からcommit成功まで保持し、取得元と取得時点の内容を更新時の
-競合検出に使う。commit又はpush失敗後の再実行と、作業バンドルを削除して取得を
+競合検出に使う。commitまたはpush失敗後の再実行と、作業バンドルを削除して取得を
 取り消した後の記録回収も、同じ`atk plans commit`で処理する。
 """
 
@@ -259,7 +259,7 @@ def _checkout_record_root(relative_main: pathlib.Path) -> pathlib.Path:
 
 
 def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
-    """正規形式又は移行済み形式の保存root相対メイン計画パスを返す。"""
+    """正規形式または移行済み形式の保存root相対メイン計画パスを返す。"""
     try:
         return _plan_file.validate_plan_relative_path(plan_file)
     except ValueError as canonical_error:
@@ -294,7 +294,7 @@ def _validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
 
 
 def _validate_saved_checkout_relative_path(path: str) -> pathlib.Path:
-    """checkout記録が受理する計画又は独立CI実行レビュー表の相対パスを返す。"""
+    """checkout記録が受理する計画または独立CI実行レビュー表の相対パスを返す。"""
     if path.endswith(".exec-review.tsv"):
         return _validate_saved_ci_review_relative_path(path)
     return _validate_saved_plan_relative_path(path)
@@ -383,8 +383,8 @@ def checkout_plan(
     working_root = _plan_file.working_plans_root(home)
     working_main = working_root / relative_main.name
     duplicate_message = (
-        f"同じ計画を取得済みです: {relative_main}。作業root直下に当該計画バンドルがある場合は、"
-        "それが取得結果のため再取得は不要です。作業root直下に当該計画バンドルが無い場合は、"
+        f"同じ計画を取得済みです: {relative_main}。作業root直下にその計画バンドルがある場合は、"
+        "それが取得結果のため再取得は不要です。作業root直下にその計画バンドルが無い場合は、"
         f"`atk plans commit {working_main.name}`で取得記録を回収してください。"
     )
     with _atk_git_sync.repo_lock(private_notes):
@@ -428,8 +428,8 @@ def checkout_ci_review(
     relative = _validate_saved_ci_review_relative_path(review_table)
     working = _plan_file.working_plans_root(home) / relative.name
     duplicate_message = (
-        f"同じ独立CI実行レビュー表を取得済みです: {relative}。作業root直下に当該表がある場合は、"
-        "それが取得結果のため再取得は不要です。作業root直下に当該表が無い場合は、"
+        f"同じ独立CI実行レビュー表を取得済みです: {relative}。作業root直下にその表がある場合は、"
+        "それが取得結果のため再取得は不要です。作業root直下にその表が無い場合は、"
         f"`atk plans commit {working.name}`で取得記録を回収してください。"
     )
     with _atk_git_sync.repo_lock(private_notes):
@@ -586,7 +586,7 @@ def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content
     """commit済みの移し先を、移し元の内容と日時を保って確定する。
 
     内容が同じ場合は`os.replace`だけでinodeごと移す。内容を変換する場合は、移し元と同じ
-    ディレクトリへ原文の複製を作成し、移し元への書戻し、日時復元及び内容検証を確定前に行う。
+    ディレクトリへ原文の複製を作成し、移し元への書戻し、日時復元および内容検証を確定前に行う。
     確定前の失敗では複製から移し元を復元し、復元自体が失敗した場合は実在するパスと手作業を
     報告する。確定後の複製削除だけが失敗した場合は、移行結果へ影響しない警告として扱う。
 
@@ -679,7 +679,7 @@ def commit_plan(
 ) -> dict[str, object]:
     """指定計画bundleを保存rootへ移し、対象限定commitを作成する。
 
-    作業バンドルを回収する時点で当該計画の所有記録も回収し、計画作業rootへ記録だけが残らないようにする。
+    作業バンドルを回収する時点でその計画の所有記録も回収し、計画作業rootへ記録だけが残らないようにする。
     """
     if plan_file.endswith(".exec-review.tsv"):
         return commit_ci_review(
@@ -960,7 +960,7 @@ def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str
     """計画作業rootの計画ファイル（メイン）を所有セッションと最終更新時刻とともに返す。
 
     所有の有無で対象を絞らないため、他のセッションが取得した計画と所有記録を持たない計画も返す。
-    最終更新時刻は当該計画バンドルの構成ファイルの更新時刻の最大値とする。
+    最終更新時刻はその計画バンドルの構成ファイルの更新時刻の最大値とする。
     一覧の作成前に、作業rootへ残る孤立したsidecarロックを回収する。
     """
     root = _plan_file.working_plans_root(home).resolve(strict=False)
@@ -1072,7 +1072,7 @@ def _migratable_legacy_files(
     for main, members in _associated_groups(files).items():
         if _plan_file.owner_record_path(main).exists():
             # 所有記録はバンドルを取得した主体が置く。移行はcommitとpushを伴うため、
-            # 取得中のバンドルを移すと当該主体の未反映の更新が保存先と分岐する。
+            # 取得中のバンドルを移すとその主体の未反映の更新が保存先と分岐する。
             continue
         try:
             relative = main.relative_to(legacy_root)
@@ -1421,14 +1421,14 @@ def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
 
 
 def _plan_stem(path: pathlib.Path) -> str:
-    """計画ファイル（メイン）又は計画ファイル（詳細）のパスから計画stemを返す。"""
+    """計画ファイル（メイン）または計画ファイル（詳細）のパスから計画stemを返す。"""
     name = path.name
     suffix = _DETAIL_SUFFIX if name.endswith(_DETAIL_SUFFIX) else ".md"
     return name[: -len(suffix)]
 
 
 def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:
-    """当該計画のstemで始まる可搬参照を新しい参照値へ書き換えた本文と件数を返す。
+    """指定した計画のstemで始まる可搬参照を新しい参照値へ書き換えた本文と件数を返す。
 
     書き換えるのはコードフェンスなどを除いたMarkdown本文の有効行に限る。
     除外領域はユーザー発言の逐語引用と実行したコマンドの記録を含み、そこに現れる表記は参照ではないためである。
@@ -1454,7 +1454,7 @@ def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:
 def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> dict[str, object]:
     """保存済み計画の可搬表記の付属ファイル参照を計画ファイル基準の表記へそろえる。
 
-    書き換えるのは、ファイル名が当該計画のstemで始まる参照だけとする。
+    書き換えるのは、ファイル名がその計画のstemで始まる参照だけとする。
     stemが一致しない参照とキュー項目の本文は、参照先の計画が別であるため書き換えない。
     """
     with _common.repo_lock(private_notes, timeout=lock_timeout):

@@ -16,7 +16,7 @@ description: >
 
 # 成果物の品質基準
 
-本スキルはドキュメント、コード及びコーディングエージェント向け文書を書く主体へ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、実行主体別のルールと各作業のスキルが定める。
+本スキルはドキュメント、コードおよびコーディングエージェント向け文書を書く主体へ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、実行主体別のルールと各作業のスキルが定める。
 着手する作業に該当する参照資料を全文読み、そのすべてを適用する。
 本スキルが「<条件>のとき: <参照先>」の形で挙げる参照先は、その条件が成立した時点で全文読む。条件は起動時だけでなく作業の途中でも成立するため、成立を判定してから読み、読む前にその条件が成立する操作へ着手しない。
 条件付きの参照先を読まずに操作へ進むと、その参照先が定める品質基準を適用できない。
@@ -38,7 +38,7 @@ description: >
 文章を書く時と表記をチェックする時は、まず`references/notation-rules.md`を全文読む。
 同資料は表記規則の目次とチェック手段を持つ。該当する節が、textlint違反、lint緩和の判定、口調の対比集の各資料への条件付きの参照を示す。
 
-新しい概念名又は識別子を導入する時は、併せて`references/referent-table.md`を全文読む。
+新しい概念名または識別子を導入する時は、併せて`references/referent-table.md`を全文読む。
 
 ## コードの編集時に読む資料
 
@@ -71,15 +71,15 @@ description: >
 手順3の条件付き資料は次のとおりとする。
 
 - 計画ファイルを作成する時点: `references/design-time.md`
-- コードを編集する時点、設計判断を確定する時、及び依存の追加・更新をする時: `references/implementation-time.md`
-- 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、及びコードレビューを実施する場合: `references/design-heuristics.md`
+- コードを編集する時点、設計判断を確定する時、および依存の追加・更新をする時: `references/implementation-time.md`
+- 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、およびコードレビューを実施する場合: `references/design-heuristics.md`
 - 依存の追加・更新をする時: `references/dependency-management.md`
-- テストコードを書く時、及び条件分岐と判定条件を新設又は変更する時: `references/testing.md`
+- テストコードを書く時、および条件分岐と判定条件を新設または変更する時: `references/testing.md`
 - 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`
-- エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画又はレビューをする時: `references/ui-ux.md`
-- 前項の画面をHTML、CSS、JavaScriptで実装又はレビューする時: `references/ui-ux-web-rules.md`
-- 前々項の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約又は多言語表示を含む時: `references/ui-ux-patterns.md`
+- エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画またはレビューをする時: `references/ui-ux.md`
+- 前項の画面をHTML、CSS、JavaScriptで実装またはレビューする時: `references/ui-ux-web-rules.md`
+- 前々項の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時: `references/ui-ux-patterns.md`
 
 ## コーディングエージェント向け文書の編集時に読む資料
 
@@ -92,10 +92,10 @@ description: >
 手順3の対象別資料は次のとおりとする。
 
 - スキル編集（公式リファレンスの参照先を含む）: `references/agent-skills.md`
-- サブエージェント定義ファイルの編集、及びサブエージェントが関与する手順の作成・改訂: `references/sub-agents.md`
-- hook編集、及びhookのエンドユーザー向けメッセージの新設・改訂: `references/agent-skills.md`と`references/claude-hooks.md`。セッション状態ファイル又はフラグを扱う場合は`references/session-state-and-flags.md`も読む
+- サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂: `references/sub-agents.md`
+- hook編集、およびhookのエンドユーザー向けメッセージの新設・改訂: `references/agent-skills.md`と`references/claude-hooks.md`。セッション状態ファイルまたはフラグを扱う場合は`references/session-state-and-flags.md`も読む
 - auto modeのカスタムルール編集: `references/auto-mode.md`と`references/agent-skills.md`。hookを編集する場合は`references/claude-hooks.md`も読む。権限拒否に遭遇した場面の手順は`agent-toolkit:confirmation-and-uwi`が扱う
-- セッション状態ファイル又はフラグを扱う編集: `references/session-state-and-flags.md`。hookの実装も編集する場合は`references/claude-hooks.md`も読む
+- セッション状態ファイルまたはフラグを扱う編集: `references/session-state-and-flags.md`。hookの実装も編集する場合は`references/claude-hooks.md`も読む
 - セッション記録の集計・分析: `references/session-records.md`
 - 機械チェックスクリプトの新設・改修: `references/check-script-design.md`
-- 規範文書へ新しい規定を追記する場面、及び文書の記述量を管理する場面: `references/agent-documents-additions.md`
+- 規範文書へ新しい規定を追記する場面、および文書の記述量を管理する場面: `references/agent-documents-additions.md`

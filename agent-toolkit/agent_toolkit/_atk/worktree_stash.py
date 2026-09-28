@@ -203,7 +203,9 @@ def drop(
     else:
         is_worktree_ref = False
     if not is_worktree_ref and _STASH_IDENTIFIER_PATTERN.fullmatch(identifier) is None:
-        _outcome.report_failure(f"退避識別子が不正である: {identifier}。refs/worktree/配下のref又はstash@{{N}}形式を指定し直す")
+        _outcome.report_failure(
+            f"退避識別子が不正である: {identifier}。refs/worktree/配下のrefまたはstash@{{N}}形式を指定し直す"
+        )
         return 2
     common_dir = _common_dir(worktree)
     if common_dir is None:
@@ -240,7 +242,7 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     save_parser = _atk_help.add_command(subparsers, "save", **_atk_help.HELP["atk worktree-stash save"])
     save_parser.add_argument("--label", required=True, help="退避先refのラベル")
     drop_parser = _atk_help.add_command(subparsers, "drop", **_atk_help.HELP["atk worktree-stash drop"])
-    drop_parser.add_argument("identifier", help="削除するstash又はworktree固有refの識別子")
+    drop_parser.add_argument("identifier", help="削除するstashまたはworktree固有refの識別子")
 
 
 def dispatch(

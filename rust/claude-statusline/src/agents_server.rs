@@ -202,8 +202,8 @@ fn parse_session(value: &Value) -> Option<Session> {
         status: required_string(object, "status")?,
         progress: required_string(object, "progress")?,
         // `last_action`は任意項目とする。長命なMCPサーバープロセスは起動時に読み込んだ
-        // モジュールを保持し続けるため、statuslineだけが先に更新される区間では
-        // 当該項目を持たない状態ファイルが書かれ続ける。必須にすると当該区間で行が消える。
+        // モジュールを保持し続けるため、statuslineだけが先に更新される間は
+        // この項目がない状態ファイルが書き込まれ続ける。必須項目にすると、その間は行を表示できない。
         last_action: absent_as_empty_string(object, "last_action")?,
         label: required_string(object, "label")?,
         started_at: required_string(object, "started_at")?,

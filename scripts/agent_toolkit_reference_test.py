@@ -96,7 +96,7 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
 
 
 def _reference_exists(root: pathlib.Path, reference: str) -> bool:
-    """起動名又はリポジトリ相対パスが実体へ解決する場合に真を返す。"""
+    """起動名またはリポジトリ相対パスが実体へ解決する場合に真を返す。"""
     invocation_prefix = f"{_PLUGIN_PREFIX}:"
     if reference.startswith(invocation_prefix):
         skill_name = reference.removeprefix(invocation_prefix)
@@ -317,7 +317,7 @@ def _unresolved_heading_references(
 
 
 def test_normative_heading_references_resolve() -> None:
-    """規範Markdownの見出し名参照が、参照先に残る見出し又は本文の文字列へ解決する。"""
+    """規範Markdownの見出し名参照が、参照先に残る見出しまたは本文の文字列へ解決する。"""
     root = pathlib.Path(__file__).resolve().parents[1]
     tracked = _tracked_source_paths(root)
     markdown_paths = [path for path in tracked if path.suffix == ".md"]

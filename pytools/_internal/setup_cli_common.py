@@ -29,7 +29,7 @@ def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
 
 
 def find_powershell() -> str:
-    """利用できるPowerShell 7又はWindows PowerShellを返す。"""
+    """利用できるPowerShell 7またはWindows PowerShellを返す。"""
     for name in ("pwsh", "powershell"):
         executable = shutil.which(name)
         if executable is not None:
@@ -243,8 +243,8 @@ def _adjacent_npm(directory: Path) -> Path | None:
 def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None = None) -> Path | None:
     """npmのグローバルパッケージのディレクトリを返す。
 
-    解決できない場合は`None`を返す。`unresolved`を渡した場合は、解決できなかった対象を
-    当該リストへ1件追記する（呼び出し元が保持の理由として利用者へ示す）。
+    解決できない場合は`None`を返す。`unresolved`を渡した場合は、解決できなかった情報を
+    そのリストへ1件追加する（呼び出し元が利用者へ保持の理由を示すために使う）。
     """
     prefix_result = claude_common.run_subprocess(
         [str(npm), "prefix", "--global"], timeout=claude_common.CLAUDE_TIMEOUT, tag=npm.name

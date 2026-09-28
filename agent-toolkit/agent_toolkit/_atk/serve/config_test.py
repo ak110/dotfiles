@@ -47,7 +47,7 @@ from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 @pytest.mark.parametrize("host", ["", "  ", 1])
 def test_invalid_host(host: object) -> None:
-    """空又は非文字列hostを拒否する。"""
+    """空または非文字列hostを拒否する。"""
     with pytest.raises(ValueError):
         config.resolve_config(host=host)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 

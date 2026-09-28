@@ -118,7 +118,7 @@ def _message_summary(message: Any) -> str:
 def _describe_child_processes(pid: int | None) -> list[str]:
     """委譲先プロセスが起動した子プロセスをPIDと起動コマンドで列挙する。
 
-    `/proc`を持たない実行環境と、列挙の途中で終了したプロセスでは、当該分を空として扱う。
+    `/proc`を持たない実行環境や、列挙の途中で終了したプロセスでは、その分を空として扱う。
     診断の付随情報であり、取得できないことを初期化の失敗として扱わない。
     """
     if pid is None:
@@ -160,7 +160,7 @@ def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
 def rename_debug_file_for_session(debug_file: pathlib.Path, session_id: str, launch_kind: LaunchKind) -> pathlib.Path:
     """診断記録の名前がsession識別子を持つ形へ改名し、確定後の絶対パスを返す。
 
-    委譲先CLIが当該ファイルを開いたまま改名する。改名できない実行環境では元の名前を保ち、
+    委譲先CLIが対象ファイルを開いたまま改名する。改名できない実行環境では元の名前を保ち、
     session識別子との対応は終端結果の`debugFile`から解決する。
     """
     stamp = debug_file.name.split("-", 1)[0]
@@ -248,9 +248,9 @@ def _build_options(
     親cmdlineを取得できない実行環境では継承せず、従来の設定層を維持する。
 
     起動区分によらず権限モードをbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
-    受信側がbypass系であり送信側が権限モードを申告していない場合に当該メッセージを保留する。
+    受信側がbypass系であり送信側が権限モードを申告していない場合にそのメッセージを保留する。
     委譲元は起動直後にメッセージを送るため、bypass系で起動したセッションは保留のまま
-    初期化を完了できない。当該保留は起動区分に依存しない。
+    初期化を完了できない。この保留動作は起動区分に依存しない。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -460,7 +460,7 @@ class ClaudeServerManager:
         excluded_candidates: frozenset[ModelCandidate],
         turn_seq: int,
     ) -> SessionState:
-        """新規又は保存済みsessionを所有する長命タスクを開始する。"""
+        """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
         debug_file = _prepare_debug_file(launch_kind)
         diagnostic.debug_file = str(debug_file)
@@ -496,7 +496,7 @@ class ClaudeServerManager:
         try:
             session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
         except TimeoutError as exc:
-            # SDKがinitを届けないまま接続を保つ場合、当該待機は所有タスクの失敗経路では解消しない。
+            # SDKがinitを届けないまま接続を保つ場合、この待機は所有タスクの失敗経路では解消しない。
             await self._release_unstarted_task(task)
             diagnostic.record_exception(exc)
             _LOG.error("Claude session初期化timeout: diagnostic=%s", diagnostic.public())
@@ -524,8 +524,8 @@ class ClaudeServerManager:
 
         切断はCLIの子プロセスへ終了を送る唯一の経路である。
         取り消された実行では、SDKの切断処理が内部のcheckpointで例外を送出し、
-        当該子プロセスの終了処理へ到達しないまま接続だけを閉じる。
-        このため切断は別taskで実行し、待機の側が取り消されても当該taskの実行を継続させる。
+        子プロセスの終了処理へ到達しないまま接続だけを閉じる。
+        このため切断は別taskで実行し、待機の側が取り消されてもそのtaskの実行を継続させる。
         """
         task: asyncio.Task[None] = asyncio.create_task(self._close_client(client))
         self._disconnects.add(task)
@@ -922,7 +922,7 @@ class ClaudeServerManager:
         """保留した終端結果を確定する。
 
         Claude backendはタスク完了通知による同一sessionの再開経路を持つため終端結果を保留する。
-        Codex backendは当該経路を持たず、終端結果を保留しない。
+        Codex backendはこの再開経路を持たず、終端結果を保留しない。
         """
         unobserved = set(session.live_child_session_ids)
         shared_state.finalize_pending_result(session)
@@ -973,7 +973,7 @@ class ClaudeServerManager:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        # 切断taskは所有タスクの終了処理が登録するため、待機の対象は当該終了の後に集める。
+        # 切断taskは所有タスクの終了処理が登録するため、待機の対象は所有タスクの終了後に集める。
         disconnects = tuple(self._disconnects)
         if disconnects:
             await asyncio.gather(*disconnects, return_exceptions=True)

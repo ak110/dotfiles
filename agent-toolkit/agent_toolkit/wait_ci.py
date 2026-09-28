@@ -453,7 +453,7 @@ def _resolve_forge(explicit: str, repository: str, cwd: pathlib.Path | None = No
     部分一致で判定すると`notgithub.example.com`のような無関係なホストを誤分類するため、ラベル単位の完全一致とする。
     ホストを含まない`owner/repo`形式は`--repo`が受理する形式であるため、作業ディレクトリ（`cwd`）の
     Git remoteのうちproject pathが一致するURLのホストで判別する。一致するremoteが無い場合と、
-    一致したremoteのホストが異なるforgeへ分かれる場合、及び未知の私設ホストは、`--forge`の明示指定が必要となる。
+    一致したremoteのホストが異なるforgeへ分かれる場合、および未知の私設ホストは、`--forge`の明示指定が必要となる。
     """
     if explicit != "auto":
         return explicit
@@ -693,7 +693,7 @@ def _superseded_cancelled_ids(runs: list[RunRecord]) -> set[int]:
 
     GitHubは同じworkflow・同じcommitへ複数のrunを登録することがあり、
     workflowの`concurrency`設定により先に登録されたrunが`cancelled`で打ち切られる。
-    当該runは対象commitのCIの成否を表さないため、全件一致で完了を判定する集合から除く。
+    打ち切られたrunは対象commitのCIの成否を表さないため、全件一致で完了を判定する集合から除く。
     判定は同じキーでより大きい`databaseId`のrunが存在することとする。GitHubの`databaseId`は
     登録順に増加するため、登録時刻を別途取得せずに先行・後続を決められる。
     呼び出し元が先に`_run_ids`で識別子を検証するため、ここでは型を再検査しない。
@@ -750,7 +750,7 @@ def _wait_for_completion(
 ) -> tuple[int, list[RunRecord], float]:
     """確定したrun集合の完了を待つ主経路・後続SHA経路の共通ループ。
 
-    登録猶予中に実行中として観測したrunが後続runへ置き換えられて打ち切られた場合、当該runは
+    登録猶予中に実行中として観測したrunが後続runへ置き換えられて打ち切られた場合、そのrunは
     取得結果から消える。期待run集合へ残すと欠落判定で待ち続けるため、除外した識別子を同集合からも取り除く。
     """
     while True:

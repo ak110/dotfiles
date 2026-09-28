@@ -1,12 +1,12 @@
 """Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
 
 Claude CodeのStop入力に完全に有効な`background_tasks`一覧が含まれる場合は、現在のtask申告を正本とする。
-フィールドが無い旧ホスト、無効な申告及びCodexでは、transcript JSONLから復元した判定へフォールバックする。
+フィールドが無い旧ホスト、無効な申告およびCodexでは、transcript JSONLから復元した判定へフォールバックする。
 本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 
 transcript上のbackground task起動の検出条件は次の4種を統合して扱う。
-- `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
+- `toolUseResult.status == "async_launched"`、または対応するAgent・Taskの`tool_result`本文に
   `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent初回起動）
 - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
 - `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、`toolUseResult.resumedAgentId`が
@@ -17,10 +17,10 @@ transcript上のbackground task起動の検出条件は次の4種を統合して
 
 SendMessage背景再開は前2者と異なり`toolUseResult`側に起動状態を示すstatusを持たないため、
 SendMessage呼び出し由来のtool_resultへ限定したうえで`resumedAgentId`の有無で識別する。
-当該フィールドを持たない旧形式に限りテキストマーカー判定へフォールバックする。
+このフィールドを持たない旧形式に限りテキストマーカー判定へフォールバックする。
 
 完了集合は`<task-notification>`による完了通知、最上位transcriptの
-`queue-operation`に含まれる完了通知及びTaskStopの停止成功結果から構成する。
+`queue-operation`に含まれる完了通知およびTaskStopの停止成功結果から構成する。
 停止成功は`toolUseResult`が文字列の`task_id`と`_TASK_STOP_SUCCESS_PREFIX`で始まる`message`を持ち、
 対応する`tool_result`の`is_error`が真でない場合に限る。
 走査範囲は呼び出し経路ごとに切り替え、メインのStop判定では非sidechainに限定し、
@@ -34,9 +34,9 @@ SubagentStop判定ではsidechainを含める。
 通知形式変動による幽霊pendingの発生を検出可能にする。
 
 本モジュールへfail-closedのゲート判定関数を追加する場合は次の2点を守る。
-完了突合は複数キー経路のフォールバック解決とし、いずれの経路でも解決できない通知又は停止結果は
+完了突合は複数キー経路のフォールバック解決とし、いずれの経路でも解決できない通知または停止結果は
 永続ログへ明示出力して未解決状態を可視化する（起動時に記録した全background taskが
-完了通知又は停止成功結果のいずれかで完了集合へ解決できることを不変条件として維持する）。
+完了通知または停止成功結果のいずれかで完了集合へ解決できることを不変条件として維持する）。
 判定は起動集合の非空ではなく`launched - completed`のremainder非空で行う
 （起動集合の非空判定では完了通知の消化後も真を返し続け、以後の素の状態表明がすべてbypassされる）。
 
@@ -86,7 +86,7 @@ _MCP_BACKGROUND_TASK_PATTERNS = (
 
 # 抽出した値は背景タスクの識別子として`<task-id>`との突合と停止対象の所有判定へ渡すため、
 # 文末に付く句読点を識別子へ取り込まない。
-# 識別子の文字種を限定する形は採らない。限定した場合、当該文字種の外にある文字を含む識別子は
+# 識別子の文字種を限定する形は採らない。限定した場合、その文字種に含まれない文字を持つ識別子は
 # 途中までしか一致せず、従来正しく抽出できていた入力の結果が変わるためである。
 _TRAILING_PUNCTUATION = ".,;:!?)]}\"'"
 
@@ -168,7 +168,7 @@ def _pending_cache_key(
 
 
 def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool]:
-    """Stop入力の有効task件数、非`teammate`件数及び一覧の権威性を返す。"""
+    """Stop入力の有効task件数、非`teammate`件数および一覧の権威性を返す。"""
     if not isinstance(background_tasks, list):
         return 0, 0, False
     valid_tasks = [
@@ -212,15 +212,15 @@ def is_pending_async_work(
     Stop入力の`background_tasks`に有効な非`teammate` taskがあれば、無効な要素の混在に
     かかわらず真を返す。個別taskの`status`その他の任意フィールドは判定に使わない。
     `background_tasks`がlistで全要素が有効な場合は空listと`teammate`だけの一覧も現在状態の
-    権威ある申告とし、当該入力が申告する背景Agent、背景Bash及びSendMessage背景再開の
-    transcript由来残差を根拠にしない。MCPツールの背景移行は当該入力へ現れないため、
+    権威ある申告とし、この入力が申告する背景Agent、背景BashおよびSendMessage背景再開の
+    transcript由来残差を根拠にしない。MCPツールの背景移行はStop入力へ現れないため、
     transcriptから復元した残差を独立した根拠とする。フィールド欠落、listでない入力、
-    無効な要素を含むlist及びCodexでは、transcriptから復元した全種別の判定を代替入力として用いる。
+    無効な要素を含むlistおよびCodexでは、transcriptから復元した全種別の判定を代替入力として用いる。
     直前の非同期待機系tool_useと有効な非`teammate` taskは、一覧の権威性にかかわらず独立した根拠とする。
 
     transcript由来の後者はtranscript全体を走査して判定する。
     起動集合は非sidechainの`type=="user"`エントリのうち、次のいずれかを持つものから抽出する。
-    - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
+    - `toolUseResult.status == "async_launched"`、または対応するAgent・Taskの`tool_result`本文に
       `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、
@@ -230,14 +230,14 @@ def is_pending_async_work(
       （MCP背景タスク）
 
     完了集合は後続エントリの`<task-notification>`要素、最上位transcriptの
-    `queue-operation`に含まれる完了通知及びTaskStopの停止成功結果から構成する。
-    停止成功結果は`toolUseResult.task_id`を背景Bashの`backgroundTaskId`対応表又は
+    `queue-operation`に含まれる完了通知およびTaskStopの停止成功結果から構成する。
+    停止成功結果は`toolUseResult.task_id`を背景Bashの`backgroundTaskId`対応表または
     agentId→tool_use_id集合マップで解決する。
     完了通知エントリは次の3形式が併存する。
     - 旧形式: 非sidechainの`type=="user"`エントリのtext content内に含まれる`<task-notification>`要素
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
       `attachment.prompt`文字列に含まれる`<task-notification>`要素（Claude Code 2.1系以降）
-    - 多段委譲形式: `type=="queue-operation"`かつ`operation`が`enqueue`又は`remove`のエントリの
+    - 多段委譲形式: `type=="queue-operation"`かつ`operation`が`enqueue`または`remove`のエントリの
       `content`文字列に含まれる`<task-notification>`要素
     `<task-notification>`要素に`<tool-use-id>`が含まれない場合は`<task-id>`要素と
     agentId→tool_use_id集合マップによるフォールバック解決を試み、それでも解決できない通知は
@@ -393,7 +393,7 @@ def _emit_debug(
     """環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみstderrへ判定根拠を1行出力する。
 
     出力形式は`key=value`空白区切りとする。
-    Stop hookの誤判定時にlast_tool_use名・transcriptの起動と残差・payloadのtask件数及び判定源から
+    Stop hookの誤判定時にlast_tool_use名・transcriptの起動と残差・payloadのtask件数および判定源から
     原因を切り分けるために用いる。
     """
     raw = os.environ.get("AGENT_TOOLKIT_STOP_GATE_DEBUG", "")
@@ -594,7 +594,7 @@ def _describe_pending_background_entries(
     前景起動の`Agent`はメインターン内で同期完了するため対象外。
 
     起動の記録: 次のいずれかを持つuserエントリ。
-    - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
+    - `toolUseResult.status == "async_launched"`、または対応するAgent・Taskの`tool_result`本文に
       `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、
@@ -614,13 +614,13 @@ def _describe_pending_background_entries(
     `_resolve_task_notification_ids`経由で適用する。両者で解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
     - 最上位transcriptの`type == "queue-operation"`エントリの`content`に含まれる
-      `operation == "enqueue"`又は`operation == "remove"`の通知（Claude Codeの多段委譲で観測される形式）
+      `operation == "enqueue"`または`operation == "remove"`の通知（Claude Codeの多段委譲で観測される形式）
 
     最上位Stop判定では、`transcript_path`が与えられた場合に
     `Path(transcript_path).with_suffix("") / "subagents"`の固定ディレクトリから
     `agent-*.jsonl`を列挙し、metadataの親子関係で直接の子に限定する。直接の子の記録にある
     Agent・Task起動を孫起動として`launched`へ加え、子の`agentId`とtool-use-idの対応を
-    `task_id_map`へ追加する。子記録の読取失敗、欠落又は無関係なmetadataは既存の最上位transcript
+    `task_id_map`へ追加する。子記録の読取失敗、欠落または無関係なmetadataは既存の最上位transcript
     の判定を変えずに無視する。`include_sidechain`が偽の最上位Stop判定だけがこの子記録を
     読み取り、SubagentStopの走査範囲を拡張しない。
 
@@ -827,7 +827,7 @@ def _collect_nested_agent_launches(
     Claude Codeの子transcriptは最上位transcriptと同じファイル名stemの
     `subagents`ディレクトリへ配置される。入力値のagent IDをパスへ連結せず、固定の
     `agent-*.jsonl`列挙とmetadataの親子関係だけで直接の子を選別する。子記録の欠落、
-    破損又は不正なmetadataは、最上位transcriptの既存判定を維持するため無視する。
+    破損または不正なmetadataは、最上位transcriptの既存判定を維持するため無視する。
     """
     if not isinstance(transcript_path, str) or not transcript_path:
         return set(), {}
@@ -1063,7 +1063,7 @@ def _collect_monitor_task_ids(entries: list[dict], *, include_sidechain: bool = 
     Monitorは`_describe_pending_background_tasks`の起動集合（`launched`）に加算されないため、
     Monitorの完了通知は常に`<task-id>`要素のフォールバック解決に失敗し
     `task_notification_unresolved`を誤って発生させる。本関数が返す集合は
-    `_resolve_task_notification_ids`が当該通知を異常系ログから除外する判定に使う。
+    `_resolve_task_notification_ids`がこの完了通知を異常系ログから除外する判定に使う。
     """
     monitor_tool_use_ids: set[str] = set()
     for block in _iter_assistant_blocks(entries, include_sidechain=include_sidechain):
@@ -1160,7 +1160,7 @@ def _extract_sendmessage_bg_resume_id(message: dict, tool_use_result: object, se
     """SendMessage由来のtool_resultが背景再開を示す場合に`tool_use_id`を返す。
 
     判定は`toolUseResult.resumedAgentId`が文字列として存在するかを第一とし、
-    当該フィールドを欠く結果に限り本文の`_SENDMESSAGE_BG_RESUME_MARKER`照合へフォールバックする。
+    このフィールドを欠く結果に限り本文の`_SENDMESSAGE_BG_RESUME_MARKER`照合へフォールバックする。
     ハーネスが返す応答文面は版更新で変わり字面一致では追随できないため、
     同じ結果が持つ構造化フィールドを検出契約の正本とし、文面照合は旧形式の後方互換に限る。
     """

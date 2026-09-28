@@ -7,13 +7,13 @@
 ## AWI処理の開始時の横断同期
 
 個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、pickerの起動より前に`ak110-projects-operations`スキルを起動する。
-同期調査と依存更新の要否の判定結果は、当該セッションの後続の工程へ渡す。
+同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
 起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude CodeではSkillツールから起動する。
 
 ## 個人プロジェクトのリリース開始手順
 
-個人プロジェクトでpatch、minor又はmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
+個人プロジェクトでpatch、minorまたはmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
 `ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
-agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築及びworkflow内部の処理は対象外とする。
+agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
 </agent-toolkit-auto-inserted>

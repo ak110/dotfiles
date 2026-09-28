@@ -12,7 +12,7 @@ class TestStripInheritedVenv:
 
     @pytest.mark.parametrize("bin_dir_name", ["bin", "Scripts"])
     def test_removes_venv_bin_dir_for_each_platform_layout(self, bin_dir_name: str) -> None:
-        """POSIXの`bin`とWindowsの`Scripts`のいずれのレイアウトでも当該要素だけを除く。"""
+        """POSIXの`bin`とWindowsの`Scripts`のどちらの配置でも、対応する要素だけを取り除く。"""
         venv_root = "/tmp/launcher-venv"
         env = {
             "VIRTUAL_ENV": venv_root,

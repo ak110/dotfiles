@@ -178,7 +178,7 @@ def _resolve_active_entry(
     """
     if state is not None:
         if state not in (*WI_PROCESSABLE_STATES, WI_STATE_HOLD):
-            raise WebInputError("stateはinbox、processing又はholdで指定してください")
+            raise WebInputError("stateはinbox、processingまたはholdで指定してください")
         candidate = _validate_filename(filename, private_notes / state)
         if candidate.is_file():
             return candidate
@@ -304,7 +304,7 @@ def _is_affirmative_post_approval(text: str, answer: str) -> bool:
 def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """answerサブコマンド: UWIへ回答する。
 
-    `filename`と`answer_body`の双方を指定した場合は非対話で当該UWIの回答欄を更新する。
+    `filename`と`answer_body`の双方を指定した場合は、指定したUWIの回答欄を非対話で更新する。
     いずれかを省略した場合は、active状態（inbox・processing）のうちfrontmatterの`type`が`uwi`かつ
     未回答のエントリを1件ずつ画面表示し`$EDITOR`で回答する。
     エディターが非ゼロ終了コードで終了した場合、以降の対象を中断してexit 1を返す

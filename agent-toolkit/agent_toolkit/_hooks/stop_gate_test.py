@@ -1465,7 +1465,7 @@ class TestDebugOutput:
     def test_output_with_async_wait_tool(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """直前tool_useが非同期待機系の場合は当該tool名を出力する。"""
+        """直前tool_useが非同期待機系の場合はそのtool名を出力する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
         t = _write_transcript(
             tmp_path,

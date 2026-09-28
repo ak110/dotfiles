@@ -57,7 +57,7 @@ def _has_normative_boundary(body: str) -> bool:
 
 
 def _embedded_section(root: Path, relative: Path) -> list[str]:
-    """生成主体、種別及び埋め込み元のパスを示す境界の間に本文を配置する。
+    """生成主体、種別および埋め込み元のパスを示す境界の間に本文を配置する。
 
     境界は要素名と属性で判別し、埋め込み元のパスがその配送単位を示す。
     """

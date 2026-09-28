@@ -269,7 +269,7 @@ def test_structured_material_contract_rejects_requirement_table_order() -> None:
 
 
 def test_structured_material_types_reject_unreferenced_user_agreement() -> None:
-    """利用者指示又は利用者合意を要求表から未参照にしない。"""
+    """利用者指示または利用者合意を要求表から未参照にしない。"""
     content = _VALID_CONTENT.replace("P-001, P-002", "P-001", 1).replace(
         "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |\n",
         "",

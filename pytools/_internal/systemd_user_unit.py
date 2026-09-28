@@ -54,14 +54,14 @@ def setup(
     restart_needed: bool = False,
     journal_identifier: str | None = None,
 ) -> bool:
-    """unitを配置し、変更又は停止したサービスを再起動する。
+    """unitを配置し、変更または停止したサービスを再起動する。
 
     Returns:
         実行ファイル不在で何もしなかった場合False、設定を確認した場合True。
 
     Raises:
         SetupError: systemctl呼び出しが失敗した場合、
-            又はrestart後にサービスが常駐状態へ至らない場合に送出する。
+            またはrestart後にサービスが常駐状態へ至らない場合に送出する。
     """
     if not executable_path.is_file():
         logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
@@ -153,7 +153,7 @@ def setup_timer(
         実行ファイル不在で何もしなかった場合False、unit配置とrestartを実施した場合True。
 
     Raises:
-        SetupError: systemctl呼び出しが失敗した場合、又はtimerがactiveでない場合に送出する。
+        SetupError: systemctl呼び出しが失敗した場合、またはtimerがactiveでない場合に送出する。
     """
     if not executable_path.is_file():
         logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
@@ -240,7 +240,7 @@ def _wait_until_running(*, service_name: str, log_tag: str) -> None:
     """restart後にサービスが常駐することを確認する。
 
     Raises:
-        SetupError: 制限時間内にactiveへ至らない場合、又は再起動を繰り返す場合に送出する。
+        SetupError: 制限時間内にactiveへ至らない場合、または再起動を繰り返す場合に送出する。
     """
     time.sleep(_SETTLE_SECONDS)
     deadline = time.monotonic() + _ACTIVE_TIMEOUT_SECONDS

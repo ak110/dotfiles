@@ -62,7 +62,7 @@ _EXEC_PREFIX_WITH_ENV_ASSIGNMENTS: frozenset[str] = frozenset({"sudo", "env"})
 """続く`KEY=VALUE`形式の代入を走査対象から除く実行前置語。
 
 `-`始まりトークンが続く場合は、引数を取るか否かが実装・版により異なり値の境界を確定できないため、
-当該区間を実行位置未確定として扱う。
+その区間を実行位置未確定として扱う。
 """
 
 _EXEC_PREFIX_WITHOUT_OPTIONS: frozenset[str] = frozenset({"command", "nohup", "uvx", "xargs"})
@@ -94,7 +94,7 @@ _UV_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
 長形と短縮形の双方を保持する。`sudo`・`env`・`xargs`・`timeout`が表を持たず`-`始まりトークンで
 一律に実行位置未確定へ倒すのに対し、`uv`だけがオプション表を持つのは、導入版の`--help`出力から
 オプション全体を一次資料として取得できるためである。
-表に無い`-`始まりトークンは意味を確定できないため当該区間を実行位置未確定として扱う。
+表にない`-`始まりトークンは意味を確定できないため、その区間を実行位置未確定として扱う。
 uvの新版でオプションが増減した場合は、`uv --help`と`uv run --help`の出力から本表と関連3表を再作成する。
 """
 
@@ -233,7 +233,7 @@ _PIPE_SEPARATORS: frozenset[str] = frozenset({"|", "|&"})
 class ExecutionSegment:
     """Bashコマンドの1区間について、実行位置以降のトークン列と実行位置の確定可否を表す。
 
-    `resolved`が偽の区間では`tokens`を空とし、助言用検査は当該区間で検出しない。
+    `resolved`が偽の区間では`tokens`を空とし、助言用検査はその区間では検出しない。
     `is_agent_toolkit_script`はagent-toolkit配下の配布検査スクリプトを表す。
     `raw_tokens`は、実行位置が未確定の区間でリダイレクト先を解析するため、元のトークン列を保持する。
     """
@@ -306,7 +306,7 @@ def extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> l
     - 下流（`sh -c '...' | 後続`）は連結する。内側の各文は同じ標準出力を継承し実行順に書き込むため、
       どの文の出力も後続へ渡る。内側の各文それぞれの末尾へ後続の区間列を複製して連結する
     - 上流（`前段 | sh -c '...'`）は連結しない。渡された標準入力をどの文が消費するかは
-      実行時の消費順に依存し、静的なトークン列の解析では確定できないため、当該区間を実行位置未確定とする
+      実行時の消費順に依存し、静的なトークン列の解析では確定できないため、その区間を実行位置未確定とする
 
     本ヘルパーはコマンド置換・サブシェル・`--`によるオプション終端・前置語の値境界を解決しない。
     この解析水準で成立するのは、実行を止めない助言用の判定に限る。
@@ -320,7 +320,7 @@ def extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> l
 def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> list[list[ExecutionSegment]]:
     """1つのパイプラインの区間列を解決する。
 
-    戻り値の先頭は当該パイプライン自身であり、2件目以降は`sh -c`展開により生じた独立したパイプラインとする。
+    戻り値の先頭は対象のパイプライン自身であり、2件目以降は`sh -c`展開により生じた独立したパイプラインとする。
     展開の接続規則は`extract_execution_pipelines`のdocstringが定める。
     """
     current: list[ExecutionSegment] = []
@@ -342,7 +342,7 @@ def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> lis
         if len(inner) <= 1:
             current.extend(inner[0] if inner else ())
             continue
-        # 内側が複数の文へ分かれる場合、上流は接続せず当該区間を実行位置未確定とする。
+        # 内側が複数の文へ分かれる場合、上流は接続せずその区間を実行位置未確定とする。
         # 下流の区間列は内側の各文へ複製して連結し、それぞれを独立したパイプラインとする。
         current.append(ExecutionSegment((), False))
         rest = _resolve_pipeline(raw_segments[index + 1 :], expand_shell=expand_shell)
@@ -380,7 +380,7 @@ def resolve_execution_segment(tokens: list[str]) -> ExecutionSegment:
     """トークン列の実行位置を求め、実行位置以降のトークン列と確定可否を返す。
 
     先頭の`KEY=VALUE`形式の環境変数代入の次の位置から、既知の実行前置語を順に走査対象から除く。
-    除いた後の位置が存在しない場合、または当該トークンが`-`で始まる場合は、
+    除いた後の位置が存在しない場合、またはそのトークンが`-`で始まる場合は、
     前置語の引数境界を確定できていないため実行位置未確定とする。
     """
     index = _skip_env_assignments(tokens, 0)
@@ -499,11 +499,11 @@ def _scan_uv_options(
     各トークンは次の5状態のいずれか1つへ排他的に定まる。判定はこの優先順位で行い、
     先に一致した状態で確定して以降の状態を評価しない。
 
-    1. 終端状態: 終端オプション。当該区間は後続の指定を実行しないため走査を終える（状態`terminal`）
+    1. 終端状態: 終端オプション。この区間は後続の指定を実行しないため走査を終える（状態`terminal`）
     2. 値あり状態: 値ありオプション表と完全一致する。トークンと続く1トークンを走査対象から除く。
        `--name=value`形式は`--name`が同表と完全一致する場合に1トークンだけを除く
     3. 値なし状態: 値なしオプション表と完全一致する。トークン1つを除く
-    4. 非オプション状態: `-`で始まらない。当該トークンを走査の到達点とする（状態`reached`）
+    4. 非オプション状態: `-`で始まらない。そのトークンを走査の到達点とする（状態`reached`）
     5. 未分類状態: 上記のいずれにも当たらない（表に無い長形、2文字以上の結合短縮形、表に無い短縮形など）。
        区間全体を実行位置未確定とする（状態`unresolved`）
 
@@ -549,7 +549,7 @@ class QuotingScanner:
     """引用とエスケープの状態を保ちながらシェル文字列を1文字ずつ走査する。
 
     `consume_quoted`が真を返した位置は、エスケープ指定・エスケープされた文字・
-    引用の内側のいずれかに属し、当該位置まで`index`が進む。偽を返した位置は
+    引用の内側のいずれかに属し、その位置まで`index`が進む。偽を返した位置は
     引用の外側にあり、呼び出し側が固有の解釈を加えて`index`を進める。
     引用の開始は呼び出し側が判定し、`enter_quote`で状態へ反映する。
     走査を終えた時点で`quote`が`None`でない場合、入力の引用は閉じていない。
@@ -561,7 +561,7 @@ class QuotingScanner:
     escaped: bool = False
 
     def consume_quoted(self) -> bool:
-        """現在位置がエスケープ又は引用に属する場合、位置を進めて真を返す。"""
+        """現在位置がエスケープまたは引用に属する場合、位置を進めて真を返す。"""
         char = self.text[self.index]
         if self.escaped:
             self.escaped = False
@@ -655,7 +655,7 @@ def _heredoc_declarations(line: str) -> list[tuple[str, bool]]:
 
 
 def _blank_line(masked: list[str], start: int, end: int, *, separator: bool = False) -> None:
-    """改行を保ち、指定範囲の行内容を空白又は区切り標識へ置換する。"""
+    """改行を保ち、指定範囲の行内容を空白または区切り標識へ置換する。"""
     for index in range(start, end):
         if masked[index] not in {"\r", "\n"}:
             masked[index] = " "
@@ -694,7 +694,7 @@ def mask_heredoc_bodies(command: str) -> str:
 
 
 def nested_shell_positions(command: str) -> frozenset[int]:
-    """置換構文、サブシェル及びバッククォートの内側にある文字位置を返す。
+    """置換構文、サブシェルおよびバッククォートの内側にある文字位置を返す。
 
     対応が閉じない構文は開始位置から末尾までを内側として扱う。補正位置を外側と
     誤認するより、補正を見送って元の入力をBashへ渡す方が入力を壊さないためである。
@@ -761,7 +761,7 @@ def split_bash_segments(command: str) -> list[str]:
 
     クォート（`'`・`"`）内のメタ文字は分割対象外とする。
     heredoc本文は同じ長さの空白へ置換してから分割し、本文外の位置を保つ。
-    行継続と置換構文、サブシェル及びバッククォート内の演算子・改行も分割しない。
+    行継続と置換構文、サブシェルおよびバッククォート内の演算子・改行も分割しない。
     `for`・`while`・`until`・`if`・`case`から対応する終端までの改行は、制御構造を
     外側の独立呼び出しへ分けないため保持する。内部の`;`は従来どおり検査対象を分ける。
     """

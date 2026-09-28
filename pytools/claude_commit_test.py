@@ -104,7 +104,7 @@ class TestBuildPrompt:
         assert "feat: 既存メッセージ" in result
 
     def test_amend_message_only(self) -> None:
-        """amendで変更ゼロの場合はメッセージのみ書き直す旨を含む。"""
+        """amendで変更ゼロの場合はメッセージのみを書き直す指示を含む。"""
         result = _build_prompt(
             git_root=Path("/tmp"),
             format_instructions="Conventional Commits形式",
@@ -116,7 +116,7 @@ class TestBuildPrompt:
         assert "メッセージのみ" in result
 
     def test_dry_run(self) -> None:
-        """dry_run時にコミットしない旨をプロンプトに含む。"""
+        """dry_run時にコミットしない指示をプロンプトに含む。"""
         result = _build_prompt(
             git_root=Path("/tmp"),
             format_instructions="Conventional Commits形式",

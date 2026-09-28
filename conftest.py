@@ -20,7 +20,7 @@ def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     `safe.directory=*`をコマンドスコープのGit設定として与える。
 
     既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
-    環境変数は当該設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
+    環境変数は既存の`git config user.*`より優先されるため実行結果は変わらず、一括削除は本fixtureの目的に不要である。
     """
     environment = {
         "GIT_AUTHOR_NAME": _GIT_IDENTITY_NAME,

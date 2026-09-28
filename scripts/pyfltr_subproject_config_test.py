@@ -1,6 +1,6 @@
 """pyfltrがsubprojectとして分離する`agent-toolkit/`の検査設定が、リポジトリ直下と一致することを検査する。
 
-pyfltrは`pyproject.toml`を持つディレクトリーをsubprojectとして分離し、当該ディレクトリー配下のファイルを
+pyfltrは`pyproject.toml`を持つディレクトリーをsubprojectとして分離し、その配下のファイルを
 そのsubprojectの`[tool.pyfltr]`で検査する。`textlint-packages`はpyfltrの既定値を上書きするキーであり、
 リポジトリ直下だけを更新すると、`agent-toolkit/`配下のMarkdownの検査がリポジトリ直下の`.textlintrc.yaml`が
 参照するruleを解決できず、"No rules found"で終了コード1となる。

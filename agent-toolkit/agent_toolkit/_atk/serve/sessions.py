@@ -222,7 +222,7 @@ def _claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] 
     """セッション本体に属するサブエージェント記録の親子関係を返す。
 
     記録が無い場合は`None`を返し、取得不能であることを表す。
-    `path`は当該サブエージェントの記録本体であり、閲覧要求の対象として使う。記録が残っていない場合は`None`とする。
+    `path`はそのサブエージェントの記録本体であり、閲覧要求の対象として使う。記録が残っていない場合は`None`とする。
     `parent_agent_id`は深さが2以上の記録にだけ現れるため、階層の復元は`spawn_depth`を典拠とする。
     """
     directory = record_path.with_suffix("") / "subagents"
@@ -1042,7 +1042,7 @@ def _remote_subagents(engine: str, payload: dict[str, typing.Any]) -> tuple[list
     """リモートの読み取り応答から、サブエージェント一覧と判定不能かどうかを返す。
 
     リモートホストのdotfilesが古く、サブエージェント一覧を返さない版のヘルパーが動いている場合は、
-    読み取り自体が成功したまま当該欄だけが欠ける。サブエージェントが無い場合と区別するため、
+    読み取り自体が成功したままその欄だけが欠ける。サブエージェントが無い場合と区別するため、
     欄が無い応答は判定不能として扱う。Codexの記録はサブエージェントを持たないため判定不能としない。
     """
     if engine != "claude":

@@ -20,7 +20,7 @@ atk wi process-loop
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
 ready項目がなくなると、`agent-toolkit:completion-report`が選定工程で完了した振り返りの結果を含む固定報告を完了し、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
-probe未実行、読取失敗又は値の不一致は停止不能として扱う。
+probe未実行、読取失敗または値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
 終了対象を確認できない環境では対話UIに終了案内を表示し、利用者が`/exit`を入力すると親の監視ループへ戻る。
 終了時の`atk agents-exit-session`は起動時の分岐値を再利用せず、停止要求直前に終了対象を新規識別する。
@@ -46,7 +46,7 @@ Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、専�
 手動で再生成する場合は`scripts/sync_codex_plugin_manifests.py`を実行し、`--check`で大元の定義との一致を確認する。
 生成に失敗した場合はpost-applyが非0で終了し、失敗したstep名と詳細を更新logへ記録する。
 
-`update-dotfiles`は未導入、disabled又はversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
+`update-dotfiles`は未導入、disabledまたはversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
 `codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
 
@@ -71,13 +71,14 @@ $env:DOTFILES_CODEX_DAEMON_AUTO_RESTART = "1"
 update-dotfiles
 ```
 
-自動再起動は、pluginの追加又は更新、導入済みversionと有効状態、hook状態の確認がすべて完了した後に1回だけ実行する。
-daemonが停止中の場合、pluginが無変更の場合及びmarketplace登録だけが変化した場合は実行しない。
+自動再起動は、pluginの追加または更新、導入済みversionと有効状態、hook状態の確認がすべて完了した後に1回だけ実行する。
+daemonが停止中の場合、pluginが無変更の場合およびmarketplace登録だけが変化した場合は実行しない。
 再起動に失敗した場合は終了コードをupdate-dotfilesログへ記録し、手動再起動の案内へ戻る。
-自動再起動により、Codex plugin又はremote-controlを利用する実行中セッションの接続が切断される可能性があるため、当該セッションを終了できる時点でだけ有効にする。
+Codex pluginまたはremote-controlを利用する実行中セッションは、自動再起動によって接続が切断される可能性がある。
+これらのセッションを終了できる時点でだけ、自動再起動を有効にする。
 
 Codex hookはPATH上の`~/.local/bin/atk-hook`（Windowsでは`atk-hook.cmd`）から起動する。
-このコマンドは`codex plugin list --json`に示された有効な現行版を毎回解決し、イベント名、標準入出力及び終了状態をhook本体へ渡す。
+このコマンドは`codex plugin list --json`に示された有効な現行版を毎回解決し、イベント名、標準入出力および終了状態をhook本体へ渡す。
 インストーラーは`codex plugin add`より先にこのコマンドを配置し、導入後に現行版のhook実体を確認する。
 初回切替時に限り、更新前の版付きhookコマンドを保持したセッションのために旧キャッシュを一時退避し、CLIが削除した場合は復元する。以降の更新に旧版保存台帳は設けない。
 プラグインの通常のversion別cache管理はCodex公式CLIへ委ねる。
@@ -91,18 +92,18 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 
 ## agents_serverによる委譲
 
-`agents_server`はCodex pluginから利用できる共有MCPである。`start(model_type, prompt, cwd)`は対応する工程別モデル設定からengine、model及びeffortを解決する。
+`agents_server`はCodex pluginから利用できる共有MCPである。`start(model_type, prompt, cwd)`は対応する工程別モデル設定からengine、modelおよびeffortを解決する。
 CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値のengine部が`claude`ならサーバーがClaude backendを選ぶ。調査専用の軽量起動には`start_explore(prompt, cwd)`を使い、出力量が大きいコマンドの実行には`start_shell(command, cwd, summary_policy)`を使う。
 `start_explore`の`model_type`を省略すると`low_tier`を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は既定のまま使い、軽量な探索では判断材料が不足する調査だけ`model_type="medium_tier"`を指定する。
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
-公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つである。`start`、`start_explore`及び`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、
-完了を待たず`session_id`を返す。`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`list`で当該sessionの`status`を確認し、`wait`を再発行する。
-`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。
+公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つである。`start`、`start_explore`および`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、
+完了を待たず`session_id`を返す。`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`wait`を再発行する前に、`list`で待機対象のsessionの`status`を確認する。
+`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionについては、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。作業の観測を試みずにターンを終えると、その作業を観測する主体が残らない。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。`kill`の`kill_requested`、
-`send_message`の`delivery`及び`wait`の終端応答で要求・配送・結果を確認する。
+`send_message`の`delivery`および`wait`の終端応答で要求・配送・結果を確認する。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。`stop(session_id)`は保持中で終端済みのsessionを破棄し、実行中turnを持つsessionは拒否する。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`wait`は引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。破棄したsessionへの`send_message`は暗黙再開する。
 
 backendから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
@@ -110,9 +111,9 @@ backendから承認・入力・認証・attestationなどの非対話要求を�
 
 ### フックの信頼確認
 
-Codexはplugin同梱フックの定義が変わると、利用者が再び信頼するまで当該フックをスキップする。
+Codexはplugin同梱フックの定義が変わると、利用者が変更後のフックを再び信頼するまで、そのフックを実行しない。
 更新処理は先にapp-serverの`hooks/list`で登録状態を確認する。次の8イベントがすべて登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で定義を確認して信頼する案内を表示する。
-登録が0件又は不足している場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
+登録が0件または不足している場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
 信頼後に新しいセッションを開始し、SessionStartの規範注入を確認する。
 再信頼の操作だけではSessionStartの規範注入を検収できない。
 プラグイン更新後は新しいCodexセッションで`/hooks`を実行し、agent-toolkitについて

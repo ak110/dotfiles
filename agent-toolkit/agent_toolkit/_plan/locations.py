@@ -2,11 +2,11 @@
 
 新規計画は`~/.claude/plans/`直下で作業し、実行レビュー完了後は作成日の年月階層を付けて
 private-notesへ移す。計画本文が同じ計画に属する付属ファイルを参照する場合は、固定接頭辞
-`~/.claude/plans/`とファイル名を用い、接頭辞を展開せず当該参照を含む計画ファイルの
+`~/.claude/plans/`とファイル名を用い、接頭辞を展開せずその参照を含む計画ファイルの
 ディレクトリを基準に解決する。これにより計画が作業rootと保存rootのどちらにあっても
 同じ参照値が同じ実体を指す。計画の外にあるキューmetadataの`plan_file`は基準となる
 計画ファイルを持たないため、移動後の位置を表す`$(atk config get private_notes)/`を
-固定接頭辞として用いる。既存の日付階層の作業ファイル、計画本文に残る可搬表記及び
+固定接頭辞として用いる。既存の日付階層の作業ファイル、計画本文に残る可搬表記および
 過去に保存された絶対パスは読み取り互換として受理する。
 本モジュールはシェルを起動せず、参照値を通常の相対パスとして検証する。
 """
@@ -89,9 +89,9 @@ def resolve_owner_session_id() -> str | None:
     """所有記録へ書くセッション識別子を環境から解決する。
 
     委譲先には委譲元が`AGENT_TOOLKIT_OWNER_SESSION`で自身の識別子を渡す。
-    当該値が無い場合は、実行中のセッション自身を示す`CLAUDE_CODE_SESSION_ID`を用いる。
+    この値が無い場合は、実行中のセッション自身を示す`CLAUDE_CODE_SESSION_ID`を用いる。
     Codex CLIが直接起動するMCPサーバーにはいずれの識別子も渡らないため、
-    当該経路で作成した計画バンドルは所有記録を持たない。
+    この経路で作成した計画バンドルは所有記録を持たない。
     いずれも非空の値を持たない場合は解決しない。
     """
     for key in _OWNER_SESSION_ENVIRONMENT_KEYS:
@@ -334,7 +334,7 @@ _HANDOFF_SUFFIX = ".handoff.md"
 
 
 def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
-    """作業root又は保存root内の計画ファイルの種別を返す。"""
+    """作業rootまたは保存root内の計画ファイルの種別を返す。"""
     try:
         path = _resolve(pathlib.Path(file_path))
         working_root = _resolve(working_plans_root())
@@ -375,7 +375,7 @@ def resolve_plan_file(
     """保存済み計画参照を実ファイルパスへ解決する。
 
     portable値はprivate-notes内へ限定する。保存先が存在せず、同じファイル名の
-    直下作業ファイル又は同じ日付相対パスの作業ファイルが存在する場合は作業実体を返す。過去の絶対パスは
+    直下作業ファイルまたは同じ日付相対パスの作業ファイルが存在する場合は作業実体を返す。過去の絶対パスは
     既存データを読むための互換経路として受理する。
     """
     raw = os.fspath(value)
@@ -471,7 +471,7 @@ def validate_adjunct_reference_name(name: str) -> str:
 def resolve_plan_adjunct_reference(value: pathlib.Path | str, *, plan_path: pathlib.Path | str) -> pathlib.Path:
     """計画本文の付属ファイル参照を実ファイルパスへ解決する。
 
-    接頭辞は展開せず、当該参照を含む計画ファイルのディレクトリへファイル名を結合する。
+    接頭辞は展開せず、その参照を含む計画ファイルのディレクトリへファイル名を結合する。
     計画が作業rootと保存rootのどちらにあっても同じ参照値が同じ計画の実体を指す。
     """
     raw = os.fspath(value)
@@ -487,7 +487,7 @@ def to_portable_plan_file(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> str:
-    """保存root又は作業root内の絶対パスをportable値へ変換する。
+    """保存rootまたは作業root内の絶対パスをportable値へ変換する。
 
     旧直下形式または過去のroot外絶対パスは読み取り互換のため絶対表記を維持する。
     """

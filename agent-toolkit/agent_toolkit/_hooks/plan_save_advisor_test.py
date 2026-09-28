@@ -59,7 +59,7 @@ def _decision(result: subprocess.CompletedProcess[str]) -> dict:
 
 
 def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path) -> None:
-    """当該セッションの編集の有無によらず、作業rootに残る計画を1回だけ通知する。"""
+    """自セッションによる編集の有無によらず、作業rootに残る計画を1回だけ通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -225,7 +225,7 @@ def test_notified_plans_are_limited_to_the_current_session(
     owner_records: dict[str, str],
     expected_notified: tuple[str, ...],
 ) -> None:
-    """所有記録が当該セッションを示す計画だけを通知し、他は承認する。"""
+    """所有記録が自セッションを示す計画だけを通知し、他は承認する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)

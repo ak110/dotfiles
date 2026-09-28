@@ -254,7 +254,7 @@ jobs:
           # restore-keysで直近のキャッシュを初期値として復元し、ジョブ中に変化した/cacheの内容を
           # 新しいキーで保存して次の実行へ引き継ぐ。
           # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
-          # run_idだけでは再実行時にキーが完全一致し、当該再実行中に変化した/cacheの内容が保存されない。
+          # run_idだけでは再実行時にキーが完全一致し、その再実行中に変化した/cacheの内容が保存されない。
           key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 

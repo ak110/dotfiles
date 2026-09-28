@@ -191,7 +191,7 @@ process.stdout.write(JSON.stringify({scrollTop: body.scrollTop, focused}));
 
 
 def test_assets_restore_detail_focus_after_origin_row_disappears() -> None:
-    """詳細の起点行が消えた場合も、残存行又は空状態の操作へフォーカスを戻す。"""
+    """詳細の起点行が消えた場合も、残存行または空状態の操作へフォーカスを戻す。"""
     result = _run_node_ui(
         """
 const first = {
@@ -1046,7 +1046,7 @@ def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> No
 def test_background_sync_uses_stale_sync_and_skips_lock_conflict(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """定期更新は鮮度判定付き同期を使い、ロック競合時は当該周期を見送る。"""
+    """定期更新は鮮度判定付き同期を使い、ロック競合時はその周期を見送る。"""
     calls: list[str] = []
 
     def synchronize(_path: pathlib.Path, *, only_if_stale: bool, **_kwargs: object) -> bool:
@@ -1260,7 +1260,7 @@ async def test_user_comment_api_rejects_non_inbox_states_and_uwi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """processing・終端状態及びUWIには操作を提供しない。"""
+    """processing・終端状態およびUWIには操作を提供しない。"""
     _patch_comment_edit_dependencies(monkeypatch)
     contents = {
         "processing": _session_review_awi("processing本文\n"),

@@ -12,14 +12,15 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
 - mq set-dependencies: 既存AWIの明示依存の更新
-- mq edit: `--body-file`による非対話編集又は$EDITORによる保存ファイル全体の編集
+- mq edit: `--body-file`による非対話編集または$EDITORによる保存ファイル全体の編集
 - mq answer: UWIへの回答
-- mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
+- mq process-loop: `orchestrate_model`設定に従いClaude CodeまたはCodexの新規セッションへ
+  `/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
 - mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: 常駐処理への中断要求と追加指示を操作する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
-- plans commit/list: 現行計画又は独立CI実行レビュー表の保存と作業中計画の一覧
+- plans commit/list: 現行計画または独立CI実行レビュー表の保存と作業中計画の一覧
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
@@ -362,7 +363,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         "--dry-run",
         action="store_true",
         help=(
-            "本文と引数の検証だけを行い、private-notes、remote及び対象リポジトリのいずれも変更せずに終了する。"
+            "本文と引数の検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せずに終了する。"
             "検証が成立しない場合は終了コード1で終わる。--batchとは併用できない。"
         ),
     )
@@ -591,7 +592,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         "filenames",
         metavar="FILENAME",
         nargs="*",
-        help="処理開始するAWI又はUWIのファイル名。--allと併用せず、個別指定では1個以上を指定する。",
+        help="処理開始するAWIまたはUWIのファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
     _add_bulk_transition_args(start_processing, action_label="処理開始")
     _add_target_repo_arg(
@@ -612,7 +613,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         "--state",
         choices=(_common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED),
         default=None,
-        help="終端した項目を保留する場合に指定する。省略時はinbox又はprocessingから保留する。--allとは併用できない。",
+        help="終端した項目を保留する場合に指定する。省略時はinboxまたはprocessingから保留する。--allとは併用できない。",
     )
     _add_bulk_transition_args(hold, action_label="保留")
     _add_target_repo_arg(
@@ -655,7 +656,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         "--state",
         choices=(_common.WI_STATE_REJECTED, _common.WI_STATE_ADOPTED),
         default=None,
-        help="adopted又はrejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。--allとは併用できない。",
+        help="adoptedまたはrejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。--allとは併用できない。",
     )
     _add_bulk_transition_args(return_to_inbox, action_label="差し戻し")
     _add_target_repo_arg(

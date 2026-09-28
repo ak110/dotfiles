@@ -81,7 +81,7 @@ REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"
 START_AVAILABILITY_TIMEOUT = 15.0
 # engineの可用性に起因し、別候補なら結果が変わり得る失敗の識別子。
 # `codex app-server generate-json-schema`が出力する`CodexErrorInfo`列挙のうち、
-# 利用枠超過、流量制限及びサーバー側過負荷に該当する区分へ限定する。
+# 利用枠超過、流量制限およびサーバー側過負荷に該当する区分へ限定する。
 ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExceeded", "serverOverloaded"})
 # engineの可用性に起因し、別候補なら結果が変わり得るClaude APIのHTTPステータス。
 # 429（rate_limit_error）と529（overloaded_error）は公式なエラーコード表が再試行可能とする。
@@ -96,7 +96,7 @@ _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 _TASK_MODEL_TYPES = state.TASK_MODEL_TYPES
 _TASK_DOCUMENT_SUFFIX = ".subagent.md"
 # 委譲先のClaude Code・Codexがプラグインを起動するコマンド。MCP設定（`.mcp.json`・`.mcp.codex.json`・`mcp.json`）の
-# `command`と`hooks/hooks.json`のhookの先頭語、及びCodexのhook起動器が内部で呼ぶ`uv run`を覆う。
+# `command`と`hooks/hooks.json`のhookの先頭語、およびCodexのhook起動器が内部で呼ぶ`uv run`を覆う。
 # 委譲先は同じPATHと作業ディレクトリからこれらを解決するため、作業ディレクトリの設定（未trustのmise設定など）で
 # 失敗する状態を子の起動前に検出する。起動後に失敗すると、Claude Codeはプラグインの接続失敗をホスト共通の記録へ残し、
 # 同じ設定のサーバーへの接続を15分間試みない。
@@ -110,7 +110,7 @@ _COMMON_ARGUMENT_REFERENCE = "意味と書式はサーバーの`instructions`の
 # 検査が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
 _REQUIRED_INPUT_LINE_FORMAT = (
     "受理する書式: 必須入力の行は`<項目名>:`で始める。"
-    "項目名へ別の語を連結した行は当該項目として解決しないため、補足する語は別の行へ書く。"
+    "項目名へ別の語を連結した行はその項目として解決しないため、補足する語は別の行へ書く。"
 )
 
 
@@ -139,7 +139,7 @@ class _PendingResume:
     previous_result: dict[str, Any] | None = None
 
     def discard_previous_result(self) -> None:
-        """配送又は明示的な破棄の後に退避済み結果本文を除く。"""
+        """配送または明示的な破棄の後に退避済み結果本文を除く。"""
         self.previous_result = None
 
     def take_previous_result(self) -> dict[str, Any] | None:
@@ -153,7 +153,7 @@ def _resolve_display_label(label: str | None, fallback: str) -> str:
     """呼び出し元が指定した識別名を正規化し、空になる指定では代替の本文から導く。
 
     未指定と、空白だけで構成された指定を含む空になる指定を同じ扱いとする。
-    識別名の列が空のまま表示されると、当該sessionを名前で見分けられないためである。
+    識別名の列が空のまま表示されると、そのsessionを名前で見分けられないためである。
     """
     normalized = status_file.normalize_label(label) if label else ""
     return normalized or status_file.normalize_label(fallback)
@@ -733,7 +733,7 @@ class AgentsServerManager:
     def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
         """保持中のsessionを開始時刻順の公開項目へ射影する。
 
-        未回収結果を持つsessionは、終端済み又は期限切れでも既定の一覧へ残す。
+        未回収結果を持つsessionは、終端済みまたは期限切れでも既定の一覧へ残す。
         """
         loop_time = asyncio.get_running_loop().time()
         for session_id, session in tuple(self.sessions.items()):
@@ -824,10 +824,10 @@ class AgentsServerManager:
         return response
 
     def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
-        """保持中又は再開可能なsessionの復旧用詳細を返す。
+        """保持中または再開可能なsessionの復旧用詳細を返す。
 
         自プロセスの保持状態に無い識別子は、共有の登録簿を正本として在否を判定する。
-        当該sessionを別のMCPサーバープロセスが実行中である場合と、登録簿にレコードが無い場合を
+        そのsessionを別のMCPサーバープロセスが実行中である場合と、登録簿にレコードが無い場合を
         区別せずに喪失として案内すると、照会した主体が新しいsessionの起動へ進む。
         """
         session: SessionState | SessionResumeState | None = self.sessions.get(session_id)
@@ -873,7 +873,7 @@ class AgentsServerManager:
             if active_tool_uses:
                 response["active_tool_uses"] = active_tool_uses
         if status == "running" and isinstance(session, SessionState) and session.live_child_session_ids:
-            # 呼び出し元が当該識別子へ`send_message`と`kill`を発行できるよう、許可判定の入力となる`cwd`を併記する。
+            # 呼び出し元がその識別子へ`send_message`と`kill`を発行できるよう、許可判定の入力となる`cwd`を併記する。
             # `cwd`を解決できない識別子は、対を持たない側の項目として区別できる形で返す。
             resolved: list[dict[str, str]] = []
             unresolved: list[str] = []
@@ -1188,7 +1188,7 @@ class AgentsServerManager:
     ) -> SessionState:
         """初期化の上限超過だけを同じ候補で再試行し、全試行の超過を例外で確定する。
 
-        上限超過はbackendが当該sessionの資源を解放してから返るため、再試行は新しい起動として成立する。
+        上限超過はbackendがそのsessionの資源を解放してから返るため、再試行は新しい起動として成立する。
         上限超過が続けば例外を上位へ返し、engineごとの候補切替条件を適用する。
         """
         last_timeout: SessionInitializationTimeoutError | None = None
@@ -1335,7 +1335,7 @@ class AgentsServerManager:
     def _wait_target_ids(self) -> list[str]:
         """待機の対象となる保持中sessionを識別子順に返す。
 
-        未回収の終端結果を持つ破棄済み又は期限切れsessionも対象へ含め、
+        未回収の終端結果を持つ破棄済みまたは期限切れsessionも対象へ含め、
         呼び出し元が結果本文を回収できないまま失う経路を残さない。
         """
         targets = set(self.sessions) | set(self._pending_resumes)
@@ -1345,7 +1345,7 @@ class AgentsServerManager:
         return sorted(targets)
 
     def _retained_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
-        """破棄済み又は期限切れsessionの未回収の終端結果だけを返す。"""
+        """破棄済みまたは期限切れsessionの未回収の終端結果だけを返す。"""
         stopped_state = self._resolve_stopped_session(session_id)
         if stopped_state is not None:
             response = self._take_stopped_result(session_id, stopped_state, collector=collector)
@@ -1362,21 +1362,21 @@ class AgentsServerManager:
     async def wait(self) -> dict[str, Any]:
         """委譲先の終端を待ち、終端時だけ結果本文を返す。
 
-        引数を受け取らない。対象は当該MCPサーバープロセスが保持する起動中のsession全体とし、最初に終端した1件の結果を返す。
+        引数を受け取らない。対象は本MCPサーバープロセスが保持する起動中のsession全体とし、最初に終端した1件の結果を返す。
         残るsessionの終端結果は次の呼び出しまで保持する。
         待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
-        当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
+        この上限へ達した応答は`status`と`elapsed_seconds`を返す。
         保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
         以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
         呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
-        公開MCP toolではなく、`atk agents wait`を実行ホストの前景又は背景ジョブとして起動する。
+        公開MCP toolではなく、`atk agents wait`を実行ホストの前景または背景ジョブとして起動する。
         委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
         呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
         終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
         終端結果は呼び出し元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
         受領した終端結果のsessionを破棄する場合は`stop`を発行する。
         終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
-        委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
+        委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
         再待機の要否は`notices`の有無ではなく`status`で判定する。
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。
@@ -1387,7 +1387,7 @@ class AgentsServerManager:
         ordered_ids = self._wait_target_ids()
         # 保留中の結果を進める判定は待機の刻みごとに1回だけ行う。
         # backendは背景作業の完了通知で受け取った再開turnの結果へ保留中の結果を差し替えるため、
-        # 通知のたびに判定すると当該差し替えの前に保留中の結果を確定してしまう。
+        # 通知のたびに判定するとその差し替えの前に保留中の結果を確定してしまう。
         advance_pending = True
 
         while True:
@@ -1465,7 +1465,7 @@ class AgentsServerManager:
     def _child_result_is_terminal(self, session_id: str) -> bool:
         """孫sessionの共有された終端結果ファイルが終端を示すかを返す。
 
-        当該ファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
+        このファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
         別プロセスが起動した孫sessionの終端も同じ経路で判定できる。
         """
         if self._status_writer is None or not status_file.valid_session_id(session_id):
@@ -1473,7 +1473,7 @@ class AgentsServerManager:
         return self._status_writer.read_result(session_id) is not None
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
-        """保留中の結果を、孫sessionの終端又は保持期限に応じて進める。"""
+        """保留中の結果を、孫sessionの終端または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
             return
         resolutions = {session_id: session_registry.resolve(session_id) for session_id in session.live_child_session_ids}
@@ -1539,7 +1539,7 @@ class AgentsServerManager:
                 self._status_writer.delete_result(session.session_id, collector="auto-resume")
             return
 
-        # 保留対象が背景taskの終端だけで消えた場合は確定しない。backendは当該終端に続く再開turnの結果で
+        # 保留対象が背景taskの終端だけで消えた場合は確定しない。backendはその終端に続く再開turnの結果で
         # 保留中の結果を差し替えるため、ここで確定すると再開turnの結果より先に待機表明の結果を公開してしまう。
         # この場合の確定は再開turnの結果か保留期限の経過に委ねる。
         if not has_pending_auto_resume_targets(session) and unobserved:
@@ -1569,7 +1569,7 @@ class AgentsServerManager:
 
     @staticmethod
     def _result_response(session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
-        """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。
+        """waitまたはkillの応答を組み立て、返した終端結果を回収済みにする。
 
         `elapsed_seconds`はturnの`started_at`起点である。
         最終活動時刻と停滞の印は`list`が返すため、本応答へは載せない。
@@ -2178,15 +2178,15 @@ with warnings.catch_warnings():
             "`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`が返した`session_id`と、"
             "`send_message`で新しい指示を配送したsessionは、"
             "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
-            "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
+            "観測を試みていない作業を残したままターンを終えると、その作業を観測する主体が残らない。\n"
             "start系の起動ツール（`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`）は、"
             "次の共通引数を同じ意味で受け取る。各ツールの引数説明にはツール固有の既定値だけを書く。\n"
-            "共通引数`model_type`: モデル段位の種別（例: `high_tier`）、又はASCIIカンマ区切りの"
+            "共通引数`model_type`: モデル段位の種別（例: `high_tier`）、またはASCIIカンマ区切りの"
             "`<claude|codex|agy>:<model>[/<effort>]`候補列（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）。"
             "候補は先頭から試し、起動可能な候補へ切り替える。"
             "`start_custom`では必須とする。他の起動ツールでは省略可能で、省略時は各ツールの工程別設定を使い、"
             "指定時はその値で一時的に上書きする。恒常的な変更は`atk config set`で行う。\n"
-            "共通引数`label`: 当該sessionを人が識別する短い名前とし、`show`・`atk agents list`・statuslineへ現れる。"
+            "共通引数`label`: そのsessionを人が識別する短い名前とし、`show`・`atk agents list`・statuslineへ現れる。"
             "全起動ツールで次の凡例に従う。`<…1〜2語>`は英小文字・数字・日本語の語をハイフンで連結した1〜2語とし、"
             "依頼本文や文章をそのまま使わない。\n"
             "| 起動 | 形式 | 例 |\n"
@@ -2194,7 +2194,7 @@ with warnings.catch_warnings():
             "| `start`（省略時はサーバーが生成） | `extra_params`に`レーン識別子`があれば`<レーン識別子>-<タスク文書名>`、"
             "無ければ`<タスク文書名>`。タスク文書名はファイル名から`.subagent.md`を除いた名前 | "
             "`lane-01-exec`、`lane-01-exec-review`、`pick-wi` |\n"
-            "| レビューを目的とする`start_explore`又は`start_custom` | `<レビュー対象を表す語>-review` | `pr-body-review` |\n"
+            "| レビューを目的とする`start_explore`または`start_custom` | `<レビュー対象を表す語>-review` | `pr-body-review` |\n"
             "| `start_explore`（レビュー以外） | `explore-<調査対象を示す1〜2語>` | `explore-pyfltr` |\n"
             "| `start_shell` | `shell-<コマンド名など1〜2語>` | `shell-make-test` |\n"
             "| `start_write` | `write-<起草対象を示す1〜2語>` | `write-awi` |\n"
@@ -2252,7 +2252,7 @@ async def start(
     応答は`session_id`と`status`を含む。候補を切り替えて起動した場合だけ、除外した候補と
     除外の根拠、および採用した`engine`・`model`・`effort`を加える。起動条件の詳細は`show`で取得する。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
-    `label`は当該sessionの識別名として`show`・`atk agents list`・statuslineへ現れる。
+    `label`はそのsessionの識別名として`show`・`atk agents list`・statuslineへ現れる。
     全候補が可用性またはagyのturn失敗で終端した場合は、最後の候補の終端応答を返す。
     最後のagy候補がbackend開始例外で失敗した場合は、除外理由を含む例外を送出する。
     """
@@ -2282,7 +2282,7 @@ async def start_custom(
 ) -> dict[str, Any]:
     """専用タスク文書がない自由な指示本文から委譲先turnを開始する。
 
-    既存の`.subagent.md`で表現できる作業には使わない。engine、model及びeffortは
+    既存の`.subagent.md`で表現できる作業には使わない。engine、modelおよびeffortは
     `model_type`の設定種別または直接指定の候補列から解決する。
     候補は先頭から試し、通常応答は後続の観測に必要な`session_id`と`status`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
@@ -2325,7 +2325,7 @@ async def start_explore(
     結果が不要なら`kill`で破棄する。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     プロジェクト指示の読込を減らした軽量な起動条件で開始する。
-    起動時のシステム指示でファイルを作成、変更及び削除しない契約を委譲先へ課すため、成果ファイルの出力を依頼しない。
+    起動時のシステム指示でファイルを作成、変更および削除しない契約を委譲先へ課すため、成果ファイルの出力を依頼しない。
     読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を本ツールへ委譲する。
     委譲すると、呼び出し元の文脈へは結果の要約だけが入る。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
@@ -2393,7 +2393,7 @@ async def start_write(
 ) -> dict[str, Any]:
     """確定済みの文章起草と小規模な定型書込を委譲する。
 
-    設計、調査、レビュー及び公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。
+    設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。
     読者が異なる文章は別の依頼にする。プロジェクト指示の読込を省いた`write_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。
     `model_type`を指定した場合はその値から候補列を決める。
     終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait --output-file <絶対パス>`で受け取る。
@@ -2473,7 +2473,7 @@ async def kill(
 
     停止は最終手段とする。実行中の委譲先には`send_message`で訂正を配送できるため、
     そちらで意図を満たせる場合は、停止によって失われる作業と再起動の費用の方が大きい。
-    本ツールを選ぶ前に、`send_message`による訂正では足りないことと、当該作業の継続自体が不要であることを確認する。
+    本ツールを選ぶ前に、`send_message`による訂正では足りないことと、その作業の継続自体が不要であることを確認する。
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     `timeout=0`は中断要求配送後の現状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
@@ -2500,10 +2500,10 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
 
     所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
     各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
-    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒及び件数を返し、モデル出力が止まっていることを示す。
+    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒および件数を返し、モデル出力が止まっていることを示す。
     起動条件は`show`で取得する。
     結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
-    既定では未回収結果を持たない終端済み又は`expired`のsessionを除き、除いた件数を`omitted`へ返す。
+    既定では未回収結果を持たない終端済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
     全件が必要な場合は`include_terminated`へ真を渡す。このとき`omitted`は0となる。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
@@ -2512,22 +2512,22 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
 
 @mcp.tool(name="show", structured_output=True)
 async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]:
-    """1件のsessionについて、文脈復旧又はトラブルシューティング用の詳細を返す。
+    """1件のsessionについて、文脈復旧またはトラブルシューティング用の詳細を返す。
 
-    既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
+    既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無および進行中の停滞診断を返す。
     `model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列である。
     停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の疑いはこの値で判定する。
-    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒及び件数を返し、モデル出力が止まっていることを示す。
+    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒および件数を返し、モデル出力が止まっていることを示す。
     `seconds_since_output`は最新のテキスト出力からの経過秒数である。
     テキスト出力だけが止まり活動が続いている状態は長時間のコマンドの実行中であり、停滞ではない。
-    `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻及び入力の要約を返す。
+    `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻および入力の要約を返す。
     前回の照会と同じ呼び出しが同じ開始時刻で続いている場合も、長時間のコマンドの実行中として扱う。
     `status`が`running`で、このsessionが`start`系ツールで起動し終端をまだ観測していない子sessionがある場合は、
     安定した順序の`live_child_sessions`（`session_id`と`cwd`の対）を返す。
     この一覧は子の終端を観測するまで残るため、子が稼働中である根拠にしない。
     子の状態は、子の`session_id`を渡した`show`の`status`と`seconds_since_activity`で判定する。
-    `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、当該識別子へは追送と打ち切りを発行できない。
-    `verbose=True`はengine、model、effort、開始・更新時刻、turn番号及び解決可能なroot sessionも加える。
+    `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、その識別子へは追送と打ち切りを発行できない。
+    `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """
     return _MANAGER.show_session(session_id, verbose=verbose)

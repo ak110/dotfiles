@@ -372,8 +372,8 @@ def write_settings_hybrid(
     """マージ結果を対象ファイルへ書き戻すハイブリッド経路。
 
     既存パスの値置換のみで済む差分ならJSONCコメント・空行・インデントを維持する
-    経路（``_atomic_edit_jsonc``）で書き戻す。構造変化を含む場合や当該経路が
-    失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
+    経路（``_atomic_edit_jsonc``）で書き戻す。構造変化を含む場合やJSONC形式の
+    更新に失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
     フォールバックする。両経路とも原子的書き込みで統一しており、書き込み失敗時は
     ``False`` を返す。
 

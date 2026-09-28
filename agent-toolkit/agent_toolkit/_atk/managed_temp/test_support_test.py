@@ -174,7 +174,7 @@ def _interrupt_cleanup(target: pathlib.Path, *, quarantine: bool = False) -> tup
 
 
 def _registry_recovery_is_accepted(target: pathlib.Path) -> bool:
-    """`--recover-registry`が当該管理対象の後始末を受理したかを返す。"""
+    """`--recover-registry`が指定された管理対象の後始末を受理したかを返す。"""
     try:
         subject.cleanup_managed_temp(target, recover_registry=True)
     except subject.ManagedTempError:

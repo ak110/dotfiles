@@ -2,7 +2,7 @@
 
 `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する場合は次の3点を守る。
 
-- 書体、文字サイズ、行の高さ、字間及び文字色は`:root`のカスタムプロパティーと`body`で一元定義し、
+- 書体、文字サイズ、行の高さ、字間および文字色は`:root`のカスタムプロパティーと`body`で一元定義し、
   `#screen-wi`・`#screen-plans`・`#screen-sessions`のIDセレクター配下でこれらを再定義しない
 - `#screen-*`のIDセレクター直下へ、本文の装飾を担う裸のタグセレクター
   （`a`・`h1`から`h6`・`p`・`ul`・`ol`・`li`・`hr`・`blockquote`・`code`・`pre`・`table`・`thead`・`th`・`td`・`img`・`strong`）を書かない。

@@ -155,8 +155,8 @@ def _consume_process_loop_abort() -> bool:
     """中断要求があればベルを3回鳴らして要求を消費し、常駐処理を終了すべきかを返す。
 
     判定点は反復の境界と、呼び出し元へ戻らない再起動の直前の2箇所へ限定する。
-    `_restart_process_loop`は`os.execv`又は`sys.exit`で呼び出し元へ戻らないため、
-    当該呼び出しの後段へ置いた判定は`--no-update`を指定しない既定の起動形で実行されない。
+    `_restart_process_loop`は`os.execv`または`sys.exit`で呼び出し元へ戻らないため、
+    その呼び出しの後段へ置いた判定は`--no-update`を指定しない既定の起動形で実行されない。
     同じ理由で`_update_before_session`と`_check_and_restart_on_update`の後段にも判定を置かず、
     反復ループの先頭でまとめて判定する。
     `atk wi process-loop abort`の公開契約は、現在のセッションが終わった時点で次の反復へ進まず
@@ -294,7 +294,7 @@ def _resolve_executable(command: str) -> str | None:
 
 
 def _mise_output_detail(output: str | bytes | None) -> str:
-    """miseの標準出力又は標準エラー出力を警告用の一行へ整形する。"""
+    """miseの標準出力または標準エラー出力を警告用の一行へ整形する。"""
     if isinstance(output, bytes):
         output = output.decode("utf-8", errors="backslashreplace")
     return output.strip() if isinstance(output, str) and output.strip() else "出力なし"
@@ -572,14 +572,14 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
 def _build_process_loop_prompt() -> str:
     """AWI処理の完遂を依頼する最小の目的文を構築する。
 
-    目的文はスキルの完遂だけを求める。処理対象、処理範囲、終了手順、実行基盤の障害対応及び
+    目的文はスキルの完遂だけを求める。処理対象、処理範囲、終了手順、実行基盤の障害対応および
     再開条件は`agent-toolkit:process-wi`とその参照先が定める。目的文へ重ねて書くと、
     スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として扱われて
     スキル側の規範より優先される。
 
     目的文は`/goal`条件としてオーケストレーターへ渡り、ターンを終えるたびに会話記録の全体を
     入力とする評価の対象となる。条件が長いほど各評価の入力が増える。この関数へ記述を足す
-    変更は行わない。過去に作業ディレクトリ、対象リポジトリ及び終了手順の指示が順に加わり、
+    変更は行わない。過去に作業ディレクトリ、対象リポジトリおよび終了手順の指示が順に加わり、
     そのたびに短縮を求める指摘を受領した経緯がある。
 
     処理対象は`_run_process_session`が子セッションの作業ディレクトリとして渡す経路で伝わる。
@@ -847,7 +847,7 @@ def _build_restart_target(
 ) -> tuple[pathlib.Path, list[str]]:
     """再起動対象のスクリプトパスと引数列を返す。
 
-    `dotfiles_root`を解決できた場合は再起動先を当該チェックアウト配下の`atk.py`へ切り替える。
+    `dotfiles_root`を解決できた場合は再起動先をそのチェックアウト配下の`atk.py`へ切り替える。
     `atk`がプラグインキャッシュ配下のバージョン別コピーから起動された場合、`argv[0]`は
     更新前バージョンのディレクトリを指す。更新は新しいバージョンディレクトリへ展開されるため、
     `argv[0]`のまま再起動すると更新を検知するたびに旧コードを再実行し続ける。
@@ -1051,7 +1051,7 @@ def _update_before_session(
     更新による再起動先には一回限りの指定を渡し、同じ上流状態への開始前更新を抑止する。
 
     同期が非0で終了した場合も子セッションを起動する。同期の終了コードは、失敗した段の種類、
-    失敗の回復可能性及びAWIの内容のいずれも表さないため、消化を止める判定の根拠から外す。
+    失敗の回復可能性およびAWIの内容のいずれも表さないため、消化を止める判定の根拠から外す。
     判定は、同期処理が残す構造化された記録を子セッション側のエージェントが読んで行う。
     同期処理そのものを起動できない場合だけは、判定材料となる記録も生じないため待機を続ける。
     """
@@ -1230,7 +1230,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
     オーケストレーター・model・effortは`orchestrate_model`設定（既定`claude:opus[1m]/medium`）から
     セッション起動反復ごとに候補列として解決する。本作業の前に副作用のない極小起動で候補を先頭から検査し、
-    最初に可用な候補をClaude Code又はCodexの新規起動とresumeの双方へ渡す。
+    最初に可用な候補をClaude CodeまたはCodexの新規起動とresumeの双方へ渡す。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
     Codexは対話CLIを使い、設定値のmodel・effortを起動引数へ渡す。
@@ -1245,7 +1245,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     秒間隔で実行し、新規アラートを検知した場合はAWIへ投入して即座に次反復へ進む。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
-    待機に入った旨を1度出力する。
+    待機に入るたびに待機メッセージを1度出力する。
     待機ループがタイムアウト（変更未検知）で復帰した場合、上流差分があれば`update-dotfiles`を実行したうえで、
     `~/dotfiles`チェックアウト内`agent-toolkit/scripts/`配下コードの起動時ハッシュと現在のハッシュを比較し、
     差異があれば同じく`_restart_process_loop`で再起動する。他プロセスが先に`update-dotfiles`を

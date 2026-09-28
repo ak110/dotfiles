@@ -257,7 +257,7 @@ def test_structured_material_contract_rejects_requirement_order_and_gap() -> Non
 
 
 def test_structured_material_contract_requires_adjacent_tables() -> None:
-    """素材表と要求表の間に説明文又は別表を置かない。"""
+    """素材表と要求表の間に説明文または別表を置かない。"""
     content = _VALID_CONTENT.replace(
         "\n| 要求ID | 素材参照 |",
         "\n説明文を配置する。\n\n| 要求ID | 素材参照 |",

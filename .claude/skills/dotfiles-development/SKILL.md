@@ -11,12 +11,12 @@ description: >
 
 # dotfilesの開発手順
 
-本スキルは本リポジトリの自動チェック、コード整形、依存更新及び振り返りの参照文書の位置を提供する。
+本スキルは本リポジトリの自動チェック、コード整形、依存更新および振り返りの参照文書の位置を提供する。
 リリース運用は`dotfiles-release`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
 ## 開発手順
 
-- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新及び全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
+- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新および全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体の自動チェックが必要な場合の実行方法: `make test`
   - 全体の自動チェックを起動する際は`agent-toolkit:check-execution`をSkill機能で起動し、`agents_server`の`start_shell`へ`make test`を渡す。委譲先の出力保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
@@ -24,7 +24,7 @@ description: >
     ただしpyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は
     `--no-fix`を付けても対象ファイルを書き換え、書き換えた場合も終了コード0で成功扱いになる。
     書き換えの対象は、整形結果が現在の内容と異なるファイル、`prek`が`.pre-commit-config.yaml`の
-    テキスト整形hookで扱うファイル、及び生成物の同期先である。
+    テキスト整形hookで扱うファイル、および生成物の同期先である。
     コミット範囲を確定する前に`git status`で自分の変更以外の差分の有無を確認する。
     自動修正が必要な場合は`make format`（`uv run --frozen pyfltr fast`）を使う
   - 特定ファイルに限定する場合はMCP経由の`run`へそのファイルのパスを渡す。
@@ -36,7 +36,7 @@ description: >
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
   - 初回の変更範囲の検証で失敗したチェックを修正後に再実行する時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
-  - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新又はその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
+  - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する変更範囲の検証を先に実行する。公開前の全体検証はCIへ委ね、ローカルでは次の4件を実行する。CIの成功を確認して全体検証の結論を確定する

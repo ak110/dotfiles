@@ -24,7 +24,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     """`agents`配下のサブコマンドを登録する。"""
     sub = _help.add_subcommands(parser, dest="agents_subcommand", required=False, show_help_when_missing=True)
     wait = _help.add_command(sub, "wait", **_help.HELP["atk agents wait"])
-    # 保存先は待機の巡回より前に開く。`atk`のmainが`--output-file`を解決してから当該サブコマンドを
+    # 保存先は待機の巡回より前に開く。`atk`のmainが`--output-file`を解決してからこのサブコマンドを
     # 実行するため、保存できない指定では結果ファイルと通知ファイルを削除せずに終わる。
     _output_file.add_output_file_arg(wait)
     wait.add_argument(
@@ -302,7 +302,7 @@ def _status_payload_is_current(payload: Any) -> bool:
 
 
 def _add_output_activity(session: dict[str, Any]) -> None:
-    """活動とテキスト出力からの経過秒、及び停滞印を公開射影へ加える。"""
+    """活動とテキスト出力からの経過秒、および停滞印を公開射影へ加える。"""
     updated_at = session.get("updated_at")
     output_updated_at = session.get("output_updated_at")
     started_at = session.get("started_at")

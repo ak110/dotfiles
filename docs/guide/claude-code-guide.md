@@ -126,15 +126,15 @@ claude plugin list
 `claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
 Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-委譲と当該sessionの管理は`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
-`prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
+委譲と起動したsessionの管理には、`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールを使う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
+`prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
 応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
 `start_explore`は`prompt`と絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`model_type`の省略時は`low_tier_model`、`medium_tier`の指定時は`medium_tier_model`の設定を使う。
-`start`・`start_explore`・`start_shell`・`start_write`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別又は候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
+`start`・`start_explore`・`start_shell`・`start_write`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
 `start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
-軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
+軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は、対象を変更しないよう`prompt`で指示する。
 `send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、呼び出し側は検収済み状態を渡して新規起動する。
-`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
+`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みずにターンを終えると、残した作業の結果を受け取る主体がいなくなる。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。保持していた`session_id`の回復と、並行する委譲先の残作業の把握に使う。
 `stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`wait`は引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。
 `wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
@@ -157,8 +157,8 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 `atk config show`はパス4行とモデル設定5行を表示し、`atk config get`はモデル設定値をそのまま返す。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
-`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、`atk config show`と`atk config get`が当該値を返し、
-委譲の起動でも当該値を使う。環境変数は保存済みの設定より優先し、当該変数を解除すると保存済みの設定へ戻る。
+`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
+委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
 `atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`はプリセットの対象外とする。
 受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
@@ -263,25 +263,25 @@ AWIは人間向けの作業要求である。実装を伴うレーンでは、�
 | `/agent-toolkit:add-awi-by-user` | 依頼内容を対話で確定してから登録したい |
 
 `atk wi reject`はprocess-loopが要求の全てを不採用と確定した場合だけに使用する。
-採用内容を統合した元項目又は別リポジトリへ移管した元項目は、統合先又は移管先をnoteへ記録して`atk wi rm --force`で除去する。
-技術的な失敗、入力不足及び外部条件待ちは、不採用にせずactive項目として保持する。ユーザーの回答を待つ項目は`atk wi hold`で保留し、回答後に`atk wi unhold`で自動処理へ戻す。
+採用内容を統合した元項目または別リポジトリへ移管した元項目は、統合先または移管先をnoteへ記録して`atk wi rm --force`で除去する。
+技術的な失敗、入力不足および外部条件待ちは、不採用にせずactive項目として保持する。ユーザーの回答を待つ項目は`atk wi hold`で保留し、回答後に`atk wi unhold`で自動処理へ戻す。
 
 ### atk serveの3画面
 
 `atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初の利用者発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は`~/.config/agent-toolkit/serve.toml`の`[plans]`・`[sessions]`で指定する。未指定の場合、計画ファイル画面はprivate-notesの`plans`と`~/.claude/plans`の両方を参照し、セッション画面は`~/.claude`と、`CODEX_HOME`が空のときは`~/.codex`を参照する。
 
-セッション画面を開いたままでも、ローカルと設定済みリモートホストで新しいセッションの記録が保存されると一覧へ自動で加わり、表示中の記録へ追記されたイベントも再読み込みせずに右ペインへ現れる。右ペインの更新では、開いたイベント、「さらに100件表示」で広げた件数及びスクロール位置を保つ。末尾を表示している間は追記に合わせて末尾へ進み、それより上を読んでいる間は右ペインの下端へ新しいイベントの件数と末尾へ移動するボタンを表示する。
+セッション画面を開いたままでも、ローカルと設定済みリモートホストで新しいセッションの記録が保存されると一覧へ自動で加わり、表示中の記録へ追記されたイベントも再読み込みせずに右ペインへ現れる。右ペインの更新では、開いたイベント、「さらに100件表示」で広げた件数およびスクロール位置を保つ。末尾を表示している間は追記に合わせて末尾へ進み、それより上を読んでいる間は右ペインの下端へ新しいイベントの件数と末尾へ移動するボタンを表示する。
 一覧への掲載は、記録にユーザーのロールを持つ行が1件でもあるかで決める。ユーザーのロールを持つ行が無い記録（Codexを起動しただけで入力しなかった記録など）は一覧に出ず、その行が保存されると一覧へ加わる。実行環境の挿入本文だけを持つ記録は一覧に残るが、最初の発話の検索値は空になる。リモートホストの自動更新には、リモートホスト側のdotfilesの更新が必要である。
 
 ### エージェント由来AWIへのユーザーコメント
 
-`atk serve`の詳細画面では、inbox又はholdにあるエージェント由来のawiにユーザーコメントの編集操作が表示される。エージェント由来とは、frontmatterの`source`が設定されており、その値が`human`でないものを指す。
+`atk serve`の詳細画面では、inboxまたはholdにあるエージェント由来のawiにユーザーコメントの編集操作が表示される。エージェント由来とは、frontmatterの`source`が設定されており、その値が`human`でないものを指す。
 コメントがない場合は末尾の`## ユーザーコメント`節へ追記し、既存のコメントを保存すると同じ節だけを置換する。
 空のコメントによる節削除はできない。
 コードフェンス外のH2を含めるコメント、同名節が複数ある本文、末尾以外に予約節がある本文は保存できない。
-processing、UWI、終端項目及び人間由来の項目では操作を使用できない。
+processing、UWI、終端項目および人間由来の項目では操作を使用できない。
 
-ユーザーコメントに操作、対象及び範囲を明記すると、その範囲の外部操作に対する承認として処理される。
+ユーザーコメントに操作、対象および範囲を明記すると、その範囲の外部操作に対する承認として処理される。
 一般的な「進めて」だけでは外部操作の範囲が確定しないため、実行してよい操作を具体的に記載する。
 
 ### UWIへの回答と状態確認
@@ -341,7 +341,7 @@ dotfiles配布利用者は`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPAT
 
 ルールファイル（`~/.claude/rules/agent-toolkit/`配下）は自動ロードされる。
 `01-agent.md`が基本原則・運用方針・言語表現・検証とコミットの流れを提供する。
-ルールファイルには、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く。
+ルールファイルには、メインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く。
 メインエージェントだけに適用する条文は`share/rules-main.md`と`share/rules-main.claude-code.md`、サブエージェントと委譲先だけに適用する条文は`share/rules-subagent.md`に置き、フックと`agents_server`が起動時に文脈へ追加する。
 文体の核はJIS規格・公的な標準仕様書のスタイルとし、
 対話型UI向けの敬体はNHKの案内放送原稿のスタイルを例外として割り当てる。
@@ -360,11 +360,11 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | --- | --- | --- | --- |
 | plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取を警告する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・背景タスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、回答済みUWIを通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録に対応する |
-| plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`及び圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は品質想起通知も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
+| plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は品質想起通知も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
-| plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`及び問いかけに関する終了判定を行う | 対応 | 非対応 |
+| plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
+| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
@@ -388,7 +388,7 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 ```
 
 `agent-toolkit:process-wi`のレーンでは`dd-HHmm_process-wi_レーンNN.md`（`NN`は2桁）とする。
-`agent-toolkit:single-lane-process`では`dd-HHmm_single-lane-process.md`とし、同じ名前が既にある場合だけ`-<小文字16進数4桁>`が付く。process-wiのレーン名は作成処理へ`lane-NN`を渡して生成し、呼び出し側で日付、時刻又は接頭辞を組み立てない。
+`agent-toolkit:single-lane-process`では`dd-HHmm_single-lane-process.md`とし、同じ名前が既にある場合だけ`-<小文字16進数4桁>`が付く。process-wiのレーン名は作成処理へ`lane-NN`を渡して生成し、呼び出し側で日付、時刻または接頭辞を組み立てない。
 
 viewerのパスコピーは選択中の実体を指すため、作業中は`~/.claude/plans/...`、保存後はprivate-notes側の可搬表記を返す。
 実装後レビューが収束した後だけ、作業rootからの相対パスを指定して計画バンドルを保存する。
@@ -397,21 +397,21 @@ viewerのパスコピーは選択中の実体を指すため、作業中は`~/.c
 atk plans commit dd-HHmm_<名詞>.md
 ```
 
-`atk plans commit`は同じstemの計画、バグ調査ファイル及び実行レビュー表を、計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
+`atk plans commit`は同じstemの計画、バグ調査ファイルおよび実行レビュー表を、計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
 pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
 計画作成基準と可搬参照のチェックは`agent-toolkit:plan-mode`の`plan-file-standards.md`が定める。
 
 計画ファイルと計画運用に関するチェックは、上表の`PreToolUse`・`PostToolUse`が扱う。
 
 - 計画ファイルは1ファイル構成とする
-- 新規の固定H2は`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`、`## 検証`、`## 終端工程`及び`## 進捗ログ`とする
+- 新規の固定H2は`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`、`## 検証`、`## 終端工程`および`## 進捗ログ`とする
 - 変更履歴のユーザー発言は`### ユーザー発言<連番>`の見出しと逐語コードブロックでチェックする
 - 進捗ログは実装工程の記録だけを収め、新規作成では内容行を持つ本文を受理しない
 - バグ対応では計画メタ情報の`計画ファイル（バグ）`行が参照する別ファイルの原因分析表と固定の調査表をチェックする
-- 計画変更履歴、進捗ログ及びレビュー指摘管理表は用途別に保持し、件数又はラウンド数を相互に比較しない
+- 計画変更履歴、進捗ログおよびレビュー指摘管理表は用途別に保持し、件数またはラウンド数を相互に比較しない
 - 計画実装では、メインセッションがレーン担当と単一の読み取り専用実行レビュー担当を直接管理する。
   各レビューラウンドはラウンド番号と指摘件数だけを返し、第2ラウンド以降はメインがレビュー指摘管理表を確認して介入する。
-  メインがマージを許可した後は、最後のレーン担当が最新ベースへのrebase、必要な競合記録と再レビュー、ffマージ、`adopt`及び後始末までを担当する
+  メインがマージを許可した後は、最後のレーン担当が最新ベースへのrebase、必要な競合記録と再レビュー、ffマージ、`adopt`および後始末までを担当する
 
 このほか、メインエージェント応答の記述言語の警告と、`AskUserQuestion`への縮退誘発フレーズ混入のブロックを
 Claude Codeで有効化する。
@@ -419,7 +419,7 @@ Claude Codeで有効化する。
 応答の冒頭が英語の談話標識であるとき、日本語文字の比率が閾値未満のときに返す。
 英単語が1語だけの記述は、識別子やコマンド名の単独提示と区別できないため警告しない。
 同じ警告が日本語の応答を経ずに2回続いたときは、ツール呼び出しをブロックする。
-単発の委譲は常設規範の基本委譲契約を適用し、起動方式の選択、継続、停滞検知又は複数主体調整が必要な場合だけ
+単発の委譲は常設規範の基本委譲契約を適用し、起動方式の選択、継続、停滞検知または複数主体調整が必要な場合だけ
 `agent-toolkit:delegation`の起動方式ごとの契約を適用する。
 
 ### オンデマンドのスキル
@@ -429,7 +429,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、コーディングエージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
 - `agent-toolkit:bugfix`: バグ対応時の2系統4段階の原因分析、類似見直し、対策・横展開・再発防止の判断基準
-- `agent-toolkit:delegation`: 起動方式の選択、継続、停滞検知又は複数主体調整が必要な高度な委譲の手順。
+- `agent-toolkit:delegation`: 起動方式の選択、継続、停滞検知または複数主体調整が必要な高度な委譲の手順。
   自動的に適用せず、対象工程が高度な委譲の条件を持つ場合にだけ読み込む
 - `agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の実行レビューを含む実行引き継ぎ
   - 計画確定時は計画構造の自動チェックで固定H2と表、計画メタ情報、見出し階層、参照実在を確認する
@@ -440,21 +440,21 @@ Claude Codeで有効化する。
   - 進捗ログは日時・完了した工程・結果の3列表で実装工程の作業状況を追跡し、異常終了からの再開に使う
 - `agent-toolkit:review-standards`: レビュー担当とレビューイーの判断基準。
   レビュー担当にはコードレビュー・ドキュメントレビューの実施基準を、レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領したレビューイーには修正要否の立証、安全な修正、自己点検と公開可能性の検証基準を与える
-- `agent-toolkit:wi-standards`: AWIとUWIの本文、由来、状態、承認及び投入の共通規範
+- `agent-toolkit:wi-standards`: AWIとUWIの本文、由来、状態、承認および投入の共通規範
 - `agent-toolkit:workflow-overview`: 対話型、自律型、まとめ処理型をまたぐWI運用の全体像と、運用変更時に確認する主体・操作・適用先
-- `agent-toolkit:add-awi-by-user`: 利用者向け要件を対話で確定し、AWI又はUWIを手動投入する
+- `agent-toolkit:add-awi-by-user`: 利用者向け要件を対話で確定し、AWIまたはUWIを手動投入する
 - `agent-toolkit:single-lane-process`: AWIをレーンへ分けずに、1回の処理回で対応する作業ツリーへ実装して終端する。計画を要する項目は同じ処理回で計画の作成から実装まで進め、複数リポジトリでは計画と実行レビューを対象worktreeごとに分ける
 - `agent-toolkit:process-wi`: 選定工程（選定とレーン分け）、レーン工程（並列レーン実行）、公開工程（全レーン後のpush・CI・終了）の3段階でAWIを処理する。
   計画を要する通常レーンは1つの計画を使い、レーン担当が計画・実装・変更範囲の検証を続けて行った後、実行レビューを要求する。
   計画を省くレーンはWIの要求と完成条件を基準に実装・レビューする。計画がある場合は自動チェックでWI集合の一致と人間由来行の根拠欄を確認する。人間由来の縮小、規範文書の編集、明示禁止条件のいずれかがある場合だけメインの判断を待つ。
-  実装不要又はholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
+  実装不要またはholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
   各レーンはffマージ直後に`adopt`と後始末を完了し、固有指示で延期した項目だけを全レーン後の終端工程で処理する
 - `agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `atk agents-exit-session`: ユーザー指示時又は自律実行スキル完遂時に、現在のClaude Code又はCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行して会話記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
+- `atk agents-exit-session`: ユーザー指示時または自律実行スキル完遂時に、現在のClaude CodeまたはCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行して会話記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する
-- `agent-toolkit:session-review`: 当該セッションの会話の流れと問題候補から原因と恒久対策を確定し、対策を作業依頼（AWI）として投入する。手動又は`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
+- `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 
 ## 更新方法
 

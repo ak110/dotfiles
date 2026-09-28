@@ -89,7 +89,7 @@ class _SilentProcess:
 
 @pytest.mark.asyncio
 async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
-    """接続断は到達段階、子PID及び直前stderrを例外とログへ残す。"""
+    """接続断は到達段階、子PIDおよび直前stderrを例外とログへ残す。"""
     client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
     process = _SilentProcess()
     process.__dict__["stdin"] = _DisconnectedStdin()
@@ -262,7 +262,7 @@ async def test_client_start_aborts_when_initialize_never_answers(monkeypatch: py
 
 @pytest.mark.asyncio
 async def test_client_logs_process_start_initialize_and_close(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Codex子プロセスの起動、initialize応答及び終了を親loggerへ記録する。"""
+    """Codex子プロセスの起動、initialize応答および終了を親loggerへ記録する。"""
     process = _SilentProcess()
     messages: list[str] = []
 

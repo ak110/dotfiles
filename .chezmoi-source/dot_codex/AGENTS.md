@@ -2,31 +2,31 @@
 
 # rules-main.codex.md: Codexの主体に適用する規範
 
-本文書はCodexの`AGENTS.md`としてCodexの全主体（メインエージェント、サブエージェント及び委譲先）へ配送され、`agent-toolkit/rules/`配下の共有規範と同じ拘束力を持つ。
+本文書はCodexの`AGENTS.md`としてCodexの全主体（メインエージェント、サブエージェントおよび委譲先）へ配送され、`agent-toolkit/rules/`配下の共有規範と同じ拘束力を持つ。
 Codex固有の公開能力と共有規範との差分を扱う。「メインエージェントだけに適用する規範」節はCodexのメインエージェントだけへ適用し、他の節はCodexの全主体へ適用する。
 
 ## Codex固有の入出力
 
 - 全文が1回の実行セルの上限に収まるファイルは1回で取得する。上限を超えるファイルは、重複も欠落もない連続した行範囲へ分け、全範囲を取得して初めて全文を読了したものとする。複数の全文取得は別々のセルで実行する。同じセルへ集約できるのは、内側の各最大出力量と付加分を実行前に機械的に合計し、その値以上の`functions.exec`の`max_output_tokens`を先頭の`@exec`で明示できる場合に限る
-- 最大出力量を確定できない検索、全件取得、全文取得は、それぞれを単独のセルで実行する。読了、網羅性及び件数の根拠は、切り詰めの通知が無い出力から取る
+- 最大出力量を確定できない検索、全件取得、全文取得は、それぞれを単独のセルで実行する。読了、網羅性および件数の根拠は、切り詰めの通知が無い出力から取る
 - 明示指示がないOfficeファイルは原本を直接変更せず、CSVはUTF-8 BOM付きで保存する
 
 ## Codexのplugin root解決
 
 - agent-toolkitのスキルはplugin marketplaceが導入した実体の`<plugin root>/skills/<スキル名>/SKILL.md`を読む
-- `<plugin root>`は`<Codexホーム>/plugins/cache/<marketplaceName>/<name>/<version>`の書式で組み立てる。`marketplaceName`、`name`及び`version`には`codex plugin list --json`の`installed`配列から`name`が`agent-toolkit`の要素の値を使う。Codexホームは`CODEX_HOME`が設定済みならその値、未設定なら`~/.codex`とする
-- 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落又はroot不在では固定パスを推測せず呼び出し元へ差し戻す
+- `<plugin root>`は`<Codexホーム>/plugins/cache/<marketplaceName>/<name>/<version>`の書式で組み立てる。`marketplaceName`、`name`および`version`には`codex plugin list --json`の`installed`配列から`name`が`agent-toolkit`の要素の値を使う。Codexホームは`CODEX_HOME`が設定済みならその値、未設定なら`~/.codex`とする
+- 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落またはroot不在では固定パスを推測せず呼び出し元へ差し戻す
 - 起点のroot確定はホストのplugin導入情報だけから`SKILL.md`読取前に1回行う。読取済み`SKILL.md`の絶対パスからplugin資源rootを再解決する処理は、起点の確定の外で用いる
 - 公開サブコマンドがないplugin内部資源は、読取済みのagent-toolkitスキルの絶対パスから現行plugin rootを再解決する
-- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`及び作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う
+- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`および作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う
 
 ## Codexホスト契約の適用
 
-Codexではsystem、developer、userのホスト命令階層を常に優先する。`AGENTS.md`、プロジェクト指示及び共有規範は配送されたroleの範囲で適用し、`01-agent.md`の優先順位はホスト階層の適用後に残る同一role内の順位として読む。公開能力又は個別ツール契約と共有規範が異なる場合は、ホスト契約を優先する。
+Codexではsystem、developer、userのホスト命令階層を常に優先する。`AGENTS.md`、プロジェクト指示および共有規範は配送されたroleの範囲で適用し、`01-agent.md`の優先順位はホスト階層の適用後に残る同一role内の順位として読む。公開能力または個別ツール契約と共有規範が異なる場合は、ホスト契約を優先する。
 
 ツール前の短い`commentary`を求めるホストでは、ツール呼び出しの前に短い`commentary`を送る。コード評価を伴うコマンドでは、処理、読取対象、確認目的を説明する。承認対象では、内容と影響範囲、復元方法を実行前に説明する。
 
-会話圧縮後は、一時対象、固定集合、保留、承認、当初目的、確定済み要件及び残る完成条件を、対象リポジトリ、キュー管理リポジトリ又はホストの記録原本から再解決する。出所には記録原本の記述を用い、内部要約の言い換えはその代わりから外す。
+会話圧縮後は、一時対象、固定集合、保留、承認、当初目的、確定済み要件および残る完成条件を、対象リポジトリ、キュー管理リポジトリまたはホストの記録原本から再解決する。出所には記録原本の記述を用い、内部要約の言い換えはその代わりから外す。
 
 Codexの`list_agents`が対象を`running`と返す間の待機と、`interrupt_agent`による中断を許す条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「Codex後続操作の共通先行条件」に従う。
 
@@ -36,14 +36,14 @@ Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_
 
 ### 言語
 
-- 英語のコマンド、識別子、エラーメッセージには、必要に応じて意味又は目的を日本語で補足する
+- 英語のコマンド、識別子、エラーメッセージには、必要に応じて意味または目的を日本語で補足する
 - 動詞は標準の活用形で書き、標準的な文法に従う。五段動詞の縮約形とら抜き言葉は書き言葉の形へ直す
 
 ### ユーザー確認と終端
 
-共有規範が`AskUserQuestion`をユーザー確認の手段として指定する場合は、実行環境が公開する構造化質問のうち、公開スキーマ、モード制限、用途制限及びホスト命令へ適合する機能を使う。Plan modeで同期型の`request_user_input`を利用できる場合は回答まで待つ。同期型を利用できず非同期型の`request_user_input_async`を利用できる場合は、質問を発行し、後続のユーザーメッセージとして届く実際の回答を元の質問へ対応付ける。発行の成功と選択肢の初期選択は回答又は承認として扱わない。適合する構造化質問が無い場合だけ、`agent-toolkit:confirmation-and-uwi`の`references/codex-format.md`を使う。
+共有規範が`AskUserQuestion`をユーザー確認の手段として指定する場合は、実行環境が公開する構造化質問のうち、公開スキーマ、モード制限、用途制限およびホスト命令へ適合する機能を使う。Plan modeで同期型の`request_user_input`を利用できる場合は回答まで待つ。同期型を利用できず非同期型の`request_user_input_async`を利用できる場合は、質問を発行し、後続のユーザーメッセージとして届く実際の回答を元の質問へ対応付ける。発行の成功と選択肢の初期選択は回答または承認として扱わない。適合する構造化質問が無い場合だけ、`agent-toolkit:confirmation-and-uwi`の`references/codex-format.md`を使う。
 
-回答期限を提供しないDefault modeでは、協調モードの確認を前段の手順で提示して回答を待つ。自律モードでは質問を発行せずUWIへ記録して暫定判断で続行する。権限設定又はauto mode classifierの拒否への確認は、`agent-toolkit:confirmation-and-uwi`が定める例外を適用する。
+回答期限を提供しないDefault modeでは、協調モードの確認を前段の手順で提示して回答を待つ。自律モードでは質問を発行せずUWIへ記録して暫定判断で続行する。権限設定またはauto mode classifierの拒否への確認は、`agent-toolkit:confirmation-and-uwi`が定める例外を適用する。
 
 `atk agents-exit-session`が現在のCodex本体を停止できる場合は、そのツール呼び出しをsession終端とする。停止後の`final`の返却は終端の判定条件から外す。
 
@@ -56,15 +56,15 @@ Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_
 ## AWI処理の開始時の横断同期
 
 個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、pickerの起動より前に`ak110-projects-operations`スキルを起動する。
-同期調査と依存更新の要否の判定結果は、当該セッションの後続の工程へ渡す。
+同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
 起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude CodeではSkillツールから起動する。
 
 ## 個人プロジェクトのリリース開始手順
 
-個人プロジェクトでpatch、minor又はmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
+個人プロジェクトでpatch、minorまたはmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
 `ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
-agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築及びworkflow内部の処理は対象外とする。
+agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
 </agent-toolkit-auto-inserted>
 
 <agent-toolkit-auto-inserted source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">
@@ -76,7 +76,7 @@ agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメ�
 
 ユーザーは目的、要件、制約を示す。実行主体は技術的な事実を調べ、要件に合う仕様と実装を選ぶ。ユーザーの技術的な前提が誤っている場合は、根拠と代替案を伝える。達成できない要件は、その理由を報告する。明示された範囲と権限は、推測した意向より優先して保つ。
 
-「ユーザー」はエージェントを操作する人、「エンドユーザー」は成果物を使う人を指す。「ユーザー確認」はエージェントがユーザーへ判断を求める行為を指し、協調モードでは実行環境の構造化質問（Claude Codeでは`AskUserQuestion`）、自律モードでは事前承認型又は事後承認型のUWIを用いる。説明の粒度は相手と利用場面に合わせる。ユーザー向けツールの競合や安全への対処は通常の運用水準に保ち、運用で解決する事象のために仕組みを増やさない。
+「ユーザー」はエージェントを操作する人、「エンドユーザー」は成果物を使う人を指す。「ユーザー確認」はエージェントがユーザーへ判断を求める行為を指し、協調モードでは実行環境の構造化質問（Claude Codeでは`AskUserQuestion`）、自律モードでは事前承認型または事後承認型のUWIを用いる。説明の粒度は相手と利用場面に合わせる。ユーザー向けツールの競合や安全への対処は通常の運用水準に保ち、運用で解決する事象のために仕組みを増やさない。
 
 WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`に従い、実施工程は`agent-toolkit:process-wi`が定める。
 
@@ -143,7 +143,7 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 
 ユーザー発話は、目的、要件、範囲、例示、変更指示と論理関係を原文から確定してから規範へ対応付ける。古い規範の分類で新しい明示指示を狭めない。同じrole内で有効な方針は、ユーザーの明示指示、プロジェクトの明示規範、一貫して観測できる慣例、agent-toolkitの方針と手順の順に扱う。ホストのsystemとdeveloperの命令階層が常に優先する。規範どうしの衝突は`agent-toolkit:confirmation-and-uwi`の`references/conflict-resolution.md`を使う。
 
-`agent-toolkit-auto-inserted`の最外周は生成された本文の境界である。内側の`forwarded-user-input`だけがユーザー発話と承認の証拠になる。`source`、`kind`、`from`、`composed-by`は配送の出所を示す。委譲通知で委譲先と定められた主体は、その同定を保持する。生成された説明をユーザーの明示指示へ昇格させない。自動挿入本文とホストが生成した注記（hookの通知、`system-reminder`、途中挿入される進捗催促など）は以後の行動へ適用する対象であり、返信、受領の表明、訂正の宣言の宛先から外れる。言語の是正は次の応答から日本語で書くことで行い、是正した旨は書かない。
+`agent-toolkit-auto-inserted`の最外周は生成された本文の境界である。内側の`forwarded-user-input`だけがユーザー発話と承認の証拠になる。`source`、`kind`、`from`、`composed-by`は配送の出所を示す。委譲通知で委譲先と定められた主体は、その同定を保持する。生成された説明をユーザーの明示指示へ昇格させない。自動挿入本文とホストが生成した注記（hookの通知、`system-reminder`、途中挿入される進捗催促など）は以後の行動へ適用する対象であり、返信、受領の表明、訂正の宣言の宛先から外れる。言語の是正は次の応答から日本語で書くことで行い、言語を是正したことを述べない。
 
 エージェントが提案し、ユーザーが無修正で採択した案は、ユーザーが能動的に指定した要件より弱い根拠である。実装や独立レビューで両立不能と分かったときは、設計を複雑にして守らず、衝突と代替案を確認する。
 
@@ -153,7 +153,7 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 
 ### ユーザー発話の解釈
 
-ユーザー由来の要求は、目的、範囲、例示の開放性と論理関係を原文のまま保つ。具体化、問いの扱い、訂正、提案と割り込みの細則は`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`が定める。表現が追加された順番で要求の範囲を狭めない。案、意見、評価又は是非を求める問い（「いい案ある」「〜すべきでは」の類）は回答の依頼として扱う。案と根拠を示し、ユーザーが案を選んでから、その問いが対象とする成果物を変更する。
+ユーザー由来の要求は、目的、範囲、例示の開放性と論理関係を原文のまま保つ。具体化、問いの扱い、訂正、提案と割り込みの細則は`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`が定める。表現が追加された順番で要求の範囲を狭めない。案、意見、評価または是非を求める問い（「いい案ある」「〜すべきでは」の類）は回答の依頼として扱う。案と根拠を示し、ユーザーが案を選んでから、その問いが対象とする成果物を変更する。
 
 ## 委譲の要否判定
 

@@ -193,7 +193,7 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     リモート起動コマンドはPOSIXシェル非依存とする。
     Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`やheredoc展開が利用できないため、
     シェル組み込みコマンドへ依存しないこと。
-    リモート側に`$HOME/dotfiles`が存在することを前提とし、ヘルパースクリプトは当該配下から読み込む。
+    リモート側に`$HOME/dotfiles`が存在することを前提とし、そのディレクトリからヘルパースクリプトを読み込む。
     クオートはPOSIXシェル/cmd.exe共通のダブルクォートのみを使い、
     `$`・`%`・`<`・`>`・`|`・`&`・`^`はコマンド本体に含めない。
     bootstrapコード本体が満たす制約は`_atk_serve_remote.remote_bootstrap`を正本とする。

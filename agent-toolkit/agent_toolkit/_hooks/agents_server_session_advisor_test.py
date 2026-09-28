@@ -13,7 +13,7 @@ _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"
     "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
-    "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
+    "観測しないまま終了すると、その作業の成果を回収する主体が残らない。"
 )
 
 
@@ -273,7 +273,7 @@ def test_agents_wait_resolves_pending_observation_for_all_owned_sessions(tmp_pat
 
 
 def _status_directory(state_directory: pathlib.Path, local_session_id: str) -> pathlib.Path:
-    """当該ルートsessionの状態ディレクトリを返す。"""
+    """そのルートsessionの状態ディレクトリを返す。"""
     return state_directory / "agent-toolkit" / "agents-server" / local_session_id
 
 
@@ -336,7 +336,7 @@ def test_held_lock_without_registered_target_still_warns(tmp_path: pathlib.Path)
 
 
 def test_waiting_declaration_for_the_session_satisfies_observation(tmp_path: pathlib.Path) -> None:
-    """直前の応答が当該sessionを指す待機表明である場合は警告しない。"""
+    """直前の応答がそのsessionを指す待機表明である場合は警告しない。"""
     local_session_id = "waiting-declared"
     remote_session_id = "remote-waiting-declared"
     _record_start(tmp_path, local_session_id, remote_session_id)
@@ -435,7 +435,7 @@ def test_agents_wait_text_as_argument_does_not_clear_pending_observation(tmp_pat
 
 
 def test_no_pending_observation_emits_nothing(tmp_path: pathlib.Path) -> None:
-    """記録不在、偽の記録及び責任主体を確定できない旧記録では何も出力しない。"""
+    """記録不在、偽の記録および責任主体を確定できない旧記録では何も出力しない。"""
     assert _run_stop(tmp_path, "no-state") == ""
     local_session_id = "all-observed"
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=local_session_id)

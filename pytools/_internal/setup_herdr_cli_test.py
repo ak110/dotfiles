@@ -230,7 +230,7 @@ def test_run_raises_on_update_or_verification_failure(
     tmp_path: Path,
     failure_command: str,
 ) -> None:
-    """更新又は更新後の確認が失敗した状態でPATHを変更しない。"""
+    """更新または更新後の確認が失敗した状態でPATHを変更しない。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
     launcher = tmp_path / ".local" / "bin" / "herdr"

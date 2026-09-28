@@ -19,7 +19,7 @@ CIの`statusline-version` jobと、pyfltrの`statusline-version`（レーンの�
 - 差分が無ければ成功とし、差分があり基点と現在の`[package].version`が等しければ失敗とする
 - `cargo metadata --locked`で`Cargo.lock`との整合を確かめ、`statusline-v<version>`タグがoriginに既にあれば失敗とする
 
-`git fetch`、`git ls-remote`及び`cargo metadata`の失敗は成功扱いにせず、失敗した操作を標準エラーへ書いて
+`git fetch`、`git ls-remote`および`cargo metadata`の失敗は成功扱いにせず、失敗した操作を標準エラーへ書いて
 非0で終える。ネットワークに到達できない環境で検査を黙って通過させないためである。
 """
 

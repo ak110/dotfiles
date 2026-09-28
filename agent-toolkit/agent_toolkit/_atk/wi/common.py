@@ -5,14 +5,14 @@
 
 不変条件: WI保存リポジトリ（`private_notes`）へのgit操作・ファイル変更は、
 `_repo_lock(private_notes)`保持下でのみ行う。複数プロセスが同一クローンへ並行アクセスする
-運用（`atk wi process-loop`の複数常駐等）を前提とし、当該不変条件を破ると
+運用（`atk wi process-loop`の複数常駐等）を前提とし、この不変条件を破ると
 remote同期とファイル操作・commitの交錯によるfast-forward失敗を招く。
 `_repo_lock`はロックファイル名を対象パスから導出するため、WI保存リポジトリ以外の
 git作業コピー（`atk wi process-loop`が上流差分を確認するdotfilesチェックアウト等）にも適用する。
-計画ロックの除外設定はGitの版管理の対象外へ書くため、当該不変条件の対象に当たらない。
+計画ロックの除外設定はGitの版管理の対象外へ書くため、この不変条件の対象には当たらない。
 
 不変条件: `list`のような読み取り専用のサブコマンドは、WI保存リポジトリの版管理を
-書き換えない。前段の環境準備は対話シェルの起動ごとにも実行されるため、当該不変条件を破ると
+書き換えない。前段の環境準備は対話シェルの起動ごとにも実行されるため、この不変条件を破ると
 利用者の操作と無関係なcommitとpushが起動のたびに発生し、他cloneとの競合を招く。
 
 UWIの回答判定`_is_uwi_answered`は`_uwi_scan`が実体を持つ。PostToolUseフックが
@@ -128,10 +128,10 @@ def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
 def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
     """WI保存ディレクトリのroot絶対パスを返す。
 
-    環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`が設定されていれば当該値を優先する。
-    未設定時は`~/private-notes/`へフォールバックし、当該パスが不在の場合は
+    環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`が設定されていればその値を優先する。
+    未設定時は`~/private-notes/`へフォールバックし、そのパスが存在しない場合は
     `platformdirs.user_data_dir("agent-toolkit")`配下のローカル管理用パスへさらにフォールバックする
-    （`_ensure_environment`が当該パスへ実体のgitリポジトリを自動生成する）。
+    （`_ensure_environment`がそのフォールバック先へ実体のgitリポジトリを自動生成する）。
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
     override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
@@ -358,7 +358,7 @@ def _pull(private_notes: pathlib.Path) -> None:
     remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
     remote同期を省略し、旧予約形式の移行だけを実行する。
     fetchは共有状態の`FETCH_HEAD`を更新しうるが、統合対象は`@{u}`へ固定して
-    他プロセスのfetch及び`pull.rebase`設定から独立させる。
+    他プロセスのfetchおよび`pull.rebase`設定から独立させる。
     """
     _assert_repo_lock_held(private_notes)
     _pull_remote(private_notes)
@@ -460,8 +460,8 @@ def _commit_and_push(
     再試行後のpushが失敗した場合はその例外をそのまま送出する。
     remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
     commitのみ実行しpushをスキップする。
-    `skip_push=True`の場合はcommitだけを実行し、remote設定時は未pushのcommitが残る旨と
-    後続の通常操作又は`atk wi commit`でpushする旨を標準エラーへ出力する。
+    `skip_push=True`の場合はcommitだけを実行し、remote設定時は未pushのcommitが残る警告と、
+    後続の通常操作または`atk wi commit`でpushする手順を標準エラーへ出力する。
     """
     _atk_git_sync.commit_and_push(
         private_notes,
@@ -474,7 +474,7 @@ def _commit_and_push(
 
 
 def _push_pending_commits(private_notes: pathlib.Path) -> None:
-    """ローカルcommitをpushし、同等終端の回復又はrebase後に1回だけ再試行する。"""
+    """ローカルcommitをpushし、同等終端の回復またはrebase後に1回だけ再試行する。"""
     _atk_git_sync.push_pending_commits(
         private_notes,
         run_git=_run_git,
@@ -592,7 +592,7 @@ def is_case_sensitive(directory: pathlib.Path) -> bool:
 
     OS種別から推定すると誤る（`os.path.normcase`はPOSIX実装では恒等関数であり、
     大文字小文字を区別しないファイルシステムを既定とする環境でも名前を畳み込まない）ため、
-    一意な名前の空ファイルを当該ディレクトリへ作成し、名前の大文字小文字を反転させたパスが
+    一意な名前の空ファイルを指定ディレクトリ内に作成し、名前の大文字小文字を反転させたパスが
     存在するかどうかで判定する。プローブ用ファイルは判定後に必ず削除する。
     """
     handle, created = tempfile.mkstemp(prefix=".atk-case-probe-", dir=directory)

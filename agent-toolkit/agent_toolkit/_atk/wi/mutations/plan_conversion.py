@@ -388,7 +388,7 @@ def _assert_conversion_paths_clean(private_notes: pathlib.Path, paths: list[path
     """計画変換前に変換対象と保存先だけがcleanであることを確認する。"""
     relative_paths = [str(path.relative_to(private_notes)) for path in paths]
     if _atk_git_sync.is_worktree_dirty(private_notes, paths=relative_paths):
-        raise WebInputError("計画変換前に変換対象と保存先の作業ツリー及びindexをcleanにしてください")
+        raise WebInputError("計画変換前に変換対象と保存先の作業ツリーおよびindexをcleanにしてください")
 
 
 def _assert_conversion_targets_tracked(

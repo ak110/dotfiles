@@ -270,7 +270,7 @@ def test_structured_output_commands_state_their_format(command: str, format_name
 def test_agents_wait_help_states_absent_target_termination() -> None:
     """`atk agents wait`の公開説明が、待機対象が不在のまま終わる経路を示す。
 
-    当該経路を説明しないと、待機を発行する主体が非0の終了を再発行すべき実行中通知と取り違える。
+    その経路を説明しないと、待機を発行する主体が非0の終了を再発行すべき実行中通知と取り違える。
     """
     commands = {name: parser for name, parser, _summary in _walk_commands()}
     description = commands["atk agents wait"].description
@@ -285,7 +285,7 @@ def test_agents_wait_help_states_absent_target_termination() -> None:
 def _leaf_commands() -> set[str]:
     """それ自体を実行できるコマンドを返す。
 
-    サブコマンドを持つ場合も、そのサブコマンドが必須でなければ当該コマンド自体を実行できるため、
+    サブコマンドを持つ場合も、そのサブコマンドが必須でなければそのコマンド自体を実行できるため、
     結果行の区分を要するコマンドとして数える。
     """
     leaves: set[str] = set()
@@ -308,7 +308,7 @@ def _leaf_commands() -> set[str]:
 def test_every_leaf_command_belongs_to_one_result_kind() -> None:
     """全リーフサブコマンドが結果行の区分のいずれか1つへ属する。
 
-    区分の対応が無いリーフを追加すると、当該コマンドの成否を結果行の先頭の語で確定できなくなる。
+    区分の対応が無いリーフを追加すると、そのコマンドの成否を結果行の先頭の語で確定できなくなる。
     """
     classified = (
         _outcome.STATE_CHANGE_COMMANDS

@@ -2,7 +2,7 @@
 
 `atk`の出力を受け取る主体が結果行の先頭の語だけで成否を確定し、終了コードの再確認と
 状態の再取得を要さない状態にするため、成功・失敗・警告・該当0件の4種の接頭辞を本モジュールへ集約する。
-成功行の出力先は、当該コマンドの標準出力が値、構造化データ又は本文の表示を担うかで決める。
+成功行の出力先は、対象コマンドの標準出力が値、構造化データまたは本文の表示を担うかで決める。
 担う場合は標準エラー、担わない場合は標準出力の1行目とする。
 """
 
@@ -98,7 +98,7 @@ READ_ONLY_COMMANDS = frozenset(
 """読み取り専用型のリーフサブコマンド。成功行を書かない。"""
 
 OUT_OF_SCOPE_COMMANDS = frozenset({"atk wi process-loop", "atk serve", "atk run-script"})
-"""結果行の規約の対象外。常駐処理、サーバー及び委譲先scriptが終了状態を表す。"""
+"""結果行の規約の対象外。常駐処理、サーバーおよび委譲先scriptが終了状態を表す。"""
 
 NO_MATCH_COMMANDS = frozenset({"atk wi grep", "atk managed-temp list"})
 """該当0件で終了コード1を返し、該当0件の行を標準エラーへ書く読み取り経路。"""
@@ -128,7 +128,7 @@ def report_failure(message: str) -> None:
 
 
 def report_warning(message: str, *, to_stderr: bool = True) -> None:
-    """警告を書く。出力先は当該警告が属する経路の現行の出力先を呼び出し側が指定する。"""
+    """警告を書く。出力先はその警告が属する経路の現行の出力先を呼び出し側が指定する。"""
     print(f"{WARNING_PREFIX}{message}", file=sys.stderr if to_stderr else sys.stdout)
 
 

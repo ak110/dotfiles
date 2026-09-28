@@ -224,7 +224,7 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     cleanup_parser.add_argument(
         "--force-remove",
         action="store_true",
-        help="通常の後始末が検証に失敗した場合に限り、管理情報、登録及び権限の検証を省いて実体と登録を回収する",
+        help="通常の後始末が検証に失敗した場合に限り、管理情報、登録および権限の検証を省いて実体と登録を回収する",
     )
     list_parser = _atk_help.add_command(subparsers, "list", **_atk_help.HELP["atk managed-temp list"])
     list_parser.add_argument("--prefix", help="列挙する領域を用途識別子で限定する。")
@@ -237,7 +237,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
         if getattr(args, command_dest) == "create":
             if args.session_root is not None:
                 if args.awi or args.session_id is not None:
-                    raise ManagedTempError("--session-rootは--awi又は--session-idと同時に指定できない")
+                    raise ManagedTempError("--session-rootは--awiまたは--session-idと同時に指定できない")
                 created = create_session_temp(args.prefix, args.session_root)
             else:
                 created = (

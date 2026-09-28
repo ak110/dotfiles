@@ -38,7 +38,7 @@ _RUNTIME_INSERTED_PREFIXES = (
 
 
 def is_runtime_inserted_text(text: str) -> bool:
-    """本文の先頭が実行環境、hook又は委譲の配送に当たる場合に真を返す。"""
+    """本文の先頭が実行環境、hookまたは委譲の配送に当たる場合に真を返す。"""
     stripped = text.lstrip()
     if stripped.startswith("<skill>") and "</skill>" in stripped:
         return True

@@ -132,7 +132,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # dotfiles ローカルの ak110-projects-operations skill が当該機能を担う (15ca58b)。
+        # dotfiles ローカルの ak110-projects-operations skill がこの機能を担う (15ca58b)。
         Path("agents/cross-project-sync-checker.md"),
         # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
         # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、

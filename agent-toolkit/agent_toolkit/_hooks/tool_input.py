@@ -146,7 +146,7 @@ def new_content_fields(tool_name: str, tool_input: object, cwd: str = "") -> lis
 def materialize(operation: EditOperation) -> MaterializedEdit | None:
     """操作記録へ現在のファイル内容を適用し、変更前後の全文像を返す。
 
-    現在内容の取得に失敗した場合、又はpatchのhunkを現在内容へ適用できない場合はNoneを返す。
+    現在内容の取得に失敗した場合、またはpatchのhunkを現在内容へ適用できない場合はNoneを返す。
     """
     if operation.kind == KIND_ADD:
         return MaterializedEdit(operation, "", operation.whole_after_text or "")

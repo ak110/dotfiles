@@ -152,7 +152,7 @@ def test_resolve_root_session_id(environment: dict[str, str], expected: str | No
 
 
 def test_conversation_root_resolution_uses_only_alias_with_existing_target(tmp_path: pathlib.Path) -> None:
-    """索引の有無、妥当性及び参照先の実在を別々の解決状態として返す。"""
+    """索引の有無、妥当性および参照先の実在を別々の解決状態として返す。"""
     environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
     resolution = subject.resolve_conversation_root(environment, tmp_path)
     assert resolution == subject.ConversationRootResolution(

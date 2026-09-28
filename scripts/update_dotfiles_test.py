@@ -123,7 +123,7 @@ class _FakePopen:
 
 
 class _TimeoutPopen(_FakePopen):
-    """初回又は全回の`communicate`をタイムアウトさせるfake。"""
+    """初回または全回の`communicate`をタイムアウトさせるfake。"""
 
     def __init__(
         self,
@@ -774,7 +774,7 @@ class TestCapturedStderr:
 
 @pytest.mark.parametrize("argument", ["--force", "--unknown"])
 def test_removed_or_unknown_argument_exits_2(argument: str) -> None:
-    """廃止済み又は未知の引数はargparseの終了コード2で拒否する。"""
+    """廃止済みまたは未知の引数はargparseの終了コード2で拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         update_dotfiles.main([argument])
     assert exc_info.value.code == 2

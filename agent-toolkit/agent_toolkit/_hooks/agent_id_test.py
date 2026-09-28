@@ -7,7 +7,7 @@ class TestResolveHookAgentId:
     """`resolve_hook_agent_id`: hook payloadからの呼出主体解決。"""
 
     def test_subagent_payload_returns_agent_id(self):
-        """`agent_id`を持つサブエージェントの呼び出しは当該値を返す。"""
+        """`agent_id`を持つサブエージェントの呼び出しは、payloadに指定された値を返す。"""
         assert _hook_agent_id.resolve_hook_agent_id({"agent_id": "abc123"}) == "abc123"
 
     def test_main_payload_returns_main(self):

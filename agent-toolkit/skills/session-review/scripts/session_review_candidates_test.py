@@ -7,7 +7,7 @@ import session_review_evidence as evidence
 
 
 def test_candidate_events_excludes_non_interventions_and_reports_counts() -> None:
-    """委譲入力、環境挿入、回答及び初期要求を決定的に除外する。"""
+    """委譲入力、環境挿入、回答および初期要求を決定的に除外する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "agent-1", "line": 1, "text": "委譲入力"},
@@ -59,7 +59,7 @@ def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
 
 
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
-    """常駐処理の通知、定時prompt及び実行環境が挿入した本文を利用者介入から除く。"""
+    """常駐処理の通知、定時promptおよび実行環境が挿入した本文を利用者介入から除く。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "main", "line": 2, "text": "Goal check-in: «目標» is still active"},
@@ -216,7 +216,7 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
 
 
 def test_candidate_events_excludes_delegate_returns_that_only_report_success() -> None:
-    """正常な完了だけを示す返却を除外し、想定外事象、未解決の指摘、不適合の判定及び自由記述を持つ返却は残す。
+    """正常な完了だけを示す返却を除外し、想定外事象、未解決の指摘、不適合の判定および自由記述を持つ返却は残す。
 
     前置きの文に続けて`status: completed`を返す形も、1回の配送で終えた委譲先では正常な完了として除く。
     この形は振り返りの候補の大半を占めた雑音である。
@@ -265,7 +265,7 @@ def test_candidate_events_excludes_successful_shell_delegation_returns() -> None
     """コマンド実行の委譲で、報告した終了コードが全て0で失敗・警告・診断が無い返却だけを除く。
 
     シェル実行の委譲は自由記述で結果を返すため、終了コードと件数の記述から成否を判定する。
-    非0の終了コード、1件以上の失敗・警告・診断、終了コードの記述が無い返却、及びシェル実行でない委譲の
+    非0の終了コード、1件以上の失敗・警告・診断、終了コードの記述が無い返却、およびシェル実行でない委譲の
     同じ本文は、本文の判断を要するため残す。
     """
     delivery = (
@@ -676,7 +676,7 @@ def _bash_failure(line: int, command: str, text: str = "Exit code 1") -> dict[st
 def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash() -> None:
     """検索が出力なしで一致0件を返した結果を除き、パイプ以外の連結・出力を伴う失敗と別の終了コードは残す。
 
-    パイプラインは最終段が検索で終了コード1、又は検索を起動する`xargs`で終了コード123の場合を一致0件とする。
+    パイプラインは最終段が検索で終了コード1、または検索を起動する`xargs`で終了コード123の場合を一致0件とする。
     """
     timeline = [
         _bash_failure(1, "rg -n -F 'a|b' agent-toolkit"),

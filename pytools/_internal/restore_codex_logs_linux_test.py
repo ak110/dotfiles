@@ -164,7 +164,7 @@ def test_unrelated_directory_warning_includes_entry_kind(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """通常ファイルでもsymlinkでもない実体による延期の警告は、当該実体の種別を示す。"""
+    """通常ファイルでもsymlinkでもないパスが見つかった場合、延期の警告にその種別を示す。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)

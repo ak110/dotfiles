@@ -79,7 +79,7 @@ def _plugin_root_is_versioned(plugin_root: Path) -> bool:
     """配布物rootが更新で消える版別ディレクトリ配下にあるかを返す。
 
     Codexホストの配布物rootは`<cache>/agent-toolkit/<版>/`であり、プラグインの更新で
-    当該版のディレクトリが除去される。版数は配布物の内側の`plugin.json`から取得する。
+    その版のディレクトリが除去される。版数は配布物の内側の`plugin.json`から取得する。
     """
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     try:
@@ -127,7 +127,7 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
 
 
 class AppServerError(RuntimeError):
-    """App Serverとの通信又は要求検証に失敗した。"""
+    """App Serverとの通信または要求検証に失敗した。"""
 
 
 class JsonRpcResponseError(AppServerError):
@@ -532,9 +532,9 @@ class AppServerManager:
 
         `bypass_hook_trust`は、hookの定義が変わった後もcodexが承認済みの記録を要求せずにhookを実行するために渡す。
         `agents_server`が開始する委譲先は対話UIを持たず、承認要求へ応答する主体が存在しないため、
-        当該キーが無いとプラグインの更新のたびに委譲先が起動しない。
-        当該制約は`launch_kind`に依存しないため、軽量起動と通常の委譲で分けない。
-        当該キーは`codex app-server`のコマンドラインオプションとしても`-c`による設定上書きとしても受理されず、
+        このキーが無いとプラグインの更新のたびに委譲先が起動しない。
+        この制約は`launch_kind`に依存しないため、軽量起動と通常の委譲で分けない。
+        `bypass_hook_trust`は`codex app-server`のコマンドラインオプションとしても`-c`による設定上書きとしても受理されず、
         `thread/start`系リクエストの`config`だけが受理する。
         """
         config: dict[str, Any] = {"bypass_hook_trust": True}

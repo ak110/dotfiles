@@ -7,7 +7,7 @@
 2系統のPreToolUse（`pretooluse.py`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
-本モジュールの構造定数は計画ファイルの見出し、固定H3及び表の行名の正本であり、同書は当該定数から導いた受理形式を記述する。
+本モジュールの構造定数は計画ファイルの見出し、固定H3および表の行名の正本であり、同書はこれらの定数から導いた受理形式を記述する。
 
 構造認識と原記法の検査は分離する。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
@@ -337,7 +337,7 @@ def check_plan_related_wi(metadata: PlanMetadata) -> list[str]:
         if metadata.related_wi:
             errors.append("計画メタ情報の`関連WI: なし`と子項目を併記しない")
     elif related_value:
-        errors.append("計画メタ情報の`関連WI`は子項目又は`なし`で記載する")
+        errors.append("計画メタ情報の`関連WI`は子項目または`なし`で記載する")
     elif not metadata.related_wi:
         errors.append("計画メタ情報の`関連WI`には正本ファイル名と1行要約を1件以上記載する")
     seen_wi: set[str] = set()
@@ -401,7 +401,7 @@ def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[
         if source == "本セッション" and citation != "全文":
             errors.append("本セッションのユーザー合意素材の引用範囲を全文にする")
         elif (source == "AskUserQuestion" or source.startswith("TBD:")) and citation != "回答全文":
-            errors.append("AskUserQuestion又はTBDのユーザー合意素材の引用範囲を回答全文にする")
+            errors.append("AskUserQuestionまたはTBDのユーザー合意素材の引用範囲を回答全文にする")
     elif material_type in {"参考素材", "処理対象資料"} and citation == PLAN_NON_QUEUE_VALUE:
         errors.append(f"{material_type}素材の引用範囲は非該当にしない")
     elif material_type == "起動事実" and (source != "常駐自動起動" or citation != PLAN_NON_QUEUE_VALUE):
@@ -501,15 +501,15 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
             if namespace not in refs:
                 errors.append(f"要求{requirement_id}の素材名前空間を素材参照に含める: {namespace}")
             if decision not in {"採用", "不採用"}:
-                errors.append(f"要求{requirement_id}の採否は採用又は不採用にする: {decision}")
+                errors.append(f"要求{requirement_id}の採否は採用または不採用にする: {decision}")
             elif decision == "採用":
                 adopted_requirement_ids.add(requirement_id)
                 if adopted.startswith("終端工程のみ"):
                     terminal_only_requirement_ids.add(requirement_id)
             if decision == "採用" and (adopted == PLAN_NON_QUEUE_VALUE or excluded != PLAN_NON_QUEUE_VALUE):
-                errors.append(f"要求{requirement_id}の採用範囲又は除外範囲が不正である")
+                errors.append(f"要求{requirement_id}の採用範囲または除外範囲が不正である")
             if decision == "不採用" and (adopted != PLAN_NON_QUEUE_VALUE or excluded == PLAN_NON_QUEUE_VALUE):
-                errors.append(f"要求{requirement_id}の採用範囲又は除外範囲が不正である")
+                errors.append(f"要求{requirement_id}の採用範囲または除外範囲が不正である")
 
         sequences_by_namespace: dict[str, list[int]] = {}
         for requirement_id in requirement_ids:
@@ -558,7 +558,7 @@ def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterial
     nonempty = [(lineno, line.strip()) for lineno, line in section if line.strip()]
     if not nonempty:
         return PlanMaterials(frozenset(), frozenset(), False, is_human_readable=True), [
-            "新規書式の`## 提示素材`はAWI又はUWIのファイル名を1件以上、または`なし`と記載する"
+            "新規書式の`## 提示素材`はAWIまたはUWIのファイル名を1件以上、または`なし`と記載する"
         ]
 
     if len(nonempty) == 1 and nonempty[0][1] == "なし":
@@ -569,7 +569,7 @@ def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterial
     for _lineno, line in nonempty:
         match = _HUMAN_MATERIAL_LINE_PATTERN.fullmatch(line)
         if match is None:
-            errors.append(f"提示素材は正本ファイル名の箇条書き又は`なし`だけにする: {line}")
+            errors.append(f"提示素材は正本ファイル名の箇条書きまたは`なし`だけにする: {line}")
             continue
         path = match.group("path").strip()
         if _STRICT_INTERNAL_PLAN_ID_PATTERN.search(path):
@@ -578,7 +578,7 @@ def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterial
             errors.append(f"提示素材のファイル名を重複させない: {path}")
         paths.append(path)
     if not paths:
-        errors.append("提示素材にAWI又はUWIのファイル名が1件以上必要")
+        errors.append("提示素材にAWIまたはUWIのファイル名が1件以上必要")
     return PlanMaterials(
         frozenset(),
         frozenset(),
@@ -781,7 +781,7 @@ def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading]
 
 
 def extract_bug_file_reference(content: str) -> str | None:
-    """計画メタ情報又は旧バグ調査節が単独で参照する分離先パスを返す。"""
+    """計画メタ情報または旧バグ調査節が単独で参照する分離先パスを返す。"""
     metadata, _errors = parse_plan_metadata(content)
     if metadata is not None and PLAN_METADATA_BUG_FIELD in metadata.values:
         return metadata.values[PLAN_METADATA_BUG_FIELD]
@@ -1145,7 +1145,7 @@ def _collect_origin_notices(
 ) -> None:
     """`人間由来のWI`行を正本へ照合し、移行の指摘と省略の事実を積む。
 
-    正本を解決できない場合とキュー管理リポジトリのルートが実在しない場合は当該行の照合だけを省略し、
+    正本を解決できない場合とキュー管理リポジトリのルートが実在しない場合はその行の照合だけを省略し、
     他の検査の結果を変えない。
     """
     root = _plan_file.private_notes_root(private_notes, home=home)
@@ -1241,7 +1241,7 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                 _collect_origin_notices(wi_origin_match.group("name"), origin_notices, origin_skips, private_notes, home)
         elif review_origin is None:
             errors.append(
-                f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、又は"
+                f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、または"
                 "区分と半角空白1字と半角丸括弧で囲んだ正本ファイル名"
                 f"（例: `{PLAN_AGENT_WI_ORIGIN} (20260831-000000-001.md)`）にする: "
                 f"{origin}"
@@ -1536,7 +1536,7 @@ def progress_log_rows(content: str) -> list[tuple[str, str, str]]:
     """`## 進捗ログ`の固定表の内容行を出現順に返す。
 
     各行の3つの値は`PLAN_PROGRESS_TABLE_HEADER`の並びに対応する。
-    節が無い場合、固定表が無い場合及び列数の異なる行がある場合は`ValueError`を送出する。
+    節が無い場合、固定表が無い場合および列数の異なる行がある場合は`ValueError`を送出する。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -1926,7 +1926,7 @@ def check_plan_single_file_structure(
                 for row_index, row in enumerate(table.rows):
                     if len(row) != len(PLAN_ACCEPTANCE_TABLE_HEADER) or any(not cell for cell in row):
                         errors.append(
-                            f"`### {PLAN_ACCEPTANCE_H3}`に空セル又は列数不一致がある: {table.row_location(row_index)}"
+                            f"`### {PLAN_ACCEPTANCE_H3}`に空セルまたは列数不一致がある: {table.row_location(row_index)}"
                         )
         elif [line.strip() for _lineno, line in acceptance_lines if line.strip()] != ["なし"]:
             errors.append(f"採用行が無い場合は`### {PLAN_ACCEPTANCE_H3}`の本文を`なし`にする")

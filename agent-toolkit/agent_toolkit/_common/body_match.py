@@ -25,7 +25,7 @@ def first_difference(expected: str, saved: str) -> int | None:
 
 
 def verdict(expected: str, saved: str) -> str:
-    """正規化した本文の一致又は最初の差異位置を固定文言で返す。"""
+    """正規化した本文の一致または最初の差異位置を固定文言で返す。"""
     position = first_difference(expected, saved)
     if position is None:
         return "一致"

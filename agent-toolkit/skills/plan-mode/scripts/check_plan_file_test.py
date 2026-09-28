@@ -506,7 +506,7 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
     assert not errors, errors
-    # 旧二ファイル形式のテスト入力は付属ファイル参照を絶対パスで持つため、バグ対応でだけ当該移行警告が加わる。
+    # 旧二ファイル形式のテスト入力は付属ファイル参照を絶対パスで持つため、バグ対応のときだけこの移行警告が加わる。
     expected = (
         ["計画本文の付属ファイル参照が旧表記である。新規作成・改訂では`~/.claude/plans/<ファイル名>`へ移行する"] if bug else []
     )
@@ -858,7 +858,7 @@ def test_current_plan_legacy_acceptance_table_still_requires_filled_cells(repo: 
 
     errors, _warnings = check_plan_file.check(path, work_dir)
 
-    assert any("空セル又は列数不一致" in error for error in errors), errors
+    assert any("空セルまたは列数不一致" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(

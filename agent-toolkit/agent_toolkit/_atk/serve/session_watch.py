@@ -57,7 +57,7 @@ def _is_user_record(record: dict[str, typing.Any], engine: str) -> bool:
 
 
 def summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None, str | None, bool | None]:
-    """一覧の識別に使う作業ディレクトリ、最初の発話、開始日時及び発話の有無を先頭から取得する。
+    """一覧の識別に使う作業ディレクトリ、最初の発話、開始日時および発話の有無を先頭から取得する。
 
     発話の有無は、ユーザー発話の記録行を1件でも持てば`True`とする。
     最初の発話が本文を持たない形式でも`True`とし、`first_user_message`がnullであることとは区別する。
@@ -186,7 +186,7 @@ class RecordChangeTracker:
         return None
 
     def record_changed(self, path: pathlib.Path) -> None:
-        """記録の作成又は追記を反映する。"""
+        """記録の作成または追記を反映する。"""
         engine = self.engine_of(path)
         if engine is None:
             return

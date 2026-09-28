@@ -156,7 +156,7 @@ def test_is_plan_adjunct_file_bugs_md_returns_true(_plans_home: pathlib.Path) ->
 
 @pytest.mark.parametrize("name", ["sample.md", "sample.detail.md", "sample.review.md", "sample.bugs.txt"])
 def test_is_plan_adjunct_file_non_bugs_files_return_false(_plans_home: pathlib.Path, name: str) -> None:
-    """計画ファイル（メイン）、詳細及び副次ファイルは付属ファイル述語で偽になる。"""
+    """計画ファイル（メイン）、詳細および副次ファイルは付属ファイル述語で偽になる。"""
     path = _plans_home / name
     path.write_text("x\n", encoding="utf-8")
     assert _plan_file.is_plan_adjunct_file(str(path)) is False

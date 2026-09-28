@@ -2,7 +2,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と、起動側が渡したセッションIDに
 一致する会話を対象とする。本フックは対象セッションに限り、`atk agents-exit-session`の
-起動漏れを検知して当該ターンの継続をblockし再促する。
+起動漏れを検知してそのターンの継続をblockし再促する。
 
 `atk agents-exit-session`起動の記録はpluginのPostToolUse
 （`agent-toolkit/agent_toolkit/_hooks/posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
@@ -12,7 +12,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 1. 常駐処理が起動した会話でない: 常駐ループ外のセッションのため無条件approve
 2. hookの呼出主体が最上位でない: 常駐ループの最上位ではないため無条件approve
-3. `is_pending_async_work`が真: 非同期処理又は未回収の終端結果が残るためapprove
+3. `is_pending_async_work`が真: 非同期処理または未回収の終端結果が残るためapprove
 4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
 5. 上記いずれでもない: blockして順序制約の再促文を返す
 
@@ -95,7 +95,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     append_stop_log(session_id, "block_autonomous_exit", {})
     reason = _block_notice(
         _REASON_BODY,
-        fix="`atk agents-exit-session`を単独で実行する。当該実行の記録が本判定を通過させる。",
+        fix="`atk agents-exit-session`を単独で実行する。その実行の記録が本判定を通過させる。",
     )
     return "block", reason
 

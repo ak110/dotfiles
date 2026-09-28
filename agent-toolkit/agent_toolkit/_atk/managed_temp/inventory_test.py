@@ -124,7 +124,7 @@ def test_force_remove_preserves_non_directory_replacement_and_registry(
     tmp_path: pathlib.Path,
     replacement: str,
 ) -> None:
-    """対象がsymlink又は通常ファイルへ置換された場合は実体と登録を保持する。"""
+    """対象がsymlinkまたは通常ファイルへ置換された場合は実体と登録を保持する。"""
     monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp(f"force-{replacement}")
     registry = subject._registry_path(target)

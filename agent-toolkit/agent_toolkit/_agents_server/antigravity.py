@@ -5,7 +5,7 @@ Antigravity CLIは非対話モードに常駐プロトコルを持たず、`-p`�
 `--output-format stream-json`が返す`init`・`step_update`・`result`の各イベントを読み、
 `SessionState`へ反映する責務をこのモジュールが持つ。
 
-当該engineも候補列で選択し、起動やturnの失敗時には次の候補へ切り替える。
+このエンジンも候補列で選択し、起動やturnの失敗時には次の候補へ切り替える。
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
     """起動条件の種別に応じたシステム指示を返す。
 
     Antigravity CLIの非対話モードはシステム指示の専用オプションを持たないため、
-    当該指示は本文の先頭へ置いて渡す。1つのメッセージへ配送本文と同居するため、
+    システム指示は本文の先頭へ置いて渡す。1つのメッセージへ配送本文と同居するため、
     受信側が両者を区別できるよう、システム指示側は`state.py`が付ける境界を保ったまま渡す。
     """
     return f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
@@ -196,7 +196,7 @@ class AntigravityManager:
         await self._notify_waiters()
 
     async def release_session(self, session_id: str) -> None:
-        """当該sessionを所有するタスクとプロセスを終了する。"""
+        """対象のsessionを所有するタスクとプロセスを終了する。"""
         await self._stop_owned_task(session_id)
 
     async def close(self) -> None:
@@ -428,7 +428,7 @@ async def _resume_text(prompt: ResumePrompt | str) -> str:
     """再開の入力を1つの本文へそろえる。
 
     `ResumePrompt`は配送先のコルーチンへ1件だけ渡す形を取る。
-    Antigravity CLIはプロセスの起動時に本文を確定するため、当該配送で本文だけを受け取る。
+    Antigravity CLIはプロセスの起動時に本文を確定するため、この配送で本文だけを受け取る。
     """
     if isinstance(prompt, str):
         return prompt

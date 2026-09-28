@@ -15,7 +15,7 @@
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がある場合だけ実行する
   （規定は`agent-toolkit:commit`の`references/push-and-ci.md`「リリースバージョン指定」が定める）
 - 現行版が`major.minor.patch`の数値3要素で表せない非SemVerの場合は、文字列の辞書順・
-  桁数・接尾辞からPATCH/MINOR/MAJORを推測せず、プロジェクト固有の対応表又はユーザーの
+  桁数・接尾辞からPATCH/MINOR/MAJORを推測せず、プロジェクト固有の対応表またはユーザーの
   明示指定がある場合だけその区分を適用する。
   どちらも無い場合はbumpを行わず判定不能として報告する
 
@@ -68,7 +68,7 @@ version・description欄の有無や実際の差分有無を問わず、定義�
 Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
 定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で差分が生じないことを確かめる。
 bumpの完了条件は、実装開始時点の版との増加比較で判定せず、
-公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、及び定義元2ファイルと派生manifestの`version`が一致することで判定する。
+公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、および定義元2ファイルと派生manifestの`version`が一致することで判定する。
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
 `agent-toolkit:process-wi`の各レーンは、bump種別（`bump不要`を含む）と「判定基準」に基づく選定根拠、MAJORの場合は認可根拠を計画へ記録し、版数更新コマンドを実行しない。
 AWI本文の版数区分は、起草時にその要求だけを見た判定である。メインは同じ処理回の統合変更へ「判定基準」を適用し、AWI単独の区分より上位の変更があれば上位区分を`bump種別`として終端担当へ渡す。終端担当が全レーンのマージ後に`scripts/agent_toolkit_bump.py`を1回実行する。

@@ -1,7 +1,7 @@
-"""CodexのBashによる大量の全文取得を分割読取又は軽量委譲へ誘導する。
+"""CodexのBashによる大量の全文取得を分割読取または軽量委譲へ誘導する。
 
 Codexではシェル出力の上限を超えた取得が返却本文の欠落を招き、欠落した範囲を回復できないため遮断する。
-Claude Codeはホストが上限超過を`PARTIAL view`又は退避ファイルとして返し、残りを続けて取得できるため対象外とする。
+Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるため対象外とする。
 """
 
 from __future__ import annotations
@@ -113,7 +113,7 @@ def _offset_limit_plan(plan: _ReadPlan) -> str:
     parts = [f"`offset={offset}, limit={limit}`" for offset, limit in plan.ranges]
     if plan.oversized_lines:
         lines = "、".join(f"{line}行目（{size}バイト）" for line, size in plan.oversized_lines)
-        parts.append(f"{lines}は単一行がバイト閾値を超えるため、バイト単位又は構造化抽出で読む")
+        parts.append(f"{lines}は単一行がバイト閾値を超えるため、バイト単位または構造化抽出で読む")
     return "。".join(parts)
 
 
@@ -121,7 +121,7 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, cwd: str) -> str:
     line_threshold = _line_threshold()
     return _block_notice(
         f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した"
-        f"（閾値: {line_threshold}行又は{_byte_threshold()}バイト）: {path}",
+        f"（閾値: {line_threshold}行または{_byte_threshold()}バイト）: {path}",
         fix=(
             f"取得案: {_offset_limit_plan(plan)}。"
             "agents_serverのstart_exploreへ"
@@ -140,7 +140,7 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     )
     return _block_notice(
         f"複数ファイルの全文取得を遮断した（合計: {total_lines}行、{total_bytes}バイト、"
-        f"閾値: {line_threshold}行又は{byte_threshold}バイト）: {details}",
+        f"閾値: {line_threshold}行または{byte_threshold}バイト）: {details}",
         fix="ファイルごとに個別取得するか、各ファイルを示した連続した行範囲へ分割して取得する。",
     )
 

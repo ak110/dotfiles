@@ -14,26 +14,26 @@
 直前にpushしたcommitの7文字以上の一意な短縮OID、固有の終端工程、延期adopt、公開対象のadopt済みAWIの既定値は`なし`とし、各行の不在をその既定値として扱う。起動側が確認済みの必須入力と絶対パスを再確認せず、権限を超える不可逆操作へも着手せず、その操作と対象を完了報告で呼び出し元へ返す。
 `bump種別`は起動側が確定した種別と選定根拠の要約として受領する。
 受領した確定済みの種別と根拠を使用し、根拠に現れる計画ファイルのパスを追加の判断材料として読み直す工程を省く。
-延期`adopt`の状態変更対象は、起動時にAWIファイル名と実装commitのOID又は空文字列を組で受領した集合だけとする。
+延期`adopt`の状態変更対象は、起動時にAWIファイル名と実装commitのOIDまたは空文字列を組で受領した集合だけとする。
 `公開対象のadopt済みAWI`はこの公開に含むcommitで終端したAWIファイル名の集合として受領し、プロジェクト固有の公開手順で参照する。WIの状態変更には延期`adopt`の明示入力を使う。
 
 ## 生成物とpush
 
 版数更新、生成物、全体検証とCIの同値性、push、CI確認、公開状態の判定は`agent-toolkit:commit`の`references/publish.md`を全文読んで実行する。受領した`bump種別`をその工程の入力に使い、CIの成功まで確認する。
 
-## 検証又はCIの失敗
+## 検証またはCIの失敗
 
-最初の失敗からCI成功又は本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装及び期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
+最初の失敗からCI成功または本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装および期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 
-修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、push及びCI確認を再判定する。
+修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、pushおよびCI確認を再判定する。
 
 同一の修正系列における3件目以降の修正commitでは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビューを1件起動する。原因commitに計画契約があれば`レビュー基準: 計画`、無ければ`レビュー基準: CI記録`とする。計画では計画ファイルを渡す。CI記録では7項目に加えて`起点commitOID`と`原因commitOID`を渡す。`起点commitOID`はその修正系列の起点commitの7文字以上の一意な短縮OIDとし同じ修正系列で継続する。`原因commitOID`は今回の原因commitの7文字以上の一意な短縮OIDとし、再帰的CI失敗では7項目と同時に更新する。同じ修正系列では同じレビュー表を継続する。レビューの収束後、必要なレビュー表を正式な保存先へ保存する。
 
-各修正commitが是正した失敗を、ログの該当箇所と直接的原因へ対応付ける。修正系列の件数へ数えるのは、この対応付けができたcommitに限る。ユーザー割り込み又は独立事象へのcommitは修正系列の件数へ含めない。既に`adopt`済みのAWIへキュー操作を重複させない。
+各修正commitが是正した失敗を、ログの該当箇所と直接的原因へ対応付ける。修正系列の件数へ数えるのは、この対応付けができたcommitに限る。ユーザー割り込みまたは独立事象へのcommitは修正系列の件数へ含めない。既に`adopt`済みのAWIへキュー操作を重複させない。
 
 ## 固有の終端工程
 
-認可されたPR又はMR、release、tag、配布等と、固有工程後に生じたcommitの再公開は`agent-toolkit:commit`の`references/publish.md`に従う。親が別主体へ渡した工程は実行しない。
+認可されたPRまたはMR、release、tag、配布等と、固有工程後に生じたcommitの再公開は`agent-toolkit:commit`の`references/publish.md`に従う。固有の終端工程では、親から自身へ渡された工程だけを実行する。
 
 adoptを延期した項目は、先行工程の成功後に受領したAWIファイル名と実装差分へ対応するOIDを維持して終端する。実装差分が無い項目は`--commit`を省き、充足の根拠をメモへ記録する。固有工程で新しい実装commitが生じた場合は、そのAWIの要求を実際に反映したOIDを選び直す。
 
@@ -46,11 +46,11 @@ adoptを延期した項目は、先行工程の成功後に受領したAWIファ
 overall_verification: <全体検査をローカルで実行せずCIの結果で判定した場合は「CI判定」、タスクランナーが定める全体検査をローカルで実行した場合は「ローカル成功」>
 ci_verified_head: <CI対象commitの7文字以上の一意な短縮OID>
 final_branch_head: <ベースbranchの追跡refが指す7文字以上の一意な短縮OID>
-ci_result: <成功又は失敗>
+ci_result: <成功または失敗>
 base_branch_state: <4項目が成立した場合は「公開済み」。それ以外は項目名>
-version: <更新後の版数又は「bump不要」>
-terminal_steps: <実行した工程と対象。`overall_verification`が「ローカル成功」なら実行した全体検証のコマンド、終了コード及び警告の有無、「CI判定」なら全体検証とCIの同値性を判定した根拠（プロジェクト規範の定め又は4項目の比較結果）を必ず挙げる。統合後にだけ成立する検証項目は項目名、終了コード及び警告の有無。無い場合は「なし」>
+version: <更新後の版数または「bump不要」>
+terminal_steps: <実行した工程と対象。`overall_verification`が「ローカル成功」なら実行した全体検証のコマンド、終了コードおよび警告の有無、「CI判定」なら全体検証とCIの同値性を判定した根拠（プロジェクト規範の定めまたは4項目の比較結果）を必ず挙げる。統合後にだけ成立する検証項目は項目名、終了コードおよび警告の有無。無い場合は「なし」>
 deferred_adopted: <AWIファイル名のJSON文字列配列。無い場合は[]>
 ```
 
-続行不能時はエスカレーション内容だけを返す。完了報告はツール戻り値で1回返す。呼び出し元への能動送付はこの返却の外に置く。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能時はエスカレーション内容だけを返す。完了報告はツール戻り値で1回返す。呼び出し元への能動送付は行わない。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

@@ -130,7 +130,7 @@ def _normalized_repo_or_none(
     """対象リポジトリを正規化する。解析できない値はNoneを返す。
 
     frontmatterが破損したエントリや対象リポジトリ未設定のエントリが1件でもあると
-    キュー全体の読み込みが失敗するため、当該エントリだけを依存判定の対象外にする。
+    キュー全体の読み込みが失敗するため、そのエントリだけを依存判定の対象外にする。
     """
     if not value:
         return None
@@ -145,7 +145,7 @@ def _count_pending_entries(
     private_notes: pathlib.Path,
     target_repo: str | None = None,
 ) -> int:
-    """当該対象リポジトリでこのセッションが着手可能な項目数を返す。"""
+    """指定された対象リポジトリでこのセッションが着手可能な項目数を返す。"""
     return calculate_readiness(private_notes, target_repo).actionable_count
 
 

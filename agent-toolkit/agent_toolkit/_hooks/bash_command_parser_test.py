@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/bash_command_parser.py のテスト。
 
-引用の走査、実行位置の抽出及びセグメント分割の挙動を検証する。
+引用の走査、実行位置の抽出およびセグメント分割の挙動を検証する。
 """
 
 from __future__ import annotations

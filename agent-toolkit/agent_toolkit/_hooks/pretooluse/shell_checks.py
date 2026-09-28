@@ -42,7 +42,7 @@ _GIT_GREP_VALUED_OPTIONS = frozenset(
 
 
 def _attached_short_value_option(token: str, valued: Iterable[str]) -> str | None:
-    """値を密着させた短縮オプションの形であれば、当該オプション名を返す。
+    """値を密着させた短縮オプションの形であれば、そのオプション名を返す。
 
     `-A14`のように値を空白なしで連結した形は対象コマンドが受理する1つのトークンである。
     短縮オプションの連結として1文字ずつ照合すると、値の各文字が受理集合に無いという判定になる。
@@ -216,7 +216,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
 
 
 def _git_subcommand_tokens(segment: _ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
-    """`git`区間のサブコマンド名と、当該サブコマンド以降の引数を返す。"""
+    """`git`区間のサブコマンド名と、そのサブコマンド以降の引数を返す。"""
     if not segment.resolved or not segment.tokens:
         return None
     if pathlib.PurePath(segment.tokens[0]).name != "git":

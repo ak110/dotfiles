@@ -1,7 +1,7 @@
 """計画本文のテスト入力を`_plan_format`の構造定数から組み立てる。
 
 計画ファイル（メイン）、計画ファイル（詳細）、計画ファイル（バグ）の正常系本文を書式ごとに1箇所で組み立て、
-固定H2名、表の列名及び表の行名を構造定数から導出する。
+固定H2名、表の列名および表の行名を構造定数から導出する。
 書式の改訂で追随が必要な値を本ファイルへ集約し、各テストが同じ値を文字列リテラルとして個別に持たない状態を保つ。
 違反を含むテスト入力は、本ファイルが公開する行・表・見出しの定数を用いた置換で各テストが組み立てる。
 """
@@ -469,7 +469,7 @@ def single_file_plan(
     work_type = "バグ対応" if bug else "通常変更"
     materials = _materials_section(materials=MATERIAL_ROWS, requirements=REQUIREMENT_ROWS)
     exclusion = EXCLUSION_SECTION if exclusions else ""
-    # 除外・保持表を置かないテスト入力では、当該表でだけ被覆していた採用要求の参照を`根拠`へ移して被覆を保つ。
+    # 除外・保持表を含まない入力でも要求を被覆できるよう、採用要求IDを`根拠`列へ加える。
     action_table = (
         TWO_FILE_ACTION_TABLE
         if exclusions

@@ -1,4 +1,4 @@
-"""agents_serverが保存した終端結果又は通知を待つ。"""
+"""agents_serverが保存した終端結果または通知を待つ。"""
 
 from __future__ import annotations
 
@@ -187,15 +187,15 @@ def wait_for_result(
     """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
 
     回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終端結果が
-    残っている間は呼び出し元が当該結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
+    残っている間は呼び出し元がその結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
     回収の途中で終端結果の読取に失敗した場合は、同じ巡回で回収済みの本文を先に配送してから終わる。
-    回収は結果ファイルと通知ファイルの削除を伴うため、当該失敗を理由に配送を取りやめると回収済みの本文が失われる。
-    読取の失敗は次の起動でも同じ状態で現れるため、当該起動の診断を1回遅らせても失われない。
+    回収は結果ファイルと通知ファイルの削除を伴うため、その失敗を理由に配送を取りやめると回収済みの本文が失われる。
+    読取の失敗は次の起動でも同じ状態で現れるため、その回の診断を1回遅らせても失われない。
 
     対象は、自身の書込主体の状態ファイルへ載るsessionと、終端結果ファイルが残るsessionの
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
     対象集合は最初の待機の発行時点で登録簿へ保存し、再発行時も同じ集合を引き継ぐ。
-    待機中に開始又は再稼働したsessionも、巡回ごとに取得して対象へ追加する。
+    待機中に開始または再稼働したsessionも、巡回ごとに取得して対象へ追加する。
     状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
     待機対象の登録も、`starting`を含む保持中sessionも0件の場合は、待機しても回収対象が生じないため、
@@ -208,7 +208,7 @@ def wait_for_result(
     try:
         identity = status_file.resolve_wait_identity(env, root_session_id, state_root)
     except ValueError as error:
-        return _fail(f"agents_serverの待機ルート又は状態書込主体を解決できません: {error}", 4)
+        return _fail(f"agents_serverの待機ルートまたは状態書込主体を解決できません: {error}", 4)
     if identity is None:
         message = (
             "agents_serverの状態ディレクトリを解決できません。"
@@ -488,7 +488,7 @@ def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict
 
 
 def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
-    """状態ファイルを解釈し、session一覧又は`None`を返す。"""
+    """状態ファイルを解釈し、session一覧または`None`を返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):

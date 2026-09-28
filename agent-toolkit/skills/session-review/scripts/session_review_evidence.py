@@ -1,9 +1,9 @@
-"""Claude CodeとCodexのtranscript、及び委譲先のAntigravityログから振り返り用の時系列証拠を抽出し、照会する。
+"""Claude CodeとCodexのtranscript、および委譲先のAntigravityログから振り返り用の時系列証拠を抽出し、照会する。
 
 既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
-`--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補及び会話の流れの抽出を
+`--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
 1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
@@ -219,7 +219,7 @@ class _CollectedRecord(NamedTuple):
 
 
 class _UnresolvedRecord(NamedTuple):
-    """解決できない委譲又は委譲先記録を機械可読イベントへ渡す。"""
+    """解決できない委譲または委譲先記録を機械可読イベントへ渡す。"""
 
     record_id: str
     line: int
@@ -250,7 +250,7 @@ class _DetailBudget:
     省略標識も返す文字数として予算から差し引くため、文字列値の個数が増えても合計は上限を超えない。
     予算が標識の長さに満たない時点以降の本文は空文字列となり、本文が元から空である場合と
     文字列単体では区別できない。この区別のため、省略が1回でも生じたかを`omitted`が保持し、
-    呼び出し側が当該エントリのイベントへ標識として付ける。
+    呼び出し側がそのエントリのイベントへ標識として付ける。
     """
 
     def __init__(self, limit: int) -> None:
@@ -336,7 +336,7 @@ class _PendingQuestion(NamedTuple):
 def _claude_question_options(content: Any) -> dict[str, dict[str, list[str]]]:
     """AskUserQuestionのtool_use IDごとに、質問文と選択肢labelの対応を取得する。
 
-    labelは`input.questions[].options[].label`に現れる。回答の文字列を当該labelの集合と
+    labelは`input.questions[].options[].label`に現れる。回答の文字列をこのlabelの集合と
     照合して、選択肢をそのまま選んだ回答と方針を是正した回答を判別する。
     """
     if not isinstance(content, list):
@@ -376,7 +376,7 @@ def _is_offered_answer(answer: str, labels: list[str]) -> bool:
 
     複数選択の回答はlabelをカンマと空白で連結した1つの文字列として記録されるため、
     区切った全ての要素がlabelに一致する場合だけ、選択肢をそのまま選んだ回答とする。
-    labelを取得できない記録では当該判別が成立しないため、選択肢をそのまま選んだ回答として扱う。
+    labelを取得できない記録ではこの判別が成り立たないため、選択肢をそのまま選んだ回答として扱う。
     """
     if not labels:
         return True
@@ -504,7 +504,7 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
             _set_entry_timestamp(event, entry)
             events.append(event)
     # Claude Code形式の本文は途中発話と最終応答を区別する標識を持たない。
-    # 同じエントリ又は後続のエントリにツール呼び出しがある本文は途中発話であり、最後の行動がツール呼び出しである記録
+    # 同じエントリまたは後続のエントリにツール呼び出しがある本文は途中発話であり、最後の行動がツール呼び出しである記録
     # （抽出時点で稼働中の委譲先など）の本文を最終結果として扱わないよう、Codex形式と同じ`commentary`を付ける。
     if last_tool_use_line is not None:
         for event in events:
@@ -620,7 +620,7 @@ def _codex_agent_message(payload: dict[str, Any]) -> str:
 
 
 def _json_object(raw: Any) -> dict[str, Any] | None:
-    """JSON文字列がobjectなら返し、破損又は別の値なら`None`を返す。"""
+    """JSON文字列がobjectなら返し、破損または別の値なら`None`を返す。"""
     if not isinstance(raw, str):
         return None
     try:
@@ -1035,7 +1035,7 @@ def _started_after_boundary(records: list[_Record], boundary: datetime.datetime)
 
 
 def _elapsed_until_event(records: list[_Record], until_text: str) -> dict[str, Any] | str:
-    """最初の記録から指定時刻までの経過時間イベント又はエラー文を返す。"""
+    """最初の記録から指定時刻までの経過時間イベントまたはエラー文を返す。"""
     try:
         until = _parse_timestamp(until_text)
     except ValueError:
@@ -1149,7 +1149,7 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
 
     同じレコードの`info.total_token_usage`はセッション内の累積値だが、Codexは過去のチェックポイントへ
     巻き戻すと累積器を巻き戻し先の値へ戻して再累積する。巻き戻し後の値には巻き戻し先までの
-    消費が既に含まれるため、減少を境界とみなして減少前の値を加算すると当該プレフィックスを二重計上する
+    消費が既に含まれるため、減少を境界とみなして減少前の値を加算するとそのプレフィックスを二重計上する
     （実測: 累積が`1246611`から`579472`へ減少した記録で、減少後の値から同レコードの
     `last_token_usage.total_tokens`を引いた`490803`が8レコード前の累積値と一致した。
     区間合算方式では実消費`3086405`に対し`3577208`を報告していた）。
@@ -1388,7 +1388,7 @@ def _rollout_candidates(thread_id: str, codex_home: Path) -> list[Path]:
 def _resolve_codex_transcript(thread_id: str, codex_home: str | None = None) -> Path:
     """Codex thread IDから親transcriptの正本を1件解決する。
 
-    一致が0件又は複数件の場合は証拠不足として例外を送出する。
+    一致が0件または複数件の場合は証拠不足として例外を送出する。
     """
     base = _codex_home(codex_home)
     candidates = _rollout_candidates(thread_id, base)
@@ -1569,7 +1569,7 @@ def _claude_call_hint(block_input: Any) -> str | None:
 def _codex_call_hint(payload: dict[str, Any]) -> str | None:
     """Codexのツール呼び出しpayloadから反復照会の識別に用いる対象値を取得する。
 
-    実行内容の格納先は呼び出しの種類で異なり、`arguments`のJSONへ`command`又は`cmd`を持つ
+    実行内容の格納先は呼び出しの種類で異なり、`arguments`のJSONへ`command`または`cmd`を持つ
     呼び出しと、`arguments`を持たず自由形式の`input`へ実行内容を埋め込む呼び出し（`exec`など）が
     実在する。前者から取得できない場合は`input`の文字列をそのままヒントとする。
     値は`_claude_call_hint`と同じ理由で先頭行へも文字数へも切り詰めず全体を返す。
@@ -1729,7 +1729,7 @@ def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
 
 
 def _codex_record_thread_id(item: _CollectedRecord) -> str | None:
-    """Codex記録が属するthread IDを収集時の識別子又はsession metadataから返す。"""
+    """Codex記録が属するthread IDを収集時の識別子またはsession metadataから返す。"""
     if item.runtime != "codex":
         return None
     if item.record_id.startswith("codex:"):
@@ -2030,7 +2030,7 @@ def _has_structured_warning_body(value: dict[str, Any]) -> bool:
 
 
 def _structured_warning_value_texts(value: Any) -> list[str]:
-    """構造化警告の値又は直接警告辞書から本文だけを取り出す。"""
+    """構造化警告の値または直接警告辞書から本文だけを取り出す。"""
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
@@ -2110,7 +2110,7 @@ def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
 
 
 def _warning_result_values(entry: dict[str, Any], tool_names: dict[str, str]) -> list[tuple[Any, bool, bool]]:
-    """警告を抽出できる結果値、hook由来及び非構造化本文の走査可否を返す。"""
+    """警告を抽出できる結果値、hook由来および非構造化本文の走査可否を返す。"""
     values: list[tuple[Any, bool, bool]] = []
     tool_use_result = entry.get("toolUseResult")
     is_read_result = isinstance(tool_use_result, dict) and "file" in tool_use_result
@@ -2232,7 +2232,7 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
                 result.append(warning_body)
             continue
         # コマンドが表示した文書のコードフェンス内は過去の出力の引用であり、実行時の警告ではない。
-        # hook記録と構造化された警告値は文書の表示を含まないため、この判定の外に置く。
+        # hook記録と構造化された警告値は文書の表示を含まないため、この判定の対象から外す。
         skip_fenced = marker_only and not from_hook_record
         in_fence = False
         for line in text.splitlines():
@@ -2464,7 +2464,7 @@ def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
 
 
 def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
-    """外側の通知境界ごとに発動元、重要度及び本文を返す。"""
+    """外側の通知境界ごとに発動元、重要度および本文を返す。"""
     if not body.strip():
         return []
     openings = list(_HOOK_NOTICE_MARKER.finditer(body))
@@ -2694,7 +2694,7 @@ def _entry_detail_events(
     """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。
 
     クリップの上限はエントリ全体で共有し、ブロックの出現順に予算を配分する。
-    予算超過で省略が生じたエントリは、当該エントリの全イベントへ`omitted`を付ける。
+    予算超過で省略が生じたエントリは、そのエントリの全イベントへ`omitted`を付ける。
     予算が尽きた後の本文は空文字列となるため、この標識が無ければ
     空の出力が元から空だったのか省略の結果なのかを判別できない。
     各イベントは元エントリの`timestamp`を持ち、区間境界の時刻を元記録を読み直さずに確定できるようにする。
@@ -2752,7 +2752,7 @@ def _entry_detail_events(
 
 
 def _message_texts(entry: dict[str, Any]) -> list[tuple[str, str]]:
-    """利用者又はアシスタントのメッセージのエントリから、役割とテキスト要素の本文を出現順に返す。"""
+    """利用者またはアシスタントのメッセージのエントリから、役割とテキスト要素の本文を出現順に返す。"""
     message = entry.get("message")
     if (
         isinstance(message, dict)
@@ -3119,12 +3119,12 @@ def _bundle_events(
     """4走査を1回の記録読み込みで行い、走査ごとの全量をファイルへ書いて要約だけを返す。
 
     標準出力へ返す要約の項目は、抽出担当が走査ごとの全量をファイルへ保存し、自作の集計コマンドで
-    再加工していた工程を代替する目的で設けた。項目を減らすと当該工程が抽出担当側へ戻るため、
+    再加工していた工程を代替する目的で設けた。項目を減らすとその工程が抽出担当側へ戻るため、
     取捨は代替対象の集計を確認してから判断する。
     保存先のファイルと同じ内容になる集計と通知の走査は標準出力へ返さない。呼び出し元が同じ内容を
     ファイルと標準出力の双方から受け取ると、標準出力の分量が実行環境の切り詰めに達するためである。
     未解決記録のイベントはどのファイルにも保存しないため、標準出力へ1回だけ書く。各ファイルの内容は、
-    当該走査を単独で実行した出力から未解決記録のイベントを除いたものと一致する。
+    その走査を単独で実行した出力から未解決記録のイベントを除いたものと一致する。
     """
     if not directory.is_dir():
         return [{"kind": "error", "text": f"出力先が実在するディレクトリでない: {directory}"}], 2
@@ -3176,21 +3176,21 @@ def _candidate_events(
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
-    母集団はhook通知、利用者介入、失敗したツール実行、警告及び工程の返却値とする。
+    母集団はhook通知、利用者介入、失敗したツール実行、警告および工程の返却値とする。
     返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合から漏れるためである。
     正常な完了だけを示し、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
 
-    同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別又はhookタグが異なる事象を別候補として保持する。同じ位置、候補種別及びhookタグの
+    同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別またはhookタグが異なる事象を別候補として保持する。同じ位置、候補種別およびhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
     `tool-failure`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
 
     候補件数の削減は、正規化した本文での集約と、恒久対策の要否が記録の構造から定まる事象の除外だけで行う。
     除外するのは、利用者介入ではない入力、正常な完了だけの委譲返却、検索の一致0件などの正常な否定結果、
-    及び起草者が保存前に処置するWI本文の表記診断の警告である。
+    および起草者が保存前に処置するWI本文の表記診断の警告である。
     hookの標識を持つツール失敗と、hook通知と同じ本文の警告は、hook通知として発生源別の上限の対象にする。
     上限は発生源と区分の組ごとに適用し、フック名のツール部分ごとに最多の種類を残して、件数の少ないツールの通知も候補に残す。
     それ以外に件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
-    判定表の位置の集合の一致を求めるため、位置を失う削減は当該検査と両立しない。
+    判定表の位置の集合の一致を求めるため、位置を失う削減はこの検査と両立しない。
     """
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     seen: set[tuple[str, int, str, str]] = set()
@@ -3370,7 +3370,7 @@ def _write_candidate_evidence_files(directory: Path, evidence: list[dict[str, An
     完全分析は候補単位で行うため、証拠の保存単位も候補単位とする。
     1ファイルへ集約すると、消費側は全候補の長文証拠を読み込むか、
     出力上限に達した後で範囲を指定して取得し直すことになる。
-    索引は候補ID、証拠件数、個別ファイルの相対パス及び総文字数を持ち、
+    索引は候補ID、証拠件数、個別ファイルの相対パスおよび総文字数を持ち、
     一次選別で除外した候補の本文を読まずに完全分析の対象を選べるようにする。
     """
     evidence_dir = directory / _CANDIDATE_EVIDENCE_DIRNAME
@@ -3532,7 +3532,7 @@ def _is_delegate_return(event: dict[str, Any]) -> bool:
     """委譲先の空でない最終返却のうち、明示的なエスカレーション以外を返す。
 
     `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
-    委譲先の記録では当該委譲先が呼び出し元へ返した返却値に対応する。
+    委譲先の記録ではその委譲先が呼び出し元へ返した返却値に対応する。
     成功の定型形式だけの返却の除外は、`_is_normal_delegate_return`が候補の集約時に行う。
     メイン記録の最終出力は委譲返却ではない。明示的なエスカレーションは独立した候補へ送る。
     """
@@ -3559,7 +3559,7 @@ def _is_escalation_return(event: dict[str, Any]) -> bool:
 def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
     """是正を求めない区分のhook通知を問題候補から除く場合に、除外の種別名を返す。
 
-    この判定は、是正を求める通知が`block`又は`warn`の区分を必ず持つという前提へ依存する。
+    この判定は、是正を求める通知が`block`または`warn`の区分を必ず持つという前提へ依存する。
     残す区分を列挙するのは、規範の注入や配送の種別のように是正の要否と無関係な値を`kind`へ持つ出力が
     今後追加されても、既知値の列挙から漏れて是正要求として扱われないようにするためである。
     区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
@@ -3585,7 +3585,7 @@ def _user_candidate_exclusion(
 ) -> str | None:
     """構造と固定接頭辞だけで利用者介入ではない入力を分類する。
 
-    接頭辞は、実行環境が利用者のメッセージへ挿入する本文、常駐処理の通知、及び定時promptの
+    接頭辞は、実行環境が利用者のメッセージへ挿入する本文、常駐処理の通知、および定時promptの
     先頭に現れる固定文字列を実記録から採取したものとする。これらは利用者の発話ではないため、
     残すと利用者介入の候補が実際の介入件数を超える。
     接頭辞を持たない実行環境の生成は本文の形からは判別できないため、`_is_runtime_generated`が
@@ -3683,7 +3683,7 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
 
 
 def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
-    """Claude CodeのBashで、読取専用の述語又は検索が出力なしで偽を返した事象を区分する。
+    """Claude CodeのBashで、読取専用の述語または検索が出力なしで偽を返した事象を区分する。
 
     Claude Codeは出力の無い非0終了を`Exit code <N>`だけの失敗として記録する。
     パイプ以外の連結とリダイレクトを含むコマンドは、どの段が偽を返したかを本文から確定できないため残す。
@@ -3717,7 +3717,7 @@ def _is_negative_search_command(tokens: list[str], exit_code: int) -> bool:
     """出力の無い非0終了が、検索の一致0件という正常な否定結果に当たるかを返す。
 
     演算子はパイプ（`|`）だけを許し、パイプラインの終了コードを決める最終段で判定する。
-    最終段が読取専用の述語で終了コード1、又は最終段が検索を起動する`xargs`で終了コード123
+    最終段が読取専用の述語で終了コード1、または最終段が検索を起動する`xargs`で終了コード123
     （起動したコマンドのいずれかが1から125で終わったことを表す）の場合を一致0件とする。
     """
     segments: list[list[str]] = [[]]
@@ -3768,7 +3768,7 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
     """想定外事象を持たず、正常な完了だけを示す委譲返却であるかを返す。
 
     正常な完了は、`status: completed`の行を持ち未解決の指摘が0件の返却、タスク文書が定める完了値で始まる返却、
-    全ての判定が適合又は合格の返却、及びコマンド実行の委譲（`shell`）で報告した終了コードが全て0で
+    全ての判定が適合または合格の返却、およびコマンド実行の委譲（`shell`）で報告した終了コードが全て0で
     失敗・警告・診断の件数に1以上が無い返却とする。
     `status: completed`の前に置いた前置きの文は、1回の配送で終えた委譲先に限って正常な完了に含める。
     再開された委譲先（`resumed`）の前置きは、受け取り済みの報告の返し直しのような異常を述べる場合があるためである。
@@ -3819,9 +3819,9 @@ def _hook_originated_event(
     event: dict[str, Any],
     hook_notices: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    """hookが出力したと記録から判定できる失敗又は警告を、hook通知の候補イベントへ変換して返す。
+    """hookが出力したと記録から判定できる失敗または警告を、hook通知の候補イベントへ変換して返す。
 
-    ツール失敗は本文が`<フック名> hook error:`で始まり、通知の標識が`block`又は`warn`の区分を持つ場合に変換する。
+    ツール失敗は本文が`<フック名> hook error:`で始まり、通知の標識が`block`または`warn`の区分を持つ場合に変換する。
     警告は本文が同じセッションのhook通知の本文と一致する場合に、その通知の発生源と区分で変換する。
     変換しない場合は`None`を返す。
     """
@@ -3888,7 +3888,7 @@ def _same_hook_notice_text(left: str, right: str) -> bool:
 
 
 def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[str, Any]) -> bool:
-    """同じ記録位置の警告又は失敗が構造化hook通知から生じたかを返す。"""
+    """同じ記録位置の警告または失敗が構造化hook通知から生じたかを返す。"""
     text = event.get("text")
     notice_text = notice.get("text")
     if not isinstance(text, str) or not isinstance(notice_text, str):
@@ -3903,7 +3903,7 @@ def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[st
 def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
     """発生源ごとの上位種への限定を適用する候補キーかを返す。
 
-    対象はblock又はwarnのhook通知とする。他の種別のキーは軸の数が異なるため、
+    対象はblockまたはwarnのhook通知とする。他の種別のキーは軸の数が異なるため、
     タグの位置を参照する前に種別と軸の数を確認する。
     """
     return len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}
@@ -4349,15 +4349,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--observation-boundary",
         metavar="TIMESTAMP",
-        help="ISO 8601の時刻を観測境界とし、親記録のうち当該時刻より後の`timestamp`を持つレコードを"
+        help="ISO 8601の時刻を観測境界とし、親記録のうちその時刻より後の`timestamp`を持つレコードを"
         "全モードの対象外にする。委譲先の記録へは適用しない。`--detail`の行番号は元ファイルの行番号を維持する。"
         "解析できない値はエラーイベントを出力して終了コード2を返す。",
     )
     parser.add_argument(
         "--elapsed-until",
         metavar="TIMESTAMP",
-        help="ISO 8601の時刻を経過時間の終端とし、メイン記録の最初のレコードから当該時刻までの経過秒数を返す。"
-        "解析できない値、算出できる記録が無い場合及び当該時刻が最初のレコードより前の場合は"
+        help="ISO 8601の時刻を経過時間の終端とし、メイン記録の最初のレコードからその時刻までの経過秒数を返す。"
+        "解析できない値、算出できる記録が無い場合およびその時刻が最初のレコードより前の場合は"
         "エラーイベントを出力して終了コード2を返す。",
     )
     parser.add_argument(
@@ -4405,15 +4405,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--since",
         metavar="TIMESTAMP",
-        help="`--user-events`又はカタログ走査の開始境界をISO 8601の時刻で指定する。",
+        help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。",
     )
     parser.add_argument(
         "--bundle",
         metavar="DIR",
-        help="通常表示、`--warn`、`--stats`及び`--hook-notices`の走査と、問題候補と会話の流れ（メイン記録の発話）の抽出を"
+        help="通常表示、`--warn`、`--stats`および`--hook-notices`の走査と、問題候補と会話の流れ（メイン記録の発話）の抽出を"
         "1回の記録読み込みで行い、走査ごとの全量を指定したディレクトリ配下のファイルへ書く。"
         "標準出力へは、走査ごとのファイルの絶対パスとイベント件数、通常表示のイベント種別ごとの件数、"
-        "問題候補の特定に用いるイベントの位置と本文の冒頭、及び警告の種別ごとの件数を返す。"
+        "問題候補の特定に用いるイベントの位置と本文の冒頭、および警告の種別ごとの件数を返す。"
         "集計と通知の走査の全量は保存先のファイルから読む。"
         "指定するディレクトリは実在していることを要する。他の照会オプションとは併用しない。",
     )
@@ -4477,7 +4477,7 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
     ):
         return _print_error("カタログ走査は単一transcriptの照会モードと併用できない")
     if args.since is not None and not args.user_events and catalog_root is None:
-        return _print_error("--sinceは--user-events又はカタログ走査と併用する")
+        return _print_error("--sinceは--user-eventsまたはカタログ走査と併用する")
     if args.user_events and args.since is None:
         return _print_error("--user-eventsには--sinceが必要")
     if catalog_root is not None and args.since is None:

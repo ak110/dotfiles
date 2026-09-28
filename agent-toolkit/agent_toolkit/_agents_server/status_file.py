@@ -1,7 +1,7 @@
 """agents_serverのsession状態をClaude Codeのstatusline向けに出力する。
 
 Claude backendの委譲先は所有sessionと自身のClaude Code sessionを持つ。
-この対応はClaude Code 2.1.261及びclaude-agent-sdk 0.2系で確認した。
+この対応はClaude Code 2.1.261およびclaude-agent-sdk 0.2系で確認した。
 Codex backendの委譲先自身のシェルは、所有sessionと自身のCodex threadを持つ。
 2026年9月7日にCodex CLI 0.153.4の`start_shell`で起動したシェルに
 `CODEX_THREAD_ID`が存在することを確認した。
@@ -9,7 +9,7 @@ Codex backendの委譲先自身のシェルは、所有sessionと自身のCodex 
 Codex CLIが直接起動するMCPサーバープロセスへは、Codex App Server自身の環境が
 継承されない。Codex CLI 0.153.4で2026年9月9日に確認した。`thread/start`の
 `config.mcp_servers.agents_server`へ完全な定義を渡す場合だけ、`env`の識別子が
-当該プロセスへ届く。ホスト、CLI又はSDKを更新した時点では、同じ起動形で
+そのプロセスへ届く。ホスト、CLIまたはSDKを更新した時点では、同じ起動形で
 MCPサーバーの環境変数と起動通知を確認する。
 
 上り通知の配送媒体は本モジュールが定める共有状態ディレクトリとする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して実測した。この前提が崩れた場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
@@ -249,7 +249,7 @@ def unavailable_candidates_path(state_root: pathlib.Path | None = None) -> pathl
     """可用性を理由に除外した候補の記録ファイルを返す。
 
     `list_root_session_ids`は`agents-server`直下のディレクトリをルートsession識別子として列挙するため、
-    当該階層へはディレクトリではなく単一のファイルとして置く。
+    この階層へはディレクトリではなく単一のファイルとして置く。
     """
     root = _atk_config.state_dir() if state_root is None else state_root
     return root / "agents-server" / "unavailable-candidates.json"
@@ -287,7 +287,7 @@ def load_unavailable_candidates(
     now: datetime.datetime,
     state_root: pathlib.Path | None = None,
 ) -> dict[tuple[str, str | None, str | None], str]:
-    """当該起動条件で除外中の候補を、候補ごとの除外理由とともに返す。
+    """指定した起動条件で除外中の候補を、候補ごとの除外理由とともに返す。
 
     保持期間を過ぎた項目は返さない。呼び出し元は残った候補だけを除外集合として扱う。
     """
@@ -369,7 +369,7 @@ def clear_unavailable_candidate(
 ) -> None:
     """起動が成立した候補の除外記録を取り除く。
 
-    当該候補の記録が無い場合は書き込まない。起動のたびに記録ファイルを作成しないためである。
+    その候補の記録が無い場合は書き込まない。起動のたびに記録ファイルを作成しないためである。
     """
     engine, model, effort = candidate
     if candidate not in load_unavailable_candidates(model_type, launch_kind, now=now, state_root=state_root):
@@ -389,7 +389,7 @@ def _matches_candidate(
     model: str | None,
     effort: str | None,
 ) -> bool:
-    """記録した項目が当該起動条件と候補の組に一致するかを返す。"""
+    """記録した項目が指定した起動条件と候補の組に一致するかを返す。"""
     return (
         entry.get("model_type") == model_type
         and entry.get("launch_kind") == launch_kind
@@ -645,7 +645,7 @@ def release_wait_target(
     session_id: str,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """回収又は明示破棄したsessionを待機対象登録簿から除く。"""
+    """回収または明示破棄したsessionを待機対象登録簿から除く。"""
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
     directory = wait_targets_directory(root_session_id, owner_status_file, state_root)
@@ -831,7 +831,7 @@ def take_notices(
 
 
 def normalize_label(value: str) -> str:
-    """依頼本文又はコマンドの最初の空でない行を表示用に正規化する。"""
+    """依頼本文またはコマンドの最初の空でない行を表示用に正規化する。"""
     line = next((line for line in value.splitlines() if line.strip()), "")
     return " ".join(line.split())[:200]
 
@@ -938,7 +938,7 @@ class StatusFileWriter:
             self._directory.rmdir()
 
     def retain_result(self, session: SessionState | SessionResumeState) -> None:
-        """保持中又は退避済みsessionの未回収終端結果を残す。"""
+        """保持中または退避済みsessionの未回収終端結果を残す。"""
         if (
             session.finalized_at is not None
             and session.status in {"completed", "failed", "interrupted"}
@@ -947,7 +947,7 @@ class StatusFileWriter:
             self._write_terminal_result(session)
 
     def delete_result(self, session_id: str, *, collector: str) -> None:
-        """回収済み又は所有解除するsessionの終端結果を削除する。"""
+        """回収済みまたは所有解除するsessionの終端結果を削除する。"""
         if not valid_session_id(session_id):
             raise ValueError(f"invalid session_id: {session_id}")
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"

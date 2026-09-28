@@ -140,7 +140,7 @@ def test_optional_exclusion_section_may_be_absent() -> None:
     start = _VALID_CONTENT.index("### 合意済みの除外・保持")
     end = _VALID_CONTENT.index("## 提示素材")
     content = _VALID_CONTENT[:start] + _VALID_CONTENT[end:]
-    # 除外表を欠くため、当該表でだけ被覆されていた採用要求の参照を`根拠`列へ追加して被覆を維持する。
+    # 除外表を欠くため、その表でだけ被覆されていた採用要求の参照を`根拠`列へ追加して被覆を維持する。
     content = content.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001, R-P-002-001 |",
@@ -167,7 +167,7 @@ def test_permanence_section_accepts_prose_instead_of_table() -> None:
     """候補0件の恒久化とリファクタリングは、固定表の代わりに理由を書いた地の文を受理する。"""
     content = _VALID_CONTENT.replace(
         _plan_fixture.PERMANENCE_TABLE,
-        "提示素材と調査結果を確認し、当該計画固有でない知見は無かった。",
+        "提示素材と調査結果を確認し、本計画固有でない知見は無かった。",
         1,
     )
     content = content.replace(
@@ -202,7 +202,7 @@ def test_extract_tables_accepts_gfm_notations(table: str) -> None:
 
 
 def test_structured_material_ids_preserve_full_namespace() -> None:
-    """英字、ハイフン及びアンダースコアを含む素材IDを要求IDの名前空間へ保持する。"""
+    """英字、ハイフンおよびアンダースコアを含む素材IDを要求IDの名前空間へ保持する。"""
     content = _VALID_CONTENT.replace("P-001", "P-alpha_1-x")
     content = content.replace("P-alpha_1-x, P-002", "P-002, P-alpha_1-x")
     first = (
@@ -224,7 +224,7 @@ def test_structured_material_ids_preserve_full_namespace() -> None:
 
 
 def test_requirement_coverage_accepts_content_where_every_adopted_requirement_is_referenced() -> None:
-    """採用要求が`根拠`又は合意表の`素材・要求参照`のいずれかで被覆されていれば検出しない。"""
+    """採用要求が`根拠`または合意表の`素材・要求参照`のいずれかで被覆されていれば検出しない。"""
     errors = _plan_format.check_plan_structure(_VALID_CONTENT)
     assert not any("採用要求を被覆しない" in error for error in errors), errors
 
@@ -292,17 +292,17 @@ def test_requirement_coverage_rejects_adopted_requirement_referenced_by_neither_
         (
             "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 |",
             "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 保留 | 診断件数の更新 | 非該当 |",
-            "採否は採用又は不採用にする",
+            "採否は採用または不採用にする",
         ),
         (
             "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 |",
             "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 非該当 | 非該当 |",
-            "採用範囲又は除外範囲が不正である",
+            "採用範囲または除外範囲が不正である",
         ),
     ],
 )
 def test_structured_material_contract_rejects_invalid_combinations(old: str, new: str, message: str) -> None:
-    """素材種別、参照、要求ID及び採否の不整合を拒否する。"""
+    """素材種別、参照、要求IDおよび採否の不整合を拒否する。"""
     materials, errors = _plan_format.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
     assert materials is not None
     assert any(message in error for error in errors), errors
@@ -343,7 +343,7 @@ def test_legacy_two_file_main_accepts_legacy_review_ids_and_tracks(review_id: st
     ],
 )
 def test_detail_structure_rejects_invalid_implementation_unit_contract(old: str, new: str, message: str) -> None:
-    """実装単位ID、依存及び統合順の構造違反を拒否する。"""
+    """実装単位ID、依存および統合順の構造違反を拒否する。"""
     errors = _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT.replace(old, new), "通常変更")
     assert any(message in error for error in errors), errors
 

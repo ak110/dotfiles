@@ -340,7 +340,7 @@ def test_respond_reports_only_decoded_no_response_reason(
 ) -> None:
     """対応不要では更新した理由を照合し、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
-    reason = '対象外の理由へ"引用符"、\\逆斜線、タブ\t及び\n改行を含める。'
+    reason = '対象外の理由へ"引用符"、\\逆斜線、タブ\tおよび\n改行を含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
     capsys.readouterr()
 
@@ -383,7 +383,7 @@ def test_non_regular_file_input_is_rejected_with_the_expected_input_form(
 
 @pytest.mark.parametrize("operation", ("validate", "show"))
 def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib.Path, operation: str) -> None:
-    """存在しないパスを読む操作は、存在しない旨と期待する入力形を示して拒否する。"""
+    """存在しないパスを読む操作は、対象が存在しないことと期待する入力形を示して拒否する。"""
     path = tmp_path / "sample.plan-review.tsv"
 
     with pytest.raises(ValueError) as exc_info:
@@ -874,7 +874,7 @@ def test_add_accepts_all_level_values_and_respond_preserves_level(tmp_path: path
 
 
 def test_validate_rejects_invalid_level(tmp_path: pathlib.Path) -> None:
-    """8列行のlevelは空又は正規値だけを受理する。"""
+    """8列行のlevelは空または正規値だけを受理する。"""
     path = tmp_path / "review.tsv"
     cells = ("1", _TRACK, "位置", "指摘", "重大", "修正", "")
     path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n", encoding="utf-8")
@@ -925,7 +925,7 @@ def test_skill_documented_review_table_commands_are_accepted(
     ),
 )
 def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv: list[str]) -> None:
-    """必須値の欠落、不正値及び旧`--file`形式を終了コード2で拒否する。"""
+    """必須値の欠落、不正値および旧`--file`形式を終了コード2で拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(argv)
     assert exc_info.value.code == 2
@@ -1086,7 +1086,7 @@ def test_option_help_describes_each_subcommand_role(
     expected_descriptions: tuple[str, ...],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各オプションの説明だけで、当該サブコマンドにおける役割を判断できる。"""
+    """各オプションの説明だけで、そのサブコマンドにおける役割を判断できる。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(["review-table", subcommand, "--help"])
 
@@ -1290,7 +1290,7 @@ def test_row_id_is_stable_across_filters_and_updates_only_selected_row(
 
 @pytest.mark.parametrize("row_id", (0, 2))
 def test_respond_rejects_invalid_row_id_without_changing_table(tmp_path: pathlib.Path, row_id: int) -> None:
-    """0以下又は範囲外のrow-idは保存本文を変更せず拒否する。"""
+    """0以下または範囲外のrow-idは保存本文を変更せず拒否する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘")

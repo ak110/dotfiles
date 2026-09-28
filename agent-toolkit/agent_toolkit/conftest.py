@@ -61,7 +61,7 @@ def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     対象にするテストも同じfixtureで実行できる。
 
     既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
-    環境変数は当該設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
+    環境変数はこの設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
     このディレクトリ配下のテストを単独で実行する場合にも同じ前提が成立するよう、
     上位ディレクトリのfixtureへ依存せず本ファイルで定義する。
     """
@@ -107,7 +107,7 @@ def _isolated_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
 
     差し替えた環境変数はテストが起動する子プロセスへも継承される。実行環境のホーム・設定
     ディレクトリから版や信頼設定を解決する外部ツール（miseのshimとして提供される`uv`・`node`など）を
-    起動するテストは、この隔離を渡すと解決に失敗する。当該テストは`os.environ`をそのまま渡さず、
+    起動するテストは、この隔離を渡すと解決に失敗する。そうしたテストでは`os.environ`をそのまま渡さず、
     `host_environ` fixtureが組み立てる環境変数を子プロセスへ渡す。
     """
     home = tmp_path / "home"
@@ -149,8 +149,8 @@ def _clear_wait_schedule_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     """委譲先セッションの標識を各テストの実行環境から除去する。
 
-    process-loopが委譲先へ渡す環境を検証するテストは、実行元の環境に当該標識が無いことを前提とする。
-    委譲先のセッションから検査を実行すると標識が継承され、当該前提が崩れる。
+    process-loopが委譲先へ渡す環境を検証するテストは、実行元の環境にこの標識が無いことを前提とする。
+    委譲先のセッションから検査を実行すると標識が継承され、その前提が崩れる。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -161,7 +161,7 @@ def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
 def _clear_process_loop_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     """process-loop起動セッションの標識を各テストの実行環境から除去する。
 
-    当該標識はUserPromptSubmitの固定sessionTitleを決める入力であり、
+    この標識はUserPromptSubmitの固定sessionTitleを決める入力であり、
     子プロセスへ継承されると出力を伴わないことを検証するテストが失敗する。
     標識の有無で分岐する動作を検証するテストは自身で`setenv`する。
     """

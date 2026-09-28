@@ -9,7 +9,7 @@ r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 `chezmoi status`（apply予定ファイルの表示） → `chezmoi diff --no-pager` →
 `chezmoi apply --force`を、プロセス間排他ロック下で直列実行する。
 画面には4段の進捗を示し、diffの詳細は永続ログへ記録する。
-pull又は退避復元が競合した場合は、元HEADと未コミット内容を専用参照へ保存し、
+pullまたは退避復元が競合した場合は、元HEADと未コミット内容を専用参照へ保存し、
 設定済み上流へ作業branchを合わせて更新を継続する。
 
 複数の`update-dotfiles`起動（`atk wi process-loop`の複数常駐・手動実行との重複等）が
@@ -32,7 +32,7 @@ Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常�
 仮想環境は子へ引き継がず、各工程が自身の設定から環境を解決する。
 取得したchezmoi出力は、プラットフォームの既定値に依存せずUTF-8として厳格にデコードする。
 git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定時は600秒、
-`0`は上限なしとし、負数又は整数でない値は終了コード2で拒否する。
+`0`は上限なしとし、負数または整数でない値は終了コード2で拒否する。
 
 実行の開始時と終了時に、同期結果を`scripts/sync_report.py`が定める構造化ファイルへ記録する。
 次に起動するコーディングエージェントが、失敗した段と標準エラーの末尾からAWIの処理を
@@ -126,9 +126,9 @@ def _child_env() -> dict[str, str]:
     """各工程のサブプロセスへ渡す環境を構成する。
 
     `MISE_AUTO_INSTALL=0`は、実行ファイル名で起動したコマンドがmiseのshimへ解決された場合に、
-    呼び出したコマンドと無関係なツールの自動導入が実行されるのを防ぐ。当該導入が失敗すると
+    呼び出したコマンドと無関係なツールの自動導入が実行されるのを防ぐ。この自動導入が失敗すると
     shimが非ゼロ終了し、更新処理が最初の工程で止まる。
-    post-apply工程が実行する明示的な`mise install`は当該設定の影響を受けないため、
+    post-apply工程が実行する明示的な`mise install`はこの設定の影響を受けないため、
     ツールの導入自体は従来どおり行われる。
     """
     env = os.environ.copy()
@@ -239,8 +239,8 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。
 
     `submodule.recurse=false`は、dotfilesリポジトリがsubmoduleを持たないため不要な再帰を無効化する。
-    利用者設定で当該再帰が有効な場合、`git pull`が`git-submodule`を起動する。`git-submodule`は
-    POSIX shで実行され、PATH上の`gettext.sh`を読み込むため、当該ファイルがbash専用構文を含むと
+    利用者設定でこの再帰が有効な場合、`git pull`が`git-submodule`を起動する。`git-submodule`は
+    POSIX shで実行され、PATH上の`gettext.sh`を読み込むため、そのファイルがbash専用構文を含むと
     構文エラーで終了し、更新処理が最初の工程で止まる。
     `_child_env`の`MISE_AUTO_INSTALL=0`と同じく、工程が利用者環境の設定を引き継いで停止する経路を抑止する。
 
@@ -345,7 +345,7 @@ def _git_value(*arguments: str) -> str | None:
 
 
 def _git_operation_in_progress() -> bool:
-    """既存のmerge又はrebaseが進行中の場合に真を返す。"""
+    """既存のmergeまたはrebaseが進行中の場合に真を返す。"""
     for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply"):
         path = _git_value("rev-parse", "--git-path", name)
         if path is None:
@@ -424,13 +424,13 @@ def _clean_saved_untracked(paths: tuple[str, ...]) -> bool:
 def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -> int:
     """Git更新を実行し、競合時は復旧参照を保持して上流へ合わせる。"""
     if _git_operation_in_progress():
-        print("既存のmerge又はrebaseが進行中のため、更新を開始しません。", file=sys.stderr)
+        print("既存のmergeまたはrebaseが進行中のため、更新を開始しません。", file=sys.stderr)
         return 1
     branch = _git_value("symbolic-ref", "--quiet", "--short", "HEAD")
     upstream = _git_value("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
     original_head = _git_value("rev-parse", "HEAD")
     if not branch or not upstream or not original_head:
-        print("現在branch、設定済み上流又はHEADを解決できません。", file=sys.stderr)
+        print("現在branch、設定済み上流またはHEADを解決できません。", file=sys.stderr)
         return 1
     status = _git_value("status", "--porcelain=v1", "--untracked-files=all")
     if status is None:

@@ -5,7 +5,7 @@
 
 読み込んだ悪い例の文面は指摘テキストへ転記しない。
 本ファイルは口語表現チェックの検査対象から除外される（`pyproject.toml`の`[tool.pyfltr] extend-exclude`で対象パスを列挙する運用）ため、悪い例には辞書検出語とwriting-standardsの規定違反が含まれてよい。
-書き換え案、解説文及び観点説明文はwriting-standardsに準拠する。
+書き換え案、解説文および観点説明文はwriting-standardsに準拠する。
 
 ## 修飾過多
 

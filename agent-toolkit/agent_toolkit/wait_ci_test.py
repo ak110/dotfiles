@@ -765,7 +765,7 @@ class TestSupersededCancelledRuns:
     """同じworkflow名・同じcommitへ重複登録され、後続runへ置き換えられて打ち切られたrunの扱いを検証する。
 
     保証する契約は、打ち切られた残骸runを成否判定の対象へ含めないことと、
-    当該runを期待run集合へ残したまま欠落待機を継続しないこととする。
+    そのrunを期待run集合へ残したまま欠落待機を継続しないこととする。
     """
 
     def _superseded_pair_dispatch(self, final_conclusion: str):

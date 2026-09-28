@@ -33,7 +33,7 @@ def test_case_sensitivity_probe_detects_case_insensitive_directory(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """名前を畳み込むディレクトリでは、反転名の実在をもって区別しないと判定する。"""
+    """名前を畳み込むディレクトリでは、反転名が存在することから区別しないと判定する。"""
     original_exists = pathlib.Path.exists
 
     def case_folding_exists(self: pathlib.Path) -> bool:
@@ -167,7 +167,7 @@ def test_state_sets_have_single_definition_site() -> None:
     """状態名の値を書くモジュールを1つに保つ。
 
     `common`と`uwi_scan`は依存関係を持つため、どちらかへ状態集合を置くと循環importになる。
-    値の記述を`constants`だけに残し、他のモジュールは当該モジュールからimportする。
+    値の記述を`constants`だけに残し、他のモジュールは`constants`からimportする。
     旧ディレクトリ構成の読み取り互換を担う`legacy`は、廃止した状態名を含む別の集合を保持するため対象から除く。
     """
     scripts_dir = pathlib.Path(__file__).resolve().parent
@@ -1081,7 +1081,7 @@ class TestExplicitUpstreamIntegration:
         self,
         tmp_path: pathlib.Path,
     ) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
-        """mainとsideを持つbare remote及び同じmainを追跡する2作業コピーを作成する。"""
+        """mainとsideを持つbare remoteおよび同じmainを追跡する2作業コピーを作成する。"""
         remote = tmp_path / "remote.git"
         seed = tmp_path / "seed"
         old_copy = tmp_path / "old-copy"

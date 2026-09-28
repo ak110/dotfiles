@@ -208,7 +208,7 @@ def _enter_index_lock(stack: contextlib.ExitStack) -> bool:
     """作成日時インデックスの排他ロックを`stack`へ登録する。取得できない場合は`False`を返す。
 
     キャッシュディレクトリを作成・書き込みできない環境ではロックファイルを開けず`OSError`となる。
-    作成日時キャッシュの失敗で一覧機能を止めないため、当該例外は呼び出し元へ伝播させない。
+    作成日時キャッシュの失敗で一覧機能を止めないため、この例外は呼び出し元へ伝播させない。
     """
     try:
         stack.enter_context(_exclusive_file_lock(_index_lock_path()))

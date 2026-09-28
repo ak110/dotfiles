@@ -111,7 +111,7 @@ fn task_description(task: &Map<String, Value>) -> String {
 
 /// タスク1件を1行分の`content`文字列へレンダリングする。`id`欠落・空文字時はNoneを返す。
 ///
-/// `name_width`省略時は当該タスク単独の名前列幅（`columns // 3`セル上限）を用いる。
+/// `name_width`を省略すると、`columns // 3`セルを上限として、そのタスクの名前列幅を用いる。
 pub fn render_task(
     task: &Map<String, Value>,
     width: usize,

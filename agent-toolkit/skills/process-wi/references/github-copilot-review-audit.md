@@ -2,8 +2,8 @@
 
 `agent-toolkit:process-wi`の自動コードレビュー監査を担当する主体が、対象GitHubリポジトリの成果物を変更せずに実行する。
 本書でいう成果物は、対象リポジトリの追跡ファイルとその履歴を指す。
-Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿及びthreadの解決は成果物の変更に当たらず、本書が定める範囲で監査担当が実行する。
-監査は呼び出し時点の保存結果を1回読むだけで完了する。新しいレビューの生成要求と到着の能動的な待機は、本監査の範囲の外に置く。
+Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿およびthreadの解決は成果物の変更に当たらず、本書が定める範囲で監査担当が実行する。
+監査は呼び出し時点の保存結果を1回読むだけで完了する。新しいレビューの生成要求と到着の能動的な待機は、本監査の対象外とする。
 
 ## 対象
 
@@ -24,7 +24,7 @@ pendingコマンドが失敗して呼び出し元からJSONを受け取れない
 いずれの接続も初回は`cursor`を渡さず、`pageInfo.hasNextPage`が真の場合は直前の`pageInfo.endCursor`を`-F cursor=<END_CURSOR>`で渡して偽になるまで取得する。
 Pull Request単位のクエリーは横断クエリーの結果とは独立した取得として扱う。
 
-全Pull Requestの番号、`reviews`の先頭ページ及び`reviewThreads`の先頭ページを、次の横断GraphQLクエリーで取得する。
+全Pull Requestの番号、`reviews`の先頭ページおよび`reviewThreads`の先頭ページを、次の横断GraphQLクエリーで取得する。
 
 ```sh
 gh api graphql -F owner=<OWNER> -F name=<REPO> -f query='query($owner:String!,$name:String!,$cursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,after:$cursor,states:[OPEN,CLOSED,MERGED]){nodes{number reviews(first:20){nodes{databaseId author{__typename login}} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{databaseId author{__typename login}}}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}'
@@ -39,7 +39,7 @@ gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($o
 `reviewThreads`の`pageInfo.hasNextPage`が真のPull Requestは、次のクエリーでreview threadを終端まで取得し直す。
 未解決threadの有無は、その取得が終端へ到達した時点で確定する。
 thread内のcomment本文は後掲のREST APIから取得し、GraphQLではthread ID、解決状態、
-REST commentとの対応に使うdatabaseId及び先頭commentのauthorを取得する。
+REST commentとの対応に使うdatabaseIdおよび先頭commentのauthorを取得する。
 authorはCopilot由来の判定に用いる。
 
 ```sh
@@ -53,7 +53,7 @@ gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/comments?per_page=100'
 ```
 
 監査を完了と判定できるのは、実行した全REST APIが終了コード0で終わり、pendingコマンドの成功、またはGraphQLによる代替取得での`pageInfo`取得とpagination終端を確認できた場合とする。
-各ページとREST APIの標準出力は管理対象一時領域の別々のJSONファイルへ保存し、保存したファイルからページの終端、件数及びdatabaseIdを確認する。端末に表示された出力を件数や網羅性の根拠にしない。
+各ページとREST APIの標準出力は管理対象一時領域の別々のJSONファイルへ保存し、保存したファイルからページの終端、件数およびdatabaseIdを確認する。端末に表示された出力を件数や網羅性の根拠にしない。
 
 ## 判定
 
@@ -66,18 +66,18 @@ gh api 'repos/{owner}/{repo}/pulls/<PR>/reviews/<REVIEW_ID>' > <管理対象一�
 
 保存した列挙結果のCopilot由来reviewのID集合を、除外したID集合と本文を取得したID集合へ過不足なく分ける。判定済み本文の取得は行わない。
 
-判定の対象に残った各指摘を現行成果物、過去の採否及び根拠と比べ、要修正、是正済み、根拠付き対応不要のいずれかへ分類する。
+判定の対象に残った各指摘を現行成果物、過去の採否および根拠と比べ、要修正、是正済み、根拠付き対応不要のいずれかへ分類する。
 review本文が概要と進行状況だけを述べ、成果物への処置を求める記述を1つも含まない場合は、その本文を指摘なしと分類する。
 指摘なしの分類は本文全体に対して行い、本文へ含まれる個々の指摘の分類とは別の単位として扱う。
 要修正は所在と対処案を返し、同一セッションの是正とAWIへの記録は呼び出し元が確定する。
-是正済み又は根拠付き対応不要と分類した指摘は、「判定結果のGitHubへの記録」に従って分類と根拠をGitHubへ残す。
-全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentについて、所在、分類及び処置をメインへ返す。inline commentの取得対象へ入らなかったPull Request番号も併せて返す。
+是正済みまたは根拠付き対応不要と分類した指摘は、「判定結果のGitHubへの記録」に従って分類と根拠をGitHubへ残す。
+全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentについて、所在、分類および処置をメインへ返す。inline commentの取得対象へ入らなかったPull Request番号も併せて返す。
 
 ## 判定結果のGitHubへの記録
 
-是正済み又は根拠付き対応不要と分類した指摘は、監査担当が分類と根拠を対象GitHubリポジトリへ書き込む。
+是正済みまたは根拠付き対応不要と分類した指摘は、監査担当が分類と根拠を対象GitHubリポジトリへ書き込む。
 判定根拠は本節が投稿する本文が保持し、`atk review-audit`のローカル記録は索引として扱う。
-この書き込みは、操作、対象及び範囲を明示した人間由来のWI `20260908-090053-001.md`で承認済みであり、監査のたびの確認は不要である。
+この書き込みは、操作、対象および範囲を明示した人間由来のWI `20260908-090053-001.md`で承認済みであり、監査のたびの確認は不要である。
 同WIが保持するユーザー発言は次のとおりである。
 
 ```text
@@ -113,9 +113,9 @@ threadを伴わないreview本文では、分類と根拠をそのPull Request�
 gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 ```
 
-返信とコメントの本文には、対象の指摘を一意に示す識別子、確定した分類、及びその分類の根拠を書く。
+返信とコメントの本文には、対象の指摘を一意に示す識別子、確定した分類、およびその分類の根拠を書く。
 識別子はreview本文ではdatabaseId、review threadでは対象ファイルと行とする。
-根拠には確認した現行成果物の位置、又は対応不要と判断した理由を書く。
+根拠には確認した現行成果物の位置、または対応不要と判断した理由を書く。
 
 記録済みとして扱うのは書き込みが終了コード0で終わった指摘に限り、非0で終了した指摘は「判定済みの記録」の対象からも外す。
 
