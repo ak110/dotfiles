@@ -23,6 +23,8 @@ def _repository_root() -> pathlib.Path:
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=30,
     )
@@ -44,6 +46,8 @@ def _show_wi(filename: str, repository: pathlib.Path) -> str:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=30,
     )
