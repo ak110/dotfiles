@@ -21,6 +21,8 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 
 本スキルから`agent-toolkit:plan-mode`を起動する場合は、確認事項をUWIへ登録する専用処理として扱い、計画の起草後は本スキルの実行順へ戻って主作業ツリーで実装する。計画stemは`dd-HHmm_single-lane-process`とする。実行レビューのレビューイーはメインとする。Codexでは`../plan-mode/references/codex-runtime.md`が専用処理へ定めるUWI記録と暫定判断を、本スキルにも適用する。
 
+本スキルでは、レーン担当と終端担当を使わないメインが、対象リポジトリの版数規範の単一worktree向け一般則に従い、実装段階で版数を更新する。
+
 ## 処理の振り分け
 
 処理対象の計画ファイル作成要否は`agent-toolkit:plan-mode`「計画ファイルの作成要否」で判定する。作成する項目を計画対象、省く項目を直接実装対象とする。

@@ -16,6 +16,8 @@
 
 ## マージありの統合
 
+版数更新を完成条件に持つAWIは、1レーンの処理回でも複数レーンの処理回でも、前段の延期`adopt`契約を適用する。
+
 1. 専用worktreeがcleanであることを確認する。受領した`実行レビュー済みHEAD`と専用branchのHEADを、いずれも`git rev-parse --short=7 <revision>`で7文字以上の一意な短縮OIDへ正規化して文字列比較し、一致することを確認する。判定の入力はこの2つの短縮OIDとし、指摘管理表の内容と完全OIDはこの判定から外す。
 2. 統合先worktreeの現在branchが統合先branchであり、別の書込主体とGitの中断状態が無いことを確認する。
 3. 統合先branchの現在HEADの7文字以上の一意な短縮OIDと、`git merge-base <専用branch> <統合先branch>`で得たrebase前のベースOIDを取得する。

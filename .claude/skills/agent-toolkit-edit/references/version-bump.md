@@ -53,7 +53,7 @@ plugin cache directory配下の新versionのrootを解決し直す。
 ## plan modeでの取り扱い
 
 本節の前段が定める一般則は、単一のworktreeで実装する計画へ適用する。
-複数レーンを並列実装するAWI処理では、本節末尾の複数レーン向けの特則が前段に優先する。
+`agent-toolkit:process-wi`が起動したレーンでは、レーン数によらず本節末尾の特則が前段に優先する。
 
 計画フェーズではbump要否や既存bumpとの差分を調査せず、種別（PATCH／MINOR／MAJOR）と
 「判定基準」節に基づく種別選定根拠を`## 要件・外部仕様`へ記述する。
@@ -70,11 +70,12 @@ Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対�
 bumpの完了条件は、実装開始時点の版との増加比較で判定せず、
 公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、及び定義元2ファイルと派生manifestの`version`が一致することで判定する。
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
-複数レーンを並列実装するAWI処理では、各レーンはbump種別（`bump不要`を含む）と選定根拠、MAJORの場合は認可根拠を計画へ記録するに留める。
-メインが本規定の適用対象となるレーンの記録から最も上位の種別を確定し、全レーンのマージ後に1回だけ実行する。
+`agent-toolkit:process-wi`の各レーンは、bump種別（`bump不要`を含む）と「判定基準」に基づく選定根拠、MAJORの場合は認可根拠を計画へ記録し、版数更新コマンドを実行しない。
+AWI本文の版数区分は、起草時にその要求だけを見た判定である。メインは同じ処理回の統合変更へ「判定基準」を適用し、AWI単独の区分より上位の変更があれば上位区分を`bump種別`として終端担当へ渡す。終端担当が全レーンのマージ後に`scripts/agent_toolkit_bump.py`を1回実行する。
+版数更新を完成条件に持つAWIは`agent-toolkit/share/lane-integration.subagent.md`の延期`adopt`に従い、終端担当が版数、派生manifestと公開結果を検収した後に終端する。
 統合ブランチのpush前に上流進行を観測してrebaseした場合は、
 rebase後の公開済み統合先と手元の定義元ファイルのversionを「競合解決と統合後の確認」節の基準で再比較する。
-未公開の振る舞い変更が公開済みと同じversionのまま残る場合は、メインが再bumpとmanifest同期を行う。
+未公開の振る舞い変更が公開済みと同じversionのまま残る場合は、終端担当が再bumpとmanifest同期を行う。
 
 ## 新規CLI公開時の疎通確認
 
