@@ -21,7 +21,9 @@ MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Code
 Codex CLIが起動するMCPサーバープロセスが受け取る環境変数は、外側の`agents_server`が`thread/start`の`config.mcp_servers.agents_server.env`で明示した値だけである。`codex app-server`自身の環境はこのプロセスへ継承されず、明示した値だけが届く。
 ルートsession識別子と書込主体識別子は、この環境変数を介して配送する。
 CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。PostToolUseフックと`atk agents wait`は`hosts`索引が存在する場合は起動元threadから書込主体を逆引きし、状態ファイルと待機対象登録を同じ名前空間で扱う。索引が無い場合は補完した識別子をそのまま書込主体として使う。
-Codex backendは、子sessionを起動した委譲先の`commandExecution`が`atk agents wait`に成功した結果を受け取ると、標準出力又は`--output-file`が示す保存結果の終端識別子を`state.py`の`consume_agents_wait_output`で追跡集合から外す。待機失敗と読取不能の結果は追跡集合へ残す。
+Codex backendは、子sessionを起動した委譲先から`atk agents wait`に成功した`commandExecution`を受け取る。
+標準出力又は`--output-file`が示す保存結果の終端識別子を、`state.py`の`consume_agents_wait_output`で追跡集合から外す。
+待機失敗と読取不能の結果は追跡集合へ残す。
 
 ## 共有状態ごとの保持先と読み書きの担当
 

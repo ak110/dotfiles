@@ -111,6 +111,36 @@ def test_pending_reports_zero_without_confusing_it_with_fetch_failure(
     assert json.loads(capsys.readouterr().out) == {"reviews": [], "threads": [], "counts": {"reviews": 0, "threads": 0}}
 
 
+@pytest.mark.parametrize("invalid_field", ("number", "databaseId"))
+def test_pending_rejects_boolean_identifiers(
+    invalid_field: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """GraphQLの真偽値を整数のPR番号やreview識別子として受理しない。"""
+    pull_request = {
+        "number": True if invalid_field == "number" else 1,
+        "reviews": {
+            "nodes": [
+                {
+                    "databaseId": True if invalid_field == "databaseId" else 1,
+                    "author": {"__typename": "Bot", "login": "copilot-bot"},
+                }
+            ],
+            "pageInfo": {"hasNextPage": False},
+        },
+        "reviewThreads": {"nodes": [], "pageInfo": {"hasNextPage": False}},
+    }
+
+    def run(_command: list[str], _timeout: float, **_kwargs: object) -> dict:
+        return {"data": {"repository": {"pullRequests": {"nodes": [pull_request], "pageInfo": {"hasNextPage": False}}}}}
+
+    monkeypatch.setattr(review_audit._json_command, "run", run)  # pylint: disable=protected-access
+
+    assert _dispatch("pending", "owner/repo") == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "不正" in captured.err
+
+
 def test_pending_paginates_and_excludes_recorded_reviews(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -132,7 +162,7 @@ def test_pending_paginates_and_excludes_recorded_reviews(
         "reviews": {"nodes": [{"databaseId": 13, "author": human}], "pageInfo": {"hasNextPage": False}},
         "reviewThreads": {"nodes": [], "pageInfo": {"hasNextPage": False}},
     }
-    responses = [
+    responses: list[dict] = [
         {
             "data": {
                 "repository": {
@@ -188,7 +218,7 @@ def test_pending_refetches_truncated_review_threads(
 ) -> None:
     """PR単位で打ち切られたthreadは先頭から取り直して終端を確認する。"""
     copilot = {"__typename": "Bot", "login": "copilot-bot"}
-    responses = [
+    responses: list[dict] = [
         {
             "data": {
                 "repository": {

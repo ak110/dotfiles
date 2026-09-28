@@ -164,7 +164,7 @@ def _pending(repository: str) -> int:
     threads: set[int] = set()
     for pull_request in _pages(owner, name, _PULL_REQUESTS_QUERY, "pullRequests"):
         number = pull_request.get("number")
-        if type(number) is not int or number <= 0:
+        if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
             raise ValueError("Copilot監査対象のPR番号が不正である")
         review_connection = _connection({"repository": pull_request}, "reviews", None)
         thread_connection = _connection({"repository": pull_request}, "reviewThreads", None)
@@ -183,7 +183,7 @@ def _pending(repository: str) -> int:
                 raise ValueError("Copilot reviewのノードが不正である")
             identifier = review.get("databaseId")
             if _copilot_author(review.get("author")):
-                if type(identifier) is not int or identifier <= 0:
+                if not isinstance(identifier, int) or isinstance(identifier, bool) or identifier <= 0:
                     raise ValueError("Copilot reviewのdatabaseIdが不正である")
                 if str(identifier) not in recorded:
                     reviews.add((number, identifier))
