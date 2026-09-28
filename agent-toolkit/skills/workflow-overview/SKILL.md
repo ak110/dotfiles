@@ -31,4 +31,4 @@ user-invocable: false
 
 process-loopが起動したセッション以外では、別セッションのprocess-loopが並行して稼働している前提で対象と状態遷移を調べる。対策を検討するときは、常駐処理、子セッションのメイン、レーン担当、手動起動のセッションのどれに作用するかを特定する。各利用形態から対策へ到達できるか、利用者の操作が増えるかを比べる。
 
-WI作成、計画、実行、実行後レビューの責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`が定める。
+WI作成、計画、実行、実行レビューの責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`が定める。

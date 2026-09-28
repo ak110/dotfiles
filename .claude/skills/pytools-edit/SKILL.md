@@ -39,7 +39,7 @@ description: >
   工程の生成物はchezmoiの管理外であり、登録しないと旧生成物が配布先に残り続ける
 - `rust/`配下の配置の単位は`rust/<クレート名>/`のCargoクレートとする。
   記述作法は`agent-toolkit:writing-standards`の`references/rust.md`が定める。
-  `make test`は`rust/`配下を対象に含まないため、変更したクレートで`cargo fmt --check`、`cargo clippy`及び`cargo test`を近接検証として実行する。
+  `make test`は`rust/`配下を対象に含まないため、変更したクレートで`cargo fmt --check`、`cargo clippy`及び`cargo test`を変更範囲の検証として実行する。
   CIでは`rust-lint` jobが同等の検証を担う。
   配布版数の更新要求は`dotfiles-release`が定め、本書へ再掲しない
 

@@ -427,9 +427,23 @@ PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
     "目的",
     "先行依存",
     "統合順",
-    "近接検証",
+    "変更範囲の検証",
 )
 PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
+    "実装単位",
+    "目的",
+    "先行依存",
+    "統合順",
+    "変更範囲の検証",
+)
+PLAN_LEGACY_CURRENT_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
+    "単位ID",
+    "目的",
+    "先行依存",
+    "統合順",
+    "近接検証",
+)
+PLAN_LEGACY_CURRENT_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
     "実装単位",
     "目的",
     "先行依存",
@@ -451,8 +465,10 @@ PLAN_VERIFICATION_TABLE_HEADER: tuple[str, ...] = ("区分", "検証コマンド
 PLAN_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("レーン内検証", "統合後検証")
 """`## 検証区分`が持つ固定2行2列表。行は`レーン内検証`・`統合後検証`の順で固定する。"""
 
-PLAN_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("近接検証",)
+PLAN_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("変更範囲の検証",)
 """現行の`## 検証`が持つ固定行。"""
+PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("近接検証",)
+"""進行中の既存計画を読む場合だけ受理する旧名の1行表。"""
 PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("近接検証", "全体検証")
 """進行中の既存計画を読む場合だけ受理する行。"""
 

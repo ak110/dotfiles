@@ -29,20 +29,20 @@ description: >
     自動修正が必要な場合は`make format`（`uv run --frozen pyfltr fast`）を使う
   - 特定ファイルに限定する場合はMCP経由の`run`へそのファイルのパスを渡す。
     MCPを利用できない場合は`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。
-    初回の近接検証では、変更ファイルに適用できるチェックを全て動かすため、MCPの`commands`とCLIの`--commands`を指定しない。
+    初回の変更範囲の検証では、変更ファイルに適用できるチェックを全て動かすため、MCPの`commands`とCLIの`--commands`を指定しない。
     `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言を変更した場合は、変更ファイルとともに`agent-toolkit/agent_toolkit/_hooks/message_language_test.py`を対象へ加える。変更した挙動に対応するhook固有の`<hook名>_test.py`も加える。
     デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
-  - 初回の近接検証で失敗したチェックを修正後に再実行する時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
+  - 初回の変更範囲の検証で失敗したチェックを修正後に再実行する時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
   - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新又はその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
-  - 検証は変更ファイルに対応する近接検証を先に実行する。公開前の全体検証はCIへ委ね、ローカルでは次の4件を実行する。CIの成功を確認して全体検証の結論を確定する
+  - 検証は変更ファイルに対応する変更範囲の検証を先に実行する。公開前の全体検証はCIへ委ね、ローカルでは次の4件を実行する。CIの成功を確認して全体検証の結論を確定する
     - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
-    - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの近接検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
-    - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず、`agent-toolkit/`を含むリポジトリ全体を対象にする。名前を削除・改名したモジュールに追随していない未変更のテストや呼び出し元は、変更ファイルだけを対象とする近接検証では検出できないため、Pythonファイルを変更するレーンでは、計画担当が計画の`近接検証`行へ含める。あわせてaridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
+    - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの変更範囲の検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
+    - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず、`agent-toolkit/`を含むリポジトリ全体を対象にする。名前を削除・改名したモジュールに追随していない未変更のテストや呼び出し元は、変更ファイルだけを対象とする変更範囲の検証では検出できないため、Pythonファイルを変更するレーンでは、計画担当が計画の`変更範囲の検証`行へ含める。あわせてaridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
     - 全追跡ファイルの参照解決: `uv run --frozen pytest -p no:cacheprovider scripts/agent_toolkit_reference_test.py`。変更ファイルの外に残る未解決参照を検出するため、aridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
     - `make test`が実行するツール集合はCIの`python-lint (3.14)`ジョブとほぼ同じである。差分は同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
       次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
@@ -51,7 +51,6 @@ description: >
       - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
       - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
       - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
-  - 局所変更の即時公開は`agent-toolkit:process-wi`「局所変更の即時公開」に従う
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
     - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する

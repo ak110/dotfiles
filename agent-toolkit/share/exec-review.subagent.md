@@ -1,7 +1,7 @@
 # 実行レビュータスク
 
 実装済み差分を要件・外部仕様の水準で1段階レビューする。最初に`agent-toolkit:review-standards`の`references/reviewer.md`を全文読み、同書の「実行レビューの判定」を適用する。担う範囲はレビューに限る。実装と修正は呼び出し元が別の主体へ委ねる。
-実行後レビューの入力、責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
+実行レビューの入力、責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 完了報告とレビュー指摘管理表は日本語で書く。固定された識別子と返却値は指定どおりに扱う。
 
 ## 入力

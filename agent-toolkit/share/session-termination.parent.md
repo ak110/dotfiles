@@ -12,7 +12,7 @@
 `agents_server`の`start`で終端担当を1件起動する。
 `subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`を解決した絶対パスを渡す。
 `extra_params`には`## 渡す入力`の名前付き入力、`cwd`には対象リポジトリの絶対パスを渡す。新しい設定キーを追加せず、既存のキーの範囲で渡す。
-同じセッションでは再度起動しない。
+起動は同じセッションで1回とする。
 
 ## 起動前の前提
 
@@ -26,9 +26,6 @@
 - 固有の終端工程がある場合だけ、`固有の終端工程`として対象と依存順。長時間工程の待機対象と、親が別の実行主体へ渡して並行開始する工程を区別する。後者は情報として示し、終端担当の実行対象から外す
 - 延期adoptがある場合だけ、`延期adopt`として対象AWIファイル名、先行する終端工程及び`deferred_adopt_commits`で検収した実装commitのOID又は実装差分が無い項目の空文字列
 - `公開対象のadopt済みAWI`: この公開に含むcommitが終端したAWIファイル名の集合。該当項目がある場合だけ渡し、WI状態変更の入力にはしない
-- `検証・CI方針`: 通常は`通常`。`agent-toolkit:process-wi`の「局所変更の即時公開」が成立する場合だけ`即時対応`
-- `近接検証結果`: `即時対応`では成功したコマンドと終了コード。`通常`では`なし`
-- `後続処置AWI`: 未完了の独立した後続処置を登録した場合はそのAWIのファイル名。それ以外は`なし`。これは終端担当の報告入力であり、延期`adopt`の対象へ加えない
 - `引き継ぎ記録先`: セッション領域（`agent-toolkit:managed-temp`）の直下のファイルの絶対パスへ`（新規）`を続けた値
 
 対象リポジトリ、ベースbranch名、プロジェクト規範は受信者が`cwd`とGitから解決する。権限は受信者の固定タスク契約を用いる。直前push OID、固有の終端工程、延期adopt及び公開対象のadopt済みAWIの既定値は`なし`とし、既定値と一致する行は省く。
@@ -38,9 +35,8 @@
 `終端完了`に続く8行を受領し、次のとおり確認する。確認の入力は受領した8行と現在のGit状態とし、成果物と実装差分の再読解をしない。`deferred_adopted`の値はJSON parserで文字列配列として検証し、不正JSON、配列以外又は文字列以外の要素を返却契約の不成立とする。いずれかが一致しない場合は同じ終端担当へ差し戻す。
 
 - `git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
-- 通常公開の全体検証を次の条件で確認する。`検証・CI方針`が`通常`の場合、`overall_verification`が`CI判定`又は`ローカル成功`のいずれかだけである。`terminal_steps`が`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「出力」の同項目が定める記載条件を満たす
-- 通常公開のCI結果を次の条件で確認する。`検証・CI方針`が`通常`の場合、`ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
-- 即時対応の返却を次の条件で確認する。`検証・CI方針`が`即時対応`の場合、`overall_verification`が起動時に渡した近接検証の成功を挙げ、`ci_result`が`待機省略`とCIのrun URLを挙げ、`terminal_steps`が省略した全体検証と後続処置AWIを挙げる
+- 全体検証を確認する。`overall_verification`は`CI判定`又は`ローカル成功`のいずれかだけを受理し、`terminal_steps`は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「出力」の同項目が定める記載条件を満たす
+- `ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
 - `ci_verified_head`と`final_branch_head`が異なり、`final_branch_head`自体のCI成功を前項で検収していない場合は、両方を7文字以上の一意な短縮OIDのまま対象リポジトリのGitコマンドへ渡す。
   `final_branch_head`がマージcommitなら、第1親を`<final_branch_head>^1`として参照し、
   差分commitを`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head> --not <final_branch_head>^1`で取得する。
@@ -53,14 +49,8 @@
   - 同じ終端担当への差し戻しでも`公開済み`にならない場合は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節が定めるUWIの登録へ送る
 - `version`が`bump不要`でない場合は、対象リポジトリの版数規範が定める定義ファイルの版数がその値と一致する
 - `terminal_steps`が、起動文で終端担当の実行対象とした固有の終端工程を過不足なく挙げる。並行開始する工程の完了は、その担当主体の返却から別に検収する
-- `deferred_adopted`のファイル名集合を、起動時にOID又は空文字列を対応付けた延期`adopt`対象の集合と、空集合の場合も含めて比較する。後続処置AWIだけを渡して延期`adopt`が空なら`[]`だけを受理する。同じAWI名が両入力にある場合も、延期`adopt`側の明示入力で一致を確かめる
+- `deferred_adopted`のファイル名集合を、起動時にOID又は空文字列を対応付けた延期`adopt`対象の集合と、空集合の場合も含めて比較する
 - 延期`adopt`対象がある場合だけ、集合一致の後に全対象のファイル名を渡して`atk wi show <ファイル名>... --target-repo=<対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行が全件`adopted`であることを確認する。状態フォルダーの全件取得は、終端項目が累積し続けるため使わない。出力量を抑える場合は`--output-file`へこの工程が所有する管理対象一時領域の絶対パスを渡し、保存したファイルの見出し行を読む
-
-```text
-後続処置AWI=A.md、延期adoptなし: `deferred_adopted: []`。
-後続処置AWI=A.md、延期adopt=A.mdとOIDの組: `deferred_adopted: ["A.md"]`。
-後続処置AWIなし、延期adopt=B.mdと空文字列の組: `deferred_adopted: ["B.md"]`。
-```
 
 全ての確認が完了した後は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節へ戻る。
 検収した公開状態の4項目を同節へ渡す。間に主作業ツリー若しくは対象refの変更又は外部更新が観測された場合は、同節に従って現在状態を取得し直す。
