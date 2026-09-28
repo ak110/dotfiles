@@ -12,6 +12,10 @@ import pathlib
 import re
 import subprocess
 
+import pytest
+
+pytestmark = pytest.mark.repo_invariant
+
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
 _SKILL_INVOCATION_PATTERN = re.compile(rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:([A-Za-z0-9][A-Za-z0-9_-]*)")

@@ -174,7 +174,10 @@ addopts = [
     # --dist=loadfileでは最大テストファイルの実行時間が全体の下限になるため、本方式を指定する
     "--dist=worksteal",
 ]
-markers = ["browser: Chromiumを使う実ブラウザー統合テスト"]
+markers = [
+    "browser: Chromiumを使う実ブラウザー統合テスト",
+    "repo_invariant: 変更ファイルと無関係に全追跡ファイルまたは全ソースを走査する不変条件テスト",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"

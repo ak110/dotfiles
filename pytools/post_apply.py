@@ -143,6 +143,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("agents/careful-followup-reviewer.md"),
         # 現在のスキル名は refine-prompt。配布先から旧スキルディレクトリを削除する。
         Path("skills/empirical-prompt-tuning"),
+        # 2つのスキルはagent-toolkit pluginへ移設したため、dotfiles側の旧配布先を削除する。
+        Path("skills/refine-prompt"),
+        Path("skills/export-session"),
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先を削除する。
         Path("skills/session-review"),
         Path("skills/session-review-dotfiles"),
@@ -196,6 +199,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 旧配布先リンクを除去する。
         Path("skills/plan-impl"),
         Path("skills/plan-codex-review"),
+        # 2つのスキルはagent-toolkit pluginへ移設したため、旧リンクを削除する。
+        Path("skills/refine-prompt"),
+        Path("skills/export-session"),
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先リンクを除去する。
         Path("skills/session-review"),
         Path("skills/session-review-dotfiles"),

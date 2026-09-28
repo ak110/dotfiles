@@ -12,7 +12,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import agents_wait, record_paths, state, status_file
+from agent_toolkit._agents_server import agents_wait, logs_export, record_paths, state, status_file
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import output_file as _output_file
@@ -41,7 +41,17 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     show = _help.add_command(sub, "show", **_help.HELP["atk agents show"])
     show.add_argument("session_id", help="表示するsession識別子。")
     logs = _help.add_command(sub, "logs", **_help.HELP["atk agents logs"])
-    logs.add_argument("session_id", help="記録を表示するsession識別子。")
+    logs.set_defaults(error_parser=logs)
+    logs.add_argument("session_id", nargs="?", help="単一の記録を表示するsession識別子。")
+    scope = logs.add_mutually_exclusive_group()
+    scope.add_argument("--all", dest="all_sessions", action="store_true", help="全プロジェクトの記録を選ぶ。")
+    scope.add_argument("--project-dir", type=pathlib.Path, help="指定した作業ディレクトリの記録を選ぶ。")
+    logs.add_argument("--latest", type=int, help="一括対象を開始日時の新しい順にN件へ限る。")
+    logs.add_argument("--format", choices=("text", "markdown"), default="text", help="出力形式。既定はtext。")
+    logs.add_argument("--output-dir", type=pathlib.Path, help="記録を1件1ファイルで保存するディレクトリ。")
+    logs.add_argument("--include-thinking", action="store_true", help="markdownへ思考ブロックを含める。")
+    logs.add_argument("--include-subagents", action="store_true", help="markdownの親記録へサブエージェントを含める。")
+    logs.add_argument("--no-tool-details", action="store_true", help="markdownのツール呼び出しを1行へ簡略化する。")
     logs.add_argument("--follow", action="store_true", help="新着の記録を表示し続ける。Ctrl-Cで終了する。")
 
 
@@ -128,7 +138,27 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             print(_dump({"sessions": [_without_prompt(session) for _, sessions in groups for session in sessions]}, env))
         return 0
     if args.agents_subcommand == "logs":
-        return _show_logs(args.session_id, follow=args.follow)
+        selected = sum((args.session_id is not None, args.all_sessions, args.project_dir is not None))
+        if selected != 1:
+            args.error_parser.error("session_id、--all、--project-dirのいずれか1つを指定してください。")
+        if args.latest is not None and (args.latest < 1 or args.session_id is not None):
+            args.error_parser.error("--latestには一括対象と1以上の件数を指定してください。")
+        if args.follow and (args.session_id is None or args.format != "text" or args.output_dir is not None):
+            args.error_parser.error("--followは単一sessionのtext標準出力でだけ指定できます。")
+        if args.format == "text" and (args.include_thinking or args.include_subagents or args.no_tool_details):
+            args.error_parser.error("内容の制御オプションには--format markdownを指定してください。")
+        if args.session_id is not None and args.format == "text" and args.output_dir is None:
+            return _show_logs(args.session_id, follow=args.follow)
+        return logs_export.export_logs(
+            session_id=args.session_id,
+            project_dir=args.project_dir,
+            latest=args.latest,
+            output_format=args.format,
+            output_dir=args.output_dir,
+            include_thinking=args.include_thinking,
+            include_subagents=args.include_subagents,
+            tool_details=not args.no_tool_details,
+        )
     if root_session_id is None:
         root_session_id = status_file.find_root_session_id_for_session(args.session_id)
     sessions = [] if root_session_id is None else _load_sessions(root_session_id)

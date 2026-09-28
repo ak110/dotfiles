@@ -38,7 +38,6 @@ dependencies = [
 astra = "pytools.claude_launcher:main_astra"
 check-image-sizes = "pytools.check_image_sizes:main"
 ccommit = "pytools.claude_commit:main"
-claude-session-export = "pytools.claude_session_export:main"
 claudize = "pytools.claudize:main"
 clonedir = "pytools.clonedir:main"
 codexize = "pytools.codexize:main"
@@ -374,7 +373,10 @@ addopts = [
     # module scopeのfixtureが1件のみで順序依存が無いことを確認したうえで本方式へ変更した
     "--dist=worksteal",
 ]
-markers = ["browser: Chromiumを使う実ブラウザー統合テスト"]
+markers = [
+    "browser: Chromiumを使う実ブラウザー統合テスト",
+    "repo_invariant: 変更ファイルと無関係に全追跡ファイルまたは全ソースを走査する不変条件テスト",
+]
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"

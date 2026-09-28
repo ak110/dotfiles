@@ -33,7 +33,7 @@ class SessionRecord:
 
 
 def find_session_record(session_id: str, *, codex_home: pathlib.Path | None = None) -> SessionRecord | None:
-    """委譲先sessionの記録をClaude Code、Codex、Antigravityの順に探す。
+    """記録をClaude Codeの親・サブエージェント、Codex、Antigravityの順に探す。
 
     Args:
         session_id: 委譲先のsession識別子。英数字・`_`・`-`以外を含む場合は探索しない。
@@ -53,6 +53,14 @@ def find_session_record(session_id: str, *, codex_home: pathlib.Path | None = No
         )
         if claude_paths:
             return SessionRecord("claude", claude_paths)
+        if re.fullmatch(r"agent-[0-9a-fA-F]+", session_id):
+            child_paths = tuple(
+                path
+                for path in sorted(claude_projects.glob(f"*/*/subagents/{session_id}{session_records.RECORD_SUFFIX}"))
+                if path.is_file()
+            )
+            if child_paths:
+                return SessionRecord("claude", child_paths)
     codex_sessions = (codex_home if codex_home is not None else session_records.default_codex_home()) / "sessions"
     if codex_sessions.is_dir():
         codex_paths = tuple(

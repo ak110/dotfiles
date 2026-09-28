@@ -915,9 +915,11 @@ class TestIsPendingAsyncWork:
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
         assert is_pending_async_work(str(transcript), "") is True
 
-    @pytest.mark.parametrize("operation", ["enqueue", "remove"])
-    def test_queue_operation_completion_completes_grandchild(self, tmp_path: pathlib.Path, operation: str) -> None:
-        """最上位`queue-operation`のenqueue・remove完了通知で孫Agentを相殺する。"""
+    @pytest.mark.parametrize(("operation", "pending"), [("enqueue", True), ("remove", False)])
+    def test_queue_operation_completion_completes_grandchild(
+        self, tmp_path: pathlib.Path, operation: str, pending: bool
+    ) -> None:
+        """完了突合後も投入だけの通知は配送待ちとして保つ。"""
         entries = [
             _user_entry("hello"),
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
@@ -935,7 +937,50 @@ class TestIsPendingAsyncWork:
             _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is pending
+
+    @pytest.mark.parametrize(
+        ("operations", "pending"),
+        [
+            (("enqueue",), True),
+            (("enqueue", "dequeue"), False),
+            (("enqueue", "remove"), False),
+            (("enqueue", "enqueue", "dequeue"), True),
+            (("dequeue", "enqueue"), True),
+        ],
+    )
+    def test_queued_notification_tracks_delivery_order(
+        self,
+        tmp_path: pathlib.Path,
+        operations: tuple[str, ...],
+        pending: bool,
+    ) -> None:
+        """投入・先頭配送・同じ本文の除去から未配送の通知を判定する。"""
+        entries = [_user_entry("続き")]
+        for operation in operations:
+            if operation == "dequeue":
+                entries.append({"type": "queue-operation", "operation": "dequeue"})
+            else:
+                entries.append(_queue_operation_task_notification_entry(operation, tool_use_id="toolu_done"))
+        entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "queued-order", background_tasks=[]) is pending
+
+    def test_non_notification_enqueue_still_occupies_fifo(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """通知以外の先行項目を配送しても、後ろの完了通知はキューへ残る。"""
+        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        entries = [
+            {"type": "queue-operation", "operation": "enqueue", "content": {"kind": "other"}},
+            _queue_operation_task_notification_entry("enqueue", tool_use_id="toolu_done"),
+            {"type": "queue-operation", "operation": "dequeue"},
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "queued-source", background_tasks=[]) is True
+        log_path = tmp_path / "claude-agent-toolkit-stop-queued-source.log"
+        assert "source=queued_notification" in log_path.read_text(encoding="utf-8")
 
     def test_missing_child_transcript_preserves_top_level_decision(self, tmp_path: pathlib.Path) -> None:
         """子記録ディレクトリが無い場合も、最上位の起動・完了判定を維持する。"""
@@ -1026,6 +1071,8 @@ class TestIsPendingAsyncWork:
                 tool_use_id="toolu_grandchild_other",
                 task_id="local-other-id",
             ),
+            {"type": "queue-operation", "operation": "dequeue"},
+            {"type": "queue-operation", "operation": "dequeue"},
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         child_entries = [

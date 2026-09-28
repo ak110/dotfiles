@@ -233,9 +233,25 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk agents show <session_id>",
     },
     "atk agents logs": {
-        "summary": "指定sessionの会話記録を表示・追尾する",
-        "description": "目的: 委譲sessionの発話と操作を時系列で読む。\n利用場面: 一覧からsessionを選んで進行状況を調べるとき。\n対象と出力: Claude Code・Codexの保存記録、またはagents_serverが保存したAntigravityのJSON出力を読み、時刻、種別、本文を表示する。`--follow`を指定すると新着行を表示し続ける。\n前提: 指定sessionのローカル記録が存在し、読取権限を持つ。終了にはCtrl-Cを使う。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": "実行例:\n\n  atk agents logs <session_id>\n  atk agents logs <session_id> --follow",
+        "summary": "Claude CodeとCodexの会話記録を表示・markdown出力する",
+        "description": (
+            "目的: 保存済みセッションの発話と操作を読み、markdownへ出力する。\n"
+            "利用場面: 1件の経過を調べるか、複数の記録をまとめて保存するとき。\n"
+            "対象と出力: Claude Codeの親・サブエージェント、Codex、agents_serverが保存したAntigravityの出力を扱う。"
+            "単一IDの既定は時刻・種別・本文のtext表示とし、`--format markdown`では会話とツールの詳細を描画する。"
+            "`--all`と`--project-dir`はClaude Codeの親とCodexの記録を一括選択し、`--output-dir`は1件1ファイルへ保存する。\n"
+            "前提: ローカル記録の読取権限を持つ。Antigravityを直接起動した会話DBは対象外。"
+            "`--follow`は単一IDのtext表示でだけ使い、Ctrl-Cで終了する。\n"
+            "復元・後始末: 出力ファイルは上書きせず、不要なら利用者が保存先から削除する。"
+        ),
+        "epilog": (
+            "実行例:\n\n"
+            "  atk agents logs <session_id>\n"
+            "  atk agents logs <session_id> --format markdown\n"
+            "  atk agents logs --all --format markdown --output-dir /path/to/exports\n"
+            "  atk agents logs --project-dir /path/to/project --latest 3 --format markdown\n"
+            "  atk agents logs <session_id> --follow"
+        ),
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",

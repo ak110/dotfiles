@@ -49,6 +49,7 @@ SubagentStop判定ではsidechainを含める。
 """
 
 import collections.abc
+import contextlib
 import json
 import os
 import pathlib
@@ -56,6 +57,7 @@ import re
 import sys
 import tempfile
 import time
+from collections import deque
 
 from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_rotate_and_append
 
@@ -207,6 +209,7 @@ def is_pending_async_work(
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
       `CronCreate`・`Monitor`、または`Bash`かつ`input.run_in_background == true`）
     - 未完了のbackground task（Agent・Bash・SendMessage背景再開・MCP）が存在する
+    - 最上位transcriptのキューへ投入され、モデルへまだ配送されていない完了通知が存在する
     - 呼出主体がまだ回収していないagents_serverの終端結果がセッション状態に存在する
 
     Stop入力の`background_tasks`に有効な非`teammate` taskがあれば、無効な要素の混在に
@@ -273,6 +276,7 @@ def is_pending_async_work(
     host_reported_remainder = host_reported_launched - completed
     unreported_remainder = remainder - host_reported_remainder
     payload_valid, payload_non_teammate, payload_authoritative = _describe_background_tasks(background_tasks)
+    queued_notification = _has_queued_task_notification(entries)
     pending_observation = _has_pending_owned_observation(session_state, owner_agent_id)
     pending_sources: list[str] = []
     if payload_non_teammate:
@@ -283,6 +287,8 @@ def is_pending_async_work(
         pending_sources.append("transcript")
     if unreported_remainder:
         pending_sources.append("transcript_unreported")
+    if queued_notification:
+        pending_sources.append("queued_notification")
     if pending_observation:
         pending_sources.append("agents_server_observation")
     source = "+".join(pending_sources) if pending_sources else "none"
@@ -291,6 +297,7 @@ def is_pending_async_work(
         or payload_non_teammate
         or (host_reported_remainder and not payload_authoritative)
         or unreported_remainder
+        or queued_notification
         or pending_observation
     )
     last_tool = _describe_last_tool_use(last_tool_use)
@@ -817,6 +824,24 @@ def _extract_queue_operation_notification_ids(
             )
         )
     return result
+
+
+def _has_queued_task_notification(entries: list[dict]) -> bool:
+    """最上位transcriptのキューに配送待ちの完了通知が残る場合に真を返す。"""
+    queue: deque[object] = deque()
+    for entry in entries:
+        if entry.get("type") != "queue-operation" or not _entry_in_scan_scope(entry, include_sidechain=False):
+            continue
+        operation = entry.get("operation")
+        if operation == "enqueue":
+            queue.append(entry.get("content"))
+        elif operation == "dequeue":
+            if queue:
+                queue.popleft()
+        elif operation == "remove":
+            with contextlib.suppress(ValueError):
+                queue.remove(entry.get("content"))
+    return any(isinstance(content, str) and "<task-notification>" in content for content in queue)
 
 
 def _collect_nested_agent_launches(

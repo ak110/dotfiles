@@ -30,7 +30,6 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete EcoUtilitie
 complete -o nospace -o default -o bashdefault -F _python_argcomplete astra
 complete -o nospace -o default -o bashdefault -F _python_argcomplete ccommit
 complete -o nospace -o default -o bashdefault -F _python_argcomplete check-image-sizes
-complete -o nospace -o default -o bashdefault -F _python_argcomplete claude-session-export
 complete -o nospace -o default -o bashdefault -F _python_argcomplete claudize
 complete -o nospace -o default -o bashdefault -F _python_argcomplete clonedir
 complete -o nospace -o default -o bashdefault -F _python_argcomplete codexize

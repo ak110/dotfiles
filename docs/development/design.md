@@ -250,6 +250,7 @@ session識別子は`--output-format stream-json`が返す`init`イベントの�
 人が`atk agents list`から選んだsessionの進行を読むため、backendは解析済みの公開JSONイベントを
 ルートsessionの状態ディレクトリ内にある`logs/<session-id>.jsonl`へ順に追記する。
 `atk agents logs`はClaude Code・Codexの既存記録と同じ表示処理で読み、`--follow`では追記分を表示する。
+保存済みの記録をmarkdownへ変換する場合も同じコマンドを使う。単一識別子に加え、作業ディレクトリまたは全件を選び、開始日時の新しい順で件数を限定する。1件1ファイルの保存では日時名の衝突を識別子で解消し、既存ファイルを上書きしない。Claude Codeの親記録にサブエージェントの会話を含めるか、思考とツール詳細を出力するかは呼び出し時に指定する。
 識別子から記録を探す処理は`agent-toolkit/agent_toolkit/_agents_server/record_paths.py`へ置き、`atk agents logs`と振り返りの証拠抽出器が共有する。
 保持と期限回収は状態ディレクトリの7日契約に従う。
 Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力には使わない。
