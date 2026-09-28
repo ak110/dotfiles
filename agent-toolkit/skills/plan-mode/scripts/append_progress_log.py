@@ -57,6 +57,8 @@ def _resolve_start_head(revision: str) -> str:
         ["git", "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if commit.returncode != 0 or not commit.stdout.strip():
@@ -65,6 +67,8 @@ def _resolve_start_head(revision: str) -> str:
         ["git", "rev-parse", "--verify", "--short=7", commit.stdout.strip()],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if shortened.returncode != 0 or not shortened.stdout.strip():

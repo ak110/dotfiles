@@ -393,6 +393,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
 def _is_japanese_notice(text: str) -> bool:
     """通知の自然言語部分が日本語だけで構成される場合に真を返す。"""
     body = re.sub(r"</?agent-toolkit-auto-inserted(?:\s[^>]*)?>", "", text)
+    body = re.sub(r"判定対象の冒頭: 「[^\n]*」", "", body)
     body = re.sub(r"(?m)^\s*(?:warn|warning|block|blocked):\s*", "", body)
     body = re.sub(r"(?m)^\s*Fix:\s*", "", body)
     body = re.sub(r"\{[^{}]*\}", "", body)
@@ -412,6 +413,9 @@ def _is_japanese_notice(text: str) -> bool:
         ("{tool_name}による編集で対象を確認する。対象: {file_path}", True),
         ("{tool_name}による編集で Retry.", False),
         ("`pkill`／`killall`は使わない。", True),
+        ("日本語の通知。\n判定対象の冒頭: 「English response.」", True),
+        ("日本語の通知。判定対象の冒頭: 「English response.」", True),
+        ("English notice.\n判定対象の冒頭: 「日本語の応答。」", False),
     ],
 )
 def test_japanese_notice_judgment(text: str, expected: bool) -> None:
