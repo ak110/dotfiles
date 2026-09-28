@@ -197,7 +197,7 @@ def _render_turn(
     heading_level: int,
     tool_details: bool,
 ) -> None:
-    """1ターンの本文を元のイベント順に出す。"""
+    """1ターンの本文を元のイベント順に出力する。"""
     lines.extend(["---", "", f"{'#' * heading_level} {role}", ""])
     for event in events:
         if event.kind in {"user", "assistant"} and event.text:

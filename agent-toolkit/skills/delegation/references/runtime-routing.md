@@ -51,7 +51,7 @@ forkの観測記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 各工程の起動文書と段位は、その工程の起動節に明記する。`atk config show`と`atk config get`は設定値を返し、Codex系列名の解決は委譲の起動時に行う。`show`は候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合、その設定キーと候補を標準エラーへ警告として書く。
 
-設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`、`codex`または`agy`とする。
+設定値の書式は`<engine>:<model>[/<effort>]`とする。`engine`には`claude`、`codex`、`agy`のいずれかを指定する。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で、agyは起動・turnの失敗で次の候補へ進む。
 上表の未設定時の実効値は、`codex-balanced`プリセットが各キーに割り当てる候補列とする。effort省略時は`medium`とする。
 `codex:astra`、`codex:sol`、`codex:terra`、`codex:luna`はCodex App Serverの`model/list`を全ページ取得し、表示対象の同系列で数値バージョンが最新の完全IDへ起動時に解決する。選んだモデルが指定effortを受理しない場合、系列が一覧に無い場合または一覧取得に失敗した場合は理由を示して停止し、推測したIDや旧版への暗黙の置換は行わない。モデルの試行起動は解決の手段に使わない。バージョン付きのCodex完全IDは固定指定として保持する。Claudeとagyの候補、およびCodex完全IDの実行時の受理可否は各engineへ委ねる。

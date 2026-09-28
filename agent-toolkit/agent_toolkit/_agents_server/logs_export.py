@@ -35,7 +35,7 @@ def export_logs(
     include_subagents: bool,
     tool_details: bool,
 ) -> int:
-    """公開CLIの選択条件で記録を読み、標準出力か1件1ファイルへ出す。"""
+    """公開CLIの選択条件で記録を読み、標準出力か1件1ファイルへ出力する。"""
     if session_id is not None:
         selected = record_paths.find_session_record(session_id)
         if selected is None:
