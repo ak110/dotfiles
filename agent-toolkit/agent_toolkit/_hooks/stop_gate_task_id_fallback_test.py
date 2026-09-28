@@ -171,9 +171,11 @@ class TestAttachmentTaskIdFallbackCompletion:
 class TestNestedAgentTaskIdFallbackCompletion:
     """孫Agentの`queue-operation`完了通知を`<task-id>`だけで突合する。"""
 
-    @pytest.mark.parametrize("operation", ["enqueue", "remove"])
-    def test_task_id_only_queue_operation_completes_grandchild(self, tmp_path: pathlib.Path, operation: str) -> None:
-        """子記録から収集した孫のagent ID対応表でtask-id単独通知を解決する。"""
+    @pytest.mark.parametrize(("operation", "pending"), [("enqueue", True), ("remove", False)])
+    def test_task_id_only_queue_operation_completes_grandchild(
+        self, tmp_path: pathlib.Path, operation: str, pending: bool
+    ) -> None:
+        """task-id単独通知を解決し、投入だけなら配送待ちも残す。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -185,7 +187,7 @@ class TestNestedAgentTaskIdFallbackCompletion:
             _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is pending
 
 
 class TestMcpBackgroundTaskCompletion:

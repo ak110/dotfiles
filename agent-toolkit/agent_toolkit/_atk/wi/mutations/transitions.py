@@ -297,7 +297,7 @@ def _apply_transition(
     commit_values: dict[pathlib.Path, _CommitMetadata | None],
     cooldown_days: int | None,
 ) -> None:
-    """検証済みエントリを削除又は目的状態へ移動する。"""
+    """検証済みエントリを削除または目的状態へ移動する。"""
     destination_name = {
         "start-processing": WI_STATE_PROCESSING,
         "return-to-inbox": WI_STATE_INBOX,
@@ -361,7 +361,7 @@ def transition_entries(
     skip_remote_sync: bool = False,
     actor_is_agent: bool = False,
 ) -> list[str]:
-    """平引数でエントリの一括状態遷移又は削除を実行する。
+    """平引数でエントリの一括状態遷移または削除を実行する。
 
     `action="remove"`では`actor_is_agent`が真の場合にinboxとholdだけを対象とする。
     偽の場合は全状態を対象とし、`force=False`（既定）でprocessing状態のファイルが
@@ -425,7 +425,7 @@ def transition_entries(
 
 
 def _single_target_repo(target_repo: str | typing.Iterable[str] | None) -> str | None:
-    """`--target-repo`が1個のときだけ当該値を返し、2個以上では`None`を返す。
+    """`--target-repo`が1個のときだけその値を返し、2個以上では`None`を返す。
 
     `--commit`のローカル作業ツリーは単一のリポジトリでしか解決できないため、
     2個以上を指定した実行では現在位置からの解決へ委ねる。
@@ -443,7 +443,7 @@ def _bulk_transition(
     *,
     action: str,
 ) -> list[str]:
-    """`--all`経路で候補を確定し、確認済みの項目へ当該操作を1回のcommitで適用する。"""
+    """`--all`経路で候補を確定し、確認済みの項目へその操作を1回のcommitで適用する。"""
     note = getattr(args, "note", None)
     commit = getattr(args, "commit", None)
     skip_push = getattr(args, "skip_push", False)
@@ -564,7 +564,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
 
 
 def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """start-processingサブコマンド: inboxのAWI又はUWIをprocessing/へ移動しcommit・push。
+    """start-processingサブコマンド: inboxのAWIまたはUWIをprocessing/へ移動しcommit・push。
 
     後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
     （最終処理結果の記録は`adopt`・`reject`側で行う）。
@@ -587,7 +587,7 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
 
 
 def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """holdサブコマンド: 処理可能又は終端した項目をholdへ移動する。"""
+    """holdサブコマンド: 処理可能または終端した項目をholdへ移動する。"""
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="hold")
         if filenames:

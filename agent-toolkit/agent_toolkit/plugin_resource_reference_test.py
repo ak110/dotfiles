@@ -8,6 +8,10 @@
 import pathlib
 import re
 
+import pytest
+
+pytestmark = pytest.mark.repo_invariant
+
 _PREFIX = "${CLAUDE_PLUGIN_ROOT}/"
 _REFERENCE_PATTERN = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./-]*[A-Za-z0-9_/]")
 

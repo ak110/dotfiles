@@ -152,7 +152,7 @@ def test_pending_async_work_resets_count(
     calls: dict[str, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """委譲先又は背景ジョブの完了待ちのターンは無進捗として数えない。"""
+    """委譲先または背景ジョブの完了待ちのターンは無進捗として数えない。"""
     monkeypatch.setattr(busy_loop_guard, "is_pending_async_work", lambda *args, **kwargs: True)
     entries: list[dict] = []
     for index in range(4):

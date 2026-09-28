@@ -337,7 +337,7 @@ def test_claude_answer_without_notes_is_unchanged(tmp_path: pathlib.Path, annota
 
 @pytest.mark.parametrize("annotations", [[], {"質問": "不正"}, {"質問": {"notes": ["不正"]}}])
 def test_claude_answer_ignores_non_string_annotation_notes(tmp_path: pathlib.Path, annotations: object) -> None:
-    """辞書以外又は文字列以外のnotesを自由記述として出力しない。"""
+    """辞書以外または文字列以外のnotesを自由記述として出力しない。"""
     event = _claude_answer_event(tmp_path, {"answers": {"質問": "回答"}, "annotations": annotations})
 
     assert isinstance(event["text"], str)
@@ -535,7 +535,7 @@ def test_main_rejects_ambiguous_or_missing_codex_thread_id(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """親rolloutが0件又は複数件なら証拠不足として終了コード2を返す。"""
+    """親rolloutが0件または複数件なら証拠不足として終了コード2を返す。"""
     thread_id = "22222222-2222-4222-8222-222222222222"
     codex_home = tmp_path / "codex"
 
@@ -2307,7 +2307,7 @@ def test_warn_mode_excludes_plain_warning_lines_from_external_content_tools(
     capsys: pytest.CaptureFixture[str],
     tool_name: str,
 ) -> None:
-    """外部検索及び文書取得の本文にある警告語を実行時警告へ数えない。"""
+    """外部検索および文書取得の本文にある警告語を実行時警告へ数えない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -2659,7 +2659,7 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """警告キーの値又は直接警告辞書の本文だけを抽出し、兄弟の通常本文を除外する。"""
+    """警告キーの値または直接警告辞書の本文だけを抽出し、兄弟の通常本文を除外する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -3185,7 +3185,7 @@ def test_query_modes_keep_warnings_outside_own_invocation(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """自己呼び出しの除外は当該記録に限り、無関係なエントリの警告は照会し続ける。"""
+    """自己呼び出しの除外はその呼び出し記録だけに留め、無関係なエントリの警告は照会し続ける。"""
     command = "python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
     entries = [
         *_self_invocation_entries(command),
@@ -3840,7 +3840,7 @@ def test_stats_sums_codex_last_token_usage_and_pairs_tool_calls(tmp_path: pathli
 def _codex_token_count_entry(timestamp: str, usage: dict[str, int], cumulative: dict[str, int] | None = None) -> dict:
     """Codexの`token_count`エントリを作成する。
 
-    `usage`は当該リクエストの実消費（`last_token_usage`）、`cumulative`はセッション累積
+    `usage`はそのリクエストの実消費（`last_token_usage`）、`cumulative`はセッション累積
     （`total_token_usage`）とする。`cumulative`を省略した場合は同じ値を与える。
     """
     return {
@@ -3923,7 +3923,7 @@ def test_stats_skips_codex_duplicate_token_count_records(tmp_path: pathlib.Path,
 def test_stats_skips_codex_zero_usage_record_after_compact(tmp_path: pathlib.Path, capsys) -> None:
     """compact直後の実消費0のレコードは合計へ影響しない。
 
-    当該レコードは`last_token_usage`の6成分が全て0でありながら`total_token_usage`は直前と同一のため、
+    このレコードは`last_token_usage`の6成分が全て0でありながら`total_token_usage`は直前と同一のため、
     加算対象へ含めると`api_messages`が実際のリクエスト数を上回る。
     """
     cumulative = _codex_usage(100, 80, 5, 20, 10)
@@ -4018,7 +4018,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
 
     `mcpMeta.structuredContent`・JSON文字列型`toolUseResult`は起動`tool_result`へ対応付け、
     同一threadIdへ重複排除する。タスク通知の`<result>`要素だけで到達するthreadIdも収集する。
-    引用UUIDにも対応するrolloutを配置するため、誤って収集した場合は当該スレッドの
+    引用UUIDにも対応するrolloutを配置するため、誤って収集した場合はそのスレッドの
     `stats-agent-thread`が出力され、本テストが失敗する。
     """
     thread_id = "11111111-1111-4111-8111-111111111111"
@@ -4266,7 +4266,7 @@ def _agy_step(step_index: int, step_type: str, state: str, **fields: object) -> 
 def test_agy_delegate_failures_become_candidates_and_stats(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """agyの委譲先の失敗したツール、エラー報告及び失敗終端が候補へ現れ、件数とトークン数が集計へ現れる。"""
+    """agyの委譲先の失敗したツール、エラー報告および失敗終端が候補へ現れ、件数とトークン数が集計へ現れる。"""
     session_id = "a9244465-1577-44a9-a7b0-500b1f976b0e"
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -4843,7 +4843,7 @@ def _write_subagent(directory: pathlib.Path, agent_id: str, entries: list[dict],
 def _write_rollout(codex_home: pathlib.Path, thread_id: str, usages: list[tuple[str, dict[str, int]]]) -> None:
     """`CODEX_HOME`配下へthreadIdに対応するrolloutを書き込む。
 
-    `usages`の各要素は当該リクエストの実消費（`last_token_usage`）とし、
+    `usages`の各要素はそのリクエストの実消費（`last_token_usage`）とし、
     `total_token_usage`にはそこまでの走行合計を与える。
     """
     rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
@@ -5682,7 +5682,7 @@ def test_query_event_is_a_stable_problem_locator(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """既存照会結果の同じ位置から統計、警告、hook通知及び詳細を再取得する。"""
+    """既存照会結果の同じ位置から統計、警告、hook通知および詳細を再取得する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -7503,7 +7503,7 @@ def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, ca
 
 
 def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """block又はwarn以外の区分を持つhook出力は候補へ残らず、区分の種類によらず除外件数へ計上される。"""
+    """blockまたはwarn以外の区分を持つhook出力は候補へ残らず、区分の種類によらず除外件数へ計上される。"""
     candidates, _ = _bundle_candidates_and_evidence(
         tmp_path,
         capsys,

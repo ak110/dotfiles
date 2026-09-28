@@ -887,7 +887,7 @@ def test_edit_entry_to_plan_rejects_invalid_material_set_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """提示素材の欠落、対象外、非最古及び状態混在は変換前に一括拒否する。"""
+    """提示素材の欠落、対象外、非最古および状態混在は変換前に一括拒否する。"""
     notes = _setup_notes(tmp_path)
     (notes / "processing").mkdir()
     names = ("20260827-000000-001.md", "20260827-000000-002.md")

@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["filelock>=3.30", "platformdirs>=4.0"]
 # ///
-"""origin/developの変化又は前回の未完了時にupdate-dotfilesを起動する。"""
+"""origin/developの変化または前回の未完了時にupdate-dotfilesを起動する。"""
 
 import argparse
 import hashlib
@@ -50,7 +50,7 @@ def _git_output(args: list[str], *, label: str) -> str | None:
 
 
 def _update_if_needed(pending_path: pathlib.Path) -> int:
-    """取得元を検証したうえで、上流変更又は未完了の更新を1回実行する。"""
+    """取得元を検証したうえで、上流変更または未完了の更新を1回実行する。"""
     branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"], label="現在branch")
     if branch is None:
         return 1
@@ -120,7 +120,7 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """euryaleの上流変更と未完了の自動更新を直列化して実行する。"""
-    parser = argparse.ArgumentParser(description="origin/developの変化又は前回の未完了時にdotfilesを更新する")
+    parser = argparse.ArgumentParser(description="origin/developの変化または前回の未完了時にdotfilesを更新する")
     parser.parse_args(argv)
     try:
         pending_path, lock_path = _state_paths()

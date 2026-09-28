@@ -35,6 +35,7 @@ let mermaidLoadPromise = null;
 const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";
 const MERMAID_CDN_INTEGRITY = "sha384-xzghz1GQ5u9HCpVskeDPqMsdogD1yvuMQbEK53+wi+G70+6J1AG0L2cfi9PHjDWI";
 const PREVIEW_LOADING_DELAY_MS = 500;
+const MISSING_SELECTION_MESSAGE = "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。";
 let previewGeneration = 0;
 let previewLoadingTimer = null;
 // 画面内の描画順序の逆転は`previewGeneration`で判定する。
@@ -414,14 +415,14 @@ async function refreshHostStatus() {
   }
 }
 
-// fetch中に届いたSSE更新の検出時、単発の見送りだと当該更新が別ホスト由来でも
+// fetch中に届いたSSE更新の検出時、単発の見送りだとその更新が別ホスト由来でも
 // スナップショット全体を破棄してしまい、取りこぼし救済がその1回で終わらない場合に収束が
 // 遅れる。カウンタが安定するまで最大でこの回数だけfetchを繰り返す。
 const HOST_INFO_REFRESH_MAX_ATTEMPTS = 3;
 
 async function refreshHostInfo() {
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  // fetch開始前後でhostInfoEventCounterを比較し、変化していれば当該フェッチのスナップショットは
+  // fetch開始前後でhostInfoEventCounterを比較し、変化していればそのフェッチによるスナップショットは
   // 新しいSSE更新より古い可能性があるため、カウンタが安定するまで取得し直す。上限到達時は
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
@@ -593,7 +594,7 @@ function showPreviewError(message, retry) {
 }
 
 // 一覧の項目は外部操作（計画の保存による別rootへの移動や削除）で消え得る。同じ対象を再試行しても到達しないため、
-// 選択を解除して移動又は削除済みを伝え、一覧を取り直す。
+// 選択を解除して移動または削除済みを伝え、一覧を取り直す。
 function showMissingSelection() {
   selectedHost = null;
   selectedSource = "";
@@ -606,8 +607,12 @@ function showMissingSelection() {
   appliedPreviewHtml = null;
   const status = document.createElement("div");
   status.setAttribute("role", "status");
-  status.textContent = "選択した計画ファイルは移動又は削除されたため表示できません。一覧を更新しました。";
+  status.textContent = MISSING_SELECTION_MESSAGE;
   preview.append(status);
+  const sidebarStatus = document.getElementById("plans-selection-status");
+  sidebarStatus.textContent = MISSING_SELECTION_MESSAGE;
+  sidebarStatus.hidden = false;
+  if (isMobileViewport()) document.getElementById("plans-sidebar").scrollTop = 0;
   void refreshFiles();
 }
 
@@ -641,6 +646,9 @@ async function openFile(host, path, source) {
   selectedHost = host;
   selectedSource = source || "";
   selectedPath = path;
+  const sidebarStatus = document.getElementById("plans-selection-status");
+  sidebarStatus.hidden = true;
+  sidebarStatus.textContent = "";
   const selected = source
     ? files.find(f => f.host === host && fileSource(f) === selectedSource && f.path === path)
     : files.find(f => f.host === host && f.path === path);

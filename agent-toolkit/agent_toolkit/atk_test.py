@@ -984,7 +984,7 @@ def test_note_file_read_error_precedes_environment_changes(
     tmp_path: pathlib.Path,
     invalid_bytes: bytes | None,
 ) -> None:
-    """存在しない又はUTF-8でないメモはprivate-notesの準備前に拒否する。"""
+    """存在しないまたはUTF-8でないメモはprivate-notesの準備前に拒否する。"""
     note_file = tmp_path / "note.txt"
     if invalid_bytes is not None:
         note_file.write_bytes(invalid_bytes)
@@ -1731,7 +1731,7 @@ class TestPrivateNotesMissing:
     """`AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定したパスが不在の場合にexit 1とディレクトリ不在案内を返すこと。
 
     conftestの`_atk_private_notes_env`が全テストへ`AGENT_TOOLKIT_PRIVATE_NOTES=tmp_path/private-notes`を
-    設定するため、当該ディレクトリを作成しない限り「明示指定パスが不在」の分岐（自動生成の対象外）を検証できる。
+    設定するため、このディレクトリを作成しない限り「明示指定パスが不在」の分岐（自動生成の対象外）を検証できる。
     """
 
     def test_exits_with_directory_missing_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -36,7 +36,7 @@ def is_main_agent_context(payload: object, environ: Mapping[str, str] | None = N
 
     in-processのサブエージェントはpayloadの`agent_id`で、`agents_server`が起動した
     委譲先セッションは環境変数の印で除く。
-    通知本文が指示する処置をメインだけが実行できる場合に、当該通知の発火条件として使う。
+    メインだけが通知本文の指示を実行できる場合に、その通知の発火条件として使う。
     処置できない主体が通知を受領すると、差し戻しだけの工程が生じる。
     """
     return resolve_hook_agent_id(payload) == MAIN_AGENT_ID and not is_delegated(os.environ if environ is None else environ)

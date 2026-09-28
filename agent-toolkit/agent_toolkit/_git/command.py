@@ -59,7 +59,7 @@ def output(args: list[str], cwd: str | pathlib.Path) -> str:
 
 
 def optional_output(args: list[str], cwd: str | pathlib.Path, *, timeout: float) -> str | None:
-    """git標準出力を返し、timeout又は非0終了時は`None`を返す。"""
+    """git標準出力を返し、timeoutまたは非0終了時は`None`を返す。"""
     try:
         result = run(args, cwd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -71,7 +71,7 @@ def optional_output(args: list[str], cwd: str | pathlib.Path, *, timeout: float)
 
 
 def lines(args: list[str], cwd: str | pathlib.Path) -> list[str] | None:
-    """git標準出力を行配列で返し、実行不能又は非0終了時は`None`を返す。"""
+    """git標準出力を行配列で返し、実行不能または非0終了時は`None`を返す。"""
     try:
         result = run(args, cwd, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError):

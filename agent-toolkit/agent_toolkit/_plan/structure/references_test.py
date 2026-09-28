@@ -108,7 +108,7 @@ def test_wi_origin_diagnostic_shows_expected_format() -> None:
     ],
 )
 def test_related_wi_rejects_invalid_children(replacement: str, expected: str) -> None:
-    """関連WIの要約欠落、重複及び`なし`との併記を拒否する。"""
+    """関連WIの要約欠落、重複および`なし`との併記を拒否する。"""
     content = _HUMAN_MAIN_CONTENT.replace(
         "- 関連WI:\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
         replacement,

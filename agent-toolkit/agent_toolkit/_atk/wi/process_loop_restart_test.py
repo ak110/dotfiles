@@ -24,7 +24,7 @@ from agent_toolkit._atk.wi.process_loop_test import (
 )
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
-# 上流差分確認は`_run_until_stop`が当該関数自体を差し替えるため公開CLI経由では検証できない。
+# 上流差分確認関数は`_run_until_stop`が差し替えるため、公開CLI経由では検証できない。
 # private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
 _has_upstream_diff = _process_loop._has_upstream_diff  # pylint: disable=protected-access
 _restart_process_loop = _process_loop._restart_process_loop  # pylint: disable=protected-access

@@ -163,7 +163,7 @@ def test_start_and_reply_register_wait_target_for_caller(
     operation: str,
     structured: dict[str, object],
 ) -> None:
-    """開始又は再開したsessionを、PostToolUseの呼出主体の待機対象へ登録する。"""
+    """開始または再開したsessionを、PostToolUseの呼出主体の待機対象へ登録する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -407,7 +407,7 @@ def test_start_without_caller_identity_does_not_register_wait_target(
     owner_session: str | None,
     tool_name: str,
 ) -> None:
-    """呼出主体又はCodex経路を解決できない開始応答は待機対象登録簿へ書き込まない。"""
+    """呼出主体またはCodex経路を解決できない開始応答は待機対象登録簿へ書き込まない。"""
     for name in (
         "AGENT_TOOLKIT_OWNER_SESSION",
         "AGENT_TOOLKIT_DELEGATED_SESSION",
@@ -1343,7 +1343,7 @@ class TestAgentsServerSessionState:
             assert "cwd" not in current["agents_server_sessions"][remote_session_id]
 
     def test_stop_removes_session_record(self, tmp_path: pathlib.Path) -> None:
-        """stop成功応答で当該sessionのエントリーを状態キーから除去する。"""
+        """stop成功応答で対象sessionのエントリーを状態キーから除去する。"""
         sid = "pending-stop"
         remote_session_id = "remote-stop"
         state = {

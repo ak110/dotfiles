@@ -72,7 +72,7 @@ def _check_lane_selection(
             or not isinstance(decision.get("lane"), str)
             or not isinstance(decision.get("awi"), str)
         ):
-            raise ValueError("選定結果のdecisionにawi又はlaneがない")
+            raise ValueError("選定結果のdecisionにawiまたはlaneがない")
         if decision["lane"] == lane:
             expected.append(decision["awi"])
     if not expected:
@@ -213,7 +213,7 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
 
 
 def _classify_skill_references(text: str) -> set[str]:
-    """起動又は呼び出しを指示するスキル参照だけを返す。"""
+    """起動または呼び出しを指示するスキル参照だけを返す。"""
     references: set[str] = set()
     for match in _INLINE_CODE_RE.finditer(text):
         reference = match.group(1)

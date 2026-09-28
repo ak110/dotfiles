@@ -240,7 +240,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         awis: tuple[str, ...],
     ) -> None:
-        """対応するAWIのファイル名の空値、パス区切り文字及び制御文字を拒否する。"""
+        """対応するAWIのファイル名の空値、パス区切り文字および制御文字を拒否する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
 
         with pytest.raises(subject.ManagedTempError, match="awi"):
@@ -560,7 +560,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
         interrupted_state: str,
     ) -> None:
-        """消費途中又は隔離途中の状態が残る対象を別実行の完了として扱わない。"""
+        """消費途中または隔離途中の状態が残る対象を別実行の完了として扱わない。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"interrupted-{interrupted_state}")
         registry = subject._registry_path(target)
@@ -1166,7 +1166,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         mismatch: str,
     ) -> None:
-        """記録から導出できない、又はidentityが異なる隔離先を削除しない。"""
+        """記録から導出できない、またはidentityが異なる隔離先を削除しない。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"quarantine-{mismatch}")
         (target / "keep.txt").write_text("keep", encoding="utf-8")

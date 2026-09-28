@@ -1528,7 +1528,7 @@ def test_bulk_cooldown_rejects_non_awi_like_individual_route(
 
 
 def test_bulk_source_states_cover_transition_explicit_states() -> None:
-    """明示`state`として受理する状態が、当該操作の遷移元状態集合に含まれる。
+    """明示`state`として受理する状態が、その操作の遷移元状態集合に含まれる。
 
     `remove`は呼出主体で値が変わるため、明示`state`の受理範囲と一致する非エージェント環境の値で比較する。
     """

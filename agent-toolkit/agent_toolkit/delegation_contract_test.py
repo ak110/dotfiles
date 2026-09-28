@@ -4,6 +4,10 @@ import collections
 import pathlib
 import re
 
+import pytest
+
+pytestmark = pytest.mark.repo_invariant
+
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
 _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"
@@ -81,7 +85,7 @@ def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str]
 
     ラベルを本文の先頭から最初の区切り文字までとする。区切り文字集合から全角丸括弧の開きを外すと、
     `統合区分`のラベルの直後へ全角丸括弧で候補値を添えた箇条書きについて、ラベルが項目名より長くなり違反として報告される。
-    必須入力名と完全一致するラベルを違反から除く。当該除外を外すと、`必須入力名:`が`対象`と`対象リポジトリ`の双方を持つ
+    必須入力名と完全一致するラベルは違反としない。この扱いをやめると、`必須入力名:`が`対象`と`対象リポジトリ`の双方を持つ
     受信者について、`対象リポジトリ`の箇条書きが`対象`の別名として報告される。
     `` - `<項目名>`: ``の形を機械的に強制しない。強制すると、項目を定義しない条件記述の箇条書きが違反となる。
     """
@@ -225,7 +229,7 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
 
 
 def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> None:
-    """WI鮮度は選定、計画起草及び計画なしレビューへ到達する。"""
+    """WI鮮度は選定、計画起草および計画なしレビューへ到達する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     lane = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")

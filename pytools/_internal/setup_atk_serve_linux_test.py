@@ -143,7 +143,7 @@ class TestRunLauncherDeployment:
         monkeypatch: pytest.MonkeyPatch,
         initial: str | None,
     ) -> None:
-        """ランチャーを新設又は更新し、実行可能化した後に unit を設定する。"""
+        """ランチャーを新設または更新し、実行可能化した後に unit を設定する。"""
         launcher = prepared / ".local" / "bin" / "atk-serve"
         if initial is not None:
             launcher.write_text(initial, encoding="utf-8")

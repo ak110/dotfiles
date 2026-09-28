@@ -30,8 +30,8 @@ def _shared_document_body(name: str) -> str:
 def test_launch_prompts_load_shared_documents() -> None:
     """起動区分ごとに対応する共有文書を読み、委譲先通知と組み合わせて実行時のシステム指示を組み立てる。
 
-    共有文書の文面そのものは`state`モジュールの契約ではなく当該文書側の内容であるため、判定対象にしない。
-    文面をテストへ書き写すと、実装の契約が変わらない改訂でも当該テストが失敗する。
+    共有文書の文面そのものは`state`モジュールの契約ではなくその文書側の内容であるため、判定対象にしない。
+    文面をテストへ書き写すと、実装の契約が変わらない改訂でもこのテストが失敗する。
     """
     notice = _shared_document_body("agents-server-delegate-notice.md")
 

@@ -1247,6 +1247,18 @@ main > .toolbar {
   border-bottom: 1px solid #fecaca;
   font-size: var(--font-size-small);
 }
+#screen-plans #plans-selection-status {
+  padding: 10px 12px;
+  background: #eef2ff;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+@media (min-width: 769px) {
+  #screen-plans #plans-selection-status {
+    display: none;
+  }
+}
 /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
 #screen-plans .host-badge {
   display: none;
@@ -1368,6 +1380,10 @@ main > .toolbar {
     transform: translateX(-100%);
     transition: transform 0.2s ease-out;
     box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+  }
+  /* 失効理由がある一覧は、ドロワーを直ちに全幅で表示する。 */
+  #screen-plans:has(#plans-selection-status:not([hidden])) aside {
+    transition: none;
   }
   #screen-plans.drawer-open aside {
     transform: translateX(0);

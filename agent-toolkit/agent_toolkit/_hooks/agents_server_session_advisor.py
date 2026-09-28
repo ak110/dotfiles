@@ -2,25 +2,25 @@
 
 `start`・`start_explore`・`start_shell`と新しいturnを起こす`send_message`は、委譲先に
 新しい作業を発生させる。実行中turnへの`steered`配送は新しい作業の発生に含めない。
-PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し、
+PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し、
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
 
 判定対象は結果の回収状態ではなく、観測を試みていない作業の有無である。
 観測義務を解消する条件は次の4つとする。
-第1に、`atk agents wait`が待機所有権を保持し、当該sessionを待機対象として登録している間は観測中として扱う。
+第1に、`atk agents wait`が待機所有権を保持し、そのsessionを待機対象として登録している間は観測中として扱う。
 第2に、同コマンドの終了後はPostToolUseが`pending_observation`を解消する。
 第3に、`kill`は結果を意図的に破棄するため同じ状態を解消する。
-第4に、直前の応答が`待機中: <当該session識別子>`の形で当該sessionを待機対象として指す場合は、
-自動再開が当該sessionの結果を受け取る経路が成立しているため解消する。
-本フックは当該sessionの記録を解消済みとして保存し、自動再開で結果を受け取った後のturnの終了でも警告しない。
+第4に、直前の応答が`待機中: <session識別子>`の形でそのsessionを待機対象として指す場合は、
+自動再開がそのsessionの結果を受け取る経路が成立しているため解消する。
+本フックはそのsessionの記録を解消済みとして保存し、自動再開で結果を受け取った後のturnの終了でも警告しない。
 この4項は、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が正しい終端として許容する形を被覆する契約を持つ。
-当該規範が許容する終端の形を変える改訂では、同じ変更単位で本列挙と`evaluate`の除外条件を追随させる。
+この規範が許容する終端の形を変える改訂では、同じ変更単位で本列挙と`evaluate`の除外条件を追随させる。
 実行環境が待機・中断を背景タスクへ移し、
 構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
 一度解消したsessionでも、
 `send_message`が新しい作業を配送すれば再び警告対象になる。
 
-警告は`hookSpecificOutput.additionalContext`で当該ターンを継続させる。
+警告は`hookSpecificOutput.additionalContext`でそのターンを継続させる。
 `stop_hook_active`が真の再呼び出し、payload不正、状態不在・破損時は何も出力せず
 終了を許可し、警告の反復で終了不能になることを避ける。
 
@@ -45,7 +45,7 @@ _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"
     "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
-    "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
+    "観測しないまま終了すると、その作業の成果を回収する主体が残らない。"
 )
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
@@ -54,7 +54,7 @@ _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 _WAITING_DECLARATION_PATTERN = re.compile(r"^待機中:(?P<targets>.*)$", re.MULTILINE)
 
 # session識別子に現れない文字。待機対象の記述を識別子の語へ区切る。
-# 前方一致での照合は別のsessionを指す待機表明で当該sessionの警告まで抑止するため用いない。
+# 前方一致での照合は別のsessionを指す待機表明でそのsessionの警告まで抑止するため用いない。
 _TARGET_SEPARATOR_PATTERN = re.compile(r"[^0-9A-Za-z_-]+")
 
 
@@ -122,7 +122,7 @@ def _held_wait_lock_owners(root_session_id: str) -> list[str]:
 def _registered_wait_targets(root_session_id: str, owner_status_file: str) -> set[str]:
     """待機主体の登録簿に残る待機対象のsession識別子を返す。
 
-    当該登録簿は`atk agents wait`が所有するため、本フックは読むだけで内容を変更しない。
+    この登録簿は`atk agents wait`が所有するため、本フックは読むだけで内容を変更しない。
     """
     directory = status_file.wait_targets_directory(root_session_id, owner_status_file)
     try:

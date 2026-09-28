@@ -844,7 +844,7 @@ def _make_tar(path: pathlib.Path, entries: dict[str, bytes]) -> None:
 
 
 class TestZeroTargetAfterFilter:
-    """フィルタ後の対象件数が 0 件の場合に ``ValueError`` で当該 target をスキップする挙動の検証。
+    """フィルタ後に対象ファイルが 0 件となった入力を ``ValueError`` でスキップする挙動の検証。
 
     3経路 (``_extract_zip`` / ``_extract_with_libarchive`` / ``_copy_filtered``) それぞれで、
     全エントリが ignore 対象になり展開・コピー対象が 0 件になるケースを再現する。

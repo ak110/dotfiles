@@ -53,7 +53,7 @@ def test_build_command_passes_model_effort_and_conversation() -> None:
 
 
 def test_build_command_omits_absent_options() -> None:
-    """モデル、effort、会話識別子を指定しない起動では当該オプションを渡さない。"""
+    """モデル、effort、会話識別子を指定しない起動ではこれらのオプションを渡さない。"""
     command = antigravity.build_command("推敲して", None, None, None)
 
     assert "--model" not in command

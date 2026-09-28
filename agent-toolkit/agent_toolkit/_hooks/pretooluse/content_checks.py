@@ -33,7 +33,7 @@ _TRAILING_TOOL_BOUNDARY_RE = re.compile(r"</content>\s*</invoke>\s*\Z")
 
 
 def _is_trailing_tool_boundary_target(file_path: str) -> bool:
-    """Python又は計画Markdownをツール境界タグ検査の対象とする。"""
+    """Pythonまたは計画Markdownをツール境界タグ検査の対象とする。"""
     suffix = pathlib.PurePath(file_path).suffix.lower()
     return suffix == ".py" or (suffix == ".md" and _is_plan_file_or_adjunct(file_path))
 
@@ -204,14 +204,14 @@ _DEPENDENCY_SECTION_RE = re.compile(r"dependenc", re.IGNORECASE)
 
 `pyproject.toml`の`[project.dependencies]`・`[project.optional-dependencies]`・`dependencies = [`と、
 `package.json`の`dependencies`・`devDependencies`などをまとめて捉える。
-`[tool.*]`と版数だけを変える編集は当該語を含まないため、警告の対象から外れる。
+`[tool.*]`と版数だけを変える編集はこの語を含まないため、警告の対象から外れる。
 """
 
 
 def _check_manifest(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """manifestの依存の節への手編集を検出したら警告本文を返す（warnのみ、exit codeは変えない）。
 
-    lockfileとの同期が失われるのは依存の節を変える編集に限るため、当該節へ触れない編集では通知しない。
+    lockfileとの同期が失われるのは依存の節を変える編集に限るため、その節へ触れない編集では通知しない。
     """
     if not file_path:
         return None

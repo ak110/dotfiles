@@ -39,7 +39,7 @@
 - 日付関連の処理は`datetime`を使う
 - ファイル関連の処理は`pathlib`を基本とする
   - `os`モジュールのパス操作は使わず、ファイルの開閉は`Path.open`等の`pathlib`経由を優先する
-- テーブルデータの処理には`polars`を使う。`pandas`は使わない
+- テーブルデータの処理には`pandas`に代えて`polars`を使う
 - 例外の再送出は`raise`（引数なし）を使い、`raise e`は使わない（スタックトレースが書き換わるため）
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
@@ -75,7 +75,7 @@
     hook等の制限時間内実行が必要なスクリプトを事前ウォームアップする場合は、
     パス非依存を前提にせず、実行時に参照される実パスを対象にする。
     観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日」にある
-- project lockfileを使う`uv run`では、lockfileを更新しない指定（`--frozen`又は`--locked`）を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
+- project lockfileを使う`uv run`では、lockfileを更新しない指定（`--frozen`または`--locked`）を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
 - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけlockfileを更新しない指定を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
 - script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してからlockfileを更新しない指定を付ける
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
@@ -88,7 +88,7 @@
 
 ### argparseとCLIエントリポイント
 
-- 新しいオプション名を既存のパーサー又は共通の`add_argument`登録へ加える前に、対象の名前空間で同じ綴りを固定文字列検索する。
+- 新しいオプション名を既存のパーサーまたは共通の`add_argument`登録へ加える前に、対象の名前空間で同じ綴りを固定文字列検索する。
   同じ綴りが別の概念へ既に割り当てられている場合は、そのパーサーを共通登録の対象から外すか、新しいオプションへ別名を選ぶ。
   同じ名前空間への重複登録は、起動時のオプション衝突を招く
 - `argparse`で`action="append"`を使う場合の既定値は`default=None`にする
@@ -203,7 +203,7 @@
 
 ## 参照情報
 
-対象コードのPythonバージョンが該当PEPの導入バージョン以上の場合、その構文は正規構文であり、指摘の対象の外に置く。
+対象コードのPythonバージョンが該当PEPの導入バージョン以上の場合、その構文を正規構文として受理する。
 
 ### Python新構文と導入バージョン
 

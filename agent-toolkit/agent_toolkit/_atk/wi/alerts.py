@@ -41,12 +41,12 @@ class AlertCollectError(RuntimeError):
 _GH_DEPENDABOT_DISABLED_MESSAGE = "Dependabot alerts are disabled for this repository."
 """Dependabotアラート機能が無効なリポジトリに対しGitHub APIが返すメッセージ本文。
 
-`gh api`は当該JSONを標準出力へ、要約1行を標準エラーへ出力する。実測で確認した文言をそのまま用いる。
+`gh api`はこのメッセージを含むJSONを標準出力へ、要約1行を標準エラーへ出力する。実測で確認した文言をそのまま用いる。
 """
 
 
 class AlertFeatureDisabledError(AlertCollectError):
-    """対象リポジトリで当該機能が無効であることを示す応答。
+    """対象リポジトリで対象機能が無効であることを示す応答。
 
     取得失敗ではなく設定上の正常状態のため、呼び出し側は警告を出力せず収集対象から除外する。
     GitLabの脆弱性アラートを上位エディション限定機能としてあらかじめ対象外とする既存方針へ揃える。
@@ -115,7 +115,7 @@ def _run_alert_json_command(
 ) -> list[dict]:
     """外部CLIを実行し、JSON配列応答を返す。
 
-    `disabled_messages`を渡した呼び出しでは、HTTP 403かつ当該文言と一致する応答を
+    `disabled_messages`を渡した呼び出しでは、HTTP 403かつ渡されたメッセージと一致する応答を
     `AlertFeatureDisabledError`として区別する。既定は空で、従来どおり全失敗を`AlertCollectError`とする。
     """
 
@@ -128,7 +128,7 @@ def _run_alert_json_command(
             return AlertCollectError(f"{operation}の標準出力をUTF-8としてデコードできません: {failure.detail}")
         if failure.kind == "exit":
             if _is_disabled_response(failure.stdout, disabled_messages):
-                return AlertFeatureDisabledError(f"{operation}: 対象リポジトリで当該機能が無効")
+                return AlertFeatureDisabledError(f"{operation}: 対象リポジトリで機能が無効")
             return AlertCollectError(f"{operation}が失敗しました（exit={failure.returncode}）: {failure.stderr.strip()}")
         return AlertCollectError(f"{operation}の応答をJSONとして解析できません: {failure.detail}")
 
@@ -180,10 +180,10 @@ def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunList
             f"- 対象コミット: {str(run.get('headSha', ''))[:8]}\n"
             f"- 検知日時: {_now_iso()}\n\n"
             f"`gh run view {run_id} --log-failed`で失敗ログを取得し、根本原因を特定して修正する。\n"
-            "既に後続の実行で解消済みの場合は、その旨を記録して不採用とする。"
+            "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
         )
         completion = (
-            f"対象ワークフロー`{name}`の失敗が解消し、ブランチ`{branch}`で当該ワークフローが成功する。"
+            f"対象ワークフロー`{name}`の失敗が解消し、ブランチ`{branch}`でそのワークフローが成功する。"
             "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
         )
         alerts.append(Alert(keys=(f"github-run:{run_id}",), title=f"ワークフロー{name}失敗", body=body, completion=completion))
@@ -194,7 +194,7 @@ def _run_gh_dependabot_alerts(repo: str) -> list[dict]:
     """`gh api --paginate`で未解決Dependabotアラート全件を返す。
 
     リポジトリ側でDependabotアラート機能が無効な場合はHTTP 403が返るため、
-    当該応答のみ`AlertFeatureDisabledError`として取得失敗と区別する。
+    この応答のみ`AlertFeatureDisabledError`として取得失敗と区別する。
     """
     return _run_alert_json_command(
         ["gh", "api", "--paginate", f"/repos/{repo}/dependabot/alerts?state=open&per_page=100"],
@@ -273,7 +273,7 @@ def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiList
         f"- 対象コミット: {str(latest.get('sha', ''))[:8]}\n"
         f"- 検知日時: {_now_iso()}\n\n"
         f"`glab ci view {pipeline_id} -R {repo}`で失敗ログを取得し、根本原因を特定して修正する。\n"
-        "既に後続の実行で解消済みの場合は、その旨を記録して不採用とする。"
+        "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
     )
     completion = (
         f"対象パイプライン`{pipeline_id}`の失敗が解消し、ブランチ`{branch}`で後続のパイプラインが成功する。"
@@ -303,11 +303,11 @@ def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
     """`add_entries`へ渡すfrontmatter付きメッセージ文字列を組み立てる。"""
     body = (
         f"# {alert.title}\n\n"
-        "自動監視が未解決の事象を検知した。当該事象を解消し、継続的な検査を正常化する。\n\n"
+        "自動監視が未解決の事象を検知した。この事象を解消し、継続的な検査を正常化する。\n\n"
         "## 反映内容と反映先\n\n"
         f"検知した事象を調査し、必要な是正と検証を行う。反映先は`{target_repo_id}`とする。\n\n"
         "## 適用範囲\n\n検知した事象を発生させる条件と、その条件に該当する実装を対象とする。\n\n"
-        "## 実現性\n\n検知元が返した識別子と詳細から、調査対象及び検収場所を確定できる。\n\n"
+        "## 実現性\n\n検知元が返した識別子と詳細から、調査対象および検収場所を確定できる。\n\n"
         f"## 完成条件\n\n{alert.completion}\n\n"
         f"## 詳細\n\n{alert.body}"
     )
@@ -326,7 +326,7 @@ def collect_new_alerts(
 ) -> list[Alert]:
     """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。
 
-    対象リポジトリで当該機能が無効な種別（`AlertFeatureDisabledError`）は
+    対象リポジトリで機能が無効な種別（`AlertFeatureDisabledError`）は
     設定上の正常状態のため警告を出力せず除外する。
     設定が変わらない限り同じ応答が返り続けるため、警告を出力すると監視間隔ごとに恒久的な雑音となる。
     """

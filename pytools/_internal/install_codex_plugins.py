@@ -31,7 +31,7 @@ _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
 )
 _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
-        "Codexプラグインの導入又は更新でHook定義が変わった場合は、定義を確認して信頼してください。"
+        "Codexプラグインの導入または更新でHook定義が変わった場合は、定義を確認して信頼してください。"
         "信頼後に新しいセッションを開始し、SessionStartの規範注入を確認してください。"
         "再信頼の操作だけではSessionStartの規範注入を検収できません。"
     ),
@@ -265,7 +265,7 @@ def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.Po
 
 
 def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
-    """稼働中daemonへ、設定に応じた自動再起動又は手動案内を適用する。"""
+    """稼働中daemonへ、設定に応じた自動再起動または手動案内を適用する。"""
     if not _command(["app-server", "daemon", "version"]):
         return
     if os.environ.get(_AUTO_RESTART_ENV) != "1":

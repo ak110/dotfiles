@@ -1,7 +1,7 @@
 ---
 name: merge-pr
 user-invocable: false
-description: 「PRをマージして」などの明示依頼を受領したとき、対象PRを検査し、マージ後のbranch同期、CI及び必要なRelease検収を完遂する
+description: 「PRをマージして」などの明示依頼を受領したとき、対象PRを検査し、マージ後のbranch同期、CIおよび必要なRelease検収を完遂する
 ---
 
 # PRマージ完遂
@@ -12,19 +12,19 @@ PRが存在するという観測を起動の契機から外し、前記2つの�
 
 ## 失敗時の共通規定
 
-CIとRelease以外の工程が失敗した場合は、成立済みの外部状態を保持し、失敗した工程、外部状態、run URL及び再開点を報告して停止する。PR作成・マージ操作の再試行とauto-merge、自動修復、自動rollbackは行わない。
+CIとRelease以外の工程が失敗した場合は、成立済みの外部状態を保持し、失敗した工程、外部状態、run URLおよび再開点を報告して停止する。PR作成・マージ操作の再試行とauto-merge、自動修復、自動rollbackは行わない。
 
 CIとReleaseのrunが失敗した場合は、run全体の終端と失敗ログを確認し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「再現性」に従って原因を分類する。ネットワーク断、配布元のタイムアウト、レート制限、ランナー障害など、ログで外部一時要因を疑える場合は、同書の広域障害確認を済ませてから、同じ原因につき失敗jobを一度だけ再実行する。
 
 runの失敗ログ取得、失敗jobの再実行、run全体の終端観測には`gh`を使い、各操作の受理形式は実行直前のヘルプで確定する。
 
-再実行後のログと結果で検収を続ける。再失敗、又は初回ログで外部一時要因を疑えない場合は、成立済みの外部状態、失敗工程、run URL及び再開点を報告して停止する。ログを取得できない場合も、元のrunの失敗を保持して停止する。
+再実行後のログと結果で検収を続ける。再失敗、または初回ログで外部一時要因を疑えない場合は、成立済みの外部状態、失敗工程、run URLおよび再開点を報告して停止する。ログを取得できない場合も、元のrunの失敗を保持して停止する。
 
 ## 対象の選択
 
-PR番号又はPR URLが指定された場合は、その対象を読み取る。
+PR番号またはPR URLが指定された場合は、その対象を読み取る。
 引数がない場合は、`develop`から`master`へのopen PRを一覧し、1件だけなら対象にする。
-0件または複数件の場合は、PR番号又はURLの指定を求めて状態を変更せず停止する。
+該当するPRが0件のときと複数件のときは、PR番号かURLの指定を求めて状態を変更せず停止する。
 明示対象のheadが`develop`以外、baseが`master`以外の場合は、状態を変更せず停止する。
 
 対象の確認には`gh`でPRの番号、URL、状態、draft、merge可否、headとbaseのbranch・OID、merge commitを取得する。受理形式と取得可能な項目は実行直前のヘルプで確定する。
@@ -56,16 +56,16 @@ git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD <基準re
 
 `git fetch origin develop master`でremote-tracking refを更新し、`origin/develop`とPR番号から操作直前に取得した`headRefOid`が同じcommitを指すことを確認する。
 PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeableが成立していなければならない。
-マージの前提と続行の判定はこれらのリモート側の条件だけで行い、作業ツリーのclean、現在branch及びローカル`develop`の位置はこの前提から外す。
+マージの前提と続行の判定はこれらのリモート側の条件だけで行い、作業ツリーのclean、現在branchおよびローカル`develop`の位置はこの前提から外す。
 
 ローカル`develop`を同期するかどうかは、マージの前提とは分けて、基準refを`origin/develop`とした「ローカルdevelop同期条件」で判定する。
 成立する場合は`develop` worktreeの絶対パスを保持し、マージ後にそのworktreeでローカル`develop`の同期を試みる。
 成立しない場合は、対象worktreeとローカル`develop`に加え、既存の未コミット差分も変更せず保持する。リモートだけでリリースを完遂する。
 この判定はマージ前時点の見込みであり、同期を実行してよいかはマージ後に同じ条件を再取得して確定する。
 
-必須checkは`gh`が返す当該PRの終了状態まで待つ。待機と必須checkの指定形式は実行直前のヘルプで確定する。
+必須checkは`gh`が返す対象PRの終了状態まで待つ。待機と必須checkの指定形式は実行直前のヘルプで確定する。
 
-必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。mergeableでない状態、PR head OIDの変化又は確認対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
+必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。mergeableでない状態、PR head OIDの変化または確認対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
 
 ## レビューコメントの確認
 
@@ -78,7 +78,7 @@ PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeabl
 同一セッションで対応する指摘と次セッション以降へ回す指摘へ分ける。
 次セッション以降へ回す指摘だけをAWIへ登録する。
 成立しない指摘は登録せず、判定の根拠を報告へ残す。
-全指摘の判定、必要な同一セッションの是正及びAWI登録を完了してからマージへ進む。
+全指摘の判定、必要な同一セッションの是正およびAWI登録を完了してからマージへ進む。
 同一セッションで是正した場合は、PR番号から修正後のPR headを再取得し、新たな確認対象として「マージ前の確認」を再実行する。
 検収は修正後のPR headに対する必須check成功とhead OIDの一致で行い、修正前の必須check成功はその根拠から外す。
 
@@ -132,7 +132,7 @@ git -C <develop worktreeの絶対パス> rev-parse --short=7 develop
 マージコミットの第一親との差分を読み取り、`rust/claude-statusline/`の変更有無を判定する。
 変更がない場合はRelease検収を省略する。
 
-変更がある場合は、`origin/master`の完全OIDに対応する`Release statusLine` runを候補とし、各候補を完全なdatabase IDで特定してジョブの状態を調べる。`prepare`が省略されずに実行されたrunを検収対象として終端まで待つ。`gate`以外のジョブが全て省略されたrunは対象から外し、次のrunを待つ。候補の`prepare`が未確定の間は、実行又は省略が確定するまで観測する。
+変更がある場合は、`origin/master`の完全OIDに対応する`Release statusLine` runを候補とし、各候補を完全なdatabase IDで特定してジョブの状態を調べる。`prepare`が省略されずに実行されたrunを検収対象として終端まで待つ。`gate`以外のジョブが全て省略されたrunは対象から外し、次のrunを待つ。候補の`prepare`が未確定の間は、実行または省略が確定するまで観測する。
 masterへのpushのCIを別に待機する工程は加えず、検収対象のRelease runの成否でmaster CIの結論を確かめる。master CIの失敗で対象のrunが作成されない場合は「失敗時の共通規定」に従う。
 その後、manifestの版数に対応する`statusline-v<version>` tagが`origin/master`を指すことを確認する。
 GitHub Releaseの存在と、次の既存asset名を確認する。
@@ -142,16 +142,16 @@ GitHub Releaseの存在と、次の既存asset名を確認する。
 
 runの特定と終端観測、Releaseのasset確認、tagの参照先確認には`gh`とGitの公開情報を使う。取得形式は各操作の直前にヘルプで確定し、同じ`origin/master`の完全OIDへ対応する結果だけを検収する。
 
-Release runの失敗は「失敗時の共通規定」を適用する。tag、Release又はassetの検収に失敗した場合は、外部状態、失敗工程、run URL及び再開点を報告する。
+Release runの失敗は「失敗時の共通規定」を適用する。tag、Releaseまたはassetの検収に失敗した場合は、外部状態、失敗工程、run URLおよび再開点を報告する。
 
 ## マージ後に到着したレビューの確認
 
 GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待つ区間に到着する場合がある。
 「マージ後のbranch同期とCI」と「条件付きRelease検収」を終えた時点で、`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。終了コード0でJSONの`reviews`と`threads`を解釈でき、対象PRが両方に含まれない場合は、そのPRの取得と判定を省く。含まれる場合は、対象PRのCopilot由来のreview本文とreview threadを1回取得する。コマンドが非0で終わった場合とJSONを解釈できない場合は従来の取得と判定を実施する。
 
-取得、判定、GitHubへの記録及び判定済みの記録は
+取得、判定、GitHubへの記録および判定済みの記録は
 `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が定める手順に従い、対象をそのPRへ限定して適用する。
-本節が扱うのはこの1回の取得までとし、新しいレビューの生成の要求と到着の能動的な待機はその外に置く。
+本節が扱うのはこの1回の取得までとし、新しいレビューの生成要求や到着の能動的な待機は対象外とする。
 その時点で未到着のレビューは、`agent-toolkit:process-wi`の選定工程が全Pull Requestを対象に実行する監査が次回以降に拾うため、本節で取得を繰り返さない。
 
 要修正と分類した指摘は「レビューコメントの確認」の振り分けに従う。
@@ -160,13 +160,13 @@ GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待�
 ## マージ後に`develop`へ加えた変更のCI確認
 
 `agent-toolkit:process-wi`の終端から本スキルを実行した場合に限り、マージの完遂後に同じセッションで`develop`へ加えた変更は、
-pushの完了とCI runの起動をもってその変更の公開工程を終え、CIの完了を待たない。
+pushが完了してCI runが起動した時点でその変更の公開工程を終え、CIの完了を待たない。
 その変更は次回のリリースPRの「マージ前の確認」が必須checkの完了を待つ対象へ入り、
 `master`は必須CIを通過したマージコミットだけで更新されるため、その時点でCIの結論を確定しなくても未検証の変更は`develop`に留まる。
 省略するのはCIの完了待ちだけとし、変更に対応する変更範囲の検証は通常どおり成功させてからpushする。
 省略したCIのrun URLは完了報告へ残す。
 
-本節の適用範囲はマージの完遂後に`develop`へ加えた変更とし、本スキルのマージ工程はその外に置く。
+本節の適用範囲はマージの完遂後に`develop`へ加えた変更とし、本スキルのマージ工程は対象外とする。
 「マージ前の確認」と「マージ後のbranch同期とCI」が定めるCIの検収は、それぞれの節の条件のまま維持する。
 
 ## 完了条件と失敗時の扱い

@@ -7,7 +7,8 @@
 2系統のPreToolUse（`pretooluse.py`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
-本モジュールの構造定数は計画ファイルの見出し、固定H3及び表の行名の正本であり、同書は当該定数から導いた受理形式を記述する。
+計画ファイルの見出し、固定H3および表の行名は、本モジュールの構造定数で定める。
+同書には、構造定数から導いた受理形式を記述する。
 
 構造認識と原記法の検査は分離する。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
@@ -410,7 +411,7 @@ PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>\S.*?\.tsv)のround (?P<
 
 
 def plan_human_review_path_is_absolute(path: str) -> bool:
-    """POSIX又はWindowsの純粋パスとして絶対パスである場合に真を返す。"""
+    """POSIXまたはWindowsの純粋パスとして絶対パスである場合に真を返す。"""
     return pathlib.PurePosixPath(path).is_absolute() or pathlib.PureWindowsPath(path).is_absolute()
 
 

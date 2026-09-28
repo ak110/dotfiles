@@ -488,7 +488,7 @@ def _check_diagnostics(root: Path) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """通常同期又は非変更検査を実行する。"""
+    """通常同期または非変更検査を実行する。"""
     parser = argparse.ArgumentParser(description="Agent Plugins・Codex向け派生JSONを同期する。")
     parser.add_argument("--check", action="store_true", help="派生JSONを変更せず整合性だけを検査する")
     args = parser.parse_args(argv)

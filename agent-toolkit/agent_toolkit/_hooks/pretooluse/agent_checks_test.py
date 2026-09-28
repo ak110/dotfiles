@@ -63,7 +63,7 @@ class TestAgentNameParameterAccepted:
 
 
 class TestTaskStopBlock:
-    """`TaskStop`を自セッションの所有記録又は停滞検知完了記録へ限定する。"""
+    """`TaskStop`を自セッションの所有記録または停滞検知完了記録へ限定する。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -511,7 +511,7 @@ class TestAgentTaskLaunchIndependence:
 
 
 class TestWorkflowSkillInvocation:
-    """工程スキル起動が委譲スキルの状態記録又は事前案内を発生させないことを確認する。"""
+    """工程スキル起動が委譲スキルの状態記録または事前案内を発生させないことを確認する。"""
 
     @pytest.mark.parametrize(
         "skill_name",

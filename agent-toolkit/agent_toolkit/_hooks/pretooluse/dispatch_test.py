@@ -98,7 +98,7 @@ def test_pretooluse_matcher_covers_agents_server_tool_names() -> None:
     実装側の`agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES`を入力として反復し、
     hooks.json（Claude Code、matcherは`*`）とhooks.codex.json（Codex）の双方が
     全要素を被覆することを検査する。実装側の集合へ要素を追加してもmatcherへ
-    追加し忘れると、Codex側の当該要素だけが検査から漏れて本検査が失敗する。
+    追加し忘れると、Codex側のその要素だけが検査から漏れて本検査が失敗する。
     """
     claude_matcher = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
     codex_matcher = json.loads(_HOOKS_CODEX_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
@@ -331,7 +331,7 @@ class TestManifestCheck:
     """manifest 手編集の警告 (warn のみ、exit code は 0)。
 
     lockfileとの同期が失われるのは依存の節を変える編集に限るため、
-    当該節へ触れない編集では通知しない。
+    その節へ触れない編集では通知しない。
     """
 
     def test_pyproject_toml_dependency_edit_warns(self):
@@ -388,9 +388,9 @@ class TestUserFacingTextChecks:
 
     @pytest.mark.parametrize("tool_name", ["AskUserQuestion", "ExitPlanMode"])
     def test_user_facing_tools_are_never_blocked(self, tool_name: str) -> None:
-        """ユーザーへ提示する本文を入力とする判定は、当該ツールの実行を遮断しない。
+        """ユーザーへ提示する本文を入力とする判定は、そのツールの実行を遮断しない。
 
-        遮断は当該ターンの入力と作業を失わせ、同じ確認の再発行を要する。
+        遮断はそのターンの入力と作業を失わせ、同じ確認の再発行を要する。
         ユーザーが本文を読んで誤りを指摘できるため、検出は警告で返す。
         """
         body = "日本語の�本文に가が混入し、atk wi addの契約へ触れる。"
@@ -789,7 +789,7 @@ class TestWarnJsonAndLanguageWarningComposition:
 
 
 class TestRemovedChecksAreSilent:
-    """規範の想起、CLI形式の事前検出又は文体の検出を目的とする撤去済み検査が、通知も補正も返さないことを検証する。
+    """規範の想起、CLI形式の事前検出または文体の検出を目的とする撤去済み検査が、通知も補正も返さないことを検証する。
 
     撤去した検査の呼び出しが残ると、公開入口の出力へ警告・遮断・`updatedInput`のいずれかが現れる。
     """
@@ -867,7 +867,7 @@ class TestRemovedChecksAreSilent:
 class TestLanguageReinjection:
     """Claude Codeのメインセッションで、直前の注入から10回目のツール呼び出しへ日本語の応答指示を添える。
 
-    間隔10回は、2026-09-22以降のClaude Codeメイン記録で、セッション開始又は会話圧縮から最初の英語検知通知までの
+    間隔10回は、2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の英語検知通知までの
     ツール呼び出し回数が中央値20回、下位30%が11回だった集計に基づく。
     委譲先とCodexは応答をユーザーが直接読まないため添えない。
     """

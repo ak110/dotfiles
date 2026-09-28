@@ -65,7 +65,7 @@ def test_missing_result_reports_execution_failure(
     monkeypatch: pytest.MonkeyPatch,
     fail_on_error: bool,
 ) -> None:
-    """結果を得られない2経路で、実行に失敗した旨を警告と例外の双方へ含める。"""
+    """結果を得られない2経路で、コマンドの実行に失敗したことを警告と例外の双方へ含める。"""
     monkeypatch.setattr(_claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
     path = _target(tmp_path)
     expected = _claude_common.format_cli_error(None)

@@ -26,7 +26,7 @@ mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / s
 
 Bash:
 
-- Codexで350行又は16KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)
+- Codexで350行または16KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - 未完了の背景タスクが書き込む出力ファイルの読取の警告 (warn)
 
@@ -36,7 +36,7 @@ Skill:
 
 TaskStop:
 
-- 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の遮断 (block)
+- 停滞検知完了記録または自セッション起動記録との対象一致による通過と、それ以外の遮断 (block)
 
 Write / Edit / MultiEdit / apply_patch:
 
@@ -380,7 +380,7 @@ def _handle_user_facing_text_tool(
     """質問・計画本文へ文字化け検査を適用し、警告として返す。
 
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
-    遮断すると当該ターンの入力と作業を失わせたうえで同じ確認の再発行を要するため、警告で返す。
+    遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。
     判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
     「遮断・警告フックの成立条件」が定める。
     """

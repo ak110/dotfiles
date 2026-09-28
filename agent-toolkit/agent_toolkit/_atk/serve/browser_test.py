@@ -911,7 +911,7 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
 
 @pytest.mark.asyncio
 async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
-    """既存回答の変更、終端状態の編集制限、削除及び識別子表示を検証する。"""
+    """既存回答の変更、終端状態の編集制限、削除および識別子表示を検証する。"""
     harness = browser_harness
     page = harness.page
     question_path = harness.root / "inbox" / "question.md"
@@ -1771,7 +1771,7 @@ async def _wait_and_close_operation_notice(page: playwright.async_api.Page, text
     """操作の通知が表示されるまで待ち、成立した通知を閉じる。
 
     通知は自動で消えないため、閉じずに次の待機へ進むと残存した通知で待機が即座に成立する。
-    待機のたびに閉じることで、次の待機が当該操作で新たに表示された通知だけで成立する。
+    待機のたびに閉じることで、次の待機がその操作で新たに表示された通知だけで成立する。
     """
     await page.get_by_role("status").filter(has_text=text).wait_for(state="visible")
     await page.locator("#operation-notice-close-button").click()
@@ -2562,7 +2562,7 @@ async def test_initial_screen_request_does_not_block_other_screen_prefetch(
 
 @pytest.mark.asyncio
 async def test_three_screen_bodies_use_matching_typography(screen_harness: _ScreenHarness) -> None:
-    """3画面の本文コンテナーで書体、文字サイズ、行高、字間及び文字色をそろえる。"""
+    """3画面の本文コンテナーで書体、文字サイズ、行高、字間および文字色をそろえる。"""
     harness = screen_harness
     page = harness.page
     read_styles = "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))"
@@ -3277,7 +3277,7 @@ _NAV_LINK_METRICS = """links => links.map(link => {
 @pytest.mark.asyncio
 @pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
 async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHarness, width: int) -> None:
-    """3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさ及び算出スタイルが一致する。
+    """3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさおよび算出スタイルが一致する。
 
     navの箱の中心だけを比べると、画面固有の要素がnavの内側でリンク群をずらしても検出できないため、
     リンク単位で比べる。現在の画面の強調が字幅を変える場合もここで検出する。
@@ -3528,7 +3528,7 @@ async def test_sidebar_items_share_style_between_plans_and_sessions(screen_harne
 
 @pytest.mark.asyncio
 async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarness) -> None:
-    """一覧表示後に削除された計画ファイルを選ぶと、再試行を求めず移動又は削除済みを示して一覧を更新する。"""
+    """一覧表示後に削除された計画ファイルを選ぶと、再試行を求めず移動または削除済みを示して一覧を更新する。"""
     harness = screen_harness
     page = harness.page
     # 更新通知の購読を止め、削除後も一覧が古いままの状態で項目を選ぶ。
@@ -3542,11 +3542,52 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
 
     preview = page.locator("#preview")
     await playwright.async_api.expect(preview.get_by_role("status")).to_have_text(
-        "選択した計画ファイルは移動又は削除されたため表示できません。一覧を更新しました。"
+        "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。"
     )
     await playwright.async_api.expect(preview.get_by_role("button", name="再読み込み")).to_have_count(0)
     await playwright.async_api.expect(page.locator("#files .file")).to_have_count(0)
     await playwright.async_api.expect(page.locator("#copy-btn")).to_be_disabled()
+
+
+@pytest.mark.asyncio
+async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile(
+    screen_harness: _ScreenHarness, tmp_path: Path
+) -> None:
+    """狭幅で失効後に一覧を開いても理由を読み、別の計画へ進める。"""
+    harness = screen_harness
+    page = harness.page
+    next_plan = harness.root / "next-plan.md"
+    next_plan.write_text("# 次の計画\n", encoding="utf-8")
+    await page.set_viewport_size({"width": 320, "height": 720})
+    await page.route("**/api/plans/events", lambda route: route.abort())
+    await page.goto(harness.base_url + "/plans")
+    await page.locator("#plans-menu-btn").click()
+    first = page.locator('#files .file[href*="path=plan.md"]')
+    await first.wait_for(state="visible")
+
+    harness.plan_path.unlink()
+    await first.click()
+    message = "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。"
+    await playwright.async_api.expect(page.locator("#preview").get_by_role("status")).to_have_text(message)
+    await page.locator("#plans-menu-btn").click()
+
+    sidebar_status = page.locator("#plans-selection-status")
+    opening_bounds = await sidebar_status.bounding_box()
+    assert opening_bounds is not None and opening_bounds["x"] >= 0
+    await playwright.async_api.expect(sidebar_status).to_have_text(message)
+    await playwright.async_api.expect(sidebar_status).to_be_visible()
+    await page.wait_for_function("""() => {
+      const bounds = document.getElementById('plans-selection-status').getBoundingClientRect();
+      return bounds.x >= 0 && bounds.right <= innerWidth;
+    }""")
+    bounds = await sidebar_status.bounding_box()
+    assert bounds is not None and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 320
+    assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 720
+    await page.screenshot(path=str(tmp_path / "missing-selection-320-after.png"))
+
+    await page.locator("#files .file", has_text="next-plan.md").click()
+    await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("次の計画")
+    await playwright.async_api.expect(sidebar_status).to_be_hidden()
 
 
 @pytest.mark.asyncio
@@ -3563,7 +3604,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "/home/aki/proj" in listing
     assert "Claudeの発話" not in listing
     assert "11111111-2222-3333-4444-555555555555" not in listing
-    # 実行系による限定の操作、実行系のバッジ、ホストの接続状態及び件数の表示は画面へ現れない。
+    # 実行系による限定の操作、実行系のバッジ、ホストの接続状態および件数の表示は画面へ現れない。
     for selector in ("#sessions .engine-badge", ".engine-filter", "#host-status", "#list-status"):
         assert await harness.page.locator(selector).count() == 0, selector
 
@@ -3749,7 +3790,7 @@ async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> Non
 
 @pytest.mark.asyncio
 async def test_session_details_open_developer_by_default(screen_harness: _ScreenHarness) -> None:
-    """利用者、アシスタント及び開発者の本文を既定で開く。"""
+    """利用者、アシスタントおよび開発者の本文を既定で開く。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="codex"]').click()

@@ -710,7 +710,7 @@ async def test_pending_result_is_finalized_without_auto_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """自動再開が届かない場合は期限又はストリーム終端で初回結果を確定する。"""
+    """自動再開が届かない場合は期限またはストリーム終端で初回結果を確定する。"""
     monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
     client = ControlledClaudeClient(f"claude-{completion}")
@@ -797,7 +797,7 @@ async def test_new_reply_can_auto_resume_after_prior_auto_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """通常又は自動再開済みsessionへのreplyは再度自動再開できる。"""
+    """通常または自動再開済みsessionへのreplyは再度自動再開できる。"""
     client = ControlledClaudeClient("claude-repeat")
     manager, backend = _manager(client, monkeypatch)
     try:

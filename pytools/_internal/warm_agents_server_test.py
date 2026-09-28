@@ -165,7 +165,7 @@ def test_warmup_launch_failure_raises_without_exit_code(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """timeout又は起動不能で結果が無い場合も更新段階へ失敗を伝播する。"""
+    """timeoutまたは起動不能で結果が無い場合も更新段階へ失敗を伝播する。"""
     _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(_claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
 

@@ -257,7 +257,8 @@ def _commit_values_by_path(
     if local_worktree is None or candidate_repo is None or unmatched:
         targets = ", ".join(unmatched or sorted(set(target_repos.values())))
         _outcome.report_failure(
-            f"対応commitを検証できる対象リポジトリの作業ツリーを特定できない: {targets}。--commitへ当該作業ツリーを指定する"
+            "対応commitを検証できる対象リポジトリの作業ツリーを特定できない: "
+            f"{targets}。--commitへ対象リポジトリの作業ツリーを指定する"
         )
         sys.exit(2)
     resolved = _resolve_commit(local_worktree, revision)

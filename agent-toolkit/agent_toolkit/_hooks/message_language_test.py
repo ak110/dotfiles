@@ -12,6 +12,8 @@ import pytest
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
+pytestmark = pytest.mark.repo_invariant
+
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _ALLOWED_BARE_IDENTIFIERS = frozenset(
     {
@@ -77,7 +79,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "pretooluse.py:1588 本文",
         "blocked: TaskStop。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、停滞検知の手順を完了した場合に限る。"
-        "当該手順の完了条件は`agent-toolkit:delegation`の"
+        "この手順の完了条件は`agent-toolkit:delegation`の"
         "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節が定める。"
         "進行が遅いことや非効率に見"
         "えることだけでは停止の指示にならない。"
@@ -127,7 +129,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     (
         "pretooluse.py:1947 本文",
-        "warn: 一括`stage`に、当該セッションのファイル編集ツールによる編集記録が無いファイルが含まれている。"
+        "warn: 一括`stage`に、現在のセッションのファイル編集ツールによる編集記録が無いファイルが含まれている。"
         "シェルコマンドや生成器が変更したファイルは記録されないため、`stage`の前に所有を確認する。"
         "候補: {sample}。ファイル単位の`stage`（`git add <file>`）への切り替えを検討する。",
     ),
@@ -159,7 +161,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
         "静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。作業ディレクトリの変更に未解決のシェル展開があると、"
         "プロジェクト種別を確認できないためこの呼び出しを遮断する。",
     ),
-    ("pretooluse.py:2540 本文", "block: 前景の`sleep`に別のコマンドが続く呼び出しを、当該セッションで再び検出した。"),
+    ("pretooluse.py:2540 本文", "block: 前景の`sleep`に別のコマンドが続く呼び出しを、現在のセッションで再び検出した。"),
     (
         "pretooluse.py:2547 本文",
         "warn: 前景の`sleep`の後に別のコマンドが続いており、反復ポーリングになる可能性がある。\\n{guidance}",
@@ -340,10 +342,11 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     (
         "plan_save_advisor.py:101 本文",
-        "当該セッションが所有する計画バンドルが計画作業`root`に残っている: {path_list}\\n"
-        "保存の契機に達した計画バンドルだけを`private-notes`へ移す。"
-        "契機は当該セッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
-        "残りはそのまま置いてターンを終える。",
+        "現在のセッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\\n"
+        "保存の契機に達したバンドルだけを"
+        "`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`で`private-notes`へ保存する。"
+        "契機は現在のセッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
+        "残りのバンドルはその場に残してターンを終了する。",
     ),
     (
         "plan_save_advisor.py:101 解消手段",
@@ -357,10 +360,9 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("subagent_stop_advisor.py:47 解消手段", "空でない完了報告を書いてから、あらためて停止する。"),
     (
         "_uwi_completion.py:build_notice",
-        "リポジトリ{target_repo}に新しく回答されたUWIがある: {filenames}。"
-        "当該セッションが終わる前に、これらを取り込むかを判断する。"
-        "各項目を`atk wi show <ファイル名>`で読み、記録された回答に従い、回答と矛盾する暫定判断を修正する。"
-        "回答が現在の作業と無関係な場合は、次回の`agent-toolkit:process-wi`へ残して続行する。",
+        "リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
+        "セッションを終える前に`agent-toolkit:confirmation-and-uwi`を起動し、"
+        "回答の反映から依存作業の再開までを完了する。",
     ),
     (
         "_response_language_check.py:BLOCK_BODY",
@@ -377,15 +379,15 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "pending_question_advisor.py:BLOCK_BODY",
         "地の文で利用者へ判断を求めたままターンを終えようとしている。判断を求める場合はAskUserQuestionで確認し、"
-        "確認が不要な場合は当該問いかけを本文から除いて応答を書き直すこと。",
+        "確認が不要な場合はその問いかけを本文から除いて応答を書き直すこと。",
     ),
-    ("pending_question_advisor.py:_BLOCK_FIX", "AskUserQuestionで確認するか、当該問いかけを本文から除いて応答を書き直す。"),
+    ("pending_question_advisor.py:_BLOCK_FIX", "AskUserQuestionで確認するか、その問いかけを本文から除いて応答を書き直す。"),
     (
         "agents_server_session_advisor.py:_WARNING_BODY",
         "`agents_server`の`session`に、観測を試みていない作業が残っている。"
         "実行ホストの`atk agents wait`で観測するか、"
         "結果が不要なら`kill(session_id)`で破棄してから終了する。`send_message`は新しい作業を配送するだけで観測しないため、"
-        "この警告は解消しない。観測しないまま終了すると、当該作業の成果を回収する主体が残らない。",
+        "この警告は解消しない。観測しないまま終了すると、その作業の成果を回収する主体が残らない。",
     ),
 )
 

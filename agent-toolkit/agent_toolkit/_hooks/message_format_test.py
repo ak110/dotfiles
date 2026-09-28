@@ -16,7 +16,7 @@ from agent_toolkit._testing.helpers import auto_message_opening_attributes
     ],
 )
 def test_llm_notice_wraps_body_with_xml_boundary(tag: str, expected_kind: str) -> None:
-    """タグ有無にかかわらず出所、種別及び本文を保つ。"""
+    """タグ有無にかかわらず出所、種別および本文を保つ。"""
     notice = llm_notice("本文", "agent-toolkit/example", tag=tag)
     assert auto_message_opening_attributes(notice) == {"source": "agent-toolkit/example", "kind": expected_kind}
     assert notice.endswith("\n本文\n</agent-toolkit-auto-inserted>")

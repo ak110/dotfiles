@@ -622,7 +622,7 @@ def test_wait_recovers_contended_running_run(
     prepare: Callable[[pathlib.Path, pathlib.Path], None],
     expected: dict[str, object],
 ) -> None:
-    """lock待ち中の未公開runから原本又は退避済みの本文を配送する。"""
+    """lock待ち中の未公開runから原本または退避済みの本文を配送する。"""
     assert _run_contended_wait(tmp_path, monkeypatch, prepare) == 0
 
     captured = capsys.readouterr()
@@ -884,7 +884,7 @@ def test_later_wait_starts_new_run_for_consumed_current_run(
     status: str,
     continuable: bool,
 ) -> None:
-    """回収済み又は前景配送済みの現行runと対象が一致しても新規runを開始する。"""
+    """回収済みまたは前景配送済みの現行runと対象が一致しても新規runを開始する。"""
     _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     run_directory, _ = _write_current_wait_run(
         tmp_path,

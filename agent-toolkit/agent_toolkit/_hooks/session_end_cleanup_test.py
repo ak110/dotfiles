@@ -193,7 +193,7 @@ def test_orphan_lock_is_never_collected(tmp_path: pathlib.Path) -> None:
 
 
 def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib.Path) -> None:
-    """Codexの`reason: other`では期限切れ状態だけを回収し、当該セッションの状態は残す。"""
+    """Codexの`reason: other`では期限切れ状態だけを回収し、自セッションの状態は残す。"""
     own = _write_state(tmp_path, "codex-session")
     stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
     stale_lock = _write_lock(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
@@ -217,7 +217,7 @@ def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib
 
 
 def test_codex_other_reason_keeps_own_expired_state(tmp_path: pathlib.Path) -> None:
-    """当該セッションの状態は期限を過ぎていても残し、別セッションの期限切れは回収する。"""
+    """自セッションの状態は期限を過ぎていても残し、別セッションの期限切れは回収する。"""
     own = _write_state(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
     own_lock = _write_lock(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
     stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
@@ -241,7 +241,7 @@ def test_codex_other_reason_keeps_own_expired_state(tmp_path: pathlib.Path) -> N
 
 
 def test_own_expired_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -> None:
-    """会話破棄時は、当該セッションの期限切れ状態も削除する。"""
+    """会話破棄時は、自セッションの期限切れ状態も削除する。"""
     own = _write_state(tmp_path, "target", age_seconds=_STALE_AGE_SECONDS)
 
     result = _run(_session_end("target", reason="clear"), tmp_path)

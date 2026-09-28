@@ -53,7 +53,7 @@ dev = [
 
 # pyfltrは`agent-toolkit/`をsubprojectとして分離し、subprojectの設定をリポジトリ直下の`pyproject.toml`とは
 # 独立に解決する。直下の同キーは本subprojectへ届かないため、検査の有無と挙動を決めるキーは本ファイルへも置く。
-# 直下と同じ値にするキーにはその旨を、本subproject固有の値にするキーにはその理由をそれぞれ併記する。
+# 直下と同じ値を指定するキーでは値をそろえたことを示し、本subproject固有の値を指定するキーではその理由を書く。
 [tool.pyfltr]
 preset = "latest"
 python = true
@@ -174,7 +174,10 @@ addopts = [
     # --dist=loadfileでは最大テストファイルの実行時間が全体の下限になるため、本方式を指定する
     "--dist=worksteal",
 ]
-markers = ["browser: Chromiumを使う実ブラウザー統合テスト"]
+markers = [
+    "browser: Chromiumを使う実ブラウザー統合テスト",
+    "repo_invariant: 変更ファイルと無関係に全追跡ファイルまたは全ソースを走査する不変条件テスト",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"

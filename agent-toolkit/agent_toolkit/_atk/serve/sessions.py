@@ -105,10 +105,15 @@ class SessionEvent:
     name: str | None = None
     usage: dict[str, typing.Any] | None = None
     detail: dict[str, typing.Any] | None = None
+    call_id: str | None = None
+    message_id: str | None = None
 
     def to_json(self) -> dict[str, typing.Any]:
         """JSON応答向けの辞書へ変換する。"""
-        return dataclasses.asdict(self)
+        result = dataclasses.asdict(self)
+        result.pop("call_id")
+        result.pop("message_id")
+        return result
 
 
 def _isoformat(epoch: float | None) -> str | None:
@@ -161,6 +166,7 @@ def _claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[lis
         message = record.get("message")
         if kind not in {"user", "assistant"} or not isinstance(message, dict):
             continue
+        message_id = message.get("id") if kind == "assistant" and isinstance(message.get("id"), str) else None
         runtime_generated = kind == "user" and is_runtime_generated(record)
         usage = message.get("usage") if isinstance(message.get("usage"), dict) else None
         if usage is not None:
@@ -174,12 +180,14 @@ def _claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[lis
             event_kind = (
                 "injected" if kind == "user" and (runtime_generated or text and is_runtime_inserted_text(text)) else kind
             )
-            events.append(SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage))
+            events.append(SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage, message_id=message_id))
             continue
         for block in content:
             if not isinstance(block, dict):
                 continue
-            events.append(_claude_block_event(block, kind, timestamp, usage, runtime_generated=runtime_generated))
+            events.append(
+                _claude_block_event(block, kind, timestamp, usage, runtime_generated=runtime_generated, message_id=message_id)
+            )
     return events, totals
 
 
@@ -190,17 +198,20 @@ def _claude_block_event(
     usage: dict[str, typing.Any] | None,
     *,
     runtime_generated: bool = False,
+    message_id: str | None = None,
 ) -> SessionEvent:
     """メッセージの1ブロックを表示モデルのイベントへ変換する。"""
     block_type = block.get("type")
     if block_type == "thinking":
-        return SessionEvent(kind="thinking", timestamp=timestamp, text=_as_text(block.get("thinking")))
+        return SessionEvent(kind="thinking", timestamp=timestamp, text=_as_text(block.get("thinking")), message_id=message_id)
     if block_type == "tool_use":
         return SessionEvent(
             kind="tool_call",
             timestamp=timestamp,
             name=block.get("name") if isinstance(block.get("name"), str) else None,
             detail={"input": block.get("input")},
+            call_id=block.get("id") if isinstance(block.get("id"), str) else None,
+            message_id=message_id,
         )
     if block_type == "tool_result":
         return SessionEvent(
@@ -208,6 +219,7 @@ def _claude_block_event(
             timestamp=timestamp,
             text=_as_text(block.get("content")),
             detail={"is_error": block.get("is_error")} if "is_error" in block else None,
+            call_id=block.get("tool_use_id") if isinstance(block.get("tool_use_id"), str) else None,
         )
     text = _as_text(block.get("text"))
     event_kind = (
@@ -215,14 +227,14 @@ def _claude_block_event(
         if kind == "user" and block_type == "text" and (runtime_generated or text and is_runtime_inserted_text(text))
         else kind
     )
-    return SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage)
+    return SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage, message_id=message_id)
 
 
-def _claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] | None:
+def claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] | None:
     """セッション本体に属するサブエージェント記録の親子関係を返す。
 
     記録が無い場合は`None`を返し、取得不能であることを表す。
-    `path`は当該サブエージェントの記録本体であり、閲覧要求の対象として使う。記録が残っていない場合は`None`とする。
+    `path`はそのサブエージェントの記録本体であり、閲覧要求の対象として使う。記録が残っていない場合は`None`とする。
     `parent_agent_id`は深さが2以上の記録にだけ現れるため、階層の復元は`spawn_depth`を典拠とする。
     """
     directory = record_path.with_suffix("") / "subagents"
@@ -316,10 +328,16 @@ def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) 
             timestamp=timestamp,
             name=payload.get("name") if isinstance(payload.get("name"), str) else None,
             detail={"input": payload.get("arguments", payload.get("input"))},
+            call_id=payload.get("call_id") if isinstance(payload.get("call_id"), str) else None,
         )
     if payload_type in {"function_call_output", "custom_tool_call_output"}:
         output = payload.get("output")
-        return SessionEvent(kind="tool_result", timestamp=timestamp, text=_as_text(output) or _stringify(output))
+        return SessionEvent(
+            kind="tool_result",
+            timestamp=timestamp,
+            text=_as_text(output) or _stringify(output),
+            call_id=payload.get("call_id") if isinstance(payload.get("call_id"), str) else None,
+        )
     role = payload.get("role")
     kind = (
         {
@@ -585,7 +603,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
             for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
                 if path.is_file():
                     collected.append(_local_entry(path, "claude", path.stem, context.hostname))
-                    subagents = _claude_subagents(path) or []
+                    subagents = claude_subagents(path) or []
                     agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
                     for item in subagents:
                         child_path = item["path"]
@@ -665,7 +683,7 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
     if len(data) > MAX_RECORD_BYTES:
         raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")
     records, broken = parse_records(data.decode("utf-8", errors="replace"))
-    subagents = _claude_subagents(path) if engine == "claude" else None
+    subagents = claude_subagents(path) if engine == "claude" else None
     # ローカルの記録は保存先を直接読むため、サブエージェント記録の有無を常に判定できる。
     detail = build_detail(engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=False)
     detail["session_id"] = path.stem if engine == "claude" else codex_session_id(path)
@@ -1042,7 +1060,7 @@ def _remote_subagents(engine: str, payload: dict[str, typing.Any]) -> tuple[list
     """リモートの読み取り応答から、サブエージェント一覧と判定不能かどうかを返す。
 
     リモートホストのdotfilesが古く、サブエージェント一覧を返さない版のヘルパーが動いている場合は、
-    読み取り自体が成功したまま当該欄だけが欠ける。サブエージェントが無い場合と区別するため、
+    読み取り自体が成功したままその欄だけが欠ける。サブエージェントが無い場合と区別するため、
     欄が無い応答は判定不能として扱う。Codexの記録はサブエージェントを持たないため判定不能としない。
     """
     if engine != "claude":

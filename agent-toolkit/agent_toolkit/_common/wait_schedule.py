@@ -6,8 +6,8 @@ Claude Codeはプロンプトキャッシュ保持期間を、`FORCE_PROMPT_CACH
 bucket別の設定、サブエージェント定義のfrontmatterの`cacheTtl`、`ENABLE_PROMPT_CACHING_1H`、
 bucket別の既定の順に評価し、最初に一致した指定を採用する。設定と環境変数はv2.1.242以降が受理し、
 値は`5m`と`1h`だけを受理する。典拠は公式資料<https://code.claude.com/docs/en/prompt-caching.md>の
-「Choose the TTL yourself」節と<https://code.claude.com/docs/en/settings-reference.md>の当該設定の節
-（いずれも2026年9月2日取得）とする。再検証は同資料の当該節を再取得して順序と受理値を照合する。
+「Choose the TTL yourself」節と<https://code.claude.com/docs/en/settings-reference.md>の各設定の節
+（いずれも2026年9月2日取得）とする。再検証は同資料の該当節を再取得して順序と受理値を照合する。
 
 Claude Agent SDKで開始したセッションのターンは、main conversationのrequest bucketとして扱われる。
 設定読込元を空にした起動でも、subagentのbucketではなくmainのbucketの既定が適用される。
@@ -35,13 +35,13 @@ from agent_toolkit._common.delegated_session import is_delegated
 _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 # キャッシュTTLごとの委譲先の終端を待つ上限。TTLが満了する前に呼び出し元のターンが再開するよう、上限はTTLより短く取る。
-# 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、当該上限より60秒短い値とする。
+# 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、この上限より60秒短い値とする。
 _WAIT_TIMEOUT_FOR_5M_TTL = 270.0
 _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 # Claude Codeを確認できないホスト向けの上限。Codexは1回のツール呼び出しへ300秒の上限を課し、
-# これを超える待機は`timed out awaiting tools/call after 300s`で失敗するため、当該上限より短い値とする。
-# 判定を誤った場合の帰結は非対称であり、Claude Codeを誤って当該ホストと判定した場合は待機の再発行が増えるだけで、
-# 逆の誤りだけが当該失敗を残す。このため`CLAUDECODE`を確認できない場合を当該ホストとして扱う。
+# これを超える待機は`timed out awaiting tools/call after 300s`で失敗するため、この上限より短い値とする。
+# 判定を誤った場合の帰結は非対称であり、Claude Codeを誤って対象ホストと判定した場合は待機の再発行が増えるだけで、
+# 逆の誤りだけがタイムアウト失敗を残す。このため`CLAUDECODE`を確認できない場合も同様のホストとして扱う。
 _WAIT_TIMEOUT_FOR_UNKNOWN_HOST = 270.0
 _WAIT_TIMEOUT_FOR_DELEGATED_SESSION = 240.0
 _BUCKET_TTL_ENV = {
@@ -66,7 +66,7 @@ _PROVIDER_ENV = (
 def _user_settings_ttl(request_bucket: str) -> str | None:
     """ユーザー設定ファイルのbucket別TTL指定を返す。
 
-    ファイルの不在、読み取り失敗、解析失敗及び受理しない値では`None`を返し、後続の判定へ委ねる。
+    ファイルの不在、読み取り失敗、解析失敗および受理しない値では`None`を返し、後続の判定へ委ねる。
     設定ファイルはコメント付きで書かれる場合があるためJSONCとして解析する。
     """
     path = pathlib.Path.home() / ".claude" / "settings.json"

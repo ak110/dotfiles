@@ -16,7 +16,7 @@ autosquashの直前と、autosquashの競合を解消した後の継続の直前
 
 autosquashの単位は、レビュー結果を一意に示す識別子（レビュー指摘管理表の絶対パスとラウンドのround値の組）と最古fixup対象の7文字以上の一意な短縮OIDの組とする。
 同じ組に対するautosquashは、その組へ帰属する全てのfixupを作成した後の1回だけ実行する。レビュー修正の受け渡し、追加の照会、工程の再開のいずれをまたいでも、同じ組への実行は1回に保つ。
-工程を再開した時点では、`## 履歴確認の起動形`が定める起動形の`git log`の出力に、件名の先頭が`fixup!`、`squash!`又は`amend!`である行があるかで新しいfixupの有無を判定する。autosquashを実行するのは、その行がある場合に限る。
+工程を再開した時点では、`## 履歴確認の起動形`が定める起動形の`git log`の出力に、件名の先頭が`fixup!`、`squash!`または`amend!`である行があるかで新しいfixupの有無を判定する。autosquashを実行するのは、その行がある場合に限る。
 
 レビュー修正は新規コミットを既定の安全な選択肢とし、履歴統合が明確に成立する場合だけamendまたはfixupを選ぶ。
 fixupは、修正が統合先コミットの時点で独立して成立し、対応する変更範囲の検証を再実行できる場合に限る。
@@ -27,7 +27,7 @@ fixupは、修正が統合先コミットの時点で独立して成立し、対
 過去単位だけが対象の場合は対象commitへのfixupとautosquashだけを実行する。
 両方が対象の場合は過去単位だけを先に実装してautosquashする。
 autosquash成功後に、開始済みの同じ実装担当が書換え後HEADへ最終単位の修正差分だけを実装し、変更範囲を検証してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
-対応付け不能、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、又は中間commitの公開契約を維持できない修正は、新規commitで対応する。
+対応付け不能、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、または中間commitの公開契約を維持できない修正は、新規commitで対応する。
 履歴書換えを開始した後の失敗時は`## 失敗時の扱い`に従う。
 `rewrite_guard`の受渡しは`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」が定めるレビュー修正の実装担当契約だけに置く。
 本節の履歴書換え契約を適用するのは通常実装のレビュー修正に限り、他の工程は各呼び出し元が定めるcommit契約に従う。
@@ -37,7 +37,7 @@ autosquash成功後に、開始済みの同じ実装担当が書換え後HEADへ
 各fixup作成後に対象OIDと件名を確認し、作業ツリーがcleanであることも確認する。
 その確認後にだけ次の過去単位の修正差分を適用する。
 全過去単位のfixupを作成した後に1回だけautosquashを実行する。
-autosquash成功後に`git rev-parse --short=7 HEAD`で書換え後HEADの7文字以上の一意な短縮OIDを取得し、書換え前後の実装単位を履歴検収用に対応付ける。tree、親及びcommitの厳密な比較では、各短縮OIDを比較の直前に対象リポジトリで解決する。
+autosquash成功後に`git rev-parse --short=7 HEAD`で書換え後HEADの7文字以上の一意な短縮OIDを取得し、書換え前後の実装単位を履歴検収用に対応付ける。tree、親およびcommitの厳密な比較では、各短縮OIDを比較の直前に対象リポジトリで解決する。
 autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換する。
 
 - 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend --no-edit`を使う。
@@ -66,7 +66,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   `git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`で範囲内のOIDと件名を列挙する。
   各fixup対象コミットの件名が範囲内で一意であることをfixup作成前に確認する。
   対象コミット件名が範囲内で一意でない場合は、fixupを作成せず`## 失敗時の扱い`に従う。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。遮断条件は件名先頭の完全一致とし、部分一致と件名途中の一致は対象から外れる。
-  範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙又は件名の一意性確認のいずれかに失敗した場合は、fixupを作成せずautosquashを中止し、`## 失敗時の扱い`に従う。
+  範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙または件名の一意性確認のいずれかに失敗した場合は、fixupを作成せずautosquashを中止し、`## 失敗時の扱い`に従う。
   範囲にmergeが含まれる場合も同じ扱いとする。
   この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する
 - fixup作成直後は、対象OIDから得た統合先件名と生成commitの制御件名を`git log -1 --format=%s`で比較する。
@@ -85,10 +85,10 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と返却種別`needs_escalation`は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていない主体は、`needs_escalation`に代えて同じ観測結果を呼び出し元へ報告する。
 
 `pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、失敗の事実と観測結果を呼び出し元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は呼び出し元の判断を得てから行う。失敗時点の履歴とindexの状態は失敗の種別ごとに異なり、状態を確定しない復旧操作と再試行はcommitの消失を招く。
-`--no-update-refs`を付けずにrebaseを実行したことを観測した場合は、local branch refsを列挙し、事前に保持したOIDと比べる。base branchを含む作業branch以外のrefが移動していた場合は、移動したref、変更前後のOID及び復旧操作に必要な許可を呼び出し元へ返し、自らrefを復旧しない。
+`--no-update-refs`を付けずにrebaseを実行したことを観測した場合は、local branch refsを列挙し、事前に保持したOIDと比べる。base branchを含む作業branch以外のrefが移動していた場合は、移動したref、変更前後のOIDおよび復旧操作に必要な許可を呼び出し元へ返し、自らrefを復旧しない。
 ただし、autosquashが内容競合で停止した場合は、同じ実装担当が次の条件を満たす範囲に限って競合を解消してよい。競合箇所が採用済みの指摘に対する修正と統合先commitの変更だけから成り、解消後もその中間commitの公開契約を維持できることを条件とする。解消したパスだけをstageし、`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して履歴と継続対象を確認した直後に`git rebase --continue`を実行する。再び内容競合で停止した場合も同じ条件を改めて判定する。
-競合箇所へ担当外の変更が含まれる場合、修正の帰属を確定できない場合又は中間commitの公開契約を維持できない場合は、競合をそのまま残して呼び出し元へ返す。
-失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`及び`git log --oneline -5`の観測結果を添えて`needs_escalation`で返す。
+競合箇所へ担当外の変更が含まれる場合、修正の帰属を確定できない場合または中間commitの公開契約を維持できない場合は、競合をそのまま残して呼び出し元へ返す。
+失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`および`git log --oneline -5`の観測結果を添えて`needs_escalation`で返す。
 
 ## merge進行中の退避
 
@@ -105,7 +105,7 @@ amendとfixupの対象は、プッシュ未了のコミットに限る。公開�
 
 ## 操作前後の確認
 
-- fixupとamendは、次の5つを1つの工程として順に完了してからcommitを実行する。第1に、変更したファイルを対象とする正式formatterを実行する。第2に、formatterが変更した差分を`git diff`で検収する。第3に、そのcommitへ帰属する差分だけをstageする。第4に、`git status --short`で未stageの差分が残らないことを確認する。第5に、fixup又はamendのcommitを実行する。pre-commitがcommitの実行時に初めて差分を変更すると、stage済みの差分と未stageの差分が併存し、そのcommitが成立しない。pre-commitが差分を変更した場合は`## 失敗時の扱い`に従う
+- fixupとamendは、次の5つを1つの工程として順に完了してからcommitを実行する。第1に、変更したファイルを対象とする正式formatterを実行する。第2に、formatterが変更した差分を`git diff`で検収する。第3に、そのcommitへ帰属する差分だけをstageする。第4に、`git status --short`で未stageの差分が残らないことを確認する。第5に、fixupまたはamendのcommitを実行する。pre-commitがcommitの実行時に初めて差分を変更すると、stage済みの差分と未stageの差分が併存し、そのcommitが成立しない。pre-commitが差分を変更した場合は`## 失敗時の扱い`に従う
 - 操作直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して対象commitの件名と差分を再特定し、
   `git blame -- <修正したファイルのリポジトリ相対パス>`または`git log -p -n 20 -- <修正したファイルのリポジトリ相対パス>`と
   `git show --stat <sha>`で統合先を確定する

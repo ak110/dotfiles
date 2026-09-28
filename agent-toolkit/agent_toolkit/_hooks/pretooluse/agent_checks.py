@@ -1,6 +1,6 @@
 # ruff: noqa: F401,F821,I001
 # pylint: disable=unused-import,used-before-assignment,wrong-import-order
-r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_server及びplan-mode起動を扱う検査。"""
+r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_serverおよびplan-mode起動を扱う検査。"""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
     Returns:
         通知本文。対象外の場合はNone。
 
-    検出した回の応答は既にユーザーへ届いており、当該ツール呼び出しを止めても当該応答は戻らない。
+    検出した回の応答は既にユーザーへ届いており、このツール呼び出しを止めてもその応答は戻らない。
     以降の応答を日本語へ切り替えることで是正できるため、
     `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
 
@@ -69,8 +69,8 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
     エスカレーションロジック:
     - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2で強い本文へ切り替える
     - PASS・SKIP: カウンタを0にリセットする。強い本文が「2ターン連続」と宣言するため、
-      英語主体でないと判定した回を経た後は、1回の検出だけでは当該本文へ切り替えない
-    - 切り替え後はカウンタを1に設定する（日本語に切り替わるまで毎ターン当該本文を返す）
+      英語主体でないと判定した回を経た後は、1回の検出だけでは強い本文へ切り替えない
+    - 切り替え後はカウンタを1に設定する（日本語に切り替わるまで毎ターン強い本文を返す）
     """
     transcript_path = payload.get("transcript_path", "")
     if not isinstance(transcript_path, str) or not transcript_path:
@@ -138,7 +138,7 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
 
 
 # 日本語の応答指示を再注入するツール呼び出しの間隔。
-# 2026-09-22以降のClaude Codeメイン記録で、セッション開始又は会話圧縮から最初の英語検知通知までの
+# 2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の英語検知通知までの
 # ツール呼び出し回数は55件で中央値20回、下位20%が7回、下位30%が11回だった。
 # 10回ごとの注入は最初の英語化の約7割より前に日本語の指示を文脈の近くへ置き、注入は1行のため文脈の消費は小さい。
 LANGUAGE_REINJECTION_INTERVAL = 10
@@ -205,15 +205,15 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 
 
 def _check_task_stop(session_id: str, tool_input: dict) -> bool:
-    """自セッションの所有記録又は対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
+    """自セッションの所有記録または対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
 
     停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
-    当該キーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
+    このキーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
     記録したものであり、自セッションが起動して停止用の識別子を保持している対象を表す。
     起動主体の確認を要する遮断の対象は、自セッションの起動記録が無い停止に限る。
 
     `stall_detection_completed_at_by_task`に5分以内の一致記録がある場合も遮断しない。
-    当該記録は待機手順を完了した主体が対象別に作成し、成功したPostToolUse(TaskStop)が消費する。
+    この記録は待機手順を完了した主体が対象別に作成し、成功したPostToolUse(TaskStop)が消費する。
 
     いずれの記録も無い対象は、再実行回数にかかわらず遮断する。
     """
@@ -229,7 +229,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
             "blocked: TaskStop。現在のセッションには、指定した対象の所有記録も停滞検知完了記録も無い。"
             "背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
             "停滞検知の手順を完了した場合に限る。"
-            "当該手順の完了条件は`agent-toolkit:delegation`の"
+            "この手順の完了条件は`agent-toolkit:delegation`の"
             f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
             "「停滞の検知と巻き取り」節が定める。"
             "進行が遅いことや非効率に確認できることだけでは停止の指示にならない。"
@@ -334,8 +334,8 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
             _block_notice(
                 f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",
                 fix=(
-                    "対象が自身の起動した対象でない場合は、当該対象を起動した委譲先へ`send_message`で追送し、"
-                    "当該委譲先に当該対象を打ち切らせる。"
+                    "対象が自身の起動した対象でない場合は、その対象を起動した委譲先へ`send_message`で追送し、"
+                    "その委譲先に対象を打ち切らせる。"
                     "自身が所有する作業を続ける場合は、絶対`cwd`を指定したagents_serverのstartで新しいセッションを開始する。"
                 ),
             ),

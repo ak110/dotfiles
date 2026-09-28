@@ -631,7 +631,7 @@ class TestRun:
         assert messages.index("前景ログ") < messages.index(background_completion) < messages.index("背景ログ")
 
     def test_background_step_failure_does_not_discard_other_results(self) -> None:
-        """背景ステップの例外を当該結果へ局所化し、他の結果を保持する。"""
+        """背景ステップの例外をそのステップの結果にとどめ、他の結果を保持する。"""
         calls: list[str] = []
         results, recommendations = post_apply.run(
             [

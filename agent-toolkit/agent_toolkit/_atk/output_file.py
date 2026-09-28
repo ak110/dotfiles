@@ -22,7 +22,7 @@ def add_output_file_arg(parser: argparse.ArgumentParser) -> None:
 
 @contextlib.contextmanager
 def redirect(path: pathlib.Path, *, after_save: Callable[[pathlib.Path], None] | None = None) -> Iterator[None]:
-    """標準出力をUTF-8ファイルへ保存し、離脱時に保存先、行数及び指定された内訳を報告する。"""
+    """標準出力をUTF-8ファイルへ保存し、離脱時に保存先、行数および指定された内訳を報告する。"""
     resolved = path.resolve(strict=False)
     stream = resolved.open("w", encoding="utf-8", newline="")
     try:

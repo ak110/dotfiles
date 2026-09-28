@@ -18,7 +18,7 @@ r"""Claude Code Stopフック: 応答終了で入力待ちになったときに�
 送出させる。フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないためである。
 
 他のStop系hookの判定（`agent-toolkit`の振り返り誘導、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`の
-終了工程の再促）とは独立に動くため、同一Stopサイクルの1回目では当該hookのblockに先行して
+終了工程の再促）とは独立に動くため、同一Stopサイクルの1回目ではこのhookのblockより先に
 ベルが鳴り得る。block後の再呼び出しは`stop_hook_active`により鳴らさない。
 """
 

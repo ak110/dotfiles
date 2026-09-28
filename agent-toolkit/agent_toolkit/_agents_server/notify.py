@@ -26,12 +26,12 @@ def send_notification(
 ) -> int:
     """共有状態ディレクトリへ通知を1件保存する。"""
     if not body.strip():
-        print("通知本文は空文字列又は空白だけにできません", file=sys.stderr)
+        print("通知本文は空文字列または空白だけにできません", file=sys.stderr)
         return 5
 
     identity = status_file.resolve_status_file_identity(os.environ if environment is None else environment)
     if identity is None or identity.host_session_id is None:
-        print("委譲先のsession識別子又はルートsessionを解決できません", file=sys.stderr)
+        print("委譲先のsession識別子またはルートsessionを解決できません", file=sys.stderr)
         return 4
 
     directory = status_file.notices_directory(identity.root_session_id, state_root)

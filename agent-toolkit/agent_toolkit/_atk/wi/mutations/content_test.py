@@ -1161,7 +1161,7 @@ class TestEditBodyFile:
         assert exc_info.value.code == 2
         assert capsys.readouterr().err == (
             "失敗: processingの項目はエージェント環境から編集できない: fb-001.md。"
-            "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わる。"
+            "処理中の要求を書き換えると、その要求をこのセッションで処理するかどうかが変わる。"
             "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
             "atk wi edit --appendで追記する\n"
         )

@@ -351,7 +351,7 @@ def test_target_skill_requires_successful_result(
     tmp_path: pathlib.Path,
     is_error: bool,
 ) -> None:
-    """失敗結果又は結果未到着の対象Skillは終了手順の対象にしない。"""
+    """失敗結果または結果未到着の対象Skillは終了手順の対象にしない。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     entries = [_skill_entry("agent-toolkit:process-wi")]

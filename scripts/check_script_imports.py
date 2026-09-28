@@ -13,8 +13,8 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   静的に評価できる`sys.path.insert`が示す探索パスを用い、到達する内部モジュールを
   推移走査する。`ImportError`または`ModuleNotFoundError`で保護されたimportは除外する
 - 対象種別2: `pyproject.toml`の`[project.scripts]`が参照する`module:function`形式。
-  参照先モジュールファイルが実在するか、当該ファイル内に対象関数の定義（または再エクスポートによる
-  束縛）が存在するかを`ast.parse`で確認する。プロジェクト依存の解決は`--no-project`環境では
+  参照先のモジュールファイルが実在し、そのファイルに対象関数の定義（または再エクスポートによる
+  束縛）があるかを`ast.parse`で確認する。プロジェクト依存の解決は`--no-project`環境では
   成立しないため対象外とする
 - 対象種別3: `agent-toolkit/agent_toolkit/`配下の責務別サブパッケージを再帰走査し、
   層の順序に反する絶対importと、非テストモジュールから`_testing`へのimportを検出する

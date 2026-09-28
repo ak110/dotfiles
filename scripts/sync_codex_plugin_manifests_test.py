@@ -406,7 +406,7 @@ def test_openai_interface_display_name_matches_skill_directory() -> None:
 
 @pytest.mark.skipif(
     not _CODEX_PLUGIN_VALIDATOR_AVAILABLE,
-    reason="Codex CLI又は同梱plugin検証器が存在しない",
+    reason="Codex CLIまたは同梱plugin検証器が存在しない",
 )
 def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
     """Codex検証器の既知の指摘集合だけを許容する。

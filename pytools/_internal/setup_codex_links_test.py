@@ -172,7 +172,7 @@ def test_os_error_skips_only_affected_link(
     caplog: pytest.LogCaptureFixture,
     failure_side: str,
 ) -> None:
-    """配布元又は配布先の検査失敗後も、残るリンクを処理する。"""
+    """配布元または配布先の検査失敗後も、残るリンクを処理する。"""
     dotfiles_root, codex_home = env
     monkeypatch.setattr(
         setup_codex_links,

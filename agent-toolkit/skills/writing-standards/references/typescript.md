@@ -12,7 +12,7 @@
 
 - 戻り値の`Promise`を意図的に無視する（fire-and-forget）場合は`void func()`形式で明示する。
   `await`忘れとの区別を付けるため`void`を省略しない。
-  Biomeやtypescript-eslintの`no-floating-promises`ルールを有効化している場合、この`void`明示で当該ルールを通過させる
+  Biomeやtypescript-eslintの`no-floating-promises`ルールを有効化している場合、この`void`明示でそのルールを通過させる
 - `void`で無視する非同期処理でも、例外が伝播しない設計の場合は明示的に`.catch(...)`を付ける
 
 ## テストコード（vitest）

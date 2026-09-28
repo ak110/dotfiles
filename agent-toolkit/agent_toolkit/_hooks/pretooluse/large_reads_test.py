@@ -103,7 +103,7 @@ def test_codex_applies_byte_threshold_and_environment_override(tmp_path: pathlib
 def test_dispatch_claude_large_read_passes_without_correction(tmp_path: pathlib.Path, capsys, tool_name: str) -> None:
     """Claude Codeでは`Read`と`cat`の大量読取を補正も遮断もしない。
 
-    ホストが上限超過を`PARTIAL view`又は退避ファイルとして返し、残りを続けて取得できるためである。
+    ホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるためである。
     """
     path = _large_file(tmp_path)
     tool_input = {"file_path": str(path)} if tool_name == "Read" else {"command": f"cat {path}"}

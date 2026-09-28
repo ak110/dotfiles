@@ -146,6 +146,26 @@ class TestApproveConditions:
         decision = _parse_decision(result)
         assert "decision" not in decision
 
+    def test_queued_notification_approves_with_empty_background_tasks(self, tmp_path: pathlib.Path) -> None:
+        """背景taskの終了後も通知の配送前なら終了再促を保留する。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry(),
+                {
+                    "type": "queue-operation",
+                    "operation": "enqueue",
+                    "content": "<task-notification><task-id>done</task-id></task-notification>",
+                },
+                _assistant_text_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "queued-notification", "transcript_path": str(transcript), "background_tasks": []},
+            state_dir=tmp_path,
+        )
+        assert "decision" not in _parse_decision(result)
+
     def test_pending_agents_server_observation_approves(self, tmp_path: pathlib.Path):
         """終端済みでも未回収のagents_server結果があれば終了再促を保留する。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])

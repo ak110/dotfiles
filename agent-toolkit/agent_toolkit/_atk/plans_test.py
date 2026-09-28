@@ -1365,7 +1365,7 @@ def test_rewrite_references_replaces_only_matching_stem(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """当該計画のstemに一致する参照だけを新しい参照値へ書き換える。"""
+    """自計画のstemに一致する参照だけを新しい参照値へ書き換える。"""
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
     _init_remote_notes(notes, remote)
@@ -1811,7 +1811,7 @@ def test_progress_rejects_missing_plan_file(tmp_path: pathlib.Path) -> None:
     ],
 )
 def test_progress_rejects_broken_progress_structure(tmp_path: pathlib.Path, content: str) -> None:
-    """節、固定表及び列構成のいずれかが成立しない計画を拒否する。"""
+    """節、固定表および列構成のいずれかが成立しない計画を拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)

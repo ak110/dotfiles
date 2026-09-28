@@ -87,7 +87,7 @@ class TestEnsurePlanLockIgnored:
         assert not _git(tmp_path, "status", "--porcelain")
 
     def test_keeps_existing_gitignore_untouched(self, tmp_path: pathlib.Path) -> None:
-        """管理パターンが`.gitignore`へ残るcloneでも、当該ファイルを変更しない。"""
+        """管理パターンが`.gitignore`へ残るcloneでも、そのファイルを変更しない。"""
         _git(tmp_path, "init", "-q")
         gitignore = tmp_path / ".gitignore"
         recorded = b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
@@ -100,7 +100,7 @@ class TestEnsurePlanLockIgnored:
         assert self._exclude_path(tmp_path).read_bytes().splitlines().count(pattern) == 1
 
     def test_writes_shared_exclude_from_a_worktree(self, tmp_path: pathlib.Path) -> None:
-        """worktreeから呼んだ場合は共有側の除外設定へ書き、当該worktreeで除外が成立する。"""
+        """worktreeから呼んだ場合は共有側の除外設定へ書き、そのworktreeで除外が成立する。"""
         repository = tmp_path / "repository"
         repository.mkdir()
         _git(repository, "init", "-q")

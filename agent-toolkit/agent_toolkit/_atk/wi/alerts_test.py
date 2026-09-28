@@ -253,7 +253,7 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
     assert gitlab_count == 1
     awis = _saved_awis_by_heading(notes)
     workflow_completion = (
-        "## 完成条件\n\n対象ワークフロー`CI`の失敗が解消し、ブランチ`main`で当該ワークフローが成功する。"
+        "## 完成条件\n\n対象ワークフロー`CI`の失敗が解消し、ブランチ`main`でそのワークフローが成功する。"
         "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
     )
     pipeline_completion = (
@@ -301,7 +301,7 @@ def test_collect_new_alerts_skips_disabled_dependabot_without_warning(
     """Dependabot機能が無効なリポジトリでは警告を出力せずアラート0件で返す。"""
 
     def disabled_fn(_repo: str) -> list[dict]:
-        raise alerts.AlertFeatureDisabledError("dependabot/alerts取得: 対象リポジトリで当該機能が無効")
+        raise alerts.AlertFeatureDisabledError("dependabot/alerts取得: 対象リポジトリで機能が無効")
 
     result = alerts.collect_new_alerts(
         "github.com/o/r",

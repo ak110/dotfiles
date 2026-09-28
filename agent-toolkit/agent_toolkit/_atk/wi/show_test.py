@@ -29,7 +29,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 
 
 class TestShowSingleFile:
-    """showサブコマンド: FILENAME指定で当該1件の本文のみを表示する。"""
+    """showサブコマンド: FILENAME指定でその1件の本文のみを表示する。"""
 
     def test_single_file_shows_only_that_entry(
         self,
@@ -37,7 +37,7 @@ class TestShowSingleFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定時は当該1件のtarget_repoグループ・ファイル名・本文が出力され他件は出力されない。"""
+        """FILENAME指定時は指定した1件のtarget_repoグループ・ファイル名・本文が出力され他件は出力されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
@@ -264,7 +264,7 @@ class TestShowMultipleFiles:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """欠落又はフィルター不一致が1件でもあれば全出力を抑制し該当名を全て列挙する。"""
+        """欠落またはフィルター不一致が1件でもあれば全出力を抑制し該当名を全て列挙する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-ok.md", target_repo="github.com/example/foo", body="表示しない本文")
         _write_awi_file(notes, "fb-mismatch.md", target_repo="github.com/example/bar", body="不一致本文")
@@ -629,7 +629,7 @@ class TestShowProcessing:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定時にinboxで見つからずprocessingで見つかる場合、当該本文が表示される。"""
+        """FILENAME指定時にinboxで見つからずprocessingで見つかる場合、その本文が表示される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_processing_file(notes, "fb-processing.md", body="processing本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

@@ -63,7 +63,7 @@ def _strip_frontmatter(lines: list[str]) -> list[str]:
 def _prose_lines(text: str) -> list[str]:
     """本文として数える行だけを返す。
 
-    フェンス付きコードブロック、見出し行、表の行及びHTMLコメントを除き、
+    フェンス付きコードブロック、見出し行、表の行およびHTMLコメントを除き、
     箇条書きの記号と番号を取ってからインラインコードを固定の置換語へ置き換える。
     """
     without_comments = _HTML_COMMENT_PATTERN.sub("", text)

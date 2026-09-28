@@ -144,7 +144,7 @@ def test_add_dry_run_validates_without_side_effects(
     monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
 
     def reject_side_effect(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("dry-runでremote同期又はcommitを実行しました")
+        raise AssertionError("dry-runでremote同期またはcommitを実行しました")
 
     monkeypatch.setattr(add_module, "_pull", reject_side_effect)
     monkeypatch.setattr(add_module, "_commit_and_push", reject_side_effect)
@@ -464,7 +464,7 @@ def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """短いフェンス又は異種文字のフェンスを閉じフェンスとして数えない。"""
+    """短いフェンスまたは異種文字のフェンスを閉じフェンスとして数えない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -562,7 +562,7 @@ def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quot
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """必須節の本文が引用の内側のH2から始まっても当該節を非空として数える。"""
+    """必須節の本文が引用の内側のH2から始まっても、その節を非空として数える。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -2273,7 +2273,7 @@ def _add_body_input_args(
     body: str,
     input_kind: str,
 ) -> list[str]:
-    """エディター又は本文ファイルの指定に対応するadd引数列を返す。"""
+    """エディターまたは本文ファイルの指定に対応するadd引数列を返す。"""
     if input_kind == "editor":
         _patch_add_editor(monkeypatch, body)
         return ["wi", "add"]

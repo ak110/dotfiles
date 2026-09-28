@@ -58,7 +58,7 @@ _INPUT_GUIDANCE = (
     "計画ファイルと同じstemの`.exec-review.tsv`、または原因commitの7文字以上の一意な短縮OID由来の"
     "`ci-<OID>.exec-review.tsv`を"
     "通常ファイルの絶対パスで指定する。"
-    "標準入力、パイプ及びプロセス置換は受理しない"
+    "標準入力、パイプおよびプロセス置換は受理しない"
 )
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
@@ -150,7 +150,7 @@ def _read(path: Path) -> list[list[str]]:
 
 
 def _normalized(value: str) -> str:
-    """複合キー用にUnicode、前後空白及び連続空白を正規化する。"""
+    """複合キー用にUnicode、前後空白および連続空白を正規化する。"""
     return _WHITESPACE_RE.sub(" ", unicodedata.normalize("NFC", value).strip())
 
 
@@ -164,7 +164,7 @@ def _key(row: list[str]) -> tuple[str, str, str, str]:
 
 
 def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) -> None:
-    """7列、先頭4列の複合キー一意性、指摘レベル及び応答分岐を検証する。
+    """7列、先頭4列の複合キー一意性、指摘レベルおよび応答分岐を検証する。
 
     対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。
     双方が空である行を未応答とし、双方が埋まっている行を矛盾として拒否する。
@@ -498,7 +498,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         "--level",
         required=True,
         choices=LEVEL_VALUES,
-        help="指摘レベル。要件、仕様、詳細又は実装を指定する。",
+        help="指摘レベル。要件、仕様、詳細または実装を指定する。",
     )
     for name, description in (
         ("location", "追加する指摘箇所"),

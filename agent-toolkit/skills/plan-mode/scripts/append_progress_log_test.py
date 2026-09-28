@@ -50,7 +50,7 @@ def test_preserves_crlf_and_missing_final_newline(tmp_path: pathlib.Path) -> Non
 
 
 def test_escapes_table_cells(tmp_path: pathlib.Path) -> None:
-    """改行、バックスラッシュ及びパイプを1つのGFM表セルへ収める。"""
+    """改行、バックスラッシュおよびパイプを1つのGFM表セルへ収める。"""
     path = tmp_path / "plan.md"
     path.write_text(_plan(), encoding="utf-8")
     now = datetime.datetime(2026, 9, 20, 3, 34, tzinfo=datetime.UTC)
@@ -80,7 +80,7 @@ def test_ignores_progress_heading_inside_code_fence(tmp_path: pathlib.Path) -> N
     ],
 )
 def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, content: str) -> None:
-    """見出し又は固定表が不正なら元のバイト列を変更しない。"""
+    """見出しまたは固定表が不正なら元のバイト列を変更しない。"""
     path = tmp_path / "plan.md"
     original = content.encode()
     path.write_bytes(original)

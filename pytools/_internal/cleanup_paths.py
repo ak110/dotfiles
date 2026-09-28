@@ -61,7 +61,7 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
         except OSError as error:
-            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
             continue
         try:
             if is_link_like:
@@ -71,7 +71,7 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
             else:
                 target.unlink()
         except OSError as error:
-            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
             continue
         logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1
@@ -102,7 +102,7 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes]
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
         except OSError as error:
-            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
             continue
         try:
             if not target.is_file() or target.is_symlink():
@@ -110,7 +110,7 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes]
                 continue
             actual_bytes = target.read_bytes()
         except OSError as error:
-            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
             continue
         if actual_bytes != expected_bytes:
             logger.warning(
@@ -121,7 +121,7 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes]
         try:
             target.unlink()
         except OSError as error:
-            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
             continue
         logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1

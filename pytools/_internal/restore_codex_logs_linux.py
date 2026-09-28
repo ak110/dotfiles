@@ -151,7 +151,7 @@ def _home_state(home_path: pathlib.Path, target_path: pathlib.Path) -> str:
 
 
 def _unrelated_reason(home_path: pathlib.Path, target_path: pathlib.Path) -> str:
-    """管理対象外へ分類した根拠を、symlinkの参照先又は実体の種別で表す。"""
+    """管理対象外へ分類した根拠を、symlinkの参照先または実体の種別で表す。"""
     if home_path.is_symlink():
         return f"symlinkの参照先が管理対象と異なる: 参照先={home_path.readlink()}・管理対象={target_path}"
     return f"通常ファイルでもsymlinkでもない実体: {_path_kind(home_path)}"
@@ -212,7 +212,7 @@ def _running_codex_processes() -> tuple[str, ...]:
 def _process_label(name: str, exe: str, cmdline_values: list[str], pid: int) -> str:
     """実行名と、許可した第2要素のサブコマンド名だけでラベルを構成する。
 
-    `name`を取得できない場合は、Codexの識別に用いた`exe`又は`cmdline`第1要素から実行名を導く。
+    `name`を取得できない場合は、Codexの識別に用いた`exe`または`cmdline`第1要素から実行名を導く。
     いずれからも実行名を得られない場合だけ`pid <pid>`とする。
     `codex [OPTIONS] [PROMPT]`の通常起動では第2要素が利用者のプロンプトになり得るため、
     完全一致で許可したサブコマンド名以外はラベルへ含めない。
@@ -251,7 +251,7 @@ def _is_codex_process_value(value: str) -> bool:
 
 
 def _is_node_executable(name: str, exe: str) -> bool:
-    """実行名又は実行ファイルパスがnode系実行体を示すか判定する。"""
+    """実行名または実行ファイルパスがnode系実行体を示すか判定する。"""
     return any(_executable_name(value.replace("\\", "/").lower()) in _NODE_EXECUTABLE_NAMES for value in (name, exe))
 
 
@@ -371,7 +371,7 @@ def _snapshot_matches(left: pathlib.Path, right: pathlib.Path) -> bool:
 
 
 def _fsync_directory(path: pathlib.Path) -> None:
-    """rename又はreplace後のディレクトリエントリを永続化する。"""
+    """renameまたはreplace後のディレクトリエントリを永続化する。"""
     descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)

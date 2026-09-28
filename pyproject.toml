@@ -38,7 +38,6 @@ dependencies = [
 astra = "pytools.claude_launcher:main_astra"
 check-image-sizes = "pytools.check_image_sizes:main"
 ccommit = "pytools.claude_commit:main"
-claude-session-export = "pytools.claude_session_export:main"
 claudize = "pytools.claudize:main"
 clonedir = "pytools.clonedir:main"
 codexize = "pytools.codexize:main"
@@ -132,14 +131,14 @@ shellcheck = true
 shfmt = true
 colloquial-check = true
 # agent-toolkit/はpyproject.tomlを持つためpyfltrがサブプロジェクトとして検出し、
-# サブプロジェクト側の設定にagent-doc-toneの定義が無いと当該配下を丸ごとスキップする。
+# サブプロジェクト側の設定にagent-doc-toneの定義が無いとその配下を丸ごとスキップする。
 # 母集団はルートとagent-toolkit/にまたがるため、本コマンドだけサブプロジェクト分割を無効にする。
 agent-doc-tone-subproject-aware = false
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
 # 配布先で常時読み込まれる規範は、配送境界を示すXML要素で本文全体を囲む。
-# 当該要素が先頭行と末尾行を占め、先頭行を見出しに限る規則とインラインHTMLを禁じる規則へ抵触する。
+# この要素が先頭行と末尾行を占め、先頭行を見出しに限る規則とインラインHTMLを禁じる規則へ抵触する。
 markdownlint-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     ".chezmoi-source/dot_claude/rules/myprojects-common.md",
@@ -374,7 +373,10 @@ addopts = [
     # module scopeのfixtureが1件のみで順序依存が無いことを確認したうえで本方式へ変更した
     "--dist=worksteal",
 ]
-markers = ["browser: Chromiumを使う実ブラウザー統合テスト"]
+markers = [
+    "browser: Chromiumを使う実ブラウザー統合テスト",
+    "repo_invariant: 変更ファイルと無関係に全追跡ファイルまたは全ソースを走査する不変条件テスト",
+]
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"

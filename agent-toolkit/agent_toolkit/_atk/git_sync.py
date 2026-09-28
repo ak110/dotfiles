@@ -10,9 +10,9 @@ private-notesへcommitする操作は、副作用を確定した後も未pushの
 通知の判定材料を本モジュールが提供する。
 pullとpushの失敗も呼び出し元の実行主体が次の操作を決められる必要があるため、
 失敗理由を示すgitの出力に続けて、本モジュールが確認コマンドと再実行の手順を出力する。
-前提検査と失敗時の復元は、当該操作が書き込む対象パスへ限定する。共有Git作業コピーへ
+前提検査と失敗時の復元は、その操作が書き込む対象パスへ限定する。共有Git作業コピーへ
 複数の実行主体が並行して書き込むため、repo全体を対象とする前提と復元は他の主体の成果を
-壊すか、当該操作を恒常的に成立させなくする。
+壊すか、その操作を恒常的に成立させなくする。
 """
 
 from __future__ import annotations
@@ -451,7 +451,7 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
 
 
 def _report_sync_failure(private_notes: pathlib.Path, operation: str) -> None:
-    """pull又はpush失敗後に確認と再実行の手順を表示する。"""
+    """pullまたはpush失敗後に確認と再実行の手順を表示する。"""
     resolved = private_notes.resolve()
     _outcome.report_failure(f"private-notesの{operation}に失敗した: {resolved}。次の手順で原因を解消してから再実行する")
     print(

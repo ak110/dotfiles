@@ -14,6 +14,12 @@ from agent_toolkit._atk import config, environment
 status_file = commands.status_file
 
 
+def _write_jsonl(path: pathlib.Path, records: list[dict]) -> None:
+    """公開CLI用の保存済み記録を作成する。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n", encoding="utf-8")
+
+
 def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureFixture[str]) -> None:
     """回収できた全件の出力形式と、待機の成立判定および再発行の条件を説明する。"""
     with pytest.raises(SystemExit, match="0"):
@@ -25,14 +31,14 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
         "1件1行のJSON Lines",
         "最初の待機で起動中sessionと未回収結果を登録簿へ固定",
         "通知だけを回収した場合",
-        "待機対象の行が現れない応答は当該対象が未終端であることを示す",
+        "待機対象の行が現れない応答は、その対象が未終端であることを示す",
         "同じターン内に同じコマンドを再発行",
         "結果を保持しない`stop`とsession登録簿での喪失確定",
         "待機対象登録が破損している場合",
         "終端statusでは追加の結果受領操作は不要",
         "`--output-file`を指定した場合",
         "通知件数と送信元session ID",
-        "回収した本文は当該保存先に残る",
+        "回収した本文はその保存先に残る",
         "MCPの`list`を1回呼び出してから同じコマンドを再実行",
         "--root-session-id",
         "次の逐次待機へ再配送しない",
@@ -139,10 +145,10 @@ def test_agents_wait_saves_collected_lines_to_the_output_file(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存先を指定した待機は、終端件数を示し、回収したJSON Linesを当該ファイルへ残す。
+    """保存先を指定した待機は、終端件数を示し、回収したJSON Linesを指定したファイルへ残す。
 
     保存先を持たない待機では、回収と同時に原本が削除されて本文が標準出力にだけ現れ、
-    後続の工程と後続のセッションが当該本文を取得できない。
+    後続の工程や後続のセッションがその本文を取得できない。
     """
     results = status_file.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
@@ -468,6 +474,213 @@ def test_agents_logs_reads_claude_record(
         atk.main(["agents", "logs", "session-1"])
 
     assert "[2026-09-24T00:00:00Z] user: 調査して" in capsys.readouterr().out
+
+
+def test_agents_logs_markdown_keeps_turns_and_tool_result_together(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開CLIがClaudeのメタデータ、会話、思考、ツール結果を同じ形式で出力する。"""
+    path = tmp_path / "projects" / "sample" / "session-1.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-09-24T00:00:00Z",
+                "sessionId": "session-1",
+                "cwd": "/work/sample",
+                "gitBranch": "develop",
+                "slug": "調査記録",
+                "message": {"content": [{"type": "text", "text": "調査して"}]},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-24T00:00:01Z",
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "調べます"},
+                        {"type": "thinking", "thinking": "確認中"},
+                        {"type": "tool_use", "id": "toolu_a", "name": "Bash", "input": {"command": "echo hi"}},
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-24T00:00:02Z",
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_a", "content": [{"text": "hi"}]}]},
+            },
+        ],
+    )
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "session-1", "--format", "markdown"])
+    output = capsys.readouterr().out
+    assert "# Session: 調査記録" in output
+    assert "| セッションID | session-1 |" in output
+    assert "| ブランチ | develop |" in output
+    assert "| 期間 | 2026-09-24 00:00:00 UTC 〜 2026-09-24 00:00:02 UTC |" in output
+    assert "## Human\n\n調査して" in output
+    assert "## Assistant\n\n調べます" in output
+    assert "<summary>Tool: Bash" in output
+    assert "**Result:**\n\n```\nhi\n```" in output
+    assert "<summary>Thinking</summary>" not in output
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "session-1", "--format", "markdown", "--include-thinking", "--no-tool-details"])
+    concise = capsys.readouterr().out
+    assert "<summary>Thinking</summary>" in concise
+    assert "> Tool: Bash" in concise
+    assert "**Result:**" not in concise
+
+
+def test_agents_logs_markdown_renders_codex_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Codexの公開記録もClaudeと同じ見出し・表・ツール詳細で出力する。"""
+    thread_id = "55555555-5555-4555-8555-555555555555"
+    path = tmp_path / "sessions" / "2026" / "09" / "24" / f"rollout-2026-09-24T00-00-00-{thread_id}.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {
+                "type": "session_meta",
+                "timestamp": "2026-09-24T00:00:00Z",
+                "payload": {"cwd": "/work/codex", "timestamp": "2026-09-24T00:00:00Z", "git": {"branch": "develop"}},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-24T00:00:01Z",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "調査して"}]},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-24T00:00:02Z",
+                "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "調べます"}]},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-24T00:00:03Z",
+                "payload": {
+                    "type": "function_call",
+                    "name": "shell",
+                    "call_id": "call-1",
+                    "arguments": '{"command": "echo hi"}',
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-24T00:00:04Z",
+                "payload": {"type": "function_call_output", "call_id": "call-1", "output": "hi"},
+            },
+        ],
+    )
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", thread_id, "--format", "markdown"])
+    output = capsys.readouterr().out
+    assert "| プロジェクト | /work/codex |" in output
+    assert "| ブランチ | develop |" in output
+    assert "## Human\n\n調査して" in output
+    assert "## Assistant\n\n調べます" in output
+    assert "<summary>Tool: shell</summary>" in output
+    assert "**Result:**\n\n```\nhi\n```" in output
+
+
+def test_agents_logs_reads_subagent_and_appends_it_to_parent_markdown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """サブエージェントのIDと親からの双方で同じ保存記録へ到達する。"""
+    parent = tmp_path / "projects" / "sample" / "parent.jsonl"
+    _write_jsonl(parent, [{"type": "user", "timestamp": "2026-09-24T00:00:00Z", "message": {"content": "親の依頼"}}])
+    child_id = "agent-a7157f79d55caab81"
+    child = parent.with_suffix("") / "subagents" / f"{child_id}.jsonl"
+    _write_jsonl(child, [{"type": "user", "timestamp": "2026-09-24T00:00:01Z", "message": {"content": "子の依頼"}}])
+    child.with_name(f"{child_id}.meta.json").write_text(
+        json.dumps({"description": "記録調査", "agentType": "Explore"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", child_id])
+    assert "子の依頼" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "parent", "--format", "markdown", "--include-subagents"])
+    output = capsys.readouterr().out
+    assert "## Subagent: 記録調査" in output
+    assert "Type: Explore" in output
+    assert "### Human\n\n子の依頼" in output
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        [],
+        ["one", "--all"],
+        ["one", "--project-dir", "/work"],
+        ["one", "--latest", "1"],
+        ["one", "--format", "markdown", "--follow"],
+        ["--all", "--format", "markdown", "--follow"],
+        ["one", "--include-thinking"],
+    ],
+)
+def test_agents_logs_rejects_incompatible_scopes(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+    """対象の排他、件数、追尾とmarkdown専用オプションの境界を検査する。"""
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", "logs", *argv])
+    assert "error:" in capsys.readouterr().err
+
+
+def test_agents_logs_bulk_export_filters_projects_and_preserves_existing_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ClaudeとCodexを全件変換し、同日時名の衝突と既存ファイルを安全に扱う。"""
+    project = tmp_path / "work" / "sample"
+    encoded = str(project).replace("/", "-").replace(".", "-")
+    claude_root = tmp_path / "claude" / "projects" / encoded
+    for name in ("claude-a", "claude-b"):
+        _write_jsonl(
+            claude_root / f"{name}.jsonl",
+            [{"type": "user", "timestamp": "2026-09-24T00:00:00Z", "cwd": str(project), "message": {"content": name}}],
+        )
+    for day, cwd in (("25", str(project)), ("26", "/other")):
+        thread_id = f"55555555-5555-4555-8555-5555555555{day}"
+        path = tmp_path / "codex" / "sessions" / "2026" / "09" / day / f"rollout-2026-09-{day}T00-00-00-{thread_id}.jsonl"
+        _write_jsonl(
+            path,
+            [
+                {"type": "session_meta", "timestamp": f"2026-09-{day}T00:00:00Z", "payload": {"cwd": cwd}},
+                {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": cwd}]}},
+            ],
+        )
+    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
+    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path / "codex")
+    output_dir = tmp_path / "exports"
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "--all", "--format", "markdown", "--output-dir", str(output_dir)])
+    assert len(list(output_dir.glob("*.md"))) == 4
+    assert (output_dir / "20260924_000000.md").is_file()
+    assert len(list(output_dir.glob("20260924_000000_*.md"))) == 1
+    first_contents = {path.name: path.read_text(encoding="utf-8") for path in output_dir.glob("*.md")}
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "--project-dir", str(project), "--latest", "1", "--format", "markdown"])
+    selected = capsys.readouterr().out
+    assert "/work" in selected
+    assert "2026-09-25" in selected
+    assert "2026-09-26" not in selected
+    assert "claude-a" not in selected
+
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", "logs", "--all", "--format", "markdown", "--output-dir", str(output_dir)])
+    assert {path.name: path.read_text(encoding="utf-8") for path in output_dir.glob("*.md")} == first_contents
 
 
 def test_agents_logs_reports_missing_record(

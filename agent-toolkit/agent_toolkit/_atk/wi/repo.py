@@ -42,7 +42,7 @@ def _resolve_local_worktree(value: str | None) -> pathlib.Path:
     """ローカル作業ツリーのパスを解決して返す。
 
     - `value`が実在するローカルパスなら`expanduser().resolve()`した結果を返す
-    - `value`が実在しないパスやURL文字列なら「ローカルパスが必要」旨をstderrへ出力してexit 2
+    - `value`が実在しないパスやURL文字列なら、実在するローカルパスの指定を求めるエラーをstderrへ出力してexit 2
     - `value`省略時は`git rev-parse --show-toplevel`の出力を返す。失敗時もexit 2
     """
     if value is not None:

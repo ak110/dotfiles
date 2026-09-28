@@ -60,9 +60,9 @@ NORMATIVE_KIND_SUBAGENT = "rules-subagent"
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
     """SessionStartへ追加する本文を構成する。
 
-    使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、当該条文は本文の末尾寄りに
+    使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、この条文は本文の末尾寄りに
     位置するため、最初の応答を生成する時点では冒頭の記述より参照から漏れやすい。同じ規定を冒頭の1文へ
-    置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先は当該規定の対象外のため追加しない。
+    置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先はこの規定の対象外のため追加しない。
 
     常駐処理が渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
@@ -164,7 +164,7 @@ def _parse_payload(payload_text: str) -> dict[str, Any]:
 
 
 def main(payload_text: str, *, host: str = "claude") -> int:
-    """SessionStart又はSubagentStartのpayloadを処理する。"""
+    """SessionStartまたはSubagentStartのpayloadを処理する。"""
     payload = _parse_payload(payload_text)
     event_name = payload.get("hook_event_name")
     if event_name == "SessionStart":
@@ -193,7 +193,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if session_temp is not None:
             content = f"{content}\n\n{_llm_notice(session_temp_notice(session_temp))}"
     else:
-        raise ValueError("hook_event_nameはSessionStart又はSubagentStartである必要がある")
+        raise ValueError("hook_event_nameはSessionStartまたはSubagentStartである必要がある")
 
     if content is not None:
         # 本文は区分ごとに境界を持つため、全体を重ねて囲まない。

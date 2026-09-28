@@ -121,7 +121,7 @@ def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path)
 
 
 def test_pending_commit_count_distinguishes_remote_and_upstream_states(tmp_path: pathlib.Path) -> None:
-    """remoteなし、upstream不明及び未push件数を別の結果で返す。"""
+    """remoteなし、upstream不明および未push件数を別の結果で返す。"""
     local_only = tmp_path / "local-only"
     local_only.mkdir()
     (local_only / _atk_git_sync.LOCAL_ONLY_MARKER).touch()
@@ -216,7 +216,7 @@ def test_push_suppresses_output_of_recovered_first_push(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """最初のpush失敗をfast-forwardと再pushで解消した場合は当該出力を表示しない。"""
+    """最初のpush失敗をfast-forwardと再pushで解消した場合はその出力を表示しない。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     calls: list[tuple[list[str], bool]] = []
@@ -275,7 +275,7 @@ def test_pull_suppresses_output_of_recovered_first_merge(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """最初のff-only失敗をrebaseで解消した場合は当該出力を表示しない。"""
+    """最初のff-only失敗をrebaseで解消した場合はその出力を表示しない。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     calls: list[tuple[list[str], bool]] = []

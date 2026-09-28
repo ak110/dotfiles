@@ -14,7 +14,7 @@ Claude CodeのsessionTitleは、process-loop起動セッションでは`process-
 process-wi手動起動セッションでは`process-wi`の固定値を優先する
 （両条件が真の場合はprocess-loopを優先する）。
 いずれにも該当しないセッションは計画ファイルのstemを一度だけ反映する。
-固定値の判定は、当該呼び出しでのスキル起動フラグ更新の後に行う
+固定値の判定は、その呼び出しでのスキル起動フラグ更新の後に行う
 （同一呼び出しで検出したスラッシュコマンド起動を、その場でsessionTitleへ反映するため）。
 
 通常発話へ返す注記は照合注記の1種とする。照合の手順を本文へ持ち、
@@ -100,7 +100,7 @@ _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
 _LAST_USER_PROMPT_AT_KEY = "last_user_prompt_at"
 _VERIFICATION_NOTICE_TAG = "notice"
 _VERIFICATION_NOTICE_BODY = (
-    "直前の発話から、当該発話が主張する事実と是正を求めている対象を列挙し、"
+    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
     "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
     "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
     "照合できない場合は同意も変更もしない。"
@@ -111,7 +111,7 @@ _VERIFICATION_NOTICE_BODY = (
 """照合要求の注記の本文。
 
 照合すべき対象は発話ごとに異なるため、対象の列挙を受領側の手順として本文に持たせる。
-当該列挙をフック側の判定で代替しない。本フックの入力は発話本文だけであり、
+その列挙をフック側の判定で代替しない。本フックの入力は発話本文だけであり、
 規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
 """
 _llm_notice = _notice_formatter("agent-toolkit/user_prompt_submit")
@@ -264,7 +264,7 @@ def main(payload_text: str) -> int:
             full_name = f"agent-toolkit:{name}"
 
             # 対応スキル別にフラグを設定する。sessionTitleの固定値判定より先に行い、
-            # 当該呼び出しでの起動を同じ応答へ反映できるようにする。
+            # その呼び出しでの起動を同じ応答へ反映できるようにする。
             if is_codex and (name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES):
                 update_state(session_id, _set_plan_mode_invoked)
             if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:

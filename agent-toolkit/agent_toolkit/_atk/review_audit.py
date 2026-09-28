@@ -110,7 +110,7 @@ def _query_graphql(owner: str, name: str, query: str, *, number: int | None = No
 
     response = _json_command.run(command, _GH_TIMEOUT, error_factory=failure, strict_stderr=False)
     if not isinstance(response, dict) or response.get("errors") or not isinstance(response.get("data"), dict):
-        raise ValueError("Copilot監査対象のGraphQL応答が不正又は部分失敗である")
+        raise ValueError("Copilot監査対象のGraphQL応答が不正または部分失敗である")
     return response["data"]
 
 
@@ -127,7 +127,7 @@ def _connection(data: dict, field: str, number: int | None) -> dict:
         or not isinstance(page, dict)
         or not isinstance(page.get("hasNextPage"), bool)
     ):
-        raise ValueError(f"Copilot監査対象の{field}接続又はpageInfoが不正である")
+        raise ValueError(f"Copilot監査対象の{field}接続またはpageInfoが不正である")
     return connection
 
 
@@ -197,7 +197,7 @@ def _pending(repository: str) -> int:
                 or not isinstance(first, list)
                 or any(not isinstance(comment, dict) for comment in first)
             ):
-                raise ValueError("Copilot review threadの状態又は先頭commentが不正である")
+                raise ValueError("Copilot review threadの状態または先頭commentが不正である")
             if not thread["isResolved"] and first and _copilot_author(first[0].get("author")):
                 threads.add(number)
     result = {

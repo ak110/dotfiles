@@ -120,7 +120,7 @@ class TestLanguageEscalation:
     def test_second_english_escalates_body(self, tmp_path: pathlib.Path):
         """2回連続英語でもツールを通し、強い本文の警告へ切り替える。
 
-        検出した回の応答は既にユーザーへ届いており、当該ツール呼び出しを止めても当該応答は戻らない。
+        検出した回の応答は既にユーザーへ届いており、ツール呼び出しを止めても送信済みの応答は戻らない。
         """
         env = self._state_env(tmp_path)
         sid = "esc-block"

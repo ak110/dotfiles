@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $baseUrl = if ($env:DOTFILES_RULES_URL) { $env:DOTFILES_RULES_URL } else { 'https://raw.githubusercontent.com/ak110/dotfiles/master/agent-toolkit/rules' }
 $targetDir = Join-Path $HOME '.claude/rules/agent-toolkit'
 $legacyDir = Join-Path $HOME '.claude/rules/agent-basics'
-# ステージング先は rules/ の外に置く。
+# ステージングには rules/ 以外のディレクトリを使う。
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 $stageRoot = Join-Path $HOME '.claude/rules-stage'
 $codexPluginId = 'agent-toolkit@ak110-dotfiles'

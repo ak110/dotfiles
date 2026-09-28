@@ -667,7 +667,7 @@ class TestConfigSet:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """環境変数が優先中でも保存先を更新し、実効値にならない旨を警告する。"""
+        """環境変数が優先中でも保存先を更新し、実効値にならないことを警告する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL", "claude:sonnet/high")
         saved = "codex:gpt-5.6-terra/low"
 
@@ -707,7 +707,7 @@ class TestConfigSet:
             config_module.resolve_model_candidates("no-such")
 
     def test_resolve_model_candidates_accepts_direct_candidates(self, tmp_path: pathlib.Path) -> None:
-        """設定値と同じ書式の候補列を直接受理し、設定を読まずに当該候補を返す。"""
+        """設定値と同じ書式の候補列を直接受理し、設定を読まずにその候補を返す。"""
         config_file = tmp_path / "config" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(json.dumps({"high_tier_model": "claude:haiku/low"}), encoding="utf-8")

@@ -132,7 +132,7 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
         "permissions.deny",
         "Read(./.env)",
     ),
-    # 2026-08: 旧Codex User scope MCPの登録廃止に伴い、当該MCPツールの許可項目を除去
+    # 2026-08: 旧Codex User scope MCPの登録廃止に伴い、そのMCPツールの許可項目を除去
     (
         "permissions.allow",
         "mcp__codex",
@@ -178,7 +178,7 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
 _LABELED_LIST_ITEM_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9 -]*): ")
 
 # `_strip_stale_labeled_list_items`の対象パス一覧（ドット区切り）。
-# managed側が当該配列を管理していない設定ファイルでの誤削除を防ぐため、
+# managed側がその配列を管理していない設定ファイルでの誤削除を防ぐため、
 # `_SETTINGS_PATH`向けの呼び出しでのみ明示指定する（`_REMOVED_LIST_ITEM_SUBSTRINGS`と同じ設計）。
 _STALE_LABELED_LIST_PATHS: tuple[str, ...] = ("autoMode.allow",)
 
@@ -261,7 +261,7 @@ def update_claude_settings(
     構造を変更した場合に旧構造が残るのを防ぐ。
 
     `removed_list_item_substrings` の既定値は空タプル。settings.json 専用の配列項目を
-    対象とする場合は呼び出し元で明示指定する（managed JSON が当該配列を管理していない
+    対象とする場合は呼び出し元で明示指定する（managed JSON がその配列を管理していない
     .claude.json などで誤削除が起きるのを防ぐため）。
 
     `stale_labeled_list_paths` は `managed_path` 側の対象配列からラベル
@@ -588,7 +588,7 @@ def _strip_stale_labeled_list_items(data: dict, managed: dict, paths: tuple[str,
     除去対象にならず保護される。
 
     `paths` の既定値は空タプル。settings.json 専用の配列項目を対象とする場合は呼び出し元で
-    明示指定する（managed JSON が当該配列を管理していない .claude.json などで誤削除が
+    明示指定する（managed JSON がその配列を管理していない .claude.json などで誤削除が
     起きるのを防ぐため。`removed_list_item_substrings` と同じ設計とする）。
     """
     if not paths:

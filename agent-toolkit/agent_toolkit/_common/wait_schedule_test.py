@@ -146,7 +146,7 @@ def test_force_five_minute_precedes_user_settings(monkeypatch: pytest.MonkeyPatc
     ],
 )
 def test_unusable_user_settings_falls_through(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
-    """受理しない値、別bucketの指定及び解析できない内容は後続の判定へ委ねる。"""
+    """受理しない値、別bucketの指定および解析できない内容は後続の判定へ委ねる。"""
     _write_user_settings(text)
     monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)

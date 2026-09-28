@@ -804,7 +804,7 @@ async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path, re
 
 @pytest.mark.asyncio
 async def test_remote_subagents_are_listed_or_reported_as_unavailable(tmp_path: pathlib.Path) -> None:
-    """リモートの記録もサブエージェント一覧を返し、当該欄を持たない応答は判定不能として区別する。"""
+    """リモートの記録もサブエージェント一覧を返し、一覧欄がない応答は判定不能として区別する。"""
     text = json.dumps({"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "やあ"}}) + "\n"
     data = base64.b64encode(text.encode("utf-8")).decode("ascii")
     subagent = {

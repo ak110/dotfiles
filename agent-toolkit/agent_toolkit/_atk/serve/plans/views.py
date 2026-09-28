@@ -209,7 +209,7 @@ def create_context(
 ) -> PlansContext:
     """計画ファイル画面の依存と初期接続状態を生成する。
 
-    `root`を渡した場合は当該rootだけを対象とし、`roots`を渡した場合はそのroot群を使う。
+    `root`を指定するとそのrootだけを対象にし、`roots`を指定すると指定されたroot群を対象にする。
     いずれも渡さない場合はprivate-notesと`~/.claude/plans`の2rootを解決する。
     `hostname`はローカル分のファイルエントリに付与する`host`ラベルとリモートホストとの一意性検査に使う。
     """
@@ -414,7 +414,7 @@ def resolve_source_id(context: PlansContext, host: str, source_id: str, rel: str
 
 
 def review_table_html(text: str) -> str:
-    """JSON文字列7列又は保存済みの旧形式のレビュー指摘管理表をHTML表へ変換する。
+    """JSON文字列7列または保存済みの旧形式のレビュー指摘管理表をHTML表へ変換する。
 
     旧8列形式は指摘レベルと対応要否の双方を持つため、対応要否の列を除く。
     旧7列形式は指摘レベルを持たず5列目が対応要否であるため、5列目の値域で現行形式と判別し、

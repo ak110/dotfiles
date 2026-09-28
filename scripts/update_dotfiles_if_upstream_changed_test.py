@@ -226,7 +226,7 @@ def test_branch_or_upstream_mismatch_stops_before_remote_lookup(
     upstream: str,
     expected_calls: int,
 ) -> None:
-    """branch又はupstream不一致時はls-remoteとupdate-dotfilesを起動しない。"""
+    """branchまたはupstream不一致時はls-remoteとupdate-dotfilesを起動しない。"""
     update_dotfiles = _prepare_root(monkeypatch, tmp_path)
     calls: list[list[str]] = []
     monkeypatch.setattr(subprocess, "run", _fake_run(calls, branch=branch, upstream=upstream))
@@ -247,7 +247,7 @@ def test_remote_lookup_failure_or_empty_output_skips_update(
     remote_returncode: int,
     remote_commit: str,
 ) -> None:
-    """ls-remote失敗又は空出力時は終了コード1でupdate-dotfilesを起動しない。"""
+    """ls-remote失敗または空出力時は終了コード1でupdate-dotfilesを起動しない。"""
     update_dotfiles = _prepare_root(monkeypatch, tmp_path)
     calls: list[list[str]] = []
     monkeypatch.setattr(

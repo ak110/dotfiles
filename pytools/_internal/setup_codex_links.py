@@ -18,8 +18,6 @@ CODEX_HOME = Path.home() / ".codex"
 # 配布先（`~/.codex/`起点）→配布元（dotfilesルート起点）のマップ。
 # 配布先は全てディレクトリで、Windowsではディレクトリジャンクションで実現する。
 _LINKS: dict[str, str] = {
-    "skills/export-session": ".chezmoi-source/dot_claude/skills/export-session",
-    "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
     "skills/ak110-projects-operations": ".chezmoi-source/dot_claude/skills/ak110-projects-operations",
     "docs": ".chezmoi-source/dot_claude/docs",
 }
@@ -59,7 +57,7 @@ def _process_link(dest: Path, target: Path) -> bool:
         )
         return False
     except OSError as error:
-        logger.warning(log_format.format_status("codex links", f"パスの検査又は同期に失敗したためスキップ: {dest}: {error}"))
+        logger.warning(log_format.format_status("codex links", f"パスの検査または同期に失敗したためスキップ: {dest}: {error}"))
         return False
     if not changed:
         return False

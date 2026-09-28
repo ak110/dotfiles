@@ -7,7 +7,8 @@
 2系統のPreToolUse（`pretooluse.py`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
-本モジュールの構造定数は計画ファイルの見出し、固定H3及び表の行名の正本であり、同書は当該定数から導いた受理形式を記述する。
+計画ファイルの見出し、固定H3および表の行名は、本モジュールの構造定数で定める。
+同書には、構造定数から導いた受理形式を記述する。
 
 構造認識と原記法の検査は分離する。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
@@ -320,7 +321,7 @@ def _check_requirement_coverage(
     exclusion_table: MarkdownTable | None,
     materials: PlanMaterials,
 ) -> list[str]:
-    """採用要求IDが`## 実施内容`の`根拠`又は`### 合意済みの除外・保持`の`素材・要求参照`で被覆されるかを検査する。
+    """採用要求IDが`## 実施内容`の`根拠`または`### 合意済みの除外・保持`の`素材・要求参照`で被覆されるかを検査する。
 
     `採用範囲`が`終端工程のみ`で始まる採用要求は被覆対象から除く。
     合意表が存在しない、または新形式でない場合は`根拠`列だけで被覆を判定する。
@@ -341,7 +342,7 @@ def _check_requirement_coverage(
     target = set(materials.adopted_requirement_ids) - set(materials.terminal_only_requirement_ids)
     uncovered = target - covered
     return [
-        f"`## 実施内容`の`根拠`又は`### 合意済みの除外・保持`の`素材・要求参照`が採用要求を被覆しない: {requirement_id}"
+        f"`## 実施内容`の`根拠`または`### 合意済みの除外・保持`の`素材・要求参照`が採用要求を被覆しない: {requirement_id}"
         for requirement_id in sorted(uncovered)
     ]
 
@@ -395,7 +396,7 @@ def _check_history_rows(
     allow_legacy_review_ids: bool = False,
     allow_legacy_review_tracks: bool = False,
 ) -> list[str]:
-    """変更履歴の起点、レビューID及びユーザー発言行の素材ID記法を検査する。"""
+    """変更履歴の起点、レビューIDおよびユーザー発言行の素材ID記法を検査する。"""
     errors: list[str] = []
     review_ids: set[str] = set()
     review_keys: set[tuple[str, int]] = set()

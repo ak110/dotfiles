@@ -1,9 +1,9 @@
 """`atk wi`の状態遷移コマンドの`--all`経路が共有する候補選定・確認・再照合を提供する。
 
-候補の選定、一覧表示、確認及び確認済み記録との再照合は操作に依存しない。
+候補の選定、一覧表示、確認および確認済み記録との再照合は操作に依存しない。
 操作ごとに変わるのは遷移元状態集合、メッセージの操作名、および確定した候補へ適用する処理だけとする。
 適用処理は呼び出し側が`apply_fn`で渡す。状態遷移の適用は`mutations/transitions.py`が持つため、
-本モジュールから当該モジュールをimportすると循環参照になるためである。
+本モジュールからそのモジュールをimportすると循環参照になるためである。
 """
 
 import pathlib
@@ -51,7 +51,7 @@ def _select_candidates(
     source: Iterable[str] | None,
     source_states: tuple[str, ...],
 ) -> list[QueueEntryDisplay]:
-    """一覧条件と当該操作の遷移元状態集合がともに一致する項目を選択する。"""
+    """一覧条件とその操作の遷移元状態集合がともに一致する項目を選択する。"""
     return [
         entry
         for entry in _select_entries(
@@ -181,7 +181,7 @@ def bulk_apply_entries(
     actor_is_agent: bool,
     apply_fn: ApplyCandidates,
 ) -> list[str]:
-    """対象リポジトリの候補を一覧表示し、確認後に一括で当該操作を適用する。
+    """対象リポジトリの候補を一覧表示し、確認後に一括でその操作を適用する。
 
     `skip_pull`が真の場合は候補選定・一覧表示・確認をローカル状態で行う。
     適用の直前は`skip_pull`によらずremote同期し、確認済みで内容が変わらない項目だけへ適用する。

@@ -99,7 +99,7 @@ class Target:
 
 
 def is_interactive_codex(argv: list[str]) -> bool:
-    """Codexの通常起動又はresume起動だけを受理する。"""
+    """Codexの通常起動またはresume起動だけを受理する。"""
     if not argv or pathlib.Path(argv[0]).name not in {"codex", "codex.exe"}:
         return False
     index = 1
@@ -313,7 +313,7 @@ def main() -> int:
         return 0
     if status == "unsupported":
         print(json.dumps({"exit_session_invoked": True, "status": "unsupported"}, separators=(",", ":")))
-        _outcome.report_warning("現在の対話CLI本体を一意に識別できない。/exit又は/quitを入力して終了する。")
+        _outcome.report_warning("現在の対話CLI本体を一意に識別できない。/exitまたは/quitを入力して終了する。")
         return 0
     if status == "changed":
         print(json.dumps({"exit_session_invoked": True, "status": "changed"}, separators=(",", ":")))

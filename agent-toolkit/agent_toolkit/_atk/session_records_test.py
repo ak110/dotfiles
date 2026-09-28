@@ -92,11 +92,11 @@ class TestInvokedProcessWi:
         """Codexの起動判定は完全一致ではなく包含で行う。
 
         確定した現象: 起動プロンプトの完全一致条件は、実記録2169件へ適用しても0件だった
-        （2026年9月10日実測。監査記録の当該見出しを参照）。
+        （2026年9月10日実測。監査記録にある同じ事象の記録を参照）。
         期待する契約: `atk wi process-loop`がCodexへ渡す起動プロンプトを含むuser役
         レコードを持つセッションを候補とする。
         直接的原因: 記録される`text`は実行環境が挿入する前置き
-        （``# AGENTS.md instructions``又は``<recommended_plugins>``で始まる）を含むため、
+        （``# AGENTS.md instructions``または``<recommended_plugins>``で始まる）を含むため、
         完全一致では成立しない。
         """
         path = tmp_path / "records.jsonl"

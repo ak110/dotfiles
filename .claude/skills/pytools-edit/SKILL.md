@@ -31,15 +31,15 @@ description: >
   `atomic_write_*()`等）を提供する。新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。書込ツールで扱う手段は`agent-toolkit:writing-standards`の
   `references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCIIのみの修正は`sed -i`で対応する
-- 非ASCIIを標準出力又は標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどのランタイム既定エンコーディングへ依存すると、日本語の最初の出力でCLIが停止するためである
+- 非ASCIIを標準出力または標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどのランタイム既定エンコーディングへ依存すると、日本語の最初の出力でCLIが停止するためである
 - ストリームの再構成を経由しないログと標準出力のメッセージは、WindowsのCP932で符号化できる範囲に収める。可否は`str.encode("cp932")`の成否で判定する。漢字にもU+20BB7のように符号化できないものがあり、em dash・en dash・`✓`・`•`も符号化できない
-- `pytools/post_apply.py`のステップが外部ツールの不在で当該ステップ全体をスキップする場合は、当該ツールを同じステップ又は先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
+- `pytools/post_apply.py`のステップが外部ツールの不在でそのステップ全体をスキップする場合は、そのツールを同じステップまたは先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
   利用者が導入先を選ぶアプリケーションは、この対象から外す
 - `pytools/post_apply.py`の工程が配置するファイル（ランチャー、フラグファイル、unitなど）の配置先を改名する場合と工程を廃止する場合は、同じ変更で旧パスを`_REMOVED_PATHS`へ登録する。利用者が編集し得るファイルは`_REMOVED_PATHS_IF_CONTENT`へ登録する。
   工程の生成物はchezmoiの管理外であり、登録しないと旧生成物が配布先に残り続ける
 - `rust/`配下の配置の単位は`rust/<クレート名>/`のCargoクレートとする。
   記述作法は`agent-toolkit:writing-standards`の`references/rust.md`が定める。
-  `make test`は`rust/`配下を対象に含まないため、変更したクレートで`cargo fmt --check`、`cargo clippy`及び`cargo test`を変更範囲の検証として実行する。
+  `make test`は`rust/`配下を対象に含まないため、変更したクレートで`cargo fmt --check`、`cargo clippy`および`cargo test`を変更範囲の検証として実行する。
   CIでは`rust-lint` jobが同等の検証を担う。
   配布版数の更新要求は`dotfiles-release`が定め、本書へ再掲しない
 

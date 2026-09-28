@@ -142,9 +142,9 @@ from agent_toolkit._atk.managed_temp.windows_security import *  # noqa: F403
 def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
     """登録だけが残り実体を失った管理対象であるかを判定する。
 
-    真を返す条件は、登録されたroot直下の絶対パスであること、当該pathを記録した登録ファイルが
+    真を返す条件は、登録されたroot直下の絶対パスであること、そのpathを記録した登録ファイルが
     存在すること、実体が存在しないことの3つをすべて満たす場合とする。
-    実体を失った領域には当該領域を使用中の主体が存在しないため、この条件に限り
+    実体を失った領域には使用中の主体が存在しないため、この条件に限り
     真正性検証（所有者・権限・マーカー）を経ずに登録の消滅として扱う。
     実体が残る管理対象は本判定の対象外とし、従来どおり真正性検証で扱う。
     """
@@ -325,7 +325,7 @@ def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
 
     本関数は`atk`の`managed-temp`以外の全サブコマンドの前段から呼ばれ、対話シェルの起動ごとに
     発火する経路を持つ。一時ディレクトリ直下の項目ごとに外部状態ディレクトリを解決すると、
-    当該項目数に比例した待ち時間が対話シェルの起動へ生じる。判定を追加する場合も、
+    その項目数に比例した待ち時間が対話シェルの起動へ生じる。判定を追加する場合も、
     項目の種別とマーカーの有無で候補を限定した後に外部状態を解決する評価順序を維持する。
     """
     root = _temp_root()
@@ -412,7 +412,7 @@ def list_managed_temp(
 
     実体に依存しない検証（`path`欄の型と登録ファイル名との対応）と`prefix`による限定を通過した
     登録のうち、実体の消滅を確定できたものは登録ファイルごと削除し、削除を警告として報告する。
-    実体を失った登録には当該領域を使用中の主体が存在しないため、登録ファイルの削除が
+    実体を失った登録にはその領域を使用中の主体が存在しないため、登録ファイルの削除が
     利用中の管理対象へ影響しない。消滅を確定できない登録は削除せず列挙対象から外す。
     記録時と列挙時で一時領域の設定が異なる登録も回収対象へ含めるため、現在の一時領域直下で
     あることは条件としない。
@@ -444,7 +444,7 @@ def list_managed_temp(
                 or not _awis_are_valid(awis)
                 or not (item_session_id is None or isinstance(item_session_id, str))
             ):
-                raise ManagedTempError("管理情報のprefix、created_at、awis又はsession_idが不正")
+                raise ManagedTempError("管理情報のprefix、created_at、awisまたはsession_idが不正")
             if prefix is not None and item_prefix != prefix:
                 continue
             if session_id is not None and item_session_id != session_id:
@@ -605,7 +605,7 @@ def _windows_reparse_entry(
     metadata: os.stat_result,
     managed_root: pathlib.Path,
 ) -> _TreeEntry:
-    """受理できるreparse pointの種別、identity及び格納値を返す。"""
+    """受理できるreparse pointの種別、identityおよび格納値を返す。"""
     tag = getattr(metadata, "st_reparse_tag", None)
     if tag == _WINDOWS_MOUNT_POINT_REPARSE_TAG:
         kind = "junction"
@@ -920,7 +920,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
 
 
 def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: ManagedTempError) -> None:
-    """親root、通常ディレクトリ及び所有者だけを確認して実体と登録を回収する。"""
+    """親root、通常ディレクトリおよび所有者だけを確認して実体と登録を回収する。"""
     try:
         _, path = _validate_path_shape(pathlib.Path(path_arg))
         _validate_root(path.parent)
@@ -950,7 +950,7 @@ def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: Man
             consuming.unlink(missing_ok=True)
     except OSError as error:
         raise ManagedTempError(f"管理対象を強制回収できない: {path}: {error}") from error
-    _outcome.report_warning(f"--force-removeにより管理情報、登録及び権限の検証を省いて管理対象を回収した: {path}")
+    _outcome.report_warning(f"--force-removeにより管理情報、登録および権限の検証を省いて管理対象を回収した: {path}")
 
 
 def _registered_ancestor(path: pathlib.Path) -> pathlib.Path | None:
@@ -973,8 +973,8 @@ def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
     """個別の管理情報を持たない子領域を、登録済み領域の配下である場合に削除する。
 
     `atk managed-temp create --session-root`は、個別登録を持たない子領域を親の配下へ作成する。
-    当該子領域は管理情報を持たないため、通常の検証経路では回収できない。
-    祖先に登録済みの管理対象領域が実在する場合だけ、当該対象を削除して回収を成立させる。
+    この子領域は管理情報を持たないため、通常の検証経路では回収できない。
+    祖先に登録済みの管理対象領域が実在する場合だけ、その子領域を削除して回収を成立させる。
     """
     path = pathlib.Path(path_arg)
     if os.path.lexists(path / _MARKER_NAME) or not path.is_dir():
@@ -1008,7 +1008,7 @@ def cleanup_managed_temp(
             raise ManagedTempError(f"session_idに対応する管理対象が複数ある: {session_id}")
         path_arg = entries[0]["path"]
     if path_arg is None:
-        raise ManagedTempError("path又はsession_idを指定する")
+        raise ManagedTempError("pathまたはsession_idを指定する")
     if _cleanup_child_of_registered_temp(path_arg):
         return
     try:

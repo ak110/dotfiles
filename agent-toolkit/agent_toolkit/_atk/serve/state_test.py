@@ -47,7 +47,7 @@ from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 @pytest.mark.parametrize("port", [True, 0, 65536])
 def test_invalid_port(port: object) -> None:
-    """bool又は範囲外portを拒否する。"""
+    """boolまたは範囲外portを拒否する。"""
     with pytest.raises(ValueError):
         config.resolve_config(port=port)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 

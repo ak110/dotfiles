@@ -29,7 +29,7 @@ _NOTICE_PATTERN = re.compile(
 )
 _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?agent-toolkit-auto-inserted\b[^>]*>")
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
-    "直前の発話から、当該発話が主張する事実と是正を求めている対象を列挙し、"
+    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
     "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
     "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
     "照合できない場合は同意も変更もしない。"
@@ -98,7 +98,7 @@ def test_notice_bodies_rejects_invalid_boundary(opening: str, closing: str) -> N
 
 
 def _session_title(result: subprocess.CompletedProcess[str]) -> str | None:
-    """出力したsessionTitleを返す。出力自体が無い場合と当該欄が無い場合はNoneを返す。"""
+    """出力したsessionTitleを返す。出力自体が無い場合とその欄が無い場合はNoneを返す。"""
     if not result.stdout:
         return None
     return json.loads(result.stdout)["hookSpecificOutput"].get("sessionTitle")

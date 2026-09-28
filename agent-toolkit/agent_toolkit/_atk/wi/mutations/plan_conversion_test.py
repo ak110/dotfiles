@@ -266,7 +266,7 @@ class TestCommitResolution:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """作成者日時又は件名が永続記録に不適切なら状態変更前に拒否する。"""
+        """作成者日時または件名が永続記録に不適切なら状態変更前に拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         worktree = tmp_path / "worktree"
@@ -472,7 +472,7 @@ def test_resolve_plan_base_commit_rejects_unresolved_seven_character_oid(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """曖昧又は存在しない7文字以上のOIDをGitの解決失敗として拒否する。"""
+    """曖昧または存在しない7文字以上のOIDをGitの解決失敗として拒否する。"""
     plan = _write_convert_plan(tmp_path, "abc1234")
     worktree = tmp_path / "worktree"
     worktree.mkdir()
@@ -574,7 +574,7 @@ def test_cli_convert_to_plan_reads_body_file_for_single_hold_input(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """単一hold入力の本文ファイルを読み、保存結果、commit及びpush結果を表示する。"""
+    """単一hold入力の本文ファイルを読み、保存結果、commitおよびpush結果を表示する。"""
     _setup_notes(tmp_path)
     body_path = tmp_path / "body.md"
     body_path.write_text("統合本文", encoding="utf-8")
@@ -840,7 +840,7 @@ class TestRmSingle:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """ユーザーが削除できる5状態のいずれにも存在しない場合、その旨を明記してexit 2する。"""
+        """ユーザーが削除できる5状態のいずれにも存在しない場合、該当項目が無いことを明記してexit 2する。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1057,7 +1057,7 @@ class TestEditWithChanges:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """編集可能な3状態のいずれにも存在しない場合、その旨を明記してexit 2する。"""
+        """編集可能な3状態のいずれにも存在しない場合、該当項目が無いことを明記してexit 2する。"""
         _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

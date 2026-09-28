@@ -3,21 +3,21 @@
 ## WIキューと実行準備
 
 AWIとUWIは、会話から独立したキューへ永続化する。
-キュー機構は、状態遷移、依存関係、回答状況及び計画ファイルの有効性から実行準備の成否を算出する。
+キュー機構は、状態遷移、依存関係、回答状況および計画ファイルの有効性から実行準備の成否を算出する。
 この構造により、中断や別セッションへの移行後も、未完了の理由と再開位置を同じ情報から復元できる。
 
 キュー操作は、保存内容の検証と状態変更を同じ排他区間で実行する。
-参照系の`list`、`show`及び`grep`は同一連続操作に限り同期結果を再利用できる。
+参照系の`list`、`show`および`grep`は同一連続操作に限り同期結果を再利用できる。
 CLIのcommitとpushを伴う状態遷移系は同期を省略せず、変更直前のキュー状態を毎回確定する。
-Webの編集・回答・状態変更・投入は排他区間で競合を確認してローカルcommitまで確定し、その時点で画面へ成功を返す。未送信commitのpushとremote差分の取得は、定期同期又は利用者の明示同期で行う。remoteの待ち時間を保存操作へ含めると、成功が確定した後も次のWIを操作できないためである。同期に失敗した場合はcommitを保持し、画面へ失敗と再試行手段を示す。独立した永続キューを追加する案はGit commitが同じ保留状態を保持するため採用しない。
+Webの編集・回答・状態変更・投入は排他区間で競合を確認してローカルcommitまで確定し、その時点で画面へ成功を返す。未送信commitのpushとremote差分の取得は、定期同期または利用者の明示同期で行う。remoteの待ち時間を保存操作へ含めると、成功が確定した後も次のWIを操作できないためである。同期に失敗した場合はcommitを保持し、画面へ失敗と再試行手段を示す。独立した永続キューを追加する案はGit commitが同じ保留状態を保持するため採用しない。
 remote同期はfetch後の統合対象を現在のブランチの`@{u}`へ明示し、fast-forward更新とpush再試行時のrebaseを
 共有状態の`FETCH_HEAD`と利用者の`pull.rebase`設定から独立させる。
 
 同じ対象リポジトリの複数項目を同一工程で読む場合は、管理対象一時領域を作成し、`atk wi show <filename>... --skip-pull`の標準出力を保存ファイルへ書き込んでから全文を読み、ファイル名見出しから本文を対応付ける。保存内容の構造成立・不成立・コマンド失敗を確定した後、独立登録した領域だけcleanupを完了する。セッションrootの子領域は同セッションの終了時に回収し、保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も、ファイル名昇順の
 `atk wi start-processing <filename>...`を1回実行する。
-処理開始コマンドは全対象の存在、状態及び`target_repo`を移動前に検証するため、一部不適合で集合全体を拒否できる。
-移動開始後にI/O、commit又はpushが失敗した場合は、指定集合のprocessing配置、管理リポジトリの未コミット差分、
-集合の移動だけを含む遷移commit及びremote設定時のupstream包含を分けて確認する。
+処理開始コマンドは全対象の存在、状態および`target_repo`を移動前に検証するため、一部不適合で集合全体を拒否できる。
+移動開始後にI/O、commitまたはpushが失敗した場合は、指定集合のprocessing配置、管理リポジトリの未コミット差分、
+集合の移動だけを含む遷移commitおよびremote設定時のupstream包含を分けて確認する。
 管理リポジトリの状態確認を開始する前に、`atk config get private_notes`の標準出力から絶対パスを取得する。
 取得したパスを`<private-notes-path>`として管理リポジトリのGit操作対象にする。
 全てのGit操作へ`git -C <private-notes-path>`を付け、対象リポジトリのcwdを使用しない。
@@ -28,19 +28,19 @@ remote設定時は`git -C <private-notes-path> fetch`を実行する。
 その後、`git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
 commit前失敗で指定集合の移動だけが残る場合に限り`atk wi commit`を1回使って再確認し、
 未pushのcleanなローカルcommitだけの場合や集合の状態が混在する場合は、項目別再実行で補わず未完了として停止する。
-単一項目の調査、警告・エラー後の再取得及びUWI回答確認は、情報の対応関係を保つため単数形を維持する。
+単一項目の調査、警告・エラー後の再取得およびUWI回答確認は、情報の対応関係を保つため単数形を維持する。
 toolkitは自身の排他区間外で他プロセスが行うfetchを管理しないため、`FETCH_HEAD`の更新は許容し、
 統合対象だけを明示refで固定する。`git pull`を継続する案と失敗時の再試行を加える案は、
 共有状態への依存を残し、恒常的な再試行の複雑性を増やすため採用しない。
 処理主体は準備が整った項目だけを実装へ渡し、利用者の判断を要する事項はUWIへ分離する。
 ファイル配置、関数分割、内部データ表現、検証手段は実装上の技術判断で確定し、UWIへ分離しない。UWIは利用者が決める要件と運用方針を対象とし、回答に必要な情報だけを本文へ置く。
 事前承認型UWIの回答を解除条件にする項目は、`atk wi hold`で保留して自動処理から外す。
-保留した元項目のファイル名と回答後の再開工程は当該UWIの本文が保持し、元項目のメタデータへ依存を登録しない。
+保留した元項目のファイル名と回答後の再開工程は、対応するUWIの本文に記録し、元項目のメタデータへ依存を登録しない。
 `hold`は`processable`に含まれないため、着手可否の導出を経由せずに選定の候補から外れる。
 回答済みUWIは回答が本文へ保存されたことを確認し、pickerが保留中の元項目を`unhold`して同じ固定集合へ加える。
-回答が元項目での作業を要さない場合はpickerが当該UWIを先に終端し、当該回答を要する元項目を処理するレーンが、ファイル名でterminal状態のUWIを再取得して保存回答を反映する。
+回答が元項目での作業を要さない場合はpickerが回答済みのUWIを先に終端する。その回答を要する元項目を処理するレーンが、ファイル名でterminal状態のUWIを再取得して保存回答を反映する。
 標準の2択を持つ事後承認型UWIへ`その対応で問題無い`と回答した場合、回答保存の操作が同時にUWIを`adopted`へ移動し、後続pickerによる終端操作を不要にする。
-各項目の`depends_on`は当該項目より先に終端すべき実在するAWIのファイル名を保持し、先行成果の完了待ちを表す。
+各項目の`depends_on`にはその項目より先に終端すべき実在するAWIのファイル名を保存し、先行成果の完了待ちを表す。
 値は保存済みのメタデータに従い、本文の記述から依存を再構築しない。
 pickerは依存先を現在の対象リポジトリに限定して先に照会し、不在の場合だけファイル名で全対象リポジトリを照会する。1件なら保存済みの`target_repo`と状態に従い、複数リポジトリの同名項目は曖昧性として停止する。別リポジトリの終端済み依存は充足済み、未終端の依存は外部依存未達とする。最初から全リポジトリを照会する案は、現在の対象リポジトリにある依存先より同名の別項目を優先し得るため採用しない。
 無関係なactive UWIを状態遷移の一律条件にしない。
@@ -51,20 +51,20 @@ pickerはAWI本文と対象実装を調査し、レーン分割とレーン内�
 
 ### キュー状態と公開一覧
 
-キューの全状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`である。公開一覧の`active`は`inbox`、`processing`、`hold`を表示し、`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。一覧集合は型によらず同じ定義とする。`hold`は明示操作まで処理ループ、readiness、UWIスキャン及びalertsの対象にしない。
+キューの全状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`である。公開一覧の`active`は`inbox`、`processing`、`hold`を表示し、`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。一覧集合は型によらず同じ定義とする。`hold`は明示操作まで処理ループ、readiness、UWIスキャンおよびalertsの対象にしない。
 
 計画作成中の項目と外部編集中の項目を分けていた`planning`と`editing`は自動処理から除外する点で`hold`と同じ振る舞いであり、状態集合の定義を型と操作ごとに分岐させていたため廃止した。役割は`hold`へ統合し、状態集合の定義を`agent-toolkit/agent_toolkit/_atk/wi/common.py`へ集約する。
 
-`hold`は`inbox`、`processing`、`adopted`、`rejected`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す操作は設けない。終端状態から保留又は受信へ戻す際には旧`## 処理結果`を除き、前回の採否を再開後の結果として残さない。`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、UWI回答、ユーザーコメント、採否及び削除は`inbox`と同じ条件で許可する。
+`hold`は`inbox`、`processing`、`adopted`、`rejected`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す操作は設けない。終端状態から保留または受信へ戻す際には旧`## 処理結果`を除き、前回の採否を再開後の結果として残さない。`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、UWI回答、ユーザーコメント、採否および削除は`inbox`と同じ条件で許可する。
 削除は終端状態（`adopted`・`rejected`）も明示`state`として受理し、`processing`の削除保護だけを維持する。
 
-エージェントが実行できる遷移は、`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終端、及び両終端状態から`inbox`又は`hold`への差し戻しとする。ユーザーはブラウザーUIから同じ再開・保留と終端項目の削除を行える。誤終端を削除と再投入だけで復旧する案は、元項目の由来と本文を保てないため採用しない。
+エージェントが実行できる遷移は、`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終端、および両終端状態から`inbox`または`hold`への差し戻しとする。ユーザーはブラウザーUIから同じ再開・保留と終端項目の削除を行える。誤終端を削除と再投入だけで復旧する案は、元項目の由来と本文を保てないため採用しない。
 
 ### 一覧出力
 
 `atk wi list`は`AI_AGENT`、`CODEX_CI`、`CLAUDECODE`、`CURSOR_AGENT`のいずれかが設定されたエージェント環境ではオプション指定が無い場合にJSON Linesを出力する。`--jsonl`はJSON Lines、`--no-jsonl`は従来のテキスト表示、`--count`は件数だけの表示として優先する。
 旧名の`--json`は単一のJSON配列と誤読されたため`--jsonl`へ改名し、旧名が新名の省略形として受理され続けないよう`list`だけ省略形の解釈を無効にする。
-この既定変更は`list`だけに適用し、`show`、状態遷移及び編集CLIの既存テキスト出力は変更しない。
+この既定変更は`list`だけに適用し、`show`、状態遷移および編集CLIの既存テキスト出力は変更しない。
 
 テキスト表示の`target_repo`と要約はstdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
 
@@ -77,19 +77,19 @@ pickerはAWI本文と対象実装を調査し、レーン分割とレーン内�
 保存前にはコメント本文も同じ規則で解析し、コードフェンス外のH2を含む入力を無変更で拒否する。
 空コメントによる節削除は提供しない。
 
-コメント編集を許可する条件は、`inbox`又は`hold`にあるawiかつエージェント由来（frontmatterの`source`が未設定でない）であることとする。
-processing、UWI、終端項目及び人間由来の項目はAPIと画面の両方で対象外とする。
+コメント編集を許可する条件は、`inbox`または`hold`にあるawiかつエージェント由来（frontmatterの`source`が未設定でない）であることとする。
+processing、UWI、終端項目および人間由来の項目はAPIと画面の両方で対象外とする。
 由来の判定は一覧フィルターと同じ`_source_kind`を用い、`source`値の列挙をユーザーコメント側へ複製しない。
 保存時はロック内で取得した最新本文が`expected_content`と一致するか確かめ、競合時は無変更で失敗を返す。
 詳細APIが返す抽出済みコメントと操作可否を画面が利用し、JavaScript側へMarkdown解析を複製しない。
 
 エージェント由来のawiの通常本文はエージェント由来の要求とし、末尾の厳密なH2 `## ユーザーコメント`配下から導出した要求だけを人間由来とする。
 両方にまたがる記述は独立して採否を記録し、ファイル全体の由来を人間へ昇格させない。
-sourceの原値と予約節は由来と確認境界を示す情報であり、利用者によるpush、公開、破壊的操作又は外部サービス変更の認可を証明しない。
-エージェント環境から起動した`atk`は予約見出しを含む新規投入と、当該節を変更する編集の双方を拒否する。エージェントはユーザーの発言を本文中へ出所を示して引用し、予約見出しを生成しない。`atk serve`のブラウザー操作は人間の入力として扱い、拒否の対象にしない。
+sourceの原値と予約節は由来と確認境界を示す情報であり、利用者によるpush、公開、破壊的操作または外部サービス変更の認可を証明しない。
+エージェント環境から起動した`atk`は予約見出しを含む新規投入と、予約節を変更する編集の双方を拒否する。エージェントはユーザーの発言を本文中へ出所を示して引用し、予約見出しを生成しない。`atk serve`のブラウザー操作は人間の入力として扱い、拒否の対象にしない。
 
-`agent-toolkit:add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該スキルの成果物へ反映する。
-主題の継続かAWI投入と直接実装の境界が不明な場合は、変更又は投入の前に確認する。
+`agent-toolkit:add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める成果物へ反映する。
+主題の継続かAWI投入と直接実装の境界が不明な場合は、変更または投入の前に確認する。
 
 会話内の作業一覧だけで進捗を管理する案は、中断後に依存関係と利用者回答を再現できないため採用しない。
 未回答UWIを能動的に監視し続ける案も、外部入力がない状態で実行主体を占有するため採用しない。
@@ -106,7 +106,7 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 利用者合意で廃止した。設定値を反復ごとに再解決する案は、既定運用がセッションごとに自己再起動するため、
 恒常的な処理費用に見合わないことから採用しない。
 
-Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存し、起動時にApp Serverの`model/list`を最終ページまで取得して表示対象の同系列の最新版へ解決する。委譲起動は保持中のApp Server接続を使い、設定CLIは短命の接続を所有する。選んだ完全IDが指定effortを受理しない場合は理由を返し、別系列又は旧版へ暗黙に置換しない。明示された完全IDは固定し、engine側の可用性判定が返す診断を候補とともに示す。モデルを試行起動して系列の最新版を推測する案は、実行費用を生み、利用可能なモデル一覧との対応も保証できないため採用しない。複数の起動処理が同じ判断を持たないよう、一覧取得と系列解決の知識境界を`agent-toolkit/agent_toolkit/_common/codex_models.py`に置く。
+Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存し、起動時にApp Serverの`model/list`を最終ページまで取得して表示対象の同系列の最新版へ解決する。委譲起動は保持中のApp Server接続を使い、設定CLIは短命の接続を所有する。選んだ完全IDが指定effortを受理しない場合は理由を返し、別系列または旧版へ暗黙に置換しない。明示された完全IDは固定し、engine側の可用性判定が返す診断を候補とともに示す。モデルを試行起動して系列の最新版を推測する案は、実行費用を生み、利用可能なモデル一覧との対応も保証できないため採用しない。複数の起動処理が同じ判断を持たないよう、一覧取得と系列解決の知識境界を`agent-toolkit/agent_toolkit/_common/codex_models.py`に置く。
 
 既定値とプリセットの「軽量」「探索上位」は`terra/medium`を選び、「上位」と「探索軽量」は各用途の指定を維持する。`luna/xhigh`を前二者へ残す案は、利用者が速度と精度の釣り合いを見直したため採用しない。これらのモデル名は運用中に変わる設定値であり、テストは値の複製ではなく、プリセットの導出、engine順、保存と実行時解決の接続を確認する。
 
@@ -120,32 +120,32 @@ Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存�
 
 `agents_server`はClaude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
 `start`の`model_type`に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
-共有のsession状態機械、待機通知及び結果配送境界へ接続する。Codex backendは公式stdio App Serverを
+共有のsession状態機械、待機通知および結果配送境界へ接続する。Codex backendは公式stdio App Serverを
 セッション単位で所有し、Claude backendはClaude Agent SDKのclientをセッション単位で所有する。
 共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
 LinuxとWindowsで寿命契約を揃えられる。
 
 Codex backendは子App Serverの作業ディレクトリへ、実行主体のホームディレクトリを明示指定する。
 MCPサーバー自身の作業ディレクトリはホストの起動条件で決まり、Codexホストではpluginの版数付きcacheディレクトリになる。
-plugin更新で当該ディレクトリが消えると、子App Serverは生存したまま`thread/start`へ`failed to load configuration: No such file or directory`のJSON-RPC errorを返し続ける。
+plugin更新で作業ディレクトリが消えると、子App Serverは生存したまま`thread/start`へ`failed to load configuration: No such file or directory`のJSON-RPC errorを返し続ける。
 子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。
 
-`wait`・`send_message`・`kill`及び`stop`は受け取った識別子を先に保持中の状態へ解決する。いずれの状態にも解決できなかった値だけを対象に、UUID形式でなければ体系の相違を示すエラーを返す。登録済みの識別子は形式によらず解決するため、backendが発行済みの識別子の解決規則は変わらない。両backendのsession識別子はUUIDであり、他の委譲手段が返す識別子との取り違えを`unknown session`と区別できるようにする。登録簿に無いUUIDへ返す`unknown session`にはagents_serverの再起動でsessionを失った可能性を診断として添える。
+`wait`・`send_message`・`kill`および`stop`は受け取った識別子を先に保持中の状態へ解決する。いずれの状態にも解決できなかった値だけを対象に、UUID形式でなければ体系の相違を示すエラーを返す。登録済みの識別子は形式によらず解決するため、backendが発行済みの識別子の解決規則は変わらない。両backendのsession識別子はUUIDであり、他の委譲手段が返す識別子との取り違えを`unknown session`と区別できるようにする。登録簿に無いUUIDへ返す`unknown session`にはagents_serverの再起動でsessionを失った可能性を診断として添える。
 
 ローカルbackendのclassはMCP module初期化時に読込み、共有の`SessionState`と状態更新関数は独立した共通moduleが所有する。
 この境界により、プラグイン配置が初回engine選択まで利用できない場合も、既に読込済みのclassからbackendを生成できる。
 Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用の処理へSDK依存を持ち込まない。
 `--check-dependencies`はPEP 723環境でClaudeAgentOptionsを構築するだけの確認であり、外部sessionもMCP公開statusも生成しない。
 Claude CodeとCodexのplugin導入後は、各cacheにあるagents_serverの起動スクリプトの実体を`uv run --locked --no-default-groups`で起動し、依存関係の確認まで完了してからupdate-dotfilesを終える。
-agents_serverのウォームアップは初回MCP起動の成立条件であるため、起動不能、timeout及び非0終了を対象・終了コード・所要時間とともに記録して更新段階へ伝播する。
+agents_serverのウォームアップは初回MCP起動の成立条件であるため、起動不能、timeoutおよび非0終了を対象・終了コード・所要時間とともに記録して更新段階へ伝播する。
 hookスクリプトのウォームアップは更新後の実行を高速化するだけであり、個別失敗を段階失敗へ変えない既存契約を維持する。
 
 `start`が受け取るタスク文書は、起動処理で実在する`.subagent.md`として解決した`Path`を必須入力検証へ直接渡す。
 表示用プロンプトへ直列化したパスを再解析しないため、Windowsドライブパス、区切り文字、空白の差は検証契約へ影響しない。
-pluginの安全境界と読めた必須入力宣言に対する実際の値欠落は拒否する一方、宣言の不在又は読取不能は警告として委譲を継続する。
+pluginの安全境界と読めた必須入力宣言に対する実際の値欠落は拒否する一方、宣言の不在または読取不能は警告として委譲を継続する。
 
 MCPの処理開始前と`atk agents wait`の待機開始前に、`platformdirs.user_state_dir("agent-toolkit", appauthor=False)`配下の`agents-server.log`を初期化する。
-MCPの処理と`atk agents wait`は同じlogger階層、UTF-8及びサイズrotationの設定を共有する。
+MCPの処理と`atk agents wait`は同じlogger階層、UTF-8およびサイズrotationの設定を共有する。
 親MCPの起動モード、正常・異常終了、Codex子App Serverの起動、initialize応答と終了コードを記録する。
 待機対象と由来、ロック競合、復帰理由、sessionの開始・再開・終端、結果ファイルの書込・削除も同じログへINFOで記録する。
 結果の回収記録は内部MCP待機と`atk agents wait`の主体を区別する。
@@ -154,16 +154,16 @@ MCPの処理と`atk agents wait`は同じlogger階層、UTF-8及びサイズrota
 子の標準エラーは既存の有界な末尾だけを異常終了診断へ含める。
 標準エラーだけを診断の出力先とする案ではプロセス終了後に初回起動失敗を調査できず、別のラッパープロセスを置く案では同じライフサイクルを二重管理するため、いずれも採用しない。
 
-公開APIは`start`、`start_explore`、`start_write`、`start_shell`、`send_message`、`kill`、`list`、`stop`の8つに固定する。`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。終端の観測と結果本文の配送を`atk agents wait`が担うため、一覧の役割は、保持していた`session_id`の回復と、並行する委譲先の残作業の把握に限る。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、工程別モデル設定の候補列から候補を解決し、委譲した作業の完了を待たず`session_id`を返す。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む。両backendともsession生成前にモデル可用性を確定できないため、`start`はbackendの起動応答の後も上限15秒まで終端を確認し、engineの可用性で終端した候補を除外集合へ加えて次候補で起動する。この確認は委譲先の最初のモデル出力（テキスト、思考、ツール呼び出し）を観測した時点で打ち切る。Claudeでは、完成したassistantメッセージが思考と最初の内容ブロックの生成を終えるまで届かず、長いタスク文書の起動では上限に達するため、部分出力を有効にしてAPIの応答開始（`message_start`）を最初のモデル出力として扱う。失敗した要求は応答を始めないため、可用性失敗の検出は保たれる。応答開始後に生じた失敗は起動成功として扱い、`atk agents wait`が終端として受け取る。可用性の失敗はモデルの最初の出力より前に生じ、正常に起動した委譲先は上限内に終端しないため、終端だけを条件にすると正常な起動が毎回上限まで待つためである。失敗より前に届く受信はモデル出力に数えない。API失敗を表すClaudeの合成メッセージ、Codexの`userMessage`などの入力の記録、agyの`user_input`・`system_message`・`error_message`がこれに当たる。全候補が起動不能な場合だけ失敗を返す。上限15秒は、利用枠上限に達したCodexのturnが起動応答から3.84〜4.27秒で終端した計測結果（2026-09-02、Codex CLI 0.152.0で3回）に対する余裕として定める。切替の対象を終端済みの可用性失敗へ限るのは、進行中の作業を残したまま別候補を起動して同一作業を重複実行することを防ぐためである。可用性の判定には、Codexの`codexErrorInfo`のうち利用枠超過、流量制限とサーバー側過負荷の区分を用いる。Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。候補を変えても結果が変わらない失敗では候補を進めない。Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。サーバーは可用性を理由として終端したsessionの採用候補を`model_type`と起動区分の組ごとに1件保持し、次の起動で除外集合の初期値へ充てる。保持は同じ組の起動が可用性の失敗なく成立した時点で解除し、除外により候補が残らない場合も破棄する。このため呼び出し側へ除外対象のsession識別子を要求しない。`atk agents wait`は状態ディレクトリにある全ルートのsessionを対象として、1回の巡回で回収できた終端結果と通知を全件、1件1行のJSON Linesで返す。1件だけを返して残りを保持する形は、未回収の終端結果がある間、呼び出し元が当該結果を消化する回数だけ起動を繰り返さないと稼働中のsessionへ到達できないため採らない。待機対象を指定する引数を加える案と、残り件数を応答へ加える案は、いずれも呼び出し元へ対象の転記または件数の判定を課すため採用しない。全件返却では、待機対象の`session_id`を持つ終端行が応答に含まれるかだけで待機の成立が定まる。待機上限はCLI実装の定数が定める。
+公開APIは`start`、`start_explore`、`start_write`、`start_shell`、`send_message`、`kill`、`list`、`stop`の8つに固定する。`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。終端の観測と結果本文の配送を`atk agents wait`が担うため、一覧の役割は、保持していた`session_id`の回復と、並行する委譲先の残作業の把握に限る。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、工程別モデル設定の候補列から候補を解決し、委譲した作業の完了を待たず`session_id`を返す。応答は採用した`model_type`、`engine`、`model`および`effort`を含む。両backendともsession生成前にモデル可用性を確定できないため、`start`はbackendの起動応答の後も上限15秒まで終端を確認し、engineの可用性で終端した候補を除外集合へ加えて次候補で起動する。この確認は委譲先の最初のモデル出力（テキスト、思考、ツール呼び出し）を観測した時点で打ち切る。Claudeでは、完成したassistantメッセージが思考と最初の内容ブロックの生成を終えるまで届かず、長いタスク文書の起動では上限に達するため、部分出力を有効にしてAPIの応答開始（`message_start`）を最初のモデル出力として扱う。失敗した要求は応答を始めないため、可用性失敗の検出は保たれる。応答開始後に生じた失敗は起動成功として扱い、`atk agents wait`が終端として受け取る。可用性の失敗はモデルの最初の出力より前に生じ、正常に起動した委譲先は上限内に終端しないため、終端だけを条件にすると正常な起動が毎回上限まで待つためである。失敗より前に届く受信はモデル出力に数えない。API失敗を表すClaudeの合成メッセージ、Codexの`userMessage`などの入力の記録、agyの`user_input`・`system_message`・`error_message`がこれに当たる。全候補が起動不能な場合だけ失敗を返す。上限15秒は、利用枠上限に達したCodexのturnが起動応答から3.84〜4.27秒で終端した計測結果（2026-09-02、Codex CLI 0.152.0で3回）に対する余裕として定める。切替の対象を終端済みの可用性失敗へ限るのは、進行中の作業を残したまま別候補を起動して同一作業を重複実行することを防ぐためである。可用性の判定には、Codexの`codexErrorInfo`のうち利用枠超過、流量制限とサーバー側過負荷の区分を用いる。Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。候補を変えても結果が変わらない失敗では候補を進めない。Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。サーバーは可用性を理由として終端したsessionの採用候補を`model_type`と起動区分の組ごとに1件保持し、次の起動で除外集合の初期値へ充てる。保持は同じ組の起動が可用性の失敗なく成立した時点で解除し、除外により候補が残らない場合も破棄する。このため呼び出し側へ除外対象のsession識別子を要求しない。`atk agents wait`は状態ディレクトリにある全ルートのsessionを対象として、1回の巡回で回収できた終端結果と通知を全件、1件1行のJSON Linesで返す。1件だけを返して残りを保持する形は、未回収の終端結果がある間、呼び出し元が未回収の結果を1件ずつ消化するたびに起動し直さないと稼働中のsessionへ到達できないため採らない。待機対象を指定する引数を加える案と、残り件数を応答へ加える案は、いずれも呼び出し元へ対象の転記または件数の判定を課すため採用しない。全件返却では、待機対象の`session_id`を持つ終端行が応答に含まれるかだけで待機の成立が定まる。待機上限はCLI実装の定数が定める。
 `start`はこの可用性の確認より前に、backendがsessionの初期化を完了するまでの待機へ上限を課す。
-Claude backendはSDKが`init`のシステムメッセージを届けるまで、Codex backendは`initialize`と`thread/start`の応答が返るまでが当該区間である。
-子プロセスが生存したまま応答を返さない場合、当該待機はbackendの失敗時の処理では解消せず、MCPツールの呼び出しがホストのアイドル上限まで返らない。
-上限へ達した起動は当該sessionの資源を解放してから同じ候補で再試行し、全ての試行が上限へ達した場合だけ対象と原因を示す例外で終わる。
+Claude backendはSDKが`init`のシステムメッセージを届けるまで、Codex backendは`initialize`と`thread/start`の応答が返るまでを初期化区間とする。
+子プロセスが生存したまま応答を返さない場合、初期化の待機はbackendの失敗時の処理では解消せず、MCPツールの呼び出しがホストのアイドル上限まで返らない。
+上限へ達した起動では、起動中のsessionの資源を解放してから同じ候補で再試行し、全ての試行が上限へ達した場合だけ対象と原因を示す例外で終わる。
 次候補へ進めないのは、初期化へ到達しない事象が候補のmodelに依存せず、候補の入れ替えでは同じ待機を反復するためである。
 上限の秒数と試行回数は`agent-toolkit/agent_toolkit/_agents_server/state.py`が定め、値の根拠となる計測結果も同ファイルが示す。
-Claude backendは、起動区分によらずbypass系以外の権限モードでセッションを起動する。Claude Codeのセッション間メッセージの受信方針は、受信側の権限モードがbypass系であり送信側が権限モードを申告していない場合に、当該メッセージを保留として扱う。委譲元は起動直後に当該メッセージを送るため、bypass系で起動したセッションは保留のまま`init`へ到達せず、上記の上限まで必ず待つ。2026-09-15の計測では、`bypassPermissions`の起動が6回中6回とも初期化タイムアウトで終わり、権限モードだけを変えた起動は初期化を完了した。失敗した起動の記録には保留を示す行があり、成功した起動には無かった。当該保留は受信側の権限モードだけを条件とし、起動区分に依存しない。軽量起動（`explore`、`shell`、`write`）で同じ失敗を観測していないのは、当該セッションの軽量起動を工程別モデル設定がCodexへ解決し、Claudeでの起動が1件も無かったためである。Claudeで起動した場合は同じ条件が成立する。
+Claude backendは、起動区分によらずbypass系以外の権限モードでセッションを起動する。Claude Codeのセッション間メッセージの受信方針は、受信側の権限モードがbypass系であり送信側が権限モードを申告していない場合に、権限モードを申告していない送信側のメッセージを保留として扱う。委譲元は起動直後に権限モードを申告せずにメッセージを送るため、bypass系で起動したセッションは保留のまま`init`へ到達せず、上記の上限まで必ず待つ。2026-09-15の計測では、`bypassPermissions`の起動が6回中6回とも初期化タイムアウトで終わり、権限モードだけを変えた起動は初期化を完了した。失敗した起動の記録には保留を示す行があり、成功した起動には無かった。この保留は受信側の権限モードだけで決まり、起動区分に依存しない。軽量起動（`explore`、`shell`、`write`）で同じ失敗を観測していないのは、調査対象のセッションでは工程別モデル設定が軽量起動をCodexへ解決し、Claudeでの起動が1件も無かったためである。Claudeで起動した場合は同じ条件が成立する。
 同じ事象の原因を事後に区別できるよう、Claude backendは委譲先CLI自身の診断記録を起動ごとに`agents-server.log`と同じ状態ディレクトリの`delegate-debug/`配下へ保存し、保持世代を超えた古い記録を起動時に削除する。初期化の上限へ達した場合の診断には、受信したメッセージを識別できる要約と、委譲先プロセスが起動した子プロセスの一覧を含める。型別の件数だけではどのメッセージで停止したかを区別できず、入れ子起動したサーバープロセスの残留も観測できないためである。却下した代替案は、`crossSessionInbound`設定で受信を拒否する案である。追加設定ファイルとユーザー設定のいずれで与えても初期化タイムアウトは解消しなかった。
-知識境界として、当該受信方針はClaude Code本体が持ち、本節は委譲先を当該方針の保留対象にしない起動条件だけを扱う。
+知識境界として、セッション間メッセージの受信方針はClaude Code本体が持つ。本節は委譲先のメッセージが保留されない起動条件だけを扱う。
 Claude backendの資源解放では、SDKクライアントの切断を所有タスクの取り消しから切り離した別taskで実行する。
 取り消された実行では、SDKの切断処理が内部のcheckpointで例外を送出し、CLIの子プロセスへ終了を送る処理へ到達しないまま接続だけを閉じるためである。
 この切り離しは、`stop`と再開が用いる資源解放の処理にも同じ切断処理を通じて適用される。
@@ -172,60 +172,60 @@ Claude backendの資源解放では、SDKクライアントの切断を所有タ
 前者は候補を消費しても同じ待機を反復し、後者は一時的な遅延で成立する起動を呼び出し元の再発行へ委ねるため採用しない。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。`0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。上限到達時は配送の成否が確定せず、`atk agents wait`で状態を確認する。
 Claude backendは、委譲先がClaude Codeの背景作業を残してturnを終えた場合、その完了通知による同じsessionの再開を一度だけ待ち、再開したturnの結果を共有の終端結果ファイルへ公開する。待機中は最初の結果を内部へ保留し、`status`と`turn_completed`を終端へ進めない。背景作業の完了通知が届かない場合は、結果保持期間と同じ上限で保留した最初の結果を確定する。
-両backendは、委譲先が`agents_server`の`start`・`start_explore`・`start_write`・`start_shell`で起動した孫sessionを追跡する。`_agents_server/claude.py`はツール利用識別子でClaude SDKの利用ブロックと結果ブロックを対応付け、`_agents_server/codex.py`は`item/completed`の`mcpToolCall`を消費する。終端状態は`_agents_server/session_registry.py`が状態ディレクトリ配下の`agents-server/sessions/<session_id>.json`へ公開する。自動再開の開始、解除、再開の判断は`_agents_server/state.py`の共通述語へ集約し、Claudeの背景taskと孫sessionのどちらも追跡対象として扱う。Managerの常駐監視taskは追跡集合が空になるまで最初の結果を保留し、全ての終端後に識別子を示す継続指示で同じsessionを当該ターンにつき一度だけ再開する。孫sessionの終端は、session登録簿の記録と共有の終端結果ファイルの双方を確かめて判定する。登録簿の記録が不在であるか読取不能である場合も、同じ識別子の終端結果ファイルが終端を示すときは終端として扱う。いずれの媒体からも終端を確定できず保持期限まで観測できない識別子だけを、応答項目を増やさず既存の`error.unobservedSessions`へ示す。
-session登録簿は全sessionについて、終端結果を返せるかどうか、公開status、engine、作業ディレクトリ、model、effort、model_type、起動種別及びturn通番を原子的に記録する。再起動後の解決は、終端、実行中、不在、読取不能を区別する。終端が確定しない記録は前プロセスがturnを実行している可能性を排除できないため再開せず、`turn_unobserved`として返す。候補切替は起動応答の後にengine可用性のため終端した場合だけ行い、起動例外では作成済み資源を残す可能性があるため例外を返す。`stop`はbackend資源の解放を先に完了し、成功後に保持集合と状態ファイルを同期する。登録簿のレコードを削除できるのは当該sessionを所有するMCPサーバーだけとし、削除の契機は`stop`による明示的な破棄と保持期限の経過に限る。終端を観測した待機側は、自身が所有しないsessionのレコードを削除しない。別プロセスの待機処理も同じレコードを観測するため、最初の観測者が削除すると残りの待機処理が終端を見失う。上り通知は送信時刻と乱数を含む一意な最終名へ原子的に公開し、破損した通知と終端結果は待機側が可視の診断として扱う。
+両backendは、委譲先が`agents_server`の`start`・`start_explore`・`start_write`・`start_shell`で起動した孫sessionを追跡する。`_agents_server/claude.py`はツール利用識別子でClaude SDKの利用ブロックと結果ブロックを対応付け、`_agents_server/codex.py`は`item/completed`の`mcpToolCall`を消費する。終端状態は`_agents_server/session_registry.py`が状態ディレクトリ配下の`agents-server/sessions/<session_id>.json`へ公開する。自動再開の開始、解除、再開の判断は`_agents_server/state.py`の共通述語へ集約し、Claudeの背景taskと孫sessionのどちらも追跡対象として扱う。Managerの常駐監視taskは追跡集合が空になるまで最初の結果を保留し、全ての終端後に識別子を示す継続指示で同じsessionを1ターンにつき一度だけ再開する。孫sessionの終端は、session登録簿の記録と共有の終端結果ファイルの双方を確かめて判定する。登録簿の記録が不在であるか読取不能である場合も、同じ識別子の終端結果ファイルが終端を示すときは終端として扱う。いずれの媒体からも終端を確定できず保持期限まで観測できない識別子だけを、応答項目を増やさず既存の`error.unobservedSessions`へ示す。
+session登録簿は全sessionについて、終端結果を返せるかどうか、公開status、engine、作業ディレクトリ、model、effort、model_type、起動種別およびturn通番を原子的に記録する。再起動後の解決は、終端、実行中、不在、読取不能を区別する。終端が確定しない記録は前プロセスがturnを実行している可能性を排除できないため再開せず、`turn_unobserved`として返す。候補切替は起動応答の後にengine可用性のため終端した場合だけ行い、起動例外では作成済み資源を残す可能性があるため例外を返す。`stop`はbackend資源の解放を先に完了し、成功後に保持集合と状態ファイルを同期する。登録簿のレコードを削除できるのは削除対象のsessionを所有するMCPサーバーだけとし、削除の契機は`stop`による明示的な破棄と保持期限の経過に限る。終端を観測した待機側は、自身が所有しないsessionのレコードを削除しない。別プロセスの待機処理も同じレコードを観測するため、最初の観測者が削除すると残りの待機処理が終端を見失う。上り通知は送信時刻と乱数を含む一意な最終名へ原子的に公開し、破損した通知と終端結果は待機側が可視の診断として扱う。
 この自動再開の目的は、委譲先が子の完了を待つ場合に、呼び出し元が追加の継続要求なしにタスク文書所定の返却値を受け取れるようにすることである。判定入力は`_agents_server/state.py`の`AUTO_RESUME_NOTICE`とし、`_agents_server/claude.py`と`_agents_server/codex.py`が両backendの起動時の指示へ加える。Claude Code自身の背景作業の完了通知を消費する仕組みはClaude backendだけが持つ。2026年9月4日の観測ではCodex backendが待機表明の行を最終の返却値として返したが、当時は孫sessionの識別子集合とプロセス間の終端登録簿を持たなかった。再検証は両backendの委譲先から`agents_server`で孫sessionを起動し、孫の終端後に同じsessionが再開することを確認する。
-知識境界として、委譲先が返す文面と待機表明の可否の規定は`agent-toolkit/rules/02-agent-operations.md`が持ち、本節は当該判定入力を委譲手段ごとに生成する方法だけを扱う。却下した代替案は、全委譲手段へ共通の無条件の待機終端規範を置く案と、待機表明の文面を呼び出し元が判別して継続要求を送る案である。前者は自動再開を持たない委譲手段で返却値を回収できない終端をそのまま残し、後者は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が禁じる文面判別に当たるため採用しない。起動文へ委譲手段の能力を書かせる案も、`agents_server`はengineを起動時に解決するため呼び出し元が起動文の作成時点で確定できず採用しない。
-`stop`は保持中で終端済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。目的は再開する予定の無いsessionが保持期限まで表示と一覧に残り、並行する委譲先の残作業の把握を妨げる状態を、呼び出し元の明示的な操作で解消することである。破棄では当該sessionのengineに対応するbackendの資源を解放する。Claude backendでは当該sessionを所有するタスクを終了させ、SDKクライアントの接続を閉じる。Codex backendは`codex app-server`をbackend単位で共有しsession専用の接続を持たないため、解放する資源を持たない。実行中turnを持つsessionを拒否するのは、中断と破棄を1つの操作へ束ねると、中断の失敗と破棄の成否を呼び出し元が区別できないためである。中断が必要な場合は`kill`を先に発行する。結果本文の受領と破棄を1回の呼び出しで済ませる手段として、`kill`へ既定`false`の`stop`引数を設け、終端結果を返した応答に限って破棄する。個別sessionの破棄は`stop`ツールで行う。この引数による破棄では終端結果を保持期限まで残し、同じ`session_id`への`atk agents wait`が期限内は当該結果を返す。応答が呼び出し元へ届いたことをMCPの応答からは判定できず、届かなかった場合に成果を回収する手段が他に無いためである。`stop`ツールからの破棄は、呼び出し元が先行する`atk agents wait`で結果を回収済みであることが前提となるため、現行どおり終端結果も破棄する。破棄後も`send_message`が暗黙再開するのは、保持期限の経過時と同じく再開用の最小状態を別の保持先へ残すためである。却下した代替案は、経過時間その他の契機で自動的に破棄する案と、`stop`を呼び出していないことを検出して警告する案である。前者は呼び出し元が再開を予定するsessionを意図と無関係に破棄し、後者は努力目標である破棄を恒常的な義務へ変えるため、いずれも採用しない。
+知識境界として、委譲先が返す文面と待機表明の可否の規定は`agent-toolkit/rules/02-agent-operations.md`が持ち、本節は待機表明の判定入力を委譲手段ごとに生成する方法だけを扱う。却下した代替案は、全委譲手段へ共通の無条件の待機終端規範を置く案と、待機表明の文面を呼び出し元が判別して継続要求を送る案である。前者は自動再開を持たない委譲手段で返却値を回収できない終端をそのまま残し、後者は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が禁じる文面判別に当たるため採用しない。起動文へ委譲手段の能力を書かせる案も、`agents_server`はengineを起動時に解決するため呼び出し元が起動文の作成時点で確定できず採用しない。
+`stop`は保持中で終端済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。目的は再開する予定の無いsessionが保持期限まで表示と一覧に残り、並行する委譲先の残作業の把握を妨げる状態を、呼び出し元の明示的な操作で解消することである。破棄時には対象sessionのengineに対応するbackendの資源を解放する。Claude backendでは破棄するsessionを所有するタスクを終了させ、SDKクライアントの接続を閉じる。Codex backendは`codex app-server`をbackend単位で共有しsession専用の接続を持たないため、解放する資源を持たない。実行中turnを持つsessionを拒否するのは、中断と破棄を1つの操作へ束ねると、中断の失敗と破棄の成否を呼び出し元が区別できないためである。中断が必要な場合は`kill`を先に発行する。結果本文の受領と破棄を1回の呼び出しで済ませる手段として、`kill`へ既定`false`の`stop`引数を設け、終端結果を返した応答に限って破棄する。個別sessionの破棄は`stop`ツールで行う。この引数による破棄では終端結果を保持期限まで残し、同じ`session_id`への`atk agents wait`が期限内は保持した終端結果を返す。応答が呼び出し元へ届いたことをMCPの応答からは判定できず、届かなかった場合に成果を回収する手段が他に無いためである。`stop`ツールからの破棄は、呼び出し元が先行する`atk agents wait`で結果を回収済みであることが前提となるため、現行どおり終端結果も破棄する。破棄後も`send_message`が暗黙再開するのは、保持期限の経過時と同じく再開用の最小状態を別の保持先へ残すためである。却下した代替案は、経過時間その他の契機で自動的に破棄する案と、`stop`を呼び出していないことを検出して警告する案である。前者は呼び出し元が再開を予定するsessionを意図と無関係に破棄し、後者は努力目標である破棄を恒常的な義務へ変えるため、いずれも採用しない。
 
 Stopフックによる継続の強制は採用しない。背景作業の完了は委譲先が同じturn内の行動で解消できず、軽量な探索委譲とシェル実行委譲はプラグインのフックを読み込まないためである。呼び出し元へ背景作業の判別値を返す方式も採用しない。再開の要否と時機を呼び出し元へ委ねると、`send_message`を送る追加の分岐が必要になり、同じsessionが自動的に進める処理を公開契約へ露出させるためである。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、
-正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionまたはbackend processを強制終了せず、後続の`atk agents wait`または終端後の`send_message`を許可する。終端結果の30分保持を過ぎた場合は結果本文だけを破棄する。保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。`previous_result`は`atk agents wait`又は`kill`が当該結果本文を呼び出し元へ返していない場合だけ付ける。返し済みの結果本文を継続入力の応答で再送しないためである。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionとbackend processは保持する。後続では`atk agents wait`で結果を受け取れる。終端後は`send_message`で再開できる。終端結果の30分保持を過ぎた場合は結果本文だけを破棄する。保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。`previous_result`は`atk agents wait`または`kill`が直前の結果本文を呼び出し元へ返していない場合だけ付ける。返し済みの結果本文を継続入力の応答で再送しないためである。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 成功応答は`status`・`kill_requested`を含み、`kill_requested`は要求の受理事実を示し、自然終端を`interrupted`へ置き換えない。
 終端結果の保持期限を過ぎたsessionへの`kill`は`status`を`expired`、`kill_requested`を偽とする成功応答を返す。`kill`の他の応答と項目をそろえず、この応答で消費される項目だけを返す。
 この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
-両backendは委譲先の実行主体へ、自身が委譲先であることを示す指示を起動時に渡す。Codex backendは`thread/start`と`thread/resume`の`developerInstructions`、Claude backendは`ClaudeAgentOptions.system_prompt`のpreset追記へ同じ本文を載せる。目的は規範が実行主体別に定める条文を委譲先が自身へ適用できる状態を起動時に成立させることである。両backendの既定の指示はいずれもユーザーと直接対話する主体を前提とし、どの手段で起動されたかを実行主体が観測できないためである。2026-09-02に`model_type=execute_review`で起動したClaude backendの委譲先は、自身をメインエージェントと申告し、応答の返却先を判定できないと回答した。Codexの既定指示はcodex-cli 0.152.1のバイナリで確認した。当該指示は`You and the user share the same workspace and collaborate to achieve the user's goals.`を含み、同じ前提を持つ。`developerInstructions`は同バイナリのスキーマ記述のとおりdeveloper roleメッセージとして注入され、既定の指示を置換しない。当該記述は`Developer instructions that should be injected as a developer role message.`である。再検証は役割を明示しない起動文で委譲先を起動し、自身の立場と応答の返却先を申告させて確認する。
+両backendは委譲先の実行主体へ、自身が委譲先であることを示す指示を起動時に渡す。Codex backendは`thread/start`と`thread/resume`の`developerInstructions`、Claude backendは`ClaudeAgentOptions.system_prompt`のpreset追記へ同じ本文を載せる。目的は規範が実行主体別に定める条文を委譲先が自身へ適用できる状態を起動時に成立させることである。両backendの既定の指示はいずれもユーザーと直接対話する主体を前提とし、どの手段で起動されたかを実行主体が観測できないためである。2026-09-02に`model_type=execute_review`で起動したClaude backendの委譲先は、自身をメインエージェントと申告し、応答の返却先を判定できないと回答した。Codexの既定指示はcodex-cli 0.152.1のバイナリで確認した。確認したCodexの既定指示は`You and the user share the same workspace and collaborate to achieve the user's goals.`を含み、同じ前提を持つ。`developerInstructions`は同バイナリのスキーマ記述のとおりdeveloper roleメッセージとして注入され、既定の指示を置換しない。スキーマの記述は`Developer instructions that should be injected as a developer role message.`である。再検証は役割を明示しない起動文で委譲先を起動し、自身の立場と応答の返却先を申告させて確認する。
 
-知識境界として、実行主体が委譲先として従う規範は`agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`が持ち、本節は当該規範を適用できる状態を起動時に成立させる手段だけを扱う。
+知識境界として、実行主体が委譲先として従う規範は`agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`が持ち、本節は委譲先がこれらの規範を適用できる状態を起動時に成立させる手段だけを扱う。
 
 却下した代替案は、委譲の起動文へ役割の明示を義務付ける規範だけを置く案と、委譲先セッションの環境変数の印を実行主体へ読ませる案である。前者は起動側が記述を欠くと成立せず、役割を明示しない単発の委譲で自己申告の誤りを観測した。後者は実行主体が環境変数を観測する工程を新たに要し、指示本文で同じ結果を得られるため採用しない。
 
-`wait`の既定timeoutは固定値を持たず、`agent-toolkit/agent_toolkit/_common/wait_schedule.py`の保持期間判定を共有して導出する。委譲待機のcron間隔と同じ判定を用いるため、待機間隔と待機上限が別々の値へ分岐しない。導出値は保持期間`5m`で270秒、`1h`で1740秒とする。いずれも保持期間より短く、キャッシュが満了する前に呼び出し元のターンが再開する。1740秒は、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分より60秒短い値とする。保持期間`1h`の3600秒をそのまま使うとアイドル上限で中断するためである。`wait`はMCPサーバープロセス内で実行され、呼び出し元がメイン会話とサブエージェントのいずれであるかを判定できない。`wait`は入力を受け取らないため、導出にはmainのbucketを用い、委譲先として起動されたセッションの上限は、同モジュールが環境変数から当該セッションを判定して240秒とする。導出には`claude auth status`の実行を伴うため、bucketごとの結果をプロセス内へ保持し、別スレッドで解決してイベントループを止めない。
+`wait`の既定timeoutは固定値を持たず、`agent-toolkit/agent_toolkit/_common/wait_schedule.py`の保持期間判定を共有して導出する。委譲待機のcron間隔と同じ判定を用いるため、待機間隔と待機上限が別々の値へ分岐しない。導出値は保持期間`5m`で270秒、`1h`で1740秒とする。いずれも保持期間より短く、キャッシュが満了する前に呼び出し元のターンが再開する。1740秒は、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分より60秒短い値とする。保持期間`1h`の3600秒をそのまま使うとアイドル上限で中断するためである。`wait`はMCPサーバープロセス内で実行され、呼び出し元がメイン会話とサブエージェントのいずれであるかを判定できない。`wait`は入力を受け取らないため、導出にはmainのbucketを用い、委譲先として起動されたセッションの上限は、同モジュールが環境変数から委譲先セッションを判定して240秒とする。導出には`claude auth status`の実行を伴うため、bucketごとの結果をプロセス内へ保持し、別スレッドで解決してイベントループを止めない。
 
 却下した代替案は、固定値を実効上限に近い値へ引き上げる案と、両bucketのうち短い保持期間を常に採る案である。前者は保持期間が`5m`の環境でキャッシュが満了した後も待ち続ける。後者はサブエージェントの既定の保持期間が`5m`であるため、待機のたびに常に270秒となり、要求した改善が成立しない。呼び出し元の区分を入力として受け取る案も、待機の手段を1つにする要求と両立しないため採用しない。`send_message`と`kill`の既定は配送結果と中断要求の確定を待つ上限であり、委譲先の終端を待つ上限ではないため、270秒の固定値を維持する。
 
 `start_explore`は調査委譲の初期コンテキストと起動費用を減らすため、backend別の軽量起動条件で開始する。Codex backendは`thread/start`へ`project_doc_max_bytes=0`と探索用指示を渡し、Claude backendは利用者・プロジェクト設定とスキルの読込を省いて組込tool presetと探索用toolを維持する。探索委譲を選ぶ条件は`agent-toolkit/rules/01-agent.md`、起動手段は`runtime-routing.md`を知識境界とする。読取専用sandboxで書込を機械的に禁じる案は、`agent-toolkit:delegation`が読取専用の担保にsandbox値を用いない既存規定と衝突するため採用しない。
 
 `start_shell`は`start_explore`と同じ軽量起動条件を共有し、システム指示だけをコマンド実行専用の文面へ替える。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendの設定読込元とスキルの省略である。`start_explore`は`model_type`を省略すると`low_tier`を使い、軽量側の候補で判断材料が不足する調査だけ`medium_tier`を指定する。
-この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`及び`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`及び組込tool presetを併用できる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
+この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
 
 継続不能の詳細な判定条件は`runtime-routing.md`「工程別モデル設定」が定める。
 `wait`は終端結果の保持期限を過ぎたsessionへ`session retention expired`を返すが、同じsessionの会話再開用の最小状態は保持され、
-`send_message`は当該状態から暗黙再開するため、保持期限の超過だけを継続不能の根拠にしない。
+`send_message`は保持された会話再開用の最小状態から暗黙再開するため、保持期限の超過だけを継続不能の根拠にしない。
 呼び出し側が`wait`の保持期限超過を継続不能と扱う運用は、再開できるthreadを破棄して規範・計画・対象コードの再読込を発生させるため採用しない。
 保持期限内に継続させる別の運用を規範へ追加する案も、暗黙再開が同じ結果を与えるため採用しない。
 
 継続要求と中断要求の応答は、対象sessionを所有する実行主体だけが解決する。Claude backendは要求の受理と応答の解決を1つの継続要求チャネルへ集約し、所有主体が保持期限の到達、message streamの例外、明示的な取り消しのいずれで終了する場合も、チャネルの閉鎖で受理済みの要求を所有主体の終了として解決する。閉鎖後の受理は待機させず直ちに拒否する。Codex backendは同じ責務をJSON-RPCの応答待ちへ適用し、接続の終了とstdout readerの失敗で未解決の要求を解決する。この終了処理と呼び出し側のtimeoutを併用し、既知の終了の仕方では配送結果を即座に確定し、未知の停止では有限時間で制御を戻す。却下した代替案は、所有主体終了時の解決を設けず、呼び出し側のtimeoutだけで応答なしを打ち切る案である。要求が配送されたかを呼び出し側が判別できず、再開の可否も決められないため採用しない。
 
 backend固有のserver requestは共有公開toolを増やさず、非対話の非対応エラーとして応答する。
-承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、対応turnをfailedへ遷移してwaiterを解放する。
+承認、ユーザー入力、認証token更新、attestationおよび未知methodを待機させず、対応turnをfailedへ遷移してwaiterを解放する。
 通知のdeltaは進捗表示にだけ用い、終端応答で結果本文を返す。この境界により、呼び出し側は実行中の状態を照会し、
 終端後に結果を取得できる。結果を回収し忘れたときにStopで機械的に遮断する仕組みは持たない。
 
 Claude Codeからclaude系モデルの実行主体へ委譲する場合の既定はAgentツールとし、`agents_server`を使わない。
 Claude CodeのUIが実行状況と応答を直接表示するため、同じ結果をより少ない観測手段で確認できるためである。
 例外は工程別モデル設定がeffortを指定する工程の委譲先とし、engineの別によらず`agents_server`を使う。
-Agentツールにeffortに相当する引数が無く、当該工程の実効設定を委譲先へ渡せないためである。
+Agentツールにeffortに相当する引数が無く、effortを指定した工程の実効設定を委譲先へ渡せないためである。
 これらの工程では、MCPツールを呼び出せない場合の自動的な代替手段を設けない。
-Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、当該工程を`agents_server`固定とした理由自体を損なうためである。
-MCPツールを呼び出せない場合は「工程別モデル設定」手順4に従い`needs_escalation`又は未完了として返す。
+Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、effortを指定した工程で`agents_server`を使う理由自体を損なうためである。
+MCPツールを呼び出せない場合は「工程別モデル設定」手順4に従い`needs_escalation`または未完了として返す。
 Codexからの委譲はengineの別によらず`agents_server`を使う既存の扱いを維持する。CodexのUIには同等の表示利得が無いためである。
 
 却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
-hookの配送境界及び継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
+hookの配送境界および継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
 Claude Codeからの委譲も`agents_server`へ一本化する案は、Claude CodeのUIで直接観測できる実行状況をMCPの状態照会へ置き換え、
 観測手段を増やすだけとなるため採用しない。effortを指定する工程の委譲先もAgentツールへ統一する案は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。2定義の配下もAgentツールへ統一する案は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。
 
@@ -250,6 +250,7 @@ session識別子は`--output-format stream-json`が返す`init`イベントの�
 人が`atk agents list`から選んだsessionの進行を読むため、backendは解析済みの公開JSONイベントを
 ルートsessionの状態ディレクトリ内にある`logs/<session-id>.jsonl`へ順に追記する。
 `atk agents logs`はClaude Code・Codexの既存記録と同じ表示処理で読み、`--follow`では追記分を表示する。
+保存済みの記録をmarkdownへ変換する場合も同じコマンドを使う。単一識別子に加え、作業ディレクトリまたは全件を選び、開始日時の新しい順で件数を限定する。1件1ファイルの保存では日時名の衝突を識別子で解消し、既存ファイルを上書きしない。Claude Codeの親記録にサブエージェントの会話を含めるか、思考とツール詳細を出力するかは呼び出し時に指定する。
 識別子から記録を探す処理は`agent-toolkit/agent_toolkit/_agents_server/record_paths.py`へ置き、`atk agents logs`と振り返りの証拠抽出器が共有する。
 保持と期限回収は状態ディレクトリの7日契約に従う。
 Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力には使わない。
@@ -257,19 +258,19 @@ Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力�
 工程別モデル設定とpresetへは加えない。
 `_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
 `_MODEL_SETTING_CATEGORIES`・`_CATEGORY_ENGINE_MODELS`・`_PRESET_ENGINE_ORDERS`は変えない。
-当該engineは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
-候補列のフォールバックの対象にもしないため、`_engine_unavailable_reason`は当該engineの失敗を分類しない。
+Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
+候補列のフォールバックの対象にもしないため、`_engine_unavailable_reason`はAntigravity CLIの失敗を分類しない。
 
 委譲先には`--dangerously-skip-permissions`を付ける。
 原稿ファイルの書き換えまでを任せる用途であり、Antigravity CLIの非対話モードは対話確認を持たず、
-agent-toolkitのhookによる遮断も当該CLIへ及ばないためである。
-この判断は利用者が確定した。当該engineの権限を見直す作業は、この記録を根拠として扱う。
+agent-toolkitのhookによる遮断もAntigravity CLIへ及ばないためである。
+この判断は利用者が確定した。Antigravity CLIの権限を見直す作業は、この記録を根拠として扱う。
 
 導入のステップ（`pytools/_internal/setup_agy_cli.py`）は失敗を警告1行に留めて`False`を返す。
-公式インストーラーはバイナリ本体を`*.run.app`のエンドポイントから取得するため、当該ホストを遮断するネットワークでは導入できない。
-他のステップと同じく例外で終えると、当該環境の`update-dotfiles`が毎回終了コード1になり、他のステップの失敗が埋もれる。
+公式インストーラーはバイナリ本体を`*.run.app`のエンドポイントから取得するため、バイナリの取得先ホストを遮断するネットワークでは導入できない。
+他のステップと同じく例外で終えると、取得先ホストへ接続できない環境では`update-dotfiles`が毎回終了コード1になり、他のステップの失敗が埋もれる。
 この判断も利用者が確定した。導入のステップを見直す作業は、この記録を根拠として扱う。
-更新はAntigravity CLI自身が実行中に自動で行うため、当該ステップはランチャーが無い場合だけインストーラーを実行する。
+更新はAntigravity CLI自身が実行中に自動で行うため、導入ステップはランチャーが無い場合だけインストーラーを実行する。
 
 statuslineは`claude-statusline`の`agy-statusline`モードが担う。
 Antigravity CLIが渡すJSONはClaude CodeのstatusLine入力と項目が完全には重ならないため、
@@ -286,7 +287,7 @@ Antigravity CLIが渡すJSONはClaude CodeのstatusLine入力と項目が完全�
 
 レーン工程の進行中に稼働レーンが1つになった時点は、そのまま続行する。
 そのレーンの未着手のAWIを新しいレーンへ移す方式は採用しない。
-当該方式は計画ファイルの分割と書込所有権の移譲を要し、実行工程で計画ファイルを更新しない方針と両立しない。
+未着手AWIを新しいレーンへ移す方式は、計画ファイルの分割と書込所有権の移譲を要し、実行工程で計画ファイルを更新しない方針と両立しない。
 単独稼働の区間は、選定工程が前段の上限を守ることで短くする。
 
 条文は`agent-toolkit/share/pick-wi.subagent.md`「調査とレーン分け」と
@@ -295,7 +296,7 @@ Antigravity CLIが渡すJSONはClaude CodeのstatusLine入力と項目が完全�
 ## 公開出力から導出できる項目の撤去
 
 `atk agents list`と`atk agents show`、およびMCPの`list`は停滞の判定を表す`stalled`を返していた。
-当該値は同じ応答が返す`seconds_since_activity`と定数の閾値の比較だけで再現できるため、公開出力から撤去した。
+`stalled`の判定は同じ応答が返す`seconds_since_activity`と定数の閾値を比べるだけで再現できるため、公開出力から撤去した。
 MCPの`list`は通常時の3項目の公開契約を保つため、`stalled`を`seconds_since_activity`へ置き換えた。ClaudeのAPI失敗を再試行している間だけ、一次情報から算出した`api_error`も返す。
 
 導出できる項目を公開出力へ置くと、同じ判定を定める箇所が生成側と呼び出し側の2つに分かれる。
@@ -308,13 +309,13 @@ MCPの`list`は通常時の3項目の公開契約を保つため、`stalled`を`
 このため`agents_server`はルートセッションごとのディレクトリへ生存中のsessionの状態ファイルを出力し、`claude-statusline`の`statusline`モードがセッション行の次の行以降へ1 sessionを1行で表示する。
 
 Claude backendが受け取るAPI失敗の合成assistantメッセージはモデルの活動を示さないため、`updated_at`を進めない。失敗の種別、取得できたHTTPステータス、連続失敗の初回時刻と件数だけをsessionに保持し、状態ファイルへ射影する。`show`と`list`は共通の射影から失敗の経過秒を算出し、通常のassistantメッセージで記録を削除する。これにより、再試行の受信で活動経過が短く表示される状態を防ぐ。親プロセスや外部ログから再試行を推定する案は、sessionの受信境界で既に失敗の種別を得られるため採用しない。
-429の再試行中は同じsessionの終端又は正常なモデル出力を待つ。`seconds_since_activity`はモデル活動がない間に増えるが、`api_error`が429を示す間はその値だけで委譲先を停止しない。診断の可視化と委譲先の置換を別の判断に分けることで、利用枠の回復後に同じ実行を継続できる余地を残す。
+429の再試行中は同じsessionの終端または正常なモデル出力を待つ。`seconds_since_activity`はモデル活動がない間に増えるが、`api_error`が429を示す間はその値だけで委譲先を停止しない。診断の可視化と委譲先の置換を別の判断に分けることで、利用枠の回復後に同じ実行を継続できる余地を残す。
 
 状態ファイルは`atk config get state_dir`が返すディレクトリ配下の`agents-server/<ルートセッション識別子>/<書込主体>.json`とする。終端結果の未回収判定は、結果ファイルを扱える処理では公開済み・回収済み・未公開を区別する共通述語で行い、状態ファイルを記述できない処理だけは内部の配送済み状態へ縮退する。各書込主体は自身の状態ファイルと対応する一時ファイルだけを削除し、共有する終端結果と通知は保持期限を超えたものだけを回収する。別の書込主体の表示、未回収の終端結果、上り通知を起動または終了時の初期化で削除する案は、同じルートに属する並行した委譲の観測を失わせるため採用しない。
-ルートセッション識別子は`AGENT_TOOLKIT_OWNER_SESSION`、無ければMCPサーバー起動時の`CLAUDE_CODE_SESSION_ID`から取る。`CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。Claude Codeが同一プロセスのままsession識別子を切り替えると、長命なMCPサーバーだけが起動時の値を保持し、statuslineが受け取る入力JSONの`session_id`と一致しなくなる。このため同じディレクトリ配下ではなく`agents-server/aliases/<現行のsession識別子>.json`へ索引を置き、statuslineと`atk agents wait`は当該索引を経てルートセッション識別子を解決する。`atk agents notify`は所有者sessionを直接解決する方式を保ち、索引を読まない。MCPサーバーは`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`と`list`の応答に、自身の状態ファイル書込先として解決した`root_session_id`を含める。`list`は保持sessionが0件でも当該項目を返す。PostToolUseフックは応答項目を索引の書込先として直接使う。状態ファイルは1秒単位で集約され、応答直後には起動したsessionが未反映であり得るため、状態ディレクトリの走査による逆引きは行わない。CLIの`list`と`wait`は索引又は現行識別子自身の状態ディレクトリで会話rootとの対応を確認する。対応未確認かつ対象0件ではCLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行するよう案内する。対応確認済みの空状態は通常の空状態として扱う。却下した代替案は、両側がClaude Codeプロセスの識別子を環境変数から解決する案と、鍵を作業ディレクトリへ変える案である。前者はMCPサーバープロセスに`CLAUDE_PID`が渡らないため成立せず、後者は同じディレクトリで複数の会話を同時に動かすと会話ごとの行を区別できないため採用しない。共有状態ごとの基準となる記録と、それを読み書きする処理の対応は`.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md`が定める。
+ルートセッション識別子は`AGENT_TOOLKIT_OWNER_SESSION`、無ければMCPサーバー起動時の`CLAUDE_CODE_SESSION_ID`から取る。`CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。Claude Codeが同一プロセスのままsession識別子を切り替えると、長命なMCPサーバーだけが起動時の値を保持し、statuslineが受け取る入力JSONの`session_id`と一致しなくなる。このため同じディレクトリ配下ではなく`agents-server/aliases/<現行のsession識別子>.json`へ索引を置き、statuslineと`atk agents wait`は会話IDの索引を経てルートセッション識別子を解決する。`atk agents notify`は所有者sessionを直接解決する方式を保ち、索引を読まない。MCPサーバーは`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`と`list`の応答に、自身の状態ファイル書込先として解決した`root_session_id`を含める。`list`は保持sessionが0件でも`root_session_id`を返す。PostToolUseフックは応答項目を索引の書込先として直接使う。状態ファイルは1秒単位で集約され、応答直後には起動したsessionが未反映であり得るため、状態ディレクトリの走査による逆引きは行わない。CLIの`list`と`wait`は索引か現行識別子自身の状態ディレクトリで会話rootとの対応を確認する。対応未確認かつ対象0件ではCLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行するよう案内する。対応確認済みの空状態は通常の空状態として扱う。却下した代替案は、両側がClaude Codeプロセスの識別子を環境変数から解決する案と、鍵を作業ディレクトリへ変える案である。前者はMCPサーバープロセスに`CLAUDE_PID`が渡らないため成立せず、後者は同じディレクトリで複数の会話を同時に動かすと会話ごとの行を区別できないため採用しない。共有状態ごとの基準となる記録と、それを読み書きする処理の対応は`.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md`が定める。
 Claude Codeが直接起動した`agents_server`は`root.json`を書き、委譲先の中で起動した`agents_server`は自身を収容するsessionの識別子を名前とするファイルを書く。
 収容sessionの識別子は、Claude backendの委譲先では`AGENT_TOOLKIT_DELEGATED_SESSION`が示すとおり自身の`CLAUDE_CODE_SESSION_ID`、Codex backendの委譲先では`CODEX_THREAD_ID`から取る。いずれも親の`agents_server`が公開する`session_id`と同じ値である。
-Codex委譲先自身のシェルには`CODEX_THREAD_ID`が存在するため、当該シェルで動く待機処理と通知処理は共有状態ディレクトリを解決できる。PostToolUseフックの環境に`CODEX_THREAD_ID`が無い場合は、フック入力の検証済み現行session識別子を既存の書込主体解決へ補完し、同じ書込主体の`wait-targets`へ子sessionの開始とreply再開を登録する。フック入力を新しい台帳へ保存する案は、待機CLIとは別に基準となる記録を増やすため採用しない。
+Codex委譲先自身のシェルには`CODEX_THREAD_ID`が存在するため、Codex委譲先のシェルで動く待機処理と通知処理は共有状態ディレクトリを解決できる。PostToolUseフックの環境に`CODEX_THREAD_ID`が無い場合は、フック入力の検証済み現行session識別子を既存の書込主体解決へ補完し、同じ書込主体の`wait-targets`へ子sessionの開始とreply再開を登録する。フック入力を新しい台帳へ保存する案は、待機CLIとは別に基準となる記録を増やすため採用しない。
 Codex backendは子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継承した`AGENT_TOOLKIT_DELEGATED_SESSION`を除く。
 除かない場合、Claude委譲先の中で起動したCodex委譲先がClaude委譲先と誤判定される。
 一方、Codexホストから直接起動したMCPサーバープロセスは、所有session識別子とCodex thread識別子のいずれも持たないため状態ファイルを書かない。
@@ -322,22 +323,22 @@ Codex backendは子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継�
 共通の`root.json`へ代替すると、活性化処理が同じ状態ディレクトリにある別の書込主体の記録を削除するためである。
 書込側はsession状態の更新を1秒で集約し、自身の生存中のsession全体を原子的に全置換する。
 ルートの書込主体はMCPの開始時にディレクトリ配下を空にして前回プロセスの残存を除き、終了時にディレクトリを削除する。入れ子の書込主体は自身のファイルだけを書き、終了時に削除する。
-書込主体は状態ファイルのトップレベルへ生存の印`heartbeat_at`を置き、稼働中は一定間隔で更新する。読取側は当該印が失効した状態ファイルを表示から外す。書込主体は自身のflushのたびに、当該印が失効した他の状態ファイルを削除する。書込主体の異常終了では状態ファイルの回収も終端状態への更新も動かないため、生存の印を持たない設計では`status`が`running`のままのsessionが表示に残り続ける。状態ファイル名は書込主体のhost session識別子であり、同じ識別子が再び使われないため、後続の`agents_server`起動では当該ファイルが除かれない。生存の印を持たない状態ファイルは、読取側の表示対象からも書込主体の削除対象からも外す。statuslineの実装とプラグインの実装は別々の仕組みで更新され、更新の順序を制御できない。印を持たないファイルを削除すると、旧版の書込主体が稼働中のsessionを次の状態変化まで書き直さないため、実在するsessionの表示が失われる。却下した代替案は、収容主体が子sessionの終端を観測した時点で子の状態ファイルを削除する案と、トップレベルの`updated_at`だけで失効を判定する案と、OSのプロセス生存確認を用いる案である。第1の案は収容主体が保持するagents_serverのsession識別子と、状態ファイル名が用いるhost session識別子が別体系であり、対応表を新設しないと対象を特定できない。第2の案は進捗の更新が届かない長時間のturnと書込主体の消失を区別できない。第3の案は読取側のstatuslineへOS別のプロセス照会を持ち込み、識別子の再利用を排除するために追加の情報を要する。
-読取側はLinuxで`XDG_STATE_HOME`又は`HOME/.local/state`、Windowsで`LOCALAPPDATA`から同じディレクトリを解決する。platformdirsの`user_state_dir`と同じ規則である。
+書込主体は状態ファイルのトップレベルへ生存の印`heartbeat_at`を置き、稼働中は一定間隔で更新する。読取側は`heartbeat_at`が失効した状態ファイルを表示から外す。書込主体は自身のflushのたびに、`heartbeat_at`が失効した他の状態ファイルを削除する。書込主体の異常終了では状態ファイルの回収も終端状態への更新も動かないため、生存の印を持たない設計では`status`が`running`のままのsessionが表示に残り続ける。状態ファイル名は書込主体のhost session識別子であり、同じ識別子が再び使われないため、後続の`agents_server`起動でも古い状態ファイルは除かれない。生存の印を持たない状態ファイルは、読取側の表示対象からも書込主体の削除対象からも外す。statuslineの実装とプラグインの実装は別々の仕組みで更新され、更新の順序を制御できない。印を持たないファイルを削除すると、旧版の書込主体が稼働中のsessionを次の状態変化まで書き直さないため、実在するsessionの表示が失われる。却下した代替案は、収容主体が子sessionの終端を観測した時点で子の状態ファイルを削除する案と、トップレベルの`updated_at`だけで失効を判定する案と、OSのプロセス生存確認を用いる案である。第1の案は収容主体が保持するagents_serverのsession識別子と、状態ファイル名が用いるhost session識別子が別体系であり、対応表を新設しないと対象を特定できない。第2の案は進捗の更新が届かない長時間のturnと書込主体の消失を区別できない。第3の案は読取側のstatuslineへOS別のプロセス照会を持ち込み、識別子の再利用を排除するために追加の情報を要する。
+読取側はLinuxで`XDG_STATE_HOME`または`HOME/.local/state`、Windowsで`LOCALAPPDATA`から同じディレクトリを解決する。platformdirsの`user_state_dir`と同じ規則である。
 
-同じディレクトリ配下の`results/<session_id>.json`へ、終端したsessionの結果本文を原子的に書く。内容へsessionごとに1から始まり新しいturnの開始ごとに1増える`turn_seq`と、終端時刻の`finalized_at`を含める。終端結果を回収済みかどうかは`results/<session_id>.json`の存在だけで決める。回収は`agent-toolkit/agent_toolkit/_agents_server/status_file.py`の`take_result`だけが行う。同処理は`results/.<session_id>.claim.lock`の排他ロックの内側で、結果本文の読取、公開した書込主体と所有者が一致するかの確認、ファイルの削除を1つの原子的な区間として実行する。所有者が一致しない場合は結果を返さず、ファイルも削除しない。`kill`、MCPの内部待機及び`atk agents wait`はいずれも同じ`take_result`を経由して回収する。回収する各呼び出し元に、結果ファイルの読取と削除を個別に持たせない。読取と削除を別の呼び出しへ分けると、2つの処理が同じ結果を読んだ後に一方だけが削除でき、同じ結果が重複して配送されるためである。MCPサーバーは、一度書いた結果ファイルが消えている場合に当該sessionを回収済みとして扱い、当該ファイルを再作成しない。終端結果を返す上限は保持期限（30分）とし、期限の経過後は`atk agents wait`が`status`を`expired`とする応答だけを返す。同じsessionの新しいturnを開始する時点でも、前のturnの結果ファイルを同期的に削除する。削除は`send_message`と再開の応答を返す前に完了させるため、応答を受け取った呼び出し側は`atk agents wait`だけで当該turnの終端を待てる。待機対象のturnの番号を引数で受け取る案は、呼び出し側が`turn_seq`を転記する必要を残し、転記の誤りが別のturnの結果を当該turnの終端として受領させるため採用しない。`atk agents wait`は結果ファイルの確認と同じ周回で未回収の通知を回収し、結果を標準出力へ配送した場合だけ当該ファイルを削除する。回収処理を1つに限ることで、同じ結果・通知を二重に配送しない。終端結果が未到達で通知だけを回収したsessionは、`status`を`running`とする行で返し、呼び出し側は再待機の要否を行の`status`で判定する。回収の途中で結果ファイルの読取に失敗した場合は、同じ巡回で回収済みの本文を先に標準出力へ配送してから非0で終える。回収は結果ファイルと通知ファイルの削除を伴うため、当該失敗で配送を取りやめると回収済みの本文が失われる。読取の失敗は次の起動でも同じ状態で現れるため、診断の報告を1回遅らせても失われない。Claude Codeの`/goal`はターン終了時に当該セッションが起動した未完了のBash背景ジョブが無い場合に目標評価を発動する。`atk agents wait`をBash背景ジョブとして起動すると当該評価が延期され、委譲先の終端・上り通知でセッションが再開し、その標準出力だけで配送が確定する。MCPサーバーへ待機専用のツールを足す案は、当該ツールの呼び出しも背景移行の対象となり目標評価の延期条件を満たさないため採用しない。
+同じディレクトリ配下の`results/<session_id>.json`へ、終端したsessionの結果本文を原子的に書く。内容へsessionごとに1から始まり新しいturnの開始ごとに1増える`turn_seq`と、終端時刻の`finalized_at`を含める。終端結果を回収済みかどうかは`results/<session_id>.json`の存在だけで決める。回収は`agent-toolkit/agent_toolkit/_agents_server/status_file.py`の`take_result`だけが行う。同処理は`results/.<session_id>.claim.lock`の排他ロックの内側で、結果本文の読取、公開した書込主体と所有者が一致するかの確認、ファイルの削除を1つの原子的な区間として実行する。所有者が一致しない場合は結果を返さず、ファイルも削除しない。`kill`、MCPの内部待機および`atk agents wait`はいずれも同じ`take_result`を経由して回収する。回収する各呼び出し元に、結果ファイルの読取と削除を個別に持たせない。読取と削除を別の呼び出しへ分けると、2つの処理が同じ結果を読んだ後に一方だけが削除でき、同じ結果が重複して配送されるためである。MCPサーバーは、一度書いた結果ファイルが消えている場合に結果を公開したsessionを回収済みとして扱い、消えた結果ファイルを再作成しない。終端結果を返す上限は保持期限（30分）とし、期限の経過後は`atk agents wait`が`status`を`expired`とする応答だけを返す。同じsessionの新しいturnを開始する時点でも、前のturnの結果ファイルを同期的に削除する。削除は`send_message`と再開の応答を返す前に完了させるため、応答を受け取った呼び出し側は`atk agents wait`だけで再開したturnの終端を待てる。待機対象のturnの番号を引数で受け取る案は、呼び出し側が`turn_seq`を転記する必要を残し、転記の誤りによって、別のturnの結果を待機中のturnの終端として受領し得るため採用しない。`atk agents wait`は結果ファイルの確認と同じ周回で未回収の通知を回収し、結果を標準出力へ配送した場合だけ対応する結果ファイルを削除する。回収処理を1つに限ることで、同じ結果・通知を二重に配送しない。終端結果が未到達で通知だけを回収したsessionは、`status`を`running`とする行で返し、呼び出し側は再待機の要否を行の`status`で判定する。回収の途中で結果ファイルの読取に失敗した場合は、同じ巡回で回収済みの本文を先に標準出力へ配送してから非0で終える。回収は結果ファイルと通知ファイルの削除を伴うため、読取に失敗した時点で配送を取りやめると回収済みの本文が失われる。読取の失敗は次の起動でも同じ状態で現れるため、診断の報告を1回遅らせても失われない。Claude Codeの`/goal`はターン終了時に評価対象のセッションが起動した未完了のBash背景ジョブが無い場合に目標評価を発動する。`atk agents wait`をBash背景ジョブとして起動すると目標評価が延期され、委譲先の終端・上り通知でセッションが再開し、その標準出力だけで配送が確定する。MCPサーバーへ待機専用のツールを足す案は、追加した待機ツールの呼び出しも背景移行の対象となり目標評価の延期条件を満たさないため採用しない。
 
-`atk agents wait`の待機所有権は書込主体につき1件とし、`wait-locks/<書込主体>.lock`のファイルロックで表す。先行待機は`wait-results/<書込主体>/<run_id>.json`へ実行中・公開済み・回収済みの状態を保存し、`current.json`へ現行run識別子を置く。同じ書込主体から2つ目の待機が発行された場合は、現行run識別子を固定してlock解放を待つ。後発はlock取得後に固定runの状態を読み直し、公開済みなら保存本文と終了コードを1回返す。先行待機が未公開の`running` runを残して終了した場合は、後発が同じrunの所有者となり、保存済み対象とrun別退避物を引き継いで結果又は通知の回収を続ける。lock待ち中に先行待機が追加した対象も引き継ぐ。run記録を持たない旧形式のlockとの競合だけは診断を添えて終了コード8で終える。異なる書込主体の待機は互いに遮断しない。却下した代替案は、対象sessionごとにロックを取る案と、回収処理をCLIとMCPで別々に持つ案である。第1の案は待機中に対象sessionが動的に増えるため、一部のsessionのロックだけを取得した状態が生じ、同じ書込主体の2つの待機が対象集合を分割して保持し得る。第2の案は所有者の一致確認と消費済み判定を定める箇所が2つに分かれ、片方の修正が他方へ及ばない。
+`atk agents wait`の待機所有権は書込主体につき1件とし、`wait-locks/<書込主体>.lock`のファイルロックで表す。先行待機は`wait-results/<書込主体>/<run_id>.json`へ実行中・公開済み・回収済みの状態を保存し、`current.json`へ現行run識別子を置く。同じ書込主体から2つ目の待機が発行された場合は、現行run識別子を固定してlock解放を待つ。後発はlock取得後に固定runの状態を読み直し、公開済みなら保存本文と終了コードを1回返す。先行待機が未公開の`running` runを残して終了した場合は、後発が同じrunの所有者となり、保存済み対象とrun別退避物を引き継いで結果または通知の回収を続ける。lock待ち中に先行待機が追加した対象も引き継ぐ。run記録を持たない旧形式のlockとの競合だけは診断を添えて終了コード8で終える。異なる書込主体の待機は互いに遮断しない。却下した代替案は、対象sessionごとにロックを取る案と、回収処理をCLIとMCPで別々に持つ案である。第1の案は待機中に対象sessionが動的に増えるため、一部のsessionのロックだけを取得した状態が生じ、同じ書込主体の2つの待機が対象集合を分割して保持し得る。第2の案は所有者の一致確認と消費済み判定を定める箇所が2つに分かれ、片方の修正が他方へ及ばない。
 
 知識境界として、終端結果の所有者の一致確認と一度限りの回収は`status_file.take_result`が持つ。`atk agents wait`とMCPの内部待機は、待機対象の決定と応答の整形だけを担い、結果ファイルの読取と削除を自ら行わない。
 
 `atk agents wait`が読む状態ファイルは表示と外部待機のための投影であり、session登録簿の代替ではない。
-取得済みのsession識別子は投影の消失後も保持し、結果又は通知が無い間は`status: running`を返す。
+取得済みのsession識別子は投影の消失後も保持し、結果または通知が無い間は`status: running`を返す。
 待機開始後に投影、未回収結果、登録済み待機対象へ現れた識別子も、待機ロックを取得した巡回から同じ保持対象へ加える。
-待機開始時から投影が空の場合も同じ非終端応答とする。投影の不在から`expired`を推論する案は、原子的な全置換、書込主体の終了及び失効投影の回収を、権威あるsession喪失と区別できないため採用しない。
+待機開始時から投影が空の場合も同じ非終端応答とする。投影の不在から`expired`を推論する案は、原子的な全置換、書込主体の終了および失効投影の回収を、権威あるsession喪失と区別できないため採用しない。
 真の`expired`はsession登録簿を所有するMCPサーバーだけが判定する。
 
-表示対象は終端結果を持たないsessionと、終端結果を持ち`results/<session_id>.json`が存在するsessionとする。statuslineは状態ファイルの各行について、終端状態であり当該結果ファイルが存在しない行を描画から外す。保持期限（30分）の到達で結果ファイルを削除するため、期限後の行も表示から外れる。
+表示対象は終端結果を持たないsessionと、終端結果を持ち`results/<session_id>.json`が存在するsessionとする。statuslineは状態ファイルの各行について、終端状態であり対応する結果ファイルが存在しない行を描画から外す。保持期限（30分）の到達で結果ファイルを削除するため、期限後の行も表示から外れる。
 実行中だけに限定しないのは、回収し忘れたsessionを可視化するためである。保持期限の到達後は結果本文を回収できないため、表示を続けても回収にはつながらない。
 入れ子の書込主体の行は、収容sessionの行の直後へ深さに応じて字下げして置く。収容sessionの行が無い場合は末尾へ置く。
 各行の左端は`label (engine:model/effort)`を表示し、`label`が空の場合は起動区分を使う。採用したモデルの完全IDとeffortを状態ファイルから読み、設定時の候補表記と同じ形で示す。右端は経過時間と状態に充て、labelを重ねて表示しない。モデル名を短縮して`model_type`を先頭へ置く案は、複数工程を段位へまとめた後に工程を識別できず、起動時に採用されたモデルの完全IDも失われるため採らない。
@@ -345,12 +346,12 @@ Claude Codeのstatuslineはメッセージ到着などのイベントでだけ�
 配布設定の`statusLine`へ`refreshInterval`を置き、待機中も経過時間と終端を反映する。
 行の整形幅は、取得した端末幅からClaude Codeがstatuslineの描画へ確保する4セルを差し引いた値とする。4セルは各行の先頭へ付く2セルの字下げと、行末へ残す2セルである。差し引く値が実際の確保幅より小さいと、整形した行が溢れ、Claude Codeが行末を切り詰めて右寄せした経過時間と状態を欠く。確保幅は描画された行の表示幅（曖昧幅を1セルとして数えた値）と、statuslineの実行時に観測できる`COLUMNS`の値との差で求める。整形処理は右寄せ要素を整形幅の右端へ置くため、整形幅が実際の確保幅を超えた分は必ず右寄せ要素から失われる。このため、確保幅の値を単体テストの期待値としてだけ固定せず、描画された行の表示幅と`COLUMNS`の差を求め直す手順を確保幅の導出根拠とする。
 
-Claudeの稼働中sessionに`api_error`がある行では説明欄へAPI失敗の種別、右端へHTTPステータス・失敗開始からの経過・件数を表示する。限られた表示幅で診断を読めるよう、この間は通常のsession開始からの経過・status表示を診断項目へ譲る。`api_error`が無い行の説明欄は、最後に観測した行動を表す`last_action`を優先し、当該値が空の場合は`progress`を表示する。
-`last_action`はassistantのテキスト出力ではその抜粋、ツール呼び出しではツール名と当該呼び出しの入力を1行へ要約した値、Codex backendでは進行中itemの種別と同じ規則で要約したitemの入力を持つ。
+Claudeの稼働中sessionに`api_error`がある行では説明欄へAPI失敗の種別、右端へHTTPステータス・失敗開始からの経過・件数を表示する。限られた表示幅で診断を読めるよう、この間は通常のsession開始からの経過・status表示を診断項目へ譲る。`api_error`が無い行の説明欄は、最後に観測した行動を表す`last_action`を優先し、`last_action`が空の場合は`progress`を表示する。
+`last_action`はassistantのテキスト出力ではその抜粋、ツール呼び出しではツール名とその呼び出しの入力を1行へ要約した値、Codex backendでは進行中itemの種別と同じ規則で要約したitemの入力を持つ。
 入力の要約は、各項目を`<key>=<値>`の形でkeyの受信順に並べ、文字列以外の値をJSONへ直列化し、改行と連続する空白を1個の空白へ畳んだうえで200文字を超える分を省略記号付きで切り詰めた値とする。Codexのitemでは、`show`が別項目として返す`type`と`id`を要約から除く。
 `show`が返す未完了のツール呼び出しの項目も同じ要約を`detail`として持つ。
 テキスト出力の無い区間でも値が進むため、委譲先が稼働しているかを1行で読み取れる。
-`last_action`は任意項目として読む。長命なMCPサーバープロセスは起動時に読み込んだモジュールを保持し続けるため、statuslineだけが先に更新される区間では当該項目を持たない状態ファイルが書かれ続ける。必須項目にすると当該区間で実在するsessionの行が消える。
+`last_action`は任意項目として読む。長命なMCPサーバープロセスは起動時に読み込んだモジュールを保持し続けるため、statuslineだけが先に更新される区間では`last_action`を持たない状態ファイルが書かれ続ける。`last_action`を必須項目にすると、statuslineだけが先に更新された間に実在するsessionの行が消える。
 入力を含めるのは、同じツール名を繰り返す区間ではツール名だけの表示が変化せず、稼働中と停止中を区別できないためである。要約を上限で切り詰めるのは、statuslineが表示幅で再度切り詰める一方、`show`の応答では停滞の切り分けに足りる長さを残すためである。
 却下した代替案は、`progress`だけを表示元として維持する案と、秘匿値の露出を避けるためにツール名とitem種別だけを表示する案である。
 前者はテキスト出力の無い区間で説明欄が`label`のまま止まり、稼働しているかを判別できない。
@@ -383,16 +384,16 @@ statuslineは状態ファイルを表示するだけで、sessionの制御と結
 
 ## 委譲継続の設計意図
 
-目的は同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合に、会話履歴と検収前提を保持したまま作業を続けられるようにすることである。新規起動による履歴の欠落を避けつつ、担当・タスク・実行条件が変わる引継ぎでは新しいthreadへ検収済み状態を渡す。
+目的は同じ担当へ同じタスクの未完了作業、指摘への対応または再レビューを返す場合に、会話履歴と検収前提を保持したまま作業を続けられるようにすることである。新規起動による履歴の欠落を避けつつ、担当・タスク・実行条件が変わる引継ぎでは新しいthreadへ検収済み状態を渡す。
 構造の理由は、`runtime-routing.md`だけが継続可否を定めるものとし、起動時に確定した実効`engine`・`model`・`effort`をサーバーが保持し続けるためである。起動後に工程別モデル設定の候補列の内容と順序のいずれが変わっても、同じsessionの継続に成功する。保持済みのsessionを失った場合だけ継続が失敗し、呼び出し側は検収済み状態を渡して新規起動する。継続手段は実際の起動routeと保持識別子で決める。`agents_server`で起動したthreadは実行ホストとengineによらず`send_message(session_id, ...)`を使い、Claude CodeのAgentツールで起動したthreadだけは`SendMessage`を使う。保持期限後もMCPが保持した同じ実効条件で暗黙再開し、終端後のreply開始に結果回収の前提条件は設けない。
-判断理由は同じthreadが保持する実行条件と工程の現在値を一致させることで、実行系の別ではなく観測可能な条件を継続可否の根拠にできる点にある。継続時と新規起動時には同じ基準文書の絶対パス、対象ID、未記録の差分及びレビュー表を渡す。
+判断理由は同じthreadが保持する実行条件と工程の現在値を一致させることで、実行系の別ではなく観測可能な条件を継続可否の根拠にできる点にある。継続時と新規起動時には同じ基準文書の絶対パス、対象ID、未記録の差分およびレビュー表を渡す。
 知識境界として、呼び出し元とexecutorは実効route、検収済み状態、全レビュー表の受け渡しを管理する。レビュー担当は指定された今回表と過去表だけを読み、継続可否を独自に再設計しない。
-UWIへの回答後も一般継続契約を適用し、同一セッションでは回答保存、UWI終端、依存解除を確認して同じpicker又はレーンを再開する。
-却下した代替案は、完了済み識別子を一律に新規起動へ置き換える案、Claude・Codexごとに継続条件を分ける案、及び継続の直前に候補列を再取得して採用済みの3値の残存を継続の条件とする案である。1つ目は起動を受け付けた手段で回復できる継続まで失わせ、2つ目は同じ実効条件を持つ起動手段の間で契約を分断し、3つ目は可用性の失敗で後続候補へ切り替わった担当への継続を失わせるため採用しない。
+UWIへの回答後も一般継続契約を適用し、同一セッションでは回答保存、UWI終端、依存解除を確認して同じpickerまたはレーンを再開する。
+却下した代替案は、完了済み識別子を一律に新規起動へ置き換える案、Claude・Codexごとに継続条件を分ける案、および継続の直前に候補列を再取得して採用済みの3値の残存を継続の条件とする案である。1つ目は起動を受け付けた手段で回復できる継続まで失わせ、2つ目は同じ実効条件を持つ起動手段の間で契約を分断し、3つ目は可用性の失敗で後続候補へ切り替わった担当への継続を失わせるため採用しない。
 
 Claude Codeが起動する委譲先のプロンプトキャッシュ保持期間は既定値へ依存させず、`share/claude_settings_json_managed.json`の`promptCacheTtl`と`subagentPromptCacheTtl`でメイン会話側とサブエージェント側の双方へ明示する。
 Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならない。このため`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`が環境変数で起動種別ごとに明示する。
-探索起動は設定読込元を空にするうえ、SDKのターンがmain conversationのrequest bucketとして扱われるため、当該bucketの既定が適用される。連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
+探索起動は設定読込元を空にするうえ、SDKのターンがmain conversationのrequest bucketとして扱われるため、main conversationのrequest bucketの既定が適用される。連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
 通常起動は設定読込元を指定していても配下のサブエージェントへ`subagentPromptCacheTtl`が届かず5分で書き込むため、1時間を指定する。届かない原因は公開資料から特定できておらず未確定とする。
 このため、サブエージェント側の既定が短いことを理由に委譲を減らす設計判断は採らない。
 キャッシュ効率を根拠として委譲構造を見直す場合は、設定値ではなく実際の計測値を根拠とする。
@@ -402,12 +403,12 @@ Claude Codeでの計測値は`~/.claude/projects`配下のセッション記録�
 
 継続不能の判定は、実際に継続手段を呼び出した結果だけを入力とする。
 `send_message`のtimeoutは配送の成否が未確定であることだけを示すため、継続不能の根拠にしない。
-timeout後は、当該継続要求の受理結果又は当該要求によって開始した新しいreplyの開始を確認できた場合だけ、同じthreadで待機を継続する。
+timeout後は、送った継続要求の受理結果、またはその要求によって始まった新しいreplyを確認できた場合だけ、同じthreadで待機を継続する。
 `wait`が返す`status=completed`だけを配送済みの根拠にしない。
-当該継続要求へ対応付く観測を得られない場合は、同じ継続指示を再送せず、継続不能とも確定せず`needs_escalation`で呼び出し元へ返す。
+送った継続要求に対応する観測を得られない場合は、同じ継続指示を再送せず、継続不能とも確定せず`needs_escalation`で呼び出し元へ返す。
 `agents_server`で継続不能と確定するのは`send_message`が`unknown session`を返した場合だけである。
 判断理由は`send_message`が`turn_control_lock`の取得待ちでtimeoutした後に元から実行中だったturnが終了しても
-`wait`は`status=completed`を返すため、当該終端を今回の継続要求の配送へ対応付けられない点にある。
+`wait`は`status=completed`を返すため、元のturnの終端を今回の継続要求の配送へ対応付けられない点にある。
 正常replyが前回と同じ定型本文を返し得るため、送信前後の`agent_message`の文字列一致も配送の成否を証明しない。
 受理後に応答だけ失われた継続指示を再送すると重複配送になるため、対応付く観測を得られない場合も再送しない。
 サーバー側の重複排除・配送識別契約を追加する案は、本計画の範囲を超えるため採用しない。
@@ -415,37 +416,37 @@ timeout後は、当該継続要求の受理結果又は当該要求によって�
 ## 多段工程の委譲の引き継ぎ記録
 
 目的は複数の工程を順に処理する委譲先が応答を停止した場合に、後続の担当が到達点を1回の読み取りで把握できるようにすることである。
-停止した委譲先の到達点と確定した判断は当該委譲先のコンテキストだけに存在し、成果物とGit状態からは工程の区切りまでしか復元できない。
+停止した委譲先の到達点と確定した判断は停止した委譲先のコンテキストだけに存在し、成果物とGit状態からは工程の区切りまでしか復元できない。
 構造の理由は、記録先の所有を起動側へ置く点にある。
 委譲先が自ら作成した領域のパスは完了報告でしか伝わらず、停止した場合は呼び出し元へ届かない。
 起動側が管理対象一時領域を所有して絶対パスを起動文へ渡すと、停止後も同じパスを後続の担当の起動文へそのまま渡せる。
 知識境界として、起動側は記録先の作成、受け渡しと回収だけを担い、記録の内容を規定しない。
-委譲先は完了した工程、確定した判断、残る工程及び再開位置を工程の区切りごとに上書きする。
+委譲先は完了した工程、確定した判断、残る工程および再開位置を工程の区切りごとに上書きする。
 却下した代替案は、委譲手段ごとのタスク文書へ同じ記録義務を書く案と、委譲先が自ら一時領域を作成する案である。
 前者は委譲手段の数だけ同期対象が増え、後者は停止した場合に記録先の所在が呼び出し元へ届かない。
 
 ## 委譲先セッションの結果待機
 
 目的はMCPクライアントのツール呼び出し上限と`/goal`の評価契機に依存せず、`agents_server`で起動した委譲先から最初に届く結果・通知を1回の待機で受け取ることである。
-`atk agents wait`は`agents_server`の状態投影を走査し、終端結果又は上り通知を1件以上回収できるまで待つ。実行ホストの組み込み委譲はこの状態投影へ登録されないため、ホストの委譲一覧と起動時に指定した成果物で終端を観測する。
+`atk agents wait`は`agents_server`の状態投影を走査し、終端結果または上り通知を1件以上回収できるまで待つ。実行ホストの組み込み委譲はこの状態投影へ登録されないため、ホストの委譲一覧と起動時に指定した成果物で終端を観測する。
 起動手段は起動前に終端観測手段と組として選び、要求する機能と権限が同等なら機械的な待機を提供する`agents_server`を優先する。終了コード10は状態投影へ対象が登録されていないことを示し、組み込み委譲自体の失敗を意味しない。
-開始時の状態投影、未回収結果及び登録済み待機対象を初期集合とし、待機中も同じ入力を巡回ごとに解決して新しい識別子を追加する。
+開始時の状態投影、未回収結果および登録済み待機対象を初期集合とし、待機中も同じ入力を巡回ごとに解決して新しい識別子を追加する。
 開始時対象の待機ロックが競合した場合は、現行run識別子を固定し、lock解放後に先行待機の結果へ合流する。
-待機中に追加した対象のロックが競合した場合は、既存対象の待機を維持して当該対象をその巡回だけ除外する。
+待機中に追加した対象のロックが競合した場合は、既存対象の待機を維持してロックが競合した対象をその巡回だけ除外する。
 待機上限はCLI実装の定数に従い、呼び出し元の区分を入力に持たない。
-待機開始中はルートセッション単位の待機所有権を状態ディレクトリへ保持する。Stopフックは当該所有権の生存を確認できる間、CLIのBash背景ジョブが稼働中であると判定し、当該セッションを未観測警告の対象から除外する。異常終了後に所有権が残らないよう、CLIは終了時に自身の所有権だけを解放する。
+待機開始中はルートセッション単位の待機所有権を状態ディレクトリへ保持する。Stopフックはルートセッションの待機所有権が有効な間、CLIのBash背景ジョブが稼働中であると判定し、待機中のセッションを未観測警告の対象から除外する。異常終了後に所有権が残らないよう、CLIは終了時に自身の所有権だけを解放する。
 MCPへ待機ツールを残す案は、同じ結果を回収する手段が2つになり、CLI待機中でも旧MCP呼び出しだけを観測済みとする判定を残すため採用しない。
 
 ## AWI本文起草の分離
 
-目的はAWIの出所、採否及び投入責務を親へ保持したまま、確定済み情報からの長文起草が親のコンテキストを占有する範囲を小さくすることである。
+目的はAWIの出所、採否および投入責務を親へ保持したまま、確定済み情報からの長文起草が親のコンテキストを占有する範囲を小さくすることである。
 親は振り返り、投入先、根拠、逐語入力を確定し、書込み専用の委譲先へ本文の起草だけを渡す。委譲先は投入操作と未確定事項の判断を担わず、親が必須見出し、逐語入力、根拠、投入先を検収してから投入する。
 調査、起草、投入を常に分離する案は、未確定の判断を下位へ移し、投入主体が出所を検証できないため採用しない。
 
 ## 直接消費側探索の証跡
 
-目的は外部から観測できる文言又は挙動を変える実装で、変更前の期待値を保持するテストを変更範囲の検証の対象に必ず含め、実行レビューが未探索と未更新を区別できるようにすることである。
-実装担当は変更前の期待値と変更した文言・挙動を外部へ公開する箇所（コマンド・API・hook・通知など）への参照を固定文字列で検索し、対象、検索語、直接消費側及び採否を管理対象一時成果物へ保存する。実行レビュー担当は提出された検証結果から成果物へ到達し、成果物の欠落だけなら不足記録、未更新の直接消費側が実在する場合は完了条件違反として扱う。
+目的は外部から観測できる文言または挙動を変える実装で、変更前の期待値を保持するテストを変更範囲の検証の対象に必ず含め、実行レビューが未探索と未更新を区別できるようにすることである。
+実装担当は変更前の期待値と変更した文言・挙動を外部へ公開する箇所（コマンド・API・hook・通知など）への参照を固定文字列で検索し、対象、検索語、直接消費側および採否を管理対象一時成果物へ保存する。実行レビュー担当は提出された検証結果から成果物へ到達し、成果物の欠落だけなら不足記録、未更新の直接消費側が実在する場合は完了条件違反として扱う。
 探索結果を完了報告の要約だけへ埋め込む案は、対象集合と採否の再検収ができず、記録不足と実装欠陥を分離できないため採用しない。
 
 ## 委譲先の起動失敗を待機側が観測できる状態
@@ -453,8 +454,8 @@ MCPへ待機ツールを残す案は、同じ結果を回収する手段が2つ�
 目的は委譲先の起動が失敗したときに、呼び出し元が失敗を短時間で受け取り、待機へ進んだ場合も待ち続けずに終わることである。
 構造の理由は、待機と再試行の上限を、待機側が観測できる状態と呼び出し側が課す打ち切り閾値の双方から導出する点にある。
 初期化の上限と試行回数の積は、起動直後の可用性失敗を待つ上限と直列に続く。この和がホストのMCPツール呼び出しを背景タスクへ移す閾値を上回ると、呼び出し元は起動の失敗を受け取る前に待機へ進む。
-待機側では待機対象の集合が待機中にも増えるため集合が空であることを即時の終了条件にできない。このため対象が0件である状態の継続に独立した上限を置き、当該上限に達した実行は理由を標準エラーへ書いて非0で終える。当該上限は初期化の失敗が確定し得る最大の経過を上回る値とする。
-知識境界として、上限値と導出関係は`agent-toolkit/agent_toolkit/_agents_server/state.py`の定数定義が持ち、待機側の分岐は`agent-toolkit/agent_toolkit/_agents_server/agents_wait.py`が持つ。呼び出し元が当該終端をどう扱うかは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`と`atk agents wait`の公開説明が持つ。
+待機側では待機対象の集合が待機中にも増えるため集合が空であることを即時の終了条件にできない。このため対象が0件である状態の継続に独立した上限を置き、対象0件の継続上限に達した実行は理由を標準エラーへ書いて非0で終える。対象0件の継続上限は、初期化の失敗が確定し得る最大の経過を上回る値とする。
+知識境界として、上限値と導出関係は`agent-toolkit/agent_toolkit/_agents_server/state.py`の定数定義が持ち、待機側の分岐は`agent-toolkit/agent_toolkit/_agents_server/agents_wait.py`が持つ。呼び出し元が対象0件の継続上限による終了をどう扱うかは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`と`atk agents wait`の公開説明が持つ。
 対象が空であることを即時の終了条件にする案は、待機開始後に登録される委譲先を取りこぼすため採用しない。
 待機側が起動側の進行状況を直接照会する案は、待機CLIと`agents_server`のMCPサーバープロセスの間へ新しい照会の仕組みを要し、既存の状態投影と待機対象登録簿に第3の観測面が加わるため採用しない。
 
@@ -476,19 +477,19 @@ MCP設定の`command`を絶対パスにする案は、`uv`の配置がホスト�
 ## 無人セッションと人間の操作を前提とする機構
 
 目的は`agents_server`が起動する委譲先を、人間の承認操作を要さずに起動できる状態に保つことである。
-構造の理由は、委譲先が対話UIを持たない無人セッションであり、承認要求と権限申告のいずれにも応答する主体を持たない点にある。当該条件は`launch_kind`とengineの種別に依存しないため、起動条件は起動区分で分けない。
-claudeの委譲先では、権限モードをbypass系にすると、Claude Codeのセッション間メッセージの受信方針が、権限モードを申告しない送信側からのメッセージを保留する。委譲元は起動直後に当該メッセージを送るため、委譲先は保留のまま初期化を完了しない。このためbypass系以外の権限モードで起動する。
+構造の理由は、委譲先が対話UIを持たない無人セッションであり、承認要求と権限申告のいずれにも応答する主体を持たない点にある。人間の操作を要しない条件は`launch_kind`とengineの種別に依存しないため、起動条件は起動区分で分けない。
+claudeの委譲先では、権限モードをbypass系にすると、Claude Codeのセッション間メッセージの受信方針が、権限モードを申告しない送信側からのメッセージを保留する。委譲元は起動直後に権限モードを申告せずにメッセージを送るため、委譲先は保留のまま初期化を完了しない。このためbypass系以外の権限モードで起動する。
 codexの委譲先では、hookの定義が変わると承認済みの記録が無効になり、実行前に承認を求める。このため`thread/start`と`thread/resume`のリクエストの`config`へ`bypass_hook_trust`を真値として渡す。
 知識境界として、claudeの権限モードは`agent-toolkit/agent_toolkit/_agents_server/claude.py`、codexの設定は`agent-toolkit/agent_toolkit/_agents_server/codex.py`が持つ。
-codexで同名のコマンドラインオプションを渡す案と、`-c`による設定上書きで渡す案は、いずれも`codex app-server`が当該キーを受理しないため採用しない。
+codexで同名のコマンドラインオプションを渡す案と、`-c`による設定上書きで渡す案は、いずれも`codex app-server`が`bypass_hook_trust`を受理しないため採用しない。
 claudeで`crossSessionInbound`設定により受信を拒否する案は、追加設定ファイルとユーザー設定のいずれで渡しても初期化タイムアウトを解消しないため採用しない。
 
 ## agents_serverの上り通知の仕組み
 
-目的は`agents_server`で起動した委譲先が自身のturnを終端させずに委譲元へ本文を届けられるようにすることである。これにより、想定外事象、エスカレーション及び阻害要因を委譲元がturnの終端前に受け取れる。`Agent`ツールとagents_serverのどちらで起動しても即時報告の可否がそろい、起動手段ごとに規範の適用結果が分かれない。
-構造の理由は、engineに依存しない配送媒体が共有状態ディレクトリだけである点にある。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されない。Claudeの委譲先にはagents_server系のMCPツールが公開されるが、当該サーバーは委譲元のsession登録簿を共有しないため、メモリー上の状態を介した配送は成立しない。`ListAgents`が返す宛先は表示名であり、委譲元のsessionを一意に指す識別子として利用できない。両engineの委譲先は環境変数`AGENT_TOOLKIT_OWNER_SESSION`と自身のsession識別子を保持するため、送信元と宛先を自力で解決できる。
-送信は`atk agents notify`が担い、委譲元は`atk agents wait`の応答の`notices`で受け取る。CLI待機は終端前でも未回収の通知が現れた時点で復帰し、`status`を`running`のまま返す。呼び出し元は`status`だけで再待機の要否を判定し、`running`の応答では同じCLIを再発行する。終端と同時に未回収の通知が残る場合は、`completed`、`failed`、`interrupted`のいずれかを返す応答へ`notices`と終端結果をともに載せる。呼び出し元は当該応答で通知の受領と終端の受領をまとめて完了する。応答へ載せた通知は状態ディレクトリから削除するため、同じ通知が二重に渡らない。
-知識境界として、委譲先は宛先の解決と本文の送信だけを担い、回収の状態を持たない。委譲元は`atk agents wait`の応答だけから通知を受け取り、通知の取得のために別のコマンド、ポーリング又は追加の待機ループを実行しない。
+目的は`agents_server`で起動した委譲先が自身のturnを終端させずに委譲元へ本文を届けられるようにすることである。これにより、想定外事象、エスカレーションおよび阻害要因を委譲元がturnの終端前に受け取れる。`Agent`ツールとagents_serverのどちらで起動しても即時報告の可否がそろい、起動手段ごとに規範の適用結果が分かれない。
+構造の理由は、engineに依存しない配送媒体が共有状態ディレクトリだけである点にある。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されない。Claudeの委譲先にはagents_server系のMCPツールが公開されるが、委譲先のMCPサーバーは委譲元のsession登録簿を共有しないため、メモリー上の状態を介した配送は成立しない。`ListAgents`が返す宛先は表示名であり、委譲元のsessionを一意に指す識別子として利用できない。両engineの委譲先は環境変数`AGENT_TOOLKIT_OWNER_SESSION`と自身のsession識別子を保持するため、送信元と宛先を自力で解決できる。
+送信は`atk agents notify`が担い、委譲元は`atk agents wait`の応答の`notices`で受け取る。CLI待機は終端前でも未回収の通知が現れた時点で復帰し、`status`を`running`のまま返す。呼び出し元は`status`だけで再待機の要否を判定し、`running`の応答では同じCLIを再発行する。終端と同時に未回収の通知が残る場合は、`completed`、`failed`、`interrupted`のいずれかを返す応答へ`notices`と終端結果をともに載せる。呼び出し元は終端結果と通知を含む応答を受け取り、両方の受領をまとめて完了する。応答へ載せた通知は状態ディレクトリから削除するため、同じ通知が二重に渡らない。
+知識境界として、委譲先は宛先の解決と本文の送信だけを担い、回収の状態を持たない。委譲元は`atk agents wait`の応答だけから通知を受け取り、通知の取得のために別のコマンド、ポーリングまたは追加の待機ループを実行しない。
 却下した代替案は、通知口をMCPツールとして追加する案と、フックの発火を主な手段とする案である。前者はCodexの委譲先にagents_server系のMCPツールが公開されないためengine横断で成立しない。後者はClaudeの委譲先だけが持つ発火機構であり、同じ理由で成立しない。委譲元が`atk agents wait`の外にいる間の通知は次の観測まで滞留するが、この滞留を解消するポーリングの導入は、通知の取得のために追加の待機ループを実行しないという要件と両立しないため採用しない。
 
 ## process-loopのworktree隔離
@@ -511,7 +512,7 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 条件を満たしたworktreeは、現在のブランチの追跡先を優先し、解決できない場合だけ`origin/HEAD`へ後退して得た上流ブランチへfetchとrebaseで追随させる。
 解決した上流ブランチはfetch・rebaseの内部だけで使用し、対象リポジトリごとに異なる公開先をセッションのプロンプトへ推測注入しない。公開操作と公開先の判断は、その運用を所有する主体へ委ねる。
 
-並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstash生成、`refs/worktree/<退避ラベル>`記録及び生成分だけのdropを行う。既存の`refs/stash`先頭OIDは維持し、途中失敗時はstash又はworktree固有refを削除せず復旧識別子を報告する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
+並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstash生成、`refs/worktree/<退避ラベル>`記録および生成分だけのdropを行う。既存の`refs/stash`先頭OIDは維持し、途中失敗時はstashまたはworktree固有refを削除せず復旧識別子を報告する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
 `atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
@@ -541,8 +542,8 @@ OSシグナルや稼働中プロセスへの直接通知は、常駐処理が動
 常駐処理はセッションを実際に起動する直前に状態ファイルを読み取って削除し、
 得た本文を`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`として子セッションの環境へ載せる。
 AWIが0件で変更検知を待つ反復は起動へ到達しないため、本文は保持したまま次の起動へ残る。
-`rules_context`のSessionStartは、当該環境変数が値を持つ場合に前置きを添えて`additionalContext`へ加え、
-委譲先のセッションへは加えない。前置きはこの本文が利用者の入力であり人間由来の明示的な指示である旨を示す。
+`rules_context`のSessionStartは、`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`に値がある場合に前置きを添えて`additionalContext`へ加え、
+委譲先のセッションへは加えない。この本文が利用者の入力であり、人間由来の明示的な指示であると前置きに明記する。
 `agent-toolkit/share/rules-main.md`「ユーザー発話の解釈」は、この本文だけをハーネス由来の通知の除外規定の例外とする。
 
 本文の上限を2,000文字とするのは、SessionStartの`additionalContext`がClaude Codeで10,000文字に切り詰められ、
@@ -591,16 +592,16 @@ bytes追記処理は、保存済みbytesと追記bytesをそのまま組み立�
 各呼び出し側は、解析と一致判定には正規化済み文字列を使い、bytes追記の組み立てには未正規化の原文を使う。
 
 `parse_frontmatter`自体をCRLF許容へ変更する案は採用しない。
-この案ではテキスト保存のLF統一、保存後の本文の一致判定及びbytes追記の原文保持を同時に成立させられず、改行の責務が呼び出し側へ分散するためである。
+この案ではテキスト保存のLF統一、保存後の本文の一致判定およびbytes追記の原文保持を同時に成立させられず、改行の責務が呼び出し側へ分散するためである。
 
 ## 委譲と知識境界
 
-親の会話履歴の大半を委譲先も要する作業では、Claude Codeの`Agent` forkとCodexの`spawn_agent`全履歴forkを使える。判定基準は`agent-toolkit:delegation`の`references/routing.md`へ集約し、ホスト別の起動形だけを各runtime資料へ分ける。forkは起動時点の会話を入力として共有するため、起動文へ同じ背景を書き直さずに済む。独立レビューと工程別モデル設定のある委譲は、先入観のない評価又は指定effortを守るため新規セッションの起動を保つ。agents_serverへfork機能を実装する案は、ホスト標準の起動手段で利用者が選んだ結果へ到達でき、別の実装と保守を増やすため採用しない。
+親の会話履歴の大半を委譲先も要する作業では、Claude Codeの`Agent` forkとCodexの`spawn_agent`全履歴forkを使える。判定基準は`agent-toolkit:delegation`の`references/routing.md`へ集約し、ホスト別の起動形だけを各runtime資料へ分ける。forkは起動時点の会話を入力として共有するため、起動文へ同じ背景を書き直さずに済む。独立レビューと工程別モデル設定のある委譲は、先入観のない評価または指定effortを守るため新規セッションの起動を保つ。agents_serverへfork機能を実装する案は、ホスト標準の起動手段で利用者が選んだ結果へ到達でき、別の実装と保守を増やすため採用しない。
 
-単発の委譲は常設規範の基本委譲契約を適用し、対象、読取・書込権限、完了条件及び受領後に成果物を直接確かめる検収を確定する。
-工程別モデル設定、複数主体調整、継続、停滞検知又は巻き取りを使う高度な委譲だけが、`agent-toolkit:delegation`の手順を適用する。
+単発の委譲は常設規範の基本委譲契約を適用し、対象、読取・書込権限、完了条件および受領後に成果物を直接確かめる検収を確定する。
+工程別モデル設定、複数主体調整、継続、停滞検知または巻き取りを使う高度な委譲だけが、`agent-toolkit:delegation`の手順を適用する。
 
-起動側が起動文へ載せる値に起因する欠落は、起動側が起動前に防ぐ。委譲先のタスク文書が要求する必須入力が起動文にそろっていること、絶対パスで示す入力のうち起動時点で作成済みのものが実在すること、及び委譲先が受領した値から自ら解決して読むplugin配下の資源が実在することを、起動側が起動前に確認する。委譲先のタスク文書は、当該完備と実在を着手前に再確認して差し戻す手順を持たない。欠落の検知点を起動側へ一本化することで、委譲先の起動、規範と対象の再読、呼び出し元の再判断を重複して費やす往復が生じない。起動側の当該確認は起動側が自ら行うものであり、解決した絶対パスを委譲先へ渡して実行させない。委譲先が当該資源を自ら解決する手順は、plugin導入版の更新時に古いパスを使わないために維持する。判定の基準は、当該欠落を起動側が防げるかである。絶対パスの実在のように機械的に確認できる項目だけでなく、担当種別ごとに異なる必須入力の完備と、起動側が組み立てる契約の各条項の充足も、値を載せる主体が起動側である以上は起動側の確認対象とする。委譲先へ差し戻しを残すのは、Codex互換レイヤーが自ホストのplugin導入情報から起点を確定する処理のように、委譲先自身の実行環境に起因し起動側から観測できない事象に限る。
+起動側が起動文へ載せる値に起因する欠落は、起動側が起動前に防ぐ。委譲先のタスク文書が要求する必須入力が起動文にそろっていること、絶対パスで示す入力のうち起動時点で作成済みのものが実在すること、および委譲先が受領した値から自ら解決して読むplugin配下の資源が実在することを、起動側が起動前に確認する。委譲先のタスク文書は、必須入力がそろい、参照する資源が実在するかを着手前に再確認して差し戻す手順を持たない。欠落の検知点を起動側へ一本化することで、委譲先の起動、規範と対象の再読、呼び出し元の再判断を重複して費やす往復が生じない。必須入力と資源の確認は起動側が自ら行い、解決した絶対パスを委譲先へ渡して実行させない。委譲先がplugin配下の資源を自ら解決する手順は、plugin導入版の更新時に古いパスを使わないために維持する。判定の基準は、入力や資源の欠落を起動側が防げるかである。絶対パスの実在のように機械的に確認できる項目だけでなく、担当種別ごとに異なる必須入力の完備と、起動側が組み立てる契約の各条項の充足も、値を載せる主体が起動側である以上は起動側の確認対象とする。委譲先へ差し戻しを残すのは、Codex互換レイヤーが自ホストのplugin導入情報から起点を確定する処理のように、委譲先自身の実行環境に起因し起動側から観測できない事象に限る。
 
 実行中に呼び元用文書を更新した場合に加え、受信者タスク文書を更新した場合も、親子を同一の資源rootから原子的に適用する。統合済みworktree側に親子がそろい委譲起動契約を満たす場合だけ、そのrootの親文書と受信者パスを後続委譲へ採用する。いずれかが欠ける場合や契約確認が不成立の場合は、稼働開始時のplugin rootにある親子へそろえて戻す。親か受信者の一方だけを切り替える案は、版ごとには整合する必須入力名が版間で一致しないため採用しない。
 
@@ -609,73 +610,73 @@ bytes追記処理は、保存済みbytesと追記bytesをそのまま組み立�
 この分離により、環境情報の基準をGitと受信側タスク契約へ集約し、送信側との不一致を表現できない構造にする。
 
 Claude Codeで委譲先がさらに読み取り専用調査・レビューを委譲する場合は、起動前に管理対象一時領域内の成果ファイル絶対パスを確定する。
-専用タスク文書・agent定義がある場合は当該基準文書の完全な完了報告を成果形式とし、起動文へ汎用形式を複製しない。
+専用タスク文書・agent定義がある場合は専用タスク文書・agent定義が定める完全な完了報告を成果形式とし、起動文へ汎用形式を複製しない。
 孫は返信先を解決できない場合も完全な最終結果を成果ファイルへ同期的に確定してから終端し、直接の委譲元は実行時に観測できる受信者の終端後に同じファイルを再読して検収する。
 完了通知の到着・祖先からの中継は成果本文の受領条件にしない。
-一方、受信者終端を観測できない場合、稼働中の途中内容及び終端後の欠損・読取不能・不完全な成果は成功扱いせず、`needs_escalation`として一時領域を保持する。
+一方、受信者終端を観測できない場合、稼働中の途中内容および終端後の欠損・読取不能・不完全な成果は成功扱いせず、`needs_escalation`として一時領域を保持する。
 読み取り専用受信者へ実装担当限定の所有プロセス終了証拠を要求する案は観測不能な受理条件を生じさせるため採用しない。
 全委譲へ成果ファイルを要求する案は通常の直接委譲へ恒常的な入出力を増やすため採用せず、配送不着を観測した孫以深の読み取り専用調査・レビューへ限定する。
 
 固定書式で返す委譲先が想定外の結果を観測し、`SendMessage`で即時報告できない場合は、指定形式の末尾へ`想定外事象:`の1行を追加して呼び出し元へ渡す。
 返却手段を増やさず地の文の禁止だけを1行分緩めるのは、固定書式の機械判定を保ったまま、重要度の高い事象が抑止される事態を防ぐためである。
 
-分配又は分類の結果を固定書式で返す委譲では、返す側が受領した入力集合と返却する区分の集合を突合し、過不足と重複の不在を1回のコマンドで確認してから返す。受領側も同じ突合を再実行してから後続工程へ進む。目的は入力の一部が返却から欠落した状態を、当該委譲の終端で検出することである。構造の理由は、返却の妥当性を判定できる知識が返す側と受領側の双方にあり、返す側だけの確認では返却本文の破損を受領側が検出できず、受領側だけの確認では差し戻しの根拠となる中間状態を返す側が失うためである。知識境界として、入力集合の基準は起動文が挙げた識別子とし、返す側は当該識別子を区分へ写像する責務だけを持ち、区分の定義そのものを再設計しない。
+分配または分類の結果を固定書式で返す委譲では、返す側が受領した入力集合と返却する区分の集合を突合し、過不足と重複の不在を1回のコマンドで確認してから返す。受領側も同じ突合を再実行してから後続工程へ進む。目的は入力の一部が返却から欠落した状態を、分配を委ねた作業の終端で検出することである。構造の理由は、返却の妥当性を判定できる知識が返す側と受領側の双方にあり、返す側だけの確認では返却本文の破損を受領側が検出できず、受領側だけの確認では差し戻しの根拠となる中間状態を返す側が失うためである。知識境界として、入力集合の基準は起動文が挙げた識別子とし、返す側は起動文にある識別子を区分へ写像する責務だけを持ち、区分の定義そのものを再設計しない。
 確認を受領側だけに置く案は、返す側が保持する分配の中間状態を失い、差し戻しの粒度が返却全体になるため採用しない。区分ごとの件数の一致だけを確認する案も、同じ識別子が2つの区分へ現れる誤りを通すため採用しない。
 
-委譲先が複数値を返し、受領側が要素ごとの対応又は集合を確認する欄はJSON配列で表す。`deferred_adopt_commits`はAWIファイル名とcommitの対応を持つオブジェクト配列、`deferred_adopted`はAWIファイル名の文字列配列とし、0件はどちらも空配列とする。`agent_rule_changes`は規範文書のリポジトリ相対パスを重複なしの文字列配列とする。受領側は配列の形式を確認し、既に読んだ文書か残工程で読むことが確定した文書だけを統合先worktreeから再取得する。送信側と受信側は同じ配列境界を契約テストで検証する。区切り文字を含む散文値は、複数件の境界とAWI・commitの対応を一意に復元できないため採用しない。
+委譲先が複数値を返し、受領側が要素ごとの対応または集合を確認する欄はJSON配列で表す。`deferred_adopt_commits`はAWIファイル名とcommitの対応を持つオブジェクト配列、`deferred_adopted`はAWIファイル名の文字列配列とし、0件はどちらも空配列とする。`agent_rule_changes`は規範文書のリポジトリ相対パスを重複なしの文字列配列とする。受領側は配列の形式を確認し、既に読んだ文書か残工程で読むことが確定した文書だけを統合先worktreeから再取得する。送信側と受信側は同じ配列境界を契約テストで検証する。区切り文字を含む散文値は、複数件の境界とAWI・commitの対応を一意に復元できないため採用しない。
 
 AWI処理は、選定工程（選定とレーン分け）、レーン工程（レーン実行）、公開工程（全レーン後の終了）に分ける。
 選定工程ではメインがキュー一覧を自ら取得せず、pickerを設定モデルへ直接委譲する。
 pickerは`processable`一覧を自ら取得し、`processing`項目の全件と、`inbox`かつ除外条件に当たらない項目を同じ候補集合へ含める。
-`processing`項目は既に選定済みであるため除外条件を適用せず、優先が必要な場合はレーン割当又はレーン内の実装依存順で表現する。候補を、実装不要、処理中に新たに必要と判定した保留及び通常レーンへ分類する。要求の不採用と既存の変更による充足はpickerが確定せず、レーン担当が確定する。
+`processing`項目は既に選定済みであるため除外条件を適用せず、優先が必要な場合はレーン割当またはレーン内の実装依存順で表現する。候補を、実装不要、処理中に新たに必要と判定した保留および通常レーンへ分類する。要求の不採用と既存の変更による充足はpickerが確定せず、レーン担当が確定する。
 `processing`項目だけを排他的に処理対象とする案は、1セッションの固定費が処理件数に依存せず、残留が1件でもあるとセッションの処理量が残留件数に固定されるため採用しない。
 除外条件は外部待ち（`cooldown_until`による時間経過待ちと未終端の依存先）と修復待ち（frontmatterや依存関係の不備）とする。
-既存の`hold`項目は候補、優先度、依存判断又は固有指示の入力へ含めない。
-選定工程はpickerが処理対象を確定した直後に、選定時点で`inbox`だった項目へ既存の一括`start-processing`を1回実行する。メインは出力の検収時に、`decisions[].awi`の全件が`processing`にあることを確認して選定工程を完了する。`start-processing`の引数集合と`decisions`のうち選定時点`inbox`の集合の一致は、引数を決めるpickerが実行前に確かめる。比較集合を対象リポジトリの`processing`全件へ広げる案は、ユーザーが処理対象を明示した処理回で当該回の対象外の`processing`項目が残り、正常な処理回を停止させるため採用しない。遷移をpickerへ置くのは、対象集合を確定した主体と遷移させる主体を分けると、確定から遷移までの間に別主体の検収工程が入り、遷移前にレーン工程へ進む危険が残るためである。
+既存の`hold`項目は候補、優先度、依存判断または固有指示の入力へ含めない。
+選定工程はpickerが処理対象を確定した直後に、選定時点で`inbox`だった項目へ既存の一括`start-processing`を1回実行する。メインは出力の検収時に、`decisions[].awi`の全件が`processing`にあることを確認して選定工程を完了する。`start-processing`の引数集合と`decisions`のうち選定時点`inbox`の集合の一致は、引数を決めるpickerが実行前に確かめる。比較集合を対象リポジトリの`processing`全件へ広げる案は、ユーザーが処理対象を明示した処理回でユーザーが指定した処理回の対象外に`processing`項目が残り、正常な処理回を停止させるため採用しない。遷移をpickerへ置くのは、対象集合を確定した主体と遷移させる主体を分けると、確定から遷移までの間に別主体の検収工程が入り、遷移前にレーン工程へ進む危険が残るためである。
 計画ファイル、managed-temp、worktreeとレーン担当の起動をこの遷移の成功より後へ置くことで、着手済みの処理回が占有する範囲を外部観測と中断後の再開位置から識別できる。
-pickerの有効出力を受領したメインは、選定結果と処理開始を検証した時点でレーン起動へ進む。並行している監査の終端を当該遷移の条件にせず、受領済みのpickerを再び待機せず、再起動もしない。監査の終端は公開工程の開始条件にだけ用い、picker出力が不正な場合だけ同じpickerへ再取得を依頼する。
+pickerの有効出力を受領したメインは、選定結果と処理開始を検証した時点でレーン起動へ進む。並行している監査の終端を`start-processing`への遷移の条件にせず、受領済みのpickerを再び待機せず、再起動もしない。監査の終端は公開工程の開始条件にだけ用い、picker出力が不正な場合だけ同じpickerへ再取得を依頼する。
 起動時に固定した集合の全レーンが完了した後はready一覧を再取得せず公開工程へ進み、処理回の進行中に追加された項目は次回の処理で扱う。
 レーン工程ではメインがレーン担当と実行レビュー担当を`agents_server`で直接起動し、工程遷移と同一threadの継続を自ら制御する。レーン担当は計画の起草から変更の作成、変更範囲の検証までを担う。
 実装工程へ進む各レーンは担当工程に必要な基準文書だけを受け取り、実行レビューの収束、最新ベースへのrebase、競合解消後の単一実行レビュー、メインから直列に許可されたffマージ、AWI行ごとの終端までを完了する。上流要求と対象リポジトリ側の要求が混在する項目は`adopt`の対象から除く。
-採用する実施範囲を持たないレーンも、レーン担当が計画の保存とAWI行ごとの終端までを完了する。メインは統合完了の固定値を公開契約の終了状態と比較し、一致の確認後に当該レーンの所有資源を回収する。
+採用する実施範囲を持たないレーンも、レーン担当が計画の保存とAWI行ごとの終端までを完了する。メインは統合完了の固定値を公開契約の終了状態と比較し、一致の確認後に統合を完了したレーンの所有資源を回収する。
 
 選定工程の手順は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`へ集約し、本体には目的と不変条件だけを残す。
 選定工程でメインが読む資料を1件にするのは、pickerの起動までに読む資料の件数が選定の固定コストを直接押し上げるためである。
 レーン工程と公開工程が同じ構造を持つため、段ごとの読込契機をそろえる。
 
 対象リポジトリの変更では要求を満たせず上流リポジトリの改訂を要する要求を含む項目は、pickerが上流投入を要する項目として示し、全投入先、投入条件、上流要求を構造化してメインへ渡す。メインはレーンの起動前に、元項目と投入先の組へ展開した固定入力を1件のWI投入担当へ渡す。上流投入はWI投入の条件判定付きの派生であり、委譲先は各投入先の現状が条件を満たすか確かめ、条件が成立する組だけに通常AWIの書式で自己完結した本文を投入する。同じ機構を2つのタスク文書へ分けると、投入前調査と本文起草の契約が二重になり、片方だけの改訂が検収の食い違いを生む。上流の改訂だけで成立する項目はレーンを起こさず、投入済みの全ファイル名を元項目の`depends_on`へ加えて`inbox`へ戻す。全投入先で条件が成立しない項目は依存を追加せず、条件不成立の確認結果を外部操作の結果として終端する。対象リポジトリで実施できる要求を併せ持つ項目は分類を分けず通常のレーンへ渡す。投入済みの組があるレーンはffマージ後に所有資源を回収して固定の完了報告を返し、メインが元項目を`adopt`せず`inbox`へ戻す。全投入先で条件が成立しないレーンは通常の終端を適用する。上流投入をレーンの起動前へ置くのは、レーンの完了報告が固定文字列であり、上流の識別子と要求本文を載せる復路を持たないためである。1つの項目を要求ごとに異なる保存状態へ分けないのは、キュー項目の保存状態がファイル単位で1つに定まるためである。投入先と要求をメインが固定して渡すのは、投入先を自ら決める不可逆操作を委譲先が実行しないためである。元項目の`depends_on`更新と`inbox`への復帰はメインが保持する。
-公開工程ではメインが1件の終端担当へ版数・生成物同期、push、CI、必要なCI修正、AWI固有の終端工程及び延期`adopt`を委譲し、受領した固定形式の値を公開契約の終了状態と比較する。自動コードレビュー監査は選定工程で起動し、完了報告と終了とあわせてメインが保持する。全体レビューは追加しない。
+公開工程ではメインが1件の終端担当へ版数・生成物同期、push、CI、必要なCI修正、AWI固有の終端工程および延期`adopt`を委譲し、受領した固定形式の値を公開契約の終了状態と比較する。自動コードレビュー監査は選定工程で起動し、完了報告と終了とあわせてメインが保持する。全体レビューは追加しない。
 1つのレーンは同じworktreeで計画から実装まで順次進め、同時に1つの書込担当だけを置く。
-通常レーンは1つの計画ファイルと1つの専用worktreeを持つ。pickerは`depends_on`と書込領域の重なりを分割不能な成分とし、変更する節又は定義を一意に分離できない同一ファイルも同じ成分へ置く。一意に分離できた同一ファイルだけを並行化できる。所要時間とレーン数はこの制約を満たす候補の内側で比較し、レーンごとの実装時間と統合時間を固定出力へ残す。重なりを競合解消時間として費用へ織り込む案は、予測済みの書込競合を許し、誤統合と再検証を後段へ残すため採用しない。
+通常レーンは1つの計画ファイルと1つの専用worktreeを持つ。pickerは`depends_on`と書込領域の重なりを分割不能な成分とし、変更する節または定義を一意に分離できない同一ファイルも同じ成分へ置く。一意に分離できた同一ファイルだけを並行化できる。所要時間とレーン数はこの制約を満たす候補の内側で比較し、レーンごとの実装時間と統合時間を固定出力へ残す。重なりを競合解消時間として費用へ織り込む案は、予測済みの書込競合を許し、誤統合と再検証を後段へ残すため採用しない。
 競合時は同じレーン担当が関係計画の`概要`、`実施内容`、`要件・外部仕様`と`変更履歴`を比較して最小限に解消し、同じ単一実行レビューを再度収束させてからffマージを要求する。
 
 レーン工程のレーン実行中、メインは全レーンの状態把握、レーン間の調停とユーザー判断への応答を保持し、
 自身のコンテキストを消費する調査と、稼働中のレーンから独立した割り込み作業を委譲先へ移す。
 AWI本文とレビュー指摘管理表を読む契機は、メイン自身が判断を確定する場面へ限る。
-要求単位の由来は、レーン担当が計画の起草時にAWI本文とfrontmatterから判定し、計画の概念単位ごとに`由来`欄へ記録する。異なる由来の要求が1つのWIに混在する場合も、概念単位を分けて表現する。pickerは由来を出力せず、メインと統合担当は由来を再判定しない。人間由来の要求を全部又は一部不採用にする確認は、レーン担当が計画確定前にメインへ即時報告して完了させ、後続工程は計画で確定した採否と終端区分を用いる。
+要求単位の由来は、レーン担当が計画の起草時にAWI本文とfrontmatterから判定し、計画の概念単位ごとに`由来`欄へ記録する。異なる由来の要求が1つのWIに混在する場合も、概念単位を分けて表現する。pickerは由来を出力せず、メインと統合担当は由来を再判定しない。人間由来の要求を全部または一部不採用にする確認は、レーン担当が計画確定前にメインへ即時報告して完了させ、後続工程は計画で確定した採否と終端区分を用いる。
 
 処理中に確定した必須是正を稼働レーンへ追加する場合は、割当と同時に開始まで含めた指示を1回送る。レーン担当は現在工程を完了した後にturnを終えず追加集合の計画起草へ進み、現在工程の結果を追加集合の最初の工程境界の返却へ含める。現在工程の結果がメインの後続工程の入力になる場合は、その結果を先に通知してから進む。開始済みの判定は追加集合の最初の工程境界で行う。工程境界ごとに返却と開始指示を往復させる案は、同じ担当が続けて行える作業の着手を1往復ずつ遅らせ、担当の再開費用も生むため採用しない（2026年9月26日、利用者指示）。最初の工程境界を受領する前にthreadが継続不能になった場合は公開応答から同じthreadの再開可否を判定し、再開不能な場合だけ新しいレーンを作成する。
 
-pickerの出力は、対象リポジトリのプロジェクト規範が選定結果とともにメインへ渡すと定めた内容を`project_notes`として運ぶ。pickerは指定された参照先の実在と可読性を確認し、上流投入の区分がある場合だけ投入先と要求を必須化する。消費側は固定出力だけを基準とし、起動文の固有指示へ値を複製しない。目的はプロジェクト規範がメインへ課す義務のうち選定時点でしか得られない情報を要するものを、選定工程の既存の1往復で成立させることである。構造の理由はpickerが起動時の`cwd`からプロジェクト規範を解決し、AWI本文も保持しているため、当該判定を担える唯一の主体であることによる。知識境界として、何を載せるかの判定はプロジェクト規範が基準を持ち、`agent-toolkit/share/`配下の契約は受け渡しの形式だけを定める。同じ内容をレーンの完了報告へ載せる案は、レーンが並行して進むため他レーンの起動時点で当該内容が確定しておらず、レーン工程の起動へ間に合わないため採用しない。
+pickerの出力は、対象リポジトリのプロジェクト規範が選定結果とともにメインへ渡すと定めた内容を`project_notes`として運ぶ。pickerは指定された参照先の実在と可読性を確認し、上流投入の区分がある場合だけ投入先と要求を必須化する。消費側は固定出力だけを基準とし、起動文の固有指示へ値を複製しない。目的はプロジェクト規範がメインへ課す義務のうち選定時点でしか得られない情報を要するものを、選定工程の既存の1往復で成立させることである。構造の理由はpickerが起動時の`cwd`からプロジェクト規範を解決し、AWI本文も保持しているため、`project_notes`へ載せる情報を判定できる唯一の主体であることによる。知識境界として、何を載せるかの判定はプロジェクト規範が基準を持ち、`agent-toolkit/share/`配下の契約は受け渡しの形式だけを定める。同じ内容をレーンの完了報告へ載せる案は、レーンが並行して進むため他レーンの起動時点で`project_notes`へ載せる内容が確定しておらず、レーン工程の起動へ間に合わないため採用しない。
 
 エージェント由来の通常AWIは、`反映内容と反映先`、`適用範囲`、`完成条件`の対象集合を比べた結果の宣言を保存する。3節のSHA-256 digestもfrontmatterへ保存する。本文変更後に古い宣言を使う操作はCLIが拒否する。人間由来のAWI、UWI、plan-file処理へ同じ制約を広げないのは、エージェントが自己生成した要求だけを通常より懐疑的に検収する境界を維持するためである。
 
 知識境界として、委譲の要否判定は`agent-toolkit/rules/01-agent.md`が持ち、
-`agent-toolkit:process-wi`は当該判定を適用する場面だけを定める。
-工程別モデル設定を持つ委譲では、当該工程を定める節が用いるキーを指定する。
+`agent-toolkit:process-wi`は委譲の要否を判定する場面だけを定める。
+工程別モデル設定を持つ委譲では、委譲する工程を定める節が用いるキーを指定する。
 却下した代替案は、割り込み作業の委譲先を一律に単一のキーへ固定する案である。
 工程ごとに適した委譲先が異なり、用途を定めたキーの適用範囲を越えるため採用しない。
 公開工程の工程をメインが自ら実行する案は、終端担当が所有するCI修正（CI修正担当の起動と受領）を含む工程全体がメインのコンテキストを消費し、ユーザー判断への応答余地を狭めるため採用しない。
-終端担当へ専用の設定キーを新設する案も、当該工程の判断量が実装と同等であり`high_tier_model`の適用範囲に収まるため採用しない。
-レーンの終端操作をメインへ残す案は、レーンの最後のレーン担当が同じ資源とref又は7文字以上の一意な短縮OIDを保持しており、メインへ戻すと同じ値の受け渡しと再確認が増えるため採用しない。
+終端担当へ専用の設定キーを新設する案も、終端工程の判断量が実装と同等であり`high_tier_model`の適用範囲に収まるため採用しない。
+レーンの終端操作をメインへ残す案は、レーンの最後のレーン担当が同じ資源とrefまたは7文字以上の一意な短縮OIDを保持しており、メインへ戻すと同じ値の受け渡しと再確認が増えるため採用しない。
 統合担当を実装担当のタスク文書へ担当種別として同居させる案は、同書の冒頭がコミット単位の実装を責務とし、必須入力へ実装するコミット単位を要求し、実装手順が計画ファイルの編集を禁じているため採用しない。同居させると、実装しない統合担当に対して同じ行為の義務と禁止が並存する。
 新しい委譲境界へ呼び元用文書と呼び先用文書のペアを設けない案も、委譲先が読む恒常手順が起動文の本文だけになり、起動のたびに手順を複製することになるため採用しない。
 
-計画の起草、実装及び変更範囲の検証は`high_tier_model`へ割り当てる。
+計画の起草、実装および変更範囲の検証は`high_tier_model`へ割り当てる。
 作業規模や計画の具体性に応じたモデル分岐は設けず、レーン担当が同じ文脈でこれらを完遂する。
 レビュー修正はレビュー修正担当、CI修正はCI修正担当として、いずれも`high_tier_model`を使う。
 モデル候補は工程ごとの個別キーではなく、`high_tier_model`・`medium_tier_model`・`low_tier_model`の段位と、固有用途の`write_model`・`orchestrate_model`で管理する。複数工程が同じ候補列を使う場合に設定と確認の対象が工程数だけ増えることを防ぐためである。`atk config show`と`get`は設定値だけを返し、Codex系列名の解決は起動時に行う。保存済みの旧工程キーは新しい設定の解決に用いず、移行層を設けない。旧キーの保存値を新キーへ自動対応させる案は、複数の旧工程が1つの段位へ合流するときに値の優先順位を新たに定める必要があり、利用者が選んだ段位の既定値と矛盾するため採用しない。
-CI修正の認可根拠には、計画が記録した元の要求又は確認回答、原因となった変更を認可した利用者指示の逐語文、既存の公開契約の該当箇所のいずれかを使用する。
+CI修正の認可根拠には、計画が記録した元の要求または確認回答、原因となった変更を認可した利用者指示の逐語文、既存の公開契約の該当箇所のいずれかを使用する。
 一般のCI失敗では計画ファイルとAWIファイル名一覧を必須とせず、存在しない資料の合成を避ける。
 CI修正担当の共通出力は`awis`を維持し、AWI起因でない場合は`なし`を返す。
 同一レーンでは、計画の起草から実装、変更範囲の検証、修正まで同じworktreeを使う。
@@ -691,7 +692,7 @@ Claude Codeの委譲・背景処理の待機は、機械的な完了通知を待
 この分離により即時通知を定期再確認へ置換せず、独自設定resolver・フックの永続状態を追加せずに、同じ待機対象のライフサイクルを各境界で確認できる。
 調査・採否と通常型の計画化は、Claude CodeとCodexのいずれでもメインが下流担当を直接起動する共通手順を使う。
 委譲先の起動失敗を別の起動手段へ迂回せず、失敗として返す。
-通常処理及び明示的な連続処理は、起動時に固定した項目だけを処理し、後始末後にready項目を再取得しない。
+通常処理および明示的な連続処理は、起動時に固定した項目だけを処理し、後始末後にready項目を再取得しない。
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
 `atk agents-exit-session`は起動時の判定を再利用せず停止直前に対象を新規識別し、PIDの開始時刻と実行ファイルのデバイス・inodeを比べ、一致した場合だけ停止する。
 Claude CodeではFunction hooks moduleの`session.start`が、実際に読み込まれたことをセッション別のファイルへ記録する。`turn.complete`は対話CLIの終了要求を読み、ターン完了後の`/exit`をキューへ入れる。Python側はファイルの更新時刻が現在の本体プロセスの開始より後か確かめ、moduleなしで再開した場合の古い記録を採用しない。両側が同じ絶対パスを使えるよう、Claude Codeの設定ディレクトリを基準にする。Pythonの一時ディレクトリだけを使うと、Function hooks側と異なる位置を指し得るため採らない。
@@ -705,9 +706,9 @@ Codexだけの公開能力との差分は`agent-toolkit/share/rules-main.codex.m
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
 Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。agents_serverの通常委譲は`_agents_server/state.py`から同じ共通委譲先規範を配送し、軽量な探索・書込・shell起動は共有規範を配送しない。Claude Code固有の委譲先規範はCodexへ配送しない。この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
 `scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成の窓口となる。
-`scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持及びCodex固有上書きの配置を確かめる。
+`scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持およびCodex固有上書きの配置を確かめる。
 生成物は手編集せず、原本と正式生成器を更新して同期する。
-公開動作を追加又は変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数の基準とし、`agent_toolkit_bump.py minor`などの正式な手順で版数を更新する。
+公開動作を追加または変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数の基準とし、`agent_toolkit_bump.py minor`などの正式な手順で版数を更新する。
 `.claude-plugin/marketplace.json`のplugin記述は基準の版数と一致させる。
 `agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
 `agent-toolkit-codex/`はGitで追跡せず、post-applyがCodex plugin導入の直前に`sync_codex_plugin_manifests.py`で生成する。
@@ -727,10 +728,10 @@ dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLI�
 専用rootの生成に失敗した場合は、post-applyのstep失敗として永続logへ記録し、全体を非0で終了する。
 `install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
-実際のadd又はupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
+実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
 既定は手動再起動案内を維持し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。
 自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録し、失敗時はplugin導入を巻き戻さず手動案内へ戻す。
-無変更、marketplace登録だけの変更、daemon停止中及び不要pluginの除去は自動再起動の対象に含めない。
+無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
 公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、マーケットプレイス登録元ではなく導入先の実体をCodexが読み込むと定める。
 そのため、`install_codex_plugins.py`はcacheを直接編集せず、Codexが管理する現行versionだけを導入先として利用する。
@@ -752,7 +753,7 @@ Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plug
 共有文書をCodex用に複製する案は、原本・生成器・自動テストの同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。
 
-`agent-toolkit/rules/`配下にはメインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く。
+`agent-toolkit/rules/`配下にはメインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く。
 メインエージェントだけに適用する条文は`agent-toolkit/share/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules-main.claude-code.md`へ置く。
 サブエージェントと委譲先だけに適用する条文は`agent-toolkit/share/rules-subagent.md`へ置く。
 メイン向け条文は`SessionStart`フック（`agent-toolkit/agent_toolkit/_hooks/rules_context.py`）が全ての`source`で文脈へ追加し、会話圧縮の後も再度追加する。
@@ -770,34 +771,34 @@ Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案
 `agents_server`の`start`で起動したClaude backendの委譲先は、`~/.claude/rules/agent-toolkit/`配下の3ファイルの全文をユーザー規範として保持し、起動時のシステム指示と区別する。
 また、`agent-toolkit/share/rules-subagent.md`を起動時のシステム指示として保持する。
 `agent-toolkit/share/rules-main.md`は保持しない。
-2026年9月7日に当該手段で委譲先を1件起動し、受領した規範文書の一覧と個別条文の有無を返させて確認した。
-再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと当該文書の任意の条文の有無を返させる。
+2026年9月7日に`agents_server`の`start`で委譲先を1件起動し、受領した規範文書の一覧と個別条文の有無を返させて確認した。
+再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと`02-agent-operations.md`の任意の条文の有無を返させる。
 委譲先へ届く条文の範囲は実際に動かして確定し、届いている条文を`agent-toolkit/share/rules-subagent.md`へ重複して置かない。
 
-AWI本文が示す文言案、列挙及び節配置は、投入元識別子にかかわらず利用者合意とみなさない。
+AWI本文が示す文言案、列挙および節配置は、投入元識別子にかかわらず利用者合意とみなさない。
 レーン担当は目的と指定された外部可視要素を維持する文面を技術判断で確定し、原文との差異と根拠を採否記録と計画へ残す。
-採用済み本文が明示する変更は確認事項又は実装前提にしない。
+採用済み本文が明示する変更は確認事項または実装前提にしない。
 残る事項だけを`agent-toolkit/rules/01-agent.md`「協調と自律」節の確認境界と照らし合わせる。
 委譲元は同じ優先関係を検収し、確認境界に該当する事項をUWI投入処理へ渡す。
 対象、範囲、外部可視の結果、除外内容を原文から新たに具体化する場合は、調査後かつ計画確定前にユーザー確認する。
 同じ内容を明示したユーザー提案として採用する場合は、コードベースから確定できる事実、内部値の計測補正、配置、分割、テスト手段を確認対象にしない。
 
 通常型のバッチでは、メインがprocessable一覧のうちready項目だけを固定し、pickerを設定モデルへ直接委譲する。
-pickerは項目別の原文、履歴及び投入元識別子を比較し、実装不要、処理中に新たに必要と判定した保留及び通常レーンを確定する。
+pickerは項目別の原文、履歴および投入元識別子を比較し、実装不要、処理中に新たに必要と判定した保留および通常レーンを確定する。
 ファイル単位の終端、通常レーンとキュー操作の責務境界は`agent-toolkit/share/pick-wi.parent.md`と`agent-toolkit/share/pick-wi.subagent.md`を基準とする。
 
-pickerは要求の採否と、既存の変更による充足を確定しない。いずれも対象実装を読解して初めて確定するため、判定をレーン担当へ置く。誤って充足済みと確定した要求は`adopt`で終端して検知手段を失う一方、充足済みを未充足と判定した損失は計画へ不要な実施内容を記録する工程だけであり、損失が非対称であるためである。pickerの挙動を検証する契約テストを設ける案は、当該契約がタスク文書の文面として成立し自動チェックの入力を持たないため採用せず、文書間の整合を検索で確かめる。
+pickerは要求の採否と、既存の変更による充足を確定しない。いずれも対象実装を読解して初めて確定するため、判定をレーン担当へ置く。誤って充足済みと確定した要求は`adopt`で終端して検知手段を失う一方、充足済みを未充足と判定した損失は計画へ不要な実施内容を記録する工程だけであり、損失が非対称であるためである。pickerの挙動を検証する契約テストを設ける案は、pickerの契約がタスク文書の文面として成立し自動チェックの入力を持たないため採用せず、文書間の整合を検索で確かめる。
 レーン担当は実施内容へ担当AWIを原則1ファイル1行で記録し、採否、採用範囲、実施しない範囲、理由を同じ行へ統合する。
 採用系（`採用`・`部分採用`）の行だけを実装対象とする。
 frontmatterの`source`からエージェント由来を判定し、それ以外の不採用候補は通常の手順でユーザー確認する。
 回答を得られない場合はUWIを保存して対象項目をholdとし、通常レーンから除外する。
-同一セッションで回答を受領した場合は、回答保存、UWI終端、依存解除を確認して、同じpicker又はレーンを一般継続契約で再開する。
-別リポジトリ項目の登録、突合及び元項目の終端順序は、
+同一セッションで回答を受領した場合は、回答保存、UWI終端、依存解除を確認して、同じpickerまたはレーンを一般継続契約で再開する。
+別リポジトリ項目の登録、突合および元項目の終端順序は、
 `agent-toolkit/skills/wi-standards/references/cross-repository-submission.md`を基準とする。
 
 この境界では項目単位の永続的な由来スキーマを新設せず、既存のsourceを判定に用いる。
-sourceによる由来境界の判定と利用者認可の確認を分け、source又はAWI本文から利用者認可を推定しない。
-独立した採否レビュー工程や専用の移管機構を追加すると、既存の項目別調査、レーン担当の採否確定及び利用者への確認手段が分断され、
+sourceによる由来境界の判定と利用者認可の確認を分け、sourceまたはAWI本文から利用者認可を推定しない。
+独立した採否レビュー工程や専用の移管機構を追加すると、既存の項目別調査、レーン担当の採否確定および利用者への確認手段が分断され、
 同じ採否記録を別状態で保持する恒常コストが増えるため採用しない。採否確定の事実と利用者判断の手順を既存の受渡しへ統合することで、
 全項目の可視性と個別判断を保ちながら、計画の実施内容では採用系の行だけを実装対象として扱える。
 
@@ -805,16 +806,16 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 `agent-toolkit:add-awi-by-user`は利用者発話を原文とする手動起動を含む全ての新規項目へ`source: add-awi-by-user`を保存する。
 別リポジトリ項目の移管では新規起票の固定値を上書きせず、移管元に保存済みのsourceがある場合は同じ値を保持する。
 
-メインはキュー、利用者合意、公開認可、要求と調査対象、確定済み計画並びに実装結果を知り、工程全体の完了を所有する。
-メインは要求を再定義せず、各担当の起動、同一threadの継続及び工程遷移を自ら制御する。
+メインはキュー、利用者合意、公開認可、要求と調査対象、確定済み計画ならびに実装結果を知り、工程全体の完了を所有する。
+メインは要求を再定義せず、各担当の起動、同一threadの継続および工程遷移を自ら制御する。
 実装担当は担当単位と対象worktreeを知るが、他のレーンの統合順や公開時機を決定しない。
 実装担当は自身が起動した外部プロセスと背景ジョブの実行識別子と停止操作を知り、
 同じworktreeの書込所有権を手放す前に全ての終了を確認する。
-委譲元は完了報告、報告されたツール終了結果又は実行識別子、`TaskStop`の結果及び実行時に公開され呼び出しに成功した`ListAgents`の状態を知り、
+委譲元は完了報告、報告されたツール終了結果または実行識別子、`TaskStop`の結果および実行時に公開され呼び出しに成功した`ListAgents`の状態を知り、
 同じworktreeへ実装担当を引き継ぐ場合に終了確認の成立を検収する。
-通常の実装モードでレビュー修正を委譲する場合は、メインが元の実装入力、レビュー表及び対象worktreeの絶対パスを修正担当へ渡す。
+通常の実装モードでレビュー修正を委譲する場合は、メインが元の実装入力、レビュー表および対象worktreeの絶対パスを修正担当へ渡す。
 修正担当は公開契約と元の要求や確認回答で認可された変更を基準文書から確認し、レビュー表の指摘を採否判断して、採用指摘を実装単位commitの7文字以上の一意な短縮OIDへ対応付ける。
-対応付け不能、計画間衝突又は認可上限超過の場合は、履歴と作業ツリーを変更せず`needs_escalation`で返す。
+対応付けられない場合、計画が衝突する場合、認可上限を超える場合は、履歴と作業ツリーを変更せず`needs_escalation`で返す。
 成立する場合は未pushの実装単位履歴へ修正を統合し、詳細をレビュー表と成果物へ記録して工程完了だけを返す。
 最終単位だけは修正・変更範囲の検証・stage後に`amend` phaseで再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・変更範囲の検証・stageした後、amend直前の再判定後にamendする。レビュー修正専用commitを残さないことは努力目標とする。対象OIDの不一致、対象commitのpush済み、複数単位へ不可分にまたがる修正、各中間commitの公開契約を維持できない修正のいずれかでは履歴書換えを開始せず通常commitを選ぶ。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
 複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行する。
@@ -822,7 +823,7 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。専用の`pre_fixup` phaseを先頭に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。
 `rewrite_guard`のphaseは通常の計画実行モードのレビュー修正だけに記録し、それ以外では`not_applicable`とする。
-実装担当は履歴書換え前の7文字以上の一意な短縮OIDと`rewrite_guard`をレビュー表の対象指摘へ保存し、履歴統合後に変更前後OID対応と全phaseの結果へ更新する。同じ担当の会話履歴が欠落した場合は、レビュー表の完了内容が現行Git実体と一致するか確かめて回復する。準備中の証拠しかない場合又は実体を確定できない場合は`needs_escalation`で返し、無指定reflogから旧OIDを復元しない。メインへの中間受渡しと成果物・Git・検証結果の再検収は設けない。
+実装担当は履歴書換え前の7文字以上の一意な短縮OIDと`rewrite_guard`をレビュー表の対象指摘へ保存し、履歴統合後に変更前後OID対応と全phaseの結果へ更新する。同じ担当の会話履歴が欠落した場合は、レビュー表の完了内容が現行Git実体と一致するか確かめて回復する。準備中の証拠しかない場合または実体を確定できない場合は`needs_escalation`で返し、無指定reflogから旧OIDを復元しない。メインへの中間受渡しと成果物・Git・検証結果の再検収は設けない。
 初回実装担当のrouteと実効`engine`・`model`・`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業・指摘への対応・再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、元の実装入力と基準文書の絶対パスを開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 再判定不能や対象OIDのpush済み検出を含む履歴書換え開始後の失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を基準とし、本書へ転記しない。
@@ -833,18 +834,18 @@ remote広告refの直積証跡・replace ref・graft・shallow複製への追加
 組み込み`Read`の拒否はBash経由の複製を遮断しないため、本設計は配布設定・常時規範・委譲手順の3層へ防止の役割を分担させる。
 
 認証を要するauto mode検証では、`auto-mode config`が現在の設定反映を確認する。
-配布元の対象固有テストは当該配布元が所有する契約をチェックし、比較可能な`critique`だけが新規・悪化指摘を検出する。
+配布元の対象固有テストは対象の配布元が所有する契約をチェックし、比較可能な`critique`だけが新規・悪化指摘を検出する。
 各チェックは担当する契約だけを知り、対象固有テストをauto mode classifierの判定のテストとして扱わない。
-比較不能な総合出力又は実在しないauto mode classifierのテストを必須にする案は、変更の成否を識別できないため採用しない。
+比較不能な総合出力または実在しないauto mode classifierのテストを必須にする案は、変更の成否を識別できないため採用しない。
 
-メインは受信者専用のタスク文書及び作成規範を読み込まず、その絶対パスを各担当へ渡す。
+メインは受信者専用のタスク文書および作成規範を読み込まず、その絶対パスを各担当へ渡す。
 agent-toolkitプラグイン内のタスク文書と作成規範の絶対パスは、メインが注入済み委譲スキルの所在から現行plugin rootを確定して解決する。
 呼び出し元は新規成果物の絶対パスを起動時に指定するか、委譲先から報告を受領してから観測する。
 AWI計画では、委譲元が既存ファイルと衝突しない保存先の絶対パスを確定する。
 通常型のAWIの下流主体は、担当ファイル名と対象リポジトリを受け取り、キューCLIから保存本文を独立に取得する。
 専用の原文ファイルを作成せず、本文を起動文へ複製しない。
-直接受領した人間由来の利用者指示、利用者合意、参考素材又は処理対象資料は、受領順を保持した素材レコード集合として渡す。
-各レコードは種別、出所及び引用範囲をこの順で保持し、逐語本文・回答全文をレコードの末尾へ続ける。
+直接受領した人間由来の利用者指示、利用者合意、参考素材または処理対象資料は、受領順を保持した素材レコード集合として渡す。
+各レコードは種別、出所および引用範囲をこの順で保持し、逐語本文・回答全文をレコードの末尾へ続ける。
 キューにない素材の逐語本文・回答全文は、計画外の明示入力として調査、起草、初回レビュー、再レビューへ渡し、計画本文へ転記しない。
 初回起動後の追送利用者発言は、レーン担当が逐語本文、入力種別、出所、引用範囲を保持して真正性を保証し、レビュー担当は本文との整合だけを検収する。
 ファイル単位の分類、reject・hold判定は`agent-toolkit/share/pick-wi.parent.md`と`agent-toolkit/share/pick-wi.subagent.md`を基準とする。
@@ -855,7 +856,7 @@ AWI計画では、委譲元が既存ファイルと衝突しない保存先の�
 frontmatterの`source`からエージェント由来と判定される項目は後段で優先順位4に準じて懐疑的に判定する。
 投入元識別子で由来境界を判定するが、投入元識別子やAWI本文から利用者認可を推定しない。
 実装担当は成果物の編集、生成、初回検証、stageとcommitを所有する。
-実装担当が着手前に実在を確認する入力は、起動時点で作成済みの計画・素材・作業ツリー・規範に限る。後段の工程で他の主体が作成する成果物の出力先パスは実在確認の対象にせず、未作成を入力の不備として扱わない。作成主体と作成時点は当該成果物の基準文書へ一意に置き、受領側が推定しない。
+実装担当が着手前に実在を確認する入力は、起動時点で作成済みの計画・素材・作業ツリー・規範に限る。後段の工程で他の主体が作成する成果物の出力先パスは実在確認の対象にせず、未作成を入力の不備として扱わない。作成主体と作成時点は成果物ごとの基準文書へ一意に置き、受領側が推定しない。
 調整役はGit状態、差分、成果物と報告済み検証結果を読み取り専用で直接確認し、完了条件への適合を検収する。
 背景の実装担当では、実装担当が所有する全プロセスの終了を確認した後、実行時に`ListAgents`を利用できる場合に限り、
 残る`TaskStop`対象の停止、同ツールによる稼働なし確認の順で書込所有権を移す。
@@ -867,7 +868,7 @@ frontmatterの`source`からエージェント由来と判定される項目は�
 前景の実装担当の終了後に実装担当が所有するプロセスの存続が判明した場合、委譲元は実装担当の引継ぎを禁止し、
 未完了として呼び出し元へ返す。
 
-別コンテキストに専用の指示文書ルートを渡す構成では、委譲元は目的、入力、制約、期待出力及び検収を定める。
+別コンテキストに専用の指示文書ルートを渡す構成では、委譲元は目的、入力、制約、期待出力および検収を定める。
 受信側の再走査、累積再監査、証拠抽出などの内部手順は指示文書ルートだけを基準とする。
 完了報告の返却方法の契約も同じ側へ置き、専用のタスク文書とagent定義のいずれかを持つ委譲では、
 起動文が基準文書の絶対パスと基準文書に未記録の差分だけを渡す。
@@ -885,32 +886,32 @@ frontmatterの`source`からエージェント由来と判定される項目は�
 手順どおりに進められない事象の即時通知は、完了報告の返却方法とは別の手段として設計する。
 完了報告は委譲元が待機を解いた後に検収する成果物であり、事象の通知は委譲元が待機中に受け取って並行する工程の判断へ使うためである。
 この効果は委譲元が並行する工程を持ち、かつ実行主体が到達可能な機械可読返信識別子を保持する場合にだけ生じる。
-返信識別子を保持しない場合、又は現在の実行主体へ`SendMessage`が公開されず呼び出しに失敗する場合は、事象を通常の完了報告へ含める。
+返信識別子を保持しない場合、または現在の実行主体へ`SendMessage`が公開されず呼び出しに失敗する場合は、事象を通常の完了報告へ含める。
 
-通信scopeは同一セッション内の親子委譲、Agent Teams及び独立セッション間通信に分ける。
-同一セッション内の親子委譲は`Agent`の起動結果が返すagent IDを保持し、Agent Teamsと独立セッション間通信はproviderが機能を公開し呼び出しが成功した場合だけ当該機能の識別子を使う。
-Claude Platform on AWSで独立セッション間通信が成立しない確認結果を、同一セッション内の`SendMessage`の不成立又は全providerの制約へ一般化しない。
+通信scopeは同一セッション内の親子委譲、Agent Teamsおよび独立セッション間通信に分ける。
+同一セッション内の親子委譲は`Agent`の起動結果が返すagent IDを保持し、Agent Teamsと独立セッション間通信はproviderが機能を公開し呼び出しが成功した場合だけ公開された通信機能が返す識別子を使う。
+Claude Platform on AWSで独立セッション間通信が成立しない確認結果を、同一セッション内の`SendMessage`の不成立または全providerの制約へ一般化しない。
 
-宛先の由来は起動結果のagent ID、hostが明示する機械可読reply address及び条件付きの`senderTaskId`に限定する。
+宛先の由来は起動結果のagent ID、hostが明示する機械可読reply addressおよび条件付きの`senderTaskId`に限定する。
 `from`・`origin.from`・`name`・`subagent_type`は表示用・種別用の値であり、返信先へ変換しない。
-`SendMessage`のsuccess又はqueuedは送信側の受理だけを示し、中継先IDと送信後の完了通知又は戻り値を対応付けて受信処理を確認する。
+`SendMessage`のsuccessまたはqueuedは送信側の受理だけを示し、中継先IDと送信後の完了通知または戻り値を対応付けて受信処理を確認する。
 完了通知の受領主体を最上位と直接の親のいずれにも固定せず、直接の呼出元でない主体は現在の実行主体への`SendMessage`公開と保持済みの直接の子IDへの呼び出し成功を確認した場合だけ通知を逐語中継する。
 中継不能時は未反映を推定して再送せず、担当範囲と権限の内側にある未完了工程だけを巻き取り、外側の工程は`needs_escalation`として呼出元へ返す。
 ホスト別の手段と宛先を共有規範へ書かないのは、未確認の手段を全ホストへ配布する実施契約へ含めないためである。
-Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/share/rules-subagent.md`「Claude Code固有事項」だけが保持し、直接の呼出元への返信、通常完了報告及び独立セッション間通信と区別する。
+Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/share/rules-subagent.md`「Claude Code固有事項」だけが保持し、直接の呼出元への返信、通常完了報告および独立セッション間通信と区別する。
 
-完了報告又は`ListAgents`だけから全プロセスの終了を推定する案は、外部プロセスを直接観測できないため採用しない。
+完了報告または`ListAgents`だけから全プロセスの終了を推定する案は、外部プロセスを直接観測できないため採用しない。
 所有主体の終了後に自然終了を待つ案は、終了時機を保証できず実装担当の引継ぎを停止させるため通常手順にしない。
 起動文の命令は、受信者側の基準文書が定める手順の範囲を狭めない。委譲元が確定した判断の記録（レビュー表の`対応内容`欄など）を受信者への命令へ転写すると、受信者が所有する採否判定と類似箇所の一括修正が失われるためである。
-委譲元の入力列挙は、受信者側の基準文書が必須とする入力を満たす。指摘の修正を委譲する手順では、受信者が適用する規範スキルを当該列挙へ含める。
+委譲元の入力列挙は、受信者側の基準文書が必須とする入力を満たす。指摘の修正を委譲する手順では、受信者が適用する規範スキルを委譲時に渡す入力の一覧へ含める。
 必須入力を委譲元だけで定義し受信者の基準文書と比較しない案は、委譲先の追加ごとに入力不足を生むため採用しない。
 
 職務として列挙されていない判断の確定主体は、委譲先ではなく呼び出し元へ一本化する。
-委譲先は判断の発生を報告し、当該判断に基づく成果物の変更、再委譲、工程の打ち切り及び巻き戻しに着手しない。復元や受領済み素材の削除にも着手しない。
-呼び出し元は返却された判断を確定し、必要な再指示又は工程停止を選択する。
+委譲先は判断の発生を報告し、未確定の判断に基づく成果物の変更、再委譲、工程の打ち切りおよび巻き戻しに着手しない。復元や受領済み素材の削除にも着手しない。
+呼び出し元は返却された判断を確定し、必要な再指示または工程停止を選択する。
 この境界は誤った判断のまま操作へ進むと反映済みの成果が失われる一方、差し戻して待てば損害が生じないという損害の非対称性に基づく。
 
-知識境界として、委譲先が持つのは自身の定義又はタスク文書が列挙する職務、受領した入力、及び判断が未確定である事実と必要な判断である。
+知識境界として、委譲先が持つのは自身の定義またはタスク文書が列挙する職務、受領した入力、および判断が未確定である事実と必要な判断である。
 呼び出し元は、利用者合意、公開認可、計画の適用範囲など、委譲先の職務として列挙されていない判断の確定を所有する。
 
 調整専任の委譲先へセッション記録を読ませ、受領した指示の真正性を自ら判定させる案は採用しない。
@@ -920,50 +921,50 @@ Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/
 `agents_server`の`start`で起動したClaude backendの委譲先は、`~/.claude/rules/agent-toolkit/`配下の3ファイルの全文をユーザー規範として保持する。
 `agent-toolkit/share/rules-subagent.md`は起動時のシステム指示として保持する。
 `agent-toolkit/share/rules-main.md`は保持しない。
-2026年9月7日に当該手段で委譲先を1件起動し、受領した規範文書の一覧と個別条文の有無を返させて確認した。
-再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと当該文書の任意の条文の有無を返させる。
+2026年9月7日に`agents_server`の`start`で委譲先を1件起動し、受領した規範文書の一覧と個別条文の有無を返させて確認した。
+再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと`02-agent-operations.md`の任意の条文の有無を返させる。
 委譲先へ届く条文の範囲は実際に動かして確定し、届いている条文を`agent-toolkit/share/rules-subagent.md`へ重複して置かない。
 
 ### session-reviewと完了報告
 
 `agent-toolkit:session-review`は準備スクリプト`agent-toolkit/skills/session-review/scripts/session_review_prepare.py`の1回の実行と、メインによる同じセッション内の分析で構成する。準備スクリプトは証拠bundleを抽出し、会話の流れ、問題候補の一覧、セッション統計を作業ディレクトリへ書き、キューを変更しない。メインは会話の流れを読んでセッション全体の遠回り、手戻り、反復、是正を探し、候補と併せて原因と対策を1案へ確定し、通常AWIとして1回の投入前レビューを経て投入する。振り返り担当の委譲先は起動しない。判断基準は`agent-toolkit/skills/session-review/references/analysis.md`が持つ。
 
-この構成の判断根拠は、実際のセッション記録を集計した次の数値である。2026年9月23日から25日のdotfiles向け親セッション21件では、振り返り担当が規範の読込、候補の読解、原因調査、AWI起草、報告組立を直列に行い、58回から237回の応答で580秒から3375秒を要した（記録長31秒の対象でも約600秒）。担当の起動をやめるため、2026年9月25日から26日には準備スクリプトが素材AWIを投入して後続セッションのレーンが分析する構成を採用した。しかし、分析が素材の生成とレーンでの読み直しの二度手間になり、深刻な問題の対策の確定が次の処理回まで遅れる事態が生じた。加えて、別環境で生じた素材AWIは処理側からセッション記録を照会できないこともあった（2026年9月26日、ユーザー指示により撤去）。同じ期間の素材AWI 3件の候補は計249件で、除外や非欠陥と判定されなかったのは78件だった。残りの171件は、正常に完了した委譲返却、一致0件の検索の終了コード（1又は123）及び`atk wi`の本文表記診断の警告が大半を占めた。遅さの原因は候補の雑音と固定の往復の2つにあると判断し、雑音を抽出器で除き、担当を起動せずにメインが自身のコンテキストで分析する構成で両方へ作用させる。300秒の目標は維持し、完了条件の外に置く。
+この構成の判断根拠は、実際のセッション記録を集計した次の数値である。2026年9月23日から25日のdotfiles向け親セッション21件では、振り返り担当が規範の読込、候補の読解、原因調査、AWI起草、報告組立を直列に行い、58回から237回の応答で580秒から3375秒を要した（記録長31秒の対象でも約600秒）。担当の起動をやめるため、2026年9月25日から26日には準備スクリプトが素材AWIを投入して後続セッションのレーンが分析する構成を採用した。しかし、分析が素材の生成とレーンでの読み直しの二度手間になり、深刻な問題の対策の確定が次の処理回まで遅れる事態が生じた。加えて、別環境で生じた素材AWIは処理側からセッション記録を照会できないこともあった（2026年9月26日、ユーザー指示により撤去）。同じ期間の素材AWI 3件の候補は計249件で、除外や非欠陥と判定されなかったのは78件だった。残りの171件は、正常に完了した委譲返却、一致0件の検索の終了コード（1または123）および`atk wi`の本文表記診断の警告が大半を占めた。遅さの原因は候補の雑音と固定の往復の2つにあると判断し、雑音を抽出器で除き、担当を起動せずにメインが自身のコンテキストで分析する構成で両方へ作用させる。300秒という所要時間の目標は維持するが、完了条件には含めない。
 
 会話の流れはメイン記録の利用者発話とアシスタント発話を時系列で並べ、自動挿入本文、実行環境の挿入、スキル展開、hookの追加コンテキスト、ツール呼び出しとツール結果を除く。機械的な抽出は標識を残す事象だけを拾い、推測で組んだコマンドの試行錯誤や採用した設計の書き直しはメインの記憶に頼るとコンテキストの圧縮と注意の偏りで欠けるため、ユーザーの指示により流れそのものを入力にした（2026年9月26日）。1発話が1000字を超える場合は先頭と末尾の500字ずつと記録位置を載せ、抽出器の`--detail`がその位置の発話を切り詰めずに返す。実際の記録を集計した結果では、自動挿入本文を除いた発話は6.3MBの記録で約3.4万字、1000字を超える発話は3記録で計2件だった。実行環境の挿入を判定する接頭辞は、利用者介入の候補の除外と会話の流れの抽出が同じ定数を使う。候補一覧は1候補を1行の要約と記録位置で示し、ユーザー介入とエスカレーションだけ全文を載せ、hook通知には通知が判定した直前のアシスタント発話を添える。素材AWIの構成では処理側が元の記録を探し直さないよう記録位置を載せなかったが、同じセッション内のメインが読む構成ではその理由が当たらない。ユーザー介入の候補は、単発の照会、判断を変えない追加要求、理由の無い拒否・中断の3区分だけを根拠付きで除外でき、それ以外は欠陥として再発防止策を要する。規範の条文だけでは介入が「ユーザーの選好」などの理由で外れた観測（2026年9月24日の振り返り成果2件）があるため、完了報告の振り返り結果は除外した介入の区分と理由を「対策を見送った問題」へ載せる。
 
 抽出器の観測境界は親の記録行と委譲先の開始時刻へ適用する。境界前に始まった委譲先は境界後の完了結果も含めて分析し、境界後に始まった委譲を候補と統計から除く。開始時刻が分からない委譲先を推測で除く案は、対象セッションの証拠を失うため採用しない。境界後に完了した行を一律に除く案も、境界前に始まった仕事の結果を失うため採用しない。
 
-抽出器の判定は、本文の表層一致ではなく記録側が持つ種別情報に基づける。`--warn`はフック通知、コマンド実行結果及び実行系が返した構造化警告を対象とし、検索結果と取得した文書本文に現れた同形の文字列を警告として扱わない。あわせて、問題の不在を述べる本文を警告から除く。`final-result`の分類はCodexの記録が持つ`phase`を参照し、`commentary`のメッセージを最終結果として扱わない。Claude Codeの記録は本文ごとに同じ区別を持たないため、同じエントリ又は後続のエントリにツール呼び出し（`SubagentHandback`を除く）がある本文を`commentary`として扱う。振り返りの準備は公開前に委譲先の稼働中にも実行され、最後の本文を無条件に最終結果とする形は、稼働中の委譲先の途中発話を委譲返却の候補にしたため採用しない。表層一致だけで判定する形は、規範文書の記述例と委譲先の中間報告という実行時の問題でない本文を候補として提示し、原因を確定する工程を増やすため採用しない。
+抽出器の判定は、本文の表層一致ではなく記録側が持つ種別情報に基づける。`--warn`はフック通知、コマンド実行結果および実行系が返した構造化警告を対象とし、検索結果と取得した文書本文に現れた同形の文字列を警告として扱わない。あわせて、問題の不在を述べる本文を警告から除く。`final-result`の分類はCodexの記録が持つ`phase`を参照し、`commentary`のメッセージを最終結果として扱わない。Claude Codeの記録は本文ごとに同じ区別を持たないため、同じエントリまたは後続のエントリにツール呼び出し（`SubagentHandback`を除く）がある本文を`commentary`として扱う。振り返りの準備は公開前に委譲先の稼働中にも実行され、最後の本文を無条件に最終結果とする形は、稼働中の委譲先の途中発話を委譲返却の候補にしたため採用しない。表層一致だけで判定する形は、規範文書の記述例と委譲先の中間報告という実行時の問題でない本文を候補として提示し、原因を確定する工程を増やすため採用しない。
 
-振り返りの候補は、候補が保持する位置の集合を保ったまま除外と集約だけで減らす。除外の対象は恒久対策の要否が記録の構造から定まる事象に限り、想定外事象を持たず正常な完了だけを示す委譲返却、検索が出力なしで一致0件を返した結果及び`atk wi add`・`edit`の本文表記診断の警告がこれに当たる。委譲返却は前置きの文に続く`status: completed`の返却（再開されず1回の配送で終えた委譲先に限る）と、報告した終了コードが全て0で失敗・警告・診断の件数が無いコマンド実行の委譲を含み、検索はパイプラインの最終段の検索（終了コード1）と検索を起動する`xargs`（終了コード123）を含む。hookが遮断したツール呼び出しの失敗と、hook通知と同じ本文の警告は、hookの発生源標識又は通知本文との一致から出所を確定できる。このため両者をhook通知の候補として扱い、発生源と区分ごとの上限の対象にする。上限では件数の多い種類に加えてツールごとの最多の種類を残し、件数の少ないツールの遮断も候補に残す。反復注記とUUIDは原因を区別しないため、種類の本文から除く。自由記述の委譲返却や本文から原因が定まらない失敗など、本文の意味の判断を要する事象は候補に残す。2026年9月26日の処理回の記録には候補が202件あり、見送った候補の多くは成功の定型返却と、hookの遮断による失敗とhook警告の重複だった。ユーザーが候補の機械的な削減を求めたため、この規則を導入し、同じ記録の候補は100件になった。再開された委譲先の前置きは除外しない。受け取り済みの報告の返し直しという異常を前置きだけで述べ、対策へ結び付いた返却が実記録にあったためである。件数の上限だけで候補を減らす案は採らない。判定表が候補の位置の集合と一致することを求める検証と両立せず、対策へ結び付く候補も件数の順で除外するためである。
+振り返りの候補は、候補が保持する位置の集合を保ったまま除外と集約だけで減らす。除外の対象は恒久対策の要否が記録の構造から定まる事象に限り、想定外事象を持たず正常な完了だけを示す委譲返却、検索が出力なしで一致0件を返した結果および`atk wi add`・`edit`の本文表記診断の警告がこれに当たる。委譲返却は前置きの文に続く`status: completed`の返却（再開されず1回の配送で終えた委譲先に限る）と、報告した終了コードが全て0で失敗・警告・診断の件数が無いコマンド実行の委譲を含み、検索はパイプラインの最終段の検索（終了コード1）と検索を起動する`xargs`（終了コード123）を含む。hookが遮断したツール呼び出しの失敗と、hook通知と同じ本文の警告は、hookの発生源標識または通知本文との一致から出所を確定できる。このため両者をhook通知の候補として扱い、発生源と区分ごとの上限の対象にする。上限では件数の多い種類に加えてツールごとの最多の種類を残し、件数の少ないツールの遮断も候補に残す。反復注記とUUIDは原因を区別しないため、種類の本文から除く。自由記述の委譲返却や本文から原因が定まらない失敗など、本文の意味の判断を要する事象は候補に残す。2026年9月26日の処理回の記録には候補が202件あり、見送った候補の多くは成功の定型返却と、hookの遮断による失敗とhook警告の重複だった。ユーザーが候補の機械的な削減を求めたため、この規則を導入し、同じ記録の候補は100件になった。再開された委譲先の前置きは除外しない。受け取り済みの報告の返し直しという異常を前置きだけで述べ、対策へ結び付いた返却が実記録にあったためである。件数の上限だけで候補を減らす案は採らない。判定表が候補の位置の集合と一致することを求める検証と両立せず、対策へ結び付く候補も件数の順で除外するためである。
 
-候補抽出は利用者介入、権限拒否、`needs_escalation`を明示した返却、未解決証拠を全件保持する。失敗した`CommandExecution`は`command-failure`、その他の失敗ツール事象は`tool-failure`、通常の不成功返却は`delegate-return`とし、上位判断を要求する`escalation`から分離する。通常失敗はコマンド、終了コード、診断、locatorを保持するため、検索不一致など恒久対策を要しない事象を証拠に基づいて一次選別できる。是正を求める通知はblockかwarnの区分を必ず持つため、それ以外の区分を持つhook出力は機械除外する。除く区分を既知値で列挙する形は、規範の注入（`kind="rules-main"`など）や配送の種別を`kind`へ持つ新しい出力を是正要求として候補へ残したため採用しない。hook通知と失敗したツール結果の個別証拠には、同じ呼び出し識別子を持つツール呼び出しの入力と記録位置を加え、対象のコマンドを特定する照会を不要にする。block又はwarnのhook通知は、hook識別子、発動元、タグを発生源として、同じ発生源の通知変種を発生件数降順の上位5種へ限定する。各変種は安定順の代表locatorを1件保持し、発生総数と省略件数を機械可読フィールドへ残す。発生源ごとに最低1候補を残し、振り返りでは発火した全発生源へ規範、判定条件、フック撤去のいずれかの改善提案を対応付ける。全locatorを素材へ載せる形は、同じ原因の反復ごとに本文量と分析量を増やすため採用しない。
+候補抽出は利用者介入、権限拒否、`needs_escalation`を明示した返却、未解決証拠を全件保持する。失敗した`CommandExecution`は`command-failure`、その他の失敗ツール事象は`tool-failure`、通常の不成功返却は`delegate-return`とし、上位判断を要求する`escalation`から分離する。通常失敗はコマンド、終了コード、診断、locatorを保持するため、検索不一致など恒久対策を要しない事象を証拠に基づいて一次選別できる。是正を求める通知はblockかwarnの区分を必ず持つため、それ以外の区分を持つhook出力は機械除外する。除く区分を既知値で列挙する形は、規範の注入（`kind="rules-main"`など）や配送の種別を`kind`へ持つ新しい出力を是正要求として候補へ残したため採用しない。hook通知と失敗したツール結果の個別証拠には、同じ呼び出し識別子を持つツール呼び出しの入力と記録位置を加え、対象のコマンドを特定する照会を不要にする。blockまたはwarnのhook通知は、hook識別子、発動元、タグを発生源として、同じ発生源の通知変種を発生件数降順の上位5種へ限定する。各変種は安定順の代表locatorを1件保持し、発生総数と省略件数を機械可読フィールドへ残す。発生源ごとに最低1候補を残し、振り返りでは発火した全発生源へ規範、判定条件、フック撤去のいずれかの改善提案を対応付ける。全locatorを素材へ載せる形は、同じ原因の反復ごとに本文量と分析量を増やすため採用しない。
 
-Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す。Codexはメインの`CODEX_THREAD_ID`を渡し、準備スクリプトは抽出器へthread IDを渡して当該threadのrolloutの解決を委ねる。保存先の解決順と完全suffix一致による一意性の検証は抽出器が単独で持ち、呼び出し側は検索式を組み立てない。親transcriptと委譲先記録で解決規則を別々に実装する案は、環境変数が未設定の場合の既定値と一意性の検証が二重に必要となり、片方だけが欠ける状態を生むため採用しない。UserPromptSubmitの追加コンテキスト、振り返り境界、開始マーカー及び起動済み状態は用いない。
+Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す。Codexはメインの`CODEX_THREAD_ID`を渡し、準備スクリプトは抽出器へthread IDを渡して渡されたthread IDに対応するrolloutの解決を委ねる。保存先の解決順と完全suffix一致による一意性の検証は抽出器が単独で持ち、呼び出し側は検索式を組み立てない。親transcriptと委譲先記録で解決規則を別々に実装する案は、環境変数が未設定の場合の既定値と一意性の検証が二重に必要となり、片方だけが欠ける状態を生むため採用しない。UserPromptSubmitの追加コンテキスト、振り返り境界、開始マーカーおよび起動済み状態は用いない。
 
 委譲先の記録の所在は証拠抽出器が解決する。抽出器はメインの記録から、サブエージェント記録のディレクトリと委譲先セッションの識別子を導出し、導出した記録に対しても同じ導出を繰り返すことで、入れ子の委譲先まで到達する。全ての照会モードは1回の実行で全記録へ適用する。メインが委譲先の記録の絶対パスを組み立てて渡す案は、記録の所在が実行系ごとに分かれるうえ、委譲先が増えるほどメインの手順と起動回数が伸びるため採用しない。抽出器が所在を確定できなかった記録を`unresolved-record`として報告し、委譲の起動を検出しながら結果から識別子を取得できなかった呼び出しを`unresolved-delegation`として報告する。振り返りの統計と候補は、双方を未確認範囲として示す。結果の解釈に失敗した呼び出しを報告せずに破棄する形は、検出できなかった委譲先を存在しないものとして扱うため採用しない。
 
 抽出器は通常表示と警告、集計、hook通知の走査を1回の記録読み込みでまとめて行う集約実行を持つ。集約実行は走査ごとの全量に加えて`candidate-evidence.jsonl`を指定ディレクトリへ書き、標準出力へは走査ごとの要約だけを返す。同ファイルは候補IDと分析グループのヒント、全locator、各位置の有界な本文を持つ。準備スクリプトは候補別証拠から候補一覧の要約と対象のツール呼び出しを組み立てる。`--detail`、`--grep`と候補別証拠の各イベントは元記録行の時刻を持ち、区間境界の時刻を記録の直接読取なしで確定できる。走査ごとに実行を分ける形と、全量ファイルの読取を既定にする形は採用しない。処理する行数とバイト数、判断回数が候補数へ比例するためである。
 
-委譲先の識別子は実行系をまたいで一意であるため、記録の所在は識別子だけで確定し、呼び出しに現れる実行系の指定は探索に使わない。探索先はClaude Code・Codex・Antigravityの3系統とし、探索処理は`atk agents logs`と共有して`agents_server`の実行系集合と一致するかをテストで確かめる。抽出器が探索を独自に持つ形は、実行系の追加時に抽出器だけが古い探索先のまま残り、その実行系の委譲先を未確認範囲にし続けたため採用しない。共有の探索処理は同じ実行系で一致した全ての記録を返し、複数一致の扱いは呼び出し側が決める。`atk agents logs`は先頭を表示し、抽出器はCodexの複数一致を未解決として扱う。別の委譲先の記録を候補へ混入させないためである。実行系と識別子の組を必須キーとする案は、実行系の指定を伴わない継続・停止の呼び出しで所在を確定できず、解決済みの記録を未確認範囲として重複報告するため採用しない。Codexの記録では委譲の呼び出しが、JavaScript本文を評価してツールを呼び出すexecツールの入力へ埋め込まれるため、識別子の抽出母集団を当該呼び出しに対応する実行結果へ限定し、無関係な実行結果に現れる同形の構造化データを委譲先として採用しない。
+委譲先の識別子は実行系をまたいで一意であるため、記録の所在は識別子だけで確定し、呼び出しに現れる実行系の指定は探索に使わない。探索先はClaude Code・Codex・Antigravityの3系統とし、探索処理は`atk agents logs`と共有して`agents_server`の実行系集合と一致するかをテストで確かめる。抽出器が探索を独自に持つ形は、実行系の追加時に抽出器だけが古い探索先のまま残り、その実行系の委譲先を未確認範囲にし続けたため採用しない。共有の探索処理は同じ実行系で一致した全ての記録を返し、複数一致の扱いは呼び出し側が決める。`atk agents logs`は先頭を表示し、抽出器はCodexの複数一致を未解決として扱う。別の委譲先の記録を候補へ混入させないためである。実行系と識別子の組を必須キーとする案は、実行系の指定を伴わない継続・停止の呼び出しで所在を確定できず、解決済みの記録を未確認範囲として重複報告するため採用しない。Codexの記録では委譲の呼び出しが、JavaScript本文を評価してツールを呼び出すexecツールの入力へ埋め込まれるため、識別子の抽出母集団を委譲の呼び出しに対応する実行結果へ限定し、無関係な実行結果に現れる同形の構造化データを委譲先として採用しない。
 
-`agent-toolkit:session-review`は起動元である当該セッション自身を対象とし、`agent-toolkit:completion-report`が全てのセッションの終了時に起動する。抽出と分析はセッション内で行い、対策の実装だけを通常AWI経由で後続の処理へ渡す。抽出まで次のセッションへ移す形は、対象の探索と、実行系ごとに異なる記録の取得手段を恒常的に抱えるため採用しない。
+`agent-toolkit:session-review`は起動したセッション自身を対象とし、`agent-toolkit:completion-report`が全てのセッションの終了時に起動する。抽出と分析はセッション内で行い、対策の実装だけを通常AWI経由で後続の処理へ渡す。抽出まで次のセッションへ移す形は、対象の探索と、実行系ごとに異なる記録の取得手段を恒常的に抱えるため採用しない。
 
 振り返りが投入したAWIは`atk wi process-loop`が次のセッションを起動する着手可能な項目になり、`agent-toolkit:process-wi`は着手可能な他の項目の件数によらずそのAWIを次のセッションで処理する（2026年9月27日、ユーザー指示）。振り返りは公開後の`agent-toolkit:completion-report`で行う。2026年9月26日のユーザー報告を受けて、着手可能な他の項目が0件の処理回に限り振り返りを公開の前へ移し、投入されたAWIを同じセッションの是正レーンで処理する分岐を設けたが、この指示で撤回した。同じセッションで処理する案は、そのセッションで改訂した規範を読み込み直さないまま古い規範で後続の処理が進み、1セッションの所要時間も振り返りの結果に応じて延びるため採用しない。分岐の目的は、振り返りのAWIだけを処理するセッションが終端の振り返りで新しいAWIを投入し、常駐処理が待機へ入らない事象の回避だった。この事象は振り返りで分析せず次のセッションへ回していた方式の頃の無限ループであり、振り返りが分析して問題を報告する現行方式では次のセッションへ続けてよいとユーザーが判断した。process-loopが振り返りのAWIだけではセッションを起動しない案は、対策の完了を次の通常の項目まで遅らせ、ユーザーが示した「対策完了が遅れすぎる」懸念に反するため採用しない。
 
-メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。同スキルは振り返り前の作業結果を`work-complete`段階、振り返り結果を`review-result`段階として別々にチェックする。作業完了報告はチェック直後に出力して同じ応答で振り返りを起動し、振り返り結果報告は振り返りの完了後に、候補件数の種別別内訳と所要時間、確定した問題ごとの対策と投入したAWI、対策を見送った問題とその理由を載せて出力する。2026年9月25日のユーザー指示により、元作業の完了通知を振り返りの待機より先に置く順序を採用した。`review-result`段階は`success`、`not-run`又は`failed`の状態を必須入力とし、成功時は要約行と2つの固定見出し（確定した問題と対策、対策を見送った問題）、対策の各行が投入したAWIのファイル名を持つこと、未実施時と失敗時は理由を固定見出しで持つかをチェックする。同スキルは常に`agent-toolkit:session-review`を起動する。工程番号は各工程の入力が揃う順序を示し、振り返りの成果へ依存しない必須是正レーンは振り返りの稼働中も開始する。個別スキルは共通形式を持たない。
+メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。同スキルは振り返り前の作業結果を`work-complete`段階、振り返り結果を`review-result`段階として別々にチェックする。作業完了報告はチェック直後に出力して同じ応答で振り返りを起動し、振り返り結果報告は振り返りの完了後に、候補件数の種別別内訳と所要時間、確定した問題ごとの対策と投入したAWI、対策を見送った問題とその理由を載せて出力する。2026年9月25日のユーザー指示により、元作業の完了通知を振り返りの待機より先に置く順序を採用した。`review-result`段階は`success`、`not-run`または`failed`の状態を必須入力とし、成功時は要約行と2つの固定見出し（確定した問題と対策、対策を見送った問題）、対策の各行が投入したAWIのファイル名を持つこと、未実施時と失敗時は理由を固定見出しで持つかをチェックする。同スキルは常に`agent-toolkit:session-review`を起動する。工程番号は各工程の入力が揃う順序を示し、振り返りの成果へ依存しない必須是正レーンは振り返りの稼働中も開始する。個別スキルは共通形式を持たない。
 
 工程別モデル設定は特定のagent名ではなく、委譲する工程に適用する。
 委譲主体は各起動の直前に設定を解決し、実行系に対応する起動ツールまで同じ判断として確定する。
 工程別設定の対象外では、専用定義、Codex、汎用Agentの共通優先順位を適用する。
-指定engineを利用できない場合の代替は、当該工程の設定を解決して委譲を起動した主体が判断する。
-当該主体がサブエージェントとして起動されているかは問わない。
+指定engineを利用できない場合の代替は、委譲する工程の設定を解決して起動した主体が判断する。
+委譲を起動した主体がサブエージェントかどうかは問わない。
 対象はモデル実行環境の可用性に起因すると観測できる失敗に限り、委譲した作業自体の失敗は含めない。
 代替はセッション内の起動時指定に限り、設定値を書き換えない。
-起動を試みずに候補を利用不能とできるのは、当該候補のengineの実行機能自体を呼び出せない場合に限り、
+起動を試みずに候補を利用不能とできるのは、選んだ候補のengineの実行機能自体を呼び出せない場合に限り、
 残る候補が尽きた場合は`needs_escalation`または未完了として返す。
-委譲先が自身の判断でengine若しくはモデルを切り替える禁止は維持する。
+委譲先が自身の判断でengineもしくはモデルを切り替える禁止は維持する。
 
 この境界により、計画単位の起動・統合費用を抑えながら、調査・実装・公開判断の混同を防ぐ。
 単一主体へ全工程を集約する案は、独立した検証と公開認可の境界を失うため採用しない。
@@ -976,19 +977,19 @@ Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す�
 複数件表示の区切りや末尾のUWI一覧を素材の引用範囲へ含めず、警告・エラー後の再取得は単数形を使う。
 起動文へ本文を複製する案は、レーン担当とレビュー担当が同じ保存項目を独立に取得できないため採用しない。
 専用の原文ファイルを共有する案は、キューCLIから同じ保存本文を取得できる一方で、作成・検収・保持・回収が増えるため採用しない。
-採否判定後のキュー原文をスナップショット又はハッシュで固定し、変更時に遮断する案も採用しない。
+採否判定後のキュー原文をスナップショットまたはハッシュで固定し、変更時に遮断する案も採用しない。
 原文変化は実用上の対象外であり、追加の恒常状態と失敗時の分岐を設ける費用が目的に比例しないためである。
 
 ## 工程名の体系
 
 レビューと自動チェックの工程名は、対象と適用する契約の組み合わせで命名する。
 レビュー工程は実装後の実行レビューに一本化し、`track`は`exec-review`とする。
-実行レビューは、目的、認可、公開契約及び過剰実装を`要件・外部仕様`の水準で評価する。
+実行レビューは、目的、認可、公開契約および過剰実装を`要件・外部仕様`の水準で評価する。
 
 レビュー以外の自動チェックは、計画構造の自動チェック（`check_plan_file.py`の実行）と、
 レーン担当が起草後に行う計画自己監査とする。
 
-役割と、当該役割の手順を定める基準文書は次のとおりとする。責務の説明は基準側に置き、本書へ複写しない。
+役割と、それぞれの手順を定める基準文書は次のとおりとする。責務の説明は基準側に置き、本書へ複写しない。
 
 | 役割 | 基準文書 |
 | --- | --- |
@@ -1013,14 +1014,14 @@ Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す�
 | 保存済み表の`implementation-review`・`plan-conformance`・`independent` | 既存表の読み取り互換。新規レビューでは生成せず、`implementation-review`は読込時に`exec-review`へ正規化する |
 
 実行レビューを単独で記載する場合は、`要件・外部仕様`と照らし合わせて成果物を評価することを含める。
-保存済み表の旧`track`は履歴の読み取りにだけ用い、新しい指摘の登録、修正対象の指定及びチェックポイントの集計には用いない。
+保存済み表の旧`track`は履歴の読み取りにだけ用い、新しい指摘の登録、修正対象の指定およびチェックポイントの集計には用いない。
 
 新しい工程・サブエージェントは本分類へ収め、名称に対象と適用契約を含める。
 
 ## 計画と実行レビュー
 
 計画ファイルは、要求単位の欠落を防ぎ、利用者要求、確定した設計判断、保持対象と検証可能な完了条件を実装とレビューへ渡す内部資料とする。人間による計画自体の承認は求めない。
-単一レーン処理が複数の対象worktreeを扱う場合も、計画と実行レビューは対象worktreeごとの部分集合へ分ける。同じ対象worktreeの計画対象と直接実装対象は1件の実行レビューへまとめ、異なる対象worktreeの項目を混在させない。各レビューの`cwd`、開始時点、レビュー表、基準は同じ単一リポジトリへ属する。処理回全体を1件へ集約する案は、計画とレビューが前提とする単一Gitルート及び単一HEADを表現できないため採用しない。
+単一レーン処理が複数の対象worktreeを扱う場合も、計画と実行レビューは対象worktreeごとの部分集合へ分ける。同じ対象worktreeの計画対象と直接実装対象は1件の実行レビューへまとめ、異なる対象worktreeの項目を混在させない。各レビューの`cwd`、開始時点、レビュー表、基準は同じ単一リポジトリへ属する。処理回全体を1件へ集約する案は、計画とレビューが前提とする単一Gitルートおよび単一HEADを表現できないため採用しない。
 レーン担当は計画構造の自動チェックと自己監査を終えた後、そのまま実装と変更範囲の検証へ進む。
 実装後は実行レビュー担当が最終差分を計画の`要件・外部仕様`と比べ、目的、認可、公開契約と過剰実装を評価する。
 レビュー担当とメインが複数WIの本文を一括取得するときは、結果をセッション領域へ保存し、要求した全WIの見出しを確かめてから読む。実行ツールの戻り値が切り詰められると後半のWI本文が欠け、逐語要求と完成条件の評価から漏れるためである。
@@ -1028,20 +1029,20 @@ Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す�
 原因commitに対応する計画契約がないCI修正では、原因分析結果、修正認可根拠、対象の検証結果、変更目的、対象と公開契約を起動文へ直接記載したCI記録を実装契約とする。
 計画構造の自動チェックは他のチェックと同じシェル呼び出しへ連結せず、直接返された終了コード0だけを実装開始条件にする。
 
-メインは担当の起動、同一threadの継続及び工程遷移を担い、レビュー担当とレビューイーの完了報告を再検収しない。
-レビュー担当はレビュー指摘管理表へ指摘レベル付きの指摘を記録し、指摘件数と要件仕様件数を返す。基準文書の読取で切り詰めの通知を受領した場合だけ、当該事実を示す1行を同じ返却へ加える。レビューイーは詳細を成果物、計画、表へ記録して工程完了だけを返す。
-各ラウンドの完了報告は、ラウンド番号、指摘件数並びに要件仕様件数を持つ。
+メインは担当の起動、同一threadの継続および工程遷移を担い、レビュー担当とレビューイーの完了報告を再検収しない。
+レビュー担当はレビュー指摘管理表へ指摘レベル付きの指摘を記録し、指摘件数と要件仕様件数を返す。基準文書の読取で切り詰めの通知を受領した場合だけ、通知を受けた事実を示す1行を同じ返却へ加える。レビューイーは詳細を成果物、計画、表へ記録して工程完了だけを返す。
+各ラウンドの完了報告は、ラウンド番号、指摘件数ならびに要件仕様件数を持つ。
 要件仕様件数が1件以上のラウンドと第2ラウンド以降のラウンドでは、メインが表を読んで介入する。
 それ以外のラウンドでは、メインはレビュー指摘管理表を読まず、受領した指摘件数と要件仕様件数だけで次の指示を確定する。
 採用案そのものを選び直せる主体はメインだけであり、要件と仕様に関わる指摘をレーン内で局所修正すると反復が止まらないためである。
-レビュー収束後、メインはレーンへマージを許可する。許可後のrebase、競合記録、必要な再レビュー、ffマージ、対象項目の`adopt`ならびに所有資源回収は最後のレーン担当が完了する。上流要求と対象リポジトリ側の要求が混在する項目は`adopt`せず、所有資源を回収して固定の完了報告を返した後にメインが依存を更新して`inbox`へ戻す。
-マージ許可は当該レーンが`統合完了`を返すまで有効とし、競合解消と再レビューを経た再収束では許可を再発行しない。収束ごとに許可を失効させると、許可の再発行と統合完了が交差して、完了済みのレーンへ同じ統合指示が届くためである。
+レビュー収束後、メインはレーンへマージを許可する。許可後のrebase、競合記録、必要な再レビュー、ffマージ、対象項目の`adopt`と所有資源の回収は最後のレーン担当が完了する。上流要求と対象リポジトリ側の要求が混在する項目は`adopt`せず、所有資源を回収して固定の完了報告を返した後にメインが依存を更新して`inbox`へ戻す。
+マージ許可は対象レーンが`統合完了`を返すまで有効とし、競合解消と再レビューを経た再収束では許可を再発行しない。収束ごとに許可を失効させると、許可の再発行と統合完了が交差して、完了済みのレーンへ同じ統合指示が届くためである。
 実行レビュー担当へ渡す開始時点の7文字以上の一意な短縮OIDは、渡す直前に対象worktreeで解決できることを実際に確認してから渡す。範囲起点の誤りはレビュー対象範囲の取り違えと担当側の実行失敗を生むため、記憶と転記で識別子を組み立てない。
 
 外部可視の変更を伴うことを担当AWIの本文から起草前に判定できる場合は、メインが承認を取得してからレーン担当を起動し、承認した操作、対象、影響範囲と承認の出所を起動文へ渡す。
-承認の回答を得られない場合はUWIを登録して依存を追加し、承認を得るまで当該レーン担当を起動しない。
-レーン担当は受領した承認範囲を計画の`## 変更履歴`へ記録し、他の節は当該記録を参照する。
-起草前に判定できなかった外部可視の変更はレーン担当が差し戻す。メインは承認を取得して同じthreadへ返すか、UWIを登録して当該変更を保留とした計画の確定を指示する。
+承認の回答を得られない場合はUWIを登録して依存を追加し、承認を得るまで承認を要するレーン担当を起動しない。
+レーン担当は受領した承認範囲を計画の`## 変更履歴`へ記録し、他の節は変更履歴の承認範囲を参照する。
+起草前に判定できなかった外部可視の変更はレーン担当が差し戻す。メインは承認を取得して同じthreadへ返すか、UWIを登録して承認を要する変更を保留とした計画の確定を指示する。
 
 却下した代替案も同じ節へ記録する。
 計画構造の自動チェックの終了コードを保存する新しいwrapperは、既存の独立コマンドと直接返却値の検収で要件を満たし、終了状態の保持と別の失敗要因を増やすため採用しない。
@@ -1050,9 +1051,9 @@ Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す�
 
 レーン担当は要求と調査根拠を知り、実装者が再現できる判断を計画へ残す。
 メインは全実装単位と最終検証の完了後、初回実行レビューの起動直前に、計画外の明示入力からだけ`review_contract`を生成する。計画だけから全条項が定まる場合は生成しない。
-各条項は独立して成否を判定できる粒度とし、計画外の契約本文又は一意な参照先と出典を起動プロンプトへ含める。専用成果物と計画ファイルの固定H2は設けない。
+各条項は独立して成否を判定できる粒度とし、計画外の契約本文または一意な参照先と出典を起動プロンプトへ含める。専用成果物と計画ファイルの固定H2は設けない。
 実行レビュー担当は計画の既存節と開始時点の実体から条項を生成し、計画外の`review_contract`を受領した場合はその条項も合わせて差分と比べる。
-第2段階では計画の採用案だけでなく、正規化した目的、公開契約、境界条件及び安全性を評価する。
+第2段階では計画の採用案だけでなく、正規化した目的、公開契約、境界条件および安全性を評価する。
 計画情報を渡さない別コンテキストでの検証は廃止するため、計画情報を持つ評価と計画から独立した観点を同一担当が順番に扱う副作用として、別コンテキストによる独立性は保証しない。
 実行レビュー担当は二段階の候補をレビュー指摘管理表へ統合し、成果物を変更しない。
 修正担当は同表の指摘を採否判断し、採用した指摘へ対応して、詳細な採否と対応結果を表へ記録する。
@@ -1060,7 +1061,7 @@ Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す�
 初回レビューの指摘管理表は、すべての起動手順が通る`agent-toolkit/share/exec-review.parent.md`が起動直前に初期化する。表が既に存在する場合は再利用し、直接起動側へ初期化責務を分散させない。
 共通のラウンド受領、モデル解決と収束判定は`agent-toolkit/share/review-loop-coordination.md`へ集約する。
 実行レビューは計画ディレクトリの`<計画stem>.exec-review.tsv`へ`exec-review`を付ける。
-レーンごとにレビュー表用の管理対象一時領域を作成する運用は行わない。レビュー表が計画ディレクトリへ移った後は当該領域に用途が残らず、レーンが作成・受け渡し・回収する資源を1つ削減するため撤去した。
+レーンごとにレビュー表用の管理対象一時領域を作成する運用は行わない。レビュー表が計画ディレクトリへ移った後はレビュー表用の一時領域に用途が残らず、レーンが作成・受け渡し・回収する資源を1つ削減するため撤去した。
 実行レビュー担当は同じ`track`の表をラウンドごとに引き継ぎ、過去ラウンドの行を変更せず今回の候補だけを追加する。
 レビューイーは修正対象として渡された`track`集合の行だけを扱う。
 計画ディレクトリのレビュー表では正規のファイル名と、`atk review-table`が扱う表の構造・`track`・行数を実際に確認する。
@@ -1068,10 +1069,10 @@ Claude Codeは現在のtranscript絶対パスを準備スクリプトへ渡す�
 修正後の累積差分の比較は重複確認として維持する。`exec-review`以外の新規trackは生成しない。
 
 通常モードのレビュー修正では、指摘と実装単位commitの対応が確定し、各中間commitの公開契約と変更範囲の検証を維持できる場合だけ、
-実装担当へ履歴統合を認可する。対象OIDの不一致、対象commitのpush済み、複数単位へ不可分にまたがる修正又は各中間commitの公開契約を維持できない修正では、履歴書換えを開始せず通常commitで対応する。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
+実装担当へ履歴統合を認可する。対象OIDの不一致、対象commitのpush済み、複数単位へ不可分にまたがる修正または各中間commitの公開契約を維持できない修正では、履歴書換えを開始せず通常commitで対応する。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
 `needs_escalation`は指摘の採否・認可範囲の判断が必要な場合に加え、履歴書換え開始後の技術的失敗で返す。技術的失敗へ添える観測項目は同節に従う。
 過去単位を含む場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを保持する。
-実装担当は各fixup作成前、autosquash直前及びamend直前の各phaseで`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定を再実行する。
+実装担当は各fixup作成前、autosquash直前およびamend直前の各phaseで`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定を再実行する。
 同判定は`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`を使う。
 未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は同判定へ一本化し、remote広告refの直積証跡・replace ref・graft・
 shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
@@ -1079,7 +1080,7 @@ shallow複製への追加防御は、対応する観測事象を得るまで導�
 fixupの作成条件は、対象コミット件名が範囲内で一意であり、範囲にmergeを含まないこととする。
 この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する。
 各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）の完全一致を`git log -1 --format=%s`で確認する。
-初回実装担当と今回routeの実効`engine`、`model`及び`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
+初回実装担当と今回routeの実効`engine`、`model`および`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応または再レビューを返す場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 autosquash成功後は実装担当が`git rev-parse --short=7 HEAD`で取得した書換え後HEADの一意な短縮OIDへautosquash成功後の2回目のpush済み判定対象を置換する。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。
 実装担当は履歴書換え前後の7文字以上の一意な短縮OID対応とphaseごとの`rewrite_guard`反復証跡をレビュー表へ保存し、統合前に現行Git実体と比べる。
@@ -1087,23 +1088,23 @@ autosquash成功後は実装担当が`git rev-parse --short=7 HEAD`で取得し�
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`が定め、本書へ転記しない。
 
 実行環境が委譲元の起動文を`user` roleで配送しても、そのtransport上のroleは人間の発話者を証明しない。
-直接対話で受領した実際の利用者メッセージと、委譲元が人間由来として出所と引用範囲を明示した素材だけを利用者指示及び合意へ分類する。
-委譲元は起動命令と人間由来の素材を区別する。当該区別を成立させる基準は受信側にある。
+直接対話で受領した実際の利用者メッセージと、委譲元が人間由来として出所と引用範囲を明示した素材だけを利用者指示および合意へ分類する。
+委譲元は起動命令と人間由来の素材を区別する。起動命令と人間由来の素材を区別する基準は受信側にある。
 配送本文の出所判定は`agent-toolkit/rules/01-agent.md`の「方針が衝突する場合の優先順位」節が担う。
 計画への由来記録は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の`由来`区分が担う。
 実行レビュー担当への受け渡しは`agent-toolkit/share/exec-review.parent.md`の「`review_contract`の生成」節が担う。
-起動命令を利用者合意へ昇格させた差分は、`agent-toolkit/share/exec-review.subagent.md`の種類2（認可された対象、範囲又は外部可視の結果からの逸脱）と種類7（自動チェックでは検出できない執筆規範又はプロジェクト規範への違反）で指摘する。独立した指摘種類は新設しない。
+起動命令を利用者合意へ昇格させた差分は、`agent-toolkit/share/exec-review.subagent.md`の種類2（認可された対象、範囲または外部可視の結果からの逸脱）と種類7（自動チェックでは検出できない執筆規範またはプロジェクト規範への違反）で指摘する。独立した指摘種類は新設しない。
 起動文全体の転記は委譲元の命令を利用者合意へ昇格させるため採用しない。
 
-初回レビューの起動後に受領した人間由来の入力は、素材の種別、逐語文、出所、引用範囲及び合意と参考素材の別を
+初回レビューの起動後に受領した人間由来の入力は、素材の種別、逐語文、出所、引用範囲および合意と参考素材の別を
 レビュー担当へ渡してから再レビューを指示する。
 キューにない素材の逐語本文・回答全文も計画外の明示入力として追送し、初回から同じ値を再レビューへ保持する。
 同じ担当へ同じタスクを返し実効3値が一致する継続接続では同一threadへ追送し、不一致時の新規起動では初回入力とともに渡す。
-レビュー担当は初回起動時点の入力しか保持しないため、追送しない発話を根拠とする実施又は除外は計画へ書かない。
+レビュー担当は初回起動時点の入力しか保持しないため、追送しない発話を根拠とする実施または除外は計画へ書かない。
 出所と引用範囲を失った要約だけを伝える案は、レビュー担当が利用者合意の範囲を確定できないため採用しない。
 
 計画どおりであることと利用者成果として正しいことは同じ判定ではないため、実行レビュー担当は計画との比較の後に
-計画から生成した条項と、受領した場合の`review_contract`を用いて成果物評価をする。レーン担当又は実装担当だけの自己レビューは、採用案の前提を共有して
+計画から生成した条項と、受領した場合の`review_contract`を用いて成果物評価をする。レーン担当または実装担当だけの自己レビューは、採用案の前提を共有して
 見逃しを独立に検出できないため採用しない。計画情報を渡さない別コンテキストへ成果物評価を分ける案は、1ラウンドの
 起動を2回にしてコストを増やすため採用せず、独立した評価観点を同じ担当の第2段階として維持する。
 
@@ -1113,7 +1114,7 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 
 配布物の版数更新と全体検証はメインが統合完了後（全レーンのff前進後）へ集約し、並列実装で決定論的に生じる競合と
 全体検証の反復を除く。版数manifestは全レーンで同一のファイルであり、レーンごとに更新すれば必ず競合するためである。
-レーンの計画は版数更新の種別、選定根拠及び認可根拠だけを保持し、メインが全レーンから単一の種別を確定して
+レーンの計画は版数更新の種別、選定根拠および認可根拠だけを保持し、メインが全レーンから単一の種別を確定して
 適用と検証を担う。
 統合の実体は完了レーンから順に自レーンworktree内で最新ベースへrebase・競合解消をし、メインが1レーンずつ直列に許可するffマージである。統合担当は変更したエージェント向け規範文書のpath集合と後続判断へ影響する確定本文を返し、メインは統合差分との集合一致と統合後本文との逐語一致を確認してから後続判断へ適用する。
 終了時一括のcherry-pickと専用の統合worktreeは設けず、メインがffマージの進行に応じてベース先端を把握する。
@@ -1132,7 +1133,7 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 
 計画ファイルの成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`だけで定め、他の文書へ再掲しない。
 レーン担当は初版の起草前に同書を全文読み、計画ファイルへの要件の追加先を同書へ一元化する。
-ユーザーが明示した対象、範囲又は外部可視結果との差は、対応する確認済み回答でだけ確定でき、回答がない計画から実装へ進まない。
+ユーザーが明示した対象、範囲または外部可視結果との差は、対応する確認済み回答でだけ確定でき、回答がない計画から実装へ進まない。
 
 明示要件との差を管理する確認状態の新しい永続表は、既存の確認済み回答とレビュー完了時の判定で要件を満たし、状態の二重管理と別の失敗要因を増やすため採用しない。
 
@@ -1140,14 +1141,14 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 計画ファイル基準は作成された計画が満たす成果物要件だけを持つ。
 `agent-toolkit:plan-mode`のSKILL.mdは調査から起動形態ごとの終端までの工程制御だけを持ち、成果物契約は作成基準を参照する。
 作成基準は現行の一ファイル書式を扱う。
-レビュー表の操作書式は`atk review-table --help`及び使用するサブコマンドの`--help`を公開の定義とし、
+レビュー表の操作書式は`atk review-table --help`および使用するサブコマンドの`--help`を公開の定義とし、
 レーン担当は自身が解決したplugin rootの計画ファイル基準と`check_plan_file.py`を用いる。
 起動主体は渡す資源の絶対パスを工程の開始時に1回解決し、同じ工程では同じ値を使う。
-解決した資源が実在しなくなった場合は、担当が差し戻し、起動主体が当該工程を終端する。plugin導入版の更新は稼働中のセッションへ反映されず、同一セッション内で現行の版を取得する手段がないためである。
+解決した資源が実在しなくなった場合は、担当が差し戻し、起動主体が資源を利用する工程を終端する。plugin導入版の更新は稼働中のセッションへ反映されず、同一セッション内で現行の版を取得する手段がないためである。
 保存TSVの構造は既存の実装・テストの基準を維持するが、レビュー担当が私有実装の探索で操作書式や実行対象を補わない境界を設ける。
 新規計画の固定H2の名称と順序は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定め、本書へ再掲しない。
 
-計画の変更履歴、進捗ログ及びレビュー指摘管理表は、人間の変更確認、中断再開及び個別指摘管理という異なる利用シナリオを持つ。件数又はラウンド数で相互比較しない。
+計画の変更履歴、進捗ログおよびレビュー指摘管理表は、人間の変更確認、中断再開および個別指摘管理という異なる利用シナリオを持つ。件数またはラウンド数で相互比較しない。
 
 作成基準を独立スキルとして新設する案は、計画ファイルが`agent-toolkit:plan-mode`経由でのみ作成されて自動発火の利益が無く、
 スキル一覧のdescriptionが恒常的にコンテキストを消費するため採用しない。
@@ -1163,22 +1164,22 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 ## レビュー担当とレビューイーの知識境界
 
 レビュー実施側と指摘受領側は、実行主体の文脈混同を防ぐため、`agent-toolkit:review-standards`の役割別参照資料へ分離する。
-同スキルの`references/reviewer.md`はレビュー担当による欠陥の導出、証拠、通常運用で生じる実害及び解消方向を定める。
+同スキルの`references/reviewer.md`はレビュー担当による欠陥の導出、証拠、通常運用で生じる実害および解消方向を定める。
 レビュー表の公開操作は`atk review-table --help`に従う。8列TSVの構造は`agent-toolkit/agent_toolkit/_atk/review_table.py`と`agent-toolkit/agent_toolkit/_atk/review_table_test.py`が定める。
 同スキルの`references/reviewee.md`はレビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領した主体による修正要否の立証、安全な修正、自己点検と公開可能性の検証を定める。
 スキル本体は、両役割へ共通する作成規範の読込、役割別資料の読込条件、他方の役割の資料を適用しない規定、レビュー指摘管理表の共通操作だけを持つ。
-一致確認は`add`と`respond`が行い、記録した主体は終了コードが0であることをもって一致の成立とし、保存本文を再取得しない。
+一致確認は`add`と`respond`が行い、記録した主体は終了コード0を確認して一致が成立したと判断し、保存本文を再取得しない。
 非0で終了した場合だけ、`atk review-table show`の`--format=jsonl`が返すデコード済みの値で差異を特定する。
-各セルはJSON文字列として保存するため、`show`の既定出力を当該特定へ用いると符号化した表現と送信本文が一致しない。
+各セルはJSON文字列として保存するため、`show`の既定出力を差異の特定に用いると符号化した表現と送信本文が一致しない。
 保存本文そのものを出力しないのは、自由記述の本文が後続の固定項目名と同じ行を含む場合に本文の終端を判別できないためである。
 判定を各役割の資料へ委ねる案は、同じ判定を複数の主体が個別に実装するため採用しない。
 役割ごとに別スキルへ分ける案は、両役割が同じ場面で一方だけを起動するため、起動手順と常時ロードされる`description`を二重に持つだけとなり採用しない。
 
-再レビューは、前ラウンドの各指摘の違反契約、発生条件、根本原因及び要求した検収手段を確認してから開始する。レビューイーが指摘の前提の不成立、対象への適用条件の不一致や検収手段の到達不能を述べた場合、レビュー担当は当該前提を自ら裏付け直し、成立しなければ指摘を取り下げ、同じ根本原因を別の観点から再提出しない。裏付けの結果として前提が成立した場合だけ、観測を示して再指摘する。この分岐はレビュー担当が自身の前回の指摘を再評価する手順である。新しい応答状態・新しい遷移先・メインの追加介在を設けない。レビュー表の応答値へ保留を足す案は、`atk review-table`の公開スキーマを変更するうえ、前提が不成立の指摘は理由を記載した不採用で表現できるため採用しない。レビューイーの応答を契機にメインが計画・規範へ戻す案は、レビュー担当が対応結果を読む契約と重複し、誰がどの時点で何を確認して何をするかが不定になるため採用しない。
+再レビューは、前ラウンドの各指摘の違反契約、発生条件、根本原因および要求した検収手段を確認してから開始する。レビューイーが指摘の前提の不成立、対象への適用条件の不一致や検収手段の到達不能を述べた場合、レビュー担当は指摘の前提を自ら裏付け直し、成立しなければ指摘を取り下げ、同じ根本原因を別の観点から再提出しない。裏付けの結果として前提が成立した場合だけ、観測を示して再指摘する。この分岐はレビュー担当が自身の前回の指摘を再評価する手順である。新しい応答状態・新しい遷移先・メインの追加介在を設けない。レビュー表の応答値へ保留を足す案は、`atk review-table`の公開スキーマを変更するうえ、前提が不成立の指摘は理由を記載した不採用で表現できるため採用しない。レビューイーの応答を契機にメインが計画・規範へ戻す案は、レビュー担当が対応結果を読む契約と重複し、誰がどの時点で何を確認して何をするかが不定になるため採用しない。
 
-合否の判定に実機検証、完了条件、待機手順を用いる指摘は、当該検証を対象成果物の許可ツール、禁止事項、入力前提及び通常の状態遷移だけで実行できるかを先に判定する。到達不能と確定した要求は成果物の未達として扱わず、計画・規範の再設計へ返す。到達不能の結論には、探索した実行手段と、各手段が成立しないことを示す観測の列挙を要する。探索を課さずに到達不能を認める案は、成立する検収手段に誰も気付かないまま工程が止まるため採用しない。判定手順は`review-standards/references/judgment-details.md`「検収手段の到達可能性」へ置く。レビュー担当とレビューイーの双方が同じ役割中立の手順を参照する。同節は「論理整合性と既存の仕組みの再評価」を統合して置き換えたものであり、同じ場面へ適用する節を並置しない。
+合否の判定に実機検証、完了条件、待機手順を用いる指摘は、指摘が求める検証を対象成果物の許可ツール、禁止事項、入力前提および通常の状態遷移だけで実行できるかを先に判定する。到達不能と確定した要求は成果物の未達として扱わず、計画・規範の再設計へ返す。到達不能の結論には、探索した実行手段と、各手段が成立しないことを示す観測の列挙を要する。探索を課さずに到達不能を認める案は、成立する検収手段に誰も気付かないまま工程が止まるため採用しない。判定手順は`review-standards/references/judgment-details.md`「検収手段の到達可能性」へ置く。レビュー担当とレビューイーの双方が同じ役割中立の手順を参照する。同節は「論理整合性と既存の仕組みの再評価」を統合して置き換えたものであり、同じ場面へ適用する節を並置しない。
 
-第2ラウンド以降の調整は、レビュー指摘管理表の未解消行を違反契約及び発生条件で比較し、同じ2要素を持つ指摘の未解消と新たに成立した欠陥の順に判定して最初に該当した1つだけを指示する。前者では再設計・簡素化を指示する。後者は前回の是正が生じさせた別の欠陥と前回未走査だった直接影響範囲の欠陥であり、当該欠陥だけの是正を指示する。遷移の判定軸をレビュー担当の候補分類と同じ2要素へそろえ、いずれの分類にも対応しない遷移を残さない。根本原因の特定と記録はレビューイー側の職務とし、レビュー担当と第2ラウンド以降の調整はレビューイーが記録した根本原因を読む対象に限り、判定軸には用いない。指摘の前提や要求する検収手順の成否が再検証を経ても確定しない場合は、レビュー担当が指摘を確定できずレビューを完了しないため、当該ラウンドのcheckpointが返らない。この状態は既存の`needs_escalation`の受領手順で扱い、確定していない前提を解消してから回答し、解消できない場合はユーザー確認する。前提の未確定を第2ラウンドの候補分類へ置く案は、checkpointが返らない状態では到達しないため採用しない。ラウンド数だけを理由とする継続と自動収束は、後半ラウンドにも実害のある欠陥が現れる観測があるため採用しない。
+第2ラウンド以降の調整は、レビュー指摘管理表の未解消行を違反契約および発生条件で比較し、同じ2要素を持つ指摘の未解消と新たに成立した欠陥の順に判定して最初に該当した1つだけを指示する。前者では再設計・簡素化を指示する。後者は前回の是正が生じさせた別の欠陥と前回未走査だった直接影響範囲の欠陥であり、新たに成立した欠陥だけの是正を指示する。遷移の判定軸をレビュー担当の候補分類と同じ2要素へそろえ、いずれの分類にも対応しない遷移を残さない。根本原因の特定と記録はレビューイー側の職務とし、レビュー担当と第2ラウンド以降の調整はレビューイーが記録した根本原因を読む対象に限り、判定軸には用いない。指摘の前提や要求する検収手順の成否が再検証を経ても確定しない場合は、レビュー担当が指摘を確定できずレビューを完了しないため、前提が未確定のラウンドではcheckpointが返らない。この状態は既存の`needs_escalation`の受領手順で扱い、確定していない前提を解消してから回答し、解消できない場合はユーザー確認する。前提の未確定を第2ラウンドの候補分類へ置く案は、checkpointが返らない状態では到達しないため採用しない。ラウンド数だけを理由とする継続と自動収束は、後半ラウンドにも実害のある欠陥が現れる観測があるため採用しない。
 
 レビュー担当は`review-standards/references/reviewee.md`を読まず、レビューイーは`review-standards/references/reviewer.md`を読まない。
 計画・設計の採用案や指摘・発見の妥当性を評価する場合だけ、両者は役割中立の共通判断手順である
@@ -1190,20 +1191,20 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 指摘修正向けの局所修正案を`agent-toolkit:review-standards`の`references/reviewee.md`で扱う。
 
 レビューイーは是正要求等を受領しても修正を前提とせず、通常運用での再現手順と影響を自ら実物で確かめて必要性を立証する。
-採否は何も変更しない案を含め、残置した場合の実害と認知・保守費用、修正・検証・再レビュー費用及び変更が増やす複雑性を同じライフサイクルで比較する。
+採否は何も変更しない案を含め、残置した場合の実害と認知・保守費用、修正・検証・再レビュー費用および変更が増やす複雑性を同じライフサイクルで比較する。
 実害がなく意味も変えない単独誤記のために独立した修正と再レビューを起こさず、同じ成果物に重大な修正があり再レビューする場合は、追加費用が小さい誤記も同時に是正する。
-利用者向け文書の誤記又は適用対象のスタイル違反は実害ありとして必ず是正し、単独誤記の修正省略及び低頻度リスクの費用比較から除外する。
-その他の実害があり得る是正要求等は、現行運用での発生条件・頻度、影響及び残余リスクを観測し、恒常的な複雑性と保守性低下が利得を上回る場合は採用しない。
+利用者向け文書の誤記または適用対象のスタイル違反は実害ありとして必ず是正し、単独誤記の修正省略および低頻度リスクの費用比較から除外する。
+その他の実害があり得る是正要求等は、現行運用での発生条件・頻度、影響および残余リスクを観測し、恒常的な複雑性と保守性低下が利得を上回る場合は採用しない。
 重大な実害、明示要件違反、公開契約違反とセキュリティ欠陥を費用だけを理由に残置しない。
 修正前に過去の指摘・採否・合意・設計理由・障害対策と既存の成功手順を確認し、修正後は変更全体の自己点検と該当する自動チェックを完了して、そのまま公開できる状態だけを完了とする。
 
 レビューイーは状態管理に関する指摘の操作単位対応を独立に検証する。
 
-利用者の是正又は実際の動作確認で前提が失効した場合は、その前提だけへ依存する指摘、修正方針及び追加機構を次回レビュー前に撤去し、前提に依存しない要求だけを再判定する。
+利用者の是正または実際の動作確認で前提が失効した場合は、その前提だけへ依存する指摘、修正方針および追加機構を次回レビュー前に撤去し、前提に依存しない要求だけを再判定する。
 
-レビュー修正でコーディングエージェント向け文書又は節の確定文面を全面差替えし、運用手順、参照資料、直接操作のいずれかを含む場合は、既存の接続再列挙を適用する。差替え前後の読込手順、直接操作の対象・入力・取得手順、実行時に渡す絶対パス及び契約テストを比べる。意味・動作・契約を変えない機械的修正は対象外とする。
+レビュー修正でコーディングエージェント向け文書または節の確定文面を全面差替えし、運用手順、参照資料、直接操作のいずれかを含む場合は、既存の接続再列挙を適用する。差替え前後の読込手順、直接操作の対象・入力・取得手順、実行時に渡す絶対パスおよび契約テストを比べる。意味・動作・契約を変えない機械的修正は対象外とする。
 
-確定済み計画に基づく実装工程では、レビューイーの修正権限は計画が確定した目的、方針、採否、対象範囲及び除外・保持の内側に限る。既存実装若しくは規範との不整合を理由に確定内容を覆す修正は、レビューイーが確定せず呼び出し元へ返し、ユーザー接点を持つ主体がユーザー確認で解消する。矛盾の判定は計画ファイル（メイン）が保持する由来と変更履歴を入力とし、新しい状態、表の列又は工程を設けない。実行レビュー担当は再レビューでも修正箇所を計画の確定内容と比べ、覆した箇所を指摘として登録する。
+確定済み計画に基づく実装工程では、レビューイーの修正権限は計画が確定した目的、方針、採否、対象範囲および除外・保持の内側に限る。既存実装もしくは規範との不整合を理由に確定内容を覆す修正は、レビューイーが確定せず呼び出し元へ返し、ユーザー接点を持つ主体がユーザー確認で解消する。矛盾の判定は計画ファイル（メイン）が保持する由来と変更履歴を入力とし、新しい状態、表の列または工程を設けない。実行レビュー担当は再レビューでも修正箇所を計画の確定内容と比べ、覆した箇所を指摘として登録する。
 
 レビューイー側だけへ規定する案は、覆した修正が検出されず差し戻しも生じないため採用しない。矛盾を自動チェックする案は、判定が本文の意味解釈を要し、判定対象を公開APIや実行結果から取得できないため採用しない。
 
@@ -1213,14 +1214,14 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 `judgment-details.md`をレビューイー側へ移す案は、レビュー担当から役割中立の判断手順へ到達できなくなるため採用しない。
 指摘修正向けの判定文を一般判断向けの原則だけで代替する案は、修正文脈固有の適用条件を保持できないため採用しない。
 
-著者側の判断指針のうち、成果物の消費主体に応じて配慮の水準を下げる規定には、レビュー担当側にも対応する判定条件を置く。消費主体が利用者とコーディングエージェントに限られるコマンドラインツールでは、観測済みの不具合、公開インターフェースの破壊及びデータの喪失を優先し、未観測の複合条件でだけ成立する競合を新しい機構で閉じる提案を指摘としない。著者向け規定の併用だけで十分であるとする案は、当該規定が優先する対象を列挙しておらず、レビュー担当が指摘の可否を判定できないため採用しない。
+著者側の判断指針のうち、成果物の消費主体に応じて配慮の水準を下げる規定には、レビュー担当側にも対応する判定条件を置く。消費主体が利用者とコーディングエージェントに限られるコマンドラインツールでは、観測済みの不具合、公開インターフェースの破壊およびデータの喪失を優先し、未観測の複合条件でだけ成立する競合を新しい機構で閉じる提案を指摘としない。著者向け規定の併用だけで十分であるとする案は、著者向け規定が優先する対象を列挙しておらず、レビュー担当が指摘の可否を判定できないため採用しない。
 
-レビューイーは、前回の是正と同じ違反契約又は同じ根本原因を示す指摘を再び受領した場合に、`agent-toolkit:bugfix`の原因分析の要否判定へ接続し、変更した契約とその判断を直接消費する箇所で影響範囲の母集団を定める。全てのレビュー修正へ恒常的な全体走査を課す案は、反復しない大多数の修正へ同じ費用を課すため採用しない。同じ論点の指摘のラウンド数を数えて判定を切り替える案は、レビュー担当へ過去ラウンドの計数という新しい状態の追跡を課すため採用しない。
+レビューイーは、前回の是正と同じ違反契約または同じ根本原因を示す指摘を再び受領した場合に、`agent-toolkit:bugfix`の原因分析の要否判定へ接続し、変更した契約とその判断を直接消費する箇所で影響範囲の母集団を定める。全てのレビュー修正へ恒常的な全体走査を課す案は、反復しない大多数の修正へ同じ費用を課すため採用しない。同じ論点の指摘のラウンド数を数えて判定を切り替える案は、レビュー担当へ過去ラウンドの計数という新しい状態の追跡を課すため採用しない。
 
 ## フックの責務境界
 
 フックはツール呼び出しやプロンプト送信など、実行環境が通知するイベントを行動規範へ接続する補助機構とする。
-成果物の直接検証、必要なスキルの起動記録、危険な操作の抑止及び終了前の未完了通知を、対応するイベントで実行する。
+成果物の直接検証、必要なスキルの起動記録、危険な操作の抑止および終了前の未完了通知を、対応するイベントで実行する。
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
 ### warn・block判定の全件確認（2026年9月26日）
@@ -1228,7 +1229,7 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 hookによるチェックは、通した場合に元へ戻せない結果を防ぐものだけを残す。
 残すのは不可逆な操作の防止、データ破損の防止、常駐運用の終端保証、規範の配送と権限の自動許可である。
 英語応答警告はこの基準の外側で利用者が残すと確定した。
-規範の想起、CLI形式の事前検出又は文体の検出を目的とするチェックは、コマンドの失敗や再編集で戻せる文面のような可逆な失敗を防ぐに留まる。こうしたチェックはhookに置かず、規範、レビュー及び`pyfltr`・CIの自動チェックで扱う。
+規範の想起、CLI形式の事前検出または文体の検出を目的とするチェックは、コマンドの失敗や再編集で戻せる文面のような可逆な失敗を防ぐに留まる。こうしたチェックはhookに置かず、規範、レビューおよび`pyfltr`・CIの自動チェックで扱う。
 hookの静的な解析はシェル構文、作業ディレクトリの遷移、ホストの通知挙動を完全には再現できない。そのため可逆な失敗を防ぐチェックは正当な操作を遮断・警告し、個別の是正を積み重ねる構造になる。
 秘匿ファイルの読取と編集はauto mode classifierと権限設定が担う（2026年9月26日、利用者指示）。
 
@@ -1239,7 +1240,7 @@ hookの静的な解析はシェル構文、作業ディレクトリの遷移、�
 2026年9月25日の一覧表は、実行時の入力を測れるという事実を存続の理由とし、Git履歴のチェックを復元手段を確かめずに「取り消し難」と分類していた。
 
 2026年9月26日の見直しで、同25日の一覧表79行のうち55行のチェックを撤去した。
-表に載っていなかったPreToolUseの7件のチェックも撤去した。対象はCo-Authored-Byの遮断、`git log`への`--decorate`の自動付与、前景ループ待機、`codex exec`の念押し、WebFetchの逐語要求、汎用Agentの選択及びSendMessageの宛先である。
+表に載っていなかったPreToolUseの7件のチェックも撤去した。対象はCo-Authored-Byの遮断、`git log`への`--decorate`の自動付与、前景ループ待機、`codex exec`の念押し、WebFetchの逐語要求、汎用Agentの選択およびSendMessageの宛先である。
 dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 個人用hookに残るのは、PowerShellの必須ディレクティブ欠落と配布物へのdotfiles固有名混入の警告である。
 各行のパスから`agent-toolkit/agent_toolkit/_hooks/`を省略し、行番号は改訂で変わるため関数名で通知位置を特定する。
@@ -1259,7 +1260,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `agents_server_session_advisor.py` `evaluate` | 未観測の子sessionを残した終了への警告 | D | 維持（常駐運用の終端保証）：所有する子sessionがrunningのままStopへ進むと、終了報告が子の結果を含まない。状態記録とStop入力を比べる処理を実装・テストで確認 |
 | `autonomous_exit.py` `evaluate` | 常駐セッションで必須の終了操作を欠く遮断 | P | 維持（常駐運用の終端保証）：常駐ループが終了操作を欠くと実行主体が残り、次の周期へ移れない。Stop入力と起動記録を比べる処理を実装で確認 |
 | `pending_question_advisor.py` `evaluate` | 地の文に質問を残した終了の遮断 | C | 維持（常駐運用の終端保証）：ユーザー確認を経ない質問を地の文へ置いたまま終了すると、回答を受け取る手段が残らない。Stop入力の判定を実装で確認 |
-| `plan_save_advisor.py` `evaluate` | f'当該セッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n保存の契機に達したバンドルだけをatk plans commit <計画… | M | 維持（データ破損）：保存契機後も所有する計画バンドルが作業rootに残ると、後続の読込先へ版が反映されない。バンドル実在分岐を実装で確認 |
+| `plan_save_advisor.py` `evaluate` | f'現在のセッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n保存の契機に達したバンドルだけをatk plans commit <計画… | M | 維持（データ破損）：保存契機後も所有する計画バンドルが作業rootに残ると、後続の読込先へ版が反映されない。バンドル実在分岐を実装で確認 |
 | `posttooluse.py` `_dispatch` | f"warn: listの応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
 | `posttooluse.py` `_dispatch` | f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
 | `posttooluse.py` `_dispatch` | 起動応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
@@ -1268,14 +1269,14 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないpromptが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないsession_idが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}は、session_idに対応する絶対cwdが保存されていないため続行できない。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
-| `pretooluse/content_checks.py` `_collect_edit_operation_warnings` | ファイル末尾のツール境界タグ混入を警告 | X | 維持（データ破損）：編集本文へツール境界タグが混入するとPython又は計画本文に制御文字列が残る。編集後の像と対象パスを比べる処理を実装で確認 |
+| `pretooluse/content_checks.py` `_collect_edit_operation_warnings` | ファイル末尾のツール境界タグ混入を警告 | X | 維持（データ破損）：編集本文へツール境界タグが混入するとPythonまたは計画本文に制御文字列が残る。編集後の像と対象パスを比べる処理を実装で確認 |
 | `pretooluse/content_checks.py` `_warn_mojibake` | f'{body}\n対処: {fix}' | X | 維持（データ破損）：編集行の文字化けは元の文字を復元できないまま利用者向け本文へ配布される。文字列検出分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_check_ps1_eol` | f'{tool_name}.{field}にLFだけの内容を検出した。この書き込みではUTF-8 BOMが失われて日本語が文字化けし、.gitattributesの*.p… | X | 維持（データ破損）：PowerShell配布ファイルのBOM・改行喪失で日本語と実行形式が変わる。書込対象と改行の判定を実装で確認 |
 | `pretooluse/content_checks.py` `_check_lockfiles` | f'{tool_name}による{label}の直接編集を検出した。対象: {file_path}\n対処: {fix}' | X | 維持（データ破損）：生成lockfileの直接編集は解決済み依存の整合を失う。対象パスと生成元ツールの分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_check_manifest` | f'{tool_name}で{label}の依存の節を編集しようとしている。{hint}' | X | 維持（データ破損）：依存manifestの手編集で生成先と配布値がずれる。対象の依存節判定を実装で確認 |
 | `pretooluse/dispatch.py` `main` | language_warning_body | W | 維持（利用者確定）：英語応答警告は存廃基準の外側で利用者が残すと確定した。発話入力から言語警告を組み立てる分岐を実装で確認 |
 | `pretooluse/dispatch.py` `_handle_bash_tool` | '未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。\n対処: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了の背景タスクが書くファイルを読むと途中の内容を結果と誤認する。対象出力とタスク状態を比べる処理を実装で確認 |
-| `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：Codexのシェル出力の上限を超えた取得は本文を欠落させ、欠落した範囲を回復できない。Claude Codeはホストが`PARTIAL view`又は退避ファイルを返し残りを続けて取得できるため対象外とする。対象ファイルの行数・バイト数の計測を実装・テストで確認 |
+| `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：Codexのシェル出力の上限を超えた取得は本文を欠落させ、欠落した範囲を回復できない。Claude Codeはホストが`PARTIAL view`または退避ファイルを返し残りを続けて取得できるため対象外とする。対象ファイルの行数・バイト数の計測を実装・テストで確認 |
 | `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：複数ファイルの合計が上限を超える取得も同じく本文を欠落させる。合計判定をテストで確認 |
 | `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（不可逆）：pkill・killallのパターン一致は所有外プロセスを終了し、終了したプロセスは元へ戻せない。終了対象の指定形を実装で確認 |
 | `subagent_stop_advisor.py` `main` | '停止する前に、空でない完了報告を出力する。呼び出し元は遮断された報告本文を保持しない。' | D | 維持（常駐運用の終端保証）：空の完了報告で停止すると呼び出し元に結果が届かない。出力本文の有無を実装で確認 |
@@ -1290,43 +1291,43 @@ Stopの登録は共通ハンドラー1件とする。
 続いて、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行忘れを判定する。
 続いて、`plan_save_advisor.py`で計画作業rootに残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 最後に、`pending_question_advisor.py`で地の文の問いかけによる終了を遮断する。
-共通ハンドラーは判定の順序、例外の隔離、応答の集約及び連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。
+共通ハンドラーは判定の順序、例外の隔離、応答の集約および連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。
 これら以外を扱わず、利用者の意図、作業完了、振り返り要否、Git変更件数、managed-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
 
-計画作業rootの保存確認は、当該セッションが作成又は編集した計画ファイル（メイン）が計画作業rootへ現存する場合だけ発火し、セッションごとに1回だけ確認を促す。
+計画作業rootの保存確認は、現在のセッションが作成または編集した計画ファイル（メイン）が計画作業rootへ現存する場合だけ発火し、セッションごとに1回だけ確認を促す。
 判定材料はセッション状態が記録する計画ファイル（メイン）の絶対パスのリストと、その実在に限り、実行レビューの収束有無を判定しない。
 移動の要否は、通知を受領した実行主体が計画の進行状況から決める。
-常駐実行の印があるセッションでは発火させない。当該運用では`agent-toolkit:process-wi`のレーン契約が`atk plans commit`による最終化を定めており、同じStopで`autonomous_exit.py`が停止を拒否し得るためである。
+常駐実行の印があるセッションでは発火させない。常駐実行では`agent-toolkit:process-wi`のレーン契約が`atk plans commit`による最終化を定めており、同じStopで`autonomous_exit.py`が停止を拒否し得るためである。
 セッション終了イベントで検出する案は、通知を受領する実行主体のターンが既に終わっており、対処へ接続できないため採用しない。
 実行レビューの収束状態をフックが判定する案も、フックが会話の意味と工程の妥当性を判断しない責務境界を越えるため採用しない。
 対象の計画は、編集ツールの処理と計画ファイル作成処理の実行結果の双方から、計画ファイル（メイン）の絶対パスとして蓄積する。作成処理はBashから実行され編集ツールを経由しないため、作成だけを行った計画は編集の記録契機に現れないためである。
-作成処理の実行は、コマンドの区間分割と実行位置の解決により、当該処理が実行主体である区間だけを対象として識別する。名称を引数、検索語その他の出力データとして含む読み取り操作を対象にしないためである。パスは記録の時点で絶対化し、後続の作業ディレクトリの変更に依存させない。
+作成処理の実行は、コマンドの区間分割と実行位置の解決により、計画作成処理を実行する区間だけを対象として識別する。名称を引数、検索語その他の出力データとして含む読み取り操作を対象にしないためである。パスは記録の時点で絶対化し、後続の作業ディレクトリの変更に依存させない。
 
 自律終了の再促は常駐実行の最上位セッションだけへ適用する。
 常駐実行の印はプロセス環境で表され子のセッションへ継承されるため、`agents_server`が起動する委譲先セッションには起動処理が委譲先の印を付与し、フックは両方の印の組合せで最上位かどうかを判定する。
 常駐実行の印そのものを委譲先で無効化する案は、同じ印を読む観測記録と入力待ちベルまで停止させるため採用しない。
 最上位だけが受け取るフックイベントで`session_id`を記録する案も、セッションをまたぐ永続状態と記録喪失時の縮退設計を要するため採用しない。
 
-入力待ち判定は、ホストがStop入力で渡す背景タスクの申告を、当該入力が申告する種別に限って基準とする。申告しない種別の未完了はtranscriptから復元した記録を独立した根拠とする。
-両者を対等な根拠として合成する案は、復元側に残る解決できない起動記録が申告を恒久的に上書きし、当該判定に依存する終了保証を働かなくするため採用しない。
+入力待ち判定は、ホストがStop入力で渡す背景タスクの申告を、Stop入力が申告する背景タスクの種別に限って判定の基準とする。申告しない種別の未完了はtranscriptから復元した記録を独立した根拠とする。
+両者を対等な根拠として合成する案は、復元側に残る解決できない起動記録が申告を恒久的に上書きし、入力待ち判定に依存する終了保証を働かなくするため採用しない。
 `background_tasks`の権威性を全種別へ適用したまま、`agents_server`側で背景移行を申告させる案も採用しない。ホストの入力形式を変えられないためである。
 
 イベントごとに登録を並べたまま各フックを軽量化する案は採用しない。ホストが登録の件数だけプロセスを起動する制約を解消できないためである。
 
-`SubagentStop`、`StopFailure`及び`SessionEnd`は別イベントの既存契約として維持する。
+`SubagentStop`、`StopFailure`および`SessionEnd`は別イベントの既存契約として維持する。
 
 共有判定器は`CronCreate`を非同期待機系として扱い、`CronCreate`後のStopでも機械的な完了通知を待つ動作を維持する。
 `ScheduleWakeup`の判定は`/loop`専用の既存契約として残し、Cronの作成・再利用・確認・削除をフックの永続状態へ移さない。
 最上位Stopはpayloadの`transcript_path`から生JSONLを読み、同じstemの`subagents`配下にある固定名
 `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読む。直接の子の記録にあるAgent起動を孫起動として起動集合へ加え、
-最上位生transcriptの`queue-operation`で`operation`が`enqueue`又は`remove`の完了通知をtool-use-id又はtask-idで相殺する。
+最上位生transcriptの`queue-operation`で`operation`が`enqueue`または`remove`の完了通知をtool-use-idまたはtask-idで相殺する。
 子記録の不在・破損・無関係な親子関係は最上位transcriptの既存判定を維持し、Hookが追加の永続状態を作成しない。
 
 最上位生transcriptの`queue-operation`を読む処理は、LLM実行主体が完了通知を受領・中継する委譲契約とは別のHook観測面である。
-LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ子孫待機のblockを復活させる案及びCodexの未確定transcript構造へ同じ探索を広げる案は採用しない。
+LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ子孫待機のblockを復活させる案およびCodexの未確定transcript構造へ同じ探索を広げる案は採用しない。
 
-フックは現在の入力ペイロード、対象ファイル及びセッション状態だけを知る。
-利用者の意図、会話全体の意味又は工程の技術的な妥当性は判断しない。
+フックは現在の入力ペイロード、対象ファイルおよびセッション状態だけを知る。
+利用者の意図、会話全体の意味または工程の技術的な妥当性は判断しない。
 実行主体はフックの通知を自動生成情報として規範や会話と比べ、採否と後続処理を決定する。
 
 品質想起通知は、`SessionStart(source=compact)`だけを発火境界とし、Claude CodeとCodexの双方で`rules_context`がメイン向け条文と同じ非遮断の`additionalContext`へ結合して返す。
@@ -1339,7 +1340,7 @@ warn通知の既存契約へ影響しない独立関数とする。フック実�
 各フックの本文へ解消手段を書く運用規定だけで担保する案は、検証手段が無く反復を防げないため採用しない。
 既存の`formatter`へサフィックス切替引数を追加する案は、warn通知の既存契約と既存テストへ影響するため採用しない。
 
-実行を遮断しない`warn`区分の通知は、同一セッション内で同じ`hook_id`と同じ原因の通知が3件目に達した時点から、反復している旨と累積件数を本文へ含める。
+同一セッション内で同じ`hook_id`と同じ原因による`warn`区分の通知が3件目に達した時点から、通知が繰り返されていることと累積件数を本文へ含める。`warn`区分は実行を遮断しない。
 目的は実行主体が原因を除去しないまま同種の操作を続けている状態を、通知そのものから判別できるようにすることである。
 構造の理由は、個々のwarn通知が単体では正常な作業の一部と区別できず、反復しているか否かを実行主体の記憶で判定させると同じ通知が見過ごされるためである。
 知識境界として、原因の識別子は通知を生成する判定処理が定め、累積件数はセッション状態ファイルが保持し、通知の整形処理は両者を読んで本文へ載せる判定だけを行う。
@@ -1369,11 +1370,11 @@ Codexでは`reason`の配送先と再提出の成立を確認できないため�
 Codex PostToolUseの計画完成時通知は、操作記録が示す計画構成要素についてメイン側とdetail側の実在だけを確認する。
 適用後に変更前後像を再構築する案は、適用済みの変更を二重に適用し、削除済みファイルを読み取れないため採用しない。
 patch全体を仮想ファイルシステムへ展開する案も、同一patch内の参照先解決のためだけに恒常的な複雑性を増すため採用しない。
-外部ファイルを読む適用後判定は、適用後に存在する対象の内容確認又は計画構成要素の実在確認へ限定する。
+外部ファイルを読む適用後判定は、適用後に存在する対象の内容確認または計画構成要素の実在確認へ限定する。
 
 実行レビューでは、`medium_tier_model`が指すengineと実際の起動ツールの一致を
 フックで強制せず、`runtime-routing.md`「工程別モデル設定」と実行レビューを起動するメインの手順で統制する。
-フックは設定値、タスク文書及び起動ツールを同時に観測できる一方、当該engineが実際に応答するかを
+フックは設定値、タスク文書および起動ツールを同時に観測できる一方、設定されたengineが実際に応答するかを
 観測できない。Codexを指定した状態で`agents_server` MCP自体を利用できない場合、
 可用性に起因する正当な代替であるClaudeの起動まで遮断され、代替の候補が残らない。
 指定からの逸脱は、代替時に記録する観測した失敗と実際に用いた組合せから事後に判定する。
@@ -1382,15 +1383,15 @@ patch全体を仮想ファイルシステムへ展開する案も、同一patch�
 UserPromptSubmitで、直前の通常発話からの経過時間が閾値以上の入力へだけ`additionalContext`を返す。
 
 知識境界は次のとおりとする。
-注入する応答契約の本文は`agent-toolkit/rules/01-agent.md`が定める規範の要約であり、フックは当該本文を保持するだけで、発話が是正要求かどうかを判定しない。
+注入する応答契約の本文は`agent-toolkit/rules/01-agent.md`が定める規範の要約であり、フックは規範の要約文を保持するだけで、発話が是正要求かどうかを判定しない。
 
 Stopの共通ハンドラーは、判定の集約に加えて連続blockの上限を管理する。
-`stop_hook_active`が真の再入で各判定が無条件approveへ遷移する案は、遮断の機会を1回で消費し、別の判定が当該機会を使った後は同じセッションで二度と発火しないため採らない。
-共通ハンドラーはセッション状態へ連続block回数を保持し、`stop_hook_active`が偽の入力では当該回数を1へ戻す。
-回数が上限へ達した入力では遮断を打ち切ってapproveし、打ち切りの事実、遮断していた判定名及び自律終了スキルの起動状態をStop判定ログへ記録する。
+`stop_hook_active`が真の再入で各判定が無条件approveへ遷移する案は、遮断の機会を1回で消費し、別の判定が最初の遮断機会を使った後は同じセッションで二度と発火しないため採らない。
+共通ハンドラーはセッション状態へ連続block回数を保持し、`stop_hook_active`が偽の入力では連続block回数を1へ戻す。
+回数が上限へ達した入力では遮断を打ち切ってapproveし、打ち切りの事実、遮断していた判定名および自律終了スキルの起動状態をStop判定ログへ記録する。
 上限は7回とし、Claude Codeが8回の連続blockでフックを上書きしてターンを終える仕様の内側へ収める。
 上限を持たない案は、打ち切りが実行環境の側で起こるため記録を残せず、遮断が続いた事実を後から確認できないため採らない。
-未観測作業の警告は当該上限の対象にせず、`agents_server_session_advisor.py`が自身の再入条件で抑止する。
+未観測作業の警告には連続blockの上限を適用せず、`agents_server_session_advisor.py`が自身の再入条件で抑止する。
 
 却下した代替案は2つある。
 1つは発話の内容から是正要求を判別して注入する案である。
@@ -1401,12 +1402,12 @@ Stopの共通ハンドラーは、判定の集約に加えて連続blockの上�
 ### hook出力契約の自動チェック
 
 Claude Codeのhookが返すJSONで受理されるフィールドはイベントごとに異なり、契約外のフィールドは実行時に破棄される。
-破棄はhookの終了コードへ現れないため、出力形式の誤りは当該hookが機能しない事象としてだけ観測される。
+破棄はhookの終了コードへ現れないため、出力形式の誤りは出力形式を誤ったhookが機能しない事象としてだけ観測される。
 これを実装の時点で検出するため、イベントごとの出力契約を`agent-toolkit/agent_toolkit/_hooks/output_contract.py`へJSON Schemaで定義する。
-`agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が`agent-toolkit/hooks/hooks.json`の全登録エントリの出力を当該契約と一致するか確かめる。
+`agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が`agent-toolkit/hooks/hooks.json`の全登録エントリの出力がJSON Schemaの契約と一致するか確かめる。
 
 知識境界は次のとおりとする。
-契約の値は公式のHooksリファレンスが定め、agent-toolkitは当該値を写して保持する。
+契約の値は公式のHooksリファレンスが定め、agent-toolkitは公式の契約値を写して保持する。
 hookの実装は契約を参照せず、テストだけが両者の一致を確認する。
 
 公式の契約は判別共用体を含む。`PermissionRequest`の`decision`は`behavior`の値で、権限更新エントリは`type`の値で枝が決まり、
@@ -1435,17 +1436,17 @@ hookの実装は契約を参照せず、テストだけが両者の一致を確�
 これにより、期限回収が使用中のロックパスを削除し、後続処理が別のinodeで同時に排他区間へ入る競合を防ぐ。
 
 書き込み側のフックは観測したイベントだけを知り、読み取り側のフックは必要なフラグだけを判定材料にする。
-状態ファイルは会話本文、成果物の内容又は工程全体の進捗を正式な記録として保持しない。
+状態ファイルは会話本文、成果物の内容または工程全体の進捗を正式な記録として保持しない。
 成果物の適否は、状態フラグではなく対象ファイルと正式な検証結果から確認する。
 
 `warn`区分の通知の反復判定に用いる累積件数も、後続判定に必要な小さな観測値として同じ状態ファイルへ置く。
-キーは`hook_id`と原因識別子の対とし、値は当該セッションでの発生件数とする。セッション終了まで保持し、リセット手段は設けない。
+キーは`hook_id`と原因識別子の対とし、値にはセッションごとの発生件数を保存する。セッション終了まで保持し、リセット手段は設けない。
 件数を過去の通知本文から数え直す案は、フックが自身の過去の出力を参照できないため採用しない。
 
 プロセス内の変数だけで共有する案は、呼び出しごとにプロセスが分かれるため採用しない。
 コマンド文字列や成果物のハッシュを多段階で同期する案も、状態と実態の不一致を新たに生むため採用しない。
 状態をセッション終了時に直ちに削除する案は、同じ識別子での再開を妨げるため、期限を過ぎた状態だけを回収する。
-回収は終了イベントを発したセッション自身を除いて実施し、会話が破棄された場合だけ当該セッションの状態を削除する。
+回収は終了イベントを発したセッション自身を除いて実施し、会話が破棄された場合だけ終了イベントを発したセッションの状態を削除する。
 計画名の記録を通常状態の例外キーとして期限回収時に残す案は、異なる寿命と排他責務を同じファイルへ混在させるため採用しない。
 
 ## AWI由来の知見の集約
@@ -1453,7 +1454,7 @@ hookの実装は契約を参照せず、テストだけが両者の一致を確�
 過去のAWIから確定した方針・意向は[concepts.md](concepts.md)へ、
 再発防止の判断材料となる障害・欠陥は[incidents.md](incidents.md)へ集約する。
 コーディングエージェント向け文書の編集規範は、両文書を編集前に参照し、
-新たな障害又は確定した意向が生じた場合に対応する文書を更新するよう求める。
+新たな障害または確定した意向が生じた場合に対応する文書を更新するよう求める。
 参照の時機は`.claude/skills/agent-toolkit-edit/SKILL.md`などの編集スキルの工程が定め、フックでは観測しない。
 未読の警告は規範の想起を目的とし、読了の事実から理解の成否を判定できないため、2026年9月26日に撤去した。
 
@@ -1466,7 +1467,7 @@ hookの実装は契約を参照せず、テストだけが両者の一致を確�
 この構造により、一時成果物の寿命を明示しながら、利用者の既存ファイルを一時領域と誤認して削除することを防ぐ。
 
 管理CLIは領域の真正性、所有者、権限と作成記録を知る。
-呼び出し元は用途、保存した成果物、検収状況及び回収時機を知る。
+呼び出し元は用途、保存した成果物、検収状況および回収時機を知る。
 CLIは内容が不要になったかを推測せず、呼び出し元もパスの形だけから管理対象であると判断しない。
 管理対象一時領域は判断材料と中間成果物だけを所有し、利用者の認証情報ファイルを所有しない。
 認証を要する検証では`CLAUDE_CONFIG_DIR`を変更せず、既定の認証解決手段を維持する。
@@ -1475,7 +1476,7 @@ POSIXではXDGのユーザーキャッシュ、Windowsでは`LOCALAPPDATA`を基
 実装worktreeを別のファイルシステム名前空間へ渡す場合だけ、既存の安全な共有ディレクトリを`--root <絶対パス>`で指定する。
 明示rootは通常ディレクトリ・非リンク・現在の利用者が所有する安全な権限を満たす場合だけ受け入れ、作成したmanaged-tempはその直下へ置く。
 登録済み領域の検証・列挙・回収は登録簿の`path`の親をroot境界として使い、現在のユーザーキャッシュ設定へ再束縛しない。
-各操作はrootの非リンク・所有者・権限又はACLとidentityを、rootを開く直前及び子を操作する直前に再検証し、置換中の対象・rootを処理しない。
+各操作はrootの非リンク・所有者・権限またはACLとidentityを、rootを開く直前および子を操作する直前に再検証し、置換中の対象・rootを処理しない。
 SessionStartはセッションごとに登録済みの領域（セッション領域）を作成して通知し、同じ`session_id`の再開では同じ領域を再通知する。
 エージェントの一時ファイルは原則としてセッション領域の直下へ置き、個別に作成するのは、通知が無い場合と別namespaceへ渡す場合、`.git`を含む領域を置く場合に限る。
 セッション領域はSessionEndで削除せず、`atk`の実行時に最終更新から7日を超えた登録済み領域を削除する掃引で回収する。
@@ -1484,7 +1485,7 @@ SessionEndは`--resume`や`agents_server`の`send_message`で同じ会話が続�
 掃引は`.git`を含む領域を削除しないため、レーンのworktreeなど`.git`を含む領域だけは作成した工程が明示的に回収する。
 `--session-root`による無登録の子領域の作成は公開オプションとして残すが、規範の手順からは使わない。
 実装worktreeを別namespaceへ渡す呼び出し元は、全消費主体から同一絶対パスへ到達できることを読み取り専用で確認する。
-MQ、CI及びpublishの補助領域は同一namespaceの既定rootを使い、暗黙の共有rootへ切り替えない。
+MQ、CIおよびpublishの補助領域は同一namespaceの既定rootを使い、暗黙の共有rootへ切り替えない。
 汎用の一時ディレクトリを直接作成して再帰削除する案は、所有対象を証明できないため採用しない。
 マーカーファイルだけを信頼する案は、既存ディレクトリへ後からマーカーファイルを置く誤操作を区別できないため採用しない。マーカーは実体側にあり、記録した絶対パスと実体のidentityへ整合する内容を後から記述できるため、内容だけでは作成処理が書いたものと区別できない。
 登録が欠落した領域の後始末は、利用者が明示指定する`--recover-registry`でだけマーカーから登録を復元する。自動判定へは接続せず、明示指定に伴う利用者の承認を第二の信頼根拠とする。
@@ -1495,7 +1496,7 @@ MQ、CI及びpublishの補助領域は同一namespaceの既定rootを使い、�
 Windowsのreparse pointは一律に拒否せず、リンクオブジェクトの種別、格納された値、管理root境界の3点を検証したうえで受理する。
 検証したリンクオブジェクトはリンク先を追跡せず、リンクオブジェクトだけを非追跡で解除する。
 同一性はリンクオブジェクト自身のidentityと格納された値で表し、リンク先の実体への到達を含めない。隔離のための改名で解決先が変わっても正常な領域を回収できるようにするためである。
-格納された値が管理root外を指す場合、絶対パスとして解釈できない場合、値を取得できない場合、種別を判定できない場合及び走査から解除までの間に置換された場合は、従来どおり後始末を拒否して管理情報と実体を保持する。
+格納された値が管理root外を指す場合、絶対パスとして解釈できない場合、値を取得できない場合、種別を判定できない場合および走査から解除までの間に置換された場合は、従来どおり後始末を拒否して管理情報と実体を保持する。
 この構造により、依存の展開が管理領域内へ作成するリンクを含む領域を通常の後始末で回収しながら、管理root外への追跡削除を防ぐ。
 全てのreparse pointを拒否する案は、依存の展開が作成する管理領域内のリンクまで回収できなくするため採用しない。
 再帰削除の実装がリンクを追跡しないという暗黙の前提へ依存する案も、走査と削除で種別の判定が分かれるため採用しない。
@@ -1515,7 +1516,7 @@ Windowsのreparse pointは一律に拒否せず、リンクオブジェクトの
 
 `atk wi`の更新は管理リポジトリの同じGit common directoryに属するプロセス間だけを
 共通ロックで直列化する。別cloneは同じロックを共有しないため、複数主体が同じ項目を近接して終端した場合、
-又はcommit後のpush失敗中に別cloneが同じ項目を終端した場合は、ローカルとupstreamが分岐し得る。
+またはcommit後のpush失敗中に別cloneが同じ項目を終端した場合は、ローカルとupstreamが分岐し得る。
 終端結果には処理日時が含まれるため、論理的に同じ採否でもGit上のcommitとblobは一致しない。
 
 共通Git同期層はfetch後に祖先関係を確認し、分岐を自動回復できない場合は双方のcommit件数、
@@ -1524,7 +1525,7 @@ HEADとupstreamの木が一致する分岐は、作業ツリーとindexの状態
 木が一致する条件では作業ツリーへ書き戻す内容がなく、`--soft`はindexを変更しないため、stage済みを含む未コミット差分を保存できる。
 `reset --keep`はstage済みの差分を未stageへ戻すため、この場合は採用しない。
 MQ層はローカル側の全commitについて、管理CLIが生成する終端commitの件名、active状態から
-`adopted`又は`rejected`への同名ファイル移動、対象件数、upstream上の移動済み状態及び
+`adopted`または`rejected`への同名ファイル移動、対象件数、upstream上の移動済み状態および
 処理日時以外のファイル内容一致を確認する。作業ツリーとindexがcleanであり、全条件を満たす場合だけ、
 ローカル側commitを冗長と判定して`reset --keep @{u}`でupstreamへ揃える。
 一般のGit同期層はMQの内容を解釈せず、呼び出し元が冗長性を証明した場合だけ`reset --keep`で回復する。
@@ -1542,18 +1543,18 @@ dirtyな場合はrebaseせず、従来どおり分岐と手動回復手順を報
 
 ## developとmasterのbranch・リリース設計
 
-`develop`を開発用branch、`master`をリリース用branch及びGitHubの既定branchとする。
+`develop`を開発用branch、`master`をリリース用branchおよびGitHubの既定branchとする。
 `master`への更新はPRのマージコミットだけに限定し、直接pushを許可しない。
 PRの作成は、条件が成立する`agent-toolkit:process-wi`の実行ではエージェントが実施し、それ以外では手動で行う。
 実施可否と条件の判定は`dotfiles-release`スキルが定める。
 head branchの機械的な限定は設けない。
 
-repository設定ではマージコミットを有効にし、squash merge、rebase merge及びauto-mergeを無効にする。
+repository設定ではマージコミットを有効にし、squash merge、rebase mergeおよびauto-mergeを無効にする。
 マージ後のbranch自動削除も無効にし、エージェントが同期状態を検収した後にだけ次の工程へ進める。
 既定branchは`master`のまま維持する。
 
 `master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
-rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の7必須check、削除禁止及びforce push禁止を設定する。
+rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の7必須check、削除禁止およびforce push禁止を設定する。
 
 - `test-linux`
 - `test-windows`
@@ -1569,8 +1570,8 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 共通jobにはjob-level `if`を置かず、step-level条件で非所有markerと既存実処理を切り替える。
 
 `test-linux`と`test-windows`は全履歴を取得し、現行HEADの時刻から約72時間前の祖先を選ぶ。
-管理一時ディレクトリ内へローカルbare remote、旧版checkout及び隔離HOMEを構成し、旧版をchezmoiで適用する。
-その後、同じbranchのremote refだけを現行HEADへ進め、旧版checkout内の`bin/update-dotfiles`又は
+管理一時ディレクトリ内へローカルbare remote、旧版checkoutおよび隔離HOMEを構成し、旧版をchezmoiで適用する。
+その後、同じbranchのremote refだけを現行HEADへ進め、旧版checkout内の`bin/update-dotfiles`または
 `bin/update-dotfiles.cmd`を起動する。公開ランチャーの終了コードが0で、更新後checkoutの`git rev-parse --short=7 HEAD`が
 検証開始時の現行HEADと一致した場合だけ成功とする。利用者HOMEと外部remoteは変更対象にしない。
 
@@ -1596,23 +1597,23 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 分離により、律速となる`python-lint (3.14)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
 `browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
 
-statuslineのCargo versionとbase・head version及びtagの確認は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
-`statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。
+statuslineのCargo versionとbase・head versionおよびtagの確認は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
+`statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
 比較基点はpull request起点では`github.event.pull_request.base.sha`、push起点では`git fetch --no-tags origin master`の後の`git merge-base`が返す`master`との共通祖先とする。
 push起点を加えるのは、版数更新の抜けをrelease pull requestの必須check一式が実行される前に検出するためである。
 判定は`scripts/check_statusline_version.py`へ集約し、CIの同jobとpyfltrのcustom-command`statusline-version`の双方から呼ぶ。pyfltr側は比較先を作業ツリーとしてcommit前の変更も判定し、レーンの変更範囲の検証と公開前のローカル検証で、push前に版数の更新忘れを見つける。pre-commitの`pyfltr fast`で版数更新前の途中commitを遮断しないよう非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
-同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検証対象となり、`rust-lint`というrequired名の重複を生成しない。
+同一repositoryのreleaseおよびnon-release pull requestとfork pull requestが同じ検証対象となり、`rust-lint`というrequired名の重複を生成しない。
 ruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
 ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを確認する。確認した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。
-ruleset更新の本文は管理対象一時領域のJSONファイルへ保存し、送信前に当該ファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、7件のrequired check名を検証する。
-検証に成功した同じファイルを`gh api --method PUT --input <当該ファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。擬似端末の標準入力を更新本文の搬送に使わない。
+ruleset更新の本文は管理対象一時領域のJSONファイルへ保存し、送信前に保存したJSONファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、7件のrequired check名を検証する。
+検証に成功した同じファイルを`gh api --method PUT --input <検証したJSONファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。擬似端末の標準入力を更新本文の搬送に使わない。
 更新要求が失敗した場合は、追加のPUTを実行する前に対象rulesetを個別GETで再取得する。再取得した現行状態が更新前状態と完全に一致し、送信するJSONファイルの内容が検証時から変化しておらず、失敗の原因が本文の搬送であって送信方法をファイル入力へ是正できることを確認できる場合だけ、同じ本文の再送を1回だけ許可する。
 現行状態を取得できない場合、現行状態が更新前状態と一致しない場合、更新後の確認が期待値と一致しない場合は再送せず、変更前状態と現行状態を保持して`needs_escalation`で終端する。
 更新本文を擬似端末の標準入力へ渡す案は、本文が欠落した場合に更新未成立と適用結果不確定を区別できないため採用しない。全ての更新失敗を状態不明として一律に再送禁止とする案も、更新が成立していないことを再取得で確定できる場合まで工程を停止させるため採用しない。
 
-ruleset一覧には個別ref条件が含まれないため、同名候補の完全なIDを取得した後に個別GETで対象repository、branch ruleset及び`refs/heads/master`を確認する。
+ruleset一覧には個別ref条件が含まれないため、同名候補の完全なIDを取得した後に個別GETで対象repository、branch rulesetおよび`refs/heads/master`を確認する。
 候補が0件の場合は作成し、1件の場合は完全IDへPUTする。
-複数件、取得失敗又は対象不一致の場合は設定を変更しない。
+複数件、取得失敗または対象不一致の場合は設定を変更しない。
 `required_linear_history`はマージコミット要件と両立しないため設定しない。
 
 GitHubのruleset API仕様は、2026年8月26日時点の[Rulesets REST API](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10)を参照する。
@@ -1623,7 +1624,7 @@ PRマージ後は、`origin/master`をマージコミットの基準として保
 マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前に必須checkの成功を確認したPR headのツリーと同じになり、developへ載るのも同じマージコミットである。両pushのCIは同じ中身の再実行であり、待機してもリリースの完了時刻が後ろへずれる以外の効果が無い（2026年9月24日、利用者指示）。以前は「commitが同一」「ツリーが同一」などの省略条件を個別に判定していたが、マージコミットをdevelopへ同期した直後にdevelop側の条件が成立せず、同じ中身のCIを待つ事象が起きたため撤去した。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commitが一致することの確認は省略しない。Release runはmaster CIの成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論はRelease runの検収で確かめる。
 同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。
 
-`origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub Release及びLinux・Windows assetを検収する。`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。
+`origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub ReleaseおよびLinux・Windows assetを検収する。`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。
 statuslineの差分がない場合はRelease成果物を検収しない。
 成功時は`origin/develop`と`origin/master`がマージコミットと同じcommitであることを7文字以上の一意な短縮OIDで確認する。ローカル`develop`の同期は同期を実行する直前に作業ツリーのclean、現在branchが`develop`であること、マージコミットへのfast-forward可能性を再取得し、すべて成立した場合だけ実施して、リリースの成立条件から分離する。現在branchを更新するコマンドを事前判定の結果だけで実行しない。同期を実施した場合はローカル`develop`の参照を更新し、条件が成立せず同期を省略した場合は本手順がローカルの作業ツリーとローカルbranchへ書き込まない。いずれの場合も、待機中に生じた変更を含めてローカルの状態をリリースの成否判定に用いない。
 ローカルの同期状態をリリースの成立条件へ含める案は、公開対象がrefで固定された後も無関係な作業中の差分でリリースを停止させるため採用しない。
@@ -1632,36 +1633,36 @@ statuslineの差分がない場合はRelease成果物を検収しない。
 実装済みHEADのrefからローカル`develop`を作成して公開し、developのCIを確認する。
 `origin/master`の移行前OIDを保存し、初回リリースPRを作成しない。
 ローカル`develop`と`origin/develop`のOID一致を確認した後、ローカル`master`の削除直前OIDを記録して削除する。
-公開又はCIが失敗した場合はローカル`master`を削除せず、成立済みの外部状態と再開点を報告する。
+公開またはCIが失敗した場合はローカル`master`を削除せず、成立済みの外部状態と再開点を報告する。
 
-PRマージ、branch同期及びRelease検収の詳細は、プロジェクトスキル[merge-pr](../../.claude/skills/merge-pr/SKILL.md)を実行時の手順とする。
+PRマージ、branch同期およびRelease検収の詳細は、プロジェクトスキル[merge-pr](../../.claude/skills/merge-pr/SKILL.md)を実行時の手順とする。
 
 ## 終端工程
 
 起動形態に依存しない版数更新、全体検証、push、CI確認、公開状態と固有工程の手順は`agent-toolkit:commit`の`references/publish.md`を基準とする。終端担当と単一レーンはその文書を読み、CI修正の委譲など固有の受渡しだけを保持する。協調モードは着手前に確認した公開範囲まで同じ手順を適用する。公開のたびに起動形態別の手順を複製する案は、版数とCIの判定が分岐するため採用しない。
 
-commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
-自動コードレビュー監査の処置は、選定工程の開始時からレーン工程と並行して進め、公開工程の開始より前に完了する。pickerの有効出力受領後の選定検証とレーン起動は、監査の終端を待たずに進める。全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインは1件の終端担当へ委譲し、版数・生成物同期、統合後検証、push、CI及び終端工程を1回だけ実行させる。
+commit以降のリリース、PR/MRまたは公開操作は、実装のレーンと分離する。
+自動コードレビュー監査の処置は、選定工程の開始時からレーン工程と並行して進め、公開工程の開始より前に完了する。pickerの有効出力受領後の選定検証とレーン起動は、監査の終端を待たずに進める。全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインは1件の終端担当へ委譲し、版数・生成物同期、統合後検証、push、CIおよび終端工程を1回だけ実行させる。
 
-メインは長時間の公開待機と追加工程の入力commit、成果物、配備先、排他資源及び先行工程の成功結果を起動前に比較し、依存関係を記録する。独立工程は別の実行主体へ渡して待機中に進め、同じDB migrationの成功を要する工程はその結果を確認してから始める。終端担当は主作業ツリーへの唯一の書込主体であり、別主体へ渡す工程の書込先は分ける。全工程を終端担当の返却後へ直列化する案では、独立した公開操作も長時間待機の終了まで開始できないため採用しない。
+メインは長時間の公開待機と追加工程の入力commit、成果物、配備先、排他資源および先行工程の成功結果を起動前に比較し、依存関係を記録する。独立工程は別の実行主体へ渡して待機中に進め、同じDB migrationの成功を要する工程はその結果を確認してから始める。終端担当は主作業ツリーへの唯一の書込主体であり、別主体へ渡す工程の書込先は分ける。全工程を終端担当の返却後へ直列化する案では、独立した公開操作も長時間待機の終了まで開始できないため採用しない。
 
 レーンは計画の`## 検証`の`変更範囲の検証`行が挙げる検証だけを実行し、対象リポジトリ全体の検証はレーンで実行しない。
 終端担当は対象リポジトリの全体検証をpushの後のCIが同値の自動検証として担うかを判定し、担わない場合だけpushの前に1回実行する。
-同値の判定は、CI定義の起動形、有効なチェックの集合、各チェックが読む設定及び実行環境を比べ、全体検証のチェックの集合がCIの集合へ含まれることを実際に確認できた場合にだけ成立させる。
-同値と判定した場合はpushの前に実行せず、結論をCIの結論で確定する。同じチェックの二重実行は、当該実行の所要時間の分だけCIの開始を遅くするためである。
+同値の判定は、CI定義の起動形、有効なチェックの集合、各チェックが読む設定および実行環境を比べ、全体検証のチェックの集合がCIの集合へ含まれることを実際に確認できた場合にだけ成立させる。
+同値と判定した場合はpushの前に実行せず、結論をCIの結論で確定する。同じチェックの二重実行は、重複する検証の所要時間だけCIの開始を遅くするためである。
 pushの前に実行した検証が失敗した場合はCI修正と同じ手順へ進み、pushとCIの往復を経ずに修正する。
 
 `agent-toolkit:process-wi`は選定工程の開始時に自動コードレビューを1回確認し、確認時点の未対応指摘を是正するか、AWIへ記録する。review本文は状態を問わず全てのPR・MRを対象に取得する。inline commentとthreadは未解決threadを持つ対象だけを取得する。監査自体が是正済みと対応不要のthreadを解決するため、未解決threadの有無で限定しても未処置の指摘を取りこぼさない。取得はいずれもpaginationの終端まで行う。review本文の取得は横断クエリーの数回で終わるのに対し、inline commentの取得はPR数に比例した照会を要するため、限定の対象を後者に置く。新しいレビューの到着を能動的に待機しない。直前のセッションが公開したPull Requestのレビューは次のセッションの選定工程で対象へ入る。
 
 状態を問わず全件を毎回取得する案は、Pull Request数に比例するinline commentの照会を削減できないため採用しない。
 
-終端担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは元作業の完了報告を先に出力し、当該セッションを対象とする`agent-toolkit:session-review`を起動する。担当の終端後の応答で振り返り結果を報告し、続けて`atk agents-exit-session`を単独で実行する。各工程は同じ完了本文を再生成しない。
+終端担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは元作業の完了報告を先に出力し、現在のセッションを対象とする`agent-toolkit:session-review`を起動する。担当の終端後の応答で振り返り結果を報告し、続けて`atk agents-exit-session`を単独で実行する。各工程は同じ完了本文を再生成しない。
 
-終端担当の起動後に生じた是正commitはローカルのベースbranchへ保持し、終端担当を再起動しない。次のセッションの公開工程は初回の終端担当で当該commitを公開し、ベースbranchのHEADについてCIを確認する。
+終端担当の起動後に生じた是正commitはローカルのベースbranchへ保持し、終端担当を再起動しない。次のセッションの公開工程は初回の終端担当で後から生じた是正commitを公開し、ベースbranchのHEADについてCIを確認する。
 
 終端担当はpushの完了後にベースbranchの公開状態を観測し、`base_branch_state`として返す。メインは固定報告の前に同じ項目を1回観測する。終端担当が返却した時点のOID一致だけを判定に用いると、作業ツリーの未コミット差分と中断状態が観測されず、以降の工程を経た後の状態も対象に入らないためである。終端担当後の是正commit以外の理由で解消できない場合はUWIへ引き継ぎ、観測を経ないまま完了報告へ到達させない。
 
-公開状態の4項目は、Gitのporcelain v2のbranch情報と通常の`status`表示から取得する。前者でbranch、未コミット差分及び追跡先からのaheadを判定し、後者でrebase・merge・cherry-pickの進行を判定する。親と終端担当は同じ取得形を使う。`.git`内部ファイルの探索を組み合わせる案は、linked worktreeのGit管理領域の配置を呼び出し側へ漏らすため採用しない。
+公開状態の4項目は、Gitのporcelain v2のbranch情報と通常の`status`表示から取得する。前者でbranch、未コミット差分および追跡先からのaheadを判定し、後者でrebase・merge・cherry-pickの進行を判定する。親と終端担当は同じ取得形を使う。`.git`内部ファイルの探索を組み合わせる案は、linked worktreeのGit管理領域の配置を呼び出し側へ漏らすため採用しない。
 
 終端担当はCIが検証した入力commitを`ci_verified_head`、固有終端工程が公開した最終commitを`final_branch_head`として分けて返す。固有終端工程がcommitを生成する場合は両OIDが一致しないため、メインはCIの成功を`ci_verified_head`だけに適用し、ベースbranchと追跡refの一致を`final_branch_head`で検収する。
 
@@ -1674,7 +1675,7 @@ GitHubのpush後CIは、baselineにない同一SHAのrunを監視対象とする
 他workflowの`dynamic`実行は除外しない。SHA一致だけで除外すると手動診断の失敗を見逃し、workflow名だけで
 除外すると起動契機の異なるrunを同一視するため、両fieldの積を境界とする。
 
-メインは全レーンの統合結果、公開先、利用者の認可及びCI結果を知る。
+メインは全レーンの統合結果、公開先、利用者の認可およびCI結果を知る。
 レーンは担当commitと変更範囲の検証を知るが、他のレーンの完了状況や公開操作の認可を知らない。
 固有指示で`adopt`を延期した項目だけは、指定されたベース反映後に終端担当が終端する。
 
@@ -1683,9 +1684,9 @@ GitHubのpush後CIは、baselineにない同一SHAのrunを監視対象とする
 明記のない不可逆操作を技術判断で補う案も、利用者の認可範囲を拡張するため採用しない。
 統括の詳細な手順は`agent-toolkit/skills/process-wi/references/run-lanes.md`に従う。
 
-公開対象が1つも無い処理回では、終端担当を起動せずに公開工程を短絡する。pickerの項目は、レーン外操作、上流投入又は固有の終端順序を持つものだけを数える。通常レーンの`merged_head`は処理開始時のベースbranch HEADから進んだ場合だけ数え、短縮OIDの文字列幅ではなくGitが解決したcommitで同一性を判定する。回答済みUWI、固有の終端工程及び延期`adopt`も無い場合、終端担当が実行する版数更新、生成物同期、push、CI確認及び固有の終端工程は対象を持たない。短絡の可否は、終端担当がpush後に観測するのと同じ4項目をメインが取得して判定する。選定された通常レーンの件数を操作量とみなす案は、実装commitを持たない処理回まで公開工程へ送るため採用しない。
+公開対象が1つも無い処理回では、終端担当を起動せずに公開工程を短絡する。pickerの項目は、レーン外操作、上流投入または固有の終端順序を持つものだけを数える。通常レーンの`merged_head`は処理開始時のベースbranch HEADから進んだ場合だけ数え、短縮OIDの文字列幅ではなくGitが解決したcommitで同一性を判定する。回答済みUWI、固有の終端工程および延期`adopt`も無い場合、終端担当が実行する版数更新、生成物同期、push、CI確認および固有の終端工程は対象を持たない。短絡の可否は、終端担当がpush後に観測するのと同じ4項目をメインが取得して判定する。選定された通常レーンの件数を操作量とみなす案は、実装commitを持たない処理回まで公開工程へ送るため採用しない。
 
-手動で起動した`agent-toolkit:process-wi`では、pickerが固定したAWIの完成条件に操作、対象及び外部可視の結果が明示された終端工程を、当該セッションの承認スコープとして選定工程で保持する。レーン担当と終端担当が同じ範囲を要求する場合は再承認を求めず、範囲が広がる差分だけをユーザー確認する。手動起動の指示は当該固定集合の完遂を委任する指示であり、同じ範囲の承認を工程ごとに繰り返す運用はユーザーの操作を増やすだけで認可の範囲を変えないためである。自動常駐起動を同じ扱いにする案は、起動時点でユーザーが対象集合を確認していないため採用しない。
+手動で起動した`agent-toolkit:process-wi`では、pickerが固定したAWIの完成条件に操作、対象および外部可視の結果が明示された終端工程を、起動したセッションの承認範囲として選定工程で保持する。レーン担当と終端担当が同じ範囲を要求する場合は再承認を求めず、範囲が広がる差分だけをユーザー確認する。手動起動の指示はpickerが固定したAWI集合の完遂を委任する指示であり、同じ範囲の承認を工程ごとに繰り返す運用はユーザーの操作を増やすだけで認可の範囲を変えないためである。自動常駐起動を同じ扱いにする案は、起動時点でユーザーが対象集合を確認していないため採用しない。
 
 ## 計画ファイルの領域構成と重複排除
 
@@ -1697,22 +1698,22 @@ AWIとUWIは確定したファイル名で追跡し、本文を計画へ複製�
 本セッションで受領した利用者発言の基準は、変更履歴の逐語`text`コードブロックとする。
 レビュー指摘の原文・個別採否・対応内容はレビュー指摘管理表が定め、計画の変更履歴にはラウンドの結論だけを自然文で記録する。
 
-同一の事実、数値又は要約は1箇所で定義し、節間では必要な場合だけ参照する。
+同一の事実、数値または要約は1箇所で定義し、節間では必要な場合だけ参照する。
 
-新規計画は実行レビュー完了まで`~/.claude/plans/<stem>.md`を計画作業root直下で更新する。stemは起動形態ごとに`dd-HHmm_process-wi_レーンNN`、`dd-HHmm_single-lane-process`、`dd-HHmm_<名詞>`とし、衝突時だけ作成処理が`-<小文字16進数4桁>`を付ける。process-wiのレーンでは作成処理へ`lane-NN`を渡し、UTCの日付と時刻、固定接頭辞及び2桁のレーン番号を作成処理が一括して組み立てる。
+新規計画は実行レビュー完了まで`~/.claude/plans/<stem>.md`を計画作業root直下で更新する。stemは起動形態ごとに`dd-HHmm_process-wi_レーンNN`、`dd-HHmm_single-lane-process`、`dd-HHmm_<名詞>`とし、衝突時だけ作成処理が`-<小文字16進数4桁>`を付ける。process-wiのレーンでは作成処理へ`lane-NN`を渡し、UTCの日付と時刻、固定接頭辞および2桁のレーン番号を作成処理が一括して組み立てる。
 plan-modeの内部作成処理が作業rootで計画ファイルを準備し、stemを確定してから計画構造の自動チェックへ渡す。
 永続する計画、バグ調査ファイルと実行レビュー表は、固定接頭辞を含む可搬表記で保存する。
 実行時のファイル操作、session stateと診断は解決済み絶対パスを使う。
-保存の契機に達した時点で、所有主体が計画stemのバンドルを`atk plans commit`へ渡す。契機は起動形態ごとに`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の`## 計画ファイルの保存と参照`が定め、本節は当該契機を再掲しない。同コマンドはprivate-notesへ移動して対象限定commit・pushを完了し、成功後に作業側を回収する。外側の運用がpushを禁止した場合は`--skip-push`で対象限定commitまでを完了し、作業側を回収する。
+保存の契機に達した時点で、所有主体が計画stemのバンドルを`atk plans commit`へ渡す。契機は起動形態ごとに`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の`## 計画ファイルの保存と参照`が定め、本節は保存の契機を再掲しない。同コマンドはprivate-notesへ移動して対象限定commit・pushを完了し、成功後に作業側を回収する。外側の運用がpushを禁止した場合は`--skip-push`で対象限定commitまでを完了し、作業側を回収する。
 失敗時は作業側を保持し、保存先が同内容なら再実行でcommit・pushを再開し、異内容なら上書きせず停止する。
 保存時はメイン計画ファイルの作成日から年月を取得し、stemを変えずに`private-notes/plans/yyyy/MM/`へ移動する。
 原因commitに対応する計画契約がない場合は、新しい計画を作成せず、計画作業root直下の`ci-<起点OID>.exec-review.tsv`を用いる。
 最初の原因commitの7文字以上の一意な短縮OIDを起点OIDとし、同じ再帰的CI失敗処理では原因commitが変わっても同じ表を継続する。
-`atk plans commit`は当該表だけを`private-notes/plans/ci/`へcommit・pushする。
+`atk plans commit`は`ci-<起点OID>.exec-review.tsv`だけを`private-notes/plans/ci/`へcommit・pushする。
 既存の日付階層の作業計画と過去に保存された絶対パスは読み書き互換として扱い、直下の正規作業バンドルは旧形式移行から除外する。
 
 private-notes内で計画作成ロックとレビュー表ロックを取得する前に、共通ロック層は`*.lock`を`.gitignore`へ1回だけ追加する。
-キュー又は計画操作のGit同期処理では、この除外行だけが未反映の場合に限って専用commitとして同期し、既存の利用者差分が混在する場合は自動commitしない。
+キューまたは計画操作のGit同期処理では、この除外行だけが未反映の場合に限って専用commitとして同期し、既存の利用者差分が混在する場合は自動commitしない。
 これにより、排他制御用ファイルをGitの統合対象から除外しながら、各ロック生成箇所へ除外規則を複製せず、既存の`.gitignore`内容を保持する。
 
 この保存契約の目的は、可変な作業ファイルをprivate-notesから分離し、複数環境で同じ永続参照を利用しながら、必要なレビューが収束した計画だけをGit履歴へ残すことである。
@@ -1753,33 +1754,33 @@ UWI終端の判断基準は`agent-toolkit:bugfix`が定める。書式と自動�
 
 目的は`agent-toolkit:process-wi`の自動コードレビュー監査が毎セッションで全Pull Requestのreview本文を再判定する状態を解消し、判定の作業量がPull Requestの累積件数へ比例しない形にすることである。
 構造の理由は、判定の入力集合を外部サービス側の状態だけで決めず、自セッション側の処理済み記録との差分で決める点にある。review threadは解決状態を持つが、inline commentもreview threadも伴わないreview本文は対応する状態を持たない。このため取得は全Pull Requestのまま維持し、判定だけを差分へ限定する。
-取得の負荷は、横断クエリーが1回に受け取るPull Requestの件数で調整する。前回実行時刻を境界として更新日時の新しい側だけを取得する増分取得は採用しない。要修正と分類した指摘のthreadを解決しない運用のため、当該Pull Requestの更新日時が進まず、境界より古い側に未処置の指摘が残る。取りこぼしを防ぐには未処置のPull Request集合と境界時刻を保存し、監査が途中で失敗した場合の整合も維持する必要があり、恒常的な状態が増える。
+取得の負荷は、横断クエリーが1回に受け取るPull Requestの件数で調整する。前回実行時刻を境界として更新日時の新しい側だけを取得する増分取得は採用しない。要修正と分類した指摘のthreadを解決しない運用のため、指摘を含むPull Requestの更新日時が進まず、境界より古い側に未処置の指摘が残る。取りこぼしを防ぐには未処置のPull Request集合と境界時刻を保存し、監査が途中で失敗した場合の整合も維持する必要があり、恒常的な状態が増える。
 記録先は`atk config get state_dir`が返す状態ディレクトリとし、`atk review-audit`が読み書きする。対象リポジトリ配下へ置く案は、監査が成果物を変更するため採用しない。キュー管理リポジトリへ置く案は、監査のたびにキュー操作とリモート同期が増えるため採用しない。
 知識境界として、記録の有無を判定へ反映する手順は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。記録の保存形式とパス解決は`agent-toolkit/agent_toolkit/_atk/review_audit.py`が持つ。
 未処置対象の取得も`atk review-audit pending`が持つ。全Pull Requestのreviewとreview threadをpagination終端まで取得し、判定済みreviewを除いた結果を構造化して返す。未判定reviewと未解決のCopilot由来threadがともに0件なら、`process-wi`は高コストの監査担当を起動しない。`merge-pr`も対象PRが含まれなければ取得と判定を省く。機能の有効状態で判定する案は、公開APIが無く、非公開APIの契約種別からもレビューの到着を判定できないため採用しない。
 記録を無効化する機構は設けない。記録した分類は現行成果物から再導出できる補助情報であり、成果物の変更で再判定が必要になった指摘は別のdatabaseIdを持つ新しいreviewとして到着するためである。記録時のHEADを併記して差分がある場合に無効化する案は採用しない。ベースbranchがほぼ毎セッション進むため、記録がほぼ常に無効となり目的を達成しないためである。
 
-判定結果は`atk review-audit`のローカル記録に加えて対象GitHubリポジトリへも残す。目的は判定の妥当性をユーザーと後続のセッションがGitHubのPull Request画面だけで確認できるようにすることである。構造の理由は、分類と根拠を保持する主体を、判定を再導出できる索引であるローカル記録と、人間向けの基準となる記録であるGitHubの本文へ分けた点にある。未解決のreview threadへは`addPullRequestReviewThreadReply`で分類と根拠を返信してから`resolveReviewThread`で解決し、threadを伴わないreview本文へは`gh pr comment`で投稿する。知識境界として、書き込みの手順と承認の扱いは`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持ち、監査担当の実行範囲は`agent-toolkit/share/pick-wi.parent.md`が持つ。`dismissPullRequestReview`で分類を残す案は、Copilotのreviewが`COMMENTED`状態で到着し、当該mutationが当該状態を受理しないため採用しない。`resolveReviewThread`の`resolutionReason`で分類を保持する案は、読み取り型`PullRequestReviewThread`が当該フィールドを返さず、後続のセッションが機械的に取得できないため採用しない。
+判定結果は`atk review-audit`のローカル記録に加えて対象GitHubリポジトリへも残す。目的は判定の妥当性をユーザーと後続のセッションがGitHubのPull Request画面だけで確認できるようにすることである。構造の理由は、分類と根拠を保持する主体を、判定を再導出できる索引であるローカル記録と、人間向けの基準となる記録であるGitHubの本文へ分けた点にある。未解決のreview threadへは`addPullRequestReviewThreadReply`で分類と根拠を返信してから`resolveReviewThread`で解決し、threadを伴わないreview本文へは`gh pr comment`で投稿する。知識境界として、書き込みの手順と承認の扱いは`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持ち、監査担当の実行範囲は`agent-toolkit/share/pick-wi.parent.md`が持つ。`dismissPullRequestReview`で分類を残す案は、Copilotのreviewが`COMMENTED`状態で到着し、`dismissPullRequestReview`が`COMMENTED`状態を受理しないため採用しない。`resolveReviewThread`の`resolutionReason`で分類を保持する案は、読み取り型`PullRequestReviewThread`が`resolutionReason`を返さず、後続のセッションが機械的に取得できないため採用しない。
 
 ## atkサブコマンドの引数拒否形式
 
 目的は`atk`の利用主体であるコーディングエージェントが、受理しないオプション名を与えた場合に、1回の出力から正しい呼び出し形式へ到達できるようにすることである。
-構造の理由は、拒否の判定を`agent-toolkit/agent_toolkit/_atk/help_text.py`の`add_subcommands`が生成する全サブパーサーの既定クラスへ置き、サブコマンドごとに適用の有無が分かれる状態を表現できなくする点にある。argparseはサブパーサーが解釈できない引数をトップレベルの`parse_args`で報告するため、既定の動作ではトップレベルのusageだけが出て、当該サブコマンドが受理するオプションが出力へ入らない。
+構造の理由は、拒否の判定を`agent-toolkit/agent_toolkit/_atk/help_text.py`の`add_subcommands`が生成する全サブパーサーの既定クラスへ置き、サブコマンドごとに適用の有無が分かれる状態を表現できなくする点にある。argparseはサブパーサーが解釈できない引数をトップレベルの`parse_args`で報告するため、既定の動作ではトップレベルのusageだけが出て、引数を拒否したサブコマンドが受理するオプションが出力へ入らない。
 知識境界として、各サブコマンドが受理するオプションの定義は各`build_parser`が持ち、本節は拒否時の出力形式だけを扱う。
 却下した代替案は、拒否形式を必要なサブコマンドごとに`parser_class`で指定する案と、推測されやすいオプション名を追加で受理する案である。前者は同じ判定を複数の呼び出し元へ分散させ、後者は受理する名前を増やしても別の推測した名前では同じ拒否が生じるため採用しない。
 
 ## atkサブコマンドの実行結果出力
 
-目的は`atk`の出力を受け取るコーディングエージェントが、結果行の先頭の語だけで成否を確定し、終了コードの再確認、状態の再取得及び一致判定の確認を追加せずに次の工程へ進める状態にすることである。
+目的は`atk`の出力を受け取るコーディングエージェントが、結果行の先頭の語だけで成否を確定し、終了コードの再確認、状態の再取得および一致判定の確認を追加せずに次の工程へ進める状態にすることである。
 結果行は成功を`成功:`、失敗を`失敗:`、警告を`警告:`、該当0件を`該当0件:`の4種の固定接頭辞で表す。
 
 構造の理由は、接頭辞の文字列と成功行の出力先の決定を`agent-toolkit/agent_toolkit/_atk/outcome.py`へ集約し、出力箇所ごとに語彙と出力先が分かれる状態を表現できなくする点にある。
-成功行の出力先は、当該コマンドの標準出力が値、構造化データ又は本文の表示を担うかで決める。担う場合は標準エラー、担わない場合は標準出力の1行目とする。
+成功行の出力先は、実行したコマンドの標準出力が値、構造化データまたは本文の表示を担うかで決める。担う場合は標準エラー、担わない場合は標準出力の1行目とする。
 この区分を状態変更報告型、値出力型、読み取り専用型、対象外の4つとして同モジュールが保持し、`help_text.py`が各コマンドの`対象と出力`へ結果行の接頭辞と出力先を自動で加える。
 `agent_toolkit/atk_help_test.py`はコマンド木の全リーフを列挙し、いずれの区分にも属さないリーフと区分の重複を検出する。
 
 知識境界として、結果行に続く本文は各出力箇所が持ち、本モジュールは接頭辞と出力先だけを持つ。
-どのコマンドがどの区分に属するかは同モジュールの区分表に従い、ヘルプの文面とテストの双方が当該表を参照する。
+どのコマンドがどの区分に属するかは同モジュールの区分表に従い、ヘルプの文面とテストの双方が区分表を参照する。
 
 保存本文の一致判定は出力しない。
 `atk wi add`・`atk wi edit`・`atk review-table add`・`atk review-table respond`は保存本文が送信元本文と一致しない場合に非0で終了して差異を標準エラーへ書くため、成功の終了コードだけで一致の成立を示せる。
@@ -1790,21 +1791,21 @@ UWI終端の判断基準は`agent-toolkit:bugfix`が定める。書式と自動�
 
 ## 規範の集約先と参照方向
 
-WI処理の運用形態、登録と回答、振り返りからの投入の流れをエージェントが横断して参照するため、`agent-toolkit:workflow-overview`をオンデマンドの知識スキルとして置く。人間向けの`docs/guide/claude-code-guide.md`は利用者の導入と操作の案内を保つ。プラグインからdotfiles固有のガイドを参照できない配布範囲と、全工程が読む`share/workflow-phases.md`の読込費用を分けるためである。ガイドだけを読む契機の追加、ガイドの内容をプラグインへ移して縮める案、工程責務の契約へ運用概要を追記する案は、この境界又は読込費用を守れないため採用しない。
+WI処理の運用形態、登録と回答、振り返りからの投入の流れをエージェントが横断して参照するため、`agent-toolkit:workflow-overview`をオンデマンドの知識スキルとして置く。人間向けの`docs/guide/claude-code-guide.md`は利用者の導入と操作の案内を保つ。プラグインからdotfiles固有のガイドを参照できない配布範囲と、全工程が読む`share/workflow-phases.md`の読込費用を分けるためである。ガイドだけを読む契機の追加、ガイドの内容をプラグインへ移して縮める案、工程責務の契約へ運用概要を追記する案は、この境界または読込費用を守れないため採用しない。
 
-複数の実行主体が使う契約は、契約本文を1箇所の基準文書へ集約し、各主体の文書には読む時点と利用場面固有の差分だけを残す。一括取得は`agent-toolkit:add-awi-by-user`、採否レコードは`agent-toolkit:process-wi`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-toolkit:review-standards`が定める。スキル本体には起動判断、工程順序及び停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
+複数の実行主体が使う契約は、契約本文を1箇所の基準文書へ集約し、各主体の文書には読む時点と利用場面固有の差分だけを残す。一括取得は`agent-toolkit:add-awi-by-user`、採否レコードは`agent-toolkit:process-wi`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-toolkit:review-standards`が定める。スキル本体には起動判断、工程順序および停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
 
-判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全又は公開契約を保護する場合を除き、各エージェント文書へ常設しない。
+判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全または公開契約を保護する場合を除き、各エージェント文書へ常設しない。
 
 呼び出し元は割当と認可を知り、受信側は自身の実行手順と出力を知る。この知識境界を維持するため、同じ契約を呼び出し元文書とagent定義へ複製しない。定義元の指定と本文複製を併存させる案は同期の抜けを残すため採用しない。共通文書を契約ごとに新設する案も参照段数を増やすため、既存の責務所有者へ集約できる場合は採用しない。
 
-委譲の名前付き入力は、起動API、受信側での取得結果、固定タスク契約及び他の受領値から導出できない状態だけを持つ。既定値と不在時の解釈は受信側文書が定め、呼び出し元文書は既定値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、起動APIの`cwd`や受信側がGitから得る値を送信一覧へ再掲しない。
+委譲の名前付き入力は、起動API、受信側での取得結果、固定タスク契約および他の受領値から導出できない状態だけを持つ。既定値と不在時の解釈は受信側文書が定め、呼び出し元文書は既定値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、起動APIの`cwd`や受信側がGitから得る値を送信一覧へ再掲しない。
 
 委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」だけで定め、他の文書へ再掲しない。
 `agent-toolkit/share/exec.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。
 同じ判定条件を複数の文書へ複製した結果、暫定修正で1文書だけが旧規定のまま残り、実装担当が矛盾を報告する事象が発生したためである。
 
-サブエージェントを起動する手順は、呼び元用文書（`<役割名>.parent.md`）と呼び先用文書（`<役割名>.subagent.md`）のペアへ分け、呼び先の所在にかかわらずプラグインの`share/`配下へ置く。複数のスキルから同じ役割を起動する場合も、いずれの呼び元も`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`という同じ形式で参照先を解決できる。呼び元用文書は起動手順、渡す入力、受領する報告と検収条件だけを持ち、呼び先固有の作業手順を複製しない。呼び先用文書は責務、入力、実行手順及び出力形式だけを持ち、呼び出し元の割当・認可判断を複製しない。
+サブエージェントを起動する手順は、呼び元用文書（`<役割名>.parent.md`）と呼び先用文書（`<役割名>.subagent.md`）のペアへ分け、呼び先の所在にかかわらずプラグインの`share/`配下へ置く。複数のスキルから同じ役割を起動する場合も、いずれの呼び元も`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`という同じ形式で参照先を解決できる。呼び元用文書は起動手順、渡す入力、受領する報告と検収条件だけを持ち、呼び先固有の作業手順を複製しない。呼び先用文書は責務、入力、実行手順および出力形式だけを持ち、呼び出し元の割当・認可判断を複製しない。
 却下した代替案は、呼び先用文書を各スキルの`references/`配下へ置く案である。複数のスキルから参照される役割では文書の所在が一意に定まらず、同じ役割の起動手順が2箇所へ分かれるため採らない。
 
 スキル本体の共有規範を`references/`配下へ移す統合では、`references/`配下の資料が互いに規範を委ねる状態が構造的に生じる。このため、資料間の委譲は`SKILL.md`が同じ読込条件で併読を定める兄弟資料に限って認め、併読を定めない兄弟資料へは規範を委ねない。委譲の可否を決める責務は`SKILL.md`の読込条件が持ち、委ねる側と委ねられる側を同じ工程へ並べる。
@@ -1812,7 +1813,7 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 
 ## 場面別手順と外部投稿前レビュー
 
-管理対象一時領域、品質確認、検索及び秘匿値ファイルの手順は、それぞれ`agent-toolkit:managed-temp`、`agent-toolkit:check-execution`、`agent-toolkit:search`、`agent-toolkit:secret-files`が所有する。実行時に必要な場面を各スキルの`description`で示す。手順本文を場面別スキルにまとめ、常時規範から長文を読む工程を減らす。委譲の親子契約は前節の境界に従って引き続き`share/`へ置く。スキル起動の判定は`description`に依存するため、常時規範からの決定的な読込契機は持たない。
+管理対象一時領域、品質確認、検索および秘匿値ファイルの手順は、それぞれ`agent-toolkit:managed-temp`、`agent-toolkit:check-execution`、`agent-toolkit:search`、`agent-toolkit:secret-files`が所有する。実行時に必要な場面を各スキルの`description`で示す。手順本文を場面別スキルにまとめ、常時規範から長文を読む工程を減らす。委譲の親子契約は前節の境界に従って引き続き`share/`へ置く。スキル起動の判定は`description`に依存するため、常時規範からの決定的な読込契機は持たない。
 
 第三者が読む外部サービスへ起草した文面を投稿する前には`agent-toolkit:external-write-review`を用いる。投稿する主体が文面、投稿先、目的と根拠の所在を確定し、読み取り専用の探索担当へ文脈を持たない読者の観点で内容の確認を依頼する。探索担当は文面の採否と投稿認可を持たず、投稿主体が指摘を反映して送信する。投稿先ごとにレビュー手順を複製する案と常時規範から別の`share/`手順を読む案は、同じ判断の保守先と読込量を増やすため採用しない。
 
@@ -1825,8 +1826,8 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 ### 計画一覧の対象判定
 
 計画一覧はメイン計画を通常の項目とし、同じstemのメイン計画が存在しないレビュー指摘管理表も独立した項目として表示する。
-目的はメイン計画とレビュー表を重複表示せず、メイン計画が移動又は削除された後も残存するレビュー表へ到達できるようにすることである。
-メイン計画が存在する場合はレビュー表を一覧へ載せず、detail、バグ調査及びその他の付属ファイルも独立表示しない。
+目的はメイン計画とレビュー表を重複表示せず、メイン計画が移動または削除された後も残存するレビュー表へ到達できるようにすることである。
+メイン計画が存在する場合はレビュー表を一覧へ載せず、detail、バグ調査およびその他の付属ファイルも独立表示しない。
 本文検索は一覧上のメイン計画へ対応付けたパスと実際のファイルパスの双方を比べ、孤立したレビュー表の一致を失わない。
 
 知識境界として、ローカル側の対象判定は`_atk_serve_plans.py`の`is_listed_path`が持つ。
@@ -1855,34 +1856,34 @@ SSEは`/api/events`（AWI）、`/api/plans/events`（計画ファイル）、`/a
 
 通知の種類は、一覧の再取得を促す`refresh`と、記録1件の更新を示す`record`（host・engine・pathを含む）の2つとする。`refresh`を送るのは一覧に載る項目の集合か表示する値が変わり得る変更に限る。記録の作成・削除・移動と、除外中の記録にユーザー発話が現れた変更がこれに当たる。一覧に載っている記録への追記では`record`だけを送る。一覧の応答は800KB程度あり、進行中のセッションが追記するたびに再取得させると転送量と描画の負担が大きいためである。監視側は記録ごとの発話の有無を一覧の取得時に引き継ぎ、未知の記録だけを変更の観測時に読む。発話は追記で消えないため、一度発話ありと判定した記録は再び読まない。購読者の未配信の通知が溜まった場合は、`refresh`の1件へまとめる。クライアントは`refresh`で一覧と選択中の記録を取り直すため、まとめても取りこぼしは生じない。
 
-選択中の記録と同じhost・engine・pathの`record`を受けると、右ペインは詳細を取り直して描き直す。描き直しでは展開中のイベントの開閉、「さらに100件表示」で広げた表示件数及びスクロール位置を保つ。記録のイベントは先頭からの順で並び、追記で既存の位置が変わらないため、開閉状態は位置で対応付ける。サブエージェントの記録を開いている場合も、開いている記録自身の更新で追随する。詳細の取得は世代で管理し、選択の切り替え後に届いた古い応答を反映しない。一覧の通知だけで右ペインも取り直す案は、他の記録の追記でも詳細を取り直すため採らない。末尾を読んでいる利用者には追記した末尾へ追従し、末尾より上を読んでいる利用者には位置を保ったまま新着の件数と末尾へ移る操作を右ペインの下端へ示す。位置を保つだけでは、読み返している間に進行中のセッションが応答や停止をしても利用者が気付けないためである。常に末尾へ移る案は、読み返している位置を奪うため採らない。
+選択中の記録と同じhost・engine・pathの`record`を受けると、右ペインは詳細を取り直して描き直す。描き直しでは展開中のイベントの開閉、「さらに100件表示」で広げた表示件数およびスクロール位置を保つ。記録のイベントは先頭からの順で並び、追記で既存の位置が変わらないため、開閉状態は位置で対応付ける。サブエージェントの記録を開いている場合も、開いている記録自身の更新で追随する。詳細の取得は世代で管理し、選択の切り替え後に届いた古い応答を反映しない。一覧の通知だけで右ペインも取り直す案は、他の記録の追記でも詳細を取り直すため採らない。末尾を読んでいる利用者には追記した末尾へ追従し、末尾より上を読んでいる利用者には位置を保ったまま新着の件数と末尾へ移る操作を右ペインの下端へ示す。位置を保つだけでは、読み返している間に進行中のセッションが応答や停止をしても利用者が気付けないためである。常に末尾へ移る案は、読み返している位置を奪うため採らない。
 
 発話を含む記録が1件も無いときの一覧の空状態は、記録そのものが無いのではなく発話を含む記録が無いことと、発話が保存されれば自動で一覧へ加わることを示す。記録が無いと表示すると、起動しただけで入力していない利用者は、rootの設定を誤ったか機能が動いていないと考えてしまう。
 
-3画面のヘッダー、ナビゲーション、ボタン及びモバイル時の折り返しは、統合したスタイルシートの共通部分で定める。画面固有の指定は、当該画面のコンテンツ整列に従属する水平方向の余白だけを上書きし、高さ、文字サイズ、内側の余白とブレークポイントを上書きしない。3画面を移動しても操作対象の大きさと位置が変わらない状態を保つためである。画面ごとに寸法を上書きする案は、共通側の変更が各画面の上書きで打ち消され、同じ要素の見え方が再び分かれるため採らない。
+3画面のヘッダー、ナビゲーション、ボタンおよびモバイル時の折り返しは、統合したスタイルシートの共通部分で定める。画面固有の指定は、画面ごとのコンテンツ整列に必要な水平方向の余白だけを上書きし、高さ、文字サイズ、内側の余白とブレークポイントを上書きしない。3画面を移動しても操作対象の大きさと位置が変わらない状態を保つためである。画面ごとに寸法を上書きする案は、共通側の変更が各画面の上書きで打ち消され、同じ要素の見え方が再び分かれるため採らない。
 
 リモートホスト側ヘルパーの起動コードは`agent-toolkit/agent_toolkit/_atk/serve/remote.py`の`remote_bootstrap`へ集約する。
 計画ファイル画面とセッション画面は別々のヘルパーを起動するが、SSH越しの起動形は同じ制約を負う。
 起動コードは`python -c`へ1行で渡し、ヘルパー本体を`exec`で実行する。
-このときヘルパーは`python -c`が用意した名前空間をそのまま使い、当該名前空間には`__file__`が無い。
+このときヘルパーは`python -c`が用意した名前空間をそのまま使い、`python -c`が用意した名前空間には`__file__`が無い。
 そのため起動コードは`exec`の前にヘルパー本体の絶対パスを`__file__`へ束縛し、通常のスクリプト実行と同じ属性を与える。
 画面ごとに起動コードを複製する案は、一方の画面で確定した名前空間の契約が他方へ伝わらず、ヘルパー側の記述が実行形式に依存して成立しなくなるため採らない。
 ヘルパー側で`__file__`の不在に耐える案も、ヘルパー自身の設置場所から導くrootと`~/dotfiles`という2つのroot候補の区別が失われるため採らない。
 
-計画ファイル画面とセッション画面のペイン高さは、ヘッダーの実際の高さへ追随させる。ヘッダーの高さを固定値の変数で見積もる方式は、ヘッダーが折り返す幅で実際の高さと一致せず、ペインの下端に余白の不足又は過剰を生じるため採用しない。あわせて、セッション画面の本文は計画ファイル画面の本文と同じ基準の文字サイズで表示し、右ペインの本文へ計画ファイル画面と同じ最大幅と左右の余白を適用する。両画面は同じ読み物として続けて閲覧されるため、文字サイズと余白が画面ごとに変わると読み手が視線の基準を取り直す必要が生じる。
+計画ファイル画面とセッション画面のペイン高さは、ヘッダーの実際の高さへ追随させる。ヘッダーの高さを固定値の変数で見積もる方式は、ヘッダーが折り返す幅で実際の高さと一致せず、ペインの下端に余白の不足または過剰を生じるため採用しない。あわせて、セッション画面の本文は計画ファイル画面の本文と同じ基準の文字サイズで表示し、右ペインの本文へ計画ファイル画面と同じ最大幅と左右の余白を適用する。両画面は同じ読み物として続けて閲覧されるため、文字サイズと余白が画面ごとに変わると読み手が視線の基準を取り直す必要が生じる。
 
 3画面は1つのHTMLドキュメントと1つのスタイルシートで構成する。サーバーは`/`、`/plans`、`/sessions`のいずれのURLでも同じ本文を返し、初期表示の画面名だけを埋め込む。画面の切り替えは`document.body`の`data-screen`を書き換えて対象の画面要素だけを表示する操作に限る。HTMLの取得、スタイルシートの追加読み込み、DOMの差し替えは行わない。画面ごとに別のドキュメントと別のスタイルシートを持つ構成は、画面ごとに読み込む資産の集合とカスケードが分かれ、利用者が画面ごとに異なる表示を観測するため採らない。
 
 画面固有のCSSは画面要素の識別子`#screen-wi`・`#screen-plans`・`#screen-sessions`で限定する。3画面のDOMは常に同じドキュメントへ存在するため、`body`の属性で限定する方式では非表示の画面の指定が`body`と共有要素へ及ぶ。本文の書体、文字サイズ、行の高さは計画ファイル画面とセッション画面で同じ指定を共有し、`body`自身へ画面固有の指定を置かない。要素の識別子は3画面で重複させず、重複する識別子には画面名の接頭辞を付けて一意にする。
 
-共通シェルの画面登録契約は`init`だけとする。`init`は当該画面の要素への購読、サーバーからの初期取得、SSEの購読をまとめて1回だけ実行する。共通シェルは初期表示の画面の`init`が完了した後、残りの画面の`init`を背景で実行する。以後の画面の切り替えでは`init`を再実行せず、表示中でない画面もSSEの購読を保ったまま内容を更新する。画面の表示のたびに初期取得をやり直す契約は、利用者が同じ画面へ戻るたびにGitの同期と一覧の再取得を待つため採らない。3画面のSSEを同時に保つ構成は、HTTP/1.1では同一ホストの同時接続数を3つ占有する。表示中でない画面の購読を閉じる案は、再表示のたびに取得をやり直す必要が生じ、上記の契約と両立しないため採らない。
+共通シェルの画面登録契約は`init`だけとする。`init`は登録された画面の要素への購読、サーバーからの初期取得、SSEの購読をまとめて1回だけ実行する。共通シェルは初期表示の画面の`init`が完了した後、残りの画面の`init`を背景で実行する。以後の画面の切り替えでは`init`を再実行せず、表示中でない画面もSSEの購読を保ったまま内容を更新する。画面の表示のたびに初期取得をやり直す契約は、利用者が同じ画面へ戻るたびにGitの同期と一覧の再取得を待つため採らない。3画面のSSEを同時に保つ構成は、HTTP/1.1では同一ホストの同時接続数を3つ占有する。表示中でない画面の購読を閉じる案は、再表示のたびに取得をやり直す必要が生じ、上記の契約と両立しないため採らない。
 
-セッション画面の本文は、実行環境の挿入本文を`injected`として初期状態で折りたたみ、通常の`user`・`assistant`・`developer`を最初から展開する。`injected`は既存の折りたたみイベントと同じアコーディオン操作で全文を読める。判定はClaude Codeの`isMeta`・`turnCompanion`と、user又はdeveloper本文の接頭辞を使い、session-reviewの証拠抽出と共通モジュールへ集約する。ロールだけで分類すると、同じロールへ実行環境が書いた本文が利用者の発話を埋める。一覧では発話プレビューを描画せず、最初の発話の検索値だけから挿入本文を除く。発話の有無は記録行のロールで判定するため、挿入本文だけの記録も一覧に残る。`system`という表示種別は設けない。2026年9月8日にClaude Codeのtranscript 2,544件とCodexのrollout 7,741件を対象として`"role": "system"`を検索し、一致するファイルが無いことを確認した。Claude Codeの`type`が`system`である記録は運用通知である。内訳は`stop_hook_summary`・`turn_duration`・`api_error`・`scheduled_task_fire`・`compact_boundary`である。残りは`local_command`・`informational`・`agents_killed`・`bridge_status`である。いずれもシステムプロンプトを保持しない。当該運用通知を本文へ表示する案は、1セッションあたりの表示件数を大きく増やす一方で、利用者が読む対象である指示と発話を埋もれさせるため採らない。記録に現れない種別のために表示種別、ラベル及び初期の開閉を先行して設ける案も、観測できない条件のための恒常的な分岐を増やすため採らない。
+セッション画面の本文は、実行環境の挿入本文を`injected`として初期状態で折りたたみ、通常の`user`・`assistant`・`developer`を最初から展開する。`injected`は既存の折りたたみイベントと同じアコーディオン操作で全文を読める。判定はClaude Codeの`isMeta`・`turnCompanion`と、userまたはdeveloper本文の接頭辞を使い、session-reviewの証拠抽出と共通モジュールへ集約する。ロールだけで分類すると、同じロールへ実行環境が書いた本文が利用者の発話を埋める。一覧では発話プレビューを描画せず、最初の発話の検索値だけから挿入本文を除く。発話の有無は記録行のロールで判定するため、挿入本文だけの記録も一覧に残る。`system`という表示種別は設けない。2026年9月8日にClaude Codeのtranscript 2,544件とCodexのrollout 7,741件を対象として`"role": "system"`を検索し、一致するファイルが無いことを確認した。Claude Codeの`type`が`system`である記録は運用通知である。内訳は`stop_hook_summary`・`turn_duration`・`api_error`・`scheduled_task_fire`・`compact_boundary`である。残りは`local_command`・`informational`・`agents_killed`・`bridge_status`である。いずれもシステムプロンプトを保持しない。Claude Codeの運用通知を本文へ表示する案は、1セッションあたりの表示件数を大きく増やす一方で、利用者が読む対象である指示と発話を埋もれさせるため採らない。記録に現れない種別のために表示種別、ラベルおよび初期の開閉を先行して設ける案も、観測できない条件のための恒常的な分岐を増やすため採らない。
 
 ## agent-toolkit/agent_toolkit/のパッケージ構成
 
 `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
-該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`、管理対象一時領域の後始末`_managed_temp.py`、及びリモートホスト上で読み込んで実行するヘルパー2件とする。
+該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`、管理対象一時領域の後始末`_managed_temp.py`、およびリモートホスト上で読み込んで実行するヘルパー2件とする。
 それ以外の実装モジュールは、責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ収める。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
@@ -1904,13 +1905,13 @@ SSEは`/api/events`（AWI）、`/api/plans/events`（計画ファイル）、`/a
 直下に置く公開ファイルは接頭辞`_`を付けずに命名する。
 `_managed_temp.py`だけは接頭辞を残す。
 このパスは`agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex.py`がCodex側の許可判定で解決し、hookの出力契約テストが生成するコマンド文字列にも現れる。
-改名すると同じコマンドが許可されなくなるため、名前を維持して`agent-toolkit/agent_toolkit/script_prefix_test.py`へ当該1件の除外を置く。
+改名すると同じコマンドが許可されなくなるため、名前を維持して`agent-toolkit/agent_toolkit/script_prefix_test.py`へ`_managed_temp.py`の除外を置く。
 
 サブパッケージ内のimportには相対importを使わず絶対importを使う。
 `scripts/check_script_imports.py`は`sys.path.insert`の静的評価と絶対importの解決によりPEP 723スクリプトのimport到達性を確かめる。
 同スクリプトは相対importを解析の対象にしないため、相対importへ変えると検証の網羅性が失われる。
 同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportも検出して失敗する。
-同スクリプトは`agent-toolkit/agent_toolkit/`直下に公開スクリプト、`__init__.py`、`conftest.py`及びテスト以外のモジュールがある場合も失敗する。
+同スクリプトは`agent-toolkit/agent_toolkit/`直下に公開スクリプト、`__init__.py`、`conftest.py`およびテスト以外のモジュールがある場合も失敗する。
 層の順序の判定はサブパッケージだけを走査するため、層に収まらないimportを持つモジュールを直下へ置くと、直下の配置の規定から外れても検出されない。
 
 モジュール名からは所属を表す接頭辞を除く。
@@ -1927,9 +1928,9 @@ pytestの既定のimport modeでは、パッケージに属するテストはパ
 
 ## 通知本文の仕様と規範文書長の追随検出
 
-`agent-toolkit`の通知本文と常時読み込む規範文書を変更した主体が、変更の時点で追随すべき対象を把握できるようにすることを目的とする。当該変更が触れていないテストと上限が全体のチェックで失敗する事象を、統合の後ではなく編集の時点へ移す。
+`agent-toolkit`の通知本文と常時読み込む規範文書を変更した主体が、変更の時点で追随すべき対象を把握できるようにすることを目的とする。変更箇所と直接接続していないテストや上限が全体チェックで失敗する事象を、統合の後ではなく編集の時点へ移す。
 構造の理由は、同じ外部仕様を固定する箇所を1か所へ集約する点にある。ユーザーが直接読む本文へのチェックは`agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py`の`_handle_user_facing_text_tool`へ集約する。適用対象は同ファイルの`_USER_FACING_TEXT_TOOL_NAMES`だけで定める。
-規範文書の合計長は、上限の超過を検出した時点で文書ごとの長さと超過分を失敗本文へ示す。当該本文は`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が組み立てる。
+規範文書の合計長は、上限の超過を検出した時点で文書ごとの長さと超過分を失敗本文へ示す。上限超過時の診断本文は`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が組み立てる。
 知識境界として、上限値は`rules_context.py`の`CLAUDE_CODE_OUTPUT_LIMIT`が持ち、超過時の診断本文はテスト側が持つ。
 却下した代替案は、相反する期待を持つテストの組をテストの意味から機械的に検出する案と、規範文書の編集時点で上限までの残量を示す案である。前者はテストの意味解析を要して成立を確認できず、後者は規範文書の編集を検出する手段の特定を要するため採用しない。
 
@@ -1947,4 +1948,4 @@ WIの完成条件は、実行レビューが条件ごとの証拠と判定を一
 
 証拠JSONの構文、配列と行の形式、WI本文の完成条件数に対する行数の下限は、`atk run-script exec-review-evidence-check`が判定する。実行レビュー担当の返却前とメインの統合指示前に同じコマンドを使い、記録の欠落とJSONの構文不正を早く発見する。各行と原文の意味対応は両者の読解に残す。行数だけで逐語引用の単位を判断する案は、複数の要求を1行へまとめても件数が一致し得るため採用しない。
 
-エージェントが起草した完成条件をユーザーコメント又はUWI回答が否定し、計画がその提案を不採用にした場合は、元の完成条件を証拠から削除せず`失効`として記録する。実行レビューが否定した要求単位と計画の不採用行を証拠へ結び付け、統合担当はその対応を検収する。単に条件を省く案ではWI本文との過不足ない対応を失い、衝突を毎回エスカレーションする案ではユーザーの是正要求が判定へ反映されない。
+エージェントが起草した完成条件をユーザーコメントまたはUWI回答が否定し、計画がその提案を不採用にした場合は、元の完成条件を証拠から削除せず`失効`として記録する。実行レビューが否定した要求単位と計画の不採用行を証拠へ結び付け、統合担当はその対応を検収する。単に条件を省く案ではWI本文との過不足ない対応を失い、衝突を毎回エスカレーションする案ではユーザーの是正要求が判定へ反映されない。

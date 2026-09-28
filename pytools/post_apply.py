@@ -132,7 +132,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # dotfiles ローカルの ak110-projects-operations skill が当該機能を担う (15ca58b)。
+        # dotfiles ローカルの ak110-projects-operations skill がこの機能を担う (15ca58b)。
         Path("agents/cross-project-sync-checker.md"),
         # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
         # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
@@ -143,6 +143,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("agents/careful-followup-reviewer.md"),
         # 現在のスキル名は refine-prompt。配布先から旧スキルディレクトリを削除する。
         Path("skills/empirical-prompt-tuning"),
+        # 2つのスキルはagent-toolkit pluginへ移設したため、dotfiles側の旧配布先を削除する。
+        Path("skills/refine-prompt"),
+        Path("skills/export-session"),
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先を削除する。
         Path("skills/session-review"),
         Path("skills/session-review-dotfiles"),
@@ -196,6 +199,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 旧配布先リンクを除去する。
         Path("skills/plan-impl"),
         Path("skills/plan-codex-review"),
+        # 2つのスキルはagent-toolkit pluginへ移設したため、旧リンクを削除する。
+        Path("skills/refine-prompt"),
+        Path("skills/export-session"),
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先リンクを除去する。
         Path("skills/session-review"),
         Path("skills/session-review-dotfiles"),

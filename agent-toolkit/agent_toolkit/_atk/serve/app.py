@@ -553,7 +553,7 @@ class Operations:
         """定期更新としてリポジトリを同期し、実際にpullしたかを返す。
 
         直近のpullから一定時間内であれば省略する。ロックを取得できない場合は
-        当該周期を見送り、次周期で再試行する。
+        その周期を見送り、次周期で再試行する。
         """
         try:
             return common.synchronize(self.private_notes, only_if_stale=True, lock_timeout=_WEB_LOCK_TIMEOUT)
@@ -565,7 +565,7 @@ class Operations:
 
         新規登録フォームの補完候補とフィルターの選択肢に用いる。
         既定の`active`ではactiveエントリに加え、直近7日以内に処理した終端エントリを含める。
-        他の状態を明示した場合は当該状態の全エントリを返す。
+        他の状態を明示した場合はその状態の全エントリを返す。
         `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
         """
         found: set[str] = set()
@@ -612,9 +612,9 @@ class Operations:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """エージェント由来のinbox又はhold項目へユーザーコメントを追記又は置換する。"""
+        """エージェント由来のinboxまたはhold項目へユーザーコメントを追記または置換する。"""
         if state not in {common.WI_STATE_INBOX, common.WI_STATE_HOLD}:
-            raise common.WebInputError("ユーザーコメントを編集できる状態はinbox又はholdだけです")
+            raise common.WebInputError("ユーザーコメントを編集できる状態はinboxまたはholdだけです")
         if not isinstance(comment, str) or not comment.strip():
             raise common.WebInputError("commentは空でない文字列で指定してください")
         if not isinstance(expected_content, str) or not expected_content.strip():
@@ -743,7 +743,7 @@ class Operations:
         state: str | None = None,
         expected_content: str | None = None,
     ) -> list[str]:
-        """複数エントリを全件検証後に移動又は削除する。
+        """複数エントリを全件検証後に移動または削除する。
 
         `force`は`action="remove"`の場合のみ意味を持ち、
         processing状態のファイルへの既定保護（`atk wi rm`の`--force`と同義）を解除する。
@@ -1442,7 +1442,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         expected_content = _specified_string(data, "expected_content")
         state_name = _optional_string(data, "state")
         if state_name is not None and state_name not in (*common.WI_PROCESSABLE_STATES, common.WI_STATE_HOLD):
-            raise common.WebInputError("stateはinbox、processing又はholdで指定してください")
+            raise common.WebInputError("stateはinbox、processingまたはholdで指定してください")
         if state_name is None:
             changed = await workers.run(ops.answer_uwi, data["filename"], data["answer"], expected_content)
         else:

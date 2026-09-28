@@ -351,7 +351,7 @@ def normalize_root_specs(specs: typing.Iterable[RootSpec]) -> tuple[RootSpec, ..
                     duplicate_index = index
                     break
             except OSError:
-                # 実体照合に失敗しても、当該rootの障害により他rootの処理を停止しない。
+                # 実体照合に失敗しても、そのrootで起きた障害によって他rootの処理を停止しない。
                 continue
         if duplicate_index is None:
             normalized.append(candidate)

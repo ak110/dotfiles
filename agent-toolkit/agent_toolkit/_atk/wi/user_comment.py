@@ -144,7 +144,7 @@ def _validate_comment(text: str) -> str:
 
 
 def update_user_comment(text: str, comment: str) -> str:
-    """予約節を追記又は置換し、更新後の全文を返す。
+    """予約節を追記または置換し、更新後の全文を返す。
 
     入力から保持する部分は部分文字列のまま用い、新たに書くコメント節だけをLFで組み立てる。
     予約見出しの位置は改行をLFへ正規化した写しに対して求める。

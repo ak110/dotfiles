@@ -792,7 +792,7 @@ class TestProcessLoopPromptAndEnv:
     def test_removes_inherited_virtual_env(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """起動元ツールの仮想環境を`VIRTUAL_ENV`と`PATH`の双方から取り除いて子セッションへ渡す。
 
-        `uv run`は`VIRTUAL_ENV`の設定と同時に当該環境のコマンド格納ディレクトリを`PATH`先頭へ挿入する。
+        `uv run`は`VIRTUAL_ENV`の設定と同時にその仮想環境のコマンド格納ディレクトリを`PATH`先頭へ挿入する。
         `VIRTUAL_ENV`だけを除いても`PATH`側が残ると`python`等の解決先が起動元ツールの環境のままになる。
         `PATH`の他要素と`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`が残ることも同時に確認し、過剰除去を防ぐ。
         """
@@ -1643,7 +1643,7 @@ class TestProcessLoopPromptAndEnv:
         resume_argv: list[str],
         expected_tail: list[str],
     ) -> None:
-        """Codex再開は対話の選択画面又はIDを使い、新しい目的文を渡さない。"""
+        """Codex再開は対話の選択画面またはIDを使い、新しい目的文を渡さない。"""
         _setup_notes(tmp_path)
         _set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/high")
         myrepo = tmp_path / "myrepo"
@@ -2980,7 +2980,7 @@ class TestWorktreeWriterGate:
         tmp_path: pathlib.Path,
         failed_step: str,
     ) -> None:
-        """fetch又はrebase失敗時は実装セッションを起動可能と判定しない。"""
+        """fetchまたはrebase失敗時は実装セッションを起動可能と判定しない。"""
         local_path = tmp_path / "repo"
         (local_path / ".claude" / "worktrees" / "process-loop").mkdir(parents=True)
         worktree_path = local_path / ".claude" / "worktrees" / "process-loop"
@@ -3359,7 +3359,7 @@ class TestProcessLoopUrlInput:
         """--target-repoにURL文字列（存在しないパス）を渡すとexit 2すること。
 
         _resolve_local_worktreeは実在しないパスをURL/不正パスとして判別し、
-        ローカルパスが必要な旨をstderrへ出力してexit 2する。
+        ローカルパスを指定する必要があるとstderrへ出力してexit 2する。
         """
         _setup_notes(tmp_path)
 

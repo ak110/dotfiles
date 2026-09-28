@@ -14,7 +14,7 @@ set -euo pipefail
 BASE_URL="${DOTFILES_RULES_URL:-https://raw.githubusercontent.com/ak110/dotfiles/master/agent-toolkit/rules}"
 TARGET_DIR="$HOME/.claude/rules/agent-toolkit"
 LEGACY_DIR="$HOME/.claude/rules/agent-basics"
-# ステージング先は rules/ の外に置く。
+# ステージングには rules/ 以外のディレクトリを使う。
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 STAGE_ROOT="$HOME/.claude/rules-stage"
 CODEX_PLUGIN_ID="agent-toolkit@ak110-dotfiles"

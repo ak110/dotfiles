@@ -26,7 +26,7 @@ def _effective_origin(plugin: "_Plugin") -> str:
     """テスト時に`origin`をローカルミラーへ差し替えるためのフック。
 
     環境変数`DOTFILES_TMUX_PLUGIN_ORIGIN_BASE`が設定されている場合、
-    `https://github.com/`プレフィックスを当該値へ置換した値を返す。
+    GitHubのURLプレフィックスを環境変数の値に置き換えて返す。
     未設定時は`plugin.origin`をそのまま返す（本番動作）。
     """
     base_override = os.environ.get(_GIT_ORIGIN_BASE_ENV)

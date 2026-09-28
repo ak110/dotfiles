@@ -39,7 +39,7 @@ def test_missing_dependency_skips_timer(
     monkeypatch: pytest.MonkeyPatch,
     missing: str,
 ) -> None:
-    """root、スクリプト又はuvを解決できなければtimerを配置しない。"""
+    """root、スクリプトまたはuvを解決できなければtimerを配置しない。"""
     _root, script, _uv = prepared
     if missing == "root":
         monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)

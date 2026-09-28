@@ -39,7 +39,7 @@ def has_recent_completion(
     """入力IDに一致する有効な停滞検知完了記録がある場合に真を返す。
 
     期限切れ要素は同じ排他更新内で除去する。記録はTaskStop成功後まで保持し、
-    PreToolUseの失敗又は許可後のツール失敗で停止根拠を失わないようにする。
+    PreToolUseの失敗または許可後のツール失敗で停止根拠を失わないようにする。
     """
     checked_at = time.time() if now is None else now
     targets = set(task_ids)

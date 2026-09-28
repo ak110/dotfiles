@@ -54,7 +54,7 @@ def _use_real_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _restore_session_listeners() -> Any:
-    """テストが登録した共有リスナーを、当該テストの終了時に元の集合へ戻す。
+    """テストが登録した共有リスナーを、テスト終了時に元の集合へ戻す。
 
     `SessionState.touch`のリスナー集合はプロセス全体で共有される。
     有効化したままの`StatusFileWriter`が残ると、後続の別モジュールのテストが`touch`を呼んだ時点で
@@ -386,7 +386,7 @@ def _immediate_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _set_wait_timeout(manager: subject.AgentsServerManager, timeout: float) -> None:
-    """導出を経由せずに当該managerの待機上限を確定する。"""
+    """導出を経由せずに指定したmanagerの待機上限を確定する。"""
     manager._wait_timeouts["main"] = timeout
 
 
@@ -564,7 +564,7 @@ async def test_session_label_prefers_argument_over_generated_value(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """識別名は引数の指定を優先し、省略時は依頼本文又はコマンド名から導く。"""
+    """識別名は引数の指定を優先し、省略時は依頼本文またはコマンド名から導く。"""
     monkeypatch.setattr(
         subject._atk_config,
         "parse_unresolved_model_candidates",
@@ -630,7 +630,7 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
 
 @pytest.mark.asyncio
 async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_path: pathlib.Path) -> None:
-    """active、再開中及び期限切れのsessionを同じ項目集合で開始順に返す。"""
+    """active、再開中および期限切れのsessionを同じ項目集合で開始順に返す。"""
     manager = subject.AgentsServerManager(status_writer=None)
     active = subject.SessionState(
         "duplicate",
@@ -2401,7 +2401,7 @@ async def test_four_observation_paths_share_the_same_activity_projection(
 
 @pytest.mark.asyncio
 async def test_show_reports_active_tool_uses_with_input_detail(tmp_path: pathlib.Path) -> None:
-    """showは未完了のツール呼び出しをツール名、開始時刻及び入力の要約で返す。"""
+    """showは未完了のツール呼び出しをツール名、開始時刻および入力の要約で返す。"""
     manager, _ = _manager_with_fake("codex")
     running = subject.SessionState("thread-running", str(tmp_path), engine="claude")
     running.pending_tool_uses["toolu_1"] = ("Bash", "2026-09-15T00:00:01+00:00", "command=git status")
@@ -3021,7 +3021,7 @@ async def test_reply_resets_progress_only_after_delivery_is_accepted(
     expected_progress: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """reply失敗時は直前の進捗を保持し、開始済み又は曖昧時だけ破棄する。"""
+    """reply失敗時は直前の進捗を保持し、開始済みまたは曖昧時だけ破棄する。"""
     manager, _ = _manager_with_fake(engine, delivery)
     session = subject.SessionState("thread-1", str(tmp_path), engine=engine)
     session.set_progress("直前の進捗")
@@ -4416,7 +4416,7 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
 def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
     """Claude探索起動はユーザー設定のhookを読み、探索用toolと指示を明示する。
 
-    所有セッションを解決できない環境では当該キーを設定しない。
+    所有セッションを解決できない環境ではそのキーを設定しない。
     """
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="explore")
     assert options.setting_sources == ["user"]
@@ -4556,7 +4556,7 @@ def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPa
 
 
 def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """stdio起動でinitializeの受信、応答完了及び失敗を永続化する。"""
+    """stdio起動でinitializeの受信、応答完了および失敗を永続化する。"""
     monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
 
     def run(**_kwargs: Any) -> None:
@@ -5395,7 +5395,7 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動、継続及び自動再開の全経路が、backendへ渡す本文を出所標識で囲む。"""
+    """起動、継続および自動再開の全経路が、backendへ渡す本文を出所標識で囲む。"""
     monkeypatch.setattr(
         subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [(engine, "model", "high")]
     )
@@ -6333,7 +6333,7 @@ def test_validate_cwd_rejects_missing_absolute_path(tmp_path: pathlib.Path) -> N
     [("model", None), (None, "high"), ("", "high"), ("model", "")],
 )
 def test_validate_model_effort_rejects_incomplete_values(model: str | None, effort: str | None) -> None:
-    """modelとeffortの片側指定及び空文字列を拒否する。"""
+    """modelとeffortの片側指定および空文字列を拒否する。"""
     with pytest.raises(ValueError, match="model and effort must"):
         subject._validate_model_effort(model, effort)
 
@@ -6341,7 +6341,7 @@ def test_validate_model_effort_rejects_incomplete_values(model: str | None, effo
 def test_initialization_failure_resolves_before_host_moves_call_to_background() -> None:
     """初期化の失敗がホストの背景移行閾値より前に確定する。
 
-    当該関係が崩れると、呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
+    この関係が崩れると、呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
     上限値を0などへ置換せずに、現行の定数どうしの関係だけを判定する。
     """
     failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
@@ -6553,7 +6553,7 @@ async def test_resume_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest
 def test_preflight_passes_where_plugin_commands_succeed(tmp_path: pathlib.Path) -> None:
     """起動コマンドが成功する作業ディレクトリでは事前確認を通過する。"""
     if shutil.which("uv") is None or shutil.which("uvx") is None:
-        pytest.skip("uv又はuvxが未導入")
+        pytest.skip("uvまたはuvxが未導入")
     _REAL_PLUGIN_PREFLIGHT(str(tmp_path))
 
 

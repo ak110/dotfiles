@@ -192,7 +192,7 @@ REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_plans_remote_he
 def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
     """`path`が対象接尾辞・`root`配下・非dotdirの全条件を満たすか判定する。
 
-    読取・検索・変更監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
+    読取・検索・変更監視の3経路が同一の対象集合を返すよう、この判定を1箇所へ集約する。
     作業rootではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
     保存rootと明示rootでは旧付属ファイルも読取・検索・監視の対象に含める。
     リモート側`atk_serve_plans_remote_helper.py`の`_is_target_path`と同一基準を保つ

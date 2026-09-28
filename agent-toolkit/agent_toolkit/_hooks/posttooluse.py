@@ -2,7 +2,7 @@ r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録と
 
 Bash / Write / Edit / MultiEdit / apply_patch / Skill / Agent / Task / agents_server MCPの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
-PreToolUse、UserPromptSubmit及びStopフックが参照して判定に使う。
+PreToolUse、UserPromptSubmitおよびStopフックが参照して判定に使う。
 本モジュールは実行後の観測と警告だけを行い、遮断経路を持たない。
 
 編集入力は`_hook_tool_input`が共通の操作記録へ正規化する。
@@ -22,8 +22,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 7. PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
 8. PermissionDenied: 状態を変更せず終了
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
-10. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
-    （編集ツールの操作記録と`create_plan_files.py`又は`atk run-script plan-create`のBash標準出力）
+10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
+    （編集ツールの操作記録と`create_plan_files.py`または`atk run-script plan-create`のBash標準出力）
 """
 
 import json
@@ -143,7 +143,7 @@ _AGENTS_SERVER_TOOL_NAMES = (
     _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_STOP_TOOLS
 )
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_LIST_TOOLS
-# `show`は稼働中の子sessionの識別子と`cwd`の対を返すため、当該対の記録だけを目的として受信する。
+# `show`は稼働中の子sessionの識別子と`cwd`の対を返すため、この対の記録だけを目的として受信する。
 _AGENTS_SERVER_SHOW_TOOLS = frozenset(f"{namespace}show" for namespace in _AGENTS_SERVER_NAMESPACES)
 
 # hooks.json・hooks.codex.jsonのPostToolUse matcherが被覆すべきagents_serverツール名の全体。
@@ -364,7 +364,7 @@ def _record_agents_server_session_state(
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
             delivery = structured.get("delivery")
-            # steerはturn_seqを変えず、当該turnの終端を既存の観測が待つ。
+            # steerはturn_seqを変えず、そのturnの終端を既存の観測が待つ。
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
@@ -426,7 +426,7 @@ def _remove_agents_server_session_record(session_id: str, remote_session_id: str
     """破棄したsessionの記録を状態キーから除去する。
 
     `stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その成功応答は
-    当該sessionが終端済み、期限切れ又は既破棄のいずれかであることを含意する。
+    そのsessionが終端済み、期限切れまたは既破棄のいずれかであることを含意する。
     """
     if remote_session_id is None:
         return
@@ -493,7 +493,7 @@ def _record_agents_server_observation_attempt(
 
     実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
     `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
-    呼び出しの受理をもって観測を試みたものとして扱い、応答境界へ到達しない経路でも
+    呼び出しが受理された時点で観測を試みたものとして扱い、応答境界へ到達しない経路でも
     `pending_observation`を偽にする。`tool_input`の`session_id`で解決した既存記録に限り、
     記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
     公開状態は移行通知から確定できないため更新しない。
@@ -568,7 +568,7 @@ _PLAN_CREATION_RUN_SCRIPT_PREFIX = ("atk", "run-script", "plan-create")
 
 
 def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
-    """実行トークン列が旧又は現行の計画ファイル作成入口であるかを返す。"""
+    """実行トークン列が旧または現行の計画ファイル作成入口であるかを返す。"""
     if any(_PLAN_CREATION_SCRIPT_NAME in token for token in tokens):
         return True
     normalized = (_executable_name(tokens[0]), *tokens[1:]) if tokens else ()
@@ -578,7 +578,7 @@ def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
 def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment], tool_response: object) -> None:
     """計画ファイル作成入口の標準出力から計画ファイル（メイン）の絶対パスを記録する。
 
-    当該スクリプトは確定したパスを標準出力へ1行ずつ書くため、計画ファイル（メイン）と判定した行だけを抽出する。
+    このスクリプトは確定したパスを標準出力へ1行ずつ書くため、計画ファイル（メイン）と判定した行だけを抽出する。
     該当が無い場合は記録せず、PostToolUseの応答を変えない。
     """
     if not any(_is_plan_creation_invocation(segment.tokens) for segment in segments):
@@ -666,7 +666,7 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
     PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力とする。
     記録の契機は、Bashの背景実行が成功した応答、同じ指定で失敗した応答、
     およびツール種別を問わない背景移行通知の3つとする。
-    所有の根拠は自身の呼び出しが識別子を返したことであり、当該呼び出しの成否に依存しない。
+    所有の根拠は自身の呼び出しが識別子を返したことであり、その呼び出しの成否に依存しない。
     """
 
     def _append(state: dict) -> dict | None:
@@ -771,7 +771,7 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
         f" `uv run --project {shlex.quote(str(project_root))} --locked --no-default-groups"
         f" {shlex.quote(str(check_script))}{work_dir_option}"
         f" {shlex.quote(file_path)}`."
-        "計画の対象リポジトリが当該セッションの作業ディレクトリと異なる場合は、"
+        "計画の対象リポジトリがこのセッションの作業ディレクトリと異なる場合は、"
         "`--work-dir`を対象リポジトリへ置き換える。",
         tag="notice",
     )
@@ -807,7 +807,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
-    # 当該通知が指示する反映と依存作業の再開はメインが所有するため、
+    # この通知が指示する反映と依存作業の再開はメインが所有するため、
     # in-processのサブエージェントと`agents_server`の委譲先セッションでは通知を組み立てない。
     if cwd and is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
@@ -824,7 +824,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         return 0
 
     # showの応答が返す稼働中の子sessionは、識別子と`cwd`の対だけを記録する。
-    # session記録そのものは当該sessionを起動した主体が持つため、ここでは更新しない。
+    # session記録そのものはそのsessionを起動した主体が持つため、ここでは更新しない。
     if tool_name in _AGENTS_SERVER_SHOW_TOOLS:
         structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
         _record_child_session_cwds(session_id, structured)
@@ -910,7 +910,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         task_id = _background_task_id_from_response(payload.get("tool_response"))
     else:
         # 実行上限に達した前景のBashを実行ホストが背景へ移した場合も、応答は構造化`backgroundTaskId`を返す。
-        # 当該タスクは自セッションが起動したものであり、TaskStopの所有判定へ含める。
+        # このタスクは自セッションが起動したものであり、TaskStopの所有判定へ含める。
         task_id = _structured_background_task_id(payload.get("tool_response"))
     if task_id is not None:
         _record_background_task_id(session_id, task_id)

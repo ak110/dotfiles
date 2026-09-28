@@ -110,7 +110,7 @@ class TestSelectSession:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """n応答で当該候補を破棄し、次に古い候補を提示する。"""
+        """n応答でこの候補を選ばず、次に古い候補を提示する。"""
         repository = _repository(tmp_path, "target")
         claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
         project = claude_home / "projects" / "-target"

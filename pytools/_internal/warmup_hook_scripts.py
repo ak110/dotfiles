@@ -3,7 +3,7 @@
 Claude Code・Codexのhookはplugin rootのuvプロジェクトを明示して起動する。
 プロジェクト環境が未構築の初回実行では、
 Python本体の解決・依存パッケージの取得・venv構築がhookの制限時間内に収まらず、
-hook出力が破棄される。`chezmoi apply`後処理で当該環境を事前に構築し、
+hook出力が破棄される。`chezmoi apply`後処理でhookが使うuv環境を事前に構築し、
 初回hook実行時のコールドスタートを解消する。
 
 ウォームアップ対象は「hook設定が実際に参照するパス」に限る。

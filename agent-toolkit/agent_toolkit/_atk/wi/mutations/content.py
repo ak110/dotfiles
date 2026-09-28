@@ -197,7 +197,7 @@ def edit_entry_content(
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
     if state not in WI_EDITABLE_STATES:
-        raise WebInputError("編集可能状態はinbox、processing又はholdです")
+        raise WebInputError("編集可能状態はinbox、processingまたはholdです")
 
     directory = private_notes / state
     return _edit_entry(
@@ -231,7 +231,7 @@ def append_entry_content(
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
     if state not in WI_EDITABLE_STATES:
-        raise WebInputError("追記可能状態はinbox、processing又はholdです")
+        raise WebInputError("追記可能状態はinbox、processingまたはholdです")
 
     directory = private_notes / state
     path = directory / filename
@@ -358,7 +358,7 @@ def _apply_cooldown_edit(content: str, value: str) -> str:
 
 
 def _reject_agent_processing_edit(path: pathlib.Path, original: str) -> None:
-    """処理中又は処理中から保留したWIの本文置換をエージェントには許さない。"""
+    """処理中または処理中から保留したWIの本文置換をエージェントには許さない。"""
     if not is_agent_environment():
         return
     state_label: str | None = None
@@ -372,7 +372,7 @@ def _reject_agent_processing_edit(path: pathlib.Path, original: str) -> None:
         return
     _outcome.report_failure(
         f"{state_label}はエージェント環境から編集できない: {path.name}。"
-        "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わる。"
+        "処理中の要求を書き換えると、その要求をこのセッションで処理するかどうかが変わる。"
         "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
         "atk wi edit --appendで追記する"
     )
@@ -380,7 +380,7 @@ def _reject_agent_processing_edit(path: pathlib.Path, original: str) -> None:
 
 
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """editサブコマンド: `--body-file`又は$EDITORで対象を編集しcommit・pushする。
+    """editサブコマンド: `--body-file`または$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
     """
@@ -492,7 +492,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             path = paths[0]
         if args.cooldown_until is not None and path.parent.name == WI_STATE_PROCESSING:
             _outcome.report_failure(
-                f"processingの項目は再処理抑制期限を変更できない: {path.name}。処理を終えてinbox又はholdへ移してから指定する"
+                f"processingの項目は再処理抑制期限を変更できない: {path.name}。処理を終えてinboxまたはholdへ移してから指定する"
             )
             sys.exit(2)
         snapshot = path.read_bytes()
