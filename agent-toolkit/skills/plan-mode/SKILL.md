@@ -16,7 +16,7 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
 計画ファイルの成果物契約は`references/plan-file-standards.md`、WI本文の要求と由来は`agent-toolkit:wi-standards`、実装と実行レビューの内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書が定める。
 計画は要件・外部仕様の水準で書き、レビューは実装後の実行レビューだけで行う。計画の起草者が続けて実装し、実行レビューは要件・外部仕様の水準を対象とする。
 
-確認要否、質問手順とUWIへの退避は`agent-toolkit:confirmation-and-uwi`が定める。協調モードでメインが本スキルを起動した場合は、`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返す。
+確認要否、質問手順とUWIへの退避は`agent-toolkit:confirmation-and-uwi`が定める。協調モードでメインが本スキルを起動した場合は、同スキルの`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返し、その後に計画ファイルを起草する。
 `agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`による実行では、認識の違いで要件または結果が変わる未確定事項だけをUWIへ登録する。
 `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を受け取ったレーン担当として起動された場合は、同書の完了報告が定めるエスカレーションで確認事項を呼び出し元へ返し、回答を受け取ってから工程を続ける。UWIの登録は呼び出し元が行う。
 旧単一ファイル形式と旧二ファイル形式の計画を読むとき、および計画書式の読み取り互換の実装・自動チェックを変更するときは、`references/legacy-plan-file-standards.md`を全文読む。
