@@ -4958,6 +4958,67 @@ def test_stats_resolves_runtime_unspecified_thread_once(
     assert [event["session_id"] for event in _events_by_kind(events, "stats-agent-thread")] == [thread_id]
 
 
+def test_stats_separates_turn_completion_from_trailing_records(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """委譲先のturn完了までの秒数を、完了後に続く記録の区間と区別して出力する。
+
+    記録の最初と最後の差だけを所要時間とすると、turn完了後に残るプロセスの記録が委譲先の所要時間へ入り、
+    律速区間の判断を誤る。Codexは`task_started`から最後の`task_complete`まで、Claude Codeのサブエージェントは
+    記録の最初から最後の`end_turn`までをturnの区間とし、完了を持たない記録には区間の項目を出力しない。
+    """
+    thread_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    codex_home = tmp_path / "codex"
+    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
+    rollout_dir.mkdir(parents=True)
+    rollout_entries = [
+        {"timestamp": "2026-08-19T00:00:00Z", "type": "session_meta", "payload": {"id": thread_id}},
+        {"timestamp": "2026-08-19T00:00:10Z", "type": "event_msg", "payload": {"type": "task_started"}},
+        {"timestamp": "2026-08-19T00:05:10Z", "type": "event_msg", "payload": {"type": "task_complete"}},
+        {"timestamp": "2026-08-19T00:06:00Z", "type": "event_msg", "payload": {"type": "task_started"}},
+        {"timestamp": "2026-08-19T00:10:10Z", "type": "event_msg", "payload": {"type": "task_complete"}},
+        {"timestamp": "2026-08-19T02:10:10Z", "type": "event_msg", "payload": {"type": "exec_command_end"}},
+    ]
+    (rollout_dir / f"rollout-test-{thread_id}.jsonl").write_text(
+        "\n".join(json.dumps(entry) for entry in rollout_entries) + "\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_tool_use_entry("2026-08-19T00:00:01Z", "call", thread_id),
+            _codex_tool_result_entry("2026-08-19T00:00:02Z", "call", thread_id),
+        ],
+    )
+    subagents = transcript.parent / transcript.stem / "subagents"
+    completed = _assistant_usage_entry("2026-08-19T00:01:30Z", "m1", _usage(1))
+    completed["message"]["stop_reason"] = "end_turn"
+    _write_subagent(
+        subagents,
+        "agent-completed",
+        [_assistant_usage_entry("2026-08-19T00:00:30Z", "m0", _usage(1)), completed],
+    )
+    _write_subagent(subagents, "agent-unfinished", [_assistant_usage_entry("2026-08-19T00:00:30Z", "m2", _usage(1))])
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    thread = _events_by_kind(events, "stats-agent-thread")[0]
+    assert thread["elapsed_seconds"] == 2 * 3600 + 10 * 60 + 10
+    assert thread["turn_elapsed_seconds"] == 10 * 60
+    assert thread["last_turn_completed_at"] == "2026-08-19T00:10:10Z"
+    assert thread["after_last_turn_seconds"] == 2 * 3600
+    rows = {row["agent"]: row for row in _events_by_kind(events, "stats-subagent")}
+    completed_row = next(row for agent, row in rows.items() if agent.endswith("agent-completed"))
+    assert completed_row["turn_elapsed_seconds"] == 60
+    assert completed_row["last_turn_completed_at"] == "2026-08-19T00:01:30Z"
+    assert completed_row["after_last_turn_seconds"] == 0
+    unfinished_row = next(row for agent, row in rows.items() if agent.endswith("agent-unfinished"))
+    assert "turn_elapsed_seconds" not in unfinished_row
+    assert "after_last_turn_seconds" not in unfinished_row
+
+
 def _usage(input_tokens: int, output_tokens: int = 0) -> dict[str, int]:
     """Claude形式の4成分usageを作成する。"""
     return {

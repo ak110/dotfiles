@@ -1190,6 +1190,49 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
     return usages
 
 
+def _turn_completion_data(
+    records: list[_Record],
+    runtime: _Runtime,
+    first_timestamp: datetime.datetime,
+    last_timestamp: datetime.datetime,
+) -> dict[str, Any]:
+    """最初のturnの開始から最後のturnの完了までの区間と、完了後に続く記録の区間を返す。
+
+    記録の最初と最後の差（`elapsed_seconds`）は、turnの完了後に残るプロセスや待機の記録を含み、
+    委譲先が結果を返すまでの時間より長くなる（実測: Codexのユーザビリティレビュー担当で、
+    最初の`task_started`から最後の`task_complete`までは約17分、記録の終端までは8408秒）。
+    Codexは`event_msg`の`task_started`と`task_complete`、Claude Codeは`stop_reason`が`end_turn`の
+    assistantレコードをturnの境界とし、Claude Codeは記録の最初のレコードを開始とする。
+    turnの完了を持たない記録は区間を定められないため、空の辞書を返す。
+    """
+    started: datetime.datetime | None = first_timestamp if runtime == "claude" else None
+    completed: _Record | None = None
+    completed_timestamp: datetime.datetime | None = None
+    for record in records:
+        timestamp = _record_timestamp(record)
+        if timestamp is None:
+            continue
+        entry = record.entry
+        if runtime == "codex" and entry.get("type") == "event_msg":
+            payload = entry.get("payload")
+            payload_type = payload.get("type") if isinstance(payload, dict) else None
+            if payload_type == "task_started" and started is None:
+                started = timestamp
+            elif payload_type == "task_complete":
+                completed, completed_timestamp = record, timestamp
+        elif runtime == "claude" and entry.get("type") == "assistant":
+            message = entry.get("message")
+            if isinstance(message, dict) and message.get("stop_reason") == "end_turn":
+                completed, completed_timestamp = record, timestamp
+    if started is None or completed is None or completed_timestamp is None:
+        return {}
+    return {
+        "turn_elapsed_seconds": int((completed_timestamp - started).total_seconds()),
+        "last_turn_completed_at": completed.entry["timestamp"],
+        "after_last_turn_seconds": int((last_timestamp - completed_timestamp).total_seconds()),
+    }
+
+
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
     timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     summary: dict[str, Any] = {}
@@ -1199,6 +1242,7 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
         summary["start"] = first_record.entry["timestamp"]
         summary["end"] = last_record.entry["timestamp"]
         summary["elapsed_seconds"] = int((last_timestamp - first_timestamp).total_seconds())
+        summary.update(_turn_completion_data(records, runtime, first_timestamp, last_timestamp))
 
     if runtime in {"claude", "agy"}:
         usages = _latest_claude_usages(records) if runtime == "claude" else _agy_token_usages(records)
@@ -4528,7 +4572,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--stats",
         action="store_true",
         help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
-        "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返す。" + _CLAUDE_ONLY_NOTE,
+        "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返す。"
+        "`elapsed_seconds`は記録の最初と最後の差であり、turnの完了を持つ記録では最初のturnの開始から"
+        "最後のturnの完了までの`turn_elapsed_seconds`、完了時刻の`last_turn_completed_at`、"
+        "完了後に続く記録の`after_last_turn_seconds`を併せて返す。" + _CLAUDE_ONLY_NOTE,
     )
     parser.add_argument(
         "--hook-notices",
