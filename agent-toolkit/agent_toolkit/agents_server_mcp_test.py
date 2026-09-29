@@ -965,6 +965,8 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         ]
     if task_name == "add-wi.subagent.md":
         return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
+    if task_name == "defect-investigation.subagent.md":
+        return ["対象の不良: 起動文の必須入力検査が見出しを誤認する（agents_server_mcp.py）", handoff]
     if task_name == "wi-draft-review.subagent.md":
         return [
             "レビュー対象: "
@@ -984,6 +986,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
     "task_name",
     [
         "add-wi.subagent.md",
+        "defect-investigation.subagent.md",
         "exec-review.subagent.md",
         "exec.subagent.md",
         "lane-integration.subagent.md",
@@ -1023,6 +1026,28 @@ async def test_wi_draft_review_uses_review_model_and_embeds_document(
     assert str(tmp_path / "draft-2.md") in prompt
     assert str(tmp_path / "user-input.md") in prompt
     assert str(task_document) in prompt
+
+
+@pytest.mark.asyncio
+async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存不良の調査担当は`start`から`high_tier`で起動し、起動文へタスク文書の出所と対象の不良を載せる。
+
+    工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
+    """
+    task_document = subject._SHARE_DIRECTORY / "defect-investigation.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    extra_params = _observed_input_params(task_document.name, tmp_path)
+
+    response = await subject.start(str(task_document), extra_params, str(tmp_path))
+
+    assert response == {"session_id": "session", "status": "running"}
+    manager.start.assert_awaited_once()
+    model_type, prompt, cwd = manager.start.await_args.args
+    assert model_type == "high_tier"
+    assert cwd == str(tmp_path)
+    assert str(task_document) in prompt
+    assert f"対象の不良: {extra_params['対象の不良']}" in prompt
 
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
