@@ -295,6 +295,29 @@ def test_candidate_events_excludes_successful_shell_delegation_returns() -> None
     assert candidates[-1]["excluded"]["normal-delegate-return"] == 2
 
 
+def test_codex_project_instructions_do_not_change_delegation_kind_or_resume() -> None:
+    """Codexの先頭注入を除いた配送本文からshell委譲と再開を判定する。"""
+    record = "codex-shell"
+    timeline = [
+        {"kind": "user", "record": record, "line": 1, "text": "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>"},
+        {
+            "kind": "user",
+            "record": record,
+            "line": 2,
+            "text": "<atk-auto>次のコマンドを実行し、結果を報告せよ。 実行するコマンド: true</atk-auto>",
+        },
+        {"kind": "final-result", "record": record, "line": 3, "text": "- 終了コード: `0`\n- 警告: 0件"},
+    ]
+
+    shell_records, resumed_records = evidence._delegation_record_kinds(timeline)  # pylint: disable=protected-access
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert shell_records == {record}
+    assert not resumed_records
+    assert candidates[-1]["excluded"]["normal-delegate-return"] == 1
+    assert all(candidate["candidate_kind"] != "delegate-return" for candidate in candidates[:-1])
+
+
 def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
     """シェル実行の委譲の判定に使う冒頭の文が、agents_serverが委譲先へ渡す指示本文と一致する。"""
     from agent_toolkit import agents_server_mcp  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
