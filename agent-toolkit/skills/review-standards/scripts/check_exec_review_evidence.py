@@ -12,6 +12,12 @@ import sys
 import tempfile
 
 OUTCOMES = frozenset({"達成", "未達", "証拠不足", "失効"})
+# 分割起票で他のWIへ割り当てた要求単位と分割元の依頼全体の単位は、原文要求の行にだけ現れる。
+# 各WIの完成条件は起票時の割当の対象外であるため、完成条件の行では受理しない。
+SECTION_OUTCOMES = {
+    "wi_conditions": OUTCOMES,
+    "user_requirements": OUTCOMES | {"割当外"},
+}
 REQUIRED_FIELDS = {
     "wi_conditions": ("awi", "condition", "outcome", "source", "evidence"),
     "user_requirements": ("awi", "requirement", "origin", "outcome", "source", "evidence"),
@@ -207,7 +213,7 @@ def _validate_schema(data: object) -> tuple[dict[str, object], list[str]]:
                 if not isinstance(row.get(field), str):
                     errors.append(f"{section}[{index}].{field}: 文字列が必要です")
             outcome = row.get("outcome")
-            if isinstance(outcome, str) and outcome not in OUTCOMES:
+            if isinstance(outcome, str) and outcome not in SECTION_OUTCOMES[section]:
                 errors.append(f"{section}[{index}].outcome: 未知の判定です: {outcome}")
     return data, errors
 

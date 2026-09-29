@@ -39,7 +39,7 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 
 ## 実行順
 
-1. processable一覧と各WI本文を取得する。同じ時点で`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス>`を実行し、回答済みUWIを取得する。取得した回答済みUWIは、実装へ着手する前に`agent-toolkit:wi-standards`「状態と依存」の回答済みUWIの取り込みに従って終端するか固定集合へ加える。残る全項目を直接実装または計画へ分ける。処理対象に依存が未達の項目が含まれる場合は、依存元を同じ処理回の集合へ加えるかを「確認を要する事項」としてユーザー確認へ回す。確認を経ずに依存元を加えることと、依存未達の項目を集合から無断で外すことのいずれも選ばない。各WIについて、WIのファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パスおよびそのworktreeで解決した処理開始時のHEADの7文字以上の一意な短縮OIDを対応付ける。対応付けた`target_repo`を使って対象を`processing`へ移し、対応表と集合を固定する。
+1. processable一覧と各WI本文を取得する。同じ時点で`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス>`を実行し、回答済みUWIを取得する。取得した回答済みUWIは、実装へ着手する前に`agent-toolkit:wi-standards`「状態と依存」の回答済みUWIの取り込みに従って終端するか固定集合へ加える。残る全項目を直接実装または計画へ分ける。処理対象に依存が未達の項目が含まれる場合は、依存元を同じ処理回の集合へ加えるかを「確認を要する事項」としてユーザー確認へ回す。確認を経ずに依存元を加えることと、依存未達の項目を集合から無断で外すことのいずれも選ばない。各WIについて、WIのファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パスおよびそのworktreeで解決した処理開始時のHEADの7文字以上の一意な短縮OIDを対応付ける。対象を`atk wi start-processing <ファイル名>... --target-repo=<対応付けたtarget_repo>`で`processing`へ移し、対応表と集合を固定する。
 2. 以降の`atk wi`操作は対応表の`target_repo`を使い、Gitの起点比較、実装、検証、commitおよびレビューは対応表のworktreeと処理開始OIDを使う。別のworktreeまたは複製元のHEADを代用しない。
 3. 計画対象がある場合は`agent-toolkit:plan-mode`のSKILL.mdと計画ファイル基準を全文読み、対象worktreeごとの部分集合を各1つの計画ファイルへ起草する。計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはその部分集合のworktreeを使う。作成と計画構造の自動チェックは同基準が定める手順で行う。
 4. 対応表が示すworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。計画対象は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`の受入シナリオ検証で検証し、シナリオ別のテスト名と合否を記録する。直接実装対象もWIの利用者と呼び出し手段から同じテストを選ぶ。`agent-toolkit:commit`に従ってcommitする。互いに依存しない対象worktreeの部分集合は並行してよいが、各worktreeへ書き込む主体はメイン1つのまま保つ。

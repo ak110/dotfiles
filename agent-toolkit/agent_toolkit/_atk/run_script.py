@@ -15,6 +15,7 @@ SCRIPT_PATHS = {
     "plan-progress": pathlib.Path("skills/plan-mode/scripts/append_progress_log.py"),
     "completion-report-check": pathlib.Path("skills/completion-report/scripts/check_completion_report.py"),
     "exec-review-evidence-check": pathlib.Path("skills/review-standards/scripts/check_exec_review_evidence.py"),
+    "review-contract": pathlib.Path("skills/review-standards/scripts/review_contract.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),
     "session-review-evidence": pathlib.Path("skills/session-review/scripts/session_review_evidence.py"),
     "session-review-prepare": pathlib.Path("skills/session-review/scripts/session_review_prepare.py"),
@@ -28,7 +29,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "script_name",
         choices=sorted(SCRIPT_PATHS),
         metavar="SCRIPT",
-        help="実行する登録済みplugin内スクリプトの公開名。",
+        help=f"実行する登録済みplugin内スクリプトの公開名（{', '.join(sorted(SCRIPT_PATHS))}）。",
     )
     parser.add_argument(
         "script_args",

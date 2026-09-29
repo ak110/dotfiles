@@ -79,7 +79,7 @@ awi_references: []
 
 参照先だけで条項の内容が一意に定まる場合は、`content`を例のように引用した`参照: <絶対パス>#<見出し>`で渡せる。参照先を追加で解釈しなければ判定内容が定まらない場合は、契約本文を`content`へ記載する。`clause`と`source`にもASCIIのコロンと空白を含めるときは引用する。commitまたはAWIを参照する場合は、両配列へ実際の識別子を記載し、条項内へも同じ識別子を含める。
 条項は観点ごとに分けて置き、前段が列挙する各観点と出典をそろえる。別のレビュー基準で認可されたcommitが無い場合は、その条項を省く。
-`review_contract`はいずれの永続ファイルにも追記せず、初回起動後は同じ実行レビュー担当のthreadへ保持する。`CI記録`か計画外の`WI`を基準に含む場合は`review_contract`を必ず渡す。YAML契約は起動前に`skills/review-standards/scripts/review_contract.py --contract <review-contract.yamlの絶対パス> --target-repo <対象リポジトリの絶対パス>`を実行する。終了コード0と警告の不在を確認する。バリデーターはschema、宣言したcommitの対象リポジトリでの解決、宣言したAWIのキュー原本からの取得、および各参照が条項へ現れることを検証する。起動文の`review_contract`には短い直接契約か検証済みYAMLの絶対パスの一方だけを渡す。
+`review_contract`はいずれの永続ファイルにも追記せず、初回起動後は同じ実行レビュー担当のthreadへ保持する。`CI記録`か計画外の`WI`を基準に含む場合は`review_contract`を必ず渡す。YAML契約は起動前に`atk run-script review-contract -- --contract <review-contract.yamlの絶対パス> --target-repo <対象リポジトリの絶対パス>`を実行する。終了コード0と警告の不在を確認する。バリデーターはschema、宣言したcommitの対象リポジトリでの解決、宣言したAWIのキュー原本からの取得、および各参照が条項へ現れることを検証する。起動文の`review_contract`には短い直接契約か検証済みYAMLの絶対パスの一方だけを渡す。
 そのthreadが継続不能と確定し、初回に`review_contract`を渡していた場合は、同じ生成元から再生成して新しい実行レビュー担当へ渡す。
 あわせて、`レビュー種別: 引き継ぎ再レビュー`、直前修正の直接影響範囲、次の項目だけを渡す。
 
