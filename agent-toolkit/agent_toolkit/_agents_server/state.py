@@ -46,6 +46,7 @@ WAIT_TIMEOUT_SECONDS = 3600.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "high_tier",
+    "defect-investigation.subagent.md": "high_tier",
     "exec-review.subagent.md": "medium_tier",
     "exec.subagent.md": "high_tier",
     "lane-integration.subagent.md": "high_tier",
