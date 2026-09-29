@@ -111,6 +111,33 @@ def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest
     assert observed == [str(run_script.registered_script_path("completion-report-check")), *script_args]
 
 
+def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """実行レビューの手順書が示す公開名で検証器を起動し、plugin環境の依存で実行して終了コードを透過する。
+
+    登録漏れや登録パスの誤りでは起動できず、依存（yaml）を解決できない起動環境では検証へ到達しない。
+    """
+    contract = tmp_path / "review-contract.yaml"
+    arguments = ["--", "--contract", str(contract), "--target-repo", str(tmp_path)]
+    contract.write_text(
+        "version: 1\n"
+        "clauses:\n  - clause: 対象\n    content: 内容\n    source: 計画\n"
+        "commit_references: []\nawi_references: []\n",
+        encoding="utf-8",
+    )
+
+    assert run_script.dispatch(argparse.Namespace(script_name="review-contract", script_args=arguments)) == 0
+
+    parser = argparse.ArgumentParser()
+    run_script.build_parser(parser)
+    # 手順書を読んだ主体が登録名を推測せず`--help`だけで見つけられることを保証する。
+    assert "review-contract" in parser.format_help()
+
+    contract.write_text("version: 1\nclauses: []\ncommit_references: []\nawi_references: []\n", encoding="utf-8")
+
+    assert run_script.dispatch(argparse.Namespace(script_name="review-contract", script_args=arguments)) == 2
+    assert "clauses" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     ("module_name", "script_source"),
     [
