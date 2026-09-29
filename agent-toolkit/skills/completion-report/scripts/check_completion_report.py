@@ -11,11 +11,12 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
 STAGES = ("work-complete", "review-result")
 REVIEW_STATES = ("success", "not-run", "failed")
-REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- 所要時間: ")
+REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- 所要時間: ", "- 改善見込み: ")
 """振り返りが正常完了した報告が持つ要約行の接頭辞。値は準備スクリプトの出力から転記する。"""
 REVIEW_SUCCESS_SECTIONS = ("確定した問題と対策", "対策を見送った問題")
 """振り返りが正常完了した報告のH3。確定した問題ごとの対策と、対策を見送った問題とその理由を読めるようにする。"""
 _WI_FILENAME = re.compile(r"\b\d{8}-\d{6}-\d{3}\.md\b")
+_UNRESEARCHED = ("照会していない", "未照会", "未調査", "確定できない")
 SKIP_REASONS = {
     "not-run": "成果を再利用したため起動省略",
     "failed": "分析失敗のため欠陥AWIへ記録",
@@ -77,6 +78,24 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
                     for item in items
                     if item != "- なし" and not _WI_FILENAME.search(item)
                 )
+            else:
+                if "- なし" in items and len(items) != 1:
+                    errors.append("### 対策を見送った問題の`- なし`は他の行と併記しない")
+                for item in items:
+                    if item == "- なし":
+                        continue
+                    if item.startswith("- 判定済み: "):
+                        parts = item.removeprefix("- 判定済み: ").split("; 根拠: ", maxsplit=1)
+                        if len(parts) != 2 or not all(part.strip() for part in parts):
+                            errors.append(f"判定済み行に問題と根拠を書く: {item}")
+                        elif any(word in parts[1] for word in _UNRESEARCHED):
+                            errors.append(f"未照会や未確定を判定済みの根拠にしない: {item}")
+                    elif item.startswith("- 未確定: "):
+                        fields = re.fullmatch(r"- 未確定: (.+?); 照会: (.+?); 再現: (.+?); 残る理由: (.+)", item)
+                        if fields is None or not all(value.strip() for value in fields.groups()):
+                            errors.append(f"未確定行に照会、再現、残る理由を書く: {item}")
+                    else:
+                        errors.append(f"対策を見送った問題の行形式が不正である: {item}")
 
     if stage == "review-result" and review_state == "success":
         lines = text.splitlines()

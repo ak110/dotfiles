@@ -948,7 +948,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
             "実行レビュー済みHEAD: 0123abc",
             f"統合先worktree: {root}",
             "統合先branch: develop",
-            "メイン計画ファイル名: plan.md",
+            '計画ファイル名一覧: ["plan.md"]',
             "AWI終端区分: 20260101-000000-001.md=adopt",
         ]
     if task_name == "session-termination.subagent.md":

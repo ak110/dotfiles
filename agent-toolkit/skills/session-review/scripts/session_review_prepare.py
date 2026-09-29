@@ -25,7 +25,9 @@ from typing import Any
 
 import session_review_evidence  # pylint: disable=import-error
 
+from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import run_script
+from agent_toolkit._common import atomic_file, file_lock
 
 CONVERSATION_FILENAME = "conversation.md"
 CANDIDATES_FILENAME = "candidates.md"
@@ -43,6 +45,8 @@ _SUMMARY_LENGTH = 200
 _SLOW_CALL_LIMIT = 10
 _FULL_TEXT_KINDS = frozenset({"user-intervention", "escalation"})
 """候補一覧へ本文の全文を載せる候補種別。利用者の是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
+_FAILURE_KINDS = frozenset({"command-failure", "tool-failure"})
+_FAILURE_LEDGER_DAYS = 30
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -233,7 +237,11 @@ def _candidate_lines(candidate: dict[str, Any], evidence: dict[str, Any], timeli
         if event.get("kind") == "detail" and isinstance(event.get("text"), str) and event["text"].strip()
     ]
     text = bodies[0] if bodies else str(candidate.get("text", ""))
-    lines = [f"- {candidate['candidate_id']} {kind}（発生{occurrence}件）: {_one_line(text) or '（本文なし）'}"]
+    readable = candidate.get("failure_summary") if kind in _FAILURE_KINDS else text
+    sessions = candidate.get("failure_session_count")
+    session_count = f"、{sessions}セッション" if isinstance(sessions, int) else ""
+    heading = f"- {candidate['candidate_id']} {kind}（発生{occurrence}件{session_count}）: "
+    lines = [heading + (_one_line(str(readable)) or "（本文なし）")]
     locators = ", ".join(f"{locator['record']}:{locator['line']}" for locator in candidate["locators"])
     omitted = candidate.get("omitted_locator_count", 0)
     lines.append(f"  - 記録位置: {locators}" + (f"（同じ種類の{omitted}件は省略）" if omitted else ""))
@@ -253,6 +261,7 @@ def _candidates_document(
     evidence_by_id: dict[str, dict[str, Any]],
     timeline: list[dict[str, Any]],
     detail_command: str,
+    single_failures: list[dict[str, Any]],
 ) -> str:
     """問題候補の一覧を組み立てる。"""
     counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
@@ -263,15 +272,115 @@ def _candidates_document(
         "# 問題候補の一覧",
         "",
         f"- 候補: {len(candidates)}件（{count_text}）",
-        f"- 抽出器が除外した件数: {excluded_text}",
+        f"- 候補から除いた件数: {excluded_text}",
         f"- 記録位置の全文は`{detail_command} --detail <記録位置>`で取得する",
         "",
     ]
     if not candidates:
-        lines.append("抽出器が問題候補を返さなかった。")
+        lines.append("候補として残す問題は無かった。")
     for candidate in candidates:
         lines.extend(_candidate_lines(candidate, evidence_by_id.get(str(candidate["candidate_id"]), {}), timeline))
+    if single_failures:
+        lines.extend(
+            ["", "## 単発の失敗（件数のみ）", "", "| 失敗署名の要約 | 今回の発生件数 | 代表の記録位置 |", "| --- | --- | --- |"]
+        )
+        for candidate in single_failures:
+            first = candidate["locators"][0]
+            summary_text = str(candidate.get("failure_summary", "診断なし")).replace("|", "\\|")
+            lines.append(
+                f"| {_one_line(summary_text)} | {candidate.get('occurrence_count', candidate.get('count', 1))} | "
+                f"{first['record']}:{first['line']} |"
+            )
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: datetime.datetime) -> tuple[dict[str, int], int]:
+    """排他下で過去30日の失敗署名を更新し、署名ごとの最上位セッション数を返す。"""
+    path = _atk_config.state_dir() / "session-review" / "failure-signatures.jsonl"
+    lock_path = path.with_name(path.name + ".lock")
+    cutoff = now.astimezone(datetime.UTC) - datetime.timedelta(days=_FAILURE_LEDGER_DAYS)
+    skipped = 0
+    records: dict[tuple[str, str], dict[str, str]] = {}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+", encoding="utf-8") as lock:
+            file_lock.acquire_lock(lock)
+            try:
+                try:
+                    lines = path.read_text(encoding="utf-8").splitlines()
+                except FileNotFoundError:
+                    lines = []
+                except (OSError, UnicodeError):
+                    lines = []
+                    skipped += 1
+                for line in lines:
+                    try:
+                        item = json.loads(line)
+                        if not isinstance(item, dict):
+                            raise ValueError("記録がobjectではない")
+                        signature, recorded_session, observed_at, summary = (
+                            item["failure_signature"],
+                            item["session_id"],
+                            item["observed_at"],
+                            item["failure_summary"],
+                        )
+                        if not all(
+                            isinstance(value, str) and value for value in (signature, recorded_session, observed_at, summary)
+                        ):
+                            raise ValueError("記録欄が不正")
+                        timestamp = datetime.datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+                        if timestamp.tzinfo is None:
+                            raise ValueError("時刻のtimezoneが無い")
+                    except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+                        skipped += 1
+                        continue
+                    if timestamp >= cutoff:
+                        records.setdefault((signature, recorded_session), item)
+                for candidate in candidates:
+                    signature = candidate.get("failure_signature")
+                    if not isinstance(signature, str):
+                        continue
+                    records.setdefault(
+                        (signature, session_id),
+                        {
+                            "failure_signature": signature,
+                            "session_id": session_id,
+                            "observed_at": now.astimezone(datetime.UTC).isoformat(),
+                            "failure_summary": str(candidate.get("failure_summary", "診断なし")),
+                        },
+                    )
+                payload = "".join(json.dumps(item, ensure_ascii=False) + "\n" for _, item in sorted(records.items()))
+                atomic_file.atomic_write(path, payload)
+            finally:
+                file_lock.release_lock(lock)
+    except OSError:
+        skipped += 1
+        return {}, skipped
+    counts = collections.Counter(signature for signature, _ in records)
+    return dict(counts), skipped
+
+
+def _select_repeated_failures(
+    candidates: list[dict[str, Any]], summary: dict[str, Any], session_id: str, now: datetime.datetime
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], int]:
+    """抽出器の失敗候補を別セッションの反復と単発へ分ける。"""
+    failures = [item for item in candidates if item.get("candidate_kind") in _FAILURE_KINDS]
+    session_counts, skipped = _failure_ledger(failures, session_id, now)
+    retained: list[dict[str, Any]] = []
+    singles: list[dict[str, Any]] = []
+    excluded = collections.Counter(summary.get("excluded", {}))
+    for candidate in candidates:
+        if candidate.get("candidate_kind") not in _FAILURE_KINDS:
+            retained.append(candidate)
+            continue
+        count = session_counts.get(str(candidate.get("failure_signature", "")), 1)
+        if count >= 2:
+            candidate["failure_session_count"] = count
+            retained.append(candidate)
+        else:
+            singles.append(candidate)
+            excluded["single-session-failure"] += int(candidate.get("occurrence_count", candidate.get("count", 1)))
+    return retained, singles, {**summary, "excluded": dict(sorted(excluded.items()))}, skipped
 
 
 def _stats_document(stats: list[dict[str, Any]]) -> str:
@@ -364,15 +473,17 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     candidates_path = work_dir / CANDIDATES_FILENAME
     stats_path = work_dir / STATS_FILENAME
     conversation_path.write_text(_conversation_document(utterances, detail_command), encoding="utf-8")
+    current = now if now is not None else datetime.datetime.now(datetime.UTC)
+    session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
+    candidates, single_failures, summary, ledger_skipped = _select_repeated_failures(candidates, summary, session_id, current)
     candidates_path.write_text(
-        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command), encoding="utf-8"
+        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command, single_failures), encoding="utf-8"
     )
     stats_path.write_text(_stats_document(stats), encoding="utf-8")
 
     reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
     total = next((event for event in stats if event.get("kind") == "stats-total"), {})
     compaction = next((event for event in stats if event.get("kind") == "stats-compaction-total"), {})
-    current = now if now is not None else datetime.datetime.now(datetime.UTC)
     role_counts = collections.Counter(str(item["role"]) for item in utterances)
     record = {
         "work_dir": str(work_dir),
@@ -385,6 +496,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "candidate_total": len(candidates),
         "candidate_counts": dict(sorted(collections.Counter(str(item["candidate_kind"]) for item in candidates).items())),
         "excluded_counts": dict(sorted(summary.get("excluded", {}).items())),
+        "failure_ledger_skipped": ledger_skipped,
         "elapsed_seconds": total.get("elapsed_seconds"),
         "compaction_count": compaction.get("count", 0),
     }

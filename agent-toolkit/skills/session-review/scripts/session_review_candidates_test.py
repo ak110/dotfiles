@@ -118,8 +118,8 @@ def test_candidate_events_excludes_hook_notices_without_tag() -> None:
     assert candidates[-1]["excluded"]["hook-notice-untagged"] == 1
 
 
-def test_candidate_events_groups_failures_sharing_a_cause_across_tool_calls() -> None:
-    """呼び出しごとに一意な識別子が異なっても、同じ原因の失敗を1候補へ集約する。"""
+def test_candidate_events_separates_failures_with_different_exit_codes_and_diagnostics() -> None:
+    """失敗署名を構成する終了コードと診断が異なる失敗は別候補にする。"""
     timeline = [
         {"kind": "failed-tool", "record": "main", "line": 2, "tool": "toolu_01", "text": "Exit code 1\n詳細1"},
         {"kind": "failed-tool", "record": "main", "line": 5, "tool": "toolu_02", "text": "Exit code 2\n詳細2"},
@@ -128,10 +128,10 @@ def test_candidate_events_groups_failures_sharing_a_cause_across_tool_calls() ->
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert len(candidates[:-1]) == 1
-    assert candidates[0]["candidate_kind"] == "tool-failure"
-    assert candidates[0]["count"] == 3
-    assert candidates[0]["locators"] == [
+    assert len(candidates[:-1]) == 3
+    assert {candidate["candidate_kind"] for candidate in candidates[:-1]} == {"tool-failure"}
+    assert sorted(candidate["count"] for candidate in candidates[:-1]) == [1, 1, 1]
+    assert candidates[-1]["included_locators"] == [
         {"record": "main", "line": 2},
         {"record": "main", "line": 5},
         {"record": "main", "line": 9},
@@ -523,7 +523,7 @@ def test_failed_tools_distinguish_operation_and_full_diagnostic() -> None:
             "line": 2,
             "text": "Exit code 1\n原因A",
             "tool_name": "Bash",
-            "operation": "cmd A",
+            "operation": json.dumps({"command": "git push --dry-run --porcelain"}),
         },
         {
             "kind": "failed-tool",
@@ -531,7 +531,7 @@ def test_failed_tools_distinguish_operation_and_full_diagnostic() -> None:
             "line": 3,
             "text": "Exit code 1\n原因B",
             "tool_name": "Bash",
-            "operation": "cmd A",
+            "operation": json.dumps({"command": "git push --dry-run --porcelain"}),
         },
         {
             "kind": "failed-tool",
@@ -539,7 +539,7 @@ def test_failed_tools_distinguish_operation_and_full_diagnostic() -> None:
             "line": 4,
             "text": "Exit code 1\n原因A",
             "tool_name": "Bash",
-            "operation": "cmd B",
+            "operation": json.dumps({"command": "git grep needle"}),
         },
         {
             "kind": "failed-tool",
@@ -547,7 +547,7 @@ def test_failed_tools_distinguish_operation_and_full_diagnostic() -> None:
             "line": 5,
             "text": "Exit code 1\n原因A",
             "tool_name": "Bash",
-            "operation": "cmd A",
+            "operation": json.dumps({"command": "git push --dry-run --porcelain"}),
         },
     ]
 

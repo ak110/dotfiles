@@ -1384,7 +1384,7 @@ def test_codex_failed_command_keeps_structured_command_and_exit_code(tmp_path: p
         ([["rg", "-F", "one"], ["rg", "-F", "two"]], ["", ""], 0),
         ([["test", "-e", "/one"], ["test", "-e", "/two"]], ["", ""], 0),
         ([["rg", "-F", "one"], ["rg", "-F", "one"]], ["", ""], 0),
-        ([["tool", "one"], ["tool", "two"]], ["same diagnostic", "same diagnostic"], 1),
+        ([["tool", "one"], ["tool", "two"]], ["same diagnostic", "same diagnostic"], 2),
         ([["tool", "one"], ["tool", "two"]], ["first diagnostic", "second diagnostic"], 2),
     ),
 )
@@ -1428,6 +1428,116 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
         assert {candidate["candidate_kind"] for candidate in candidates} == {"command-failure"}
         assert sum(candidate["count"] for candidate in candidates) == 2
         assert sum(len(candidate["locators"]) for candidate in candidates) == 2
+
+
+def _bundle_failed_codex_commands(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    cases: list[tuple[list[str], int, str]],
+) -> list[dict]:
+    """CommandExecutionの失敗列を公開bundle入口へ渡し、候補レコードを返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "failed",
+                        "command": command,
+                        "exit_code": code,
+                        "stderr": diagnostic,
+                    },
+                },
+            }
+            for command, code, diagnostic in cases
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys)
+    return [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+
+
+def test_bundle_groups_wrapped_commands_by_failure_signature(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """包装とスクリプト名が異なる同じ原因を1署名へまとめ、別の終了理由は分ける。"""
+    cases = [
+        (["/bin/bash", "-lc", "timeout 900s uv run --frozen python a.py"], 127, "python: command not found"),
+        (["python", "b.py"], 127, "python: command not found"),
+        (["git", "push", "--dry-run", "--porcelain"], 128, "fatal: push destination differs"),
+    ]
+    records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
+    candidates = [item for item in records if item["kind"] == "candidate"]
+
+    assert sorted(item["count"] for item in candidates) == [1, 2]
+    repeated = next(item for item in candidates if item["count"] == 2)
+    assert repeated["candidate_kind"] == "command-failure"
+    assert "python a.py" in repeated["failure_summary"]
+    assert "127" in repeated["failure_signature"]
+    assert len({item["failure_signature"] for item in candidates}) == 2
+
+
+def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_error(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """正常な否定結果と検査の検出を除外し、終了コード2の入力誤りは候補へ残す。"""
+    cases = [
+        (["/bin/bash", "-lc", "git -c color.ui=false grep -n -F needle -- docs"], 1, ""),
+        (["git", "config", "--get", "unset.key"], 1, ""),
+        (["/bin/bash", "-lc", "git grep needle && test -e /missing"], 1, ""),
+        (["pyfltr", "run"], 1, "test failed"),
+        (["python", "scripts/sync.py", "--check"], 1, "generated files differ"),
+        (["atk", "review-table", "validate"], 2, "usage: invalid arguments"),
+    ]
+    records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
+
+    assert [item["locators"] for item in records if item["kind"] == "candidate"] == [[{"record": "main", "line": 6}]]
+    assert records[-1]["excluded"]["normal-negative-result"] == 3
+    assert records[-1]["excluded"]["check-detected"] == 2
+
+
+def test_bundle_excludes_transient_classifier_failure(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """auto mode classifierの一時的な判定不能は候補にせず専用区分へ数える。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "true"}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "c1",
+                            "is_error": True,
+                            "content": "The server-side auto mode classifier gave no verdict (error)",
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys)
+    records = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+
+    assert not [item for item in records if item["kind"] == "candidate"]
+    assert records[-1]["excluded"]["runtime-transient"] == 1
 
 
 def test_candidates_exclude_explicit_help_failure_but_keep_usage_errors() -> None:
