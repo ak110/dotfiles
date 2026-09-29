@@ -72,7 +72,7 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
     assert auto_message_opening_attributes(decision["reason"]) == {
-        "source": "agent-toolkit/subagent-stop",
+        "source": "subagent-stop",
         "kind": "block",
     }
     assert "\n停止する前に" in decision["reason"]

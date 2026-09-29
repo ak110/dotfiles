@@ -502,7 +502,7 @@ class TestBashProcessKillByPattern:
     def test_blocks(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
-        assert auto_message_opening_attributes(result.stderr)["source"] == "agent-toolkit/pretooluse"
+        assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
         # 遮断本文が示す検索語の書き方は、同じ検査を通過する形である
         assert "`git log -S`" in result.stderr
         assert "`p[k]ill`" in result.stderr

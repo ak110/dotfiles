@@ -237,7 +237,7 @@ class TestBlockCondition:
         assert isinstance(reason, str)
         assert "atk agents-exit-session" in reason
         assert "Fix: " in reason
-        assert "agent-toolkit/autonomous_exit" in reason
+        assert reason.startswith('<atk-auto source="autonomous_exit" kind="block">')
 
     def test_reason_body_states_the_evaluated_input(self, tmp_path: pathlib.Path) -> None:
         """本hookが実際に判定した入力だけを述べ、未完了工程を列挙しない。"""
