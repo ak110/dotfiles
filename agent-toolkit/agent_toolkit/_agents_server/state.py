@@ -53,7 +53,6 @@ TASK_MODEL_TYPES = {
     "pick-wi.subagent.md": "medium_tier",
     "session-termination.subagent.md": "high_tier",
     "usability-review.subagent.md": "medium_tier",
-    "wi-draft-review.subagent.md": "medium_tier",
 }
 """専用タスク文書名と工程別モデル設定の対応。"""
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
