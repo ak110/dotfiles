@@ -16,7 +16,7 @@ description: >
 
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
   - `agent-toolkit:process-wi`と、公開範囲を「既存の判断基準どおり」と回答した協調モードの作業では、次の条件が成立する場合に`develop`から`master`へのリリースPRを作成し、マージまで実施する。判定と実施はメインが担う。導入の経緯と根拠は[日次リリースの自動実施](../../../docs/development/operations.md#日次リリースの自動実施)にある
-    - 実施条件: 公開工程のpushとCI成功を確認した後、`agent-toolkit:commit`のGit識別子規定に従って`origin/develop`と`origin/master`を解決し、両者のcommitが異なる
+    - 実施条件: 公開工程のpushとCI成功を確認した後、`agent-toolkit:commit`のGit識別子規定に従って`origin/develop`と`origin/master`を解決し、両者のcommitが異なる。変更の消費主体で限定せず、コーディングエージェント向けの変更だけでもリリースPRへ進める
     - 条件が成立しない場合は両branchが同じcommitを指していることを報告し、PRを作成しない
     - 実施する場合は、同じheadとbaseのopen PRを調べる。1件ならそのPRを再利用する。0件なら管理対象一時領域へPR本文を保存し、投稿の直前に`agent-toolkit:external-write-review`をSkill機能で起動してから作成する。複数件の場合は対象を推測せず、候補の番号とURLを報告して停止する。タイトルにはそのセッションの変更の主題を1文で書く。本文は`agent-toolkit:writing-standards`の`references/writing.md`「人間向け文章の共通規定」に従う。`gh`の受理形式は操作直前のヘルプで確定する
 
