@@ -162,7 +162,7 @@ _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
 _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}"
     for namespace in _AGENTS_SERVER_NAMESPACES
-    for tool in ("start", "start_explore", "start_shell", "start_write")
+    for tool in ("start", "start_custom", "start_explore", "start_shell", "start_write")
 )
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)

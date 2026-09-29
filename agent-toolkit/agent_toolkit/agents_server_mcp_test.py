@@ -878,6 +878,95 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
     assert called is True
 
 
+def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> pathlib.Path:
+    """agent-toolkitのshare配下と同じ構造の一時タスク文書を作成し、その絶対パスを返す。"""
+    plugin_root = tmp_path / "plugin"
+    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document = plugin_root / "share" / "declared.subagent.md"
+    task_document.parent.mkdir()
+    task_document.write_text(f"# 担当\n\n## 入力\n\n```text\n{input_block}\n```\n\n## 出力\n\n結果を返す。\n", encoding="utf-8")
+    return task_document
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """宣言外の入力名を渡した`start`は委譲先を起動せず、宣言外の項目名と受理する項目名の一覧を返す。
+
+    受理すると、タスク文書が定める手順を呼び出し元が起動文へ書き足す経路が残る。
+    """
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    extra_params = _observed_input_params(task_document.name, tmp_path) | {"追加指示": "検証はpytestで行う"}
+
+    with pytest.raises(ValueError, match="タスク文書が宣言していない入力です: 追加指示") as raised:
+        await subject.start(str(task_document), extra_params, str(tmp_path))
+
+    assert "受理する入力名:" in str(raised.value)
+    assert "環境構築" in str(raised.value)
+    assert str(task_document) in str(raised.value)
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_accepts_declared_optional_and_common_inputs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """必須・任意・共通入力名だけの`start`は起動し、起動文は`入力:`見出しを持ち`追加指示:`を持たない。"""
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    extra_params = _observed_input_params(task_document.name, tmp_path) | {
+        "環境構築": "完了済み",
+        "待機表明の例外": "適用しない。待機対象の種別を問わず前景で終端を観測する",
+    }
+
+    await subject.start(str(task_document), extra_params, str(tmp_path))
+
+    prompt = manager.start.await_args.args[1]
+    assert "\n入力:\n" in prompt
+    assert "追加指示:" not in prompt
+    assert "環境構築: 完了済み" in prompt
+    assert manager.start.await_args.kwargs["launch_kind"] == "delegate"
+
+
+@pytest.mark.asyncio
+async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`起動種別: explore`を宣言したタスク文書は`start_explore`と同じ軽量な起動条件で起動する。
+
+    起動条件はsession記録の`launch_kind`と、backendへ渡すシステム指示・許可ツールを決める種別で確かめる。
+    """
+    _recording_candidates(monkeypatch)
+    manager, _ = _manager_with_fake("claude")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    explain = subject._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
+
+    response = await subject.start(str(explain), _observed_input_params(explain.name, tmp_path), str(tmp_path))
+
+    shown = manager.show_session(response["session_id"])
+    assert shown["launch_kind"] == "explore"
+    assert shown["model_type"] == "low_tier"
+
+
+@pytest.mark.asyncio
+async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`起動種別:`行の無いタスク文書は通常委譲で起動し、不正な起動種別は宣言を読めない扱いで通常委譲とする。"""
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    task_document = _write_declared_task_document(tmp_path, "必須入力名: 対象\n任意入力名: 補足")
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
+
+    await subject.start(str(task_document), {"対象": "値", "補足": "値"}, str(tmp_path))
+    task_document.write_text(
+        task_document.read_text(encoding="utf-8").replace("任意入力名: 補足", "起動種別: batch"), encoding="utf-8"
+    )
+    await subject.start(str(task_document), {"対象": "値", "未宣言": "値"}, str(tmp_path))
+
+    assert [call.kwargs["launch_kind"] for call in manager.start.await_args_list] == ["delegate", "delegate"]
+
+
 @pytest.mark.asyncio
 async def test_public_start_variants_and_send_message_return_minimal_responses(
     monkeypatch: pytest.MonkeyPatch,
@@ -934,14 +1023,15 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     if task_name == "exec-review.subagent.md":
         return [
             "レビュー基準: 計画",
-            f"計画ファイル: {root / 'plan.md'}",
+            f"計画: {root / 'plan.md'}",
             f"完成条件証拠: {root / 'completion-evidence.json'}",
             handoff,
         ]
     if task_name == "exec.subagent.md":
         return [
             "担当種別: レーン担当",
-            "AWIファイル名一覧: 20260101-000000-001.md (origin: human)",
+            f"選定結果の出力先ファイル: {root / 'selection.json'}",
+            "レーン識別子: lane-01",
             handoff,
         ]
     if task_name == "pick-wi.subagent.md":
@@ -965,6 +1055,11 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         ]
     if task_name == "add-wi.subagent.md":
         return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
+    if task_name == "pick-wi-explain.subagent.md":
+        return [
+            f"説明対象の選定結果ファイル: {root / 'selection.json'}",
+            "選定理由への質問: 20260101-000000-001.mdを別レーンにした理由",
+        ]
     if task_name == "defect-investigation.subagent.md":
         return ["対象の不良: 起動文の必須入力検査が見出しを誤認する（agents_server_mcp.py）", handoff]
     raise ValueError(f"未対応のタスク文書: {task_name}")
@@ -983,6 +1078,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
         "exec-review.subagent.md",
         "exec.subagent.md",
         "lane-integration.subagent.md",
+        "pick-wi-explain.subagent.md",
         "pick-wi.subagent.md",
         "session-termination.subagent.md",
     ],
@@ -6262,7 +6358,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
 
     prompt = manager.start.await_args.args[1]
     assert f"`{plugin_root.resolve()}/share/other.parent.md`を読む。" in prompt
-    # 追加指示は呼び出し元の本文のまま配送する
+    # 名前付き入力は呼び出し元の値のまま配送する
     assert prompt.endswith("補足: ${CLAUDE_PLUGIN_ROOT}")
 
 
@@ -6494,6 +6590,38 @@ def test_lightweight_launch_limits_in_instructions() -> None:
         "スキルの手順を要する作業には`start`を使う",
     ):
         assert fragment in instructions, fragment
+
+
+def test_start_description_declares_input_and_launch_kind_contract() -> None:
+    """`start`の説明と`instructions`が、宣言済み入力だけの受理と起動種別による軽量起動を示し、`追加指示`を案内しない。
+
+    `追加指示`へ補足を渡す案内が残ると、呼び出し元は拒否される項目名で起動し、同じ呼び出しをやり直す。
+    """
+    instructions = subject.mcp.instructions or ""
+    start_tool = subject.mcp._tool_manager.get_tool("start")
+    assert start_tool is not None
+    extra_params = start_tool.parameters["properties"]["extra_params"]["description"]
+    assert "追加指示" not in extra_params
+    assert "宣言外の入力名を含む場合は委譲先を起動しない" in extra_params
+    assert "`待機表明の例外`" in extra_params
+    assert "宣言した起動種別に従い" in instructions
+    assert "宣言外の入力名を含む起動は拒否する" in instructions
+    assert "`起動種別:`を宣言した場合" in start_tool.description
+    for tool_name in ("start_explore", "start_write", "start_shell"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert "専用タスク文書を用意できない単発の作業に使う" in tool.description, tool_name
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_removed_wi_draft_review(tmp_path: pathlib.Path) -> None:
+    """廃止した投入前レビューのタスク文書は配布物に無く、`start`は起動しない。"""
+    task_document = subject._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
+
+    with pytest.raises(ValueError, match="is not an existing .subagent.md file"):
+        await subject.start(str(task_document), {"レビュー対象": "draft.md"}, str(tmp_path))
+
+    assert "wi-draft-review.subagent.md" not in subject._TASK_MODEL_TYPES
 
 
 def test_preflight_covers_plugin_launch_commands() -> None:

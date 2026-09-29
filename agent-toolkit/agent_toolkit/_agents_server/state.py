@@ -10,9 +10,9 @@ import logging
 import pathlib
 import typing
 from collections.abc import Callable, Coroutine, Mapping
-from typing import Any, Literal
+from typing import Any
 
-from agent_toolkit._agents_server import session_registry, tool_names
+from agent_toolkit._agents_server import session_registry, task_documents, tool_names
 from agent_toolkit._common import message_format
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
@@ -50,6 +50,7 @@ TASK_MODEL_TYPES = {
     "exec-review.subagent.md": "medium_tier",
     "exec.subagent.md": "high_tier",
     "lane-integration.subagent.md": "high_tier",
+    "pick-wi-explain.subagent.md": "low_tier",
     "pick-wi.subagent.md": "medium_tier",
     "session-termination.subagent.md": "high_tier",
     "usability-review.subagent.md": "medium_tier",
@@ -97,7 +98,7 @@ EXPLORE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-se
 SHELL_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}", kind="shell")
 WRITE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}", kind="write")
 ModelCandidate = tuple[str, str, str]
-LaunchKind = Literal["delegate", "explore", "shell", "write"]
+LaunchKind = task_documents.LaunchKind
 # 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
 LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "delegate": DELEGATE_SYSTEM_PROMPT,

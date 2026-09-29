@@ -191,7 +191,7 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 `updatedInput`による入力書き換えの効果は入力値の変更までとし、確認ダイアログの発生はそのまま残る。
 ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
 `agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新および一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
-PreToolUseの処理は、`send_message`・`kill`の保存済みsessionのチェックまでとし、開始ツールの入力妥当性検証は実行基盤へ委ねる。入力の実行権限値はそのまま渡す。
+PreToolUseの処理は、`send_message`・`kill`の保存済みsessionのチェックと、`start_custom`・`start_explore`・`start_write`の本文がタスク文書を指す起動の遮断までとし、`start`の入力妥当性検証は実行基盤へ委ねる。`Agent`ツールの本文がタスク文書を指す起動は、1行目の命令と宣言済みの入力以外の行を遮断する。入力の実行権限値はそのまま渡す。
 `wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
 PostToolUseは成功した開始ツール（`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
 

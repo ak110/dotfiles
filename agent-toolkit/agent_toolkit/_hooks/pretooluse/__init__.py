@@ -6,8 +6,9 @@ from agent_toolkit._hooks.pretooluse import dispatch as _dispatch
 from agent_toolkit._hooks.pretooluse import large_reads as _large_reads
 from agent_toolkit._hooks.pretooluse import notices as _notices
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
+from agent_toolkit._hooks.pretooluse import task_document_launch as _task_document_launch
 
-_MODULES = (_notices, _dispatch, _content_checks, _large_reads, _shell_checks, _agent_checks)
+_MODULES = (_notices, _dispatch, _content_checks, _large_reads, _shell_checks, _agent_checks, _task_document_launch)
 
 for _target in _MODULES:
     for _source in _MODULES:

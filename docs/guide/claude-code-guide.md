@@ -126,8 +126,10 @@ claude plugin list
 `claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
 Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-委譲と起動したsessionの管理には、`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールを使う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
-`prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
+委譲と起動したsessionの管理には、`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`・`send_message`・`kill`・`list`・`show`・`stop`の各ツールと、結果を受け取る`atk agents wait`を使う。
+`start`は専用のタスク文書（`share/<役割名>.subagent.md`）の絶対パス、そのタスク文書が`## 入力`で宣言した入力名だけを持つ`extra_params`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。
+宣言外の入力名を渡すと委譲先を起動せず、宣言外の項目名と受理する項目名を返す。タスク文書が`起動種別:`で`explore`・`write`・`shell`を宣言した場合は、`start_explore`などと同じ軽量な起動条件で開始する。
+自由本文の`start_custom`は工程別モデル設定のキー名から`_model`を除いた`model_type`と`prompt`を受け取り、専用のタスク文書を用意できない単発の作業に使う。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
 応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
 `start_explore`は`prompt`と絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`model_type`の省略時は`low_tier_model`、`medium_tier`の指定時は`medium_tier_model`の設定を使う。
 `start`・`start_explore`・`start_shell`・`start_write`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
@@ -149,9 +151,9 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 | キー | 対応する起動 |
 | --- | --- |
-| `high_tier_model` | 計画・実装・修正・公開工程の終端・自動コードレビュー監査 |
+| `high_tier_model` | 計画・実装・修正・AWI投入・公開工程の終端・自動コードレビュー監査 |
 | `medium_tier_model` | WI選定・実行レビュー・`model_type="medium_tier"`を指定した`start_explore` |
-| `low_tier_model` | `start_explore`の既定・`start_shell` |
+| `low_tier_model` | `start_explore`の既定・`start_shell`・軽量種別を宣言したタスク文書の`start` |
 | `write_model` | `start_write` |
 | `orchestrate_model` | `atk wi process-loop` |
 
@@ -358,7 +360,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
-| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取を警告する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する |
+| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取を警告する。`agents_server`の`start_custom`・`start_explore`・`start_write`の本文がタスク文書を指す起動と、`Agent`でタスク文書を指す本文が命令と宣言済みの入力以外の行を含む起動を遮断する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する。`agents_server`の自由本文の起動がタスク文書を指す場合の遮断に対応する |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・背景タスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、回答済みUWIを通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録に対応する |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は品質想起通知も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
