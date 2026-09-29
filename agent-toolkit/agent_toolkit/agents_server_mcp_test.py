@@ -6630,7 +6630,7 @@ def test_label_legend_in_instructions() -> None:
 
 
 def test_lightweight_launch_limits_in_instructions() -> None:
-    """起動手段を選ぶ呼び出し元が読む`instructions`に、軽量起動で使えない規範とスキルおよび代わりの`start`を示す。
+    """起動手段を選ぶ呼び出し元が読む`instructions`に、軽量起動で使えない規範とスキル、代わりの`start`、および固定指示が定める事項を示す。
 
     欠けると呼び出し元は軽量起動でもスキルと共有規範を使えると誤解し、起動文を短く書いて
     スキルの手順を要する作業を`start_explore`などへ渡し、委譲先は必要な手順を持たないまま作業する。
@@ -6641,6 +6641,7 @@ def test_lightweight_launch_limits_in_instructions() -> None:
         "スキルを使える保証も無い",
         "作業に必要な指示を全て起動文へ書く",
         "スキルの手順を要する作業には`start`を使う",
+        "各起動種別の固定指示（`share/agents-server-*.md`）が既に定めるため、起動文へ書かない",
     ):
         assert fragment in instructions, fragment
 

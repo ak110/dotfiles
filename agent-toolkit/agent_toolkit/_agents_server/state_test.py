@@ -52,6 +52,20 @@ def test_launch_prompts_carry_normative_boundaries() -> None:
     assert 'kind="rules-subagent"' in state.DELEGATE_SYSTEM_PROMPT
 
 
+def test_all_launch_system_prompts_include_language_condition() -> None:
+    """全起動種別のシステム指示が完了報告の言語を定め、通常委譲は英語の挿入指示を引き継がない条件も持つ。
+
+    起動文から言語の指定を外しても委譲先が日本語で返すことを、呼び出し元の記述に依存せず保証する。
+    通常委譲の固定指示が条件を欠くと、Claude以外のbackendでは共有規範の言語条項も届かず、
+    実行環境が英語で挿入した指示に引きずられた応答が応答言語の検査で遮断される。
+    """
+    for kind, prompt in state.LAUNCH_SYSTEM_PROMPTS.items():
+        assert "日本語" in prompt, kind
+    for prompt in (state.DELEGATE_SYSTEM_PROMPT, state.CLAUDE_DELEGATE_SYSTEM_PROMPT):
+        assert "英語で挿入した指示" in prompt
+        assert "応答言語として引き継がない" in prompt
+
+
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
 def test_child_session_is_tracked_for_every_host_tool_name_form(namespace: str) -> None:
     """ホストが配送するいずれの修飾形式でも孫sessionを追跡対象へ登録する。"""
