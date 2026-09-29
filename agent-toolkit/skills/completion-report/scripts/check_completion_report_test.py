@@ -28,6 +28,7 @@ SUCCESS = """## 振り返り結果報告
 
 - 候補: 3件 (user-intervention 1件 / tool-failure 2件)
 - 所要時間: 1234秒 (準備時点)
+- 改善見込み: なし
 
 ### 確定した問題と対策
 
@@ -35,7 +36,7 @@ SUCCESS = """## 振り返り結果報告
 
 ### 対策を見送った問題
 
-- 検索の一致0件で失敗扱いになった: 同じ呼び出しで目的を達し、対策の費用に見合わない
+- 判定済み: 検索の一致0件で失敗扱いになった; 根拠: 同じ呼び出しで目的を達し、対策の費用に見合わない
 """
 
 NOT_RUN = """## 振り返り結果報告
@@ -59,7 +60,7 @@ FAILED = """## 振り返り結果報告
         pytest.param(WORK_COMPLETE, "work-complete", None, id="work-complete"),
         pytest.param(SUCCESS, "review-result", "success", id="success"),
         pytest.param(
-            "## 振り返り結果報告\n\n- 候補: 0件\n- 所要時間: 12秒 (準備時点)\n\n"
+            "## 振り返り結果報告\n\n- 候補: 0件\n- 所要時間: 12秒 (準備時点)\n- 改善見込み: なし\n\n"
             "### 確定した問題と対策\n\n- なし\n\n### 対策を見送った問題\n\n- なし\n",
             "review-result",
             "success",
@@ -184,7 +185,9 @@ def test_main_rejects_invalid_stage_state_combination(
             id="measure-without-awi",
         ),
         pytest.param(
-            SUCCESS.replace("- 検索の一致0件で失敗扱いになった: 同じ呼び出しで目的を達し、対策の費用に見合わない\n", ""),
+            SUCCESS.replace(
+                "- 判定済み: 検索の一致0件で失敗扱いになった; 根拠: 同じ呼び出しで目的を達し、対策の費用に見合わない\n", ""
+            ),
             "review-result",
             "success",
             "対策を見送った問題に1件以上",
@@ -209,3 +212,24 @@ def test_main_rejects_invalid_stage_state_combination(
 )
 def test_rejects_invalid_report(text: str, stage: str, state: str | None, message: str) -> None:
     assert any(message in error for error in SUBJECT.validate_report(text, stage, state))
+
+
+@pytest.mark.parametrize(
+    ("item", "accepted"),
+    [
+        ("- 判定済み: 正常な否定結果; 根拠: 標準エラーが空で一致0件だった", True),
+        (
+            "- 未確定: 記録欠落; 照会: 記録位置を照会したが欠落; "
+            "再現: 同じ入力を試したが応答なし; 残る理由: 生の応答を取得できない",
+            True,
+        ),
+        ("- 判定済み: 委譲先の失敗; 根拠: 照会していないため確定できず", False),
+        ("- 未確定: 記録欠落; 照会: 実施; 再現: 実施", False),
+    ],
+)
+def test_review_result_requires_evidence_for_unaddressed_problem(item: str, accepted: bool) -> None:
+    report = SUCCESS.replace(
+        "- 判定済み: 検索の一致0件で失敗扱いになった; 根拠: 同じ呼び出しで目的を達し、対策の費用に見合わない",
+        item,
+    )
+    assert (not SUBJECT.validate_report(report, "review-result", "success")) is accepted

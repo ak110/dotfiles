@@ -35,20 +35,9 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 1. pushの許可（計画に記録した元の要求または確認回答・委譲元の起動文・ユーザー指示のいずれか）が
    対象リポジトリと対象branchを含むことを確認する
 2. `git fetch`後に上流との差分を双方向で確認する。上流が進んでいる場合は追随後に検証をやり直す
-3. `git remote -v`、`git branch --show-current`、有効なpush設定から、承認済みのremoteとdestinationを確認する。
-   最初に引数なし`git push --dry-run --porcelain`を実行する。
-   引数なしの実行が失敗するか意図したrefspecを示さない場合は、
-   `git push --dry-run --porcelain <remote> <source>:<destination>`を実行する。
-   次の表で方式を選ぶ
+3. `git remote -v`、`git branch --show-current`、追跡branch、有効な`push.default`と明示された承認済みdestinationから、引数なしpushの到達先を先に判定する。`push.default=simple`で現在branch名と追跡branch名が異なる場合や追跡branchが無い場合など、引数なしpushの失敗が確定する構成では、そのdry-runを省く。承認済みの`<remote> <source>:refs/heads/<destination>`を明示した`git push --dry-run --porcelain`を最初に試す。引数なしpushが承認済みdestinationへ到達すると確定する場合は、引数なしdry-runを最初に実行する。設定だけで判定できない場合は、引数なしdry-runを試し、失敗するか意図したrefspecを示さなければ明示dry-runを続ける。
 
-   | 引数なしdry-runの結果 | 明示dry-runの結果 | 選ぶ方式 |
-   | --- | --- | --- |
-   | 成功し、全status lineが承認済みremote・destinationへの意図したrefspecを示す | 実行不要 | 標準指定 |
-   | 失敗、または意図したrefspecを示さない | 成功し、remoteとdestinationが承認範囲と完全一致 | 明示指定 |
-   | 失敗、または意図したrefspecを示さない | 上記以外 | pushしない |
-
-   明示指定ではremote、source、完全なdestination refをすべて書く。
-   pushへ進むのは、いずれの方式でも拒否と失敗予定のrefが無い場合に限る
+   成功したdry-runの全status lineが承認済みremote・destinationへのrefspecを示す場合だけ、その方式を選ぶ。拒否や失敗予定のref、または承認範囲と異なるremote・destinationがあればpushしない。明示指定ではremote、source、完全なdestination refをすべて書き、実際のpushも成功したdry-runと同じ方式を使う
 
 呼び出し元がそのpushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
 CIを判定する場合は、次の3工程で監視用の証拠を作成する。

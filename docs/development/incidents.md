@@ -23,6 +23,8 @@
 
 ## [停滞・空転](incidents-workflows.md#停滞・空転)
 
+## [公開工程の未完了](incidents-workflows.md#公開工程の未完了)
+
 ## [並行実行の競合](incidents-workflows.md#並行実行の競合)
 
 ## [フック・セッション状態の不全](incidents-runtime.md#フック・セッション状態の不全)

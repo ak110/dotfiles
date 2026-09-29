@@ -1305,6 +1305,17 @@ class AppServerManager:
                     return
                 if len(arguments) >= 3 and Path(arguments[0]).name == "timeout":
                     arguments = arguments[2:]
+                if (
+                    len(arguments) == 3
+                    and Path(arguments[0]).name in {"bash", "sh", "dash", "zsh"}
+                    and arguments[1] in {"-c", "-lc"}
+                ):
+                    try:
+                        arguments = shlex.split(arguments[2])
+                    except ValueError:
+                        return
+                    if len(arguments) >= 3 and Path(arguments[0]).name == "timeout":
+                        arguments = arguments[2:]
                 if len(arguments) >= 3 and Path(arguments[0]).name == "atk" and arguments[1:3] == ["agents", "wait"]:
                     shared_state.consume_agents_wait_output(session, output)
         elif item_type == "mcpToolCall" and item.get("server") == "agents_server":

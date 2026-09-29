@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
+import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -16,6 +19,12 @@ _LANGUAGE_NOTICE = (
     '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
     "直前のアシスタント応答の地の文が英語主体と判定された。次の応答は日本語で書くこと。</agent-toolkit-auto-inserted>"
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_failure_ledger(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """失敗署名の発生記録をテストごとの状態ディレクトリへ閉じる。"""
+    monkeypatch.setattr(prepare._atk_config, "state_dir", lambda: tmp_path / "state")  # pylint: disable=protected-access
 
 
 def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -97,8 +106,10 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     stdout = capsys.readouterr().out
     assert len(stdout.splitlines()) == 1
     record = json.loads(stdout)
-    assert record["candidate_counts"] == {"hook-notice": 1, "tool-failure": 1, "user-intervention": 1}
-    assert record["candidate_total"] == 3
+    assert record["candidate_counts"] == {"hook-notice": 1, "user-intervention": 1}
+    assert record["candidate_total"] == 2
+    assert record["excluded_counts"]["single-session-failure"] == 1
+    assert record["failure_ledger_skipped"] == 0
     assert record["utterance_counts"] == {"user": 2, "assistant": 1}
     assert record["elapsed_seconds"] == 60
     assert record["prepared_at"] == "2026-09-06T12:34:56Z"
@@ -120,9 +131,10 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert f"atk run-script session-review-evidence -- {transcript.resolve()} --detail <記録位置>" in conversation
 
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
-    assert "- 候補: 3件（hook-notice 1件、tool-failure 1件、user-intervention 1件）" in candidates
+    assert "- 候補: 2件（hook-notice 1件、user-intervention 1件）" in candidates
     assert "  - 記録位置: main:3" in candidates
-    assert "  - 対象: Bash make lint" in candidates
+    assert "## 単発の失敗（件数のみ）" in candidates
+    assert "make lint" in candidates
     # hook通知の是非は通知が判定した応答を読まないと判断できないため、直前のアシスタント発話を添える。
     assert "  - 直前のアシスタント発話: I will run the linter now." in candidates
     # 利用者の是正は要約すると趣旨が変わるため全文を載せる。
@@ -164,7 +176,142 @@ def test_prepare_reads_codex_thread(
     assert record["utterance_counts"] == {"user": 1, "assistant": 0}
     conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
     assert f"--codex-thread-id {thread_id} --detail <記録位置>" in conversation
-    assert "抽出器が問題候補を返さなかった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+
+
+def _write_failed_codex_transcript(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
+    """同じ原因のCommandExecution失敗を持つ最上位セッション記録を作成する。"""
+    path = tmp_path / f"{session_id}.jsonl"
+    entries = [
+        {
+            "timestamp": "2026-09-06T12:00:00Z",
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+        },
+        {
+            "timestamp": "2026-09-06T12:00:01Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "CommandExecution",
+                    "status": "failed",
+                    "command": ["/bin/bash", "-lc", "timeout 900s uv run --frozen python a.py"],
+                    "exit_code": 127,
+                    "stderr": "python: command not found",
+                },
+            },
+        },
+    ]
+    path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    return path
+
+
+def test_prepare_promotes_failure_only_after_another_session(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """単発は件数表へ置き、別セッションの反復だけ候補へ上げ、同じセッションの再実行は重ねない。"""
+    first = _write_failed_codex_transcript(tmp_path, "session-a")
+    second = _write_failed_codex_transcript(tmp_path, "session-b")
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+
+    assert prepare.main(["--transcript", str(first), "--work-dir", str(first_dir)], now=_FIXED_NOW) == 0
+    first_result = json.loads(capsys.readouterr().out)
+    assert first_result["candidate_total"] == 0
+    assert first_result["excluded_counts"]["single-session-failure"] == 1
+    assert "単発の失敗" in (first_dir / "candidates.md").read_text(encoding="utf-8")
+
+    assert prepare.main(["--transcript", str(second), "--work-dir", str(second_dir)], now=_FIXED_NOW) == 0
+    second_result = json.loads(capsys.readouterr().out)
+    assert second_result["candidate_counts"] == {"command-failure": 1}
+    assert "2セッション" in (second_dir / "candidates.md").read_text(encoding="utf-8")
+
+    assert prepare.main(["--transcript", str(second), "--work-dir", str(second_dir)], now=_FIXED_NOW) == 0
+    assert json.loads(capsys.readouterr().out)["candidate_total"] == 1
+    ledger = (tmp_path / "state" / "session-review" / "failure-signatures.jsonl").read_text(encoding="utf-8")
+    assert len(ledger.splitlines()) == 2
+
+
+def test_prepare_prunes_old_and_skips_invalid_failure_records(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """30日より古い観測と破損行は反復に使わず、無視した行数を公開結果へ示す。"""
+    ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "failure_signature": "old",
+                "session_id": "old-session",
+                "observed_at": "2026-07-01T00:00:00+00:00",
+                "failure_summary": "old",
+            }
+        )
+        + "\n{"
+        + "broken\n",
+        encoding="utf-8",
+    )
+    transcript = _write_failed_codex_transcript(tmp_path, "new-session")
+    work_dir = _work_dir(tmp_path)
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)], now=_FIXED_NOW) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["failure_ledger_skipped"] == 1
+    assert result["candidate_total"] == 0
+    saved = ledger.read_text(encoding="utf-8")
+    assert "old-session" not in saved
+    assert "new-session" in saved
+
+
+def test_parallel_prepare_keeps_both_sessions_in_failure_ledger(tmp_path: pathlib.Path) -> None:
+    """別々の最上位セッションの準備を並行実行しても、共有記録へ両方の署名を残す。"""
+    state_home = tmp_path / "state-home"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "XDG_STATE_HOME": str(state_home),
+            "LOCALAPPDATA": str(state_home),
+            "APPDATA": str(state_home),
+            "USERPROFILE": str(tmp_path),
+            "HOME": str(tmp_path),
+        }
+    )
+    with contextlib.ExitStack() as opened:
+        processes: list[subprocess.Popen[str]] = []
+        for session_id in ("parallel-a", "parallel-b"):
+            transcript = _write_failed_codex_transcript(tmp_path, session_id)
+            work_dir = tmp_path / session_id
+            work_dir.mkdir()
+            processes.append(
+                opened.enter_context(
+                    subprocess.Popen(
+                        [
+                            sys.executable,
+                            str(pathlib.Path(prepare.__file__)),
+                            "--transcript",
+                            str(transcript),
+                            "--work-dir",
+                            str(work_dir),
+                        ],
+                        env=environment,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                )
+            )
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=30)
+            assert process.returncode == 0, stderr
+            assert json.loads(stdout)["failure_ledger_skipped"] == 0
+
+    ledger = state_home / "agent-toolkit" / "session-review" / "failure-signatures.jsonl"
+    records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    assert {item["session_id"] for item in records} == {"parallel-a", "parallel-b"}
 
 
 @pytest.mark.parametrize("linked_worktree", [False, True])

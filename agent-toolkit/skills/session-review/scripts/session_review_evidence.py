@@ -449,6 +449,7 @@ def _failed_tool_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
         text = "\n".join(_text_blocks(block.get("content")))
         event = _event("failed-tool", text, tool=str(block.get("tool_use_id", "")))
         if event:
+            event["diagnostic_last_line"] = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
             events.append(event)
     return events
 
@@ -857,8 +858,10 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
         command = item.get("command")
         if isinstance(command, list) and all(isinstance(part, str) for part in command):
             event["command"] = _clip(json.dumps(command, ensure_ascii=False))
+            event["command_full"] = json.dumps(command, ensure_ascii=False)
             event["executable"] = _basename(command[0]) if command else ""
         event["diagnostic"] = "" if text == "CommandExecution failed" else _clip(text)
+        event["diagnostic_last_line"] = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
         exit_code = item.get("exit_code")
         if isinstance(exit_code, int) and not isinstance(exit_code, bool):
             event["exit_code"] = exit_code
@@ -3108,6 +3111,25 @@ _REPORTED_NONZERO_COUNT = re.compile(
 )
 _WI_STYLE_DIAGNOSTIC = re.compile(r"^警告: 本文:\d+:\d+: (?:口語表現|ダッシュ) ")
 """`atk wi add`・`atk wi edit`が保存前に表示する本文の表記診断の書式。起草者が保存前の本文で処置する警告に当たる。"""
+_TRANSIENT_CLASSIFIER_ERROR = "The server-side auto mode classifier gave no verdict (error)"
+_FAILURE_PATH = re.compile(r"(?<!\w)(?:~?/|[A-Za-z]:[\\/])[^\s'\"`]+")
+_FAILURE_QUOTED = re.compile(r"(['\"`]).*?\1")
+_FAILURE_HASH = re.compile(r"\b[0-9a-fA-F]{7,64}\b")
+_FAILURE_NUMBER = re.compile(r"\d+")
+_CHECK_COMMANDS = frozenset(
+    {
+        ("pyfltr", "run"),
+        ("pytest", ""),
+        ("make", "test"),
+        ("atk", "plan-check"),
+        ("atk", "exec-review-evidence-check"),
+        ("atk", "completion-report-check"),
+        ("atk", "validate"),
+        ("gh", "watch"),
+        ("wait_ci.py", ""),
+        ("wait-ci", ""),
+    }
+)
 
 
 def _bundle_events(
@@ -3236,6 +3258,7 @@ def _candidate_events(
     )
     for candidate_kind, events in sources:
         for event in events:
+            event = dict(event)
             record = event.get("record")
             line = event.get("line")
             if not isinstance(record, str) or not isinstance(line, int):
@@ -3288,12 +3311,20 @@ def _candidate_events(
             if candidate_kind == "command-failure" and _is_normal_negative_result(event):
                 excluded["normal-negative-result"] += 1
                 continue
+            if event_kind == "tool-failure" and _TRANSIENT_CLASSIFIER_ERROR in normalized_text:
+                excluded["runtime-transient"] += 1
+                continue
+            if event_kind in {"command-failure", "tool-failure"} and _is_check_detected(event):
+                excluded["check-detected"] += 1
+                continue
             if event_kind == "hook-notice":
                 exclusion = _hook_notice_candidate_exclusion(event.get("tag"))
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
             key = _candidate_key(event_kind, event, normalized_text)
+            if event_kind in {"command-failure", "tool-failure"}:
+                event["failure_signature"], event["failure_summary"] = _failure_signature(event_kind, event)
             groups.setdefault(key, []).append(event)
 
     selected_groups: list[tuple[tuple[str, ...], list[dict[str, Any]], int, int]] = []
@@ -3343,6 +3374,9 @@ def _candidate_events(
         text = events[0].get("text")
         if isinstance(text, str):
             candidate["text"] = text
+        if key and key[0] in {"command-failure", "tool-failure"}:
+            candidate["failure_signature"] = events[0]["failure_signature"]
+            candidate["failure_summary"] = events[0]["failure_summary"]
         if _is_bounded_hook_group(key):
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
@@ -3686,7 +3720,7 @@ def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
     """Claude CodeのBashで、読取専用の述語または検索が出力なしで偽を返した事象を区分する。
 
     Claude Codeは出力の無い非0終了を`Exit code <N>`だけの失敗として記録する。
-    パイプ以外の連結とリダイレクトを含むコマンドは、どの段が偽を返したかを本文から確定できないため残す。
+    `&&`の全段が読取専用の述語であれば、どの段が偽でも正常な否定結果とする。
     """
     matched = re.fullmatch(r"Exit code (\d+)", str(event.get("text", "")).strip())
     if event.get("tool_name") != "Bash" or matched is None:
@@ -3716,10 +3750,21 @@ def _shell_command_tokens(command: str) -> list[str] | None:
 def _is_negative_search_command(tokens: list[str], exit_code: int) -> bool:
     """出力の無い非0終了が、検索の一致0件という正常な否定結果に当たるかを返す。
 
-    演算子はパイプ（`|`）だけを許し、パイプラインの終了コードを決める最終段で判定する。
+    `&&`で連結した全段が読取専用の述語であれば、終了コード1を正常な否定結果とする。
+    それ以外の演算子はパイプ（`|`）だけを許し、パイプラインの終了コードを決める最終段で判定する。
     最終段が読取専用の述語で終了コード1、または最終段が検索を起動する`xargs`で終了コード123
     （起動したコマンドのいずれかが1から125で終わったことを表す）の場合を一致0件とする。
     """
+    if "&&" in tokens:
+        parts: list[list[str]] = [[]]
+        for token in tokens:
+            if token == "&&":
+                parts.append([])
+            elif set(token) <= _SHELL_OPERATOR_CHARS:
+                return False
+            else:
+                parts[-1].append(token)
+        return exit_code == 1 and all(part and _is_negative_predicate(part) for part in parts)
     segments: list[list[str]] = [[]]
     for token in tokens:
         if set(token) <= _SHELL_OPERATOR_CHARS:
@@ -3755,12 +3800,19 @@ def _is_negative_predicate(args: list[str]) -> bool:
     if executable != "git":
         return False
     git_args = args[1:]
-    while git_args and git_args[0] == "-C" and len(git_args) >= 2:
-        git_args = git_args[2:]
+    while git_args:
+        if git_args[0] in {"-C", "-c", "--git-dir", "--work-tree"} and len(git_args) >= 2:
+            git_args = git_args[2:]
+        elif git_args[0] == "--no-pager":
+            git_args = git_args[1:]
+        else:
+            break
     if not git_args:
         return False
     if git_args[0] == "grep":
         return True
+    if git_args[0] == "config":
+        return any(option in git_args[1:] for option in ("--get", "--get-all", "--get-regexp"))
     return git_args[0] == "merge-base" and "--is-ancestor" in git_args[1:]
 
 
@@ -3925,6 +3977,116 @@ def _candidate_mechanism(candidate_kind: str, event: dict[str, Any]) -> str:
     return _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(reason.split()))
 
 
+def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[str]]:
+    """失敗した実行の包装を外し、実行ファイル、サブコマンド、表示用本文と引数を返す。"""
+    raw = event.get("command_full", event.get("command"))
+    command = _json_object(str(event.get("operation", "")))
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        args = parsed if isinstance(parsed, list) and all(isinstance(value, str) for value in parsed) else []
+    else:
+        value = command.get("command") if command is not None else None
+        args = _shell_tokens(value) if isinstance(value, str) else []
+    display = " ".join(args)
+    for _ in range(5):
+        if not args:
+            break
+        name = _basename(args[0])
+        if name == "timeout" and len(args) >= 3:
+            args = args[2:]
+        elif name == "env":
+            index = 1
+            while index < len(args) and _ENV_ASSIGNMENT.match(args[index]):
+                index += 1
+            args = args[index:]
+        elif name in _SHELL_NAMES and len(args) >= 3 and args[1] in {"-c", "-lc"}:
+            display = args[2]
+            args = _shell_tokens(args[2])
+        elif name == "uv" and len(args) >= 3 and args[1] == "run":
+            index = 2
+            while index < len(args) and args[index] in {"--frozen", "--locked", "--no-project"}:
+                index += 1
+            args = args[index:]
+        else:
+            break
+    if not args:
+        name = str(event.get("tool_name") or event.get("tool") or "")
+        return name, "", display, []
+    name = _basename(args[0])
+    if name == "git":
+        index = 1
+        while index < len(args):
+            if args[index] in {"-C", "-c", "--git-dir", "--work-tree"} and index + 1 < len(args):
+                index += 2
+            elif args[index] == "--no-pager":
+                index += 1
+            else:
+                break
+        subcommand = args[index] if index < len(args) else ""
+    elif (
+        name == "atk"
+        and len(args) >= 3
+        and args[1] in {"run-script", "review-table"}
+        or name == "gh"
+        and len(args) >= 3
+        and args[1] == "run"
+    ):
+        subcommand = args[2]
+    elif name.startswith("python") or name in {"pytest", "wait_ci.py", "wait-ci"}:
+        subcommand = ""
+    else:
+        subcommand = args[1] if len(args) >= 2 and not args[1].startswith("-") else ""
+    return name, subcommand, display or " ".join(args), args
+
+
+def _failure_exit_code(event: dict[str, Any]) -> int | None:
+    value = event.get("exit_code")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    match = re.search(r"\bExit code (\d+)\b", str(event.get("text", "")))
+    return int(match.group(1)) if match else None
+
+
+def _failure_diagnostic(event: dict[str, Any]) -> str:
+    tail = event.get("diagnostic_last_line")
+    if isinstance(tail, str) and tail.strip():
+        return tail.strip()
+    text = str(event.get("diagnostic") or event.get("text") or "")
+    return next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+
+
+def _failure_signature(candidate_kind: str, event: dict[str, Any]) -> tuple[str, str]:
+    """可変値を除いた失敗署名と、候補一覧へ表示するコマンド・診断を返す。"""
+    name, subcommand, display, _ = _failure_command_parts(event)
+    code = _failure_exit_code(event)
+    diagnostic = _failure_diagnostic(event)
+    if candidate_kind == "tool-failure" and "hook error:" in diagnostic:
+        diagnostic = _HOOK_FAILURE_PREFIX.sub("", diagnostic, count=1)
+    if diagnostic == "CommandExecution failed" and not display:
+        diagnostic = ""
+    normalized = " ".join(diagnostic.split()).casefold()
+    normalized = _FAILURE_QUOTED.sub("<arg>", normalized)
+    normalized = _FAILURE_PATH.sub("<path>", normalized)
+    normalized = _FAILURE_HASH.sub("<hash>", normalized)
+    normalized = _FAILURE_NUMBER.sub("<num>", normalized)
+    if not normalized:
+        normalized = display or f"{event.get('record', '')}:{event.get('line', '')}"
+    signature = json.dumps([candidate_kind, name, subcommand, code, normalized], ensure_ascii=False, separators=(",", ":"))
+    summary = f"{display or name}（終了コード{code if code is not None else '不明'}）: {diagnostic or '診断なし'}"
+    return signature, summary
+
+
+def _is_check_detected(event: dict[str, Any]) -> bool:
+    """検証コマンドが欠陥を検出して終了コード1を返した結果かを判定する。"""
+    if _failure_exit_code(event) != 1:
+        return False
+    name, subcommand, _, args = _failure_command_parts(event)
+    return (name, subcommand) in _CHECK_COMMANDS or "--check" in args
+
+
 def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
     """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。
 
@@ -3941,40 +4103,8 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             _normalize_hook_candidate_text(normalized_text),
             _candidate_mechanism(candidate_kind, event),
         )
-    if candidate_kind == "command-failure":
-        if event.get("tool") == "CommandExecution":
-            diagnostic = event.get("diagnostic")
-            first_diagnostic_line = (
-                diagnostic.splitlines()[0] if isinstance(diagnostic, str) and diagnostic.splitlines() else ""
-            )
-            command_or_location = str(event.get("command", "")) or (
-                f"{event.get('record', '')}:{event.get('line', '')}" if not first_diagnostic_line else ""
-            )
-            return (
-                candidate_kind,
-                "CommandExecution",
-                str(event.get("exit_code", "")),
-                str(event.get("executable", "")),
-                _normalize_candidate_kind_text(first_diagnostic_line) if first_diagnostic_line else command_or_location,
-            )
-        raw_text = event.get("text")
-        first_line = raw_text.splitlines()[0] if isinstance(raw_text, str) and raw_text.splitlines() else ""
-        return candidate_kind, _normalize_candidate_kind_text(first_line)
-    if candidate_kind == "tool-failure":
-        raw_text = event.get("text")
-        if isinstance(raw_text, str) and "hook error:" in raw_text:
-            source, _, body = raw_text.partition("hook error:")
-            normalized_body = _HOOK_FAILURE_PREFIX.sub("", raw_text, count=1)
-            if normalized_body == raw_text:
-                normalized_body = body.strip()
-            normalized_body = _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(normalized_body.split()))
-            return candidate_kind, source.strip(), str(event.get("kind", "")), normalized_body
-        diagnostic = (
-            _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(_EXIT_CODE_PREFIX.sub("", raw_text).split()))
-            if isinstance(raw_text, str)
-            else ""
-        )
-        return candidate_kind, str(event.get("tool_name", "")), str(event.get("operation", "")), diagnostic
+    if candidate_kind in {"command-failure", "tool-failure"}:
+        return candidate_kind, _failure_signature(candidate_kind, event)[0]
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
