@@ -25,7 +25,7 @@
 
 最初の失敗からCI成功または本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装および期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 
-修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、pushおよびCI確認を再判定する。
+修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。原因commitに対応する計画が保存済みの場合は、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める`入力計画`の取得と修正系列の終端での再保存を終端担当が行い、取得した計画の保存root相対パスと再保存の結果を引き継ぎ記録へ残す。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、pushおよびCI確認を再判定する。
 
 同一の修正系列における3件目以降の修正commitでは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビューを1件起動する。原因commitに計画契約があれば`レビュー基準: 計画`、無ければ`レビュー基準: CI記録`とする。計画では計画ファイルを渡す。CI記録では7項目に加えて`起点commitOID`と`原因commitOID`を渡す。`起点commitOID`はその修正系列の起点commitの7文字以上の一意な短縮OIDとし同じ修正系列で継続する。`原因commitOID`は今回の原因commitの7文字以上の一意な短縮OIDとし、再帰的CI失敗では7項目と同時に更新する。同じ修正系列では同じレビュー表を継続する。レビューの収束後、必要なレビュー表を正式な保存先へ保存する。
 

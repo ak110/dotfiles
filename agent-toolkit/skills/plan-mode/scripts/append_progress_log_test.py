@@ -160,3 +160,22 @@ def test_cli_resolves_start_head_and_rejects_invalid_revision(tmp_path: pathlib.
         == 1
     )
     assert path.read_bytes() == saved
+
+
+def test_main_rejects_saved_plan_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """保存済み計画の領域の計画は変更せずに失敗し、取得と保存の手順を示す。"""
+    private_notes = tmp_path / "private-notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+    path = private_notes / "plans" / "2026" / "09" / "28-example-1a2b.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(_plan(), encoding="utf-8")
+    original = path.read_bytes()
+
+    assert append_progress_log.main([str(path), "--completed-step", "工程", "--result", "結果"]) == 1
+
+    error = capsys.readouterr().err
+    assert "`atk plans checkout 2026/09/28-example-1a2b.md`" in error
+    assert "`atk plans commit 2026/09/28-example-1a2b.md`" in error
+    assert path.read_bytes() == original

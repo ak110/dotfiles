@@ -430,6 +430,52 @@ def test_dispatch_rejects_writing_table_with_legacy_track(tmp_path: pathlib.Path
     assert path.read_bytes() == original
 
 
+def test_cli_rejects_writes_under_saved_plans_root(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存済み計画の領域の表へのinit・add・respondは表を変えずに失敗し、showは表示する。"""
+    private_notes = tmp_path / "private-notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+    saved_dir = private_notes / "plans" / "2026" / "09"
+    saved_dir.mkdir(parents=True)
+    saved = saved_dir / "28-example-1a2b.exec-review.tsv"
+    assert table.add(saved, "1", _TRACK, "sample.py:1", "保存済みの指摘") == 0
+    original = saved.read_bytes()
+    missing = saved_dir / "28-other-3c4d.exec-review.tsv"
+    location_file = tmp_path / "location.txt"
+    location_file.write_text("sample.py:2", encoding="utf-8")
+    issue_file = tmp_path / "issue.md"
+    issue_file.write_text("追加の指摘", encoding="utf-8")
+    response_file = tmp_path / "response.md"
+    response_file.write_text("対応した", encoding="utf-8")
+    capsys.readouterr()
+
+    for argv, checkout in (
+        (["init", str(missing)], "2026/09/28-other-3c4d.md"),
+        (
+            ["add", str(saved), "--round=1", f"--track={_TRACK}", "--level=詳細"]
+            + [f"--location-file={location_file}", f"--issue-file={issue_file}"],
+            "2026/09/28-example-1a2b.md",
+        ),
+        (["respond", str(saved), "--row-id=1", f"--response-file={response_file}"], "2026/09/28-example-1a2b.md"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["review-table", *argv], home=tmp_path)
+        assert exc_info.value.code == 1
+        error = capsys.readouterr().err
+        assert f"`atk plans checkout {checkout}`" in error
+        assert f"`atk plans commit {checkout}`" in error
+
+    assert saved.read_bytes() == original
+    assert not missing.exists()
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "show", str(saved)], home=tmp_path)
+    assert exc_info.value.code == 0
+    assert "保存済みの指摘" in capsys.readouterr().out
+
+
 def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)

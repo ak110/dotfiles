@@ -24,6 +24,7 @@ from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._plan import locations as _plan_locations
 
 # 配布物独立性のため、Web表示側`_atk_serve_plans.py`の`_REVIEW_TABLE_HEADERS`と同じ列順を二重に持つ。
 # 列を増減する場合は双方を同期し、旧形式の読み取り互換も両側で更新する。
@@ -600,8 +601,9 @@ def dispatch(args: argparse.Namespace) -> int:
 
 
 def _require_writable_exec_review(raw_path: str) -> None:
-    """保存済みの旧計画レビュー表を更新対象から除外する。"""
+    """保存済み計画の領域の表と、保存済みの旧計画レビュー表を更新対象から除外する。"""
     target = _path(raw_path)
+    _plan_locations.reject_saved_plans_root_write(target)
     name = target.name
     if name.endswith(".plan-review.tsv") or (name.startswith("dlg-") and name.endswith(".exec-review.tsv")):
         raise ValueError("保存済みの旧レビュー表は読み取り専用です。更新には.exec-review.tsvを指定する")

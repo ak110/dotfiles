@@ -452,6 +452,33 @@ def require_saved_plan_file(
     return path
 
 
+def reject_saved_plans_root_write(
+    target: pathlib.Path | str,
+    *,
+    private_notes: pathlib.Path | str | None = None,
+) -> None:
+    """保存済み計画rootの配下を指すパスへの直接書込みを`ValueError`で拒否する。
+
+    保存済み計画は`atk plans checkout`で作業rootへ取得してから更新し、`atk plans commit`で保存し直す。
+    書込補助処理が保存rootのファイルを直接書き換えると、private-notesに所有者のいない未コミット差分が残る。
+    """
+    root = new_plans_root(private_notes)
+    relative = _relative_to(pathlib.Path(target), root)
+    if relative is None:
+        return
+    checkout = pathlib.PurePosixPath(*relative.parts)
+    # 付属ファイルは計画バンドルの単位で取得するため、同じstemのメイン計画を案内する。
+    # 独立CI実行レビュー表（`ci-*.exec-review.tsv`）はそれ自体を取得の単位とする。
+    for suffix in (".exec-review.tsv", ".bugs.md"):
+        if checkout.name.endswith(suffix) and not checkout.name.startswith("ci-"):
+            checkout = checkout.with_name(checkout.name.removesuffix(suffix) + ".md")
+            break
+    raise ValueError(
+        f"保存済み計画の領域（{root}）のファイルは直接更新できない。"
+        f"`atk plans checkout {checkout}`で作業rootへ取得して更新し、`atk plans commit {checkout}`で保存する"
+    )
+
+
 def is_plan_adjunct_reference(value: pathlib.Path | str) -> bool:
     """計画本文の付属ファイル参照の固定接頭辞を持つ値かを返す。"""
     return os.fspath(value).startswith(PLAN_ADJUNCT_REFERENCE_PREFIX)
