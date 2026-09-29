@@ -46,12 +46,16 @@ WAIT_TIMEOUT_SECONDS = 3600.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "high_tier",
+    "bulk-replace-review.subagent.md": "low_tier",
+    "copilot-review-audit.subagent.md": "high_tier",
     "defect-investigation.subagent.md": "high_tier",
     "exec-review.subagent.md": "medium_tier",
     "exec.subagent.md": "high_tier",
+    "external-write-review.subagent.md": "low_tier",
     "lane-integration.subagent.md": "high_tier",
     "pick-wi-explain.subagent.md": "low_tier",
     "pick-wi.subagent.md": "medium_tier",
+    "reader-fit-review.subagent.md": "low_tier",
     "session-termination.subagent.md": "high_tier",
     "usability-review.subagent.md": "medium_tier",
 }

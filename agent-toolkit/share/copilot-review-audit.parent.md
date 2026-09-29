@@ -1,0 +1,21 @@
+# 自動コードレビュー監査担当の起動と受領
+
+```text
+起動対象: copilot-review-audit.subagent.md
+```
+
+`agent-toolkit:process-wi`のメインが自動コードレビュー監査を委譲するときに、本書に従って監査担当を起動し、結果を受領する。
+監査の手順と返却項目は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`が定める。
+
+## 起動
+
+タスク文書起動（`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」）で1件の監査担当を起動する。`cwd`は対象リポジトリの絶対パスとし、`extra_params`には次の名前付き入力だけを渡す。
+
+- `pending取得結果`: `atk review-audit pending`の標準出力をセッション領域（`agent-toolkit:managed-temp`）へ保存したJSONファイルの絶対パス。コマンドが非0で終わった場合と、JSONまたは件数を解釈できない場合は`なし`
+- `引き継ぎ記録先`: 値は`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」が指す`引き継ぎ記録先`の書式に従う
+
+監査の手順、返却項目、権限および応答言語は起動文へ書かない。
+
+## 受領
+
+結果は引数なしの`atk agents wait`で受け取る。返却がタスク文書の定める項目を持つことを確かめ、要修正の指摘を同じセッションで是正するかAWIへ記録するかを確定する。返却の受領と処置の確定を公開工程の開始条件とする。

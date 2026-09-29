@@ -951,6 +951,39 @@ async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("task_name", "launch_kind", "model_type"),
+    [
+        ("external-write-review.subagent.md", "explore", "low_tier"),
+        ("reader-fit-review.subagent.md", "explore", "low_tier"),
+        ("bulk-replace-review.subagent.md", "explore", "low_tier"),
+        ("copilot-review-audit.subagent.md", "delegate", "high_tier"),
+    ],
+)
+async def test_standard_review_task_documents_launch_with_declared_kinds(
+    task_name: str,
+    launch_kind: str,
+    model_type: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """定型の委譲を移したタスク文書は、呼び元文書が定める入力だけで`start`から起動し、宣言した起動条件と段位で動く。
+
+    起動条件が通常委譲へ戻ると読み取り専用の探索が規範とプロジェクト指示を読み込み、段位を誤ると監査を下位モデルで行う。
+    """
+    _recording_candidates(monkeypatch)
+    manager, _ = _manager_with_fake("claude")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    task_document = subject._SHARE_DIRECTORY / task_name
+
+    response = await subject.start(str(task_document), _observed_input_params(task_name, tmp_path), str(tmp_path))
+
+    shown = manager.show_session(response["session_id"])
+    assert shown["launch_kind"] == launch_kind
+    assert shown["model_type"] == model_type
+
+
+@pytest.mark.asyncio
 async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`起動種別:`行の無いタスク文書は通常委譲で起動し、不正な起動種別は宣言を読めない扱いで通常委譲とする。"""
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
@@ -1055,6 +1088,22 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         ]
     if task_name == "add-wi.subagent.md":
         return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
+    if task_name == "external-write-review.subagent.md":
+        return [
+            f"文面ファイル: {root / 'pr-body.md'}（12行）",
+            "投稿先と目的: GitHubのPR本文。変更の目的をレビュアーへ伝える",
+            f"根拠の所在: {root / 'diff.patch'}",
+        ]
+    if task_name == "copilot-review-audit.subagent.md":
+        return [f"pending取得結果: {root / 'pending.json'}", handoff]
+    if task_name == "reader-fit-review.subagent.md":
+        return [
+            f"成果物: {root / 'guide.md'}（40行）",
+            "種別: 利用者向け文書",
+            "読者像: ツールを初めて導入する利用者。内部の実装は知らない",
+        ]
+    if task_name == "bulk-replace-review.subagent.md":
+        return [f"差分ファイル: {root / 'word-diff.txt'}（120行）"]
     if task_name == "pick-wi-explain.subagent.md":
         return [
             f"説明対象の選定結果ファイル: {root / 'selection.json'}",
@@ -1074,12 +1123,16 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
     "task_name",
     [
         "add-wi.subagent.md",
+        "bulk-replace-review.subagent.md",
+        "copilot-review-audit.subagent.md",
         "defect-investigation.subagent.md",
         "exec-review.subagent.md",
         "exec.subagent.md",
+        "external-write-review.subagent.md",
         "lane-integration.subagent.md",
         "pick-wi-explain.subagent.md",
         "pick-wi.subagent.md",
+        "reader-fit-review.subagent.md",
         "session-termination.subagent.md",
     ],
 )
