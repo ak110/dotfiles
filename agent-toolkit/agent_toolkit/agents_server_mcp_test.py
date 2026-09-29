@@ -47,6 +47,22 @@ def _skip_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subject, "_check_plugin_commands", _skipped_plugin_preflight)
 
 
+async def _forbidden_backend_process(*args: Any, **_kwargs: Any) -> Any:
+    """実backendの子プロセス起動を拒否し、差し替え漏れを実行環境によらず失敗として表す。"""
+    raise AssertionError(f"テストが実backendの子プロセスを起動しようとしました: {args}")
+
+
+@pytest.fixture(autouse=True)
+def _forbid_backend_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex・Antigravityの実backendが子プロセスを起動する経路を既定で塞ぐ。
+
+    backendを差し替えたengineが候補のengineと一致しないと、実backendが`codex app-server`などを起動する。
+    CLIを導入した開発機ではそれが成功して欠陥が隠れ、導入していないCIだけが失敗するため、
+    起動そのものを失敗させて両環境の結果をそろえる。起動引数を検査するテストはテスト内で改めて差し替える。
+    """
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _forbidden_backend_process)
+
+
 def _use_real_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """事前確認を実装どおりに実行させる。"""
     monkeypatch.setattr(subject, "_check_plugin_commands", _REAL_PLUGIN_PREFLIGHT_ASYNC)
@@ -939,7 +955,7 @@ async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, 
     起動条件はsession記録の`launch_kind`と、backendへ渡すシステム指示・許可ツールを決める種別で確かめる。
     """
     _recording_candidates(monkeypatch)
-    manager, _ = _manager_with_fake("claude")
+    manager, _ = _manager_with_fake("codex")
     monkeypatch.setattr(subject, "_MANAGER", manager)
     explain = subject._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
 
@@ -972,7 +988,7 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
     起動条件が通常委譲へ戻ると読み取り専用の探索が規範とプロジェクト指示を読み込み、段位を誤ると監査を下位モデルで行う。
     """
     _recording_candidates(monkeypatch)
-    manager, _ = _manager_with_fake("claude")
+    manager, _ = _manager_with_fake("codex")
     monkeypatch.setattr(subject, "_MANAGER", manager)
     task_document = subject._SHARE_DIRECTORY / task_name
 
