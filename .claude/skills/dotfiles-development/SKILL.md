@@ -32,6 +32,7 @@ description: >
     初回の変更範囲の検証では、変更ファイルに適用できるチェックを全て動かすため、MCPの`commands`とCLIの`--commands`を指定しない。
     Pythonファイルまたはエージェント向け文書を変更するレーンの近接検証へ、後述の`repo_invariant`マーカーのテストを含める。
     `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言を変更した場合は、変更した挙動に対応するhook固有の`<hook名>_test.py`も加える。
+    `agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、または`atk.py`のサブコマンド登録を変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`を近接検証へ加える。同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。共有の生成値や登録を期待する未変更のテストも検証するためである。
     デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
