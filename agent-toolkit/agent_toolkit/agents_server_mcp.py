@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import pathlib
-import re
 import subprocess
 import typing
 import warnings
@@ -31,7 +30,7 @@ from pydantic import Field
 from agent_toolkit._agents_server import antigravity as antigravity_backend
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
-from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
+from agent_toolkit._agents_server import logging_config, session_registry, state, status_file, task_documents
 from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
     LaunchKind,
@@ -59,7 +58,6 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
-from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 
 try:
@@ -90,11 +88,10 @@ ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExcee
 # 前2者と一致するため同じ集合の要素とする。
 # 500（api_error）はサービス内部の失敗であり、候補の変更で解決するとは限らないため含めない。
 ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({401, 403, 429, 529})
-_REQUIRED_INPUT_PREFIX = "必須入力名: "
-_REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
+_REQUIRED_INPUT_NAME_PATTERN = task_documents.INPUT_NAME_PATTERN
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 _TASK_MODEL_TYPES = state.TASK_MODEL_TYPES
-_TASK_DOCUMENT_SUFFIX = ".subagent.md"
+_TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
 # 委譲先のClaude Code・Codexがプラグインを起動するコマンド。MCP設定（`.mcp.json`・`.mcp.codex.json`・`mcp.json`）の
 # `command`と`hooks/hooks.json`のhookの先頭語、およびCodexのhook起動器が内部で呼ぶ`uv run`を覆う。
 # 委譲先は同じPATHと作業ディレクトリからこれらを解決するため、作業ディレクトリの設定（未trustのmise設定など）で
@@ -120,13 +117,7 @@ _PLUGIN_ROOT_VARIABLE = "${CLAUDE_PLUGIN_ROOT}"
 
 def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
     """agent-toolkit pluginのshare直下にあるタスク文書だけを受理する。"""
-    if path.parent.name != "share":
-        return False
-    try:
-        manifest = json.loads((path.parent.parent / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return False
-    return isinstance(manifest, dict) and manifest.get("name") == "agent-toolkit"
+    return task_documents.is_agent_toolkit_task_document(path)
 
 
 @dataclasses.dataclass
@@ -351,48 +342,52 @@ def _validate_required_prompt_inputs(
     extra_params: Mapping[str, str],
     document_text: str | None = None,
 ) -> str | None:
-    """タスク文書の必須入力名を名前付き追加入力と照合する。"""
+    """タスク文書の宣言を名前付き入力と照合し、宣言を読めない場合だけ警告文を返す。
+
+    必須入力の欠落と宣言外の入力名は委譲先を起動せず`ValueError`で拒否する。
+    """
+    declaration = _task_document_declaration(task_document, document_text)
+    if isinstance(declaration, str):
+        return declaration
+    _check_declared_inputs(task_document, declaration, extra_params)
+    return None
+
+
+def _task_document_declaration(
+    task_document: pathlib.Path,
+    document_text: str | None,
+) -> task_documents.TaskDocumentDeclaration | str:
+    """タスク文書の宣言を読む。共有規則の判定は`_is_agent_toolkit_task_document`を経由する。"""
     if not _is_agent_toolkit_task_document(task_document):
         return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
-    if document_text is None:
-        try:
-            document_text = task_document.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as error:
-            return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
-    document_lines = document_text.splitlines()
-    headings = top_level_atx_headings("\n".join(document_lines), 2)
-    inputs = [index for index, (_, title) in enumerate(headings) if title == "入力"]
-    if not inputs:
-        return f"必須入力検査を実施できません: タスク文書に## 入力がありません: {task_document}"
-    position = inputs[0]
-    token = headings[position][0]
-    assert token.map is not None
-    following = headings[position + 1][0] if position + 1 < len(headings) else None
-    end = following.map[0] if following is not None and following.map is not None else len(document_lines)
-    section = document_lines[token.map[1] : end]
-    try:
-        fence = section.index("```text")
-        marker = section[fence + 1]
-    except (ValueError, IndexError):
-        return f"必須入力検査を実施できません: ## 入力にtextコードブロックがありません: {task_document}"
-    if not marker.startswith(_REQUIRED_INPUT_PREFIX):
-        return f"必須入力検査を実施できません: 必須入力名を取得できません: {task_document}"
-    required_names = marker.removeprefix(_REQUIRED_INPUT_PREFIX).split(",")
-    if not required_names or any(not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name) for name in required_names):
-        return f"必須入力検査を実施できません: 必須入力名の書式が不正です: {task_document}"
-    missing = [name for name in required_names if name not in extra_params]
+    return task_documents.read_declaration_unchecked(task_document, document_text)
+
+
+def _check_declared_inputs(
+    task_document: pathlib.Path,
+    declaration: task_documents.TaskDocumentDeclaration,
+    extra_params: Mapping[str, str],
+) -> None:
+    """必須入力の欠落と宣言外の入力名を拒否する。"""
+    missing = [name for name in declaration.required if name not in extra_params]
     if missing:
         raise ValueError(
             f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}"
         )
-    return None
+    undeclared = [name for name in extra_params if name not in declaration.accepted]
+    if undeclared:
+        raise ValueError(
+            f"タスク文書が宣言していない入力です: {', '.join(undeclared)}; "
+            f"受理する入力名: {', '.join(sorted(declaration.accepted))}; タスク文書: {task_document}。"
+            "今回限りの補足を渡す欄は無いため、値をタスク文書が宣言した入力へ収めるか、宣言外の値を渡さずに起動する。"
+        )
 
 
 def _task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
-) -> tuple[str, str]:
-    """専用タスク文書と名前付き追加入力からmodel種別と起動文を返す。"""
+) -> tuple[str, str, LaunchKind]:
+    """専用タスク文書と名前付き入力からmodel種別、起動文および起動種別を返す。"""
     task_document = pathlib.Path(subagent_md_path)
     if not task_document.is_absolute():
         raise ValueError("subagent_md_path must be an absolute path")
@@ -415,13 +410,18 @@ def _task_document_request(
     # 委譲先は配送された本文だけを読むため、プラグインルートの変数を配送側で解決する。
     # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
-    prompt_lines = [f"次のタスク文書の手順を実行せよ（出所: {task_document}）。", document_text, "追加指示:"]
-    prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
-    prompt = "\n".join(prompt_lines)
-    warning = _validate_required_prompt_inputs(task_document, extra_params, document_text)
-    if warning is not None:
-        _LOG.warning("%s", warning)
-    return model_type, prompt
+    declaration = _task_document_declaration(task_document, document_text)
+    launch_kind: LaunchKind = "delegate"
+    if isinstance(declaration, str):
+        _LOG.warning("%s", declaration)
+    else:
+        _check_declared_inputs(task_document, declaration, extra_params)
+        launch_kind = declaration.launch_kind
+    prompt_lines = [f"次のタスク文書の手順を実行せよ（出所: {task_document}）。", document_text]
+    if extra_params:
+        prompt_lines.append("入力:")
+        prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
+    return model_type, "\n".join(prompt_lines), launch_kind
 
 
 _DEFAULT_STATUS_WRITER = object()
@@ -2154,9 +2154,13 @@ with warnings.catch_warnings():
         instructions=_schema_text(
             "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
             "`start`は専用タスク文書、`start_custom`は自由本文からsessionを開始する。"
-            "`start_explore`は読み取り専用探索、`start_shell`はコマンド実行、`start_write`は確定済みの軽量書込を委譲する。"
+            "`start`はタスク文書が宣言した起動種別に従い、`start_explore`・`start_write`・`start_shell`と同じ軽量な起動条件でも開始する。"
+            "`extra_params`はタスク文書が宣言した入力名だけを受け取り、宣言外の入力名を含む起動は拒否する。"
+            "`start_explore`は読み取り専用探索、`start_shell`はコマンド実行、`start_write`は確定済みの軽量書込を委譲し、"
+            "いずれも専用タスク文書を用意できない単発の作業に使う。"
             "この3つの軽量起動の委譲先へは共有規範が注入されず、スキルを使える保証も無い"
             "（Claude Codeの委譲先ではスキルを起動できない）ため、作業に必要な指示を全て起動文へ書く。"
+            "ただし読み取り専用、応答言語、担当の範囲は各起動種別の固定指示（`share/agents-server-*.md`）が既に定めるため、起動文へ書かない。"
             "スキルの手順を要する作業には`start`を使う。"
             "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
             "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待つ。"
@@ -2209,7 +2213,8 @@ async def start(
         dict[str, str],
         Field(
             description=_parameter_description(
-                "タスク文書の必須入力名をキーとする追加パラメータ。固有の補足は`追加指示`へ渡す。"
+                "タスク文書が`## 入力`で宣言した入力名（必須入力名・任意入力名と共通入力名`待機表明の例外`）"
+                "をキーとする名前付き入力。宣言外の入力名を含む場合は委譲先を起動しない。"
             )
         ),
     ],
@@ -2230,7 +2235,9 @@ async def start(
 ) -> dict[str, Any]:
     """専用タスク文書と名前付き追加入力から委譲先turnを開始する。
 
-    タスク文書を読み、同文書の必須入力名と`extra_params`を照合し、文書本文と出所を起動文へ含めてから起動する。
+    タスク文書を読み、同文書が宣言した入力名と`extra_params`を照合し、文書本文と出所を起動文へ含めてから起動する。
+    必須入力の欠落と宣言外の入力名は拒否し、欠けた項目名または宣言外の項目名と受理する項目名の一覧を返す。
+    タスク文書が`起動種別:`を宣言した場合は、その種別の起動条件（`explore`・`write`・`shell`では軽量な起動条件）で開始する。
     engine、model、effortはタスク文書に対応する工程別モデル設定から決め、`model_type`を指定した場合はその値から決める。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、
@@ -2243,11 +2250,12 @@ async def start(
     全候補が可用性またはagyのturn失敗で終端した場合は、最後の候補の終端応答を返す。
     最後のagy候補がbackend開始例外で失敗した場合は、除外理由を含む例外を送出する。
     """
-    task_model_type, prompt = _task_document_request(subagent_md_path, extra_params)
+    task_model_type, prompt, launch_kind = _task_document_request(subagent_md_path, extra_params)
     response = await _MANAGER.start(
         model_type or task_model_type,
         prompt,
         cwd,
+        launch_kind=launch_kind,
         label=_resolve_display_label(label, _task_document_label(subagent_md_path, extra_params)),
     )
     return _public_start_response(response)
@@ -2305,6 +2313,8 @@ async def start_explore(
 ) -> dict[str, Any]:
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
+    専用タスク文書を用意できない単発の作業に使う。タスク文書がある作業は`start`へ渡す。
+
     `model_type`の省略時は`low_tier_model`、指定時はその値の候補列を使う。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、
@@ -2347,6 +2357,8 @@ async def start_shell(
 ) -> dict[str, Any]:
     """コマンドを実行して結果を要約する委譲先turnを開始する。
 
+    専用タスク文書を用意できない単発の作業に使う。タスク文書がある作業は`start`へ渡す。
+
     `low_tier_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
     `model_type`を指定した場合はその値から候補列を決める。
     読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
@@ -2378,6 +2390,8 @@ async def start_write(
     ] = None,
 ) -> dict[str, Any]:
     """確定済みの文章起草と小規模な定型書込を委譲する。
+
+    専用タスク文書を用意できない単発の作業に使う。タスク文書がある作業は`start`へ渡す。
 
     設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。
     読者が異なる文章は別の依頼にする。プロジェクト指示の読込を省いた`write_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。

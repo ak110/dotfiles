@@ -107,6 +107,38 @@ def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkey
     assert session.agent_message.endswith("原稿を推敲して")
 
 
+def test_delegate_prompt_carries_language_condition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """通常委譲の本文先頭に、完了報告を日本語で書き英語の挿入指示を引き継がない条件が届く。
+
+    Antigravityは規範とプロジェクト指示を読み込まないため、この条件が本文に無いと委譲先へ言語の定めが届かない。
+    """
+    fake = _install_fake_agy(tmp_path, monkeypatch)
+    captured = tmp_path / "prompt.txt"
+    fake.write_text(
+        _FAKE_AGY.format(python=sys.executable).replace(
+            'prompt = args[args.index("-p") + 1]\n',
+            f'prompt = args[args.index("-p") + 1]\nopen({str(captured)!r}, "w", encoding="utf-8").write(prompt)\n',
+        ),
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        manager = antigravity.AntigravityManager()
+        session = await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
+        for _ in range(200):
+            if session.terminal:
+                break
+            await asyncio.sleep(0.02)
+        await manager.close()
+
+    asyncio.run(scenario())
+
+    prompt = captured.read_text(encoding="utf-8")
+    assert "日本語" in prompt
+    assert "応答言語として引き継がない" in prompt
+    assert prompt.endswith("原稿を推敲して")
+
+
 def test_send_message_starts_a_new_turn_on_the_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

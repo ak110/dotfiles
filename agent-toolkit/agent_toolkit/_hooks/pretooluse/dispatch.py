@@ -18,11 +18,17 @@ AskUserQuestion / ExitPlanMode:
 
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / start_shell / send_message / kill / list:
+mcp__plugin_agent-toolkit_agents_server__start / start_custom / start_explore / start_write / start_shell /
+send_message / kill / list:
 
+- `start_custom`・`start_explore`・`start_write`の本文がタスク文書（`share/*.subagent.md`）を指す起動の遮断 (block)
 - `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
 - 対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
+
+Agent / Task:
+
+- タスク文書を指す本文が1行目の命令と宣言済みの入力以外の行を含む起動の遮断 (block)
 
 Bash:
 
@@ -118,6 +124,10 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.shell_checks import (
         _check_bash_process_kill_by_pattern,
         _warn_git_rev_parse_short_multiple,
+    )
+    from agent_toolkit._hooks.pretooluse.task_document_launch import (
+        AGENT_TOOL_NAMES,
+        check_task_document_launch,
     )
 
 _ExecutionSegment = _bash_command_parser.ExecutionSegment
@@ -230,6 +240,14 @@ def main(payload_text: str) -> int:
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         return exit_with(_handle_agents_server_tool(payload, tool_name, tool_input, session_id, emit_json))
 
+    if tool_name in AGENT_TOOL_NAMES:
+        agent_block = check_task_document_launch(tool_name, tool_input)
+        if agent_block is not None:
+            print(agent_block, file=sys.stderr)
+            return exit_with(2)
+        flush_pending_notices()
+        return exit_with(0)
+
     if tool_name == "Bash":
         return exit_with(
             _handle_bash_tool(
@@ -260,6 +278,10 @@ def _handle_agents_server_tool(
 ) -> int:
     """agents_serverの開始点・観測点を分離して検査する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
+    launch_block = check_task_document_launch(tool_name, tool_input)
+    if launch_block is not None:
+        print(launch_block, file=sys.stderr)
+        return 2
     if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS:
         continuation = _check_agents_server_continuation_input(session_id, tool_input, tool_name)
         if continuation is True:

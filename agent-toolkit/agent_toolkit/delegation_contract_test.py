@@ -6,6 +6,8 @@ import re
 
 import pytest
 
+from agent_toolkit._agents_server import task_documents
+
 pytestmark = pytest.mark.repo_invariant
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
@@ -13,6 +15,7 @@ _REQUIRED_INPUT_PREFIX = "必須入力名:"
 _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"
 _BULLET_PREFIX = "- "
 _LABEL_DELIMITER_PATTERN = re.compile("[:\uff1a\u3002\uff08\uff09\u3001,\\s]")
+_INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE)
 
 
 def _text_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
@@ -216,11 +219,21 @@ def test_launch_target_occurrences_match_parent_document_set() -> None:
 
 
 def test_handoff_path_mentions_match_delegation_document_set() -> None:
-    """引き継ぎ記録先を持つ文書集合を委譲文書と共通契約から導出する。"""
+    """引き継ぎ記録先を持つ文書集合を委譲文書と共通契約から導出する。
+
+    軽量種別のタスク文書の受信者はファイルを書けない1工程の担当であり、引き継ぎ記録を持たないため集合から除く。
+    """
     share = pathlib.Path(__file__).resolve().parents[1] / "share"
     markdown = {path.name: path.read_text(encoding="utf-8") for path in sorted(share.glob("*.md"))}
-    parent_names = {path.name for path in share.glob("*.parent.md")}
-    recipient_names = {path.name for path in share.glob("*.subagent.md")}
+    lightweight = {
+        path.name for path in share.glob("*.subagent.md") if _declaration(path).launch_kind in ("explore", "write", "shell")
+    }
+    parent_names = {
+        path.name
+        for path in share.glob("*.parent.md")
+        if not set(_marker_values(path, _LAUNCH_TARGET_PREFIX, recipient=False)[0]) <= lightweight
+    }
+    recipient_names = {path.name for path in share.glob("*.subagent.md")} - lightweight
     contract_names = {name for name, content in markdown.items() if "## 多段工程の引き継ぎ記録" in content}
     expected_names = parent_names | recipient_names | contract_names
     actual_names = {name for name, content in markdown.items() if "引き継ぎ記録先" in content}
@@ -243,37 +256,55 @@ def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> Non
 
 
 def test_picker_explanation_contract_covers_questions_without_state_changes() -> None:
-    """選定理由の説明は4場面を扱い、選定結果とキュー状態を維持する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    question_route = parent.split("## 選定理由への質問\n", maxsplit=1)[1]
-    explanation = picker.split("## 選定理由の説明\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    """選定理由の説明は専用ペアへ分かれ、読み取り専用の軽量起動で選定結果とキュー状態を変更しない。
 
-    assert all(
-        value in question_route
-        for value in ("説明対象の選定結果ファイル", "選定理由への質問", "元のpickerが終端していても", "新しい担当")
+    説明の手順が選定担当の文書に残ると、`start`は選定担当の必須入力を要求して説明担当を起動できない。
+    説明担当の文書が状態を変える`atk wi`の操作を含むと、軽量起動の読み取り専用の契約と衝突する。
+    """
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    share = plugin_root / "share"
+    explain = share / "pick-wi-explain.subagent.md"
+    declaration = _declaration(explain)
+    picker = (share / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    question_route = (share / "pick-wi.parent.md").read_text(encoding="utf-8").split("## 選定理由への質問\n", maxsplit=1)[1]
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+
+    assert declaration.launch_kind == "explore"
+    assert declaration.required == ("説明対象の選定結果ファイル", "選定理由への質問")
+    assert "pick-wi-explain.parent.md" in question_route
+    assert "## 選定理由の説明" not in picker
+    assert not _declaration(share / "pick-wi.subagent.md").accepted & set(declaration.required)
+    assert not re.search(
+        r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explain.read_text(encoding="utf-8")
     )
-    assert "start_explore" in question_route and "session_id" in question_route
-    assert "選定結果の出力先ファイル" not in question_route
-    mode_inputs = ("説明モード", "説明対象の選定結果ファイル", "選定理由への質問")
-    picker_inputs = picker.split("## 入力\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-    parent_fields = re.findall(r"^- `([^`]+)`: ", question_route, flags=re.MULTILINE)
-    child_contract = picker_inputs.split("説明モードの必須入力は", maxsplit=1)[1].split("とする。", maxsplit=1)[0]
-    child_fields = [value.split(":", maxsplit=1)[0] for value in re.findall(r"`([^`]+)`", child_contract)]
-    assert tuple(parent_fields) == tuple(child_fields) == mode_inputs
-    assert "選定モードへ適用" in picker_inputs and "説明モードの必須入力" in picker_inputs
-    assert "出力先ファイルと引き継ぎ記録先は選定モード専用" in picker_inputs
-    assert "「入力」と「選定理由の説明」を読んで適用" in question_route
-    assert "ツール戻り値で1回だけ返却" in explanation
-    assert "3行形式は選定モード専用" in explanation
-    assert all(value in explanation for value in ("選定結果に含まれるWI", "decision", "WI本文"))
-    assert all(value in explanation for value in ("含まれないWI", "atk wi show", "--skip-pull", "判断材料"))
-    assert all(value in explanation for value in ("質問が複数件", "対象ごと", "本文上の根拠"))
-    assert all(value in explanation for value in ("読み取り専用コマンド", "着手前と終了後", "WI状態", "レーン割当"))
-    assert not re.search(r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explanation)
     assert "pick-wi.parent.md" in lanes and "包含理由、除外理由" in lanes
+
+
+def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDeclaration:
+    """配布物のタスク文書の宣言を読み、読めない場合はテストを失敗させる。"""
+    declaration = task_documents.read_declaration(task_document)
+    assert not isinstance(declaration, str), declaration
+    return declaration
+
+
+def test_parent_input_names_are_declared_by_recipient() -> None:
+    """呼び元用文書が`` - `<項目名>`: ``で渡すと定める項目は、起動対象のいずれかが宣言した入力名である。
+
+    宣言外の項目を渡す呼び元手順は、`agents_server`の`start`が起動を拒否するため成立しない。
+    全ての受信者の宣言が読めること（不正な`起動種別:`を含まないこと）も同時に確かめる。
+    """
+    share = pathlib.Path(__file__).resolve().parents[1] / "share"
+    errors: list[str] = []
+    for parent in sorted(share.glob("*.parent.md")):
+        targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
+        accepted: set[str] = set()
+        for target in targets:
+            accepted |= _declaration(share / target).accepted
+        for match in _INPUT_BULLET_PATTERN.finditer(parent.read_text(encoding="utf-8")):
+            if match.group("name") not in accepted:
+                errors.append(f"{parent.name}: {match.group('name')}")
+
+    assert not errors, "\n".join(errors)
 
 
 def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:

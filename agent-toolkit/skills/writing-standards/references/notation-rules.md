@@ -23,7 +23,7 @@ textlintの`preset-jtf-style`でチェックされる項目は同プリセット
 
 1. `git status --porcelain=v1 -- <対象パス>`で、置換する各パスに未コミットの変更が無いことを確認する
 2. 1対1なら置換語を、文脈に応じて選ぶ場合は有限の候補表を作成し、Git追跡ファイルの代表箇所で指示対象と条件を保てるか試す。成立した候補だけを対象へ適用する
-3. `git diff --word-diff=plain --word-diff-regex=.`の文字単位差分を`agents_server`の`start_explore`へ渡し、既定の`low_tier_model`の読取担当に変更箇所を全件レビューさせる。指示対象、条件と例外、適用範囲、出力元と完全一致期待値の対応、および自然な文かを確かめる。誤置換が広がる場合は候補を狭めて再試行する
+3. `git diff --word-diff=plain --word-diff-regex=.`の文字単位差分を管理対象一時領域のファイルへ保存し、`${CLAUDE_PLUGIN_ROOT}/share/bulk-replace-review.parent.md`に従って変更箇所を全件レビューさせる。誤置換が広がる場合は候補を狭めて再試行する
 4. 問題が報告された文と候補外の文を、必要な範囲で担当自身または`agent-toolkit:delegation`の`start_write`によって書き直す。変更したパスだけを戻す場合は、着手前に自分の未コミット変更が無かったことを確認した対象だけへ限定する
 5. 通常のtextlintと対象のテストを実行する
 

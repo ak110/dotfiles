@@ -1,4 +1,8 @@
-"""計画ファイルの進捗ログへ実行時刻を含む1行を追記する。"""
+"""計画ファイルの進捗ログへ実行時刻を含む1行を追記する。
+
+保存済み計画の領域（private-notesの`plans`配下）の計画は変更せずに失敗する。
+保存済み計画へ追記する場合は、`atk plans checkout`で作業rootへ取得してから追記し、`atk plans commit`で保存する。
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,7 @@ from collections.abc import Callable
 try:
     from agent_toolkit._common.atomic_file import atomic_write
     from agent_toolkit._common.markdown_headings import top_level_atx_headings
+    from agent_toolkit._plan import locations as _plan_locations
     from agent_toolkit._plan import structure as _plan_format
 except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
@@ -89,6 +94,7 @@ def append_progress_log(
     if start_head is not None:
         result = f"{result}、開始HEAD: {_resolve_start_head(start_head)}"
     path = pathlib.Path(plan_file)
+    _plan_locations.reject_saved_plans_root_write(path)
     original = path.read_bytes()
     try:
         content = original.decode("utf-8")
@@ -143,7 +149,7 @@ def append_progress_log(
 
 def main(argv: list[str] | None = None) -> int:
     """進捗ログ追記CLIの入口。"""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan_file", type=pathlib.Path, help="更新する計画ファイル")
     parser.add_argument("--completed-step", required=True, help="完了した工程")
     parser.add_argument("--result", required=True, help="結果・特記事項")

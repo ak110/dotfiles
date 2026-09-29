@@ -82,7 +82,7 @@ pickerと並行して、対象がGitHub上にある場合は対象リポジト�
 
 監査担当を起動した場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得し、その返却と処置確定を公開工程の開始条件とする。新しいレビューの到着は次の処理回の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
 
-監査担当は`agents_server`の`start_custom`で1件起動し、`model_type`へ`high_tier`を渡す。`cwd`には対象リポジトリの絶対パスを渡し、`prompt`には同書に従って監査を実施する指示と返却する項目を書く。pendingの取得に成功した場合は、そのJSONも渡す。
+監査担当は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.parent.md`に従って起動し、結果を受領する。pendingの取得に成功した場合は、標準出力のJSONをセッション領域へ保存して渡す。
 
 ## 終端
 

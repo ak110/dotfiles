@@ -21,7 +21,7 @@ session未生成かつ元担当不在を実際に確認できない場合は、�
 
 ## 実行手段
 
-`agents_server`の`start`・`start_custom`による起動を通常起動、`start_explore`・`start_shell`・`start_write`による起動を軽量起動と呼ぶ。区分は`agent_toolkit/_agents_server/state.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。
+`agents_server`の`start_custom`と、`起動種別:`を宣言しないか`delegate`を宣言したタスク文書の`start`による起動を通常起動と呼ぶ。`start_explore`・`start_shell`・`start_write`と、`explore`・`shell`・`write`を宣言したタスク文書の`start`による起動を軽量起動と呼ぶ。区分は`agent_toolkit/_agents_server/state.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。
 
 - 専用agent定義がある作業をClaude Codeで実行する場合は、その定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
 - Claude Codeからの委譲は`agents_server`を既定とする。「工程別モデル設定」の表が定めるキーを持つ工程は同表のeffortを渡す。`Agent`ツールにはeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合に`Agent`ツールへ自動で切り替える仕組みは設けず、その工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。`Agent`ツールを使うのは、前項が定める専用agent定義がある作業、ユーザーまたは上位主体の明示指示があった場合、`routing.md`「会話を引き継ぐ委譲」がforkを選ぶ場合とする。forkは`subagent_type: "fork"`で起動し、親と同じモデルおよびeffortを使う
@@ -43,9 +43,9 @@ forkの観測記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`環境 | `claude`環境 |
 | --- | --- | --- | --- | --- |
-| `high_tier_model` | 計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、上流AWI投入、自動コードレビュー監査、公開工程の終端工程 | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `high_tier_model` | 計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程 | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `medium_tier_model` | WIの選定とレーン分け、実装後の実行レビュー、`model_type="medium_tier"`を指定した`start_explore` | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `low_tier_model` | `start_explore`の既定と`start_shell` | 調査またはshellを委譲する主体 | `agents_server` MCP | `agents_server` MCP |
+| `low_tier_model` | `start_explore`の既定、`start_shell`、`TASK_MODEL_TYPES`が`low_tier`へ対応付けた軽量種別のタスク文書起動 | 調査またはshellを委譲する主体 | `agents_server` MCP | `agents_server` MCP |
 | `write_model` | `start_write`による文章起草 | 文章を委譲する主体 | `agents_server` MCP | `agents_server` MCP |
 | `orchestrate_model` | `atk wi process-loop`の新しいセッション | 常駐処理 | `atk` | `atk` |
 
@@ -60,12 +60,12 @@ forkの観測記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 環境変数は保存済みの設定より優先し、`atk config set`は保存先だけを更新する。
 
 `start_custom`の`model_type`へは上表のキー名から`_model`を除いた種別に加えて、設定値と同じ書式のASCIIカンマ区切り候補列を直接渡せる。
-`start`・`start_explore`・`start_shell`・`start_write`も省略可能な`model_type`へ同じ値を受け付け、指定時は各ツールの工程別設定の代わりにその値を使う。起動区分（読取専用などの起動条件）は各ツール固有のまま変わらない。
+`start`・`start_explore`・`start_shell`・`start_write`も省略可能な`model_type`へ同じ値を受け付け、指定時は各ツールの工程別設定の代わりにその値を使う。起動区分（読取専用などの起動条件）は各ツール固有のまま、`start`ではタスク文書の`起動種別:`のまま変わらない。
 例えば`agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`を渡すと、先頭から試し、agyの起動またはturnが失敗した場合は除外理由とともに次候補へ進む。
 直接渡した場合、サーバーは工程別モデル設定を読まず、渡した候補列をそのまま候補として使う。
 実験と障害時の回避で一時的に別のengineまたはmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
 
-1. `agents_server`では`<役割名>.subagent.md`を`start`へ、自由本文と設定種別または直接候補列を`start_custom`へ渡す。設定の読込、候補の分解および候補の選択はサーバーが行う。
+1. `agents_server`では`<役割名>.subagent.md`を`start`へ、自由本文と設定種別または直接候補列を`start_custom`へ渡す。`start`の起動条件はタスク文書の`起動種別:`が、工程別モデル設定は`agent_toolkit/_agents_server/state.py`の`TASK_MODEL_TYPES`が決める。設定の読込、候補の分解および候補の選択はサーバーが行う。
 2. `Agent`ツールを使う場合は、起動直前に`atk config get <キー>`で設定値を取得し、先頭候補を`engine`、`model`、`effort`へ分解する。effort省略時は`medium`を使う。`engine`部が`claude`でない場合はその工程を`needs_escalation`または未完了として返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
 3. `agents_server`の通常の起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。採用した`model_type`、`engine`、`model`および`effort`を記録する必要がある場合は、返された`session_id`を`show`へ渡して取得する。`show`の`model_type`は設定種別か、起動ツールの`model_type`へ渡した候補列である。
 4. サーバーが候補列を使い尽くした場合、呼び出し側は設定外のengineへ自動切替せず、その工程を`needs_escalation`または未完了として返す。
