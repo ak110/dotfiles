@@ -37,10 +37,7 @@ dependencies = [
 [project.scripts]
 astra = "pytools.claude_launcher:main_astra"
 check-image-sizes = "pytools.check_image_sizes:main"
-ccommit = "pytools.claude_commit:main"
-claudize = "pytools.claudize:main"
 clonedir = "pytools.clonedir:main"
-codexize = "pytools.codexize:main"
 dateRelocator = "pytools.date_relocator:main"
 deletehomonym = "pytools.delete_homonym:main"
 dirsize = "pytools.dirsize:main"

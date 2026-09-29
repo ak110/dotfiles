@@ -217,7 +217,7 @@ _install_codex_plugin() {
     fi
     mkdir -p "$HOME/.local/bin"
     hook_stage=$(mktemp "$HOME/.local/bin/atk-hook.XXXXXX")
-    if ! curl -fsSL "${BASE_URL%/agent-toolkit/rules}/bin/atk-hook" -o "$hook_stage"; then
+    if ! curl -fsSL "${BASE_URL%/agent-toolkit/rules}/agent-toolkit/bin/atk-hook" -o "$hook_stage"; then
         rm -f "$hook_stage"
         return 1
     fi

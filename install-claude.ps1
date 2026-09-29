@@ -163,8 +163,8 @@ function Install-CodexPlugin {
     $hookWrapper = Join-Path $binDir 'atk-hook.cmd'
     $firstHookTransition = -not (Test-Path -LiteralPath $hookWrapper -PathType Leaf)
     $downloadRoot = $baseUrl -replace '/agent-toolkit/rules/?$', ''
-    Invoke-Download "$downloadRoot/bin/atk-hook" (Join-Path $binDir 'atk-hook')
-    Invoke-Download "$downloadRoot/bin/atk-hook.cmd" $hookWrapper
+    Invoke-Download "$downloadRoot/agent-toolkit/bin/atk-hook" (Join-Path $binDir 'atk-hook')
+    Invoke-Download "$downloadRoot/agent-toolkit/bin/atk-hook.cmd" $hookWrapper
     $oldCache = $null
     $savedCache = $null
     if ($firstHookTransition -and $beforeState.Present -and $beforeState.Version) {

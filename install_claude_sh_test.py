@@ -341,7 +341,7 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
     assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == (RULES_SRC / "01-agent.md").read_text(encoding="utf-8")
     if kind == "sh":
         hook_wrapper = home / ".local" / "bin" / "atk-hook"
-        assert hook_wrapper.read_bytes() == (REPO_ROOT / "bin" / "atk-hook").read_bytes()
+        assert hook_wrapper.read_bytes() == (REPO_ROOT / "agent-toolkit" / "bin" / "atk-hook").read_bytes()
         assert hook_wrapper.stat().st_mode & stat.S_IXUSR
     assert not legacy_dir.exists()
     assert not (rules_dir / "obsolete.md").exists()

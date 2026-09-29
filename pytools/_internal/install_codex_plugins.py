@@ -335,7 +335,7 @@ def _install_hook_wrapper(root: Path) -> bool:
     """plugin有効化前に安定したhook入口をPATH上へ配置する。"""
     changed = False
     for name in ("atk-hook", "atk-hook.cmd") if os.name == "nt" else ("atk-hook",):
-        source = root / "bin" / name
+        source = root / "agent-toolkit" / "bin" / name
         destination = _hook_bin() / name
         data = source.read_bytes()
         if destination.is_file() and destination.read_bytes() == data:

@@ -27,6 +27,16 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: atkが参照する実行環境を診断する。\n利用場面: 起動したディレクトリ、pluginの版または設定の所在を確かめるとき。\n対象と出力: 現在ディレクトリ、実行ファイル、plugin rootと版、設定ファイルと状態ディレクトリの所在を標準出力へ書く。\n前提: なし。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk info",
     },
+    "atk commit": {
+        "summary": "子エージェントでGitコミットを作成する",
+        "description": "目的: 作業ツリーの差分を子エージェントに確認させてGitコミットまで行う。\n利用場面: 変更に対応するコミットメッセージの作成とコミットを任せるとき。\n対象と出力: 現在のGitリポジトリのstage・未stage・未追跡ファイルを調べ、選んだengineの子エージェントへ指示を渡す。dry-runではコミットしない。\n前提: 通常実行では変更があること。model-typeは段位名またはengine:model[/effort]の候補列を受け取る。\n復元・後始末: 作成したコミットはGit履歴で確認し、必要ならGitの通常手段で取り消す。",
+        "epilog": "実行例:\n\n  atk commit\n  atk commit --model-type claude:sonnet/high",
+    },
+    "atk setup-project": {
+        "summary": "プロジェクト指示と共有スキルを統一する",
+        "description": "目的: Claude CodeとCodexが同じプロジェクト指示とスキルを読めるようにする。\n利用場面: プロジェクトの指示ファイルをAGENTS.mdへ統一するとき。\n対象と出力: 現在ディレクトリの指示を移行し、共有スキルのリンクを作成する。with-rulesではpluginの規範も複製し、cleanでは配置済みリンクと規範を削除する。\n前提: 予期しない指示ファイルとリンク先は変更せず失敗する。\n復元・後始末: cleanで共有リンクと複製済み規範を削除できる。移行した指示ファイルはGit履歴から復元できる。",
+        "epilog": "実行例:\n\n  atk setup-project\n  atk setup-project --with-rules\n  atk setup-project --clean",
+    },
     "atk run-script": {
         "summary": "登録済みplugin内Pythonスクリプトを実行する",
         "description": "目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skillまたは規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、標準出力、標準エラーおよび終了コードを透過する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",

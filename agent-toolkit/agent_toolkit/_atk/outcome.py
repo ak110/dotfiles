@@ -29,6 +29,8 @@ class ResultKind(enum.Enum):
 
 STATE_CHANGE_COMMANDS = frozenset(
     {
+        "atk commit",
+        "atk setup-project",
         "atk wi add",
         "atk wi start-processing",
         "atk wi hold",

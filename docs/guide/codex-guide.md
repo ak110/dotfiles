@@ -187,7 +187,7 @@ agent-toolkitのMarkdownルールは`~/.codex/agent-toolkit/rules`に配置す�
 
 プロジェクト固有設定は、原則として`AGENTS.md`を実体ファイルとし、`CLAUDE.md`は置かない。
 Claude Codeは`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まない。
-そのため個人用の`CLAUDE.local.md`を置いたプロジェクトでは、`claudize`と`codexize`が`@AGENTS.md`を取り込むだけの`CLAUDE.md`アダプターを置き、
+そのため個人用の`CLAUDE.local.md`を置いたプロジェクトでは、`atk setup-project`が`@AGENTS.md`を取り込むだけの`CLAUDE.md`アダプターを置き、
 リポジトリの`.git/info/exclude`へ加えて追跡対象から外す。アダプターは手元の`CLAUDE.local.md`に付随する設定であり、リポジトリへは入れない。
 実体ファイルとすることで、コピー欠落やシンボリックリンク非対応環境での障害を回避する。
 Codex専用の差分が必要な場合のみ、`AGENTS.md`本体に分岐記述を追加する。
