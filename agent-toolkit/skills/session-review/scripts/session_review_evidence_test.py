@@ -936,12 +936,9 @@ def test_elapsed_until_conflicts_with_other_query_options(
 
     assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:02Z", "--stats"]) == 2
 
-    assert _read_jsonl(capsys) == [
-        {
-            "kind": "error",
-            "text": "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-untilは併用できない",
-        }
-    ]
+    (event,) = _read_jsonl(capsys)
+    assert event["kind"] == "error"
+    assert "併用できない" in event["text"]
 
 
 def test_default_events_separate_main_user_message_from_subagent_task_prompt(
@@ -7782,3 +7779,175 @@ def test_detail_and_grep_include_timestamp(tmp_path: pathlib.Path, capsys: pytes
     assert evidence.main([str(transcript), "--grep", "needle"]) == 0
     matches = [event for event in _read_jsonl(capsys) if event["kind"] == "match"]
     assert [(event["line"], event["timestamp"]) for event in matches] == [(1, "2026-09-25T01:02:03Z"), (2, None)]
+
+
+def _context_verdicts(capsys: pytest.CaptureFixture[str]) -> dict[str, dict]:
+    """`--context-at`の出力をphraseごとの判定と一致の組へまとめる。"""
+    events = _read_jsonl(capsys)
+    verdicts = {event["phrase"]: dict(event, matches=[]) for event in events if event["kind"] == "context-verdict"}
+    for event in events:
+        if event["kind"] == "context-match":
+            verdicts[event["phrase"]]["matches"].append(event)
+    return verdicts
+
+
+def test_context_at_judges_claude_context_across_compaction(tmp_path: pathlib.Path, capsys) -> None:
+    """条文が事象の時点でその記録の文脈にあったかを、圧縮境界との前後と経路から判定する。
+
+    Skill本文は圧縮前なら`present`（経路`meta`）、Readで読んだ参照資料は圧縮で`dropped-by-compaction`、
+    ルールファイルは境界後の再注入で`present`となる。起動済みスキル本文の末尾は再注入の切り詰めで
+    境界後に現れないため`dropped-by-compaction`、事象行より後にだけある文字列と
+    親セッションだけにある文字列は`absent`となる。判定を誤ると、振り返りが原因の区分を取り違える。
+    """
+    skill_body = "スキル冒頭の条文\n" + "x" * 50 + "\nスキル末尾の条文"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "isMeta": True,
+                "timestamp": "2026-09-29T00:00:01Z",
+                "message": {"role": "user", "content": [{"type": "text", "text": skill_body}]},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-29T00:00:02Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "read-1",
+                            "name": "Read",
+                            "input": {"file_path": "/plugin/references/ref.md"},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-29T00:00:03Z",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "read-1", "content": "参照資料の条文"}],
+                },
+            },
+            {
+                "type": "attachment",
+                "timestamp": "2026-09-29T00:00:04Z",
+                "attachment": {"type": "instructions", "files": [{"path": "/rules/a.md", "content": "ルールの条文"}]},
+            },
+            {"type": "user", "timestamp": "2026-09-29T00:00:05Z", "message": {"role": "user", "content": "圧縮前の事象"}},
+            _compaction_entry("2026-09-29T00:00:06Z"),
+            {
+                "type": "attachment",
+                "timestamp": "2026-09-29T00:00:07Z",
+                "attachment": {"type": "instructions", "files": [{"path": "/rules/a.md", "content": "ルールの条文"}]},
+            },
+            {
+                "type": "attachment",
+                "timestamp": "2026-09-29T00:00:08Z",
+                "attachment": {"type": "invoked_skills", "skills": [{"name": "s", "content": skill_body[:30]}]},
+            },
+            {"type": "user", "timestamp": "2026-09-29T00:00:09Z", "message": {"role": "user", "content": "圧縮後の事象"}},
+            {"type": "user", "timestamp": "2026-09-29T00:00:10Z", "message": {"role": "user", "content": "事象より後の言及"}},
+        ],
+    )
+    _write_subagent(
+        transcript.parent / transcript.stem / "subagents",
+        "agent-child",
+        [
+            {"type": "user", "timestamp": "2026-09-29T00:00:03Z", "message": {"role": "user", "content": "委譲の起動文"}},
+            {"type": "user", "timestamp": "2026-09-29T00:00:04Z", "message": {"role": "user", "content": "委譲先の事象"}},
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--context-at", "5", "--phrase=スキル冒頭の条文"]) == 0
+    before = _context_verdicts(capsys)["スキル冒頭の条文"]
+    assert before["verdict"] == "present"
+    assert before["boundary_line"] is None
+    assert [match["channel"] for match in before["matches"]] == ["meta"]
+
+    phrases = ["参照資料の条文", "ルールの条文", "スキル末尾の条文", "事象より後の言及"]
+    assert evidence.main([str(transcript), "--context-at", "main:9", *(f"--phrase={phrase}" for phrase in phrases)]) == 0
+    after = _context_verdicts(capsys)
+    assert after["参照資料の条文"]["verdict"] == "dropped-by-compaction"
+    assert after["参照資料の条文"]["matches"][0]["channel"] == "tool-result"
+    assert after["参照資料の条文"]["matches"][0]["tool"] == "Read"
+    assert after["参照資料の条文"]["matches"][0]["tool_input"] == "/plugin/references/ref.md"
+    assert after["参照資料の条文"]["boundary_line"] == 6
+    assert after["ルールの条文"]["verdict"] == "present"
+    assert after["ルールの条文"]["last_match_line"] == 7
+    assert [(match["line"], match["channel"], match["before_boundary"]) for match in after["ルールの条文"]["matches"]] == [
+        (4, "attachment:instructions", True),
+        (7, "attachment:instructions", False),
+    ]
+    assert after["スキル末尾の条文"]["verdict"] == "dropped-by-compaction"
+    assert after["事象より後の言及"]["verdict"] == "absent"
+    assert after["事象より後の言及"]["match_count"] == 0
+
+    assert evidence.main([str(transcript), "--context-at", "agent-child:2", "--phrase=圧縮前の事象"]) == 0
+    assert _context_verdicts(capsys)["圧縮前の事象"]["verdict"] == "absent"
+
+
+def test_context_at_keeps_codex_replacement_history(tmp_path: pathlib.Path, capsys) -> None:
+    """Codexの`compacted`レコードが保持する本文は、圧縮後の事象行で`present`（経路`compaction-retained`）となる。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"timestamp": "2026-09-29T00:00:00Z", "type": "session_meta", "payload": {"id": "thread"}},
+            {
+                "timestamp": "2026-09-29T00:00:01Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "developer",
+                    "content": [{"type": "input_text", "text": "AGENTSの条文"}],
+                },
+            },
+            {
+                "timestamp": "2026-09-29T00:00:02Z",
+                "type": "compacted",
+                "payload": {
+                    "message": "",
+                    "replacement_history": [
+                        {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "AGENTSの条文"}]}
+                    ],
+                },
+            },
+            {
+                "timestamp": "2026-09-29T00:00:03Z",
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "圧縮後の事象"}]},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--context-at", "4", "--phrase=AGENTSの条文"]) == 0
+    verdict = _context_verdicts(capsys)["AGENTSの条文"]
+    assert verdict["verdict"] == "present"
+    assert [(match["channel"], match["before_boundary"]) for match in verdict["matches"]] == [
+        ("developer", True),
+        ("compaction-retained", False),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (["--context-at", "missing:1", "--phrase=x"], "記録が不明"),
+        (["--context-at", "main:99", "--phrase=x"], "範囲外"),
+        (["--context-at", "1"], "--phrase"),
+        (["--context-at", "1", "--phrase="], "--phrase"),
+        (["--context-at", "1", "--phrase=x", "--stats"], "併用できない"),
+        (["--phrase=x"], "--context-at"),
+    ],
+)
+def test_context_at_rejects_invalid_input(tmp_path: pathlib.Path, capsys, arguments: list[str], message: str) -> None:
+    """不正な記録位置、phraseの欠落、他の照会モードとの併用を、エラーイベントと終了コード2で拒否する。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "本文"}}])
+
+    assert evidence.main([str(transcript), *arguments]) == 2
+    (event,) = _read_jsonl(capsys)
+    assert event["kind"] == "error"
+    assert message in event["text"]
