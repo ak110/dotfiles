@@ -105,7 +105,7 @@ Skill機能で起動した後に変更済みと分かった場合も、作業ツ
 `agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
 `project_notes`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
 本節の適用対象となる規範を変更するAWIには、その変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
-反映先に本リポジトリのコーディングエージェント向け文書を含むAWIには、`docs/development/concepts.md`と`docs/development/incidents.md`を編集主体自身が同じセッションで全文読む要求も書く。
+反映先に本リポジトリのコーディングエージェント向け文書を含むAWIには、編集主体自身が計画の採否を確定する前に次を読む要求も書く。`docs/development/concepts.md`と`docs/development/incidents.md`は索引であり、全文を読む。加えて、索引の見出しのうち変更対象のファイル名、工程名または機能名を含む見出しがリンクする分割ファイルの節を読む。見出しで判定できない場合は、索引がリンクする分割ファイルを変更対象のファイル名と工程名で検索し、一致した節を読む。利用者が確定した方針の本文は分割ファイルにあり、索引の全文だけでは届かない。
 対象かどうかの判定は、そのAWIが挙げる反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行う。
 レーン担当は選定工程の固定出力ファイルから自レーンの`project_notes`を読むため、メインの起動プロンプトへその要求を再掲しない。
 メインは`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、その項目のファイル名と対象ファイルのパスを渡す。
