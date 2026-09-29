@@ -134,6 +134,41 @@ def test_raw_awi_requires_each_original_sentence_and_comment(
     assert run_script.dispatch(args) == 0
 
 
+def test_conditions_also_require_verbatim_requests_and_user_comment(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    evidence = tmp_path / "evidence.json"
+    first = "設定を移して。"
+    second = "旧入口を廃止して。"
+    comment = "利用者向けの案内も直して。"
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {
+            FIRST_WI: (
+                "type: awi\nsource: agent\n---\n# WI\n"
+                "## 完成条件\n- 新入口で操作できる\n"
+                "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
+                f"```text\n{first}{second}\n```\n"
+                f"## ユーザーコメント\n- {comment}\n"
+            )
+        },
+    )
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+
+    _write_evidence(evidence, [_condition(FIRST_WI)], [_requirement(FIRST_WI, "設定と旧入口を変更して。")])
+    assert run_script.dispatch(args) == 1
+    diagnostic = capsys.readouterr().err
+    assert first in diagnostic and second in diagnostic and comment in diagnostic
+
+    _write_evidence(
+        evidence,
+        [_condition(FIRST_WI)],
+        [_requirement(FIRST_WI, first), _requirement(FIRST_WI, second), _requirement(FIRST_WI, comment)],
+    )
+    assert run_script.dispatch(args) == 0
+
+
 def test_answered_uwi_checks_answer_only(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -74,6 +74,22 @@ def test_accepts_each_report_stage_without_rewriting(text: str, stage: str, stat
     assert SUBJECT.validate_report(text, stage, state) == []
 
 
+def test_accepts_measure_implemented_in_the_same_session() -> None:
+    report = SUCCESS.replace(
+        "（20260926-120000-001.md: 対象範囲を確認してから着手する）",
+        "（同一セッションで実装済み: a1b2c3d）",
+    )
+    assert SUBJECT.validate_report(report, "review-result", "success") == []
+
+
+def test_rejects_implemented_measure_without_evidence() -> None:
+    report = SUCCESS.replace(
+        "（20260926-120000-001.md: 対象範囲を確認してから着手する）",
+        "（同一セッションで実装済み:  ）",
+    )
+    assert any("実装済みの根拠" in error for error in SUBJECT.validate_report(report, "review-result", "success"))
+
+
 def test_heading_in_code_fence_does_not_change_report_structure() -> None:
     text = WORK_COMPLETE.replace("完了した。", "完了した。\n\n````markdown\n## 起草中の見出し\n### 草案\n````", 1)
     assert SUBJECT.validate_report(text, "work-complete") == []

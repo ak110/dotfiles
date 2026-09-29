@@ -16,6 +16,7 @@ REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- 所要時間: ", "- 改善見込み:
 REVIEW_SUCCESS_SECTIONS = ("確定した問題と対策", "対策を見送った問題")
 """振り返りが正常完了した報告のH3。確定した問題ごとの対策と、対策を見送った問題とその理由を読めるようにする。"""
 _WI_FILENAME = re.compile(r"\b\d{8}-\d{6}-\d{3}\.md\b")
+_IMPLEMENTED_EVIDENCE = re.compile(r"（同一セッションで実装済み:\s*[^）\s][^）]*）")
 _UNRESEARCHED = ("照会していない", "未照会", "未調査", "確定できない")
 SKIP_REASONS = {
     "not-run": "成果を再利用したため起動省略",
@@ -38,6 +39,12 @@ def _section_items(text: str, title: str) -> list[str]:
         if inside and line.startswith("- "):
             items.append(line)
     return items
+
+
+def _has_measure_evidence(item: str) -> bool:
+    if "同一セッションで実装済み:" in item:
+        return _IMPLEMENTED_EVIDENCE.search(item) is not None
+    return _WI_FILENAME.search(item) is not None
 
 
 def validate_report(text: str, stage: str, review_state: str | None = None) -> list[str]:
@@ -74,9 +81,9 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
                 errors.append(f"### {title}に1件以上の箇条書きを置く（該当なしは`- なし`）")
             elif title == REVIEW_SUCCESS_SECTIONS[0]:
                 errors.extend(
-                    f"### {title}の各行へ対策として投入したAWIのファイル名を書く: {item}"
+                    f"### {title}の各行へ対策として投入したAWIのファイル名または同一セッションで実装済みの根拠を書く: {item}"
                     for item in items
-                    if item != "- なし" and not _WI_FILENAME.search(item)
+                    if item != "- なし" and not _has_measure_evidence(item)
                 )
             else:
                 if "- なし" in items and len(items) != 1:

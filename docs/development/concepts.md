@@ -18,6 +18,8 @@
 
 ## [品質とコスト効率の優先順位](concepts-principles.md#品質とコスト効率の優先順位)
 
+## [付帯作業の単位](concepts-principles.md#付帯作業の単位)
+
 ## [過剰設計の抑制](concepts-principles.md#過剰設計の抑制)
 
 ## [概念設計と最小実装の優先順位](concepts-principles.md#概念設計と最小実装の優先順位)
