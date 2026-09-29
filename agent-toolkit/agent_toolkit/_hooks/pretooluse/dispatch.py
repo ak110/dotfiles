@@ -26,7 +26,7 @@ mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / s
 
 Bash:
 
-- Codexで350行または16KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)
+- Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は閾値以下の連続した行範囲を示す
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - 未完了の背景タスクが書き込む出力ファイルの読取の警告 (warn)
 
