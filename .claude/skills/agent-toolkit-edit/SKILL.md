@@ -249,7 +249,9 @@ Pythonモジュールを保持し続ける。このため、`agent-toolkit/agent
 
 push前にbumpが必須（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
 
-1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する
+1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`で版数を更新する。
+   実行する主体と時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
+   `agent-toolkit:process-wi`のレーンは実行せず版数区分を計画へ記録し、終端担当が全レーンのマージ後に1回実行する
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
 3. Agent Plugins・Codex向け派生JSONを「バージョン更新」節の生成器で同期する
 4. `docs/guide/claude-code-guide.md`のチェック内容リストは「同期先ドキュメント」節に従って更新する
