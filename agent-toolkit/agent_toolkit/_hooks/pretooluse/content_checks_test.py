@@ -118,7 +118,7 @@ class TestLanguageEscalation:
         assert "evaluate relevance" not in ctx
 
     def test_second_english_escalates_body(self, tmp_path: pathlib.Path):
-        """2回連続英語でもツールを通し、強い本文の警告へ切り替える。
+        """同一セッションの2回目の英語でもツールを通し、強い通知へ切り替える。
 
         検出した回の応答は既にユーザーへ届いており、ツール呼び出しを止めても送信済みの応答は戻らない。
         """
@@ -132,7 +132,7 @@ class TestLanguageEscalation:
         r2 = self._invoke(tmp_path, env, sid, message, msg_id="m2")
         assert r2.returncode == 0
         ctx = _additional_context(r2)
-        assert "2ターン連続" in ctx
+        assert "累計2回以上" in ctx
         assert message in ctx
         assert "evaluate relevance" not in ctx
 
@@ -151,22 +151,49 @@ class TestLanguageEscalation:
             excerpt = context.split("判定対象の冒頭: 「", maxsplit=1)[1].split("」", maxsplit=1)[0]
             assert excerpt == "The process [2J finished."
             assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
-        assert "2ターン連続" in _additional_context(second)
+        assert "累計2回以上" in _additional_context(second)
 
-    def test_japanese_resets_counter(self, tmp_path: pathlib.Path):
-        """日本語応答が間に入るとカウンタがリセットされる。"""
+    def test_japanese_keeps_english_total(self, tmp_path: pathlib.Path):
+        """日本語応答が間に入る英語の反復でも強い通知へ切り替える。"""
         env = self._state_env(tmp_path)
-        sid = "esc-reset"
+        sid = "esc-japanese-between"
         # 1回目: 英語 → warn
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
-        # 2回目: 日本語 → pass（カウンタリセット）
+        # 2回目: 日本語 → pass（累計維持）
         self._invoke(tmp_path, env, sid, "これは日本語の応答です。" * 5, msg_id="m2")
-        # 3回目: 英語 → 連続回数は1へ戻り、警告する
+        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 1
+        # 3回目: 英語 → 累計2回目の強い通知
         r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
         assert r3.returncode == 0
         ctx = _additional_context(r3)
         assert "英語主体" in ctx
-        assert "2ターン連続" not in ctx
+        assert "累計2回以上" in ctx
+        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 2
+
+    def test_skipped_message_keeps_english_total(self, tmp_path: pathlib.Path):
+        """判定対象外の短文が間に入っても次の英語を累計2回目とする。"""
+        env = self._state_env(tmp_path)
+        sid = "esc-skipped"
+        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
+        self._invoke(tmp_path, env, sid, "了解した。", msg_id="m2")
+
+        second = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
+
+        assert second.returncode == 0
+        assert "累計2回以上" in _additional_context(second)
+        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 2
+
+    def test_english_total_is_per_session(self, tmp_path: pathlib.Path):
+        """別セッションの初回英語は通常の通知から始まる。"""
+        env = self._state_env(tmp_path)
+        self._invoke(tmp_path, env, "first-session", "A" * 100, msg_id="m1")
+
+        other = self._invoke(tmp_path, env, "other-session", "B" * 100, msg_id="m2")
+
+        assert other.returncode == 0
+        assert "累計2回以上" not in _additional_context(other)
+        assert _read_session_state(tmp_path, "first-session")["english_warning_count"] == 1
+        assert _read_session_state(tmp_path, "other-session")["english_warning_count"] == 1
 
     def test_same_msg_id_no_double_count(self, tmp_path: pathlib.Path):
         """同一message IDの並列ツール呼び出しはカウンタを1回のみ増加する。"""
@@ -188,17 +215,18 @@ class TestLanguageEscalation:
         # 2回目: 強い本文
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
         assert r2.returncode == 0
-        # 3回目: 再び強い本文（カウンタが1に設定されているため、次の英語で再度≧2）
+        # 3回目: 累計3回目も強い通知
         r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
         assert r3.returncode == 0
-        assert "2ターン連続" in _additional_context(r3)
+        assert "累計2回以上" in _additional_context(r3)
+        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 3
 
     @pytest.mark.parametrize(
         ("text", "expected_count", "expected_returncode"),
         [
-            ("A" * 100, 1, 0),
-            ("これは日本語の応答です。" * 5, 0, 0),
-            ("了解した。", 0, 0),
+            ("A" * 100, 2, 0),
+            ("これは日本語の応答です。" * 5, 1, 0),
+            ("了解した。", 1, 0),
         ],
         ids=["warn", "pass", "skip"],
     )
@@ -209,11 +237,11 @@ class TestLanguageEscalation:
         expected_count: int,
         expected_returncode: int,
     ) -> None:
-        """判定結果の3値それぞれについて連続検出カウンタの遷移を検証する。
+        """判定結果の3値それぞれについて累計カウンタの遷移を検証する。
 
         直前の検出が1回記録された状態から始める。英語主体と判定した回は前回と異なる
-        message IDでカウンタが2へ達して強い本文へ切り替え、切り替え後のカウンタは1になる。
-        英語主体でないと判定した回は、警告本文を返さない結果でもカウンタを0へ戻す。
+        message IDでカウンタが2へ達して強い本文へ切り替える。
+        英語主体でないと判定した回は、警告本文を返さずカウンタを維持する。
         """
         env = self._state_env(tmp_path)
         sid = "esc-transition"
