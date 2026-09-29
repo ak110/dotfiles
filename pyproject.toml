@@ -127,9 +127,20 @@ mypy-exclude = ["conftest.py"]
 shellcheck = true
 shfmt = true
 colloquial-check = true
-# agent-toolkit/はpyproject.tomlを持つためpyfltrがサブプロジェクトとして検出し、
-# サブプロジェクト側の設定にagent-doc-toneの定義が無いとその配下を丸ごとスキップする。
-# 母集団はルートとagent-toolkit/にまたがるため、本コマンドだけサブプロジェクト分割を無効にする。
+# agent-toolkit/はpyproject.tomlを持つためpyfltrがサブプロジェクトとして検出し、分割した検査は
+# agent-toolkit/pyproject.tomlとそのcwdの設定ファイルだけを読む。agent-toolkitの独立した仮想環境に
+# 依存しない検査は分割を無効にし、本ファイルと直下の設定ファイルでリポジトリ全体を1回で検査する。
+# カスタムコマンドはサブプロジェクト側に定義が無いとその配下を丸ごとスキップするため、全件を対象にする。
+# 分割を維持するPython系の検査の値はscripts/pyfltr_subproject_config_test.pyが両側の一致を検査する。
+markdownlint-subproject-aware = false
+textlint-subproject-aware = false
+lychee-subproject-aware = false
+sync-generated-files-subproject-aware = false
+check-cmd-encoding-subproject-aware = false
+check-templates-subproject-aware = false
+require-ps1-bom-subproject-aware = false
+powershell-analyzer-subproject-aware = false
+claude-plugin-validate-subproject-aware = false
 agent-doc-tone-subproject-aware = false
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
@@ -159,10 +170,11 @@ extend-exclude = [
     # 本リポジトリの表記検査の対象から外す。
     ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
 ]
-# chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
-shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]
+# chezmoi命名規則（dot_*・executable_*）のshellスクリプトと、拡張子を持たないbash製CLIラッパー
+# （agent-toolkit/bin/atk）をshfmtの対象に追加する
+shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
 # 上記shfmt対象と同じファイル群をshellcheckでも検査する
-shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*"]
+shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
     "textlint-rule-preset-jtf-style",

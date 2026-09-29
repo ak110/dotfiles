@@ -1,2 +1,0 @@
-# githubstatus.com はCI等の自動アクセスへ418を返すため検査対象から除外する
-https://www\.githubstatus\.com/api/

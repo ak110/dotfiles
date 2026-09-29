@@ -1990,6 +1990,29 @@ pytestの既定のimport modeでは、パッケージに属するテストはパ
 肥大化したモジュールは、パッケージ化と同じ責務の区分でサブモジュールへ分ける。
 分割だけを行いパッケージ化しない案は、直下のファイル数をさらに増やして所属の判別を難しくするため採らない。
 
+## pyfltrのsubproject分割とチェック設定の置き場所
+
+`agent-toolkit/`は独自の`pyproject.toml`と`uv.lock`を持つため、pyfltrはこれをsubprojectとして分割する。
+分割したチェックは`agent-toolkit/pyproject.toml`とそのcwdの設定ファイルだけを読み、分割しないチェックはリポジトリ直下の設定だけを読む。
+どのチェックがどちらから設定を読むかを設定ファイルから読み取れないため、直下だけの変更が`agent-toolkit/`配下のチェックへ届かない事象が繰り返し起きた。
+lycheeの`.lycheeignore`が届かずCIが外部サイトの応答待ちで失敗した事例と、カスタムコマンドが`agent-toolkit/`配下の指定でskippedになる事例がこれに当たる。
+
+設定の置き場所は次のように決める。
+
+- pytest、mypy、pyright、ty、pylintなどのPython系のチェックは、agent-toolkitの環境で動く必要があるため分割を維持する。これらが読む`[tool.pyfltr]`のキーと`[tool.ruff]`・`[tool.pylint]`・`[tool.mypy]`・`[tool.pyright]`・`[tool.pytest.ini_options]`・`[tool.arid]`には両側へ同じ値を置く
+- markdownlint、textlint、lychee、直下で定義した全カスタムコマンドなど、agent-toolkitの環境に依存しないチェックは`<名前>-subproject-aware = false`で分割を無効にし、直下の設定と設定ファイルでリポジトリ全体を1回で調べる。shellcheck、shfmt、colloquial-check、typosはpyfltrが元から分割しない
+- 分割しないチェックのキーと設定ファイル（`.lycheeignore`、`.markdownlint-cli2.*`、`.textlintrc*`、`.textlintignore`）は`agent-toolkit/`側に置かない。置いても読まれず、直下と値が一致しなくても気付けない
+
+`scripts/pyfltr_subproject_config_test.py`がこの対応を保証する。
+分割しないチェックの値と設定ファイルがsubproject側に無いこと、直下のカスタムコマンドが分割を無効にしていること、分割するチェックと全体に作用するキーが両側で一致することを確かめる。
+分割の有無はpyfltrの`resolve_subproject_aware`で直下の設定から求め、pyfltrの判定をテスト側に再実装しない。
+探索パスをcwd基準で書く`ty-args`と`[tool.pyright]`の`extraPaths`、直下の実行だけの事情による`mypy-exclude`、直下基準のパスだけを持つ`extend-exclude`は意図的な差異としてテストに理由付きで列挙する。
+意図的な差異を加える場合は同じ列挙へ理由とともに加える。
+`[tool.typos]`はtyposが各ファイルに最も近い設定を自ら読み、語の不足は変更時点のチェックで失敗として現れるため対象から外す。
+
+`subproject-exclude`で分割そのものを外す案は、Python系のチェックがリポジトリ直下の環境で動いてagent-toolkitの依存と設定を使えなくなるため採らない。
+個別のキーを見つけるたびに両側へ値を追随させ、そのキーだけを比べるテストを足す案は、テストの無いキーで同じ事象が続くため採らない。
+
 ## 通知本文の仕様と規範文書長の追随検出
 
 `agent-toolkit`の通知本文と常時読み込む規範文書を変更した主体が、変更の時点で追随すべき対象を把握できるようにすることを目的とする。変更箇所と直接接続していないテストや上限が全体チェックで失敗する事象を、統合の後ではなく編集の時点へ移す。

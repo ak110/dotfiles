@@ -51,9 +51,10 @@ dev = [
     "types-PyYAML",
 ]
 
-# pyfltrは`agent-toolkit/`をsubprojectとして分離し、subprojectの設定をリポジトリ直下の`pyproject.toml`とは
-# 独立に解決する。直下の同キーは本subprojectへ届かないため、検査の有無と挙動を決めるキーは本ファイルへも置く。
-# 直下と同じ値を指定するキーでは値をそろえたことを示し、本subproject固有の値を指定するキーではその理由を書く。
+# pyfltrは`agent-toolkit/`をsubprojectとして分離する。本subprojectの独立した仮想環境を要するPython系の検査だけが
+# 分割して本ファイルの値を読み、その他の検査はリポジトリ直下の`pyproject.toml`で全体を1回で検査する。
+# ここへ置くのはPython系の検査と全体に作用するキーだけとし、直下と同じ値を指定する。
+# 本subproject固有の値を指定するキーではその理由を書く。両側の対応は`scripts/pyfltr_subproject_config_test.py`が検査する。
 [tool.pyfltr]
 preset = "latest"
 python = true
@@ -68,30 +69,6 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 ruff-format-by-check = false
 # pylintを直列で実行すると本subprojectのモジュール数では律速になるため、直下と同じ並列度を指定する。
 pylint-args = ["--jobs=4"]
-shellcheck = true
-shfmt = true
-# 拡張子を持たないbash製CLIラッパーを検査対象へ加える。
-shellcheck-extend-targets = ["atk"]
-shfmt-extend-targets = ["atk"]
-colloquial-check = true
-textlint-args = ["--cache"]
-lychee-exclude = ["agent_toolkit/_atk/serve/static/index.html"]
-# 口調例は意図的な違反例を収録するため検査対象外とする。
-extend-exclude = [
-    "skills/writing-standards/references/tone-examples.md",
-    "skills/writing-standards/references/tone-examples-llm-tone.md",
-]
-# リポジトリ直下の`.textlintrc.yaml`が参照するruleのうち、利用中のpyfltrの既定の
-# `textlint-packages`に含まれないものがあるため、既定のままではruleを解決できず
-# "No rules found"で終了コード1となる。直下と同じ内容をここでも指定して解決する。
-textlint-packages = [
-    "textlint-rule-preset-ja-technical-writing",
-    "textlint-rule-preset-jtf-style",
-    "textlint-rule-ja-no-abusage",
-    # コーディングエージェントのコンテキスト汚染対策として独自強化する辞書を追加する
-    "textlint-rule-prh",
-    "textlint-rule-preset-ai-words-ja",
-]
 
 [tool.pylint."messages control"]
 disable = [
@@ -178,6 +155,8 @@ markers = [
     "browser: Chromiumを使う実ブラウザー統合テスト",
     "repo_invariant: 変更ファイルと無関係に全追跡ファイルまたは全ソースを走査する不変条件テスト",
 ]
-asyncio_mode = "auto"
+log_level = "DEBUG"
+xfail_strict = true
+asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
