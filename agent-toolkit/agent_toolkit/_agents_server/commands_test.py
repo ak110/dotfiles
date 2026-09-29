@@ -8,7 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import commands
+from agent_toolkit._agents_server import commands, state
 from agent_toolkit._atk import config, environment
 
 status_file = commands.status_file
@@ -166,6 +166,55 @@ def test_agents_wait_saves_collected_lines_to_the_output_file(
     saved = json.loads(destination.read_text(encoding="utf-8").strip())
     assert saved["session_id"] == "session-1"
     assert saved["agent_message"] == "完了"
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_readable(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント環境の引数なしの待機は、長い結果を自動保存して要約行を返し、回収判定もその保存先を読む。
+
+    自動保存が無いと、待機のたびに保存先の組み立てを呼び出し側へ残す。要約行から保存先を読めないと、
+    委譲元は回収済みの孫sessionを追跡し続け、受け取り済みの結果を理由に自動再開する。
+    """
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True, exist_ok=True)
+    long_message = "完了報告" * 5000
+    (results / "session-1.json").write_text(
+        json.dumps(
+            {"status": "completed", "owner_status_file": "root.json", "agent_message": long_message}, ensure_ascii=False
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    output = capsys.readouterr().out
+    saved_line, count_line, terminal_line = output.splitlines()
+    saved = pathlib.Path(saved_line.removeprefix("保存先: "))
+    assert saved_line.startswith("保存先: ")
+    assert (count_line, terminal_line) == ("行数: 1", "終端: 1件")
+    assert json.loads(saved.read_text(encoding="utf-8"))["agent_message"] == long_message
+
+    session = state.SessionState("parent-1", "/tmp")
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_1", "name": "mcp__agents_server__start_explore", "input": {"prompt": "調査"}}]},
+    )
+    state.consume_claude_agents_server_message(
+        session, {"content": [{"tool_use_id": "toolu_1", "content": {"session_id": "session-1", "status": "running"}}]}
+    )
+    state.consume_claude_agents_server_message(
+        session, {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": "atk agents wait"}}]}
+    )
+    state.consume_claude_agents_server_message(session, {"content": [{"tool_use_id": "toolu_2", "content": output}]})
+    assert not session.live_child_session_ids
 
 
 @pytest.mark.usefixtures("session_environment")

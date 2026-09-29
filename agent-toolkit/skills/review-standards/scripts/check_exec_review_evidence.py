@@ -9,6 +9,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 OUTCOMES = frozenset({"達成", "未達", "証拠不足", "失効"})
 REQUIRED_FIELDS = {
@@ -37,26 +38,34 @@ def _repository_root() -> pathlib.Path:
 
 
 def _show_wi(filename: str, repository: pathlib.Path) -> str:
+    """WI本文を`atk wi show`の保存先ファイルから全量で取得する。
+
+    エージェント環境の`atk`は長い標準出力を要約行へ置き換えるため、本文を解析する本処理は
+    出力の大きさによらず`--output-file`で全量を受け取る。
+    """
     plugin_root = pathlib.Path(__file__).resolve().parents[3]
-    result = subprocess.run(
-        [
-            str(plugin_root / "bin" / "atk"),
-            "wi",
-            "show",
-            filename,
-            f"--target-repo={repository}",
-            "--skip-pull",
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=30,
-    )
-    if result.returncode != 0:
-        raise ValueError(f"{filename}: WI本文を取得できません: {result.stderr.strip()}")
-    return result.stdout
+    with tempfile.TemporaryDirectory() as directory:
+        output = pathlib.Path(directory) / "wi-show.txt"
+        result = subprocess.run(
+            [
+                str(plugin_root / "bin" / "atk"),
+                "wi",
+                "show",
+                filename,
+                f"--target-repo={repository}",
+                "--skip-pull",
+                f"--output-file={output}",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise ValueError(f"{filename}: WI本文を取得できません: {result.stderr.strip()}")
+        return output.read_text(encoding="utf-8")
 
 
 def _wi_body(output: str, filename: str) -> tuple[dict[str, str], list[str]]:

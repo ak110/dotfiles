@@ -1190,6 +1190,49 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
     return usages
 
 
+def _turn_completion_data(
+    records: list[_Record],
+    runtime: _Runtime,
+    first_timestamp: datetime.datetime,
+    last_timestamp: datetime.datetime,
+) -> dict[str, Any]:
+    """最初のturnの開始から最後のturnの完了までの区間と、完了後に続く記録の区間を返す。
+
+    記録の最初と最後の差（`elapsed_seconds`）は、turnの完了後に残るプロセスや待機の記録を含み、
+    委譲先が結果を返すまでの時間より長くなる（実測: Codexのユーザビリティレビュー担当で、
+    最初の`task_started`から最後の`task_complete`までは約17分、記録の終端までは8408秒）。
+    Codexは`event_msg`の`task_started`と`task_complete`、Claude Codeは`stop_reason`が`end_turn`の
+    assistantレコードをturnの境界とし、Claude Codeは記録の最初のレコードを開始とする。
+    turnの完了を持たない記録は区間を定められないため、空の辞書を返す。
+    """
+    started: datetime.datetime | None = first_timestamp if runtime == "claude" else None
+    completed: _Record | None = None
+    completed_timestamp: datetime.datetime | None = None
+    for record in records:
+        timestamp = _record_timestamp(record)
+        if timestamp is None:
+            continue
+        entry = record.entry
+        if runtime == "codex" and entry.get("type") == "event_msg":
+            payload = entry.get("payload")
+            payload_type = payload.get("type") if isinstance(payload, dict) else None
+            if payload_type == "task_started" and started is None:
+                started = timestamp
+            elif payload_type == "task_complete":
+                completed, completed_timestamp = record, timestamp
+        elif runtime == "claude" and entry.get("type") == "assistant":
+            message = entry.get("message")
+            if isinstance(message, dict) and message.get("stop_reason") == "end_turn":
+                completed, completed_timestamp = record, timestamp
+    if started is None or completed is None or completed_timestamp is None:
+        return {}
+    return {
+        "turn_elapsed_seconds": int((completed_timestamp - started).total_seconds()),
+        "last_turn_completed_at": completed.entry["timestamp"],
+        "after_last_turn_seconds": int((last_timestamp - completed_timestamp).total_seconds()),
+    }
+
+
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
     timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     summary: dict[str, Any] = {}
@@ -1199,6 +1242,7 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
         summary["start"] = first_record.entry["timestamp"]
         summary["end"] = last_record.entry["timestamp"]
         summary["elapsed_seconds"] = int((last_timestamp - first_timestamp).total_seconds())
+        summary.update(_turn_completion_data(records, runtime, first_timestamp, last_timestamp))
 
     if runtime in {"claude", "agy"}:
         usages = _latest_claude_usages(records) if runtime == "claude" else _agy_token_usages(records)
@@ -3057,6 +3101,145 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
     return events, 0
 
 
+def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases: list[str]) -> tuple[list[dict[str, Any]], int]:
+    """指定した記録位置の時点で、各phraseがその記録の文脈にあったかを判定する。
+
+    文脈はエージェントごとに独立するため、母集団は指定した記録の指定行より前のレコードだけとする。
+    指定行より前で最後の圧縮境界（有効境界）の行自身とそれより後の一致は、圧縮後も文脈にある一致として扱う。
+    Codexは`compacted`レコードの`replacement_history`が圧縮後の文脈を保持し、
+    Claude Codeは境界の直後にルールファイルと起動済みスキル本文を再注入するため、
+    境界以後に現れた一致だけで圧縮後の文脈を判定できる。
+    """
+    if ":" in locator:
+        record_id, raw_line = locator.rsplit(":", 1)
+    else:
+        record_id, raw_line = "main", locator
+    if not record_id or not raw_line.isdecimal():
+        return [{"kind": "error", "text": f"記録位置が不正: {locator}"}], 2
+    selected = next((item for item in collected if item.record_id == record_id), None)
+    if selected is None:
+        return [{"kind": "error", "text": f"記録が不明: {record_id}"}], 2
+    target_line = int(raw_line)
+    if not selected.records or not 1 <= target_line <= max(record.line for record in selected.records):
+        return [{"kind": "error", "text": f"行番号が記録の範囲外: {locator}"}], 2
+    if not phrases or any(not phrase for phrase in phrases):
+        return [{"kind": "error", "text": "--phraseへ空でない固定文字列を1件以上指定する"}], 2
+
+    preceding = [record for record in selected.records if record.line < target_line]
+    boundary = next(
+        (record for record in reversed(preceding) if _compaction_event(record, record_id) is not None),
+        None,
+    )
+    channels = _context_channels(preceding)
+    events: list[dict[str, Any]] = []
+    for phrase in phrases:
+        pattern = re.compile(re.escape(phrase))
+        matches: list[dict[str, Any]] = []
+        for record in _scannable_records(preceding):
+            for line_text in _matched_lines(record.entry, pattern):
+                match: dict[str, Any] = {
+                    "kind": "context-match",
+                    "record": record_id,
+                    "phrase": phrase,
+                    "line": record.line,
+                    "timestamp": _entry_timestamp(record.entry),
+                    "text": _clip(line_text),
+                    **channels[record.line],
+                    "before_boundary": boundary is not None and record.line < boundary.line,
+                }
+                matches.append(match)
+        retained = [match for match in matches if not match["before_boundary"]]
+        verdict = "present" if retained else "dropped-by-compaction" if matches else "absent"
+        events.append(
+            {
+                "kind": "context-verdict",
+                "record": record_id,
+                "line": target_line,
+                "phrase": phrase,
+                "verdict": verdict,
+                "boundary_line": boundary.line if boundary is not None else None,
+                "boundary_timestamp": _entry_timestamp(boundary.entry) if boundary is not None else None,
+                "match_count": len(matches),
+                "last_match_line": matches[-1]["line"] if matches else None,
+                "last_match_timestamp": matches[-1]["timestamp"] if matches else None,
+            }
+        )
+        events.extend(matches)
+    return events, 0
+
+
+def _context_channels(records: list[_Record]) -> dict[int, dict[str, Any]]:
+    """各レコードの本文が文脈へ入った経路`channel`を、レコードの構造から行番号ごとに返す。
+
+    ツール結果には対応する呼び出しのツール名と入力の要点を添える。条文の本文が
+    ルールファイル、Skill起動、Readの結果、hook通知のどれで入ったかによって、
+    圧縮後の再注入の有無と原因の区分が変わるためである。
+    """
+    calls: dict[str, tuple[str, str | None]] = {}
+    channels: dict[int, dict[str, Any]] = {}
+    for record in records:
+        entry = record.entry
+        entry_type = entry.get("type")
+        channel: dict[str, Any] = {"channel": "other"}
+        message = entry.get("message")
+        payload = entry.get("payload")
+        if entry_type == "attachment":
+            attachment = entry.get("attachment")
+            attachment_type = attachment.get("type") if isinstance(attachment, dict) else None
+            if isinstance(attachment_type, str) and attachment_type:
+                channel = {"channel": f"attachment:{attachment_type}"}
+        elif entry_type in {"user", "assistant"} and isinstance(message, dict):
+            content = message.get("content")
+            blocks = [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
+            for block in blocks:
+                if block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                    calls[block["id"]] = (str(block.get("name", "")), _claude_call_hint(block.get("input")))
+            result = next(
+                (block for block in blocks if block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str)),
+                None,
+            )
+            if entry_type == "assistant":
+                channel = {"channel": "assistant"}
+            elif entry.get("isCompactSummary"):
+                channel = {"channel": "compact-summary"}
+            elif entry.get("isMeta"):
+                channel = {"channel": "meta"}
+            elif result is not None:
+                channel = _tool_result_channel(calls.get(result["tool_use_id"]))
+            else:
+                channel = {"channel": "user"}
+        elif entry_type == "compacted":
+            channel = {"channel": "compaction-retained"}
+        elif entry_type == "response_item" and isinstance(payload, dict):
+            payload_type = payload.get("type")
+            call_id = payload.get("call_id")
+            if payload_type == "message" and isinstance(payload.get("role"), str):
+                channel = {"channel": payload["role"]}
+            elif payload_type in {"custom_tool_call", "function_call"}:
+                if isinstance(call_id, str):
+                    calls[call_id] = (str(payload.get("name", "")), _codex_call_hint(payload))
+                channel = {"channel": "assistant"}
+            elif payload_type in {"custom_tool_call_output", "function_call_output"}:
+                channel = _tool_result_channel(calls.get(call_id) if isinstance(call_id, str) else None)
+        channels[record.line] = channel
+    return channels
+
+
+_CONTEXT_TOOL_INPUT_LENGTH = 200
+"""経路へ添える呼び出し入力の上限。用途はどのファイルやコマンドの結果かの識別に限られるため、先頭行を短く切り詰める。"""
+
+
+def _tool_result_channel(call: tuple[str, str | None] | None) -> dict[str, Any]:
+    """ツール結果の経路へ、対応する呼び出しのツール名と入力の要点を添える。"""
+    channel: dict[str, Any] = {"channel": "tool-result"}
+    if call is not None:
+        name, hint = call
+        channel["tool"] = name
+        if hint:
+            channel["tool_input"] = _clip(hint.splitlines()[0], _CONTEXT_TOOL_INPUT_LENGTH)
+    return channel
+
+
 _BUNDLE_SCAN_FILENAMES = (
     "timeline.jsonl",
     "warnings.jsonl",
@@ -4528,7 +4711,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--stats",
         action="store_true",
         help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
-        "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返す。" + _CLAUDE_ONLY_NOTE,
+        "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返す。"
+        "`elapsed_seconds`は記録の最初と最後の差であり、turnの完了を持つ記録では最初のturnの開始から"
+        "最後のturnの完了までの`turn_elapsed_seconds`、完了時刻の`last_turn_completed_at`、"
+        "完了後に続く記録の`after_last_turn_seconds`を併せて返す。" + _CLAUDE_ONLY_NOTE,
     )
     parser.add_argument(
         "--hook-notices",
@@ -4536,6 +4722,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
         "格納された通知本文だけを集計し、hook識別子・発動元・タグ・種別ごとの件数と"
         "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE,
+    )
+    parser.add_argument(
+        "--context-at",
+        metavar="RECORD:LINE",
+        help="指定した<記録>:<行番号>（数値だけならメイン記録）の時点で、`--phrase`の各文字列がその記録の文脈にあったかを"
+        "判定する。母集団は指定した記録の指定行より前の行だけとし、親セッションや他の委譲先の記録は含めない。"
+        "判定はphraseごとの`context-verdict`（`present`・`dropped-by-compaction`・`absent`）と、"
+        "一致ごとの`context-match`（行、時刻、本文、経路`channel`、有効な圧縮境界より前か）で返す。"
+        "記録が不明、行番号が範囲外、`--phrase`が無いか空の場合はエラーイベントを出力して終了コード2を返す。",
+    )
+    parser.add_argument(
+        "--phrase",
+        action="append",
+        default=None,
+        help="`--context-at`で判定する固定文字列。繰り返し指定できる。一致は本文の1行ごとの部分文字列で判定するため、"
+        "事象時点の条文の1行の範囲から選ぶ（原文の折り返しをまたぐ文字列は一致しない）。"
+        "先頭がハイフンの文字列は`--phrase=<文字列>`の形で渡す。",
     )
     parser.add_argument(
         "--user-events",
@@ -4594,11 +4797,14 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
                 args.bundle is not None,
                 args.elapsed_until is not None,
                 args.user_events,
+                args.context_at is not None,
             )
         )
         > 1
     ):
-        return _print_error("--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-untilは併用できない")
+        return _print_error(
+            "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない"
+        )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
         "claude" if args.catalog_claude_project else "codex" if args.catalog_codex_history else None
@@ -4613,9 +4819,12 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
             args.bundle is not None,
             args.elapsed_until is not None,
             args.user_events,
+            args.context_at is not None,
         )
     ):
         return _print_error("カタログ走査は単一transcriptの照会モードと併用できない")
+    if args.phrase is not None and args.context_at is None:
+        return _print_error("--phraseは--context-atと併用する")
     if args.since is not None and not args.user_events and catalog_root is None:
         return _print_error("--sinceは--user-eventsまたはカタログ走査と併用する")
     if args.user_events and args.since is None:
@@ -4703,6 +4912,10 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         return 0
     if args.detail is not None:
         events, exit_code = _detail_collection_events(collected, args.detail)
+        _print_events(events)
+        return exit_code
+    if args.context_at is not None:
+        events, exit_code = _context_at_events(collected, args.context_at, args.phrase or [])
         _print_events(events)
         return exit_code
     if args.stats:

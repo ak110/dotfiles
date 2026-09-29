@@ -186,7 +186,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
   計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の記載規則に従い、生成コマンドは`uv run python scripts/sync_generated_files.py`とする
-- `agent-toolkit/share/rules-main.md`とホスト別の`rules-main.*.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hookおよびagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_serverでの委譲へ共有規範を配らない境界も検体で保持する。
+- `agent-toolkit/share/rules-main.codex.md`は`scripts/sync_codex_agents.py`の生成元であり、その編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。生成コマンドは`uv run python scripts/sync_generated_files.py`とする
+- `agent-toolkit/share/rules-main.md`と`rules-main.claude-code.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hookおよびagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_serverでの委譲へ共有規範を配らない境界も検体で保持する。
   バージョン更新の規定は適用する
 - 計画ファイルの見出し、固定H3および表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が定める。
   対象は同ファイルが構造定数として名称を持つものとする。
@@ -249,7 +250,9 @@ Pythonモジュールを保持し続ける。このため、`agent-toolkit/agent
 
 push前にbumpが必須（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
 
-1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する
+1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`で版数を更新する。
+   実行する主体と時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
+   `agent-toolkit:process-wi`のレーンは実行せず版数区分を計画へ記録し、終端担当が全レーンのマージ後に1回実行する
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
 3. Agent Plugins・Codex向け派生JSONを「バージョン更新」節の生成器で同期する
 4. `docs/guide/claude-code-guide.md`のチェック内容リストは「同期先ドキュメント」節に従って更新する

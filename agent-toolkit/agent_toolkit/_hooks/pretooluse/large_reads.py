@@ -2,42 +2,41 @@
 
 Codexではシェル出力の上限を超えた取得が返却本文の欠落を招き、欠落した範囲を回復できないため遮断する。
 Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるため対象外とする。
+
+遮断後に対処する型のhookとする。規範は全文取得の前に容量を測る工程を求めず、
+遮断した場合だけ通知が示す連続した行範囲で読ませる。閾値を出力上限から導いておけば、
+遮断は実際に上限を超え得るファイルだけで発火し、事前計測の呼び出しを操作のたびに払うより費用が小さい。
 """
 
 from __future__ import annotations
 
 import os
 import pathlib
+import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from agent_toolkit._hooks import bash_command_parser
 from agent_toolkit._hooks.notice import block_formatter
 
-_DEFAULT_LINE_THRESHOLD = 350
-# 1回の応答へ収まる実効上限を超える前に、バイト数でも分割へ誘導する。
-_DEFAULT_BYTE_THRESHOLD = 16 * 1024
-_LINE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_LINES"
+# Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
+# agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。
+# 実行セルが本文へ付加する分の余裕を取り、48KiBを閾値とする。
+# 測定の記録と再検証手段は`docs/development/audit-records.md`の
+# 「agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py：全文取得の閾値：2026年9月29日」にある。
+_DEFAULT_BYTE_THRESHOLD = 48 * 1024
 _BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
 _block_notice = block_formatter("pretooluse")
 
 
-def _positive_threshold(environment_name: str, default: int) -> int:
+def _byte_threshold() -> int:
     """環境指定が正の整数なら採用し、それ以外は既定値を返す。"""
     try:
-        threshold = int(os.environ.get(environment_name, str(default)))
+        threshold = int(os.environ.get(_BYTE_THRESHOLD_ENV, str(_DEFAULT_BYTE_THRESHOLD)))
     except ValueError:
-        return default
-    return threshold if threshold > 0 else default
-
-
-def _line_threshold() -> int:
-    return _positive_threshold(_LINE_THRESHOLD_ENV, _DEFAULT_LINE_THRESHOLD)
-
-
-def _byte_threshold() -> int:
-    return _positive_threshold(_BYTE_THRESHOLD_ENV, _DEFAULT_BYTE_THRESHOLD)
+        return _DEFAULT_BYTE_THRESHOLD
+    return threshold if threshold > 0 else _DEFAULT_BYTE_THRESHOLD
 
 
 @dataclass(frozen=True)
@@ -48,13 +47,14 @@ class _ReadPlan:
     oversized_lines: tuple[tuple[int, int], ...]
 
 
-def _measure_and_plan(path: pathlib.Path) -> _ReadPlan | None:
-    """同じ走査で両閾値を測り、成立する連続行範囲を組み立てる。"""
+def _measure_and_plan(path: pathlib.Path, byte_threshold: int) -> _ReadPlan | None:
+    """容量を測り、各範囲が閾値以下になる連続行範囲を組み立てる。
+
+    範囲は`(開始行, 終了行)`とし、重複も欠落もなく全行を覆う。単一行で閾値を超える行は範囲から外して別に返す。
+    """
     if not path.is_file():
         return None
-    line_threshold = _line_threshold()
-    byte_threshold = _byte_threshold()
-    line_count = byte_count = start = size = count = 0
+    line_count = byte_count = start = size = 0
     ranges: list[tuple[int, int]] = []
     oversized: list[tuple[int, int]] = []
     try:
@@ -64,22 +64,21 @@ def _measure_and_plan(path: pathlib.Path) -> _ReadPlan | None:
                 length = len(line)
                 byte_count += length
                 if length > byte_threshold:
-                    if count:
-                        ranges.append((start, count))
-                        count = size = 0
+                    if start:
+                        ranges.append((start, line_count - 1))
+                        start = size = 0
                     oversized.append((line_count, length))
                     continue
-                if count and (count == line_threshold or size + length > byte_threshold):
-                    ranges.append((start, count))
-                    count = size = 0
-                if not count:
+                if start and size + length > byte_threshold:
+                    ranges.append((start, line_count - 1))
+                    start = size = 0
+                if not start:
                     start = line_count
-                count += 1
                 size += length
     except OSError:
         return None
-    if count:
-        ranges.append((start, count))
+    if start:
+        ranges.append((start, line_count))
     return _ReadPlan(line_count, byte_count, tuple(ranges), tuple(oversized))
 
 
@@ -108,47 +107,46 @@ def _full_read_operands(tokens: Sequence[str]) -> tuple[str, ...]:
     return ()
 
 
-def _offset_limit_plan(plan: _ReadPlan) -> str:
-    """両閾値に収まるRead範囲と、行単位の取得が成立しない行を示す。"""
-    parts = [f"`offset={offset}, limit={limit}`" for offset, limit in plan.ranges]
+def _range_plan(path: pathlib.Path, plan: _ReadPlan) -> str:
+    """閾値以下の連続行範囲を取得するコマンドと、行単位の取得が成立しない行を示す。
+
+    範囲の取得コマンドは`_full_read_operands`の全文取得の判定に一致しないため、通知どおりの取得で同じ通知は反復しない。
+    """
+    quoted = shlex.quote(str(path))
+    parts = [f"`sed -n '{first},{last}p' {quoted}`" for first, last in plan.ranges]
     if plan.oversized_lines:
         lines = "、".join(f"{line}行目（{size}バイト）" for line, size in plan.oversized_lines)
         parts.append(f"{lines}は単一行がバイト閾値を超えるため、バイト単位または構造化抽出で読む")
-    return "。".join(parts)
+    return "、".join(parts)
 
 
-def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, cwd: str) -> str:
-    line_threshold = _line_threshold()
+def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, cwd: str, byte_threshold: int) -> str:
     return _block_notice(
-        f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した"
-        f"（閾値: {line_threshold}行または{_byte_threshold()}バイト）: {path}",
+        f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した（閾値: {byte_threshold}バイト）: {path}",
         fix=(
-            f"取得案: {_offset_limit_plan(plan)}。"
+            f"次の連続した行範囲を全て取得すると全文を読了したものとする: {_range_plan(path, plan)}。"
             "agents_serverのstart_exploreへ"
             f"質問とcwd={cwd}を渡して読み取り専用調査を委譲してもよい。"
         ),
     )
 
 
-def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan]]) -> str:
-    line_threshold = _line_threshold()
-    byte_threshold = _byte_threshold()
-    total_lines = sum(plan.line_count for _path, plan in path_counts)
+def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan]], byte_threshold: int) -> str:
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
     details = "、".join(
-        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、{_offset_limit_plan(plan)}" for path, plan in path_counts
+        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、{_range_plan(path, plan)}" for path, plan in path_counts
     )
     return _block_notice(
-        f"複数ファイルの全文取得を遮断した（合計: {total_lines}行、{total_bytes}バイト、"
-        f"閾値: {line_threshold}行または{byte_threshold}バイト）: {details}",
-        fix="ファイルごとに個別取得するか、各ファイルを示した連続した行範囲へ分割して取得する。",
+        f"複数ファイルの全文取得を遮断した（合計: {total_bytes}バイト、閾値: {byte_threshold}バイト）: {details}",
+        fix="ファイルごとに別々の取得で読むか、各ファイルに示した連続した行範囲を全て取得する。",
     )
 
 
 def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
-    """Codexでパイプ・リダイレクトを持たない単純なBash全文取得だけを遮断する。"""
+    """Codexでパイプ・リダイレクトを持たない単純なBash全文取得のうち、閾値を超えるものだけを遮断する。"""
     if not is_codex:
         return None
+    byte_threshold = _byte_threshold()
     current = bash_command_parser.CwdResolution(cwd, bool(cwd))
     for pipeline in bash_command_parser.extract_execution_pipelines(command):
         if len(pipeline) != 1 or not pipeline[0].resolved:
@@ -165,20 +163,14 @@ def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> 
         path_counts: list[tuple[pathlib.Path, _ReadPlan]] = []
         for operand in operands:
             path = _resolve_path(operand, base)
-            measurement = _measure_and_plan(path)
+            measurement = _measure_and_plan(path, byte_threshold)
             if measurement is not None:
                 path_counts.append((path, measurement))
         if not path_counts:
             continue
-        line_threshold = _line_threshold()
-        byte_threshold = _byte_threshold()
-        if (
-            any(plan.line_count > line_threshold or plan.byte_count > byte_threshold for _path, plan in path_counts)
-            or sum(plan.line_count for _path, plan in path_counts) > line_threshold
-            or sum(plan.byte_count for _path, plan in path_counts) > byte_threshold
-        ):
+        if sum(plan.byte_count for _path, plan in path_counts) > byte_threshold:
             if len(path_counts) == 1:
                 path, plan = path_counts[0]
-                return _large_read_notice(path, plan, cwd)
-            return _large_multi_read_notice(path_counts)
+                return _large_read_notice(path, plan, cwd, byte_threshold)
+            return _large_multi_read_notice(path_counts, byte_threshold)
     return None

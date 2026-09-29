@@ -551,11 +551,18 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
 
 
 def test_start_tool_descriptions_show_agents_wait_invocation() -> None:
-    """開始ツールの公開説明が、待機コマンドの形と`session_id`を引数に渡さないことを示す。"""
+    """instructionsと開始ツールの公開説明が、引数なしの単独の待機コマンドと`session_id`を引数に渡さないことを示す。
+
+    保存先の指定を受領手段として示すと、委譲元は待機のたびに保存先の組み立てと確認のコマンドを連結する。
+    """
+    instructions = subject.mcp.instructions or ""
+    assert "引数なしの単独コマンド`atk agents wait`で受け取る" in instructions
+    assert "--output-file" not in instructions
     for tool_name in ("start", "start_custom", "start_explore", "start_write", "start_shell"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
-        assert "`atk agents wait --output-file <絶対パス>`" in tool.description, tool_name
+        assert "`atk agents wait`を単独で" in tool.description, tool_name
+        assert "--output-file" not in tool.description, tool_name
         assert "`atk agents wait`は`session_id`を引数に取らず" in tool.description, tool_name
 
 

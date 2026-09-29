@@ -62,6 +62,7 @@ from agent_toolkit._atk import run_script as _run_script  # noqa: E402
 from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
+from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
 from agent_toolkit._atk.wi import add as _add  # noqa: E402
 from agent_toolkit._atk.wi import batch as _batch  # noqa: E402
 from agent_toolkit._atk.wi import common as _common  # noqa: E402
@@ -1249,6 +1250,21 @@ def _cmd_pull(private_notes: pathlib.Path) -> None:
     _outcome.report_success(f"private-notesをremoteと同期した: {private_notes.resolve()}")
 
 
+def _auto_saves_output(args: argparse.Namespace) -> bool:
+    """エージェント環境で、長い標準出力を自動退避するサブコマンドかを返す。
+
+    ユーザーが直接呼んだ場合は出力をそのまま表示する。標準出力を逐次書き続ける常駐と追従の起動は、
+    終了まで出力を受け取ると経過を表示できなくなるため対象から外す。
+    """
+    if not is_agent_environment():
+        return False
+    if args.command == "serve":
+        return False
+    if args.command == "wi" and args.wi_subcommand == "process-loop" and getattr(args, "process_loop_subcommand", None) is None:
+        return False
+    return not (args.command == "agents" and args.agents_subcommand == "logs" and getattr(args, "follow", False))
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -1283,11 +1299,15 @@ def main(
     _resolve_wi_target_repo(args, parser)
     _resolve_note_file(args, parser)
     output_path = getattr(args, "output_file", None)
+    after_save = _agents.summarize_saved_wait if args.command == "agents" and args.agents_subcommand == "wait" else None
     if output_path is not None and not _output_file_active:
         if not output_path.is_absolute():
             args.subparser.error("--output-fileには絶対パスを指定してください。")
-        after_save = _agents.summarize_saved_wait if args.command == "agents" and args.agents_subcommand == "wait" else None
         with _output_file.redirect(output_path, after_save=after_save):
+            main(argv, home=home, now=now, _output_file_active=True)
+        return
+    if output_path is None and not _output_file_active and _auto_saves_output(args):
+        with _output_file.auto_save(lambda: _managed_temp.create_managed_temp("atk-output"), after_save=after_save):
             main(argv, home=home, now=now, _output_file_active=True)
         return
     if now is None:

@@ -93,6 +93,15 @@ class TestBuildNotice:
         assert _REPO in notice
         assert "unanswered-0.md" in notice
         assert "unanswered-1.md" not in notice
+        # hookはprocess-wiの実行中かを判定しないため、本文は条件ごとの扱いを書き分ける。
+        # 完了指示に条件が付かないと、処理中のメインは選定時の固定集合と両立しない同一セッション内の反映も求められる。
+        sentences = [sentence for sentence in notice.split("。") if sentence]
+        completion = [sentence for sentence in sentences if "セッションを終える前に" in sentence]
+        assert completion
+        assert all("`agent-toolkit:process-wi`の実行中でないセッションでは" in sentence for sentence in completion)
+        in_process_wi = [sentence for sentence in sentences if sentence.startswith("`agent-toolkit:process-wi`の実行中は")]
+        assert in_process_wi
+        assert any("次の処理回の選定工程が取り込む" in sentence for sentence in sentences)
 
     def test_initial_answered_state_does_not_notify(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=1)

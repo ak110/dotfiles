@@ -2155,7 +2155,7 @@ with warnings.catch_warnings():
             "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
             "`start`は専用タスク文書、`start_custom`は自由本文からsessionを開始する。"
             "`start_explore`は読み取り専用探索、`start_shell`はコマンド実行、`start_write`は確定済みの軽量書込を委譲する。"
-            "終端と結果本文は`atk agents wait --output-file <絶対パス>`で受け取る。"
+            "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
             "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待つ。"
             "`list`は最小状態、`show`は個別の診断情報を返す。"
             "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
@@ -2230,7 +2230,7 @@ async def start(
     タスク文書を読み、同文書の必須入力名と`extra_params`を照合し、文書本文と出所を起動文へ含めてから起動する。
     engine、model、effortはタスク文書に対応する工程別モデル設定から決め、`model_type`を指定した場合はその値から決める。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、
     結果が不要なら`kill`で破棄する。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     応答は`session_id`と`status`を含む。候補を切り替えて起動した場合だけ、除外した候補と
@@ -2270,7 +2270,7 @@ async def start_custom(
     候補は先頭から試し、通常応答は後続の観測に必要な`session_id`と`status`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     候補を切り替えて起動した場合だけ、除外した候補と採用した候補を加える。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、
     結果が不要なら`kill`で破棄する。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
@@ -2304,7 +2304,7 @@ async def start_explore(
 
     `model_type`の省略時は`low_tier_model`、指定時はその値の候補列を使う。
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、
     結果が不要なら`kill`で破棄する。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     プロジェクト指示の読込を減らした軽量な起動条件で開始する。
@@ -2347,7 +2347,7 @@ async def start_shell(
     `low_tier_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
     `model_type`を指定した場合はその値から候補列を決める。
     読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
-    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait --output-file <絶対パス>`を開始して観測するか、
+    返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、
     結果が不要なら`kill`で破棄する。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     委譲と直接実行の採算は、コマンドの出力量で判定する。
@@ -2379,7 +2379,7 @@ async def start_write(
     設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。
     読者が異なる文章は別の依頼にする。プロジェクト指示の読込を省いた`write_model`の候補列を使い、ファイルの読取・検索・作成・編集だけを許可する。
     `model_type`を指定した場合はその値から候補列を決める。
-    終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait --output-file <絶対パス>`で受け取る。
+    終端と結果本文は、返した`session_id`を保持して実行ホストの`atk agents wait`を単独で発行して受け取る。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
     結果が不要なら`kill`で破棄する。
     応答は`start`と同じ項目を含む。
