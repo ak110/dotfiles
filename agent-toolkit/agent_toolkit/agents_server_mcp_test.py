@@ -6488,6 +6488,22 @@ def test_label_legend_in_instructions() -> None:
     assert len(set(descriptions)) == len(descriptions)
 
 
+def test_lightweight_launch_limits_in_instructions() -> None:
+    """起動手段を選ぶ呼び出し元が読む`instructions`に、軽量起動で使えない規範とスキルおよび代わりの`start`を示す。
+
+    欠けると呼び出し元は軽量起動でもスキルと共有規範を使えると誤解し、起動文を短く書いて
+    スキルの手順を要する作業を`start_explore`などへ渡し、委譲先は必要な手順を持たないまま作業する。
+    """
+    instructions = subject.mcp.instructions or ""
+    for fragment in (
+        "共有規範が注入されず",
+        "スキルを使える保証も無い",
+        "作業に必要な指示を全て起動文へ書く",
+        "スキルの手順を要する作業には`start`を使う",
+    ):
+        assert fragment in instructions, fragment
+
+
 def test_preflight_covers_plugin_launch_commands() -> None:
     """事前確認は、プラグインのMCP設定とhookが委譲先で起動するコマンドの先頭語を全て含む。
 
