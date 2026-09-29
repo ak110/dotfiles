@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 
 import pytest
@@ -49,3 +50,74 @@ def test_redirect_reports_saved_output_when_system_exit_propagates(
     assert exc_info.value.code == 7
     assert output_path.read_text(encoding="utf-8") == "終了前\n"
     assert capsys.readouterr().out == f"保存先: {output_path.resolve()}\n行数: 1\n"
+
+
+def _run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int | str | None, str]:
+    """`atk`を公開の入口から実行し、終了コードと標準出力を返す。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv)
+    return exc_info.value.code, capsys.readouterr().out
+
+
+@pytest.fixture
+def _long_output_argv(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """管理対象一時領域をテスト内へ隔離し、16384バイトを超える標準出力を生む`atk run-script`の引数を返す。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    transcript = tmp_path / "transcript.jsonl"
+    entries = [
+        {"type": "user", "message": {"role": "user", "content": f"検索語{index} " + "本文" * 600}} for index in range(20)
+    ]
+    transcript.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n", encoding="utf-8")
+    return ["run-script", "session-review-evidence", "--", str(transcript), "--grep", "検索語"]
+
+
+def test_agent_environment_auto_saves_long_output_to_new_files(
+    _long_output_argv: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント環境の長い標準出力は、実行ごとに新しいファイルへ全量を保存して要約行だけを返す。
+
+    ユーザーが直接呼んだ場合と短い出力はそのまま表示する。保存先を再利用すると先の結果を上書きし、
+    ユーザーの実行まで要約行へ置き換えると、端末で結果を読めなくなる。
+    """
+    code, direct_output = _run_atk(_long_output_argv, capsys)
+    assert code == 0
+    assert len(direct_output.encode("utf-8")) > output_file.AUTO_SAVE_THRESHOLD_BYTES
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    saved_paths = []
+    for _ in range(2):
+        code, output = _run_atk(_long_output_argv, capsys)
+        assert code == 0
+        saved_line, count_line = output.splitlines()
+        saved = pathlib.Path(saved_line.removeprefix("保存先: "))
+        assert saved_line.startswith("保存先: ")
+        assert count_line == f"行数: {len(direct_output.splitlines())}"
+        assert saved.read_text(encoding="utf-8") == direct_output
+        saved_paths.append(saved)
+    assert saved_paths[0] != saved_paths[1]
+
+    code, short_output = _run_atk([*_long_output_argv[:-1], "検索語3 "], capsys)
+    assert code == 0
+    assert not short_output.startswith("保存先: ")
+    assert '"kind": "match"' in short_output
+
+
+def test_auto_save_writes_full_output_when_directory_cannot_be_created(capsys: pytest.CaptureFixture[str]) -> None:
+    """保存先を作成できない場合は、警告を標準エラーへ書いて全量を標準出力へ残す。"""
+
+    def fail() -> pathlib.Path:
+        raise OSError("作成できない")
+
+    text = "x" * (output_file.AUTO_SAVE_THRESHOLD_BYTES + 1)
+    with pytest.raises(SystemExit) as exc_info, output_file.auto_save(fail):
+        print(text)
+        raise SystemExit(5)
+
+    assert exc_info.value.code == 5
+    captured = capsys.readouterr()
+    assert captured.out == text + "\n"
+    assert "作成できない" in captured.err

@@ -9,6 +9,7 @@ from collections.abc import Iterator
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._agents_server import state
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk import outcome as _outcome
@@ -278,8 +279,23 @@ def test_agents_wait_help_states_absent_target_termination() -> None:
     assert description is not None
     assert "待機対象の登録が0件" in description
     assert "`starting`を含む保持中sessionも0件" in description
-    assert "保持中sessionが1件以上ある場合は通常の待機上限まで待つ" in description
     assert "同じコマンドを再発行せず" in description
+
+
+def test_agents_wait_help_states_own_limit_and_standalone_invocation() -> None:
+    """`atk agents wait`の公開説明が、実装の待機上限、上限到達時の終了コード、単独発行と自動保存を示す。
+
+    上限値が説明に無いと、待機する主体が上限の無い待機と判断して外側の`timeout`とパイプで包み、
+    自前の上限より先に待機を打ち切るうえ、続行の判定に使う終了コードを覆い隠す。
+    """
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    description = commands["atk agents wait"].description
+
+    assert description is not None
+    assert f"{int(state.WAIT_TIMEOUT_SECONDS)}秒" in description
+    assert "終了コード3" in description
+    assert "単独で発行する" in description
+    assert "`--output-file`は保存先を指定する必要がある場合だけ使う" in description
 
 
 def _leaf_commands() -> set[str]:

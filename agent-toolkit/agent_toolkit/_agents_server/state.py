@@ -788,7 +788,7 @@ def consume_agents_server_tool_result(
 # 委譲先がBashで実行した`atk agents wait`の呼び出しを`child_tool_uses`で識別する名前。
 # agents_serverのツール名と衝突しない値とする。
 _AGENTS_WAIT_TOOL_USE = "atk agents wait"
-# `atk agents wait --output-file`が標準出力へ書く保存先の行。
+# `atk agents wait`が`--output-file`の指定時とエージェント環境の自動保存時に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
 
 
@@ -833,7 +833,7 @@ def consume_agents_wait_output(session: SessionState, text: str) -> None:
 
     回収済みの結果は再配送されないため、そのsessionの終端を理由に委譲先を再開させると、
     委譲先は受け取り済みの結果について同じ報告を返し直すだけのturnを費やす。
-    回収の根拠は待機コマンドが返したJSON Linesとし、`--output-file`の場合は標準出力が示す保存先を読む。
+    回収の根拠は待機コマンドが返したJSON Linesとし、`--output-file`の指定時と長い結果の自動保存時は標準出力が示す保存先を読む。
     結果ファイルの不在は公開前の状態と区別できないため、回収の根拠に用いない。
     """
     collected = _collected_session_ids(text)

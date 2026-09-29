@@ -51,9 +51,10 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
         if args[:2] == ["git", "rev-parse"]:
             return subprocess.CompletedProcess(args, 0, stdout=f"{tmp_path}\n", stderr="")
         filename = args[3]
-        return subprocess.CompletedProcess(
-            args, 0, stdout=f"## target_repo: example\n### {filename} [processing]\n---\n{bodies[filename]}", stderr=""
-        )
+        output = pathlib.Path(next(arg for arg in args if arg.startswith("--output-file=")).removeprefix("--output-file="))
+        output.write_text(f"## target_repo: example\n### {filename} [processing]\n---\n{bodies[filename]}", encoding="utf-8")
+        # エージェント環境の`atk`は長い本文を標準出力へ書かないため、検査は保存先だけを読む必要がある。
+        return subprocess.CompletedProcess(args, 0, stdout=f"保存先: {output}\n行数: 1\n", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
