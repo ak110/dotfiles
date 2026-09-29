@@ -1392,7 +1392,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.19.1"
+version = "3.19.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arid" },
@@ -1423,9 +1423,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/19/84/0e22b05f7ccdb1d2ef5f512d628766fc0cdd97654c62f104052112c7c2ca/pyfltr-3.19.1.tar.gz", hash = "sha256:cbf5621ffc91b4244dc5aa09f183c025217c158d5516e35a4efd97a53031dfcb", size = 899628, upload-time = "2026-09-27T18:34:56.045Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/94/ae3ee7592dd7c9499f41e6563f1ee0fc5291f0caad5afde747eb85c09178/pyfltr-3.19.2.tar.gz", hash = "sha256:fde8cbb181ee7af470e57d667bcb4ce5c61e783148cab1670b2ad414e7473ed2", size = 899825, upload-time = "2026-09-28T23:28:31.684Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5c/e2/7d044b09cc58c6078cbaaeaf01f9476b3154d97c4e16a160642f74bb7c37/pyfltr-3.19.1-py3-none-any.whl", hash = "sha256:ebc6cc05efea464ed336f186a14bb9a4d068e58ed6dfc657271efae7c107c0ce", size = 388184, upload-time = "2026-09-27T18:34:54.637Z" },
+    { url = "https://files.pythonhosted.org/packages/78/97/f2eb032821b3ec7a5df5fc05f2f68d0e289783e0c5d31cd4a852d807fccf/pyfltr-3.19.2-py3-none-any.whl", hash = "sha256:82ddc36c1f9e68bcb6c12a04eb9641f1fdf8d6b6b8507da58e19ae158d441f3d", size = 388195, upload-time = "2026-09-28T23:28:30.116Z" },
 ]
 
 [[package]]
@@ -2179,14 +2179,14 @@ wheels = [
 
 [[package]]
 name = "werkzeug"
-version = "3.1.8"
+version = "3.1.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markupsafe" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/b2/381be8cfdee792dd117872481b6e378f85c957dd7c5bca38897b08f765fd/werkzeug-3.1.8.tar.gz", hash = "sha256:9bad61a4268dac112f1c5cd4630a56ede601b6ed420300677a869083d70a4c44", size = 875852, upload-time = "2026-04-02T18:49:14.268Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/34/4dd12fc8bb7d61c91467ec3efe415ffa7d5456f799954b40c5bbaeae470e/werkzeug-3.1.9.tar.gz", hash = "sha256:55ca7c70a75689be937aa27f8ff4b018f06ff4838fc73045560bf0f5a1291060", size = 940188, upload-time = "2026-09-27T18:33:41.637Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/8c/2e650f2afeb7ee576912636c23ddb621c91ac6a98e66dc8d29c3c69446e1/werkzeug-3.1.8-py3-none-any.whl", hash = "sha256:63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50", size = 226459, upload-time = "2026-04-02T18:49:12.72Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/38/df03f564f43cec2684823f3cccae1a652ee7face1cbaa76fb223096e64d7/werkzeug-3.1.9-py3-none-any.whl", hash = "sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab", size = 228700, upload-time = "2026-09-27T18:33:39.685Z" },
 ]
 
 [[package]]
