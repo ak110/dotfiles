@@ -2,7 +2,7 @@
 
 委譲先の判定は`_common.delegated_session`を正本とする。
 
-出力する自動挿入本文は`agent-toolkit-auto-inserted`で囲む。常駐処理が渡したユーザー自身の入力は
+出力する自動挿入本文は`atk-auto`で囲む。常駐処理が渡したユーザー自身の入力は
 `forwarded-user-input`で囲む。受信側が区分ごとに生成主体と種別を
 判別できるようにするためであり、区分ごとに囲んだ本文を全体で重ねて囲まない。
 
@@ -24,7 +24,7 @@ from agent_toolkit._hooks.message_format import xml_message
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.session_state import update_state
 
-_HOOK_ID = "agent-toolkit/rules_context"
+_HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
 RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書く。"

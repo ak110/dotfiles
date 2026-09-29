@@ -11,12 +11,11 @@ from agent_toolkit._agents_server import status_file
 from agent_toolkit._atk import config
 
 _NOTICE_TAG_PATTERN = re.compile(
-    r"\A<agent-toolkit-auto-inserted"
+    r"\A<atk-auto"
     r'(?=[^>]*\sfrom="delegate:(?P<sender>[^"]+)")'
-    r'(?=[^>]*\scomposed-by="caller")'
-    r'(?=[^>]*\ssource="agent-toolkit/agents-notify")'
-    r'(?=[^>]*\skind="agent-delivery")[^>]*>\n'
-    r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
+    r'(?=[^>]*\ssource="agents-notify")'
+    r'(?=[^>]*\skind="delivery")[^>]*>\n'
+    r"(?P<body>.*)\n</atk-auto>\Z",
     re.DOTALL,
 )
 
@@ -30,12 +29,8 @@ def _notice_body(delivered: str) -> str:
 
 def test_notice_body_accepts_reordered_attributes_and_outer_body() -> None:
     """必要属性の順序が変わっても最後の終了タグまで本文を保つ。"""
-    body = '<agent-toolkit-auto-inserted source="inner" kind="notice">内側</agent-toolkit-auto-inserted>\r\n次の行'
-    delivered = (
-        '<agent-toolkit-auto-inserted kind="agent-delivery" source="agent-toolkit/agents-notify"'
-        ' composed-by="caller" from="delegate:child">\n'
-        f"{body}\n</agent-toolkit-auto-inserted>"
-    )
+    body = '<atk-auto source="inner" kind="notice">内側</atk-auto>\r\n次の行'
+    delivered = f'<atk-auto kind="delivery" source="agents-notify" from="delegate:child">\n{body}\n</atk-auto>'
     assert _notice_body(delivered) == body
 
 
@@ -43,30 +38,27 @@ def test_notice_body_accepts_reordered_attributes_and_outer_body() -> None:
     "opening,closing",
     [
         (
-            '<other from="delegate:child" composed-by="caller" source="agent-toolkit/agents-notify" kind="agent-delivery">',
+            '<other from="delegate:child" source="agents-notify" kind="delivery">',
             "</other>",
         ),
         (
-            '<agent-toolkit-auto-inserted from="delegate:child" source="agent-toolkit/agents-notify" kind="agent-delivery">',
-            "</agent-toolkit-auto-inserted>",
+            '<atk-auto from="delegate:child" source="wrong" kind="delivery">',
+            "</atk-auto>",
         ),
         (
-            '<agent-toolkit-auto-inserted from="main:child" composed-by="caller"'
-            ' source="agent-toolkit/agents-notify" kind="agent-delivery">',
-            "</agent-toolkit-auto-inserted>",
+            '<atk-auto from="main:child" source="agents-notify" kind="delivery">',
+            "</atk-auto>",
         ),
         (
-            '<agent-toolkit-auto-inserted from="delegate:child" composed-by="caller" source="wrong" kind="agent-delivery">',
-            "</agent-toolkit-auto-inserted>",
+            '<atk-auto from="delegate:child" source="wrong" kind="delivery">',
+            "</atk-auto>",
         ),
         (
-            '<agent-toolkit-auto-inserted from="delegate:child" composed-by="caller"'
-            ' source="agent-toolkit/agents-notify" kind="wrong">',
-            "</agent-toolkit-auto-inserted>",
+            '<atk-auto from="delegate:child" source="agents-notify" kind="wrong">',
+            "</atk-auto>",
         ),
         (
-            '<agent-toolkit-auto-inserted from="delegate:child" composed-by="caller"'
-            ' source="agent-toolkit/agents-notify" kind="agent-delivery">',
+            '<atk-auto from="delegate:child" source="agents-notify" kind="delivery">',
             "</other>",
         ),
     ],
@@ -105,6 +97,8 @@ def test_agents_notify_preserves_body_exactly(
     assert payload["version"] == 1
     assert payload["session_id"] == "child-session"
     assert isinstance(payload["sent_at"], str)
+    assert payload["body"].startswith('<atk-auto source="agents-notify" kind="delivery" from="delegate:child-session">')
+    assert "composed-by" not in payload["body"]
     assert _notice_body(payload["body"]) == body
     assert raw_payload.endswith("\n")
     assert raw_payload.count("\n") == 1

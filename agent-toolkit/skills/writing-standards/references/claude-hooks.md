@@ -318,16 +318,16 @@ hookメッセージの目的はコーディングエージェントが参照先�
 ## コーディングエージェント宛てメッセージの標識
 
 コーディングエージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）は、
-`agent-toolkit-auto-inserted`要素で全体を囲む。`source`へ`<plugin>/<hook>`、`kind`へ通知種別を置く。
+`atk-auto`要素で全体を囲む。`source`へagent-toolkit自身は接頭辞の無い生成元名、他の生成元は`<所有者>/<生成元>`を置き、`kind`へ通知種別を置く。
 hookの出力はユーザー発言と同じ形で会話コンテキストに注入されるため、機械判定できる境界と出所を設ける。
 
 種別は受領した主体が通知の原因を除去できるかで選ぶ。除去できる事象には`warn`、発話ごとの定型の配送には`notice`、遮断には`block`を使う。
 振り返りの証拠抽出器は`info`または`notice`を持つhook通知を問題候補から除く。原因も対策も持たない通知へ`warn`を指定すると、候補の判定工程が発話のたびに生じる。
 
 ```xml
-<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">
+<atk-auto source="pretooluse" kind="warn">
 detected ...
-</agent-toolkit-auto-inserted>
+</atk-auto>
 ```
 
 `systemMessage` / `stopReason` などコーディングエージェントに届かないフィールドや、
@@ -335,11 +335,11 @@ detected ...
 
 ### hook以外で生成する本文の要素
 
-自動生成する本文はhook以外の生成元も`agent-toolkit-auto-inserted`で囲む。`source`と`kind`で生成主体と用途を区別し、agent間の配送では`from`と`composed-by`も残す。最初の開始タグと最後の同名終了タグで境界を確定する。
+自動生成する本文はhook以外の生成元も`atk-auto`で囲む。`source`と`kind`で生成主体と用途を区別する。agent間の配送では、委譲先から委譲元への通知だけ`from`で送信元を示す。最初の開始タグと最後の同名終了タグで境界を確定する。保存済みの会話にある旧要素名は読み取り側が引き続き受け付ける。
 
 | 要素 | 対象の本文 |
 | --- | --- |
-| `agent-toolkit-auto-inserted` | hook通知、規範、agent間配送、機械生成の入力 |
+| `atk-auto` | hook通知、規範、agent間配送、機械生成の入力 |
 | `forwarded-user-input` | 自動生成本文の中に保持したユーザー自身の入力 |
 
 機械が生成した本文は、ユーザー発話の解釈規範を再読させる注記の対象から外れる。

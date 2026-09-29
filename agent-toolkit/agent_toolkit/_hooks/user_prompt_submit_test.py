@@ -23,11 +23,11 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
 _NOTICE_PATTERN = re.compile(
-    r"<agent-toolkit-auto-inserted"
-    r'(?=[^>]*\ssource="agent-toolkit/user_prompt_submit")'
+    r"<atk-auto"
+    r'(?=[^>]*\ssource="user_prompt_submit")'
     r'(?=[^>]*\skind="notice")[^>]*>\n',
 )
-_NOTICE_BOUNDARY_PATTERN = re.compile(r"</?agent-toolkit-auto-inserted\b[^>]*>")
+_NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
     "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
@@ -64,16 +64,13 @@ def _notice_bodies(context: str) -> list[str]:
 def test_notice_bodies_preserves_outer_body_with_reordered_attributes() -> None:
     """別順の開始タグと入れ子の本文を外側の境界ごとに読む。"""
     first = (
-        '<agent-toolkit-auto-inserted kind="notice" source="agent-toolkit/user_prompt_submit">\n'
-        '<agent-toolkit-auto-inserted source="inner" kind="notice">内側</agent-toolkit-auto-inserted>\n'
-        "</agent-toolkit-auto-inserted>"
+        '<atk-auto kind="notice" source="user_prompt_submit">\n'
+        '<atk-auto source="inner" kind="notice">内側</atk-auto>\n'
+        "</atk-auto>"
     )
-    second = (
-        '<agent-toolkit-auto-inserted source="agent-toolkit/user_prompt_submit" kind="notice">\n'
-        "次\n</agent-toolkit-auto-inserted>"
-    )
+    second = '<atk-auto source="user_prompt_submit" kind="notice">\n次\n</atk-auto>'
     assert _notice_bodies(f"{first}\n{second}") == [
-        '<agent-toolkit-auto-inserted source="inner" kind="notice">内側</agent-toolkit-auto-inserted>',
+        '<atk-auto source="inner" kind="notice">内側</atk-auto>',
         "次",
     ]
 
@@ -142,11 +139,22 @@ class TestMachineInjectedTurn:
         [
             ({"source": "system"}, "状況を確認する。", {}),
             ({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n稼働状況を確認する。", {}),
+            (
+                {},
+                '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">\n確認する。',
+                {},
+            ),
             ({}, "<task-notification>完了</task-notification>", {}),
             (
                 {},
                 '<agent-toolkit-auto-inserted source="agent-toolkit/process-loop" kind="goal">'
                 "継続</agent-toolkit-auto-inserted>",
+                {},
+            ),
+            (
+                {},
+                '<agent-toolkit-auto-inserted source="agent-toolkit/agents-server" kind="agent-delivery">'
+                "委譲指示</agent-toolkit-auto-inserted>",
                 {},
             ),
         ],

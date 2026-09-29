@@ -179,6 +179,7 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
     """起動の応答のうち呼び出し元へ公開する項目を返す。
 
     候補を切り替えて成立した起動だけが、除外した候補と採用した候補を加える。
+    除外した候補のうち実際に作成したsessionは、その識別子も保持する。
     切り替えが起きない起動は`session_id`と`status`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     """
@@ -213,12 +214,18 @@ def _engine_unavailable(session: SessionState) -> bool:
     return _engine_unavailable_reason(session) is not None
 
 
-def _excluded_candidate_payload(excluded: Mapping[ModelCandidate, str]) -> list[dict[str, Any]]:
-    """除外した候補と除外の根拠を、呼び出し元が読む形へそろえる。"""
-    return [
-        {"engine": engine, "model": model, "effort": effort, "reason": reason}
-        for (engine, model, effort), reason in sorted(excluded.items())
-    ]
+def _excluded_candidate_payload(
+    excluded: Mapping[ModelCandidate, str], session_ids: Mapping[ModelCandidate, str] | None = None
+) -> list[dict[str, Any]]:
+    """除外した候補の理由と、作成済み試行の識別子を公開する。"""
+    payload: list[dict[str, Any]] = []
+    for (engine, model, effort), reason in sorted(excluded.items()):
+        item = {"engine": engine, "model": model, "effort": effort, "reason": reason}
+        candidate = (engine, model, effort)
+        if session_ids is not None and candidate in session_ids:
+            item["session_id"] = session_ids[candidate]
+        payload.append(item)
+    return payload
 
 
 def _elapsed_seconds(started_at_value: str | None) -> int | None:
@@ -232,13 +239,9 @@ def _elapsed_seconds(started_at_value: str | None) -> int | None:
     return max(0, int(datetime.datetime.now(tz=started_at.tzinfo).timestamp() - started_at.timestamp()))
 
 
-# 配送本文を組み立てた主体。呼び出し元のエージェントと本サーバーを区別する。
-COMPOSED_BY_CALLER = "caller"
-COMPOSED_BY_AGENTS_SERVER = "agents-server"
-
 # MCPのスキーマとして実行ホストのsystem promptへ入る本文の境界。
 _NORMATIVE_ELEMENT = AUTO_INSERTED_ELEMENT
-_NORMATIVE_SOURCE = "agent-toolkit/agents-server"
+_NORMATIVE_SOURCE = "agents-server"
 _KIND_MCP_INSTRUCTIONS = "mcp-instructions"
 _KIND_MCP_TOOL = "mcp-tool"
 _KIND_MCP_PARAMETER = "mcp-parameter"
@@ -334,34 +337,13 @@ async def _check_plugin_commands(cwd: str) -> None:
     await asyncio.to_thread(_check_plugin_commands_sync, cwd)
 
 
-def _delivery_sender_label() -> str:
-    """配送本文の`from`属性が示す呼び出し元の種別とsession識別子を返す。"""
-    identity = status_file.resolve_status_file_identity(os.environ)
-    if identity is None:
-        return "unresolved"
-    if identity.host_session_id is None:
-        return f"main:{identity.root_session_id}"
-    return f"delegate:{identity.host_session_id}"
+def _wrap_delivery_body(body: str) -> str:
+    """委譲先へ配送する本文を、生成された配送境界で囲む。
 
-
-def _wrap_delivery_body(body: str, *, composed_by: str = COMPOSED_BY_CALLER) -> str:
-    """委譲先へ配送する本文を、配送元と本文の作成主体を示す標識で囲む。
-
-    `from`は配送を発行したsessionを示し、`composed-by`は本文を組み立てた主体を示す。
-    タスク文書の読み込み指示、シェル実行の依頼文、自動再開の継続指示は、呼び出し元ではなく
-    本サーバーが組み立てるため、受信側が両者を取り違えないよう作成主体を分けて示す。
-
-    `from`が示すsession識別子はXML属性値へエスケープして置く。
     配送境界は最初の開始タグと最後の同名終了タグで確定する。
     受信側の解釈は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」が定める。
     """
-    sender = _delivery_sender_label()
-    return auto_message(
-        body,
-        source="agent-toolkit/agents-server",
-        kind="agent-delivery",
-        attributes={"from": sender, "composed-by": composed_by},
-    )
+    return auto_message(body, source="agents-server", kind="delivery")
 
 
 def _validate_required_prompt_inputs(
@@ -1058,7 +1040,6 @@ class AgentsServerManager:
         *,
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
-        composed_by: str = COMPOSED_BY_CALLER,
     ) -> dict[str, Any]:
         """工程別モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -1076,8 +1057,9 @@ class AgentsServerManager:
         )
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
+        excluded_session_ids: dict[ModelCandidate, str] = {}
         display_label = _resolve_display_label(label, prompt)
-        delivery_body = _wrap_delivery_body(prompt, composed_by=composed_by)
+        delivery_body = _wrap_delivery_body(prompt)
         for candidate_index, candidate in enumerate(candidates):
             engine, model, effort = candidate
             if engine not in SUPPORTED_ENGINES:
@@ -1119,7 +1101,7 @@ class AgentsServerManager:
                 "effort": effort,
             }
             if excluded:
-                response["excluded_candidates"] = _excluded_candidate_payload(excluded)
+                response["excluded_candidates"] = _excluded_candidate_payload(excluded, excluded_session_ids)
             if self._status_writer is not None:
                 response["root_session_id"] = self._status_writer.root_session_id
             unavailable_reason = _engine_unavailable_reason(session)
@@ -1136,7 +1118,7 @@ class AgentsServerManager:
                         session.session_id,
                         model_type,
                         launch_kind,
-                        json.dumps(_excluded_candidate_payload(excluded), ensure_ascii=False),
+                        json.dumps(_excluded_candidate_payload(excluded, excluded_session_ids), ensure_ascii=False),
                         json.dumps({"engine": engine, "model": model, "effort": effort}, ensure_ascii=False),
                     )
                 session.label = display_label
@@ -1155,10 +1137,11 @@ class AgentsServerManager:
             unavailable_response, unavailable_session = response, session
             excluded[candidate] = unavailable_reason
             if candidate_index + 1 < len(candidates):
+                excluded_session_ids[candidate] = session.session_id
                 await self._abandon_unavailable_session(session)
         if unavailable_response is not None:
             assert unavailable_session is not None
-            unavailable_response["excluded_candidates"] = _excluded_candidate_payload(excluded)
+            unavailable_response["excluded_candidates"] = _excluded_candidate_payload(excluded, excluded_session_ids)
             unavailable_session.label = display_label
             unavailable_session.prompt = prompt
             unavailable_session.announced = True
@@ -1172,7 +1155,10 @@ class AgentsServerManager:
                 unavailable_session.turn_seq,
             )
             return unavailable_response
-        raise RuntimeError(f"no available model candidates: {model_type}; excluded={_excluded_candidate_payload(excluded)}")
+        raise RuntimeError(
+            "no available model candidates: "
+            f"{model_type}; excluded={_excluded_candidate_payload(excluded, excluded_session_ids)}"
+        )
 
     async def _start_until_initialized(
         self,
@@ -1300,7 +1286,6 @@ class AgentsServerManager:
             cwd,
             launch_kind="shell",
             label=_resolve_display_label(label, _shell_default_label(command)),
-            composed_by=COMPOSED_BY_AGENTS_SERVER,
         )
 
     async def start_write(
@@ -1505,7 +1490,6 @@ class AgentsServerManager:
                 "あなたが`agents_server`で起動した次のsessionは終端した。\n"
                 f"終端したsession: {', '.join(identifiers)}\n"
                 "各sessionの結果を確認し、所定の返却形式を返せ。",
-                composed_by=COMPOSED_BY_AGENTS_SERVER,
             )
             session.auto_resume_consumed = True
             pending_result = session.pending_result
@@ -2262,7 +2246,6 @@ async def start(
         prompt,
         cwd,
         label=_resolve_display_label(label, _task_document_label(subagent_md_path, extra_params)),
-        composed_by=COMPOSED_BY_AGENTS_SERVER,
     )
     return _public_start_response(response)
 

@@ -1962,7 +1962,7 @@ def test_hook_notices_mode_parses_xml_boundary_without_closing_tag(
     assert _read_jsonl(capsys) == [
         {
             "kind": "hook-notice",
-            "hook": "agent-toolkit/pretooluse",
+            "hook": "pretooluse",
             "hook_name": "PreToolUse:Bash",
             "tag": "warn",
             "kind_text": "入力を補正した",
@@ -1970,6 +1970,42 @@ def test_hook_notices_mode_parses_xml_boundary_without_closing_tag(
         },
         {"kind": "summary", "count": 1},
     ]
+
+
+def test_new_and_old_hook_boundaries_share_one_source(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    notices = [
+        '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">\n同じ警告\n</agent-toolkit-auto-inserted>',
+        '<atk-auto source="pretooluse" kind="warn">\n同じ警告\n</atk-auto>',
+    ]
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": f"call-{index}",
+                    "content": [notice],
+                }
+            )
+            for index, notice in enumerate(notices)
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "hook-notice",
+            "hook": "pretooluse",
+            "hook_name": "PreToolUse:Bash",
+            "tag": "warn",
+            "kind_text": "同じ警告",
+            "count": 2,
+        },
+        {"kind": "summary", "count": 2},
+    ]
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert len(_read_jsonl(capsys)) == 2
 
 
 def test_warn_keeps_command_output_warning(
@@ -4554,10 +4590,11 @@ def test_collect_resolves_codex_agents_server_delegations(
                 "payload": {
                     "type": "item_completed",
                     "item": {
+                        "type": "McpToolCall",
                         "server": "agents_server",
-                        "tool": "mcp__agents_server__start",
+                        "tool": "start",
                         "arguments": {"engine": "codex"},
-                        "result": {"structuredContent": {"session_id": thread_ids[0]}},
+                        "result": json.dumps({"structuredContent": {"session_id": thread_ids[0]}}),
                     },
                 },
             },
@@ -4650,8 +4687,9 @@ def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path,
                 "payload": {
                     "type": "item_completed",
                     "item": {
+                        "type": "McpToolCall",
                         "server": "agents_server",
-                        "tool": "mcp__agents_server__start",
+                        "tool": "start",
                         "arguments": {"engine": "codex"},
                         "result": {"status": "done"},
                     },
@@ -5765,7 +5803,7 @@ def _hook_attachment(attachment: dict) -> dict:
             0,
             {
                 "kind": "hook-notice",
-                "hook": "agent-toolkit/posttooluse",
+                "hook": "posttooluse",
                 "hook_name": "PostToolUse:Bash",
                 "tag": "warn",
                 "kind_text": "warn: 成功結果を確認する",
@@ -5967,7 +6005,7 @@ def test_hook_notices_mode_counts_notices_by_hook_origin_tag_and_kind(
     assert events[-1] == {"kind": "summary", "count": 5}
     assert events[0] == {
         "kind": "hook-notice",
-        "hook": "agent-toolkit/pretooluse",
+        "hook": "pretooluse",
         "hook_name": "PreToolUse:Bash",
         "tag": "block",
         "kind_text": "block: 固定待機を検出した",
@@ -5978,7 +6016,7 @@ def test_hook_notices_mode_counts_notices_by_hook_origin_tag_and_kind(
         for event in [
             {
                 "kind": "hook-notice",
-                "hook": "agent-toolkit/pretooluse",
+                "hook": "pretooluse",
                 "hook_name": "PreToolUse:Bash",
                 "tag": "warn",
                 "kind_text": "warn: 出力を切り詰めている",
@@ -6807,7 +6845,7 @@ def test_bundle_reports_hook_blocked_tool_call_as_hook_notice(
     records = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
     candidates = [record for record in records if record["kind"] == "candidate"]
     assert [(record["candidate_kind"], record["event_key"][0], record["event_key"][2]) for record in candidates] == [
-        ("hook-notice", "agent-toolkit/pretooluse", "block")
+        ("hook-notice", "pretooluse", "block")
     ]
     assert "所有記録の無いタスクの停止" in candidates[0]["text"]
 

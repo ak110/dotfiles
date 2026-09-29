@@ -46,10 +46,10 @@ _SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("exec-review.subagent.md",)
 
 
-_NOTICE_PREFIX = '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
+_NOTICE_PREFIX = '<atk-auto source="pretooluse" kind="warn">'
 
 
-_NOTICE_SUFFIX = "</agent-toolkit-auto-inserted>"
+_NOTICE_SUFFIX = "</atk-auto>"
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:

@@ -29,8 +29,8 @@ def _dst_dirs(claude_home: Path, codex_home: Path) -> tuple[Path, Path]:
 
 
 def _expected(name: str, body: str) -> str:
-    opening = f'<agent-toolkit-auto-inserted source="agent-toolkit" kind="rules" path="agent-toolkit/rules/{name}">'
-    return f"{opening}\n{body}\n</agent-toolkit-auto-inserted>\n"
+    opening = f'<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/{name}">'
+    return f"{opening}\n{body}\n</atk-auto>\n"
 
 
 class TestRun:

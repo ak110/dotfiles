@@ -90,7 +90,7 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
 # pylint: enable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
-_HOOK_ID = "agent-toolkit/posttooluse"
+_HOOK_ID = "posttooluse"
 
 _llm_notice = _notice_formatter(_HOOK_ID)
 

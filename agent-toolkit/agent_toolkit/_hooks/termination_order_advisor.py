@@ -36,7 +36,7 @@ from agent_toolkit._hooks.stop_gate import (
 )
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 
-_HOOK_ID = "agent-toolkit/termination_order_advisor"
+_HOOK_ID = "termination_order_advisor"
 
 # 表示用の代表名（`agent-toolkit:`修飾つき）と、プレフィックス付き・素の両表記を受理する名前集合の対。
 # 代表名はアルファベット順による自動選出ではなく明示指定とする

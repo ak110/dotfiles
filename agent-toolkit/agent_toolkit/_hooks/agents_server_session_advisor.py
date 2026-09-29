@@ -39,7 +39,7 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import parse_stop_session
 
-_HOOK_ID = "agent-toolkit/agents_server_session_advisor"
+_HOOK_ID = "agents_server_session_advisor"
 _SESSION_STATE_KEY = "agents_server_sessions"
 _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"

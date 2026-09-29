@@ -20,7 +20,7 @@ _DEFAULT_BYTE_THRESHOLD = 16 * 1024
 _LINE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_LINES"
 _BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
-_block_notice = block_formatter("agent-toolkit/pretooluse")
+_block_notice = block_formatter("pretooluse")
 
 
 def _positive_threshold(environment_name: str, default: int) -> int:

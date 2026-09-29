@@ -24,7 +24,7 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
 
     assert auto_message_opening_attributes(message) == {"source": "test/hook", "kind": "block"}
     assert "\nblocked\nFix: retry\n" in message
-    assert message.endswith("</agent-toolkit-auto-inserted>")
+    assert message.endswith("</atk-auto>")
 
 
 def test_warning_formatter_requests_block_from_second_notice(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

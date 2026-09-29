@@ -33,7 +33,7 @@ GENERATED_MARKER = (
     "本文は全リポジトリ共通のCodex向け規範であり、作業対象リポジトリのAGENTS.mdの記述ではない。 -->"
 )
 # 常時読み込まれる規範の配布物へ付ける境界。
-NORMATIVE_ELEMENT = "agent-toolkit-auto-inserted"
+NORMATIVE_ELEMENT = "atk-auto"
 NORMATIVE_SOURCE = "agent-toolkit"
 NORMATIVE_KIND = "rules"
 
@@ -50,7 +50,7 @@ def render(root: Path = REPO_ROOT) -> str:
 def _has_normative_boundary(body: str) -> bool:
     """本文の先頭が境界の開始タグかを、要素名の完全一致で判定する。
 
-    接頭辞の一致だけでは`<agent-toolkit-auto-inserted-extra ...>`のような別要素も境界と判定し、
+    接頭辞の一致だけでは`<atk-auto-extra ...>`のような別要素も境界と判定し、
     境界を持たない本文がそのまま埋め込まれる。
     """
     prefix = f"<{NORMATIVE_ELEMENT}"

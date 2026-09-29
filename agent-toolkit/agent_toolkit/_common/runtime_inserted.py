@@ -9,6 +9,7 @@ _RUNTIME_INSERTED_PREFIXES = (
     "[COMPACTION RECOVERY]",
     "This session is being continued",
     "<normative-context",
+    "<atk-auto",
     "<agent-toolkit-auto-inserted",
     "<agent-toolkit-hook-message",
     "<task-notification>",

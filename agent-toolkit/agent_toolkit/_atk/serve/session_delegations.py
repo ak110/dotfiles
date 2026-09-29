@@ -28,6 +28,12 @@ def _delegated_ids_cached(path: pathlib.Path, engine: str, _mtime_ns: int, _size
             if isinstance(child, str) and child:
                 children.add(child)
                 break
+        excluded = value.get("excluded_candidates")
+        if isinstance(excluded, list):
+            for candidate in excluded:
+                child = candidate.get("session_id") if isinstance(candidate, dict) else None
+                if isinstance(child, str) and child:
+                    children.add(child)
 
     try:
         with path.open(encoding="utf-8") as stream:
@@ -68,6 +74,17 @@ def _delegated_ids_cached(path: pathlib.Path, engine: str, _mtime_ns: int, _size
                     payload = record.get("payload")
                     if not isinstance(payload, dict):
                         continue
+                    item = payload.get("item")
+                    if (
+                        record.get("type") == "event_msg"
+                        and payload.get("type") == "item_completed"
+                        and isinstance(item, dict)
+                        and item.get("type") == "McpToolCall"
+                        and item.get("server") == "agents_server"
+                        and isinstance(item.get("tool"), str)
+                        and item["tool"].startswith("start")
+                    ):
+                        add_result(item.get("result"))
                     name = payload.get("name")
                     if (
                         payload.get("type") in {"custom_tool_call", "function_call"}

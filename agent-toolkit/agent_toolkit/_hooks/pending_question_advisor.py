@@ -27,7 +27,7 @@ from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatt
 from agent_toolkit._hooks.stop_gate import append_stop_log
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 
-_HOOK_ID = "agent-toolkit/pending_question_advisor"
+_HOOK_ID = "pending_question_advisor"
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
 # フェンス付きコードブロック・インラインコード・URL・行頭が`>`の引用行。

@@ -259,7 +259,7 @@ class TestLanguageEscalation:
         assert result.returncode == 0
         ctx = _additional_context(result)
         assert ctx  # 警告が出ていること
-        assert ctx.endswith("</agent-toolkit-auto-inserted>")
+        assert ctx.endswith("</atk-auto>")
         assert "evaluate relevance" not in ctx
 
     def test_escalated_body_has_suffix(self, tmp_path: pathlib.Path):
@@ -270,7 +270,7 @@ class TestLanguageEscalation:
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
         assert r2.returncode == 0
         ctx = _additional_context(r2)
-        assert ctx.rstrip().endswith("</agent-toolkit-auto-inserted>")
+        assert ctx.rstrip().endswith("</atk-auto>")
         assert "evaluate relevance" not in ctx
 
 

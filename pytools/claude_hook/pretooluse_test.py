@@ -190,7 +190,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         message = _get_additional_context(result)
         assert name in message
         assert "generalized wording" in message
-        assert '<agent-toolkit-auto-inserted source="dotfiles/claude_hook_pretooluse"' in message
+        assert '<atk-auto source="dotfiles/claude_hook_pretooluse"' in message
 
     def test_warn_in_agent_toolkit_rules(self):
         target = str(_AT_RULES_DIR / "01-agent.md")

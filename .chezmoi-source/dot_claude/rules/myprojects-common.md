@@ -1,4 +1,4 @@
-<agent-toolkit-auto-inserted source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
+<atk-auto source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
 # myprojects-common.md: ホスト共通の個人プロジェクト規範
 
 実行ホストとコーディングエージェントの種別によらず、同一作者の個人プロジェクト全体へ適用する規範を置く。
@@ -16,4 +16,4 @@
 `ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
-</agent-toolkit-auto-inserted>
+</atk-auto>
