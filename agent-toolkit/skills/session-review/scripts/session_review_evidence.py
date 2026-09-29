@@ -3857,15 +3857,21 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
 def _delegation_record_kinds(timeline: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
     """コマンド実行の委譲（`start_shell`）を受け取った委譲先と、再開された委譲先の記録IDを返す。
 
-    委譲先の記録の利用者ロールの本文は、呼び出し元から配送された指示本文である。
-    最初の本文でコマンド実行の委譲かを判定し、2件以上ある記録を再開されたものとする。
+    実行環境が先に注入した利用者ロールの本文を除き、最初の配送本文で
+    コマンド実行の委譲かを判定する。配送本文が2件以上ある記録を再開されたものとする。
     """
     user_texts: dict[str, list[str]] = collections.defaultdict(list)
     for event in timeline:
         record, text = event.get("record"), event.get("text")
-        if event.get("kind") == "user" and isinstance(record, str) and record != "main" and isinstance(text, str):
+        if (
+            event.get("kind") == "user"
+            and isinstance(record, str)
+            and record != "main"
+            and isinstance(text, str)
+            and not text.startswith("# AGENTS.md instructions")
+        ):
             user_texts[record].append(text)
-    shell = {record for record, texts in user_texts.items() if _SHELL_DELEGATION_MARKER in texts[0]}
+    shell = {record for record, texts in user_texts.items() if texts and _SHELL_DELEGATION_MARKER in texts[0]}
     resumed = {record for record, texts in user_texts.items() if len(texts) >= 2}
     return shell, resumed
 
