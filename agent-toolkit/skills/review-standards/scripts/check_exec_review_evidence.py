@@ -90,12 +90,19 @@ def _section(body: list[str], heading: str) -> list[str] | None:
     return body[start + 1 : end]
 
 
-def _condition_count(content: list[str], filename: str) -> int:
-    count = sum(bool(LIST_ITEM.match(line)) for line in content)
-    if count:
-        return count
-    if any(line.strip() for line in content):
-        return 1
+def _normalize_condition(text: str) -> str:
+    """完成条件の行頭記号と前後の空白を除く。"""
+    return LIST_ITEM.sub("", text.strip()).strip()
+
+
+def _condition_units(content: list[str], filename: str) -> list[str]:
+    lines = HTML_COMMENT.sub("", "\n".join(content)).splitlines()
+    items = [_normalize_condition(line) for line in lines if LIST_ITEM.match(line.strip())]
+    if items:
+        return items
+    paragraph = " ".join(line.strip() for line in lines if line.strip())
+    if paragraph:
+        return [paragraph]
     raise ValueError(f"{filename}: 『完成条件』節が空です")
 
 
@@ -145,7 +152,7 @@ def _quoted_requirements(body: list[str]) -> list[str]:
     return requirements
 
 
-def _expected_rows(output: str, filename: str) -> tuple[int, list[str]]:
+def _expected_rows(output: str, filename: str) -> tuple[list[str], list[str]]:
     frontmatter, body = _wi_body(output, filename)
     kind = frontmatter.get("type")
     if kind not in {"awi", "uwi"}:
@@ -156,7 +163,7 @@ def _expected_rows(output: str, filename: str) -> tuple[int, list[str]]:
         comment = _section(body, "## ユーザーコメント")
         if comment is not None:
             requirements.extend(_requirement_units(comment))
-        return _condition_count(conditions, filename), requirements
+        return _condition_units(conditions, filename), requirements
     if kind == "awi" and "source" in frontmatter:
         raise ValueError(f"{filename}: 『完成条件』節がありません")
     if kind == "uwi":
@@ -164,14 +171,14 @@ def _expected_rows(output: str, filename: str) -> tuple[int, list[str]]:
         requirements = _requirement_units(answer or [])
         if not requirements:
             raise ValueError(f"{filename}: 『回答』節が空です")
-        return 0, requirements
+        return [], requirements
     result = _section(body, "## 処理結果")
     if result is not None:
         body = body[: body.index("## 処理結果")]
     requirements = _requirement_units(body)
     if not requirements:
         raise ValueError(f"{filename}: 原文本文が空です")
-    return 0, requirements
+    return [], requirements
 
 
 def _validate_schema(data: object) -> tuple[dict[str, object], list[str]]:
@@ -218,9 +225,19 @@ def check_evidence(path: pathlib.Path, filenames: list[str]) -> list[str]:
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             errors.append(str(exc))
             continue
-        actual = sum(row["awi"] == filename for row in condition_rows)
-        if actual < expected:
-            errors.append(f"{filename}: 完成条件の証拠が不足しています（期待 {expected} 行、実数 {actual} 行）")
+        actual = [row["condition"] for row in condition_rows if row["awi"] == filename]
+        normalized_actual = [_normalize_condition(condition) for condition in actual]
+        unmatched = [
+            condition for condition, normalized in zip(actual, normalized_actual, strict=True) if normalized not in expected
+        ]
+        for condition in unmatched:
+            errors.append(f"{filename}: 完成条件の証拠行が原文と一致しません: {condition}")
+        missing_conditions = collections.Counter(expected) - collections.Counter(normalized_actual)
+        if missing_conditions:
+            errors.append(
+                f"{filename}: 完成条件の証拠が不足しています"
+                f"（期待 {len(expected)} 行、実数 {len(actual)} 行、不足: {', '.join(missing_conditions.elements())}）"
+            )
         if requirements:
             expected_units = collections.Counter(requirements)
             actual_units = collections.Counter(row["requirement"] for row in requirement_rows if row["awi"] == filename)

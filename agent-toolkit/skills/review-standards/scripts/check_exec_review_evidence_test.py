@@ -15,10 +15,10 @@ FIRST_WI = "20260928-192559-001.md"
 SECOND_WI = "20260928-192559-002.md"
 
 
-def _condition(awi: str) -> dict[str, str]:
+def _condition(awi: str, condition: str) -> dict[str, str]:
     return {
         "awi": awi,
-        "condition": "利用者が結果を確認できる",
+        "condition": condition,
         "outcome": "達成",
         "source": "WI本文",
         "evidence": "実行結果",
@@ -61,7 +61,10 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
 def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開入口で複数箇条書きと段落一件の条件数を判定する。"""
     evidence = tmp_path / "evidence.json"
-    _write_evidence(evidence, [_condition(FIRST_WI), _condition(FIRST_WI), _condition(SECOND_WI)])
+    _write_evidence(
+        evidence,
+        [_condition(FIRST_WI, "第一条件"), _condition(FIRST_WI, "第二条件"), _condition(SECOND_WI, "段落の完成条件。")],
+    )
 
     _mock_wi(
         monkeypatch,
@@ -75,6 +78,29 @@ def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, mo
         script_name="exec-review-evidence-check",
         script_args=["--", str(evidence), FIRST_WI, SECOND_WI],
     )
+    assert run_script.dispatch(args) == 0
+
+
+def test_public_command_rejects_numbered_condition_instead_of_original(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """行数が一致しても原文との対応が無ければ公開入口で拒否する。"""
+    evidence = tmp_path / "evidence.json"
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 第一条件\n- 第二条件\n"},
+    )
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+
+    _write_evidence(evidence, [_condition(FIRST_WI, "完成条件1"), _condition(FIRST_WI, "第二条件")])
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    assert FIRST_WI in error
+    assert "完成条件1" in error
+    assert "第一条件" in error
+
+    _write_evidence(evidence, [_condition(FIRST_WI, "- 第一条件 "), _condition(FIRST_WI, "第二条件")])
     assert run_script.dispatch(args) == 0
 
 
@@ -156,14 +182,16 @@ def test_conditions_also_require_verbatim_requests_and_user_comment(
     )
     args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
 
-    _write_evidence(evidence, [_condition(FIRST_WI)], [_requirement(FIRST_WI, "設定と旧入口を変更して。")])
+    _write_evidence(
+        evidence, [_condition(FIRST_WI, "新入口で操作できる")], [_requirement(FIRST_WI, "設定と旧入口を変更して。")]
+    )
     assert run_script.dispatch(args) == 1
     diagnostic = capsys.readouterr().err
     assert first in diagnostic and second in diagnostic and comment in diagnostic
 
     _write_evidence(
         evidence,
-        [_condition(FIRST_WI)],
+        [_condition(FIRST_WI, "新入口で操作できる")],
         [_requirement(FIRST_WI, first), _requirement(FIRST_WI, second), _requirement(FIRST_WI, comment)],
     )
     assert run_script.dispatch(args) == 0
@@ -229,7 +257,7 @@ def test_rejects_missing_required_wi_content(
         ('{"wi_conditions": [{"awi": 1}], "user_requirements": []}', "wi_conditions[1].awi: 文字列が必要"),
         (
             json.dumps(
-                {"wi_conditions": [{**_condition(FIRST_WI), "outcome": "保留"}], "user_requirements": []},
+                {"wi_conditions": [{**_condition(FIRST_WI, "完成条件"), "outcome": "保留"}], "user_requirements": []},
                 ensure_ascii=False,
             ),
             "未知の判定",
