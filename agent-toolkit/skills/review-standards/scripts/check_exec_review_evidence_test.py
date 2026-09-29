@@ -198,6 +198,43 @@ def test_conditions_also_require_verbatim_requests_and_user_comment(
     assert run_script.dispatch(args) == 0
 
 
+def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """分割起票で他のWIへ割り当てた原文要求は割当外として受理し、完成条件の割当外は拒否する。
+
+    完成条件の行で割当外を受理すると、そのWI自身が担う条件の未達が統合時の判定を通過する。
+    """
+    evidence = tmp_path / "evidence.json"
+    own = "設定画面を直して。"
+    whole = "処理全体を3時間以内に収めて。"
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {
+            FIRST_WI: (
+                "type: awi\nsource: agent\n---\n# WI\n"
+                "## 完成条件\n- 設定画面で保存できる\n"
+                "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
+                f"```text\n{own}{whole}\n```\n"
+            )
+        },
+    )
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+    unassigned = {**_requirement(FIRST_WI, whole), "outcome": "割当外", "evidence": "分割元の依頼全体"}
+
+    _write_evidence(evidence, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), unassigned])
+    assert run_script.dispatch(args) == 0
+
+    _write_evidence(
+        evidence,
+        [{**_condition(FIRST_WI, "設定画面で保存できる"), "outcome": "割当外"}],
+        [_requirement(FIRST_WI, own), unassigned],
+    )
+    assert run_script.dispatch(args) == 1
+    assert "wi_conditions[1].outcome: 未知の判定です: 割当外" in capsys.readouterr().err
+
+
 def test_answered_uwi_checks_answer_only(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
