@@ -1371,6 +1371,9 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
     assert response["engine"] == "claude"
     assert response["model"] == "second"
     assert response["status"] == "running"
+    assert response["excluded_candidates"] == [
+        {"engine": "codex", "model": "first", "effort": "high", "reason": "usageLimitExceeded", "session_id": "codex-session"}
+    ]
     assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
 
 
@@ -1428,7 +1431,7 @@ async def test_agy_failed_turn_advances_config_candidate(
     assert agy.release_calls == ["agy-session"]
     assert claude.start_calls == [("opus[1m]", "medium", "delegate")]
     assert response["excluded_candidates"] == [
-        {"engine": "agy", "model": "gemini-3.8-flash", "effort": "medium", "reason": reason}
+        {"engine": "agy", "model": "gemini-3.8-flash", "effort": "medium", "reason": reason, "session_id": "agy-session"}
     ]
     assert set(manager.sessions) == {"claude-session"}
 
@@ -1505,6 +1508,7 @@ async def test_abandoned_candidate_is_released(
     response = await manager.start("plan", "調査", str(tmp_path))
 
     assert response["session_id"] == "claude-session"
+    assert response["excluded_candidates"][0]["session_id"] == "codex-session"
     assert set(manager.sessions) == {"claude-session"}
     listed = manager.list_sessions(include_terminated=True)["sessions"]
     assert [item["session_id"] for item in listed] == ["claude-session"]
@@ -1561,7 +1565,13 @@ async def test_authentication_failure_switches_to_next_candidate(
     assert response["engine"] == "codex"
     assert response["model"] == "second"
     assert public["excluded_candidates"] == [
-        {"engine": "claude", "model": "first", "effort": "high", "reason": str(api_error_status)}
+        {
+            "engine": "claude",
+            "model": "first",
+            "effort": "high",
+            "reason": str(api_error_status),
+            "session_id": "claude-session",
+        }
     ]
     assert public["engine"] == "codex"
     assert public["model"] == "second"
@@ -5443,7 +5453,8 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
 
         delivered = backend.prompts[0]
         assert delivery_payload(delivered) == body
-        assert delivered.count("<agent-toolkit-auto-inserted ") == 2
+        assert delivered.count("<agent-toolkit-auto-inserted ") == 1
+        assert delivered.count("<atk-auto ") == 1
     finally:
         await manager.close()
 

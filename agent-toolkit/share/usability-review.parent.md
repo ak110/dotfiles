@@ -9,6 +9,7 @@
 ## 起動
 
 対象worktreeを対象リポジトリの作業ツリーから確定する。
+メインは`検証環境`を渡す前に、対象worktreeの書込主体へ対象リポジトリの手順で対象HEADの再配備または起動を依頼し、完了を確認する。レーン工程の書込主体はレーン担当とする。実装途中に配備済みの環境を使う場合も対象HEADへ更新する。修正後の再判定でも、新しい対象HEADで同じように準備する。
 同じplugin rootの`share/usability-review.subagent.md`をタスク文書起動（`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」）で起動し、`cwd`はその絶対パスとする。`extra_params`へは次の名前付き入力を渡す。
 
 - 対象worktree: `cwd`と同じ絶対パス。

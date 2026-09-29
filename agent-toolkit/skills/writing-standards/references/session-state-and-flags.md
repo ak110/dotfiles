@@ -67,10 +67,10 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 ## 応答言語系
 
-- `english_warning_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、直前のアシスタント応答の地の文を英語主体と判定した連続ターン数を記録する。
-  同フックが遮断への昇格判定に読む。英語主体でないと判定した回で0へ戻し、遮断した回で1へ設定する。セッション終了まで保持する
+- `english_warning_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、アシスタント応答の地の文を英語主体と判定した同一セッション内の累計回数を記録する。
+  同フックが強い通知への切り替えに読む。日本語判定と判定対象外の応答では累計を維持する。セッション終了まで保持する
 - `english_warning_msg_id`: 同フックが、直前に通知したアシスタント応答のmessage IDを記録する。
-  同じ応答に対する重複した通知と連続ターン数の二重加算を抑止する入力として同フックが読む。
+  同じ応答に対する重複した通知と累計回数の二重加算を抑止する入力として同フックが読む。
   セッション終了まで保持し、リセット処理は設けない
 - `language_reinjection_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、Claude Codeのメインセッションで直前に日本語の応答指示を注入してからのツール呼び出し回数を記録する。
   同フックが再注入の間隔の判定に読み、間隔に達した呼び出しで途中注入用の指示を添えて0へ戻す。`agent-toolkit/agent_toolkit/_hooks/rules_context.py`もSessionStartで開始用の日本語の応答指示を注入した時点で0へ戻す。
@@ -99,7 +99,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間で`照合注記`（発話の内容を現物で確かめる手順を示す注記）の注入要否を判定する入力として読む。
   記録と注入の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力したスラッシュコマンドも対象に含め、機械注入ターンは対象外とする。
-  機械注入ターンの判定入力は5系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">`だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`または旧形式の`<cross-session-message`で始まること。第5に`prompt`の1行目が`<agent-toolkit-auto-inserted`要素の開始タグを含むこと。
+  機械注入ターンの判定入力は5系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`<atk-auto source="periodic-recheck" kind="periodic-recheck">`か旧標識だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まること。第5に`prompt`の1行目が新旧の自動挿入要素の開始タグを含むこと。
   セッション終了まで保持し、リセット処理は設けない
 
 ## 通知反復系

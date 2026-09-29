@@ -16,7 +16,7 @@ import json
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 
-_HOOK_ID = "agent-toolkit/subagent-stop"
+_HOOK_ID = "subagent-stop"
 
 
 def _is_empty_completion_report(text: object) -> bool:

@@ -48,6 +48,7 @@ from typing import Any
 # pylint: disable=wrong-import-position,protected-access
 from agent_toolkit._agents_server import commands as _agents  # noqa: E402
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
+from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
 from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402
 from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
@@ -58,6 +59,7 @@ from agent_toolkit._atk import plans as _plans  # noqa: E402
 from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
 from agent_toolkit._atk import review_table as _review_table  # noqa: E402
 from agent_toolkit._atk import run_script as _run_script  # noqa: E402
+from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 from agent_toolkit._atk.wi import add as _add  # noqa: E402
@@ -985,6 +987,20 @@ def _build_parser() -> argparse.ArgumentParser:
         show_help_when_missing=True,
     )
     _atk_help.add_command(top, "info", **_atk_help.HELP["atk info"])
+    commit = _atk_help.add_command(top, "commit", **_atk_help.HELP["atk commit"])
+    commit.add_argument("--amend", action="store_true", help="HEADのコミットを改訂する。")
+    commit.add_argument("--dry-run", action="store_true", help="コミットせず候補メッセージを表示する。")
+    commit.add_argument(
+        "--model-type",
+        default="medium_tier",
+        metavar="TYPE",
+        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列（既定: medium_tier）。",
+    )
+    commit.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
+    setup_project = _atk_help.add_command(top, "setup-project", **_atk_help.HELP["atk setup-project"])
+    setup_project_options = setup_project.add_mutually_exclusive_group()
+    setup_project_options.add_argument("--with-rules", action="store_true", help="共有規範をプロジェクトへ複製する。")
+    setup_project_options.add_argument("--clean", action="store_true", help="配置済みの共有リンクと規範を削除する。")
     wi = _atk_help.add_command(top, "wi", **_atk_help.HELP["atk wi"])
     _build_wi_parser(wi)
     run_script = _atk_help.add_command(top, "run-script", **_atk_help.HELP["atk run-script"])
@@ -1259,6 +1275,10 @@ def main(
     if args.command == "info":
         _show_info()
         return
+    if args.command == "commit":
+        sys.exit(_commit_cmd.run(args))
+    if args.command == "setup-project":
+        sys.exit(_setup_project.run(args))
     _normalize_repeatable_wi_filters(args)
     _resolve_wi_target_repo(args, parser)
     _resolve_note_file(args, parser)

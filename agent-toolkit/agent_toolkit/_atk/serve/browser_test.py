@@ -3827,6 +3827,49 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
 
 
 @pytest.mark.asyncio
+async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness) -> None:
+    """初期取得中に開いた一覧を維持し、選択後と未操作での閉状態も確認する。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 320, "height": 720})
+    started = asyncio.Event()
+    release = asyncio.Event()
+    route_handler = functools.partial(_hold_route, started=started, release=release)
+    await page.route("**/api/plans/files", route_handler)
+    try:
+        await page.goto(screen_harness.base_url + "/plans", wait_until="domcontentloaded")
+        await asyncio.wait_for(started.wait(), timeout=10)
+        screen = page.locator("#screen-plans")
+        menu = page.locator("#plans-menu-btn")
+        sidebar = page.locator("#plans-app > aside")
+        assert not await screen.evaluate("element => element.classList.contains('drawer-open')")
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
+        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
+
+        await menu.click()
+        assert await screen.evaluate("element => element.classList.contains('drawer-open')")
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
+        assert not await sidebar.evaluate("element => element.inert")
+        release.set()
+        item = page.locator("#files .file").first
+        await item.wait_for(state="visible")
+        await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        assert await screen.evaluate("element => element.classList.contains('drawer-open')")
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
+        assert not await sidebar.evaluate("element => element.inert")
+        await item.click()
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
+        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
+    finally:
+        release.set()
+        await page.unroute("**/api/plans/files", route_handler)
+
+    await page.reload()
+    await page.locator("#files .file").first.wait_for(state="attached")
+    await playwright.async_api.expect(page.locator("#plans-menu-btn")).to_have_attribute("aria-expanded", "false")
+    await playwright.async_api.expect(page.locator("#plans-app > aside")).to_have_attribute("inert", "")
+
+
+@pytest.mark.asyncio
 async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _ScreenHarness) -> None:
     """390px幅の計画画面で本文とパスのコピー操作を1行の高さに保つ。"""
     page = screen_harness.page

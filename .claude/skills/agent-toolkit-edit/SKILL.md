@@ -36,6 +36,10 @@ WI処理の工程や運用を担うスキル、`share/`配下の担当タスク�
 - プロジェクト固有のツール、データ、命名、CI、運用手順へ依存する内容はプロジェクト側へ置く
 - 固有要素を同種の任意要素へ置換しても判定基準、工程順序、停止条件が成立する内容だけを配布物候補とする
 
+### 付帯作業の扱い
+
+`agent-toolkit/rules/01-agent.md`が定める付帯作業のうち、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下の規範文書の改訂は主作業とする。これらの文書はルール、`SKILL.md`、`references/`、タスク文書であり、利用者へ配布する成果物そのものである。変更目的ごとにcommitとWIを扱う。`agent-toolkit/agent_toolkit/`配下のPythonコードやスクリプト、hookのリファクタリング、テスト、CI、コメントの整備は一般の付帯作業として扱う。
+
 ### scripts配下の配置
 
 `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
@@ -291,7 +295,7 @@ agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_h
 ## 複数hook共存時の識別子
 
 agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
-自身のhookメッセージを他hookから判別するため、`agent-toolkit-auto-inserted`要素の`source`へ`agent-toolkit/<hook>`を置く。
+自身のhookメッセージを他hookから判別するため、`atk-auto`要素の`source`へagent-toolkitでは接頭辞の無い生成元名を置く。agent-toolkit以外の生成元は`<所有者>/<生成元>`の形で区別する。
 XML境界と属性の規約は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
 「コーディングエージェント宛てメッセージの標識」節に従う。
 

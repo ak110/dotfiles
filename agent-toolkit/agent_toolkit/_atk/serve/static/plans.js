@@ -911,6 +911,7 @@ async function init() {
   window.addEventListener("focus", handleWindowFocus);
   globalThis.addEventListener?.("popstate", () => { void restoreFileFromUrl(); });
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  setDrawerOpen(false);
 
   await (refreshHostStatus());
   await (refreshHostInfo());
@@ -922,7 +923,6 @@ async function init() {
   } else if (files.length > 0 && !isMobileViewport()) {
     await openFile(files[0].host, files[0].path, fileSource(files[0]));
   }
-  setDrawerOpen(false);
   setupSentinelObserver();
 }
 

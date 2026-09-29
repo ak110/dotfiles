@@ -63,14 +63,12 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
     `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
 
     セッション状態キー:
-    - english_warning_count: 連続英語ターンのカウンタ（int）
+    - english_warning_count: 同一セッションの英語判定累計（int）
     - english_warning_msg_id: 前回検出時のmessage ID（str）
 
     エスカレーションロジック:
     - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2で強い本文へ切り替える
-    - PASS・SKIP: カウンタを0にリセットする。強い本文が「2ターン連続」と宣言するため、
-      英語主体でないと判定した回を経た後は、1回の検出だけでは強い本文へ切り替えない
-    - 切り替え後はカウンタを1に設定する（日本語に切り替わるまで毎ターン強い本文を返す）
+    - PASS・SKIP: 累計を維持する
     """
     transcript_path = payload.get("transcript_path", "")
     if not isinstance(transcript_path, str) or not transcript_path:
@@ -86,15 +84,6 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
         _response_language_check.CheckOutcome.PASS,
         _response_language_check.CheckOutcome.SKIP,
     ):
-        if session_id:
-
-            def _reset_count(current: dict) -> dict | None:
-                if current.get("english_warning_count", 0) == 0:
-                    return None
-                current["english_warning_count"] = 0
-                return current
-
-            update_state(session_id, _reset_count)
         return None
 
     # WARN
@@ -125,12 +114,6 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
         return None
 
     if count >= 2:
-
-        def _set_threshold(current: dict) -> dict | None:
-            current["english_warning_count"] = 1
-            return current
-
-        update_state(session_id, _set_threshold)
         assert body is not None
         return _response_language_check.BLOCK_BODY + body.removeprefix(_response_language_check.WARNING_BODY)
 

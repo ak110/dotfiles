@@ -78,9 +78,9 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "agent-toolkit/agent_toolkit/hook.py").write_text("source", encoding="utf-8")
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")
-    (root / "bin").mkdir()
-    (root / "bin/atk-hook").write_text("hook wrapper", encoding="utf-8")
-    (root / "bin/atk-hook.cmd").write_text("hook wrapper cmd", encoding="utf-8")
+    (root / "agent-toolkit/bin").mkdir()
+    (root / "agent-toolkit/bin/atk-hook").write_text("hook wrapper", encoding="utf-8")
+    (root / "agent-toolkit/bin/atk-hook.cmd").write_text("hook wrapper cmd", encoding="utf-8")
     current_hook = tmp_path / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/hook.py"
     current_hook.parent.mkdir(parents=True)
     current_hook.write_text("hook", encoding="utf-8")
@@ -203,7 +203,7 @@ def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkey
 def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """入口は現行版を解決してイベントと子hookの終了状態を渡す。"""
     del plugin_env
-    wrapper = Path(__file__).resolve().parents[2] / "bin/atk-hook"
+    wrapper = Path(__file__).resolve().parents[2] / "agent-toolkit/bin/atk-hook"
     calls: list[list[str]] = []
     monkeypatch.setenv("CODEX_HOME", str(install_codex_plugins.CODEX_HOME))
     monkeypatch.setattr(sys, "argv", [str(wrapper), "pretooluse"])

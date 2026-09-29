@@ -8,14 +8,14 @@ from agent_toolkit._testing.helpers import delivery_payload
 @pytest.mark.parametrize(
     "attributes",
     [
-        'from="main:root" composed-by="caller" source="agent-toolkit/agents-server" kind="agent-delivery"',
-        'kind="agent-delivery" source="agent-toolkit/agents-server" composed-by="caller" from="main:root"',
+        'source="agents-server" kind="delivery"',
+        'kind="delivery" source="agents-server"',
     ],
 )
 def test_delivery_payload_uses_outer_boundary_and_attribute_values(attributes: str) -> None:
     """属性順を変えても入れ子の本文を同じ文字列として返す。"""
-    body = '<agent-toolkit-auto-inserted source="inner" kind="notice">内側</agent-toolkit-auto-inserted>\r\n次の行'
-    delivered = f"<agent-toolkit-auto-inserted {attributes}>\n{body}\n</agent-toolkit-auto-inserted>"
+    body = '<atk-auto source="inner" kind="notice">内側</atk-auto>\r\n次の行'
+    delivered = f"<atk-auto {attributes}>\n{body}\n</atk-auto>"
     assert delivery_payload(delivered) == body
 
 

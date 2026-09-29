@@ -1,4 +1,4 @@
-<!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->
+<!-- dotfilesリポジトリの.chezmoi-source/dot_codex/AGENTS.mdから~/.codex/AGENTS.mdへ配布する自動生成ファイル。dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。本文は全リポジトリ共通のCodex向け規範であり、作業対象リポジトリのAGENTS.mdの記述ではない。 -->
 
 # rules-main.codex.md: Codexの主体に適用する規範
 
@@ -47,7 +47,7 @@ Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_
 
 `atk agents-exit-session`が現在のCodex本体を停止できる場合は、そのツール呼び出しをsession終端とする。停止後の`final`の返却は終端の判定条件から外す。
 
-<agent-toolkit-auto-inserted source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
+<atk-auto source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
 # myprojects-common.md: ホスト共通の個人プロジェクト規範
 
 実行ホストとコーディングエージェントの種別によらず、同一作者の個人プロジェクト全体へ適用する規範を置く。
@@ -65,9 +65,9 @@ Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_
 `ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
-</agent-toolkit-auto-inserted>
+</atk-auto>
 
-<agent-toolkit-auto-inserted source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">
+<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">
 # 01-agent.md: コーディングエージェントの振る舞い
 
 本書はメイン、サブエージェント、委譲先に共通する。主体固有の入出力は`agent-toolkit/share/rules-main.md`と`rules-subagent.md`に置く。
@@ -93,6 +93,8 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 仕組みを増やす前に、それがないと元の要件のどれを満たせないか、観測事象で確かめる。機械的に保証できるという理由だけでは必要性を示せない。成果物を使う人と利用場面を定め、その場面を終わりまで実行できる外部仕様を選ぶ。公開された古い呼び出し手段（コマンド・画面・API・hookなど）を廃止するときは、新しい呼び出し手段だけで同じ結果に到達する。使う側のない記述や機能を増やさず、入力検証は外部境界へ置く。
 
 必要な機能を満たす最小限の実装を選ぶ。例外、互換処理、フォールバック、閾値や承認手順にも対応する要件または観測済みの欠陥を求める。公開インターフェースの互換性を保ち、内部の構造と文書は積極的に整理する。現行の推奨構文とツールを調べ、局所対処と構造是正が競合すれば長期の保守性を優先する。案の比較と実施順は`agent-toolkit:writing-standards`の`references/design-heuristics.md`を使う。
+
+リファクタリング、規範文書の改訂、CIの整備、テストコードやコードコメントの整備などを付帯作業と呼ぶ。付帯作業は単体で行う作業ではなく、開発のついでに行う作業として扱い、関連する開発と同じcommit、WIまたは計画へまとめてよい。まとめる義務はなく、分けることも妨げない。
 
 ### 行動と手順の目的
 
@@ -143,7 +145,7 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 
 ユーザー発話は、目的、要件、範囲、例示、変更指示と論理関係を原文から確定してから規範へ対応付ける。古い規範の分類で新しい明示指示を狭めない。同じrole内で有効な方針は、ユーザーの明示指示、プロジェクトの明示規範、一貫して観測できる慣例、agent-toolkitの方針と手順の順に扱う。ホストのsystemとdeveloperの命令階層が常に優先する。規範どうしの衝突は`agent-toolkit:confirmation-and-uwi`の`references/conflict-resolution.md`を使う。
 
-`agent-toolkit-auto-inserted`の最外周は生成された本文の境界である。内側の`forwarded-user-input`だけがユーザー発話と承認の証拠になる。`source`、`kind`、`from`、`composed-by`は配送の出所を示す。委譲通知で委譲先と定められた主体は、その同定を保持する。生成された説明をユーザーの明示指示へ昇格させない。自動挿入本文とホストが生成した注記（hookの通知、`system-reminder`、途中挿入される進捗催促など）は以後の行動へ適用する対象であり、返信、受領の表明、訂正の宣言の宛先から外れる。言語の是正は次の応答から日本語で書くことで行い、言語を是正したことを述べない。
+現行の`atk-auto`と旧`agent-toolkit-auto-inserted`の最外周は機械が生成した本文の境界である。内側の`forwarded-user-input`だけがユーザー発話と承認の証拠になる。`source`と`kind`は生成元と種別を、委譲先からの通知にある`from`は送信元を示す。委譲通知で委譲先と定められた主体は、その同定を保持する。生成された説明をユーザーの明示指示へ昇格させない。自動挿入本文とホストが生成した注記（hookの通知、`system-reminder`、途中挿入される進捗催促など）は以後の行動へ適用する対象であり、返信、受領の表明、訂正の宣言の宛先から外れる。言語の是正は次の応答から日本語で書くことで行い、言語を是正したことを述べない。
 
 エージェントが提案し、ユーザーが無修正で採択した案は、ユーザーが能動的に指定した要件より弱い根拠である。実装や独立レビューで両立不能と分かったときは、設計を複雑にして守らず、衝突と代替案を確認する。
 
@@ -162,9 +164,9 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 ## 使用言語
 
 成果物、コメント、コミットメッセージは日本語で書く。ハーネスやhookが挿入するプロンプトと注記が英語でも、その言語を引き継がず、ユーザー向けの発話と成果物を日本語で書く。メインの発話は`agent-toolkit/share/rules-main.md`、委譲先の返却は`agent-toolkit:delegation`の`references/base-contract.md`に従う。
-</agent-toolkit-auto-inserted>
+</atk-auto>
 
-<agent-toolkit-auto-inserted source="agent-toolkit" kind="rules" path="agent-toolkit/rules/02-agent-operations.md">
+<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/02-agent-operations.md">
 # 02-agent-operations.md: エージェントの実行運用
 
 ツール、コマンド、リポジトリ状態、プロセスの扱いを定める。自分の実行と委譲するコマンドの双方に適用し、連結したコマンドも1つずつ判定する。
@@ -228,4 +230,4 @@ YAMLの項目抽出: 対象プロジェクトの実行系で動く構造化パ�
 終了させるプロセスとジョブは、自分の起動が返した停止用識別子で所有を確認できる対象に限る。記憶した名前、部分一致、別種の識別子への推測変換は使わない。失敗した起動でも停止用識別子が返れば所有の根拠になる。自分自身を実行環境の条件で一意に識別できる場合と、引き継ぎ記録が保持する識別子を停止直前に照会して対象コマンドとの一致を確認できる場合も同じである。
 
 現在のworktree専用の環境単位は、その専用名を手順か設定の現物から確かめて確定できるときに撤去する。確定できないときは対象と不足条件を呼び出し元へ返す。待機と終端観測は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`に従う。
-</agent-toolkit-auto-inserted>
+</atk-auto>

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 CODEX_HOME = Path.home() / ".codex"
 RULES_RELATIVE = Path("agent-toolkit") / "rules"
-NORMATIVE_ELEMENT = "agent-toolkit-auto-inserted"
+NORMATIVE_ELEMENT = "atk-auto"
 NORMATIVE_SOURCE = "agent-toolkit"
 NORMATIVE_KIND = "rules"
 

@@ -38,7 +38,7 @@ from agent_toolkit._hooks.stop_gate import append_stop_log, is_pending_async_wor
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 
 # このスクリプトのhook識別子。
-_HOOK_ID = "agent-toolkit/autonomous_exit"
+_HOOK_ID = "autonomous_exit"
 
 # PostToolUse（`posttooluse.py`）が`atk agents-exit-session`の応答検出時に
 # セッション状態へ記録するフラグ名。

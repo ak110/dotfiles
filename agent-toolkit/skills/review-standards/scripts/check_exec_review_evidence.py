@@ -124,6 +124,27 @@ def _requirement_units(content: list[str]) -> list[str]:
     return units
 
 
+def _quoted_requirements(body: list[str]) -> list[str]:
+    requirements: list[str] = []
+    for heading in (line for line in body if line.startswith("## ") and "逐語引用" in line):
+        section = _section(body, heading)
+        assert section is not None
+        quote: list[str] = []
+        inside = False
+        for line in section:
+            if line == "```text":
+                inside = True
+                continue
+            if inside and line == "```":
+                requirements.extend(_requirement_units(quote))
+                quote.clear()
+                inside = False
+                continue
+            if inside:
+                quote.append(line)
+    return requirements
+
+
 def _expected_rows(output: str, filename: str) -> tuple[int, list[str]]:
     frontmatter, body = _wi_body(output, filename)
     kind = frontmatter.get("type")
@@ -131,7 +152,11 @@ def _expected_rows(output: str, filename: str) -> tuple[int, list[str]]:
         raise ValueError(f"{filename}: WIのtypeが不正です")
     conditions = _section(body, "## 完成条件")
     if kind == "awi" and conditions is not None:
-        return _condition_count(conditions, filename), []
+        requirements = _quoted_requirements(body)
+        comment = _section(body, "## ユーザーコメント")
+        if comment is not None:
+            requirements.extend(_requirement_units(comment))
+        return _condition_count(conditions, filename), requirements
     if kind == "awi" and "source" in frontmatter:
         raise ValueError(f"{filename}: 『完成条件』節がありません")
     if kind == "uwi":

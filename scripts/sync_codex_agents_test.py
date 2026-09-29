@@ -193,9 +193,10 @@ def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> 
 @pytest.mark.parametrize(
     ("body", "wrapped"),
     [
-        ('<agent-toolkit-auto-inserted source="x" kind="y" path="z">\nbody\n</agent-toolkit-auto-inserted>', False),
-        ("<agent-toolkit-auto-inserted>\nbody\n</agent-toolkit-auto-inserted>", False),
-        ('<agent-toolkit-auto-inserted-extra source="x">\nbody\n</agent-toolkit-auto-inserted-extra>', True),
+        ('<atk-auto source="x" kind="y" path="z">\nbody\n</atk-auto>', False),
+        ("<atk-auto>\nbody\n</atk-auto>", False),
+        ('<agent-toolkit-auto-inserted source="x" kind="y" path="z">\nbody\n</agent-toolkit-auto-inserted>', True),
+        ('<atk-auto-extra source="x">\nbody\n</atk-auto-extra>', True),
         ("plain body", True),
     ],
 )

@@ -51,7 +51,7 @@ _HANDBACK_TOOL = "SubagentHandback"
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
     r"\s*(?:\d+\t)?(?:"
-    r"<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
+    r"<(?:atk-auto|agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
     r'(?=[^>]*\ssource="[^"]+")(?=[^>]*\skind="(?:warn|warning)")[^>]*>|'
     r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
     r"⚠(?:\s+|\s*[:：])"
@@ -100,12 +100,12 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
 
 
 _HOOK_NOTICE_MARKER = re.compile(
-    r"(?:<(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
+    r"(?:<(?:atk-auto|agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
     r'(?=[^>]*\ssource="(?P<hook_xml>[^"]+)")(?=[^>]*\skind="(?P<tag_xml>[^"]+)")[^>]*>|'
     r"\[auto-generated:\s*(?P<hook_legacy>[^\]]*?)\s*\](?:\s*\[(?P<tag_legacy>[^\]]*)\])?)"
 )
-_HOOK_XML_END_TAGS = ("</agent-toolkit-auto-inserted>", "</agent-toolkit-hook-message>")
-_HOOK_XML_END_MARKER = re.compile(r"</(?:agent-toolkit-auto-inserted|agent-toolkit-hook-message)>")
+_HOOK_XML_END_TAGS = ("</atk-auto>", "</agent-toolkit-auto-inserted>", "</agent-toolkit-hook-message>")
+_HOOK_XML_END_MARKER = re.compile(r"</(?:atk-auto|agent-toolkit-auto-inserted|agent-toolkit-hook-message)>")
 _CANDIDATE_KIND_LENGTH = 80
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
@@ -1246,7 +1246,7 @@ def _thread_id_from_mapping(value: Any) -> str | None:
 
 
 def _agents_server_call_ids(records: list[_Record]) -> set[str]:
-    """ClaudeとCodexのagents_server起動ツール呼び出しIDを返す。"""
+    """ClaudeとCodexの直接呼び出し形式にある起動ツールの呼び出しIDを返す。"""
     call_ids: set[str] = set()
     for record in records:
         message = record.entry.get("message")
@@ -1269,6 +1269,24 @@ def _agents_server_call_ids(records: list[_Record]) -> set[str]:
         if name in _AGENTS_SERVER_TOOL_NAMES:
             call_ids.add(call_id)
     return call_ids
+
+
+def _codex_mcp_start_item(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Codexのexec経由で完了したagents_server起動項目を返す。"""
+    payload = entry.get("payload")
+    item = payload.get("item") if isinstance(payload, dict) else None
+    if (
+        entry.get("type") == "event_msg"
+        and isinstance(payload, dict)
+        and payload.get("type") == "item_completed"
+        and isinstance(item, dict)
+        and item.get("type") == "McpToolCall"
+        and item.get("server") == "agents_server"
+        and isinstance(item.get("tool"), str)
+        and item.get("tool") in _agents_server_tool_names.START_OPERATIONS
+    ):
+        return item
+    return None
 
 
 def _thread_ids_from_record(
@@ -1321,14 +1339,8 @@ def _thread_ids_from_record(
             add_mapping(output)
             for text in _codex_text_blocks(output):
                 add_mapping(text)
-        if entry.get("type") == "event_msg" and payload.get("type") == "item_completed":
-            item = payload.get("item")
-            if (
-                isinstance(item, dict)
-                and item.get("server") == "agents_server"
-                and item.get("tool") in _AGENTS_SERVER_TOOL_NAMES
-            ):
-                add_mapping(item.get("result"))
+        if item := _codex_mcp_start_item(entry):
+            add_mapping(item.get("result"))
 
     notification_texts: list[str] = []
     if entry.get("type") == "queue-operation":
@@ -1498,17 +1510,7 @@ def _collect_records(
             if call_id and not thread_ids and call_id not in unresolved_delegation_calls:
                 unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
                 unresolved_delegation_calls.add(call_id)
-            payload = record.entry.get("payload")
-            item = payload.get("item") if isinstance(payload, dict) else None
-            if (
-                record.entry.get("type") == "event_msg"
-                and isinstance(payload, dict)
-                and payload.get("type") == "item_completed"
-                and isinstance(item, dict)
-                and item.get("server") == "agents_server"
-                and item.get("tool") in _AGENTS_SERVER_TOOL_NAMES
-                and not thread_ids
-            ):
+            if _codex_mcp_start_item(record.entry) is not None and not thread_ids:
                 unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
             for session_id in thread_ids:
                 if session_id in seen_sessions:
@@ -2483,6 +2485,8 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
 
     def append_notice(marker: re.Match[str], end: int) -> None:
         source = marker.group("hook_xml") or marker.group("hook_legacy")
+        if source is not None:
+            source = source.removeprefix("agent-toolkit/")
         tag = marker.group("tag_xml") or marker.group("tag_legacy")
         text = _HOOK_REPEAT_ANNOTATION.sub("", body[marker.end() : end])
         keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _normalize_candidate_kind_text(text)))

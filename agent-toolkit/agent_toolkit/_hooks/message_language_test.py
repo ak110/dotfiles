@@ -366,7 +366,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     (
         "_response_language_check.py:BLOCK_BODY",
-        "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、"
+        "同一セッションで英語主体の応答を累計2回以上検出した。ツール呼び出しは続行できる。ユーザーは英語の発話を読まないため、"
         "訂正や謝罪を宣言せず、次の応答の冒頭から`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い日本語で書くこと。",
     ),
     (
@@ -394,7 +394,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
 
 def _is_japanese_notice(text: str) -> bool:
     """通知の自然言語部分が日本語だけで構成される場合に真を返す。"""
-    body = re.sub(r"</?agent-toolkit-auto-inserted(?:\s[^>]*)?>", "", text)
+    body = re.sub(r"</?(?:atk-auto|agent-toolkit-auto-inserted)(?:\s[^>]*)?>", "", text)
     body = re.sub(r"判定対象の冒頭: 「[^\n」]*」", "", body)
     body = re.sub(r"(?m)^\s*(?:warn|warning|block|blocked):\s*", "", body)
     body = re.sub(r"(?m)^\s*Fix:\s*", "", body)

@@ -29,7 +29,7 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 2. `prompt`の1行目が`PERIODIC_RECHECK_MARKER`だけの行であること
 3. 委譲先として起動されていること
 4. `prompt`が`<task-notification`で始まること
-5. `prompt`の1行目が`<agent-toolkit-auto-inserted`要素の開始タグを含むこと
+5. `prompt`の1行目が新旧の自動挿入要素の開始タグを含むこと
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -88,7 +88,10 @@ _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
-PERIODIC_RECHECK_MARKER = '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
+PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">'
+_LEGACY_PERIODIC_RECHECK_MARKER = (
+    '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
+)
 """定期再確認のpromptの1行目へ置く役割標識。
 
 `agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」が
@@ -114,7 +117,7 @@ _VERIFICATION_NOTICE_BODY = (
 その列挙をフック側の判定で代替しない。本フックの入力は発話本文だけであり、
 規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
 """
-_llm_notice = _notice_formatter("agent-toolkit/user_prompt_submit")
+_llm_notice = _notice_formatter("user_prompt_submit")
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -145,7 +148,7 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
     source = payload.get(_USER_PROMPT_SOURCE_KEY)
     if isinstance(source, str) and source and source != _USER_PROMPT_SOURCE_USER:
         return True
-    if prompt.split("\n", 1)[0].strip() == PERIODIC_RECHECK_MARKER:
+    if prompt.split("\n", 1)[0].strip() in {PERIODIC_RECHECK_MARKER, _LEGACY_PERIODIC_RECHECK_MARKER}:
         return True
     if is_delegated(os.environ):
         return True

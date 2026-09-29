@@ -228,6 +228,81 @@ def test_listing_links_codex_start_result_to_claude_child(tmp_path: pathlib.Path
     assert entries[str(child)].parent_path == str(parent)
 
 
+def test_listing_links_codex_mcp_tool_call_and_excluded_candidate(tmp_path: pathlib.Path) -> None:
+    parent = _codex_record(tmp_path)
+    chosen = _claude_record(tmp_path)
+    excluded_id = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+    excluded = _write(
+        tmp_path / "codex" / "sessions" / "2026" / "09" / "01" / f"rollout-excluded-{excluded_id}.jsonl",
+        [
+            {"type": "session_meta", "payload": {"cwd": "/home/aki/other"}},
+            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "候補"}]}},
+        ],
+    )
+    records = [json.loads(line) for line in parent.read_text(encoding="utf-8").splitlines()]
+    records.append(
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "McpToolCall",
+                    "server": "agents_server",
+                    "tool": "start_explore",
+                    "result": json.dumps(
+                        {
+                            "structuredContent": {
+                                "session_id": "11111111-2222-3333-4444-555555555555",
+                                "excluded_candidates": [{"session_id": excluded_id}],
+                            }
+                        }
+                    ),
+                },
+            },
+        }
+    )
+    _write(parent, records)
+
+    entries = {entry.path: entry for entry in sessions.list_local_sessions(_context(tmp_path))}
+
+    assert entries[str(chosen)].parent_path == str(parent)
+    assert entries[str(excluded)].parent_path == str(parent)
+
+
+def test_listing_links_claude_start_result_and_excluded_candidate(tmp_path: pathlib.Path) -> None:
+    parent = _claude_record(tmp_path)
+    project = parent.parent
+    chosen = _write(project / "chosen.jsonl", [{"type": "user", "message": {"content": "採用候補"}}])
+    excluded = _write(project / "excluded.jsonl", [{"type": "user", "message": {"content": "除外候補"}}])
+    records = [json.loads(line) for line in parent.read_text(encoding="utf-8").splitlines()]
+    records.extend(
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [{"type": "tool_use", "id": "start-call", "name": "mcp__agents_server__start", "input": {}}]
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": {
+                    "structuredContent": {
+                        "session_id": "chosen",
+                        "excluded_candidates": [{"session_id": "excluded"}],
+                    }
+                },
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "start-call", "content": "起動"}]},
+            },
+        ]
+    )
+    _write(parent, records)
+
+    entries = {entry.path: entry for entry in sessions.list_local_sessions(_context(tmp_path))}
+
+    assert entries[str(chosen)].parent_path == str(parent)
+    assert entries[str(excluded)].parent_path == str(parent)
+
+
 def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     """Claude Codeの詳細は思考・ツール呼び出しと結果・圧縮境界・使用量を時系列に返す。"""
     path = _claude_record(tmp_path)

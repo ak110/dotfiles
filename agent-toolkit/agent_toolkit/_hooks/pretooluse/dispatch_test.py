@@ -196,9 +196,9 @@ class TestMojibakeCheck:
         context = _additional_context(result)
         assert "U+FFFD" in context
         # コーディングエージェント宛てメッセージ規約: XMLの開始境界と終了境界が付与されていること。
-        assert auto_message_opening_attributes(context) == {"source": "agent-toolkit/pretooluse", "kind": "warn"}
+        assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
         assert "対処: U+FFFDを意図した文字へ置き換えて再実行する" in context
-        assert context.endswith("</agent-toolkit-auto-inserted>")
+        assert context.endswith("</atk-auto>")
 
     def test_edit_with_mojibake(self):
         result = _run(
@@ -665,7 +665,7 @@ class TestResponseLanguageCheck:
         output = json.loads(result.stdout)
         assert "permissionDecision" not in output["hookSpecificOutput"]
         ctx = _additional_context(result)
-        assert auto_message_opening_attributes(ctx) == {"source": "agent-toolkit/pretooluse", "kind": "warn"}
+        assert auto_message_opening_attributes(ctx) == {"source": "pretooluse", "kind": "warn"}
         assert "英語主体" in ctx
         assert "evaluate relevance" not in ctx
 

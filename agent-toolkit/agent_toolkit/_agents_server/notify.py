@@ -15,7 +15,6 @@ from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 
 DELIVERY_ELEMENT = AUTO_INSERTED_ELEMENT
-COMPOSED_BY_CALLER = "caller"
 
 
 def send_notification(
@@ -39,9 +38,9 @@ def send_notification(
     # 本文は委譲元の会話文脈へ入るため、配送元と作成主体を示す境界で囲む。
     delivery_body = auto_message(
         body,
-        source="agent-toolkit/agents-notify",
-        kind="agent-delivery",
-        attributes={"from": f"delegate:{identity.host_session_id}", "composed-by": COMPOSED_BY_CALLER},
+        source="agents-notify",
+        kind="delivery",
+        attributes={"from": f"delegate:{identity.host_session_id}"},
     )
     payload = (
         json.dumps(

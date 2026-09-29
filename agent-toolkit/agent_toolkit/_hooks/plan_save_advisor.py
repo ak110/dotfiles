@@ -29,7 +29,7 @@ from agent_toolkit._hooks.stop_gate import append_stop_log, is_pending_async_wor
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 from agent_toolkit._plan.locations import is_plan_main_file, read_owner_session_id, working_plans_root
 
-_HOOK_ID = "agent-toolkit/plan_save_advisor"
+_HOOK_ID = "plan_save_advisor"
 _NOTIFIED_STATE_KEY = "working_plan_save_notified"
 _PROCESS_WI_STATE_KEY = "process_wi_skill_invoked"
 

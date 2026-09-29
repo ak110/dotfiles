@@ -17,13 +17,13 @@ from agent_toolkit._testing.helpers import auto_message_opening_attributes
 )
 def test_llm_notice_wraps_body_with_xml_boundary(tag: str, expected_kind: str) -> None:
     """タグ有無にかかわらず出所、種別および本文を保つ。"""
-    notice = llm_notice("本文", "agent-toolkit/example", tag=tag)
-    assert auto_message_opening_attributes(notice) == {"source": "agent-toolkit/example", "kind": expected_kind}
-    assert notice.endswith("\n本文\n</agent-toolkit-auto-inserted>")
+    notice = llm_notice("本文", "example", tag=tag)
+    assert auto_message_opening_attributes(notice) == {"source": "example", "kind": expected_kind}
+    assert notice.endswith("\n本文\n</atk-auto>")
 
 
 def test_llm_notice_escapes_attribute_values() -> None:
     """属性値にXMLメタ文字があっても境界を壊さない。"""
-    notice = llm_notice("本文", 'agent-toolkit/"example&', tag="warn")
+    notice = llm_notice("本文", '"example&', tag="warn")
     element = ET.fromstring(notice)
-    assert element.attrib["source"] == 'agent-toolkit/"example&'
+    assert element.attrib["source"] == '"example&'

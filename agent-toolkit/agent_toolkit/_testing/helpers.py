@@ -13,15 +13,13 @@ import re
 SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
 
 _DELIVERY_TAG_PATTERN = re.compile(
-    r"\A<agent-toolkit-auto-inserted"
-    r'(?=[^>]*\sfrom="(?P<sender>[^"]+)")'
-    r'(?=[^>]*\scomposed-by="(?P<composed_by>[^"]+)")'
-    r'(?=[^>]*\ssource="agent-toolkit/agents-server")'
-    r'(?=[^>]*\skind="agent-delivery")[^>]*>\n'
-    r"(?P<body>.*)\n</agent-toolkit-auto-inserted>\Z",
+    r"\A<atk-auto"
+    r'(?=[^>]*\ssource="agents-server")'
+    r'(?=[^>]*\skind="delivery")[^>]*>\n'
+    r"(?P<body>.*)\n</atk-auto>\Z",
     re.DOTALL,
 )
-_AUTO_OPENING_PATTERN = re.compile(r'<agent-toolkit-auto-inserted(?P<attributes>(?:\s+[a-z][a-z-]*="[^"]*")*)>')
+_AUTO_OPENING_PATTERN = re.compile(r'<atk-auto(?P<attributes>(?:\s+[a-z][a-z-]*="[^"]*")*)>')
 _AUTO_ATTRIBUTE_PATTERN = re.compile(r'\s+([a-z][a-z-]*)="([^"]*)"')
 
 

@@ -10,11 +10,11 @@
 from agent_toolkit._common import message_format
 
 ELEMENT = message_format.AUTO_INSERTED_ELEMENT
-SOURCE_PROCESS_LOOP = "agent-toolkit/process-loop"
+SOURCE_PROCESS_LOOP = "process-loop"
 KIND_GOAL = "goal"
 KIND_AVAILABILITY_PROBE = "availability-probe"
 
-_OPENING_TAG = f"<{ELEMENT}"
+_OPENING_TAGS = (f"<{ELEMENT}", f"<{message_format.LEGACY_AUTO_INSERTED_ELEMENT}")
 
 
 def wrap(body: str, *, source: str, kind: str) -> str:
@@ -28,4 +28,5 @@ def contains(prompt: str) -> bool:
     スラッシュコマンドはホストが1行目の先頭でだけ解釈するため、包装は引数の位置へ置く。
     このため判定は先頭一致ではなく1行目に開始タグが現れるかで行う。
     """
-    return _OPENING_TAG in prompt.split("\n", 1)[0]
+    first_line = prompt.split("\n", 1)[0]
+    return any(tag in first_line for tag in _OPENING_TAGS)

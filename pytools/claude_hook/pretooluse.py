@@ -33,7 +33,7 @@ from agent_toolkit._hooks.notice import (
 )
 from agent_toolkit._hooks.tool_input import new_content_fields
 
-# このスクリプトのhook識別子。`agent-toolkit-auto-inserted`要素の`source`属性に展開される。
+# このスクリプトのhook識別子。`atk-auto`要素の`source`属性に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
 
 

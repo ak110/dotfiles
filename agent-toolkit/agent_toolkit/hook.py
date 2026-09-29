@@ -58,7 +58,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 # 例外時に`_approve()`で終了を許可する対象。出力形式はStop系モジュールの実装へ委ねる。
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop"})
 
-_llm_notice = _notice_formatter("agent-toolkit/hook")
+_llm_notice = _notice_formatter("hook")
 
 
 def _configure_standard_output() -> None:
