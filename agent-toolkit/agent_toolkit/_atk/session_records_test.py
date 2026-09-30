@@ -163,19 +163,28 @@ class TestExitSessionReached:
 
         assert session_records.exit_session_reached(path, "claude") is False
 
-    def test_claude_cli_response_is_detected(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ("atk agents-exit-session", True),
+            ("atk agents-exit-session 2>&1", True),
+            ("atk agents-exit-session --x", False),
+        ],
+    )
+    def test_claude_cli_response_is_detected(self, tmp_path: pathlib.Path, command: str, expected: bool) -> None:
         path = tmp_path / "records.jsonl"
         _write_record(
             path,
             [
-                _claude_bash_record("atk agents-exit-session"),
+                _claude_bash_record(command),
                 _claude_tool_result_record('{"exit_session_invoked":true,"status":"unsupported"}'),
             ],
         )
 
-        assert session_records.exit_session_reached(path, "claude") is True
+        assert session_records.exit_session_reached(path, "claude") is expected
 
-    def test_codex_cli_response_is_detected(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize("command", ["atk agents-exit-session", "atk agents-exit-session 2>&1"])
+    def test_codex_cli_response_is_detected(self, tmp_path: pathlib.Path, command: str) -> None:
         path = tmp_path / "records.jsonl"
         _write_record(
             path,
@@ -186,7 +195,7 @@ class TestExitSessionReached:
                         "type": "function_call",
                         "name": "exec_command",
                         "call_id": "call-x",
-                        "arguments": json.dumps({"cmd": "atk agents-exit-session"}),
+                        "arguments": json.dumps({"cmd": command}),
                     },
                 },
                 {

@@ -1079,12 +1079,12 @@ class TestExitSessionResetsProcessAwisFlag:
     """終了CLIの機械可読な応答で自動振り返り起点フラグをリセットする。"""
 
     @staticmethod
-    def _invoke(session_id: str, state_dir: pathlib.Path) -> None:
+    def _invoke(session_id: str, state_dir: pathlib.Path, command: str = "atk agents-exit-session") -> None:
         _run(
             {
                 "session_id": session_id,
                 "tool_name": "Bash",
-                "tool_input": {"command": "atk agents-exit-session"},
+                "tool_input": {"command": command},
                 "tool_response": {"stdout": '{"exit_session_invoked":true,"status":"unsupported"}'},
             },
             state_dir=state_dir,
@@ -1138,6 +1138,20 @@ class TestExitSessionResetsProcessAwisFlag:
         self._invoke(sid, tmp_path)
         assert _read_state(tmp_path, sid)["marker"] == "keep"
         assert path.stat().st_mtime_ns == mtime_before
+
+    @pytest.mark.parametrize(
+        ("command", "recorded"),
+        [
+            ("atk agents-exit-session 2>&1", True),
+            ("atk agents-exit-session 2>/dev/null", True),
+            ("atk agents-exit-session --x", False),
+        ],
+    )
+    def test_redirection_does_not_count_as_argument(self, tmp_path: pathlib.Path, command: str, recorded: bool) -> None:
+        """リダイレクトだけを伴う起動は単独の起動として記録し、引数を伴う起動は記録しない。"""
+        sid = "exit-redirect"
+        self._invoke(sid, tmp_path, command)
+        assert (_read_state(tmp_path, sid).get("autonomous_exit_invoked") is True) is recorded
 
 
 class TestProcessAwisInvokedNonIdempotent:

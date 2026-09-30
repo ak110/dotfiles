@@ -50,6 +50,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._common.shell_tokens import is_agents_exit_session_command  # noqa: E402
 from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     background_task_outputs as _background_task_outputs,
 )
@@ -555,10 +556,7 @@ def _response_has_exit_invocation(value: object) -> bool:
 def _record_bash_response_state(session_id: str, command: str, tool_response: object) -> None:
     """成功したBash応答を使い、終了CLI起動と計画ファイル作成を記録する。"""
     segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
-    exit_invoked = any(
-        pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"} and segment.tokens[1:] == ("agents-exit-session",)
-        for segment in segments
-    )
+    exit_invoked = any(is_agents_exit_session_command(segment.tokens) for segment in segments)
     if exit_invoked and _response_has_exit_invocation(tool_response):
         update_state(session_id, _record_exit_session_invoked)
     _record_created_plan_file(session_id, segments, tool_response)

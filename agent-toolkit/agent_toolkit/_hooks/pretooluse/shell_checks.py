@@ -19,8 +19,8 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     _GLOBAL_OPTIONS_WITH_VALUE,
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
     split_bash_segments,
-    strip_redirections,
 )
+from agent_toolkit._common.shell_tokens import strip_redirections
 
 
 if TYPE_CHECKING:

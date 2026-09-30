@@ -13,7 +13,6 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     extract_execution_segments,
     mask_heredoc_bodies,
     split_bash_segments,
-    strip_redirections,
 )
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
@@ -131,37 +130,6 @@ class TestExtractExecutionSegments:
         assert extract_execution_segments(command) == [
             ExecutionSegment((script,), True, False, ("uv", "run", "--no-project", "--script", script))
         ]
-
-
-class TestStripRedirections:
-    """位置引数を数える消費側が使う、リダイレクトを除いた引数列。"""
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "git rev-parse HEAD > /tmp/x",
-            "git rev-parse HEAD >/tmp/x",
-            "git rev-parse HEAD >> f",
-            "git rev-parse HEAD < /dev/null",
-            "git rev-parse HEAD 2>/dev/null",
-            "git rev-parse HEAD 2> err > out",
-            "git rev-parse HEAD 2>&1",
-            "git rev-parse HEAD >&2",
-            "git rev-parse HEAD &>/tmp/x",
-            "git rev-parse HEAD &>> f",
-            "git rev-parse HEAD <<< x",
-            "git rev-parse HEAD 1>f",
-            "git rev-parse HEAD << EOF",
-            "git rev-parse HEAD >| f",
-        ],
-    )
-    def test_redirection_operator_and_target_are_removed(self, command: str) -> None:
-        segment = extract_execution_segments(command)[0]
-        assert strip_redirections(segment.tokens) == ("git", "rev-parse", "HEAD")
-
-    def test_options_and_arguments_are_kept(self) -> None:
-        tokens = ("git", "-C", "/tmp/repo", "rev-parse", "--short=7", "HEAD~1", "HEAD", "--", "path")
-        assert strip_redirections(tokens) == tokens
 
 
 class TestSplitBashSegments:
