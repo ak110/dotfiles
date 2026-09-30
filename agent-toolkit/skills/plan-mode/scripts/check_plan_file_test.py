@@ -1635,6 +1635,58 @@ def test_agent_wi_adopted_action_without_reason_is_error_on_creation(repo: tuple
     assert not any("適用範囲を再導出した結果と根拠" in warning for warning in warnings), warnings
 
 
+def _bug_plan_without_bug_file(repo: pathlib.Path, private_notes: pathlib.Path, *, related_wi: bool) -> pathlib.Path:
+    """`計画ファイル（バグ）`行を持たないバグ対応計画と、人間由来の正本を配置する。"""
+    related = _plan_fixture.WI_FILES if related_wi else ()
+    path = repo / "bug-plan.md"
+    path.write_text(_plan_fixture.current_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related), encoding="utf-8")
+    inbox = private_notes / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    for name, _summary in _plan_fixture.WI_FILES:
+        (inbox / name).write_text("# 要求\n\n本文。\n", encoding="utf-8")
+    return path
+
+
+def test_bug_plan_without_bug_file_reference_accepted_with_related_wi(
+    repo: tuple[pathlib.Path, str],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """関連WIの原因分析を正本とするバグ対応計画は、計画ファイル（バグ）行なしで新規作成の検査を通る。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+    path = _bug_plan_without_bug_file(work_dir, private_notes, related_wi=True)
+    result = check_plan_file.main(
+        [
+            "--reject-migration-warnings",
+            "--work-dir",
+            str(work_dir),
+            str(path),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert result == 0, captured.err
+    assert captured.err == ""
+
+
+def test_bug_plan_without_bug_file_reference_rejected_without_related_wi(
+    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
+) -> None:
+    """関連WIが無いバグ対応計画は計画ファイル（バグ）行を必須とする。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    path = _bug_plan_without_bug_file(work_dir, private_notes, related_wi=False)
+    errors, _warnings = check_plan_file.check(
+        path,
+        work_dir,
+        private_notes=private_notes,
+        reject_migration_warnings=True,
+    )
+    assert any(_plan_format.PLAN_METADATA_BUG_FIELD in error for error in errors), errors
+
+
 def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
     """照合を省略した事実は助言に留め、新規作成を遮断しない。"""
     work_dir, _base = repo

@@ -278,7 +278,10 @@ def _check_bug_file_reference(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """バグ対応計画の分離先参照について実在、stem、構造を検査する。
+    """`計画ファイル（バグ）`行を持つバグ対応計画の分離先参照について実在、stem、構造を検査する。
+
+    同行を持たない計画は関連WIの`## 原因分析`を正本とするため検証の対象から外す。
+    同行の要否は計画構造の自動チェックが計画メタ情報の`関連WI`から判定する。
 
     新しい参照値は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
     既存の可搬表記と絶対パスは読み取り互換として従来の経路で解決する。

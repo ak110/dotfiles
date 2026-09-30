@@ -428,6 +428,61 @@ def test_cmd_add_rejects_agent_awi_with_empty_required_section(
     assert not list((notes / "inbox").iterdir())
 
 
+_CAUSE_ANALYSIS_SECTION = "## 原因分析\n直接的原因と根本原因\n\n"
+
+
+def test_add_dry_run_accepts_agent_awi_with_cause_analysis(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`## 原因分析`を`## 反映内容と反映先`と`## 適用範囲`の間へ置いた本文を受理する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = _AGENT_AWI_BODY.replace("## 適用範囲\n", f"{_CAUSE_ANALYSIS_SECTION}## 適用範囲\n", 1)
+
+    _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    assert capsys.readouterr().err == ""
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_dry_run_rejects_cause_analysis_after_scope(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`## 原因分析`を`## 適用範囲`より後へ置いた本文を順序の不一致で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = _AGENT_AWI_BODY.replace("## 実現性\n", f"{_CAUSE_ANALYSIS_SECTION}## 実現性\n", 1)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "H2の順序が規定と異なります: 反映内容と反映先、適用範囲、原因分析、実現性、完成条件" in capsys.readouterr().err
+
+
+def test_add_dry_run_rejects_empty_cause_analysis(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """本文が空の`## 原因分析`を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = _AGENT_AWI_BODY.replace("## 適用範囲\n", "## 原因分析\n\n## 適用範囲\n", 1)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "本文が空の節があります: 原因分析" in error
+    assert "非空の必須節がありません" not in error
+
+
 @pytest.mark.parametrize(
     ("opening_fence", "closing_fence"),
     [("```markdown", "```"), ("~~~markdown", "~~~")],

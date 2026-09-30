@@ -1844,7 +1844,13 @@ def check_plan_single_file_structure(
     parsed, _parse_errors = parse_plan_metadata(content)
     parsed_work_type = parsed.values.get("作業種別") if parsed is not None else None
     expected_metadata = PLAN_METADATA_CURRENT_FIELDS
-    if parsed_work_type == "バグ対応":
+    # 関連WIの`## 原因分析`を正本とするバグ対応計画は計画ファイル（バグ）を持たない。
+    # 入力WIが無い計画は原因分析の正本が他に無いため、同行を必須とする。
+    if (
+        parsed is not None
+        and parsed_work_type == "バグ対応"
+        and (PLAN_METADATA_BUG_FIELD in parsed.values or not parsed.related_wi)
+    ):
         expected_metadata = (*expected_metadata, PLAN_METADATA_BUG_FIELD)
     work_type, metadata_errors = _check_metadata_block(content, expected_fields=expected_metadata)
     errors.extend(metadata_errors)

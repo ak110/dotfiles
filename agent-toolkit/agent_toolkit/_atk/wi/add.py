@@ -159,8 +159,24 @@ _REQUIRED_AWI_HEADINGS: tuple[str, ...] = (
 規範の一部だけを判定する状態が生じないようにする。規範側の必須節を変える改訂では本定数も同じ変更単位で更新する。
 """
 
-_AWI_HEADING_ORDER: tuple[str, ...] = (*_REQUIRED_AWI_HEADINGS, "ユーザー指摘の逐語引用")
-"""同じ規範が定めるH2の並び順。`ユーザー指摘の逐語引用`は条件付きで必須なため順序の判定にだけ用いる。"""
+_CAUSE_ANALYSIS_HEADING = "原因分析"
+"""観測した欠陥を起点とする通常AWIだけが持つH2見出し。
+
+起点が観測した欠陥かは本文から機械判定できないため、必須集合へ加えず、置いた場合の順序と非空だけを判定する。
+"""
+
+_AWI_HEADING_ORDER: tuple[str, ...] = (
+    "反映内容と反映先",
+    _CAUSE_ANALYSIS_HEADING,
+    "適用範囲",
+    "実現性",
+    "完成条件",
+    "ユーザー指摘の逐語引用",
+)
+"""同じ規範が定めるH2の並び順。
+
+`原因分析`と`ユーザー指摘の逐語引用`は条件付きで必須なため順序の判定にだけ用いる。
+"""
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -196,6 +212,8 @@ def _require_agent_awi_sections(
     problems: list[str] = []
     if missing := [name for name in _REQUIRED_AWI_HEADINGS if name not in filled]:
         problems.append(f"非空の必須節がありません: {'、'.join(missing)}")
+    if _CAUSE_ANALYSIS_HEADING in appeared and _CAUSE_ANALYSIS_HEADING not in filled:
+        problems.append(f"本文が空の節があります: {_CAUSE_ANALYSIS_HEADING}")
     order_indexes = [_AWI_HEADING_ORDER.index(name) for name in appeared]
     if order_indexes != sorted(order_indexes):
         problems.append(f"H2の順序が規定と異なります: {'、'.join(appeared)}")
@@ -203,8 +221,9 @@ def _require_agent_awi_sections(
         return
     raise WebInputError(
         "。".join(problems)
-        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{'、'.join(_AWI_HEADING_ORDER)}の順に置くことと、"
-        + f"{'、'.join(_REQUIRED_AWI_HEADINGS)}を必須とすることを定めます。"
+        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{'、'.join(_AWI_HEADING_ORDER)}の順に置くこと、"
+        + f"{'、'.join(_REQUIRED_AWI_HEADINGS)}を必須とすること、"
+        + f"{_CAUSE_ANALYSIS_HEADING}を置く場合は本文を書くことを定めます。"
     )
 
 

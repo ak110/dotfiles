@@ -298,6 +298,21 @@ def _finalize_candidate(
                 temporary_path.unlink()
 
 
+def _check_bug_input(metadata: _plan_format.PlanMetadata, *, has_bug_input: bool) -> None:
+    """バグ対応計画の`計画ファイル（バグ）`行と入力の有無の整合を検査する。
+
+    関連WIの`## 原因分析`を正本とする計画は計画ファイル（バグ）を持たない。
+    関連WIが無い計画は原因分析の正本が他に無いため、同行と入力を必須とする。
+    """
+    has_bug_field = _plan_format.PLAN_METADATA_BUG_FIELD in metadata.values
+    if has_bug_field and not has_bug_input:
+        raise PlanCreationError("計画メタ情報に計画ファイル（バグ）の行がある場合は計画ファイル（バグ）の入力が必要です")
+    if not has_bug_field and has_bug_input:
+        raise PlanCreationError("計画メタ情報に計画ファイル（バグ）の行が無い場合は計画ファイル（バグ）の入力を指定できません")
+    if not has_bug_field and not metadata.related_wi:
+        raise PlanCreationError("関連WIが無いバグ対応の計画は、原因分析の記録先として計画ファイル（バグ）の行と入力が必要です")
+
+
 def create_plan_files(
     main_source: pathlib.Path | str,
     plan_name: str,
@@ -329,10 +344,10 @@ def create_plan_files(
     if metadata_errors:
         raise PlanCreationError("計画メタ情報を解析できません: " + " / ".join(metadata_errors))
     work_type = metadata.values.get("作業種別") if metadata is not None else None
-    if work_type == "バグ対応" and bug_content is None:
-        raise PlanCreationError("作業種別がバグ対応の場合は計画ファイル（バグ）の入力が必要です")
     if work_type == "通常変更" and bug_content is not None:
         raise PlanCreationError("作業種別が通常変更の場合は計画ファイル（バグ）の入力を指定できません")
+    if work_type == "バグ対応" and metadata is not None:
+        _check_bug_input(metadata, has_bug_input=bug_content is not None)
 
     plans_root = _resolved_plans_root(home)
     plans_root.mkdir(parents=True, exist_ok=True)
