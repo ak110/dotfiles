@@ -153,7 +153,7 @@ AWIはユーザーとエージェントが非同期に共有する人間向け�
   UWI本文は、冒頭の疑問文と判断を変える事実を順に置く。`choice`と`yes-no`では疑問文の後に選択肢と各選択肢を選んだ場合の結果を置き、回答方法の説明を書かない。
   `free-form`では自由記述で回答できる問いとし、返信形式を指定する必要がある場合だけ回答方法を書く
   （2026年9月8日、利用者指示。本文が長く、UWIでは何を問われているかが読み取りにくいという指摘に由来する）
-- `agent-toolkit:add-awi-by-user`は`agent-toolkit:confirmation-and-uwi`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好に依存する未確定判断を解消する。
+- `agent-toolkit:add-awi-by-user`は`agent-toolkit:user-confirmation-and-report`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好に依存する未確定判断を解消する。
   起動時の登録依頼が成立しているため、解消後に本文の全文提示と投入可否の一律確認は行わない。
   新しい未確定要件が生じた場合だけ質問ラウンドへ戻る
   （2026年9月8日の確認不足の指摘と、2026年9月28日の現行スキルに合わせる利用者回答に基づく）
@@ -203,7 +203,7 @@ sourceがある場合は同じ値を渡す。
 ## 計画ファイルの体裁の扱い
 
 計画ファイルは要求単位の欠落、実装と実行レビューの基準、中断後の再開を扱う内部資料であり、人間の承認対象にしない。協調モードでは利用者がエージェントへ直接依頼し、`agent-toolkit:plan-mode`の要否をエージェントが判断する。
-リポジトリ変更を伴う協調モードの作業では、着手前に公開範囲を確認し、既存の判断基準どおりの公開を推奨する。明示的な手動起動を前提としないスキルは`user-invocable: false`とする。これらの方針の実行手順は`agent-toolkit:plan-mode`、`agent-toolkit:confirmation-and-uwi`、`agent-toolkit:commit`および`agent-toolkit:writing-standards`が定める。
+リポジトリ変更を伴う協調モードの作業では、着手前に公開範囲を確認し、既存の判断基準どおりの公開を推奨する。明示的な手動起動を前提としないスキルは`user-invocable: false`とする。これらの方針の実行手順は`agent-toolkit:plan-mode`、`agent-toolkit:user-confirmation-and-report`、`agent-toolkit:commit`および`agent-toolkit:writing-standards`が定める。
 
 計画ファイルの体裁の差異は、工程の停止条件にしない。
 体裁に関する指摘の採否は、指摘の種別ではなく、根拠の確認と何も変更しない案を含めた費用の比較で確定する

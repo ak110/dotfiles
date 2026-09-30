@@ -9,7 +9,7 @@ description: >
 
 本スキルは投稿後に第三者へ届く文面を、起草者と独立した読み取り専用の担当が投稿前に検証する手順を提供する。
 投稿する主体が対象の判定、レビューの依頼、指摘の採否および投稿を担う。
-投稿操作の認可は`agent-toolkit:confirmation-and-uwi`に従って判定する。
+投稿操作の認可は`agent-toolkit:user-confirmation-and-report`に従って判定する。
 
 ## 対象と入力
 

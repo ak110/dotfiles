@@ -166,7 +166,7 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
     return (
         f"リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
         "`agent-toolkit:process-wi`の実行中でないセッションでは、セッションを終える前に"
-        "`agent-toolkit:confirmation-and-uwi`を起動し、回答の反映から依存作業の再開までを完了する。"
+        "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から依存作業の再開までを完了する。"
         "`agent-toolkit:process-wi`の実行中は、処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、"
         "保留していた工程を再開する。"
         "それ以外の回答済みUWIはそのセッションで反映せず、`agent-toolkit:wi-standards`「状態と依存」に従い、次の処理回の選定工程が取り込む。"

@@ -4,7 +4,7 @@
 
 ## 公開範囲
 
-協調モードの選択肢は`agent-toolkit:confirmation-and-uwi`の`references/judgment.md`「公開範囲の確認」が定める。各範囲で実施する工程は次のとおりとする。元の依頼がPR、releaseまたはtagを個別に求める場合は、その明示指示を固有の終端工程として扱う。
+協調モードの選択肢は`agent-toolkit:user-confirmation-and-report`の`references/judgment.md`「公開範囲の確認」が定める。各範囲で実施する工程は次のとおりとする。元の依頼がPR、releaseまたはtagを個別に求める場合は、その明示指示を固有の終端工程として扱う。
 
 | 範囲 | 実施する工程 |
 | --- | --- |

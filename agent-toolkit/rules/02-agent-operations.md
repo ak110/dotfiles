@@ -50,7 +50,7 @@ YAMLの項目抽出: 対象プロジェクトの実行系で動く構造化パ�
 - 削除や回収の完了は対象の不在で確認する。`test -e <絶対パス>; echo "test_e_rc=$?"`の終了表示は読み取り専用の確認として別の呼び出しで行う。操作コマンドの契約が除去完了を終了コードに含む場合はその結果を使う。`ls`、`find`、`git rev-parse`の非0終了だけで対象不在を確定しない。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。前工程から受け取ったパスや識別子は、その後に移動や終了を起こす操作が介在したときに同一性を再確認する。
 - 調査用サーバーは到達を要する主体の範囲だけで待ち受ける。同じホストの確認にはloopbackを使い、不要な外部公開を避ける。
-- 権限設定やauto mode classifierが操作を拒否した場合は、別の手段を試す前に`agent-toolkit:confirmation-and-uwi`の`references/permission-denial.md`を適用する。
+- 権限設定やauto mode classifierが操作を拒否した場合は、別の手段を試す前に`agent-toolkit:user-confirmation-and-report`の`references/permission-denial.md`を適用する。
 
 ## 作業中に観測したリポジトリ状態変化の扱い
 

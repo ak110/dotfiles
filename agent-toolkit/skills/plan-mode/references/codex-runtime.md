@@ -4,9 +4,9 @@
 
 計画ファイル初版を起草するメインは、CodexのネイティブPlan modeの有無にかかわらず、`update_plan`へ「調査」と「計画ファイル起草」を独立工程として登録する。適用規範、変更対象の全文、定義・参照元・呼び出し元、既存テスト、生成・配布の仕組みおよび類似実装のうち該当する対象を調査し、外部仕様または実行時挙動は公式一次資料か実機で確認する。
 
-調査工程を`completed`へ更新するときは、`explanation`へ確認対象、確認手段、確定事項および未確定事項の有無を対応付ける。起草へ進むのは、未確定事項がなくなった時点とする。ユーザー依存事項は`agent-toolkit:confirmation-and-uwi`のユーザー確認を完了してから、起草工程を`in_progress`へ更新する。
+調査工程を`completed`へ更新するときは、`explanation`へ確認対象、確認手段、確定事項および未確定事項の有無を対応付ける。起草へ進むのは、未確定事項がなくなった時点とする。ユーザー依存事項は`agent-toolkit:user-confirmation-and-report`のユーザー確認を完了してから、起草工程を`in_progress`へ更新する。
 
-変更対象または採用方針を左右する提案的表現の扱いは`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`に従う。回答を同期的に得られない実行では、共有規範が定めるUWI記録と暫定判断を完了した事項だけを起草の対象にできる。この扱いは`agent-toolkit:process-wi`による実行に限る。レーン担当の確認の扱いは`agent-toolkit:plan-mode`のSKILL.mdに従う。
+変更対象または採用方針を左右する提案的表現の扱いは`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`に従う。回答を同期的に得られない実行では、共有規範が定めるUWI記録と暫定判断を完了した事項だけを起草の対象にできる。この扱いは`agent-toolkit:process-wi`による実行に限る。レーン担当の確認の扱いは`agent-toolkit:plan-mode`のSKILL.mdに従う。
 
 起草後に事実不足が判明した場合は、調査工程へ戻ってから再開する。レビュー指摘の反映と進捗ログ追記は初版の開始制御の対象外とする。
 
