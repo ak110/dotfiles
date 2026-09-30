@@ -828,7 +828,7 @@ class TestUwiAnswerNonInteractive:
             atk.main(["wi", "answer", f"{_FIXED_TIMESTAMP}-999.md", "採用する"], home=tmp_path)
 
         assert exc_info.value.code == 1
-        assert "inbox・processingのいずれにも存在しない" in capsys.readouterr().err
+        assert "processing・inbox・holdのいずれにも存在しない" in capsys.readouterr().err
 
     def test_non_uwi_entry_exits_1(
         self,
@@ -1083,7 +1083,7 @@ class TestUwiAdopt:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
+        """processing・inbox・holdのいずれにも存在しないファイル名指定でexit 2と案内が出力される。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1092,7 +1092,7 @@ class TestUwiAdopt:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox・processingのいずれにも存在しない" in captured.err
+        assert "processing・inbox・holdのいずれにも存在しない" in captured.err
 
     def test_partial_missing_file_prevents_any_move(
         self,

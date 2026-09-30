@@ -55,10 +55,10 @@ pickerはAWI本文と対象実装を調査し、レーン分割とレーン内�
 
 計画作成中の項目と外部編集中の項目を分けていた`planning`と`editing`は自動処理から除外する点で`hold`と同じ振る舞いであり、状態集合の定義を型と操作ごとに分岐させていたため廃止した。役割は`hold`へ統合し、状態集合の定義を`agent-toolkit/agent_toolkit/_atk/wi/common.py`へ集約する。
 
-`hold`は`inbox`、`processing`、`adopted`、`rejected`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す操作は設けない。終端状態から保留または受信へ戻す際には旧`## 処理結果`を除き、前回の採否を再開後の結果として残さない。`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、UWI回答、ユーザーコメント、採否および削除は`inbox`と同じ条件で許可する。
+`hold`は`inbox`、`processing`、`adopted`、`rejected`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す操作は設けない。終端状態から保留または受信へ戻す際には旧`## 処理結果`を除き、前回の採否を再開後の結果として残さない。`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、UWI回答、ユーザーコメント、採否および削除は`inbox`と同じ条件で許可する。CLIのファイル名指定による`adopt`・`reject`は`processing`、`inbox`、`hold`の順で対象を解決し、探索する状態の集合を`--all`の候補と同じ`BULK_SOURCE_STATES`から導く。両経路が状態を別々に列挙すると、状態の追加が片方にだけ反映されるためである。
 削除は終端状態（`adopted`・`rejected`）も明示`state`として受理し、`processing`の削除保護だけを維持する。
 
-エージェントが実行できる遷移は、`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終端、および両終端状態から`inbox`または`hold`への差し戻しとする。ユーザーはブラウザーUIから同じ再開・保留と終端項目の削除を行える。誤終端を削除と再投入だけで復旧する案は、元項目の由来と本文を保てないため採用しない。
+エージェントが実行できる遷移は、`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終端、`hold`から`adopted`・`rejected`への直接の終端、および両終端状態から`inbox`または`hold`への差し戻しとする。ユーザーはブラウザーUIから同じ再開・保留と終端項目の削除を行える。誤終端を削除と再投入だけで復旧する案は、元項目の由来と本文を保てないため採用しない。
 
 ### 一覧出力
 

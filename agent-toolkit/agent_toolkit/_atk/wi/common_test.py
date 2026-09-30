@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access
 
+import argparse
 import datetime
 import os
 import pathlib
@@ -201,6 +202,53 @@ def test_make_filename_completer_matches_prefix_and_sorts(tmp_path: pathlib.Path
     _write_awi(private_notes, "other.md")
     completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES)
     assert completer("pre-") == ["pre-a.md", "pre-z.md"]
+
+
+def _positional_completer(command: str, dest: str) -> Any:
+    """`atk wi <command>`の位置引数へ実際に設定された補完関数を返す。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access
+    wi_parser = next(
+        action.choices["wi"]
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
+    )
+    command_parser = next(
+        action.choices[command]
+        for action in wi_parser._actions  # pylint: disable=protected-access
+        if isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
+    )
+    return next(action.completer for action in command_parser._actions if action.dest == dest)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize(
+    ("command", "dest", "expected"),
+    [
+        ("adopt", "filenames", ["hold-awi.md", "hold-uwi.md", "inbox-awi.md", "inbox-uwi.md", "processing-awi.md"]),
+        ("reject", "filenames", ["hold-awi.md", "hold-uwi.md", "inbox-awi.md", "inbox-uwi.md", "processing-awi.md"]),
+        ("set-dependencies", "filename", ["hold-awi.md", "hold-uwi.md", "inbox-awi.md", "inbox-uwi.md", "processing-awi.md"]),
+        ("answer", "filename", ["hold-uwi.md", "inbox-uwi.md"]),
+    ],
+)
+def test_filename_completion_includes_hold_entries(
+    tmp_path: pathlib.Path,
+    command: str,
+    dest: str,
+    expected: list[str],
+) -> None:
+    """holdを受け付けるサブコマンドの補完は、holdの項目を候補に含める。
+
+    `answer`はUWIだけを候補にする限定を保ち、終端状態の項目は候補に含めない。
+    """
+    private_notes = tmp_path / "private-notes"
+    _write_awi(private_notes, "inbox-awi.md", state="inbox")
+    _write_awi(private_notes, "processing-awi.md", state="processing")
+    _write_awi(private_notes, "hold-awi.md", state="hold")
+    _write_uwi(private_notes, "inbox-uwi.md")
+    _write_uwi(private_notes, "hold-uwi.md")
+    (private_notes / "hold").mkdir(exist_ok=True)
+    (private_notes / "inbox" / "hold-uwi.md").replace(private_notes / "hold" / "hold-uwi.md")
+    _write_awi(private_notes, "adopted-awi.md", state="adopted")
+    assert _positional_completer(command, dest)("") == expected
 
 
 class TestReadiness:

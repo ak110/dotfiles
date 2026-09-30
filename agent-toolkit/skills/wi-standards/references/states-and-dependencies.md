@@ -28,6 +28,7 @@
 | `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが、回答を保存済みで未終端のUWIをAWIの処理開始前に終端する。事後承認型UWIのうち回答が是正を求めないものも同じ契機で終端する |
 | `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが回答済みUWIをAWIの処理開始前に終端するか、レーンがベースブランチへのマージ完了時または実装変更を伴わない充足の確定後にAWIを終端する。AWIの`adopt`では要求を反映した実装commitの完全OIDを`--commit`へ渡し、複数commitでは全OIDと要求単位を`--note`または`--note-file`へ渡す処理結果に残し、実装差分のない充足済みでは`--commit`を省いて根拠を同じ処理結果に残す（adoptのcommit対応付け） |
 | `processing`→`rejected` | `atk wi reject` | `agent-toolkit:process-wi`のレーンが、計画工程で確定した全要求の不採用についてメインが確認を終えた後に遷移させる |
+| `hold`→`adopted`または`rejected` | `atk wi adopt`・`atk wi reject` | 保留中の項目の採否が確定し、その項目で行う作業が残らない場合に、採否を確定した主体が`unhold`を経ずに終端する。`unhold`で戻すと、終端までの間に`atk wi process-loop`がその項目を取得し得るためである。元項目で作業を再開する場合は、後段の「回答済みUWIの取り込み」のとおり`unhold`で戻す |
 | `processing`→`inbox` | `atk wi return-to-inbox` | 上流リポジトリへ投入したAWIの終端を待つ項目を`inbox`へ戻す。手順は[cross-repository-submission.md](cross-repository-submission.md)が定める |
 | `adopted`または`rejected`→`inbox` | `atk wi return-to-inbox --state=<終端状態>` | 誤って終端した項目を再処理へ戻す主体が、旧処理結果を除いて再開する |
 | `adopted`または`rejected`→`hold` | `atk wi hold --state=<終端状態>` | 誤って終端した項目を確認や修正の間は自動処理から除外する主体が、旧処理結果を除いて保留する |
