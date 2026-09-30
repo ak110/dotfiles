@@ -229,9 +229,7 @@ Claude Codeからclaude系モデルの実行主体へ委譲する場合の既定
 Claude CodeのUIが実行状況と応答を直接表示するため、同じ結果をより少ない観測手段で確認できるためである。
 例外は工程別モデル設定がeffortを指定する工程の委譲先とし、engineの別によらず`agents_server`を使う。
 Agentツールにeffortに相当する引数が無く、effortを指定した工程の実効設定を委譲先へ渡せないためである。
-これらの工程では、MCPツールを呼び出せない場合の自動的な代替手段を設けない。
-Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、effortを指定した工程で`agents_server`を使う理由自体を損なうためである。
-MCPツールを呼び出せない場合は「工程別モデル設定」手順4に従い`needs_escalation`または未完了として返す。
+これらの工程でMCPツールを呼び出せない場合は、Agentツールへ切り替えて委譲する。切り替えると`engine=claude`では同設定が指定したeffortを失い、`engine=codex`ではengineも変わるが、委譲そのものを止めるより作業を進める価値が大きいため許容し、本来の設定値と切り替えた理由を報告へ記録する（2026年9月30日、利用者回答）。
 Codexからの委譲はengineの別によらず`agents_server`を使う既存の扱いを維持する。CodexのUIには同等の表示利得が無いためである。
 
 却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
