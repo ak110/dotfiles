@@ -169,14 +169,24 @@ def _pending_cache_key(
     return transcript_path, session_id, background_state, stored_state, transcript_state
 
 
+def _valid_background_tasks(background_tasks: object) -> list[dict]:
+    """Stop入力の`background_tasks`から、空でない文字列の`type`を持つ有効なtaskを返す。"""
+    if not isinstance(background_tasks, list):
+        return []
+    return [task for task in background_tasks if isinstance(task, dict) and isinstance(task.get("type"), str) and task["type"]]
+
+
+def active_non_teammate_tasks(background_tasks: object) -> list[dict]:
+    """Stop入力の有効taskのうち`teammate`以外を返す。"""
+    return [task for task in _valid_background_tasks(background_tasks) if task["type"] != "teammate"]
+
+
 def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool]:
     """Stop入力の有効task件数、非`teammate`件数および一覧の権威性を返す。"""
     if not isinstance(background_tasks, list):
         return 0, 0, False
-    valid_tasks = [
-        task for task in background_tasks if isinstance(task, dict) and isinstance(task.get("type"), str) and task["type"]
-    ]
-    non_teammate_tasks = sum(task["type"] != "teammate" for task in valid_tasks)
+    valid_tasks = _valid_background_tasks(background_tasks)
+    non_teammate_tasks = len(active_non_teammate_tasks(background_tasks))
     return len(valid_tasks), non_teammate_tasks, len(valid_tasks) == len(background_tasks)
 
 

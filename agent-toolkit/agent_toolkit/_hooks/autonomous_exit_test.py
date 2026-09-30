@@ -9,6 +9,8 @@ import os
 import pathlib
 import subprocess
 
+import pytest
+
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
@@ -283,6 +285,104 @@ class TestBlockCondition:
         )
         assert _parse_decision(first).get("decision") == "block"
         assert _parse_decision(second).get("decision") == "block"
+
+
+def _write_exit_request(state_dir: pathlib.Path, session_id: str, content: str) -> pathlib.Path:
+    """Function hooks moduleと共有する終了要求ファイルを書く。"""
+    request = state_dir / "claude" / "agent-toolkit-function-hooks" / f"request-{session_id}.txt"
+    request.parent.mkdir(parents=True, exist_ok=True)
+    request.write_text(content, encoding="utf-8")
+    return request
+
+
+def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+_RUNNING_TASKS = [
+    {"id": "bg1", "type": "shell", "status": "running", "description": "60秒待機する"},
+    {"id": "tm1", "type": "teammate", "status": "running", "description": "チームの作業"},
+]
+
+
+class TestExitRequestWithdrawal:
+    """背景作業が残る終了要求を取り下げ、終端の確認と終了工程の再実行を求める。"""
+
+    def _run_with_request(
+        self,
+        tmp_path: pathlib.Path,
+        session_id: str,
+        *,
+        request: str,
+        background_tasks: list[dict],
+        extra_env: dict[str, str] | None = None,
+        required_env: str | None = _ENV_REQUIRED,
+    ) -> tuple[dict, pathlib.Path]:
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, session_id, {"autonomous_exit_invoked": True})
+        request_path = _write_exit_request(tmp_path, session_id, request)
+        result = _run(
+            {"session_id": session_id, "transcript_path": str(transcript), "background_tasks": background_tasks},
+            state_dir=tmp_path,
+            extra_env={"CLAUDE_CONFIG_DIR": str(tmp_path / "claude"), **(extra_env or {})},
+            required_env=required_env,
+        )
+        return _parse_decision(result), request_path
+
+    def test_remaining_background_work_withdraws_request_and_blocks(self, tmp_path: pathlib.Path) -> None:
+        """終了要求を`consumed`へ戻し、実行済みの記録を偽へ戻し、残った作業を列挙してblockする。"""
+        decision, request_path = self._run_with_request(
+            tmp_path, "withdraw", request="requested", background_tasks=_RUNNING_TASKS
+        )
+
+        assert decision.get("decision") == "block"
+        reason = decision["reason"]
+        assert "shell: 60秒待機する" in reason
+        assert "チームの作業" not in reason
+        assert "atk agents-exit-session" in reason
+        assert request_path.read_text(encoding="utf-8") == "consumed"
+        assert _read_state(tmp_path, "withdraw")["autonomous_exit_invoked"] is False
+
+    def test_withdrawn_request_falls_back_to_pending_work_approval(self, tmp_path: pathlib.Path) -> None:
+        """取り下げ済み（`consumed`）なら従来どおり背景作業の残存をapproveする。"""
+        decision, request_path = self._run_with_request(
+            tmp_path, "consumed", request="consumed", background_tasks=_RUNNING_TASKS
+        )
+
+        assert "decision" not in decision
+        assert request_path.read_text(encoding="utf-8") == "consumed"
+        assert _read_state(tmp_path, "consumed")["autonomous_exit_invoked"] is True
+
+    @pytest.mark.parametrize("tasks", [[], [{"id": "tm1", "type": "teammate", "description": "チームの作業"}]])
+    def test_no_remaining_work_keeps_exit_request(self, tmp_path: pathlib.Path, tasks: list[dict]) -> None:
+        """有効な非`teammate`の背景作業が無ければ終了要求を保ち、従来の判定（実行済みでapprove）を返す。"""
+        decision, request_path = self._run_with_request(tmp_path, "no-work", request="requested", background_tasks=tasks)
+
+        assert "decision" not in decision
+        assert request_path.read_text(encoding="utf-8") == "requested"
+
+    def test_outside_process_loop_does_not_withdraw(self, tmp_path: pathlib.Path) -> None:
+        """常駐処理外の対話セッションでは終了要求を取り下げない。"""
+        decision, request_path = self._run_with_request(
+            tmp_path, "interactive", request="requested", background_tasks=_RUNNING_TASKS, required_env=None
+        )
+
+        assert "decision" not in decision
+        assert request_path.read_text(encoding="utf-8") == "requested"
+
+    def test_delegated_session_does_not_withdraw(self, tmp_path: pathlib.Path) -> None:
+        """委譲先では終了要求を取り下げない。"""
+        decision, request_path = self._run_with_request(
+            tmp_path,
+            "delegated-withdraw",
+            request="requested",
+            background_tasks=_RUNNING_TASKS,
+            extra_env={_ENV_DELEGATED_SESSION: "1"},
+        )
+
+        assert "decision" not in decision
+        assert request_path.read_text(encoding="utf-8") == "requested"
 
 
 class TestEdgeCases:
