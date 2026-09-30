@@ -172,7 +172,9 @@ def _run_step(
     _last_stderr_tail = None
     log_step_no = step_no if log_step_no is None else log_step_no
     if show_heading:
-        print(f"=== [{step_no}/{total}] {title} ===")
+        # 子プロセスが同じ標準出力へ直接書くため、見出しを子プロセスの起動前に書き込む。
+        # 端末以外（サービスのjournal、ファイル）への出力はブロックバッファで、flushしないと見出しが後段の出力より後に並ぶ。
+        print(f"=== [{step_no}/{total}] {title} ===", flush=True)
     logger.info("stage開始: %d/%d %s", log_step_no, _LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
     try:
@@ -254,7 +256,7 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
     _current_stage_title = "git pull"
     _last_stderr_tail = None
-    print(f"=== [{step_no}/{total}] git pull ===")
+    print(f"=== [{step_no}/{total}] git pull ===", flush=True)
     logger.info("stage開始: %d/%d git pull", step_no, _LOG_STAGE_TOTAL)
     started_at = time.monotonic()
     # 上限超過時に子孫を列挙してから直接子を回収するため、プロセスを明示的に保持する。

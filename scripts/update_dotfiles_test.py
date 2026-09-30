@@ -1169,3 +1169,23 @@ class TestFilterApplyPending:
 
         assert update_dotfiles.main() == 0
         assert "\nA\n" not in f"\n{capsys.readouterr().out}\n"
+
+
+def test_stage_heading_precedes_child_output_when_stdout_is_not_a_terminal() -> None:
+    """標準出力がパイプの場合も、段見出しがその段の子プロセスの出力より前に並ぶ。
+
+    自動更新サービスのjournalや保存した出力では標準出力がブロックバッファになり、
+    子プロセスが同じ出力先へ直接書くと、見出しが後段の出力の後にまとまって現れる。
+    """
+    scripts_dir = pathlib.Path(__file__).resolve().parent
+    code = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(scripts_dir)!r})\n"
+        "import update_dotfiles\n"
+        "update_dotfiles._run_step(1, 4, 'stage', [sys.executable, '-c', 'print(\"child\", flush=True)'])\n"
+        "update_dotfiles._run_step(2, 4, 'next', [sys.executable, '-c', 'print(\"child2\", flush=True)'])\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, check=False, encoding="utf-8")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["=== [1/4] stage ===", "child", "=== [2/4] next ===", "child2"]
