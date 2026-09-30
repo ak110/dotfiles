@@ -676,13 +676,31 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
     dialog = page.get_by_role("dialog", name="詳細")
     long_key_term = dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY)
     await playwright.async_api.expect(long_key_term).to_have_count(1)
-    term_box = await long_key_term.bounding_box()
-    metadata_box = await dialog.locator("#detail-metadata").bounding_box()
-    assert term_box is not None
-    assert metadata_box is not None
-    assert term_box["width"] <= metadata_box["width"]
-    assert await long_key_term.evaluate("element => element.scrollWidth <= element.clientWidth")
-    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # 詳細の再読込でdtが置換されるため、表示済み要素の解決と寸法取得を同じ描画状態で行う。
+    metrics_handle = await page.wait_for_function(
+        """key => {
+          const metadata = document.querySelector('#detail-metadata');
+          const terms = [...(metadata?.querySelectorAll('dt') ?? [])]
+            .filter(element => element.textContent === key);
+          if (terms.length !== 1) return false;
+          const term = terms[0];
+          if (!term.checkVisibility()) return false;
+          return {
+            termWidth: term.getBoundingClientRect().width,
+            metadataWidth: metadata.getBoundingClientRect().width,
+            termScrollWidth: term.scrollWidth,
+            termClientWidth: term.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth
+          };
+        }""",
+        arg=_LONG_UNKNOWN_FRONTMATTER_KEY,
+    )
+    metrics = await metrics_handle.json_value()
+    await metrics_handle.dispose()
+    assert metrics["termWidth"] <= metrics["metadataWidth"]
+    assert metrics["termScrollWidth"] <= metrics["termClientWidth"]
+    assert metrics["documentScrollWidth"] <= metrics["viewportWidth"]
 
 
 @pytest.mark.asyncio

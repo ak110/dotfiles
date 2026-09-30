@@ -3529,9 +3529,14 @@ def _candidate_events(
     for event in timeline:
         line = event.get("line")
         text = event.get("text")
-        if event.get("kind") == "user" and event.get("record") == "main" and isinstance(line, int) and isinstance(text, str):
-            if _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None:
-                first_main_user = ("main", line)
+        if (
+            event.get("kind") == "user"
+            and event.get("record") == "main"
+            and isinstance(line, int)
+            and isinstance(text, str)
+            and _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None
+        ):
+            first_main_user = ("main", line)
             break
     sources = (
         ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
@@ -3979,18 +3984,26 @@ def _initial_skill_input_locators(
         and isinstance(event.get("text"), str)
         and event.get("runtime_generated") is not True
     ]
-    if not main_users:
+    request_index = next(
+        (
+            index
+            for index, event in enumerate(main_users)
+            if _user_candidate_exclusion(event, "main", int(event["line"]), " ".join(str(event["text"]).split()), None) is None
+        ),
+        None,
+    )
+    if request_index is None:
         return None, None
-    request = main_users[0]
+    request = main_users[request_index]
     request_text = str(request["text"]).strip()
     if not request_text.startswith("$") or any(character.isspace() for character in request_text):
         return None, None
     skill_name = request_text.removeprefix("$")
     if not skill_name or any(not (character.isalnum() or character in {"-", "_", ":"}) for character in skill_name):
         return None, None
-    if len(main_users) < 2:
+    if request_index + 1 >= len(main_users):
         return None, None
-    body = main_users[1]
+    body = main_users[request_index + 1]
     body_text = str(body["text"]).lstrip()
     if not body_text.startswith("<skill>") or f"<name>{skill_name}</name>" not in body_text:
         return None, None

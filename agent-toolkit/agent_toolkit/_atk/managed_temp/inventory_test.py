@@ -272,6 +272,107 @@ class TestManagedTempWindows:
         assert not subject._registry_path(target).exists()
         assert not consuming.exists()
 
+    def test_cleanup_removes_readonly_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """通常ファイルを変えずに、Readonlyを含む管理対象を公開CLIから回収する。"""
+        target = subject.create_managed_temp("windows-readonly")
+        nested = target / "nested"
+        nested.mkdir()
+        normal = nested / "normal.txt"
+        readonly = nested / "readonly.txt"
+        normal.write_text("normal", encoding="utf-8")
+        readonly.write_text("readonly", encoding="utf-8")
+        readonly.chmod(stat.S_IREAD)
+        registry = subject._registry_path(target)
+        changed: list[str] = []
+        original_chmod = os.chmod
+
+        def record_chmod(path: typing.Any, mode: int, **kwargs: typing.Any) -> None:
+            changed.append(pathlib.Path(path).name)
+            original_chmod(path, mode, **kwargs)
+
+        monkeypatch.setattr(os, "chmod", record_chmod)
+
+        assert subject.main(["cleanup", "--path", str(target)]) == 0
+
+        assert not target.exists()
+        assert not registry.exists()
+        assert changed == ["readonly.txt"]
+
+    def test_cleanup_resumes_quarantine_with_readonly_files(self) -> None:
+        """Readonlyを含む隔離途中状態も公開CLIから回収する。"""
+        target = subject.create_managed_temp("windows-readonly-resume")
+        readonly = target / "readonly.txt"
+        readonly.write_text("readonly", encoding="utf-8")
+        readonly.chmod(stat.S_IREAD)
+        consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
+
+        assert subject.main(["cleanup", "--path", str(target)]) == 0
+
+        assert not target.exists()
+        assert not quarantine.exists()
+        assert not subject._registry_path(target).exists()
+        assert not consuming.exists()
+
+    @pytest.mark.parametrize(("mode", "winerror"), [(stat.S_IWRITE, 5), (stat.S_IREAD, 32)])
+    def test_cleanup_keeps_attributes_for_other_delete_failures(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        mode: int,
+        winerror: int,
+    ) -> None:
+        """Readonly以外のアクセス拒否と共有違反では属性を変えず、登録と再試行案内を保つ。"""
+        target = subject.create_managed_temp("windows-delete-denied")
+        content = target / "keep.txt"
+        content.write_text("keep", encoding="utf-8")
+        content.chmod(mode)
+        before_attributes = getattr(content.lstat(), "st_file_attributes", 0)
+        registry = subject._registry_path(target)
+        original_unlink = os.unlink
+
+        def deny_unlink(path: typing.Any, **kwargs: typing.Any) -> None:
+            if pathlib.Path(path).name == "keep.txt":
+                raise PermissionError(13, "削除拒否", str(path), winerror)
+            original_unlink(path, **kwargs)
+
+        monkeypatch.setattr(os, "unlink", deny_unlink)
+
+        assert subject.main(["cleanup", "--path", str(target)]) == 2
+
+        assert registry.exists()
+        assert content.read_text(encoding="utf-8") == "keep"
+        assert getattr(content.lstat(), "st_file_attributes", 0) == before_attributes
+        assert "同じcleanupを再試行" in capsys.readouterr().err
+
+    def test_cleanup_preserves_readonly_replacement_during_delete(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """削除直前に置換されたReadonlyファイルへ属性変更を適用しない。"""
+        target = subject.create_managed_temp("windows-readonly-race")
+        content = target / "keep.txt"
+        content.write_text("original", encoding="utf-8")
+        original_unlink = os.unlink
+
+        def replace_before_unlink(path: typing.Any, **kwargs: typing.Any) -> None:
+            candidate = pathlib.Path(path)
+            if candidate.name != "keep.txt":
+                original_unlink(path, **kwargs)
+                return
+            candidate.rename(candidate.with_name("original.txt"))
+            candidate.write_text("replacement", encoding="utf-8")
+            candidate.chmod(stat.S_IREAD)
+            raise PermissionError(13, "削除拒否", str(path), 5)
+
+        monkeypatch.setattr(os, "unlink", replace_before_unlink)
+
+        assert subject.main(["cleanup", "--path", str(target)]) == 2
+
+        assert content.read_text(encoding="utf-8") == "replacement"
+        assert getattr(content.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_READONLY
+        assert (target / "original.txt").read_text(encoding="utf-8") == "original"
+        assert subject._registry_path(target).exists()
+        assert "置換" in capsys.readouterr().err
+
     def test_cleanup_resumes_after_an_interrupted_quarantine(
         self,
         monkeypatch: pytest.MonkeyPatch,

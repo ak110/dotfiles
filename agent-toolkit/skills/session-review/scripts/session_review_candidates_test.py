@@ -550,16 +550,17 @@ def test_candidate_events_counts_only_identical_candidate_identity_as_duplicate(
     assert candidates[-1]["excluded"] == {"duplicate-candidate": 1}
 
 
-def test_first_human_message_after_automated_start_is_intervention() -> None:
+def test_first_human_request_after_automated_start_is_initial_request() -> None:
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "<agent-toolkit-auto-inserted>自動起動"},
-        {"kind": "user", "record": "main", "line": 2, "text": "人間の指摘"},
+        {"kind": "user", "record": "main", "line": 2, "text": "最初の人間の依頼"},
+        {"kind": "user", "record": "main", "line": 3, "text": "後続の人間の指摘"},
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert candidates[0]["locators"] == [{"record": "main", "line": 2}]
-    assert candidates[-1]["excluded"] == {"runtime-inserted": 1}
+    assert candidates[0]["locators"] == [{"record": "main", "line": 3}]
+    assert candidates[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1}
 
 
 def test_failed_tools_distinguish_operation_and_full_diagnostic() -> None:

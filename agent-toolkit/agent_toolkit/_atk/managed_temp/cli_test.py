@@ -89,13 +89,14 @@ def test_session_id_create_is_idempotent_and_cleanup_resolves_target(tmp_path: p
     env, _ = _isolated_cli_environment(tmp_path)
     command = [sys.executable, str(_SCRIPT), "create", "--prefix", "session", "--session-id", "session-1"]
 
-    first = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
-    second = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+    first = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False, env=env)
+    second = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False, env=env)
     target = pathlib.Path(first.stdout.strip())
     cleaned = subprocess.run(
         [sys.executable, str(_SCRIPT), "cleanup", "--session-id", "session-1"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -244,6 +245,7 @@ def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: 
         [sys.executable, str(_SCRIPT), "create", "--prefix", "cli-resume"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -262,6 +264,7 @@ def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: 
         [sys.executable, str(_SCRIPT), "cleanup", "--path", str(target)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )

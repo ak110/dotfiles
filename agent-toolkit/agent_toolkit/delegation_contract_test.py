@@ -83,12 +83,12 @@ def _bullet_label(line: str) -> str | None:
     return label or None
 
 
-def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str]) -> list[str]:
+def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str], accepted_names: set[str]) -> list[str]:
     """必須入力名へ語を足した表記で始まる箇条書きを別名として報告する。
 
     ラベルを本文の先頭から最初の区切り文字までとする。区切り文字集合から全角丸括弧の開きを外すと、
     `統合区分`のラベルの直後へ全角丸括弧で候補値を添えた箇条書きについて、ラベルが項目名より長くなり違反として報告される。
-    必須入力名と完全一致するラベルは違反としない。この扱いをやめると、`必須入力名:`が`対象`と`対象リポジトリ`の双方を持つ
+    宣言済みの入力名と完全一致するラベルは違反としない。この扱いをやめると、入力宣言が`対象`と`対象リポジトリ`の双方を持つ
     受信者について、`対象リポジトリ`の箇条書きが`対象`の別名として報告される。
     `` - `<項目名>`: ``の形を機械的に強制しない。強制すると、項目を定義しない条件記述の箇条書きが違反となる。
     """
@@ -96,7 +96,7 @@ def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str]
     seen: set[tuple[str, str]] = set()
     for line in parent.read_text(encoding="utf-8").splitlines():
         label = _bullet_label(line)
-        if label is None or label in required_names:
+        if label is None or label in accepted_names:
             continue
         for name in sorted(required_names):
             if name in label and (label, name) not in seen:
@@ -161,6 +161,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         errors.extend(_pair_errors(parent, recipient))
 
     parent_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
+    accepted_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
     for parent, target in pairs:
         recipient = recipients.get(target)
         if recipient is None:
@@ -169,8 +170,14 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         if not valid_structure or not required_names:
             continue
         parent_populations[parent].update(required_names)
+        # 検査対象のshareは引数で固定済みであり、隔離したテスト入力にも同じ宣言解析を使う。
+        declaration = task_documents.read_declaration_unchecked(recipient)
+        if isinstance(declaration, str):
+            errors.append(declaration)
+            continue
+        accepted_populations[parent].update(declaration.accepted)
     for parent, population in parent_populations.items():
-        errors.extend(_extended_bullet_label_errors(parent, population))
+        errors.extend(_extended_bullet_label_errors(parent, population, accepted_populations[parent]))
     return errors
 
 
@@ -539,15 +546,18 @@ def test_extended_bullet_label_is_reported(tmp_path: pathlib.Path) -> None:
     assert "項目名の別名を列挙している: task.parent.md: 対象リポジトリの絶対パス (対象リポジトリ)" in _contract_errors(tmp_path)
 
 
-def test_exact_bullet_label_is_accepted(tmp_path: pathlib.Path) -> None:
-    """必須入力名と完全一致するラベルと、他の必須入力名の部分文字列となる必須入力名は別名として報告しない。"""
+@pytest.mark.parametrize("optional", [False, True])
+def test_exact_bullet_label_is_accepted(tmp_path: pathlib.Path, optional: bool) -> None:
+    """必須入力名を含む長いラベルでも、必須・任意の宣言と完全一致すれば別名として報告しない。"""
     tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / "task.parent.md").write_text(
         "# 呼び元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 起動\n\n- `対象`: 値\n- `対象リポジトリ`: 値\n",
         encoding="utf-8",
     )
     (tmp_path / "task.subagent.md").write_text(
-        f"# 受信者\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 対象,対象リポジトリ\n```\n",
+        "# 受信者\n\n## 入力\n\n```text\n"
+        + ("必須入力名: 対象\n任意入力名: 対象リポジトリ\n" if optional else "必須入力名: 対象,対象リポジトリ\n")
+        + "```\n",
         encoding="utf-8",
     )
 

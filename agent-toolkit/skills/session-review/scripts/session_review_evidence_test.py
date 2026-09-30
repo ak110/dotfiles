@@ -7804,8 +7804,8 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     items = [item for item in candidates if item["kind"] == "candidate"]
-    assert sorted(item["locators"][0]["line"] for item in items) == [3, 4, 5]
-    assert candidates[-1]["excluded"] == {"runtime-inserted": 1, "runtime-meta": 1}
+    assert sorted(item["locators"][0]["line"] for item in items) == [4, 5]
+    assert candidates[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1, "runtime-meta": 1}
 
 
 def test_candidates_exclude_boundary_marked_injections() -> None:
@@ -7824,8 +7824,9 @@ def test_candidates_exclude_boundary_marked_injections() -> None:
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     items = [item for item in candidates if item["kind"] == "candidate"]
-    assert sorted(item["locators"][0]["line"] for item in items) == [3, 4]
+    assert sorted(item["locators"][0]["line"] for item in items) == [4]
     assert candidates[-1]["excluded"]["runtime-inserted"] == 2
+    assert candidates[-1]["excluded"]["initial-request"] == 1
 
 
 def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_intervention() -> None:
@@ -7871,6 +7872,46 @@ def _bundle_candidates_and_evidence(
         if item["kind"] == "candidate"
     }
     return candidates, items
+
+
+@pytest.mark.parametrize(
+    "injection", ["# AGENTS.md instructions\n規範", '<atk-auto source="runtime" kind="notice">注入</atk-auto>']
+)
+def test_bundle_selects_initial_request_after_runtime_injections(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], injection: str
+) -> None:
+    """Codexの先行注入と最初の依頼を候補から除き、後続是正と通常文の標識を保持する。"""
+    texts = [injection, "最初の依頼", "後続の訂正", "通常文中の <skill> という表記"]
+    records, _ = _bundle_candidates_and_evidence(
+        tmp_path,
+        capsys,
+        [{"type": "response_item", "payload": {"type": "message", "role": "user", "content": text}} for text in texts],
+    )
+
+    assert sorted(locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]) == [3, 4]
+    assert records[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1}
+
+
+@pytest.mark.parametrize("closing", ["", "\n</skill>"])
+def test_bundle_selects_initial_skill_after_runtime_injections(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], closing: str
+) -> None:
+    """注入後の初期スキルと対応本文は元の区分で除き、後続の是正を保持する。"""
+    texts = [
+        "# AGENTS.md instructions\n規範",
+        '<atk-auto source="runtime" kind="notice">注入</atk-auto>',
+        "$agent-toolkit:process-wi",
+        f"<skill>\n<name>agent-toolkit:process-wi</name>\n本文{closing}",
+        "後続の訂正",
+    ]
+    records, _ = _bundle_candidates_and_evidence(
+        tmp_path,
+        capsys,
+        [{"type": "response_item", "payload": {"type": "message", "role": "user", "content": text}} for text in texts],
+    )
+
+    assert [item["locators"] for item in records if item["kind"] == "candidate"] == [[{"record": "main", "line": 5}]]
+    assert records[-1]["excluded"] == {"initial-skill-body": 1, "initial-skill-request": 1, "runtime-inserted": 2}
 
 
 def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

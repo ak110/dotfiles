@@ -1,4 +1,8 @@
-"""実行レビュー証拠の形式とWI本文に対応する証拠行を検査する。"""
+"""実行レビュー証拠の形式、WI原文との対応、所在のない達成根拠の共用を検査する。
+
+異なる要求へ参照先のない根拠を写すと条件別の検収が成立しないため、errorとして扱う。
+参照内容が実際に各条件を満たすかはレビュー担当が判定する。
+"""
 
 from __future__ import annotations
 
@@ -28,6 +32,10 @@ LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
 SENTENCE = re.compile(r"[^。．.!?！？]+[。．.!?！？]*")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\(([^)]+)\)|`([^`]+)`|([^\s`\[\]（）「」、。]+)")
+TEST_RESULT = re.compile(
+    r"(?<!\w)test_[\w]+(?:\[[^\]\n]+\])?(?:`)?\s*(?::|：|=|は|が|\s)\s*(?:成功|合格|PASS(?:ED)?|passed)(?!\w)"
+)
 
 
 def _repository_root() -> pathlib.Path:
@@ -267,6 +275,52 @@ def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, 
     return errors
 
 
+def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
+    """所在を記したファイル参照か、具体的なテスト識別子と成功結果を認識する。"""
+    if TEST_RESULT.search(evidence):
+        return True
+    for match in EVIDENCE_REFERENCE.finditer(evidence):
+        candidate = next(value for value in match.groups() if value is not None).strip().strip("<>")
+        # テスト識別子・節・行番号はファイルの所在と分け、内容の妥当性はレビューへ残す。
+        candidate = re.split(r"::|#|:(?=\d+(?:\D|$))", candidate, maxsplit=1)[0].rstrip(".,;:)")
+        if "://" in candidate:
+            continue
+        reference = pathlib.Path(candidate)
+        if not reference.is_absolute():
+            reference = repository / reference
+        try:
+            if reference.is_file():
+                return True
+        except OSError:
+            # 自由文の語も候補へ入るため、ファイル名として扱えない文字列は参照としない。
+            continue
+    return False
+
+
+def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
+    """両配列の全達成行を要求単位で区別し、所在のない共用を報告する。"""
+    groups: dict[str, list[tuple[str, int, str, str]]] = collections.defaultdict(list)
+    for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
+        rows = payload[section]
+        assert isinstance(rows, list)
+        for index, row in enumerate(rows, start=1):
+            if row["outcome"] == "達成":
+                groups[row["evidence"].strip()].append((section, index, row["awi"], row[field]))
+    errors = []
+    for evidence, rows in groups.items():
+        units = {(section, awi, text) for section, _, awi, text in rows}
+        if len(units) < 2 or _has_evidence_reference(evidence, repository):
+            continue
+        for section, index, awi, _ in rows:
+            errors.append(
+                f"{awi or '計画由来'}: {section}[{index}].evidence: "
+                f"異なる要求単位で達成根拠を共用していますが、具体的な参照先がありません: {evidence!r}。"
+                "実在ファイルのパスか具体的なテスト名と成功結果を記入する。"
+                "条件を観測できていない場合は証拠不足へ再判定する"
+            )
+    return errors
+
+
 def _expired_source_error(row: dict[str, str], index: int, repository: pathlib.Path, wi_outputs: dict[str, str]) -> str | None:
     """失効行のsourceから、記入済みユーザー判断の参照先を確認する。"""
     source = row["source"]
@@ -313,6 +367,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     try:
         repository = _repository_root()
         errors.extend(_check_reviewed_heads(payload, repository, expected_head))
+        errors.extend(_check_shared_evidence(payload, repository))
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [str(exc)]
     condition_rows = payload["wi_conditions"]
