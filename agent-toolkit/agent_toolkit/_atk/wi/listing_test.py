@@ -1498,7 +1498,7 @@ def test_list_summary_only_outputs_filename_and_summary(
         {"filename": "a-uwi.md", "summary": "UWIの質問"},
         {"filename": "z-awi.md", "summary": "AWIの要約"},
     ]
-    assert "a-uwi.md" in captured.err
+    assert not captured.err
 
 
 @pytest.mark.parametrize("other_output", ["--count", "--jsonl"])

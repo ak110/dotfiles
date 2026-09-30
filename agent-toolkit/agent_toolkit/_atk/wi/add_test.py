@@ -275,6 +275,23 @@ def test_style_diagnostics_skips_fenced_code() -> None:
     assert warnings == ["本文:4:3: ダッシュ —"]
 
 
+@pytest.mark.parametrize("diagnostic_count", [0, 2])
+def test_public_add_reports_style_actions_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    diagnostic_count: int,
+) -> None:
+    """複数の診断でも案内は一度にまとめ、診断0件では案内も省く。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    body = "\n".join(["説明\u2014補足"] * diagnostic_count) or "説明。"
+    _run_public_add(_cmd_add_args(tmp_path, body, dry_run=True), notes, _FIXED_DT, tmp_path)
+    lines = capsys.readouterr().err.splitlines()
+    assert len([line for line in lines if line.startswith("警告: 本文:") and "ダッシュ" in line]) == diagnostic_count
+    assert len([line for line in lines if line.startswith("次の操作: ")]) == bool(diagnostic_count)
+
+
 def test_style_diagnostics_reports_colloquial_location(monkeypatch: pytest.MonkeyPatch) -> None:
     """口語辞書の検出結果を本文の行番号付き警告へ変換する。"""
 

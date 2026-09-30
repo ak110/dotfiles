@@ -718,9 +718,9 @@ def _cmd_add(
                 )
             else:
                 validation_errors.append(error)
-    for warning in style_warnings:
+    if style_warnings:
         _outcome.report_warning(
-            warning,
+            "\n警告: ".join(style_warnings),
             next_action=(
                 "対応不要（投入は続行する）。直す場合は投入前に本文を書き直すか、"
                 "投入後に`atk wi edit <ファイル名> --body-file <本文ファイル>`で置き換える"

@@ -191,11 +191,11 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     assert "Exception ignored on flushing sys.stdout" not in stderr
 
 
-def test_cli_local_path_filter_notifies_legacy_and_current_uwis(
+def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """実CLIはローカルパス指定時に旧パス形とURL形の未回答UWIをともに通知する。"""
+    """実CLIはローカルパス指定時に旧パス形とURL形のUWIをともに数える。"""
     notes = _setup_notes(tmp_path)
     local_repo = tmp_path / "repo"
     subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
@@ -232,9 +232,7 @@ def test_cli_local_path_filter_notifies_legacy_and_current_uwis(
 
     assert result.returncode == 0
     assert result.stdout == "2\n"
-    assert "legacy.md" in result.stderr
-    assert "current.md" in result.stderr
-    assert "other.md" not in result.stderr
+    assert not result.stderr
 
 
 class TestWorktreeStashDispatch:
@@ -816,7 +814,6 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
     list_module = atk_members["_list"]
     plans_module = atk_members["_plans"]
     monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
-    monkeypatch.setattr(common_module, "notify_unanswered_uwis_if_any", lambda *_args: None)
     monkeypatch.setattr(mutations_module, "_cmd_start_processing", lambda *_args: None)
     monkeypatch.setattr(list_module, "_cmd_list", lambda *_args: None)
     monkeypatch.setattr(plans_module, "dispatch", lambda *_args: 0)
@@ -1056,7 +1053,6 @@ def test_wi_pull_uses_lock_and_suppresses_entry_notification(
     monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
     monkeypatch.setattr(common_module, "_repo_lock", lambda _path: Lock())
     monkeypatch.setattr(common_module, "pull", lambda _path: events.append("pull"))
-    monkeypatch.setattr(common_module, "notify_unanswered_uwis_if_any", lambda *_args: events.append("notify"))
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "pull"], home=tmp_path)
@@ -1608,104 +1604,42 @@ class TestSpaceSeparatedOptionWithoutWarning:
         assert "--commit=VALUE形式で渡すことを推奨" in help_text
 
 
-class TestUnansweredUwiNotification:
-    """`list`・`show`が通知対象の未回答UWIを全て含む場合は通知を抑止し、
-    そうでない場合は通知が表示されることを検証する。"""
-
-    @pytest.mark.parametrize("count", [0, 1, 3])
-    def test_notifies_unanswered_entries_after_non_uwi_command(
-        self, count: int, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        notes = _setup_notes(tmp_path)
-        for index in range(count):
-            _write_uwi_file(notes, f"uwi-{index:03d}.md", question=f"質問{index}")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=awi", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        stderr = capsys.readouterr().err
-        assert stderr.count("[inbox/unanswered]") == count
-        assert stderr.startswith(f"{_wi_common.UNANSWERED_UWI_NOTICE_HEADER}\n") if count else not stderr
-
-    def test_suppresses_notify_when_list_covers_all_unanswered(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """list --type=uwi --answered=no実行時、通知が抑止されることを検証する。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=uwi", "--answered=no", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
+@pytest.mark.parametrize("agent_environment", [False, True], ids=["human", "agent"])
+def test_wi_commands_report_only_their_results_with_pending_questions(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    agent_environment: bool,
+) -> None:
+    """読み取りと投入・編集・状態遷移は、未回答項目があっても実行した結果だけを表示する。"""
+    notes = _setup_notes(tmp_path)
+    _write_uwi_file(notes, "pending-question.md", question="回答待ち")
+    _write_awi_file(notes, "entry.md", body=_wi_bodies.AGENT_AWI_BODY, source="test")
+    body = tmp_path / "body.md"
+    body.write_text(_wi_bodies.AGENT_AWI_BODY, encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    if agent_environment:
+        monkeypatch.setenv("CLAUDECODE", "1")
+    commands = [
+        ["list", "--count", "--skip-pull"],
+        ["show", "entry.md", "--skip-pull"],
+        ["grep", ".", "--skip-pull"],
+        ["add", "--source=test", "--target-repo=github.com/example/repo", "--body-file", str(body)],
+        ["edit", "entry.md", "--body-file", str(body)],
+        ["hold", "entry.md"],
+        ["unhold", "entry.md"],
+        ["adopt", "entry.md"],
+    ]
+    for command in commands:
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", *command], home=tmp_path, now=_FIXED_DT)
         captured = capsys.readouterr()
-        assert captured.out.count("[inbox/unanswered]") == 1
+        assert result.value.code == 0, (command, captured.err)
+        assert "# 未回答" + "UWI通知" not in captured.out + captured.err
+        assert "pending-question.md" not in captured.err
         assert "[inbox/unanswered]" not in captured.err
-
-    def test_suppresses_notify_when_list_covers_all_unanswered_with_defaults(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """list --type=all --status=active --answered=all実行時、通知が抑止されることを検証する。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out.count("[inbox/unanswered]") == 1
-        assert "[inbox/unanswered]" not in captured.err
-
-    def test_does_not_suppress_notify_when_list_has_source_filter(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """list --source指定時、通知が抑止されないことを検証する。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--source=session-review", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER in captured.err
-
-    def test_does_not_suppress_notify_when_list_has_status_inbox(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """list --status=inbox単独では通知が抑止されないことを検証する。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--status=inbox", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER in captured.err
-
-    def test_suppresses_notify_when_show_all_covers_unanswered(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """show --all --type=uwi --answered=no実行時、通知が抑止されることを検証する。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "--all", "--type=uwi", "--answered=no", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER not in captured.err
-
-    def test_does_not_suppress_notify_when_show_with_filename(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """show <FILENAME>（単一ファイル指定）実行時、通知が抑止されないことを検証する。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER in captured.err
+    assert (notes / "adopted/entry.md").is_file()
 
 
 class TestInboxAlwaysEnabled:

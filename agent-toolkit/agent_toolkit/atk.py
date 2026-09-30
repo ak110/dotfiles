@@ -1547,13 +1547,6 @@ def main(
         private_notes,
         should_check=sub in _WI_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
     )
-    suppress_notify = (
-        sub == "pull"
-        or (sub == "list" and _list._covers_unanswered_uwis(args))
-        or (sub == "show" and _show._covers_unanswered_uwis(args))
-    )
-    if not suppress_notify:
-        _common.notify_unanswered_uwis_if_any(private_notes, getattr(args, "target_repo", None))
     sys.exit(exit_code)
 
 

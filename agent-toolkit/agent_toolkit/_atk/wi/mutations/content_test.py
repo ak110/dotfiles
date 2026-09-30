@@ -82,6 +82,26 @@ def test_edit_reports_style_warning_with_new_section_error(
     assert path.read_text(encoding="utf-8") == original
 
 
+@pytest.mark.parametrize("diagnostic_count", [0, 2])
+def test_public_edit_reports_style_actions_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    diagnostic_count: int,
+) -> None:
+    """編集は全診断を出力して案内を一度だけ置き、診断なしの編集では案内を省く。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "entry.md")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body = "\n".join(["説明\u2014補足"] * diagnostic_count) or "説明。"
+    with pytest.raises(SystemExit) as result:
+        atk.main(_edit_body_args(tmp_path, "entry.md", body), home=tmp_path)
+    assert result.value.code == 0
+    lines = capsys.readouterr().err.splitlines()
+    assert len([line for line in lines if line.startswith("警告: 本文:") and "ダッシュ" in line]) == diagnostic_count
+    assert len([line for line in lines if line.startswith("次の操作: ")]) == bool(diagnostic_count)
+
+
 def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """holdとunholdは専用復旧状態を作成せず既存の状態遷移で往復する。"""
     notes = _setup_notes(tmp_path)
