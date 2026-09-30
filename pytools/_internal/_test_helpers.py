@@ -34,11 +34,12 @@ def _plugin_list_json(*entries: dict[str, object]) -> str:
     return json.dumps(list(entries), ensure_ascii=False)
 
 
-def make_fresh_install_fake(calls: list[list[str]]) -> typing.Callable[..., _FakeResult]:
+def make_fresh_install_fake(calls: list[list[str]], *, version: str = "") -> typing.Callable[..., _FakeResult]:
     """未インストール環境からの新規導入を模した `claude` CLI フェイクを返す。
 
     `plugin list`は成功した`plugin install`を後続呼び出しへ反映し、`marketplace list`は空リスト、
     `marketplace add`/`plugin install`は成功する。それ以外のコマンドは失敗を返す。
+    `version`は導入後の`plugin list`が示す版で、導入後の版の検証まで通す検体では目標の版を渡す。
     install_claude_plugins 系テストの新規導入シナリオで共用する。
     """
     installed_plugin_ids: set[str] = set()
@@ -47,7 +48,7 @@ def make_fresh_install_fake(calls: list[list[str]]) -> typing.Callable[..., _Fak
         calls.append(cmd)
         if command_matches(cmd, ["claude", "plugin", "list"]):
             entries: list[dict[str, object]] = [
-                {"id": plugin_id, "scope": "user", "version": ""} for plugin_id in sorted(installed_plugin_ids)
+                {"id": plugin_id, "scope": "user", "version": version} for plugin_id in sorted(installed_plugin_ids)
             ]
             return _FakeResult(returncode=0, stdout=_plugin_list_json(*entries))
         if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):

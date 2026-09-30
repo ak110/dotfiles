@@ -1033,6 +1033,7 @@ class TestDefaultSteps:
         "Claude 設定": {"Claude Code plugin のインストール", "旧Codex User scope MCP登録の移行"},
         "claude-statusline バイナリの取得": {"Codex CLI の導入と更新"},
         "libarchive (Windows)": {"mise セットアップ"},
+        "atk serve 自動起動セットアップ (Linux)": {"Claude Code plugin のインストール"},
         "dotfiles自動更新タイマー セットアップ (Linux)": {"atk serve 自動起動セットアップ (Linux)"},
     }
     _WINDOWS_STEPS = {

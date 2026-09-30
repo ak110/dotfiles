@@ -46,7 +46,7 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
 def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
     """外部マーケットプレイスの専用テスト以外では対象を空にする。"""
     monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
-    monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets: None)
+    monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed=(): None)
 
 
 def test_verify_target_plugins_requires_installed_and_enabled(monkeypatch: pytest.MonkeyPatch) -> None:

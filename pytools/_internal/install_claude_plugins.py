@@ -3,13 +3,15 @@
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 対象プラグインは`.claude-plugin/marketplace.json`の`plugins[]`をSSOTとして動的に決定する。
 前提条件（`claude` CLI / `uv` CLIがPATHにある）を満たさない場合は完全にスキップし、
-dotfiles apply全体の失敗にはしない。
+dotfiles apply全体の失敗にはしない。前提を満たしたうえで管理対象pluginの導入・更新が失敗した場合と、
+導入後の版・有効状態が目標と一致しない場合は例外を送出し、後処理の工程の失敗として扱わせる。
 """
 
 import json
 import logging
 import shutil
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
@@ -73,6 +75,9 @@ def run() -> tuple[bool, list[str]]:
         (changed, recommendations) のタプル。
         changedは何らかのpluginを新たにインストールまたは更新した場合にTrue。
         recommendationsは呼び出し元が利用者へ案内する推奨コマンド列。
+
+    Raises:
+        RuntimeError: 管理対象pluginの導入・更新に失敗した場合、または導入後の状態が目標と一致しない場合。
     """
     if not _prerequisites_ok():
         return False, []
@@ -129,7 +134,8 @@ def run() -> tuple[bool, list[str]]:
     updated_count = 0
     installed_count = 0
     resynced_count = 0
-    failed_count = 0
+    # 管理対象の導入・更新に失敗したplugin名と操作。サマリ行の後に工程の失敗として送出する。
+    failed_operations: list[str] = []
     # CLI が成功終了した plugin だけを、キャッシュ実体の検査対象にする。
     cache_check_names: list[str] = []
     for name, target in target_versions.items():
@@ -143,7 +149,7 @@ def run() -> tuple[bool, list[str]]:
                 installed_count += 1
                 cache_check_names.append(name)
             else:
-                failed_count += 1
+                failed_operations.append(f"{name} (install)")
         elif target and current != target:
             logger.info(log_format.format_status(name, f"更新を検出: {current} -> {target}"))
             if _update_plugin(name):
@@ -151,7 +157,7 @@ def run() -> tuple[bool, list[str]]:
                 updated_count += 1
                 cache_check_names.append(name)
             else:
-                failed_count += 1
+                failed_operations.append(f"{name} (update)")
         elif is_directory_type:
             # directory 型登録が健全かつ version 一致の場合、dotfiles 側の編集を反映するため
             # `plugin install` を再実行してキャッシュを最新化する。
@@ -161,7 +167,7 @@ def run() -> tuple[bool, list[str]]:
                 resynced_count += 1
                 cache_check_names.append(name)
             else:
-                failed_count += 1
+                failed_operations.append(f"{name} (install)")
         else:
             logger.info(log_format.format_status(name, f"最新 ({current or '不明'})"))
             latest_count += 1
@@ -181,17 +187,19 @@ def run() -> tuple[bool, list[str]]:
         any_change = True
     recommendations = compute_recommended_commands(raw_data, enabled_map)
 
-    # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
-    _verify_target_plugins(target_versions)
+    failed_count = len(failed_operations) + disable_failed_count
     logger.info(
         log_format.format_status(
             "plugins",
             f"サマリ: 最新 {latest_count} 件 / 更新 {updated_count} 件 / 新規 {installed_count} 件"
             + (f" / 再同期 {resynced_count} 件" if resynced_count else "")
             + (f" / 自動無効化 {disabled_count} 件" if disabled_count else "")
-            + (f" / 失敗 {failed_count + disable_failed_count} 件" if failed_count + disable_failed_count else ""),
+            + (f" / 失敗 {failed_count} 件" if failed_count else ""),
         )
     )
+    # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
+    # 外部marketplaceの自動無効化の失敗は管理対象の版と動作に影響しないため、件数だけに残す。
+    _verify_target_plugins(target_versions, failed_operations)
     return external_changed or any_change, recommendations
 
 
@@ -721,8 +729,12 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     return True
 
 
-def _verify_target_plugins(target_versions: dict[str, str]) -> None:
-    """管理対象pluginがuser scopeへ導入され、有効であることを実体から検証する。"""
+def _verify_target_plugins(target_versions: dict[str, str], failed_operations: Sequence[str] = ()) -> None:
+    """管理対象pluginが目標の版でuser scopeへ導入され、有効であることを実体から検証する。
+
+    `failed_operations`は同じ回に失敗した`claude plugin install`・`update`（`<plugin名> (<操作>)`）で、
+    実体の検証結果と併せて1つの例外へまとめる。CLIが成功終了しても版が変わらない場合は版の不一致で検出する。
+    """
     raw_data: object = _read_installed_plugins_from_file()
     if raw_data is None:
         raw_data = _get_installed_plugins_raw()
@@ -736,9 +748,18 @@ def _verify_target_plugins(target_versions: dict[str, str]) -> None:
         for name in target_versions
         if enabled is None or enabled.get(f"{name}@{_MARKETPLACE_NAME}") is not True
     )
+    mismatched = sorted(
+        f"{name} ({installed[name]} != {target})"
+        for name, target in target_versions.items()
+        if target and name in installed and installed[name] != target
+    )
     failures: list[str] = []
+    if failed_operations:
+        failures.append(f"CLI失敗: {', '.join(failed_operations)}")
     if missing:
         failures.append(f"未インストール: {', '.join(missing)}")
+    if mismatched:
+        failures.append(f"版不一致: {', '.join(mismatched)}")
     if disabled:
         failures.append(f"未有効化: {', '.join(disabled)}")
     if failures:

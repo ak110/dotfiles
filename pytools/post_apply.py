@@ -388,8 +388,10 @@ _CODEX_LINKS = "Codex リンクの同期"
 _CLEANUP = "旧配布物の削除"
 
 # 先行工程は、同じ資源（設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、
-# plugin cache、systemd、codexプロセスの稼働判定）を扱うステップの組と、先行ステップが導入する
-# 実行ファイルを使うステップへ宣言する。宣言の無いステップは他と同時に実行してよい。
+# plugin cache、Claude Code pluginの複製元である`agent-toolkit/`（`.venv`を含む）、systemd、
+# codexプロセスの稼働判定）を扱うステップの組と、先行ステップが導入する実行ファイルを使うステップへ宣言する。
+# 資源は子プロセスやサービスの再起動を経由して間接的に書き換える場合も含める。
+# 宣言の無いステップは他と同時に実行してよい。
 _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("bin PATH 登録 (Windows)", setup_bin_path.run, platforms=_WINDOWS),
     _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run, platforms=_WINDOWS),
@@ -445,7 +447,14 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("libarchive (Windows)", install_libarchive_windows.run, after=(_MISE,), platforms=_WINDOWS),
     # 開発版の取得はmise経由でcargoを使うため、Codex CLI工程のmise操作の後に行う。
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,)),
-    _StepSpec("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run, platforms=_LINUX),
+    # サービスの再起動で起動する`uv run --project <dotfiles>/agent-toolkit`が`agent-toolkit/.venv`を再同期するため、
+    # `claude plugin install`・`update`が同じ`agent-toolkit/`を複製し終えてから実行する。
+    _StepSpec(
+        "atk serve 自動起動セットアップ (Linux)",
+        setup_atk_serve_linux.run,
+        after=(_CLAUDE_PLUGIN,),
+        platforms=_LINUX,
+    ),
     # 両ステップが`systemctl --user daemon-reload`と`restart`を実行する。
     _StepSpec(
         "dotfiles自動更新タイマー セットアップ (Linux)",
