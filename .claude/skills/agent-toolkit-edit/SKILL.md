@@ -10,7 +10,7 @@ description: >
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）
 
-WI処理の工程や運用を担うスキル、`share/`配下の担当タスク文書または`atk wi`の実装を編集する場合は、編集前に`agent-toolkit:workflow-overview`を起動し、`docs/guide/claude-code-guide.md`を全文読む。
+WI処理の工程や運用を担うスキル、`share/`配下の担当タスク文書または`atk wi`の実装を編集する場合は、編集前に`agent-toolkit:workflow-overview`を起動する。あわせて`docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」）を読む。
 
 ## ファイル構成と参照方向
 
@@ -110,7 +110,7 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
 - 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述する。
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は記述の対象から外す
-- 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
+- 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く（努力目標。素のスキル名は同名スキルの探索を招く）。
   修飾のない素のスキル名は、同名のスキルを探索する無駄な工程を招く。
   `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
   サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
@@ -119,7 +119,7 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
 - 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名チェックを適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文では、hookの挙動をエンドユーザーが観測できる結果（特定操作がブロックされる・警告が返る等）として提示する。
-  ハッシュ値の比較・SHA256記録・ブロック機構・状態フラグ書き込みなどの内部実装の説明は、提示の対象から外す。
+  ハッシュ値の比較・SHA256記録・ブロック機構・状態フラグ書き込みなどの内部実装の説明は、提示の対象から外す（努力目標。利用者が観測する結果に限定すると、実装変更に本文が引きずられない）。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
     （`<plugin root>/skills/writing-standards/references/session-state-and-flags.md`等）は本規定の対象外とする
 
@@ -129,8 +129,8 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
   `agent-toolkit/skills/writing-standards/references/agent-skills.md`を適用する
 - 呼び出し元の専用の参照文書を起動契約、agent定義を受信側の恒常手順としてペアで更新する
 - 呼び出し元スキルと参照文書からagent定義をReadする手順を除外する
-- 独立に読み込まれる文書間の重複は、それぞれの読込コンテキストを実際に測定し、
-  参照だけでは実行判断に必要な情報が欠ける場合に限って許容する
+- 独立に読み込まれる文書間の重複は、参照だけでは実行判断に必要な情報が欠ける場合に許容する
+  （努力目標。重複は保守の手間を増やす）
 - 相互参照が発生する共通観点は横断スキル配下`references/`へ集約してよい
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
@@ -146,7 +146,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 ## スキル間の連携
 
-`agent-toolkit/skills/single-lane-process/`配下以外の`agent-toolkit/`配下の規範文書は、`single-lane-process`を名指ししない。共通契約と`agent-toolkit:process-wi`側は読み替え先を知らない一方向の依存とし、`single-lane-process`側から共通契約を参照して上書きを定める。利用者が起動名を知る必要がある`docs/`配下の案内と方針記録は対象外とする。
+`agent-toolkit/skills/single-lane-process/`配下以外の`agent-toolkit/`配下の規範文書は、`single-lane-process`を名指ししない（努力目標。共通側が読み替え先を知らない一方向依存に保つと、改訂が片側で済む）。共通契約と`agent-toolkit:process-wi`側は読み替え先を知らない一方向の依存とし、`single-lane-process`側から共通契約を参照して上書きを定める。利用者が起動名を知る必要がある`docs/`配下の案内と方針記録は対象外とする。
 
 ## バージョン更新
 
@@ -167,7 +167,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 ## 同期先ドキュメント
 
-複数ファイルへまたがる機構または委譲構造を新設または変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界および却下した代替案を追加または更新する。
+複数ファイルへまたがる機構または委譲構造を新設または変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界および却下した代替案を追加または更新する（努力目標。構造の理由と却下した案を残すと、後の変更で同じ検討を繰り返さずに済む）。
 
 `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」の一方で、運用形態、WIの登録方法、回答の流れのいずれかを変更した場合は、他方も同じ変更単位でそろえる。
 
@@ -264,7 +264,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 自動化手段の選定は`agent-toolkit:writing-standards`の振り分け規定と本節に従う。
 
 PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
-類似チェックが既に片方に存在する場合は、定義を1か所に保つため、そちらへ統合する。
+類似チェックが既に片方に存在する場合は、そちらへ統合する（努力目標。定義を1か所にすると改訂も1か所で済む）。
 両方に該当すると判断した場合は、そのチェックがdotfiles固有の運用前提（配布先ディレクトリ構成・個人の命名規約など）へ
 依存するかで判定し、依存しないものをプラグインへ置く。
 
@@ -286,7 +286,9 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - `agent-toolkit/pyproject.toml`の`dependencies`へパッケージを追加・更新する場合、
   同projectの`uv.lock`も更新する。`agent-toolkit/scripts/`に残すリモート補助処理だけはPEP 723宣言を維持する
 - 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
-  `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、そのイベントの既存のエントリーポイントへ相乗りさせる。
+  `share/claude_settings_json_managed.*.json`のいずれでも、そのイベントの既存のエントリーポイントへ相乗りさせることを推奨する。
+  登録を並べるとプロセスの起動が増え、ツール呼び出しのたびに遅延が加わる。
+  入力契約の違いなどで相乗りできない場合は、その理由を残して登録を並べてよい。
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
   イベントごとのエントリーポイントの実装契約は`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める
 
