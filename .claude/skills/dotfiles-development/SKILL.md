@@ -33,6 +33,7 @@ description: >
     Pythonファイルまたはエージェント向け文書を変更するレーンの変更範囲の検証へ、後述の`repo_invariant`マーカーのテストを含める。
     `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言を変更した場合は、変更した挙動に対応するhook固有の`<hook名>_test.py`も加える。
     `agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、または`atk.py`のサブコマンド登録を変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`を変更範囲の検証へ加える。同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。共有の生成値や登録を期待する未変更のテストも検証するためである。
+    `agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider pytools scripts`を変更範囲の検証へ加え、同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。`agent-toolkit/`の外にも`agent_toolkit`をimportする実装とテストがあり（現行は`pytools/`と`scripts/`）、引数の必須化や例外の追加のような実行時にだけ成立する契約の変更は、固定文字列の検索と`ty`の型チェックでは呼び出し元の破損を検出できないためである。統合直前にも実行するのは、並行する別のレーンが同じ契約の新しい呼び出し元を加えた場合に、統合後に初めて破損が成立するためである。
     デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
