@@ -17,6 +17,7 @@ from typing import Any
 from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.wait_schedule import get_wait_timeout
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 
@@ -315,8 +316,11 @@ def wait_for_result(
             _write_json(run_directory / "current.json", {"run_id": run_id})
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
+        # 上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、CLIとMCPで同じ値を使う。
+        # 呼び出し元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
+        wait_timeout = get_wait_timeout("main")
         started_at = time.monotonic()
-        deadline = started_at + state.WAIT_TIMEOUT_SECONDS
+        deadline = started_at + wait_timeout
         while True:
             current_origins, target_error = _target_origins(
                 own_status_path,

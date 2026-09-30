@@ -36,6 +36,10 @@ _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 # キャッシュTTLごとの委譲先の終端を待つ上限。TTLが満了する前に呼び出し元のターンが再開するよう、上限はTTLより短く取る。
 # 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、この上限より60秒短い値とする。
+# この値はCLIの`atk agents wait`の上限にも使う。同コマンドは外側の`timeout`を付けずにBashツールの背景実行で待つため、
+# Claude CodeのBashツールの背景実行の既定上限1800秒（Claude Code 2.1.285の実装では
+# `max(1800000, BASH_DEFAULT_TIMEOUT_MS)`ミリ秒）も下回る必要がある。上回るとホストが先に待機を打ち切り、
+# 上限到達時の終了コード3が呼び出し元へ届かず、同じコマンドを再発行して待機を続ける経路へ入れない。
 _WAIT_TIMEOUT_FOR_5M_TTL = 270.0
 _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 # Claude Codeを確認できないホスト向けの上限。Codexは1回のツール呼び出しへ300秒の上限を課し、

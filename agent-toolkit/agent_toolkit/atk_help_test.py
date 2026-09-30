@@ -9,7 +9,6 @@ from collections.abc import Iterator
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import state
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk import outcome as _outcome
@@ -292,7 +291,10 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation() -> None:
     description = commands["atk agents wait"].description
 
     assert description is not None
-    assert f"{int(state.WAIT_TIMEOUT_SECONDS)}秒" in description
+    # 上限は保持期間1h・5m、Claude Codeを確認できないホスト、委譲先セッションの各条件でMCPの`wait`と同じ導出値をとる。
+    for limit in ("1740秒", "270秒", "240秒"):
+        assert limit in description
+    assert "3600秒" not in description
     assert "終了コード3" in description
     assert "単独で発行する" in description
     assert "`--output-file`は保存先を指定する必要がある場合だけ使う" in description

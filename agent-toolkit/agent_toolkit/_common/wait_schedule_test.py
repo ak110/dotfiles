@@ -439,3 +439,14 @@ def test_rejects_unknown_request_bucket() -> None:
         _wait_schedule.get_schedule("worker")
     with pytest.raises(ValueError, match="未対応のrequest bucket"):
         _wait_schedule.get_wait_timeout("worker")
+
+
+def test_1h_wait_timeout_below_host_limits() -> None:
+    """保持期間1hの待機上限は、Bashツールの背景実行の既定上限1800秒とキャッシュTTLの3600秒を下回る。
+
+    CLIの`atk agents wait`は外側の`timeout`を付けずに背景実行で待つため、上限が1800秒以上になると
+    ホストが先に待機を打ち切り、終了コード3による再発行の経路へ入れない。3600秒以上ではキャッシュが満了してから戻る。
+    """
+    limit = _wait_schedule._WAIT_TIMEOUT_FOR_1H_TTL  # pylint: disable=protected-access
+    assert limit < 1800.0
+    assert limit < 3600.0

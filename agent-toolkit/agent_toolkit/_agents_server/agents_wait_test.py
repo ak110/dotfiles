@@ -1,22 +1,26 @@
 """atk agents waitの公開CLI契約を検証する。"""
 
+import asyncio
 import json
+import os
 import pathlib
 import threading
 from collections.abc import Callable
 
 import pytest
 
+import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit import atk
 from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import wait_schedule
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 
 @pytest.fixture(autouse=True)
 def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "logs"))
 
 
@@ -637,7 +641,7 @@ def test_wait_continues_after_contended_owner_aborts(
 ) -> None:
     """lock取得後も待機を続け、後から届く終端結果を受け取る。"""
     results = status_file.results_directory("root-session", tmp_path)
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 10.0)
     monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(results))
 
     assert _run_contended_wait(tmp_path, monkeypatch) == 0
@@ -1011,7 +1015,7 @@ def test_agents_wait_keeps_waiting_once_a_target_is_registered(
 ) -> None:
     """待機対象を1件でも取得した待機へは対象不在の上限を適用しない。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 0.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0.0)
 
     with pytest.raises(SystemExit, match="3"):
         atk.main(["agents", "wait"])
@@ -1028,7 +1032,7 @@ def test_agents_wait_keeps_waiting_for_starting_session(
 ) -> None:
     """startingのsessionが保持中なら対象不在として即時終了しない。"""
     _write_own_status(wait_environment, [{"session_id": "session-1", "status": "starting"}])
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 0.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0.0)
 
     with pytest.raises(SystemExit, match="3"):
         atk.main(["agents", "wait"])
@@ -1046,7 +1050,7 @@ def test_agents_wait_keeps_captured_session_after_projection_disappears(
     """待機開始後に状態投影が消えても取得済みsessionを非終端として返す。"""
     status_path = _write_own_status(wait_environment, [{"session_id": "session-1"}])
     monotonic_values = iter([0.0, 0.0, 2.0])
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 1.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 1.0)
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
     monkeypatch.setattr(agents_wait.time, "sleep", lambda _seconds: status_path.unlink())
 
@@ -1237,7 +1241,7 @@ def test_agents_wait_reissues_for_registered_session_after_notice(
     assert json.loads(capsys.readouterr().out)["status"] == "running"
     status_path.unlink()
 
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 10.0)
     monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(wait_environment))
 
     assert _wait_for_session_1_result(wait_environment) == 0
@@ -1303,7 +1307,7 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
     status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     session_registry.publish("session-1", terminal=False, state_root=state_root)
     # 上限到達による終了と区別するため、待機上限をテストの実行時間より十分大きくする。
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 3600.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 3600.0)
     sleeps: list[float] = []
 
     def terminate_on_sleep(seconds: float) -> None:
@@ -1437,7 +1441,7 @@ def test_agents_wait_keeps_waiting_after_stall_threshold(
     """停滞候補の診断後も待機を続け、次の周回で終端結果を回収する。"""
     _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": "2000-01-01T00:00:00+00:00"}])
     monotonic_values = iter((0.0, 1.0, state.STALL_NOTICE_SECONDS + 1.0))
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", state.STALL_NOTICE_SECONDS + 100.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: state.STALL_NOTICE_SECONDS + 100.0)
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
 
     monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(wait_environment))
@@ -1550,7 +1554,7 @@ def test_agents_wait_collects_dynamic_target_under_owner_lock(
 ) -> None:
     """書込主体の単一ロックを保持したまま追加対象を待機集合へ加える。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 10.0)
     monotonic_values = iter((0.0, 0.0, 1.0))
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
 
@@ -1565,3 +1569,95 @@ def test_agents_wait_collects_dynamic_target_under_owner_lock(
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-2"}
     log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
     assert "wait_target_added session_id=session-2" in log_text
+
+
+_TTL_CASES = [
+    pytest.param({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"}, 1740.0, id="claude-code-1h"),
+    pytest.param({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m"}, 270.0, id="claude-code-5m"),
+    pytest.param({"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"}, 270.0, id="no-claudecode"),
+    pytest.param(
+        {"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "AGENT_TOOLKIT_DELEGATED_SESSION": "1"},
+        240.0,
+        id="delegated",
+    ),
+]
+
+
+def _set_ttl_environment(monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]) -> None:
+    """保持期間とホストの判定入力を指定の条件だけへ固定し、上限の導出を実装へ戻す。"""
+    for name in ("CLAUDECODE", "FORCE_PROMPT_CACHING_5M", "ENABLE_PROMPT_CACHING_1H", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", wait_schedule.get_wait_timeout)
+
+
+def _observe_cli_wait_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    results_directory: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    probe_limit: float,
+) -> float:
+    """終端しない委譲先を`atk agents wait`で待ち、終了コード3で戻った時点の経過秒数を返す。
+
+    最初の待機で`probe_limit`の0.5秒前まで時刻を進め、以降は待機した秒数だけ進める。
+    実際の上限が`probe_limit`と一致する場合だけ、残り0.5秒の待機を経て同じ時刻に上限へ到達する。
+    """
+    identity = status_file.resolve_status_file_identity(dict(os.environ))
+    assert identity is not None
+    status_path = results_directory.parent / identity.file_name
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    status_path.write_text(json.dumps({"version": 1, "sessions": [{"session_id": "session-1"}]}), encoding="utf-8")
+    clock = [0.0]
+    sleeps: list[float] = []
+
+    def advance(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock[0] = probe_limit - 0.5 if len(sleeps) == 1 else clock[0] + seconds
+
+    monkeypatch.setattr(agents_wait.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(agents_wait.time, "sleep", advance)
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents", "wait"])
+
+    assert sleeps == [1.0, 0.5]
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "running"}
+    return clock[0]
+
+
+@pytest.mark.parametrize(("environment", "expected_limit"), _TTL_CASES)
+def test_wait_limit_follows_prompt_cache_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    environment: dict[str, str],
+    expected_limit: float,
+) -> None:
+    """待機上限は保持期間・ホスト・委譲先の条件から導出され、到達時に終了コード3で戻る。
+
+    上限の定数を置き換えず、環境条件だけを切り替える。固定値へ戻ると、条件ごとの秒数で上限へ到達しない。
+    """
+    _set_ttl_environment(monkeypatch, environment)
+
+    assert _observe_cli_wait_limit(monkeypatch, wait_environment, capsys, expected_limit) == expected_limit
+
+
+@pytest.mark.parametrize(("environment", "expected_limit"), _TTL_CASES)
+def test_cli_and_mcp_wait_limits_match(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    environment: dict[str, str],
+    expected_limit: float,
+) -> None:
+    """CLIとMCPの`wait`は同じ条件で同じ上限を使い、CLI専用の上限定数を持たない。"""
+    _set_ttl_environment(monkeypatch, environment)
+    # 導出値の保持だけを持つ最小のインスタンスで、MCPの`wait`が使う解決処理を呼ぶ。
+    manager = subject.AgentsServerManager.__new__(subject.AgentsServerManager)
+    manager._wait_timeouts = {}  # pylint: disable=protected-access
+    mcp_limit = asyncio.run(manager._resolve_wait_timeout("main"))  # pylint: disable=protected-access
+
+    assert mcp_limit == expected_limit
+    assert _observe_cli_wait_limit(monkeypatch, wait_environment, capsys, mcp_limit) == mcp_limit
+    assert not hasattr(state, "WAIT_TIMEOUT_SECONDS")

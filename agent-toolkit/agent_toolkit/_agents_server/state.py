@@ -42,14 +42,6 @@ HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
 SESSION_INITIALIZATION_TIMEOUT = 50.0
 SESSION_INITIALIZATION_ATTEMPTS = 2
-# Claude CodeのBashツールが`run_in_background`指定で`timeout`を省いたコマンドへ課す実行上限の既定値。
-# 以降の待機上限はこの上限を制約として導出する。
-HOST_BASH_BACKGROUND_TIMEOUT_SECONDS = 1800.0
-# `atk agents wait`が待機対象を1件以上取得した後に用いる上限秒数。
-# 呼び出し側は外側の`timeout`を付けずに背景起動するため、HOST_BASH_BACKGROUND_TIMEOUT_SECONDSより60秒短くする。
-# この関係が崩れると、ホストが先に待機を打ち切り、上限到達時の終了コード3が呼び出し元へ届かず、
-# 同じコマンドを再発行して待機を続ける経路へ入れない。
-WAIT_TIMEOUT_SECONDS = HOST_BASH_BACKGROUND_TIMEOUT_SECONDS - 60.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "high_tier",

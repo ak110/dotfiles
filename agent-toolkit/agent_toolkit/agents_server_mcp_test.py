@@ -5839,7 +5839,7 @@ async def test_stop_releases_wait_target_before_waiting_for_new_result(
     old_session = subject.SessionState("old-session", str(tmp_path), engine="codex", announced=True)
     manager.sessions[old_session.session_id] = old_session
     writer.flush()
-    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0)
 
     assert (
         agents_wait.wait_for_result(
@@ -6576,16 +6576,6 @@ def test_initialization_failure_resolves_before_host_moves_call_to_background() 
     """
     failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
     assert failure_path + subject.START_AVAILABILITY_TIMEOUT < state.HOST_BACKGROUND_THRESHOLD_SECONDS
-
-
-def test_cli_wait_limit_ends_before_host_background_timeout() -> None:
-    """`atk agents wait`の待機上限がClaude CodeのBash背景実行の既定上限より前に到達する。
-
-    呼び出し側は外側の`timeout`を付けずに背景起動するため、この関係が崩れるとホストが待機を打ち切り、
-    終了コード3による再発行の経路へ入れない。既定上限はClaude CodeのBashツールの定義（既定1800000ミリ秒）に従う。
-    """
-    assert state.HOST_BASH_BACKGROUND_TIMEOUT_SECONDS == 1800.0
-    assert state.WAIT_TIMEOUT_SECONDS < state.HOST_BASH_BACKGROUND_TIMEOUT_SECONDS
 
 
 def _recording_candidates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
