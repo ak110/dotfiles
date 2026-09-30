@@ -419,6 +419,21 @@ async def _open_filters(page: playwright.async_api.Page) -> None:
         await details.locator("summary").click()
 
 
+def _assert_list_request_without_fallback(request_urls: list[str], base_url: str, expected_path: str) -> None:
+    """期待した条件の一覧要求が送られ、補助検索の要求が送られていないことを判定する。
+
+    要求一覧の完全一致は使わない。画面は利用者操作と独立に、外部変更時の再読込で
+    `/api/entries?type=uwi&status=all&answered=all`と現在の条件の一覧要求を任意の時点で追加送信するためである。
+    再読込の契機はSSE接続の確立、`window`の`focus`、`visibilitychange`、SSEの`changed`、
+    および利用者操作中に保留した再読込の操作終了後の実行である。
+    条件付きの一覧要求は常に`/api/entries?type=`で始まり、条件を外した補助検索の要求だけが
+    `/api/entries?q=`で始まるため、後者の不在で補助検索の混入を判定できる。
+    """
+    assert f"{base_url}{expected_path}" in request_urls
+    fallback_prefix = f"{base_url}/api/entries?q="
+    assert not [url for url in request_urls if url.startswith(fallback_prefix)]
+
+
 async def _shift_click_default_prevented(link: playwright.async_api.Locator) -> bool:
     """Shiftクリックを送り、アプリケーション処理後の既定動作抑止状態を返す。"""
     default_prevented = await link.evaluate(
@@ -876,7 +891,9 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await page.locator("#search-input").fill("")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
     await page.wait_for_timeout(100)
-    assert request_urls == [f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all&page=1"]
+    _assert_list_request_without_fallback(
+        request_urls, browser_harness.base_url, "/api/entries?type=all&status=active&answered=all&page=1"
+    )
 
     request_urls.clear()
     async with page.expect_response(
@@ -889,9 +906,11 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await playwright.async_api.expect(notice).to_be_hidden()
     await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
     await page.wait_for_timeout(100)
-    assert request_urls == [
-        f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
-    ]
+    _assert_list_request_without_fallback(
+        request_urls,
+        browser_harness.base_url,
+        "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1",
+    )
 
     await page.locator("#kind-filter").select_option("all")
     await page.locator("#state-filter").select_option("all")
@@ -907,9 +926,9 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await playwright.async_api.expect(notice).to_be_hidden()
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
-    assert request_urls == [
-        f"{browser_harness.base_url}/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1"
-    ]
+    _assert_list_request_without_fallback(
+        request_urls, browser_harness.base_url, "/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1"
+    )
 
 
 @pytest.mark.asyncio
