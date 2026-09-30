@@ -46,6 +46,7 @@ from agent_toolkit._agents_server.state import (
     _validate_shell_request,
     add_terminal_listener,
     add_touch_listener,
+    consume_agents_wait_background_outputs,
     finalize_pending_result,
     has_pending_auto_resume_targets,
     has_uncollected_result,
@@ -1479,6 +1480,8 @@ class AgentsServerManager:
         """保留中の結果を、孫sessionの終端または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
             return
+        # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終端結果ファイルが消えた後も未観測にしない。
+        consume_agents_wait_background_outputs(session)
         resolutions = {session_id: session_registry.resolve(session_id) for session_id in session.live_child_session_ids}
         terminal = {
             session_id

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import datetime
 import json
 import logging
 import pathlib
+import re
 import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any
@@ -401,6 +403,9 @@ class SessionState:
     live_task_ids: set[str] = dataclasses.field(default_factory=set)
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
+    # 背景実行へ移った`atk agents wait`の出力ファイルの絶対パス。結果本文がツール結果に現れないため、
+    # 孫sessionの終端判定と未観測の記録の直前にこのファイルを読み、回収済みの孫sessionを追跡から外す。
+    agents_wait_background_outputs: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
     # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名、そのブロックを受信した時刻および入力の1行要約の組とする。
     # `child_tool_uses`は`agents_server`のツール呼び出しの引数を孫session追跡のために保持する別の責務を持つため統合しない。
@@ -721,6 +726,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.failure_pending_completion = False
     session.live_child_session_ids.clear()
     session.terminal_child_session_ids.clear()
+    session.agents_wait_background_outputs.clear()
     session.child_tool_uses.clear()
     session.pending_tool_uses.clear()
     session.last_action = ""
@@ -801,6 +807,9 @@ def consume_agents_server_tool_result(
 _AGENTS_WAIT_TOOL_USE = "atk agents wait"
 # `atk agents wait`が`--output-file`の指定時とエージェント環境の自動保存時に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
+# Claude CodeのBashツールが背景実行へ移したコマンドのツール結果が、出力ファイルを示す語句。
+# 例: `Command running in background with ID: <id>. Output is being written to: <path>. You will be notified ...`
+_BACKGROUND_OUTPUT_PATTERN = re.compile(r"Output is being written to: (\S+)")
 
 
 def _is_agents_wait_command(tool_input: Any) -> bool:
@@ -846,17 +855,47 @@ def consume_agents_wait_output(session: SessionState, text: str) -> None:
     委譲先は受け取り済みの結果について同じ報告を返し直すだけのturnを費やす。
     回収の根拠は待機コマンドが返したJSON Linesとし、`--output-file`の指定時と長い結果の自動保存時は標準出力が示す保存先を読む。
     結果ファイルの不在は公開前の状態と区別できないため、回収の根拠に用いない。
+    ホストが待機を背景実行へ移した場合は結果本文が出力ファイルへ書かれるため、そのパスを記録し、
+    `consume_agents_wait_background_outputs`が判定の直前に読む。
+    """
+    collected = _collected_from_wait_output(text)
+    for match in _BACKGROUND_OUTPUT_PATTERN.finditer(text):
+        # 語句の後に文を続けるため、パス末尾の句点を除く。
+        session.agents_wait_background_outputs.add(match.group(1).rstrip("."))
+    _discard_collected(session, collected)
+
+
+def consume_agents_wait_background_outputs(session: SessionState) -> None:
+    """背景実行の`atk agents wait`が出力ファイルへ書いた終端結果の孫sessionを追跡から外す。
+
+    孫sessionの終端判定と未観測の記録の直前に呼ぶ。出力ファイルが無い、読めない、終端statusの行が無い
+    （待機が未完了、または`status: running`だけ）場合は追跡に残す。
+    """
+    collected: set[str] = set()
+    for path in session.agents_wait_background_outputs:
+        with contextlib.suppress(OSError, UnicodeError):
+            collected |= _collected_from_wait_output(pathlib.Path(path).read_text(encoding="utf-8"))
+    _discard_collected(session, collected)
+
+
+def _collected_from_wait_output(text: str) -> set[str]:
+    """`atk agents wait`の標準出力から、終端結果を回収したsession識別子を返す。
+
+    標準出力はJSON Linesか、`--output-file`の指定時と長い結果の自動保存時に保存先の行だけを持つ。
+    ツール結果の本文と背景実行の出力ファイルはどちらも標準出力そのものであるため、同じ規則で読む。
     """
     collected = _collected_session_ids(text)
     for line in text.splitlines():
         if not line.startswith(_AGENTS_WAIT_SAVED_PREFIX):
             continue
-        try:
+        with contextlib.suppress(OSError, UnicodeError):
             collected |= _collected_session_ids(
                 pathlib.Path(line.removeprefix(_AGENTS_WAIT_SAVED_PREFIX).strip()).read_text(encoding="utf-8")
             )
-        except (OSError, UnicodeError):
-            continue
+    return collected
+
+
+def _discard_collected(session: SessionState, collected: set[str]) -> None:
     session.live_child_session_ids.difference_update(collected)
     session.terminal_child_session_ids.difference_update(collected)
 

@@ -6872,3 +6872,34 @@ def test_model_type_descriptions_reference_instructions() -> None:
         assert "共通引数`model_type`" in description, tool_name
         assert "<claude|codex|agy>" not in description, tool_name
         assert "`atk config set`" not in description, tool_name
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected_unobserved"),
+    [("completed", None), ("running", ["child-session"])],
+)
+async def test_child_collected_by_background_agents_wait_is_not_unobserved(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    status: str,
+    expected_unobserved: list[str] | None,
+) -> None:
+    """登録簿と終端結果ファイルが消えた後も、背景待機の出力ファイルに終端行がある孫sessionは未観測にしない。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    manager = subject.AgentsServerManager(status_writer=None)
+    parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
+    parent.live_child_session_ids.add("child-session")
+    output = tmp_path / "bqwu17av0.output"
+    output.write_text(json.dumps({"session_id": "child-session", "status": status}) + "\n", encoding="utf-8")
+    state.consume_agents_wait_output(
+        parent, f"Command running in background with ID: bqwu17av0. Output is being written to: {output}. You will be notified."
+    )
+    state.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+    manager.sessions[parent.session_id] = parent
+
+    await manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
+
+    error = parent.error if isinstance(parent.error, dict) else {}
+    assert error.get("unobservedSessions") == expected_unobserved
+    await manager.close()
