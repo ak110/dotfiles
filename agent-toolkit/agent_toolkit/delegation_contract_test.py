@@ -321,6 +321,32 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
     assert "`after_lanes`" in _h2_section(lanes, "レーンと資源")
 
 
+def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
+    """省略値を含む割当条件が生成・受領・上流分岐で一致し、一律の非実装除外を拒否する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share/pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share/pick-wi.parent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills/process-wi/references/run-lanes.md").read_text(encoding="utf-8")
+    output = _h2_section(picker, "出力")
+    rows = [[cell.strip() for cell in line.strip("|").split("|")] for line in output.splitlines() if line.startswith("| `")]
+    contract = {row[0].split("`")[1]: row[1] for row in rows[1:] if len(row) == 3}
+    assert contract == {"なし": "通常の`lane-NN`", "上流要求だけ": "`なし`", "混在": "通常の`lane-NN`"}
+    assert "行の省略を含む" in output
+    assert "書き込み前" in output and "既定値と省略を解決" in output
+    generation = _h2_section(picker, "反映先と上流投入")
+    receipt = _h2_section(parent, "出力の受領")
+    assert "「出力」の組合せ条件" in generation
+    assert "組合せ条件も検収" in receipt and "同一pickerへの再取得" in receipt
+    assert "`上流要求だけ`（`lane`が`なし`）" in _h2_section(lanes, "上流投入")
+
+    def assert_no_blanket_exclusion(text: str) -> None:
+        assert "外部操作または待機だけの項目は`lane`を`なし`とする" not in text
+
+    assert_no_blanket_exclusion(generation)
+    with pytest.raises(AssertionError):
+        assert_no_blanket_exclusion(generation + "外部操作または待機だけの項目は`lane`を`なし`とする")
+
+
 def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
     """委譲先の確認事項は標識へ保存せず確定時点でメインへ通知する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
