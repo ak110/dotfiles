@@ -5,6 +5,12 @@ PostToolUseフックから毎回呼ばれる。セッション状態へ対象リ
 ファイル名だけを通知する。セッション開始後の初回観測は基準値の記録だけを行い、
 通知しない。
 
+キュー管理リポジトリは複数のセッションが共有するため、回答済みUWIの通知は投入元のセッションへ限る。
+frontmatterの`submitter_session`がフック入力の`session_id`と一致するUWIと、キーを持たないUWIだけを通知する。
+キーを持たないUWIは本機能の導入前の投入分と、Codexのメインのように投入元を解決できない経路の投入分であり、
+通知しないと回答の反映契機を失うため通知側へ倒す。
+他のセッションが投入したUWIも回答済みファイル名の基準値へ記録し、後の観測で通知しない。
+
 `git pull`は実行しない。同一ホストのWeb UIおよびCLIからの回答はローカルファイルを
 直接更新するため、pullなしで観測できる。他端末からの回答は、このホストで次にpullが
 実行されるまで観測できない。
@@ -144,7 +150,8 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
     if not scan.complete:
         return None
 
-    answered = sorted(entry.filename for entry in scan.entries if entry.answered)
+    submitters = {entry.filename: entry.submitter_session for entry in scan.entries if entry.answered}
+    answered = sorted(submitters)
     outcome: dict[str, list[str]] = {"newly_answered": []}
 
     def _record(state: dict) -> dict | None:
@@ -158,13 +165,15 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
         return state
 
     state_updated = update_state(session_id, _record)
-    newly_answered = outcome["newly_answered"]
+    newly_answered = [filename for filename in outcome["newly_answered"] if submitters[filename] in (None, session_id)]
     if not newly_answered or not state_updated:
         return None
 
     filenames = ", ".join(newly_answered)
     return (
         f"リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
+        "反映の対象はこのセッション（委譲先を含む）が投入したUWIに限る。"
+        "このセッションが投入していないUWIは読まずに無視し、投入した処理回か次の処理回の選定工程に任せる。"
         "`agent-toolkit:process-wi`の実行中でないセッションでは、セッションを終える前に"
         "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から依存作業の再開までを完了する。"
         "`agent-toolkit:process-wi`の実行中は、処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、"

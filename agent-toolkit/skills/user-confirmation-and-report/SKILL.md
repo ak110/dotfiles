@@ -198,7 +198,7 @@ UWIの本文、投入、状態および依存関係の形式は`agent-toolkit:wi
 
 回答の到達は、投入済みで未回答のUWIを保持している間、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が定める経過時間起動の各回で`atk wi`により確認する。この確認も本節の起点とする。
 
-`agent-toolkit:process-wi`の起動中は`agent-toolkit:wi-standards`「状態と依存」の手順を適用する。それ以外で回答済みUWIの通知を受け取った主体は、次を同じ作業の連続した工程として完了する。
+`agent-toolkit:process-wi`の起動中は`agent-toolkit:wi-standards`「状態と依存」の手順を適用する。それ以外で回答済みUWIの通知を受け取った主体は、自セッション（委譲先を含む）が投入したUWIだけについて、次を同じ作業の連続した工程として完了する。他のセッションが投入したUWIは読まずに無視し、投入した処理回か次の処理回の選定工程に任せる。
 
 標準2択の事後承認型UWIへの肯定回答後の遷移は`agent-toolkit:wi-standards`「状態と依存」に従う。この分岐では回答を読み取って了承済みの判断を確認し、同じUWIへの再度の`adopt`や是正処理を実行しない。問題を示す回答と事前承認型UWIは、以下の手順で元の作業へ反映する。
 

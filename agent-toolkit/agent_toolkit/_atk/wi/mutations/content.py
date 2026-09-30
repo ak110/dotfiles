@@ -293,6 +293,8 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         raise WebInputError("repair_kindは予約キーのため atk wi edit では指定できません")
     if "plan_file" in updates:
         raise WebInputError("plan_fileは予約キーのため atk wi edit では指定できません")
+    if "submitter_session" in updates:
+        raise WebInputError("submitter_sessionは予約キーのため atk wi edit では指定できません")
     updated_data = {**stored_data, **updates}
     target_repo_changed = "target_repo" in updates and stored_data.get("target_repo") != updates["target_repo"]
     if target_repo_changed:

@@ -281,6 +281,7 @@ _RESERVED_FRONTMATTER_KEYS = (
     "reservation",
     "reservation_companion",
     "target_commit_history",
+    "submitter_session",
 )
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
@@ -292,10 +293,32 @@ CLIオプションより優先して採用するが、`target_repo`は`_resolve_
 `type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
 `origin_session`・`origin_locator`は旧形式のキーとして予約し、新規投入時に引き継がない。
+`submitter_session`は`atk wi add --type=uwi`を実行したセッションの識別子であり、回答済みUWIの通知を
+投入元のセッションへ限る`_hooks.uwi_completion`だけが読む。要求の由来の判定には使わず、
+本文のfrontmatterからの指定を採用しない。
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
 `reservation`・`reservation_companion`・`target_commit_history`はユーザーによる直接指定を禁止し、
 CLIが管理する識別情報、依存、修復UWI、旧形式の内部metadataとして予約する。
 """
+
+
+_PROCESS_ROOT_SESSION_PREFIX = "mcp-"
+"""`_agents_server.status_file.create_process_root_identity`が生成するプロセス専用の識別子の接頭辞。
+
+この識別子は会話のセッションではないため、回答通知の宛先を表さない。
+"""
+
+
+def _resolve_submitter_session() -> str | None:
+    """UWIを投入したセッションの識別子を環境から解決する。
+
+    委譲先は委譲元のセッションを返すため、委譲先が投入したUWIも委譲元のセッションへ通知される。
+    解決できない場合と、会話へ対応しないプロセス専用の識別子だった場合は`None`を返す。
+    """
+    session_id = _plan_file.resolve_owner_session_id()
+    if session_id is None or session_id.startswith(_PROCESS_ROOT_SESSION_PREFIX):
+        return None
+    return session_id
 
 
 def _add_entries_locked(
@@ -314,6 +337,7 @@ def _add_entries_locked(
     repair_targets: list[str | None] | None = None,
     repair_kinds: list[str | None] | None = None,
     depends_on: tuple[str, ...] = (),
+    submitter_session: str | None = None,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
@@ -367,6 +391,8 @@ def _add_entries_locked(
             if repair_target is not None:
                 frontmatter_data["repair_target"] = repair_target
                 frontmatter_data["repair_kind"] = repair_kind
+            if submitter_session is not None:
+                frontmatter_data["submitter_session"] = submitter_session
             logical_body = f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
         else:
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
@@ -400,6 +426,7 @@ def add_entries(
     lock_timeout: float = -1,
     saved_details: dict[str, dict[str, object | None]] | None = None,
     skip_remote_sync: bool = False,
+    submitter_session: str | None = None,
 ) -> list[str]:
     """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
 
@@ -408,6 +435,7 @@ def add_entries(
     `_uwi.reject_reserved_uwi_markup`が`WebInputError`を送出する（CLIとWeb UIの共通経路）。
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
+    `submitter_session`はUWI種別のfrontmatterへだけ保存する。
     """
     parsed_messages, normalized_target_repo, stored_plan_file = _validate_add_entries(
         private_notes,
@@ -436,6 +464,7 @@ def add_entries(
             target_commit=target_commit,
             plan_file=stored_plan_file,
             depends_on=depends_on,
+            submitter_session=submitter_session,
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
@@ -554,6 +583,7 @@ def _cmd_add(
     `--body-file`を指定した場合はそのファイルの内容を本文として扱う。
     シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
     `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
+    UWIでは投入したセッションの識別子を`submitter_session`へ保存する（`_resolve_submitter_session`）。
     """
     body_files = getattr(args, "body_file", None)
     if body_files:
@@ -658,6 +688,7 @@ def _cmd_add(
             plan_file=args.plan_file,
             depends_on=canonical_dependencies,
             saved_details=saved_details,
+            submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error}")

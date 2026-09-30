@@ -361,6 +361,8 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "_uwi_completion.py:build_notice",
         "リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
+        "反映の対象はこのセッション（委譲先を含む）が投入したUWIに限る。"
+        "このセッションが投入していないUWIは読まずに無視し、投入した処理回か次の処理回の選定工程に任せる。"
         "`agent-toolkit:process-wi`の実行中でないセッションでは、セッションを終える前に"
         "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から依存作業の再開までを完了する。"
         "`agent-toolkit:process-wi`の実行中は、処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、"
