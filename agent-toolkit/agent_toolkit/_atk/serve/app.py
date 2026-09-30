@@ -433,6 +433,69 @@ class BoundedWorkers:
         return await asyncio.shield(asyncio.create_task(managed()))
 
 
+# 停止要求で打ち切った要求へ返す応答本文。WI・計画ファイル・セッションの各画面はAPIの`error`を表示する。
+_SHUTDOWN_RESPONSE_BODY = json.dumps(
+    {"error": "atk serveが停止処理中のため要求を中断しました。再起動後に画面を再読み込みする"}, ensure_ascii=False
+).encode("utf-8")
+
+
+class _ShutdownAwareAsgi:
+    """HTTPの各要求の処理を停止要求と競合させ、停止要求が先なら要求を打ち切って応答を完了する。
+
+    hypercornは停止時に`server.wait_closed()`で全接続の終了を待ってから`graceful_timeout`を適用するため、
+    処理に時間のかかる要求（一覧・検索の走査やリモート取得）が接続を保持すると停止がその完了まで待つ。
+    経路ごとではなくアプリのASGI呼び出しの1箇所で打ち切り、今後加える経路も書き足さずに対象とする。
+    応答を開始していない要求には503を返す。`BoundedWorkers.run`は`asyncio.shield`で同期処理の完了を保つため、
+    WIの変更処理は要求を打ち切っても途中で止まらない。
+    """
+
+    def __init__(self, inner: typing.Any, shutdown: asyncio.Event) -> None:
+        self._inner = inner
+        self._shutdown = shutdown
+
+    async def __call__(self, scope: dict[str, typing.Any], receive: typing.Any, send: typing.Any) -> None:
+        if scope.get("type") != "http":
+            await self._inner(scope, receive, send)
+            return
+        progress = {"started": False, "completed": False}
+
+        async def tracked_send(message: dict[str, typing.Any]) -> None:
+            if message.get("type") == "http.response.start":
+                progress["started"] = True
+            elif message.get("type") == "http.response.body" and not message.get("more_body", False):
+                progress["completed"] = True
+            await send(message)
+
+        request_task = asyncio.ensure_future(self._inner(scope, receive, tracked_send))
+        stop_task = asyncio.ensure_future(self._shutdown.wait())
+        try:
+            await asyncio.wait({request_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            request_task.cancel()
+            raise
+        finally:
+            stop_task.cancel()
+        if request_task.done():
+            request_task.result()
+            return
+        request_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await request_task
+        if progress["completed"]:
+            return
+        if not progress["started"]:
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 503,
+                    "headers": [(b"content-type", b"application/json; charset=utf-8")],
+                }
+            )
+            await send({"type": "http.response.body", "body": _SHUTDOWN_RESPONSE_BODY, "more_body": False})
+            return
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+
 class Operations:
     """同期ファイル操作をWeb API向けに提供する。"""
 
@@ -800,6 +863,7 @@ class _ServeRuntime:
         self.state = state
         self.sync_task: asyncio.Task[bool] | None = None
         self.background_task: asyncio.Task[None] | None = None
+        self.remote_stop_task: asyncio.Task[None] | None = None
 
     async def synchronize(self) -> bool:
         """同時に届いた同期要求へ同じ実行結果を返す。"""
@@ -1182,9 +1246,23 @@ def _register_lifecycle(
         serve_plans.start_remote_watchers(plans)
         serve_sessions.start_local_watch(sessions)
         serve_sessions.start_remote_clients(sessions)
+        runtime.remote_stop_task = asyncio.create_task(stop_remote_connections_on_shutdown())
+
+    async def stop_remote_connections_on_shutdown() -> None:
+        # 停止要求から`after_serving`までの間に常駐SSHが終わると、常駐接続はバックオフの後に再接続する。
+        # systemdがcgroup全体へSIGTERMを送る停止では常駐SSHが同時に終わるため、停止要求の時点で停止を始める。
+        await runtime.state.shutdown_requested.wait()
+        await serve_sessions.stop_remote_clients(sessions)
+        await serve_plans.stop_remote_watchers(plans)
 
     @app.after_serving
     async def stop_background_tasks() -> None:
+        if runtime.remote_stop_task is not None:
+            if not runtime.remote_stop_task.done():
+                runtime.remote_stop_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await runtime.remote_stop_task
+            runtime.remote_stop_task = None
         await serve_sessions.stop_remote_clients(sessions)
         serve_sessions.stop_local_watch(sessions)
         await serve_plans.stop_remote_watchers(plans)
@@ -1573,5 +1651,10 @@ def create_app(
     _register_plan_routes(app, plans)
     _register_session_routes(app, sessions, plans)
     _register_lifecycle(app, runtime, plans, sessions)
-    app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
+    # スレッドで動く読み取り専用の走査が、同じ停止要求を反復の途中で参照できるようにする。
+    plans.state.stop_requested = state.stop_requested
+    sessions.state.stop_requested = state.stop_requested
+    app.asgi_app = _ShutdownAwareAsgi(  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
+        pytilpack.quart.ProxyFix(app), state.shutdown_requested
+    )
     return app

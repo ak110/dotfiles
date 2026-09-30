@@ -12,10 +12,12 @@ import json
 import os
 import pathlib
 import subprocess
+import threading
 import typing
 
 import pytest
 
+from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import plans
 from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
 
@@ -126,7 +128,7 @@ async def test_start_local_watchers_schedules_existing_roots(
 async def test_long_stderr_keeps_the_tail_in_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """標準エラー出力が上限を超える場合、失敗の直接原因が現れる末尾側を残して切り詰める。"""
     head = "先頭の行" * plans.STDERR_EXCERPT_MAX_CHARS
-    monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, f"{head}\n末尾の理由\n".encode()))
+    monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(3, f"{head}\n末尾の理由\n".encode()))
 
     with pytest.raises(plans.RemoteHelperError) as error:
         await plans.fetch_remote_file("remote-host", "p.md", plans.default_ssh_runner, None)
@@ -135,3 +137,19 @@ async def test_long_stderr_keeps_the_tail_in_the_error(monkeypatch: pytest.Monke
     assert "末尾の理由" in message
     assert head not in message
     assert len(message) < len(head)
+
+
+def test_local_scans_stop_on_shutdown_request(tmp_path: pathlib.Path) -> None:
+    """停止要求が設定されると、一覧と本文検索のローカル走査はファイルを読み進めずに打ち切る。"""
+    root = tmp_path / "plans"
+    root.mkdir()
+    (root / "30-1200_計画.md").write_text("# 計画\n\n検索語\n", encoding="utf-8")
+    stop = threading.Event()
+    assert plans.search_files(root, "検索語", stop=stop) == {"30-1200_計画.md"}
+
+    stop.set()
+
+    with pytest.raises(_atk_serve_remote.ServeStopping):
+        plans.search_files(root, "検索語", stop=stop)
+    with pytest.raises(_atk_serve_remote.ServeStopping):
+        plans.scan_files(root, "local-host", stop=stop)

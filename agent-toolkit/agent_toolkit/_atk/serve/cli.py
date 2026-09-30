@@ -62,9 +62,10 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
     hypercorn_config.bind = [f"{config.host}:{config.port}"]
     # アクセスログは常駐運用で情報価値が低いため出力しない。
     hypercorn_config.accesslog = None
-    # hypercornは停止時に`server.wait_closed()`で全接続の切断を待ってから本値を適用する。
-    # SSEの生成処理は停止要求（`ServeState.request_shutdown`）で応答を完了して購読解除するため、
-    # 接続が残っていても本値の範囲で停止する。終了要求後の体感遅延を1秒以内へ抑える。
+    # hypercornは停止時に`server.wait_closed()`で全接続の終了を待ってから本値を適用する。
+    # 停止要求（`ServeState.request_shutdown`）で、アプリのASGI呼び出しが処理中の要求を打ち切り、
+    # SSEの生成処理が応答を完了し、スレッドの走査と常駐接続も止まるため、接続が残っていても本値の範囲で停止する。
+    # 終了要求後の体感遅延を1秒以内へ抑える。
     hypercorn_config.graceful_timeout = 1.0
 
     shutdown_event = asyncio.Event()

@@ -90,12 +90,12 @@ def _runner_returning(payload: dict[str, typing.Any]) -> tuple[plans.SshRunner, 
     return runner, calls
 
 
-def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., subprocess.CompletedProcess[bytes]]:
-    """指定した終了コードと標準エラー出力を返す`subprocess.run`の代用を組み立てる。"""
+def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., typing.Awaitable[tuple[int, bytes, bytes]]]:
+    """指定した終了コードと標準エラー出力を返す単発SSH（`remote.run_ssh`）の代用を組み立てる。"""
 
-    def run(*args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
-        del args, kwargs
-        return subprocess.CompletedProcess(args=["ssh"], returncode=returncode, stdout=b"", stderr=stderr)
+    async def run(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
+        del cmd, timeout
+        return returncode, b"", stderr
 
     return run
 

@@ -1239,3 +1239,69 @@ async def test_serve_stops_promptly_while_sse_client_is_connected(
             server.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await server
+
+
+@pytest.mark.parametrize("path", ["/api/sessions/list", "/api/plans/search?q=x"])
+@pytest.mark.asyncio
+async def test_serve_stops_promptly_while_slow_request_is_in_progress(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+) -> None:
+    """処理に時間のかかる一覧・検索の要求の処理中に停止要求を受けても、実際のhypercornが短時間で停止する。
+
+    hypercornは停止時に全接続の終了を待つため、要求の処理を停止要求で打ち切らないと、一覧の走査や
+    リモート取得が終わるまで`_serve`が戻らない（systemdの停止タイムアウトでSIGKILLされる）。
+    打ち切った要求は応答を開始していないため503で完了する。
+    """
+    from agent_toolkit._atk.serve.plans import views as serve_plan_views  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    request_started = asyncio.Event()
+
+    async def slow_list_sessions(*args: object, **kwargs: object) -> typing.NoReturn:
+        del args, kwargs
+        request_started.set()
+        await asyncio.sleep(60)
+        raise AssertionError("停止要求で打ち切られなかった")
+
+    monkeypatch.setattr(serve_sessions, "list_sessions", slow_list_sessions)
+    monkeypatch.setattr(serve_plan_views, "all_entries", slow_list_sessions)
+    handlers: dict[int, tuple[typing.Callable[[str], None], str]] = {}
+    loop = asyncio.get_running_loop()
+
+    def add_signal_handler(sig: int, callback: typing.Callable[[str], None], signal_name: str, **kwargs: object) -> None:
+        del kwargs
+        handlers[sig] = (callback, signal_name)
+
+    monkeypatch.setattr(loop, "add_signal_handler", add_signal_handler)
+    port = _unused_local_port()
+    server = asyncio.create_task(serve._serve(tmp_path, config.ServeConfig("127.0.0.1", port)))
+    writer: asyncio.StreamWriter | None = None
+    try:
+        reader: asyncio.StreamReader | None = None
+        for _ in range(200):
+            try:
+                reader, writer = await asyncio.open_connection("127.0.0.1", port)
+                break
+            except OSError:
+                await asyncio.sleep(0.05)
+        assert reader is not None and writer is not None
+        writer.write(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".encode())
+        await writer.drain()
+        await asyncio.wait_for(request_started.wait(), timeout=10)
+
+        callback, signal_name = handlers[signal.SIGTERM]
+        callback(signal_name)
+        started = loop.time()
+        status_line = await asyncio.wait_for(reader.readline(), timeout=5)
+        await asyncio.wait_for(asyncio.shield(server), timeout=5)
+
+        assert status_line.startswith(b"HTTP/1.1 503")
+        assert loop.time() - started < 3
+    finally:
+        if writer is not None:
+            writer.close()
+        if not server.done():
+            server.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await server

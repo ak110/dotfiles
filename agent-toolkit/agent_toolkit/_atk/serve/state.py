@@ -49,16 +49,20 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self._pending_started_at: float | None = None
         self._pending_generation = 0
         self._stopped = False
-        # サーバーの停止要求。SSEの生成処理はこれを参照して応答を完了させる。
+        # サーバーの停止要求。SSEの生成処理、処理中の要求の打ち切りおよびリモート接続の停止はこれを参照する。
         self.shutdown_requested = asyncio.Event()
+        # 同じ停止要求をスレッドで動く読み取り専用の走査から参照するための写し。
+        self.stop_requested = threading.Event()
 
     def request_shutdown(self) -> None:
-        """停止要求を設定する。購読中のSSE応答は次の待ちでこの要求を受けて終わる。
+        """停止要求を設定する。
 
-        hypercornは停止時に全接続の切断を待ってから`graceful_timeout`を適用するため、
-        クライアントが切断するまで続くSSE応答を停止要求で完了させないと、停止が無期限に待つ。
+        hypercornは停止時に全接続の切断を待ってから`graceful_timeout`を適用し、`asyncio.run`の終了処理は
+        既定のexecutorのスレッドの終了を待つ。停止要求で処理中の要求、購読中のSSE応答、スレッドの走査および
+        リモート接続を終えないと、停止がそれらの完了まで待つ。
         """
         self.shutdown_requested.set()
+        self.stop_requested.set()
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         """監視を開始する。"""

@@ -18,6 +18,7 @@ import re
 import signal
 import struct
 import subprocess
+import sys
 import threading
 import types
 import typing
@@ -32,6 +33,7 @@ from agent_toolkit._atk.serve import assets, config, state
 from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
+from agent_toolkit._atk.serve.plans import remote as serve_plan_remote
 from agent_toolkit._atk.wi import common, user_comment
 from agent_toolkit._atk.wi import repo as awi_repo
 
@@ -1493,3 +1495,60 @@ async def test_single_entry_api_rejects_invalid_show_format_without_saving(
     assert response.status_code == 400
     assert await response.get_json() == await batch_response.get_json()
     assert _saved_files(tmp_path / "single") == {}
+
+
+@pytest.mark.asyncio
+async def test_shutdown_request_stops_remote_connections_without_reconnecting(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """停止要求の時点で常駐接続を止め、`after_serving`までの間に常駐SSHを起動し直さない。
+
+    systemdがcgroup全体へSIGTERMを送ると常駐SSHが停止処理と同時に終わり、常駐接続はバックオフの後に
+    新しい常駐SSHを起動する。停止要求で止めないと、`after_serving`まで再接続を繰り返す。
+    """
+    started: list[str] = []
+    real_exec = asyncio.create_subprocess_exec
+
+    async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
+        started.append(" ".join(str(part) for part in cmd))
+        # 標準出力を閉じて接続断を起こし、標準入力の終端を受けて終了する子プロセスで常駐SSHを代替する。
+        script = "import os, sys; os.close(1); sys.stdin.read()"
+        return await real_exec(sys.executable, "-c", script, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(serve_sessions, "BACKOFF_INITIAL_SEC", 0.01)
+    monkeypatch.setattr(serve_plan_remote, "REMOTE_BACKOFF_INITIAL_SEC", 0.01)
+    current_state = state.ServeState(tmp_path)
+    sessions_context = serve_sessions.create_context(
+        hostname="local-host",
+        claude_home=tmp_path / "claude",
+        codex_home=tmp_path / "codex",
+        remote_hosts=["remote-host"],
+    )
+    plans_context = serve_plans.create_context(root=tmp_path / "plans", hostname="local-host", remote_hosts=["remote-host"])
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        current_state,
+        plans_context=plans_context,
+        sessions_context=sessions_context,
+    )
+    async with app.test_app():  # ty: ignore[invalid-context-manager]
+        for _ in range(500):
+            if len(started) >= 4:
+                break
+            await asyncio.sleep(0.01)
+        assert len(started) >= 4
+
+        current_state.request_shutdown()
+        for _ in range(500):
+            if not sessions_context.state.tasks and not plans_context.state.remote_tasks:
+                break
+            await asyncio.sleep(0.01)
+        assert not sessions_context.state.tasks
+        assert not plans_context.state.remote_tasks
+        count = len(started)
+        await asyncio.sleep(0.2)
+
+        assert len(started) == count
