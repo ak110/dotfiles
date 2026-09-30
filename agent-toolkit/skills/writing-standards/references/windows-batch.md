@@ -28,5 +28,4 @@
   - 遅延展開が必要な場面では`setlocal enabledelayedexpansion`を使う
 - セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。cmd.exeでは動的な分岐を`if`・`goto`など固定候補への分岐で表す（努力目標）
 - 推奨事項
-  - 新規スクリプトではPowerShellの利用を検討する（UTF-8を標準で扱うことができ、構造化された制御構文・例外処理を備えるため）
-  - `.cmd`はレガシー互換やPowerShellを利用できない環境向けに限定する
+  - 新規スクリプトはPowerShellを優先し、`.cmd`はレガシー互換やPowerShellを利用できない環境などで選ぶ（PowerShellはUTF-8を標準で扱うことができ、構造化された制御構文・例外処理を備えるため）
