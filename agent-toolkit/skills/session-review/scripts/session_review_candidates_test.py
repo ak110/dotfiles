@@ -119,6 +119,29 @@ def test_candidate_events_excludes_hook_notices_without_tag() -> None:
     assert candidates[-1]["excluded"]["hook-notice-untagged"] == 1
 
 
+def test_candidate_events_reports_no_detail_budget_exclusion_without_omitted_notices() -> None:
+    """同じ種類の発生が1件だけのhook通知では、省略が無いため`hook-notice-detail-budget`を除外件数へ載せない。
+
+    値0の区分が残ると、候補一覧の「候補から除いた件数」が除外の起きたように読める。
+    """
+    hook_notices = [
+        {
+            "kind": "hook-notice",
+            "record": "main",
+            "line": 3,
+            "text": "遮断",
+            "hook": "pretooluse",
+            "hook_name": "PreToolUse:Bash",
+            "tag": "block",
+        }
+    ]
+
+    candidates = evidence._candidate_events([], [], hook_notices)  # pylint: disable=protected-access
+
+    assert [candidate["occurrence_count"] for candidate in candidates[:-1]] == [1]
+    assert not candidates[-1]["excluded"]
+
+
 def test_candidate_events_separates_failures_with_different_exit_codes_and_diagnostics() -> None:
     """失敗署名を構成する終了コードと診断が異なる失敗は別候補にする。"""
     timeline = [

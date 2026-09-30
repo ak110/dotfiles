@@ -3608,7 +3608,9 @@ def _candidate_events(
                 continue
             representative = min(events, key=lambda event: (str(event["record"]), int(event["line"])))
             omitted_count = len(events) - 1
-            excluded["hook-notice-detail-budget"] += omitted_count
+            # Counterは0の加算でもキーを生成するため、省略が無い種類では加算せず、値0の区分を除外件数へ残さない。
+            if omitted_count:
+                excluded["hook-notice-detail-budget"] += omitted_count
             selected_groups.append((key, [representative], len(events), omitted_count))
 
     candidates: list[dict[str, Any]] = []
