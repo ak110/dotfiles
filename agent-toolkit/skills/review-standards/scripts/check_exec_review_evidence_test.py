@@ -6,6 +6,7 @@ import argparse
 import json
 import pathlib
 import subprocess
+import typing
 
 import pytest
 
@@ -13,6 +14,7 @@ from agent_toolkit._atk import run_script
 
 FIRST_WI = "20260928-192559-001.md"
 SECOND_WI = "20260928-192559-002.md"
+REVIEWED_HEAD = "a" * 40
 
 
 def _condition(awi: str, condition: str) -> dict[str, str]:
@@ -22,6 +24,7 @@ def _condition(awi: str, condition: str) -> dict[str, str]:
         "outcome": "達成",
         "source": "WI本文",
         "evidence": "実行結果",
+        "reviewed_head": REVIEWED_HEAD,
     }
 
 
@@ -33,6 +36,7 @@ def _requirement(awi: str, requirement: str) -> dict[str, str]:
         "outcome": "達成",
         "source": "WI本文",
         "evidence": "実行結果",
+        "reviewed_head": REVIEWED_HEAD,
     }
 
 
@@ -48,8 +52,9 @@ def _write_evidence(
 def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: dict[str, str]) -> None:
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
-        if args[:2] == ["git", "rev-parse"]:
-            return subprocess.CompletedProcess(args, 0, stdout=f"{tmp_path}\n", stderr="")
+        if args[0] == "git":
+            value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
+            return subprocess.CompletedProcess(args, 0, stdout=f"{value}\n", stderr="")
         filename = args[3]
         output = pathlib.Path(next(arg for arg in args if arg.startswith("--output-file=")).removeprefix("--output-file="))
         output.write_text(f"## target_repo: example\n### {filename} [processing]\n---\n{bodies[filename]}", encoding="utf-8")
@@ -77,7 +82,7 @@ def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, mo
     )
     args = argparse.Namespace(
         script_name="exec-review-evidence-check",
-        script_args=["--", str(evidence), FIRST_WI, SECOND_WI],
+        script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI, SECOND_WI],
     )
     assert run_script.dispatch(args) == 0
 
@@ -92,7 +97,9 @@ def test_public_command_rejects_numbered_condition_instead_of_original(
         tmp_path,
         {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 第一条件\n- 第二条件\n"},
     )
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
+    )
 
     _write_evidence(evidence, [_condition(FIRST_WI, "完成条件1"), _condition(FIRST_WI, "第二条件")])
     assert run_script.dispatch(args) == 1
@@ -122,7 +129,7 @@ def test_reports_every_wi_with_missing_rows(
     )
     args = argparse.Namespace(
         script_name="exec-review-evidence-check",
-        script_args=["--", str(evidence), FIRST_WI, SECOND_WI],
+        script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI, SECOND_WI],
     )
     assert run_script.dispatch(args) == 1
     error = capsys.readouterr().err
@@ -147,7 +154,9 @@ def test_raw_awi_requires_each_original_sentence_and_comment(
             )
         },
     )
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
+    )
 
     _write_evidence(evidence, [], [_requirement(FIRST_WI, first), _requirement(FIRST_WI, second)])
     assert run_script.dispatch(args) == 1
@@ -181,7 +190,9 @@ def test_conditions_also_require_verbatim_requests_and_user_comment(
             )
         },
     )
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
+    )
 
     _write_evidence(
         evidence, [_condition(FIRST_WI, "新入口で操作できる")], [_requirement(FIRST_WI, "設定と旧入口を変更して。")]
@@ -220,7 +231,9 @@ def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
             )
         },
     )
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
+    )
     unassigned = {**_requirement(FIRST_WI, whole), "outcome": "割当外", "evidence": "分割元の依頼全体"}
 
     _write_evidence(evidence, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), unassigned])
@@ -254,7 +267,9 @@ def test_answered_uwi_checks_answer_only(
             )
         },
     )
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), SECOND_WI])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), SECOND_WI]
+    )
 
     _write_evidence(evidence, [])
     assert run_script.dispatch(args) == 1
@@ -284,7 +299,9 @@ def test_rejects_missing_required_wi_content(
     evidence = tmp_path / "evidence.json"
     _write_evidence(evidence, [])
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: f"{frontmatter}\n---\n{body}\n"})
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
+    )
     assert run_script.dispatch(args) == 1
     stderr = capsys.readouterr().err
     assert diagnostic in stderr
@@ -313,8 +330,93 @@ def test_rejects_invalid_json_schema_and_outcome(
     """構文、必須キーと型、判定値域の不備を区別する。"""
     evidence = tmp_path / "evidence.json"
     evidence.write_text(content, encoding="utf-8")
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
+    )
     assert run_script.dispatch(args) == 1
     stderr = capsys.readouterr().err
     assert diagnostic in stderr
     assert "`atk wi show <ファイル名>`" in stderr.split("\n次の操作: ", maxsplit=1)[1]
+
+
+@pytest.mark.parametrize("stale_section", ["wi_conditions", "user_requirements", "plan-requirements"])
+def test_public_command_rejects_partly_updated_review_heads(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stale_section: str,
+) -> None:
+    """片側配列と計画由来の行の更新漏れを、実Gitの別commitとの照合で検出する。"""
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=30,
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "旧対象")
+    old = git("rev-parse", "HEAD")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "新対象")
+    current = git("rev-parse", "HEAD")
+    real_run = subprocess.run
+
+    def fake_wi(args: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        if args[0] == "git":
+            check = kwargs.pop("check", False)
+            return real_run(args, check=check, **kwargs)
+        output = pathlib.Path(next(arg.removeprefix("--output-file=") for arg in args if arg.startswith("--output-file=")))
+        output.write_text(
+            f"### {FIRST_WI} [processing]\n---\ntype: awi\nsource: agent\n---\n## 完成条件\n- 完成\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args, 0, stdout=f"保存先: {output}\n", stderr="")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(subprocess, "run", fake_wi)
+    evidence = tmp_path / "evidence.json"
+    conditions = [{**_condition(FIRST_WI, "完成"), "reviewed_head": current}]
+    requirements = [
+        {**_requirement(FIRST_WI, "要求"), "reviewed_head": current},
+        {**_requirement("", "計画だけの要求"), "reviewed_head": current},
+    ]
+    stale = {"wi_conditions": conditions[0], "user_requirements": requirements[0], "plan-requirements": requirements[1]}[
+        stale_section
+    ]
+    stale["reviewed_head"] = old
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=["--", str(evidence), FIRST_WI, "--expected-head", current],
+    )
+    _write_evidence(evidence, conditions, requirements)
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    assert current in error and old in error and "再判定" in error
+    assert (FIRST_WI if stale_section != "plan-requirements" else "計画由来") in error
+
+    for invalid in ("", "unknown-commit", "HEAD"):
+        stale["reviewed_head"] = invalid
+        _write_evidence(evidence, conditions, requirements)
+        assert run_script.dispatch(args) == 1
+        assert "reviewed_head" in capsys.readouterr().err
+    stale.pop("reviewed_head")
+    _write_evidence(evidence, conditions, requirements)
+    assert run_script.dispatch(args) == 1
+    assert "reviewed_head" in capsys.readouterr().err
+
+    stale["reviewed_head"] = git("rev-parse", "--short=7", current)
+    _write_evidence(evidence, conditions, requirements)
+    assert run_script.dispatch(args) == 0
+    assert not capsys.readouterr().err
+
+    for row in [*conditions, *requirements]:
+        row["reviewed_head"] = old
+    args.script_args[-1] = old
+    _write_evidence(evidence, conditions, requirements)
+    assert run_script.dispatch(args) == 0
+    assert not capsys.readouterr().err
