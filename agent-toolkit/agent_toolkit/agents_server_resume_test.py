@@ -50,8 +50,10 @@ class SystemMessage:
 class TaskStartedMessage:
     """背景タスクの開始を再現する。"""
 
-    def __init__(self, task_id: str) -> None:
+    def __init__(self, task_id: str, task_type: str = "local_bash", description: str = "") -> None:
         self.task_id = task_id
+        self.task_type = task_type
+        self.description = description
 
 
 class TaskUpdatedMessage:
@@ -108,16 +110,25 @@ class ControlledClaudeClient:
         self.queries: list[str] = []
         self.interrupts = 0
         self.disconnected = False
+        # 直前のturnの`ResultMessage`を発行済みで次の`query`を受けていない間は偽とする。
+        self.turn_active = False
 
     async def connect(self) -> None:
         """接続のダミー。"""
 
     async def query(self, prompt: str) -> None:
         self.queries.append(prompt)
+        self.turn_active = True
 
     async def interrupt(self) -> None:
+        """実行中のturnだけを中断する。
+
+        Claude Code CLIはturnを終えた後に受けた中断要求へ`ResultMessage`もtaskの終端通知も返さない
+        （claude_agent_sdk 0.2.161で背景Bashを残してturnを終えた後の`interrupt()`で68秒間観測した）。
+        """
         self.interrupts += 1
-        self.emit(ResultMessage("中断結果", terminal_reason="aborted_streaming"))
+        if self.turn_active:
+            self.emit(ResultMessage("中断結果", terminal_reason="aborted_streaming"))
 
     def receive_messages(self):
         async def stream():
@@ -133,6 +144,8 @@ class ControlledClaudeClient:
         self.disconnected = True
 
     def emit(self, message: Any) -> None:
+        if isinstance(message, ResultMessage):
+            self.turn_active = False
         self.messages.put_nowait(message)
 
     def end_stream(self) -> None:
@@ -468,7 +481,7 @@ async def test_wait_returns_last_result_after_chained_auto_resumes(
         client.emit(ResultMessage("待機中: task-2", origin={"kind": "task-notification"}))
         await _await_state(
             lambda: (
-                session.live_task_ids == {"task-2"}
+                set(session.live_tasks) == {"task-2"}
                 and session.pending_result is not None
                 and session.pending_result["agent_message"] == "待機中: task-2"
             )
@@ -476,7 +489,7 @@ async def test_wait_returns_last_result_after_chained_auto_resumes(
         assert wait_task.done() is False
 
         client.emit(TaskNotificationMessage("task-2", "completed"))
-        await _await_state(lambda: not session.live_task_ids)
+        await _await_state(lambda: not session.live_tasks)
         # 自動再開の監視と待機は0.1秒刻みで保留中の結果を判定するため、刻みを複数回経過させる。
         await asyncio.sleep(0.35)
         assert wait_task.done() is False
@@ -677,7 +690,7 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
         assert result["status"] == "completed"
         assert result["agent_message"] == "再開結果"
         assert session.auto_resume_consumed is True
-        assert session.live_task_ids == set()
+        assert not session.live_tasks
         await _await_state(lambda: session.session_id not in manager.sessions)
         assert await _wait_with_timeout(manager, 0) == {"status": "expired"}
     finally:
@@ -739,7 +752,10 @@ async def test_kill_interrupts_while_initial_result_is_pending(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留中の中断要求は初回結果を確定せずSDKへ配送する。"""
+    """保留中の中断要求はSDKへ配送したうえで保留していた結果を返し、以後の継続入力を受け付ける。
+
+    SDKはturnの外で受けた中断要求へ何も返さないため、保留結果を確定しないと`kill`はtimeoutまで待つ。
+    """
     client = ControlledClaudeClient("claude-kill")
     manager, backend = _manager(client, monkeypatch)
     try:
@@ -750,11 +766,52 @@ async def test_kill_interrupts_while_initial_result_is_pending(
 
         result = await manager.kill(session.session_id, timeout=1)
 
-        assert result["status"] == "interrupted"
-        assert result["agent_message"] == "中断結果"
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "初回結果"
         assert result["kill_requested"] is True
         assert client.interrupts == 1
         assert session.auto_resume_consumed is True
+
+        response = await manager.send_message(session.session_id, "続行", timeout=1)
+        assert response["delivery"] == "reply_started"
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_show_reports_held_result_and_live_background_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """結果を保留している間だけ、`show`が保留と追跡中の背景作業を返す。"""
+    client = ControlledClaudeClient("claude-show")
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        client.emit(TaskStartedMessage("task-b", "local_agent", "子エージェント"))
+        client.emit(TaskStartedMessage("task-a", "local_bash", "cat > /dev/null"))
+        await _await_state(lambda: len(session.live_tasks) == 2)
+        running = manager.show_session(session.session_id)
+        assert "result_held" not in running
+        assert "live_background_tasks" not in running
+
+        client.emit(ResultMessage("初回結果"))
+        await _await_state(lambda: session.awaiting_auto_resume)
+        held = manager.show_session(session.session_id)
+
+        assert held["status"] == "running"
+        assert held["result_held"] is True
+        tasks = held["live_background_tasks"]
+        assert [(task["task_id"], task["task_type"], task["description"]) for task in tasks] == [
+            ("task-a", "local_bash", "cat > /dev/null"),
+            ("task-b", "local_agent", "子エージェント"),
+        ]
+        assert all(isinstance(task["seconds_since_start"], int) for task in tasks)
+
+        await manager.kill(session.session_id, timeout=1)
+        finalized = manager.show_session(session.session_id)
+        assert "result_held" not in finalized
+        assert "live_background_tasks" not in finalized
     finally:
         await backend.close()
 
@@ -779,7 +836,7 @@ async def test_send_message_finalizes_pending_result_before_starting_reply(
         assert response["previous_result"]["agent_message"] == "初回結果"
         assert session.status == "running"
         assert session.auto_resume_consumed is False
-        assert session.live_task_ids == {"task-1"}
+        assert set(session.live_tasks) == {"task-1"}
         assert [delivery_payload(value) for value in client.queries] == ["調査", "続行"]
 
         client.emit(TaskUpdatedMessage("task-1", "completed"))

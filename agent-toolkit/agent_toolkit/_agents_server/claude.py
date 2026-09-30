@@ -744,12 +744,16 @@ class ClaudeServerManager:
                             session.touch()
                             await self._notify_waiters()
                         elif name == "TaskStartedMessage" and session is not None:
-                            session.live_task_ids.add(message.task_id)
+                            session.live_tasks[message.task_id] = shared_state.LiveTask(
+                                task_type=str(getattr(message, "task_type", None) or ""),
+                                description=str(getattr(message, "description", None) or ""),
+                                started_at=datetime.datetime.now(datetime.UTC).isoformat(),
+                            )
                             session.touch()
                             await self._notify_waiters()
                         elif name in {"TaskUpdatedMessage", "TaskNotificationMessage"} and session is not None:
                             if getattr(message, "status", None) in TERMINAL_TASK_STATUSES:
-                                session.live_task_ids.discard(message.task_id)
+                                session.live_tasks.pop(message.task_id, None)
                                 session.touch()
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
@@ -771,7 +775,7 @@ class ClaudeServerManager:
                     retrieved = None
                     active_future = command[2]
                     if (
-                        command[0] == "prompt"
+                        command[0] in {"prompt", "interrupt"}
                         and session is not None
                         and session.awaiting_auto_resume
                         and message_task is not None
@@ -841,6 +845,11 @@ class ClaudeServerManager:
                 if not future.done():
                     future.set_exception(exc)
             else:
+                if session.awaiting_auto_resume:
+                    # モデルのturnは終わっており、Claude Code CLIはturnの外で受けた中断要求へ`ResultMessage`を返さない。
+                    # 保留した結果をそのまま確定し、以後の再開turnは読まない（保留中に`prompt`を受けた場合と同じ扱い）。
+                    self._finalize_pending_result(session, record_unobserved=True)
+                    iterator = None
                 if not future.done():
                     future.set_result(("interrupt_accepted", None))
             await self._notify_waiters()

@@ -984,6 +984,20 @@ class AgentsServerManager:
             response["live_child_sessions"] = resolved
             if unresolved:
                 response["live_child_session_ids_without_cwd"] = unresolved
+        if status == "running" and isinstance(session, SessionState) and session.awaiting_auto_resume:
+            # モデルのturnは終わり、背景作業か孫sessionの終端を待って結果を保留している。
+            # 活動時刻が進まないため、呼び出し元が停滞と区別できるよう保留と待機対象を公開する。
+            response["result_held"] = True
+            if session.live_tasks:
+                response["live_background_tasks"] = [
+                    {
+                        "task_id": task_id,
+                        "task_type": task.task_type,
+                        "description": task.description,
+                        "seconds_since_start": state.elapsed_seconds(task.started_at),
+                    }
+                    for task_id, task in sorted(session.live_tasks.items())
+                ]
         if verbose:
             response.update(
                 engine=session.engine,
@@ -2696,6 +2710,7 @@ async def kill(
     `timeout=0`は中断要求配送後の現状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
+    `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終端結果として返し、以後の`send_message`を受け付ける。
     """
     return await _MANAGER.kill(session_id, timeout, stop)
 
@@ -2745,6 +2760,10 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
     この一覧は子の終端を観測するまで残るため、子が稼働中である根拠にしない。
     子の状態は、子の`session_id`を渡した`show`の`status`と`seconds_since_activity`で判定する。
     `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、その識別子へは追送と打ち切りを発行できない。
+    `result_held`が真のsessionは、委譲先のモデルのturnが終わり、背景作業または子sessionの終端を待って結果を保留している。
+    活動が止まるため`seconds_since_activity`が増えても停滞を意味しない。追跡中の背景作業は`live_background_tasks`
+    （`task_id`・`task_type`・`description`・`seconds_since_start`）で返す。
+    背景作業の後の結果が不要なら`kill`で保留中の結果を受け取れる。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """
