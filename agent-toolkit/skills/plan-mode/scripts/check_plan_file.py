@@ -671,6 +671,8 @@ def check(
     selection_file: pathlib.Path | None = None,
     lane: str | None = None,
     prior_plans: tuple[pathlib.Path, ...] = (),
+    agent_rule_paths: tuple[str, ...] = (),
+    warning_details: list[_ClassifiedWarning] | None = None,
 ) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
@@ -708,6 +710,11 @@ def check(
         else:
             format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
+    errors.extend(
+        f"返却予定の規範文書パスが計画本文にない: {relative}。編集対象のパスを計画本文へ明記し、同じ一覧で再検査する"
+        for relative in agent_rule_paths
+        if relative not in text
+    )
     if (selection_file is None) != (lane is None):
         raise ValueError("選定結果ファイルとレーン識別子は組で指定する")
     if prior_plans and selection_file is None:
@@ -726,7 +733,33 @@ def check(
             errors.append(message)
         else:
             warnings.append(message)
+            if warning_details is not None:
+                warning_details.append((kind, message))
     return errors, warnings
+
+
+def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
+    """由来照合の省略に限り、原因ごとの解消手段を一度ずつ案内する。"""
+    skips = [
+        message
+        for kind, message in warnings
+        if kind == "advisory" and message.startswith("`## 実施内容`の由来照合を省略した。")
+    ]
+    if not skips:
+        return None
+    actions = []
+    if any("キュー管理リポジトリが実在しない:" in message for message in skips):
+        actions.append(
+            "`atk info`でキュー管理リポジトリの場所を確認し、`AGENT_TOOLKIT_PRIVATE_NOTES`をその場所へ合わせて再実行する"
+        )
+    if any("正本を解決できない:" in message for message in skips):
+        actions.append("実施内容と関連WIのファイル名を`atk wi show <ファイル名>`で確かめ、誤りを直して再実行する")
+    if any("正本を取得できない:" in message for message in skips):
+        actions.append("表示された権限・文字コードのエラーの原因を解消して再実行する")
+    actions.append(
+        "解消できない場合は、由来照合を行えなかったWIファイル名と原因を呼び出し元（メインから起動した場合はユーザー）へ報告する"
+    )
+    return "。".join(actions)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -736,6 +769,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
     parser.add_argument("--selection-file", type=pathlib.Path, help="pickerが保存した選定結果の絶対パス")
     parser.add_argument("--lane", help="選定結果内のlane-NN形式のレーン識別子")
+    parser.add_argument(
+        "--agent-rule-path",
+        action="append",
+        default=None,
+        help="返却予定の規範文書のリポジトリ相対パス。全件を反復指定し、計画本文へ固定文字列照合する",
+    )
     parser.add_argument(
         "--prior-plan",
         action="append",
@@ -755,6 +794,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         args = parser.parse_args(argv)
+        warning_details: list[_ClassifiedWarning] = []
         errors, warnings = check(
             args.plan_file,
             args.work_dir,
@@ -763,6 +803,8 @@ def main(argv: list[str] | None = None) -> int:
             selection_file=args.selection_file,
             lane=args.lane,
             prior_plans=tuple(args.prior_plan or ()),
+            agent_rule_paths=tuple(args.agent_rule_path or ()),
+            warning_details=warning_details,
         )
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
         _next_action.report(
@@ -777,6 +819,8 @@ def main(argv: list[str] | None = None) -> int:
         print(error, file=sys.stderr)
     for warning in warnings:
         print(f"[warn] {warning}", file=sys.stderr)
+    if (next_action := _origin_skip_next_action(warning_details)) is not None:
+        print(_next_action.next_action_line(next_action), file=sys.stderr)
     if errors:
         print(
             _next_action.next_action_line(

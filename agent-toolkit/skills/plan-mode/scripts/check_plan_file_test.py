@@ -6,6 +6,7 @@ import io
 import pathlib
 import subprocess
 import sys
+import typing
 
 import check_plan_file
 import pytest
@@ -579,6 +580,31 @@ def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> Non
 
     assert not errors, errors
     assert not warnings, warnings
+
+
+def test_cli_checks_all_returned_agent_rule_paths(repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str]) -> None:
+    """返却するパス一覧を同じ本文へ照合し、全欠落と修正後の成功を公開入口から確認する。"""
+    work_dir, _base = repo
+    path = work_dir / "paths.md"
+    content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    path.write_text(content, encoding="utf-8")
+    paths = ("AGENTS.md", ".claude/rules/new[1]+.md")
+    args = ["--work-dir", str(work_dir), str(path)]
+    for relative in paths:
+        args.extend(["--agent-rule-path", relative])
+
+    assert check_plan_file.main(args) == 1
+    error = capsys.readouterr().err
+    assert all(relative in error for relative in paths)
+    assert "計画本文へ明記" in error
+    assert "同じ一覧" in error
+
+    path.write_text(content.replace("対象の公開契約を更新する。", "、".join(paths)), encoding="utf-8")
+    assert all(not (work_dir / relative).exists() for relative in paths)
+    assert check_plan_file.main(args) == 0
+    assert not capsys.readouterr().err
+    assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
+    assert not capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1789,3 +1815,54 @@ def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], 
     )
     assert not errors, errors
     assert any("由来照合を省略した" in warning for warning in warnings), warnings
+
+
+@pytest.mark.parametrize("missing_queue", [True, False], ids=["missing-queue", "missing-wi"])
+def test_cli_origin_skip_reports_one_next_action(
+    repo: tuple[pathlib.Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    missing_queue: bool,
+) -> None:
+    """由来を照合できない警告から原因の解消と解消不能時の報告へ進める。"""
+    work_dir, _base = repo
+    queue = work_dir / "queue"
+    if not missing_queue:
+        queue.mkdir()
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
+    path = work_dir / "origin.md"
+    path.write_text(_plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES), encoding="utf-8")
+    assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
+    lines = capsys.readouterr().err.splitlines()
+    assert any(line.startswith("[warn]") and "由来照合を省略した" in line for line in lines)
+    actions = [line for line in lines if line.startswith("次の操作: ")]
+    assert len(actions) == 1
+    expected = "AGENT_TOOLKIT_PRIVATE_NOTES" if missing_queue else "atk wi show"
+    assert expected in actions[0]
+    assert "解消できない" in actions[0] and "報告" in actions[0]
+
+
+def test_cli_origin_read_failure_reports_recovery(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """正本の取得に失敗しても省略を助言に保ち、取得エラーの解消を案内する。"""
+    work_dir, _base = repo
+    queue = work_dir / "queue"
+    path = _bug_plan_without_bug_file(work_dir, queue, related_wi=True)
+    source = queue / "inbox" / _plan_fixture.WI_FILES[0][0]
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
+    original = pathlib.Path.read_text
+
+    def read_text(file: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str:
+        if file == source:
+            raise PermissionError("検証用の読取拒否")
+        return original(file, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
+    lines = capsys.readouterr().err.splitlines()
+    assert any("正本を取得できない" in line and source.name in line for line in lines)
+    actions = [line for line in lines if line.startswith("次の操作: ")]
+    assert len(actions) == 1
+    assert "エラーの原因を解消" in actions[0]
