@@ -18,7 +18,7 @@ from pathlib import Path
 import httpx
 import platformdirs
 
-from pytools._internal import claude_common, log_format, winutils
+from pytools._internal import claude_common, log_format, setup_cli_common, winutils
 from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -400,10 +400,12 @@ def _ensure_windows_user_path_has_shims() -> bool:
 
     # 現プロセスの PATH にも反映しておく (post_apply の後続ステップが shims 内の
     # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
-    current_process_path = os.environ.get("PATH", "")
-    if str(shims_dir) not in current_process_path.split(os.pathsep):
-        separator = os.pathsep if current_process_path else ""
-        os.environ["PATH"] = current_process_path + separator + str(shims_dir)
+    # 並列に動く他工程のPATH追加を失わないよう、読み取りから書き戻しまでを直列化する。
+    with setup_cli_common.PROCESS_PATH_LOCK:
+        current_process_path = os.environ.get("PATH", "")
+        if str(shims_dir) not in current_process_path.split(os.pathsep):
+            separator = os.pathsep if current_process_path else ""
+            os.environ["PATH"] = current_process_path + separator + str(shims_dir)
 
     return not already_registered
 

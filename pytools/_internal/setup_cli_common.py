@@ -11,6 +11,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -20,6 +21,13 @@ import psutil
 from pytools._internal import claude_common, log_format
 
 logger = logging.getLogger(__name__)
+
+# post-applyは互いに依存しない工程を並列に実行する。プロセス全体のPATHを読んで書き戻す処理
+# （本モジュールの`prepend_path`とWindowsの`setup_mise`のshims追加）は、同時に実行すると
+# 一方の追加が失われるため、このロックで直列化する。
+PROCESS_PATH_LOCK = threading.Lock()
+# 複数のCLI工程が同じnpmのグローバル領域を同時に変更しないよう、旧npm版の削除を直列化する。
+_NPM_GLOBAL_LOCK = threading.Lock()
 
 
 def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
@@ -94,10 +102,11 @@ def run_official_installer(
 def prepend_path(path: Path) -> None:
     """ディレクトリを現プロセスのPATH先頭へ重複なく追加する。"""
     value = str(path)
-    entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
     normalized = os.path.normcase(os.path.abspath(value))
-    remaining = [entry for entry in entries if os.path.normcase(os.path.abspath(entry)) != normalized]
-    os.environ["PATH"] = os.pathsep.join([value, *remaining])
+    with PROCESS_PATH_LOCK:
+        entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+        remaining = [entry for entry in entries if os.path.normcase(os.path.abspath(entry)) != normalized]
+        os.environ["PATH"] = os.pathsep.join([value, *remaining])
 
 
 def migrate_npm_launchers(
@@ -129,11 +138,12 @@ def migrate_npm_launchers(
         if not _launcher_belongs_to_package(launcher, package_dir, package_name):
             _warn_unconfirmed_launcher(cli_name, launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
             continue
-        result = claude_common.run_subprocess(
-            [str(npm), "uninstall", "--global", package_name],
-            timeout=claude_common.CLAUDE_TIMEOUT,
-            tag=cli_name,
-        )
+        with _NPM_GLOBAL_LOCK:
+            result = claude_common.run_subprocess(
+                [str(npm), "uninstall", "--global", package_name],
+                timeout=claude_common.CLAUDE_TIMEOUT,
+                tag=cli_name,
+            )
         if result is not None and result.returncode == 0:
             changed = True
         else:

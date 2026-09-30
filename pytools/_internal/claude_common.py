@@ -189,7 +189,8 @@ def run_claude(
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
     `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
     `timeout`の既定は30秒とし、長時間を要する操作だけ呼び出し元が上書きする。
-    原因追跡のため、実行コマンドと戻り値をログに残す。
+    原因追跡のため、実行コマンドと戻り値を永続ログに残す。利用者の判断には使わないため、
+    post-applyの画面へは出力しない。
     """
     claude = resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",))
     if claude is None:
@@ -199,12 +200,16 @@ def run_claude(
         log_format.format_status(
             "claude",
             f"exec: {' '.join(args)}" + (f" (cwd={cwd})" if cwd is not None else ""),
-        )
+        ),
+        extra=log_format.LOG_ONLY,
     )
     result = run_subprocess([str(claude), *args], timeout=timeout, cwd=cwd, tag="claude")
     if result is None:
         return None
-    logger.info(log_format.format_status("claude", f"exit {result.returncode}: {' '.join(args)}"))
+    logger.info(
+        log_format.format_status("claude", f"exit {result.returncode}: {' '.join(args)}"),
+        extra=log_format.LOG_ONLY,
+    )
     return result
 
 

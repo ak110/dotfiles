@@ -1,6 +1,8 @@
 """`chezmoi apply`後処理のエントリポイント。
 
 各ステップは独立して動作し、途中で失敗しても他のステップは継続する。
+ステップ間の順序は先行工程の宣言（`_StepSpec.after`）で表し、互いに依存しない
+ステップは同時に実行する。画面には各ステップの出力を列挙順にまとめて表示する。
 """
 
 import argparse
@@ -13,7 +15,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -78,6 +80,17 @@ class _BelowWarningFilter(logging.Filter):
         return record.levelno < logging.WARNING
 
 
+class _ScreenFilter(logging.Filter):
+    """利用者の判断に使わない行を画面から外す。永続ログのハンドラーには付けない。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """画面へ出力するレコードなら真を返す。"""
+        if log_format.is_log_only(record):
+            return False
+        # 依存ライブラリhttpxのリクエスト記録。WARNING以上は標準エラー側で表示する。
+        return not (record.levelno < logging.WARNING and (record.name == "httpx" or record.name.startswith("httpx.")))
+
+
 def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
     """ログを出力先で分離し、符号化不能文字でレコードを欠落させない。"""
     for stream in (sys.stdout, sys.stderr):
@@ -87,6 +100,7 @@ def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
     stdout_handler.addFilter(_BelowWarningFilter())
+    stdout_handler.addFilter(_ScreenFilter())
     stdout_handler.setFormatter(formatter)
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setLevel(logging.WARNING)
@@ -309,9 +323,17 @@ class _StepResult:
 
 @dataclass(frozen=True)
 class _StepSpec:
+    """post-applyの1ステップ。
+
+    `after`は開始前に完了している必要があるステップ名、`after_all_preceding`は列挙順で前にある
+    全ステップを先行工程とする指定、`platforms`は実行対象の`sys.platform`値（空なら全OS）を表す。
+    """
+
     name: str
     run: Callable[[], "StepReturn"]
-    background: bool = False
+    after: tuple[str, ...] = ()
+    after_all_preceding: bool = False
+    platforms: tuple[str, ...] = ()
 
 
 def _cleanup_removed_paths() -> bool:
@@ -354,42 +376,85 @@ def _cleanup_removed_paths() -> bool:
 # ステップ関数の戻り値型。通常ステップは bool、個別の出力を持つステップは構造化した値を返す。
 StepReturn = bool | tuple[bool, list[str]] | post_apply_outcome.PostApplyOutcome
 
+_WINDOWS = ("win32",)
+_LINUX = ("linux",)
+_MISE = "mise セットアップ"
+_CODEX_CLI = "Codex CLI の導入と更新"
+_CLAUDE_CLI = "Claude Code CLI の導入と更新"
+_CLAUDE_PLUGIN = "Claude Code plugin のインストール"
+_CODEX_PLUGIN = "Codex plugin のインストール"
+_CODEX_LINKS = "Codex リンクの同期"
+_CLEANUP = "旧配布物の削除"
+
+# 先行工程は、同じ資源（設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、
+# plugin cache、systemd、codexプロセスの稼働判定）を扱うステップの組と、先行ステップが導入する
+# 実行ファイルを使うステップへ宣言する。宣言の無いステップは他と同時に実行してよい。
 _DEFAULT_STEPS: list[_StepSpec] = [
-    _StepSpec("bin PATH 登録 (Windows)", setup_bin_path.run),
-    _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run),
+    _StepSpec("bin PATH 登録 (Windows)", setup_bin_path.run, platforms=_WINDOWS),
+    _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run, platforms=_WINDOWS),
     _StepSpec("VSCode 設定", update_vscode_settings.run),
     _StepSpec("SSH config", update_ssh_config.run),
-    _StepSpec("旧配布物の削除", _cleanup_removed_paths),
+    _StepSpec(_CLEANUP, _cleanup_removed_paths),
     _StepSpec("npm/pnpm サプライチェーン対策", update_npmrc.run),
-    _StepSpec("mise セットアップ", setup_mise.run),
-    _StepSpec("Codex CLI の導入と更新", setup_codex_cli.run),
-    _StepSpec("Codex の Claude MCP 登録削除", remove_codex_claude_mcp.run),
-    _StepSpec("Claude Code CLI の導入と更新", setup_claude_cli.run),
+    # Windowsでは bin PATH 登録と同じユーザーPATHを読んで書き戻す。
+    _StepSpec(_MISE, setup_mise.run, after=("npm/pnpm サプライチェーン対策", "bin PATH 登録 (Windows)")),
+    # miseのinstalls・shimsを操作し、codexを起動するため診断ログの復元後に実行する。
+    _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, "Codex 診断ログの通常ストレージ復元 (Linux)")),
+    _StepSpec("Codex の Claude MCP 登録削除", remove_codex_claude_mcp.run, after=(_CODEX_CLI,)),
+    # 旧npm版の除去がmise管理のNode配下のnpmを使う。
+    _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,)),
     _StepSpec("Antigravity CLI の導入", setup_agy_cli.run),
     _StepSpec("Herdr CLI の導入と更新", setup_herdr_cli.run),
-    _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run),
-    _StepSpec("Codex リンクの同期", setup_codex_links.run),
-    _StepSpec("Codex 診断ログの通常ストレージ復元 (Linux)", restore_codex_logs_linux.run),
-    _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
-    _StepSpec("Claude Code plugin のインストール", install_claude_plugins.run),
-    # installed_plugins.json が更新後の版を指してから現行版を判定するため、導入処理の直後に置く。
-    _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run),
-    _StepSpec("Codex plugin snapshot の生成", sync_codex_plugin_manifests.sync),
-    _StepSpec("Codex plugin のインストール", install_codex_plugins.run),
-    _StepSpec("agents_serverのuv環境ウォームアップ", warm_agents_server.run, background=True),
-    # hookが参照するインストール先を対象にするため、両プラグインの導入・更新の後に実行する。
-    _StepSpec("hookスクリプトのuv環境ウォームアップ", warmup_hook_scripts.run, background=True),
-    _StepSpec("旧Codex User scope MCP登録の移行", remove_legacy_codex_mcp_from_claude.run),
-    _StepSpec("Claude 設定", update_claude_settings.run),
-    _StepSpec("libarchive (Windows)", install_libarchive_windows.run),
-    _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run),
-    _StepSpec("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
-    _StepSpec("dotfiles自動更新タイマー セットアップ (Linux)", setup_dotfiles_autoupdate_linux.run),
-    _StepSpec("Windowsレジストリ設定", setup_registry.run),
-    _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
-    _StepSpec("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),
+    # 旧配布物の削除と同じ配布先ディレクトリの旧ファイルを削除する。
+    _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run, after=(_CLEANUP,)),
+    _StepSpec(_CODEX_LINKS, setup_codex_links.run),
+    _StepSpec(
+        "Codex 診断ログの通常ストレージ復元 (Linux)",
+        restore_codex_logs_linux.run,
+        after=(_CODEX_LINKS,),
+        platforms=_LINUX,
+    ),
+    _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run, platforms=_LINUX),
+    _StepSpec(_CLAUDE_PLUGIN, install_claude_plugins.run, after=(_CLAUDE_CLI,)),
+    # installed_plugins.json が更新後の版を指してから現行版を判定する。
+    _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run, after=(_CLAUDE_PLUGIN,)),
+    # plugin導入が`agent-toolkit/`を複製する間に同じ配下の派生ファイルを書き換えない。
+    _StepSpec("Codex plugin snapshot の生成", sync_codex_plugin_manifests.sync, after=(_CLAUDE_PLUGIN,)),
+    _StepSpec(
+        _CODEX_PLUGIN,
+        install_codex_plugins.run,
+        after=("Codex の Claude MCP 登録削除", "Codex plugin snapshot の生成", _CODEX_LINKS, _CLEANUP),
+    ),
+    _StepSpec("agents_serverのuv環境ウォームアップ", warm_agents_server.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
+    # 両ウォームアップは同じcache版ディレクトリで`uv run --project`を実行するため順に行う。
+    _StepSpec(
+        "hookスクリプトのuv環境ウォームアップ",
+        warmup_hook_scripts.run,
+        after=("agents_serverのuv環境ウォームアップ",),
+    ),
+    _StepSpec(
+        "旧Codex User scope MCP登録の移行",
+        remove_legacy_codex_mcp_from_claude.run,
+        after=(_CLAUDE_CLI, _CODEX_PLUGIN),
+    ),
+    # settings.json（plugin導入）と~/.claude.json（MCP移行）を読んでマージして書き戻す。
+    _StepSpec("Claude 設定", update_claude_settings.run, after=(_CLAUDE_PLUGIN, "旧Codex User scope MCP登録の移行")),
+    _StepSpec("libarchive (Windows)", install_libarchive_windows.run, after=(_MISE,), platforms=_WINDOWS),
+    # 開発版の取得はmise経由でcargoを使うため、Codex CLI工程のmise操作の後に行う。
+    _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,)),
+    _StepSpec("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run, platforms=_LINUX),
+    # 両ステップが`systemctl --user daemon-reload`と`restart`を実行する。
+    _StepSpec(
+        "dotfiles自動更新タイマー セットアップ (Linux)",
+        setup_dotfiles_autoupdate_linux.run,
+        after=("atk serve 自動起動セットアップ (Linux)",),
+        platforms=_LINUX,
+    ),
+    _StepSpec("Windowsレジストリ設定", setup_registry.run, platforms=_WINDOWS),
+    _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run, platforms=_WINDOWS),
+    _StepSpec("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run, platforms=_WINDOWS),
     # 他ステップが PATH 追加を行うため、それらの後に整理を実行する。
-    _StepSpec("ユーザー PATH 整理 (Windows)", cleanup_user_path.run),
+    _StepSpec("ユーザー PATH 整理 (Windows)", cleanup_user_path.run, after_all_preceding=True, platforms=_WINDOWS),
 ]
 
 
@@ -535,23 +600,32 @@ def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
     return [post_apply_outcome.PostApplyNotice(message)]
 
 
-_background_log_state = threading.local()
+_step_log_state = threading.local()
 
 
-class _BackgroundLogFilter(logging.Filter):
-    """背景ステップのログを通常handlerから除外する。"""
+class _StepLogFilter(logging.Filter):
+    """実行中のステップが出力したレコードを通常handlerから除外する。"""
 
     def filter(self, record: logging.LogRecord) -> bool:
         del record
-        return not getattr(_background_log_state, "active", False)
+        return not getattr(_step_log_state, "active", False)
 
 
-class _BackgroundLogCapture(logging.Handler):
-    """背景ステップのログレコードを投入順に保持する。"""
+class _StepLogCapture(logging.Handler):
+    """実行中のステップが出力したレコードをステップごとに投入順で保持する。"""
 
     def emit(self, record: logging.LogRecord) -> None:
-        if getattr(_background_log_state, "active", False):
-            _background_log_state.records.append(record)
+        if getattr(_step_log_state, "active", False):
+            _step_log_state.records.append(record)
+
+
+@dataclass
+class _StepOutcome:
+    result: _StepResult
+    recommendations: list[str]
+    duration: float
+    records: list[logging.LogRecord]
+    skipped: bool = False
 
 
 def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
@@ -585,15 +659,18 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
     )
 
 
-def _execute_background_step(step: _StepSpec) -> tuple[_StepResult, list[str], float, list[logging.LogRecord]]:
+def _execute_captured_step(label: str, step: _StepSpec) -> _StepOutcome:
+    """ワーカースレッドで1ステップを実行し、そのステップのログレコードを捕捉する。"""
     records: list[logging.LogRecord] = []
-    _background_log_state.active = True
-    _background_log_state.records = records
+    _step_log_state.active = True
+    _step_log_state.records = records
     try:
+        # 開始行は開始時刻の記録として永続ログにだけ残す。
+        logger.info("%s", label, extra=log_format.LOG_ONLY)
         result, recommendations, duration = _execute_step(step)
-        return result, recommendations, duration, records
+        return _StepOutcome(result, recommendations, duration, records)
     finally:
-        _background_log_state.active = False
+        _step_log_state.active = False
 
 
 def _normalize_step(step: _StepSpec | tuple[str, Callable[[], StepReturn]]) -> _StepSpec:
@@ -603,51 +680,103 @@ def _normalize_step(step: _StepSpec | tuple[str, Callable[[], StepReturn]]) -> _
     return _StepSpec(name, step_runner)
 
 
+def _resolve_predecessors(steps: Sequence[_StepSpec]) -> list[frozenset[int]]:
+    """各ステップの先行工程を添字の集合へ解決し、未知の名前と循環を拒否する。"""
+    index_by_name = {step.name: index for index, step in enumerate(steps)}
+    predecessors: list[frozenset[int]] = []
+    for index, step in enumerate(steps):
+        resolved = set(range(index)) if step.after_all_preceding else set()
+        for name in step.after:
+            if name not in index_by_name:
+                raise ValueError(f"先行工程が見つかりません: {step.name} -> {name}")
+            resolved.add(index_by_name[name])
+        predecessors.append(frozenset(resolved))
+    # 全ステップを処理できる順序が存在しなければ循環がある。
+    done: set[int] = set()
+    while len(done) < len(steps):
+        ready = {index for index in range(len(steps)) if index not in done and predecessors[index] <= done}
+        if not ready:
+            names = ", ".join(steps[index].name for index in range(len(steps)) if index not in done)
+            raise ValueError(f"先行工程が循環しています: {names}")
+        done |= ready
+    return predecessors
+
+
+def _targets_current_platform(step: _StepSpec) -> bool:
+    return not step.platforms or sys.platform in step.platforms
+
+
+def _emit_outcome(label: str, outcome: _StepOutcome) -> None:
+    """1ステップの出力を、所要時間付きの見出しを先頭にまとめて各handlerへ送る。"""
+    root_logger = logging.getLogger()
+    if outcome.skipped:
+        logger.info("%s: 実行中のOSは対象外のため実行しない", label, extra=log_format.LOG_ONLY)
+        return
+    start_record, *rest = outcome.records
+    root_logger.handle(start_record)
+    logger.info("%s (%.1f秒)", label, outcome.duration)
+    for record in rest:
+        root_logger.handle(record)
+
+
 def run(
     steps: Sequence[_StepSpec | tuple[str, Callable[[], StepReturn]]] | None = None,
 ) -> tuple[list[_StepResult], list[str]]:
-    """各ステップを順に実行し、`(results, recommendations)` を返す。
+    """各ステップを先行工程の順序を守って並列に実行し、`(results, recommendations)` を返す。
 
+    先行工程が失敗しても後続ステップは実行する。出力と`results`は列挙順に並べ、
+    各ステップの出力はそのステップと列挙順でそれより前の全ステップが完了した時点で出力する。
     `recommendations` は ``install_claude_plugins.run()`` が算出した推奨コマンド列。
     ``install_claude_plugins.run`` は ``tuple[bool, list[str]]`` を返すため、
     タプルの戻り値を持つステップは推奨コマンドとして収集する。
     """
     selected_steps = _DEFAULT_STEPS if steps is None else steps
     effective_steps = [_normalize_step(step) for step in selected_steps]
-    results: list[_StepResult] = []
-    recommendations: list[str] = []
+    predecessors = _resolve_predecessors(effective_steps)
     total = len(effective_steps)
+    labels = [f"[{index}/{total}] {step.name}" for index, step in enumerate(effective_steps, start=1)]
     root_logger = logging.getLogger()
-    exclusion = _BackgroundLogFilter()
-    capture = _BackgroundLogCapture()
+    exclusion = _StepLogFilter()
+    capture = _StepLogCapture()
     original_handlers = root_logger.handlers.copy()
     for handler in original_handlers:
         handler.addFilter(exclusion)
     root_logger.addHandler(capture)
-    pending: list[tuple[int, _StepSpec, Future[tuple[_StepResult, list[str], float, list[logging.LogRecord]]]]] = []
+    outcomes: dict[int, _StepOutcome] = {}
+    started: set[int] = set()
+    running: dict[Future[_StepOutcome], int] = {}
+    emitted = 0
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            for index, step in enumerate(effective_steps, start=1):
-                if step.background:
-                    pending.append((index, step, executor.submit(_execute_background_step, step)))
-                    continue
-                logger.info("[%d/%d] %s", index, total, step.name)
-                result, step_recommendations, duration = _execute_step(step)
-                logger.info("[%d/%d] %s (%.1f秒)", index, total, step.name, duration)
-                results.append(result)
-                recommendations.extend(step_recommendations)
-            for index, step, future in pending:
-                result, step_recommendations, duration, records = future.result()
-                logger.info("[%d/%d] %s (%.1f秒)", index, total, step.name, duration)
-                for record in records:
-                    root_logger.handle(record)
-                results.append(result)
-                recommendations.extend(step_recommendations)
+        with ThreadPoolExecutor(max_workers=max(total, 1)) as executor:
+            while True:
+                progressed = True
+                while progressed:
+                    progressed = False
+                    for index, step in enumerate(effective_steps):
+                        if index in started or not predecessors[index].issubset(outcomes):
+                            continue
+                        started.add(index)
+                        if _targets_current_platform(step):
+                            running[executor.submit(_execute_captured_step, labels[index], step)] = index
+                            continue
+                        # 対象外OSのステップは`run`を呼ばず、成功かつ変更なしとして扱う。
+                        result = _StepResult(name=step.name, ok=True, changed=False)
+                        outcomes[index] = _StepOutcome(result, [], 0.0, [], skipped=True)
+                        progressed = True
+                while emitted < total and emitted in outcomes:
+                    _emit_outcome(labels[emitted], outcomes[emitted])
+                    emitted += 1
+                if not running:
+                    break
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    outcomes[running.pop(future)] = future.result()
     finally:
         root_logger.removeHandler(capture)
         for handler in original_handlers:
             handler.removeFilter(exclusion)
-    return results, recommendations
+    ordered = [outcomes[index] for index in range(total)]
+    return [outcome.result for outcome in ordered], [item for outcome in ordered for item in outcome.recommendations]
 
 
 if __name__ == "__main__":

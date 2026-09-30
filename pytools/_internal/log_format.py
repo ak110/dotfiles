@@ -1,6 +1,18 @@
 """post-apply系モジュールで共有するログフォーマットヘルパー。"""
 
+import logging
+import types
 from pathlib import Path
+
+# 永続ログにだけ残し、post-applyの画面（標準出力）から外すレコードの目印。
+# `logger.info(..., extra=LOG_ONLY)`で付け、post-applyの標準出力ハンドラーが除く。
+LOG_ONLY_ATTR = "post_apply_log_only"
+LOG_ONLY = types.MappingProxyType({LOG_ONLY_ATTR: True})
+
+
+def is_log_only(record: logging.LogRecord) -> bool:
+    """レコードが永続ログ専用の目印を持つかを返す。"""
+    return getattr(record, LOG_ONLY_ATTR, False) is True
 
 
 def format_status(target: str, state: str) -> str:
