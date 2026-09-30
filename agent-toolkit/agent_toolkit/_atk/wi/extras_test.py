@@ -158,6 +158,20 @@ class TestShowAllPullsBeforeRead:
         assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
 
 
+def _record_commit_git_calls(calls: list[_GitCall], *, dirty: bool) -> Any:
+    """外部編集の有無だけを変え、commitのGit呼出しを記録する。"""
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+        status = " M inbox/x.md\n" if dirty else ""
+        if cmd[:3] == ["git", "status", "--porcelain"]:
+            stdout = status if kwargs.get("text") else status.encode()
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+    return fake_run
+
+
 class TestCommitSubcommand:
     """commitサブコマンド: 外部編集分をコミットし、滞留commitをpushする。"""
 
@@ -171,20 +185,13 @@ class TestCommitSubcommand:
         notes = _setup_notes(tmp_path)
         calls: list[_GitCall] = []
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
-            if cmd[:3] == ["git", "status", "--porcelain"]:
-                stdout: Any = " M inbox/x.md\n" if kwargs.get("text") else b" M inbox/x.md\n"
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _record_commit_git_calls(calls, dirty=True))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls]
+        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"]]
         assert git_cmds[:3] == [
             ["git", "push"],
             ["git", "fetch"],
@@ -197,7 +204,7 @@ class TestCommitSubcommand:
         assert git_cmds[6] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()
-        assert "外部編集分をcommit・pushした" in captured.out
+        assert "外部編集分をcommitした" in captured.out
 
     def test_commit_when_clean_pushes_pending_commits(
         self,
@@ -209,20 +216,13 @@ class TestCommitSubcommand:
         _setup_notes(tmp_path)
         calls: list[_GitCall] = []
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
-            if cmd[:3] == ["git", "status", "--porcelain"]:
-                stdout: Any = "" if kwargs.get("text") else b""
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _record_commit_git_calls(calls, dirty=False))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls]
+        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"]]
         assert git_cmds[:3] == [
             ["git", "push"],
             ["git", "fetch"],
@@ -232,7 +232,7 @@ class TestCommitSubcommand:
         assert not [cmd for cmd in git_cmds if cmd[:2] == ["git", "commit"]]
         assert [cmd for cmd in git_cmds if cmd[:2] == ["git", "push"]] == [["git", "push"], ["git", "push"]]
         captured = capsys.readouterr()
-        assert "外部編集の差分は無く、滞留commitをpushした" in captured.out
+        assert "外部編集の差分は無い" in captured.out
 
     def test_commit_confirms_plans_only_diff(
         self,
@@ -249,7 +249,9 @@ class TestCommitSubcommand:
             atk.main(["wi", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert "外部編集分をcommit・pushした" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert "外部編集分をcommitした" in output
+        assert "2件のcommitをpushした" in output
         status = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=notes,
@@ -265,6 +267,53 @@ class TestCommitSubcommand:
             capture_output=True,
         )
         assert tracked.returncode == 0
+
+
+def test_commit_reports_sent_count_then_zero_and_pull_syncs(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実Gitで滞留1件の送信と送信対象なしを区別し、remoteありの同期を示す。"""
+    _setup_notes_with_pending_commit(tmp_path)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "commit"], home=tmp_path)
+    assert "1件のcommitをpushした" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "commit"], home=tmp_path)
+    assert "pushするcommitは無かった" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "pull"], home=tmp_path)
+    assert "remoteと同期した" in capsys.readouterr().out
+
+
+def test_local_only_commit_and_pull_report_skipped_remote_operations(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    make_clean_repo: typing.Callable[..., pathlib.Path],
+) -> None:
+    """remoteなしの初回・外部編集・同期で、行っていないpushや同期を完了と書かない。"""
+    notes = make_clean_repo(tmp_path, "private-notes")
+    marker = notes / ".agent-toolkit-local-only"
+    marker.touch()
+    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "local setup"], check=True, capture_output=True)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "commit"], home=tmp_path)
+    clean = capsys.readouterr().out
+    assert "外部編集の差分は無い" in clean
+    assert "remoteが無いためpushしていない" in clean
+    (notes / "external.txt").write_text("外部編集\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "commit"], home=tmp_path)
+    edited = capsys.readouterr().out
+    assert "外部編集分をcommitした" in edited
+    assert "remoteが無いためpushしていない" in edited
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "pull"], home=tmp_path)
+    synced = capsys.readouterr().out
+    assert "remoteが無いため同期していない" in synced
+    assert "pushした" not in clean + edited
+    assert "remoteと同期した" not in synced
 
 
 def _write_processing_file(
@@ -604,8 +653,8 @@ class TestAddViaEditor:
         assert "エディター経由の本文" in content
 
         captured = capsys.readouterr()
-        assert "編集する場合:\n" in captured.out
-        assert f"  atk wi edit {files[0].name}\n" in captured.out
+        assert "編集する場合:" not in captured.out
+        assert f"  atk wi edit {files[0].name}\n" not in captured.out
 
     def test_editor_empty_save_aborts(
         self,

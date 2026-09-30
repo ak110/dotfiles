@@ -2,7 +2,7 @@
 
 ## 開発環境の構築手順
 
-mise 2026.8.8以降とuvを導入し、次を実行する。
+恒久作業ツリーの初期セットアップでは、mise 2026.8.8以降とuvを導入し、次を実行する。
 uvは公式インストーラーを使用する。
 uvはbootstrap自身の実行基盤であるため、ルートのmise設定では管理しない。
 手動起動した`update-dotfiles`は公式インストーラー版uvの自己更新を起動時に試行する。
@@ -22,6 +22,10 @@ Python依存の同期では、Makefileから継承する`UV_FROZEN=1`を解除�
 
 適用内容だけを確認する場合は`mise bootstrap --dry-run`を使う。
 宣言済み状態との差分は`mise bootstrap status`で確認する。
+
+専用worktreeや回収予定の検証用複製の準備では、[dotfiles-development](../../.claude/skills/dotfiles-development/SKILL.md)の「開発手順」で、mise trustとローカル依存の同期を行う。
+初期セットアップは共有CLI、Git hookとcommit templateも登録するため、一時作業場所の準備には使わない。
+共有CLIの導入元は、回収後も存続する恒久作業ツリーに保つ。
 
 PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyzer`に依存する。
 未導入でも`make test`は通過し、検証の抜けはCIで担保する。

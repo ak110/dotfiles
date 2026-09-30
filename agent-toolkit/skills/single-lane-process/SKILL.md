@@ -19,7 +19,7 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 レーン実行の文書は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`とする。
 終端担当の文書は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`および`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`とする。
 
-本スキルから`agent-toolkit:plan-mode`を起動する場合は、確認事項をUWIへ登録する専用処理として扱い、計画の起草後は本スキルの実行順へ戻って主作業ツリーで実装する。計画stemは`dd-HHmm_single-lane-process`とする。実行レビューのレビューイーはメインとする。Codexでは`../plan-mode/references/codex-runtime.md`が専用処理へ定めるUWI記録と暫定判断を、本スキルにも適用する。
+本スキルから`agent-toolkit:plan-mode`を起動する場合は、確認要否と手段を`agent-toolkit:user-confirmation-and-report`に従って選び、計画の起草後は本スキルの実行順へ戻って主作業ツリーで実装する。計画stemは`dd-HHmm_single-lane-process`とする。実行レビューのレビューイーはメインとする。Codexでは`../plan-mode/references/codex-runtime.md`が専用処理へ定めるUWI記録と暫定判断を、本スキルにも適用する。
 
 本スキルでは、レーン担当と終端担当を使わないメインが、対象リポジトリの版数規範の単一worktree向け一般則に従い、実装段階で版数を更新する。
 

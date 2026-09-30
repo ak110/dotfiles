@@ -38,14 +38,14 @@ LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
 """履歴分岐時に無関係な差分がある場合の確定通知。"""
 
-PUSH_DEFERRED_NEXT_ACTION = "`git status`で差分を確認してcommit等でcleanにした後、元の`atk`操作を再実行する"
+PUSH_DEFERRED_NEXT_ACTION = (
+    "`git -C {private_notes} status`で無関係な差分を確認し、commitするか取り除いてcleanにしてから"
+    "`atk wi commit`を実行する。分岐の自動解消とpushを行う"
+)
 """`PUSH_DEFERRED_MESSAGE`に続けて案内する次の操作。"""
 
 _REPORTED_ATTRIBUTE = "_atk_sync_failure_reported"
 """失敗の原因と次の操作を本モジュールが出力済みであることを例外へ記録する属性名。"""
-
-_NO_ACTION_NEEDED = "対応不要（処理は継続した）"
-"""自動で解消した事象に添える次の操作。"""
 
 _DivergenceRecovery = Callable[[pathlib.Path], bool]
 """呼び出し元の意味論でローカル側commitの冗長性を証明する判定関数。"""
@@ -121,6 +121,7 @@ class _ThreadLocalHeldPaths(threading.local):
 
     def __init__(self) -> None:
         self.paths: dict[pathlib.Path, int] = {}
+        self.push_deferred: set[pathlib.Path] = set()
 
 
 _LOCK_HELD_PATHS = _ThreadLocalHeldPaths()
@@ -213,6 +214,11 @@ def assert_repo_lock_held(repo_path: pathlib.Path) -> None:
 def has_remote(private_notes: pathlib.Path) -> bool:
     """remote同期を行う通常リポジトリか判定する。"""
     return not (private_notes / LOCAL_ONLY_MARKER).exists()
+
+
+def push_was_deferred(private_notes: pathlib.Path) -> bool:
+    """現在のスレッドの直近pushで保留を報告したか返す。"""
+    return private_notes.resolve() in _LOCK_HELD_PATHS.push_deferred
 
 
 def _git_path(private_notes: pathlib.Path, name: str, *, result_runner: _GitResultRunner) -> pathlib.Path | None:
@@ -314,7 +320,7 @@ def _pull_impl(
         return
     if is_worktree_dirty(private_notes, result_runner=result_runner):
         _forward_error_output(merge_error)
-        _report_divergence(private_notes, result_runner=result_runner)
+        _report_divergence(private_notes, result_runner=result_runner, dirty=True)
         mark_reported(merge_error)
         raise merge_error
     try:
@@ -396,10 +402,6 @@ def _recover_redundant_divergence(
     if not redundant_divergence(private_notes):
         return False
     run_git(["reset", "--keep", "@{u}"], private_notes)
-    _next_action.report(
-        "同等の変更がupstreamへ反映済みであることを確認したため、冗長なローカルcommitを除外して自動同期しました。",
-        next_action=_NO_ACTION_NEEDED,
-    )
     return True
 
 
@@ -414,19 +416,15 @@ def _recover_matching_tree_divergence(
     if result.returncode != 0:
         return False
     run_git(["reset", "--soft", "@{u}"], private_notes)
-    _next_action.report(
-        "HEADとupstreamの内容が一致するため、冗長なローカルcommitを除外して自動同期しました。",
-        next_action=_NO_ACTION_NEEDED,
-    )
     return True
 
 
-def _report_divergence(
+def _divergence_details(
     private_notes: pathlib.Path,
     *,
     result_runner: _GitResultRunner,
-) -> None:
-    """自動回復できない分岐の原因と手動回復手順を表示する。"""
+) -> str:
+    """分岐の件数と内容差を、出力先と成否を決めずに組み立てる。"""
     count_text = "取得できなかった"
     try:
         counts = result_runner(["rev-list", "--left-right", "--count", "HEAD...@{u}"], private_notes)
@@ -447,9 +445,26 @@ def _report_divergence(
             reason_lines.append(differences.stdout.rstrip())
     except (OSError, subprocess.SubprocessError):
         pass
+    return "\n".join(reason_lines)
+
+
+def _report_divergence(
+    private_notes: pathlib.Path,
+    *,
+    result_runner: _GitResultRunner,
+    dirty: bool = False,
+) -> None:
+    """分岐による失敗を、未コミット差分の解消順に合わせて案内する。"""
+    preparation = (
+        f"`git -C {private_notes} status`で無関係な差分を確認してcleanにし、元の操作を再実行する。"
+        "cleanにしても自動解消できない場合は、"
+        if dirty
+        else ""
+    )
     _outcome.report_failure(
-        "\n".join(reason_lines),
-        next_action=(
+        _divergence_details(private_notes, result_runner=result_runner),
+        next_action=preparation
+        + (
             "`git log --left-right --oneline HEAD...@{u}`で分岐を確認し、`git rebase @{u}`を実行する。"
             "競合したら解消して`git add <path>`、`git rebase --continue`、`git push`の順に実行する。\n"
             "同じ変更がupstreamに存在する重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
@@ -550,10 +565,11 @@ def push_pending_commits(
     run_git: _GitRunner = _run_git,
     result_runner: _GitResultRunner = _run_git_result,
     redundant_divergence: _DivergenceRecovery | None = None,
-) -> None:
+) -> int | None:
     """branch上の未push commitを送信し、履歴分岐だけをrebaseして再送する。"""
+    _LOCK_HELD_PATHS.push_deferred.discard(private_notes.resolve())
     try:
-        _push_pending_commits_impl(
+        return _push_pending_commits_impl(
             private_notes,
             run_git=run_git,
             result_runner=result_runner,
@@ -572,16 +588,17 @@ def _push_pending_commits_impl(
     run_git: _GitRunner,
     result_runner: _GitResultRunner,
     redundant_divergence: _DivergenceRecovery | None,
-) -> None:
+) -> int | None:
     """pushのGit操作本体を実行する。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
-        return
+        return 0
     original_error: subprocess.CalledProcessError
+    count = pending_commit_count(private_notes, result_runner=result_runner)
     try:
         run_git(["push"], private_notes, forward_error_output=False)
-        return
+        return count
     except subprocess.CalledProcessError as error:
         original_error = error
 
@@ -598,7 +615,7 @@ def _push_pending_commits_impl(
     if local_is_ancestor and not remote_is_ancestor:
         run_git(["merge", "--ff-only", "@{u}"], private_notes)
         run_git(["push"], private_notes)
-        return
+        return 0
     if remote_is_ancestor or (local_is_ancestor and remote_is_ancestor):
         _forward_error_output(original_error)
         raise original_error
@@ -608,13 +625,19 @@ def _push_pending_commits_impl(
         run_git=run_git,
         result_runner=result_runner,
     ):
-        return
+        return 0
 
     if is_worktree_dirty(private_notes, result_runner=result_runner):
         _forward_error_output(original_error)
-        _report_divergence(private_notes, result_runner=result_runner)
-        _outcome.report_warning(PUSH_DEFERRED_MESSAGE, next_action=PUSH_DEFERRED_NEXT_ACTION)
-        return
+        count = pending_commit_count(private_notes, result_runner=result_runner)
+        count_text = "取得できない" if count is None else f"{count}件"
+        _outcome.report_warning(
+            f"{PUSH_DEFERRED_MESSAGE}。未push commit: {count_text}\n"
+            + _divergence_details(private_notes, result_runner=result_runner),
+            next_action=PUSH_DEFERRED_NEXT_ACTION.format(private_notes=private_notes),
+        )
+        _LOCK_HELD_PATHS.push_deferred.add(private_notes.resolve())
+        return 0
 
     if _recover_redundant_divergence(
         private_notes,
@@ -622,7 +645,7 @@ def _push_pending_commits_impl(
         run_git=run_git,
         result_runner=result_runner,
     ):
-        return
+        return 0
 
     try:
         run_git(["rebase", "@{u}"], private_notes)
@@ -630,7 +653,9 @@ def _push_pending_commits_impl(
         _report_rebase_failure(private_notes, result_runner=result_runner)
         mark_reported(error)
         raise
+    count = pending_commit_count(private_notes, result_runner=result_runner)
     run_git(["push"], private_notes)
+    return count
 
 
 def _target_has_staged_changes(
@@ -704,8 +729,8 @@ def commit_and_push(
     skip_push: bool = False,
     run_git: _GitRunner = _run_git,
     result_runner: _GitResultRunner = _run_git_result,
-    push_pending_fn: Callable[[pathlib.Path], None] | None = None,
-) -> None:
+    push_pending_fn: Callable[[pathlib.Path], int | None] | None = None,
+) -> int | None:
     """許可pathだけをstage・commitし、branch上のpending commitをpushする。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
@@ -713,19 +738,19 @@ def commit_and_push(
     push_fn = push_pending_fn or (lambda path: push_pending_commits(path, run_git=run_git, result_runner=result_runner))
     if not paths:
         if not skip_push:
-            push_fn(private_notes)
-        return
+            return push_fn(private_notes)
+        return 0
     stage_paths = _usable_pathspecs(private_notes, paths, result_runner=result_runner)
     if not stage_paths:
         if not skip_push:
-            push_fn(private_notes)
-        return
+            return push_fn(private_notes)
+        return 0
     run_git(["add", "--all", "--", *stage_paths], private_notes)
     staged = _target_has_staged_changes(private_notes, stage_paths, result_runner=result_runner)
     if staged is False:
         if not skip_push:
-            push_fn(private_notes)
-        return
+            return push_fn(private_notes)
+        return 0
     run_git(["commit", "-m", message, "--", *stage_paths], private_notes)
     if skip_push:
         if has_remote(private_notes):
@@ -733,8 +758,8 @@ def commit_and_push(
                 "注記: --skip-pushにより未pushのcommitをローカルへ残し、pushを省略しました。",
                 next_action="最後の操作は--skip-pushなしで実行するか、atk wi commitを実行して滞留commitをpushする",
             )
-        return
-    push_fn(private_notes)
+        return 0
+    return push_fn(private_notes)
 
 
 def require_upstream(

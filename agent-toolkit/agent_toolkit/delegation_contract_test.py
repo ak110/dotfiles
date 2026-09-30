@@ -308,7 +308,7 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
 
 
 def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
-    """pickerが出力する先行レーンの項目を、受領検収とレーンの開始順が同じ名前で読む。"""
+    """既存の先行レーン欄を読め、新規の生成・受領・実行は同一レーンの依存順で一致する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
@@ -319,6 +319,16 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
     assert "after_lanes" in lane_cost_fields
     assert "`after_lanes`" in _h2_section(parent, "出力の受領")
     assert "`after_lanes`" in _h2_section(lanes, "レーンと資源")
+    for document in (picker, parent, lanes):
+        assert "既存出力の読取互換" in document
+        assert "新しい選定では省略または空列" in document or "新しい選定の`after_lanes`は省略または空列" in document
+        assert "同じレーン" in document
+    assert "推移的な依存先" in _h2_section(picker, "処理対象の決定")
+    assert "推移的に照合" in _h2_section(parent, "出力の受領")
+    assert "依存先が先行" in parent and "依存先から処理" in lanes
+    assert "候補とdecisionへ全項目を残す" in picker
+    assert "後続だけを開始せず依存待ちを維持" in picker
+    assert "後続を依存待ち" in lanes
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:

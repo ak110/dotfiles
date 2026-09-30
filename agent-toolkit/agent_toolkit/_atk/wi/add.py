@@ -21,14 +21,12 @@ from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
     MISSING_DEPENDENCY_NEXT_ACTION,
     WI_STATE_INBOX,
-    WI_STATE_PROCESSING,
     WI_STATES,
     WI_TYPE_AWI,
     WI_TYPE_UWI,
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
-    _count_awi,
     _max_existing_seq,
     _pull,
     _reject_bare_repo_path_override,
@@ -800,18 +798,9 @@ def _cmd_add(
         sys.exit(1)
     count = len(generated)
     inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
-    processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
     _outcome.report_success(f"{count}件をinboxへ投入した")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
         _print_entry_details(saved_details[filename])
-    print(f"inbox: 計{_count_awi(inbox_dir)}件（processing: {_count_awi(processing_dir)}件）")
-    print(
-        f"  うち{target_repo}: {_count_awi(inbox_dir, target_repo)}件"
-        f"（processing: {_count_awi(processing_dir, target_repo)}件）"
-    )
-    print("編集する場合:")
-    for filename in generated:
-        print(f"  atk wi edit {filename}")

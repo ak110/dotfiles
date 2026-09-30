@@ -17,8 +17,9 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 固定値の判定は、その呼び出しでのスキル起動フラグ更新の後に行う
 （同一呼び出しで検出したスラッシュコマンド起動を、その場でsessionTitleへ反映するため）。
 
-通常発話へ返す注記は照合注記の1種とする。照合の手順を本文へ持ち、
-直前の通常発話からの経過時間が閾値以上の場合だけ`additionalContext`へ返す。
+通常発話へ返す照合注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
+全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず認識合わせスキルの起動を促す。
+成立した注記を1つの`additionalContext`へまとめる。
 
 注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
 スラッシュコマンド（Claude Codeは`/`、Codexは`$`）で始まるものも対象に含める。
@@ -118,6 +119,10 @@ _VERIFICATION_NOTICE_BODY = (
 規則による分類の誤りは、照合を最も要する発話で注記を無音のまま欠落させるためである。
 """
 _llm_notice = _notice_formatter("user_prompt_submit")
+_REALIGN_NOTICE_BODY = (
+    "ユーザー発話に全角の連続した「！！」が含まれている。"
+    "次の操作: `agent-toolkit:realign-with-user`を起動し、目標と解決したい問題の理解を確かめる。"
+)
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -258,6 +263,8 @@ def main(payload_text: str) -> int:
     notices: list[str] = []
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
         notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
+    if is_normal_prompt and "！！" in prompt:
+        notices.append(_llm_notice(_REALIGN_NOTICE_BODY, tag="notice"))
     additional_context = "\n".join(notices) if notices else None
 
     if first_line.startswith(command_prefix):

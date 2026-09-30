@@ -174,8 +174,8 @@ backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 
 [[tools."npm:aws-cdk"]]
-version = "2.1142.0"
-aube = { path = ".mise/locks/npm-aws-cdk/2.1142.0", digest = "sha256:4003d6ee21fe531d6a633c7708b98183764687c8b0e2614d63695e80f0ab5713" }
+version = "2.1143.0"
+aube = { path = ".mise/locks/npm-aws-cdk/2.1143.0", digest = "sha256:05a2404dd403bcccfee686d430c68a28de0539e87a83cf5dc9ecd939cdbd28b9" }
 backend = "npm:aws-cdk"
 specifiers = ["latest"]
 

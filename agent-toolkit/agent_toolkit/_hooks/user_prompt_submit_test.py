@@ -392,6 +392,61 @@ class TestNonMatchingPrompts:
         assert state["plan_mode_skill_invoked"] is True
 
 
+class TestRealignNoticeInjection:
+    """実ユーザー発話の全角記号から、両ホストへ認識合わせの起動を促す。"""
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    @pytest.mark.parametrize("prompt", ["！！直してほしい", "理解が違う！！", "確認\nここです！！"])
+    def test_first_and_repeated_prompts_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
+        sid = "realign-repeat"
+        for _ in range(3):
+            result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
+            assert result.returncode == 0
+            output = json.loads(result.stdout)["hookSpecificOutput"]
+            bodies = _notice_bodies(output["additionalContext"])
+            assert len(bodies) == 1
+            assert "agent-toolkit:realign-with-user" in bodies[0]
+            assert "次の操作:" in bodies[0]
+            assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    @pytest.mark.parametrize("prompt", ["直してほしい!!", "直してほしい！", "通常の依頼"])
+    def test_other_prompts_do_not_receive_realign_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
+        result = _run({"session_id": "realign-negative", "prompt": prompt, **host_fields}, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert not result.stdout
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    @pytest.mark.parametrize(
+        ("extra", "prompt"),
+        [
+            ({"source": "system"}, "確認！！"),
+            ({}, '<atk-auto source="test" kind="goal">確認！！</atk-auto>'),
+            ({}, "<task-notification>完了！！</task-notification>"),
+            ({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n確認！！"),
+        ],
+    )
+    def test_machine_injection_does_not_receive_realign_notice(
+        self, tmp_path: pathlib.Path, host_fields: dict, extra: dict, prompt: str
+    ) -> None:
+        result = _run({"session_id": "realign-machine", "prompt": prompt, **host_fields, **extra}, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert not result.stdout
+        assert not _read_state(tmp_path, "realign-machine")
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    def test_verification_and_realign_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
+        sid = "realign-verification"
+        state = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        state.write_text(json.dumps({"last_user_prompt_at": time.time() - 200}), encoding="utf-8")
+        result = _run({"session_id": sid, "prompt": "理解を確かめて！！", **host_fields}, state_dir=tmp_path)
+        assert result.returncode == 0
+        bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
+        assert len(bodies) == 2
+        assert bodies[0] == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert "agent-toolkit:realign-with-user" in bodies[1]
+
+
 class TestVerificationNoticeInjection:
     """通常発話へ返す照合注記の注入契約を検証する。"""
 

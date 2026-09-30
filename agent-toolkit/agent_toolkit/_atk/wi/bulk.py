@@ -211,7 +211,8 @@ def bulk_apply_entries(
         readiness = calculate_readiness(private_notes, normalized_repos[0] if len(normalized_repos) == 1 else None)
         confirmed_snapshot = _snapshot(candidates)
 
-    _print_entries(candidates, readiness)
+    if not assume_yes:
+        _print_entries(candidates, readiness)
     if not candidates:
         _outcome.report_success(f"対象0件のため{label}しなかった（変更は無い）: {', '.join(normalized_repos)}")
         return []

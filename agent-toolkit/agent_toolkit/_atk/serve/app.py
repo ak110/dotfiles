@@ -851,7 +851,7 @@ class Operations:
 
     def commit(self) -> bool:
         """外部編集差分をcommitしてpushする。"""
-        return awi_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
+        return awi_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT).changed
 
 
 class _ServeRuntime:

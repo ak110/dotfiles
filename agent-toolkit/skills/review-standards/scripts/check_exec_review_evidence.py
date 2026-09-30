@@ -267,6 +267,40 @@ def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, 
     return errors
 
 
+def _expired_source_error(row: dict[str, str], index: int, repository: pathlib.Path, wi_outputs: dict[str, str]) -> str | None:
+    """失効行のsourceから、記入済みユーザー判断の参照先を確認する。"""
+    source = row["source"]
+    references = dict.fromkeys(re.findall(r"\d{8}-\d{6}-\d{3}\.md", source))
+    reasons: list[str] = []
+    for reference in references:
+        own_comment = reference == row["awi"] and "ユーザーコメント" in source
+        if not own_comment and "回答" not in source:
+            continue
+        try:
+            if reference not in wi_outputs:
+                wi_outputs[reference] = _show_wi(reference, repository)
+            frontmatter, body = _wi_body(wi_outputs[reference], reference)
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            reasons.append(str(exc))
+            continue
+        if own_comment and frontmatter.get("type") == "awi":
+            if _requirement_units(_section(body, "## ユーザーコメント") or []):
+                return None
+            reasons.append(f"{reference}: ユーザーコメントが空です")
+        elif frontmatter.get("type") == "uwi" and "回答" in source:
+            if _requirement_units(_section(body, "## 回答") or []):
+                return None
+            reasons.append(f"{reference}: UWIの回答が空です")
+        else:
+            reasons.append(f"{reference}: 記入済みユーザーコメントか回答済みUWIの参照ではありません")
+    detail = f"（{'、'.join(reasons)}）" if reasons else ""
+    return (
+        f"{row['awi']}: wi_conditions[{index}].source: 失効のユーザー判断を確認できません{detail}。"
+        "対象AWIの記入済みユーザーコメントか関連する回答済みUWIのファイル名と所在を記録する。"
+        "ユーザーの回答がない場合は、その判断を得てから同じ証拠を再検査する"
+    )
+
+
 def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: str) -> list[str]:
     """証拠ファイルと対象WIを検査し、診断を全件返す。"""
     try:
@@ -284,12 +318,20 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     condition_rows = payload["wi_conditions"]
     requirement_rows = payload["user_requirements"]
     assert isinstance(condition_rows, list) and isinstance(requirement_rows, list)
+    wi_outputs: dict[str, str] = {}
     for filename in filenames:
         try:
-            expected, requirements = _expected_rows(_show_wi(filename, repository), filename)
+            if filename not in wi_outputs:
+                wi_outputs[filename] = _show_wi(filename, repository)
+            expected, requirements = _expected_rows(wi_outputs[filename], filename)
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             errors.append(str(exc))
             continue
+        for index, row in enumerate(condition_rows, start=1):
+            if row["awi"] == filename and row["outcome"] == "失効":
+                error = _expired_source_error(row, index, repository, wi_outputs)
+                if error is not None:
+                    errors.append(error)
         actual = [row["condition"] for row in condition_rows if row["awi"] == filename]
         normalized_actual = [_normalize_condition(condition) for condition in actual]
         unmatched = [

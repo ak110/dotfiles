@@ -4,7 +4,7 @@ user-invocable: false
 description: >
   dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make setup-pwsh`・`make test-browser`を
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、
-  mise trustを要する作業ツリーと状態ディレクトリを扱うとき、専用worktreeの変更を`atk`で動かすとき、
+  専用worktreeや回収予定の検証用複製の環境を準備するとき、mise trustを要する作業ツリーと状態ディレクトリを扱うとき、専用worktreeの変更を`atk`で動かすとき、
   画面を実描画で確かめるとき、commit typeを判定するとき、
   `agent-toolkit:session-review`の参照文書の位置を確認するときに起動する。
 ---
@@ -16,6 +16,9 @@ description: >
 
 ## 開発手順
 
+- 専用worktreeや回収予定の検証用複製を準備する主体は、実行前に本スキルを起動する。後掲のmise trust手順を適用した後、準備する作業ツリーのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行し、その作業ツリーの`.venv`へ依存を同期する。終了コードと全出力を検収し、失敗した環境は準備完了として渡さない。
+  - `mise run bootstrap`、`mise bootstrap`、`make setup`は恒久作業ツリーの初期導入に使う。回収予定の作業場所ではローカル依存の同期だけを行い、`uv tool install --editable`、`prek install`、`git config --local commit.template`を準備へ含めない。共有CLIの導入元と共通Git設定が、その作業場所の回収後も存続する必要があるためである。Git hookとtemplateは既存設定を使う。
+  - ローカル依存の同期と共有登録の比較の観測・再検証手段は、`docs/development/audit-records.md`「dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日」にある。
 - `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新および全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体の自動チェックが必要な場合の実行方法: `make test`
@@ -32,7 +35,7 @@ description: >
     初回の変更範囲の検証では、変更ファイルに適用できるチェックを全て動かすため、MCPの`commands`とCLIの`--commands`を指定しない。
     Pythonファイルまたはエージェント向け文書を変更するレーンの変更範囲の検証へ、後述の`repo_invariant`マーカーのテストを含める。
     `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言を変更した場合は、変更した挙動に対応するhook固有の`<hook名>_test.py`も加える。
-    `agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、または`atk.py`のサブコマンド登録を変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`を変更範囲の検証へ加える。同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。共有の生成値や登録を期待する未変更のテストも検証するためである。
+    `agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約を変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`を変更範囲の検証へ加える。同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。共有契約の変更は、変更前か変更後の実際の呼び出し経路が異なる2つ以上のサブコマンドへ到達する処理の挙動・契約の変更や撤去、および共通出力の内容・書式・条件・有無の変更とする。共通後処理も含め、import数だけや単一サブコマンド内の複数モジュールから判定せず、内部のコメント・空白だけの変更はこの追加条件に含めない。共有の生成値や処理を期待する未変更のテストも検証するためである。
     `agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider pytools scripts`を変更範囲の検証へ加え、同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。`agent-toolkit/`の外にも`agent_toolkit`をimportする実装とテストがあり（現行は`pytools/`と`scripts/`）、引数の必須化や例外の追加のような実行時にだけ成立する契約の変更は、固定文字列の検索と`ty`の型チェックでは呼び出し元の破損を検出できないためである。統合直前にも実行するのは、並行する別のレーンが同じ契約の新しい呼び出し元を加えた場合に、統合後に初めて破損が成立するためである。
     デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。

@@ -206,11 +206,19 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 def _cmd_config_show(home: pathlib.Path) -> None:
     """showサブコマンド: 設定値を1キー1行で表示する。"""
     settings = _resolved_settings(home)
+    warnings: list[str] = []
     for key, value in settings.items():
         print(f"{key}: {value}")
         if key in _MUTABLE_KEY_DEFAULTS:
-            for warning in _stage_model_candidate_warnings(key, value):
-                _outcome.report_warning(warning, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
+            warnings.extend(_stage_model_candidate_warnings(key, value))
+    _report_candidate_warnings(warnings)
+
+
+def _report_candidate_warnings(warnings: list[str]) -> None:
+    """候補の警告を全件示し、共通の次の操作は1回だけ添える。"""
+    if warnings:
+        message = "\n".join([warnings[0], *(f"{_outcome.WARNING_PREFIX}{warning}" for warning in warnings[1:])])
+        _outcome.report_warning(message, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
 
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
@@ -244,8 +252,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             next_action=f"受理可能書式の値で`atk config set {args.key} <VALUE>`を再実行する",
         )
         sys.exit(2)
-    for warning in _stage_model_candidate_warnings(args.key, args.value):
-        _outcome.report_warning(warning, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
+    _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
     config = _load_config()
     config[args.key] = args.value
     _save_config(config)

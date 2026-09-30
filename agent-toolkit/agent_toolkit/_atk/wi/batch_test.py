@@ -15,6 +15,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
 from agent_toolkit._atk.wi import batch
 from agent_toolkit._atk.wi import show as show_module
@@ -68,6 +69,33 @@ def _batch_args(tmp_path: pathlib.Path, text: str) -> argparse.Namespace:
     body_path = tmp_path / "batch.md"
     body_path.write_text(text, encoding="utf-8")
     return argparse.Namespace(body_file=[str(body_path)])
+
+
+@pytest.mark.parametrize("agent_environment", [False, True])
+def test_batch_cli_omits_queue_overview_in_both_environments(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    agent_environment: bool,
+) -> None:
+    """一括投入も両環境で結果を先に示し、無関係なキュー件数を付けない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    existing = notes / "inbox" / "existing.md"
+    existing.write_text("---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存\n", encoding="utf-8")
+    body = tmp_path / "batch.md"
+    body.write_text(_entry_text("imported.md"), encoding="utf-8")
+    if agent_environment:
+        monkeypatch.setenv("AI_AGENT", "1")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "add", "--batch", "--body-file", str(body)], home=tmp_path, now=_FIXED_DT)
+    captured = capsys.readouterr()
+    assert captured.out.splitlines()[0] == "成功: 1件をinboxへ取り込んだ"
+    assert "inbox: 計" not in captured.out
+    assert "編集する場合:" not in captured.out
+    assert not captured.err
+    assert existing.is_file()
+    assert (notes / "inbox" / "imported.md").is_file()
 
 
 def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(

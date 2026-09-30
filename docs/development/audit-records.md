@@ -425,3 +425,9 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。分割後の137件では、最大が13,176トークン（`skills/plan-mode/references/plan-file-standards.md`、45,749バイト）だった。1トークンあたりバイト数の最小は3.10（`skills/plan-mode/references/legacy-plan-file-standards.md`）だった。配布設定`scripts/codex_config.toml`の`tool_output_token_limit`は20000である。20,000トークンと3.10バイトの積は約62,000バイトであり、実行セルが本文へ付加する分の余裕を取って閾値を48KiB（49,152バイト）とした。48KiBの文書は最悪の比率でも約15,900トークンで、上限に対して約4,000トークンの余裕が残る。
 再検証では同じ集合をo200k_baseで数えて1トークンあたりバイト数の最小値を測り直し、配布設定の`tool_output_token_limit`との積が閾値と付加分の余裕を上回るか確かめる。
+
+## dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日
+
+2026年10月1日、uv 0.12.21を使い、専用worktreeのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行した。終了コードは0で、標準エラーには135パッケージの解決と133パッケージの確認が記録された。続く`uv run --frozen python`でpytools、agent_toolkit、pytestのimportが成功した。
+同期の前後で、`uv tool dir`配下の導入記録と共有ツールのPythonから取得したeditable導入元を比較し、変更が無いことを確認した。Git共通dirのhookの内容・実行権限・リンク先と、`git config --local --get commit.template`の値も変わらなかった。アクセス時刻は比較対象へ含めていない。
+再検証では、共有ツールの導入記録とeditable導入元、Git共通dirのhook、commit.templateを保存した後、回収予定の作業場所で上記の同期を1回実行する。importの成功と登録内容の一致を確認する。恒久作業ツリーの初期導入を検証用に再実行する必要は無い。

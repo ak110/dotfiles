@@ -727,6 +727,46 @@ class TestResponseLanguageCheck:
         assert result.returncode == 0
         assert ("英語主体" in _additional_context(result)) is warns
 
+    @pytest.mark.parametrize(
+        ("child_fields", "child_env"),
+        [
+            ({"agent_id": "child-one"}, {}),
+            ({"agent_id": "child-two"}, {}),
+            ({"isSidechain": True}, {}),
+            ({}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
+        ],
+    )
+    def test_child_does_not_consume_main_warning(self, tmp_path: pathlib.Path, child_fields: dict, child_env: dict) -> None:
+        """子の後に同じ応答を読むメインだけが、一度の警告を受け取る。"""
+        sid = "language-child-main"
+        transcript = self._write_transcript(tmp_path, "English status report for the current work.")
+        environment = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": ""}
+        _write_session_state(tmp_path, sid, {"unrelated": True})
+        payload = {
+            "session_id": sid,
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "transcript_path": str(transcript),
+        }
+
+        child = _run({**payload, **child_fields}, env_overrides={**environment, **child_env})
+        assert child.returncode == 0
+        assert "英語主体" not in _additional_context(child)
+        state = _read_session_state(tmp_path, sid)
+        assert "english_warning_count" not in state
+        assert "english_warning_msg_id" not in state
+        assert state["unrelated"] is True
+
+        first = _run(payload, env_overrides=environment)
+        repeated = _run(payload, env_overrides=environment)
+        assert first.returncode == repeated.returncode == 0
+        assert "英語主体" in _additional_context(first)
+        assert "permissionDecision" not in json.loads(first.stdout)["hookSpecificOutput"]
+        assert "英語主体" not in _additional_context(repeated)
+        state = _read_session_state(tmp_path, sid)
+        assert state["english_warning_count"] == 1
+        assert state["english_warning_msg_id"] == "m1"
+
     def test_no_warn_without_transcript_path(self):
         """transcript_path未指定なら検査スキップ。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})

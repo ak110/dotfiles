@@ -297,6 +297,62 @@ def test_prepare_promotes_failure_only_after_another_session(
     assert len(ledger.splitlines()) == 2
 
 
+def test_prepare_counts_wait_continuations_without_repeated_failure_signature(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """待機継続は別セッションで反復しても署名へ集計せず、実際の待機失敗だけを候補にする。"""
+    for session in ("wait-session-a", "wait-session-b"):
+        entries = [
+            {
+                "timestamp": "2026-09-06T12:00:00Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "依頼"}],
+                },
+            },
+        ]
+        for command, code in [
+            (["atk", "agents", "wait"], 3),
+            (["bash", "-lc", "/repo/agent-toolkit/bin/atk agents wait"], 3),
+            (["atk", "agents", "wait"], 2),
+            (["rg", "missing", "docs"], 1),
+        ]:
+            entries.append(
+                {
+                    "timestamp": "2026-09-06T12:00:01Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "item_completed",
+                        "item": {
+                            "type": "CommandExecution",
+                            "status": "failed",
+                            "command": command,
+                            "exit_code": code,
+                            "stderr": "",
+                        },
+                    },
+                }
+            )
+        transcript = tmp_path / f"{session}.jsonl"
+        transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+        work = tmp_path / session
+        work.mkdir()
+        assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["excluded_counts"]["normal-nonterminal-result"] == 2
+        assert result["excluded_counts"]["normal-negative-result"] == 1
+        document = pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8")
+        assert "normal-nonterminal-result 2件" in document
+        bundle = [json.loads(line) for line in (work / "bundle" / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+        assert bundle[-1]["excluded"]["normal-nonterminal-result"] == 2
+        assert [item["locators"] for item in bundle if item["kind"] == "candidate"] == [[{"record": "main", "line": 4}]]
+    assert result["candidate_counts"] == {"command-failure": 1}
+    ledger = (tmp_path / "state" / "session-review" / "failure-signatures.jsonl").read_text(encoding="utf-8")
+    assert len(ledger.splitlines()) == 2
+
+
 def test_prepare_prunes_old_and_skips_invalid_failure_records(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

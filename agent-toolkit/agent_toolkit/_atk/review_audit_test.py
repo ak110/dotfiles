@@ -56,6 +56,23 @@ def test_mark_records_ids_without_duplication(
     assert list(records["owner/repo"]) == ["9"]
 
 
+def test_mark_outputs_only_requested_ids_and_keeps_existing_records(
+    record_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """既存の識別子を保持し、今回の指定分だけを重複なく昇順で表示する。"""
+    assert _dispatch("mark", "owner/repo", "9") == 0
+    before = json.loads(record_path.read_text(encoding="utf-8"))["owner/repo"]["9"]
+    capsys.readouterr()
+    assert _dispatch("mark", "owner/repo", "11", "10", "10") == 0
+    assert capsys.readouterr().out == "10\n11\n"
+    after = json.loads(record_path.read_text(encoding="utf-8"))["owner/repo"]
+    assert after["9"] == before
+    assert set(after) == {"9", "10", "11"}
+    assert _dispatch("list", "owner/repo") == 0
+    assert capsys.readouterr().out == "9\n10\n11\n"
+
+
 def test_mark_keeps_other_repository_records(
     record_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

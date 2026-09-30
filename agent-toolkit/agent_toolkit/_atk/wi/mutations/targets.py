@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import os
 import pathlib
@@ -289,13 +290,23 @@ def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:
     return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 
 
-def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:
+@dataclasses.dataclass(frozen=True)
+class CommitEntriesResult:
+    """外部編集のcommitと、その実行で送信したcommitの結果。"""
+
+    changed: bool
+    has_remote: bool
+    pushed_commits: int | None
+
+
+def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> CommitEntriesResult:
     """平引数でprivate-notesの作業ツリー全体の外部編集差分をcommit・pushする。
 
-    差分がない場合も滞留commitをpushし、外部編集によるcommitを行ったかを返す。
+    差分がない場合も滞留commitをpushし、外部編集とremoteの有無・送信件数を返す。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
+        has_remote = _atk_git_sync.has_remote(private_notes)
+        initial_pushed = _push_pending_commits(private_notes)
         _pull(private_notes)
         status = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -306,11 +317,14 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
             encoding="utf-8",
             errors="replace",
         )
-        if not status.stdout.strip():
-            _push_pending_commits(private_notes)
-            return False
-        _commit_and_push(private_notes, "chore: edit private notes externally", ["."])
-    return True
+        changed = bool(status.stdout.strip())
+        final_pushed = (
+            _commit_and_push(private_notes, "chore: edit private notes externally", ["."])
+            if changed
+            else _push_pending_commits(private_notes)
+        )
+        pushed = None if initial_pushed is None or final_pushed is None else initial_pushed + final_pushed
+        return CommitEntriesResult(changed, has_remote, pushed)
 
 
 def _resolve_awi_targets(
@@ -532,7 +546,14 @@ def _cmd_commit(private_notes: pathlib.Path) -> None:
 
     未コミット変更がない場合も滞留commitをpushする。
     """
-    if commit_entries(private_notes):
-        _outcome.report_success("private-notesの外部編集分をcommit・pushした")
+    result = commit_entries(private_notes)
+    edited = "外部編集分をcommitした" if result.changed else "外部編集の差分は無い"
+    if not result.has_remote:
+        push = "remoteが無いためpushしていない"
+    elif result.pushed_commits is None:
+        push = "pushを完了した（送信件数は取得できない）"
+    elif result.pushed_commits == 0:
+        push = "pushするcommitは無かった"
     else:
-        _outcome.report_success("外部編集の差分は無く、滞留commitをpushした")
+        push = f"{result.pushed_commits}件のcommitをpushした"
+    _outcome.report_success(f"{edited}。{push}")

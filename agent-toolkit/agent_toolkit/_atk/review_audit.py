@@ -391,7 +391,7 @@ def _mark(repository: str, identifiers: list[str]) -> int:
     _outcome.report_success(
         f"判定済みの識別子を記録した: {repository}（{len(identifiers)}件）", _outcome.ResultKind.VALUE_OUTPUT
     )
-    _print_identifiers(repository_records)
+    _print_identifiers(dict.fromkeys(identifiers, recorded_at))
     return 0
 
 

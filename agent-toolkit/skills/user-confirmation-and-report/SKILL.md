@@ -180,11 +180,13 @@ UWIの本文、投入、状態および依存関係の形式は`agent-toolkit:wi
 
 | 工程 | 協調モード | 自律モード |
 | --- | --- | --- |
-| ユーザー確認（事前承認と、回答を待つ通常の確認） | 実行環境の構造化質問。Claude Codeは`AskUserQuestion`（制約は`agent-toolkit/share/rules-main.claude-code.md`）、Codexは`agent-toolkit/share/rules-main.codex.md`の手段を使い、適合するものが無ければ`references/codex-format.md`の固定形式で提示する | 事前承認型UWIへ記録し、回答まで進められない元項目を`atk wi hold`で保留する |
-| ユーザー確認（事後承認） | その場で構造化質問を使う | 事後承認型UWI |
+| ユーザー確認（事前承認と、回答を待つ通常の確認） | 実行環境の構造化質問。Claude Codeは`AskUserQuestion`（制約は`agent-toolkit/share/rules-main.claude-code.md`）、Codexは`agent-toolkit/share/rules-main.codex.md`の手段を使い、適合するものが無ければ`references/codex-format.md`の固定形式で提示する | 質問を発行できるメインは、その場でホスト契約に適合する構造化質問を使う。回答を得られない場合は後段の切替手順へ進む。回答期限を持たないCodex Default modeは`agent-toolkit/share/rules-main.codex.md`の例外に従う |
+| ユーザー確認（事後承認） | その場で構造化質問を使う | 質問を発行できるメインは、その場でホスト契約に適合する構造化質問を使う。回答なしの切替とCodex Default modeの例外は前行と同じ参照先に従う |
 | ユーザーへの報告 | 発話本文。作業完了報告は`agent-toolkit:completion-report`の書式に従う | `agent-toolkit:completion-report`の報告用UWI（セッションに1件） |
 
 回答なしで終わった確認のUWIへの切替は`references/main-behavior.md`「未確定判断の保留と暫定判断」が定める。
+有効な回答期限の超過、回答なしで終了した後の同一セッションの確認、事前承認を要する元項目の保留は同節へ接続する。
+実際の回答を得た場合は、その合意に沿って続行する。ユーザー接点を持たない委譲先は、後段の確認通知の手段で呼び出し元へ返す。
 
 次の場合はモードによらず個別のUWIを使う。
 

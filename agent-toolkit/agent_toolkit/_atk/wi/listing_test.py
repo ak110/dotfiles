@@ -1072,13 +1072,17 @@ class TestListSkipPull:
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_calls)
 
+    @pytest.mark.parametrize("agent_environment", [False, True])
     def test_recent_sync_is_reused_without_remote_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        agent_environment: bool,
     ) -> None:
-        """直近の同期形跡がある通常一覧ではremote同期を省略して再利用を案内する。"""
+        """両環境で直近の同期を再利用し、対処不要な注記を付けない。"""
+        if agent_environment:
+            monkeypatch.setenv("AI_AGENT", "1")
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_dir = notes / ".git"
@@ -1093,10 +1097,7 @@ class TestListSkipPull:
         assert exc_info.value.code == 0
         assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"]) for call in git_calls)
         stderr = capsys.readouterr().err
-        assert stderr == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。\n"
-            "次の操作: このまま続行してよい。最新化する場合は`--pull`を指定する。\n"
-        )
+        assert not stderr
 
     def test_pull_forces_remote_sync_after_recent_sync(
         self,

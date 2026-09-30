@@ -429,6 +429,13 @@ def _reject_agent_processing_edit(path: pathlib.Path) -> None:
     sys.exit(2)
 
 
+def _print_cooldown_result(content: str) -> None:
+    """確定本文に保存した期限だけを表示する。"""
+    parsed = _frontmatter.parse_frontmatter(content)
+    assert parsed is not None
+    print(f"    cooldown_until: {parsed[0].get('cooldown_until', 'なし')}")
+
+
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """editサブコマンド: `--body-file`または$EDITORで対象を編集しcommit・pushする。
 
@@ -594,6 +601,8 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         _outcome.report_success("差分なし（変更は無い）")
+        if args.cooldown_until is not None:
+            _print_cooldown_result(edited)
         return
     if message is None and _reject_agent_user_comment_change(original, edited):
         if tmp_path is not None:
@@ -669,12 +678,14 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if tmp_path is not None:
         tmp_path.unlink(missing_ok=True)
     _outcome.report_success(f"編集を反映した: {path.name}")
-    _add._print_entry_details(  # pylint: disable=protected-access
-        _add._read_saved_entry_details(  # pylint: disable=protected-access
-            path,
-            expected_body=finalized_content["content"],
-        )
+    details = _add._read_saved_entry_details(  # pylint: disable=protected-access
+        path,
+        expected_body=finalized_content["content"],
     )
+    if editing_body:
+        _add._print_entry_details(details)  # pylint: disable=protected-access
+    if args.cooldown_until is not None:
+        _print_cooldown_result(finalized_content["content"])
 
 
 def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str) -> None:
@@ -729,9 +740,7 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
         )
         sys.exit(1)
     _outcome.report_success(f"追記を反映した: {path.name}")
-    _add._print_entry_details(  # pylint: disable=protected-access
-        _add._read_saved_entry_details(  # pylint: disable=protected-access
-            path,
-            expected_body=finalized_content["content"],
-        )
+    _add._read_saved_entry_details(  # pylint: disable=protected-access
+        path,
+        expected_body=finalized_content["content"],
     )

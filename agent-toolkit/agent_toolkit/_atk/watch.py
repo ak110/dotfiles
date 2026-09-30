@@ -131,4 +131,14 @@ def dispatch(args: argparse.Namespace, *, now: datetime.datetime | None = None) 
     for label, path in files:
         fields.extend(_file_fields(label, path, now))
     print(" ".join(fields))
-    return 1 if any(field.endswith(f"={_ERROR_VALUE}") for field in fields) else 0
+    errors = [field.partition("=")[0] for field in fields if field.endswith(f"={_ERROR_VALUE}")]
+    if errors:
+        _outcome.report_failure(
+            f"取得できない項目がある: {'・'.join(errors)}",
+            next_action=(
+                "`--worktree`はGit作業ツリー、`--file`は読み取れるファイルのパスを指定して再実行する。"
+                "回収済みの対象は観測対象から外す"
+            ),
+        )
+        return 1
+    return 0

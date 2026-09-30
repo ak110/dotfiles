@@ -169,6 +169,10 @@ Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`
 
 ## Claude Codeの推奨設定
 
+UserPromptSubmitの起動促進は、実ユーザー発話の全角`！！`を対象とする。
+両ホストで`agent-toolkit:realign-with-user`の起動を促し、半角`!!`だけの本文と機械注入は対象から除く。
+既存の照合注記と同じ出力にまとめ、初回や短い間隔の発話でも届く。
+
 以下の設定を適用することを推奨する。
 
 ### `~/.claude/settings.json`
@@ -220,7 +224,18 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼したい内容を要求として登録する。
 登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
+依存は、先行成果が無ければ安全な実施や完成判定ができない要求にだけ設定する。
+同じファイルの編集順は依存で待たせず、レーンの割当と実装順で扱う。
+処理回の選定開始時に、選定担当（picker）が取得した処理候補を「開始時候補」と呼ぶ。
+同じ開始時候補の同一リポジトリ依存は、同じ処理回・同じレーンで依存先から処理する。
+先行項目が候補外や外部成果待ちなら、必要な成果を得るまで後続を待機する。
 要件を本文だけで説明できる作業に向く。
+
+Claude Codeの自律実行でも、必要な確認はその場の構造化質問から始められる。
+回答を得られない場合はUWIへ退避し、回答を要する元項目だけを保留して他の作業を続ける。
+質問の有効な回答期限と無回答後の切替は、`agent-toolkit:user-confirmation-and-report`が扱う。
+回答期限を持たないCodex Default modeの自律実行では、ホスト別規範に従いUWIを使う。
+質問の発行成功や初期選択は回答として扱わない。
 
 オーケストレーター・モデル・effortは`atk config`の`orchestrate_model`へ設定する。
 書式は`<claude|codex>:<model>[/<effort>]`、既定値は`claude:opus[1m]/medium`（Claude Code）である。
@@ -370,7 +385,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。完了済みの背景タスクの通知が配送されないまま残る場合は、その出力ファイルの読取を1回だけ案内する | 対応 | 非対応 |
-| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
+| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じた照合注記と、実ユーザー発話の全角`！！`から認識合わせスキルの起動を促す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
@@ -423,13 +438,22 @@ Claude Codeで有効化する。
 記述言語の警告は、応答が日本語文字を含まず英単語を2語以上含む記述であるとき、
 応答の冒頭が英語の談話標識であるとき、日本語文字の比率が閾値未満のときに返す。
 英単語が1語だけの記述は、識別子やコマンド名の単独提示と区別できないため警告しない。
-同じ警告が日本語の応答を経ずに2回続いたときは、ツール呼び出しをブロックする。
+同一セッションで英語主体の応答を累計2回以上検出すると警告本文が強まるが、ツール呼び出しは続行できる。
+検出の間に日本語の応答があっても累計はリセットされない。
+判定は[`_handle_language_check`](../../agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py)、
+警告の合成は[`dispatch.py`](../../agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py)を参照。
 単発の委譲は常設規範の基本委譲契約を適用し、起動方式の選択、継続、停滞検知または複数主体調整が必要な場合だけ
 `agent-toolkit:delegation`の起動方式ごとの契約を適用する。
 
 ### オンデマンドのスキル
 
 該当作業に着手したときエージェントが起動する。Claude Codeで`/`を付けて手動起動できるのは、`user-invocable: false`を持たないスキルだけである。Codexの`$`による手動起動はこの設定の対象外とする。
+
+認識のずれが疑われる場面では、`agent-toolkit:realign-with-user`が目標と解決したい問題を
+エージェント自身の言葉で提示し、その理解をその場で確認する。
+モデルの判断でも手動でも起動でき、協調・自律の両モードを対象とする。
+実ユーザー発話に全角`！！`が含まれる場合は、hookからも起動を促す。
+この注記は感情の判定ではなく、認識を確かめるきっかけである。
 
 - `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、コーディングエージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:refine-prompt`: プロンプトの指摘を独立した実行者から集め、共通の文書基準で改善案を組み立てる

@@ -126,7 +126,9 @@ class TestWatch:
         exit_code = _run_watch(["--file", str(missing)])
 
         assert exit_code == 0
-        assert capsys.readouterr().out == "now=03:04:05 missing.lines=NA missing.age=NA\n"
+        captured = capsys.readouterr()
+        assert captured.out == "now=03:04:05 missing.lines=NA missing.age=NA\n"
+        assert not captured.err
 
     def test_file_read_error_remains_an_error(
         self,
@@ -261,7 +263,12 @@ class TestWatch:
         exit_code = _run_watch(["--worktree", str(missing)])
 
         assert exit_code == 1
-        assert capsys.readouterr().out == "now=03:04:05 missing.dirty=ERR missing.head=ERR\n"
+        captured = capsys.readouterr()
+        assert captured.out == "now=03:04:05 missing.dirty=ERR missing.head=ERR\n"
+        assert captured.err.splitlines()[0].startswith("失敗: ")
+        assert "missing.dirty" in captured.err
+        assert "missing.head" in captured.err
+        assert captured.err.splitlines()[1].startswith("次の操作: ")
 
     def test_requires_at_least_one_target(self, capsys: pytest.CaptureFixture[str]) -> None:
         """対象未指定を終了コード2で拒否する。"""

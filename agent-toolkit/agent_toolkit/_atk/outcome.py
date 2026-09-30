@@ -32,6 +32,7 @@ class ResultKind(enum.Enum):
 STATE_CHANGE_COMMANDS = frozenset(
     {
         "atk commit",
+        "atk agents notify",
         "atk setup-project",
         "atk wi add",
         "atk wi start-processing",
@@ -70,7 +71,6 @@ VALUE_OUTPUT_COMMANDS = frozenset(
         "atk worktree-stash drop",
         "atk review-table init",
         "atk review-audit mark",
-        "atk agents notify",
         "atk agents-exit-session",
     }
 )

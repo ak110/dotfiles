@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Mapping
 
 from agent_toolkit._agents_server import status_file
+from agent_toolkit._atk import outcome
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 from agent_toolkit._common.next_action import report
@@ -66,4 +67,5 @@ def send_notification(
     sent_at = datetime.datetime.now(datetime.UTC)
     path = directory / f"{identity.host_session_id}.{sent_at.strftime('%Y%m%dT%H%M%S%f')}.{uuid.uuid4().hex[:16]}.json"
     atomic_write(path, payload)
+    outcome.report_success("委譲元へ通知を1件保存した")
     return 0

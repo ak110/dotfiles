@@ -751,6 +751,9 @@ class TestCooldownEdit:
         with pytest.raises(SystemExit) as set_exit:
             atk.main(["wi", "edit", "entry.md", "--cooldown-until", "2999-01-01T00:00:00+00:00"], home=tmp_path)
         assert set_exit.value.code == 0
+        set_lines = capsys.readouterr().out.splitlines()
+        assert set_lines[0].startswith("成功: ")
+        assert set_lines[1:] == ["    cooldown_until: 2999-01-01T00:00:00+00:00"]
         parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         assert parsed[0]["cooldown_until"] == "2999-01-01T00:00:00+00:00"
@@ -764,6 +767,9 @@ class TestCooldownEdit:
         with pytest.raises(SystemExit) as clear_exit:
             atk.main(["wi", "edit", "entry.md", "--cooldown-until", ""], home=tmp_path)
         assert clear_exit.value.code == 0
+        clear_lines = capsys.readouterr().out.splitlines()
+        assert clear_lines[0].startswith("成功: ")
+        assert clear_lines[1:] == ["    cooldown_until: なし"]
         assert "cooldown_until" not in path.read_text(encoding="utf-8")
         if state == "inbox":
             capsys.readouterr()
@@ -828,6 +834,7 @@ class TestEditBodyFile:
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """本文ファイルを追記でき、位置引数の本文は書込前に拒否する。"""
         notes = _setup_notes(tmp_path)
@@ -839,6 +846,7 @@ class TestEditBodyFile:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "edit", "entry.md", "--append", "--body-file", str(body_path)], home=tmp_path)
         assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "成功: 追記を反映した: entry.md\n"
         appended = path.read_text(encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "edit", "entry.md", "MESSAGE", "--body-file", str(body_path)], home=tmp_path)
