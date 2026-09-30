@@ -59,7 +59,7 @@ gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/comments?per_page=100'
 ## 判定
 
 pendingのJSONを受け取った場合は、`reviews`の各reviewを判定対象とし、`threads`の各PRをinline commentの取得対象とする。JSONを受け取れずGraphQLで代替した場合だけ、判定前に`atk review-audit list --repo <OWNER>/<REPO>`で判定済みreview本文のdatabaseIdを取得する。この代替手順では列挙した全reviewのdatabaseIdとauthorからCopilot由来のreviewを特定し、判定済みのdatabaseIdと一致するreviewを除く。除いたdatabaseIdの一覧と件数を呼び出し元へ返す。全Pull Requestのreviewの列挙は本記録の有無で変えない。
-判定対象に残ったreviewの`<PR>`と`<REVIEW_ID>`へPull Request番号とdatabaseIdを渡し、本文を1件ずつ取得する。実行直前に`gh api --help`で受理形式を確かめ、各応答の`id`が取得予定のdatabaseIdと一致することを確認する。
+判定対象に残ったreviewの`<PR>`と`<REVIEW_ID>`へPull Request番号とdatabaseIdを渡し、本文を1件ずつ取得する。同じセッションで`gh api`の受理形式が未確定の場合は、実行前に`gh api --help`で確かめる。各応答の`id`が取得予定のdatabaseIdと一致することを確認する。
 
 ```sh
 gh api 'repos/{owner}/{repo}/pulls/<PR>/reviews/<REVIEW_ID>' > <管理対象一時領域のJSONファイル>
