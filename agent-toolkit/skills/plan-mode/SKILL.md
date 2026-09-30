@@ -18,7 +18,7 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
 
 確認要否、質問手順とUWIへの退避は`agent-toolkit:user-confirmation-and-report`が定める。協調モードでメインが本スキルを起動した場合は、同スキルの`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返し、その後に計画ファイルを起草する。
 入力のWIが確定した判断は確認し直さない。
-`agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`による実行では、認識の違いで要件または結果が変わる未確定事項だけをUWIへ登録する。
+自律実行で認識の違いにより要件または結果が変わる未確定事項も、確認要否と手段は`agent-toolkit:user-confirmation-and-report`に従う。
 `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を受け取ったレーン担当として起動された場合は、同書の完了報告が定めるエスカレーションで確認事項を呼び出し元へ返し、回答を受け取ってから工程を続ける。UWIの登録は呼び出し元が行う。
 旧単一ファイル形式と旧二ファイル形式の計画を読むとき、および計画書式の読み取り互換の実装・自動チェックを変更するときは、`references/legacy-plan-file-standards.md`を全文読む。
 
