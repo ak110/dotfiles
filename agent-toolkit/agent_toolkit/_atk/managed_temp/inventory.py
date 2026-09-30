@@ -315,7 +315,7 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
         else:
             expected_tree = _tree_snapshot(quarantine)
             _unlink_windows_reparse_points(quarantine, expected_tree)
-            shutil.rmtree(quarantine)
+            _remove_windows_quarantine(quarantine, expected_tree)
     except OSError as error:
         raise ManagedTempError(
             f"中断した後始末の隔離先を後始末できない: {quarantine}: {error}。"
@@ -677,6 +677,47 @@ def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, 
             os.unlink(path)
 
 
+def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _TreeEntry]) -> None:
+    """隔離内で検証済みの通常ファイルだけ、Readonlyによる削除拒否を再試行する。"""
+    root_identity = _path_identity(root)
+
+    def retry_readonly_file(function: typing.Callable[..., typing.Any], raw_path: str, error: BaseException) -> None:
+        if function is not os.unlink or not isinstance(error, PermissionError) or getattr(error, "winerror", None) != 5:
+            raise error
+        path = pathlib.Path(raw_path)
+        try:
+            relative = path.relative_to(root)
+        except ValueError:
+            raise error from None
+        expected = expected_tree.get(str(relative))
+        if expected is None or expected[0] != "leaf" or len(expected) != 3:
+            raise error
+        metadata = path.lstat()
+        attributes = getattr(metadata, "st_file_attributes", 0)
+        if not stat.S_ISREG(metadata.st_mode) or attributes & _WINDOWS_REPARSE_POINT:
+            raise error
+        if _path_identity(root) != root_identity or _path_identity(path) != expected[1:]:
+            raise ManagedTempError(
+                f"Readonly解除前に隔離対象が置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            ) from error
+        # 親の置換によって、同じ相対位置から隔離領域外へ到達することも防ぐ。
+        for parent in relative.parents:
+            if parent == pathlib.Path("."):
+                continue
+            entry = expected_tree.get(str(parent))
+            if entry is None or entry[0] != "dir" or _path_identity(root / parent) != entry[1:]:
+                raise ManagedTempError(
+                    f"Readonly解除前に親ディレクトリが置換された: {path}",
+                    next_action=ManagedTempError.REPLACED_NEXT_ACTION,
+                ) from error
+        if not attributes & stat.FILE_ATTRIBUTE_READONLY:
+            raise error
+        os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
+        function(raw_path)
+
+    shutil.rmtree(root, onexc=retry_readonly_file)
+
+
 def _consume_registry(validated: _ValidatedTemp) -> pathlib.Path:
     consuming = validated.registry_path.with_name(f"{validated.registry_path.name}.consuming-{validated.nonce}")
     try:
@@ -858,7 +899,7 @@ def _cleanup_windows(
             )
         _validate_root(root, expected=expected_root)
         _unlink_windows_reparse_points(quarantine, expected_tree)
-        shutil.rmtree(quarantine)
+        _remove_windows_quarantine(quarantine, expected_tree)
     except OSError as error:
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
 
