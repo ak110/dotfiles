@@ -230,3 +230,61 @@ def test_registered_stop_checks_document_delegated_execution() -> None:
     for module_name in module_names:
         docstring = importlib.import_module(f"agent_toolkit._hooks.{module_name}").__doc__ or ""
         assert any(line.startswith("委譲先での実行可否:") for line in docstring.splitlines()), module_name
+
+
+@pytest.mark.parametrize(
+    ("stop_hook_active", "delegated"),
+    [(False, False), (True, False), (False, True)],
+    ids=["main", "stop-hook-active", "delegated"],
+)
+def test_stop_reports_queued_task_notification_output_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    stop_hook_active: bool,
+    delegated: bool,
+) -> None:
+    """キューに残る完了通知のtask-idと出力ファイルを、Stopの応答が実行主体へ示す。
+
+    他の判定の遮断がある場合は`reason`、無い場合は`additionalContext`へ本文が入る。
+    """
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    else:
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    plan_save_advisor = importlib.import_module("agent_toolkit._hooks.plan_save_advisor")
+    monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
+    monkeypatch.setattr(_stop_gate, "_wait_for_end_turn", lambda _path: None)
+    _stop_gate._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+    _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    output_file = str(tmp_path / "tasks" / "b6n4gipz5.output")
+    notification = (
+        f"<task-notification>\n<task-id>b6n4gipz5</task-id>\n<output-file>{output_file}</output-file>\n"
+        "<status>completed</status>\n</task-notification>"
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "…"}]}},
+            {"type": "queue-operation", "operation": "enqueue", "content": notification},
+        ],
+    )
+    payload = json.dumps(
+        {
+            "session_id": "queued-stop",
+            "transcript_path": str(transcript),
+            "stop_hook_active": stop_hook_active,
+            "background_tasks": [],
+        }
+    )
+
+    result = stop.evaluate(payload)
+
+    hook_output = result.get("hookSpecificOutput")
+    text = hook_output["additionalContext"] if isinstance(hook_output, dict) else result.get("reason")
+    assert isinstance(text, str)
+    assert "b6n4gipz5" in text
+    assert output_file in text
+    assert "出力ファイルを読んで結果を受け取り" in text

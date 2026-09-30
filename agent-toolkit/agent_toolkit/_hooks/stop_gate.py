@@ -838,6 +838,15 @@ def _extract_queue_operation_notification_ids(
 
 def _has_queued_task_notification(entries: list[dict]) -> bool:
     """最上位transcriptのキューに配送待ちの完了通知が残る場合に真を返す。"""
+    return bool(queued_task_notification_contents(entries))
+
+
+def queued_task_notification_contents(entries: list[dict]) -> list[str]:
+    """最上位transcriptのキューに残る配送待ちの完了通知の`content`を投入順に返す。
+
+    `enqueue`で投入し、`dequeue`で先頭から、`remove`で同じ本文の要素を取り除く。
+    Stop判定の入力待ち判定と、未配送の完了通知を案内する判定が同じ規則を共有する。
+    """
     queue: deque[object] = deque()
     for entry in entries:
         if entry.get("type") != "queue-operation" or not _entry_in_scan_scope(entry, include_sidechain=False):
@@ -851,7 +860,7 @@ def _has_queued_task_notification(entries: list[dict]) -> bool:
         elif operation == "remove":
             with contextlib.suppress(ValueError):
                 queue.remove(entry.get("content"))
-    return any(isinstance(content, str) and "<task-notification>" in content for content in queue)
+    return [content for content in queue if isinstance(content, str) and "<task-notification>" in content]
 
 
 def _collect_nested_agent_launches(
