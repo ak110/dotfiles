@@ -158,6 +158,7 @@ if TYPE_CHECKING:
         PLAN_WI_ANSWER_HEADING,
         PLAN_WI_ORIGIN_ALIASES,
         PLAN_WI_ORIGIN_PATTERN,
+        PLAN_WI_SCOPE_HEADING,
         PLAN_WI_SOURCE_KEY,
         PLAN_WI_USER_COMMENT_HEADING,
         PLAN_WORK_TYPES,
@@ -1169,6 +1170,38 @@ def _collect_origin_notices(
         )
 
 
+def _wi_has_scope(
+    name: str,
+    origin_skips: list[str],
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> bool:
+    """`エージェント由来のWI`の正本が非空の`## 適用範囲`を持つかを返す。
+
+    WIが確定した適用範囲は計画で再導出せず参照するため、同節を持つ正本の採用行は根拠を省略できる。
+    正本を解決できない場合は照合の省略を`origin_skips`へ積んで真を返し、作成を遮断しない。
+    """
+    root = _plan_file.private_notes_root(private_notes, home=home)
+    try:
+        if not root.is_dir():
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。キュー管理リポジトリが実在しない: {root}")
+            return True
+        source = _find_wi_source(name, root)
+        if source is None:
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を解決できない: {name}")
+            return True
+        content = source.read_text(encoding="utf-8")
+    except OSError as error:
+        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を取得できない: {name}: {error}")
+        return True
+    headings = extract_headings(content)
+    index = find_heading_index(headings, 2, PLAN_WI_SCOPE_HEADING)
+    if index is None:
+        return False
+    start, end = heading_subtree_range(headings, index)
+    return any(line.strip() for _lineno, line in lines_within(list(enumerate(content.splitlines(), 1)), start, end))
+
+
 def _check_human_action_table(  # pylint: disable=too-many-arguments
     table: MarkdownTable,
     materials: PlanMaterials | None,
@@ -1185,6 +1218,7 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
     正本のfrontmatterと本文へ照合する。`[対話由来]`注記のある行は機械判定できない明示由来を
     根拠とするため照合の対象から除く。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
     採用行の根拠が`-`の場合は`origin_notices`を渡した場合だけ移行の指摘を積む。
+    `origin_skips`も渡した場合は正本を読み、非空の`## 適用範囲`を持てば指摘を積まない。
     改名前の由来は読み取り互換で受理する。
 
     人間由来の2区分（`人間由来のWI`と`ユーザー指示`）は、採否にかかわらず原文の要求単位ごとの
@@ -1255,13 +1289,17 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
         elif origin == "エージェント提案":
             if not root or root == "-":
                 errors.append(f"`## {PLAN_H2_ACTION}`のエージェント提案行には観測可能な根拠を記載する: {root}")
-        elif wi_origin_kind == PLAN_AGENT_WI_ORIGIN:
+        elif wi_origin_kind == PLAN_AGENT_WI_ORIGIN and wi_origin_match is not None:
             if not root or root == "-":
                 if decision == "採用":
-                    if origin_notices is not None:
+                    if origin_notices is not None and (
+                        origin_skips is None
+                        or not _wi_has_scope(wi_origin_match.group("name"), origin_skips, private_notes, home)
+                    ):
                         origin_notices.append(
                             f"`## {PLAN_H2_ACTION}`の`{PLAN_AGENT_WI_ORIGIN}`の採用行の`根拠`へ、"
-                            "適用範囲を再導出した結果と根拠を記載する"
+                            "適用範囲を再導出した結果と根拠を記載する。"
+                            f"関連WIの正本が非空の`## {PLAN_WI_SCOPE_HEADING}`を持つ場合は`-`のままWIを参照する"
                         )
                 else:
                     errors.append(f"`## {PLAN_H2_ACTION}`の採用以外の`根拠`は理由を自足して記載する: {root}")

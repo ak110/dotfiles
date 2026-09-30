@@ -1615,24 +1615,109 @@ def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tm
     assert any("正本の由来と一致しない" in error for error in errors), errors
 
 
-def test_agent_wi_adopted_action_without_reason_is_error_on_creation(repo: tuple[pathlib.Path, str]) -> None:
-    """エージェント由来のWIの旧採用行は新規作成でエラーに移す。"""
-    work_dir, _base = repo
-    main_content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
-    row = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | - |"
-    main_content = main_content.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
-    path = work_dir / "agent-wi.md"
+def _assert_creation_check_passes_silently(
+    work_dir: pathlib.Path, path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開CLIの新規作成向け検査が終了コード0で、警告を出力しないことを確かめる。"""
+    result = check_plan_file.main(["--reject-migration-warnings", "--work-dir", str(work_dir), str(path)])
+    captured = capsys.readouterr()
+    assert result == 0, captured.err
+    assert captured.err == ""
+
+
+_AGENT_WI_ADOPTED_ROW = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | - |"
+
+
+def _agent_wi_plan(repo: pathlib.Path, private_notes: pathlib.Path, wi_sections: str | None) -> pathlib.Path:
+    """根拠が`-`の`エージェント由来のWI`採用行を持つ計画と、指定した節を持つ正本を配置する。
+
+    `wi_sections`が`None`の場合は正本を置かない。
+    """
+    main_content = _plan_fixture.current_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
+    main_content = main_content.replace(_plan_fixture.WI_ACTION_ROW, _AGENT_WI_ADOPTED_ROW, 1)
+    path = repo / "agent-wi.md"
     path.write_text(main_content, encoding="utf-8")
-    read_errors, read_warnings = check_plan_file.check(path, work_dir)
+    inbox = private_notes / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    if wi_sections is not None:
+        frontmatter = f"---\n{_plan_format.PLAN_WI_SOURCE_KEY}: process-wi\n---\n\n"
+        (inbox / _plan_fixture.WI_FILES[0][0]).write_text(f"{frontmatter}# 要求\n\n本文。\n\n{wi_sections}", encoding="utf-8")
+    return path
+
+
+def test_agent_wi_adopted_action_without_reason_is_error_on_creation(
+    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
+) -> None:
+    """正本が`## 適用範囲`を持たないエージェント由来のWIの採用行は、新規作成でエラーに移す。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    path = _agent_wi_plan(work_dir, private_notes, "## 反映内容と反映先\n\n対象。\n")
+    read_errors, read_warnings = check_plan_file.check(path, work_dir, private_notes=private_notes)
     errors, warnings = check_plan_file.check(
         path,
         work_dir,
+        private_notes=private_notes,
         reject_migration_warnings=True,
     )
     assert not read_errors, read_errors
     assert any("適用範囲を再導出した結果と根拠" in warning for warning in read_warnings), read_warnings
     assert any("適用範囲を再導出した結果と根拠" in error for error in errors), errors
     assert not any("適用範囲を再導出した結果と根拠" in warning for warning in warnings), warnings
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "## 適用範囲\n\n",
+        "```markdown\n## 適用範囲\n\n誤りの機構が依存する条件。\n```\n",
+    ],
+    ids=["empty", "fenced"],
+)
+def test_agent_wi_adopted_action_without_reason_rejected_when_wi_scope_empty(
+    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path, scope: str
+) -> None:
+    """正本の`## 適用範囲`が空かコードフェンス内にしか無い場合は、参照だけで根拠を省略できるとみなさない。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    path = _agent_wi_plan(work_dir, private_notes, f"{scope}\n## 実現性\n\n確認済み。\n")
+    errors, _warnings = check_plan_file.check(
+        path,
+        work_dir,
+        private_notes=private_notes,
+        reject_migration_warnings=True,
+    )
+    assert any("適用範囲を再導出した結果と根拠" in error for error in errors), errors
+
+
+def test_agent_wi_adopted_action_without_reason_accepted_when_wi_has_scope(
+    repo: tuple[pathlib.Path, str],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """正本が非空の`## 適用範囲`を持つエージェント由来のWIの採用行は、根拠`-`のまま新規作成で受理する。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+    path = _agent_wi_plan(work_dir, private_notes, "## 適用範囲\n\n誤りの機構が依存する条件。\n\n## 実現性\n\n確認済み。\n")
+    _assert_creation_check_passes_silently(work_dir, path, capsys)
+
+
+def test_agent_wi_adopted_action_without_reason_skips_when_wi_unresolvable(
+    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
+) -> None:
+    """正本を解決できない場合は照合の省略を助言に留め、新規作成を遮断しない。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    path = _agent_wi_plan(work_dir, private_notes, None)
+    errors, warnings = check_plan_file.check(
+        path,
+        work_dir,
+        private_notes=private_notes,
+        reject_migration_warnings=True,
+    )
+    assert not errors, errors
+    assert any("正本を解決できない" in warning for warning in warnings), warnings
 
 
 def _bug_plan_without_bug_file(repo: pathlib.Path, private_notes: pathlib.Path, *, related_wi: bool) -> pathlib.Path:
@@ -1658,17 +1743,7 @@ def test_bug_plan_without_bug_file_reference_accepted_with_related_wi(
     private_notes = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
     path = _bug_plan_without_bug_file(work_dir, private_notes, related_wi=True)
-    result = check_plan_file.main(
-        [
-            "--reject-migration-warnings",
-            "--work-dir",
-            str(work_dir),
-            str(path),
-        ]
-    )
-    captured = capsys.readouterr()
-    assert result == 0, captured.err
-    assert captured.err == ""
+    _assert_creation_check_passes_silently(work_dir, path, capsys)
 
 
 def test_bug_plan_without_bug_file_reference_rejected_without_related_wi(
