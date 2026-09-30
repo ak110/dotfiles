@@ -64,17 +64,16 @@ def main(payload_text: str) -> int:
     # 本フックが扱う検査は、いずれも書き込んだファイルの再編集で結果を復元できる。
     # `agent-toolkit:writing-standards`の`references/claude-hooks.md`
     # 「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、遮断を用いない。
-    warnings: list[str] = []
+    # 本文と解消手段（warn通知の`fix`）の組を集める。
+    warnings: list[tuple[str, str]] = []
     ps1_directives_warning = _check_ps1_directives(tool_name, fields, file_path)
     if ps1_directives_warning is not None:
-        warnings.append(ps1_directives_warning)
+        warnings.append((ps1_directives_warning, _PS1_DIRECTIVES_FIX))
     dotfiles_detected, dotfiles_warn = _check_dotfiles_specific_names(tool_name, fields, file_path)
     if dotfiles_detected is not None:
-        warnings.append(
-            f"{dotfiles_detected} Replace the identifiers with generalized wording before editing the distribution file again."
-        )
+        warnings.append((dotfiles_detected, _DOTFILES_SPECIFIC_NAMES_FIX))
     if dotfiles_warn is not None:
-        warnings.append(dotfiles_warn)
+        warnings.append((dotfiles_warn, _POSSIBLY_DOTFILES_NAMES_FIX))
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
         # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
@@ -86,8 +85,9 @@ def main(payload_text: str) -> int:
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
                         "additionalContext": _llm_notice(
-                            " | ".join(warnings),
+                            " | ".join(body for body, _ in warnings),
                             tag="warn",
+                            fix=" | ".join(fix for _, fix in warnings),
                             removable_cause=True,
                         ),
                     }
@@ -118,6 +118,12 @@ _PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
 # 検査する先頭行数（コメントブロックを許容するため広めに取る）。
 _PS1_DIRECTIVES_HEAD_LINES = 50
 
+_PS1_DIRECTIVES_FIX = (
+    "For Windows PowerShell 5.1 compatibility, add `Set-StrictMode -Version Latest`"
+    " and `$ErrorActionPreference = 'Stop'` near the top"
+    f" (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start), then write the file again."
+)
+
 
 def _is_ps1(file_path: str) -> bool:
     """対象拡張子か判定する（`.ps1` / `.ps1.tmpl`）。"""
@@ -139,12 +145,7 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
         head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
         missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
         if missing:
-            return (
-                f"{tool_name}.{field}: missing required PowerShell directives: {', '.join(missing)}. Target: {file_path}"
-                " For Windows PowerShell 5.1 compatibility, add `Set-StrictMode -Version Latest`"
-                " and `$ErrorActionPreference = 'Stop'` near the top"
-                f" (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
-            )
+            return f"{tool_name}.{field}: missing required PowerShell directives: {', '.join(missing)}. Target: {file_path}"
     return None
 
 
@@ -162,6 +163,11 @@ _PERSONAL_PROJECTS_WARN: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
 # 配布物文面 (`agent-toolkit/` 配下) への記述が許可される。
 # 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_BLOCK` との非衝突など) を確認する。
 _EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"atk"})
+
+_DOTFILES_SPECIFIC_NAMES_FIX = "Replace the identifiers with generalized wording, then edit the distribution file again."
+_POSSIBLY_DOTFILES_NAMES_FIX = (
+    "Verify each reference is an intentional and accurate OSS reference; otherwise replace it with generalized wording."
+)
 
 
 def _check_dotfiles_specific_names(
@@ -198,7 +204,6 @@ def _check_dotfiles_specific_names(
             "agent-toolkit distribution references possibly dotfiles-related projects: "
             + "; ".join(warn_hits)
             + ". These names are personal projects but commonly referenced as OSS."
-            " Verify the reference is intentional and accurate."
             f" Target: {file_path}"
         )
     return block_msg, warn_msg
