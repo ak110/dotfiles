@@ -143,6 +143,10 @@
   直接原因: サーバーが可用性の失敗を判定せず、次候補への切替を`exclude_session_id`付きの再起動という呼び出し側の操作だけに委ねていた。
   背景原因: 工程別モデル設定が候補列を持つ一方で、候補を進める契機の判定を配布物の外側へ置いていた。
   対策: `start`・`start_explore`が起動直後の終端を上限付きで確認し、engineの可用性で終端した候補を除外して次候補で起動する。全候補が起動不能な場合だけ失敗を返す
+- 2026年9月30日: 工程別設定`codex:sol/medium,claude:opus[1m]/medium`の`start`が、`sol`系列の最新版として解決した`gpt-6.1-sol`で起動し、接続先がそのモデルを提供しないため最初のturnが失敗した。候補は第2候補のclaudeへ切り替わらず、呼び出し元が`model_type`を手で指定して起動し直した。
+  失敗は`codexErrorInfo: other`で届き、`message`はJSON文字列で`error`オブジェクトが`code: invalid_parameter_value`と`param: model`を持っていた。
+  直接原因: 可用性失敗の判定が`codexErrorInfo`の利用枠超過・流量制限・過負荷の区分とHTTPステータスだけを判定材料としており、モデルIDの不受理はどちらにも当たらなかった。除外記録にも残らないため、呼び直しても同じ候補で起動した。
+  対策: Codexの失敗の`message`がJSONの`error`オブジェクトを持ち`param`が`model`である場合を、除外理由`modelRejected`の可用性失敗として判定へ加える
 - 2026年9月4日: 終端結果の保持期限を過ぎたagents_server sessionに対して`wait`と`kill`のいずれも失敗し、ターン終了ごとの未観測警告を解消できなかった。
   直接原因: 保持期限切れのsessionへの`kill`が例外を送出し、MCPツールの失敗ではPostToolUseが発火しないため観測状態を更新できなかった。
   対策: 保持期限切れのsessionへの`kill`は中断対象が無いことを示す応答を返す。その応答を受けたら観測状態を解消する

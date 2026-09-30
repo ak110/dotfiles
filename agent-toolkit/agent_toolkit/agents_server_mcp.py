@@ -95,6 +95,12 @@ ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExcee
 # 前2者と一致するため同じ集合の要素とする。
 # 500（api_error）はサービス内部の失敗であり、候補の変更で解決するとは限らないため含めない。
 ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({401, 403, 429, 529})
+# 接続先がCodex候補のモデルIDを受け付けなかった失敗へ付ける除外理由。
+# Codex CLI 0.159.1の`codex app-server generate-json-schema`が出力する`CodexErrorInfo`の列挙にはモデルの不受理を表す値が無く、
+# 接続先がモデルIDを拒否した失敗は`codexErrorInfo: other`で届く。その`message`はJSON文字列で、`error`オブジェクトが
+# `type`・`code`・`param`を持ち、`param`が拒否した引数を示す（2026-09-30、`param: "model"`の`invalid_parameter_value`）。
+# モデルIDの拒否は同じ候補で再試行しても解消せず、別候補なら結果が変わるため可用性失敗として扱う。
+ENGINE_MODEL_REJECTED_REASON = "modelRejected"
 _REQUIRED_INPUT_NAME_PATTERN = task_documents.INPUT_NAME_PATTERN
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 _TASK_MODEL_TYPES = state.TASK_MODEL_TYPES
@@ -236,7 +242,23 @@ def _engine_unavailable_reason(session: SessionState) -> str | None:
     api_error_status = session.error.get("apiErrorStatus")
     if api_error_status in ENGINE_UNAVAILABLE_API_ERROR_STATUS:
         return str(api_error_status)
+    if session.engine == "codex" and _codex_rejected_parameter(session.error) == "model":
+        return ENGINE_MODEL_REJECTED_REASON
     return None
+
+
+def _codex_rejected_parameter(error: Mapping[str, Any]) -> str | None:
+    """Codexの失敗の`message`がJSONの`error`オブジェクトを持つ場合、拒否された引数名（`param`）を返す。"""
+    message = error.get("message")
+    if not isinstance(message, str):
+        return None
+    try:
+        payload = json.loads(message)
+    except ValueError:
+        return None
+    body = payload.get("error") if isinstance(payload, dict) else None
+    param = body.get("param") if isinstance(body, dict) else None
+    return param if isinstance(param, str) else None
 
 
 def _engine_unavailable(session: SessionState) -> bool:
