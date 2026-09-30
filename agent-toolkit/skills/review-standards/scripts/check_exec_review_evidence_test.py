@@ -49,19 +49,25 @@ def _write_evidence(
     )
 
 
-def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: dict[str, str]) -> None:
+def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: dict[str, str]) -> list[str]:
+    requested: list[str] = []
+
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
         if args[0] == "git":
             value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
             return subprocess.CompletedProcess(args, 0, stdout=f"{value}\n", stderr="")
         filename = args[3]
+        requested.append(filename)
+        if filename not in bodies:
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr=f"失敗: {filename}はありません")
         output = pathlib.Path(next(arg for arg in args if arg.startswith("--output-file=")).removeprefix("--output-file="))
         output.write_text(f"## target_repo: example\n### {filename} [processing]\n---\n{bodies[filename]}", encoding="utf-8")
         # エージェント環境の`atk`は長い本文を標準出力へ書かないため、検査は保存先だけを読む必要がある。
         return subprocess.CompletedProcess(args, 0, stdout=f"保存先: {output}\n行数: 1\n", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    return requested
 
 
 def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,6 +254,89 @@ def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
     stderr = capsys.readouterr().err
     assert "wi_conditions[1].outcome: 未知の判定です: 割当外（受理する値: " in stderr
     assert "\n次の操作: " in stderr
+
+
+@pytest.mark.parametrize("awi", [FIRST_WI, SECOND_WI])
+@pytest.mark.parametrize(
+    ("reference_body", "source", "valid"),
+    [
+        ("type: uwi\n---\n## 回答\n条件を外す\n", "20260929-120000-001.md の ## 回答: 条件を外す", True),
+        ("type: uwi\n---\n## 回答\n<!-- 回答案内 -->\n", "20260929-120000-001.md の ## 回答", False),
+        ("type: awi\n---\n## 回答\n条件を外す\n", "20260929-120000-001.md の UWI回答", False),
+        (None, "20260929-120000-001.md の ## 回答", False),
+        (None, "レビュー指摘管理表とreview_contract", False),
+    ],
+)
+def test_expired_condition_checks_user_answer_source(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    awi: str,
+    reference_body: str | None,
+    source: str,
+    valid: bool,
+) -> None:
+    """公開入口で失効根拠の種類と回答の有無を検査し、別のWIでも同じ不足を検出する。"""
+    reference = "20260929-120000-001.md"
+    bodies = {awi: "type: awi\nsource: agent\n---\n## 完成条件\n- 取り除く条件\n"}
+    if reference_body is not None:
+        bodies[reference] = reference_body
+    _mock_wi(monkeypatch, tmp_path, bodies)
+    evidence = tmp_path / "evidence.json"
+    _write_evidence(evidence, [{**_condition(awi, "取り除く条件"), "outcome": "失効", "source": source}])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), awi],
+    )
+    assert run_script.dispatch(args) == (0 if valid else 1)
+    error = capsys.readouterr().err
+    if not valid:
+        assert awi in error and "wi_conditions[1].source" in error and "ユーザー" in error
+
+
+@pytest.mark.parametrize("comment", ["条件を外す。", "<!-- コメント案内 -->"])
+def test_expired_condition_checks_own_user_comment(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, comment: str
+) -> None:
+    """ユーザーコメントの要求行を保った証拠を受理し、案内だけの空欄を拒否する。"""
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {FIRST_WI: f"type: awi\nsource: agent\n---\n## 完成条件\n- 条件\n## ユーザーコメント\n{comment}\n"},
+    )
+    evidence = tmp_path / "evidence.json"
+    valid = not comment.startswith("<!--")
+    _write_evidence(
+        evidence,
+        [{**_condition(FIRST_WI, "条件"), "outcome": "失効", "source": f"{FIRST_WI} の ## ユーザーコメント"}],
+        [_requirement(FIRST_WI, comment)] if valid else [],
+    )
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI],
+    )
+    assert run_script.dispatch(args) == (0 if valid else 1)
+
+
+@pytest.mark.parametrize("outcome", ["達成", "未達", "証拠不足"])
+def test_nonexpired_rows_do_not_fetch_answer_references(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """rejectの未達や延期の証拠不足を含む非失効行へ、追加の回答取得を課さない。"""
+    requested = _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 条件\n"},
+    )
+    evidence = tmp_path / "evidence.json"
+    _write_evidence(evidence, [{**_condition(FIRST_WI, "条件"), "outcome": outcome, "source": "20260929-120000-001.md 回答"}])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI],
+    )
+    for _ in range(2):
+        assert run_script.dispatch(args) == 0
+    assert requested == [FIRST_WI, FIRST_WI]
 
 
 def test_answered_uwi_checks_answer_only(
