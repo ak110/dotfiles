@@ -230,6 +230,27 @@ class TestTaskStopBlock:
         assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
         assert self._invoke(session_id, state_dir, {"task_id": "bo9oa1l0a"}).returncode == 0
 
+    def test_agent_async_launch_allows_only_its_task_stop(
+        self,
+        state_dir: dict[str, str],
+    ) -> None:
+        """Agentの背景起動が返した`agentId`の停止だけを通し、記録の無い`agentId`は遮断する。"""
+        session_id = "task-stop-agent-async"
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "general-purpose", "prompt": "調査する", "run_in_background": True},
+                "tool_response": {"isAsync": True, "status": "async_launched", "agentId": "a8d4542d5607ca48d"},
+            },
+            state_dir,
+        )
+
+        assert recorded.returncode == 0
+        assert self._invoke(session_id, state_dir, {"task_id": "b0000000000000000"}).returncode == 2
+        assert self._invoke(session_id, state_dir, {"task_id": "a8d4542d5607ca48d"}).returncode == 0
+
     def test_foreground_output_mentioning_background_id_is_not_ownership(
         self,
         state_dir: dict[str, str],

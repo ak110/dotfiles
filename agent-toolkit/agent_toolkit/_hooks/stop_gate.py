@@ -997,6 +997,17 @@ def _collect_mcp_background_task_id_tool_use_ids(
     return result
 
 
+def async_agent_launch_id(tool_response: object) -> str | None:
+    """Agent・Task起動の応答が背景起動を示す場合に`agentId`を返す。
+
+    前景で完了した起動と`agentId`を欠く応答は、停止の対象が残らないため`None`を返す。
+    """
+    if not isinstance(tool_response, dict) or tool_response.get("status") != _AGENT_ASYNC_LAUNCH_STATUS:
+        return None
+    agent_id = tool_response.get("agentId")
+    return agent_id if isinstance(agent_id, str) and agent_id else None
+
+
 def background_task_id_from_notice(value: object) -> str | None:
     """背景移行通知からタスクIDを返す。
 

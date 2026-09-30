@@ -191,8 +191,9 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     """自セッションの所有記録または対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
 
     停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
-    このキーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
-    記録したものであり、自セッションが起動して停止用の識別子を保持している対象を表す。
+    このキーは、PostToolUseがBashの`run_in_background`指定の応答と背景移行通知から取得したタスクID、
+    およびAgent・Taskの背景起動の応答が返した`agentId`を記録したものであり、
+    自セッションが起動して停止用の識別子を保持している対象を表す。
     起動主体の確認を要する遮断の対象は、自セッションの起動記録が無い停止に限る。
 
     `stall_detection_completed_at_by_task`に5分以内の一致記録がある場合も遮断しない。
