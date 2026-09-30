@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 def _handle_language_check(payload: dict, session_id: str) -> str | None:
     """直前メインエージェント応答の言語検査を実行し、セッション状態でエスカレーションを管理する。
 
-    agents_serverが起動した委譲先セッションでは、作業途中の文章を呼び出し元もユーザーも読まないため検査しない。
+    サブエージェントとagents_serverの委譲先では、メイン向けの検査と警告状態の更新を行わない。
 
     Returns:
         通知本文。対象外の場合はNone。
@@ -73,7 +73,7 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
     transcript_path = payload.get("transcript_path", "")
     if not isinstance(transcript_path, str) or not transcript_path:
         return None
-    if payload.get("isSidechain") is True:
+    if payload.get("agent_id") or payload.get("isSidechain") is True:
         return None
     if os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1":
         return None
