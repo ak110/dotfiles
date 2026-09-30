@@ -13,9 +13,9 @@
 {{- /* 権限判定と実行範囲はCodexの自動レビュー経路へ委ねる。 */ -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
-{{- /* 推論の要約を自動表示し、診断に必要な内容を隠さない。 */ -}}
-{{- $config = setValueAtPath "model_reasoning_summary" "auto" $config -}}
-{{- $config = setValueAtPath "hide_agent_reasoning" false $config -}}
+{{- /* 推論の要約と表示はCodexのデフォルトへ委ねる。 */ -}}
+{{- $config = deleteValueAtPath "model_reasoning_summary" $config -}}
+{{- $config = deleteValueAtPath "hide_agent_reasoning" $config -}}
 {{- /* 実験的なコンテキスト管理と工程ごとのeffort指定を利用する。 */ -}}
 {{- $config = setValueAtPath "features.context_management.experimental_mode" true $config -}}
 {{- $config = setValueAtPath "features.reasoning_effort_override" true $config -}}

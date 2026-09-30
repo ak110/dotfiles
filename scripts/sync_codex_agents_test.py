@@ -170,6 +170,35 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
     assert rendered["features"]["user_feature"] is True
 
 
+@pytest.mark.parametrize(
+    "reasoning_config",
+    [
+        "",
+        'model_reasoning_summary = "auto"\nhide_agent_reasoning = false\n',
+        'model_reasoning_summary = "none"\nhide_agent_reasoning = true\n',
+    ],
+)
+def test_config_template_removes_reasoning_overrides(reasoning_config: str) -> None:
+    """既存設定の有無と値によらず固定を解除し、無関係な利用者設定を保つ。"""
+    template = subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
+    result = subprocess.run(
+        ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(subject.REPO_ROOT)],
+        input=reasoning_config + 'model = "gpt-test"\n[features]\nuser_feature = true\n',
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    rendered = tomllib.loads(result.stdout)
+    assert "model_reasoning_summary" not in rendered
+    assert "hide_agent_reasoning" not in rendered
+    assert rendered["model"] == "gpt-test"
+    assert rendered["features"]["user_feature"] is True
+
+
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:
     """共有ルールの参照資料が両配布経路のplugin rootから解決できることを固定する。"""
     skill_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`")
