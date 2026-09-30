@@ -47,6 +47,10 @@ _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 # 閾値を超えても計画として成立し得るため、エラーではなく警告に留める。
 _PLAN_LINE_WARNING_THRESHOLD = 1200
 
+# 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合の既定値（`pick-wi.subagent.md`「出力」）。
+_RESUME_POSITION_KEY = "再開位置"
+_RESUME_POSITION_NONE = "なし"
+
 type _WarningKind = typing.Literal["migration", "advisory"]
 type _ClassifiedWarning = tuple[_WarningKind, str]
 
@@ -60,11 +64,14 @@ def _check_lane_selection(
 ) -> list[str]:
     """選定済みWI集合と人間由来行の根拠を計画へ照合する。
 
+    照合の期待集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）decisionとする。
+    再開位置を持つ項目は再開位置が指す既存計画で続け、新しい計画の対象にしないためである。
     不一致は、割り当てた要求を実行とレビューへ渡せない致命的な問題としてerrorにする。
     """
     selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
     if not isinstance(selection, dict) or not isinstance(selection.get("decisions"), list):
         raise ValueError("選定結果のdecisionsがYAMLの配列ではない")
+    lane_awis: list[str] = []
     expected: list[str] = []
     for decision in selection["decisions"]:
         if (
@@ -73,12 +80,17 @@ def _check_lane_selection(
             or not isinstance(decision.get("awi"), str)
         ):
             raise ValueError("選定結果のdecisionにawiまたはlaneがない")
-        if decision["lane"] == lane:
+        if decision["lane"] != lane:
+            continue
+        lane_awis.append(decision["awi"])
+        if decision.get(_RESUME_POSITION_KEY, _RESUME_POSITION_NONE) == _RESUME_POSITION_NONE:
             expected.append(decision["awi"])
-    if not expected:
+    if not lane_awis:
         raise ValueError(f"選定結果にレーンがない: {lane}")
-    if len(expected) != len(set(expected)):
+    if len(lane_awis) != len(set(lane_awis)):
         raise ValueError(f"選定結果のレーンにWIが重複する: {lane}")
+    if not expected:
+        return [f"レーン{lane}の全WIが再開位置を持ち、新しい計画の対象となるWIが無い。再開位置が指す既存計画で続ける"]
 
     metadata, metadata_errors = _plan_format.parse_plan_metadata(text)
     if metadata_errors:
