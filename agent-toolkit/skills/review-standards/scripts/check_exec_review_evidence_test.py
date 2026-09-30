@@ -23,7 +23,7 @@ def _condition(awi: str, condition: str) -> dict[str, str]:
         "condition": condition,
         "outcome": "達成",
         "source": "WI本文",
-        "evidence": "実行結果",
+        "evidence": f"条件『{condition}』の観測結果",
         "reviewed_head": REVIEWED_HEAD,
     }
 
@@ -35,7 +35,7 @@ def _requirement(awi: str, requirement: str) -> dict[str, str]:
         "origin": "WI本文",
         "outcome": "達成",
         "source": "WI本文",
-        "evidence": "実行結果",
+        "evidence": f"要求『{requirement}』の観測結果",
         "reviewed_head": REVIEWED_HEAD,
     }
 
@@ -68,6 +68,114 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     return requested
+
+
+@pytest.mark.parametrize("layout", ["same-wi", "cross-wi", "cross-array", "plan"])
+@pytest.mark.parametrize(
+    "evidence_text", ["実行結果", " 提出済み検証記録 ", "レビュー対象差分", "テスト成功", "missing.md", "観測した内容" * 100]
+)
+def test_public_command_rejects_shared_evidence_without_reference(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    layout: str,
+    evidence_text: str,
+) -> None:
+    """所在のない共用をWI内外、両配列、指定WI集合外の計画要求でも拒否する。"""
+    first = _condition(FIRST_WI, "保存")
+    second = {
+        "same-wi": _condition(FIRST_WI, "再読込"),
+        "cross-wi": _condition(SECOND_WI, "再読込"),
+        "cross-array": _requirement(FIRST_WI, "再読込後も保持"),
+        "plan": _requirement("", "計画だけの要求"),
+    }[layout]
+    first["evidence"] = evidence_text
+    second["evidence"] = evidence_text.strip()
+    conditions = [first, second] if layout in {"same-wi", "cross-wi"} else [first]
+    requirements = [] if layout in {"same-wi", "cross-wi"} else [second]
+    body = "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"
+    if layout == "same-wi":
+        body += "- 再読込\n"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, conditions, requirements)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 1
+    diagnostic = capsys.readouterr().err
+    assert "wi_conditions[1].evidence" in diagnostic
+    assert ("wi_conditions[2]" if layout in {"same-wi", "cross-wi"} else "user_requirements[1]") in diagnostic
+    assert ("計画由来" if layout == "plan" else second["awi"]) in diagnostic
+    assert evidence_text.strip() in diagnostic and "証拠不足へ再判定" in diagnostic
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "records/観測.md",
+        "records/観測.md:12",
+        "`records/観測.md#設定保存`",
+        "[検証](records/観測.md#設定保存)",
+        "{absolute}",
+        "`{absolute}:12`",
+        "[検証]({absolute}#設定保存)",
+        "`records/test_settings.py::test_save` 成功",
+        "test_save_settings PASSED",
+        "`test_save_settings` 成功",
+        "test_save_settings: 成功",
+    ],
+)
+def test_public_command_accepts_shared_file_or_test_result(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reference: str
+) -> None:
+    """実在する同じ記録の参照と具体的なテスト成功結果の共用は公開入口で受理する。"""
+    records = tmp_path / "records"
+    records.mkdir()
+    record = records / "観測.md"
+    record.write_text("# 設定保存\n保存と再読込が成功した。\n", encoding="utf-8")
+    (records / "test_settings.py").write_text("", encoding="utf-8")
+    rows = [_condition(FIRST_WI, "保存"), _condition(FIRST_WI, "再読込")]
+    for row in rows:
+        row["evidence"] = reference.format(absolute=record)
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 0
+
+
+@pytest.mark.parametrize("outcome", ["未達", "証拠不足", "失効", "割当外"])
+def test_public_command_excludes_nonachieved_shared_reasons(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """公開待ちや不採用の理由を共有しても達成根拠の共用には含めない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    first = {**_requirement("", "保存"), "outcome": outcome, "evidence": "公開工程待ち"}
+    second = {**_requirement("", "再読込"), "outcome": outcome, "evidence": "公開工程待ち"}
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [_condition(FIRST_WI, "保存")], [first, second])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 0
+
+
+def test_public_command_accepts_same_unit_duplicates_and_distinct_evidence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同一単位の重複、単独の抽象根拠、異なる根拠を新判定では拒否しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    first = {**_condition(FIRST_WI, "保存"), "evidence": "実行結果"}
+    second = {**_condition(FIRST_WI, "再読込"), "evidence": "再読込の結果"}
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [first, first.copy(), second])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 0
 
 
 def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

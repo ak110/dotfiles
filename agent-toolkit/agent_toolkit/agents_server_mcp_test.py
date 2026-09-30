@@ -1126,7 +1126,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     }
 
 
-def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
+def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool = False) -> list[str]:
     """実運用で観測した起動文の名前付き入力を組み立てる。"""
     handoff = f"引き継ぎ記録先: {root / 'handoff.md'}"
     if task_name == "exec-review.subagent.md":
@@ -1173,11 +1173,20 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     if task_name == "copilot-review-audit.subagent.md":
         return [f"pending取得結果: {root / 'pending.json'}", handoff]
     if task_name == "reader-fit-review.subagent.md":
-        return [
+        lines = [
             f"成果物: {root / 'guide.md'}（40行）",
             "種別: 利用者向け文書",
             "読者像: ツールを初めて導入する利用者。内部の実装は知らない",
         ]
+        if rereview:
+            lines.extend(
+                [
+                    "レビュー種別: 再レビュー",
+                    f"修正範囲: {root / 'before.md'}と成果物の設定保存節の差分、直接影響は再読込節",
+                    "未解決事項: なし",
+                ]
+            )
+        return lines
     if task_name == "bulk-replace-review.subagent.md":
         return [f"差分ファイル: {root / 'word-diff.txt'}（120行）"]
     if task_name == "pick-wi-explain.subagent.md":
@@ -1218,6 +1227,46 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     extra_params = _observed_input_params(task_name, tmp_path)
 
     assert subject._validate_required_prompt_inputs(task_document, extra_params) is None
+
+
+@pytest.mark.parametrize("rereview", [False, True])
+@pytest.mark.asyncio
+async def test_reader_fit_public_start_accepts_declared_review_inputs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, rereview: bool
+) -> None:
+    """親が渡す初回・再レビューの入力をstartで受理し、宣言外入力だけを拒否する。"""
+    task = subject._SHARE_DIRECTORY / "reader-fit-review.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "reader", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    params = dict(line.split(": ", 1) for line in _observed_input_lines(task.name, tmp_path, rereview=rereview))
+    response = await subject.start(str(task), params, str(tmp_path))
+    assert response["session_id"] == "reader"
+    manager.start.assert_awaited_once()
+    prompt = manager.start.await_args.args[1]
+    assert all(f"{key}: {value}" in prompt for key, value in params.items())
+    manager.start.reset_mock()
+    with pytest.raises(ActionableError, match="宣言"):
+        await subject.start(str(task), {**params, "追加説明": "全体を再走査"}, str(tmp_path))
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_exec_review_public_start_accepts_previous_revision(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """引き継ぎ再レビューの比較元を宣言済み入力として起動文へ配送する。"""
+    task = subject._SHARE_DIRECTORY / "exec-review.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "review", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    params = {
+        **_observed_input_params(task.name, tmp_path),
+        "レビュー種別": "引き継ぎ再レビュー",
+        "round": "2",
+        "前回確認版": str(tmp_path / "previous.md"),
+    }
+    response = await subject.start(str(task), params, str(tmp_path))
+    assert response["session_id"] == "review"
+    assert f"前回確認版: {params['前回確認版']}" in manager.start.await_args.args[1]
 
 
 @pytest.mark.asyncio

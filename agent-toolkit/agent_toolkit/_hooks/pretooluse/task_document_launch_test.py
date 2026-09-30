@@ -78,6 +78,31 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
     assert "レーン識別子" in blocked.stderr
 
 
+def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path) -> None:
+    """初回3入力と再レビュー入力を通し、宣言外補足の拒否を維持する。"""
+    task = _SHARE_DIR / "reader-fit-review.subagent.md"
+    initial = f"{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n種別: 利用者向け文書\n読者像: 初めて導入する利用者\n"
+    rereview = initial + (
+        f"レビュー種別: 再レビュー\n修正範囲: {tmp_path / 'before.md'}と成果物の保存節の差分\n未解決事項: なし\n"
+    )
+    assert _invoke("Agent", initial, tmp_path).returncode == 0
+    assert _invoke("Agent", rereview, tmp_path).returncode == 0
+    rejected = _invoke("Agent", rereview + "追加説明: 全文から指摘して\n", tmp_path)
+    assert rejected.returncode == 2
+    assert "追加説明" in rejected.stderr
+
+
+def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathlib.Path) -> None:
+    """引き継ぎで前回確認版を渡しても宣言外入力として遮断しない。"""
+    task = _SHARE_DIR / "exec-review.subagent.md"
+    prompt = (
+        f"{task}の手順を実行せよ。\nレビュー基準: 計画\n計画: {tmp_path / 'plan.md'}\n"
+        f"引き継ぎ記録先: {tmp_path / 'handoff.md'}\n完成条件証拠: なし\n"
+        f"レビュー種別: 引き継ぎ再レビュー\nround: 2\n前回確認版: {tmp_path / 'previous.md'}\n"
+    )
+    assert _invoke("Agent", prompt, tmp_path).returncode == 0
+
+
 def test_agent_prompt_with_role_preface_before_command_is_blocked(tmp_path: pathlib.Path) -> None:
     """1行目が命令でない本文は、命令の前に置いた前置きを宣言外の行として遮断する。"""
     prompt = f"あなたは実装担当である。\n{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n"
