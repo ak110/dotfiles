@@ -6523,6 +6523,16 @@ def test_initialization_failure_resolves_before_host_moves_call_to_background() 
     assert failure_path + subject.START_AVAILABILITY_TIMEOUT < state.HOST_BACKGROUND_THRESHOLD_SECONDS
 
 
+def test_cli_wait_limit_ends_before_host_background_timeout() -> None:
+    """`atk agents wait`の待機上限がClaude CodeのBash背景実行の既定上限より前に到達する。
+
+    呼び出し側は外側の`timeout`を付けずに背景起動するため、この関係が崩れるとホストが待機を打ち切り、
+    終了コード3による再発行の経路へ入れない。既定上限はClaude CodeのBashツールの定義（既定1800000ミリ秒）に従う。
+    """
+    assert state.HOST_BASH_BACKGROUND_TIMEOUT_SECONDS == 1800.0
+    assert state.WAIT_TIMEOUT_SECONDS < state.HOST_BASH_BACKGROUND_TIMEOUT_SECONDS
+
+
 def _recording_candidates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """候補列の解決へ渡った`model_type`を記録し、常に同じ候補を返す。"""
     requested: list[str] = []
