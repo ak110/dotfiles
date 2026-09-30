@@ -34,6 +34,7 @@ try:
     from agent_toolkit._atk import config as _atk_config
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
+    from agent_toolkit._hooks import response_language_check as _response_language_check
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
@@ -3509,6 +3510,9 @@ def _candidate_events(
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
+                if _is_response_language_notice(event):
+                    excluded["response-language-notice"] += 1
+                    continue
             key = _candidate_key(event_kind, event, normalized_text)
             if event_kind in {"command-failure", "tool-failure"}:
                 event["failure_signature"], event["failure_summary"] = _failure_signature(event_kind, event)
@@ -3792,6 +3796,27 @@ def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
     if tag is None:
         return "hook-notice-untagged"
     return "hook-notice-context"
+
+
+def _is_response_language_notice(event: dict[str, Any]) -> bool:
+    """応答言語hookの警告を表すhook通知かを返す。
+
+    応答言語hookは直前の応答を検出後に通知するだけの遮断後に対処する型であり、
+    振り返りのたびに同じ見送り判定になるため、問題候補から除いて件数だけを数える。
+    同じ`pretooluse`の`warn`通知には他の検査も含まれるため、発生源と区分に加えて本文の先頭を
+    hook側の本文定数と比べる。定数を参照するのは、hook側の文言を変えたときに判定を追随させるためである。
+    """
+    if event.get("hook") != "pretooluse" or event.get("tag") != "warn":
+        return False
+    text = event.get("text")
+    if not isinstance(text, str) or not text:
+        return False
+    for body in (_response_language_check.WARNING_BODY, _response_language_check.BLOCK_BODY):
+        expected = _normalize_candidate_kind_text(body)
+        length = min(len(text), len(expected))
+        if text[:length] == expected[:length]:
+            return True
+    return False
 
 
 def _user_candidate_exclusion(

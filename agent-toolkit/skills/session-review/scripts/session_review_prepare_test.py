@@ -13,11 +13,13 @@ import sys
 import pytest
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
+from agent_toolkit._hooks import response_language_check
+
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
-_LANGUAGE_NOTICE = (
+_BACKGROUND_OUTPUT_NOTICE = (
     '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
-    "直前のアシスタント応答の地の文が英語主体と判定された。次の応答は日本語で書くこと。</agent-toolkit-auto-inserted>"
+    "未完了の背景タスクが書き込む出力ファイルを読み取った。完了通知を受けてから読むこと。</agent-toolkit-auto-inserted>"
 )
 
 
@@ -34,7 +36,7 @@ def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _write_claude_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
-    """初期要求、英語の状況説明と言語判定の通知、失敗したコマンド、2000文字を超えるユーザー介入を持つtranscriptを書き込む。"""
+    """初期要求、英語の状況説明と`pretooluse`の警告通知、失敗したコマンド、2000文字を超えるユーザー介入を持つtranscriptを書き込む。"""
     entries = [
         {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
         {
@@ -55,7 +57,7 @@ def _write_claude_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
                 "type": "hook_additional_context",
                 "hookName": "PreToolUse:Bash",
                 "toolUseID": "toolu_fail",
-                "content": [_LANGUAGE_NOTICE],
+                "content": [_BACKGROUND_OUTPUT_NOTICE],
             },
         },
         {
@@ -73,6 +75,67 @@ def _write_claude_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
     transcript = tmp_path / "11111111-2222-3333-4444-555555555555.jsonl"
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     return transcript
+
+
+def _hook_attachment(line_time: str, tool_use_id: str, notice: str) -> dict[str, object]:
+    return {
+        "type": "attachment",
+        "timestamp": line_time,
+        "attachment": {
+            "type": "hook_additional_context",
+            "hookName": "PreToolUse:Bash",
+            "toolUseID": tool_use_id,
+            "content": [notice],
+        },
+    }
+
+
+def test_response_language_notices_are_excluded_from_candidates(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """応答言語hookの警告を候補から除いて件数だけを数え、同じ発生源・区分の他の警告と別の発生源の同じ本文は候補に残す。
+
+    応答言語hookは遮断後に対処する型で、振り返りのたびに同じ見送り判定になる。
+    除外が漏れると候補一覧へ毎回載り、発生源や区分を見ずに除くと是正を要する他の警告まで候補から消える。
+    """
+    opening = '<atk-auto source="pretooluse" kind="warn">'
+    first_warning = f"{opening}{response_language_check.WARNING_BODY}判定対象の冒頭: 「I will run」</atk-auto>"
+    repeated_strong_warning = (
+        '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
+        f"{response_language_check.BLOCK_BODY}{response_language_check.WARNING_BODY}"
+        "\nこの通知は同一セッションで3件目である。</agent-toolkit-auto-inserted>"
+    )
+    other_source = f'<atk-auto source="posttooluse" kind="warn">{response_language_check.WARNING_BODY}</atk-auto>'
+    entries = [
+        {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:10Z",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "name": "Bash", "id": "toolu_a", "input": {"command": "ls"}}],
+            },
+        },
+        _hook_attachment("2026-09-06T12:00:11Z", "toolu_a", first_warning),
+        _hook_attachment("2026-09-06T12:00:12Z", "toolu_a", repeated_strong_warning),
+        _hook_attachment("2026-09-06T12:00:13Z", "toolu_a", _BACKGROUND_OUTPUT_NOTICE),
+        _hook_attachment("2026-09-06T12:00:14Z", "toolu_a", other_source),
+    ]
+    transcript = tmp_path / "22222222-3333-4444-5555-666666666666.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    work_dir = _work_dir(tmp_path)
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)], now=_FIXED_NOW) == 0
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["candidate_counts"] == {"hook-notice": 2}
+    # 同じ通知はhook実行記録と警告行の双方から事象になるため、件数は除いた通知の数以上になる。
+    assert record["excluded_counts"]["response-language-notice"] >= 2
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    assert "response-language-notice" in candidates
+    assert "未完了の背景タスクが書き込む出力ファイルを読み取った" in candidates
+    assert "  - 記録位置: main:6" in candidates
+    assert "累計2回以上" not in candidates
 
 
 def _git_repository(path: pathlib.Path) -> pathlib.Path:
