@@ -253,8 +253,8 @@ def _update_transition_metadata(
     now: datetime.datetime,
     cooldown_days: int | None,
 ) -> None:
-    """状態移動前に、その遷移が所有するfrontmatterを更新する。"""
-    if action not in {"start-processing", "return-to-inbox", "hold", "unhold"}:
+    """active状態間の移動前にcooldownメタデータを更新する。"""
+    if action not in {"start-processing", "return-to-inbox"}:
         return
     for path in paths:
         text = path.read_text(encoding="utf-8")
@@ -262,16 +262,11 @@ def _update_transition_metadata(
         if parsed is None:
             continue
         data, body = parsed
-        if action in {"start-processing", "return-to-inbox"}:
-            if action == "return-to-inbox" and cooldown_days is not None:
-                deadline = now.astimezone(datetime.UTC) + datetime.timedelta(days=cooldown_days)
-                data["cooldown_until"] = deadline.isoformat()
-            else:
-                data.pop("cooldown_until", None)
-        elif action == "hold" and path.parent.name == WI_STATE_PROCESSING:
-            data["held_from_state"] = WI_STATE_PROCESSING
+        if action == "return-to-inbox" and cooldown_days is not None:
+            deadline = now.astimezone(datetime.UTC) + datetime.timedelta(days=cooldown_days)
+            data["cooldown_until"] = deadline.isoformat()
         else:
-            data.pop("held_from_state", None)
+            data.pop("cooldown_until", None)
         updated = _frontmatter.serialize_frontmatter(data, body)
         if updated != text:
             _atomic_write_text(path, updated)

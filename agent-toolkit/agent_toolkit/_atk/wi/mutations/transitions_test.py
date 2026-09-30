@@ -544,28 +544,25 @@ def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
     assert "cooldown_until" not in (notes / "processing/first.md").read_text(encoding="utf-8")
 
 
-def test_hold_records_processing_origin_only_until_unhold(
+def test_hold_does_not_record_processing_origin(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保留前のprocessingを記録し、inbox由来と解除後には記録を残さない。"""
+    """processingからの保留でも保留前の状態をfrontmatterへ残さない。
+
+    holdの項目はinboxと同じ条件で扱うため、保留前の状態を読む処理を持たない。
+    """
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
-    _write_awi_file(notes, "inbox.md")
     _disable_transition_git(monkeypatch)
+    original = frontmatter_parser.parse_frontmatter((notes / "inbox/processing.md").read_text(encoding="utf-8"))
 
     mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
     mutations.transition_entries(notes, action="hold", filenames=["processing.md"], now=_FIXED_DT)
-    mutations.transition_entries(notes, action="hold", filenames=["inbox.md"], now=_FIXED_DT)
 
-    processing = frontmatter_parser.parse_frontmatter((notes / "hold/processing.md").read_text(encoding="utf-8"))
-    inbox = frontmatter_parser.parse_frontmatter((notes / "hold/inbox.md").read_text(encoding="utf-8"))
-    assert processing is not None and processing[0]["held_from_state"] == "processing"
-    assert inbox is not None and "held_from_state" not in inbox[0]
-
-    mutations.transition_entries(notes, action="unhold", filenames=["processing.md"], now=_FIXED_DT)
-    unheld = frontmatter_parser.parse_frontmatter((notes / "inbox/processing.md").read_text(encoding="utf-8"))
-    assert unheld is not None and "held_from_state" not in unheld[0]
+    held = frontmatter_parser.parse_frontmatter((notes / "hold/processing.md").read_text(encoding="utf-8"))
+    assert original is not None and held is not None
+    assert held[0] == original[0]
 
 
 def test_return_to_inbox_missing_file_reports_processing_state(
