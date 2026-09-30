@@ -35,6 +35,7 @@ from agent_toolkit._atk.wi import bulk  # noqa: E402  # pylint: disable=wrong-im
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.constants import (  # noqa: E402  # pylint: disable=wrong-import-position
     BULK_ACTION_LABELS,
+    BULK_SOURCE_STATES,
     TRANSITION_EXPLICIT_STATES,
     bulk_source_states,
 )
@@ -108,6 +109,104 @@ def test_agent_reopens_terminal_entry_without_old_result(
             atk.main(["wi", "unhold", source.name], home=tmp_path)
         assert second.value.code == 0
         assert (notes / "inbox" / source.name).is_file()
+
+
+def _place_awi(notes: pathlib.Path, filename: str, state: str, body: str = "テスト本文") -> pathlib.Path:
+    """AWIを指定状態のディレクトリへ置き、そのパスを返す。"""
+    source = _write_awi_file(notes, filename, body=body)
+    target = notes / state / filename
+    if source != target:
+        target.parent.mkdir(exist_ok=True)
+        source.replace(target)
+    return target
+
+
+_TERMINAL_DIRECTORIES = {"adopt": "adopted", "reject": "rejected"}
+
+
+@pytest.mark.parametrize(
+    ("action", "state"),
+    [(action, state) for action in ("adopt", "reject") for state in BULK_SOURCE_STATES[action]],
+)
+def test_filename_terminal_transition_reaches_every_bulk_source_state(
+    action: str,
+    state: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ファイル名だけの`adopt`・`reject`が、`--all`の候補となる全状態から終端できる。
+
+    個別指定と`--all`で到達できる遷移元が一致することを固定し、状態を片方にだけ加える変更を検出する。
+    """
+    notes = _setup_notes(tmp_path)
+    source = _place_awi(notes, "entry.md", state)
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", action, "entry.md", "--note=終端する"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    destination = notes / _TERMINAL_DIRECTORIES[action] / "entry.md"
+    assert destination.is_file()
+    assert not source.exists()
+    assert "## 処理結果" in destination.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("action", ["adopt", "reject"])
+def test_filename_terminal_transition_prefers_processing_over_hold(
+    action: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同名がprocessingとholdにある場合はprocessing側を終端し、hold側を残す。"""
+    notes = _setup_notes(tmp_path)
+    processing = _place_awi(notes, "entry.md", "processing", body="処理中の本文")
+    held = _place_awi(notes, "entry.md", "hold", body="保留中の本文")
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", action, "entry.md"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert not processing.exists()
+    assert held.is_file()
+    destination = notes / _TERMINAL_DIRECTORIES[action] / "entry.md"
+    assert "処理中の本文" in destination.read_text(encoding="utf-8")
+
+
+def test_reject_if_inbox_keeps_all_targets_when_hold_is_included(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`reject --if-inbox`はholdの対象を含むと終了コード2で全対象を元の状態に残す。"""
+    notes = _setup_notes(tmp_path)
+    inbox_entry = _place_awi(notes, "inbox-entry.md", "inbox")
+    held_entry = _place_awi(notes, "held-entry.md", "hold")
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "reject", "inbox-entry.md", "held-entry.md", "--if-inbox"], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    assert inbox_entry.is_file()
+    assert held_entry.is_file()
+    assert not (notes / "rejected").exists() or not any((notes / "rejected").iterdir())
+
+
+def test_hold_does_not_resolve_held_entry(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """holdにある項目への`atk wi hold`は、adopt・rejectの解決変更後も受理しない。"""
+    notes = _setup_notes(tmp_path)
+    held = _place_awi(notes, "entry.md", "hold")
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", "entry.md"], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    assert held.is_file()
 
 
 @pytest.mark.parametrize("state", ["processing", "inbox", "hold", "adopted", "rejected"])

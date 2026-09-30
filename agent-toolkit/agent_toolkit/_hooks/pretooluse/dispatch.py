@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.shell_checks import (
         _check_bash_process_kill_by_pattern,
         _warn_git_rev_parse_short_multiple,
+        _warn_windows_drive_letter_path,
     )
     from agent_toolkit._hooks.pretooluse.task_document_launch import (
         AGENT_TOOL_NAMES,
@@ -341,6 +342,9 @@ def _handle_bash_tool(
     rev_parse_warning = _warn_git_rev_parse_short_multiple(command)
     if rev_parse_warning is not None:
         warnings.append(rev_parse_warning)
+    drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
+    if drive_letter_path_warning is not None:
+        warnings.append(drive_letter_path_warning)
     transcript_path = payload.get("transcript_path")
     if isinstance(transcript_path, str) and transcript_path:
         state = read_state(session_id)

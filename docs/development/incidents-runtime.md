@@ -143,6 +143,10 @@
   直接原因: サーバーが可用性の失敗を判定せず、次候補への切替を`exclude_session_id`付きの再起動という呼び出し側の操作だけに委ねていた。
   背景原因: 工程別モデル設定が候補列を持つ一方で、候補を進める契機の判定を配布物の外側へ置いていた。
   対策: `start`・`start_explore`が起動直後の終端を上限付きで確認し、engineの可用性で終端した候補を除外して次候補で起動する。全候補が起動不能な場合だけ失敗を返す
+- 2026年9月30日: 工程別設定`codex:sol/medium,claude:opus[1m]/medium`の`start`が、`sol`系列の最新版として解決した`gpt-6.1-sol`で起動し、接続先がそのモデルを提供しないため最初のturnが失敗した。候補は第2候補のclaudeへ切り替わらず、呼び出し元が`model_type`を手で指定して起動し直した。
+  失敗は`codexErrorInfo: other`で届き、`message`はJSON文字列で`error`オブジェクトが`code: invalid_parameter_value`と`param: model`を持っていた。
+  直接原因: 可用性失敗の判定が`codexErrorInfo`の利用枠超過・流量制限・過負荷の区分とHTTPステータスだけを判定材料としており、モデルIDの不受理はどちらにも当たらなかった。除外記録にも残らないため、呼び直しても同じ候補で起動した。
+  対策: Codexの失敗の`message`がJSONの`error`オブジェクトを持ち`param`が`model`である場合を、除外理由`modelRejected`の可用性失敗として判定へ加える
 - 2026年9月4日: 終端結果の保持期限を過ぎたagents_server sessionに対して`wait`と`kill`のいずれも失敗し、ターン終了ごとの未観測警告を解消できなかった。
   直接原因: 保持期限切れのsessionへの`kill`が例外を送出し、MCPツールの失敗ではPostToolUseが発火しないため観測状態を更新できなかった。
   対策: 保持期限切れのsessionへの`kill`は中断対象が無いことを示す応答を返す。その応答を受けたら観測状態を解消する
@@ -204,3 +208,9 @@
   同じ原因で、廃止した工程が配置した`~/.config/agent-toolkit/feedback-inbox.enabled`と`review-balance-mode.claude-heavy`も残存していた。
   対策: 3件の旧生成物（`atk.cmd`を含む）を`pytools/post_apply.py`の`_REMOVED_PATHS`へ登録する。
   `pytools-edit`スキルの実装規約へ、工程が配置するファイルの配置先を改名または工程を廃止する場合に旧パスを登録する規定を加える
+- 2026年9月30日: Windowsホストで`actionlint`が`command not found`（終了コード127）となり、`mise which actionlint`は「No executable found for configured tool」で終了コード1を返した。
+  同ホストの`installs/actionlint/1.7.12/`は2026年6月8日の導入で、`.mise-bins`ディレクトリが無かった。
+  直接原因: 全体設定と`mise.toml`へ2026年9月20日（aa9cbec18）に加えた`[tools.actionlint] symlink_bins = true`が、導入済みのホストへ反映されなかった。miseは導入時にだけ配置を生成し、`mise install`は導入済みの版を再導入しないためである。
+  設定コメントはローカル環境の強制再インストールを手作業として定めていたが、各ホストで行われなかった。
+  同じ原因で、2026年9月8日の7c3ba2363が`symlink_bins`を加えたときも、pre-commitとCIのactionlintの実行が止まった。
+  対策: `pytools/_internal/setup_mise.py`の後処理が`mise install`の後に`mise bin-paths`の配置先の欠落を検出し、欠落したツールを同じ版で`mise install --force`により再導入する

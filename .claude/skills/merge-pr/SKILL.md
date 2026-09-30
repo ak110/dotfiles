@@ -122,7 +122,7 @@ git -C <develop worktreeの絶対パス> rev-parse --short=7 develop
 実行後に対象worktreeで取得した`develop`が`origin/master`の短縮OIDと一致することを確認する。
 再取得した条件のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略する。対象worktreeと既存の未コミット差分に加え、ローカルbranchも変更せずリモートの完遂を維持する。完了報告には、省略した条件と対象worktreeの絶対パスを記録する。ローカル`develop`の短縮OIDと`origin/master`の短縮OIDも記録する。
 
-マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。
+マージ後のmaster pushと同期後のdevelop pushに対するCIは、同じツリーでの再実行であるため待機を省く（努力目標。待つと完了が遅れるだけである）。
 `master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前の確認で必須checkの成功を確認したPR headのツリーと同じになる。同期で`develop`へ載るのも同じマージコミットである。
 両pushのCIは同じ中身の再実行になり、待機しても完了までの時間が延びるだけである。
 `Release statusLine`はmaster pushのCI成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論は「条件付きRelease検収」が待つRelease runの成否で確かめる。
@@ -152,7 +152,7 @@ GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待�
 取得、判定、GitHubへの記録および判定済みの記録は
 `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が定める手順に従い、対象をそのPRへ限定して適用する。
 本節が扱うのはこの1回の取得までとし、新しいレビューの生成要求や到着の能動的な待機は対象外とする。
-その時点で未到着のレビューは、`agent-toolkit:process-wi`の選定工程が全Pull Requestを対象に実行する監査が次回以降に拾うため、本節で取得を繰り返さない。
+その時点で未到着のレビューは、`agent-toolkit:process-wi`の選定工程が全Pull Requestを対象に実行する監査が次回以降に拾うため、本節の取得は1回とし、未到着分は次回の監査へ回す（努力目標。反復しても成果が増えない）。
 
 要修正と分類した指摘は「レビューコメントの確認」の振り分けに従う。
 同一セッションで是正する場合は、その是正を`develop`への通常の変更として扱い、本スキルのマージ工程を再実行せず、公開を次回のリリースPRへ委ねる。

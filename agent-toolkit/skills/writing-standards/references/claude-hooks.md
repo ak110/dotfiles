@@ -10,7 +10,7 @@ Claude Codeは公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>
 取得方法は`agent-skills.md`の「公式リファレンス（Claude Code）」が定める。
 Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次資料とする。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
-参照したセクション名は計画ファイルの実装者向け領域へ引用する。
+参照したセクション名は計画ファイルの実装者向け領域へ引用する（努力目標。計画を読む実装者とレビュー担当が根拠の節をたどれるようにするため）。
 payload設計は、上記の一次資料が示す仕様から確定する。
 
 - 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutにホスト別契約の応答JSONを出力する。exit codeは0で正常完了とする
@@ -47,7 +47,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
   互換スクリプトのdocstringへ役割と撤去条件を書く。撤去は旧定義を読み込んだセッションが全て終了したことを確認できた場合だけ行い、
   確認できない場合は互換スクリプトを維持する。
   配布物では、新しいエントリーポイントを含む版を配布した後の版数更新以降を撤去可能な時機の下限とし、撤去の契機は旧定義を読み込んだセッションの全終了の確認とする
-- イベントごとのエントリーポイント: 同じイベントへ判定を追加する場合は、新しい登録を並べずそのイベントの既存のエントリーポイントへ相乗りさせる。
+- イベントごとのエントリーポイント: 同じイベントへ判定を追加する場合は、新しい登録を並べる代わりにそのイベントの既存のエントリーポイントへ相乗りさせる（努力目標。登録ごとにプロセスが起動するため）。
   エントリーポイントは各判定を順に呼び、判定単位で例外を隔離し、単一の応答へ集約する。
   ホストは登録の件数だけプロセスを起動するため、登録を分けると実行時間と画面の行数が判定の件数に比例して増える。
   matcherを持つ登録を統合する場合は、ツール名による限定を各判定側の早期returnへ移す
@@ -71,13 +71,13 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 復元できない結果の代表例は、実行主体のコンテキストへの取り込み、外部への公開、プロセスまたはタスクの終了、対象の上書きと削除とする。
 ユーザーへ提示する本文そのものを入力とする判定（`AskUserQuestion`の選択肢、`ExitPlanMode`の計画本文など）は、ユーザー自身が読んで指摘できるため警告で返す。
 この判定は`PreToolUse`と`PostToolUse`の遮断を対象とし、`Stop`と`SubagentStop`には「Stop/SubagentStopフックの再帰呼び出し対策」が定める条件を適用する。
-判定ごとに結論と根拠をその判定モジュールのdocstringへ記録する。
+判定ごとに結論と根拠をその判定モジュールのdocstringへ記録する（努力目標。判定を見直す読み手が根拠をたどれるようにするため）。
 
 警告とした判定のうち、同一セッションでの反復が母集団の欠落または工程の停止を招くものは、`warning_formatter`へ`escalate_on_repeat=True`を明示し、1件目を警告、2件目以降を遮断とする。昇格の既定は偽とする。`removable_cause=True`は反復注記に使い、遮断は昇格の明示を要する。後続の編集で是正できる文体などの警告は昇格させない。昇格したblockはPreToolUseの`exit_with`が終了コード2で返し、同時に保留した警告もstderrへ配送する。反復が招く欠落と停止は復元できない結果に当たるためである。
 
 遮断の解除に必要な情報は通知本文へ載せる。別の呼び出しでの取得を要求すると、遮断のたびに1ラウンドを消費する。
 `fix`が名指しする手段を利用できない実行主体がある場合は、同じ判定を通過する別の手段を併記し、無い場合は遮断が解除される条件を書く。
-受理集合その他の集合を通知本文へ列挙する場合は、判定した対象と対応づく要素だけを載せる。列挙は要素数に比例して実行主体のコンテキストを占める一方、対応づかない要素は次の操作を変えない。
+受理集合その他の集合を通知本文へ列挙する場合は、判定した対象と対応づく要素を載せる（努力目標。列挙は要素数に比例して実行主体のコンテキストを占める一方、対応づかない要素は次の操作を変えないため）。
 
 `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
 `agent-toolkit/agent_toolkit/_hooks/rules_context.py`は前者でメイン向け条文を追加するときに委譲先を除く。
@@ -101,7 +101,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 
 ツール名で`matcher`を評価するイベントは`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`PermissionDenied`の5つとする。
 これらのイベントの`matcher`は3通りに解釈する。`"*"`、空文字列およびキーの省略は全ツールへ一致する。英数字、`_`、`-`、空白、`,`、`|`だけからなる値は、`|`または`,`で区切ったツール名の完全一致とする。それ以外の文字を含む値は、先頭と末尾を固定しないJavaScriptの正規表現として評価する。
-全ツールへ一致させる登録には`"*"`を書き、新規記述で用いる表記をこの1つに限る。ツール名で`matcher`を評価しないイベントでは`matcher`キーを省く。
+全ツールへ一致させる新規の登録には`"*"`を書く（努力目標。3通りの表記は同じ意味であり、表記をそろえると読み手が登録を比べやすいため）。ツール名で`matcher`を評価しないイベントでは`matcher`キーを省く。
 一次資料は公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Matcher patterns`節とする。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
 
@@ -155,8 +155,8 @@ Claude Codeが表示する`Stop hook error: JSON validation failed`はプロン�
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日」にある。
 
 PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。各フィールドがターン継続を強制するかは後掲の表に従う。
-`systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
-`systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使う。決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象は通知の対象に含めない。
+stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
+`systemMessage`はユーザーの判断・操作に影響する情報通知に限って使う。決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象は通知の対象に含めない。
 Stop/SubagentStopでそのターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
 永続ログはstderr出力ではなく`_hooks.stop_gate.append_stop_log`等の専用APIに集約する。
 
@@ -168,7 +168,7 @@ Stop/SubagentStopでそのターン継続を強制する用途は、エラーと
 | `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
 | `decision.*` | PermissionRequest専用 | 許可・拒否の決定。`hookSpecificOutput`直下に置く |
 
-deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届くため、重複表示を避けて片方に統一する。
+deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届くため、重複表示を避けて片方に統一する（努力目標。両方へ書くと同じ本文を2回読ませるため）。
 
 `decision: "block"`の挙動はイベント別に異なる。
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
@@ -207,7 +207,8 @@ blockとwarnは、次の2つの型から費用の小さい型を選んで設計�
 Claude CodeとCodexの双方に対応するフックでは、ホスト固有の入力・終了状態が必要な判定だけを差分とし、共有できる判定条件と規範参照を共通実装へ置く。
 
 blockするチェックは規範の読み込み不足や手順の取り違えを実行主体へ通知する目的で設計する。
-新設するチェックの目的はこの通知に限る。別ツール経由の書き換えやフック自身への変更など、迂回手段の網羅的な遮断は目的に含めない。
+別ツール経由の書き換えやフック自身への変更などの迂回手段まで遮断の目的に加えるかは、増えるコード量と保守負担を、防げる事象と比べて決める。
+迂回手段の網羅的な遮断は機能上の便益が小さく、費用が便益を上回りやすい。
 
 ### PermissionRequest
 

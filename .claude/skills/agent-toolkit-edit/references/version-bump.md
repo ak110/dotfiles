@@ -27,7 +27,7 @@ rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`�
 `scripts/sync_codex_plugin_manifests.py --check`で派生物を変更せず整合性を確かめる。
 終了コードは最新なら0、不整合なら1、引数誤用なら2とする。
 同スクリプトが定義元ファイル間の`version`と`description`の一致と派生manifestの内容一致をまとめて判定するため、
-派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値の比較を個別に行わず、同スクリプトの実行で確認を終える。
+確認は同スクリプトの実行で終える（努力目標。派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値を個別に比較すると、同じ判定の重複になる）。
 
 rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の定義元ファイルの`version`値を比較する。
 自分の未公開コミットにエンドユーザーの振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
@@ -37,7 +37,7 @@ rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの
 ## 未プッシュ範囲での統合
 
 `scripts/agent_toolkit_bump.py`は既存bump以下の種別指定をno-op扱いとするため、
-未プッシュ範囲では後続編集ごとに追加bumpせず、格上げが必要な場合だけ上位種別を指定する。
+未プッシュ範囲では後続編集ごとの追加bumpは不要である（努力目標。同じ種別以下の指定は変化しない）。格上げが必要な場合だけ上位種別を指定する。
 `git push`実行後の追加commitは新たな未プッシュ範囲として扱い、エンドユーザー振る舞い変更を含む場合は再度bumpする。
 
 ## Codex導入後のrootの再確認
@@ -55,15 +55,15 @@ plugin cache directory配下の新versionのrootを解決し直す。
 本節の前段が定める一般則は、単一のworktreeで実装する計画へ適用する。
 `agent-toolkit:process-wi`が起動したレーンでは、レーン数によらず本節末尾の特則が前段に優先する。
 
-計画フェーズではbump要否や既存bumpとの差分を調査せず、種別（PATCH／MINOR／MAJOR）と
+計画フェーズではbump要否や既存bumpとの差分の調査を省き（努力目標。既存bumpとの統合はツールが吸収する）、種別（PATCH／MINOR／MAJOR）と
 「判定基準」節に基づく種別選定根拠を`## 要件・外部仕様`へ記述する。
 具体的なversion数値は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
 実装フェーズでは検証より前に`scripts/agent_toolkit_bump.py {種別}`を実行する
 （既存bumpとの統合はツール側が吸収する）。bump不要の場合は`## 要件・外部仕様`へ`bump不要`と根拠を記載する。
 version bumpを伴う計画では、Claude Code向けの定義元2ファイルを`## 要件・外部仕様`の変更説明へ含める。
 正式な生成コマンドと生成器出力との一致確認は`## 検証`へ記載する。
-生成コマンドが扱う派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など生成器の出力全般）は、変更説明へ重複して含めない。
-version・description欄の有無や実際の差分有無を問わず、定義元のファイルだけを記載する。
+生成コマンドが扱う派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など生成器の出力全般）は、変更説明へ重複して含めない（努力目標。派生物は生成器が保証するため列挙は重複になる）。
+version・description欄の有無や実際の差分有無を問わず、変更説明には定義元のファイルを記載する。
 派生物の完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
 Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
 定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で差分が生じないことを確かめる。

@@ -19,7 +19,7 @@ import logging
 import os
 import pathlib
 import socket
-import subprocess
+import threading
 import typing
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
@@ -51,8 +51,8 @@ SSH_WATCH_OPTIONS = (
 )
 # 単発SSH呼び出しのタイムアウト秒。
 SSH_TIMEOUT_SEC = 30.0
-# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、画面の警告欄を占有させない。
-STDERR_EXCERPT_MAX_CHARS = 500
+# 警告本文へ引き継ぐ標準エラー出力の最大文字数。値と選定理由は計画ファイル画面と共通とする。
+STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
 # RPCリクエスト1件あたりのタイムアウト秒。超過時は単発SSHへ切り替える。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
 # 常駐SSH接続のstdout用StreamReader上限（バイト）。一覧・本文は1行JSONで届くため大きく取る。
@@ -524,6 +524,8 @@ class SessionsState:
     tasks: list[asyncio.Task[None]] = dataclasses.field(default_factory=list)
     # ローカルの記録rootの変更監視。`start_local_watch`が生成する。
     record_watch: session_watch.RecordWatch | None = None
+    # サーバーの停止要求。スレッドで動くローカル走査が反復の途中で参照して打ち切る。
+    stop_requested: threading.Event = dataclasses.field(default_factory=threading.Event)
 
 
 def create_context(
@@ -593,7 +595,9 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     Codexは`<CODEX_HOME>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`を対象とする。
     ユーザー発話の記録行を持たない記録は、件数上限による切り詰めより前に除外する。
     変更監視が動いている場合は、判定した発話の有無を監視側の判定へ引き継ぐ。
+    サーバーの停止要求を受けた場合は記録1件ごとの確認で`ServeStopping`を送出して打ち切る。
     """
+    stop = context.state.stop_requested
     collected: list[tuple[SessionSummary, bool | None]] = []
     projects = context.claude_home / "projects"
     if projects.is_dir():
@@ -601,6 +605,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
             if not project_dir.is_dir():
                 continue
             for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
+                _atk_serve_remote.raise_if_stopping(stop)
                 if path.is_file():
                     collected.append(_local_entry(path, "claude", path.stem, context.hostname))
                     subagents = claude_subagents(path) or []
@@ -626,6 +631,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     sessions = context.codex_home / "sessions"
     if sessions.is_dir():
         for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
+            _atk_serve_remote.raise_if_stopping(stop)
             if path.is_file():
                 collected.append(_local_entry(path, "codex", codex_session_id(path), context.hostname))
     watch = context.state.record_watch
@@ -731,49 +737,18 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     ]
 
 
-class RemoteHelperError(Exception):
-    """リモートヘルパーの実行が非0で終了したことを、失敗元の標準エラー出力とともに示す。
-
-    本例外の文字列表現は利用者向けの警告本文へそのまま引き継がれるため、失敗元の標準エラー出力を含める。
-    SSHの接続が成立したうえでリモート側の実行が失敗する場合も本例外となるため、
-    到達可否を判別していない語で原因を断定しない。
-    """
-
-    def __init__(self, returncode: int, stderr: bytes) -> None:
-        super().__init__(f"リモートヘルパーの実行が終了コード{returncode}で失敗しました: {_stderr_excerpt(stderr)}")
-
-
-def _stderr_excerpt(stderr: bytes) -> str:
-    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
-
-    デコードできない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
-    """
-    text = " ".join(stderr.decode("utf-8", errors="replace").split())
-    if not text:
-        return "標準エラー出力はありません"
-    if len(text) > STDERR_EXCERPT_MAX_CHARS:
-        return f"...{text[-STDERR_EXCERPT_MAX_CHARS:]}"
-    return text
+# 単発SSHの失敗の表現と標準エラー出力の整形は計画ファイル画面と共通の契約とする。
+RemoteHelperError = _atk_serve_remote.RemoteHelperError
+_stderr_excerpt = _atk_serve_remote.stderr_excerpt
 
 
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
 
-    非0終了は`RemoteHelperError`として送出し、失敗元の標準エラー出力を呼び出し元へ渡す。
+    非0終了は`RemoteHelperError`として送出し、呼び出し元がキャンセルされた場合は子プロセスを終了させる。
     """
     cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
-    proc = await asyncio.to_thread(
-        subprocess.run,
-        cmd,
-        capture_output=True,
-        timeout=SSH_TIMEOUT_SEC,
-        check=False,
-    )
-    assert isinstance(proc.stdout, bytes)
-    assert isinstance(proc.stderr, bytes)
-    if proc.returncode != 0:
-        raise RemoteHelperError(proc.returncode, proc.stderr)
-    return proc.stdout.decode("utf-8")
+    return await _atk_serve_remote.run_helper(cmd, timeout=SSH_TIMEOUT_SEC)
 
 
 class RemoteSessionClient:

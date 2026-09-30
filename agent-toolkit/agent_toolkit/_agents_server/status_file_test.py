@@ -83,6 +83,16 @@ def test_unavailable_candidates_record_is_a_file_and_not_a_root_session(tmp_path
     assert subject.list_root_session_ids(tmp_path) == []
 
 
+def test_root_session_listing_excludes_management_directories(tmp_path: pathlib.Path) -> None:
+    """状態ディレクトリ直下の管理用ディレクトリはルートsession識別子として列挙しない。"""
+    base = tmp_path / "agents-server"
+    for name in ("aliases", "compaction", "sessions", "root-session"):
+        (base / name).mkdir(parents=True)
+    (base / "aliases" / "current.json").write_text('{"version": 1, "root_session_id": "root-session"}', encoding="utf-8")
+
+    assert subject.list_root_session_ids(tmp_path) == ["root-session"]
+
+
 def test_process_root_identities_are_valid_and_collision_free() -> None:
     first = subject.create_process_root_identity()
     second = subject.create_process_root_identity()

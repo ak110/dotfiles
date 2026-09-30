@@ -50,6 +50,8 @@ _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 HEARTBEAT_INTERVAL_SECONDS = 30
 HEARTBEAT_EXPIRY_SECONDS = 120
 STALE_SHARED_STATE_SECONDS = 7 * 24 * 60 * 60
+RESERVED_DIRECTORY_NAMES = frozenset({"aliases", "sessions", "compaction"})
+"""状態ディレクトリ直下でrootに属さない管理用ディレクトリの名前（索引・session登録簿・計測記録）。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -138,7 +140,11 @@ def list_root_session_ids(state_root: pathlib.Path | None = None) -> list[str]:
     root = _atk_config.state_dir() if state_root is None else state_root
     base = root / "agents-server"
     try:
-        identifiers = [path.name for path in base.iterdir() if path.is_dir() and valid_session_id(path.name)]
+        identifiers = [
+            path.name
+            for path in base.iterdir()
+            if path.is_dir() and path.name not in RESERVED_DIRECTORY_NAMES and valid_session_id(path.name)
+        ]
     except OSError:
         return []
     return sorted(identifiers)
@@ -159,11 +165,10 @@ def sweep_stale_shared_state(
         entries = tuple(base.iterdir())
     except OSError:
         return
-    reserved = {"aliases", "sessions", "compaction"}
     for directory in entries:
         if (
             not directory.is_dir()
-            or directory.name in reserved
+            or directory.name in RESERVED_DIRECTORY_NAMES
             or directory.name == keep_root_session_id
             or not valid_session_id(directory.name)
         ):

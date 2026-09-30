@@ -33,8 +33,8 @@
   - 統合テストはクレートルート直下の`tests/`に置く（後述の統合テスト節を参照）
   - ポーリング + `thread::sleep`を避け、`crossbeam-channel::recv_timeout`などの確定待機を使う
    （sleepループはflakyテストの主要因となるため）
-  - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`でcompile-timeに行う
-   （Rust 1.79+）。実行時テストにはしない
+  - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`（Rust 1.79+）でcompile-timeに行う
+   （努力目標。実行時テストより早いビルド時に検出できるため）
 
 ## テストコード（統合テスト）
 

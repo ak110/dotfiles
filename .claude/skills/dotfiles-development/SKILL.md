@@ -19,7 +19,7 @@ description: >
 - `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新および全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体の自動チェックが必要な場合の実行方法: `make test`
-  - 全体の自動チェックを起動する際は`agent-toolkit:check-execution`をSkill機能で起動し、`agents_server`の`start_shell`へ`make test`を渡す。委譲先の出力保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
+  - 全体の自動チェックを起動する際は`agent-toolkit:check-execution`をSkill機能で起動し、標準出力と標準エラーを保存して検収できる手段（例: `agents_server`の`start_shell`へ`make test`を渡す）で実行する。出力の保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
   - `make test`（`uv run --frozen pyfltr run --no-fix`）はlintで自動修正しない。
     ただしpyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は
     `--no-fix`を付けても対象ファイルを書き換え、書き換えた場合も終了コード0で成功扱いになる。
@@ -33,6 +33,7 @@ description: >
     Pythonファイルまたはエージェント向け文書を変更するレーンの変更範囲の検証へ、後述の`repo_invariant`マーカーのテストを含める。
     `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言を変更した場合は、変更した挙動に対応するhook固有の`<hook名>_test.py`も加える。
     `agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、または`atk.py`のサブコマンド登録を変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`を変更範囲の検証へ加える。同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。共有の生成値や登録を期待する未変更のテストも検証するためである。
+    `agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider pytools scripts`を変更範囲の検証へ加え、同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。`agent-toolkit/`の外にも`agent_toolkit`をimportする実装とテストがあり（現行は`pytools/`と`scripts/`）、引数の必須化や例外の追加のような実行時にだけ成立する契約の変更は、固定文字列の検索と`ty`の型チェックでは呼び出し元の破損を検出できないためである。統合直前にも実行するのは、並行する別のレーンが同じ契約の新しい呼び出し元を加えた場合に、統合後に初めて破損が成立するためである。
     デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
@@ -43,9 +44,9 @@ description: >
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する変更範囲の検証を先に実行する。公開前の全体検証はCIへ委ね、ローカルでは次の4件を実行する。CIの成功を確認して全体検証の結論を確定する
     - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
-    - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの変更範囲の検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
-    - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず、`agent-toolkit/`を含むリポジトリ全体を対象にする。名前を削除・改名したモジュールに追随していない未変更のテストや呼び出し元は、変更ファイルだけを対象とする変更範囲の検証では検出できないため、Pythonファイルを変更するレーンでは、計画担当が計画の`変更範囲の検証`行へ含める。あわせてaridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する
-    - 全追跡ファイルと全ソースの不変条件: `uv run --frozen pytest -p no:cacheprovider -m repo_invariant agent-toolkit/agent_toolkit scripts`。変更ファイルの外に残る未解決参照、subprocessの文字コード指定、hook通知の言語などを検出する。Pythonファイルまたはエージェント向け文書を変更するレーンの変更範囲の検証、各レーンの統合でfast-forwardする前、および公開工程のpush前に実行する。新しい横断テストにも`pytestmark = pytest.mark.repo_invariant`を付ける
+    - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの変更範囲の検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する。push対象のtreeが直前にチェックを実行したtreeと同じ場合は、push前の実行を省いてよい
+    - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず、`agent-toolkit/`を含むリポジトリ全体を対象にする。名前を削除・改名したモジュールに追随していない未変更のテストや呼び出し元は、変更ファイルだけを対象とする変更範囲の検証では検出できないため、Pythonファイルを変更するレーンでは、計画担当が計画の`変更範囲の検証`行へ含める。あわせてaridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する。push対象のtreeが直前にチェックを実行したtreeと同じ場合は、push前の実行を省いてよい
+    - 全追跡ファイルと全ソースの不変条件: `uv run --frozen pytest -p no:cacheprovider -m repo_invariant agent-toolkit/agent_toolkit scripts`。変更ファイルの外に残る未解決参照、subprocessの文字コード指定、hook通知の言語などを検出する。Pythonファイルまたはエージェント向け文書を変更するレーンの変更範囲の検証、各レーンの統合でfast-forwardする前、および公開工程のpush前に実行する。push対象のtreeが直前にチェックを実行したtreeと同じ場合は、push前の実行を省いてよい。新しい横断テストにも`pytestmark = pytest.mark.repo_invariant`を付ける
     - `make test`が実行するツール集合はCIの`python-lint (3.14)`ジョブとほぼ同じである。差分は同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
       次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
       - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト

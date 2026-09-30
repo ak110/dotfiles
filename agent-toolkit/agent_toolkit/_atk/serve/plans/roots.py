@@ -32,6 +32,7 @@ import random
 import re
 import socket
 import subprocess
+import threading
 import typing
 from typing import TYPE_CHECKING
 
@@ -216,8 +217,8 @@ _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 SSH_BASE_OPTIONS = ("-o", "BatchMode=yes")
 # 単発SSH呼び出し（fallback用`read`）のタイムアウト秒。
 SSH_TIMEOUT_SEC = 30.0
-# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、記録を占有させない。
-STDERR_EXCERPT_MAX_CHARS = 500
+# 警告本文へ引き継ぐ標準エラー出力の最大文字数。値と選定理由はセッション画面と共通とする。
+STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
 # RPCリクエスト1件あたりのタイムアウト秒。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
 # SSHフォールバック経路の検索を同時に実行する上限（全ホスト合計）。
@@ -311,6 +312,8 @@ class BroadcastState:
     root_info: dict[str, dict[str, dict[str, typing.Any]]] = dataclasses.field(default_factory=dict)
     # ホスト名 -> 保存元ID -> 状態。状態値は"ok"またはroot単位の警告本文。
     root_status: dict[str, dict[str, dict[str, str]]] = dataclasses.field(default_factory=dict)
+    # サーバーの停止要求。スレッドで動くローカルの一覧・検索の走査が反復の途中で参照して打ち切る。
+    stop_requested: threading.Event = dataclasses.field(default_factory=threading.Event)
 
 
 def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEntry:

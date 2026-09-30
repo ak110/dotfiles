@@ -32,6 +32,7 @@ import random
 import re
 import socket
 import subprocess
+import threading
 import typing
 from typing import TYPE_CHECKING
 
@@ -260,11 +261,11 @@ def create_context(
     )
 
 
-def _scan_local_root(spec: RootSpec, host: str) -> tuple[list[FileEntry], str | None]:
+def _scan_local_root(spec: RootSpec, host: str, stop: threading.Event | None = None) -> tuple[list[FileEntry], str | None]:
     """root解決時の警告を保ったまま、利用可能なローカルrootだけを走査する。"""
     if spec.warning is not None:
         return [], spec.warning
-    return scan_files(spec.path, host, spec.source_id, migrate_legacy_ctime=spec.migrate_legacy_ctime)
+    return scan_files(spec.path, host, spec.source_id, migrate_legacy_ctime=spec.migrate_legacy_ctime, stop=stop)
 
 
 def _oldest_host_per_file(entries: list[FileEntry]) -> list[FileEntry]:
@@ -294,7 +295,7 @@ async def all_entries(context: PlansContext) -> list[FileEntry]:
     """ローカルとリモートの一覧を、同期で重複した分を1件へ絞ってから作成日時の降順で返す。"""
     # ローカル一覧はリモート集約と並列実行できるよう`asyncio.to_thread`経由で取得する。
     local_results = await asyncio.gather(
-        *(asyncio.to_thread(_scan_local_root, spec, context.hostname) for spec in context.roots)
+        *(asyncio.to_thread(_scan_local_root, spec, context.hostname, context.state.stop_requested) for spec in context.roots)
     )
     local_entries = [entry for entries, _ in local_results for entry in entries]
     local_status = {
@@ -326,7 +327,10 @@ async def search_entries(context: PlansContext, query: str) -> list[FileEntry] |
     if not query:
         return entries
     local_results = await asyncio.gather(
-        *(asyncio.to_thread(search_files, spec.path, query, spec.source_id) for spec in context.roots)
+        *(
+            asyncio.to_thread(search_files, spec.path, query, spec.source_id, stop=context.state.stop_requested)
+            for spec in context.roots
+        )
     )
     local_matches = {
         candidate

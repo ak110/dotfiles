@@ -59,6 +59,7 @@ from agent_toolkit._atk.wi.common import (
     is_agent_environment,
     normalized_wi_type,
 )
+from agent_toolkit._atk.wi.constants import BULK_SOURCE_STATES
 from agent_toolkit._atk.wi.repo import (
     _normalize_remote_url,
     _resolve_repo_id,
@@ -126,6 +127,30 @@ if TYPE_CHECKING:
 
 
 _AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要になった項目なら`atk wi reject`で不採用にする"
+
+_IMPLICIT_TERMINAL_STATE_PRIORITY = (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
+"""`adopt`・`reject`のファイル名指定で同名が複数の状態にある場合の優先順。
+
+`set-dependencies`の既定順、`answer`の回答対象の解決順と同じ順とする。
+"""
+
+
+def _implicit_terminal_source_states(action: str) -> tuple[str, ...]:
+    """`adopt`・`reject`のファイル名指定が探索する状態を優先順で返す。
+
+    状態の集合は`--all`の候補と同じ`BULK_SOURCE_STATES`から導き、本関数は順序だけを定める。
+    両経路が状態を別々に列挙すると、状態の追加が片方にだけ反映されるためである。
+    """
+    return tuple(
+        sorted(
+            BULK_SOURCE_STATES[action],
+            key=lambda state: (
+                _IMPLICIT_TERMINAL_STATE_PRIORITY.index(state)
+                if state in _IMPLICIT_TERMINAL_STATE_PRIORITY
+                else len(_IMPLICIT_TERMINAL_STATE_PRIORITY)
+            ),
+        )
+    )
 
 
 def _validate_transition_options(
@@ -211,6 +236,14 @@ def _resolve_transition_paths(
             processing_dir,
             missing_is_conflict=missing_is_conflict,
             states=removable_states,
+        )
+    if action in {"adopt", "reject"}:
+        return _resolve_active_targets(
+            filenames,
+            inbox_dir,
+            processing_dir,
+            missing_is_conflict=missing_is_conflict,
+            states=_implicit_terminal_source_states(action),
         )
     return _resolve_processable_targets(filenames, inbox_dir, processing_dir, missing_is_conflict=missing_is_conflict)
 
@@ -520,11 +553,11 @@ def _bulk_transition(
 
 
 def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """adoptサブコマンド: 採用としてinboxまたはprocessingからadopted/へ移動しcommit・push。
+    """adoptサブコマンド: 採用としてinbox・processing・holdのいずれかからadopted/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
     `--note`指定時はメモ、`--commit`指定時は対応commitの作成者日時と件名を含む。
-    inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
+    inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:
@@ -553,11 +586,11 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
 
 
 def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """rejectサブコマンド: 不採用としてinboxまたはprocessingからrejected/へ移動しcommit・push。
+    """rejectサブコマンド: 不採用としてinbox・processing・holdのいずれかからrejected/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
     `--note`指定時はメモ、`--commit`指定時は対応commitの作成者日時と件名を含む。
-    inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
+    inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:
@@ -588,6 +621,8 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
 
 def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """start-processingサブコマンド: inboxのAWIまたはUWIをprocessing/へ移動しcommit・push。
+
+    ファイル名指定の対象はinboxとし、`--all`ではholdの項目も候補にする。
 
     後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
     （最終処理結果の記録は`adopt`・`reject`側で行う）。

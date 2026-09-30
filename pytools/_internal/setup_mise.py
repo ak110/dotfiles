@@ -98,6 +98,7 @@ def run() -> bool:
     changed |= _ensure_working_tree_trusted(mise_bin)
     changed |= _ensure_global_node(mise_bin)
     changed |= _ensure_tools_installed(mise_bin)
+    changed |= _ensure_tool_bin_paths_present(mise_bin)
     changed |= _ensure_orphan_shims_removed(mise_bin)
     if _is_windows():
         changed |= _ensure_windows_user_path_has_shims()
@@ -343,6 +344,166 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
         return True
     logger.info(log_format.format_status("mise", "`install` を実行しました"))
     return True
+
+
+def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
+    """導入済みツールの実行ファイルの配置先が欠落していれば、同じ版を強制再インストールする。
+
+    `symlink_bins`など配置先を変えるツールオプションは導入時にだけ配置を生成し、導入済みの版へ遡及しない。
+    `mise install`は導入済みの版を再導入せず、`mise install --dry-run-code`と`mise doctor`も欠落を示さないため、
+    配布設定の変更後も導入済みのホストではコマンドを解決できないまま残る。
+    欠落の原因となるオプションを列挙せず、mise自身が現在の設定から導く配置先（`mise bin-paths`）の実在で判定する。
+    `mise bin-paths --json`は実在しない配置先を含まないため、引数なしの出力を使う。
+    実行位置は`_ensure_tools_installed`と同じとし、working treeの`mise.toml`にだけあるツールも対象にする。
+    版を明示して再導入するため、版の解決とlockfileは変わらない。
+    検出・再導入の失敗は警告して後続のステップを止めない。
+
+    Returns:
+        再導入を1件以上実行した場合True。
+    """
+    cwd = _working_tree_with_config()
+    missing = _missing_bin_paths(mise_bin, cwd)
+    if not missing:
+        return False
+    installs = _installed_tool_paths(mise_bin, cwd)
+    if installs is None:
+        return False
+
+    targets: dict[tuple[str, str], list[Path]] = {}
+    for directory in missing:
+        owner = _owning_tool(directory, installs)
+        if owner is None:
+            # 共有ランタイムへのリンクで導入されるツール（dotnet-root、~/.cargo/binなど）は再導入で生成されない。
+            logger.warning(
+                log_format.format_status(
+                    "mise",
+                    f"実行ファイルの配置先が無いが、導入先を特定できないため再導入しない: {directory}（処理は継続した）",
+                )
+            )
+            continue
+        targets.setdefault(owner, []).append(directory)
+    if not targets:
+        return False
+
+    changed = False
+    for tool, version in targets:
+        spec = f"{tool}@{version}"
+        # lockedモードを与えない。mise 2026.9.17では、lockにURLがあってもlockedモードの`install --force <ツール>@<版>`は
+        # 「No lockfile URL found」で失敗する。版を明示した再導入はlockfileを書き戻さないことを同じ版で確かめた。
+        result = _run_mise(mise_bin, ["install", "--force", spec], timeout=_MISE_INSTALL_TIMEOUT, cwd=cwd)
+        if result is None:
+            logger.warning(
+                log_format.format_status(
+                    "mise",
+                    f"`install --force {spec}` がタイムアウトまたは例外で中断。手動で`mise install --force {spec}`を実行する",
+                )
+            )
+            continue
+        if result.returncode != 0:
+            logger.warning(
+                log_format.format_status(
+                    "mise",
+                    f"`install --force {spec}` に失敗: {result.stderr.strip()}。手動で`mise install --force {spec}`を実行する",
+                )
+            )
+            continue
+        logger.info(
+            log_format.format_status("mise", f"実行ファイルの配置先を再生成するため `install --force {spec}` を実行しました")
+        )
+        changed = True
+
+    remaining = _missing_bin_paths(mise_bin, cwd)
+    if remaining is None:
+        return changed
+    for directory in remaining:
+        owner = _owning_tool(directory, installs)
+        if owner is None or owner not in targets:
+            continue
+        tool, version = owner
+        logger.warning(
+            log_format.format_status(
+                "mise",
+                f"{tool}の実行ファイルの配置先が再導入後も見つからない: {directory}。"
+                f"手動で`mise install --force {tool}@{version}`を実行する",
+            )
+        )
+    return changed
+
+
+def _missing_bin_paths(mise_bin: Path, cwd: Path | None) -> list[Path] | None:
+    """`mise bin-paths`が返す配置先のうち実在しないものを返す。取得に失敗した場合は警告して`None`を返す。"""
+    result = _run_mise(mise_bin, ["bin-paths"], cwd=cwd)
+    if result is None:
+        logger.warning(
+            log_format.format_status(
+                "mise", "`bin-paths` がタイムアウトまたは例外で中断したため配置先の確認を省いた（処理は継続した）"
+            )
+        )
+        return None
+    if result.returncode != 0:
+        logger.warning(
+            log_format.format_status(
+                "mise", f"`bin-paths` に失敗したため配置先の確認を省いた（処理は継続した）: {result.stderr.strip()}"
+            )
+        )
+        return None
+    return [Path(line.strip()) for line in result.stdout.splitlines() if line.strip() and not Path(line.strip()).is_dir()]
+
+
+def _installed_tool_paths(mise_bin: Path, cwd: Path | None) -> dict[Path, tuple[str, str]] | None:
+    """導入済みの現行版について、導入先ディレクトリからツール名と版への対応を返す。
+
+    取得または解析に失敗した場合は警告して`None`を返す。
+    """
+    result = _run_mise(mise_bin, ["ls", "--current", "--installed", "--json"], cwd=cwd)
+    if result is None:
+        logger.warning(
+            log_format.format_status(
+                "mise",
+                "`ls --current --installed --json` がタイムアウトまたは例外で中断したため再導入を省いた（処理は継続した）",
+            )
+        )
+        return None
+    if result.returncode != 0:
+        logger.warning(
+            log_format.format_status(
+                "mise",
+                f"`ls --current --installed --json` に失敗したため再導入を省いた（処理は継続した）: {result.stderr.strip()}",
+            )
+        )
+        return None
+    try:
+        data = json.loads(result.stdout) if result.stdout.strip() else {}
+    except json.JSONDecodeError as error:
+        logger.warning(
+            log_format.format_status(
+                "mise", f"`ls --current --installed --json` の出力を解析できないため再導入を省いた（処理は継続した）: {error}"
+            )
+        )
+        return None
+    installs: dict[Path, tuple[str, str]] = {}
+    if not isinstance(data, dict):
+        return installs
+    for tool, entries in typing.cast("dict[object, object]", data).items():
+        if not isinstance(tool, str) or not isinstance(entries, list):
+            continue
+        for entry in typing.cast("list[object]", entries):
+            if not isinstance(entry, dict):
+                continue
+            entry_dict = typing.cast("dict[object, object]", entry)
+            install_path = entry_dict.get("install_path")
+            version = entry_dict.get("version")
+            if isinstance(install_path, str) and install_path and isinstance(version, str) and version:
+                installs[Path(install_path)] = (tool, version)
+    return installs
+
+
+def _owning_tool(directory: Path, installs: dict[Path, tuple[str, str]]) -> tuple[str, str] | None:
+    """配置先ディレクトリを配下に持つ導入先のうち最も深いもののツール名と版を返す。"""
+    owners = [install_path for install_path in installs if directory.is_relative_to(install_path)]
+    if not owners:
+        return None
+    return installs[max(owners, key=lambda install_path: len(install_path.parts))]
 
 
 def _ensure_orphan_shims_removed(mise_bin: Path) -> bool:

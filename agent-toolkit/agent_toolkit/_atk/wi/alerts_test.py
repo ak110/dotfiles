@@ -11,11 +11,6 @@ import pytest
 from agent_toolkit._atk.wi import alerts  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import json_command as _json_command  # noqa: E402  # pylint: disable=wrong-import-position
 
-# 機能無効判定は`collect_new_alerts`経由では応答本文の分岐を網羅できないため直接検証する。
-# private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
-_GH_DEPENDABOT_DISABLED_MESSAGE = alerts._GH_DEPENDABOT_DISABLED_MESSAGE  # pylint: disable=protected-access
-_is_disabled_response = alerts._is_disabled_response  # pylint: disable=protected-access
-
 
 def test_collect_github_ci_failures_latest_completed_only() -> None:
     """ワークフローごとに直近の完了runのみを確認し、失敗中のみアラート化する。"""
@@ -36,38 +31,6 @@ def test_collect_github_ci_failures_skips_in_progress_latest() -> None:
     ]
     result = alerts.collect_github_ci_failures("owner/repo", "master", run_list_fn=lambda _r, _b: runs)
     assert [alert.keys for alert in result] == [("github-run:2",)]
-
-
-def test_collect_github_dependabot_alerts_combines_all_open() -> None:
-    """未解決Dependabotアラート全件を1件へまとめ、脆弱バージョン範囲・修正版を含む。"""
-    payload = [
-        {
-            "number": 21,
-            "security_advisory": {"severity": "high"},
-            "dependency": {"package": {"name": "p21"}},
-            "security_vulnerability": {
-                "vulnerable_version_range": "< 1.2.0",
-                "first_patched_version": {"identifier": "1.3.0"},
-            },
-        },
-        {"number": 22, "security_advisory": {"severity": "low"}, "dependency": {"package": {"name": "p22"}}},
-        {
-            "number": 23,
-            "security_advisory": {"severity": "critical"},
-            "dependency": {"package": {"name": "p23"}},
-            "security_vulnerability": {"vulnerable_version_range": "< 2.0.0", "first_patched_version": None},
-        },
-    ]
-    result = alerts.collect_github_dependabot_alerts("owner/repo", alerts_fn=lambda _r: payload)
-    assert result is not None
-    assert result.keys == ("github-dependabot:21", "github-dependabot:22", "github-dependabot:23")
-    # 脆弱バージョン範囲・修正版に異なる値を用い、列を取り違えていないことを行全体の一致で検証する。
-    assert "| 21 | high | p21 | ? | < 1.2.0 | 1.3.0 |" in result.body
-    assert "| 22 | low | p22 | ? | ? | ? |" in result.body
-    # 修正版が存在しない脆弱性はGitHub REST APIが`first_patched_version`にnullを返すため、
-    # `?`へ正規化されクラッシュしないことを確認する。
-    assert "| 23 | critical | p23 | ? | < 2.0.0 | ? |" in result.body
-    assert alerts.collect_github_dependabot_alerts("owner/repo", alerts_fn=lambda _r: []) is None
 
 
 def test_collect_gitlab_ci_failures_only_when_latest_failed() -> None:
@@ -106,17 +69,19 @@ def test_collect_new_alerts_filters_keys_per_repository(tmp_path: pathlib.Path) 
     adopted = notes / "adopted"
     adopted.mkdir(parents=True)
     (adopted / "other.md").write_text(
-        "---\ntarget_repo: github.com/other/repo\ntype: awi\nalert_keys: github-dependabot:21\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/other/repo\ntype: awi\nalert_keys: github-run:21\n---\n\n本文\n",
         encoding="utf-8",
     )
-    payload = [{"number": 21, "security_advisory": {}, "dependency": {}}]
-    result = alerts.collect_new_alerts("github.com/owner/repo", None, notes, forge="github", dependabot_fn=lambda _r: payload)
-    assert [alert.keys for alert in result] == [("github-dependabot:21",)]
+    runs = [{"workflowName": "CI", "status": "completed", "conclusion": "failure", "databaseId": 21}]
+    result = alerts.collect_new_alerts("github.com/owner/repo", "main", notes, forge="github", run_list_fn=lambda _r, _b: runs)
+    assert [alert.keys for alert in result] == [("github-run:21",)]
     (adopted / "same.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\ntype: awi\nalert_keys: github-dependabot:21\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: awi\nalert_keys: github-run:21\n---\n\n本文\n",
         encoding="utf-8",
     )
-    assert not alerts.collect_new_alerts("github.com/owner/repo", None, notes, forge="github", dependabot_fn=lambda _r: payload)
+    assert not alerts.collect_new_alerts(
+        "github.com/owner/repo", "main", notes, forge="github", run_list_fn=lambda _r, _b: runs
+    )
 
 
 def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.Path) -> None:
@@ -192,21 +157,21 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("AI_AGENT", "1")
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
-    payload = [{"number": 21, "security_advisory": {}, "dependency": {}}]
+    runs = [{"workflowName": "CI", "status": "completed", "conclusion": "failure", "databaseId": 21}]
     count = alerts.check_and_submit_alerts(
         notes,
         "github.com/owner/repo",
         tmp_path / "repo",
         forge="github",
         now=datetime.datetime(2026, 1, 1),
-        git_fn=lambda _p, _a: None,
-        dependabot_fn=lambda _r: payload,
+        git_fn=lambda _p, args: "refs/remotes/origin/main" if args == ["symbolic-ref", "refs/remotes/origin/HEAD"] else None,
+        run_list_fn=lambda _r, _b: runs,
     )
     assert count == 1
     content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
-    assert "alert_keys: github-dependabot:21" in content
+    assert "alert_keys: github-run:21" in content
     assert "source: alert-monitor" in content
-    assert "# Dependabot未解決アラート1件" in content
+    assert "# ワークフローCI失敗" in content
     assert "## 反映内容と反映先" in content
     assert "反映先は`github.com/owner/repo`とする。" in content
     assert "## メリット" not in content
@@ -237,7 +202,6 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
         run_list_fn=lambda _repo, _branch: [
             {"workflowName": "CI", "status": "completed", "conclusion": "failure", "databaseId": 100}
         ],
-        dependabot_fn=lambda _repo: [{"number": 21, "security_advisory": {}, "dependency": {}}],
     )
     gitlab_count = alerts.check_and_submit_alerts(
         notes,
@@ -249,7 +213,7 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
         ci_list_fn=lambda _repo, _branch: [{"status": "failed", "id": 200}],
     )
 
-    assert github_count == 2
+    assert github_count == 1
     assert gitlab_count == 1
     awis = _saved_awis_by_heading(notes)
     workflow_completion = (
@@ -260,15 +224,9 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
         "## 完成条件\n\n対象パイプライン`200`の失敗が解消し、ブランチ`main`で後続のパイプラインが成功する。"
         "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
     )
-    dependabot_completion = (
-        "## 完成条件\n\n対象アラートが未解決でなくなる。"
-        "ロック済みバージョンが修正版以上の場合は、依存を変更せずアラートを棄却する。"
-        "修正版未満の場合は依存を更新する"
-    )
     assert workflow_completion in awis["# ワークフローCI失敗"]
     assert pipeline_completion in awis["# パイプライン200失敗"]
-    assert dependabot_completion in awis["# Dependabot未解決アラート1件"]
-    assert dependabot_completion != workflow_completion
+    assert set(awis) == {"# ワークフローCI失敗", "# パイプライン200失敗"}
 
 
 def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -289,47 +247,27 @@ def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.Mon
         forge="github",
         now=datetime.datetime(2026, 1, 1),
         git_fn=lambda _p, _a: None,
-        dependabot_fn=lambda _r: [],
     )
     assert count == 0
     assert not calls
 
 
-def test_collect_new_alerts_skips_disabled_dependabot_without_warning(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Dependabot機能が無効なリポジトリでは警告を出力せずアラート0件で返す。"""
-
-    def disabled_fn(_repo: str) -> list[dict]:
-        raise alerts.AlertFeatureDisabledError("dependabot/alerts取得: 対象リポジトリで機能が無効")
-
-    result = alerts.collect_new_alerts(
-        "github.com/o/r",
-        None,
-        tmp_path,
-        forge="github",
-        dependabot_fn=disabled_fn,
-    )
-    assert not result
-    assert capsys.readouterr().err == ""
-
-
 def test_collect_new_alerts_warns_on_generic_failure(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """機能無効以外の取得失敗は従来どおり警告を出力する。"""
+    """CI状態の取得失敗は待機を止めずに警告を出力する。"""
 
-    def failing_fn(_repo: str) -> list[dict]:
-        raise alerts.AlertCollectError("dependabot/alerts取得が失敗しました（exit=1）")
+    def failing_fn(_repo: str, _branch: str) -> list[dict]:
+        raise alerts.AlertCollectError("gh run list（o/r）が失敗しました（exit=1）")
 
     result = alerts.collect_new_alerts(
         "github.com/o/r",
-        None,
+        "main",
         tmp_path,
         forge="github",
-        dependabot_fn=failing_fn,
+        run_list_fn=failing_fn,
     )
     assert not result
     stderr = capsys.readouterr().err
-    assert "Dependabotアラートの取得に失敗しました" in stderr
+    assert "GitHub CI状態の取得に失敗しました" in stderr
     # 認証の確認手段を次の操作として続ける。
     assert "gh auth status" in stderr.split("\n次の操作: ", 1)[1]
 
@@ -338,7 +276,7 @@ def test_collect_new_alerts_decodes_utf8_json_bytes_without_locale_dependency(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """公開収集経路が非ASCIIのUTF-8 JSON bytesをアラートへ変換する。"""
-    payload = [{"number": 21, "security_advisory": {"summary": "日本語"}, "dependency": {}}]
+    payload = [{"workflowName": "日本語CI", "status": "completed", "conclusion": "failure", "databaseId": 21}]
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         assert "text" not in _kwargs
@@ -346,10 +284,10 @@ def test_collect_new_alerts_decodes_utf8_json_bytes_without_locale_dependency(
 
     monkeypatch.setattr(_json_command.subprocess, "run", fake_run)
 
-    result = alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
+    result = alerts.collect_new_alerts("github.com/owner/repo", "main", tmp_path, forge="github")
 
-    assert [alert.keys for alert in result] == [("github-dependabot:21",)]
-    assert "日本語" in result[0].body
+    assert [alert.keys for alert in result] == [("github-run:21",)]
+    assert "日本語CI" in result[0].body
 
 
 def test_collect_new_alerts_warns_when_json_stdout_is_not_utf8(
@@ -362,7 +300,7 @@ def test_collect_new_alerts_warns_when_json_stdout_is_not_utf8(
 
     monkeypatch.setattr(_json_command.subprocess, "run", fake_run)
 
-    assert not alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
+    assert not alerts.collect_new_alerts("github.com/owner/repo", "main", tmp_path, forge="github")
     assert "標準出力をUTF-8としてデコードできません" in capsys.readouterr().err
 
 
@@ -376,21 +314,5 @@ def test_collect_new_alerts_keeps_non_utf8_stderr_as_bytes_notation(
 
     monkeypatch.setattr(_json_command.subprocess, "run", fake_run)
 
-    assert not alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
+    assert not alerts.collect_new_alerts("github.com/owner/repo", "main", tmp_path, forge="github")
     assert "\\x81" in capsys.readouterr().err
-
-
-def test_is_disabled_response_matches_only_known_message() -> None:
-    """403かつ既知の機能無効メッセージと完全一致する応答のみを機能無効と判定する。"""
-    known = (_GH_DEPENDABOT_DISABLED_MESSAGE,)
-    disabled = '{"message":"Dependabot alerts are disabled for this repository.","status":"403"}'
-    other_disabled = '{"message":"Your account has been disabled.","status":"403"}'
-    forbidden = '{"message":"Resource not accessible by personal access token","status":"403"}'
-    not_found = '{"message":"Not Found","status":"404"}'
-    assert _is_disabled_response(disabled, known) is True
-    assert _is_disabled_response(other_disabled, known) is False
-    assert _is_disabled_response(forbidden, known) is False
-    assert _is_disabled_response(not_found, known) is False
-    assert _is_disabled_response(disabled, ()) is False
-    assert _is_disabled_response("[]", known) is False
-    assert _is_disabled_response("not json", known) is False

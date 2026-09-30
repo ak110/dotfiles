@@ -1,4 +1,8 @@
-"""自動コードレビュー監査で判定済みのreview識別子を記録する。"""
+"""自動コードレビュー監査の未判定対象を取得し、判定済みの識別子を記録する。
+
+対象はGitHub Copilot由来のreviewとthread、およびDependabotアラートである。
+Dependabotアラートは処理回ごとの監査で拾うため、`atk wi process-loop`の待機中確認も同じ取得と判定を使う。
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ import contextlib
 import datetime
 import json
 import re
+import urllib.parse
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -21,7 +26,11 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
-_IDENTIFIER_RE = re.compile(r"^[1-9][0-9]*$")
+_IDENTIFIER_RE = re.compile(r"^(?:dependabot:)?[1-9][0-9]*$")
+DEPENDABOT_PREFIX = "dependabot:"
+"""判定済み記録でDependabotアラート番号をreviewの`databaseId`と区別する接頭辞。"""
+_DEPENDABOT_DISABLED_MESSAGE = "Dependabot alerts are disabled for this repository."
+"""Dependabotアラート機能が無効なリポジトリへGitHub APIがHTTP 403で返す本文。実測で確認した文言をそのまま用いる。"""
 _GH_TIMEOUT = 30.0
 _PULL_REQUESTS_QUERY = (
     "query($owner:String!,$name:String!,$cursor:String){repository(owner:$owner,name:$name){"
@@ -66,7 +75,8 @@ def _validate_repository(repository: str) -> None:
 def _validate_identifiers(identifiers: list[str]) -> None:
     if any(_IDENTIFIER_RE.fullmatch(identifier) is None for identifier in identifiers):
         raise _next_action.ActionableError(
-            "10進数の正の整数ではない識別子がある", next_action="識別子は10進数の正の整数で指定する"
+            "10進数の正の整数でも`dependabot:<番号>`でもない識別子がある",
+            next_action="reviewは10進数の正の整数、Dependabotアラートは`dependabot:<番号>`で指定する",
         )
 
 
@@ -86,8 +96,14 @@ def _repository_records(records: dict[str, dict[str, str]], repository: str) -> 
     return repository_records if isinstance(repository_records, dict) else {}
 
 
+def _identifier_sort_key(identifier: str) -> tuple[bool, int]:
+    """reviewの`databaseId`を先に、各種別の中では番号の昇順に並べる。"""
+    is_dependabot = identifier.startswith(DEPENDABOT_PREFIX)
+    return is_dependabot, int(identifier.removeprefix(DEPENDABOT_PREFIX))
+
+
 def _print_identifiers(records: dict[str, str]) -> None:
-    for identifier in sorted(records, key=int):
+    for identifier in sorted(records, key=_identifier_sort_key):
         print(identifier)
 
 
@@ -169,8 +185,143 @@ def _copilot_author(author: Any) -> bool:
     return isinstance(author, dict) and author.get("__typename") == "Bot" and "copilot" in str(author.get("login", "")).lower()
 
 
+def _error_body(stdout: str) -> dict:
+    """`gh api`が失敗時に標準出力へ書いた応答本文を返す。解釈できない場合は空の辞書を返す。
+
+    `--slurp`付きの呼び出しは本文を配列で包むため、要素1件の配列も本文として扱う。
+    """
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(payload, list) and len(payload) == 1:
+        payload = payload[0]
+    return payload if isinstance(payload, dict) else {}
+
+
+def _dependabot_error(reason: str) -> _next_action.ActionableError:
+    return _next_action.ActionableError(reason, next_action=_GRAPHQL_NEXT_ACTION)
+
+
+class _NotFound(Exception):
+    """REST APIがHTTP 404を返したことを呼び出し元の分岐へ伝える。"""
+
+
+class _Forbidden(Exception):
+    """REST APIがHTTP 403を返したことと応答本文のmessageを呼び出し元の分岐へ伝える。"""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _gh_rest(path: str, *, operation: str, paginate: bool = False, not_found_ok: bool = False) -> Any:
+    """REST APIの応答を返す。`not_found_ok`ではHTTP 404を`None`で返し、それ以外の失敗は非0終了の例外にする。"""
+    command = ["gh", "api", *(("--paginate", "--slurp") if paginate else ()), path]
+
+    def failure(error: _json_command.Failure) -> Exception:
+        if error.kind == "exit" and not_found_ok and str(_error_body(error.stdout).get("status")) == "404":
+            return _NotFound()
+        if error.kind == "exit" and str(_error_body(error.stdout).get("status")) == "403":
+            return _Forbidden(str(_error_body(error.stdout).get("message", "")))
+        return _dependabot_error(f"{operation}に失敗した: {error.kind}: {error.detail or error.stderr.strip()}")
+
+    try:
+        return _json_command.run(command, _GH_TIMEOUT, error_factory=failure, strict_stderr=False)
+    except _NotFound:
+        return None
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    """辞書でない値（GitHub APIがnullを返す項目など）を空の辞書として扱う。"""
+    return value if isinstance(value, dict) else {}
+
+
+def _optional_str(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def dependabot_pending(repository: str) -> dict[str, Any]:
+    """未判定のopenなDependabotアラートを判定区分付きで返す。
+
+    戻り値の`status`は`available`・`disabled`（機能が無効）・`unauthorized`（権限不足。`message`に応答本文）のいずれかとする。
+    `category`はマニフェストが既定ブランチに実在しなければ`inaccurate`、実在すれば`manifest_present`とする。
+    機能無効と権限不足以外の取得失敗は`ActionableError`を送出する。
+    """
+    _validate_repository(repository)
+    try:
+        pages = _gh_rest(
+            f"repos/{repository}/dependabot/alerts?state=open&per_page=100",
+            operation="Dependabotアラートの取得",
+            paginate=True,
+        )
+    except _Forbidden as forbidden:
+        if forbidden.message == _DEPENDABOT_DISABLED_MESSAGE:
+            return {"status": "disabled", "alerts": []}
+        return {"status": "unauthorized", "alerts": [], "message": forbidden.message}
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+        raise _dependabot_error("Dependabotアラートの応答形状が不正である")
+    recorded = _repository_records(_read_records(_record_path()), repository)
+    items = [item for page in pages for item in page]
+    unjudged: list[dict[str, Any]] = []
+    for item in items:
+        number = item.get("number") if isinstance(item, dict) else None
+        if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
+            raise _dependabot_error("Dependabotアラートの番号が不正である")
+        if f"{DEPENDABOT_PREFIX}{number}" not in recorded:
+            unjudged.append(item)
+    alerts: list[dict[str, Any]] = []
+    if unjudged:
+        default_branch = _default_branch(repository)
+        presence: dict[str, bool] = {}
+        for item in sorted(unjudged, key=lambda alert: alert["number"]):
+            dependency = _mapping(item.get("dependency"))
+            manifest_path = dependency.get("manifest_path")
+            if not isinstance(manifest_path, str) or not manifest_path:
+                raise _dependabot_error(f"Dependabotアラート{item['number']}のmanifest_pathが不正である")
+            if manifest_path not in presence:
+                presence[manifest_path] = _manifest_exists(repository, manifest_path, default_branch)
+            package = _mapping(dependency.get("package"))
+            patched = _mapping(_mapping(item.get("security_vulnerability")).get("first_patched_version"))
+            alerts.append(
+                {
+                    "number": item["number"],
+                    "manifest_path": manifest_path,
+                    "package": _optional_str(package.get("name")),
+                    "ecosystem": _optional_str(package.get("ecosystem")),
+                    "first_patched_version": _optional_str(patched.get("identifier")),
+                    "category": "manifest_present" if presence[manifest_path] else "inaccurate",
+                }
+            )
+    return {"status": "available", "alerts": alerts}
+
+
+def _default_branch(repository: str) -> str:
+    try:
+        response = _gh_rest(f"repos/{repository}", operation="既定ブランチの取得")
+    except _Forbidden as forbidden:
+        raise _dependabot_error(f"既定ブランチの取得が拒否された: {forbidden.message}") from forbidden
+    branch = response.get("default_branch") if isinstance(response, dict) else None
+    if not isinstance(branch, str) or not branch:
+        raise _dependabot_error("既定ブランチを応答から取得できない")
+    return branch
+
+
+def _manifest_exists(repository: str, manifest_path: str, branch: str) -> bool:
+    """既定ブランチにマニフェストが実在するかを返す。HTTP 404だけを不在とし、他の失敗は例外にする。"""
+    path = urllib.parse.quote(manifest_path, safe="/")
+    ref = urllib.parse.quote(branch, safe="")
+    try:
+        response = _gh_rest(
+            f"repos/{repository}/contents/{path}?ref={ref}", operation=f"{manifest_path}の実在確認", not_found_ok=True
+        )
+    except _Forbidden as forbidden:
+        raise _dependabot_error(f"{manifest_path}の実在確認が拒否された: {forbidden.message}") from forbidden
+    return response is not None
+
+
 def _pending(repository: str) -> int:
-    """未判定reviewと未解決のCopilot由来threadがあるPRを返す。"""
+    """未判定reviewと未解決のCopilot由来threadがあるPR、および未判定のDependabotアラートを返す。"""
     _validate_repository(repository)
     owner, name = repository.split("/", 1)
     recorded = _repository_records(_read_records(_record_path()), repository)
@@ -214,10 +365,12 @@ def _pending(repository: str) -> int:
                 raise _graphql_error("Copilot review threadの状態または先頭commentが不正である")
             if not thread["isResolved"] and first and _copilot_author(first[0].get("author")):
                 threads.add(number)
+    dependabot = dependabot_pending(repository)
     result = {
         "reviews": [{"pr": number, "databaseId": identifier} for number, identifier in sorted(reviews)],
         "threads": [{"pr": number} for number in sorted(threads)],
-        "counts": {"reviews": len(reviews), "threads": len(threads)},
+        "dependabot": dependabot,
+        "counts": {"reviews": len(reviews), "threads": len(threads), "dependabot": len(dependabot["alerts"])},
     }
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -235,7 +388,9 @@ def _mark(repository: str, identifiers: list[str]) -> int:
         for identifier in identifiers:
             repository_records.setdefault(identifier, recorded_at)
         atomic_write(path, json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True) + "\n", fsync=True)
-    _outcome.report_success(f"判定済みreviewを記録した: {repository}（{len(identifiers)}件）", _outcome.ResultKind.VALUE_OUTPUT)
+    _outcome.report_success(
+        f"判定済みの識別子を記録した: {repository}（{len(identifiers)}件）", _outcome.ResultKind.VALUE_OUTPUT
+    )
     _print_identifiers(repository_records)
     return 0
 
@@ -256,11 +411,15 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     pending_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
     mark_parser = _atk_help.add_command(subcommands, "mark", **_atk_help.HELP["atk review-audit mark"])
     mark_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
-    mark_parser.add_argument("identifiers", nargs="+", help="記録するreviewのdatabaseId。正の整数で指定する。")
+    mark_parser.add_argument(
+        "identifiers",
+        nargs="+",
+        help="記録する識別子。reviewはdatabaseIdの正の整数、Dependabotアラートは`dependabot:<番号>`で指定する。",
+    )
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """argparse結果を判定済みreviewの操作へ振り分ける。"""
+    """argparse結果を判定済み記録と未判定対象の操作へ振り分ける。"""
     if args.review_audit_subcommand == "list":
         return _list(args.repo)
     if args.review_audit_subcommand == "pending":

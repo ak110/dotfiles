@@ -1,8 +1,9 @@
 """agent-toolkitプラグイン配下の`atk wi process-loop`アラート自動検出補助モジュール。
 
-対象リポジトリのCI失敗（GitHub Actions run失敗・GitLabパイプライン失敗）とGitHub
-Dependabotアラートの未解決分を収集し、AWIへの重複投入を防いだうえで
-`add_entries`へ引き渡す本文を組み立てる。GitLabの脆弱性アラート（Dependency Scanning等）は
+対象リポジトリのCI失敗（GitHub Actions run失敗・GitLabパイプライン失敗）を収集し、
+AWIへの重複投入を防いだうえで`add_entries`へ引き渡す本文を組み立てる。
+GitHubのDependabotアラートは処理回ごとの自動コードレビュー監査（`atk review-audit pending`）が扱い、
+本モジュールはAWIを起票しない。GitLabの脆弱性アラート（Dependency Scanning等）は
 GitLab Ultimateプラン限定機能のため対象外とする。
 """
 
@@ -29,7 +30,6 @@ _ALL_AWI_STATES = WI_STATES
 """重複投入の判定で走査する保存状態。全ての保存状態を対象とする。"""
 
 GhRunListFn = Callable[[str, str], list[dict]]
-GhDependabotAlertsFn = Callable[[str], list[dict]]
 GlabCiListFn = Callable[[str, str], list[dict]]
 GitCaptureFn = Callable[[pathlib.Path, list[str]], str | None]
 
@@ -41,39 +41,7 @@ ALERT_FAILURE_NEXT_ACTION = (
 
 
 class AlertCollectError(RuntimeError):
-    """CI・Dependabotアラート収集中に発生した回復不能な失敗（CLI不在・非ゼロ終了・JSON不正等）。"""
-
-
-_GH_DEPENDABOT_DISABLED_MESSAGE = "Dependabot alerts are disabled for this repository."
-"""Dependabotアラート機能が無効なリポジトリに対しGitHub APIが返すメッセージ本文。
-
-`gh api`はこのメッセージを含むJSONを標準出力へ、要約1行を標準エラーへ出力する。実測で確認した文言をそのまま用いる。
-"""
-
-
-class AlertFeatureDisabledError(AlertCollectError):
-    """対象リポジトリで対象機能が無効であることを示す応答。
-
-    取得失敗ではなく設定上の正常状態のため、呼び出し側は警告を出力せず収集対象から除外する。
-    GitLabの脆弱性アラートを上位エディション限定機能としてあらかじめ対象外とする既存方針へ揃える。
-    """
-
-
-def _is_disabled_response(stdout: str, disabled_messages: tuple[str, ...]) -> bool:
-    """応答本文がHTTP 403かつ既知の機能無効メッセージと一致するかを判定する。
-
-    権限不足・トークン失効・組織の利用停止など別原因の403を機能無効と誤認しないよう、
-    メッセージは呼び出し側が渡した既知文言との完全一致でのみ判定する。
-    `disabled_messages`が空の呼び出し（CI状態取得など機能無効の概念が無い経路）は常に`False`となる。
-    JSON配列を返す正常応答および解析できない応答も`False`を返す。
-    """
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(payload, dict) or str(payload.get("status")) != "403":
-        return False
-    return str(payload.get("message", "")) in disabled_messages
+    """CI状態の収集中に発生した回復不能な失敗（CLI不在・非ゼロ終了・JSON不正等）。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -116,14 +84,8 @@ def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _r
     return None
 
 
-def _run_alert_json_command(
-    command: list[str], *, timeout: float, operation: str, disabled_messages: tuple[str, ...] = ()
-) -> list[dict]:
-    """外部CLIを実行し、JSON配列応答を返す。
-
-    `disabled_messages`を渡した呼び出しでは、HTTP 403かつ渡されたメッセージと一致する応答を
-    `AlertFeatureDisabledError`として区別する。既定は空で、従来どおり全失敗を`AlertCollectError`とする。
-    """
+def _run_alert_json_command(command: list[str], *, timeout: float, operation: str) -> list[dict]:
+    """外部CLIを実行し、JSON配列応答を返す。"""
 
     def error_factory(failure: _json_command.Failure) -> Exception:
         if failure.kind == "timeout":
@@ -133,8 +95,6 @@ def _run_alert_json_command(
         if failure.kind == "decode":
             return AlertCollectError(f"{operation}の標準出力をUTF-8としてデコードできません: {failure.detail}")
         if failure.kind == "exit":
-            if _is_disabled_response(failure.stdout, disabled_messages):
-                return AlertFeatureDisabledError(f"{operation}: 対象リポジトリで機能が無効")
             return AlertCollectError(f"{operation}が失敗しました（exit={failure.returncode}）: {failure.stderr.strip()}")
         return AlertCollectError(f"{operation}の応答をJSONとして解析できません: {failure.detail}")
 
@@ -194,65 +154,6 @@ def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunList
         )
         alerts.append(Alert(keys=(f"github-run:{run_id}",), title=f"ワークフロー{name}失敗", body=body, completion=completion))
     return alerts
-
-
-def _run_gh_dependabot_alerts(repo: str) -> list[dict]:
-    """`gh api --paginate`で未解決Dependabotアラート全件を返す。
-
-    リポジトリ側でDependabotアラート機能が無効な場合はHTTP 403が返るため、
-    この応答のみ`AlertFeatureDisabledError`として取得失敗と区別する。
-    """
-    return _run_alert_json_command(
-        ["gh", "api", "--paginate", f"/repos/{repo}/dependabot/alerts?state=open&per_page=100"],
-        timeout=_GH_SUBPROCESS_TIMEOUT,
-        operation=f"dependabot/alerts取得（{repo}）",
-        disabled_messages=(_GH_DEPENDABOT_DISABLED_MESSAGE,),
-    )
-
-
-def collect_github_dependabot_alerts(repo: str, *, alerts_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts) -> Alert | None:
-    """未解決Dependabotアラート全件を1件のAlertへまとめる。未解決0件なら`None`を返す。"""
-    payload = alerts_fn(repo)
-    if not payload:
-        return None
-    keys = tuple(f"github-dependabot:{item['number']}" for item in payload)
-
-    def _first_patched_version(item: dict) -> str:
-        # GitHub REST APIは修正版が存在しない脆弱性で`first_patched_version`にnullを返す
-        # （`security_vulnerability`オブジェクト自体がnullの場合も同様）。
-        # `.get(key, {})`は既存キーの値がNoneの場合はNoneをそのまま返すため、
-        # `or {}`でNone・キー欠落の双方を空dictへ正規化してから後続の`.get`を呼ぶ。
-        vulnerability = item.get("security_vulnerability") or {}
-        patched = vulnerability.get("first_patched_version") or {}
-        return patched.get("identifier", "?")
-
-    rows = "\n".join(
-        f"| {item['number']} | {item.get('security_advisory', {}).get('severity', '?')} | "
-        f"{item.get('dependency', {}).get('package', {}).get('name', '?')} | "
-        f"{item.get('security_advisory', {}).get('summary', '?')} | "
-        f"{(item.get('security_vulnerability') or {}).get('vulnerable_version_range', '?')} | "
-        f"{_first_patched_version(item)} |"
-        for item in payload
-    )
-    body = (
-        f"Dependabotが未解決の脆弱性アラートを{len(payload)}件報告している。\n\n"
-        "| 番号 | 深刻度 | パッケージ | 概要 | 脆弱バージョン範囲 | 修正版 |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
-        f"{rows}\n\n"
-        "(1) 対象パッケージのロック済みバージョンと表の修正版を突き合わせ、既に修正版以上であれば依存更新は不要である。\n"
-        "(2) 修正版以上の場合はアラートが実態より遅れて未クローズになっている状態であるため、"
-        f"`gh api --method PATCH /repos/{repo}/dependabot/alerts/<番号> -f state=dismissed "
-        "-f dismissed_reason=inaccurate`に突合結果を記したコメントを添えてdismissし、AWIは採用として処理する。\n"
-        "(3) 修正版未満の場合のみ依存を更新して解消する。更新できない場合は理由を記録して不採用とする。\n"
-        f"詳細は`gh api /repos/{repo}/dependabot/alerts/<番号>`で取得できる。"
-    )
-    completion = (
-        "対象アラートが未解決でなくなる。"
-        "ロック済みバージョンが修正版以上の場合は、依存を変更せずアラートを棄却する。"
-        "修正版未満の場合は依存を更新する"
-    )
-
-    return Alert(keys=keys, title=f"Dependabot未解決アラート{len(payload)}件", body=body, completion=completion)
 
 
 def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
@@ -327,15 +228,9 @@ def collect_new_alerts(
     *,
     forge: str,
     run_list_fn: GhRunListFn = _run_gh_run_list,
-    dependabot_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts,
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
 ) -> list[Alert]:
-    """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。
-
-    対象リポジトリで機能が無効な種別（`AlertFeatureDisabledError`）は
-    設定上の正常状態のため警告を出力せず除外する。
-    設定が変わらない限り同じ応答が返り続けるため、警告を出力すると監視間隔ごとに恒久的な雑音となる。
-    """
+    """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。"""
     host = repo_id.split("/", 1)[0]
     resolved_forge = forge if forge != "auto" else ("github" if host == "github.com" else "gitlab")
     repo_path = repo_id.split("/", 1)[1] if "/" in repo_id else repo_id
@@ -346,15 +241,6 @@ def collect_new_alerts(
                 candidates.extend(collect_github_ci_failures(repo_path, branch, run_list_fn=run_list_fn))
             except AlertCollectError as exc:
                 _next_action.report(f"警告: GitHub CI状態の取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION)
-        try:
-            dependabot_alert = collect_github_dependabot_alerts(repo_path, alerts_fn=dependabot_fn)
-        except AlertFeatureDisabledError:
-            dependabot_alert = None
-        except AlertCollectError as exc:
-            _next_action.report(f"警告: Dependabotアラートの取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION)
-            dependabot_alert = None
-        if dependabot_alert is not None:
-            candidates.append(dependabot_alert)
     elif branch is not None:
         try:
             candidates.extend(collect_gitlab_ci_failures(repo_path, branch, ci_list_fn=ci_list_fn))
@@ -373,7 +259,6 @@ def check_and_submit_alerts(
     now: datetime.datetime,
     git_fn: GitCaptureFn = _run_git_capture,
     run_list_fn: GhRunListFn = _run_gh_run_list,
-    dependabot_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts,
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
 ) -> int:
     """アラートを収集・重複除外し、新規分をAWIへ投入した件数を返す。"""
@@ -383,7 +268,6 @@ def check_and_submit_alerts(
         private_notes,
         forge=forge,
         run_list_fn=run_list_fn,
-        dependabot_fn=dependabot_fn,
         ci_list_fn=ci_list_fn,
     )
     if not alerts:

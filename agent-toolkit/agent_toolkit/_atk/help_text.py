@@ -69,7 +69,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi start-processing": {
         "summary": "AWIまたはUWIをprocessingへ移して処理中にする",
-        "description": "目的: inboxのAWIまたはUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。UWIの回答が是正または保留中の元項目での作業を求め、その作業を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
+        "description": "目的: inboxのAWIまたはUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。UWIの回答が是正または保留中の元項目での作業を求め、その作業を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。`--all`ではholdの項目も候補にする。\n前提: ファイル名で指定する対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
         "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
     "atk wi hold": {
@@ -89,12 +89,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi adopt": {
         "summary": "採用として終端し対応結果を記録する",
-        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの作成者日時・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinboxまたはprocessingからadoptedへファイルを移動する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの作成者日時・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの作成者日時・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからadoptedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの作成者日時・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
         "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"',
     },
     "atk wi reject": {
         "summary": "不採用として終端し理由を記録する",
-        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinboxまたはprocessingからrejectedへファイルを移動する。`--note`または`--note-file`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=rejected`で再処理へ戻す。",
+        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからrejectedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=rejected`で再処理へ戻す。",
         "epilog": '実行例:\n\n  atk wi reject 20260901-072734-001.md --note="現行実装で解消済み"',
     },
     "atk wi rm": {
@@ -129,7 +129,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "AWI消化の常駐処理を開始する",
-        "description": "目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行する常駐処理を開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_model設定で決まるオーケストレーターを起動する。待機中はCIの失敗とDependabotのアラートを検出してAWIを投入する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
+        "description": "目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行する常駐処理を開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_model設定で決まるオーケストレーターを起動する。待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せず処理回を起動し、処理回の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
         "epilog": "実行例:\n\n  atk wi process-loop --worktree",
     },
     "atk wi process-loop abort": {
@@ -234,7 +234,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを詳しい状態とともに一覧表示する",
-        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では全rootのClaude Code・Codex識別子を見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。\n前提: 既定では未回収結果を持たない終端済みsessionを除く。エージェント環境で会話rootとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。\n前提: 既定では未回収結果を持たない終端済みsessionを除く。エージェント環境で会話rootとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
     },
     "atk agents show": {
@@ -339,24 +339,24 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk review-table validate /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-audit": {
-        "summary": "自動コードレビュー監査の未処置対象と判定済みreviewを扱う",
-        "description": "目的: Copilot由来reviewの未処置対象を取得し、分類を確定したreview本文の識別子を対象リポジトリごとに記録する。\n利用場面: 監査前に対象を調べるとき、分類の確定後に識別子を記録するとき。\n対象と出力: GitHub APIと状態ディレクトリの`review-audit.json`を読み、markだけが記録を更新する。対象リポジトリの作業ツリーは変更しない。サブコマンドを指定しない場合は一覧を表示する。\n前提: リポジトリを`<owner>/<repo>`形式で指定する。\n復元・後始末: 記録が失われた場合は次回の監査が同じ分類を再導出する。",
+        "summary": "自動コードレビュー監査の未処置対象と判定済みの識別子を扱う",
+        "description": "目的: Copilot由来reviewとDependabotアラートの未処置対象を取得し、判定を確定したreview本文とアラートの識別子を対象リポジトリごとに記録する。\n利用場面: 監査前に対象を調べるとき、分類の確定後に識別子を記録するとき。\n対象と出力: GitHub APIと状態ディレクトリの`review-audit.json`を読み、markだけが記録を更新する。対象リポジトリの作業ツリーは変更しない。サブコマンドを指定しない場合は一覧を表示する。\n前提: リポジトリを`<owner>/<repo>`形式で指定する。\n復元・後始末: 記録が失われた場合は次回の監査が同じ分類を再導出する。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles\n  atk review-audit mark --repo=ak110/dotfiles 123456789",
     },
     "atk review-audit list": {
-        "summary": "判定済みreviewの識別子を列挙する",
-        "description": "目的: 指定したリポジトリについて記録済みのreview識別子を昇順で列挙する。\n利用場面: 自動コードレビュー監査が、取得したreview本文から判定済みのものを除くとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を読み取り、標準出力へ識別子を1件1行で書く。`--output-file`を指定した場合は標準出力の内容を指定されたファイルへ保存し、標準出力へ保存先パスと行数だけを書く。記録が無い場合は何も書かず終了コード0で終わる。ファイルは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "summary": "判定済みの識別子を列挙する",
+        "description": "目的: 指定したリポジトリについて記録済みの識別子を列挙する。review識別子を昇順で並べ、続けて`dependabot:<番号>`を番号の昇順で並べる。\n利用場面: 自動コードレビュー監査が、取得したreview本文から判定済みのものを除くとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を読み取り、標準出力へ識別子を1件1行で書く。`--output-file`を指定した場合は標準出力の内容を指定されたファイルへ保存し、標準出力へ保存先パスと行数だけを書く。記録が無い場合は何も書かず終了コード0で終わる。ファイルは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-audit list --repo=ak110/dotfiles",
     },
     "atk review-audit pending": {
-        "summary": "未処置のCopilot reviewと未解決threadがあるPRを取得する",
-        "description": "目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、またはmerge-prで対象PRを判定する前。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、各件数を持つJSONを1行で出力する。取得失敗とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
+        "summary": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する",
+        "description": "目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストが既定ブランチに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles",
     },
     "atk review-audit mark": {
-        "summary": "判定済みreviewの識別子を記録する",
-        "description": "目的: 分類を確定したreview識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済みまたは根拠付き対応不要と分類したreview本文を記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、更新後の対象リポジトリの識別子を昇順で標準出力へ書く。記録済みの識別子は重複させない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へ正の整数の識別子を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
-        "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 987654321",
+        "summary": "判定済みの識別子を記録する",
+        "description": "目的: 分類を確定したreviewとDependabotアラートの識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済みまたは根拠付き対応不要と分類したreview本文と、判定したDependabotアラートを記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、更新後の対象リポジトリの識別子を`atk review-audit list`と同じ順で標準出力へ書く。記録済みの識別子は重複させない。Dependabotアラートは`dependabot:<番号>`で記録し、reviewの識別子と区別する。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へreviewの正の整数の識別子または`dependabot:<番号>`を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
+        "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 dependabot:48",
     },
 }
 

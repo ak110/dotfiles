@@ -7,7 +7,8 @@ typos = "latest"
 
 # actionlintの配布物はインストールrootへ実行ファイルと並んで`man`・`docs`のディレクトリを展開する。
 # `symlink_bins`は導入時にだけ実行ファイルの配置を生成するため、この設定を変更する場合は、
-# 同じ変更でローカル環境とCIのactionlintを強制再インストールする。
+# 同じ変更でCIのactionlintを強制再インストールする。導入済みのローカル環境は、chezmoi applyの後処理が
+# 実行ファイルの配置先の欠落を検出して強制再インストールする。
 [tools.actionlint]
 version = "latest"
 symlink_bins = true

@@ -171,6 +171,10 @@ def warn_question_quality(filename: str, message: str, question_type: str | None
         )
 
 
+_ANSWER_TARGET_STATES = (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
+"""状態を省略した回答対象の探索順。探索と対象不在のエラー文の双方が参照する。"""
+
+
 def _resolve_active_entry(
     private_notes: pathlib.Path,
     filename: str,
@@ -188,7 +192,7 @@ def _resolve_active_entry(
         if candidate.is_file():
             return candidate
         raise FileNotFoundError(filename)
-    for candidate_state in (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD):
+    for candidate_state in _ANSWER_TARGET_STATES:
         candidate = _validate_filename(filename, private_notes / candidate_state)
         if candidate.is_file():
             return candidate
@@ -227,7 +231,8 @@ def _answer_noninteractive(private_notes: pathlib.Path, *, filename: str, answer
         changed = answer_uwi(private_notes, filename=filename, answer=answer)
     except FileNotFoundError:
         _outcome.report_failure(
-            f"inbox・processingのいずれにも存在しない: {filename}", next_action="実在するファイル名を指定し直す"
+            f"{'・'.join(_ANSWER_TARGET_STATES)}のいずれにも存在しない: {filename}",
+            next_action="実在するファイル名を指定し直す",
         )
         sys.exit(1)
     except WebInputError as error:

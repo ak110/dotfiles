@@ -2,7 +2,8 @@
 
 `agent-toolkit:process-wi`の自動コードレビュー監査を担当する主体が、対象GitHubリポジトリの成果物を変更せずに実行する。
 本書でいう成果物は、対象リポジトリの追跡ファイルとその履歴を指す。
-Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿およびthreadの解決は成果物の変更に当たらず、本書が定める範囲で監査担当が実行する。
+Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿、threadの解決およびDependabotアラートの却下は成果物の変更に当たらず、本書が定める範囲で監査担当が実行する。
+本書はCopilot由来のレビュー指摘を「対象」から「判定済みの記録」までの節で、Dependabotアラートを「Dependabotアラート」節で扱う。
 監査は呼び出し時点の保存結果を1回読むだけで完了する。新しいレビューの生成要求と到着の能動的な待機は、本監査の対象外とする。
 
 ## 対象
@@ -58,7 +59,7 @@ gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/comments?per_page=100'
 ## 判定
 
 pendingのJSONを受け取った場合は、`reviews`の各reviewを判定対象とし、`threads`の各PRをinline commentの取得対象とする。JSONを受け取れずGraphQLで代替した場合だけ、判定前に`atk review-audit list --repo <OWNER>/<REPO>`で判定済みreview本文のdatabaseIdを取得する。この代替手順では列挙した全reviewのdatabaseIdとauthorからCopilot由来のreviewを特定し、判定済みのdatabaseIdと一致するreviewを除く。除いたdatabaseIdの一覧と件数を呼び出し元へ返す。全Pull Requestのreviewの列挙は本記録の有無で変えない。
-判定対象に残ったreviewの`<PR>`と`<REVIEW_ID>`へPull Request番号とdatabaseIdを渡し、本文を1件ずつ取得する。実行直前に`gh api --help`で受理形式を確かめ、各応答の`id`が取得予定のdatabaseIdと一致することを確認する。
+判定対象に残ったreviewの`<PR>`と`<REVIEW_ID>`へPull Request番号とdatabaseIdを渡し、本文を1件ずつ取得する。同じセッションで`gh api`の受理形式が未確定の場合は、実行前に`gh api --help`で確かめる。各応答の`id`が取得予定のdatabaseIdと一致することを確認する。
 
 ```sh
 gh api 'repos/{owner}/{repo}/pulls/<PR>/reviews/<REVIEW_ID>' > <管理対象一時領域のJSONファイル>
@@ -128,3 +129,67 @@ gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 記録の読み書きは`atk review-audit`だけで行う。記録ファイルのパス解決と保存形式をこのコマンドが定め、別の手段で同じファイルを読み書きすると形式が分岐するためである。
 記録先は対象GitHubリポジトリの外にある状態ディレクトリであり、本記録は成果物を変更しない制約の対象に当たらない。
 本記録は分類の再導出を省く索引であり、分類と根拠はGitHubへ残す記録が保持する。成果物の変更により再判定が必要になった指摘は、その変更に対する新しいreviewが別のdatabaseIdで到着するため、記録の無効化を経ずに再判定できる。
+
+## Dependabotアラート
+
+対象GitHubリポジトリでopenのDependabotアラートのうち、判定済みとして記録されていないものを判定し、削除済みマニフェストに紐づく誤検知を却下する。
+処理回ごとの監査で拾うことで、キューが空かどうかにかかわらずアラートが処理の対象に入る。
+
+### 取得と判定区分
+
+通常の監査は、`atk review-audit pending`のJSONの`dependabot`と`counts.dependabot`を入力とする。
+`dependabot.alerts`の各要素は番号、`manifest_path`、パッケージ、エコシステム、修正版（`first_patched_version`。無い場合はnull）および`category`を持つ。
+`category`はマニフェストが既定ブランチに実在しなければ`inaccurate`、実在すれば`manifest_present`である。
+`dependabot.status`が`disabled`（機能が無効）または`unauthorized`（権限不足。`message`に応答本文）の場合は判定せず、その状態を呼び出し元へ返す。
+
+pendingのJSONを受け取れない場合は、次の手順で監査担当が直接取得する。各応答は管理対象一時領域のJSONファイルへ保存し、保存したファイルから件数と値を確認する。
+
+1. `gh api --paginate --slurp 'repos/<OWNER>/<REPO>/dependabot/alerts?state=open&per_page=100'`で全ページを取得する。HTTP 403の本文が「Dependabot alerts are disabled for this repository.」なら機能が無効、それ以外の403なら権限不足として扱い、判定しない
+2. `atk review-audit list --repo <OWNER>/<REPO>`が返す`dependabot:<番号>`の番号を判定済みとして除く
+3. `gh api 'repos/<OWNER>/<REPO>'`の`default_branch`で既定ブランチを得る
+4. 残る各アラートの`dependency.manifest_path`について`gh api 'repos/<OWNER>/<REPO>/contents/<manifest_path>?ref=<既定ブランチ>'`を実行する。HTTP 404なら既定ブランチに不在、終了コード0なら実在とする。それ以外の失敗は取得失敗として監査を未完了にする
+
+判定区分と処置は次の表のとおりとする。
+処理回のベースbranchは、対象リポジトリ（起動時の`cwd`）で処理対象としているbranchを指す。
+
+| 区分 | 条件 | 処置 |
+| --- | --- | --- |
+| 誤検知 | `manifest_path`が既定ブランチに実在しない（`category`が`inaccurate`） | 後掲の却下を行う |
+| 是正済み | マニフェストは既定ブランチに実在するが、処理回のベースbranchの同じマニフェストが対象パッケージを修正版以上へ更新済みか、そのマニフェストがベースbranchに無い | GitHubへは書き込まない。既定ブランチへの反映でアラートが`fixed`になるのを待つ |
+| 要修正 | 上記のいずれにも当たらない。修正版が無い場合もこの区分とする | 番号、マニフェスト、パッケージ、修正版、対処案（依存更新。修正版が無い場合はその旨）を呼び出し元へ返す |
+
+是正済みの判定では、ベースbranchのマニフェストを`git show <ベースbranch>:<manifest_path>`で読み、対象パッケージの版を修正版と比べる。版を比べられない場合は要修正として返す。
+
+### 却下
+
+誤検知と判定したアラートは、監査担当が`PATCH /repos/<OWNER>/<REPO>/dependabot/alerts/<番号>`で却下する。
+値は`state=dismissed`と`dismissed_reason=inaccurate`とし、`dismissed_comment`（280文字以内）へ既定ブランチに該当マニフェストが無いことを根拠として書く。
+
+```sh
+gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state=dismissed -f dismissed_reason=inaccurate -F dismissed_comment=@<COMMENT_FILE>
+```
+
+`dismissed_comment`はアラートを閲覧できる第三者が読むため、文面を保存した後、送信の直前に`agent-toolkit:external-write-review`をSkill機能で起動し、レビュー結果を反映した文面だけを送る。キュー項目の識別子は書かない。
+非0で終了した却下は判定済みの記録から外し、結果を呼び出し元へ返す。記録から外したアラートは次の処理回で未判定として再び拾われる。誤って却下したアラートは`state=open`で戻せる。
+
+この却下は人間由来のWI `20260930-175957-001.md`で承認済みであり、監査のたびの確認は不要である。
+承認範囲は既定ブランチに実在しないマニフェストに紐づくアラートを`inaccurate`で却下することに限る。是正済みと要修正の区分はGitHubへ書き込まない。
+同WIが保持するユーザー発言と確認回答は次のとおりである。
+
+```text
+dotfiles向けDependabot alertsが出てる気がするんだけどこれって自動で対応されないんだっけ？ (対応して＆対応する仕掛け入れて）
+```
+
+```text
+PRレビュー指摘を拾うスクリプトにそっちもチェックして拾う感じにまとめるのがいい気がする。
+```
+
+```text
+回答: review-auditへ集約 (Recommended)
+```
+
+### 判定したアラートの記録
+
+却下が成功したアラート、是正済みと判定したアラート、要修正として返したアラートの番号を、`atk review-audit mark --repo <OWNER>/<REPO> dependabot:<番号>...`で記録する。
+記録したアラートは以降のpendingから除かれ、`atk wi process-loop`の待機中確認も同じアラートを理由に処理回を起動しない。
+要修正のアラートは、呼び出し元が同じセッションで是正するかAWIへ記録して扱う。

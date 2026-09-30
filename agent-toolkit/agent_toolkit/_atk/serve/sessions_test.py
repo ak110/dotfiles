@@ -13,6 +13,7 @@ import typing
 
 import pytest
 
+from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import sessions
 
 
@@ -753,12 +754,12 @@ async def test_unreachable_host_is_reported_and_others_are_returned(tmp_path: pa
     assert "接続できません" in warnings[0]["reason"]
 
 
-def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., subprocess.CompletedProcess[bytes]]:
-    """指定した終了コードと標準エラー出力を返す`subprocess.run`の代用を組み立てる。"""
+def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., typing.Awaitable[tuple[int, bytes, bytes]]]:
+    """指定した終了コードと標準エラー出力を返す単発SSH（`remote.run_ssh`）の代用を組み立てる。"""
 
-    def run(*args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
-        del args, kwargs
-        return subprocess.CompletedProcess(args=["ssh"], returncode=returncode, stdout=b"", stderr=stderr)
+    async def run(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
+        del cmd, timeout
+        return returncode, b"", stderr
 
     return run
 
@@ -780,7 +781,7 @@ async def test_remote_failure_warning_carries_stderr(
     expected: str,
 ) -> None:
     """リモート実行が非0で終了した場合、終了コードと失敗元の標準エラー出力を警告本文へ引き継ぐ。"""
-    monkeypatch.setattr(sessions.subprocess, "run", _failed_ssh(2, stderr))
+    monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(2, stderr))
     context = _context(tmp_path, remote_hosts=["down-host"])
 
     _, warnings = await sessions.list_sessions(context)
@@ -796,7 +797,7 @@ async def test_long_stderr_keeps_the_tail_in_the_warning(tmp_path: pathlib.Path,
     """標準エラー出力が上限を超える場合、失敗の直接原因が現れる末尾側を残して切り詰める。"""
     head = "先頭の行" * sessions.STDERR_EXCERPT_MAX_CHARS
     stderr = f"{head}\n末尾の理由\n".encode()
-    monkeypatch.setattr(sessions.subprocess, "run", _failed_ssh(2, stderr))
+    monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(2, stderr))
     context = _context(tmp_path, remote_hosts=["down-host"])
 
     _, warnings = await sessions.list_sessions(context)
@@ -1136,3 +1137,19 @@ async def test_local_watch_notifies_new_records_and_appends(tmp_path: pathlib.Pa
         await sessions.unsubscribe(context.state, queue)
         sessions.stop_local_watch(context)
     assert context.state.record_watch is None
+
+
+def test_list_local_sessions_stops_on_shutdown_request(tmp_path: pathlib.Path) -> None:
+    """停止要求が設定されると、スレッドで動くローカル走査は記録を読み進めずに打ち切る。
+
+    要求をキャンセルしてもスレッドは止まらず、`asyncio.run`の終了処理がスレッドの終了を待つため、
+    記録の件数に比例して停止を待たせる。
+    """
+    _claude_record(tmp_path)
+    context = _context(tmp_path)
+    assert sessions.list_local_sessions(context)
+
+    context.state.stop_requested.set()
+
+    with pytest.raises(_atk_serve_remote.ServeStopping):
+        sessions.list_local_sessions(context)

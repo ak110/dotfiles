@@ -1,15 +1,19 @@
 """リモートホスト側ヘルパーの起動bootstrapのテスト。"""
 
+import asyncio
 import io
 import json
+import os
 import pathlib
 import shutil
+import subprocess
 import sys
 import typing
 
 import pytest
 
 from agent_toolkit._atk.serve import plans, sessions
+from agent_toolkit._atk.serve import remote as serve_remote
 
 # 配送経路のbootstrapと、それが読み込むヘルパー本体の対応。
 _HELPERS = (
@@ -79,3 +83,49 @@ def _isolate_environment(home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch
     monkeypatch.delenv("CODEX_HOME", raising=False)
     # PATHを空にして`atk`を解決させない（対象ホストの実際の設定を読ませないため）。
     monkeypatch.setenv("PATH", "")
+
+
+async def _wait_for_pid(pid_file: pathlib.Path) -> int:
+    for _ in range(500):
+        if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip():
+            return int(pid_file.read_text(encoding="utf-8"))
+        await asyncio.sleep(0.01)
+    raise AssertionError("子プロセスが起動しなかった")
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.mark.asyncio
+async def test_run_ssh_terminates_child_when_cancelled(tmp_path: pathlib.Path) -> None:
+    """単発SSHの呼び出し元をキャンセルすると、子プロセスを終了させてから`CancelledError`を送出する。
+
+    子プロセスが残ると、停止処理がその終了（最長で単発SSHの時間上限）を待たされる。
+    """
+    pid_file = tmp_path / "pid"
+    script = f"import os, pathlib, time; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+    task = asyncio.create_task(serve_remote.run_ssh([sys.executable, "-c", script], timeout=30))
+    pid = await _wait_for_pid(pid_file)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+
+    assert not _process_exists(pid)
+
+
+@pytest.mark.asyncio
+async def test_run_ssh_terminates_child_on_timeout(tmp_path: pathlib.Path) -> None:
+    """時間上限に達した単発SSHは子プロセスを終了させ、`subprocess.TimeoutExpired`を送出する。"""
+    pid_file = tmp_path / "pid"
+    script = f"import os, pathlib, time; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        await serve_remote.run_ssh([sys.executable, "-c", script], timeout=0.5)
+
+    assert not _process_exists(await _wait_for_pid(pid_file))

@@ -24,6 +24,7 @@ import watchdog.observers
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk import review_audit as _review_audit
 from agent_toolkit._atk.wi import alerts as _alerts
 from agent_toolkit._atk.wi import auto_resume as _auto_resume
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
@@ -1322,13 +1323,17 @@ def _check_process_loop_alerts(
     target_repo_id: str,
     local_path: pathlib.Path,
     last_alert_check: float | None,
-) -> tuple[float | None, int]:
-    """確認間隔を満たす場合だけアラートを収集し、確認時刻と投入件数を返す。"""
+) -> tuple[float | None, int, int]:
+    """確認間隔を満たす場合だけアラートを確認し、確認時刻、CI失敗のAWI投入件数、未判定のDependabotアラート件数を返す。
+
+    Dependabotアラートは処理回の自動コードレビュー監査が判定するため、AWIを起票せず件数だけを返す。
+    呼び出し側は投入が無く件数が1以上のとき、監査を実施させるために処理回を起動する。
+    """
     if args.no_alerts:
-        return last_alert_check, 0
+        return last_alert_check, 0, 0
     monotonic_now = time.monotonic()
     if last_alert_check is not None and monotonic_now - last_alert_check < args.alert_interval:
-        return last_alert_check, 0
+        return last_alert_check, 0, 0
     try:
         submitted = _alerts.check_and_submit_alerts(
             private_notes,
@@ -1343,8 +1348,30 @@ def _check_process_loop_alerts(
             next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
         )
         submitted = 0
-    _process_loop_log.append("alert_check", submitted=submitted)
-    return monotonic_now, submitted
+    dependabot_pending = _count_dependabot_pending(args, target_repo_id)
+    _process_loop_log.append(
+        "alert_check",
+        submitted=submitted,
+        dependabot_pending=dependabot_pending,
+        session_started=submitted == 0 and dependabot_pending > 0,
+    )
+    return monotonic_now, submitted, dependabot_pending
+
+
+def _count_dependabot_pending(args: argparse.Namespace, target_repo_id: str) -> int:
+    """GitHubの対象リポジトリで未判定のDependabotアラート件数を返す。取得できない場合は警告して0とする。"""
+    host, _, repo_path = target_repo_id.partition("/")
+    forge = args.alert_forge if args.alert_forge != "auto" else ("github" if host == "github.com" else "gitlab")
+    if forge != "github" or not repo_path:
+        return 0
+    try:
+        return len(_review_audit.dependabot_pending(repo_path)["alerts"])
+    except _next_action.ActionableError as exc:
+        _next_action.report(
+            f"警告: Dependabotアラートの確認に失敗しました: {exc}",
+            next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
+        )
+        return 0
 
 
 def _restore_process_loop_env(previous_values: dict[str, str | None]) -> None:
@@ -1382,7 +1409,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     含む反復の境界でも要求を検出する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
-    秒間隔で実行し、新規アラートを検知した場合はAWIへ投入して即座に次反復へ進む。
+    秒間隔で実行する。新規のCI失敗を検知した場合はAWIへ投入して即座に次反復へ進む。
+    未判定のDependabotアラートがある場合はAWIを起票せず、処理回の自動コードレビュー監査に判定させるため
+    処理回を1回起動する。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
     待機に入るたびに待機メッセージを1度出力する。
@@ -1418,6 +1447,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
         mise_refreshed_at = time.monotonic()
     print(f"atk wi process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     last_alert_check: float | None = None
+    alert_session_pending = False
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
@@ -1442,7 +1472,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         refresh_before_session = True
                         continue
                     count = _count_pending_entries(private_notes, target_repo=target_repo_id)
-                    if count > 0 and refresh_before_session and not args.no_update:
+                    if (count > 0 or alert_session_pending) and refresh_before_session and not args.no_update:
                         session_ready, update_succeeded = _update_before_session(
                             private_notes,
                             dotfiles_root,
@@ -1460,7 +1490,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             continue
                         count = _count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
-                    if count > 0:
+                    if count > 0 or alert_session_pending:
                         refresh_before_session = False
                         current_resume_pending = resume_pending
                         if current_resume_pending:
@@ -1481,7 +1511,11 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         orchestrator, model, effort = _select_available_orchestrator(
                             _resolve_orchestrator_specs(), env, session_path
                         )
-                        print(f"{count}件のAWI/回答済みUWIを検知。{orchestrator}へ委譲します。")
+                        if count > 0:
+                            print(f"{count}件のAWI/回答済みUWIを検知。{orchestrator}へ委譲します。")
+                        else:
+                            print(f"未判定のDependabotアラートを検知。監査のため{orchestrator}へ委譲します。")
+                        alert_session_pending = False
                         if _run_process_session(
                             args,
                             session_path,
@@ -1495,7 +1529,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         ):
                             return
                         continue
-                    last_alert_check, submitted = _check_process_loop_alerts(
+                    last_alert_check, submitted, dependabot_pending = _check_process_loop_alerts(
                         args,
                         private_notes,
                         target_repo_id,
@@ -1504,6 +1538,11 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     )
                     if submitted > 0:
                         print(f"アラート監視により{submitted}件のAWIを投入しました。")
+                        refresh_before_session = True
+                        continue
+                    if dependabot_pending > 0:
+                        print(f"未判定のDependabotアラートが{dependabot_pending}件あるため処理回を起動します。")
+                        alert_session_pending = True
                         refresh_before_session = True
                         continue
                     print("0件のため変更検知を待機します。")

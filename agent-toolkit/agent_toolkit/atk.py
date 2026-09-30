@@ -17,7 +17,8 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq process-loop: `orchestrate_model`設定に従いClaude CodeまたはCodexの新規セッションへ
   `/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
-  待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
+  待機中は既定でCI失敗を自動検出してAWI投入し、未判定のDependabotアラートがあれば
+  処理回を起動して監査させる（`--no-alerts`で無効化）
 - mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: 常駐処理への中断要求と追加指示を操作する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - plans commit/list: 現行計画または独立CI実行レビュー表の保存と作業中計画の一覧
@@ -79,7 +80,7 @@ from agent_toolkit._hooks import session_state as _session_state  # noqa: E402
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
-_processable_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES)
+_active_filename_completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES)
 _editable_filename_completer = _common.make_filename_completer(_common.WI_EDITABLE_STATES)
 _removable_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
@@ -90,7 +91,7 @@ _holdable_filename_completer = _common.make_filename_completer(
 _returnable_filename_completer = _common.make_filename_completer(
     (_common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED)
 )
-_uwi_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES, _common.WI_TYPE_UWI)
+_uwi_filename_completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES, _common.WI_TYPE_UWI)
 
 _WI_SYNC_MUTATIONS = frozenset(
     (
@@ -685,7 +686,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="FILENAME",
         nargs="*",
         help="採用するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]
     _add_note_args(
         adopt,
         help_text="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
@@ -719,7 +720,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="FILENAME",
         nargs="*",
         help="不採用とするファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]
     _add_note_args(
         reject,
         help_text="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
@@ -829,8 +830,8 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     set_dependencies.add_argument(
         "filename",
         metavar="FILENAME",
-        help="更新する`inbox`または`processing`のAWIファイル名。",
-    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
+        help="更新する`inbox`・`processing`・`hold`のいずれかにあるAWIファイル名。",
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]
     set_dependencies.add_argument(
         "--depends-on",
         metavar="FILENAME",
@@ -920,7 +921,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop.add_argument(
         "--no-alerts",
         action="store_true",
-        help="CI失敗・Dependabotアラートの自動検出を無効化する（既定は有効）。",
+        help="待機中のCI失敗の検出と、未判定のDependabotアラートによる処理回の起動を無効化する（既定は有効）。",
     )
     loop.add_argument(
         "--alert-interval",

@@ -32,6 +32,7 @@ import random
 import re
 import socket
 import subprocess
+import threading
 import typing
 from typing import TYPE_CHECKING
 
@@ -330,12 +331,14 @@ def scan_files(
     source_id: str = "",
     *,
     migrate_legacy_ctime: bool | None = None,
+    stop: threading.Event | None = None,
 ) -> tuple[list[FileEntry], str | None]:
     """`root`を走査し、一覧とroot単位の警告を返す。
 
     rootの非ディレクトリ・権限不足は呼び出し元が他rootの処理を継続できるよう、
     例外ではなく警告本文として返す。rootの不在は通常の状態として空の一覧だけを返す。
     rootは自動作成しない。
+    `stop`が設定されると走査の途中で`ServeStopping`を送出し、途中までの観測でインデックスを更新しない。
     """
     warning = root_warning(root)
     if warning is not None:
@@ -350,6 +353,7 @@ def scan_files(
     warning = None
     try:
         for path in root.rglob("*"):
+            _atk_serve_remote.raise_if_stopping(stop)
             try:
                 if not path.is_file() or not is_listed_path(path, root, source_id):
                     continue
@@ -383,24 +387,22 @@ def list_files(root: pathlib.Path, host: str, source_id: str = "") -> list[FileE
     return entries
 
 
-def search_files(root: pathlib.Path, query: str, source_id: str = "") -> set[str]:
-    """本文へ検索語が部分一致する計画ファイルの相対パス集合を返す。"""
+def search_files(root: pathlib.Path, query: str, source_id: str = "", *, stop: threading.Event | None = None) -> set[str]:
+    """本文へ検索語が部分一致する計画ファイルの相対パス集合を返す。
+
+    `stop`が設定されるとファイル1件ごとの確認で`ServeStopping`を送出して打ち切る。
+    """
     needle = query.casefold()
     if not root.is_dir():
         return set()
-    if not needle:
-        try:
-            return {
-                path.relative_to(root).as_posix()
-                for path in root.rglob("*")
-                if path.is_file() and is_target_path(path, root, source_id)
-            }
-        except OSError:
-            return set()
     matched: set[str] = set()
     try:
         for path in root.rglob("*"):
+            _atk_serve_remote.raise_if_stopping(stop)
             if not path.is_file() or not is_target_path(path, root, source_id):
+                continue
+            if not needle:
+                matched.add(path.relative_to(root).as_posix())
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
@@ -409,7 +411,8 @@ def search_files(root: pathlib.Path, query: str, source_id: str = "") -> set[str
             if needle in text.casefold():
                 matched.add(path.relative_to(root).as_posix())
     except OSError:
-        return matched
+        # 空の検索語は全件の一致を返すため、走査の失敗では途中までの結果を返さない。
+        return matched if needle else set()
     return matched
 
 

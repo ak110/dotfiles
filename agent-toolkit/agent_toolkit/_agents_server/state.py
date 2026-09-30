@@ -365,6 +365,18 @@ def _append_bounded(existing: str, delta: str, limit: int = 4000) -> str:
     return value if len(value) <= limit else value[-limit:]
 
 
+@dataclasses.dataclass(frozen=True)
+class LiveTask:
+    """Claude backendが追跡する背景task（`TaskStartedMessage`の内容と受信時刻）。
+
+    結果を保留している間の待機対象を`show`で呼び出し元へ示すために保持する。
+    """
+
+    task_type: str
+    description: str
+    started_at: str
+
+
 @dataclasses.dataclass
 class SessionState:
     """MCPから観測できる1つの委譲先sessionと最新turnの共有状態。"""
@@ -410,8 +422,8 @@ class SessionState:
     # engineの可用性失敗は最初のモデル出力より前に生じるため、`start`はこの値で起動直後の終端待ちを打ち切る。
     # `start`は新しいsessionだけを待つため、turnごとに初期化しない。
     model_output_observed: bool = False
-    # Claude backendの背景タスクだけを表し、Codex backendでは値を持たない。
-    live_task_ids: set[str] = dataclasses.field(default_factory=set)
+    # Claude backendの背景タスクだけを表し、Codex backendでは値を持たない。キーはtask識別子とする。
+    live_tasks: dict[str, LiveTask] = dataclasses.field(default_factory=dict)
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     # 背景実行へ移った`atk agents wait`の出力ファイルの絶対パス。結果本文がツール結果に現れないため、
@@ -687,7 +699,7 @@ def has_pending_auto_resume_targets(session: SessionState) -> bool:
 
     Claude・Codex backendとMCP層は、開始、解除、再開の全条件で本述語だけを使う。
     """
-    return bool(session.live_task_ids or session.live_child_session_ids)
+    return bool(session.live_tasks or session.live_child_session_ids)
 
 
 def has_uncollected_result(session: SessionState | SessionResumeState, result_consumed: bool | None) -> bool:

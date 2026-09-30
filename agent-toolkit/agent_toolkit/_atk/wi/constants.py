@@ -76,7 +76,8 @@ TRANSITION_EXPLICIT_STATES = {
 }
 """操作ごとに明示`state`として受理する遷移元の状態。
 
-暗黙解決（`inbox`・`processing`）は各操作の既定として別に扱い、本表は明示指定だけを統治する。
+ファイル名指定の暗黙解決は各操作の既定として別に扱い、本表は明示指定だけを統治する。
+暗黙解決は多くの操作で`inbox`・`processing`を探索し、`adopt`・`reject`は`BULK_SOURCE_STATES`から導いた`inbox`・`processing`・`hold`を探索する。
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
 `remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
 """

@@ -428,6 +428,66 @@ def test_agents_list_without_conversation_root_shows_all_roots(
     assert "session-b" in output
 
 
+def _write_root_sessions(state_root: pathlib.Path, root_session_id: str, sessions: list[dict]) -> None:
+    directory = status_file.status_directory(root_session_id, state_root)
+    directory.mkdir(parents=True)
+    (directory / "root.json").write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
+
+
+def test_agents_list_human_tree_omits_roots_without_listed_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """人の端末の一覧は表示するsessionを持つrootだけを見出しにし、管理用ディレクトリをrootとして出力しない。"""
+    for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    for name in environment.AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    timestamps = {"started_at": "2026-09-30T00:00:00+00:00", "updated_at": "2026-09-30T00:00:00+00:00"}
+    _write_root_sessions(tmp_path, "root-running", [{"session_id": "session-running", "status": "running", **timestamps}])
+    _write_root_sessions(tmp_path, "root-empty", [])
+    _write_root_sessions(tmp_path, "root-done", [{"session_id": "session-done", "status": "completed", **timestamps}])
+    base = tmp_path / "agents-server"
+    for reserved in ("aliases", "compaction", "sessions"):
+        (base / reserved).mkdir()
+        (base / reserved / "entry.json").write_text(json.dumps({"version": 1, "sessions": []}), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+    default_output = capsys.readouterr().out
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list", "--include-terminated"])
+    terminated_output = capsys.readouterr().out
+
+    headings = {line for line in default_output.splitlines() if line.startswith("root ")}
+    assert headings == {"root root-running"}
+    headings = {line for line in terminated_output.splitlines() if line.startswith("root ")}
+    assert headings == {"root root-running", "root root-done"}
+    assert "session-done" in terminated_output
+
+
+def test_agents_list_human_tree_reports_no_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """人の端末で表示するsessionが無ければ見出しを出力せず、sessionが無いことを示して正常終了する。"""
+    for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    for name in environment.AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    _write_root_sessions(tmp_path, "root-empty", [])
+    (tmp_path / "agents-server" / "aliases").mkdir()
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+
+    assert capsys.readouterr().out == "sessionはありません\n"
+
+
 def test_agents_list_reports_unconfirmed_conversation_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

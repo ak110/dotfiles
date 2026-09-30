@@ -261,10 +261,12 @@ class DelayedUnavailableBackend(FakeBackend):
         engine: str,
         condition: asyncio.Condition,
         delay: float = 0.0,
+        error: Any = None,
     ) -> None:
         super().__init__(sessions, engine)
         self._condition = condition
         self._delay = delay
+        self.error = error if error is not None else {"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"}
         self.pending: list[asyncio.Task[None]] = []
 
     async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
@@ -274,7 +276,7 @@ class DelayedUnavailableBackend(FakeBackend):
 
     async def _fail_after_response(self, session: subject.SessionState) -> None:
         await asyncio.sleep(self._delay)
-        _complete(session, message="", error={"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"})
+        _complete(session, message="", error=self.error)
         async with self._condition:
             self._condition.notify_all()
 
@@ -2120,6 +2122,111 @@ async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
         "codex",
         error={"message": "invalid request", "codexErrorInfo": "badRequest"},
     )
+    _install_backend(manager, "codex", codex)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert codex.start_calls == [("first", "high", "delegate")]
+    assert response["status"] == "failed"
+    assert response["model"] == "first"
+
+
+def _codex_model_rejected_error(param: str = "model") -> dict[str, Any]:
+    """接続先がCodex候補の引数を拒否した失敗（2026-09-30に観測した`TurnError`の形）を返す。"""
+    body = {
+        "error": {
+            "message": "gpt-6.1-sol は利用できません。使用可能なモデル: gpt-5.6-sol, gpt-6-sol",
+            "type": "aichat_error",
+            "code": "invalid_parameter_value",
+            "param": param,
+        }
+    }
+    return {
+        "message": json.dumps(body, ensure_ascii=False),
+        "codexErrorInfo": "other",
+        "additionalDetails": None,
+        "misalignment": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_advances_candidate_when_codex_rejects_model(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """接続先がモデルIDを拒否して起動時の待機内に終端したCodex候補を除外し、次候補で起動する。"""
+    candidates = [("codex", "gpt-6.1-sol", "medium"), ("claude", "opus[1m]", "medium")]
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    manager, claude = _manager_with_fake("claude")
+    codex = UnavailableStartBackend(manager.sessions, "codex", error=_codex_model_rejected_error())
+    _install_backend(manager, "codex", codex)
+
+    response = await manager.start("high_tier", "調査", str(tmp_path))
+
+    assert claude.start_calls == [("opus[1m]", "medium", "delegate")]
+    assert response["engine"] == "claude"
+    assert response["status"] == "running"
+    assert response["excluded_candidates"] == [
+        {
+            "engine": "codex",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "reason": "modelRejected",
+            "session_id": "codex-session",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_late_codex_model_rejection_is_carried_over_to_next_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起動時の待機の後にモデルIDの拒否で終端した候補を除外記録へ残し、呼び直した`start`で次候補へ進む。"""
+    candidates = [("codex", "gpt-6.1-sol", "medium"), ("codex", "gpt-6-sol", "medium")]
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
+    manager = subject.AgentsServerManager()
+    delayed = DelayedUnavailableBackend(
+        manager.sessions, "codex", manager._condition, delay=0.01, error=_codex_model_rejected_error()
+    )
+    _install_backend(manager, "codex", delayed)
+
+    failed = await manager.start("high_tier", "調査", str(tmp_path))
+    await asyncio.gather(*delayed.pending)
+    assert failed["status"] == "running"
+    assert await manager.stop(failed["session_id"]) == {}
+    assert status_file.load_unavailable_candidates("high_tier", "delegate", now=datetime.datetime.now(datetime.UTC)) == {
+        ("codex", "gpt-6.1-sol", "medium"): "modelRejected"
+    }
+    available = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", available)
+
+    response = await manager.start("high_tier", "再試行", str(tmp_path))
+
+    assert response["model"] == "gpt-6-sol"
+    assert available.start_calls == [("gpt-6-sol", "medium", "delegate")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        _codex_model_rejected_error(param="reasoning_effort"),
+        {"message": "model gpt-6.1-sol is not available", "codexErrorInfo": "other"},
+        {"message": json.dumps(["param", "model"]), "codexErrorInfo": "other"},
+    ],
+)
+async def test_codex_failure_other_than_model_rejection_keeps_candidate(
+    error: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`error.param`が`model`以外の失敗と、`message`がJSONの`error`オブジェクトを持たない失敗では候補を進めない。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    codex = UnavailableStartBackend(manager.sessions, "codex", error=error)
     _install_backend(manager, "codex", codex)
 
     response = await manager.start("plan", "調査", str(tmp_path))

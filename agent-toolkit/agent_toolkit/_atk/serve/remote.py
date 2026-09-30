@@ -1,10 +1,112 @@
 """`atk serve`がリモートホスト側ヘルパーを起動・停止する処理のうち、両画面に共通する契約を持つ。
 
 計画ファイル画面とセッション画面はそれぞれ別のヘルパーを起動するが、
-リモート側の実行名前空間の構成と、常駐接続のタスクを停止処理で終える条件は共通の契約とするため、本モジュールへ集約する。
+リモート側の実行名前空間の構成、単発SSHの起動と停止、常駐接続のタスクと読み取り専用の走査を停止要求で終える条件は
+共通の契約とするため、本モジュールへ集約する。
 """
 
 import asyncio
+import contextlib
+import subprocess
+import threading
+
+# 警告本文へ引き継ぐリモートヘルパーの標準エラー出力の最大文字数。
+# 原因の判別に足りる長さを残しつつ、画面の警告欄と記録を占有させない。
+STDERR_EXCERPT_MAX_CHARS = 500
+# 単発SSHをキャンセルまたは時間上限で打ち切った後、子プロセスの終了を待つ上限秒数。
+# SIGTERMで終わらない子は上限の後にSIGKILLする。
+_SSH_TERMINATE_TIMEOUT_SEC = 1.0
+
+
+class RemoteHelperError(Exception):
+    """リモートヘルパーの実行が非0で終了したことを、失敗元の標準エラー出力とともに示す。
+
+    本例外の文字列表現は利用者へ渡る警告本文と記録へそのまま引き継がれるため、失敗元の標準エラー出力を含める。
+    SSHの接続が成立したうえでリモート側の実行が失敗する場合も本例外となるため、
+    到達可否を判別していない語で原因を断定しない。
+    """
+
+    def __init__(self, returncode: int, stderr: bytes) -> None:
+        super().__init__(f"リモートヘルパーの実行が終了コード{returncode}で失敗しました: {stderr_excerpt(stderr)}")
+
+
+def stderr_excerpt(stderr: bytes) -> str:
+    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
+
+    デコードできない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    """
+    text = " ".join(stderr.decode("utf-8", errors="replace").split())
+    if not text:
+        return "標準エラー出力はありません"
+    if len(text) > STDERR_EXCERPT_MAX_CHARS:
+        return f"...{text[-STDERR_EXCERPT_MAX_CHARS:]}"
+    return text
+
+
+async def run_helper(cmd: list[str], timeout: float) -> str:
+    """リモートヘルパーを単発のSSHで実行し、標準出力をUTF-8文字列で返す。
+
+    非0終了は`RemoteHelperError`として送出し、失敗元の標準エラー出力を呼び出し元へ渡す。
+    呼び出し元がキャンセルされた場合は子プロセスを終了させてから`CancelledError`を送出する。
+    """
+    returncode, stdout, stderr = await run_ssh(cmd, timeout=timeout)
+    if returncode != 0:
+        raise RemoteHelperError(returncode, stderr)
+    return stdout.decode("utf-8")
+
+
+class ServeStopping(Exception):  # noqa: N818  # 失敗ではなく停止要求による打ち切りを表すため`Error`を付けない
+    """サーバーの停止要求を受けて読み取り専用の走査を打ち切ったことを示す。"""
+
+
+def raise_if_stopping(stop: threading.Event | None) -> None:
+    """停止要求が設定されていれば`ServeStopping`を送出する。
+
+    スレッドで動く走査は要求のキャンセルでは止まらず、`asyncio.run`の終了処理が既定のexecutorの
+    スレッドの終了を待つため、走査対象の件数に比例して停止を待たせる。反復の途中で本関数を呼んで打ち切る。
+    """
+    if stop is not None and stop.is_set():
+        raise ServeStopping
+
+
+async def run_ssh(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
+    """単発のSSHを子プロセスとして実行し、終了コード、標準出力と標準エラー出力を返す。
+
+    呼び出し元のキャンセルと時間上限の到達では子プロセスを終了させてから送出する。
+    スレッドで`subprocess.run`を呼ぶ形は外から打ち切れず、停止処理が子プロセスとスレッドの終了を待つ。
+    時間上限の到達は`subprocess.TimeoutExpired`で示す。
+    """
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
+        await _terminate(proc)
+        raise subprocess.TimeoutExpired(cmd, timeout) from None
+    except asyncio.CancelledError:
+        await _terminate(proc)
+        raise
+    assert proc.returncode is not None
+    return proc.returncode, stdout, stderr
+
+
+async def _terminate(proc: asyncio.subprocess.Process) -> None:
+    """子プロセスをSIGTERMで終了させ、上限までに終わらなければSIGKILLして回収する。"""
+    if proc.returncode is not None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        proc.terminate()
+    try:
+        await asyncio.shield(asyncio.wait_for(proc.wait(), timeout=_SSH_TERMINATE_TIMEOUT_SEC))
+    except (TimeoutError, asyncio.CancelledError):
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.shield(proc.wait())
 
 
 def remote_bootstrap(helper_name: str) -> str:

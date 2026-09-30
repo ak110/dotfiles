@@ -16,6 +16,7 @@ import typing
 
 import pytest
 
+from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import plans
 from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
 
@@ -120,7 +121,7 @@ async def test_local_watcher_broadcasts_on_local_change(
 )
 async def test_remote_read_failure_reports_stderr(monkeypatch: pytest.MonkeyPatch, stderr: bytes, expected: str) -> None:
     """リモート実行が非0で終了した場合、終了コードと失敗元の標準エラー出力を例外本文へ引き継ぐ。"""
-    monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, stderr))
+    monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(3, stderr))
 
     with pytest.raises(plans.RemoteHelperError) as error:
         await plans.fetch_remote_file("remote-host", "p.md", plans.default_ssh_runner, None)
