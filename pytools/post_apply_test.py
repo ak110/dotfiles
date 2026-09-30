@@ -1,7 +1,7 @@
 """pytools.post_apply のテスト。
 
-各ステップが順に呼ばれること、途中ステップが例外を送出しても他が継続すること、
-失敗時の exit code を検証する。
+各ステップが呼ばれること、先行工程の順序と並列実行、途中ステップが例外を送出しても他が継続すること、
+画面と永続ログへの出力の振り分け、失敗時の exit code を検証する。
 """
 
 import io
@@ -149,7 +149,7 @@ def test_canonical_root_or_explicit_override_runs_steps(
         post_apply.main(argv)
 
     assert exc_info.value.code == 0
-    assert calls == ["first", "second"]
+    assert sorted(calls) == ["first", "second"]
 
 
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:
@@ -518,18 +518,20 @@ class TestRun:
 
         results, recommendations = post_apply.run(steps=steps)
 
-        assert calls == [
-            "claude",
-            "vscode",
-            "ssh",
-            "cleanup",
-            "npmrc",
-            "mise",
-            "plugins",
-            "codex-migration",
-            "libarchive",
-            "atk-serve-restart-linux",
-        ]
+        assert sorted(calls) == sorted(
+            [
+                "claude",
+                "vscode",
+                "ssh",
+                "cleanup",
+                "npmrc",
+                "mise",
+                "plugins",
+                "codex-migration",
+                "libarchive",
+                "atk-serve-restart-linux",
+            ]
+        )
         assert all(r.ok for r in results)
         assert [r.changed for r in results] == [
             True,
@@ -563,18 +565,20 @@ class TestRun:
 
         results, _ = post_apply.run(steps=steps)
 
-        assert calls == [
-            "claude",
-            "vscode",
-            "broken",
-            "cleanup",
-            "npmrc",
-            "mise",
-            "plugins",
-            "codex-migration",
-            "libarchive",
-            "atk-serve-restart-linux",
-        ]
+        assert sorted(calls) == sorted(
+            [
+                "claude",
+                "vscode",
+                "broken",
+                "cleanup",
+                "npmrc",
+                "mise",
+                "plugins",
+                "codex-migration",
+                "libarchive",
+                "atk-serve-restart-linux",
+            ]
+        )
         ok_flags = [r.ok for r in results]
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
@@ -593,59 +597,189 @@ class TestRun:
         assert match is not None
         assert float(match.group(1)) >= 0.2
 
-    def test_background_step_overlaps_foreground_and_appends_result_after_it(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """背景ログを結合時まで保持し、前景結果の後へ投入順で追加する。"""
-        started = threading.Event()
-        released = threading.Event()
+    def test_independent_steps_overlap_and_predecessor_blocks_successor(self) -> None:
+        """先行工程を持たないステップは同時に実行し、後続ステップは先行工程の完了後に開始する。"""
+        first_started = threading.Event()
+        second_started = threading.Event()
+        events: list[str] = []
+        lock = threading.Lock()
 
-        def background() -> bool:
-            started.set()
-            time.sleep(0.3)
-            released.set()
-            logging.getLogger("background-test").info("背景ログ")
-            return True
+        def record(event: str) -> None:
+            with lock:
+                events.append(event)
 
-        def foreground() -> bool:
-            assert started.wait(timeout=2)
-            assert released.wait(timeout=2)
-            logging.getLogger("foreground-test").info("前景ログ")
+        def first() -> bool:
+            record("first-start")
+            first_started.set()
+            # 2番目のステップが同時に動いていなければ、待機が上限に達して失敗する。
+            assert second_started.wait(timeout=5)
+            time.sleep(0.1)
+            record("first-end")
             return False
 
-        caplog.set_level(logging.INFO)
+        def second() -> bool:
+            second_started.set()
+            assert first_started.wait(timeout=5)
+            return False
+
+        def successor() -> bool:
+            record("successor-start")
+            return False
+
         results, _ = post_apply.run(
             [
-                post_apply._StepSpec("背景", background, background=True),  # noqa: SLF001
-                post_apply._StepSpec("前景", foreground),  # noqa: SLF001
+                post_apply._StepSpec("first", first),  # noqa: SLF001
+                post_apply._StepSpec("second", second),  # noqa: SLF001
+                post_apply._StepSpec("successor", successor, after=("first",)),  # noqa: SLF001
             ]
         )
 
-        assert [result.name for result in results] == ["前景", "背景"]
-        messages = [record.getMessage() for record in caplog.records]
-        background_completion = next(message for message in messages if message.startswith("[1/2] 背景 ("))
-        match = re.fullmatch(r"\[1/2] 背景 \(([0-9]+\.[0-9])秒\)", background_completion)
-        assert match is not None
-        assert float(match.group(1)) >= 0.2
-        assert messages.index("前景ログ") < messages.index(background_completion) < messages.index("背景ログ")
+        assert all(result.ok for result in results)
+        assert events.index("first-end") < events.index("successor-start")
 
-    def test_background_step_failure_does_not_discard_other_results(self) -> None:
-        """背景ステップの例外をそのステップの結果にとどめ、他の結果を保持する。"""
+    def test_failed_predecessor_does_not_stop_successor(self) -> None:
+        """先行工程が失敗しても後続ステップを実行し、失敗をそのステップの結果にとどめる。"""
         calls: list[str] = []
+        results, _ = post_apply.run(
+            [
+                post_apply._StepSpec("先行", _make_broken_step("before", calls)),  # noqa: SLF001
+                post_apply._StepSpec("後続", _make_step("after", calls, changed=True), after=("先行",)),  # noqa: SLF001
+            ]
+        )
+
+        assert calls == ["before", "after"]
+        assert [(result.name, result.ok, result.changed) for result in results] == [
+            ("先行", False, False),
+            ("後続", True, True),
+        ]
+
+    def test_after_all_preceding_waits_for_every_earlier_step(self) -> None:
+        """列挙順で前にある全ステップの完了後に開始する。"""
+        finished: list[str] = []
+        observed: list[list[str]] = []
+
+        def slow() -> bool:
+            time.sleep(0.2)
+            finished.append("slow")
+            return False
+
+        def last() -> bool:
+            observed.append(list(finished))
+            return False
+
+        post_apply.run(
+            [
+                post_apply._StepSpec("slow", slow),  # noqa: SLF001
+                post_apply._StepSpec("fast", _make_step("fast", finished)),  # noqa: SLF001
+                post_apply._StepSpec("last", last, after_all_preceding=True),  # noqa: SLF001
+            ]
+        )
+
+        assert sorted(observed[0]) == ["fast", "slow"]
+
+    def test_output_and_results_follow_enumeration_order(self, caplog: pytest.LogCaptureFixture) -> None:
+        """後に完了した先頭ステップの出力を、先に完了した後続ステップより前へまとめて出力する。"""
+        second_done = threading.Event()
+
+        def first() -> bool:
+            assert second_done.wait(timeout=5)
+            logging.getLogger("order-test").info("一のログ")
+            return False
+
+        def second() -> tuple[bool, list[str]]:
+            logging.getLogger("order-test").info("二のログ")
+            second_done.set()
+            return True, ["cmd-2"]
+
+        caplog.set_level(logging.INFO)
         results, recommendations = post_apply.run(
             [
-                post_apply._StepSpec("背景", _make_broken_step("background", calls), background=True),  # noqa: SLF001
-                post_apply._StepSpec("前景", _make_step("foreground", calls, changed=True)),  # noqa: SLF001
+                post_apply._StepSpec("一", first),  # noqa: SLF001
+                post_apply._StepSpec("二", second),  # noqa: SLF001
             ]
         )
 
-        assert sorted(calls) == ["background", "foreground"]
-        assert [(result.name, result.ok, result.changed) for result in results] == [
-            ("前景", True, True),
-            ("背景", False, False),
+        assert [result.name for result in results] == ["一", "二"]
+        assert recommendations == ["cmd-2"]
+        messages = [record.getMessage() for record in caplog.records]
+        first_heading = next(message for message in messages if message.startswith("[1/2] 一 ("))
+        second_heading = next(message for message in messages if message.startswith("[2/2] 二 ("))
+        order = [messages.index(item) for item in (first_heading, "一のログ", second_heading, "二のログ")]
+        assert order == sorted(order)
+
+    @pytest.mark.parametrize(
+        ("steps", "message"),
+        [
+            ([post_apply._StepSpec("a", lambda: False, after=("missing",))], "先行工程が見つかりません"),  # noqa: SLF001
+            (
+                [
+                    post_apply._StepSpec("a", lambda: False, after=("b",)),  # noqa: SLF001
+                    post_apply._StepSpec("b", lambda: False, after=("a",)),  # noqa: SLF001
+                ],
+                "先行工程が循環しています",
+            ),
+        ],
+    )
+    def test_invalid_predecessor_declaration_is_rejected(self, steps: list[post_apply._StepSpec], message: str) -> None:  # noqa: SLF001
+        """未知の先行工程と循環は実行前に拒否する。"""
+        with pytest.raises(ValueError, match=message):
+            post_apply.run(steps)
+
+    def test_screen_hides_noise_lines_and_persistent_log_keeps_them(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """HTTP Request行、claude CLIの実行記録、対象外OSのステップ、開始行を画面から外し、永続ログへ残す。"""
+        monkeypatch.setattr(post_apply.sys, "platform", "linux")
+        monkeypatch.setattr(post_apply.claude_common, "resolve_executable", lambda name, **_kwargs: Path(name))
+        monkeypatch.setattr(
+            post_apply.claude_common,
+            "run_subprocess",
+            lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 0, "", ""),
+        )
+        windows_calls: list[str] = []
+
+        def http_step() -> bool:
+            logging.getLogger("httpx").info('HTTP Request: GET https://example.invalid "HTTP/1.1 200 OK"')
+            logging.getLogger("result-test").info("    http: 変更なし")
+            return False
+
+        def claude_step() -> bool:
+            post_apply.claude_common.run_claude(["plugin", "list"])
+            return False
+
+        steps = [
+            post_apply._StepSpec("HTTPを使う工程", http_step),  # noqa: SLF001
+            post_apply._StepSpec("claudeを使う工程", claude_step),  # noqa: SLF001
+            post_apply._StepSpec(  # noqa: SLF001
+                "Windows専用工程", _make_step("windows", windows_calls), platforms=("win32",)
+            ),
         ]
-        assert not recommendations
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: post_apply.run(steps))
+
+        assert exc_info.value.code == 0
+        assert not windows_calls
+        out = capsys.readouterr().out
+        assert "HTTP Request:" not in out
+        assert "claude: exec:" not in out
+        assert "claude: exit" not in out
+        assert "Windows専用工程" not in out
+        lines = out.splitlines()
+        assert "  [1/3] HTTPを使う工程" not in lines
+        assert "  [2/3] claudeを使う工程" not in lines
+        heading = next(index for index, line in enumerate(lines) if line.startswith("  [1/3] HTTPを使う工程 ("))
+        assert lines[heading + 1] == "      http: 変更なし"
+        assert any(line.startswith("  [2/3] claudeを使う工程 (") for line in lines)
+        assert "完了: 更新 0 件 / スキップ 3 件 / 失敗 0 件" in out
+        log_text = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+        assert "HTTP Request: GET" in log_text
+        assert "claude: exec: plugin list" in log_text
+        assert "claude: exit 0: plugin list" in log_text
+        assert "[1/3] HTTPを使う工程\n" in log_text
+        assert "[3/3] Windows専用工程: 実行中のOSは対象外のため実行しない" in log_text
 
     def test_main_exits_1_on_failure(self):
         """失敗があれば main() は SystemExit(1) で終了する。"""
@@ -668,7 +802,7 @@ class TestRun:
 
         results, _ = post_apply.run(steps=steps)
 
-        assert calls == ["codex", "later"]
+        assert sorted(calls) == ["codex", "later"]
         assert [(result.ok, result.changed) for result in results] == [(False, False), (True, False)]
         with pytest.raises(SystemExit) as exc_info:
             post_apply.main(runner=lambda: (results, []))
@@ -684,7 +818,7 @@ class TestRun:
 
         results, _ = post_apply.run(steps=steps)
 
-        assert calls == ["statusline", "later"]
+        assert sorted(calls) == ["later", "statusline"]
         assert [(result.ok, result.changed) for result in results] == [(False, False), (True, False)]
         with pytest.raises(SystemExit) as exc_info:
             post_apply.main(runner=lambda: (results, []))
@@ -715,7 +849,7 @@ class TestRun:
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
 
         assert exc_info.value.code == 1
-        assert calls == ["ok", "broken"]
+        assert sorted(calls) == ["broken", "ok"]
         captured = capsys.readouterr()
         assert "完了: 更新 0 件 / スキップ 1 件 / 失敗 1 件" in captured.out
         assert "失敗したステップ" not in captured.out
@@ -787,7 +921,7 @@ class TestRun:
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
 
         assert exc_info.value.code == 1
-        assert calls == ["codex", "later"]
+        assert sorted(calls) == ["codex", "later"]
         captured = capsys.readouterr()
         assert captured.err.count(notice.message) == 1
         assert captured.err.count(notice.command) == 1
@@ -873,120 +1007,89 @@ class TestPytoolsInstallNotices:
 
 
 class TestDefaultSteps:
-    """`_DEFAULT_STEPS`に想定ステップが登録されていることを検証する。"""
+    """`_DEFAULT_STEPS`の登録内容と先行工程・対象OSの宣言を検証する。"""
 
-    def test_statusline_binary_step_registered(self):
-        """claude-statuslineバイナリ取得ステップが登録され、libarchiveステップの後に続く。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        assert "claude-statusline バイナリの取得" in names
-        assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
-
-    def test_plugin_cache_prune_follows_claude_plugin_install(self) -> None:
-        """plugin cacheの旧版削除は、導入処理が現行版を更新した直後に1回だけ実行する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        prune_name = "Claude Code plugin cache の旧版削除"
-        assert names.count(prune_name) == 1
-        assert names.index(prune_name) == names.index("Claude Code plugin のインストール") + 1
-
-    def test_agy_cli_step_follows_claude_code_cli(self):
-        """Antigravity CLIの導入をClaude Code CLIの直後に1回登録する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        agy_name = "Antigravity CLI の導入"
-        assert names.count(agy_name) == 1
-        assert names.index(agy_name) == names.index("Claude Code CLI の導入と更新") + 1
-
-    def test_herdr_cli_step_follows_agy_cli(self) -> None:
-        """Herdr CLIの導入と更新を他のCLI準備に続けて1回登録する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        herdr_name = "Herdr CLI の導入と更新"
-        assert names.count(herdr_name) == 1
-        assert names.index(herdr_name) == names.index("Antigravity CLI の導入") + 1
-
-    def test_codex_plugin_step_order(self):
-        """Codex pluginは正本からsnapshotを生成した後に導入する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        assert names.index("Codex リンクの同期") < names.index("Codex plugin のインストール")
-        assert names.index("Claude Code plugin のインストール") < names.index("Codex plugin snapshot の生成")
-        assert names.index("Codex plugin snapshot の生成") + 1 == names.index("Codex plugin のインストール")
-        assert names.index("Codex plugin のインストール") < names.index("旧Codex User scope MCP登録の移行")
-        assert names.index("旧Codex User scope MCP登録の移行") < names.index("Claude 設定")
-
-    def test_codex_logs_step_registered_after_links(self):
-        """Codex診断ログの通常ストレージ復元をリンク同期の直後に実行する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        assert names.index("Codex 診断ログの通常ストレージ復元 (Linux)") == names.index("Codex リンクの同期") + 1
-
-    def test_cli_setup_precedes_dependent_steps(self):
-        """CLI本体をplugin、リンク、旧User scope移行より前に準備する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        remove_name = "Codex の Claude MCP 登録削除"
-        codex_name = "Codex CLI の導入と更新"
-        claude_name = "Claude Code CLI の導入と更新"
-        assert names.count(remove_name) == 1
-        assert names.index(remove_name) == names.index(codex_name) + 1
-        assert names.index(remove_name) < names.index(claude_name)
-        ordered = [
-            "npm/pnpm サプライチェーン対策",
-            "mise セットアップ",
-            codex_name,
-            remove_name,
-            claude_name,
-            "Antigravity CLI の導入",
-            "Herdr CLI の導入と更新",
-            "agent-toolkit ルールの同期",
-            "Codex リンクの同期",
-            "Claude Code plugin のインストール",
+    # 共有資源と実行ファイルの前提から定めた先行工程。宣言の欠落は同時実行による競合を招く。
+    _EXPECTED_PREDECESSORS: dict[str, set[str]] = {
+        "mise セットアップ": {"npm/pnpm サプライチェーン対策", "bin PATH 登録 (Windows)"},
+        "Codex CLI の導入と更新": {"mise セットアップ", "Codex 診断ログの通常ストレージ復元 (Linux)"},
+        "Codex 診断ログの通常ストレージ復元 (Linux)": {"Codex リンクの同期"},
+        "Codex の Claude MCP 登録削除": {"Codex CLI の導入と更新"},
+        "Claude Code CLI の導入と更新": {"mise セットアップ"},
+        "Codex plugin snapshot の生成": {"Claude Code plugin のインストール"},
+        "Codex plugin のインストール": {
+            "Codex の Claude MCP 登録削除",
             "Codex plugin snapshot の生成",
-            "Codex plugin のインストール",
-            "agents_serverのuv環境ウォームアップ",
-            "旧Codex User scope MCP登録の移行",
-            "Claude 設定",
-        ]
-        indexes = [names.index(name) for name in ordered]
-        assert indexes == sorted(indexes)
+            "Codex リンクの同期",
+            "旧配布物の削除",
+        },
+        "agent-toolkit ルールの同期": {"旧配布物の削除"},
+        "Claude Code plugin のインストール": {"Claude Code CLI の導入と更新"},
+        "Claude Code plugin cache の旧版削除": {"Claude Code plugin のインストール"},
+        "agents_serverのuv環境ウォームアップ": {"Claude Code plugin のインストール", "Codex plugin のインストール"},
+        "hookスクリプトのuv環境ウォームアップ": {"agents_serverのuv環境ウォームアップ"},
+        "pyfltr MCPのuv環境ウォームアップ": {"Claude Code plugin のインストール", "Codex plugin のインストール"},
+        "旧Codex User scope MCP登録の移行": {"Claude Code CLI の導入と更新", "Codex plugin のインストール"},
+        "Claude 設定": {"Claude Code plugin のインストール", "旧Codex User scope MCP登録の移行"},
+        "claude-statusline バイナリの取得": {"Codex CLI の導入と更新"},
+        "libarchive (Windows)": {"mise セットアップ"},
+        "dotfiles自動更新タイマー セットアップ (Linux)": {"atk serve 自動起動セットアップ (Linux)"},
+    }
+    _WINDOWS_STEPS = {
+        "bin PATH 登録 (Windows)",
+        "MSYS 環境変数 (Windows)",
+        "libarchive (Windows)",
+        "Windowsレジストリ設定",
+        "SendTo ショートカット (Windows)",
+        "メディアリモコン自動起動 (Windows/stheno)",
+        "ユーザー PATH 整理 (Windows)",
+    }
+    _LINUX_STEPS = {
+        "Codex 診断ログの通常ストレージ復元 (Linux)",
+        "tmux プラグインの導入 (Linux)",
+        "atk serve 自動起動セットアップ (Linux)",
+        "dotfiles自動更新タイマー セットアップ (Linux)",
+    }
 
-    def test_warmup_hook_scripts_follows_codex_plugin_install(self) -> None:
-        """hookスクリプトのuv環境ウォームアップをCodex plugin導入の直後に1回登録する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        warmup_name = "hookスクリプトのuv環境ウォームアップ"
-        assert names.count(warmup_name) == 1
-        assert names.index(warmup_name) == names.index("agents_serverのuv環境ウォームアップ") + 1
-
-    def test_agents_server_warmup_follows_codex_plugin_install(self) -> None:
-        """agents_serverのuv環境ウォームアップをCodex plugin導入直後に登録する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        warmup_name = "agents_serverのuv環境ウォームアップ"
-        assert names.count(warmup_name) == 1
-        assert names.index(warmup_name) == names.index("Codex plugin のインストール") + 1
-
-    def test_atk_serve_follows_statusline_before_windows_steps(self) -> None:
-        """atk serveセットアップをstatusline取得直後かつWindows固有処理前に1回登録する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        serve_name = "atk serve 自動起動セットアップ (Linux)"
-        assert names.count(serve_name) == 1
-        assert names.index(serve_name) == names.index("claude-statusline バイナリの取得") + 1
-        assert names.index(serve_name) < names.index("Windowsレジストリ設定")
-        # 計画ファイル閲覧を統合したため、旧計画ビューアーの自動起動ステップは登録しない。
-        assert not [name for name in names if "claude-plans-viewer" in name]
-
-    def test_dotfiles_autoupdate_follows_atk_serve_before_windows_steps(self) -> None:
-        """dotfiles自動更新timerをatk serve直後かつWindows固有処理前に1回登録する。"""
-        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        timer_name = "dotfiles自動更新タイマー セットアップ (Linux)"
-        serve_name = "atk serve 自動起動セットアップ (Linux)"
-        assert names.count(timer_name) == 1
-        assert names.index(timer_name) == names.index(serve_name) + 1
-        assert names.index(timer_name) < names.index("Windowsレジストリ設定")
-
-    def test_removed_plan_migration_is_not_registered(self) -> None:
-        """廃止済みatk計画移行をpost-applyへ登録しない。"""
+    def test_step_names_are_unique_and_declarations_resolve(self) -> None:
+        """ステップ名は一意であり、全ての先行工程の宣言が既存ステップを指し循環しない。"""
         steps = post_apply._DEFAULT_STEPS  # noqa: SLF001
         names = [step.name for step in steps]
-        assert names.index("Windowsレジストリ設定") == names.index("dotfiles自動更新タイマー セットアップ (Linux)") + 1
-        assert [step.name for step in steps if step.background] == [
-            "agents_serverのuv環境ウォームアップ",
-            "hookスクリプトのuv環境ウォームアップ",
-        ]
+        assert len(names) == len(set(names))
+        post_apply._resolve_predecessors(steps)  # noqa: SLF001
+
+    def test_predecessor_declarations(self) -> None:
+        """共有資源を扱うステップの組へ先行工程を宣言する。"""
+        declared = {step.name: set(step.after) for step in post_apply._DEFAULT_STEPS if step.after}  # noqa: SLF001
+        assert declared == self._EXPECTED_PREDECESSORS
+
+    def test_user_path_cleanup_follows_all_other_steps(self) -> None:
+        """ユーザーPATHの整理は他の全ステップの後に実行する。"""
+        steps = post_apply._DEFAULT_STEPS  # noqa: SLF001
+        assert steps[-1].name == "ユーザー PATH 整理 (Windows)"
+        assert [step.name for step in steps if step.after_all_preceding] == ["ユーザー PATH 整理 (Windows)"]
+
+    def test_platform_declarations(self) -> None:
+        """実行中のOSでは何もしないステップへ対象OSを宣言する。"""
+        steps = post_apply._DEFAULT_STEPS  # noqa: SLF001
+        assert {step.name for step in steps if step.platforms == ("win32",)} == self._WINDOWS_STEPS
+        assert {step.name for step in steps if step.platforms == ("linux",)} == self._LINUX_STEPS
+        assert not [step.name for step in steps if step.platforms not in ((), ("win32",), ("linux",))]
+
+    def test_pyfltr_mcp_warmup_registered_once(self) -> None:
+        """pyfltr MCPのウォームアップを1回だけ登録する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # noqa: SLF001
+        assert names.count("pyfltr MCPのuv環境ウォームアップ") == 1
+
+    def test_statusline_binary_step_registered(self):
+        """claude-statuslineバイナリ取得ステップを1回登録する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        assert names.count("claude-statusline バイナリの取得") == 1
+
+    def test_removed_steps_are_not_registered(self) -> None:
+        """廃止済みの計画移行と旧計画ビューアーの自動起動を登録しない。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # noqa: SLF001
+        assert not [name for name in names if "claude-plans-viewer" in name or "計画" in name]
 
 
 class TestPluginRecommendations:

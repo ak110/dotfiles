@@ -58,6 +58,9 @@ _POLL_INTERVAL_SEC = 600.0
 # `latest`指定ツールを外部の登録簿に対して再評価する間隔と、導入処理の実行上限。
 _MISE_REFRESH_INTERVAL_SEC = 24 * 60 * 60
 _MISE_INSTALL_TIMEOUT_SEC = 600
+# dotfilesの作業ツリーの`mise.lock`を書き戻さないよう、プロジェクトのlockfileに対してlockedモードで導入する。
+# global設定はlockにURLを持たないツールを含むため対象外とする。
+_MISE_LOCKED_ENV = {"MISE_LOCKED": "1", "MISE_LOCKED_SCOPES": "project"}
 _INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
 _INTERNAL_DOTFILES_UPDATED_ARG = "--internal-dotfiles-updated"
 
@@ -309,7 +312,7 @@ def _refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
         result = subprocess.run(
             [executable, "install", "--quiet"],
             cwd=dotfiles_root,
-            env=_child_env(),
+            env=_child_env() | _MISE_LOCKED_ENV,
             capture_output=True,
             text=True,
             encoding="utf-8",

@@ -10,6 +10,9 @@ Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッ
 
 `session.start`は読込目印へ`ready`を書き、終了要求を`consumed`へ初期化する。Pythonは目印の内容が`ready`で、更新時刻が現在のClaude Code本体の開始より後の場合だけ、終了要求へ`requested`を書いて`exit_requested`を返す。`turn.complete`はメインのターンだけでその値を読み、`consumed`へ書き換えた後に`/exit`をキューへ入れる。目印が無い場合とCodexでは、対話CLI本体を従来の方法で終了させる。
 
+`/exit`は終了とともに停止するセッション限りの作業が残ると確認画面を表示するため、`turn.complete`は`/exit`の直前に`durable`が真でないcron taskを削除する。一覧の取得と各削除は`$.tool.check`の判定が`allow`の場合だけ行い、失敗しても`/exit`は実行する。
+常駐処理が起動した会話の最上位のStopでは、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`が背景作業の残存を確かめる。終了要求が`requested`かつStop入力の`background_tasks`に有効な非`teammate`の作業が残る場合は、同フックが終了要求を`consumed`へ戻してblockする。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
+
 通常のSessionEndでは現行セッションの2ファイルを保持し、期限を過ぎた他セッションのファイルを回収する。`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルには前掲の固定値だけを保存し、発話やツール結果は保存しない。
 
 ## 状態ファイルの設計
@@ -91,7 +94,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `process_wi_skill_invoked`: process-wiスキルの起動を記録する。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受領した時点で偽へ戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が`atk agents-exit-session`の実行と機械可読な応答を記録し、
-  `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。保持はセッション状態の有効期間中に限り、通常のスキル完了処理では再利用の対象外とする
+  `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。同フックが背景作業の残存で終了要求を取り下げた時点で偽へ戻し、`atk agents-exit-session`の再実行が再び真にする。保持はセッション状態の有効期間中に限り、通常のスキル完了処理では再利用の対象外とする
 - `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションのツール呼び出しを含まないターンの連続回数を記録する。
   同フックが常駐ループの停止判定の入力として読む。ツール呼び出しを観測したターンと、委譲先または背景ジョブの完了待ちのターンで0へ戻し、停止工程を実行した時点でも0へ戻す。セッション終了まで保持する
 - `stop_observed_entry_count`: 同フックが、Stop判定の時点で観測済みの会話記録のエントリ数を記録する。

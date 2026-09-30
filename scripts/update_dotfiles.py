@@ -9,6 +9,9 @@ r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 `chezmoi status`（apply予定ファイルの表示） → `chezmoi diff --no-pager` →
 `chezmoi apply --force`を、プロセス間排他ロック下で直列実行する。
 画面には4段の進捗を示し、diffの詳細は永続ログへ記録する。
+pull前にルート`mise.lock`の差分を破棄する。`mise.lock`はコミット済みの`mise.toml`から
+再生成でき、更新処理のmise操作が書き戻した差分を利用者の未コミット内容として保持しないためである。
+それ以外の未コミット内容は退避してpull後に復元する。
 pullまたは退避復元が競合した場合は、元HEADと未コミット内容を専用参照へ保存し、
 設定済み上流へ作業branchを合わせて更新を継続する。
 
@@ -334,6 +337,10 @@ def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+# 更新処理が差分を保持せずHEADへ戻すlockfile（作業ツリーのルートからの相対パス）。
+_MISE_LOCK = "mise.lock"
+
+
 def _git_value(*arguments: str) -> str | None:
     """Gitの成功した単一値を返し、失敗時は診断を転送する。"""
     result = _git_capture(*arguments)
@@ -421,10 +428,21 @@ def _clean_saved_untracked(paths: tuple[str, ...]) -> bool:
     return not paths or _run_git_change("clean", "-fd", "--", *paths)
 
 
+def _discard_mise_lock_changes() -> bool:
+    """ルート`mise.lock`のindexと作業ツリーの差分をHEADの内容へ戻す。差分が無ければ何もしない。"""
+    status = _git_value("status", "--porcelain=v1", "--", _MISE_LOCK)
+    if status is None:
+        return False
+    return not status or _run_git_change("checkout", "HEAD", "--", _MISE_LOCK)
+
+
 def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -> int:
     """Git更新を実行し、競合時は復旧参照を保持して上流へ合わせる。"""
     if _git_operation_in_progress():
         print("既存のmergeまたはrebaseが進行中のため、更新を開始しません。", file=sys.stderr)
+        return 1
+    if not _discard_mise_lock_changes():
+        print("mise.lockの差分を破棄できなかったため、更新を中止します。", file=sys.stderr)
         return 1
     branch = _git_value("symbolic-ref", "--quiet", "--short", "HEAD")
     upstream = _git_value("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")

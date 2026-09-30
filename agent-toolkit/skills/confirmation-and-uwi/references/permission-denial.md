@@ -39,6 +39,7 @@ permissions設定による確認ダイアログが対象の場合は本書の範
 | コンテナーまたはサービスの再作成 | Interfere With Workloads等 | 許可ルール`Reversible Change Approval`が、利用者本人の環境で変更前の構成を復元できる再作成を対象に含む |
 | 承認条件の緩和・規範改訂・設定原本変更を含むコミット | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
 | `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | 許可ルール`Session And Delegation Control`が対象に含む |
+| 自ら新規に作成したtmuxセッションでの対話CLIの起動し直し、キー入力の送信、画面の取得 | Tmux Self Drive | 許可ルール`Session And Delegation Control`が対象に含む。拒否が残る場合は後掲の偽陽性フローへ進む |
 | UWIの回答でエージェントに実行を任せたシステムへの永続的な変更（sudoによるパッケージ導入など） | Unauthorized Persistence | UWIの回答は判定器が読む会話上のユーザー発言に現れない。実行前には確認せずに実行し、拒否された場合は設定ファイルの読み取りを省いて後掲の偽陽性フローの`AskUserQuestion`へ進む |
 | ユーザーの指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | 許可ルール`Reconsidered Retry Approval`により、拒否本文とユーザーメッセージを比べて同一のコマンド・引数・ツールを1回だけ再発行する |
 | 常時読み込む規範ファイル（`~/.claude/rules/`配下など）の編集 | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
@@ -57,6 +58,8 @@ auto mode classifierによる拒否は対象操作の実行自体を妨げる技
 本フローはその1回の再発行の後も拒否が残る場合に適用する。`clears`が成立するのは、ユーザーが拒否を偽陽性と明示した回答に限る。進行への同意は対象外とする。
 
 メイン・サブエージェントのいずれが発行した操作にも適用する。
+委譲先は本フローの`AskUserQuestion`を自ら発行せず、拒否本文、分類名、拒否された操作と対象を、`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」の確認事項として呼び出し元へ返す。代替手段で工程を進めた場合も同じく返す。
+呼び出し元は、返却から受け取った拒否を自ら発行した操作の拒否と同じく本フローで扱う。「拒否の確認手順」の設定ファイルの読み取りとallow規則の確認も呼び出し元が行う。手順3で承認を得た後の実行も手順3に従い、委譲先が継続中か終端済みかを問わずメイン側が該当操作を直接実行する。
 対象操作は`git commit`、`git commit --amend`、`Write`／`Edit`／`MultiEdit`によるファイル編集、GitHubリポジトリ設定変更等の外部サービスの設定変更コマンドを含む（代表例であり、同種の操作を含む開放集合とする）。
 適用条件はユーザーまたは処理中のAWIでその操作が承認済みであると実体確認でき、拒否理由がその承認を反映していないと判断できる場合、または「拒否の確認手順」のallow規則の確認で対応する規則がある場合とする。両条件は独立に判定し、いずれかが成立した操作を偽陽性の可能性が高い対象として扱う。適用範囲は`hard_deny`領域の外とする。
 

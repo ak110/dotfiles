@@ -2390,6 +2390,11 @@ class TestMiseLatestRefresh:
         assert kwargs["cwd"] == tmp_path
         assert kwargs["timeout"] == 600
         assert kwargs["capture_output"] is True
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        # 作業ツリーの`mise.lock`を書き戻さないlockedモードで、対象をプロジェクトのlockfileに限る。
+        assert env["MISE_LOCKED"] == "1"
+        assert env["MISE_LOCKED_SCOPES"] == "project"
 
     @pytest.mark.parametrize(("failure", "expected_detail"), [("nonzero", "exit code 7"), ("timeout", "途中出力")])
     def test_mise_failure_warns_and_returns_false(

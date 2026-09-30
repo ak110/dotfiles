@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 _WARMUP_TIMEOUT = 600.0
 _CODEX_LIST_TIMEOUT = 60.0
+_AGENT_TOOLKIT_ID = f"agent-toolkit@{claude_common.MARKETPLACE_NAME}"
 
 
 def enabled_version(installed: list[object], plugin_id: str) -> str | None:
@@ -97,6 +98,29 @@ def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Pat
     return targets
 
 
+def agent_toolkit_targets(
+    installed_plugins_path: Path,
+    *,
+    claude_relative: Path,
+    codex_relative: Path,
+    tag: str,
+) -> list[Path]:
+    """Claude CodeとCodexが実際に参照するagent-toolkitの版の中のファイルを重複なく列挙する。"""
+    claude = claude_plugin_scripts(
+        installed_plugins_path,
+        plugin_id=_AGENT_TOOLKIT_ID,
+        relative_path=claude_relative,
+        tag=tag,
+    )
+    codex = codex_plugin_script(
+        plugin_id=_AGENT_TOOLKIT_ID,
+        plugin_name="agent-toolkit",
+        relative_path=codex_relative,
+        tag=tag,
+    )
+    return existing_targets([*claude, codex], tag=tag)
+
+
 def claude_plugin_scripts(
     installed_plugins_path: Path,
     *,
@@ -135,8 +159,7 @@ def warmup(
     fail_on_error: bool = False,
 ) -> None:
     """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。"""
-    started = time.monotonic()
-    result = claude_common.run_subprocess(
+    run_command(
         [
             str(uv),
             "run",
@@ -147,21 +170,27 @@ def warmup(
             str(path),
             *arguments,
         ],
-        timeout=_WARMUP_TIMEOUT,
-        tag="uv",
+        target=log_format.home_short(path),
+        tag=tag,
+        fail_on_error=fail_on_error,
     )
+
+
+def run_command(cmd: Sequence[str], *, target: str, tag: str, fail_on_error: bool) -> None:
+    """環境を構築するコマンドを上限時間付きで1回実行し、対象・終了コード・所要時間を記録する。"""
+    started = time.monotonic()
+    result = claude_common.run_subprocess(list(cmd), timeout=_WARMUP_TIMEOUT, tag=Path(cmd[0]).stem)
     elapsed = time.monotonic() - started
-    short = log_format.home_short(path)
     if result is not None and result.returncode == 0:
-        logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {short}"))
+        logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {target}"))
         return
-    # 失敗時は`uv`の標準エラーと標準出力を必ず伝播させる。
+    # 失敗時は構築コマンドの標準エラーと標準出力を必ず伝播させる。
     # 終了コードと経過時間だけの診断では、依存解決の失敗本文が永続ログにもtracebackにも現れず、
     # 利用者と後続の調査主体が原因へ到達できない。
     if result is None:
-        summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {short}"
+        summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {target}"
     else:
-        summary = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {short}"
+        summary = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {target}"
     message = f"{summary} / {claude_common.format_cli_error(result)}"
     logger.warning(log_format.format_status(tag, message))
     if fail_on_error:

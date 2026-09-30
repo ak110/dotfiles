@@ -1057,6 +1057,76 @@ class TestGitConflictRecovery:
         assert {"tracked.txt", "staged.txt", "untracked.txt"} <= set(saved_paths)
 
 
+def _track_mise_lock(local: pathlib.Path, seed: pathlib.Path) -> None:
+    """上流へ`mise.lock`を追加し、ローカルへ取り込んでから上流側で更新する。"""
+    (seed / "mise.lock").write_text("lock v1\n", encoding="utf-8")
+    _git(seed, "add", "mise.lock")
+    _git(seed, "commit", "-m", "lock v1")
+    _git(seed, "push")
+    _git(local, "pull", "--quiet")
+    (seed / "mise.lock").write_text("lock v2\n", encoding="utf-8")
+    _git(seed, "add", "mise.lock")
+    _git(seed, "commit", "-m", "lock v2")
+    _git(seed, "push")
+
+
+class TestMiseLockDiscard:
+    """pull前に`mise.lock`の差分を破棄し、他の未コミット内容だけを退避・復元する。"""
+
+    def test_mise_lock_only_change_is_discarded_without_stash(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`mise.lock`だけの差分では退避用refを作成せず、更新後の`mise.lock`が上流と一致する。"""
+        local, seed, _remote = _create_git_pair(tmp_path)
+        _track_mise_lock(local, seed)
+        (local / "mise.lock").write_text("rewritten by mise\n", encoding="utf-8")
+        _git(local, "add", "mise.lock")
+        monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+        _patch_real_pull(monkeypatch, local)
+
+        result = _REAL_UPDATE_GIT_WITH_RECOVERY(1, 5, timeout=30)
+
+        assert result == 0
+        assert _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree") == ""
+        assert _git(local, "status", "--porcelain=v1") == ""
+        assert (local / "mise.lock").read_text(encoding="utf-8") == "lock v2\n"
+        assert "未コミット内容" not in capsys.readouterr().out
+
+    def test_other_changes_are_stashed_and_restored_without_mise_lock(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """他のファイルの差分（stage済み・未追跡を含む）は退避・復元し、退避内容に`mise.lock`を含めない。"""
+        local, seed, _remote = _create_git_pair(tmp_path)
+        _track_mise_lock(local, seed)
+        (local / "mise.lock").write_text("rewritten by mise\n", encoding="utf-8")
+        (local / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+        (local / "staged.txt").write_text("staged\n", encoding="utf-8")
+        _git(local, "add", "staged.txt")
+        (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+        monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+        _patch_real_pull(monkeypatch, local)
+
+        result = _REAL_UPDATE_GIT_WITH_RECOVERY(1, 5, timeout=30)
+
+        worktree_refs = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()
+        stash_ref = next(ref for ref in worktree_refs if ref.startswith("refs/worktree/update-dotfiles-"))
+        saved_paths = set(_git(local, "stash", "show", "--include-untracked", "--name-only", stash_ref).splitlines())
+        assert result == 0
+        assert {"tracked.txt", "staged.txt", "untracked.txt"} <= saved_paths
+        assert "mise.lock" not in saved_paths
+        assert (local / "mise.lock").read_text(encoding="utf-8") == "lock v2\n"
+        assert (local / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+        assert (local / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+        status = _git(local, "status", "--porcelain=v1").splitlines()
+        assert "A  staged.txt" in status
+        assert not [line for line in status if line.endswith("mise.lock")]
+
+
 class TestFilterApplyPending:
     """`chezmoi status`出力の2列目フィルタを公開インターフェース経由で検証する。"""
 

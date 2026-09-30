@@ -219,7 +219,8 @@ def _function_hook_dir() -> pathlib.Path | None:
     return root / _FUNCTION_HOOK_DIR if root is not None and root.is_absolute() else None
 
 
-def _function_hook_paths(session_id: str) -> tuple[pathlib.Path, pathlib.Path] | None:
+def function_hook_paths(session_id: str) -> tuple[pathlib.Path, pathlib.Path] | None:
+    """Function hooks moduleと共有する読込目印と終了要求のパスを返す。解決できなければNoneを返す。"""
     directory = _function_hook_dir()
     if directory is None or not _SESSION_ID.fullmatch(session_id):
         return None
@@ -229,7 +230,7 @@ def _function_hook_paths(session_id: str) -> tuple[pathlib.Path, pathlib.Path] |
 def _request_hook_exit(target: Target, session_id: str | None) -> bool:
     if target.host != "claude" or not session_id:
         return False
-    paths = _function_hook_paths(session_id)
+    paths = function_hook_paths(session_id)
     if paths is None:
         return False
     marker, request = paths
@@ -247,7 +248,7 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
     directory = _function_hook_dir()
     if directory is None or not directory.is_dir():
         return
-    own_paths = _function_hook_paths(keep_session_id) if keep_session_id else None
+    own_paths = function_hook_paths(keep_session_id) if keep_session_id else None
     threshold = time.time() - _STATE_MAX_AGE_SECONDS
     for pattern in ("marker-*.txt", "request-*.txt"):
         for path in directory.glob(pattern):

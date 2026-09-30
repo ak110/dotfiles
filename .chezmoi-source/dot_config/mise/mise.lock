@@ -106,19 +106,19 @@ url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checke
 provenance = "github-attestations"
 
 [[tools.glab]]
-version = "1.118.0"
+version = "1.119.0"
 backend = "gitlab:gitlab-org/cli"
 specifiers = ["latest"]
 
 [tools.glab."platforms.linux-x64"]
-checksum = "sha256:f3782ddb62b6ab20d0031699ea7b43f345dc6f63e991883660e21343b9524931"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.118.0/downloads/glab_1.118.0_linux_amd64.tar.gz"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E118%2E0/glab_1%2E118%2E0_linux_amd64%2Etar%2Egz"
+checksum = "sha256:4d83375d202ffa634eaf627fd9272b610fa599f20f5b711f55d770583eca2b84"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.119.0/downloads/glab_1.119.0_linux_amd64.tar.gz"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E119%2E0/glab_1%2E119%2E0_linux_amd64%2Etar%2Egz"
 
 [tools.glab."platforms.windows-x64"]
-checksum = "sha256:f9e843edb625a6f78686d8f421f1e80f98f76fe993b75263c1aa9f428c8a32ff"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.118.0/downloads/glab_1.118.0_windows_amd64.zip"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E118%2E0/glab_1%2E118%2E0_windows_amd64%2Ezip"
+checksum = "sha256:fa12c31cf8100fd5b41f6fc9cf907b344474d183c766d9b6806dbbbeba14e7af"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.119.0/downloads/glab_1.119.0_windows_amd64.zip"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E119%2E0/glab_1%2E119%2E0_windows_amd64%2Ezip"
 
 [[tools.glow]]
 version = "3.0.0"

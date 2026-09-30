@@ -6,7 +6,7 @@ description: >
   応答を始める前に必ず起動する。セッションの最初の発話と、会話圧縮の後に最初に受けた発話がこれに当たる。
   操作または判断の確認要否を判定するとき、UWIへ確認を退避するとき、
   回答済みUWIを元の作業へ反映するとき、
-  またはツール呼び出しが権限設定もしくはauto mode classifierに拒否されたときにも起動する。
+  またはツール呼び出しが権限設定もしくはauto mode classifierに拒否されたとき、委譲先の返却がその拒否を報告したときにも起動する。
 ---
 
 # 確認とUWIの状態遷移
@@ -28,7 +28,7 @@ UWIの本文、投入、状態および依存関係の形式は`agent-toolkit:wi
 - `references/conflict-resolution.md`: 規範どうしが矛盾する場合の由来確定
 - `references/procedure-conflict.md`: 手順どおりに進められない場合の判定順
 
-ツール呼び出しが権限設定またはauto mode classifierに拒否された場合は、上記に加えて`references/permission-denial.md`を全文読み、同書の手順に従う。
+ツール呼び出しが権限設定またはauto mode classifierに拒否された場合と、委譲先の返却がその拒否を報告した場合は、上記に加えて`references/permission-denial.md`を全文読み、同書の手順に従う。
 同書は拒否の確認手順、既知の誤拒否パターン、偽陽性と判断できる拒否への対応を扱う。
 
 ## 確認要否の判定
