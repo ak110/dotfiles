@@ -1504,6 +1504,29 @@ def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_err
     assert records[-1]["excluded"]["check-detected"] == 2
 
 
+def test_bundle_excludes_wait_continuations_but_keeps_real_failures(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """終了3の待機継続を出力の表記によらず除外し、別の契約の失敗は残す。"""
+    cases = [
+        (["atk", "agents", "wait"], 3, '{"status": "running"}'),
+        (["/repo/agent-toolkit/bin/atk", "agents", "wait"], 3, "待機継続"),
+        (["/bin/bash", "-lc", "/repo/agent-toolkit/bin/atk agents wait"], 3, "別の表示"),
+        (["sh", "-c", "atk agents wait"], 3, ""),
+        (["atk", "agents", "wait"], 2, "引数が不正"),
+        (["atk", "agents", "show"], 3, "失敗"),
+        (["other", "agents", "wait"], 3, "失敗"),
+        (["bash", "-lc", "atk agents wait; false"], 3, "連結全体の失敗"),
+        (["bash", "-lc", "echo 'atk agents wait'"], 3, "引用だけ"),
+        (["rg", "missing", "docs"], 1, ""),
+    ]
+    records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
+    candidates = [item for item in records if item["kind"] == "candidate"]
+    assert {locator["line"] for item in candidates for locator in item["locators"]} == {5, 6, 7, 8, 9}
+    assert records[-1]["excluded"]["normal-nonterminal-result"] == 4
+    assert records[-1]["excluded"]["normal-negative-result"] == 1
+
+
 def test_bundle_excludes_transient_classifier_failure(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """auto mode classifierの一時的な判定不能は候補にせず専用区分へ数える。"""
     transcript = _write_transcript(

@@ -786,6 +786,57 @@ def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash(
     assert candidates[-1]["excluded"] == {"normal-negative-result": 6}
 
 
+def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Bashの記録を公開bundleで処理し、包装と出力形式が違う継続を同じ区分へ集計する。"""
+    entries = []
+    cases = [
+        ("atk agents wait", 3),
+        ("/repo/agent-toolkit/bin/atk agents wait", 3),
+        ("bash -lc 'atk agents wait'", 3),
+        ("sh -c 'atk agents wait'", 3),
+        ("atk agents wait && false", 3),
+        ("atk agents wait", 2),
+    ]
+    for index, (command, code) in enumerate(cases):
+        call_id = f"toolu_{index}"
+        entries.extend(
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}},
+                        ],
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": call_id,
+                                "is_error": True,
+                                "content": f'Exit code {code}\n{{"status": "running"}}',
+                            },
+                        ],
+                    },
+                },
+            ]
+        )
+    transcript = tmp_path / "claude-wait.jsonl"
+    transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    records = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert {locator["line"] for item in records[:-1] for locator in item["locators"]} == {10, 12}
+    assert records[-1]["excluded"]["normal-nonterminal-result"] == 4
+
+
 def test_candidate_events_does_not_spend_hook_budget_on_repeat_summaries() -> None:
     """1件目の本文の要約で届く2件目以降の通知を同じ通知として扱い、上限の枠を別の通知へ残す。"""
     variants = [

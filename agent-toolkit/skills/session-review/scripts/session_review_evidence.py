@@ -3571,6 +3571,9 @@ def _candidate_events(
             if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(event):
                 excluded["normal-negative-result"] += 1
                 continue
+            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_nonterminal_result(event):
+                excluded["normal-nonterminal-result"] += 1
+                continue
             if candidate_kind == "delegate-return" and _is_normal_delegate_return(
                 event, shell=record in shell_records, resumed=record in resumed_records
             ):
@@ -4010,6 +4013,18 @@ def _is_help_command_failure(event: dict[str, Any]) -> bool:
         return False
     normalized = diagnostic.casefold()
     return "usage:" in normalized or "options:" in normalized
+
+
+def _is_normal_nonterminal_result(event: dict[str, Any]) -> bool:
+    """単独の`atk agents wait`が返す終了3を、正常な待機継続として区分する。"""
+    if _failure_exit_code(event) != 3:
+        return False
+    executable, subcommand, command, args = _failure_command_parts(event)
+    if executable != "atk" or subcommand != "agents" or args[1:3] != ["agents", "wait"]:
+        return False
+    tokens = _shell_command_tokens(command)
+    # 連結全体の終了コードを待機へ帰属させず、同じコマンドによる継続だけを除外する。
+    return tokens is not None and not any(set(token) <= _SHELL_OPERATOR_CHARS for token in tokens)
 
 
 def _is_normal_negative_result(event: dict[str, Any]) -> bool:
