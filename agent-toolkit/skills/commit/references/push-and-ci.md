@@ -9,7 +9,7 @@ CI失敗の帰属と原因分析は`../../bugfix/SKILL.md`に従う。
 プロジェクト方針が無い場合は次の基準を用いる。
 
 - ユーザーが明示したバージョン区分（MAJOR、MINOR、PATCH）を最優先とする
-- MAJORリリースはユーザーの明示指示がある場合に限る。MAJORは互換破壊の外部宣言であり、`agent-toolkit:confirmation-and-uwi`の`references/judgment.md`「認可を要する操作」が定める承認対象に当たる
+- MAJORリリースはユーザーの明示指示がある場合に限る。MAJORは互換破壊の外部宣言であり、`agent-toolkit:user-confirmation-and-report`の`references/judgment.md`「認可を要する操作」が定める承認対象に当たる
 - 現行版が数値3要素のSemVerでない場合は、プロジェクトの対応表またはユーザーが明示した区分から区分を決める。いずれも無い場合はバージョンを変更せず、判定不能の根拠を報告する。文字列の辞書順と桁数は区分の判定材料から外れる
 
 ## ローカルで実行するlintとCIジョブの対応

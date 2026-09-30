@@ -122,33 +122,14 @@ class TestReadInstalledFromFile:
         assert changed is False
         assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
-    def test_file_not_found_falls_back_to_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """ファイルが存在しない場合は CLI フォールバックで plugin list が呼ばれる。"""
-        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", tmp_path / "missing.json")
-        monkeypatch.setattr(
-            _install_claude_plugins,
-            "_read_target_info",
-            lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
-        )
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
-        monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
-        monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
-        monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
-        monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-        calls: list[list[str]] = []
-        fake_run = make_fresh_install_fake(calls)
-
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
-
-        changed, _ = _install_claude_plugins.run()
-        assert changed is True
-        # CLI フォールバックとして plugin list が呼ばれている
-        assert any(command_matches(c, ["claude", "plugin", "list"]) for c in calls)
-
-    def test_invalid_json_falls_back_to_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """不正な JSON の場合は CLI フォールバックで動作する。"""
+    @pytest.mark.parametrize("content", [None, "{invalid"], ids=["file_not_found", "invalid_json"])
+    def test_unreadable_file_falls_back_to_cli(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, content: str | None
+    ):
+        """ファイルが存在しないか不正な JSON の場合は CLI フォールバックで plugin list が呼ばれる。"""
         path = tmp_path / "installed_plugins.json"
-        path.write_text("{invalid", encoding="utf-8")
+        if content is not None:
+            path.write_text(content, encoding="utf-8")
         monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", path)
         monkeypatch.setattr(
             _install_claude_plugins,
@@ -161,12 +142,13 @@ class TestReadInstalledFromFile:
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
         monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
         calls: list[list[str]] = []
-        fake_run = make_fresh_install_fake(calls)
+        fake_run = make_fresh_install_fake(calls, version="0.2.0")
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         changed, _ = _install_claude_plugins.run()
         assert changed is True
+        # CLI フォールバックとして plugin list が呼ばれている
         assert any(command_matches(c, ["claude", "plugin", "list"]) for c in calls)
 
     def test_mixed_scopes_user_scope_only_in_version_check(

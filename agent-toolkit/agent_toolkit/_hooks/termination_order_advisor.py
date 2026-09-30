@@ -24,6 +24,7 @@ transcriptのSkillの成功結果とBashツール起動記録から判定する�
 import json
 import pathlib
 
+from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
@@ -112,10 +113,7 @@ def _skill_invocations(entries: list[dict]) -> list[str]:
         if not isinstance(command, str):
             continue
         if any(
-            segment.resolved
-            and segment.tokens
-            and pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"}
-            and segment.tokens[1:] == ("agents-exit-session",)
+            segment.resolved and is_agents_exit_session_command(segment.tokens)
             for segment in extract_execution_segments(command)
         ):
             invocations.append("atk agents-exit-session")

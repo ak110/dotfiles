@@ -359,7 +359,8 @@ class TestExternalMarketplaces:
                 )
                 return _FakeResult(returncode=0, stdout=json.dumps(marketplaces))
             if command_matches(cmd, ["claude", "plugin", "list"]):
-                plugins = [{"id": plugin_id, "scope": "user"} for plugin_id in sorted(installed_plugin_ids)]
+                # 導入後の版の検証を通すため、実CLIと同じく導入済みの版を返す。
+                plugins = [{"id": plugin_id, "scope": "user", "version": "1.0.0"} for plugin_id in sorted(installed_plugin_ids)]
                 return _FakeResult(returncode=0, stdout=json.dumps(plugins))
             if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 marketplace_added = add_succeeds

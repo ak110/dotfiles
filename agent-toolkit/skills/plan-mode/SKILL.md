@@ -16,7 +16,7 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
 計画ファイルの成果物契約は`references/plan-file-standards.md`、WI本文の要求と由来は`agent-toolkit:wi-standards`、実装と実行レビューの内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書が定める。
 計画は要件・外部仕様の水準で書き、レビューは実装後の実行レビューだけで行う。計画の起草者が続けて実装し、実行レビューは要件・外部仕様の水準を対象とする。
 
-確認要否、質問手順とUWIへの退避は`agent-toolkit:confirmation-and-uwi`が定める。協調モードでメインが本スキルを起動した場合は、同スキルの`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返し、その後に計画ファイルを起草する。
+確認要否、質問手順とUWIへの退避は`agent-toolkit:user-confirmation-and-report`が定める。協調モードでメインが本スキルを起動した場合は、同スキルの`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返し、その後に計画ファイルを起草する。
 `agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`による実行では、認識の違いで要件または結果が変わる未確定事項だけをUWIへ登録する。
 `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を受け取ったレーン担当として起動された場合は、同書の完了報告が定めるエスカレーションで確認事項を呼び出し元へ返し、回答を受け取ってから工程を続ける。UWIの登録は呼び出し元が行う。
 旧単一ファイル形式と旧二ファイル形式の計画を読むとき、および計画書式の読み取り互換の実装・自動チェックを変更するときは、`references/legacy-plan-file-standards.md`を全文読む。
@@ -35,7 +35,7 @@ Codexで実行する場合は、計画工程へ着手する前に`references/cod
    - 対象分岐へ到達する有効化条件、是正前の基準状態および是正後の期待値も対応付ける
    - 基準状態と期待値が同じ条件、対象分岐が無効な条件および成功時に抑制される生出力の不在は識別条件にせず、公開状態または直接の契約テストを使う
    - 人間の依頼かWIが禁止条件を明示する場合は、その条件と採用する手段を`## 実施内容`の同じ概念行へ書く。禁止条件には、実施しない操作、選択肢から外す機構および許容しない副作用を含める。メインが同節だけで両者を並べて確認できる計画を確定する
-2. 計画の変更対象または採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し、`agent-toolkit:confirmation-and-uwi`「確認要否の判定」を適用する。`起動経路`の値ごとの確認の扱いは本書冒頭の確認の段落に従う
+2. 計画の変更対象または採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。`起動経路`の値ごとの確認の扱いは本書冒頭の確認の段落に従う
 3. `references/plan-file-standards.md`を全文読み、`atk run-script plan-create --`で計画ファイルを作成する。作業種別が`バグ対応`の場合は計画担当が`agent-toolkit:bugfix`をSkill機能で起動し、同スキルの原因分析契約に従って計画ファイル（バグ）を先に埋める
 4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。`agent-toolkit:process-wi`のレーン担当は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「計画の起草」が定める選定結果とレーン識別子付きの形で単独実行する。いずれも直接返った終了コード0を確認する
 5. `起動経路`の値に対応する次の1行だけを実施する

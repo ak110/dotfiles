@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import json
 import pathlib
+import typing
 
 import pytest
 
@@ -71,13 +72,25 @@ def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
     assert resolution.resume_info.status == "starting"
 
 
-def test_remove_discards_observed_session(tmp_path: pathlib.Path) -> None:
-    """観測済みsessionと空になった登録簿ディレクトリを取り除く。"""
+@pytest.mark.parametrize("reason", ["retention_expired", "stopped"])
+def test_release_replaces_record_with_released_state(tmp_path: pathlib.Path, reason: subject.ReleaseReason) -> None:
+    """解放したsessionは不在と区別できる解放済みとして解決され、理由と時刻を持ち、再開条件を持たない。"""
     subject.publish("child-session", terminal=True, state_root=tmp_path)
-    subject.remove("child-session", state_root=tmp_path)
+    subject.release("child-session", reason=reason, state_root=tmp_path)
 
-    assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.MISSING
-    assert subject.registry_directory(tmp_path).exists() is False
+    resolution = subject.resolve("child-session", state_root=tmp_path)
+    assert resolution.state is subject.Resolution.RELEASED
+    assert resolution.released_reason == reason
+    assert resolution.released_at is not None
+    assert datetime.datetime.fromisoformat(resolution.released_at).tzinfo is not None
+    assert resolution.resume_info is None
+    assert subject.resolve("never-registered", state_root=tmp_path).state is subject.Resolution.MISSING
+
+
+def test_release_rejects_unknown_reason(tmp_path: pathlib.Path) -> None:
+    """解放の理由は応答文面の分岐に使うため、定義外の値を書き込まない。"""
+    with pytest.raises(ValueError, match="invalid release reason"):
+        subject.release("child-session", reason=typing.cast("subject.ReleaseReason", "restarted"), state_root=tmp_path)
 
 
 @pytest.mark.asyncio
@@ -112,11 +125,11 @@ async def test_session_state_publishes_state_transitions(
 
 
 @pytest.mark.asyncio
-async def test_observing_wait_keeps_record_and_stop_removes_it(
+async def test_observing_wait_keeps_record_and_stop_releases_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終端を観測した待機経路はレコードを残し、所有主体の破棄だけが削除する。"""
+    """終端を観測した待機経路はレコードを残し、所有主体の破棄だけが解放済みへ置き換える。"""
     monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(agents_server_mcp._wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
     subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))
@@ -134,16 +147,18 @@ async def test_observing_wait_keeps_record_and_stop_removes_it(
 
     await manager.stop("child-session")
 
-    assert subject.resolve("child-session").state is subject.Resolution.MISSING
+    released = subject.resolve("child-session")
+    assert released.state is subject.Resolution.RELEASED
+    assert released.released_reason == "stopped"
     await manager.close()
 
 
 @pytest.mark.asyncio
-async def test_retention_expiry_removes_record(
+async def test_retention_expiry_releases_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持期限へ到達したsessionのレコードを所有主体が削除する。"""
+    """保持期限へ到達したsessionのレコードを所有主体が解放済みへ置き換える。"""
     monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
     manager = agents_server_mcp.AgentsServerManager(status_writer=None)
     session = state.SessionState("expiring-session", str(tmp_path), engine="codex", publish_registry=True)
@@ -156,7 +171,9 @@ async def test_retention_expiry_removes_record(
     session.retention_deadline = asyncio.get_running_loop().time() - 1.0
     manager._expire_session(session.session_id)
 
-    assert subject.resolve("expiring-session").state is subject.Resolution.MISSING
+    released = subject.resolve("expiring-session")
+    assert released.state is subject.Resolution.RELEASED
+    assert released.released_reason == "retention_expired"
     await manager.close()
 
 

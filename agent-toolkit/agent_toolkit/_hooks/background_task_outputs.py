@@ -7,12 +7,12 @@ import re
 import shlex
 from collections.abc import Iterator
 
+from agent_toolkit._common import background_output
 from agent_toolkit._hooks import stop_gate
 from agent_toolkit._hooks.bash_command_parser import split_bash_segments
 from agent_toolkit._hooks.session_state import update_state
 
 _TASK_ID_RE = re.compile(r"running in background with ID:\s*([\w-]+)", re.IGNORECASE)
-_OUTPUT_PATH_RE = re.compile(r"Output is being written to:\s*(/\S+)", re.IGNORECASE)
 _READ_COMMANDS = frozenset({"cat", "head", "less", "more", "sed", "tail", "wc", "grep", "rg"})
 
 
@@ -25,11 +25,10 @@ def task_output_from_response(value: object) -> tuple[str, str] | None:
         task_id = stop_gate.background_task_id_from_notice(value)
     if task_id is None:
         task_id = next((match.group(1) for text in texts if (match := _TASK_ID_RE.search(text))), None)
-    raw_path = next((match.group(1) for text in texts if (match := _OUTPUT_PATH_RE.search(text))), None)
-    if task_id is None or raw_path is None:
+    path = next((path for text in texts for path in background_output.output_paths(text)), None)
+    if task_id is None or path is None:
         return None
-    path = raw_path.rstrip(".,;:)")
-    return (task_id, path) if pathlib.PurePath(path).is_absolute() else None
+    return task_id, path
 
 
 def command_reads_path(command: str, paths: set[str]) -> bool:

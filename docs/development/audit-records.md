@@ -179,7 +179,7 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 ## agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月
 
-本項は軽量モデルへreasoning effort `max`を割り当てた大きな作業で自動コンパクションが10回発生し、所要時間が大幅に伸びた観測に基づく（2026年8月、ユーザー報告）。再検証は同じ組合せで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
+本項は軽量モデルへreasoning effort `max`を割り当てた大きな作業で自動コンパクションが10回発生し、所要時間が大幅に伸びた観測に基づく（2026年8月、ユーザーからの報告）。再検証は同じ組合せで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
 
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月
 

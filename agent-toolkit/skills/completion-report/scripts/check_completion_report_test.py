@@ -249,3 +249,86 @@ def test_review_result_requires_evidence_for_unaddressed_problem(item: str, acce
         item,
     )
     assert (not SUBJECT.validate_report(report, "review-result", "success")) is accepted
+
+
+PREVIEW = SUCCESS.replace(
+    "（20260926-120000-001.md: 対象範囲を確認してから着手する）",
+    "（投入予定: 対象範囲を確認してから着手する）",
+)
+
+SUBMISSION = """## AWI投入結果報告
+
+予告どおり投入を完了した。
+
+### 投入したAWI
+
+- 20260926-120000-001.md: 対象範囲を確認してから着手する
+"""
+
+SUBMISSION_WITH_DIFFERENCE = (
+    SUBMISSION.replace("予告どおり投入を完了した。", "予告と異なる結果が1件あった。")
+    + "\n### 予告との差分\n\n"
+    + "- 確認の手順へ範囲の確認を加える: 既存の未終端AWIへ統合した（20260925-100000-001.md: 範囲を確認する）\n"
+)
+
+
+def _run_main(tmp_path: pathlib.Path, text: str, *args: str) -> int:
+    report = tmp_path / "report.md"
+    report.write_text(text, encoding="utf-8")
+    return SUBJECT.main([str(report), *args])
+
+
+def test_review_result_accepts_scheduled_awi_preview(tmp_path: pathlib.Path) -> None:
+    assert _run_main(tmp_path, PREVIEW, "--stage", "review-result", "--review-state", "success") == 0
+
+
+def test_review_result_rejects_empty_scheduled_title(tmp_path: pathlib.Path) -> None:
+    text = PREVIEW.replace("（投入予定: 対象範囲を確認してから着手する）", "（投入予定: ）")
+    assert _run_main(tmp_path, text, "--stage", "review-result", "--review-state", "success") == 1
+
+
+def test_review_submission_accepts_as_announced(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _run_main(tmp_path, SUBMISSION, "--stage", "review-submission") == 0
+    assert capsys.readouterr().out == SUBMISSION
+
+
+def test_review_submission_accepts_difference_section(tmp_path: pathlib.Path) -> None:
+    assert _run_main(tmp_path, SUBMISSION_WITH_DIFFERENCE, "--stage", "review-submission") == 0
+
+
+def test_review_submission_accepts_no_new_awi(tmp_path: pathlib.Path) -> None:
+    text = SUBMISSION_WITH_DIFFERENCE.replace("- 20260926-120000-001.md: 対象範囲を確認してから着手する\n", "- なし\n", 1)
+    assert _run_main(tmp_path, text, "--stage", "review-submission") == 0
+
+
+def test_review_submission_rejects_review_state(tmp_path: pathlib.Path) -> None:
+    assert _run_main(tmp_path, SUBMISSION, "--stage", "review-submission", "--review-state", "success") == 1
+
+
+@pytest.mark.parametrize("body", ["", "- なし\n"], ids=["empty", "none-only"])
+def test_review_submission_rejects_empty_difference(tmp_path: pathlib.Path, body: str) -> None:
+    text = SUBMISSION + "\n### 予告との差分\n\n" + body
+    assert _run_main(tmp_path, text, "--stage", "review-submission") == 1
+
+
+def test_review_submission_rejects_scheduled_marker(tmp_path: pathlib.Path) -> None:
+    text = SUBMISSION.replace(
+        "- 20260926-120000-001.md: 対象範囲を確認してから着手する", "- （投入予定: 対象範囲を確認してから着手する）"
+    )
+    assert _run_main(tmp_path, text, "--stage", "review-submission") == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        SUBMISSION.replace("## AWI投入結果報告", "## 振り返り結果報告"),
+        SUBMISSION_WITH_DIFFERENCE.replace(
+            "### 投入したAWI\n\n- 20260926-120000-001.md: 対象範囲を確認してから着手する\n\n", ""
+        ),
+        "## AWI投入結果報告\n\n予告と異なる結果があった。\n\n### 予告との差分\n\n- 対策: 結果\n\n"
+        "### 投入したAWI\n\n- 20260926-120000-001.md: 対象範囲を確認してから着手する\n",
+    ],
+    ids=["wrong-h2", "difference-without-submitted", "reversed-h3"],
+)
+def test_review_submission_rejects_heading_order(tmp_path: pathlib.Path, text: str) -> None:
+    assert _run_main(tmp_path, text, "--stage", "review-submission") == 1

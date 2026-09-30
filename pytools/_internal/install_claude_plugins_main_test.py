@@ -7,6 +7,7 @@ subprocess.run / shutil.which をモックして、前提条件分岐・plugin i
 import json
 import pathlib
 import subprocess
+import typing
 
 import pytest
 
@@ -534,3 +535,90 @@ class TestRunFlowDirectoryType:
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
         # directory 型では refresh (marketplace update) は呼ばない
         assert not any(command_matches(c, ["claude", "plugin", "marketplace", "update"]) for c in calls)
+
+
+def _drifted_plugins_fake(calls: list[list[str]], *, update_returncode: int) -> typing.Callable[..., _FakeResult]:
+    """agent-toolkitだけが目標より古い版で導入済みの`claude` CLIフェイクを返す。"""
+
+    def _extra(cmd: list[str]) -> _FakeResult | None:
+        if command_matches(cmd, ["claude", "plugin", "update"]):
+            return _FakeResult(returncode=update_returncode, stderr="ENOENT: no such file or directory")
+        return _FakeResult(returncode=0)
+
+    base = make_installed_two_plugin_fake(calls, _extra)
+
+    def fake_run(cmd: list[str], **kwargs: object) -> _FakeResult:
+        if command_matches(cmd, ["claude", "plugin", "list"]):
+            calls.append(cmd)
+            return _FakeResult(
+                returncode=0,
+                stdout=_plugin_list_json(
+                    {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "user"},
+                    {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
+                ),
+            )
+        return base(cmd, **kwargs)
+
+    return fake_run
+
+
+@pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_file_reads", "disable_auto_managed_plugins")
+class TestManagedPluginFailures:
+    """管理対象pluginが目標の版へ到達しない回を工程の失敗として送出する契約。
+
+    後処理は工程関数の例外だけを失敗として最終集計と`sync-report.json`へ届けるため、
+    失敗を件数だけに残して正常に戻ると、古い版のまま「失敗 0 件」と報告される。
+    """
+
+    def test_update_failure_raises_with_plugin_and_operation(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_claude_common.subprocess, "run", _drifted_plugins_fake(calls, update_returncode=1))
+
+        with caplog.at_level("INFO"), pytest.raises(RuntimeError, match=r"agent-toolkit \(update\)"):
+            _install_claude_plugins.run()
+        # 失敗件数はサマリ行にも残す。
+        assert "失敗 1 件" in caplog.text
+
+    def test_install_failure_of_installed_plugin_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # directory型では導入済みでも再同期のためinstallを実行する。
+        monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: True)
+        calls: list[list[str]] = []
+
+        def _extra(cmd: list[str]) -> _FakeResult | None:
+            if command_matches(cmd, ["claude", "plugin", "install"]):
+                return _FakeResult(returncode=1, stderr="install failed")
+            return _FakeResult(returncode=0)
+
+        monkeypatch.setattr(_claude_common.subprocess, "run", make_installed_two_plugin_fake(calls, _extra))
+
+        with pytest.raises(RuntimeError, match=r"\(install\)"):
+            _install_claude_plugins.run()
+
+    def test_version_unchanged_after_successful_update_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # CLIが成功終了しても導入済みの版が目標へ変わらない状態を返す。
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_read_installed_plugins_from_file",
+            lambda: [
+                {"id": "agent-toolkit@ak110-dotfiles", "scope": "user", "version": "0.1.0"},
+                {"id": "sample-plugin@ak110-dotfiles", "scope": "user", "version": "1.0.0"},
+            ],
+        )
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_claude_common.subprocess, "run", _drifted_plugins_fake(calls, update_returncode=0))
+
+        with pytest.raises(RuntimeError, match="版不一致: agent-toolkit"):
+            _install_claude_plugins.run()
+
+    def test_auto_disable_failure_alone_does_not_raise(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 1))
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_claude_common.subprocess, "run", make_installed_two_plugin_fake(calls))
+
+        with caplog.at_level("INFO"):
+            _install_claude_plugins.run()
+        assert "失敗 1 件" in caplog.text

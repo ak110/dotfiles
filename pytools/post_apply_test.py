@@ -4,10 +4,12 @@
 画面と永続ログへの出力の振り分け、失敗時の exit code を検証する。
 """
 
+import dataclasses
 import io
 import json
 import logging
 import logging.handlers
+import os
 import re
 import subprocess
 import threading
@@ -927,6 +929,58 @@ class TestRun:
         assert captured.err.count(notice.command) == 1
 
 
+class TestSubstitutedHome:
+    """HOMEを差し替えた実行で、HOMEの外にある実機の共有資源を操作するステップを実行しない契約。
+
+    `systemctl --user`や`/dev/shm`はHOMEで解決されないため、手動観測やテストでHOMEだけを差し替えても
+    実機の`atk-serve.service`の再起動や共有メモリー上のファイルの削除が起こる。
+    """
+
+    _HOST_RESOURCE_STEPS = (
+        "Codex 診断ログの通常ストレージ復元 (Linux)",
+        "atk serve 自動起動セットアップ (Linux)",
+        "dotfiles自動更新タイマー セットアップ (Linux)",
+    )
+
+    def _default_steps_with_recorders(self, calls: list[str]) -> list[post_apply._StepSpec]:  # noqa: SLF001
+        """既定の3ステップの宣言を保ったまま、`run`だけを呼び出しの記録へ差し替える。"""
+        steps = [step for step in post_apply._DEFAULT_STEPS if step.name in self._HOST_RESOURCE_STEPS]  # noqa: SLF001
+        assert [step.name for step in steps] == list(self._HOST_RESOURCE_STEPS)
+        return [dataclasses.replace(step, after=(), run=_make_step(step.name, calls)) for step in steps]
+
+    def test_substituted_home_skips_host_resource_steps(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setattr(post_apply.sys, "platform", "linux")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        systemctl_calls: list[object] = []
+        monkeypatch.setattr(subprocess, "run", lambda *args, **_kwargs: systemctl_calls.append(args))
+        calls: list[str] = []
+
+        with caplog.at_level(logging.INFO):
+            results, _ = post_apply.run(self._default_steps_with_recorders(calls))
+
+        assert not calls
+        assert not systemctl_calls
+        assert [(result.ok, result.changed) for result in results] == [(True, False)] * 3
+        for index, name in enumerate(self._HOST_RESOURCE_STEPS, start=1):
+            record = next(r for r in caplog.records if r.getMessage().startswith(f"[{index}/3] {name}: "))
+            assert "HOMEが実行ユーザーのホームと異なるため" in record.getMessage()
+            # 手動観測の実行者が画面で確認できるよう、画面から外す印を付けない。
+            assert not post_apply.log_format.is_log_only(record)
+
+    def test_actual_home_runs_host_resource_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr(post_apply.sys, "platform", "linux")
+        monkeypatch.setenv("HOME", pwd.getpwuid(os.getuid()).pw_dir)
+        calls: list[str] = []
+
+        post_apply.run(self._default_steps_with_recorders(calls))
+
+        assert sorted(calls) == sorted(self._HOST_RESOURCE_STEPS)
+
+
 class TestPytoolsInstallNotices:
     """テンプレートから渡されたpytools再導入状態の最終案内。"""
 
@@ -1033,6 +1087,7 @@ class TestDefaultSteps:
         "Claude 設定": {"Claude Code plugin のインストール", "旧Codex User scope MCP登録の移行"},
         "claude-statusline バイナリの取得": {"Codex CLI の導入と更新"},
         "libarchive (Windows)": {"mise セットアップ"},
+        "atk serve 自動起動セットアップ (Linux)": {"Claude Code plugin のインストール"},
         "dotfiles自動更新タイマー セットアップ (Linux)": {"atk serve 自動起動セットアップ (Linux)"},
     }
     _WINDOWS_STEPS = {

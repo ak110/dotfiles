@@ -20,6 +20,7 @@ from agent_toolkit._atk.serve.sessions import (
 )
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
+from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
 
 # Claude Codeのハーネスが、Skillツール起動の`tool_result`として記録する起動確認文言。
 _CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
@@ -150,7 +151,7 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
             tokens = shlex.split(command, posix=True)
         except ValueError:
             return False
-        return len(tokens) == 2 and pathlib.PurePath(tokens[0]).name in {"atk", "atk.py"} and tokens[1] == "agents-exit-session"
+        return is_agents_exit_session_command(tokens)
 
     def _has_invocation_record(value: object) -> bool:
         if isinstance(value, dict):

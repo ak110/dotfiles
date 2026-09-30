@@ -1,6 +1,8 @@
 """意味契約中心の計画検査を検証する。"""
 
 import collections.abc
+import contextlib
+import io
 import pathlib
 import subprocess
 import sys
@@ -643,6 +645,87 @@ def test_lane_selection_combines_prior_plans(
         assert not errors, errors
     else:
         assert any(expected_fragment in error for error in errors), errors
+
+
+def _run_lane_check_with_resumed(
+    work_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    related: tuple[str, ...],
+    decisions: list[dict[str, str]],
+) -> tuple[int, str]:
+    """再開位置を含む選定結果をそのまま`plan-check`のCLI入口へ渡し、終了コードと標準エラーを返す。
+
+    CLI入口は由来照合の正本をキュー管理リポジトリから探すため、実行環境の実物に依存しないよう
+    一時のキュー管理リポジトリへ計画の人間由来行が指す正本を置く。
+    """
+    private_notes = work_dir / "private-notes"
+    inbox = private_notes / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / _plan_fixture.WI_FILES[0][0]).write_text("---\nstatus: inbox\n---\n\n# 要求\n\n本文。\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+    plan_path = work_dir / "plan.md"
+    plan_path.write_text(
+        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=tuple((name, "要求") for name in related)),
+        encoding="utf-8",
+    )
+    selection_path = work_dir / "selection.yaml"
+    selection_path.write_text(yaml.safe_dump({"decisions": decisions}, allow_unicode=True), encoding="utf-8")
+    stderr = io.StringIO()
+    with contextlib.redirect_stderr(stderr):
+        code = check_plan_file.main(
+            [
+                "--reject-migration-warnings",
+                "--selection-file",
+                str(selection_path),
+                "--lane",
+                "lane-01",
+                "--work-dir",
+                str(work_dir),
+                str(plan_path),
+            ]
+        )
+    return code, stderr.getvalue()
+
+
+_NEW_AWI = _plan_fixture.WI_FILES[0][0]
+_RESUMED_AWI = "20260831-000000-002.md"
+_RESUMED_DECISION = {"awi": _RESUMED_AWI, "lane": "lane-01", "再開位置": "/tmp/plans/prior.md の反映後の観測だけが残る"}
+
+
+@pytest.mark.parametrize("new_resume_value", [None, "なし"], ids=["omitted", "explicit-none"])
+def test_lane_selection_excludes_resumed_decisions(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, new_resume_value: str | None
+) -> None:
+    """再開位置あり・なしが混在するレーンでも、再開位置なしの集合と一致する新規計画を受理する。"""
+    work_dir, _base = repo
+    new_decision = {"awi": _NEW_AWI, "lane": "lane-01"}
+    if new_resume_value is not None:
+        new_decision["再開位置"] = new_resume_value
+    code, stderr = _run_lane_check_with_resumed(work_dir, monkeypatch, (_NEW_AWI,), [new_decision, _RESUMED_DECISION])
+    assert code == 0, stderr
+    assert not stderr
+
+
+def test_lane_selection_rejects_resumed_awi_in_new_plan(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """再開位置が指す既存計画で続ける項目を新規計画へ重ねると`余剰`で拒否する。"""
+    work_dir, _base = repo
+    code, stderr = _run_lane_check_with_resumed(
+        work_dir, monkeypatch, (_NEW_AWI, _RESUMED_AWI), [{"awi": _NEW_AWI, "lane": "lane-01"}, _RESUMED_DECISION]
+    )
+    assert code == 1
+    assert f"余剰=['{_RESUMED_AWI}']" in stderr
+
+
+def test_lane_selection_rejects_lane_with_only_resumed_decisions(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """全件が再開位置を持つレーンは、新しい計画の対象が無いことを示して拒否する。"""
+    work_dir, _base = repo
+    code, stderr = _run_lane_check_with_resumed(work_dir, monkeypatch, (_RESUMED_AWI,), [_RESUMED_DECISION])
+    assert code == 1
+    assert "新しい計画の対象となるWIが無い" in stderr
 
 
 def test_lane_selection_rejects_duplicate_wi_across_plans(repo: tuple[pathlib.Path, str]) -> None:

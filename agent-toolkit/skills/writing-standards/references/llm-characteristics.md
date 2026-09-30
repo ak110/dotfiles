@@ -11,7 +11,7 @@
 - LLMはコンテキスト内の語彙に誘発されて知識を想起する傾向があり、関連分野の語がコンテキストに
   無い場合は原理原則だけの記述で想起が弱まる。
   条文の書き方は`agent-documents-additions.md`「規範追記時の判定」の、列挙と判定基準を比べる項が定める
-- 例示は発想を例の近傍へ狭める作用を持ちやすい。例示の書式は`writing.md`「人間向け文章の共通規定」、ユーザー発話にある例示の解釈は`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`が定める
+- 例示は発想を例の近傍へ狭める作用を持ちやすい。例示の書式は`writing.md`「人間向け文章の共通規定」、ユーザー発話にある例示の解釈は`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`が定める
 - 名前付き概念は再利用されやすく、同じ原則の呼称が一定だと参照先を想起しやすい。
   名付けと定義の置き場所は`agent-documents-basics.md`の「主要用語の初出定義先」が定める
 - 前の版との差の扱いは`agent-documents-basics.md`の「語調と現行規則の表現」が定める

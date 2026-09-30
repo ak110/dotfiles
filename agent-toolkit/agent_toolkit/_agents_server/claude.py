@@ -924,6 +924,7 @@ class ClaudeServerManager:
         Claude backendはタスク完了通知による同一sessionの再開経路を持つため終端結果を保留する。
         Codex backendはこの再開経路を持たず、終端結果を保留しない。
         """
+        shared_state.consume_agents_wait_background_outputs(session)
         unobserved = set(session.live_child_session_ids)
         shared_state.finalize_pending_result(session)
         if record_unobserved and unobserved:

@@ -236,6 +236,8 @@ class ExecutionSegment:
     `resolved`が偽の区間では`tokens`を空とし、助言用検査はその区間では検出しない。
     `is_agent_toolkit_script`はagent-toolkit配下の配布検査スクリプトを表す。
     `raw_tokens`は、実行位置が未確定の区間でリダイレクト先を解析するため、元のトークン列を保持する。
+    `tokens`はリダイレクトの演算子と対象（`>`・`/tmp/x`・`2>&1`など）も含む。
+    位置引数を数える消費側と、引数列全体を比べる消費側は、`agent_toolkit._common.shell_tokens`でリダイレクトを除いた引数列を使う。
     """
 
     tokens: tuple[str, ...]

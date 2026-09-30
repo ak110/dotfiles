@@ -7,7 +7,7 @@ description: >
 # AWIのレーン処理
 
 選定時に固定したAWIをレーンへ分け、各レーンの同じ担当threadが計画を要する場合の起草から統合までを担う。メインは選定、判断が要る計画境界の確認、実行レビューの調整、公開工程およびセッション終端を担う。
-AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手順は`agent-toolkit:confirmation-and-uwi`に従う。本スキルの実行中は自律モードとする。
+AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手順は`agent-toolkit:user-confirmation-and-report`に従う。本スキルの実行中は自律モードとする。
 
 ## 用語
 
@@ -38,7 +38,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 
 ## 同一主題の追加指示
 
-本スキルの起動中にユーザーが追加した指示は、既存の処理条件と比べて採否を決めた差分だけを同一主題の処理条件へ反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従う。追加指示の範囲と論理関係の解釈は`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`に従う。直接実装を求める表現も、同一主題である間は本スキルの処理を継続する追加条件として扱う。主題の継続と直接実装との境界が不明な場合は、変更の前に確認する。
+本スキルの起動中にユーザーが追加した指示は、既存の処理条件と比べて採否を決めた差分だけを同一主題の処理条件へ反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従う。追加指示の範囲と論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`に従う。直接実装を求める表現も、同一主題である間は本スキルの処理を継続する追加条件として扱う。主題の継続と直接実装との境界が不明な場合は、変更の前に確認する。
 追加指示が既存の要件を変える場合、メインは中継前に変更前の要件で作業ツリーの外へ生成済みの成果物を確認し、成果物ごとの終端、改訂または取り消しなどの処置を同じ追送へ含める。キュー項目は`atk wi list`などで確かめる。Issue・MRの本文へ追記済みの項目も成果物に含め、GitLabなら`glab issue view <番号> --output json`の`description`、GitHubなら`gh issue view <番号> --json body`などで本文を取得する。処置が追加指示から一意に定まらない場合はユーザーへ確認する。作業ツリーの差分に依存しない外部成果物の編集は、メインが中継と同じ時点で実施する。作業ツリー内の差分はレーン担当が計画と実装で追随させる。
 
 ## 即時対応
@@ -86,5 +86,5 @@ pickerと並行して、対象がGitHub上にある場合は対象リポジト�
 
 ## 終端
 
-選定、レーンまたは公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:confirmation-and-uwi`の手順でUWIへ退避し、WIの状態は`agent-toolkit:wi-standards`に従って`atk wi hold`で保留する。
+選定、レーンまたは公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:user-confirmation-and-report`の手順でUWIへ退避し、WIの状態は`agent-toolkit:wi-standards`に従って`atk wi hold`で保留する。
 通常の完了報告は`agent-toolkit:completion-report`に従う。本スキルの工程で生じたcommitは、公開工程で反映してから完了を報告する。

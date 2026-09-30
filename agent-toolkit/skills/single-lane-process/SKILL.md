@@ -54,7 +54,7 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 5. 対象worktreeごとに1件の実行レビューを`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動する。そのworktreeに計画対象がある場合は対応する計画ファイルの絶対パスを渡し、直接実装対象がある場合は対応するWIの記録を渡す。両方がある場合は同じ起動文へ渡す。計画対象が無い場合は、そのworktreeで解決した処理開始OIDを渡す。レビュー起動時の`cwd`、処理開始OID、レビュー表およびレビュー基準には同じ部分集合の値だけを使う。
 6. 対象worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させる。修正はメインが行い、同じ起点OIDとレビュー表を継続する。
 7. 各計画について`atk run-script plan-progress --`で完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックの成功を確認してから計画バンドルを保存する。
-8. 各WIを採否に応じて`adopt`または`reject`し、対象worktreeごとに`agent-toolkit:commit`の`references/publish.md`を全文読んで公開する。`adopt`では`agent-toolkit:wi-standards`「状態と依存」のcommit対応付けを使う。複数の対象リポジトリでは成果依存を保ち、独立した対象のpushを先に全件終えてからCI監視を並行開始する。対象リポジトリ、ref、baselineおよび監視識別子を対応付け、全識別子の終端を待って結果を個別に回収する。CI成功を入力にする固有工程は、その対象の成功後に行う。待機中は結果を入力とせず同じ書込資源を占有しない固有工程を進めてよい。
+8. 各WIを採否に応じて`adopt`または`reject`し、対象worktreeごとに`agent-toolkit:commit`をSkill機能で起動し、同スキルの`references/publish.md`を全文読んで公開する。`adopt`では`agent-toolkit:wi-standards`「状態と依存」のcommit対応付けを使う。複数の対象リポジトリでは成果依存を保ち、独立した対象のpushを先に全件終えてからCI監視を並行開始する。対象リポジトリ、ref、baselineおよび監視識別子を対応付け、全識別子の終端を待って結果を個別に回収する。CI成功を入力にする固有工程は、その対象の成功後に行う。待機中は結果を入力とせず同じ書込資源を占有しない固有工程を進めてよい。
    開発マシン上の常時稼働サーバーへの反映は、`agent-toolkit:completion-report`「工程」手順1が定める反映手段と稼働確認手段を持つ対象で、実装・レビューが収束したHEADを使える場合にCI待機と並行して始める。反映が対象リポジトリへ書き込まず、公開の入力を生成せず、読み取る成果物と排他資源が公開操作と競合しないことを確かめる。反映したHEADの完全OID、反映コマンドの終了状態と稼働確認の結果を保持して完了報告へ渡す。後続のcommitによる差分は完了報告の同手順で判定する。
    Claude Codeでは、全ての未終端識別子を条件とする1つの`Monitor`のuntil-loopで終端を待つ。固定時間の`sleep`と状態変化の無い空の`ReadNotifications`の反復は待機手順へ加えない。
 9. 一時的なレビュー表を正式な保存または回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。

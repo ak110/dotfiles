@@ -20,6 +20,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
     split_bash_segments,
 )
+from agent_toolkit._common.shell_tokens import strip_redirections
 
 
 if TYPE_CHECKING:
@@ -247,11 +248,12 @@ _GIT_GREP_PATTERN_FILE_OPTIONS: frozenset[str] = frozenset({"-f", "--file"})
 def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
     """`git rev-parse`の引数が`--short`を持つ場合に、revisionとして渡された引数を返す。
 
-    `--`以降はパスとして扱い、revisionに数えない。`--short`を持たない場合はNoneを返す。
+    `--`以降はパスとして扱い、revisionに数えない。リダイレクトの演算子と対象も数えない。
+    `--short`を持たない場合はNoneを返す。
     """
     has_short = False
     revisions: list[str] = []
-    for token in arguments:
+    for token in strip_redirections(arguments):
         if token == "--":
             break
         if token == "--short" or token.startswith("--short="):

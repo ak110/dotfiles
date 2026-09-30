@@ -1218,6 +1218,42 @@ class TestEditBodyFile:
     @pytest.mark.parametrize(
         "message",
         [
+            "---\nsubmitter_session: other-session\n---\n\n変更後の質問",
+            "---\nsubmitter_session: self-session\n---\n\n変更後の質問",
+        ],
+    )
+    def test_uwi_edit_keeps_stored_submitter_session(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        message: str,
+    ) -> None:
+        """本文のfrontmatterから投入元セッションを書き換えられない。
+
+        回答済みUWIの通知は保存した投入元セッションだけへ届くため、編集で値が変わると通知の宛先が変わる。
+        """
+        notes = _setup_notes(tmp_path)
+        path = _write_uwi_entry(
+            notes,
+            "uwi-001.md",
+            frontmatter=(
+                "target_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\nsubmitter_session: self-session"
+            ),
+        )
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(_edit_body_args(tmp_path, "uwi-001.md", message), home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "予約キー" in capsys.readouterr().err
+        assert path.read_text(encoding="utf-8") == original
+
+    @pytest.mark.parametrize(
+        "message",
+        [
             f"変更後\n\n{uwi.ANSWER_HEADING}\n",
             f"変更後\n\n{uwi.ANSWER_MARKER}\n",
             "---\nquestion_type: invalid\n---\n\n変更後",

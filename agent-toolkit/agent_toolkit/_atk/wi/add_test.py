@@ -604,6 +604,50 @@ def test_cmd_add_omits_origin_metadata(
     assert "origin_locator" not in parsed[0]
 
 
+@pytest.mark.parametrize(
+    ("environment", "entry_type", "message", "expected"),
+    [
+        ({"CLAUDE_CODE_SESSION_ID": "main-session"}, WI_TYPE_UWI, "質問本文", "main-session"),
+        (
+            {"CLAUDE_CODE_SESSION_ID": "child-session", "AGENT_TOOLKIT_OWNER_SESSION": "owner-session"},
+            WI_TYPE_UWI,
+            "質問本文",
+            "owner-session",
+        ),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "mcp-0123abcd"}, WI_TYPE_UWI, "質問本文", None),
+        ({}, WI_TYPE_UWI, "質問本文", None),
+        ({}, WI_TYPE_UWI, "---\nsubmitter_session: forged-session\n---\n\n質問本文", None),
+        ({"CLAUDE_CODE_SESSION_ID": "main-session"}, "awi", "本文", None),
+    ],
+)
+def test_cmd_add_records_submitter_session_only_for_uwi(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    environment: dict[str, str],
+    entry_type: str,
+    message: str,
+    expected: str | None,
+) -> None:
+    """UWIだけへ投入元セッションを保存する。
+
+    回答済みUWIの通知は保存した値で宛先を決めるため、委譲先の投入分は委譲元の値、
+    会話へ対応しないプロセス専用の値と未解決の場合はキーを持たない状態にする。
+    本文のfrontmatterで指定した値は宛先を偽れないよう採用しない。
+    """
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+
+    _run_public_add(_cmd_add_args(tmp_path, message, entry_type=entry_type), notes, _FIXED_DT, tmp_path)
+
+    parsed = frontmatter.parse_frontmatter(next((notes / "inbox").iterdir()).read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0].get("submitter_session") == expected
+
+
 def test_cmd_add_rejects_missing_source_in_agent_environment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -994,6 +1038,7 @@ def test_flat_add_operation_drops_input_queue_schedule(
         ("target_commit_history", "forged"),
         ("origin_session", "forged-session"),
         ("origin_locator", "forged-rollout:1"),
+        ("submitter_session", "forged-session"),
     ],
 )
 def test_flat_add_operation_drops_input_repair_metadata(

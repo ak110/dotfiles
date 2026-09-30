@@ -19,7 +19,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
    `process_wi_skill_invoked`のリセット (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
-7. PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
+7. Bashの背景実行、背景移行通知およびAgent・Taskの背景起動が返した識別子の所有記録 (Bash / Agent / Task)
+   PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
 8. PermissionDenied: 状態を変更せず終了
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
@@ -49,6 +50,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._common.shell_tokens import is_agents_exit_session_command  # noqa: E402
 from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     background_task_outputs as _background_task_outputs,
 )
@@ -554,10 +556,7 @@ def _response_has_exit_invocation(value: object) -> bool:
 def _record_bash_response_state(session_id: str, command: str, tool_response: object) -> None:
     """成功したBash応答を使い、終了CLI起動と計画ファイル作成を記録する。"""
     segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
-    exit_invoked = any(
-        pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"} and segment.tokens[1:] == ("agents-exit-session",)
-        for segment in segments
-    )
+    exit_invoked = any(is_agents_exit_session_command(segment.tokens) for segment in segments)
     if exit_invoked and _response_has_exit_invocation(tool_response):
         update_state(session_id, _record_exit_session_invoked)
     _record_created_plan_file(session_id, segments, tool_response)
@@ -665,7 +664,7 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
 
     PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力とする。
     記録の契機は、Bashの背景実行が成功した応答、同じ指定で失敗した応答、
-    およびツール種別を問わない背景移行通知の3つとする。
+    ツール種別を問わない背景移行通知およびAgent・Taskの背景起動が返した`agentId`の4つとする。
     所有の根拠は自身の呼び出しが識別子を返したことであり、その呼び出しの成否に依存しない。
     """
 
@@ -819,8 +818,11 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_skill_use(session_id, tool_input.get("skill"))
         return 0
 
-    # AgentとTask: 後続の分岐が対象としないツールのため、記録せずに終了する
+    # AgentとTask: 背景起動の応答が返した`agentId`だけを所有記録へ残す。後続の分岐は対象としない
     if tool_name in ("Agent", "Task"):
+        agent_id = _stop_gate.async_agent_launch_id(payload.get("tool_response"))
+        if agent_id is not None:
+            _record_background_task_id(session_id, agent_id)
         return 0
 
     # showの応答が返す稼働中の子sessionは、識別子と`cwd`の対だけを記録する。

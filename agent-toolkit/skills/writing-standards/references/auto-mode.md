@@ -1,7 +1,7 @@
 # Claude Code auto modeのカスタムルール
 
 本書はauto modeのカスタムルールを追加・編集する手順を扱う。
-拒否に遭遇したときの行動手順は`agent-toolkit:confirmation-and-uwi`の`references/permission-denial.md`が定める。
+拒否に遭遇したときの行動手順は`agent-toolkit:user-confirmation-and-report`の`references/permission-denial.md`が定める。
 
 auto modeはユーザー環境の`~/.claude/settings.json`の`autoMode.allow`配列に自然言語の許可指示を追加できる。
 `allow`・`soft_deny`・`hard_deny`・`environment`の各配列は設定するとその区分のデフォルト一覧を置き換える。

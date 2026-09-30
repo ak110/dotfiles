@@ -52,7 +52,7 @@ def _tool_result_entry(tool_use_id: str, *, is_error: bool = False) -> dict:
     }
 
 
-def _exit_entry(*, tool_use_id: str = "toolu_exit") -> dict:
+def _exit_entry(*, tool_use_id: str = "toolu_exit", command: str = "atk agents-exit-session") -> dict:
     """終了CLIのBash起動を含むアシスタントエントリを生成する。"""
     return {
         "type": "assistant",
@@ -64,7 +64,7 @@ def _exit_entry(*, tool_use_id: str = "toolu_exit") -> dict:
                     "type": "tool_use",
                     "id": tool_use_id,
                     "name": "Bash",
-                    "input": {"command": "atk agents-exit-session"},
+                    "input": {"command": command},
                 }
             ],
             "stop_reason": "end_turn",
@@ -165,11 +165,24 @@ def test_blocks_when_termination_order_reversed(
     assert "atk agents-exit-session" in body
 
 
-def test_approves_when_termination_order_satisfied(
+@pytest.mark.parametrize(
+    ("command", "expected_decision"),
+    [
+        ("atk agents-exit-session", "approve"),
+        ("atk agents-exit-session 2>&1", "approve"),
+        ("atk agents-exit-session --x", "block"),
+    ],
+)
+def test_termination_order_satisfied_by_exit_invocation_without_arguments(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    command: str,
+    expected_decision: str,
 ) -> None:
-    """対象スキルの最新起動以後に終了スキルが要求順で起動済みなら許可する。"""
+    """対象スキルの最新起動以後に終了工程が要求順で起動済みなら許可する。
+
+    終了CLIはリダイレクトだけを伴う起動も終了工程として数え、引数を伴う起動は数えない。
+    """
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     transcript = _write_transcript(
@@ -179,13 +192,15 @@ def test_approves_when_termination_order_satisfied(
             _tool_result_entry("toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
             _tool_result_entry("toolu_2"),
-            _exit_entry(tool_use_id="toolu_3"),
+            _exit_entry(tool_use_id="toolu_3", command=command),
         ],
     )
 
     decision, body = termination_order_advisor.evaluate(_payload("sess-satisfied", str(transcript)))
 
-    assert (decision, body) == ("approve", "")
+    assert decision == expected_decision
+    # 遮断時だけ、残りの工程として終了CLIを本文に示す。
+    assert ("atk agents-exit-session" in body) is (expected_decision == "block")
 
 
 def test_blocks_when_second_invocation_lacks_new_termination(

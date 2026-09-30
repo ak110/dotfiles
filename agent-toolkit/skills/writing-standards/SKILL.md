@@ -94,7 +94,7 @@ description: >
 - スキル編集（公式リファレンスの参照先を含む）: `references/agent-skills.md`
 - サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂: `references/sub-agents.md`
 - hook編集、およびhookのエンドユーザー向けメッセージの新設・改訂: `references/agent-skills.md`と`references/claude-hooks.md`。セッション状態ファイルまたはフラグを扱う場合は`references/session-state-and-flags.md`も読む
-- auto modeのカスタムルール編集: `references/auto-mode.md`と`references/agent-skills.md`。hookを編集する場合は`references/claude-hooks.md`も読む。権限拒否に遭遇した場面の手順は`agent-toolkit:confirmation-and-uwi`が扱う
+- auto modeのカスタムルール編集: `references/auto-mode.md`と`references/agent-skills.md`。hookを編集する場合は`references/claude-hooks.md`も読む。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う
 - セッション状態ファイルまたはフラグを扱う編集: `references/session-state-and-flags.md`。hookの実装も編集する場合は`references/claude-hooks.md`も読む
 - セッション記録の集計・分析: `references/session-records.md`
 - 機械チェックスクリプトの新設・改修: `references/check-script-design.md`

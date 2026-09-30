@@ -27,6 +27,8 @@ class ActiveUwi(typing.NamedTuple):
 
     filename: str
     answered: bool
+    submitter_session: str | None = None
+    """投入したセッションの識別子。frontmatterの`submitter_session`が文字列でない場合は`None`。"""
 
 
 class ActiveUwiScan(typing.NamedTuple):
@@ -147,5 +149,12 @@ def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:
                 continue
             if canonical_target is None or _git_remote.canonical_repo(entry_repo, resolver_cache) != canonical_target:
                 continue
-            found.append(ActiveUwi(filename=path.name, answered=is_uwi_answered(text)))
+            raw_submitter = frontmatter.get("submitter_session")
+            found.append(
+                ActiveUwi(
+                    filename=path.name,
+                    answered=is_uwi_answered(text),
+                    submitter_session=raw_submitter if isinstance(raw_submitter, str) else None,
+                )
+            )
     return ActiveUwiScan(entries=found, complete=complete)

@@ -56,8 +56,9 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
     hypercorn_config.bind = [f"{config.host}:{config.port}"]
     # アクセスログは常駐運用で情報価値が低いため出力しない。
     hypercorn_config.accesslog = None
-    # SSEのgeneratorは`CancelledError`を捕捉して購読解除まで完了するため、
-    # 短時間で打ち切っても整合性は保たれる。終了要求後の体感遅延を1秒以内へ抑える。
+    # hypercornは停止時に`server.wait_closed()`で全接続の切断を待ってから本値を適用する。
+    # SSEの生成処理は停止要求（`ServeState.request_shutdown`）で応答を完了して購読解除するため、
+    # 接続が残っていても本値の範囲で停止する。終了要求後の体感遅延を1秒以内へ抑える。
     hypercorn_config.graceful_timeout = 1.0
 
     shutdown_event = asyncio.Event()
@@ -65,6 +66,7 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
 
     def request_shutdown(signal_name: str) -> None:
         logger.info("atk serveの停止シグナルを受信しました: %s", signal_name)
+        state.request_shutdown()
         shutdown_event.set()
 
     for signal_name in ("SIGINT", "SIGTERM", "SIGHUP"):

@@ -14,12 +14,14 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 _REPO = "github.com/ak110/dotfiles"
 
 
-def _entry(*, answer: str = "", target_repo: str = _REPO) -> str:
+def _entry(*, answer: str = "", target_repo: str = _REPO, submitter_session: str | None = None) -> str:
     """テスト用UWIエントリ本文を返す。"""
+    submitter_line = f"submitter_session: {submitter_session}\n" if submitter_session is not None else ""
     return (
         "---\n"
         f"target_repo: {target_repo}\n"
         "type: uwi\n"
+        f"{submitter_line}"
         "---\n\n"
         "## 質問\n\n本文\n\n"
         "## 回答\n\n"
@@ -102,6 +104,43 @@ class TestBuildNotice:
         in_process_wi = [sentence for sentence in sentences if sentence.startswith("`agent-toolkit:process-wi`の実行中は")]
         assert in_process_wi
         assert any("次の処理回の選定工程が取り込む" in sentence for sentence in sentences)
+
+    def test_notifies_only_uwis_submitted_by_this_session_or_without_submitter(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 共有キューには他のセッションが投入したUWIも並ぶ。投入元へだけ通知し、
+        # 投入元を記録していないUWI（導入前の投入分など）は反映の契機を失わないよう通知する。
+        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=0)
+        inbox = root / "inbox"
+        (inbox / "own.md").write_text(_entry(submitter_session="self-session"), encoding="utf-8")
+        (inbox / "foreign.md").write_text(_entry(submitter_session="other-session"), encoding="utf-8")
+        (inbox / "legacy.md").write_text(_entry(), encoding="utf-8")
+        assert _uwi_completion.build_notice("self-session", "/dummy") is None
+        for name in ("own.md", "foreign.md", "legacy.md"):
+            path = inbox / name
+            path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+
+        notice = _uwi_completion.build_notice("self-session", "/dummy")
+
+        assert notice is not None
+        assert "own.md" in notice
+        assert "legacy.md" in notice
+        assert "foreign.md" not in notice
+
+        # 他のセッションの投入分は基準値へ取り込まれ、後の観測でも通知しない。
+        (inbox / "unrelated.md").write_text(_entry(), encoding="utf-8")
+        assert _uwi_completion.build_notice("self-session", "/dummy") is None
+
+    def test_does_not_notify_when_only_foreign_uwi_is_answered(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=0)
+        path = root / "inbox" / "foreign.md"
+        path.write_text(_entry(submitter_session="other-session"), encoding="utf-8")
+        assert _uwi_completion.build_notice("self-session", "/dummy") is None
+        path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+
+        assert _uwi_completion.build_notice("self-session", "/dummy") is None
 
     def test_initial_answered_state_does_not_notify(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=1)

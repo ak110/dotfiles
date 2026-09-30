@@ -11,7 +11,7 @@ agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の
 | `TaskStop` | 起動手段の中断操作を使い、同じ識別子で停止を確認する |
 | `ToolSearch` | 公開ツール一覧または検索機能から利用可能な能力へ分解し、必須能力がなければ差し戻す |
 | `Monitor` | 起動手段の状態確認と待機結果を使う |
-| `AskUserQuestion` | 公開された構造化質問を使い、利用できなければ`agent-toolkit:confirmation-and-uwi`のCodex表示形式に従う |
+| `AskUserQuestion` | 公開された構造化質問を使い、利用できなければ`agent-toolkit:user-confirmation-and-report`のCodex表示形式に従う |
 | `Skill` | descriptionまたは明示起動で選び、`SKILL.md`を全文読む。出力隔離には`agents_server`を使う |
 | `Read`・`Write`・`Edit` | Codexのネイティブ編集機能を使う |
 | `Bash`・`Grep`・`Glob` | シェル経由のネイティブ機能を使う |

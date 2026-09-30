@@ -4,11 +4,11 @@
 
 ## 協調と自律
 
-起動したスキルが許す成果物の種類の扱いは`agent-toolkit:confirmation-and-uwi`の`references/user-utterance.md`の成果物制限に従う。
+起動したスキルが許す成果物の種類の扱いは`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`の成果物制限に従う。
 
 ユーザーの割り込みが扱う話題は会話で返し、無関係な工程は自律モードを保つ。
 
-委譲先から確認事項を受け取ったら、`agent-toolkit:confirmation-and-uwi`「確認要否の判定」の確認提示項目がそろうか確かめ、不足は同じ委譲先へ返す。そろっていれば協調モードではホストの構造化質問、自律モードではUWIへ送る。実装順序、分割、配置などの技術判断は自ら行う。
+委譲先から確認事項を受け取ったら、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」の確認提示項目がそろうか確かめ、不足は同じ委譲先へ返す。そろっていればユーザー確認する。実装順序、分割、配置などの技術判断は自ら行う。
 
 取り消しの難しい操作の前に、受領した指示が現在の作業対象と整合するか確認する。別セッション向けの指示を混同すると誤った変更が確定する。
 

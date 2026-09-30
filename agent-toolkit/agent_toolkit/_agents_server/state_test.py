@@ -148,6 +148,73 @@ def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Pa
     assert not state.has_pending_auto_resume_targets(session)
 
 
+def _background_agents_wait(session: state.SessionState, tool_use_id: str, output: pathlib.Path) -> None:
+    """委譲先が`atk agents wait`を背景実行し、ホストが起動の通知だけを返した状態を再現する。"""
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": tool_use_id, "name": "Bash", "input": {"command": "atk agents wait"}}]},
+    )
+    state.consume_claude_agents_server_message(
+        session,
+        {
+            "content": [
+                {
+                    "tool_use_id": tool_use_id,
+                    "content": f"Command running in background with ID: bqwu17av0. Output is being written to: {output}. "
+                    "You will be notified when it completes.",
+                }
+            ]
+        },
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("output_text", "expected_unobserved"),
+    [
+        ('{"session_id": "child-1", "status": "completed", "agent_message": "完了"}\n', None),
+        ('{"session_id": "child-1", "status": "running", "notices": []}\n', ["child-1"]),
+        (None, ["child-1"]),
+        ("saved-terminal", None),
+    ],
+    ids=["terminal", "running-only", "no-output", "saved-terminal"],
+)
+async def test_background_agents_wait_output_releases_collected_child_before_unobserved_record(
+    tmp_path: pathlib.Path,
+    output_text: str | None,
+    expected_unobserved: list[str] | None,
+) -> None:
+    """背景実行の待機が出力ファイルへ書いた終端行の孫sessionは、未観測として記録しない。
+
+    背景起動のツール結果は起動の通知だけで、結果本文は出力ファイルへ後から書かれる。
+    出力ファイルに終端行が無い場合は、従来どおり未観測として記録する。
+    """
+    from agent_toolkit._agents_server import claude  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    session = state.SessionState("parent-1", "/tmp")
+    _start_child(session, "toolu_1", "child-1")
+    output = tmp_path / "tasks" / "bqwu17av0.output"
+    _background_agents_wait(session, "toolu_2", output)
+    # ツール結果の時点では出力ファイルが未完成のため、追跡を続ける。
+    assert session.live_child_session_ids == {"child-1"}
+    if output_text == "saved-terminal":
+        # 長い結果は`atk`が別ファイルへ自動保存し、標準出力（出力ファイル）には保存先の行だけが残る。
+        saved = tmp_path / "saved" / "output.txt"
+        saved.parent.mkdir()
+        saved.write_text('{"session_id": "child-1", "status": "completed", "agent_message": "長い本文"}\n', encoding="utf-8")
+        output_text = f"保存先: {saved}\n行数: 1\n終端: 1件\n"
+    if output_text is not None:
+        output.parent.mkdir(parents=True)
+        output.write_text(output_text, encoding="utf-8")
+    session.pending_result = {"status": "completed", "agent_message": "待機表明", "error": None}
+    session.awaiting_auto_resume = True
+
+    claude.ClaudeServerManager._finalize_pending_result(session, record_unobserved=True)  # pylint: disable=protected-access
+
+    error = session.error if isinstance(session.error, dict) else {}
+    assert error.get("unobservedSessions") == expected_unobserved
+
+
 def test_unrelated_bash_output_does_not_release_child_session() -> None:
     """`atk agents wait`以外のBash出力に同じJSON行が現れても、追跡対象を変えない。"""
     session = state.SessionState("parent-1", "/tmp")

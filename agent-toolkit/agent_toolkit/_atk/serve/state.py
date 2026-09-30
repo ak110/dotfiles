@@ -49,6 +49,16 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self._pending_started_at: float | None = None
         self._pending_generation = 0
         self._stopped = False
+        # サーバーの停止要求。SSEの生成処理はこれを参照して応答を完了させる。
+        self.shutdown_requested = asyncio.Event()
+
+    def request_shutdown(self) -> None:
+        """停止要求を設定する。購読中のSSE応答は次の待ちでこの要求を受けて終わる。
+
+        hypercornは停止時に全接続の切断を待ってから`graceful_timeout`を適用するため、
+        クライアントが切断するまで続くSSE応答を停止要求で完了させないと、停止が無期限に待つ。
+        """
+        self.shutdown_requested.set()
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         """監視を開始する。"""
@@ -166,10 +176,52 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self._queues.add(queue)
         try:
             while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=heartbeat)
-                    yield f"event: {event}\ndata: {{}}\n\n"
-                except TimeoutError:
+                received = await next_subscription_item(queue, self.shutdown_requested, heartbeat)
+                if received is SHUTDOWN:
+                    return
+                if received is HEARTBEAT:
                     yield "event: heartbeat\ndata: {}\n\n"
+                else:
+                    yield f"event: {received}\ndata: {{}}\n\n"
         finally:
             self._queues.discard(queue)
+
+
+class _Signal:
+    """`next_subscription_item`が通知本文の代わりに返す区分。"""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __repr__(self) -> str:
+        return self.name
+
+
+HEARTBEAT = _Signal("HEARTBEAT")
+SHUTDOWN = _Signal("SHUTDOWN")
+
+
+async def next_subscription_item(
+    queue: asyncio.Queue[str],
+    shutdown: asyncio.Event,
+    heartbeat: float,
+) -> str | _Signal:
+    """購読キューの次の通知、heartbeat間隔の経過（`HEARTBEAT`）、停止要求（`SHUTDOWN`）のいずれかを返す。
+
+    SSEの各経路は本関数で待ち、`SHUTDOWN`を受けたら生成処理を終える。停止要求を参照しない待ちは、
+    クライアントが切断するまでサーバーの停止を妨げる。
+    """
+    if shutdown.is_set():
+        return SHUTDOWN
+    get_task = asyncio.ensure_future(queue.get())
+    stop_task = asyncio.ensure_future(shutdown.wait())
+    try:
+        done, _ = await asyncio.wait({get_task, stop_task}, timeout=heartbeat, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        get_task.cancel()
+        stop_task.cancel()
+    if get_task in done:
+        return get_task.result()
+    if stop_task in done:
+        return SHUTDOWN
+    return HEARTBEAT

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import datetime
 import json
@@ -13,7 +14,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import session_registry, task_documents, tool_names
-from agent_toolkit._common import message_format
+from agent_toolkit._common import background_output, message_format
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
@@ -41,8 +42,14 @@ HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
 SESSION_INITIALIZATION_TIMEOUT = 50.0
 SESSION_INITIALIZATION_ATTEMPTS = 2
+# Claude CodeのBashツールが`run_in_background`指定で`timeout`を省いたコマンドへ課す実行上限の既定値。
+# 以降の待機上限はこの上限を制約として導出する。
+HOST_BASH_BACKGROUND_TIMEOUT_SECONDS = 1800.0
 # `atk agents wait`が待機対象を1件以上取得した後に用いる上限秒数。
-WAIT_TIMEOUT_SECONDS = 3600.0
+# 呼び出し側は外側の`timeout`を付けずに背景起動するため、HOST_BASH_BACKGROUND_TIMEOUT_SECONDSより60秒短くする。
+# この関係が崩れると、ホストが先に待機を打ち切り、上限到達時の終了コード3が呼び出し元へ届かず、
+# 同じコマンドを再発行して待機を続ける経路へ入れない。
+WAIT_TIMEOUT_SECONDS = HOST_BASH_BACKGROUND_TIMEOUT_SECONDS - 60.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "high_tier",
@@ -395,6 +402,9 @@ class SessionState:
     live_task_ids: set[str] = dataclasses.field(default_factory=set)
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
+    # 背景実行へ移った`atk agents wait`の出力ファイルの絶対パス。結果本文がツール結果に現れないため、
+    # 孫sessionの終端判定と未観測の記録の直前にこのファイルを読み、回収済みの孫sessionを追跡から外す。
+    agents_wait_background_outputs: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
     # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名、そのブロックを受信した時刻および入力の1行要約の組とする。
     # `child_tool_uses`は`agents_server`のツール呼び出しの引数を孫session追跡のために保持する別の責務を持つため統合しない。
@@ -715,6 +725,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.failure_pending_completion = False
     session.live_child_session_ids.clear()
     session.terminal_child_session_ids.clear()
+    session.agents_wait_background_outputs.clear()
     session.child_tool_uses.clear()
     session.pending_tool_uses.clear()
     session.last_action = ""
@@ -840,17 +851,45 @@ def consume_agents_wait_output(session: SessionState, text: str) -> None:
     委譲先は受け取り済みの結果について同じ報告を返し直すだけのturnを費やす。
     回収の根拠は待機コマンドが返したJSON Linesとし、`--output-file`の指定時と長い結果の自動保存時は標準出力が示す保存先を読む。
     結果ファイルの不在は公開前の状態と区別できないため、回収の根拠に用いない。
+    ホストが待機を背景実行へ移した場合は結果本文が出力ファイルへ書かれるため、そのパスを記録し、
+    `consume_agents_wait_background_outputs`が判定の直前に読む。
+    """
+    collected = _collected_from_wait_output(text)
+    session.agents_wait_background_outputs.update(background_output.output_paths(text))
+    _discard_collected(session, collected)
+
+
+def consume_agents_wait_background_outputs(session: SessionState) -> None:
+    """背景実行の`atk agents wait`が出力ファイルへ書いた終端結果の孫sessionを追跡から外す。
+
+    孫sessionの終端判定と未観測の記録の直前に呼ぶ。出力ファイルが無い、読めない、終端statusの行が無い
+    （待機が未完了、または`status: running`だけ）場合は追跡に残す。
+    """
+    collected: set[str] = set()
+    for path in session.agents_wait_background_outputs:
+        with contextlib.suppress(OSError, UnicodeError):
+            collected |= _collected_from_wait_output(pathlib.Path(path).read_text(encoding="utf-8"))
+    _discard_collected(session, collected)
+
+
+def _collected_from_wait_output(text: str) -> set[str]:
+    """`atk agents wait`の標準出力から、終端結果を回収したsession識別子を返す。
+
+    標準出力はJSON Linesか、`--output-file`の指定時と長い結果の自動保存時に保存先の行だけを持つ。
+    ツール結果の本文と背景実行の出力ファイルはどちらも標準出力そのものであるため、同じ規則で読む。
     """
     collected = _collected_session_ids(text)
     for line in text.splitlines():
         if not line.startswith(_AGENTS_WAIT_SAVED_PREFIX):
             continue
-        try:
+        with contextlib.suppress(OSError, UnicodeError):
             collected |= _collected_session_ids(
                 pathlib.Path(line.removeprefix(_AGENTS_WAIT_SAVED_PREFIX).strip()).read_text(encoding="utf-8")
             )
-        except (OSError, UnicodeError):
-            continue
+    return collected
+
+
+def _discard_collected(session: SessionState, collected: set[str]) -> None:
     session.live_child_session_ids.difference_update(collected)
     session.terminal_child_session_ids.difference_update(collected)
 
