@@ -236,6 +236,8 @@ class ExecutionSegment:
     `resolved`が偽の区間では`tokens`を空とし、助言用検査はその区間では検出しない。
     `is_agent_toolkit_script`はagent-toolkit配下の配布検査スクリプトを表す。
     `raw_tokens`は、実行位置が未確定の区間でリダイレクト先を解析するため、元のトークン列を保持する。
+    `tokens`はリダイレクトの演算子と対象（`>`・`/tmp/x`・`2>&1`など）も含む。
+    位置引数を数える消費側と、引数列全体を比べる消費側は`strip_redirections`を通した引数列を使う。
     """
 
     tokens: tuple[str, ...]
@@ -286,6 +288,34 @@ def _is_redirection_continuation(previous: str, separator: str, following: str) 
     if previous.endswith((">", "<")):
         return True
     return following.startswith(">") and separator.endswith("&")
+
+
+_REDIRECTION_OPERATOR_PATTERN = re.compile(r"^(?:\d+|&)?(?:>>|>\||>&|>|<<<|<<-|<<|<>|<&|<)")
+"""リダイレクト演算子で始まるトークンの先頭部分。
+
+先頭のファイル記述子番号（`2>`）と、標準出力・標準エラーの同時指定（`&>`）を含む。
+"""
+
+
+def strip_redirections(tokens: Sequence[str]) -> tuple[str, ...]:
+    """トークン列からリダイレクトの演算子と対象を除いた引数列を返す。
+
+    演算子に対象を密着させたトークン（`2>/dev/null`・`2>&1`）はそれだけを除き、
+    演算子だけのトークン（`>`・`2>`・`<<<`）は直後の対象の1トークンと合わせて除く。
+    `shlex.split`は引用の有無を保持しないため、引用した`'>'`も演算子として除く。
+    """
+    arguments: list[str] = []
+    skip_target = False
+    for token in tokens:
+        if skip_target:
+            skip_target = False
+            continue
+        match = _REDIRECTION_OPERATOR_PATTERN.match(token)
+        if match is None:
+            arguments.append(token)
+            continue
+        skip_target = match.end() == len(token)
+    return tuple(arguments)
 
 
 def extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> list[list[ExecutionSegment]]:

@@ -627,6 +627,12 @@ class TestBashGitRevParseShortMultiple:
         assert "`git rev-parse --short`へ2つのrevision" in context
         assert "`git rev-parse --short=7 <revision>`" in context
 
+    def test_redirection_is_not_counted_as_revision(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git rev-parse --short=7 HEAD~1 HEAD > /tmp/x"}})
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "`git rev-parse --short`へ2つのrevision（HEAD~1、HEAD）を渡している" in context
+
     @pytest.mark.parametrize(
         "command",
         [
@@ -634,6 +640,11 @@ class TestBashGitRevParseShortMultiple:
             "git rev-parse HEAD~1 HEAD",
             "git rev-parse --short=7 HEAD -- path/file",
             "git log --oneline HEAD~1 HEAD",
+            "git rev-parse --short=7 HEAD > /tmp/x",
+            "git rev-parse --short HEAD >/tmp/x",
+            "git rev-parse --short HEAD 2>/dev/null",
+            "git rev-parse --short HEAD < /dev/null",
+            "git rev-parse --short=7 HEAD >> f",
         ],
     )
     def test_single_revision_or_other_command_not_warned(self, command: str):
