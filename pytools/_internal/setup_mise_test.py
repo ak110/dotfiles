@@ -18,6 +18,14 @@ _EXPECTED_ENV_OVERRIDES = {
     "CI": "1",
     "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT": "120s",
 }
+# 作業ツリーの`mise.lock`を書き戻さないよう、`install`だけへ加えるlockedモードの環境変数。
+_LOCKED_ENV = {"MISE_LOCKED": "1", "MISE_LOCKED_SCOPES": "project"}
+_EXPECTED_INSTALL_ENV_OVERRIDES = _EXPECTED_ENV_OVERRIDES | _LOCKED_ENV
+
+
+def _expected_env(record: dict[str, typing.Any]) -> dict[str, str]:
+    """呼び出しの種類ごとの期待する環境変数を返す。lockedモードは`install`だけに与える。"""
+    return _EXPECTED_INSTALL_ENV_OVERRIDES if record["args"][0] == "install" else _EXPECTED_ENV_OVERRIDES
 
 
 class _MiseSubprocessStub:
@@ -250,7 +258,7 @@ class TestRunTrustsWorkingTree:
         assert trust_calls and trust_calls[0]["args"] == ["trust", str(mise_toml)]
         # 全 mise CLI 呼び出しで非対話化 env_overrides が注入されていること
         for record in mise_stub.records:
-            assert record["env_overrides"] == _EXPECTED_ENV_OVERRIDES
+            assert record["env_overrides"] == _expected_env(record)
 
     def test_trust_skipped_without_env(self, mise_stub: _MiseSubprocessStub):
         """CHEZMOI_WORKING_TREE が未設定のとき trust をスキップする。"""
@@ -362,7 +370,7 @@ class TestRunInstallStep:
         assert install_calls[0]["args"] == ["install"]
         # インストール処理は通常コマンドより長いタイムアウト（600 秒）で呼ばれる
         assert install_calls[0]["timeout"] == 600
-        assert install_calls[0]["env_overrides"] == _EXPECTED_ENV_OVERRIDES
+        assert install_calls[0]["env_overrides"] == _EXPECTED_INSTALL_ENV_OVERRIDES
         # working treeが無い場合は実行位置を指定しない（従来どおりglobal設定だけが対象）
         assert install_calls[0]["cwd"] is None
 
@@ -384,6 +392,31 @@ class TestRunInstallStep:
         install_calls = mise_stub.calls_for("install")
         assert len(install_calls) == 1
         assert install_calls[0]["cwd"] == tmp_path
+        assert install_calls[0]["env_overrides"] == _EXPECTED_INSTALL_ENV_OVERRIDES
+
+    def test_locked_install_failure_is_not_retried_without_lock(
+        self,
+        mise_stub: _MiseSubprocessStub,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """lockedモードの`install`が失敗しても、lockを書き戻すlockedなしの再実行をしない。"""
+        (tmp_path / "mise.toml").write_text("[tools]\n", encoding="utf-8")
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        mise_stub.handlers[("install",)] = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="jq@latest is not in the lockfile"
+        )
+
+        assert _setup_mise.run() is True
+
+        install_calls = mise_stub.calls_for("install")
+        assert len(install_calls) == 1
+        assert install_calls[0]["env_overrides"] == _EXPECTED_INSTALL_ENV_OVERRIDES
+        assert mise_stub.calls_for("reshim")
+        others = [record for record in mise_stub.records if record["args"][0] != "install"]
+        assert others
+        assert all(not set(_LOCKED_ENV) & set(record["env_overrides"]) for record in others)
 
     def test_install_omits_working_tree_without_config(
         self,
@@ -619,4 +652,4 @@ class TestNonInteractiveEnvInjection:
         assert mise_stub.calls_for("ls", "--global", "--json"), "mise ls が呼ばれていない"
         assert mise_stub.calls_for("install"), "mise install が呼ばれていない"
         for record in mise_stub.records:
-            assert record["env_overrides"] == _EXPECTED_ENV_OVERRIDES
+            assert record["env_overrides"] == _expected_env(record)

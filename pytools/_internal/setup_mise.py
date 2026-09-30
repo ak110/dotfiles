@@ -305,6 +305,10 @@ def _list_item_is_node(item: object) -> bool:
     return isinstance(name, str) and name == "node"
 
 
+# 作業ツリーを実行位置とする`mise install`だけへ与える環境変数。
+_LOCKED_INSTALL_ENV = {"MISE_LOCKED": "1", "MISE_LOCKED_SCOPES": "project"}
+
+
 def _ensure_tools_installed(mise_bin: Path) -> bool:
     """`mise install` で global/working-tree 設定のツールを取得する。
 
@@ -314,11 +318,22 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
     global設定も併合されるため、`CHEZMOI_WORKING_TREE` に `mise.toml` がある場合は
     そこを実行位置として1回だけ実行する。
 
+    working treeの`mise.lock`を書き戻さないよう、プロジェクトのlockfileに対してlockedモード
+    （`MISE_LOCKED=1`・`MISE_LOCKED_SCOPES=project`）で実行する。global設定はlockにURLを持たない
+    ツールを含むため対象外とする。lockedモードで失敗しても、lockの書き戻しを招くため
+    lockedを外した再実行はしない。
+
     終了コード非ゼロ・タイムアウト・例外はすべて吸収し、後続ステップを止めない。
     インストール差分の厳密判定は出力からは行えないため、`changed` の冪等性ではなく
     実行事実の記録を優先する設計とし、結果に関わらず常に True を返す。
     """
-    result = _run_mise(mise_bin, ["install"], timeout=_MISE_INSTALL_TIMEOUT, cwd=_working_tree_with_config())
+    result = _run_mise(
+        mise_bin,
+        ["install"],
+        timeout=_MISE_INSTALL_TIMEOUT,
+        cwd=_working_tree_with_config(),
+        extra_env=_LOCKED_INSTALL_ENV,
+    )
     if result is None:
         logger.info(log_format.format_status("mise", "`install` がタイムアウトまたは例外で中断"))
         return True
@@ -441,6 +456,7 @@ def _run_mise(
     *,
     timeout: float = _MISE_TIMEOUT,
     cwd: Path | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str] | None:
     """`mise` CLIを呼び出す共通ヘルパー。
 
@@ -459,7 +475,7 @@ def _run_mise(
         timeout=timeout,
         cwd=cwd,
         tag="mise",
-        env_overrides=_mise_env_overrides(),
+        env_overrides=_mise_env_overrides() | (extra_env or {}),
     )
 
 

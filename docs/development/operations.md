@@ -151,6 +151,15 @@ miseは実行位置から設定ファイルを探索するため、後処理は`
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
 working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
 
+process-loopと後処理の`mise install`へは環境変数`MISE_LOCKED=1`と`MISE_LOCKED_SCOPES=project`を与える。
+これにより、プロジェクトの`mise.lock`に記録済みの解決結果から導入するlockedモードで動かす。
+既定動作の`mise install`は実行位置のlockfileを書き戻し、書き戻す内容は実行ホストのプラットフォームで変わる。
+このため既定動作では、dotfilesの作業ツリーの`mise.lock`に差分が残る（Windowsで`mise.toml`がLinux x64だけに指定した配布物のエントリが消えた）。
+global設定は`npm:`系などlockにURLを持たないツールを含むため、`MISE_LOCKED_SCOPES=project`でlockedの対象から外す。
+lockedモードの`install`が失敗しても、lockを書き戻すlockedなしの再実行はしない。
+`mise.toml`にあってlockに無いツールによる失敗はlockの更新不足であり、`make update-mise-locks`で解消する。
+`update-dotfiles`はgit pull工程の前にルート`mise.lock`の差分を破棄してHEADの内容へ戻し、それ以外の未コミット差分だけを退避して復元する。
+
 ## 対話シェル起動時のbash補完のキャッシュ
 
 対話シェルは補完定義を得るためにコマンドごとの子プロセスを起動する。
@@ -286,8 +295,8 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   - 指定順は`~/.local/bin`、miseのshims、systemdの既定PATHとし、実体を持つコマンドをshimより優先する
 - GitHubへの接続失敗、対象refの欠落、branchまたはupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
   systemdのjournalへ残る。次回のタイマー起動で再試行する
-- dotfilesの作業ツリーに追跡済みの未コミット差分がある場合、`update-dotfiles`の`git pull --rebase`が失敗して
-  自動反映は成立しない。差分は手動で整理する
+- dotfilesの作業ツリーの未コミット差分は、`update-dotfiles`がpullの前に退避して後に復元する。ルート`mise.lock`の差分は保持せず破棄する。
+  pullまたは復元が競合した場合は、元のcommitと未コミット内容を復旧用の参照へ保存して上流へ合わせる
 
 ## Windowsの電源設定の最適化（dotfiles-setup）
 
