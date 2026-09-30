@@ -14,7 +14,7 @@
 - `pending取得結果`: `atk review-audit pending`の標準出力をセッション領域（`agent-toolkit:managed-temp`）へ保存したJSONファイルの絶対パス。JSONはCopilot由来の`reviews`・`threads`とDependabotアラートの`dependabot`を持つ。コマンドが非0で終わった場合と、JSONまたは件数を解釈できない場合は`なし`
 - `引き継ぎ記録先`: 値は`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」が指す`引き継ぎ記録先`の書式に従う
 
-監査の手順、返却項目、権限および応答言語は起動文へ書かない。
+監査の手順、返却項目、権限および応答言語はタスク文書が定めるため、起動文で再掲しない。
 
 ## 受領
 
