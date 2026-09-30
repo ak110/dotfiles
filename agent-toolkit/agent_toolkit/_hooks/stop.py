@@ -29,6 +29,7 @@ CHECK_MODULE_NAMES = (
     "agents_server_session_advisor",
     "pending_question_advisor",
     "termination_order_advisor",
+    "queued_notification_advisor",
 )
 
 _CONSECUTIVE_BLOCK_LIMIT = 7

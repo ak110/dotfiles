@@ -1252,7 +1252,51 @@ const call = fetchCalls.find(item => item.url.endsWith('/api/entries'));
 process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body)}));
 """
     )
-    assert result == {"body": {"type": "awi", "messages": ["---\ntarget_repo: example/repo\n---\n\n本文"]}}
+    assert result == {
+        "body": {
+            "type": "awi",
+            "messages": ["---\ntarget_repo: example/repo\n---\n\n本文"],
+            "raw_text": "---\ntarget_repo: example/repo\n---\n\n本文",
+        }
+    }
+
+
+def test_normal_creation_reports_auto_batch_import_and_ignored_fields() -> None:
+    """種別uwiのまま送った本文をサーバーが一括登録として取り込んだ場合、その旨と使わなかった入力欄を通知する。"""
+    result = _run_node_ui(
+        """
+elements['create-dialog'].open = true;
+dialogStack.push('create-dialog');
+elements['create-kind'].value = 'uwi';
+updateCreateFields();
+elements['create-content'].value = '  show形式テキスト  ';
+elements['create-target'].value = 'example/repo';
+fetchHandler = async (url) => {
+  if (url.endsWith('/api/entries')) {
+    return {
+      ok: true, status: 201, statusText: 'Created',
+      json: async () => ({
+        batch: true, filenames: ['new.md'], mapping: {'old.md': 'new.md'}, skipped: [],
+        warnings: ['依存先が不在'], ignored_fields: ['target_repo', 'question_type']
+      })
+    };
+  }
+  if (url.endsWith('/api/repos?status=active')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+await createEntry({preventDefault() {}});
+const call = fetchCalls.find(item => item.url.endsWith('/api/entries'));
+process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body), toast: elements['toast'].textContent}));
+"""
+    )
+    assert result["body"]["raw_text"] == "  show形式テキスト  "
+    assert result["body"]["messages"] == ["show形式テキスト"]
+    assert result["toast"] == (
+        "show形式の本文のため一括登録として取り込みました。1件を取り込みました。改名: old.md -> new.md"
+        " 使わなかった入力欄: target-repo、回答形式 警告: 依存先が不在"
+    )
 
 
 @pytest.mark.asyncio
@@ -1294,3 +1338,158 @@ async def test_user_comment_api_rejects_non_inbox_states_and_uwi(
         assert response.status_code == 400
         actual_path = tmp_path / ("inbox" if state_name == "uwi" else state_name) / filename
         assert actual_path.read_text(encoding="utf-8") == content
+
+
+_SINGLE_SHOW_TEXT = (
+    "## target_repo: github.com/example/foo\n"
+    "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
+)
+
+
+def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """単件登録と一括取り込みの両経路でロック・remote同期・commitを無効化する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, serve_app.awi_add):
+        monkeypatch.setattr(module, "_repo_lock", lock)
+        monkeypatch.setattr(module, "_pull", lambda _path: None)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
+    _patch_batch_repo_operations(monkeypatch)
+
+
+def _serve_app(root: pathlib.Path) -> typing.Any:
+    """指定したキュー管理ディレクトリを使う`atk serve`のアプリを返す。"""
+    return serve_app.create_app(root, config.ServeConfig("127.0.0.1", 28766), state.ServeState(root))
+
+
+def _saved_files(root: pathlib.Path) -> dict[str, str]:
+    """inboxへ保存されたファイル名と内容を返す。"""
+    inbox = root / "inbox"
+    if not inbox.is_dir():
+        return {}
+    return {path.name: path.read_text(encoding="utf-8") for path in sorted(inbox.iterdir()) if path.suffix == ".md"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+@pytest.mark.parametrize("text", [_BATCH_TEXT, _SINGLE_SHOW_TEXT], ids=["show-all", "show-single"])
+async def test_single_entry_api_switches_show_format_to_batch_import(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry_type: str,
+    text: str,
+) -> None:
+    """種別awi・uwiのままshow形式の本文を送ると、単件保存せず一括登録と同じ結果で取り込む。
+
+    ブラウザーは単件の本文をtrimして送るため、未trimの`raw_text`で取り込まないと最終行の末尾空白が失われる。
+    """
+    _patch_single_add_operations(monkeypatch)
+    batch_root = tmp_path / "batch"
+    single_root = tmp_path / "single"
+    batch_response = await _serve_app(batch_root).test_client().post("/api/entries/batch", json={"text": text})
+    payload: dict[str, object] = {"type": entry_type, "messages": [text.strip()], "raw_text": text}
+    if entry_type == "uwi":
+        payload["question_type"] = "free-form"
+
+    response = await _serve_app(single_root).test_client().post("/api/entries", json=payload)
+
+    assert batch_response.status_code == 201
+    assert response.status_code == 201
+    assert await response.get_json() == {**(await batch_response.get_json()), "batch": True, "ignored_fields": []}
+    assert _saved_files(single_root) == _saved_files(batch_root)
+    assert list(_saved_files(single_root)) == ["keep.md"]
+
+
+@pytest.mark.asyncio
+async def test_single_entry_api_reports_ignored_single_fields(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """自動切替した登録は、入力されていた単件用の項目を使わなかったことを応答で示す。"""
+    _patch_single_add_operations(monkeypatch)
+
+    response = (
+        await _serve_app(tmp_path)
+        .test_client()
+        .post(
+            "/api/entries",
+            json={
+                "type": "uwi",
+                "messages": [_BATCH_TEXT.strip()],
+                "raw_text": _BATCH_TEXT,
+                "target_repo": "github.com/example/foo",
+                "scope": "範囲",
+                "question_type": "choice",
+                "choices": ["はい", "いいえ"],
+            },
+        )
+    )
+
+    assert response.status_code == 201
+    body = await response.get_json()
+    assert body["batch"] is True
+    assert body["ignored_fields"] == ["target_repo", "scope", "question_type", "choices"]
+    assert list(_saved_files(tmp_path)) == ["keep.md"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("---\ntarget_repo: github.com/Example/Repo\n---\n\n通常の本文\n", id="frontmatter"),
+        pytest.param(
+            "---\ntarget_repo: github.com/Example/Repo\n---\n\n# 書式の例\n\n"
+            "### 20260101-000000-001.md\n---\ntype: awi\n---\n\n引用した例\n",
+            id="quoted-example",
+        ),
+        pytest.param("# 見出し\n\n本文だけの依頼\n", id="plain"),
+    ],
+)
+async def test_single_entry_api_keeps_non_show_text_single(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+) -> None:
+    """show形式の構造に該当しない本文は、`raw_text`があっても単件で保存する。"""
+    _patch_single_add_operations(monkeypatch)
+    payload: dict[str, object] = {"type": "awi", "messages": [text.strip()], "raw_text": text}
+    if not text.startswith("---"):
+        payload["target_repo"] = "github.com/Example/Repo"
+
+    response = await _serve_app(tmp_path).test_client().post("/api/entries", json=payload)
+
+    assert response.status_code == 201
+    body = await response.get_json()
+    assert set(body) == {"filenames"}
+    saved = _saved_files(tmp_path)
+    assert list(saved) == body["filenames"]
+    assert text.strip().splitlines()[-1] in saved[body["filenames"][0]]
+
+
+@pytest.mark.asyncio
+async def test_single_entry_api_rejects_invalid_show_format_without_saving(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """show形式の構造に該当しエントリ検証に失敗する本文は、一括登録と同じエラーで拒否し何も保存しない。"""
+    _patch_single_add_operations(monkeypatch)
+    invalid = "### broken.md [inbox]\n---\ntype: awi\n---\n\n対象リポジトリの無い本文\n"
+    batch_response = await _serve_app(tmp_path / "batch").test_client().post("/api/entries/batch", json={"text": invalid})
+
+    response = (
+        await _serve_app(tmp_path / "single")
+        .test_client()
+        .post(
+            "/api/entries",
+            json={"type": "awi", "messages": [invalid.strip()], "raw_text": invalid, "target_repo": "github.com/Example/Repo"},
+        )
+    )
+
+    assert batch_response.status_code == 400
+    assert response.status_code == 400
+    assert await response.get_json() == await batch_response.get_json()
+    assert _saved_files(tmp_path / "single") == {}

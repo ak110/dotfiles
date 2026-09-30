@@ -72,7 +72,7 @@ def test_mark_keeps_other_repository_records(
 @pytest.mark.parametrize("repository", ("owner", "owner/repo/extra", ""))
 def test_invalid_repository_is_rejected(repository: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert _dispatch("list", repository) == 1
-    assert "<owner>/<repo>" in capsys.readouterr().err
+    assert "次の操作: --repoへ<owner>/<repo>形式で指定する" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("identifier", ("0", "-1", "abc"))
@@ -288,3 +288,4 @@ def test_pending_does_not_report_zero_after_gh_failure(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "gh api failed" in captured.err
+    assert "次の操作: `gh auth status`" in captured.err

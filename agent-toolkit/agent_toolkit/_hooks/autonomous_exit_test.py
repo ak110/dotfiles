@@ -238,7 +238,7 @@ class TestBlockCondition:
         reason = decision.get("reason")
         assert isinstance(reason, str)
         assert "atk agents-exit-session" in reason
-        assert "Fix: " in reason
+        assert "\n次の操作: " in reason
         assert reason.startswith('<atk-auto source="autonomous_exit" kind="block">')
 
     def test_reason_body_states_the_evaluated_input(self, tmp_path: pathlib.Path) -> None:

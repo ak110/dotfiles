@@ -261,6 +261,24 @@ from agent_toolkit._plan.structure.parsing import *  # noqa: F403
 from agent_toolkit._plan.structure.sections import *  # noqa: F403
 
 
+_MISSING_MATERIAL_FIX = "提示素材の素材表・要求表に在るIDへ直すか、素材を追加する"
+
+
+def _missing_requirement_reference_error(reference: str) -> str:
+    """要求表に無い要求IDを`根拠`が参照する違反文を返す。"""
+    return (
+        f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}。要求表に在る採用要求のIDへ直すか、要求表へ要求を追加する"
+    )
+
+
+def _non_adopted_requirement_reference_error(reference: str) -> str:
+    """不採用要求を`根拠`が参照する違反文を返す。"""
+    return (
+        f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}。"
+        "採用要求のIDへ直すか、不採用要求を根拠にする場合は要求表の採否を見直す"
+    )
+
+
 def _check_action_references(
     table: MarkdownTable,
     requirement_ids: set[str],
@@ -281,9 +299,9 @@ def _check_action_references(
                 continue
             for reference in references:
                 if reference not in requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
+                    errors.append(_missing_requirement_reference_error(reference))
                 elif reference not in adopted_requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
+                    errors.append(_non_adopted_requirement_reference_error(reference))
         return errors
 
     decision_column = table.header.index("採否")
@@ -302,9 +320,9 @@ def _check_action_references(
                 continue
             for reference in references:
                 if reference not in requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
+                    errors.append(_missing_requirement_reference_error(reference))
                 elif reference not in adopted_requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
+                    errors.append(_non_adopted_requirement_reference_error(reference))
             continue
         if decision in PLAN_ACTION_NON_ADOPTED_DECISIONS:
             if not root:
@@ -312,7 +330,7 @@ def _check_action_references(
                 continue
             for reference in _requirement_references(root):
                 if reference not in requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
+                    errors.append(_missing_requirement_reference_error(reference))
     return errors
 
 
@@ -380,7 +398,7 @@ def _check_reference_ids(
         references = _split_material_references(row[column])
         for token in references:
             if token not in valid_ids:
-                errors.append(f"{label}の{column_name}が提示素材に無い: {token}")
+                errors.append(f"{label}の{column_name}が提示素材に無い: {token}。{_MISSING_MATERIAL_FIX}")
         if is_new:
             if not any(token in identifiers for token in references):
                 errors.append(f"{label}の{column_name}へ素材IDを1件以上記載する: {row[column]}")
@@ -440,7 +458,9 @@ def _check_history_rows(
             errors.append(f"`## 変更履歴`のユーザー発言行は`指摘内容`へ素材IDだけを書く: {detail}")
         for reference in references:
             if reference not in identifiers:
-                errors.append(f"`## 変更履歴`のユーザー発言行が参照する素材IDが提示素材に無い: {reference}")
+                errors.append(
+                    f"`## 変更履歴`のユーザー発言行が参照する素材IDが提示素材に無い: {reference}。{_MISSING_MATERIAL_FIX}"
+                )
     return errors
 
 

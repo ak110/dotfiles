@@ -81,6 +81,9 @@ from agent_toolkit._hooks import (
     message_format as _message_format,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._hooks import (
+    response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 
@@ -183,7 +186,14 @@ def main(payload_text: str) -> int:
     # 遮断で終える場合はJSONを出力しないため、`exit_with`がstderrへ出力して消費する。
     pending_notices: list[str] = []
     if language_warning_body is not None:
-        pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG, removable_cause=True))
+        pending_notices.append(
+            _llm_notice(
+                language_warning_body,
+                tag=_WARN_TAG,
+                fix=_response_language_check.WARNING_FIX,
+                removable_cause=True,
+            )
+        )
     # Claude Codeのメインセッションでは一定間隔で日本語の応答指示を文脈の近くへ置き直す。
     if not is_codex and _advance_language_reinjection(payload, session_id):
         pending_notices.append(_message_format.llm_notice(_rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE, _HOOK_ID))
@@ -343,9 +353,9 @@ def _handle_bash_tool(
             if _background_task_outputs.command_reads_path(command, pending_paths):
                 warnings.append(
                     _llm_notice(
-                        "未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。\n"
-                        "対処: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。",
+                        "未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。",
                         tag=_WARN_TAG,
+                        fix="完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。",
                         removable_cause=True,
                         escalate_on_repeat=True,
                     )

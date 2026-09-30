@@ -13,11 +13,13 @@ import subprocess
 import sys
 
 try:
+    from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan.structure import is_agent_doc_target_file
 except ImportError as _import_error:
     print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}。"
-        "`atk run-script agent-doc-changes -- <引数>`で起動してください。",
+        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
+        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        "次の操作: `atk run-script agent-doc-changes -- <引数>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -58,7 +60,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         paths = changed_agent_doc_paths(args.repo, args.base, args.target)
     except RuntimeError as error:
-        print(f"失敗: {error}", file=sys.stderr)
+        _next_action.report(
+            f"失敗: {error}",
+            next_action="`--repo`が対象リポジトリを指し、baseとtargetの両revisionがそこで解決できることを確かめて再実行する",
+        )
         return 1
     print(json.dumps(paths, ensure_ascii=False))
     return 0

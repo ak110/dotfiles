@@ -69,6 +69,10 @@ class TestCheckDash:
         # 列番号は4（"abc"の後）、抜粋はダブルクォートで囲まれる。
         assert f"{path}:1:4: em-dash(U+2014)" in result.stderr
         assert '"' in result.stderr  # 抜粋のダブルクォートが存在する。
+        # 違反の後に置換先を示す次の操作の行を1行だけ置く。
+        next_action = result.stderr.splitlines()[-1]
+        assert next_action.startswith("次の操作: ")
+        assert "読点" in next_action
 
     def test_output_excerpt_is_double_quoted(self, tmp_path: pathlib.Path) -> None:
         """出力の抜粋部分がダブルクォートで囲まれている。"""

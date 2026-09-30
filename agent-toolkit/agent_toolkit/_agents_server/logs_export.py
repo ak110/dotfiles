@@ -12,6 +12,13 @@ import typing
 
 from agent_toolkit._agents_server import logs_markdown, record_paths
 from agent_toolkit._atk.serve import sessions as session_records
+from agent_toolkit._common.next_action import report
+
+# 記録を特定できない場合の次の操作。`atk agents logs`の各経路と`atk agents logs <id>`の表示で共有する。
+MISSING_RECORD_NEXT_ACTION = "`atk agents list --include-terminated`でsession_idを確かめてから再実行する"
+UNREADABLE_RECORD_NEXT_ACTION = "記録ファイルの権限を確かめてから再実行する"
+BROKEN_LINES_NEXT_ACTION = "対応不要（解析できた行の出力は継続した）"
+_OUTPUT_DIR_NEXT_ACTION = "`--output-dir`を書込可能で同名のファイルが無いディレクトリへ変えて再実行する"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -39,7 +46,7 @@ def export_logs(
     if session_id is not None:
         selected = record_paths.find_session_record(session_id)
         if selected is None:
-            print(f"sessionの記録が見つかりません: {session_id}", file=sys.stderr)
+            report(f"sessionの記録が見つかりません: {session_id}", next_action=MISSING_RECORD_NEXT_ACTION)
             return 2
         targets = [_target(selected.engine, selected.paths[0], session_id)]
     else:
@@ -47,7 +54,10 @@ def export_logs(
         if latest is not None:
             targets = targets[:latest]
     if not targets:
-        print("対象のsession記録が見つかりません", file=sys.stderr)
+        report(
+            "対象のsession記録が見つかりません",
+            next_action="`--project-dir`の作業ディレクトリを確かめるか、`--all`で全プロジェクトの記録を対象にする",
+        )
         return 2
 
     destinations: list[pathlib.Path] | None = None
@@ -56,17 +66,17 @@ def export_logs(
             output_dir.mkdir(parents=True, exist_ok=True)
             destinations = _destinations(output_dir, targets)
         except (OSError, FileExistsError) as error:
-            print(f"出力先を準備できません: {error}", file=sys.stderr)
+            report(f"出力先を準備できません: {error}", next_action=_OUTPUT_DIR_NEXT_ACTION)
             return 2
 
     for index, target in enumerate(targets):
         try:
             records, broken = session_records.parse_records(target.path.read_text(encoding="utf-8", errors="replace"))
         except OSError as error:
-            print(f"sessionの記録を読めません: {target.session_id}: {error}", file=sys.stderr)
+            report(f"sessionの記録を読めません: {target.session_id}: {error}", next_action=UNREADABLE_RECORD_NEXT_ACTION)
             return 2
         if broken:
-            print(f"解析できない行: {broken}: {target.path}", file=sys.stderr)
+            report(f"解析できない行: {broken}: {target.path}", next_action=BROKEN_LINES_NEXT_ACTION)
         if output_format == "markdown":
             rendered = logs_markdown.render_session(
                 target.engine,
@@ -89,7 +99,7 @@ def export_logs(
                 with destination.open("x", encoding="utf-8") as stream:
                     stream.write(rendered)
             except OSError as error:
-                print(f"出力ファイルを書けません: {destination}: {error}", file=sys.stderr)
+                report(f"出力ファイルを書けません: {destination}: {error}", next_action=_OUTPUT_DIR_NEXT_ACTION)
                 return 2
             print(f"出力: {destination}")
     return 0

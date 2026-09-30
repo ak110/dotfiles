@@ -10,6 +10,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._agents_server import commands, state
 from agent_toolkit._atk import config, environment
+from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
 status_file = commands.status_file
 
@@ -331,7 +332,7 @@ def test_agents_show_finds_uncollected_result_after_status_expires(
     (results / "nested.json").unlink()
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "show", "nested"])
-    assert capsys.readouterr().err == "unknown session: nested\n"
+    assert capsys.readouterr().err.startswith(f"unknown session: nested\n{NEXT_ACTION_PREFIX}")
 
 
 @pytest.mark.usefixtures("session_environment")
@@ -379,11 +380,13 @@ def test_agents_show_keeps_single_line_in_agent_environment(
 
 @pytest.mark.usefixtures("session_environment")
 def test_agents_show_rejects_unknown_session(capsys: pytest.CaptureFixture[str]) -> None:
-    """未知の識別子は非0と理由で拒否する。"""
+    """未知の識別子は非0と理由で拒否し、一覧で識別子を確かめる操作を示す。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "show", "missing"])
 
-    assert capsys.readouterr().err == "unknown session: missing\n"
+    error = capsys.readouterr().err
+    assert error.startswith(f"unknown session: missing\n{NEXT_ACTION_PREFIX}")
+    assert "atk agents list" in error
 
 
 def test_agents_list_without_conversation_root_shows_all_roots(
@@ -679,10 +682,12 @@ def test_agents_logs_reads_subagent_and_appends_it_to_parent_markdown(
     ],
 )
 def test_agents_logs_rejects_incompatible_scopes(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
-    """対象の排他、件数、追尾とmarkdown専用オプションの境界を検査する。"""
+    """対象の排他、件数、追尾とmarkdown専用オプションの境界を検査し、受理される指定を次の操作で示す。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "logs", *argv])
-    assert "error:" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "error:" in error
+    assert f"\n{NEXT_ACTION_PREFIX}" in error
 
 
 def test_agents_logs_bulk_export_filters_projects_and_preserves_existing_files(
@@ -729,20 +734,24 @@ def test_agents_logs_bulk_export_filters_projects_and_preserves_existing_files(
 
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "logs", "--all", "--format", "markdown", "--output-dir", str(output_dir)])
+    assert "--output-dir" in capsys.readouterr().err.split(NEXT_ACTION_PREFIX, 1)[1]
     assert {path.name: path.read_text(encoding="utf-8") for path in output_dir.glob("*.md")} == first_contents
 
 
 def test_agents_logs_reports_missing_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """存在しない記録は識別子を添えて報告する。"""
+    """存在しない記録は識別子を添えて報告し、一覧で識別子を確かめる操作を示す。"""
     monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
     monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
 
-    with pytest.raises(SystemExit, match="2"):
-        atk.main(["agents", "logs", "missing"])
+    for argv in (["missing"], ["missing", "--format", "markdown"]):
+        with pytest.raises(SystemExit, match="2"):
+            atk.main(["agents", "logs", *argv])
 
-    assert "missing" in capsys.readouterr().err
+        error = capsys.readouterr().err
+        assert "missing" in error
+        assert "atk agents list --include-terminated" in error.split(NEXT_ACTION_PREFIX, 1)[1]
 
 
 def test_agents_logs_shows_first_of_ambiguous_codex_records(

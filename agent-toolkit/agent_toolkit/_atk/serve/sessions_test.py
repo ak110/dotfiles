@@ -1074,6 +1074,38 @@ async def test_remote_change_notifications_are_relayed_to_subscribers(tmp_path: 
     assert json.loads(queue.get_nowait()) == {"type": "refresh"}
 
 
+@pytest.mark.asyncio
+async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """常駐SSHが停止処理と同時に終了しても、停止処理のキャンセルで再接続せずに終わる。
+
+    プロセスグループ全体へSIGTERMが届くと、子のSSHが先に終了して後始末へ入ったタスクへ停止処理のキャンセルが届く。
+    後始末の待機がキャンセルを吸収したまま再接続すると、新しいSSHの出力を待ち続けてatk serveの停止が完了しない。
+    """
+    started: list[tuple[typing.Any, ...]] = []
+    real_exec = asyncio.create_subprocess_exec
+
+    async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
+        # 標準出力を閉じて接続断を起こし、標準入力の終端を受けてから少し遅れて終了する子プロセスで代替する。
+        started.append(cmd)
+        script = "import os, sys, time; os.close(1); sys.stdin.read(); time.sleep(0.3)"
+        return await real_exec(sys.executable, "-c", script, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    sessions.start_remote_clients(context)
+    for _ in range(500):
+        if context.state.host_status.get("remote-host") == "disconnected":
+            break
+        await asyncio.sleep(0.01)
+    assert context.state.host_status.get("remote-host") == "disconnected"
+
+    await asyncio.wait_for(sessions.stop_remote_clients(context), timeout=5)
+
+    assert len(started) == 1
+
+
 def test_remote_helper_is_started_with_watchdog() -> None:
     """常駐接続のリモート補助は変更監視に使うwatchdogを伴って起動する。"""
     argv = sessions._build_remote_command_argv("serve", [])

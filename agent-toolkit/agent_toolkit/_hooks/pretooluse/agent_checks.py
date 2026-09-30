@@ -299,16 +299,20 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
         prompt = tool_input.get("prompt")
         if not isinstance(prompt, str) or not prompt.strip():
             return _llm_notice(
-                f"warn: {display_name}には空でない`prompt`が必要である。空でない`prompt`を指定して再実行する。",
+                f"warn: {display_name}には空でない`prompt`が必要である。",
                 tag=_WARN_TAG,
+                fix="空でない`prompt`を指定して再実行する。",
                 removable_cause=True,
             )
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         return _llm_notice(
-            f"warn: {display_name}には空でない`session_id`が必要である。"
-            "codex_startが返した`session_id`を使うか、codex_startで新しいセッションを開始する。",
+            f"warn: {display_name}には空でない`session_id`が必要である。",
             tag=_WARN_TAG,
+            fix=(
+                "`start`系ツール（`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`）が返した"
+                "`session_id`を指定して再実行する。"
+            ),
             removable_cause=True,
         )
     state = read_state(session_id)
@@ -320,7 +324,7 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
                 fix=(
                     "対象が自身の起動した対象でない場合は、その対象を起動した委譲先へ`send_message`で追送し、"
                     "その委譲先に対象を打ち切らせる。"
-                    "自身が所有する作業を続ける場合は、絶対`cwd`を指定したagents_serverのstartで新しいセッションを開始する。"
+                    "自身が所有する作業を続ける場合は、絶対`cwd`を指定した`agents_server`の`start`で新しいセッションを開始する。"
                 ),
             ),
             file=sys.stderr,

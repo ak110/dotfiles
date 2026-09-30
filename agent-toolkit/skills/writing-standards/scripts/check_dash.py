@@ -17,6 +17,8 @@ import sys
 
 import markdown_it
 
+from agent_toolkit._common import next_action as _next_action
+
 # 抜粋の最大文字数。違反行を見やすく示す切り詰め幅。
 _EXCERPT_LIMIT = 80
 
@@ -78,7 +80,15 @@ def main() -> int:
 
     for line in all_violations:
         print(line, file=sys.stderr)
-    return 1 if all_violations else 0
+    if all_violations:
+        print(
+            _next_action.next_action_line(
+                "各位置のダッシュを文の構造に合わせて読点（、）、括弧（（）、コロン（：）のいずれかへ置き換え、再検査する"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
 
 def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:

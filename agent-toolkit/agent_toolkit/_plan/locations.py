@@ -22,6 +22,8 @@ import subprocess
 
 import platformdirs
 
+from agent_toolkit._common.next_action import ActionableError
+
 PORTABLE_PLAN_PREFIX = "$(atk config get private_notes)/"
 """キューmetadataの`plan_file`と、計画本文に残る既存参照で受理する固定可搬接頭辞。"""
 
@@ -39,6 +41,16 @@ _OWNER_SESSION_ENVIRONMENT_KEYS = ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_S
 _FORBIDDEN_NAME_CHARACTERS = set('/\\:*?"<>|')
 _CANONICAL_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<label>.+)-(?P<token>[0-9a-f]{4})\.md\Z")
 _MIGRATED_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<legacy_name>.+\.md)\Z")
+_SAVED_PLAN_PATH_NEXT_ACTION = "保存root相対のyyyy/MM/dd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
+_WORKING_PLAN_PATH_NEXT_ACTION = "計画作業root直下のdd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
+_MIGRATED_PLAN_PATH_NEXT_ACTION = "保存root相対のyyyy/MM/dd-{旧ファイル名}の形式で指定し直す"
+_PLAN_FILE_VALUE_NEXT_ACTION = (
+    "plan_fileを`$(atk config get private_notes)/plans/yyyy/MM/<ファイル名>`の可搬表記か、"
+    "保存rootまたは計画作業root配下の絶対パスで指定し直す"
+)
+_ADJUNCT_REFERENCE_NEXT_ACTION = (
+    f"計画本文の参照値を`{PLAN_ADJUNCT_REFERENCE_PREFIX}<同じディレクトリのファイル名>`の形式へ直す"
+)
 
 
 def private_notes_root(
@@ -168,12 +180,18 @@ def _relative_to(path: pathlib.Path, root: pathlib.Path) -> pathlib.PurePath | N
 def _validate_portable_remainder(remainder: str) -> pathlib.PurePosixPath:
     """portable接頭辞後の相対値を検証する。"""
     if not remainder or "$(" in remainder or "\x00" in remainder:
-        raise ValueError("計画ファイルの可搬パスが空、または別のシェル式を含んでいます")
+        raise ActionableError(
+            "計画ファイルの可搬パスが空、または別のシェル式を含んでいます", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+        )
     if "\\" in remainder:
-        raise ValueError("計画ファイルの可搬パスにWindows区切り文字を指定できません")
+        raise ActionableError(
+            "計画ファイルの可搬パスにWindows区切り文字を指定できません", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+        )
     relative = pathlib.PurePosixPath(remainder)
     if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
-        raise ValueError("計画ファイルの可搬パスはprivate-notes配下の相対パスで指定してください")
+        raise ActionableError(
+            "計画ファイルの可搬パスはprivate-notes配下の相対パスで指定してください", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+        )
     return relative
 
 
@@ -185,25 +203,32 @@ def validate_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Pa
     """
     raw = os.fspath(relative_path)
     if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
-        raise ValueError("計画ファイルの相対パスが不正です")
+        raise ActionableError("計画ファイルの相対パスが不正です", next_action=_SAVED_PLAN_PATH_NEXT_ACTION)
     relative = pathlib.PurePosixPath(raw)
     if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
-        raise ValueError("計画ファイルの相対パスはplans root配下で指定してください")
+        raise ActionableError(
+            "計画ファイルの相対パスはplans root配下で指定してください", next_action=_SAVED_PLAN_PATH_NEXT_ACTION
+        )
     if len(relative.parts) != 3:
-        raise ValueError("計画ファイルはyyyy/MM/ファイル名の形式で指定してください")
+        raise ActionableError(
+            "計画ファイルはyyyy/MM/ファイル名の形式で指定してください", next_action=_SAVED_PLAN_PATH_NEXT_ACTION
+        )
     year_text, month_text, filename = relative.parts
     if not (re.fullmatch(r"[0-9]{4}", year_text) and re.fullmatch(r"[0-9]{2}", month_text)):
-        raise ValueError("計画ファイルの年月ディレクトリが不正です")
+        raise ActionableError("計画ファイルの年月ディレクトリが不正です", next_action=_SAVED_PLAN_PATH_NEXT_ACTION)
     match = _CANONICAL_MAIN_RE.fullmatch(filename)
     if match is None:
-        raise ValueError("計画ファイル名はdd-{日本語の名称}-{小文字16進数4桁}.mdの形式で指定してください")
+        raise ActionableError(
+            "計画ファイル名はdd-{日本語の名称}-{小文字16進数4桁}.mdの形式で指定してください",
+            next_action=_SAVED_PLAN_PATH_NEXT_ACTION,
+        )
     label = match.group("label")
     if not label or any(character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in label):
-        raise ValueError("計画ファイル名に使用できない文字が含まれています")
+        raise ActionableError("計画ファイル名に使用できない文字が含まれています", next_action=_SAVED_PLAN_PATH_NEXT_ACTION)
     try:
         datetime.date(int(year_text), int(month_text), int(match.group("day")))
     except ValueError as error:
-        raise ValueError("計画ファイル名の日付が不正です") from error
+        raise ActionableError("計画ファイル名の日付が不正です", next_action=_SAVED_PLAN_PATH_NEXT_ACTION) from error
     return pathlib.Path(*relative.parts)
 
 
@@ -211,29 +236,38 @@ def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pa
     """計画作業root直下のメイン計画パスを検証して返す。"""
     raw = os.fspath(relative_path)
     if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
-        raise ValueError("作業中の計画ファイルの相対パスが不正です")
+        raise ActionableError("作業中の計画ファイルの相対パスが不正です", next_action=_WORKING_PLAN_PATH_NEXT_ACTION)
     relative = pathlib.PurePosixPath(raw)
     if relative.is_absolute() or len(relative.parts) != 1 or relative.parts[0] in ("", ".", ".."):
-        raise ValueError("作業中の計画ファイルは計画作業root直下のファイル名で指定してください")
+        raise ActionableError(
+            "作業中の計画ファイルは計画作業root直下のファイル名で指定してください", next_action=_WORKING_PLAN_PATH_NEXT_ACTION
+        )
     filename = relative.name
     canonical = _CANONICAL_MAIN_RE.fullmatch(filename)
     migrated = _MIGRATED_MAIN_RE.fullmatch(filename)
     if canonical is not None:
         label = canonical.group("label")
         if not label or any(character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in label):
-            raise ValueError("作業中の計画ファイル名に使用できない文字が含まれています")
+            raise ActionableError(
+                "作業中の計画ファイル名に使用できない文字が含まれています", next_action=_WORKING_PLAN_PATH_NEXT_ACTION
+            )
         day = int(canonical.group("day"))
     elif migrated is not None:
         legacy_name = migrated.group("legacy_name")
         if legacy_name.endswith((".detail.md", ".bugs.md", ".review.md", "-workaround-check.md")) or any(
             character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in legacy_name
         ):
-            raise ValueError("作業中の移行済み計画ファイル名に使用できない文字が含まれています")
+            raise ActionableError(
+                "作業中の移行済み計画ファイル名に使用できない文字が含まれています", next_action=_WORKING_PLAN_PATH_NEXT_ACTION
+            )
         day = int(migrated.group("day"))
     else:
-        raise ValueError("作業中の計画ファイル名はdd-{名称}-{小文字16進数4桁}.mdの形式で指定してください")
+        raise ActionableError(
+            "作業中の計画ファイル名はdd-{名称}-{小文字16進数4桁}.mdの形式で指定してください",
+            next_action=_WORKING_PLAN_PATH_NEXT_ACTION,
+        )
     if not 1 <= day <= 31:
-        raise ValueError("作業中の計画ファイル名の日が不正です")
+        raise ActionableError("作業中の計画ファイル名の日が不正です", next_action=_WORKING_PLAN_PATH_NEXT_ACTION)
     return pathlib.Path(filename)
 
 
@@ -290,25 +324,34 @@ def validate_migrated_plan_relative_path(relative_path: pathlib.Path | str) -> p
     """
     raw = os.fspath(relative_path)
     if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
-        raise ValueError("移行済み計画ファイルの相対パスが不正です")
+        raise ActionableError("移行済み計画ファイルの相対パスが不正です", next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION)
     relative = pathlib.PurePosixPath(raw)
     if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
-        raise ValueError("移行済み計画ファイルはplans root配下で指定してください")
+        raise ActionableError(
+            "移行済み計画ファイルはplans root配下で指定してください", next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION
+        )
     if len(relative.parts) != 3:
-        raise ValueError("移行済み計画ファイルはyyyy/MM/dd-{旧ファイル名}の形式で指定してください")
+        raise ActionableError(
+            "移行済み計画ファイルはyyyy/MM/dd-{旧ファイル名}の形式で指定してください",
+            next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION,
+        )
     year_text, month_text, filename = relative.parts
     match = _MIGRATED_MAIN_RE.fullmatch(filename)
     if not (re.fullmatch(r"[0-9]{4}", year_text) and re.fullmatch(r"[0-9]{2}", month_text) and match):
-        raise ValueError("移行済み計画ファイルの年月またはファイル名が不正です")
+        raise ActionableError(
+            "移行済み計画ファイルの年月またはファイル名が不正です", next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION
+        )
     legacy_name = match.group("legacy_name")
     if legacy_name.endswith((".detail.md", ".bugs.md", ".review.md", "-workaround-check.md")) or any(
         character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in legacy_name
     ):
-        raise ValueError("移行済み計画ファイル名に使用できない文字が含まれています")
+        raise ActionableError(
+            "移行済み計画ファイル名に使用できない文字が含まれています", next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION
+        )
     try:
         datetime.date(int(year_text), int(month_text), int(match.group("day")))
     except ValueError as error:
-        raise ValueError("移行済み計画ファイルの日付が不正です") from error
+        raise ActionableError("移行済み計画ファイルの日付が不正です", next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION) from error
     return pathlib.Path(*relative.parts)
 
 
@@ -380,14 +423,16 @@ def resolve_plan_file(
     """
     raw = os.fspath(value)
     if not raw:
-        raise ValueError("plan_fileが空です")
+        raise ActionableError("plan_fileが空です", next_action=_PLAN_FILE_VALUE_NEXT_ACTION)
     notes = _resolve(private_notes_root(private_notes))
     working_root = _resolve(working_plans_root(home))
     if raw.startswith(PORTABLE_PLAN_PREFIX):
         relative = _validate_portable_remainder(raw[len(PORTABLE_PLAN_PREFIX) :])
         candidate = _resolve(notes / relative)
         if not candidate.is_relative_to(notes):
-            raise ValueError("計画ファイルの可搬パスがprivate-notes外を指しています")
+            raise ActionableError(
+                "計画ファイルの可搬パスがprivate-notes外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+            )
         if candidate.exists():
             return candidate
         if allow_working_fallback and relative.parts and relative.parts[0] == NEW_PLANS_DIRECTORY:
@@ -403,28 +448,36 @@ def resolve_plan_file(
                 else:
                     if direct_candidate.exists():
                         if not direct_candidate.is_relative_to(working_root):
-                            raise ValueError("計画ファイルの作業パスが作業root外を指しています")
+                            raise ActionableError(
+                                "計画ファイルの作業パスが作業root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+                            )
                         return direct_candidate
             working_candidate = _resolve(working_root.joinpath(*relative.parts[1:]))
             if working_candidate.exists():
                 if not working_candidate.is_relative_to(working_root):
-                    raise ValueError("計画ファイルの作業パスが作業root外を指しています")
+                    raise ActionableError(
+                        "計画ファイルの作業パスが作業root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+                    )
                 return working_candidate
         return candidate
     if "$(" in raw:
-        raise ValueError("plan_fileには固定された可搬接頭辞以外のシェル式を指定できません")
+        raise ActionableError(
+            "plan_fileには固定された可搬接頭辞以外のシェル式を指定できません", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+        )
     path = pathlib.Path(raw).expanduser()
     if not path.is_absolute():
-        raise ValueError("plan_fileは可搬表記または絶対パスで指定してください")
+        raise ActionableError("plan_fileは可搬表記または絶対パスで指定してください", next_action=_PLAN_FILE_VALUE_NEXT_ACTION)
     resolved = _resolve(path)
     for root in (notes / NEW_PLANS_DIRECTORY, working_plans_root(home)):
         if _lexically_under(path, root) and not resolved.is_relative_to(_resolve(root)):
-            raise ValueError("計画ファイルのシンボリックリンクが許可root外を指しています")
+            raise ActionableError(
+                "計画ファイルのシンボリックリンクが許可root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+            )
     if resolved.is_relative_to(notes) or resolved.is_relative_to(working_root):
         return resolved
     if allow_legacy_absolute:
         return resolved
-    raise ValueError("plan_fileが許可された保存root外を指しています")
+    raise ActionableError("plan_fileが許可された保存root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION)
 
 
 def require_saved_plan_file(
@@ -445,9 +498,9 @@ def require_saved_plan_file(
         allow_working_fallback=False,
     )
     if not path.is_file():
-        raise ValueError(
-            "plan_fileの保存先に実体がありません。"
-            "先に`atk plans commit <計画作業root直下のメイン計画ファイル名>`で計画バンドルを保存してください"
+        raise ActionableError(
+            "plan_fileの保存先に実体がありません",
+            next_action="先に`atk plans commit <計画作業root直下のメイン計画ファイル名>`で計画バンドルを保存してください",
         )
     return path
 
@@ -457,7 +510,7 @@ def reject_saved_plans_root_write(
     *,
     private_notes: pathlib.Path | str | None = None,
 ) -> None:
-    """保存済み計画rootの配下を指すパスへの直接書込みを`ValueError`で拒否する。
+    """保存済み計画rootの配下を指すパスへの直接書込みを`ActionableError`で拒否する。
 
     保存済み計画は`atk plans checkout`で作業rootへ取得してから更新し、`atk plans commit`で保存し直す。
     書込補助処理が保存rootのファイルを直接書き換えると、private-notesに所有者のいない未コミット差分が残る。
@@ -473,9 +526,9 @@ def reject_saved_plans_root_write(
         if checkout.name.endswith(suffix) and not checkout.name.startswith("ci-"):
             checkout = checkout.with_name(checkout.name.removesuffix(suffix) + ".md")
             break
-    raise ValueError(
-        f"保存済み計画の領域（{root}）のファイルは直接更新できない。"
-        f"`atk plans checkout {checkout}`で作業rootへ取得して更新し、`atk plans commit {checkout}`で保存する"
+    raise ActionableError(
+        f"保存済み計画の領域（{root}）のファイルは直接更新できない",
+        next_action=f"`atk plans checkout {checkout}`で作業rootへ取得して更新し、`atk plans commit {checkout}`で保存する",
     )
 
 
@@ -487,11 +540,14 @@ def is_plan_adjunct_reference(value: pathlib.Path | str) -> bool:
 def validate_adjunct_reference_name(name: str) -> str:
     """付属ファイル参照の接頭辞に続くファイル名を検証して返す。"""
     if not name or "$(" in name or "\x00" in name:
-        raise ValueError("計画本文の参照値が空、またはシェル式を含んでいます")
+        raise ActionableError("計画本文の参照値が空、またはシェル式を含んでいます", next_action=_ADJUNCT_REFERENCE_NEXT_ACTION)
     if "\\" in name:
-        raise ValueError("計画本文の参照値にWindows区切り文字を指定できません")
+        raise ActionableError("計画本文の参照値にWindows区切り文字を指定できません", next_action=_ADJUNCT_REFERENCE_NEXT_ACTION)
     if "/" in name or name in (".", ".."):
-        raise ValueError("計画本文の参照値は計画ファイルと同じディレクトリのファイル名1件で指定してください")
+        raise ActionableError(
+            "計画本文の参照値は計画ファイルと同じディレクトリのファイル名1件で指定してください",
+            next_action=_ADJUNCT_REFERENCE_NEXT_ACTION,
+        )
     return name
 
 
@@ -503,7 +559,9 @@ def resolve_plan_adjunct_reference(value: pathlib.Path | str, *, plan_path: path
     """
     raw = os.fspath(value)
     if not is_plan_adjunct_reference(raw):
-        raise ValueError(f"計画本文の参照値は`{PLAN_ADJUNCT_REFERENCE_PREFIX}`から始めてください")
+        raise ActionableError(
+            f"計画本文の参照値は`{PLAN_ADJUNCT_REFERENCE_PREFIX}`から始めてください", next_action=_ADJUNCT_REFERENCE_NEXT_ACTION
+        )
     name = validate_adjunct_reference_name(raw[len(PLAN_ADJUNCT_REFERENCE_PREFIX) :])
     return _resolve(pathlib.Path(plan_path)).parent / name
 

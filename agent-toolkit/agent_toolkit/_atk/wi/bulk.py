@@ -87,7 +87,8 @@ def _ensure_processing_is_explicit(
     protected = [path.name for path, _repo, _text, state, _type in candidates if state == WI_STATE_PROCESSING]
     if protected and not force:
         _outcome.report_failure(
-            f"processing状態のファイルは既定で削除を保護する: {', '.join(protected)}。削除するには--forceを指定する"
+            f"processing状態のファイルは既定で削除を保護する: {', '.join(protected)}",
+            next_action="削除するには--forceを指定する",
         )
         sys.exit(2)
 
@@ -95,7 +96,9 @@ def _ensure_processing_is_explicit(
 def _confirm(count: int, label: str) -> bool:
     """対話端末で一括操作を1回確認する。"""
     if not sys.stdin.isatty():
-        _outcome.report_failure(f"非対話環境で一括{label}するには--yesを指定する")
+        _outcome.report_failure(
+            f"非対話環境では一括{label}の確認を受け取れない", next_action=f"非対話環境で一括{label}するには--yesを指定する"
+        )
         sys.exit(2)
     answer = input(f"上記{count}件を{label}します。続行しますか？ [Y/n]: ")
     return answer.strip().casefold() in {"", "y", "yes"}
@@ -159,9 +162,13 @@ def _apply_confirmed_candidates(
         applicable = [entry for entry in current if _candidate_key(entry) in confirmed_keys]
         changed = [key.name for key in confirmed if key not in current_keys]
         if changed:
-            print(f"確認後に変更されたため{label}しません: {', '.join(changed)}")
+            _outcome.report_warning(
+                f"確認後に変更されたため{label}しない: {', '.join(changed)}",
+                next_action=f"変更された項目を`atk wi show <ファイル名>`で確認し、{label}する場合は同じコマンドを再実行する",
+                to_stderr=False,
+            )
         if not applicable:
-            print(f"{label}対象なし: {', '.join(normalized_repos)}")
+            _outcome.report_success(f"対象0件のため{label}しなかった（変更は無い）: {', '.join(normalized_repos)}")
             return []
         return apply_fn(private_notes, applicable)
 
@@ -206,12 +213,12 @@ def bulk_apply_entries(
 
     _print_entries(candidates, readiness)
     if not candidates:
-        print(f"{label}対象なし: {', '.join(normalized_repos)}")
+        _outcome.report_success(f"対象0件のため{label}しなかった（変更は無い）: {', '.join(normalized_repos)}")
         return []
     if action == "remove":
         _ensure_processing_is_explicit(candidates, force=force)
     if not assume_yes and not _confirm(len(candidates), label):
-        print(f"{label}を中止しました。")
+        _outcome.report_success(f"確認で中止したため{label}しなかった（変更は無い）")
         return []
     return _apply_confirmed_candidates(
         private_notes,

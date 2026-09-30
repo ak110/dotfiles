@@ -86,19 +86,25 @@ def main(argv: list[str]) -> int:
     known_subcommands = "|".join(sorted(_SUBCOMMANDS))
     if not argv:
         print(
-            _llm_notice(f"usage: hook.py <{known_subcommands}>", tag="warn", removable_cause=False),
+            _llm_notice(
+                f"usage: hook.py <{known_subcommands}>",
+                tag="warn",
+                fix="フック定義の起動コマンドへ現行のサブコマンド名を渡す。",
+                removable_cause=False,
+            ),
             file=sys.stderr,
         )
         return 0
     if argv[0] not in _SUBCOMMANDS:
         print(
             _llm_notice(
-                f"hook定義と実装が不整合: 未知のサブコマンド'{argv[0]}'を受領した。"
-                f"現行のサブコマンド: {known_subcommands}。"
-                "呼び出し元のhook定義の登録名と現行のサブコマンドを照合する。"
-                "稼働中のセッションが起動時に読んだ旧定義を保持している場合は、"
-                "プラグインを更新してセッションを再起動すると解消する。",
+                f"hook定義と実装が不整合: 未知のサブコマンド'{argv[0]}'を受領した。現行のサブコマンド: {known_subcommands}。",
                 tag="warn",
+                fix=(
+                    "呼び出し元のフック定義の登録名と現行のサブコマンドを照合する。"
+                    "稼働中のセッションが起動時に読んだ旧定義を保持している場合は、"
+                    "プラグインを更新してセッションを再起動すると解消する。"
+                ),
                 removable_cause=False,
             ),
             file=sys.stderr,
@@ -113,6 +119,7 @@ def main(argv: list[str]) -> int:
             _llm_notice(
                 f"stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
                 tag="warn",
+                fix="対応不要（フック処理を通過させて継続した）。",
                 removable_cause=False,
             ),
             file=sys.stderr,
@@ -142,6 +149,7 @@ def main(argv: list[str]) -> int:
             _llm_notice(
                 f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}",
                 tag="warn",
+                fix="対応不要（フック処理を通過させて継続した）。再発する場合はagent-toolkitの不具合としてユーザーへ報告する。",
                 removable_cause=False,
             ),
             file=sys.stderr,

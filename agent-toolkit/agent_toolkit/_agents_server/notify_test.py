@@ -9,6 +9,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._atk import config
+from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
 _NOTICE_TAG_PATTERN = re.compile(
     r"\A<atk-auto"
@@ -143,7 +144,7 @@ def test_agents_notify_rejects_missing_delegated_identity(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """委譲先の識別子が無い実行主体は終了コード4で拒否する。"""
+    """委譲先の識別子が無い実行主体は終了コード4で拒否し、ルートでは通知が不要なことを示す。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
@@ -155,6 +156,7 @@ def test_agents_notify_rejects_missing_delegated_identity(
     captured = capsys.readouterr()
     assert not captured.out
     assert "解決できません" in captured.err
+    assert "委譲先の中でだけ使える" in captured.err.split(NEXT_ACTION_PREFIX, 1)[1]
     assert not (tmp_path / "agents-server").exists()
 
 
@@ -190,6 +192,7 @@ def test_agents_notify_rejects_blank_body(
     captured = capsys.readouterr()
     assert not captured.out
     assert "空白だけ" in captured.err
+    assert "--body" in captured.err.split(NEXT_ACTION_PREFIX, 1)[1]
     assert not notify_environment.exists()
 
 

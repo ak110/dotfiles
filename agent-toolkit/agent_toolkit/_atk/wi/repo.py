@@ -13,6 +13,7 @@ import typing
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi.common import (
+    WebInputError,
     _commit_and_push,
     _parse_type,
     _pull,
@@ -20,12 +21,15 @@ from agent_toolkit._atk.wi.common import (
     _repo_lock,
     _require_type,
     _validate_filename,
+    web_input_error_from,
 )
 from agent_toolkit._atk.wi.formatters import _parse_target_repo
 from agent_toolkit._git import remote as _git_remote
 
 TARGET_REPO_ALL = "all"
 """`--target-repo`へ指定すると対象リポジトリを限定しない値。"""
+
+_TARGET_REPO_NEXT_ACTION = "`--target-repo`へローカルworktreeのパスかremote URLを指定して再実行する"
 
 
 def _normalize_remote_url(url: str) -> str:
@@ -48,7 +52,9 @@ def _resolve_local_worktree(value: str | None) -> pathlib.Path:
     if value is not None:
         local_path = pathlib.Path(value).expanduser()
         if not local_path.exists():
-            _outcome.report_failure(f"ローカルパスとして存在しない: {value}。URLではなく実在するローカルパスを指定する")
+            _outcome.report_failure(
+                f"ローカルパスとして存在しない: {value}", next_action="URLではなく実在するローカルパスを指定する"
+            )
             sys.exit(2)
         return local_path.resolve()
 
@@ -61,53 +67,18 @@ def _resolve_local_worktree(value: str | None) -> pathlib.Path:
         check=False,
     )
     if result.returncode != 0:
-        _outcome.report_failure("git rev-parse --show-toplevel が失敗した。gitリポジトリ内で実行する")
+        _outcome.report_failure(
+            "git rev-parse --show-toplevel が失敗した",
+            next_action=f"gitリポジトリ内で実行するか、{_TARGET_REPO_NEXT_ACTION}",
+        )
         sys.exit(2)
     return pathlib.Path(result.stdout.strip())
 
 
-def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
-    """リポジトリ識別子（正規化リモートURL）を解決して返す。
-
-    - `value`がURLらしい文字列（スキームを持つ・`@`を含む・スラッシュ2個以上の3要素）なら直接正規化する
-    - ローカルパスとして判定した場合は`git -C <path> remote get-url origin`の出力を正規化する
-    - `value`省略時は`cwd`（省略時は`_resolve_local_worktree`で取得した作業ツリー）を使う
-    - パス不在・git未管理・remote未設定はexit 2で原因を標準エラー出力へ書く
-    """
-    if value is not None:
-        # ローカルパスとして実在すればremote URLを取得して正規化、それ以外はURL文字列として正規化を試みる
-        local_path = pathlib.Path(value).expanduser()
-        if local_path.exists():
-            local_path = local_path.resolve()
-            result = subprocess.run(
-                ["git", "-C", str(local_path), "remote", "get-url", "origin"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-            )
-            if result.returncode != 0:
-                _outcome.report_failure(
-                    f"リモートURLを取得できない（git remote get-url origin）: {local_path}。originを設定する"
-                )
-                sys.exit(2)
-            try:
-                return _normalize_remote_url(result.stdout.strip())
-            except ValueError as exc:
-                _outcome.report_failure(str(exc))
-                sys.exit(2)
-        try:
-            return _normalize_remote_url(value)
-        except ValueError:
-            _outcome.report_failure(f"パスが存在せずリモートURLとしても解析できない: {value}。実在するパスかURLを指定する")
-            sys.exit(2)
-
-    # value省略時: ローカル作業ツリーを特定してからremoteを取得
-    if cwd is None:
-        cwd = _resolve_local_worktree(None)
+def _origin_url(worktree: pathlib.Path) -> str:
+    """作業ツリーのoriginのURLを返す。取得できない場合は設定手順を次の操作とする例外を送出する。"""
     result = subprocess.run(
-        ["git", "-C", str(cwd), "remote", "get-url", "origin"],
+        ["git", "-C", str(worktree), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -115,13 +86,53 @@ def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> s
         check=False,
     )
     if result.returncode != 0:
-        _outcome.report_failure(f"リモートURLを取得できない（git remote get-url origin）: {cwd}。originを設定する")
-        sys.exit(2)
-    remote_url = result.stdout.strip()
+        raise WebInputError(
+            f"リモートURLを取得できない（git remote get-url origin）: {worktree}",
+            next_action=f"`git -C {worktree} remote add origin <URL>`でoriginを設定するか、{_TARGET_REPO_NEXT_ACTION}",
+        )
+    return result.stdout.strip()
+
+
+def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
+    """リポジトリ識別子（正規化リモートURL）を解決して返す。
+
+    - `value`がURLらしい文字列（スキームを持つ・`@`を含む・スラッシュ2個以上の3要素）なら直接正規化する
+    - ローカルパスとして判定した場合は`git -C <path> remote get-url origin`の出力を正規化する
+    - `value`省略時は`cwd`（省略時は`_resolve_local_worktree`で取得した作業ツリー）を使う
+    - パス不在・git未管理・remote未設定は理由と次の操作を持つ`WebInputError`を送出する。
+      呼び出し元が自分の失敗行へ包めるよう、ここでは出力しない
+    """
+    if value is not None:
+        # ローカルパスとして実在すればremote URLを取得して正規化、それ以外はURL文字列として正規化を試みる
+        local_path = pathlib.Path(value).expanduser()
+        if local_path.exists():
+            local_path = local_path.resolve()
+            try:
+                return _normalize_remote_url(_origin_url(local_path))
+            except ValueError as exc:
+                raise web_input_error_from(exc, next_action=_TARGET_REPO_NEXT_ACTION) from exc
+        try:
+            return _normalize_remote_url(value)
+        except ValueError as exc:
+            raise WebInputError(
+                f"パスが存在せずリモートURLとしても解析できない: {value}", next_action=_TARGET_REPO_NEXT_ACTION
+            ) from exc
+
+    # value省略時: ローカル作業ツリーを特定してからremoteを取得
+    if cwd is None:
+        cwd = _resolve_local_worktree(None)
     try:
-        return _normalize_remote_url(remote_url)
+        return _normalize_remote_url(_origin_url(cwd))
     except ValueError as exc:
-        _outcome.report_failure(str(exc))
+        raise web_input_error_from(exc, next_action=_TARGET_REPO_NEXT_ACTION) from exc
+
+
+def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
+    """リポジトリ識別子を解決して返す。解決できない場合は失敗行と次の操作を書いてexit 2で終了する。"""
+    try:
+        return resolve_repo_id_or_raise(value, cwd=cwd)
+    except WebInputError as error:
+        _outcome.report_failure(error.reason, next_action=error.next_action)
         sys.exit(2)
 
 
@@ -181,7 +192,9 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
             check=False,
         )
         if result.returncode != 0 or result.stdout.strip() != "true":
-            _outcome.report_failure(f"ローカルworktreeではない: {local_worktree}。Gitの作業ツリーを指定する")
+            _outcome.report_failure(
+                f"ローカルworktreeではない: {local_worktree}", next_action="Gitの作業ツリーのパスを指定して再実行する"
+            )
             sys.exit(2)
         return _resolve_repo_id(str(local_worktree)), local_worktree
 
@@ -201,11 +214,20 @@ def resolve_head_commit(local_worktree: pathlib.Path) -> str:
     if result.returncode != 0:
         detail = result.stderr.strip()
         suffix = f": {detail}" if detail else ""
-        _outcome.report_failure(f"HEADコミットを取得できない（git rev-parse --verify HEAD^{{commit}}）{suffix}")
+        _outcome.report_failure(
+            f"HEADコミットを取得できない（git rev-parse --verify HEAD^{{commit}}）{suffix}",
+            next_action=(
+                f"`git -C {local_worktree} log -1`でコミットが1件以上あるか確認し、無い場合は最初のコミットを作成してから"
+                "再実行する"
+            ),
+        )
         sys.exit(2)
     commit = result.stdout.strip()
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
-        _outcome.report_failure(f"HEADコミットが40桁または64桁OIDではない: {commit!r}")
+        _outcome.report_failure(
+            f"HEADコミットが40桁または64桁OIDではない: {commit!r}",
+            next_action=f"`git -C {local_worktree} rev-parse HEAD`の出力を確認し、解消しない場合はユーザーへ報告する",
+        )
         sys.exit(2)
     return commit
 
@@ -216,13 +238,16 @@ def _verify_target_repo_content(path: pathlib.Path, content: str, normalized_exp
         return
     actual = _parse_target_repo(content)
     if actual == "(unknown)":
-        _outcome.report_failure(f"frontmatterにtarget_repoが無い: {path}。target_repoを追記する")
+        _outcome.report_failure(
+            f"frontmatterにtarget_repoが無い: {path}",
+            next_action=f"`atk wi edit {path.name}`でtarget_repoを追記する。直せない場合はユーザーへ報告する",
+        )
         sys.exit(2)
     normalized_actual = _git_remote.resolve_repo_identifier(actual)
     if normalized_actual != normalized_expected:
         _outcome.report_failure(
-            f"target_repoが一致しない: 期待={normalized_expected} 実際={normalized_actual} "
-            f"ファイル={path}。対象リポジトリの指定を見直す"
+            f"target_repoが一致しない: 期待={normalized_expected} 実際={normalized_actual} ファイル={path}",
+            next_action=f"実際の値で`--target-repo={normalized_actual}`を指定し直すか、別リポジトリの項目か確認する",
         )
         sys.exit(2)
 
@@ -278,7 +303,8 @@ def edit_entry(
         new_type = _parse_type(content)
         if new_type != previous_type:
             _outcome.report_failure(
-                f"typeは変更も欠落もできない（現在値: {previous_type}）: {filename}。frontmatterのtypeを元の値へ戻す"
+                f"typeは変更も欠落もできない（現在値: {previous_type}）: {filename}",
+                next_action="frontmatterのtypeを元の値へ戻して再実行する",
             )
             sys.exit(2)
         _frontmatter.write_entry_text(path, content)
@@ -325,7 +351,8 @@ def append_entry(
         new_type = _parse_type(updated)
         if new_type != previous_type:
             _outcome.report_failure(
-                f"typeは変更も欠落もできない（現在値: {previous_type}）: {filename}。frontmatterのtypeを元の値へ戻す"
+                f"typeは変更も欠落もできない（現在値: {previous_type}）: {filename}",
+                next_action="frontmatterのtypeを元の値へ戻して再実行する",
             )
             sys.exit(2)
         path.write_bytes(content)

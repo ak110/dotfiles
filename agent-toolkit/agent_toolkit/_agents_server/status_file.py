@@ -42,6 +42,7 @@ from agent_toolkit._agents_server.state import (
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
 
@@ -459,8 +460,8 @@ def resolve_conversation_root_session_id(environment: Mapping[str, str], state_r
     return None if resolution is None else resolution.root_session_id
 
 
-def unconfirmed_root_recovery_message(resolution: ConversationRootResolution, command: str) -> str:
-    """未確認の会話rootをMCPの一覧応答から復旧する手順を返す。"""
+def unconfirmed_root_recovery(resolution: ConversationRootResolution, command: str) -> tuple[str, str]:
+    """未確認の会話rootを診断する理由と、MCPの一覧応答から復旧する次の操作を返す。"""
     if not resolution.alias_present:
         reason = "aliasが存在しません"
     elif not resolution.alias_valid:
@@ -468,10 +469,8 @@ def unconfirmed_root_recovery_message(resolution: ConversationRootResolution, co
     else:
         reason = "aliasの参照先を確認できません"
     return (
-        "agents_serverの会話root対応を確認できません。"
-        f"CLIが解決したroot={resolution.root_session_id}、{reason}。"
-        "MCPの`list`を1回呼び出してから"
-        f"`{command}`を再実行してください。"
+        f"agents_serverの会話root対応を確認できません。CLIが解決したroot={resolution.root_session_id}、{reason}。",
+        f"MCPの`list`を1回呼び出してから`{command}`を再実行する",
     )
 
 
@@ -678,7 +677,10 @@ def resolve_status_owner_identity(
     except FileNotFoundError:
         paths = ()
     except OSError as error:
-        raise ValueError(f"書込主体索引を読めません: {error}") from error
+        raise ActionableError(
+            f"書込主体索引を読めません: {error}",
+            next_action="索引ディレクトリの権限を確かめて再実行し、解消しない場合はagents_serverの不具合としてユーザーへ報告する",
+        ) from error
 
     writers: list[str] = []
     for path in paths:
@@ -705,12 +707,21 @@ def resolve_status_owner_identity(
     if not writers:
         return identity
     if len(writers) != 1:
-        raise ValueError(
+        raise ActionableError(
             "起動元sessionに対応する書込主体を一意に解決できません: "
-            f"host_session_id={identity.host_session_id}, writers={','.join(sorted(writers))}"
+            f"host_session_id={identity.host_session_id}, writers={','.join(sorted(writers))}",
+            next_action=(
+                "同じsessionで`atk agents list`を実行して書込主体を確かめ、"
+                "解消しない場合はagents_serverの不具合としてユーザーへ報告する"
+            ),
         )
     writer_session_id = writers[0]
     return StatusFileIdentity(identity.root_session_id, f"{writer_session_id}.json", writer_session_id)
+
+
+_EXPLICIT_ROOT_NEXT_ACTION = (
+    "MCPの`list`が返す`root_session_id`を`--root-session-id`へ渡すか、`--root-session-id`を外して再実行する"
+)
 
 
 def resolve_wait_identity(
@@ -726,14 +737,20 @@ def resolve_wait_identity(
             return identity
         return StatusFileIdentity(inferred.root_session_id, identity.file_name, identity.host_session_id)
     if not valid_session_id(explicit_root_session_id):
-        raise ValueError(f"root_session_idの形式が不正です: {explicit_root_session_id}")
+        raise ActionableError(
+            f"root_session_idの形式が不正です: {explicit_root_session_id}", next_action=_EXPLICIT_ROOT_NEXT_ACTION
+        )
     if not status_directory(explicit_root_session_id, state_root).is_dir():
-        raise ValueError(f"指定したroot_session_idの状態ディレクトリが存在しません: {explicit_root_session_id}")
+        raise ActionableError(
+            f"指定したroot_session_idの状態ディレクトリが存在しません: {explicit_root_session_id}",
+            next_action=_EXPLICIT_ROOT_NEXT_ACTION,
+        )
 
     if inferred is not None and inferred.mapping_confirmed and inferred.root_session_id != explicit_root_session_id:
-        raise ValueError(
+        raise ActionableError(
             "確認済みの会話rootと指定したroot_session_idが一致しません: "
-            f"conversation={inferred.root_session_id}, explicit={explicit_root_session_id}"
+            f"conversation={inferred.root_session_id}, explicit={explicit_root_session_id}",
+            next_action="`--root-session-id`を外して再実行する",
         )
     if identity is not None:
         return StatusFileIdentity(explicit_root_session_id, identity.file_name, identity.host_session_id)

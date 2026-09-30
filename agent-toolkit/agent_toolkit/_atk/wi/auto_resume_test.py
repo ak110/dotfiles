@@ -13,6 +13,7 @@ from collections.abc import Sequence
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._atk import session_records
 from agent_toolkit._atk.wi import auto_resume
 
@@ -81,6 +82,10 @@ class TestSelectSession:
         assert exc_info.value.code == 1
         err = capsys.readouterr().err
         assert f"見つからない: {repository}" in err
+        # 再開先の指定か新規起動を次の操作として続ける。
+        next_action = err.split("\n次の操作: ", 1)[1]
+        assert "`--auto-resume`を外して`--resume <session_id>`" in next_action
+        assert "どちらも付けずに新規に起動する" in next_action
 
     def test_displays_candidate_and_resumes_on_yes(
         self,
@@ -147,7 +152,7 @@ class TestSelectSession:
             auto_resume.select_session(_repo_id(repository), repository)
 
         assert exc_info.value.code == 1
-        assert "--resume session-a" in capsys.readouterr().err
+        assert "`--auto-resume`を外し、`--resume session-a`を指定" in capsys.readouterr().err
 
     def test_all_rejected_exits_nonzero(
         self,
@@ -168,6 +173,8 @@ class TestSelectSession:
         assert exc_info.value.code == 1
         err = capsys.readouterr().err
         assert "すべての候補が拒否された: 1件" in err
+        # 再開先の指定か新規起動を次の操作として続ける。
+        assert "`--auto-resume`を外して`--resume <session_id>`" in err.split("\n次の操作: ", 1)[1]
 
     def test_excludes_candidates_of_other_repository(
         self,
@@ -186,3 +193,11 @@ class TestSelectSession:
         result = auto_resume.select_session(_repo_id(repository), repository)
 
         assert result == "target"
+
+
+def test_resume_and_auto_resume_are_mutually_exclusive() -> None:
+    """次の操作が`--auto-resume`を外すよう案内する根拠として、両オプションの併用が拒否されることを固定する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access
+    parser.parse_args(["wi", "process-loop", "--resume", "session-a"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["wi", "process-loop", "--auto-resume", "--resume", "session-a"])

@@ -58,6 +58,7 @@ from agent_toolkit._atk.wi.common import (
     is_agent_environment,
     normalized_wi_type,
 )
+from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action as _unrepairable_entry_next_action
 from agent_toolkit._atk.wi.repo import (
     _normalize_remote_url,
     _resolve_repo_id,
@@ -124,17 +125,24 @@ if TYPE_CHECKING:
     )
 
 _GIT_TIMEOUT_SECONDS = 10.0
+_MISSING_TARGET_NEXT_ACTION = "`atk wi list`で実在するファイル名を確かめて指定し直す"
 
 
 def _entry_target_repo(path: pathlib.Path, text: str) -> str:
     """エントリの`target_repo`を検証し、正規化した識別子を返す。"""
     parsed = _frontmatter.parse_frontmatter(text)
     if parsed is None:
-        _outcome.report_failure(f"frontmatterを解析できないため処理を停止した: {path}。frontmatterの書式を直す")
+        _outcome.report_failure(
+            f"frontmatterを解析できないため処理を停止した: {path}",
+            next_action=_unrepairable_entry_next_action(path.name),
+        )
         sys.exit(2)
     raw_target_repo = parsed[0].get("target_repo")
     if not isinstance(raw_target_repo, str) or not raw_target_repo:
-        _outcome.report_failure(f"frontmatterにtarget_repoが無いため処理を停止した: {path}。target_repoを追記する")
+        _outcome.report_failure(
+            f"frontmatterにtarget_repoが無いため処理を停止した: {path}",
+            next_action=_unrepairable_entry_next_action(path.name),
+        )
         sys.exit(2)
     return _resolve_repo_id(raw_target_repo)
 
@@ -208,7 +216,8 @@ def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
     commit = result.stdout.strip() if result is not None and result.returncode == 0 else ""
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
         _outcome.report_failure(
-            f"対応commitを解決できない: {local_worktree} ({revision})。対象作業ツリーでrevisionを取得して再実行する"
+            f"対応commitを解決できない: {local_worktree} ({revision})",
+            next_action="対象作業ツリーでrevisionを取得して再実行する",
         )
         sys.exit(2)
     return commit
@@ -237,7 +246,8 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetad
         author_date = ""
     if separator != "\0" or not author_date or not subject or "\n" in subject:
         _outcome.report_failure(
-            f"対応commitの作成者日時と件名を取得できない: {local_worktree} ({revision})。revisionの指定を見直す"
+            f"対応commitの作成者日時と件名を取得できない: {local_worktree} ({revision})",
+            next_action="--commitへ対象リポジトリで解決できるrevisionを指定し直す",
         )
         sys.exit(2)
     return _CommitMetadata(oid=commit, author_date=author_date, subject=subject)
@@ -257,8 +267,8 @@ def _commit_values_by_path(
     if local_worktree is None or candidate_repo is None or unmatched:
         targets = ", ".join(unmatched or sorted(set(target_repos.values())))
         _outcome.report_failure(
-            "対応commitを検証できる対象リポジトリの作業ツリーを特定できない: "
-            f"{targets}。--commitへ対象リポジトリの作業ツリーを指定する"
+            f"対応commitを検証できる対象リポジトリの作業ツリーを特定できない: {targets}",
+            next_action="対象リポジトリの作業ツリー内で実行するか、--target-repoへその作業ツリーのパスを指定して再実行する",
         )
         sys.exit(2)
     resolved = _resolve_commit(local_worktree, revision)
@@ -320,7 +330,7 @@ def _resolve_awi_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for p in missing:
-            _outcome.report_failure(f"{awi_dir.name}に存在しない: {p.name}。実在するファイル名を指定し直す")
+            _outcome.report_failure(f"{awi_dir.name}に存在しない: {p.name}", next_action=_MISSING_TARGET_NEXT_ACTION)
         sys.exit(2)
     return paths
 
@@ -354,7 +364,7 @@ def _resolve_processable_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            _outcome.report_failure(f"inbox・processingのいずれにも存在しない: {name}。実在するファイル名を指定し直す")
+            _outcome.report_failure(f"inbox・processingのいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION)
         sys.exit(2)
     return resolved
 
@@ -386,7 +396,9 @@ def _resolve_editable_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            _outcome.report_failure(f"inbox・processing・holdのいずれにも存在しない: {name}。実在するファイル名を指定し直す")
+            _outcome.report_failure(
+                f"inbox・processing・holdのいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION
+            )
         sys.exit(2)
     return resolved
 
@@ -406,7 +418,10 @@ def _resolve_conversion_targets(
         hold_path = _validate_filename(inbox_path.name, hold_dir)
         if hold_path.exists():
             if inbox_path.exists() or processing_path.exists():
-                raise WebInputError(f"異なる状態の同名項目が存在するため変換できません: {hold_path.name}")
+                raise WebInputError(
+                    f"異なる状態の同名項目が存在するため変換できません: {hold_path.name}",
+                    next_action=f"`atk wi show {hold_path.name}`で各状態の項目を比較し、不要な側を整理してから再実行する",
+                )
             resolved.append(hold_path)
         elif processing_path.exists():
             resolved.append(processing_path)
@@ -416,11 +431,16 @@ def _resolve_conversion_targets(
             missing.append(inbox_path.name)
     if missing:
         for name in missing:
-            _outcome.report_failure(f"inbox・processing・holdのいずれにも存在しない: {name}。実在するファイル名を指定し直す")
+            _outcome.report_failure(
+                f"inbox・processing・holdのいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION
+            )
         sys.exit(2)
     states = {path.parent.name for path in resolved}
     if len(states) != 1:
-        raise WebInputError("異なる状態の入力を混在させて変換できません")
+        raise WebInputError(
+            "異なる状態の入力を混在させて変換できません",
+            next_action="同じ状態の項目だけを指定し、状態ごとに分けて再実行する",
+        )
     return next(iter(states)), resolved
 
 
@@ -460,7 +480,9 @@ def _resolve_active_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            _outcome.report_failure(f"{'・'.join(state_names)}のいずれにも存在しない: {name}。実在するファイル名を指定し直す")
+            _outcome.report_failure(
+                f"{'・'.join(state_names)}のいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION
+            )
         sys.exit(2)
     return resolved
 
@@ -498,7 +520,10 @@ def _git_head(private_notes: pathlib.Path) -> str:
     )
     commit = result.stdout.strip()
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
-        raise RuntimeError(f"管理repoのHEADが40桁または64桁OIDではありません: {commit!r}")
+        raise WebInputError(
+            f"管理repoのHEADが40桁または64桁OIDではありません: {commit!r}",
+            next_action=f"`git -C {private_notes} status`で管理repoの状態を確認する。解消しない場合はユーザーへ報告する",
+        )
     return commit
 
 

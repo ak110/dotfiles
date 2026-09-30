@@ -272,7 +272,31 @@ class TestSyncWorktreeWithUpstream:
         _process_loop._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
         assert ["git", "rebase", "--abort"] in calls
-        assert "追随に失敗したため実装セッションを起動しません" in capsys.readouterr().err
+        stderr = capsys.readouterr().err
+        assert "追随に失敗したため実装セッションを起動しません" in stderr
+        # 手作業で競合を解消するrebaseのコマンドを次の操作として続ける。
+        assert "rebase origin/master`を手作業で実行" in stderr.split("\n次の操作: ", 1)[1]
+
+    def test_unresolved_upstream_guides_upstream_setting(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """上流ブランチを解決できない場合は、上流の設定コマンドを次の操作として返し実装セッションを起動しない。"""
+        self._make_worktree(tmp_path)
+        local_path = tmp_path / "repo"
+        monkeypatch.setattr(_process_loop, "_ensure_worktree_excluded", lambda _path: True)
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[1:2] in (["rev-parse"], ["symbolic-ref"]):
+                return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="no upstream")
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert _process_loop._sync_worktree_with_upstream(local_path, "process-loop") is None  # pylint: disable=protected-access  # noqa: SLF001
+
+        stderr = capsys.readouterr().err
+        assert "上流ブランチを解決できないため実装セッションを起動しません" in stderr
+        assert f"`git -C {local_path} branch -u <remote>/<branch>`" in stderr.split("\n次の操作: ", 1)[1]
 
 
 class TestPublicWorktreePreparation:

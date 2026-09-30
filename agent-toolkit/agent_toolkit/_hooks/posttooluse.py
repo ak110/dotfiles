@@ -95,6 +95,10 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
 _HOOK_ID = "posttooluse"
 
 _llm_notice = _notice_formatter(_HOOK_ID)
+_UNREGISTERED_WAIT_TARGET_FIX = (
+    "`atk agents wait`はこのセッションを待機対象として扱わないため、終端は`agents_server`の`show`で確認する。"
+)
+"""待機所有者を識別できず待機対象を登録できなかったsessionの次の操作。"""
 
 
 # --- Bashコマンド前処理 ---
@@ -837,7 +841,15 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
         missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
         if missing:
-            notices.append(_llm_notice(f"warn: listの応答で{', '.join(missing)}が欠落しているか不正である。"))
+            notices.append(
+                _llm_notice(
+                    f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正である。"
+                    "このセッションは別名索引へ記録されていない。",
+                    tag=_WARN_TAG,
+                    fix="`show`で同じセッションを再取得する。欠落が続く場合は`agents_server`の不具合としてユーザーへ報告する。",
+                    removable_cause=False,
+                )
+            )
         _record_agents_server_root_alias(session_id, structured)
         return 0
 
@@ -852,7 +864,18 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
                 display_name = tool_name.rsplit("__", 1)[-1]
-                notices.append(_llm_notice(f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。"))
+                notices.append(
+                    _llm_notice(
+                        f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。"
+                        "観測待ちの記録が欠けるため、ターン終了時の未観測警告が出ない。",
+                        tag=_WARN_TAG,
+                        fix=(
+                            "起動したセッションは`atk agents wait`で終端を観測するか、結果が不要なら`kill`で破棄する。"
+                            "欠落が続く場合は`agents_server`の不具合としてユーザーへ報告する。"
+                        ),
+                        removable_cause=False,
+                    )
+                )
         remote_session_id = _agents_server_remote_session_id(tool_input, structured, tool_name)
         if moved_to_background:
             _record_agents_server_observation_attempt(
@@ -878,7 +901,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 fallback_status_host_session=session_id if tool_name.startswith("mcp__agents_server__") else None,
             )
             if warning is not None:
-                notices.append(_llm_notice(warning, tag=_WARN_TAG, removable_cause=False))
+                notices.append(_llm_notice(warning, tag=_WARN_TAG, fix=_UNREGISTERED_WAIT_TARGET_FIX, removable_cause=False))
         elif operation == "stop":
             _remove_agents_server_session_record(session_id, remote_session_id)
         else:
@@ -893,7 +916,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 fallback_status_host_session=session_id if tool_name.startswith("mcp__agents_server__") else None,
             )
             if warning is not None:
-                notices.append(_llm_notice(warning, tag=_WARN_TAG, removable_cause=False))
+                notices.append(_llm_notice(warning, tag=_WARN_TAG, fix=_UNREGISTERED_WAIT_TARGET_FIX, removable_cause=False))
         return 0
 
     if tool_name == "TaskStop":

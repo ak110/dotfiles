@@ -171,3 +171,68 @@ def test_missing_executable_uses_next_candidate(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(commit.subprocess, "run", run)
     assert commit.run(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
     assert calls == ["codex"]
+
+
+def _next_action_line(stderr: str) -> str:
+    """失敗行の直後に続く次の操作の行を返す。"""
+    lines = stderr.splitlines()
+    index = next(i for i, line in enumerate(lines) if line.startswith("失敗: "))
+    assert lines[index + 1].startswith("次の操作: ")
+    return "\n".join(lines[index + 1 :])
+
+
+def test_no_changes_reports_that_commit_is_unnecessary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """変更が無い場合はcommitが不要であることと再実行の条件を案内する。"""
+    repository = _repo(tmp_path)
+    (repository / "change.txt").unlink()
+    monkeypatch.chdir(repository)
+
+    assert commit.run(atk._build_parser().parse_args(["commit"])) == 1  # pylint: disable=protected-access
+    assert "commitは不要" in _next_action_line(capsys.readouterr().err)
+
+
+def test_start_failure_names_git_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """commitを開始できない失敗は`git status`での状態確認を案内する。"""
+    repository = _repo(tmp_path)
+    monkeypatch.chdir(repository)
+
+    def fail(_value: str) -> list[tuple[str, str, str]]:
+        raise OSError("読み取り失敗")
+
+    monkeypatch.setattr(commit.config, "resolve_model_candidates", fail)
+    assert commit.run(atk._build_parser().parse_args(["commit"])) == 2  # pylint: disable=protected-access
+    assert "`git status`" in _next_action_line(capsys.readouterr().err)
+
+
+@pytest.mark.parametrize(
+    ("change_state", "expected_operation"),
+    [(True, "`git status`"), (False, "atk config set")],
+)
+def test_final_failure_names_recovery_operation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    change_state: bool,
+    expected_operation: str,
+) -> None:
+    """状態を変えた失敗は状態の確認を、候補の枯渇は候補の追加を案内する。"""
+    repository = _repo(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(commit.config, "resolve_model_candidates", lambda _value: [("claude", "first", "medium")])
+    monkeypatch.setattr(commit, "_executable", lambda engine: f"/fake/{engine}")
+    original_run = subprocess.run
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if command[0].startswith("/fake/"):
+            if change_state:
+                (repository / "other.txt").write_text("途中変更\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 9)
+        return original_run(command, check=kwargs.pop("check", False), **kwargs)
+
+    monkeypatch.setattr(commit.subprocess, "run", run)
+    commit.run(atk._build_parser().parse_args(["commit"]))  # pylint: disable=protected-access
+    assert expected_operation in _next_action_line(capsys.readouterr().err)

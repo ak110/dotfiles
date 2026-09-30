@@ -13,6 +13,7 @@ from typing import Any
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, serialize_frontmatter, write_entry_text
+from agent_toolkit._common.next_action import ActionableError
 
 WI_STATE_INBOX = "inbox"
 WI_STATE_PLANNING = "planning"
@@ -82,9 +83,10 @@ def _plan_legacy_migration(
             destinations.add(destination)
             planned.append((path, destination, migrated))
     if errors:
-        _outcome.report_failure(f"旧レイアウトの移行を中止した（{private_notes}）。以下を解消してから再実行する")
-        for error in errors:
-            print(f"- {error}", file=sys.stderr)
+        _outcome.report_failure(
+            f"旧レイアウトの移行を中止した（{private_notes}）:\n" + "\n".join(f"- {error}" for error in errors),
+            next_action="上記を解消してから再実行する",
+        )
         sys.exit(2)
     return planned
 
@@ -270,7 +272,13 @@ def migrate_legacy_reservations(
         path.name for path in reservation_paths if path.parent == processing_dir and (inbox_dir / path.name).exists()
     )
     if move_conflicts:
-        raise RuntimeError("旧予約の移行先に同名項目が存在します: " + ", ".join(move_conflicts))
+        raise ActionableError(
+            "旧予約の移行先に同名項目が存在します: " + ", ".join(move_conflicts),
+            next_action=(
+                f"{processing_dir}と{inbox_dir}の同名ファイルを比較し、不要な側を`git -C {private_notes} rm`で削除して"
+                "commitしてから再実行する"
+            ),
+        )
 
     for path, data, body in parsed_entries:
         if path in companion_paths:

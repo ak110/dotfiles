@@ -21,6 +21,8 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import frontmatter, listing  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import legacy as legacy_module  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common.next_action import ActionableError  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._testing.git_fakes import make_current_worktree_fake as _make_current_worktree_fake  # noqa: E402
@@ -283,6 +285,21 @@ class TestLegacyReservationMigration:
         ]
         assert len(migration_commits) == 1
 
+    def test_conflicting_inbox_entry_stops_migration_with_manual_steps(self, tmp_path: pathlib.Path) -> None:
+        """移行先inboxに同名項目がある場合は何も変えず、比較と削除の手順を次の操作として返す。"""
+        notes = _setup_notes(tmp_path)
+        main = self._write_legacy_main(notes, reservation="broken")
+        self._write_companion(notes)
+        conflict = notes / "inbox/main.md"
+        conflict.write_text("---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n別本文\n", encoding="utf-8")
+        before = main.read_bytes()
+
+        with pytest.raises(ActionableError, match="同名項目が存在します: main.md") as error_info:
+            legacy_module.migrate_legacy_reservations(notes, assert_lock_fn=lambda _path: None, commit_fn=lambda *_args: None)
+
+        assert main.read_bytes() == before
+        assert f"git -C {notes} rm" in error_info.value.next_action
+
     def test_invalid_reservation_keeps_unrelated_dependency(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -543,7 +560,9 @@ class TestListMalformedFrontmatter:
             assert not captured.err
         else:
             assert not captured.out
-            assert "frontmatterのtypeが不正または欠落" in captured.err
+            # 終了コード2で打ち切るため、警告ではなく失敗行と次の操作で返す。
+            assert "失敗: frontmatterのtypeが不正または欠落" in captured.err
+            assert "atk wi edit" in captured.err.split("\n次の操作: ", 1)[1]
 
     @pytest.mark.parametrize("content", ["本文のみ\n", "---\ncreated: 2024\n本文\n"])
     def test_malformed_frontmatter_json_type_is_null(
@@ -1075,8 +1094,8 @@ class TestListSkipPull:
         assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"]) for call in git_calls)
         stderr = capsys.readouterr().err
         assert stderr == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
-            "最新化する場合は`--pull`を指定する。\n"
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。\n"
+            "次の操作: このまま続行してよい。最新化する場合は`--pull`を指定する。\n"
         )
 
     def test_pull_forces_remote_sync_after_recent_sync(

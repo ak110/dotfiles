@@ -47,7 +47,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -186,7 +186,13 @@ def test_agent_rejects_individual_entry_from_forbidden_state(
         atk.main(args, home=tmp_path)
 
     assert exc_info.value.code == 1
-    assert f"state={state}" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert f"state={state}" in err
+    # 削除できない主体へ、ユーザーへの依頼と実行できる代替（不採用）を示すこと。
+    next_actions = [line for line in err.splitlines() if line.startswith("次の操作: ")]
+    assert len(next_actions) == 1
+    assert "ユーザーへ依頼する" in next_actions[0]
+    assert "atk wi reject" in next_actions[0]
     assert target.is_file()
 
 
@@ -544,28 +550,25 @@ def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
     assert "cooldown_until" not in (notes / "processing/first.md").read_text(encoding="utf-8")
 
 
-def test_hold_records_processing_origin_only_until_unhold(
+def test_hold_does_not_record_processing_origin(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保留前のprocessingを記録し、inbox由来と解除後には記録を残さない。"""
+    """processingからの保留でも保留前の状態をfrontmatterへ残さない。
+
+    holdの項目はinboxと同じ条件で扱うため、保留前の状態を読む処理を持たない。
+    """
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
-    _write_awi_file(notes, "inbox.md")
     _disable_transition_git(monkeypatch)
+    original = frontmatter_parser.parse_frontmatter((notes / "inbox/processing.md").read_text(encoding="utf-8"))
 
     mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
     mutations.transition_entries(notes, action="hold", filenames=["processing.md"], now=_FIXED_DT)
-    mutations.transition_entries(notes, action="hold", filenames=["inbox.md"], now=_FIXED_DT)
 
-    processing = frontmatter_parser.parse_frontmatter((notes / "hold/processing.md").read_text(encoding="utf-8"))
-    inbox = frontmatter_parser.parse_frontmatter((notes / "hold/inbox.md").read_text(encoding="utf-8"))
-    assert processing is not None and processing[0]["held_from_state"] == "processing"
-    assert inbox is not None and "held_from_state" not in inbox[0]
-
-    mutations.transition_entries(notes, action="unhold", filenames=["processing.md"], now=_FIXED_DT)
-    unheld = frontmatter_parser.parse_frontmatter((notes / "inbox/processing.md").read_text(encoding="utf-8"))
-    assert unheld is not None and "held_from_state" not in unheld[0]
+    held = frontmatter_parser.parse_frontmatter((notes / "hold/processing.md").read_text(encoding="utf-8"))
+    assert original is not None and held is not None
+    assert held[0] == original[0]
 
 
 def test_return_to_inbox_missing_file_reports_processing_state(
@@ -866,7 +869,11 @@ class TestAppendEdit:
             atk.main(["wi", "edit", "--append", "uwi-001.md", "--body-file", str(body_file)], home=tmp_path)
 
         assert exc_info.value.code == 1
-        assert "UWIには追記できません" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "UWIには追記できません" in err
+        next_actions = [line for line in err.splitlines() if line.startswith("次の操作: ")]
+        assert len(next_actions) == 1
+        assert "--appendを外して" in next_actions[0]
         assert path.read_bytes() == original
 
     def test_append_expected_bytes_conflict_keeps_message_unapplied(
@@ -1361,7 +1368,10 @@ def test_bulk_transition_excludes_entries_outside_source_states(
     assert exc_info.value.code == 0
     assert kept.is_file()
     assert not commits
-    assert f"{BULK_ACTION_LABELS[action]}対象なし" in capsys.readouterr().out
+    # 対象0件は接頭辞付きの成功行で、変更が無いことを示す。
+    output = capsys.readouterr().out
+    assert output.startswith("成功: 対象0件のため")
+    assert "（変更は無い）" in output
 
 
 def test_bulk_transition_requires_yes_in_non_interactive_environment(
@@ -1405,7 +1415,7 @@ def test_bulk_transition_keeps_entries_when_confirmation_is_declined(
     assert not commits
     captured = capsys.readouterr().out
     assert "上記1件を保留します" in captured
-    assert "保留を中止しました。" in captured
+    assert "成功: 確認で中止したため保留しなかった（変更は無い）" in captured
 
 
 def test_bulk_transition_skips_entries_changed_after_confirmation(
@@ -1435,7 +1445,9 @@ def test_bulk_transition_skips_entries_changed_after_confirmation(
     assert changed.is_file()
     assert not commits
     captured = capsys.readouterr().out
-    assert "確認後に変更されたため保留しません: changed.md" in captured
+    # 確認後に変わった項目は警告行で名指し、確認と再実行の手段を次の操作で示す。
+    assert "警告: 確認後に変更されたため保留しない: changed.md\n次の操作: " in captured
+    assert "`atk wi show <ファイル名>`" in captured
 
 
 @pytest.mark.parametrize(

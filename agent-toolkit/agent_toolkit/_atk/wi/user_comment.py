@@ -11,11 +11,11 @@ _COMMENT_HEADING = "ユーザーコメント"
 _AGENT_USER_COMMENT_PREFIX = "ユーザーコメントはユーザーだけが書き込みます。"
 AGENT_USER_COMMENT_ADD_ERROR = (
     _AGENT_USER_COMMENT_PREFIX + "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
-    "ユーザーの発言は本文中へ出所を示して引用してください。"
 )
+AGENT_USER_COMMENT_ADD_NEXT_ACTION = "ユーザーの発言は本文中へ出所を示して引用してください。"
 AGENT_USER_COMMENT_EDIT_ERROR = (
     _AGENT_USER_COMMENT_PREFIX + "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を指定できません。"
-    "ユーザーコメント節は編集の対象から外し、保存済みの内容をそのまま残します。"
+    "保存済みのユーザーコメント節は、この操作では変更されません。"
 )
 
 

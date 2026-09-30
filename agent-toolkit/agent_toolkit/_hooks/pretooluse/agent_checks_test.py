@@ -26,9 +26,18 @@ from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 
-@pytest.mark.parametrize("tool_input", [{"session_id": "owned"}, {"prompt": "続行する"}])
-def test_agents_server_missing_required_input_warns(tool_input: dict[str, str], tmp_path: pathlib.Path) -> None:
-    """必須値を欠く継続入力はツールの検証へ渡し、遮断しない。"""
+@pytest.mark.parametrize(
+    ("tool_input", "next_action_names"),
+    [
+        ({"session_id": "owned"}, ["`prompt`"]),
+        # 継続先の識別子は起動系ツールだけが返すため、実在する全ての起動系ツール名を案内する。
+        ({"prompt": "続行する"}, ["`start`", "`start_custom`", "`start_explore`", "`start_shell`", "`start_write`"]),
+    ],
+)
+def test_agents_server_missing_required_input_warns(
+    tool_input: dict[str, str], next_action_names: list[str], tmp_path: pathlib.Path
+) -> None:
+    """必須値を欠く継続入力はツールの検証へ渡し、遮断せず、実在する名前で次の操作を示す。"""
     result = _run(
         {
             "tool_name": "mcp__agents_server__send_message",
@@ -38,7 +47,11 @@ def test_agents_server_missing_required_input_warns(tool_input: dict[str, str], 
         }
     )
     assert result.returncode == 0
-    assert "空でない" in _agent_messages(result)
+    messages = _agent_messages(result)
+    assert "空でない" in messages
+    next_action = messages.split("\n次の操作: ", maxsplit=1)[1].split("\n", maxsplit=1)[0]
+    assert all(name in next_action for name in next_action_names)
+    assert "codex_start" not in messages
 
 
 class TestAgentNameParameterAccepted:

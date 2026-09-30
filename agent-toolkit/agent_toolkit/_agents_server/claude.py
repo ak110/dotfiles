@@ -36,6 +36,7 @@ from agent_toolkit._agents_server.state import (
     _append_bounded,
     _begin_reply,
 )
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import locations as _plan_file
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
@@ -545,7 +546,9 @@ class ClaudeServerManager:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
         async with session.turn_control_lock:
             if not session.terminal and session.interrupt_requested:
-                raise ValueError("the active Claude turn is being interrupted")
+                raise ActionableError(
+                    "the active Claude turn is being interrupted", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
+                )
             future = channel.send("prompt", prompt)
             actual_delivery, previous_result = await future
         result: dict[str, Any] = {"delivery": actual_delivery}
@@ -574,7 +577,7 @@ class ClaudeServerManager:
             session.interrupt_requested = False
             session.touch()
             await self._notify_waiters()
-            raise RuntimeError(f"unexpected Claude interrupt delivery: {delivery}")
+            raise shared_state.DelegateBackendError(f"unexpected Claude interrupt delivery: {delivery}")
         await self._notify_waiters()
 
     def _forget_task(self, task: asyncio.Task[Any]) -> None:
@@ -683,7 +686,9 @@ class ClaudeServerManager:
                         ):
                             iterator = None
                         else:
-                            raise RuntimeError("Claude Agent SDK message stream ended before ResultMessage") from None
+                            raise shared_state.DelegateBackendError(
+                                "Claude Agent SDK message stream ended before ResultMessage"
+                            ) from None
                     else:
                         diagnostic.record_message(message)
                         name = _message_name(message)
@@ -691,9 +696,9 @@ class ClaudeServerManager:
                             data = getattr(message, "data", {})
                             session_id = data.get("session_id") if isinstance(data, dict) else None
                             if not isinstance(session_id, str) or not session_id:
-                                raise RuntimeError("Claude init message did not contain session_id")
+                                raise shared_state.DelegateBackendError("Claude init message did not contain session_id")
                             if expected_session_id is not None and session_id != expected_session_id:
-                                raise RuntimeError("Claude resume returned an unexpected session_id")
+                                raise shared_state.DelegateBackendError("Claude resume returned an unexpected session_id")
                             # `_CommandChannel`と`SessionState`は所有タスクの生存期間で1つだけ保持する。
                             # キューは永続session IDを要しないため所有タスクの開始時に生成する。
                             # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
@@ -723,7 +728,7 @@ class ClaudeServerManager:
                                 if not initialized.done():
                                     initialized.set_result(session)
                             elif session_id != session.session_id:
-                                raise RuntimeError("Claude init message reported a different session_id")
+                                raise shared_state.DelegateBackendError("Claude init message reported a different session_id")
                         elif name == "AssistantMessage" and session is not None:
                             consume_assistant_message(session, message)
                             await self._notify_waiters()

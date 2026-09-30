@@ -10,6 +10,7 @@ import sys
 from collections.abc import Callable, Iterator
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import next_action as _next_action
 
 AUTO_SAVE_THRESHOLD_BYTES = 16 * 1024
 """エージェント環境で標準出力を自動退避するUTF-8のバイト数の閾値。
@@ -78,10 +79,18 @@ def auto_save(
                 with saved.open("x", encoding="utf-8", newline="") as stream:
                     stream.write(text)
             except Exception as error:  # noqa: BLE001  # 保存の失敗で本来の出力を失わない
-                _outcome.report_warning(f"長い出力を自動で保存できなかったため全量を表示する: {error}")
+                _outcome.report_warning(
+                    f"長い出力を自動で保存できなかったため全量を表示する: {error}",
+                    next_action="対応不要（処理は継続した）。全量は標準出力にある",
+                )
                 sys.stdout.write(text)
             else:
                 _report_saved(saved.resolve(), after_save)
+                # 標準出力の要約行は形式を固定して読む消費側があるため、次の操作は標準エラーへ書く。
+                _next_action.report(
+                    "標準出力が長いため全量をファイルへ保存した",
+                    next_action="全量は`保存先:`の行のファイルにある。必要な範囲を読む",
+                )
 
 
 def _report_saved(resolved: pathlib.Path, after_save: Callable[[pathlib.Path], None] | None) -> None:

@@ -65,6 +65,7 @@ from agent_toolkit._atk.wi.repo import (
 )
 from agent_toolkit._atk.wi.repo import append_entry as _append_entry
 from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import structure as _plan_format
 
@@ -83,6 +84,8 @@ if TYPE_CHECKING:
         _cmd_convert_to_plan,
         _convert_held_entries,
         _normalize_stored_plan_file,
+        _PLAN_FILE_RESOLUTION_NEXT_ACTION,
+        _PLAN_WORKTREE_NEXT_ACTION,
         _plan_awi_paths,
         _PlanAwiValidationError,
         _read_plan_input_filenames,
@@ -105,6 +108,7 @@ if TYPE_CHECKING:
         _git_head,
         _invalidate_repo_bound_metadata,
         _local_worktree_repo_id,
+        _MISSING_TARGET_NEXT_ACTION,
         _resolve_awi_targets,
         _resolve_commit,
         _resolve_conversion_targets,
@@ -132,6 +136,29 @@ if TYPE_CHECKING:
     )
 
 
+_USER_COMMENT_EDIT_NEXT_ACTION = (
+    "本文からユーザーコメント節（`## ユーザーコメント`見出し以降）を除いて再実行する。"
+    "保存済みのユーザーコメント節は変更されずに残る"
+)
+_USER_COMMENT_BROKEN_NEXT_ACTION = "`atk wi show {name}`で保存済みのユーザーコメント節の構造を確認し、ユーザーへ報告する"
+_BROKEN_STORED_NEXT_ACTION = "`atk wi show {name}`で保存済み本文の構造を確認し、ユーザーへ報告する"
+_EDITABLE_STATE_NEXT_ACTION = (
+    "inbox・processing・holdの項目を指定する。終端した項目は"
+    "`atk wi hold <ファイル名> --state <adopted|rejected>`（現在の状態を指定）でholdへ戻してから編集する"
+)
+_COOLDOWN_FORMAT_NEXT_ACTION = "--cooldown-untilへタイムゾーン付きISO 8601日時（例: 2026-10-01T09:00:00+09:00）を指定する"
+_RESERVED_EDIT_KEY_NEXT_ACTIONS = {
+    "depends_on": "frontmatterからdepends_onを除き、依存は`atk wi set-dependencies`で更新する",
+    "target_commit": "frontmatterからtarget_commitを除いて再実行する（target_commitはatkが記録する）",
+    "cooldown_until": "frontmatterからcooldown_untilを除き、期限は`atk wi edit <FILE> --cooldown-until`で設定する",
+    "repair_target": "frontmatterからrepair_targetを除いて再実行する（repair_targetはatkが記録する）",
+    "repair_kind": "frontmatterからrepair_kindを除いて再実行する（repair_kindはatkが記録する）",
+    "plan_file": "frontmatterからplan_fileを除いて再実行する（atk wi editでは計画ファイルを変更できない）",
+    "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
+}
+"""`atk wi edit`が受け付けない予約キーと、代わりに行う操作の対応。"""
+
+
 def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
     """$EDITOR経路からのユーザーコメント変更を拒否した場合に真を返す。"""
     if not is_agent_environment():
@@ -142,7 +169,7 @@ def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
         changed = True
     if not changed:
         return False
-    _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
+    _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, next_action=_USER_COMMENT_EDIT_NEXT_ACTION)
     return True
 
 
@@ -150,7 +177,7 @@ def _reject_agent_user_comment_message(message: str) -> bool:
     """エージェント環境の本文が予約見出しを含む場合に真を返す。"""
     if not is_agent_environment() or not _user_comment.has_reserved_heading(message):
         return False
-    _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
+    _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, next_action=_USER_COMMENT_EDIT_NEXT_ACTION)
     return True
 
 
@@ -161,7 +188,10 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     try:
         _before, saved_user_comment = _user_comment.split_before_user_comment(original)
     except _user_comment.UserCommentError:
-        _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
+        _outcome.report_failure(
+            _user_comment.AGENT_USER_COMMENT_EDIT_ERROR,
+            next_action=_USER_COMMENT_BROKEN_NEXT_ACTION.format(name="<FILE>"),
+        )
         sys.exit(1)
     if not saved_user_comment:
         return updated
@@ -176,7 +206,8 @@ def _require_agent_edit_source(content: str) -> None:
     raw_source = parsed[0].get("source") if parsed is not None else None
     if not isinstance(raw_source, str) or not raw_source:
         raise WebInputError(
-            "エージェント環境ではsourceの明示が必須です。本文先頭のfrontmatterで`source: <出所>`を指定してください。"
+            "エージェント環境ではsourceの明示が必須です。本文先頭のfrontmatterで`source: <出所>`を指定してください。",
+            next_action="本文先頭のfrontmatterへ`source: <出所>`を追記して再実行する",
         )
 
 
@@ -197,7 +228,7 @@ def edit_entry_content(
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
     if state not in WI_EDITABLE_STATES:
-        raise WebInputError("編集可能状態はinbox、processingまたはholdです")
+        raise WebInputError("編集可能状態はinbox、processingまたはholdです", next_action=_EDITABLE_STATE_NEXT_ACTION)
 
     directory = private_notes / state
     return _edit_entry(
@@ -231,7 +262,7 @@ def append_entry_content(
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
     if state not in WI_EDITABLE_STATES:
-        raise WebInputError("追記可能状態はinbox、processingまたはholdです")
+        raise WebInputError("追記可能状態はinbox、processingまたはholdです", next_action=_EDITABLE_STATE_NEXT_ACTION)
 
     directory = private_notes / state
     path = directory / filename
@@ -239,7 +270,7 @@ def append_entry_content(
     def validate(previous: str, updated: str) -> None:
         del updated
         if _require_type(path, previous) == WI_TYPE_UWI:
-            raise WebInputError("UWIには追記できません")
+            raise WebInputError("UWIには追記できません", next_action="--appendを外して本文全体を置き換える")
 
     return _append_entry(
         private_notes,
@@ -259,7 +290,10 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     """本文ファイルの内容を既存メタデータへ重ね、種別別の保存内容を返す。"""
     parsed = _frontmatter.parse_frontmatter(original)
     if parsed is None:
-        raise WebInputError(f"frontmatterが破損しているため編集できません: {path.name}")
+        raise WebInputError(
+            f"frontmatterが破損しているため編集できません: {path.name}",
+            next_action=_BROKEN_STORED_NEXT_ACTION.format(name=path.name),
+        )
     stored_data, stored_body = parsed
     entry_type = _require_type(path, original)
     assert entry_type is not None
@@ -268,33 +302,34 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
 
     requested_type = message_frontmatter.get("type")
     if requested_type is not None and requested_type != entry_type:
-        _outcome.report_failure(f"typeは変更できない（現在値: {entry_type}）: {path.name}。frontmatterのtypeを元の値へ戻す")
+        _outcome.report_failure(
+            f"typeは変更できない（現在値: {entry_type}）: {path.name}",
+            next_action="frontmatterのtypeを元の値へ戻して再実行する",
+        )
         sys.exit(2)
     if entry_type != WI_TYPE_UWI:
         uwi_only_keys = sorted({"scope", "question_type", "choices"} & message_frontmatter.keys())
         if uwi_only_keys:
-            raise WebInputError(f"AWIでは指定できないメタデータです: {', '.join(uwi_only_keys)}")
+            raise WebInputError(
+                f"AWIでは指定できないメタデータです: {', '.join(uwi_only_keys)}",
+                next_action=f"frontmatterから{'・'.join(uwi_only_keys)}を除いて再実行する",
+            )
 
     updates = dict(message_frontmatter)
     if "target_repo" in updates:
         raw_target_repo = updates["target_repo"]
         if not isinstance(raw_target_repo, str):
-            raise WebInputError("target_repoは文字列で指定してください")
+            raise WebInputError(
+                "target_repoは文字列で指定してください",
+                next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを文字列で指定する",
+            )
         updates["target_repo"] = _resolve_repo_id(raw_target_repo)
-    if "depends_on" in updates:
-        raise WebInputError("depends_onは予約キーのため atk wi edit では指定できません")
-    if "target_commit" in updates:
-        raise WebInputError("target_commitは予約キーのため atk wi edit では指定できません")
-    if "cooldown_until" in updates:
-        raise WebInputError("cooldown_untilは予約キーのため atk wi edit では指定できません")
-    if "repair_target" in updates:
-        raise WebInputError("repair_targetは予約キーのため atk wi edit では指定できません")
-    if "repair_kind" in updates:
-        raise WebInputError("repair_kindは予約キーのため atk wi edit では指定できません")
-    if "plan_file" in updates:
-        raise WebInputError("plan_fileは予約キーのため atk wi edit では指定できません")
-    if "submitter_session" in updates:
-        raise WebInputError("submitter_sessionは予約キーのため atk wi edit では指定できません")
+    for reserved_key, reserved_next_action in _RESERVED_EDIT_KEY_NEXT_ACTIONS.items():
+        if reserved_key in updates:
+            raise WebInputError(
+                f"{reserved_key}は予約キーのため atk wi edit では指定できません",
+                next_action=reserved_next_action,
+            )
     updated_data = {**stored_data, **updates}
     target_repo_changed = "target_repo" in updates and stored_data.get("target_repo") != updates["target_repo"]
     if target_repo_changed:
@@ -304,20 +339,29 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
 
     if not normalized_message_body.strip():
-        raise WebInputError("UWIの質問本文は空にできません")
+        raise WebInputError("UWIの質問本文は空にできません", next_action="質問本文を記入して再実行する")
     question_type = updated_data.get("question_type")
     if question_type not in {"choice", "yes-no", "free-form"}:
-        raise WebInputError("question_typeが不正です")
+        raise WebInputError(
+            "question_typeが不正です",
+            next_action="frontmatterのquestion_typeへchoice・yes-no・free-formのいずれかを指定する",
+        )
     if question_type == "choice" and not updated_data.get("choices"):
-        raise WebInputError("choice形式にはchoicesが必要です")
+        raise WebInputError(
+            "choice形式にはchoicesが必要です",
+            next_action="frontmatterのchoicesへ選択肢を指定するか、question_typeをyes-noかfree-formへ変える",
+        )
 
     marker_index = stored_body.rfind(_uwi.ANSWER_MARKER)
     if marker_index < 0:
-        raise WebInputError("回答欄マーカーがありません")
+        raise WebInputError("回答欄マーカーがありません", next_action=_BROKEN_STORED_NEXT_ACTION.format(name=path.name))
     answer_heading_index = stored_body.rfind(_uwi.ANSWER_HEADING, 0, marker_index)
     question_heading_index = stored_body.rfind(_uwi.QUESTION_HEADING, 0, answer_heading_index)
     if answer_heading_index < 0 or question_heading_index < 0:
-        raise WebInputError("UWIの質問見出しまたは回答見出しがありません")
+        raise WebInputError(
+            "UWIの質問見出しまたは回答見出しがありません",
+            next_action=_BROKEN_STORED_NEXT_ACTION.format(name=path.name),
+        )
     question_heading_end = question_heading_index + len(_uwi.QUESTION_HEADING)
     updated_body = (
         stored_body[:question_heading_end]
@@ -336,7 +380,7 @@ def _resolve_edit_message(args: argparse.Namespace) -> str | None:
     try:
         return _add.read_body_files([args.body_file])[0]
     except WebInputError as error:
-        _outcome.report_failure(f"編集を拒否した: {error}")
+        _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
         sys.exit(1)
 
 
@@ -344,39 +388,43 @@ def _apply_cooldown_edit(content: str, value: str) -> str:
     """再処理抑制期限をfrontmatterへ設定し、空文字列では削除する。"""
     parsed = _frontmatter.parse_frontmatter(content)
     if parsed is None:
-        raise WebInputError("frontmatterが破損しているため期限を変更できません")
+        raise WebInputError(
+            "frontmatterが破損しているため期限を変更できません",
+            next_action=_BROKEN_STORED_NEXT_ACTION.format(name="<FILE>"),
+        )
     data, body = parsed
     if value:
         try:
             deadline = datetime.datetime.fromisoformat(value)
         except ValueError as error:
-            raise WebInputError("cooldown_untilはタイムゾーン付きISO 8601日時で指定してください") from error
+            raise WebInputError(
+                "cooldown_untilはタイムゾーン付きISO 8601日時で指定してください",
+                next_action=_COOLDOWN_FORMAT_NEXT_ACTION,
+            ) from error
         if deadline.tzinfo is None or deadline.utcoffset() is None:
-            raise WebInputError("cooldown_untilはタイムゾーン付きISO 8601日時で指定してください")
+            raise WebInputError(
+                "cooldown_untilはタイムゾーン付きISO 8601日時で指定してください",
+                next_action=_COOLDOWN_FORMAT_NEXT_ACTION,
+            )
         data["cooldown_until"] = deadline.isoformat()
     else:
         data.pop("cooldown_until", None)
     return _frontmatter.serialize_frontmatter(data, body)
 
 
-def _reject_agent_processing_edit(path: pathlib.Path, original: str) -> None:
-    """処理中または処理中から保留したWIの本文置換をエージェントには許さない。"""
-    if not is_agent_environment():
-        return
-    state_label: str | None = None
-    if path.parent.name == WI_STATE_PROCESSING:
-        state_label = "processingの項目"
-    elif path.parent.name == WI_STATE_HOLD:
-        parsed = _frontmatter.parse_frontmatter(original)
-        if parsed is not None and parsed[0].get("held_from_state") == WI_STATE_PROCESSING:
-            state_label = "processingから保留した項目"
-    if state_label is None:
+def _reject_agent_processing_edit(path: pathlib.Path) -> None:
+    """処理中のWIの本文置換をエージェントには許さない。
+
+    拒否はprocessingの項目だけに限る。holdの項目は保留前の状態によらずinboxと同じ条件で編集を許す。
+    holdは自動処理からの除外だけを意味し、状態による編集の制限を増やすと、保留、本文置換、解除の順で
+    投入済み項目を更新する手順が操作不能になるためである。
+    """
+    if not is_agent_environment() or path.parent.name != WI_STATE_PROCESSING:
         return
     _outcome.report_failure(
-        f"{state_label}はエージェント環境から編集できない: {path.name}。"
-        "処理中の要求を書き換えると、その要求をこのセッションで処理するかどうかが変わる。"
-        "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
-        "atk wi edit --appendで追記する"
+        f"processingの項目はエージェント環境から編集できない: {path.name}。"
+        "処理中の要求を書き換えると、その要求をこのセッションで処理するかどうかが変わる",
+        next_action="書き換えたい内容はatk wi addで新しい項目として投入し、この項目へはatk wi edit --appendで追記する",
     )
     sys.exit(2)
 
@@ -391,14 +439,14 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if args.filename is None:
             args.subparser.error("--cooldown-untilではFILENAMEを指定してください。")
         if args.append or args.plan_file is not None:
-            args.subparser.error("--cooldown-untilは--append・--plan-fileと併用できません。")
+            args.subparser.error("--cooldown-untilは--appendおよび計画ファイルの指定と併用できません。")
     if args.depends_on and args.plan_file is None:
-        args.subparser.error("--depends-onは--plan-fileとともに指定してください。")
+        args.subparser.error("--depends-onは計画ファイルの指定とともに指定してください。")
     if args.plan_file is not None:
         if args.filename is None or message is None:
-            args.subparser.error("--plan-fileではFILENAMEと--body-fileを指定してください。")
+            args.subparser.error("計画ファイルの指定ではFILENAMEと--body-fileを指定してください。")
         if args.append:
-            args.subparser.error("--plan-fileと--appendは併用できません。")
+            args.subparser.error("計画ファイルの指定と--appendは併用できません。")
         assert args.filename is not None
         assert message is not None
     elif args.append:
@@ -415,14 +463,23 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             if local_worktree is None:
                 local_worktree = _candidate_local_worktree(args.target_repo)
             if local_worktree is None:
-                raise WebInputError("計画型編集には対象リポジトリのローカルworktreeが必要です")
+                raise WebInputError(
+                    "計画型編集には対象リポジトリのローカルworktreeが必要です", next_action=_PLAN_WORKTREE_NEXT_ACTION
+                )
             if _local_worktree_repo_id(local_worktree) != target_repo:
-                raise WebInputError("計画型編集の対象repoとローカルworktreeが一致しません")
+                raise WebInputError(
+                    "計画型編集の対象repoとローカルworktreeが一致しません", next_action=_PLAN_WORKTREE_NEXT_ACTION
+                )
             stored_plan_file = _normalize_stored_plan_file(args.plan_file, private_notes=private_notes)
             plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
             target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
         except (OSError, ValueError, WebInputError) as error:
-            _outcome.report_failure(f"計画型編集を拒否した: {error}")
+            _outcome.report_failure(
+                f"計画型編集を拒否した: {error}",
+                next_action=(
+                    error.next_action if isinstance(error, _next_action.ActionableError) else _PLAN_FILE_RESOLUTION_NEXT_ACTION
+                ),
+            )
             sys.exit(1)
 
         inbox_dir = private_notes / WI_STATE_INBOX
@@ -431,11 +488,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _pull(private_notes)
             snapshot_path = _validate_filename(args.filename, private_notes / WI_STATE_HOLD)
             if not snapshot_path.is_file():
-                _outcome.report_failure(f"holdに存在しない: {snapshot_path.name}。実在するファイル名を指定し直す")
+                _outcome.report_failure(f"holdに存在しない: {snapshot_path.name}", next_action=_MISSING_TARGET_NEXT_ACTION)
                 sys.exit(2)
             snapshot = snapshot_path.read_text(encoding="utf-8")
             _verify_target_repo_content(snapshot_path, snapshot, target_repo)
-            _reject_agent_processing_edit(snapshot_path, snapshot)
         if _reject_agent_user_comment_message(message):
             sys.exit(1)
         message = _preserve_agent_user_comment(snapshot, message)
@@ -452,12 +508,12 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             )
         except RuntimeError:
             _outcome.report_failure(
-                f"編集中に他プロセスが対象を変更した: {snapshot_path.name}。"
-                "指定した本文は反映していない。同じFILENAMEと--body-fileで再実行する"
+                f"編集中に他プロセスが対象を変更した: {snapshot_path.name}。指定した本文は反映していない",
+                next_action="同じFILENAMEと--body-fileで再実行する",
             )
             sys.exit(1)
         except WebInputError as error:
-            _outcome.report_failure(f"計画型編集を拒否した: {error}")
+            _outcome.report_failure(f"計画型編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
         _outcome.report_success(f"計画型の編集を反映した: {snapshot_path.name}")
         _add._print_entry_details(details)  # pylint: disable=protected-access
@@ -472,7 +528,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if message is None and args.cooldown_until is None:
         editor = os.environ.get("EDITOR")
         if not editor:
-            _outcome.report_failure("$EDITORが未設定のため編集できない。$EDITORを設定するか--body-fileを指定する")
+            _outcome.report_failure("$EDITORが未設定のため編集できない", next_action="$EDITORを設定するか--body-fileを指定する")
             sys.exit(1)
     inbox_dir = private_notes / WI_STATE_INBOX
     _subdir(private_notes, WI_STATE_PROCESSING)
@@ -484,7 +540,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 key=lambda p: p.name,
             )
             if not candidates:
-                _outcome.report_failure("inboxが空のため編集対象が無い。FILENAMEを指定するか項目を投入する")
+                _outcome.report_failure("inboxが空のため編集対象が無い", next_action="FILENAMEを指定するか項目を投入する")
                 sys.exit(2)
             path = candidates[-1]
         else:
@@ -494,14 +550,15 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             path = paths[0]
         if args.cooldown_until is not None and path.parent.name == WI_STATE_PROCESSING:
             _outcome.report_failure(
-                f"processingの項目は再処理抑制期限を変更できない: {path.name}。処理を終えてinboxまたはholdへ移してから指定する"
+                f"processingの項目は再処理抑制期限を変更できない: {path.name}",
+                next_action="処理を終えてinboxまたはholdへ移してから指定する",
             )
             sys.exit(2)
         snapshot = path.read_bytes()
         original = _frontmatter.decode_entry_text(snapshot)
         editing_body = message is not None or args.cooldown_until is None
         if editing_body:
-            _reject_agent_processing_edit(path, original)
+            _reject_agent_processing_edit(path)
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
         _verify_target_repo_content(path, original, normalized_target_repo)
     original = _frontmatter.decode_entry_text(snapshot)
@@ -509,13 +566,20 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if message is None and args.cooldown_until is None:
         assert editor is not None
         tmp_path = _copy_to_tempfile(snapshot)
-        subprocess.run([editor, str(tmp_path)], check=True)
+        editor_result = subprocess.run([editor, str(tmp_path)], check=False)
+        if editor_result.returncode != 0:
+            _outcome.report_failure(
+                f"エディターが終了コード{editor_result.returncode}で終了したため編集を反映しない: {path.name}。"
+                f"本文は保存していない。編集内容は{tmp_path}に残した",
+                next_action=f"{tmp_path}の内容を確かめ、atk wi edit {path.name} --body-file {tmp_path}で再実行する",
+            )
+            sys.exit(1)
         edited = tmp_path.read_text(encoding="utf-8")
     elif message is not None:
         try:
             edited = _build_noninteractive_edit_content(path, original, message)
         except WebInputError as error:
-            _outcome.report_failure(f"編集を拒否した: {error}")
+            _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
         edited = _preserve_agent_user_comment(original, edited)
     else:
@@ -524,12 +588,12 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         try:
             edited = _apply_cooldown_edit(edited, args.cooldown_until)
         except WebInputError as error:
-            _outcome.report_failure(f"編集を拒否した: {error}")
+            _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
     if edited == original:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
-        print("差分なし。")
+        _outcome.report_success("差分なし（変更は無い）")
         return
     if message is None and _reject_agent_user_comment_change(original, edited):
         if tmp_path is not None:
@@ -540,14 +604,19 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     except WebInputError as error:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
-        _outcome.report_failure(f"編集を拒否した: {error}")
+        _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
         sys.exit(1)
     if message is not None:
         parsed = _frontmatter.parse_frontmatter(edited)
         if parsed is not None:
             frontmatter, body = parsed
             for warning in _style_diagnostics.warnings_for_body(body):
-                print(f"警告: {warning}", file=sys.stderr)
+                _outcome.report_warning(
+                    warning,
+                    next_action=(
+                        f"編集は続行する。直す場合は反映後にatk wi edit {path.name} --body-file <PATH>で本文を置き換える"
+                    ),
+                )
             original_parsed = _frontmatter.parse_frontmatter(original)
             if original_parsed is not None and isinstance(original_parsed[0].get("source"), str):
                 original_frontmatter, original_body = original_parsed
@@ -571,7 +640,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                             plan_file=args.plan_file,
                         )
                     except WebInputError as error:
-                        _outcome.report_failure(f"編集を拒否した: {error}")
+                        _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
                         sys.exit(1)
     finalized_content: dict[str, str] = {}
     try:
@@ -587,12 +656,13 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     except RuntimeError:
         if tmp_path is None:
             _outcome.report_failure(
-                f"編集中に他プロセスが対象を変更した: {path.name}。"
-                "指定した本文は反映していない。同じFILENAMEと--body-fileで再実行する"
+                f"編集中に他プロセスが対象を変更した: {path.name}。指定した本文は反映していない",
+                next_action="同じFILENAMEと--body-fileで再実行する",
             )
         else:
             _outcome.report_failure(
-                f"編集中に他プロセスが対象を変更した: {path.name}。編集内容は{tmp_path}に残した。再度atk wi editを実行する"
+                f"編集中に他プロセスが対象を変更した: {path.name}。編集内容は{tmp_path}に残した",
+                next_action=f"再度atk wi edit {path.name}を実行し、{tmp_path}の編集内容を反映し直す",
             )
         sys.exit(1)
     if tmp_path is not None:
@@ -627,7 +697,10 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
         try:
             before_user_comment, saved_user_comment = _user_comment.split_before_user_comment(original)
         except _user_comment.UserCommentError:
-            _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR)
+            _outcome.report_failure(
+                _user_comment.AGENT_USER_COMMENT_EDIT_ERROR,
+                next_action=_USER_COMMENT_BROKEN_NEXT_ACTION.format(name=path.name),
+            )
             sys.exit(1)
         content = (
             before_user_comment.encode("utf-8")
@@ -650,8 +723,8 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
         )
     except RuntimeError:
         _outcome.report_failure(
-            f"追記中に他プロセスが対象を変更した: {path.name}。"
-            "指定した本文は反映していない。同じFILENAMEと--body-fileで再実行する"
+            f"追記中に他プロセスが対象を変更した: {path.name}。指定した本文は反映していない",
+            next_action="同じFILENAMEと--body-fileと--appendで再実行する",
         )
         sys.exit(1)
     _outcome.report_success(f"追記を反映した: {path.name}")

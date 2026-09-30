@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from typing import Literal
 
 import pytest
@@ -66,6 +67,7 @@ def test_output_file_rejects_relative_path(capsys: pytest.CaptureFixture[str]) -
     assert json.loads(capsys.readouterr().out) == {
         "kind": "error",
         "text": "--output-fileには絶対パスを指定してください。",
+        "next_action": "`--output-file`へ絶対パスを渡して再実行する",
     }
 
 
@@ -620,7 +622,9 @@ def test_main_requires_exactly_one_transcript_source(
     assert _read_jsonl(capsys) == [
         {
             "kind": "error",
-            "text": "transcript_path・--transcript・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+            "text": (
+                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・カタログ走査はいずれか一つだけを指定する"
+            ),
         }
     ]
 
@@ -628,7 +632,9 @@ def test_main_requires_exactly_one_transcript_source(
     assert _read_jsonl(capsys) == [
         {
             "kind": "error",
-            "text": "transcript_path・--transcript・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+            "text": (
+                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・カタログ走査はいずれか一つだけを指定する"
+            ),
         }
     ]
 
@@ -1094,7 +1100,7 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
     """Codexの質問定義と回答をcall_idで対応付け、回答位置へuserイベントを置く。"""
     arguments = {
         "questions": [
-            {"id": "first", "question": "最初の質問", "options": [{"label": "非出力の選択肢"}]},
+            {"id": "first", "question": "最初の質問", "options": [{"label": "提示した選択肢"}]},
             {"id": "second", "question": "次の質問"},
             "不正な質問定義",
         ]
@@ -1143,7 +1149,7 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
         {"kind": "final-result", "text": "回答待ち", "line": 2, "timestamp": None, "sequence": 1},
         {
             "kind": "user",
-            "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答1\n次の回答2",
+            "text": "質問: 最初の質問\n選択肢: 提示した選択肢\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答1\n次の回答2",
             "line": 1,
             "timestamp": None,
             "sequence": 2,
@@ -1831,17 +1837,32 @@ def test_default_output_line_points_at_source_transcript_line(tmp_path: pathlib.
 
 
 def _read_jsonl(capsys: pytest.CaptureFixture[str], *, raw: bool = False) -> list[dict]:
-    """標準出力のJSONLを読み、既存の単一記録テストでは由来欄を除く。"""
+    """標準出力のJSONLを読み、既存の単一記録テストでは由来欄を除く。
+
+    エラーイベントは実在する引数やコマンドを名指す次の操作`next_action`を持つことを確かめてから、
+    本文の比較を変えないよう`raw`でない場合はその項目を除く。
+    """
     captured = capsys.readouterr()
     assert captured.err == ""
     events = [json.loads(line) for line in captured.out.splitlines()]
+    for event in events:
+        if event.get("kind") == "error":
+            assert _ERROR_NEXT_ACTION_RE.search(event.get("next_action", "")), event
     if raw:
         return events
     return [
-        {key: value for key, value in event.items() if key != "record"}
+        {
+            key: value
+            for key, value in event.items()
+            if key != "record" and not (key == "next_action" and event.get("kind") == "error")
+        }
         for event in events
         if not (event.get("kind") == "summary" and "record" in event)
     ]
+
+
+_ERROR_NEXT_ACTION_RE = re.compile(r"`[^`]+`")
+"""エラーイベントの次の操作が名指す操作（バッククォートで囲んだ引数やコマンド）。"""
 
 
 def test_warn_excludes_hook_marker_in_command_output(
@@ -2386,6 +2407,176 @@ def test_user_events_keeps_codex_question_state_across_start_boundary(
         (3, "質問: 境界越え1\n回答: 回答1"),
     ]
     assert events[-1] == {"kind": "summary", "count": 3}
+
+
+def _user_events(argv: list[str], capsys: pytest.CaptureFixture[str]) -> list[dict]:
+    """`--user-events`を実行し、終了コード0を確かめて全イベントを返す。"""
+    assert evidence.main([*argv, "--user-events", "--since", "2026-09-01T00:00:00Z"]) == 0
+    return _read_jsonl(capsys, raw=True)
+
+
+def test_user_events_resolves_claude_session_id(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """セッション識別子から親transcriptを解決し、パスを渡した場合と同じ利用者イベントを返す。
+
+    呼び出し元は自身の`CLAUDE_CODE_SESSION_ID`から記録を指定するため、
+    `projects`配下の作業ディレクトリを符号化した名前を組み立てずに同じ原文を得られる必要がある。
+    """
+    session_id = "11111111-2222-4333-8444-555555555555"
+    home = tmp_path / "home"
+    transcript = home / ".claude" / "projects" / "-repo" / f"{session_id}.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text(
+        "".join(
+            json.dumps(entry, ensure_ascii=False) + "\n"
+            for entry in (
+                _timestamped_entry("2026-08-31T23:59:59Z", "区間前"),
+                _timestamped_entry("2026-09-01T00:00:01Z", "依頼の原文"),
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+
+    by_session_id = _user_events(["--claude-session-id", session_id], capsys)
+    by_path = _user_events(["--transcript", str(transcript)], capsys)
+
+    assert by_session_id == by_path
+    assert [event["text"] for event in by_session_id if event["kind"] == "user"] == ["依頼の原文"]
+
+
+def test_claude_session_id_unknown_returns_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """一致する記録が無いセッション識別子は、エラーイベントと終了コード2で拒否する。"""
+    (tmp_path / "home" / ".claude" / "projects" / "-repo").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    assert (
+        evidence.main(
+            ["--claude-session-id", "99999999-2222-4333-8444-555555555555", "--user-events", "--since", "2026-09-01T00:00:00Z"]
+        )
+        == 2
+    )
+    events = _read_jsonl(capsys, raw=True)
+    assert [event["kind"] for event in events] == ["error"]
+    assert "99999999-2222-4333-8444-555555555555" in events[0]["text"]
+
+
+def test_user_events_keeps_long_text(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """2000字を超える利用者発話も切り詰めずに返す。逐語引用と文字列比較する原文として使うためである。"""
+    long_text = "長" * 2500 + "末尾"
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", long_text)])
+
+    events = _user_events([str(transcript)], capsys)
+
+    assert [event["text"] for event in events if event["kind"] == "user"] == [long_text]
+
+
+def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """AskUserQuestionの回答イベントは、提示した全選択肢のlabelとdescriptionを質問文の直後に持つ。
+
+    確認回答に依存する対象・除外・認可は、選ばれなかった選択肢との対比で決まるため、回答だけでは判定できない。
+    """
+    question = "反映先をどうしますか"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-01T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "AskUserQuestion",
+                            "id": "ask-1",
+                            "input": {
+                                "questions": [
+                                    {
+                                        "question": question,
+                                        "options": [
+                                            {"label": "既存節へ追記", "description": "既存の節の末尾へ加える"},
+                                            {"label": "新しい節", "description": "独立した節を設ける"},
+                                            {"label": "説明なし"},
+                                        ],
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-01T00:00:02Z",
+                "toolUseResult": {"answers": {question: "新しい節"}, "questions": []},
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "ask-1", "content": "回答"}]},
+            },
+        ],
+    )
+
+    events = _user_events([str(transcript)], capsys)
+
+    assert [event["text"] for event in events if event["kind"] == "user"] == [
+        f"質問: {question}\n"
+        "選択肢: 既存節へ追記: 既存の節の末尾へ加える\n"
+        "選択肢: 新しい節: 独立した節を設ける\n"
+        "選択肢: 説明なし\n"
+        "回答: 新しい節"
+    ]
+
+
+def test_user_events_includes_offered_options_codex(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Codexのrequest_user_inputの回答イベントも、提示した全選択肢のlabelとdescriptionを質問文の直後に持つ。"""
+    arguments = {
+        "questions": [
+            {
+                "id": "scope",
+                "question": "対象範囲",
+                "options": [
+                    {"label": "全体", "description": "リポジトリ全体を対象にする"},
+                    {"label": "一部", "description": "指定したディレクトリだけにする"},
+                ],
+            }
+        ]
+    }
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T00:00:01Z",
+                "payload": {
+                    "type": "function_call",
+                    "name": "request_user_input",
+                    "call_id": "call-1",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T00:00:02Z",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-1",
+                    "output": json.dumps({"answers": {"scope": {"answers": ["全体"]}}}, ensure_ascii=False),
+                },
+            },
+        ],
+    )
+
+    events = _user_events([str(transcript)], capsys)
+
+    assert [event["text"] for event in events if event["kind"] == "user"] == [
+        "質問: 対象範囲\n選択肢: 全体: リポジトリ全体を対象にする\n選択肢: 一部: 指定したディレクトリだけにする\n回答: 全体"
+    ]
 
 
 def test_user_events_requires_since(
@@ -7267,7 +7458,9 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     assert evidence.main([str(transcript), "--detail", f"claude:{claude_b}:1"]) == 0
     assert _read_jsonl(capsys, raw=True)[0]["record"] == f"claude:{claude_b}"
     assert evidence.main([str(transcript), "--detail", "unknown:1"]) == 2
-    assert _read_jsonl(capsys, raw=True) == [{"kind": "error", "text": "記録が不明: unknown"}]
+    assert [
+        {key: value for key, value in event.items() if key != "next_action"} for event in _read_jsonl(capsys, raw=True)
+    ] == [{"kind": "error", "text": "記録が不明: unknown"}]
 
     assert evidence.main([str(transcript), "--hook-notices"]) == 0
     hook_events = _read_jsonl(capsys, raw=True)

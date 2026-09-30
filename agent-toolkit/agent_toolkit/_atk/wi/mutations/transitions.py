@@ -125,6 +125,9 @@ if TYPE_CHECKING:
     )
 
 
+_AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要になった項目なら`atk wi reject`で不採用にする"
+
+
 def _validate_transition_options(
     action: str,
     filenames: list[str],
@@ -135,16 +138,32 @@ def _validate_transition_options(
 ) -> None:
     """状態遷移オプション間の制約を検証する。"""
     if action not in {"start-processing", "return-to-inbox", "hold", "unhold", "adopt", "reject", "remove"}:
-        raise WebInputError(f"未知のエントリ操作です: {action}")
+        raise WebInputError(
+            f"未知のエントリ操作です: {action}",
+            next_action="start-processing・return-to-inbox・hold・unhold・adopt・reject・removeのいずれかを指定する",
+        )
     if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
-        raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
+        raise WebInputError(
+            "cooldown_daysはreturn-to-inboxで3以上を指定してください",
+            next_action="return-to-inboxで3以上の日数を指定するか、cooldown_daysの指定を外して再実行する",
+        )
     accepted_states = TRANSITION_EXPLICIT_STATES.get(action, ())
     state_is_valid = state in accepted_states
     if state is not None and not state_is_valid:
         rendered_states = "、".join(accepted_states) if accepted_states else "なし"
-        raise WebInputError(f"操作{action}はstate={state}を受理しません。明示stateとして受理する状態: {rendered_states}")
+        raise WebInputError(
+            f"操作{action}はstate={state}を受理しません。明示stateとして受理する状態: {rendered_states}",
+            next_action=(
+                f"stateの指定を外すか、{rendered_states}のいずれかを指定して再実行する"
+                if accepted_states
+                else "stateの指定を外して再実行する"
+            ),
+        )
     if expected_content is not None and (action != "remove" or len(filenames) != 1):
-        raise WebInputError("expected_contentはremoveで1件を指定する場合に限り使用できます")
+        raise WebInputError(
+            "expected_contentはremoveで1件を指定する場合に限り使用できます",
+            next_action="expected_contentの指定を外すか、removeで対象を1件だけ指定して再実行する",
+        )
 
 
 def _resolve_transition_paths(
@@ -161,7 +180,7 @@ def _resolve_transition_paths(
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
     removable_states = WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
     if action == "remove" and state is not None and state not in removable_states:
-        raise WebInputError(f"エージェント環境ではstate={state}の項目を削除できません")
+        raise WebInputError(f"エージェント環境ではstate={state}の項目を削除できません", next_action=_AGENT_REMOVE_NEXT_ACTION)
     if action == "remove" and state is None and actor_is_agent:
         forbidden_states = tuple(candidate for candidate in WI_USER_REMOVABLE_STATES if candidate not in removable_states)
         for filename in filenames:
@@ -169,7 +188,10 @@ def _resolve_transition_paths(
                 continue
             for candidate in forbidden_states:
                 if _validate_filename(filename, private_notes / candidate).is_file():
-                    raise WebInputError(f"エージェント環境ではstate={candidate}の項目を削除できません")
+                    raise WebInputError(
+                        f"エージェント環境ではstate={candidate}の項目を削除できません",
+                        next_action=_AGENT_REMOVE_NEXT_ACTION,
+                    )
     if state is not None:
         return _resolve_awi_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
     if action == "start-processing":
@@ -228,19 +250,25 @@ def _validate_transition_targets(
             if actual_target_repo not in normalized_target_repos:
                 _outcome.report_failure(
                     f"target_repoが一致しない: 期待={', '.join(normalized_target_repos)} 実際={actual_target_repo} "
-                    f"ファイル={path}。対象リポジトリの指定を見直す"
+                    f"ファイル={path}",
+                    next_action=(
+                        f"実際の値を--target-repoへ指定し直すか、`atk wi show {path.name}`で別リポジトリの項目でないか確認する"
+                    ),
                 )
                 sys.exit(2)
     if cooldown_days is not None:
         non_awi = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != WI_TYPE_AWI]
         if non_awi:
-            raise WebInputError(f"--`cooldown-days`はAWI専用です: {', '.join(non_awi)}")
+            raise WebInputError(
+                f"--`cooldown-days`はAWI専用です: {', '.join(non_awi)}",
+                next_action="--cooldown-daysの対象からAWI以外の項目を外して再実行する",
+            )
     if action == "remove" and not force:
         protected = [path.name for path in paths if path.parent.name == WI_STATE_PROCESSING]
         if protected:
             _outcome.report_failure(
-                "processing状態のファイルは既定で削除を保護する: "
-                f"{', '.join(protected)}。削除するには--force（Web APIはforce指定）を指定する"
+                f"processing状態のファイルは既定で削除を保護する: {', '.join(protected)}",
+                next_action="削除するには--force（Web APIはforce指定）を指定する",
             )
             sys.exit(2)
     return current_content
@@ -253,8 +281,8 @@ def _update_transition_metadata(
     now: datetime.datetime,
     cooldown_days: int | None,
 ) -> None:
-    """状態移動前に、その遷移が所有するfrontmatterを更新する。"""
-    if action not in {"start-processing", "return-to-inbox", "hold", "unhold"}:
+    """active状態間の移動前にcooldownメタデータを更新する。"""
+    if action not in {"start-processing", "return-to-inbox"}:
         return
     for path in paths:
         text = path.read_text(encoding="utf-8")
@@ -262,16 +290,11 @@ def _update_transition_metadata(
         if parsed is None:
             continue
         data, body = parsed
-        if action in {"start-processing", "return-to-inbox"}:
-            if action == "return-to-inbox" and cooldown_days is not None:
-                deadline = now.astimezone(datetime.UTC) + datetime.timedelta(days=cooldown_days)
-                data["cooldown_until"] = deadline.isoformat()
-            else:
-                data.pop("cooldown_until", None)
-        elif action == "hold" and path.parent.name == WI_STATE_PROCESSING:
-            data["held_from_state"] = WI_STATE_PROCESSING
+        if action == "return-to-inbox" and cooldown_days is not None:
+            deadline = now.astimezone(datetime.UTC) + datetime.timedelta(days=cooldown_days)
+            data["cooldown_until"] = deadline.isoformat()
         else:
-            data.pop("held_from_state", None)
+            data.pop("cooldown_until", None)
         updated = _frontmatter.serialize_frontmatter(data, body)
         if updated != text:
             _atomic_write_text(path, updated)
@@ -314,8 +337,8 @@ def _apply_transition(
     conflicts = [path.name for path in paths if (destination / path.name).exists()]
     if conflicts:
         _outcome.report_failure(
-            f"移動先（{destination_name}）に同名エントリが既に存在する: {', '.join(conflicts)}。"
-            "移動先の同名エントリを整理してから再実行する"
+            f"移動先（{destination_name}）に同名エントリが既に存在する: {', '.join(conflicts)}",
+            next_action=(f"`atk wi show {conflicts[0]}`で同名の項目を比較し、不要な側を`atk wi rm`で削除してから再実行する"),
         )
         sys.exit(2)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)

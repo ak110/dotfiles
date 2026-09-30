@@ -32,6 +32,7 @@ from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi.add import _body_is_effectively_empty, read_body_files
 from agent_toolkit._atk.wi.common import (
+    MISSING_DEPENDENCY_NEXT_ACTION,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
     WI_STATES,
@@ -53,6 +54,7 @@ from agent_toolkit._atk.wi.common import (
     validate_filename,
 )
 from agent_toolkit._atk.wi.formatters import _shorten_home
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import locations as _plan_file
 
 _ENTRY_HEADING_RE = re.compile(r"### (?P<name>\S+\.md)(?: \[[^\]]*\])?")
@@ -108,17 +110,62 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
     """
     parsed = _frontmatter.parse_frontmatter(raw_text)
     if parsed is None:
-        raise WebInputError(f"frontmatterを解析できません: {name}")
+        raise WebInputError(f"frontmatterを解析できません: {name}", next_action=_SHOW_FORMAT_NEXT_ACTION)
     frontmatter, body = parsed
     entry_type = frontmatter.get("type")
     if entry_type not in WI_TYPES:
-        raise WebInputError(f"frontmatterのtypeがawi・uwiのいずれかではありません: {name}")
+        raise WebInputError(
+            f"frontmatterのtypeがawi・uwiのいずれかではありません: {name}",
+            next_action="frontmatterのtypeへawiかuwiを書いて再投入する",
+        )
     target_repo = frontmatter.get("target_repo")
     if not isinstance(target_repo, str) or not target_repo.strip():
-        raise WebInputError(f"frontmatterのtarget_repoを非空の文字列で指定してください: {name}")
+        raise WebInputError(
+            f"frontmatterのtarget_repoが空または文字列ではない: {name}",
+            next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを書いて再投入する",
+        )
     if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
-        raise WebInputError(f"AWI本文が実質空です: {name}")
+        raise WebInputError(f"AWI本文が実質空です: {name}", next_action="本文を記入して再投入する")
     return BatchEntry(original_name=name, raw_text=raw_text, frontmatter=frontmatter, body=body)
+
+
+_SHOW_FORMAT_NEXT_ACTION = (
+    "`atk wi show --all`の出力と同じく、`### <ファイル名>`の行の直後にfrontmatterと本文を置く形へ直して再投入する"
+    "（最小例: `### 20260101-000000-001.md`、`---`、`type: awi`、`target_repo: github.com/owner/repo`、`---`、"
+    "本文の各行）"
+)
+_DEPENDS_ON_BLOCK_NEXT_ACTION = "depends_onを`- <ファイル名>`を1行ずつ並べたブロック形式で書き直して再投入する"
+
+
+def _normalized_lines(text: str) -> list[str]:
+    """CRLF・単独CRをLFへ揃えて行へ分割する。"""
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+
+def _structure_error(lines: list[str], boundaries: list[int]) -> tuple[str, str] | None:
+    """show形式の構造に該当しない理由と次の操作を返し、該当する場合は`None`を返す。"""
+    if not boundaries:
+        return (
+            "show形式のエントリ見出し（`### <ファイル名>`とその直後のfrontmatter）が見つかりません",
+            _SHOW_FORMAT_NEXT_ACTION,
+        )
+    for line in lines[: boundaries[0]]:
+        if not _is_structural_line(line):
+            return (
+                f"show形式として解析できない行が先頭エントリより前にあります: {line}",
+                f"先頭エントリより前の行を削除し、{_SHOW_FORMAT_NEXT_ACTION}",
+            )
+    return None
+
+
+def is_show_batch_format(text: str) -> bool:
+    """テキストが`parse_show_batch`の受理する構造（エントリ境界と先頭前の構造行）を持つかを返す。
+
+    各エントリのfrontmatterと本文の検証は含めない。構造に該当して検証に失敗する入力は
+    `parse_show_batch`が`WebInputError`で拒否する。
+    """
+    lines = _normalized_lines(text)
+    return _structure_error(lines, _entry_boundaries(lines)) is None
 
 
 def parse_show_batch(text: str) -> list[BatchEntry]:
@@ -132,13 +179,12 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
     行分割の前にCRLF・単独CRをLFへ正規化し、別環境（Windows等）から持ち込んだ入力でも
     境界行を検出できるようにする（保存内容の改行もLFへ揃う）。
     """
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = _normalized_lines(text)
     boundaries = _entry_boundaries(lines)
-    if not boundaries:
-        raise WebInputError("show形式のエントリ見出し（`### <ファイル名>`とその直後のfrontmatter）が見つかりません")
-    for line in lines[: boundaries[0]]:
-        if not _is_structural_line(line):
-            raise WebInputError(f"show形式として解析できない行が先頭エントリより前にあります: {line}")
+    structure_error = _structure_error(lines, boundaries)
+    if structure_error is not None:
+        reason, next_action = structure_error
+        raise WebInputError(reason, next_action=next_action)
     entries: list[BatchEntry] = []
     for position, start in enumerate(boundaries):
         end = boundaries[position + 1] if position + 1 < len(boundaries) else len(lines)
@@ -256,7 +302,10 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
     renamed = [value for value in dependencies if isinstance(value, str) and value in renames]
     if not renamed:
         if isinstance(raw_dependencies, str) and raw_dependencies in renames:
-            raise WebInputError(f"depends_onがブロック形式シーケンスではないため読み替えできません: {entry.original_name}")
+            raise WebInputError(
+                f"depends_onがブロック形式シーケンスではないため読み替えできません: {entry.original_name}",
+                next_action=_DEPENDS_ON_BLOCK_NEXT_ACTION,
+            )
         return entry.raw_text
     lines = entry.raw_text.split("\n")
     frontmatter_end = lines.index("---", 1)
@@ -266,11 +315,17 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
         if heading is None:
             continue
         if _has_inline_value(heading.group("inline")):
-            raise WebInputError(f"depends_onがブロック形式シーケンスではないため読み替えできません: {entry.original_name}")
+            raise WebInputError(
+                f"depends_onがブロック形式シーケンスではないため読み替えできません: {entry.original_name}",
+                next_action=_DEPENDS_ON_BLOCK_NEXT_ACTION,
+            )
         heading_index = index
         break
     if heading_index is None:
-        raise WebInputError(f"depends_onのブロックを特定できないため読み替えできません: {entry.original_name}")
+        raise WebInputError(
+            f"depends_onのブロックを特定できないため読み替えできません: {entry.original_name}",
+            next_action=_DEPENDS_ON_BLOCK_NEXT_ACTION,
+        )
     elements: list[tuple[int, str, str]] = []
     for index in range(heading_index + 1, frontmatter_end):
         element = _DEPENDS_ON_ELEMENT_RE.fullmatch(lines[index])
@@ -280,7 +335,10 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
     block = "---\n" + "\n".join(lines[heading_index : heading_index + 1 + len(elements)]) + "\n---\n"
     parsed_block = _frontmatter.parse_frontmatter(block)
     if parsed_block is None or parsed_block[0].get("depends_on") != dependencies:
-        raise WebInputError(f"depends_onの要素行を一意に特定できないため読み替えできません: {entry.original_name}")
+        raise WebInputError(
+            f"depends_onの要素行を一意に特定できないため読み替えできません: {entry.original_name}",
+            next_action=_DEPENDS_ON_BLOCK_NEXT_ACTION,
+        )
     for (index, indent, value), dependency in zip(elements, dependencies, strict=True):
         if not isinstance(dependency, str) or dependency not in renames:
             continue
@@ -288,7 +346,8 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
         assert split is not None
         if split.group("scalar") != dependency:
             raise WebInputError(
-                f"depends_onの要素行で値とコメントの境界を特定できないため読み替えできません: {entry.original_name}（{value}）"
+                f"depends_onの要素行で値とコメントの境界を特定できないため読み替えできません: {entry.original_name}（{value}）",
+                next_action=f"depends_onの要素行から行末のコメントを除き、{_DEPENDS_ON_BLOCK_NEXT_ACTION}",
             )
         # 差し替え先は本モジュールが採番した`{タイムスタンプ}-{連番}.md`形式であり、
         # 引用符を必要としないYAMLのプレーンスカラーに該当する。値以降の空白とコメントは字面ごと残す。
@@ -304,7 +363,14 @@ def _normalize_plan_file(entry: BatchEntry, private_notes: pathlib.Path) -> Batc
     try:
         stored_plan_file = _plan_file.normalize_plan_file(raw_plan_file, private_notes=private_notes)
     except ValueError as error:
-        raise WebInputError(f"plan_fileを解決できません: {raw_plan_file}（{error}）") from error
+        raise WebInputError(
+            f"plan_fileを解決できません: {raw_plan_file}（{error}）",
+            next_action=(
+                error.next_action
+                if isinstance(error, _next_action.ActionableError)
+                else "plan_fileを`$(atk config get private_notes)/plans/yyyy/MM/<ファイル名>`の形式へ直して再投入する"
+            ),
+        ) from error
     if stored_plan_file == raw_plan_file:
         return entry
     frontmatter = dict(entry.frontmatter)
@@ -376,7 +442,7 @@ def add_batch_entries(
     それ以外のファイル名は取り込み先と衝突しない限り元名を維持する。
     """
     if not texts:
-        raise WebInputError("取り込む本文を1件以上指定してください")
+        raise WebInputError("取り込む本文が無い", next_action="取り込む本文を1件以上指定してください")
     entries = [entry for text in texts for entry in parse_show_batch(text)]
     inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
     for entry in entries:
@@ -394,7 +460,10 @@ def add_batch_entries(
             }
         )
         if duplicated:
-            raise WebInputError(f"元ファイル名が重複しています: {'、'.join(duplicated)}")
+            raise WebInputError(
+                f"元ファイル名が重複しています: {'、'.join(duplicated)}",
+                next_action="重複した見出しのファイル名を別名にして再投入する",
+            )
         existing = existing_entry_filenames(private_notes)
         normalized_entries = [_normalize_plan_file(entry, private_notes) for entry in entries]
         skipped = _duplicate_original_names(private_notes, normalized_entries, existing=existing, case_sensitive=case_sensitive)
@@ -441,7 +510,7 @@ def _collect_batch_texts(args: argparse.Namespace) -> list[str]:
         try:
             return read_body_files(body_files)
         except WebInputError as error:
-            _outcome.report_failure(f"投入を拒否した: {error}")
+            _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
             sys.exit(1)
     text = _collect_message_via_editor(strip=False)
     if text is None:
@@ -464,18 +533,20 @@ def _cmd_add_batch(
     texts = _collect_batch_texts(args)
     if is_agent_environment() and any(_user_comment.has_reserved_heading(text) for text in texts):
         _outcome.report_failure(
-            "投入を拒否した: ユーザーコメントはユーザーだけが書き込む。"
-            "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できない。"
-            "ユーザーの発言は本文中へ出所を示して引用する"
+            f"投入を拒否した: {_user_comment.AGENT_USER_COMMENT_ADD_ERROR}",
+            next_action=_user_comment.AGENT_USER_COMMENT_ADD_NEXT_ACTION,
         )
         sys.exit(1)
     try:
         mapping, skipped, warnings = add_batch_entries(private_notes, texts=texts, now=now)
     except WebInputError as error:
-        _outcome.report_failure(f"投入を拒否した: {error}")
+        _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
         sys.exit(1)
     except subprocess.CalledProcessError:
-        _outcome.report_failure("remote同期に失敗した。確定済みの本文を以下に再表示するため、保存してから再投入する")
+        _outcome.report_failure(
+            "remote同期に失敗した。確定済みの本文を以下に再表示する",
+            next_action=(f"再表示した本文を保存し、`git -C {private_notes} status`で同期状態を確認してから再投入する"),
+        )
         for text in texts:
             print("---", file=sys.stderr)
             print(text, file=sys.stderr)
@@ -491,5 +562,5 @@ def _cmd_add_batch(
         for original in skipped:
             print(f"  {original}")
     for warning in warnings:
-        _outcome.report_warning(warning)
+        _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
     print(f"inbox: 計{_count_awi(inbox_dir)}件（processing: {_count_awi(processing_dir)}件）")

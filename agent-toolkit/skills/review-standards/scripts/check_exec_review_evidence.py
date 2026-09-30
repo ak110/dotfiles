@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 
+from agent_toolkit._common import next_action as _next_action
+
 OUTCOMES = frozenset({"達成", "未達", "証拠不足", "失効"})
 # 分割起票で他のWIへ割り当てた要求単位と分割元の依頼全体の単位は、原文要求の行にだけ現れる。
 # 各WIの完成条件は起票時の割当の対象外であるため、完成条件の行では受理しない。
@@ -214,7 +216,10 @@ def _validate_schema(data: object) -> tuple[dict[str, object], list[str]]:
                     errors.append(f"{section}[{index}].{field}: 文字列が必要です")
             outcome = row.get("outcome")
             if isinstance(outcome, str) and outcome not in SECTION_OUTCOMES[section]:
-                errors.append(f"{section}[{index}].outcome: 未知の判定です: {outcome}")
+                errors.append(
+                    f"{section}[{index}].outcome: 未知の判定です: {outcome}"
+                    f"（受理する値: {'、'.join(sorted(SECTION_OUTCOMES[section]))}）"
+                )
     return data, errors
 
 
@@ -246,12 +251,16 @@ def check_evidence(path: pathlib.Path, filenames: list[str]) -> list[str]:
             condition for condition, normalized in zip(actual, normalized_actual, strict=True) if normalized not in expected
         ]
         for condition in unmatched:
-            errors.append(f"{filename}: 完成条件の証拠行が原文と一致しません: {condition}")
+            errors.append(
+                f"{filename}: 完成条件の証拠行が原文と一致しません: {condition}。"
+                "`atk wi show`で完成条件を読み、原文どおりに書き直す"
+            )
         missing_conditions = collections.Counter(expected) - collections.Counter(normalized_actual)
         if missing_conditions:
             errors.append(
                 f"{filename}: 完成条件の証拠が不足しています"
-                f"（期待 {len(expected)} 行、実数 {len(actual)} 行、不足: {', '.join(missing_conditions.elements())}）"
+                f"（期待 {len(expected)} 行、実数 {len(actual)} 行、不足: {', '.join(missing_conditions.elements())}）。"
+                "不足した条件を原文どおり`wi_conditions`へ追記する"
             )
         if requirements:
             expected_units = collections.Counter(requirements)
@@ -261,7 +270,8 @@ def check_evidence(path: pathlib.Path, filenames: list[str]) -> list[str]:
                 matched = sum((expected_units & actual_units).values())
                 errors.append(
                     f"{filename}: 原文要求の証拠が不足しています"
-                    f"（期待 {len(requirements)} 行、実数 {matched} 行、不足: {', '.join(missing.elements())}）"
+                    f"（期待 {len(requirements)} 行、実数 {matched} 行、不足: {', '.join(missing.elements())}）。"
+                    "不足した要求を原文どおり`user_requirements`へ追記する"
                 )
     return errors
 
@@ -278,6 +288,14 @@ def main(argv: list[str] | None = None) -> int:
     for error in errors:
         print(f"失敗: {error}", file=sys.stderr)
     if errors:
+        print(
+            _next_action.next_action_line(
+                "各行が示す箇所を証拠JSONで直して同じコマンドで再検査する。"
+                "WI本文や節を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめ、"
+                "WI側が欠けている場合はWIの欠陥として報告する"
+            ),
+            file=sys.stderr,
+        )
         return 1
     print(f"成功: 完成条件証拠を検査しました（WI {len(args.wi)} 件）")
     return 0

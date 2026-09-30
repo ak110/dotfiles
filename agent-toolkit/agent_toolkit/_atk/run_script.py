@@ -7,6 +7,9 @@ import pathlib
 import runpy
 import sys
 
+from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import next_action as _next_action
+
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
     "agent-doc-changes": pathlib.Path("skills/plan-mode/scripts/list_agent_doc_changes.py"),
@@ -44,10 +47,16 @@ def registered_script_path(script_name: str) -> pathlib.Path:
     try:
         relative = SCRIPT_PATHS[script_name]
     except KeyError as exc:
-        raise ValueError(f"未登録のscriptです: {script_name}") from exc
+        raise _next_action.ActionableError(
+            f"未登録のscriptです: {script_name}",
+            next_action=f"登録済みscriptから選び直す: {', '.join(sorted(SCRIPT_PATHS))}",
+        ) from exc
     target = (PLUGIN_ROOT / relative).resolve()
     if not target.is_relative_to(PLUGIN_ROOT) or not target.is_file():
-        raise ValueError(f"登録済みscriptがplugin root内に存在しません: {script_name}")
+        raise _next_action.ActionableError(
+            f"登録済みscriptがplugin root内に存在しません: {script_name}",
+            next_action="agent-toolkitの配布物が欠けている。プラグインを更新するか、ユーザーへ報告する",
+        )
     return target
 
 
@@ -69,7 +78,12 @@ def dispatch(args: argparse.Namespace) -> int:
             return 0
         if isinstance(exc.code, int):
             return exc.code
-        print(exc.code, file=sys.stderr)
+        _outcome.report_failure(
+            f"{args.script_name}が失敗した: {exc.code}",
+            next_action=(
+                f"表示された理由を解消して再実行する。受理形式は`atk run-script {args.script_name} -- --help`で確かめる"
+            ),
+        )
         return 1
     finally:
         sys.argv = previous_argv

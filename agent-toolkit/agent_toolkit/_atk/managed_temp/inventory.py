@@ -288,7 +288,8 @@ def _restore_interrupted_consume(registry_path: pathlib.Path) -> bool:
     except OSError as error:
         raise ManagedTempError(
             f"中断した後始末の登録を復元できない: {registry_path}: {error}。"
-            "管理情報を保持したため、原因を除去した後に同じcleanupを再試行できる"
+            "管理情報を保持したため、原因を除去した後に同じcleanupを再試行できる",
+            next_action=ManagedTempError.RETRYABLE_NEXT_ACTION,
         ) from error
     return True
 
@@ -304,7 +305,9 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
             try:
                 opened = os.fstat(descriptor)
                 if (opened.st_dev, opened.st_ino) != identity:
-                    raise ManagedTempError(f"隔離先が再開時に置換された: {quarantine}")
+                    raise ManagedTempError(
+                        f"隔離先が再開時に置換された: {quarantine}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                    )
                 _clear_directory(descriptor)
             finally:
                 os.close(descriptor)
@@ -316,7 +319,8 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
     except OSError as error:
         raise ManagedTempError(
             f"中断した後始末の隔離先を後始末できない: {quarantine}: {error}。"
-            "管理情報と隔離先を保持したため、原因を除去した後に同じcleanupを再試行できる"
+            "管理情報と隔離先を保持したため、原因を除去した後に同じcleanupを再試行できる",
+            next_action=ManagedTempError.RETRYABLE_NEXT_ACTION,
         ) from error
 
 
@@ -381,24 +385,28 @@ def _report_unregistered_candidates(prefix: str | None) -> None:
     try:
         candidates = _unregistered_candidates(prefix)
     except (OSError, ManagedTempError) as error:
-        _outcome.report_warning(f"登録を持たない管理対象を探索できない: {error}")
+        _outcome.report_warning(
+            f"登録を持たない管理対象を探索できない: {error}",
+            next_action="表示された原因を除去して`atk managed-temp list`を再実行する。解消しない場合はユーザーへ報告する",
+        )
         return
     for child in candidates:
         registry_path = _registry_path(child)
         if _consuming_registry_path(registry_path) is not None:
             _outcome.report_warning(
-                f"後始末が中断した可能性がある管理対象がある: {child}（回収する場合は atk managed-temp cleanup --path {child}）"
+                f"後始末が中断した可能性がある管理対象がある: {child}",
+                next_action=f"回収する場合は atk managed-temp cleanup --path {child} を実行する",
             )
             continue
         if not _marker_recovery_is_accepted(child):
             _outcome.report_warning(
-                f"マーカーから登録を復元できない管理対象がある: {child}"
-                f"（回収する場合は atk managed-temp cleanup --path {child} --force-remove）"
+                f"マーカーから登録を復元できない管理対象がある: {child}",
+                next_action=f"回収する場合は atk managed-temp cleanup --path {child} --force-remove を実行する",
             )
             continue
         _outcome.report_warning(
-            f"登録を持たない管理対象がある: {child}"
-            f"（回収する場合は atk managed-temp cleanup --path {child} --recover-registry）"
+            f"登録を持たない管理対象がある: {child}",
+            next_action=f"回収する場合は atk managed-temp cleanup --path {child} --recover-registry を実行する",
         )
 
 
@@ -452,11 +460,13 @@ def list_managed_temp(
             if not os.path.lexists(path):
                 if _entity_absence_is_confirmed(record, path):
                     registry_path.unlink(missing_ok=True)
-                    _outcome.report_warning(f"実体が失われた管理対象の登録を回収した: {path}")
+                    _outcome.report_warning(
+                        f"実体が失われた管理対象の登録を回収した: {path}", next_action="対応不要（処理は継続した）"
+                    )
                 elif report_recovery_candidates:
                     _outcome.report_warning(
-                        f"実体へ到達できないため登録を保持した: {path}"
-                        "（同じ絶対パスへ到達できる実行文脈で atk managed-temp list を実行すると回収する）"
+                        f"実体へ到達できないため登録を保持した: {path}",
+                        next_action="同じ絶対パスへ到達できる実行文脈で atk managed-temp list を実行すると回収する",
                     )
                 continue
             validate_managed_temp(path)
@@ -473,12 +483,14 @@ def list_managed_temp(
             if report_recovery_candidates:
                 recorded_target = f": {recorded_path}" if isinstance(recorded_path, str) else ""
                 recovery = (
-                    f"。後始末する場合は atk managed-temp cleanup --path {recorded_path} を実行する。"
+                    f"後始末する場合は atk managed-temp cleanup --path {recorded_path} を実行する。"
                     "実体を削除した場合は、次回の atk managed-temp list で登録を回収する"
                     if isinstance(recorded_path, str)
-                    else ""
+                    else f"登録ファイル{registry_path}の内容を確認し、自分で直せない場合はユーザーへ報告する"
                 )
-                _outcome.report_warning(f"管理対象を列挙できない: {registry_path}{recorded_target}: {error}{recovery}")
+                _outcome.report_warning(
+                    f"管理対象を列挙できない: {registry_path}{recorded_target}: {error}", next_action=recovery
+                )
     if report_recovery_candidates:
         _report_unregistered_candidates(prefix)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
@@ -543,7 +555,10 @@ def sweep_expired_managed_temp(
         except (ManagedTempError, OSError) as error:
             if _sweep_cleanup_completed_elsewhere(path, registry_path, nonce):
                 continue
-            _outcome.report_warning(f"管理対象一時領域を自動削除できない: {path}: {error}")
+            _outcome.report_warning(
+                f"管理対象一時領域を自動削除できない: {path}: {error}",
+                next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} で回収する",
+            )
             continue
         deleted.append(path)
         print(
@@ -568,7 +583,9 @@ def _clear_directory(descriptor: int) -> None:
         try:
             opened = os.fstat(child_descriptor)
             if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-                raise ManagedTempError(f"管理対象の子ディレクトリが後始末中に置換された: {name}")
+                raise ManagedTempError(
+                    f"管理対象の子ディレクトリが後始末中に置換された: {name}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                )
             _clear_directory(child_descriptor)
             os.rmdir(name, dir_fd=descriptor)
         finally:
@@ -655,7 +672,9 @@ def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, 
         path = root / relative
         metadata = path.lstat()
         if _windows_reparse_entry(path, metadata, root.parent) != expected:
-            raise ManagedTempError(f"Windows reparse pointが後始末中に置換された: {path}")
+            raise ManagedTempError(
+                f"Windows reparse pointが後始末中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         if expected[0] in ("junction", "symlink-dir"):
             os.rmdir(path)
         else:
@@ -672,7 +691,9 @@ def _consume_registry(validated: _ValidatedTemp) -> pathlib.Path:
     if not _records_match(validated.path, consumed, consumed, identity=(validated.device, validated.inode)):
         with contextlib.suppress(OSError):
             _restore_registry(consuming, validated.registry_path)
-        raise ManagedTempError(f"外部状態が消費時に置換された: {validated.registry_path}")
+        raise ManagedTempError(
+            f"外部状態が消費時に置換された: {validated.registry_path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+        )
     return consuming
 
 
@@ -689,7 +710,9 @@ def _restore_cleanup_marker(validated: _ValidatedTemp) -> None:
         try:
             metadata = os.fstat(descriptor)
             if (metadata.st_dev, metadata.st_ino) != (validated.device, validated.inode):
-                raise ManagedTempError(f"管理対象が復元中に置換された: {validated.path}")
+                raise ManagedTempError(
+                    f"管理対象が復元中に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                )
             try:
                 os.stat(_MARKER_NAME, dir_fd=descriptor, follow_symlinks=False)
             except FileNotFoundError:
@@ -698,7 +721,9 @@ def _restore_cleanup_marker(validated: _ValidatedTemp) -> None:
             os.close(descriptor)
         return
     if _path_identity(validated.path) != (validated.device, validated.inode):
-        raise ManagedTempError(f"管理対象が復元中に置換された: {validated.path}")
+        raise ManagedTempError(
+            f"管理対象が復元中に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+        )
     if not os.path.lexists(marker):
         _write_marker(validated.path, validated.record)
 
@@ -753,20 +778,26 @@ def _cleanup_posix(
             )
             != expected_root
         ):
-            raise ManagedTempError(f"管理対象rootが隔離時に置換または変更された: {root}")
+            raise ManagedTempError(
+                f"管理対象rootが隔離時に置換または変更された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         current = os.stat(validated.path.name, dir_fd=root_descriptor, follow_symlinks=False)
         if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
             validated.device,
             validated.inode,
         ):
-            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
+            raise ManagedTempError(
+                f"管理対象が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         os.rename(validated.path.name, quarantine.name, src_dir_fd=root_descriptor, dst_dir_fd=root_descriptor)
         current = os.stat(quarantine.name, dir_fd=root_descriptor, follow_symlinks=False)
         if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
             validated.device,
             validated.inode,
         ):
-            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
+            raise ManagedTempError(
+                f"管理対象が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         target_descriptor = os.open(
             quarantine.name,
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
@@ -774,9 +805,13 @@ def _cleanup_posix(
         )
         opened = os.fstat(target_descriptor)
         if (opened.st_dev, opened.st_ino) != (validated.device, validated.inode):
-            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
+            raise ManagedTempError(
+                f"管理対象が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         if _tree_snapshot(quarantine) != expected_tree:
-            raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
+            raise ManagedTempError(
+                f"管理対象の内容が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         _validate_root(root, expected=expected_root)
         _clear_directory(target_descriptor)
         _validate_root(root, expected=expected_root)
@@ -818,9 +853,13 @@ def _cleanup_windows(
         os.replace(validated.path, quarantine)
         _validate_root(root, expected=expected_root)
         if _windows_identity(quarantine) != (validated.device, validated.inode):
-            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
+            raise ManagedTempError(
+                f"管理対象が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         if _tree_snapshot(quarantine) != expected_tree:
-            raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
+            raise ManagedTempError(
+                f"管理対象の内容が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         _validate_root(root, expected=expected_root)
         _unlink_windows_reparse_points(quarantine, expected_tree)
         shutil.rmtree(quarantine)
@@ -846,18 +885,19 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     registry_path = _registry_path(path)
     if _restore_interrupted_consume(registry_path):
-        _outcome.report_warning(f"中断した後始末の登録を復元した: {registry_path}")
+        _outcome.report_warning(f"中断した後始末の登録を復元した: {registry_path}", next_action="対応不要（処理は継続した）")
     judgement = _classify_quarantine(root, path)
     if judgement.state is _QuarantineState.UNVERIFIABLE:
         raise ManagedTempError(
             f"中断した後始末の状態を判定できない: {path}: {judgement.reason}。"
-            "管理情報と隔離先を保持したため、原因を除去した後に同じcleanupを再試行できる"
+            "管理情報と隔離先を保持したため、原因を除去した後に同じcleanupを再試行できる",
+            next_action=ManagedTempError.RETRYABLE_NEXT_ACTION,
         )
     if judgement.state is _QuarantineState.MATCHED:
         if judgement.quarantine is None or judgement.identity is None:
             raise AssertionError("一致した隔離途中状態に後始末情報がない")
         _cleanup_quarantine(root, judgement.quarantine, judgement.identity)
-        _outcome.report_warning(f"中断した後始末の隔離先を後始末した: {path}")
+        _outcome.report_warning(f"中断した後始末の隔離先を後始末した: {path}", next_action="対応不要（処理は継続した）")
     if is_missing_registered_temp(path):
         _cleanup_missing_registered_temp(path)
         return
@@ -868,7 +908,9 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
     )
     if _lstat_or_none(validated.registry_path) is None:
         _write_private_json(validated.registry_path, validated.record)
-        _outcome.report_warning(f"欠落した登録をマーカーから復元した: {validated.registry_path}")
+        _outcome.report_warning(
+            f"欠落した登録をマーカーから復元した: {validated.registry_path}", next_action="対応不要（処理は継続した）"
+        )
     if os.name == "nt":
         # 利用中に追加された受理済みACEを除去し、隔離以降を現在利用者だけのDACLで実行する。
         _windows_secure_path(
@@ -883,7 +925,9 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
         if quarantine.exists() or quarantine.is_symlink():
             raise ManagedTempError(f"隔離先が既に存在する: {quarantine}")
         if _tree_snapshot(path) != before:
-            raise ManagedTempError(f"管理対象の内容が後始末開始前に置換された: {path}")
+            raise ManagedTempError(
+                f"管理対象の内容が後始末開始前に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         if os.name == "posix":
             if not shutil.rmtree.avoids_symlink_attacks:
                 raise ManagedTempError("symlink attack耐性を持つ後始末手段を利用できない")
@@ -891,7 +935,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
         elif os.name == "nt":
             _cleanup_windows(root, validated, quarantine, before)
         else:
-            raise ManagedTempError(f"未対応platform: {os.name}")
+            raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
         consuming.unlink()
     except (ManagedTempError, OSError) as error:
         recovery_error: ManagedTempError | OSError | None = None
@@ -911,11 +955,19 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
             recovery_error = restore_error
         failure = str(error) if isinstance(error, ManagedTempError) else f"管理対象を後始末できない: {path}: {error}"
         if recovery_error is None:
+            # 原因を分類した送出箇所の次の操作を優先し、分類の無い失敗には再試行を案内する。
+            next_action = (
+                error.next_action
+                if isinstance(error, ManagedTempError) and error.next_action != ManagedTempError.DEFAULT_NEXT_ACTION
+                else ManagedTempError.RETRYABLE_NEXT_ACTION
+            )
             raise ManagedTempError(
-                f"{failure}。管理情報の復元を検証したため、原因を除去した後に同じcleanupを再試行できる"
+                f"{failure}。管理情報の復元を検証したため、原因を除去した後に同じcleanupを再試行できる",
+                next_action=next_action,
             ) from error
         raise ManagedTempError(
-            f"{failure}。管理情報の復元を検証できないため、同じcleanupを再試行できない: {recovery_error}"
+            f"{failure}。管理情報の復元を検証できないため、同じcleanupを再試行できない: {recovery_error}",
+            next_action=f"同じcleanupは再試行しない。`atk managed-temp list`で{path}の状態を確認し、ユーザーへ報告する",
         ) from error
 
 
@@ -928,17 +980,23 @@ def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: Man
         if not stat.S_ISDIR(metadata.st_mode) or (
             os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT
         ):
-            raise ManagedTempError(f"管理対象が通常ディレクトリではない: {path}")
+            raise ManagedTempError(
+                f"管理対象が通常ディレクトリではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         if os.name == "posix":
             if metadata.st_uid != os.geteuid():
-                raise ManagedTempError(f"管理対象の所有者が現在の利用者ではない: {path}")
+                raise ManagedTempError(
+                    f"管理対象の所有者が現在の利用者ではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                )
         elif os.name == "nt":
             security = _windows_security_descriptor(path)
             current_sid = _windows_sid_bytes(_windows_current_sid())
             if not _windows_equal_sids(security.owner, current_sid):
-                raise ManagedTempError(f"管理対象の所有者が現在の利用者ではない: {path}")
+                raise ManagedTempError(
+                    f"管理対象の所有者が現在の利用者ではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                )
         else:
-            raise ManagedTempError(f"未対応platform: {os.name}")
+            raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
     except (OSError, ValueError, ManagedTempError) as validation_error:
         raise original_error from validation_error
 
@@ -950,7 +1008,10 @@ def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: Man
             consuming.unlink(missing_ok=True)
     except OSError as error:
         raise ManagedTempError(f"管理対象を強制回収できない: {path}: {error}") from error
-    _outcome.report_warning(f"--force-removeにより管理情報、登録および権限の検証を省いて管理対象を回収した: {path}")
+    _outcome.report_warning(
+        f"--force-removeにより管理情報、登録および権限の検証を省いて管理対象を回収した: {path}",
+        next_action="対応不要（処理は継続した）",
+    )
 
 
 def _registered_ancestor(path: pathlib.Path) -> pathlib.Path | None:

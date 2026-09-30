@@ -357,6 +357,8 @@ def test_codex_delegate_hook_reports_ambiguous_writer_aliases(
     assert exit_code == 0
     assert "agents_serverの待機対象を登録できない" in context
     assert "書込主体を一意に解決できません" in context
+    assert "\n次の操作: `atk agents wait`はこのセッションを待機対象として扱わないため" in context
+    assert "`show`" in context
     for owner_status_file in ("writer-a.json", "writer-b.json", "codex-thread.json"):
         retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
             "root-session", owner_status_file, tmp_path
@@ -1233,6 +1235,38 @@ class TestAgentsServerSessionState:
         assert (
             _POSTTOOLUSE_MODULE._agents_server_missing_response_fields("local-session", payload, response, qualified_name) == []
         )
+
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_input", "response", "next_action_names"),
+        (
+            ("list", {}, {"sessions": [], "omitted": 0}, ["`show`"]),
+            ("start", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}, ["`atk agents wait`", "`kill`"]),
+        ),
+    )
+    def test_missing_response_fields_warn_with_next_action(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        tool_input: dict[str, object],
+        response: dict[str, object],
+        next_action_names: list[str],
+    ) -> None:
+        """必須項目を欠く応答は、影響と実在する操作を次の操作とする警告として返す。"""
+        result = _run(
+            {
+                "session_id": f"missing-fields-{tool_name}",
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_name}",
+                "tool_input": tool_input,
+                "tool_response": {"structuredContent": response},
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert 'kind="warn"' in context
+        assert "root_session_id" in context
+        next_action = context.split("\n次の操作: ", maxsplit=1)[1]
+        assert all(name in next_action for name in next_action_names)
 
     def test_reduced_terminal_start_status_is_recorded(self, tmp_path: pathlib.Path) -> None:
         """全候補不可用のstartが返す終端statusをそのまま記録する。"""

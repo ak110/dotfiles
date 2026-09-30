@@ -314,11 +314,14 @@ def main() -> int:
         return 0
     if status == "unsupported":
         print(json.dumps({"exit_session_invoked": True, "status": "unsupported"}, separators=(",", ":")))
-        _outcome.report_warning("現在の対話CLI本体を一意に識別できない。/exitまたは/quitを入力して終了する。")
+        _outcome.report_warning("現在の対話CLI本体を一意に識別できない", next_action="/exitまたは/quitを入力して終了する")
         return 0
     if status == "changed":
         print(json.dumps({"exit_session_invoked": True, "status": "changed"}, separators=(",", ":")))
-        _outcome.report_warning("終了対象が識別後に変化したため停止しない。")
+        _outcome.report_warning(
+            "終了対象が識別後に変化したため停止しない",
+            next_action="`atk agents-exit-session`を再実行するか、/exitを入力して終了する",
+        )
         return 0
     assert target is not None
     _outcome.report_success(

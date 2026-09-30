@@ -368,6 +368,8 @@ class TestConfigGet:
         assert not captured.out
         assert "AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL" in captured.err
         assert "codex:gpt-5.6-sol/medium, invalid" in captured.err
+        next_action = next(line for line in captured.err.splitlines() if line.startswith("次の操作: "))
+        assert "AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL" in next_action
 
     def test_empty_environment_override_is_ignored(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -486,7 +488,7 @@ class TestConfigSet:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert f"成功: 設定を更新した: {key}={value}" in captured.out
-        assert captured.err == "設定は保存します。\n"
+        assert captured.err == ""
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", key], home=tmp_path)
@@ -539,7 +541,7 @@ class TestConfigSet:
             atk.main(["config", "set", "high_tier_model", "claude:fable/medium"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().err == "設定は保存します。\n"
+        assert capsys.readouterr().err == ""
 
     def test_set_preserves_unconfigured_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """旧キーがない設定保存では、未設定の既定値を永続化しない。"""
@@ -551,7 +553,7 @@ class TestConfigSet:
             atk.main(["config", "set", "high_tier_model", "codex:gpt-5.6-terra/medium"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().err == "設定は保存します。\n"
+        assert capsys.readouterr().err == ""
         assert json.loads(config_file.read_text(encoding="utf-8")) == {
             "other_setting": "keep",
             "high_tier_model": "codex:gpt-5.6-terra/medium",
@@ -589,7 +591,7 @@ class TestConfigSet:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == f"成功: 設定を更新した: orchestrate_model={value}\n"
-        assert captured.err == "設定は保存します。\n"
+        assert captured.err == ""
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
@@ -677,6 +679,8 @@ class TestConfigSet:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL" in captured.err
+        next_action = next(line for line in captured.err.splitlines() if line.startswith("次の操作: "))
+        assert "AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL" in next_action
         config_file = tmp_path / "config" / "config.json"
         assert json.loads(config_file.read_text(encoding="utf-8"))["high_tier_model"] == saved
 
@@ -735,6 +739,9 @@ class TestConfigSet:
         assert "成功: 設定を更新した: high_tier_model=claude:unknown-model" in captured.out
         assert "モデル名`unknown-model`は主に使うモデルの一覧" in captured.err
         assert "利用可否は実行時に各engineが判定します" in captured.err
+        assert "警告: 警告: " not in captured.err
+        assert "次の操作: " in captured.err
+        assert "対応不要" in captured.err
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "high_tier_model"], home=tmp_path)
@@ -796,7 +803,7 @@ class TestConfigSet:
             atk.main(["config", "set", "medium_tier_model", "codex:gpt-5.6-terra"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().err == "設定は保存します。\n"
+        assert capsys.readouterr().err == ""
 
     @pytest.mark.parametrize("value", ["gpt-5.6-sol", "other:model", "codex:", "claude:model/"])
     def test_set_invalid_stage_model_exits_2(

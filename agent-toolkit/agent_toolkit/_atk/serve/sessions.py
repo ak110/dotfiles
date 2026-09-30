@@ -851,6 +851,7 @@ class RemoteSessionClient:
                     await _terminate_process(proc)
                 self._proc = None
                 self._connected = False
+            _atk_serve_remote.raise_if_cancelling()
             await asyncio.sleep(self._backoff)
             self._backoff = min(self._backoff * 2, BACKOFF_MAX_SEC)
 
@@ -962,6 +963,11 @@ async def _terminate_process(proc: _async_subprocess.Process, grace_timeout: flo
 
 
 async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
+    """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
+
+    キャンセル経路からも段階的な終了を完了させるため`CancelledError`を吸収する。
+    吸収した後に次の反復へ戻る呼び出し側は、`_atk_serve_remote.raise_if_cancelling`でキャンセル要求を確かめる。
+    """
     if proc.returncode is not None:
         return True
     with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):

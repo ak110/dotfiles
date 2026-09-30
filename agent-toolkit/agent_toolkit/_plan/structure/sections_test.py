@@ -9,6 +9,7 @@ import sys
 import pytest
 from pyfltr.colloquial import check as _colloquial_check
 
+from agent_toolkit._common import next_action as _next_action  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -512,3 +513,17 @@ def test_progress_log_rows_rejects_broken_structure(content: str, expected: str)
     """節、固定表および列構成のいずれかが成立しない本文を拒否する。"""
     with pytest.raises(ValueError, match=expected):
         _plan_format.progress_log_rows(content)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        f"# plan\n\n## {_plan_format.PLAN_H2_OVERVIEW}\n\n概要だけ。\n",
+        f"# plan\n\n## {_plan_format.PLAN_H2_PROGRESS}\n\n表の無い本文。\n",
+    ],
+)
+def test_progress_log_rows_missing_table_states_next_action(content: str) -> None:
+    """節か固定表が無い場合は、置くべき見出しと表頭を次の操作として示す。"""
+    with pytest.raises(_next_action.ActionableError) as raised:
+        _plan_format.progress_log_rows(content)
+    assert f"`## {_plan_format.PLAN_H2_PROGRESS}`見出しと、表頭" in raised.value.next_action

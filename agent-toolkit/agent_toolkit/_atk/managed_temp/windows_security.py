@@ -388,11 +388,16 @@ def _windows_replace_security(
         if actual_directory != directory:
             raise ManagedTempError(f"Windows pathの種別が指定と一致しない: {path}")
         if expected_identity is not None and _windows_information_identity(information) != expected_identity:
-            raise ManagedTempError(f"管理対象がACL再保護時に置換された: {path}")
+            raise ManagedTempError(
+                f"管理対象がACL再保護時に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         current_owner = _windows_security_from_handle(handle, information, path).owner
         owner_changed = not _windows_equal_sids(current_owner, owner_sid)
         if owner_changed and not can_write_owner:
-            raise ManagedTempError(f"Windowsの所有者を変更できるハンドルを取得できない: {path}")
+            raise ManagedTempError(
+                f"Windowsの所有者を変更できるハンドルを取得できない: {path}",
+                next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
+            )
         security_information = _WINDOWS_DACL_SECURITY_INFORMATION | _WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION
         owner_to_set: bytes | None = None
         if owner_changed:
@@ -418,7 +423,9 @@ def _windows_acl_buffer(path: pathlib.Path, aces: tuple[_WindowsAce, ...]) -> ty
     advapi32.AddAccessDeniedAceEx.restype = wintypes.BOOL
     sid_lengths = [len(ace.sid) for ace in aces if ace.sid is not None]
     if len(sid_lengths) != len(aces):
-        raise ManagedTempError(f"Windows DACLへSIDを持たないACEは設定できない: {path}")
+        raise ManagedTempError(
+            f"Windows DACLへSIDを持たないACEは設定できない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+        )
     acl_size = ctypes.sizeof(_Acl) + sum(
         ctypes.sizeof(_AccessAllowedAce) - ctypes.sizeof(ctypes.c_uint32) + size for size in sid_lengths
     )
@@ -433,7 +440,10 @@ def _windows_acl_buffer(path: pathlib.Path, aces: tuple[_WindowsAce, ...]) -> ty
         elif ace.ace_type == _WINDOWS_ACCESS_DENIED_ACE_TYPE:
             add_ace = advapi32.AddAccessDeniedAceEx
         else:
-            raise ManagedTempError(f"Windows DACLへ未対応種別のACEは設定できない: {path}: {ace.ace_type}")
+            raise ManagedTempError(
+                f"Windows DACLへ未対応種別のACEは設定できない: {path}: {ace.ace_type}",
+                next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
+            )
         if not add_ace(acl_buffer, _WINDOWS_ACL_REVISION, ace.flags, ace.mask, sid_buffer):
             raise _windows_error("Windows DACLへACEを追加できない", path)
     return acl_buffer
@@ -530,7 +540,7 @@ def _windows_security_from_handle(
         raise ManagedTempError(f"Windows security descriptorを取得できない: {path}: {result}")
     try:
         if not owner or not advapi32.IsValidSid(owner):
-            raise ManagedTempError(f"Windows owner SIDが不正: {path}")
+            raise ManagedTempError(f"Windows owner SIDが不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION)
         owner_sid = ctypes.string_at(owner, advapi32.GetLengthSid(owner))
         control = wintypes.WORD(0)
         revision = wintypes.DWORD(0)
@@ -607,7 +617,9 @@ def _validate_windows_security(path: pathlib.Path) -> None:
     expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if security.directory else 0
     valid_ace = len(security.aces) == 1 and _windows_current_user_ace_is_valid(security.aces[0], current_sid, expected_flags)
     if not _windows_security_base_is_valid(security, current_sid) or not valid_ace:
-        raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {path}")
+        raise ManagedTempError(
+            f"Windows pathのownerまたはACLが不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+        )
 
 
 def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
@@ -615,7 +627,9 @@ def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
     current_sid = _windows_sid_bytes(_windows_current_sid())
     security = _windows_security_descriptor(path)
     if not _windows_managed_root_security_is_valid(security, current_sid):
-        raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {path}")
+        raise ManagedTempError(
+            f"Windows pathのownerまたはACLが不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+        )
 
 
 def _windows_managed_root_security_is_valid(security: _WindowsSecurity, current_sid: bytes) -> bool:

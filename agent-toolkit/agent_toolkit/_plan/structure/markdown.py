@@ -440,7 +440,7 @@ def check_duplicate_headings(content: str) -> list[str]:
             parent = "/".join(key[:-1]) or "文書直下"
             errors.append(
                 f"同じ見出しが重複している: `{'#' * heading.level} {heading.text}`"
-                f"（{parent}配下、{first}行目と{heading.lineno}行目）"
+                f"（{parent}配下、{first}行目と{heading.lineno}行目）。一方を削除するか、見出しの文言を区別する"
             )
         stack.append(heading)
     return errors

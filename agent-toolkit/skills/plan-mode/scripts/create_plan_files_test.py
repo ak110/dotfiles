@@ -351,17 +351,24 @@ def test_adds_hex_suffix_only_after_collision(
     assert path.name == "13-0217_計画-a1b2.md"
 
 
-@pytest.mark.parametrize(("bug", "provide_bug"), [(True, False), (False, True)])
+@pytest.mark.parametrize(
+    ("work_type", "bug_field", "provide_bug", "message"),
+    [
+        ("バグ対応", True, False, "行がある場合は計画ファイル（バグ）の入力が必要"),
+        ("バグ対応", False, True, "行が無い場合は計画ファイル（バグ）の入力を指定できません"),
+        ("通常変更", False, True, "作業種別が通常変更の場合"),
+    ],
+)
 def test_rejects_work_type_and_bug_input_mismatch(
-    repo: pathlib.Path, tmp_path: pathlib.Path, bug: bool, provide_bug: bool
+    repo: pathlib.Path, tmp_path: pathlib.Path, work_type: str, bug_field: bool, provide_bug: bool, message: str
 ) -> None:
-    """作業種別とバグ入力の有無が一致しない本文を拒否する。"""
-    source, bug_source = _source(repo, tmp_path, bug=bug)
-    if provide_bug and bug_source is None:
-        bug_source = tmp_path / "bug.md"
-        bug_source.write_text(_plan_fixture.bug_file(), encoding="utf-8")
+    """作業種別・計画ファイル（バグ）の行・バグ入力の有無が一致しない本文を拒否する。"""
+    reference = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
+    source = _related_wi_source(repo, tmp_path, work_type=work_type, bug_reference=reference if bug_field else None)
+    bug_source = tmp_path / "bug.md"
+    bug_source.write_text(_plan_fixture.bug_file(), encoding="utf-8")
 
-    with pytest.raises(create_plan_files.PlanCreationError, match="作業種別"):
+    with pytest.raises(create_plan_files.PlanCreationError, match=message):
         create_plan_files.create_plan_files(
             source,
             "13-0217_入力不一致",
@@ -369,6 +376,78 @@ def test_rejects_work_type_and_bug_input_mismatch(
             home=tmp_path / "home",
             work_dir=repo,
         )
+
+
+def _related_wi_source(
+    repo: pathlib.Path, directory: pathlib.Path, *, work_type: str = "バグ対応", bug_reference: str | None = None
+) -> pathlib.Path:
+    """関連WIを持つ計画本文を保存してパスを返す。"""
+    source = directory / "related-wi.md"
+    source.write_text(
+        _plan_fixture.current_plan(
+            repo=repo.resolve(),
+            work_type=work_type,
+            related_wi=_plan_fixture.WI_FILES,
+            bug_reference=bug_reference,
+        ),
+        encoding="utf-8",
+    )
+    return source
+
+
+def test_cli_creates_bug_plan_without_bug_file_when_related_wi_exists(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """関連WIの原因分析を正本とするバグ対応計画は、計画ファイル（バグ）なしで作成する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
+    source = _related_wi_source(repo, tmp_path)
+
+    result = create_plan_files.main(
+        [
+            "--main-source",
+            str(source),
+            "--name",
+            "13-0217_WI参照のバグ対応",
+            "--home",
+            str(tmp_path / "home"),
+            "--work-dir",
+            str(repo),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0, captured.err
+    paths = [pathlib.Path(line) for line in captured.out.splitlines()]
+    assert [path.name for path in paths] == ["13-0217_WI参照のバグ対応.md"]
+    assert not list((tmp_path / "home").rglob("*.bugs.md"))
+
+
+def test_cli_rejects_bug_plan_without_bug_file_and_related_wi(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """関連WIが無いバグ対応計画は計画ファイル（バグ）の行と入力なしでは作成しない。"""
+    source = tmp_path / "no-wi.md"
+    source.write_text(
+        _plan_fixture.current_plan(repo=repo.resolve(), work_type="バグ対応"),
+        encoding="utf-8",
+    )
+
+    result = create_plan_files.main(
+        [
+            "--main-source",
+            str(source),
+            "--name",
+            "13-0217_WIなしのバグ対応",
+            "--home",
+            str(tmp_path / "home"),
+            "--work-dir",
+            str(repo),
+        ]
+    )
+
+    assert result != 0
+    assert "関連WIが無いバグ対応の計画" in capsys.readouterr().err
+    assert not list((tmp_path / "home").rglob("*.md"))
 
 
 def test_cli_rejects_removed_detail_source() -> None:

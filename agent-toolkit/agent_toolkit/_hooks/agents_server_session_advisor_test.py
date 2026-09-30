@@ -3,18 +3,16 @@
 import json
 import os
 import pathlib
+import re
 
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
-_WARNING_BODY = (
-    "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-    "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
-    "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
-    "観測しないまま終了すると、その作業の成果を回収する主体が残らない。"
-)
+# 警告の契約: 未観測の作業が残ることと、実在する観測手段（`atk agents wait`）・破棄手段（`kill`）を次の操作として示すこと。
+_WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
+_NEXT_ACTION_PATTERN = re.compile(r"\n次の操作: [^\n]*`atk agents wait`[^\n]*`kill\(session_id\)`")
 
 
 def _environment(state_directory: pathlib.Path) -> dict[str, str]:
@@ -148,6 +146,7 @@ def test_pending_observation_emits_stop_hook_event_and_additional_context(tmp_pa
     assert hook_output["hookEventName"] == "Stop"
     assert _WARNING_BODY in hook_output["additionalContext"]
     assert "対象session: session-a, session-b" in hook_output["additionalContext"]
+    assert _NEXT_ACTION_PATTERN.search(hook_output["additionalContext"]) is not None
 
 
 def test_start_only_record_emits_warning(tmp_path: pathlib.Path) -> None:

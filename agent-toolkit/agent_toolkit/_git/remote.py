@@ -7,20 +7,25 @@ import re
 import subprocess
 import urllib.parse
 
+from agent_toolkit._common.next_action import ActionableError
+
 _SCP_LIKE_REMOTE_RE = re.compile(r"^[^@\s]+@(?P<host>[^:\s]+):(?P<path>.+)$")
 _NORMALIZED_REMOTE_RE = re.compile(r"[^/]+(?:/[^/]+){2,}")
+_REMOTE_URL_NEXT_ACTION = (
+    "`git remote get-url origin`の値を確認し、HTTPS・SSHのURLか`host/owner/repository`形式の値を指定し直す"
+)
 
 
 def normalize_remote_url(remote_url: str) -> str:
     """GitリモートURLを`host/owner/repository`形式へ正規化する。
 
-    HTTPS、SSH URI、SSH短縮、正規化済み識別子を受理する。受理外はValueErrorを送出する。
+    HTTPS、SSH URI、SSH短縮、正規化済み識別子を受理する。受理外は`ValueError`の派生の`ActionableError`を送出する。
     ポート番号を伴うURI（`ssh://git@host:22/owner/repo.git`等）はホスト名だけを採用し、
     ポートを経路要素として扱わない。
     """
     value = remote_url.strip()
     if not value:
-        raise ValueError(f"リモートURLとして解析できません: {remote_url!r}")
+        raise ActionableError(f"リモートURLとして解析できません: {remote_url!r}", next_action=_REMOTE_URL_NEXT_ACTION)
 
     # スキーム付きの値はSCP短縮形の判定より先にURLとして解析する。
     # `ssh://git@host:22/owner/repo.git`はSCP短縮形の正規表現にも一致するため、
@@ -28,7 +33,7 @@ def normalize_remote_url(remote_url: str) -> str:
     if "://" in value:
         parsed = urllib.parse.urlsplit(value)
         if parsed.scheme not in {"http", "https", "ssh"} or parsed.hostname is None:
-            raise ValueError(f"リモートURLとして解析できません: {remote_url!r}")
+            raise ActionableError(f"リモートURLとして解析できません: {remote_url!r}", next_action=_REMOTE_URL_NEXT_ACTION)
         host = parsed.hostname
         path = parsed.path
     elif (scp_match := _SCP_LIKE_REMOTE_RE.fullmatch(value)) is not None:
@@ -37,13 +42,13 @@ def normalize_remote_url(remote_url: str) -> str:
     elif _NORMALIZED_REMOTE_RE.fullmatch(value) is not None and "@" not in value:
         host, path = value.split("/", maxsplit=1)
     else:
-        raise ValueError(f"リモートURLとして解析できません: {remote_url!r}")
+        raise ActionableError(f"リモートURLとして解析できません: {remote_url!r}", next_action=_REMOTE_URL_NEXT_ACTION)
 
     normalized_path = path.strip("/")
     if normalized_path.endswith(".git"):
         normalized_path = normalized_path[:-4]
     if not normalized_path or "/" not in normalized_path:
-        raise ValueError(f"リモートURLとして解析できません: {remote_url!r}")
+        raise ActionableError(f"リモートURLとして解析できません: {remote_url!r}", next_action=_REMOTE_URL_NEXT_ACTION)
     return f"{host.lower()}/{normalized_path.lower()}"
 
 

@@ -232,7 +232,9 @@ def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
         [_requirement(FIRST_WI, own), unassigned],
     )
     assert run_script.dispatch(args) == 1
-    assert "wi_conditions[1].outcome: 未知の判定です: 割当外" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "wi_conditions[1].outcome: 未知の判定です: 割当外（受理する値: " in stderr
+    assert "\n次の操作: " in stderr
 
 
 def test_answered_uwi_checks_answer_only(
@@ -284,7 +286,9 @@ def test_rejects_missing_required_wi_content(
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: f"{frontmatter}\n---\n{body}\n"})
     args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
     assert run_script.dispatch(args) == 1
-    assert diagnostic in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert diagnostic in stderr
+    assert "`atk wi show <ファイル名>`" in stderr.split("\n次の操作: ", maxsplit=1)[1]
 
 
 @pytest.mark.parametrize(
@@ -311,4 +315,6 @@ def test_rejects_invalid_json_schema_and_outcome(
     evidence.write_text(content, encoding="utf-8")
     args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI])
     assert run_script.dispatch(args) == 1
-    assert diagnostic in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert diagnostic in stderr
+    assert "`atk wi show <ファイル名>`" in stderr.split("\n次の操作: ", maxsplit=1)[1]

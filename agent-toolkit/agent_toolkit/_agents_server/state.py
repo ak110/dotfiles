@@ -15,6 +15,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import session_registry, task_documents, tool_names
 from agent_toolkit._common import background_output, message_format
+from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
@@ -42,14 +43,6 @@ HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
 SESSION_INITIALIZATION_TIMEOUT = 50.0
 SESSION_INITIALIZATION_ATTEMPTS = 2
-# Claude CodeのBashツールが`run_in_background`指定で`timeout`を省いたコマンドへ課す実行上限の既定値。
-# 以降の待機上限はこの上限を制約として導出する。
-HOST_BASH_BACKGROUND_TIMEOUT_SECONDS = 1800.0
-# `atk agents wait`が待機対象を1件以上取得した後に用いる上限秒数。
-# 呼び出し側は外側の`timeout`を付けずに背景起動するため、HOST_BASH_BACKGROUND_TIMEOUT_SECONDSより60秒短くする。
-# この関係が崩れると、ホストが先に待機を打ち切り、上限到達時の終了コード3が呼び出し元へ届かず、
-# 同じコマンドを再発行して待機を続ける経路へ入れない。
-WAIT_TIMEOUT_SECONDS = HOST_BASH_BACKGROUND_TIMEOUT_SECONDS - 60.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "high_tier",
@@ -149,6 +142,25 @@ class SessionInitializationTimeoutError(RuntimeError):
 
     起動を要求した主体は無制限に待たされる代わりに本例外を受領し、対象と原因を報告できる。
     """
+
+
+class DelegateBackendError(RuntimeError):
+    """委譲先CLIの起動、または委譲先CLIとの通信の形式が想定と異なることを示す。
+
+    MCPのツール処理の共通層は本例外を受け取ると、CLIの導入と認証の確認と別engineでの再起動を次の操作として返す。
+    """
+
+
+RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終端を観測してから`send_message`を再送する"
+"""turnが中断中または未終端のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
+
+
+class ActionableRuntimeError(ActionableError, RuntimeError):
+    """次の操作を持つ`RuntimeError`。既存の`except RuntimeError`節が捕捉する範囲を保つために使う。"""
+
+
+class ActionableTimeoutError(ActionableError, TimeoutError):
+    """次の操作を持つ`TimeoutError`。既存の`except TimeoutError`節が捕捉する範囲を保つために使う。"""
 
 
 class SessionOwnerGoneError(RuntimeError):
@@ -999,25 +1011,34 @@ def _begin_reply(session: SessionState) -> None:
 
 def _validate_prompt(prompt: str) -> None:
     if not isinstance(prompt, str) or not prompt.strip():
-        raise ValueError("prompt must be a non-empty string")
+        raise ActionableError("prompt must be a non-empty string", next_action="委譲先へ渡す空でない本文を`prompt`へ指定する")
+
+
+_CWD_NEXT_ACTION = "既存ディレクトリの絶対パスを`cwd`へ指定する"
 
 
 def _validate_cwd(cwd: str) -> None:
     if not isinstance(cwd, str) or not cwd or not pathlib.PurePath(cwd).is_absolute():
-        raise ValueError("cwd must be a non-empty absolute path")
+        raise ActionableError("cwd must be a non-empty absolute path", next_action=_CWD_NEXT_ACTION)
     if not pathlib.Path(cwd).is_dir():
-        raise ValueError(f"cwd is not an existing directory: {cwd}")
+        raise ActionableError(f"cwd is not an existing directory: {cwd}", next_action=_CWD_NEXT_ACTION)
 
 
 def _validate_shell_request(command: str, summary_policy: str) -> None:
     if not isinstance(command, str) or not command.strip():
-        raise ValueError("command must be a non-empty string")
+        raise ActionableError("command must be a non-empty string", next_action="実行する空でないコマンドを`command`へ指定する")
     if not isinstance(summary_policy, str) or not summary_policy.strip():
-        raise ValueError("summary_policy must be a non-empty string")
+        raise ActionableError(
+            "summary_policy must be a non-empty string",
+            next_action="報告へ含める値と粒度を書いた空でない要約方針を`summary_policy`へ指定する",
+        )
+
+
+_MODEL_EFFORT_NEXT_ACTION = "`model_type`の候補を`<engine>:<model>/<effort>`の形で書き、modelとeffortの両方を指定する"
 
 
 def _validate_model_effort(model: str | None, effort: str | None) -> None:
     if (model is None) != (effort is None):
-        raise ValueError("model and effort must be provided together")
+        raise ActionableError("model and effort must be provided together", next_action=_MODEL_EFFORT_NEXT_ACTION)
     if model is not None and (not model.strip() or not effort or not effort.strip()):
-        raise ValueError("model and effort must be non-empty strings")
+        raise ActionableError("model and effort must be non-empty strings", next_action=_MODEL_EFFORT_NEXT_ACTION)

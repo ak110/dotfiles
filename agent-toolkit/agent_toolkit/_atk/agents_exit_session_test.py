@@ -49,7 +49,26 @@ def test_unsupported_host_reports_invocation_without_stopping(
     monkeypatch.setattr(agents_exit_session.os, "kill", lambda *_args: pytest.fail("停止してはならない"))
 
     assert agents_exit_session.main() == 0
-    assert json.loads(capsys.readouterr().out)["status"] == "unsupported"
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["status"] == "unsupported"
+    assert "次の操作: /exit" in captured.err
+
+
+def test_changed_target_names_rerun_and_exit_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """識別後に終了対象が変化した場合は停止せず、再実行か/exitの入力を案内する。"""
+    monkeypatch.setattr(agents_exit_session, "identify_current_host", lambda: _claude_target(tmp_path))
+    monkeypatch.setattr(agents_exit_session, "_same_process", lambda _target: False)
+    monkeypatch.setattr(agents_exit_session.os, "kill", lambda *_args: pytest.fail("停止してはならない"))
+
+    assert agents_exit_session.main() == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["status"] == "changed"
+    next_action_lines = [line for line in captured.err.splitlines() if line.startswith("次の操作: ")]
+    assert len(next_action_lines) == 1
+    assert "atk agents-exit-session" in next_action_lines[0]
+    assert "/exit" in next_action_lines[0]
 
 
 def test_rechecked_target_is_terminated(

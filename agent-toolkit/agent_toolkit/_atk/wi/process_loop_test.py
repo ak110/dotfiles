@@ -402,7 +402,12 @@ class TestWaitForChanges:
 
         _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert "remote同期に失敗" in capsys.readouterr().err
+        stderr = capsys.readouterr().err
+        assert "remote同期に失敗" in stderr
+        # 待機を続ける旨と、繰り返す場合の確認コマンドを次の操作として続ける。
+        next_action = stderr.split("\n次の操作: ", 1)[1]
+        assert next_action.startswith("対応不要（待機は継続した）")
+        assert "status`で同期状態を確認する" in next_action
 
     def test_change_event_skips_pull(
         self,
@@ -1798,7 +1803,9 @@ class TestProcessLoopSessionPreparation:
         monkeypatch.setattr(_process_loop, "_pull", fail_pull)
 
         assert not _PULL_PRIVATE_NOTES_IMPL(tmp_path)
-        assert "remote同期に失敗（子セッションを起動せず待機します）: rebase中" in capsys.readouterr().err
+        stderr = capsys.readouterr().err
+        assert "remote同期に失敗（子セッションを起動せず待機します）: rebase中" in stderr
+        assert "status`で同期状態を確認し" in stderr.split("\n次の操作: ", 1)[1]
 
     def test_missing_update_command_does_not_repull_or_start_session(
         self,
@@ -2515,6 +2522,10 @@ class TestProcessLoopReturncode:
         assert exc_info.value.code == 42
         captured = capsys.readouterr()
         assert "claudeがexit code 42で異常終了しました" in captured.err
+        # 原因の確認先と候補の変更手段を次の操作として続ける。
+        next_action = captured.err.split("\n次の操作: ", 1)[1]
+        assert "セッション記録" in next_action
+        assert "atk config set orchestrate_model" in next_action
 
     def test_codex_rejects_sigterm_style_returncodes(
         self,
@@ -3454,6 +3465,32 @@ def test_instruction_append_rejects_duplicate_and_over_limit(monkeypatch, tmp_pa
     assert appended is False
     assert "上限" in summary
     assert process_loop_log.read_instructions() == ["既存のテストコードを先に読む"]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("あ" * (process_loop_log.INSTRUCTION_MAX_CHARS + 1), "instruct-cancel"),
+        ("   ", "本文を記入して再実行する"),
+    ],
+)
+def test_instruct_rejection_reports_next_action(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    body: str,
+    expected: str,
+) -> None:
+    """保持の上限超過と空の本文は、破棄か書き直しを次の操作として返して終了コード1で終わる。"""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+
+    with pytest.raises(SystemExit) as exc_info:
+        _process_loop._cmd_process_loop_instruct(body)  # pylint: disable=protected-access
+
+    assert exc_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert stderr.startswith("失敗: 追加指示を保持しなかった: ")
+    assert expected in stderr.split("\n次の操作: ", 1)[1]
 
 
 def test_instructions_are_consumed_once(monkeypatch, tmp_path) -> None:

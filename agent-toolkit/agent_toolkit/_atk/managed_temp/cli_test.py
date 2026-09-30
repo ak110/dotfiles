@@ -24,6 +24,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import cli as cli_subject
+from agent_toolkit._atk.managed_temp import inventory as inventory_subject
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
@@ -33,17 +34,14 @@ from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 @pytest.mark.parametrize(
-    ("entries", "expected"),
+    ("entries", "expected_listed", "expected_operation"),
     [
-        ([], "失敗: --pathを指定してください。現在の管理対象はありません。\n"),
-        (
-            [{"path": "/tmp/first"}],
-            "失敗: --pathを指定してください。現在の管理対象は1件です。"
-            "atk managed-temp cleanup --path /tmp/first を実行してください。\n",
-        ),
+        ([], [], None),
+        ([{"path": "/tmp/first"}], [], "atk managed-temp cleanup --path /tmp/first"),
         (
             [{"path": "/tmp/first"}, {"path": "/tmp/second"}],
-            "失敗: --pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n/tmp/first\n/tmp/second\n",
+            ["/tmp/first", "/tmp/second"],
+            "atk managed-temp cleanup --path",
         ),
     ],
 )
@@ -51,16 +49,23 @@ def test_cleanup_without_path_reports_managed_targets(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     entries: list[subject._ManagedTempEntry],
-    expected: str,
+    expected_listed: list[str],
+    expected_operation: str | None,
 ) -> None:
-    """path欠落時は管理対象の件数に応じた再実行情報を示す。"""
+    """path欠落時は管理対象の件数に応じた再実行情報を次の操作の行で示す。"""
     monkeypatch.setattr(subject, "list_managed_temp", lambda: entries)
     monkeypatch.setattr(subject, "cleanup_managed_temp", lambda *_args, **_kwargs: pytest.fail("cleanupを呼んだ"))
 
     assert subject.main(["cleanup"]) == 2
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == expected
+    lines = captured.err.splitlines()
+    assert lines[0].startswith("失敗: --pathを指定してください。")
+    assert lines[1 : 1 + len(expected_listed)] == expected_listed
+    next_action = lines[1 + len(expected_listed)]
+    assert next_action.startswith("次の操作: ")
+    if expected_operation is not None:
+        assert expected_operation in next_action
 
 
 def test_cleanup_passes_force_remove_to_inventory(
@@ -267,3 +272,34 @@ def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: 
     assert not quarantine_path.exists()
     assert not registry.exists()
     assert not consuming.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの権限検証を再現する")
+def test_create_with_unsafe_root_names_owner_and_mode_check(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """明示したrootの権限が不安全な場合は、所有者と0700の確認を次の操作として示す。"""
+    root = tmp_path / "unsafe-root"
+    root.mkdir()
+    root.chmod(0o777)
+
+    assert subject.main(["create", "--prefix", "work", "--root", str(root)]) == 2
+
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[0].startswith("失敗: ")
+    assert lines[1].startswith("次の操作: ")
+    assert "所有者" in lines[1]
+    assert "0700" in lines[1]
+
+
+def test_replacement_detected_during_cleanup_names_rerun_and_report(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """後始末中に置換を検出した失敗は、再実行と繰り返す場合の報告を次の操作として示す。"""
+    target = subject.create_managed_temp("replaced")
+    snapshots = iter([{}, {"changed": ("file", 0, 0)}])
+    monkeypatch.setattr(inventory_subject, "_tree_snapshot", lambda _path: next(snapshots))
+
+    assert subject.main(["cleanup", "--path", str(target)]) == 2
+
+    next_action = next(line for line in capsys.readouterr().err.splitlines() if line.startswith("次の操作: "))
+    assert "再実行" in next_action
+    assert "ユーザーへ報告" in next_action

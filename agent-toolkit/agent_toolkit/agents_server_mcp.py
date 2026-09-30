@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import dataclasses
 import datetime
+import functools
 import inspect
 import json
 import logging
@@ -22,6 +23,7 @@ from uuid import UUID
 from anyio.abc import ObjectReceiveStream, ObjectSendStream
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
 from mcp.types import Icon, ToolAnnotations
@@ -33,6 +35,9 @@ from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import logging_config, session_registry, state, status_file, task_documents
 from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
+    ActionableRuntimeError,
+    ActionableTimeoutError,
+    DelegateBackendError,
     LaunchKind,
     ModelCandidate,
     ResumePrompt,
@@ -60,6 +65,7 @@ from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
+from agent_toolkit._common.next_action import ActionableError, with_next_action
 
 try:
     from pydantic_settings.exceptions import IncompleteFieldDefinitionWarning
@@ -111,6 +117,35 @@ _REQUIRED_INPUT_LINE_FORMAT = (
     "項目名へ別の語を連結した行はその項目として解決しないため、補足する語は別の行へ書く。"
 )
 
+
+# 受信側がツールのエラー本文や状態値だけで次の行動を決められるよう、応答へ載せる次の操作の文面。
+# 同じ状況を複数の経路が返すため、経路ごとに書き分けず1か所へ置く。
+_TASK_DOCUMENT_PATH_NEXT_ACTION = (
+    "`subagent_md_path`へ`<plugin root>/share/*.subagent.md`の絶対パスを渡す。自由本文で委譲する場合は`start_custom`を使う"
+)
+_TASK_DOCUMENT_DEFECT_NEXT_ACTION = "agent-toolkitの不具合としてユーザーへ報告し、同じ依頼を`start_custom`で起動する"
+_MODEL_TYPE_NEXT_ACTION = (
+    "`model_type`へ段位名（例: `high_tier`）か`<claude|codex|agy>:<model>[/<effort>]`の候補列を指定する。"
+    "段位名に対応する候補は`atk config get <段位名>_model`で確かめる"
+)
+_UNKNOWN_SESSION_NEXT_ACTION = (
+    "`list`で保持状態を確かめる。結果が必要なら`atk agents wait`を試し、無ければ検証済みの状態から新規に起動する"
+)
+_EXPIRED_SESSION_NEXT_ACTION = (
+    "継続不能とは扱わない。未回収の結果は`atk agents wait`で受領し、"
+    "継続は同じ`session_id`へ`send_message`を送って暗黙に再開する"
+)
+_SESSION_ID_NEXT_ACTION = "start系ツールの応答か`list`が返した`session_id`を指定する"
+_RUNNING_STOP_NEXT_ACTION = "中断が必要なら先に`kill`を発行し、終端を観測してから`stop`を再発行する"
+_KILL_NOT_DELIVERED_NEXT_ACTION = "`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する"
+_START_FAILED_NEXT_ACTION = "`atk agents wait`で終端結果の`error`を受領し、`model_type`へ別の候補を指定して起動し直す"
+_REPLY_NEXT_ACTIONS = {
+    "reply_failed": "新しいturnを開始できなかった。`atk agents wait`で終端結果を受領して原因を確かめてから次の操作を選ぶ",
+    "reply_ambiguous": (
+        "turnの開始を確定できなかった。`atk agents wait`で状態を確認し、turnが始まっていない場合だけ`send_message`を再送する"
+    ),
+}
+_EXPIRED_KILL_NEXT_ACTION = "中断対象は無い。未回収の結果は`atk agents wait`で受領する"
 
 # タスク文書の本文がプラグインルートを参照するときの変数名。
 _PLUGIN_ROOT_VARIABLE = "${CLAUDE_PLUGIN_ROOT}"
@@ -174,6 +209,7 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
     除外した候補のうち実際に作成したsessionは、その識別子も保持する。
     切り替えが起きない起動は`session_id`と`status`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
+    起動直後に失敗で終端した応答は、受信側が状態値だけで次の行動を決められるよう`next_action`を加える。
     """
     public: dict[str, Any] = {key: response[key] for key in ("session_id", "status")}
     if "root_session_id" in response:
@@ -183,6 +219,8 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
         public["engine"] = response["engine"]
         public["model"] = response["model"]
         public["effort"] = response["effort"]
+    if response["status"] == "failed":
+        public["next_action"] = _START_FAILED_NEXT_ACTION
     return public
 
 
@@ -290,8 +328,8 @@ def _shell_default_label(command: str) -> str:
     return f"shell-{pathlib.PurePath(words[0]).name}" if words else "shell"
 
 
-def _run_preflight_command(command: tuple[str, ...], cwd: str) -> str | None:
-    """1件の事前確認コマンドを実行し、失敗時は失敗内容の説明を返す。"""
+def _run_preflight_command(command: tuple[str, ...], cwd: str) -> tuple[str, str] | None:
+    """1件の事前確認コマンドを実行し、失敗時は失敗内容の説明と原因に応じた次の操作を返す。"""
     try:
         completed = subprocess.run(
             command,
@@ -304,11 +342,21 @@ def _run_preflight_command(command: tuple[str, ...], cwd: str) -> str | None:
             check=False,
         )
     except FileNotFoundError:
-        return f"command={' '.join(command)} error=実行ファイルが見つからない"
+        return (
+            f"command={' '.join(command)} error=実行ファイルが見つからない",
+            "agents_serverを起動したホストのPATHで`uv`と`uvx`を解決できるかを確かめてから再実行する",
+        )
     except subprocess.TimeoutExpired:
-        return f"command={' '.join(command)} error={PREFLIGHT_TIMEOUT:g}秒以内に終了しない"
+        return (
+            f"command={' '.join(command)} error={PREFLIGHT_TIMEOUT:g}秒以内に終了しない",
+            "時間をおいて再実行するか、`cwd`を別の作業ディレクトリへ変えて再実行する",
+        )
     if completed.returncode != 0:
-        return f"command={' '.join(command)} exit_code={completed.returncode} stderr={completed.stderr.strip()}"
+        return (
+            f"command={' '.join(command)} exit_code={completed.returncode} stderr={completed.stderr.strip()}",
+            "未trustのmise設定が原因の場合は、呼び出し元で`mise trust`の要否を判断してから再実行する。"
+            "それ以外はstderrの原因を解消するか、`cwd`を変えて再実行する",
+        )
     return None
 
 
@@ -317,10 +365,11 @@ def _check_plugin_commands_sync(cwd: str) -> None:
     for command in PREFLIGHT_COMMANDS:
         failure = _run_preflight_command(command, cwd)
         if failure is not None:
-            raise ValueError(
+            description, next_action = failure
+            raise ActionableError(
                 "委譲先の作業ディレクトリでプラグインの起動コマンドが失敗したため委譲先を起動しない: "
-                f"cwd={cwd} {failure}。"
-                "未trustのmise設定が原因の場合は、呼び出し元で`mise trust`の要否を判断してから再実行する。"
+                f"cwd={cwd} {description}。",
+                next_action=next_action,
             )
 
 
@@ -372,15 +421,18 @@ def _check_declared_inputs(
     """必須入力の欠落と宣言外の入力名を拒否する。"""
     missing = [name for name in declaration.required if name not in extra_params]
     if missing:
-        raise ValueError(
-            f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}"
+        raise ActionableError(
+            f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}",
+            next_action="欠けた入力名をキーとして`extra_params`へ加え、`start`を再発行する",
         )
     undeclared = [name for name in extra_params if name not in declaration.accepted]
     if undeclared:
-        raise ValueError(
+        raise ActionableError(
             f"タスク文書が宣言していない入力です: {', '.join(undeclared)}; "
-            f"受理する入力名: {', '.join(sorted(declaration.accepted))}; タスク文書: {task_document}。"
-            "今回限りの補足を渡す欄は無いため、値をタスク文書が宣言した入力へ収めるか、宣言外の値を渡さずに起動する。"
+            f"受理する入力名: {', '.join(sorted(declaration.accepted))}; タスク文書: {task_document}。",
+            next_action=(
+                "今回限りの補足を渡す欄は無いため、値をタスク文書が宣言した入力へ収めるか、宣言外の値を渡さずに起動する"
+            ),
         )
 
 
@@ -391,23 +443,40 @@ def _task_document_request(
     """専用タスク文書と名前付き入力からmodel種別、起動文および起動種別を返す。"""
     task_document = pathlib.Path(subagent_md_path)
     if not task_document.is_absolute():
-        raise ValueError("subagent_md_path must be an absolute path")
+        raise ActionableError("subagent_md_path must be an absolute path", next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION)
     task_document = task_document.resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
-        raise ValueError(f"subagent_md_path is not an existing .subagent.md file: {task_document}")
+        raise ActionableError(
+            f"subagent_md_path is not an existing .subagent.md file: {task_document}",
+            next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION,
+        )
     if not _is_agent_toolkit_task_document(task_document):
-        raise ValueError(f"subagent_md_path is not an agent-toolkit task document: {task_document}")
+        raise ActionableError(
+            f"subagent_md_path is not an agent-toolkit task document: {task_document}",
+            next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION,
+        )
     model_type = _TASK_MODEL_TYPES.get(task_document.name)
     if model_type is None:
-        raise ValueError(f"subagent task has no model_type mapping: {task_document.name}")
+        raise ActionableError(
+            f"subagent task has no model_type mapping: {task_document.name}",
+            next_action=_TASK_DOCUMENT_DEFECT_NEXT_ACTION,
+        )
     if any(not isinstance(name, str) or not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name) for name in extra_params):
-        raise ValueError("extra_params contains an invalid input name")
+        raise ActionableError(
+            "extra_params contains an invalid input name",
+            next_action=(
+                "`extra_params`のキーはタスク文書の`## 入力`が宣言した入力名にし、空白・バッククォート・読点を含めず、"
+                "先頭と末尾をコロンにしない"
+            ),
+        )
     if any(not isinstance(value, str) for value in extra_params.values()):
-        raise ValueError("extra_params values must be strings")
+        raise ActionableError("extra_params values must be strings", next_action="`extra_params`の値を全て文字列で渡す")
     try:
         document_text = task_document.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
-        raise ValueError(f"タスク文書をUTF-8で読めません: {task_document}: {error}") from error
+        raise ActionableError(
+            f"タスク文書をUTF-8で読めません: {task_document}: {error}", next_action=_TASK_DOCUMENT_DEFECT_NEXT_ACTION
+        ) from error
     # 委譲先は配送された本文だけを読むため、プラグインルートの変数を配送側で解決する。
     # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
@@ -513,21 +582,23 @@ class AgentsServerManager:
                     log_directory=self._status_writer.path.parent / "logs" if self._status_writer is not None else None,
                 )
             return self._agy
-        raise ValueError(f"unsupported engine: {engine}")
+        raise ActionableError(f"unsupported engine: {engine}", next_action=_MODEL_TYPE_NEXT_ACTION)
 
     def _get_session(self, session_id: str) -> SessionState:
         """保持中のsessionを返し、未解決値は識別子体系と喪失に分けて診断する。"""
         if not isinstance(session_id, str) or not session_id:
-            raise ValueError("session_id must be a non-empty string")
+            raise ActionableError("session_id must be a non-empty string", next_action=_SESSION_ID_NEXT_ACTION)
         try:
             session = self.sessions[session_id]
         except KeyError as exc:
             if session_id in self.expired_sessions:
-                raise ValueError(f"session retention expired: {session_id}") from exc
+                raise ActionableError(
+                    f"session retention expired: {session_id}", next_action=_EXPIRED_SESSION_NEXT_ACTION
+                ) from exc
             raise self._unresolved_session_error(session_id, label="session") from exc
         if session.retention_deadline is not None and asyncio.get_running_loop().time() >= session.retention_deadline:
             self._expire_session(session_id)
-            raise ValueError(f"session retention expired: {session_id}")
+            raise ActionableError(f"session retention expired: {session_id}", next_action=_EXPIRED_SESSION_NEXT_ACTION)
         return session
 
     def _expire_session(self, session_id: str) -> None:
@@ -604,14 +675,29 @@ class AgentsServerManager:
         if resolution is None:
             resolution = session_registry.resolve(session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
-            raise ValueError(f"error.recovery=turn_unobserved: {session_id}")
+            raise ActionableError(
+                f"error.recovery=turn_unobserved: {session_id}",
+                next_action=(
+                    "別のagents_serverプロセスがturnを実行中の可能性があるため、新しいstartでやり直さない。"
+                    "そのsessionを起動したroot sessionで`atk agents wait`を実行して終端を観測する"
+                ),
+            )
         if resolution.state in {session_registry.Resolution.MISSING, session_registry.Resolution.RELEASED}:
             return None
         if resolution.state is session_registry.Resolution.UNREADABLE:
-            raise ValueError(f"error.recovery=unreadable: {session_id}")
+            raise ActionableError(
+                f"error.recovery=unreadable: {session_id}",
+                next_action="`atk agents wait`で結果を観測し、得られなければ検証済みの状態から新規に起動する",
+            )
         info = resolution.resume_info
         if info is None:
-            raise ValueError(f"error.recovery=no_resume_info: {session_id}")
+            raise ActionableError(
+                f"error.recovery=no_resume_info: {session_id}",
+                next_action=(
+                    "同じsessionでは継続できない。未回収の結果は`atk agents wait`で受領し、"
+                    "継続が必要なら検証済みの状態から新規に起動する"
+                ),
+            )
         persisted_result = self._status_writer.read_result(session_id) if self._status_writer is not None else None
         resume_state = SessionResumeState(
             session_id=session_id,
@@ -674,7 +760,7 @@ class AgentsServerManager:
         resume_state = self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
-        return {"status": "expired", "kill_requested": False}
+        return {"status": "expired", "kill_requested": False, "next_action": _EXPIRED_KILL_NEXT_ACTION}
 
     @staticmethod
     def _listed_session(
@@ -821,9 +907,9 @@ class AgentsServerManager:
         if session is None:
             resolution = session_registry.resolve(session_id)
             if resolution.state is session_registry.Resolution.RUNNING:
-                raise ValueError(
-                    f"session {session_id} belongs to another writer's agents_server process and is still running; "
-                    "receive its result with `atk agents wait` on the owning root session"
+                raise ActionableError(
+                    f"session {session_id} belongs to another writer's agents_server process and is still running",
+                    next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して結果を受領する",
                 )
             session = self._restore_registry_session(session_id, resolution=resolution)
             if session is None:
@@ -895,9 +981,9 @@ class AgentsServerManager:
         持たないことを表す。解放後の同期失敗では再発行が同期だけを再試行する。
         """
         if not isinstance(session_id, str) or not session_id:
-            raise ValueError("session_id must be a non-empty string")
+            raise ActionableError("session_id must be a non-empty string", next_action=_SESSION_ID_NEXT_ACTION)
         if session_id in self._pending_resumes:
-            raise ValueError(f"session is running: {session_id}; issue kill before stop if interruption is required")
+            raise ActionableError(f"session is running: {session_id}", next_action=_RUNNING_STOP_NEXT_ACTION)
         stopped_state = self._resolve_stopped_session(session_id)
         if stopped_state is None:
             stopped_state = self._restore_registry_session(session_id)
@@ -912,7 +998,7 @@ class AgentsServerManager:
             session = None
         if session is not None:
             if not session.terminal:
-                raise ValueError(f"session is running: {session_id}; issue kill before stop if interruption is required")
+                raise ActionableError(f"session is running: {session_id}", next_action=_RUNNING_STOP_NEXT_ACTION)
             resume_state = SessionResumeState.from_session(session)
         else:
             resume_state = stopped_state or self.expired_sessions.get(session_id)
@@ -940,8 +1026,12 @@ class AgentsServerManager:
                     self._status_writer.delete_result(session_id, collector="stop")
                 self._status_writer.schedule()
             except Exception as exc:
-                raise RuntimeError(
-                    f"backend resources released; state synchronization incomplete for session {session_id}: {exc}"
+                raise ActionableRuntimeError(
+                    f"backend resources released; state synchronization incomplete for session {session_id}: {exc}",
+                    next_action=(
+                        "資源は解放済みのため、同じ`session_id`へ`stop`を再発行してよい（状態の同期だけを再試行する）。"
+                        "結果は`list`で確認する"
+                    ),
                 ) from exc
         return {}
 
@@ -962,13 +1052,14 @@ class AgentsServerManager:
         *,
         label: str,
         resolution: session_registry.SessionResolution | None = None,
-    ) -> ValueError:
+    ) -> ActionableError:
         """未解決の識別子を体系相違、所有側による解放済み、または記録無しとして診断する。
 
         保持状態の照会後だけ呼び、登録済みの非UUID識別子は拒否しない。
         体系相違の本文には、継続不能の判定に使う`unknown session`を含めない。
         UUIDの識別子は、登録簿の解放済みレコードの有無で文面を分け、いずれも`unknown <label>: <id>`で始める。
         登録簿のレコードは再起動では削除されないため、不在の原因として再起動を案内しない。
+        記録が無い原因は照会側から確定できないため、理由には原因を書かず、次の操作で確認の手順を示す。
         `resolution`は、呼び出し元が同じ識別子を既に解決している場合に渡す。
         """
         try:
@@ -976,18 +1067,21 @@ class AgentsServerManager:
         except ValueError:
             parsed = None
         if parsed is None or str(parsed) != session_id.lower():
-            return ValueError(f"{label} identifier scheme mismatch: {session_id}; expected UUID")
+            return ActionableError(
+                f"{label} identifier scheme mismatch: {session_id}; expected UUID", next_action=_SESSION_ID_NEXT_ACTION
+            )
         if resolution is None:
             resolution = session_registry.resolve(session_id)
         if resolution.state is session_registry.Resolution.RELEASED:
             reason = "retention expired" if resolution.released_reason == "retention_expired" else "stopped"
-            return ValueError(
+            return ActionableError(
                 f"unknown {label}: {session_id}; released by the owning agents_server ({reason}, {resolution.released_at}); "
-                "its result is no longer retained"
+                "its result is no longer retained",
+                next_action=_UNKNOWN_SESSION_NEXT_ACTION,
             )
-        return ValueError(
-            f"unknown {label}: {session_id}; no agents_server on this host has a record of this session "
-            "(started on another host, or its record was swept after 7 days); start a new session with the verified state"
+        return ActionableError(
+            f"unknown {label}: {session_id}; no agents_server on this host has a record of this session",
+            next_action=_UNKNOWN_SESSION_NEXT_ACTION,
         )
 
     async def _resolve_start_candidates(
@@ -1001,12 +1095,17 @@ class AgentsServerManager:
         除外中の候補は状態ディレクトリの記録を正本として読む。
         除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
         """
-        candidates = _atk_config.parse_unresolved_model_candidates(model_type)
+        try:
+            candidates = _atk_config.parse_unresolved_model_candidates(model_type)
+        except ValueError as error:
+            raise ActionableError(str(error), next_action=_MODEL_TYPE_NEXT_ACTION) from error
         if codex_models.needs_catalog(candidates):
             catalog = await self._backend("codex").list_models()
             candidates = codex_models.resolve_candidates(candidates, catalog)
         if not candidates:
-            raise ValueError(f"no model candidates remain for model_type: {model_type}")
+            raise ActionableError(
+                f"no model candidates remain for model_type: {model_type}", next_action=_MODEL_TYPE_NEXT_ACTION
+            )
         recorded = status_file.load_unavailable_candidates(
             model_type,
             launch_kind,
@@ -1082,7 +1181,7 @@ class AgentsServerManager:
         for candidate_index, candidate in enumerate(candidates):
             engine, model, effort = candidate
             if engine not in SUPPORTED_ENGINES:
-                raise ValueError(f"unsupported engine: {engine}")
+                raise ActionableError(f"unsupported engine: {engine}", next_action=_MODEL_TYPE_NEXT_ACTION)
             _validate_model_effort(model, effort)
             try:
                 session = await self._start_until_initialized(
@@ -1174,9 +1273,13 @@ class AgentsServerManager:
                 unavailable_session.turn_seq,
             )
             return unavailable_response
-        raise RuntimeError(
+        raise ActionableRuntimeError(
             "no available model candidates: "
-            f"{model_type}; excluded={_excluded_candidate_payload(excluded, excluded_session_ids)}"
+            f"{model_type}; excluded={_excluded_candidate_payload(excluded, excluded_session_ids)}",
+            next_action=(
+                "時間をおいて再試行するか、`model_type`へ別の候補を明示して起動する。"
+                "除外した候補は`excluded`の理由（CLIの導入・認証・利用上限など）を解消すると再び使える"
+            ),
         )
 
     async def _start_until_initialized(
@@ -1776,7 +1879,9 @@ class AgentsServerManager:
         """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。"""
         _validate_prompt(prompt)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
-            raise ValueError("timeout must be positive")
+            raise ActionableError(
+                "timeout must be positive", next_action="`timeout`を省略して既定の270秒を使うか、正の秒数を指定する"
+            )
         prompt = _wrap_delivery_body(prompt)
         try:
             async with asyncio.timeout(float(timeout)):
@@ -1820,7 +1925,9 @@ class AgentsServerManager:
                     backend = self._backend(session.engine)
                     async with session.turn_control_lock:
                         if session.interrupt_requested and not session.terminal:
-                            raise ValueError(f"session is being interrupted: {session_id}")
+                            raise ActionableError(
+                                f"session is being interrupted: {session_id}", next_action=state.RESEND_AFTER_WAIT_NEXT_ACTION
+                            )
                     try:
                         result = await backend.send_message(session, prompt)
                     except SessionOwnerGoneError:
@@ -1847,8 +1954,9 @@ class AgentsServerManager:
                             response["previous_result"] = previous_result
                     return response
         except TimeoutError as exc:
-            raise TimeoutError(
-                f"send_message timed out: {session_id}; delivery is undetermined, observe with atk agents wait"
+            raise ActionableTimeoutError(
+                f"send_message timed out: {session_id}; delivery is undetermined",
+                next_action="`atk agents wait`で状態を確認し、指示が届いていないと判断した場合だけ`send_message`を再送する",
             ) from exc
 
     async def kill(
@@ -1859,7 +1967,9 @@ class AgentsServerManager:
     ) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
-            raise ValueError("timeout must be non-negative")
+            raise ActionableError(
+                "timeout must be non-negative", next_action="`timeout`を省略して既定の270秒を使うか、0以上の秒数を指定する"
+            )
         stopped_state = self._resolve_stopped_session(session_id)
         recovered_state: SessionResumeState | None = None
         if stopped_state is None:
@@ -1886,7 +1996,10 @@ class AgentsServerManager:
                     max(0.0, delivery_deadline - loop.time()),
                 )
             except TimeoutError as exc:
-                raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
+                raise ActionableTimeoutError(
+                    f"kill timed out: {session_id}; the interrupt request was not delivered",
+                    next_action=_KILL_NOT_DELIVERED_NEXT_ACTION,
+                ) from exc
             if interrupt_requested:
                 response = self._kill_result_response(session, kill_requested=True)
                 return await self._stop_after_terminal_response(session_id, response, stop)
@@ -1909,7 +2022,10 @@ class AgentsServerManager:
                 timeout=max(0.0, delivery_deadline - loop.time()),
             )
         except TimeoutError as exc:
-            raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
+            raise ActionableTimeoutError(
+                f"kill timed out: {session_id}; the interrupt request was not delivered",
+                next_action=_KILL_NOT_DELIVERED_NEXT_ACTION,
+            ) from exc
         try:
             if session.terminal:
                 requested = requested or requested_before_call or session.interrupt_requested
@@ -1918,7 +2034,10 @@ class AgentsServerManager:
             else:
                 if session.engine == "codex" and not session.turn_id:
                     if timeout == 0:
-                        raise ValueError("the active Codex turn has no turn_id")
+                        raise ActionableError(
+                            "the active Codex turn has no turn_id",
+                            next_action="`timeout`へ正の秒数を指定して`kill`を再発行するか、`atk agents wait`で終端を観測する",
+                        )
                     assert deadline is not None
                     try:
                         async with self._condition:
@@ -1927,7 +2046,10 @@ class AgentsServerManager:
                                 timeout=max(0.0, deadline - loop.time()),
                             )
                     except TimeoutError as exc:
-                        raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
+                        raise ActionableTimeoutError(
+                            f"kill timed out: {session_id}; the interrupt request was not delivered",
+                            next_action=_KILL_NOT_DELIVERED_NEXT_ACTION,
+                        ) from exc
                     if session.terminal:
                         response = self._kill_result_response(session, kill_requested=False)
                         return await self._stop_after_terminal_response(session_id, response, stop)
@@ -1942,8 +2064,9 @@ class AgentsServerManager:
                     session.interrupt_requested = False
                     session.touch()
                     await self._notify_waiters()
-                    raise TimeoutError(
-                        f"kill timed out: {session_id}; interrupt delivery is undetermined, observe with atk agents wait"
+                    raise ActionableTimeoutError(
+                        f"kill timed out: {session_id}; interrupt delivery is undetermined",
+                        next_action=_KILL_NOT_DELIVERED_NEXT_ACTION,
                     ) from None
                 except Exception:
                     session.interrupt_requested = False
@@ -1966,8 +2089,9 @@ class AgentsServerManager:
                         timeout=max(0.0, deadline - loop.time()),
                     )
             except TimeoutError as exc:
-                raise TimeoutError(
-                    f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate"
+                raise ActionableTimeoutError(
+                    f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate",
+                    next_action="中断要求は配送済みのため`kill`を再発行しない。`atk agents wait`で終端を観測する",
                 ) from exc
         response = self._kill_result_response(session, kill_requested=True)
         return await self._stop_after_terminal_response(session_id, response, stop)
@@ -2099,8 +2223,52 @@ class _InitializationLoggingSendStream(ObjectSendStream[SessionMessage]):
         await self._stream.aclose()
 
 
+def _unexpected_error_next_action(error: Exception) -> str:
+    """共通の例外型でない例外へ、失敗の種類に応じた次の操作を返す。"""
+    if isinstance(error, SessionInitializationTimeoutError):
+        return (
+            "ホストのCLI（`claude`・`codex`・`agy`）の認証状態を確かめ、`model_type`へ別の候補を指定して起動し直す。"
+            "原因はエラー本文のdiagnosticと、session_idが分かる場合は`atk agents logs <session_id>`で調べる"
+        )
+    # Claude Agent SDKの例外（CLIの未導入、接続失敗、プロセス異常）はbackendが包まずに届くため、型の所属で同じ分類にする。
+    if isinstance(error, DelegateBackendError) or type(error).__module__.startswith("claude_agent_sdk"):
+        return "委譲先CLIの導入と認証を確かめ、`model_type`へ別のengineの候補を指定して起動し直す"
+    if isinstance(error, ValueError):
+        return (
+            "ツールの説明で引数の受理形式を確かめて再発行する。"
+            "解消しない場合はエラー本文を添えてagents_serverの不具合としてユーザーへ報告する"
+        )
+    return (
+        "`list`か`show`で対象sessionの状態を確かめてから再発行する。"
+        "再発する場合はエラー本文を添えてagents_serverの不具合としてユーザーへ報告する"
+    )
+
+
+def _actionable_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """ツール関数の例外を、理由と次の操作の2行を本文とするツールのエラーへ変える。
+
+    FastMCPは例外の`str()`をエラー本文へ使う。共通の例外型の`str()`は理由だけを返すため、
+    ここで次の操作の行を加えないと受信側へ届かない。入力スキーマはFastMCPが`__wrapped__`の署名から生成するため変わらない。
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            result = fn(*args, **kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+        except ActionableError as error:
+            raise ToolError(error.message) from error
+        except Exception as error:
+            reason = str(error) or type(error).__name__
+            raise ToolError(with_next_action(reason, _unexpected_error_next_action(error))) from error
+        return result
+
+    return wrapper
+
+
 class _AgentsServerFastMCP(FastMCP[Any]):
-    """stdio上のinitialize節目を診断ログへ残し、ツールの説明文へ境界を付けるFastMCP。"""
+    """stdio上のinitialize節目を診断ログへ残し、ツールの説明文へ境界と例外の次の操作を付けるFastMCP。"""
 
     @typing.override
     def add_tool(  # noqa: PLR0913 -- 上位の署名をそのまま受け取る
@@ -2114,14 +2282,14 @@ class _AgentsServerFastMCP(FastMCP[Any]):
         meta: dict[str, Any] | None = None,
         structured_output: bool | None = None,
     ) -> None:
-        """ツールの説明文へ境界を付けて登録する。
+        """ツールの説明文へ境界を付け、例外を次の操作付きのエラー本文へ変えて登録する。
 
         説明文は実行ホストがスキーマとしてsystem promptへ載せる。登録の1箇所で囲むことで、
-        ツールごとの書き分けを増やさずに全てのツールへ同じ境界を付ける。
+        ツールごとの書き分けを増やさずに全てのツールへ同じ境界と次の操作を付ける。
         """
         resolved = description if description is not None else inspect.getdoc(fn) or ""
         super().add_tool(
-            fn,
+            _actionable_tool(fn),
             name,
             title,
             _schema_text(resolved, kind=_KIND_MCP_TOOL),
@@ -2473,6 +2641,9 @@ async def send_message(
     previous_result = response.get("previous_result")
     if previous_result:
         public["previous_result"] = previous_result
+    next_action = _REPLY_NEXT_ACTIONS.get(response["delivery"])
+    if next_action is not None:
+        public["next_action"] = next_action
     return public
 
 

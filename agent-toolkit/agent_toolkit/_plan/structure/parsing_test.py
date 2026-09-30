@@ -127,7 +127,9 @@ def test_bug_file_structure_rejects_empty_content_cell() -> None:
         "| 直接的原因 |  |",
     )
     errors = _plan_format.check_bug_file_structure(content)
-    assert any("空の`内容`" in error for error in errors), errors
+    matched = [error for error in errors if "空の`内容`" in error]
+    assert matched, errors
+    assert all("空のセルへ内容を記載し" in error for error in matched)
 
 
 def test_bug_file_structure_accepts_legacy_standalone_table() -> None:
@@ -306,6 +308,29 @@ def test_structured_material_contract_rejects_invalid_combinations(old: str, new
     materials, errors = _plan_format.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
     assert materials is not None
     assert any(message in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "fix"),
+    [
+        (
+            "| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
+            "| P-001 | フィードバック | feedback.md | 値なし | 本文全文 |",
+            "`YYYYMMDD-HHMMSS-NNN.md`形式にする",
+        ),
+        ("R-P-002-001 | P-002 |", "R-P-002-000 | P-002 |", "連番を001から振り直す"),
+        ("R-P-002-001 | P-002 |", "R-P-999-001 | P-002 |", "素材表に在る素材IDへ直すか、素材を追加する"),
+        (
+            "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 |",
+            "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 非該当 | 非該当 |",
+            "採用行は`採用範囲`を記載し、`除外範囲`を`非該当`にする",
+        ),
+    ],
+)
+def test_structured_material_errors_state_how_to_fix(old: str, new: str, fix: str) -> None:
+    """受理形式を示さなかった違反文は、受理する形式か直し方を同じ行に示す。"""
+    _materials, errors = _plan_format.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
+    assert any(fix in error for error in errors), errors
 
 
 def test_main_structure_requires_judgment_for_canonical_headings() -> None:

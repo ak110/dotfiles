@@ -12,6 +12,7 @@ from pathlib import Path
 
 from agent_toolkit._atk import config, outcome
 from agent_toolkit._common import automated_prompt, message_format
+from agent_toolkit._common import next_action as _next_action
 
 _PROMPT_SOURCE = "atk-commit"
 _PROMPT_KIND = "commit-request"
@@ -182,7 +183,7 @@ def run(args: argparse.Namespace) -> int:
         unstaged = _names(root, "unstaged")
         untracked = _names(root, "untracked")
         if not args.amend and not (staged or unstaged or untracked):
-            outcome.report_failure("変更がありません。")
+            outcome.report_failure("変更がありません。", next_action="commitは不要。変更を加えてから再実行する")
             return 1
         head_message = _git(root, "log", "-1", "--format=%B").stdout.strip() if args.amend else ""
         prompt = _prompt(
@@ -197,8 +198,14 @@ def run(args: argparse.Namespace) -> int:
             additional_prompt=args.additional_prompt or "",
         )
         candidates = config.resolve_model_candidates(args.model_type)
+    except _next_action.ActionableError as error:
+        outcome.report_failure(f"commitを開始できません: {error}", next_action=error.next_action)
+        return 2
     except (OSError, subprocess.CalledProcessError, ValueError) as error:
-        outcome.report_failure(f"commitを開始できません: {error}")
+        outcome.report_failure(
+            f"commitを開始できません: {error}",
+            next_action="`git status`でリポジトリの状態を確認し、原因を解消して再実行する",
+        )
         return 2
     for engine, model, effort in candidates:
         if engine not in {"claude", "codex"}:
@@ -220,8 +227,17 @@ def run(args: argparse.Namespace) -> int:
             outcome.report_success("コミット用エージェントの実行が完了した")
             return 0
         if _git_state(root) != before:
-            outcome.report_failure(f"{engine}がGit状態を変更した後に失敗したため、次の候補を起動しません")
+            outcome.report_failure(
+                f"{engine}がGit状態を変更した後に失敗したため、次の候補を起動しません",
+                next_action="`git status`と`git log -1`で変更の途中状態を確認し、手動でcommitを完了するか変更を戻す",
+            )
             return result.returncode
         print(f"候補をスキップします: {engine}がGit状態を変えず終了コード{result.returncode}で失敗した", file=sys.stderr)
-    outcome.report_failure("利用できるモデル候補がありません")
+    outcome.report_failure(
+        "利用できるモデル候補がありません",
+        next_action=(
+            "スキップした理由を確認し、`atk config set <段位>_model <VALUE>`（既定の段位は`medium_tier`）で"
+            "起動できる候補を追加するか、`--model-type`に別の候補を指定して再実行する"
+        ),
+    )
     return 1

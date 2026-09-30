@@ -576,6 +576,7 @@ class RemoteWatcher:
                     await _terminate_process(proc)
                 self._proc = None
                 self._connected = False
+            _atk_serve_remote.raise_if_cancelling()
             # 指数バックオフ（上限・±20%ジッタ）。リトライ上限なし。
             jittered = self._backoff * random.uniform(*REMOTE_BACKOFF_JITTER_RANGE)
             await asyncio.sleep(jittered)
@@ -809,6 +810,7 @@ async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) ->
 
     `_terminate_process`はキャンセル経路からも呼ばれるため、
     `CancelledError`は吸収して段階的処理を継続する。
+    吸収した後に次の反復へ戻る呼び出し側は、`_atk_serve_remote.raise_if_cancelling`でキャンセル要求を確かめる。
     """
     if proc.returncode is not None:
         return True

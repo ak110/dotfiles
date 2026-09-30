@@ -12,6 +12,7 @@ from agent_toolkit._atk.wi.common import _iter_entries, _pull_with_recent_reuse,
 from agent_toolkit._atk.wi.formatters import _parse_source, _source_matches
 from agent_toolkit._atk.wi.listing import _answered_matches, _resolve_states
 from agent_toolkit._atk.wi.repo import _resolve_repo_id
+from agent_toolkit._common import next_action as _next_action
 
 
 def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
@@ -40,7 +41,13 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     try:
         compiled = re.compile(args.pattern, flags)
     except re.error as error:
-        args.subparser.error(f"正規表現が不正です: {error}")
+        # argparseの使い方の表示と終了コード2は保ち、直し方を1行に続ける。
+        args.subparser.error(
+            f"正規表現が不正です: {error}\n"
+            + _next_action.next_action_line(
+                "Pythonの正規表現の構文を確かめて直すか、記号を文字として探す場合は`\\`でエスケープして再実行する"
+            )
+        )
         raise AssertionError("unreachable") from error  # pragma: no cover - args.subparser.error()はSystemExitを送出する
     matched = False
     for path, _, text, _state, entry_type in _iter_entries(

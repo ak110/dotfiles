@@ -1,8 +1,10 @@
-"""`atk serve`がリモートホスト側ヘルパーを起動するbootstrapコードを組み立てる。
+"""`atk serve`がリモートホスト側ヘルパーを起動・停止する処理のうち、両画面に共通する契約を持つ。
 
 計画ファイル画面とセッション画面はそれぞれ別のヘルパーを起動するが、
-リモート側の実行名前空間をどう構成するかは共通の契約とするため、本モジュールへ集約する。
+リモート側の実行名前空間の構成と、常駐接続のタスクを停止処理で終える条件は共通の契約とするため、本モジュールへ集約する。
 """
+
+import asyncio
 
 
 def remote_bootstrap(helper_name: str) -> str:
@@ -30,3 +32,15 @@ def remote_bootstrap(helper_name: str) -> str:
         "__file__ = str(p); "
         "exec(compile(p.read_text(encoding='utf-8'), str(p), 'exec'))"
     )
+
+
+def raise_if_cancelling() -> None:
+    """後始末の待機が吸収したキャンセル要求が残っていれば、タスクを終えるため送出する。
+
+    常駐接続のタスクは、キャンセル経路でも子プロセスの段階的な終了を完了させるため、後始末の待機で
+    `CancelledError`を吸収する。停止処理はタスクをキャンセルして完了を待つため、吸収したまま再接続へ進むと
+    新しい子プロセスの出力を待ち続けて停止処理が完了しない。再接続の反復へ戻る前に本関数を呼ぶ。
+    """
+    task = asyncio.current_task()
+    if task is not None and task.cancelling():
+        raise asyncio.CancelledError

@@ -19,6 +19,7 @@ import platformdirs
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import codex_models
+from agent_toolkit._common import next_action as _next_action
 
 _CONFIG_FILENAME = "config.json"
 
@@ -157,7 +158,14 @@ def resolve_mutable_setting(key: str) -> str:
         _validate_stage_model_candidates(value)
     except ValueError as error:
         source = f"環境変数{env_name}" if env_value else f"設定キー{key}"
-        raise ValueError(f"{source}の値が不正です（値: {value}）。{error}") from error
+        next_action = (
+            f"環境変数{env_name}を受理可能書式の値へ直すか解除して再実行する"
+            if env_value
+            else f"`atk config set {key} <VALUE>`で受理可能書式の値へ直して再実行する"
+        )
+        raise _next_action.ActionableError(
+            f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action
+        ) from error
     return value
 
 
@@ -175,23 +183,23 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     }
 
 
+_UNKNOWN_CANDIDATE_NEXT_ACTION = "利用可否は実行時に各engineが判定します。対応不要（処理は継続した）"
+"""参考一覧外の工程別モデル候補の警告に添える次の操作。"""
+
+
 def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
-    """参考一覧外の工程別モデル候補を警告文へ変換する。"""
+    """参考一覧外の工程別モデル候補を警告の本文へ変換する。接頭辞は`report_warning`が付ける。"""
     warnings: list[str] = []
     for candidate in value.split(","):
         engine, model, effort = _parse_stage_model(candidate)
         models = ", ".join(sorted(_KNOWN_MODELS[engine]))
         if model not in _KNOWN_MODELS[engine]:
             warnings.append(
-                f"警告: 設定キー`{key}`の候補`{candidate}`のモデル名`{model}`は主に使うモデルの一覧（{models}）にありません。"
-                "利用可否は実行時に各engineが判定します。"
+                f"設定キー`{key}`の候補`{candidate}`のモデル名`{model}`は主に使うモデルの一覧（{models}）にありません"
             )
         if effort is not None and effort not in _KNOWN_EFFORTS:
             efforts = ", ".join(sorted(_KNOWN_EFFORTS))
-            warnings.append(
-                f"警告: 設定キー`{key}`の候補`{candidate}`のeffort`{effort}`は主に使う値の一覧（{efforts}）にありません。"
-                "利用可否は実行時に各engineが判定します。"
-            )
+            warnings.append(f"設定キー`{key}`の候補`{candidate}`のeffort`{effort}`は主に使う値の一覧（{efforts}）にありません")
     return warnings
 
 
@@ -202,7 +210,7 @@ def _cmd_config_show(home: pathlib.Path) -> None:
         print(f"{key}: {value}")
         if key in _MUTABLE_KEY_DEFAULTS:
             for warning in _stage_model_candidate_warnings(key, value):
-                _outcome.report_warning(warning)
+                _outcome.report_warning(warning, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
 
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
@@ -212,7 +220,8 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
         _outcome.report_failure(
-            f"未知の設定キーを指定した: {', '.join(unknown_keys)}。利用可能なキーから選び直す: {', '.join(sorted(settings))}"
+            f"未知の設定キーを指定した: {', '.join(unknown_keys)}",
+            next_action=f"利用可能なキーから選び直す: {', '.join(sorted(settings))}",
         )
         sys.exit(2)
     for key in requested_keys:
@@ -223,25 +232,30 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
     """setサブコマンド: 変更可能設定を更新する。対象外キーはexit 2。"""
     if args.key not in _MUTABLE_KEY_DEFAULTS:
         _outcome.report_failure(
-            f"変更できない設定キーを指定した: {args.key}。"
-            f"変更可能なキーから選び直す: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}"
+            f"変更できない設定キーを指定した: {args.key}",
+            next_action=f"変更可能なキーから選び直す: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}",
         )
         sys.exit(2)
     try:
         _validate_stage_model_candidates(args.value)
     except ValueError as error:
-        _outcome.report_failure(f"設定値の書式が不正である。{error}")
+        _outcome.report_failure(
+            f"設定値の書式が不正である。{error}",
+            next_action=f"受理可能書式の値で`atk config set {args.key} <VALUE>`を再実行する",
+        )
         sys.exit(2)
     for warning in _stage_model_candidate_warnings(args.key, args.value):
-        _outcome.report_warning(warning)
-    print("設定は保存します。", file=sys.stderr)
+        _outcome.report_warning(warning, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
     config = _load_config()
     config[args.key] = args.value
     _save_config(config)
     _outcome.report_success(f"設定を更新した: {args.key}={args.value}")
     env_name = _config_env_name(args.key)
     if os.environ.get(env_name, ""):
-        _outcome.report_warning(f"環境変数{env_name}が優先されるため、解除するまで更新値は実効値にならない。")
+        _outcome.report_warning(
+            f"環境変数{env_name}が優先されるため、解除するまで更新値は実効値にならない",
+            next_action=f"保存した値を使う場合は環境変数{env_name}を解除する。環境変数の値を使い続ける場合は対応不要",
+        )
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
@@ -324,6 +338,11 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
         else:
             _cmd_config_set(args)
     except ValueError as error:
-        _outcome.report_failure(str(error))
+        next_action = (
+            error.next_action
+            if isinstance(error, _next_action.ActionableError)
+            else "`atk config show`で現在値を確認し、`atk config set <KEY> <VALUE>`で不正な値を直して再実行する"
+        )
+        _outcome.report_failure(str(error), next_action=next_action)
         sys.exit(2)
     sys.exit(0)

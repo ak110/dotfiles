@@ -251,7 +251,9 @@ def create_managed_temp(
             root_descriptor = os.open(root_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             opened_root = os.fstat(root_descriptor)
             if (opened_root.st_dev, opened_root.st_ino) != (validated_root.device, validated_root.inode):
-                raise ManagedTempError(f"管理対象rootが作成中に置換された: {root_path}")
+                raise ManagedTempError(
+                    f"管理対象rootが作成中に置換された: {root_path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                )
         path = pathlib.Path(tempfile.mkdtemp(prefix=f"{prefix}-", dir=root_path))
         if root_descriptor is not None:
             created_metadata = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
@@ -268,14 +270,16 @@ def create_managed_temp(
             )
             opened_target = os.fstat(target_descriptor)
             if created_identity is None or created_identity != (opened_target.st_dev, opened_target.st_ino):
-                raise ManagedTempError(f"管理対象が作成中に置換された: {path}")
+                raise ManagedTempError(
+                    f"管理対象が作成中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                )
             os.fchmod(target_descriptor, 0o700)
             _validate_root(root_path, explicit=explicit_root, expected=validated_root)
         elif os.name == "nt":
             _windows_secure_path(path, directory=True)
             created_identity = _windows_identity(path)
         else:
-            raise ManagedTempError(f"未対応platform: {os.name}")
+            raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
         assert path is not None
         marker_path = path / _MARKER_NAME
         registry_path = _registry_path(path)
@@ -332,7 +336,7 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
     elif os.name == "nt":
         validated = _validate_windows(root_argument)
     else:
-        raise ManagedTempError(f"未対応platform: {os.name}")
+        raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
     if not isinstance(validated.record.get("session_id"), str) or not validated.record["session_id"]:
         raise ManagedTempError(f"session_rootはセッション識別子を持つ管理対象である必要がある: {validated.path}")
     path: pathlib.Path | None = None
@@ -343,13 +347,18 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
             root_descriptor = os.open(validated.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             opened_root = os.fstat(root_descriptor)
             if (opened_root.st_dev, opened_root.st_ino) != (validated.device, validated.inode):
-                raise ManagedTempError(f"session_rootが作成中に置換された: {validated.path}")
+                raise ManagedTempError(
+                    f"session_rootが作成中に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                )
         path = pathlib.Path(tempfile.mkdtemp(prefix=f"{prefix}-", dir=validated.path))
         if os.name == "posix":
             assert root_descriptor is not None
             created = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
             if not stat.S_ISDIR(created.st_mode):
-                raise ManagedTempError(f"セッション内管理対象が通常ディレクトリではない: {path}")
+                raise ManagedTempError(
+                    f"セッション内管理対象が通常ディレクトリではない: {path}",
+                    next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
+                )
             created_identity = (created.st_dev, created.st_ino)
             descriptor = os.open(
                 path.name,
@@ -359,7 +368,9 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
             try:
                 opened = os.fstat(descriptor)
                 if created_identity != (opened.st_dev, opened.st_ino):
-                    raise ManagedTempError(f"セッション内管理対象が作成中に置換された: {path}")
+                    raise ManagedTempError(
+                        f"セッション内管理対象が作成中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                    )
                 os.fchmod(descriptor, 0o700)
             finally:
                 os.close(descriptor)
@@ -367,10 +378,12 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
             _windows_secure_path(path, directory=True)
             created_identity = _windows_identity(path)
         else:
-            raise ManagedTempError(f"未対応platform: {os.name}")
+            raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
         current = _validate_posix(validated.path) if os.name == "posix" else _validate_windows(validated.path)
         if (current.device, current.inode) != (validated.device, validated.inode):
-            raise ManagedTempError(f"session_rootが作成中に置換された: {validated.path}")
+            raise ManagedTempError(
+                f"session_rootが作成中に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         return path
     except (ManagedTempError, OSError) as error:
         if path is not None:
@@ -399,7 +412,9 @@ def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.
 
 def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = False) -> _ValidatedTemp:
     if os.name != "posix":
-        raise ManagedTempError("Windowsの所有者・ACL検証はWindows実機で確定する必要がある")
+        raise ManagedTempError(
+            "Windowsの所有者・ACL検証はWindows実機で確定する必要がある", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION
+        )
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     root_state = _validate_root(root)
     root_descriptor: int | None = None
@@ -414,12 +429,18 @@ def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = F
             stat.S_IMODE(opened_root.st_mode),
         )
         if opened_root_state != root_state:
-            raise ManagedTempError(f"管理対象rootが検証中に置換または変更された: {root}")
+            raise ManagedTempError(
+                f"管理対象rootが検証中に置換または変更された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         before = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
         if not stat.S_ISDIR(before.st_mode):
-            raise ManagedTempError(f"管理対象が通常ディレクトリではない: {path}")
+            raise ManagedTempError(
+                f"管理対象が通常ディレクトリではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o700:
-            raise ManagedTempError(f"管理対象の所有者・権限またはroot直下の条件が不正: {path}")
+            raise ManagedTempError(
+                f"管理対象の所有者・権限またはroot直下の条件が不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         target_descriptor = os.open(
             path.name,
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
@@ -427,7 +448,7 @@ def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = F
         )
         opened = os.fstat(target_descriptor)
         if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise ManagedTempError(f"管理対象が検証中に置換された: {path}")
+            raise ManagedTempError(f"管理対象が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
         marker = _load_marker(target_descriptor, path)
         after_root = os.fstat(root_descriptor)
         after_root_state = _ValidatedRoot(
@@ -437,9 +458,11 @@ def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = F
             stat.S_IMODE(after_root.st_mode),
         )
         if after_root_state != root_state:
-            raise ManagedTempError(f"管理対象rootが検証中に置換または変更された: {root}")
+            raise ManagedTempError(
+                f"管理対象rootが検証中に置換または変更された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         if (opened.st_dev, opened.st_ino) != _path_identity(path):
-            raise ManagedTempError(f"管理対象が検証中に置換された: {path}")
+            raise ManagedTempError(f"管理対象が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
     except OSError as error:
         raise ManagedTempError(f"管理対象を検証できない: {path}: {error}") from error
     finally:
@@ -475,7 +498,9 @@ def _validate_windows(path_arg: pathlib.Path | str, *, registry_fallback: bool =
     except OSError as error:
         raise ManagedTempError(f"管理対象を検証できない: {path}: {error}") from error
     if not stat.S_ISDIR(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-        raise ManagedTempError(f"管理対象が通常ディレクトリではない: {path}")
+        raise ManagedTempError(
+            f"管理対象が通常ディレクトリではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+        )
     _validate_windows_managed_root_security(path)
     identity = _windows_identity(path)
     marker = _load_private_json(path / _MARKER_NAME)
@@ -486,7 +511,7 @@ def _validate_windows(path_arg: pathlib.Path | str, *, registry_fallback: bool =
         raise _record_mismatch_error(path / _MARKER_NAME, recovered_from_marker=recovered_from_marker)
     _validate_root(root, expected=root_state)
     if _windows_identity(path) != identity:
-        raise ManagedTempError(f"管理対象が検証中に置換された: {path}")
+        raise ManagedTempError(f"管理対象が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
     return _ValidatedTemp(
         path,
         identity[0],
@@ -508,4 +533,4 @@ def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
         return _validate_posix(path_arg).path
     if os.name == "nt":
         return _validate_windows(path_arg).path
-    raise ManagedTempError(f"未対応platform: {os.name}")
+    raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)

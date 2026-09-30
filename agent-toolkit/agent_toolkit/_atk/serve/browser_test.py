@@ -157,7 +157,7 @@ class _BrowserOperations(serve_app.Operations):
                         if not path.exists():
                             continue
                         if state_name == "processing" and not force:
-                            raise serve_app.common.WebInputError("指定したエントリを操作できません")
+                            raise serve_app.WebApiInputError("指定したエントリを操作できません")
                         if expected_content is not None:
                             try:
                                 current_content = path.read_text(encoding="utf-8")
@@ -193,7 +193,10 @@ class _BrowserOperations(serve_app.Operations):
             metadata, body = parsed if parsed is not None else ({}, message)
             repo = target_repo if target_repo is not None else metadata.get("target_repo")
             if not isinstance(repo, str) or not repo:
-                raise serve_app.common.WebInputError("target_repoを指定するか各メッセージのfrontmatterへ記載してください")
+                raise serve_app.common.WebInputError(
+                    "target_repoを指定するか各メッセージのfrontmatterへ記載してください",
+                    next_action="--target-repoを指定して再実行する",
+                )
             filename = f"created-{len(self.add_calls)}-{index}.md"
             (self.private_notes / "inbox" / filename).write_text(
                 f"---\ntarget_repo: {repo}\ntype: {entry_type}\n---\n\n{body.strip()}\n",
@@ -1688,6 +1691,44 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
     detail = page.get_by_role("dialog", name="詳細")
     await playwright.async_api.expect(detail).to_be_hidden()
     await page.locator("#entry-list .entry-select").filter(has_text="frontmatter指定の本文").wait_for(state="visible")
+
+
+@pytest.mark.asyncio
+async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness: _BrowserHarness) -> None:
+    """種別uwiのままshow形式の本文を送ると一括登録として取り込み、使わなかった入力欄を通知する。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+
+    await page.get_by_role("button", name="新規追加").click()
+    create_dialog = page.get_by_role("dialog", name="新規追加")
+    await create_dialog.wait_for(state="visible")
+    await create_dialog.locator("#create-kind").select_option("uwi")
+    await create_dialog.locator("#create-target").fill("ignored/repo")
+    show_text = (
+        "## target_repo: batch/repo\n"
+        "### auto-imported.md [inbox]\n---\ntarget_repo: batch/repo\ntype: awi\n---\n\n自動切替の本文  \n"
+    )
+    await create_dialog.locator("#create-content").fill(show_text)
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/entries") and request.method == "POST"
+    ) as request_info:
+        await create_dialog.get_by_role("button", name="追加").click()
+    request = await request_info.value
+    request_body = request.post_data_json
+    assert isinstance(request_body, dict)
+    assert request_body["raw_text"] == show_text
+    await create_dialog.wait_for(state="hidden")
+    notice = page.get_by_role("status").filter(has_text="一括登録として取り込みました")
+    await notice.wait_for(state="visible")
+    await playwright.async_api.expect(notice).to_contain_text("1件を取り込みました")
+    await playwright.async_api.expect(notice).to_contain_text("使わなかった入力欄: target-repo")
+    await page.locator('.entry-select[data-key="inbox/auto-imported.md"]').wait_for(state="visible")
+    assert harness.operations.batch_calls[-1] == show_text
+    assert (harness.root / "inbox" / "auto-imported.md").read_text(encoding="utf-8") == (
+        "---\ntarget_repo: batch/repo\ntype: awi\n---\n\n自動切替の本文  \n"
+    )
 
 
 @pytest.mark.asyncio

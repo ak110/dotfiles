@@ -41,7 +41,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -74,6 +74,7 @@ def test_add_empty_awi_keeps_detailed_rejection(
 def test_return_rejected_entry_conflict_preserves_terminal_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """復帰先が競合する場合は不採用項目を変更せず保持する。"""
     notes = _setup_notes(tmp_path)
@@ -94,6 +95,11 @@ def test_return_rejected_entry_conflict_preserves_terminal_result(
         )
 
     assert exc_info.value.code == 2
+    # 同名の項目を比較して不要な側を削除する手段を、実在するサブコマンド名で示すこと。
+    next_actions = [line for line in capsys.readouterr().err.splitlines() if line.startswith("次の操作: ")]
+    assert len(next_actions) == 1
+    assert "atk wi show entry.md" in next_actions[0]
+    assert "atk wi rm" in next_actions[0]
     assert rejected.read_bytes() == before
     assert "## 処理結果" in rejected.read_text(encoding="utf-8")
 
@@ -167,7 +173,7 @@ def test_edit_entry_to_plan_rejects_plan_file_only_in_working_root_without_chang
     plan.parent.mkdir(parents=True)
     plan.write_text("# 計画\n", encoding="utf-8")
 
-    with pytest.raises(mutations.WebInputError, match="atk plans commit"):
+    with pytest.raises(mutations.WebInputError) as exc_info:
         mutations.edit_entry_to_plan(
             notes,
             filename="awi.md",
@@ -176,6 +182,8 @@ def test_edit_entry_to_plan_rejects_plan_file_only_in_working_root_without_chang
             target_commit="a" * 40,
         )
 
+    # 保存操作の案内は理由と次の操作のどちらに置かれても受信側へ届く。
+    assert "atk plans commit" in exc_info.value.message
     assert entry.read_text(encoding="utf-8") == original
 
 
@@ -278,7 +286,14 @@ def test_set_dependencies_cli_rejects_cycle(
         )
 
     assert captured.value.code == 1
-    assert "循環する依存" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "循環する依存" in err
+    # 受信側が外す依存先を特定できるよう、循環の経路と確認に使うコマンドを示すこと。
+    assert "second.md → first.md → second.md" in err
+    next_actions = [line for line in err.splitlines() if line.startswith("次の操作: ")]
+    assert len(next_actions) == 1
+    assert "atk wi show first.md" in next_actions[0]
+    assert "--depends-on" in next_actions[0]
 
 
 def test_convert_multiple_entries_rejects_duplicate_before_writing(
@@ -989,3 +1004,76 @@ class TestStartProcessingFailureBoundaries:
             check=False,
         )
         assert upstream_check.returncode != 0
+
+
+def test_git_head_rejects_non_oid_with_status_guidance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """管理repoのHEADがOIDでない場合はtracebackではなく、状態を確認するコマンドを持つ入力エラーにする。"""
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, *_args, **_kwargs: subprocess.CompletedProcess(cmd, 0, "not-an-oid\n", ""),
+    )
+
+    with pytest.raises(mutations.WebInputError) as exc_info:
+        mutations._git_head(tmp_path)  # pylint: disable=protected-access
+
+    assert f"git -C {tmp_path} status" in exc_info.value.next_action
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_reason"),
+    [
+        ("本文だけ\n", "frontmatterを解析できない"),
+        ("---\ntype: awi\n---\n\n本文\n", "target_repoが無い"),
+    ],
+)
+def test_entry_target_repo_failure_guides_to_show_and_report(
+    text: str,
+    expected_reason: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """frontmatterの欠陥は`atk wi edit`でも同じ検証で拒否されるため、確認と報告を次の操作として示す。"""
+    path = tmp_path / "broken.md"
+
+    with pytest.raises(SystemExit) as exc_info:
+        mutations._entry_target_repo(path, text)  # pylint: disable=protected-access
+
+    assert exc_info.value.code == 2
+    failure, next_action = capsys.readouterr().err.splitlines()
+    assert expected_reason in failure
+    assert next_action.startswith("次の操作: ")
+    assert "`atk wi show broken.md`" in next_action
+    assert "ユーザーへ報告する" in next_action
+    assert "ユーザーへ報告する" in next_action
+
+
+def test_transition_with_multiple_target_repos_mismatch_names_recovery(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数の--target-repoのいずれとも一致しない場合は、指定し直す引数と確認するコマンドを示す。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "entry.md")
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        mutations.transition_entries(
+            notes,
+            action="start-processing",
+            filenames=["entry.md"],
+            now=_FIXED_DT,
+            target_repo=["github.com/example/a", "github.com/example/b"],
+        )
+
+    assert exc_info.value.code == 2
+    failure, next_action = capsys.readouterr().err.splitlines()
+    assert "target_repoが一致しない" in failure
+    assert next_action.startswith("次の操作: ")
+    assert "--target-repo" in next_action
+    assert "atk wi show entry.md" in next_action
+    assert (notes / "inbox/entry.md").is_file()

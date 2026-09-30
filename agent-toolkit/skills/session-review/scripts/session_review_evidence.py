@@ -5,6 +5,8 @@
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
 1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
+対象の記録はtranscriptの絶対パス、Claude Codeのセッション識別子、Codex thread IDおよびカタログ走査のいずれか1つで指定する。
+`--user-events`は逐語引用の原文として使うため、本文を切り詰めず、確認回答には提示した全選択肢を含める。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -34,11 +36,13 @@ try:
     from agent_toolkit._atk import config as _atk_config
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
+    from agent_toolkit._hooks import response_language_check as _response_language_check
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}。"
-        "`atk run-script session-review-evidence -- <引数>`で起動してください。",
+        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
+        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        "次の操作: `atk run-script session-review-evidence -- <引数>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -313,62 +317,93 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
     return event
 
 
-def _question_answers_event(pairs: list[tuple[str, list[str], str]]) -> dict[str, Any] | None:
-    """質問と回答を共通書式の単一userイベントへ変換する。"""
+_OfferedOption = tuple[str, str]
+"""確認で提示した選択肢1件のlabelとdescription。descriptionを持たない選択肢は空文字列とする。"""
+
+_CodexPendingQuestions = dict[str, tuple[int, dict[str, tuple[str, list[_OfferedOption]]]]]
+"""Codexの`request_user_input`のcall_idごとの、質問側の行番号と質問IDごとの質問文・提示した選択肢。"""
+
+
+class _AnsweredQuestion(NamedTuple):
+    """回答イベントへ書く1問分の質問文、提示した選択肢、回答および自由記述。"""
+
+    question: str
+    options: list[_OfferedOption]
+    answers: list[str]
+    notes: str
+
+
+def _question_answers_event(pairs: list[_AnsweredQuestion]) -> dict[str, Any] | None:
+    """質問と回答を共通書式の単一userイベントへ変換する。
+
+    確認回答に依存する対象・除外・認可を記録から判定できるよう、提示した全選択肢を質問文の直後へ並べる。
+    """
     sections: list[str] = []
-    for question, answers, notes in pairs:
-        clipped_answers = [_clip(answer) for answer in answers]
-        answer_text = "\n".join(clipped_answers)
-        section = f"質問: {_clip(question)}\n回答: {answer_text}"
-        if notes:
-            section += f"\n自由記述: {_clip(notes)}"
-        sections.append(section)
+    for pair in pairs:
+        lines = [f"質問: {_clip(pair.question)}"]
+        for label, description in pair.options:
+            lines.append(f"選択肢: {_clip(label)}: {_clip(description)}" if description else f"選択肢: {_clip(label)}")
+        lines.append("回答: " + "\n".join(_clip(answer) for answer in pair.answers))
+        if pair.notes:
+            lines.append(f"自由記述: {_clip(pair.notes)}")
+        sections.append("\n".join(lines))
     return _event("user", "\n".join(sections))
 
 
 class _PendingQuestion(NamedTuple):
-    """回答イベントの生成に要する、質問側の行番号と質問文ごとの選択肢label。"""
+    """回答イベントの生成に要する、質問側の行番号と質問文ごとの提示した選択肢。"""
 
     line: int
-    labels: dict[str, list[str]]
+    options: dict[str, list[_OfferedOption]]
 
 
-def _claude_question_options(content: Any) -> dict[str, dict[str, list[str]]]:
-    """AskUserQuestionのtool_use IDごとに、質問文と選択肢labelの対応を取得する。
+def _claude_question_options(content: Any) -> dict[str, dict[str, list[_OfferedOption]]]:
+    """AskUserQuestionのtool_use IDごとに、質問文と提示した選択肢の対応を取得する。
 
     labelは`input.questions[].options[].label`に現れる。回答の文字列をこのlabelの集合と
     照合して、選択肢をそのまま選んだ回答と方針を是正した回答を判別する。
     """
     if not isinstance(content, list):
         return {}
-    options: dict[str, dict[str, list[str]]] = {}
+    options: dict[str, dict[str, list[_OfferedOption]]] = {}
     for block in content:
         if not isinstance(block, dict) or block.get("type") != "tool_use":
             continue
         if block.get("name") != "AskUserQuestion" or not isinstance(block.get("id"), str):
             continue
-        options[block["id"]] = _claude_question_labels(block.get("input"))
+        options[block["id"]] = _claude_offered_options(block.get("input"))
     return options
 
 
-def _claude_question_labels(payload: Any) -> dict[str, list[str]]:
-    """AskUserQuestionの入力から、質問文ごとの選択肢labelを取得する。"""
+def _claude_offered_options(payload: Any) -> dict[str, list[_OfferedOption]]:
+    """AskUserQuestionの入力から、質問文ごとに提示した選択肢のlabelとdescriptionを取得する。"""
     if not isinstance(payload, dict):
         return {}
     questions = payload.get("questions")
     if not isinstance(questions, list):
         return {}
-    labels: dict[str, list[str]] = {}
+    options: dict[str, list[_OfferedOption]] = {}
     for question in questions:
         if not isinstance(question, dict) or not isinstance(question.get("question"), str):
             continue
-        choices = question.get("options")
-        if not isinstance(choices, list):
+        if not isinstance(question.get("options"), list):
             continue
-        labels[question["question"]] = [
-            choice["label"] for choice in choices if isinstance(choice, dict) and isinstance(choice.get("label"), str)
-        ]
-    return labels
+        options[question["question"]] = _offered_options(question["options"])
+    return options
+
+
+def _offered_options(choices: Any) -> list[_OfferedOption]:
+    """質問の`options`配列から、labelを持つ選択肢のlabelとdescriptionを取得する。
+
+    Claude Codeの`AskUserQuestion`とCodexの`request_user_input`は同じ形の`options`配列を持つ。
+    """
+    if not isinstance(choices, list):
+        return []
+    return [
+        (choice["label"], choice["description"] if isinstance(choice.get("description"), str) else "")
+        for choice in choices
+        if isinstance(choice, dict) and isinstance(choice.get("label"), str)
+    ]
 
 
 def _is_offered_answer(answer: str, labels: list[str]) -> bool:
@@ -407,9 +442,9 @@ def _claude_answers_event(
         return None
     matched = [pending_questions.pop(matched_id) for matched_id in matched_ids]
     question_line = min(pending.line for pending in matched)
-    labels: dict[str, list[str]] = {}
+    options: dict[str, list[_OfferedOption]] = {}
     for pending in matched:
-        labels.update(pending.labels)
+        options.update(pending.options)
     if not isinstance(result, dict):
         return None
     answers = result.get("answers")
@@ -418,15 +453,16 @@ def _claude_answers_event(
     ):
         return None
     annotations = result.get("annotations")
-    pairs: list[tuple[str, list[str], str]] = []
+    pairs: list[_AnsweredQuestion] = []
     intervention = False
     for question, answer in answers.items():
         annotation = annotations.get(question) if isinstance(annotations, dict) else None
         raw_notes = annotation.get("notes") if isinstance(annotation, dict) else ""
         notes = raw_notes if isinstance(raw_notes, str) else ""
-        if notes or not _is_offered_answer(answer, labels.get(question, [])):
+        offered = options.get(question, [])
+        if notes or not _is_offered_answer(answer, [label for label, _description in offered]):
             intervention = True
-        pairs.append((question, [answer], notes))
+        pairs.append(_AnsweredQuestion(question, offered, [answer], notes))
     event = _question_answers_event(pairs)
     if event is not None:
         event["line"] = question_line
@@ -591,8 +627,8 @@ def _claude_entry_events(
         elif entry_type == "assistant" and role == "assistant":
             pending_claude_questions.update(
                 {
-                    call_id: _PendingQuestion(line, labels)
-                    for call_id, labels in _claude_question_options(message.get("content")).items()
+                    call_id: _PendingQuestion(line, options)
+                    for call_id, options in _claude_question_options(message.get("content")).items()
                 }
             )
             for text in _text_blocks(message.get("content")):
@@ -631,8 +667,10 @@ def _json_object(raw: Any) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _codex_question_call(payload: dict[str, Any]) -> tuple[str, dict[str, str]] | None:
-    """request_user_inputからcall_idごとの質問IDと質問文だけを取得する。"""
+def _codex_question_call(
+    payload: dict[str, Any],
+) -> tuple[str, dict[str, tuple[str, list[_OfferedOption]]]] | None:
+    """request_user_inputからcall_idごとの質問IDと、質問文・提示した選択肢を取得する。"""
     if payload.get("name") != "request_user_input":
         return None
     call_id = payload.get("call_id")
@@ -642,20 +680,20 @@ def _codex_question_call(payload: dict[str, Any]) -> tuple[str, dict[str, str]] 
     raw_questions = arguments.get("questions")
     if not isinstance(raw_questions, list):
         return None
-    questions: dict[str, str] = {}
+    questions: dict[str, tuple[str, list[_OfferedOption]]] = {}
     for raw_question in raw_questions:
         if not isinstance(raw_question, dict):
             continue
         question_id = raw_question.get("id")
         question = raw_question.get("question")
         if isinstance(question_id, str) and isinstance(question, str):
-            questions.setdefault(question_id, question)
+            questions.setdefault(question_id, (question, _offered_options(raw_question.get("options"))))
     return (call_id, questions) if questions else None
 
 
 def _codex_question_output_event(
     payload: dict[str, Any],
-    pending_questions: dict[str, tuple[int, dict[str, str]]],
+    pending_questions: _CodexPendingQuestions,
 ) -> dict[str, Any] | None:
     """対応する回答outputの位置で、call_id内の既知質問だけをuserイベントへ変換する。
 
@@ -672,15 +710,15 @@ def _codex_question_output_event(
     raw_answers = output.get("answers")
     if not isinstance(raw_answers, dict):
         return None
-    pairs: list[tuple[str, list[str], str]] = []
-    for question_id, question in questions.items():
+    pairs: list[_AnsweredQuestion] = []
+    for question_id, (question, offered) in questions.items():
         answer_data = raw_answers.get(question_id)
         if not isinstance(answer_data, dict):
             continue
         answers = answer_data.get("answers")
         if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
             continue
-        pairs.append((question, answers, ""))
+        pairs.append(_AnsweredQuestion(question, offered, answers, ""))
     if not pairs:
         return None
     event = _question_answers_event(pairs)
@@ -701,7 +739,7 @@ def _codex_command_output(item: dict[str, Any]) -> str:
 def _extract_codex(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
     """Codex rollout形式を共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
-    pending_questions: dict[str, tuple[int, dict[str, str]]] = {}
+    pending_questions: _CodexPendingQuestions = {}
     for line, entry in zip(lines, entries, strict=True):
         for event in _codex_entry_events(entry, line, pending_questions):
             event.setdefault("line", line)
@@ -713,7 +751,7 @@ def _extract_codex(entries: list[dict[str, Any]], lines: list[int]) -> list[dict
 def _codex_entry_events(
     entry: dict[str, Any],
     line: int,
-    pending_questions: dict[str, tuple[int, dict[str, str]]],
+    pending_questions: _CodexPendingQuestions,
 ) -> list[dict[str, Any]]:
     """Codexの1エントリから共通イベントを取得する。"""
     events: list[dict[str, Any]] = []
@@ -1442,6 +1480,23 @@ def _rollout_candidates(thread_id: str, codex_home: Path) -> list[Path]:
         for path in codex_home.glob(f"sessions/*/*/*/rollout-*{thread_id}.jsonl")
         if re.search(rf"rollout-.*{escaped_thread}\.jsonl$", path.name)
     )
+
+
+def _resolve_claude_transcript(session_id: str) -> Path:
+    """Claude Codeのセッション識別子から親transcriptを1件解決する。
+
+    委譲先の記録の解決と同じ探索を使い、Claude Codeの`projects`配下にある親セッションの記録だけを受理する。
+    """
+    found = _record_paths.find_session_record(session_id)
+    if found is None or found.engine != "claude":
+        raise ValueError(f"対象記録を解決できない: Claude Codeのセッション識別子{session_id}に一致する記録が無い")
+    first, *others = found.paths
+    if others or first.parent.name == "subagents":
+        joined = ", ".join(str(path) for path in found.paths)
+        raise ValueError(
+            f"対象記録を解決できない: Claude Codeのセッション識別子{session_id}が親セッションの記録1件に一致しない: {joined}"
+        )
+    return first
 
 
 def _resolve_codex_transcript(thread_id: str, codex_home: str | None = None) -> Path:
@@ -2518,7 +2573,7 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
         return []
     openings = list(_HOOK_NOTICE_MARKER.finditer(body))
     if not openings:
-        return [_HookNoticeKey(None, hook_name, None, _normalize_candidate_kind_text(body))]
+        return [_HookNoticeKey(None, hook_name, None, _hook_notice_kind_text(body))]
     boundaries = sorted(
         [*openings, *_HOOK_XML_END_MARKER.finditer(body)],
         key=lambda marker: marker.start(),
@@ -2532,8 +2587,7 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
         if source is not None:
             source = source.removeprefix("agent-toolkit/")
         tag = marker.group("tag_xml") or marker.group("tag_legacy")
-        text = _HOOK_REPEAT_ANNOTATION.sub("", body[marker.end() : end])
-        keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _normalize_candidate_kind_text(text)))
+        keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _hook_notice_kind_text(body[marker.end() : end])))
 
     for marker in boundaries:
         if marker.re is _HOOK_XML_END_MARKER:
@@ -2554,6 +2608,16 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
     if outer is not None:
         append_notice(outer, len(body))
     return keys
+
+
+def _hook_notice_kind_text(text: str) -> str:
+    """hook通知の本文を、通知の種類を表す種類本文へ正規化する。
+
+    種類本文は反復注記の除去、可変部の置換および切り詰めを経た損失のある値であり、通知の事象は元の本文を保持しない。
+    通知の種類本文の生成と、警告行などの別の本文を通知と比べる全ての箇所がこの関数を通すことで、
+    正規化を変えても比較の両側へ同時に届く。片側だけ別の正規化で比べると、同じ通知を別の事象として数える。
+    """
+    return _normalize_candidate_kind_text(_HOOK_REPEAT_ANNOTATION.sub("", text))
 
 
 def _normalize_candidate_kind_text(text: str) -> str:
@@ -2734,7 +2798,7 @@ def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dic
     for number in numbers:
         entry = index.get(number)
         if entry is None:
-            return [{"kind": "error", "text": f"行番号{number}は範囲外"}], 2
+            return [_error_event(f"行番号{number}は範囲外", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         events.extend(_entry_detail_events(number, entry, full_message_text=True))
     return events, 0
 
@@ -2961,9 +3025,29 @@ def _print_events(events: list[dict[str, Any]]) -> None:
         print(json.dumps(event, ensure_ascii=False))
 
 
-def _print_error(text: str) -> int:
+_RECORD_LOCATOR_NEXT_ACTION = (
+    "`--detail`・`--context-at`へ`<記録ID>:<行番号>`の形で、既定の出力が示す記録IDと行番号を渡して再実行する"
+)
+_CATALOG_ROOT_NEXT_ACTION = (
+    "Claude Codeは`--catalog-claude-project`へ`~/.claude/projects/<プロジェクト>`の絶対パスを、"
+    "Codexは`--catalog-codex-history`へCodexの記録ディレクトリの絶対パスを渡して再実行する"
+)
+_SINCE_NEXT_ACTION = "`--since`へISO 8601形式の時刻（例: `2026-09-30T00:00:00+09:00`）を渡して再実行する"
+_BOUNDARY_NEXT_ACTION = (
+    "`--observation-boundary`へ`--since`以後のISO 8601形式の時刻（例: `2026-09-30T12:00:00+09:00`）を渡して再実行する"
+)
+
+
+def _error_event(text: str, *, next_action: str) -> dict[str, Any]:
+    """照会不能を示すエラーイベントを、次の操作の項目`next_action`付きで返す。"""
+    if not next_action.strip():
+        raise ValueError("エラーイベントのnext_actionは空文字列以外で指定する必要がある")
+    return {"kind": "error", "text": text, "next_action": next_action}
+
+
+def _print_error(text: str, *, next_action: str) -> int:
     """照会不能を示すエラーを出力し、終了コード2を返す。"""
-    _print_events([{"kind": "error", "text": text}])
+    _print_events([_error_event(text, next_action=next_action)])
     return 2
 
 
@@ -2991,7 +3075,19 @@ def _warning_collection_events(collected: list[_CollectedRecord], unresolved: li
 
 
 def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
-    """メイン記録の状態を保ち、指定時刻より後に成立した利用者イベントだけを返す。"""
+    """メイン記録の状態を保ち、指定時刻より後に成立した利用者イベントだけを返す。
+
+    出力は逐語引用と文字列比較する原文として使うため、本文を切り詰めない。
+    """
+    token = _TEXT_LIMIT.set(None)
+    try:
+        return _collect_user_events_since(collected, since)
+    finally:
+        _TEXT_LIMIT.reset(token)
+
+
+def _collect_user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
+    """`_user_events_since`の抽出本体。"""
     events: list[dict[str, Any]] = []
     for item in collected:
         if item.record_id != "main":
@@ -3001,7 +3097,7 @@ def _user_events_since(collected: list[_CollectedRecord], since: datetime.dateti
             break
         selected_events: list[dict[str, Any]] = []
         pending_claude_questions: dict[str, _PendingQuestion] = {}
-        pending_questions: dict[str, tuple[int, dict[str, str]]] = {}
+        pending_questions: _CodexPendingQuestions = {}
         subagent_record = _is_subagent_record([record.entry for record in item.records])
         for record in item.records:
             record_events = (
@@ -3090,10 +3186,10 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
         else:
             record_id, raw_line = "main", locator
         if not record_id or not raw_line.isdecimal():
-            return [{"kind": "error", "text": f"詳細位置が不正: {locator}"}], 2
+            return [_error_event(f"詳細位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         selected = by_id.get(record_id)
         if selected is None:
-            return [{"kind": "error", "text": f"記録が不明: {record_id}"}], 2
+            return [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         record_events, exit_code = _detail_events(selected.records, [int(raw_line)])
         if exit_code:
             return record_events, exit_code
@@ -3115,15 +3211,20 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
     else:
         record_id, raw_line = "main", locator
     if not record_id or not raw_line.isdecimal():
-        return [{"kind": "error", "text": f"記録位置が不正: {locator}"}], 2
+        return [_error_event(f"記録位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
     selected = next((item for item in collected if item.record_id == record_id), None)
     if selected is None:
-        return [{"kind": "error", "text": f"記録が不明: {record_id}"}], 2
+        return [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
     target_line = int(raw_line)
     if not selected.records or not 1 <= target_line <= max(record.line for record in selected.records):
-        return [{"kind": "error", "text": f"行番号が記録の範囲外: {locator}"}], 2
+        return [_error_event(f"行番号が記録の範囲外: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
     if not phrases or any(not phrase for phrase in phrases):
-        return [{"kind": "error", "text": "--phraseへ空でない固定文字列を1件以上指定する"}], 2
+        return [
+            _error_event(
+                "--phraseへ空でない固定文字列を1件以上指定する",
+                next_action="`--phrase <固定文字列>`を1件以上付けて再実行する",
+            )
+        ], 2
 
     preceding = [record for record in selected.records if record.line < target_line]
     boundary = next(
@@ -3336,7 +3437,12 @@ def _bundle_events(
     その走査を単独で実行した出力から未解決記録のイベントを除いたものと一致する。
     """
     if not directory.is_dir():
-        return [{"kind": "error", "text": f"出力先が実在するディレクトリでない: {directory}"}], 2
+        return [
+            _error_event(
+                f"出力先が実在するディレクトリでない: {directory}",
+                next_action="`--bundle`へ作成済みのディレクトリ（管理対象一時領域の配下など）の絶対パスを渡して再実行する",
+            )
+        ], 2
     resolved = directory.resolve()
     timeline = _default_events(collected, [])
     warnings = _warning_collection_events(collected, [])
@@ -3509,6 +3615,9 @@ def _candidate_events(
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
+                if _is_response_language_notice(event):
+                    excluded["response-language-notice"] += 1
+                    continue
             key = _candidate_key(event_kind, event, normalized_text)
             if event_kind in {"command-failure", "tool-failure"}:
                 event["failure_signature"], event["failure_summary"] = _failure_signature(event_kind, event)
@@ -3530,7 +3639,9 @@ def _candidate_events(
                 continue
             representative = min(events, key=lambda event: (str(event["record"]), int(event["line"])))
             omitted_count = len(events) - 1
-            excluded["hook-notice-detail-budget"] += omitted_count
+            # Counterは0の加算でもキーを生成するため、省略が無い種類では加算せず、値0の区分を除外件数へ残さない。
+            if omitted_count:
+                excluded["hook-notice-detail-budget"] += omitted_count
             selected_groups.append((key, [representative], len(events), omitted_count))
 
     candidates: list[dict[str, Any]] = []
@@ -3792,6 +3903,27 @@ def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
     if tag is None:
         return "hook-notice-untagged"
     return "hook-notice-context"
+
+
+def _is_response_language_notice(event: dict[str, Any]) -> bool:
+    """応答言語hookの警告を表すhook通知かを返す。
+
+    応答言語hookは直前の応答を検出後に通知するだけの遮断後に対処する型であり、
+    振り返りのたびに同じ見送り判定になるため、問題候補から除いて件数だけを数える。
+    同じ`pretooluse`の`warn`通知には他の検査も含まれるため、発生源と区分に加えて本文の先頭を
+    hook側の本文定数と比べる。定数を参照するのは、hook側の文言を変えたときに判定を追随させるためである。
+    """
+    if event.get("hook") != "pretooluse" or event.get("tag") != "warn":
+        return False
+    text = event.get("text")
+    if not isinstance(text, str) or not text:
+        return False
+    for body in (_response_language_check.WARNING_BODY, _response_language_check.BLOCK_BODY):
+        expected = _hook_notice_kind_text(body)
+        length = min(len(text), len(expected))
+        if text[:length] == expected[:length]:
+            return True
+    return False
 
 
 def _user_candidate_exclusion(
@@ -4089,7 +4221,7 @@ def _hook_originated_event(
                     "tag": key.tag,
                 }
         return None
-    normalized = _normalize_candidate_kind_text(text)
+    normalized = _hook_notice_kind_text(text)
     for notice in hook_notices:
         notice_text = str(notice.get("text", ""))
         if _same_hook_notice_text(normalized, notice_text):
@@ -4139,6 +4271,9 @@ def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[st
     if not isinstance(text, str) or not isinstance(notice_text, str):
         return False
     if candidate_kind == "warning":
+        if _same_hook_notice_text(_hook_notice_kind_text(text), notice_text):
+            return True
+        # 前方一致の最小一致長に満たない短い警告は、通知の種類本文に含まれるかで代表を判定する。
         normalized = " ".join(text.split())
         return bool(normalized) and normalized in " ".join(notice_text.split())
     hook_name = notice.get("hook_name")
@@ -4506,13 +4641,15 @@ def _catalog_events(
 ) -> tuple[list[dict[str, Any]], int]:
     """指定root内だけから比較用の親セッションカタログを生成する。"""
     if not root.is_dir():
-        return [{"kind": "error", "text": f"カタログrootが実在するディレクトリでない: {root}"}], 2
+        return [_error_event(f"カタログrootが実在するディレクトリでない: {root}", next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
     resolved_root = root.resolve()
     paths = sorted(resolved_root.glob("**/*.jsonl"))
     if runtime == "codex":
         paths = [path for path in paths if path.name.startswith("rollout-")]
     if not paths:
-        return [{"kind": "error", "text": f"カタログrootから{runtime}記録を判別できない: {resolved_root}"}], 2
+        return [
+            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
+        ], 2
     loaded: dict[str, _CollectedRecord] = {}
     path_items: dict[Path, _CollectedRecord] = {}
     unresolved_loads = 0
@@ -4529,7 +4666,9 @@ def _catalog_events(
         loaded.setdefault(session_id, item)
         path_items[path.resolve()] = item
     if not loaded:
-        return [{"kind": "error", "text": f"カタログrootから{runtime}記録を判別できない: {resolved_root}"}], 2
+        return [
+            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
+        ], 2
 
     children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
     referenced: set[str] = set()
@@ -4632,12 +4771,20 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "transcript_path",
         nargs="?",
-        help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。`--codex-thread-id`と併用しない。",
+        help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。"
+        "`--transcript`・`--claude-session-id`・`--codex-thread-id`・カタログ走査とは併用しない。",
     )
     parser.add_argument(
         "--transcript",
         metavar="PATH",
-        help="位置引数と同じ単一transcriptの絶対パス。位置引数・Codex thread ID・カタログ走査とは併用しない。",
+        help="位置引数と同じ単一transcriptの絶対パス。"
+        "位置引数・セッション識別子・Codex thread ID・カタログ走査とは併用しない。",
+    )
+    parser.add_argument(
+        "--claude-session-id",
+        metavar="SESSION_ID",
+        help="Claude Codeのセッション識別子（`CLAUDE_CODE_SESSION_ID`の値など）から、`projects`配下の親transcriptを"
+        "解決して抽出を開始する。一致する親セッションの記録が1件でない場合はエラーイベントを出力して終了コード2を返す。",
     )
     parser.add_argument(
         "--codex-thread-id",
@@ -4777,7 +4924,9 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
     if args.output_file is not None and not _output_file_active:
         output_path = Path(args.output_file)
         if not output_path.is_absolute():
-            return _print_error("--output-fileには絶対パスを指定してください。")
+            return _print_error(
+                "--output-fileには絶対パスを指定してください。", next_action="`--output-file`へ絶対パスを渡して再実行する"
+            )
         resolved = output_path.resolve(strict=False)
         with resolved.open("w", encoding="utf-8", newline="") as stream, contextlib.redirect_stdout(stream):
             exit_code = main(argv, _output_file_active=True)
@@ -4803,7 +4952,8 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         > 1
     ):
         return _print_error(
-            "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない"
+            "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない",
+            next_action="`--warn`・`--grep`などの照会の指定を1回に1つだけにして、照会ごとに別々に実行する",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
@@ -4822,68 +4972,108 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
             args.context_at is not None,
         )
     ):
-        return _print_error("カタログ走査は単一transcriptの照会モードと併用できない")
+        return _print_error(
+            "カタログ走査は単一transcriptの照会モードと併用できない",
+            next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
+        )
     if args.phrase is not None and args.context_at is None:
-        return _print_error("--phraseは--context-atと併用する")
+        return _print_error(
+            "--phraseは--context-atと併用する", next_action="`--context-at <記録ID>:<行番号>`を付けて再実行する"
+        )
     if args.since is not None and not args.user_events and catalog_root is None:
-        return _print_error("--sinceは--user-eventsまたはカタログ走査と併用する")
+        return _print_error(
+            "--sinceは--user-eventsまたはカタログ走査と併用する",
+            next_action="`--user-events`かカタログ走査の引数を付けるか、`--since`を外して再実行する",
+        )
     if args.user_events and args.since is None:
-        return _print_error("--user-eventsには--sinceが必要")
+        return _print_error("--user-eventsには--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.since is None:
-        return _print_error("カタログ走査には--sinceが必要")
+        return _print_error("カタログ走査には--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.observation_boundary is None:
-        return _print_error("カタログ走査には--observation-boundaryが必要")
+        return _print_error("カタログ走査には--observation-boundaryが必要", next_action=_BOUNDARY_NEXT_ACTION)
     since = None
     if args.since is not None:
         try:
             since = _parse_timestamp(args.since)
         except ValueError:
-            return _print_error(f"開始境界が不正: {args.since}")
+            return _print_error(f"開始境界が不正: {args.since}", next_action=_SINCE_NEXT_ACTION)
 
     sources = (
         args.transcript_path,
         args.transcript,
+        args.claude_session_id,
         args.codex_thread_id,
         args.catalog_claude_project,
         args.catalog_codex_history,
     )
     if sum(source is not None for source in sources) != 1:
-        return _print_error("transcript_path・--transcript・--codex-thread-id・カタログ走査はいずれか一つだけを指定する")
+        return _print_error(
+            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+            next_action=(
+                "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・"
+                "カタログ走査のいずれか1つだけで指定して再実行する"
+            ),
+        )
     if args.codex_home is not None and args.codex_thread_id is None:
-        return _print_error("--codex-homeは--codex-thread-idと併用する")
+        return _print_error(
+            "--codex-homeは--codex-thread-idと併用する",
+            next_action="`--codex-thread-id`を付けるか、`--codex-home`を外して再実行する",
+        )
     if catalog_root is not None:
         assert since is not None and catalog_runtime is not None and args.observation_boundary is not None
         try:
             catalog_boundary = _parse_timestamp(args.observation_boundary)
         except ValueError:
-            return _print_error(f"観測境界が不正: {args.observation_boundary}")
+            return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
         if catalog_boundary < since:
-            return _print_error("観測境界は開始境界以後を指定する")
+            return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
         events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
         _print_events(events)
         return exit_code
-    if args.codex_thread_id is not None:
+    if args.claude_session_id is not None:
+        try:
+            transcript_path = str(_resolve_claude_transcript(args.claude_session_id))
+        except ValueError as error:
+            return _print_error(
+                str(error),
+                next_action=(
+                    "`--claude-session-id`の値を確かめる。記録が見つからない場合や複数ある場合は、"
+                    "`--transcript`で記録の絶対パスを直接渡して再実行する"
+                ),
+            )
+    elif args.codex_thread_id is not None:
         try:
             transcript_path = str(_resolve_codex_transcript(args.codex_thread_id, args.codex_home))
         except ValueError as error:
-            return _print_error(str(error))
+            return _print_error(
+                str(error),
+                next_action=(
+                    "`--codex-thread-id`の値を確かめる。rolloutが別の場所にある場合は`--codex-home`へCodexのホームを渡し、"
+                    "複数ある場合は`--transcript`でrolloutの絶対パスを直接渡して再実行する"
+                ),
+            )
     else:
         transcript_path = args.transcript or args.transcript_path
 
     records = _load_records(transcript_path)
     if records is None:
-        return _print_error(f"対象記録を読み込めない: {transcript_path}")
+        return _print_error(
+            f"対象記録を読み込めない: {transcript_path}",
+            next_action="`--transcript`へ実在する記録の絶対パスを渡し、読み取り権限を確かめて再実行する",
+        )
     boundary = None
     if args.observation_boundary is not None:
         try:
             boundary = _parse_timestamp(args.observation_boundary)
         except ValueError:
-            return _print_error(f"観測境界が不正: {args.observation_boundary}")
+            return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
     if args.elapsed_until is not None:
         event = _elapsed_until_event(records, args.elapsed_until)
         if isinstance(event, str):
             message = event or f"経過時間を算出できる記録が無い: {transcript_path}"
-            return _print_error(message)
+            return _print_error(
+                message, next_action="`--elapsed-until`へ記録に存在する時刻か位置を渡すか、時刻を持つ記録を対象にして再実行する"
+            )
         _print_events([event])
         return 0
     if boundary is not None:
@@ -4907,7 +5097,9 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         try:
             pattern = re.compile(args.grep)
         except re.error as error:
-            return _print_error(f"正規表現が不正: {error}")
+            return _print_error(
+                f"正規表現が不正: {error}", next_action="`--grep`の正規表現の構文（括弧の対応、エスケープ）を直して再実行する"
+            )
         _print_events(_grep_collection_events(collected, unresolved, pattern))
         return 0
     if args.detail is not None:

@@ -5,6 +5,7 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
 
 
@@ -29,9 +30,11 @@ def test_normalize_remote_url(remote_url: str, expected: str) -> None:
 
 @pytest.mark.parametrize("remote_url", ["", "/home/user/dotfiles", "https://github.com/ak110"])
 def test_normalize_remote_url_rejects_invalid_value(remote_url: str) -> None:
-    """解析できない値はValueErrorを送出すること。"""
-    with pytest.raises(ValueError, match="リモートURLとして解析できません"):
+    """解析できない値は、originの値を確かめる次の操作を持つ例外を送出すること。"""
+    with pytest.raises(ActionableError, match="リモートURLとして解析できません") as error_info:
         _git_remote.normalize_remote_url(remote_url)
+
+    assert "git remote get-url origin" in error_info.value.next_action
 
 
 def test_resolve_repo_identifier_reads_legacy_local_path(tmp_path: pathlib.Path) -> None:

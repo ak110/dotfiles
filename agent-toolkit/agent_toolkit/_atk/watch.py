@@ -104,18 +104,24 @@ def dispatch(args: argparse.Namespace, *, now: datetime.datetime | None = None) 
     worktree_values = args.worktree or []
     file_values = args.file or []
     if not worktree_values and not file_values:
-        _outcome.report_failure("観測対象の指定が無い。--worktreeまたは--fileを1件以上指定する")
+        _outcome.report_failure("観測対象の指定が無い", next_action="--worktreeまたは--fileを1件以上指定して再実行する")
         return 2
     try:
         worktrees = [_split_target(value, stem=False) for value in worktree_values]
         files = [_split_target(value, stem=True) for value in file_values]
     except TargetSpecError as error:
-        _outcome.report_failure(str(error))
+        _outcome.report_failure(
+            str(error),
+            next_action="空でないパスを`<パス>`または空白文字・=を含まない`<ラベル>=<パス>`の形式で指定して再実行する",
+        )
         return 2
     labels = [label for label, _ in worktrees] + [label for label, _ in files]
     duplicated = sorted({label for label in labels if labels.count(label) > 1})
     if duplicated:
-        _outcome.report_failure(f"ラベルが重複している: {'・'.join(duplicated)}。<ラベル>=<パス>形式で区別する")
+        _outcome.report_failure(
+            f"ラベルが重複している: {'・'.join(duplicated)}",
+            next_action="<ラベル>=<パス>形式で別のラベルを付けて再実行する",
+        )
         return 2
     if now is None:
         now = datetime.datetime.now()

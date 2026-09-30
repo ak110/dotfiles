@@ -405,6 +405,9 @@ PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
 PLAN_WI_ANSWER_HEADING: str = "回答"
 """UWIの正本でユーザーの回答を記録する見出し。"""
 
+PLAN_WI_SCOPE_HEADING: str = "適用範囲"
+"""通常AWIの正本で誤りの機構が依存する条件を記録する見出し。"""
+
 _FRONTMATTER_DELIMITER: str = "---"
 _FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_WI_SOURCE_KEY}:[ \t]*\S")
 PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>\S.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")

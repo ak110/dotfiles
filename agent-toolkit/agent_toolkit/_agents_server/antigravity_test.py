@@ -12,6 +12,7 @@ import pytest
 
 from agent_toolkit._agents_server import antigravity
 from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 
 _FAKE_AGY = """#!{python}
 import json
@@ -105,6 +106,21 @@ def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkey
     assert session.engine == "agy"
     assert session.status == "completed"
     assert session.agent_message.endswith("原稿を推敲して")
+
+
+def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLIが未導入の起動失敗を委譲先CLIの失敗として送出し、導入と認証の確認へ分類されるようにする。"""
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+
+    async def scenario() -> None:
+        manager = antigravity.AntigravityManager()
+        try:
+            await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
+        finally:
+            await manager.close()
+
+    with pytest.raises(shared_state.DelegateBackendError, match="failed to start Antigravity CLI"):
+        asyncio.run(scenario())
 
 
 def test_delegate_prompt_carries_language_condition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -232,13 +248,15 @@ def test_event_log_write_failure_does_not_fail_session(
 
 
 def test_send_message_rejects_an_unfinished_turn() -> None:
-    """実行中のturnへの継続は受理しない。"""
+    """実行中のturnへの継続は受理せず、終端の観測後に再送する操作を示す。"""
     session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy", status="running")
 
     async def scenario() -> None:
         manager = antigravity.AntigravityManager()
-        with pytest.raises(ValueError, match="has not finished"):
+        with pytest.raises(ValueError, match="has not finished") as raised:
             await manager.send_message(session, "続けて")
+        assert isinstance(raised.value, ActionableError)
+        assert f"{NEXT_ACTION_PREFIX}`atk agents wait`" in raised.value.message
 
     asyncio.run(scenario())
 

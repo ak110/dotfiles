@@ -21,6 +21,7 @@ import pytest
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import (
     frontmatter,  # noqa: E402  # pylint: disable=wrong-import-position
     style_diagnostics,  # noqa: E402  # pylint: disable=wrong-import-position
@@ -302,8 +303,13 @@ def test_add_dry_run_does_not_report_kanji_compound_as_colloquial(
 
     _run_public_add(_cmd_add_args(tmp_path, body, dry_run=True), notes, _FIXED_DT, tmp_path)
 
-    colloquial_warnings = [line for line in capsys.readouterr().err.splitlines() if "口語表現" in line]
+    stderr_lines = capsys.readouterr().err.splitlines()
+    colloquial_warnings = [line for line in stderr_lines if "口語表現" in line]
     assert colloquial_warnings == [f"警告: 本文:2:3: 口語表現 {colloquial}（候補: 具体的な発生源と動作を記す）"]
+    # 表記の警告の次行へ、投入後に直す手段を置く。
+    next_line = stderr_lines[stderr_lines.index(colloquial_warnings[0]) + 1]
+    assert next_line.startswith("次の操作: ")
+    assert "atk wi edit <ファイル名> --body-file" in next_line
 
 
 def test_add_dry_run_rejects_batch(
@@ -426,6 +432,61 @@ def test_cmd_add_rejects_agent_awi_with_empty_required_section(
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
+
+
+_CAUSE_ANALYSIS_SECTION = "## 原因分析\n直接的原因と根本原因\n\n"
+
+
+def test_add_dry_run_accepts_agent_awi_with_cause_analysis(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`## 原因分析`を`## 反映内容と反映先`と`## 適用範囲`の間へ置いた本文を受理する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = _AGENT_AWI_BODY.replace("## 適用範囲\n", f"{_CAUSE_ANALYSIS_SECTION}## 適用範囲\n", 1)
+
+    _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    assert capsys.readouterr().err == ""
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_dry_run_rejects_cause_analysis_after_scope(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`## 原因分析`を`## 適用範囲`より後へ置いた本文を順序の不一致で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = _AGENT_AWI_BODY.replace("## 実現性\n", f"{_CAUSE_ANALYSIS_SECTION}## 実現性\n", 1)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "H2の順序が規定と異なります: 反映内容と反映先、適用範囲、原因分析、実現性、完成条件" in capsys.readouterr().err
+
+
+def test_add_dry_run_rejects_empty_cause_analysis(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """本文が空の`## 原因分析`を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = _AGENT_AWI_BODY.replace("## 適用範囲\n", "## 原因分析\n\n## 適用範囲\n", 1)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "本文が空の節があります: 原因分析" in error
+    assert "非空の必須節がありません" not in error
 
 
 @pytest.mark.parametrize(
@@ -1175,7 +1236,10 @@ def test_add_warns_for_missing_dependency_and_keeps_registering(
     captured = capsys.readouterr()
     generated = sorted(path.name for path in (notes / "inbox").iterdir() if path.suffix == ".md")
     assert len(generated) == 1
-    assert captured.err == f"警告: {generated[0]}のdepends_onが参照するabsent.mdは取り込み先に実在しません\n"
+    warning, next_action = captured.err.splitlines()
+    assert warning == f"警告: {generated[0]}のdepends_onが参照するabsent.mdは取り込み先に実在しません"
+    assert next_action.startswith("次の操作: 登録は完了した。")
+    assert "atk wi set-dependencies" in next_action
     assert "成功: 1件をinboxへ投入した" in captured.out
 
 
@@ -1684,7 +1748,7 @@ def test_add_operation_rejects_plan_file_only_in_working_root(
     plan.parent.mkdir(parents=True)
     plan.write_text("# 計画\n", encoding="utf-8")
 
-    with pytest.raises(WebInputError, match="atk plans commit"):
+    with pytest.raises(WebInputError, match="保存先に実体がありません") as error_info:
         add_module.add_entries(
             notes,
             messages=["本文"],
@@ -1694,6 +1758,9 @@ def test_add_operation_rejects_plan_file_only_in_working_root(
             target_commit="a" * 40,
             plan_file=str(plan),
         )
+
+    # 作業root直下の計画は、保存するコマンドを次の操作として返す。
+    assert "atk plans commit" in error_info.value.next_action
 
     assert not list((notes / "inbox").iterdir())
 
@@ -2156,6 +2223,7 @@ class TestAddEmptyBodyRejection:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "実質空" in captured.err
+        assert "\n次の操作: 本文を記入して再投入する" in captured.err
 
     def test_single_dash_body_rejected(
         self,
@@ -2732,3 +2800,81 @@ def test_cli_add_outputs_missing_source_and_extra_frontmatter_as_none(
     output = capsys.readouterr().out
     assert "    source: なし\n" in output
     assert "    extra_frontmatter: なし\n" in output
+
+
+def test_validate_rejects_unresolvable_frontmatter_target_repo_in_one_failure(tmp_path: pathlib.Path) -> None:
+    """frontmatterのtarget_repoを解決できない場合は、解決側の出力を重ねず1件の例外に次の操作を持たせる。"""
+    notes = _setup_notes(tmp_path)
+    message = "---\ntarget_repo: not-a-repository\nsource: test\n---\n\n" + _AGENT_AWI_BODY
+
+    with pytest.raises(WebInputError, match="target_repoを解決できません: not-a-repository") as error_info:
+        add_module._validate_add_entries(  # pylint: disable=protected-access
+            notes,
+            messages=[message],
+            target_repo=None,
+            entry_type="awi",
+            question_type=None,
+            choices=None,
+            target_commit=None,
+            plan_file=None,
+        )
+
+    assert "`--target-repo`へローカルworktreeのパスかremote URLを指定" in error_info.value.next_action
+
+
+@pytest.mark.parametrize(
+    ("question_type", "choices", "expected"),
+    [
+        ("unknown", None, "choice・yes-no・free-form"),
+        ("choice", None, "`--choices`"),
+    ],
+)
+def test_validate_uwi_question_type_errors_name_accepted_values(
+    tmp_path: pathlib.Path, question_type: str, choices: str | None, expected: str
+) -> None:
+    """question_typeの不正とchoicesの欠落は、受理する値や指定するオプションを次の操作として返す。"""
+    notes = _setup_notes(tmp_path)
+
+    with pytest.raises(WebInputError) as error_info:
+        add_module._validate_add_entries(  # pylint: disable=protected-access
+            notes,
+            messages=["どちらを選びますか？"],
+            target_repo="github.com/example/repo",
+            entry_type=WI_TYPE_UWI,
+            question_type=question_type,
+            choices=choices,
+            target_commit=None,
+            plan_file=None,
+        )
+
+    assert expected in error_info.value.next_action
+
+
+def test_read_saved_entry_details_mismatch_guides_show_and_edit(tmp_path: pathlib.Path) -> None:
+    """保存本文が送信した本文と異なる場合は、保存済みであることと確認・修正のコマンドを次の操作として返す。"""
+    path = tmp_path / "20260101-000000-001.md"
+    path.write_text("---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n保存本文\n", encoding="utf-8")
+
+    with pytest.raises(WebInputError, match="保存本文が送信元本文と一致しない") as error_info:
+        add_module._read_saved_entry_details(  # pylint: disable=protected-access
+            path, expected_body="---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n送信本文\n"
+        )
+
+    next_action = error_info.value.next_action
+    assert next_action.startswith("保存は済んでいる。")
+    assert f"atk wi show {path.name}" in next_action
+    assert f"atk wi edit {path.name} --body-file" in next_action
+
+
+def test_editor_nonzero_exit_guides_body_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """エディターが非0で終了した場合は、本文を保存していないことと`--body-file`での再実行を次の操作として返す。"""
+    del tmp_path
+    monkeypatch.setenv("EDITOR", "false")
+
+    assert _common._collect_message_via_editor() is None  # pylint: disable=protected-access
+
+    stderr = capsys.readouterr().err
+    assert stderr.startswith("失敗: エディターが終了コード1で終了した\n次の操作: 本文は保存していない。")
+    assert "--body-file" in stderr

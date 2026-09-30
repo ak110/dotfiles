@@ -1,5 +1,6 @@
 """公開hookが返すコーディングエージェント向け通知の日本語を検証する。"""
 
+import ast
 import json
 import os
 import pathlib
@@ -32,6 +33,7 @@ _ALLOWED_BARE_IDENTIFIERS = frozenset(
         "GitHub",
         "Markdown",
         "JSON",
+        "BOM",
         "YAML",
         "SSE",
         "URL",
@@ -49,352 +51,74 @@ _ALLOWED_BARE_IDENTIFIERS = frozenset(
 _JAPANESE_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 
-# 計画で確定した通知本文と解消手段の正本。公開入口の代表入力とは独立に、
-# 全テンプレートへ同じ日本語判定を適用する。
-_CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
-    (
-        "pretooluse.py:1158 本文",
-        "規範文書の本文が持つ節参照が実在しない可能性がある（{tool_name}、対象: {file_path}）: "
-        "{'; '.join(reasons)}。参照先のファイルと節名が一致することを確認する。",
-    ),
-    (
-        "pretooluse.py:1228 本文",
-        "warning: `agent-toolkit:plan-mode`スキルを起動せずに計画ファイルを編集している。"
-        "自身で計画を起草する場合は、同スキルを起動し、計画ファイルの編集を続ける前に`Phase 1`（初期理解）からやり直す。"
-        "委譲した計画をレビューし、成果物と根拠から一意に定まる値だけを訂正する場合は、"
-        "訂正内容と根拠を`## 変更履歴`へ記録したうえで、`plan-mode`をやり直さずに続行する。"
-        "計画を確定する前に、`plan-mode`の直接委譲の手順でこの警告を解消して検証する。",
-    ),
-    (
-        "pretooluse.py:1516 本文",
-        "WebFetchは要約モデルを経由するため、その出力は逐語引用の根拠にならない。"
-        "逐語で引用する場合は、同じURLの生データをagent-toolkitの管理対象一時領域へ保存し、"
-        "保存した本文から該当箇所だけを引用する。",
-    ),
-    (
-        "pretooluse.py:1529 本文",
-        "エージェント種別名はSendMessageの到達可能な宛先ではない。通常の完了報告はツール結果として1回返し、"
-        "即時通知は実行環境が渡した呼び出し元識別子へだけ送る。",
-    ),
-    (
-        "pretooluse.py:1588 本文",
-        "blocked: TaskStop。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、停滞検知の手順を完了した場合に限る。"
-        "この手順の完了条件は`agent-toolkit:delegation`の"
-        "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節が定める。"
-        "進行が遅いことや非効率に見"
-        "えることだけでは停止の指示にならない。"
-        "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
-        "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
-    ),
-    (
-        "pretooluse.py:1588 解消手段",
-        "自セッションが起動した対象は所有記録に一致する識別子を指定する。"
-        "その他の対象は`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節に従い、"
-        "対象別の停滞検知完了記録を作成してからTaskStopを実行する。",
-    ),
-    ("pretooluse.py:1691 本文", "blocked: {op}。作業ディレクトリを表す式{event.unresolved_expression!r}を静的に解決できない。"),
-    (
-        "pretooluse.py:1691 解消手段",
-        "先に`git -C <絶対パス> log --oneline --decorate -n 20`を実行し、履歴の書き換えを`git -C <絶対パス>`で再実行する。",
-    ),
-    ("pretooluse.py:1697 本文", "blocked: {op}。コマンドが未解決のシェル展開によって作業ディレクトリを変更している。"),
-    (
-        "pretooluse.py:1697 解消手段",
-        "先に対象リポジトリで`git log --oneline --decorate -n 20`を実行し、静的に解決できる作業ディレクトリで再実行する。",
-    ),
-    ("pretooluse.py:1724 本文", "blocked: {op}。`amend`・`rebase`の前に`commit`の状態を確認する必要がある。"),
-    (
-        "pretooluse.py:1724 解消手段",
-        "`amend`・`rebase`の前に`git log --oneline --decorate -n 20`を実行して`commit`の状態を確認する"
-        "（特に`push`済みの`commit`を`amend`・`rebase`しない）。同じ`Bash`コマンド内の`git log`はこの検査を満たさない。"
-        "同じ実効作業ディレクトリに対して、先行する別の`Bash`呼び出しで実行する。",
-    ),
-    (
-        "pretooluse.py:1770 本文",
-        "blocked: `amend`・`fixup`の後の`git push`で、作業ディレクトリを表す式{event.unresolved_expression!r}を解決できない。",
-    ),
-    ("pretooluse.py:1770 解消手段", "対象リポジトリを確認したうえで、`git -C <絶対パス> push ...`の形で再実行する。"),
-    ("pretooluse.py:1775 本文", "blocked: `amend`・`fixup`の後の`git push`で、作業ディレクトリを解決できない。"),
-    ("pretooluse.py:1775 解消手段", "`amend`の状態を確認し、静的に解決できる作業ディレクトリで再実行する。"),
-    (
-        "pretooluse.py:1791 本文",
-        "blocked: {event.cwd}に追跡対象の未コミット変更が残ったまま、"
-        "`git commit --amend`・`--fixup`の後に`git push`しようとしている。",
-    ),
-    (
-        "pretooluse.py:1791 解消手段",
-        "`git status`で内容を確認し、`git add`と`git commit --amend`（または`--fixup=<sha>`）で残りの差分を"
-        "`amend`済み`commit`へ取り込むか、`push`の前に後続の`commit`を作"
-        "る。",
-    ),
-    (
-        "pretooluse.py:1947 本文",
-        "warn: 一括`stage`に、現在のセッションのファイル編集ツールによる編集記録が無いファイルが含まれている。"
-        "シェルコマンドや生成器が変更したファイルは記録されないため、`stage`の前に所有を確認する。"
-        "候補: {sample}。ファイル単位の`stage`（`git add <file>`）への切り替えを検討する。",
-    ),
-    (
-        "pretooluse.py:2568 本文",
-        "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
-    ),
-    (
-        "pretooluse.py:2568 解消手段",
-        "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
-        "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
-        "`p[k]ill`のように文字クラスで書く。",
-    ),
-    (
-        "pretooluse.py:_UV_RUN_PYTHON_BLOCK_MSG 本文",
-        "blocked: `python`トークンの前に`--script`も`--no-project`も指定しない`uv run python`呼び出しである"
-        "（`python`の後にパスが続く場合も`-c`が続く場合も同じ）。Pythonプロジェクトでない場所"
-        "（`[project]`節を持たない`pyproject.toml`、または`pyproject.toml`が無い場所）では、`uv`がカレントディレクトリを"
-        "プロジェクトとして扱い、副作用として`.venv`と`uv.lock`を生成する。プロジェクトに依存しない形を明示しない限り、"
-        "この呼び出しは安全に続行できない。",
-    ),
-    (
-        "pretooluse.py:_UV_RUN_PYTHON_FIX 解消手段",
-        "`agent-toolkit`配下の入口は`uv run --project <plugin root> --locked --no-default-groups <パス>`を使う。"
-        "`agent-toolkit/scripts/`に残すリモート補助処理とその他の`PEP 723`スクリプトは"
-        "`uv run --script <パス>`を使うか、実行可能な`shebang`を直接呼び出す。"
-        "カレントディレクトリのプロジェクト解決を省く場合は`uv run --no-project python ...`を使う。いずれでもない場合は、"
-        "カレントディレクトリまたはその祖先で最初に見つかる`pyproject.toml`が`[project]`節を持つディレクトリで実行する。"
-        "静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。作業ディレクトリの変更に未解決のシェル展開があると、"
-        "プロジェクト種別を確認できないためこの呼び出しを遮断する。",
-    ),
-    ("pretooluse.py:2540 本文", "block: 前景の`sleep`に別のコマンドが続く呼び出しを、現在のセッションで再び検出した。"),
-    (
-        "pretooluse.py:2547 本文",
-        "warn: 前景の`sleep`の後に別のコマンドが続いており、反復ポーリングになる可能性がある。\\n{guidance}",
-    ),
-    (
-        "pretooluse.py:2534 解消手段",
-        "完了通知を受け取るか、背景ジョブの機械可読な完了標識を使うか、`atk watch`で委譲先の作業を観測し、\\n"
-        "待機表明でターンを終える。",
-    ),
-    (
-        "pretooluse.py:2815 本文",
-        "blocked: 検証コマンドの出力を`tail`・`head`へ流"
-        "して切り詰めている。"
-        "ライブ出力は切り詰めた時点で失われ、後から全量を取得できない。",
-    ),
-    (
-        "pretooluse.py:2809 解消手段",
-        "先に全量を保存し（例: `tee /tmp/<name>.log`）保存したファイルから抽出するか、"
-        "構造化出力から必要なレコード種別を指定して抽出するか、"
-        "`agents_server`の`start_shell`ツールで分離したコンテキストで実行する。",
-    ),
-    (
-        "pretooluse.py:2885 本文",
-        "warn: 出力を切り詰める検証パイプラインの直後の`$?`は、検証コマンドではなく`head`・`tail`の終了状態を返す。"
-        "出力を切り詰める前に検証コマンドの終了状態を保存する。",
-    ),
-    (
-        "pretooluse.py:2998 本文",
-        "warn: 再帰検索が容量の大きいユーザーディレクトリを対象にしている。`rg`や再帰的な`grep`を使う前に、"
-        "対象ディレクトリを絞"
-        "るか、不要な領域を除外するか、走査対象と出力量を制限するか、"
-        "分離した実行コンテキストで検索する。",
-    ),
-    (
-        "pretooluse.py:3082・3089 本文",
-        "テストを実行せずに`commit`しようとしている。`01-agent.md`の検証してから`commit`する手順に従い、先にテストを実行する。",
-    ),
-    (
-        "pretooluse.py:3159 本文",
-        "`agent-toolkit/`配下のファイルを`stage`しているが、この`commit`と未`push`の範囲で"
-        "`agent-toolkit/.claude-plugin/plugin.json`の`version`が変わっていない。利用者から見"
-        "えるふるまい"
-        "（`hook`スクリプト・スキル・エージェント定義・ルールファイル等）が変わる場合は、`commit`の前に"
-        "`plugin.json`の`version`を更新し、`.claude-plugin/marketplace.json`も同期させる。",
-    ),
-    (
-        "pretooluse.py:3231 本文",
-        "`codex exec`を実行しようとしている。この実行が計画ファイルをレビューへ出"
-        "すものである場合は、"
-        "ユーザーの確認ではなく推測で確定した判断が無いかを確認し、未解決の確認事項をユーザーと解消してから進める。",
-    ),
-    (
-        "pretooluse.py:3285 本文",
-        "blocked: `agents_server`の`start`は、空でない絶対パスの`cwd`パラメーターを要求する（受領値: {actual}）。"
-        "指定が無いとCodexは、要求した`worktree`ではなく`App Server`プロセスから作業ディレクトリを解決する。",
-    ),
-    ("pretooluse.py:3285 解消手段", "`cwd`へ対象作業ディレクトリの絶対パスを設定して再実行する。"),
-    ("pretooluse.py:3303 本文", "blocked: {display_name}は空でない`prompt`を要求する。"),
-    ("pretooluse.py:3303 解消手段", "空でない`prompt`を指定して再実行する。"),
-    ("pretooluse.py:3313 本文", "blocked: {display_name}は空でない`session_id`を要求する。"),
-    (
-        "pretooluse.py:3313 解消手段",
-        "`codex_start`が返した`session_id`を使うか、`codex_start`で新しい`session`を開始する。",
-    ),
-    (
-        "pretooluse.py:3324 本文",
-        "blocked: `session_id`に対応する絶対パスの`cwd`が保存されていないため、{display_name}を継続できない。",
-    ),
-    (
-        "pretooluse.py:3324 解消手段",
-        "この`session`を継続せず、絶対パスの`cwd`を指定した`agents_server`の`start`で新しい`session`を開始する。",
-    ),
-    (
-        "pretooluse.py:662 本文",
-        "blocked: {tool_name}.{field}の日本語テキストへ、日本語以外の文字体系（ハングル・キリル文字）が混入している。"
-        "該当箇所: {ascii(value[start:end])}。",
-    ),
-    ("pretooluse.py:662 解消手段", "意図した日本語の文字へ置き換える。"),
-    ("pretooluse.py:683 本文", "blocked: {tool_name}.{field}に文字化け（`U+FFFD`）を検出した。該当箇所: {sample!r}"),
-    ("pretooluse.py:683 解消手段", "`U+FFFD`を意図した文字へ置き換えて再実行する。"),
-    (
-        "content_checks.py _check_ps1_eol 本文",
-        "blocked: {tool_name}.{field}の内容が`LF`だけの改行になっている。"
-        "この書き込みでは`UTF-8 BOM`が失われて日本語が文字化けし、"
-        "`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}",
-    ),
-    (
-        "content_checks.py _check_ps1_eol 解消手段",
-        "既存ファイルは`Edit`ツールで編集する（`CRLF`をそのまま保つ）。"
-        "新規ファイルは`Bash`経由で`UTF-8 BOM`と`CRLF`改行を付けて書き"
-        "出"
-        "す"
-        "（例: `printf '\\xEF\\xBB\\xBF' > file.ps1 && ... | sed 's/$/\\r/' >> file.ps1`）。",
-    ),
-    ("pretooluse.py:763 本文", "blocked: {tool_name}による{label}の直接編集は禁止する。対象: {file_path}"),
-    ("pretooluse.py:763 解消手段", "このパスは編集せず、パッケージマネージャーで再生成する。"),
-    ("pretooluse.py:_LOCKFILE_RULES uv.lock", "依存の追加は`uv add`、削除は`uv remove`を使う。"),
-    ("pretooluse.py:_LOCKFILE_RULES pnpm-lock.yaml", "依存の追加は`pnpm add`、削除は`pnpm remove`を使う。"),
-    ("pretooluse.py:_LOCKFILE_RULES package-lock.json", "依存の追加は`npm install <pkg>`を使う。"),
-    ("pretooluse.py:_LOCKFILE_RULES yarn.lock", "依存の追加は`yarn add`を使う。"),
-    ("pretooluse.py:_LOCKFILE_RULES Cargo.lock", "依存の追加は`cargo add`を使う。"),
-    ("pretooluse.py:_LOCKFILE_RULES mise.lock", "ツールの管理は`mise use`・`mise install`を使う。"),
-    ("pretooluse.py:_LOCKFILE_RULES .venv/", "仮想環境のファイルを直接編集せず、`uv`等で再構築する。"),
-    ("pretooluse.py:_LOCKFILE_RULES node_modules/", "`node_modules`は生成ディレクトリであり、直接編集しない。"),
-    (
-        "pretooluse.py:819 本文",
-        "blocked: {tool_name}による秘匿ファイル・鍵ファイルの直接編集は禁止する。"
-        "誤編集はサービス停止や情報漏洩を招く。対象: {file_path}",
-    ),
-    (
-        "pretooluse.py:_ENV_FILE_GUIDANCE 解消手段",
-        "`git worktree`を実行可能にする場合は、`Bash`の`cp`で複製元から複製する。"
-        "動作確認のために値を追加・変更・削除する場合は、"
-        "編集ツールでファイルを書き換えず、`Bash`で行を追記または編集する（`echo ... >>`・`sed -i`）。",
-    ),
-    ("pretooluse.py:819 鍵・証明書の解消手段", "鍵ファイルと証明書ファイルは編集せず、この編集を取りやめる。"),
-    ("pretooluse.py:860 本文", "{tool_name}で{label}を編集しようとしている。{hint}"),
-    (
-        "pretooluse.py:_MANIFEST_RULES pyproject.toml",
-        "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
-        "`uv.lock`を同期させるため`uv add`・`uv remove`を使う。"
-        "`[tool.*]`と版数の編集はそのまま進めてよい。",
-    ),
-    (
-        "pretooluse.py:_MANIFEST_RULES package.json",
-        "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使う。"
-        "`scripts`とメタデータの編集はそのまま進めてよい。",
-    ),
-    (
-        "pretooluse.py:940 本文",
-        "{tool_name}.{field}にホームディレクトリの絶対パス（{home}）を検出した。バージョン管理下のファイルでは、"
-        "環境に依存するパスを避けるため`~`・`$HOME`・`pathlib.Path.home()`を使う。該当箇所: {sample!r}",
-    ),
-    (
-        "pretooluse.py:1000 本文",
-        "{tool_name}.{field}に口語表現を検出した。一致: {len(hits)}件（{listed}）。"
-        "`agent-toolkit:writing-standards`「日本語の書き方」節に従い、"
-        "検出した表現を含む文を、標準的な専門用語・終止形・比喩的でない動詞による書き言葉へ文ごと書き換える。"
-        "検出語を同義語へ置き換えるだけにせず、文を組み立て直す。{target}",
-    ),
-    (
-        "pretooluse.py:1447 本文",
-        "blocked: `plan-mode`スキルの起動後、計画ファイルを作成しないまま、`agent-toolkit/`配下のファイルを対象とする"
-        "`Write`・`Edit`・`MultiEdit`が連続で{new_count}回実行された。",
-    ),
-    (
-        "pretooluse.py:1447 解消手段",
-        "`agent-toolkit/`配下のファイルを編集する前に、`~/.claude/plans/`配下へ計画ファイルを作成する。",
-    ),
-    (
-        "pretooluse.py:1456 本文",
-        "warn: `plan-mode`スキルの起動後、計画ファイルを作成しないまま、`agent-toolkit/`配下のファイルを対象とする"
-        "`Write`・`Edit`・`MultiEdit`が連続で{new_count}回実行された。次の同種の編集は遮断される。"
-        "先に`~/.claude/plans/`配下へ計画ファイルを作成する。",
-    ),
-    (
-        "posttooluse.py:588 本文",
-        "計画ファイル{file_path}を書き込んだ。書き込み後の検査を実行する: "
-        "`uv run --project {shlex.quote(str(project_root))} --locked --no-default-groups "
-        "{shlex.quote(str(check_script))}{work_dir_option} {shlex.quote(file_path)}`。"
-        "計画がセッションの作業ディレクトリ以外のリポジトリを対象とする場合は`--work-dir`を差し替える。",
-    ),
-    ("posttooluse.py:686 本文", "warn: {display_name}の応答に{', '.join(missing)}が欠けているか不正である。"),
-    (
-        "_hooks/rules_context.py:QUALITY_CHECKPOINT_NOTICE",
-        "会話圧縮後は`01-agent.md`「行動と手順の目的」に従い、目的と承認状態を記録された計画やキュー項目から復元する。"
-        "会話限定の指示を成果物へ混入させない。",
-    ),
-    (
-        "autonomous_exit.py:108 解消手段",
-        "列挙した前提工程をすべて完了してから、`atk agents-exit-session`を単独で実行する。",
-    ),
-    (
-        "autonomous_exit.py:_REASON_BODY",
-        "このセッションには常駐ループの終了保証が適用される。`agent-toolkit:process-wi`の全工程を完了し、"
-        "`agent-toolkit:completion-report`で完了報告した後に、`atk agents-exit-session`を実行する。"
-        "未完了の工程がある場合は、その工程へ戻ってから終了を再検討する。",
-    ),
-    (
-        "plan_save_advisor.py:101 本文",
-        "現在のセッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\\n"
-        "保存の契機に達したバンドルだけを"
-        "`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`で`private-notes`へ保存する。"
-        "契機は現在のセッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
-        "残りのバンドルはその場に残してターンを終了する。",
-    ),
-    (
-        "plan_save_advisor.py:101 解消手段",
-        "保存の契機に達した計画ごとに`atk plans commit <計画作業rootにある計画ファイル（メイン）のファイル名>`を実行する。"
-        "契機に達したものが無い場合はターンを終える。",
-    ),
-    (
-        "subagent_stop_advisor.py:47 本文",
-        "停止する前に、空でない完了報告を出力する。呼び出し元は遮断された報告本文を保持しない。",
-    ),
-    ("subagent_stop_advisor.py:47 解消手段", "空でない完了報告を書いてから、あらためて停止する。"),
-    (
-        "_uwi_completion.py:build_notice",
-        "リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
-        "反映の対象はこのセッション（委譲先を含む）が投入したUWIに限る。"
-        "このセッションが投入していないUWIは読まずに無視し、投入した処理回か次の処理回の選定工程に任せる。"
-        "`agent-toolkit:process-wi`の実行中でないセッションでは、セッションを終える前に"
-        "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から依存作業の再開までを完了する。"
-        "`agent-toolkit:process-wi`の実行中は、処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、"
-        "保留していた工程を再開する。"
-        "それ以外の回答済みUWIはそのセッションで反映せず、`agent-toolkit:wi-standards`「状態と依存」に従い、次の処理回の選定工程が取り込む。",
-    ),
-    (
-        "_response_language_check.py:BLOCK_BODY",
-        "同一セッションで英語主体の応答を累計2回以上検出した。ツール呼び出しは続行できる。ユーザーは英語の発話を読まないため、"
-        "訂正や謝罪を宣言せず、次の応答の冒頭から`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い日本語で書くこと。",
-    ),
-    (
-        "_response_language_check.py:WARNING_BODY",
-        "直前のアシスタント応答の地の文が英語主体と判定された。地の文が日本語主体でも、"
-        "冒頭が`Now`・`Next`・`Then`などの英語の語で始まる応答は同じ判定になる。"
-        "ユーザーは英語の発話を読まないため、次の応答は訂正や謝罪を宣言せず、冒頭の1文から日本語で書くこと。"
-        "`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い、進捗報告・判断・ステータス更新をツール呼び出し前後の短文ステータスも含めて日本語で記述すること。",
-    ),
-    (
-        "pending_question_advisor.py:BLOCK_BODY",
-        "地の文で利用者へ判断を求めたままターンを終えようとしている。判断を求める場合はAskUserQuestionで確認し、"
-        "確認が不要な場合はその問いかけを本文から除いて応答を書き直すこと。",
-    ),
-    ("pending_question_advisor.py:_BLOCK_FIX", "AskUserQuestionで確認するか、その問いかけを本文から除いて応答を書き直す。"),
-    (
-        "agents_server_session_advisor.py:_WARNING_BODY",
-        "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-        "実行ホストの`atk agents wait`で観測するか、"
-        "結果が不要なら`kill(session_id)`で破棄してから終了する。`send_message`は新しい作業を配送するだけで観測しないため、"
-        "この警告は解消しない。観測しないまま終了すると、その作業の成果を回収する主体が残らない。",
-    ),
-)
+_HOOK_SOURCE_ROOT = pathlib.Path(__file__).resolve().parent
+_NOTICE_CALL_NAMES = frozenset({"_llm_notice", "_block_notice", "_notice", "_block", "block", "format_block"})
+_NOTICE_CONSTANT_NAME_RE = re.compile(r"(?:^|_)(?:BODY|FIX|NOTICE|MESSAGE)$")
+
+
+def _literal_text(node: ast.expr, constants: dict[str, str]) -> str | None:
+    """文字列リテラル・f-string・連結・モジュール定数参照を、置換欄を`{}`にした本文へ直す。"""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            text = _literal_text(value, constants) if not isinstance(value, ast.FormattedValue) else "{}"
+            parts.append(text or "")
+        return "".join(parts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _literal_text(node.left, constants)
+        right = _literal_text(node.right, constants)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    if isinstance(node, ast.Attribute):
+        return constants.get(node.attr)
+    return None
+
+
+def _collect_notice_texts() -> list[tuple[str, str]]:
+    """hookのソースから通知の本文と解消手段を抽出する。
+
+    写しを持たずソースから直接読むため、文面を変えても検査対象が追随し、旧文面の写しとの乖離が生じない。
+    """
+    sources = [path for path in sorted(_HOOK_SOURCE_ROOT.rglob("*.py")) if not path.name.endswith("_test.py")]
+    trees = {path: ast.parse(path.read_text(encoding="utf-8")) for path in sources}
+    constants: dict[str, str] = {}
+    for tree in trees.values():
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                text = _literal_text(node.value, constants)
+                if text is not None:
+                    constants[node.targets[0].id] = text
+    texts: list[tuple[str, str]] = []
+    for path, tree in trees.items():
+        relative = path.relative_to(_HOOK_SOURCE_ROOT.parent)
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and _NOTICE_CONSTANT_NAME_RE.search(node.targets[0].id) is not None
+                and node.targets[0].id in constants
+            ):
+                texts.append((f"{relative}:{node.targets[0].id}", constants[node.targets[0].id]))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+            if name not in _NOTICE_CALL_NAMES:
+                continue
+            candidates = [("本文", node.args[0])] if node.args else []
+            candidates += [(keyword.arg, keyword.value) for keyword in node.keywords if keyword.arg in {"fix", "summary"}]
+            for label, value in candidates:
+                text = _literal_text(value, constants)
+                if text is not None:
+                    texts.append((f"{relative}:{node.lineno} {label}", text))
+    # `hook.py`の自己障害通知は終了コード0の標準エラーへ出てエージェントへ届かないため、走査対象の`_hooks/`に含めない。
+    # 置換欄だけで構成される本文（`f"{a}\n{b}"`など）は自然言語を持たないため判定対象から外す。
+    return [(source, text) for source, text in texts if re.sub(r"[{}\s]", "", text)]
 
 
 def _is_japanese_notice(text: str) -> bool:
@@ -402,7 +126,7 @@ def _is_japanese_notice(text: str) -> bool:
     body = re.sub(r"</?(?:atk-auto|agent-toolkit-auto-inserted)(?:\s[^>]*)?>", "", text)
     body = re.sub(r"判定対象の冒頭: 「[^\n」]*」", "", body)
     body = re.sub(r"(?m)^\s*(?:warn|warning|block|blocked):\s*", "", body)
-    body = re.sub(r"(?m)^\s*Fix:\s*", "", body)
+    body = re.sub(r"(?m)^\s*(?:Fix|次の操作):\s*", "", body)
     body = re.sub(r"\{[^{}]*\}", "", body)
     body = re.sub(r"`[^`]*`", "", body)
     body = re.sub(r"https?://\S+", "", body)
@@ -431,10 +155,19 @@ def test_japanese_notice_judgment(text: str, expected: bool) -> None:
     assert _is_japanese_notice(text) is expected
 
 
-def test_confirmed_notice_templates_are_japanese() -> None:
-    """確定訳の全本文と全解消手段が通知言語契約を満たすことを検証する。"""
-    failures = [source for source, text in _CONFIRMED_NOTICE_TEMPLATES if not _is_japanese_notice(text)]
+def test_hook_source_notice_texts_are_japanese() -> None:
+    """hookのソースが持つ通知の本文と解消手段が通知言語契約を満たすことを検証する。"""
+    texts = _collect_notice_texts()
+    # 抽出が機能しない変更（呼び出し名の改名など）で検査対象が空になり、無条件に合格することを防ぐ。
+    assert len(texts) >= 40
+    failures = [source for source, text in texts if not _is_japanese_notice(text)]
     assert failures == []
+
+
+def test_hook_source_does_not_name_removed_agents_server_tools() -> None:
+    """通知が廃止済みの旧ツール名を案内しないことを検証する。"""
+    stale = [source for source, text in _collect_notice_texts() if "codex_start" in text]
+    assert stale == []
 
 
 def _run(payload: dict, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -488,14 +221,14 @@ def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
     [
         (
             "pyproject.toml",
-            "`Write`で`pyproject.toml`の依存の節を編集しようとしている。"
+            "`Write`で`pyproject.toml`の依存の節を編集しようとしている。\n次の操作: "
             "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
             "`uv.lock`を同期させるため`uv add`・`uv remove`を使う。"
             "`[tool.*]`と版数の編集はそのまま進めてよい。",
         ),
         (
             "package.json",
-            "`Write`で`package.json`の依存の節を編集しようとしている。"
+            "`Write`で`package.json`の依存の節を編集しようとしている。\n次の操作: "
             "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使う。"
             "`scripts`とメタデータの編集はそのまま進めてよい。",
         ),

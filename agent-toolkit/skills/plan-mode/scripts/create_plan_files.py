@@ -21,6 +21,7 @@ try:
     from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         file_lock as _file_lock,
     )
+    from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
     )
@@ -30,7 +31,9 @@ try:
 except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
     print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}。`atk run-script plan-create -- <引数>`で起動してください。",
+        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
+        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        "次の操作: `atk run-script plan-create -- <引数>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -51,8 +54,16 @@ _TIMESTAMPED_NAME_PATTERN = re.compile(r"[0-9]{2}-[0-9]{4}_.+\Z")
 _DEFAULT_MAX_ATTEMPTS = 100
 
 
-class PlanCreationError(RuntimeError):
-    """計画ファイルを確定できなかった場合のエラー。"""
+_ROOT_NEXT_ACTION = (
+    "`--home`が実行ユーザーのホームディレクトリを指し、"
+    "`~/.claude/plans`が`~/.claude`の外へのシンボリックリンクでないことを確かめて再実行する"
+)
+_RETRY_NEXT_ACTION = "時間をおいて同じ引数で再実行する。繰り返す場合は`~/.claude/plans`の空き容量と権限を確かめる"
+_SOURCE_NEXT_ACTION = "計画本文の入力ファイルを直し、同じ引数で再実行する"
+
+
+class PlanCreationError(_next_action.ActionableError):
+    """計画ファイルを確定できなかった場合のエラー。理由と次の操作を持つ。"""
 
 
 class _CandidateCollision(Exception):
@@ -98,7 +109,7 @@ def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
     claude_root = (home_path / ".claude").resolve(strict=False)
     plans_root = _plan_file.working_plans_root(home_path).resolve(strict=False)
     if not plans_root.is_relative_to(claude_root):
-        raise PlanCreationError("計画作業rootが~/.claudeの外を指しています")
+        raise PlanCreationError("計画作業rootが~/.claudeの外を指しています", next_action=_ROOT_NEXT_ACTION)
     return plans_root
 
 
@@ -107,9 +118,9 @@ def _require_plans_root_path(path: pathlib.Path, plans_root: pathlib.Path) -> No
     try:
         resolved = path.resolve(strict=False)
     except OSError as error:
-        raise PlanCreationError(f"計画作成先を検証できません: {path}") from error
+        raise PlanCreationError(f"計画作成先を検証できません: {path}", next_action=_ROOT_NEXT_ACTION) from error
     if not resolved.is_relative_to(plans_root):
-        raise PlanCreationError(f"計画作成先が計画作業rootの外を指しています: {path}")
+        raise PlanCreationError(f"計画作成先が計画作業rootの外を指しています: {path}", next_action=_ROOT_NEXT_ACTION)
 
 
 def _read_source(path: pathlib.Path | str) -> bytes:
@@ -147,7 +158,7 @@ def _write_temporary(directory: pathlib.Path, stem: str, suffix: str, content: b
     if path.read_bytes() != content:
         with contextlib.suppress(OSError):
             path.unlink()
-        raise PlanCreationError(f"一時ファイルの読み戻し内容が一致しません: {path}")
+        raise PlanCreationError(f"一時ファイルの読み戻し内容が一致しません: {path}", next_action=_RETRY_NEXT_ACTION)
     return path
 
 
@@ -201,21 +212,26 @@ def _check_plan_references(
         text = content.decode("utf-8")
         for lineno, source in enumerate(text.splitlines(), start=1):
             if PLAN_STEM_PLACEHOLDER in source:
-                raise PlanCreationError(f"計画本文に未解決のstemプレースホルダーがあります: {path.name}:{lineno}行目: {source}")
+                raise PlanCreationError(
+                    f"計画本文に未解決のstemプレースホルダーがあります: {path.name}:{lineno}行目: {source}",
+                    next_action="`~/.claude/plans/__PLAN_STEM__.<拡張子>`の形の参照だけにプレースホルダーを置き、同じ引数で再実行する",
+                )
         body_lines = tuple(_plan_format.iter_markdown_body_lines(text))
         for lineno, source, reference in _portable_reference_values(iter(body_lines)):
             try:
                 _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
             except (OSError, ValueError) as error:
                 raise PlanCreationError(
-                    f"計画本文の可搬参照が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}"
+                    f"計画本文の可搬参照が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}",
+                    next_action=_SOURCE_NEXT_ACTION,
                 ) from error
         for lineno, source, reference in _adjunct_reference_values(iter(body_lines)):
             try:
                 _plan_file.resolve_plan_adjunct_reference(reference, plan_path=main_path)
             except (OSError, ValueError) as error:
                 raise PlanCreationError(
-                    f"計画本文の参照値が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}"
+                    f"計画本文の参照値が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}",
+                    next_action=_SOURCE_NEXT_ACTION,
                 ) from error
 
 
@@ -240,7 +256,8 @@ def _check_structure(
         raise PlanCreationError(
             "計画構造検査に失敗しました: "
             + " / ".join(errors)
-            + " / 判定条件の正本: agent-toolkit/skills/plan-mode/references/plan-file-standards.md"
+            + " / 判定条件の正本: agent-toolkit/skills/plan-mode/references/plan-file-standards.md",
+            next_action="列挙した各違反を計画本文の入力ファイルで直し、同じ引数で再実行する",
         )
 
 
@@ -283,7 +300,7 @@ def _finalize_candidate(
         for path, content, _suffix in targets:
             _require_plans_root_path(path, plans_root)
             if path.read_bytes() != content:
-                raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}")
+                raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}", next_action=_RETRY_NEXT_ACTION)
         _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
         _plan_file.record_plan_owner(main_path)
@@ -296,6 +313,30 @@ def _finalize_candidate(
         for temporary_path in temporary_paths:
             with contextlib.suppress(OSError):
                 temporary_path.unlink()
+
+
+def _check_bug_input(metadata: _plan_format.PlanMetadata, *, has_bug_input: bool) -> None:
+    """バグ対応計画の`計画ファイル（バグ）`行と入力の有無の整合を検査する。
+
+    関連WIの`## 原因分析`を正本とする計画は計画ファイル（バグ）を持たない。
+    関連WIが無い計画は原因分析の正本が他に無いため、同行と入力を必須とする。
+    """
+    has_bug_field = _plan_format.PLAN_METADATA_BUG_FIELD in metadata.values
+    if has_bug_field and not has_bug_input:
+        raise PlanCreationError(
+            "計画メタ情報に計画ファイル（バグ）の行がある場合は計画ファイル（バグ）の入力が必要です",
+            next_action="計画ファイル（バグ）の本文を`--bugs-source`で渡すか、計画メタ情報から`計画ファイル（バグ）`の行を除いて再実行する",
+        )
+    if not has_bug_field and has_bug_input:
+        raise PlanCreationError(
+            "計画メタ情報に計画ファイル（バグ）の行が無い場合は計画ファイル（バグ）の入力を指定できません",
+            next_action="`--bugs-source`を外すか、計画メタ情報へ`計画ファイル（バグ）`の行を加えて再実行する",
+        )
+    if not has_bug_field and not metadata.related_wi:
+        raise PlanCreationError(
+            "関連WIが無いバグ対応の計画は、原因分析の記録先として計画ファイル（バグ）の行と入力が必要です",
+            next_action="計画メタ情報へ`計画ファイル（バグ）`の行を加え、その本文を`--bugs-source`で渡して再実行する",
+        )
 
 
 def create_plan_files(
@@ -327,12 +368,15 @@ def create_plan_files(
 
     metadata, metadata_errors = _plan_format.parse_plan_metadata(main_content.decode("utf-8"))
     if metadata_errors:
-        raise PlanCreationError("計画メタ情報を解析できません: " + " / ".join(metadata_errors))
+        raise PlanCreationError("計画メタ情報を解析できません: " + " / ".join(metadata_errors), next_action=_SOURCE_NEXT_ACTION)
     work_type = metadata.values.get("作業種別") if metadata is not None else None
-    if work_type == "バグ対応" and bug_content is None:
-        raise PlanCreationError("作業種別がバグ対応の場合は計画ファイル（バグ）の入力が必要です")
     if work_type == "通常変更" and bug_content is not None:
-        raise PlanCreationError("作業種別が通常変更の場合は計画ファイル（バグ）の入力を指定できません")
+        raise PlanCreationError(
+            "作業種別が通常変更の場合は計画ファイル（バグ）の入力を指定できません",
+            next_action="`--bugs-source`を外すか、計画メタ情報の作業種別を`バグ対応`へ直して再実行する",
+        )
+    if work_type == "バグ対応" and metadata is not None:
+        _check_bug_input(metadata, has_bug_input=bug_content is not None)
 
     plans_root = _resolved_plans_root(home)
     plans_root.mkdir(parents=True, exist_ok=True)
@@ -351,7 +395,7 @@ def create_plan_files(
                 else:
                     token = secrets.token_hex(2)
                     if _TOKEN_RE.fullmatch(token) is None:
-                        raise PlanCreationError(f"乱数suffixが4桁16進数ではありません: {token}")
+                        raise PlanCreationError(f"乱数suffixが4桁16進数ではありません: {token}", next_action=_RETRY_NEXT_ACTION)
                     stem = f"{name}-{token}"
                 if _candidate_is_taken(plans_root, stem):
                     continue
@@ -370,7 +414,9 @@ def create_plan_files(
                     continue
         finally:
             _file_lock.release_lock(lock_file)
-    raise PlanCreationError(f"計画ファイル名の衝突を解消できませんでした（試行回数={max_attempts}）")
+    raise PlanCreationError(
+        f"計画ファイル名の衝突を解消できませんでした（試行回数={max_attempts}）", next_action=_RETRY_NEXT_ACTION
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -403,8 +449,14 @@ def main(argv: list[str] | None = None) -> int:
             home=args.home,
             work_dir=args.work_dir,
         )
-    except (OSError, UnicodeError, PlanCreationError, TypeError, ValueError) as error:
-        print(f"計画ファイルを作成できません: {error}", file=sys.stderr)
+    except _next_action.ActionableError as error:
+        _next_action.report(f"計画ファイルを作成できません: {error.reason}", next_action=error.next_action)
+        return 1
+    except (OSError, UnicodeError, TypeError, ValueError) as error:
+        _next_action.report(
+            f"計画ファイルを作成できません: {error}",
+            next_action="`--name`・`--lane`の値と入力ファイル（UTF-8で読めること）を直し、同じ引数で再実行する",
+        )
         return 1
     for path in paths:
         print(path)

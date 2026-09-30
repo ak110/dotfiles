@@ -73,6 +73,7 @@ from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402
 from agent_toolkit._atk.wi import repo as _wi_repo  # noqa: E402
 from agent_toolkit._atk.wi import show as _show  # noqa: E402
 from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
+from agent_toolkit._common import next_action as _next_action  # noqa: E402
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
 from agent_toolkit._hooks import session_state as _session_state  # noqa: E402
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402
@@ -110,6 +111,9 @@ _WI_SYNC_MUTATIONS = frozenset(
 
 _UNREGISTERED_TEMP_FINGERPRINT_KEY = "unregistered_managed_temp_fingerprint"
 
+_MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed-temp list`で残存を確認する"
+"""管理対象一時領域の自動削除・探索の失敗に添える次の操作。"""
+
 
 def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
     """候補集合が現行セッションで未報告の場合だけ警告権を取得する。"""
@@ -133,14 +137,19 @@ def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bo
     return should_warn
 
 
+def _argument_type_error(reason: str, next_action: str) -> argparse.ArgumentTypeError:
+    """理由と次の操作の行を持つargparse向けの型エラーを返す。"""
+    return argparse.ArgumentTypeError(_next_action.with_next_action(reason, next_action))
+
+
 def _cooldown_days(value: str) -> int:
     """3以上の再処理抑制日数をargparse向けに検証する。"""
     try:
         days = int(value)
     except ValueError as error:
-        raise argparse.ArgumentTypeError("3以上の整数を指定してください") from error
+        raise _argument_type_error(f"整数ではない: {value}", "3以上の整数を指定する") from error
     if days < 3:
-        raise argparse.ArgumentTypeError("3以上の整数を指定してください")
+        raise _argument_type_error(f"3未満の値: {value}", "3以上の整数を指定する")
     return days
 
 
@@ -205,7 +214,7 @@ def _source_filter_type(value: str) -> str:
     """
     remainder = value[1:] if value.startswith("!") else value
     if not remainder:
-        raise argparse.ArgumentTypeError("空文字列は指定できません（例: --source=session-review）")
+        raise _argument_type_error("空文字列は指定できません", "空でない投入元識別子を指定する（例: --source=session-review）")
     return value
 
 
@@ -214,9 +223,9 @@ def _port_type(value: str) -> int:
     try:
         port = int(value)
     except ValueError as error:
-        raise argparse.ArgumentTypeError("portは1から65535までの整数で指定してください") from error
+        raise _argument_type_error(f"portが整数ではない: {value}", "portは1から65535までの整数で指定する") from error
     if not 1 <= port <= 65535:
-        raise argparse.ArgumentTypeError("portは1から65535までの整数で指定してください")
+        raise _argument_type_error(f"portが範囲外である: {value}", "portは1から65535までの整数で指定する")
     return port
 
 
@@ -225,17 +234,18 @@ def _nonnegative_finite_float(value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError("0以上の有限な数値を指定してください。") from exc
+        raise _argument_type_error(f"数値ではない: {value}", "0以上の有限な数値を指定する") from exc
     if not math.isfinite(parsed) or parsed < 0:
-        raise argparse.ArgumentTypeError("0以上の有限な数値を指定してください。")
+        raise _argument_type_error(f"0以上の有限な数値ではない: {value}", "0以上の有限な数値を指定する")
     return parsed
 
 
 def _worktree_name(value: str) -> str:
     """worktree名としてパス逸脱を起こさない値を検証する。"""
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value) is None or ".." in value:
-        raise argparse.ArgumentTypeError(
-            "worktree名は英数字で始め、英数字・`.`・`_`・`-`だけで指定し、`..`を含めないでください"
+        raise _argument_type_error(
+            f"worktree名として使えない: {value}",
+            "worktree名は英数字で始め、英数字・`.`・`_`・`-`だけで指定し、`..`を含めない",
         )
     return value
 
@@ -296,7 +306,7 @@ def _absolute_note_path(raw_path: str) -> pathlib.Path:
     """メモファイルの絶対パスだけを受理する。"""
     path = pathlib.Path(raw_path)
     if not path.is_absolute():
-        raise argparse.ArgumentTypeError("--note-fileには絶対パスを指定してください。")
+        raise _argument_type_error(f"--note-fileが絶対パスではない: {raw_path}", "--note-fileには絶対パスを指定する")
     return path
 
 
@@ -1250,6 +1260,52 @@ def _cmd_pull(private_notes: pathlib.Path) -> None:
     _outcome.report_success(f"private-notesをremoteと同期した: {private_notes.resolve()}")
 
 
+_SUBCOMMAND_DESTS = (
+    "wi_subcommand",
+    "process_loop_subcommand",
+    "plans_subcommand",
+    "review_table_subcommand",
+    "review_audit_subcommand",
+)
+"""リーフサブコマンドの表記を組み立てるときに、トップレベルコマンドへ続けて読むdest名。"""
+
+
+def _command_label(args: argparse.Namespace) -> str:
+    """ヘルプを案内するリーフサブコマンドの表記（例: `atk wi add`）を返す。"""
+    parts = ["atk", args.command]
+    for dest in _SUBCOMMAND_DESTS:
+        value = getattr(args, dest, None)
+        if isinstance(value, str) and value:
+            parts.append(value)
+    return " ".join(parts)
+
+
+def _report_rejected(args: argparse.Namespace, error: ValueError | _atk_git_sync.RebaseInProgressError) -> None:
+    """入力・状態のエラーを失敗行と次の操作の行で出力する。
+
+    共通の例外型と`RebaseInProgressError`は発生源が決めた次の操作を使う。
+    それ以外の`ValueError`は発生源が次の操作を持たないため、受理形式の確認と不具合の報告を案内する。
+    """
+    if isinstance(error, (_next_action.ActionableError, _atk_git_sync.RebaseInProgressError)):
+        next_action = error.next_action
+    else:
+        next_action = (
+            f"`{_command_label(args)} --help`で受理形式を確かめて再実行する。"
+            "解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
+        )
+    _outcome.report_failure(f"操作を拒否した: {error}", next_action=next_action)
+
+
+def _report_git_failure(error: subprocess.CalledProcessError, private_notes: pathlib.Path) -> None:
+    """Git操作の失敗を出力する。同期基盤が原因と次の操作を出力済みなら重ねない。"""
+    if _atk_git_sync.is_reported(error):
+        return
+    _outcome.report_failure(
+        f"Git操作に失敗した: {error}",
+        next_action=f"`git -C {private_notes.resolve()} status`で確認し、元の操作を再実行する",
+    )
+
+
 def _auto_saves_output(args: argparse.Namespace) -> bool:
     """エージェント環境で、長い標準出力を自動退避するサブコマンドかを返す。
 
@@ -1316,18 +1372,24 @@ def main(
     try:
         automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
-        _outcome.report_warning(f"管理対象一時領域の自動削除に失敗した: {error}")
+        _outcome.report_warning(
+            f"管理対象一時領域の自動削除に失敗した: {error}",
+            next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
+        )
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
     if args.command != "managed-temp" and not is_delegated_session:
         try:
             unregistered_candidates = _managed_temp.list_unregistered_candidates()
         except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
-            _outcome.report_warning(f"登録を持たない管理対象を探索できなかった: {error}")
+            _outcome.report_warning(
+                f"登録を持たない管理対象を探索できなかった: {error}",
+                next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
+            )
         else:
             if _claim_unregistered_temp_warning(unregistered_candidates):
                 _outcome.report_warning(
-                    f"登録を持たない管理対象が{len(unregistered_candidates)}件ある"
-                    "（一覧と回収方法は atk managed-temp list で確認できる）"
+                    f"登録を持たない管理対象が{len(unregistered_candidates)}件ある",
+                    next_action="`atk managed-temp list`で一覧と回収方法を確認する",
                 )
     _validate_bulk_transition_args(args)
     args.repo_path_override = repo_path_override
@@ -1366,7 +1428,7 @@ def main(
         try:
             sys.exit(_run_script.dispatch(args))
         except ValueError as error:
-            _outcome.report_failure(f"操作を拒否した: {error}")
+            _report_rejected(args, error)
             sys.exit(1)
     if home is None:
         home = pathlib.Path.home()
@@ -1376,7 +1438,11 @@ def main(
             sys.exit(_serve.show_logs(follow=args.follow))
         if args.follow:
             parser.error("--followは`atk serve logs`で指定してください。")
-        _serve.run(host=args.host, port=args.port, home=home)
+        try:
+            _serve.run(host=args.host, port=args.port, home=home)
+        except ValueError as error:
+            _report_rejected(args, error)
+            sys.exit(1)
         sys.exit(0)
     if args.command == "managed-temp":
         if (
@@ -1410,23 +1476,23 @@ def main(
                     should_check=not getattr(args, "skip_push", False),
                 )
             )
-        except (_common.WebInputError, _atk_git_sync.RebaseInProgressError) as error:
-            _outcome.report_failure(f"操作を拒否した: {error}")
+        except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
+            _report_rejected(args, error)
             sys.exit(1)
         except subprocess.CalledProcessError as error:
-            _outcome.report_failure(f"Git操作に失敗した: {error}")
+            _report_git_failure(error, private_notes)
             sys.exit(1)
     if args.command == "review-table":
         try:
             sys.exit(_review_table.dispatch(args))
         except ValueError as error:
-            _outcome.report_failure(f"操作を拒否した: {error}")
+            _report_rejected(args, error)
             sys.exit(1)
     if args.command == "review-audit":
         try:
             sys.exit(_review_audit.dispatch(args))
         except ValueError as error:
-            _outcome.report_failure(f"操作を拒否した: {error}")
+            _report_rejected(args, error)
             sys.exit(1)
     if args.command != "wi":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
@@ -1469,11 +1535,11 @@ def main(
     }
     try:
         exit_code = dispatch[sub]() or 0
-    except _common.WebInputError as error:
-        _outcome.report_failure(f"操作を拒否した: {error}")
+    except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
+        _report_rejected(args, error)
         sys.exit(1)
     except subprocess.CalledProcessError as error:
-        _outcome.report_failure(f"Git操作に失敗した: {error}")
+        _report_git_failure(error, private_notes)
         sys.exit(1)
     exit_code = _sync_exit_code(
         exit_code,

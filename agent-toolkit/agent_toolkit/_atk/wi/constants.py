@@ -143,3 +143,14 @@ def normalized_wi_type(value: object) -> str | None:
     if value in WI_TYPES:
         return value
     return LEGACY_WI_TYPES.get(value)
+
+
+def unrepairable_entry_next_action(name: str) -> str:
+    """frontmatterの破損・必須キー欠落の項目に対する次の操作を返す。
+
+    `atk wi edit`の非対話経路も同じ検証を先に行って拒否するため、エージェントが直せる操作として案内しない。
+    """
+    return (
+        f"`atk wi show {name}`で保存内容を確かめ、ユーザーへ報告する"
+        "（この状態の項目は`atk wi edit`の`--body-file`経路でも同じ理由で拒否される）"
+    )

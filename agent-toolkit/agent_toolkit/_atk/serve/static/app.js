@@ -1290,13 +1290,27 @@ function openCreateDialog(origin = null) {
   openDialog(byId('create-dialog'), origin || document.activeElement, byId('create-content'));
 }
 
+const IGNORED_SINGLE_FIELD_LABELS = {
+  target_repo: 'target-repo',
+  scope: '確認範囲',
+  question_type: '回答形式',
+  choices: '選択肢',
+};
+
 function createResultMessage(isBatch, result) {
   const filenames = Array.isArray(result.filenames) ? result.filenames : [];
   const warnings = Array.isArray(result.warnings) ? result.warnings : [];
   const renamed = Object.entries(result.mapping || {}).filter(([original, saved]) => original !== saved);
-  const summary = isBatch
-    ? `${filenames.length}件を取り込みました。` +
-      (renamed.length ? `改名: ${renamed.map(([original, saved]) => `${original} -> ${saved}`).join('、')}` : '')
+  // 種別awi・uwiのまま送ったshow形式の本文をサーバーが一括登録として取り込んだ場合、応答の`batch`が真になる。
+  const autoBatch = !isBatch && result.batch === true;
+  const ignored = Array.isArray(result.ignored_fields) ? result.ignored_fields : [];
+  const summary = isBatch || autoBatch
+    ? (autoBatch ? 'show形式の本文のため一括登録として取り込みました。' : '') +
+      `${filenames.length}件を取り込みました。` +
+      (renamed.length ? `改名: ${renamed.map(([original, saved]) => `${original} -> ${saved}`).join('、')}` : '') +
+      (ignored.length
+        ? ` 使わなかった入力欄: ${ignored.map(name => IGNORED_SINGLE_FIELD_LABELS[name] || name).join('、')}`
+        : '')
     : (filenames[0] ? `${filenames[0]}を追加しました。` : '項目を追加しました。');
   return warnings.length ? `${summary} 警告: ${warnings.join('、')}` : summary;
 }
@@ -1317,7 +1331,8 @@ async function createEntry(event) {
   const choiceInvalid = type === 'uwi' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
   setFieldError(byId('create-choices'), byId('create-choices-error'), choiceInvalid ? '選択肢を2件以上入力してください。' : '');
   if (firstInvalid([byId('create-content'), byId('create-choices')])) return;
-  const payload = isBatch ? {text: rawContent} : {type, messages: [message]};
+  // 単件でも未trimの入力を添え、show形式の本文ならサーバーが原文のまま一括登録へ切り替える。
+  const payload = isBatch ? {text: rawContent} : {type, messages: [message], raw_text: rawContent};
   if (!isBatch) {
     if (targetRepo) payload.target_repo = targetRepo;
     if (type === 'uwi') {

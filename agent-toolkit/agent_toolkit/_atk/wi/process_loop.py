@@ -33,6 +33,7 @@ from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import inherited_venv as _inherited_venv
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._git import command as _git_command
 
@@ -138,7 +139,12 @@ def _cmd_process_loop_instruct(body: str) -> None:
     appended, summary = _process_loop_log.append_instruction(body)
     if not appended:
         if summary.startswith("保持中の合計") or summary == "本文が空である":
-            _outcome.report_failure(f"追加指示を保持しなかった: {summary}")
+            next_action = (
+                "本文を記入して再実行する"
+                if summary == "本文が空である"
+                else "`atk wi process-loop instruct-cancel`で保持中の指示を破棄するか、本文を短くして再実行する"
+            )
+            _outcome.report_failure(f"追加指示を保持しなかった: {summary}", next_action=next_action)
             raise SystemExit(1)
         _outcome.report_success(f"追加指示は{summary}ため、変更は無い")
         return
@@ -292,7 +298,10 @@ def _resolve_executable(command: str) -> str | None:
     """実行可能ファイルを環境の探索規則で解決し、利用不能時は警告する。"""
     executable = shutil.which(command)
     if executable is None:
-        print(f"{command}コマンドを利用できないため処理を継続します。", file=sys.stderr)
+        _next_action.report(
+            f"{command}コマンドを利用できないため処理を継続します。",
+            next_action=f"対応不要（処理は継続した）。{command}を使う場合はPATHへ導入してからprocess-loopを再起動する",
+        )
     return executable
 
 
@@ -322,19 +331,25 @@ def _refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
         )
     except subprocess.TimeoutExpired as exc:
         detail = _mise_output_detail(exc.stderr or exc.stdout)
-        print(
+        _next_action.report(
             f"mise install --quietが{_MISE_INSTALL_TIMEOUT_SEC}秒でタイムアウトしました"
             f"（{detail}）。process-loopを継続します。",
-            file=sys.stderr,
+            next_action=(
+                f"対応不要（process-loopは継続した）。ツールの不足で子セッションが失敗する場合は`mise install`を"
+                f"{dotfiles_root}で手作業で実行して原因を確認する"
+            ),
         )
         return False
     finally:
         _console_title.set_console_title("atk wi process-loop")
     if result.returncode != 0:
         detail = _mise_output_detail(result.stderr or result.stdout)
-        print(
+        _next_action.report(
             f"mise install --quietに失敗しました（exit code {result.returncode}: {detail}）。process-loopを継続します。",
-            file=sys.stderr,
+            next_action=(
+                f"対応不要（process-loopは継続した）。ツールの不足で子セッションが失敗する場合は`mise install`を"
+                f"{dotfiles_root}で手作業で実行して原因を確認する"
+            ),
         )
         return False
     return True
@@ -403,9 +418,30 @@ def _resolve_git_path(output: str, cwd: pathlib.Path) -> pathlib.Path | None:
         return None
 
 
-def _warn_worktree_preparation_failure(message: str, path: pathlib.Path) -> None:
+def _worktree_status_next_action(path: pathlib.Path) -> str:
+    """worktree準備の失敗で、状態の確認から始める次の操作を返す。"""
+    return (
+        f"`git -C {path} status`と`git -C {path} worktree list`で状態を確認して原因を解消する。"
+        "解消後はprocess-loopが次の反復で再試行する"
+    )
+
+
+def _fetch_failure_next_action(path: pathlib.Path, remote: str) -> str:
+    """worktree準備のfetchが失敗したときの次の操作を返す。"""
+    return (
+        f"`git -C {path} fetch {remote}`を手作業で実行して認証とネットワークを確認する。"
+        "解消後はprocess-loopが次の反復で再試行する"
+    )
+
+
+def _worktree_dirty_next_action(path: pathlib.Path) -> str:
+    """worktreeに未コミット変更があるときの次の操作を返す。"""
+    return f"`git -C {path} status`で未コミット変更を確認し、commitするか退避する。解消後はprocess-loopが次の反復で再試行する"
+
+
+def _warn_worktree_preparation_failure(message: str, path: pathlib.Path, *, next_action: str) -> None:
     """worktree準備を停止する警告を共通形式で出力する。"""
-    print(f"{message}ため実装セッションを起動しません: {path}", file=sys.stderr)
+    _next_action.report(f"{message}ため実装セッションを起動しません: {path}", next_action=next_action)
 
 
 def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
@@ -414,13 +450,17 @@ def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
     if check.returncode == 0:
         return True
     if check.returncode != 1:
-        _warn_worktree_preparation_failure("worktree配置先の除外判定に失敗した", local_path)
+        _warn_worktree_preparation_failure(
+            "worktree配置先の除外判定に失敗した", local_path, next_action=_worktree_status_next_action(local_path)
+        )
         return False
 
     exclude_output = _git_output(["rev-parse", "--git-path", "info/exclude"], cwd=local_path)
     exclude_path = _resolve_git_path(exclude_output, local_path)
     if exclude_path is None:
-        _warn_worktree_preparation_failure("Gitの除外設定のパスを解決できなかった", local_path)
+        _warn_worktree_preparation_failure(
+            "Gitの除外設定のパスを解決できなかった", local_path, next_action=_worktree_status_next_action(local_path)
+        )
         return False
     try:
         existing = exclude_path.read_text(encoding="utf-8") if exclude_path.exists() else ""
@@ -430,12 +470,18 @@ def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
             with exclude_path.open("a", encoding="utf-8") as exclude_file:
                 exclude_file.write(f"{prefix}{_WORKTREE_IGNORE_PATTERN}\n")
     except (OSError, UnicodeError):
-        _warn_worktree_preparation_failure("Gitの除外設定を更新できなかった", exclude_path)
+        _warn_worktree_preparation_failure(
+            "Gitの除外設定を更新できなかった",
+            exclude_path,
+            next_action=f"{exclude_path}の書き込み権限を確認するか、`{_WORKTREE_IGNORE_PATTERN}`の行を手作業で追記する",
+        )
         return False
 
     check = _run_worktree_git(["check-ignore", "-q", f"{_WORKTREE_PARENT_REL}/"], local_path)
     if check.returncode != 0:
-        _warn_worktree_preparation_failure("worktree配置先の除外を確認できなかった", local_path)
+        _warn_worktree_preparation_failure(
+            "worktree配置先の除外を確認できなかった", local_path, next_action=_worktree_status_next_action(local_path)
+        )
         return False
     return True
 
@@ -443,12 +489,16 @@ def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
 def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib.Path, branch: str) -> bool:
     """既存worktreeが対象リポジトリの専用worktreeであることを検証する。"""
     if not worktree_path.is_dir():
-        _warn_worktree_preparation_failure("worktreeの配置先がディレクトリではない", worktree_path)
+        _warn_worktree_preparation_failure(
+            "worktreeの配置先がディレクトリではない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
+        )
         return False
     try:
         resolved_worktree_path = worktree_path.resolve()
     except (OSError, RuntimeError):
-        _warn_worktree_preparation_failure("既存worktreeの実体パスを解決できない", worktree_path)
+        _warn_worktree_preparation_failure(
+            "既存worktreeの実体パスを解決できない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
+        )
         return False
 
     worktree_common = _git_output(["rev-parse", "--git-common-dir"], cwd=worktree_path)
@@ -456,7 +506,9 @@ def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib
     worktree_top = _git_output(["rev-parse", "--show-toplevel"], cwd=worktree_path)
     current_branch = _git_output(["symbolic-ref", "--short", "HEAD"], cwd=worktree_path)
     if not all((worktree_common, local_common, worktree_top, current_branch)):
-        _warn_worktree_preparation_failure("既存worktreeのGit照会が失敗した", worktree_path)
+        _warn_worktree_preparation_failure(
+            "既存worktreeのGit照会が失敗した", worktree_path, next_action=_worktree_status_next_action(worktree_path)
+        )
         return False
 
     resolved_worktree_common = _resolve_git_path(worktree_common, worktree_path)
@@ -470,10 +522,14 @@ def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib
         or resolved_worktree_top != resolved_worktree_path
         or current_branch != branch
     ):
-        _warn_worktree_preparation_failure("既存worktreeのGit検証条件が成立しなかった", worktree_path)
+        _warn_worktree_preparation_failure(
+            "既存worktreeのGit検証条件が成立しなかった", worktree_path, next_action=_worktree_status_next_action(worktree_path)
+        )
         return False
     if not _worktree_is_clean(worktree_path):
-        _warn_worktree_preparation_failure("worktreeに未コミット変更がある", worktree_path)
+        _warn_worktree_preparation_failure(
+            "worktreeに未コミット変更がある", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
+        )
         return False
     return True
 
@@ -496,7 +552,11 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
     ref_check = _run_worktree_git(["check-ref-format", "--branch", branch], local_path)
     if ref_check.returncode != 0:
-        _warn_worktree_preparation_failure("worktree名から有効なGitブランチ名を作成できない", worktree_path)
+        _warn_worktree_preparation_failure(
+            "worktree名から有効なGitブランチ名を作成できない",
+            worktree_path,
+            next_action="`--worktree`へ英数字とハイフンからなる名前を指定してprocess-loopを再起動する",
+        )
         return None
     if not _ensure_worktree_excluded(local_path):
         return None
@@ -504,7 +564,14 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     if not upstream_branch:
         upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
     if not upstream_branch:
-        print(f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
+        _next_action.report(
+            f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}",
+            next_action=(
+                f"`git -C {local_path} branch -u <remote>/<branch>`で上流を設定するか、"
+                f"`git -C {local_path} remote set-head origin -a`でorigin/HEADを設定する。"
+                "解消後はprocess-loopが次の反復で再試行する"
+            ),
+        )
         return None
     remotes = (_git_output(["remote"], cwd=local_path) or "").splitlines()
     upstream_remote = max(
@@ -513,7 +580,14 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         default=None,
     )
     if upstream_remote is None:
-        print(f"上流remoteを解決できないため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
+        _next_action.report(
+            f"上流remoteを解決できないため実装セッションを起動しません: {worktree_path}",
+            next_action=(
+                f"`git -C {local_path} branch -u <remote>/<branch>`で上流を設定するか、"
+                f"`git -C {local_path} remote set-head origin -a`でorigin/HEADを設定する。"
+                "解消後はprocess-loopが次の反復で再試行する"
+            ),
+        )
         return None
     created_worktree = False
     if not worktree_path.exists():
@@ -524,50 +598,79 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
             registered_worktrees = _run_worktree_git(["worktree", "list", "--porcelain"], local_path)
             branch_line = f"branch refs/heads/{branch}"
             if registered_worktrees.returncode != 0 or branch_line not in registered_worktrees.stdout.splitlines():
-                _warn_worktree_preparation_failure("既存ブランチのworktree登録を確認できない", worktree_path)
+                _warn_worktree_preparation_failure(
+                    "既存ブランチのworktree登録を確認できない",
+                    worktree_path,
+                    next_action=_worktree_status_next_action(worktree_path),
+                )
                 return None
         try:
             worktree_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError:
-            _warn_worktree_preparation_failure("worktreeの親ディレクトリを作成できなかった", worktree_path)
+            _warn_worktree_preparation_failure(
+                "worktreeの親ディレクトリを作成できなかった",
+                worktree_path,
+                next_action=_worktree_status_next_action(worktree_path),
+            )
             return None
         fetch = _run_worktree_git(["fetch", upstream_remote], local_path)
         if fetch.returncode != 0:
-            print(f"worktree作成前のfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
+            _next_action.report(
+                f"worktree作成前のfetchに失敗しました: {fetch.stderr.strip()}",
+                next_action=_fetch_failure_next_action(local_path, upstream_remote),
+            )
             return None
         command = ["git", "worktree", "add", str(worktree_path), branch]
         if not branch_exists:
             command = ["git", "worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
         created = _run_worktree_git(command[1:], local_path)
         if created.returncode != 0:
-            print(f"worktreeの作成に失敗しました: {created.stderr.strip()}", file=sys.stderr)
+            _next_action.report(
+                f"worktreeの作成に失敗しました: {created.stderr.strip()}",
+                next_action=(
+                    f"`git -C {local_path} worktree list`で登録状況を確認し、実体の無い登録は"
+                    f"`git -C {local_path} worktree prune`で除く。解消後はprocess-loopが次の反復で再試行する"
+                ),
+            )
             return None
         created_worktree = True
     elif not _validate_existing_worktree(local_path, worktree_path, branch):
         return None
     if created_worktree:
         if not worktree_path.is_dir():
-            _warn_worktree_preparation_failure("worktreeの配置先がディレクトリではない", worktree_path)
+            _warn_worktree_preparation_failure(
+                "worktreeの配置先がディレクトリではない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
+            )
             return None
         if not _worktree_is_clean(worktree_path):
-            _warn_worktree_preparation_failure("worktreeに未コミット変更がある", worktree_path)
+            _warn_worktree_preparation_failure(
+                "worktreeに未コミット変更がある", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
+            )
             return None
     if not created_worktree:
         fetch = _run_worktree_git(["fetch", upstream_remote], worktree_path)
         if fetch.returncode != 0:
-            print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
+            _next_action.report(
+                f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}",
+                next_action=_fetch_failure_next_action(worktree_path, upstream_remote),
+            )
             return None
     rebase = _run_worktree_git(["rebase", upstream_branch], worktree_path)
     if rebase.returncode == 0:
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         if _worktree_is_clean(worktree_path):
             return worktree_path
-        _warn_worktree_preparation_failure("追随後のworktreeがdirtyになった", worktree_path)
+        _warn_worktree_preparation_failure(
+            "追随後のworktreeがdirtyになった", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
+        )
         return None
     _run_worktree_git(["rebase", "--abort"], worktree_path)
-    print(
+    _next_action.report(
         f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。",
-        file=sys.stderr,
+        next_action=(
+            f"rebaseは中止した。`git -C {worktree_path} rebase {upstream_branch}`を手作業で実行して競合を解消する。"
+            "解消後はprocess-loopが次の反復で再試行する"
+        ),
     )
     return None
 
@@ -615,17 +718,24 @@ def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
         raw_value = os.environ.get(env_name, "") or _config._load_config().get(  # pylint: disable=protected-access
             "orchestrate_model", default
         )
-        print(
-            f"orchestrate_modelの設定値が不正です（現在の設定値: {raw_value}）。{error}。"
-            f"`atk config set orchestrate_model {default}`のように"
-            "`<claude|codex>:<model>[/<effort>]`形式の候補列で修正してください。",
-            file=sys.stderr,
+        _next_action.report(
+            f"orchestrate_modelの設定値が不正です（現在の設定値: {raw_value}）。{error}。",
+            next_action=(
+                f"`atk config set orchestrate_model {default}`のように"
+                "`<claude|codex>:<model>[/<effort>]`形式の候補列で修正してください。"
+            ),
         )
         sys.exit(2)
     try:
         return _config.resolve_model_candidates("orchestrate")
     except ValueError as error:
-        print(f"orchestrate_modelのCodexモデル解決に失敗しました（設定値: {value}）。{error}", file=sys.stderr)
+        _next_action.report(
+            f"orchestrate_modelのCodexモデル解決に失敗しました（設定値: {value}）。{error}",
+            next_action=(
+                "`codex`へのログインを確認するか、`atk config set orchestrate_model <候補列>`で候補を変えてから"
+                "process-loopを再起動する"
+            ),
+        )
         sys.exit(2)
 
 
@@ -671,9 +781,9 @@ def _select_available_orchestrator(
         except OSError as error:
             _console_title.set_console_title("atk wi process-loop")
             last_failure = (orchestrator, 1, f"engineを起動できません: {error}")
-            print(
+            _next_action.report(
                 f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
-                file=sys.stderr,
+                next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
             )
             continue
         _console_title.set_console_title("atk wi process-loop")
@@ -687,7 +797,10 @@ def _select_available_orchestrator(
         reason = "engineがeffortを無視しました" if ignored_effort else f"exit code {result.returncode}"
         reason = f"{reason}; engine診断: {diagnostic}" if diagnostic else f"{reason}; engineの診断出力はありません"
         last_failure = (orchestrator, failure_code, reason)
-        print(f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}", file=sys.stderr)
+        _next_action.report(
+            f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}",
+            next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
+        )
     _exit_abnormal_session(*last_failure)
     raise AssertionError("到達不能")
 
@@ -750,7 +863,14 @@ def _is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str
 def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "") -> None:
     """既存のセッション異常終了メッセージを出力し、同じ終了コードで終了する。"""
     suffix = f" 原因: {detail}" if detail else ""
-    print(f"{orchestrator}がexit code {returncode}で異常終了しました。{suffix}", file=sys.stderr)
+    _next_action.report(
+        f"{orchestrator}がexit code {returncode}で異常終了しました。{suffix}",
+        next_action=(
+            "オーケストレーターのセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）"
+            "で原因を確認し、解消してからprocess-loopを再起動する。モデル候補の問題なら"
+            "`atk config set orchestrate_model <候補列>`で候補を変える"
+        ),
+    )
     sys.exit(returncode)
 
 
@@ -784,7 +904,10 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
             with _repo_lock(private_notes):
                 _pull(private_notes)
         except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
-            print(f"remote同期に失敗（待機ループ続行）: {exc}", file=sys.stderr)
+            _next_action.report(
+                f"remote同期に失敗（待機ループ続行）: {exc}",
+                next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認する",
+            )
         return False
     finally:
         observer.stop()
@@ -797,7 +920,13 @@ def _pull_private_notes(private_notes: pathlib.Path) -> bool:
         with _repo_lock(private_notes):
             _pull(private_notes)
     except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
-        print(f"remote同期に失敗（子セッションを起動せず待機します）: {exc}", file=sys.stderr)
+        _next_action.report(
+            f"remote同期に失敗（子セッションを起動せず待機します）: {exc}",
+            next_action=(
+                f"`git -C {private_notes} status`で同期状態を確認し、競合やrebase中の状態を解消する。"
+                "解消後はprocess-loopが次の反復で再試行する"
+            ),
+        )
         return False
     return True
 
@@ -994,7 +1123,10 @@ def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
     except (subprocess.CalledProcessError, ValueError) as exc:
         stderr = getattr(exc, "stderr", None)
         detail = f": {stderr.strip()}" if isinstance(stderr, str) and stderr.strip() else ""
-        print(f"上流差分確認に失敗しました（待機ループを続行します）: {exc}{detail}", file=sys.stderr)
+        _next_action.report(
+            f"上流差分確認に失敗しました（待機ループを続行します）: {exc}{detail}",
+            next_action=(f"対応不要（待機は継続した）。繰り返す場合は`git -C {dotfiles_root} fetch`で上流への到達を確認する"),
+        )
         return False
 
 
@@ -1022,9 +1154,9 @@ def _check_and_restart_on_update(
             _console_title.set_console_title("atk wi process-loop")
             update_succeeded = result.returncode == 0
             if not update_succeeded:
-                print(
+                _next_action.report(
                     f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
-                    file=sys.stderr,
+                    next_action="対応不要（待機は継続した）。繰り返す場合は`update-dotfiles`を手作業で実行して原因を確認する",
                 )
     current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
     if current_hash != startup_hash:
@@ -1060,16 +1192,18 @@ def _update_before_session(
     """
     executable = _resolve_executable("update-dotfiles")
     if executable is None:
-        print("update-dotfilesを利用できないため、子セッションを起動せず待機します。", file=sys.stderr)
+        _next_action.report(
+            "update-dotfilesを利用できないため、子セッションを起動せず待機します。",
+            next_action="`update-dotfiles`をPATHへ導入してからprocess-loopを再起動する",
+        )
         return False, False
     result = subprocess.run([executable], check=False, env=env)
     _console_title.set_console_title("atk wi process-loop")
     update_succeeded = result.returncode == 0
     if not update_succeeded:
-        print(
-            f"update-dotfilesに失敗しました（exit code {result.returncode}）。"
-            "同期結果の記録を子セッションが判定するため、子セッションの起動は続行します。",
-            file=sys.stderr,
+        _next_action.report(
+            f"update-dotfilesに失敗しました（exit code {result.returncode}）。",
+            next_action="対応不要（子セッションの起動は続行した）。同期結果の記録は子セッションが判定する",
         )
     if dotfiles_root is not None and startup_hash is not None:
         current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
@@ -1204,7 +1338,10 @@ def _check_process_loop_alerts(
             now=datetime.datetime.now(),
         )
     except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
-        print(f"警告: アラート確認処理に失敗しました: {exc}", file=sys.stderr)
+        _next_action.report(
+            f"警告: アラート確認処理に失敗しました: {exc}",
+            next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
+        )
         submitted = 0
     _process_loop_log.append("alert_check", submitted=submitted)
     return monotonic_now, submitted
