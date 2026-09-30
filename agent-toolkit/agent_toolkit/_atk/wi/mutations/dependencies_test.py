@@ -40,7 +40,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -95,16 +95,16 @@ def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
     [(False, "計画メタ情報の関連WI"), (True, "計画の提示素材")],
 )
 @pytest.mark.parametrize(
-    ("condition", "message_suffix"),
+    ("condition", "message_suffix", "next_action_fragment"),
     [
-        ("missing", "を一意に特定できません"),
-        ("multiple", "を一意に特定できません"),
-        ("broken-frontmatter", "のfrontmatterが破損しています"),
-        ("awi-outside-hold", "の変換元awiがholdに存在しません"),
-        ("already-planned", "が既に計画型です"),
-        ("inactive-uwi", "のUWIがactive状態ではありません"),
-        ("invalid-type", "のtypeが不正です"),
-        ("no-awi", "に変換元awiがありません"),
+        ("missing", "を一意に特定できません", "atk wi show"),
+        ("multiple", "を一意に特定できません", "atk wi show"),
+        ("broken-frontmatter", "のfrontmatterが破損しています", "ユーザーへ報告する"),
+        ("awi-outside-hold", "の変換元awiがholdに存在しません", "atk wi hold"),
+        ("already-planned", "が既に計画型です", "関連WIから"),
+        ("inactive-uwi", "のUWIがactive状態ではありません", "関連WIから"),
+        ("invalid-type", "のtypeが不正です", "ユーザーへ報告する"),
+        ("no-awi", "に変換元awiがありません", "関連WIへ"),
     ],
 )
 def test_plan_awi_paths_identifies_plan_input_source_in_errors(
@@ -113,8 +113,9 @@ def test_plan_awi_paths_identifies_plan_input_source_in_errors(
     source_description: str,
     condition: str,
     message_suffix: str,
+    next_action_fragment: str,
 ) -> None:
-    """計画入力の通常検証エラーが新旧どちらの参照元かを示す。"""
+    """計画入力の通常検証エラーが新旧どちらの参照元かを示し、条件ごとの次の操作を持つ。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     if condition == "multiple":
@@ -143,8 +144,9 @@ def test_plan_awi_paths_identifies_plan_input_source_in_errors(
     filenames, actual_source_description = read_plan_input_filenames(plan)
 
     assert actual_source_description == source_description
-    with pytest.raises(mutations.WebInputError, match=re.escape(source_description + message_suffix)):
+    with pytest.raises(mutations.WebInputError, match=re.escape(source_description + message_suffix)) as exc_info:
         plan_awi_paths(notes, filenames, actual_source_description)
+    assert next_action_fragment in exc_info.value.next_action
 
 
 def test_convert_to_plan_rejects_plan_file_only_in_working_root_without_changes(
@@ -160,9 +162,11 @@ def test_convert_to_plan_rejects_plan_file_only_in_working_root_without_changes(
     plan.write_text("# 計画\n", encoding="utf-8")
     _disable_convert_git(monkeypatch)
 
-    with pytest.raises(mutations.WebInputError, match="atk plans commit"):
+    with pytest.raises(mutations.WebInputError) as raised:
         mutations.convert_entries_to_plan(notes, filenames=("awi.md",), plan_file=str(plan))
 
+    # 保存前の作業計画は、保存の操作を次の操作として示す。
+    assert "atk plans commit" in raised.value.next_action
     assert entry.read_text(encoding="utf-8") == original
 
 
@@ -539,7 +543,12 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
 
     assert exc_info.value.code == 1
     assert path.read_bytes() == original
-    assert capsys.readouterr().err == _USER_COMMENT_ERROR
+    failure, next_action = capsys.readouterr().err.splitlines()
+    assert failure == _USER_COMMENT_ERROR
+    # 旧文面の「残します」は自動処理と読めたため、受信側が行う操作を次の操作の行で受け取れること。
+    assert next_action.startswith("次の操作: ")
+    assert "ユーザーコメント節" in next_action
+    assert "除いて再実行する" in next_action
 
 
 def test_agent_environment_rejects_add_with_user_comment(

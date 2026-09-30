@@ -279,10 +279,10 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
         revisions = _rev_parse_short_revisions(subcommand[1])
         if revisions is not None and len(revisions) >= 2:
             return _llm_notice(
-                f"`git rev-parse --short`へ{len(revisions)}つのrevision（{'、'.join(revisions)}）を渡している。"
-                "同コマンドは1回に1つのrevisionだけを受理し、`fatal: Needed a single revision`で失敗する。\n"
-                "対処: revisionごとに`git rev-parse --short=7 <revision>`を個別に実行し、入力と出力の対応を保つ。",
+                f"`git rev-parse --short`へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
+                "同コマンドは1回に1つのリビジョンだけを受理し、`fatal: Needed a single revision`で失敗する。",
                 tag=_WARN_TAG,
+                fix="リビジョンごとに`git rev-parse --short=7 <revision>`を個別に実行し、入力と出力の対応を保つ。",
                 removable_cause=True,
             )
     return None

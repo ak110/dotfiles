@@ -17,9 +17,35 @@ from typing import Any
 from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.next_action import ActionableError, report, with_next_action
 from agent_toolkit._common.wait_schedule import get_wait_timeout
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
+
+# 次の操作の文面。待機の結果を受け取った主体が、再待機・調査・巻き取りのどれへ進むかを応答だけで決められるようにする。
+_RERUN_WAIT_NEXT_ACTION = "`atk agents wait`を再実行して待機を続ける"
+_NOTICE_NEXT_ACTION = "`notices`の通知を読んで対処し、終端を待つ場合は`atk agents wait`を再実行する"
+_CONSUMED_NEXT_ACTION = (
+    "結果は別の`atk agents wait`が受領済みのため、その出力を参照する。後続の結果を待つ場合は`atk agents wait`を再実行する"
+)
+_PRECEDING_WAIT_NEXT_ACTION = (
+    "先行する`atk agents wait`の終了を待って再実行する。"
+    "先行する待機が応答しないまま残っている場合は、そのプロセスを停止してから再実行する"
+)
+_BROKEN_STATE_NEXT_ACTION = (
+    "agents_serverの状態が壊れているため、MCPの`list`で保持状態を確かめ、agents_serverの不具合としてユーザーへ報告する"
+)
+_READ_FAILURE_NEXT_ACTION = (
+    "回収済みの結果は出力済みのため再取得しない。"
+    "MCPの`show`で対象sessionの状態を確かめ、読めない状態が続く場合はagents_serverの不具合としてユーザーへ報告する"
+)
+_ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
+_IDENTITY_NEXT_ACTION = "同じsessionで`atk agents list`と`atk agents wait`を実行する"
+_FAILED_RESULT_NEXT_ACTION = (
+    "`agent_message`と`error`で失敗の種類を確かめる。作業を続けられる失敗なら同じsessionへ`send_message`で継続し、"
+    "利用上限・認証・過負荷など候補の可用性による失敗なら別の`model_type`で起動し直し、いずれも成立しなければ作業を巻き取る"
+)
+_INTERRUPTED_RESULT_NEXT_ACTION = "中断を要求していない場合は同じsessionへ`send_message`で継続するか、作業を巻き取る"
 
 
 def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Path | None) -> pathlib.Path:
@@ -105,9 +131,10 @@ def _remove_wait_stash(run_path: pathlib.Path) -> None:
 def _consume_wait_result(run_path: pathlib.Path) -> int:
     value = _read_json(run_path)
     if value is None:
-        return _fail(f"先行する待機の結果記録を読めません: {run_path}", 8)
+        return _fail(f"先行する待機の結果記録を読めません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
     if value.get("status") == "consumed":
-        print(json.dumps({"status": "consumed", "run_id": value.get("run_id")}, ensure_ascii=False, separators=(",", ":")))
+        consumed = {"status": "consumed", "run_id": value.get("run_id"), "next_action": _CONSUMED_NEXT_ACTION}
+        print(json.dumps(consumed, ensure_ascii=False, separators=(",", ":")))
         return 8
     output = value.get("output")
     code = value.get("exit_code")
@@ -117,7 +144,7 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
         or not isinstance(output, str)
         or not isinstance(code, int)
     ):
-        return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8)
+        return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
     print(output, file=sys.stderr if stream == "stderr" else sys.stdout, flush=True)
     value["status"] = "consumed"
     _write_json(run_path, value)
@@ -126,22 +153,28 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
 
 
 def _absent_targets_message(owner_status_file: str) -> str:
-    """待機対象の不在を理由とする終了の本文を返す。"""
-    return (
-        "待機対象の登録が0件で、保持中のsessionも0件です。"
-        "委譲先を起動してから`atk agents wait`を実行してください: "
-        f"owner={owner_status_file}"
-    )
+    """待機対象の不在を理由とする終了の理由を返す。"""
+    return f"待機対象の登録が0件で、保持中のsessionも0件です: owner={owner_status_file}"
 
 
-def _fail(message: str, code: int, *, session_id: str | None = None) -> int:
-    """標準エラーへ理由を出力してから非0の終了コードで異常終了する。
+def _fail(message: str, code: int, *, next_action: str, session_id: str | None = None) -> int:
+    """標準エラーへ理由と次の操作を出力してから非0の終了コードで異常終了する。
 
-    理由を伴わない異常終了をこの経路では表現できないよう、`message`を必須の引数とする。
+    理由または次の操作を伴わない異常終了をこの経路では表現できないよう、`message`と`next_action`を必須の引数とする。
     """
     _LOG.info("wait_return reason=abnormal code=%d session_id=%s", code, session_id or "none")
-    print(message, file=sys.stderr)
+    report(message, next_action=next_action)
     return code
+
+
+def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
+    """委譲先が失敗または中断で終端した結果へ、受領した主体の次の操作を加える。"""
+    status = result.get("status")
+    if status == "failed":
+        result["next_action"] = _FAILED_RESULT_NEXT_ACTION
+    elif status == "interrupted":
+        result["next_action"] = _INTERRUPTED_RESULT_NEXT_ACTION
+    return result
 
 
 def _target_origins(
@@ -150,17 +183,17 @@ def _target_origins(
     root_session_id: str,
     owner_status_file: str,
     state_root: pathlib.Path | None,
-) -> tuple[dict[str, set[str]], tuple[str, int] | None]:
-    """現行の待機対象と由来を返し、解釈不能な入力は診断へ変換する。"""
+) -> tuple[dict[str, set[str]], tuple[str, int, str] | None]:
+    """現行の待機対象と由来を返し、解釈不能な入力は理由・終了コード・次の操作の診断へ変換する。"""
     listed = _read_sessions(own_status_path)
     invalid = [session["session_id"] for session in listed or () if not status_file.valid_session_id(session["session_id"])]
     if invalid:
-        return {}, (f"session_idの形式が不正です: {invalid[0]}", 5)
+        return {}, (f"session_idの形式が不正です: {invalid[0]}", 5, _BROKEN_STATE_NEXT_ACTION)
     listed_ids = {session["session_id"] for session in listed or ()}
     result_ids = _retained_result_session_ids(result_directory, owner_status_file=owner_status_file)
     registered_ids, registry_error = status_file.read_wait_targets(root_session_id, owner_status_file, state_root)
     if registry_error is not None:
-        return {}, (f"待機対象登録簿を読めません: {registry_error}", 9)
+        return {}, (f"待機対象登録簿を読めません: {registry_error}", 9, _BROKEN_STATE_NEXT_ACTION)
     # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終端を示す場合に結果が生じないため解放する。
     # 終端の公開から結果ファイルの書込までの間は状態ファイルに行が残るため、回収前の対象を解放しない。
     releasable = {
@@ -213,13 +246,13 @@ def wait_for_result(
     try:
         identity = status_file.resolve_wait_identity(env, root_session_id, state_root)
     except ValueError as error:
-        return _fail(f"agents_serverの待機ルートまたは状態書込主体を解決できません: {error}", 4)
-    if identity is None:
-        message = (
-            "agents_serverの状態ディレクトリを解決できません。"
-            "同じsessionで`atk agents list`と`atk agents wait`を実行してください。"
+        return _fail(
+            f"agents_serverの待機ルートまたは状態書込主体を解決できません: {error}",
+            4,
+            next_action=error.next_action if isinstance(error, ActionableError) else _IDENTITY_NEXT_ACTION,
         )
-        return _fail(message, 4)
+    if identity is None:
+        return _fail("agents_serverの状態ディレクトリを解決できません。", 4, next_action=_IDENTITY_NEXT_ACTION)
     root_session_id = identity.root_session_id
     own_status_path = status_file.status_directory(root_session_id, state_root) / identity.file_name
     result_directory = status_file.results_directory(root_session_id, state_root)
@@ -232,7 +265,8 @@ def wait_for_result(
         state_root,
     )
     if target_error is not None:
-        return _fail(*target_error)
+        message, code, next_action = target_error
+        return _fail(message, code, next_action=next_action)
     current = _read_json(run_directory / "current.json")
     current_id = current.get("run_id") if current is not None else None
     current_run_path = run_directory / f"{current_id}.json" if isinstance(current_id, str) else None
@@ -252,11 +286,9 @@ def wait_for_result(
     own_sessions = _read_sessions(own_status_path)
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
         if root_resolution is not None and not root_resolution.mapping_confirmed:
-            return _fail(
-                status_file.unconfirmed_root_recovery_message(root_resolution, "atk agents wait"),
-                4,
-            )
-        return _fail(_absent_targets_message(identity.file_name), 10)
+            reason, next_action = status_file.unconfirmed_root_recovery(root_resolution, "atk agents wait")
+            return _fail(reason, 4, next_action=next_action)
+        return _fail(_absent_targets_message(identity.file_name), 10, next_action=_ABSENT_TARGETS_NEXT_ACTION)
     _LOG.info(
         "wait_start targets=%s origins=%s",
         ",".join(ordered_ids) or "none",
@@ -282,6 +314,7 @@ def wait_for_result(
                     "同じ書込主体の旧形式の待機がlockを保持しています: "
                     f"owner={identity.file_name}, targets={','.join(ordered_ids) or 'none'}",
                     8,
+                    next_action=_PRECEDING_WAIT_NEXT_ACTION,
                 )
             run_path = run_directory / f"{run_id}.json"
             acquire_lock(lock_file, blocking=True)
@@ -330,8 +363,8 @@ def wait_for_result(
                 state_root,
             )
             if target_error is not None:
-                message, code = target_error
-                return _publish_wait_result(run_path, message, code, stream="stderr")
+                message, code, next_action = target_error
+                return _publish_wait_result(run_path, with_next_action(message, next_action), code, stream="stderr")
             # 待機中の対象不在は、全対象の登録簿が終端を示す場合だけ確定する。
             # 状態投影の消失と登録簿の不在は待機開始後の喪失の根拠にしないため、その場合は待機上限まで待つ。
             if (
@@ -344,7 +377,12 @@ def wait_for_result(
                 )
             ):
                 _LOG.info("wait_return reason=absent owner=%s", identity.file_name)
-                return _publish_wait_result(run_path, _absent_targets_message(identity.file_name), 10, stream="stderr")
+                return _publish_wait_result(
+                    run_path,
+                    with_next_action(_absent_targets_message(identity.file_name), _ABSENT_TARGETS_NEXT_ACTION),
+                    10,
+                    stream="stderr",
+                )
             for session_id in sorted(set(current_origins) - set(ordered_ids)):
                 ordered_ids.append(session_id)
                 ordered_ids.sort()
@@ -359,7 +397,7 @@ def wait_for_result(
                 )
             status_paths = status_file.list_status_files(root_session_id, state_root)
             collected: list[dict[str, Any]] = []
-            read_failure: tuple[str, int] | None = None
+            read_failure: str | None = None
             for session_id in ordered_ids:
                 result_path = result_directory / f"{session_id}.json"
                 result, read_error = status_file.take_result(
@@ -371,7 +409,7 @@ def wait_for_result(
                     stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
                 )
                 if read_error is not None:
-                    read_failure = (f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
+                    read_failure = f"終端結果ファイルを読めません: {result_path}: {read_error}"
                     break
                 notices = status_file.take_notices(
                     root_session_id,
@@ -383,12 +421,13 @@ def wait_for_result(
                     result["session_id"] = session_id
                     if notices:
                         result["notices"] = notices
-                    collected.append(result)
+                    collected.append(_with_result_next_action(result))
                     status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
                     continue
                 if notices:
                     response = _running_response(session_id, _session_output_activity(status_paths, session_id))
                     response["notices"] = notices
+                    response["next_action"] = _NOTICE_NEXT_ACTION
                     collected.append(response)
             if collected:
                 output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
@@ -400,8 +439,9 @@ def wait_for_result(
                 continuable = all(item.get("status") == "running" for item in collected)
                 return _publish_wait_result(run_path, output, 0, continuable=continuable)
             if read_failure is not None:
-                message, code = read_failure
-                return _publish_wait_result(run_path, message, code, stream="stderr")
+                return _publish_wait_result(
+                    run_path, with_next_action(read_failure, _READ_FAILURE_NEXT_ACTION), 6, stream="stderr"
+                )
 
             now = time.monotonic()
             retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
@@ -414,6 +454,7 @@ def wait_for_result(
             )
             remaining = deadline - now
             if remaining <= 0:
+                response["next_action"] = _RERUN_WAIT_NEXT_ACTION
                 output = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
                 _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
                 return _publish_wait_result(run_path, output, 3, continuable=True)

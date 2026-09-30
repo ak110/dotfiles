@@ -209,7 +209,10 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     assert ["rebase", "@{u}"] not in calls
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐している" in stderr
-    assert stderr.endswith(_atk_git_sync.PUSH_DEFERRED_MESSAGE + "\n")
+    lines = stderr.splitlines()
+    assert lines[-2] == f"警告: {_atk_git_sync.PUSH_DEFERRED_MESSAGE}"
+    assert lines[-1].startswith("次の操作: ")
+    assert "git status" in lines[-1]
 
 
 def test_push_suppresses_output_of_recovered_first_push(
@@ -408,6 +411,12 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     assert "git rebase @{u}" in stderr
     assert "git rebase --skip" in stderr
     assert "git rebase --abort" in stderr
+    # 分岐の報告に汎用の同期失敗行を重ねず、原因別の失敗行1本にする。
+    assert stderr.count("失敗: ") == 1
+    assert "private-notesのpullに失敗した" not in stderr
+    lines = stderr.splitlines()
+    failure_end = next(index for index, line in enumerate(lines) if line.startswith("次の操作: "))
+    assert "git rebase @{u}" in lines[failure_end]
 
 
 def test_mq_pull_reports_rebase_failure_and_preserves_state(
@@ -430,3 +439,69 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     stderr = capsys.readouterr().err
     assert "rebaseに失敗したため、rebase状態を保持した" in stderr
     assert "Git履歴が分岐している" not in stderr
+    assert stderr.count("失敗: ") == 1
+    assert "git rebase --continue" in next(line for line in stderr.splitlines() if line.startswith("次の操作: "))
+
+
+@pytest.mark.parametrize(
+    ("git_stderr", "expected_cause", "expected_operation"),
+    [
+        ("fatal: Authentication failed for 'https://example.invalid/repo.git/'\n", "認証", "remote -v"),
+        ("ssh: Could not resolve hostname example.invalid\n", "接続", "ネットワーク接続"),
+        (" ! [rejected]        main -> main (fetch first)\n", "upstream", "atk wi pull"),
+    ],
+)
+def test_sync_failure_classifies_git_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    git_stderr: str,
+    expected_cause: str,
+    expected_operation: str,
+) -> None:
+    """同期失敗はgitの出力から原因を分類し、原因別の次の操作を示す。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    expected = subprocess.CalledProcessError(1, ["git", "fetch"], output="", stderr=git_stderr)
+
+    def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+        del args, cwd, forward_error_output
+        raise expected
+
+    with _atk_git_sync.repo_lock(repo), pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _atk_git_sync.pull(repo, run_git=run_git)
+
+    assert _atk_git_sync.is_reported(exc_info.value)
+    lines = capsys.readouterr().err.splitlines()
+    failure = next(line for line in lines if line.startswith("失敗: "))
+    next_action = lines[lines.index(failure) + 1]
+    assert expected_cause in failure
+    assert next_action.startswith("次の操作: ")
+    assert expected_operation in next_action
+
+
+def test_require_upstream_names_set_upstream_command(tmp_path: pathlib.Path) -> None:
+    """upstreamを解決できない場合は、上流を設定するコマンドを次の操作として持つ。"""
+
+    def result_runner(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        del cwd
+        return subprocess.CompletedProcess(["git", *args], 128, "", "fatal: no upstream configured")
+
+    with pytest.raises(_atk_git_sync.GitSyncError) as exc_info:
+        _atk_git_sync.require_upstream(tmp_path, result_runner=result_runner)
+
+    assert "branch --set-upstream-to=<remote>/<branch>" in exc_info.value.next_action
+
+
+def test_rebase_in_progress_error_keeps_reason_and_next_action(tmp_path: pathlib.Path) -> None:
+    """rebase中の拒否は理由だけを`str()`で返し、競合解消の手順を次の操作として持つ。"""
+    _init_repo(tmp_path / "repo")
+    repo = tmp_path / "repo"
+    rebase_dir = pathlib.Path(_git(repo, "rev-parse", "--git-path", "rebase-merge").stdout.strip())
+    (rebase_dir if rebase_dir.is_absolute() else repo / rebase_dir).mkdir(parents=True)
+
+    with pytest.raises(_atk_git_sync.RebaseInProgressError) as exc_info:
+        _atk_git_sync.ensure_not_rebasing(repo)
+
+    assert "git rebase --continue" not in str(exc_info.value)
+    assert "git rebase --continue" in exc_info.value.next_action
+    assert "git rebase --abort" in exc_info.value.next_action

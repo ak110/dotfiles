@@ -12,13 +12,13 @@ import dataclasses
 import datetime
 import json
 import pathlib
-import sys
 from collections.abc import Callable
 
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi.common import WI_STATES, WI_TYPE_AWI, _iter_entries
 from agent_toolkit._atk.wi.formatters import _parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
 
 _GH_SUBPROCESS_TIMEOUT = 30.0
@@ -32,6 +32,12 @@ GhRunListFn = Callable[[str, str], list[dict]]
 GhDependabotAlertsFn = Callable[[str], list[dict]]
 GlabCiListFn = Callable[[str, str], list[dict]]
 GitCaptureFn = Callable[[pathlib.Path, list[str]], str | None]
+
+
+ALERT_FAILURE_NEXT_ACTION = (
+    "対応不要（待機は継続した）。繰り返す場合は`gh auth status`（GitLabは`glab auth status`）で認証を確認する"
+)
+"""アラート取得の失敗に続ける次の操作。取得失敗は待機ループを止めないため、認証の確認だけを案内する。"""
 
 
 class AlertCollectError(RuntimeError):
@@ -339,13 +345,13 @@ def collect_new_alerts(
             try:
                 candidates.extend(collect_github_ci_failures(repo_path, branch, run_list_fn=run_list_fn))
             except AlertCollectError as exc:
-                print(f"警告: GitHub CI状態の取得に失敗しました: {exc}", file=sys.stderr)
+                _next_action.report(f"警告: GitHub CI状態の取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION)
         try:
             dependabot_alert = collect_github_dependabot_alerts(repo_path, alerts_fn=dependabot_fn)
         except AlertFeatureDisabledError:
             dependabot_alert = None
         except AlertCollectError as exc:
-            print(f"警告: Dependabotアラートの取得に失敗しました: {exc}", file=sys.stderr)
+            _next_action.report(f"警告: Dependabotアラートの取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION)
             dependabot_alert = None
         if dependabot_alert is not None:
             candidates.append(dependabot_alert)
@@ -353,7 +359,7 @@ def collect_new_alerts(
         try:
             candidates.extend(collect_gitlab_ci_failures(repo_path, branch, ci_list_fn=ci_list_fn))
         except AlertCollectError as exc:
-            print(f"警告: GitLab CI状態の取得に失敗しました: {exc}", file=sys.stderr)
+            _next_action.report(f"警告: GitLab CI状態の取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION)
     existing = existing_alert_keys(private_notes, repo_id)
     return [alert for alert in candidates if any(key not in existing for key in alert.keys)]
 

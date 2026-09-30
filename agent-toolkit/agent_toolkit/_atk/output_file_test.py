@@ -52,11 +52,12 @@ def test_redirect_reports_saved_output_when_system_exit_propagates(
     assert capsys.readouterr().out == f"保存先: {output_path.resolve()}\n行数: 1\n"
 
 
-def _run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int | str | None, str]:
-    """`atk`を公開の入口から実行し、終了コードと標準出力を返す。"""
+def _run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int | str | None, str, str]:
+    """`atk`を公開の入口から実行し、終了コード、標準出力および標準エラーを返す。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv)
-    return exc_info.value.code, capsys.readouterr().out
+    captured = capsys.readouterr()
+    return exc_info.value.code, captured.out, captured.err
 
 
 @pytest.fixture
@@ -83,15 +84,17 @@ def test_agent_environment_auto_saves_long_output_to_new_files(
     ユーザーが直接呼んだ場合と短い出力はそのまま表示する。保存先を再利用すると先の結果を上書きし、
     ユーザーの実行まで要約行へ置き換えると、端末で結果を読めなくなる。
     """
-    code, direct_output = _run_atk(_long_output_argv, capsys)
+    code, direct_output, direct_error = _run_atk(_long_output_argv, capsys)
     assert code == 0
     assert len(direct_output.encode("utf-8")) > output_file.AUTO_SAVE_THRESHOLD_BYTES
+    assert "次の操作: " not in direct_error
 
     monkeypatch.setenv("CLAUDECODE", "1")
     saved_paths = []
     for _ in range(2):
-        code, output = _run_atk(_long_output_argv, capsys)
+        code, output, error = _run_atk(_long_output_argv, capsys)
         assert code == 0
+        assert any(line.startswith("次の操作: ") and "保存先" in line for line in error.splitlines())
         saved_line, count_line = output.splitlines()
         saved = pathlib.Path(saved_line.removeprefix("保存先: "))
         assert saved_line.startswith("保存先: ")
@@ -100,7 +103,7 @@ def test_agent_environment_auto_saves_long_output_to_new_files(
         saved_paths.append(saved)
     assert saved_paths[0] != saved_paths[1]
 
-    code, short_output = _run_atk([*_long_output_argv[:-1], "検索語3 "], capsys)
+    code, short_output, _short_error = _run_atk([*_long_output_argv[:-1], "検索語3 "], capsys)
     assert code == 0
     assert not short_output.startswith("保存先: ")
     assert '"kind": "match"' in short_output
@@ -121,3 +124,4 @@ def test_auto_save_writes_full_output_when_directory_cannot_be_created(capsys: p
     captured = capsys.readouterr()
     assert captured.out == text + "\n"
     assert "作成できない" in captured.err
+    assert "次の操作: 対応不要（処理は継続した）" in captured.err

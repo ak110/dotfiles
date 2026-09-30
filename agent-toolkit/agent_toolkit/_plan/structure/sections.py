@@ -42,6 +42,7 @@ import markdown_it.common.html_re
 import markdown_it.rules_inline
 import markdown_it.token
 
+from agent_toolkit._common.next_action import ActionableError  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 if TYPE_CHECKING:
@@ -232,6 +233,14 @@ from agent_toolkit._plan.structure.constants import *  # noqa: F403
 from agent_toolkit._plan.structure.markdown import *  # noqa: F403
 from agent_toolkit._plan.structure.parsing import *  # noqa: F403
 
+_EMPTY_CELL_FIX = "空のセルへ内容を記載し、列数を表頭へそろえる（検証コマンドの欄には実行するコマンドを書く）"
+_NO_FIXED_H2_ERROR = (
+    "固定H2が1件も無い。対象が計画ファイルか確かめる。計画ファイルなら`atk run-script plan-create`で作成した雛形の固定H2を置く"
+)
+_PROGRESS_TABLE_FIX = (
+    f"`## {PLAN_H2_PROGRESS}`見出しと、表頭（{list(PLAN_PROGRESS_TABLE_HEADER)}の列）だけの固定表を置いてから再実行する"
+)
+
 
 def _check_fixed_h2_layout(
     headings: list[PlanHeading],
@@ -318,7 +327,7 @@ def _check_metadata_block(
         if canonical_field not in PLAN_METADATA_QUOTED_FIELDS and quoted:
             errors.append(f"計画メタ情報の`{field}`はバッククォートで囲まない")
         if not _strip_backticks(raw_value) and canonical_field != PLAN_METADATA_RELATED_WI_FIELD:
-            errors.append(f"計画メタ情報の`{field}`が空である")
+            errors.append(f"計画メタ情報の`{field}`が空である。値を記載する")
     if PLAN_METADATA_RELATED_WI_FIELD in expected_fields:
         errors.extend(check_plan_related_wi(metadata))
     work_type = metadata.values.get("作業種別")
@@ -344,11 +353,14 @@ def check_plan_related_wi(metadata: PlanMetadata) -> list[str]:
     seen_wi: set[str] = set()
     for filename, summary in metadata.related_wi:
         if PLAN_QUEUE_ID_PATTERN.fullmatch(filename) is None:
-            errors.append(f"計画メタ情報の`関連WI`のファイル名が不正である: {filename}")
+            errors.append(
+                f"計画メタ情報の`関連WI`のファイル名が不正である: {filename}。"
+                "`YYYYMMDD-HHMMSS-NNN.md`形式の正本ファイル名を`atk wi list`で確かめて直す"
+            )
         if not summary:
-            errors.append(f"計画メタ情報の`関連WI`の1行要約が空である: {filename}")
+            errors.append(f"計画メタ情報の`関連WI`の1行要約が空である: {filename}。1行要約を記載する")
         if filename in seen_wi:
-            errors.append(f"計画メタ情報の`関連WI`のファイル名が重複している: {filename}")
+            errors.append(f"計画メタ情報の`関連WI`のファイル名が重複している: {filename}。重複した行を削除する")
         seen_wi.add(filename)
     return errors
 
@@ -380,16 +392,16 @@ def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[
     material_id, material_type, queue_id, source, citation = row
     errors: list[str] = []
     if not PLAN_MATERIAL_ID_PATTERN.fullmatch(material_id):
-        errors.append(f"提示素材の素材IDが不正である: {material_id}")
+        errors.append(f"提示素材の素材IDが不正である: {material_id}。`P-`で始まる英数字（例: `P-001`）にする")
     elif material_id in identifiers:
-        errors.append(f"提示素材の素材IDが重複している: {material_id}")
+        errors.append(f"提示素材の素材IDが重複している: {material_id}。重複した素材IDを別のIDにする")
     if material_type not in PLAN_MATERIAL_TYPES:
-        errors.append(f"提示素材の種別が不正である: {material_type}")
+        errors.append(f"提示素材の種別が不正である: {material_type}。{list(PLAN_MATERIAL_TYPES)}のいずれかにする")
         return errors
 
     if material_type == "フィードバック":
         if PLAN_QUEUE_ID_PATTERN.fullmatch(queue_id) is None:
-            errors.append(f"フィードバック素材のキューIDが不正である: {queue_id}")
+            errors.append(f"フィードバック素材のキューIDが不正である: {queue_id}。`YYYYMMDD-HHMMSS-NNN.md`形式にする")
         if citation != "本文全文":
             errors.append("フィードバック素材の引用範囲は本文全文にする")
     elif queue_id != PLAN_NON_QUEUE_VALUE:
@@ -409,9 +421,9 @@ def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[
         errors.append("起動事実素材は投入元を常駐自動起動、引用範囲を非該当にする")
 
     if material_type != "起動事実" and not source:
-        errors.append(f"{material_type}素材の投入元が空である")
+        errors.append(f"{material_type}素材の投入元が空である。値を記載する")
     if not citation:
-        errors.append(f"{material_type}素材の引用範囲が空である")
+        errors.append(f"{material_type}素材の引用範囲が空である。値を記載する")
     return errors
 
 
@@ -446,12 +458,12 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
             )
             continue
         if any(not cell for cell in row):
-            errors.append(f"提示素材の素材表に空cellがある: {material_table.row_location(index)}")
+            errors.append(f"提示素材の素材表に空cellがある: {material_table.row_location(index)}。空cellを埋める")
             continue
         errors.extend(_validate_material_row(row, identifiers))
         if row[1] == "フィードバック" and PLAN_QUEUE_ID_PATTERN.fullmatch(row[2]):
             if row[2] in feedback_queue_ids:
-                errors.append(f"フィードバック素材のキューIDが重複している: {row[2]}")
+                errors.append(f"フィードバック素材のキューIDが重複している: {row[2]}。重複を除く")
             feedback_queue_ids.add(row[2])
         identifiers.add(row[0])
 
@@ -474,31 +486,33 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
                 )
                 continue
             if any(not cell for cell in row):
-                errors.append(f"提示素材の要求表に空cellがある: {requirements.row_location(index)}")
+                errors.append(f"提示素材の要求表に空cellがある: {requirements.row_location(index)}。空cellを埋める")
                 continue
             requirement_id, references, _description, decision, adopted, excluded, _reason = row
             match = PLAN_REQUIREMENT_ID_PATTERN.fullmatch(requirement_id)
             if match is None:
-                errors.append(f"要求IDが不正である: {requirement_id}")
+                errors.append(f"要求IDが不正である: {requirement_id}。`R-<素材ID>-<3桁の連番>`（例: `R-P-001-001`）にする")
                 continue
             if requirement_id in requirement_ids:
-                errors.append(f"要求IDが重複している: {requirement_id}")
+                errors.append(f"要求IDが重複している: {requirement_id}。重複を除く")
             requirement_ids.add(requirement_id)
             namespace = match.group("material")
             if namespace not in identifiers:
-                errors.append(f"要求IDの素材名前空間が素材表に無い: {namespace}")
+                errors.append(f"要求IDの素材名前空間が素材表に無い: {namespace}。素材表に在る素材IDへ直すか、素材を追加する")
             refs = _split_material_references(references)
             if not refs:
-                errors.append(f"要求{requirement_id}の素材参照が空である")
+                errors.append(f"要求{requirement_id}の素材参照が空である。素材参照を記載する")
             elif references != ", ".join(refs):
                 errors.append(f"要求{requirement_id}の素材参照は`P-001, P-002`形式で記載する: {references}")
             if refs != sorted(refs):
                 errors.append(f"要求{requirement_id}の素材参照はID昇順で並べる: {references}")
             if len(refs) != len(set(refs)):
-                errors.append(f"要求{requirement_id}の素材参照が重複している: {references}")
+                errors.append(f"要求{requirement_id}の素材参照が重複している: {references}。重複を除く")
             for reference in refs:
                 if reference not in identifiers:
-                    errors.append(f"要求{requirement_id}の素材参照が素材表に無い: {reference}")
+                    errors.append(
+                        f"要求{requirement_id}の素材参照が素材表に無い: {reference}。素材表に在る素材IDへ直すか、素材を追加する"
+                    )
             if namespace not in refs:
                 errors.append(f"要求{requirement_id}の素材名前空間を素材参照に含める: {namespace}")
             if decision not in {"採用", "不採用"}:
@@ -508,9 +522,15 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
                 if adopted.startswith("終端工程のみ"):
                     terminal_only_requirement_ids.add(requirement_id)
             if decision == "採用" and (adopted == PLAN_NON_QUEUE_VALUE or excluded != PLAN_NON_QUEUE_VALUE):
-                errors.append(f"要求{requirement_id}の採用範囲または除外範囲が不正である")
+                errors.append(
+                    f"要求{requirement_id}の採用範囲または除外範囲が不正である（採用範囲={adopted}、除外範囲={excluded}）。"
+                    f"採用行は`採用範囲`を記載し、`除外範囲`を`{PLAN_NON_QUEUE_VALUE}`にする"
+                )
             if decision == "不採用" and (adopted != PLAN_NON_QUEUE_VALUE or excluded == PLAN_NON_QUEUE_VALUE):
-                errors.append(f"要求{requirement_id}の採用範囲または除外範囲が不正である")
+                errors.append(
+                    f"要求{requirement_id}の採用範囲または除外範囲が不正である（採用範囲={adopted}、除外範囲={excluded}）。"
+                    f"不採用行は`採用範囲`を`{PLAN_NON_QUEUE_VALUE}`にし、`除外範囲`を記載する"
+                )
 
         sequences_by_namespace: dict[str, list[int]] = {}
         for requirement_id in requirement_ids:
@@ -519,7 +539,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
             sequences_by_namespace.setdefault(match.group("material"), []).append(int(match.group("sequence")))
         for namespace, sequences in sequences_by_namespace.items():
             if sorted(sequences) != list(range(1, len(sequences) + 1)):
-                errors.append(f"素材{namespace}の要求ID末尾連番が001から欠番なく続かない")
+                errors.append(f"素材{namespace}の要求ID末尾連番が001から欠番なく続かない。連番を001から振り直す")
 
     if material_tables and requirement_tables:
         material_end = material_tables[0].lineno + len(material_tables[0].rows) + 1
@@ -543,7 +563,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
             and row[0] not in referenced
             and row[1] not in {"参考素材", "処理対象資料", "起動事実"}
         ):
-            errors.append(f"素材{row[0]}が要求表から参照されていない")
+            errors.append(f"素材{row[0]}が要求表から参照されていない。要求表の素材参照へ加えるか、素材表から外す")
     return PlanMaterials(
         frozenset(identifiers),
         frozenset(requirement_ids),
@@ -619,7 +639,9 @@ def _check_materials(
             None,
         )
         if follower is None or _MATERIAL_FENCE_PATTERN.fullmatch(follower[1]) is None:
-            errors.append(f"提示素材`{match.group('id')}`の直後に`text`フェンスの逐語転記が無い")
+            errors.append(
+                f"提示素材`{match.group('id')}`の直後に`text`フェンスの逐語転記が無い。素材ID行の直後へ`text`フェンスで原文を転記する"
+            )
         position += 1
     if not identifiers:
         errors.append("提示素材に素材IDと`text`フェンスの逐語転記が1件以上必要")
@@ -653,7 +675,7 @@ def _check_fixed_table(
         if len(row) != len(header):
             errors.append(_column_count_error(f"{label}の表", len(header), row, table.row_location(index)))
         elif any(not cell for cell in row):
-            errors.append(f"{label}の表に空cellがある: {table.row_location(index)}")
+            errors.append(f"{label}の表に空cellがある: {table.row_location(index)}。{_EMPTY_CELL_FIX}")
     return table, errors
 
 
@@ -709,7 +731,10 @@ def _check_bug_unit_sections(
                         )
                     )
                 elif not row[1]:
-                    errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {standalone_table.row_location(index)}")
+                    errors.append(
+                        f"`### {heading.text}`の調査表に空の`内容`がある: {standalone_table.row_location(index)}。"
+                        f"{_EMPTY_CELL_FIX}"
+                    )
             continue
 
         investigation_tables = [
@@ -745,7 +770,9 @@ def _check_bug_unit_sections(
                     )
                 )
             elif any(not cell for cell in row[1:]):
-                errors.append(f"`### {heading.text}`の原因分析表に空のセルがある: {cause_table.row_location(index)}")
+                errors.append(
+                    f"`### {heading.text}`の原因分析表に空のセルがある: {cause_table.row_location(index)}。{_EMPTY_CELL_FIX}"
+                )
         for index, row in enumerate(table.rows):
             if len(row) != len(PLAN_BUG_TABLE_HEADER):
                 errors.append(
@@ -757,7 +784,7 @@ def _check_bug_unit_sections(
                     )
                 )
             elif not row[1]:
-                errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {table.row_location(index)}")
+                errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {table.row_location(index)}。{_EMPTY_CELL_FIX}")
     return errors
 
 
@@ -909,7 +936,9 @@ def _check_permanence_sections(
                                 )
                             )
                         elif any(not cell for cell in row):
-                            errors.append(f"`### リファクタリング`の表に空cellがある: {table.row_location(row_index)}")
+                            errors.append(
+                                f"`### リファクタリング`の表に空cellがある: {table.row_location(row_index)}。{_EMPTY_CELL_FIX}"
+                            )
     return errors
 
 
@@ -988,7 +1017,7 @@ def _check_action_table(tables: list[MarkdownTable]) -> tuple[MarkdownTable | No
         if len(row) != len(table.header):
             errors.append(_column_count_error(f"`## {PLAN_H2_ACTION}`の表", len(table.header), row, table.row_location(index)))
         elif any(not cell for cell in row):
-            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellがある: {table.row_location(index)}")
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellがある: {table.row_location(index)}。{_EMPTY_CELL_FIX}")
     return table, errors
 
 
@@ -1245,7 +1274,7 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
             )
             continue
         if any(not cell for cell in row):
-            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellがある: {table.row_location(index)}")
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellがある: {table.row_location(index)}。{_EMPTY_CELL_FIX}")
             continue
         origin = row[origin_index]
         canonical_origin = canonical_wi_origin(origin)
@@ -1265,7 +1294,10 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
             elif wi_origin_match.group("name") not in related_wi and (
                 materials is None or wi_origin_match.group("name") not in materials.material_paths
             ):
-                errors.append(f"`## {PLAN_H2_ACTION}`のWI由来が`関連WI`に無い: {wi_origin_match.group('name')}")
+                errors.append(
+                    f"`## {PLAN_H2_ACTION}`のWI由来が`関連WI`に無い: {wi_origin_match.group('name')}。"
+                    "計画メタ情報の`関連WI`へ加えるか、由来のファイル名を直す"
+                )
             elif (
                 origin_notices is not None
                 and origin_skips is not None
@@ -1580,11 +1612,13 @@ def progress_log_rows(content: str) -> list[tuple[str, str, str]]:
     headings = extract_headings(content)
     progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
     if progress_index is None:
-        raise ValueError(f"`## {PLAN_H2_PROGRESS}`が無い")
+        raise ActionableError(f"`## {PLAN_H2_PROGRESS}`が無い", next_action=_PROGRESS_TABLE_FIX)
     start, end = heading_subtree_range(headings, progress_index)
     tables = [table for table in extract_tables(lines_within(body, start, end)) if table.header == PLAN_PROGRESS_TABLE_HEADER]
     if not tables:
-        raise ValueError(f"`## {PLAN_H2_PROGRESS}`に{list(PLAN_PROGRESS_TABLE_HEADER)}の固定表が無い")
+        raise ActionableError(
+            f"`## {PLAN_H2_PROGRESS}`に{list(PLAN_PROGRESS_TABLE_HEADER)}の固定表が無い", next_action=_PROGRESS_TABLE_FIX
+        )
     rows: list[tuple[str, str, str]] = []
     for table in tables:
         for index, row in enumerate(table.rows):
@@ -1641,7 +1675,9 @@ def _check_verification_section(
                 )
             )
         elif not row[1]:
-            errors.append(f"`## {PLAN_H2_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}")
+            errors.append(
+                f"`## {PLAN_H2_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}。{_EMPTY_CELL_FIX}"
+            )
     return errors
 
 
@@ -1708,7 +1744,7 @@ def check_plan_structure(content: str) -> list[str]:
     errors.extend(metadata_errors)
 
     if not [heading for heading in headings if heading.level == 2]:
-        errors.append("固定H2が1件も無い")
+        errors.append(_NO_FIXED_H2_ERROR)
         return errors
     errors.extend(
         _check_fixed_h2_layout(headings, _legacy_expected_h2(work_type), disallow_bug_for_normal=True, work_type=work_type)
@@ -1772,7 +1808,7 @@ def check_plan_main_structure(
     errors.extend(metadata_errors)
 
     if not [heading for heading in headings if heading.level == 2]:
-        errors.append("固定H2が1件も無い")
+        errors.append(_NO_FIXED_H2_ERROR)
         return work_type, errors
     canonical_format = is_canonical_main_format(headings)
     if old_two_file_format:
@@ -1970,7 +2006,8 @@ def check_plan_single_file_structure(
                 for row_index, row in enumerate(table.rows):
                     if len(row) != len(PLAN_ACCEPTANCE_TABLE_HEADER) or any(not cell for cell in row):
                         errors.append(
-                            f"`### {PLAN_ACCEPTANCE_H3}`に空セルまたは列数不一致がある: {table.row_location(row_index)}"
+                            f"`### {PLAN_ACCEPTANCE_H3}`に空セルまたは列数不一致がある: {table.row_location(row_index)}。"
+                            f"{_EMPTY_CELL_FIX}"
                         )
         elif [line.strip() for _lineno, line in acceptance_lines if line.strip()] != ["なし"]:
             errors.append(f"採用行が無い場合は`### {PLAN_ACCEPTANCE_H3}`の本文を`なし`にする")
@@ -2022,7 +2059,8 @@ def check_plan_single_file_structure(
                     )
                 elif not row[1]:
                     errors.append(
-                        f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}"
+                        f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}。"
+                        f"{_EMPTY_CELL_FIX}"
                     )
 
     termination_index = find_heading_index(headings, 2, PLAN_H2_TERMINATION)
@@ -2059,7 +2097,7 @@ def check_plan_detail_structure(content: str, work_type: str | None) -> list[str
     errors = check_duplicate_headings(content)
 
     if not [heading for heading in headings if heading.level == 2]:
-        errors.append("固定H2が1件も無い")
+        errors.append(_NO_FIXED_H2_ERROR)
         return errors
     errors.extend(
         _check_fixed_h2_layout(headings, _detail_expected_h2(work_type), disallow_bug_for_normal=True, work_type=work_type)

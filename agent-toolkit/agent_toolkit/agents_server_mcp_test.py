@@ -20,13 +20,16 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+import claude_agent_sdk
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
 
 import agent_toolkit._agents_server.commands as atk_agents
 import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file, tool_names
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.helpers import delivery_payload
 
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
@@ -94,6 +97,13 @@ def _assert_no_forbidden_keys(value: Any) -> None:
     elif isinstance(value, list):
         for nested in value:
             _assert_no_forbidden_keys(nested)
+
+
+def _actionable_message(error: BaseException) -> str:
+    """共通の例外型であることを確かめ、ツールのエラー本文として届く理由と次の操作の2行を返す。"""
+    assert isinstance(error, ActionableError)
+    assert f"\n{NEXT_ACTION_PREFIX}" in error.message
+    return error.message
 
 
 def _complete(session: subject.SessionState, *, message: str = "完了", error: Any = None) -> None:
@@ -923,6 +933,54 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
     assert "受理する入力名:" in str(raised.value)
     assert "環境構築" in str(raised.value)
     assert str(task_document) in str(raised.value)
+    assert "宣言した入力へ収める" in _actionable_message(raised.value)
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("document", "extra_params", "operation"),
+    [
+        ("relative.subagent.md", {}, "`start_custom`"),
+        ("/nonexistent/share/missing.subagent.md", {}, "`start_custom`"),
+        ("exec.subagent.md", {"不正 な名前": "値"}, "空白"),
+    ],
+    ids=["relative-path", "missing-file", "invalid-input-name"],
+)
+async def test_start_rejects_invalid_task_document_request_with_next_action(
+    document: str,
+    extra_params: dict[str, str],
+    operation: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """タスク文書の指定と入力名の誤りは、正しい渡し方か`start_custom`への切替を次の操作で示す。"""
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    path = str(subject._SHARE_DIRECTORY / document) if document == "exec.subagent.md" else document
+
+    with pytest.raises(ValueError) as raised:
+        await subject.start(path, extra_params, str(tmp_path))
+
+    assert operation in _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_reports_missing_model_type_mapping_as_defect(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """工程別設定の対応が無いタスク文書は、欠陥の報告と`start_custom`への切替を次の操作で示す。"""
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    monkeypatch.delitem(subject._TASK_MODEL_TYPES, "exec.subagent.md")
+
+    with pytest.raises(ValueError, match="no model_type mapping") as raised:
+        await subject.start(str(subject._SHARE_DIRECTORY / "exec.subagent.md"), {}, str(tmp_path))
+
+    next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert "`start_custom`" in next_action
+    assert "報告" in next_action
     manager.start.assert_not_awaited()
 
 
@@ -1471,6 +1529,54 @@ async def test_start_retries_same_candidate_when_initialization_times_out(
     assert calls == ["first", "first"]
     assert response["model"] == "first"
     assert response["session_id"] in manager.sessions
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "candidates",
+    [None, [("unknown-engine", "model", "high")], []],
+    ids=["unknown-model-type", "unsupported-engine", "no-candidates"],
+)
+async def test_start_rejects_unusable_model_type_with_accepted_format(
+    candidates: list[tuple[str, str, str]] | None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """解釈できない`model_type`は、受理する書式と`atk config get`での確認を次の操作で示す。"""
+    if candidates is not None:
+        monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+
+    with pytest.raises(ValueError) as raised:
+        await manager.start("not-a-model-type", "調査", str(tmp_path))
+
+    next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert "<claude|codex|agy>:<model>[/<effort>]" in next_action
+    assert "atk config get" in next_action
+    assert not backend.start_calls
+
+
+@pytest.mark.asyncio
+async def test_start_reports_retry_or_other_model_type_when_every_candidate_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """全候補が起動例外で除外された場合は、再試行か別の`model_type`の指定を次の操作で示す。"""
+    candidates = [("agy", "first", "high"), ("agy", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("agy")
+
+    async def failing_start(*_args: Any, **_kwargs: Any) -> subject.SessionState:
+        raise RuntimeError("agy CLI failed")
+
+    monkeypatch.setattr(backend, "start", failing_start)
+
+    with pytest.raises(RuntimeError, match="no available model candidates") as raised:
+        await manager.start("plan", "調査", str(tmp_path))
+
+    next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert "時間をおいて再試行" in next_action
+    assert "`model_type`" in next_action
 
 
 @pytest.mark.asyncio
@@ -2831,9 +2937,12 @@ async def test_kill_lock_wait_respects_positive_timeout(tmp_path: pathlib.Path) 
     manager.sessions[session.session_id] = session
 
     async with session.turn_control_lock:
-        with pytest.raises(TimeoutError, match="kill timed out: thread-1"):
+        with pytest.raises(TimeoutError, match="kill timed out: thread-1") as raised:
             await manager.kill(session.session_id, timeout=0.01)
 
+    next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert "atk agents wait" in next_action
+    assert "`kill`" in next_action
     assert backend.interrupt_calls == 0
 
 
@@ -2845,10 +2954,25 @@ async def test_send_message_rejects_non_positive_timeout(timeout: float, tmp_pat
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     manager.sessions[session.session_id] = session
 
-    with pytest.raises(ValueError, match="timeout must be positive"):
+    with pytest.raises(ValueError, match="timeout must be positive") as raised:
         await manager.send_message(session.session_id, "追加指示", timeout=timeout)
 
+    assert "`timeout`を省略" in _actionable_message(raised.value)
     assert backend.send_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_kill_rejects_negative_timeout_with_default_hint(tmp_path: pathlib.Path) -> None:
+    """killの負のtimeoutは、引数を省略すれば既定値を使えることを次の操作で示す。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    with pytest.raises(ValueError, match="timeout must be non-negative") as raised:
+        await manager.kill(session.session_id, timeout=-1)
+
+    assert "`timeout`を省略" in _actionable_message(raised.value)
+    assert backend.interrupt_calls == 0
 
 
 @pytest.mark.asyncio
@@ -3021,8 +3145,10 @@ async def test_send_message_rejects_active_interrupt_without_backend_call(tmp_pa
     session.interrupt_requested = True
     manager.sessions[session.session_id] = session
 
-    with pytest.raises(ValueError, match="session is being interrupted: thread-1"):
+    with pytest.raises(ValueError, match="session is being interrupted: thread-1") as raised:
         await manager.send_message(session.session_id, "追加指示")
+
+    assert "atk agents wait" in _actionable_message(raised.value)
 
     assert backend.send_calls == 0
 
@@ -3849,8 +3975,9 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
     killed = await manager.kill("thread-codex", timeout=0)
     assert killed["kill_requested"] is True
     assert client.requests[-1][0] == "turn/interrupt"
-    with pytest.raises(ValueError, match="being interrupted"):
+    with pytest.raises(ValueError, match="being interrupted") as raised:
         await manager.send_message("thread-codex", "競合入力")
+    assert "atk agents wait" in _actionable_message(raised.value)
 
 
 @pytest.mark.asyncio
@@ -4389,8 +4516,9 @@ async def test_send_message_timeout_reports_undetermined_delivery(
         session = await backend.start("調査", str(tmp_path))
         await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
 
-        with pytest.raises(TimeoutError, match="send_message timed out: claude-blocking; delivery is undetermined"):
+        with pytest.raises(TimeoutError, match="send_message timed out: claude-blocking; delivery is undetermined") as raised:
             await manager.send_message(session.session_id, "継続", timeout=0.01)
+        assert "atk agents wait" in _actionable_message(raised.value)
     finally:
         await backend.close()
 
@@ -5332,6 +5460,8 @@ async def test_recovered_session_restores_persisted_result_once(
     restored = json.loads(capsys.readouterr().out)
     second = await manager.kill(session_id, timeout=0)
 
+    assert "`send_message`" in restored.pop("next_action")
+
     assert restored == {
         "session_id": session_id,
         "status": "failed",
@@ -5959,8 +6089,11 @@ async def test_stop_does_not_release_twice_after_state_sync_failure(
     with pytest.raises(
         RuntimeError,
         match="backend resources released; state synchronization incomplete.*schedule failed once",
-    ):
+    ) as raised:
         await manager.stop(session.session_id, retain_result=True)
+    next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert "`stop`" in next_action
+    assert "`list`" in next_action
     await manager.stop(session.session_id, retain_result=True)
 
     assert schedule_calls == 2
@@ -5989,14 +6122,142 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("status", "expects_next_action"), [("failed", True), ("running", False)])
+async def test_start_response_adds_next_action_only_for_failed_start(
+    status: str,
+    expects_next_action: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起動直後に失敗で終端した応答だけが、結果の受領と別候補での再起動を`next_action`で示す。"""
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": status}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    response = await subject.start_custom("調査", "high_tier", str(tmp_path))
+
+    if expects_next_action:
+        assert "atk agents wait" in response["next_action"]
+        assert "`model_type`" in response["next_action"]
+    else:
+        assert "next_action" not in response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("delivery", "expects_next_action"),
+    [("reply_failed", True), ("reply_ambiguous", True), ("reply_started", False), ("steered", False)],
+)
+async def test_send_message_response_adds_next_action_for_unconfirmed_reply(
+    delivery: str,
+    expects_next_action: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新しいturnを開始できなかったか確定できなかった配送は、`atk agents wait`での確認を`next_action`で示す。"""
+    manager = SimpleNamespace(send_message=AsyncMock(return_value={"delivery": delivery}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    response = await subject.send_message("3468feae-b2bf-4d67-ac55-3c40207e8b5b", "続行")
+
+    assert response["delivery"] == delivery
+    if expects_next_action:
+        assert "atk agents wait" in response["next_action"]
+    else:
+        assert "next_action" not in response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "operation"),
+    [
+        (ActionableError("理由の本文", next_action="`list`で保持状態を確かめる"), "`list`で保持状態を確かめる"),
+        (state.SessionInitializationTimeoutError("initialize timed out"), "atk agents logs"),
+        (codex_backend.AppServerError("failed to start codex app-server"), "導入と認証"),
+        (RuntimeError("unexpected failure"), "`show`"),
+        (ValueError("unexpected value"), "受理形式"),
+        (claude_agent_sdk.CLINotFoundError("Claude Code not found"), "導入と認証"),
+    ],
+    ids=["actionable", "initialization-timeout", "backend-start", "other", "plain-value-error", "claude-sdk-cli-missing"],
+)
+async def test_tool_error_body_carries_next_action(
+    error: Exception,
+    operation: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MCPツールのエラー本文は理由の後に`次の操作: `の行を持ち、失敗の種類に応じた操作を示す。
+
+    FastMCPは例外の`str()`をエラー本文へ使うため、共通の例外型の次の操作も想定外の例外の案内も、
+    登録の共通層が加えない限り受信側へ届かない。
+    """
+
+    def raise_error(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise error
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(show_session=raise_error))
+
+    with pytest.raises(ToolError) as raised:
+        await subject.mcp.call_tool("show", {"session_id": "3468feae-b2bf-4d67-ac55-3c40207e8b5b"})
+
+    body = str(raised.value)
+    reason, next_action = body.split(f"\n{NEXT_ACTION_PREFIX}", 1)
+    assert reason.endswith(str(error))
+    assert operation in next_action
+
+
+@pytest.mark.asyncio
+async def test_tool_input_schema_is_unchanged_by_error_wrapping() -> None:
+    """例外を包む共通層を通しても、ツールの引数と説明文はツール関数の定義から生成される。"""
+    tools = {tool.name: tool for tool in await subject.mcp.list_tools()}
+
+    assert set(tools["send_message"].inputSchema["properties"]) == {"session_id", "prompt", "timeout"}
+    assert tools["send_message"].inputSchema["required"] == ["session_id", "prompt"]
+    assert "reply_failed" in (tools["send_message"].description or "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("registry_content", "code", "operation"),
+    [
+        (None, "turn_unobserved", "新しいstartでやり直さない"),
+        ("{", "unreadable", "atk agents wait"),
+    ],
+    ids=["running-elsewhere", "unreadable"],
+)
+async def test_unrecoverable_registry_record_reports_next_action(
+    registry_content: str | None,
+    code: str,
+    operation: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """再開できない登録簿の状態は、符号に加えて取るべき操作を次の操作で示す。
+
+    符号だけを返すと、受信側は別の主体が実行中のsessionを新しいstartでやり直し得る。
+    """
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
+    session_registry.publish(session_id, terminal=False, engine="codex", cwd=str(tmp_path))
+    if registry_content is not None:
+        (session_registry.registry_directory() / f"{session_id}.json").write_text(registry_content, encoding="utf-8")
+    manager, backend = _manager_with_fake("codex")
+
+    with pytest.raises(ValueError, match=f"error.recovery={code}") as raised:
+        await manager.send_message(session_id, "続行")
+
+    assert operation in _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert not backend.resume_calls
+    await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_stop_rejects_running_session(tmp_path: pathlib.Path) -> None:
     """実行中turnは中断も破棄もせず、killの先行を要求する。"""
     manager, backend = _manager_with_fake("codex")
     session = subject.SessionState("running", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
 
-    with pytest.raises(ValueError, match="session is running: running; issue kill before stop"):
+    with pytest.raises(ValueError, match="session is running: running") as exc_info:
         await manager.stop(session.session_id)
+    assert "`kill`" in _actionable_message(exc_info.value)
 
     assert manager.sessions[session.session_id] is session
     assert backend.interrupt_calls == 0
@@ -6014,8 +6275,9 @@ async def test_stop_rejects_pending_resume(tmp_path: pathlib.Path) -> None:
     send_task = asyncio.create_task(manager.send_message(resume_state.session_id, "再開", timeout=1))
     await blocker.resume_started.wait()
 
-    with pytest.raises(ValueError, match="session is running: pending; issue kill before stop"):
+    with pytest.raises(ValueError, match="session is running: pending") as exc_info:
         await manager.stop(resume_state.session_id)
+    assert "`kill`" in _actionable_message(exc_info.value)
 
     assert not blocker.release_calls
     blocker.release_resume.set()
@@ -6047,7 +6309,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
     with pytest.raises(ValueError) as excinfo:
         manager.show_session(session_id)
 
-    message = str(excinfo.value)
+    message = _actionable_message(excinfo.value)
     assert "may have restarted" not in message
     assert "another writer" in message
     assert "atk agents wait" in message
@@ -6297,6 +6559,7 @@ async def test_expired_session_kill_returns_success_response(
 
     response = await manager.kill(session.session_id, timeout=0)
 
+    assert "atk agents wait" in response.pop("next_action")
     assert response == {"status": "expired", "kill_requested": False}
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].session_id == "expired"
@@ -6322,11 +6585,13 @@ async def test_unknown_session_is_distinct_from_expired_session(
             await manager.send_message(session_id, "続行")
         else:
             await manager.kill(session_id, timeout=0)
-    message = str(exc_info.value)
+    message = _actionable_message(exc_info.value)
     assert message.startswith(f"unknown session: {session_id}")
     assert "restarted" not in message
     assert "no agents_server on this host has a record" in message
-    assert "start a new session with the verified state" in message
+    next_action = message.split(f"\n{NEXT_ACTION_PREFIX}", 1)[1]
+    assert "`list`" in next_action
+    assert "atk agents wait" in next_action
 
 
 @pytest.mark.asyncio
@@ -6365,7 +6630,8 @@ async def test_session_released_by_another_server_is_reported_as_released(
             await observer.kill(session_id, timeout=0)
         else:
             await observer.stop(session_id)
-    message = str(exc_info.value)
+    message = _actionable_message(exc_info.value)
+    assert "atk agents wait" in message.split(NEXT_ACTION_PREFIX, 1)[1]
     released_at = session_registry.resolve(session_id).released_at
     assert released_at is not None
     assert message.startswith(f"unknown session: {session_id}")
@@ -6388,9 +6654,10 @@ async def test_non_uuid_session_id_reports_identifier_scheme_mismatch(operation:
             await manager.kill("agent-session", timeout=0)
         else:
             await manager.stop("agent-session")
-    message = str(exc_info.value)
+    message = _actionable_message(exc_info.value)
     assert message.startswith("session identifier scheme mismatch: agent-session")
     assert "unknown session" not in message
+    assert "`list`" in message.split(NEXT_ACTION_PREFIX, 1)[1]
 
 
 @pytest.mark.asyncio
@@ -6431,7 +6698,8 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
 
     with pytest.raises(ValueError) as exc_info:
         await subject.start(str(task_document), {}, str(tmp_path))
-    message = str(exc_info.value)
+    message = _actionable_message(exc_info.value)
+    assert "`extra_params`" in message.split(NEXT_ACTION_PREFIX, 1)[1]
     assert "必須入力が欠けています: 対象" in message
     assert str(task_document) in message
     assert "必須入力の行は`<項目名>:`で始める" in message
@@ -6554,8 +6822,9 @@ def test_validate_cwd_rejects_empty_and_relative_paths(cwd: str) -> None:
 
 def test_validate_cwd_rejects_missing_absolute_path(tmp_path: pathlib.Path) -> None:
     """cwd検証は存在しない絶対パスを拒否する。"""
-    with pytest.raises(ValueError, match="cwd is not an existing directory"):
+    with pytest.raises(ValueError, match="cwd is not an existing directory") as raised:
         subject._validate_cwd(str(tmp_path / "missing"))
+    assert "既存ディレクトリの絶対パス" in _actionable_message(raised.value)
 
 
 @pytest.mark.parametrize(
@@ -6564,8 +6833,9 @@ def test_validate_cwd_rejects_missing_absolute_path(tmp_path: pathlib.Path) -> N
 )
 def test_validate_model_effort_rejects_incomplete_values(model: str | None, effort: str | None) -> None:
     """modelとeffortの片側指定および空文字列を拒否する。"""
-    with pytest.raises(ValueError, match="model and effort must"):
+    with pytest.raises(ValueError, match="model and effort must") as raised:
         subject._validate_model_effort(model, effort)
+    assert "`<engine>:<model>/<effort>`" in _actionable_message(raised.value)
 
 
 def test_initialization_failure_resolves_before_host_moves_call_to_background() -> None:
@@ -6801,13 +7071,39 @@ async def test_start_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest.
     with pytest.raises(ValueError) as raised:
         await subject.start_explore("調査", str(workdir))
 
-    message = str(raised.value)
+    message = _actionable_message(raised.value)
     assert f"cwd={workdir}" in message
     assert "command=uv --version" in message
     assert "exit_code=1" in message
     assert "not trusted" in message
+    assert "`mise trust`" in message
     assert not backend.start_calls
     assert not manager.sessions
+
+
+@pytest.mark.asyncio
+async def test_start_reports_path_check_when_plugin_commands_are_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """起動コマンドの実行ファイルが無い場合は、mise以外の原因としてPATHの確認を次の操作に示す。
+
+    miseの案内だけを返すと、受信側は無関係な`mise trust`を試して同じ失敗を繰り返す。
+    """
+    _use_real_plugin_preflight(monkeypatch)
+    _recording_candidates(monkeypatch)
+    empty_bin = tmp_path / "bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    with pytest.raises(ValueError) as raised:
+        await subject.start_explore("調査", str(tmp_path))
+
+    message = _actionable_message(raised.value)
+    assert "実行ファイルが見つからない" in message
+    assert "PATH" in message.split(NEXT_ACTION_PREFIX, 1)[1]
+    assert not backend.start_calls
 
 
 @pytest.mark.asyncio

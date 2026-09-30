@@ -29,16 +29,23 @@ import filelock
 import platformdirs
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
 
 LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
 """自動生成されたremoteなしリポジトリを示すマーカー。"""
 
-PUSH_DEFERRED_MESSAGE = (
-    "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した。\n"
-    "`git status`で差分を確認してcommit等でcleanにした後、元の`atk`操作を再実行する。"
-)
+PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
 """履歴分岐時に無関係な差分がある場合の確定通知。"""
+
+PUSH_DEFERRED_NEXT_ACTION = "`git status`で差分を確認してcommit等でcleanにした後、元の`atk`操作を再実行する"
+"""`PUSH_DEFERRED_MESSAGE`に続けて案内する次の操作。"""
+
+_REPORTED_ATTRIBUTE = "_atk_sync_failure_reported"
+"""失敗の原因と次の操作を本モジュールが出力済みであることを例外へ記録する属性名。"""
+
+_NO_ACTION_NEEDED = "対応不要（処理は継続した）"
+"""自動で解消した事象に添える次の操作。"""
 
 _DivergenceRecovery = Callable[[pathlib.Path], bool]
 """呼び出し元の意味論でローカル側commitの冗長性を証明する判定関数。"""
@@ -57,11 +64,38 @@ class _GitResultRunner(Protocol):
 
 
 class RebaseInProgressError(RuntimeError):
-    """rebase中の作業コピーへ新しいmutationを開始しようとした。"""
+    """rebase中の作業コピーへ新しいmutationを開始しようとした。
+
+    `str()`は理由だけを返す。次の操作は原因が1つに決まるため`next_action`へ固定する。
+    """
+
+    next_action = (
+        "現在の競合を解消して`git add <path>`、`git rebase --continue`、`git push`を実行するか、"
+        "不要であれば`git rebase --abort`を実行してから、元の`atk`操作を再実行する"
+    )
 
 
 class GitSyncError(RuntimeError):
-    """Git同期の前提を満たせない。"""
+    """Git同期の前提を満たせない。`str()`は理由だけを返し、`next_action`に次の操作を持つ。"""
+
+    def __init__(self, reason: str, *, next_action: str) -> None:
+        _next_action.next_action_line(next_action)
+        super().__init__(reason)
+        self.reason = reason
+        self.next_action = next_action
+
+
+def mark_reported(error: subprocess.CalledProcessError) -> None:
+    """失敗の原因と次の操作を出力済みであることを例外へ記録する。"""
+    setattr(error, _REPORTED_ATTRIBUTE, True)
+
+
+def is_reported(error: subprocess.CalledProcessError) -> bool:
+    """本モジュールが失敗の原因と次の操作を出力済みの例外か返す。
+
+    呼び出し元のCLIは出力済みの失敗へ汎用の失敗行を重ねず、原因別の失敗行を1本に保つ。
+    """
+    return bool(getattr(error, _REPORTED_ATTRIBUTE, False))
 
 
 def _run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
@@ -213,11 +247,7 @@ def is_rebase_in_progress(
 def ensure_not_rebasing(private_notes: pathlib.Path) -> None:
     """新しいmutationを受け付けられる状態か検証する。"""
     if is_rebase_in_progress(private_notes):
-        raise RebaseInProgressError(
-            "rebase中のため新しい更新を開始できません。現在の競合を解消して"
-            "`git add <path>`、`git rebase --continue`、`git push`を実行するか、"
-            "不要であれば`git rebase --abort`を実行してください。"
-        )
+        raise RebaseInProgressError("rebase中のため新しい更新を開始できない")
 
 
 def pull(
@@ -235,8 +265,10 @@ def pull(
             result_runner=result_runner,
             redundant_divergence=redundant_divergence,
         )
-    except subprocess.CalledProcessError:
-        _report_sync_failure(private_notes, "pull")
+    except subprocess.CalledProcessError as error:
+        if not is_reported(error):
+            _report_sync_failure(private_notes, "pull", error)
+            mark_reported(error)
         raise
 
 
@@ -283,12 +315,14 @@ def _pull_impl(
     if is_worktree_dirty(private_notes, result_runner=result_runner):
         _forward_error_output(merge_error)
         _report_divergence(private_notes, result_runner=result_runner)
+        mark_reported(merge_error)
         raise merge_error
     try:
         run_git(["rebase", "@{u}"], private_notes)
     except subprocess.CalledProcessError:
         _forward_error_output(merge_error)
         _report_rebase_failure(private_notes, result_runner=result_runner)
+        mark_reported(merge_error)
         raise merge_error from None
 
 
@@ -362,9 +396,9 @@ def _recover_redundant_divergence(
     if not redundant_divergence(private_notes):
         return False
     run_git(["reset", "--keep", "@{u}"], private_notes)
-    print(
+    _next_action.report(
         "同等の変更がupstreamへ反映済みであることを確認したため、冗長なローカルcommitを除外して自動同期しました。",
-        file=sys.stderr,
+        next_action=_NO_ACTION_NEEDED,
     )
     return True
 
@@ -380,9 +414,9 @@ def _recover_matching_tree_divergence(
     if result.returncode != 0:
         return False
     run_git(["reset", "--soft", "@{u}"], private_notes)
-    print(
+    _next_action.report(
         "HEADとupstreamの内容が一致するため、冗長なローカルcommitを除外して自動同期しました。",
-        file=sys.stderr,
+        next_action=_NO_ACTION_NEEDED,
     )
     return True
 
@@ -402,27 +436,25 @@ def _report_divergence(
                 count_text = f"ローカルのみ{fields[0]}件、upstreamのみ{fields[1]}件"
     except (OSError, subprocess.SubprocessError):
         pass
-    _outcome.report_failure(f"Git履歴が分岐している（{count_text}）: {private_notes}。次の回復手順で解消する")
+    reason_lines = [
+        f"Git履歴が分岐している（{count_text}）: {private_notes}。"
+        "ローカルの未push commitを残した間に、別のcloneからupstreamが更新された状態である",
+    ]
     try:
         differences = result_runner(["diff", "--name-status", "HEAD", "@{u}"], private_notes)
         if differences.returncode == 0 and differences.stdout.strip():
-            print("内容差のあるファイル:", file=sys.stderr)
-            print(differences.stdout.rstrip(), file=sys.stderr)
+            reason_lines.append("内容差のあるファイル:")
+            reason_lines.append(differences.stdout.rstrip())
     except (OSError, subprocess.SubprocessError):
         pass
-    print(
-        "ローカルの未push commitを残した間に、別のcloneからupstreamが更新された状態である。",
-        file=sys.stderr,
-    )
-    print("確認: `git log --left-right --oneline HEAD...@{u}`", file=sys.stderr)
-    print(
-        "回復: `git rebase @{u}`を実行し、競合を解消して`git add <path>`、`git rebase --continue`、`git push`の順に実行する。",
-        file=sys.stderr,
-    )
-    print(
-        "同じ変更がupstreamに存在する重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
-        "中止する場合は`git rebase --abort`を実行する。",
-        file=sys.stderr,
+    _outcome.report_failure(
+        "\n".join(reason_lines),
+        next_action=(
+            "`git log --left-right --oneline HEAD...@{u}`で分岐を確認し、`git rebase @{u}`を実行する。"
+            "競合したら解消して`git add <path>`、`git rebase --continue`、`git push`の順に実行する。\n"
+            "同じ変更がupstreamに存在する重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
+            "中止する場合は`git rebase --abort`を実行する"
+        ),
     )
 
 
@@ -436,30 +468,80 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
         names = [line for line in conflicts.stdout.splitlines() if line]
     except (OSError, subprocess.SubprocessError):
         names = []
-    _outcome.report_failure("rebaseに失敗したため、rebase状態を保持した。自動abortは行っていない。次の手順で競合を解消する")
-    print(
+    _outcome.report_failure(
+        "rebaseに失敗したため、rebase状態を保持した。自動abortは行っていない\n"
         "競合ファイル: " + ("、".join(names) if names else "取得できなかった"),
-        file=sys.stderr,
-    )
-    print("競合を解消した後、次の順に実行する: `git add <競合解消済みパス>`、", file=sys.stderr)
-    print("`git rebase --continue`、`git push`。", file=sys.stderr)
-    print(
-        "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
-        "中止する場合は`git rebase --abort`を実行する。",
-        file=sys.stderr,
+        next_action=(
+            "競合を解消した後、`git add <競合解消済みパス>`、`git rebase --continue`、`git push`の順に実行する。\n"
+            "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
+            "中止する場合は`git rebase --abort`を実行する"
+        ),
     )
 
 
-def _report_sync_failure(private_notes: pathlib.Path, operation: str) -> None:
-    """pullまたはpush失敗後に確認と再実行の手順を表示する。"""
+_AUTH_FAILURE_MARKERS = (
+    "Authentication failed",
+    "Permission denied",
+    "could not read Username",
+    "could not read Password",
+    "The requested URL returned error: 401",
+    "The requested URL returned error: 403",
+)
+"""gitの出力のうち認証の失敗を示す語句。"""
+
+_NETWORK_FAILURE_MARKERS = (
+    "Could not resolve host",
+    "Could not resolve hostname",
+    "Connection timed out",
+    "Connection refused",
+    "Network is unreachable",
+    "Operation timed out",
+    "unable to access",
+)
+"""gitの出力のうちネットワーク接続の失敗を示す語句。"""
+
+_NON_FAST_FORWARD_MARKERS = ("non-fast-forward", "[rejected]", "fetch first", "Not possible to fast-forward")
+"""gitの出力のうちupstreamがローカルより進んでいることを示す語句。"""
+
+
+def _sync_failure_next_action(resolved: pathlib.Path, error: subprocess.CalledProcessError) -> tuple[str, str]:
+    """gitの出力から失敗の原因を分類し、原因の説明と次の操作を返す。"""
+    outputs = [output for output in (error.output, error.stderr) if isinstance(output, str)]
+    text = "\n".join(outputs)
+    retry = "解消後、失敗した`atk`操作を再実行すると同期を完了できる"
+    if any(marker in text for marker in _AUTH_FAILURE_MARKERS):
+        return (
+            "remoteの認証に失敗した",
+            f"`git -C {resolved} remote -v`で接続先を確認し、認証情報（SSH鍵または資格情報）を設定する。{retry}。"
+            "認証情報を設定できない場合はユーザーへ報告する",
+        )
+    if any(marker in text for marker in _NETWORK_FAILURE_MARKERS):
+        return (
+            "remoteへ接続できなかった",
+            f"ネットワーク接続を確認し、時間をおいて失敗した`atk`操作を再実行する。"
+            f"繰り返す場合は`git -C {resolved} remote -v`の接続先を確認してユーザーへ報告する",
+        )
+    if any(marker in text for marker in _NON_FAST_FORWARD_MARKERS):
+        return (
+            "upstreamにローカルへ無いcommitがある",
+            f"`git -C {resolved} status`と`git -C {resolved} log --left-right --oneline HEAD...@{{u}}`で差分を確認し、"
+            f"`atk wi pull`で取り込んでから失敗した`atk`操作を再実行する",
+        )
+    return (
+        "直前のgitの出力が失敗理由である。認証、ネットワーク接続、remoteの状態のいずれかを解消する",
+        f"確認: `git -C {resolved} status`\n{retry}",
+    )
+
+
+def _report_sync_failure(
+    private_notes: pathlib.Path,
+    operation: str,
+    error: subprocess.CalledProcessError,
+) -> None:
+    """pullまたはpush失敗後に原因別の確認と再実行の手順を表示する。"""
     resolved = private_notes.resolve()
-    _outcome.report_failure(f"private-notesの{operation}に失敗した: {resolved}。次の手順で原因を解消してから再実行する")
-    print(
-        "直前のgitの出力が失敗理由である。認証、ネットワーク接続、remoteの状態のいずれかを解消する。",
-        file=sys.stderr,
-    )
-    print(f"確認: `git -C {resolved} status`", file=sys.stderr)
-    print("解消後、失敗した`atk`操作を再実行すると同期を完了できる。", file=sys.stderr)
+    cause, next_action = _sync_failure_next_action(resolved, error)
+    _outcome.report_failure(f"private-notesの{operation}に失敗した: {resolved}。{cause}", next_action=next_action)
 
 
 def push_pending_commits(
@@ -477,8 +559,10 @@ def push_pending_commits(
             result_runner=result_runner,
             redundant_divergence=redundant_divergence,
         )
-    except subprocess.CalledProcessError:
-        _report_sync_failure(private_notes, "push")
+    except subprocess.CalledProcessError as error:
+        if not is_reported(error):
+            _report_sync_failure(private_notes, "push", error)
+            mark_reported(error)
         raise
 
 
@@ -529,7 +613,7 @@ def _push_pending_commits_impl(
     if is_worktree_dirty(private_notes, result_runner=result_runner):
         _forward_error_output(original_error)
         _report_divergence(private_notes, result_runner=result_runner)
-        _outcome.report_warning(PUSH_DEFERRED_MESSAGE)
+        _outcome.report_warning(PUSH_DEFERRED_MESSAGE, next_action=PUSH_DEFERRED_NEXT_ACTION)
         return
 
     if _recover_redundant_divergence(
@@ -542,8 +626,9 @@ def _push_pending_commits_impl(
 
     try:
         run_git(["rebase", "@{u}"], private_notes)
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as error:
         _report_rebase_failure(private_notes, result_runner=result_runner)
+        mark_reported(error)
         raise
     run_git(["push"], private_notes)
 
@@ -644,10 +729,9 @@ def commit_and_push(
     run_git(["commit", "-m", message, "--", *stage_paths], private_notes)
     if skip_push:
         if has_remote(private_notes):
-            print(
-                "注記: --skip-pushにより未pushのcommitをローカルへ残し、pushを省略しました。"
-                "最後の操作は--skip-pushなしで実行するか、atk wi commitを実行して滞留commitをpushしてください。",
-                file=sys.stderr,
+            _next_action.report(
+                "注記: --skip-pushにより未pushのcommitをローカルへ残し、pushを省略しました。",
+                next_action="最後の操作は--skip-pushなしで実行するか、atk wi commitを実行して滞留commitをpushする",
             )
         return
     push_fn(private_notes)
@@ -664,7 +748,10 @@ def require_upstream(
         private_notes,
     )
     if result.returncode != 0 or not result.stdout.strip():
-        raise GitSyncError("upstreamを解決できないため移行を開始できません")
+        raise GitSyncError(
+            "upstreamを解決できないため移行を開始できません",
+            next_action=(f"`git -C {private_notes} branch --set-upstream-to=<remote>/<branch>`で上流を設定して再実行する"),
+        )
     return result.stdout.strip()
 
 

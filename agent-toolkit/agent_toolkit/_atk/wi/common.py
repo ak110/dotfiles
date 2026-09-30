@@ -57,6 +57,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_TYPES,
     WI_USER_REMOVABLE_STATES,
     normalized_wi_type,
+    unrepairable_entry_next_action,
 )
 from agent_toolkit._atk.wi.formatters import (
     _display_width,
@@ -69,6 +70,7 @@ from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, write_entry_tex
 from agent_toolkit._atk.wi.readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._common import file_lock as _file_lock
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 
@@ -208,7 +210,11 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     root = _private_notes_path(home)
     if not root.exists():
         if os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
-            _outcome.report_failure(f"WI保存ディレクトリが見つからない: {root}。AGENT_TOOLKIT_PRIVATE_NOTESの値を確認する")
+            _outcome.report_failure(
+                f"WI保存ディレクトリが見つからない: {root}",
+                next_action="環境変数AGENT_TOOLKIT_PRIVATE_NOTESの値を実在するディレクトリへ直すか、"
+                "未設定にして既定の場所を使ってから再実行する",
+            )
             sys.exit(1)
         _init_local_private_notes_repo(root)
     _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
@@ -392,10 +398,9 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
         return
 
     interval = int(_PULL_MIN_INTERVAL_SECONDS)
-    print(
-        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
-        "最新化する場合は`--pull`を指定する。",
-        file=sys.stderr,
+    _next_action.report(
+        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。",
+        next_action="このまま続行してよい。最新化する場合は`--pull`を指定する。",
     )
     _migrate_legacy_reservations(private_notes)
 
@@ -489,8 +494,8 @@ def _notify_unpushed_commits_if_any(private_notes: pathlib.Path) -> bool:
         return False
     resolved = private_notes.resolve()
     _outcome.report_warning(
-        f"private-notesに未pushのcommitが{count}件残る。操作自体は完了している。"
-        f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushする。"
+        f"private-notesに未pushのcommitが{count}件残る。操作自体は完了している。",
+        next_action=f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushする。",
     )
     return True
 
@@ -557,7 +562,9 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
         or ".." in parts
         or pathlib.PurePath(filename).is_absolute()
     ):
-        _outcome.report_failure(f"不正なファイル名: {filename}。パス区切りを含まないファイル名を指定する")
+        _outcome.report_failure(
+            f"不正なファイル名: {filename}", next_action="パス区切りを含まないファイル名を指定して再実行する"
+        )
         sys.exit(2)
     filename = _normalize_md_filename(filename)
     path = base_dir / filename
@@ -565,7 +572,10 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     try:
         path.resolve().relative_to(base_resolved)
     except ValueError:
-        _outcome.report_failure(f"ファイル名が基準ディレクトリ外を指す: {filename}。基準ディレクトリ内のファイル名を指定する")
+        _outcome.report_failure(
+            f"ファイル名が基準ディレクトリ外を指す: {filename}",
+            next_action="基準ディレクトリ内のファイル名を指定して再実行する",
+        )
         sys.exit(2)
     return path
 
@@ -614,6 +624,10 @@ def comparison_key(name: str, *, case_sensitive: bool) -> str:
     return name if case_sensitive else name.lower()
 
 
+MISSING_DEPENDENCY_NEXT_ACTION = "登録は完了した。依存先を投入するか、`atk wi set-dependencies`で依存を直す"
+"""`depends_on`の参照先が取り込み先に無いときの警告に続ける次の操作。"""
+
+
 def missing_dependency_warnings(
     references: Iterable[tuple[str, str]],
     *,
@@ -656,7 +670,8 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
     if duplicates:
         unique_duplicates = list(dict.fromkeys(duplicates))
         _outcome.report_warning(
-            f"{subcommand}の引数リストに重複がある（重複を除いて処理を継続する）: {', '.join(unique_duplicates)}"
+            f"{subcommand}の引数リストに重複がある（重複を除いて処理を継続する）: {', '.join(unique_duplicates)}",
+            next_action="対応不要（重複を除いて処理を継続した）",
         )
     return list(seen.values())
 
@@ -740,7 +755,10 @@ def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object])
     """
     entry_type = normalized_wi_type(metadata.get("type"))
     if entry_type is None:
-        _outcome.report_failure(f"frontmatterのtypeが不正または欠落している（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}")
+        _outcome.report_failure(
+            f"frontmatterのtypeが不正または欠落している（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}",
+            next_action=unrepairable_entry_next_action(path.name),
+        )
         sys.exit(2)
     return entry_type
 
@@ -774,6 +792,9 @@ UNANSWERED_UWI_NOTICE_HEADER = "# 未回答UWI通知（`atk wi list`と`atk wi s
 別の文面とし、通知と一覧出力を読み手が判別できるようにする。
 """
 
+UNANSWERED_UWI_NEXT_ACTION = "ユーザーの回答待ちである。エージェントは回答できない。対象の作業を続けるか、ユーザーへ提示する"
+"""未回答UWI通知の末尾へ置く次の操作。回答欄はユーザーだけが書き込むため、エージェントが取れる行動を示す。"""
+
 
 def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str | Iterable[str] | None) -> None:
     """未回答UWIが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
@@ -792,6 +813,7 @@ def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str 
         prefix = f"{path.name}: {display_repo} [{label}] "
         available_width = shutil.get_terminal_size().columns - _display_width(prefix)
         print(f"{prefix}{_uwi_body_summary(text, available_width)}", file=sys.stderr)
+    print(_next_action.next_action_line(UNANSWERED_UWI_NEXT_ACTION), file=sys.stderr)
 
 
 def _count_awi(awi_dir: pathlib.Path, target_repo: str | None = None) -> int:
@@ -885,26 +907,51 @@ def _collect_message_via_editor(*, strip: bool = True) -> str | None:
     """
     editor = os.environ.get("EDITOR")
     if not editor:
-        _outcome.report_failure("$EDITORが未設定のためエディター経路を利用できない。$EDITORを設定するか--body-fileを指定する")
+        _outcome.report_failure(
+            "$EDITORが未設定のためエディター経路を利用できない",
+            next_action="$EDITORを設定するか--body-fileを指定して再実行する",
+        )
         return None
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8", delete=False) as f:
         tmp_path = pathlib.Path(f.name)
     try:
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
-            _outcome.report_failure(f"エディターが終了コード{result.returncode}で終了した")
+            _outcome.report_failure(
+                f"エディターが終了コード{result.returncode}で終了した",
+                next_action="本文は保存していない。本文をファイルへ書き、--body-fileで指定して再実行する",
+            )
             return None
         saved = tmp_path.read_text(encoding="utf-8")
         if not saved.strip():
-            _outcome.report_failure("本文が空のため投入を中止した。本文を書いてから再実行する")
+            _outcome.report_failure("本文が空のため投入を中止した", next_action="本文を書いてから再実行する")
             return None
         return saved.strip() if strip else saved
     finally:
         tmp_path.unlink(missing_ok=True)
 
 
-class WebInputError(ValueError):
-    """Web APIへ安全に公開できる入力エラー。"""
+class WebInputError(_next_action.ActionableError):
+    """`atk`のCLIとWeb APIが共有する入力エラー。
+
+    CLIは理由と次の操作の2行を出力し、Web APIは`str()`が返す理由だけを応答本文へ使う。
+    """
+
+
+def web_input_error_from(error: Exception, *, next_action: str) -> WebInputError:
+    """下位層の例外を`WebInputError`へ包む。
+
+    元の例外が次の操作を持つ場合はそれを引き継ぎ、発生源に近い案内を包む側の汎用の案内で上書きしない。
+    持たない場合は`next_action`を使う。
+    """
+    if isinstance(error, _next_action.ActionableError):
+        return WebInputError(error.reason, next_action=error.next_action)
+    # `ActionableError`の派生でない下位層の例外（Git同期の`GitSyncError`・`RebaseInProgressError`など）も、
+    # `next_action`属性を持つ場合は発生源の案内を引き継ぐ。
+    own_next_action = getattr(error, "next_action", None)
+    if isinstance(own_next_action, str) and own_next_action.strip():
+        return WebInputError(str(error), next_action=own_next_action)
+    return WebInputError(str(error), next_action=next_action)
 
 
 def ensure_environment(home: pathlib.Path) -> pathlib.Path:
@@ -988,4 +1035,6 @@ def validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     try:
         return _validate_filename(filename, base_dir)
     except SystemExit as error:
-        raise WebInputError(f"不正なファイル名です: {filename}") from error
+        raise WebInputError(
+            f"不正なファイル名です: {filename}", next_action="パス区切りを含まないMarkdownのファイル名を指定する"
+        ) from error

@@ -291,7 +291,12 @@ def test_duplicate_headings_rejects_same_text_under_same_parent() -> None:
     """同じ親の下に同じ文言の見出しが現れた場合は文言と両方の行番号を返す。"""
     content = "# 計画\n\n## 親\n\n### 子\n\n### 子\n"
 
-    assert _plan_format.check_duplicate_headings(content) == ["同じ見出しが重複している: `### 子`（計画/親配下、5行目と7行目）"]
+    errors = _plan_format.check_duplicate_headings(content)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("同じ見出しが重複している: `### 子`（計画/親配下、5行目と7行目）。")
+    # 位置に加えて直し方（削除か文言の区別）を示す。
+    assert "一方を削除するか、見出しの文言を区別する" in errors[0]
 
 
 def test_duplicate_headings_checks_deep_headings_and_ignores_fences() -> None:
@@ -355,7 +360,10 @@ def test_main_structure_rejects_empty_verification_command() -> None:
         f"| {_plan_format.PLAN_VERIFICATION_TABLE_ROWS[1]} | {_plan_fixture.INTEGRATION_COMMAND} |", "| 統合後検証 |  |"
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
-    assert any("空の検証コマンドがある" in error for error in errors), errors
+    matched = [error for error in errors if "空の検証コマンドがある" in error]
+    assert matched, errors
+    # 位置に加えて、検証コマンドの欄へ実行するコマンドを書く直し方を示す。
+    assert all("検証コマンドの欄には実行するコマンドを書く" in error for error in matched)
 
 
 def test_origin_check_reports_notice_for_agent_sourced_wi(tmp_path: pathlib.Path) -> None:

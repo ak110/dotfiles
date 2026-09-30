@@ -80,6 +80,15 @@ _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}
 _BASE_PATH_ALLOWED_RE = re.compile(r"^/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$")
 
 
+class WebApiInputError(ValueError):
+    """`atk serve`のWeb APIだけが送出する入力エラー。
+
+    受信側はブラウザー画面であり、HTTP 400の応答本文は理由の文字列だけとする。
+    CLIとWeb APIが共有する処理の入力エラー（`common.WebInputError`）は次の操作を持つが、
+    Web APIの応答本文へは同じく`str()`の理由だけを使う。
+    """
+
+
 def _safe_base_path(raw: str) -> str:
     """`request.root_path`を信頼境界として正規化する。
 
@@ -139,7 +148,7 @@ async def _request_json() -> typing.Any:
     try:
         return await quart.request.get_json()
     except werkzeug.exceptions.BadRequest as error:
-        raise common.WebInputError("JSON本文の構文が不正です") from error
+        raise WebApiInputError("JSON本文の構文が不正です") from error
 
 
 def _json_object(
@@ -149,19 +158,19 @@ def _json_object(
     required: set[str] | None = None,
 ) -> JsonObject:
     if not isinstance(value, dict):
-        raise common.WebInputError("JSON objectを指定してください")
+        raise WebApiInputError("JSON objectを指定してください")
     unknown = set(value) - allowed
     if unknown:
-        raise common.WebInputError(f"未知のキーです: {', '.join(sorted(unknown))}")
+        raise WebApiInputError(f"未知のキーです: {', '.join(sorted(unknown))}")
     missing = (required or set()) - set(value)
     if missing:
-        raise common.WebInputError(f"必須キーがありません: {', '.join(sorted(missing))}")
+        raise WebApiInputError(f"必須キーがありません: {', '.join(sorted(missing))}")
     return value
 
 
 def _strings(value: typing.Any, name: str) -> list[str]:
     if not isinstance(value, list) or not value or any(not isinstance(item, str) or not item for item in value):
-        raise common.WebInputError(f"{name}は空でない文字列の配列で指定してください")
+        raise WebApiInputError(f"{name}は空でない文字列の配列で指定してください")
     return value
 
 
@@ -170,7 +179,7 @@ def _optional_string(data: JsonObject, name: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
-        raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+        raise WebApiInputError(f"{name}は空でない文字列で指定してください")
     return value
 
 
@@ -179,7 +188,7 @@ def _specified_string(data: JsonObject, name: str) -> str | None:
         return None
     value = data[name]
     if not isinstance(value, str) or not value.strip():
-        raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+        raise WebApiInputError(f"{name}は空でない文字列で指定してください")
     return value
 
 
@@ -189,7 +198,7 @@ def _specified_text(data: JsonObject, name: str) -> str | None:
         return None
     value = data[name]
     if not isinstance(value, str):
-        raise common.WebInputError(f"{name}は文字列で指定してください")
+        raise WebApiInputError(f"{name}は文字列で指定してください")
     return value
 
 
@@ -508,7 +517,7 @@ class Operations:
 
     def detail(self, state: str, filename: str) -> dict[str, object]:
         if state not in _ENTRY_STATES:
-            raise common.WebInputError("stateが不正です")
+            raise WebApiInputError("stateが不正です")
         path = common.validate_filename(filename, self.private_notes / state)
         if not path.is_file():
             candidates = []
@@ -620,31 +629,31 @@ class Operations:
                 skip_remote_sync=True,
             )
         except SystemExit as error:
-            raise common.WebInputError("指定したエントリを操作できません") from error
+            raise WebApiInputError("指定したエントリを操作できません") from error
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """エージェント由来のinboxまたはhold項目へユーザーコメントを追記または置換する。"""
         if state not in {common.WI_STATE_INBOX, common.WI_STATE_HOLD}:
-            raise common.WebInputError("ユーザーコメントを編集できる状態はinboxまたはholdだけです")
+            raise WebApiInputError("ユーザーコメントを編集できる状態はinboxまたはholdだけです")
         if not isinstance(comment, str) or not comment.strip():
-            raise common.WebInputError("commentは空でない文字列で指定してください")
+            raise WebApiInputError("commentは空でない文字列で指定してください")
         if not isinstance(expected_content, str) or not expected_content.strip():
-            raise common.WebInputError("expected_contentは空でない文字列で指定してください")
+            raise WebApiInputError("expected_contentは空でない文字列で指定してください")
 
         parsed = frontmatter.parse_frontmatter(expected_content)
         if parsed is None:
-            raise common.WebInputError("frontmatterを解析できません")
+            raise WebApiInputError("frontmatterを解析できません")
         metadata, _body = parsed
         if common.normalized_wi_type(metadata.get("type")) != common.WI_TYPE_AWI:
-            raise common.WebInputError(f"ユーザーコメントの対象は{common.WI_TYPE_AWI}だけです")
+            raise WebApiInputError(f"ユーザーコメントの対象は{common.WI_TYPE_AWI}だけです")
         if _source_kind(metadata.get("source")) != "agent":
-            raise common.WebInputError(
+            raise WebApiInputError(
                 "ユーザーコメントの対象はエージェント由来のawiだけです。sourceが未設定の項目は対象になりません"
             )
         try:
             updated = user_comment_mutations.update_user_comment(expected_content, comment)
         except user_comment_mutations.UserCommentError as error:
-            raise common.WebInputError(str(error)) from error
+            raise WebApiInputError(str(error)) from error
         try:
             return awi_mutations.edit_entry_content(
                 self.private_notes,
@@ -656,7 +665,7 @@ class Operations:
                 skip_remote_sync=True,
             )
         except SystemExit as error:
-            raise common.WebInputError("指定したエントリを操作できません") from error
+            raise WebApiInputError("指定したエントリを操作できません") from error
 
     def add(
         self,
@@ -674,22 +683,22 @@ class Operations:
         検証は`add_entries`の共通経路へ委ねる。
         """
         if entry_type not in common.WI_TYPES:
-            raise common.WebInputError("typeが不正です")
+            raise WebApiInputError("typeが不正です")
         if entry_type == common.WI_TYPE_AWI and (scope or question_type or choices):
-            raise common.WebInputError(f"scope・question_type・choicesはtype={common.WI_TYPE_UWI}でのみ指定できます")
+            raise WebApiInputError(f"scope・question_type・choicesはtype={common.WI_TYPE_UWI}でのみ指定できます")
         if entry_type == common.WI_TYPE_UWI:
             if question_type not in {"choice", "yes-no", "free-form"}:
-                raise common.WebInputError("question_typeが不正です")
+                raise WebApiInputError("question_typeが不正です")
             if question_type == "choice" and (choices is None or len(choices) < 2):
-                raise common.WebInputError("choice形式には2件以上のchoicesが必要です")
+                raise WebApiInputError("choice形式には2件以上のchoicesが必要です")
             if question_type != "choice" and choices is not None:
-                raise common.WebInputError("choicesはchoice形式でのみ指定できます")
+                raise WebApiInputError("choicesはchoice形式でのみ指定できます")
         resolved_target_repo: str | None = None
         if target_repo is not None:
             try:
                 resolved_target_repo = awi_repo.resolve_repo_id(target_repo)
             except SystemExit as error:
-                raise common.WebInputError("target_repoを解決できません") from error
+                raise WebApiInputError("target_repoを解決できません") from error
         return awi_add.add_entries(
             self.private_notes,
             messages=[_without_source_frontmatter(message) for message in messages],
@@ -775,7 +784,7 @@ class Operations:
                 skip_remote_sync=True,
             )
         except SystemExit as error:
-            raise common.WebInputError("指定したエントリを操作できません") from error
+            raise WebApiInputError("指定したエントリを操作できません") from error
 
     def commit(self) -> bool:
         """外部編集差分をcommitしてpushする。"""
@@ -822,6 +831,10 @@ def _register_error_handlers(app: quart.Quart) -> None:
 
     @app.errorhandler(common.WebInputError)
     async def input_error(error: common.WebInputError) -> tuple[quart.Response, int]:
+        return quart.jsonify(error=str(error)), 400
+
+    @app.errorhandler(WebApiInputError)
+    async def web_api_input_error(error: WebApiInputError) -> tuple[quart.Response, int]:
         return quart.jsonify(error=str(error)), 400
 
     @app.errorhandler(FileNotFoundError)
@@ -1090,16 +1103,16 @@ def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, s
     """
     rel = quart.request.args.get("path")
     if not rel:
-        raise common.WebInputError("pathを指定してください")
+        raise WebApiInputError("pathを指定してください")
     host = quart.request.args.get("host")
     if host is None:
         host = context.hostname
     if host != context.hostname and host not in context.allowed_remote_hosts:
-        raise common.WebInputError("未知のhostです")
+        raise WebApiInputError("未知のhostです")
     requested_source = quart.request.args.get("source") or quart.request.args.get("source_id") or ""
     source_id = serve_plans.resolve_source_id(context, host, requested_source, rel)
     if source_id is None:
-        raise common.WebInputError("sourceを解決できません")
+        raise WebApiInputError("sourceを解決できません")
     return host, source_id, rel
 
 
@@ -1130,12 +1143,12 @@ def _register_session_routes(
     async def sessions_detail() -> quart.Response:
         unknown = set(quart.request.args) - {"host", "engine", "path"}
         if unknown:
-            raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+            raise WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
         engine = quart.request.args.get("engine", "")
         path = quart.request.args.get("path", "")
         host = quart.request.args.get("host") or context.hostname
         if not engine or not path:
-            raise common.WebInputError("engineとpathを指定してください")
+            raise WebApiInputError("engineとpathを指定してください")
         try:
             detail = await serve_sessions.session_detail(context, engine, host, path)
         except serve_sessions.SessionNotFoundError as error:
@@ -1190,38 +1203,38 @@ def _entry_page(filters: dict[str, str]) -> int | None:
     if raw_page is None:
         return None
     if not _DECIMAL_INTEGER_RE.fullmatch(raw_page):
-        raise common.WebInputError("pageは正の10進整数で指定してください")
+        raise WebApiInputError("pageは正の10進整数で指定してください")
     try:
         page = int(raw_page)
     except ValueError as error:
-        raise common.WebInputError("pageは正の10進整数で指定してください") from error
+        raise WebApiInputError("pageは正の10進整数で指定してください") from error
     if page <= 0:
-        raise common.WebInputError("pageは正の10進整数で指定してください")
+        raise WebApiInputError("pageは正の10進整数で指定してください")
     return page
 
 
 def _validate_entry_filters(filters: dict[str, str]) -> None:
     """一覧APIのquery組合せを検証する。"""
     if filters.get("type", "all") not in {"all", *common.WI_TYPES}:
-        raise common.WebInputError("typeが不正です")
+        raise WebApiInputError("typeが不正です")
     if filters.get("status", "all") not in _STATUS_FILTERS:
-        raise common.WebInputError("statusが不正です")
+        raise WebApiInputError("statusが不正です")
     if filters.get("answered", "all") not in _ANSWERED_FILTERS:
-        raise common.WebInputError("answeredが不正です")
+        raise WebApiInputError("answeredが不正です")
     if filters.get("plan", "all") not in _PLAN_FILTERS:
-        raise common.WebInputError("planが不正です")
+        raise WebApiInputError("planが不正です")
     _entry_page(filters)
     if "source_empty" in filters and filters["source_empty"] != "true":
-        raise common.WebInputError("source_emptyはtrueで指定してください")
+        raise WebApiInputError("source_emptyはtrueで指定してください")
     if "source" in filters and "source_empty" in filters:
-        raise common.WebInputError("sourceとsource_emptyは同時に指定できません")
+        raise WebApiInputError("sourceとsource_emptyは同時に指定できません")
     if "source_kind" in filters and filters["source_kind"] not in _SOURCE_KIND_FILTERS:
-        raise common.WebInputError("source_kindが不正です")
+        raise WebApiInputError("source_kindが不正です")
     if "source_kind" in filters and ("source" in filters or "source_empty" in filters):
-        raise common.WebInputError("source_kindとsource/source_emptyは同時に指定できません")
+        raise WebApiInputError("source_kindとsource/source_emptyは同時に指定できません")
     for name in ("target_repo", "source", "q"):
         if name in filters and not filters[name].strip():
-            raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+            raise WebApiInputError(f"{name}は空でない文字列で指定してください")
 
 
 def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
@@ -1236,10 +1249,10 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     async def repos() -> quart.Response:
         unknown = set(quart.request.args) - {"status"}
         if unknown:
-            raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+            raise WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
         status_filter = quart.request.args.get("status", "active")
         if status_filter not in _STATUS_FILTERS:
-            raise common.WebInputError("statusが不正です")
+            raise WebApiInputError("statusが不正です")
         return quart.jsonify(repos=await workers.run(ops.target_repos, status_filter))
 
     @app.get("/api/entries")
@@ -1258,7 +1271,7 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         }
         unknown = set(quart.request.args) - allowed
         if unknown:
-            raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+            raise WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
         filters = dict(quart.request.args.items())
         _validate_entry_filters(filters)
         result, warnings = await workers.run(ops.entries_with_warnings, filters)
@@ -1302,14 +1315,14 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
     force = False
     if "force" in allowed and "force" in data:
         if not isinstance(data["force"], bool):
-            raise common.WebInputError("forceはbooleanで指定してください")
+            raise WebApiInputError("forceはbooleanで指定してください")
         force = data["force"]
     state_name = _optional_string(data, "state") if "state" in allowed else None
     if state_name is not None:
         valid_states = common.TRANSITION_EXPLICIT_STATES.get(action, ())
         if state_name not in valid_states:
             rendered_states = "、".join(valid_states) if valid_states else "なし"
-            raise common.WebInputError(
+            raise WebApiInputError(
                 f"操作{action}はstate={state_name}を受理しません。明示stateとして受理する状態: {rendered_states}"
             )
     expected_content = _specified_text(data, "expected_content") if "expected_content" in allowed else None
@@ -1375,7 +1388,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     async def edit_entry(state_name: str, filename: str) -> quart.Response:
         data = _json_object(await _request_json(), allowed={"content", "expected_content"}, required={"content"})
         if not isinstance(data["content"], str) or not data["content"].strip():
-            raise common.WebInputError("contentは空でない文字列で指定してください")
+            raise WebApiInputError("contentは空でない文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         return quart.jsonify(changed=await workers.run(ops.edit, state_name, filename, data["content"], expected_content))
 
@@ -1397,7 +1410,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             ("expected_content", expected_content),
         ):
             if not isinstance(value, str) or not value.strip():
-                raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+                raise WebApiInputError(f"{name}は空でない文字列で指定してください")
         return quart.jsonify(
             changed=await workers.run(
                 ops.user_comment,
@@ -1416,10 +1429,10 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             required={"type", "messages"},
         )
         if data["type"] not in common.WI_TYPES:
-            raise common.WebInputError("typeが不正です")
+            raise WebApiInputError("typeが不正です")
         raw_text = data.get("raw_text")
         if raw_text is not None and not isinstance(raw_text, str):
-            raise common.WebInputError("raw_textは文字列で指定してください")
+            raise WebApiInputError("raw_textは文字列で指定してください")
         # 種別の選び忘れで一括登録の本文を1件のWIとして保存しないよう、show形式の構造を持つ本文は一括取り込みへ切り替える。
         # ブラウザーの単件送信はtrim済みのため、原文保持に必要な未trimの入力（raw_text）で判定・取り込みする。
         if raw_text is not None and awi_batch.is_show_batch_format(raw_text):
@@ -1428,7 +1441,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         messages = _strings(data["messages"], "messages")
         for key in ("target_repo",):
             if key in data and (not isinstance(data[key], str) or not data[key]):
-                raise common.WebInputError(f"{key}は空でない文字列で指定してください")
+                raise WebApiInputError(f"{key}は空でない文字列で指定してください")
         question_type = data.get("question_type")
         if data["type"] == common.WI_TYPE_UWI and question_type is None:
             question_type = "free-form"
@@ -1447,7 +1460,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     async def add_batch() -> tuple[quart.Response, int]:
         data = _json_object(await _request_json(), allowed={"text"}, required={"text"})
         if not isinstance(data["text"], str) or not data["text"].strip():
-            raise common.WebInputError("textは空でない文字列で指定してください")
+            raise WebApiInputError("textは空でない文字列で指定してください")
         result = await workers.run(ops.add_batch, data["text"])
         return quart.jsonify(**result), 201
 
@@ -1459,13 +1472,13 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             required={"filename", "answer"},
         )
         if not isinstance(data["answer"], str) or not data["answer"].strip():
-            raise common.WebInputError("answerは空でない文字列で指定してください")
+            raise WebApiInputError("answerは空でない文字列で指定してください")
         if not isinstance(data["filename"], str):
-            raise common.WebInputError("filenameは文字列で指定してください")
+            raise WebApiInputError("filenameは文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         state_name = _optional_string(data, "state")
         if state_name is not None and state_name not in (*common.WI_PROCESSABLE_STATES, common.WI_STATE_HOLD):
-            raise common.WebInputError("stateはinbox、processingまたはholdで指定してください")
+            raise WebApiInputError("stateはinbox、processingまたはholdで指定してください")
         if state_name is None:
             changed = await workers.run(ops.answer_uwi, data["filename"], data["answer"], expected_content)
         else:

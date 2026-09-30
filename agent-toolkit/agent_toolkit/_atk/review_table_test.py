@@ -11,7 +11,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
-from agent_toolkit._common import body_match
+from agent_toolkit._common import body_match, next_action
 
 _TRACK = "exec-review"
 _COMPAT_TRACK = "implementation-review"
@@ -372,13 +372,12 @@ def test_non_regular_file_input_is_rejected_with_the_expected_input_form(
     else:
         path.mkdir()
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(next_action.ActionableError) as exc_info:
         _invoke_table_operation(operation, path)
 
-    message = str(exc_info.value)
-    assert f"レビュー表を読み込めない: {path}: 通常ファイルではない。" in message
-    assert ".plan-review.tsv" in message
-    assert "標準入力" in message
+    assert exc_info.value.reason == f"レビュー表を読み込めない: {path}: 通常ファイルではない"
+    assert ".exec-review.tsv" in exc_info.value.next_action
+    assert "標準入力" in exc_info.value.next_action
 
 
 @pytest.mark.parametrize("operation", ("validate", "show"))
@@ -386,13 +385,12 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
     """存在しないパスを読む操作は、対象が存在しないことと期待する入力形を示して拒否する。"""
     path = tmp_path / "sample.plan-review.tsv"
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(next_action.ActionableError) as exc_info:
         _invoke_table_operation(operation, path)
 
-    message = str(exc_info.value)
-    assert f"レビュー表を読み込めない: {path}: 存在しない。" in message
-    assert ".plan-review.tsv" in message
-    assert "標準入力" in message
+    assert exc_info.value.reason == f"レビュー表を読み込めない: {path}: 存在しない"
+    assert ".exec-review.tsv" in exc_info.value.next_action
+    assert "標準入力" in exc_info.value.next_action
 
 
 def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pathlib.Path) -> None:
@@ -744,15 +742,18 @@ def test_respond_rejects_empty_response_and_reason(tmp_path: pathlib.Path) -> No
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "hook", "対象外")
-    with pytest.raises(ValueError, match="いずれかを指定する"):
+    with pytest.raises(next_action.ActionableError) as exc_info:
         table.respond(path, "1", _TRACK, "hook", "対象外", "", "")
+    assert "--response-file" in exc_info.value.next_action
+    assert "--no-response-reason-file" in exc_info.value.next_action
 
 
 def test_duplicate_key_and_existing_init_are_rejected(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
-    with pytest.raises(ValueError, match="既に存在"):
+    with pytest.raises(next_action.ActionableError, match="既に存在") as exc_info:
         table.init(path)
+    assert "既存の表をそのまま使う" in exc_info.value.next_action
     table.add(path, "1", _TRACK, "module.py:10", "同じ指摘")
     with pytest.raises(ValueError, match="重複"):
         table.add(path, "1", _TRACK, " module.py:10 ", "同じ指摘")
@@ -805,8 +806,9 @@ def test_validate_rejects_invalid_track(tmp_path: pathlib.Path) -> None:
         "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="trackの正規値集合"):
+    with pytest.raises(next_action.ActionableError, match="trackが正規値ではない") as exc_info:
         table.validate(path)
+    assert "trackの正規値集合" in exc_info.value.next_action
 
 
 def test_validate_rejects_unanswered_response(tmp_path: pathlib.Path) -> None:
@@ -816,8 +818,9 @@ def test_validate_rejects_unanswered_response(tmp_path: pathlib.Path) -> None:
         "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="未応答"):
+    with pytest.raises(next_action.ActionableError, match="未応答") as exc_info:
         table.validate(path)
+    assert "atk review-table respond <PATH> --row-id 1" in exc_info.value.next_action
 
 
 def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: pathlib.Path) -> None:
@@ -834,9 +837,9 @@ def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: 
         lambda: table.respond(path, "1", _TRACK, "位置", "指摘", "修正", ""),
     ):
         before = path.read_text(encoding="utf-8")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(next_action.ActionableError) as exc_info:
             operation()
-        message = str(exc_info.value)
+        message = exc_info.value.message
         assert path.read_text(encoding="utf-8") == before
         assert "期待列数は7" in message
         assert "trackの位置はroundの直後" in message
@@ -1342,10 +1345,12 @@ def test_respond_rejects_invalid_row_id_without_changing_table(tmp_path: pathlib
     table.add(path, "1", _TRACK, "module.py:10", "指摘")
     before = path.read_text(encoding="utf-8")
 
-    with pytest.raises(ValueError, match="row-id"):
+    with pytest.raises(next_action.ActionableError, match="row-id") as exc_info:
         table.respond(path, "", "", "", "", "対応した", "", row_id=row_id)
 
     assert path.read_text(encoding="utf-8") == before
+    if row_id > 0:
+        assert "atk review-table show" in exc_info.value.next_action
 
 
 def test_respond_rejects_row_id_with_legacy_key(tmp_path: pathlib.Path) -> None:
@@ -1384,3 +1389,25 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     matching = [row for row in rows if row[:4] == list(target)]
     assert matching == [[*target, "詳細", "再現経路を追加", ""]]
+
+
+@pytest.mark.parametrize("operation", ("add", "respond"))
+def test_saved_body_mismatch_names_show_and_respond(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    """保存本文が送信元と一致しない場合は、保存済みであることと確認・修正のコマンドを示す。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    if operation == "respond":
+        table.add(path, "1", _TRACK, "module.py:10", "指摘")
+    monkeypatch.setattr(table._body_match, "verdict", lambda _expected, _saved: "不一致")  # pylint: disable=protected-access
+
+    with pytest.raises(next_action.ActionableError, match="保存本文が送信元本文と一致しない") as exc_info:
+        if operation == "add":
+            table.add(path, "1", _TRACK, "module.py:10", "指摘")
+        else:
+            table.respond(path, "", "", "", "", "対応した", "", row_id=1)
+
+    assert "保存は済んでいる" in exc_info.value.next_action
+    assert "atk review-table show" in exc_info.value.next_action
+    assert "atk review-table respond" in exc_info.value.next_action

@@ -11,6 +11,12 @@ import pathlib
 import sys
 
 from agent_toolkit._atk import session_records as _session_records
+from agent_toolkit._common import next_action as _next_action
+
+_NO_CANDIDATE_NEXT_ACTION = (
+    "`--auto-resume`を外して`--resume <session_id>`で再開するセッションを指定するか、"
+    "`--auto-resume`と`--resume`のどちらも付けずに新規に起動する"
+)
 
 _EXIT_SESSION_LABELS: dict[bool | None, str] = {True: "あり", False: "なし", None: "判定不能"}
 
@@ -55,9 +61,9 @@ def select_session(target_repo_id: str, target_repo_path: pathlib.Path) -> str:
     """
     candidates = _collect_candidates(target_repo_id)
     if not candidates:
-        print(
+        _next_action.report(
             f"error: 対象リポジトリでagent-toolkit:process-wiを起動したセッション記録が見つからない: {target_repo_path}",
-            file=sys.stderr,
+            next_action=_NO_CANDIDATE_NEXT_ACTION,
         )
         sys.exit(1)
 
@@ -67,13 +73,13 @@ def select_session(target_repo_id: str, target_repo_path: pathlib.Path) -> str:
         try:
             answer = input("このセッションを再開しますか [y/n]: ")
         except EOFError:
-            print(
-                f"error: 標準入力が終了したため候補を選択できない。--resume {session_id} を指定して再実行する",
-                file=sys.stderr,
+            _next_action.report(
+                "error: 標準入力が終了したため候補を選択できない。",
+                next_action=f"`--auto-resume`を外し、`--resume {session_id}`を指定して再実行する",
             )
             sys.exit(1)
         if answer.strip().lower() == "y":
             return session_id
 
-    print(f"error: すべての候補が拒否された: {total}件", file=sys.stderr)
+    _next_action.report(f"error: すべての候補が拒否された: {total}件", next_action=_NO_CANDIDATE_NEXT_ACTION)
     sys.exit(1)

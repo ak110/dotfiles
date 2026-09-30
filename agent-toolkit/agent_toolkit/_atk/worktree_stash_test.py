@@ -212,6 +212,7 @@ def test_save_refuses_queue_repository_worktree(
     assert stash.dispatch(args, private_notes=queue_repository) == 2
     error = capsys.readouterr().err
     assert "キュー管理リポジトリ" in error
+    assert "次の操作: " in error
     assert "atk wi・atk plans・atk serve" in error
     assert "atk wi commit" in error
     assert _git(["status", "--short"], queue_repository).stdout == queue_status
@@ -239,6 +240,7 @@ def test_drop_refuses_queue_repository_worktree(
     assert stash.dispatch(args, private_notes=queue_repository) == 2
     error = capsys.readouterr().err
     assert "キュー管理リポジトリ" in error
+    assert "次の操作: " in error
     assert "atk wi・atk plans・atk serve" in error
     assert "atk wi commit" in error
     assert _git(["show-ref", "--verify", "--quiet", ref], queue_repository).returncode == 0
@@ -289,6 +291,10 @@ def test_intermediate_failure_preserves_recovery_identifier(
     error = capsys.readouterr().err
     assert "stash_oid=0123456789abcdef" in error
     assert ref in error
+    next_action = next(line for line in error.splitlines() if line.startswith("次の操作: "))
+    assert "git -C" in next_action
+    assert "stash list" in next_action
+    assert "stash apply 0123456789abcdef" in next_action
     if failure == "update-ref":
         assert "共有refs/stashへ保持" in error
     else:

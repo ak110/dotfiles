@@ -626,7 +626,8 @@ def parse_plan_implementation_units(
     for index, row in enumerate(table.rows):
         if len(row) != len(table.header) or any(not cell for cell in row):
             errors.append(
-                f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}"
+                f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}。"
+                "空cellを埋め、列数を表頭へそろえる"
             )
 
     is_human = table.header in (
@@ -696,7 +697,13 @@ def parse_plan_implementation_units(
         for dependency in unit.dependencies:
             dependency_unit = units_by_id.get(dependency)
             if dependency_unit is None:
-                errors.append(f"実装単位`{unit.unit_id}`の`先行依存`が実装単位表に無い: {dependency}")
+                errors.append(
+                    f"実装単位`{unit.unit_id}`の`先行依存`が実装単位表に無い: {dependency}。"
+                    "実装単位表に在るIDへ直すか、`先行依存`から外す"
+                )
             elif dependency_unit.integration_order >= unit.integration_order:
-                errors.append(f"実装単位`{unit.unit_id}`の`先行依存`が`統合順`より前にない: {dependency}")
+                errors.append(
+                    f"実装単位`{unit.unit_id}`の`先行依存`が`統合順`より前にない: {dependency}。"
+                    "先行する単位の`統合順`を小さくする"
+                )
     return tuple(units), errors

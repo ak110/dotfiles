@@ -48,6 +48,7 @@ from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import
 )
 from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
 from agent_toolkit._common import codex_models
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import locations as _plan_file  # pylint: disable=wrong-import-position
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -126,7 +127,7 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
     return destination
 
 
-class AppServerError(RuntimeError):
+class AppServerError(shared_state.DelegateBackendError):
     """App Serverとの通信または要求検証に失敗した。"""
 
 
@@ -754,9 +755,13 @@ class AppServerManager:
                 }
                 return result
             if session.interrupt_requested:
-                raise ValueError("the active Codex turn is being interrupted")
+                raise ActionableError(
+                    "the active Codex turn is being interrupted", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
+                )
             if not session.turn_id:
-                raise ValueError("the active Codex turn has no turn_id")
+                raise ActionableError(
+                    "the active Codex turn has no turn_id", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
+                )
             client = self.client
             if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
                 raise AppServerError("Codex App Server client is unavailable for steering")
@@ -807,7 +812,10 @@ class AppServerManager:
         if session.terminal:
             return
         if not session.turn_id:
-            raise ValueError("the active Codex turn has no turn_id")
+            raise ActionableError(
+                "the active Codex turn has no turn_id",
+                next_action="`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する",
+            )
         client = self.client
         if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
             raise AppServerError("Codex App Server client is unavailable for interrupt")

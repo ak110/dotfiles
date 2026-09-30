@@ -6,13 +6,13 @@ import datetime
 import json
 import os
 import pathlib
-import sys
 import uuid
 from collections.abc import Mapping
 
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
+from agent_toolkit._common.next_action import report
 
 DELIVERY_ELEMENT = AUTO_INSERTED_ELEMENT
 
@@ -25,12 +25,21 @@ def send_notification(
 ) -> int:
     """共有状態ディレクトリへ通知を1件保存する。"""
     if not body.strip():
-        print("通知本文は空文字列または空白だけにできません", file=sys.stderr)
+        report(
+            "通知本文は空文字列または空白だけにできません",
+            next_action="空でない本文を`--body`か`--body-file`で渡して再実行する",
+        )
         return 5
 
     identity = status_file.resolve_status_file_identity(os.environ if environment is None else environment)
     if identity is None or identity.host_session_id is None:
-        print("委譲先のsession識別子またはルートsessionを解決できません", file=sys.stderr)
+        report(
+            "委譲先のsession識別子またはルートsessionを解決できません",
+            next_action=(
+                "`atk agents notify`はagents_serverが起動した委譲先の中でだけ使える。"
+                "ルートのsessionでは通知は不要なため、結果は通常の応答で返す"
+            ),
+        )
         return 4
 
     directory = status_file.notices_directory(identity.root_session_id, state_root)

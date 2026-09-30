@@ -64,6 +64,7 @@ from agent_toolkit._atk.wi.repo import (
 from agent_toolkit._atk.wi.repo import append_entry as _append_entry
 from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
 from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import structure as _plan_format
 
 if TYPE_CHECKING:
@@ -79,7 +80,9 @@ if TYPE_CHECKING:
     )
     from agent_toolkit._atk.wi.mutations.dependencies import (
         _active_dependency_graph,
+        _BROKEN_ENTRY_NEXT_ACTION,
         _cmd_set_dependencies,
+        _dependency_cycle,
         _dependency_reaches,
         _entry_dependencies,
         _entry_dependencies_for_conversion,
@@ -121,27 +124,133 @@ if TYPE_CHECKING:
     )
 
 
+_PLAN_FILE_READ_NEXT_ACTION = "plan_fileのパスとUTF-8の文字コードを確かめて再実行する"
+_PLAN_METADATA_NEXT_ACTION = "計画ファイルの計画メタ情報を直し、`atk plans commit`で保存してから再実行する"
+_PLAN_MATERIAL_NEXT_ACTION = "計画ファイルの関連WIへholdにある変換元AWIを記載し、`atk plans commit`で保存してから再実行する"
+_PLAN_FILE_RESOLUTION_NEXT_ACTION = (
+    "計画ファイルが作業root直下にある場合は`atk plans commit`で保存し、"
+    "保存済みで手元に無い場合は`atk plans checkout`で取得してから再実行する"
+)
+_PLAN_WORKTREE_NEXT_ACTION = "対象worktreeで実行するか、--target-repoへworktreeのパスを指定する"
+_TARGET_REPO_MISMATCH_NEXT_ACTION = "実際の値を--target-repoへ指定し直すか、`atk wi show`で別リポジトリの項目でないか確認する"
+_ALREADY_PLAN_NEXT_ACTION = (
+    "既に計画型の項目は再変換しない。本文を変える場合は`atk wi edit {name} --body-file <PATH>`で編集する"
+)
+_SAME_NAME_NEXT_ACTION = "`atk wi show {name}`で同名の項目を比較し、不要な側を`atk wi rm`で削除してから再実行する"
+
+
+def _cycle_next_action(cycle: tuple[str, ...]) -> str:
+    """循環する依存の経路から次の操作を返す。"""
+    return f"`atk wi show {cycle[1]}`で依存先を確認し、循環の原因となる依存先を指定から外して再実行する"
+
+
 class _PlanAwiValidationError(Exception):
     """計画入力の参照元を付ける前の検証失敗。"""
+
+    def __init__(self, reason: str, *, next_action: str) -> None:
+        super().__init__(reason)
+        self.next_action = next_action
+
+
+def _plan_file_resolution_error(plan_file: str, error: ValueError | OSError) -> WebInputError:
+    """plan_fileの解決・検証の失敗を入力エラーへ変換する。原因の例外が次の操作を持てばそれを使う。"""
+    if isinstance(error, OSError):
+        return WebInputError(f"plan_fileを検証できません: {plan_file}", next_action=_PLAN_FILE_RESOLUTION_NEXT_ACTION)
+    next_action = error.next_action if isinstance(error, _next_action.ActionableError) else _PLAN_FILE_RESOLUTION_NEXT_ACTION
+    return WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）", next_action=next_action)
+
+
+def _read_plan_text(plan_path: pathlib.Path) -> str:
+    """計画ファイルの本文をUTF-8で読み込む。"""
+    try:
+        return plan_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise WebInputError(f"plan_fileを読み込めません: {plan_path}", next_action=_PLAN_FILE_READ_NEXT_ACTION) from error
+    except UnicodeError as error:
+        raise WebInputError(
+            f"plan_fileをUTF-8として読み込めません: {plan_path}", next_action=_PLAN_FILE_READ_NEXT_ACTION
+        ) from error
+
+
+def _validated_message_updates(
+    message_frontmatter: dict[str, object],
+    material_repo: str,
+    manager_label: str,
+) -> dict[str, object]:
+    """計画型変換の本文frontmatterを検証し、保存へ重ねる更新値を返す。"""
+    for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
+        if key in message_frontmatter:
+            raise WebInputError(
+                f"{key}は{manager_label}が管理する予約キーです",
+                next_action=f"本文のfrontmatterから{key}を除いて再実行する（{key}は計画型への変換が記録する）",
+            )
+    updates = dict(message_frontmatter)
+    if "target_repo" in updates:
+        raw_target_repo = updates["target_repo"]
+        if not isinstance(raw_target_repo, str):
+            raise WebInputError(
+                "target_repoは文字列で指定してください",
+                next_action="本文のfrontmatterのtarget_repoへローカルworktreeのパスかremote URLを文字列で指定する",
+            )
+        updates["target_repo"] = _resolve_repo_id(raw_target_repo)
+        if updates["target_repo"] != material_repo:
+            raise WebInputError(
+                f"target_repoが一致しません: 期待={material_repo} 実際={updates['target_repo']}",
+                next_action=_TARGET_REPO_MISMATCH_NEXT_ACTION,
+            )
+    return updates
+
+
+def _parse_conversion_entry(
+    path: pathlib.Path,
+    text: str,
+    normalized_target_repo: str | None,
+) -> tuple[dict[str, object], str, str]:
+    """変換対象1件のfrontmatter・種別・対象repoを検証し、frontmatter・本文・対象repoを返す。"""
+    parsed = _frontmatter.parse_frontmatter(text)
+    if parsed is None:
+        raise WebInputError(
+            f"frontmatterが破損しているため変換できません: {path.name}",
+            next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name),
+        )
+    data, body = parsed
+    if _require_type(path, text) != WI_TYPE_AWI:
+        raise WebInputError(f"AWIだけを計画実装型へ変換できます: {path.name}", next_action="AWIのファイル名を指定し直す")
+    raw_entry_repo = data.get("target_repo")
+    if not isinstance(raw_entry_repo, str):
+        raise WebInputError(f"target_repoが不正です: {path.name}", next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name))
+    entry_repo = _resolve_repo_id(raw_entry_repo)
+    if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+        raise WebInputError(
+            f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}",
+            next_action=_TARGET_REPO_MISMATCH_NEXT_ACTION,
+        )
+    if "plan_file" in data:
+        raise WebInputError(
+            f"既に計画型のため再変換できません: {path.name}",
+            next_action=_ALREADY_PLAN_NEXT_ACTION.format(name=path.name),
+        )
+    return data, body, entry_repo
 
 
 def _read_plan_input_filenames(plan_path: pathlib.Path) -> tuple[tuple[str, ...], str]:
     """キュー項目名と、参照元を示すユーザー向け表示名を返す。"""
-    try:
-        text = plan_path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise WebInputError(f"plan_fileを読み込めません: {plan_path}") from error
-    except UnicodeError as error:
-        raise WebInputError(f"plan_fileをUTF-8として読み込めません: {plan_path}") from error
+    text = _read_plan_text(plan_path)
 
     metadata, metadata_errors = _plan_format.parse_plan_metadata(text)
     if metadata_errors:
-        raise WebInputError("計画メタ情報が不正です: " + "; ".join(metadata_errors))
+        raise WebInputError(
+            "計画メタ情報が不正です: " + "; ".join(metadata_errors),
+            next_action=_PLAN_METADATA_NEXT_ACTION,
+        )
     if metadata is not None and _plan_format.PLAN_METADATA_RELATED_WI_FIELD in metadata.values:
         source_description = "計画メタ情報の関連WI"
         related_errors = _plan_format.check_plan_related_wi(metadata)
         if related_errors:
-            raise WebInputError("計画メタ情報の関連WIが不正です: " + "; ".join(related_errors))
+            raise WebInputError(
+                "計画メタ情報の関連WIが不正です: " + "; ".join(related_errors),
+                next_action=_PLAN_METADATA_NEXT_ACTION,
+            )
         filenames = tuple(filename for filename, _summary in metadata.related_wi)
         if metadata.values[_plan_format.PLAN_METADATA_RELATED_WI_FIELD] == "なし":
             filenames = ()
@@ -149,9 +258,15 @@ def _read_plan_input_filenames(plan_path: pathlib.Path) -> tuple[tuple[str, ...]
         source_description = "計画の提示素材"
         materials, errors = _plan_format.parse_plan_materials(text)
         if errors:
-            raise WebInputError("旧書式の計画の提示素材が不正です: " + "; ".join(errors))
+            raise WebInputError(
+                "旧書式の計画の提示素材が不正です: " + "; ".join(errors),
+                next_action=_PLAN_METADATA_NEXT_ACTION,
+            )
         if materials is None:
-            raise WebInputError("旧書式の計画の提示素材を解析できません")
+            raise WebInputError(
+                "旧書式の計画の提示素材を解析できません",
+                next_action=_PLAN_METADATA_NEXT_ACTION,
+            )
         filenames = materials.material_paths if materials.is_human_readable else materials.feedback_queue_ids
     return tuple(sorted(filenames)), source_description
 
@@ -166,27 +281,44 @@ def _validated_plan_awi_paths(
         candidates = tuple((state, private_notes / state / filename) for state in WI_STATES)
         existing = tuple((state, path) for state, path in candidates if path.is_file())
         if len(existing) != 1:
-            raise _PlanAwiValidationError(f"を一意に特定できません: {filename}")
+            raise _PlanAwiValidationError(
+                f"を一意に特定できません: {filename}",
+                next_action=f"`atk wi show {filename}`で項目の有無と状態を確かめ、計画ファイルの関連WIを直して再実行する",
+            )
         state, path = existing[0]
         text = path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
-            raise _PlanAwiValidationError(f"のfrontmatterが破損しています: {filename}")
+            raise _PlanAwiValidationError(
+                f"のfrontmatterが破損しています: {filename}",
+                next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=filename),
+            )
         entry_type = normalized_wi_type(parsed[0].get("type"))
         if entry_type == WI_TYPE_AWI:
             if state != WI_STATE_HOLD:
-                raise _PlanAwiValidationError(f"の変換元awiがholdに存在しません: {filename}")
+                raise _PlanAwiValidationError(
+                    f"の変換元awiがholdに存在しません: {filename}",
+                    next_action=f"`atk wi hold {filename}`でholdへ移してから再実行する",
+                )
             if "plan_file" in parsed[0]:
-                raise _PlanAwiValidationError(f"が既に計画型です: {filename}")
+                raise _PlanAwiValidationError(
+                    f"が既に計画型です: {filename}",
+                    next_action=f"計画ファイルの関連WIから{filename}を外して再実行する",
+                )
             awi_paths.append(path)
             continue
         if entry_type == WI_TYPE_UWI:
             if state not in WI_PROCESSABLE_STATES:
-                raise _PlanAwiValidationError(f"のUWIがactive状態ではありません: {filename}")
+                raise _PlanAwiValidationError(
+                    f"のUWIがactive状態ではありません: {filename}",
+                    next_action=f"計画ファイルの関連WIから{filename}を外して再実行する",
+                )
             continue
-        raise _PlanAwiValidationError(f"のtypeが不正です: {filename}")
+        raise _PlanAwiValidationError(
+            f"のtypeが不正です: {filename}", next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=filename)
+        )
     if not awi_paths:
-        raise _PlanAwiValidationError("に変換元awiがありません")
+        raise _PlanAwiValidationError("に変換元awiがありません", next_action=_PLAN_MATERIAL_NEXT_ACTION)
     return tuple(awi_paths)
 
 
@@ -199,28 +331,38 @@ def _plan_awi_paths(
     try:
         return _validated_plan_awi_paths(private_notes, filenames)
     except _PlanAwiValidationError as error:
-        raise WebInputError(f"{source_description}{error}") from error
+        raise WebInputError(
+            f"{source_description}{error}",
+            next_action=error.next_action,
+        ) from error
 
 
 def _resolve_plan_base_commit(plan_path: pathlib.Path, local_worktree: pathlib.Path) -> str:
     """計画メタ情報の一意なベースコミットを対象作業ツリーで解決する。"""
-    try:
-        content = plan_path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise WebInputError(f"plan_fileを読み込めません: {plan_path}") from error
-    except UnicodeError as error:
-        raise WebInputError(f"plan_fileをUTF-8として読み込めません: {plan_path}") from error
+    content = _read_plan_text(plan_path)
     metadata, errors = _plan_format.parse_plan_metadata(content)
     if errors:
-        raise WebInputError("計画メタ情報を一意に解析できません: " + "; ".join(errors))
+        raise WebInputError(
+            "計画メタ情報を一意に解析できません: " + "; ".join(errors),
+            next_action=_PLAN_METADATA_NEXT_ACTION,
+        )
     if metadata is None:
-        raise WebInputError("計画メタ情報にベースコミットがありません")
+        raise WebInputError(
+            "計画メタ情報にベースコミットがありません",
+            next_action=_PLAN_METADATA_NEXT_ACTION,
+        )
     candidates = tuple(dict.fromkeys(metadata.base_commit_candidates))
     if len(candidates) != 1:
-        raise WebInputError("計画メタ情報のベースコミットを一意に特定できません")
+        raise WebInputError(
+            "計画メタ情報のベースコミットを一意に特定できません",
+            next_action=_PLAN_METADATA_NEXT_ACTION,
+        )
     candidate = candidates[0].lower()
     if re.fullmatch(r"[0-9a-f]{7,64}", candidate) is None:
-        raise WebInputError("計画メタ情報のベースコミットは7文字以上の一意な短縮OIDで指定してください")
+        raise WebInputError(
+            "計画メタ情報のベースコミットは7文字以上の一意な短縮OIDで指定してください",
+            next_action=_PLAN_METADATA_NEXT_ACTION,
+        )
     return _resolve_commit_oid(local_worktree, candidate)
 
 
@@ -242,7 +384,10 @@ def _store_plan_file(data: dict[str, object], stored_plan_file: _StoredPlanFile)
         not stored_plan_file.startswith(_plan_file.PORTABLE_PLAN_PREFIX)
         and not pathlib.PurePath(stored_plan_file).is_absolute()
     ):
-        raise WebInputError(f"plan_fileの保存値が可搬値でも絶対パスでもありません: {stored_plan_file}")
+        raise WebInputError(
+            f"plan_fileの保存値が可搬値でも絶対パスでもありません: {stored_plan_file}",
+            next_action=_PLAN_FILE_RESOLUTION_NEXT_ACTION,
+        )
     data["plan_file"] = stored_plan_file
 
 
@@ -262,12 +407,13 @@ def edit_entry_to_plan(
     try:
         stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
         plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
-    except ValueError as error:
-        raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
-    except OSError as error:
-        raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+    except (ValueError, OSError) as error:
+        raise _plan_file_resolution_error(plan_file, error) from error
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
-        raise WebInputError("target_commitは解決済みの40桁または64桁OIDで指定してください")
+        raise WebInputError(
+            "target_commitは解決済みの40桁または64桁OIDで指定してください",
+            next_action="target_commitへ解決済みの40桁または64桁のOIDを指定する",
+        )
 
     inbox_dir = private_notes / WI_STATE_INBOX
     _validate_filenames_only([filename, *depends_on], inbox_dir)
@@ -280,16 +426,28 @@ def edit_entry_to_plan(
         material_names, source_description = _read_plan_input_filenames(plan_path)
         normalized_material_names = tuple(dict.fromkeys(_validate_filename(name, inbox_dir).name for name in material_names))
         if not normalized_material_names:
-            raise WebInputError(f"{source_description}に変換元awiがありません")
+            raise WebInputError(
+                f"{source_description}に変換元awiがありません",
+                next_action=_PLAN_MATERIAL_NEXT_ACTION,
+            )
         if normalized_filename not in normalized_material_names:
-            raise WebInputError(f"指定項目が{source_description}に含まれません: {normalized_filename}")
+            raise WebInputError(
+                f"指定項目が{source_description}に含まれません: {normalized_filename}",
+                next_action="計画ファイルの関連WIに含まれる項目を指定し直す",
+            )
         material_paths = _plan_awi_paths(private_notes, normalized_material_names, source_description)
         awi_names = tuple(path.name for path in material_paths)
         if normalized_filename not in awi_names:
-            raise WebInputError(f"指定項目が計画の変換元awiに含まれません: {normalized_filename}")
+            raise WebInputError(
+                f"指定項目が計画の変換元awiに含まれません: {normalized_filename}",
+                next_action="計画ファイルの関連WIに含まれる項目を指定し直す",
+            )
         oldest_material = min(awi_names)
         if normalized_filename != oldest_material:
-            raise WebInputError(f"計画型へ変換できるのは変換元awiの昇順最古だけです: {oldest_material}")
+            raise WebInputError(
+                f"計画型へ変換できるのは変換元awiの昇順最古だけです: {oldest_material}",
+                next_action=f"{oldest_material}を指定して再実行する",
+            )
         held_path = _validate_filename(normalized_filename, private_notes / WI_STATE_HOLD)
         previous = held_path.read_text(encoding="utf-8")
         if expected_content is not None and previous != expected_content:
@@ -297,12 +455,21 @@ def edit_entry_to_plan(
         _verify_target_repo_content(held_path, previous, normalized_target_repo)
         parsed = _frontmatter.parse_frontmatter(previous)
         if parsed is None:
-            raise WebInputError(f"frontmatterが破損しているため計画型へ編集できません: {held_path.name}")
+            raise WebInputError(
+                f"frontmatterが破損しているため計画型へ編集できません: {held_path.name}",
+                next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=held_path.name),
+            )
         stored_data, _stored_body = parsed
         if _require_type(held_path, previous) != WI_TYPE_AWI:
-            raise WebInputError(f"AWIだけを計画型へ編集できます: {held_path.name}")
+            raise WebInputError(
+                f"AWIだけを計画型へ編集できます: {held_path.name}",
+                next_action="AWIのファイル名を指定し直す",
+            )
         if "plan_file" in stored_data:
-            raise WebInputError(f"既に計画型のため再変換できません: {held_path.name}")
+            raise WebInputError(
+                f"既に計画型のため再変換できません: {held_path.name}",
+                next_action=_ALREADY_PLAN_NEXT_ACTION.format(name=held_path.name),
+            )
 
         material_repositories: set[str] = set()
         dependencies: list[str] = []
@@ -310,7 +477,10 @@ def edit_entry_to_plan(
             material_text = material_path.read_text(encoding="utf-8")
             material_parsed = _frontmatter.parse_frontmatter(material_text)
             if material_parsed is None:
-                raise WebInputError(f"変換元awiのfrontmatterが破損しています: {material_path.name}")
+                raise WebInputError(
+                    f"変換元awiのfrontmatterが破損しています: {material_path.name}",
+                    next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=material_path.name),
+                )
             material_data, _material_body = material_parsed
             material_repo = _entry_target_repo(material_path, material_text)
             material_repositories.add(material_repo)
@@ -318,26 +488,25 @@ def edit_entry_to_plan(
                 _validate_filename(value, inbox_dir).name for value in _entry_dependencies(material_path, material_data)
             )
         if len(material_repositories) != 1:
-            raise WebInputError(f"{source_description}は同一target_repoである必要があります")
+            raise WebInputError(
+                f"{source_description}は同一target_repoである必要があります",
+                next_action="計画ファイルの関連WIを同じtarget_repoの項目だけにして再実行する",
+            )
         material_repo = next(iter(material_repositories))
         if normalized_target_repo is not None and material_repo != normalized_target_repo:
-            raise WebInputError(f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}")
+            raise WebInputError(
+                f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}",
+                next_action=_TARGET_REPO_MISMATCH_NEXT_ACTION,
+            )
 
         message_frontmatter, message_body = _add.parse_entry_message(content, entry_type=WI_TYPE_AWI)
         requested_type = message_frontmatter.get("type")
         if requested_type is not None and requested_type != WI_TYPE_AWI:
-            raise WebInputError(f"計画型編集のtypeは{WI_TYPE_AWI}で指定してください: {held_path.name}")
-        for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
-            if key in message_frontmatter:
-                raise WebInputError(f"{key}は計画型編集が管理する予約キーです")
-        updates = dict(message_frontmatter)
-        if "target_repo" in updates:
-            raw_target_repo = updates["target_repo"]
-            if not isinstance(raw_target_repo, str):
-                raise WebInputError("target_repoは文字列で指定してください")
-            updates["target_repo"] = _resolve_repo_id(raw_target_repo)
-            if updates["target_repo"] != material_repo:
-                raise WebInputError(f"target_repoが一致しません: 期待={material_repo} 実際={updates['target_repo']}")
+            raise WebInputError(
+                f"計画型編集のtypeは{WI_TYPE_AWI}で指定してください: {held_path.name}",
+                next_action=f"本文のfrontmatterのtypeを{WI_TYPE_AWI}にするか除いて再実行する",
+            )
+        updates = _validated_message_updates(message_frontmatter, material_repo, "計画型編集")
 
         updated_data = {**stored_data, **updates}
         updated_data["source"] = "plan-and-add-awi"
@@ -357,8 +526,12 @@ def edit_entry_to_plan(
             _subdir(private_notes, WI_STATE_HOLD),
         )
         dependency_graph[held_path.name] = set(canonical_dependencies)
-        if any(_dependency_reaches(dependency_graph, dependency, held_path.name) for dependency in canonical_dependencies):
-            raise WebInputError(f"循環する依存を指定できません: {held_path.name}")
+        cycle = _dependency_cycle(dependency_graph, held_path.name, canonical_dependencies)
+        if cycle is not None:
+            raise WebInputError(
+                f"循環する依存を指定できません: {held_path.name}（経路: {' → '.join(cycle)}）",
+                next_action=_cycle_next_action(cycle),
+            )
         if canonical_dependencies:
             updated_data["depends_on"] = list(canonical_dependencies)
         else:
@@ -370,7 +543,10 @@ def edit_entry_to_plan(
 
         inbox_path = inbox_dir / held_path.name
         if inbox_path.exists():
-            raise WebInputError(f"inboxに同名エントリが既に存在します: {held_path.name}")
+            raise WebInputError(
+                f"inboxに同名エントリが既に存在します: {held_path.name}",
+                next_action=_SAME_NAME_NEXT_ACTION.format(name=held_path.name),
+            )
         _atomic_write_text(inbox_path, updated_text)
         held_path.unlink()
         _commit_and_push(
@@ -388,7 +564,10 @@ def _assert_conversion_paths_clean(private_notes: pathlib.Path, paths: list[path
     """計画変換前に変換対象と保存先だけがcleanであることを確認する。"""
     relative_paths = [str(path.relative_to(private_notes)) for path in paths]
     if _atk_git_sync.is_worktree_dirty(private_notes, paths=relative_paths):
-        raise WebInputError("計画変換前に変換対象と保存先の作業ツリーおよびindexをcleanにしてください")
+        raise WebInputError(
+            "計画変換前に変換対象と保存先の作業ツリーおよびindexをcleanにしてください",
+            next_action=f"`git -C {private_notes} status`で差分を確認し、`atk wi commit`で確定してから再実行する",
+        )
 
 
 def _assert_conversion_targets_tracked(
@@ -407,7 +586,10 @@ def _assert_conversion_targets_tracked(
         check=False,
     )
     if result.returncode != 0:
-        raise WebInputError("計画変換対象が管理repoの開始時HEADに登録されていません")
+        raise WebInputError(
+            "計画変換対象が管理repoの開始時HEADに登録されていません",
+            next_action="`atk wi commit`で確定してから再実行する",
+        )
 
 
 def _restore_conversion_paths(
@@ -455,8 +637,14 @@ def _restore_conversion_paths(
             )
             if status.stdout.strip():
                 raise RuntimeError(f"計画変換対象の復元後に差分が残っています: {relative_path}")
-    except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
-        _outcome.report_failure(f"計画変換対象の復元に失敗した: {error}。作業ツリーの状態を手動で確認する")
+    except (OSError, subprocess.CalledProcessError, RuntimeError, WebInputError) as error:
+        _outcome.report_failure(
+            f"計画変換対象の復元に失敗した: {error}",
+            next_action=(
+                f"`git -C {private_notes} status`で確認し、"
+                f"`git -C {private_notes} restore --source={start_head} --staged --worktree -- <path>`で戻す"
+            ),
+        )
 
 
 def _convert_held_entries(
@@ -478,14 +666,23 @@ def _convert_held_entries(
     material_names, source_description = _read_plan_input_filenames(plan_path)
     normalized_material_names = tuple(_validate_filename(name, inbox_dir).name for name in material_names)
     if len(set(normalized_material_names)) != len(normalized_material_names):
-        raise WebInputError(f"{source_description}に重複したファイル名があります")
+        raise WebInputError(
+            f"{source_description}に重複したファイル名があります",
+            next_action="計画ファイルの関連WIから重複したファイル名を除いて再実行する",
+        )
     material_paths = _plan_awi_paths(private_notes, normalized_material_names, source_description)
     input_names = tuple(path.name for path in paths)
     awi_names = tuple(path.name for path in material_paths)
     if tuple(sorted(input_names)) != tuple(sorted(awi_names)):
-        raise WebInputError(f"convert-to-planの入力と{source_description}が一致しません")
+        raise WebInputError(
+            f"convert-to-planの入力と{source_description}が一致しません",
+            next_action=f"指定する項目を{source_description}の変換元awiと一致させて再実行する",
+        )
     if local_worktree is None:
-        raise WebInputError("holdの変換には対象リポジトリのローカルworktreeが必要です")
+        raise WebInputError(
+            "holdの変換には対象リポジトリのローカルworktreeが必要です",
+            next_action=_PLAN_WORKTREE_NEXT_ACTION,
+        )
     _assert_conversion_targets_tracked(private_notes, paths)
     snapshots = [(path, path.read_text(encoding="utf-8")) for path in sorted(paths, key=lambda item: item.name)]
 
@@ -493,48 +690,37 @@ def _convert_held_entries(
     dependencies: list[str] = []
     parsed_entries: dict[pathlib.Path, tuple[dict[str, object], str]] = {}
     for path, text in snapshots:
-        parsed = _frontmatter.parse_frontmatter(text)
-        if parsed is None:
-            raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
-        data, body = parsed
-        if _require_type(path, text) != WI_TYPE_AWI:
-            raise WebInputError(f"AWIだけを計画実装型へ変換できます: {path.name}")
-        raw_entry_repo = data.get("target_repo")
-        if not isinstance(raw_entry_repo, str):
-            raise WebInputError(f"target_repoが不正です: {path.name}")
-        entry_repo = _resolve_repo_id(raw_entry_repo)
+        data, body, entry_repo = _parse_conversion_entry(path, text, normalized_target_repo)
         repositories.add(entry_repo)
-        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
-            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
-        if "plan_file" in data:
-            raise WebInputError(f"既に計画型のため再変換できません: {path.name}")
         entry_dependencies = _entry_dependencies_for_conversion(path, data)
         dependencies.extend(_validate_filename(value, inbox_dir).name for value in entry_dependencies)
         parsed_entries[path] = (data, body)
     if len(repositories) != 1:
-        raise WebInputError("変換対象は同一target_repoで指定してください")
+        raise WebInputError(
+            "変換対象は同一target_repoで指定してください",
+            next_action="同じtarget_repoの項目だけを指定して再実行する",
+        )
     material_repo = next(iter(repositories))
     if normalized_target_repo is not None and material_repo != normalized_target_repo:
-        raise WebInputError(f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}")
+        raise WebInputError(
+            f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}",
+            next_action=_TARGET_REPO_MISMATCH_NEXT_ACTION,
+        )
     if _local_worktree_repo_id(local_worktree) != material_repo:
-        raise WebInputError("holdの変換対象repoとローカルworktreeが一致しません")
+        raise WebInputError(
+            "holdの変換対象repoとローカルworktreeが一致しません",
+            next_action=_PLAN_WORKTREE_NEXT_ACTION,
+        )
     target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
 
     message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=WI_TYPE_AWI)
     requested_type = message_frontmatter.get("type")
     if requested_type is not None and requested_type != WI_TYPE_AWI:
-        raise WebInputError(f"holdの統合本文のtypeは{WI_TYPE_AWI}で指定してください")
-    for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
-        if key in message_frontmatter:
-            raise WebInputError(f"{key}はholdの統合処理が管理する予約キーです")
-    updates = dict(message_frontmatter)
-    if "target_repo" in updates:
-        raw_target_repo = updates["target_repo"]
-        if not isinstance(raw_target_repo, str):
-            raise WebInputError("target_repoは文字列で指定してください")
-        updates["target_repo"] = _resolve_repo_id(raw_target_repo)
-        if updates["target_repo"] != material_repo:
-            raise WebInputError(f"target_repoが一致しません: 期待={material_repo} 実際={updates['target_repo']}")
+        raise WebInputError(
+            f"holdの統合本文のtypeは{WI_TYPE_AWI}で指定してください",
+            next_action=f"本文のfrontmatterのtypeを{WI_TYPE_AWI}にするか除いて再実行する",
+        )
+    updates = _validated_message_updates(message_frontmatter, material_repo, "holdの統合処理")
 
     oldest_path = min(snapshots, key=lambda item: item[0].name)[0]
     oldest_data, _oldest_body = parsed_entries[oldest_path]
@@ -551,8 +737,12 @@ def _convert_held_entries(
     )
     dependency_graph = _active_dependency_graph(inbox_dir, processing_dir, hold_dir)
     dependency_graph[oldest_path.name] = set(canonical_dependencies)
-    if any(_dependency_reaches(dependency_graph, dependency, oldest_path.name) for dependency in canonical_dependencies):
-        raise WebInputError(f"循環する依存を指定できません: {oldest_path.name}")
+    cycle = _dependency_cycle(dependency_graph, oldest_path.name, canonical_dependencies)
+    if cycle is not None:
+        raise WebInputError(
+            f"循環する依存を指定できません: {oldest_path.name}（経路: {' → '.join(cycle)}）",
+            next_action=_cycle_next_action(cycle),
+        )
     if canonical_dependencies:
         updated_data["depends_on"] = list(canonical_dependencies)
     else:
@@ -564,7 +754,10 @@ def _convert_held_entries(
 
     inbox_path = inbox_dir / oldest_path.name
     if inbox_path.exists():
-        raise WebInputError(f"inboxに同名エントリが既に存在します: {oldest_path.name}")
+        raise WebInputError(
+            f"inboxに同名エントリが既に存在します: {oldest_path.name}",
+            next_action=_SAME_NAME_NEXT_ACTION.format(name=oldest_path.name),
+        )
     source_paths = tuple(path for path, _text in snapshots)
     source_relative_paths = tuple(str(path.relative_to(private_notes)) for path in source_paths)
     destination_relative_path = str(inbox_path.relative_to(private_notes))
@@ -591,7 +784,10 @@ def _convert_held_entries(
                 )
             raise error
         if not inbox_path.is_file() or any(path.exists() for path in source_paths):
-            raise RuntimeError("計画型変換後の保存集合を検証できません")
+            raise WebInputError(
+                "計画型変換後の保存集合を検証できません",
+                next_action=f"`git -C {private_notes} status`と`atk wi show`で変換結果を確認し、ユーザーへ報告する",
+            )
         return {
             "entries": [
                 _add._read_saved_entry_details(  # pylint: disable=protected-access
@@ -630,16 +826,22 @@ def convert_entries_to_plan(
 ) -> dict[str, object]:
     """状態別のawiを計画実装型へ変換し、holdは1件へ統合する。"""
     if not filenames:
-        raise WebInputError("変換するFILENAMEを1件以上指定してください")
+        raise WebInputError(
+            "変換するFILENAMEを1件以上指定してください",
+            next_action="変換するFILENAMEを1件以上指定して再実行する",
+        )
     try:
         stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
     except ValueError as error:
-        raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
+        raise _plan_file_resolution_error(plan_file, error) from error
     inbox_dir = private_notes / WI_STATE_INBOX
     processing_dir = private_notes / WI_STATE_PROCESSING
     normalized_filenames = tuple(dict.fromkeys(_validate_filename(name, inbox_dir).name for name in filenames))
     if len(normalized_filenames) != len(filenames):
-        raise WebInputError("同じFILENAMEを重複して指定できません")
+        raise WebInputError(
+            "同じFILENAMEを重複して指定できません",
+            next_action="重複したFILENAMEを除いて再実行する",
+        )
     normalized_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in (depends_on or ())))
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
 
@@ -648,10 +850,8 @@ def convert_entries_to_plan(
         _pull(private_notes)
         try:
             plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
-        except ValueError as error:
-            raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
-        except OSError as error:
-            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+        except (ValueError, OSError) as error:
+            raise _plan_file_resolution_error(plan_file, error) from error
         hold_dir = _subdir(private_notes, WI_STATE_HOLD)
         state, paths = _resolve_conversion_targets(
             normalized_filenames,
@@ -661,7 +861,10 @@ def convert_entries_to_plan(
         )
         if state == WI_STATE_HOLD:
             if message is None:
-                raise WebInputError("holdの入力には--body-fileを指定してください")
+                raise WebInputError(
+                    "holdの入力には--body-fileを指定してください",
+                    next_action="holdの入力には統合後の本文を--body-fileで指定して再実行する",
+                )
             destination = inbox_dir / min(paths, key=lambda path: path.name).name
             _assert_conversion_paths_clean(private_notes, [*paths, destination])
             return _convert_held_entries(
@@ -679,9 +882,15 @@ def convert_entries_to_plan(
                 skip_push=skip_push,
             )
         if message is not None:
-            raise WebInputError("inbox・processingの入力には--body-fileを指定できません")
+            raise WebInputError(
+                "inbox・processingの入力には--body-fileを指定できません",
+                next_action="inbox・processingの入力では--body-fileを外して再実行する",
+            )
         if len(paths) != len(normalized_filenames):
-            raise WebInputError("変換対象を一意に特定できません")
+            raise WebInputError(
+                "変換対象を一意に特定できません",
+                next_action="`atk wi show`で変換対象を確かめ、一意に特定できるファイル名を指定し直す",
+            )
         _assert_conversion_paths_clean(private_notes, paths)
         _assert_conversion_targets_tracked(private_notes, paths)
         snapshots = [(path, path.read_text(encoding="utf-8")) for path in paths]
@@ -690,39 +899,33 @@ def convert_entries_to_plan(
             dependency_graph.update({path.name: set(normalized_dependencies) for path, _text in snapshots})
             for path, _text in snapshots:
                 if path.name in normalized_dependencies:
-                    raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
-            if any(
-                _dependency_reaches(dependency_graph, dependency, path.name)
-                for path, _text in snapshots
-                for dependency in normalized_dependencies
-            ):
-                raise WebInputError("循環する依存を指定できません")
+                    raise WebInputError(
+                        f"自分自身を依存先へ指定できません: {path.name}",
+                        next_action="依存先から自分自身を外して再実行する",
+                    )
+            for path, _text in snapshots:
+                cycle = _dependency_cycle(dependency_graph, path.name, normalized_dependencies)
+                if cycle is not None:
+                    raise WebInputError(
+                        f"循環する依存を指定できません（経路: {' → '.join(cycle)}）",
+                        next_action=_cycle_next_action(cycle),
+                    )
 
         updated: list[tuple[pathlib.Path, str, str]] = []
         repositories: set[str] = set()
         for path, text in snapshots:
-            parsed = _frontmatter.parse_frontmatter(text)
-            if parsed is None:
-                raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
-            data, body = parsed
-            if _require_type(path, text) != WI_TYPE_AWI:
-                raise WebInputError(f"AWIだけを計画実装型へ変換できます: {path.name}")
-            raw_entry_repo = data.get("target_repo")
-            if not isinstance(raw_entry_repo, str):
-                raise WebInputError(f"target_repoが不正です: {path.name}")
-            entry_repo = _resolve_repo_id(raw_entry_repo)
+            data, body, entry_repo = _parse_conversion_entry(path, text, normalized_target_repo)
             repositories.add(entry_repo)
-            if normalized_target_repo is not None and entry_repo != normalized_target_repo:
-                raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
-            if "plan_file" in data:
-                raise WebInputError(f"既に計画型のため再変換できません: {path.name}")
             if depends_on is None:
                 stored_dependencies = _entry_dependencies_for_conversion(path, data)
                 if stored_dependencies:
                     data["depends_on"] = list(stored_dependencies)
             if depends_on is not None:
                 if path.name in normalized_dependencies:
-                    raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+                    raise WebInputError(
+                        f"自分自身を依存先へ指定できません: {path.name}",
+                        next_action="依存先から自分自身を外して再実行する",
+                    )
                 if normalized_dependencies:
                     data["depends_on"] = list(normalized_dependencies)
                 else:
@@ -732,7 +935,10 @@ def convert_entries_to_plan(
             updated_text = _frontmatter.serialize_frontmatter(data, body)
             updated.append((path, text, updated_text))
         if len(repositories) != 1:
-            raise WebInputError("変換対象は同一target_repoで指定してください")
+            raise WebInputError(
+                "変換対象は同一target_repoで指定してください",
+                next_action="同じtarget_repoの項目だけを指定して再実行する",
+            )
 
         start_head = _git_head(private_notes)
         relative_paths = tuple(str(path.relative_to(private_notes)) for path, _old, _new in updated)
@@ -813,7 +1019,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
     try:
         message = _add.read_body_files([body_file])[0] if body_file is not None else None
     except WebInputError as error:
-        _outcome.report_failure(f"変換を拒否した: {error}")
+        _outcome.report_failure(f"変換を拒否した: {error}", next_action=error.next_action)
         sys.exit(1)
     target_repo, local_worktree = _add.resolve_add_target(args.target_repo)
     if message is not None and local_worktree is None:
@@ -838,7 +1044,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
         if not isinstance(entries, list):
             raise RuntimeError("複数変換結果のentriesがリストではありません")
     except WebInputError as error:
-        _outcome.report_failure(f"変換を拒否した: {error}")
+        _outcome.report_failure(f"変換を拒否した: {error}", next_action=error.next_action)
         sys.exit(1)
     _outcome.report_success(f"{len(filenames)}件を計画実装型へ変換した: {', '.join(filenames)}")
     if not single_compat or result.get("integrated") is True:

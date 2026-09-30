@@ -117,7 +117,9 @@ def test_main_rejects_missing_or_non_utf8_input(
         report.write_bytes(content)
 
     assert SUBJECT.main([str(report), "--stage", "work-complete"]) == 2
-    assert "完了報告を読み取れません" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "完了報告を読み取れません" in stderr
+    assert "\n次の操作: UTF-8で保存した完了報告ファイルのパスを渡して再実行する" in stderr
 
 
 @pytest.mark.parametrize(
@@ -152,7 +154,9 @@ def test_main_rejects_invalid_stage_state_combination(
     report.write_text(text, encoding="utf-8")
 
     assert SUBJECT.main([str(report), *arguments]) == 1
-    assert "review-state" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "review-state" in stderr
+    assert "\n次の操作: " in stderr
 
 
 @pytest.mark.parametrize(
@@ -332,3 +336,16 @@ def test_review_submission_rejects_scheduled_marker(tmp_path: pathlib.Path) -> N
 )
 def test_review_submission_rejects_heading_order(tmp_path: pathlib.Path, text: str) -> None:
     assert _run_main(tmp_path, text, "--stage", "review-submission") == 1
+
+
+def test_skip_reason_mismatch_names_expected_prefix() -> None:
+    """未実施理由がreview-stateに対応しない場合は、そのreview-stateで受理する行の冒頭を示す。"""
+    text = SUCCESS.replace("### 確定した問題と対策", "- session-review未実施: 別の理由\n\n### 確定した問題と対策")
+    errors = SUBJECT.validate_report(text, "review-result", "not-run")
+    assert any("`- session-review未実施: 成果を再利用したため起動省略`で始める" in error for error in errors)
+
+
+def test_unknown_stage_lists_accepted_values() -> None:
+    """検査段階が不正な場合は受理する値を列挙する。"""
+    errors = SUBJECT.validate_report(SUCCESS, "unknown", None)
+    assert errors == ["検査段階が不正である: unknown（受理する値: work-complete, review-result, review-submission）"]

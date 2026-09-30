@@ -7,6 +7,7 @@ import pathlib
 import re
 import sys
 
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
 STAGES = ("work-complete", "review-result", "review-submission")
@@ -80,7 +81,7 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
     """報告本文を検証し、違反理由を返す。"""
     errors: list[str] = []
     if stage not in STAGES:
-        return [f"検査段階が不正である: {stage}"]
+        return [f"検査段階が不正である: {stage}（受理する値: {', '.join(STAGES)}）"]
     if stage in ("work-complete", "review-submission") and review_state is not None:
         errors.append(f"{stage}段階ではreview-stateを指定しない")
     if stage == "review-result" and review_state not in REVIEW_STATES:
@@ -155,7 +156,10 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
         if len(skip_matches) != 1:
             errors.append("振り返り未実施時はsession-review未実施理由を1件書く")
         elif not skip_matches[0].startswith(SKIP_REASONS[review_state]):
-            errors.append("session-review未実施理由がreview-stateに対応していない")
+            errors.append(
+                "session-review未実施理由がreview-stateに対応していない"
+                f"（`{review_state}`では`- session-review未実施: {SKIP_REASONS[review_state]}`で始める）"
+            )
 
     if "成果ファイル:" in text:
         errors.append("回収済みの成果ファイルpathを最終報告へ書かない")
@@ -172,12 +176,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         text = args.report_file.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
-        print(f"完了報告を読み取れません: {exc}", file=sys.stderr)
+        _next_action.report(
+            f"完了報告を読み取れません: {exc}", next_action="UTF-8で保存した完了報告ファイルのパスを渡して再実行する"
+        )
         return 2
     errors = validate_report(text, args.stage, args.review_state)
     if errors:
         for error in errors:
             print(f"完了報告の構造違反: {error}", file=sys.stderr)
+        print(
+            _next_action.next_action_line("各行が示す形へ完了報告を直し、同じコマンドで再検査する"),
+            file=sys.stderr,
+        )
         return 1
     sys.stdout.write(text)
     return 0

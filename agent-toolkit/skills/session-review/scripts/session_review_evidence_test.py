@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from typing import Literal
 
 import pytest
@@ -66,6 +67,7 @@ def test_output_file_rejects_relative_path(capsys: pytest.CaptureFixture[str]) -
     assert json.loads(capsys.readouterr().out) == {
         "kind": "error",
         "text": "--output-fileには絶対パスを指定してください。",
+        "next_action": "`--output-file`へ絶対パスを渡して再実行する",
     }
 
 
@@ -1835,17 +1837,32 @@ def test_default_output_line_points_at_source_transcript_line(tmp_path: pathlib.
 
 
 def _read_jsonl(capsys: pytest.CaptureFixture[str], *, raw: bool = False) -> list[dict]:
-    """標準出力のJSONLを読み、既存の単一記録テストでは由来欄を除く。"""
+    """標準出力のJSONLを読み、既存の単一記録テストでは由来欄を除く。
+
+    エラーイベントは実在する引数やコマンドを名指す次の操作`next_action`を持つことを確かめてから、
+    本文の比較を変えないよう`raw`でない場合はその項目を除く。
+    """
     captured = capsys.readouterr()
     assert captured.err == ""
     events = [json.loads(line) for line in captured.out.splitlines()]
+    for event in events:
+        if event.get("kind") == "error":
+            assert _ERROR_NEXT_ACTION_RE.search(event.get("next_action", "")), event
     if raw:
         return events
     return [
-        {key: value for key, value in event.items() if key != "record"}
+        {
+            key: value
+            for key, value in event.items()
+            if key != "record" and not (key == "next_action" and event.get("kind") == "error")
+        }
         for event in events
         if not (event.get("kind") == "summary" and "record" in event)
     ]
+
+
+_ERROR_NEXT_ACTION_RE = re.compile(r"`[^`]+`")
+"""エラーイベントの次の操作が名指す操作（バッククォートで囲んだ引数やコマンド）。"""
 
 
 def test_warn_excludes_hook_marker_in_command_output(
@@ -7441,7 +7458,9 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     assert evidence.main([str(transcript), "--detail", f"claude:{claude_b}:1"]) == 0
     assert _read_jsonl(capsys, raw=True)[0]["record"] == f"claude:{claude_b}"
     assert evidence.main([str(transcript), "--detail", "unknown:1"]) == 2
-    assert _read_jsonl(capsys, raw=True) == [{"kind": "error", "text": "記録が不明: unknown"}]
+    assert [
+        {key: value for key, value in event.items() if key != "next_action"} for event in _read_jsonl(capsys, raw=True)
+    ] == [{"kind": "error", "text": "記録が不明: unknown"}]
 
     assert evidence.main([str(transcript), "--hook-notices"]) == 0
     hook_events = _read_jsonl(capsys, raw=True)

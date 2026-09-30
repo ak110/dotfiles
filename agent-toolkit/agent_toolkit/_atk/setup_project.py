@@ -167,7 +167,10 @@ def run(args: argparse.Namespace) -> int:
             if args.with_rules:
                 _copy_rules(target)
     except (OSError, ValueError) as error:
-        outcome.report_failure(f"プロジェクトの設定を完了できません: {error}")
+        outcome.report_failure(
+            f"プロジェクトの設定を完了できません: {error}",
+            next_action="表示されたパスを確認し、手動で退避または削除してから`atk setup-project`を再実行する",
+        )
         return 1
     outcome.report_success(f"プロジェクト設定を{'削除した' if args.clean else '整えた'}: {target}")
     return 0

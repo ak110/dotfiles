@@ -48,7 +48,9 @@ def test_validate_rejects_undeclared_clause_reference(monkeypatch: pytest.Monkey
         review_contract.validate(contract, tmp_path)
 
 
-def test_main_reads_yaml_and_rejects_missing_commit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+def test_main_reads_yaml_and_rejects_missing_commit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     contract_path = tmp_path / "review-contract.yaml"
     contract_path.write_text(yaml.safe_dump(_contract(), allow_unicode=True, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(
@@ -58,6 +60,7 @@ def test_main_reads_yaml_and_rejects_missing_commit(monkeypatch: pytest.MonkeyPa
     )
 
     assert review_contract.main(["--contract", str(contract_path), "--target-repo", str(tmp_path)]) == 2
+    assert "\n次の操作: `git -C <target-repo> fetch`" in capsys.readouterr().err
 
 
 def test_validate_rejects_missing_awi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -66,8 +69,9 @@ def test_validate_rejects_missing_awi(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     monkeypatch.setattr(review_contract.subprocess, "run", run)
 
-    with pytest.raises(review_contract.ContractError, match="AWI参照"):
+    with pytest.raises(review_contract.ContractError, match="AWI参照") as raised:
         review_contract.validate(_contract(), tmp_path)
+    assert "`atk wi show <ファイル名>`" in raised.value.next_action
 
 
 def test_validate_rejects_invalid_structure(tmp_path: pathlib.Path) -> None:

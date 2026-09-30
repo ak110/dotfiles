@@ -328,7 +328,10 @@ def test_collect_new_alerts_warns_on_generic_failure(tmp_path: pathlib.Path, cap
         dependabot_fn=failing_fn,
     )
     assert not result
-    assert "Dependabotアラートの取得に失敗しました" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "Dependabotアラートの取得に失敗しました" in stderr
+    # 認証の確認手段を次の操作として続ける。
+    assert "gh auth status" in stderr.split("\n次の操作: ", 1)[1]
 
 
 def test_collect_new_alerts_decodes_utf8_json_bytes_without_locale_dependency(

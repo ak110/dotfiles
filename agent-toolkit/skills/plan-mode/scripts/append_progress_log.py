@@ -14,6 +14,7 @@ import sys
 from collections.abc import Callable
 
 try:
+    from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._common.atomic_file import atomic_write
     from agent_toolkit._common.markdown_headings import top_level_atx_headings
     from agent_toolkit._plan import locations as _plan_locations
@@ -21,8 +22,9 @@ try:
 except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
     print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}。"
-        "`atk run-script plan-progress -- <引数>`で起動してください。",
+        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
+        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        "次の操作: `atk run-script plan-progress -- <引数>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -30,8 +32,13 @@ except ImportError as _import_error:
 Clock = Callable[[], datetime.datetime]
 
 
-class ProgressLogError(RuntimeError):
-    """進捗ログを安全に更新できない場合のエラー。"""
+_CHECK_STRUCTURE = (
+    "`atk run-script plan-check -- <計画ファイルの絶対パス>`で計画の構造を検査し、指摘どおりに直してから再実行する"
+)
+
+
+class ProgressLogError(_next_action.ActionableError):
+    """進捗ログを安全に更新できない場合のエラー。理由と次の操作を持つ。"""
 
 
 def _local_now() -> datetime.datetime:
@@ -67,7 +74,10 @@ def _resolve_start_head(revision: str) -> str:
         check=False,
     )
     if commit.returncode != 0 or not commit.stdout.strip():
-        raise ProgressLogError(f"開始HEADをcommitとして解決できません: {revision}: {commit.stderr.strip()}")
+        raise ProgressLogError(
+            f"開始HEADをcommitとして解決できません: {revision}: {commit.stderr.strip()}",
+            next_action="作業ディレクトリを対象のworktreeにして、そこで解決できるcommitを`--start-head`へ渡して再実行する",
+        )
     shortened = subprocess.run(
         ["git", "rev-parse", "--verify", "--short=7", commit.stdout.strip()],
         capture_output=True,
@@ -77,7 +87,10 @@ def _resolve_start_head(revision: str) -> str:
         check=False,
     )
     if shortened.returncode != 0 or not shortened.stdout.strip():
-        raise ProgressLogError(f"開始HEADを短縮できません: {revision}: {shortened.stderr.strip()}")
+        raise ProgressLogError(
+            f"開始HEADを短縮できません: {revision}: {shortened.stderr.strip()}",
+            next_action="`git rev-parse --short=7 <revision>`が成功することを確かめてから同じ引数で再実行する",
+        )
     return shortened.stdout.strip()
 
 
@@ -99,18 +112,22 @@ def append_progress_log(
     try:
         content = original.decode("utf-8")
     except UnicodeDecodeError as error:
-        raise ProgressLogError("計画ファイルをUTF-8として読めません") from error
+        raise ProgressLogError(
+            "計画ファイルをUTF-8として読めません", next_action="計画ファイルをUTF-8で保存し直してから再実行する"
+        ) from error
 
     lines = content.splitlines(keepends=True)
     headings = top_level_atx_headings(content, 2)
     matches = [index for index, (_, title) in enumerate(headings) if title in _heading_names()]
     if len(matches) != 1:
-        raise ProgressLogError(f"進捗ログ見出しは1件必要です（実際={len(matches)}件）")
+        raise ProgressLogError(f"進捗ログ見出しは1件必要です（実際={len(matches)}件）", next_action=_CHECK_STRUCTURE)
 
     try:
         _plan_format.progress_log_rows(content)
+    except _next_action.ActionableError as error:
+        raise ProgressLogError(error.reason, next_action=error.next_action) from error
     except ValueError as error:
-        raise ProgressLogError(str(error)) from error
+        raise ProgressLogError(str(error), next_action=_CHECK_STRUCTURE) from error
 
     position = matches[0]
     token = headings[position][0]
@@ -121,18 +138,21 @@ def append_progress_log(
     header_text = "| " + " | ".join(_plan_format.PLAN_PROGRESS_TABLE_HEADER) + " |"
     table_headers = [index for index in range(section_start, section_end) if lines[index].rstrip("\r\n").strip() == header_text]
     if len(table_headers) != 1:
-        raise ProgressLogError(f"進捗ログの固定表は1件必要です（実際={len(table_headers)}件）")
+        raise ProgressLogError(f"進捗ログの固定表は1件必要です（実際={len(table_headers)}件）", next_action=_CHECK_STRUCTURE)
 
     header_index = table_headers[0]
     if header_index + 1 >= section_end or not lines[header_index + 1].rstrip("\r\n").strip().startswith("|"):
-        raise ProgressLogError("進捗ログの固定表に区切り行がありません")
+        raise ProgressLogError("進捗ログの固定表に区切り行がありません", next_action=_CHECK_STRUCTURE)
     insertion = header_index + 2
     while insertion < section_end and lines[insertion].rstrip("\r\n").strip().startswith("|"):
         insertion += 1
 
     now = clock()
     if now.tzinfo is None:
-        raise ProgressLogError("進捗ログの時計にはタイムゾーンが必要です")
+        raise ProgressLogError(
+            "進捗ログの時計にはタイムゾーンが必要です",
+            next_action="`clock`へタイムゾーン付きの時刻を返す関数を渡す（CLIの経路では発生しない）",
+        )
     row = f"| {now:%Y-%m-%d %H:%M} | {_escape_cell(completed_step)} | {_escape_cell(result)} |"
     newline = "\r\n" if "\r\n" in content else "\n"
     if insertion == len(lines):
@@ -157,8 +177,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         append_progress_log(args.plan_file, args.completed_step, args.result, start_head=args.start_head)
-    except (OSError, ProgressLogError, ValueError) as error:
-        print(f"進捗ログを更新できません: {error}", file=sys.stderr)
+    except _next_action.ActionableError as error:
+        # 保存済み計画の直接更新（`_plan.locations`）もこの型で次の操作を持って届く。
+        _next_action.report(f"進捗ログを更新できません: {error.reason}", next_action=error.next_action)
+        return 1
+    except (OSError, ValueError) as error:
+        _next_action.report(
+            f"進捗ログを更新できません: {error}",
+            next_action="計画ファイルのパスと読み書きの権限を確かめ、同じ引数で再実行する",
+        )
         return 1
     return 0
 

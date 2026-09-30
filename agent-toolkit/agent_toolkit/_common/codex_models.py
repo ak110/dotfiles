@@ -7,10 +7,16 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from agent_toolkit._common import next_action as _next_action
+
 FAMILIES = frozenset({"astra", "sol", "terra", "luna"})
 _VERSIONED_MODEL = re.compile(r"^gpt-(\d+)(?:\.(\d+))?-(astra|sol|terra|luna)$")
 _MODEL_LIST_TIMEOUT_SECONDS = 30.0
 _APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
+_CHANGE_CANDIDATES_NEXT_ACTION = (
+    "`atk config set <KEY> <VALUE>`で工程別モデル設定の候補を変えるか、`--model-type`に別の候補を指定して再実行する"
+)
+"""系列を完全IDへ解決できない場合に添える次の操作。"""
 
 
 def needs_catalog(candidates: list[tuple[str, str, str]]) -> bool:
@@ -37,14 +43,20 @@ def resolve_candidates(candidates: list[tuple[str, str, str]], catalog: list[dic
                 continue
             available.append(((int(match.group(1)), int(match.group(2) or 0)), candidate_id, item))
         if not available:
-            raise ValueError(f"Codex App Serverのmodel/listに利用可能な{model}系列がありません")
+            raise _next_action.ActionableError(
+                f"Codex App Serverのmodel/listに利用可能な{model}系列がありません",
+                next_action=_CHANGE_CANDIDATES_NEXT_ACTION,
+            )
         _version, selected_id, selected = max(available, key=lambda item: (item[0], item[1]))
         efforts = selected.get("supportedReasoningEfforts")
         supported = (
             {item.get("reasoningEffort") for item in efforts if isinstance(item, dict)} if isinstance(efforts, list) else set()
         )
         if effort not in supported:
-            raise ValueError(f"Codexモデル{selected_id}はreasoning effort {effort}を受理しません")
+            raise _next_action.ActionableError(
+                f"Codexモデル{selected_id}はreasoning effort {effort}を受理しません",
+                next_action=_CHANGE_CANDIDATES_NEXT_ACTION,
+            )
         resolved.append((engine, selected_id, effort))
     return resolved
 
@@ -142,4 +154,10 @@ def list_models() -> list[dict[str, Any]]:
     try:
         return asyncio.run(list_models_from_app_server())
     except (OSError, ValueError) as error:
-        raise ValueError(f"Codexの利用可能モデル一覧を取得できません: {error}") from error
+        raise _next_action.ActionableError(
+            f"Codexの利用可能モデル一覧を取得できません: {error}",
+            next_action=(
+                "`codex login status`で`codex`へのログインを確認して再実行するか、"
+                "`atk config set <KEY> <VALUE>`でCodex以外の候補へ変える"
+            ),
+        ) from error

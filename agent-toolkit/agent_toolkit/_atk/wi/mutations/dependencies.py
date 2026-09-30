@@ -131,11 +131,20 @@ if TYPE_CHECKING:
     )
 
 
+_BROKEN_ENTRY_NEXT_ACTION = "`atk wi show {name}`で保存内容を確認し、ユーザーへ報告する"
+_LEGACY_DEPENDENCY_NEXT_ACTION = (
+    "`atk wi set-dependencies {name} --depends-on <依存先>`で依存を現行の形式へ指定し直してから再実行する"
+)
+
+
 def _entry_dependencies(path: pathlib.Path, data: dict[str, object]) -> tuple[str, ...]:
     """エントリの依存先を文字列列として検証して返す。"""
     raw_dependencies = data.get("depends_on", [])
     if not isinstance(raw_dependencies, list) or not all(isinstance(value, str) for value in raw_dependencies):
-        raise WebInputError(f"depends_onが不正です: {path.name}")
+        raise WebInputError(
+            f"depends_onが不正です: {path.name}",
+            next_action=f"`atk wi set-dependencies {path.name} --depends-on <依存先>`で依存を指定し直す",
+        )
     return tuple(raw_dependencies)
 
 
@@ -150,10 +159,16 @@ def _entry_dependencies_for_conversion(path: pathlib.Path, data: dict[str, objec
     if not isinstance(dependency, dict) or dependency.get("kind") in (None, "none"):
         return ()
     if dependency.get("kind") != "entries":
-        raise WebInputError(f"旧形式の依存を計画実装型へ移行できません: {path.name}")
+        raise WebInputError(
+            f"旧形式の依存を計画実装型へ移行できません: {path.name}",
+            next_action=_LEGACY_DEPENDENCY_NEXT_ACTION.format(name=path.name),
+        )
     filenames = dependency.get("filenames")
     if not isinstance(filenames, list) or not filenames or any(not isinstance(value, str) or not value for value in filenames):
-        raise WebInputError(f"旧形式の依存が不正なため変換できません: {path.name}")
+        raise WebInputError(
+            f"旧形式の依存が不正なため変換できません: {path.name}",
+            next_action=_LEGACY_DEPENDENCY_NEXT_ACTION.format(name=path.name),
+        )
     return tuple(dict.fromkeys(filenames))
 
 
@@ -184,24 +199,47 @@ def set_entry_dependencies(
         text = path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
-            raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
+            raise WebInputError(
+                f"frontmatterが破損しているため依存を更新できません: {path.name}",
+                next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name),
+            )
         data, body = parsed
         if _require_type(path, text) != WI_TYPE_AWI:
-            raise WebInputError(f"AWIだけ依存を更新できます: {path.name}")
+            raise WebInputError(
+                f"AWIだけ依存を更新できます: {path.name}",
+                next_action="依存を更新するAWIのファイル名を指定し直す",
+            )
         raw_entry_repo = data.get("target_repo")
         if not isinstance(raw_entry_repo, str):
-            raise WebInputError(f"target_repoが不正です: {path.name}")
+            raise WebInputError(
+                f"target_repoが不正です: {path.name}",
+                next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name),
+            )
         entry_repo = _resolve_repo_id(raw_entry_repo)
         if normalized_target_repo is not None and entry_repo != normalized_target_repo:
-            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+            raise WebInputError(
+                f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}",
+                next_action=(
+                    f"実際の値を--target-repoへ指定し直すか、`atk wi show {path.name}`で別リポジトリの項目でないか確認する"
+                ),
+            )
 
         canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
         if path.name in canonical_dependencies:
-            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+            raise WebInputError(
+                f"自分自身を依存先へ指定できません: {path.name}",
+                next_action="--depends-onから自分自身を外して再実行する",
+            )
         dependency_graph = _active_dependency_graph(inbox_dir, processing_dir, hold_dir)
         dependency_graph[path.name] = set(canonical_dependencies)
-        if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
-            raise WebInputError(f"循環する依存を指定できません: {path.name}")
+        cycle = _dependency_cycle(dependency_graph, path.name, canonical_dependencies)
+        if cycle is not None:
+            raise WebInputError(
+                f"循環する依存を指定できません: {path.name}（経路: {' → '.join(cycle)}）",
+                next_action=(
+                    f"`atk wi show {cycle[1]}`で依存先を確認し、循環の原因となる依存先を--depends-onの指定から外して再実行する"
+                ),
+            )
         data.pop("queue_schedule", None)
         if canonical_dependencies:
             data["depends_on"] = list(canonical_dependencies)
@@ -234,30 +272,58 @@ def _active_dependency_graph(
         entry_text = entry_path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(entry_text)
         if parsed is None:
-            raise WebInputError(f"active項目のfrontmatterが破損しているため依存を更新できません: {name}")
+            raise WebInputError(
+                f"active項目のfrontmatterが破損しているため依存を更新できません: {name}",
+                next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=name),
+            )
         data, _body = parsed
         if _require_type(entry_path, entry_text) != WI_TYPE_AWI:
             continue
         raw_dependencies = data.get("depends_on", [])
         if not isinstance(raw_dependencies, list) or not all(isinstance(value, str) for value in raw_dependencies):
-            raise WebInputError(f"active項目のdepends_onが不正なため依存を更新できません: {name}")
+            raise WebInputError(
+                f"active項目のdepends_onが不正なため依存を更新できません: {name}",
+                next_action=f"`atk wi set-dependencies {name} --depends-on <依存先>`で依存を指定し直してから再実行する",
+            )
         graph[name] = {_validate_filename(value, inbox_dir).name for value in raw_dependencies}
     return graph
 
 
 def _dependency_reaches(graph: dict[str, set[str]], start: str, target: str) -> bool:
     """startからtargetへ到達できる場合に真を返す。"""
-    pending = [start]
+    return _dependency_path(graph, start, target) is not None
+
+
+def _dependency_path(graph: dict[str, set[str]], start: str, target: str) -> tuple[str, ...] | None:
+    """startからtargetへ至る依存の経路を返す。到達できない場合は`None`を返す。"""
+    pending: list[tuple[str, ...]] = [(start,)]
     visited: set[str] = set()
     while pending:
-        current = pending.pop()
+        route = pending.pop()
+        current = route[-1]
         if current == target:
-            return True
+            return route
         if current in visited:
             continue
         visited.add(current)
-        pending.extend(graph.get(current, ()))
-    return False
+        pending.extend((*route, following) for following in sorted(graph.get(current, ()), reverse=True))
+    return None
+
+
+def _dependency_cycle(
+    graph: dict[str, set[str]],
+    name: str,
+    dependencies: typing.Iterable[str],
+) -> tuple[str, ...] | None:
+    """nameから依存先を経てnameへ戻る循環の経路を返す。循環が無い場合は`None`を返す。
+
+    受信側が循環の原因となる依存先を特定できるよう、拒否の理由へ経路を載せるために使う。
+    """
+    for dependency in dependencies:
+        route = _dependency_path(graph, dependency, name)
+        if route is not None:
+            return (name, *route)
+    return None
 
 
 def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -273,7 +339,7 @@ def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path)
             target_repo=target_repo,
         )
     except WebInputError as error:
-        _outcome.report_failure(f"依存更新を拒否した: {error}")
+        _outcome.report_failure(f"依存更新を拒否した: {error}", next_action=error.next_action)
         sys.exit(1)
     _outcome.report_success(f"依存を更新した: {args.filename}")
     _add._print_entry_details(details)  # pylint: disable=protected-access

@@ -18,6 +18,8 @@ import pytest
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import readiness as _readiness  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.mutations import content as _mutations_content  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.mutations import targets as _mutations_targets  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import file_lock as _file_lock  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
@@ -752,9 +754,12 @@ class TestNotifyUnansweredUwisIfAny:
 
         _common.notify_unanswered_uwis_if_any(tmp_path, None)
 
+        # エージェントは回答できないため、通知の末尾へ取れる行動を次の操作として置く。
         assert capsys.readouterr().err == (
             f"{_common.UNANSWERED_UWI_NOTICE_HEADER}\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
+            f"次の操作: {_common.UNANSWERED_UWI_NEXT_ACTION}\n"
         )
+        assert "エージェントは回答できない" in _common.UNANSWERED_UWI_NEXT_ACTION
 
     def test_notifies_matching_unanswered_entries_in_filename_order(
         self,
@@ -772,6 +777,7 @@ class TestNotifyUnansweredUwisIfAny:
             f"{_common.UNANSWERED_UWI_NOTICE_HEADER}\n"
             "001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
             "002.md: github.com/example/repo [inbox/unanswered] 質問2\n"
+            f"次の操作: {_common.UNANSWERED_UWI_NEXT_ACTION}\n"
         )
 
     def test_local_path_filter_notifies_legacy_and_current_repo_forms(
@@ -1596,8 +1602,8 @@ class TestPullWithRecentNotice:
 
         assert [call for call in calls if call[0] in ("fetch", "merge")] == []
         assert capsys.readouterr().err == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。"
-            "最新化する場合は`--pull`を指定する。\n"
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。\n"
+            "次の操作: このまま続行してよい。最新化する場合は`--pull`を指定する。\n"
         )
 
     def test_recent_reuse_still_migrates_legacy_reservations(
@@ -1829,3 +1835,51 @@ class TestUpstreamCrossRepoDependency:
 
         assert readiness.ready == ("downstream.md",)
         assert not readiness.blocked
+
+
+_TYPELESS_ENTRY = "---\ntarget_repo: github.com/example/foo\n---\n\n# 本文\n"
+
+
+def _next_action_of(capsys: pytest.CaptureFixture[str]) -> str:
+    """標準エラーの次の操作の行の本文を返す。"""
+    lines = [line for line in capsys.readouterr().err.splitlines() if line.startswith("次の操作: ")]
+    assert len(lines) == 1
+    return lines[0]
+
+
+def test_typeless_entry_guides_to_report_instead_of_edit(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """typeが欠落した項目は`atk wi edit`でも同じ理由で拒否されるため、確認と報告を案内する。"""
+    path = tmp_path / "20260930-000000-001.md"
+    path.write_text(_TYPELESS_ENTRY, encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        _common.entry_type_from_metadata(path, {"target_repo": "github.com/example/foo"})
+    common_next_action = _next_action_of(capsys)
+    with pytest.raises(SystemExit):
+        _readiness._require_type(path, _TYPELESS_ENTRY)  # pylint: disable=protected-access
+    readiness_next_action = _next_action_of(capsys)
+    # 案内した`atk wi edit`の`--body-file`経路は、同じ検証で拒否されることを確かめる。
+    with pytest.raises(SystemExit):
+        _mutations_content._build_noninteractive_edit_content(path, _TYPELESS_ENTRY, "# 新しい本文\n")  # pylint: disable=protected-access
+    capsys.readouterr()
+
+    for next_action in (common_next_action, readiness_next_action):
+        assert f"`atk wi show {path.name}`" in next_action
+        assert "ユーザーへ報告する" in next_action
+        assert "でtypeを追記" not in next_action
+
+
+def test_unparsable_frontmatter_guides_to_report_instead_of_edit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """frontmatterを解析できない項目は、編集ではなく確認と報告を案内する。"""
+    path = tmp_path / "20260930-000000-002.md"
+    broken = "---\ntarget_repo: [\n---\n\n# 本文\n"
+    path.write_text(broken, encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        _mutations_targets._entry_target_repo(path, broken)  # pylint: disable=protected-access
+    next_action = _next_action_of(capsys)
+
+    assert f"`atk wi show {path.name}`" in next_action
+    assert "書式を直す" not in next_action

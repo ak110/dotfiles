@@ -63,6 +63,9 @@ def _state_prefixed_filename_hint(filename: str) -> str | None:
     return f"状態名を除いたファイル名を指定する: {remainder}（showは全状態フォルダを探索する）"
 
 
+_STATE_PREFIX_REASON = "状態名付きのファイル名は受理しない"
+
+
 def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """showサブコマンド: `FILENAME...`指定時は指定された項目群、`--all`指定時は全件の本文を表示する。
 
@@ -90,7 +93,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     for filename in args.filenames:
         hint = _state_prefixed_filename_hint(filename)
         if hint is not None:
-            _outcome.report_failure(hint)
+            _outcome.report_failure(f"{_STATE_PREFIX_REASON}: {filename}", next_action=hint)
             sys.exit(2)
     filenames = _dedup_positional_filenames(args.filenames, "show")
     validated_filenames = [
@@ -130,7 +133,10 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 selected_by_name.append(selected_entry)
         if missing:
             for filename in missing:
-                _outcome.report_failure(f"全状態フォルダに存在しない: {filename}。実在するファイル名を指定し直す")
+                _outcome.report_failure(
+                    f"全状態フォルダに存在しない: {filename}",
+                    next_action="実在するファイル名を指定し直す（`atk wi list`で候補を確認できる）",
+                )
             sys.exit(2)
         for path, target_repo, text, state, kind in selected_by_name:
             answered = _is_uwi_answered(text)

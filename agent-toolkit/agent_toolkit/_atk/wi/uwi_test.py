@@ -679,7 +679,7 @@ class TestUwiEdit:
             atk.main(["wi", "edit", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "差分なし" in captured.out
+        assert "成功: 差分なし（変更は無い）" in captured.out
         commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert commit_calls == []
 
@@ -704,7 +704,8 @@ class TestUwiAnswer:
             atk.main(["wi", "answer"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "未回答のUWIはありません" in captured.out
+        # 対象0件も接頭辞付きの成功行で返し、受信側が接頭辞だけで成否を判定できるようにする。
+        assert captured.out.startswith("成功: 未回答のUWIが無いため")
         commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert commit_calls == []
 
@@ -871,9 +872,10 @@ def test_agent_environment_rejects_uwi_answer_before_writing(
 
     assert exc_info.value.code == 1
     assert path.read_bytes() == before
-    assert (
-        capsys.readouterr().err == "失敗: UWIの回答はユーザーだけが書き込む。エージェント環境から起動したatkでは回答できない\n"
-    )
+    failure, next_action = capsys.readouterr().err.splitlines()
+    assert failure == "失敗: UWIの回答はユーザーだけが書き込む。エージェント環境から起動したatkでは回答できない"
+    # エージェントは回答できないため、ユーザーへの依頼を次の操作として返す。
+    assert next_action == "次の操作: ユーザーへ回答を依頼する"
 
 
 def test_answer_uwi_common_core_accepts_agent_environment(
@@ -1353,6 +1355,52 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
     assert commits == [("chore: answer and adopt uwi item", list(uwi_module.WI_STATES))]
 
 
+def test_answer_without_diff_reports_success_line(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存済みと同じ回答は、接頭辞の無い行ではなく変更の無い成功行で報告する。"""
+    notes = _setup_notes(tmp_path)
+    filename = f"{_FIXED_TIMESTAMP}-001.md"
+    _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n採用する\n")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "answer", filename, "採用する"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert f"成功: 差分なし（変更は無い）: {filename}" in capsys.readouterr().out
+
+
+def test_answer_uwi_auto_adopt_conflict_guides_comparison(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """採用先に同名項目がある場合は何も変えず、比較と不要な側の削除を次の操作として返す。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    path = notes / "inbox/post-approval.md"
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
+        "choices: [その対応で問題無い, 問題がある]\n---\n\n"
+        f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
+        f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
+        encoding="utf-8",
+    )
+    (notes / "adopted").mkdir(exist_ok=True)
+    (notes / "adopted/post-approval.md").write_text("既存\n", encoding="utf-8")
+    before = path.read_bytes()
+
+    with pytest.raises(uwi_module.WebInputError, match="同名エントリが既に存在します") as error_info:
+        uwi_module.answer_uwi(notes, filename=path.name, answer="その対応で問題無い")
+
+    assert path.read_bytes() == before
+    assert "atk wi show post-approval.md" in error_info.value.next_action
+    assert "atk wi rm" in error_info.value.next_action
+
+
 @pytest.mark.parametrize("answer", ["問題がある", "別の回答"])
 def test_answer_uwi_does_not_auto_adopt_other_answers(
     answer: str,
@@ -1392,10 +1440,29 @@ def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
     )
     before = path.read_bytes()
 
-    with pytest.raises(uwi_module.WebInputError, match="回答本文が空です"):
+    with pytest.raises(uwi_module.WebInputError, match="回答本文が空です") as error_info:
         uwi_module.answer_uwi(notes, filename=path.name, answer=" \n\t")
 
     assert path.read_bytes() == before
+    assert error_info.value.next_action == "回答を記入して再実行する"
+
+
+def test_answer_uwi_without_marker_asks_to_report_to_user(tmp_path: pathlib.Path) -> None:
+    """回答欄マーカーを失った保存済みUWIは、構造の破損としてユーザーへの報告を次の操作に返す。"""
+    notes = _setup_notes(tmp_path)
+    path = notes / "inbox" / "20260101-000000-004.md"
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n{uwi_module.ANSWER_HEADING}\n\n",
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+
+    with pytest.raises(uwi_module.WebInputError, match="回答欄マーカーがありません") as error_info:
+        uwi_module.answer_uwi(notes, filename=path.name, answer="採用する", skip_remote_sync=True)
+
+    assert path.read_bytes() == before
+    assert "ユーザーへ報告する" in error_info.value.next_action
 
 
 def test_answer_uwi_targets_explicit_state_and_keeps_legacy_priority(
@@ -1470,4 +1537,4 @@ def test_reject_reserved_uwi_markup_reports_every_violation(body: str, expected:
     message = str(exc_info.value)
     assert message.count("見出し（## 回答）") == expected.count("見出し（## 回答）")
     assert all(item in message for item in expected)
-    assert message.endswith("本文には質問内容のみを書いてください")
+    assert exc_info.value.next_action == "本文には質問内容のみを書いてください"

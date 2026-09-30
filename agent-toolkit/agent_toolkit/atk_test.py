@@ -425,13 +425,15 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "fixed-subcommand-output\n"
-        warning_lines = [line for line in captured.err.splitlines() if "登録を持たない管理対象" in line]
+        err_lines = captured.err.splitlines()
+        warning_lines = [line for line in err_lines if "登録を持たない管理対象" in line]
         if count == 0:
             assert not warning_lines
         else:
-            assert warning_lines == [
-                f"警告: 登録を持たない管理対象が{count}件ある（一覧と回収方法は atk managed-temp list で確認できる）"
-            ]
+            assert warning_lines == [f"警告: 登録を持たない管理対象が{count}件ある"]
+            next_action = err_lines[err_lines.index(warning_lines[0]) + 1]
+            assert next_action.startswith("次の操作: ")
+            assert "atk managed-temp list" in next_action
             assert str(tmp_path) not in captured.err
 
     @pytest.mark.parametrize(
@@ -490,7 +492,11 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "fixed-subcommand-output\n"
-        assert captured.err == "警告: 登録を持たない管理対象を探索できなかった: 走査失敗\n"
+        err_lines = captured.err.splitlines()
+        assert err_lines[0] == "警告: 登録を持たない管理対象を探索できなかった: 走査失敗"
+        assert err_lines[1].startswith("次の操作: 本来の操作は継続した。")
+        assert "atk managed-temp list" in err_lines[1]
+        assert len(err_lines) == 2
 
     def test_identical_unregistered_managed_temp_warning_is_emitted_once_per_session(
         self,
@@ -597,6 +603,7 @@ class TestWaitScheduleParser:
         captured = capsys.readouterr()
         assert captured.out == "*/30 * * * *\n"
         assert "警告: 管理対象一時領域を自動削除できない" in captured.err
+        assert f"atk managed-temp cleanup --path {target}" in captured.err
         assert target.exists()
 
     @pytest.mark.parametrize("path_form", ["canonical", "parent-reference"])
@@ -818,9 +825,11 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
         atk.main(["wi", "start-processing", "awi.md"], home=tmp_path)
     assert exc_info.value.code == 3
     stderr = capsys.readouterr().err
-    assert "private-notesに未pushのcommitが1件残る" in stderr
-    assert f"`git -C {notes.resolve()} status`" in stderr
-    assert "atk wi commit" in stderr
+    assert "警告: private-notesに未pushのcommitが1件残る" in stderr
+    # pushの手順は警告行に続く次の操作の行へ置く。
+    next_action = next(line for line in stderr.splitlines() if line.startswith("次の操作: "))
+    assert f"`git -C {notes.resolve()} status`" in next_action
+    assert "atk wi commit" in next_action
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
@@ -1478,6 +1487,19 @@ def test_public_review_table_add_requires_track_and_shows_choices(
     assert "independent" not in error
 
 
+def _assert_review_table_recovery_error(error: str) -> None:
+    """失敗行に続く次の操作の行が、列位置とtrack値の修復案内を含むことを確かめる。"""
+    error_lines = error.splitlines()
+    assert error_lines[0].startswith("失敗: ")
+    next_action = error_lines[1]
+    assert next_action.startswith("次の操作: ")
+    assert "期待列数は7" in next_action
+    assert "trackの位置はroundの直後" in next_action
+    assert "levelの位置はissueの直後" in next_action
+    assert "plan-review, exec-review, plan-conformance, independent" in next_action
+    assert "implementation-reviewはexec-reviewとして読み取る" in next_action
+
+
 def test_public_review_table_invalid_column_count_error_explains_recovery(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1495,12 +1517,7 @@ def test_public_review_table_invalid_column_count_error_explains_recovery(
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
     assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "期待列数は7" in error
-    assert "trackの位置はroundの直後" in error
-    assert "levelの位置はissueの直後" in error
-    assert "plan-review, exec-review, plan-conformance, independent" in error
-    assert "implementation-reviewはexec-reviewとして読み取る" in error
+    _assert_review_table_recovery_error(capsys.readouterr().err)
 
 
 @pytest.mark.parametrize("subcommand", ["respond", "add"])
@@ -1550,12 +1567,7 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
         atk.main(argv)
 
     assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "期待列数は7" in error
-    assert "trackの位置はroundの直後" in error
-    assert "levelの位置はissueの直後" in error
-    assert "plan-review, exec-review, plan-conformance, independent" in error
-    assert "implementation-reviewはexec-reviewとして読み取る" in error
+    _assert_review_table_recovery_error(capsys.readouterr().err)
 
 
 class TestSpaceSeparatedOptionWithoutWarning:
@@ -1744,6 +1756,8 @@ class TestPrivateNotesMissing:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "WI保存ディレクトリが見つからない" in captured.err
+        assert "\n次の操作: " in captured.err
+        assert "AGENT_TOOLKIT_PRIVATE_NOTES" in captured.err.split("\n次の操作: ", 1)[1]
 
 
 class TestNoSubcommand:
@@ -2425,3 +2439,77 @@ class TestAddBatchOption:
         assert exc_info.value.code == 1
         assert "投入を拒否した" in capsys.readouterr().err
         assert not list((notes / "inbox").iterdir())
+
+
+class TestMainFailureNextAction:
+    """`atk.py:main`が捕捉した例外を失敗行と次の操作の行の2行で出力することを検証する。"""
+
+    @staticmethod
+    def _run_wi_commit(
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        error: BaseException,
+    ) -> list[str]:
+        """`atk wi commit`の処理が`error`を送出したときの標準エラーの行を返す。"""
+        atk_members = vars(atk)
+        monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: tmp_path)
+
+        def fail(*_args: object) -> None:
+            raise error
+
+        monkeypatch.setattr(atk_members["_mutations"], "_cmd_commit", fail)
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "commit"], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 1
+        return capsys.readouterr().err.splitlines()
+
+    @staticmethod
+    def _next_action_after_failure(lines: list[str]) -> str:
+        """失敗行の直後の行が次の操作の行であることを確かめて返す。"""
+        index = next(i for i, line in enumerate(lines) if line.startswith("失敗: "))
+        assert lines[index + 1].startswith("次の操作: ")
+        return lines[index + 1]
+
+    def test_actionable_error_prints_its_next_action(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`WebInputError`は発生源が渡した次の操作を出力する。"""
+        error = _wi_common.WebInputError("対象が無い", next_action="`atk wi list`で対象を確認する")
+        lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
+        assert lines[0] == "失敗: 操作を拒否した: 対象が無い"
+        assert self._next_action_after_failure(lines) == "次の操作: `atk wi list`で対象を確認する"
+
+    def test_plain_value_error_names_help_and_bug_report(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """共通型でない`ValueError`は受理形式の確認と不具合の報告を案内する。"""
+        lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, ValueError("想定外の値"))
+        next_action = self._next_action_after_failure(lines)
+        assert "`atk wi commit --help`" in next_action
+        assert "ユーザーへ報告" in next_action
+
+    def test_rebase_in_progress_error_is_reported_without_traceback(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """wi経路の`RebaseInProgressError`は失敗行と競合解消の次の操作で出力する。"""
+        error = atk._atk_git_sync.RebaseInProgressError("rebase中")  # pylint: disable=protected-access
+        lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
+        assert "git rebase --continue" in self._next_action_after_failure(lines)
+
+    def test_unreported_git_failure_names_status_check(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """同期基盤が報告していないGit操作の失敗は、`git -C <private-notes> status`での確認を案内する。"""
+        error = subprocess.CalledProcessError(1, ["git", "commit"])
+        lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
+        assert f"`git -C {tmp_path.resolve()} status`" in self._next_action_after_failure(lines)
+
+    def test_reported_git_failure_is_not_repeated(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """同期基盤が原因と次の操作を出力済みのGit操作の失敗へ、汎用の失敗行を重ねない。"""
+        error = subprocess.CalledProcessError(1, ["git", "push"])
+        atk._atk_git_sync.mark_reported(error)  # pylint: disable=protected-access
+        lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
+        assert not any(line.startswith("失敗: ") for line in lines)

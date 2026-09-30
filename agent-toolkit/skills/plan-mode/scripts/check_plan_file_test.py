@@ -322,10 +322,12 @@ def test_cli_reports_missing_completion_once(repo: tuple[pathlib.Path, str]) -> 
         text=True,
         check=False,
     )
-    diagnostics = [line for line in result.stderr.splitlines() if line and not line.startswith("[warn]")]
+    diagnostics = [line for line in result.stderr.splitlines() if line and not line.startswith(("[warn]", "次の操作: "))]
     assert result.returncode == 1
     assert len(diagnostics) == 1, diagnostics
     assert "`## 完了条件`は1件必要" in diagnostics[0]
+    assert result.stderr.splitlines()[-1].startswith("次の操作: ")
+    assert "同じコマンドで再検査する" in result.stderr.splitlines()[-1]
 
 
 def test_cli_warns_for_legacy_materials_without_changing_exit_code(repo: tuple[pathlib.Path, str]) -> None:
@@ -445,7 +447,17 @@ def test_rejects_missing_skill_invocations(
     work_dir, base = repo
     content = _plan(work_dir, base).replace("対象の構造を更新する。", invocation.format(spacing=spacing))
     errors, _warnings = _check(work_dir, content)
-    assert f"実在しないスキル参照: {expected_reference}" in errors
+    matched = [error for error in errors if error.startswith(f"実在しないスキル参照: {expected_reference}。")]
+    assert len(matched) == 1, errors
+    assert "実在するスキル名へ直すか、起動の形の参照をやめる" in matched[0]
+
+
+def test_missing_skill_reference_suggests_close_existing_name(repo: tuple[pathlib.Path, str]) -> None:
+    """綴りの近い実在スキルがあれば候補として示す。"""
+    work_dir, base = repo
+    invocation = f"Skillツールで`{_TOOLKIT_PREFIX}:plan-mod`を起動する。"
+    errors, _warnings = _check(work_dir, _plan(work_dir, base).replace("対象の構造を更新する。", invocation))
+    assert any(f"候補: {_TOOLKIT_PREFIX}:plan-mode" in error for error in errors), errors
 
 
 @pytest.mark.parametrize("spacing", ["", " "])
@@ -454,7 +466,7 @@ def test_accepts_new_skill_description_without_invocation(repo: tuple[pathlib.Pa
     work_dir, base = repo
     description = f"新スキル{spacing}`{_TOOLKIT_PREFIX}:missing-skill`{spacing}を新設する。"
     errors, _warnings = _check(work_dir, _plan(work_dir, base).replace("対象の構造を更新する。", description))
-    assert f"実在しないスキル参照: {_TOOLKIT_PREFIX}:missing-skill" not in errors
+    assert not any(error.startswith(f"実在しないスキル参照: {_TOOLKIT_PREFIX}:missing-skill") for error in errors)
 
 
 def test_rejects_missing_agent_reference(repo: tuple[pathlib.Path, str]) -> None:

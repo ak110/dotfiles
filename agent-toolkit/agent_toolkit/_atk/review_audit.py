@@ -17,6 +17,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import json_command as _json_command
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
@@ -41,6 +42,15 @@ _THREADS_QUERY = (
 )
 
 
+_GRAPHQL_NEXT_ACTION = "`gh auth status`で認証を確認し、時間をおいて再実行する。繰り返す場合はユーザーへ報告する"
+"""GitHub GraphQLの取得失敗と応答不正に添える次の操作。"""
+
+
+def _graphql_error(reason: str) -> _next_action.ActionableError:
+    """GitHub GraphQLの取得失敗と応答不正を次の操作付きの例外へ変換する。"""
+    return _next_action.ActionableError(reason, next_action=_GRAPHQL_NEXT_ACTION)
+
+
 def _record_path() -> Path:
     """判定済みreviewの記録ファイルを返す。"""
     return _config.state_dir() / "review-audit.json"
@@ -48,12 +58,16 @@ def _record_path() -> Path:
 
 def _validate_repository(repository: str) -> None:
     if _REPOSITORY_RE.fullmatch(repository) is None:
-        raise ValueError("リポジトリは<owner>/<repo>形式で指定する")
+        raise _next_action.ActionableError(
+            f"リポジトリの形式が不正: {repository}", next_action="--repoへ<owner>/<repo>形式で指定する"
+        )
 
 
 def _validate_identifiers(identifiers: list[str]) -> None:
     if any(_IDENTIFIER_RE.fullmatch(identifier) is None for identifier in identifiers):
-        raise ValueError("識別子は10進数の正の整数で指定する")
+        raise _next_action.ActionableError(
+            "10進数の正の整数ではない識別子がある", next_action="識別子は10進数の正の整数で指定する"
+        )
 
 
 def _read_records(path: Path) -> dict[str, dict[str, str]]:
@@ -106,18 +120,18 @@ def _query_graphql(owner: str, name: str, query: str, *, number: int | None = No
     command.extend(("-f", f"query={query}"))
 
     def failure(error: _json_command.Failure) -> Exception:
-        return ValueError(f"Copilot監査対象の取得に失敗した: {error.kind}: {error.detail or error.stderr.strip()}")
+        return _graphql_error(f"Copilot監査対象の取得に失敗した: {error.kind}: {error.detail or error.stderr.strip()}")
 
     response = _json_command.run(command, _GH_TIMEOUT, error_factory=failure, strict_stderr=False)
     if not isinstance(response, dict) or response.get("errors") or not isinstance(response.get("data"), dict):
-        raise ValueError("Copilot監査対象のGraphQL応答が不正または部分失敗である")
+        raise _graphql_error("Copilot監査対象のGraphQL応答が不正または部分失敗である")
     return response["data"]
 
 
 def _connection(data: dict, field: str, number: int | None) -> dict:
     repository = data.get("repository")
     if not isinstance(repository, dict):
-        raise ValueError("Copilot監査対象のrepositoryを取得できない")
+        raise _graphql_error("Copilot監査対象のrepositoryを取得できない")
     parent = repository if number is None else repository.get("pullRequest")
     connection = parent.get(field) if isinstance(parent, dict) else None
     page = connection.get("pageInfo") if isinstance(connection, dict) else None
@@ -127,7 +141,7 @@ def _connection(data: dict, field: str, number: int | None) -> dict:
         or not isinstance(page, dict)
         or not isinstance(page.get("hasNextPage"), bool)
     ):
-        raise ValueError(f"Copilot監査対象の{field}接続またはpageInfoが不正である")
+        raise _graphql_error(f"Copilot監査対象の{field}接続またはpageInfoが不正である")
     return connection
 
 
@@ -140,13 +154,13 @@ def _pages(owner: str, name: str, query: str, field: str, *, number: int | None 
         connection = _connection(_query_graphql(owner, name, query, number=number, cursor=cursor), field, number)
         page = connection["pageInfo"]
         if any(not isinstance(node, dict) for node in connection["nodes"]):
-            raise ValueError(f"Copilot監査対象の{field}ノードが不正である")
+            raise _graphql_error(f"Copilot監査対象の{field}ノードが不正である")
         nodes.extend(connection["nodes"])
         if not page["hasNextPage"]:
             return nodes
         next_cursor = page.get("endCursor")
         if not isinstance(next_cursor, str) or not next_cursor or next_cursor in visited:
-            raise ValueError(f"Copilot監査対象の{field}接続がpagination終端へ到達しない")
+            raise _graphql_error(f"Copilot監査対象の{field}接続がpagination終端へ到達しない")
         visited.add(next_cursor)
         cursor = next_cursor
 
@@ -165,7 +179,7 @@ def _pending(repository: str) -> int:
     for pull_request in _pages(owner, name, _PULL_REQUESTS_QUERY, "pullRequests"):
         number = pull_request.get("number")
         if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
-            raise ValueError("Copilot監査対象のPR番号が不正である")
+            raise _graphql_error("Copilot監査対象のPR番号が不正である")
         review_connection = _connection({"repository": pull_request}, "reviews", None)
         thread_connection = _connection({"repository": pull_request}, "reviewThreads", None)
         review_nodes = (
@@ -180,16 +194,16 @@ def _pending(repository: str) -> int:
         )
         for review in review_nodes:
             if not isinstance(review, dict):
-                raise ValueError("Copilot reviewのノードが不正である")
+                raise _graphql_error("Copilot reviewのノードが不正である")
             identifier = review.get("databaseId")
             if _copilot_author(review.get("author")):
                 if not isinstance(identifier, int) or isinstance(identifier, bool) or identifier <= 0:
-                    raise ValueError("Copilot reviewのdatabaseIdが不正である")
+                    raise _graphql_error("Copilot reviewのdatabaseIdが不正である")
                 if str(identifier) not in recorded:
                     reviews.add((number, identifier))
         for thread in thread_nodes:
             if not isinstance(thread, dict):
-                raise ValueError("Copilot review threadのノードが不正である")
+                raise _graphql_error("Copilot review threadのノードが不正である")
             comments = thread.get("comments")
             first = comments.get("nodes") if isinstance(comments, dict) else None
             if (
@@ -197,7 +211,7 @@ def _pending(repository: str) -> int:
                 or not isinstance(first, list)
                 or any(not isinstance(comment, dict) for comment in first)
             ):
-                raise ValueError("Copilot review threadの状態または先頭commentが不正である")
+                raise _graphql_error("Copilot review threadの状態または先頭commentが不正である")
             if not thread["isResolved"] and first and _copilot_author(first[0].get("author")):
                 threads.add(number)
     result = {

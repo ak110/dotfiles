@@ -145,8 +145,9 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
         _flush_warning: Callable[[], None],
     ) -> int:
         notice = pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
-            "controlled warning\n対処: retry",
+            "controlled warning",
             tag=pretooluse._WARN_TAG,  # noqa: SLF001  # pylint: disable=protected-access
+            fix="retry",
             removable_cause=bool(tool_input["removable"]),
         )
         _emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}})
@@ -197,7 +198,7 @@ class TestMojibakeCheck:
         assert "U+FFFD" in context
         # コーディングエージェント宛てメッセージ規約: XMLの開始境界と終了境界が付与されていること。
         assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
-        assert "対処: U+FFFDを意図した文字へ置き換えて再実行する" in context
+        assert "\n次の操作: U+FFFDを意図した文字へ置き換えて再実行する" in context
         assert context.endswith("</atk-auto>")
 
     def test_edit_with_mojibake(self):
@@ -245,11 +246,14 @@ class TestPs1EolCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 0
         context = _additional_context(result)
-        assert "LFだけの内容" in context
-        assert "UTF-8 BOMが失われて日本語が文字化け" in context
+        assert "`LF`だけの内容" in context
+        assert "`UTF-8`の`BOM`が失われて日本語が文字化け" in context
         assert "*.ps1 text eol=crlf" in context
-        assert "「書込ツールの改行・BOM保全」に従う" in context
-        assert "既存ファイルにはEditツールを使い" in context
+        assert (
+            "\n次の操作: `agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い"
+            in context
+        )
+        assert "既存ファイルには`Edit`ツールを使い" in context
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -262,7 +266,7 @@ class TestPs1EolCheck:
         content = "Set-StrictMode\n{{ .chezmoi.homeDir }}\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "./a.ps1.tmpl", "content": content}})
         assert result.returncode == 0
-        assert "LFだけの内容" in _additional_context(result)
+        assert "`LF`だけの内容" in _additional_context(result)
 
     def test_ps1_with_crlf_allowed(self):
         content = "Set-StrictMode\r\nWrite-Host 'x'\r\n"
@@ -307,7 +311,7 @@ class TestLockfilesCheck:
         assert result.returncode == 0
         context = _additional_context(result)
         assert "直接編集" in context
-        assert "対処: " in context
+        assert "\n次の操作: " in context
 
     def test_edit_cargo_lock_warned(self):
         result = _run(
@@ -319,7 +323,7 @@ class TestLockfilesCheck:
         assert result.returncode == 0
         context = _additional_context(result)
         assert "cargo add" in context
-        assert "対処: " in context
+        assert "\n次の操作: " in context
 
     def test_normal_file_allowed(self):
         """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""

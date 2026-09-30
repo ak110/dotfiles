@@ -11,6 +11,7 @@ import sys
 import pytest
 
 from agent_toolkit._atk import run_script
+from agent_toolkit._common import next_action
 
 
 def test_registry_stays_inside_plugin_root() -> None:
@@ -331,3 +332,32 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
     output = pathlib.Path(result.stdout.strip())
     assert output == isolated_home / ".claude/plans/01-0000_external-entry.md"
     assert output.is_file()
+
+
+def test_unregistered_script_lists_registered_names() -> None:
+    """未登録のscript名は登録済みscriptの一覧を次の操作として示す。"""
+    with pytest.raises(next_action.ActionableError) as raised:
+        run_script.registered_script_path("unknown-script")
+
+    assert "plan-check" in raised.value.next_action
+    assert "session-review-prepare" in raised.value.next_action
+
+
+def test_string_system_exit_is_reported_as_failure_with_next_action(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """scriptが文字列で終了した場合は失敗行と、再実行と受理形式の確認を示す次の操作の行で包む。"""
+
+    def exit_with_message(_target: str, *, run_name: str) -> None:
+        del run_name
+        raise SystemExit("入力ファイルが無い")
+
+    monkeypatch.setattr(run_script.runpy, "run_path", exit_with_message)
+
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-check", script_args=[])) == 1
+
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[0].startswith("失敗: ")
+    assert "入力ファイルが無い" in lines[0]
+    assert lines[1].startswith("次の操作: ")
+    assert "atk run-script plan-check -- --help" in lines[1]

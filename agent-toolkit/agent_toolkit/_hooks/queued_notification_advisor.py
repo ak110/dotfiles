@@ -39,10 +39,9 @@ _TASK_ID_RE = re.compile(r"<task-id>([^<]+)</task-id>")
 _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
 _OUTPUT_FILE_RE = re.compile(r"<output-file>([^<]+)</output-file>")
 
-_NOTICE_BODY = (
-    "完了済みの背景タスクの通知が、配送されないままキューに残っている。"
-    "結果は次の出力ファイルに保存済みである。完了通知を待つためにターンを終えず、"
-    "このターンのうちに出力ファイルを読んで結果を受け取り、工程を進める。"
+_NOTICE_BODY = "完了済みの背景タスクの通知が、配送されないままキューに残っている。結果は次の出力ファイルに保存済みである。"
+_NOTICE_FIX = (
+    "完了通知を待つためにターンを終えず、このターンのうちに出力ファイルを読んで結果を受け取り、工程を進める。"
     "同じ結果を得る目的で待機コマンドを再発行しない。"
     "`atk agents wait`は回収した結果を削除するため、再発行しても同じ結果は返らない。"
 )
@@ -129,4 +128,4 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     _record_notified(session_id, list(pending))
     body = "\n".join([_NOTICE_BODY, *(_describe(notification) for notification in pending.values())])
-    return "notify", _notice(body, removable_cause=True, summary=body)
+    return "notify", _notice(body, fix=_NOTICE_FIX, removable_cause=True, summary=body)

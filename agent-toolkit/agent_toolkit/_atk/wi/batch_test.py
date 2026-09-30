@@ -86,7 +86,9 @@ def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
 
     assert exc_info.value.code == 1
     assert not list((notes / "inbox").iterdir())
-    assert "ユーザーコメント節を含む本文を投入できない" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "ユーザーコメント節を含む本文を投入できません" in stderr
+    assert "\n次の操作: " in stderr
 
 
 def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environment(
@@ -149,9 +151,11 @@ def test_parse_accepts_crlf_line_endings() -> None:
     ],
 )
 def test_parse_rejects_non_show_format(text: str) -> None:
-    """show形式として解析できない入力を全件拒否する。"""
-    with pytest.raises(WebInputError):
+    """show形式として解析できない入力を全件拒否し、期待する形式の最小例を次の操作として返す。"""
+    with pytest.raises(WebInputError) as error_info:
         batch.parse_show_batch(text)
+
+    assert "最小例: `### 20260101-000000-001.md`" in error_info.value.next_action
 
 
 @pytest.mark.parametrize(
@@ -173,9 +177,11 @@ def test_parse_rejects_invalid_frontmatter(frontmatter: str) -> None:
 
 
 def test_parse_rejects_effectively_empty_awi_body() -> None:
-    """実質空のAWI本文を拒否する。"""
-    with pytest.raises(WebInputError):
+    """実質空のAWI本文を拒否し、本文の記入を次の操作として返す。"""
+    with pytest.raises(WebInputError) as error_info:
         batch.parse_show_batch(_entry_text("a.md", body="-"))
+
+    assert error_info.value.next_action == "本文を記入して再投入する"
 
 
 def test_import_keeps_original_names_and_raw_text(
@@ -335,8 +341,10 @@ def test_import_rejects_duplicated_original_names_across_texts(
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
 
-    with pytest.raises(WebInputError):
+    with pytest.raises(WebInputError) as error_info:
         batch.add_batch_entries(notes, texts=[_entry_text("same.md"), _entry_text("same.md")], now=_FIXED_DT)
+
+    assert "重複した見出し" in error_info.value.next_action
 
     assert not list((notes / "inbox").iterdir())
 
@@ -466,8 +474,12 @@ def test_import_rejects_non_canonical_depends_on_needing_rewrite(
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on: [dep.md]\n---\n\n本文\n\n"
     )
 
-    with pytest.raises(WebInputError):
+    with pytest.raises(WebInputError) as error_info:
         batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
+
+    # flow形式は読み替えられないため、ブロック形式での書き直しを次の操作として返す。
+    assert "`- <ファイル名>`" in error_info.value.next_action
+    assert "ブロック形式で書き直して再投入する" in error_info.value.next_action
 
     assert not (notes / "inbox" / "plan.md").exists()
 
@@ -629,7 +641,7 @@ def test_show_all_output_round_trips_into_another_repository(
     target_notes = _setup_notes(tmp_path, "target-notes")
     _patch_repo_operations(monkeypatch, add_module)
     _patch_repo_operations(monkeypatch, batch)
-    monkeypatch.setattr(add_module, "_resolve_repo_id", lambda value, **_kwargs: value)
+    monkeypatch.setattr(add_module, "resolve_repo_id_or_raise", lambda value, **_kwargs: value)
     generated = add_module.add_entries(
         source_notes,
         messages=["AWI本文", f"---\nsource: session-review\nscope_alignment: sha256:old\n---\n\n{AGENT_AWI_BODY}\n"],

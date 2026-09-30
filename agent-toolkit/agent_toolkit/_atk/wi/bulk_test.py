@@ -287,7 +287,7 @@ class TestRemoveAllConfirmation:
 
         assert path.exists()
         assert not commits
-        assert "削除を中止しました。" in capsys.readouterr().out
+        assert "成功: 確認で中止したため削除しなかった（変更は無い）" in capsys.readouterr().out
 
     def test_non_tty_requires_yes(
         self,
@@ -556,7 +556,8 @@ class TestRemoveAllScope:
         assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         assert not commits
-        assert "削除対象なし: github.com/example/foo" in capsys.readouterr().out
+        # 対象0件は接頭辞の無い行ではなく成功行で報告する。
+        assert "成功: 対象0件のため削除しなかった（変更は無い）: github.com/example/foo" in capsys.readouterr().out
 
     def test_removes_same_filename_from_both_active_states(
         self,
@@ -633,8 +634,9 @@ class TestRemoveAllConcurrentChanges:
         assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         captured = capsys.readouterr()
-        assert "確認後に変更されたため削除しません: original.md" in captured.out
-        assert "削除対象なし: github.com/example/foo" in captured.out
+        assert "警告: 確認後に変更されたため削除しない: original.md\n次の操作: " in captured.out
+        assert "同じコマンドを再実行する" in captured.out
+        assert "成功: 対象0件のため削除しなかった（変更は無い）: github.com/example/foo" in captured.out
         assert not commits
 
     def test_removes_confirmed_entry_and_keeps_added_entry(
@@ -681,7 +683,7 @@ class TestRemoveAllConcurrentChanges:
         assert not unchanged.exists()
         assert (notes / "processing/changed.md").exists()
         assert commits == [("chore: remove 1 entry", ["inbox", "processing", "hold", "adopted", "rejected"])]
-        assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out
+        assert "警告: 確認後に変更されたため削除しない: changed.md\n次の操作: " in capsys.readouterr().out
 
 
 class TestRemoveAllSkipPull:
@@ -738,4 +740,4 @@ class TestRemoveAllSkipPull:
         assert not unchanged.exists()
         assert changed.exists()
         assert commits == [("chore: remove 1 entry", ["inbox", "processing", "hold", "adopted", "rejected"])]
-        assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out
+        assert "警告: 確認後に変更されたため削除しない: changed.md\n次の操作: " in capsys.readouterr().out

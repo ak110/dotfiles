@@ -43,9 +43,11 @@ _HOOK_ID = "agents_server_session_advisor"
 _SESSION_STATE_KEY = "agents_server_sessions"
 _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"
+    "観測しないまま終了すると、その作業の成果を回収する主体が残らない。"
+)
+_WARNING_FIX = (
     "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
-    "観測しないまま終了すると、その作業の成果を回収する主体が残らない。"
 )
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
@@ -193,7 +195,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     body = f"{_WARNING_BODY}\n対象session: {', '.join(pending_session_ids)}"
-    return "notify", _notice(body, removable_cause=True, summary=body)
+    return "notify", _notice(body, fix=_WARNING_FIX, removable_cause=True, summary=body)
 
 
 def main(payload_text: str) -> int:

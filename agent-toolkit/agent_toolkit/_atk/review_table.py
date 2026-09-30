@@ -23,6 +23,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._plan import locations as _plan_locations
 
@@ -61,6 +62,16 @@ _INPUT_GUIDANCE = (
     "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプおよびプロセス置換は受理しない"
 )
+_FIX_FORMAT_NEXT_ACTION = f"表を次の形式へ直して再実行する。{_RECOVERY_GUIDANCE}"
+_FIX_ROW_NEXT_ACTION = "`atk review-table show <PATH>`で該当行を確認し、表を直して再実行する"
+_SAVED_MISMATCH_NEXT_ACTION = (
+    "保存は済んでいる。`atk review-table show <PATH>`で保存結果を確認し、"
+    "`atk review-table respond <PATH> --row-id <ROW_ID>`で直す"
+)
+_SAVED_UNRESOLVED_NEXT_ACTION = (
+    "`atk review-table show <PATH>`で保存結果を確認する。解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
+)
+_ActionableError = _next_action.ActionableError
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -119,7 +130,9 @@ def _parse_text(text: str) -> list[tuple[str, list[str]]]:
             continue
         cells = line.split("\t")
         if len(cells) not in (_COLUMN_COUNT, _LEGACY_WIDE_COLUMN_COUNT):
-            raise ValueError(f"{line_number}行の列数が{_COLUMN_COUNT}ではない: {len(cells)}。{_RECOVERY_GUIDANCE}")
+            raise _ActionableError(
+                f"{line_number}行の列数が{_COLUMN_COUNT}ではない: {len(cells)}", next_action=_FIX_FORMAT_NEXT_ACTION
+            )
         row = [_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)]
         row = _drop_legacy_response_needed(row)
         row[1] = _normalize_track(row[1])
@@ -136,13 +149,13 @@ def _read_table_text(path: Path) -> str:
     渡すと`_path`の解決が存在しないパスへ至り、同じ文面では原因を判別できないためである。
     """
     if not path.exists():
-        raise ValueError(f"レビュー表を読み込めない: {path}: 存在しない。{_INPUT_GUIDANCE}")
+        raise _ActionableError(f"レビュー表を読み込めない: {path}: 存在しない", next_action=_INPUT_GUIDANCE)
     if not path.is_file():
-        raise ValueError(f"レビュー表を読み込めない: {path}: 通常ファイルではない。{_INPUT_GUIDANCE}")
+        raise _ActionableError(f"レビュー表を読み込めない: {path}: 通常ファイルではない", next_action=_INPUT_GUIDANCE)
     try:
         return path.read_text(encoding="utf-8")
     except OSError as error:
-        raise ValueError(f"レビュー表を読み込めない: {path}: {error}。{_INPUT_GUIDANCE}") from error
+        raise _ActionableError(f"レビュー表を読み込めない: {path}: {error}", next_action=_INPUT_GUIDANCE) from error
 
 
 def _read(path: Path) -> list[list[str]]:
@@ -173,25 +186,34 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
     keys: set[tuple[str, str, str, str]] = set()
     for index, row in enumerate(rows, start=1):
         if len(row) != _COLUMN_COUNT:
-            raise ValueError(f"{index}行の列数が{_COLUMN_COUNT}ではない")
+            raise _ActionableError(f"{index}行の列数が{_COLUMN_COUNT}ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
         if any(not _normalized(value) for value in row[:_KEY_COLUMN_COUNT]):
-            raise ValueError(f"{index}行の先頭4列は空にできない")
+            raise _ActionableError(f"{index}行の先頭4列は空にできない", next_action=_FIX_ROW_NEXT_ACTION)
         if _ROUND_RE.match(_normalized(row[0])) is None:
-            raise ValueError(f"{index}行のラウンドが1以上の整数ではない")
+            raise _ActionableError(f"{index}行のラウンドが1以上の整数ではない", next_action=_FIX_ROW_NEXT_ACTION)
         if row[1] not in TRACK_VALUES:
-            raise ValueError(f"{index}行のtrackが正規値ではない。{_RECOVERY_GUIDANCE}")
+            raise _ActionableError(f"{index}行のtrackが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
         if row[4] and row[4] not in LEVEL_VALUES:
-            raise ValueError(f"{index}行のlevelが正規値ではない。{_RECOVERY_GUIDANCE}")
+            raise _ActionableError(f"{index}行のlevelが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
         key = _key(row)
         if key in keys:
-            raise ValueError(f"{index}行の先頭4列が重複している")
+            raise _ActionableError(f"{index}行の先頭4列が重複している", next_action=_FIX_ROW_NEXT_ACTION)
         keys.add(key)
         response = row[5].strip()
         reason = row[6].strip()
         if response and reason:
-            raise ValueError(f"{index}行は対応内容と対応不要理由を同時に持てない")
+            raise _ActionableError(
+                f"{index}行は対応内容と対応不要理由を同時に持てない",
+                next_action=f"`atk review-table respond <PATH> --row-id {index}`で対応内容か対応不要理由の一方だけを記録し直す",
+            )
         if require_responses and not response and not reason:
-            raise ValueError(f"{index}行が未応答である")
+            raise _ActionableError(
+                f"{index}行が未応答である",
+                next_action=(
+                    f"`atk review-table respond <PATH> --row-id {index}`へ--response-fileか"
+                    "--no-response-reason-fileを指定して応答する"
+                ),
+            )
 
 
 def validate(path: str | Path, *, require_responses: bool = True) -> int:
@@ -254,7 +276,7 @@ def init(path: str | Path) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
     with _table_lock(target):
         if target.exists():
-            raise ValueError(f"レビュー表が既に存在する: {target}")
+            raise _ActionableError(f"レビュー表が既に存在する: {target}", next_action="既存の表をそのまま使う")
         _write_atomic(target, [])
     _outcome.report_success(f"レビュー指摘管理表を作成した: {target}", _outcome.ResultKind.VALUE_OUTPUT)
     print(target)
@@ -268,23 +290,29 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
         if _key(row) in {_key(existing) for existing in rows}:
-            raise ValueError("先頭4列の複合キーが重複している")
+            raise _ActionableError(
+                "先頭4列の複合キーが重複している",
+                next_action="同じ指摘なら追加は不要。別の指摘ならlocationかissueを区別して追加し直す",
+            )
         return [*rows, row]
 
     rows = _locked_update(target, updater)
     saved_rows = [saved_row for saved_row in _read(target) if _key(saved_row) == _key(row)]
     if len(saved_rows) != 1:
-        raise ValueError(f"追加した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
+        raise _ActionableError(
+            f"追加した行を保存済みの表から一意に解決できない: {len(saved_rows)}件", next_action=_SAVED_UNRESOLVED_NEXT_ACTION
+        )
     saved_row = saved_rows[0]
     for column, expected, saved in (("location", location, saved_row[2]), ("issue", issue, saved_row[3])):
         if _body_match.verdict(expected, saved) != "一致":
             position = _body_match.first_difference(expected, saved)
-            raise ValueError(
+            raise _ActionableError(
                 f"保存本文が送信元本文と一致しない: {target}\n"
                 f"不一致の列: {column}\n"
                 f"最初の差異: {position}文字目\n"
                 f"送信元本文:\n{expected}\n"
-                f"保存本文:\n{saved}"
+                f"保存本文:\n{saved}",
+                next_action=_SAVED_MISMATCH_NEXT_ACTION,
             )
     _outcome.report_success(f"指摘行を1件追加した: {target}（{len(rows)}件）")
     return 0
@@ -295,9 +323,13 @@ def _row_id(raw: str) -> int:
     try:
         value = int(raw)
     except ValueError as error:
-        raise argparse.ArgumentTypeError("row-idは1以上の整数で指定する") from error
+        raise argparse.ArgumentTypeError(
+            _next_action.with_next_action(f"row-idが整数ではない: {raw}", "row-idは1以上の整数で指定する")
+        ) from error
     if value < 1:
-        raise argparse.ArgumentTypeError("row-idは1以上の整数で指定する")
+        raise argparse.ArgumentTypeError(
+            _next_action.with_next_action(f"row-idが1未満である: {raw}", "row-idは1以上の整数で指定する")
+        )
     return value
 
 
@@ -340,18 +372,27 @@ def respond(
     replacement = response.strip()
     reason = no_response_reason.strip()
     if replacement and reason:
-        raise ValueError("対応内容と対応不要理由は同時に指定できない")
+        raise _ActionableError(
+            "対応内容と対応不要理由は同時に指定できない",
+            next_action="--response-fileと--no-response-reason-fileのどちらか一方だけを指定する",
+        )
     if not replacement and not reason:
-        raise ValueError("対応内容と対応不要理由のいずれかを指定する")
+        raise _ActionableError(
+            "対応内容と対応不要理由のどちらも指定されていない",
+            next_action="--response-fileか--no-response-reason-fileのどちらか一方を指定する",
+        )
     needed = "yes" if replacement else "no"
     track = _normalize_track(track)
     given = [
         (index, _normalized(value)) for index, value in enumerate((round_value, track, location, issue)) if _normalized(value)
     ]
     if row_id is not None and row_id < 1:
-        raise ValueError("row-idは1以上の整数で指定する")
+        raise _ActionableError(f"row-idが1未満である: {row_id}", next_action="row-idは1以上の整数で指定する")
     if row_id is not None and given:
-        raise ValueError("row-idはround・track・location・issueと同時に指定できない")
+        raise _ActionableError(
+            "row-idはround・track・location・issueと同時に指定できない",
+            next_action="--row-idか、--round・--track・--location-file・--issue-fileのどちらか一方で行を指定する",
+        )
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
         if row_id is not None:
@@ -364,9 +405,15 @@ def respond(
             ]
         if len(matches) != 1:
             if row_id is not None:
-                raise ValueError(f"row-idが範囲外である: {row_id}（行数: {len(rows)}）")
+                raise _ActionableError(
+                    f"row-idが範囲外である: {row_id}（行数: {len(rows)}）",
+                    next_action="`atk review-table show <PATH>`でrow-idを確認して指定し直す",
+                )
             diagnostic = _format_key_diagnostic(rows, given, matches)
-            raise ValueError(f"応答対象の複合キーが一意に解決できない: {len(matches)}件\n{diagnostic}")
+            raise _ActionableError(
+                f"応答対象の複合キーが一意に解決できない: {len(matches)}件\n{diagnostic}",
+                next_action="`atk review-table show <PATH>`でrow-idを確認し、--row-idで指定し直す",
+            )
         updated = [*rows]
         updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], updated[matches[0]][4], replacement, reason]
         return updated
@@ -379,19 +426,22 @@ def respond(
         else [row for row in current_rows if all(_normalized(row[column_index]) == value for column_index, value in given)]
     )
     if len(saved_rows) != 1:
-        raise ValueError(f"更新した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
+        raise _ActionableError(
+            f"更新した行を保存済みの表から一意に解決できない: {len(saved_rows)}件", next_action=_SAVED_UNRESOLVED_NEXT_ACTION
+        )
     saved_row = saved_rows[0]
     saved_body = saved_row[5] if needed == "yes" else saved_row[6]
     expected_body = replacement if needed == "yes" else reason
     if _body_match.verdict(expected_body, saved_body) != "一致":
         position = _body_match.first_difference(expected_body, saved_body)
         column = "response" if needed == "yes" else "no_response_reason"
-        raise ValueError(
+        raise _ActionableError(
             f"保存本文が送信元本文と一致しない: {target}\n"
             f"不一致の列: {column}\n"
             f"最初の差異: {position}文字目\n"
             f"送信元本文:\n{expected_body}\n"
-            f"保存本文:\n{saved_body}"
+            f"保存本文:\n{saved_body}",
+            next_action=_SAVED_MISMATCH_NEXT_ACTION,
         )
     _outcome.report_success(f"応答欄を更新した: {target}")
     return 0
@@ -408,7 +458,9 @@ def show(
     text = _read_table_text(target)
     rows = _parse_text(text)
     if track is not None and track not in _TRACK_READ_VALUES:
-        raise ValueError(f"trackが正規値ではない。{_RECOVERY_GUIDANCE}")
+        raise _ActionableError(
+            f"trackが正規値ではない: {track}", next_action=f"trackを{', '.join(TRACK_VALUES)}のいずれかで指定し直す"
+        )
     track = _normalize_track(track) if track is not None else None
     selected = [
         (row_id, raw_line, row)
@@ -442,9 +494,15 @@ def _read_cell_file(option: str, raw_path: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError as error:
-        raise ValueError(f"{option}の読み込みに失敗した: {raw_path}（{error}）") from error
+        raise _ActionableError(
+            f"{option}の読み込みに失敗した: {raw_path}（{error}）",
+            next_action=f"{option}へ読み取れるファイルのパスを指定して再実行する",
+        ) from error
     except UnicodeDecodeError as error:
-        raise ValueError(f"{option}をUTF-8として解釈できない: {raw_path}") from error
+        raise _ActionableError(
+            f"{option}をUTF-8として解釈できない: {raw_path}",
+            next_action=f"{option}へUTF-8で保存したファイルを指定して再実行する",
+        ) from error
 
 
 def _cell_value(args: argparse.Namespace, dest: str) -> str:
@@ -458,7 +516,9 @@ def _cell_value(args: argparse.Namespace, dest: str) -> str:
 def _required_value(args: argparse.Namespace, option: str) -> str:
     value = _cell_value(args, option)
     if not isinstance(value, str) or not value:
-        raise ValueError(f"--{option}を指定する")
+        raise _ActionableError(
+            f"--{option}-fileが指定されていない", next_action=f"--{option}-fileへ本文を記載したファイルのパスを指定する"
+        )
     return value
 
 
@@ -584,9 +644,15 @@ def dispatch(args: argparse.Namespace) -> int:
         location = _cell_value(args, "location")
         issue = _cell_value(args, "issue")
         if args.row_id is not None and any((round_value, track, location, issue)):
-            raise ValueError("row-idはround・track・location・issueと同時に指定できない")
+            raise _ActionableError(
+                "row-idはround・track・location・issueと同時に指定できない",
+                next_action="--row-idか、--round・--track・--location-file・--issue-fileのどちらか一方で行を指定する",
+            )
         if args.row_id is None and not any((round_value, track, location, issue)):
-            raise ValueError("row-id・round・track・location・issueのいずれかを指定する")
+            raise _ActionableError(
+                "応答する行が指定されていない",
+                next_action="--row-id・--round・--track・--location-file・--issue-fileのいずれかで行を指定する",
+            )
         return respond(
             args.path,
             round_value,
@@ -606,10 +672,13 @@ def _require_writable_exec_review(raw_path: str) -> None:
     _plan_locations.reject_saved_plans_root_write(target)
     name = target.name
     if name.endswith(".plan-review.tsv") or (name.startswith("dlg-") and name.endswith(".exec-review.tsv")):
-        raise ValueError("保存済みの旧レビュー表は読み取り専用です。更新には.exec-review.tsvを指定する")
+        raise _ActionableError("保存済みの旧レビュー表は読み取り専用です", next_action="更新には.exec-review.tsvを指定する")
     if not target.exists():
         return
     for line_number, (raw_line, _row) in enumerate(_parse_text(_read_table_text(target)), start=1):
         raw_track = _decode_cell(raw_line.rstrip("\r\n").split("\t")[1], line=line_number, column=2)
         if raw_track != "exec-review":
-            raise ValueError(f"{line_number}行の旧review typeは読み取り専用です: {raw_track}")
+            raise _ActionableError(
+                f"{line_number}行の旧review typeは読み取り専用です: {raw_track}",
+                next_action="更新にはexec-reviewの行だけを持つ.exec-review.tsvを指定する",
+            )

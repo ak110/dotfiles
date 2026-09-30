@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import locations as _plan_file
 
 
@@ -288,8 +289,38 @@ def test_require_saved_plan_file_rejects_working_copy(tmp_path: pathlib.Path) ->
     working.write_text("# 作業中\n", encoding="utf-8")
     portable = "$(atk config get private_notes)/plans/2026/08/30-計画保存先移行-d4f9.md"
 
-    with pytest.raises(ValueError, match="atk plans commit"):
+    with pytest.raises(ActionableError, match="保存先に実体がありません") as error_info:
         _plan_file.require_saved_plan_file(portable, private_notes=private_notes, home=home)
+
+    assert "atk plans commit" in error_info.value.next_action
+
+
+def test_reject_saved_plans_root_write_guides_checkout_and_commit(tmp_path: pathlib.Path) -> None:
+    """保存rootへの直接書込みは、取得と保存のコマンドを次の操作として返す。"""
+    private_notes = tmp_path / "private-notes"
+    target = private_notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
+
+    with pytest.raises(ActionableError, match="直接更新できない") as error_info:
+        _plan_file.reject_saved_plans_root_write(target, private_notes=private_notes)
+
+    assert "atk plans checkout 2026/08/30-計画保存先移行-d4f9.md" in error_info.value.next_action
+    assert "atk plans commit 2026/08/30-計画保存先移行-d4f9.md" in error_info.value.next_action
+
+
+@pytest.mark.parametrize(
+    ("validator", "value"),
+    [
+        (_plan_file.validate_plan_relative_path, "2026/08/計画.md"),
+        (_plan_file.validate_working_plan_relative_path, "2026/08/30-計画-d4f9.md"),
+        (_plan_file.validate_migrated_plan_relative_path, "2026/08"),
+    ],
+)
+def test_path_validators_report_accepted_form_as_next_action(validator, value: str) -> None:
+    """計画パスの検証は、受理する形式を次の操作として返す。"""
+    with pytest.raises(ActionableError) as error_info:
+        validator(value)
+
+    assert "形式で指定し直す" in error_info.value.next_action
 
 
 def test_require_saved_plan_file_accepts_saved_and_legacy_absolute_paths(tmp_path: pathlib.Path) -> None:

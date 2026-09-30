@@ -13,10 +13,9 @@ from agent_toolkit._common import file_lock as _file_lock  # pylint: disable=wro
 
 _LOCK_NAME = "agent-toolkit-stash.lock"
 _STASH_IDENTIFIER_PATTERN = re.compile(r"stash@\{[0-9]+\}\Z")
-_QUEUE_REPOSITORY_ERROR = (
-    "対象はキュー管理リポジトリのため操作を拒否した。"
-    "変更にはatk wi・atk plans・atk serveが提供する経路を使い、"
-    "未コミットのキュー操作はatk wi commitで確定する。"
+_QUEUE_REPOSITORY_ERROR = "対象はキュー管理リポジトリのため操作を拒否した"
+_QUEUE_REPOSITORY_NEXT_ACTION = (
+    "変更にはatk wi・atk plans・atk serveが提供する経路を使い、未コミットのキュー操作はatk wi commitで確定する"
 )
 
 
@@ -43,7 +42,10 @@ def _common_dir(cwd: pathlib.Path) -> pathlib.Path | None:
     """worktreeからGit共通ディレクトリを絶対パスへ解決する。"""
     result = _run_git(["rev-parse", "--git-common-dir"], cwd)
     if result.returncode != 0 or not result.stdout.strip():
-        _outcome.report_failure(f"Git共通ディレクトリを解決できない: {result.stderr.strip()}。Gitの作業ツリーで実行し直す")
+        _outcome.report_failure(
+            f"Git共通ディレクトリを解決できない: {result.stderr.strip()}",
+            next_action="Gitの作業ツリーで実行し直す",
+        )
         return None
     value = pathlib.Path(result.stdout.strip())
     return value.resolve() if value.is_absolute() else (cwd / value).resolve()
@@ -73,7 +75,10 @@ def _ref_exists(ref: str, cwd: pathlib.Path) -> bool | None:
         return True
     if result.returncode == 1:
         return False
-    _outcome.report_failure(f"退避refの存在を照会できない: {result.stderr.strip()}。Gitの状態を確認してから再実行する")
+    _outcome.report_failure(
+        f"退避refの存在を照会できない: {result.stderr.strip()}",
+        next_action="`git status`でGitの状態を確認してから再実行する",
+    )
     return None
 
 
@@ -90,9 +95,20 @@ def _report_failure(
     ref_recorded: bool,
     cwd: pathlib.Path,
 ) -> None:
-    """途中失敗時に退避物と復旧識別子を標準エラーへ記録する。"""
+    """途中失敗時に退避物と復旧識別子、復元の手順を標準エラーへ記録する。"""
     location = "worktree固有refへ記録済み" if ref_recorded else "共有refs/stashへ保持"
-    _outcome.report_failure(f"{message}: {location}; stash_oid={stash_oid or '(なし)'}; ref={ref}; cwd={cwd}")
+    if stash_oid is None:
+        next_action = f"`git -C {cwd} status`と`git -C {cwd} stash list`で変更と退避の残存を確認し、原因を解消して再実行する"
+    else:
+        restore_source = f"`{stash_oid}`または`{ref}`" if ref_recorded else f"`{stash_oid}`"
+        next_action = (
+            f"`git -C {cwd} stash list`で共有stashの残存を確認し、"
+            f"変更を戻す場合は`git -C {cwd} stash apply {stash_oid}`で{restore_source}から復元する"
+        )
+    _outcome.report_failure(
+        f"{message}: {location}; stash_oid={stash_oid or '(なし)'}; ref={ref}; cwd={cwd}",
+        next_action=next_action,
+    )
 
 
 def _worktree_ref(label: str, cwd: pathlib.Path) -> str | None:
@@ -101,7 +117,7 @@ def _worktree_ref(label: str, cwd: pathlib.Path) -> str | None:
     check = _run_git(["check-ref-format", ref], cwd)
     if check.returncode == 0:
         return ref
-    _outcome.report_failure(f"退避ラベルが不正である: {label}。Gitのref名として有効なラベルを指定し直す")
+    _outcome.report_failure(f"退避ラベルが不正である: {label}", next_action="Gitのref名として有効なラベルを指定し直す")
     return None
 
 
@@ -114,7 +130,7 @@ def save(
     """現在worktreeの変更を`refs/worktree/<label>`へ退避する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
-        _outcome.report_failure(_QUEUE_REPOSITORY_ERROR)
+        _outcome.report_failure(_QUEUE_REPOSITORY_ERROR, next_action=_QUEUE_REPOSITORY_NEXT_ACTION)
         return 2
     ref = _worktree_ref(label, worktree)
     if ref is None:
@@ -131,7 +147,10 @@ def save(
                 if existing is None:
                     return 1
                 if existing:
-                    _outcome.report_failure(f"退避refが既に存在する: {ref}。別のラベルを指定するか既存のrefをdropする")
+                    _outcome.report_failure(
+                        f"退避refが既に存在する: {ref}",
+                        next_action=f"別のラベルを指定するか、`atk worktree-stash drop {ref}`で既存のrefを削除する",
+                    )
                     return 2
                 before = _stash_oid(worktree)
                 stash_push = _run_git(["stash", "push", "--include-untracked"], worktree)
@@ -147,7 +166,7 @@ def save(
                     return 1
                 after = _stash_oid(worktree)
                 if after is None or after == before:
-                    _outcome.report_failure("退避対象の変更が無い。変更を加えてから退避する")
+                    _outcome.report_failure("退避対象の変更が無い", next_action="退避は不要。変更を加えてから退避する")
                     return 2
                 update_ref = _run_git(["update-ref", ref, after], worktree)
                 if update_ref.returncode != 0:
@@ -195,7 +214,7 @@ def drop(
     """退避識別子を固定ロック下でOID照合して削除する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
-        _outcome.report_failure(_QUEUE_REPOSITORY_ERROR)
+        _outcome.report_failure(_QUEUE_REPOSITORY_ERROR, next_action=_QUEUE_REPOSITORY_NEXT_ACTION)
         return 2
     if identifier.startswith("refs/worktree/"):
         check = _run_git(["check-ref-format", identifier], worktree)
@@ -204,7 +223,8 @@ def drop(
         is_worktree_ref = False
     if not is_worktree_ref and _STASH_IDENTIFIER_PATTERN.fullmatch(identifier) is None:
         _outcome.report_failure(
-            f"退避識別子が不正である: {identifier}。refs/worktree/配下のrefまたはstash@{{N}}形式を指定し直す"
+            f"退避識別子が不正である: {identifier}",
+            next_action="refs/worktree/配下のrefまたはstash@{N}形式を指定し直す",
         )
         return 2
     common_dir = _common_dir(worktree)
@@ -217,13 +237,19 @@ def drop(
             try:
                 oid = _git_output(["rev-parse", "--verify", identifier], worktree)
                 if oid is None:
-                    _outcome.report_failure(f"退避識別子が存在しない: {identifier}。実在する識別子を指定し直す")
+                    _outcome.report_failure(
+                        f"退避識別子が存在しない: {identifier}",
+                        next_action=(
+                            "`git stash list`または`git for-each-ref refs/worktree/`で実在する識別子を確認して指定し直す"
+                        ),
+                    )
                     return 2
                 delete_args = ["update-ref", "-d", identifier, oid] if is_worktree_ref else ["stash", "drop", identifier]
                 deleted = _run_git(delete_args, worktree)
                 if deleted.returncode != 0:
                     _outcome.report_failure(
-                        f"退避識別子を削除できない: {deleted.stderr.strip()}。Gitの状態を確認してから再実行する"
+                        f"退避識別子を削除できない: {deleted.stderr.strip()}",
+                        next_action="`git status`でGitの状態を確認してから再実行する",
                     )
                     return 1
                 _outcome.report_success(f"退避を削除した: {identifier}", _outcome.ResultKind.VALUE_OUTPUT)
@@ -232,7 +258,7 @@ def drop(
             finally:
                 _file_lock.release_lock(lock_file)
     except OSError as error:
-        _outcome.report_failure(f"退避用ロックを取得できない: {error}。ロックを保持する処理の終了後に再実行する")
+        _outcome.report_failure(f"退避用ロックを取得できない: {error}", next_action="ロックを保持する処理の終了後に再実行する")
         return 1
 
 

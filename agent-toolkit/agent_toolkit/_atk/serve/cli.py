@@ -6,7 +6,6 @@ import logging
 import pathlib
 import signal
 import subprocess
-import sys
 
 import hypercorn.asyncio
 import hypercorn.config
@@ -16,6 +15,7 @@ from agent_toolkit._atk.serve import config as _atk_serve_config
 from agent_toolkit._atk.serve import state as _atk_serve_state
 from agent_toolkit._atk.wi import common
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import next_action as _next_action
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,13 @@ def show_logs(*, follow: bool = False) -> int:
     try:
         return subprocess.run(command, check=False).returncode
     except OSError as error:
-        print(f"atk serveのログを開けません: {error}", file=sys.stderr)
+        _next_action.report(
+            f"atk serveのログを開けません: {error}",
+            next_action=(
+                "ログの表示にはsystemdのuser環境（journalctl）が必要。"
+                "使えない環境では`atk serve`を前景で起動し、標準エラーへ出るログを読む"
+            ),
+        )
         return 1
 
 

@@ -28,6 +28,7 @@ import session_review_evidence  # pylint: disable=import-error
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import atomic_file, file_lock
+from agent_toolkit._common import next_action as _next_action
 
 CONVERSATION_FILENAME = "conversation.md"
 CANDIDATES_FILENAME = "candidates.md"
@@ -69,11 +70,28 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_MISSING_NEXT_ACTIONS = {
+    "evidence_script": (
+        "`atk run-script session-review-prepare -- <引数>`で起動する。"
+        "解消しない場合はagent-toolkitの導入が壊れているため、ユーザーへ報告する"
+    ),
+    "work_dir": "`atk managed-temp create`で作成した管理対象一時領域の絶対パスを`--work-dir`へ渡して再実行する",
+    "transcript_path": (
+        "`--transcript`へ実在するClaude Codeのtranscriptの絶対パスを渡すか、Codexでは`--codex-thread-id`を渡して再実行する"
+    ),
+    "bundle": (
+        "表示した原因を確かめ、同じ引数で再実行する。記録が読めない場合は`--transcript`・`--codex-thread-id`の値を確かめる"
+    ),
+}
+"""準備項目ごとの取得方法。項目名は標準エラーの`不足:`行と一致させる。"""
+
+
 def _missing(item: str, detail: str | None = None) -> int:
-    """取得できなかった準備項目を報告する。"""
+    """取得できなかった準備項目を、項目に対応する引数と取得方法とともに報告する。"""
     print(f"不足: {item}", file=sys.stderr)
     if detail:
         print(detail, file=sys.stderr)
+    print(_next_action.next_action_line(_MISSING_NEXT_ACTIONS[item]), file=sys.stderr)
     return 2
 
 

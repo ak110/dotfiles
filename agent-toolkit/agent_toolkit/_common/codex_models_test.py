@@ -4,7 +4,10 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, next_action
+
+_UNPATCHED_LIST_MODELS = codex_models.list_models
+"""conftestが固定一覧へ差し替える前の`list_models`。取得失敗の出力を検証するテストが使う。"""
 
 
 def _model(model: str, *efforts: str, hidden: bool = False) -> dict[str, Any]:
@@ -61,3 +64,20 @@ async def test_model_list_rejects_repeated_cursor() -> None:
 
     with pytest.raises(ValueError, match="ページ送りが不正"):
         await codex_models.fetch_catalog(request)
+
+
+def test_family_resolution_failure_names_candidate_change() -> None:
+    """系列を解決できない失敗は候補を変える操作を次の操作として持つ。"""
+    with pytest.raises(next_action.ActionableError) as exc_info:
+        codex_models.resolve_candidates([("codex", "terra", "medium")], [])
+    assert "atk config set" in exc_info.value.next_action
+    assert "--model-type" in exc_info.value.next_action
+
+
+def test_model_list_failure_names_login_check_and_candidate_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    """App Serverを起動できない失敗はログインの確認と候補の変更を次の操作として持つ。"""
+    monkeypatch.setattr(codex_models, "_APP_SERVER_COMMAND", ("agent-toolkit-missing-codex-executable",))
+    with pytest.raises(next_action.ActionableError) as exc_info:
+        _UNPATCHED_LIST_MODELS()
+    assert "codex login status" in exc_info.value.next_action
+    assert "atk config set" in exc_info.value.next_action

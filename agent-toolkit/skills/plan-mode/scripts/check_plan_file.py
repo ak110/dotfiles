@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import pathlib
 import re
 import subprocess
@@ -16,6 +17,7 @@ import typing
 import yaml
 
 try:
+    from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
     )
@@ -25,8 +27,9 @@ try:
 except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
     print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}。"
-        "`atk run-script plan-check -- <計画ファイルの絶対パス>`で起動してください。",
+        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
+        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        "次の操作: `atk run-script plan-check -- <計画ファイルの絶対パス>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -116,7 +119,10 @@ def _check_lane_selection(
     missing = sorted(set(expected) - actual)
     extra = sorted(actual - set(expected))
     if missing or extra:
-        errors.append(f"関連WIとレーン{lane}の選定結果が一致しない: 欠落={missing}, 余剰={extra}")
+        errors.append(
+            f"関連WIとレーン{lane}の選定結果が一致しない: 欠落={missing}, 余剰={extra}。"
+            "計画メタ情報の`関連WI`を、選定結果のうち再開位置を持たないそのレーンのWIへそろえる"
+        )
 
     headings = _plan_format.extract_headings(text)
     section_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_ACTION)
@@ -134,7 +140,10 @@ def _check_lane_selection(
             if (origin.startswith("人間由来のWI (") or origin == "ユーザー指示") and row[
                 table.header.index("根拠")
             ].strip() in {"", "-"}:
-                errors.append(f"人間由来行の根拠がない: {table.row_location(index)}")
+                errors.append(
+                    f"人間由来行の根拠がない: {table.row_location(index)}。"
+                    "`根拠`列へ原文の要求単位ごとの分解と、各単位を実施範囲へ採るか外すかを書く"
+                )
     return errors
 
 
@@ -199,7 +208,7 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
     for skill in sorted(skill_calls):
         namespace, separator, qualified_name = skill.partition(":")
         if separator and namespace != "agent-toolkit":
-            errors.append(f"実在しないスキル参照: {skill}")
+            errors.append(_missing_reference_message("スキル", skill, _known_skill_names(work_dir)))
             continue
         name = qualified_name if separator else namespace
         plugin_candidates = (_PLUGIN_DIR / "skills" / name / "SKILL.md",)
@@ -209,19 +218,41 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
         )
         candidates = plugin_candidates if separator else plugin_candidates + project_candidates
         if not any(path.exists() for path in candidates):
-            errors.append(f"実在しないスキル参照: {skill}")
+            errors.append(_missing_reference_message("スキル", skill, _known_skill_names(work_dir)))
     for agent in sorted(agent_calls):
         namespace, separator, qualified_name = agent.partition(":")
         if separator and namespace != "agent-toolkit":
-            errors.append(f"実在しないサブエージェント参照: {agent}")
+            errors.append(_missing_reference_message("サブエージェント", agent, _known_agent_names(work_dir)))
             continue
         name = qualified_name if separator else namespace
         plugin_candidates = (_PLUGIN_DIR / "agents" / f"{name}.md",)
         project_candidates = (work_dir / ".claude" / "agents" / f"{name}.md",)
         candidates = plugin_candidates if separator else plugin_candidates + project_candidates
         if not any(path.exists() for path in candidates):
-            errors.append(f"実在しないサブエージェント参照: {agent}")
+            errors.append(_missing_reference_message("サブエージェント", agent, _known_agent_names(work_dir)))
     return errors
+
+
+def _known_skill_names(work_dir: pathlib.Path) -> list[str]:
+    """参照先として実在するスキル名を、プラグイン修飾付きとプロジェクトの素の名前で返す。"""
+    names = [f"agent-toolkit:{path.parent.name}" for path in (_PLUGIN_DIR / "skills").glob("*/SKILL.md")]
+    for root in (work_dir / ".claude" / "skills", work_dir / ".agents" / "skills"):
+        names.extend(path.parent.name for path in root.glob("*/SKILL.md"))
+    return sorted(set(names))
+
+
+def _known_agent_names(work_dir: pathlib.Path) -> list[str]:
+    """参照先として実在するサブエージェント名を返す。"""
+    names = [f"agent-toolkit:{path.stem}" for path in (_PLUGIN_DIR / "agents").glob("*.md")]
+    names.extend(path.stem for path in (work_dir / ".claude" / "agents").glob("*.md"))
+    return sorted(set(names))
+
+
+def _missing_reference_message(kind: str, reference: str, known: list[str]) -> str:
+    """実在しない参照の違反文へ、近い名前の候補と直し方を加える。"""
+    candidates = difflib.get_close_matches(reference, known, n=3, cutoff=0.6)
+    hint = f"候補: {', '.join(candidates)}。" if candidates else ""
+    return f"実在しない{kind}参照: {reference}。{hint}実在する{kind}名へ直すか、起動の形の参照をやめる"
 
 
 def _classify_skill_references(text: str) -> set[str]:
@@ -734,13 +765,28 @@ def main(argv: list[str] | None = None) -> int:
             prior_plans=tuple(args.prior_plan or ()),
         )
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
-        print(f"計画検査の入力を読み込めない: {error}", file=sys.stderr)
+        _next_action.report(
+            f"計画検査の入力を読み込めない: {error}",
+            next_action=(
+                "計画ファイル（位置引数）と`--prior-plan`へ実在するUTF-8の計画ファイルの絶対パスを、"
+                "`--selection-file`へpickerが保存したYAMLの絶対パスを、`--lane`へ`lane-NN`形式の識別子を渡して再実行する"
+            ),
+        )
         return 2
     for error in errors:
         print(error, file=sys.stderr)
     for warning in warnings:
         print(f"[warn] {warning}", file=sys.stderr)
-    return 1 if errors else 0
+    if errors:
+        print(
+            _next_action.next_action_line(
+                "各行が示す規定のとおりに計画ファイルを直し、同じコマンドで再検査する"
+                "（規定の正本は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`）"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

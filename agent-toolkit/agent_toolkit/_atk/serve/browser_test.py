@@ -157,7 +157,7 @@ class _BrowserOperations(serve_app.Operations):
                         if not path.exists():
                             continue
                         if state_name == "processing" and not force:
-                            raise serve_app.common.WebInputError("指定したエントリを操作できません")
+                            raise serve_app.WebApiInputError("指定したエントリを操作できません")
                         if expected_content is not None:
                             try:
                                 current_content = path.read_text(encoding="utf-8")
@@ -193,7 +193,10 @@ class _BrowserOperations(serve_app.Operations):
             metadata, body = parsed if parsed is not None else ({}, message)
             repo = target_repo if target_repo is not None else metadata.get("target_repo")
             if not isinstance(repo, str) or not repo:
-                raise serve_app.common.WebInputError("target_repoを指定するか各メッセージのfrontmatterへ記載してください")
+                raise serve_app.common.WebInputError(
+                    "target_repoを指定するか各メッセージのfrontmatterへ記載してください",
+                    next_action="--target-repoを指定して再実行する",
+                )
             filename = f"created-{len(self.add_calls)}-{index}.md"
             (self.private_notes / "inbox" / filename).write_text(
                 f"---\ntarget_repo: {repo}\ntype: {entry_type}\n---\n\n{body.strip()}\n",

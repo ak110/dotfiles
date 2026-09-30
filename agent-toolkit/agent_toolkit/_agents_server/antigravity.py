@@ -32,6 +32,7 @@ from agent_toolkit._agents_server.state import (
     _initialize_turn,
     _validate_prompt,
 )
+from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.antigravity")
 _COMMAND = "agy"
@@ -166,7 +167,9 @@ class AntigravityManager:
         _validate_prompt(prompt)
         async with session.turn_control_lock:
             if not session.terminal:
-                raise ValueError("the active Antigravity turn has not finished")
+                raise ActionableError(
+                    "the active Antigravity turn has not finished", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
+                )
             previous_result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
             await self._stop_owned_task(session.session_id)
             await self._start_turn(
@@ -294,13 +297,18 @@ class AntigravityManager:
         stderr_text = ""
         finalized = False
         try:
-            process = await asyncio.create_subprocess_exec(
-                *build_command(prompt, model, effort, conversation_id),
-                cwd=cwd,
-                env=_child_env(),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            command = build_command(prompt, model, effort, conversation_id)
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *command,
+                    cwd=cwd,
+                    env=_child_env(),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except OSError as exc:
+                # CLIの未導入などの起動失敗を委譲先CLIの失敗として分類し、導入と認証の確認を次の操作として返す。
+                raise shared_state.DelegateBackendError(f"failed to start Antigravity CLI ({command[0]}): {exc}") from exc
             assert process.stdout is not None
             if session is not None:
                 self._attach_session(session, process, turn_seq)
@@ -350,9 +358,9 @@ class AntigravityManager:
             stderr_text = await _read_stderr(process)
             await process.wait()
             if session is None:
-                raise RuntimeError(f"Antigravity CLI ended before the init event: stderr={stderr_text}")
+                raise shared_state.DelegateBackendError(f"Antigravity CLI ended before the init event: stderr={stderr_text}")
             if not finalized:
-                raise RuntimeError(f"Antigravity CLI ended before the result event: stderr={stderr_text}")
+                raise shared_state.DelegateBackendError(f"Antigravity CLI ended before the result event: stderr={stderr_text}")
         except asyncio.CancelledError:
             raise
         except BaseException as exc:  # pylint: disable=broad-exception-caught
@@ -407,9 +415,9 @@ class AntigravityManager:
     ) -> SessionState:
         session_id = payload.get("conversation_id") or payload.get("conversationId")
         if not isinstance(session_id, str) or not session_id:
-            raise RuntimeError("Antigravity init event did not contain conversation_id")
+            raise shared_state.DelegateBackendError("Antigravity init event did not contain conversation_id")
         if conversation_id is not None and session_id != conversation_id:
-            raise RuntimeError("Antigravity resume returned an unexpected conversation_id")
+            raise shared_state.DelegateBackendError("Antigravity resume returned an unexpected conversation_id")
         return SessionState(
             session_id=session_id,
             cwd=cwd,

@@ -27,6 +27,7 @@ from urllib.parse import quote, urlparse
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import json_command as _json_command
+from agent_toolkit._common import next_action as _next_action
 
 # 以下の終了コードはCLIの公開インターフェース（ユーザーが`echo $?`等で参照する契約）であり、
 # private実装詳細ではないためアンダースコア接頭辞を付けない。
@@ -53,6 +54,32 @@ RunListFn = Callable[[str], list[RunRecord]]
 JobListFn = Callable[[RunRecord], list[JobRecord]]
 AncestorCheckFn = Callable[[str], bool]
 FollowShasFn = Callable[[str], list[str]]
+
+
+_NEXT_ACTION_CI_FAILED = (
+    "表示したrunまたはジョブのURLで失敗ログを読み、原因を調べる"
+    "（GitHubは`gh run view <run id> --log-failed`、GitLabは`glab ci trace <job id>`で取得できる）"
+)
+_NEXT_ACTION_TIMEOUT = "同じ引数で再実行すると待機を続けられる。CIの所要時間が長い場合は`--timeout`を延ばして再実行する"
+_NEXT_ACTION_FORGE_ERROR = (
+    "`gh auth status`（GitLabは`glab auth status`）で認証とネットワーク到達を確かめ、同じ引数で再実行する"
+)
+_NEXT_ACTION_NO_RUNS = (
+    "push先のrefとCI定義のトリガー条件（対象のブランチ・パス）を確かめる。"
+    "登録が遅いだけの場合は`--registration-grace`を延ばして再実行する"
+)
+_NEXT_ACTION_NO_CI_CONFIG = "CI検収は不要として次の工程へ進む"
+_NEXT_ACTION_INTERRUPTED = "同じ引数で再実行すると待機を再開できる"
+_NEXT_ACTION_SHA_RESOLUTION = (
+    "revisionの綴りを確かめる。remoteにだけあるcommitなら`git fetch`してから、"
+    "作業ディレクトリが対象リポジトリであることを確かめて再実行する"
+)
+
+
+def _finish(code: int, next_action: str) -> int:
+    """非0の終了コードを返す前に、次の操作の行を標準エラーへ書く。"""
+    print(_next_action.next_action_line(next_action), file=sys.stderr, flush=True)
+    return code
 
 
 class RunListError(RuntimeError):
@@ -764,7 +791,7 @@ def _wait_for_completion(
             prefix = "後続run取得失敗" if follow_mode else "run list error"
             _print(elapsed, f"{prefix} (attempt {consecutive_failures}): {exc}")
             if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return EXIT_GH_ERROR, [], elapsed
+                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR), [], elapsed
             sleep_fn(poll_interval)
             continue
         elapsed = now_fn() - start
@@ -777,20 +804,25 @@ def _wait_for_completion(
             _print(elapsed, f"{noun}の一部が取得結果から欠落（{len(runs)}/{len(expected_ids)}）")
             if elapsed >= timeout:
                 _emit_summary(runs)
-                return EXIT_TIMEOUT, runs, elapsed
+                return _finish(EXIT_TIMEOUT, _NEXT_ACTION_TIMEOUT), runs, elapsed
             sleep_fn(poll_interval)
             continue
         if failure := _find_early_failure(runs, jobs, forge):
             _emit_failure_summary(*failure)
-            return EXIT_CI_FAILED, runs, elapsed
+            return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED), runs, elapsed
         if runs and _all_completed(runs):
             _emit_summary(runs)
-            return (EXIT_SUCCESS if _all_success(runs) else EXIT_CI_FAILED), runs, elapsed
+            if _all_success(runs):
+                return EXIT_SUCCESS, runs, elapsed
+            # 全run cancelledで後続runを追跡する場合は、呼び出し側が追跡の結果に応じた次の操作を書く。
+            if follow_mode or not _all_cancelled(runs):
+                return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED), runs, elapsed
+            return EXIT_CI_FAILED, runs, elapsed
         if elapsed >= timeout:
             message = "後続run追跡タイムアウト" if follow_mode else f"タイムアウト（{timeout:.0f}秒経過）"
             _print(elapsed, message)
             _emit_summary(runs)
-            return EXIT_TIMEOUT, runs, elapsed
+            return _finish(EXIT_TIMEOUT, _NEXT_ACTION_TIMEOUT), runs, elapsed
         pending = [run.get("name", "?") for run in runs if run.get("status") != "completed"]
         if follow_mode:
             pending = pending or ["<未検出>"]
@@ -855,7 +887,7 @@ def wait_for_ci(
     start = now_fn()
     if forge == "github" and use_default_fetchers and _github_ci_configured(repository, sha, subprocess_timeout) is False:
         _print(0.0, "CI定義が無いため監視対象なし")
-        return EXIT_NO_CI_CONFIG
+        return _finish(EXIT_NO_CI_CONFIG, _NEXT_ACTION_NO_CI_CONFIG)
     runs: list[RunRecord] = []
     consecutive_failures = 0
     expected_ids: set[int] = set()
@@ -869,26 +901,26 @@ def wait_for_ci(
             expected_ids |= _run_ids(runs)
             if failure := _find_early_failure(runs, jobs, forge):
                 _emit_failure_summary(*failure)
-                return EXIT_CI_FAILED
+                return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED)
         except RunListError as exc:
             consecutive_failures += 1
             last_call_failed = True
             _print(now_fn() - start, f"run list error (attempt {consecutive_failures}): {exc}")
             if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return EXIT_GH_ERROR
+                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
         elapsed = now_fn() - start
         if elapsed >= registration_grace:
             if last_call_failed:
                 _print(elapsed, "CI実行一覧またはジョブ一覧の取得失敗により期待run集合を確定できないまま登録猶予が経過")
-                return EXIT_GH_ERROR
+                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
             if not expected_ids:
                 _print(elapsed, f"run未登録のまま登録猶予{registration_grace:.0f}秒超過")
-                return EXIT_NO_RUNS
+                return _finish(EXIT_NO_RUNS, _NEXT_ACTION_NO_RUNS)
             _print(elapsed, f"期待run集合確定（{len(expected_ids)}件）")
             break
         if elapsed >= timeout:
             _print(elapsed, f"タイムアウト（登録猶予中に{timeout:.0f}秒経過）")
-            return EXIT_TIMEOUT
+            return _finish(EXIT_TIMEOUT, _NEXT_ACTION_TIMEOUT)
         sleep_fn(min(poll_interval, max(1.0, registration_grace - elapsed)))
 
     result, expected_runs, elapsed = _wait_for_completion(
@@ -904,11 +936,19 @@ def wait_for_ci(
         consecutive_failures=consecutive_failures,
         follow_mode=False,
     )
-    if result != EXIT_CI_FAILED or not follow_cancelled or not _all_cancelled(expected_runs):
+    if result != EXIT_CI_FAILED or not _all_cancelled(expected_runs):
         return result
+    if not follow_cancelled:
+        return _finish(
+            result,
+            "全runが取り消された。後続のpushで置き換えられた場合は`--follow-cancelled`を付けて再実行し、"
+            "後続runの結果を確かめる。それ以外は取り消した主体と理由を確かめる",
+        )
     if not ancestor_check_fn(sha):
         _print(elapsed, f"--follow-cancelled対象外: {sha}は{source_ref}の祖先ではない")
-        return EXIT_GH_ERROR
+        return _finish(
+            EXIT_GH_ERROR, "`--follow-cancelled`を外して再実行するか、`--source-ref`を対象SHAを含むrefへ直して再実行する"
+        )
     _print(elapsed, f"全runがcancelled。{source_ref}の後続SHA集合を取得し追跡へ移行")
     return _follow_cancelled(
         sha,
@@ -972,14 +1012,14 @@ def _follow_cancelled(
             expected_ids |= _run_ids(candidates)
             if failure := _find_early_failure(candidates, jobs, forge):
                 _emit_failure_summary(*failure)
-                return EXIT_CI_FAILED
+                return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED)
         except RunListError as exc:
             consecutive_failures += 1
             last_call_failed = True
             elapsed = now_fn() - start
             _print(elapsed, f"後続run取得失敗 (attempt {consecutive_failures}): {exc}")
             if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return EXIT_GH_ERROR
+                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
         elapsed = now_fn() - start
         if follow_shas and grace_start is None:
             grace_start = now_fn()
@@ -987,13 +1027,13 @@ def _follow_cancelled(
         if grace_start is not None and (now_fn() - grace_start) >= registration_grace:
             if last_call_failed:
                 _print(elapsed, "後続run取得失敗により期待run集合を確定できないまま登録猶予が経過")
-                return EXIT_GH_ERROR
+                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
             _print(elapsed, f"後続run集合確定（SHA{len(follow_shas)}件・run{len(expected_ids)}件）")
             break
         if elapsed >= remaining_timeout:
             if not follow_shas:
                 _print(elapsed, "後続コミット未検出のままタイムアウト")
-                return EXIT_TIMEOUT
+                return _finish(EXIT_TIMEOUT, _NEXT_ACTION_TIMEOUT)
             break
         sleep_fn(poll_interval)
 
@@ -1095,7 +1135,10 @@ def _install_signal_handlers() -> None:
     """
 
     def _handler(signum, _frame):
-        os.write(_STDERR_FD, f"[wait_ci] シグナル{signum}受信で終了\n".encode())
+        os.write(
+            _STDERR_FD,
+            f"[wait_ci] シグナル{signum}受信で終了\n{_next_action.next_action_line(_NEXT_ACTION_INTERRUPTED)}\n".encode(),
+        )
         sys.exit(EXIT_INTERRUPTED)
 
     signal.signal(signal.SIGINT, _handler)
@@ -1162,16 +1205,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--wait-shaと--shaは同時に指定できません")
     forge = _resolve_forge(args.forge, args.repo)
     if forge is None:
-        print(
-            "[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない。--forgeで明示指定する", file=sys.stderr
-        )
-        return EXIT_GH_ERROR
+        print("[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない", file=sys.stderr)
+        return _finish(EXIT_GH_ERROR, "`--forge github`または`--forge gitlab`を明示指定して再実行する")
     if args.write_baseline is not None:
         revision = args.sha if args.sha is not None else args.source_ref
         sha = _resolve_sha(revision, args.subprocess_timeout)
         if sha is None:
             print(f"[wait_ci] {revision}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
-            return EXIT_GH_ERROR
+            return _finish(EXIT_GH_ERROR, _NEXT_ACTION_SHA_RESOLUTION)
         try:
             runs = _default_run_list_fn(forge, args.repo, args.ref, args.subprocess_timeout)(sha)
             baseline = CiBaseline(
@@ -1185,7 +1226,12 @@ def main(argv: list[str] | None = None) -> int:
             _write_baseline(args.write_baseline, baseline)
         except (OSError, RunListError) as exc:
             print(f"[wait_ci] baseline作成に失敗: {exc}", file=sys.stderr)
-            return EXIT_GH_ERROR
+            next_action = (
+                "`--write-baseline`の保存先ディレクトリが存在し書き込めることを確かめて再実行する"
+                if isinstance(exc, OSError)
+                else _NEXT_ACTION_FORGE_ERROR
+            )
+            return _finish(EXIT_GH_ERROR, next_action)
         print(f"[wait_ci] baseline保存: {args.write_baseline} ({len(baseline.run_ids)}件)")
         return EXIT_SUCCESS
     if args.wait_sha is not None:
@@ -1210,11 +1256,15 @@ def main(argv: list[str] | None = None) -> int:
             sha = _resolve_sha(args.sha, args.subprocess_timeout)
             if sha is None:
                 print(f"[wait_ci] {args.sha}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
-                return EXIT_GH_ERROR
+                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_SHA_RESOLUTION)
         _validate_baseline_context(baseline, forge, args.repo, args.ref, args.source_ref, sha)
     except RunListError as exc:
         print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)
-        return EXIT_GH_ERROR
+        return _finish(
+            EXIT_GH_ERROR,
+            "push前に同じ`--repo`・`--ref`・`--source-ref`で`--write-baseline`を取り直してから待機するか、"
+            "baselineを使わない`--wait-sha`で対象commitの全runを待つ",
+        )
     return wait_for_ci(
         sha,
         args.timeout,

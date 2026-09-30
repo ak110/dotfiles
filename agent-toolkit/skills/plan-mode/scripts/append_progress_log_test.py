@@ -85,10 +85,25 @@ def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, conte
     original = content.encode()
     path.write_bytes(original)
 
-    with pytest.raises(append_progress_log.ProgressLogError):
+    with pytest.raises(append_progress_log.ProgressLogError) as raised:
         append_progress_log.append_progress_log(path, "工程", "結果")
 
     assert path.read_bytes() == original
+    # 構造の不正は、置くべき見出しと固定表か、構造検査のコマンドを次の操作として示す。
+    next_action = raised.value.next_action
+    assert "`atk run-script plan-check --" in next_action or "の列）だけの固定表を置いてから再実行する" in next_action
+
+
+def test_cli_structure_error_reports_next_action(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """CLIは理由の行に続けて次の操作の行を書く。"""
+    path = tmp_path / "plan.md"
+    path.write_text("# 計画\n", encoding="utf-8")
+
+    assert append_progress_log.main([str(path), "--completed-step", "工程", "--result", "結果"]) == 1
+
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[0].startswith("進捗ログを更新できません: ")
+    assert lines[1].startswith("次の操作: `atk run-script plan-check --")
 
 
 def test_rejects_non_utf8_without_changes(tmp_path: pathlib.Path) -> None:
@@ -176,6 +191,7 @@ def test_main_rejects_saved_plan_root(
     assert append_progress_log.main([str(path), "--completed-step", "工程", "--result", "結果"]) == 1
 
     error = capsys.readouterr().err
+    assert "\n次の操作: " in error
     assert "`atk plans checkout 2026/09/28-example-1a2b.md`" in error
     assert "`atk plans commit 2026/09/28-example-1a2b.md`" in error
     assert path.read_bytes() == original

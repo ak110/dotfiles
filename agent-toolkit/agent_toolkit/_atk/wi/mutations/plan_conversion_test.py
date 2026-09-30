@@ -39,7 +39,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -1357,3 +1357,76 @@ class TestPathTraversalRejection:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "不正なファイル名" in captured.err or "基準ディレクトリ外" in captured.err
+
+
+def test_untracked_conversion_target_names_commit_command(tmp_path: pathlib.Path) -> None:
+    """管理repoへ未登録の変換対象は、確定に使うコマンドを次の操作として示す。"""
+    notes = tmp_path / "notes"
+    _write_convert_awi(notes, "tracked.md")
+    _initialize_private_notes_git(notes)
+    path = _write_convert_awi(notes, "awi.md")
+
+    with pytest.raises(mutations.WebInputError) as exc_info:
+        mutations._assert_conversion_targets_tracked(notes, [path])  # pylint: disable=protected-access
+
+    assert "atk wi commit" in exc_info.value.next_action
+
+
+def test_convert_already_planned_entry_names_edit_command(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """既に計画型の項目は再変換せず、本文を変える場合のコマンドを示す。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_awi(notes, "awi.md")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\nplan_file: /tmp/other.md\n"),
+        encoding="utf-8",
+    )
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="既に計画型") as exc_info:
+        mutations.convert_entries_to_plan(notes, filenames=("awi.md",), plan_file=str(plan))
+
+    assert "atk wi edit awi.md --body-file" in exc_info.value.next_action
+
+
+def test_convert_held_entries_without_worktree_names_target_repo(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """holdの統合でローカルworktreeを特定できない場合は、実行場所か--target-repoの指定を示す。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    _write_convert_awi(notes, filename, state="hold")
+    plan = _write_integration_plan(tmp_path / "plans", "a" * 40, (filename,))
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="ローカルworktreeが必要") as exc_info:
+        mutations.convert_entries_to_plan(notes, filenames=(filename,), plan_file=str(plan), message="統合本文")
+
+    assert "--target-repo" in exc_info.value.next_action
+
+
+def test_restore_failure_names_git_restore_command(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """変換対象の復元に失敗した場合は、状態の確認と手動で戻すgitコマンドを示す。"""
+    start_head = "a" * 40
+    monkeypatch.setattr(mutations, "_git_head", lambda _path: start_head)
+
+    def failing_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(subprocess, "run", failing_run)
+
+    mutations._restore_conversion_paths(tmp_path, start_head, ("inbox/awi.md",))  # pylint: disable=protected-access
+
+    failure, next_action = capsys.readouterr().err.splitlines()
+    assert failure.startswith("失敗: 計画変換対象の復元に失敗した")
+    assert next_action.startswith("次の操作: ")
+    assert f"git -C {tmp_path} status" in next_action
+    assert f"restore --source={start_head}" in next_action

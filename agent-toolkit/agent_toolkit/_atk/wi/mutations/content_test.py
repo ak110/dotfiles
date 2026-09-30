@@ -41,7 +41,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -73,7 +73,11 @@ def test_edit_reports_style_warning_with_new_section_error(
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "警告: 本文:2:3: ダッシュ" in error
+    lines = error.splitlines()
+    warning_index = next(index for index, line in enumerate(lines) if line.startswith("警告: 本文:2:3: ダッシュ"))
+    # 表記の警告の直後に、直し方（本文を置き換えるコマンド）を示す次の操作の行が続くこと。
+    assert lines[warning_index + 1].startswith("次の操作: ")
+    assert "atk wi edit entry.md --body-file" in lines[warning_index + 1]
     assert "必須節" in error
     assert path.read_text(encoding="utf-8") == original
 
@@ -614,7 +618,12 @@ def test_agent_environment_rejects_malformed_user_comment_structure(
         "本文\n",
         "本文\n\n## ユーザーコメント\n\n1\n\n## ユーザーコメント\n\n2\n",
     )
-    assert capsys.readouterr().err == _USER_COMMENT_ERROR
+    failure, next_action = capsys.readouterr().err.splitlines()
+    assert failure == _USER_COMMENT_ERROR
+    # 受信側が再実行の前に行う操作（予約節を本文から除く）を次の操作の行で受け取れること。
+    assert next_action.startswith("次の操作: ")
+    assert "ユーザーコメント節" in next_action
+    assert "除いて再実行する" in next_action
 
 
 class TestEditNoEditor:
@@ -1146,12 +1155,12 @@ class TestEditBodyFile:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert capsys.readouterr().err == (
-            "失敗: processingの項目はエージェント環境から編集できない: fb-001.md。"
-            "処理中の要求を書き換えると、その要求をこのセッションで処理するかどうかが変わる。"
-            "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
-            "atk wi edit --appendで追記する\n"
-        )
+        failure, next_action = capsys.readouterr().err.splitlines()
+        assert failure.startswith("失敗: processingの項目はエージェント環境から編集できない: fb-001.md")
+        # 置換の代わりに使える投入と追記の2経路を、実在するコマンドで示すこと。
+        assert next_action.startswith("次の操作: ")
+        assert "atk wi add" in next_action
+        assert "atk wi edit --append" in next_action
         assert path.read_text(encoding="utf-8") == original
 
     def test_agent_environment_can_append_to_processing(
@@ -1353,7 +1362,8 @@ class TestEditBodyFile:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", "本文"), home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert "差分なし。" in capsys.readouterr().out
+        # 接頭辞の無い行は成否を読み取れないため、差分なしも成功行として報告すること。
+        assert capsys.readouterr().out.startswith("成功: 差分なし")
         assert not [call for call in git_calls if "commit" in call["cmd"]]
 
     def test_edit_rejects_explicit_target_commit(
@@ -1562,3 +1572,145 @@ class TestEditBodyFile:
 
         assert exc_info.value.code == 1
         assert "frontmatterが破損" in capsys.readouterr().err
+
+
+def _next_action_lines(err: str) -> list[str]:
+    """標準エラーから次の操作の行だけを返す。"""
+    return [line for line in err.splitlines() if line.startswith("次の操作: ")]
+
+
+@pytest.mark.parametrize(
+    ("reserved_key", "reserved_value", "expected_route"),
+    [
+        ("depends_on", "[other.md]", "atk wi set-dependencies"),
+        ("cooldown_until", "2026-08-15T00:00:00+00:00", "--cooldown-until"),
+        ("target_commit", "b" * 40, "target_commitを除いて"),
+        ("plan_file", "/tmp/plan.md", "plan_fileを除いて"),
+    ],
+)
+def test_edit_reserved_key_rejection_names_alternative_route(
+    reserved_key: str,
+    reserved_value: str,
+    expected_route: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """予約キーの拒否は、その値を変える代わりの経路を次の操作として示す。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "fb-001.md")
+    original = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    message = f"---\n{reserved_key}: {reserved_value}\n---\n\n編集後"
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert f"{reserved_key}は予約キー" in err
+    next_actions = _next_action_lines(err)
+    assert len(next_actions) == 1
+    assert expected_route in next_actions[0]
+    assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_values"),
+    [
+        ("---\nquestion_type: invalid\n---\n\n変更後", ("choice", "yes-no", "free-form")),
+        ("---\nquestion_type: choice\nchoices:\n---\n\n変更後", ("choices",)),
+    ],
+)
+def test_uwi_invalid_question_metadata_names_accepted_values(
+    message: str,
+    expected_values: tuple[str, ...],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """不正な回答形式の拒否は、受理する値か補う項目を次の操作として示す。"""
+    notes = _setup_notes(tmp_path)
+    _write_uwi_entry(notes, "uwi-001.md")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(_edit_body_args(tmp_path, "uwi-001.md", message), home=tmp_path)
+
+    assert exc_info.value.code == 1
+    next_actions = _next_action_lines(capsys.readouterr().err)
+    assert len(next_actions) == 1
+    for value in expected_values:
+        assert value in next_actions[0]
+
+
+def test_uwi_edit_with_broken_stored_structure_points_to_show(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存済みUWIの構造が壊れている場合は、確認するコマンドとユーザーへの報告を示す。"""
+    notes = _setup_notes(tmp_path)
+    path = notes / "inbox" / "uwi-001.md"
+    path.write_text(
+        f"---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        f"{uwi.QUESTION_HEADING}\n\n質問\n",
+        encoding="utf-8",
+    )
+    original = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(_edit_body_args(tmp_path, "uwi-001.md", "変更後の質問"), home=tmp_path)
+
+    assert exc_info.value.code == 1
+    next_actions = _next_action_lines(capsys.readouterr().err)
+    assert len(next_actions) == 1
+    assert "atk wi show uwi-001.md" in next_actions[0]
+    assert "ユーザーへ報告する" in next_actions[0]
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_editor_failure_keeps_entry_and_names_retry_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エディターが非0で終わった場合は、tracebackではなく失敗行と再実行の手段を示す。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "fb-001.md")
+    original = path.read_text(encoding="utf-8")
+    monkeypatch.setenv("EDITOR", "fake-editor")
+    fallback = _make_subprocess_fake([])
+
+    def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+        if cmd[0] == "fake-editor":
+            return subprocess.CompletedProcess(cmd, returncode=1)
+        return fallback(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "edit", "fb-001.md"], home=tmp_path)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    next_actions = _next_action_lines(err)
+    assert len(next_actions) == 1
+    assert "atk wi edit fb-001.md --body-file" in next_actions[0]
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pathlib.Path) -> None:
+    """終端した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
+    with pytest.raises(mutations.WebInputError) as raised:
+        mutations.edit_entry_content(tmp_path, state="adopted", filename="20260930-000000-001.md", content="本文")
+
+    next_action = raised.value.next_action
+    assert "`atk wi hold <ファイル名> --state <adopted|rejected>`" in next_action
+    parser = atk._build_parser()  # pylint: disable=protected-access
+    parser.parse_args(["wi", "hold", "20260930-000000-001.md", "--state", "adopted"])
+    # 値を省いた`--state`は受理されないため、案内は値付きの形でなければならない。
+    with pytest.raises(SystemExit):
+        parser.parse_args(["wi", "hold", "20260930-000000-001.md", "--state"])

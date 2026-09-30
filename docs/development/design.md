@@ -1305,7 +1305,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `autonomous_exit.py` `evaluate` | 常駐セッションで必須の終了操作を欠く遮断と、背景作業が残る終了要求の取り下げ | P | 維持（常駐運用の終端保証）：常駐ループが終了操作を欠くと実行主体が残り、次の周期へ移れない。背景作業が残ったまま`/exit`を実行すると確認画面で止まる。Stop入力と起動記録、終了要求ファイルを比べる処理を実装で確認 |
 | `pending_question_advisor.py` `evaluate` | 地の文に質問を残した終了の遮断 | C | 維持（常駐運用の終端保証）：ユーザー確認を経ない質問を地の文へ置いたまま終了すると、回答を受け取る手段が残らない。Stop入力の判定を実装で確認 |
 | `plan_save_advisor.py` `evaluate` | f'現在のセッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n保存の契機に達したバンドルだけをatk plans commit <計画… | M | 維持（データ破損）：保存契機後も所有する計画バンドルが作業rootに残ると、後続の読込先へ版が反映されない。バンドル実在分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | f"warn: listの応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `posttooluse.py` `_dispatch` | f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正である。"と、`show`での再取得を案内する`次の操作:`の行 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
 | `posttooluse.py` `_dispatch` | f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
 | `posttooluse.py` `_dispatch` | 起動応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
 | `posttooluse.py` `_dispatch` | 継続応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
@@ -1314,12 +1314,12 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないsession_idが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}は、session_idに対応する絶対cwdが保存されていないため続行できない。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_collect_edit_operation_warnings` | ファイル末尾のツール境界タグ混入を警告 | X | 維持（データ破損）：編集本文へツール境界タグが混入するとPythonまたは計画本文に制御文字列が残る。編集後の像と対象パスを比べる処理を実装で確認 |
-| `pretooluse/content_checks.py` `_warn_mojibake` | f'{body}\n対処: {fix}' | X | 維持（データ破損）：編集行の文字化けは元の文字を復元できないまま利用者向け本文へ配布される。文字列検出分岐を実装で確認 |
+| `pretooluse/content_checks.py` `_warn_mojibake` | 本文`{body}`と、解消手段`{fix}`を渡した`次の操作:`の行 | X | 維持（データ破損）：編集行の文字化けは元の文字を復元できないまま利用者向け本文へ配布される。文字列検出分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_check_ps1_eol` | f'{tool_name}.{field}にLFだけの内容を検出した。この書き込みではUTF-8 BOMが失われて日本語が文字化けし、.gitattributesの*.p… | X | 維持（データ破損）：PowerShell配布ファイルのBOM・改行喪失で日本語と実行形式が変わる。書込対象と改行の判定を実装で確認 |
-| `pretooluse/content_checks.py` `_check_lockfiles` | f'{tool_name}による{label}の直接編集を検出した。対象: {file_path}\n対処: {fix}' | X | 維持（データ破損）：生成lockfileの直接編集は解決済み依存の整合を失う。対象パスと生成元ツールの分岐を実装で確認 |
+| `pretooluse/content_checks.py` `_check_lockfiles` | f'{tool_name}による{label}の直接編集を検出した。対象: {file_path}'と、パッケージ管理ツールを名指す`次の操作:`の行 | X | 維持（データ破損）：生成lockfileの直接編集は解決済み依存の整合を失う。対象パスと生成元ツールの分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_check_manifest` | f'{tool_name}で{label}の依存の節を編集しようとしている。{hint}' | X | 維持（データ破損）：依存manifestの手編集で生成先と配布値がずれる。対象の依存節判定を実装で確認 |
 | `pretooluse/dispatch.py` `main` | language_warning_body | W | 維持（利用者確定）：英語応答警告は存廃基準の外側で利用者が残すと確定した。発話入力から言語警告を組み立てる分岐を実装で確認 |
-| `pretooluse/dispatch.py` `_handle_bash_tool` | '未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。\n対処: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了の背景タスクが書くファイルを読むと途中の内容を結果と誤認する。対象出力とタスク状態を比べる処理を実装で確認 |
+| `pretooluse/dispatch.py` `_handle_bash_tool` | '未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。'と、'次の操作: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了の背景タスクが書くファイルを読むと途中の内容を結果と誤認する。対象出力とタスク状態を比べる処理を実装で確認 |
 | `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：Codexのシェル出力の上限を超えた取得は本文を欠落させ、欠落した範囲を回復できない。Claude Codeはホストが`PARTIAL view`または退避ファイルを返し残りを続けて取得できるため対象外とする。遮断後に対処する型であり、閾値48KiBは配布設定の出力上限20,000トークンと測定した1トークンあたりバイト数の最小値3.10から導く（測定は`docs/development/audit-records.md`）。通知は閾値以下の連続行範囲を`sed -n`の形で示す。境界と範囲案を実装・テストで確認 |
 | `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：複数ファイルの合計が上限を超える取得も同じく本文を欠落させる。遮断後に対処する型で、閾値は前行と同じ。合計判定をテストで確認 |
 | `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（不可逆）：pkill・killallのパターン一致は所有外プロセスを終了し、終了したプロセスは元へ戻せない。終了対象の指定形を実装で確認 |
@@ -1878,6 +1878,24 @@ AWIの節は原因分析表と、調査表のうち`直接的原因`・`原因�
 
 却下した代替案は、接頭辞を各出力箇所へ直接書く案と、区分表をテストだけが持つ案である。
 前者は同じ語彙の決定を出力箇所の数だけ分散させ、後者はヘルプの文面とテストの判定が別々の表を持つため採用しない。
+
+失敗行と警告行には、続く行に`次の操作:`で始まる次の操作を必ず置く。
+結果行だけで成否は確定しても、事実だけを受け取ったエージェントは次の行動を推測で選び、実行できない操作や同じ失敗を繰り返した（`atk`の引数エラー、agents_serverの`unknown session`、hookの警告などで観測した）。
+`report_failure`と`report_warning`は理由と次の操作を別々の必須の引数として受け取り、次の操作を欠いた呼び出しを失敗させる。
+対処が不要な警告も、続行してよいことを次の操作として書く。
+
+次の操作を必須とする構造は`atk`以外の発生源にも同じ形で置く。
+標識`次の操作:`、空の次の操作の拒否、理由と次の操作を持つ例外型（`ActionableError`）、標準エラーへの出力関数の4つは`agent-toolkit/agent_toolkit/_common/next_action.py`が持つ。
+同モジュールは層の順序で最も前にあり、全ての層、公開スクリプトとスキル付属スクリプトから使える。
+hookは`_hooks/notice.py`の`block_formatter`と`warn`区分の整形関数が解消手段`fix`を必須とし、反復集約の2件目以降と遮断への昇格でも同じ行を残す。
+`atk`は`WebInputError`を`ActionableError`の派生とし、`atk.py:main`が理由と次の操作の2行で出力する。Web APIの応答本文は`str()`が返す理由だけを使い、変えない。
+agents_serverはツール関数の登録の1箇所で例外を包み、`ActionableError`と想定外の例外を次の操作付きのエラー本文へ変える。状態値だけを返す応答（配送の失敗、期限切れsessionの中断、待機の打ち切りなど）には`next_action`項目を加える。
+`atk agents wait`、`wait_ci.py`、スキル付属スクリプトと計画ファイルの構造チェックも、非0の終了で同じ標識の行を出力する。
+
+知識境界として、標識と必須性は`_common/next_action.py`、文面は各発生源、状態値の`next_action`項目はagents_serverがそれぞれ持つ。
+受信時に参照できる位置は受け取ったメッセージだけであるため、次の操作をツールの説明文や規範文書だけに置く形は採らない。
+却下した代替案は、本文中で次の操作を任意とし、レビューと規範で補う案である。
+文面の正しさを確かめるレビューは次の操作の欠落と実在しない名前の案内を検出できず、観測した事象はいずれもレビューを通って混入したため採用しない。
 
 ## エージェント環境での長い出力の自動保存
 

@@ -47,7 +47,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
+_USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
@@ -186,7 +186,13 @@ def test_agent_rejects_individual_entry_from_forbidden_state(
         atk.main(args, home=tmp_path)
 
     assert exc_info.value.code == 1
-    assert f"state={state}" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert f"state={state}" in err
+    # 削除できない主体へ、ユーザーへの依頼と実行できる代替（不採用）を示すこと。
+    next_actions = [line for line in err.splitlines() if line.startswith("次の操作: ")]
+    assert len(next_actions) == 1
+    assert "ユーザーへ依頼する" in next_actions[0]
+    assert "atk wi reject" in next_actions[0]
     assert target.is_file()
 
 
@@ -863,7 +869,11 @@ class TestAppendEdit:
             atk.main(["wi", "edit", "--append", "uwi-001.md", "--body-file", str(body_file)], home=tmp_path)
 
         assert exc_info.value.code == 1
-        assert "UWIには追記できません" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "UWIには追記できません" in err
+        next_actions = [line for line in err.splitlines() if line.startswith("次の操作: ")]
+        assert len(next_actions) == 1
+        assert "--appendを外して" in next_actions[0]
         assert path.read_bytes() == original
 
     def test_append_expected_bytes_conflict_keeps_message_unapplied(
@@ -1358,7 +1368,10 @@ def test_bulk_transition_excludes_entries_outside_source_states(
     assert exc_info.value.code == 0
     assert kept.is_file()
     assert not commits
-    assert f"{BULK_ACTION_LABELS[action]}対象なし" in capsys.readouterr().out
+    # 対象0件は接頭辞付きの成功行で、変更が無いことを示す。
+    output = capsys.readouterr().out
+    assert output.startswith("成功: 対象0件のため")
+    assert "（変更は無い）" in output
 
 
 def test_bulk_transition_requires_yes_in_non_interactive_environment(
@@ -1402,7 +1415,7 @@ def test_bulk_transition_keeps_entries_when_confirmation_is_declined(
     assert not commits
     captured = capsys.readouterr().out
     assert "上記1件を保留します" in captured
-    assert "保留を中止しました。" in captured
+    assert "成功: 確認で中止したため保留しなかった（変更は無い）" in captured
 
 
 def test_bulk_transition_skips_entries_changed_after_confirmation(
@@ -1432,7 +1445,9 @@ def test_bulk_transition_skips_entries_changed_after_confirmation(
     assert changed.is_file()
     assert not commits
     captured = capsys.readouterr().out
-    assert "確認後に変更されたため保留しません: changed.md" in captured
+    # 確認後に変わった項目は警告行で名指し、確認と再実行の手段を次の操作で示す。
+    assert "警告: 確認後に変更されたため保留しない: changed.md\n次の操作: " in captured
+    assert "`atk wi show <ファイル名>`" in captured
 
 
 @pytest.mark.parametrize(

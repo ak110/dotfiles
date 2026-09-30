@@ -76,7 +76,7 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
         "kind": "block",
     }
     assert "\n停止する前に" in decision["reason"]
-    assert "Fix: 空でない完了報告を書いてから、あらためて停止する。" in decision["reason"]
+    assert "\n次の操作: 空でない完了報告を書いてから、あらためて停止する。" in decision["reason"]
 
 
 def test_pending_child_with_nonempty_report_is_approved(

@@ -63,7 +63,7 @@ def test_web_transition_rejects_commit_without_resolvable_worktree(
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
 
-    with pytest.raises(common.WebInputError, match="指定したエントリを操作できません"):
+    with pytest.raises(serve_app.WebApiInputError, match="指定したエントリを操作できません"):
         serve_app.Operations(tmp_path).transition("adopt", ["awi.md"], commit="abcdef1")
 
     assert (tmp_path / "inbox/awi.md").is_file()

@@ -29,6 +29,8 @@ log_launcher() {
     if ! printf '%s event=launcher_%s pid=%s status=%s signal=%s\n' \
         "$(date '+%Y-%m-%dT%H:%M:%S')" "$1" "$$" "$2" "${received_signal}" >>"${LOG}"; then
         printf 'process-loop監督ログへ記録できません: %s\n' "${LOG}" >&2
+        # 次の操作の標識は`agent_toolkit/_common/next_action.py`の`NEXT_ACTION_PREFIX`とそろえる。
+        printf '次の操作: 常駐処理は継続する。再起動と終了の記録が欠けるため、%sの親ディレクトリの所有者と書き込み権限を確かめる\n' "${LOG}" >&2
     fi
 }
 finish_launcher() {

@@ -428,13 +428,19 @@ def test_prepare_reports_missing_items(
 
     assert prepare.main(["--transcript", str(tmp_path / "missing.jsonl"), "--work-dir", str(work_dir)]) == 2
     captured = capsys.readouterr()
-    assert (captured.out, captured.err) == ("", "不足: transcript_path\n")
+    assert captured.out == ""
+    assert captured.err.splitlines()[0] == "不足: transcript_path"
+    assert "`--transcript`" in captured.err.splitlines()[1].removeprefix("次の操作: ")
 
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(tmp_path / "absent")]) == 2
     captured = capsys.readouterr()
-    assert (captured.out, captured.err) == ("", "不足: work_dir\n")
+    assert captured.out == ""
+    assert captured.err.splitlines()[0] == "不足: work_dir"
+    assert "`--work-dir`" in captured.err.splitlines()[1].removeprefix("次の操作: ")
 
     monkeypatch.setattr(prepare, "__file__", str(tmp_path / "detached" / "session_review_prepare.py"))
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)]) == 2
     captured = capsys.readouterr()
-    assert (captured.out, captured.err) == ("", "不足: evidence_script\n")
+    assert captured.out == ""
+    assert captured.err.splitlines()[0] == "不足: evidence_script"
+    assert captured.err.splitlines()[1].startswith("次の操作: `atk run-script session-review-prepare --")

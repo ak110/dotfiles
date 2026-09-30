@@ -145,7 +145,27 @@ _WINDOWS_WRITE_OWNER = 0x00080000
 
 
 class ManagedTempError(Exception):
-    """ユーザーが入力または実行環境を修正できる検証エラー。"""
+    """ユーザーが入力または実行環境を修正できる検証エラー。
+
+    `str()`は理由だけを返し、`next_action`に次の操作を持つ。送出箇所が原因の分類に応じた次の操作を渡し、
+    渡さない送出箇所には状態の確認と報告先を示す既定の次の操作を使う。
+    """
+
+    DEFAULT_NEXT_ACTION = (
+        "`atk managed-temp list`で管理対象の状態を確認し、表示された原因を除去して再実行する。"
+        "解消しない場合はユーザーへ報告する"
+    )
+    PERMISSION_NEXT_ACTION = (
+        "表示されたパスの所有者が現在の利用者で、権限がディレクトリは0700・ファイルは0600であることを確認する。"
+        "自分で直せない場合はユーザーへ報告する"
+    )
+    REPLACED_NEXT_ACTION = "同じ操作を再実行する。繰り返す場合は別の主体が同じパスを操作していないか確認し、ユーザーへ報告する"
+    RETRYABLE_NEXT_ACTION = "表示された原因を除去した後に、同じ`atk managed-temp cleanup`を再実行する"
+    UNSUPPORTED_NEXT_ACTION = "この実行環境では操作できない。対応するplatformで実行するか、ユーザーへ報告する"
+
+    def __init__(self, message: str, *, next_action: str | None = None) -> None:
+        super().__init__(message)
+        self.next_action = next_action or self.DEFAULT_NEXT_ACTION
 
 
 class _ManagedTempEntry(typing.TypedDict):
@@ -210,15 +230,20 @@ def _temp_root() -> pathlib.Path:
         if os.name == "posix":
             metadata = root.lstat()
             if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
-                raise ManagedTempError(f"一時ディレクトリのルートの所有者または種別が不正: {root}")
+                raise ManagedTempError(
+                    f"一時ディレクトリのルートの所有者または種別が不正: {root}",
+                    next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
+                )
             root.chmod(0o700)
             if stat.S_IMODE(root.stat().st_mode) != 0o700:
-                raise ManagedTempError(f"一時ディレクトリのルートの権限が不正: {root}")
+                raise ManagedTempError(
+                    f"一時ディレクトリのルートの権限が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                )
         elif os.name == "nt":
             _windows_secure_path(root, directory=True)
             _validate_windows_security(root)
         else:
-            raise ManagedTempError(f"未対応platform: {os.name}")
+            raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
     except OSError as error:
         raise ManagedTempError(f"一時ディレクトリのルートを準備できない: {root}: {error}") from error
     return root
@@ -240,16 +265,24 @@ def _validate_root(
             raise ManagedTempError(f"管理対象rootを検証できない: {root}: {error}") from error
         mode = stat.S_IMODE(metadata.st_mode)
         if not stat.S_ISDIR(metadata.st_mode):
-            raise ManagedTempError(f"管理対象rootが通常ディレクトリではない: {root}")
+            raise ManagedTempError(
+                f"管理対象rootが通常ディレクトリではない: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         if mode & (stat.S_ISUID | stat.S_ISGID):
-            raise ManagedTempError(f"管理対象rootの特殊権限が不正: {root}")
+            raise ManagedTempError(f"管理対象rootの特殊権限が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION)
         if (mode & stat.S_IWUSR) == 0 or (mode & stat.S_IXUSR) == 0:
-            raise ManagedTempError(f"管理対象rootの所有者権限が不正: {root}")
+            raise ManagedTempError(
+                f"管理対象rootの所有者権限が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         if mode & (stat.S_IWGRP | stat.S_IWOTH):
             if explicit or mode != 0o1777:
-                raise ManagedTempError(f"管理対象rootの権限が不安全: {root}")
+                raise ManagedTempError(
+                    f"管理対象rootの権限が不安全: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                )
         elif metadata.st_uid != os.geteuid():
-            raise ManagedTempError(f"管理対象rootの所有者が現在の利用者ではない: {root}")
+            raise ManagedTempError(
+                f"管理対象rootの所有者が現在の利用者ではない: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         current = _ValidatedRoot(metadata.st_dev, metadata.st_ino, metadata.st_uid, mode)
     elif os.name == "nt":
         try:
@@ -257,25 +290,37 @@ def _validate_root(
         except OSError as error:
             raise ManagedTempError(f"管理対象rootを検証できない: {root}: {error}") from error
         if not stat.S_ISDIR(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-            raise ManagedTempError(f"管理対象rootが通常ディレクトリではない: {root}")
+            raise ManagedTempError(
+                f"管理対象rootが通常ディレクトリではない: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         identity = _windows_identity(root)
         current_sid = _windows_sid_bytes(_windows_current_sid())
         security = _windows_security_descriptor(root)
         if not security.directory or not security.dacl_present:
-            raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {root}")
+            raise ManagedTempError(
+                f"Windows pathのownerまたはACLが不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         if explicit and not _windows_managed_root_security_is_valid(security, current_sid):
-            raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {root}")
+            raise ManagedTempError(
+                f"Windows pathのownerまたはACLが不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         after_identity = _windows_identity(root)
         after_security = _windows_security_descriptor(root)
         if after_identity != identity:
-            raise ManagedTempError(f"管理対象rootが検証中に置換された: {root}")
+            raise ManagedTempError(
+                f"管理対象rootが検証中に置換された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         if after_security != security:
-            raise ManagedTempError(f"管理対象rootが検証中に変更された: {root}")
+            raise ManagedTempError(
+                f"管理対象rootが検証中に変更された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         current = _ValidatedRoot(after_identity[0], after_identity[1], None, None, after_security)
     else:
-        raise ManagedTempError(f"未対応platform: {os.name}")
+        raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
     if expected is not None and current != expected:
-        raise ManagedTempError(f"管理対象rootが検証中に置換または変更された: {root}")
+        raise ManagedTempError(
+            f"管理対象rootが検証中に置換または変更された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+        )
     return current
 
 
@@ -284,7 +329,7 @@ def _owner_record() -> dict[str, str | int]:
         return {"kind": "uid", "id": os.geteuid()}
     if os.name == "nt":
         return {"kind": "sid", "id": _windows_current_sid()}
-    raise ManagedTempError(f"未対応platform: {os.name}")
+    raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
 
 
 def _state_root_path() -> pathlib.Path:
@@ -305,15 +350,19 @@ def _state_root() -> pathlib.Path:
         if os.name == "posix":
             metadata = root.lstat()
             if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
-                raise ManagedTempError(f"外部状態ディレクトリの所有者または種別が不正: {root}")
+                raise ManagedTempError(
+                    f"外部状態ディレクトリの所有者または種別が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                )
             root.chmod(0o700)
             if stat.S_IMODE(root.stat().st_mode) != 0o700:
-                raise ManagedTempError(f"外部状態ディレクトリの権限が不正: {root}")
+                raise ManagedTempError(
+                    f"外部状態ディレクトリの権限が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                )
         elif os.name == "nt":
             _windows_secure_path(root, directory=True)
             _validate_windows_security(root)
         else:
-            raise ManagedTempError(f"未対応platform: {os.name}")
+            raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)
     except OSError as error:
         raise ManagedTempError(f"外部状態ディレクトリを準備できない: {root}: {error}") from error
     return root
@@ -356,10 +405,14 @@ def _load_private_json(path: pathlib.Path) -> dict[str, typing.Any]:
     try:
         before = path.lstat()
         if not stat.S_ISREG(before.st_mode):
-            raise ManagedTempError(f"外部状態が通常ファイルではない: {path}")
+            raise ManagedTempError(
+                f"外部状態が通常ファイルではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         if os.name == "posix":
             if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o600:
-                raise ManagedTempError(f"外部状態の所有者または権限が不正: {path}")
+                raise ManagedTempError(
+                    f"外部状態の所有者または権限が不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                )
             descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
             with os.fdopen(descriptor, "r", encoding="utf-8") as source:
                 opened = os.fstat(source.fileno())
@@ -369,13 +422,17 @@ def _load_private_json(path: pathlib.Path) -> dict[str, typing.Any]:
                 after.st_dev,
                 after.st_ino,
             ) != (opened.st_dev, opened.st_ino):
-                raise ManagedTempError(f"外部状態が検証中に置換された: {path}")
+                raise ManagedTempError(
+                    f"外部状態が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                )
         else:
             _validate_windows_security(path)
             identity = _windows_identity(path)
             value = json.loads(path.read_text(encoding="utf-8"))
             if _windows_identity(path) != identity:
-                raise ManagedTempError(f"外部状態が検証中に置換された: {path}")
+                raise ManagedTempError(
+                    f"外部状態が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                )
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ManagedTempError(f"外部状態を検証できない: {path}: {error}") from error
     if not isinstance(value, dict):
@@ -609,13 +666,19 @@ def _load_marker(directory_descriptor: int, path: pathlib.Path) -> dict[str, typ
     try:
         before = os.stat(_MARKER_NAME, dir_fd=directory_descriptor, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode):
-            raise ManagedTempError(f"管理情報が通常ファイルではない: {path / _MARKER_NAME}")
+            raise ManagedTempError(
+                f"管理情報が通常ファイルではない: {path / _MARKER_NAME}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o600:
-            raise ManagedTempError(f"管理情報の所有者または権限が不正: {path / _MARKER_NAME}")
+            raise ManagedTempError(
+                f"管理情報の所有者または権限が不正: {path / _MARKER_NAME}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
         descriptor = os.open(_MARKER_NAME, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_descriptor)
         opened = os.fstat(descriptor)
         if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise ManagedTempError(f"管理情報が検証中に置換された: {path / _MARKER_NAME}")
+            raise ManagedTempError(
+                f"管理情報が検証中に置換された: {path / _MARKER_NAME}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
         with os.fdopen(descriptor, "r", encoding="utf-8") as marker:
             descriptor = None
             value = json.load(marker)
@@ -626,7 +689,9 @@ def _load_marker(directory_descriptor: int, path: pathlib.Path) -> dict[str, typ
         if descriptor is not None:
             os.close(descriptor)
     if (after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino):
-        raise ManagedTempError(f"管理情報が検証中に置換された: {path / _MARKER_NAME}")
+        raise ManagedTempError(
+            f"管理情報が検証中に置換された: {path / _MARKER_NAME}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+        )
     if not isinstance(value, dict):
         raise ManagedTempError(f"管理情報はJSON objectである必要がある: {path / _MARKER_NAME}")
     return value

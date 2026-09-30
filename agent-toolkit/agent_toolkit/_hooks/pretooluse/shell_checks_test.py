@@ -624,14 +624,14 @@ class TestBashGitRevParseShortMultiple:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "`git rev-parse --short`へ2つのrevision" in context
+        assert "`git rev-parse --short`へ2つのリビジョン" in context
         assert "`git rev-parse --short=7 <revision>`" in context
 
     def test_redirection_is_not_counted_as_revision(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git rev-parse --short=7 HEAD~1 HEAD > /tmp/x"}})
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "`git rev-parse --short`へ2つのrevision（HEAD~1、HEAD）を渡している" in context
+        assert "`git rev-parse --short`へ2つのリビジョン（HEAD~1、HEAD）を渡している" in context
 
     @pytest.mark.parametrize(
         "command",

@@ -11,6 +11,8 @@ from __future__ import annotations
 import enum
 import sys
 
+from agent_toolkit._common import next_action as _next_action
+
 SUCCESS_PREFIX = "成功: "
 FAILURE_PREFIX = "失敗: "
 WARNING_PREFIX = "警告: "
@@ -124,14 +126,23 @@ def report_success(message: str, kind: ResultKind = ResultKind.STATE_CHANGE) -> 
     print(f"{SUCCESS_PREFIX}{message}", file=stream)
 
 
-def report_failure(message: str) -> None:
-    """非0で終了する理由と次に行う操作を標準エラーへ書く。"""
-    print(f"{FAILURE_PREFIX}{message}", file=sys.stderr)
+def report_failure(message: str, *, next_action: str) -> None:
+    """非0で終了する理由を失敗行へ、次に行う操作を続く行へ標準エラーへ書く。
+
+    次の操作を任意にすると、受信側が理由だけを受け取って次の行動を推測する経路が残るため必須の引数とする。
+    """
+    print(_next_action.with_next_action(f"{FAILURE_PREFIX}{message}", next_action), file=sys.stderr)
 
 
-def report_warning(message: str, *, to_stderr: bool = True) -> None:
-    """警告を書く。出力先はその警告が属する経路の現行の出力先を呼び出し側が指定する。"""
-    print(f"{WARNING_PREFIX}{message}", file=sys.stderr if to_stderr else sys.stdout)
+def report_warning(message: str, *, next_action: str, to_stderr: bool = True) -> None:
+    """警告行と次に行う操作の行を書く。出力先はその警告が属する経路の現行の出力先を呼び出し側が指定する。
+
+    対処が不要な警告も、続行してよいことを次の操作として明示する。
+    """
+    print(
+        _next_action.with_next_action(f"{WARNING_PREFIX}{message}", next_action),
+        file=sys.stderr if to_stderr else sys.stdout,
+    )
 
 
 def report_no_match(message: str) -> None:

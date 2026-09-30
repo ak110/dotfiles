@@ -40,8 +40,9 @@ try:
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}。"
-        "`atk run-script session-review-evidence -- <引数>`で起動してください。",
+        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
+        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        "次の操作: `atk run-script session-review-evidence -- <引数>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -2797,7 +2798,7 @@ def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dic
     for number in numbers:
         entry = index.get(number)
         if entry is None:
-            return [{"kind": "error", "text": f"行番号{number}は範囲外"}], 2
+            return [_error_event(f"行番号{number}は範囲外", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         events.extend(_entry_detail_events(number, entry, full_message_text=True))
     return events, 0
 
@@ -3024,9 +3025,29 @@ def _print_events(events: list[dict[str, Any]]) -> None:
         print(json.dumps(event, ensure_ascii=False))
 
 
-def _print_error(text: str) -> int:
+_RECORD_LOCATOR_NEXT_ACTION = (
+    "`--detail`・`--context-at`へ`<記録ID>:<行番号>`の形で、既定の出力が示す記録IDと行番号を渡して再実行する"
+)
+_CATALOG_ROOT_NEXT_ACTION = (
+    "Claude Codeは`--catalog-claude-project`へ`~/.claude/projects/<プロジェクト>`の絶対パスを、"
+    "Codexは`--catalog-codex-history`へCodexの記録ディレクトリの絶対パスを渡して再実行する"
+)
+_SINCE_NEXT_ACTION = "`--since`へISO 8601形式の時刻（例: `2026-09-30T00:00:00+09:00`）を渡して再実行する"
+_BOUNDARY_NEXT_ACTION = (
+    "`--observation-boundary`へ`--since`以後のISO 8601形式の時刻（例: `2026-09-30T12:00:00+09:00`）を渡して再実行する"
+)
+
+
+def _error_event(text: str, *, next_action: str) -> dict[str, Any]:
+    """照会不能を示すエラーイベントを、次の操作の項目`next_action`付きで返す。"""
+    if not next_action.strip():
+        raise ValueError("エラーイベントのnext_actionは空文字列以外で指定する必要がある")
+    return {"kind": "error", "text": text, "next_action": next_action}
+
+
+def _print_error(text: str, *, next_action: str) -> int:
     """照会不能を示すエラーを出力し、終了コード2を返す。"""
-    _print_events([{"kind": "error", "text": text}])
+    _print_events([_error_event(text, next_action=next_action)])
     return 2
 
 
@@ -3165,10 +3186,10 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
         else:
             record_id, raw_line = "main", locator
         if not record_id or not raw_line.isdecimal():
-            return [{"kind": "error", "text": f"詳細位置が不正: {locator}"}], 2
+            return [_error_event(f"詳細位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         selected = by_id.get(record_id)
         if selected is None:
-            return [{"kind": "error", "text": f"記録が不明: {record_id}"}], 2
+            return [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         record_events, exit_code = _detail_events(selected.records, [int(raw_line)])
         if exit_code:
             return record_events, exit_code
@@ -3190,15 +3211,20 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
     else:
         record_id, raw_line = "main", locator
     if not record_id or not raw_line.isdecimal():
-        return [{"kind": "error", "text": f"記録位置が不正: {locator}"}], 2
+        return [_error_event(f"記録位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
     selected = next((item for item in collected if item.record_id == record_id), None)
     if selected is None:
-        return [{"kind": "error", "text": f"記録が不明: {record_id}"}], 2
+        return [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
     target_line = int(raw_line)
     if not selected.records or not 1 <= target_line <= max(record.line for record in selected.records):
-        return [{"kind": "error", "text": f"行番号が記録の範囲外: {locator}"}], 2
+        return [_error_event(f"行番号が記録の範囲外: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
     if not phrases or any(not phrase for phrase in phrases):
-        return [{"kind": "error", "text": "--phraseへ空でない固定文字列を1件以上指定する"}], 2
+        return [
+            _error_event(
+                "--phraseへ空でない固定文字列を1件以上指定する",
+                next_action="`--phrase <固定文字列>`を1件以上付けて再実行する",
+            )
+        ], 2
 
     preceding = [record for record in selected.records if record.line < target_line]
     boundary = next(
@@ -3411,7 +3437,12 @@ def _bundle_events(
     その走査を単独で実行した出力から未解決記録のイベントを除いたものと一致する。
     """
     if not directory.is_dir():
-        return [{"kind": "error", "text": f"出力先が実在するディレクトリでない: {directory}"}], 2
+        return [
+            _error_event(
+                f"出力先が実在するディレクトリでない: {directory}",
+                next_action="`--bundle`へ作成済みのディレクトリ（管理対象一時領域の配下など）の絶対パスを渡して再実行する",
+            )
+        ], 2
     resolved = directory.resolve()
     timeline = _default_events(collected, [])
     warnings = _warning_collection_events(collected, [])
@@ -4610,13 +4641,15 @@ def _catalog_events(
 ) -> tuple[list[dict[str, Any]], int]:
     """指定root内だけから比較用の親セッションカタログを生成する。"""
     if not root.is_dir():
-        return [{"kind": "error", "text": f"カタログrootが実在するディレクトリでない: {root}"}], 2
+        return [_error_event(f"カタログrootが実在するディレクトリでない: {root}", next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
     resolved_root = root.resolve()
     paths = sorted(resolved_root.glob("**/*.jsonl"))
     if runtime == "codex":
         paths = [path for path in paths if path.name.startswith("rollout-")]
     if not paths:
-        return [{"kind": "error", "text": f"カタログrootから{runtime}記録を判別できない: {resolved_root}"}], 2
+        return [
+            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
+        ], 2
     loaded: dict[str, _CollectedRecord] = {}
     path_items: dict[Path, _CollectedRecord] = {}
     unresolved_loads = 0
@@ -4633,7 +4666,9 @@ def _catalog_events(
         loaded.setdefault(session_id, item)
         path_items[path.resolve()] = item
     if not loaded:
-        return [{"kind": "error", "text": f"カタログrootから{runtime}記録を判別できない: {resolved_root}"}], 2
+        return [
+            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
+        ], 2
 
     children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
     referenced: set[str] = set()
@@ -4889,7 +4924,9 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
     if args.output_file is not None and not _output_file_active:
         output_path = Path(args.output_file)
         if not output_path.is_absolute():
-            return _print_error("--output-fileには絶対パスを指定してください。")
+            return _print_error(
+                "--output-fileには絶対パスを指定してください。", next_action="`--output-file`へ絶対パスを渡して再実行する"
+            )
         resolved = output_path.resolve(strict=False)
         with resolved.open("w", encoding="utf-8", newline="") as stream, contextlib.redirect_stdout(stream):
             exit_code = main(argv, _output_file_active=True)
@@ -4915,7 +4952,8 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         > 1
     ):
         return _print_error(
-            "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない"
+            "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない",
+            next_action="`--warn`・`--grep`などの照会の指定を1回に1つだけにして、照会ごとに別々に実行する",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
@@ -4934,23 +4972,31 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
             args.context_at is not None,
         )
     ):
-        return _print_error("カタログ走査は単一transcriptの照会モードと併用できない")
+        return _print_error(
+            "カタログ走査は単一transcriptの照会モードと併用できない",
+            next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
+        )
     if args.phrase is not None and args.context_at is None:
-        return _print_error("--phraseは--context-atと併用する")
+        return _print_error(
+            "--phraseは--context-atと併用する", next_action="`--context-at <記録ID>:<行番号>`を付けて再実行する"
+        )
     if args.since is not None and not args.user_events and catalog_root is None:
-        return _print_error("--sinceは--user-eventsまたはカタログ走査と併用する")
+        return _print_error(
+            "--sinceは--user-eventsまたはカタログ走査と併用する",
+            next_action="`--user-events`かカタログ走査の引数を付けるか、`--since`を外して再実行する",
+        )
     if args.user_events and args.since is None:
-        return _print_error("--user-eventsには--sinceが必要")
+        return _print_error("--user-eventsには--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.since is None:
-        return _print_error("カタログ走査には--sinceが必要")
+        return _print_error("カタログ走査には--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.observation_boundary is None:
-        return _print_error("カタログ走査には--observation-boundaryが必要")
+        return _print_error("カタログ走査には--observation-boundaryが必要", next_action=_BOUNDARY_NEXT_ACTION)
     since = None
     if args.since is not None:
         try:
             since = _parse_timestamp(args.since)
         except ValueError:
-            return _print_error(f"開始境界が不正: {args.since}")
+            return _print_error(f"開始境界が不正: {args.since}", next_action=_SINCE_NEXT_ACTION)
 
     sources = (
         args.transcript_path,
@@ -4962,18 +5008,25 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
     )
     if sum(source is not None for source in sources) != 1:
         return _print_error(
-            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・カタログ走査はいずれか一つだけを指定する"
+            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+            next_action=(
+                "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・"
+                "カタログ走査のいずれか1つだけで指定して再実行する"
+            ),
         )
     if args.codex_home is not None and args.codex_thread_id is None:
-        return _print_error("--codex-homeは--codex-thread-idと併用する")
+        return _print_error(
+            "--codex-homeは--codex-thread-idと併用する",
+            next_action="`--codex-thread-id`を付けるか、`--codex-home`を外して再実行する",
+        )
     if catalog_root is not None:
         assert since is not None and catalog_runtime is not None and args.observation_boundary is not None
         try:
             catalog_boundary = _parse_timestamp(args.observation_boundary)
         except ValueError:
-            return _print_error(f"観測境界が不正: {args.observation_boundary}")
+            return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
         if catalog_boundary < since:
-            return _print_error("観測境界は開始境界以後を指定する")
+            return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
         events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
         _print_events(events)
         return exit_code
@@ -4981,29 +5034,46 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         try:
             transcript_path = str(_resolve_claude_transcript(args.claude_session_id))
         except ValueError as error:
-            return _print_error(str(error))
+            return _print_error(
+                str(error),
+                next_action=(
+                    "`--claude-session-id`の値を確かめる。記録が見つからない場合や複数ある場合は、"
+                    "`--transcript`で記録の絶対パスを直接渡して再実行する"
+                ),
+            )
     elif args.codex_thread_id is not None:
         try:
             transcript_path = str(_resolve_codex_transcript(args.codex_thread_id, args.codex_home))
         except ValueError as error:
-            return _print_error(str(error))
+            return _print_error(
+                str(error),
+                next_action=(
+                    "`--codex-thread-id`の値を確かめる。rolloutが別の場所にある場合は`--codex-home`へCodexのホームを渡し、"
+                    "複数ある場合は`--transcript`でrolloutの絶対パスを直接渡して再実行する"
+                ),
+            )
     else:
         transcript_path = args.transcript or args.transcript_path
 
     records = _load_records(transcript_path)
     if records is None:
-        return _print_error(f"対象記録を読み込めない: {transcript_path}")
+        return _print_error(
+            f"対象記録を読み込めない: {transcript_path}",
+            next_action="`--transcript`へ実在する記録の絶対パスを渡し、読み取り権限を確かめて再実行する",
+        )
     boundary = None
     if args.observation_boundary is not None:
         try:
             boundary = _parse_timestamp(args.observation_boundary)
         except ValueError:
-            return _print_error(f"観測境界が不正: {args.observation_boundary}")
+            return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
     if args.elapsed_until is not None:
         event = _elapsed_until_event(records, args.elapsed_until)
         if isinstance(event, str):
             message = event or f"経過時間を算出できる記録が無い: {transcript_path}"
-            return _print_error(message)
+            return _print_error(
+                message, next_action="`--elapsed-until`へ記録に存在する時刻か位置を渡すか、時刻を持つ記録を対象にして再実行する"
+            )
         _print_events([event])
         return 0
     if boundary is not None:
@@ -5027,7 +5097,9 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         try:
             pattern = re.compile(args.grep)
         except re.error as error:
-            return _print_error(f"正規表現が不正: {error}")
+            return _print_error(
+                f"正規表現が不正: {error}", next_action="`--grep`の正規表現の構文（括弧の対応、エスケープ）を直して再実行する"
+            )
         _print_events(_grep_collection_events(collected, unresolved, pattern))
         return 0
     if args.detail is not None:

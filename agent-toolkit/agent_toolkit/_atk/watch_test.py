@@ -218,6 +218,7 @@ class TestWatch:
         assert not captured.out
         assert "ラベルが重複している" in captured.err
         assert "result" in captured.err
+        assert "次の操作: <ラベル>=<パス>" in captured.err
 
     @pytest.mark.parametrize("whitespace", [" ", "\t", "\n", "\r", "\v", "\f"])
     def test_whitespace_in_label_is_rejected(
@@ -247,6 +248,7 @@ class TestWatch:
         assert exit_code == 2
         assert not captured.out
         assert "パスが空の指定です" in captured.err
+        assert "次の操作: " in captured.err
 
     def test_missing_target_reports_error(
         self,
@@ -268,7 +270,7 @@ class TestWatch:
         captured = capsys.readouterr()
         assert exit_code == 2
         assert not captured.out
-        assert "--worktreeまたは--fileを1件以上指定する" in captured.err
+        assert "次の操作: --worktreeまたは--file" in captured.err
 
     def test_multiple_targets_share_one_line(
         self,

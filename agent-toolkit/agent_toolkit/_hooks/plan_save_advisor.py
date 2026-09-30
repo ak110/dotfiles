@@ -106,11 +106,13 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     update_state(session_id, _mark_notified)
     path_list = ", ".join(str(path) for path in paths)
     body = _notice(
-        f"現在のセッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n"
-        "保存の契機に達したバンドルだけを"
-        "`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`でprivate-notesへ保存する。"
-        "契機は現在のセッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
-        "残りのバンドルはその場に残してターンを終了する。",
+        f"現在のセッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}",
+        fix=(
+            "保存の契機に達したバンドルだけを"
+            "`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`で`private-notes`へ保存する。"
+            "契機は現在のセッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
+            "残りのバンドルはその場に残してターンを終了する。"
+        ),
         removable_cause=True,
     )
     append_stop_log(session_id, "notify_working_plan_save", {"paths": len(paths)})

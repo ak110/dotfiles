@@ -237,7 +237,10 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
         if getattr(args, command_dest) == "create":
             if args.session_root is not None:
                 if args.awi or args.session_id is not None:
-                    raise ManagedTempError("--session-rootは--awiまたは--session-idと同時に指定できない")
+                    raise ManagedTempError(
+                        "--session-rootは--awiまたは--session-idと同時に指定できない",
+                        next_action="--session-rootを外すか、--awiと--session-idを外して再実行する",
+                    )
                 created = create_session_temp(args.prefix, args.session_root)
             else:
                 created = (
@@ -260,15 +263,19 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
             if args.path is None and args.session_id is None:
                 entries = list_managed_temp()
                 if not entries:
-                    raise ManagedTempError("--pathを指定してください。現在の管理対象はありません。")
+                    raise ManagedTempError(
+                        "--pathを指定してください。現在の管理対象はありません。",
+                        next_action="回収する管理対象は無い。対応不要",
+                    )
                 if len(entries) == 1:
                     raise ManagedTempError(
-                        "--pathを指定してください。現在の管理対象は1件です。"
-                        f"atk managed-temp cleanup --path {entries[0]['path']} を実行してください。"
+                        "--pathを指定してください。現在の管理対象は1件です。",
+                        next_action=f"atk managed-temp cleanup --path {entries[0]['path']} を実行する",
                     )
                 paths = "\n".join(entry["path"] for entry in entries)
                 raise ManagedTempError(
-                    f"--pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n{paths}"
+                    f"--pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n{paths}",
+                    next_action="回収する管理対象を上の一覧から選び、atk managed-temp cleanup --path <絶対パス> を実行する",
                 )
             if args.session_id is None:
                 cleanup_managed_temp(
@@ -294,7 +301,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
             return 0
         return 0
     except ManagedTempError as error:
-        _outcome.report_failure(str(error))
+        _outcome.report_failure(str(error), next_action=error.next_action)
         return 2
 
 

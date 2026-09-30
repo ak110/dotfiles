@@ -19,6 +19,7 @@ from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
+    MISSING_DEPENDENCY_NEXT_ACTION,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
     WI_STATES,
@@ -40,9 +41,20 @@ from agent_toolkit._atk.wi.common import (
     missing_dependency_warnings,
 )
 from agent_toolkit._atk.wi.formatters import _shorten_home
-from agent_toolkit._atk.wi.repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
+from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._common import body_match as _body_match
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import locations as _plan_file
+
+
+def _saved_mismatch_next_action(filename: str) -> str:
+    """保存後の読み戻しが送信した本文と一致しないときの次の操作を返す。"""
+    return f"保存は済んでいる。`atk wi show {filename}`で確認し、`atk wi edit {filename} --body-file <本文ファイル>`で直す"
+
+
+def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
+    """target_repoの解決失敗を、投入の失敗行1本へ包む。"""
+    return WebInputError(f"target_repoを解決できません: {value}（{error.reason}）", next_action=error.next_action)
 
 
 def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
@@ -54,7 +66,9 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     saved_body = _frontmatter.decode_entry_text(path.read_bytes())
     parsed = _frontmatter.parse_frontmatter(saved_body)
     if parsed is None:
-        raise WebInputError(f"保存済みエントリのfrontmatterを読み込めません: {path.name}")
+        raise WebInputError(
+            f"保存済みエントリのfrontmatterを読み込めません: {path.name}", next_action=_saved_mismatch_next_action(path.name)
+        )
     data, _body = parsed
     raw_dependencies = data.get("depends_on")
     depends_on = [value for value in raw_dependencies if isinstance(value, str)] if isinstance(raw_dependencies, list) else []
@@ -64,7 +78,8 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
             f"保存本文が送信元本文と一致しない: {path.name}\n"
             f"最初の差異: {position}文字目\n"
             f"送信元本文:\n{expected_body}\n"
-            f"保存本文:\n{saved_body}"
+            f"保存本文:\n{saved_body}",
+            next_action=_saved_mismatch_next_action(path.name),
         )
     return {
         "target_repo": data.get("target_repo"),
@@ -146,6 +161,7 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_AWI_ERROR = "AWI本文が実質空です"
+_EMPTY_AWI_NEXT_ACTION = "本文を記入して再投入する"
 _REQUIRED_AWI_HEADINGS: tuple[str, ...] = (
     "反映内容と反映先",
     "適用範囲",
@@ -183,7 +199,7 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     """先頭frontmatterと論理本文を返し、種別共通の本文契約を検証する。"""
     frontmatter, body = _parse_leading_frontmatter(message)
     if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
-        raise WebInputError(_EMPTY_AWI_ERROR)
+        raise WebInputError(_EMPTY_AWI_ERROR, next_action=_EMPTY_AWI_NEXT_ACTION)
     if entry_type != WI_TYPE_AWI:
         _uwi.reject_reserved_uwi_markup(body)
     return frontmatter, body
@@ -223,7 +239,11 @@ def _require_agent_awi_sections(
         "。".join(problems)
         + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{'、'.join(_AWI_HEADING_ORDER)}の順に置くこと、"
         + f"{'、'.join(_REQUIRED_AWI_HEADINGS)}を必須とすること、"
-        + f"{_CAUSE_ANALYSIS_HEADING}を置く場合は本文を書くことを定めます。"
+        + f"{_CAUSE_ANALYSIS_HEADING}を置く場合は本文を書くことを定めます。",
+        next_action=(
+            f"本文のH2を{'、'.join(_AWI_HEADING_ORDER)}の順に並べ、{'、'.join(_REQUIRED_AWI_HEADINGS)}へ本文を書いてから"
+            f"再投入する。{_CAUSE_ANALYSIS_HEADING}を置く場合はその節にも本文を書く"
+        ),
     )
 
 
@@ -237,7 +257,8 @@ def _require_agent_source(frontmatter: dict[str, object], source: str | None) ->
     item_source = raw_source if isinstance(raw_source, str) else source
     if is_agent_environment() and not item_source:
         raise WebInputError(
-            "エージェント環境ではsourceの明示が必須です。--sourceオプション、または本文先頭のfrontmatterで指定してください。"
+            "エージェント環境ではsourceの明示が必須です。",
+            next_action="--sourceオプション、または本文先頭のfrontmatterで指定してください。",
         )
 
 
@@ -250,13 +271,19 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
     for frontmatter, _body in parsed_messages:
         raw_target_repo = frontmatter.get("target_repo")
         if raw_target_repo is None:
-            raise WebInputError("target_repoを指定するか各メッセージのfrontmatterへ記載してください")
+            raise WebInputError(
+                "target_repoが指定されていない",
+                next_action="`--target-repo`を指定するか、各メッセージのfrontmatterへtarget_repoを記載して再投入する",
+            )
         if not isinstance(raw_target_repo, str) or not raw_target_repo.strip():
-            raise WebInputError("メッセージfrontmatterのtarget_repoは空でない文字列で指定してください")
+            raise WebInputError(
+                "メッセージfrontmatterのtarget_repoは空でない文字列で指定してください",
+                next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを書いて再投入する",
+            )
         try:
-            _resolve_repo_id(raw_target_repo)
-        except SystemExit as error:
-            raise WebInputError(f"target_repoを解決できません: {raw_target_repo}") from error
+            resolve_repo_id_or_raise(raw_target_repo)
+        except WebInputError as error:
+            raise _target_repo_error(raw_target_repo, error) from error
 
 
 def _verify_plan_target_repos(
@@ -269,15 +296,19 @@ def _verify_plan_target_repos(
         if raw_target_repo is None:
             continue
         if not isinstance(raw_target_repo, str):
-            raise WebInputError("plan_file指定時のメッセージfrontmatterのtarget_repoは文字列で指定してください")
+            raise WebInputError(
+                "plan_file指定時のメッセージfrontmatterのtarget_repoは文字列で指定してください",
+                next_action="frontmatterのtarget_repoを削除するか、投入先と同じ値の文字列にして再投入する",
+            )
         try:
-            item_target_repo = _resolve_repo_id(raw_target_repo)
-        except SystemExit as error:
-            raise WebInputError(f"target_repoを解決できません: {raw_target_repo}") from error
+            item_target_repo = resolve_repo_id_or_raise(raw_target_repo)
+        except WebInputError as error:
+            raise _target_repo_error(raw_target_repo, error) from error
         if item_target_repo != target_repo:
             raise WebInputError(
                 "plan_file指定時はメッセージfrontmatterで対象リポジトリを別の値へ上書きできません。"
-                f"投入先={target_repo}、frontmatter={item_target_repo}"
+                f"投入先={target_repo}、frontmatter={item_target_repo}",
+                next_action="frontmatterのtarget_repoを削除するか、投入先と同じ値にして再投入する",
             )
 
 
@@ -307,7 +338,7 @@ _RESERVED_FRONTMATTER_KEYS = (
 出力frontmatterはCLIが生成するキーを単一の値へ確定させ、入力メッセージのfrontmatterへ
 同名キーが含まれていても`frontmatter_data.update()`による辞書更新で
 入力値を除外する。このうち`target_repo`・`source`は明示された入力側の値を
-CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
+CLIオプションより優先して採用するが、`target_repo`は`resolve_repo_id_or_raise`で正規化してから
 保存する。
 `type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
@@ -387,9 +418,9 @@ def _add_entries_locked(
         raw_target_repo = frontmatter.get("target_repo", target_repo)
         raw_source = frontmatter.get("source", source)
         try:
-            item_target_repo = _resolve_repo_id(raw_target_repo) if isinstance(raw_target_repo, str) else target_repo
-        except SystemExit as error:
-            raise WebInputError(f"target_repoを解決できません: {raw_target_repo}") from error
+            item_target_repo = resolve_repo_id_or_raise(raw_target_repo) if isinstance(raw_target_repo, str) else target_repo
+        except WebInputError as error:
+            raise _target_repo_error(raw_target_repo, error) from error
         item_source = raw_source if isinstance(raw_source, str) else source
         filename = f"{timestamp}-{counter:03d}.md"
         while any((private_notes / state / filename).exists() for state in WI_STATES):
@@ -518,30 +549,48 @@ def _validate_add_entries(
 ) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
     """保存前の入力検証を行い、正規化済みの値を返す。"""
     if not messages:
-        raise WebInputError("messagesには1件以上を指定してください")
+        raise WebInputError("messagesには1件以上を指定してください", next_action="本文を1件以上指定して再投入する")
     if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
-        raise WebInputError("target_commitは解決済みの40桁または64桁OIDで指定してください")
+        raise WebInputError(
+            "target_commitは解決済みの40桁または64桁OIDで指定してください",
+            next_action="対象worktreeで`git rev-parse HEAD`を実行して得た完全なOIDを指定して再投入する",
+        )
     normalized_target_repo: str | None = None
     if target_repo is not None:
         try:
-            normalized_target_repo = _resolve_repo_id(target_repo)
-        except SystemExit as error:
-            raise WebInputError(f"target_repoを解決できません: {target_repo}") from error
+            normalized_target_repo = resolve_repo_id_or_raise(target_repo)
+        except WebInputError as error:
+            raise _target_repo_error(target_repo, error) from error
     plan_path: pathlib.Path | None = None
     if plan_file is not None:
         if entry_type != WI_TYPE_AWI:
-            raise WebInputError("plan_fileはawi種別でのみ指定できます")
+            raise WebInputError("plan_fileはawi種別でのみ指定できます", next_action="plan_fileを外すか、awi種別で投入し直す")
         try:
             stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
             plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
         except ValueError as error:
-            raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
+            # 保存前の作業root直下の計画は保存を、保存済みの計画は可搬表記への指定し直しを案内する。
+            raise WebInputError(
+                f"plan_fileを解決できません: {plan_file}（{error}）",
+                next_action=(
+                    error.next_action
+                    if isinstance(error, _next_action.ActionableError)
+                    else "作業root直下の計画は`atk plans commit <ファイル名>`で保存してから、保存済みの計画は"
+                    "`$(atk config get private_notes)/plans/yyyy/MM/<ファイル名>`で指定し直す"
+                ),
+            ) from error
         except OSError as error:
-            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+            raise WebInputError(
+                f"plan_fileを検証できません: {plan_file}",
+                next_action="plan_fileが指すファイルの存在と読み取り権限を確認してから再投入する",
+            ) from error
     else:
         stored_plan_file = None
     if entry_type != WI_TYPE_AWI and question_type not in {"choice", "yes-no", "free-form"}:
-        raise WebInputError("question_typeが不正です")
+        raise WebInputError(
+            f"question_typeが不正です: {question_type}",
+            next_action="question_typeへchoice・yes-no・free-formのいずれかを指定する（CLIでは`--question-type`）",
+        )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     for frontmatter, body in parsed_messages:
         _require_agent_awi_sections(
@@ -555,10 +604,15 @@ def _validate_add_entries(
         _verify_frontmatter_target_repos(parsed_messages)
     if plan_path is not None:
         if normalized_target_repo is None:
-            raise WebInputError("plan_file指定時はtarget_repoを指定してください")
+            raise WebInputError(
+                "plan_file指定時はtarget_repoを指定してください",
+                next_action="target_repoへ計画の対象リポジトリを指定して再投入する",
+            )
         _verify_plan_target_repos(parsed_messages, normalized_target_repo)
     if entry_type != WI_TYPE_AWI and question_type == "choice" and not choices:
-        raise WebInputError("choice形式にはchoicesが必要です")
+        raise WebInputError(
+            "choice形式にはchoicesが必要です", next_action="`--choices`で選択肢を指定するか、別のquestion_typeを選ぶ"
+        )
     return parsed_messages, normalized_target_repo, stored_plan_file
 
 
@@ -574,9 +628,15 @@ def read_body_files(paths: list[str]) -> list[str]:
         try:
             bodies.append(_frontmatter.normalize_newlines(path.read_text(encoding="utf-8")))
         except OSError as error:
-            raise WebInputError(f"--body-fileの読み込みに失敗しました: {raw}（{error}）") from error
+            raise WebInputError(
+                f"--body-fileの読み込みに失敗しました: {raw}（{error}）",
+                next_action="--body-fileのパスと読み取り権限を確認して再実行する",
+            ) from error
         except UnicodeDecodeError as error:
-            raise WebInputError(f"--body-fileをUTF-8として読めません: {raw}") from error
+            raise WebInputError(
+                f"--body-fileをUTF-8として読めません: {raw}",
+                next_action="本文ファイルをUTF-8で保存し直して再実行する",
+            ) from error
     return bodies
 
 
@@ -609,7 +669,7 @@ def _cmd_add(
         try:
             messages = read_body_files(body_files)
         except WebInputError as error:
-            _outcome.report_failure(f"投入を拒否した: {error}")
+            _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
             sys.exit(1)
     else:
         messages = []
@@ -623,15 +683,14 @@ def _cmd_add(
         if message is None:
             sys.exit(1)
         messages = [message]
-    validation_errors: list[str] = []
+    validation_errors: list[WebInputError] = []
     style_warnings: list[str] = []
     for message in messages:
         try:
             if is_agent_environment() and _user_comment.has_reserved_heading(message):
                 raise WebInputError(
-                    "ユーザーコメントはユーザーだけが書き込みます。"
-                    "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
-                    "ユーザーの発言は本文中へ出所を示して引用してください。"
+                    _user_comment.AGENT_USER_COMMENT_ADD_ERROR,
+                    next_action=_user_comment.AGENT_USER_COMMENT_ADD_NEXT_ACTION,
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             _require_agent_source(frontmatter, args.source)
@@ -645,31 +704,49 @@ def _cmd_add(
                     plan_file=args.plan_file,
                 )
             except WebInputError as error:
-                validation_errors.append(str(error))
+                validation_errors.append(error)
         except WebInputError as error:
-            if str(error) == _EMPTY_AWI_ERROR:
+            if error.reason == _EMPTY_AWI_ERROR:
                 preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
                 validation_errors.append(
-                    "投入を拒否した: 本文が実質空である"
-                    "（空文字・空白のみ・箇条書きマーカー単独文字のいずれか）。"
-                    f"該当メッセージの先頭: {preview}。本文を書いてから再投入する"
+                    WebInputError(
+                        "投入を拒否した: 本文が実質空である"
+                        "（空文字・空白のみ・箇条書きマーカー単独文字のいずれか）。"
+                        f"該当メッセージの先頭: {preview}",
+                        next_action=_EMPTY_AWI_NEXT_ACTION,
+                    )
                 )
             else:
-                validation_errors.append(str(error))
+                validation_errors.append(error)
     for warning in style_warnings:
-        print(f"警告: {warning}", file=sys.stderr)
+        _outcome.report_warning(
+            warning,
+            next_action=(
+                "対応不要（投入は続行する）。直す場合は投入前に本文を書き直すか、"
+                "投入後に`atk wi edit <ファイル名> --body-file <本文ファイル>`で置き換える"
+            ),
+        )
     if validation_errors:
-        _outcome.report_failure("投入を拒否した: " + "\n".join(validation_errors))
+        # 全メッセージの違反を1回で返し、次の操作は重複を除いて同じ順に並べる。
+        next_actions = dict.fromkeys(error.next_action for error in validation_errors)
+        _outcome.report_failure(
+            "投入を拒否した: " + "\n".join(error.reason for error in validation_errors),
+            next_action="\n".join(next_actions),
+        )
         sys.exit(1)
     if args.type == WI_TYPE_UWI and args.depends_on:
-        _outcome.report_failure("投入を拒否した: --depends-onは--type=awiでのみ指定できる")
+        _outcome.report_failure(
+            "投入を拒否した: --depends-onは--type=awiでのみ指定できる",
+            next_action="--depends-onを外すか、--type=awiで投入し直す",
+        )
         sys.exit(1)
     try:
         target_commit = resolve_head_commit(local_worktree) if local_worktree is not None else None
     except SystemExit:
         if collected_via_editor:
             _outcome.report_failure(
-                "HEADコミットの取得に失敗した。確定済みの本文を以下に再表示するため、保存してから再投入する"
+                "HEADコミットの取得に失敗した。確定済みの本文を以下に再表示する",
+                next_action="再表示した本文を保存してから再投入する",
             )
             for message in messages:
                 print("---", file=sys.stderr)
@@ -710,10 +787,13 @@ def _cmd_add(
             submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
         )
     except WebInputError as error:
-        _outcome.report_failure(f"投入を拒否した: {error}")
+        _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
         sys.exit(1)
     except subprocess.CalledProcessError:
-        _outcome.report_failure("remote同期に失敗した。確定済みの本文を以下に再表示するため、保存してから再投入する")
+        _outcome.report_failure(
+            "remote同期に失敗した。確定済みの本文を以下に再表示する",
+            next_action=(f"再表示した本文を保存し、`git -C {private_notes} status`で同期状態を確認してから再投入する"),
+        )
         for message in messages:
             print("---", file=sys.stderr)
             print(message, file=sys.stderr)
@@ -722,7 +802,7 @@ def _cmd_add(
     inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
-        _outcome.report_warning(warning)
+        _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
     _outcome.report_success(f"{count}件をinboxへ投入した")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")

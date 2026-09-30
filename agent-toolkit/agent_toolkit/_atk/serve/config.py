@@ -13,6 +13,8 @@ import typing
 
 import platformdirs
 
+from agent_toolkit._common import next_action as _next_action
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
@@ -77,7 +79,12 @@ def _warn_unknown(known: typing.Iterable[str], section: dict[str, typing.Any], c
     """未知キーを警告して無視する。"""
     unknown = set(section) - set(known)
     if unknown:
-        logger.warning("設定ファイルの未知キーを無視します: %s (%s)", ", ".join(sorted(unknown)), config_path)
+        logger.warning(
+            "設定ファイルの未知キーを無視します: %s (%s)\n%s",
+            ", ".join(sorted(unknown)),
+            config_path,
+            _next_action.next_action_line("対応不要（未知キーを無視して起動した）。意図した設定なら設定ファイルのキー名を直す"),
+        )
 
 
 def _string_or_none(section: dict[str, typing.Any], key: str, label: str, config_path: pathlib.Path) -> str | None:
@@ -87,7 +94,13 @@ def _string_or_none(section: dict[str, typing.Any], key: str, label: str, config
     value = section[key]
     if isinstance(value, str) and value.strip():
         return value
-    logger.warning("設定ファイルの%s.%sは空でない文字列で指定してください (%s)", label, key, config_path)
+    logger.warning(
+        "設定ファイルの%s.%sが空でない文字列ではないため無視して既定値で起動する (%s)\n%s",
+        label,
+        key,
+        config_path,
+        _next_action.next_action_line("値を使う場合は設定ファイルの値を空でない文字列へ直してatk serveを再起動する"),
+    )
     return None
 
 
@@ -98,7 +111,12 @@ def _hosts(section: dict[str, typing.Any], label: str, config_path: pathlib.Path
     value = section["remote_hosts"]
     if isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value):
         return tuple(value)
-    logger.warning("設定ファイルの%s.remote_hostsは文字列の配列で指定してください (%s)", label, config_path)
+    logger.warning(
+        "設定ファイルの%s.remote_hostsが文字列の配列ではないため無視して既定値で起動する (%s)\n%s",
+        label,
+        config_path,
+        _next_action.next_action_line("値を使う場合は設定ファイルの値を文字列の配列へ直してatk serveを再起動する"),
+    )
     return ()
 
 
@@ -109,7 +127,12 @@ def _section(loaded: dict[str, typing.Any], name: str, config_path: pathlib.Path
     value = loaded[name]
     if isinstance(value, dict):
         return value
-    logger.warning("設定ファイルの%sはテーブルで指定してください (%s)", name, config_path)
+    logger.warning(
+        "設定ファイルの%sがテーブルではないため無視して既定値で起動する (%s)\n%s",
+        name,
+        config_path,
+        _next_action.next_action_line("値を使う場合は設定ファイルの節をテーブルへ直してatk serveを再起動する"),
+    )
     return {}
 
 

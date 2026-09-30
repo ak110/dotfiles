@@ -229,9 +229,11 @@ def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) ->
     with pytest.raises(_common.WebInputError) as exc_info:
         _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
 
-    message = str(exc_info.value)
-    assert f"atk plans commit {main.name}" in message
-    assert "取得記録を回収" in message
+    # 次の操作は理由と別の行で届くため、2行の本文から回収コマンドを確かめる。
+    message = exc_info.value.message
+    assert "\n次の操作: " in message
+    assert f"atk plans commit {main.name}" in exc_info.value.next_action
+    assert "取得記録を回収" in exc_info.value.next_action
 
 
 def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path) -> None:
@@ -425,8 +427,8 @@ def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
         _atk_plans.commit_plan(notes, main.name, home=home)
 
     assert "相違した対象" in str(exc_info.value)
-    assert "作業root外へ退避" in str(exc_info.value)
-    assert "別名の新しい計画" in str(exc_info.value)
+    assert "作業root外へ退避" in exc_info.value.next_action
+    assert "別名の新しい計画" in exc_info.value.next_action
 
     assert (
         _atk_plans._bundle_contents(  # pylint: disable=protected-access
@@ -599,8 +601,11 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
 
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", diverge_then_commit)
 
-    with pytest.raises(_common.WebInputError, match="remote branch"):
+    with pytest.raises(_common.WebInputError, match="remote branch") as error_info:
         _atk_plans.commit_plan(notes, saved_main.name, home=home)
+
+    # 到達を確認できない場合は、ローカルに残ったcommitをpushする手段を案内する。
+    assert "atk wi commit" in error_info.value.next_action
 
     assert working_main.read_text(encoding="utf-8") == "# working\n"
     assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
@@ -963,8 +968,8 @@ def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp
     with pytest.raises(_common.WebInputError, match="内容の異なる") as error_info:
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
-    assert "作業側を退避" in str(error_info.value)
-    assert "別名の新しい計画" in str(error_info.value)
+    assert "作業側を退避" in error_info.value.next_action
+    assert "別名の新しい計画" in error_info.value.next_action
     assert working.read_text(encoding="utf-8") == "working\n"
     assert saved.read_text(encoding="utf-8") == "saved\n"
 
@@ -983,7 +988,7 @@ def test_commit_saved_bundle_rejects_working_root_residue(tmp_path: pathlib.Path
     with pytest.raises(_common.WebInputError, match="同じstemのファイルが残っています") as error_info:
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
-    assert "別名の新しい計画" in str(error_info.value)
+    assert "別名の新しい計画" in error_info.value.next_action
     assert residue.read_text(encoding="utf-8") == "# unsaved residue\n"
     assert saved.read_text(encoding="utf-8") == "# saved main\n"
 
@@ -1319,8 +1324,10 @@ def test_migrate_plans_keeps_legacy_files_when_remote_does_not_contain_head(
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(_atk_git_sync, "remote_contains_head", lambda _path: False)
 
-    with pytest.raises(_common.WebInputError, match="remote branch"):
+    with pytest.raises(_common.WebInputError, match="remote branch") as error_info:
         _atk_plans.migrate_plans(notes, home=home)
+
+    assert "atk wi commit" in error_info.value.next_action
 
     assert source.is_file()
 
@@ -1335,8 +1342,10 @@ def test_migrate_plans_rejects_remote_less_repository_before_writing(tmp_path: p
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
 
-    with pytest.raises(_common.WebInputError, match="remote"):
+    with pytest.raises(_common.WebInputError, match="remote") as error_info:
         _atk_plans.migrate_plans(notes, home=home)
+
+    assert f"git -C {notes} remote -v" in error_info.value.next_action
 
     assert source.is_file()
     assert not (notes / "plans").exists()
@@ -1798,8 +1807,10 @@ def test_progress_rejects_missing_plan_file(tmp_path: pathlib.Path) -> None:
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
 
-    with pytest.raises(_common.WebInputError, match="指定したメイン計画が見つかりません"):
+    with pytest.raises(_common.WebInputError, match="指定したメイン計画が見つかりません") as error_info:
         _atk_plans.plan_progress(notes, "2026/09/09-不在-a1b5.md", home=home)
+
+    assert "atk plans list" in error_info.value.next_action
 
 
 @pytest.mark.parametrize(
@@ -1822,3 +1833,90 @@ def test_progress_rejects_broken_progress_structure(tmp_path: pathlib.Path, cont
 
     with pytest.raises(_common.WebInputError, match="進捗ログを読み取れません"):
         _atk_plans.plan_progress(notes, relative.as_posix(), home=home)
+
+
+def test_commit_rejects_broken_checkout_record_with_recovery_steps(tmp_path: pathlib.Path) -> None:
+    """壊れた取得記録は、記録を削除して再取得する手順を次の操作として返す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-記録破損-d4f9.md")
+    _create_saved_plan(notes, relative)
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    record = _atk_plans._checkout_record_root(pathlib.Path(relative.name))  # pylint: disable=protected-access
+    (record / "meta.json").write_text("{", encoding="utf-8")
+
+    with pytest.raises(_common.WebInputError, match="取得記録を読み取れません") as error_info:
+        _atk_plans.commit_plan(notes, relative.name, home=home)
+
+    assert str(record) in error_info.value.next_action
+    assert "atk plans checkout" in error_info.value.next_action
+
+
+def test_rewrite_references_rejects_dirty_notes_with_commit_guidance(tmp_path: pathlib.Path) -> None:
+    """cleanでないprivate-notesでは書き換えを始めず、状態の確認と確定のコマンドを次の操作として返す。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    (notes / "未確定.md").write_text("未確定\n", encoding="utf-8")
+
+    with pytest.raises(_common.WebInputError, match="cleanでないため書き換えを開始できません") as error_info:
+        _atk_plans.rewrite_plan_references(notes)
+
+    assert f"`git -C {notes} status`" in error_info.value.next_action
+    assert "atk wi commit" in error_info.value.next_action
+
+
+def test_migrate_reference_error_names_only_existing_commands(tmp_path: pathlib.Path) -> None:
+    """MQの`plan_file`が移行先に無い場合は、実在するサブコマンドだけを次の操作として案内する。"""
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    entry = notes / "inbox" / "20260930-000000-001.md"
+    content = f"---\ntype: awi\nplan_file: {_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/30-absent-1a2b.md\n---\n\n# 本文\n"
+
+    with pytest.raises(_common.WebInputError, match="移行先に存在しません") as error_info:
+        _atk_plans._validate_references(notes, {entry: content.encode()})  # pylint: disable=protected-access
+
+    next_action = error_info.value.next_action
+    # `plan_file`を変更するオプションは`atk wi edit`に無いため、確認と報告だけを案内する。
+    assert "--plan-file" not in next_action
+    assert f"`atk wi show {entry.name}`" in next_action
+    assert "`atk plans list`" in next_action
+    parser = atk._build_parser()  # pylint: disable=protected-access
+    parser.parse_args(["wi", "show", entry.name])
+    parser.parse_args(["plans", "list"])
+
+
+def test_migrate_keeps_git_sync_next_action_for_missing_upstream(tmp_path: pathlib.Path) -> None:
+    """upstreamが無い場合は、Git同期が示す上流設定の操作をそのまま次の操作にする。"""
+    home = tmp_path / "home"
+    (home / ".claude" / "plans").mkdir(parents=True)
+    notes = tmp_path / "private-notes"
+    _init_remote_notes(notes, tmp_path / "remote.git")
+    _git(notes, "branch", "--unset-upstream")
+
+    with pytest.raises(_common.WebInputError, match="upstream") as error_info:
+        _atk_plans.migrate_plans(notes, home=home)
+
+    assert "--set-upstream-to=<remote>/<branch>" in error_info.value.next_action
+
+
+def test_migrate_keeps_git_sync_next_action_for_rebase_in_progress(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """rebase中の場合は、Git同期が示すrebaseの継続か中止の操作をそのまま次の操作にする。"""
+    home = tmp_path / "home"
+    (home / ".claude" / "plans").mkdir(parents=True)
+    notes = tmp_path / "private-notes"
+    _init_remote_notes(notes, tmp_path / "remote.git")
+
+    def _rebasing(_path: pathlib.Path) -> None:
+        raise _atk_git_sync.RebaseInProgressError("rebase中である")
+
+    monkeypatch.setattr(_atk_git_sync, "ensure_not_rebasing", _rebasing)
+
+    with pytest.raises(_common.WebInputError, match="rebase中") as error_info:
+        _atk_plans.migrate_plans(notes, home=home)
+
+    assert "`git rebase --continue`" in error_info.value.next_action
+    assert "`git rebase --abort`" in error_info.value.next_action

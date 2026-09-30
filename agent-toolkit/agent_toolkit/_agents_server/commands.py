@@ -7,7 +7,6 @@ import datetime
 import json
 import os
 import pathlib
-import sys
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -18,6 +17,7 @@ from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.serve import sessions as session_records
+from agent_toolkit._common.next_action import report, with_next_action
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
@@ -101,12 +101,14 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         body = args.body
         if args.body_file is not None:
             if not args.body_file.is_absolute():
-                args.error_parser.error("--body-fileには絶対パスを指定してください。")
+                args.error_parser.error(with_next_action("--body-fileが絶対パスではない", "--body-fileには絶対パスを指定する"))
             try:
                 with args.body_file.open(encoding="utf-8", newline="") as stream:
                     body = stream.read()
             except (OSError, UnicodeError) as error:
-                args.error_parser.error(f"--body-fileをUTF-8で読めません: {error}")
+                args.error_parser.error(
+                    with_next_action(f"--body-fileをUTF-8で読めません: {error}", "UTF-8で保存した本文ファイルを指定する")
+                )
         assert body is not None
         return send_notification(body)
     env = os.environ if environment is None else environment
@@ -127,10 +129,8 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             and root_resolution is not None
             and not root_resolution.mapping_confirmed
         ):
-            print(
-                status_file.unconfirmed_root_recovery_message(root_resolution, "atk agents list"),
-                file=sys.stderr,
-            )
+            reason, next_action = status_file.unconfirmed_root_recovery(root_resolution, "atk agents list")
+            report(reason, next_action=next_action)
             return 4
         if human:
             print(_human_tree(groups))
@@ -140,13 +140,26 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     if args.agents_subcommand == "logs":
         selected = sum((args.session_id is not None, args.all_sessions, args.project_dir is not None))
         if selected != 1:
-            args.error_parser.error("session_id、--all、--project-dirのいずれか1つを指定してください。")
+            args.error_parser.error(
+                with_next_action("記録の対象が1つに定まらない", "session_id、--all、--project-dirのいずれか1つを指定する")
+            )
         if args.latest is not None and (args.latest < 1 or args.session_id is not None):
-            args.error_parser.error("--latestには一括対象と1以上の件数を指定してください。")
+            args.error_parser.error(
+                with_next_action("--latestの指定が不正", "--latestには一括対象（--allか--project-dir）と1以上の件数を指定する")
+            )
         if args.follow and (args.session_id is None or args.format != "text" or args.output_dir is not None):
-            args.error_parser.error("--followは単一sessionのtext標準出力でだけ指定できます。")
+            args.error_parser.error(
+                with_next_action(
+                    "--followは単一sessionのtext標準出力でだけ指定できる",
+                    "session_idを1つ指定し、--format markdownと--output-dirを外して再実行する",
+                )
+            )
         if args.format == "text" and (args.include_thinking or args.include_subagents or args.no_tool_details):
-            args.error_parser.error("内容の制御オプションには--format markdownを指定してください。")
+            args.error_parser.error(
+                with_next_action(
+                    "内容の制御オプションはtext形式では使えない", "内容の制御オプションには--format markdownを指定する"
+                )
+            )
         if args.session_id is not None and args.format == "text" and args.output_dir is None:
             return _show_logs(args.session_id, follow=args.follow)
         return logs_export.export_logs(
@@ -174,7 +187,13 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     if selected is None and root_session_id is not None:
         selected = _retained_session(root_session_id, args.session_id)
     if selected is None:
-        print(f"unknown session: {args.session_id}", file=sys.stderr)
+        report(
+            f"unknown session: {args.session_id}",
+            next_action=(
+                "`atk agents list --include-terminated`で保持中のsession_idを確かめる。"
+                "結果が必要なら`atk agents wait`を試し、無ければ検証済みの状態から新規に起動する"
+            ),
+        )
         return 2
     print(_dump(selected, env))
     return 0
@@ -238,7 +257,7 @@ def _show_logs(session_id: str, *, follow: bool) -> int:
     """保存済みの会話記録を表示し、指定時は追尾する。"""
     selected = record_paths.find_session_record(session_id)
     if selected is None:
-        print(f"sessionの記録が見つかりません: {session_id}", file=sys.stderr)
+        report(f"sessionの記録が見つかりません: {session_id}", next_action=logs_export.MISSING_RECORD_NEXT_ACTION)
         return 2
     # 同じ実行系で複数の記録が一致した場合は先頭を表示する。
     engine, path = selected.engine, selected.paths[0]
@@ -257,13 +276,13 @@ def _show_logs(session_id: str, *, follow: bool) -> int:
                             detail = event.text or event.name or ""
                             print(f"[{event.timestamp or '-'}] {event.kind}: {detail}", flush=True)
                         if broken:
-                            print(f"解析できない行: {broken}", file=sys.stderr)
+                            report(f"解析できない行: {broken}", next_action=logs_export.BROKEN_LINES_NEXT_ACTION)
                         pending = remainder
                 if not follow:
                     break
                 time.sleep(0.2)
     except (OSError, UnicodeError) as error:
-        print(f"sessionの記録を読めません: {session_id}: {error}", file=sys.stderr)
+        report(f"sessionの記録を読めません: {session_id}: {error}", next_action=logs_export.UNREADABLE_RECORD_NEXT_ACTION)
         return 2
     except KeyboardInterrupt:
         pass

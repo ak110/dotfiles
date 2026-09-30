@@ -39,9 +39,21 @@ _MAIN_ATTACHMENT_SUFFIXES = (".detail.md", ".bugs.md", ".review.md", "-workaroun
 _CURRENT_ATTACHMENT_SUFFIXES = (".bugs.md", ".exec-review.tsv")
 _CI_REVIEW_DIRECTORY = pathlib.Path("ci")
 _CI_REVIEW_NAME_RE = re.compile(r"^ci-[0-9a-f]{7,64}\.exec-review\.tsv$")
-_SAVED_BUNDLE_CONFLICT_MESSAGE = (
-    "保存先に内容の異なる計画ファイルがあります: {destination}。"
+_SAVED_BUNDLE_CONFLICT_MESSAGE = "保存先に内容の異なる計画ファイルがあります: {destination}"
+_SAVED_BUNDLE_CONFLICT_NEXT_ACTION = (
     "保存済み計画を正とする場合は作業側を退避し、作業側を残す場合は別名の新しい計画として保存してください"
+)
+_PLAN_PATH_NEXT_ACTION = (
+    "作業root直下のdd-{名称}-{16進数4桁}.md、または保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdで指定し直す。"
+    "作業中の計画は`atk plans list`で確認できる"
+)
+_UNPUSHED_NEXT_ACTION = "commitはローカルに残っている。`atk wi commit`でpushしてから、同じコマンドを再実行して到達を確認する"
+_REPORT_BUG_NEXT_ACTION = "agent-toolkitの不具合としてユーザーへ報告する"
+_READBACK_NEXT_ACTION = (
+    "保存先のファイルシステムの空き容量と権限を確認してから同じコマンドを再実行する。繰り返す場合はユーザーへ報告する"
+)
+_CHANGED_DURING_SAVE_NEXT_ACTION = (
+    "保存rootへの保存とcommitは完了している。作業ファイルの変更内容を確認し、反映する場合は同じ`atk plans commit`を再実行する"
 )
 
 
@@ -113,9 +125,15 @@ def _as_relative_notes_path(path: pathlib.Path, private_notes: pathlib.Path) -> 
     try:
         relative = path.resolve(strict=False).relative_to(private_notes.resolve(strict=False))
     except (OSError, ValueError) as error:
-        raise _common.WebInputError(f"private-notes外のパスをcommit対象にできません: {path}") from error
+        raise _common.WebInputError(
+            f"private-notes外のパスをcommit対象にできません: {path}",
+            next_action=f"保存rootの配置を確認し、解消しない場合は{_REPORT_BUG_NEXT_ACTION}",
+        ) from error
     if any(part in ("", ".", "..") for part in relative.parts):
-        raise _common.WebInputError(f"commit対象の相対パスが不正です: {path}")
+        raise _common.WebInputError(
+            f"commit対象の相対パスが不正です: {path}",
+            next_action=f"保存rootの配置を確認し、解消しない場合は{_REPORT_BUG_NEXT_ACTION}",
+        )
     return relative.as_posix()
 
 
@@ -129,7 +147,9 @@ def _tracked_deleted_paths(private_notes: pathlib.Path) -> set[pathlib.Path]:
         text=False,
     )
     if not isinstance(result.stdout, bytes):
-        raise RuntimeError("git ls-files --deletedの出力をbytesとして取得できません")
+        raise _common.WebInputError(
+            "git ls-files --deletedの出力をbytesとして取得できません", next_action=_REPORT_BUG_NEXT_ACTION
+        )
     return {private_notes / pathlib.Path(raw.decode("utf-8")) for raw in result.stdout.split(b"\0") if raw}
 
 
@@ -138,7 +158,7 @@ def _plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tu
     parent = (private_notes / _plan_file.NEW_PLANS_DIRECTORY / relative_main.parent).resolve(strict=False)
     main = parent / relative_main.name
     if not parent.is_relative_to((private_notes / _plan_file.NEW_PLANS_DIRECTORY).resolve(strict=False)):
-        raise _common.WebInputError("計画バンドルがplans root外を指しています")
+        raise _common.WebInputError("計画バンドルがplans root外を指しています", next_action=_PLAN_PATH_NEXT_ACTION)
     stem = main.stem
     candidates: set[pathlib.Path] = set()
     if main.is_file() and not main.is_symlink():
@@ -151,9 +171,11 @@ def _plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tu
         if path.parent == parent and (path.name == main.name or path.name.startswith(f"{stem}.")) and not _excluded_path(path):
             candidates.add(path)
     if not candidates:
-        raise _common.WebInputError(f"指定したメイン計画または計画バンドルが見つかりません: {relative_main}")
+        raise _common.WebInputError(
+            f"指定したメイン計画または計画バンドルが見つかりません: {relative_main}", next_action=_PLAN_PATH_NEXT_ACTION
+        )
     if main not in candidates:
-        raise _common.WebInputError(f"指定したメイン計画が見つかりません: {relative_main}")
+        raise _common.WebInputError(f"指定したメイン計画が見つかりません: {relative_main}", next_action=_PLAN_PATH_NEXT_ACTION)
     return tuple(sorted(candidates))
 
 
@@ -162,7 +184,7 @@ def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     parent = (root / relative_main.parent).resolve(strict=False)
     if not parent.is_relative_to(root):
-        raise _common.WebInputError("計画作業バンドルが作業root外を指しています")
+        raise _common.WebInputError("計画作業バンドルが作業root外を指しています", next_action=_PLAN_PATH_NEXT_ACTION)
     main = parent / relative_main.name
     if not main.is_file() or main.is_symlink():
         return ()
@@ -192,7 +214,7 @@ def _saved_plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path)
     root = _plan_file.new_plans_root(private_notes).resolve(strict=False)
     parent = (root / relative_main.parent).resolve(strict=False)
     if not parent.is_relative_to(root):
-        raise _common.WebInputError("計画保存バンドルが保存root外を指しています")
+        raise _common.WebInputError("計画保存バンドルが保存root外を指しています", next_action=_PLAN_PATH_NEXT_ACTION)
     main = parent / relative_main.name
     if not main.is_file() or main.is_symlink():
         return ()
@@ -224,7 +246,7 @@ def _bundle_contents_at_ref(
         text=False,
     )
     if not isinstance(result.stdout, bytes):
-        raise RuntimeError("git ls-treeの出力をbytesとして取得できません")
+        raise _common.WebInputError("git ls-treeの出力をbytesとして取得できません", next_action=_REPORT_BUG_NEXT_ACTION)
     main_path = relative_parent / relative_main.name
     stem = relative_main.stem
     paths = tuple(pathlib.Path(raw.decode("utf-8")) for raw in result.stdout.split(b"\0") if raw)
@@ -247,7 +269,7 @@ def _bundle_contents_at_ref(
             text=False,
         )
         if not isinstance(content.stdout, bytes):
-            raise RuntimeError("git showの出力をbytesとして取得できません")
+            raise _common.WebInputError("git showの出力をbytesとして取得できません", next_action=_REPORT_BUG_NEXT_ACTION)
         contents[path.name] = content.stdout
     return contents
 
@@ -266,29 +288,33 @@ def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
         try:
             return _plan_file.validate_migrated_plan_relative_path(plan_file)
         except ValueError as migrated_error:
-            raise _common.WebInputError(str(canonical_error)) from migrated_error
+            raise _common.web_input_error_from(canonical_error, next_action=_PLAN_PATH_NEXT_ACTION) from migrated_error
 
 
 def _validate_working_ci_review_relative_path(review_table: str) -> pathlib.Path:
     """計画作業root直下の独立CI実行レビュー表名を返す。"""
+    next_action = "ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvの形式で指定し直す"
     if "\0" in review_table or "\\" in review_table or "$(" in review_table:
-        raise _common.WebInputError("独立CI実行レビュー表のパスが不正です")
+        raise _common.WebInputError("独立CI実行レビュー表のパスが不正です", next_action=next_action)
     relative = pathlib.Path(review_table)
     if relative.parent != pathlib.Path() or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
         raise _common.WebInputError(
-            "独立CI実行レビュー表はci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください"
+            "独立CI実行レビュー表はci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
+            next_action=next_action,
         )
     return relative
 
 
 def _validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
     """Plans root相対の独立CI実行レビュー表パスを返す。"""
+    next_action = "ci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvの形式で指定し直す"
     if "\0" in review_table or "\\" in review_table or "$(" in review_table:
-        raise _common.WebInputError("独立CI実行レビュー表のパスが不正です")
+        raise _common.WebInputError("独立CI実行レビュー表のパスが不正です", next_action=next_action)
     relative = pathlib.Path(review_table)
     if relative.parent != _CI_REVIEW_DIRECTORY or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
         raise _common.WebInputError(
-            "保存済みの独立CI実行レビュー表はci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください"
+            "保存済みの独立CI実行レビュー表はci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
+            next_action=next_action,
         )
     return relative
 
@@ -305,25 +331,30 @@ def _read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, di
     root = _checkout_record_root(relative_main)
     if not root.exists():
         return None
+    # 取得記録は取得時点の内容を持つだけで、作業バンドルそのものではない。壊れた記録を削除しても作業側は失われない。
+    next_action = (
+        f"作業root直下の該当計画バンドルを作業root外へ退避してから取得記録{root}を削除し、"
+        "`atk plans checkout <保存root相対パス>`で再取得する"
+    )
     if root.is_symlink() or not root.is_dir():
-        raise _common.WebInputError(f"計画の取得記録が不正です: {root}")
+        raise _common.WebInputError(f"計画の取得記録が不正です: {root}", next_action=next_action)
     try:
         raw_metadata = json.loads((root / "meta.json").read_text(encoding="utf-8"))
         recorded_relative = _validate_saved_checkout_relative_path(raw_metadata["relative_main"])
     except (OSError, KeyError, TypeError, _common.WebInputError, json.JSONDecodeError) as error:
-        raise _common.WebInputError(f"計画の取得記録を読み取れません: {root}") from error
+        raise _common.WebInputError(f"計画の取得記録を読み取れません: {root}", next_action=next_action) from error
     if recorded_relative.stem != relative_main.stem:
-        raise _common.WebInputError(f"計画の取得記録とstemが一致しません: {root}")
+        raise _common.WebInputError(f"計画の取得記録とstemが一致しません: {root}", next_action=next_action)
     files_root = root / "files"
     if files_root.is_symlink() or not files_root.is_dir():
-        raise _common.WebInputError(f"計画の取得記録にファイルsnapshotがありません: {root}")
+        raise _common.WebInputError(f"計画の取得記録にファイルsnapshotがありません: {root}", next_action=next_action)
     snapshots: dict[str, bytes] = {}
     for path in files_root.iterdir():
         if path.is_symlink() or not path.is_file() or _excluded_path(path):
-            raise _common.WebInputError(f"計画の取得記録に不正なファイルがあります: {path}")
+            raise _common.WebInputError(f"計画の取得記録に不正なファイルがあります: {path}", next_action=next_action)
         snapshots[path.name] = path.read_bytes()
     if recorded_relative.name not in snapshots:
-        raise _common.WebInputError(f"計画の取得記録にメイン計画がありません: {root}")
+        raise _common.WebInputError(f"計画の取得記録にメイン計画がありません: {root}", next_action=next_action)
     return recorded_relative, snapshots
 
 
@@ -348,14 +379,14 @@ def _write_checkout_record(
     relative_main: pathlib.Path,
     snapshots: dict[str, bytes],
     *,
-    duplicate_message: str,
+    duplicate_error: _common.WebInputError,
 ) -> None:
     """取得元と取得時点のbytesをcheckout記録へ排他的に保存する。"""
     root = _checkout_record_root(relative_main)
     try:
         root.mkdir(parents=True, exist_ok=False)
     except FileExistsError as error:
-        raise _common.WebInputError(duplicate_message) from error
+        raise duplicate_error from error
     try:
         files_root = root / "files"
         files_root.mkdir()
@@ -382,24 +413,32 @@ def checkout_plan(
     relative_main = _validate_saved_plan_relative_path(plan_file)
     working_root = _plan_file.working_plans_root(home)
     working_main = working_root / relative_main.name
-    duplicate_message = (
-        f"同じ計画を取得済みです: {relative_main}。作業root直下にその計画バンドルがある場合は、"
-        "それが取得結果のため再取得は不要です。作業root直下にその計画バンドルが無い場合は、"
-        f"`atk plans commit {working_main.name}`で取得記録を回収してください。"
+    duplicate_error = _common.WebInputError(
+        f"同じ計画を取得済みです: {relative_main}",
+        next_action=(
+            "作業root直下にその計画バンドルがある場合は、それが取得結果のため再取得は不要です。"
+            f"作業root直下にその計画バンドルが無い場合は、`atk plans commit {working_main.name}`で取得記録を回収してください。"
+        ),
     )
     with _atk_git_sync.repo_lock(private_notes):
         if _checkout_record_root(relative_main).exists():
-            raise _common.WebInputError(duplicate_message)
+            raise duplicate_error
         if _atk_git_sync.has_remote(private_notes):
             _atk_git_sync.push_pending_commits(private_notes)
             _atk_git_sync.pull(private_notes)
         saved_bundle = _saved_plan_bundle(private_notes, relative_main)
         if not saved_bundle:
-            raise _common.WebInputError(f"指定したメイン計画が見つかりません: {relative_main}")
+            raise _common.WebInputError(
+                f"指定したメイン計画が見つかりません: {relative_main}",
+                next_action="保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdを確かめて指定し直す",
+            )
         destinations = tuple(working_root / path.name for path in saved_bundle)
         conflicts = tuple(path for path in destinations if path.exists())
         if conflicts:
-            raise _common.WebInputError(f"作業rootに同名ファイルがあります: {conflicts[0]}")
+            raise _common.WebInputError(
+                f"作業rootに同名ファイルがあります: {conflicts[0]}",
+                next_action="作業root側のファイルを作業root外へ退避してから再実行する",
+            )
         snapshots = {path.name: path.read_bytes() for path in saved_bundle}
         working_root.mkdir(parents=True, exist_ok=True)
         copied: list[pathlib.Path] = []
@@ -409,7 +448,7 @@ def checkout_plan(
                 with os.fdopen(descriptor, "wb") as output:
                     output.write(snapshots[destination.name])
                 copied.append(destination)
-            _write_checkout_record(relative_main, snapshots, duplicate_message=duplicate_message)
+            _write_checkout_record(relative_main, snapshots, duplicate_error=duplicate_error)
         except Exception:
             for path in copied:
                 path.unlink(missing_ok=True)
@@ -427,29 +466,37 @@ def checkout_ci_review(
     """保存済みの独立CI実行レビュー表を計画作業rootへ取得する。"""
     relative = _validate_saved_ci_review_relative_path(review_table)
     working = _plan_file.working_plans_root(home) / relative.name
-    duplicate_message = (
-        f"同じ独立CI実行レビュー表を取得済みです: {relative}。作業root直下にその表がある場合は、"
-        "それが取得結果のため再取得は不要です。作業root直下にその表が無い場合は、"
-        f"`atk plans commit {working.name}`で取得記録を回収してください。"
+    duplicate_error = _common.WebInputError(
+        f"同じ独立CI実行レビュー表を取得済みです: {relative}",
+        next_action=(
+            "作業root直下にその表がある場合は、それが取得結果のため再取得は不要です。"
+            f"作業root直下にその表が無い場合は、`atk plans commit {working.name}`で取得記録を回収してください。"
+        ),
     )
     with _atk_git_sync.repo_lock(private_notes):
         if _checkout_record_root(relative).exists():
-            raise _common.WebInputError(duplicate_message)
+            raise duplicate_error
         if _atk_git_sync.has_remote(private_notes):
             _atk_git_sync.push_pending_commits(private_notes)
             _atk_git_sync.pull(private_notes)
         saved = _plan_file.new_plans_root(private_notes) / relative
         if saved.is_symlink() or not saved.is_file():
-            raise _common.WebInputError(f"指定した独立CI実装レビュー表が見つかりません: {relative}")
+            raise _common.WebInputError(
+                f"指定した独立CI実装レビュー表が見つかりません: {relative}",
+                next_action="保存root相対のci/ci-{短縮OID}.exec-review.tsvを確かめて指定し直す",
+            )
         if working.exists():
-            raise _common.WebInputError(f"作業rootに同名ファイルがあります: {working}")
+            raise _common.WebInputError(
+                f"作業rootに同名ファイルがあります: {working}",
+                next_action="作業root側のファイルを作業root外へ退避してから再実行する",
+            )
         content = saved.read_bytes()
         working.parent.mkdir(parents=True, exist_ok=True)
         try:
             descriptor = os.open(working, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "wb") as output:
                 output.write(content)
-            _write_checkout_record(relative, {relative.name: content}, duplicate_message=duplicate_message)
+            _write_checkout_record(relative, {relative.name: content}, duplicate_error=duplicate_error)
         except Exception:
             working.unlink(missing_ok=True)
             raise
@@ -473,7 +520,10 @@ def _copy_working_bundle(
         destination = destination_directory / source.name
         if destination.exists():
             if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != content:
-                raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=destination))
+                raise _common.WebInputError(
+                    _SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=destination),
+                    next_action=_SAVED_BUNDLE_CONFLICT_NEXT_ACTION,
+                )
             destinations.append(destination)
             continue
         descriptor, raw_temporary = tempfile.mkstemp(prefix=f".{source.name}.", suffix=".tmp", dir=destination_directory)
@@ -487,9 +537,15 @@ def _copy_working_bundle(
                 os.link(temporary, destination)
             except FileExistsError:
                 if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != content:
-                    raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=destination)) from None
+                    raise _common.WebInputError(
+                        _SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=destination),
+                        next_action=_SAVED_BUNDLE_CONFLICT_NEXT_ACTION,
+                    ) from None
             if destination.read_bytes() != content:
-                raise _common.WebInputError(f"保存した計画ファイルの読戻し内容が一致しません: {destination}")
+                raise _common.WebInputError(
+                    f"保存した計画ファイルの読戻し内容が一致しません: {destination}",
+                    next_action=_READBACK_NEXT_ACTION,
+                )
         finally:
             temporary.unlink(missing_ok=True)
         destinations.append(destination)
@@ -508,7 +564,9 @@ def _remove_finalized_working_bundle(
         identity, content = snapshots[source]
         current = source.stat(follow_symlinks=False)
         if (current.st_dev, current.st_ino) != identity or source.read_bytes() != content:
-            raise _common.WebInputError(f"保存処理中に作業ファイルが変更されたため回収しません: {source}")
+            raise _common.WebInputError(
+                f"保存処理中に作業ファイルが変更されたため回収しません: {source}", next_action=_CHANGED_DURING_SAVE_NEXT_ACTION
+            )
     destination_by_name = {path.name: path for path in destinations}
     ordered_sources = sorted(working_bundle, key=lambda path: (path.name == relative_main.name, path.name))
     for source in ordered_sources:
@@ -544,7 +602,9 @@ def _remove_checked_out_working_bundle(
         identity, content = snapshots[source]
         current = source.stat(follow_symlinks=False)
         if (current.st_dev, current.st_ino) != identity or source.read_bytes() != content:
-            raise _common.WebInputError(f"保存処理中に作業ファイルが変更されたため回収しません: {source}")
+            raise _common.WebInputError(
+                f"保存処理中に作業ファイルが変更されたため回収しません: {source}", next_action=_CHANGED_DURING_SAVE_NEXT_ACTION
+            )
     for source in sorted(working_bundle, key=lambda path: (path.name == relative_main.name, path.name)):
         source.unlink()
     _remove_working_residue(working_bundle[0].parent / relative_main.name)
@@ -575,7 +635,9 @@ def _update_saved_bundle(
             with os.fdopen(descriptor, "wb") as output:
                 output.write(content)
         if destination.read_bytes() != content:
-            raise _common.WebInputError(f"保存した計画ファイルの読戻し内容が一致しません: {destination}")
+            raise _common.WebInputError(
+                f"保存した計画ファイルの読戻し内容が一致しません: {destination}", next_action=_READBACK_NEXT_ACTION
+            )
     for name, path in saved_by_name.items():
         if name not in working_contents:
             path.unlink()
@@ -616,7 +678,9 @@ def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content
         source.write_bytes(content)
         os.utime(source, ns=timestamps)
         if source.read_bytes() != content:
-            raise _common.WebInputError(f"確定前の計画ファイルの読戻し内容が一致しません: {source}")
+            raise _common.WebInputError(
+                f"確定前の計画ファイルの読戻し内容が一致しません: {source}", next_action=_READBACK_NEXT_ACTION
+            )
         os.replace(source, destination)
     except (OSError, _common.WebInputError) as error:
         try:
@@ -626,19 +690,32 @@ def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content
         except OSError as recovery_error:
             existing = "、".join(str(path) for path in (source, destination, backup) if path.exists())
             _outcome.report_failure(
-                f"計画ファイルを自動復元できない: {recovery_error}。"
-                f"実在するパス: {existing}。退避用の複製 {backup} の内容を {source} へ書き戻し、"
-                "移行前の日時を復元する"
+                f"計画ファイルを自動復元できない: {recovery_error}。実在するパス: {existing}",
+                next_action=f"退避用の複製 {backup} の内容を {source} へ書き戻し、移行前の日時を復元する",
             )
-            raise _common.WebInputError(f"計画ファイルを自動復元できません: {source}") from error
+            raise _common.WebInputError(
+                f"計画ファイルを自動復元できません: {source}",
+                next_action=f"退避用の複製 {backup} の内容を {source} へ手作業で書き戻す",
+            ) from error
         raise
 
     try:
         backup.unlink()
     except OSError as error:
         _outcome.report_warning(
-            f"移行は完了したが、退避用の複製を削除できない: {backup}: {error}。この複製は移行結果に影響しない"
+            f"移行は完了したが、退避用の複製を削除できない: {backup}: {error}。この複製は移行結果に影響しない",
+            next_action="対応不要（処理は継続した）。不要になった複製は手作業で削除してよい",
         )
+
+
+def _no_remote_next_action(private_notes: pathlib.Path) -> str:
+    """Remoteを持たないprivate-notesで同期を要する操作を拒否したときの次の操作を返す。"""
+    return f"`git -C {private_notes} remote -v`でremoteを確認し、remoteとupstreamを設定してから再実行する"
+
+
+def _dirty_next_action(private_notes: pathlib.Path) -> str:
+    """Private-notesがcleanでないため操作を開始できないときの次の操作を返す。"""
+    return f"`git -C {private_notes} status`で確認し、`atk wi commit`で確定してから再実行する"
 
 
 def _plan_display_name(relative_main: pathlib.Path) -> str:
@@ -700,7 +777,7 @@ def commit_plan(
             try:
                 relative_main = _plan_file.validate_migrated_plan_relative_path(plan_file)
             except ValueError:
-                raise _common.WebInputError(str(working_error)) from saved_error
+                raise _common.web_input_error_from(working_error, next_action=_PLAN_PATH_NEXT_ACTION) from saved_error
     requested_relative = working_relative or relative_main
     checkout_record = _read_checkout_record(requested_relative)
     recorded_contents: dict[str, bytes] = {}
@@ -731,9 +808,11 @@ def commit_plan(
             names = "、".join(path.name for path in residue)
             raise _common.WebInputError(
                 f"作業root直下に保存済み計画バンドルと同じstemのファイルが残っています: {names}。"
-                "保存先へ反映していないため、この状態では保存を完了できません。次の順に実行してください。"
-                f"作業root直下の{names}を作業root外へ退避し、保存済み計画を正とするか、"
-                "退避した内容を別名の新しい計画として保存してください。"
+                "保存先へ反映していないため、この状態では保存を完了できません。",
+                next_action=(
+                    f"作業root直下の{names}を作業root外へ退避し、保存済み計画を正とするか、"
+                    "退避した内容を別名の新しい計画として保存してください。"
+                ),
             )
     if checkout_record is not None:
         if not working_bundle:
@@ -742,8 +821,11 @@ def commit_plan(
             return {"plan_file": relative_main.as_posix(), "paths": (), "message": ""}
     elif working_relative is not None and not working_bundle:
         raise _common.WebInputError(
-            f"指定した作業中の計画バンドルが見つかりません: {working_relative}。"
-            "保存済みの場合は`atk plans checkout <保存root相対パス>`で取得してください"
+            f"指定した作業中の計画バンドルが見つかりません: {working_relative}",
+            next_action=(
+                "保存済みの場合は`atk plans checkout <保存root相対パス>`で取得してください。"
+                "作業中の計画は`atk plans list`で確認できる"
+            ),
         )
     if checkout_record is None and working_relative is not None and working_bundle:
         working_main = _plan_file.working_plans_root(home) / working_relative
@@ -762,7 +844,13 @@ def commit_plan(
         if checkout_record is not None:
             saved_bundle = _saved_plan_bundle(private_notes, relative_main)
             if not saved_bundle:
-                raise _common.WebInputError(f"取得元の計画バンドルが見つかりません: {relative_main}")
+                raise _common.WebInputError(
+                    f"取得元の計画バンドルが見つかりません: {relative_main}",
+                    next_action=(
+                        f"`git -C {private_notes} log -- {_plan_file.NEW_PLANS_DIRECTORY}/{relative_main.as_posix()}`で"
+                        "保存元の削除・移動を確認する。作業側の内容を残す場合は別名の新しい計画として保存する"
+                    ),
+                )
             saved_contents = _bundle_contents(saved_bundle)
             working_contents = _bundle_contents(working_bundle)
             remote_contents = (
@@ -787,10 +875,14 @@ def commit_plan(
                 raise _common.WebInputError(
                     f"取得後に保存元の計画バンドルが変更されています: {relative_main}。"
                     "取得時点・作業側・保存元の内容が一致しないため、どれを正とするかが確定するまで"
-                    f"保存も取得もできません。相違した対象は{differences}です。次の順に実行してください。"
-                    f"作業root直下の{bundle_names}を作業root外へ退避します。"
-                    f"`atk plans commit {working_main.name}`を実行すると、作業バンドルが不在のため取得記録だけを回収します。"
-                    "保存済み計画を確認し、退避した内容を残す場合は別名の新しい計画として保存します。"
+                    f"保存も取得もできません。相違した対象は{differences}です。",
+                    next_action=(
+                        "次の順に実行してください。"
+                        f"作業root直下の{bundle_names}を作業root外へ退避します。"
+                        f"`atk plans commit {working_main.name}`を実行すると、"
+                        "作業バンドルが不在のため取得記録だけを回収します。"
+                        "保存済み計画を確認し、退避した内容を残す場合は別名の新しい計画として保存します。"
+                    ),
                 )
             snapshots = _working_snapshots(working_bundle)
             if saved_current == recorded_current:
@@ -805,7 +897,9 @@ def commit_plan(
         message = f"chore: update plan {_plan_display_name(relative_main)}"
         _atk_git_sync.commit_and_push(private_notes, message, relative_paths, skip_push=skip_push)
         if not skip_push and _atk_git_sync.has_remote(private_notes) and not _atk_git_sync.remote_contains_head(private_notes):
-            raise _common.WebInputError("計画commitがremote branchへ到達したことを確認できません")
+            raise _common.WebInputError(
+                "計画commitがremote branchへ到達したことを確認できません", next_action=_UNPUSHED_NEXT_ACTION
+            )
         if checkout_record is not None:
             _remove_checked_out_working_bundle(working_bundle, snapshots, requested_relative)
             _remove_checkout_record(requested_relative)
@@ -845,7 +939,13 @@ def commit_ci_review(
         _remove_checkout_record(requested_relative)
         return {"plan_file": relative.as_posix(), "paths": (), "message": "", "kind": "ci-review"}
     if working.is_symlink() or not working.is_file():
-        raise _common.WebInputError(f"指定した独立CI実行レビュー表が見つかりません: {working_relative}")
+        raise _common.WebInputError(
+            f"指定した独立CI実行レビュー表が見つかりません: {working_relative}",
+            next_action=(
+                "作業root直下の表の名前を確かめて指定し直す。"
+                "保存済みの表は`atk plans checkout ci/<ファイル名>`で取得してから編集する"
+            ),
+        )
     snapshots = _working_snapshots((working,))
     working_contents = {working.name: snapshots[working][1]}
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
@@ -857,7 +957,10 @@ def commit_ci_review(
                 _atk_git_sync.push_pending_commits(private_notes)
             _atk_git_sync.pull(private_notes)
         if saved.exists() and (saved.is_symlink() or not saved.is_file()):
-            raise _common.WebInputError(f"保存先の独立CI実行レビュー表が通常ファイルではありません: {saved}")
+            raise _common.WebInputError(
+                f"保存先の独立CI実行レビュー表が通常ファイルではありません: {saved}",
+                next_action=f"`git -C {private_notes} status`で保存先の状態を確認し、原因が分からない場合はユーザーへ報告する",
+            )
         saved_contents = {saved.name: saved.read_bytes()} if saved.is_file() else {}
         if checkout_record is not None:
             remote_contents = (
@@ -878,13 +981,18 @@ def commit_ci_review(
                 raise _common.WebInputError(
                     f"取得後に保存元の独立CI実行レビュー表が変更されています: {relative}。"
                     "取得時点・作業側・保存元の内容が一致しないため、どれを正とするかが確定するまで"
-                    f"保存も取得もできません。相違した対象は{differences}です。次の順に実行してください。"
-                    f"作業root直下の{working.name}を作業root外へ退避します。"
-                    f"`atk plans commit {working.name}`を実行すると、作業側が不在のため取得記録だけを回収します。"
-                    "保存済みの表を確認し、退避した内容を残す場合は別の原因commitに対応する表として保存します。"
+                    f"保存も取得もできません。相違した対象は{differences}です。",
+                    next_action=(
+                        "次の順に実行してください。"
+                        f"作業root直下の{working.name}を作業root外へ退避します。"
+                        f"`atk plans commit {working.name}`を実行すると、作業側が不在のため取得記録だけを回収します。"
+                        "保存済みの表を確認し、退避した内容を残す場合は別の原因commitに対応する表として保存します。"
+                    ),
                 )
         elif saved_contents and saved_contents != working_contents:
-            raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=saved))
+            raise _common.WebInputError(
+                _SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=saved), next_action=_SAVED_BUNDLE_CONFLICT_NEXT_ACTION
+            )
         if saved_contents != working_contents:
             saved.parent.mkdir(parents=True, exist_ok=True)
             if saved_contents:
@@ -894,12 +1002,16 @@ def commit_ci_review(
                 with os.fdopen(descriptor, "wb") as output:
                     output.write(working_contents[working.name])
         if saved.read_bytes() != working_contents[working.name]:
-            raise _common.WebInputError(f"保存した独立CI実行レビュー表の読戻し内容が一致しません: {saved}")
+            raise _common.WebInputError(
+                f"保存した独立CI実行レビュー表の読戻し内容が一致しません: {saved}", next_action=_READBACK_NEXT_ACTION
+            )
         relative_path = _as_relative_notes_path(saved, private_notes)
         message = f"chore: update CI review {working.stem}"
         _atk_git_sync.commit_and_push(private_notes, message, (relative_path,), skip_push=skip_push)
         if not skip_push and _atk_git_sync.has_remote(private_notes) and not _atk_git_sync.remote_contains_head(private_notes):
-            raise _common.WebInputError("独立CI実行レビュー表のcommitがremote branchへ到達したことを確認できません")
+            raise _common.WebInputError(
+                "独立CI実行レビュー表のcommitがremote branchへ到達したことを確認できません", next_action=_UNPUSHED_NEXT_ACTION
+            )
         _remove_checked_out_working_bundle((working,), snapshots, working_relative)
         if checkout_record is not None:
             _remove_checkout_record(requested_relative)
@@ -924,14 +1036,14 @@ def _resolve_progress_source(
         try:
             relative_main = _validate_saved_plan_relative_path(plan_file)
         except _common.WebInputError as saved_error:
-            raise _common.WebInputError(str(working_error)) from saved_error
+            raise _common.web_input_error_from(working_error, next_action=_PLAN_PATH_NEXT_ACTION) from saved_error
         candidates = (_plan_file.new_plans_root(private_notes) / relative_main, working_root / relative_main.name)
     else:
         candidates = (working_root / working_relative,)
     for candidate in candidates:
         if candidate.is_file() and not candidate.is_symlink():
             return candidate
-    raise _common.WebInputError(f"指定したメイン計画が見つかりません: {plan_file}")
+    raise _common.WebInputError(f"指定したメイン計画が見つかりません: {plan_file}", next_action=_PLAN_PATH_NEXT_ACTION)
 
 
 def plan_progress(
@@ -949,7 +1061,10 @@ def plan_progress(
     try:
         rows = _plan_format.progress_log_rows(main.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        raise _common.WebInputError(f"進捗ログを読み取れません: {main}: {error}") from error
+        raise _common.WebInputError(
+            f"進捗ログを読み取れません: {main}: {error}",
+            next_action="計画ファイルの`## 進捗ログ`節の表をUTF-8の3列の表へ直してから再実行する",
+        ) from error
     return tuple(
         {"datetime": recorded_at, "completed_step": completed_step, "notes": notes}
         for recorded_at, completed_step, notes in rows
@@ -1003,7 +1118,7 @@ def _birth_date(path: pathlib.Path) -> str:
     try:
         return _plan_file.file_birth_date(path).strftime("%Y/%m/%d")
     except OSError as error:
-        raise _common.WebInputError(str(error)) from error
+        raise _common.WebInputError(str(error), next_action=f"{path}の存在と読み取り権限を確認してから再実行する") from error
 
 
 def _legacy_files(legacy_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
@@ -1011,7 +1126,10 @@ def _legacy_files(legacy_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
     if not legacy_root.exists():
         return ()
     if legacy_root.is_symlink() or not legacy_root.is_dir():
-        raise _common.WebInputError(f"旧計画rootが通常ディレクトリではありません: {legacy_root}")
+        raise _common.WebInputError(
+            f"旧計画rootが通常ディレクトリではありません: {legacy_root}",
+            next_action=f"{legacy_root}を別の場所へ退避してから再実行する",
+        )
     files: list[pathlib.Path] = []
     root_resolved = legacy_root.resolve()
     for path in sorted(legacy_root.rglob("*")):
@@ -1019,13 +1137,20 @@ def _legacy_files(legacy_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
             continue
         try:
             if not path.resolve(strict=False).is_relative_to(root_resolved):
-                raise _common.WebInputError(f"旧計画root外を指すパスを検出しました: {path}")
+                raise _common.WebInputError(
+                    f"旧計画root外を指すパスを検出しました: {path}",
+                    next_action=f"{path}を旧計画rootの外へ退避してから再実行する",
+                )
         except OSError as error:
-            raise _common.WebInputError(f"旧計画パスを検証できません: {path}") from error
+            raise _common.WebInputError(
+                f"旧計画パスを検証できません: {path}", next_action=f"{path}の存在と読み取り権限を確認してから再実行する"
+            ) from error
         try:
             mode = path.stat(follow_symlinks=False).st_mode
         except OSError as error:
-            raise _common.WebInputError(f"旧計画パスを検証できません: {path}") from error
+            raise _common.WebInputError(
+                f"旧計画パスを検証できません: {path}", next_action=f"{path}の存在と読み取り権限を確認してから再実行する"
+            ) from error
         if stat.S_ISREG(mode):
             files.append(path)
     return tuple(files)
@@ -1057,7 +1182,10 @@ def _associated_groups(files: tuple[pathlib.Path, ...]) -> dict[pathlib.Path, tu
         )
         if len(matches) > 1:
             names = "、".join(str(item) for item in matches)
-            raise _common.WebInputError(f"計画付属ファイルの所属を一意に決められません: {path}（{names}）")
+            raise _common.WebInputError(
+                f"計画付属ファイルの所属を一意に決められません: {path}（{names}）",
+                next_action="付属ファイルの名前を、所属するメイン計画のstemにだけ前方一致する名前へ変えてから再実行する",
+            )
         group_key = matches[0] if matches else path
         groups.setdefault(group_key, []).append(path)
     return {key: tuple(sorted(values)) for key, values in groups.items()}
@@ -1101,10 +1229,16 @@ def _destination_map(
             destination = new_root / year / month / f"{day}-{source.name}"
             destination = destination.resolve(strict=False)
             if not destination.is_relative_to(new_root.resolve(strict=False)):
-                raise _common.WebInputError(f"移行先がplans root外を指しています: {source}")
+                raise _common.WebInputError(
+                    f"移行先がplans root外を指しています: {source}",
+                    next_action=f"{source}の名前を`/`や`..`を含まない名前へ変えてから再実行する",
+                )
             previous = seen_destinations.get(destination)
             if previous is not None and previous != source:
-                raise _common.WebInputError(f"移行先が重複しています: {destination}（{previous}、{source}）")
+                raise _common.WebInputError(
+                    f"移行先が重複しています: {destination}（{previous}、{source}）",
+                    next_action="重複する旧ファイルの一方を別名へ変えてから再実行する",
+                )
             seen_destinations[destination] = source
             destinations[source] = destination
     return destinations
@@ -1270,9 +1404,23 @@ def _validate_references(
         try:
             target = _plan_file.resolve_plan_file(raw_plan, private_notes=private_notes)
         except ValueError as error:
-            raise _common.WebInputError(f"MQのplan_fileを解決できません: {path}") from error
+            raise _common.WebInputError(
+                f"MQのplan_fileを解決できません: {path}",
+                next_action=_mq_plan_file_next_action(path.name),
+            ) from error
         if not target.is_file() and target not in changes:
-            raise _common.WebInputError(f"MQのplan_fileが移行先に存在しません: {path}")
+            raise _common.WebInputError(
+                f"MQのplan_fileが移行先に存在しません: {path}",
+                next_action=_mq_plan_file_next_action(path.name),
+            )
+
+
+def _mq_plan_file_next_action(name: str) -> str:
+    """MQの`plan_file`を移行できない場合の次の操作を返す。`plan_file`は`atk wi edit`で変更できない。"""
+    return (
+        f"`atk wi show {name}`で`plan_file`を確かめ、参照先の計画が`atk plans list`に無い場合は"
+        "移行を再実行せずにユーザーへ報告する（`plan_file`は`atk wi edit`で変更できない）"
+    )
 
 
 def migrate_plans(
@@ -1287,17 +1435,23 @@ def migrate_plans(
         try:
             _atk_git_sync.ensure_not_rebasing(private_notes)
             if not _atk_git_sync.has_remote(private_notes):
-                raise _common.WebInputError("remoteなしのprivate-notesでは計画移行を実行できません")
+                raise _common.WebInputError(
+                    "remoteなしのprivate-notesでは計画移行を実行できません", next_action=_no_remote_next_action(private_notes)
+                )
             if _atk_git_sync.is_worktree_dirty(private_notes):
-                raise _common.WebInputError("private-notesのindex・worktreeがcleanでないため移行を開始できません")
+                raise _common.WebInputError(
+                    "private-notesのindex・worktreeがcleanでないため移行を開始できません",
+                    next_action=_dirty_next_action(private_notes),
+                )
             _atk_git_sync.require_upstream(private_notes)
             _atk_git_sync.pull(private_notes)
             if _atk_git_sync.is_worktree_dirty(private_notes):
-                raise _common.WebInputError("remote同期後のprivate-notesがcleanでないため移行を開始できません")
-        except _atk_git_sync.RebaseInProgressError as error:
-            raise _common.WebInputError(str(error)) from error
-        except _atk_git_sync.GitSyncError as error:
-            raise _common.WebInputError(str(error)) from error
+                raise _common.WebInputError(
+                    "remote同期後のprivate-notesがcleanでないため移行を開始できません",
+                    next_action=_dirty_next_action(private_notes),
+                )
+        except (_atk_git_sync.RebaseInProgressError, _atk_git_sync.GitSyncError) as error:
+            raise _common.web_input_error_from(error, next_action=_dirty_next_action(private_notes)) from error
 
         files = _migratable_legacy_files(legacy_root, _legacy_files(legacy_root))
         if not files:
@@ -1320,7 +1474,10 @@ def migrate_plans(
             protected_before[destination] = hashes
             existing = destination.read_bytes() if destination.is_file() else None
             if existing is not None and existing != transformed:
-                raise _common.WebInputError(f"移行先に異なる内容のファイルが存在します: {destination}")
+                raise _common.WebInputError(
+                    f"移行先に異なる内容のファイルが存在します: {destination}",
+                    next_action=f"{destination}と旧ファイルを比べ、不要な側を退避してから再実行する",
+                )
             if existing != transformed:
                 changes[destination] = transformed
 
@@ -1333,12 +1490,18 @@ def migrate_plans(
                 continue
             leftovers = _unprotected_tokens(text, replacements)
             if leftovers:
-                raise _common.WebInputError(f"移行後も旧計画パスが残っています: {path}")
+                raise _common.WebInputError(
+                    f"移行後も旧計画パスが残っています: {path}",
+                    next_action=f"変更は書き込んでいない。{_REPORT_BUG_NEXT_ACTION}",
+                )
             if path in protected_before:
                 _before = protected_before[path]
                 _after = _protected_ranges(text)[1]
                 if _before != _after:
-                    raise _common.WebInputError(f"逐語textブロックが変更されています: {path}")
+                    raise _common.WebInputError(
+                        f"逐語textブロックが変更されています: {path}",
+                        next_action=f"変更は書き込んでいない。{_REPORT_BUG_NEXT_ACTION}",
+                    )
 
         _validate_references(private_notes, changes)
         start_head_result = _git_command.run(
@@ -1349,7 +1512,7 @@ def migrate_plans(
             text=True,
         )
         if not isinstance(start_head_result.stdout, str):
-            raise RuntimeError("移行開始時のHEADを取得できません")
+            raise _common.WebInputError("移行開始時のHEADを取得できません", next_action=_REPORT_BUG_NEXT_ACTION)
         start_head = start_head_result.stdout.strip()
         snapshot = _snapshot(changes)
         source_snapshots = {source: source.read_bytes() for source in files}
@@ -1373,10 +1536,12 @@ def migrate_plans(
                 text=True,
             )
             if not isinstance(end_head_result.stdout, str):
-                raise RuntimeError("移行後のHEADを取得できません")
+                raise _common.WebInputError("移行後のHEADを取得できません", next_action=_REPORT_BUG_NEXT_ACTION)
             end_head = end_head_result.stdout.strip()
             if not _atk_git_sync.remote_contains_head(private_notes):
-                raise _common.WebInputError("移行commitがremote branchへ到達したことを確認できません")
+                raise _common.WebInputError(
+                    "移行commitがremote branchへ到達したことを確認できません", next_action=_UNPUSHED_NEXT_ACTION
+                )
         except (OSError, subprocess.SubprocessError, _common.WebInputError):
             if start_head == _git_head(private_notes):
                 _restore_files(snapshot)
@@ -1384,7 +1549,10 @@ def migrate_plans(
 
         for source in files:
             if source.is_symlink() or not source.is_file() or source.read_bytes() != source_snapshots[source]:
-                raise _common.WebInputError(f"旧ファイルの内容が移行中に変化しました: {source}")
+                raise _common.WebInputError(
+                    f"旧ファイルの内容が移行中に変化しました: {source}",
+                    next_action=f"移行commitは完了している。{source}の変更内容を確認し、同じコマンドを再実行する",
+                )
             _finalize_plan_file(source, destinations[source], finalized_contents[source])
         return {
             "migrated": len(destinations),
@@ -1461,15 +1629,24 @@ def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float 
         try:
             _atk_git_sync.ensure_not_rebasing(private_notes)
             if not _atk_git_sync.has_remote(private_notes):
-                raise _common.WebInputError("remoteなしのprivate-notesでは参照表記の書き換えを実行できません")
+                raise _common.WebInputError(
+                    "remoteなしのprivate-notesでは参照表記の書き換えを実行できません",
+                    next_action=_no_remote_next_action(private_notes),
+                )
             if _atk_git_sync.is_worktree_dirty(private_notes):
-                raise _common.WebInputError("private-notesのindex・worktreeがcleanでないため書き換えを開始できません")
+                raise _common.WebInputError(
+                    "private-notesのindex・worktreeがcleanでないため書き換えを開始できません",
+                    next_action=_dirty_next_action(private_notes),
+                )
             _atk_git_sync.require_upstream(private_notes)
             _atk_git_sync.pull(private_notes)
             if _atk_git_sync.is_worktree_dirty(private_notes):
-                raise _common.WebInputError("remote同期後のprivate-notesがcleanでないため書き換えを開始できません")
+                raise _common.WebInputError(
+                    "remote同期後のprivate-notesがcleanでないため書き換えを開始できません",
+                    next_action=_dirty_next_action(private_notes),
+                )
         except (_atk_git_sync.RebaseInProgressError, _atk_git_sync.GitSyncError) as error:
-            raise _common.WebInputError(str(error)) from error
+            raise _common.web_input_error_from(error, next_action=_dirty_next_action(private_notes)) from error
 
         changes: dict[pathlib.Path, str] = {}
         reference_count = 0
@@ -1493,7 +1670,9 @@ def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float 
                 relative_paths,
             )
             if not _atk_git_sync.remote_contains_head(private_notes):
-                raise _common.WebInputError("書き換えcommitがremote branchへ到達したことを確認できません")
+                raise _common.WebInputError(
+                    "書き換えcommitがremote branchへ到達したことを確認できません", next_action=_UNPUSHED_NEXT_ACTION
+                )
         except (OSError, subprocess.SubprocessError, _common.WebInputError):
             if start_head == _git_head(private_notes):
                 _restore_files(snapshot)
@@ -1511,7 +1690,7 @@ def _git_head(private_notes: pathlib.Path) -> str:
         text=True,
     )
     if not isinstance(result.stdout, str):
-        raise RuntimeError("HEADを取得できません")
+        raise _common.WebInputError("HEADを取得できません", next_action=_REPORT_BUG_NEXT_ACTION)
     return result.stdout.strip()
 
 
@@ -1537,7 +1716,9 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
         result = rewrite_plan_references(private_notes)
         _outcome.report_success(f"付属ファイル参照を書き換えた: {result['plans']}件（参照: {result['references']}件）")
         return 0
-    raise _common.WebInputError(f"未知のplansサブコマンド: {args.plans_subcommand}")
+    raise _common.WebInputError(
+        f"未知のplansサブコマンド: {args.plans_subcommand}", next_action="`atk plans --help`で受理するサブコマンドを確認する"
+    )
 
 
 # テスト・既存呼び出し向けの短い別名。

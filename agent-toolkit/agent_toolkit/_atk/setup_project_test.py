@@ -74,10 +74,16 @@ def test_unexpected_instruction_file_is_left_untouched(tmp_path: Path, monkeypat
     assert claude.read_text(encoding="utf-8") == "# 別の指示\n"
 
 
-def test_clean_rejects_unexpected_skills_link(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_clean_rejects_unexpected_skills_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     target = tmp_path / "project"
     (target / ".agents").mkdir(parents=True)
     (target / ".agents" / "skills").symlink_to("../other")
 
     assert _run(monkeypatch, target, "--clean") == 1
     assert os.readlink(target / ".agents" / "skills") == "../other"
+    lines = capsys.readouterr().err.splitlines()
+    failure_index = next(index for index, line in enumerate(lines) if line.startswith("失敗: "))
+    assert lines[failure_index + 1].startswith("次の操作: ")
+    assert "atk setup-project" in lines[failure_index + 1]

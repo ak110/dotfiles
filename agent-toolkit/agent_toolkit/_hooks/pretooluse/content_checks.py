@@ -56,9 +56,9 @@ def _collect_edit_operation_warnings(
         image = _materialize_cached(operation, index, images)
         if image is not None and _TRAILING_TOOL_BOUNDARY_RE.search(image.after_image) is not None:
             boundary_warning = _llm_notice(
-                f"warn: `{display_path}`の末尾にツール境界タグ`</content>`と`</invoke>`が混入している。"
-                "末尾のツール境界タグを削除する。",
+                f"warn: `{display_path}`の末尾にツール境界タグ`</content>`と`</invoke>`が混入している。",
                 tag=_WARN_TAG,
+                fix="末尾のツール境界タグを削除する。",
                 removable_cause=True,
             )
     candidates = [
@@ -99,7 +99,7 @@ def _warn_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> str | None:
     if detected is None:
         return None
     body, fix = detected
-    return _llm_notice(f"{body}\n対処: {fix}", tag=_WARN_TAG, removable_cause=True)
+    return _llm_notice(body, tag=_WARN_TAG, fix=fix, removable_cause=True)
 
 
 def _is_ps1(file_path: str) -> bool:
@@ -119,12 +119,14 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
         if "\r\n" in value:
             continue
         return _llm_notice(
-            f"`{tool_name}.{field}`にLFだけの内容を検出した。"
-            "この書き込みではUTF-8 BOMが失われて日本語が文字化けし、"
-            f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}\n"
-            "対処は`agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従う。"
-            "既存ファイルにはEditツールを使い、新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。",
+            f"`{tool_name}.{field}`に`LF`だけの内容を検出した。"
+            "この書き込みでは`UTF-8`の`BOM`が失われて日本語が文字化けし、"
+            f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}",
             tag=_WARN_TAG,
+            fix=(
+                "`agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い、"
+                "既存ファイルには`Edit`ツールを使い、新規ファイルは`Bash`で`UTF-8`の`BOM`と`CRLF`改行を指定して書き込む。"
+            ),
             removable_cause=True,
         )
     return None
@@ -169,8 +171,9 @@ def _check_lockfiles(tool_name: str, file_path: str) -> str | None:
         if pattern.search(normalized):
             fix = "このパスを直接編集せず、パッケージ管理ツールで再生成する。" if label in {".venv/", "node_modules/"} else hint
             return _llm_notice(
-                f"{tool_name}による{label}の直接編集を検出した。対象: {file_path}\n対処: {fix}",
+                f"{tool_name}による{label}の直接編集を検出した。対象: {file_path}",
                 tag=_WARN_TAG,
+                fix=fix,
                 removable_cause=True,
             )
     return None
@@ -222,8 +225,9 @@ def _check_manifest(tool_name: str, fields: list[tuple[str, str]], file_path: st
         if not any(_DEPENDENCY_SECTION_RE.search(value) for _, value in fields):
             return None
         return _llm_notice(
-            f"`{tool_name}`で`{label}`の依存の節を編集しようとしている。{hint}",
+            f"`{tool_name}`で`{label}`の依存の節を編集しようとしている。",
             tag=_WARN_TAG,
+            fix=hint,
             removable_cause=True,
         )
     return None

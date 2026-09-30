@@ -94,6 +94,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 区分の詳細は`agent-toolkit:delegation`の`references/claude-code-runtime.md`「実行時能力と通信scope」に従う。
 
 実行を遮断しない`warn`区分の通知は、同一セッションで同じ原因の通知が繰り返された時点から、その原因で繰り返し通知していることと累積件数を本文へ含める。
+2件目以降は本文を対象と件数へ縮めるが、解消手段の`次の操作:`の行は残す。受け取った主体は反復した通知だけを読んでも次に行う操作を得られる。
 閾値と記録先は`agent-toolkit/agent_toolkit/_hooks/notice.py`が持つ。
 
 ## matcher設定
@@ -173,8 +174,9 @@ deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`は
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
 PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。継続強制の有無は前掲の表に従う。
 
-- block通知は`_hooks.notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`fix`が空文字列または空白文字だけの場合は`ValueError`となる
-- block本文の構成はこの整形関数に限る（独自の整形関数では解消手段の欠落を機械的に検出できなくなるため）
+- block通知は`_hooks.notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`warn`通知も同モジュールの整形関数へ解消手段を`fix`として渡す。いずれも`fix`を省くか空文字列または空白文字だけにすると`ValueError`となり、整形関数は本文の後へ`次の操作: <fix>`の行を置く
+- block・warn本文の構成はこれらの整形関数に限る（独自の整形関数では解消手段の欠落を機械的に検出できなくなるため）。解消手段は本文へ混ぜず`fix`へ渡す。文面の基準は`writing.md`「読み手別の追加注意点」のプログラムが出力するメッセージの項目に従う
+- `notice`区分は行動の指示そのものを本文とする定型の配送であり、`fix`を任意とする
 
 警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する。
 決定を省略すると通常の権限フローが適用され、警告表示とは独立に許可プロンプトが出る。

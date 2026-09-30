@@ -453,7 +453,9 @@ class TestGithubCiConfiguration:
             == wait_ci.EXIT_NO_RUNS
         )
 
-    def test_no_definition_exits_before_run_listing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_definition_exits_before_run_listing(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         monkeypatch.setattr(wait_ci, "_github_ci_configured", lambda *_args: False)
         result = wait_ci.wait_for_ci(
             "sha1",
@@ -470,6 +472,8 @@ class TestGithubCiConfiguration:
             sleep_fn=lambda _seconds: None,
         )
         assert result == wait_ci.EXIT_NO_CI_CONFIG
+        # CI定義が無い場合は、CI検収を不要として進めてよいことを次の操作で示す。
+        assert "次の操作: CI検収は不要として次の工程へ進む" in capsys.readouterr().err
 
 
 class TestPushIdentityDifferential:
@@ -1296,6 +1300,88 @@ class TestSignalHandling:
                 break
             assert returncode == -signal.SIGTERM, f"想定外の終了コード: {returncode}"
         assert returncode == wait_ci.EXIT_INTERRUPTED
+        assert "次の操作: 同じ引数で再実行すると待機を再開できる" in stderr_text
+
+
+def _next_action(stderr: str) -> str:
+    """標準エラーから次の操作の行の本文を1件だけ取り出す。"""
+    lines = [line.removeprefix("次の操作: ") for line in stderr.splitlines() if line.startswith("次の操作: ")]
+    assert len(lines) == 1, stderr
+    return lines[0]
+
+
+class TestNextActionOnNonZeroExit:
+    """非0の終了では、失敗の種類ごとに実在するコマンドやオプションを名指す次の操作を標準エラーへ書く。"""
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected_code", "expected_names"),
+        [
+            (
+                {"run_list_fn": lambda _s: [_run(conclusion="failure")]},
+                wait_ci.EXIT_CI_FAILED,
+                ["--log-failed", "glab ci trace"],
+            ),
+            ({"run_list_fn": lambda _s: [], "registration_grace": 100.0, "timeout": 1.0}, wait_ci.EXIT_TIMEOUT, ["--timeout"]),
+            (
+                {
+                    "run_list_fn": lambda _s: [_run(status="in_progress", conclusion=None)],
+                    "registration_grace": 0.0,
+                    "timeout": 3.0,
+                },
+                wait_ci.EXIT_TIMEOUT,
+                ["--timeout"],
+            ),
+            ({"run_list_fn": lambda _s: [], "registration_grace": 5.0}, wait_ci.EXIT_NO_RUNS, ["--registration-grace"]),
+            (
+                {"run_list_fn": mock.Mock(side_effect=wait_ci.RunListError("boom"))},
+                wait_ci.EXIT_GH_ERROR,
+                ["gh auth status", "glab auth status"],
+            ),
+            ({"run_list_fn": lambda _s: [_run(conclusion="cancelled")]}, wait_ci.EXIT_CI_FAILED, ["--follow-cancelled"]),
+            (
+                {
+                    "run_list_fn": lambda _s: [_run(conclusion="cancelled")],
+                    "follow_cancelled": True,
+                    "ancestor_check_fn": lambda _a: False,
+                },
+                wait_ci.EXIT_GH_ERROR,
+                ["--follow-cancelled", "--source-ref"],
+            ),
+        ],
+    )
+    def test_wait_paths_write_next_action(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        kwargs: dict,
+        expected_code: int,
+        expected_names: list[str],
+    ) -> None:
+        assert _run_wait(**kwargs) == expected_code
+        next_action = _next_action(capsys.readouterr().err)
+        assert all(name in next_action for name in expected_names)
+
+    def test_successful_wait_writes_no_next_action(self, capsys: pytest.CaptureFixture[str]) -> None:
+        assert _run_wait(lambda _s: [_run()]) == wait_ci.EXIT_SUCCESS
+        assert "次の操作: " not in capsys.readouterr().err
+
+    def test_sha_resolution_failure_names_git_fetch(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout="", returncode=1, stderr="")):
+            assert wait_ci.main(_main_args(baseline) + ["--timeout", "1"]) == wait_ci.EXIT_GH_ERROR
+        assert "`git fetch`" in _next_action(capsys.readouterr().err)
+
+    def test_baseline_mismatch_names_write_baseline_and_wait_sha(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+        arguments = _main_args(baseline, sha=None)
+        arguments[arguments.index("refs/heads/main")] = "refs/heads/other"
+        assert wait_ci.main(arguments) == wait_ci.EXIT_GH_ERROR
+        next_action = _next_action(capsys.readouterr().err)
+        assert "`--write-baseline`" in next_action
+        assert "`--wait-sha`" in next_action
 
 
 class TestMainEntrypoint:
