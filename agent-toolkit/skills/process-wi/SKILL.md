@@ -76,9 +76,11 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 
 ## 自動コードレビュー監査
 
-自動コードレビュー監査とは、pickerと並行してGitHub Copilotのレビューを取得し、必要な処置を確定する工程を指す。
+自動コードレビュー監査とは、pickerと並行してGitHub CopilotのレビューとDependabotアラートを取得し、必要な処置を確定する工程を指す。
 
-pickerと並行して、対象がGitHub上にある場合は対象リポジトリに`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。標準出力の`counts.reviews`と`counts.threads`がともに0で終了コード0なら監査担当を起動せず、両件数を監査省略の根拠として完了報告へ渡す。いずれかが1件以上なら標準出力のJSONを監査担当へ渡す。コマンドが非0で終わった場合とJSONまたは件数を解釈できない場合は、従来どおり監査担当を起動する。
+pickerと並行して、対象がGitHub上にある場合は対象リポジトリに`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。標準出力の`counts.reviews`、`counts.threads`および`counts.dependabot`がいずれも0で終了コード0なら監査担当を起動せず、3件数を監査省略の根拠として完了報告へ渡す。いずれかが1件以上なら標準出力のJSONを監査担当へ渡す。`dependabot.status`が`disabled`か`unauthorized`の場合も、その状態を完了報告へ渡す。コマンドが非0で終わった場合とJSONまたは件数を解釈できない場合は、従来どおり監査担当を起動する。
+
+`atk wi process-loop`はキューが空の待機中に未判定のDependabotアラートを見つけると、AWIを起票せずに処理回を起動する。このときpickerは選定候補が0件の選定結果を返す。メインはその結果を正常な選定結果として受け取り、レーンを起動せずに監査の処置を確定し、`references/finish-session.md`「公開対象が無い処理回の短絡」を経て終端する。監査が返した要修正を同じセッションで直す場合は「即時対応」に従う。
 
 監査担当を起動した場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得し、その返却と処置確定を公開工程の開始条件とする。新しいレビューの到着は次の処理回の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
 

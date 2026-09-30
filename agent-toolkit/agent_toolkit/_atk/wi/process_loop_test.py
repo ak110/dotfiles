@@ -3363,6 +3363,70 @@ class TestAlertMonitoring:
             )
         assert calls == ["checked"]
 
+    def test_unjudged_dependabot_alerts_start_session_without_submitting_awi(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """待機中に未判定のDependabotアラートがあれば、AWIを投入せずに処理回を起動し、起動の有無を記録する。"""
+        notes = _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 2))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: 0)
+        repositories: list[str] = []
+
+        def fake_pending(repository: str) -> dict[str, Any]:
+            repositories.append(repository)
+            return {"status": "available", "alerts": [{"number": 48, "category": "inaccurate"}]}
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._review_audit,  # pylint: disable=protected-access
+            "dependabot_pending",
+            fake_pending,
+        )
+
+        def fail_wait(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("待機ループへ入らないはず")
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fail_wait)
+        with pytest.raises(SystemExit):
+            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+        assert repositories == ["example/myrepo"]
+        assert len(claude_calls) == 1
+        assert not list((notes / "inbox").iterdir())
+        log = (tmp_path / "state" / "agent-toolkit" / "process-wi.log").read_text(encoding="utf-8")
+        assert "event=alert_check submitted=0 dependabot_pending=1 session_started=True" in log
+
+    def test_judged_dependabot_alerts_do_not_start_session(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """全アラートが判定済みで未判定件数が0なら、処理回を起動せず待機へ進む。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 2))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: 0)
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._alerts,  # pylint: disable=protected-access
+            "check_and_submit_alerts",
+            lambda *_a, **_k: 0,
+        )
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._review_audit,  # pylint: disable=protected-access
+            "dependabot_pending",
+            lambda _repository: {"status": "available", "alerts": []},
+        )
+
+        def fake_wait(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        with pytest.raises(SystemExit):
+            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+        assert not claude_calls
+
 
 class TestProcessLoopUrlInput:
     """process-loop: --target-repoにURLを渡した場合はexit 2すること。"""

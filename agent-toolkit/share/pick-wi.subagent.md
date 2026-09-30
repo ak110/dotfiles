@@ -92,6 +92,8 @@ lane_costs:
 - <確認事項。完了時は「なし」>
 ```
 
+処理可能な候補が0件の場合は、`decisions`と`lane_costs`を空の列（`[]`）とし、`status: completed`で返す。
+
 既定値のとき省略する行は`再開位置`、`terminal_order`、`project_notes`、3つの上流投入行および`lane_costs`の`after_lanes`とする。行の不在は記載した既定値として解釈する。各decisionが必ず持つ行は`awi`、`lane`、`staleness`とする。`staleness`は一覧JSONの写像を値と型を変えずに転記する。
 
 `lane_costs`は`なし`でないレーンを重複なく全て1件ずつ含める。秒数は実装時間と直列統合時間を分けて保持し、同じ値へ重複計上しない。別レーンの項目へ`depends_on`を持つ項目を含むレーンは、依存先の項目を含むレーンを`after_lanes`へ書く。メインはこの値で開始順を決めるため、書き漏らすと依存先の統合前にレーンが起動して未着手のまま差し戻される。
