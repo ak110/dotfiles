@@ -1045,18 +1045,22 @@ def _subscription_stream(
     heartbeatは`event: heartbeat`とし、`onmessage`へ届かないため再取得を起こさない。
     `pytilpack.sse.generator`のコメント行のkeep-aliveは、内側が間隔内に送るため発生しない。
     """
+    # 停止要求は生成処理の外で取得する。生成処理はリクエストの文脈の外で実行されるため`current_app`を参照できない。
+    current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
+    shutdown = current_state.shutdown_requested
 
     @pytilpack.sse.generator()
     async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
         queue = await subscribe()
         try:
             while True:
-                try:
-                    message = await asyncio.wait_for(queue.get(), timeout=SSE_HEARTBEAT_SEC)
-                except TimeoutError:
+                received = await serve_state.next_subscription_item(queue, shutdown, SSE_HEARTBEAT_SEC)
+                if received is serve_state.SHUTDOWN:
+                    return
+                if received is serve_state.HEARTBEAT:
                     yield pytilpack.sse.SSE(event="heartbeat", data="{}")
                     continue
-                yield pytilpack.sse.SSE(data=message)
+                yield pytilpack.sse.SSE(data=typing.cast("str", received))
         finally:
             await unsubscribe(queue)
 
