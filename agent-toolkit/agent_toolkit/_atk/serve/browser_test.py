@@ -1691,6 +1691,44 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
 
 
 @pytest.mark.asyncio
+async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness: _BrowserHarness) -> None:
+    """種別uwiのままshow形式の本文を送ると一括登録として取り込み、使わなかった入力欄を通知する。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+
+    await page.get_by_role("button", name="新規追加").click()
+    create_dialog = page.get_by_role("dialog", name="新規追加")
+    await create_dialog.wait_for(state="visible")
+    await create_dialog.locator("#create-kind").select_option("uwi")
+    await create_dialog.locator("#create-target").fill("ignored/repo")
+    show_text = (
+        "## target_repo: batch/repo\n"
+        "### auto-imported.md [inbox]\n---\ntarget_repo: batch/repo\ntype: awi\n---\n\n自動切替の本文  \n"
+    )
+    await create_dialog.locator("#create-content").fill(show_text)
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/entries") and request.method == "POST"
+    ) as request_info:
+        await create_dialog.get_by_role("button", name="追加").click()
+    request = await request_info.value
+    request_body = request.post_data_json
+    assert isinstance(request_body, dict)
+    assert request_body["raw_text"] == show_text
+    await create_dialog.wait_for(state="hidden")
+    notice = page.get_by_role("status").filter(has_text="一括登録として取り込みました")
+    await notice.wait_for(state="visible")
+    await playwright.async_api.expect(notice).to_contain_text("1件を取り込みました")
+    await playwright.async_api.expect(notice).to_contain_text("使わなかった入力欄: target-repo")
+    await page.locator('.entry-select[data-key="inbox/auto-imported.md"]').wait_for(state="visible")
+    assert harness.operations.batch_calls[-1] == show_text
+    assert (harness.root / "inbox" / "auto-imported.md").read_text(encoding="utf-8") == (
+        "---\ntarget_repo: batch/repo\ntype: awi\n---\n\n自動切替の本文  \n"
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_failure_is_visible_inside_open_dialog(browser_harness: _BrowserHarness) -> None:
     """新規追加の失敗は開いたダイアログ内へ表示し、ページ通知を表示しない。"""
     page = browser_harness.page

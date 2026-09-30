@@ -121,6 +121,31 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
     return BatchEntry(original_name=name, raw_text=raw_text, frontmatter=frontmatter, body=body)
 
 
+def _normalized_lines(text: str) -> list[str]:
+    """CRLF・単独CRをLFへ揃えて行へ分割する。"""
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+
+def _structure_error(lines: list[str], boundaries: list[int]) -> str | None:
+    """show形式の構造に該当しない理由を返し、該当する場合は`None`を返す。"""
+    if not boundaries:
+        return "show形式のエントリ見出し（`### <ファイル名>`とその直後のfrontmatter）が見つかりません"
+    for line in lines[: boundaries[0]]:
+        if not _is_structural_line(line):
+            return f"show形式として解析できない行が先頭エントリより前にあります: {line}"
+    return None
+
+
+def is_show_batch_format(text: str) -> bool:
+    """テキストが`parse_show_batch`の受理する構造（エントリ境界と先頭前の構造行）を持つかを返す。
+
+    各エントリのfrontmatterと本文の検証は含めない。構造に該当して検証に失敗する入力は
+    `parse_show_batch`が`WebInputError`で拒否する。
+    """
+    lines = _normalized_lines(text)
+    return _structure_error(lines, _entry_boundaries(lines)) is None
+
+
 def parse_show_batch(text: str) -> list[BatchEntry]:
     """`atk wi show --all`の出力形式のテキストからエントリ列を取り出す。
 
@@ -132,13 +157,11 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
     行分割の前にCRLF・単独CRをLFへ正規化し、別環境（Windows等）から持ち込んだ入力でも
     境界行を検出できるようにする（保存内容の改行もLFへ揃う）。
     """
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = _normalized_lines(text)
     boundaries = _entry_boundaries(lines)
-    if not boundaries:
-        raise WebInputError("show形式のエントリ見出し（`### <ファイル名>`とその直後のfrontmatter）が見つかりません")
-    for line in lines[: boundaries[0]]:
-        if not _is_structural_line(line):
-            raise WebInputError(f"show形式として解析できない行が先頭エントリより前にあります: {line}")
+    structure_error = _structure_error(lines, boundaries)
+    if structure_error is not None:
+        raise WebInputError(structure_error)
     entries: list[BatchEntry] = []
     for position, start in enumerate(boundaries):
         end = boundaries[position + 1] if position + 1 < len(boundaries) else len(lines)

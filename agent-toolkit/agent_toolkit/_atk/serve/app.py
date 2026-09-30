@@ -193,6 +193,17 @@ def _specified_text(data: JsonObject, name: str) -> str | None:
     return value
 
 
+def _ignored_single_fields(data: dict[str, typing.Any]) -> list[str]:
+    """一括取り込みへ切り替えた登録で、使わなかった単件用の入力項目名を返す。"""
+    ignored = [name for name in ("target_repo", "scope") if data.get(name)]
+    question_type = data.get("question_type")
+    if question_type is not None and question_type != "free-form":
+        ignored.append("question_type")
+    if data.get("choices"):
+        ignored.append("choices")
+    return ignored
+
+
 def _without_source_frontmatter(message: str) -> str:
     """通常Web登録の本文から投入元を除いて返す。"""
     parsed = frontmatter.parse_frontmatter(message)
@@ -1401,11 +1412,19 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     async def add_entry() -> tuple[quart.Response, int]:
         data = _json_object(
             await _request_json(),
-            allowed={"type", "messages", "target_repo", "scope", "question_type", "choices"},
+            allowed={"type", "messages", "target_repo", "scope", "question_type", "choices", "raw_text"},
             required={"type", "messages"},
         )
         if data["type"] not in common.WI_TYPES:
             raise common.WebInputError("typeが不正です")
+        raw_text = data.get("raw_text")
+        if raw_text is not None and not isinstance(raw_text, str):
+            raise common.WebInputError("raw_textは文字列で指定してください")
+        # 種別の選び忘れで一括登録の本文を1件のWIとして保存しないよう、show形式の構造を持つ本文は一括取り込みへ切り替える。
+        # ブラウザーの単件送信はtrim済みのため、原文保持に必要な未trimの入力（raw_text）で判定・取り込みする。
+        if raw_text is not None and awi_batch.is_show_batch_format(raw_text):
+            result = await workers.run(ops.add_batch, raw_text)
+            return quart.jsonify(batch=True, ignored_fields=_ignored_single_fields(data), **result), 201
         messages = _strings(data["messages"], "messages")
         for key in ("target_repo",):
             if key in data and (not isinstance(data[key], str) or not data[key]):
