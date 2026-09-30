@@ -204,3 +204,9 @@
   同じ原因で、廃止した工程が配置した`~/.config/agent-toolkit/feedback-inbox.enabled`と`review-balance-mode.claude-heavy`も残存していた。
   対策: 3件の旧生成物（`atk.cmd`を含む）を`pytools/post_apply.py`の`_REMOVED_PATHS`へ登録する。
   `pytools-edit`スキルの実装規約へ、工程が配置するファイルの配置先を改名または工程を廃止する場合に旧パスを登録する規定を加える
+- 2026年9月30日: Windowsホストで`actionlint`が`command not found`（終了コード127）となり、`mise which actionlint`は「No executable found for configured tool」で終了コード1を返した。
+  同ホストの`installs/actionlint/1.7.12/`は2026年6月8日の導入で、`.mise-bins`ディレクトリが無かった。
+  直接原因: 全体設定と`mise.toml`へ2026年9月20日（aa9cbec18）に加えた`[tools.actionlint] symlink_bins = true`が、導入済みのホストへ反映されなかった。miseは導入時にだけ配置を生成し、`mise install`は導入済みの版を再導入しないためである。
+  設定コメントはローカル環境の強制再インストールを手作業として定めていたが、各ホストで行われなかった。
+  同じ原因で、2026年9月8日の7c3ba2363が`symlink_bins`を加えたときも、pre-commitとCIのactionlintの実行が止まった。
+  対策: `pytools/_internal/setup_mise.py`の後処理が`mise install`の後に`mise bin-paths`の配置先の欠落を検出し、欠落したツールを同じ版で`mise install --force`により再導入する

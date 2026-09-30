@@ -151,6 +151,13 @@ miseは実行位置から設定ファイルを探索するため、後処理は`
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
 working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
 
+後処理は`mise install`の後、`mise prune`の前に、設定済みツールの実行ファイルの配置先（引数なしの`mise bin-paths`が返すディレクトリ）の実在を確かめる。
+実在しない配置先は、`mise ls --current --installed --json`の`install_path`を親に持つツールと版へ対応付け、同じ実行位置で`mise install --force <ツール>@<版>`により再導入する。
+`symlink_bins`など配置先を変えるツールオプションはmiseが導入時にだけ配置を生成し、`mise install`は導入済みの版を再導入せず、`mise install --dry-run-code`と`mise doctor`も欠落を示さないためである。
+どの`install_path`の配下にも無い配置先（共有ランタイムへのリンクで導入されるツール）は再導入しない。
+再導入にはlockedモードの環境変数を与えない。mise 2026.9.17では、lockにURLがあってもlockedモードの`mise install --force <ツール>@<版>`は失敗し、版を明示した再導入はlockfileを書き戻さないためである。
+検出と再導入の失敗、および再導入後も残る欠落は警告を出力して後処理を続け、残る欠落の警告には手動の復旧コマンドを含める。
+
 process-loopと後処理の`mise install`へは環境変数`MISE_LOCKED=1`と`MISE_LOCKED_SCOPES=project`を与える。
 これにより、プロジェクトの`mise.lock`に記録済みの解決結果から導入するlockedモードで動かす。
 既定動作の`mise install`は実行位置のlockfileを書き戻し、書き戻す内容は実行ホストのプラットフォームで変わる。
