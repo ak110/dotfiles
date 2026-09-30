@@ -1028,6 +1028,7 @@ class TestDefaultSteps:
         "Claude Code plugin cache の旧版削除": {"Claude Code plugin のインストール"},
         "agents_serverのuv環境ウォームアップ": {"Claude Code plugin のインストール", "Codex plugin のインストール"},
         "hookスクリプトのuv環境ウォームアップ": {"agents_serverのuv環境ウォームアップ"},
+        "pyfltr MCPのuv環境ウォームアップ": {"Claude Code plugin のインストール", "Codex plugin のインストール"},
         "旧Codex User scope MCP登録の移行": {"Claude Code CLI の導入と更新", "Codex plugin のインストール"},
         "Claude 設定": {"Claude Code plugin のインストール", "旧Codex User scope MCP登録の移行"},
         "claude-statusline バイナリの取得": {"Codex CLI の導入と更新"},
@@ -1074,6 +1075,11 @@ class TestDefaultSteps:
         assert {step.name for step in steps if step.platforms == ("win32",)} == self._WINDOWS_STEPS
         assert {step.name for step in steps if step.platforms == ("linux",)} == self._LINUX_STEPS
         assert not [step.name for step in steps if step.platforms not in ((), ("win32",), ("linux",))]
+
+    def test_pyfltr_mcp_warmup_registered_once(self) -> None:
+        """pyfltr MCPのウォームアップを1回だけ登録する。"""
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # noqa: SLF001
+        assert names.count("pyfltr MCPのuv環境ウォームアップ") == 1
 
     def test_statusline_binary_step_registered(self):
         """claude-statuslineバイナリ取得ステップを1回登録する。"""

@@ -16,7 +16,6 @@ from pathlib import Path
 from pytools._internal import claude_common, plugin_warmup
 
 _TAG = "hook warmup"
-_PLUGIN_ID = f"agent-toolkit@{claude_common.MARKETPLACE_NAME}"
 _PLUGIN_HOOK_SCRIPT_RELATIVE = Path("agent_toolkit") / "hook.py"
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 # 低スペック環境ではPython本体の取得と依存パッケージの初回構築に分単位を要するため、余裕のある上限値とする。
@@ -41,31 +40,15 @@ def run() -> bool:
 
 
 def _targets() -> list[Path]:
-    """ウォームアップ対象のスクリプトパスを重複なく列挙する。"""
-    return plugin_warmup.existing_targets([*_claude_plugin_scripts(), _codex_plugin_script()], tag=_TAG)
+    """ウォームアップ対象のスクリプトパスを重複なく列挙する。
 
-
-def _claude_plugin_scripts() -> list[Path]:
-    """Claude Codeプラグインhookが参照するインストール先のパスを返す。"""
-    return plugin_warmup.claude_plugin_scripts(
-        _INSTALLED_PLUGINS_PATH,
-        plugin_id=_PLUGIN_ID,
-        relative_path=_PLUGIN_HOOK_SCRIPT_RELATIVE,
-        tag=_TAG,
-    )
-
-
-def _codex_plugin_script() -> Path | None:
-    """Codex hookが参照する有効版プラグインキャッシュ内のパスを返す。
-
-    版はプラグイン更新が失敗した場合も実際の参照先と一致させるため、配布元manifestではなく
-    `codex plugin list --json`の有効なエントリ（`pluginId`一致・`enabled`が真・
-    文字列の`version`）から解決する。
+    Codexの版はプラグイン更新が失敗した場合も実際の参照先と一致させるため、
+    `codex plugin list --json`の有効なエントリから解決する。
     """
-    return plugin_warmup.codex_plugin_script(
-        plugin_id=_PLUGIN_ID,
-        plugin_name="agent-toolkit",
-        relative_path=_PLUGIN_HOOK_SCRIPT_RELATIVE,
+    return plugin_warmup.agent_toolkit_targets(
+        _INSTALLED_PLUGINS_PATH,
+        claude_relative=_PLUGIN_HOOK_SCRIPT_RELATIVE,
+        codex_relative=_PLUGIN_HOOK_SCRIPT_RELATIVE,
         tag=_TAG,
     )
 

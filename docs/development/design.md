@@ -141,6 +141,8 @@ Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点ま
 Claude CodeとCodexのplugin導入後は、各cacheにあるagents_serverの起動スクリプトの実体を`uv run --locked --no-default-groups`で起動し、依存関係の確認まで完了してからupdate-dotfilesを終える。
 agents_serverのウォームアップは初回MCP起動の成立条件であるため、起動不能、timeoutおよび非0終了を対象・終了コード・所要時間とともに記録して更新段階へ伝播する。
 hookスクリプトのウォームアップは更新後の実行を高速化するだけであり、個別失敗を段階失敗へ変えない既存契約を維持する。
+pyfltr MCPのウォームアップも初回MCP起動の成立条件として扱い、失敗を更新段階へ伝播する。Claude CodeとCodexは`uvx`でpyfltr MCPを起動し、ツール環境が未構築なら取得と構築の時間がMCPクライアントの起動上限（Codexの`startup_timeout_sec`は既定10秒）を超え得るためである。
+起動形は両ホストが実際に読むMCP定義（Claude Codeの`.mcp.json`、Codexの`.mcp.codex.json`）の`pyfltr`の`command`と`args`から導出し、末尾の`mcp`を`--version`へ置き換えて1回起動する。要求指定をウォームアップ側へ書き写すと、配布元の要求指定の更新に追随しない二重管理になるためである。
 
 `start`が受け取るタスク文書は、起動処理で実在する`.subagent.md`として解決した`Path`を必須入力検証へ直接渡す。
 表示用プロンプトへ直列化したパスを再解析しないため、Windowsドライブパス、区切り文字、空白の差は検証契約へ影響しない。

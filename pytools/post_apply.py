@@ -55,6 +55,7 @@ from pytools._internal import (
     update_npmrc,
     update_vscode_settings,
     warm_agents_server,
+    warm_pyfltr_mcp,
     warmup_hook_scripts,
 )
 from scripts import sync_codex_plugin_manifests, sync_report
@@ -432,6 +433,8 @@ _DEFAULT_STEPS: list[_StepSpec] = [
         warmup_hook_scripts.run,
         after=("agents_serverのuv環境ウォームアップ",),
     ),
+    # 両pluginの導入後の参照先にあるMCP定義を読む。uvのキャッシュだけへ作用する。
+    _StepSpec("pyfltr MCPのuv環境ウォームアップ", warm_pyfltr_mcp.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
     _StepSpec(
         "旧Codex User scope MCP登録の移行",
         remove_legacy_codex_mcp_from_claude.run,

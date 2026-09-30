@@ -6,7 +6,6 @@ from pathlib import Path
 from pytools._internal import claude_common, plugin_warmup
 
 _TAG = "agents_server warmup"
-_PLUGIN_ID = f"agent-toolkit@{claude_common.MARKETPLACE_NAME}"
 _SCRIPT_RELATIVE = Path("agent_toolkit") / "agents_server_mcp.py"
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 
@@ -35,25 +34,10 @@ def run() -> bool:
 
 def _targets() -> list[Path]:
     """Claude CodeとCodexの実参照先を重複なく列挙する。"""
-    return plugin_warmup.existing_targets([*_claude_plugin_scripts(), _codex_plugin_script()], tag=_TAG)
-
-
-def _claude_plugin_scripts() -> list[Path]:
-    """Claude Codeプラグインのインストール先を返す。"""
-    return plugin_warmup.claude_plugin_scripts(
+    return plugin_warmup.agent_toolkit_targets(
         _INSTALLED_PLUGINS_PATH,
-        plugin_id=_PLUGIN_ID,
-        relative_path=_SCRIPT_RELATIVE,
-        tag=_TAG,
-    )
-
-
-def _codex_plugin_script() -> Path | None:
-    """Codexが参照する有効版プラグインキャッシュ内のスクリプトを返す。"""
-    return plugin_warmup.codex_plugin_script(
-        plugin_id=_PLUGIN_ID,
-        plugin_name="agent-toolkit",
-        relative_path=_SCRIPT_RELATIVE,
+        claude_relative=_SCRIPT_RELATIVE,
+        codex_relative=_SCRIPT_RELATIVE,
         tag=_TAG,
     )
 
