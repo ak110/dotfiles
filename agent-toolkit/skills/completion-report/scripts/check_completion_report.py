@@ -9,7 +9,7 @@ import sys
 
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
-STAGES = ("work-complete", "review-result")
+STAGES = ("work-complete", "review-result", "review-submission")
 REVIEW_STATES = ("success", "not-run", "failed")
 REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- 所要時間: ", "- 改善見込み: ")
 """振り返りが正常完了した報告が持つ要約行の接頭辞。値は準備スクリプトの出力から転記する。"""
@@ -17,6 +17,10 @@ REVIEW_SUCCESS_SECTIONS = ("確定した問題と対策", "対策を見送った
 """振り返りが正常完了した報告のH3。確定した問題ごとの対策と、対策を見送った問題とその理由を読めるようにする。"""
 _WI_FILENAME = re.compile(r"\b\d{8}-\d{6}-\d{3}\.md\b")
 _IMPLEMENTED_EVIDENCE = re.compile(r"（同一セッションで実装済み:\s*[^）\s][^）]*）")
+_SCHEDULED_MARKER = "投入予定:"
+_SCHEDULED_EVIDENCE = re.compile(r"（投入予定:\s*[^）\s][^）]*）")
+SUBMISSION_SECTIONS = ("投入したAWI", "予告との差分")
+"""投入後の最終報告のH3。予告どおりなら`投入したAWI`だけを置き、予告と異なる結果があれば差分を続ける。"""
 _UNRESEARCHED = ("照会していない", "未照会", "未調査", "確定できない")
 SKIP_REASONS = {
     "not-run": "成果を再利用したため起動省略",
@@ -44,7 +48,32 @@ def _section_items(text: str, title: str) -> list[str]:
 def _has_measure_evidence(item: str) -> bool:
     if "同一セッションで実装済み:" in item:
         return _IMPLEMENTED_EVIDENCE.search(item) is not None
+    if _SCHEDULED_MARKER in item:
+        return _SCHEDULED_EVIDENCE.search(item) is not None
     return _WI_FILENAME.search(item) is not None
+
+
+def _validate_submission(text: str) -> list[str]:
+    """投入後の最終報告（`## AWI投入結果報告`）の構造を検証する。"""
+    errors: list[str] = []
+    submitted = _section_items(text, SUBMISSION_SECTIONS[0])
+    if not submitted:
+        errors.append(f"### {SUBMISSION_SECTIONS[0]}に1件以上の箇条書きを置く（新たな投入が無い場合は`- なし`）")
+    elif "- なし" in submitted and len(submitted) != 1:
+        errors.append(f"### {SUBMISSION_SECTIONS[0]}の`- なし`は他の行と併記しない")
+    else:
+        errors.extend(
+            f"### {SUBMISSION_SECTIONS[0]}の各行へWIのファイル名を書く: {item}"
+            for item in submitted
+            if item != "- なし" and _WI_FILENAME.search(item) is None
+        )
+    if SUBMISSION_SECTIONS[1] in _headings(text, 3):
+        differences = [item for item in _section_items(text, SUBMISSION_SECTIONS[1]) if item != "- なし"]
+        if not differences:
+            errors.append(f"### {SUBMISSION_SECTIONS[1]}は予告と異なる結果がある場合だけ置き、その結果を箇条書きで書く")
+    if _SCHEDULED_MARKER in text:
+        errors.append("最終報告には予告の`投入予定`を残さず、投入したファイル名で書く")
+    return errors
 
 
 def validate_report(text: str, stage: str, review_state: str | None = None) -> list[str]:
@@ -52,25 +81,29 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
     errors: list[str] = []
     if stage not in STAGES:
         return [f"検査段階が不正である: {stage}"]
-    if stage == "work-complete" and review_state is not None:
-        errors.append("作業完了段階ではreview-stateを指定しない")
+    if stage in ("work-complete", "review-submission") and review_state is not None:
+        errors.append(f"{stage}段階ではreview-stateを指定しない")
     if stage == "review-result" and review_state not in REVIEW_STATES:
         errors.append("振り返り結果段階ではreview-stateを指定する")
 
     h2 = _headings(text, 2)
-    expected_h2 = ["作業完了報告"] if stage == "work-complete" else ["振り返り結果報告"]
+    expected_h2 = {"work-complete": ["作業完了報告"], "review-submission": ["AWI投入結果報告"]}.get(stage, ["振り返り結果報告"])
     if h2 != expected_h2:
         errors.append(f"H2は次の順序にする: {', '.join(expected_h2)}")
 
     h3 = _headings(text, 3)
-    if stage == "work-complete":
-        expected_h3 = ["成果", "投入したWI"]
+    if stage == "review-submission":
+        allowed_h3 = [list(SUBMISSION_SECTIONS[:1]), list(SUBMISSION_SECTIONS)]
+    elif stage == "work-complete":
+        allowed_h3 = [["成果", "投入したWI"]]
     elif review_state == "success":
-        expected_h3 = list(REVIEW_SUCCESS_SECTIONS)
+        allowed_h3 = [list(REVIEW_SUCCESS_SECTIONS)]
     else:
-        expected_h3 = ["振り返り"]
-    if h3 != expected_h3:
-        errors.append(f"H3は次の順序にする: {', '.join(expected_h3)}")
+        allowed_h3 = [["振り返り"]]
+    if h3 not in allowed_h3:
+        errors.append("H3は次の順序にする: " + "、または".join(", ".join(order) for order in allowed_h3))
+    if stage == "review-submission":
+        errors.extend(_validate_submission(text))
 
     if stage == "work-complete" and "### 投入したWI\n\n- " not in text:
         errors.append("### 投入したWIに1件以上の箇条書きを置く")
@@ -81,7 +114,8 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
                 errors.append(f"### {title}に1件以上の箇条書きを置く（該当なしは`- なし`）")
             elif title == REVIEW_SUCCESS_SECTIONS[0]:
                 errors.extend(
-                    f"### {title}の各行へ対策として投入したAWIのファイル名または同一セッションで実装済みの根拠を書く: {item}"
+                    f"### {title}の各行へ対策として投入したAWIのファイル名、投入予定のH1タイトル"
+                    f"または同一セッションで実装済みの根拠を書く: {item}"
                     for item in items
                     if item != "- なし" and not _has_measure_evidence(item)
                 )
@@ -113,8 +147,8 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
         )
 
     skip_matches = re.findall(r"(?m)^- session-review未実施: (.+)$", text)
-    if stage == "work-complete" and skip_matches:
-        errors.append("作業完了段階にはsession-review未実施理由を書かない")
+    if stage in ("work-complete", "review-submission") and skip_matches:
+        errors.append(f"{stage}段階にはsession-review未実施理由を書かない")
     elif review_state == "success" and skip_matches:
         errors.append("振り返り成功時はsession-review未実施理由を書かない")
     elif stage == "review-result" and review_state in SKIP_REASONS:
