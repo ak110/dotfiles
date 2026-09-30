@@ -1660,4 +1660,5 @@ def test_cli_and_mcp_wait_limits_match(
 
     assert mcp_limit == expected_limit
     assert _observe_cli_wait_limit(monkeypatch, wait_environment, capsys, mcp_limit) == mcp_limit
-    assert not hasattr(state, "WAIT_TIMEOUT_SECONDS")
+    # CLI専用の待機上限の定数が`state`へ戻ると、CLIとMCPの上限が別々の値へ分かれ得る。
+    assert not [name for name in vars(state) if name.startswith("WAIT_TIMEOUT")]
