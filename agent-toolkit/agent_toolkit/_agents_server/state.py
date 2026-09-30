@@ -9,13 +9,12 @@ import datetime
 import json
 import logging
 import pathlib
-import re
 import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import session_registry, task_documents, tool_names
-from agent_toolkit._common import message_format
+from agent_toolkit._common import background_output, message_format
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
@@ -807,9 +806,6 @@ def consume_agents_server_tool_result(
 _AGENTS_WAIT_TOOL_USE = "atk agents wait"
 # `atk agents wait`が`--output-file`の指定時とエージェント環境の自動保存時に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
-# Claude CodeのBashツールが背景実行へ移したコマンドのツール結果が、出力ファイルを示す語句。
-# 例: `Command running in background with ID: <id>. Output is being written to: <path>. You will be notified ...`
-_BACKGROUND_OUTPUT_PATTERN = re.compile(r"Output is being written to: (\S+)")
 
 
 def _is_agents_wait_command(tool_input: Any) -> bool:
@@ -859,9 +855,7 @@ def consume_agents_wait_output(session: SessionState, text: str) -> None:
     `consume_agents_wait_background_outputs`が判定の直前に読む。
     """
     collected = _collected_from_wait_output(text)
-    for match in _BACKGROUND_OUTPUT_PATTERN.finditer(text):
-        # 語句の後に文を続けるため、パス末尾の句点を除く。
-        session.agents_wait_background_outputs.add(match.group(1).rstrip("."))
+    session.agents_wait_background_outputs.update(background_output.output_paths(text))
     _discard_collected(session, collected)
 
 
