@@ -194,6 +194,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
 def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """実CLIはローカルパス指定時に旧パス形とURL形のUWIをともに数える。"""
     notes = _setup_notes(tmp_path)
@@ -206,8 +207,13 @@ def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     _write_uwi_file(notes, "legacy.md", target_repo=str(local_repo), question="旧形式")
     _write_uwi_file(notes, "current.md", target_repo="github.com/example/repo", question="現行形式")
     _write_uwi_file(notes, "other.md", target_repo="github.com/example/other", question="対象外")
+    monkeypatch.setenv("UV_FROZEN", "1")
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "parent-venv"))
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+    # 子projectのlock指定と環境を使い、親のuv設定による警告をCLI出力へ混ぜない。
+    env.pop("UV_FROZEN", None)
+    env.pop("VIRTUAL_ENV", None)
 
     result = subprocess.run(  # noqa: S603
         [
