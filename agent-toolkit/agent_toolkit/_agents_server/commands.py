@@ -133,7 +133,8 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             report(reason, next_action=next_action)
             return 4
         if human:
-            print(_human_tree(groups))
+            # 選べるsessionを持たないrootの見出しは端末の一覧を埋めるだけなので除く
+            print(_human_tree([(root_id, sessions) for root_id, sessions in groups if sessions]))
         else:
             print(_dump({"sessions": [_without_prompt(session) for _, sessions in groups for session in sessions]}, env))
         return 0

@@ -234,7 +234,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを詳しい状態とともに一覧表示する",
-        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では全rootのClaude Code・Codex識別子を見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。\n前提: 既定では未回収結果を持たない終端済みsessionを除く。エージェント環境で会話rootとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。\n前提: 既定では未回収結果を持たない終端済みsessionを除く。エージェント環境で会話rootとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
     },
     "atk agents show": {
