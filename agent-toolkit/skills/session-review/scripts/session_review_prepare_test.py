@@ -129,10 +129,9 @@ def test_response_language_notices_are_excluded_from_candidates(
 
     record = json.loads(capsys.readouterr().out)
     assert record["candidate_counts"] == {"hook-notice": 2}
-    # 同じ通知はhook実行記録と警告行の双方から事象になるため、件数は除いた通知の数以上になる。
-    assert record["excluded_counts"]["response-language-notice"] >= 2
+    assert record["excluded_counts"]["response-language-notice"] == 2
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
-    assert "response-language-notice" in candidates
+    assert "response-language-notice 2件" in candidates
     assert "未完了の背景タスクが書き込む出力ファイルを読み取った" in candidates
     assert "  - 記録位置: main:6" in candidates
     assert "累計2回以上" not in candidates

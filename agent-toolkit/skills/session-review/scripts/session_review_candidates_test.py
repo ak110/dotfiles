@@ -3,6 +3,7 @@
 import json
 import pathlib
 
+import pytest
 import session_review_evidence as evidence
 
 
@@ -682,6 +683,43 @@ def test_hook_repeat_annotation_does_not_split_notice_kinds() -> None:
     ]
 
     assert keys[0] == keys[1]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "対象の検査に該当した。" + "理由の説明を続ける。" * 12,
+        "未完了の背景タスクが書く /home/user/work/output.txt を読む前に完了通知を待つこと。",
+        "未完了の背景タスクの出力を読む前に完了通知を待つこと。\nこの通知は同一セッションで2件目である。",
+    ],
+    ids=["longer-than-kind-length", "with-path", "with-repeat-annotation"],
+)
+def test_candidate_events_counts_a_hook_notice_and_its_warning_line_once(body: str) -> None:
+    """1回のhook通知は、同じ位置に同じ本文の警告行を伴っても候補の発生1件として数える。
+
+    通知は切り詰め・可変部の置換・反復注記の除去を経た種類本文だけを保持するため、
+    警告本文を同じ正規化で比べないと代表判定が外れ、同じ通知が警告からもう1件数えられる。
+    """
+    key = evidence._hook_notice_keys(  # pylint: disable=protected-access
+        f'<atk-auto source="pretooluse" kind="warn">{body}</atk-auto>', "PreToolUse:Bash"
+    )[0]
+    notice = {
+        "kind": "hook-notice",
+        "record": "main",
+        "line": 3,
+        "text": key.kind_text,
+        "hook": key.hook,
+        "hook_name": key.hook_name,
+        "tag": key.tag,
+    }
+    warning = {"kind": "warning", "record": "main", "line": 3, "text": " ".join(body.split())}
+
+    candidates = evidence._candidate_events([], [warning], [notice])  # pylint: disable=protected-access
+
+    assert [(candidate["candidate_kind"], candidate["occurrence_count"]) for candidate in candidates[:-1]] == [
+        ("hook-notice", 1)
+    ]
+    assert candidates[-1]["excluded"]["hook-notice-represented"] == 1
 
 
 def _bash_failure(line: int, command: str, text: str = "Exit code 1") -> dict[str, object]:

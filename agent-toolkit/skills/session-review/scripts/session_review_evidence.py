@@ -2572,7 +2572,7 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
         return []
     openings = list(_HOOK_NOTICE_MARKER.finditer(body))
     if not openings:
-        return [_HookNoticeKey(None, hook_name, None, _normalize_candidate_kind_text(body))]
+        return [_HookNoticeKey(None, hook_name, None, _hook_notice_kind_text(body))]
     boundaries = sorted(
         [*openings, *_HOOK_XML_END_MARKER.finditer(body)],
         key=lambda marker: marker.start(),
@@ -2586,8 +2586,7 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
         if source is not None:
             source = source.removeprefix("agent-toolkit/")
         tag = marker.group("tag_xml") or marker.group("tag_legacy")
-        text = _HOOK_REPEAT_ANNOTATION.sub("", body[marker.end() : end])
-        keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _normalize_candidate_kind_text(text)))
+        keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _hook_notice_kind_text(body[marker.end() : end])))
 
     for marker in boundaries:
         if marker.re is _HOOK_XML_END_MARKER:
@@ -2608,6 +2607,16 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
     if outer is not None:
         append_notice(outer, len(body))
     return keys
+
+
+def _hook_notice_kind_text(text: str) -> str:
+    """hook通知の本文を、通知の種類を表す種類本文へ正規化する。
+
+    種類本文は反復注記の除去、可変部の置換および切り詰めを経た損失のある値であり、通知の事象は元の本文を保持しない。
+    通知の種類本文の生成と、警告行などの別の本文を通知と比べる全ての箇所がこの関数を通すことで、
+    正規化を変えても比較の両側へ同時に届く。片側だけ別の正規化で比べると、同じ通知を別の事象として数える。
+    """
+    return _normalize_candidate_kind_text(_HOOK_REPEAT_ANNOTATION.sub("", text))
 
 
 def _normalize_candidate_kind_text(text: str) -> str:
@@ -3877,7 +3886,7 @@ def _is_response_language_notice(event: dict[str, Any]) -> bool:
     if not isinstance(text, str) or not text:
         return False
     for body in (_response_language_check.WARNING_BODY, _response_language_check.BLOCK_BODY):
-        expected = _normalize_candidate_kind_text(body)
+        expected = _hook_notice_kind_text(body)
         length = min(len(text), len(expected))
         if text[:length] == expected[:length]:
             return True
@@ -4179,7 +4188,7 @@ def _hook_originated_event(
                     "tag": key.tag,
                 }
         return None
-    normalized = _normalize_candidate_kind_text(text)
+    normalized = _hook_notice_kind_text(text)
     for notice in hook_notices:
         notice_text = str(notice.get("text", ""))
         if _same_hook_notice_text(normalized, notice_text):
@@ -4229,6 +4238,9 @@ def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[st
     if not isinstance(text, str) or not isinstance(notice_text, str):
         return False
     if candidate_kind == "warning":
+        if _same_hook_notice_text(_hook_notice_kind_text(text), notice_text):
+            return True
+        # 前方一致の最小一致長に満たない短い警告は、通知の種類本文に含まれるかで代表を判定する。
         normalized = " ".join(text.split())
         return bool(normalized) and normalized in " ".join(notice_text.split())
     hook_name = notice.get("hook_name")
