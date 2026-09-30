@@ -10,7 +10,6 @@ import sys
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.common import (
-    WI_PROCESSABLE_STATES,
     WI_STATES,
     WI_TYPE_UWI,
     WI_TYPES,
@@ -23,28 +22,8 @@ from agent_toolkit._atk.wi.common import (
     _validate_filename,
 )
 from agent_toolkit._atk.wi.formatters import _parse_source, _parse_target_repo, _source_matches
-from agent_toolkit._atk.wi.listing import _resolve_states, _select_entries
+from agent_toolkit._atk.wi.listing import _select_entries
 from agent_toolkit._atk.wi.repo import _resolve_repo_id
-
-
-def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
-    """`show --all`コマンドの出力が通知対象の未回答UWIを全て含むか判定する。
-
-    次の全条件を満たす場合に`True`を返す:
-    - `args.filenames`が空かつ`args.all`が`True`（ファイル指定は全集合対象外）
-    - `args.type`が`"all"`または`"uwi"`
-    - `args.status`（`--state`の値）が`"all"`または`"active"`
-    - `args.answered`が`"all"`または`"no"`
-    - `args.source`が`None`
-    """
-    return (
-        not args.filenames
-        and args.all
-        and ("all" in args.type or WI_TYPE_UWI in args.type)
-        and set(WI_PROCESSABLE_STATES).issubset(_resolve_states(args.status))
-        and ("all" in args.answered or "no" in args.answered)
-        and args.source is None
-    )
 
 
 def _state_prefixed_filename_hint(filename: str) -> str | None:

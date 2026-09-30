@@ -24,10 +24,8 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     として解釈し、`--ignore-case`指定時は大文字小文字を無視する。
     該当0件の場合は1、該当1件以上で0を返す。
     非エラーの真偽判定を終了コードで表現し、検索処理自体の失敗とは区別する。
-    戻り値をそのまま`sys.exit`せず整数で返す設計は、`main`関数末尾の共通後処理
-    （`_covers_unanswered_uwis`による通知抑止判定・`notify_unanswered_uwis_if_any`呼び出し）が
-    `dispatch[sub]()`の直後で必ず実行される必要があるためである。ここで`sys.exit`すると
-    `SystemExit`が`main`関数の呼び出し元まで伝播し、共通後処理が実行されずに終了してしまう。
+    整数で返すことで、`main`が戻り値から終了コードを確定する。
+    検索結果を返す途中では`SystemExit`を送出しない。
     パターンが不正な正規表現の場合は`args.subparser.error()`でexit 2とする（既存の`edit`・
     `show`と同じ引数検証エラー時の扱いであり、こちらは意図的に共通後処理をスキップする）。
     """

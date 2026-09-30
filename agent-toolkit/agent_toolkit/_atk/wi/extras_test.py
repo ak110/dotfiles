@@ -504,13 +504,13 @@ class TestListAwiStatusRejected:
         assert "fb-inbox.md" not in captured.out
         assert "fb-rejected.md: github.com/example/foo [rejected/normal/complete] rejected-body" in captured.out
 
-    def test_rejected_does_not_affect_uwi(
+    def test_rejected_excludes_inbox_uwi_without_notification(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=rejected`指定時、uwi側は状態フォルダを持たないため全件出力される。"""
+        """却下一覧へinboxのUWIを混ぜず、明示したinbox照会では取得できる。"""
         notes = _setup_notes(tmp_path)
         (notes / "inbox").mkdir(parents=True, exist_ok=True)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
@@ -521,7 +521,16 @@ class TestListAwiStatusRejected:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.err
+        assert not captured.out
+        assert not captured.err
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--type=uwi", "--status=inbox"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
+        assert not captured.err
 
 
 def _editor_fake_run(

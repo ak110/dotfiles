@@ -12,7 +12,7 @@
 - リポジトリ全体の構成・配布対象と開発対象の区別・プラットフォーム対応・bash補完運用・
   PowerShellスクリプト注意事項・ホーム配下編集前の確認手順:
   [docs/development/architecture.md](docs/development/architecture.md)
-- 運用機能の詳細（`sync_generated_files.py`の起動形・tmux自動アタッチ・UWI未回答表示・
+- 運用機能の詳細（`sync_generated_files.py`の起動形・tmux自動アタッチ・
   常駐サービス・Windows電源設定・post-applyキャッシュ・chezmoiの命名規則）:
   [docs/development/operations.md](docs/development/operations.md)
 - 過去のAWIから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)

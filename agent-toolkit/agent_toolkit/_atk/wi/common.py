@@ -26,7 +26,6 @@ import functools
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -60,11 +59,7 @@ from agent_toolkit._atk.wi.constants import (
     unrepairable_entry_next_action,
 )
 from agent_toolkit._atk.wi.formatters import (
-    _display_width,
     _parse_target_repo,
-    _target_repo_budget,
-    _truncate_target_repo,
-    _uwi_body_summary,
 )
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, write_entry_text
 from agent_toolkit._atk.wi.readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
@@ -783,37 +778,6 @@ def _iter_entries(
             if "all" not in entry_types and actual_type not in entry_types:
                 continue
             yield path, target_repo, text, state, actual_type
-
-
-UNANSWERED_UWI_NOTICE_HEADER = "# 未回答UWI通知（`atk wi list`と`atk wi show`の対象限定は適用しない）"
-"""未回答UWI通知の種別ヘッダー。
-
-`atk wi list`・`atk wi show`が出力する一覧の種別ヘッダー（`# awi`・`# uwi`）とは
-別の文面とし、通知と一覧出力を読み手が判別できるようにする。
-"""
-
-UNANSWERED_UWI_NEXT_ACTION = "ユーザーの回答待ちである。エージェントは回答できない。対象の作業を続けるか、ユーザーへ提示する"
-"""未回答UWI通知の末尾へ置く次の操作。回答欄はユーザーだけが書き込むため、エージェントが取れる行動を示す。"""
-
-
-def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str | Iterable[str] | None) -> None:
-    """未回答UWIが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
-    entries = [
-        (path, entry_repo, text, state)
-        for path, entry_repo, text, state, _ in _iter_entries(private_notes, WI_PROCESSABLE_STATES, target_repo, WI_TYPE_UWI)
-        if not _is_uwi_answered(text)
-    ]
-    if not entries:
-        return
-    print(UNANSWERED_UWI_NOTICE_HEADER, file=sys.stderr)
-    for path, entry_repo, text, state in entries:
-        label = f"{state}/unanswered"
-        repo_budget = _target_repo_budget(path.name, label)
-        display_repo = _truncate_target_repo(entry_repo, max_width=repo_budget)
-        prefix = f"{path.name}: {display_repo} [{label}] "
-        available_width = shutil.get_terminal_size().columns - _display_width(prefix)
-        print(f"{prefix}{_uwi_body_summary(text, available_width)}", file=sys.stderr)
-    print(_next_action.next_action_line(UNANSWERED_UWI_NEXT_ACTION), file=sys.stderr)
 
 
 def _count_awi(awi_dir: pathlib.Path, target_repo: str | None = None) -> int:

@@ -223,7 +223,51 @@ def _validate_schema(data: object) -> tuple[dict[str, object], list[str]]:
     return data, errors
 
 
-def check_evidence(path: pathlib.Path, filenames: list[str]) -> list[str]:
+def _commit_oid(repository: pathlib.Path, revision: str) -> str:
+    """判定対象をGitでcommitへ解決し、短縮OIDも同じ値として比較する。"""
+    # HEADやbranch名は、行を更新せずに参照先が新しい対象へ変わる。
+    if re.fullmatch(r"[0-9a-fA-F]{7,64}", revision) is None:
+        raise ValueError(f"判定したcommitの7文字以上のOIDを記録してください: {revision}")
+    result = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"commitを解決できません: {revision}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
+    """WIの指定集合によらず証拠の全判定行を実レビュー対象へ照合する。"""
+    expected = _commit_oid(repository, expected_head)
+    errors = []
+    for section in REQUIRED_FIELDS:
+        rows = payload[section]
+        assert isinstance(rows, list)
+        for index, row in enumerate(rows, start=1):
+            actual = row.get("reviewed_head")
+            reason = "判定対象が未記入です"
+            if isinstance(actual, str) and actual.strip():
+                try:
+                    if _commit_oid(repository, actual) == expected:
+                        continue
+                    reason = "判定対象が異なります"
+                except ValueError as error:
+                    reason = str(error)
+            errors.append(
+                f"{row['awi'] or '計画由来'}: {section}[{index}].reviewed_head: {reason}"
+                f"（期待: {expected}、実際: {actual!r}）。"
+                "その行の要求・判定・根拠を期待HEADで再判定してからreviewed_headを記録する"
+            )
+    return errors
+
+
+def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: str) -> list[str]:
     """証拠ファイルと対象WIを検査し、診断を全件返す。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -234,6 +278,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str]) -> list[str]:
         return errors
     try:
         repository = _repository_root()
+        errors.extend(_check_reviewed_heads(payload, repository, expected_head))
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [str(exc)]
     condition_rows = payload["wi_conditions"]
@@ -281,10 +326,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("evidence", type=pathlib.Path, help="完成条件証拠JSONの絶対パス")
     parser.add_argument("wi", nargs="+", help="対象WIのファイル名")
+    parser.add_argument("--expected-head", required=True, help="最後に実際にレビューした対象commit。返却値reviewed_headを渡す")
     args = parser.parse_args(argv)
     if not args.evidence.is_absolute():
         parser.error("証拠JSONには絶対パスを指定してください")
-    errors = check_evidence(args.evidence, args.wi)
+    errors = check_evidence(args.evidence, args.wi, expected_head=args.expected_head)
     for error in errors:
         print(f"失敗: {error}", file=sys.stderr)
     if errors:

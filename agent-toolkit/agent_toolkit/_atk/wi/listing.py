@@ -100,28 +100,6 @@ def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> s
     return "ready" if filename in readiness.ready else "blocked"
 
 
-def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
-    """`list`コマンドの出力が通知対象の未回答UWIを全て含むか判定する。
-
-    次の全条件を満たす場合に`True`を返す:
-    - `args.count`が`False`（整数のみ出力時は本文表示がないため対象外）
-    - `args.type`が`"all"`または`"uwi"`
-    - `args.status`が`"all"`、`"active"`または`"processable"`
-    - `args.answered`が`"all"`または`"no"`
-    - `args.source`が`None`（source指定時は出力が部分集合になり得るため対象外）
-    """
-    emits_json = getattr(args, "jsonl", False) or (is_agent_environment() and not getattr(args, "no_jsonl", False))
-    return (
-        not args.count
-        and not getattr(args, "summary_only", False)
-        and not emits_json
-        and ("all" in args.type or WI_TYPE_UWI in args.type)
-        and set(WI_PROCESSABLE_STATES).issubset(_resolve_states(args.status))
-        and ("all" in args.answered or "no" in args.answered)
-        and args.source is None
-    )
-
-
 def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     """項目の具体的なblocked理由を安定した識別子で返す。
 

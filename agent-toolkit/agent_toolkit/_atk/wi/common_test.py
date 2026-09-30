@@ -7,7 +7,6 @@ import datetime
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -777,63 +776,14 @@ class TestReadiness:
         assert unreferenced not in reads
 
 
-class TestNotifyUnansweredUwisIfAny:
-    """未回答UWI通知の件数・フィルター・形式を検証する。"""
+class TestIterEntriesRepoFilter:
+    """保存済みのリポジトリ表記を正規化して同じ対象へ限定する。"""
 
-    def test_does_not_notify_without_unanswered_entries(
+    def test_local_path_filter_includes_legacy_and_current_repo_forms(
         self,
         tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """UWIが0件または全件回答済みの場合は何も通知しない。"""
-        _write_uwi(tmp_path, "answered.md", answer="回答済み")
-
-        _common.notify_unanswered_uwis_if_any(tmp_path, None)
-
-        assert not capsys.readouterr().err
-
-    def test_notifies_one_unanswered_entry(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """未回答UWIが1件の場合はヘッダと1行を通知する。"""
-        _write_uwi(tmp_path, "one.md", question="最初の質問")
-
-        _common.notify_unanswered_uwis_if_any(tmp_path, None)
-
-        # エージェントは回答できないため、通知の末尾へ取れる行動を次の操作として置く。
-        assert capsys.readouterr().err == (
-            f"{_common.UNANSWERED_UWI_NOTICE_HEADER}\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
-            f"次の操作: {_common.UNANSWERED_UWI_NEXT_ACTION}\n"
-        )
-        assert "エージェントは回答できない" in _common.UNANSWERED_UWI_NEXT_ACTION
-
-    def test_notifies_matching_unanswered_entries_in_filename_order(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """複数件では対象リポジトリの未回答項目だけをファイル名順で通知する。"""
-        _write_uwi(tmp_path, "002.md", question="質問2")
-        _write_uwi(tmp_path, "001.md", question="質問1")
-        _write_uwi(tmp_path, "003.md", target_repo="github.com/example/other", question="対象外")
-
-        _common.notify_unanswered_uwis_if_any(tmp_path, "github.com/example/repo")
-
-        assert capsys.readouterr().err == (
-            f"{_common.UNANSWERED_UWI_NOTICE_HEADER}\n"
-            "001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
-            "002.md: github.com/example/repo [inbox/unanswered] 質問2\n"
-            f"次の操作: {_common.UNANSWERED_UWI_NEXT_ACTION}\n"
-        )
-
-    def test_local_path_filter_notifies_legacy_and_current_repo_forms(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """生のローカルパス指定でも旧パス形とURL形の未回答UWIを通知する。"""
+        """生のローカルパス指定でも旧パス形とURL形を含み、不在のパスは除く。"""
         local_repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
         subprocess.run(
@@ -844,12 +794,9 @@ class TestNotifyUnansweredUwisIfAny:
         _write_uwi(tmp_path, "current.md", target_repo="github.com/example/repo", question="現行形式")
         _write_uwi(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"), question="対象外")
 
-        _common.notify_unanswered_uwis_if_any(tmp_path, str(local_repo))
-
-        error = capsys.readouterr().err
-        assert "legacy.md" in error
-        assert "current.md" in error
-        assert "missing.md" not in error
+        iter_entries = _common.__dict__["_iter_entries"]
+        entries = list(iter_entries(tmp_path, ("inbox",), str(local_repo), _common.WI_TYPE_UWI))
+        assert {entry[0].name for entry in entries} == {"legacy.md", "current.md"}
 
     def test_filter_resolves_each_raw_repo_value_once(
         self,
@@ -873,29 +820,6 @@ class TestNotifyUnansweredUwisIfAny:
 
         assert [entry[0].name for entry in entries] == ["first.md", "second.md"]
         assert calls.count("/legacy/repo") == 1
-
-    def test_narrow_terminal_truncates_long_target_repo(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。
-
-        `_atk_wi_list.py`の狭幅端末対応（`_target_repo_budget`・`_truncate_target_repo`）を
-        本関数も共有して適用していることを検証する。
-        """
-        long_repo = "github.com/organization-name/very-long-repository-name-example"
-        _write_uwi(tmp_path, "one.md", target_repo=long_repo, question="最初の質問")
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
-
-        _common.notify_unanswered_uwis_if_any(tmp_path, None)
-
-        line = capsys.readouterr().err.splitlines()[1]
-        display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
-        budget = _common._target_repo_budget("one.md", "unanswered")  # noqa: SLF001  # pylint: disable=protected-access
-        assert _common._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
-        assert display_repo != long_repo
 
 
 class TestIsExistingDir:
