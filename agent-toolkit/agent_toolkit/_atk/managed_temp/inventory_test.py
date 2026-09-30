@@ -337,7 +337,7 @@ class TestManagedTempWindows:
 
         monkeypatch.setattr(os, "unlink", deny_unlink)
 
-        assert subject.main(["cleanup", "--path", str(target)]) == 1
+        assert subject.main(["cleanup", "--path", str(target)]) == 2
 
         assert registry.exists()
         assert content.read_text(encoding="utf-8") == "keep"
@@ -365,7 +365,7 @@ class TestManagedTempWindows:
 
         monkeypatch.setattr(os, "unlink", replace_before_unlink)
 
-        assert subject.main(["cleanup", "--path", str(target)]) == 1
+        assert subject.main(["cleanup", "--path", str(target)]) == 2
 
         assert content.read_text(encoding="utf-8") == "replacement"
         assert getattr(content.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_READONLY

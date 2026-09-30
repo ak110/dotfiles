@@ -85,6 +85,7 @@ def test_cli_list_accepts_stale_posix_device(monkeypatch: pytest.MonkeyPatch, tm
         [sys.executable, str(_SCRIPT), "create", "--prefix", "restart-device"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -102,6 +103,7 @@ def test_cli_list_accepts_stale_posix_device(monkeypatch: pytest.MonkeyPatch, tm
         [sys.executable, str(_SCRIPT), "list", "--prefix", "restart-device"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -122,6 +124,7 @@ def test_cli_list_rejects_changed_inode(monkeypatch: pytest.MonkeyPatch, tmp_pat
         [sys.executable, str(_SCRIPT), "create", "--prefix", "changed-inode"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -139,6 +142,7 @@ def test_cli_list_rejects_changed_inode(monkeypatch: pytest.MonkeyPatch, tmp_pat
         [sys.executable, str(_SCRIPT), "list", "--prefix", "changed-inode"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -210,6 +214,7 @@ def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
         [sys.executable, str(_SCRIPT), "create", "--prefix", "cli-test"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -218,6 +223,7 @@ def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
         [sys.executable, str(_SCRIPT), "cleanup", "--path", str(target)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -225,6 +231,7 @@ def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
         [sys.executable, str(_SCRIPT), "cleanup", "--path", str(target)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
