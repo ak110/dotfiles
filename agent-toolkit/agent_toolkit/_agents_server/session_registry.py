@@ -1,8 +1,11 @@
-"""agents_serverが起動したsessionの終端状態をプロセス間で共有する。"""
+"""agents_serverが起動したsessionの終端状態をプロセス間で共有する。
+
+所有側のagents_serverがsessionを解放した場合は、レコードを削除せず解放済みレコードへ置き換える。
+照会した別プロセスが「所有側が正常に解放した」と「どのagents_serverにも記録が無い」を区別できるようにするためである。
+"""
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import datetime
 import enum
@@ -16,6 +19,8 @@ from agent_toolkit._common.atomic_file import atomic_write
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 _STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupted"})
+ReleaseReason = Literal["retention_expired", "stopped"]
+_RELEASE_REASONS: frozenset[str] = frozenset({"retention_expired", "stopped"})
 
 
 class Resolution(enum.StrEnum):
@@ -25,6 +30,7 @@ class Resolution(enum.StrEnum):
     RUNNING = "running"
     MISSING = "missing"
     UNREADABLE = "unreadable"
+    RELEASED = "released"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -51,6 +57,9 @@ class SessionResolution:
 
     state: Resolution
     resume_info: ResumeInfo | None = None
+    # `RELEASED`の場合だけ、解放の理由と時刻（UTCのISO 8601）を保持する。
+    released_reason: ReleaseReason | None = None
+    released_at: str | None = None
 
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -108,7 +117,7 @@ def publish(
 
 
 def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> SessionResolution:
-    """登録済みsessionを終端・実行中・不在・読取不能へ区分して返す。"""
+    """登録済みsessionを終端・実行中・解放済み・不在・読取不能へ区分して返す。"""
     _validate_session_id(session_id)
     path = registry_directory(state_root) / f"{session_id}.json"
     try:
@@ -123,6 +132,11 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
         or not isinstance(payload.get("updated_at"), str)
     ):
         return SessionResolution(Resolution.UNREADABLE)
+    if payload.get("version") == 3:
+        reason = payload.get("released_reason")
+        if reason not in _RELEASE_REASONS:
+            return SessionResolution(Resolution.UNREADABLE)
+        return SessionResolution(Resolution.RELEASED, released_reason=reason, released_at=payload["updated_at"])
     if payload.get("version") == 1:
         if not isinstance(payload.get("terminal"), bool):
             return SessionResolution(Resolution.UNREADABLE)
@@ -135,15 +149,21 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
     return SessionResolution(Resolution.TERMINAL if payload["terminal"] else Resolution.RUNNING, info)
 
 
-def remove(session_id: str, *, state_root: pathlib.Path | None = None) -> None:
-    """観測済みsessionの登録を削除する。"""
+def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path | None = None) -> None:
+    """所有側が解放したsessionの登録を、再開条件を持たない解放済みレコードへ置き換える。
+
+    解放済みレコードは復元の対象にならず、7日超の共有状態の掃引で他のレコードと同じく回収される。
+    """
     _validate_session_id(session_id)
-    path = registry_directory(state_root) / f"{session_id}.json"
-    path.unlink(missing_ok=True)
-    directory = path.parent
-    if directory.exists() and not any(directory.iterdir()):
-        with contextlib.suppress(OSError):
-            directory.rmdir()
+    if reason not in _RELEASE_REASONS:
+        raise ValueError(f"invalid release reason: {reason}")
+    payload = {
+        "version": 3,
+        "session_id": session_id,
+        "released_reason": reason,
+        "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+    }
+    atomic_write(registry_directory(state_root) / f"{session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def _validate_session_id(session_id: str) -> None:

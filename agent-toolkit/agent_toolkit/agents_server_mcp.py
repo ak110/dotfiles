@@ -535,7 +535,7 @@ class AgentsServerManager:
         session = self.sessions.pop(session_id, None)
         if session is not None:
             if session.publish_registry:
-                session_registry.remove(session_id)
+                session_registry.release(session_id, reason="retention_expired")
             resume_state = SessionResumeState.from_session(session)
             self.expired_sessions[session_id] = resume_state
             if self._status_writer is not None:
@@ -604,7 +604,7 @@ class AgentsServerManager:
             resolution = session_registry.resolve(session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
             raise ValueError(f"error.recovery=turn_unobserved: {session_id}")
-        if resolution.state is session_registry.Resolution.MISSING:
+        if resolution.state in {session_registry.Resolution.MISSING, session_registry.Resolution.RELEASED}:
             return None
         if resolution.state is session_registry.Resolution.UNREADABLE:
             raise ValueError(f"error.recovery=unreadable: {session_id}")
@@ -825,6 +825,8 @@ class AgentsServerManager:
                     "receive its result with `atk agents wait` on the owning root session"
                 )
             session = self._restore_registry_session(session_id, resolution=resolution)
+            if session is None:
+                raise self._unresolved_session_error(session_id, label="session", resolution=resolution)
         if session is None:
             raise self._unresolved_session_error(session_id, label="session")
         status = "running" if session_id in self._pending_resumes else session.status
@@ -926,7 +928,7 @@ class AgentsServerManager:
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state
-        session_registry.remove(session_id)
+        session_registry.release(session_id, reason="stopped")
         if self._status_writer is not None:
             try:
                 if not keep_result:
@@ -954,11 +956,19 @@ class AgentsServerManager:
         return response
 
     @staticmethod
-    def _unresolved_session_error(session_id: str, *, label: str) -> ValueError:
-        """未解決の識別子を体系相違または失われたsessionとして診断する。
+    def _unresolved_session_error(
+        session_id: str,
+        *,
+        label: str,
+        resolution: session_registry.SessionResolution | None = None,
+    ) -> ValueError:
+        """未解決の識別子を体系相違、所有側による解放済み、または記録無しとして診断する。
 
         保持状態の照会後だけ呼び、登録済みの非UUID識別子は拒否しない。
         体系相違の本文には、継続不能の判定に使う`unknown session`を含めない。
+        UUIDの識別子は、登録簿の解放済みレコードの有無で文面を分け、いずれも`unknown <label>: <id>`で始める。
+        登録簿のレコードは再起動では削除されないため、不在の原因として再起動を案内しない。
+        `resolution`は、呼び出し元が同じ識別子を既に解決している場合に渡す。
         """
         try:
             parsed = UUID(session_id)
@@ -966,9 +976,17 @@ class AgentsServerManager:
             parsed = None
         if parsed is None or str(parsed) != session_id.lower():
             return ValueError(f"{label} identifier scheme mismatch: {session_id}; expected UUID")
+        if resolution is None:
+            resolution = session_registry.resolve(session_id)
+        if resolution.state is session_registry.Resolution.RELEASED:
+            reason = "retention expired" if resolution.released_reason == "retention_expired" else "stopped"
+            return ValueError(
+                f"unknown {label}: {session_id}; released by the owning agents_server ({reason}, {resolution.released_at}); "
+                "its result is no longer retained"
+            )
         return ValueError(
-            f"unknown {label}: {session_id}; agents_server may have restarted and lost this session; "
-            "start a new session with the verified state"
+            f"unknown {label}: {session_id}; no agents_server on this host has a record of this session "
+            "(started on another host, or its record was swept after 7 days); start a new session with the verified state"
         )
 
     async def _resolve_start_candidates(
@@ -1469,9 +1487,13 @@ class AgentsServerManager:
         }
         unobserved: set[str] = set()
         for session_id, resolution in resolutions.items():
-            if resolution.state not in {session_registry.Resolution.MISSING, session_registry.Resolution.UNREADABLE}:
+            if resolution.state not in {
+                session_registry.Resolution.MISSING,
+                session_registry.Resolution.RELEASED,
+                session_registry.Resolution.UNREADABLE,
+            }:
                 continue
-            # レコードの不在は削除と保持期限の経過からも生じるため、終端結果ファイルを終端の第2の根拠とする。
+            # レコードの不在と解放済みは、所有側の解放と7日超の回収からも生じるため、終端結果ファイルを終端の第2の根拠とする。
             if self._child_result_is_terminal(session_id):
                 terminal.add(session_id)
                 continue

@@ -162,7 +162,11 @@ def _target_origins(
         return {}, (f"待機対象登録簿を読めません: {registry_error}", 9)
     # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終端を示す場合に結果が生じないため解放する。
     # 終端の公開から結果ファイルの書込までの間は状態ファイルに行が残るため、回収前の対象を解放しない。
-    releasable = {session_registry.Resolution.MISSING, session_registry.Resolution.TERMINAL}
+    releasable = {
+        session_registry.Resolution.MISSING,
+        session_registry.Resolution.RELEASED,
+        session_registry.Resolution.TERMINAL,
+    }
     for session_id in set(registered_ids) - listed_ids - result_ids:
         if session_registry.resolve(session_id, state_root=state_root).state in releasable:
             status_file.release_wait_target(root_session_id, owner_status_file, session_id, state_root)

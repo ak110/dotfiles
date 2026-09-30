@@ -5543,7 +5543,8 @@ async def test_wait_delivers_child_session_result_without_kill(
 
     _complete(child, message="子sessionの結果")
     child_writer.flush()
-    session_registry.remove(child.session_id)
+    # 所有側が保持期限で解放した後も、終端結果ファイルを第2の根拠に終端と判定する。
+    session_registry.release(child.session_id, reason="retention_expired")
 
     pending = await manager.wait()
 
@@ -6047,7 +6048,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
         manager.show_session(session_id)
 
     message = str(excinfo.value)
-    assert "agents_server may have restarted and lost this session" not in message
+    assert "may have restarted" not in message
     assert "another writer" in message
     assert "atk agents wait" in message
     await manager.close()
@@ -6306,8 +6307,14 @@ async def test_expired_session_kill_returns_success_response(
 @pytest.mark.parametrize("operation", ["send_message", "kill"])
 async def test_unknown_session_is_distinct_from_expired_session(
     operation: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
 ) -> None:
-    """未登録のUUIDを期限切れ識別子と区別し、喪失時の復旧手順を返す。"""
+    """未登録のUUIDを期限切れ識別子と区別し、記録が無いことと復旧手順を返す。
+
+    登録簿のレコードは再起動では削除されないため、再起動を原因として案内しない。
+    """
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
     manager, _ = _manager_with_fake("codex")
     session_id = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
     with pytest.raises(ValueError) as exc_info:
@@ -6317,8 +6324,56 @@ async def test_unknown_session_is_distinct_from_expired_session(
             await manager.kill(session_id, timeout=0)
     message = str(exc_info.value)
     assert message.startswith(f"unknown session: {session_id}")
-    assert "agents_server may have restarted" in message
+    assert "restarted" not in message
+    assert "no agents_server on this host has a record" in message
     assert "start a new session with the verified state" in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["show", "send_message", "kill", "stop"])
+@pytest.mark.parametrize(("release", "reason_text"), [("expire", "retention expired"), ("stop", "stopped")])
+async def test_session_released_by_another_server_is_reported_as_released(
+    operation: str,
+    release: str,
+    reason_text: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """別のagents_serverが解放したsessionの照会は、解放済みであることと理由・時刻を返す。
+
+    どちらの応答も継続不能の判定に使う`unknown session: <id>`で始め、再起動を案内しない。
+    記録が無い識別子とは文面が異なる。
+    """
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    session_id = "7f0c2b8e-5d1a-4e3b-9c6f-2a8d4e1b7c90"
+    owner, _ = _manager_with_fake("codex")
+    session = subject.SessionState(session_id, str(tmp_path), engine="codex", publish_registry=True)
+    _complete(session)
+    owner.sessions[session_id] = session
+    if release == "expire":
+        owner._expire_session(session_id)
+    else:
+        await owner.stop(session_id)
+    observer, _ = _manager_with_fake("codex")
+
+    with pytest.raises(ValueError) as exc_info:
+        if operation == "show":
+            observer.show_session(session_id)
+        elif operation == "send_message":
+            await observer.send_message(session_id, "続行")
+        elif operation == "kill":
+            await observer.kill(session_id, timeout=0)
+        else:
+            await observer.stop(session_id)
+    message = str(exc_info.value)
+    released_at = session_registry.resolve(session_id).released_at
+    assert released_at is not None
+    assert message.startswith(f"unknown session: {session_id}")
+    assert f"released by the owning agents_server ({reason_text}, {released_at})" in message
+    assert "restarted" not in message
+    assert "no agents_server on this host has a record" not in message
+    await owner.close()
+    await observer.close()
 
 
 @pytest.mark.asyncio

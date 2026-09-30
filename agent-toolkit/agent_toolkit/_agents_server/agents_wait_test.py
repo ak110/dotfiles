@@ -1244,12 +1244,19 @@ def test_agents_wait_reissues_for_registered_session_after_notice(
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-1"}
 
 
+@pytest.mark.parametrize("released", [False, True], ids=["missing", "released"])
 def test_agents_wait_releases_registered_session_missing_from_registry(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    released: bool,
 ) -> None:
-    """状態・結果・session登録簿から失われた待機対象を再発行時に解放する。"""
+    """状態・結果・session登録簿から失われた待機対象を再発行時に解放する。
+
+    所有側が解放した解放済みレコードも、レコードの不在と同じく解放の対象とする。
+    """
     status_file.retain_wait_targets("root-session", "root.json", ["session-1"], wait_environment.parents[2])
+    if released:
+        session_registry.release("session-1", reason="retention_expired", state_root=wait_environment.parents[2])
 
     with pytest.raises(SystemExit, match="10"):
         atk.main(["agents", "wait"])
