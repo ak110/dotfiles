@@ -328,6 +328,9 @@ class _StepSpec:
 
     `after`は開始前に完了している必要があるステップ名、`after_all_preceding`は列挙順で前にある
     全ステップを先行工程とする指定、`platforms`は実行対象の`sys.platform`値（空なら全OS）を表す。
+    `host_resources`は、HOMEで解決されない実機の共有資源（systemdのユーザーマネージャー、`/dev/shm`など）を
+    操作するステップであることを表す。HOMEを差し替えた実行（手動観測やテスト）ではこのステップを実行しない。
+    `systemctl --user`はHOMEではなく`XDG_RUNTIME_DIR`とD-Busで接続先を決めるため、HOMEの差し替えでは隔離できない。
     """
 
     name: str
@@ -335,6 +338,7 @@ class _StepSpec:
     after: tuple[str, ...] = ()
     after_all_preceding: bool = False
     platforms: tuple[str, ...] = ()
+    host_resources: bool = False
 
 
 def _cleanup_removed_paths() -> bool:
@@ -416,6 +420,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
         restore_codex_logs_linux.run,
         after=(_CODEX_LINKS,),
         platforms=_LINUX,
+        host_resources=True,
     ),
     _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run, platforms=_LINUX),
     _StepSpec(_CLAUDE_PLUGIN, install_claude_plugins.run, after=(_CLAUDE_CLI,)),
@@ -454,6 +459,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
         setup_atk_serve_linux.run,
         after=(_CLAUDE_PLUGIN,),
         platforms=_LINUX,
+        host_resources=True,
     ),
     # 両ステップが`systemctl --user daemon-reload`と`restart`を実行する。
     _StepSpec(
@@ -461,6 +467,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
         setup_dotfiles_autoupdate_linux.run,
         after=("atk serve 自動起動セットアップ (Linux)",),
         platforms=_LINUX,
+        host_resources=True,
     ),
     _StepSpec("Windowsレジストリ設定", setup_registry.run, platforms=_WINDOWS),
     _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run, platforms=_WINDOWS),
@@ -637,7 +644,8 @@ class _StepOutcome:
     recommendations: list[str]
     duration: float
     records: list[logging.LogRecord]
-    skipped: bool = False
+    # 実行しなかったステップの理由。`None`は実行したことを表す。
+    skip_reason: str | None = None
 
 
 def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
@@ -714,15 +722,40 @@ def _resolve_predecessors(steps: Sequence[_StepSpec]) -> list[frozenset[int]]:
     return predecessors
 
 
-def _targets_current_platform(step: _StepSpec) -> bool:
-    return not step.platforms or sys.platform in step.platforms
+_SKIP_OTHER_PLATFORM = "実行中のOSは対象外のため実行しない"
+_SKIP_SUBSTITUTED_HOME = "HOMEが実行ユーザーのホームと異なるため、実機の共有資源を操作せず実行しない"
+
+
+def _home_is_substituted() -> bool:
+    """HOMEが実行ユーザーのパスワードデータベース上のホームと異なるかを返す。
+
+    `pwd`を持たないWindowsでは判定せず偽を返す。`host_resources`を持つステップはいずれもLinux専用である。
+    """
+    if sys.platform == "win32":
+        return False
+    import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # Windowsに存在しないモジュールのため
+
+    return Path.home().resolve() != Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+
+
+def _skip_reason(step: _StepSpec, *, home_substituted: bool) -> str | None:
+    """ステップを実行しない理由を返す。実行する場合は`None`を返す。"""
+    if step.platforms and sys.platform not in step.platforms:
+        return _SKIP_OTHER_PLATFORM
+    if step.host_resources and home_substituted:
+        return _SKIP_SUBSTITUTED_HOME
+    return None
 
 
 def _emit_outcome(label: str, outcome: _StepOutcome) -> None:
     """1ステップの出力を、所要時間付きの見出しを先頭にまとめて各handlerへ送る。"""
     root_logger = logging.getLogger()
-    if outcome.skipped:
-        logger.info("%s: 実行中のOSは対象外のため実行しない", label, extra=log_format.LOG_ONLY)
+    if outcome.skip_reason == _SKIP_OTHER_PLATFORM:
+        logger.info("%s: %s", label, outcome.skip_reason, extra=log_format.LOG_ONLY)
+        return
+    if outcome.skip_reason is not None:
+        # HOMEの差し替えによる省略は、手動観測の実行者が画面で確認できるよう表示する。
+        logger.info("%s: %s", label, outcome.skip_reason)
         return
     start_record, *rest = outcome.records
     root_logger.handle(start_record)
@@ -747,6 +780,7 @@ def run(
     predecessors = _resolve_predecessors(effective_steps)
     total = len(effective_steps)
     labels = [f"[{index}/{total}] {step.name}" for index, step in enumerate(effective_steps, start=1)]
+    home_substituted = _home_is_substituted()
     root_logger = logging.getLogger()
     exclusion = _StepLogFilter()
     capture = _StepLogCapture()
@@ -768,12 +802,13 @@ def run(
                         if index in started or not predecessors[index].issubset(outcomes):
                             continue
                         started.add(index)
-                        if _targets_current_platform(step):
+                        reason = _skip_reason(step, home_substituted=home_substituted)
+                        if reason is None:
                             running[executor.submit(_execute_captured_step, labels[index], step)] = index
                             continue
-                        # 対象外OSのステップは`run`を呼ばず、成功かつ変更なしとして扱う。
+                        # 実行しないステップは`run`を呼ばず、成功かつ変更なしとして扱う。
                         result = _StepResult(name=step.name, ok=True, changed=False)
-                        outcomes[index] = _StepOutcome(result, [], 0.0, [], skipped=True)
+                        outcomes[index] = _StepOutcome(result, [], 0.0, [], skip_reason=reason)
                         progressed = True
                 while emitted < total and emitted in outcomes:
                     _emit_outcome(labels[emitted], outcomes[emitted])
