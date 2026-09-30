@@ -27,8 +27,8 @@ description: >
 
 CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.md`を全文読む。
 履歴を扱う実装単位へ入る前は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を全文読む。
-実装担当の委譲先を確定する前は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`を全文読む。
-分岐検証へ入る前は`agent-toolkit:writing-standards`の`references/testing.md`を全文読む。
+実装担当の委譲先を確定する前は`agent-toolkit:delegation`をSkill機能で起動し、同スキルの`delegation/references/runtime-routing.md`を全文読む。
+分岐検証へ入る前は`agent-toolkit:writing-standards`をSkill機能で起動し、同スキルの`references/testing.md`を全文読む。
 
 ## 初動と拡張原因分析の判定
 

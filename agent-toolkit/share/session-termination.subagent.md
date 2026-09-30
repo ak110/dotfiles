@@ -20,7 +20,7 @@
 
 ## 生成物とpush
 
-版数更新、生成物、全体検証とCIの同値性、push、CI確認、公開状態の判定は`agent-toolkit:commit`の`references/publish.md`を全文読んで実行する。受領した`bump種別`をその工程の入力に使い、CIの成功まで確認する。
+版数更新、生成物、全体検証とCIの同値性、push、CI確認、公開状態の判定は、`agent-toolkit:commit`をSkill機能で起動し、同スキルの`references/publish.md`を全文読んで実行する。受領した`bump種別`をその工程の入力に使い、CIの成功まで確認する。
 
 ## 検証またはCIの失敗
 
