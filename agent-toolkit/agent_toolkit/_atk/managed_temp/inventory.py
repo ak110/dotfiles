@@ -561,10 +561,6 @@ def sweep_expired_managed_temp(
             )
             continue
         deleted.append(path)
-        print(
-            f"note: 最終更新から{max_age_days}日を超えた管理対象一時領域を削除した: {path}",
-            file=sys.stderr,
-        )
     return deleted
 
 

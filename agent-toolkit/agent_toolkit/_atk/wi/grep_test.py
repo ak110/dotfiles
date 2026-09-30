@@ -73,7 +73,7 @@ class TestGrepBasic:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """直近の同期形跡がある通常検索ではremote同期を省略して再利用を案内する。"""
+        """直近の同期形跡がある通常検索ではremote同期を省略し、注記を付けない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="searchword")
         git_dir = notes / ".git"
@@ -87,10 +87,7 @@ class TestGrepBasic:
 
         assert exc_info.value.code == 0
         assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"]) for call in git_calls)
-        assert capsys.readouterr().err == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。\n"
-            "次の操作: このまま続行してよい。最新化する場合は`--pull`を指定する。\n"
-        )
+        assert not capsys.readouterr().err
 
     def test_pull_forces_remote_sync_after_recent_sync(
         self,

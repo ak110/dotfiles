@@ -50,7 +50,8 @@ def test_info_reports_current_execution_context(capsys: pytest.CaptureFixture[st
 
     output = capsys.readouterr().out
     assert f"作業ディレクトリ: {pathlib.Path.cwd()}" in output
-    assert f"atk実装: {_ATK_PATH}" in output
+    assert "atk実装:" not in output
+    assert f"plugin root: {_PROJECT_ROOT}" in output
     assert "plugin version (plugin.json):" in output
 
 
@@ -1772,7 +1773,7 @@ class TestAddSingleMessage:
         assert git_cmds[fetch_idx + 1] == ["git", "merge", "--ff-only", "@{u}"]
         assert git_cmds[fetch_idx + 2] == ["git", "add", "--all", "--", "inbox"]
         assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 awi item", "--", "inbox"]
-        assert git_cmds[fetch_idx + 4] == ["git", "push"]
+        assert ["git", "push"] in git_cmds[fetch_idx + 4 :]
         for call in git_calls:
             if call["cmd"][:2] != ["git", "-C"]:
                 assert call["kwargs"].get("cwd") == notes
@@ -1780,9 +1781,9 @@ class TestAddSingleMessage:
         captured = capsys.readouterr()
         assert "成功: 1件をinboxへ投入した\n" in captured.out
         assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
-        assert "inbox: 計1件" in captured.out
-        assert "編集する場合:\n" in captured.out
-        assert f"  atk wi edit {files[0].name}\n" in captured.out
+        assert "inbox: 計" not in captured.out
+        assert "編集する場合:" not in captured.out
+        assert f"  atk wi edit {files[0].name}\n" not in captured.out
 
 
 class TestMqLifecycleScenario:
@@ -1849,105 +1850,46 @@ class TestMqLifecycleScenario:
         assert ["git", "push"] in git_cmds
 
 
-class TestAddCompletionShowsProcessingCount:
-    """addサブコマンド: 完了表示の「inbox: 計X件」にprocessing件数を併記する（AWI20260724-075120-001反映）。"""
+class TestAddCompletionNoQueueOverview:
+    """投入結果だけを示し、無関係なキュー件数と固定案内を出力しない。"""
 
-    def test_processing_count_shown_alongside_inbox_count(
+    @pytest.mark.parametrize("existing_state", ["inbox", "processing"])
+    @pytest.mark.parametrize("agent_environment", [False, True])
+    def test_omits_queue_overview_in_both_environments(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        existing_state: str,
+        agent_environment: bool,
     ) -> None:
-        """processing配下に既存ファイルがある状態で`mq add`すると、その件数が併記される。"""
+        """人の端末とエージェントの双方で、別項目の件数を投入結果に付けない。"""
         notes = _setup_notes(tmp_path)
-        processing_dir = notes / "processing"
-        processing_dir.mkdir(parents=True)
-        (processing_dir / "existing-001.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存処理中\n", encoding="utf-8"
-        )
+        directory = notes / existing_state
+        directory.mkdir(parents=True, exist_ok=True)
+        existing = directory / "existing-001.md"
+        existing.write_text("---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存項目\n", encoding="utf-8")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+        if agent_environment:
+            monkeypatch.setenv("AI_AGENT", "1")
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(
+                ["wi", "add", str(myrepo), "--source=agent", *_body_file_args(tmp_path, _wi_bodies.AGENT_AWI_BODY)],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
 
-        assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "inbox: 計1件（processing: 1件）" in captured.out
-
-    def test_processing_count_is_zero_when_none_processing(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """processing配下が空の状態でも0件と明示される。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "inbox: 計1件（processing: 0件）" in captured.out
-
-
-class TestAddCompletionShowsTargetRepoBreakdown:
-    """addサブコマンド: 完了表示へ全体件数に加えて対象リポジトリ分の内訳を併記する。"""
-
-    def test_breakdown_excludes_other_repo_processing_entries(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """別リポジトリ宛のprocessingエントリは対象リポジトリ分の内訳へ数えない。"""
-        notes = _setup_notes(tmp_path)
-        processing_dir = notes / "processing"
-        processing_dir.mkdir(parents=True)
-        (processing_dir / "existing-001.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの処理中\n", encoding="utf-8"
-        )
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "inbox: 計1件（processing: 1件）" in captured.out
-        assert "  うちgithub.com/example/myrepo: 1件（processing: 0件）" in captured.out
-
-    def test_breakdown_excludes_other_repo_inbox_entries(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """別リポジトリ宛のinboxエントリは対象リポジトリ分の内訳へ数えない。"""
-        notes = _setup_notes(tmp_path)
-        inbox_dir = notes / "inbox"
-        inbox_dir.mkdir(parents=True, exist_ok=True)
-        (inbox_dir / "existing-001.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの未処理\n", encoding="utf-8"
-        )
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "inbox: 計2件（processing: 0件）" in captured.out
-        assert "  うちgithub.com/example/myrepo: 1件（processing: 0件）" in captured.out
+        assert captured.out.splitlines()[0] == "成功: 1件をinboxへ投入した"
+        assert "inbox: 計" not in captured.out
+        assert "  うち" not in captured.out
+        assert "編集する場合:" not in captured.out
+        assert existing.name not in captured.out
+        assert not captured.err
+        assert existing.is_file()
 
 
 class TestAddMultipleMessages:
@@ -2008,10 +1950,10 @@ class TestAddMultipleMessages:
         assert "成功: 2件をinboxへ投入した\n" in captured.out
         assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
         assert f"  ~/private-notes/inbox/{files[1].name}\n" in captured.out
-        assert "inbox: 計2件" in captured.out
-        assert "編集する場合:\n" in captured.out
-        assert f"  atk wi edit {files[0].name}\n" in captured.out
-        assert f"  atk wi edit {files[1].name}\n" in captured.out
+        assert "inbox: 計" not in captured.out
+        assert "編集する場合:" not in captured.out
+        assert f"  atk wi edit {files[0].name}\n" not in captured.out
+        assert f"  atk wi edit {files[1].name}\n" not in captured.out
 
 
 class TestAddRepoPathExpansion:

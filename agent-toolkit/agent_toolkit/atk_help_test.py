@@ -27,8 +27,8 @@ def test_info_reports_current_environment_without_creating_config(
     output = capsys.readouterr().out
     assert f"作業ディレクトリ: {tmp_path}" in output
     assert "plugin version (plugin.json): " in output
-    assert f"設定ファイル候補: {config}" in output
-    assert "設定ファイル: 未作成" in output
+    assert "設定ファイル候補:" not in output
+    assert f"設定ファイル: {config}（未作成）" in output
     assert not config.exists()
 
 

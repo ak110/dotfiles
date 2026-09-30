@@ -439,14 +439,18 @@ class TestManagedTempPosix:
         assert subject.dispatch(parser.parse_args(["list"])) == 1
         assert capsys.readouterr().out == ""
 
+    @pytest.mark.parametrize("agent_environment", [False, True])
     def test_sweep_deletes_an_expired_managed_temp(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        agent_environment: bool,
     ) -> None:
         """領域内の全更新が期限を超えた真正な領域だけを既存経路で削除する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        if agent_environment:
+            monkeypatch.setenv("AI_AGENT", "1")
         target = subject.create_managed_temp("expired")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
@@ -454,7 +458,7 @@ class TestManagedTempPosix:
 
         assert subject.sweep_expired_managed_temp(now=now) == [target]
         assert not target.exists()
-        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除した: {target}" in capsys.readouterr().err
+        assert not capsys.readouterr().err
 
     def test_sweep_retains_a_recent_session_root(
         self,
@@ -498,7 +502,7 @@ class TestManagedTempPosix:
         assert not deleted.exists()
         captured = capsys.readouterr()
         assert f"警告: 管理対象一時領域を自動削除できない: {failed}" in captured.err
-        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除した: {deleted}" in captured.err
+        assert "note: 最終更新から" not in captured.err
 
     @pytest.mark.parametrize("race_point", ["stat", "scandir", "cleanup"])
     def test_sweep_silences_cleanup_completed_by_another_process(

@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.wi import common as _atk_wi_common
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
@@ -201,6 +202,10 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
             return subprocess.CompletedProcess(["git", *args], 1, "", "")
         if args == ["status", "--porcelain"]:
             return subprocess.CompletedProcess(["git", *args], 0, " M unrelated.txt\n", "")
+        if args == ["rev-list", "--left-right", "--count", "HEAD...@{u}"]:
+            return subprocess.CompletedProcess(["git", *args], 0, "1\t1\n", "")
+        if args == ["rev-list", "--count", "@{u}..HEAD"]:
+            return subprocess.CompletedProcess(["git", *args], 0, "1\n", "")
         return subprocess.CompletedProcess(["git", *args], 0, "", "")
 
     with _atk_git_sync.repo_lock(repo):
@@ -210,9 +215,64 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐している" in stderr
     lines = stderr.splitlines()
-    assert lines[-2] == f"警告: {_atk_git_sync.PUSH_DEFERRED_MESSAGE}"
+    assert lines[0].startswith(f"警告: {_atk_git_sync.PUSH_DEFERRED_MESSAGE}")
+    assert "ローカルのみ1件、upstreamのみ1件" in stderr
+    assert "未push commit: 1件" in stderr
+    assert "失敗: " not in stderr
     assert lines[-1].startswith("次の操作: ")
-    assert "git status" in lines[-1]
+    assert "atk wi commit" in lines[-1]
+    assert "元の`atk`操作" not in lines[-1]
+
+
+def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """状態変更の成功・push保留・dirtyの失敗・clean後の回復を公開CLIで判定する。"""
+    local, peer = _init_diverged_mq_repos(tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(local))
+    monkeypatch.chdir(tmp_path)
+    original_run = _atk_wi_common._run_git
+    injected = False
+    dirty = local / "unrelated.tmp"
+
+    def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True, **_kwargs: object) -> None:
+        nonlocal injected
+        if args[0] == "commit" and not injected:
+            injected = True
+            (peer / "peer.txt").write_text("他のcloneの変更\n", encoding="utf-8")
+            _git(peer, "add", "peer.txt")
+            _git(peer, "commit", "-m", "peer update")
+            _git(peer, "push")
+            dirty.write_text("無関係な未追跡差分\n", encoding="utf-8")
+        original_run(args, cwd, forward_error_output=forward_error_output)
+
+    monkeypatch.setattr(_atk_wi_common, "_run_git", run_git)
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["wi", "hold", "20260831-101752-001.md"], home=tmp_path)
+    held = capsys.readouterr()
+    assert held.out.splitlines()[0].startswith("成功: ")
+    assert "失敗: " not in held.err
+    assert held.err.count("警告: ") == held.err.count("次の操作: ") == 1
+    assert "未push commit: 1件" in held.err
+    assert "ローカルのみ1件、upstreamのみ1件" in held.err
+    assert "atk wi commit" in held.err
+    assert "元の`atk`操作" not in held.err
+    assert (local / "hold" / "20260831-101752-001.md").is_file()
+
+    with pytest.raises(SystemExit, match="1"):
+        atk.main(["wi", "commit"], home=tmp_path)
+    blocked = capsys.readouterr()
+    assert blocked.err.count("失敗: ") == 1
+    next_action = blocked.err.rsplit("次の操作: ", 1)[1]
+    assert next_action.index("clean") < next_action.index("git rebase")
+
+    dirty.unlink()
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "commit"], home=tmp_path)
+    assert "1件のcommitをpushした" in capsys.readouterr().out
+    assert _git(local, "rev-list", "--left-right", "--count", "HEAD...@{u}").stdout.split() == ["0", "0"]
 
 
 def test_push_suppresses_output_of_recovered_first_push(
@@ -310,13 +370,18 @@ def test_pull_suppresses_output_of_recovered_first_merge(
 
 @pytest.mark.parametrize("operation", ["pull", "push"])
 @pytest.mark.parametrize("dirty", [False, True])
+@pytest.mark.parametrize("agent_environment", [False, True])
 def test_sync_recovers_matching_tree_divergence(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     operation: str,
     dirty: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    agent_environment: bool,
 ) -> None:
     """木が一致する分岐は未コミット差分を保ってpull・pushできる。"""
+    if agent_environment:
+        monkeypatch.setenv("AI_AGENT", "1")
     local, peer = _init_diverged_mq_repos(tmp_path)
     upstream = _create_matching_tree_divergence(local, peer)
     if dirty:
@@ -334,16 +399,21 @@ def test_sync_recovers_matching_tree_divergence(
 
     assert _git(local, "rev-parse", "HEAD").stdout.strip() == upstream
     assert _git(local, "status", "--porcelain").stdout == status_before
-    assert "HEADとupstreamの内容が一致" in capsys.readouterr().err
+    assert not capsys.readouterr().err
 
 
 @pytest.mark.parametrize("operation", ["pull", "push"])
+@pytest.mark.parametrize("agent_environment", [False, True])
 def test_mq_sync_recovers_duplicate_terminal_commit(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     operation: str,
+    monkeypatch: pytest.MonkeyPatch,
+    agent_environment: bool,
 ) -> None:
     """処理日時だけが異なる同一終端はpull・pushの両経路でupstreamへ揃える。"""
+    if agent_environment:
+        monkeypatch.setenv("AI_AGENT", "1")
     local, peer = _init_diverged_mq_repos(tmp_path)
     _finish_entry(local, "2026-08-31T20:42:20+00:00")
     _finish_entry(peer, "2026-08-31T20:48:40+00:00")
@@ -354,11 +424,11 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
         with _atk_git_sync.repo_lock(local):
             _atk_wi_common.pull(local)
     else:
-        assert _atk_wi_mutations.commit_entries(local) is False
+        assert _atk_wi_mutations.commit_entries(local).changed is False
 
     assert _git(local, "rev-parse", "HEAD").stdout.strip() == upstream
     assert _git(local, "status", "--porcelain").stdout == ""
-    assert "自動同期しました" in capsys.readouterr().err
+    assert not capsys.readouterr().err
 
 
 def test_mq_pull_rebases_clean_divergence(

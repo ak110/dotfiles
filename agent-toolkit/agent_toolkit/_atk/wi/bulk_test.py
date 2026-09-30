@@ -227,7 +227,9 @@ class TestRemoveAllConfirmation:
 
         assert not held.exists()
         assert commits
-        assert "[hold/" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert output.splitlines()[0].startswith("成功: ")
+        assert "[hold/" not in output
 
     def test_restores_missing_state_directories_before_commit(
         self,
@@ -308,17 +310,21 @@ class TestRemoveAllConfirmation:
         assert not commits
         assert "--yes" in capsys.readouterr().err
 
-    def test_yes_shows_list_without_reading_input(
+    @pytest.mark.parametrize("agent_environment", [False, True])
+    def test_yes_omits_list_without_reading_input(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        agent_environment: bool,
     ) -> None:
-        """`--yes`でも一覧を表示し、標準入力を読まずに削除する。"""
+        """`--yes`は両環境で候補一覧と標準入力を省き、適用結果を先に表示する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
+        if agent_environment:
+            monkeypatch.setenv("AI_AGENT", "1")
 
         class _UnreadableInput:
             def readline(self, _size: int = -1, /) -> str:
@@ -336,8 +342,9 @@ class TestRemoveAllConfirmation:
 
         assert not path.exists()
         output = capsys.readouterr().out
-        assert "# awi" in output
-        assert "[inbox/" in output
+        assert output.splitlines()[0].startswith("成功: ")
+        assert "# awi" not in output
+        assert "[inbox/" not in output
         assert len(commits) == 1
 
 

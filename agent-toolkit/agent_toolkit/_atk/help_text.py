@@ -99,7 +99,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi rm": {
         "summary": "指定項目またはフィルターに一致する項目を削除する",
-        "description": "目的: 指定した項目、または対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。`--note-file`はUTF-8ファイルの絶対パスで指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合はそのcommitから復元する。",
+        "description": "目的: 指定した項目、または対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、確認を求める場合だけ削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。`--note-file`はUTF-8ファイルの絶対パスで指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合はそのcommitから復元する。",
         "epilog": "実行例:\n\n  atk wi rm 20260901-072734-001.md",
     },
     "atk wi edit": {
@@ -229,7 +229,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents notify": {
         "summary": "委譲先から委譲元のルートセッションへ本文を1件送る",
-        "description": "目的: 委譲先が自身のturnを終端せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーションまたは阻害要因を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。標準出力へは何も書かない。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲元が`wait`で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
+        "description": "目的: 委譲先が自身のturnを終端せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーションまたは阻害要因を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲元が`wait`で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
         "epilog": "実行例:\n\n  atk agents notify --body='検査コマンドが未導入で実行できない'",
     },
     "atk agents list": {
@@ -305,7 +305,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk watch": {
         "summary": "委譲先の成果物側の状況を1行で出力する",
-        "description": "目的: 指定した作業ツリーの未コミット差分の件数とHEAD、指定したファイルの行数と最終更新からの経過秒を1行へまとめて出力する。\n利用場面: 委譲先の作業が進んでいるかを、少ないコンテキストで繰り返し観測するとき。\n対象と出力: 指定した作業ツリーとファイルを読み取り、標準出力へ1行で書く。取得できない項目がある場合は終了コード1、指定が不正な場合は終了コード2を返す。\n前提: `--worktree`か`--file`を1件以上指定する。ラベルは対象ごとに重複させない。作業ツリーの差分の件数とHEADは、並行する他の主体の変更も含む全体の値である。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 指定した作業ツリーの未コミット差分の件数とHEAD、指定したファイルの行数と最終更新からの経過秒を1行へまとめて出力する。\n利用場面: 委譲先の作業が進んでいるかを、少ないコンテキストで繰り返し観測するとき。\n対象と出力: 指定した作業ツリーとファイルを読み取り、標準出力へ1行で書く。取得できない項目がある場合は、標準エラーへ失敗行と次の操作を書いて終了コード1、指定が不正な場合は終了コード2を返す。\n前提: `--worktree`か`--file`を1件以上指定する。ラベルは対象ごとに重複させない。作業ツリーの差分の件数とHEADは、並行する他の主体の変更も含む全体の値である。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk watch --worktree=lane-05=/home/aki/dotfiles/.claude/worktrees/lane-05",
     },
     "atk review-table": {
@@ -355,7 +355,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-audit mark": {
         "summary": "判定済みの識別子を記録する",
-        "description": "目的: 分類を確定したreviewとDependabotアラートの識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済みまたは根拠付き対応不要と分類したreview本文と、判定したDependabotアラートを記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、更新後の対象リポジトリの識別子を`atk review-audit list`と同じ順で標準出力へ書く。記録済みの識別子は重複させない。Dependabotアラートは`dependabot:<番号>`で記録し、reviewの識別子と区別する。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へreviewの正の整数の識別子または`dependabot:<番号>`を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
+        "description": "目的: 分類を確定したreviewとDependabotアラートの識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済みまたは根拠付き対応不要と分類したreview本文と、判定したDependabotアラートを記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、今回指定した識別子だけを重複なく、`atk review-audit list`と同じ順で標準出力へ書く。記録済みの識別子は重複させない。Dependabotアラートは`dependabot:<番号>`で記録し、reviewの識別子と区別する。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へreviewの正の整数の識別子または`dependabot:<番号>`を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
         "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 dependabot:48",
     },
 }
@@ -378,9 +378,7 @@ BULK_TRANSITION_COMMANDS = (
 )
 """`--all`とフィルター系引数を`atk wi rm`と同じ形式で受理する状態遷移コマンド。"""
 
-_BULK_TRANSITION_OUTPUT = (
-    "`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、操作の前に候補を一覧表示する。"
-)
+_BULK_TRANSITION_OUTPUT = "`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、確認を求める場合だけ操作の前に候補を一覧表示する。"
 _BULK_TRANSITION_PRECONDITION = "個別指定ではFILENAMEを1個以上、一括操作では--allと--target-repoを指定する。"
 
 

@@ -1559,7 +1559,7 @@ class TestPullWithRecentNotice:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """直近同期が統合済みの場合はfetch・mergeを省略し、再利用を案内する。"""
+        """直近同期が統合済みの場合はfetch・mergeを省略し、補足を出力しない。"""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         fetch_head = git_dir / "FETCH_HEAD"
@@ -1573,10 +1573,7 @@ class TestPullWithRecentNotice:
             _common._pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert [call for call in calls if call[0] in ("fetch", "merge")] == []
-        assert capsys.readouterr().err == (
-            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。\n"
-            "次の操作: このまま続行してよい。最新化する場合は`--pull`を指定する。\n"
-        )
+        assert not capsys.readouterr().err
 
     def test_recent_reuse_still_migrates_legacy_reservations(
         self,

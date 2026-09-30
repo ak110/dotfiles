@@ -104,8 +104,12 @@ def test_agents_notify_preserves_body_exactly(
     assert raw_payload.endswith("\n")
     assert raw_payload.count("\n") == 1
     captured = capsys.readouterr()
-    assert not captured.out
+    assert captured.out.splitlines()[0].startswith("成功: ")
     assert not captured.err
+    help_text = atk.format_command_help(("agents", "notify"))
+    assert help_text is not None
+    assert "標準出力へは何も書かない" not in help_text
+    assert "標準出力の1行目" in help_text
 
 
 def test_agents_notify_reads_body_file(

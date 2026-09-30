@@ -117,7 +117,7 @@ def migrate_legacy_layout(
     *,
     repo_lock_fn: Callable[[pathlib.Path], AbstractContextManager[object]],
     pull_fn: Callable[[pathlib.Path], None],
-    commit_fn: Callable[[pathlib.Path, str, Iterable[str]], None],
+    commit_fn: Callable[[pathlib.Path, str, Iterable[str]], object],
 ) -> None:
     """旧2階層レイアウトの管理repoを平坦レイアウトへ移行する。
 
@@ -229,7 +229,7 @@ def migrate_legacy_reservations(
     private_notes: pathlib.Path,
     *,
     assert_lock_fn: Callable[[pathlib.Path], None],
-    commit_fn: Callable[[pathlib.Path, str, Iterable[str]], None],
+    commit_fn: Callable[[pathlib.Path, str, Iterable[str]], object],
 ) -> int:
     """2.34.0形式の予約を通常のinbox項目へ一方向に移行する。"""
     assert_lock_fn(private_notes)

@@ -647,7 +647,10 @@ def test_set_dependencies_reports_body_mismatch_and_omits_body_on_success(
         )
 
     assert success.value.code == 0
-    assert "本文" not in capsys.readouterr().out
+    assert capsys.readouterr().out.splitlines() == [
+        "成功: 依存を更新した: success.md",
+        "    depends_on: dependency.md",
+    ]
     original_read = mutations._add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
     captured: dict[str, str] = {}
 

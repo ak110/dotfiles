@@ -34,14 +34,12 @@ from agent_toolkit._atk.wi.add import _body_is_effectively_empty, read_body_file
 from agent_toolkit._atk.wi.common import (
     MISSING_DEPENDENCY_NEXT_ACTION,
     WI_STATE_INBOX,
-    WI_STATE_PROCESSING,
     WI_STATES,
     WI_TYPE_AWI,
     WI_TYPES,
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
-    _count_awi,
     _max_existing_seq,
     _pull,
     _repo_lock,
@@ -552,7 +550,6 @@ def _cmd_add_batch(
             print(text, file=sys.stderr)
         sys.exit(1)
     inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
-    processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
     _outcome.report_success(f"{len(mapping)}件をinboxへ取り込んだ")
     for original, saved in mapping:
         renamed = f"（{original} -> {saved}）" if original != saved else ""
@@ -563,4 +560,3 @@ def _cmd_add_batch(
             print(f"  {original}")
     for warning in warnings:
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
-    print(f"inbox: 計{_count_awi(inbox_dir)}件（processing: {_count_awi(processing_dir)}件）")

@@ -247,7 +247,7 @@ _PULL_MIN_INTERVAL_SECONDS = 30.0
 直近の同期からの経過時間は`.git/FETCH_HEAD`のmtimeで判定する。
 同ファイルは`git fetch`が実行されるたびに更新され、プロセスを跨いで参照できるため、
 状態ファイルを別途設けずに済む。
-定期バックグラウンド更新の省略と、ユーザー操作での同期再利用案内に共用する。
+定期バックグラウンド更新の省略と、読み取り操作の同期再利用に共用する。
 """
 
 _TERMINAL_COMMIT_SUBJECT = re.compile(
@@ -392,11 +392,6 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
         _pull(private_notes)
         return
 
-    interval = int(_PULL_MIN_INTERVAL_SECONDS)
-    _next_action.report(
-        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用した。",
-        next_action="このまま続行してよい。最新化する場合は`--pull`を指定する。",
-    )
     _migrate_legacy_reservations(private_notes)
 
 
@@ -449,7 +444,7 @@ def _commit_and_push(
     rel_paths: Iterable[str],
     *,
     skip_push: bool = False,
-) -> None:
+) -> int | None:
     """指定パスをaddしcommit・pushする。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
@@ -463,7 +458,7 @@ def _commit_and_push(
     `skip_push=True`の場合はcommitだけを実行し、remote設定時は未pushのcommitが残る警告と、
     後続の通常操作または`atk wi commit`でpushする手順を標準エラーへ出力する。
     """
-    _atk_git_sync.commit_and_push(
+    return _atk_git_sync.commit_and_push(
         private_notes,
         message,
         rel_paths,
@@ -473,9 +468,9 @@ def _commit_and_push(
     )
 
 
-def _push_pending_commits(private_notes: pathlib.Path) -> None:
+def _push_pending_commits(private_notes: pathlib.Path) -> int | None:
     """ローカルcommitをpushし、同等終端の回復またはrebase後に1回だけ再試行する。"""
-    _atk_git_sync.push_pending_commits(
+    return _atk_git_sync.push_pending_commits(
         private_notes,
         run_git=_run_git,
         redundant_divergence=_redundant_terminal_divergence,
@@ -487,6 +482,8 @@ def _notify_unpushed_commits_if_any(private_notes: pathlib.Path) -> bool:
     count = _atk_git_sync.pending_commit_count(private_notes)
     if count is None or count == 0:
         return False
+    if _atk_git_sync.push_was_deferred(private_notes):
+        return True
     resolved = private_notes.resolve()
     _outcome.report_warning(
         f"private-notesに未pushのcommitが{count}件残る。操作自体は完了している。",

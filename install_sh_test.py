@@ -59,6 +59,8 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     assert pathlib.Path(uv_cache_dir).is_absolute()
     shutil.copy2(chezmoi_bin, local_bin / "chezmoi")
     shutil.copy2(uv_bin, local_bin / "uv")
+    # MCPウォームアップはuvxを使うため、同じ導入元の実行ファイルも隔離PATHへ置く。
+    shutil.copy2(uv_bin.with_name("uvx"), local_bin / "uvx")
     _write_fake_cli(local_bin / "claude")
     _write_fake_codex(local_bin / "codex", fake_home, fake_dotfiles)
     _write_fake_npm(local_bin / "npm")

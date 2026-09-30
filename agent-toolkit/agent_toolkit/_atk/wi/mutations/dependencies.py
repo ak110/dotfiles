@@ -342,4 +342,6 @@ def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path)
         _outcome.report_failure(f"依存更新を拒否した: {error}", next_action=error.next_action)
         sys.exit(1)
     _outcome.report_success(f"依存を更新した: {args.filename}")
-    _add._print_entry_details(details)  # pylint: disable=protected-access
+    dependencies = details["depends_on"]
+    assert isinstance(dependencies, list)
+    print(f"    depends_on: {'、'.join(str(value) for value in dependencies) or 'なし'}")

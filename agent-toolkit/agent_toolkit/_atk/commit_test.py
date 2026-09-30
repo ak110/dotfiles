@@ -22,7 +22,11 @@ def _repo(tmp_path: Path) -> Path:
     return repository
 
 
-def test_public_commit_creates_git_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_public_commit_creates_git_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
     monkeypatch.setattr(commit, "_executable", lambda _engine: "/fake/claude")
@@ -35,7 +39,11 @@ def test_public_commit_creates_git_commit(tmp_path: Path, monkeypatch: pytest.Mo
             assert Path(kwargs["cwd"]) != repository
             original_run(["git", "-C", str(repository), "add", "change.txt"], check=True)
             original_run(["git", "-C", str(repository), "commit", "-q", "-m", "test: 変更を保存する"], check=True)
-            return subprocess.CompletedProcess(command, 0)
+            child_output = "子の完了報告\n"
+            if kwargs.get("stdout") != subprocess.PIPE:
+                print(child_output, end="")
+                child_output = ""
+            return subprocess.CompletedProcess(command, 0, stdout=child_output)
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
@@ -43,6 +51,9 @@ def test_public_commit_creates_git_commit(tmp_path: Path, monkeypatch: pytest.Mo
         atk.main(["commit", "--model-type", "claude:sonnet/high"])
 
     assert len(calls) == 1
+    output = capsys.readouterr().out.splitlines()
+    assert output[0].startswith("成功: ")
+    assert output[1] == "子の完了報告"
     assert "--model=sonnet" in calls[0]
     assert "--effort=high" in calls[0]
     assert calls[0][-1].startswith('<atk-auto source="atk-commit" kind="commit-request">')
@@ -55,7 +66,11 @@ def test_public_commit_creates_git_commit(tmp_path: Path, monkeypatch: pytest.Mo
     )
 
 
-def test_dry_run_passes_forwarded_prompt_without_committing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dry_run_passes_forwarded_prompt_without_committing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
     monkeypatch.setattr(commit, "_executable", lambda _engine: "/fake/codex")
@@ -65,7 +80,11 @@ def test_dry_run_passes_forwarded_prompt_without_committing(tmp_path: Path, monk
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if command[0] == "/fake/codex":
             calls.append(command)
-            return subprocess.CompletedProcess(command, 0)
+            proposal = "test: 提案された件名\n"
+            if kwargs.get("stdout") != subprocess.PIPE:
+                print(proposal, end="")
+                proposal = ""
+            return subprocess.CompletedProcess(command, 0, stdout=proposal)
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
@@ -73,6 +92,9 @@ def test_dry_run_passes_forwarded_prompt_without_committing(tmp_path: Path, monk
         atk.main(["commit", "--dry-run", "--model-type", "codex:gpt-6-sol/high", "背景を説明して"])
 
     assert len(calls) == 1
+    output = capsys.readouterr().out.splitlines()
+    assert output[0].startswith("成功: ")
+    assert output[1] == "test: 提案された件名"
     assert calls[0][:6] == ["/fake/codex", "exec", "--model", "gpt-6-sol", "-c", "model_reasoning_effort=high"]
     assert "--dangerously-bypass-approvals-and-sandbox" in calls[0]
     assert "forwarded-user-input" in calls[0][-1]
@@ -230,9 +252,16 @@ def test_final_failure_names_recovery_operation(
         if command[0].startswith("/fake/"):
             if change_state:
                 (repository / "other.txt").write_text("途中変更\n", encoding="utf-8")
-            return subprocess.CompletedProcess(command, 9)
+            diagnostic = "子の失敗診断\n"
+            if kwargs.get("stdout") != subprocess.PIPE:
+                print(diagnostic, end="")
+                diagnostic = ""
+            return subprocess.CompletedProcess(command, 9, stdout=diagnostic)
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
     commit.run(atk._build_parser().parse_args(["commit"]))  # pylint: disable=protected-access
-    assert expected_operation in _next_action_line(capsys.readouterr().err)
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "子の失敗診断" in captured.err
+    assert expected_operation in _next_action_line(captured.err)

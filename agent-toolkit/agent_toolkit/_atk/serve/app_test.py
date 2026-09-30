@@ -486,6 +486,29 @@ async def test_wi_mutation_logs_operation_without_body(
 
 
 @pytest.mark.asyncio
+async def test_commit_api_keeps_changed_boolean(
+    tmp_path: pathlib.Path,
+    make_clean_repo: typing.Callable[..., pathlib.Path],
+) -> None:
+    """commit結果が詳細を持っても、Web APIは外部編集をcommitした真偽だけを返す。"""
+    notes = make_clean_repo(tmp_path, "notes")
+    marker = notes / ".agent-toolkit-local-only"
+    marker.touch()
+    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "local setup"], check=True, capture_output=True)
+    client = _serve_app(notes).test_client()
+    empty = await client.post("/api/entries/commit", json={})
+    assert empty.status_code == 200
+    assert await empty.get_json() == {"changed": False}
+    (notes / "external.txt").write_text("外部編集\n", encoding="utf-8")
+    changed = await client.post("/api/entries/commit", json={})
+    assert changed.status_code == 200
+    assert await changed.get_json() == {"changed": True}
+    repeated = await client.post("/api/entries/commit", json={})
+    assert await repeated.get_json() == {"changed": False}
+
+
+@pytest.mark.asyncio
 async def test_concurrent_sync_requests_share_one_pull(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

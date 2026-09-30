@@ -75,7 +75,7 @@ class TestConfigShow:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """参考一覧外の候補は設定キーと候補を標準エラーへ示す。"""
-        candidate = "codex:unknown-model/ultra"
+        candidate = "codex:unknown-model/ultra,claude:another-unknown/medium"
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL", candidate)
 
         with pytest.raises(SystemExit) as exc_info:
@@ -84,9 +84,12 @@ class TestConfigShow:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert f"high_tier_model: {candidate}" in captured.out
-        assert f"設定キー`high_tier_model`の候補`{candidate}`" in captured.err
+        assert "候補`codex:unknown-model/ultra`" in captured.err
+        assert "候補`claude:another-unknown/medium`" in captured.err
         assert "モデル名`unknown-model`は主に使うモデルの一覧" in captured.err
         assert "effort`ultra`は主に使う値の一覧" in captured.err
+        assert captured.err.count("警告: ") == 3
+        assert captured.err.count("次の操作: ") == 1
 
     def test_show_emits_no_warning_when_all_candidates_known(
         self,
@@ -732,7 +735,7 @@ class TestConfigSet:
     def test_set_unknown_model_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """参考一覧に無いモデル名は警告を表示したうえで受理し、永続化する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "set", "high_tier_model", "claude:unknown-model"], home=tmp_path)
+            atk.main(["config", "set", "high_tier_model", "claude:unknown-model,codex:another-unknown"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -742,11 +745,13 @@ class TestConfigSet:
         assert "警告: 警告: " not in captured.err
         assert "次の操作: " in captured.err
         assert "対応不要" in captured.err
+        assert captured.err.count("警告: ") == 2
+        assert captured.err.count("次の操作: ") == 1
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "high_tier_model"], home=tmp_path)
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "claude:unknown-model\n"
+        assert capsys.readouterr().out == "claude:unknown-model,codex:another-unknown\n"
 
     def test_set_unknown_effort_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """参考一覧に無いeffortは警告を表示したうえで受理し、永続化する。"""

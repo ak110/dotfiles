@@ -219,13 +219,25 @@ def run(args: argparse.Namespace) -> int:
         with tempfile.TemporaryDirectory() as temporary:
             command = _command(engine, executable, model, effort, root, temporary, prompt)
             try:
-                result = subprocess.run(command, cwd=temporary, check=False)
+                result = subprocess.run(
+                    command,
+                    cwd=temporary,
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
             except OSError as error:
                 print(f"候補をスキップします: {engine}を起動できません: {error}", file=sys.stderr)
                 continue
         if result.returncode == 0:
             outcome.report_success("コミット用エージェントの実行が完了した")
+            if result.stdout:
+                print(result.stdout, end="")
             return 0
+        if result.stdout:
+            print(result.stdout, end="", file=sys.stderr)
         if _git_state(root) != before:
             outcome.report_failure(
                 f"{engine}がGit状態を変更した後に失敗したため、次の候補を起動しません",

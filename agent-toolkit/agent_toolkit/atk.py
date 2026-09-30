@@ -559,7 +559,7 @@ def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
     parser.add_argument(
         "--all",
         action="store_true",
-        help=f"--target-repoとフィルターに一致する全項目を一覧表示後に{action_label}する。",
+        help=f"--target-repoとフィルターに一致する全項目を{action_label}する。確認時は候補一覧を表示する。",
     )
     parser.add_argument(
         "--type",
@@ -587,7 +587,7 @@ def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
     parser.add_argument(
         "--yes",
         action="store_true",
-        help=f"--allによる一括{action_label}の確認入力を省略する。一覧表示は維持する。",
+        help=f"--allによる一括{action_label}の候補一覧と確認入力を省略する。",
     )
     parser.add_argument(
         "--skip-pull",
@@ -1080,12 +1080,10 @@ def _show_info() -> None:
         version = "不明"
     config_file = _config_cmd._config_file_path()  # pylint: disable=protected-access
     print(f"作業ディレクトリ: {pathlib.Path.cwd()}")
-    print(f"atk実装: {pathlib.Path(__file__).resolve()}")
     print(f"起動ファイル: {pathlib.Path(sys.argv[0]).resolve()}")
     print(f"plugin root: {plugin_root}")
     print(f"plugin version (plugin.json): {version}")
-    print(f"設定ファイル: {config_file if config_file.is_file() else '未作成'}")
-    print(f"設定ファイル候補: {config_file}")
+    print(f"設定ファイル: {config_file}{'' if config_file.is_file() else '（未作成）'}")
     print(f"状態ディレクトリ: {_config_cmd.state_dir()}")
 
 
@@ -1258,7 +1256,9 @@ def _cmd_pull(private_notes: pathlib.Path) -> None:
     """private-notesを排他ロック内で明示的に同期する。"""
     with _common._repo_lock(private_notes):
         _common.pull(private_notes)
-    _outcome.report_success(f"private-notesをremoteと同期した: {private_notes.resolve()}")
+        has_remote = _atk_git_sync.has_remote(private_notes)
+    result = "remoteと同期した" if has_remote else "remoteが無いため同期していない"
+    _outcome.report_success(f"private-notesを{result}: {private_notes.resolve()}")
 
 
 _SUBCOMMAND_DESTS = (
@@ -1474,7 +1474,7 @@ def main(
                 _sync_exit_code(
                     exit_code,
                     private_notes,
-                    should_check=not getattr(args, "skip_push", False),
+                    should_check=args.plans_subcommand != "list" and not getattr(args, "skip_push", False),
                 )
             )
         except (ValueError, _atk_git_sync.RebaseInProgressError) as error:

@@ -647,7 +647,9 @@ class TestSkipPush:
             check=True,
         ).stdout.strip()
         assert local_head == remote_head
-        assert "外部編集の差分は無く、滞留commitをpushした" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert "外部編集の差分は無い" in output
+        assert "1件のcommitをpushした" in output
 
     def test_real_git_transitions_push_and_recover_after_remote_advances(
         self,
@@ -931,8 +933,8 @@ class TestStartProcessingFailureBoundaries:
         monkeypatch.setattr(subprocess, "run", fake_status)
         monkeypatch.setattr(mutations, "_commit_and_push", recover_commit)
         monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
-        assert mutations.commit_entries(notes) is True
-        assert mutations.commit_entries(notes) is False
+        assert mutations.commit_entries(notes).changed is True
+        assert mutations.commit_entries(notes).changed is False
         assert len(recovery_calls) == 1
         assert push_calls == [notes, notes, notes]
 
