@@ -4,6 +4,10 @@
 
 ## フック・セッション状態の不全
 
+- 2026年9月30日: Claude CodeのサブエージェントがBashで内容を取得したファイルへEditを発行し、Read不足で複数の操作が拒否された。Read後の同じEditは成功した。
+  直接原因: 内容の取得と編集ツールの読取状態を同一視し、対象ごとの前提が成立していない編集群を発行した。
+  対策: `agent-toolkit/skills/writing-standards/references/notation-rules.md`のファイル更新と一括置換の適用時点で編集ツールの前提を確かめ、Read不足で失敗した全操作をRead後に回収する。同版の新しい主セッションとサブエージェントではBash取得後のEditが成功したため、監査記録は過去の失敗と今回の非再現を分け、失敗した条件でだけRead回復を確かめる手順を持つ
+
 - 2026年9月30日: `atk wi process-loop`が起動したClaude Codeの子セッションが、終了時に「Background work is running」の確認画面で止まり、次の周期へ進まなかった。残っていたのは委譲先の停滞を確認する定時確認のcron task（`durable`なし）だった。
   直接原因: Function hooksの`turn.complete`が実行する`/exit`は終了とともに停止するセッション限りの作業（非durableのcron task、背景作業）が残ると確認画面を表示し、無人のセッションでは回答する主体がいない。定時確認taskの削除はモデルが`CronDelete`を実行する規定だけが担っていた。終了をSIGTERMからターン完了後の`/exit`へ移した変更で、残った作業の扱いを`/exit`の処理へ加えておらず、移行時の確認も残った作業がある終了を含めていなかった。
   対策: `turn.complete`が`/exit`の直前に非durableのcron taskを削除する（許可の判定が`allow`の場合だけ。失敗しても`/exit`は実行する）。Stop hookの`autonomous_exit.py`は終了要求が`requested`でStop入力に有効な非`teammate`の背景作業が残る場合に要求を`consumed`へ戻してblockし、作業の終端を確かめてから`atk agents-exit-session`を再実行するよう求める
