@@ -43,8 +43,11 @@ formatter未適用・単純なテスト期待値の未追随など）と確定�
 対処選択肢を決める前に、CI失敗の性質を実際に確認して分類する。
 
 - 監視で取得したrun IDまたはpipeline ID・job IDを引き継ぎ、全体の実行状態を確認してから失敗ジョブのログを取得する
-  - GitHubではrunの終端前にjob IDを使うAPI、annotationまたは失敗テスト名から証拠を暫定保存する。run単位の失敗ログを読む前に`gh run watch <run ID> --exit-status`などで終端を待ち、失敗による非0終了と待機手段の失敗をrun状態で区別する。終端後に`gh run view <run ID> --log-failed`で失敗ログを取得し、暫定証拠が失敗job集合の全jobを欠けなく覆っているか確かめる
-  - GitHubのjob単位のログは`gh run view --job <job ID> --log-failed`で取得できる。`gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs`をファイルへ保存する場合は`--allow-escape-sequences`を付ける。応答に端末エスケープが含まれると、指定のない`gh api`は出力を拒否する。各コマンドの受理形式は操作直前のヘルプで確かめる
+  - GitHubではrunと対象jobの状態から取得手段を選び、各コマンドの受理形式を操作直前のヘルプで確かめる
+    - run進行中で対象jobが完了済み: `gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全jobログを管理対象一時領域のファイルへ暫定保存する。端末エスケープを含む応答はこの指定が無いと出力を拒否される。取得に失敗した場合とjobが進行中の場合は、annotationや失敗テスト名などの取得可能な証拠を保存して先行分析する
+    - run終端後: `gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`で対象jobの失敗ステップを取得する。全失敗jobの確認には`--job`を省いたrun単位の取得を使い、暫定証拠が全失敗jobを覆っているか確かめる。job logs APIの全jobログとは出力範囲が異なる
+    - run単位の失敗ログの取得前は`gh run watch <run ID> --repo <OWNER>/<REPO> --exit-status`などで終端を待ち、失敗による非0終了と待機手段の失敗をrun状態で区別する
+    - 観測記録と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」にある
   - GitLabでは対象SHAに対応するpipeline IDから失敗jobとそのtraceへ到達する。`gh`と`glab`の受理形式は実行直前のヘルプで確定する
 - artifactが生成されるジョブでは、VRT差分画像やtest-resultsなどのartifactも取得する
 - 取得したログとartifactを読み取り、失敗の性質を目視で確認する

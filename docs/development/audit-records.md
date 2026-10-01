@@ -426,6 +426,23 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。分割後の137件では、最大が13,176トークン（`skills/plan-mode/references/plan-file-standards.md`、45,749バイト）だった。1トークンあたりバイト数の最小は3.10（`skills/plan-mode/references/legacy-plan-file-standards.md`）だった。配布設定`scripts/codex_config.toml`の`tool_output_token_limit`は20000である。20,000トークンと3.10バイトの積は約62,000バイトであり、実行セルが本文へ付加する分の余裕を取って閾値を48KiB（49,152バイト）とした。48KiBの文書は最悪の比率でも約15,900トークンで、上限に対して約4,000トークンの余裕が残る。
 再検証では同じ集合をo200k_baseで数えて1トークンあたりバイト数の最小値を測り直し、配布設定の`tool_output_token_limit`との積が閾値と付加分の余裕を上回るか確かめる。
 
+## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日
+
+2026年10月1日、LinuxのGitHub CLI 2.101.0で`ak110/dotfiles`を対象に確認した。
+run `36791008397`が進行中でjob `110143643856`が`completed/success`のとき、job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で454行の全jobログを保存できた。
+保存直後もrunは`in_progress`で、同runとjobを指定した`gh run view --log-failed`は終了コード1となり、進行中のため取得できない旨を返した。
+終端済みの失敗run `36786321272`とjob `110128462391`への`gh run view --log-failed`は終了コード0で保存できた。
+確認したAPIの成立範囲は進行中runの完了済みjobであり、進行中jobの取得可否は未確認である。
+
+再検証では`gh version`と両コマンドのヘルプを取得する。
+この節の再検証コマンドでは`<OWNER>/<REPO>`を`ak110/dotfiles`とする。
+進行中runに完了jobがある場合はrunとjobの状態をAPIで保存する。
+`gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全jobログを取得する。
+同じ対象へ`gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`を実行し、出力と終了コードを比較する。
+取得後もrunが進行中であることを確認し、終端済みの失敗runとjobにも後者を適用する。
+APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力件数の一致は求めない。
+進行中runが無い場合はその条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
+
 ## dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日
 
 2026年10月1日、uv 0.12.21を使い、専用worktreeのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行した。終了コードは0で、標準エラーには135パッケージの解決と133パッケージの確認が記録された。続く`uv run --frozen python`でpytools、agent_toolkit、pytestのimportが成功した。

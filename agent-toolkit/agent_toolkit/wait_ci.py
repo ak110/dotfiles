@@ -17,6 +17,7 @@ import math
 import os
 import pathlib
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -56,10 +57,6 @@ AncestorCheckFn = Callable[[str], bool]
 FollowShasFn = Callable[[str], list[str]]
 
 
-_NEXT_ACTION_CI_FAILED = (
-    "表示したrunまたはジョブのURLで失敗ログを読み、原因を調べる"
-    "（GitHubは`gh run view <run id> --log-failed`、GitLabは`glab ci trace <job id>`で取得できる）"
-)
 _NEXT_ACTION_TIMEOUT = "同じ引数で再実行すると待機を続けられる。CIの所要時間が長い場合は`--timeout`を延ばして再実行する"
 _NEXT_ACTION_FORGE_ERROR = (
     "`gh auth status`（GitLabは`glab auth status`）で認証とネットワーク到達を確かめ、同じ引数で再実行する"
@@ -80,6 +77,26 @@ def _finish(code: int, next_action: str) -> int:
     """非0の終了コードを返す前に、次の操作の行を標準エラーへ書く。"""
     print(_next_action.next_action_line(next_action), file=sys.stderr, flush=True)
     return code
+
+
+def _failure_next_action(record: RunRecord | JobRecord, record_type: str, repository: str, forge: str) -> str:
+    """検出済みの対象と状態から、待機を追加せず成立するログ取得を案内する。"""
+    identifier = str(record.get("databaseId", "?"))
+    if forge == "gitlab":
+        job_id = identifier if record_type == "job" else "<job id>"
+        return (
+            f"表示したURLで失敗jobを確かめ、`glab ci trace {job_id} --repo {shlex.quote(repository)}`"
+            "でログを取得して原因を調べる"
+        )
+    target = _parse_repository(repository)
+    if record_type == "job":
+        command = ["gh", "api", f"repos/{target.project_path}/actions/jobs/{identifier}/logs", "--allow-escape-sequences"]
+        if target.hostname is not None:
+            command.extend(["--hostname", target.hostname])
+        return f"`{shlex.join(command)}`で全jobログを管理対象一時領域のファイルへ保存し、失敗箇所を読んで原因を調べる"
+    repo = f"{target.hostname}/{target.project_path}" if target.hostname else target.project_path
+    command = ["gh", "run", "view", identifier, "--repo", repo, "--log-failed"]
+    return f"`{shlex.join(command)}`で失敗ログを取得して原因を調べる"
 
 
 class RunListError(RuntimeError):
@@ -770,6 +787,7 @@ def _wait_for_completion(
     fetch_fn: Callable[[], tuple[list[RunRecord], list[JobRecord], set[int]]],
     select_fn: Callable[[list[RunRecord]], list[RunRecord]],
     forge: str,
+    repository: str,
     sleep_fn: Callable[[float], None],
     now_fn: Callable[[], float],
     consecutive_failures: int,
@@ -809,14 +827,15 @@ def _wait_for_completion(
             continue
         if failure := _find_early_failure(runs, jobs, forge):
             _emit_failure_summary(*failure)
-            return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED), runs, elapsed
+            return _finish(EXIT_CI_FAILED, _failure_next_action(*failure, repository, forge)), runs, elapsed
         if runs and _all_completed(runs):
             _emit_summary(runs)
             if _all_success(runs):
                 return EXIT_SUCCESS, runs, elapsed
             # 全run cancelledで後続runを追跡する場合は、呼び出し側が追跡の結果に応じた次の操作を書く。
             if follow_mode or not _all_cancelled(runs):
-                return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED), runs, elapsed
+                failed_run = next(run for run in runs if run.get("conclusion") != "success")
+                return _finish(EXIT_CI_FAILED, _failure_next_action(failed_run, "run", repository, forge)), runs, elapsed
             return EXIT_CI_FAILED, runs, elapsed
         if elapsed >= timeout:
             message = "後続run追跡タイムアウト" if follow_mode else f"タイムアウト（{timeout:.0f}秒経過）"
@@ -901,7 +920,7 @@ def wait_for_ci(
             expected_ids |= _run_ids(runs)
             if failure := _find_early_failure(runs, jobs, forge):
                 _emit_failure_summary(*failure)
-                return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED)
+                return _finish(EXIT_CI_FAILED, _failure_next_action(*failure, repository, forge))
         except RunListError as exc:
             consecutive_failures += 1
             last_call_failed = True
@@ -931,6 +950,7 @@ def wait_for_ci(
         fetch_fn=lambda: _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids),
         select_fn=lambda candidates: [run for run in candidates if run.get("databaseId") in expected_ids],
         forge=forge,
+        repository=repository,
         sleep_fn=sleep_fn,
         now_fn=now_fn,
         consecutive_failures=consecutive_failures,
@@ -961,6 +981,7 @@ def wait_for_ci(
         job_list_fn=job_list_fn,
         follow_shas_fn=follow_shas_fn,
         forge=forge,
+        repository=repository,
         excluded_ids=baseline_ids,
     )
 
@@ -977,6 +998,7 @@ def _follow_cancelled(
     job_list_fn: JobListFn,
     follow_shas_fn: FollowShasFn,
     forge: str,
+    repository: str,
     excluded_ids: frozenset[int],
 ) -> int:
     """全run cancelled時、明示source refの後続SHA集合を判定対象とする。
@@ -1012,7 +1034,7 @@ def _follow_cancelled(
             expected_ids |= _run_ids(candidates)
             if failure := _find_early_failure(candidates, jobs, forge):
                 _emit_failure_summary(*failure)
-                return _finish(EXIT_CI_FAILED, _NEXT_ACTION_CI_FAILED)
+                return _finish(EXIT_CI_FAILED, _failure_next_action(*failure, repository, forge))
         except RunListError as exc:
             consecutive_failures += 1
             last_call_failed = True
@@ -1053,6 +1075,7 @@ def _follow_cancelled(
             run for run in candidates if run.get("headSha") in follow_shas and run.get("databaseId") in expected_ids
         ],
         forge=forge,
+        repository=repository,
         sleep_fn=sleep_fn,
         now_fn=now_fn,
         consecutive_failures=consecutive_failures,

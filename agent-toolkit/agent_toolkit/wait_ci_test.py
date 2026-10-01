@@ -139,6 +139,7 @@ def _run_wait(
     follow_shas_fn=None,
     baseline_ids=frozenset(),
     source_ref="HEAD",
+    repository="owner/repository",
 ):
     """`wait_for_ci`をDI経由で駆動する。時刻・sleepはスタブ化。"""
     times = iter(t * 1.0 for t in range(0, 100_000))
@@ -149,7 +150,7 @@ def _run_wait(
         registration_grace,
         follow_cancelled,
         10.0,
-        repository="owner/repository",
+        repository=repository,
         ref="refs/heads/main",
         source_ref=source_ref,
         baseline_ids=baseline_ids,
@@ -711,6 +712,23 @@ class TestGhErrorHandling:
 class TestUnifiedCompletionLoop:
     """主SHA・後続SHAが共有する完了待機ループを同一条件で検証する。"""
 
+    def _run_completion(self, fetch, follow_mode: bool, now_fn):
+        """共通の待機条件でsnapshotの取得と時刻だけを差し替える。"""
+        return wait_ci._wait_for_completion(  # pylint: disable=protected-access  # noqa: SLF001
+            start=0.0,
+            timeout=10.0,
+            poll_interval=1.0,
+            expected_ids={1},
+            fetch_fn=fetch,
+            select_fn=lambda candidates: candidates,
+            forge="github",
+            repository="owner/repository",
+            sleep_fn=lambda _seconds: None,
+            now_fn=now_fn,
+            consecutive_failures=0,
+            follow_mode=follow_mode,
+        )
+
     @pytest.mark.parametrize("follow_mode", [False, True])
     def test_snapshot_failure_recovers(self, follow_mode: bool) -> None:
         """一時的な取得失敗後の成功を両経路で受理する。"""
@@ -723,19 +741,7 @@ class TestUnifiedCompletionLoop:
                 raise wait_ci.RunListError("transient completion failure")
             return [_run()], [], set()
 
-        result, runs, _ = wait_ci._wait_for_completion(  # pylint: disable=protected-access  # noqa: SLF001
-            start=0.0,
-            timeout=10.0,
-            poll_interval=1.0,
-            expected_ids={1},
-            fetch_fn=fetch,
-            select_fn=lambda candidates: candidates,
-            forge="github",
-            sleep_fn=lambda _seconds: None,
-            now_fn=lambda: float(calls),
-            consecutive_failures=0,
-            follow_mode=follow_mode,
-        )
+        result, runs, _ = self._run_completion(fetch, follow_mode, lambda: float(calls))
 
         assert result == wait_ci.EXIT_SUCCESS
         assert runs == [_run()]
@@ -747,19 +753,7 @@ class TestUnifiedCompletionLoop:
         def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord], set[int]]:
             raise wait_ci.RunListError("completion failure")
 
-        result, runs, _ = wait_ci._wait_for_completion(  # pylint: disable=protected-access  # noqa: SLF001
-            start=0.0,
-            timeout=10.0,
-            poll_interval=1.0,
-            expected_ids={1},
-            fetch_fn=fetch,
-            select_fn=lambda candidates: candidates,
-            forge="github",
-            sleep_fn=lambda _seconds: None,
-            now_fn=lambda: 0.0,
-            consecutive_failures=0,
-            follow_mode=follow_mode,
-        )
+        result, runs, _ = self._run_completion(fetch, follow_mode, lambda: 0.0)
 
         assert result == wait_ci.EXIT_GH_ERROR
         assert not runs
@@ -1319,7 +1313,7 @@ class TestNextActionOnNonZeroExit:
             (
                 {"run_list_fn": lambda _s: [_run(conclusion="failure")]},
                 wait_ci.EXIT_CI_FAILED,
-                ["--log-failed", "glab ci trace"],
+                ["gh run view 1", "--repo owner/repository", "--log-failed"],
             ),
             ({"run_list_fn": lambda _s: [], "registration_grace": 100.0, "timeout": 1.0}, wait_ci.EXIT_TIMEOUT, ["--timeout"]),
             (
@@ -1363,6 +1357,71 @@ class TestNextActionOnNonZeroExit:
     def test_successful_wait_writes_no_next_action(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _run_wait(lambda _s: [_run()]) == wait_ci.EXIT_SUCCESS
         assert "次の操作: " not in capsys.readouterr().err
+
+    @pytest.mark.parametrize("follow", [False, True])
+    @pytest.mark.parametrize(("grace", "fail_at"), [(100.0, 1), (0.0, 2)])
+    @pytest.mark.parametrize("record_type", ["job", "run"])
+    def test_github_failure_guidance_matches_detected_target(
+        self, capsys: pytest.CaptureFixture[str], follow: bool, grace: float, fail_at: int, record_type: str
+    ) -> None:
+        """各待機段階で検出したjobとrunを取り違えず、終端待機を増やさず案内する。"""
+        calls = 0
+
+        def run_list(sha: str) -> list[dict]:
+            nonlocal calls
+            if follow and sha == "sha1":
+                return [_run(conclusion="cancelled")]
+            calls += 1
+            failed = calls >= fail_at and record_type == "run"
+            records = [_run(db_id=303, head_sha=sha, status="in_progress", conclusion=None)]
+            if failed:
+                records[0].update(status="completed", conclusion="failure")
+                records.append(_run(db_id=304, name="pending", head_sha=sha, status="in_progress", conclusion=None))
+            return records
+
+        def job_list(run: dict) -> list[dict]:
+            if run["databaseId"] == 303 and calls >= fail_at and record_type == "job":
+                return [_job(db_id=904, conclusion="failure")]
+            return []
+
+        assert (
+            _run_wait(
+                run_list,
+                repository="https://github.example.com/team/project.git",
+                registration_grace=grace,
+                follow_cancelled=follow,
+                job_list_fn=job_list,
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+        action = _next_action(capsys.readouterr().err)
+        assert calls == fail_at
+        if record_type == "job":
+            assert "repos/team/project/actions/jobs/904/logs" in action
+            assert "--hostname github.example.com" in action
+            assert "--allow-escape-sequences" in action
+            assert "管理対象一時領域のファイルへ保存" in action
+            assert "--log-failed" not in action
+        else:
+            assert "gh run view 303 --repo github.example.com/team/project --log-failed" in action
+            assert "actions/jobs" not in action
+
+    def test_terminal_non_success_guidance_uses_failed_run(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """早期失敗に含まれない終端状態でも成功runのIDを案内しない。"""
+        assert _run_wait(lambda _sha: [_run(db_id=301), _run(db_id=302, conclusion="skipped")]) == wait_ci.EXIT_CI_FAILED
+        assert "gh run view 302 --repo owner/repository --log-failed" in _next_action(capsys.readouterr().err)
+
+    def test_gitlab_failure_guidance_uses_job_trace(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """GitLabの失敗jobにはrun IDではなく検出したjob IDでtrace取得を案内する。"""
+        assert (
+            _run_wait(
+                lambda _sha: [_run(db_id=303, status="in_progress", conclusion=None)],
+                forge="gitlab",
+                job_list_fn=lambda _run: [_job(db_id=904, status="failed", conclusion="failure")],
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+        assert "glab ci trace 904 --repo owner/repository" in _next_action(capsys.readouterr().err)
 
     def test_sha_resolution_failure_names_git_fetch(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         baseline = tmp_path / "baseline.json"
