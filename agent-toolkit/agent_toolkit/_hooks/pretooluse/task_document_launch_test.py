@@ -68,7 +68,7 @@ def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) ->
 def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib.Path) -> None:
     """`Agent`の本文は1行目の命令と宣言済み入力の行だけで通り、役割宣言などの行を含むと遮断する。
 
-    宣言済みの入力には共通入力名`待機表明の例外`と、字下げした続きの行を持つ値を含める。
+    宣言済みの入力には、字下げした続きの行を持つ値を含める。
     """
     minimal = "\n".join(
         [
@@ -77,7 +77,6 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
             "引き継ぎ記録先:",
             f"  {tmp_path / 'handoff.md'}（新規）",
             "  ",
-            "待機表明の例外: 適用しない。待機対象の種別を問わず前景で終端を観測する",
             "レーン識別子: lane-01",
         ]
     )

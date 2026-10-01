@@ -935,8 +935,8 @@ class ClaudeServerManager:
     ) -> None:
         """保留した終端結果を確定する。
 
-        Claude backendはタスク完了通知によって同一sessionを再開できるため終端結果を保留する。
-        Codex backendはこの通知によって再開できないため、終端結果を保留しない。
+        Claude backendはタスク完了通知と孫sessionの終端によって同一sessionを再開できるため終端結果を保留する。
+        Codex backendは孫sessionの終端による再開だけを持ち、同じ保留をMCP層の監視が確定する。
         """
         shared_state.consume_agents_wait_background_outputs(session)
         unobserved = set(session.live_child_session_ids)

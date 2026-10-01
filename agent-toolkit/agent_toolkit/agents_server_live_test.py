@@ -18,18 +18,8 @@ _PROMPT = """Bashツールで`sleep 2`を背景実行し、待たずにturnを�
 背景作業の完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["delegate", "explore", "shell"])
-async def test_live_launch_waits_for_automatic_resume(
-    mode: str,
-    monkeypatch: pytest.MonkeyPatch,
-    host_environ: Callable[[], dict[str, str]],
-) -> None:
-    """公開する起動ツール`start`の3つのmodeが、再開指示なしで背景作業完了後の結果を返す。"""
-    manager = subject.AgentsServerManager()
-    monkeypatch.setattr(subject, "_MANAGER", manager)
-    cwd = str(pathlib.Path(__file__).parents[2])
-    host = host_environ()
+def _use_host_environment(monkeypatch: pytest.MonkeyPatch, host: dict[str, str]) -> None:
+    """委譲先CLIが認証と設定を読めるよう、ホストのホーム・設定・状態ディレクトリの環境変数を戻す。"""
     for name in (
         "HOME",
         "USERPROFILE",
@@ -45,6 +35,20 @@ async def test_live_launch_waits_for_automatic_resume(
             monkeypatch.setenv(name, host[name])
         else:
             monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["delegate", "explore", "shell"])
+async def test_live_launch_waits_for_automatic_resume(
+    mode: str,
+    monkeypatch: pytest.MonkeyPatch,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """公開する起動ツール`start`の3つのmodeが、再開指示なしで背景作業完了後の結果を返す。"""
+    manager = subject.AgentsServerManager()
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    cwd = str(pathlib.Path(__file__).parents[2])
+    _use_host_environment(monkeypatch, host_environ())
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
@@ -67,5 +71,46 @@ async def test_live_launch_waits_for_automatic_resume(
 
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED"
+    finally:
+        await manager.close()
+
+
+_GRANDCHILD_PROMPT = """`agents_server`の起動ツールで、コマンド`sleep 5`を実行して終了状態を要約させる委譲を1件起動せよ。
+起動ツールが`mode`を受け取る場合は`start`へ`mode`の`shell`を渡し、受け取らない場合は`start_shell`を使う。
+起動の直後は`atk agents wait`を実行せず、`待機中: <起動したsession_id>`の1行だけを出力してターンを終えよ。
+自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収し、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("candidate", [("codex", "sol", "medium"), ("claude", "sonnet[1m]", "medium")])
+async def test_live_grandchild_wait_resumes_same_session(
+    candidate: tuple[str, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """委譲先が孫sessionを起動して待機を表明すると、孫の終端後に同じsessionが手動の指示なしに再開し完了報告を返す。
+
+    待機表明の行を完了報告として配送せず、再開したturnの結果だけを呼び出し元へ返すことを確かめる。
+    """
+    manager = subject.AgentsServerManager()
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    cwd = str(pathlib.Path(__file__).parents[2])
+    _use_host_environment(monkeypatch, host_environ())
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [candidate])
+    try:
+        started = await subject.start(cwd, mode="delegate", prompt=_GRANDCHILD_PROMPT, model_type="high_tier")
+        session = manager.sessions[started["session_id"]]
+
+        result = await manager.wait()
+        # 待機上限へ達した応答は`running`を返すため、終端まで同じ待機を繰り返す。
+        for _ in range(10):
+            if result["status"] != "running":
+                break
+            result = await manager.wait()
+
+        assert result["status"] == "completed", result
+        assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED", result
+        assert "unobservedSessions" not in (result.get("error") or {}), result
+        assert session.turn_seq == 2
     finally:
         await manager.close()

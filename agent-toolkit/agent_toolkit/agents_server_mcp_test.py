@@ -1024,17 +1024,12 @@ async def test_start_reports_missing_model_type_mapping_as_defect(
 
 
 @pytest.mark.asyncio
-async def test_start_accepts_declared_optional_and_common_inputs(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    """必須・任意・共通入力名だけの`start`は起動し、起動文は`入力:`見出しを持ち`追加指示:`を持たない。"""
+async def test_start_accepts_declared_optional_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """必須・任意入力名だけの`start`は起動し、起動文は`入力:`見出しを持ち`追加指示:`を持たない。"""
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
-    extra_params = _observed_input_params(task_document.name, tmp_path) | {
-        "環境構築": "完了済み",
-        "待機表明の例外": "適用しない。待機対象の種別を問わず前景で終端を観測する",
-    }
+    extra_params = _observed_input_params(task_document.name, tmp_path) | {"環境構築": "完了済み"}
 
     await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
@@ -1043,6 +1038,20 @@ async def test_start_accepts_declared_optional_and_common_inputs(
     assert "追加指示:" not in prompt
     assert "環境構築: 完了済み" in prompt
     assert manager.start.await_args.kwargs["launch_kind"] == "delegate"
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """待機と再開の方針はサーバーが伝えるため、呼び出し元が渡す`待機表明の例外`は宣言外の入力として拒否する。"""
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock())
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    extra_params = _observed_input_params(task_document.name, tmp_path) | {"待機表明の例外": "適用する"}
+
+    with pytest.raises(ActionableError, match="タスク文書が宣言していない入力です: 待機表明の例外"):
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
+
+    manager.start.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -7192,7 +7201,8 @@ def test_start_description_declares_input_and_launch_kind_contract() -> None:
     extra_params = start_tool.parameters["properties"]["extra_params"]["description"]
     assert "追加指示" not in extra_params
     assert "宣言外の入力名を含む場合は委譲先を起動しない" in extra_params
-    assert "`待機表明の例外`" in extra_params
+    assert "待機表明の例外" not in extra_params
+    assert "待機と再開の方針はサーバーが伝える" in extra_params
     assert "タスク文書が宣言した起動種別" in start_tool.description
     assert "宣言外の入力名は拒否し" in start_tool.description
 

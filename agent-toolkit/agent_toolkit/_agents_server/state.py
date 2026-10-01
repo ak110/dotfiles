@@ -110,6 +110,8 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "shell": SHELL_SYSTEM_PROMPT,
     "write": WRITE_SYSTEM_PROMPT,
 }
+# 同じsessionの自動再開を実際に行うbackend（ClaudeとCodex）だけが起動時の指示へ加える。
+# Antigravity backendは自動再開を実機で確かめていないため、この能力を伝えない。
 AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), kind="auto-resume")
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
@@ -460,7 +462,7 @@ class SessionState:
     awaiting_auto_resume: bool = False
     # `auto_resume_consumed`を真にするのは、Claude backendのタスク完了通知による再開と、
     # MCP層が孫sessionの終端を検出して発行する再開の2つの処理だけである。
-    # Codex backendは終端結果を保留しないため、これらの処理へ到達しない。
+    # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
     pending_result: dict[str, Any] | None = None

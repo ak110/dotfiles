@@ -160,10 +160,29 @@ async def test_model_output_is_observed_only_after_non_input_item(tmp_path: path
 
 
 @pytest.mark.asyncio
-async def test_completed_turn_with_unobserved_child_is_published_immediately(tmp_path: pathlib.Path) -> None:
-    """未観測の子sessionを記録し、Codexのturn終端結果を直ちに公開する。"""
+async def test_completed_turn_with_live_child_holds_result_for_auto_resume(tmp_path: pathlib.Path) -> None:
+    """未観測の子sessionが残るturnは、待機表明を完了報告として公開せず、自動再開まで結果を保留する。"""
     session = shared_state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     session.live_child_session_ids.add("child-1")
+    manager = _InspectableAppServerManager({session.session_id: session})
+
+    await manager.handle_notification(_completed_turn(session))
+
+    assert session.result_available is False
+    assert session.awaiting_auto_resume is True
+    assert session.status == "running"
+    assert session.pending_result == {"status": "completed", "agent_message": "", "error": None}
+    assert session.error is None
+    assert session.live_child_session_ids == {"child-1"}
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_completed_turn_after_consumed_auto_resume_publishes_unobserved_child(tmp_path: pathlib.Path) -> None:
+    """そのturnで自動再開を消費済みなら保留せず、残る子sessionを未観測として記録して直ちに公開する。"""
+    session = shared_state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    session.live_child_session_ids.add("child-1")
+    session.auto_resume_consumed = True
     manager = _InspectableAppServerManager({session.session_id: session})
 
     await manager.handle_notification(_completed_turn(session))
@@ -216,9 +235,12 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
     )
     await manager.handle_notification(_completed_turn(session))
 
-    assert session.error == (
-        {"unobservedSessions": ["child-1"]} if delivery in {"failure", "unrelated", "shell-unrelated"} else None
-    )
+    # 回収できなかった子は追跡に残り、自動再開まで結果を保留する。回収済みなら保留せず直ちに公開する。
+    unobserved = delivery in {"failure", "unrelated", "shell-unrelated"}
+    assert session.awaiting_auto_resume is unobserved
+    assert session.result_available is not unobserved
+    assert session.live_child_session_ids == ({"child-1"} if unobserved else set())
+    assert session.error is None
     await manager.close()
 
 

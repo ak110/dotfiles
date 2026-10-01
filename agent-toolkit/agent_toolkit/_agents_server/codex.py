@@ -743,6 +743,10 @@ class AppServerManager:
         """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
         _validate_prompt(prompt)
         async with session.turn_control_lock:
+            if session.awaiting_auto_resume and session.pending_result is not None:
+                # 保留中の追加指示は、保留した結果を確定してから同じsessionのreplyとして配送する。
+                # 確定した結果は`previous_result`で返すため、終端結果ファイルへは公開しない。
+                shared_state.finalize_pending_result(session, touch=False)
             if session.terminal:
                 previous_result = self._capture_result(session)
                 delivery, status, error = await self._start_reply_locked(session, prompt)
@@ -808,7 +812,17 @@ class AppServerManager:
         del session_id
 
     async def interrupt(self, session: SessionState) -> None:
-        """公開killから対象turnへ中断要求を送り、受理を待つ。"""
+        """公開killから対象turnへ中断要求を送り、受理を待つ。
+
+        結果を保留している間はモデルのturnが終わっているため、中断要求を送らずに保留した結果を確定する。
+        """
+        if session.awaiting_auto_resume and session.pending_result is not None:
+            unobserved = set(session.live_child_session_ids)
+            shared_state.finalize_pending_result(session)
+            if unobserved:
+                shared_state.record_unobserved_sessions(session, unobserved)
+            await self._notify_waiters()
+            return
         if session.terminal:
             return
         if not session.turn_id:
@@ -1076,14 +1090,19 @@ class AppServerManager:
             session.failure_pending_completion = False
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
-            if session.live_child_session_ids:
+            # 背景実行の`atk agents wait`で回収済みの孫sessionは、保留の判定より前に追跡から外す。
+            shared_state.consume_agents_wait_background_outputs(session)
+            if shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+                # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。
+                # MCP層の常駐監視（`_monitor_auto_resume`）が孫の終端を観測し、同じsessionを一度だけ再開する。
+                # 期限到来・追跡先の喪失・再開失敗の確定と未観測識別子の記録も、同じ監視が既存の診断で行う。
+                shared_state.begin_auto_resume_wait(
+                    session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+                )
+                session.status = "running"
+            elif session.live_child_session_ids:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
-                # Codex backendには、Claude backendが持つタスク完了通知によって同一sessionを
-                # 再開する手段が存在しない。このためturnの終端時に未観測の孫sessionが残る場合も
-                # 終端結果を保留せず、未観測の識別子を`error`の`unobservedSessions`へ記録して
-                # 直ちに公開する。保留すると解除の契機が期限の到来だけになり、呼び出し元が
-                # 最大`AUTO_RESUME_DEADLINE_SECONDS`だけ完了報告を受け取れない。
                 shared_state.record_unobserved_sessions(session, unobserved_session_ids)
             session.compaction_started_at_ms.clear()
         elif method == "turn/plan/updated":

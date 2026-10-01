@@ -336,7 +336,8 @@ _SUBAGENT_MD_PATH_DESCRIPTION = _parameter_description(
 )
 _EXTRA_PARAMS_DESCRIPTION = _parameter_description(
     "taskだけで受理し、他のmodeでは指定しない。省略時は入力なしとして扱う。"
-    "タスク文書が`## 入力`で宣言した入力名（必須入力名・任意入力名と共通入力名`待機表明の例外`）をキー、文字列を値とする。"
+    "タスク文書が`## 入力`で宣言した入力名（必須入力名と任意入力名）をキー、文字列を値とする。"
+    "待機と再開の方針はサーバーが伝えるため、起動文へ書き足さない。"
     "必須入力の欠落と宣言外の入力名を含む場合は委譲先を起動しない。"
 )
 _PROMPT_DESCRIPTION = _parameter_description(

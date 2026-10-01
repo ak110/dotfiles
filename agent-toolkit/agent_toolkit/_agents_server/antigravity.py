@@ -21,7 +21,6 @@ from typing import Any
 from agent_toolkit._agents_server import process_tree, status_file
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
-    AUTO_RESUME_NOTICE,
     LAUNCH_SYSTEM_PROMPTS,
     LaunchKind,
     ModelCandidate,
@@ -51,8 +50,9 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
     Antigravity CLIの非対話モードはシステム指示の専用オプションを持たないため、
     システム指示は本文の先頭へ置いて渡す。1つのメッセージへ配送本文と同居するため、
     受信側が両者を区別できるよう、システム指示側は`state.py`が付ける境界を保ったまま渡す。
+    同じsessionの自動再開はこのbackendで確かめていないため、自動再開の通知（`AUTO_RESUME_NOTICE`）は加えない。
     """
-    return f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
+    return LAUNCH_SYSTEM_PROMPTS[launch_kind]
 
 
 def build_command(

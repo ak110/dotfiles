@@ -20,13 +20,6 @@ LAUNCH_KIND_PREFIX = "起動種別: "
 INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 TASK_DOCUMENT_SUFFIX = ".subagent.md"
 
-COMMON_INPUT_NAMES: frozenset[str] = frozenset({"待機表明の例外"})
-"""全タスク文書が宣言なしに受理する入力名。
-
-`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」が、通常委譲のタスク文書起動の定型として
-待機表明の例外の適用可否を起動文へ含めると定めるため、各文書の宣言に依存せず受理する。
-"""
-
 LaunchKind = typing.Literal["delegate", "explore", "shell", "write"]
 LAUNCH_KINDS: tuple[LaunchKind, ...] = typing.get_args(LaunchKind)
 
@@ -45,8 +38,11 @@ class TaskDocumentDeclaration:
 
     @property
     def accepted(self) -> frozenset[str]:
-        """起動文で受理する全入力名（必須・任意・共通入力名）。"""
-        return frozenset(self.required) | frozenset(self.optional) | COMMON_INPUT_NAMES
+        """起動文で受理する全入力名（必須・任意入力名）。
+
+        待機と再開の方針は採用したbackendの能力に従ってサーバーが固定指示で伝えるため、呼び出し元が渡す共通入力は持たない。
+        """
+        return frozenset(self.required) | frozenset(self.optional)
 
 
 def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
