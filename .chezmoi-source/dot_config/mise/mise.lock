@@ -168,8 +168,8 @@ checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e
 url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
-version = "0.60.0"
-aube = { path = ".mise/locks/npm-google-gemini-cli/0.60.0", digest = "sha256:ba8c83caf921d51b0990d145a0c1148051754f168baece1e3f1a6895ca85c921" }
+version = "0.61.0"
+aube = { path = ".mise/locks/npm-google-gemini-cli/0.61.0", digest = "sha256:e9caf36f95dd4803097accab9e8e75b6983d581b5a92c3a3fa854deb430ccd09" }
 backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 
