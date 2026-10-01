@@ -339,7 +339,7 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
 
 
 def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
-    """選定で列挙した書込対象が受領側の突き合わせへ届く。"""
+    """選定で列挙した書込対象を受領側が比較できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")

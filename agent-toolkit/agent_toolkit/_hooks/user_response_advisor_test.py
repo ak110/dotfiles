@@ -1,4 +1,4 @@
-"""人間の発話と本文の受渡しをStop入口で検証する。"""
+"""人間の発話と本文の受渡しをStopの呼び出しで検証する。"""
 
 import json
 import pathlib
