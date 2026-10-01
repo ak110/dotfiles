@@ -22,8 +22,13 @@ import update_dotfiles
 def main() -> int:
     """要求を読み、実物のgit pullの終了コードと端末出力を返す。"""
     request = json.load(sys.stdin)
+    # ランナーの起動・importを除き、端末内の待機と子孫回収を計測する。
+    started = time.monotonic()
     returncode, output, descendant_running = _run_in_terminal(request["timeout"], request["input_text"])
-    print(json.dumps({"returncode": returncode, "output": output, "descendant_running": descendant_running}))
+    elapsed = time.monotonic() - started
+    print(
+        json.dumps({"returncode": returncode, "output": output, "descendant_running": descendant_running, "elapsed": elapsed})
+    )
     return 0
 
 

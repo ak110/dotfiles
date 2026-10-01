@@ -819,7 +819,7 @@ def _run_git_pull_in_pty(
     mode: str,
     timeout: int | None,
     input_text: str | None = None,
-) -> tuple[int, str, pathlib.Path]:
+) -> tuple[int, str, pathlib.Path, float]:
     """疑似端末内で実物の`_run_git_pull`を実行し、終了コードと出力を返す。"""
     executable = tmp_path / "bin" / "chezmoi"
     executable.parent.mkdir()
@@ -849,7 +849,7 @@ def _run_git_pull_in_pty(
     result = json.loads(stdout)
     assert "DeprecationWarning" not in result["output"], result["output"]
     assert not result["descendant_running"], "製品のgit pullが終了した時点で孫プロセスが残っている"
-    return result["returncode"], result["output"], descendant_pid_path
+    return result["returncode"], result["output"], descendant_pid_path, result["elapsed"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="ptyと/dev/ttyを使用するLinux専用のテスト")
@@ -866,7 +866,7 @@ def test_git_pull_preserves_terminal_interaction(
     並行実行の負荷でも到達しない秒数を渡す。上限の到達側は
     `test_git_pull_timeout_terminates_stream_holding_descendant`が検査する。
     """
-    returncode, output, _pid_path = _run_git_pull_in_pty(
+    returncode, output, _pid_path, _elapsed = _run_git_pull_in_pty(
         tmp_path,
         monkeypatch,
         mode="interactive",
@@ -885,14 +885,12 @@ def test_git_pull_timeout_terminates_stream_holding_descendant(
 ) -> None:
     """標準ストリームを継承する孫も終了し、回収上限の内側で復帰する。"""
     started = time.monotonic()
-    returncode, output, pid_path = _run_git_pull_in_pty(
+    returncode, output, pid_path, elapsed = _run_git_pull_in_pty(
         tmp_path,
         monkeypatch,
         mode="hang",
         timeout=5,
     )
-    elapsed = time.monotonic() - started
-
     assert returncode == 1
     assert elapsed < 12
     del output
