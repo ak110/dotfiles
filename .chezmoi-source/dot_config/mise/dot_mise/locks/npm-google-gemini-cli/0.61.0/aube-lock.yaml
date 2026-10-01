@@ -9,16 +9,16 @@ importers:
   .:
     dependencies:
       '@google/gemini-cli':
-        specifier: 0.60.0
-        version: 0.60.0
+        specifier: 0.61.0
+        version: 0.61.0
 
 packages:
 
   '@github/keytar@7.10.6':
     resolution: {integrity: sha512-mRW6cUsSG+nj4jp5gp8e91zPySaT73r+2JM6VyMZfrEgksjPmjSMr+tPGNOK3HUHV+GUU9B1LAiiYy/wmAnIxA==}
 
-  '@google/gemini-cli@0.60.0':
-    resolution: {integrity: sha512-bp6aLytN+beto8sTHIzMyK5Y6Ry5mMZrBdNGx3EiAjqIpS99B8c/Elha6xyYRIabgFs0Q75/xDauNRAqHGY34w==}
+  '@google/gemini-cli@0.61.0':
+    resolution: {integrity: sha512-dbQ9A0qBtFJNi6XBkHvfZ6Azpn6PNgH/P8h2MZ67RLlX8hSAVjup39CRWqdRxZv7YXIuhrFaytr8y0jKnkoxnQ==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -72,7 +72,7 @@ snapshots:
       node-addon-api: 8.9.2
     optional: true
 
-  '@google/gemini-cli@0.60.0':
+  '@google/gemini-cli@0.61.0':
     optionalDependencies:
       '@github/keytar': 7.10.6
       '@lydell/node-pty': 1.1.0

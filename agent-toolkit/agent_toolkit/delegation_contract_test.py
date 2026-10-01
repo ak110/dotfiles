@@ -61,7 +61,7 @@ def _marker_values(path: pathlib.Path, prefix: str, *, recipient: bool) -> tuple
         next_content = h1_headings[0] + 1
         while next_content < len(lines) and not lines[next_content]:
             next_content += 1
-        valid_position = block_start == next_content and block_start < h2_headings[0]
+        valid_position = next_content == block_start < h2_headings[0]
     values = block_lines[0].removeprefix(prefix).strip().split(",")
     return values, valid_position and all(values)
 
