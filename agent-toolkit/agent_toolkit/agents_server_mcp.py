@@ -2464,6 +2464,8 @@ with warnings.catch_warnings():
         "agents_server",
         instructions=_schema_text(
             "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
+            "Claude Codeからの委譲は`Agent`ツールではなく本サーバーを標準とする。"
+            "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
             "`start`がsessionを開始し、`mode`でタスク文書の定型作業、自由本文の委譲、読み取り専用の探索、"
             "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
             "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
@@ -2526,6 +2528,10 @@ _START_DESCRIPTION = "\n".join(
         "読み取り専用の制約は課さないため、対象を変更する自動チェックも渡せる。呼び出し元の文脈へは終了状態と要約だけが入る。",
         "",
         "入力の欠落とmodeが受理しない入力の混在は、委譲先を起動せずに拒否し、受理する入力と次の呼び出し方を返す。",
+        "",
+        "起動前の準備: Claude Codeで`CronCreate`を使える実行主体が待機のためにターンを終える場合は、"
+        "そのセッションで最初にこのツールを呼ぶ前に定期再確認を装着する"
+        "（`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」）。",
         "",
         "応答と結果の受領:",
         "応答は`session_id`と`status`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。",

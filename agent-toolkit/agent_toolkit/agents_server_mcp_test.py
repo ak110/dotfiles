@@ -616,6 +616,20 @@ def test_instructions_keep_server_overview_without_argument_specification() -> N
         assert legacy not in instructions, legacy
 
 
+def test_delegation_choice_and_cron_cues_are_read_before_first_start() -> None:
+    """委譲手段を選ぶ時点と最初の起動の直前に読む文面へ、`Agent`ツールとの関係と定期再確認の装着時点を置く。
+
+    Claude Codeは`start`を遅延読み込みしてスキーマを取得してから呼ぶため、説明は最初の呼び出しの直前に読まれる。
+    """
+    instructions = subject.mcp.instructions or ""
+    assert "Claude Codeからの委譲は`Agent`ツールではなく本サーバーを標準とする" in instructions
+    assert "`references/runtime-routing.md`「実行手段」" in instructions
+    description = _start_tool().description
+    assert "`CronCreate`を使える実行主体" in description
+    assert "最初にこのツールを呼ぶ前に定期再確認を装着する" in description
+    assert "`references/claude-code-runtime.md`「Cronによる定期再確認」" in description
+
+
 def test_start_tool_description_requires_same_turn_observation() -> None:
     """`start`の公開説明が返却sessionを同じ応答内で、引数なしの単独の待機コマンドで観測させる。
 

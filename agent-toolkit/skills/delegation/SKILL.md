@@ -18,7 +18,7 @@ Codexで実行する場合は、委譲、待機、状態確認または中断へ
 受信者が行う用途固有の作業は、受信者用のタスク文書またはagent定義に従う。
 
 委譲先とモデルを選ぶ時点では`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読み、同文書の振り分け規則とモデル区分を適用する。
-Claude Code固有の手順を確定する時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を全文読む。
+Claude Codeで最初の委譲先を起動する前と、Claude Code固有の手順を確定する時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を全文読む。
 完了通知および待機・停滞を確定する時は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`を全文読む。
 計画実装の受領の取り決めを確定する時は、`起動経路`に対応する規定文書を全文読む。`agent-toolkit:process-wi`による起動では同スキルの`references/run-lanes.md`、`agent-toolkit:plan-mode`による直接起動では同スキルのSKILL.mdに従う。
 
