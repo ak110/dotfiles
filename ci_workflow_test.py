@@ -153,4 +153,5 @@ def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
     targets = _direct_pytest_targets(workflow_data)
     assert targets
     for target in targets:
-        assert (_REPOSITORY_ROOT / target).exists(), target
+        # pytestのnode指定はファイルパスの後に::でクラス名やテスト名を持つ。
+        assert (_REPOSITORY_ROOT / target.split("::", maxsplit=1)[0]).exists(), target

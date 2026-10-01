@@ -280,6 +280,7 @@ def test_entrypoint_subprocess_allows_valid_cleanup_without_deleting(tmp_path: p
         [sys.executable, str(_HELPER), "create", "--prefix", "hook-subprocess"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
         env=env,
     )
@@ -289,6 +290,7 @@ def test_entrypoint_subprocess_allows_valid_cleanup_without_deleting(tmp_path: p
         input=_payload(_command(plugin_root, target)),
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )
@@ -296,6 +298,7 @@ def test_entrypoint_subprocess_allows_valid_cleanup_without_deleting(tmp_path: p
         [sys.executable, str(_HELPER), "cleanup", "--path", str(target)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env,
     )

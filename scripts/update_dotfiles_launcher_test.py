@@ -18,6 +18,23 @@ _UPDATE_WARNING = (
     "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。"
 )
 
+# 実更新中にcmd.exeが読み直す位置を再現する、block化前の公開ランチャー。
+_LEGACY_WINDOWS_PREFIX = """@echo off
+setlocal
+for /f "delims=" %%A in ('cd /d "%~dp0.." ^& cd') do set SCRIPT_DIR=%%A
+set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"
+if not exist "%UV%" (
+    echo uv was not found. Install uv with the official installer. 1>&2
+    exit /b 127
+)
+set "UV_SELF_UPDATE_FAILED=0"
+if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" (
+    "%UV%" self update
+    if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"
+)
+"%UV%" run --no-project --script "%SCRIPT_DIR%\\scripts\\update_dotfiles.py" %*
+"""
+
 
 def _write_fake_uv(path: pathlib.Path, name: str) -> None:
     """呼び出しをNUL区切りで記録するfake uvを作成する。"""
@@ -230,6 +247,53 @@ def test_logs_public_launcher_reads_saved_log_without_writing_state(
     assert {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in state_dir.iterdir()} == before
 
 
+@pytest.mark.parametrize("run_exit", [0, 23])
+@pytest.mark.parametrize(
+    "version",
+    [
+        "current",
+        pytest.param("legacy", marks=pytest.mark.skipif(os.name != "nt", reason="旧batchの読取位置はcmd.exeで検証する")),
+        pytest.param("logs", marks=pytest.mark.skipif(os.name != "nt", reason="旧batchの読取位置はcmd.exeで検証する")),
+    ],
+)
+def test_launcher_replacement_preserves_update_exit(tmp_path: pathlib.Path, version: str, run_exit: int) -> None:
+    """更新中の自身の書換え後も、新旧ランチャーが更新処理の終了コードを返す。"""
+    native_path = os.pathsep.join(part for part in os.environ["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
+    uv = shutil.which("uv", path=native_path)
+    assert uv is not None
+    home = tmp_path / "home"
+    native_uv = home / ".local" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
+    native_uv.parent.mkdir(parents=True)
+    shutil.copy2(uv, native_uv)
+    launcher = tmp_path / "bin" / ("update-dotfiles.cmd" if os.name == "nt" else "update-dotfiles")
+    launcher.parent.mkdir()
+    current = (_WINDOWS_LAUNCHER if os.name == "nt" else _LAUNCHER).read_bytes()
+    legacy = (_LEGACY_WINDOWS_PREFIX + "exit /b %ERRORLEVEL%\n").replace("\n", "\r\n").encode("cp932")
+    logs = legacy.replace(
+        b'if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"',
+        b'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"',
+    )
+    launcher.write_bytes({"current": current, "legacy": legacy, "logs": logs}[version])
+    launcher.chmod(0o755)
+    replacement = current if version != "current" else b"@echo off\r\nexit /b 99\r\n"
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "update_dotfiles.py").write_text(
+        f"import pathlib\npathlib.Path({str(launcher)!r}).write_bytes({replacement!r})\nraise SystemExit({run_exit})\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment.update(
+        {"HOME": str(home), "USERPROFILE": str(home), "UV_PYTHON": sys.executable, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1"}
+    )
+    command = ["cmd.exe", "/d", "/c", str(launcher)] if os.name == "nt" else [str(launcher)]
+
+    result = subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", timeout=45, check=False)
+
+    assert launcher.read_bytes() == replacement
+    assert result.returncode == run_exit, result.stdout + result.stderr
+
+
 @_LINUX_ONLY
 def test_path_uv_is_not_used_when_native_uv_is_absent(tmp_path: pathlib.Path) -> None:
     """公式パスが存在しない場合はPATH上のuvを選ばず終了する。"""
@@ -263,10 +327,10 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     update = '"%UV%" self update'
     update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
     run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\scripts\\update_dotfiles.py" %*'
-    capture_run_exit = 'set "UPDATE_DOTFILES_EXIT=%ERRORLEVEL%"'
+    capture_run_exit = 'call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"'
     warning_state = f'set "UV_SELF_UPDATE_WARNING={_UPDATE_WARNING}"'
     warning = 'if "%UV_SELF_UPDATE_FAILED%"=="1" powershell.exe -NoLogo -NoProfile -Command '
-    return_run_exit = "exit /b %UPDATE_DOTFILES_EXIT%"
+    return_run_exit = "call exit /b %%UPDATE_DOTFILES_EXIT%%"
     assert native in content
     assert missing in content
     assert update_state in content
