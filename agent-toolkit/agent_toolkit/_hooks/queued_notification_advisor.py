@@ -46,7 +46,7 @@ _NOTICE_FIX = (
     "同じ結果を得る目的で待機コマンドを再発行しない。"
     "`atk agents wait`は回収した結果を削除するため、再発行しても同じ結果は返らない。"
 )
-_AGENT_NOTICE_BODY = "完了済みのAgentまたはTaskの返却通知が、配送されないままキューに残っている。"
+_AGENT_NOTICE_BODY = "完了済みの`Agent`または`Task`の返却通知が、配送されないままキューに残っている。"
 _AGENT_NOTICE_FIX = "通知の配送後、返却メッセージの本文を結果として使って工程を進める。別の結果取得操作は不要である。"
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
