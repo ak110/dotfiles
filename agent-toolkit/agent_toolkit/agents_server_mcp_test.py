@@ -575,6 +575,7 @@ def test_start_parameter_descriptions_are_self_contained() -> None:
         "依頼本文の先頭にある空でない1行",
         "`shell-<コマンドの最初の語のbasename>`",
         "statusline",
+        "`-review`で終わるsessionの完了結果には、指摘の採否を確定する手順を示す`next_action`が付く",
     ):
         assert fragment in label, fragment
 
@@ -3355,6 +3356,47 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
         "agent_message": "直前の結果",
     }
     _assert_no_forbidden_keys(response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["codex", "claude"])
+@pytest.mark.parametrize(("label", "guided"), [("pr-body-review", True), ("explore-pyfltr", False)])
+async def test_send_message_previous_result_guides_review_findings(
+    engine: str, label: str, guided: bool, tmp_path: pathlib.Path
+) -> None:
+    """レビューを目的とするsessionの未回収の完了結果を`previous_result`で返す場合も、採否確定の次の操作を加える。"""
+    manager, _ = _manager_with_fake(engine, "reply_started")
+    session = subject.SessionState("thread-1", str(tmp_path), engine=engine, label=label)
+    _complete(session, message="指摘1件")
+    manager.sessions[session.session_id] = session
+
+    response = await manager.send_message(session.session_id, "再レビュー")
+
+    previous = response["previous_result"]
+    assert (previous.get("next_action") == state.REVIEW_RESULT_NEXT_ACTION) is guided
+    if not guided:
+        assert "next_action" not in previous
+
+
+@pytest.mark.asyncio
+async def test_stopped_review_session_previous_result_guides_review_findings(tmp_path: pathlib.Path) -> None:
+    """破棄済みのレビューsessionの未回収結果を再開時に返す場合も、同じ次の操作を加える。"""
+    resume_state = state.SessionResumeState(
+        session_id="stopped-review",
+        cwd=str(tmp_path),
+        model="model",
+        effort="medium",
+        engine="codex",
+        status="completed",
+        agent_message="指摘1件",
+        finalized_at="2026-10-01T00:00:00+00:00",
+        label="lane-01-exec-review",
+    )
+
+    response = subject.AgentsServerManager._stopped_result_response(resume_state)
+
+    assert response is not None
+    assert response["next_action"] == state.REVIEW_RESULT_NEXT_ACTION
 
 
 @pytest.mark.asyncio

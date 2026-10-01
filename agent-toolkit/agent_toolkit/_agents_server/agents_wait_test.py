@@ -109,6 +109,51 @@ def test_agents_wait_outputs_every_retained_result(
     assert not (wait_environment / "session-2.json").exists()
 
 
+@pytest.mark.parametrize(
+    ("label", "status", "expected"),
+    [
+        ("slides-review", "completed", "review"),
+        ("lane-01-exec-review", "completed", "review"),
+        ("explore-pyfltr", "completed", None),
+        ("slides-review", "failed", "failed"),
+        ("slides-review", "interrupted", "interrupted"),
+        (None, "completed", None),
+    ],
+)
+def test_agents_wait_guides_review_result_before_deciding_findings(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    label: str | None,
+    status: str,
+    expected: str | None,
+) -> None:
+    """labelが`-review`で終わる完了結果だけへ、review-standardsで採否を確定する次の操作を加える。
+
+    失敗と中断の結果は既存の次の操作のままとし、レビュー以外の完了結果へは次の操作を加えない。
+    """
+    wait_environment.mkdir(parents=True)
+    payload: dict[str, Any] = {"status": status, "agent_message": "指摘1件"}
+    if label is not None:
+        payload["session"] = {"session_id": "session-1", "label": label}
+    (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    result = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert "session" not in result
+    next_action = result.get("next_action")
+    if expected is None:
+        assert next_action is None
+    elif expected == "review":
+        assert next_action == state.REVIEW_RESULT_NEXT_ACTION
+        for fragment in ("`agent-toolkit:review-standards`", "`references/reviewee.md`", "合意を示すユーザー発話を特定"):
+            assert fragment in next_action
+    else:
+        assert next_action is not None
+        assert next_action != state.REVIEW_RESULT_NEXT_ACTION
+
+
 def test_agents_wait_uses_explicit_root_without_environment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

@@ -362,6 +362,7 @@ _LABEL_DESCRIPTION = _parameter_description(
     "レビューを目的とするdelegateとexploreは`<レビュー対象を表す語>-review`（例: `pr-body-review`）とする。"
     "explore・write・shellは同じ種類のsessionを区別できるよう明示する。"
     "省略時はそれぞれ`explore`、`write`、`shell-<コマンドの最初の語のbasename>`を使う。"
+    "labelが`-review`で終わるsessionの完了結果には、指摘の採否を確定する手順を示す`next_action`が付く。"
 )
 _MODEL_TYPE_DESCRIPTION = _parameter_description(
     "委譲先のモデルを選ぶ。モデル段位の種別（例: `high_tier`、`medium_tier`、`low_tier`、`write`）か、"
@@ -834,7 +835,7 @@ class AgentsServerManager:
         }
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
-        return response
+        return state.with_review_result_next_action(response, resume_state.label)
 
     def _take_stopped_result(
         self,

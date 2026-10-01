@@ -154,6 +154,27 @@ class DelegateBackendError(RuntimeError):
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終端を観測してから`send_message`を再送する"
 """turnが中断中または未終端のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
 
+# レビューを目的とするsessionのlabelの末尾。`start`のlabelの凡例と、タスク文書から生成するlabelがこの末尾を持つ。
+REVIEW_LABEL_SUFFIX = "-review"
+
+# レビューを目的とするsessionの完了結果を受け取った主体へ示す次の操作。
+REVIEW_RESULT_NEXT_ACTION = (
+    "レビューの指摘を受領した。採否を確定する前に`agent-toolkit:review-standards`をSkill機能で起動し、"
+    "同スキルの`references/reviewee.md`に従って採否と修正を確定する。"
+    "ユーザーの合意を見送りの根拠にする場合は、合意を示すユーザー発話を特定してから根拠にする"
+)
+
+
+def with_review_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
+    """labelが`-review`で終わるsessionの`completed`結果へ、指摘の採否を確定する手順を次の操作として加える。
+
+    受領した主体が参照できるのは受け取った結果だけであるため、採否確定の工程へ入る手掛かりを結果へ載せる。
+    失敗と中断の結果、レビュー以外のsessionの結果は変えない。
+    """
+    if result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
+        result["next_action"] = REVIEW_RESULT_NEXT_ACTION
+    return result
+
 
 class ActionableRuntimeError(ActionableError, RuntimeError):
     """次の操作を持つ`RuntimeError`。既存の`except RuntimeError`節が捕捉する範囲を保つために使う。"""
@@ -629,7 +650,7 @@ class SessionState:
         }
         if _nonempty_error(self.error):
             result["error"] = self.error
-        return result
+        return with_review_result_next_action(result, self.label)
 
 
 @dataclasses.dataclass(frozen=True)

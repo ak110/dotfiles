@@ -170,7 +170,9 @@ class AntigravityManager:
                 raise ActionableError(
                     "the active Antigravity turn has not finished", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
                 )
-            previous_result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+            previous_result = shared_state.with_review_result_next_action(
+                {"status": session.status, "agent_message": session.agent_message, "error": session.error}, session.label
+            )
             await self._stop_owned_task(session.session_id)
             await self._start_turn(
                 prompt,

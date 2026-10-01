@@ -38,6 +38,7 @@ from agent_toolkit._agents_server.state import (
     SessionState,
     has_uncollected_result,
     terminal_result_payload,
+    with_review_result_next_action,
 )
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
@@ -536,7 +537,11 @@ def take_result(
     state_root: pathlib.Path | None = None,
     stash_path: pathlib.Path | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。"""
+    """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。
+
+    返す本文から内部の項目（所有者と保持状態）を除き、レビューを目的とするsessionの完了結果へは
+    採否確定の次の操作を加える。判定に使うlabelは除く前の保持状態から読む。
+    """
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
     directory = results_directory(root_session_id, state_root)
@@ -578,8 +583,9 @@ def take_result(
                         collector,
                     )
             payload.pop("owner_status_file", None)
-            payload.pop("session", None)
-            return payload, None
+            session = payload.pop("session", None)
+            label = session.get("label") if isinstance(session, dict) else None
+            return with_review_result_next_action(payload, label), None
         finally:
             release_lock(lock_file)
 
