@@ -54,7 +54,7 @@ def test_plan_human_review_path_is_absolute(path: str, expected: bool) -> None:
 
 
 def test_canonical_plan_passes_structure_check() -> None:
-    """通常変更とバグ対応の正規形はいずれも構造検査を通過する。"""
+    """通常変更とバグ対応の正規形はいずれも計画の構造に関する基準を満たす。"""
     assert not _plan_format.check_plan_structure(_VALID_CONTENT)
     assert not _plan_format.check_plan_structure(_BUG_CONTENT)
 
@@ -98,14 +98,14 @@ def test_agent_wi_non_adopted_action_requires_reason() -> None:
 
 
 def test_human_readable_action_rejects_wi_missing_from_metadata() -> None:
-    """WI由来の正本は`関連WI`から逆照合できる。"""
+    """`関連WI`から由来となるWIファイルを特定できる。"""
     content = _HUMAN_MAIN_CONTENT.replace("(20260817-223603-001.md)", "(20260817-223603-999.md)", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any("WI由来が`関連WI`に無い" in error for error in errors), errors
 
 
 def test_human_readable_main_accepts_legacy_wi_names() -> None:
-    """改名前の項目名と`由来`欄を持つ計画を読み取り経路で受理する。"""
+    """改名前の項目名と`由来`欄を持つ計画を読み取る場合は受理する。"""
     content = _plan_fixture.legacy_wi_names(_HUMAN_MAIN_CONTENT)
     work_type, errors = _plan_format.check_plan_main_structure(content)
     assert work_type == "通常変更"
@@ -163,7 +163,7 @@ def test_bug_file_structure_rejects_additional_table() -> None:
     ],
 )
 def test_history_origin_and_user_material_reference_are_checked(mutation: tuple[str, str], message: str) -> None:
-    """変更履歴の起点固定値とユーザー発言の素材ID参照を検査する。"""
+    """変更履歴の起点固定値とユーザー発言の素材ID参照が基準を満たすか確かめる。"""
     errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(*mutation, 1))
     assert any(message in error for error in errors), errors
 
@@ -189,7 +189,7 @@ def test_legacy_bug_table_predicate_requires_valid_fixed_table() -> None:
             ),
             "固定H2は",
         ),
-        (("### 計画メタ情報", "### 総論"), "`### 計画メタ情報`を検査できない"),
+        (("### 計画メタ情報", "### 総論"), "`### 計画メタ情報`の構造を判定できない"),
         (("## 提示素材", "## 素材"), "固定H2は"),
         (("- 起動経路: `agent-toolkit:plan-mode`\n", ""), "この順序で1行ずつ置く"),
         (("- 作業種別: 通常変更", "- 作業種別: `通常変更`"), "バッククォートで囲まない"),
@@ -323,9 +323,9 @@ def test_duplicate_headings_accepts_same_text_under_different_parents() -> None:
     ],
 )
 def test_plan_file_standards_states_every_structure_constant(expected: str) -> None:
-    """構造検査が用いる見出し名を計画ファイル基準の本文が明記する。
+    """構造の判定に用いる見出し名を計画ファイル基準の本文が明記する。
 
-    実装だけが要件を持つ状態を避け、構造定数を改訂した場合に正本の追随漏れを検出する。
+    実装だけが要件を持つ状態を避け、構造定数を改訂した場合に計画ファイル基準が更新されていないことを検出する。
     """
     assert expected in _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
 
@@ -383,7 +383,7 @@ def test_detail_structure_permanence_rejects_free_h3() -> None:
 
 
 def test_origin_check_skips_when_queue_repository_is_absent(tmp_path: pathlib.Path) -> None:
-    """キュー管理リポジトリのルートが実在しない環境では照合だけを省略する。"""
+    """キュー管理リポジトリのルートが実在しない環境ではWI本文との比較だけを省略する。"""
     absent = tmp_path / "absent"
     errors, notices, skips = _origin_check(absent)
     assert not errors, errors

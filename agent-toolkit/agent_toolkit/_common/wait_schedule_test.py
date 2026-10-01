@@ -216,7 +216,7 @@ def test_environment_scrub_uses_five_minute_schedule(monkeypatch: pytest.MonkeyP
 
 
 def test_subagent_default_uses_five_minute_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
-    """subagentの既定TTLは認証状態を参照せず5分系へ分類する。"""
+    """subagentのTTLを指定しない場合は、認証状態を参照せず5分系へ分類する。"""
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
     _assert_ttl_and_schedule("subagent", "5m", _SCHEDULE_FOR_5M_TTL)
@@ -442,10 +442,10 @@ def test_rejects_unknown_request_bucket() -> None:
 
 
 def test_1h_wait_timeout_below_host_limits() -> None:
-    """保持期間1hの待機上限は、Bashツールの背景実行の既定上限1800秒とキャッシュTTLの3600秒を下回る。
+    """保持期間1hの待機上限は、Bashツールの背景実行で上限を指定しない場合の1800秒とキャッシュTTLの3600秒を下回る。
 
     CLIの`atk agents wait`は外側の`timeout`を付けずに背景実行で待つため、上限が1800秒以上になると
-    ホストが先に待機を打ち切り、終了コード3による再発行の経路へ入れない。3600秒以上ではキャッシュが満了してから戻る。
+    ホストが先に待機を打ち切り、終了コード3を受けて待機を再発行できない。3600秒以上ではキャッシュが満了してから戻る。
     """
     limit = _wait_schedule._WAIT_TIMEOUT_FOR_1H_TTL  # pylint: disable=protected-access
     assert limit < 1800.0

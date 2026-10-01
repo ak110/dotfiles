@@ -196,7 +196,7 @@ def test_session_start_length_report_shows_overage_and_breakdown() -> None:
 
 
 def test_share_task_documents_have_no_bare_return_line_examples() -> None:
-    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを検査する。
+    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
 
     条件付き出力の書式例をフェンスの外へ置くと、常時出力する行と誤読される。
     母集団は`rules_context.SHARE_DIR`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。

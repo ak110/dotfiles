@@ -46,14 +46,14 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str) -> dict:
 
 
 class TestCodexApplyPatchPlanFile:
-    """成功したCodex `apply_patch`の計画ファイルを記録し、追加時だけ検査案内を返す。"""
+    """成功したCodex `apply_patch`の計画ファイルを記録し、追加時だけ構造を確かめるコマンドの案内を返す。"""
 
     def test_added_plan_file_returns_check_guidance(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """追加した計画ファイルだけが検査案内を返し、更新は返さない。"""
+        """追加した計画ファイルだけが構造を確かめるコマンドの案内を返し、更新は返さない。"""
         home = tmp_path / "home"
         monkeypatch.setenv("HOME", str(home))
         monkeypatch.setenv("USERPROFILE", str(home))
@@ -70,5 +70,5 @@ class TestCodexApplyPatchPlanFile:
             state_path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
             state_path.write_text(json.dumps(env_state), encoding="utf-8")
             result = _run(_codex_payload(patch_text, tmp_path, session_id), state_dir=tmp_path)
-            assert ("書き込み後の検査を実行する" in result.stdout) is expected
+            assert ("書き込み後に計画の構造を確かめる" in result.stdout) is expected
             assert _read_state(tmp_path, session_id).get("current_plan_file_path") is not None

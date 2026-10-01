@@ -1,28 +1,28 @@
 # pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F821,I001
 # pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,unused-import,used-before-assignment,wrong-import-order
-"""計画ファイルの構造検査の共通モジュール。
+"""計画ファイルの構造が基準を満たすか判定する共有モジュール。
 
-構造検査（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
+構造の判定（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
 2系統のPreToolUse（`pretooluse.py`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
 計画ファイルの見出し、固定H3および表の行名は、本モジュールの構造定数で定める。
 同書には、構造定数から導いた受理形式を記述する。
 
-構造認識と原記法の検査は分離する。
+構造の認識と原文の記法の判定は別々に行う。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
-トークン列と位置情報から認識する。解析結果を各検査へ渡し、検査ごとの再解析を避ける。
+トークン列と位置情報から認識する。解析結果を各判定関数へ渡し、同じ構造を再び解析することを避ける。
 パーサーが補完、除去、段落へ変換する可能性がある原記法は、表トークンと段落トークンの
-位置情報から取得した原文を別関数で検査する。
+位置情報から取得した原文の記法は別関数で判定する。
 - 表の列数、外側パイプ、セル数の一致を原文から判定する
 - 表に変換されなかった段落では、パイプ区切りのヘッダー候補と直後の区切り行候補について
   セル数の不一致を検出する
-- 原文検査の対象範囲は、パーサーが表または段落として分類した箇所に限定する
-- 正規表現は原文の内容照合に限定し、列数は区切り記号で分割した要素数から計算する
+- 原文の記法を判定する範囲は、パーサーが表または段落として分類した箇所に限定する
+- 正規表現は原文が指定の内容に一致するかの判定に限定し、列数は区切り記号で分割した要素数から計算する
 
-各検査関数のdocstringへ担当する検査、受け取るトークン範囲、段落内の候補条件を記載する。
-検査項目を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
+各判定関数のdocstringへ、判定する条件、受け取るトークン範囲、段落内の候補条件を記載する。
+判定する条件を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
 - インデント、コードブロック内の記述、見出しの閉じ記号
 - 表の外側パイプの省略、表トークンになる列数不一致、段落へ変換される列数不一致
 - 同名節の重複、親節の違い
@@ -277,7 +277,7 @@ PLAN_METADATA_DETAIL_FIELD: str = "計画ファイル（詳細）"
 """改訂前の二ファイル計画が持つ計画ファイル（詳細）の参照項目。読み取り互換専用。"""
 
 PLAN_METADATA_RELATED_WI_FIELD: str = "関連WI"
-"""新書式計画ファイル（メイン）が入力の正本ファイル名と要約を持つ項目。"""
+"""新書式計画ファイル（メイン）が入力したWIファイル名と要約を持つ項目。"""
 
 PLAN_METADATA_LEGACY_DETAIL_FIELD: str = "実装詳細"
 """読み取り互換で受理する旧形式の計画ファイル（詳細）参照項目。"""
@@ -332,7 +332,7 @@ PLAN_METADATA_QUOTED_FIELDS: frozenset[str] = frozenset(
 PLAN_WORK_TYPES: tuple[str, ...] = ("バグ対応", "通常変更")
 
 PLAN_METADATA_FALLBACK_H2: tuple[str, ...] = ("目的", "実装契約", "背景")
-"""正規配置を持たない既存計画で計画メタ情報を読み取る旧配置。読み取り専用の互換経路とする。"""
+"""正規配置を持たない既存計画で計画メタ情報を読み取る旧配置。読み取り専用の互換形式として使う。"""
 
 PLAN_HISTORY_USER_EVENT_PREFIX: str = "ユーザー発言"
 """`## 変更履歴（計画時）`でユーザー発言の逐語記録を置くH3見出しの接頭辞。"""
@@ -359,10 +359,10 @@ PLAN_LEGACY_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザ�
 PLAN_HUMAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "由来", "採否", "根拠")
 PLAN_HUMAN_JUDGMENT_TABLE_HEADER: tuple[str, ...] = ("実施内容", "観測事象", "ユーザー要求との関係", "具体化した内容", "根拠")
 PLAN_HUMAN_WI_ORIGIN: str = "人間由来のWI"
-"""正本の`source`と機械判定できる明示由来から照合する由来の区分。"""
+"""WI本文の`source`と機械判定できる明示由来から確定する由来の区分。"""
 
 PLAN_AGENT_WI_ORIGIN: str = "エージェント由来のWI"
-"""正本が機械判定できる明示由来を持たない場合の由来の区分。"""
+"""WI本文が機械判定できる明示由来を持たない場合の由来の区分。"""
 
 PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN: str = "人間由来のフィードバック"
 """読み取り互換で受理する改名前の人間由来の区分。"""
@@ -397,16 +397,16 @@ PLAN_WI_ORIGIN_PATTERN = re.compile(
 """WI由来の`由来`欄。機械判定できない明示由来には`[対話由来]`注記を付ける。"""
 
 PLAN_WI_SOURCE_KEY: str = "source"
-"""WIの正本のfrontmatterで投入元スキルを表すキー。"""
+"""WIファイルのfrontmatterで投入元スキルを表すキー。"""
 
 PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
-"""WIの正本の末尾に置く、ユーザー専用の記入欄の見出し。"""
+"""WIファイルの末尾に置く、ユーザー専用の記入欄の見出し。"""
 
 PLAN_WI_ANSWER_HEADING: str = "回答"
-"""UWIの正本でユーザーの回答を記録する見出し。"""
+"""UWIファイルでユーザーの回答を記録する見出し。"""
 
 PLAN_WI_SCOPE_HEADING: str = "適用範囲"
-"""通常AWIの正本で誤りの機構が依存する条件を記録する見出し。"""
+"""通常AWIファイルで誤りの機構が依存する条件を記録する見出し。"""
 
 _FRONTMATTER_DELIMITER: str = "---"
 _FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_WI_SOURCE_KEY}:[ \t]*\S")
@@ -558,7 +558,7 @@ PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS: tuple[str, ...] = (
 """原因分析表を持たない旧バグ調査表の固定行。既存計画の読み取り互換にだけ用いる。"""
 
 PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
-"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表を正本とする。"""
+"""通常変更の恒久化表の固定4列。バグ対応ではバグ調査表を使う。"""
 
 PLAN_REFACTORING_TABLE_HEADER: tuple[str, ...] = ("対象", "現状の問題", "対応")
 """`### リファクタリング`が持つ現行3列。対象が無い場合は表を置かず地の文とする。"""

@@ -1,6 +1,6 @@
-"""Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
+"""Claude Code agent-toolkit: Stop hookの継続・終了を判定する共有モジュール。
 
-Claude CodeのStop入力に完全に有効な`background_tasks`一覧が含まれる場合は、現在のtask申告を正本とする。
+Claude CodeのStop入力に完全に有効な`background_tasks`一覧が含まれる場合は、現在のtask申告から実行中のtaskを確定する。
 フィールドが無い旧ホスト、無効な申告およびCodexでは、transcript JSONLから復元した判定へフォールバックする。
 本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
@@ -23,18 +23,18 @@ SendMessage呼び出し由来のtool_resultへ限定したうえで`resumedAgent
 `queue-operation`に含まれる完了通知およびTaskStopの停止成功結果から構成する。
 停止成功は`toolUseResult`が文字列の`task_id`と`_TASK_STOP_SUCCESS_PREFIX`で始まる`message`を持ち、
 対応する`tool_result`の`is_error`が真でない場合に限る。
-走査範囲は呼び出し経路ごとに切り替え、メインのStop判定では非sidechainに限定し、
+走査範囲は呼び出し元に応じて切り替え、メインのStop判定では非sidechainに限定し、
 SubagentStop判定ではsidechainを含める。
 
 `<task-notification>`要素に`<tool-use-id>`が含まれない通知形式では、
 `<task-id>`要素とagentId→tool_use_id集合マップ（`_collect_task_id_tool_use_ids`）による
 フォールバック解決を行う。両者で解決できない通知のうち、対応するassistant側`tool_use`の
 `name`が`"Monitor"`と突合できたもの（`_collect_monitor_task_ids`）は追跡対象外の既知通知として
-黙って無視する。それ以外で解決できない通知は`task_notification_unresolved`として常時ログへ明示出力し、
+ログへ記録せず無視する。それ以外で解決できない通知は`task_notification_unresolved`として常時ログへ明示出力し、
 通知形式変動による幽霊pendingの発生を検出可能にする。
 
-本モジュールへfail-closedのゲート判定関数を追加する場合は次の2点を守る。
-完了突合は複数キー経路のフォールバック解決とし、いずれの経路でも解決できない通知または停止結果は
+本モジュールへ判定不能時に終了を拒否する関数を追加する場合は次の2点を守る。
+完了の判定には複数キーによるフォールバック解決を使い、どのキーでも解決できない通知または停止結果は
 永続ログへ明示出力して未解決状態を可視化する（起動時に記録した全background taskが
 完了通知または停止成功結果のいずれかで完了集合へ解決できることを不変条件として維持する）。
 判定は起動集合の非空ではなく`launched - completed`のremainder非空で行う
@@ -45,7 +45,7 @@ SubagentStop判定ではsidechainを含める。
 `{tempdir}/claude-agent-toolkit-stop-{session_id}.log`へ1行ずつ追記し、
 1MB超過時に`.log.1`へ1世代ローリングする。詳細stderr出力は
 環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみ発火するDEBUG相当
-（last_tool・launched・pending・pending_ids・payload task件数・判定源）で、原因切り分け用途に限定する。
+（last_tool・launched・pending・pending_ids・payload task件数・判定源）で、原因を特定する用途に限定する。
 """
 
 import collections.abc
@@ -104,7 +104,7 @@ _TASK_ID_RE = re.compile(r"<task-id>([^<]+)</task-id>")
 # `Agent ... resumed from transcript in the background with your message.`形式で
 # 出力されるため、`resumed from transcript in the background`を一致条件とする。
 # 同期SendMessage応答は本文言を含まないため、背景再開ケースのみ加算される。
-# 現行形式は本文言を持たず`toolUseResult.resumedAgentId`を持つため、本マーカーの照合は
+# 現行形式は本文言を持たず`toolUseResult.resumedAgentId`を持つため、本マーカーとの一致判定は
 # `resumedAgentId`を欠く結果に対する後方互換のフォールバックとしてのみ用いる。
 _SENDMESSAGE_BG_RESUME_MARKER = "resumed from transcript in the background"
 
@@ -255,7 +255,7 @@ def is_pending_async_work(
     `<task-notification>`要素に`<tool-use-id>`が含まれない場合は`<task-id>`要素と
     agentId→tool_use_id集合マップによるフォールバック解決を試み、それでも解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
-    停止成功結果を同じ2経路で解決できない場合も同形式で常時ログへ明示出力する。
+    停止成功結果を同じ2つのキーで解決できない場合も同形式で常時ログへ明示出力する。
     起動集合から完了集合を差し引いて1件以上残れば「未完了background taskあり」と判断する。
 
     `transcript_path`が与えられた最上位Stop判定では、同じstemの`subagents`配下にある
@@ -263,7 +263,7 @@ def is_pending_async_work(
     task-id対応表を起動集合へ加える。子記録の不在・破損・無関係なmetadataは無視する。
     この追加走査は非sidechainの最上位Stop判定だけで行い、SubagentStopの走査範囲は拡張しない。
 
-    本経路は非sidechainエントリだけを走査する。
+    この処理は非sidechainエントリだけを走査する。
 
     transcriptを読み取れない異常系ではtranscript由来の根拠を偽とし、
     Stop入力とセッション状態の根拠は独立に判定する。
@@ -411,7 +411,7 @@ def _emit_debug(
 
     出力形式は`key=value`空白区切りとする。
     Stop hookの誤判定時にlast_tool_use名・transcriptの起動と残差・payloadのtask件数および判定源から
-    原因を切り分けるために用いる。
+    原因を特定するために用いる。
     """
     raw = os.environ.get("AGENT_TOOLKIT_STOP_GATE_DEBUG", "")
     if raw.lower() not in _DEBUG_TRUTHY_VALUES:
@@ -497,7 +497,7 @@ def _read_child_transcript_entries(transcript_path: str) -> list[dict] | None:
 
 
 def _entry_in_scan_scope(entry: dict, *, include_sidechain: bool) -> bool:
-    """エントリが呼び出し経路ごとの走査範囲に含まれる場合に真を返す。"""
+    """エントリが呼び出し元に応じた走査範囲に含まれる場合に真を返す。"""
     return include_sidechain or entry.get("isSidechain") is not True
 
 
@@ -548,7 +548,7 @@ def _last_tool_use_is_async_wait(last_tool_use: dict | None) -> bool:
 
     `_ASYNC_WAIT_TOOLS`に含まれるツール名、または`Bash`かつ
     `input.run_in_background == true`の場合に真を返す。
-    バックグラウンド処理中のStop hook誤発動を防ぐためのゲート。
+    バックグラウンド処理中のStop hook誤発動を防ぐための判定。
     """
     if last_tool_use is None:
         return False
@@ -627,7 +627,7 @@ def _describe_pending_background_entries(
       `attachment.prompt`文字列（Claude Code 2.1系以降で観測される形式）
     旧形式・新形式とも`<tool-use-id>`要素が欠落する通知は`<task-id>`要素と
     `_collect_task_id_tool_use_ids`が構築するagentId→tool_use_id集合マップ
-    （`task_id_map`）で解決するフォールバック経路を共有ヘルパー
+    （`task_id_map`）で解決するフォールバック処理を共有ヘルパー
     `_resolve_task_notification_ids`経由で適用する。両者で解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
     - 最上位transcriptの`type == "queue-operation"`エントリの`content`に含まれる
@@ -651,7 +651,7 @@ def _describe_pending_background_entries(
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
     Agent・Bash・SendMessage背景再開・MCP背景タスクとも同一の完了通知機構で通知され共通の抽出処理を用いる。
     `kinds`は起動集合へ含める種別を`agent`・`bash`・`sendmessage`・`mcp`から指定する。
-    既定値は全種別であり、既存の呼び出し元の挙動を維持する。
+    種別を指定しなければ全種別を対象とし、既存の呼び出し元の挙動を維持する。
     第3要素はStop入力の`background_tasks`が申告する種別の起動集合である。
 
     走査は2段構成とする。
@@ -778,10 +778,10 @@ def _resolve_task_notification_ids(
     `<tool-use-id>`要素を優先して解決し、含まれない場合は`<task-id>`要素と
     `task_id_map`によるフォールバック解決を試みる。両者で解決できない場合、
     `<task-id>`が`monitor_task_ids`に含まれる場合（Monitorツール由来と突合済みの既知通知）は
-    ログ出力せず黙って無視する。含まれない場合のみ、`session_id`が与えられていれば
+    ログへ記録せず無視する。含まれない場合のみ、`session_id`が与えられていれば
     `append_stop_log`で明示ログ出力する。
     旧形式（メインuserエントリの`<task-notification>`）・新形式
-    （`type=="attachment"`の`<task-notification>`）の両解決経路が共有する。
+    （`type=="attachment"`の`<task-notification>`）の両方の解決処理が共有する。
     """
     ids = set(_TOOL_USE_ID_RE.findall(notification_text))
     if ids:
@@ -816,7 +816,7 @@ def _extract_queue_operation_notification_ids(
     Claude Codeの多段委譲では、子エージェントの完了通知が最上位transcriptの
     `queue-operation`へ記録される。`enqueue`と`remove`はいずれも同じ完了通知を
     表すため処理し、その他のキュー操作は対象外とする。LLM実行主体へ通知を配送する
-    契約とは別に、Stop hookが生transcriptを観測するための経路である。
+    契約とは別に、Stop hookが生transcriptを観測するために使う。
     """
     if entry.get("type") != "queue-operation" or entry.get("operation") not in {"enqueue", "remove"}:
         return set()
@@ -926,7 +926,7 @@ def _is_direct_subagent_metadata(metadata: object) -> bool:
 
 
 def _log_unresolved_completion(session_id: str | None, detail: str) -> None:
-    """未解決の完了経路を既存の通知未解決ログ形式で記録する。"""
+    """完了と判定できなかった処理を既存の通知未解決ログ形式で記録する。"""
     if session_id is None:
         return
     append_stop_log(
@@ -1049,7 +1049,7 @@ def _collect_task_id_tool_use_ids(entries: list[dict], *, include_sidechain: boo
 
     起動を記録した`toolUseResult`に`agentId`（背景タスクの`task-id`）が含まれる場合、
     task-notification本文の`<task-id>`要素経由での完了突合をフォールバックとして提供する。
-    `<tool-use-id>`要素が通知形式変動で欠落した場合の解決経路として用いる。
+    `<tool-use-id>`要素が通知形式変動で欠落した場合に解決する手段として用いる。
     """
     result: dict[str, set[str]] = {}
     for entry in entries:
@@ -1215,9 +1215,9 @@ def _extract_sendmessage_bg_resume_id(message: dict, tool_use_result: object, se
     """SendMessage由来のtool_resultが背景再開を示す場合に`tool_use_id`を返す。
 
     判定は`toolUseResult.resumedAgentId`が文字列として存在するかを第一とし、
-    このフィールドを欠く結果に限り本文の`_SENDMESSAGE_BG_RESUME_MARKER`照合へフォールバックする。
+    このフィールドを欠く結果に限り本文の`_SENDMESSAGE_BG_RESUME_MARKER`との一致判定へフォールバックする。
     ハーネスが返す応答文面は版更新で変わり字面一致では追随できないため、
-    同じ結果が持つ構造化フィールドを検出契約の正本とし、文面照合は旧形式の後方互換に限る。
+    同じ結果が持つ構造化フィールドから検出し、文面との一致判定は旧形式の後方互換に限る。
     """
     has_resumed_agent_id = isinstance(tool_use_result, dict) and isinstance(tool_use_result.get("resumedAgentId"), str)
     content = message.get("content")
@@ -1287,7 +1287,7 @@ def _extract_task_notification_ids(
 
     `content`が文字列（旧フォーマット）でも配列（実transcriptフォーマット）でも処理する。
     `task_id_map`はagentId（task-id要素の値）から`tool_use_id`集合へのマップで、
-    `<tool-use-id>`要素で解決できない場合のフォールバック解決経路として用いる。
+    `<tool-use-id>`要素で解決できない場合に解決する代替手段として用いる。
     `monitor_task_ids`はMonitorツール由来と突合済みの`task-id`値を示す。
     両者で解決できない`<task-notification>`は`session_id`が与えられていれば
     `append_stop_log(..., "task_notification_unresolved", ...)`で明示ログ出力する。

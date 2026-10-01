@@ -40,7 +40,7 @@ def make_git_remote_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Compl
 def make_current_worktree_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
     """カレント作業ツリーを`myrepo`として応答するfakeを返す。
 
-    `--target-repo`の既定解決がカレントディレクトリから対象リポジトリを確定する経路を検証するために使う。
+    `--target-repo`を省略したときにカレントディレクトリから対象リポジトリを確定する処理を検証するために使う。
     """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -56,7 +56,7 @@ def make_current_worktree_fake(myrepo: pathlib.Path) -> Callable[..., subprocess
 def make_outside_worktree_fake() -> Callable[..., subprocess.CompletedProcess[Any]]:
     """カレントディレクトリがGitの作業ツリー外であるとして応答するfakeを返す。
 
-    `--target-repo`の既定解決が対象を限定しない経路を検証するために使う。
+    `--target-repo`を省略したときに対象を限定しない処理を検証するために使う。
     """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:

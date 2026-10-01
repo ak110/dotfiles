@@ -66,7 +66,7 @@ def test_warning_formatters_reject_missing_or_empty_fix(fix: str) -> None:
     with pytest.raises(ValueError):
         format_notice("警告本文", tag="warn", removable_cause=False)
     with pytest.raises(TypeError):
-        # 必須引数の欠落そのものを検証するため、静的検査の指摘を抑止する。
+        # 必須引数の欠落そのものを検証するため、静的解析が返す指摘を抑止する。
         format_warning(  # type: ignore[call-arg]  # pylint: disable=missing-kwoa
             "警告本文", cause="missing", session_id="session-1", removable_cause=False
         )
@@ -144,7 +144,7 @@ def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: 
 
 
 def test_removable_warning_does_not_escalate_without_explicit_choice(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    """是正可能な警告でも反復遮断は既定で無効にする。"""
+    """是正可能な警告が反復しても、明示しなければ遮断しない。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     consume_warning_blocks()
     format_warning = warning_formatter("test/hook")

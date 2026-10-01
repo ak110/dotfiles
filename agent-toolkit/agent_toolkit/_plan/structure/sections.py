@@ -1,27 +1,27 @@
 # pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F821,I001
 # pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,unused-import,used-before-assignment,wrong-import-order
-"""計画ファイルの構造検査の共通モジュール。
+"""計画ファイルの構造が基準を満たすか判定する共有モジュール。
 
-構造検査（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
+構造の判定（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
 2系統のPreToolUse（`pretooluse.py`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
-本モジュールの構造定数は計画ファイルの見出し、固定H3および表の行名の正本であり、同書はこれらの定数から導いた受理形式を記述する。
+本モジュールの構造定数は計画ファイルの見出し、固定H3および表の行名を定めており、同書はこれらの定数から導いた受理形式を記述する。
 
-構造認識と原記法の検査は分離する。
+構造の認識と原文の記法の判定は別々に行う。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
-トークン列と位置情報から認識する。解析結果を各検査へ渡し、検査ごとの再解析を避ける。
+トークン列と位置情報から認識する。解析結果を各判定関数へ渡し、同じ構造を再び解析することを避ける。
 パーサーが補完、除去、段落へ変換する可能性がある原記法は、表トークンと段落トークンの
-位置情報から取得した原文を別関数で検査する。
+位置情報から取得した原文の記法は別関数で判定する。
 - 表の列数、外側パイプ、セル数の一致を原文から判定する
 - 表に変換されなかった段落では、パイプ区切りのヘッダー候補と直後の区切り行候補について
   セル数の不一致を検出する
-- 原文検査の対象範囲は、パーサーが表または段落として分類した箇所に限定する
-- 正規表現は原文の内容照合に限定し、列数は区切り記号で分割した要素数から計算する
+- 原文の記法を判定する範囲は、パーサーが表または段落として分類した箇所に限定する
+- 正規表現は原文が指定の内容に一致するかの判定に限定し、列数は区切り記号で分割した要素数から計算する
 
-各検査関数のdocstringへ担当する検査、受け取るトークン範囲、段落内の候補条件を記載する。
-検査項目を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
+各判定関数のdocstringへ、判定する条件、受け取るトークン範囲、段落内の候補条件を記載する。
+判定する条件を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
 - インデント、コードブロック内の記述、見出しの閉じ記号
 - 表の外側パイプの省略、表トークンになる列数不一致、段落へ変換される列数不一致
 - 同名節の重複、親節の違い
@@ -249,7 +249,7 @@ def _check_fixed_h2_layout(
     disallow_bug_for_normal: bool = False,
     work_type: str | None = None,
 ) -> list[str]:
-    """全H2の有無、一意性、固定順序を検査する。"""
+    """全H2が一意に存在し、固定された順に並ぶか確かめる。"""
     errors: list[str] = []
     actual_h2_texts = [heading.text for heading in headings if heading.level == 2]
     expected_canonical = [canonical_h2_name(name) for name in expected]
@@ -281,7 +281,7 @@ def _check_child_heading_sequence(
     parent_label: str,
     optional: tuple[str, ...] = (),
 ) -> list[str]:
-    """指定見出しの直下にある固定見出しの有無、一意性、順序を検査する。
+    """指定見出しの直下に固定見出しが一意に存在し、所定の順に並ぶか確かめる。
 
     ``optional``は廃止済みの見出しなど、置かなくてよく、置いても違反としない見出しを指す。
     """
@@ -305,13 +305,13 @@ def _check_child_heading_sequence(
 def _check_metadata_block(
     content: str, *, expected_fields: tuple[str, ...] = PLAN_METADATA_FIELDS
 ) -> tuple[str | None, list[str]]:
-    """計画メタ情報の配置、項目、順序、記法、値を検査して(作業種別, エラー)を返す。
+    """計画メタ情報の配置、項目、順序、記法、値が基準を満たすか判定し、(作業種別, エラー)を返す。
 
     `expected_fields`は対象書式が定める計画メタ情報の項目順を渡す。
     """
     metadata, errors = parse_plan_metadata(content)
     if metadata is None:
-        return None, errors or [f"`## {PLAN_H2_OVERVIEW}`直下の`### {PLAN_METADATA_H3}`を検査できない"]
+        return None, errors or [f"`## {PLAN_H2_OVERVIEW}`直下の`### {PLAN_METADATA_H3}`の構造を判定できない"]
     if not metadata.is_canonical:
         errors.append(f"計画メタ情報は`## {PLAN_H2_OVERVIEW}`直下へ置く: 実際=`## {metadata.parent}`直下")
     fields = [canonical_metadata_field(field) for field, _value in metadata.entries]
@@ -340,7 +340,7 @@ def _check_metadata_block(
 
 
 def check_plan_related_wi(metadata: PlanMetadata) -> list[str]:
-    """計画メタ情報の`関連WI`の値と子項目を検査する。"""
+    """計画メタ情報の`関連WI`の値と子項目が所定の形式であるか確かめる。"""
     errors: list[str] = []
     related_value = metadata.values.get(PLAN_METADATA_RELATED_WI_FIELD, "")
     if related_value == "なし":
@@ -349,13 +349,13 @@ def check_plan_related_wi(metadata: PlanMetadata) -> list[str]:
     elif related_value:
         errors.append("計画メタ情報の`関連WI`は子項目または`なし`で記載する")
     elif not metadata.related_wi:
-        errors.append("計画メタ情報の`関連WI`には正本ファイル名と1行要約を1件以上記載する")
+        errors.append("計画メタ情報の`関連WI`にはWIファイル名と1行要約を1件以上記載する")
     seen_wi: set[str] = set()
     for filename, summary in metadata.related_wi:
         if PLAN_QUEUE_ID_PATTERN.fullmatch(filename) is None:
             errors.append(
                 f"計画メタ情報の`関連WI`のファイル名が不正である: {filename}。"
-                "`YYYYMMDD-HHMMSS-NNN.md`形式の正本ファイル名を`atk wi list`で確かめて直す"
+                "`YYYYMMDD-HHMMSS-NNN.md`形式のWIファイル名を`atk wi list`で確かめて直す"
             )
         if not summary:
             errors.append(f"計画メタ情報の`関連WI`の1行要約が空である: {filename}。1行要約を記載する")
@@ -388,7 +388,7 @@ def _requirement_references(value: str) -> list[str]:
 
 
 def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[str]:
-    """新形式の素材表1行を検査する。"""
+    """新形式の素材表1行が所定の形式であるか確かめる。"""
     material_id, material_type, queue_id, source, citation = row
     errors: list[str] = []
     if not PLAN_MATERIAL_ID_PATTERN.fullmatch(material_id):
@@ -428,7 +428,7 @@ def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[
 
 
 def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials, list[str]]:
-    """新形式の素材表と要求表を検査する。"""
+    """新形式の素材表と要求表が所定の形式であるか確かめる。"""
     tables = extract_tables(section)
     material_tables = [table for table in tables if table.header == PLAN_MATERIAL_TABLE_HEADER]
     requirement_tables = [table for table in tables if table.header == PLAN_REQUIREMENT_TABLE_HEADER]
@@ -575,7 +575,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
 
 
 def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials | None, list[str]]:
-    """新規書式の`## 提示素材`にファイル名だけが列挙されていることを検査する。"""
+    """新規書式の`## 提示素材`にファイル名だけが列挙されているか確かめる。"""
     nonempty = [(lineno, line.strip()) for lineno, line in section if line.strip()]
     if not nonempty:
         return PlanMaterials(frozenset(), frozenset(), False, is_human_readable=True), [
@@ -590,7 +590,7 @@ def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterial
     for _lineno, line in nonempty:
         match = _HUMAN_MATERIAL_LINE_PATTERN.fullmatch(line)
         if match is None:
-            errors.append(f"提示素材は正本ファイル名の箇条書きまたは`なし`だけにする: {line}")
+            errors.append(f"提示素材はWIファイル名の箇条書きまたは`なし`だけにする: {line}")
             continue
         path = match.group("path").strip()
         if _STRICT_INTERNAL_PLAN_ID_PATTERN.search(path):
@@ -615,7 +615,7 @@ def _check_materials(
     headings: list[PlanHeading],
     index: int,
 ) -> tuple[set[str], list[str]]:
-    """`## 提示素材`の素材IDと逐語fenceを検査して(素材ID集合, エラー)を返す。"""
+    """`## 提示素材`の素材IDと逐語fenceが所定の形式であるか判定し、(素材ID集合, エラー)を返す。"""
     raw_lines = content.splitlines()
     start, end = heading_subtree_range(headings, index)
     upper = len(raw_lines) if end is None else end - 1
@@ -662,7 +662,7 @@ def _check_fixed_table(
     label: str,
     minimum_rows: int = 1,
 ) -> tuple[MarkdownTable | None, list[str]]:
-    """列名が一致する表の件数、最低行数、空cellを検査して(表, エラー)を返す。"""
+    """列名が一致する表が件数と最低行数を満たし、空cellを含まないか判定し、(表, エラー)を返す。"""
     tables = extract_tables(lines)
     matching = [candidate for candidate in tables if candidate.header == header]
     if not matching:
@@ -699,7 +699,7 @@ def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
 def _check_bug_unit_sections(
     body: list[tuple[int, str]], headings: list[PlanHeading], children: list[tuple[int, PlanHeading]]
 ) -> list[str]:
-    """バグ単位H3ごとに原因分析表と固定行の2列表を検査する。
+    """バグ単位H3ごとに原因分析表と固定行の2列表が基準を満たすか確かめる。
 
     統廃合前の調査表は原因分析表を伴う形と伴わない形の2種があり、前者は現行と同じ2表構成で受理する。
     行数はいずれも構造定数から導出し、メッセージへリテラルで持たない。
@@ -789,7 +789,7 @@ def _check_bug_unit_sections(
 
 
 def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading], index: int) -> list[str]:
-    """`## バグ調査結果`の分離先参照または旧形式の本文内調査表を検査する。"""
+    """`## バグ調査結果`の分離先参照または旧形式の本文内調査表が基準を満たすか確かめる。"""
     start, end = heading_subtree_range(headings, index)
     section = lines_within(body, start, end)
     children = child_headings(headings, index, 3)
@@ -847,7 +847,7 @@ def has_legacy_bug_investigation_table(content: str) -> bool:
 
 
 def check_bug_file_structure(content: str) -> list[str]:
-    """計画ファイル（バグ）のH1、バグ単位H3、原因分析表と固定行の調査表を検査する。"""
+    """計画ファイル（バグ）のH1、バグ単位H3、原因分析表と固定行の調査表が基準を満たすか確かめる。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
@@ -876,9 +876,9 @@ def _check_permanence_sections(
     parent_label: str = "`## 恒久化・リファクタリング内容`",
     current_format: bool = False,
 ) -> list[str]:
-    """恒久化とリファクタリングの検討実体を検査する。
+    """恒久化とリファクタリングの検討内容が存在し、基準を満たすか確かめる。
 
-    該当が無い場合に固定表の代わりへ置く地の文を受理し、表を置いた場合だけ固定の列名と行名を検査する。
+    該当が無い場合に固定表の代わりへ置く地の文を受理し、表を置いた場合だけ列名と行名が固定された名称に一致するか確かめる。
     廃止済みの`### 類似見直し`は、既存計画の読み取りのため見出しの存在だけを受理する。
     """
     errors = _check_child_heading_sequence(
@@ -897,7 +897,7 @@ def _check_permanence_sections(
         if _is_placeholder_only(section):
             errors.append(f"`### {heading.text}`は対象、比較、確認結果、理由を記載する（結論語だけの記載は成立しない）")
             continue
-        # 表記法の有無で地の文と表を分ける。抽出できない崩れた表を地の文として通さない。
+        # 表記法の有無で地の文と表を分ける。書式が不正で抽出できない表を地の文として通さない。
         if not any(line.strip().startswith("|") for _lineno, line in section):
             continue
         tables = extract_tables(section)
@@ -957,7 +957,7 @@ def has_legacy_acceptance_table(content: str) -> bool:
 
 
 def _check_h1(headings: list[PlanHeading]) -> list[str]:
-    """先頭ATX H1の有無と非空を検査する。"""
+    """先頭に空でないATX H1があるか確かめる。"""
     h1_headings = [heading for heading in headings if heading.level == 1]
     if len(h1_headings) != 1:
         return [f"先頭にATX H1が1件必要: 実際={len(h1_headings)}件"]
@@ -967,7 +967,7 @@ def _check_h1(headings: list[PlanHeading]) -> list[str]:
 
 
 def _check_overview_section(body: list[tuple[int, str]], headings: list[PlanHeading], overview_index: int) -> list[str]:
-    """`## 概要`直下のH3構成と地の文の記載を検査する。"""
+    """`## 概要`直下のH3構成と地の文の記載が基準を満たすか確かめる。"""
     errors: list[str] = []
     children = child_headings(headings, overview_index, 3)
     if [heading.text for _position, heading in children] != [PLAN_METADATA_H3]:
@@ -1000,7 +1000,7 @@ def _check_materials_and_identifiers(
 
 
 def _check_action_table(tables: list[MarkdownTable]) -> tuple[MarkdownTable | None, list[str]]:
-    """新旧の実施内容表を新形式優先で検査し、互換形式を含む表を返す。"""
+    """新形式を優先して新旧の実施内容表が基準を満たすか判定し、互換形式を含む表を返す。"""
     candidates = [
         table
         for table in tables
@@ -1068,10 +1068,10 @@ def _check_action_section(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> list[str]:
-    """`## 実施内容`の固定表と新旧の除外・保持表を検査する。
+    """`## 実施内容`の固定表と新旧の除外・保持表が基準を満たすか確かめる。
 
-    `origin_notices`と`origin_skips`を渡した場合だけ、WI由来行を正本へ照合する。
-    照合の結果はエラーではなく呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
+    `origin_notices`と`origin_skips`を渡した場合だけ、WI由来行をWI本文と比べて確かめる。
+    WI本文との比較結果はエラーではなく呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
     """
     if action_index is None:
         return []
@@ -1127,7 +1127,7 @@ def _check_action_section(
 
 
 def _has_frontmatter_source(content: str) -> bool:
-    """WIの正本のfrontmatterが値を伴う第1階層の`source`を持つかを返す。
+    """WIファイルのfrontmatterが値を伴う第1階層の`source`を持つかを返す。
 
     キーの有無だけを判定するため、YAMLパーサーへ依存せず行頭一致で確定する。
     本モジュールはhookとPEP 723スクリプトから読み込まれるため、依存を広げない選択とする。
@@ -1155,7 +1155,7 @@ def _has_machine_detectable_human_origin(content: str) -> bool:
 
 
 def _find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
-    """キュー管理リポジトリのルート配下から正本ファイルを探す。
+    """キュー管理リポジトリのルート配下からWIファイルを探す。
 
     状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
     """
@@ -1173,28 +1173,30 @@ def _collect_origin_notices(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """`人間由来のWI`行を正本へ照合し、移行の指摘と省略の事実を積む。
+    """`人間由来のWI`行をWI本文と比べて確かめ、移行の指摘と省略の事実を積む。
 
-    正本を解決できない場合とキュー管理リポジトリのルートが実在しない場合はその行の照合だけを省略し、
-    他の検査の結果を変えない。
+    WIファイルを特定できない場合とキュー管理リポジトリのルートが実在しない場合はその行とWI本文との比較だけを省略し、
+    他の判定結果を変えない。
     """
     root = _plan_file.private_notes_root(private_notes, home=home)
     try:
         if not root.is_dir():
-            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。キュー管理リポジトリが実在しない: {root}")
+            origin_skips.append(
+                f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。キュー管理リポジトリが実在しない: {root}"
+            )
             return
         source = _find_wi_source(name, root)
         if source is None:
-            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を解決できない: {name}")
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WIファイルを特定できない: {name}")
             return
         content = source.read_text(encoding="utf-8")
     except OSError as error:
-        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を取得できない: {name}: {error}")
+        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WI本文を取得できない: {name}: {error}")
         return
     if _has_frontmatter_source(content) and not _has_machine_detectable_human_origin(content):
         origin_notices.append(
-            f"`## {PLAN_H2_ACTION}`の`{PLAN_HUMAN_WI_ORIGIN}`が正本の由来と一致しない: {name}。"
-            f"正本は`{PLAN_WI_SOURCE_KEY}`を持ち機械判定できる明示由来が無いため、"
+            f"`## {PLAN_H2_ACTION}`の`{PLAN_HUMAN_WI_ORIGIN}`がWI本文の由来と一致しない: {name}。"
+            f"WI本文は`{PLAN_WI_SOURCE_KEY}`を持ち機械判定できる明示由来が無いため、"
             f"`{PLAN_AGENT_WI_ORIGIN}`とするか、機械判定できない明示由来を根拠とする場合は`[対話由来]`注記を付ける"
         )
 
@@ -1205,23 +1207,25 @@ def _wi_has_scope(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> bool:
-    """`エージェント由来のWI`の正本が非空の`## 適用範囲`を持つかを返す。
+    """`エージェント由来のWI`の本文が非空の`## 適用範囲`を持つかを返す。
 
-    WIが確定した適用範囲は計画で再導出せず参照するため、同節を持つ正本の採用行は根拠を省略できる。
-    正本を解決できない場合は照合の省略を`origin_skips`へ積んで真を返し、作成を遮断しない。
+    WIが確定した適用範囲は計画で再導出せず参照するため、同節を持つWIの採用行は根拠を省略できる。
+    WIファイルを特定できない場合はWI本文との比較を省略した事実を`origin_skips`へ積んで真を返し、作成を遮断しない。
     """
     root = _plan_file.private_notes_root(private_notes, home=home)
     try:
         if not root.is_dir():
-            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。キュー管理リポジトリが実在しない: {root}")
+            origin_skips.append(
+                f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。キュー管理リポジトリが実在しない: {root}"
+            )
             return True
         source = _find_wi_source(name, root)
         if source is None:
-            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を解決できない: {name}")
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WIファイルを特定できない: {name}")
             return True
         content = source.read_text(encoding="utf-8")
     except OSError as error:
-        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を取得できない: {name}: {error}")
+        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WI本文を取得できない: {name}: {error}")
         return True
     headings = extract_headings(content)
     index = find_heading_index(headings, 2, PLAN_WI_SCOPE_HEADING)
@@ -1241,20 +1245,20 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> list[str]:
-    """新規書式の実施内容4列表を検査する。
+    """新規書式の実施内容4列表が基準を満たすか確かめる。
 
     `人間由来のWI`と記載した行は、`origin_notices`と`origin_skips`を渡した場合だけ
-    正本のfrontmatterと本文へ照合する。`[対話由来]`注記のある行は機械判定できない明示由来を
-    根拠とするため照合の対象から除く。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
+    WIファイルのfrontmatterと本文に一致するか確かめる。`[対話由来]`注記のある行は機械判定できない明示由来を
+    根拠とするためWI本文とは比較しない。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
     採用行の根拠が`-`の場合は`origin_notices`を渡した場合だけ移行の指摘を積む。
-    `origin_skips`も渡した場合は正本を読み、非空の`## 適用範囲`を持てば指摘を積まない。
+    `origin_skips`も渡した場合はWI本文を読み、非空の`## 適用範囲`を持てば指摘を積まない。
     改名前の由来は読み取り互換で受理する。
 
     人間由来の2区分（`人間由来のWI`と`ユーザー指示`）は、採否にかかわらず原文の要求単位ごとの
     分解結果を`根拠`へ必要とする。`根拠`が`-`である行は`origin_notices`へ積み、
-    新規作成と改訂の検査だけが失敗する。分解結果を持たない計画は、原文が示した集合と
+    新規作成と改訂を確かめるときだけエラーとする。分解結果を持たない計画は、原文が示した集合と
     成果物が扱う集合との差を誰も観測できないためである。
-    既に保存した計画を読み取りだけで検査する経路は、同じ指摘を警告として扱う。
+    既に保存した計画を読み取りだけで確かめる処理は、同じ指摘を警告として扱う。
     """
     errors: list[str] = []
     if not table.rows:
@@ -1285,12 +1289,12 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
             if canonical_origin in PLAN_WI_ORIGIN_ALIASES:
                 errors.append(
                     f"`## {PLAN_H2_ACTION}`のWI由来には"
-                    "半角空白1字に続けて半角丸括弧で囲んだ正本ファイル名を記載する"
+                    "半角空白1字に続けて半角丸括弧で囲んだWIファイル名を記載する"
                     f"（例: `{PLAN_AGENT_WI_ORIGIN} (20260831-000000-001.md)`）: {origin}"
                 )
         elif any(origin.startswith(f"{alias} (") for alias in _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS):
             if wi_origin_match is None:
-                errors.append(f"`## {PLAN_H2_ACTION}`の`由来`は正本ファイル名付きの4値にする: {origin}")
+                errors.append(f"`## {PLAN_H2_ACTION}`の`由来`はWIファイル名付きの4値にする: {origin}")
             elif wi_origin_match.group("name") not in related_wi and (
                 materials is None or wi_origin_match.group("name") not in materials.material_paths
             ):
@@ -1308,7 +1312,7 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
         elif review_origin is None:
             errors.append(
                 f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、または"
-                "区分と半角空白1字と半角丸括弧で囲んだ正本ファイル名"
+                "区分と半角空白1字と半角丸括弧で囲んだWIファイル名"
                 f"（例: `{PLAN_AGENT_WI_ORIGIN} (20260831-000000-001.md)`）にする: "
                 f"{origin}"
             )
@@ -1331,7 +1335,7 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                         origin_notices.append(
                             f"`## {PLAN_H2_ACTION}`の`{PLAN_AGENT_WI_ORIGIN}`の採用行の`根拠`へ、"
                             "適用範囲を再導出した結果と根拠を記載する。"
-                            f"関連WIの正本が非空の`## {PLAN_WI_SCOPE_HEADING}`を持つ場合は`-`のままWIを参照する"
+                            f"関連WIの本文が非空の`## {PLAN_WI_SCOPE_HEADING}`を持つ場合は`-`のままWIを参照する"
                         )
                 else:
                     errors.append(f"`## {PLAN_H2_ACTION}`の採用以外の`根拠`は理由を自足して記載する: {root}")
@@ -1365,9 +1369,9 @@ def _check_agent_judgment_section(
     action_index: int | None,
     judgment_index: int | None,
 ) -> list[str]:
-    """新書式の`## エージェント提案詳細`を実施内容の提案行と照合する。"""
+    """新書式の`## エージェント提案詳細`が実施内容の提案行に対応するか確かめる。"""
     if judgment_index is None:
-        return [f"`## {PLAN_H2_AGENT_JUDGMENT}`が無いためエージェント提案の詳細を検査できない"]
+        return [f"`## {PLAN_H2_AGENT_JUDGMENT}`が無いためエージェント提案の詳細が基準を満たすか判定できない"]
 
     proposal_names: list[str] = []
     if action_index is not None:
@@ -1408,7 +1412,7 @@ def _check_agent_judgment_section(
 
 
 def _check_human_review_root(root: str, expected_round: str, decision: str) -> list[str]:
-    """計画レビュー由来の行が絶対パスと同じラウンドを指すか検査する。"""
+    """計画レビュー由来の行が絶対パスと同じラウンドを指すか確かめる。"""
     match = PLAN_HUMAN_REVIEW_ROOT_PATTERN.fullmatch(root)
     if match is None or not plan_human_review_path_is_absolute(match.group("path")):
         return [f"`## {PLAN_H2_ACTION}`の計画レビュー由来の`根拠`は絶対パスのTSVと同じroundを指定する: {root}"]
@@ -1444,7 +1448,7 @@ def _check_history_section(
     allow_legacy_review_ids: bool = False,
     allow_legacy_review_tracks: bool = False,
 ) -> list[str]:
-    """`## 変更履歴`の固定表を検査する。
+    """`## 変更履歴`の表が固定された書式を満たすか確かめる。
 
     ``allow_legacy_review_ids`` は旧単一ファイルの ``C-`` IDを許可し、
     ``allow_legacy_review_tracks`` は旧二ファイル計画に残るIDと系統名を読み取り専用で受理する。
@@ -1470,7 +1474,7 @@ def _check_history_section(
 def _check_human_history_section(
     headings: list[PlanHeading], history_index: int | None, content: str, *, require_user_event: bool = False
 ) -> list[str]:
-    """新規書式の変更履歴（自然な見出しと逐語入力）を検査する。"""
+    """新規書式の変更履歴（自然な見出しと逐語入力）が基準を満たすか確かめる。"""
     if history_index is None:
         return []
     start, end = heading_subtree_range(headings, history_index)
@@ -1636,7 +1640,7 @@ def progress_log_rows(content: str) -> list[tuple[str, str, str]]:
 
 
 def _check_progress_section(body: list[tuple[int, str]], headings: list[PlanHeading], progress_index: int | None) -> list[str]:
-    """`## 進捗ログ`の固定表を検査する。"""
+    """`## 進捗ログ`の表が固定された書式を満たすか確かめる。"""
     if progress_index is None:
         return []
     start, end = heading_subtree_range(headings, progress_index)
@@ -1652,7 +1656,7 @@ def _check_progress_section(body: list[tuple[int, str]], headings: list[PlanHead
 def _check_verification_section(
     body: list[tuple[int, str]], headings: list[PlanHeading], verification_index: int | None
 ) -> list[str]:
-    """`## 検証区分`の固定2行2列表を検査する。"""
+    """`## 検証区分`の表が固定された2行2列の書式を満たすか確かめる。"""
     if verification_index is None:
         return []
     start, end = heading_subtree_range(headings, verification_index)
@@ -1684,7 +1688,7 @@ def _check_verification_section(
 def _check_termination_section(
     body: list[tuple[int, str]], headings: list[PlanHeading], termination_index: int | None
 ) -> list[str]:
-    """`## 終端工程`に記載があるかを検査する（終端工程が無い場合は`なし`と書く運用を許容する）。"""
+    """`## 終端工程`に記載があるかを確かめる（終端工程が無い場合は`なし`と書く運用を許容する）。"""
     if termination_index is None:
         return []
     start, end = heading_subtree_range(headings, termination_index)
@@ -1695,7 +1699,7 @@ def _check_termination_section(
 
 
 def _check_bug_and_permanence(body: list[tuple[int, str]], headings: list[PlanHeading], work_type: str | None) -> list[str]:
-    """`## バグ調査結果`と`## 恒久化・リファクタリング内容`の実体を検査する。"""
+    """`## バグ調査結果`と`## 恒久化・リファクタリング内容`が存在し、基準を満たすか確かめる。"""
     errors: list[str] = []
     bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)
     if bug_index is not None:
@@ -1709,7 +1713,7 @@ def _check_bug_and_permanence(body: list[tuple[int, str]], headings: list[PlanHe
 def _check_h3_and_deeper(
     headings: list[PlanHeading], allowed_h3_parents: set[str], freeform_parents: frozenset[str]
 ) -> list[str]:
-    """固定H2直下に自由なH3を置かないこと、H4以深を置かないことを検査する。"""
+    """固定H2直下に自由なH3がなく、H4以深の見出しもないことを確かめる。"""
     errors: list[str] = []
     for index, heading in enumerate(headings):
         if heading.level < 3:
@@ -1727,13 +1731,13 @@ def _check_h3_and_deeper(
 
 
 def check_plan_structure(content: str) -> list[str]:
-    """旧形式（単一ファイル9節）の計画を検査して違反一覧を返す。
+    """旧形式（単一ファイル9節）の計画が基準を満たすか判定し、違反一覧を返す。
 
-    検査対象は見出しの欠落、重複、順序違反、固定領域への追加H2、固定表の列と行、
+    判定する対象は見出しの欠落、重複、順序違反、固定領域への追加H2、固定表の列と行、
     空cell、素材・要求参照先の欠落、恒久化等の空欄または結論語だけの記載とする。
-    素材と要求の意味照合、根拠の妥当性、検討の実質はレビュー担当が判定する。
+    素材と要求の意味が一致するかの確認、根拠の妥当性、検討の実質はレビュー担当が判定する。
     新規作成では生成しない読み取り互換の形式であり、新書式の2ファイルは
-    `check_plan_main_structure`・`check_plan_detail_structure`で検査する。
+    `check_plan_main_structure`・`check_plan_detail_structure`で基準を満たすか判定する。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -1785,12 +1789,12 @@ def check_plan_main_structure(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[str | None, list[str]]:
-    """新書式の計画ファイル（メイン）`<計画名>.md`を検査して(作業種別, 違反一覧)を返す。
+    """新書式の計画ファイル（メイン）`<計画名>.md`が基準を満たすか判定し、(作業種別, 違反一覧)を返す。
 
     固定H2順は`PLAN_MAIN_H2_ORDER`とし、計画メタ情報は`関連WI`を含む5項目とする。
     改訂前の二ファイル形式は提示素材と計画ファイル（詳細）参照を読み取り互換で受理する。
-    `origin_notices`と`origin_skips`を渡した場合だけ、実施内容表のWI由来行を正本へ照合し、
-    移行を促す指摘と照合を省略した事実をそれぞれへ積む。照合の結果は違反一覧へ含めない。
+    `origin_notices`と`origin_skips`を渡した場合だけ、実施内容表のWI由来行をWI本文と比べて確かめ、
+    移行を促す指摘とWI本文との比較を省略した事実をそれぞれへ積む。WI本文との比較結果は違反一覧へ含めない。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -1891,7 +1895,7 @@ def check_plan_main_structure(
 
 
 def _check_nonempty_section(body: list[tuple[int, str]], headings: list[PlanHeading], heading_name: str) -> list[str]:
-    """指定したH2の本文が空でないことを検査する。"""
+    """指定したH2の本文が空でないか確かめる。"""
     index = find_heading_index(headings, 2, heading_name)
     if index is None:
         return []
@@ -1909,7 +1913,7 @@ def check_plan_single_file_structure(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[str | None, list[str]]:
-    """現行の1ファイル計画を検査して(作業種別, 違反一覧)を返す。"""
+    """現行の1ファイル計画が基準を満たすか判定し、(作業種別, 違反一覧)を返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
@@ -1918,8 +1922,8 @@ def check_plan_single_file_structure(
     parsed, _parse_errors = parse_plan_metadata(content)
     parsed_work_type = parsed.values.get("作業種別") if parsed is not None else None
     expected_metadata = PLAN_METADATA_CURRENT_FIELDS
-    # 関連WIの`## 原因分析`を正本とするバグ対応計画は計画ファイル（バグ）を持たない。
-    # 入力WIが無い計画は原因分析の正本が他に無いため、同行を必須とする。
+    # 関連WIの`## 原因分析`を参照するバグ対応計画は計画ファイル（バグ）を持たない。
+    # 入力WIが無い計画は原因分析を参照するWIが他に無いため、同行を必須とする。
     if (
         parsed is not None
         and parsed_work_type == "バグ対応"
@@ -2086,9 +2090,9 @@ def check_plan_single_file_structure(
 
 
 def check_plan_detail_structure(content: str, work_type: str | None) -> list[str]:
-    """新書式の計画ファイル（詳細）`<計画名>.detail.md`を検査して違反一覧を返す。
+    """新書式の計画ファイル（詳細）`<計画名>.detail.md`が基準を満たすか判定し、違反一覧を返す。
 
-    計画ファイル（詳細）は計画メタ情報を持たないため、作業種別は計画ファイル（メイン）の検査結果から受け取る。
+    計画ファイル（詳細）は計画メタ情報を持たないため、作業種別は計画ファイル（メイン）の判定結果から受け取る。
     固定H2順は`PLAN_DETAIL_H2_ORDER`（恒久化・リファクタリング内容・実装資料・完了条件）とし、
     作業種別が`バグ対応`の場合だけ先頭へ`バグ調査結果`を加える。
     """

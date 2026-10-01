@@ -1,6 +1,6 @@
 # ruff: noqa: F401,F821,I001
 # pylint: disable=unused-import,used-before-assignment,wrong-import-order
-r"""PreToolUse統合フックのうち、Bashコマンドを対象とする遮断検査。"""
+r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件の判定。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def _attached_short_value_option(token: str, valued: Iterable[str]) -> str | Non
     """値を密着させた短縮オプションの形であれば、そのオプション名を返す。
 
     `-A14`のように値を空白なしで連結した形は対象コマンドが受理する1つのトークンである。
-    短縮オプションの連結として1文字ずつ照合すると、値の各文字が受理集合に無いという判定になる。
+    短縮オプションの連結として1文字ずつ受理集合に含まれるか判定すると、値の各文字が受理集合に無いという判定になる。
     """
     if not token.startswith("-") or token.startswith("--"):
         return None
@@ -194,7 +194,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
 def _check_bash_process_kill_by_pattern(command: str) -> bool:
     """`pkill`・`killall`等パターン指定によるプロセス終了をブロックする。
 
-    対象の所有権を確認できないパターン一致の一括終了は事故の危険があるため禁止する。
+    対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
     ヒアドキュメント本文をマスクした文字列を解析し、禁止語が実行位置ではなく、安全な引数位置の
     リテラルだと確定できる区間だけを許可する。

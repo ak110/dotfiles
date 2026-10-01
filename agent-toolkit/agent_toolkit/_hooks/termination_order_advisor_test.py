@@ -233,7 +233,7 @@ def test_approves_when_target_skill_never_invoked(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """対象スキルを一度も起動していないセッションは検査対象外とする。"""
+    """対象スキルを一度も起動していないセッションでは起動順を判定しない。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     transcript = _write_transcript(
@@ -250,7 +250,7 @@ def test_approves_delegated_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の委譲先では終了手順を検査しない。"""
+    """`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の委譲先では終了手順の起動順を確かめない。"""
     _set_state_directory(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     _clear_caches()
@@ -285,7 +285,7 @@ def test_approves_and_logs_when_transcript_unreadable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """transcriptが存在しない場合は遮断せず、Stop判定ログへ検査不能を記録する。"""
+    """transcriptが存在しない場合は遮断せず、Stop判定ログへ起動順を確かめられないことを記録する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     session_id = "sess-unreadable"
@@ -295,7 +295,7 @@ def test_approves_and_logs_when_transcript_unreadable(
 
     assert (decision, body) == ("approve", "")
     log_text = (tmp_path / f"claude-agent-toolkit-stop-{session_id}.log").read_text(encoding="utf-8")
-    assert "検査不能" in log_text
+    assert "起動順を確認できない" in log_text
 
 
 def test_approves_when_pending_async_work(

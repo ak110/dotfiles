@@ -23,7 +23,7 @@ except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
         "次の操作: `atk run-script plan-progress -- <引数>`で起動する",
         file=sys.stderr,
     )
@@ -33,7 +33,8 @@ Clock = Callable[[], datetime.datetime]
 
 
 _CHECK_STRUCTURE = (
-    "`atk run-script plan-check -- <計画ファイルの絶対パス>`で計画の構造を検査し、指摘どおりに直してから再実行する"
+    "`atk run-script plan-check -- <計画ファイルの絶対パス>`で計画の構造が基準を満たすか確かめ、"
+    "指摘どおりに直してから再実行する"
 )
 
 
@@ -151,7 +152,7 @@ def append_progress_log(
     if now.tzinfo is None:
         raise ProgressLogError(
             "進捗ログの時計にはタイムゾーンが必要です",
-            next_action="`clock`へタイムゾーン付きの時刻を返す関数を渡す（CLIの経路では発生しない）",
+            next_action="`clock`へタイムゾーン付きの時刻を返す関数を渡す（CLIからの呼び出しでは発生しない）",
         )
     row = f"| {now:%Y-%m-%d %H:%M} | {_escape_cell(completed_step)} | {_escape_cell(result)} |"
     newline = "\r\n" if "\r\n" in content else "\n"
@@ -168,7 +169,7 @@ def append_progress_log(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """進捗ログ追記CLIの入口。"""
+    """CLIから進捗ログの追記を開始する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan_file", type=pathlib.Path, help="更新する計画ファイル")
     parser.add_argument("--completed-step", required=True, help="完了した工程")

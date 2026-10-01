@@ -4,7 +4,7 @@
 実行できない操作や同じ失敗を繰り返す。次の操作を任意の本文にするとレビューでも欠落を検出できないため、
 本モジュールの例外型と出力関数は理由と次の操作を別々の必須の引数として受け取り、欠いた呼び出しを失敗させる。
 層の順序で最も前にある`_common`へ置き、hook、`atk`、agents_server、`wait_ci.py`およびスキル付属スクリプトの
-全ての経路から同じ標識と必須性を使う。文面は各発生源が持つ。
+全ての呼び出し元が同じ標識を使い、次の操作を必須とする。文面は各発生源が持つ。
 """
 
 import sys
@@ -29,8 +29,8 @@ def with_next_action(reason: str, next_action: str) -> str:
 class ActionableError(ValueError):
     """理由と次の操作を持つ入力・状態のエラー。
 
-    `str()`は理由だけを返し、理由の文字列を使う既存の経路（Web APIの応答本文など）を変えない。
-    受信側へ届ける経路は`message`で理由と次の操作の2行を得る。
+    `str()`は理由だけを返し、理由の文字列を使う既存の応答（Web APIの応答本文など）を変えない。
+    受信側へ通知する処理は`message`から理由と次の操作の2行を得る。
     """
 
     def __init__(self, reason: str, *, next_action: str) -> None:
@@ -47,5 +47,5 @@ class ActionableError(ValueError):
 
 
 def report(reason: str, *, next_action: str, stream: TextIO | None = None) -> None:
-    """理由と次の操作の行を出力する。既定の出力先は標準エラーとする。"""
+    """理由と次の操作の行を出力する。出力先を指定しなければ標準エラーへ出力する。"""
     print(with_next_action(reason, next_action), file=stream if stream is not None else sys.stderr)

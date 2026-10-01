@@ -171,7 +171,7 @@ def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
 
 
 def _home_path() -> str:
-    """検査対象プロセスが解決するホームディレクトリを実行時に返す。
+    """判定を実行するプロセスが解決するホームディレクトリを実行時に返す。
 
     `_run`が起動するフックは呼び出し時点の環境変数からホームを解決するため、
     テスト側も同じ時点で解決する。収集時に評価したクラス変数は、実行環境のホームを
@@ -282,7 +282,7 @@ def _init_git_repo(path: pathlib.Path) -> None:
 
 
 def _make_repo_with_optional_remote(path: pathlib.Path, remote_url: str | None) -> str:
-    """検査除外条件の判定用に、remote設定の有無を選べるgit repoを作成する。
+    """判定を省略する条件の確認用に、remote設定の有無を選べるgit repoを作成する。
 
     `remote_url`が`None`の場合は`git remote`が空リストを返すrepoになる。
     """
@@ -337,7 +337,7 @@ def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 
 def _path_section_build_content(recorded_path: str) -> str:
-    """撤去済みの末尾パス節検査へ与える計画本文を組み立てる。"""
+    """撤去した末尾パス節の判定処理へ与える計画本文を組み立てる。"""
     return (
         "## 概要\n\nx\n\n"
         "## 実装資料\n\n### 変更説明\n\nREADMEを更新する。\n\n"

@@ -17,7 +17,7 @@ def atomic_write(path: Path, content: str, *, fsync: bool = False) -> None:
 
     一時ファイル作成→書き込み→（`fsync=True`時はディスクへの同期→）`os.replace`の順で実行し、
     書き込み中断時は旧ファイル内容が残るよう保証する。
-    `fsync`は呼び出し元の耐障害性要件に応じて指定する（既定は無効）。
+    `fsync`は呼び出し元の耐障害性要件に応じて指定する（指定しなければ無効）。
     """
     parent = path.parent
     parent.mkdir(parents=True, exist_ok=True)

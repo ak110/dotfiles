@@ -1,4 +1,4 @@
-"""`_git_remote`のリモートURL正規化と取得を検査する。"""
+"""`_git_remote`のリモートURLの正規化と取得の動作を確かめる。"""
 
 import pathlib
 import subprocess

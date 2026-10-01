@@ -1,4 +1,4 @@
-"""Claude Code agent-toolkit: 文字列の記述言語検査。
+"""Claude Code agent-toolkit: 文字列の記述言語を判定する。
 
 文字列からコードブロック・インラインコード・URL・機械可読な返却行を除いた地の文を判定する。
 テキストブロックを持つ直近のメインエージェント応答はtranscriptから文字列を取得して同じ判定へ渡す。
@@ -86,7 +86,7 @@ _DISCOURSE_MARKER_PATTERN = re.compile(
 
 
 class CheckOutcome(enum.Enum):
-    """言語検査の判定結果。"""
+    """文字列が日本語であるかの判定結果。"""
 
     WARN = "warn"
     PASS = "pass"

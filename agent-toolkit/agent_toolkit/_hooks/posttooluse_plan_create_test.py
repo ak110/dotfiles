@@ -1,4 +1,4 @@
-"""公開された計画ファイル作成入口のPostToolUse記録を検証する。"""
+"""公開された計画ファイル作成コマンドのPostToolUse記録を検証する。"""
 
 import pathlib
 

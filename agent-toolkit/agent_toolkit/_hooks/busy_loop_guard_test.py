@@ -240,7 +240,7 @@ def test_native_subagent_question_does_not_block_parent_loop(tmp_path: pathlib.P
 
 
 def test_stop_entry_point_reports_system_message(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """共通入口が停止の本文を`systemMessage`へ集約する。
+    """各Stop判定を集約する関数が停止の本文を`systemMessage`へ集約する。
 
     同じターンで別の判定が遮断を返す場合も、利用者向けの本文を同じ応答へ添える。
     """

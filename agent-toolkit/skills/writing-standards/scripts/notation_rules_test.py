@@ -1,4 +1,4 @@
-"""`notation-rules.md`が定める外部パス検査の回帰テスト。"""
+"""`notation-rules.md`が定める外部パスへチェックを届かせる条件の回帰テスト。"""
 
 import json
 import pathlib
@@ -46,7 +46,7 @@ def _assert_all_commands_reach_one_file(records: list[dict[str, object]]) -> Non
 
 
 def test_pyfltr_reaches_an_external_markdown_file(tmp_path: pathlib.Path) -> None:
-    """設定プロジェクト外の絶対パスを警告やskipなしで検査する。"""
+    """設定プロジェクト外の絶対パスへ警告やskipなしでチェックを届かせる。"""
     project_root = pathlib.Path(__file__).resolve().parents[4]
     target = tmp_path / "external-target.md"
     target.write_text("# 外部対象\n\n検査対象の文書である。\n", encoding="utf-8")
@@ -73,7 +73,7 @@ def test_external_markdown_without_allow_external_paths_is_not_fully_reached(tmp
 
 
 def test_external_markdown_without_work_dir_does_not_reach_project_commands(tmp_path: pathlib.Path) -> None:
-    """設定起点を外すとプロジェクトの検査コマンド全てへ対象が到達しない。"""
+    """設定起点を外すとプロジェクトで定義した全チェックコマンドへ対象が到達しない。"""
     target = tmp_path / "external-target.md"
     target.write_text("# 外部対象\n\n検査対象の文書である。\n", encoding="utf-8")
 
@@ -85,7 +85,7 @@ def test_external_markdown_without_work_dir_does_not_reach_project_commands(tmp_
 
 
 def test_repository_markdown_reaches_commands_with_the_existing_invocation() -> None:
-    """リポジトリ内入力は追加オプションなしの従来経路で対象1件へ到達する。"""
+    """リポジトリ内入力は追加オプションなしの従来の呼び出し方で対象1件へ到達する。"""
     project_root = pathlib.Path(__file__).resolve().parents[4]
     target = project_root / "agent-toolkit/skills/writing-standards/references/notation-rules.md"
 

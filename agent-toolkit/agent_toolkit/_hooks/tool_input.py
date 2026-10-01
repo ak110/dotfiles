@@ -3,7 +3,7 @@
 Claude Codeの`Write` / `Edit` / `MultiEdit`と、Codexの`apply_patch`は、
 同じ「ファイルをどう変えるか」を別々の入力形式で表す。
 本モジュールは両者を1つの操作記録（`EditOperation`）へ変換し、
-PreToolUseとPostToolUseの双方が同じ単位で検査・記録できるようにする。
+PreToolUseとPostToolUseの双方が同じ単位を判定・記録できるようにする。
 
 層は2つに分ける。
 
@@ -33,7 +33,7 @@ KIND_UPDATE = "update"
 KIND_DELETE = "delete"
 KIND_MOVE = "move"
 
-# 全文を書き込む操作種別。検査によっては断片ごとではなく変更後全文で判定する。
+# 全文を書き込む操作種別。判定する条件によっては、断片ごとではなく変更後全文を使う。
 _WHOLE_WRITE_KINDS: frozenset[str] = frozenset({KIND_WRITE, KIND_ADD})
 
 _PATCH_BEGIN = "*** Begin Patch"
@@ -117,7 +117,7 @@ def parse_operations(tool_name: str, tool_input: object, cwd: str) -> list[EditO
     """編集ツール入力を操作記録の一覧へ変換する。
 
     対象外のツールではNoneを返す。
-    Codexのpatch構文を認識できない場合は空リストを返し、呼び出し側は検査を行わずに通過させる
+    Codexのpatch構文を認識できない場合は空リストを返し、呼び出し側は内容を判定せずに通過させる
     （patchの妥当性判定は`apply_patch`本体へ委ねる）。
     """
     if not isinstance(tool_input, dict):
@@ -135,7 +135,7 @@ def parse_operations(tool_name: str, tool_input: object, cwd: str) -> list[EditO
 def new_content_fields(tool_name: str, tool_input: object, cwd: str = "") -> list[tuple[str, str]] | None:
     """編集ツール入力の変更後断片を（ラベル, 値）の一覧で返す。
 
-    新規に書き込まれる側だけを検査するhookの共通入口とする。対象外のツールではNoneを返す。
+    新規に書き込まれる側だけを判定するhookが共通して使う。対象外のツールではNoneを返す。
     """
     operations = parse_operations(tool_name, tool_input, cwd)
     if operations is None:
@@ -419,7 +419,7 @@ def _split_hunks(body: list[str]) -> list[list[str]]:
 def _apply_fragments(before: str, fragments: tuple[EditFragment, ...], *, line_based: bool) -> str | None:
     """順序付き編集断片を現在内容へ順に適用する。
 
-    行単位断片では変更前断片を行の並びとして照合し、見つからない場合はNoneを返す。
+    行単位断片では変更前断片と同じ行の並びを探し、見つからない場合はNoneを返す。
     文字列断片では先頭からの置換で適用する。
     """
     if not fragments:

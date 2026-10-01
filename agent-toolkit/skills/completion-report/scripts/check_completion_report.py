@@ -81,7 +81,7 @@ def validate_report(text: str, stage: str, review_state: str | None = None) -> l
     """報告本文を検証し、違反理由を返す。"""
     errors: list[str] = []
     if stage not in STAGES:
-        return [f"検査段階が不正である: {stage}（受理する値: {', '.join(STAGES)}）"]
+        return [f"確認する段階の指定が不正である: {stage}（受理する値: {', '.join(STAGES)}）"]
     if stage in ("work-complete", "review-submission") and review_state is not None:
         errors.append(f"{stage}段階ではreview-stateを指定しない")
     if stage == "review-result" and review_state not in REVIEW_STATES:
@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(f"完了報告の構造違反: {error}", file=sys.stderr)
         print(
-            _next_action.next_action_line("各行が示す形へ完了報告を直し、同じコマンドで再検査する"),
+            _next_action.next_action_line("各行が示す形へ完了報告を直し、同じコマンドでもう一度確かめる"),
             file=sys.stderr,
         )
         return 1

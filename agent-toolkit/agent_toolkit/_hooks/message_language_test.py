@@ -80,7 +80,7 @@ def _literal_text(node: ast.expr, constants: dict[str, str]) -> str | None:
 def _collect_notice_texts() -> list[tuple[str, str]]:
     """hookのソースから通知の本文と解消手段を抽出する。
 
-    写しを持たずソースから直接読むため、文面を変えても検査対象が追随し、旧文面の写しとの乖離が生じない。
+    写しを持たずソースから直接読むため、文面を変えても新しい文面を対象にでき、旧文面の写しとの乖離が生じない。
     """
     sources = [path for path in sorted(_HOOK_SOURCE_ROOT.rglob("*.py")) if not path.name.endswith("_test.py")]
     trees = {path: ast.parse(path.read_text(encoding="utf-8")) for path in sources}
@@ -158,7 +158,7 @@ def test_japanese_notice_judgment(text: str, expected: bool) -> None:
 def test_hook_source_notice_texts_are_japanese() -> None:
     """hookのソースが持つ通知の本文と解消手段が通知言語契約を満たすことを検証する。"""
     texts = _collect_notice_texts()
-    # 抽出が機能しない変更（呼び出し名の改名など）で検査対象が空になり、無条件に合格することを防ぐ。
+    # 抽出が機能しない変更（呼び出し名の改名など）で対象の文面が空になり、無条件に合格することを防ぐ。
     assert len(texts) >= 40
     failures = [source for source, text in texts if not _is_japanese_notice(text)]
     assert failures == []
@@ -239,7 +239,7 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
     file_name: str,
     expected_notice: str,
 ) -> None:
-    """manifest編集警告の確定訳を公開hook入口で検証する。"""
+    """manifest編集警告の確定訳を公開されたhookを起動して検証する。"""
     result = _run(
         {
             "tool_name": "Write",

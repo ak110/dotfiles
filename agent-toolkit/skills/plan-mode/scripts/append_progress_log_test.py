@@ -89,7 +89,7 @@ def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, conte
         append_progress_log.append_progress_log(path, "工程", "結果")
 
     assert path.read_bytes() == original
-    # 構造の不正は、置くべき見出しと固定表か、構造検査のコマンドを次の操作として示す。
+    # 構造の不正は、置くべき見出しと固定表か、構造を確かめるコマンドを次の操作として示す。
     next_action = raised.value.next_action
     assert "`atk run-script plan-check --" in next_action or "の列）だけの固定表を置いてから再実行する" in next_action
 

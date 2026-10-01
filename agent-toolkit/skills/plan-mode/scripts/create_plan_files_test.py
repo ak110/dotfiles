@@ -20,7 +20,7 @@ def _git(repo: pathlib.Path, *args: str) -> str:
 
 @pytest.fixture(name="repo")
 def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """構造検査へ渡すGitリポジトリを準備する。"""
+    """構造の判定に使うGitリポジトリを準備する。"""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -35,7 +35,7 @@ def _source(
     bug: bool = False,
     bug_reference: str | None = None,
 ) -> tuple[pathlib.Path, pathlib.Path | None]:
-    """検査を通過する入力本文を保存する。
+    """計画の基準を満たす入力本文を保存する。
 
     `bug_reference`は計画本文へ書く計画ファイル（バグ）の参照値を差し替える。
     """
@@ -233,7 +233,7 @@ def test_documented_bug_reference_is_accepted_without_substitution(repo: pathlib
     """計画ファイル作成基準の記載例を置換せず転記した計画本文を作成処理が受理する。
 
     記載例は起草者がそのまま書き写す値であり、受理形式を満たさない例は計画作成のやり直しを招く。
-    書式の正本（固定プレースホルダー）を改訂したときに記載例が追随しない状態を、本テストが検出する。
+    書式を定める固定プレースホルダーを改訂したときに記載例が追随しない状態を、本テストが検出する。
     """
     reference = _documented_bug_reference()
     assert reference.startswith(create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX)
@@ -398,7 +398,7 @@ def _related_wi_source(
 def test_cli_creates_bug_plan_without_bug_file_when_related_wi_exists(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """関連WIの原因分析を正本とするバグ対応計画は、計画ファイル（バグ）なしで作成する。"""
+    """関連WIの原因分析に従うバグ対応計画は、計画ファイル（バグ）なしで作成する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
     source = _related_wi_source(repo, tmp_path)
 

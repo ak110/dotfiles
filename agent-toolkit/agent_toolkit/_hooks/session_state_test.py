@@ -56,7 +56,7 @@ class TestUpdateState:
 
     def test_invalid_session_id_non_string(self) -> None:
         # 静的型は`str`だが、ランタイムでは外部payload由来の非文字列値を防御するため、
-        # `cast`で型チェックを回避して入力検証経路の動作を直接検証する。
+        # `cast`で型チェックを回避して入力の妥当性を判定する処理を直接検証する。
         modified = update_state(cast(str, 123), lambda current: {**current, "a": 1})
         assert modified is False
 
@@ -353,7 +353,7 @@ class TestSweepStaleStates:
         """状態ファイルの無いロックは、期限をいくら過ぎても削除しない。
 
         `update_state`はロックを先に作成するため、状態ファイルの無いロックは
-        セッション開始直後にも生じる。ロックファイルの削除経路自体を持たないため、
+        セッション開始直後にも生じる。ロックファイルを削除する処理がないため、
         回収対象からの除外に`keep_session_id`の指定有無は影響しない。
         """
         starting_name = SESSION_STATE_FILENAME_TEMPLATE.format(session_id="starting")

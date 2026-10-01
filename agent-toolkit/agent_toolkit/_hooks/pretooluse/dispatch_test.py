@@ -98,8 +98,8 @@ def test_pretooluse_matcher_covers_agents_server_tool_names() -> None:
 
     実装側の`agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES`を入力として反復し、
     hooks.json（Claude Code、matcherは`*`）とhooks.codex.json（Codex）の双方が
-    全要素を被覆することを検査する。実装側の集合へ要素を追加してもmatcherへ
-    追加し忘れると、Codex側のその要素だけが検査から漏れて本検査が失敗する。
+    全要素が含まれているか確かめる。実装側の集合へ要素を追加してもmatcherへ
+    追加し忘れると、Codex側のその要素だけが判定されなくなり、このテストが失敗する。
     """
     claude_matcher = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
     codex_matcher = json.loads(_HOOKS_CODEX_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
@@ -389,7 +389,7 @@ class TestManifestCheck:
 
 
 class TestUserFacingTextChecks:
-    """ユーザーが直接読む質問・計画本文へ文字化け検査を適用し、警告で返す。"""
+    """ユーザーが直接読む質問・計画本文に文字化けがあるか確かめ、警告で返す。"""
 
     @pytest.mark.parametrize("tool_name", ["AskUserQuestion", "ExitPlanMode"])
     def test_user_facing_tools_are_never_blocked(self, tool_name: str) -> None:
@@ -492,7 +492,7 @@ class TestAtkContractBeforeQuestion:
 
 
 class TestPlanModeSkillCallSites:
-    """plan-modeスキル呼び出しの素通り保証。
+    """plan-modeスキルを呼び出すときに遮断も警告も返さないことの確認。
 
     plan-mode起動時の計画単位リセット以外の委譲状態を参照せず、`returncode`は0を保つ。
     """
@@ -637,7 +637,7 @@ class TestPlanFileDoesNotRequireTextlintRead:
 
 
 class TestResponseLanguageCheck:
-    """直前メインエージェント応答の日本語文字比率検査の統合動作。"""
+    """直前メインエージェント応答の日本語文字比率を用いた判定の統合動作。"""
 
     @staticmethod
     def _write_transcript(tmp_path: pathlib.Path, text: str, *, is_sidechain: bool = False) -> pathlib.Path:
@@ -688,7 +688,7 @@ class TestResponseLanguageCheck:
         assert "英語主体" not in _additional_context(result)
 
     def test_no_warn_for_sidechain(self, tmp_path: pathlib.Path):
-        """payloadのisSidechain=trueは検査対象外。"""
+        """payloadのisSidechain=trueでは応答の言語を判定しない。"""
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
@@ -709,7 +709,7 @@ class TestResponseLanguageCheck:
         delegated: bool,
         warns: bool,
     ) -> None:
-        """agents_serverの委譲先だけを言語検査から除外する。"""
+        """agents_serverの委譲先の応答だけは言語を判定しない。"""
         transcript = self._write_transcript(tmp_path, "This is a plain English status report for the current task.")
         if delegated:
             monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -768,7 +768,7 @@ class TestResponseLanguageCheck:
         assert state["english_warning_msg_id"] == "m1"
 
     def test_no_warn_without_transcript_path(self):
-        """transcript_path未指定なら検査スキップ。"""
+        """transcript_pathを指定しなければ応答の言語を判定しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})
         assert result.returncode == 0
         assert result.stdout == ""
@@ -834,9 +834,9 @@ class TestWarnJsonAndLanguageWarningComposition:
 
 
 class TestRemovedChecksAreSilent:
-    """規範の想起、CLI形式の事前検出または文体の検出を目的とする撤去済み検査が、通知も補正も返さないことを検証する。
+    """規範の想起、CLI形式の事前検出または文体の検出を目的としていた撤去済みの判定処理が、通知も補正も返さないことを検証する。
 
-    撤去した検査の呼び出しが残ると、公開入口の出力へ警告・遮断・`updatedInput`のいずれかが現れる。
+    撤去した判定処理の呼び出しが残ると、公開されたhookの出力へ警告・遮断・`updatedInput`のいずれかが現れる。
     """
 
     @pytest.mark.parametrize(

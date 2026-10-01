@@ -1,6 +1,6 @@
 """Claude CodeとCodexのtranscript、および委譲先のAntigravityログから振り返り用の時系列証拠を抽出し、照会する。
 
-既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
+モードを指定しない場合はセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
@@ -8,7 +8,7 @@
 対象の記録はtranscriptの絶対パス、Claude Codeのセッション識別子、Codex thread IDおよびカタログ走査のいずれか1つで指定する。
 `--user-events`は逐語引用の原文として使うため、本文を切り詰めず、確認回答には提示した全選択肢を含める。
 
-本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
+本スクリプトはデータ抽出を目的とし、合否を判定しないため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
 引数誤用と照会不能（対象記録の読込不能・モード併用・不正な正規表現・範囲外の行番号）を
 終了コード2とする区分だけを踏襲する。
@@ -41,7 +41,7 @@ except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
         "次の操作: `atk run-script session-review-evidence -- <引数>`で起動する",
         file=sys.stderr,
     )
@@ -67,7 +67,7 @@ _WARNING_LINE_PATTERN = re.compile(
 _ZERO_COUNT_ANNOTATION = r"(?:[\s]*[(（](?:warnings?|エラー|警告)?[\s:：]*0(?:件)?[)）])?"
 """不在を表す語の後に続く、件数が0であることを示す注記。
 
-`警告: なし(warning: 0)`のように、検査の正常終了が件数の注記を伴う形で書かれる。
+`警告: なし(warning: 0)`のように、自動チェックの正常終了に件数の注記を添える形で書かれる。
 注記を不在判定の対象外にすると、正常終了の本文が警告候補として上がる。
 一致の条件を件数が0の場合へ限り、0でない件数が続く本文を除外しない。
 """
@@ -98,7 +98,7 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
     `type`の値は文字列とは限らない。ツール定義を含む記録では
     `attachment.tools[].schema.input_schema.properties`配下に`type`という名前の
     プロパティ定義が現れ、その値はJSON Schemaのdictになる。
-    集合照合の前に文字列であることを確かめないと`TypeError`で走査が止まる。
+    集合に含まれるか判定する前に文字列であることを確かめないと`TypeError`で走査が止まる。
     """
     return isinstance(value.get("type"), str) and value["type"] in _HOOK_RECORD_TYPES
 
@@ -361,7 +361,7 @@ def _claude_question_options(content: Any) -> dict[str, dict[str, list[_OfferedO
     """AskUserQuestionのtool_use IDごとに、質問文と提示した選択肢の対応を取得する。
 
     labelは`input.questions[].options[].label`に現れる。回答の文字列をこのlabelの集合と
-    照合して、選択肢をそのまま選んだ回答と方針を是正した回答を判別する。
+    比べて、選択肢をそのまま選んだ回答と方針を是正した回答を判別する。
     """
     if not isinstance(content, list):
         return {}
@@ -1123,7 +1123,7 @@ def _codex_normalized_tokens(tokens: dict[str, int]) -> dict[str, int]:
     加算すれば他成分の再合算となる。そのため次の対応で変換した値だけを合算へ用いる。
 
     - `cache_read_input_tokens` ← `cached_input_tokens`
-    - `input_tokens` ← `input_tokens - cached_input_tokens`（内包関係は実測で確認済み）
+    - `input_tokens` ← `input_tokens - cached_input_tokens`（内包関係は実際の記録で確認済み）
     - `output_tokens` ← `output_tokens`（`reasoning_output_tokens`は内包されるため加算しない）
     - `cache_creation_input_tokens` ← `cache_write_input_tokens`
     """
@@ -1140,7 +1140,7 @@ def _latest_claude_usages(records: list[_Record]) -> list[tuple[_Record, dict[st
     """同一`message.id`の重複エントリを最後のusageだけへ畳み込む。
 
     Claude Code transcriptでは同一`message.id`のエントリが複数現れ、各エントリのusageを合算すると
-    トークン消費量が数倍になる。実測した重複形状に合わせ、最後に現れたusageを採用する。
+    トークン消費量が数倍になる。実際の記録で確認した重複形状に合わせ、最後に現れたusageを採用する。
     """
     latest: dict[str, tuple[_Record, dict[str, int]]] = {}
     for record in records:
@@ -1160,7 +1160,8 @@ def _agy_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, i
     """Antigravityの応答ステップの`usage`を、Claude形式の4成分へ正規化して返す。
 
     agyの`usage`は`input_tokens`へキャッシュ読取を含めず、`output_tokens`へ思考分を含める
-    （実測: `total_tokens`は`input_tokens`と`output_tokens`の和に一致する）。キャッシュ作成の成分は持たないため0とする。
+    （記録の確認結果: `total_tokens`は`input_tokens`と`output_tokens`の和に一致する）。
+    キャッシュ作成の成分は持たないため0とする。
     同じ応答の`usage`は完了した`agent_response`ステップだけが持つため、各ステップを1回ずつ数える。
     """
     usages: list[tuple[_Record, dict[str, int]]] = []
@@ -1191,16 +1192,16 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
     同じレコードの`info.total_token_usage`はセッション内の累積値だが、Codexは過去のチェックポイントへ
     巻き戻すと累積器を巻き戻し先の値へ戻して再累積する。巻き戻し後の値には巻き戻し先までの
     消費が既に含まれるため、減少を境界とみなして減少前の値を加算するとそのプレフィックスを二重計上する
-    （実測: 累積が`1246611`から`579472`へ減少した記録で、減少後の値から同レコードの
+    （記録の確認結果: 累積が`1246611`から`579472`へ減少した記録で、減少後の値から同レコードの
     `last_token_usage.total_tokens`を引いた`490803`が8レコード前の累積値と一致した。
     区間合算方式では実消費`3086405`に対し`3577208`を報告していた）。
     `last_token_usage`は1リクエスト当たりの実消費であり、巻き戻しの有無にかかわらず単純加算で
-    セッション全体の消費量が得られる（実測: 走査した4398 rolloutの全`token_count`レコードに存在する）。
+    セッション全体の消費量が得られる（記録の確認結果: 走査した4398 rolloutの全`token_count`レコードに存在する）。
 
     ただしCodexは同一リクエストの`token_count`を複数回記録する（ターン終了時の再送、compact直後の
     記録など。後者は`last_token_usage`の6成分が全て0となる）。重複記録では`total_token_usage`が
     直前の採用レコードと完全に一致するため、一致するレコードを加算対象から除外する
-    （実測: `~/.codex/sessions/2026/08/`配下1942セッションのうち707セッションで無条件加算が実消費を
+    （記録の確認結果: `~/.codex/sessions/2026/08/`配下1942セッションのうち707セッションで無条件加算が実消費を
     上回り、最大54.8%の過大計上となった。除外方式を実rollout 476件へ適用すると474件で加算値が
     セッション内の最終`total_token_usage`と一致した）。巻き戻しでは`total_token_usage`が直前と
     異なる値へ変わるため、減少後のレコードは加算対象へ残る。
@@ -1237,7 +1238,7 @@ def _turn_completion_data(
     """最初のturnの開始から最後のturnの完了までの区間と、完了後に続く記録の区間を返す。
 
     記録の最初と最後の差（`elapsed_seconds`）は、turnの完了後に残るプロセスや待機の記録を含み、
-    委譲先が結果を返すまでの時間より長くなる（実測: Codexのユーザビリティレビュー担当で、
+    委譲先が結果を返すまでの時間より長くなる（記録の確認結果: Codexのユーザビリティレビュー担当で、
     最初の`task_started`から最後の`task_complete`までは約17分、記録の終端までは8408秒）。
     Codexは`event_msg`の`task_started`と`task_complete`、Claude Codeは`stop_reason`が`end_turn`の
     assistantレコードをturnの境界とし、Claude Codeは記録の最初のレコードを開始とする。
@@ -1500,7 +1501,7 @@ def _resolve_claude_transcript(session_id: str) -> Path:
 
 
 def _resolve_codex_transcript(thread_id: str, codex_home: str | None = None) -> Path:
-    """Codex thread IDから親transcriptの正本を1件解決する。
+    """Codex thread IDから親transcriptの記録ファイルを1件解決する。
 
     一致が0件または複数件の場合は証拠不足として例外を送出する。
     """
@@ -1699,7 +1700,7 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
 
     エントリは表示用の`hint`（`_clip`で切り詰めた値）と、反復判定用の`hint_key`（切り詰め前の原文）を
     分けて持つ。切り詰め後の値で反復を判定すると、上限まで前方一致するだけの別内容の呼び出しが
-    同じ反復組へ集約されるためである（実測: 上限2000文字の一致で内容の異なる組が実記録に存在する）。
+    同じ反復組へ集約されるためである（記録の確認結果: 上限2000文字の一致で内容の異なる組が実記録に存在する）。
     """
     calls: dict[str, tuple[str, str | None, int, datetime.datetime]] = {}
     results: dict[str, list[datetime.datetime]] = {}
@@ -2624,7 +2625,7 @@ def _normalize_candidate_kind_text(text: str) -> str:
     """本文を、可変部を置換した先頭一定長の種別テキストへ正規化する。
 
     可変部を残すと同じ原因の事象が複数の候補へ分かれ、長さが不足すると別原因の事象が
-    同一候補へ統合されるため、長さは実測に基づいて確定する。
+    同一候補へ統合されるため、長さは実際の記録を確かめて決める。
     """
     without_hook_prefix = _HOOK_FAILURE_PREFIX.sub("", text, count=1)
     without_common_prefix = _EXIT_CODE_PREFIX.sub("", without_hook_prefix, count=1)
@@ -2928,7 +2929,7 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
     エントリの構造を再帰的にたどり、文字列値をすべて集める。
     メッセージ本文・tool_use入力・tool_result本文・ツール実行結果の生出力に加え、
     hook通知が入る`attachment`配下のような未知のフィールドも対象となる。
-    既知フィールドを列挙する方式は、通知の格納先が増えるたびに検索対象から漏れるため採らない。
+    既知フィールドを列挙する方式は、通知の格納先が増えるたびに新しい格納先が検索対象にならないため採らない。
     `_METADATA_KEYS`の値は本文を持たない管理用の値（識別子・時刻・形式名・実行環境）であり、
     走査しても一致を増やすだけとなるため除外する。
     除外の可否は深さではなく、値を保持するフィールドの構造上の役割で判定する。
@@ -2965,7 +2966,7 @@ def _matched_lines(entry: dict[str, Any], pattern: re.Pattern[str]) -> list[str]
     """エントリ内で一致した行を、同一本文の重複を除いて出現順に返す。
 
     退避された実行結果と可視テキストのように、同一の本文が複数のフィールドへ重複して格納される場合がある。
-    また、退避出力だけへ付く行番号接頭辞を別本文の番号なし行と突き合わせる場合がある。
+    また、退避出力だけへ付く行番号接頭辞を別本文の番号なし行と比較する場合がある。
     そのため、別本文に同じ番号なし行がある行番号付き行だけを本文の重複として扱い、表示は最初に現れた原文を保つ。
     """
     texts = _entry_texts(entry)
@@ -3026,7 +3027,8 @@ def _print_events(events: list[dict[str, Any]]) -> None:
 
 
 _RECORD_LOCATOR_NEXT_ACTION = (
-    "`--detail`・`--context-at`へ`<記録ID>:<行番号>`の形で、既定の出力が示す記録IDと行番号を渡して再実行する"
+    "`--detail`・`--context-at`へ`<記録ID>:<行番号>`の形で、"
+    "オプションを指定しないときの出力が示す記録IDと行番号を渡して再実行する"
 )
 _CATALOG_ROOT_NEXT_ACTION = (
     "Claude Codeは`--catalog-claude-project`へ`~/.claude/projects/<プロジェクト>`の絶対パスを、"
@@ -3270,7 +3272,7 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
 
 
 def _context_channels(records: list[_Record]) -> dict[int, dict[str, Any]]:
-    """各レコードの本文が文脈へ入った経路`channel`を、レコードの構造から行番号ごとに返す。
+    """各レコードの本文が文脈へどのように入ったかを表す`channel`を、レコードの構造から行番号ごとに返す。
 
     ツール結果には対応する呼び出しのツール名と入力の要点を添える。条文の本文が
     ルールファイル、Skill起動、Readの結果、hook通知のどれで入ったかによって、
@@ -3327,11 +3329,11 @@ def _context_channels(records: list[_Record]) -> dict[int, dict[str, Any]]:
 
 
 _CONTEXT_TOOL_INPUT_LENGTH = 200
-"""経路へ添える呼び出し入力の上限。用途はどのファイルやコマンドの結果かの識別に限られるため、先頭行を短く切り詰める。"""
+"""`channel`へ添える呼び出し入力の上限。用途はどのファイルやコマンドの結果かの識別に限られるため、先頭行を短く切り詰める。"""
 
 
 def _tool_result_channel(call: tuple[str, str | None] | None) -> dict[str, Any]:
-    """ツール結果の経路へ、対応する呼び出しのツール名と入力の要点を添える。"""
+    """ツール結果の`channel`へ、対応する呼び出しのツール名と入力の要点を添える。"""
     channel: dict[str, Any] = {"channel": "tool-result"}
     if call is not None:
         name, hint = call
@@ -3371,7 +3373,7 @@ _TOOL_USE_EVIDENCE_KINDS = frozenset({"hook-notice", "command-failure", "tool-fa
 """個別証拠へ対象のツール呼び出しの入力を加える候補種別。"""
 _HOOK_NOTICE_CANDIDATE_TAGS = frozenset({"block", "warn"})
 _HOOK_ORIGIN_MIN_MATCH_LENGTH = 20
-"""hook通知の本文どうしを前方一致で照合するときに一致を求める最小の文字数。短い定型句だけの一致で別の通知を同一視しないための下限とする。"""
+"""hook通知の本文どうしを前方一致で比較するときに一致を求める最小の文字数。短い定型句だけの一致で別の通知を同一視しないための下限とする。"""
 _HOOK_REPEAT_ANNOTATION = re.compile(r"この通知は同一セッションで\d+件目である。[^\n]*")
 """hookの通知基盤が2件目以降の通知へ付ける反復注記。件数は原因を区別しないため、種類の本文から除く。"""
 _DELEGATE_COMPLETION_VALUES = frozenset(
@@ -3492,7 +3494,7 @@ def _candidate_events(
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
     母集団はhook通知、利用者介入、失敗したツール実行、警告および工程の返却値とする。
-    返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合から漏れるためである。
+    返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合に含まれなくなるためである。
     正常な完了だけを示し、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
 
     同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別またはhookタグが異なる事象を別候補として保持する。同じ位置、候補種別およびhookタグの
@@ -3505,7 +3507,7 @@ def _candidate_events(
     hookの標識を持つツール失敗と、hook通知と同じ本文の警告は、hook通知として発生源別の上限の対象にする。
     上限は発生源と区分の組ごとに適用し、フック名のツール部分ごとに最多の種類を残して、件数の少ないツールの通知も候補に残す。
     それ以外に件数上限を設けない。振り返りの契約は、候補が保持する位置の集合と
-    判定表の位置の集合の一致を求めるため、位置を失う削減はこの検査と両立しない。
+    判定表の位置の集合の一致を求めるため、位置を失う削減はこの判定と両立しない。
     """
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     seen: set[tuple[str, int, str, str]] = set()
@@ -3901,7 +3903,7 @@ def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
 
     この判定は、是正を求める通知が`block`または`warn`の区分を必ず持つという前提へ依存する。
     残す区分を列挙するのは、規範の注入や配送の種別のように是正の要否と無関係な値を`kind`へ持つ出力が
-    今後追加されても、既知値の列挙から漏れて是正要求として扱われないようにするためである。
+    今後追加されても、既知値の列挙に含まれず是正要求として扱われないことを防ぐためである。
     区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
     """
     if tag in _HOOK_NOTICE_CANDIDATE_TAGS:
@@ -3918,7 +3920,7 @@ def _is_response_language_notice(event: dict[str, Any]) -> bool:
 
     応答言語hookは直前の応答を検出後に通知するだけの遮断後に対処する型であり、
     振り返りのたびに同じ見送り判定になるため、問題候補から除いて件数だけを数える。
-    同じ`pretooluse`の`warn`通知には他の検査も含まれるため、発生源と区分に加えて本文の先頭を
+    同じ`pretooluse`の`warn`通知には他の判定処理が返す通知も含まれるため、発生源と区分に加えて本文の先頭を
     hook側の本文定数と比べる。定数を参照するのは、hook側の文言を変えたときに判定を追随させるためである。
     """
     if event.get("hook") != "pretooluse" or event.get("tag") != "warn":
@@ -4787,7 +4789,7 @@ def _catalog_events(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """既定の抽出と照会モードの引数を定義する。"""
+    """オプションを指定しない場合の抽出と照会モードの引数を定義する。"""
     parser = argparse.ArgumentParser(
         description=(
             "transcriptから振り返り用の時系列証拠を抽出・照会する。--statsは経過時間、トークン消費、"
@@ -4817,7 +4819,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--codex-thread-id",
         metavar="THREAD_ID",
-        help="Codex thread IDから親transcriptの正本を解決して抽出を開始する。"
+        help="Codex thread IDから親transcriptの記録ファイルを解決して抽出を開始する。"
         "保存先は`--codex-home`、空でない`CODEX_HOME`、`~/.codex`の順に解決し、"
         "`sessions`配下で完全suffix一致するrolloutが1件でない場合はエラーイベントを出力して終了コード2を返す。",
     )
@@ -4904,7 +4906,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="指定した<記録>:<行番号>（数値だけならメイン記録）の時点で、`--phrase`の各文字列がその記録の文脈にあったかを"
         "判定する。母集団は指定した記録の指定行より前の行だけとし、親セッションや他の委譲先の記録は含めない。"
         "判定はphraseごとの`context-verdict`（`present`・`dropped-by-compaction`・`absent`）と、"
-        "一致ごとの`context-match`（行、時刻、本文、経路`channel`、有効な圧縮境界より前か）で返す。"
+        "一致ごとの`context-match`（行、時刻、本文、文脈へ入る方法を表す`channel`、有効な圧縮境界より前か）で返す。"
         "記録が不明、行番号が範囲外、`--phrase`が無いか空の場合はエラーイベントを出力して終了コード2を返す。",
     )
     parser.add_argument(

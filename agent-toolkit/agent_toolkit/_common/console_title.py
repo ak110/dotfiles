@@ -30,7 +30,7 @@ def console_title(title: str, *, stream: typing.TextIO | None = None) -> typing.
 
     Args:
         title: 設定するウィンドウタイトル。
-        stream: OSC制御文字の出力先兼ターミナル接続判定先。既定は標準エラー出力。
+        stream: OSC制御文字を出力し、ターミナルとの接続を判定するストリーム。省略すると標準エラーへ出力する。
     """
     out = sys.stderr if stream is None else stream
     if not _isatty(out):
@@ -57,7 +57,7 @@ def set_console_title(title: str, *, stream: typing.TextIO | None = None) -> Non
 
     Args:
         title: 設定するウィンドウタイトル。
-        stream: OSC制御文字の出力先兼ターミナル接続判定先。既定は標準エラー出力。
+        stream: OSC制御文字を出力し、ターミナルとの接続を判定するストリーム。省略すると標準エラーへ出力する。
     """
     out = sys.stderr if stream is None else stream
     if not _isatty(out):

@@ -1,6 +1,6 @@
-"""計画の成立に必要な情報契約と実体だけを検査する。
+"""計画に必要な情報と実体が揃っているか確かめる。
 
-計画メタ情報、見出し構造、`関連WI`、スキル・サブエージェント参照を共有parserで検査する。
+計画メタ情報、見出し構造、`関連WI`、スキル・サブエージェント参照を共有parserで読み取り、基準を満たすか判定する。
 旧単一ファイル形式と旧二ファイル形式は読み取り互換で受理し、現行形式への移行をwarningで案内する。
 """
 
@@ -28,7 +28,7 @@ except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
         "次の操作: `atk run-script plan-check -- <計画ファイルの絶対パス>`で起動する",
         file=sys.stderr,
     )
@@ -45,12 +45,12 @@ _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 # 計画の分量を警告する行数の閾値。
-# 既存計画380件の実測分布（中央値443行、第75百分位732行、第90百分位1312行、最大3476行）の
+# 既存計画380件を集計した分布（中央値443行、第75百分位732行、第90百分位1312行、最大3476行）の
 # 第75百分位と第90百分位の間から選び、通常規模の計画を警告せず肥大した計画だけを検出する。
 # 閾値を超えても計画として成立し得るため、エラーではなく警告に留める。
 _PLAN_LINE_WARNING_THRESHOLD = 1200
 
-# 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合の既定値（`pick-wi.subagent.md`「出力」）。
+# 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合に使う値（`pick-wi.subagent.md`「出力」）。
 _RESUME_POSITION_KEY = "再開位置"
 _RESUME_POSITION_NONE = "なし"
 
@@ -65,9 +65,9 @@ def _check_lane_selection(
     prior_plans: tuple[pathlib.Path, ...],
     work_dir: pathlib.Path,
 ) -> list[str]:
-    """選定済みWI集合と人間由来行の根拠を計画へ照合する。
+    """選定済みWI集合と人間由来行の根拠が計画に対応するか確かめる。
 
-    照合の期待集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）decisionとする。
+    計画と比べる集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）decisionとする。
     再開位置を持つ項目は再開位置が指す既存計画で続け、新しい計画の対象にしないためである。
     不一致は、割り当てた要求を実行とレビューへ渡せない致命的な問題としてerrorにする。
     """
@@ -181,7 +181,7 @@ def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
 
 
 def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> list[str]:
-    """宣言された対象リポジトリと作業ディレクトリのGitルートを照合する。"""
+    """宣言された対象リポジトリと作業ディレクトリのGitルートが一致するか確かめる。"""
     if declared_value is None:
         return []
     declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
@@ -200,7 +200,7 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
 
 
 def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
-    """コードフェンスを除く本文のスキル・専用agent参照を検査する。"""
+    """コードフェンスを除く本文のスキル・専用agent参照が実在するか確かめる。"""
     inline_text = _plan_format.markdown_body_text(text)
     errors: list[str] = []
     agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
@@ -309,13 +309,13 @@ def _check_bug_file_reference(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """`計画ファイル（バグ）`行を持つバグ対応計画の分離先参照について実在、stem、構造を検査する。
+    """`計画ファイル（バグ）`行を持つバグ対応計画の分離先の実在、stemの一致、構造が基準を満たすかを確かめる。
 
-    同行を持たない計画は関連WIの`## 原因分析`を正本とするため検証の対象から外す。
+    同行を持たない計画は関連WIの`## 原因分析`に従うため、分離先の参照を判定しない。
     同行の要否は計画構造の自動チェックが計画メタ情報の`関連WI`から判定する。
 
     新しい参照値は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
-    既存の可搬表記と絶対パスは読み取り互換として従来の経路で解決する。
+    既存の可搬表記と絶対パスは読み取り互換として従来と同じ処理で解決する。
     統廃合前の行構成を持つ調査表は読み取りで受理し、新規作成・改訂では移行warningをエラーへ変える。
     """
     if work_type != "バグ対応":
@@ -516,7 +516,7 @@ def _check_new_format(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """二ファイル形式の計画を検査してエラーと警告を返す。
+    """二ファイル形式の計画が基準を満たすか判定し、エラーと警告を返す。
 
     呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
     計画ファイル（詳細）の実在は呼び出し前提として扱う。
@@ -587,7 +587,7 @@ def _check_single_file_format(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """現行の1ファイル計画を検査してエラーと警告を返す。"""
+    """現行の1ファイル計画が基準を満たすか判定し、エラーと警告を返す。"""
     origin_notices: list[str] = []
     origin_skips: list[str] = []
     work_type, errors = _plan_format.check_plan_single_file_structure(
@@ -620,7 +620,7 @@ def _check_legacy_format(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """旧形式（単一ファイル9節）を検査してエラーと警告を返す。読み取り互換であり新規作成では生成しない。"""
+    """旧形式（単一ファイル9節）が基準を満たすか判定し、エラーと警告を返す。読み取り互換であり新規作成では生成しない。"""
     lines = text.splitlines()
     errors = _plan_format.check_plan_structure(text)
     materials, _material_errors = _plan_format.parse_plan_materials(text)
@@ -643,12 +643,12 @@ def _check_legacy_format(
 
 
 def _check_working_plan_filename(plan_path: pathlib.Path, home: pathlib.Path | str | None) -> list[str]:
-    """計画作業root直下の計画ファイル名を保存工程と同じ受理条件で検査する。
+    """計画作業root直下の計画ファイル名が保存工程と同じ受理条件を満たすか確かめる。
 
     保存工程は計画作業root直下のファイル名へ`validate_working_plan_relative_path()`の条件を課す。
-    起草時の本検査が同じ関数を呼ばないと、合格した計画が保存で初めて拒否され、
+    起草時の判定で同じ関数を呼ばないと、合格した計画が保存で初めて拒否され、
     計画バンドルの改名と内部参照の修正という手戻りが生じる。判定規則を本スクリプトへ書き写さない。
-    計画作業root直下に無い対象は保存rootの日付階層などを含むため、ファイル名を検査しない。
+    計画作業root直下に無い対象は保存rootの日付階層などを含むため、ファイル名が形式を満たすかは判定しない。
     """
     working_root = _plan_file.working_plans_root(home).resolve(strict=False)
     if plan_path.parent.resolve(strict=False) != working_root:
@@ -674,10 +674,10 @@ def check(
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """計画ファイルを検査し、エラーと警告を返す。
+    """計画ファイルが基準を満たすか判定し、エラーと警告を返す。
 
     計画作業root直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
-    計画作業root直下の対象では、保存工程と同じ条件でファイル名の形式も検査する。
+    計画作業root直下の対象では、保存工程と同じ条件でファイル名が所定の形式であるかも確かめる。
     対応する`<stem>.detail.md`があれば旧二ファイル形式として扱う。
     detailが無く、現行H2集合を持つ場合は現行の1ファイル形式、それ以外は旧単一ファイル形式として扱う。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
@@ -711,7 +711,7 @@ def check(
             format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
     errors.extend(
-        f"返却予定の規範文書パスが計画本文にない: {relative}。編集対象のパスを計画本文へ明記し、同じ一覧で再検査する"
+        f"返却予定の規範文書パスが計画本文にない: {relative}。編集対象のパスを計画本文へ明記し、同じ一覧でもう一度確かめる"
         for relative in agent_rule_paths
         if relative not in text
     )
@@ -739,11 +739,11 @@ def check(
 
 
 def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
-    """由来照合の省略に限り、原因ごとの解消手段を一度ずつ案内する。"""
+    """由来をWI本文と比べられなかった場合に限り、原因ごとの解消手段を一度ずつ案内する。"""
     skips = [
         message
         for kind, message in warnings
-        if kind == "advisory" and message.startswith("`## 実施内容`の由来照合を省略した。")
+        if kind == "advisory" and message.startswith("`## 実施内容`の由来をWI本文と比べられなかった。")
     ]
     if not skips:
         return None
@@ -752,18 +752,18 @@ def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
         actions.append(
             "`atk info`でキュー管理リポジトリの場所を確認し、`AGENT_TOOLKIT_PRIVATE_NOTES`をその場所へ合わせて再実行する"
         )
-    if any("正本を解決できない:" in message for message in skips):
+    if any("WIファイルを特定できない:" in message for message in skips):
         actions.append("実施内容と関連WIのファイル名を`atk wi show <ファイル名>`で確かめ、誤りを直して再実行する")
-    if any("正本を取得できない:" in message for message in skips):
+    if any("WI本文を取得できない:" in message for message in skips):
         actions.append("表示された権限・文字コードのエラーの原因を解消して再実行する")
     actions.append(
-        "解消できない場合は、由来照合を行えなかったWIファイル名と原因を呼び出し元（メインから起動した場合はユーザー）へ報告する"
+        "解消できない場合は、由来をWI本文と比べられなかったWIファイル名と原因を呼び出し元（メインから起動した場合はユーザー）へ報告する"
     )
     return "。".join(actions)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドライン引数を解析して計画検査を実行する。"""
+    """コマンドライン引数を解析し、計画が基準を満たすか確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan_file", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
@@ -773,14 +773,14 @@ def main(argv: list[str] | None = None) -> int:
         "--agent-rule-path",
         action="append",
         default=None,
-        help="返却予定の規範文書のリポジトリ相対パス。全件を反復指定し、計画本文へ固定文字列照合する",
+        help="返却予定の規範文書のリポジトリ相対パス。全件を反復指定し、計画本文に固定文字列として含まれるか確かめる",
     )
     parser.add_argument(
         "--prior-plan",
         action="append",
         type=pathlib.Path,
         default=None,
-        help="同じレーンで検査済みの先行計画の絶対パス。全件を反復指定する",
+        help="同じレーンで確認を終えた先行計画の絶対パス。全件を反復指定する",
     )
     parser.add_argument(
         "--reject-migration-warnings",
@@ -808,7 +808,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
         _next_action.report(
-            f"計画検査の入力を読み込めない: {error}",
+            f"計画を確認するための入力を読み込めない: {error}",
             next_action=(
                 "計画ファイル（位置引数）と`--prior-plan`へ実在するUTF-8の計画ファイルの絶対パスを、"
                 "`--selection-file`へpickerが保存したYAMLの絶対パスを、`--lane`へ`lane-NN`形式の識別子を渡して再実行する"
@@ -824,8 +824,8 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         print(
             _next_action.next_action_line(
-                "各行が示す規定のとおりに計画ファイルを直し、同じコマンドで再検査する"
-                "（規定の正本は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`）"
+                "各行が示す規定のとおりに計画ファイルを直し、同じコマンドでもう一度確かめる"
+                "（規定は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`に従う）"
             ),
             file=sys.stderr,
         )

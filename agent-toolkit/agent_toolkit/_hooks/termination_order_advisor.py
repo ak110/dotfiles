@@ -1,4 +1,4 @@
-r"""多段終了手順の起動順をStopフックで検査する。
+r"""多段終了手順の起動順が要求を満たすかStopフックで確かめる。
 
 `agent-toolkit:process-wi`と`agent-toolkit:add-awi-by-user`は、
 本体の作業を終える際に固定の終了工程列（`agent-toolkit:completion-report`、
@@ -6,19 +6,19 @@ r"""多段終了手順の起動順をStopフックで検査する。
 本フックは対象スキルの最新の起動以後に、要求される終了工程が要求順で実行されたかを
 transcriptのSkillの成功結果とBashツール起動記録から判定する。
 
-対象スキルの起動が無いセッションは検査対象外として常時approveする。
+対象スキルの起動が無いセッションでは起動順を判定せず常時approveする。
 最新の対象スキル起動より前の終了スキル起動は充足の判定へ流用しない。
 終了スキルの起動順が要求と逆である場合も未充足として扱う。
 
-多段終了手順の検査は`stop_hook_active`が真の回だけ遮断する。
+多段終了手順の起動順を判定する処理は`stop_hook_active`が真の回だけ遮断する。
 偽の回で遮断すると、対象スキルの起動後の通常のターン終了を毎回阻止する
 （既存の`agents_server_session_advisor.py`も、他の判定が既にターン継続を強制している
 再入回であることを`stop_hook_active`で確認したうえで自身の判定を重ねる前提を用いる）。
 
 継続中の非同期作業がある場合は`is_pending_async_work`の判定を維持し、遮断しない。
-セッション記録（transcript）を読み取れない場合も遮断せず、Stop判定ログへ検査不能を記録する。
+セッション記録（transcript）を読み取れない場合も遮断せず、Stop判定ログへ起動順を確かめられないことを記録する。
 
-委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順を検査対象としないため、hook入力と環境印で除外する。
+委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順の起動順を確かめる対象ではないため、hook入力と環境印で除外する。
 """
 
 import json
@@ -54,7 +54,7 @@ _COMPLETION_REPORT = (
 )
 _EXIT_SESSION = ("atk agents-exit-session", frozenset({"atk agents-exit-session"}))
 
-# 検査対象スキルの(代表名, 名前集合)と、その最新起動以後に要求順で起動される必要がある終了スキル列。
+# 起動順を確かめるスキルの(代表名, 名前集合)と、その最新起動以後に要求順で起動される必要がある終了スキル列。
 _TERMINATION_SEQUENCES: tuple[tuple[tuple[str, frozenset[str]], tuple[tuple[str, frozenset[str]], ...]], ...] = (
     (_PROCESS_WI, (_COMPLETION_REPORT, _EXIT_SESSION)),
     (_ADD_AWI_BY_USER, (_COMPLETION_REPORT,)),
@@ -165,7 +165,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     if not transcript_path or not pathlib.Path(transcript_path).is_file():
-        append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "検査不能"})
+        append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "起動順を確認できない"})
         return "approve", ""
 
     if is_pending_async_work(

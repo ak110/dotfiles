@@ -408,7 +408,7 @@ def test_detail_structure_requires_bug_section_for_bug_work_type() -> None:
     ],
 )
 def test_origin_check_accepts_human_origin(tmp_path: pathlib.Path, body: str) -> None:
-    """`source`の欠落と機械判定できる明示由来を持つ正本は指摘の対象にしない。"""
+    """`source`の欠落と機械判定できる明示由来を持つWI本文は指摘の対象にしない。"""
     _write_wi(tmp_path, body)
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors

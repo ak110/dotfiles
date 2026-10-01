@@ -1,4 +1,4 @@
-"""実行レビュー証拠の形式、WI原文との対応、所在のない達成根拠の共用を検査する。
+"""実行レビュー証拠の形式とWI原文との対応を確かめ、所在のない達成根拠の共用を検出する。
 
 異なる要求へ参照先のない根拠を写すと条件別の検収が成立しないため、errorとして扱う。
 参照内容が実際に各条件を満たすかはレビュー担当が判定する。
@@ -251,7 +251,7 @@ def _commit_oid(repository: pathlib.Path, revision: str) -> str:
 
 
 def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
-    """WIの指定集合によらず証拠の全判定行を実レビュー対象へ照合する。"""
+    """WIの指定集合によらず証拠の全判定行が実レビュー対象に対応するか確かめる。"""
     expected = _commit_oid(repository, expected_head)
     errors = []
     for section in REQUIRED_FIELDS:
@@ -351,12 +351,12 @@ def _expired_source_error(row: dict[str, str], index: int, repository: pathlib.P
     return (
         f"{row['awi']}: wi_conditions[{index}].source: 失効のユーザー判断を確認できません{detail}。"
         "対象AWIの記入済みユーザーコメントか関連する回答済みUWIのファイル名と所在を記録する。"
-        "ユーザーの回答がない場合は、その判断を得てから同じ証拠を再検査する"
+        "ユーザーの回答がない場合は、その判断を得てから同じ証拠をもう一度確かめる"
     )
 
 
 def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: str) -> list[str]:
-    """証拠ファイルと対象WIを検査し、診断を全件返す。"""
+    """証拠ファイルと対象WIが基準を満たすか判定し、診断を全件返す。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -419,7 +419,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
 
 
 def main(argv: list[str] | None = None) -> int:
-    """証拠JSONと対象WI名を受け取り、検査結果を返す。"""
+    """証拠JSONと対象WI名を受け取り、基準を満たすか判定して結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("evidence", type=pathlib.Path, help="完成条件証拠JSONの絶対パス")
     parser.add_argument("wi", nargs="+", help="対象WIのファイル名")
@@ -433,14 +433,14 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         print(
             _next_action.next_action_line(
-                "各行が示す箇所を証拠JSONで直して同じコマンドで再検査する。"
+                "各行が示す箇所を証拠JSONで直して同じコマンドでもう一度確かめる。"
                 "WI本文や節を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめ、"
                 "WI側が欠けている場合はWIの欠陥として報告する"
             ),
             file=sys.stderr,
         )
         return 1
-    print(f"成功: 完成条件証拠を検査しました（WI {len(args.wi)} 件）")
+    print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(args.wi)} 件）")
     return 0
 
 

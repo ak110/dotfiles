@@ -110,7 +110,7 @@ def test_human_readable_action_rejects_arbitrary_h3() -> None:
 
 
 def test_related_wi_rejects_invalid_filename() -> None:
-    """関連WIは正本ファイル名だけを受理する。"""
+    """関連WIはWIファイル名だけを受理する。"""
     content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "docs/notes.md", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any("ファイル名が不正" in error for error in errors), errors
@@ -250,7 +250,7 @@ def test_adopted_action_rejects_non_queue_relation() -> None:
 
 
 def test_requirement_coverage_keeps_checking_adopted_requirement_outside_terminal_only() -> None:
-    """`終端工程のみ`で始まらない採用要求は除外の影響を受けず被覆検査の対象に残る。"""
+    """`終端工程のみ`で始まらない採用要求は除外の影響を受けず被覆の判定対象に残る。"""
     errors = _plan_format.check_plan_structure(_plan_with_uncovered_requirement("公開APIの維持"))
     assert any("採用要求を被覆しない: R-P-002-001" in error for error in errors), errors
 
@@ -322,13 +322,13 @@ def test_markdown_body_text_excludes_code_fence() -> None:
 def test_root_cause_analysis_states_every_bug_table_row(row_name: str) -> None:
     """調査表の固定行名を原因分析契約の集約表が明記する。
 
-    行名の正本を構造定数に置くため、集約表の追随漏れをここで検出する。
+    行名を構造定数で定めるため、集約表に更新されていない行名があれば検出する。
     """
     assert f"| {row_name} | " in _ROOT_CAUSE_ANALYSIS.read_text(encoding="utf-8")
 
 
 def test_main_and_detail_canonical_pass_structure_check() -> None:
-    """新書式のメイン側・detail側の正規形はいずれも構造検査を通過する。"""
+    """新書式のメイン側・detail側の正規形はいずれも計画の構造に関する基準を満たす。"""
     work_type, main_errors = _plan_format.check_plan_main_structure(_canonical_main_content())
     assert work_type == "通常変更"
     assert not main_errors
@@ -386,7 +386,7 @@ def test_main_structure_rejects_bug_section() -> None:
 
 
 def test_origin_check_skips_conversational_note(tmp_path: pathlib.Path) -> None:
-    """`[対話由来]`注記のある行は書式として受理し、照合の対象から除く。"""
+    """`[対話由来]`注記のある行は書式として受理し、WI本文との比較は行わない。"""
     _write_wi(tmp_path, _wi_source(source=True))
     content = _HUMAN_MAIN_CONTENT.replace(
         f"({_plan_fixture.WI_FILES[0][0]})",

@@ -30,12 +30,12 @@ _NOTICE_PATTERN = re.compile(
 _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
-    "それぞれを現物（原文・実装・規範・実行結果）で照合してから応答する。"
+    "それぞれの内容を現物（原文・実装・規範・実行結果）と比べて確かめてから応答する。"
     "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
-    "照合できない場合は同意も変更もしない。"
-    "いずれも含まないと判定した発話では、照合を要さないと判断して次の工程へ進む。"
-    "稼働中の依頼がある場合は、元の依頼の目的と未完了工程を照合してから次に実行する工程を確定する。"
-    "同じ論点で修正が続く場合は意図と要件への影響を照合し、確定できないときだけ確認経路へ送る。"
+    "現物と比べて確かめられない場合は同意も変更もしない。"
+    "いずれも含まないと判定した発話では、現物との比較を要さないと判断して次の工程へ進む。"
+    "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定する。"
+    "同じ論点で修正が続く場合は意図と要件への影響を確かめ、確定できないときだけユーザー確認する。"
 )
 
 
@@ -130,7 +130,7 @@ def _run_subcommand(
 class TestMachineInjectedTurn:
     """ユーザーが発話していないターンでの注記と時刻記録の抑止。
 
-    実ユーザー発話が受け取るべき照合注記を機械注入ターンが消費しないようにする。
+    実ユーザー発話が受け取るべき現物との比較を求める注記を機械注入ターンが消費しないようにする。
     """
 
     @staticmethod
@@ -189,7 +189,7 @@ class TestMachineInjectedTurn:
 
     @staticmethod
     def test_normal_prompt_after_machine_turn_receives_verification_notice(tmp_path: pathlib.Path) -> None:
-        """機械注入ターンの後でも、直前の通常発話から閾値以上離れた発話は照合注記を受け取る。"""
+        """機械注入ターンの後でも、直前の通常発話から閾値以上離れた発話は現物との比較を求める注記を受け取る。"""
         sid = "machine-then-user"
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(json.dumps({"last_user_prompt_at": time.time() - 600.0}), encoding="utf-8")
@@ -448,7 +448,7 @@ class TestRealignNoticeInjection:
 
 
 class TestVerificationNoticeInjection:
-    """通常発話へ返す照合注記の注入契約を検証する。"""
+    """通常発話へ現物との比較を求める注記を返す契約を検証する。"""
 
     @staticmethod
     def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
@@ -466,7 +466,7 @@ class TestVerificationNoticeInjection:
         assert _notice_bodies(context) == [_EXPECTED_VERIFICATION_NOTICE_BODY]
 
     def test_normal_prompt_does_not_repeat_reference_notice(self, tmp_path: pathlib.Path) -> None:
-        """発話解釈の正本を常時読むため、通常発話では参照注記を繰り返さない。"""
+        """発話解釈を定める文書を常時読むため、通常発話では参照注記を繰り返さない。"""
         sid = "reference-every-prompt"
         contexts = []
         for _ in range(3):

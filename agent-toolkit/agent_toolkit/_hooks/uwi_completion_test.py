@@ -236,7 +236,7 @@ class TestBuildNotice:
         """新規回答があっても通知状態を保存できなければ通知しない。
 
         保存できないまま通知すると、同じ回答を次回以降も繰り返し通知する。
-        指紋照合を無効化して`update_state`の呼び出しを回答記録の1回に限定し、
+        指紋による一致判定を無効化して`update_state`の呼び出しを回答記録の1回に限定し、
         呼び出し順に依存せず書き込み失敗だけを模擬する。
         """
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)

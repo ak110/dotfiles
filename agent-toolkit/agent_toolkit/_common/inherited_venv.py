@@ -16,7 +16,7 @@ import os
 import pathlib
 from collections.abc import MutableMapping
 
-# `uv run`が設定する仮想環境の印。実測で子プロセスへ混入したキーだけを除去対象とする。
+# `uv run`が設定する仮想環境の印。子プロセスへの引き継ぎを実際に観測したキーだけを除去対象とする。
 INHERITED_VENV_ENV_KEYS: tuple[str, ...] = ("VIRTUAL_ENV",)
 
 # 仮想環境のコマンド格納ディレクトリ名（POSIXは`bin`、Windowsは`Scripts`）。

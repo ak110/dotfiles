@@ -215,7 +215,7 @@ HOOK_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
 
 
 def validate_hook_output(event_name: str, output: object) -> list[str]:
-    """hook出力をイベントの契約へ照合し、違反内容を文字列で返す。"""
+    """hook出力がイベントの契約を満たすか確かめ、違反内容を文字列で返す。"""
     schema = HOOK_OUTPUT_SCHEMAS.get(event_name)
     if schema is None:
         return [f"未定義のhookイベント: {event_name}"]

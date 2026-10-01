@@ -21,7 +21,7 @@ def normalize_remote_url(remote_url: str) -> str:
 
     HTTPS、SSH URI、SSH短縮、正規化済み識別子を受理する。受理外は`ValueError`の派生の`ActionableError`を送出する。
     ポート番号を伴うURI（`ssh://git@host:22/owner/repo.git`等）はホスト名だけを採用し、
-    ポートを経路要素として扱わない。
+    ポートをパスの要素として扱わない。
     """
     value = remote_url.strip()
     if not value:
@@ -29,7 +29,7 @@ def normalize_remote_url(remote_url: str) -> str:
 
     # スキーム付きの値はSCP短縮形の判定より先にURLとして解析する。
     # `ssh://git@host:22/owner/repo.git`はSCP短縮形の正規表現にも一致するため、
-    # 判定順を誤るとポート番号が経路の先頭要素として取り込まれる。
+    # 判定順を誤るとポート番号がパスの先頭要素として取り込まれる。
     if "://" in value:
         parsed = urllib.parse.urlsplit(value)
         if parsed.scheme not in {"http", "https", "ssh"} or parsed.hostname is None:
