@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tomllib
 
+import platformdirs
 import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -173,6 +174,62 @@ def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib
     assert result.stderr == "uv run stderr\n"
 
 
+@pytest.mark.parametrize("run_exit", [0, 23])
+@_LINUX_ONLY
+def test_logs_launcher_skips_self_update(tmp_path: pathlib.Path, run_exit: int) -> None:
+    """logsは自己更新を起動せず、引数と表示の終了コードを共通実装へ渡す。"""
+    result, calls = _run_launcher(
+        tmp_path, native_uv=True, path_uv=True, arguments=["logs"], self_update_exit=9, run_exit=run_exit
+    )
+
+    assert result.returncode == run_exit
+    assert calls == [["native", "run", "--no-project", "--script", str(_ROOT / "scripts" / "update_dotfiles.py"), "logs"]]
+    assert result.stderr == "uv run stderr\n"
+
+
+def test_logs_public_launcher_reads_saved_log_without_writing_state(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """両OSの公開ランチャーから実Pythonへ到達し、保存ログだけを読む。"""
+    # mise shimを複製すると隔離した設定先で再解決されるため、実体だけを選ぶ。
+    native_path = os.pathsep.join(part for part in os.environ["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
+    uv = shutil.which("uv", path=native_path)
+    assert uv is not None
+    cache = subprocess.run([uv, "cache", "dir"], check=True, capture_output=True, encoding="utf-8", timeout=30).stdout.strip()
+    home = tmp_path / "home"
+    native_uv = home / ".local" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
+    native_uv.parent.mkdir(parents=True)
+    shutil.copy2(uv, native_uv)
+    for variable in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(variable, str(home))
+    for variable in (
+        "XDG_STATE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "PROGRAMDATA",
+    ):
+        monkeypatch.setenv(variable, str(tmp_path / variable))
+    monkeypatch.setenv("UV_CACHE_DIR", cache)
+    monkeypatch.setenv("UV_PYTHON", sys.executable)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
+    state_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+    state_dir.mkdir(parents=True)
+    expected = "2026-10-01 12:00:00,000 run=100-2 INFO 保存済みの更新\n"
+    (state_dir / "update-dotfiles.log").write_text(expected, encoding="utf-8")
+    (state_dir / "sync-report.json").write_text('{"status": "failed"}', encoding="utf-8")
+    before = {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in state_dir.iterdir()}
+    command = ["cmd.exe", "/d", "/c", str(_WINDOWS_LAUNCHER), "logs"] if os.name == "nt" else [str(_LAUNCHER), "logs"]
+
+    result = subprocess.run(command, check=False, capture_output=True, encoding="utf-8", timeout=90)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == expected
+    assert {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in state_dir.iterdir()} == before
+
+
 @_LINUX_ONLY
 def test_path_uv_is_not_used_when_native_uv_is_absent(tmp_path: pathlib.Path) -> None:
     """公式パスが存在しない場合はPATH上のuvを選ばず終了する。"""
@@ -202,7 +259,7 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     native = 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"'
     missing = 'if not exist "%UV%" ('
     update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
-    process_loop_guard = 'if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" ('
+    process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" ('
     update = '"%UV%" self update'
     update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
     run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\scripts\\update_dotfiles.py" %*'

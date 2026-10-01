@@ -118,6 +118,13 @@ jobs:
           agent-toolkit/agent_toolkit/_atk/managed_temp
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure
+      - name: update-dotfiles ランチャーの動作確認
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        shell: pwsh
+        working-directory: ${{ env.DOTFILES_DIR }}
+        run: >-
+          uv run --frozen --python 3.14 pytest -v -p no:cacheprovider
+          scripts/update_dotfiles_launcher_test.py
       - name: chezmoi インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash

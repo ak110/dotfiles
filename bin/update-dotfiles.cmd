@@ -7,7 +7,7 @@ if not exist "%UV%" (
     exit /b 127
 )
 set "UV_SELF_UPDATE_FAILED=0"
-if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" (
+if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" (
     "%UV%" self update
     if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"
 )
