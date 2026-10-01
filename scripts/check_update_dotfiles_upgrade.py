@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
+import json
 import os
 import pathlib
 import shutil
@@ -19,6 +21,7 @@ from collections.abc import Callable, Sequence
 
 _BRANCH = "upgrade-check"
 _AGE_HOURS = 72
+_DIAGNOSTIC_TIMEOUT = 30
 
 
 class UpgradeCheckError(RuntimeError):
@@ -126,6 +129,139 @@ def create_local_remote(
     _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", old_oid), runner=runner)
 
 
+def _diagnostic_command(arguments: list[str], checkout: pathlib.Path, env: dict[str, str], runner: Runner) -> str:
+    """診断の各出力と終了状態を区別し、採取失敗でも次の採取を続ける。"""
+    print(f"診断コマンド: cwd={checkout} command={arguments!r}")
+    try:
+        result = runner(
+            arguments,
+            cwd=checkout,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_DIAGNOSTIC_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"診断採取失敗: {error!r}。元の検証失敗を保持して次の採取へ進む。", file=sys.stderr)
+        if isinstance(error, subprocess.TimeoutExpired):
+            print(f"診断stdout（時間超過）: {error.stdout!r}")
+            print(f"診断stderr（時間超過）: {error.stderr!r}", file=sys.stderr)
+        return ""
+    print(f"診断終了コード: {result.returncode}")
+    print(f"診断stdout: {result.stdout}")
+    print(f"診断stderr: {result.stderr}", file=sys.stderr)
+    return result.stdout if result.returncode == 0 else ""
+
+
+def _diagnostic_hook(path: pathlib.Path) -> None:
+    """hookの配置と内容ハッシュだけを採取する。"""
+    try:
+        exists = path.is_file()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if exists else None
+        print(f"診断hook: path={path} is_file={exists} sha256={digest}")
+    except OSError as error:
+        print(f"診断hook採取失敗: path={path} error={error!r}。他の配置を採取する。", file=sys.stderr)
+
+
+def _diagnostic_source(root: pathlib.Path, codex_home: pathlib.Path) -> None:
+    """marketplaceのlocal sourceからsnapshotと検収パスを取得する。"""
+    _diagnostic_hook(root / "agent-toolkit" / "agent_toolkit" / "hook.py")
+    try:
+        manifest = json.loads((root / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
+        entry = next(item for item in manifest["plugins"] if item["name"] == "agent-toolkit")
+        source = entry["source"]
+        if source["source"] != "local":
+            raise ValueError("local sourceではない")
+        snapshot = (root / source["path"]).resolve()
+        _diagnostic_hook(snapshot / "agent_toolkit" / "hook.py")
+        plugin = json.loads((snapshot / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        expected = codex_home / "plugins" / "cache" / manifest["name"] / plugin["name"] / plugin["version"]
+        print(f"診断Python検収先: {expected}")
+        _diagnostic_hook(expected / "agent_toolkit" / "hook.py")
+    except (OSError, ValueError, KeyError, TypeError, StopIteration) as error:
+        print(f"診断source採取失敗: root={root} error={error!r}。CLIメタデータとcache一覧を確認する。", file=sys.stderr)
+
+
+def _collect_initial_apply_failure(
+    checkout: pathlib.Path,
+    env: dict[str, str],
+    old_oid: str,
+    current_oid: str,
+    platform_name: str,
+    runner: Runner,
+) -> None:
+    """検証homeの回収前に、初期適用失敗時のCodex配置を限定採取する。"""
+    print(f"初期適用失敗の診断: old={old_oid} current={current_oid} platform={platform_name}")
+    keys = ("HOME", "USERPROFILE", "CODEX_HOME", "CODEX_INSTALL_DIR", "APPDATA", "LOCALAPPDATA")
+    print(f"診断環境: {json.dumps({key: env.get(key) for key in keys}, ensure_ascii=False)}")
+    # post-applyが導入したtool環境を使い、同じ旧版の実行ファイル解決を観測する。
+    tool_root = pathlib.Path(env["UV_TOOL_DIR"]) / "pytools"
+    interpreter = tool_root / ("Scripts/python.exe" if platform_name == "windows" else "bin/python")
+    probe = (
+        "import json, pathlib, sys; from pytools._internal import claude_common, install_codex_plugins; "
+        "print(json.dumps({'python': sys.version, 'home': str(pathlib.Path.home()), "
+        "'codex': str(claude_common.resolve_executable('codex')), "
+        "'codex_home': str(install_codex_plugins._codex_home())}))"
+    )
+    output = _diagnostic_command([str(interpreter), "-c", probe], checkout, env, runner)
+    codex_home = pathlib.Path(env.get("CODEX_HOME", str(pathlib.Path(env["HOME"]) / ".codex")))
+    roots = {checkout}
+    homes = {codex_home, pathlib.Path(env["HOME"]) / ".codex", pathlib.Path(env["USERPROFILE"]) / ".codex"}
+    if platform_name == "windows":
+        powershell = shutil.which("powershell.exe", path=env["PATH"])
+        if powershell is None:
+            print("診断OS profile採取失敗: powershell.exeが無い。取得済みhome候補の採取を続ける。", file=sys.stderr)
+        else:
+            command = (
+                "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); "
+                "[Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)"
+            )
+            profile = _diagnostic_command(
+                [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+                checkout,
+                env,
+                runner,
+            ).strip()
+            if profile and pathlib.Path(profile).is_absolute():
+                print(f"診断OS profile: {profile}")
+                homes.add(pathlib.Path(profile) / ".codex")
+            else:
+                print("診断OS profile採取失敗: 絶対パスを取得できない。取得済みhome候補の採取を続ける。", file=sys.stderr)
+    try:
+        metadata = json.loads(output)
+        codex_home = pathlib.Path(metadata["codex_home"])
+        homes.update((codex_home, pathlib.Path(metadata["home"]) / ".codex"))
+        if metadata["codex"] != "None":
+            codex = metadata["codex"]
+            _diagnostic_command([codex, "--version"], checkout, env, runner)
+            _diagnostic_command([codex, "plugin", "list", "--json"], checkout, env, runner)
+            marketplaces = _diagnostic_command([codex, "plugin", "marketplace", "list", "--json"], checkout, env, runner)
+            for item in json.loads(marketplaces)["marketplaces"]:
+                if item.get("name") == "ak110-dotfiles":
+                    roots.add(pathlib.Path(item["root"]))
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        print(f"診断メタデータ採取失敗: {error!r}。取得済み環境値から配置を採取する。", file=sys.stderr)
+    for root in sorted(roots):
+        _diagnostic_source(root, codex_home)
+    for home in sorted(homes):
+        cache = home / "plugins" / "cache"
+        plugin_cache = cache / "ak110-dotfiles" / "agent-toolkit"
+        try:
+            exists = plugin_cache.is_dir()
+            versions = sorted(path for path in plugin_cache.iterdir() if path.is_dir()) if exists else []
+            print(
+                f"診断plugin cache: root={plugin_cache} cache_exists={cache.is_dir()} exists={exists} "
+                f"versions={json.dumps([path.name for path in versions], ensure_ascii=False)}"
+            )
+            for version in versions:
+                _diagnostic_hook(version / "agent_toolkit" / "hook.py")
+        except OSError as error:
+            print(f"診断cache採取失敗: root={cache} error={error!r}。元の検証失敗を報告する。", file=sys.stderr)
+
+
 def run_upgrade_check(source_repo: pathlib.Path, platform_name: str, *, runner: Runner = subprocess.run) -> None:
     """ローカルremoteを用いて旧版から現行版への更新を終端まで検証する。"""
     current_oid = _git_value(source_repo, "rev-parse", "HEAD", runner=runner)
@@ -146,7 +282,14 @@ def run_upgrade_check(source_repo: pathlib.Path, platform_name: str, *, runner: 
         create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
         _run(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
         env = _isolated_env(home, pathlib.Path(uv_path), platform_name)
-        _run(("chezmoi", "init", f"--source={checkout}", "--apply"), cwd=checkout, env=env, runner=runner)
+        try:
+            _run(("chezmoi", "init", f"--source={checkout}", "--apply"), cwd=checkout, env=env, runner=runner)
+        except UpgradeCheckError:
+            try:
+                _collect_initial_apply_failure(checkout, env, old_oid, current_oid, platform_name, runner)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                print(f"初期適用診断の採取失敗: {error!r}。元の検証失敗を報告する。", file=sys.stderr)
+            raise
         _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
         _run(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
         actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)
