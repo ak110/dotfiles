@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import urllib.parse
 from typing import Any
 
 from agent_toolkit._atk import managed_temp
@@ -130,8 +131,8 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
 def _existing_session_temp(session_id: object) -> str | None:
     """SessionStartが作成済みのセッション領域を、新たに作成せずに解決する。
 
-    サブエージェントは親と同じsession_idを受け取るため、親のセッション領域を同じ所在として通知できる。
-    SubagentStartでは領域を作成しない。親のSessionStartが作成していない場合は通知しない。
+    サブエージェントは親と同じsession_idを受け取るため、親のセッション領域を解決できる。
+    SubagentStartでは管理領域を登録しない。親のSessionStartが作成していない場合は通知しない。
     """
     if not isinstance(session_id, str) or not session_id:
         return None
@@ -143,6 +144,21 @@ def _existing_session_temp(session_id: object) -> str | None:
         return None
     path = entries[-1].get("path")
     return path if isinstance(path, str) else None
+
+
+def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
+    """担当ごとの置き場所と、親の領域でのファイルの受渡しを通知する。"""
+    if not isinstance(agent_id, str) or not agent_id:
+        return session_temp_notice(session_temp)
+    # IDを単一のパス要素に保ち、同じIDの再開でも同じ場所へ到達する。
+    child = pathlib.Path(session_temp) / f"agent-{urllib.parse.quote(agent_id, safe='')}"
+    child.mkdir(exist_ok=True)
+    return (
+        f"このサブエージェント専用の一時領域: {child}\n"
+        "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
+        f"親のセッション領域: {session_temp}\n"
+        "親の領域は、委譲元が渡したファイルの読み書きに使ってよい。"
+    )
 
 
 def compose_subagent_start(*, host: str) -> str:
@@ -191,7 +207,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         content = compose_subagent_start(host=host)
         session_temp = _existing_session_temp(payload.get("session_id"))
         if session_temp is not None:
-            content = f"{content}\n\n{_llm_notice(session_temp_notice(session_temp))}"
+            content = f"{content}\n\n{_llm_notice(_subagent_temp_notice(session_temp, payload.get('agent_id')))}"
     else:
         raise ValueError("hook_event_nameはSessionStartまたはSubagentStartである必要がある")
 
