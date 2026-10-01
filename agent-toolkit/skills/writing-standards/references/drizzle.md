@@ -13,7 +13,7 @@
 
 ## マイグレーション運用
 
-- 本番運用は`drizzle-kit generate`での生成と`drizzle-kit migrate`での適用の2段階を既定とし、生成物（`drizzle/`配下の`*.sql`・`snapshot.json`）はリポジトリにコミットする（環境ごとの再現性を担保し、スキーマ変更履歴を監査可能にするため）
+- 本番運用は`drizzle-kit generate`での生成と`drizzle-kit migrate`での適用の2段階を通常の手順とし、生成物（`drizzle/`配下の`*.sql`・`snapshot.json`）はリポジトリにコミットする（環境ごとの再現性を担保し、スキーマ変更履歴を監査可能にするため）
 - `drizzle-kit push`は差分を即座にDBへ反映するがマイグレーション履歴を残さない。履歴不在はロールバック手段の喪失とチーム間の状態不整合に直結するため、ローカルプロトタイピングに限定する
 - 本番適用専用のconfig（例: `drizzle-prod.config.ts`）を分離し、`migrate`実行時に`--config`で明示切り替える
 

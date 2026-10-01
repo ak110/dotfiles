@@ -10,9 +10,9 @@ description: >
   およびメインエージェント自身のいずれもが起動する。
   著者向けスキル`agent-toolkit:writing-standards`と併用する。
 # 編集時の注意点:
-# レビュー担当側はreferences/reviewer.md、レビューイー側はreferences/reviewee.mdを正本とする。
+# レビュー担当側の基準はreferences/reviewer.md、レビューイー側の基準はreferences/reviewee.mdが定める。
 # 両役割へ共通する契約だけを本体へ置く。
-# レビュー工程管理と経路固有の出力は各タスク文書が扱う。
+# レビュー工程管理と実行手段ごとの出力は各タスク文書が扱う。
 ---
 
 # レビュー担当とレビューイーの心得

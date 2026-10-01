@@ -5,7 +5,7 @@ Claude Codeから委譲を起動する直前に本文書を全文読む。
 
 ## 起動パラメーター
 
-Agent機能を使う条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段の選択」に従う。専用agent定義が必要な工程ではその役割を、横断調査では調査に適した役割を選ぶ。モデル、推論の深さ、背景実行および既定値は、起動時に公開されたスキーマと定義のfrontmatterから確定する。
+Agent機能を使う条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段の選択」に従う。専用agent定義が必要な工程ではその役割を、横断調査では調査に適した役割を選ぶ。モデル、推論の深さ、背景実行および省略時の値は、起動時に公開されたスキーマと定義のfrontmatterから確定する。
 
 `routing.md`「会話を引き継ぐ委譲」がforkを選び、fork modeが有効なときは`Agent`へ`subagent_type: "fork"`を渡す。forkは親のモデルと会話履歴を引き継ぎ、背景で実行され、通常の`Agent`の子と同じ完了通知で結果を返す。forkの起動は親からの1階層で完結する。対話セッションのfork modeは初期状態で有効だが、`-p`の非対話実行とAgent SDKでは初期状態で無効である。無効な環境では`agents_server`の新規起動を使う。観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日」にある。
 
@@ -74,7 +74,7 @@ agent定義の`tools`は許可の上限を示す。`ListAgents`の許可と実�
   即時通知の適用条件、判定順序、手段および宛先は同規範を単一の根拠とし、起動文からは参照だけを行う
 - 組み込み`Explore`・`Plan`へ委譲する場合は、報告の正否を左右する前提を起動文へ明記する。
   対象は判定に用いる実行系の起動コマンド、検証に用いるコマンド、調査対象から除外する範囲、報告様式とする。
-  前提を欠いた委譲は環境既定の処理系による構文判定など委譲元の意図と異なる根拠の報告を生み、再検証と棄却に往復を要する
+  前提を欠いた委譲は環境が指定なしで選ぶ処理系による構文判定など委譲元の意図と異なる根拠の報告を生み、再検証と棄却に往復を要する
 
 ## 検証コマンドの実行形態
 
@@ -158,7 +158,7 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
   この代替手段では、起動結果が返した出力ファイルの末尾標識を回数上限付きで照会し、`atk watch`で作業ツリーまたは成果物を観測し、自身が起動して識別子を保持したプロセスの生存を照会する。
   稼働状態の判定には、末尾標識の不在、列挙不能および成果物の更新に加えて、これらの観測の組合せを用いる。
   更新が続く間は完了と決めつけず催促にとどめ、上限到達後は取得できた観測結果だけを添えて継続または停止を判断する
-- 待機解除の既定手段と、MCPツール呼び出しが背景タスクへ移った場合の扱いは`references/waiting-and-monitoring.md`「待機区間の構成」に従う
+- 待機を解除するために通常使う手段と、MCPツール呼び出しが背景タスクへ移った場合の扱いは`references/waiting-and-monitoring.md`「待機区間の構成」に従う
 - Agentツールで起動した担当の継続条件を次に定める（`agents_server`で起動した担当は`references/runtime-routing.md`「工程別モデル設定」手順6）。
   完了報告を受け取って停止済みの識別子でも、同じ担当へ同じタスクの未完了作業、指摘への対応または再レビューを返す場合は、
   継続直前に再取得した実効`engine`・`model`・`effort`が現在のthreadの起動時と一致するときに限り`SendMessage`で再開してよい。
@@ -182,7 +182,7 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 
 ### Cronによる定期再確認
 
-Claude Codeで未完了の委譲または背景処理を待つ実行主体は、機械的な完了通知を待機解除の既定手段としたまま、`CronCreate`、`CronList`および`CronDelete`が現在の実行主体へ公開される場合だけ定期再確認を併用する。一般の委譲待機では`/loop`専用の`ScheduleWakeup`を使用しない。
+Claude Codeで未完了の委譲または背景処理を待つ実行主体は、機械的な完了通知を待機を解除するために通常使う手段としたまま、`CronCreate`、`CronList`および`CronDelete`が現在の実行主体へ公開される場合だけ定期再確認を併用する。一般の委譲待機では`/loop`専用の`ScheduleWakeup`を使用しない。
 
 装着の時点は、そのセッションで最初の委譲先または背景ジョブを起動する直前とする。メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行する。標準出力のcron式を変更せず`CronCreate`へ渡す。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行とする。この行はUserPromptSubmitフックが機械注入ターンを判定する入力であり、リテラルをそのまま保つ。resume後の所有taskの確認も、この標識の完全一致を判定手段とする。待機対象を記録側（保持元）から列挙する手段、対象ごとの成果物を決める方法および動的に解決したパスを渡す`atk watch`のコマンド形も含める。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程をpromptへ埋め込まず、`recur=true`で1件だけ作成する。作成結果のtask IDはprompt外で保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。
 

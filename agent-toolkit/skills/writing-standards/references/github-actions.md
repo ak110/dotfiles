@@ -12,7 +12,7 @@
 ## 権限と秘密情報
 
 - ワークフロー全体または個別ジョブで`permissions:`を最小権限に設定する
-  既定のtoken権限に頼らない（例: `contents: read`が基本、書き込みが必要なジョブのみ`contents: write`）
+  tokenの権限を明示する（例: `contents: read`が基本、書き込みが必要なジョブのみ`contents: write`）
 - secretは`${{ secrets.NAME }}`で参照する。stepの`run`にベタ書きしない
 - 信頼できないPRからの`pull_request_target`は厳禁。レビュー前の任意コード実行を許してしまう
 

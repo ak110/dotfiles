@@ -81,7 +81,7 @@
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
   - `appname`単独指定は不可
-  - Windowsでは`appauthor`が省略されると、既定の動作として`appname`と同じ値が補完され、
+  - Windowsでは`appauthor`が省略されると、自動で`appname`と同じ値が補完され、
     配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
@@ -91,7 +91,7 @@
 - 新しいオプション名を既存のパーサーまたは共通の`add_argument`登録へ加える前に、対象の名前空間で同じ綴りを固定文字列検索する。
   同じ綴りが別の概念へ既に割り当てられている場合は、そのパーサーを共通登録の対象から外すか、新しいオプションへ別名を選ぶ。
   同じ名前空間への重複登録は、起動時のオプション衝突を招く
-- `argparse`で`action="append"`を使う場合の既定値は`default=None`にする
+- `argparse`で`action="append"`を使う場合、引数が指定されないときの値は`default=None`にする
   - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が合わず例外になる
   - list（例: `[]`）を渡すと毎回初期要素として混入する
   - 環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、`None`なら環境変数から初期化、それ以外はそのまま使う
@@ -99,8 +99,8 @@
   `add_argument`の`type`引数（`type=int`・`type=float`等）は維持する
   - `type`を外して全解決元の値を文字列で受け取り後段で変換する設計に変更すると、
     CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
-  - 既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
-    parse段階の型変換と既定値解決を分離する
+  - 指定なしの場合に値を決める処理は別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
+    parse段階の型変換と指定なしの場合に値を決める処理を分離する
 - CLIエントリポイント関数（コマンドラインから直接呼ばれる関数）は`_main`等のprivate命名ではなく`main`として公開し、
   成功パスも含めて終了コードを`sys.exit(exit_code)`で明示するか、`-> int`を返して`sys.exit(main())`へ渡す形を基本とする。
   テストが公開関数を呼んで全パスの終了コードを検証できる状態を保つためである
@@ -150,7 +150,7 @@
 - 大規模テストスイートを対象とするプロジェクトでは`pyfltr`の`command-timeout`を延伸する
   - 具体値・延伸判定・計測手順は各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ
     実際の計測結果に基づいて記録し、そこをSSOTとする（本ファイル側の数値記載はしない）
-  - `command-timeout`の既定値と挙動仕様は<https://ak110.github.io/pyfltr/llms.txt>から現行版の該当ページを取得して確認する
+  - `command-timeout`の省略時の値と挙動仕様は<https://ak110.github.io/pyfltr/llms.txt>から現行版の該当ページを取得して確認する
 
 ### Fixtureのコーディングルール
 
@@ -170,7 +170,7 @@
 ### 環境変数・設定ディレクトリのテスト隔離
 
 環境変数フォールバックや設定ディレクトリを読み込むCLIをテストする場合、
-テスト環境のホームディレクトリや設定ディレクトリ変数が漏れ込むと結果が不安定になる。
+テスト環境のホームディレクトリや設定ディレクトリ変数がテストへ引き継がれると結果が不安定になる。
 
 - `monkeypatch.setenv`／`monkeypatch.delenv`で関連する全環境変数を`tmp_path`配下へ向ける
   対象は対応する独自環境変数に加え、次の両系統を網羅する。
