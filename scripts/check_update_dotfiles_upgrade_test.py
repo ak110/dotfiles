@@ -111,7 +111,15 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
             home = pathlib.Path(env["HOME"])
             assert env["CODEX_HOME"] == str(home / ".codex")
             assert pathlib.Path(env["CODEX_HOME"]).is_dir()
-            assert env["CODEX_INSTALL_DIR"] == str(home / ".local" / "bin")
+            shared_bin = home / ".local" / "bin"
+            codex_bin = home / ".local" / "share" / "codex" / "bin" if platform_name == "windows" else shared_bin
+            assert env["CODEX_INSTALL_DIR"] == str(codex_bin)
+            # Windowsのinstallerが専用binを作成・置換できるよう、事前に作成しない。
+            assert platform_name != "windows" or not codex_bin.exists()
+            uv_name = "uv.exe" if platform_name == "windows" else "uv"
+            assert (shared_bin / uv_name).is_file()
+            visible_bins = list(dict.fromkeys((str(codex_bin), str(shared_bin))))
+            assert env["PATH"].split(os.pathsep)[: len(visible_bins)] == visible_bins
             bin_result = subprocess.run(
                 [uv_executable, "tool", "dir", "--bin"],
                 env=env,

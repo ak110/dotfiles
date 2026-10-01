@@ -90,6 +90,9 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
     shutil.copy2(uv_executable, uv_target)
     codex_home = home / ".codex"
     codex_home.mkdir(parents=True, exist_ok=True)
+    # Windowsのinstallerは可視binのdirectory全体をjunctionへ置き換えるため、uvの共有binと分ける。
+    # 専用binはinstallerが作成するため、ここでは作成しない。
+    codex_bin = home / ".local" / "share" / "codex" / "bin" if platform_name == "windows" else uv_target.parent
     env = os.environ.copy()
     env.update(
         {
@@ -102,13 +105,14 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
             "UV_TOOL_BIN_DIR": str(uv_target.parent),
             "UV_TOOL_DIR": str(home / ".local" / "share" / "uv" / "tools"),
             "CODEX_HOME": str(codex_home),
-            "CODEX_INSTALL_DIR": str(uv_target.parent),
+            "CODEX_INSTALL_DIR": str(codex_bin),
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
             "PYTHONIOENCODING": "utf-8",
         }
     )
-    env["PATH"] = os.pathsep.join((str(uv_target.parent), env.get("PATH", "")))
+    visible_bins = dict.fromkeys((str(codex_bin), str(uv_target.parent)))
+    env["PATH"] = os.pathsep.join((*visible_bins, env.get("PATH", "")))
     return env
 
 
