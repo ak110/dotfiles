@@ -47,7 +47,7 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileClosedEvent,
 )
 
-# Claude Codeの`/exit`経路は0、Function hooksが無い場合のSIGTERM経路は残りの値で正常終了とする。
+# Claude Codeの`/exit`による終了は0、Function hooksが無い場合のSIGTERMによる終了は残りの値で正常終了とする。
 _CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 
 # Codexがexit-sessionスキル経由で終了する場合のOS別正常終了集合。
@@ -67,7 +67,7 @@ _INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
 _INTERNAL_DOTFILES_UPDATED_ARG = "--internal-dotfiles-updated"
 
 # 変更検知後、追加イベント発火が無くなるまでの畳み込み待機秒
-# （1回のファイル操作で複数イベントが連続発火する実測を吸収する）。
+# （1回のファイル操作で複数イベントが連続発火するという観測に対応する）。
 _DEBOUNCE_SEC = 3.0
 
 # ランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
@@ -86,7 +86,7 @@ _PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
-# Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数の契約を検査できるよう値を固定する。
+# Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数が契約どおりに動作するかを確かめられるよう値を固定する。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
@@ -104,7 +104,7 @@ _ABORT_BELL_INTERVAL_SEC = 0.1
 def _process_loop_abort_path() -> pathlib.Path:
     """process-loopの中断要求を保持する状態ファイルのパスを返す。
 
-    解決処理の正本は`process_loop_log.abort_path`とする。Stop hookも同じ関数を使う。
+    パスの解決は`process_loop_log.abort_path`が担う。Stop hookも同じ関数を使う。
     """
     return _process_loop_log.abort_path()
 
@@ -166,7 +166,7 @@ def _consume_process_loop_abort() -> bool:
 
     判定点は反復の境界と、呼び出し元へ戻らない再起動の直前の2箇所へ限定する。
     `_restart_process_loop`は`os.execv`または`sys.exit`で呼び出し元へ戻らないため、
-    その呼び出しの後段へ置いた判定は`--no-update`を指定しない既定の起動形で実行されない。
+    その呼び出しの後段へ置いた判定は`--no-update`を省略して起動した場合には実行されない。
     同じ理由で`_update_before_session`と`_check_and_restart_on_update`の後段にも判定を置かず、
     反復ループの先頭でまとめて判定する。
     `atk wi process-loop abort`の公開契約は、現在のセッションが終わった時点で次の反復へ進まず
@@ -201,7 +201,7 @@ def _child_env() -> dict[str, str]:
     対象は`atk`から起動する外部コマンド（claudeセッション・`update-dotfiles`）とする。
     `update-dotfiles`は`chezmoi apply`を経て作業対象リポジトリのuvベースのパッケージ操作へ至るため、
     claudeセッションと同じく起動元ツールの環境を引き継がせない。
-    自己再起動経路（`_restart_process_loop`）は本関数の対象外とする。
+    自己再起動を行う`_restart_process_loop`は本関数の対象外とする。
     再起動先は`atk`自身であり、起動元と同じ実行環境で継続する必要があるためである。
     ランチャーとの再起動要求の受け渡しファイルは自プロセス専用のため、子孫プロセスへは引き継がない。
     引き継ぐと、子孫が同じファイルへ再起動対象を書き込みうる。
@@ -314,7 +314,7 @@ def _mise_output_detail(output: str | bytes | None) -> str:
 
 
 def _refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
-    """dotfilesのlatest指定ツールを非ログイン経路で再評価し、失敗後も呼び出し元を継続させる。"""
+    """dotfilesのlatest指定ツールをログインシェルを使わずに再評価し、失敗後も呼び出し元を継続させる。"""
     executable = _resolve_executable("mise")
     if executable is None:
         return False
@@ -689,7 +689,7 @@ def _build_process_loop_prompt() -> str:
     変更は行わない。過去に作業ディレクトリ、対象リポジトリおよび終了手順の指示が順に加わり、
     そのたびに短縮を求める指摘を受領した経緯がある。
 
-    処理対象は`_run_process_session`が子セッションの作業ディレクトリとして渡す経路で伝わる。
+    処理対象は`_run_process_session`が子セッションの作業ディレクトリの引数として渡すことで伝わる。
     `atk wi`の各サブコマンドは`--target-repo`を省略した場合に作業ディレクトリから対象
     リポジトリを解決するため、目的文へ処理対象を書く必要はない。
 
@@ -764,7 +764,7 @@ def _claude_ignored_effort(stderr: str) -> bool:
 def _select_available_orchestrator(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path
 ) -> tuple[str, str, str]:
-    """候補を先頭から事前検査し、最初に可用な3つ組を返す。"""
+    """候補を先頭から事前に試し、最初に可用な3つ組を返す。"""
     last_failure = (candidates[-1][0], 1, "")
     for orchestrator, model, effort in candidates:
         candidate = f"{orchestrator}:{model}/{effort}"
@@ -1010,7 +1010,7 @@ def _restart_process_loop(
 ) -> None:
     """次に起動するスクリプトと引数をランチャーへ渡して再起動を要求する。
 
-    セッション終了後経路・待機中経路の双方から呼ぶ共通ヘルパーとする。
+    セッション終了後と待機中の双方で呼ぶ共通ヘルパーとする。
     ランチャー経由で起動された場合は受け渡しファイルへ次の起動対象を書き、
     専用の終了コードで終了する。ランチャーは同一プロセスで次の実体を`uv run`で起動するため、
     plugin projectの依存解決が再実行され、かつプロセス階層が増えない。
@@ -1257,7 +1257,7 @@ def _run_process_session(
     """子セッションを1回実行し、常駐処理を終了すべきかを返す。
 
     中断要求の判定は`_restart_process_loop`の呼び出しより前に置く。同関数は呼び出し元へ
-    戻らないため、後段へ置いた判定は`--no-update`を指定しない経路で実行されない。
+    戻らないため、後段へ置いた判定は`--no-update`を省略して起動した場合には実行されない。
     """
     session_argv, hook_debug_log = _build_session_argv(
         args,
@@ -1395,8 +1395,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     新規起動は対象リポジトリでprocess-wiを完遂する短い`/goal`条件を登録する。
     `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
-    オーケストレーター・model・effortは`orchestrate_model`設定（既定`claude:opus[1m]/medium`）から
-    セッション起動反復ごとに候補列として解決する。本作業の前に副作用のない極小起動で候補を先頭から検査し、
+    オーケストレーター・model・effortは`orchestrate_model`設定（未指定なら`claude:opus[1m]/medium`）から
+    セッション起動反復ごとに候補列として解決する。本作業の前に副作用のない極小起動で候補を先頭から実際に試し、
     最初に可用な候補をClaude CodeまたはCodexの新規起動とresumeの双方へ渡す。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
@@ -1408,7 +1408,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     要求を解除して正常終了する。反復ループ先頭の判定により、更新検知による再起動と0件待機を
     含む反復の境界でも要求を検出する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
-    件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
+    件数0の間はアラート自動検出（指定が無ければ有効、`--no-alerts`で無効化）を`--alert-interval`
     秒間隔で実行する。新規のCI失敗を検知した場合はAWIへ投入して即座に次反復へ進む。
     未判定のDependabotアラートがある場合はAWIを起票せず、処理回の自動コードレビュー監査に判定させるため
     処理回を1回起動する。

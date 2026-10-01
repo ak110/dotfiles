@@ -359,7 +359,7 @@ _ALERTS_PATH = "repos/owner/repo/dependabot/alerts?state=open&per_page=100"
 def test_pending_classifies_dependabot_alerts_by_default_branch_manifest(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """全ページのopenアラートを、既定ブランチにマニフェストが無ければ誤検知、あれば実在として区分して出力する。"""
+    """全ページのopenアラートを、GitHubで標準の参照先に指定されたブランチにマニフェストが無ければ誤検知、あれば実在として区分して出力する。"""
     pages = [[_alert(40, "old/uv.lock", "2.14.0"), _alert(7, "uv.lock", "2.14.0")], [_alert(41, "old/uv.lock", None)]]
     calls = _fake_gh(
         monkeypatch,

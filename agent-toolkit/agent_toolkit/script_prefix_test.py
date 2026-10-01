@@ -35,7 +35,7 @@ def _imported_module_names(paths: list[pathlib.Path]) -> set[str]:
 
 
 def _standalone_private_prefixed_scripts(paths: list[pathlib.Path]) -> list[str]:
-    """対応テスト以外から読み込まれない接頭辞付き入口を返す。"""
+    """対応テスト以外から読み込まれない接頭辞付きの実行ファイルを返す。"""
     imports_by_path = {path: _imported_module_names([path]) for path in paths}
     return [
         path.name
@@ -61,7 +61,7 @@ def test_standalone_scripts_do_not_use_private_prefix() -> None:
 
 
 def test_test_only_import_does_not_make_entry_private(tmp_path: pathlib.Path) -> None:
-    """入口自身の対応テストだけが読み込む形状を単独実行として判定する。"""
+    """実行ファイル自身の対応テストだけが読み込む形状を単独実行として判定する。"""
     entry = tmp_path / "_foo.py"
     entry.write_text('if __name__ == "__main__":\n    pass\n', encoding="utf-8")
     (tmp_path / "_foo_test.py").write_text("import _foo\n", encoding="utf-8")

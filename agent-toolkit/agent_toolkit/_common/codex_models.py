@@ -85,7 +85,7 @@ async def fetch_catalog(request: Callable[[str, dict[str, Any]], Awaitable[dict[
 
 
 async def list_models_from_app_server() -> list[dict[str, Any]]:
-    """短命なApp Server接続で、独立した`atk config`経路の一覧を取得する。"""
+    """短命なApp Server接続で、`atk config`が他の接続と独立してモデル一覧を取得する。"""
     with tempfile.TemporaryFile(mode="w+b") as diagnostics:
         try:
             process = await asyncio.create_subprocess_exec(

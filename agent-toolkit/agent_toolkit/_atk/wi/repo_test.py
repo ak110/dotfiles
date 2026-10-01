@@ -1,4 +1,4 @@
-"""`_atk/wi/repo.py`の対象リポジトリ解決とtarget_repo照合の失敗出力を検証する。"""
+"""`_atk/wi/repo.py`の対象リポジトリの解決とtarget_repoの一致判定が失敗した際の出力を検証する。"""
 
 import pathlib
 import subprocess
@@ -26,7 +26,7 @@ def test_resolve_repo_id_or_raise_guides_target_repo_option() -> None:
 
 
 def test_resolve_repo_id_reports_one_failure_line(capsys: pytest.CaptureFixture[str]) -> None:
-    """CLI経路の解決失敗は失敗行1本と次の操作の行で終了コード2になる。"""
+    """CLIで対象の解決に失敗した場合は失敗行1本と次の操作の行で終了コード2になる。"""
     with pytest.raises(SystemExit) as exc_info:
         repo_module._resolve_repo_id("not-a-repository")  # pylint: disable=protected-access
 

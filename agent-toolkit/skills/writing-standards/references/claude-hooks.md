@@ -73,7 +73,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 この判定は`PreToolUse`と`PostToolUse`の遮断を対象とし、`Stop`と`SubagentStop`には「Stop/SubagentStopフックの再帰呼び出し対策」が定める条件を適用する。
 判定ごとに結論と根拠をその判定モジュールのdocstringへ記録する（努力目標。判定を見直す読み手が根拠をたどれるようにするため）。
 
-警告とした判定のうち、同一セッションでの反復が母集団の欠落または工程の停止を招くものは、`warning_formatter`へ`escalate_on_repeat=True`を明示し、1件目を警告、2件目以降を遮断とする。昇格の既定は偽とする。`removable_cause=True`は反復注記に使い、遮断は昇格の明示を要する。後続の編集で是正できる文体などの警告は昇格させない。昇格したblockはPreToolUseの`exit_with`が終了コード2で返し、同時に保留した警告もstderrへ配送する。反復が招く欠落と停止は復元できない結果に当たるためである。
+警告とした判定のうち、同一セッションでの反復が母集団の欠落または工程の停止を招くものは、`warning_formatter`へ`escalate_on_repeat=True`を明示し、1件目を警告、2件目以降を遮断とする。昇格を指定しない場合は偽を使う。`removable_cause=True`は反復注記に使い、遮断は昇格の明示を要する。後続の編集で是正できる文体などの警告は昇格させない。昇格したblockはPreToolUseの`exit_with`が終了コード2で返し、同時に保留した警告もstderrへ配送する。反復が招く欠落と停止は復元できない結果に当たるためである。
 
 遮断の解除に必要な情報は通知本文へ載せる。別の呼び出しでの取得を要求すると、遮断のたびに1ラウンドを消費する。
 `fix`が名指しする手段を利用できない実行主体がある場合は、同じ判定を通過する別の手段を併記し、無い場合は遮断が解除される条件を書く。
@@ -297,7 +297,7 @@ Codex rolloutのtranscript形式は安定インターフェースではないた
 
 配布物完結の環境変数（`AGENT_TOOLKIT_<PURPOSE>`形式）の一覧と用途を示す。
 
-- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`管理repoのroot（既定`~/private-notes/`）
+- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`管理repoのroot（指定がなければ`~/private-notes/`）
 - `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力
 - `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信payloadのダンプ先
 - `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行で、次に起動するセッションの指定を
@@ -307,7 +307,7 @@ Codex rolloutのtranscript形式は安定インターフェースではないた
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションの印（値`1`）。常駐用hookは次項のIDがある場合、印に加えてhook入力の会話IDとの一致を確認する。IDを指定しない再開では印だけで判定する
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: 常駐処理がClaude会話の新規起動またはID指定再開で子へ渡す会話ID。hook入力の`session_id`と比べ、環境印を継承した入れ子の別会話を自律終了、空転ガード、計画保存通知、セッション名および観測ログの対象から外す
 - `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインのセッション開始時の文脈へ置く
-- `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBashによる全文取得を分割読取へ誘導する`pretooluse/large_reads`のバイト数の閾値。正の整数だけを採用し、それ以外は既定値を使う
+- `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBashによる全文取得を分割読取へ誘導する`pretooluse/large_reads`のバイト数の閾値。正の整数だけを採用し、それ以外は省略時の値を使う
 
 ## メッセージの記述言語
 

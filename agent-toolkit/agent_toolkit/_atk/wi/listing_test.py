@@ -405,7 +405,7 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """frontmatterを解析できない項目は既存修復経路へ残す。"""
+        """frontmatterを解析できない項目も対象から外さず、既存の修復処理で扱えるよう残す。"""
         notes = _setup_notes(tmp_path)
         path = notes / "inbox/broken.md"
         original = "---\ntarget_repo: [broken\nreservation: forged\n---\n本文\n"
@@ -1038,7 +1038,7 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=all（既定）でuwi側が0件の場合はuwi種別ヘッダを省略する。"""
+        """--type=all（省略時も同じ値）でuwi側が0件の場合はuwi種別ヘッダを省略する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

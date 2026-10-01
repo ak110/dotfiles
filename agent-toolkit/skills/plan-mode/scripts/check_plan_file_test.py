@@ -1,4 +1,4 @@
-"""意味契約中心の計画検査を検証する。"""
+"""計画が意味の契約を満たすか確かめる処理を検証する。"""
 
 import collections.abc
 import contextlib
@@ -33,7 +33,7 @@ def _git(repo: pathlib.Path, *args: str) -> str:
 
 @pytest.fixture(name="repo")
 def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
-    """計画検査用のGitリポジトリを作成する。"""
+    """計画の確認に使うGitリポジトリを作成する。"""
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.email", "test@example.com")
     _git(tmp_path, "config", "user.name", "Test")
@@ -200,7 +200,7 @@ def _check_new(
     reject_migration_warnings: bool = False,
     reject_progress_log_rows: bool = False,
 ) -> tuple[list[str], list[str]]:
-    """新書式の計画（計画ファイル（メイン）・計画ファイル（詳細））を一時ファイルへ保存して検査する。"""
+    """新書式の計画（計画ファイル（メイン）・計画ファイル（詳細））を一時ファイルへ保存し、基準を満たすか確かめる。"""
     path = repo / plan_name
     path.write_text(main_content, encoding="utf-8")
     detail_path = repo / f"{path.stem}.detail.md"
@@ -221,7 +221,7 @@ def _check_new(
 
 
 def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
-    """計画を一時ファイルへ保存して検査する。"""
+    """計画を一時ファイルへ保存し、基準を満たすか確かめる。"""
     path = repo / "plan.md"
     path.write_text(content, encoding="utf-8")
     return check_plan_file.check(path, repo)
@@ -328,7 +328,7 @@ def test_cli_reports_missing_completion_once(repo: tuple[pathlib.Path, str]) -> 
     assert len(diagnostics) == 1, diagnostics
     assert "`## 完了条件`は1件必要" in diagnostics[0]
     assert result.stderr.splitlines()[-1].startswith("次の操作: ")
-    assert "同じコマンドで再検査する" in result.stderr.splitlines()[-1]
+    assert "同じコマンドでもう一度確かめる" in result.stderr.splitlines()[-1]
 
 
 def test_cli_warns_for_legacy_materials_without_changing_exit_code(repo: tuple[pathlib.Path, str]) -> None:
@@ -395,7 +395,7 @@ def test_rejects_target_repo_mismatched_with_worktree(repo: tuple[pathlib.Path, 
 def test_cli_requires_metadata_target_repo_instead_of_linked_worktree(
     repo: tuple[pathlib.Path, str],
 ) -> None:
-    """構造検査は同じGitリポジトリの別作業ツリーを対象リポジトリとして代用しない。"""
+    """構造を判定するとき、同じGitリポジトリの別作業ツリーを対象リポジトリとして代用しない。"""
     work_dir, _base = repo
     linked_worktree = work_dir.parent / f"{work_dir.name}-linked"
     _git(work_dir, "worktree", "add", "-q", str(linked_worktree), "HEAD")
@@ -424,7 +424,7 @@ def test_cli_requires_metadata_target_repo_instead_of_linked_worktree(
 
 
 def test_accepts_relative_target_repo_matching_worktree(repo: tuple[pathlib.Path, str]) -> None:
-    """相対表記の対象リポジトリを正規化してGitルートと照合する。"""
+    """相対表記の対象リポジトリを正規化してGitルートと一致するか確かめる。"""
     work_dir, base = repo
     content = _plan(work_dir, base).replace(f"- 対象リポジトリ: `{work_dir.resolve()}`", "- 対象リポジトリ: `.`")
     errors, _warnings = _check(work_dir, content)
@@ -483,7 +483,7 @@ def test_resolves_plugin_resources_outside_plugin_worktree(repo: tuple[pathlib.P
     work_dir, base = repo
     content = _plan(work_dir, base).replace(
         "対象の構造を更新する。",
-        "`agent-toolkit:plan-mode`を起動し、`agent-toolkit:delegation`の経路選択に従う。",
+        "`agent-toolkit:plan-mode`を起動し、`agent-toolkit:delegation`の実行手段の選択に従う。",
     )
     errors, _warnings = _check(work_dir, content)
     assert not errors, errors
@@ -501,7 +501,7 @@ def test_resolves_project_local_skill_from_worktree(repo: tuple[pathlib.Path, st
 
 
 def test_cli_has_no_base_commit_option() -> None:
-    """廃止した対象一覧照合オプションを公開しない。"""
+    """廃止した対象一覧との比較用オプションを公開しない。"""
     parser_result = subprocess.run(
         [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--help"],
         capture_output=True,
@@ -511,7 +511,7 @@ def test_cli_has_no_base_commit_option() -> None:
     assert "--base-commit" not in parser_result.stdout
 
 
-# --- 新書式（計画2ファイル）の検査 ---
+# --- 新書式（計画2ファイル）が基準を満たすか確かめる ---
 
 
 @pytest.mark.parametrize("bug", [False, True])
@@ -583,7 +583,7 @@ def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> Non
 
 
 def test_cli_checks_all_returned_agent_rule_paths(repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str]) -> None:
-    """返却するパス一覧を同じ本文へ照合し、全欠落と修正後の成功を公開入口から確認する。"""
+    """返却するパス一覧の全件が同じ本文に含まれるか確かめ、全欠落と修正後の成功を公開されたコマンドから確認する。"""
     work_dir, _base = repo
     path = work_dir / "paths.md"
     content = _plan_fixture.current_plan(repo=work_dir.resolve())
@@ -618,7 +618,7 @@ def test_cli_checks_all_returned_agent_rule_paths(repo: tuple[pathlib.Path, str]
 def test_lane_selection_checks_related_wi_set(
     repo: tuple[pathlib.Path, str], selection: str, expected_fragment: str | None
 ) -> None:
-    """選定レーンのWI集合を計画メタ情報と照合し、欠落と余剰を示す。"""
+    """選定レーンのWI集合を計画メタ情報と比べ、欠落と余剰を示す。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
     other = "20260831-000000-002.md"
@@ -654,7 +654,7 @@ def test_lane_selection_checks_related_wi_set(
 def test_lane_selection_combines_prior_plans(
     repo: tuple[pathlib.Path, str], prior_count: int, selected_extra: tuple[str, ...], expected_fragment: str | None
 ) -> None:
-    """凍結済み計画を再検査せず、追加計画と先行計画の和集合を検査する。"""
+    """凍結済み計画を再び判定せず、追加計画と先行計画の和集合が基準を満たすか確かめる。"""
     work_dir, _base = repo
     names = ("20260831-000000-001.md", "20260831-000000-002.md")
     current_name = _plan_fixture.WI_FILES[0][0]
@@ -691,10 +691,10 @@ def _run_lane_check_with_resumed(
     related: tuple[str, ...],
     decisions: list[dict[str, str]],
 ) -> tuple[int, str]:
-    """再開位置を含む選定結果をそのまま`plan-check`のCLI入口へ渡し、終了コードと標準エラーを返す。
+    """再開位置を含む選定結果をそのまま`plan-check`のCLIに渡し、終了コードと標準エラーを返す。
 
-    CLI入口は由来照合の正本をキュー管理リポジトリから探すため、実行環境の実物に依存しないよう
-    一時のキュー管理リポジトリへ計画の人間由来行が指す正本を置く。
+    CLIは由来を比べるWIファイルをキュー管理リポジトリから探すため、実行環境の実物に依存しないよう
+    一時のキュー管理リポジトリへ計画の人間由来行が指すWIファイルを置く。
     """
     private_notes = work_dir / "private-notes"
     inbox = private_notes / "inbox"
@@ -824,7 +824,7 @@ def test_cli_accepts_prior_plan_for_added_lane_wi(repo: tuple[pathlib.Path, str]
 
 @pytest.mark.parametrize("root", ("", "-"))
 def test_lane_selection_rejects_missing_human_reason(repo: tuple[pathlib.Path, str], root: str) -> None:
-    """人間由来の実施行に根拠がない計画は、選定レーン付き検査で失敗する。"""
+    """人間由来の実施行に根拠がない計画は、選定レーンを指定すると基準を満たさず失敗する。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
     content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
@@ -930,7 +930,7 @@ def _acceptance_header_row(header: tuple[str, ...]) -> str:
 
 
 def test_current_plan_acceptance_table_accepts_new_header(repo: tuple[pathlib.Path, str]) -> None:
-    """現行の列名を持つ受入シナリオ表は新規作成・改訂の検査でも移行警告の対象にならない。"""
+    """現行の列名を持つ受入シナリオ表は新規作成・改訂として判定しても移行警告の対象にならない。"""
     work_dir, _base = repo
     content = _plan_fixture.current_plan(repo=work_dir.resolve())
     path = work_dir / "acceptance.md"
@@ -1151,7 +1151,7 @@ def test_accepts_direct_and_date_hierarchy_working_paths(
     tmp_path: pathlib.Path,
     relative: pathlib.Path,
 ) -> None:
-    """直下形式と既存の日付階層形式の作業計画を同じ構造検査で受理する。"""
+    """直下形式と既存の日付階層形式の作業計画を同じ構造の判定条件で受理する。"""
     work_dir, _base = repo
     home = tmp_path / "home"
     main_path = home / ".claude/plans" / relative
@@ -1181,7 +1181,7 @@ def test_working_plan_filename_follows_save_stage_condition(
     filename: str,
     rejected: bool,
 ) -> None:
-    """計画作業root直下の計画ファイル名を保存工程と同じ受理条件で検査する。"""
+    """計画作業root直下の計画ファイル名が保存工程と同じ受理条件を満たすか確かめる。"""
     work_dir, base = repo
     home = tmp_path / "home"
     plan_path = home / ".claude/plans" / filename
@@ -1200,7 +1200,7 @@ def test_working_plan_filename_is_not_checked_outside_working_root(
     repo: tuple[pathlib.Path, str],
     tmp_path: pathlib.Path,
 ) -> None:
-    """計画作業root直下に無い計画ファイルの名前は検査しない。"""
+    """計画作業root直下に無い計画ファイルの名前が所定の形式であるかは判定しない。"""
     work_dir, base = repo
     home = tmp_path / "home"
     plan_path = home / ".claude/plans/2026/08/example-plan.md"
@@ -1215,7 +1215,7 @@ def test_working_plan_filename_is_not_checked_outside_working_root(
 def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(
     repo: tuple[pathlib.Path, str],
 ) -> None:
-    """一件の重複見出しに対する診断を二ファイル検査で一回だけ返す。"""
+    """一件の重複見出しに対する診断を二ファイルの形式を判定するときに一回だけ返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     detail_content = detail_content.replace(
@@ -1231,7 +1231,7 @@ def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(
 
 
 def test_new_format_detected_by_detail_file_presence(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（詳細）が存在しない同名の計画ファイル（メイン）は旧形式として検査される。"""
+    """計画ファイル（詳細）が存在しない同名の計画ファイル（メイン）は旧形式として判定される。"""
     work_dir, base = repo
     errors, _warnings = _check(work_dir, _plan(work_dir, base))
     assert not errors, errors
@@ -1344,7 +1344,7 @@ def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（詳細）の固定H2欠落も検査対象となる。"""
+    """計画ファイル（詳細）の固定H2欠落も基準に違反すると判定される。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     detail_content = detail_content.replace(
@@ -1451,7 +1451,7 @@ def test_new_format_warns_for_legacy_adjunct_reference_notation(repo: tuple[path
 def test_new_format_accepts_portable_bug_file_reference(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """新rootのバグ調査ファイルを固定portable参照で検査できる。"""
+    """固定portable参照から新rootのバグ調査ファイルの構造を確かめられる。"""
     work_dir, base = repo
     private_notes = work_dir / "private-notes"
     stem = "30-計画保存先移行-d4f9"
@@ -1557,7 +1557,7 @@ def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[
     reason="実在する旧二ファイル計画がこの環境に無い",
 )
 def test_cli_accepts_review_ids_in_real_legacy_two_file_plan() -> None:
-    """実在する旧二ファイル計画を公式CLIで検査し、旧IDをエラーにしない。"""
+    """実在する旧二ファイル計画を公式CLIで基準を満たすか確かめ、旧IDをエラーにしない。"""
     result = subprocess.run(
         [
             sys.executable,
@@ -1603,7 +1603,7 @@ def test_legacy_wi_names_are_read_compatible_and_warned(repo: tuple[pathlib.Path
 
 
 def test_legacy_wi_names_are_rejected_on_creation(repo: tuple[pathlib.Path, str]) -> None:
-    """新規作成・改訂の経路では改名前の項目名を拒否する。"""
+    """新規作成・改訂を行う場合は改名前の項目名を拒否する。"""
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
     main_content = _plan_fixture.legacy_wi_names(main_content)
@@ -1612,7 +1612,7 @@ def test_legacy_wi_names_are_rejected_on_creation(repo: tuple[pathlib.Path, str]
 
 
 def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: bool) -> pathlib.Path:
-    """由来照合の対象となる計画一式と正本を配置し、計画ファイル（メイン）のパスを返す。"""
+    """由来をWI本文と比べる計画一式とWIファイルを配置し、計画ファイル（メイン）のパスを返す。"""
     main_content = _plan_fixture.human_main(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = repo / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
@@ -1636,7 +1636,7 @@ def test_origin_mismatch_is_warning_on_read(repo: tuple[pathlib.Path, str], tmp_
     main_path = _origin_plan(work_dir, private_notes, source=True)
     errors, warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
     assert not errors, errors
-    assert any("正本の由来と一致しない" in warning for warning in warnings), warnings
+    assert any("WI本文の由来と一致しない" in warning for warning in warnings), warnings
 
 
 def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
@@ -1650,13 +1650,13 @@ def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tm
         private_notes=private_notes,
         reject_migration_warnings=True,
     )
-    assert any("正本の由来と一致しない" in error for error in errors), errors
+    assert any("WI本文の由来と一致しない" in error for error in errors), errors
 
 
 def _assert_creation_check_passes_silently(
     work_dir: pathlib.Path, path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開CLIの新規作成向け検査が終了コード0で、警告を出力しないことを確かめる。"""
+    """公開CLIで新規作成の基準を満たすか確かめた結果が終了コード0で、警告を出力しないことを確かめる。"""
     result = check_plan_file.main(["--reject-migration-warnings", "--work-dir", str(work_dir), str(path)])
     captured = capsys.readouterr()
     assert result == 0, captured.err
@@ -1667,9 +1667,9 @@ _AGENT_WI_ADOPTED_ROW = f"| 入力の境界を追加確認する | エージェ�
 
 
 def _agent_wi_plan(repo: pathlib.Path, private_notes: pathlib.Path, wi_sections: str | None) -> pathlib.Path:
-    """根拠が`-`の`エージェント由来のWI`採用行を持つ計画と、指定した節を持つ正本を配置する。
+    """根拠が`-`の`エージェント由来のWI`採用行を持つ計画と、指定した節を持つWIファイルを配置する。
 
-    `wi_sections`が`None`の場合は正本を置かない。
+    `wi_sections`が`None`の場合はWIファイルを置かない。
     """
     main_content = _plan_fixture.current_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_content = main_content.replace(_plan_fixture.WI_ACTION_ROW, _AGENT_WI_ADOPTED_ROW, 1)
@@ -1686,7 +1686,7 @@ def _agent_wi_plan(repo: pathlib.Path, private_notes: pathlib.Path, wi_sections:
 def test_agent_wi_adopted_action_without_reason_is_error_on_creation(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
 ) -> None:
-    """正本が`## 適用範囲`を持たないエージェント由来のWIの採用行は、新規作成でエラーに移す。"""
+    """WI本文が`## 適用範囲`を持たないエージェント由来のWIの採用行は、新規作成でエラーに移す。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _agent_wi_plan(work_dir, private_notes, "## 反映内容と反映先\n\n対象。\n")
@@ -1714,7 +1714,7 @@ def test_agent_wi_adopted_action_without_reason_is_error_on_creation(
 def test_agent_wi_adopted_action_without_reason_rejected_when_wi_scope_empty(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path, scope: str
 ) -> None:
-    """正本の`## 適用範囲`が空かコードフェンス内にしか無い場合は、参照だけで根拠を省略できるとみなさない。"""
+    """WI本文の`## 適用範囲`が空かコードフェンス内にしか無い場合は、参照だけで根拠を省略できるとみなさない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _agent_wi_plan(work_dir, private_notes, f"{scope}\n## 実現性\n\n確認済み。\n")
@@ -1733,7 +1733,7 @@ def test_agent_wi_adopted_action_without_reason_accepted_when_wi_has_scope(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """正本が非空の`## 適用範囲`を持つエージェント由来のWIの採用行は、根拠`-`のまま新規作成で受理する。"""
+    """WI本文が非空の`## 適用範囲`を持つエージェント由来のWIの採用行は、根拠`-`のまま新規作成で受理する。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
@@ -1744,7 +1744,7 @@ def test_agent_wi_adopted_action_without_reason_accepted_when_wi_has_scope(
 def test_agent_wi_adopted_action_without_reason_skips_when_wi_unresolvable(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
 ) -> None:
-    """正本を解決できない場合は照合の省略を助言に留め、新規作成を遮断しない。"""
+    """WIファイルを特定できない場合もWI本文との比較を省略した事実は助言に留め、新規作成を遮断しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _agent_wi_plan(work_dir, private_notes, None)
@@ -1755,11 +1755,11 @@ def test_agent_wi_adopted_action_without_reason_skips_when_wi_unresolvable(
         reject_migration_warnings=True,
     )
     assert not errors, errors
-    assert any("正本を解決できない" in warning for warning in warnings), warnings
+    assert any("WIファイルを特定できない" in warning for warning in warnings), warnings
 
 
 def _bug_plan_without_bug_file(repo: pathlib.Path, private_notes: pathlib.Path, *, related_wi: bool) -> pathlib.Path:
-    """`計画ファイル（バグ）`行を持たないバグ対応計画と、人間由来の正本を配置する。"""
+    """`計画ファイル（バグ）`行を持たないバグ対応計画と、人間由来のWIファイルを配置する。"""
     related = _plan_fixture.WI_FILES if related_wi else ()
     path = repo / "bug-plan.md"
     path.write_text(_plan_fixture.current_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related), encoding="utf-8")
@@ -1776,7 +1776,7 @@ def test_bug_plan_without_bug_file_reference_accepted_with_related_wi(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """関連WIの原因分析を正本とするバグ対応計画は、計画ファイル（バグ）行なしで新規作成の検査を通る。"""
+    """関連WIの原因分析に従うバグ対応計画は、計画ファイル（バグ）行なしで新規作成の基準を満たす。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
@@ -1801,7 +1801,7 @@ def test_bug_plan_without_bug_file_reference_rejected_without_related_wi(
 
 
 def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    """照合を省略した事実は助言に留め、新規作成を遮断しない。"""
+    """WI本文との比較を省略した事実は助言に留め、新規作成を遮断しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "absent"
     main_content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
@@ -1814,7 +1814,7 @@ def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], 
         reject_migration_warnings=True,
     )
     assert not errors, errors
-    assert any("由来照合を省略した" in warning for warning in warnings), warnings
+    assert any("由来をWI本文と比べられなかった" in warning for warning in warnings), warnings
 
 
 @pytest.mark.parametrize("missing_queue", [True, False], ids=["missing-queue", "missing-wi"])
@@ -1825,7 +1825,7 @@ def test_cli_origin_skip_reports_one_next_action(
     *,
     missing_queue: bool,
 ) -> None:
-    """由来を照合できない警告から原因の解消と解消不能時の報告へ進める。"""
+    """由来をWI本文と比べられなかった警告から原因の解消と解消不能時の報告へ進める。"""
     work_dir, _base = repo
     queue = work_dir / "queue"
     if not missing_queue:
@@ -1835,7 +1835,7 @@ def test_cli_origin_skip_reports_one_next_action(
     path.write_text(_plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES), encoding="utf-8")
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
     lines = capsys.readouterr().err.splitlines()
-    assert any(line.startswith("[warn]") and "由来照合を省略した" in line for line in lines)
+    assert any(line.startswith("[warn]") and "由来をWI本文と比べられなかった" in line for line in lines)
     actions = [line for line in lines if line.startswith("次の操作: ")]
     assert len(actions) == 1
     expected = "AGENT_TOOLKIT_PRIVATE_NOTES" if missing_queue else "atk wi show"
@@ -1846,7 +1846,7 @@ def test_cli_origin_skip_reports_one_next_action(
 def test_cli_origin_read_failure_reports_recovery(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """正本の取得に失敗しても省略を助言に保ち、取得エラーの解消を案内する。"""
+    """WI本文の取得に失敗しても省略を助言に保ち、取得エラーの解消を案内する。"""
     work_dir, _base = repo
     queue = work_dir / "queue"
     path = _bug_plan_without_bug_file(work_dir, queue, related_wi=True)
@@ -1862,7 +1862,7 @@ def test_cli_origin_read_failure_reports_recovery(
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
     lines = capsys.readouterr().err.splitlines()
-    assert any("正本を取得できない" in line and source.name in line for line in lines)
+    assert any("WI本文を取得できない" in line and source.name in line for line in lines)
     actions = [line for line in lines if line.startswith("次の操作: ")]
     assert len(actions) == 1
     assert "エラーの原因を解消" in actions[0]

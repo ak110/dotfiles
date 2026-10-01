@@ -17,7 +17,7 @@ from agent_toolkit._common import file_lock
 
 
 def record_directory(state_root: Path | None = None) -> Path:
-    """コンパクション計測記録の既定ディレクトリを返す。"""
+    """コンパクション計測記録の保存先を指定しない場合に使うディレクトリを返す。"""
     root = _atk_config.state_dir() if state_root is None else state_root
     return root / "agents-server" / "compaction"
 

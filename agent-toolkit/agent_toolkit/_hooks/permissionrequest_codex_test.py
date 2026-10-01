@@ -265,7 +265,7 @@ def test_rejects_untrusted_or_noncanonical_atk_command(
 
 
 def test_entrypoint_subprocess_allows_valid_cleanup_without_deleting(tmp_path: pathlib.Path) -> None:
-    """共通入口へ実stdinを渡してallow JSONと非削除を確認する。"""
+    """共通の呼び出し先へ実stdinを渡してallow JSONと非削除を確認する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[2]
     env = os.environ.copy()
     if os.name == "nt":

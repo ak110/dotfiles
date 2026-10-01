@@ -30,7 +30,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 
 class TestCodexApplyPatchEditChecks:
-    """Codexの`apply_patch`入力に対する共通編集検査。"""
+    """Codexの`apply_patch`入力に対するホスト共通の編集内容の判定。"""
 
     def test_multiple_warnings_are_merged_into_single_json(self, tmp_path: pathlib.Path) -> None:
         """同一入力の初回警告と反復警告を単一のJSONへまとめる。"""
@@ -63,7 +63,7 @@ class TestCodexApplyPatchEditChecks:
         assert result.stdout == ""
 
     def test_lockfile_path_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
-        """patchの対象パス判定は既存のパターン検査を共有する。"""
+        """patchの対象パス判定は既存のパターンとの一致判定を共有する。"""
         patch_text = _patch("*** Update File: uv.lock\n@@\n-old\n+new\n")
         result = _run(_codex_payload(patch_text, tmp_path))
 
@@ -71,7 +71,7 @@ class TestCodexApplyPatchEditChecks:
         assert "uv.lock" in _additional_context(result)
 
     def test_delete_of_unprotected_file_passes(self, tmp_path: pathlib.Path) -> None:
-        """非保護対象の削除はこの検査で誤遮断しない。"""
+        """非保護対象の削除はこの条件では誤遮断しない。"""
         target = tmp_path / "docs" / "old.md"
         target.parent.mkdir(parents=True)
         target.write_text("本文\n", encoding="utf-8")
@@ -82,7 +82,7 @@ class TestCodexApplyPatchEditChecks:
 
 
 class TestCodexBashCheckSelection:
-    """同一のBash入力に対するホスト別の検査集合。"""
+    """同一のBash入力にホスト別の判定条件を適用する。"""
 
     @staticmethod
     def _payload(command: str, cwd: pathlib.Path, session_id: str, *, codex: bool) -> dict:
@@ -97,7 +97,7 @@ class TestCodexBashCheckSelection:
         return payload
 
     def test_transcript_language_check_is_claude_only(self, tmp_path: pathlib.Path) -> None:
-        """transcript由来の言語検査はCodexで起動しない。"""
+        """Codexではtranscriptを使って応答言語を判定しない。"""
         entry = {
             "type": "assistant",
             "message": {

@@ -1,16 +1,16 @@
 """公開情報からプロンプトキャッシュTTLを判定する。
 
-TTL判定は、委譲待機用cron式と質問・ダイアログのタイムアウトが共有する正本である。
+委譲待機用cron式と質問・ダイアログのタイムアウトは、本モジュールのTTL判定を共有する。
 
 Claude Codeはプロンプトキャッシュ保持期間を、`FORCE_PROMPT_CACHING_5M`、bucket別の環境変数、
 bucket別の設定、サブエージェント定義のfrontmatterの`cacheTtl`、`ENABLE_PROMPT_CACHING_1H`、
-bucket別の既定の順に評価し、最初に一致した指定を採用する。設定と環境変数はv2.1.242以降が受理し、
+bucketごとに定められた順に評価し、最初に一致した指定を採用する。設定と環境変数はv2.1.242以降が受理し、
 値は`5m`と`1h`だけを受理する。典拠は公式資料<https://code.claude.com/docs/en/prompt-caching.md>の
 「Choose the TTL yourself」節と<https://code.claude.com/docs/en/settings-reference.md>の各設定の節
-（いずれも2026年9月2日取得）とする。再検証は同資料の該当節を再取得して順序と受理値を照合する。
+（いずれも2026年9月2日取得）とする。再検証は同資料の該当節を再取得して順序と受理値が現在の実装と一致するか確かめる。
 
 Claude Agent SDKで開始したセッションのターンは、main conversationのrequest bucketとして扱われる。
-設定読込元を空にした起動でも、subagentのbucketではなくmainのbucketの既定が適用される。
+設定読込元を空にした起動でも、subagentのbucketではなくmainのbucketで値を指定しない場合のTTLが適用される。
 典拠は同じ公式資料の「Which TTL each request gets」節（2026年9月3日取得）とし、再検証は同節のbucketの区分を読み直す。
 本モジュールは呼び出し元プロセスの環境変数と設定を読むため、別のセッションへ渡した環境変数は本モジュールの判定へ影響しない。
 
@@ -18,8 +18,8 @@ Claude Agent SDKで開始したセッションのターンは、main conversatio
 プロジェクト設定と`--settings`の指定は、判定を要求する主体の起動条件から確定できないため読まない。
 サブエージェント定義のfrontmatterも、判定時点では対象の定義が定まらないため読まない。
 
-委譲先として起動されたセッションでは、実測したMCPクライアントの300秒のツール呼び出し上限の内側へ
-収めるため、既定待機上限を240秒とする。上限には2割の余裕を取り、実行環境の版ごとの変動を吸収する。
+委譲先として起動されたセッションでは、実際に確認したMCPクライアントの300秒のツール呼び出し上限の内側へ
+収めるため、上限を指定しない場合は待機を240秒までとする。上限には2割の余裕を取り、実行環境の版ごとの変動を吸収する。
 """
 
 import json
@@ -37,14 +37,14 @@ _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 # キャッシュTTLごとの委譲先の終端を待つ上限。TTLが満了する前に呼び出し元のターンが再開するよう、上限はTTLより短く取る。
 # 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、この上限より60秒短い値とする。
 # この値はCLIの`atk agents wait`の上限にも使う。同コマンドは外側の`timeout`を付けずにBashツールの背景実行で待つため、
-# Claude CodeのBashツールの背景実行の既定上限1800秒（Claude Code 2.1.285の実装では
+# Claude CodeのBashツールの背景実行で上限を指定しない場合の1800秒（Claude Code 2.1.285の実装では
 # `max(1800000, BASH_DEFAULT_TIMEOUT_MS)`ミリ秒）も下回る必要がある。上回るとホストが先に待機を打ち切り、
-# 上限到達時の終了コード3が呼び出し元へ届かず、同じコマンドを再発行して待機を続ける経路へ入れない。
+# 上限到達時の終了コード3が呼び出し元へ届かず、同じコマンドを再発行して待機を続けられない。
 _WAIT_TIMEOUT_FOR_5M_TTL = 270.0
 _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 # Claude Codeを確認できないホスト向けの上限。Codexは1回のツール呼び出しへ300秒の上限を課し、
 # これを超える待機は`timed out awaiting tools/call after 300s`で失敗するため、この上限より短い値とする。
-# 判定を誤った場合の帰結は非対称であり、Claude Codeを誤って対象ホストと判定した場合は待機の再発行が増えるだけで、
+# 誤判定の影響は対象ホストによって異なり、Claude Codeを誤って対象ホストと判定した場合は待機の再発行が増えるだけで、
 # 逆の誤りだけがタイムアウト失敗を残す。このため`CLAUDECODE`を確認できない場合も同様のホストとして扱う。
 _WAIT_TIMEOUT_FOR_UNKNOWN_HOST = 270.0
 _WAIT_TIMEOUT_FOR_DELEGATED_SESSION = 240.0

@@ -15,7 +15,7 @@ import pytest
 from agent_toolkit._atk.serve import plans, sessions
 from agent_toolkit._atk.serve import remote as serve_remote
 
-# 配送経路のbootstrapと、それが読み込むヘルパー本体の対応。
+# 配送時に使うbootstrapと、それが読み込むヘルパー本体の対応。
 _HELPERS = (
     (plans.REMOTE_BOOTSTRAP, "atk_serve_plans_remote_helper.py"),
     (sessions.REMOTE_BOOTSTRAP, "atk_serve_sessions_remote_helper.py"),

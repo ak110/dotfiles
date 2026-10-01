@@ -19,7 +19,7 @@ def _redirect_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 
 @pytest.fixture(autouse=True)
 def _enable_autonomous_exit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既定で`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`を設定する（`TestNoop`では個別に上書きする）。"""
+    """各テストを始める際に`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`を設定する（`TestNoop`では個別に上書きする）。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
 

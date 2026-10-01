@@ -1,6 +1,6 @@
 # ruff: noqa: F401,F821,I001
 # pylint: disable=unused-import,used-before-assignment,wrong-import-order
-r"""PreToolUse統合フックのうち、編集内容とユーザー向け本文を対象とする警告検査。"""
+r"""PreToolUse統合フックのうち、編集内容とユーザー向け本文について警告するか判定する。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ _TRAILING_TOOL_BOUNDARY_RE = re.compile(r"</content>\s*</invoke>\s*\Z")
 
 
 def _is_trailing_tool_boundary_target(file_path: str) -> bool:
-    """Pythonまたは計画Markdownをツール境界タグ検査の対象とする。"""
+    """Pythonまたは計画Markdownであればツール境界タグを判定する対象に含める。"""
     suffix = pathlib.PurePath(file_path).suffix.lower()
     return suffix == ".py" or (suffix == ".md" and _is_plan_file_or_adjunct(file_path))
 

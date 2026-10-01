@@ -195,7 +195,7 @@ def test_file_birth_date_falls_back_to_mtime_when_creation_time_is_unavailable(
     assert _plan_file.file_birth_date(plan) == expected
 
 
-@pytest.mark.skipif(hasattr(os.stat_result, "st_birthtime"), reason="GNU statの後退経路を持たない環境")
+@pytest.mark.skipif(hasattr(os.stat_result, "st_birthtime"), reason="GNU statによる代替処理を使わない環境")
 def test_file_birth_date_falls_back_to_mtime_when_gnu_stat_cannot_start(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -215,7 +215,7 @@ def test_file_birth_date_falls_back_to_mtime_when_gnu_stat_cannot_start(
     assert _plan_file.file_birth_date(plan) == expected
 
 
-@pytest.mark.skipif(hasattr(os.stat_result, "st_birthtime"), reason="GNU statの後退経路を持たない環境")
+@pytest.mark.skipif(hasattr(os.stat_result, "st_birthtime"), reason="GNU statによる代替処理を使わない環境")
 @pytest.mark.parametrize("raw_creation_time", ["0\n", "-1\n"])
 def test_creation_epoch_rejects_non_positive_gnu_stat_birth_time(
     tmp_path: pathlib.Path,

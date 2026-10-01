@@ -53,7 +53,7 @@ def test_invalid_port(port: object) -> None:
 
 
 def test_assets_global_error_uses_shared_lifecycle_for_all_generators() -> None:
-    """共通エラーの消去・再表示と、各生成元の同一表示経路を検証する。"""
+    """共通エラーの消去・再表示と、各生成元が同じ処理で表示することを検証する。"""
     result = _run_node_ui(
         """
 bindEvents();
@@ -422,7 +422,7 @@ async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
 
 
 def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> None:
-    """設定の正本を`serve.toml`へ統合し、両画面の参照元を同じファイルで解決する。"""
+    """設定の読み込みを`serve.toml`に統合し、両画面の参照元を同じファイルで解決する。"""
     path = tmp_path / "serve.toml"
     path.write_text(
         'host = "toml-host"\n'

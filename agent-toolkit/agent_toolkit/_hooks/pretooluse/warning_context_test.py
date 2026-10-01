@@ -20,7 +20,7 @@ def test_format_warning_context(warnings: list[str], expected: str) -> None:
 
 
 def test_preformatted_context_is_recounted_without_nested_header() -> None:
-    """局所検査で結合済みの警告と入口の警告を総数で数え直す。"""
+    """個々の判定で結合済みの警告と集約関数の警告を総数で数え直す。"""
     first = llm_notice("first", "hook", tag="warn")
     second = llm_notice("second", "hook", tag="warn")
     third = llm_notice("third", "hook", tag="warn")

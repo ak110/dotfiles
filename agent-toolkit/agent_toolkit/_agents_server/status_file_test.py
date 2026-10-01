@@ -885,7 +885,7 @@ async def test_nested_writer_preserves_root_file_on_deactivate(tmp_path: pathlib
 async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """3つの起動入口と結果回収を状態ファイルへ反映する。"""
+    """3つの起動手段と結果回収を状態ファイルへ反映する。"""
     writer = subject.StatusFileWriter(
         {},
         subject.StatusFileIdentity("root", "root.json", None),
@@ -1066,7 +1066,7 @@ def _use_candidates(monkeypatch: pytest.MonkeyPatch, *candidates: tuple[str, str
 
 
 def _status_writer(tmp_path: pathlib.Path) -> subject.StatusFileWriter:
-    """公開manager経路用のルートwriterを返す。"""
+    """公開managerを通した操作に使うルートwriterを返す。"""
     return subject.StatusFileWriter(
         {},
         subject.StatusFileIdentity("root", "root.json", None),

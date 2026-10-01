@@ -1,6 +1,6 @@
 """パス構成要素としての `scratchpad` 判定を共有するヘルパー。
 
-`permissionrequest.py`の自動許可判定と`pretooluse.py`のgit検査除外判定が
+`permissionrequest.py`の自動許可判定と`pretooluse.py`のgitに関する判定を省略する処理が
 同じscratchpad判定を必要とするため、本モジュールへ集約する。
 """
 

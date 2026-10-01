@@ -55,12 +55,12 @@ def test_agents_server_missing_required_input_warns(
 
 
 class TestAgentNameParameterAccepted:
-    """`name`引数を伴うAgent/Task起動が委譲ゲートで拒否されないことを保証する（`name`禁止規程撤回の受理契約）。"""
+    """`name`引数を伴うAgent/Task起動が委譲の可否判定で拒否されないことを保証する（`name`禁止規程撤回の受理契約）。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("name_value", ["impl-1", "", None])
     def test_name_parameter_does_not_block(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
-        """`name`キーの値によらず、他の委譲ゲートを満たす起動はブロックされない。"""
+        """`name`キーの値によらず、委譲に必要な他の条件を満たす起動はブロックされない。"""
         sid = f"agent-name-accept-{tool_name.lower()}-{name_value!r}"
         result = _run(
             {
@@ -330,7 +330,7 @@ class TestExecuteReviewAlternateRouteAllowed:
 
     @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
     def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
-        """可用性起因の代替としてClaude経路へ切り替えた実行レビュー起動を遮断しない。"""
+        """可用性起因の代替としてClaudeによる実行へ切り替えた実行レビュー起動を遮断しない。"""
         result = _run(
             {
                 "tool_name": "Agent",
@@ -378,13 +378,13 @@ class TestExecuteReviewAlternateRouteAllowed:
         assert result.returncode == 0
 
     def test_guarded_task_references_exist(self) -> None:
-        """回帰検査が与えるタスク文書名の実在を確認し、改名による空振りを検出する。"""
+        """回帰テストが与えるタスク文書名の実在を確認し、改名による空振りを検出する。"""
         for task_name in _EXECUTE_REVIEW_TASK_NAMES:
             assert (_SHARE_DIR / task_name).is_file()
 
 
 class TestPlanFileDoesNotRequireSelfPath:
-    """計画自身のパス照合が撤去済みであることを検証する。"""
+    """計画自身のパスとの一致を判定しないことを検証する。"""
 
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
@@ -440,7 +440,7 @@ class TestPlanFileDoesNotRequireSelfPath:
         assert result.returncode == 0
 
     def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
-        """plan fileでないパスへの書き込みは検査対象外。"""
+        """plan fileでないパスへ書き込む場合は判定しない。"""
         content = _path_section_build_content("/tmp/x.md")
         result = _run(
             {
@@ -472,7 +472,7 @@ class TestPlanFileDoesNotRequireSelfPath:
         assert result.returncode == 0
 
     def test_allows_when_section_body_absent(self, tmp_path: pathlib.Path):
-        """パス節が本文に存在しない場合は本検査の対象外として通過する（他検査でブロックされ得る）。"""
+        """パス節が本文に存在しない場合はこの判定では通過する（他の条件でブロックされ得る）。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -494,7 +494,7 @@ class TestPlanFileDoesNotRequireSelfPath:
             },
             env_overrides=env,
         )
-        # 本検査は「該当節本文が空」の場合は対象外として通過する
+        # 該当節本文が空の場合は、この判定では通過する
         assert "trailing path section" not in result.stderr
 
 
@@ -532,7 +532,7 @@ class TestAgentTaskLaunchIndependence:
         assert sidechain.returncode == 0
 
     def test_claude_code_guide_without_delegation_passes(self, tmp_path: pathlib.Path) -> None:
-        """公式資料照会専用エージェントも独立した入力検査後に許可する。"""
+        """公式資料照会専用エージェントも入力が条件を満たすか独立して判定した後に許可する。"""
         result = _run(
             {
                 "session_id": "guide-without-delegation",

@@ -235,7 +235,7 @@ def set_entry_dependencies(
         cycle = _dependency_cycle(dependency_graph, path.name, canonical_dependencies)
         if cycle is not None:
             raise WebInputError(
-                f"循環する依存を指定できません: {path.name}（経路: {' → '.join(cycle)}）",
+                f"循環する依存を指定できません: {path.name}（依存先の並び: {' → '.join(cycle)}）",
                 next_action=(
                     f"`atk wi show {cycle[1]}`で依存先を確認し、循環の原因となる依存先を--depends-onの指定から外して再実行する"
                 ),
@@ -295,7 +295,7 @@ def _dependency_reaches(graph: dict[str, set[str]], start: str, target: str) -> 
 
 
 def _dependency_path(graph: dict[str, set[str]], start: str, target: str) -> tuple[str, ...] | None:
-    """startからtargetへ至る依存の経路を返す。到達できない場合は`None`を返す。"""
+    """startからtargetへ至る依存先を辿った並びを返す。到達できない場合は`None`を返す。"""
     pending: list[tuple[str, ...]] = [(start,)]
     visited: set[str] = set()
     while pending:
@@ -315,9 +315,9 @@ def _dependency_cycle(
     name: str,
     dependencies: typing.Iterable[str],
 ) -> tuple[str, ...] | None:
-    """nameから依存先を経てnameへ戻る循環の経路を返す。循環が無い場合は`None`を返す。
+    """nameから依存先を経てnameへ戻る循環を構成する依存先の並びを返す。循環が無い場合は`None`を返す。
 
-    受信側が循環の原因となる依存先を特定できるよう、拒否の理由へ経路を載せるために使う。
+    受信側が循環の原因となる依存先を特定できるよう、拒否の理由へ依存先の並びを載せるために使う。
     """
     for dependency in dependencies:
         route = _dependency_path(graph, dependency, name)

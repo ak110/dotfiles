@@ -145,7 +145,7 @@ _LOCAL_ONLY_MARKER = _atk_git_sync.LOCAL_ONLY_MARKER
 
 remote未設定であることを`git remote`の実行結果に頼らずファイル存在のみで判定するための目印。
 通常運用（既存クローン済みリポジトリ・テストの一時ディレクトリ）にはこのファイルが存在しないため、
-既存のgit呼び出し経路（`subprocess.run`のフェイク差し替え等）に影響を与えない。
+既存のgitを呼び出す処理（`subprocess.run`のフェイク差し替え等）に影響を与えない。
 """
 
 
@@ -155,7 +155,7 @@ def _has_remote(private_notes: pathlib.Path) -> bool:
     `_LOCAL_ONLY_MARKER`が存在する場合のみFalse（`_init_local_private_notes_repo`が
     生成したremote未設定のローカル管理リポジトリ）とみなし、`_pull`・`_commit_and_push`は
     この判定でremote同期・push操作をスキップする。マーカー不在時は`git remote`実行結果を問わず
-    Trueとして扱う（通常運用のリポジトリを対象とする既存の呼び出し経路を変えないため）。
+    Trueとして扱う（通常運用のリポジトリを対象とする既存の呼び出し方を変えないため）。
     """
     return _atk_git_sync.has_remote(private_notes)
 
@@ -163,7 +163,7 @@ def _has_remote(private_notes: pathlib.Path) -> bool:
 def _init_local_private_notes_repo(root: pathlib.Path) -> None:
     """ローカル管理用のgitリポジトリを`root`へ自動生成する。
 
-    `AGENT_TOOLKIT_PRIVATE_NOTES`未設定かつ既定パス`~/private-notes/`が不在の場合に、
+    `AGENT_TOOLKIT_PRIVATE_NOTES`が未設定で、未指定時に使う`~/private-notes/`も存在しない場合に、
     `root`（`platformdirs.user_data_dir("agent-toolkit")`配下）へ生成する。
     remoteは設定せず`_LOCAL_ONLY_MARKER`を配置する（`_has_remote`がFalseを返し、
     以後の`_pull`・`_commit_and_push`はremote同期・pushをスキップしてローカルコミットのみで完結する）。
@@ -199,7 +199,7 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     """WI保存ディレクトリの存在を確認し、rootパスを返す。
 
     `AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定されたパスが不在の場合はexit 1で原因を案内する。
-    未指定かつ既定パスも不在の場合は`_init_local_private_notes_repo`でローカルリポジトリを自動生成する。
+    未指定かつ省略時に使うパスも不在の場合は`_init_local_private_notes_repo`でローカルリポジトリを自動生成する。
     旧2階層レイアウトが残るリポジトリは`_migrate_legacy_layout`が平坦レイアウトへ移行する。
     """
     root = _private_notes_path(home)
@@ -208,7 +208,7 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
             _outcome.report_failure(
                 f"WI保存ディレクトリが見つからない: {root}",
                 next_action="環境変数AGENT_TOOLKIT_PRIVATE_NOTESの値を実在するディレクトリへ直すか、"
-                "未設定にして既定の場所を使ってから再実行する",
+                "未設定にして省略時の保存先を使ってから再実行する",
             )
             sys.exit(1)
         _init_local_private_notes_repo(root)
@@ -381,7 +381,7 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
 
     直近30秒の同期形跡とupstreamのHEAD祖先判定が成立した場合だけremoteのfetch・mergeを
     省略し、旧予約形式の移行は実行する。状態遷移系サブコマンドは最新状態を要するため
-    この経路を使わず、毎回`pull`を実行する。
+    この処理を使わず、毎回`pull`を実行する。
 
     `force_pull`が真の場合は再利用判定を行わず、必ず`_pull`を実行する。
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
@@ -420,7 +420,7 @@ def _repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.File
     上流差分を確認するdotfiles作業コピーも対象とする。
     `filelock.FileLock`は同一インスタンス内で再入可能（スレッドローカル＋カウンタ管理）だが、
     現行のロック区間分割設計では同一関数内のネスト`with`は発生しない。
-    CLIは既定値により取得できるまで無期限に待機する
+    CLIは待機時間を指定しなければ取得できるまで無期限に待機する
     （常駐ループはclaudeセッション実行中にロックを保持しない設計であり、
     臨界区間はgit操作前後の短時間に限るため）。
     """
@@ -430,7 +430,7 @@ def _repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.File
 def _copy_to_tempfile(content: bytes) -> pathlib.Path:
     """バイト列を`.md`拡張子の一時ファイルへ書き込み、そのパスを返す。
 
-    エディター起動をロック外で行う経路（`_cmd_edit`等）が、ロック保持下で取得した
+    エディターをロック外で起動する処理（`_cmd_edit`等）が、ロック保持下で取得した
     対象ファイルのスナップショットを一時ファイルへ複製する用途に用いる。
     """
     with tempfile.NamedTemporaryFile(mode="wb", suffix=".md", delete=False) as f:
@@ -532,7 +532,7 @@ def _stamp_result(
 def _normalize_md_filename(filename: str) -> str:
     """拡張子`.md`が省略されたファイル名を正規形（`.md`付き）へ補完して返す。
 
-    ファイル名を受け取る全経路が同一の正規化規約を使うためのSSOT。
+    ファイル名を受け取る際に、呼び出し元によらず同一の規約で正規化する。
     パス妥当性検証は行わない（呼び出し元が別途`_validate_filename`等で担う）。
     """
     if not filename.endswith(".md"):
@@ -590,10 +590,10 @@ def existing_entry_filenames(private_notes: pathlib.Path) -> set[str]:
 
 
 def is_case_sensitive(directory: pathlib.Path) -> bool:
-    """指定ディレクトリのファイルシステムがファイル名の大文字小文字を区別するかを実測する。
+    """指定ディレクトリのファイルシステムがファイル名の大文字小文字を区別するかを実際にファイルを作成して確認する。
 
     OS種別から推定すると誤る（`os.path.normcase`はPOSIX実装では恒等関数であり、
-    大文字小文字を区別しないファイルシステムを既定とする環境でも名前を畳み込まない）ため、
+    大文字小文字を区別しないファイルシステムが標準で使われる環境でも名前を畳み込まない）ため、
     一意な名前の空ファイルを指定ディレクトリ内に作成し、名前の大文字小文字を反転させたパスが
     存在するかどうかで判定する。プローブ用ファイルは判定後に必ず削除する。
     """
@@ -631,7 +631,7 @@ def missing_dependency_warnings(
     `references`は`(参照元の保存ファイル名, 依存先の原文)`の列とする。
     実在判定は`comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
     大小の綴りだけが異なる参照を不在と誤判定しない。警告文には参照の原文を用いる。
-    判定と文面を`atk wi add`の通常経路と`--batch`経路で共有し、両経路で同じ条件の参照へ同じ警告を返す。
+    判定と文面を`atk wi add`の通常の投入と`--batch`指定時で共有し、どちらの場合も同じ条件の参照へ同じ警告を返す。
     """
     key = functools.partial(comparison_key, case_sensitive=case_sensitive)
     resolvable_keys = {key(name) for name in resolvable}
@@ -861,15 +861,15 @@ def _reject_bare_repo_path_override(
 def _collect_message_via_editor(*, strip: bool = True) -> str | None:
     """$EDITORで一時ファイルを開き、保存内容を返す。
 
-    既定では保存内容をstripして返す。`strip=False`は保存内容を原文のまま返し、
-    空判定だけをstrip結果で行う（原文保持が必要な一括取り込み経路が用いる）。
+    指定が無ければ保存内容をstripして返す。`strip=False`は保存内容を原文のまま返し、
+    空判定だけをstrip結果で行う（原文保持が必要な一括取り込みで用いる）。
     $EDITOR未設定・エディター非ゼロ終了・保存内容が空のいずれもNoneを返し、
     原因をstderrへ出力する。一時ファイルは終了時に必ず削除する。
     """
     editor = os.environ.get("EDITOR")
     if not editor:
         _outcome.report_failure(
-            "$EDITORが未設定のためエディター経路を利用できない",
+            "$EDITORが未設定のためエディターで本文を入力できない",
             next_action="$EDITORを設定するか--body-fileを指定して再実行する",
         )
         return None
@@ -928,7 +928,7 @@ def pull(private_notes: pathlib.Path) -> None:
 def pull_if_stale(private_notes: pathlib.Path) -> bool:
     """定期更新が必要ならremote同期し、実行したかを返す。
 
-    定期バックグラウンド更新専用とする。ユーザーの操作に対応する経路
+    定期バックグラウンド更新専用とする。ユーザーの操作によって呼ばれる処理
     （変更操作・明示的な同期要求）は`pull`を用い、毎回リモートの最新状態を取得する。
     """
     _assert_repo_lock_held(private_notes)

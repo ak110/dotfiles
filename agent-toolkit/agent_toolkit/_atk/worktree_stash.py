@@ -15,7 +15,7 @@ _LOCK_NAME = "agent-toolkit-stash.lock"
 _STASH_IDENTIFIER_PATTERN = re.compile(r"stash@\{[0-9]+\}\Z")
 _QUEUE_REPOSITORY_ERROR = "対象はキュー管理リポジトリのため操作を拒否した"
 _QUEUE_REPOSITORY_NEXT_ACTION = (
-    "変更にはatk wi・atk plans・atk serveが提供する経路を使い、未コミットのキュー操作はatk wi commitで確定する"
+    "変更はatk wi・atk plansのコマンドかatk serveの画面から行い、未コミットのキュー操作はatk wi commitで確定する"
 )
 
 
@@ -211,7 +211,7 @@ def drop(
     cwd: pathlib.Path | None = None,
     private_notes: pathlib.Path | None = None,
 ) -> int:
-    """退避識別子を固定ロック下でOID照合して削除する。"""
+    """固定ロック下で退避識別子が指すOIDと期待値の一致を確かめてから削除する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
         _outcome.report_failure(_QUEUE_REPOSITORY_ERROR, next_action=_QUEUE_REPOSITORY_NEXT_ACTION)

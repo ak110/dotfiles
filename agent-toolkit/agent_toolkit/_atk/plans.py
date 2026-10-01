@@ -111,7 +111,7 @@ def _remove_working_residue(working_main: pathlib.Path) -> None:
     これらは計画バンドルから除外されて保存rootへ移らないため、作業バンドルの回収と
     同じ時点で取り除く。stemに前方一致する名前だけを対象とするため、計画作成の排他に
     使う作業root直下の共有ロックは削除しない。
-    `.bak`と`.tmp`は現行の書き込み経路が生成する。`.lock`はレビュー指摘管理表の
+    `.bak`と`.tmp`は現行の書き込み処理が生成する。`.lock`はレビュー指摘管理表の
     ロックを兄弟ファイルとして置いていた旧版の生成物であり、現行版は作業rootの外へ置く。
     """
     prefix = f"{working_main.stem}."
@@ -584,7 +584,7 @@ def _remove_finalized_working_bundle(
 def _working_snapshots(
     working_bundle: tuple[pathlib.Path, ...],
 ) -> dict[pathlib.Path, tuple[tuple[int, int], bytes]]:
-    """作業バンドルの回収前照合用snapshotを返す。"""
+    """回収前に作業バンドルが一致するかを確かめるためのsnapshotを返す。"""
     snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
     for source in working_bundle:
         metadata = source.stat(follow_symlinks=False)
@@ -1362,7 +1362,7 @@ def _migrate_mq_contents(
                 text = original.decode("utf-8")
             except UnicodeDecodeError:
                 continue
-            # frontmatterも本文と同じ置換経路へ通し、plan_file以外の字面を再整形しない。
+            # frontmatterも本文と同じ処理で置換し、plan_file以外の字面を再整形しない。
             serialized, _count, _hashes = _replace_tokens(text, replacements)
             updated = serialized.encode("utf-8")
             if updated != original:

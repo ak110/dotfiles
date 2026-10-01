@@ -327,13 +327,13 @@ class TestDetailedCheck:
         assert body is None
 
     def test_boundary_text_length_50(self, tmp_path: pathlib.Path):
-        """テキスト長50文字で検査が実行される。"""
+        """テキスト長50文字で日本語文字比率を判定する。"""
         path = _write_assistant_transcript(tmp_path, [_text_block("A" * 50)])
         outcome, _, _ = detailed_check(path)
         assert outcome is CheckOutcome.WARN
 
     def test_boundary_text_length_51(self, tmp_path: pathlib.Path):
-        """テキスト長51文字で検査が実行される。"""
+        """テキスト長51文字で日本語文字比率を判定する。"""
         path = _write_assistant_transcript(tmp_path, [_text_block("A" * 51)])
         outcome, _, _ = detailed_check(path)
         assert outcome is CheckOutcome.WARN

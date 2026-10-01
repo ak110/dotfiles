@@ -29,7 +29,7 @@
 8. rebaseが成功した場合は、`git range-diff <rebase前のベースOID>..<rebase前の専用branchのHEAD> <統合先branchの現在HEAD>..<rebase後の専用branchのHEAD>`を実行する。全commitが1対1で対応し、かつ内容が変化していないこと（各行の対応記号が`=`であること）を確認する。対応の欠落、追加、または内容の変化を観測した場合は手順9へ進まず、`git range-diff`の該当行を`reason:`へ書いて`needs_escalation`で返す。
 9. 計画を持つ場合は計画ファイルの`## 検証`の`変更範囲の検証`行、計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを、rebase後の専用branchのHEADで再実行し、終了コード0と警告の不在を確認する。失敗がレビュー済みHEADでは再現せず、統合先との組合せだけで生じた場合は、失敗契約の送信側、受信側、実装およびテストを列挙したうえで、専用worktreeへ是正commitを記録する。変更範囲の検証を再実行して成功と警告の不在を確認し、commitと検証の証拠を`needs_escalation`でメインへ返す。メインの差分確認と再指示後に手順10へ進む。レビュー済みHEADでも再現する失敗または認可範囲外の変更を要する失敗は、コマンド、出力および阻害条件を`reason:`へ書いて返す。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。
 10. 対象リポジトリのプロジェクト規範に、統合後にだけ成立する検証があるか確認する。なければ手順11へ進む。ある場合は管理対象一時領域を確保する。標準出力と標準エラーの保存先を、その領域内の絶対パスとして`summary_policy`へ記す。規範が定めるコマンドを、専用worktreeを`cwd`として`agents_server`の`start_shell`へ渡して1回実行する。委譲先には両方を保存して必要な範囲を読ませ、終了状態、警告の有無、両保存先と要約を返させる。返却パスが渡した領域内に実在することを確認する。保存済みの全量から終了コード0と警告の不在を検収する。この検証は他のレーンの成果と合わせた状態でだけ成立するため、rebase前の変更範囲の検証では代替できない。専用branchのHEADは統合先branchの現在HEADの子孫であり、そのtreeはfast-forward後の統合先と同じになるため、fast-forwardの前に専用worktreeで実行する。統合先を変える前に失敗を確定すると、他のレーンが失敗した状態の統合先の上へ載ることを防げる。成立しない場合は統合先branchを変更せず、専用worktreeで是正commitを作成し、変更範囲の検証を再実行してから本手順をやり直す。
-11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の既定値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず`needs_escalation`で返す。
+11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず`needs_escalation`で返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
 ## マージなしの統合
@@ -55,7 +55,7 @@
 ## 出力
 
 統合差分のエージェント向け文書の変更パスは、統合先worktreeで`atk run-script agent-doc-changes -- <手順3で取得した統合先branchの統合前HEAD> <merged_head>`を単独実行し、終了コード0で得た標準出力のJSON配列をそのまま返す。対象集合は同コマンドの判定に従う。プロジェクト側は`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、`.claude/skills/`の`SKILL.md`と`references/`、`.claude/agents/`を含む。配布物側は`agent-toolkit/rules/`、`agent-toolkit/skills/`の`SKILL.md`と`references/`、`agent-toolkit/agents/`、`agent-toolkit/share/`を含む。chezmoiの配布元である`.chezmoi-source/dot_claude/rules/`と`.chezmoi-source/dot_claude/skills/`（`.md.tmpl`を含む）も含む。通常コードと履歴文書は対象外とする。`マージなし`の統合では空配列とする。
-同じレーンの統合を再び行う場合（統合指示の再受領、競合解消後の再統合など）は、前回までに返した`agent_rule_changes`の要素と今回の出力の和集合を、重複を除いて返す。メインはこの値でレーン全体の規範変更を再取得するため、今回の統合前HEADから数えた差分だけを返すと、前回統合した規範文書が再取得から漏れる。そのため、`agent_rule_changes`を返すたびに、その値を引き継ぎ記録先へ記録する。
+同じレーンの統合を再び行う場合（統合指示の再受領、競合解消後の再統合など）は、前回までに返した`agent_rule_changes`の要素と今回の出力の和集合を、重複を除いて返す。メインはこの値でレーン全体の規範変更を再取得するため、今回の統合前HEADから数えた差分だけを返すと、前回統合した規範文書が再取得の対象から外れる。そのため、`agent_rule_changes`を返すたびに、その値を引き継ぎ記録先へ記録する。
 
 次の形式だけを返す。
 

@@ -21,10 +21,10 @@ else:
 class _LiteralScalarLoader(_SafeLoaderBase):  # pylint: disable=too-many-ancestors
     """暗黙の型推論を行わず、スカラーノードの字面をそのまま`str`として構築するローダー。
 
-    bool・int・float・null・timestampの各タグに対する既定コンストラクターを、
+    bool・int・float・null・timestampの各タグで標準的に使うコンストラクターを、
     型変換済みのPythonオブジェクトではなく`construct_scalar`が返すノード文字列
     （引用符解決後の生のYAML字面）へ差し替える。マッピング・シーケンスの構築は
-    選択した安全な基底ローダーの既定を維持するため、入れ子構造そのものは保持される。
+    選択した安全な基底ローダーの標準動作を維持するため、入れ子構造そのものは保持される。
     """
 
 
@@ -53,8 +53,8 @@ def decode_entry_text(data: bytes) -> str:
     """キュー項目のbytesをUTF-8でデコードし、改行をLFへ正規化して返す。
 
     読み取り時にテキストIOのユニバーサル改行処理を経ないため、Windowsで保存したCRLFの本文が
-    frontmatterの区切り照合と読み直した本文との一致判定を通らない。デコードの時点で正規化して両者をそろえる。
-    保存bytesをそのまま保つ追記経路では、保存する内容の組み立てへ本関数を使わない。
+    frontmatterの区切りの一致確認と読み直した本文との一致判定を通らない。デコードの時点で正規化して両者をそろえる。
+    追記で保存bytesをそのまま保つ場合は、保存する内容の組み立てへ本関数を使わない。
     """
     return normalize_newlines(data.decode("utf-8"))
 
@@ -62,8 +62,8 @@ def decode_entry_text(data: bytes) -> str:
 def write_entry_text(path: pathlib.Path, content: str) -> None:
     """キュー項目の本文をLF改行のUTF-8で保存する。
 
-    テキストモードの既定はプラットフォームの改行へ変換するため、Windowsで保存した本文がCRLFとなり、
-    bytesで読み直す経路がfrontmatterを解析できなくなる。本文をLFへ正規化したうえでテキストモードを
+    テキストモードは指定が無ければプラットフォームの改行へ変換するため、Windowsで保存した本文がCRLFとなり、
+    bytesで読み直す処理がfrontmatterを解析できなくなる。本文をLFへ正規化したうえでテキストモードを
     経ずに符号化して書き込み、保存形式を実行環境から独立させる。
     """
     path.write_bytes(normalize_newlines(content).encode("utf-8"))

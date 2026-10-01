@@ -1,7 +1,7 @@
 """`atk serve`のセッション画面の処理本体。
 
 Claude CodeとCodexの保存済み記録を共通の表示モデルへ正規化し、一覧と詳細を返す。
-保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`を正本とする。
+保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`が定める。
 リモートホスト側で実行するヘルパーは`atk_serve_sessions_remote_helper.py`とする。
 
 記録が持たない情報は0や空文字列で補わず、`None`（JSONのnull）として返す。
@@ -63,7 +63,7 @@ BACKOFF_MAX_SEC = 30.0
 # 停止段階ごとに`proc.wait()`へ与えるタイムアウト秒。
 TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
-# リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`を正本とする。
+# リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`が定める。
 REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_sessions_remote_helper.py")
 
 SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
@@ -393,7 +393,7 @@ def codex_session_id(path: pathlib.Path) -> str:
 def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
     """JSON Linesを解析し、解析できた行と解析できなかった行数を返す。
 
-    書き込み途中の行が混ざっても他の行を失わせないため、行単位で解析する。
+    書き込み途中の行が含まれていても他の行を失わせないため、行単位で解析する。
     """
     records: list[dict[str, typing.Any]] = []
     broken = 0
@@ -488,12 +488,12 @@ def _started_at(engine: str, records: list[dict[str, typing.Any]]) -> str | None
 
 
 def default_claude_home() -> pathlib.Path:
-    """Claude Codeの記録の既定の保存先を返す。"""
+    """Claude Codeの記録の保存先を指定しない場合に使うパスを返す。"""
     return pathlib.Path.home() / ".claude"
 
 
 def default_codex_home() -> pathlib.Path:
-    """Codexの記録の既定の保存先を返す。空でない`CODEX_HOME`を優先する。"""
+    """Codexの記録の保存先を指定しない場合に使うパスを返す。空でない`CODEX_HOME`を優先する。"""
     value = os.environ.get("CODEX_HOME")
     if value:
         return pathlib.Path(value)
@@ -940,7 +940,7 @@ async def _terminate_process(proc: _async_subprocess.Process, grace_timeout: flo
 async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
     """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
 
-    キャンセル経路からも段階的な終了を完了させるため`CancelledError`を吸収する。
+    キャンセルされた場合も段階的な終了を完了させるため`CancelledError`を吸収する。
     吸収した後に次の反復へ戻る呼び出し側は、`_atk_serve_remote.raise_if_cancelling`でキャンセル要求を確かめる。
     """
     if proc.returncode is not None:

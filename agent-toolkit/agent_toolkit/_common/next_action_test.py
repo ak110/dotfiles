@@ -19,7 +19,7 @@ def test_blank_next_action_is_rejected(value: str) -> None:
 
 def test_actionable_error_requires_next_action_keyword() -> None:
     with pytest.raises(TypeError):
-        # 必須引数の欠落そのものを検証するため、静的検査の指摘を抑止する。
+        # 必須引数の欠落そのものを検証するため、静的解析が返す指摘を抑止する。
         _ = next_action.ActionableError("理由")  # type: ignore[call-arg]  # ty: ignore[missing-argument]  # pylint: disable=missing-kwoa
 
 

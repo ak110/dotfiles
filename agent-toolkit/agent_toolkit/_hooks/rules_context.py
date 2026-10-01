@@ -1,6 +1,6 @@
 """実行主体ごとの規範を起動時の文脈へ追加するhandler。
 
-委譲先の判定は`_common.delegated_session`を正本とする。
+委譲先かどうかは`_common.delegated_session`が判定する。
 
 出力する自動挿入本文は`atk-auto`で囲む。常駐処理が渡したユーザー自身の入力は
 `forwarded-user-input`で囲む。受信側が区分ごとに生成主体と種別を
@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import urllib.parse
 from typing import Any
 
 from agent_toolkit._atk import managed_temp
@@ -61,7 +62,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     """SessionStartへ追加する本文を構成する。
 
     使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、この条文は本文の末尾寄りに
-    位置するため、最初の応答を生成する時点では冒頭の記述より参照から漏れやすい。同じ規定を冒頭の1文へ
+    位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を冒頭の1文へ
     置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先はこの規定の対象外のため追加しない。
 
     常駐処理が渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
@@ -130,8 +131,8 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
 def _existing_session_temp(session_id: object) -> str | None:
     """SessionStartが作成済みのセッション領域を、新たに作成せずに解決する。
 
-    サブエージェントは親と同じsession_idを受け取るため、親のセッション領域を同じ所在として通知できる。
-    SubagentStartでは領域を作成しない。親のSessionStartが作成していない場合は通知しない。
+    サブエージェントは親と同じsession_idを受け取るため、親のセッション領域を解決できる。
+    SubagentStartでは管理領域を登録しない。親のSessionStartが作成していない場合は通知しない。
     """
     if not isinstance(session_id, str) or not session_id:
         return None
@@ -143,6 +144,21 @@ def _existing_session_temp(session_id: object) -> str | None:
         return None
     path = entries[-1].get("path")
     return path if isinstance(path, str) else None
+
+
+def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
+    """担当ごとの置き場所と、親の領域でのファイルの受渡しを通知する。"""
+    if not isinstance(agent_id, str) or not agent_id:
+        return session_temp_notice(session_temp)
+    # IDを単一のパス要素に保ち、同じIDの再開でも同じ場所へ到達する。
+    child = pathlib.Path(session_temp) / f"agent-{urllib.parse.quote(agent_id, safe='')}"
+    child.mkdir(exist_ok=True)
+    return (
+        f"このサブエージェント専用の一時領域: {child}\n"
+        "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
+        f"親のセッション領域: {session_temp}\n"
+        "親の領域は、委譲元が渡したファイルの読み書きに使ってよい。"
+    )
 
 
 def compose_subagent_start(*, host: str) -> str:
@@ -191,7 +207,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         content = compose_subagent_start(host=host)
         session_temp = _existing_session_temp(payload.get("session_id"))
         if session_temp is not None:
-            content = f"{content}\n\n{_llm_notice(session_temp_notice(session_temp))}"
+            content = f"{content}\n\n{_llm_notice(_subagent_temp_notice(session_temp, payload.get('agent_id')))}"
     else:
         raise ValueError("hook_event_nameはSessionStartまたはSubagentStartである必要がある")
 

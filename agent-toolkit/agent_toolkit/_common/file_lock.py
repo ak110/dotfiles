@@ -127,7 +127,7 @@ def acquire_lock(fh: IO, *, blocking: bool = True) -> None:
     """ファイルハンドル`fh`へ排他ロックを取得する。
 
     POSIXは`fcntl.flock`、Windowsは`msvcrt.locking`を使う。
-    `blocking=True`（既定）は取得できるまで待機する。
+    `blocking`を省略するか`True`にすると、ロックを取得できるまで待機する。
     Windowsでは待機に上限があり、上限を超えた場合はロック対象と経過時間を持つ`OSError`を送出する。
     `blocking=False`時は即時取得できない場合に`OSError`を送出する。
     いずれの`OSError`も送出時点でロックを取得していないため、呼び出し側は`release_lock`を呼ばない。

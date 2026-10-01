@@ -103,7 +103,7 @@ def resolve_owner_session_id() -> str | None:
     委譲先には委譲元が`AGENT_TOOLKIT_OWNER_SESSION`で自身の識別子を渡す。
     この値が無い場合は、実行中のセッション自身を示す`CLAUDE_CODE_SESSION_ID`を用いる。
     Codex CLIが直接起動するMCPサーバーにはいずれの識別子も渡らないため、
-    この経路で作成した計画バンドルは所有記録を持たない。
+    この処理で作成した計画バンドルは所有記録を持たない。
     いずれも非空の値を持たない場合は解決しない。
     """
     for key in _OWNER_SESSION_ENVIRONMENT_KEYS:
@@ -419,7 +419,7 @@ def resolve_plan_file(
 
     portable値はprivate-notes内へ限定する。保存先が存在せず、同じファイル名の
     直下作業ファイルまたは同じ日付相対パスの作業ファイルが存在する場合は作業実体を返す。過去の絶対パスは
-    既存データを読むための互換経路として受理する。
+    既存データを読むために互換形式として受理する。
     """
     raw = os.fspath(value)
     if not raw:
@@ -488,7 +488,7 @@ def require_saved_plan_file(
 ) -> pathlib.Path:
     """記録するplan_file値を、その値が指す保存先の実体へ解決する。
 
-    記録値の消費主体は計画作業rootへのフォールバックを持たないため、記録経路と着手可否判定は
+    記録値の消費主体は計画作業rootへのフォールバックを持たないため、値を記録する処理と着手可否判定は
     記録値をそのまま解決した実体だけを受理する。
     """
     path = resolve_plan_file(
@@ -695,7 +695,7 @@ def is_plan_handoff_file(file_path: str) -> bool:
     """計画root配下の引き継ぎ記録か判定する。
 
     引き継ぎ記録は計画本体ではないため、`agent-toolkit:plan-mode`の未起動を警告する判定の対象から外す。
-    起草中の素材を含むため、口語検査の対象からは外さない。
+    起草中の素材を含むため、口語表現があるか確かめる対象からは外さない。
     """
     name = _plan_file_name(file_path)
     if name is not None:

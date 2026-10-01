@@ -831,7 +831,7 @@ class TestRmSingle:
         assert exc_info.value.code == 2
         assert (processing_dir / "fb-001.md").exists()
         captured = capsys.readouterr()
-        assert "processing状態のファイルは既定で削除を保護する" in captured.err
+        assert "processing状態のファイルは、--forceを指定しない限り削除できない" in captured.err
         assert "fb-001.md" in captured.err
 
     def test_missing_file_reports_all_user_removable_states(
@@ -856,7 +856,7 @@ def test_common_edit_and_append_accept_user_comment_change_in_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """ブラウザー経路が使う共有中核はエージェント環境でもコメント変更を保存する。"""
+    """ブラウザーから呼ぶ共有の実装はエージェント環境でもコメント変更を保存する。"""
     notes = _setup_notes(tmp_path)
     edit_path = _write_awi_file(notes, "edit.md", body="本文\n\n## ユーザーコメント\n\n変更前")
     append_path = _write_awi_file(notes, "append.md", body="本文")

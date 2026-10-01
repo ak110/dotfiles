@@ -11,7 +11,7 @@ PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し
 第2に、同コマンドの終了後はPostToolUseが`pending_observation`を解消する。
 第3に、`kill`は結果を意図的に破棄するため同じ状態を解消する。
 第4に、直前の応答が`待機中: <session識別子>`の形でそのsessionを待機対象として指す場合は、
-自動再開がそのsessionの結果を受け取る経路が成立しているため解消する。
+自動再開がそのsessionの結果を受け取る仕組みが成立しているため解消する。
 本フックはそのsessionの記録を解消済みとして保存し、自動再開で結果を受け取った後のturnの終了でも警告しない。
 この4項は、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が正しい終端として許容する形を被覆する契約を持つ。
 この規範が許容する終端の形を変える改訂では、同じ変更単位で本列挙と`evaluate`の除外条件を追随させる。
@@ -56,7 +56,7 @@ _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 _WAITING_DECLARATION_PATTERN = re.compile(r"^待機中:(?P<targets>.*)$", re.MULTILINE)
 
 # session識別子に現れない文字。待機対象の記述を識別子の語へ区切る。
-# 前方一致での照合は別のsessionを指す待機表明でそのsessionの警告まで抑止するため用いない。
+# 前方一致による判定は別のsessionを指す待機表明でそのsessionの警告まで抑止するため用いない。
 _TARGET_SEPARATOR_PATTERN = re.compile(r"[^0-9A-Za-z_-]+")
 
 
@@ -150,7 +150,7 @@ def _declared_waiting_target_ids(last_assistant_message: object) -> set[str]:
 def _resolve_declared_sessions(session_id: str, owner_agent_id: str, declared: set[str]) -> None:
     """待機表明が指すsessionの観測待ちを解消済みとして保存する。
 
-    表明の時点で自動再開が結果を受け取る経路が成立するため、以降のturnの終了では同じsessionを警告しない。
+    表明の時点で自動再開が結果を受け取る仕組みが成立するため、以降のturnの終了では同じsessionを警告しない。
     `send_message`が新しい作業を配送した場合はPostToolUseが観測待ちへ戻す。
     """
 

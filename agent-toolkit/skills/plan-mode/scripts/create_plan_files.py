@@ -32,7 +32,7 @@ except ImportError as _import_error:
     _SELF = pathlib.Path(__file__).resolve()
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
         "次の操作: `atk run-script plan-create -- <引数>`で起動する",
         file=sys.stderr,
     )
@@ -201,7 +201,7 @@ def _check_plan_references(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """計画本文の参照値を安全な共通resolverで検査する。
+    """共通resolverで計画本文の参照値を安全に解決できるか確かめる。
 
     付属ファイル参照は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
     既存の可搬参照は従来どおりprivate-notes基準で解決する。
@@ -241,7 +241,7 @@ def _check_structure(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """確定した計画ファイル群を構造検査へ渡す。"""
+    """確定した計画ファイル群を構造が基準を満たすか判定する関数へ渡す。"""
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     errors, _warnings = check_plan_file.check(
@@ -254,9 +254,9 @@ def _check_structure(
     )
     if errors:
         raise PlanCreationError(
-            "計画構造検査に失敗しました: "
+            "計画の構造が基準を満たしていません: "
             + " / ".join(errors)
-            + " / 判定条件の正本: agent-toolkit/skills/plan-mode/references/plan-file-standards.md",
+            + " / 判定条件を定める文書: agent-toolkit/skills/plan-mode/references/plan-file-standards.md",
             next_action="列挙した各違反を計画本文の入力ファイルで直し、同じ引数で再実行する",
         )
 
@@ -273,8 +273,8 @@ def _finalize_candidate(
 ) -> tuple[pathlib.Path, ...]:
     """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。
 
-    確定と検査に成功した後、この計画バンドルを所有するセッションと、
-    連続直接編集検査が読むセッション状態を記録する。
+    確定した計画が基準を満たすと確認した後、この計画バンドルを所有するセッションと、
+    連続する直接編集を判定する処理が読むセッション状態を記録する。
     所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
     """
     main_path = directory / f"{stem}.md"
@@ -316,10 +316,10 @@ def _finalize_candidate(
 
 
 def _check_bug_input(metadata: _plan_format.PlanMetadata, *, has_bug_input: bool) -> None:
-    """バグ対応計画の`計画ファイル（バグ）`行と入力の有無の整合を検査する。
+    """バグ対応計画の`計画ファイル（バグ）`行と入力の有無が一致するか確かめる。
 
-    関連WIの`## 原因分析`を正本とする計画は計画ファイル（バグ）を持たない。
-    関連WIが無い計画は原因分析の正本が他に無いため、同行と入力を必須とする。
+    関連WIの`## 原因分析`を参照する計画は計画ファイル（バグ）を持たない。
+    関連WIが無い計画は原因分析を参照するWIが他に無いため、同行と入力を必須とする。
     """
     has_bug_field = _plan_format.PLAN_METADATA_BUG_FIELD in metadata.values
     if has_bug_field and not has_bug_input:
@@ -352,7 +352,7 @@ def create_plan_files(
     """入力本文を計画作業rootへ作成し、確定済みパスを返す。
 
     ``main_source``および任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
-    private-notesは既存の可搬参照の検査にだけ使い、計画本文は作業rootへ保存する。
+    private-notesは既存の可搬参照の妥当性を判定するときだけ使い、計画本文は作業rootへ保存する。
     """
     if max_attempts <= 0:
         raise ValueError("max_attemptsは1以上にしてください")
@@ -420,7 +420,7 @@ def create_plan_files(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """内部作成処理のCLI入口。"""
+    """CLIから内部の作成処理を開始する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     source_group = parser.add_mutually_exclusive_group(required=True)
     source_group.add_argument("--main-source", dest="main_source", type=pathlib.Path)

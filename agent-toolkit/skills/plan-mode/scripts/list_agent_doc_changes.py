@@ -18,7 +18,7 @@ try:
 except ImportError as _import_error:
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない経路のため共通の出力関数を使えず、同じ標識を直接書く。
+        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
         "次の操作: `atk run-script agent-doc-changes -- <引数>`で起動する",
         file=sys.stderr,
     )
@@ -52,7 +52,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     parser.add_argument(
-        "--repo", type=pathlib.Path, default=pathlib.Path.cwd(), help="対象リポジトリのパス（既定: 現在のディレクトリ）"
+        "--repo",
+        type=pathlib.Path,
+        default=pathlib.Path.cwd(),
+        help="対象リポジトリのパス（省略すると現在のディレクトリを使う）",
     )
     parser.add_argument("base", help="比較の基準とするrevision")
     parser.add_argument("target", help="比較の対象とするrevision")

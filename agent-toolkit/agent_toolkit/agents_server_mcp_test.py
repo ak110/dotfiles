@@ -43,25 +43,25 @@ async def _skipped_plugin_preflight(_cwd: str) -> None:
 
 @pytest.fixture(autouse=True)
 def _skip_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動と再開の事前確認を既定で省き、実コマンドの所要時間とスレッド切替を各テストの時間制約へ持ち込まない。
+    """起動と再開の事前確認を通常は省き、実コマンドの所要時間とスレッド切替を各テストの時間制約へ持ち込まない。
 
-    事前確認そのものを検査するテストは`_use_real_plugin_preflight`で実装へ戻す。
+    事前確認そのものを確かめるテストは`_use_real_plugin_preflight`で実装へ戻す。
     """
     monkeypatch.setattr(subject, "_check_plugin_commands", _skipped_plugin_preflight)
 
 
 async def _forbidden_backend_process(*args: Any, **_kwargs: Any) -> Any:
-    """実backendの子プロセス起動を拒否し、差し替え漏れを実行環境によらず失敗として表す。"""
+    """実backendの子プロセス起動を拒否し、差し替えていない呼び出しを実行環境によらず失敗させる。"""
     raise AssertionError(f"テストが実backendの子プロセスを起動しようとしました: {args}")
 
 
 @pytest.fixture(autouse=True)
 def _forbid_backend_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Codex・Antigravityの実backendが子プロセスを起動する経路を既定で塞ぐ。
+    """Codex・Antigravityの実backendが子プロセスを起動する処理を通常は拒否する。
 
     backendを差し替えたengineが候補のengineと一致しないと、実backendが`codex app-server`などを起動する。
     CLIを導入した開発機ではそれが成功して欠陥が隠れ、導入していないCIだけが失敗するため、
-    起動そのものを失敗させて両環境の結果をそろえる。起動引数を検査するテストはテスト内で改めて差し替える。
+    起動そのものを失敗させて両環境の結果をそろえる。起動引数を確かめるテストはテスト内で改めて差し替える。
     """
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _forbidden_backend_process)
 
@@ -138,7 +138,7 @@ class FakeBackend:
         self.prompts: list[str] = []
 
     async def list_models(self) -> list[dict[str, Any]]:
-        """既定の系列候補を起動せずに解決できる一覧を返す。"""
+        """系列の候補を指定しない場合も、起動せずに解決できる一覧を返す。"""
         return [
             {
                 "model": model,
@@ -477,9 +477,9 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
 
 
 def test_start_operations_match_registered_start_tools() -> None:
-    """子sessionを生成する登録ツールの集合が、判定箇所の参照する起動ツールの正本と一致する。
+    """子sessionを生成する登録ツールの集合が、判定箇所が参照する起動ツールの定義と一致する。
 
-    起動ツールを追加して正本を更新しない変更では、証拠抽出器やフックがその委譲を認識しない。
+    起動ツールを追加して定義を更新しない変更では、証拠抽出器やフックがその委譲を認識しない。
     未分類のツールを登録した変更も、子sessionを生成するかの分類を求めるため失敗させる。
     """
     non_start_operations = {"send_message", "kill", "list", "show", "stop"}
@@ -488,7 +488,7 @@ def test_start_operations_match_registered_start_tools() -> None:
 
 
 def test_start_tools_describe_cwd_condition() -> None:
-    """全ての起動ツールのスキーマが、起動処理の検査する`cwd`の条件（既存ディレクトリの絶対パス）を示す。
+    """全ての起動ツールのスキーマが、起動処理が確認する`cwd`の条件（既存ディレクトリの絶対パス）を示す。
 
     起動ツールを追加して`cwd`の説明を付け忘れた変更も失敗させる。
     `start_shell`はシェルの作業ディレクトリとして独自の説明を持ち、他の起動ツールは説明を共有する。
@@ -627,7 +627,7 @@ async def test_session_label_prefers_argument_over_generated_value(
 async def test_start_resolves_codex_family_from_existing_backend_catalog(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """委譲起動へ系列名を渡さず、既存App Server経路の完全IDを使う。"""
+    """委譲起動へ系列名を渡さず、既存のApp Serverが解決した完全IDを使う。"""
     monkeypatch.setattr(
         subject._atk_config,
         "parse_unresolved_model_candidates",
@@ -740,7 +740,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
 async def test_list_sessions_omits_terminated_sessions_without_pending_result(
     tmp_path: pathlib.Path,
 ) -> None:
-    """既定では未回収結果を持たない終端sessionだけを除く。"""
+    """表示範囲を指定しない場合は未回収結果を持たない終端sessionだけを除く。"""
     manager = subject.AgentsServerManager(status_writer=None)
     active = subject.SessionState("active", str(tmp_path))
     manager.sessions[active.session_id] = active
@@ -802,7 +802,7 @@ def test_delegation_result_scope_is_available_before_calling() -> None:
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
-    """公開schemaの待機系操作が既定timeoutの決まり方と省略契約を示す。"""
+    """公開schemaの待機系操作がtimeoutを省略した場合の値の決まり方を示す。"""
     assert subject.DEFAULT_KILL_TIMEOUT == 270.0
     assert subject.DEFAULT_SEND_MESSAGE_TIMEOUT == 270.0
     assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
@@ -814,22 +814,22 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
     assert (
-        "継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。"
+        "継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
         "委譲先の応答生成の完了は待たない。0以下は受理しない。"
     ) in send_timeout["description"]
-    assert "通常の既定は270秒" in send_tool.description
-    assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in send_tool.description
+    assert "引数を省略すると270秒を待機上限とする" in send_tool.description
+    assert "固有のtimeout要件がなければ引数を省略する" in send_tool.description
     assert "待つのは継続要求の配送結果が確定するまで" in send_tool.description
     assert "委譲先の応答生成の完了ではない" in send_tool.description
     assert "上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する" in send_tool.description
     kill_timeout = kill_tool.parameters["properties"]["timeout"]
     assert kill_timeout["default"] == 270.0
     assert (
-        "中断要求後に終端を待つ上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。"
+        "中断要求後に終端を待つ上限秒数。固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
         "0は中断要求配送後の現状態を返す。"
     ) in kill_timeout["description"]
-    assert "通常の既定は270秒" in kill_tool.description
-    assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in kill_tool.description
+    assert "引数を省略すると270秒を待機上限とする" in kill_tool.description
+    assert "固有のtimeout要件がなければ引数を省略する" in kill_tool.description
     assert "`timeout=0`は中断要求配送後の現状態を返す" in kill_tool.description
 
 
@@ -922,7 +922,7 @@ def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> p
 async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """宣言外の入力名を渡した`start`は委譲先を起動せず、宣言外の項目名と受理する項目名の一覧を返す。
 
-    受理すると、タスク文書が定める手順を呼び出し元が起動文へ書き足す経路が残る。
+    受理すると、タスク文書が定める手順を呼び出し元が起動文へ書き足して起動できてしまう。
     """
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
@@ -1222,7 +1222,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
     ],
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
-    """実運用で観測した最小起動文が必須入力検査を通過する。"""
+    """実運用で観測した最小起動文が必須入力の確認処理を通過する。"""
     task_document = subject._SHARE_DIRECTORY / task_name
     extra_params = _observed_input_params(task_name, tmp_path)
 
@@ -1345,7 +1345,7 @@ async def test_start_warns_and_continues_without_required_input_marker(
         response = await subject.start(str(task_document), {}, str(tmp_path))
 
     assert response == {"session_id": "session", "status": "running"}
-    assert "必須入力検査を実施できません" in caplog.text
+    assert "必須入力を確認できません" in caplog.text
 
 
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
@@ -1931,7 +1931,7 @@ async def test_exclusion_record_is_read_by_a_newly_created_manager(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """除外の記録は状態ディレクトリを正本とし、別のmanagerの起動でも先頭候補を試さない。"""
+    """除外した候補は状態ディレクトリの記録から解決し、別のmanagerの起動でも先頭候補を試さない。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
     monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
     failing = subject.AgentsServerManager()
@@ -2364,7 +2364,7 @@ async def test_start_explore_selects_default_low_tier_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """探索起動は既定のlow_tier設定を選ぶ。"""
+    """探索起動でモデルを指定しない場合はlow_tier設定を選ぶ。"""
     monkeypatch.setattr(
         subject._atk_config,
         "parse_unresolved_model_candidates",
@@ -2749,7 +2749,7 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
 
 @pytest.mark.asyncio
 async def test_claude_api_error_is_visible_in_show_and_list(tmp_path: pathlib.Path) -> None:
-    """ClaudeのAPI失敗を両公開経路へ示し、再試行と回復を区別できる。"""
+    """ClaudeのAPI失敗を両方の公開手段で示し、再試行と回復を区別できる。"""
     manager, _ = _manager_with_fake("claude")
     session = subject.SessionState("claude-session", str(tmp_path), engine="claude")
     session.updated_at = "2000-01-01T00:00:00+00:00"
@@ -2788,8 +2788,8 @@ async def test_four_observation_paths_share_the_same_activity_projection(
 ) -> None:
     """`show`・`list`・待機CLI・`atk agents list`が、同じ入力へ同じ経過秒数を返す。
 
-    いずれかの経路が共通の射影から外れて独自の判定入力へ戻る退行を検出する。
-    停滞の判定は呼び出し元が経過秒数と閾値の比較で行うため、4経路の返す経過秒数が同じ判定を与えることを確認する。
+    いずれかの呼び出し手段が共通の射影から外れて独自の判定入力へ戻る退行を検出する。
+    停滞の判定は呼び出し元が経過秒数と閾値の比較で行うため、4つの呼び出し手段が返す経過秒数で同じ判定が得られることを確認する。
     """
     started_at = "2000-01-01T00:00:00+00:00"
     output_updated_at = "2000-01-01T00:00:00+00:00"
@@ -3119,7 +3119,7 @@ async def test_send_message_rejects_non_positive_timeout(timeout: float, tmp_pat
 
 @pytest.mark.asyncio
 async def test_kill_rejects_negative_timeout_with_default_hint(tmp_path: pathlib.Path) -> None:
-    """killの負のtimeoutは、引数を省略すれば既定値を使えることを次の操作で示す。"""
+    """killの負のtimeoutは、引数を省略すれば待機上限を270秒とすることを次の操作で示す。"""
     manager, backend = _manager_with_fake("codex")
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     manager.sessions[session.session_id] = session
@@ -4944,7 +4944,7 @@ async def test_claude_resume_owns_saved_session(
 
 
 def test_claude_dependency_check_builds_options_without_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存検査は現在の作業ディレクトリでoptionsだけを構築する。"""
+    """依存の確認処理は現在の作業ディレクトリでoptionsだけを構築する。"""
     calls: list[tuple[str, str | None, str | None]] = []
 
     def fake_build_options(cwd: str, model: str | None, effort: str | None) -> object:
@@ -4975,7 +4975,7 @@ def test_main_strips_launcher_venv_from_child_environment(monkeypatch: pytest.Mo
 
 
 def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存検査指定時はMCP stdioを起動しない。"""
+    """依存の確認を指定した場合はMCP stdioを起動しない。"""
     calls: list[bool] = []
     monkeypatch.setattr(claude_backend, "check_dependencies", lambda: calls.append(True))
     monkeypatch.setattr(subject.mcp, "run", lambda **_kwargs: pytest.fail("MCPを起動してはいけない"))
@@ -4985,7 +4985,7 @@ def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch
 
 
 def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存検査の例外を握り潰さず呼び出し元へ伝える。"""
+    """依存の確認処理で発生した例外を捕捉せず呼び出し元へ伝える。"""
 
     def fail_check() -> None:
         raise ImportError("claude-agent-sdk is unavailable")
@@ -4996,7 +4996,7 @@ def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch
 
 
 def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """依存検査を含む起動初期の診断を状態ディレクトリへ永続化する。"""
+    """依存の確認を含む起動初期の診断を状態ディレクトリへ永続化する。"""
     monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
     monkeypatch.setattr(claude_backend, "check_dependencies", lambda: None)
 
@@ -5856,7 +5856,7 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動、継続および自動再開の全経路が、backendへ渡す本文を出所標識で囲む。"""
+    """起動、継続および自動再開の全ての処理が、backendへ渡す本文を出所標識で囲む。"""
     monkeypatch.setattr(
         subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [(engine, "model", "high")]
     )
@@ -6076,7 +6076,7 @@ async def test_take_result_rejects_collection_by_another_writer(tmp_path: pathli
 
 @pytest.mark.asyncio
 async def test_mcp_wait_collects_shared_result_exactly_once(tmp_path: pathlib.Path) -> None:
-    """MCP待機は共有結果ファイルを1回だけ回収し、同じ結果を後続の回収経路へ残さない。"""
+    """MCP待機は共有結果ファイルを1回だけ回収し、同じ結果を後続の回収処理へ残さない。"""
     manager, writer = _writer_backed_manager(tmp_path)
     session = subject.SessionState("terminal", str(tmp_path), engine="codex")
     _complete(session, message="一度だけの本文")
@@ -6838,7 +6838,7 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """別配置の正規plugin root配下でも必須入力を検査する。"""
+    """別配置の正規plugin root配下でも必須入力を確かめる。"""
     task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
     manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -6945,7 +6945,7 @@ async def test_start_rejects_task_document_that_cannot_be_read(
 
 
 def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_path: pathlib.Path) -> None:
-    """manifestを持たないshare配下の文書は検査対象外とする。"""
+    """manifestを持たないshare配下の文書は入力を確認する対象から除く。"""
     task_document = tmp_path / "share" / "task.subagent.md"
     task_document.parent.mkdir()
     task_document.write_text("## 入力\n", encoding="utf-8")
@@ -6956,7 +6956,7 @@ def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_pat
 
 
 def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_path: pathlib.Path) -> None:
-    """別名pluginのshare配下の文書は検査対象外とする。"""
+    """別名pluginのshare配下の文書は入力を確認する対象から除く。"""
     task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
     manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -6997,7 +6997,7 @@ def test_validate_model_effort_rejects_incomplete_values(model: str | None, effo
 def test_initialization_failure_resolves_before_host_moves_call_to_background() -> None:
     """初期化の失敗がホストの背景移行閾値より前に確定する。
 
-    この関係が崩れると、呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
+    この関係が成立しなくなると、呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
     上限値を0などへ置換せずに、現行の定数どうしの関係だけを判定する。
     """
     failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
@@ -7092,7 +7092,7 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
 
 
 def test_label_legend_in_instructions() -> None:
-    """共通引数の説明をサーバーの`instructions`へ1か所にまとめ、各ツールの説明は固有の既定値と参照だけにする。"""
+    """共通引数の説明をサーバーの`instructions`へ1か所にまとめ、各ツールの説明は固有の省略時の値と参照だけにする。"""
     instructions = subject.mcp.instructions or ""
     for fragment in (
         "共通引数`model_type`",
@@ -7178,7 +7178,7 @@ async def test_start_rejects_removed_wi_draft_review(tmp_path: pathlib.Path) -> 
 def test_preflight_covers_plugin_launch_commands() -> None:
     """事前確認は、プラグインのMCP設定とhookが委譲先で起動するコマンドの先頭語を全て含む。
 
-    起動コマンドを追加した変更で事前確認が漏れると、未trustの設定などで起動が失敗する状態を
+    起動コマンドを追加した変更で事前確認を追加しないと、未trustの設定などで起動が失敗する状態を
     子の起動前に検出できず、ホスト共通の接続失敗記録を生じさせる。
     """
     plugin_root = pathlib.Path(subject.__file__).resolve().parent.parent
@@ -7306,7 +7306,7 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
 
 
 def test_model_type_descriptions_reference_instructions() -> None:
-    """model_typeの書式と用途は`instructions`だけが持ち、各ツールの説明は既定値と参照だけにする。"""
+    """model_typeの書式と用途は`instructions`だけが持ち、各ツールの説明は省略時の値と参照だけにする。"""
     for tool_name in ("start", "start_custom", "start_explore", "start_shell", "start_write"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None

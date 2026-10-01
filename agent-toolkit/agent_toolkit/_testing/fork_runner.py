@@ -93,7 +93,7 @@ def _run_via_server(
                 "stdout_path": str(stdout_path),
                 "stderr_path": str(stderr_path),
                 # env・cwd未指定時も現在の環境・作業ディレクトリを必ず格納する
-                # （fork子がサーバー起動時の環境を継承するとsubprocess.runとの等価性が崩れるため）
+                # （fork子がサーバー起動時の環境を継承するとsubprocess.runと同じ環境ではなくなるため）
                 "env": env if env is not None else os.environ.copy(),
                 "cwd": str(cwd) if cwd is not None else os.getcwd(),
                 "timeout": timeout,

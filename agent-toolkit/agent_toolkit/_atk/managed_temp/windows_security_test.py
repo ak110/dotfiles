@@ -77,7 +77,7 @@ class TestManagedTempPosix:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """POSIXの既定rootはユーザーキャッシュ配下へ0700で作成する。"""
+        """POSIXでrootを指定しない場合は、ユーザーキャッシュ配下へ0700で作成する。"""
 
         target = subject.create_managed_temp("default-sticky-root")
 
@@ -447,7 +447,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
         agent_environment: bool,
     ) -> None:
-        """領域内の全更新が期限を超えた真正な領域だけを既存経路で削除する。"""
+        """領域内の全更新が期限を超えた真正な領域だけを既存の削除処理で回収する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         if agent_environment:
             monkeypatch.setenv("AI_AGENT", "1")
@@ -1069,7 +1069,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """管理CLIが作成していない領域の自己整合マーカーを既定では信頼しない。"""
+        """管理CLIが作成していない領域の自己整合マーカーは、利用者の指定が無ければ信頼しない。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = tmp_path / "handmade"
         target.mkdir(mode=0o700)
@@ -1205,7 +1205,7 @@ class TestManagedTempPosix:
         scenario: str,
         expected: subject._QuarantineState,
     ) -> None:
-        """隔離途中状態の入力を対象不在・一致・不一致・検査不能へ分類する。"""
+        """隔離途中状態の入力を対象不在・一致・不一致・確認不能のいずれかへ分類する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"classify-{scenario}")
         if scenario == "target-exists":
@@ -1241,7 +1241,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
         failure_point: str,
     ) -> None:
-        """隔離状態を検査できない場合は管理情報と隔離先を保持して再試行できる。"""
+        """隔離した対象の状態を確認できない場合は管理情報と隔離先を保持して再試行できる。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"unverifiable-{failure_point}")
         (target / "content.txt").write_text("keep", encoding="utf-8")
@@ -1346,7 +1346,7 @@ class TestManagedTempPosix:
         assert str(captured.value) == f"prefixが条件を満たしていません（{violation}）: {prefix}"
 
     def test_list_rejects_invalid_prefix_with_condition_and_value(self) -> None:
-        """listもcreateと同じ正本から違反条件と拒否値を案内する。"""
+        """listもcreateと同じ定義を使い、違反条件と拒否値を案内する。"""
         with pytest.raises(subject.ManagedTempError) as captured:
             subject.list_managed_temp("under_score")
         assert str(captured.value) == "prefixが条件を満たしていません（英小文字・数字・ハイフンだけを\u4f7fえる）: under_score"

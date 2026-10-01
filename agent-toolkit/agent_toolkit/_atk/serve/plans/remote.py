@@ -191,12 +191,12 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     シェルにより1単位として解釈すべき要素はあらかじめダブルクォートで囲んで返す。
 
     リモート起動コマンドはPOSIXシェル非依存とする。
-    Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`やheredoc展開が利用できないため、
+    Windows OpenSSHが指定を省いた場合に使う`cmd.exe`では`bash -c`やheredoc展開が利用できないため、
     シェル組み込みコマンドへ依存しないこと。
     リモート側に`$HOME/dotfiles`が存在することを前提とし、そのディレクトリからヘルパースクリプトを読み込む。
     クオートはPOSIXシェル/cmd.exe共通のダブルクォートのみを使い、
     `$`・`%`・`<`・`>`・`|`・`&`・`^`はコマンド本体に含めない。
-    bootstrapコード本体が満たす制約は`_atk_serve_remote.remote_bootstrap`を正本とする。
+    bootstrapコード本体が満たす制約は`_atk_serve_remote.remote_bootstrap`が定める。
     """
     return [
         "uv",
@@ -222,7 +222,7 @@ _stderr_excerpt = _atk_serve_remote.stderr_excerpt
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
 
-    fallback経路（常駐watch経由RPCが利用できない場合）でのみ使う。
+    常駐watch経由RPCが利用できない場合の代替処理だけで使う。
     非0終了は`RemoteHelperError`として送出し、呼び出し元がキャンセルされた場合は子プロセスを終了させる。
     """
     cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
@@ -294,7 +294,7 @@ class _PendingSearch:
 
 
 class RemoteSearchCoordinator:
-    """SSHフォールバック経路の検索をホスト単位で直列化し、全ホスト合計でも有界化する。
+    """SSHによる代替の検索をホスト単位で直列化し、全ホスト合計でも有界化する。
 
     検索は利用者の入力ごとに発行されるため、素朴に実行するとSSHとリモートPythonの組が
     入力継続中に積み上がる。ホストごとに実行中1件・待機中1件へ制限し、
@@ -361,7 +361,7 @@ async def search_remote_files(
 ) -> RemoteSearchResult:
     """リモートホストで本文検索を実行し、一致した相対パス集合を返す。
 
-    `coordinator`を渡した場合、SSHフォールバック経路だけが直列化と全体上限の対象になる。
+    `coordinator`を渡した場合、SSHによる代替の検索だけが直列化と全体上限の対象になる。
     常駐SSH接続経由のRPCはプロセスを起動しないため対象外とする。
     """
     query_b64 = base64.b64encode(query.encode("utf-8")).decode("ascii")
@@ -563,7 +563,7 @@ class RemoteWatcher:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             # ヘルパーは初回snapshotで全エントリーを1行JSONとして出力するため、
-            # asyncio既定の64KiB上限を超えると`readline()`が例外を送出する。
+            # asyncioが標準で使う64KiB上限を超えると`readline()`が例外を送出する。
             limit=REMOTE_STREAM_LIMIT_BYTES,
         )
         # helper起動失敗（依存解決失敗など）はstdoutが空EOFとなり原因ログが残らないため、
@@ -573,7 +573,7 @@ class RemoteWatcher:
         return proc
 
     async def _cancel_stderr_task(self) -> None:
-        """stderr読取タスクを終了させる。切断・キャンセルのfinally経路から呼ぶ。"""
+        """stderr読取タスクを終了させる。切断・キャンセル時にfinallyで呼ぶ。"""
         task = self._stderr_task
         if task is None:
             return
@@ -739,7 +739,7 @@ async def _drain_stderr(host: str, stream: asyncio.StreamReader) -> None:
             if text:
                 logger.warning("リモートwatch stderr host=%s: %s", host, text)
     except Exception as error:  # noqa: BLE001
-        # CancelledErrorはBaseException派生のため`Exception`で拾わず、通常経路で再送出される。
+        # CancelledErrorはBaseException派生のため`Exception`で拾わず、通常どおり再送出される。
         logger.warning("リモートwatch stderr読取失敗 host=%s: %s", host, error)
 
 
@@ -749,7 +749,7 @@ async def _terminate_process(
 ) -> None:
     """watch用subprocessを段階的に終了させる。
 
-    serveヘルパーは`for raw in sys.stdin:`のEOFで停止経路に入るため、
+    serveヘルパーは`for raw in sys.stdin:`でEOFを受け取ると停止するため、
     まずstdinをcloseして穏当な終了を試み、応答がなければ`terminate`、
     それでも応答がなければ`kill`へ降下する。
     """
@@ -775,7 +775,7 @@ async def _terminate_process(
 async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
     """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
 
-    `_terminate_process`はキャンセル経路からも呼ばれるため、
+    `_terminate_process`はキャンセルされた場合も呼ばれるため、
     `CancelledError`は吸収して段階的処理を継続する。
     吸収した後に次の反復へ戻る呼び出し側は、`_atk_serve_remote.raise_if_cancelling`でキャンセル要求を確かめる。
     """

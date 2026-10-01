@@ -1,6 +1,6 @@
 # ruff: noqa: F401,F821,I001
 # pylint: disable=unused-import,used-before-assignment,wrong-import-order
-r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_serverおよびplan-mode起動を扱う検査。"""
+r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_serverおよびplan-mode起動の可否を判定する。"""
 
 from __future__ import annotations
 
@@ -51,9 +51,9 @@ if TYPE_CHECKING:
 
 
 def _handle_language_check(payload: dict, session_id: str) -> str | None:
-    """直前メインエージェント応答の言語検査を実行し、セッション状態でエスカレーションを管理する。
+    """直前のメインエージェント応答が日本語であるか判定し、セッション状態でエスカレーションを管理する。
 
-    サブエージェントとagents_serverの委譲先では、メイン向けの検査と警告状態の更新を行わない。
+    サブエージェントとagents_serverの委譲先では、メイン応答の言語判定と警告状態の更新を行わない。
 
     Returns:
         通知本文。対象外の場合はNone。
@@ -173,7 +173,7 @@ _AGENTS_SERVER_TOOL_NAMES = (
 
 
 # hooks.json・hooks.codex.jsonのPreToolUse matcherが被覆すべきagents_serverツール名の全体。
-# 一致検査（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
+# 集合の一致を確かめるテスト（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
 AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
@@ -289,7 +289,7 @@ def _record_iss_sidechain_probe(
 
 
 def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> bool | str:
-    """`send_message`・`kill`の入力と保存済みcwdを検査する。
+    """`send_message`・`kill`の入力と保存済みcwdから操作の可否を判定する。
 
     必須値の欠落はツール自身が拒否する可逆な入力不成立として警告する。
     停止対象のcwd記録の欠落は所有を確認できないため遮断する。

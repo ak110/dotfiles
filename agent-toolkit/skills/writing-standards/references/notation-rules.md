@@ -6,6 +6,7 @@ textlintの`preset-jtf-style`でチェックされる項目は同プリセット
 
 - 日本語と全角括弧の境界はスペースなしで続ける。英文脈の半角括弧は英数字との間に半角スペースを1つ置く（例: `Python (CPython 3.12)`）
 - 全角丸括弧の入れ子を避け、内側の括弧は読点による区切りや別文への分割で表現する
+- 括弧による補足は、本文だけでは伝わらない条件や意味を加える場合に使う。同義の言い換えだけを重ねる補足は本文へ統合するか省き、補足には全角丸括弧を使う（努力目標。情報を増やさない補足は読む区切りだけを増やすため）
 - 日本語の地の文や見出しではダッシュ記号（emダッシュ・horizontal bar・2倍ダッシュ）を避け、同格や補足には全角丸括弧を用い、言い換えは文の分割や読点で表現する
 - 技術用語、固有名詞、コード識別子は原典の表記を優先する
 - 「復号」は暗号を解く処理に限定して用いる。バイト列から文字列への変換や、JSON文字列などの符号化表現から値を取り出す処理は「デコード」と書く
@@ -13,6 +14,12 @@ textlintの`preset-jtf-style`でチェックされる項目は同プリセット
 - 内部の役割や概念には自然な日本語の名前を優先し、カタカナ名を使う場合は初出で定義する
 - 接続詞は「または」「もしくは」「および」「ならびに」のように、ひらがなで書く
 - 法令文調の指示語や回りくどい言い回しは、語だけを差し替えず、指す対象と条件が分かる平易な文に書き直す
+- 次の3語は説明の語として使わず、どの資料が何を定めるか、指定がない場合に何を使うか、何と何が一致することを確かめるかを文で説明する。文全体を書き直す方針は`textlint-violations.md`「textlint指摘への修正方針」に従う。語そのものを示す悪い例、検出用データと他者の逐語引用は、その役割を明示して原文を保持する
+
+```text
+対象語: 正本、既定、照合
+```
+
 - 恒久的な成果物の文面案を執筆する前に`textlint-violations.md`を確認する。textlintの指摘へ対応するときは同文書の`textlint指摘への修正方針`に従う
 - 計画ファイルは、文章lint、口語表現チェック、ダッシュチェックの必須対象から除外する。読み手がその計画を処理する実行主体に限られ、表記の統一が対象の特定と完成条件の判定を変えないためである
 - `atk wi add`・`atk wi edit`の`--body-file`へ渡すWI本文は文章lintの必須対象から除外する。口語表現とダッシュは保存前の診断で行番号付き警告として一括表示する。表記警告の処置は起草者が判断し、構造エラーの有無で保存の可否を決める。計画とWI本文から転記する文面は、転記先の基準でチェックして整形する
@@ -49,7 +56,7 @@ Read履歴を持つEditとの区別を保ち、Codexのapply_patchは現在本�
 
 ## 口語表現チェック
 
-恒久成果物にはpyfltrの有効なチェック定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。`<pyfltrの起動形>`は`agent-toolkit:check-execution`の「pyfltrの起動形」に従って解決する。
+恒久成果物にはpyfltrの有効なチェック定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で通常の除外を解除し、指定したファイルへ到達したかをJSONLから判定する。`<pyfltrの起動形>`は`agent-toolkit:check-execution`の「pyfltrの起動形」に従って解決する。
 
 ```sh
 <pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
@@ -75,7 +82,7 @@ uv run --frozen python -c 'print(__import__("pyfltr.colloquial.check", fromlist=
 `--work-dir`へ渡し、`--allow-external-paths`を併用する。
 
 ```sh
-<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <検査設定を持つプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
+<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <チェックする内容を設定したプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
 ```
 
 この手順でも、JSONLの`header`レコードと各commandレコードで対象ファイルへの到達を判定する。

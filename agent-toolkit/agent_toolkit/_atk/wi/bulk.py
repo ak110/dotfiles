@@ -1,6 +1,6 @@
-"""`atk wi`の状態遷移コマンドの`--all`経路が共有する候補選定・確認・再照合を提供する。
+"""`atk wi`の状態遷移コマンドが`--all`指定時に行う候補選定・確認・確認後の一致判定を提供する。
 
-候補の選定、一覧表示、確認および確認済み記録との再照合は操作に依存しない。
+候補の選定、一覧表示、確認および確認済み記録との一致判定は操作に依存しない。
 操作ごとに変わるのは遷移元状態集合、メッセージの操作名、および確定した候補へ適用する処理だけとする。
 適用処理は呼び出し側が`apply_fn`で渡す。状態遷移の適用は`mutations/transitions.py`が持つため、
 本モジュールからそのモジュールをimportすると循環参照になるためである。
@@ -87,7 +87,7 @@ def _ensure_processing_is_explicit(
     protected = [path.name for path, _repo, _text, state, _type in candidates if state == WI_STATE_PROCESSING]
     if protected and not force:
         _outcome.report_failure(
-            f"processing状態のファイルは既定で削除を保護する: {', '.join(protected)}",
+            f"processing状態のファイルは、--forceを指定しない限り削除できない: {', '.join(protected)}",
             next_action="削除するには--forceを指定する",
         )
         sys.exit(2)

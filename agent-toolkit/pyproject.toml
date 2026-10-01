@@ -33,7 +33,7 @@ exclude-newer-package = { pyfltr = false, pytilpack = false }
 # mcp 2.0.0で`mcp.server.fastmcp`が削除され`mcp.server.mcpserver`へ改称されたため上限を設ける。
 # 本パッケージのMCPサーバースクリプトがmcpを直接importするため、上限なしの指定は推移依存の解決へ破壊的変更を持ち込む。
 # 上限の解除条件: mcpをピン留めする上流パッケージのピンが2系を含む版へ更新され、
-# その版で`uv lock`が上限なしでも解決できることを実測した時点で`<2`を外す。
+# その版の`uv lock`を上限なしで実行し、依存の解決に成功した時点で`<2`を外す。
 override-dependencies = ["mcp>=1.28.1,<2"]
 
 [tool.hatch.build.targets.wheel]
@@ -51,10 +51,10 @@ dev = [
     "types-PyYAML",
 ]
 
-# pyfltrは`agent-toolkit/`をsubprojectとして分離する。本subprojectの独立した仮想環境を要するPython系の検査だけが
-# 分割して本ファイルの値を読み、その他の検査はリポジトリ直下の`pyproject.toml`で全体を1回で検査する。
-# ここへ置くのはPython系の検査と全体に作用するキーだけとし、直下と同じ値を指定する。
-# 本subproject固有の値を指定するキーではその理由を書く。両側の対応は`scripts/pyfltr_subproject_config_test.py`が検査する。
+# pyfltrは`agent-toolkit/`をsubprojectとして分離する。Pythonを使うチェックだけが独立した仮想環境で
+# 本ファイルの値を読み、ほかのチェックはリポジトリ直下の`pyproject.toml`を使って全体を1回で確認する。
+# ここにはPythonを使うチェックの設定と全体に作用するキーだけを置き、直下と同じ値を指定する。
+# 本subproject固有の値を指定するキーでは理由を書く。両側の対応は`scripts/pyfltr_subproject_config_test.py`が確認する。
 [tool.pyfltr]
 preset = "latest"
 python = true
@@ -64,8 +64,8 @@ ty = true
 # 直下は`scripts`と`agent-toolkit/skills/plan-mode/scripts`を探索パスへ加える。
 # 本subprojectからは後者だけがsubproject相対で解決できるため、そのパスだけを加える。
 ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "skills/plan-mode/scripts"]
-# pyfltrの既定では`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
-# 検査だけを行う`make test`が担当範囲外のファイルを書き換えないよう、直下と同じく無効にする。
+# pyfltrは設定を省略した場合、`ruff-format`で整形する前に`ruff check --fix --unsafe-fixes`を実行する。
+# `make test`で担当範囲外のファイルを自動修正しないよう、直下と同じくlintの自動修正を無効にする。
 ruff-format-by-check = false
 # pylintを直列で実行すると本subprojectのモジュール数では律速になるため、直下と同じ並列度を指定する。
 pylint-args = ["--jobs=4"]

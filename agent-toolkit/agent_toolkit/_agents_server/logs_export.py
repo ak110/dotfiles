@@ -14,7 +14,7 @@ from agent_toolkit._agents_server import logs_markdown, record_paths
 from agent_toolkit._atk.serve import sessions as session_records
 from agent_toolkit._common.next_action import report
 
-# 記録を特定できない場合の次の操作。`atk agents logs`の各経路と`atk agents logs <id>`の表示で共有する。
+# 記録を特定できない場合の次の操作。`atk agents logs`の各処理と`atk agents logs <id>`の表示で共有する。
 MISSING_RECORD_NEXT_ACTION = "`atk agents list --include-terminated`でsession_idを確かめてから再実行する"
 UNREADABLE_RECORD_NEXT_ACTION = "記録ファイルの権限を確かめてから再実行する"
 BROKEN_LINES_NEXT_ACTION = "対応不要（解析できた行の出力は継続した）"
@@ -203,7 +203,7 @@ def _safe_stem(value: str) -> str:
 
 
 def _render_text(target: RecordTarget, records: list[dict[str, typing.Any]], *, bulk: bool) -> str:
-    """単一記録の既定形式を維持し、複数件には識別子の区切りを付ける。"""
+    """単一記録は形式指定がない場合と同じ書式で出力し、複数件には識別子の区切りを付ける。"""
     lines = [f"### {target.session_id}"] if bulk else []
     for event in session_records.record_events(target.engine, records):
         detail = event.text or event.name or ""

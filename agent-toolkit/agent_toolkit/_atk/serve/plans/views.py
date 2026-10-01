@@ -212,7 +212,7 @@ def create_context(
 
     `root`を指定するとそのrootだけを対象にし、`roots`を指定すると指定されたroot群を対象にする。
     いずれも渡さない場合はprivate-notesと`~/.claude/plans`の2rootを解決する。
-    `hostname`はローカル分のファイルエントリに付与する`host`ラベルとリモートホストとの一意性検査に使う。
+    `hostname`はローカル分のファイルエントリに`host`ラベルとして付与し、リモートホストと重複しないことの確認にも使う。
     """
     # 前回の異常終了で残った作成日時インデックスの一時ファイルを起動時に除去する。
     cleanup_creation_time_temporaries()
@@ -605,7 +605,7 @@ def start_remote_watchers(context: PlansContext) -> None:
     context.state.loop = asyncio.get_running_loop()
     for host in context.remote_hosts:
         watcher = RemoteWatcher(host, context.state)
-        # 本文取得がwatch経路のRPCを利用できるよう参照を共有する。
+        # 本文取得が常駐watch接続のRPCからも本文を取得できるよう、同じ参照を渡す。
         context.state.remote_watchers[host] = watcher
         context.state.remote_tasks.append(asyncio.create_task(watcher.run()))
 

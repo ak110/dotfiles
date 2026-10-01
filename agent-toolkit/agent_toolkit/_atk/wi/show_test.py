@@ -99,7 +99,7 @@ class TestShowSingleFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """カレントディレクトリから注入した既定は、ファイル名で指定した項目を候補から外さない。"""
+        """カレントディレクトリから注入した省略時の値は、ファイル名で指定した項目を候補から外さない。"""
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         local_repo.mkdir()
@@ -473,7 +473,7 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=all（既定）は種別を問わず探索し該当エントリを表示する。"""
+        """--typeを省略してallを使う場合は種別を問わず探索し該当エントリを表示する。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -746,9 +746,9 @@ class TestShowProcessedStates:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`未指定（既定active）でもFILENAME指定時はadopted配下を探索し表示できる。
+        """`--status`未指定（省略時はactive）でもFILENAME指定時はadopted配下を探索し表示できる。
 
-        既定の`--status=active`をFILENAME単発指定分岐へ適用すると、`atk wi show <FILENAME>`
+        省略時に使う`--status=active`をFILENAME単発指定分岐へ適用すると、`atk wi show <FILENAME>`
         でadopted・rejected状態のエントリを一切参照できなくなるため、単発指定は`--status`を
         迂回する契約になっている（指摘2の修正と対で成立する）。
         """
@@ -879,7 +879,7 @@ class TestShowStatePrefixedFilename:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
-        # 対象リポジトリを明示し、`--target-repo`の既定解決によるgit呼び出しを検証対象から外す。
+        # 対象リポジトリを明示し、`--target-repo`省略時の解決によるgit呼び出しを検証対象から外す。
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "show", f"{state}/fb-001.md", "--target-repo=all"], home=tmp_path)
 

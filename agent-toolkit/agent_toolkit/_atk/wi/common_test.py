@@ -655,7 +655,7 @@ class TestReadiness:
         assert "awi.md" in result.ready
 
     def test_malformed_explicit_dependency_is_invalid_even_with_valid_legacy_value(self, tmp_path: pathlib.Path) -> None:
-        """正本の明示依存が不正な場合は旧依存へフォールバックせず修復対象にする。"""
+        """トップレベルに保存した明示依存が不正な場合は旧依存へフォールバックせず修復対象にする。"""
         path = _write_awi(
             tmp_path,
             "awi.md",
@@ -854,9 +854,9 @@ class TestRepoLock:
             lock1.release()
 
     def test_constructor_timeout_bounds_plain_with_statement(self, tmp_path: pathlib.Path) -> None:
-        """`_repo_lock(..., timeout=...)`のコンストラクタ既定値が`with lock:`（引数無し取得）へ伝搬する。
+        """`_repo_lock(..., timeout=...)`のコンストラクタで設定した値が`with lock:`（引数無し取得）へ伝搬する。
 
-        Web要求経路は`acquire(timeout=...)`を明示呼び出しせず`with _repo_lock(private_notes, timeout=...):`
+        Web要求を処理する際は`acquire(timeout=...)`を明示呼び出しせず`with _repo_lock(private_notes, timeout=...):`
         の形でロックを使うため、コンストラクタで指定した`timeout`が実際の`with`文へ反映されることを保証する。
         """
         target = tmp_path / "private-notes"
@@ -1092,7 +1092,7 @@ class TestExplicitUpstreamIntegration:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """複数fetch候補ではpull再現経路が失敗し、明示upstream同期は成功する。"""
+        """複数fetch候補ではpullによる再現は失敗し、明示upstream同期は成功する。"""
         _remote, old_copy, new_copy = self._make_remote_and_clones(tmp_path)
 
         old_result = self._git(
@@ -1206,7 +1206,7 @@ class TestValidateFilename:
 
 
 class TestPrivateNotesAutoCreate:
-    """`AGENT_TOOLKIT_PRIVATE_NOTES`未設定かつ既定パス不在時のローカルリポジトリ自動生成を検証する。
+    """`AGENT_TOOLKIT_PRIVATE_NOTES`未設定かつ省略時に使うパスが不在の場合のローカルリポジトリ自動生成を検証する。
 
     conftestの`_atk_private_notes_env`autouseフィクスチャが全テストへ環境変数を設定するため、
     本クラスの各テストは`monkeypatch.delenv`で明示的に解除してから検証する。
@@ -1214,26 +1214,26 @@ class TestPrivateNotesAutoCreate:
 
     @pytest.fixture(autouse=True)
     def _isolate_data_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """自動生成先を実環境の`user_data_dir`から隔離し、既定の環境変数上書きを解除する。"""
+        """自動生成先を実環境の`user_data_dir`から隔離し、テストの準備で設定した環境変数による上書きを解除する。"""
         monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
         monkeypatch.setattr(_common.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
 
     def test_private_notes_path_falls_back_to_platformdirs_when_default_missing(self, tmp_path: pathlib.Path) -> None:
-        """既定パス`home/private-notes`が不在の場合、platformdirs配下へフォールバックする。"""
+        """未指定の場合に使う`home/private-notes`が不在の場合、platformdirs配下へフォールバックする。"""
         home = tmp_path / "home"
         home.mkdir()
         resolved = _common._private_notes_path(home)  # pylint: disable=protected-access  # noqa: SLF001
         assert resolved == tmp_path / "data" / "private-notes"
 
     def test_private_notes_path_prefers_existing_default(self, tmp_path: pathlib.Path) -> None:
-        """既定パスが実在する場合はplatformdirsへフォールバックせずそちらを返す。"""
+        """省略時に使うパスが実在する場合はplatformdirsへフォールバックせずそちらを返す。"""
         home = tmp_path / "home"
         (home / "private-notes").mkdir(parents=True)
         resolved = _common._private_notes_path(home)  # pylint: disable=protected-access  # noqa: SLF001
         assert resolved == home / "private-notes"
 
     def test_ensure_environment_initializes_local_repo(self, tmp_path: pathlib.Path) -> None:
-        """既定パス不在時、`_ensure_environment`はローカルgitリポジトリを自動生成して返す。"""
+        """省略時に使うパスが不在の場合、`_ensure_environment`はローカルgitリポジトリを自動生成して返す。"""
         home = tmp_path / "home"
         home.mkdir()
         root = _common._ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
@@ -1765,7 +1765,7 @@ class TestPullWithRecentNotice:
 
 
 class TestUpstreamCrossRepoDependency:
-    """別の対象リポジトリの依存先が着手可否を制御することを検査する。"""
+    """着手できるかは、別の対象リポジトリにある依存先の状態でも決まる。"""
 
     def test_cross_repo_dependency_blocks_until_terminal(self, tmp_path: pathlib.Path) -> None:
         """別target_repoの依存先がactiveの間はblockedで、終端でreadyへ戻る。"""
@@ -1827,7 +1827,7 @@ def test_typeless_entry_guides_to_report_instead_of_edit(tmp_path: pathlib.Path,
     with pytest.raises(SystemExit):
         _readiness._require_type(path, _TYPELESS_ENTRY)  # pylint: disable=protected-access
     readiness_next_action = _next_action_of(capsys)
-    # 案内した`atk wi edit`の`--body-file`経路は、同じ検証で拒否されることを確かめる。
+    # 案内した`atk wi edit`に`--body-file`で本文を渡した場合は、同じ検証で拒否されることを確かめる。
     with pytest.raises(SystemExit):
         _mutations_content._build_noninteractive_edit_content(path, _TYPELESS_ENTRY, "# 新しい本文\n")  # pylint: disable=protected-access
     capsys.readouterr()

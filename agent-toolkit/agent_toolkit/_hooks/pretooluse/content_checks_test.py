@@ -53,7 +53,7 @@ def test_trailing_tool_boundary_tags_warn(
 
 
 def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: pathlib.Path) -> None:
-    """計画以外のMarkdownはツール境界タグ検査の対象外とする。"""
+    """計画以外のMarkdownではツール境界タグを判定しない。"""
     result = _run(
         {
             "tool_name": "Write",
@@ -65,7 +65,7 @@ def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: p
 
 
 class TestLanguageEscalation:
-    """言語検査のエスカレーション（連続英語ターン → ブロック）。
+    """日本語の使用を求める通知のエスカレーション（連続英語ターン → ブロック）。
 
     セッション状態を介してexit code 2でツール呼び出しをブロックする。
     """

@@ -367,7 +367,7 @@ def test_main_structure_rejects_empty_verification_command() -> None:
 
 
 def test_origin_check_reports_notice_for_agent_sourced_wi(tmp_path: pathlib.Path) -> None:
-    """`source`を持ち機械判定できる明示由来が無い正本を移行の指摘として報告する。"""
+    """`source`を持ち機械判定できる明示由来が無いWI本文を移行の指摘として報告する。"""
     _write_wi(tmp_path, _wi_source(source=True))
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors
@@ -376,7 +376,7 @@ def test_origin_check_reports_notice_for_agent_sourced_wi(tmp_path: pathlib.Path
 
 
 def test_origin_check_is_inactive_without_collectors(tmp_path: pathlib.Path) -> None:
-    """収集用の一覧を渡さない既存の呼び出しでは照合を行わない。"""
+    """収集用の一覧を渡さない既存の呼び出しではWI本文との比較を行わない。"""
     _write_wi(tmp_path, _wi_source(source=True))
     _work_type, errors = _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)
     assert not errors, errors

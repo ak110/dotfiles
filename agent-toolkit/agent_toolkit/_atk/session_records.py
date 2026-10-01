@@ -29,7 +29,7 @@ _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 # `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す起動プロンプトの本体。
 # 起動プロンプトは`/goal`とautomated-prompt要素の境界を伴うため、本体だけを判定に用いる。
 #
-# 完全一致ではなく包含で判定する。2026年9月10日の実測（監査記録参照）で、このプロンプト本文との
+# 完全一致ではなく包含で判定する。2026年9月10日に実物を確認した結果（監査記録参照）で、このプロンプト本文との
 # 完全一致は実記録2169件に対して0件だった。記録される`text`は実行環境が挿入する前置き
 # （``# AGENTS.md instructions``または``<recommended_plugins>``で始まる）を含むため、完全一致では
 # 成立しない。期待する契約は、`atk wi process-loop`がCodexへ渡す起動プロンプトを含むuser役

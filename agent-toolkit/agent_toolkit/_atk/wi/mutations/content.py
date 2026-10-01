@@ -160,7 +160,7 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
 
 
 def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
-    """$EDITOR経路からのユーザーコメント変更を拒否した場合に真を返す。"""
+    """$EDITORでユーザーコメントを変更し、保存を拒否した場合に真を返す。"""
     if not is_agent_environment():
         return False
     try:

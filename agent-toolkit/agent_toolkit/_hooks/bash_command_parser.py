@@ -51,9 +51,9 @@ _GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
     }
 )
 
-# --- Bash: 実行位置のトークン列抽出（助言用検査の共通入口）---
+# --- Bash: 実行位置のトークン列抽出（助言の判定に共通して使う関数）---
 
-# 本ヘルパーはPreToolUseの助言用検査とPostToolUseの実行済みコマンド記録が共有する。
+# 本ヘルパーはPreToolUseで助言するかの判定とPostToolUseの実行済みコマンド記録が共有する。
 # 遮断を伴う`_check_bash_process_kill_by_pattern`は、コマンド置換・サブシェル・改行・未知の前置語を
 # 保持しない本解析を使わない。入力文字列上で安全な検索リテラルと確定できる場合だけ遮断を緩める
 # （解析の不足で既存の保護を外さないため）。
@@ -233,8 +233,8 @@ _PIPE_SEPARATORS: frozenset[str] = frozenset({"|", "|&"})
 class ExecutionSegment:
     """Bashコマンドの1区間について、実行位置以降のトークン列と実行位置の確定可否を表す。
 
-    `resolved`が偽の区間では`tokens`を空とし、助言用検査はその区間では検出しない。
-    `is_agent_toolkit_script`はagent-toolkit配下の配布検査スクリプトを表す。
+    `resolved`が偽の区間では`tokens`を空とし、助言するかを判定する処理は、その区間では検出しない。
+    `is_agent_toolkit_script`はagent-toolkit配下から配布する自動チェックスクリプトを表す。
     `raw_tokens`は、実行位置が未確定の区間でリダイレクト先を解析するため、元のトークン列を保持する。
     `tokens`はリダイレクトの演算子と対象（`>`・`/tmp/x`・`2>&1`など）も含む。
     位置引数を数える消費側と、引数列全体を比べる消費側は、`agent_toolkit._common.shell_tokens`でリダイレクトを除いた引数列を使う。
@@ -249,7 +249,7 @@ class ExecutionSegment:
 def _split_bash_pipelines(command: str) -> list[list[str]]:
     """`split_bash_segments`の分割結果を、パイプラインごとの区間列へまとめて返す。
 
-    分割そのものは`split_bash_segments`を正本とし、本関数は境界の分類とまとめ直しだけを行う。
+    分割そのものは`split_bash_segments`が行い、本関数は境界の分類とまとめ直しだけを行う。
     各区間の元コマンド内の位置を先頭から順に求め、区間の間に残る文字列（空白と区切り演算子だけからなる）で
     同一パイプラインの継続かを判定する。位置を求められない場合は継続とみなさない。
     """
@@ -295,7 +295,7 @@ def extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> l
 
     1つのパイプラインは`|`だけで連結された一続きの区間列であり、前段の標準出力が後段へ渡る。
     `;`・`&&`・`||`・`&`は出力を渡さないため別のパイプラインとして分ける。
-    前段の出力が後段へ渡るか否かを要件とする検査は、同じパイプライン内の前後関係だけを見ればよい。
+    前段の出力が後段へ渡るかを判定する処理は、同じパイプライン内の前後関係だけを見ればよい。
 
     区間分割は`split_bash_segments`（`;`・`&&`・`||`・`|`・`&`で分割し、クォート内のメタ文字を除く）、
     トークン化は`shlex.split(segment, posix=True)`を使う。
@@ -356,7 +356,7 @@ def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> lis
 def extract_execution_segments(command: str) -> list[ExecutionSegment]:
     """Bashコマンドの全区間を実行順の一次元列で返す。
 
-    パイプラインの区切りを要件としない検査（実行位置の一致だけを判定する検査）が使う。
+    パイプラインの区切りを条件に含めず、実行位置の一致だけを判定する処理が使う。
     """
     return [segment for pipeline in extract_execution_pipelines(command) for segment in pipeline]
 
@@ -451,7 +451,7 @@ def _resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
 
 
 def _is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, execution_index: int) -> bool:
-    """pluginプロジェクトの入口と、独立したリモート補助スクリプトを識別する。"""
+    """pluginプロジェクトを起動するコマンドと、独立したリモート補助スクリプトを識別する。"""
     index, state = _scan_uv_options(list(tokens), uv_index + 1, _UV_GLOBAL_OPTIONS_WITH_VALUE, _UV_GLOBAL_OPTIONS_WITHOUT_VALUE)
     if state != "reached" or index >= len(tokens) or tokens[index] != "run":
         return False
@@ -511,7 +511,7 @@ def _scan_uv_options(
 
     5状態は排他かつ網羅であり、優先順位が固定されているため同じトークンが2つの状態へ当たることはない。
     値なしオプション表に`--help`・`-h`が含まれていても、終端状態を最優先で判定するため状態1で確定する。
-    新しいオプションや未知の記法が現れても個別の規則追加を要さず状態5へ倒れ、助言用検査は非検出となる。
+    新しいオプションや未知の記法が現れても個別の規則追加を要さず状態5へ倒れ、助言するかの判定では検出しない。
     """
     index = start
     while index < len(tokens):
@@ -765,7 +765,7 @@ def split_bash_segments(command: str) -> list[str]:
     heredoc本文は同じ長さの空白へ置換してから分割し、本文外の位置を保つ。
     行継続と置換構文、サブシェルおよびバッククォート内の演算子・改行も分割しない。
     `for`・`while`・`until`・`if`・`case`から対応する終端までの改行は、制御構造を
-    外側の独立呼び出しへ分けないため保持する。内部の`;`は従来どおり検査対象を分ける。
+    外側の独立呼び出しへ分けないため保持する。内部の`;`では従来どおり判定する区間を分ける。
     """
     original = command
     command = mask_heredoc_bodies(command)

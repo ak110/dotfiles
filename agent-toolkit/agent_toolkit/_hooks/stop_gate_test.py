@@ -29,7 +29,7 @@ _BACKGROUND_TASKS_OMITTED = object()
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:
     """アシスタントエントリを生成する。
 
-    `stop_reason`の既定は`end_turn`（最終ターン相当）。
+    `stop_reason`を省略すると`end_turn`（最終ターン相当）として扱う。
     `_wait_for_end_turn`のポーリングを即時通過させるための設定。
     """
     return {
@@ -430,7 +430,7 @@ class TestIsPendingAsyncWork:
     - SendMessage呼び出しと背景再開tool_resultが存在する場合に`True`を返す（誤発動防止のコア）
     - 現行形式（`toolUseResult.resumedAgentId`を持ち本文に旧マーカーを含まない）でも`True`を返し、
       同`tool_use_id`の完了通知で`False`へ相殺される
-    - `resumedAgentId`を持たない旧形式は本文マーカー照合へフォールバックして`True`を返す（後方互換）
+    - `resumedAgentId`を持たない旧形式は本文マーカーとの一致判定へフォールバックして`True`を返す（後方互換）
     - `resumedAgentId`が非文字列の場合は構造化フィールド判定が成立せず本文マーカーの有無で決まる
     - 現行形式でもSendMessage呼び出し由来でない`tool_use_id`は加算しない（誤検知防止）
     - 同`tool_use_id`の旧形式完了通知（user textブロック内`<task-notification>`）で`False`へ相殺される
@@ -709,7 +709,7 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", background_tasks=[]) is True
 
     def test_empty_background_tasks_hide_agent_remainder(self, tmp_path: pathlib.Path) -> None:
-        """申告対象の背景Agent残差は空の`background_tasks`を正本として打ち消す。"""
+        """空の`background_tasks`を優先し、記録に残る申告対象の背景Agentは実行中ではないと判定する。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -803,7 +803,7 @@ class TestIsPendingAsyncWork:
         ],
     )
     def test_attachment_task_notification(self, tmp_path: pathlib.Path, pending_entries: list[dict], expected: bool):
-        """Claude Code 2.1系以降の新形式（`type=="attachment"`）完了通知の抽出経路を検証する。
+        """Claude Code 2.1系以降の新形式（`type=="attachment"`）完了通知から識別子を抽出する処理を検証する。
 
         旧形式との混在、`commandMode`非対象・`isSidechain`真・防御ガード（dictでない／strでない）を含めて
         境界値・同値分割で網羅する。
@@ -1243,7 +1243,7 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "") is False
 
     def test_sendmessage_bg_resume_legacy_marker_with_tool_use_result_detected(self, tmp_path: pathlib.Path):
-        """`resumedAgentId`を持たない`toolUseResult`では旧マーカー照合へフォールバックする。
+        """`resumedAgentId`を持たない`toolUseResult`では旧マーカーとの一致判定へフォールバックする。
 
         後方互換の観点。構造化フィールドを欠く結果でも旧形式の検出が維持されることを確認する。
         """
@@ -1383,7 +1383,7 @@ class TestIsPendingAsyncWork:
 class TestDebugOutput:
     """`AGENT_TOOLKIT_STOP_GATE_DEBUG`環境変数によるstderrデバッグ出力の検証。
 
-    Stop hookの誤判定時の原因切り分け手段として、判定根拠を1行出力する機能を確認する。
+    Stop hookの誤判定時に原因を特定する手段として、判定根拠を1行出力する機能を確認する。
     同値分割: 環境変数値 × 残差有無 で代表ケースを抽出する。
     """
 

@@ -151,6 +151,24 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, existing)
         assert result["env"] == {"FOO": "bar", "CLAUDE_CODE_NO_FLICKER": "1"}
 
+    def test_managed_project_files_environment_merges_with_existing_rules(self, tmp_path: Path) -> None:
+        """作業ツリーの環境宣言が、既定ルールと利用者の独自設定を保持して届く。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        declaration = next(item for item in managed["autoMode"]["environment"] if item.startswith("Project files: "))
+        existing = {
+            "autoMode": {
+                "environment": ["$defaults", "利用者固有の信頼境界"],
+                "allow": ["利用者固有の許可"],
+            },
+        }
+        result = _run(tmp_path, managed, existing)["autoMode"]
+        assert declaration in result["environment"]
+        assert "利用者固有の信頼境界" in result["environment"]
+        assert result["environment"].count("$defaults") == 1
+        assert set(managed["autoMode"]["environment"]) <= set(result["environment"])
+        assert "利用者固有の許可" in result["allow"]
+        assert "$defaults" in result["allow"]
+
 
 class TestHomePlaceholder:
     """`__HOME__`プレースホルダーがホームディレクトリ絶対パスへ置換されることを検証する。"""

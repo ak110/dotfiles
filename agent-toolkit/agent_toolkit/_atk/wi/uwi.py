@@ -131,10 +131,10 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
 def reject_reserved_uwi_markup(body: str) -> None:
     """UWI本文がツール側で自動付与する要素を含む場合に`WebInputError`を送出する。
 
-    検査対象は回答欄マーカーと、行頭に現れる質問見出し・回答見出しとする。
-    投入側が本文へ同じ要素を書くと`add_entries`が無検査で連結し二重生成となるため、
+    確認する対象は回答欄マーカーと、行頭に現れる質問見出し・回答見出しとする。
+    投入側が本文へ同じ要素を書くと`add_entries`が確認せず連結し二重生成となるため、
     警告ではなく拒否とする（既存の非ブロッキング警告`warn_question_quality`は無視された実績がある）。
-    CLIとWeb UIの双方が`add_entries`を経由するため、本検査1箇所で両経路を覆う。
+    CLIとWeb UIの双方が`add_entries`を経由するため、この1箇所で確認すれば両方を対象にできる。
     """
     violations: list[str] = []
     if ANSWER_MARKER in body:
@@ -256,7 +256,7 @@ def answer_uwi(
 ) -> bool:
     """平引数でUWI回答欄を更新する。対象はinbox・processing・holdのUWIに限る。
 
-    呼び出し元に依存せず、共有コア入口で空回答を拒否する。
+    呼び出し元に依存せず、共有の実装で受け取る際に空回答を拒否する。
     """
     if not answer.strip():
         raise WebInputError("回答本文が空です", next_action="回答を記入して再実行する")
@@ -353,7 +353,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     editor = os.environ.get("EDITOR")
     if not editor:
         _outcome.report_failure(
-            "$EDITORが未設定のため回答経路を利用できない",
+            "$EDITORが未設定のためエディターで回答を入力できない",
             next_action="$EDITORを設定してから再実行するか、`atk wi answer <ファイル名> <回答本文>`で回答する",
         )
         sys.exit(1)

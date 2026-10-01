@@ -1,9 +1,9 @@
-r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
+r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態の記録とplan file書式の判定。
 
 Bash / Write / Edit / MultiEdit / apply_patch / Skill / Agent / Task / agents_server MCPの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
 PreToolUse、UserPromptSubmitおよびStopフックが参照して判定に使う。
-本モジュールは実行後の観測と警告だけを行い、遮断経路を持たない。
+本モジュールは実行後の観測と警告だけを行い、操作を遮断しない。
 
 編集入力は`_hook_tool_input`が共通の操作記録へ正規化する。
 Codexでは成功した`apply_patch`だけが本フックへ届く。
@@ -11,7 +11,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 検出対象:
 
 1. plan file（計画作業root `~/.claude/plans/` または
-   保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
+   保存済み計画root `$(atk config get private_notes)/plans/` 配下）書式の判定 (Write / Edit / MultiEdit / apply_patch)
 2. plan-modeスキル呼び出し検出 (Skill)
 3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
@@ -153,21 +153,21 @@ _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_LIS
 _AGENTS_SERVER_SHOW_TOOLS = frozenset(f"{namespace}show" for namespace in _AGENTS_SERVER_NAMESPACES)
 
 # hooks.json・hooks.codex.jsonのPostToolUse matcherが被覆すべきagents_serverツール名の全体。
-# 一致検査（posttooluse_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
+# 集合の一致を確かめるテスト（posttooluse_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
 AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_SHOW_TOOLS | _AGENTS_SERVER_LIST_TOOLS
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
 
 
-# --- plan file形式検査の定数 ---
+# --- plan fileの書式を判定する定数 ---
 
 
 def _set_process_wi_invoked(state: dict) -> dict | None:
     """process-wiスキル起動フラグを常時Trueへ上書きする。
 
     新規process-wiラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
-    リセット経路は`_reset_process_wi_invoked`（exit-session起動検知）と併用する。
+    リセットする処理は`_reset_process_wi_invoked`（exit-session起動検知）と併用する。
     """
     state["process_wi_skill_invoked"] = True
     return state
@@ -212,7 +212,7 @@ def _is_nonempty_absolute_cwd(value: object) -> bool:
 
 
 def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_name: str) -> str | None:
-    """操作ごとの正本から委譲先session識別子を返す。"""
+    """操作ごとに識別子を保持するフィールドから委譲先session識別子を返す。"""
     source = structured if tool_name in _AGENTS_SERVER_START_TOOLS else tool_input
     value = source.get("session_id") if isinstance(source, dict) else None
     return value if isinstance(value, str) and value else None
@@ -395,7 +395,7 @@ def _record_agents_server_session_state(
         if isinstance(cwd, str) and cwd and cwd_map.get(remote_session_id) != cwd:
             cwd_map[remote_session_id] = cwd
             changed = True
-        # 応答が返した稼働中の子sessionも、識別子と同じ経路で`cwd`を記録する。
+        # 応答が返した稼働中の子sessionも、識別子を記録する処理で`cwd`も記録する。
         # 返却する識別子の集合と、追送・打ち切りの許可判定の入力の集合を一致させるためである。
         for child_session_id, child_cwd in _live_child_session_cwds(structured):
             if cwd_map.get(child_session_id) != child_cwd:
@@ -499,7 +499,7 @@ def _record_agents_server_observation_attempt(
 
     実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
     `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
-    呼び出しが受理された時点で観測を試みたものとして扱い、応答境界へ到達しない経路でも
+    呼び出しが受理された時点で観測を試みたものとして扱い、応答境界へ到達しない場合でも
     `pending_observation`を偽にする。`tool_input`の`session_id`で解決した既存記録に限り、
     記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
     公開状態は移行通知から確定できないため更新しない。
@@ -571,7 +571,7 @@ _PLAN_CREATION_RUN_SCRIPT_PREFIX = ("atk", "run-script", "plan-create")
 
 
 def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
-    """実行トークン列が旧または現行の計画ファイル作成入口であるかを返す。"""
+    """実行トークン列が旧または現行の計画ファイルを作成するコマンドであるかを返す。"""
     if any(_PLAN_CREATION_SCRIPT_NAME in token for token in tokens):
         return True
     normalized = (_executable_name(tokens[0]), *tokens[1:]) if tokens else ()
@@ -579,7 +579,7 @@ def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
 
 
 def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment], tool_response: object) -> None:
-    """計画ファイル作成入口の標準出力から計画ファイル（メイン）の絶対パスを記録する。
+    """計画ファイルを作成するコマンドの標準出力から計画ファイル（メイン）の絶対パスを記録する。
 
     このスクリプトは確定したパスを標準出力へ1行ずつ書くため、計画ファイル（メイン）と判定した行だけを抽出する。
     該当が無い場合は記録せず、PostToolUseの応答を変えない。
@@ -655,7 +655,7 @@ def _background_task_id_from_response(value: object) -> str | None:
 def _structured_background_task_id(value: object) -> str | None:
     """Bash応答の最上位にある構造化`backgroundTaskId`を返す。
 
-    前景実行の出力本文に同じ文言が現れても所有の根拠にしないため、本文の文字列照合は行わない。
+    前景実行の出力本文に同じ文言が現れても所有の根拠にしないため、本文の文字列が一致するかは判定しない。
     """
     if not isinstance(value, dict):
         return None
@@ -739,7 +739,7 @@ def _handle_edit_tool(
     cwd: str,
     notices: list[str],
 ) -> None:
-    """編集成功後の計画ファイル記録と計画構造検査の案内を処理する。
+    """編集成功後の計画ファイル記録と計画の構造を確かめるコマンドの案内を処理する。
 
     ClaudeのWrite・Edit・MultiEditとCodexの成功した`apply_patch`を
     `_hook_tool_input`が共通の操作記録へ変換する。
@@ -765,12 +765,12 @@ def _plan_main_path_for(display_path: str) -> str:
 
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
-    """計画ファイル全文書き込み後に実行する計画構造検査の案内文を返す。"""
+    """計画ファイル全文書き込み後に実行する計画の構造を確かめるコマンドの案内文を返す。"""
     project_root = pathlib.Path(__file__).resolve().parents[2]
     check_script = project_root / "skills/plan-mode/scripts/check_plan_file.py"
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
-        f"計画ファイル{file_path}へ書き込んだ。書き込み後の検査を実行する:"
+        f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめる:"
         f" `uv run --project {shlex.quote(str(project_root))} --locked --no-default-groups"
         f" {shlex.quote(str(check_script))}{work_dir_option}"
         f" {shlex.quote(file_path)}`."
@@ -809,7 +809,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         return 0
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
-    # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
+    # ツール種別に依らず回答を確認し、ユーザーの回答から通知までの遅延を抑える。
     # この通知が指示する反映と依存作業の再開はメインが所有するため、
     # in-processのサブエージェントと`agents_server`の委譲先セッションでは通知を組み立てない。
     if cwd and is_main_agent_context(payload):

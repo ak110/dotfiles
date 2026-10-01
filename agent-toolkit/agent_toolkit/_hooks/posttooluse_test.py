@@ -1,7 +1,7 @@
 """agent-toolkit/agent_toolkit/_hooks/posttooluse.py のテスト。
 
 subprocessで起動しexit code・状態ファイルの内容を検証する。
-plan file形式検査・SSOT検査・codex-review.md読み込み追跡は`posttooluse_plan_format_test.py`、
+plan fileの書式と定義元との一致の確認・codex-review.md読み込み追跡は`posttooluse_plan_format_test.py`、
 `session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へ分割している。
 """
 
@@ -38,7 +38,7 @@ def _load_posttooluse_module() -> types.ModuleType:
     """`scripts/posttooluse.py`を`importlib`で動的にインポートする。
 
     PostToolUseの内部dispatchと補助機構を直接呼ぶテストで使う。
-    引数注入では到達不能なモジュール内部関数の単体検査のため、importlibによる直接参照を例外的に許容する。
+    引数注入では到達不能なモジュール内部関数の単体テストのため、importlibによる直接参照を例外的に許容する。
     `_SCRIPT`（`hook.py`、サブプロセス起動用）とは別に本体ファイルのパスを参照する。
     """
     spec = importlib.util.spec_from_file_location("posttooluse", _POSTTOOLUSE_MODULE_PATH)
@@ -48,7 +48,7 @@ def _load_posttooluse_module() -> types.ModuleType:
     return module
 
 
-# モジュールレベルでキャッシュ済みモジュールを参照し、引数注入では到達不能な内部関数を直接検査する。
+# モジュールレベルでキャッシュ済みモジュールを参照し、引数注入では到達不能な内部関数を直接テストする。
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
@@ -371,7 +371,7 @@ def test_codex_delegate_hook_without_host_alias_uses_hook_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """書込主体索引が無いCodex経路は検証済みhook sessionで待機対象を登録する。"""
+    """Codexによる起動で書込主体索引が無い場合は検証済みhook sessionで待機対象を登録する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
     for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(name, raising=False)
@@ -409,7 +409,7 @@ def test_start_without_caller_identity_does_not_register_wait_target(
     owner_session: str | None,
     tool_name: str,
 ) -> None:
-    """呼出主体またはCodex経路を解決できない開始応答は待機対象登録簿へ書き込まない。"""
+    """呼出主体またはCodexによる起動を解決できない開始応答は待機対象登録簿へ書き込まない。"""
     for name in (
         "AGENT_TOOLKIT_OWNER_SESSION",
         "AGENT_TOOLKIT_DELEGATED_SESSION",
@@ -500,8 +500,8 @@ def _run(
     if home_dir is not None:
         env["HOME"] = str(home_dir)
     env.update(extra_env or {})
-    # plan file形式検査はplan_mode_skill_invokedが真の場合のみ実行されるため、
-    # 形式検査を期待するテストでは事前に状態ファイルへ同フラグを書き込んでおく。
+    # plan fileの書式を判定する処理はplan_mode_skill_invokedが真の場合のみ実行されるため、
+    # 書式の判定を期待するテストでは事前に状態ファイルへ同フラグを書き込んでおく。
     if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
@@ -778,7 +778,7 @@ class TestUwiCompletionNotice:
 class TestCurrentPlanFilePathTracking:
     """plan file編集時の`current_plan_file_path`記録。
 
-    pretooluse.py側の遡及スキャン記録検査・process7完了検査が
+    pretooluse.py側の遡及スキャンの記録とprocess7の完了を確かめる処理が
     計画ファイル本文を再読み込みする際に使う。
     """
 
@@ -946,7 +946,7 @@ class TestPlanFilePostWriteNotice:
         assert result.returncode == 0
         payload = json.loads(result.stdout)
         message = payload["hookSpecificOutput"]["additionalContext"]
-        assert "書き込み後の検査" in message
+        assert "書き込み後に計画の構造を確かめる" in message
         assert "check_plan_file.py" in message
         assert auto_message_opening_attributes(message)["source"] == "posttooluse"
 
@@ -955,7 +955,7 @@ class TestPlanFilePostWriteNotice:
 
         案内文を受け取った側はこれをシェルで実行する。実行するシェルの環境に
         `${CLAUDE_PLUGIN_ROOT}`は存在しないため、スクリプトは絶対パスで示す。
-        照会先の既定は実行時の作業ディレクトリであり、対象リポジトリと一致する保証がないため、
+        照会先を指定しない場合は実行時の作業ディレクトリを使い、対象リポジトリと一致する保証がないため、
         payloadの`cwd`を`--work-dir`へ明示する。
         """
         plan_path = self._make_plan_path(tmp_path)
@@ -981,7 +981,7 @@ class TestPlanFilePostWriteNotice:
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
 
     def test_notice_on_removed_detail_file_write_is_skipped(self, tmp_path: pathlib.Path) -> None:
-        """廃止した`.detail.md`への書込みを現行計画の検査対象にしない。"""
+        """廃止した`.detail.md`への書込みを現行計画として判定しない。"""
         plan_path = self._make_plan_path(tmp_path)
         detail_path = plan_path.with_name("sample.detail.md")
         sid = "post-write-notice-detail"
@@ -1904,7 +1904,7 @@ class TestAgentsServerProcessLoopLog:
 
 
 class TestRemovedRecordsAreAbsent:
-    """撤去した検査の入力だった状態と、常時規範の編集警告を記録・出力しないことを検証する。"""
+    """撤去した判定処理へ渡していた状態と、常時規範の編集警告を記録・出力しないことを検証する。"""
 
     _REMOVED_KEYS = (
         "test_executed",
@@ -1959,6 +1959,6 @@ class TestRemovedRecordsAreAbsent:
 def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str) -> None:
     """記録する工程種別は、サーバーが各起動ツールの省略時に使う種別と一致する。
 
-    `start_write`の既定は`write`であり、`start_shell`と同じ`low_tier`を記録すると工程の集計が別種別へ混ざる。
+    `start_write`で種別を省略すると`write`を使うため、`start_shell`と同じ`low_tier`を記録すると工程を別の種別に加算してしまう。
     """
     assert _POSTTOOLUSE_MODULE._agents_server_model_type(tool_input, operation) == expected

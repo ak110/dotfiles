@@ -24,7 +24,7 @@ def test_registry_stays_inside_plugin_root() -> None:
 def test_dispatch_forwards_help_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
     args = argparse.Namespace(script_name="plan-check", script_args=["--", "--help"])
     assert run_script.dispatch(args) == 0
-    assert "計画の成立に必要な情報契約" in capsys.readouterr().out
+    assert "計画に必要な情報と実体が揃っているか確かめる" in capsys.readouterr().out
 
 
 def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -35,7 +35,7 @@ def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPa
 
 
 def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
-    """再照合の全引数を抽出器へ同じ順序で渡す。"""
+    """再度の一致確認に使う全引数を抽出器へ同じ順序で渡す。"""
     observed: list[str] = []
 
     def capture_argv(_target: str, *, run_name: str) -> None:
@@ -61,7 +61,7 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
 
 
 def test_session_review_documents_use_public_script_entries() -> None:
-    """振り返りの手順書の実行例が登録済み入口を使い、実装ファイルを直接起動しない。"""
+    """振り返りの手順書の実行例が登録済みのコマンドを使い、実装ファイルを直接起動しない。"""
     documents = (run_script.PLUGIN_ROOT / "skills" / "session-review" / "SKILL.md",)
     commands: list[list[str]] = []
     for document in documents:
@@ -84,7 +84,7 @@ def test_session_review_documents_use_public_script_entries() -> None:
 
 @pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report"])
 def test_removed_session_review_entries_are_rejected(script_name: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """振り返りの判定入力と報告の生成器として撤去した入口を指定すると、未知の公開名として拒否する。"""
+    """振り返りの判定入力と報告の生成器として撤去したコマンドを指定すると、未知の公開名として拒否する。"""
     parser = argparse.ArgumentParser()
     run_script.build_parser(parser)
 
@@ -97,7 +97,7 @@ def test_removed_session_review_entries_are_rejected(script_name: str, capsys: p
 
 
 def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    """報告段階と振り返り状態を検査器へ同じ順序で渡す。"""
+    """報告段階と振り返り状態を判定するスクリプトへ同じ順序で渡す。"""
     observed: list[str] = []
 
     def capture_argv(_target: str, *, run_name: str) -> None:
@@ -115,7 +115,7 @@ def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest
 def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """実行レビューの手順書が示す公開名で検証器を起動し、plugin環境の依存で実行して終了コードを透過する。
 
-    登録漏れや登録パスの誤りでは起動できず、依存（yaml）を解決できない起動環境では検証へ到達しない。
+    登録が無い場合や登録パスが誤っている場合は起動できず、依存（yaml）を解決できない起動環境では検証へ到達しない。
     """
     contract = tmp_path / "review-contract.yaml"
     arguments = ["--", "--contract", str(contract), "--target-repo", str(tmp_path)]

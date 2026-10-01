@@ -1,6 +1,6 @@
-"""大量全文読取のPreToolUse検査を検証する。
+"""大量の全文読取をPreToolUseで遮断する条件を検証する。
 
-遮断はCodexのBash経路だけへ適用し、Claude Codeの`Read`と`Bash`は補正も遮断もしない。
+遮断はCodexのBash実行だけへ適用し、Claude Codeの`Read`と`Bash`は補正も遮断もしない。
 """
 
 import json

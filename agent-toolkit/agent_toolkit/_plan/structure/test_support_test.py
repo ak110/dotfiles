@@ -72,7 +72,7 @@ def _canonical_human_main_content() -> str:
 
 
 def _wi_source(*, source: bool, trailing_user_comment: bool = False, answer: bool = False) -> str:
-    """WIの正本の本文を組み立てる。"""
+    """WIファイルへ保存する本文を組み立てる。"""
     frontmatter = ["---", "status: inbox"]
     if source:
         frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:session-review")
@@ -86,7 +86,7 @@ def _wi_source(*, source: bool, trailing_user_comment: bool = False, answer: boo
 
 
 def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTENT) -> tuple[list[str], list[str], list[str]]:
-    """由来照合を有効にして(違反, 移行の指摘, 省略の事実)を返す。"""
+    """由来をWI本文と比べて確かめ、(違反, 移行の指摘, 省略の事実)を返す。"""
     notices: list[str] = []
     skips: list[str] = []
     _work_type, errors = _plan_format.check_plan_main_structure(
@@ -96,7 +96,7 @@ def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTEN
 
 
 def _write_wi(private_notes: pathlib.Path, body: str, name: str = _plan_fixture.WI_FILES[0][0]) -> None:
-    """キュー管理リポジトリの状態ディレクトリへ正本を作成する。"""
+    """キュー管理リポジトリの状態ディレクトリへWIファイルを作成する。"""
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / name).write_text(body, encoding="utf-8")

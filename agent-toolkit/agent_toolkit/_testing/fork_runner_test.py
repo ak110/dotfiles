@@ -88,7 +88,7 @@ def test_server_start_failure_falls_back_once(tmp_path: pathlib.Path, monkeypatc
     )
     original_popen = subprocess.Popen
     server_start_attempts = 0
-    _fork_runner._terminate_server()  # noqa: SLF001 -- サーバー起動経路を確実に通す  # pylint: disable=protected-access
+    _fork_runner._terminate_server()  # noqa: SLF001 -- サーバーを起動する処理を確実に実行する  # pylint: disable=protected-access
     monkeypatch.setattr(_fork_runner, "_HAS_FORK", True)
 
     def fail_server_start(

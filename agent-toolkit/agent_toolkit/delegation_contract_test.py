@@ -1,4 +1,4 @@
-"""呼び元用文書と受信者タスク文書の委譲起動契約を検査する。"""
+"""呼び元用文書と受信者タスク文書の委譲起動契約を確かめる。"""
 
 import collections
 import pathlib
@@ -106,7 +106,7 @@ def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str]
 
 
 def _pair_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[str]:
-    """指定した呼び元と受信者の組が同じ起動契約を持つか検査する。"""
+    """指定した呼び元と受信者の組が同じ起動契約を持つか確かめる。"""
     errors: list[str] = []
     targets, valid_structure = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
     if not valid_structure or recipient.name not in targets:
@@ -170,7 +170,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         if not valid_structure or not required_names:
             continue
         parent_populations[parent].update(required_names)
-        # 検査対象のshareは引数で固定済みであり、隔離したテスト入力にも同じ宣言解析を使う。
+        # 確認対象のshareは引数で固定済みであり、隔離したテスト入力にも同じ宣言解析を使う。
         declaration = task_documents.read_declaration_unchecked(recipient)
         if isinstance(declaration, str):
             errors.append(declaration)
@@ -331,11 +331,28 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
         assert "新しい選定では省略または空列" in document or "新しい選定の`after_lanes`は省略または空列" in document
         assert "同じレーン" in document
     assert "推移的な依存先" in _h2_section(picker, "処理対象の決定")
-    assert "推移的に照合" in _h2_section(parent, "出力の受領")
+    assert "推移的にたどる" in _h2_section(parent, "出力の受領")
     assert "依存先が先行" in parent and "依存先から処理" in lanes
     assert "候補とdecisionへ全項目を残す" in picker
     assert "後続だけを開始せず依存待ちを維持" in picker
     assert "後続を依存待ち" in lanes
+
+
+def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
+    """選定で列挙した書込対象を受領側が比較できる。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    output = _h2_section(picker, "出力")
+    output_format = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    fields = re.findall(r"^  ([a-z_]+):", output_format.split("lane_costs:\n", maxsplit=1)[0], flags=re.MULTILINE)
+    assert "write_files" in fields
+    receipt = _h2_section(parent, "出力の受領")
+    generation = _h2_section(picker, "調査とレーン分け")
+    assert "`write_files`" in receipt
+    assert "`/`" in output and "`/`" in receipt
+    assert "パス要素" in generation and "パス要素" in receipt
+    assert "狭い方の範囲" in generation and "狭い方の範囲" in receipt
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
@@ -349,7 +366,7 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     contract = {row[0].split("`")[1]: row[1] for row in rows[1:] if len(row) == 3}
     assert contract == {"なし": "通常の`lane-NN`", "上流要求だけ": "`なし`", "混在": "通常の`lane-NN`"}
     assert "行の省略を含む" in output
-    assert "書き込み前" in output and "既定値と省略を解決" in output
+    assert "書き込み前" in output and "省略時の値と省略を解決" in output
     generation = _h2_section(picker, "反映先と上流投入")
     receipt = _h2_section(parent, "出力の受領")
     assert "「出力」の組合せ条件" in generation

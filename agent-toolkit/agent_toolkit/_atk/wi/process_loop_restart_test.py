@@ -171,7 +171,7 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 
 
 def _command_was_called(calls: list[list[str]], command: str) -> bool:
-    """呼び出し配列の先頭要素を基底名で照合する。"""
+    """呼び出し配列の先頭要素の基底名が一致するか確認する。"""
     return any(pathlib.Path(call[0]).stem.lower() == command for call in calls)
 
 
@@ -544,7 +544,7 @@ class TestWaitLoopAutoRestart:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`pending_count=1`経路のClaude起動も一時設定ディレクトリへ診断ログを保存する。"""
+        """`pending_count=1`でClaudeを起動する場合も一時設定ディレクトリへ診断ログを保存する。"""
         subprocess_calls, _ = self._run_until_stop(
             monkeypatch,
             tmp_path,
@@ -624,7 +624,7 @@ def test_restart_spec_carries_refreshed_marker_once_and_next_restart_drops_it(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ランチャー経路は更新成功後だけ内部指定を一回渡し、再々起動へ残さない。"""
+    """ランチャーから起動した場合は更新成功後だけ内部指定を一回渡し、再々起動へ残さない。"""
     first_spec = tmp_path / "first-restart-spec"
     script = tmp_path / "atk.py"
     monkeypatch.setenv(_RESTART_SPEC_ENV, str(first_spec))
@@ -691,7 +691,7 @@ def test_restart_spec_carries_updated_marker_once_and_next_restart_drops_it(
 
 
 def test_restart_spec_targets_dotfiles_checkout_entry_point(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """受け渡しファイル経路でも更新後のチェックアウト配下の`atk.py`へ切り替える。"""
+    """ファイルで値を受け渡した場合も更新後のチェックアウト配下の`atk.py`へ切り替える。"""
     spec = tmp_path / "restart-spec"
     canonical = tmp_path / "dotfiles" / "agent-toolkit" / "agent_toolkit" / "atk.py"
     canonical.parent.mkdir(parents=True)
@@ -705,7 +705,7 @@ def test_restart_spec_targets_dotfiles_checkout_entry_point(tmp_path: pathlib.Pa
 
 
 def test_restart_spec_drops_resume_option_and_value(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """受け渡しファイル経路でも再開オプションの除去を維持する。"""
+    """ファイルで値を受け渡した場合も再開オプションの除去を維持する。"""
     spec = tmp_path / "restart-spec"
     monkeypatch.setenv(_RESTART_SPEC_ENV, str(spec))
 

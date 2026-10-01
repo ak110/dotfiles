@@ -117,7 +117,7 @@ def _parse_alert_keys(text: str) -> list[str]:
 
 
 def _source_matches(entry_source: str | None, filter_value: str) -> bool:
-    """`--source`フィルター値とエントリのsourceを照合する。
+    """`--source`フィルター値にエントリのsourceが一致するかを返す。
 
     先頭`!`は否定指定とし、無指定（None）エントリも否定側の一致に含める。
     """

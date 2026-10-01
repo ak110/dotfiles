@@ -56,9 +56,9 @@ Write / Edit / MultiEdit / apply_patch:
 
 ホスト差の扱い:
 
-- 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、検査本体はホストを区別しない
-- 非空文字列の`turn_id`をCodex判定の正本とし、payload読込直後に一度だけ判定する
-- 大量読取の遮断はCodexだけへ適用し、PowerShellの改行検査はClaudeの`Write`へ限定する
+- 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、各判定処理はホストを区別しない
+- 非空文字列の`turn_id`からCodexかどうかを判定し、payload読込直後に一度だけ判定する
+- 大量読取の遮断はCodexだけへ適用し、PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
 - 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
 """
 
@@ -157,7 +157,7 @@ def main(payload_text: str) -> int:
     - exit 0: 通過（違反なし / スキップ対象ツール / 想定外入力 / warnのみ）
     - exit 2: block違反検出（stderrに理由を出力）
 
-    予期せぬ例外は0にフォールバックする（pluginのhookが破損して編集できなくなる事故を避けるため）。
+    予期せぬ例外は0にフォールバックする（pluginのhookが破損して編集できなくなることを避けるため）。
     """
     try:
         payload = json.loads(payload_text)
@@ -174,7 +174,7 @@ def main(payload_text: str) -> int:
     set_warning_session_id(session_id)
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-    # ホスト判定はpayload読込直後に一度だけ行い、以降の検査選択と入力アダプターへ同じ値を渡す。
+    # ホスト判定はpayload読込直後に一度だけ行い、以降の判定処理の選択と入力アダプターへ同じ値を渡す。
     is_codex = _hook_tool_input.is_codex_payload(payload)
 
     # 直前メインエージェント応答の日本語比率警告（任意ツール）。
@@ -221,9 +221,9 @@ def main(payload_text: str) -> int:
         """終了コードを返す直前に、遮断時だけ保留通知をstderrへ出力して消費する。
 
         exit 2ではstdoutの構造化JSONが評価されず、保留通知を`additionalContext`で渡せない。
-        出力しないまま返すと、検査側のカウンタと最終パスだけが更新されるため、
+        出力しないまま返すと、判定処理側のカウンタと最終パスだけが更新されるため、
         同じ入力を再試行しても通知が再生成されず失われる。
-        exit 2のstderrはコーディングエージェントへ届くため、遮断理由と同じ経路で出力する。
+        exit 2のstderrはコーディングエージェントへ届くため、遮断理由と同じ出力先へ送る。
         """
         warning_blocks = consume_warning_blocks()
         if warning_blocks:
@@ -287,7 +287,7 @@ def _handle_agents_server_tool(
     session_id: str,
     emit_json: Callable[[dict], None],
 ) -> int:
-    """agents_serverの開始点・観測点を分離して検査する。"""
+    """agents_serverの開始点と観測点の条件をそれぞれ判定する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
     launch_block = check_task_document_launch(tool_name, tool_input)
     if launch_block is not None:
@@ -413,7 +413,7 @@ def _handle_user_facing_text_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文へ文字化け検査を適用し、警告として返す。
+    """質問・計画本文に文字化けがあるか確かめ、警告として返す。
 
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
     遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。
@@ -442,11 +442,11 @@ def _handle_edit_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """共通編集単位ごとに警告検査を処理する。
+    """共通編集単位ごとに警告が必要か判定する。
 
     ClaudeのWrite・Edit・MultiEditとCodexの`apply_patch`を`_hook_tool_input`が
-    同一の操作記録へ変換するため、検査本体はホストを区別しない。
-    複数対象・複数検査の警告は1つの`additionalContext`へ結合する。
+    同一の操作記録へ変換するため、各判定処理はホストを区別しない。
+    複数の対象と判定処理が返す警告は1つの`additionalContext`へ結合する。
     """
     operations = _hook_tool_input.parse_operations(tool_name, tool_input, cwd)
     if operations is None:

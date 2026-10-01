@@ -105,7 +105,7 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
 
     依存の未充足は、未終端の依存先が全て`--target-repo`の`processable`集合の内側にあるかで
     2値へ分ける。未終端の依存先を持たないblockedは、その集合の内側にある項目が終端しても解除されないため
-    外側として返す。この対応が崩れると、時間経過だけで解除される待機が内側として返り、
+    外側として返す。この対応が一致しなくなると、時間経過だけで解除される待機が内側として返り、
     その処理回で着手できない項目が選定の候補へ入る。
     """
     reasons = (
@@ -241,8 +241,8 @@ def _print_summary_entries(selected: list[QueueEntryDisplay]) -> None:
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`list`サブコマンド: AWI/`uwi`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
-    `--type`指定で出力対象種別（awi・uwi・all）を限定する（既定: all）。
-    `--state`指定で表示範囲を限定する（既定: active）。
+    `--type`指定で出力対象種別（awi・uwi・all）を限定する（省略時はall）。
+    `--state`指定で表示範囲を限定する（省略時はactive）。
     `active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を出力する。
     個別状態は`inbox`・`processing`・`hold`・`adopted`・`rejected`を解釈し、`all`は5状態すべてを出力する。
     `uwi`側は`answered`・`unanswered`で回答状況を限定する。

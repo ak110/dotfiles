@@ -56,9 +56,9 @@ def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
 
 
 def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
-    """保存済みエントリを再読込し、本文の一致を検証したうえで照合用のメタデータを返す。
+    """保存済みエントリを再読込し、本文の一致を検証したうえで一致確認の対象を示すメタデータを返す。
 
-    `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存経路で本文が欠落または改変されて
+    `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存の処理中に本文が欠落または改変されて
     いないことを、呼び出し元が終了状態で確定できるようにする。
     """
     saved_body = _frontmatter.decode_entry_text(path.read_bytes())
@@ -90,7 +90,7 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
 
 
 def _print_entry_details(details: dict[str, object | None]) -> None:
-    """エントリの照合対象を固定順で表示する。"""
+    """一致を確認したエントリの項目を決まった順で表示する。"""
     for key in ("target_repo", "target_commit", "plan_file"):
         value = details[key]
         print(f"    {key}: {value if value is not None else 'なし'}")
@@ -125,7 +125,7 @@ def _missing_dependency_warnings(
 
     依存先が実在しないことを理由に投入を拒否せず、警告を返して登録を続ける。
     `--depends-on`はその呼び出しの全エントリへ共通に付くため、エントリと依存先の組ごとに1件返す。
-    判定と文面は`--batch`経路と共有し、両経路で同じ条件の参照へ同じ警告が出る状態を保つ。
+    判定と文面は`--batch`指定時と共有し、どちらの場合も同じ条件の参照へ同じ警告が出る状態を保つ。
     """
     if not dependencies:
         return []
@@ -149,7 +149,7 @@ def _body_is_effectively_empty(body: str) -> bool:
 
     実質空とは、空文字・空白のみ、または全ての非空行が箇条書きマーカー
     （`-`・`*`・`+`のいずれか単独文字）のみで構成される状態を指す。
-    session-review自動投入・ユーザー直接投入いずれの経路でも、
+    session-review自動投入・ユーザー直接投入のどちらでも、
     実効的な指示・観察事象を含まない投入をCLI側で一律検出するための基準とする。
     """
     non_empty_lines = [line.strip() for line in body.split("\n") if line.strip()]
@@ -169,7 +169,7 @@ _REQUIRED_AWI_HEADINGS: tuple[str, ...] = (
 """`source`を持つ通常AWIが必須とするH2見出し。
 
 `agent-toolkit:wi-standards`の`## 通常AWIの本文`が定める必須節をそのまま写す。
-規範が必須と定める集合と本検査が判定する集合を1箇所へ集約し、
+規範が必須と定める集合を1箇所で定義し、本処理もその集合を使って判定することで、
 規範の一部だけを判定する状態が生じないようにする。規範側の必須節を変える改訂では本定数も同じ変更単位で更新する。
 """
 
@@ -249,7 +249,7 @@ def _require_agent_source(frontmatter: dict[str, object], source: str | None) ->
     """CLIのエージェント投入でsourceが確定していることを検証する。
 
     環境変数では呼出元を区別できないため、ユーザーの手動投入を受領する
-    Web UI等の共有保存関数には本検査を適用しない。
+    この確認はWeb UI等の共有保存関数には適用しない。
     """
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
@@ -480,7 +480,7 @@ def add_entries(
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     UWI種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
-    `_uwi.reject_reserved_uwi_markup`が`WebInputError`を送出する（CLIとWeb UIの共通経路）。
+    `_uwi.reject_reserved_uwi_markup`が`WebInputError`を送出する（CLIとWeb UIが共通で呼ぶ処理）。
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
     `submitter_session`はUWI種別のfrontmatterへだけ保存する。
@@ -617,7 +617,7 @@ def _validate_add_entries(
 def read_body_files(paths: list[str]) -> list[str]:
     """`--body-file`で指定された各パスの内容を本文として読む。
 
-    シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路として用いる。
+    引用符・改行を含む長文を、シェルの引用規則による解釈を介さずに渡すために使う。
     読み込みに失敗したパスは`WebInputError`を送出し、部分的に読み込んだ内容を投入へ進めない。
     """
     bodies: list[str] = []
@@ -658,7 +658,7 @@ def _cmd_add(
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
     計画実装型の分類は`--plan-file`の指定だけで確定する。
     `--body-file`を指定した場合はそのファイルの内容を本文として扱う。
-    シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
+    引用符・改行を含む長文を、シェルの引用規則による解釈を介さずに渡す。複数回指定すれば複数件を投入できる。
     `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
     UWIでは投入したセッションの識別子を`submitter_session`へ保存する（`_resolve_submitter_session`）。
     """

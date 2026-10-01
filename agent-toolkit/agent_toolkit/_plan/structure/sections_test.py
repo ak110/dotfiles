@@ -40,7 +40,7 @@ from agent_toolkit._plan.structure.test_support_test import *  # noqa: F403
 
 
 def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
-    """人間向け形式は正本ファイル名と説明的な実装単位だけを解析する。"""
+    """人間向け形式はWIファイル名と説明的な実装単位だけを解析する。"""
     metadata, metadata_errors = _plan_format.parse_plan_metadata(_HUMAN_MAIN_CONTENT)
     assert not metadata_errors, metadata_errors
     assert metadata is not None
@@ -81,7 +81,7 @@ def test_agent_wi_adopted_action_accepts_rederived_scope() -> None:
 def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
     """ユーザー指示由来は採否によらず原文の分解結果を要求する。
 
-    分解結果を持たない行は新規作成と改訂の経路で失敗させるため、移行の指摘として積む。
+    分解結果を持たない行は新規作成と改訂を行う場合は失敗させるため、移行の指摘として積む。
     """
     original = _plan_fixture.USER_ACTION_ROW
     decomposed = "原文の「公開契約を直して」が示す要求単位は1つであり、例示の範囲を閉じずに実施範囲とする。"
@@ -396,7 +396,7 @@ def test_agent_document_target_paths() -> None:
 def test_agent_document_target_covers_every_layer_and_kind(layer: str, kind_path: str) -> None:
     """ルール・SKILL.md・references・サブエージェント定義を、配布物と任意プロジェクトの両層で判定する。
 
-    ある種類を片方の層へだけ加えると、レーン統合の`agent_rule_changes`から他方の層の同じ種類が漏れる。
+    ある種類を片方の層へだけ加えると、レーン統合の`agent_rule_changes`に他方の層の同じ種類が含まれなくなる。
     """
     assert _plan_format.is_agent_doc_target_file(f"{layer}/{kind_path}")
 
@@ -466,7 +466,7 @@ def test_detail_structure_rejects_bug_section_for_normal_work_type() -> None:
 
 
 def test_origin_check_skips_when_source_is_unresolvable(tmp_path: pathlib.Path) -> None:
-    """正本を解決できない場合は照合だけを省略し、他の検査の結果を変えない。"""
+    """WIファイルを特定できない場合はWI本文との比較だけを省略し、他の判定結果を変えない。"""
     (tmp_path / "inbox").mkdir(parents=True)
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors

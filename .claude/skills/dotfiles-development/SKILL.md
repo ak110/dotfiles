@@ -68,8 +68,11 @@ description: >
     `.chezmoi-source/dot_claude/`・`.claude/skills/`）とする。
     文体の密度を測り、閾値を超えたファイルを指標付きで報告する。
     測る指標と閾値は`scripts/check_agent_doc_tone.py`のdocstringが定める。
+    `agent-toolkit/`の説明文はMarkdownの本文・見出し・表に加え、コードのコメント・docstring・表示文・注入文へ指定された語が戻った場合に、ファイルと行を示して非0で終える。
+    引用、意図的な悪い例、検出用データと保存形式の名称は説明文と区別し、良い例と通常の説明は判定する。
     報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
-    指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる
+    指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる。
+    語の再使用は`agent-toolkit:writing-standards`の`references/textlint-violations.md`に従って文全体を書き直す
 - 新規Linux環境では、利用者が自分の端末から`make setup-browser`でChromiumとシステム依存を初期導入する。
   Ubuntu/DebianでPowerShell検証が必要な場合も、利用者が自分の端末から`make setup-pwsh`で初期導入する
 - エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する

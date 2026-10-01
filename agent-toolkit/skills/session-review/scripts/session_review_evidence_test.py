@@ -574,7 +574,7 @@ def test_codex_home_resolution_order(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """明示引数、空でない環境変数、ホーム既定値の順に保存先を解決する。"""
+    """明示引数、空でない環境変数、ホームから求めた値の順に保存先を解決する。"""
     thread_id = "33333333-3333-4333-8333-333333333333"
     home = tmp_path / "home"
     roots = {
@@ -972,7 +972,7 @@ def test_reconciliation_repeats_until_no_main_user_intervention_is_added(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """再取得中に届いた人間の入力も次の境界で追加し、0件まで照合する。"""
+    """再取得中に届いた人間の入力も次の境界で追加し、新しい入力が0件になるまで比較する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1019,7 +1019,7 @@ def test_elapsed_until_after_reconciliation_includes_finalization_time(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """再照合後の成果確定時刻までを経過時間へ含める。"""
+    """再比較後の成果確定時刻までを経過時間へ含める。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1438,7 +1438,7 @@ def _bundle_failed_codex_commands(
     capsys: pytest.CaptureFixture[str],
     cases: list[tuple[list[str], int, str]],
 ) -> list[dict]:
-    """CommandExecutionの失敗列を公開bundle入口へ渡し、候補レコードを返す。"""
+    """CommandExecutionの失敗列を公開されたbundleコマンドへ渡し、候補レコードを返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1488,7 +1488,7 @@ def test_bundle_groups_wrapped_commands_by_failure_signature(
 def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_error(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """正常な否定結果と検査の検出を除外し、終了コード2の入力誤りは候補へ残す。"""
+    """正常な否定結果と自動チェックによる検出を除外し、終了コード2の入力誤りは候補へ残す。"""
     cases = [
         (["/bin/bash", "-lc", "git -c color.ui=false grep -n -F needle -- docs"], 1, ""),
         (["git", "config", "--get", "unset.key"], 1, ""),
@@ -1841,7 +1841,7 @@ def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> 
 
 
 def test_default_output_line_points_at_source_transcript_line(tmp_path: pathlib.Path) -> None:
-    """既定出力の各イベントへ、由来したtranscript行の1始まり行番号を付ける。"""
+    """オプションを指定しない場合の出力の各イベントへ、由来したtranscript行の1始まり行番号を付ける。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -6821,7 +6821,7 @@ def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
     """会話の流れはメイン記録の利用者発話とアシスタント発話だけを全文で載せ、記録位置の`--detail`で全文を返す。
 
     振り返りは会話の流れからセッション全体の遠回りや是正を探すため、配送本文、実行環境の挿入、
-    スキル展開、ツール呼び出しとツール結果が混ざると利用者の発話と区別できなくなる。
+    スキル展開、ツール呼び出しとツール結果を同じ本文に含めると利用者の発話と区別できなくなる。
     長い発話は会話の流れの表示で先頭と末尾だけになるため、記録位置の照会が全文を返す必要がある。
     """
     long_reply = "長い応答の先頭。" + "あ" * 1500 + "長い応答の末尾。"
@@ -7142,7 +7142,7 @@ def test_claude_main_record_keeps_only_completion_from_subagent_entries(tmp_path
 
 
 def _write_jsonl(path: pathlib.Path, entries: list[dict]) -> None:
-    """任意の記録正本をテスト用の絶対パスへ書く。"""
+    """任意の記録ファイルをテスト用の絶対パスへ書く。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n", encoding="utf-8")
 
@@ -7226,7 +7226,7 @@ def test_backup_only_thread_id_is_evidence_insufficient(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """backupに写しだけがあるthread IDは親・委譲先の両経路で証拠不足とする。"""
+    """backupに写しだけがあるthread IDは親・委譲先のどちらから解決しても証拠不足とする。"""
     thread_id = "66666666-6666-4666-8666-666666666666"
     codex_home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -7574,7 +7574,7 @@ def test_transcript_alias_selects_the_single_record_source(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--transcript`を位置引数と同じ単一記録の入口として扱う。"""
+    """`--transcript`を位置引数と同じ単一記録を指定する手段として扱う。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
 
     assert evidence.main(["--transcript", str(transcript)]) == 0
@@ -8049,9 +8049,9 @@ def _context_verdicts(capsys: pytest.CaptureFixture[str]) -> dict[str, dict]:
 
 
 def test_context_at_judges_claude_context_across_compaction(tmp_path: pathlib.Path, capsys) -> None:
-    """条文が事象の時点でその記録の文脈にあったかを、圧縮境界との前後と経路から判定する。
+    """条文が事象の時点でその記録の文脈にあったかを、圧縮境界との前後と文脈へ入る方法から判定する。
 
-    Skill本文は圧縮前なら`present`（経路`meta`）、Readで読んだ参照資料は圧縮で`dropped-by-compaction`、
+    Skill本文は圧縮前なら`present`（`channel`は`meta`）、Readで読んだ参照資料は圧縮で`dropped-by-compaction`、
     ルールファイルは境界後の再注入で`present`となる。起動済みスキル本文の末尾は再注入の切り詰めで
     境界後に現れないため`dropped-by-compaction`、事象行より後にだけある文字列と
     親セッションだけにある文字列は`absent`となる。判定を誤ると、振り返りが原因の区分を取り違える。
@@ -8148,7 +8148,7 @@ def test_context_at_judges_claude_context_across_compaction(tmp_path: pathlib.Pa
 
 
 def test_context_at_keeps_codex_replacement_history(tmp_path: pathlib.Path, capsys) -> None:
-    """Codexの`compacted`レコードが保持する本文は、圧縮後の事象行で`present`（経路`compaction-retained`）となる。"""
+    """Codexの`compacted`レコードが保持する本文は、圧縮後の事象行で`present`（`channel`は`compaction-retained`）となる。"""
     transcript = _write_transcript(
         tmp_path,
         [

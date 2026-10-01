@@ -148,7 +148,7 @@ class ManagedTempError(Exception):
     """ユーザーが入力または実行環境を修正できる検証エラー。
 
     `str()`は理由だけを返し、`next_action`に次の操作を持つ。送出箇所が原因の分類に応じた次の操作を渡し、
-    渡さない送出箇所には状態の確認と報告先を示す既定の次の操作を使う。
+    渡さない送出箇所には状態の確認と報告先を示す次の操作を共通の案内として使う。
     """
 
     DEFAULT_NEXT_ACTION = (
@@ -214,7 +214,7 @@ class _ValidatedRoot(typing.NamedTuple):
 
 
 def _temp_root_path() -> pathlib.Path:
-    """OS別のユーザーキャッシュ領域に置く既定rootを返す。"""
+    """rootを指定しない場合に使うOS別のユーザーキャッシュ領域を返す。"""
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA")
         if not base:

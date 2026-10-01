@@ -1,7 +1,7 @@
 """agent-toolkitのタスク文書（`share/<役割名>.subagent.md`）が宣言する入力と起動種別を読む。
 
 タスク文書は`## 入力`直後の`text`コードブロックへ、1行目の`必須入力名:`に続けて任意の`任意入力名:`と
-`起動種別:`を置く。`agents_server`の`start`と、`Agent`ツール・自由本文の起動を検査するPreToolUseフックが
+`起動種別:`を置く。`agents_server`の`start`と、`Agent`ツール・自由本文の起動を確認するPreToolUseフックが
 同じ宣言を読むため、解析を本モジュールへ集約する。解析が2箇所へ分かれると、一方だけが新しい行を受理し、
 同じ起動文がサーバーでは拒否されフックでは通る（またはその逆の）不一致が生じる。
 """
@@ -63,11 +63,11 @@ def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
 def read_declaration(task_document: pathlib.Path, document_text: str | None = None) -> TaskDocumentDeclaration | str:
     """タスク文書の宣言を返す。宣言を読めない場合は理由を示す警告文を返す。
 
-    警告文を返す場合、呼び出し元は必須入力と宣言外入力の検査を実施できないことを示して起動を続ける。
+    警告文を返す場合、呼び出し元は必須入力と宣言外入力を確認できないことを示して起動を続ける。
     宣言行の書式違反（未知の起動種別を含む）も警告文として返す。
     """
     if not is_agent_toolkit_task_document(task_document):
-        return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
+        return f"必須入力を確認できません: タスク文書がshare配下ではありません: {task_document}"
     return read_declaration_unchecked(task_document, document_text)
 
 
@@ -80,27 +80,27 @@ def read_declaration_unchecked(
         try:
             document_text = task_document.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
-            return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
+            return f"必須入力を確認できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
     block = _input_code_block(document_text)
     if isinstance(block, str):
-        return f"必須入力検査を実施できません: {block}: {task_document}"
+        return f"必須入力を確認できません: {block}: {task_document}"
     if not block or not block[0].startswith(REQUIRED_INPUT_PREFIX):
-        return f"必須入力検査を実施できません: 必須入力名を取得できません: {task_document}"
+        return f"必須入力を確認できません: 必須入力名を取得できません: {task_document}"
     required = _parse_names(block[0].removeprefix(REQUIRED_INPUT_PREFIX))
     if required is None:
-        return f"必須入力検査を実施できません: 必須入力名の書式が不正です: {task_document}"
+        return f"必須入力を確認できません: 必須入力名の書式が不正です: {task_document}"
     optional: tuple[str, ...] = ()
     launch_kind: LaunchKind = "delegate"
     for line in block[1:]:
         if line.startswith(OPTIONAL_INPUT_PREFIX):
             parsed = _parse_names(line.removeprefix(OPTIONAL_INPUT_PREFIX))
             if parsed is None:
-                return f"必須入力検査を実施できません: 任意入力名の書式が不正です: {task_document}"
+                return f"必須入力を確認できません: 任意入力名の書式が不正です: {task_document}"
             optional = parsed
         elif line.startswith(LAUNCH_KIND_PREFIX):
             value = line.removeprefix(LAUNCH_KIND_PREFIX).strip()
             if value not in LAUNCH_KINDS:
-                return f"必須入力検査を実施できません: 起動種別が不正です: {value}: {task_document}"
+                return f"必須入力を確認できません: 起動種別が不正です: {value}: {task_document}"
             launch_kind = value
     return TaskDocumentDeclaration(required=required, optional=optional, launch_kind=launch_kind)
 

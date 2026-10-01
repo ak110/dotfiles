@@ -1,6 +1,6 @@
 """agent-toolkit/skills/writing-standards/scripts/check_dash.py のテスト。
 
-ダッシュ系禁止文字検査スクリプトをfork-server経由（フォールバック時はsubprocess）で起動し、
+禁止されたダッシュ文字を検出するスクリプトをfork-server経由（フォールバック時はsubprocess）で起動し、
 違反検出・除外・出力形式・ディレクトリ再帰・拡張子フィルタを検証する。
 """
 
@@ -33,7 +33,7 @@ def _write(path: pathlib.Path, content: str) -> pathlib.Path:
 
 
 class TestCheckDash:
-    """ダッシュ系禁止文字検査の主要シナリオをまとめて検証する。"""
+    """禁止されたダッシュ文字の検出に関する主要シナリオをまとめて検証する。"""
 
     # ---- 違反検出 ----
 

@@ -1,4 +1,4 @@
-"""atk commitの公開入口と候補切替を検証する。"""
+"""利用者が使うatk commitコマンドを通して候補切替を検証する。"""
 
 from __future__ import annotations
 

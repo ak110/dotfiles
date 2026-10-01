@@ -161,7 +161,7 @@ def test_old_marker_from_resume_keeps_signal_path(monkeypatch: pytest.MonkeyPatc
 
 
 class _FakeProcess:
-    """`_target`が参照する属性だけを返す検査用のプロセス。"""
+    """`_target`の判定に使うプロセスで、同関数が参照する属性だけを返す。"""
 
     def __init__(self, pid: int, argv: list[str], executable: pathlib.Path) -> None:
         self.pid = pid

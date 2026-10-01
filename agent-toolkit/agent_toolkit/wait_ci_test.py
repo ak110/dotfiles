@@ -324,7 +324,7 @@ class TestRegistrationGrace:
 
 
 class TestGithubCiConfiguration:
-    """GitHub tree応答によるCI定義不在の即時判定と後退経路。"""
+    """GitHub tree応答によるCI定義不在の即時判定と代替処理。"""
 
     @pytest.mark.parametrize(
         "payload",
@@ -731,7 +731,7 @@ class TestUnifiedCompletionLoop:
 
     @pytest.mark.parametrize("follow_mode", [False, True])
     def test_snapshot_failure_recovers(self, follow_mode: bool) -> None:
-        """一時的な取得失敗後の成功を両経路で受理する。"""
+        """一時的な取得失敗後の成功を両方の待機処理で受理する。"""
         calls = 0
 
         def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord], set[int]]:
@@ -748,7 +748,7 @@ class TestUnifiedCompletionLoop:
 
     @pytest.mark.parametrize("follow_mode", [False, True])
     def test_three_snapshot_failures_return_gh_error(self, follow_mode: bool) -> None:
-        """3回連続取得失敗を両経路で同じ終了コードへ変換する。"""
+        """3回連続取得失敗を両方の待機処理で同じ終了コードへ変換する。"""
 
         def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord], set[int]]:
             raise wait_ci.RunListError("completion failure")
@@ -1238,7 +1238,7 @@ class TestSignalHandling:
         """SIGTERM受信時に`EXIT_INTERRUPTED`を返すことを実プロセスで確認する。
 
         ハンドラ登録は`main`冒頭で行われるため、送信までの待機が起動所要時間を下回ると
-        既定動作で終了し`-SIGTERM`が返る。待機時間を延ばしながら最大3回試行し、
+        通常のシグナル処理で終了し`-SIGTERM`が返る。待機時間を延ばしながら最大3回試行し、
         起動が遅い実行環境でも登録後の挙動を判定できるようにする。
 
         併せてstderrへ`reentrant call`が出ないことを確認する。ハンドラが`print`で

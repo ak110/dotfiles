@@ -196,7 +196,7 @@ def test_session_start_length_report_shows_overage_and_breakdown() -> None:
 
 
 def test_share_task_documents_have_no_bare_return_line_examples() -> None:
-    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを検査する。
+    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
 
     条件付き出力の書式例をフェンスの外へ置くと、常時出力する行と誤読される。
     母集団は`rules_context.SHARE_DIR`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
@@ -392,6 +392,33 @@ def test_subagent_start_without_parent_session_temp_omits_notice(
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "no-parent-area"}))
 
     assert "このセッションの管理対象一時領域" not in _output(capsys)
+
+
+def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """異なるAgentが同じ用途名で書いても衝突せず、再開は同じ場所へ届く。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "parent"}))
+    _output(capsys)
+    parent = pathlib.Path(managed_temp.list_managed_temp(session_id="parent")[0]["path"])
+    paths = []
+    for agent in ("group-a", "group-b", "group-a"):
+        rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "parent", "agent_id": agent}))
+        output = _output(capsys)
+        path = parent / f"agent-{agent}"
+        assert str(path) in output
+        assert str(parent) in output
+        assert "委譲元が渡したファイルの読み書き" in output
+        assert path.is_dir()
+        paths.append(path)
+    assert paths[0] == paths[2]
+    assert paths[0] != paths[1]
+    (paths[0] / "msg1.txt").write_text("担当A", encoding="utf-8")
+    (paths[1] / "msg1.txt").write_text("担当B", encoding="utf-8")
+    assert (paths[0] / "msg1.txt").read_text(encoding="utf-8") == "担当A"
+    assert len(managed_temp.list_managed_temp(session_id="parent")) == 1
 
 
 def test_session_start_resets_language_reinjection_count(

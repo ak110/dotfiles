@@ -1,28 +1,28 @@
 # pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F821,I001
 # pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,unused-import,used-before-assignment,wrong-import-order
-"""計画ファイルの構造検査の共通モジュール。
+"""計画ファイルの構造が基準を満たすか判定する共有モジュール。
 
-構造検査（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
+構造の判定（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
 2系統のPreToolUse（`pretooluse.py`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
 計画ファイルの見出し、固定H3および表の行名は、本モジュールの構造定数で定める。
 同書には、構造定数から導いた受理形式を記述する。
 
-構造認識と原記法の検査は分離する。
+構造の認識と原文の記法の判定は別々に行う。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
-トークン列と位置情報から認識する。解析結果を各検査へ渡し、検査ごとの再解析を避ける。
+トークン列と位置情報から認識する。解析結果を各判定関数へ渡し、同じ構造を再び解析することを避ける。
 パーサーが補完、除去、段落へ変換する可能性がある原記法は、表トークンと段落トークンの
-位置情報から取得した原文を別関数で検査する。
+位置情報から取得した原文の記法は別関数で判定する。
 - 表の列数、外側パイプ、セル数の一致を原文から判定する
 - 表に変換されなかった段落では、パイプ区切りのヘッダー候補と直後の区切り行候補について
   セル数の不一致を検出する
-- 原文検査の対象範囲は、パーサーが表または段落として分類した箇所に限定する
-- 正規表現は原文の内容照合に限定し、列数は区切り記号で分割した要素数から計算する
+- 原文の記法を判定する範囲は、パーサーが表または段落として分類した箇所に限定する
+- 正規表現は原文が指定の内容に一致するかの判定に限定し、列数は区切り記号で分割した要素数から計算する
 
-各検査関数のdocstringへ担当する検査、受け取るトークン範囲、段落内の候補条件を記載する。
-検査項目を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
+各判定関数のdocstringへ、判定する条件、受け取るトークン範囲、段落内の候補条件を記載する。
+判定する条件を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
 - インデント、コードブロック内の記述、見出しの閉じ記号
 - 表の外側パイプの省略、表トークンになる列数不一致、段落へ変換される列数不一致
 - 同名節の重複、親節の違い
@@ -303,13 +303,13 @@ class PlanMetadata:
     """メタ情報を収めていた親H2の見出し文。正規形では`概要`となる。"""
 
     entries: tuple[tuple[str, str], ...]
-    """記載順の(項目名, 生の値)。順序と記法の検査に使う。"""
+    """記載順の(項目名, 生の値)。項目の順序と記法が基準を満たすかの判定に使う。"""
 
     values: dict[str, str]
     """認識した項目の値。バッククォートは除去済みで、欠落項目は含めない。"""
 
     related_wi: tuple[tuple[str, str], ...]
-    """`関連WI`の(正本ファイル名, 1行要約)。記載順を保持する。"""
+    """`関連WI`の(WIファイル名, 1行要約)。記載順を保持する。"""
 
     base_commit_candidates: tuple[str, ...]
     """`ベースコミット`と旧別名`基準コミット`から抽出した16進値の全候補。"""
@@ -325,7 +325,7 @@ _METADATA_RELATED_WI_PATTERN = re.compile(r"^  - (?P<filename>[^:]+):(?: (?P<sum
 _METADATA_BASE_COMMIT_LINE = re.compile(r"^\s*-\s*(?:ベースコミット|基準コミット):\s*`(?P<oid>[0-9a-fA-F]+)`.*$")
 """ベースコミットを記載した箇条書きからOIDを読み取る互換パターン。
 
-正規形の記法検査は`entries`側で行うため、値抽出は既存計画の記法差を受け入れる。
+正規形の記法に従うかは`entries`側で判定するため、値抽出は既存計画の記法差を受け入れる。
 行頭の字下げ、コロン前後の空白、閉じバッククォート以降の注記を許容し、
 旧別名`基準コミット`も対象とする。
 """
@@ -437,13 +437,13 @@ def is_agent_facing_md(rel_path: str) -> bool:
     """パス文字列がコーディングエージェント向けMarkdownの対象種別かを判定する。
 
     対象は拡張子`.md`のファイルのうち、次のいずれかに該当するもの。
-    ルートの`AGENTS.md`・`CLAUDE.md`。パス部品に`rules`を含むもの
+    ルートの`AGENTS.md`・`CLAUDE.md`。パスを構成する要素に`rules`を含むもの
     （`agent-toolkit/rules/`・`.claude/rules/`・`.chezmoi-source/dot_claude/rules/`等）。
-    末尾から3番目のパス部品が`skills`かつファイル名が`SKILL.md`のもの
+    末尾から3番目のパスを構成する要素が`skills`かつファイル名が`SKILL.md`のもの
     （`agent-toolkit/skills/<name>/SKILL.md`・`.claude/skills/<name>/SKILL.md`・
     `.chezmoi-source/dot_claude/skills/<name>/SKILL.md`等）。
-    パス部品に`references`と`skills`の両方を含むもの。パス部品に`agents`を含むもの。
-    パス部品の完全一致で判定し、部分文字列一致は行わない。
+    パスを構成する要素に`references`と`skills`の両方を含むもの。パスを構成する要素に`agents`を含むもの。
+    パスを構成する要素の完全一致で判定し、部分文字列一致は行わない。
     `posttooluse.py`の条件付き禁止形の警告通知が対象種別の判定に使う。
     """
     p = pathlib.PurePosixPath(rel_path.replace("\\", "/"))
@@ -471,11 +471,11 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
     # chezmoi配布元のテンプレート（`<name>.md.tmpl`）も配布先ではエージェント向け文書として読み込まれるため、
-    # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレート経由の規範改訂を検査が素通りさせる。
+    # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレートによる規範の改訂を判定できなくなる。
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md(\.tmpl)?$"),
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md(\.tmpl)?$"),
     # ユーザーのプロジェクトが直接持つ規範文書。配布元固有パスだけを対象にすると、
-    # プラグインとして配布された先のプロジェクトで検査が素通りする。
+    # プラグインとして配布された先のプロジェクトで改訂を判定できなくなる。
     # `skills`配下の粒度は`agent-toolkit/skills/`側と揃え、`SKILL.md`と`references/`配下に限定する。
     re.compile(r"(^|/)\.claude/rules/.+\.md$"),
     re.compile(r"(^|/)\.claude/skills/[^/]+/SKILL\.md$"),
@@ -483,7 +483,7 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     # サブエージェント定義も`agent-toolkit/agents/`と同じ種類としてプロジェクト側の層で判定する。
     re.compile(r"(^|/)\.claude/agents/.+\.md$"),
 )
-# basenameで照合するコーディングエージェント向け文書判定対象ファイル名。
+# basenameとの一致で判定するコーディングエージェント向け文書判定対象ファイル名。
 # ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
 AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
 
@@ -510,7 +510,7 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     return pathlib.Path(normalized).name in AGENT_DOC_TARGET_BASENAMES
 
 
-# --- 人間向け固定領域の構造検査 ---
+# --- 人間向け固定領域の構造を判定する ---
 
 _LEGACY_MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
 _MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^P-[0-9A-Za-z][0-9A-Za-z_-]*(?:(?:（[^）\n]+）|\([^)\n]+\)):|:\s+\S.*)$")
@@ -520,7 +520,7 @@ _HUMAN_MATERIAL_LINE_PATTERN = re.compile(r"^\s*-\s+(?P<path>[^/\\\s]+\.md)\s*$"
 _STRICT_INTERNAL_PLAN_ID_PATTERN = re.compile(
     r"(?<![0-9A-Za-z_-])(?:R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}|P-[0-9A-Za-z][0-9A-Za-z_-]*|U-[0-9]{3}|H-[0-9]{3}|C-[0-9]{3}|R[0-9]+-[a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![0-9A-Za-z_-])"
 )
-# `P-256`は外部仕様でも使われるため、自由文では旧素材IDとの区別を断定しない。
+# `P-256`は外部仕様でも使われるため、自由文では旧素材IDであるとは判定しない。
 _INTERNAL_PLAN_ID_PATTERN = re.compile(
     r"(?<![0-9A-Za-z_-])(?:R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}|P-(?!256(?![0-9A-Za-z_-]))[0-9A-Za-z][0-9A-Za-z_-]*|U-[0-9]{3}|H-[0-9]{3}|C-[0-9]{3}|R[0-9]+-[a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![0-9A-Za-z_-])"
 )
@@ -562,7 +562,7 @@ def parse_plan_materials(content: str) -> tuple[PlanMaterials | None, list[str]]
     headings = extract_headings(content)
     index = find_heading_index(headings, 2, PLAN_H2_MATERIALS)
     if index is None:
-        return None, ["固定H2の提示素材を検査できない"]
+        return None, ["固定H2の提示素材の構造を判定できない"]
     section = _materials_section(content, headings, index)
     tables = extract_tables(section)
     if (
@@ -585,7 +585,7 @@ def parse_plan_implementation_units(
     """計画ファイル（詳細）の`### 実装単位`の固定表を解析して構造違反を返す。
 
     単位表は新書式の計画ファイル（詳細）だけの必須契約であり、違反は計画を実装順へ分解できないためerrorとする。
-    旧6列表は読み取り互換として受理し、`対象の実施内容`列の値を検査しない。
+    旧6列表は読み取り互換として受理し、`対象の実施内容`列の値が基準を満たすかは判定しない。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)

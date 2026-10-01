@@ -97,7 +97,7 @@ def validate(contract: Any, target_repo: pathlib.Path) -> None:
         )
         if result.returncode != 0:
             raise ContractError(
-                "AWI参照を正本から取得できない",
+                "AWI参照をWI本文から取得できない",
                 next_action="`atk wi show <ファイル名>`で各AWIの実在とファイル名の綴りを確かめ、直してから再実行する",
             )
 

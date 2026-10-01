@@ -24,7 +24,7 @@ session未生成かつ元担当不在を実際に確認できない場合は、�
 `agents_server`の`start_custom`と、`起動種別:`を宣言しないか`delegate`を宣言したタスク文書の`start`による起動を通常起動と呼ぶ。`start_explore`・`start_shell`・`start_write`と、`explore`・`shell`・`write`を宣言したタスク文書の`start`による起動を軽量起動と呼ぶ。区分は`agent_toolkit/_agents_server/state.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。
 
 - 専用agent定義がある作業をClaude Codeで実行する場合は、その定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
-- Claude Codeからの委譲は`agents_server`を既定とする。「工程別モデル設定」の表が定めるキーを持つ工程は同表のeffortを渡す。`Agent`ツールにはeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合は`Agent`ツールへ切り替えて委譲する。`Agent`ツールはeffortを渡せず、実行するengineとモデルも工程別モデル設定と異なり得るため、切り替えた工程、本来の設定値（engine、モデル、effort）と切り替えた理由を報告へ記録する。`Agent`ツールを使うのは、この場合に加えて、前項が定める専用agent定義がある作業、ユーザーまたは上位主体の明示指示があった場合、`routing.md`「会話を引き継ぐ委譲」がforkを選ぶ場合とする。forkは`subagent_type: "fork"`で起動し、親と同じモデルおよびeffortを使う
+- Claude Codeからの委譲は`agents_server`を通常の選択とする。「工程別モデル設定」の表が定めるキーを持つ工程は同表のeffortを渡す。`Agent`ツールにはeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合は`Agent`ツールへ切り替えて委譲する。`Agent`ツールはeffortを渡せず、実行するengineとモデルも工程別モデル設定と異なり得るため、切り替えた工程、本来の設定値（engine、モデル、effort）と切り替えた理由を報告へ記録する。`Agent`ツールを使うのは、この場合に加えて、前項が定める専用agent定義がある作業、ユーザーまたは上位主体の明示指示があった場合、`routing.md`「会話を引き継ぐ委譲」がforkを選ぶ場合とする。forkは`subagent_type: "fork"`で起動し、親と同じモデルおよびeffortを使う
 - `agents_server`を利用できる環境では、公開ツールの説明と入力スキーマの確認は`agent-toolkit:delegation`「送信」に従う。役割文書を持つ工程にはその文書を渡し、自由本文からの起動は対応する起動方法を選ぶ。起動方法とモデルの選定は本書の工程別モデル設定に従う
   - 起動直後に実行環境の可用性失敗が確定したときは、元担当の不在と書込所有権の解放を先に確認する。候補の除外と再起動は公開応答に従い、同じ失敗を繰り返す場合は自ら実施できる範囲を進め、委譲が不可欠な工程は未完了として返す。実行中の担当を経過時間や無応答だけで置き換えない
   - 読み取りだけの調査、参照実装に沿う定型的な書込、出力量が大きいコマンド実行は、各専用ツールの公開説明を確認して割り当てる。読み取り専用の調査結果は根拠とともに受け取り、出力の切り詰めや上限到達が報告された結果を網羅性・件数・不在の根拠にしない。書込主体と検証主体の責務は起動契約に従う
@@ -45,7 +45,7 @@ forkの観測記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 | --- | --- | --- | --- | --- |
 | `high_tier_model` | 計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程 | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `medium_tier_model` | WIの選定とレーン分け、実装後の実行レビュー、`model_type="medium_tier"`を指定した`start_explore` | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `low_tier_model` | `start_explore`の既定、`start_shell`、`TASK_MODEL_TYPES`が`low_tier`へ対応付けた軽量種別のタスク文書起動 | 調査またはshellを委譲する主体 | `agents_server` MCP | `agents_server` MCP |
+| `low_tier_model` | `start_explore`で指定がない場合、`start_shell`、`TASK_MODEL_TYPES`が`low_tier`へ対応付けた軽量種別のタスク文書起動 | 調査またはshellを委譲する主体 | `agents_server` MCP | `agents_server` MCP |
 | `write_model` | `start_write`による文章起草 | 文章を委譲する主体 | `agents_server` MCP | `agents_server` MCP |
 | `orchestrate_model` | `atk wi process-loop`の新しいセッション | 常駐処理 | `atk` | `atk` |
 
@@ -124,18 +124,18 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 委譲先は可用性に起因する失敗を観測した場合も、設定と異なるengineとモデルのどちらへも自身の判断で切り替えず、手順4のとおり`needs_escalation`または未完了として呼び出し元へ返す。
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
-工程別モデル設定のキーを持たない名前付きagentの呼び出しは、「工程別モデル設定」および「modelとreasoning effort」の対象外とし、その定義のfrontmatterが指定する既定に従って起動する。
+工程別モデル設定のキーを持たない名前付きagentの呼び出しは、「工程別モデル設定」および「modelとreasoning effort」の対象外とし、その定義のfrontmatterが指定する省略時の扱いに従って起動する。
 同じ計画の起草から実装、変更範囲の検証までは、同じレーン担当が同一worktreeで順に実施する。
 継続接続が成立しない場合だけ新規threadを起動し、検収済み状態と残る工程を1つの担当へまとめて渡す。
 
 ## modelとreasoning effort
 
-次の基準を上から評価し、最初に該当した項を選ぶ（努力目標。選択は品質と費用の配分を改善するが、外れても作業は成立する）。reasoning effortの既定値は`medium`とする。
+次の基準を上から評価し、最初に該当した項を選ぶ（努力目標。選択は品質と費用の配分を改善するが、外れても作業は成立する）。reasoning effortの省略時の値は`medium`とする。
 
 1. 設計判断を伴う実装とレビューは上位モデルを選ぶ
 2. その他は標準モデルを選ぶ
 
-既定より高いreasoning effortは、読むファイル数が少なく、推論の深さが結果を左右すると事前に判明している工程で選ぶ（努力目標。それ以外の工程では費用が増えるだけになりやすいため）。
+通常選ぶ値より高いreasoning effortは、読むファイル数が少なく、推論の深さが結果を左右すると事前に判明している工程で選ぶ（努力目標。それ以外の工程では費用が増えるだけになりやすいため）。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」にある。
 
 モデルを明示する指定ではreasoning effortも併せて指定する。
@@ -157,7 +157,7 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 - 同じ行の`codex`と`claude`の組合せを代替候補とみなし、effortは表の値を用いる
 - `terra`は系列名として指定し、その時点で利用可能な同系列の最新版へ解決する。Codexの各行で世代をそろえる前提は置かない。現行の`haiku`は旧世代に属し、新世代の軽量モデルが利用可能になった時点で軽量の行を見直す
 - 代替起動では、まず同じ行のもう一方のengineを試す（起動順は「工程別モデル設定」の代替起動の規定に従う）
-- 上位の行を既定とし、中位・軽量の行は、工程別モデル設定の値がその行の組合せに当たる場合と、内容が確定済みで低リスクな機械作業に限って選ぶ
+- 通常は上位の行を選び、中位・軽量の行は、工程別モデル設定の値がその行の組合せに当たる場合と、内容が確定済みで低リスクな機械作業に限って選ぶ
 - 上表に無いモデルを用いる用途は、上表のある組合せを同等以上と確認できる別の組合せへ置き換える場合に限る（本表はユーザーが運用上の目安として指定した対応関係であり、表外のモデルを候補へ加えるとその目安の外で組合せが選ばれるため）
 - effortを指定できない環境で上表の組合せを満たせない場合は、`codex`の列へ切り替えるか、より上位の行を選ぶ。
   Claudeでのeffortはエージェント定義のfrontmatterで確定し、frontmatterを持たない起動方法では指定できない（`agent-toolkit:delegation`の`references/claude-code-runtime.md`）

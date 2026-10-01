@@ -1,4 +1,4 @@
-"""振り返りの入力（会話の流れ、問題候補の一覧、セッション統計）を書く準備スクリプトを、公開入口から利用シナリオで検証する。"""
+"""振り返りの入力（会話の流れ、問題候補の一覧、セッション統計）を書く準備スクリプトを、公開されたコマンドから利用シナリオを実行して検証する。"""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def test_response_language_notices_are_excluded_from_candidates(
     """応答言語hookの警告を候補から除いて件数だけを数え、同じ発生源・区分の他の警告と別の発生源の同じ本文は候補に残す。
 
     応答言語hookは遮断後に対処する型で、振り返りのたびに同じ見送り判定になる。
-    除外が漏れると候補一覧へ毎回載り、発生源や区分を見ずに除くと是正を要する他の警告まで候補から消える。
+    除外しないと候補一覧へ毎回載り、発生源や区分を見ずに除くと是正を要する他の警告まで候補から消える。
     """
     opening = '<atk-auto source="pretooluse" kind="warn">'
     first_warning = f"{opening}{response_language_check.WARNING_BODY}判定対象の冒頭: 「I will run」</atk-auto>"

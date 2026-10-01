@@ -346,6 +346,6 @@ def test_skip_reason_mismatch_names_expected_prefix() -> None:
 
 
 def test_unknown_stage_lists_accepted_values() -> None:
-    """検査段階が不正な場合は受理する値を列挙する。"""
+    """確認する段階の指定が不正な場合は受理する値を列挙する。"""
     errors = SUBJECT.validate_report(SUCCESS, "unknown", None)
-    assert errors == ["検査段階が不正である: unknown（受理する値: work-complete, review-result, review-submission）"]
+    assert errors == ["確認する段階の指定が不正である: unknown（受理する値: work-complete, review-result, review-submission）"]

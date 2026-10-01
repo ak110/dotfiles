@@ -87,7 +87,7 @@ def _assert_preserved_times(path: pathlib.Path, expected: tuple[float | None, in
 
 
 def _set_stable_mtime(path: pathlib.Path) -> tuple[float | None, int]:
-    """日時維持の検査用に更新日時を固定して返す。"""
+    """日時が維持されることを確かめるため更新日時を固定して返す。"""
     timestamp_ns = 1_700_000_000_123_456_789
     os.utime(path, ns=(timestamp_ns, timestamp_ns))
     return _preserved_times(path)
@@ -975,7 +975,7 @@ def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp
 
 
 def test_commit_saved_bundle_rejects_working_root_residue(tmp_path: pathlib.Path) -> None:
-    """保存済み計画と同stemの直下残骸を黙って無視しない。"""
+    """保存済み計画と同じstemのファイルが作業root直下に残っていれば失敗を返す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)

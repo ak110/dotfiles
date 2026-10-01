@@ -79,7 +79,7 @@ _KNOWN_MODELS = {
     ),
     # Antigravity CLIの`--model`は、`agy models`が返す推論の深さ込みの完全スラッグと、
     # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。
-    # 実測の日付と再検証手段は`docs/development/audit-records.md`の
+    # 実物を確認した日付と再検証手段は`docs/development/audit-records.md`の
     # 「agent-toolkit/agent_toolkit/_atk/config.py：Antigravity CLIのモデル指定」が持つ。
     # 日本語文書の推敲へ用途を限定するため、一覧はこの用途で使う1件だけとする。
     "agy": frozenset({"gemini-3.8-flash"}),
@@ -148,7 +148,7 @@ def _validate_stage_model_candidates(value: str) -> None:
 
 
 def resolve_mutable_setting(key: str) -> str:
-    """変更可能設定を環境変数、保存値、既定値の優先順で解決する。"""
+    """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
     if key not in _MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
     env_name = _config_env_name(key)

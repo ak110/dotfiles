@@ -1,4 +1,4 @@
-"""実行レビュー証拠の公開検査コマンドを検証する。"""
+"""公開コマンドで実行レビュー証拠が基準を満たすか判定する動作を検証する。"""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
             return subprocess.CompletedProcess(args, 1, stdout="", stderr=f"失敗: {filename}はありません")
         output = pathlib.Path(next(arg for arg in args if arg.startswith("--output-file=")).removeprefix("--output-file="))
         output.write_text(f"## target_repo: example\n### {filename} [processing]\n---\n{bodies[filename]}", encoding="utf-8")
-        # エージェント環境の`atk`は長い本文を標準出力へ書かないため、検査は保存先だけを読む必要がある。
+        # エージェント環境の`atk`は長い本文を標準出力へ書かないため、証拠を確かめる処理は保存先だけを読む必要がある。
         return subprocess.CompletedProcess(args, 0, stdout=f"保存先: {output}\n行数: 1\n", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -129,7 +129,7 @@ def test_public_command_rejects_shared_evidence_without_reference(
 def test_public_command_accepts_shared_file_or_test_result(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reference: str
 ) -> None:
-    """実在する同じ記録の参照と具体的なテスト成功結果の共用は公開入口で受理する。"""
+    """実在する同じ記録の参照と具体的なテスト成功結果の共用は公開されたコマンドで受理する。"""
     records = tmp_path / "records"
     records.mkdir()
     record = records / "観測.md"
@@ -179,7 +179,7 @@ def test_public_command_accepts_same_unit_duplicates_and_distinct_evidence(
 
 
 def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開入口で複数箇条書きと段落一件の条件数を判定する。"""
+    """公開されたコマンドで複数箇条書きと段落一件の条件数を判定する。"""
     evidence = tmp_path / "evidence.json"
     _write_evidence(
         evidence,
@@ -204,7 +204,7 @@ def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, mo
 def test_public_command_rejects_numbered_condition_instead_of_original(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """行数が一致しても原文との対応が無ければ公開入口で拒否する。"""
+    """行数が一致しても原文との対応が無ければ公開されたコマンドで拒否する。"""
     evidence = tmp_path / "evidence.json"
     _mock_wi(
         monkeypatch,
@@ -384,7 +384,7 @@ def test_expired_condition_checks_user_answer_source(
     source: str,
     valid: bool,
 ) -> None:
-    """公開入口で失効根拠の種類と回答の有無を検査し、別のWIでも同じ不足を検出する。"""
+    """公開されたコマンドで失効根拠の種類と回答の有無が条件を満たすか判定し、別のWIでも同じ不足を検出する。"""
     reference = "20260929-120000-001.md"
     bodies = {awi: "type: awi\nsource: agent\n---\n## 完成条件\n- 取り除く条件\n"}
     if reference_body is not None:
@@ -543,7 +543,7 @@ def test_public_command_rejects_partly_updated_review_heads(
     capsys: pytest.CaptureFixture[str],
     stale_section: str,
 ) -> None:
-    """片側配列と計画由来の行の更新漏れを、実Gitの別commitとの照合で検出する。"""
+    """片側配列と計画由来の行が更新されていないことを、実Gitの別commitと比べて検出する。"""
 
     def git(*args: str) -> str:
         return subprocess.run(

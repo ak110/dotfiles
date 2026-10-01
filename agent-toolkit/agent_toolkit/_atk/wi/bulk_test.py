@@ -258,7 +258,7 @@ class TestRemoveAllConfirmation:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """空入力は表示どおり既定の承認として候補を削除する。"""
+        """空入力は表示どおり承認とみなして候補を削除する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []

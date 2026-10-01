@@ -13,7 +13,7 @@ _warning_context: dict[str, object] = {"session_id": "", "blocks": []}
 
 
 def set_warning_session_id(session_id: str) -> None:
-    """現在のhook payloadのセッションIDをwarn整形経路へ渡す。"""
+    """現在のhook payloadのセッションIDをwarn通知を整形する処理へ渡す。"""
     _warning_context["session_id"] = session_id
     _warning_context["blocks"] = []
 
@@ -43,7 +43,7 @@ def _with_fix(body: str, fix: str | None) -> str:
 
 
 def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
-    """`hook_id`と既定タグを固定した通知整形関数を返す。"""
+    """`hook_id`と、タグを省略した場合に使う値を固定した通知整形関数を返す。"""
 
     def format_notice(  # noqa: PLR0913 -- 通知の種別ごとに必須となる引数をキーワードで受け取る
         body: str,

@@ -31,7 +31,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, auto
 
 
 class TestAgentsServerInputChecks:
-    """agents_serverの入力検査が委譲スキル状態から独立していることを確認する。"""
+    """agents_serverの入力の妥当性判定が委譲スキル状態に依存しないことを確認する。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -58,7 +58,7 @@ class TestAgentsServerInputChecks:
         tool_input: dict,
         remote_session_id: str | None,
     ) -> None:
-        """専用スキルの起動記録が無くても独立した入力検査を通過すれば許可する。"""
+        """専用スキルの起動記録が無くても入力の妥当性を独立して確かめて通過すれば許可する。"""
         session_id = f"without-skill-{tool_suffix}"
         if remote_session_id is not None:
             _write_session_state(
@@ -149,7 +149,7 @@ class TestCodexMcpExecution:
         assert "systemMessage" not in out
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str]):
-        """sandbox・approval-policyが共に既定値の場合、updatedInputは返すがsystemMessageを含めない。"""
+        """sandbox・approval-policyが共に省略時の値と一致する場合、updatedInputは返すがsystemMessageを含めない。"""
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -191,7 +191,7 @@ class TestCodexMcpExecution:
 
 
 class TestCheckCodexMcpCwd:
-    """開始時`cwd`は実行基盤の入力検査へ委ねる。"""
+    """開始時`cwd`は入力の妥当性を判定する実行基盤へ委ねる。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -231,7 +231,7 @@ class TestCodexMcpReply:
         ],
     )
     def test_continuation_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path, tool_name: str, prompt: str):
-        """Codex継続用MCP toolが入力検査後に強制承認される。"""
+        """Codex継続用MCP toolが入力の妥当性を確かめた後に強制承認される。"""
         _write_session_state(
             tmp_path,
             "reply1",
@@ -472,7 +472,7 @@ class TestIssSidechainProbe:
         assert entry["tool_name"] == "mcp__plugin_agent-toolkit_agents_server__send_message"
 
     def test_called_even_when_iss_sidechain_true(self, tmp_path: pathlib.Path):
-        """`isSidechain=True`ケースでも本ヘルパーが呼ばれる（既存ゲートより前で実行される確認）。"""
+        """`isSidechain=True`ケースでも本ヘルパーが呼ばれる（既存の可否判定より前で実行されることの確認）。"""
         env = self._state_env(tmp_path)
         result = _run(
             {
@@ -504,7 +504,7 @@ class TestBashProcessKillByPattern:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
-        # 遮断本文が示す検索語の書き方は、同じ検査を通過する形である
+        # 遮断本文が示す検索語の書き方は、同じ判定条件を通過する形である
         assert "`git log -S`" in result.stderr
         assert "`p[k]ill`" in result.stderr
 
@@ -581,7 +581,7 @@ class TestBashHeredocLiteralExclusion:
     """ヒアドキュメント本文のリテラルを実行コマンドとして誤検出しない。
 
     区間分割と実行位置解析はヒアドキュメント本文も実行コマンド列として扱うため、
-    本文へ書き込む字面だけでは検査が成立しないことを検証する。
+    本文へ書き込む字面だけでは判定できないことを検証する。
     """
 
     def test_pattern_kill_in_heredoc_body_is_not_blocked(self, tmp_path: pathlib.Path) -> None:

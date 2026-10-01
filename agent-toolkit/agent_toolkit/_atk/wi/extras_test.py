@@ -351,7 +351,7 @@ def _write_adopted_file(
 
 
 class TestListAwiStatusDefaultAll:
-    """`list`サブコマンド既定: AWIは`inbox`・`processing`両方を表示する。"""
+    """`list`で状態を省略した場合、AWIは`inbox`・`processing`両方を表示する。"""
 
     def test_default_shows_inbox_and_processing(
         self,
@@ -620,9 +620,9 @@ class TestAddViaEditor:
     """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。
 
     `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
-    捕捉する。エラー経路のテストでは`_pull`等のgit呼び出しもfake_runへ吸収されるが、
-    検証焦点は`_collect_message_via_editor`の早期None返却にあり、git経路到達有無は
-    別経路（AWIディレクトリへのファイル生成有無）で間接確認する。
+    捕捉する。エラー時の動作を確かめるテストでは`_pull`等のgit呼び出しもfake_runへ吸収されるが、
+    検証焦点は`_collect_message_via_editor`の早期None返却にあり、gitが呼び出されたかどうかは
+    AWIディレクトリへのファイル生成有無によって間接的に確認する。
     """
 
     def test_editor_path_generates_file_with_content(

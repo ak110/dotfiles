@@ -5,13 +5,9 @@
 
 # pylint: disable=protected-access
 
-import contextlib
-import importlib
 import json
 import os
 import pathlib
-import select
-import signal
 import subprocess
 import sys
 import time
@@ -19,8 +15,6 @@ from typing import Any, cast
 
 import psutil
 import pytest
-
-pty = None if sys.platform == "win32" else importlib.import_module("pty")
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -808,7 +802,11 @@ if os.environ["UPDATE_DOTFILES_TEST_MODE"] == "interactive":
         raise SystemExit(9)
     print(f"received: {value.decode().strip()}")
 else:
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(6)"])
+    # 端末終了のSIGHUPや自然終了で、製品の子孫回収漏れを隠さない。
+    child = subprocess.Popen([
+        sys.executable, "-c",
+        "import signal, time; signal.signal(signal.SIGHUP, signal.SIG_IGN); time.sleep(60)",
+    ])
     pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"]).write_text(str(child.pid), encoding="utf-8")
     time.sleep(6)
 """
@@ -821,10 +819,8 @@ def _run_git_pull_in_pty(
     mode: str,
     timeout: int | None,
     input_text: str | None = None,
-) -> tuple[int, str, pathlib.Path]:
+) -> tuple[int, str, pathlib.Path, float]:
     """疑似端末内で実物の`_run_git_pull`を実行し、終了コードと出力を返す。"""
-    if pty is None:
-        pytest.skip("ptyを利用できない環境")
     executable = tmp_path / "bin" / "chezmoi"
     executable.parent.mkdir()
     executable.write_text(_FAKE_CHEZMOI_CODE, encoding="utf-8")
@@ -834,40 +830,30 @@ def _run_git_pull_in_pty(
     monkeypatch.setenv("UPDATE_DOTFILES_TEST_MODE", mode)
     monkeypatch.setenv("UPDATE_DOTFILES_TEST_PID_PATH", str(descendant_pid_path))
 
-    pid, terminal_fd = pty.fork()
-    if pid == 0:  # pragma: no cover - 検証対象となる子プロセス側
-        returncode = update_dotfiles._run_git_pull(1, 4, timeout=timeout)  # pylint: disable=protected-access
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(returncode)
-
-    output = bytearray()
-    input_sent = False
-    deadline = time.monotonic() + 20
-    status: int | None = None
-    try:
-        while time.monotonic() < deadline:
-            readable, _, _ = select.select([terminal_fd], [], [], 0.1)
-            if readable:
-                with contextlib.suppress(OSError):
-                    output.extend(os.read(terminal_fd, 4096))
-            if input_text is not None and not input_sent and b"passphrase:" in output:
-                os.write(terminal_fd, f"{input_text}\n".encode())
-                input_sent = True
-            waited_pid, candidate_status = os.waitpid(pid, os.WNOHANG)
-            if waited_pid == pid:
-                status = candidate_status
-                break
-        if status is None:
-            os.kill(pid, signal.SIGKILL)
-            _waited_pid, status = os.waitpid(pid, 0)
-            pytest.fail("疑似端末内のgit pullテストが20秒以内に終了しなかった")
-    finally:
-        os.close(terminal_fd)
-    return os.waitstatus_to_exitcode(status), output.decode(errors="replace"), descendant_pid_path
+    runner = pathlib.Path(__file__).with_name("_update_dotfiles_pty_runner.py")
+    with subprocess.Popen(  # noqa: S603
+        [sys.executable, "-W", "error::DeprecationWarning", str(runner)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(json.dumps({"timeout": timeout, "input_text": input_text}), timeout=30)
+        except subprocess.TimeoutExpired:
+            update_dotfiles._kill_process_tree(process)  # pylint: disable=protected-access
+            stdout, stderr = process.communicate(timeout=5)
+            pytest.fail(f"端末ランナーが30秒以内に終了しなかった: {stdout}\n{stderr}")
+    assert process.returncode == 0, stderr
+    assert not stderr, stderr
+    result = json.loads(stdout)
+    assert "DeprecationWarning" not in result["output"], result["output"]
+    assert not result["descendant_running"], "製品のgit pullが終了した時点で孫プロセスが残っている"
+    return result["returncode"], result["output"], descendant_pid_path, result["elapsed"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="ptyと/dev/ttyを使用するLinux専用のテスト")
+@pytest.mark.filterwarnings("error::DeprecationWarning")
 @pytest.mark.parametrize("timeout", [30, None])
 def test_git_pull_preserves_terminal_interaction(
     monkeypatch: pytest.MonkeyPatch,
@@ -880,7 +866,7 @@ def test_git_pull_preserves_terminal_interaction(
     並行実行の負荷でも到達しない秒数を渡す。上限の到達側は
     `test_git_pull_timeout_terminates_stream_holding_descendant`が検査する。
     """
-    returncode, output, _pid_path = _run_git_pull_in_pty(
+    returncode, output, _pid_path, _elapsed = _run_git_pull_in_pty(
         tmp_path,
         monkeypatch,
         mode="interactive",
@@ -892,20 +878,19 @@ def test_git_pull_preserves_terminal_interaction(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="ptyを使用するLinux専用のテスト")
+@pytest.mark.filterwarnings("error::DeprecationWarning")
 def test_git_pull_timeout_terminates_stream_holding_descendant(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
     """標準ストリームを継承する孫も終了し、回収上限の内側で復帰する。"""
     started = time.monotonic()
-    returncode, output, pid_path = _run_git_pull_in_pty(
+    returncode, output, pid_path, elapsed = _run_git_pull_in_pty(
         tmp_path,
         monkeypatch,
         mode="hang",
         timeout=5,
     )
-    elapsed = time.monotonic() - started
-
     assert returncode == 1
     assert elapsed < 12
     del output

@@ -114,7 +114,7 @@ class TestAttachmentTaskIdFallbackCompletion:
     """新形式（`type=="attachment"`の`<task-notification>`）における`<task-id>`フォールバック解決の検証。
 
     項番1のリファクタリング（`_resolve_task_notification_ids`共通ヘルパー抽出）後の
-    attachment分岐が旧形式と同一の解決経路を通ることを確認する。
+    attachment分岐が旧形式と同一の解決処理を使うことを確認する。
     通知形式のバリエーション: `<tool-use-id>`のみ・`<task-id>`のみ・両方あり・両方欠落。
     両方欠落時は`task_notification_unresolved`ログが出力されることも検証する。
     """

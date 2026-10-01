@@ -1,8 +1,8 @@
-"""Claude Code向け正本manifest間のSSOT整合性のテスト。
+"""Claude Code向けmanifestの定義元間でSSOTの整合性を確かめる。
 
 version / description / nameを`agent-toolkit/.claude-plugin/plugin.json`と
 `.claude-plugin/marketplace.json`の2箇所で重複管理しているため、
-片方だけ更新して配布されない事故を防ぐ。
+片方だけ更新したために変更が配布されない事態を防ぐ。
 Codex向け派生manifestは`scripts/sync_codex_plugin_manifests.py`が検証する。
 """
 

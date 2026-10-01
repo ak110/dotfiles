@@ -150,7 +150,7 @@ def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     """委譲先セッションの標識を各テストの実行環境から除去する。
 
     process-loopが委譲先へ渡す環境を検証するテストは、実行元の環境にこの標識が無いことを前提とする。
-    委譲先のセッションから検査を実行すると標識が継承され、その前提が崩れる。
+    委譲先のセッションからテストを実行すると標識が継承され、その前提が成立しなくなる。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -173,8 +173,8 @@ def _clear_process_loop_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
 def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """エージェント環境の判定変数を各テストの実行環境から除去する。
 
-    コーディングエージェントから検査を起動すると変数が子プロセスへ継承され、
-    エージェント環境向けの分岐を検査するテストと、それ以外のテストの結果が実行環境で変わる。
+    コーディングエージェントからテストを起動すると変数が子プロセスへ継承され、
+    エージェント環境向けの分岐を確かめるテストと、それ以外のテストの結果が実行環境で変わる。
     """
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
@@ -196,7 +196,7 @@ def _reset_warning_context(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fixed_codex_model_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     """Codexの利用可能モデル一覧を固定値へ差し替え、実行環境の`codex` CLIの有無に依存しない結果にする。
 
-    工程別モデル設定の既定値はCodexの系列名を含み、系列の解決は`codex app-server`を起動して一覧を取得する。
+    工程別モデル設定で値を省略した場合の候補にはCodexの系列名が含まれ、系列の解決は`codex app-server`を起動して一覧を取得する。
     `codex`を導入していない継続的インテグレーションでは解決が失敗し、設定の解決を経由する
     process-loopなどのテストが対象外の理由で失敗する。一覧の内容や取得失敗を検証するテストは、
     モジュール側のfixtureやテスト内で改めて差し替える。子プロセスへは本差し替えが及ばないため、

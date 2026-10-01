@@ -9,7 +9,7 @@ Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿�
 ## 対象
 
 状態（open・closed・merged）を問わず全Pull Requestのreviewを列挙し、判定対象に残るCopilot由来のreview本文を取得する。
-inline commentもreview threadも伴わずreview本文だけが到着する場合があり、未解決threadの有無で列挙を限定すると、その本文が漏れるためである。
+inline commentもreview threadも伴わずreview本文だけが到着する場合があり、未解決threadの有無で列挙を限定すると、その本文を取得できないためである。
 Copilot由来のinline commentとreview threadは、未解決のreview threadを持つPull Requestだけを対象に取得する。
 解決済みのthreadだけを持つPull Requestは、その時点で未処置のinline commentを持たない。
 要修正としてAWIへ記録した指摘のthreadは未解決のまま残り、以降も対象に入り続ける。
@@ -139,23 +139,23 @@ gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 
 通常の監査は、`atk review-audit pending`のJSONの`dependabot`と`counts.dependabot`を入力とする。
 `dependabot.alerts`の各要素は番号、`manifest_path`、パッケージ、エコシステム、修正版（`first_patched_version`。無い場合はnull）および`category`を持つ。
-`category`はマニフェストが既定ブランチに実在しなければ`inaccurate`、実在すれば`manifest_present`である。
+`category`はマニフェストが`default_branch`で指定されたbranchに実在しなければ`inaccurate`、実在すれば`manifest_present`である。
 `dependabot.status`が`disabled`（機能が無効）または`unauthorized`（権限不足。`message`に応答本文）の場合は判定せず、その状態を呼び出し元へ返す。
 
 pendingのJSONを受け取れない場合は、次の手順で監査担当が直接取得する。各応答は管理対象一時領域のJSONファイルへ保存し、保存したファイルから件数と値を確認する。
 
 1. `gh api --paginate --slurp 'repos/<OWNER>/<REPO>/dependabot/alerts?state=open&per_page=100'`で全ページを取得する。HTTP 403の本文が「Dependabot alerts are disabled for this repository.」なら機能が無効、それ以外の403なら権限不足として扱い、判定しない
 2. `atk review-audit list --repo <OWNER>/<REPO>`が返す`dependabot:<番号>`の番号を判定済みとして除く
-3. `gh api 'repos/<OWNER>/<REPO>'`の`default_branch`で既定ブランチを得る
-4. 残る各アラートの`dependency.manifest_path`について`gh api 'repos/<OWNER>/<REPO>/contents/<manifest_path>?ref=<既定ブランチ>'`を実行する。HTTP 404なら既定ブランチに不在、終了コード0なら実在とする。それ以外の失敗は取得失敗として監査を未完了にする
+3. `gh api 'repos/<OWNER>/<REPO>'`の`default_branch`から対象のbranch名を得る
+4. 残る各アラートの`dependency.manifest_path`について`gh api 'repos/<OWNER>/<REPO>/contents/<manifest_path>?ref=<branch名>'`を実行する。HTTP 404なら`default_branch`で指定されたbranchに不在、終了コード0なら実在とする。それ以外の失敗は取得失敗として監査を未完了にする
 
 判定区分と処置は次の表のとおりとする。
 処理回のベースbranchは、対象リポジトリ（起動時の`cwd`）で処理対象としているbranchを指す。
 
 | 区分 | 条件 | 処置 |
 | --- | --- | --- |
-| 誤検知 | `manifest_path`が既定ブランチに実在しない（`category`が`inaccurate`） | 後掲の却下を行う |
-| 是正済み | マニフェストは既定ブランチに実在するが、処理回のベースbranchの同じマニフェストが対象パッケージを修正版以上へ更新済みか、そのマニフェストがベースbranchに無い | GitHubへは書き込まない。既定ブランチへの反映でアラートが`fixed`になるのを待つ |
+| 誤検知 | `manifest_path`が`default_branch`で指定されたbranchに実在しない（`category`が`inaccurate`） | 後掲の却下を行う |
+| 是正済み | マニフェストは`default_branch`で指定されたbranchに実在するが、処理回のベースbranchの同じマニフェストが対象パッケージを修正版以上へ更新済みか、そのマニフェストがベースbranchに無い | GitHubへは書き込まない。`default_branch`で指定されたbranchへの反映でアラートが`fixed`になるのを待つ |
 | 要修正 | 上記のいずれにも当たらない。修正版が無い場合もこの区分とする | 番号、マニフェスト、パッケージ、修正版、対処案（依存更新。修正版が無い場合はその旨）を呼び出し元へ返す |
 
 是正済みの判定では、ベースbranchのマニフェストを`git show <ベースbranch>:<manifest_path>`で読み、対象パッケージの版を修正版と比べる。版を比べられない場合は要修正として返す。
@@ -163,7 +163,7 @@ pendingのJSONを受け取れない場合は、次の手順で監査担当が直
 ### 却下
 
 誤検知と判定したアラートは、監査担当が`PATCH /repos/<OWNER>/<REPO>/dependabot/alerts/<番号>`で却下する。
-値は`state=dismissed`と`dismissed_reason=inaccurate`とし、`dismissed_comment`（280文字以内）へ既定ブランチに該当マニフェストが無いことを根拠として書く。
+値は`state=dismissed`と`dismissed_reason=inaccurate`とし、`dismissed_comment`（280文字以内）へ`default_branch`で指定されたbranchに該当マニフェストが無いことを根拠として書く。
 
 ```sh
 gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state=dismissed -f dismissed_reason=inaccurate -F dismissed_comment=@<COMMENT_FILE>
@@ -173,7 +173,7 @@ gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state
 非0で終了した却下は判定済みの記録から外し、結果を呼び出し元へ返す。記録から外したアラートは次の処理回で未判定として再び拾われる。誤って却下したアラートは`state=open`で戻せる。
 
 この却下は人間由来のWI `20260930-175957-001.md`で承認済みであり、監査のたびの確認は不要である。
-承認範囲は既定ブランチに実在しないマニフェストに紐づくアラートを`inaccurate`で却下することに限る。是正済みと要修正の区分はGitHubへ書き込まない。
+承認範囲は`default_branch`で指定されたbranchに実在しないマニフェストに紐づくアラートを`inaccurate`で却下することに限る。是正済みと要修正の区分はGitHubへ書き込まない。
 同WIが保持するユーザー発言と確認回答は次のとおりである。
 
 ```text

@@ -21,7 +21,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
 RESULT_RETENTION_SECONDS = 1800.0
 # 自動再開の待機上限は終端結果の保持期限とは目的が異なる。本計画の起草時点では
-# 値を変える根拠となる実測が無いため、現行の結果保持期限と同じ値を選ぶ。
+# 値を変える根拠となる観測結果が無いため、現行の結果保持期限と同じ値を選ぶ。
 AUTO_RESUME_DEADLINE_SECONDS = 1800.0
 # 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
 # 値は利用者の提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
@@ -37,7 +37,7 @@ HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # 1回の上限は観測の上位側の47.65秒を含む値とし、回数との積へ起動直後の可用性失敗を待つ上限
 # （agents_server_mcp.pyのSTART_AVAILABILITY_TIMEOUT）を直列に加えた和が
 # HOST_BACKGROUND_THRESHOLD_SECONDSを下回るように選ぶ。
-# この関係が崩れると、初期化の失敗が確定する前にホストがツール呼び出しを背景へ移し、
+# この関係が成立しなくなると、初期化の失敗が確定する前にホストがツール呼び出しを背景へ移し、
 # 呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
 # 監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
@@ -80,18 +80,18 @@ NORMATIVE_SOURCE = "agent-toolkit"
 def _normative(body: str, *, kind: str) -> str:
     """System promptへ渡す本文へ、生成主体と種別を示す境界を付ける。
 
-    委譲先のsystem promptは、ホストの既定の指示と同じ経路で実行主体へ届く。
-    本リポジトリが生成した範囲を受信側が判別できるよう、他の自動注入経路と同じ形式で囲む。
+    委譲先のsystem promptは、ホストが用意する指示と同じ仕組みで実行主体へ届く。
+    本リポジトリが生成した範囲を受信側が判別できるよう、他の自動注入と同じ形式で囲む。
     """
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
-# 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
+# 通常委譲へ追加する規範は、起動フックと共有するrules-subagent.mdが定める。
 SUBAGENT_RULES = _read_share("rules-subagent.md")
 CLAUDE_CODE_SUBAGENT_RULES = _read_share("rules-subagent.claude-code.md")
-# 委譲先の実行主体は、両backendの既定の指示ではユーザーと直接対話する主体として起動される。
-# 起動経路の別を実行主体が観測できないため、規範が主体別に定める条文を適用できる状態を明示の指示で成立させる。
-# Codexの`developerInstructions`はdeveloper roleメッセージとして注入され、既定の指示を置換しない。
+# 委譲先の実行主体は、両backendが用意する指示ではユーザーと直接対話する主体として起動される。
+# 起動方法の違いを実行主体が観測できないため、規範が主体別に定める条文を適用できる状態を明示の指示で成立させる。
+# Codexの`developerInstructions`はdeveloper roleメッセージとして注入され、ホストが用意する指示を置換しない。
 DELEGATE_NOTICE = _read_prompt("agents-server-delegate-notice.md")
 _DELEGATE_ROLE = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-delegate.md')}", kind="delegate")
 DELEGATE_SYSTEM_PROMPT = f"{_DELEGATE_ROLE}\n\n{_normative(SUBAGENT_RULES, kind='rules-subagent')}"
@@ -275,7 +275,7 @@ def _progress_excerpt(text: str) -> str:
 
 # ツール呼び出しの入力を1行へ要約するときの上限文字数。
 # statuslineは受け取った説明を表示幅で切り詰めるため、上限は`show`の応答が
-# 停滞の切り分けに足りる長さとして定める。
+# 停滞の原因を判別できる長さとして定める。
 _ACTION_DETAIL_LIMIT = 200
 
 
@@ -329,10 +329,10 @@ def activity_projection(
     停滞の判定入力は活動時刻とする。テキスト出力の時刻を判定入力にすると、
     ツール呼び出しだけを長時間続ける正常なsessionを停滞と判定し、
     呼び出し元が不要な催促と巻き取りへ進む。
-    テキスト出力の停止と活動の停止を呼び出し元が1回の照会で切り分けられるよう、
+    呼び出し元が1回の照会で、テキスト出力だけが停止したのか活動も停止したのか判別できるよう、
     両者の時刻と経過を同じ応答へ並べる。
-    `show`・`list`・`atk agents wait`・`atk agents list`の4経路は本関数を共有する。
-    経路ごとに判定入力が分かれると、同じsessionへ異なる停滞の印が返る。
+    `show`・`list`・`atk agents wait`・`atk agents list`は本関数を共有する。
+    呼び出し手段ごとに判定入力が分かれると、同じsessionへ異なる停滞の印が返る。
     """
     seconds_since_activity = elapsed_seconds(updated_at or started_at)
     if seconds_since_activity is None:
@@ -437,9 +437,9 @@ class SessionState:
     # statuslineが、テキスト出力の無い区間でも稼働を表示するための射影元とする。
     last_action: str = ""
     awaiting_auto_resume: bool = False
-    # `auto_resume_consumed`は、Claude backendのタスク完了通知による再開と、
-    # MCP層が孫sessionの終端を検出して発行する再開の2経路だけが真にする。
-    # Codex backendは終端結果を保留しないため、これらの経路へ到達しない。
+    # `auto_resume_consumed`を真にするのは、Claude backendのタスク完了通知による再開と、
+    # MCP層が孫sessionの終端を検出して発行する再開の2つの処理だけである。
+    # Codex backendは終端結果を保留しないため、これらの処理へ到達しない。
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
     pending_result: dict[str, Any] | None = None
@@ -507,8 +507,8 @@ class SessionState:
     def active_tool_uses(self) -> list[dict[str, str]]:
         """未完了のツール呼び出しを、開始時刻の昇順で公開項目へ射影する。
 
-        呼び出し元が停滞を疑った時点で、長時間のコマンドの実行中か活動そのものの停止かを
-        1回の照会で切り分けられるようにする。
+        呼び出し元が停滞の可能性を確認する際、1回の照会で長時間のコマンドを実行しているのか
+        活動そのものが停止したのかを判別できるようにする。
         Claude backendは`tool_use`ブロックの記録から、Codex backendは進行中itemから射影する。
         1つのsessionはいずれか一方のbackendだけを使うため、両者を同じ項目で返す。
         入力の1行要約は`detail`として載せ、要約が空の場合だけこのkeyを置かない。
@@ -705,7 +705,7 @@ def has_pending_auto_resume_targets(session: SessionState) -> bool:
 def has_uncollected_result(session: SessionState | SessionResumeState, result_consumed: bool | None) -> bool:
     """終端結果が未回収かを返す。
 
-    結果ファイルを扱える消費側は回収状態を渡し、扱えない経路だけは`None`を渡す。
+    結果ファイルを扱える消費側は回収状態を渡し、結果ファイルを扱えない処理だけは`None`を渡す。
     """
     if session.finalized_at is None or session.result_delivered:
         return False

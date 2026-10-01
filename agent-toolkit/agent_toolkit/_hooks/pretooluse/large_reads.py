@@ -31,7 +31,7 @@ _block_notice = block_formatter("pretooluse")
 
 
 def _byte_threshold() -> int:
-    """環境指定が正の整数なら採用し、それ以外は既定値を返す。"""
+    """環境指定が正の整数なら採用し、それ以外は指定を省略した場合の値を返す。"""
     try:
         threshold = int(os.environ.get(_BYTE_THRESHOLD_ENV, str(_DEFAULT_BYTE_THRESHOLD)))
     except ValueError:

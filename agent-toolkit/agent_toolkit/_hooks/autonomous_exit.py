@@ -2,7 +2,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と、起動側が渡したセッションIDに
 一致する会話を対象とする。本フックは対象セッションに限り、`atk agents-exit-session`の
-起動漏れを検知してそのターンの継続をblockし再促する。
+起動されていないことを検知してそのターンの継続をblockし再促する。
 
 `atk agents-exit-session`起動の記録はpluginのPostToolUse
 （`agent-toolkit/agent_toolkit/_hooks/posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
@@ -24,7 +24,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
 次のStopでは要求が`consumed`のため4が背景作業の残存をapproveし、作業の終了後は5・6が再実行を促す。
 
-連続blockの上限は共通入口`stop.py`が管理する。
+`stop.py`が各判定に共通する連続blockの上限を管理する。
 
 LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 `decision: "block"`＋`reason`フィールドへ載せて返す。
@@ -146,7 +146,7 @@ def _withdraw_exit_request(session_id: str) -> bool:
 
 
 def main(payload_text: str) -> int:
-    """`atk agents-exit-session`の起動漏れを検知し再促するエントリポイント。"""
+    """`atk agents-exit-session`が起動されていないことを検知して再促するエントリポイント。"""
     decision, body = evaluate(payload_text)
     if decision == "block":
         print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))

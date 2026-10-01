@@ -53,7 +53,7 @@ def main(payload_text: str) -> int:
 def _record(payload_text: str) -> None:
     """許可した要求を記録する。記録できない場合は何もしない。
 
-    許可の応答は記録の成否に依存しないため、記録経路の失敗はすべて無視する。
+    許可の応答は記録の成否に依存しないため、記録する処理の失敗はすべて無視する。
     """
     with contextlib.suppress(Exception):
         _append_record(_build_record(payload_text))

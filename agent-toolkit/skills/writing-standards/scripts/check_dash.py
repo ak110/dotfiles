@@ -1,4 +1,4 @@
-"""Markdownの地の文・見出し中のダッシュ系禁止文字を検査する独立スクリプト。
+"""Markdownの地の文・見出しに禁止されたダッシュ文字があるか確かめる独立スクリプト。
 
 writing-standardsの`references/notation-rules.md`が定める、日本語の地の文や見出しで
 ダッシュ記号（emダッシュ・horizontal bar・2倍ダッシュ）を避ける規定を機械化する。
@@ -47,7 +47,7 @@ _EXCLUDED_DIRS = frozenset(
 # 検出対象の文字パターン。U+2500は2連続のみを対象とする。
 _DASH_PATTERN = re.compile(r"—|―|──")
 
-# URL内の文字を検査対象から除外するためのパターン。
+# URL内の文字は判定せず除外するためのパターン。
 _URL_RE = re.compile(r"(?:[a-zA-Z][a-zA-Z0-9+.\-]*://|www\.)[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+")
 
 # 違反種別の表示名。
@@ -61,15 +61,15 @@ _COMMONMARK = markdown_it.MarkdownIt("commonmark")
 
 
 def main() -> int:
-    """ダッシュ系禁止文字の検査エントリポイント。"""
+    """禁止されたダッシュ文字があるか判定するエントリポイント。"""
     parser = argparse.ArgumentParser(
-        description="Markdownの地の文・見出し中のダッシュ系禁止文字を検査する。",
+        description="Markdownの地の文・見出しに禁止されたダッシュ文字があるか確かめる。",
     )
     parser.add_argument(
         "paths",
         nargs="+",
         type=pathlib.Path,
-        help="検査対象のMarkdownファイルまたはディレクトリ（複数指定可）",
+        help="ダッシュ文字を判定するMarkdownファイルまたはディレクトリ（複数指定可）",
     )
     args = parser.parse_args()
 
@@ -83,7 +83,7 @@ def main() -> int:
     if all_violations:
         print(
             _next_action.next_action_line(
-                "各位置のダッシュを文の構造に合わせて読点（、）、括弧（（）、コロン（：）のいずれかへ置き換え、再検査する"
+                "各位置のダッシュを文の構造に合わせて読点（、）、括弧（（）、コロン（：）のいずれかへ置き換え、もう一度確かめる"
             ),
             file=sys.stderr,
         )
@@ -92,7 +92,7 @@ def main() -> int:
 
 
 def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
-    """ファイル/ディレクトリ混在の入力を検査対象ファイルの一覧へ展開する。
+    """ファイルとディレクトリが混在する入力からダッシュ文字を判定するファイルの一覧を作成する。
 
     ディレクトリは再帰的に対象拡張子のファイルを収集する。
     `_EXCLUDED_DIRS`配下は除外する。順序の安定性のため、ディレクトリ展開分はpath順に並べる。
@@ -128,7 +128,7 @@ def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -
 
 
 def _check_file(path: pathlib.Path) -> list[str]:
-    """1ファイルを検査して違反行のメッセージ一覧を返す。読み込み失敗時は空リストを返す。"""
+    """1ファイルに禁止されたダッシュ文字があるか判定し、違反行のメッセージ一覧を返す。読み込み失敗時は空リストを返す。"""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -232,7 +232,7 @@ def _is_escaped(text: str, index: int) -> bool:
 
 
 def _strip_urls(line: str) -> str:
-    """行中のURLをダッシュ検査対象から除外するため、同じ長さの空白に置換する。
+    """行中のURL内のダッシュ文字は判定せず除外するため、同じ長さの空白に置換する。
 
     スキームまたは`www.`を持たない相対リンクはURLとして除外しない。
     """

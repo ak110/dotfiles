@@ -53,8 +53,8 @@ def _assume_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
     """取り込み先が大文字小文字を区別しないファイルシステムである状況を再現する。
 
     Linuxの一時ディレクトリでは実際に区別しないファイルシステムを用意できないため、
-    実測結果だけを差し替える。プローブ処理そのものは`common_test`の該当テストと
-    差し替えを行わない他のテストが実経路で検証する。
+    実際の判定結果だけを差し替える。プローブ処理そのものは`common_test`の該当テストと
+    差し替えを行わない他のテストが実際の呼び出しを通して検証する。
     """
     monkeypatch.setattr(batch, "is_case_sensitive", lambda _directory: False)
 

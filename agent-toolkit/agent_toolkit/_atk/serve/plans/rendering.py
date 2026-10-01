@@ -198,7 +198,7 @@ from agent_toolkit._atk.serve.plans.roots import MARKDOWN_CACHE_MAX_BYTES, MARKD
 def _highlight_code(code: str, name: str, _attrs: str) -> str:
     """markdown-itのフェンスコードブロックをPygmentsでハイライトする。
 
-    言語指定なし・未知言語フェンスは空文字を返し、markdown-it既定の素通し描画にフォールバックする。
+    言語指定なし・未知言語フェンスは空文字を返し、markdown-itが標準で行う描画に任せる。
     """
     if not name:
         return ""
@@ -247,7 +247,7 @@ def make_md_renderer() -> markdown_it.MarkdownIt:
     """Raw HTMLを無効化しPygmentsハイライトを注入したGFM相当のMarkdownレンダラを返す。
 
     GFM相当プリセットの表・取り消し線は維持し、誤リンクを防ぐため裸URLの自動リンクだけを無効化する。
-    `html`も明示的に`False`へ上書きしてXSS経路を塞ぐ。
+    `html`も明示的に`False`へ上書きし、HTMLを解釈させずにXSSを防ぐ。
     `highlight`コールバックの戻り値はそのままHTMLとして埋め込まれるため、
     Pygmentsのエスケープ済み出力のみを返す。
     """

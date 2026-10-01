@@ -75,7 +75,7 @@ def _isolate_agent_and_managed_temp_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """listとmanaged-tempの既定動作をホスト環境から隔離する。"""
+    """listとmanaged-tempが引数を省略した場合の動作をホスト環境から隔離する。"""
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -88,7 +88,7 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """別cloneの追加項目を取得し、連続実行でも明示pull経路を完了する。"""
+    """別cloneの追加項目を取得し、連続実行でも明示したpull処理を完了する。"""
     origin = tmp_path / "origin.git"
     seed = tmp_path / "seed"
     notes = tmp_path / "private-notes"
@@ -165,7 +165,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     argv: list[str],
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """公開出力経路は読取側の早期クローズをTracebackなしのexit 1として処理する。"""
+    """公開された出力処理は読取側の早期クローズをTracebackなしのexit 1として処理する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "awi.md", body="searchable")
     read_fd, write_fd = os.pipe()
@@ -175,7 +175,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
         env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = "claude:opus/medium"
-    # Gitの作業ツリー外で起動し、`--target-repo`の既定解決が対象を限定しない状態にする。
+    # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
         stdout=write_fd,
@@ -386,7 +386,7 @@ class TestWaitScheduleParser:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """任意のサブコマンドを実行する共通経路で管理対象一時領域を整理する。"""
+        """任意のサブコマンドに共通する実行処理で管理対象一時領域を整理する。"""
         calls: list[datetime.datetime] = []
 
         def fake_sweep(*, now: datetime.datetime) -> list[pathlib.Path]:
@@ -1355,7 +1355,7 @@ def test_add_output_reloads_saved_metadata(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """add完了表示が保存済みfrontmatterの照合対象を列挙する。"""
+    """add完了表示が保存済みfrontmatterと比較する対象を列挙する。"""
     _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
@@ -1407,7 +1407,7 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIは構造検証の明示指定を許容し、既定では未応答行を拒否する。"""
+    """公開CLIは構造検証の明示指定を許容し、指定しない場合は未応答行を拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
         "\t".join(
@@ -2288,7 +2288,7 @@ class TestAddBatchOption:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--body-file`省略時はエディター経路の生テキストを原文保持で取り込む。"""
+        """`--body-file`省略時はエディターで入力した生テキストを原文のまま取り込む。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
         entry = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
@@ -2374,7 +2374,7 @@ class TestMainFailureNextAction:
     def test_rebase_in_progress_error_is_reported_without_traceback(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """wi経路の`RebaseInProgressError`は失敗行と競合解消の次の操作で出力する。"""
+        """wiの処理で発生した`RebaseInProgressError`は失敗行と競合解消の次の操作で出力する。"""
         error = atk._atk_git_sync.RebaseInProgressError("rebase中")  # pylint: disable=protected-access
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert "git rebase --continue" in self._next_action_after_failure(lines)

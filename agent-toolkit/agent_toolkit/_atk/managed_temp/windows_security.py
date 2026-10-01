@@ -600,7 +600,7 @@ def _windows_current_user_ace_is_valid(ace: _WindowsAce, current_sid: bytes, exp
 
 
 def _windows_external_writer_ace_is_valid(ace: _WindowsAce, current_sid: bytes, expected_flags: int) -> bool:
-    """ACEが管理対象rootで実測した外部書込主体の権限形に一致するか返す。"""
+    """ACEが管理対象rootで実際に確認した外部書込主体の権限形に一致するか返す。"""
     return (
         ace.ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE
         and ace.flags == expected_flags
@@ -623,7 +623,7 @@ def _validate_windows_security(path: pathlib.Path) -> None:
 
 
 def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
-    """管理対象rootでは厳格ACLと実測済みの追加ACE 1件だけを受理する。"""
+    """管理対象rootでは厳格ACLと、実物で確認した追加ACE 1件だけを受理する。"""
     current_sid = _windows_sid_bytes(_windows_current_sid())
     security = _windows_security_descriptor(path)
     if not _windows_managed_root_security_is_valid(security, current_sid):
@@ -633,7 +633,7 @@ def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
 
 
 def _windows_managed_root_security_is_valid(security: _WindowsSecurity, current_sid: bytes) -> bool:
-    """厳格ACLと実測済みの追加ACE 1件だけを受理する。"""
+    """厳格ACLと、実物で確認した追加ACE 1件だけを受理する。"""
     expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE
     current_user_aces = [ace for ace in security.aces if _windows_current_user_ace_is_valid(ace, current_sid, expected_flags)]
     other_aces = [ace for ace in security.aces if not _windows_current_user_ace_is_valid(ace, current_sid, expected_flags)]

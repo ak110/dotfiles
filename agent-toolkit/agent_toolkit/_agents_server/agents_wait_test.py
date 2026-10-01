@@ -369,7 +369,7 @@ def test_codex_delegate_wait_reports_ambiguous_writer_aliases(
 
 
 def _wait_lock_path(tmp_path: pathlib.Path) -> pathlib.Path:
-    """root書込主体の待機所有権を表すロックの経路を返す。"""
+    """root書込主体の待機所有権を表すロックファイルのパスを返す。"""
     return status_file.status_directory("root-session", tmp_path) / "wait-locks" / "root.json.lock"
 
 
@@ -380,7 +380,7 @@ def _write_current_wait_run(
     status: str,
     continuable: bool = False,
 ) -> tuple[pathlib.Path, pathlib.Path]:
-    """指定したrunをcurrentとして保存し、runディレクトリと記録経路を返す。"""
+    """指定したrunをcurrentとして保存し、runディレクトリと記録ファイルのパスを返す。"""
     run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
     run_path = run_directory / "run-1.json"
     agents_wait._write_json(  # pylint: disable=protected-access

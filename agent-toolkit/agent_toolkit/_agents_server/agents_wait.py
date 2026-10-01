@@ -160,7 +160,7 @@ def _absent_targets_message(owner_status_file: str) -> str:
 def _fail(message: str, code: int, *, next_action: str, session_id: str | None = None) -> int:
     """標準エラーへ理由と次の操作を出力してから非0の終了コードで異常終了する。
 
-    理由または次の操作を伴わない異常終了をこの経路では表現できないよう、`message`と`next_action`を必須の引数とする。
+    異常終了を返すときに理由と次の操作を必ず示すため、`message`と`next_action`を必須の引数とする。
     """
     _LOG.info("wait_return reason=abnormal code=%d session_id=%s", code, session_id or "none")
     report(message, next_action=next_action)
