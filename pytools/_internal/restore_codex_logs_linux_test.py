@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pytools._internal import restore_codex_logs_linux
+from pytools._internal import codex_processes, restore_codex_logs_linux
 
 # 復元処理の安全境界を構成する内部関数と定数を直接検証する。
 # pylint: disable=protected-access
@@ -25,7 +25,7 @@ def _prepare(
     """
     monkeypatch.setattr(restore_codex_logs_linux.sys, "platform", "linux")
     if stop_codex:
-        monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", lambda: ())
+        monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ())
     home = tmp_path / "home"
     shm_root = tmp_path / "shm"
     codex_dir = home / ".codex"
@@ -67,7 +67,7 @@ def test_running_at_start_defers_without_changes(
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     contents = _write_targets(pairs)
     _link_all(pairs)
-    monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", lambda: ("codex mcp-server",))
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex mcp-server",))
 
     assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
@@ -87,7 +87,7 @@ def test_running_after_copy_discards_only_temporary_files(
     def running_codex_processes() -> tuple[str, ...]:
         return next(results)
 
-    monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", running_codex_processes)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", running_codex_processes)
 
     assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
@@ -112,7 +112,7 @@ def test_write_after_second_check_is_detected_as_conflict_on_retry(
             pairs[0][1].write_bytes(b"written-after-check")
         return ()
 
-    monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", check_and_write)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", check_and_write)
     assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
     assert pairs[0][0].read_bytes() == original[pairs[0][1]]
 
@@ -409,7 +409,7 @@ class _FakeProcess:
 
 _OWN_UID = os.getuid()
 _OTHER_UID = _OWN_UID + 1
-_DENIED = restore_codex_logs_linux._ACCESS_DENIED
+_DENIED = object()
 
 
 def _uids(uid: int) -> SimpleNamespace:
@@ -423,7 +423,7 @@ def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakePr
     def process_iter(_attrs: list[str], **_kwargs: object) -> list[_FakeProcess]:
         return processes
 
-    monkeypatch.setattr(restore_codex_logs_linux.psutil, "process_iter", process_iter)
+    monkeypatch.setattr(codex_processes.psutil, "process_iter", process_iter)
 
 
 @pytest.mark.parametrize(

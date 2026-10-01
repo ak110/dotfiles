@@ -47,6 +47,13 @@ Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、専�
 生成に失敗した場合はpost-applyが非0で終了し、失敗したstep名と詳細を更新logへ記録する。
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
+euryaleの既定の更新では、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
+app-server daemonも稼働判定に含むため、セッションとdaemonを停止してから次の`update-dotfiles`で反映する。
+延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
+ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
+自動更新タイマーは上流変更が無ければpost-applyを実行しないため、停止後の次の周期に必ず反映されるわけではない。
+未導入plugin、他ホストの更新と、後述の自動再起動を明示した更新は延期の対象に含めない。
+
 ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
 `codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
 

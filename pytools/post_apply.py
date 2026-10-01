@@ -428,6 +428,8 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run, after=(_CLAUDE_PLUGIN,)),
     # plugin導入が`agent-toolkit/`を複製する間に同じ配下の派生ファイルを書き換えない。
     _StepSpec("Codex plugin snapshot の生成", sync_codex_plugin_manifests.sync, after=(_CLAUDE_PLUGIN,)),
+    # 稼働判定の前にCodex CLI工程とMCP照会を終え、後続のwarmupのCodex照会と重ねない。
+    # 診断ログの稼働判定もCodex CLI工程より先に終わるため、この順序を共有する。
     _StepSpec(
         _CODEX_PLUGIN,
         install_codex_plugins.run,

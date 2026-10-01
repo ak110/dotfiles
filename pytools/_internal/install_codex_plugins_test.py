@@ -1,8 +1,10 @@
 """install_codex_pluginsのテスト。"""
 
+import dataclasses
 import json
 import logging
 import runpy
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
@@ -11,7 +13,8 @@ from typing import Any, cast
 
 import pytest
 
-from pytools._internal import claude_common, install_codex_plugins
+from pytools import post_apply
+from pytools._internal import claude_common, codex_processes, install_codex_plugins, plugin_warmup
 
 from ._test_helpers import _FakeResult
 
@@ -33,6 +36,8 @@ def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     """ローカルpluginのテストでは不要pluginの除去を無効にする。"""
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
     monkeypatch.delenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", raising=False)
+    monkeypatch.setattr(claude_common, "is_euryale", lambda: False)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ())
     monkeypatch.setattr(
         install_codex_plugins,
         "_hooks_list",
@@ -148,6 +153,8 @@ def _set_json_responses(
 
 def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """未導入pluginは公式CLIへ導入を委譲し、legacy linkを除去する。"""
+    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
     destination = _legacy_link(plugin_env)
     cache_entry = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
     cache_entry.mkdir(parents=True)
@@ -161,7 +168,14 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
             _installed_state(),
         ],
     )
-    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    def command(args: list[str]) -> bool:
+        calls.append(args)
+        if args[:2] == ["plugin", "add"]:
+            shutil.rmtree(cache_entry)
+        return True
+
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
 
     outcome = install_codex_plugins.run()
 
@@ -170,7 +184,7 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
     assert ["plugin", "marketplace", "add", str(plugin_env)] in calls
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
-    assert (cache_entry / "marker").read_text(encoding="utf-8") == "keep"
+    assert not cache_entry.exists()
 
 
 def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -198,6 +212,177 @@ def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkey
 
     assert outcome.changed is True
     assert (previous / "hook.py").read_text(encoding="utf-8") == "previous"
+
+
+@pytest.mark.parametrize(
+    ("old_version", "enabled", "first_transition"),
+    [("1.2.2", True, False), ("1.2.2", True, True), ("1.2.3", False, False)],
+)
+def test_running_codex_preserves_cache_then_updates_after_stop(
+    plugin_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    old_version: str,
+    enabled: bool,
+    first_transition: bool,
+) -> None:
+    """旧版を削除するCLIへの到達を延期し、停止後に更新と有効版のwarmup解決を完遂する。"""
+    cache = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit"
+    previous = cache / old_version
+    (previous / "skills/coding").mkdir(parents=True)
+    (previous / "skills/coding/SKILL.md").write_text("old skill", encoding="utf-8")
+    (previous / "agent_toolkit").mkdir(exist_ok=True)
+    (previous / "agent_toolkit/agents_server_mcp.py").write_text("old mcp", encoding="utf-8")
+    if first_transition:
+        (install_codex_plugins._hook_bin() / "atk-hook").unlink()  # pylint: disable=protected-access
+    current: dict[str, Any] = {"version": old_version, "enabled": enabled}
+    running = True
+    calls: list[list[str]] = []
+    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",) if running else ())
+
+    def codex_json(args: list[str]) -> dict[str, Any]:
+        if running:
+            assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
+            assert (previous / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "old mcp"
+        return _local_marketplace(plugin_env) if args[1] == "marketplace" else _installed_state(**current)
+
+    def command(args: list[str]) -> bool:
+        calls.append(args)
+        if args[:2] == ["plugin", "add"]:
+            assert not running
+            shutil.rmtree(previous)
+            latest = cache / "1.2.3"
+            (latest / "agent_toolkit").mkdir(parents=True, exist_ok=True)
+            (latest / "agent_toolkit/hook.py").write_text("new hook", encoding="utf-8")
+            (latest / "agent_toolkit/agents_server_mcp.py").write_text("new mcp", encoding="utf-8")
+            (latest / "skills/coding").mkdir(parents=True, exist_ok=True)
+            (latest / "skills/coding/SKILL.md").write_text("new skill", encoding="utf-8")
+            current.update(version="1.2.3", enabled=True)
+        return True
+
+    def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
+        assert args[1:] == ["plugin", "list", "--json"]
+        return _FakeResult(stdout=json.dumps(_installed_state(**current)))
+
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+    monkeypatch.setattr(claude_common, "run_subprocess", run_subprocess)
+    caplog.set_level(logging.WARNING, logger=install_codex_plugins.__name__)
+
+    outcome = install_codex_plugins.run()
+    assert outcome.changed is False
+    assert not calls
+    assert current == {"version": old_version, "enabled": enabled}
+    assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
+    assert (previous / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "old mcp"
+    assert "plugin更新を延期" in caplog.text and "Codex停止後の次のupdate-dotfiles" in caplog.text
+    warmup = plugin_warmup.codex_plugin_script(
+        plugin_id="agent-toolkit@ak110-dotfiles",
+        plugin_name="agent-toolkit",
+        relative_path=Path("agent_toolkit/agents_server_mcp.py"),
+        tag="test",
+    )
+    assert warmup == (previous / "agent_toolkit/agents_server_mcp.py" if enabled else None)
+
+    running = False
+    assert install_codex_plugins.run().changed is True
+    assert calls.count(["plugin", "add", "agent-toolkit@ak110-dotfiles"]) == 1
+    assert current == {"version": "1.2.3", "enabled": True}
+    latest = cache / "1.2.3"
+    assert (latest / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "new skill"
+    assert (latest / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "new mcp"
+    assert (
+        plugin_warmup.codex_plugin_script(
+            plugin_id="agent-toolkit@ak110-dotfiles",
+            plugin_name="agent-toolkit",
+            relative_path=Path("agent_toolkit/agents_server_mcp.py"),
+            tag="test",
+        )
+        == latest / "agent_toolkit/agents_server_mcp.py"
+    )
+
+
+@pytest.mark.parametrize(("euryale", "auto_restart"), [(False, False), (True, True)])
+def test_running_codex_updates_outside_default_euryale_policy(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, euryale: bool, auto_restart: bool
+) -> None:
+    """対象外ホストと明示した自動再起動は稼働中でも既存の更新を行う。"""
+    monkeypatch.setattr(claude_common, "is_euryale", lambda: euryale)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
+    if auto_restart:
+        monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
+    assert install_codex_plugins.run().changed is True
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_post_apply_deferral_continues_with_installed_warmup_version(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    """既定工程の順序で更新延期後も後続へ進み、snapshotでなく旧有効版をwarmupへ渡す。"""
+    monkeypatch.setattr(post_apply.sys, "platform", "linux")
+    state = _installed_state(version="1.2.2", enabled=enabled)
+    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_codex_json",
+        lambda args: _local_marketplace(plugin_env) if args[1] == "marketplace" else state,
+    )
+    monkeypatch.setattr(install_codex_plugins, "_command", lambda _args: pytest.fail("延期中にaddを呼ばない"))
+    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: _FakeResult(stdout=json.dumps(state)))
+    reached: list[str] = []
+    warmup_targets: list[Path | None] = []
+
+    def record_step(name: str) -> Callable[[], bool]:
+        def run() -> bool:
+            reached.append(name)
+            return False
+
+        return run
+
+    def warmup() -> bool:
+        warmup_targets.append(
+            plugin_warmup.codex_plugin_script(
+                plugin_id="agent-toolkit@ak110-dotfiles",
+                plugin_name="agent-toolkit",
+                relative_path=Path("agent_toolkit/agents_server_mcp.py"),
+                tag="test",
+            )
+        )
+        reached.append("warmup")
+        return False
+
+    def install() -> post_apply.StepReturn:
+        assert "Codex CLI の導入と更新" in reached
+        assert "Codex の Claude MCP 登録削除" in reached
+        assert "warmup" not in reached
+        return install_codex_plugins.run()
+
+    steps = [
+        dataclasses.replace(step, run=record_step(step.name), host_resources=False)
+        for step in post_apply._DEFAULT_STEPS  # pylint: disable=protected-access
+    ]
+    for index, step in enumerate(steps):
+        if step.name == "Codex plugin のインストール":
+            steps[index] = dataclasses.replace(step, run=install)
+        if step.name == "agents_serverのuv環境ウォームアップ":
+            steps[index] = dataclasses.replace(step, run=warmup)
+    results, _ = post_apply.run(steps)
+    assert all(result.ok for result in results)
+    assert next(result for result in results if result.name == "Codex plugin のインストール").changed is False
+    expected = (
+        install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2/agent_toolkit/agents_server_mcp.py"
+    )
+    assert warmup_targets == [expected if enabled else None]
+    assert "Codex plugin snapshot の生成" in reached
+    assert "Claude Code plugin のインストール" in reached
+    assert "旧Codex User scope MCP登録の移行" in reached
+    assert "atk serve 自動起動セットアップ (Linux)" in reached
 
 
 def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:

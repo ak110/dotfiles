@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, setup_codex_links
+from pytools._internal import claude_common, codex_processes, log_format, post_apply_outcome, setup_codex_links
 
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
@@ -358,6 +358,23 @@ def _sync_local_plugin(
 ) -> bool:
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("enabled") is not True or current.get("version") != version
+    # addは旧版のスキルとMCP実体も回収するため、hook入口の安定化だけでは稼働中の参照を守れない。
+    if (
+        needs_plugin_add
+        and current is not None
+        and claude_common.is_euryale()
+        and os.environ.get(_AUTO_RESTART_ENV) != "1"
+        and (running := codex_processes.running_codex_processes())
+    ):
+        logger.warning(
+            log_format.format_status(
+                "codex plugins",
+                "Codexが稼働中のためplugin更新を延期: "
+                f"{codex_processes.format_running_processes(running)}。"
+                "導入済みの版と有効状態を保持しました。Codex停止後の次のupdate-dotfilesで更新します。",
+            )
+        )
+        return False
     wrapper = _hook_bin() / ("atk-hook.cmd" if os.name == "nt" else "atk-hook")
     first_transition = not wrapper.exists()
     wrapper_changed = _install_hook_wrapper(root)
