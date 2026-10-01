@@ -37,7 +37,7 @@ from agent_toolkit._common.next_action import ActionableError
 _LOG = logging.getLogger("agent-toolkit.agents-server.antigravity")
 _COMMAND = "agy"
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
-# 非対話実行の既定の上限は5分であり、委譲先の1turnはこれを超える。
+# 非対話実行で上限を指定しない場合は5分で終了するが、委譲先の1turnにはそれより長い時間が必要になる。
 _PRINT_TIMEOUT_SECONDS = 3600
 _STDERR_LIMIT_CHARS = 4000
 # モデル出力に数える`step_update`の種別。agy 1.2.11の記録では、利用上限の失敗は

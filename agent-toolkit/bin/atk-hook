@@ -23,7 +23,7 @@ class _HookLaunchError(Exception):
 
 
 def main() -> int:
-    """plugin一覧を正本としてhookへ引数と入出力を引き継ぐ。"""
+    """plugin一覧からhookを解決し、引数と入出力を引き継ぐ。"""
     if len(sys.argv) != 2:
         print("usage: atk-hook EVENT", file=sys.stderr)
         print(f"{_NEXT_ACTION_PREFIX}hook定義の起動コマンドへイベント名を1つだけ渡す", file=sys.stderr)

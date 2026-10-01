@@ -740,7 +740,7 @@ def _superseded_cancelled_ids(runs: list[RunRecord]) -> set[int]:
     打ち切られたrunは対象commitのCIの成否を表さないため、全件一致で完了を判定する集合から除く。
     判定は同じキーでより大きい`databaseId`のrunが存在することとする。GitHubの`databaseId`は
     登録順に増加するため、登録時刻を別途取得せずに先行・後続を決められる。
-    呼び出し元が先に`_run_ids`で識別子を検証するため、ここでは型を再検査しない。
+    呼び出し元が先に`_run_ids`で識別子を検証するため、ここでは型を再確認しない。
     """
     latest_ids: dict[tuple[str, str], int] = {}
     for run in runs:
@@ -793,7 +793,7 @@ def _wait_for_completion(
     consecutive_failures: int,
     follow_mode: bool,
 ) -> tuple[int, list[RunRecord], float]:
-    """確定したrun集合の完了を待つ主経路・後続SHA経路の共通ループ。
+    """確定したrun集合と後続SHAのrun集合のどちらにも使う完了待ちループ。
 
     登録猶予中に実行中として観測したrunが後続runへ置き換えられて打ち切られた場合、そのrunは
     取得結果から消える。期待run集合へ残すと欠落判定で待ち続けるため、除外した識別子を同集合からも取り除く。
@@ -873,7 +873,7 @@ def wait_for_ci(
 ) -> int:
     """対象shaの明確な失敗run・ジョブ1件検出または期待run集合完了の早い方を待ちexit codeを返す。
 
-    - 毎pollでbaseline IDを除いたrun一覧とジョブ一覧を、通常経路は`_fetch_snapshot`、
+    - 毎pollでbaseline IDを除いたrun一覧とジョブ一覧を、通常は`_fetch_snapshot`、
       後続SHA追跡時は`_fetch_follow_snapshot`で不可分なスナップショットとして取得し、
       `_find_early_failure`が確定的な失敗（forgeごとの判定は同関数docstring参照）を1件検出した時点で
       run/pipeline完了を待たずEXIT_CI_FAILEDを返す
@@ -890,8 +890,8 @@ def wait_for_ci(
     - 早期失敗が無く期待run集合全runが`conclusion==success`のときのみEXIT_SUCCESS
     - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..<source_ref>`の後続SHA上のrunで補完判定
     - 対象SHAが明示したsource refの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
-    - `forge`が`gitlab`のとき既定の取得手段を`glab ci list --sha`・`glab api`へ切り替える
-      （`run_list_fn`・`job_list_fn`を明示指定した場合、取得関数の既定選択には`forge`を参照しない）
+    - `forge`が`gitlab`のとき取得関数を指定しない場合の手段を`glab ci list --sha`・`glab api`へ切り替える
+      （`run_list_fn`・`job_list_fn`を明示指定した場合、取得関数の選択には`forge`を参照しない）
     - `forge`は早期失敗の分類（`_find_early_failure`のforgeごとの判定）には
       `run_list_fn`・`job_list_fn`の明示指定有無によらず常に使う
     """
@@ -1087,7 +1087,7 @@ def _follow_cancelled(
 def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
     """`git rev-parse`でrevisionを完全形式のcommit shaへ再帰的にpeelする。
 
-    明示指定されたSHAを同一経路で完全形式へ変換することで、
+    明示指定されたSHAを同じ処理で完全形式へ変換することで、
     短縮形式を受理しないforge CLIとの扱いを揃える。
     解決失敗時は`None`を返し、呼び出し元で識別子解決失敗として区別できるようにする。
     """
@@ -1207,20 +1207,29 @@ def main(argv: list[str] | None = None) -> int:
         "--sha",
         help="対象commit SHA（省略時はbaseline作成でsource ref、待機でbaseline保存SHAを使用）",
     )
-    parser.add_argument("--timeout", type=_positive_float, default=270.0, help="全体タイムアウト秒数（既定270）")
-    parser.add_argument("--poll-interval", type=_positive_float, default=20.0, help="ポーリング間隔秒数（既定20）")
-    parser.add_argument("--registration-grace", type=_non_negative_float, default=60.0, help="run未登録許容秒数（既定60）")
+    parser.add_argument(
+        "--timeout", type=_positive_float, default=270.0, help="全体タイムアウト秒数。省略時は270秒で打ち切る。"
+    )
+    parser.add_argument(
+        "--poll-interval", type=_positive_float, default=20.0, help="ポーリング間隔秒数。省略時は20秒間隔とする。"
+    )
+    parser.add_argument(
+        "--registration-grace", type=_non_negative_float, default=60.0, help="runが登録されるまで待つ秒数。省略時は60秒とする。"
+    )
     parser.add_argument(
         "--subprocess-timeout",
         type=_positive_float,
         default=60.0,
-        help="個別forge CLI実行のタイムアウト秒数（既定60）",
+        help="個別forge CLI実行のタイムアウト秒数。省略時は60秒で打ち切る。",
     )
     parser.add_argument(
         "--forge",
         choices=("auto", "github", "gitlab"),
         default="auto",
-        help="対象ホスティング種別（既定auto。--repoのホスト、ホストを含まない場合は作業ディレクトリのGit remoteから自動判定）",
+        help=(
+            "対象ホスティング種別。省略時はautoとして--repoのホストから自動判定する。"
+            "ホストを含まない場合は作業ディレクトリのGit remoteから判定する。"
+        ),
     )
     parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時にsource refの後続run成功を追跡")
     args = parser.parse_args(argv)

@@ -19,7 +19,7 @@ def _shared_document_body(name: str) -> str:
     """共有文書から先頭のH1見出し行と直後の空行を除いた本文を返す。
 
     除去する行数は共有文書の書式（1行目がH1見出し、2行目が空行）から導く。
-    書式が崩れた場合は照合の前に失敗させ、実装側の分割結果と偶然一致する事態を防ぐ。
+    書式が不正な場合は比較の前に失敗させ、実装側の分割結果と偶然一致する事態を防ぐ。
     """
     lines = (state.SHARE_DIR / name).read_text(encoding="utf-8").rstrip("\n").split("\n")
     assert lines[0].startswith("# "), f"{name}の1行目がH1見出しではない"
@@ -57,7 +57,7 @@ def test_all_launch_system_prompts_include_language_condition() -> None:
 
     起動文から言語の指定を外しても委譲先が日本語で返すことを、呼び出し元の記述に依存せず保証する。
     通常委譲の固定指示が条件を欠くと、Claude以外のbackendでは共有規範の言語条項も届かず、
-    実行環境が英語で挿入した指示に引きずられた応答が応答言語の検査で遮断される。
+    実行環境が英語で挿入した指示に引きずられた応答が応答言語のチェックで遮断される。
     """
     for kind, prompt in state.LAUNCH_SYSTEM_PROMPTS.items():
         assert "日本語" in prompt, kind

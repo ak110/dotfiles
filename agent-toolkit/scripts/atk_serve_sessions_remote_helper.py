@@ -9,7 +9,7 @@
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 `serve`は記録のrootの変更も監視し、一覧の再取得と記録1件の更新の通知を同じstdoutへ行で書く。
 
-保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`を正本とし、
+保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`に従い、
 サーバー側`_atk/serve/sessions.py`と同じ規約で解決する。
 子セッションの解析と、一覧の判定・変更監視は、同じリポジトリの共通モジュールを読み込む。
 ユーザー発話の記録行を持たない記録は一覧から除外する。

@@ -1,4 +1,4 @@
-"""本番Pythonコードのテキストsubprocess境界を検査する。"""
+"""本番Pythonコードがsubprocessでテキストを送受信する際の文字コード指定を確かめる。"""
 
 import ast
 import os

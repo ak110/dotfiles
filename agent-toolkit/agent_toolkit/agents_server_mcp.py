@@ -111,13 +111,13 @@ _TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
 # 失敗する状態を子の起動前に検出する。起動後に失敗すると、Claude Codeはプラグインの接続失敗をホスト共通の記録へ残し、
 # 同じ設定のサーバーへの接続を15分間試みない。
 PREFLIGHT_COMMANDS: tuple[tuple[str, ...], ...] = (("uv", "--version"), ("uvx", "--version"))
-# 事前確認の1コマンドあたりの上限秒数。成功時の実測は2コマンドの連続実行で約0.14秒である。
+# 事前確認の1コマンドあたりの上限秒数。成功した2コマンドの連続実行に約0.14秒かかることを確認した。
 PREFLIGHT_TIMEOUT = 20.0
 # start系の起動ツールが共通して受け取る引数の説明はサーバーの`instructions`へ1か所だけ置き、
-# 各ツールの引数説明にはツール固有の既定値と、この参照文だけを書く。
+# 各ツールの引数説明にはツール固有の省略時の値と、この参照文だけを書く。
 _COMMON_ARGUMENT_REFERENCE = "意味と書式はサーバーの`instructions`の共通引数`{name}`の説明に従う。"
 
-# 検査が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
+# 確認処理が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
 _REQUIRED_INPUT_LINE_FORMAT = (
     "受理する書式: 必須入力の行は`<項目名>:`で始める。"
     "項目名へ別の語を連結した行はその項目として解決しないため、補足する語は別の行へ書く。"
@@ -125,7 +125,7 @@ _REQUIRED_INPUT_LINE_FORMAT = (
 
 
 # 受信側がツールのエラー本文や状態値だけで次の行動を決められるよう、応答へ載せる次の操作の文面。
-# 同じ状況を複数の経路が返すため、経路ごとに書き分けず1か所へ置く。
+# 同じ状況を複数の処理が返すため、処理ごとに書き分けず1か所へ置く。
 _TASK_DOCUMENT_PATH_NEXT_ACTION = (
     "`subagent_md_path`へ`<plugin root>/share/*.subagent.md`の絶対パスを渡す。自由本文で委譲する場合は`start_custom`を使う"
 )
@@ -303,7 +303,7 @@ def _schema_text(body: str, *, kind: str) -> str:
     """MCPのスキーマへ載る本文へ、生成主体と種別を示す境界を付ける。
 
     サーバーの説明文とツールの説明文は、呼び出し側のホストがsystem promptへ自動的に載せる。
-    受信したエージェントが本リポジトリの生成物と判別できるよう、他の自動注入経路と同じ形式で囲む。
+    受信したエージェントが本リポジトリの生成物と判別できるよう、他の自動注入と同じ形式で囲む。
     """
     return auto_message(body, source=_NORMATIVE_SOURCE, kind=kind)
 
@@ -319,21 +319,21 @@ def _shell_prompt(command: str, summary_policy: str) -> str:
 
 
 def _common_argument_description(name: str, tool_specific: str) -> str:
-    """共通引数の説明を、ツール固有の既定値と`instructions`への参照から組み立てる。"""
+    """共通引数の説明を、ツール固有の省略時の値と`instructions`への参照から組み立てる。"""
     return _parameter_description(f"{tool_specific}{_COMMON_ARGUMENT_REFERENCE.format(name=name)}")
 
 
-# `start_shell`以外の起動ツールが共有する`cwd`の説明。受理条件は起動処理の`_validate_cwd`が検査する条件と一致させる。
+# `start_shell`以外の起動ツールが共有する`cwd`の説明。受理条件は起動処理の`_validate_cwd`が確認する条件と一致させる。
 _DELEGATE_CWD_DESCRIPTION = _parameter_description("委譲先の作業ディレクトリ。既存ディレクトリの絶対パスとする。")
 
 
 def _label_description(tool_specific: str) -> str:
-    """label引数の説明を、ツール固有の形式・既定値と`instructions`への参照から組み立てる。"""
+    """label引数の説明を、ツール固有の形式・省略時の値と`instructions`への参照から組み立てる。"""
     return _common_argument_description("label", tool_specific)
 
 
 def _model_type_description(tool_specific: str) -> str:
-    """model_type引数の説明を、ツール固有の既定値と`instructions`への参照から組み立てる。"""
+    """model_type引数の説明を、ツール固有の省略時の値と`instructions`への参照から組み立てる。"""
     return _common_argument_description("model_type", tool_specific)
 
 
@@ -414,7 +414,7 @@ def _validate_required_prompt_inputs(
     extra_params: Mapping[str, str],
     document_text: str | None = None,
 ) -> str | None:
-    """タスク文書の宣言を名前付き入力と照合し、宣言を読めない場合だけ警告文を返す。
+    """タスク文書の宣言と名前付き入力が一致するか確かめ、宣言を読めない場合だけ警告文を返す。
 
     必須入力の欠落と宣言外の入力名は委譲先を起動せず`ValueError`で拒否する。
     """
@@ -431,7 +431,7 @@ def _task_document_declaration(
 ) -> task_documents.TaskDocumentDeclaration | str:
     """タスク文書の宣言を読む。共有規則の判定は`_is_agent_toolkit_task_document`を経由する。"""
     if not _is_agent_toolkit_task_document(task_document):
-        return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
+        return f"必須入力を確認できません: タスク文書がshare配下ではありません: {task_document}"
     return task_documents.read_declaration_unchecked(task_document, document_text)
 
 
@@ -667,7 +667,7 @@ class AgentsServerManager:
         return response
 
     def _resolve_stopped_session(self, session_id: str) -> SessionResumeState | None:
-        """破棄済みsessionを返し、外部経路による結果回収を反映する。"""
+        """破棄済みsessionを返し、別プロセスによる結果回収を反映する。"""
         resume_state = self.stopped_sessions.get(session_id)
         if resume_state is None:
             return None
@@ -824,7 +824,7 @@ class AgentsServerManager:
     def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
         """保持中のsessionを開始時刻順の公開項目へ射影する。
 
-        未回収結果を持つsessionは、終端済みまたは期限切れでも既定の一覧へ残す。
+        一覧の範囲を指定しない場合も、未回収結果を持つsessionは終端済みまたは期限切れでも表示する。
         """
         loop_time = asyncio.get_running_loop().time()
         for session_id, session in tuple(self.sessions.items()):
@@ -917,7 +917,7 @@ class AgentsServerManager:
     def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
         """保持中または再開可能なsessionの復旧用詳細を返す。
 
-        自プロセスの保持状態に無い識別子は、共有の登録簿を正本として在否を判定する。
+        自プロセスの保持状態に無い識別子は、共有の登録簿に記録されているか確かめて在否を判定する。
         そのsessionを別のMCPサーバープロセスが実行中である場合と、登録簿にレコードが無い場合を
         区別せずに喪失として案内すると、照会した主体が新しいsessionの起動へ進む。
         """
@@ -1128,7 +1128,7 @@ class AgentsServerManager:
     ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
         """起動条件を検証し、除外後の候補列を設定順で返す。
 
-        除外中の候補は状態ディレクトリの記録を正本として読む。
+        除外中の候補は状態ディレクトリに保存した記録を読む。
         除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
         """
         try:
@@ -1157,7 +1157,7 @@ class AgentsServerManager:
         """可用性を理由に終端した候補を、同じ起動条件の次回へ引き継ぐ。
 
         終端結果が確定した時点の通知として`SessionState.touch`から呼ぶ。
-        結果本文の受領、`stop`による破棄、保持期限切れのいずれを経ても記録が漏れないよう、
+        結果本文の受領、`stop`による破棄、保持期限切れのいずれの場合も記録を保存できるよう、
         記録の契機を終端の確定点だけに置く。共有の通知先は全managerへ届くため、
         自身が保持するsessionだけを記録の対象とする。
         """
@@ -1464,7 +1464,7 @@ class AgentsServerManager:
         )
 
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
-        """bucket別の既定待機上限を導出し、同じbucketの以降の呼び出しへ再利用する。
+        """bucketごとに省略時に使う待機上限を導出し、同じbucketの以降の呼び出しへ再利用する。
 
         導出は`claude auth status`の実行を伴い得るため、イベントループ上で直接実行しない。
         """
@@ -1479,7 +1479,7 @@ class AgentsServerManager:
         """待機の対象となる保持中sessionを識別子順に返す。
 
         未回収の終端結果を持つ破棄済みまたは期限切れsessionも対象へ含め、
-        呼び出し元が結果本文を回収できないまま失う経路を残さない。
+        呼び出し元が回収する前に結果本文を失わないようにする。
         """
         targets = set(self.sessions) | set(self._pending_resumes)
         for session_id, resume_state in (*self.expired_sessions.items(), *self.stopped_sessions.items()):
@@ -1609,7 +1609,7 @@ class AgentsServerManager:
         """孫sessionの共有された終端結果ファイルが終端を示すかを返す。
 
         このファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
-        別プロセスが起動した孫sessionの終端も同じ経路で判定できる。
+        別プロセスが起動した孫sessionの終端も同じ処理で判定できる。
         """
         if self._status_writer is None or not status_file.valid_session_id(session_id):
             return False
@@ -1916,7 +1916,7 @@ class AgentsServerManager:
         _validate_prompt(prompt)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ActionableError(
-                "timeout must be positive", next_action="`timeout`を省略して既定の270秒を使うか、正の秒数を指定する"
+                "timeout must be positive", next_action="`timeout`を省略して270秒で待つか、正の秒数を指定する"
             )
         prompt = _wrap_delivery_body(prompt)
         try:
@@ -2004,7 +2004,7 @@ class AgentsServerManager:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ActionableError(
-                "timeout must be non-negative", next_action="`timeout`を省略して既定の270秒を使うか、0以上の秒数を指定する"
+                "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
             )
         stopped_state = self._resolve_stopped_session(session_id)
         recovered_state: SessionResumeState | None = None
@@ -2400,7 +2400,7 @@ with warnings.catch_warnings():
             "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、その作業を観測する主体が残らない。\n"
             "start系の起動ツール（`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`）は、"
-            "次の共通引数を同じ意味で受け取る。各ツールの引数説明にはツール固有の既定値だけを書く。\n"
+            "次の共通引数を同じ意味で受け取る。各ツールの引数説明にはツール固有の省略時の値だけを書く。\n"
             "共通引数`model_type`: モデル段位の種別（例: `high_tier`）、またはASCIIカンマ区切りの"
             "`<claude|codex|agy>:<model>[/<effort>]`候補列（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）。"
             "候補は先頭から試し、起動可能な候補へ切り替える。"
@@ -2420,7 +2420,7 @@ with warnings.catch_warnings():
             "| `start_write` | `write-<起草対象を示す1〜2語>` | `write-awi` |\n"
             "| `start_custom`（レビュー以外） | 役割を表す短い語 | `audit` |\n"
             "`start_explore`・`start_shell`・`start_write`はlabelを明示して起動する。"
-            "省略時の既定値（`explore`、`shell-<コマンド名>`、`write`）だけでは同じ種別のsessionを区別できないためである。",
+            "省略時に使う値（`explore`、`shell-<コマンド名>`、`write`）だけでは同じ種別のsessionを区別できないためである。",
             kind=_KIND_MCP_INSTRUCTIONS,
         ),
         lifespan=_mcp_lifespan,
@@ -2464,7 +2464,7 @@ async def start(
 ) -> dict[str, Any]:
     """専用タスク文書と名前付き追加入力から委譲先turnを開始する。
 
-    タスク文書を読み、同文書が宣言した入力名と`extra_params`を照合し、文書本文と出所を起動文へ含めてから起動する。
+    タスク文書を読み、同文書が宣言した入力名と`extra_params`が一致するか確かめ、文書本文と出所を起動文へ含めてから起動する。
     必須入力の欠落と宣言外の入力名は拒否し、欠けた項目名または宣言外の項目名と受理する項目名の一覧を返す。
     タスク文書が`起動種別:`を宣言した場合は、その種別の起動条件（`explore`・`write`・`shell`では軽量な起動条件）で開始する。
     engine、model、effortはタスク文書に対応する工程別モデル設定から決め、`model_type`を指定した場合はその値から決める。
@@ -2590,7 +2590,7 @@ async def start_shell(
 
     `low_tier_model`の候補列で軽量な起動条件を使い、呼び出し元へは終了状態と要約だけを返す。
     `model_type`を指定した場合はその値から候補列を決める。
-    読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
+    読み取り専用の制約は課さないため、自動チェックなど対象を変更する実行を渡せる。
     返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、
     結果が不要なら`kill`で破棄する。
     `atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。
@@ -2644,7 +2644,7 @@ async def send_message(
         Field(
             description=_parameter_description(
                 "継続要求の配送結果が確定するまでの待機上限秒数。"
-                "固有のtimeout要件がなければ引数を省略して通常既定を使う。"
+                "固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
                 "委譲先の応答生成の完了は待たない。0以下は受理しない。"
             )
         ),
@@ -2652,7 +2652,7 @@ async def send_message(
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。
 
-    通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
+    引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
     待つのは継続要求の配送結果が確定するまでであり、委譲先の応答生成の完了ではない。
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
@@ -2691,7 +2691,7 @@ async def kill(
         Field(
             description=_parameter_description(
                 "中断要求後に終端を待つ上限秒数。"
-                "固有のtimeout要件がなければ引数を省略して通常既定を使う。"
+                "固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
                 "0は中断要求配送後の現状態を返す。"
             )
         ),
@@ -2706,7 +2706,7 @@ async def kill(
     停止は最終手段とする。実行中の委譲先には`send_message`で訂正を配送できるため、
     そちらで意図を満たせる場合は、停止によって失われる作業と再起動の費用の方が大きい。
     本ツールを選ぶ前に、`send_message`による訂正では足りないことと、その作業の継続自体が不要であることを確認する。
-    通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
+    引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
     `timeout=0`は中断要求配送後の現状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
@@ -2736,7 +2736,7 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
     ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒および件数を返し、モデル出力が止まっていることを示す。
     起動条件は`show`で取得する。
     結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
-    既定では未回収結果を持たない終端済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
+    表示範囲を指定しない場合は未回収結果を持たない終端済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
     全件が必要な場合は`include_terminated`へ真を渡す。このとき`omitted`は0となる。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
@@ -2747,9 +2747,9 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
 async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]:
     """1件のsessionについて、文脈復旧またはトラブルシューティング用の詳細を返す。
 
-    既定では識別名、起動prompt、cwd、種別、model_type、status、結果の有無および進行中の停滞診断を返す。
+    `verbose`を指定しない場合は識別名、起動prompt、cwd、種別、model_type、status、結果の有無および進行中の停滞診断を返す。
     `model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列である。
-    停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の疑いはこの値で判定する。
+    停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の可能性はこの値で判定する。
     ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒および件数を返し、モデル出力が止まっていることを示す。
     `seconds_since_output`は最新のテキスト出力からの経過秒数である。
     テキスト出力だけが止まり活動が続いている状態は長時間のコマンドの実行中であり、停滞ではない。
@@ -2775,7 +2775,7 @@ def _prepare_child_environment() -> None:
 
     Claude backendが渡す`ClaudeAgentOptions.env`は継承環境へ重なる仕様であり、
     キーの削除を表現できない。Codex backendのApp Server子プロセスも本プロセスの環境を継承する。
-    このため両経路の起点である本プロセスの環境を、起動時に1回だけ整える。
+    このため両方の処理を起動する本プロセスの環境を、起動時に1回だけ整える。
     """
     _inherited_venv.strip_inherited_venv(os.environ)
 
@@ -2786,13 +2786,13 @@ def _configure_logging() -> pathlib.Path:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """引数に応じて依存検査またはMCP stdio transportを起動する。"""
+    """引数に応じて依存の確認またはMCP stdio transportの起動を行う。"""
     _prepare_child_environment()
     parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
     parser.add_argument(
         "--check-dependencies",
         action="store_true",
-        help="Claude Agent SDKの依存を読み込み、options構築まで検査する。",
+        help="Claude Agent SDKの依存を読み込み、optionsを構築できることを確かめる。",
     )
     args = parser.parse_args(argv)
     log_path = _configure_logging()

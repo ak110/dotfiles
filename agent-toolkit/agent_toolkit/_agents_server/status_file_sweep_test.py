@@ -69,7 +69,7 @@ def test_sweep_stale_shared_state_continues_after_root_removal_failure(
 
 @pytest.mark.asyncio
 async def test_status_writer_activate_continues_when_sweep_fails(tmp_path: pathlib.Path, monkeypatch) -> None:
-    """manager起動経路は掃引APIのOSErrorを記録して書込を開始する。"""
+    """managerの起動処理は掃引APIのOSErrorを記録して書込を開始する。"""
     monkeypatch.setattr(status_file, "sweep_stale_shared_state", lambda **_kwargs: (_ for _ in ()).throw(OSError("x")))
     writer = status_file.StatusFileWriter(
         {},

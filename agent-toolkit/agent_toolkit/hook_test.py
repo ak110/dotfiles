@@ -2,8 +2,8 @@
 
 フック共通エントリポイントが、モジュール読込段階の失敗と`main()`実行中の例外を
 区別して扱うことを検証する。読込失敗では素のtracebackだけを標準エラー出力へ書き、
-`main()`実行中の例外では要約1行とtracebackを書いたうえでStop共通入口の空JSON応答を返す。
-Stop入口とprocess-loop入口を通した親子セッションの中断経路も検証する。
+`main()`実行中の例外では要約1行とtracebackを書いたうえでStop共通処理の空JSON応答を返す。
+Stopとprocess-loopを呼び出した場合の親子セッションの中断処理も検証する。
 """
 
 # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
@@ -171,7 +171,7 @@ class TestEntrypointExceptionStages:
 
 
 class TestStandardInputAndPayloadDump:
-    """共通入口のUTF-8境界とpayloadダンプを検証する。"""
+    """共通処理によるUTF-8のデコードとpayloadダンプを検証する。"""
 
     _copy_entrypoint = staticmethod(_copy_entrypoint)
 
@@ -258,7 +258,7 @@ class TestStandardInputAndPayloadDump:
         assert "\nusage: hook.py <" in stderr
 
     def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:
-        """各サブコマンドへ渡す前に共通入口が前身状態を継承する。"""
+        """各サブコマンドへ渡す前に共通処理が前身状態を継承する。"""
         entrypoint = self._copy_entrypoint(tmp_path)
         self._write_echo_module(tmp_path)
         source_directory = _SCRIPT.parent
@@ -380,7 +380,7 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """公開hook入口で子のStopを処理した後も、公開CLIが次のセッションを起動する。"""
+    """公開hookで子のStopを処理した後も、公開CLIが次のセッションを起動する。"""
     _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()

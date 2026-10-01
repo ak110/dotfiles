@@ -47,7 +47,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     scope.add_argument("--all", dest="all_sessions", action="store_true", help="全プロジェクトの記録を選ぶ。")
     scope.add_argument("--project-dir", type=pathlib.Path, help="指定した作業ディレクトリの記録を選ぶ。")
     logs.add_argument("--latest", type=int, help="一括対象を開始日時の新しい順にN件へ限る。")
-    logs.add_argument("--format", choices=("text", "markdown"), default="text", help="出力形式。既定はtext。")
+    logs.add_argument("--format", choices=("text", "markdown"), default="text", help="出力形式。省略時はtextで出力する。")
     logs.add_argument("--output-dir", type=pathlib.Path, help="記録を1件1ファイルで保存するディレクトリ。")
     logs.add_argument("--include-thinking", action="store_true", help="markdownへ思考ブロックを含める。")
     logs.add_argument("--include-subagents", action="store_true", help="markdownの親記録へサブエージェントを含める。")
@@ -205,7 +205,7 @@ def _without_prompt(session: dict[str, Any]) -> dict[str, Any]:
 
     `list`の用途は稼働状況の把握であり、起動文はこれに使わない。
     起動文の量はsession数と長さの積で増えるため、一覧から外して呼び出し元が受け取る量の伸びを抑える。
-    起動文は`show`が返すため、除いても取得経路は失われない。
+    起動文は`show`が返すため、この一覧から除いても取得できる。
     """
     return {key: value for key, value in session.items() if key != "prompt"}
 

@@ -4,7 +4,7 @@
 MCP層はキューへ入力を渡し、クライアントへ直接アクセスしない。
 """
 
-# Claude Agent SDKはCodexだけを使う経路で読み込まない。
+# Codexだけを使う場合はClaude Agent SDKを読み込まない。
 # pylint: disable=import-outside-toplevel
 
 from __future__ import annotations
@@ -200,7 +200,7 @@ class _CommandChannel:
     """1つのClaude sessionへの継続要求と中断要求を所有タスクへ渡す。
 
     受理した要求の応答futureは、所有タスクによる処理か`close`のいずれかで必ず解決する。
-    所有タスクの終了経路が増えても、`close`の1箇所で受理済みの要求を解決できる。
+    所有タスクを終了させる処理が増えても、`close`の1箇所で受理済みの要求を解決できる。
     """
 
     def __init__(self) -> None:
@@ -240,7 +240,7 @@ def _build_options(
     stderr: Callable[[str], None] | None = None,
     debug_file: pathlib.Path | None = None,
 ) -> Any:
-    """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
+    """Claude Codeが用意するシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
     委譲先の印を追加する。
@@ -259,10 +259,10 @@ def _build_options(
     owner_session = _plan_file.resolve_owner_session_id()
     if owner_session is not None:
         env[_ENV_OWNER_SESSION] = owner_session
-    # 委譲先のプロンプトキャッシュ保持期間を経路別に固定する。評価順序は`_wait_schedule.py`のdocstringを正本とする。
+    # 委譲先のプロンプトキャッシュ保持期間を起動種別ごとに固定する。評価順序は`_wait_schedule.py`のdocstringが定める。
     # 軽量起動（探索委譲とシェル実行委譲）は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
     # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。
-    # 前提が崩れた場合は、軽量起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが
+    # 前提が成立しなくなった場合は、軽量起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが
     # 1時間で書き込む事象を、セッション記録の`message.usage.cache_creation`から観測できる。
     lightweight = launch_kind in LIGHTWEIGHT_LAUNCH_KINDS
     if lightweight:
@@ -497,7 +497,7 @@ class ClaudeServerManager:
         try:
             session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
         except TimeoutError as exc:
-            # SDKがinitを届けないまま接続を保つ場合、この待機は所有タスクの失敗経路では解消しない。
+            # SDKがinitを届けないまま接続を保つ場合、所有タスクが失敗してもこの待機は解消しない。
             await self._release_unstarted_task(task)
             diagnostic.record_exception(exc)
             _LOG.error("Claude session初期化timeout: diagnostic=%s", diagnostic.public())
@@ -523,7 +523,7 @@ class ClaudeServerManager:
     async def _disconnect_client(self, client: Any) -> None:
         """SDKクライアントの切断を、所有タスクの取り消しから切り離して完走させる。
 
-        切断はCLIの子プロセスへ終了を送る唯一の経路である。
+        CLIの子プロセスへ終了を送れるのは切断処理だけである。
         取り消された実行では、SDKの切断処理が内部のcheckpointで例外を送出し、
         子プロセスの終了処理へ到達しないまま接続だけを閉じる。
         このため切断は別taskで実行し、待機の側が取り消されてもそのtaskの実行を継続させる。
@@ -935,8 +935,8 @@ class ClaudeServerManager:
     ) -> None:
         """保留した終端結果を確定する。
 
-        Claude backendはタスク完了通知による同一sessionの再開経路を持つため終端結果を保留する。
-        Codex backendはこの再開経路を持たず、終端結果を保留しない。
+        Claude backendはタスク完了通知によって同一sessionを再開できるため終端結果を保留する。
+        Codex backendはこの通知によって再開できないため、終端結果を保留しない。
         """
         shared_state.consume_agents_wait_background_outputs(session)
         unobserved = set(session.live_child_session_ids)

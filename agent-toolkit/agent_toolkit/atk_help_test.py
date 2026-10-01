@@ -268,9 +268,9 @@ def test_structured_output_commands_state_their_format(command: str, format_name
 
 
 def test_agents_wait_help_states_absent_target_termination() -> None:
-    """`atk agents wait`の公開説明が、待機対象が不在のまま終わる経路を示す。
+    """`atk agents wait`の公開説明が、待機対象が不在のまま終わる場合の動作を示す。
 
-    その経路を説明しないと、待機を発行する主体が非0の終了を再発行すべき実行中通知と取り違える。
+    その場合の動作を説明しないと、待機を発行する主体が非0の終了を再発行すべき実行中通知と取り違える。
     """
     commands = {name: parser for name, parser, _summary in _walk_commands()}
     description = commands["atk agents wait"].description
@@ -356,7 +356,7 @@ def test_result_kinds_do_not_overlap() -> None:
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
     """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
     commands = {name: parser for name, parser, _summary in _walk_commands()}
-    # `--state`は`return-to-inbox`が差し戻し元の指定に使う綴りと重なるため、本検査の期待集合から除く。
+    # `--state`は`return-to-inbox`が差し戻し元の指定に使う綴りと重なるため、このテストの期待集合から除く。
     # フィルターの綴りの別名は`listing_test.py`が検証する。
     expected = {"--all", "--type", "--status", "--answered", "--source", "--yes", "--skip-pull", "--target-repo"}
 

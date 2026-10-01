@@ -16,7 +16,7 @@ from agent_toolkit._agents_server import state as shared_state
 
 
 def test_debug_file_name_carries_session_id_after_initialization(tmp_path: pathlib.Path) -> None:
-    """診断記録の名前がsession識別子を持ち、対応を時刻の突き合わせなしで判別できる状態にする。"""
+    """診断記録の名前にsession識別子を含め、時刻を比較せずに対応するsessionを判別できる状態にする。"""
     debug_file = tmp_path / "20260916T000000000000-delegate.log"
     debug_file.write_text("diagnostic", encoding="utf-8")
 

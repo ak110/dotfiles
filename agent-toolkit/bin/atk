@@ -17,7 +17,7 @@ fi
 # 実体は次の起動対象を受け渡しファイルへ書いて専用の終了コードで終了し、
 # 本スクリプトが同一プロセスで次の実体を起動する。`uv run`を毎回経由するため、
 # 更新後のplugin rootが持つlockfileと依存宣言を解決し直す。
-# 停止シグナルは、プロセスグループ全体へ届く経路（端末のCtrl-C、systemdのcgroup単位の停止）で送る。
+# 停止シグナルは、プロセスグループ全体へ届く手段（端末のCtrl-C、systemdのcgroup単位の停止）で送る。
 # 本スクリプトのPIDだけへシグナルを送った場合、本スクリプトは実体の終了を待たずに終了して
 # 受け渡しファイルを削除し、実体は監督者を失ったまま動作を継続する。
 SPEC="$(mktemp)"
@@ -53,7 +53,7 @@ while :; do
     if [ "${status}" -ne 75 ]; then
         exit "${status}"
     fi
-    # `mapfile`はbash 4.0以降の組み込みのため、macOS既定のbash 3.2でも動く読み取りにする。
+    # `mapfile`はbash 4.0以降の組み込みのため、macOSに標準で付属するbash 3.2でも動く読み取りにする。
     next=()
     while IFS= read -r line; do
         next+=("${line}")

@@ -11,7 +11,7 @@ from agent_toolkit._atk import config as _atk_config
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("AGENT_TOOLKIT_LIVE_AGENTS_TEST") != "1",
-    reason="ライブのagents_server検査は明示指定時だけ実行する",
+    reason="実際のagents_serverを起動するテストは明示指定時だけ実行する",
 )
 
 _PROMPT = """Bashツールで`sleep 2`を背景実行し、待たずにturnを終えよ。
@@ -25,7 +25,7 @@ async def test_live_launch_waits_for_automatic_resume(
     monkeypatch: pytest.MonkeyPatch,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """3つの公開起動経路が再開指示なしで背景作業完了後の結果を返す。"""
+    """3つの公開起動手段が再開指示なしで背景作業完了後の結果を返す。"""
     manager = subject.AgentsServerManager()
     cwd = str(pathlib.Path(__file__).parents[2])
     host = host_environ()

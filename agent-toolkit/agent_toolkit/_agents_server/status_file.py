@@ -12,7 +12,7 @@ Codex CLIが直接起動するMCPサーバープロセスへは、Codex App Serv
 そのプロセスへ届く。ホスト、CLIまたはSDKを更新した時点では、同じ起動形で
 MCPサーバーの環境変数と起動通知を確認する。
 
-上り通知の配送媒体は本モジュールが定める共有状態ディレクトリとする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して実測した。この前提が崩れた場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
+上り通知の配送媒体は本モジュールが定める共有状態ディレクトリとする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して確かめた。この前提が成立しなくなった場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ def list_status_files(root_session_id: str, state_root: pathlib.Path | None = No
     """書込主体ごとの状態ファイルを絶対パスの安定順で返す。
 
     書込主体ごとに`root.json`と`<host_session_id>.json`へ分かれるため、
-    読取主体は単一のファイル名を組み立てない。ファイル名の規則の正本は
+    読取主体は単一のファイル名を組み立てない。ファイル名の規則を定めるのは
     `resolve_status_file_identity`である。
     """
     directory = status_directory(root_session_id, state_root)
@@ -536,7 +536,7 @@ def take_result(
     state_root: pathlib.Path | None = None,
     stash_path: pathlib.Path | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """所有者を照合し、CLI用の退避先があれば保存後に原本を回収する。"""
+    """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。"""
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
     directory = results_directory(root_session_id, state_root)

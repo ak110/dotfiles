@@ -17,7 +17,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq process-loop: `orchestrate_model`設定に従いClaude CodeまたはCodexの新規セッションへ
   `/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
-  待機中は既定でCI失敗を自動検出してAWI投入し、未判定のDependabotアラートがあれば
+  待機中は無効化しない限りCI失敗を自動検出してAWI投入し、未判定のDependabotアラートがあれば
   処理回を起動して監査させる（`--no-alerts`で無効化）
 - mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: 常駐処理への中断要求と追加指示を操作する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
@@ -385,7 +385,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         "--type",
         choices=_common.WI_TYPES,
         default=None,
-        help="投入する種別（既定: awi）。uwiを指定すると確認事項として投入する。",
+        help="投入する種別。省略時はawiとして投入する。uwiを指定すると確認事項として投入する。",
     )
     add.add_argument(
         "--scope",
@@ -397,7 +397,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         "--question-type",
         choices=("free-form", "yes-no", "choice"),
         default=None,
-        help="UWIの回答形式（既定: free-form）。`--type=uwi`でのみ指定できる。",
+        help="UWIの回答形式。省略時はfree-formで回答を求める。`--type=uwi`でのみ指定できる。",
     )
     add.add_argument(
         "--choices",
@@ -438,7 +438,7 @@ def _add_wi_add_parser(sub: Any) -> None:
 def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
     # 旧名`--json`・`--no-json`が改名後の`--jsonl`・`--no-jsonl`の省略形として受理され続けないよう、
-    # 省略形照合を無効にする。
+    # 省略したオプション名では一致と判定しない。
     list_ = _atk_help.add_command(sub, "list", allow_abbrev=False, **_atk_help.HELP["atk wi list"])
     _add_target_repo_arg(list_, multiple=True, allow_all=True)
     list_.add_argument(
@@ -446,7 +446,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         choices=("all", *_common.WI_TYPES),
         action="append",
         default=None,
-        help="出力対象種別（既定: all）。",
+        help="出力対象種別。省略時は全種別を表示する。",
     )
     list_.add_argument(
         "--state",
@@ -456,7 +456,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="append",
         default=None,
         help=(
-            "状態フォルダで表示範囲を限定する（既定: active）。"
+            "状態フォルダで表示範囲を限定する。省略時はactiveを表示する。"
             "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "回答状況での限定は`--answered`で別途行う。"
         ),
@@ -466,7 +466,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         choices=("all", "yes", "no"),
         action="append",
         default=None,
-        help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
+        help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(list_, multiple=True)
     output = list_.add_mutually_exclusive_group()
@@ -488,7 +488,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     output.add_argument(
         "--no-jsonl",
         action="store_true",
-        help="JSON Linesの既定を無効にし、従来のテキスト形式で出力する。",
+        help="JSON Linesの代わりに従来のテキスト形式で出力する。",
     )
     list_.add_argument(
         "--with-staleness",
@@ -522,7 +522,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         choices=("all", *_common.WI_TYPES),
         action="append",
         default=None,
-        help="出力対象種別（既定: all）。",
+        help="出力対象種別。省略時は全種別を表示する。",
     )
     show.add_argument(
         "--state",
@@ -532,7 +532,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="append",
         default=None,
         help=(
-            "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
+            "状態フォルダで表示範囲を限定する。省略時はactiveを対象とする。--all指定時のみ有効。"
             "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
@@ -542,7 +542,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         choices=("all", "yes", "no"),
         action="append",
         default=None,
-        help="UWIの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はAWIを除外する。",
+        help="UWIの回答状況で限定する。省略時は全ての回答状況を対象とする。--all指定時のみ有効。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(show, multiple=True)
     _add_mq_read_sync_args(show)
@@ -550,7 +550,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
 
 
 def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
-    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢・既定値で追加する。
+    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢と省略時の値で追加する。
 
     一括フィルターの綴りは`--status`だけとする。`rm`と`return-to-inbox`は
     個別指定の探索先と差し戻し元を`--state`で受け取るため、同じ綴りが2つの概念を指す状態を避ける。
@@ -566,7 +566,7 @@ def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
         choices=("all", *_common.WI_TYPES),
         action="append",
         default=None,
-        help="--allの対象種別（既定: all）。",
+        help="--allの対象種別。省略時は全種別を対象とする。",
     )
     parser.add_argument(
         "--status",
@@ -574,14 +574,14 @@ def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
         choices=("all", "active", "processable", *_common.WI_STATES),
         action="append",
         default=None,
-        help="--allの対象状態（既定: active）。listと同じ集合名を受理する。",
+        help="--allの対象状態。省略時はactiveを対象とする。listと同じ集合名を受理する。",
     )
     parser.add_argument(
         "--answered",
         choices=("all", "yes", "no"),
         action="append",
         default=None,
-        help="--allのUWI回答状況（既定: all）。",
+        help="--allのUWI回答状況。省略時は全ての回答状況を対象とする。",
     )
     _add_source_arg(parser, multiple=True)
     parser.add_argument(
@@ -773,7 +773,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     rm.add_argument(
         "--force",
         action="store_true",
-        help="processing状態のファイルも削除する（既定では保護し拒否する）。",
+        help="processing状態のファイルも削除する（指定しない場合は保護して削除を拒否する）。",
     )
     _add_note_args(
         rm,
@@ -839,7 +839,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         default=None,
         help="処理完了を待つキュー項目。複数回指定でき、省略時は依存を全て解除する。",
     )
-    _add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと照合する。")
+    _add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
 
 
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
@@ -847,20 +847,22 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     grep = _atk_help.add_command(sub, "grep", **_atk_help.HELP["atk wi grep"])
     grep.add_argument("pattern", metavar="PATTERN", help="Pythonの正規表現（reモジュール）として解釈する検索パターン。")
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
-    grep.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
+    grep.add_argument(
+        "--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別。省略時は全種別を表示する。"
+    )
     grep.add_argument(
         "--state",
         "--status",
         dest="status",
         choices=("all", "active", "processable", *_common.WI_STATES),
         default="active",
-        help="状態フォルダで検索範囲を限定する（既定: active）。`list`と同じ選択肢・既定値。",
+        help="状態フォルダで検索範囲を限定する。省略時はactiveを対象とする。`list`と同じ選択肢と省略時の値を使う。",
     )
     grep.add_argument(
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
+        help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(grep, multiple=True)
     _add_target_repo_arg(grep, allow_all=True)
@@ -886,7 +888,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         "--target-repo",
         metavar="REPO",
         default=None,
-        help="対象リポジトリ（パスまたは正規化リモートURL）。既定は現在の作業リポジトリ。",
+        help="対象リポジトリ（パスまたは正規化リモートURL）。省略時は現在の作業リポジトリを対象とする。",
     )
     # 常駐処理はローカル作業ツリーのパスを必要とするため、未指定時の解決を自身で行う。
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
@@ -906,7 +908,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop.add_argument(
         "--no-update",
         action="store_true",
-        help="セッション完了後・待機中いずれの経路でもupdate-dotfiles実行と自身再起動を抑止する。",
+        help="セッション完了後と待機中のどちらの場合もupdate-dotfiles実行と自身再起動を抑止する。",
     )
     loop.add_argument(
         "--internal-mise-refreshed",
@@ -921,20 +923,20 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop.add_argument(
         "--no-alerts",
         action="store_true",
-        help="待機中のCI失敗の検出と、未判定のDependabotアラートによる処理回の起動を無効化する（既定は有効）。",
+        help="待機中のCI失敗の検出と、未判定のDependabotアラートによる処理回の起動を無効化する（指定しない場合は有効）。",
     )
     loop.add_argument(
         "--alert-interval",
         type=float,
         default=1800.0,
         metavar="SECONDS",
-        help="アラート確認の最短間隔秒数（既定1800）。",
+        help="アラート確認の最短間隔秒数。省略時は1800秒間隔とする。",
     )
     loop.add_argument(
         "--alert-forge",
         choices=("auto", "github", "gitlab"),
         default="auto",
-        help="アラート検出対象のホスティング種別（既定auto。repo_idのhostから自動判定）。",
+        help="アラート検出対象のホスティング種別。省略時はautoとしてrepo_idのhostから自動判定する。",
     )
     resume_group = loop.add_mutually_exclusive_group()
     resume_group.add_argument(
@@ -1006,7 +1008,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--model-type",
         default="medium_tier",
         metavar="TYPE",
-        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列（既定: medium_tier）。",
+        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列。省略時はmedium_tierを使う。",
     )
     commit.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
     setup_project = _atk_help.add_command(top, "setup-project", **_atk_help.HELP["atk setup-project"])
@@ -1057,7 +1059,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def format_command_help(command_path: tuple[str, ...]) -> str | None:
-    """公開サブコマンドの経路に対応するヘルプをCLI定義から生成する。"""
+    """指定した公開サブコマンドに対応するヘルプをCLI定義から生成する。"""
     parser = _build_parser()
     for name in command_path:
         choices = next(
@@ -1166,14 +1168,14 @@ def _validate_bulk_transition_args(args: argparse.Namespace) -> None:
 
 
 def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """`--target-repo`の未指定時の既定と`all`の受理可否を確定する。
+    """`--target-repo`を指定しない場合の対象と`all`の受理可否を確定する。
 
     確定後の`args.target_repo`は、Noneが対象の非限定を、値が対象リポジトリを表す。
     未指定のときはカレントディレクトリが属するリポジトリを対象とし、解決できない場合は非限定とする。
     `all`は非限定の指定として受理し、単一の対象リポジトリを確定するサブコマンドでは拒否する。
-    未指定時の解決を自ら行うサブコマンドへは既定の解決を適用せず、`all`の拒否だけを適用する。
-    既定を注入した実行では`args.target_repo_defaulted`を真にする。
-    明示指定と既定の注入を区別できないと、対象を一意に指定した照会まで既定で除外される。
+    未指定時の解決を自ら行うサブコマンドへはこの関数で対象を補完せず、`all`の拒否だけを適用する。
+    対象を補完した実行では`args.target_repo_defaulted`を真にする。
+    明示指定と対象の補完を区別できないと、対象を一意に指定した照会まで通常の除外処理が適用される。
     """
     if args.command != "wi" or not hasattr(args, "target_repo"):
         return
@@ -1197,7 +1199,7 @@ def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentP
 
 
 def _normalize_repeatable_wi_filters(args: argparse.Namespace) -> None:
-    """一覧・表示・状態遷移の反復可能フィルターへ従来の既定値を設定する。"""
+    """一覧・表示・状態遷移の反復可能フィルターへ、指定がない場合に使う従来の値を設定する。"""
     if args.command != "wi" or args.wi_subcommand not in {"list", "show", *_BULK_TRANSITION_SUBCOMMANDS}:
         return
     args.type = args.type or ["all"]
@@ -1217,10 +1219,10 @@ def _resolve_note_file(args: argparse.Namespace, parser: argparse.ArgumentParser
 
 
 def _validate_add_args(args: argparse.Namespace) -> None:
-    """`atk wi add`の`--batch`併用制約を検証し、種別の既定値を確定する。
+    """`atk wi add`の`--batch`併用制約を検証し、種別を指定しない場合の値を確定する。
 
-    `--type`の既定値を`None`とすることで、`--batch`との併用判定で明示指定
-    （`--type=awi`を含む）を区別する。検証後に通常add経路の既定値`awi`へ正規化する。
+    `--type`を省略した場合は`None`を設定することで、`--batch`との併用判定で明示指定
+    （`--type=awi`を含む）を区別する。検証後に通常のadd処理が省略時に使う`awi`へ正規化する。
     """
     if args.batch and args.dry_run:
         args.subparser.error("--dry-runは--batchと併用できません。")

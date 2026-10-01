@@ -129,7 +129,7 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終端を観測した待機経路はレコードを残し、所有主体の破棄だけが解放済みへ置き換える。"""
+    """終端を観測した待機処理はレコードを残し、所有主体による破棄だけが解放済みへ置き換える。"""
     monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(agents_server_mcp._wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
     subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))

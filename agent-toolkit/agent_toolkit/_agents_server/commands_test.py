@@ -66,7 +66,7 @@ def test_agents_wait_passes_explicit_root_to_waiter(
 
 
 def _without_wrapping(text: str) -> str:
-    """端末幅で変わる折り返しに依存せず本文を照合するため、空白文字を取り除いた文字列を返す。"""
+    """端末幅による折り返しの違いを除いて本文を比較するため、空白文字を取り除いた文字列を返す。"""
     return "".join(text.split())
 
 
@@ -742,7 +742,7 @@ def test_agents_logs_reads_subagent_and_appends_it_to_parent_markdown(
     ],
 )
 def test_agents_logs_rejects_incompatible_scopes(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
-    """対象の排他、件数、追尾とmarkdown専用オプションの境界を検査し、受理される指定を次の操作で示す。"""
+    """対象の排他、件数、追尾とmarkdown専用オプションの受理条件を確かめ、受理される指定を次の操作で示す。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "logs", *argv])
     error = capsys.readouterr().err

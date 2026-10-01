@@ -2,7 +2,7 @@
 
 配布対象のファイル名は`scripts/gen-install-files.py`がrules一覧から両インストーラーへ生成し、
 `scripts/sync_generated_files.py`が同生成器を統合実行する。
-本テストは生成後の3者の一致を検証して同期漏れを検知する。
+本テストは生成後の3者の一致を検証し、同期していない変更を検知する。
 """
 
 import pathlib

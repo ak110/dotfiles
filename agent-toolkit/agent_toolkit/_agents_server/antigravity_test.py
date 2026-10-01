@@ -49,7 +49,7 @@ def test_build_command_passes_model_effort_and_conversation() -> None:
     assert command[command.index("--effort") + 1] == "medium"
     assert command[command.index("--conversation") + 1] == "conv-1"
     assert "--dangerously-skip-permissions" in command
-    # 非対話実行の既定の上限は5分であり、1turnがこれを超えるため明示する。
+    # 非対話実行で上限を指定しない場合は5分で終了するため、1turnを完了できる上限を明示する。
     assert command[command.index("--print-timeout") + 1] == "3600s"
 
 

@@ -59,7 +59,7 @@ APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
 APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 DEFAULT_WAIT_TIMEOUT = 300.0
 # App ServerのJSONL通知用StreamReader上限（バイト）。
-# asyncioの既定値は64KiBで、turnのplan・diffなどの有効な通知が上限を超えると
+# asyncioは上限を指定しない場合に64KiBを使うため、turnのplan・diffなどの有効な通知が上限を超えると
 # readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 APP_SERVER_STDERR_LIMIT_CHARS = 4000
@@ -70,7 +70,7 @@ STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
 STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
 # `item/started`のうちモデル出力に数えないitem種別。
 # `userMessage`はモデル呼び出しより前に届く入力の記録で、利用上限の失敗はその後に起こり得る。
-# codex-cli 0.157.0の通常のturnでは`userMessage`の後に`reasoning`が届いた（2026年9月26日に実測）。
+# codex-cli 0.157.0の通常のturnでは`userMessage`の後に`reasoning`が届いた（2026年9月26日の実行で確認）。
 _NON_MODEL_OUTPUT_ITEM_TYPES = frozenset({"userMessage", "hookPrompt", "contextCompaction"})
 
 _stable_plugin_roots: dict[Path, Path] = {}
@@ -100,7 +100,7 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
     管理対象一時領域へ複製した実体を返す。複製元ごとの結果を保持し、同じ複製元に対する
     複製を本プロセスで1回に限る。
     複製に失敗した場合は解決したrootをそのまま返し、複製の失敗を委譲の不成立へ変えない。
-    `plugin_root`は解決済みrootを注入する経路とし、省略時は自身の位置から解決する。
+    `plugin_root`には解決済みrootを渡し、省略時は自身の位置から解決する。
     """
     root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
     cached = _stable_plugin_roots.get(root)
@@ -246,7 +246,7 @@ class JsonRpcProcess:
         self._initialization_stage = "process_started"
         _LOG.info("Codex App Server初期化段階: %s", self.initialization_diagnostic())
         try:
-            # 子プロセスが応答を返さないまま生存する場合、要求の応答futureは読取taskの失敗経路では解消しない。
+            # 子プロセスが応答を返さないまま生存する場合、読取taskが失敗しても要求の応答futureは解消しない。
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
                 self._initialization_stage = "initialize_requested"
                 initialize_result = await self.request(
@@ -803,7 +803,7 @@ class AppServerManager:
         """Codex backendにはsession専用の接続が無いため、資源を解放しない。
 
         `codex app-server`はbackend単位で共有する。`thread/unsubscribe`後の
-        `thread/resume`による会話復元を実測していないため、unsubscribeは行わない。
+        `thread/resume`による会話復元を実際に動かして確かめていないため、unsubscribeは行わない。
         """
         del session_id
 
@@ -1079,8 +1079,8 @@ class AppServerManager:
             if session.live_child_session_ids:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
-                # Codex backendには、Claude backendが持つタスク完了通知による同一sessionの
-                # 再開の経路が存在しない。このためturnの終端時に未観測の孫sessionが残る場合も
+                # Codex backendには、Claude backendが持つタスク完了通知によって同一sessionを
+                # 再開する手段が存在しない。このためturnの終端時に未観測の孫sessionが残る場合も
                 # 終端結果を保留せず、未観測の識別子を`error`の`unobservedSessions`へ記録して
                 # 直ちに公開する。保留すると解除の契機が期限の到来だけになり、呼び出し元が
                 # 最大`AUTO_RESUME_DEADLINE_SECONDS`だけ完了報告を受け取れない。

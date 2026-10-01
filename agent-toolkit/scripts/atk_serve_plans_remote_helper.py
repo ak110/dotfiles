@@ -68,7 +68,7 @@ NEW_PORTABLE_ROOT = "$(atk config get private_notes)/plans"
 LEGACY_PORTABLE_ROOT = "~/.claude/plans"
 _DEFAULT_ROOT = pathlib.Path.home() / ".claude" / "plans"
 _UNRESOLVED_PRIVATE_NOTES_ROOT = pathlib.Path.home() / ".claude" / ".plans-viewer-private-notes-unresolved"
-# 旧単一rootテスト・呼び出しとの互換用。通常のmain経路ではROOTSを解決済みroot群へ設定する。
+# 旧単一rootテスト・呼び出しとの互換用。通常のmain処理ではROOTSを解決済みroot群へ設定する。
 ROOT = _DEFAULT_ROOT
 ROOTS: list["_RootSpec"] | None = None
 
@@ -98,7 +98,7 @@ def _atk_executable() -> str:
 
     本ヘルパーはSSH経由の非対話シェルで起動されるため、対象ホストのPATHにdotfilesの
     `agent-toolkit/bin`が含まれないことがある。PATHで解決できない場合は、本ファイル位置から
-    辿るdotfilesルートと`~/dotfiles`の順に既定の配置を探す。いずれにも無い場合はPATH解決へ委ね、
+    取得したdotfilesルート、`~/dotfiles`の順に標準の配置を探す。いずれにも無い場合はPATH解決へ委ね、
     呼び出し側が失敗として扱う。
     """
     found = shutil.which("atk")
@@ -222,7 +222,7 @@ def _migrates_legacy_ctime(spec: _RootSpec) -> bool:
 
 
 def _default_root_specs() -> list[_RootSpec]:
-    """既定の新旧rootを対象ホスト上で解決する。"""
+    """rootを指定しない場合に使う新旧の配置を対象ホスト上で解決する。"""
     specs: list[_RootSpec] = []
     private_notes, warning = _resolve_private_notes_result()
     if private_notes is not None:
@@ -457,7 +457,7 @@ def _update_creation_time_index(
             creation = min(observed_epoch, cached) if cached is not None else observed_epoch
             resolved[rel] = creation
             updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
-        # インデックスを更新する経路は全て同じロックを保持するため、冒頭で読み込んだ内容へ直接反映する。
+        # インデックスを更新する処理は全て同じロックを保持するため、冒頭で読み込んだ内容へ直接反映する。
         if prune:
             for key, entry in list(index.items()):
                 if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
@@ -672,7 +672,7 @@ def _list_files() -> None:
 def _read_file(source_or_rel_b64: str, rel_b64: str | None = None) -> None:
     """`read`サブコマンド: 指定相対パスのファイル本文をJSON文字列でstdoutへ出力する。
 
-    応答形式（fallback経路用、単発SSH呼び出し）:
+    応答形式（代替取得用、単発SSH呼び出し）:
         {"data":"<base64本文>"}
     """
     json.dump(_read_payload(source_or_rel_b64, rel_b64), sys.stdout, ensure_ascii=False)
@@ -729,7 +729,7 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
                 dest_ok = _is_target_path(dest, self.spec.path, self.spec.source_id)
                 if not (src_ok or dest_ok):
                     return
-                # rename経路でsrcのみ`.md`の場合は元パス側を削除扱い、
+                # rename処理でsrcのみ`.md`の場合は元パス側を削除扱い、
                 # destが`.md`なら新パス側をupsertする。
                 if src_ok and not dest_ok:
                     payload: dict[str, typing.Any] = {
@@ -834,7 +834,7 @@ def _watch_files() -> int:
     """
     stop_event = threading.Event()
     observer = _start_observer(stop_event)
-    # SIGPIPEはping_loopが捕捉してstop_eventを通じて停止経路に乗せる。
+    # SIGPIPEはping_loopが捕捉してstop_eventを通じて停止処理を実行する。
     try:
         while not stop_event.is_set():
             time.sleep(1.0)
