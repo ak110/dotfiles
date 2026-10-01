@@ -617,3 +617,110 @@ def test_public_command_rejects_partly_updated_review_heads(
     _write_evidence(evidence, conditions, requirements)
     assert run_script.dispatch(args) == 0
     assert not capsys.readouterr().err
+
+
+_FENCED_REQUIREMENTS = ["一覧から保存できるようにして。", "保存後は`wi show`の表示を更新して。"]
+_SUPPLEMENTS = {
+    "backtick-plain": "```\nSystem.Xml.XmlException: 不正な値. at Lc.Config.Load() in C:\\lc\\Config.cs:line 12.\n```",
+    "backtick-lang": '```text\nTraceback (most recent call last):\n  File "x.py", line 1. ValueError: bad.\n```',
+    "tilde-ini": "~~~ini\n[launcher.hotkey]\nmodifier = ctrl. key = space.\n~~~",
+    "nested-long": "`````\n```\n内側のフェンス. 終了.\n```\n外側の続き. 完了.\n`````",
+}
+
+
+def _fenced_body(route: str, supplement: str) -> tuple[str, list[dict[str, str]]]:
+    """2つの要求の間に補足フェンスを置いたWI本文と、完成条件の証拠行を入力の種類ごとに返す。"""
+    content = f"{_FENCED_REQUIREMENTS[0]}\n\n{supplement}\n\n{_FENCED_REQUIREMENTS[1]}\n"
+    if route == "raw-awi":
+        return f"type: awi\n---\n# 題\n\n{content}", []
+    if route == "uwi-answer":
+        return f"type: uwi\n---\n# 確認\n\n## 回答\n\n{content}", []
+    conditions = "## 完成条件\n- 保存\n"
+    if route == "user-comment":
+        return f"type: awi\nsource: agent\n---\n{conditions}\n## ユーザーコメント\n\n{content}", [_condition(FIRST_WI, "保存")]
+    # 通常AWIの逐語引用は外側の`text`フェンスを要求原文の容器とし、内側だけを補足として除く。
+    container = "`" * 6
+    quote = f"## ユーザー指摘の逐語引用\n\n{container}text\n{content}{container}\n"
+    return f"type: awi\nsource: agent\n---\n{conditions}\n{quote}", [_condition(FIRST_WI, "保存")]
+
+
+@pytest.mark.parametrize("route", ["raw-awi", "quoted-awi", "user-comment", "uwi-answer"])
+@pytest.mark.parametrize("supplement", list(_SUPPLEMENTS))
+def test_fenced_supplements_are_not_requirements(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    route: str,
+    supplement: str,
+) -> None:
+    """補足フェンスの断片を要求に数えず、前後の要求は1件省くと不足として拒否する。"""
+    body, conditions = _fenced_body(route, _SUPPLEMENTS[supplement])
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    path = tmp_path / "evidence.json"
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    _write_evidence(path, conditions, [_requirement(FIRST_WI, text) for text in _FENCED_REQUIREMENTS])
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+    for omitted in _FENCED_REQUIREMENTS:
+        kept = [_requirement(FIRST_WI, text) for text in _FENCED_REQUIREMENTS if text != omitted]
+        _write_evidence(path, conditions, kept)
+        assert run_script.dispatch(args) == 1
+        error = capsys.readouterr().err
+        assert f"不足: {omitted}" in error and "期待 2 行" in error
+
+
+def test_unclosed_fence_keeps_following_requirements(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """閉じていないフェンスは補足として除かず、後続の要求を証拠の対象に残す。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n# 題\n\n要求A。\n\n```\n要求B。\n"})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [], [_requirement(FIRST_WI, "要求A。")])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 1
+
+
+def test_public_command_runs_platform_launcher(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """subprocessを置き換えず、OS別のランチャーから空白を含むパスのWIを取得し、証拠の過不足を判定する。"""
+    root = tmp_path / "work dir"
+    notes = root / "private notes"
+    repository = root / "target repo"
+    (notes / "inbox").mkdir(parents=True)
+    repository.mkdir()
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repository), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=30,
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("remote", "add", "origin", "https://github.com/example/foo.git")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "対象")
+    head = git("rev-parse", "HEAD")
+    body = f"# 題\n\n{_FENCED_REQUIREMENTS[0]}\n\n{_SUPPLEMENTS['backtick-plain']}\n\n{_FENCED_REQUIREMENTS[1]}\n"
+    (notes / "inbox" / FIRST_WI).write_text(
+        f"---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n{body}", encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.chdir(repository)
+    path = root / "evidence.json"
+    rows = [{**_requirement(FIRST_WI, text), "reviewed_head": head} for text in _FENCED_REQUIREMENTS]
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", head]
+    )
+    _write_evidence(path, [], rows)
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+    _write_evidence(path, [], rows[:1])
+    assert run_script.dispatch(args) == 1
+    assert f"不足: {_FENCED_REQUIREMENTS[1]}" in capsys.readouterr().err
