@@ -134,7 +134,8 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   対応する出力パスを読取コマンドのオペランドとして渡した場合に完了通知待ちを案内する。
   完了通知がUserPromptSubmitへ到達した時点で、同通知のタスクIDに対応する要素を削除する。
   未完了の対応はセッション終了まで保持する
-- `queued_notification_notified_ids`: Stopの`queued_notification_advisor.py`が、最上位transcriptのキューに残る未配送の完了通知について出力ファイルを案内した通知の識別子を重複なく記録する。
+- `queued_notification_notified_ids`: Stopの`queued_notification_advisor.py`が、最上位transcriptのキューに残る未配送の完了通知について案内した通知の識別子を重複なく記録する。
+  Agent・Taskの起動記録に対応する通知では返却メッセージの利用を、それ以外では出力ファイルの読取を案内する。
   識別子は`<task-id>`、無い場合は`<tool-use-id>`、いずれも無い場合は通知本文とする。
   同フックが、同じ通知への案内を1回に限る判定に読む。案内を繰り返すと、同フック自体がツールを呼ばないターンの継続を反復させるためである。
   セッション終了まで保持し、リセット処理は設けない
