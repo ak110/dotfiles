@@ -150,8 +150,9 @@
         </section>
         <section id="user-comment-panel" class="user-comment-panel" hidden>
           <h3>ユーザーコメント</h3>
-          <label for="user-comment-input">コメント（必須）</label>
-          <textarea id="user-comment-input" aria-describedby="user-comment-input-error" required></textarea>
+          <label for="user-comment-input">コメント</label>
+          <p id="user-comment-input-hint" class="field-hint">空にして保存すると、ユーザーコメント節を削除する。</p>
+          <textarea id="user-comment-input" aria-describedby="user-comment-input-hint user-comment-input-error"></textarea>
           <p id="user-comment-input-error" class="inline-error" hidden></p>
         </section>
         <section id="decision-panel" class="decision-panel" hidden>

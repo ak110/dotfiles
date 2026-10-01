@@ -1365,6 +1365,44 @@ async def test_user_comment_api_rejects_non_inbox_states_and_uwi(
         assert actual_path.read_text(encoding="utf-8") == content
 
 
+@pytest.mark.asyncio
+async def test_user_comment_api_empty_comment_removes_section(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """空のコメントを保存するとユーザーコメント節だけが消え、節が無い状態の再保存も成功する。"""
+    _patch_comment_edit_dependencies(monkeypatch)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    kept = _session_review_awi("通常本文\n")
+    original = kept + "\n## ユーザーコメント\n\n削除対象のコメント\n"
+    path = inbox / "awi.md"
+    path.write_text(original, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    payload = {"state": "inbox", "filename": "awi.md", "comment": "", "expected_content": original}
+    removed = await client.post("/api/entries/user-comment", json=payload)
+    assert removed.status_code == 200
+    assert await removed.get_json() == {"changed": True}
+    assert path.read_text(encoding="utf-8") == kept
+    detail = await (await client.get("/api/entries/inbox/awi.md")).get_json()
+    assert detail["entry"]["user_comment"] is None
+    assert detail["entry"]["user_comment_editable"] is True
+
+    again = await client.post("/api/entries/user-comment", json={**payload, "comment": " ", "expected_content": kept})
+    assert again.status_code == 200
+    assert await again.get_json() == {"changed": False}
+    assert path.read_text(encoding="utf-8") == kept
+
+    missing = await client.post("/api/entries/user-comment", json={**payload, "comment": None, "expected_content": kept})
+    assert missing.status_code == 400
+
+
 _SINGLE_SHOW_TEXT = (
     "## target_repo: github.com/example/foo\n"
     "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"

@@ -1206,9 +1206,12 @@ async function saveUserComment() {
   if (!currentEntry || detailRefreshRequired || currentEntry.user_comment_editable !== true) return;
   const input = byId('user-comment-input');
   const comment = input.value;
-  setFieldError(input, byId('user-comment-input-error'), comment.trim() ? '' : 'コメントを入力してください。');
-  if (firstInvalid([input])) return;
+  setFieldError(input, byId('user-comment-input-error'), '');
   const key = entryKey(currentEntry);
+  // 空の保存はユーザーコメント節の削除を表す。節が無い項目では本文を変えずに終える。
+  const savedMessage = comment.trim() ? `${key}のユーザーコメントを保存しました。` :
+    currentEntry.user_comment == null ? `${key}にはユーザーコメントが無いため、変更していません。` :
+      `${key}のユーザーコメントを削除しました。`;
   const sessionGeneration = detailSessionGeneration;
   const payload = {
     state: currentEntry.state,
@@ -1221,7 +1224,7 @@ async function saveUserComment() {
     await (runPending('user-comment', {
       container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
     }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)})));
-    finishDetailMutation(key, sessionGeneration, `${key}のユーザーコメントを保存しました。`);
+    finishDetailMutation(key, sessionGeneration, savedMessage);
   } catch (error) {
     if (error.payload?.code === 'edit_conflict' &&
         await (reloadUserCommentAfterConflict(key, sessionGeneration))) return;

@@ -134,24 +134,32 @@ def has_reserved_heading(text: str) -> bool:
 
 
 def _validate_comment(text: str) -> str:
-    """入力コメントを検証し、前後の空行を正規化する。"""
+    """入力コメントを検証し、前後の空行を正規化する。空白だけの入力は空文字列を返す。"""
     normalized = _normalize_comment(frontmatter.normalize_newlines(text))
-    if not normalized:
-        raise UserCommentError("ユーザーコメントは空にできません")
-    if _headings.contains_h2(text):
+    if normalized and _headings.contains_h2(text):
         raise UserCommentError("ユーザーコメントにコードフェンス外のH2見出しを含められません")
     return normalized
 
 
 def update_user_comment(text: str, comment: str) -> str:
-    """予約節を追記または置換し、更新後の全文を返す。
+    """予約節を追記または置換し、更新後の全文を返す。空白だけのコメントでは予約節を削除する。
 
     入力から保持する部分は部分文字列のまま用い、新たに書くコメント節だけをLFで組み立てる。
     予約見出しの位置は改行をLFへ正規化した写しに対して求める。
+    予約節が無い本文へ空のコメントを渡した場合は、本文を変えずに返す。
     """
     normalized = _validate_comment(comment)
     prefix, body = _body_parts(text)
     heading = _find_reserved_heading(body)
+    if not normalized:
+        if heading is None:
+            return text
+        assert heading.map is not None
+        lines = _lines(body)[: heading.map[0]]
+        while lines and _is_blank_line(lines[-1]):
+            lines.pop()
+        before_section = prefix + "".join(lines)
+        return before_section if before_section.endswith(("\n", "\r")) else f"{before_section}\n"
     if heading is None:
         base = text
         lines = _lines(base)
