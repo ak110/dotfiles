@@ -338,6 +338,23 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
     assert "後続を依存待ち" in lanes
 
 
+def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
+    """選定で列挙した書込対象が受領側の突き合わせへ届く。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    output = _h2_section(picker, "出力")
+    output_format = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    fields = re.findall(r"^  ([a-z_]+):", output_format.split("lane_costs:\n", maxsplit=1)[0], flags=re.MULTILINE)
+    assert "write_files" in fields
+    receipt = _h2_section(parent, "出力の受領")
+    generation = _h2_section(picker, "調査とレーン分け")
+    assert "`write_files`" in receipt
+    assert "`/`" in output and "`/`" in receipt
+    assert "パス要素" in generation and "パス要素" in receipt
+    assert "狭い方の範囲" in generation and "狭い方の範囲" in receipt
+
+
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
     """省略値を含む割当条件が生成・受領・上流分岐で一致し、一律の非実装除外を拒否する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
