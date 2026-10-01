@@ -367,6 +367,48 @@ class TestShowAll:
         assert "本文2" in captured.out
 
 
+class TestShowSummary:
+    """状態だけの照会を単件・複数・全件とファイル保存で完遂する。"""
+
+    @pytest.mark.parametrize(
+        ("selection", "expected"),
+        [
+            (["fb-001.md"], ["### fb-001.md [inbox]"]),
+            (["uwi-001.md", "fb-001.md"], ["### uwi-001.md [inbox/answered]", "### fb-001.md [inbox]"]),
+            (["--all"], ["### fb-001.md [inbox]", "### uwi-001.md [inbox/answered]"]),
+        ],
+    )
+    @pytest.mark.parametrize("save_output", [False, True])
+    def test_state_only_lookup_and_save(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        selection: list[str],
+        expected: list[str],
+        save_output: bool,
+    ) -> None:
+        """公開CLIの選択順と回答状態を保持し、本文・frontmatterを出力しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "fb-001.md", body="表示を省くAWI本文")
+        _write_uwi_file(notes, "uwi-001.md", question="表示を省く質問", answer="表示を省く回答")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        output_path = tmp_path / "summary.txt"
+        output_args = ["--output-file", str(output_path)] if save_output else []
+        with pytest.raises(SystemExit) as exit_info:
+            atk.main(
+                ["wi", "show", *selection, "--summary-only", "--target-repo=all", "--skip-pull", *output_args], home=tmp_path
+            )
+        assert exit_info.value.code == 0
+        captured = capsys.readouterr()
+        output = output_path.read_text(encoding="utf-8") if save_output else captured.out
+        assert [line for line in output.splitlines() if line.startswith("### ")] == expected
+        assert "## target_repo:" in output
+        assert "表示を省く" not in output
+        assert "---" not in output
+        assert not captured.err
+
+
 class TestShowStatusAll:
     """showサブコマンド `--all --status=all`: 全状態（adopted・rejected含む）を出力する。"""
 

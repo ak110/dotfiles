@@ -69,6 +69,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """
     if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
+    summary_only = getattr(args, "summary_only", False)
     for filename in args.filenames:
         hint = _state_prefixed_filename_hint(filename)
         if hint is not None:
@@ -124,7 +125,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 label = f" [{state}/{'answered' if answered else 'unanswered'}]"
             print(f"## target_repo: {target_repo}")
             print(f"### {path.name}{label}")
-            print(text)
+            if not summary_only:
+                print(text)
             if len(selected_by_name) > 1:
                 print()
         return
@@ -153,5 +155,6 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     if header_type == WI_TYPE_UWI:
                         label = f" [{state}/{'answered' if _is_uwi_answered(text) else 'unanswered'}]"
                     print(f"### {name}{label}")
-                    print(text)
+                    if not summary_only:
+                        print(text)
                     print()
