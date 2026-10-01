@@ -38,8 +38,9 @@ if TYPE_CHECKING:
 # --- Bash: パターン一致によるプロセス終了の検出 ---
 
 _GIT_GREP_VALUED_OPTIONS = frozenset(
-    {"-A", "-B", "-C", "-m", "--after-context", "--before-context", "--context", "--max-count"}
+    {"-A", "-B", "-C", "-m", "--after-context", "--before-context", "--context", "--max-count", "--max-depth", "--threads"}
 )
+"""`git grep -h`の必須値付きオプション（git 2.43.0の確認。パターン用は別集合）。"""
 
 
 def _attached_short_value_option(token: str, valued: Iterable[str]) -> str | None:
@@ -244,6 +245,9 @@ _GIT_GREP_PATTERN_FILE_OPTIONS: frozenset[str] = frozenset({"-f", "--file"})
 
 # --- Bash: `git rev-parse --short`への複数revision ---
 
+_GIT_REV_PARSE_VALUED_OPTIONS = frozenset({"--default", "--prefix", "--git-path", "--resolve-git-dir"})
+"""`man git-rev-parse`の値を別引数で取るオプション（git 2.43.0）。"""
+
 
 def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
     """`git rev-parse`の引数が`--short`を持つ場合に、revisionとして渡された引数を返す。
@@ -253,9 +257,16 @@ def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
     """
     has_short = False
     revisions: list[str] = []
+    skip_value = False
     for token in strip_redirections(arguments):
+        if skip_value:
+            skip_value = False
+            continue
         if token == "--":
             break
+        if token in _GIT_REV_PARSE_VALUED_OPTIONS:
+            skip_value = True
+            continue
         if token == "--short" or token.startswith("--short="):
             has_short = True
             continue
@@ -280,7 +291,10 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
         if revisions is not None and len(revisions) >= 2:
             return _llm_notice(
                 f"`git rev-parse --short`へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
-                "同コマンドは1回に1つのリビジョンだけを受理し、`fatal: Needed a single revision`で失敗する。",
+                "同コマンドは1回に1つのリビジョンだけを受理し、実行されると"
+                "`fatal: Needed a single revision`で終了コード128になる。"
+                "`&&`で連結した後段は実行されず、後に表示する`$?`は後段ではなくこの失敗を示し得る。"
+                "連結した結果を判断へ使う前に、各区間が実行されたかを確かめる。",
                 tag=_WARN_TAG,
                 fix="リビジョンごとに`git rev-parse --short=7 <revision>`を個別に実行し、入力と出力の対応を保つ。",
                 removable_cause=True,
