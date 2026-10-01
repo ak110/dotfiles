@@ -455,3 +455,23 @@ APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力
 Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[1m]/medium`）のいずれも、待機表明の結果は呼び出し元へ配送されず、孫の終端後に同じsessionが手動の指示なしに再開した。再開したターンは`atk agents wait`で孫の結果を回収し、呼び出し元は`AUTO_RESUME_COMPLETED`と`turn_seq`2の完了結果を受け取った。2件とも成功し、所要時間は141秒だった。
 変更前のCodex backendは、同じ待機表明を`completed`の結果として公開し、孫の識別子を`error.unobservedSessions`へ記録していた（同日の対照観測）。
 再検証は`AGENT_TOOLKIT_LIVE_AGENTS_TEST=1`を設定し、呼び出し元の会話と状態ディレクトリを分けるため別の`CLAUDE_CODE_SESSION_ID`を与えて同じテストを実行する。
+
+## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：典拠と既存サーバーへの適用：2026年10月2日
+
+2026年10月2日、同書の典拠表の各資料を取得した。Claude Code公式資料（Claude Code 2.1.286の時点）の「For MCP server authors」は、ツール説明とserver instructionsを各2,048文字に切り詰めると記す。この値は`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更できる。「MCP output limits and warnings」は1万トークンの警告と2万5千トークンの上限を記し、上限を変える`MAX_MCP_OUTPUT_TOKENS`と`_meta["anthropic/maxResultSizeChars"]`を示す。MCP 2025-11-25のSchema Referenceは`InitializeResult.instructions`をsystem promptへ加えてもよいヒントとし、`ToolAnnotations`の全項目をヒントとする。
+再検証は各資料の該当節を取得し、切り詰めの文字数、出力上限、instructionsの扱いを比べる。値が変わった場合は同書の「ホスト固有の条件」と、後述の説明長のテストを改める。
+
+既存の2サーバーへ同書の観点を適用した。判定は「適用済み」「任意の改善候補」「仕様上の是正」に分ける。任意の推奨との相違だけでは不良と判定しない。
+
+agents_server（`agent-toolkit/agent_toolkit/agents_server_mcp.py`、MCP Python SDK 1.30.0）の公開ツールは`start`、`send_message`、`kill`、`stop`、`list`、`show`の6件である。`FastMCP.list_tools()`の取得結果と、各ツールの直接の応答生成（`_public_start_response`、`AgentsServerManager`の各公開メソッド、`_actionable_tool`）を読んだ。
+
+- 適用済み: 起動操作は`start`の`mode`へ統合し、modeを列挙型でスキーマへ示し、modeごとの必須・禁止の入力を説明と`_validate_start_inputs`の双方に置く。応答は`session_id`と次の操作を返し、`list`は除いた件数を`omitted`へ、`show`は`verbose`で詳細を選ぶ。例外は`_actionable_tool`が`next_action`付きの`ToolError`へ変え、SDKがツール実行エラーとして返す。全ツールが構造化応答を返し、`outputSchema`は任意の項目を許すobjectである。stdio transportのログは標準エラーとファイルへ出力する
+- 是正済み（同書の「単体での利用」とホスト固有の条件による）: 適用前の`start`の説明は2,932文字で、Claude Codeの設定を変えない状態では後半の結果受領・起動前の準備・応答の説明が切り詰められていた。結果受領を先頭へ移し、modeの選び方を`mode`の引数説明へ移して1,962文字とした。`send_message`・`kill`・`stop`・`show`の`session_id`、`send_message`の`prompt`、`list`の`include_terminated`、`show`の`verbose`は引数説明を持たなかったため説明を加えた。`agents_server_mcp_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が説明長と全引数の説明を確かめる。instructionsは690文字である
+- 任意の改善候補: annotationsは全ツールで未設定である。`show`は保持中の状態を読むだけで`readOnlyHint`を付与できる。`list`は保持期限に達したsessionの本体の解放を内部で進めるため、付与はその扱いを決めてから判断する。`outputSchema`は応答の項目を列挙していない
+- 仕様上の是正: 該当なし
+
+pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Python SDK 2.2.0）の公開ツールは`build_server`が登録する11件である。読み取り専用で`list_tools()`の結果と各ツールの直接の応答生成を読んだ。
+
+- 適用済み: 全ツールの`inputSchema`はobjectで、構造化結果は戻り値の型で検証してから返す。想定内の誤りは`ToolError`からツール実行エラーとして返り、`show_run`などは有効な値を得るツールを案内する。`grep`は件数上限、要約の選択、省略件数と`guidance`を返す。MCPのstdoutへは書かず、ログを標準エラーへ向ける
+- 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
+- 仕様上の是正: 確定した該当なし。未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。子プロセスの標準出力が常に取り込まれるかは確認していない

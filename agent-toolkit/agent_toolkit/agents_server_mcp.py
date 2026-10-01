@@ -329,7 +329,21 @@ _MODE_DESCRIPTION = _parameter_description(
     "入力の形と起動条件を選ぶ。省略時は`task`。"
     "`task`は専用タスク文書の定型作業、`delegate`は自由本文の通常委譲、`explore`は読み取り専用の調査とレビュー、"
     "`write`は確定済みの文章起草と小規模な定型書込、`shell`はコマンドの実行と結果の要約に使う。"
-    "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。"
+    "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
+    "選び方: タスク文書がある作業はtaskで渡す。手順、権限、検証方法、返却形式はタスク文書が定めるため、起動文へ書き足さない。"
+    "タスク文書を読み、同文書が宣言した入力名と`extra_params`が一致するか確かめてから起動する。"
+    "explore・write・shellの委譲先へは共有規範が配送されず、スキルを使える保証も無い"
+    "（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な指示は全て`prompt`へ書く。"
+    "読み取り専用、応答言語、担当の範囲は各modeの固定指示が既に定めるため書かない。"
+    "スキルの手順を要する作業にはtaskかdelegateを使う。\n"
+    "explore: 読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を委譲する。"
+    "委譲先はファイルを作成、変更および削除しないため、成果ファイルの出力を依頼しない。"
+    "呼び出し元の文脈へは結果の要約だけが入る。\n"
+    "write: 設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。"
+    "読者が異なる文章は別の依頼にする。委譲先はファイルの読取・検索・作成・編集だけを行う。\n"
+    "shell: 出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドを委譲し、"
+    "1,000トークン未満に収まる見込みのコマンドは自ら実行する。"
+    "読み取り専用の制約は課さないため、対象を変更する自動チェックも渡せる。呼び出し元の文脈へは終了状態と要約だけが入る。"
 )
 _SUBAGENT_MD_PATH_DESCRIPTION = _parameter_description(
     "taskで必須、他のmodeでは指定しない。受信側の手順と返却契約を保持するagent-toolkitの`share/*.subagent.md`の絶対パス。"
@@ -364,6 +378,9 @@ _LABEL_DESCRIPTION = _parameter_description(
     "explore・write・shellは同じ種類のsessionを区別できるよう明示する。"
     "省略時はそれぞれ`explore`、`write`、`shell-<コマンドの最初の語のbasename>`を使う。"
     "labelが`-review`で終わるsessionの完了結果には、指摘の採否を確定する手順を示す`next_action`が付く。"
+)
+_SESSION_ID_DESCRIPTION = _parameter_description(
+    "対象sessionの識別子。`start`の応答または`list`が返した`session_id`をそのまま渡す。"
 )
 _MODEL_TYPE_DESCRIPTION = _parameter_description(
     "委譲先のモデルを選ぶ。モデル段位の種別（例: `high_tier`、`medium_tier`、`low_tier`、`write`）か、"
@@ -2483,24 +2500,29 @@ with warnings.catch_warnings():
         lifespan=_mcp_lifespan,
     )
 
-_NOT_FOR_SHELL = "`subagent_md_path`・`extra_params`・`command`・`summary_policy`"
+# Claude Codeはツール説明とserver instructionsを、設定を変えない状態で各2,048文字に切り詰める。
+# 観測と結果受領の手順を先頭に置き、modeの選び方は`mode`の引数説明へ置いて上限内に収める。
 _START_DESCRIPTION = "\n".join(
     (
         "委譲先のsessionを開始する。agents_serverの唯一の起動ツールであり、`mode`で入力の形と起動条件を選ぶ。",
+        "返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、"
+        "結果が不要なら`kill`で破棄する。`atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
         "",
-        "| mode | 用途 | 必須の入力 | 受理しない入力 | 起動条件と`model_type`省略時の設定 |",
-        "| --- | --- | --- | --- | --- |",
+        "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
+        "| --- | --- | --- | --- |",
         "| `task`（省略時） | 専用タスク文書（agent-toolkitの`share/*.subagent.md`）を持つ定型作業 | `subagent_md_path` | "
-        "`prompt`・`command`・`summary_policy` | タスク文書が宣言した起動種別、タスク文書に対応する工程別設定 |",
-        f"| `delegate` | タスク文書の無い単発の作業を自由本文で委譲する | `prompt`・`model_type` | {_NOT_FOR_SHELL} | "
+        "タスク文書が宣言した起動種別、タスク文書に対応する工程別設定 |",
+        "| `delegate` | タスク文書の無い単発の作業を自由本文で委譲する | `prompt`・`model_type` | "
         "通常起動。委譲先は共有規範を受け取りスキルを使える |",
-        f"| `explore` | 読み取り専用の調査とレビュー | `prompt` | {_NOT_FOR_SHELL} | 軽量起動、`low_tier` |",
-        f"| `write` | 確定済みの文章起草と小規模な定型書込 | `prompt` | {_NOT_FOR_SHELL} | 軽量起動、`write` |",
-        "| `shell` | コマンドを実行して結果を要約する | `command`・`summary_policy` | "
-        "`subagent_md_path`・`extra_params`・`prompt` | 軽量起動、`low_tier` |",
+        "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`low_tier` |",
+        "| `write` | 確定済みの文章起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",
+        "| `shell` | コマンドを実行して結果を要約する | `command`・`summary_policy` | 軽量起動、`low_tier` |",
+        "",
+        "modeごとの選び方は`mode`、受理しない入力は各引数の説明が示す。"
+        "入力の欠落とmodeが受理しない入力の混在は、委譲先を起動せずに拒否し、受理する入力と次の呼び出し方を返す。"
+        "taskではタスク文書の必須入力の欠落と宣言外の入力名は拒否し、欠けた項目名または宣言外の項目名と受理する項目名を返す。",
         "",
         "最小の呼び出し例（`cwd`は全modeで必須）:",
-        "",
         '- task: `{"cwd": "/repo", "subagent_md_path": "<plugin root>/share/exec-review.subagent.md", '
         '"extra_params": {"計画": "/abs/plan.md"}}`',
         '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", '
@@ -2511,39 +2533,15 @@ _START_DESCRIPTION = "\n".join(
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '
         '"summary_policy": "終了コードと失敗したテスト名", "label": "shell-make-test"}`',
         "",
-        "modeの選び方:",
-        "",
-        "- タスク文書がある作業はtaskで渡す。手順、権限、検証方法、返却形式はタスク文書が定めるため、起動文へ書き足さない。"
-        "タスク文書を読み、同文書が宣言した入力名と`extra_params`が一致するか確かめてから起動する。"
-        "必須入力の欠落と宣言外の入力名は拒否し、欠けた項目名または宣言外の項目名と受理する項目名を返す。",
-        "- explore・write・shellの委譲先へは共有規範が配送されず、スキルを使える保証も無い"
-        "（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な指示は全て`prompt`へ書く。"
-        "読み取り専用、応答言語、担当の範囲は各modeの固定指示が既に定めるため書かない。"
-        "スキルの手順を要する作業にはtaskかdelegateを使う。",
-        "- explore: 読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を委譲する。"
-        "委譲先はファイルを作成、変更および削除しないため、成果ファイルの出力を依頼しない。"
-        "呼び出し元の文脈へは結果の要約だけが入る。",
-        "- write: 設計、調査、レビューおよび公開操作を依頼せず、"
-        "成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。"
-        "読者が異なる文章は別の依頼にする。委譲先はファイルの読取・検索・作成・編集だけを行う。",
-        "- shell: 出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドを委譲し、"
-        "1,000トークン未満に収まる見込みのコマンドは自ら実行する。"
-        "読み取り専用の制約は課さないため、対象を変更する自動チェックも渡せる。呼び出し元の文脈へは終了状態と要約だけが入る。",
-        "",
-        "入力の欠落とmodeが受理しない入力の混在は、委譲先を起動せずに拒否し、受理する入力と次の呼び出し方を返す。",
-        "",
         "起動前の準備: Claude Codeで`CronCreate`を使える実行主体が待機のためにターンを終える場合は、"
         "そのセッションで最初にこのツールを呼ぶ前に定期再確認を装着する"
         "（`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」）。",
         "",
-        "応答と結果の受領:",
-        "応答は`session_id`と`status`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。",
+        "応答は`session_id`と`status`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。"
         "engineの利用上限などで起動できない候補はサーバーが除外し、残る候補で起動する。"
-        "候補を切り替えて起動した場合だけ、除外した候補と除外の根拠、および採用した`engine`・`model`・`effort`を加える。",
-        "全候補が可用性またはagyのturn失敗で終端した場合は、最後の候補の終端応答を返す。"
-        "最後のagy候補がbackend開始例外で失敗した場合は、除外理由を含む例外を送出する。起動条件の詳細は`show`で取得する。",
-        "返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、"
-        "結果が不要なら`kill`で破棄する。`atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
+        "切り替えた場合だけ、除外した候補と根拠、採用した`engine`・`model`・`effort`を加える。"
+        "全候補が可用性またはagyのturn失敗で終端した場合は最後の候補の終端応答を返し、"
+        "最後のagy候補のbackend開始例外は除外理由を含む例外で返す。起動条件の詳細は`show`で取得する。",
     )
 )
 
@@ -2598,8 +2596,15 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
 
 @mcp.tool(name="send_message", structured_output=True)
 async def send_message(
-    session_id: str,
-    prompt: str,
+    session_id: Annotated[str, Field(description=_SESSION_ID_DESCRIPTION)],
+    prompt: Annotated[
+        str,
+        Field(
+            description=_parameter_description(
+                "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終端済みsessionへは新しい依頼として届く。"
+            )
+        ),
+    ],
     timeout: Annotated[
         float,
         Field(
@@ -2646,7 +2651,7 @@ async def send_message(
 
 @mcp.tool(name="kill", structured_output=True)
 async def kill(
-    session_id: str,
+    session_id: Annotated[str, Field(description=_SESSION_ID_DESCRIPTION)],
     timeout: Annotated[
         float,
         Field(
@@ -2677,7 +2682,7 @@ async def kill(
 
 
 @mcp.tool(name="stop", structured_output=True)
-async def stop_session(session_id: str) -> dict[str, Any]:
+async def stop_session(session_id: Annotated[str, Field(description=_SESSION_ID_DESCRIPTION)]) -> dict[str, Any]:
     """再開する予定の無い終端済みsessionを明示的に破棄する。
 
     statusLineの表示対象と`list`の応答から除き、backendがsession専用に保持する資源を解放する。
@@ -2689,7 +2694,16 @@ async def stop_session(session_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(name="list", structured_output=True)
-async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
+async def list_sessions(
+    include_terminated: Annotated[
+        bool,
+        Field(
+            description=_parameter_description(
+                "真のとき、未回収結果を持たない終端済みと`expired`のsessionも返す。省略時は除き、除いた件数を`omitted`へ返す。"
+            )
+        ),
+    ] = False,
+) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
     所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
@@ -2705,7 +2719,17 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
 
 
 @mcp.tool(name="show", structured_output=True)
-async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]:
+async def show_session(
+    session_id: Annotated[str, Field(description=_SESSION_ID_DESCRIPTION)],
+    verbose: Annotated[
+        bool,
+        Field(
+            description=_parameter_description(
+                "真のとき、engine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも返す。"
+            )
+        ),
+    ] = False,
+) -> dict[str, Any]:
     """1件のsessionについて、文脈復旧またはトラブルシューティング用の詳細を返す。
 
     `verbose`を指定しない場合は識別名、起動prompt、cwd、種別、model_type、status、結果の有無および進行中の停滞診断を返す。

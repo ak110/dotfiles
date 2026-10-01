@@ -581,8 +581,9 @@ def test_start_parameter_descriptions_are_self_contained() -> None:
 
 
 def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
-    """`start`の説明だけでmodeを選べるよう、用途・必須と禁止の入力の表と各modeの最小呼び出し例を持つ。"""
-    description = _start_tool().description
+    """`start`の説明と`mode`の引数説明だけでmodeを選べるよう、用途・必須入力の表、選び方と各modeの最小呼び出し例を持つ。"""
+    tool = _start_tool()
+    description = tool.description + tool.parameters["properties"]["mode"]["description"]
     for mode in tool_names.START_MODES:
         assert f"- {mode}: `{{" in description, mode
     for fragment in (
@@ -602,6 +603,19 @@ def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
     ):
         assert fragment in description, fragment
     assert "147,000トークン" not in description
+
+
+@pytest.mark.asyncio
+async def test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument() -> None:
+    """Claude Codeが設定を変えない状態で切り詰める2,048文字に説明を収め、全引数へ説明を付けて単体で呼び出せるようにする。
+
+    出典はClaude Code公式資料「Connect Claude Code to tools via MCP」の「For MCP server authors」。
+    """
+    assert len(subject.mcp.instructions or "") <= 2048
+    for tool in await subject.mcp.list_tools():
+        assert len(tool.description or "") <= 2048, tool.name
+        for name, schema in tool.inputSchema.get("properties", {}).items():
+            assert schema.get("description"), f"{tool.name}.{name}"
 
 
 def test_instructions_keep_server_overview_without_argument_specification() -> None:
