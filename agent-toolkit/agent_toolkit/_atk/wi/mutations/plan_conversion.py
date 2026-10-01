@@ -140,7 +140,7 @@ _SAME_NAME_NEXT_ACTION = "`atk wi show {name}`で同名の項目を比較し、�
 
 
 def _cycle_next_action(cycle: tuple[str, ...]) -> str:
-    """循環する依存の経路から次の操作を返す。"""
+    """循環する依存先の並びから、循環を解除する操作を返す。"""
     return f"`atk wi show {cycle[1]}`で依存先を確認し、循環の原因となる依存先を指定から外して再実行する"
 
 
@@ -529,7 +529,7 @@ def edit_entry_to_plan(
         cycle = _dependency_cycle(dependency_graph, held_path.name, canonical_dependencies)
         if cycle is not None:
             raise WebInputError(
-                f"循環する依存を指定できません: {held_path.name}（経路: {' → '.join(cycle)}）",
+                f"循環する依存を指定できません: {held_path.name}（依存先の並び: {' → '.join(cycle)}）",
                 next_action=_cycle_next_action(cycle),
             )
         if canonical_dependencies:
@@ -740,7 +740,7 @@ def _convert_held_entries(
     cycle = _dependency_cycle(dependency_graph, oldest_path.name, canonical_dependencies)
     if cycle is not None:
         raise WebInputError(
-            f"循環する依存を指定できません: {oldest_path.name}（経路: {' → '.join(cycle)}）",
+            f"循環する依存を指定できません: {oldest_path.name}（依存先の並び: {' → '.join(cycle)}）",
             next_action=_cycle_next_action(cycle),
         )
     if canonical_dependencies:
@@ -907,7 +907,7 @@ def convert_entries_to_plan(
                 cycle = _dependency_cycle(dependency_graph, path.name, normalized_dependencies)
                 if cycle is not None:
                     raise WebInputError(
-                        f"循環する依存を指定できません（経路: {' → '.join(cycle)}）",
+                        f"循環する依存を指定できません（依存先の並び: {' → '.join(cycle)}）",
                         next_action=_cycle_next_action(cycle),
                     )
 
@@ -996,7 +996,7 @@ def convert_entry_to_plan(
     lock_timeout: float = -1,
     skip_push: bool = False,
 ) -> dict[str, object]:
-    """既存の単一項目APIを一括変換経路へ委譲する。"""
+    """既存の単一項目APIの処理を一括変換の実装へ委ねる。"""
     result = convert_entries_to_plan(
         private_notes,
         filenames=(filename,),

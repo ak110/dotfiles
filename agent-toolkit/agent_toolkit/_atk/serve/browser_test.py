@@ -89,7 +89,7 @@ class _BrowserOperations(serve_app.Operations):
         return True
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """Gitを使わず、ユーザーコメントの期待本文照合と保存を行う。"""
+        """Gitを使わず、ユーザーコメントの本文が期待値に一致するかを確かめて保存する。"""
         self.user_comment_calls += 1
         if self.delay_user_comment:
             self.user_comment_started.set()
@@ -435,7 +435,7 @@ def _assert_list_request_without_fallback(request_urls: list[str], base_url: str
 
 
 async def _shift_click_default_prevented(link: playwright.async_api.Locator) -> bool:
-    """Shiftクリックを送り、アプリケーション処理後の既定動作抑止状態を返す。"""
+    """Shiftクリックを送り、アプリケーションの処理後、ブラウザーの標準動作が抑止された状態を返す。"""
     default_prevented = await link.evaluate(
         """element => {
           let defaultPrevented = null;
@@ -646,7 +646,7 @@ async def test_global_error_closed_during_sync_restores_refresh_focus(
     await playwright.async_api.expect(refresh_button).to_be_disabled()
 
     await page.route("**/api/entries?*", fail_entries)
-    # 種別フィルターの変更経路を、値を変えずに起動する。
+    # 種別フィルター変更時の処理を、値を変えずに起動する。
     await page.locator("#kind-filter").dispatch_event("change")
     await playwright.async_api.expect(page.locator("#operation-notice")).to_be_visible()
     await page.unroute("**/api/entries?*", fail_entries)
@@ -869,7 +869,7 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
 async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """既定状態で終端状態を検索し、少数結果だけを補助表示して条件を維持する。"""
+    """初期状態の条件で終端状態を検索し、少数結果だけを補助表示して条件を維持する。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
@@ -1492,7 +1492,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     await page.route("**/api/repos?status=active", delay_first_repo_request)
     await page.locator("#result-status").evaluate("element => { element.textContent = '変更前の通知'; }")
     await page.locator("#kind-filter").evaluate("element => { element.value = 'awi'; }")
-    # 状態フィルターの変更経路を起動し、対象リポジトリの再取得を伴う一覧の更新を実行する。
+    # 状態フィルター変更時の処理を起動し、対象リポジトリの再取得を伴う一覧の更新を実行する。
     await page.locator("#state-filter").dispatch_event("change")
     await asyncio.wait_for(first_started.wait(), timeout=5)
     try:
@@ -3398,7 +3398,7 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
         assert header_box is not None, path
         headers[path] = {
             "height": round(header_box["height"], 1),
-            # ヘッダー内の部品は各画面の本文用の指定ではなく共有ヘッダーの文字サイズを継承する。
+            # ヘッダー内の要素が継承する文字サイズは共有ヘッダーの指定であり、各画面の本文用の指定は適用されない。
             "font_size": await header.evaluate("(element) => getComputedStyle(element).fontSize"),
         }
 
@@ -3420,7 +3420,7 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
         navigation_box = await navigation.bounding_box()
         assert header_box is not None and title_box is not None and navigation_box is not None, path
         # 折り返す幅ではWI画面だけが同期操作の欄を別の行に置くため、ヘッダー全体の高さと絶対位置は画面ごとに異なる。
-        # 3画面が共通して持つ部品の大きさと、ヘッダー左端からの水平位置を比較する。
+        # 3画面で共通する各要素について、大きさとヘッダー左端からの水平位置が一致するかを比較する。
         layouts[path] = {
             "title_height": round(title_box["height"], 1),
             "nav_height": round(navigation_box["height"], 1),
@@ -3461,7 +3461,7 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
 
 @pytest.mark.asyncio
 async def test_shell_parts_share_computed_style_across_three_screens(screen_harness: _ScreenHarness) -> None:
-    """共有シェル部品の計算スタイルを3画面と反復遷移の前後で維持する。"""
+    """共有ヘッダーとツールバーの計算スタイルを3画面と反復遷移の前後で維持する。"""
     harness = screen_harness
     page = harness.page
     properties = ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "color"]
@@ -3780,7 +3780,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
         "inputTextOverflow": "ellipsis",
         "inputWhiteSpace": "nowrap",
     }
-    # 思考とツール呼び出しは既定で畳み、要求された時だけ本文を展開する。
+    # 思考とツール呼び出しは初期状態では畳み、要求された時だけ本文を展開する。
     await harness.page.locator("#detail .kind-thinking summary").click()
     detail_text = await harness.page.locator("#detail").inner_text()
     assert "Claudeの発話" in detail_text
@@ -3797,7 +3797,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
 
 @pytest.mark.asyncio
 async def test_session_details_use_exclusive_default_closed_sections(screen_harness: _ScreenHarness) -> None:
-    """思考とツール呼び出しは既定で畳み、同時に1項目だけを展開する。"""
+    """思考とツール呼び出しは初期状態では畳み、同時に1項目だけを展開する。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="claude"]').click()
@@ -3868,7 +3868,7 @@ async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> Non
 
 @pytest.mark.asyncio
 async def test_session_details_open_developer_by_default(screen_harness: _ScreenHarness) -> None:
-    """利用者、アシスタントおよび開発者の本文を既定で開く。"""
+    """利用者、アシスタントおよび開発者の本文を初期状態で開く。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="codex"]').click()
@@ -4465,7 +4465,7 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
     second_path.write_text("# 再同期後\n\n更新後の内容\n", encoding="utf-8")
     stat = second_path.stat()
     os.utime(second_path, (stat.st_atime, stat.st_mtime + 1))
-    # ウィンドウのフォーカス復帰と同じ経路で強制再同期を起動する。
+    # ウィンドウのフォーカス復帰時と同じ処理で強制再同期を起動する。
     await harness.page.evaluate("() => window.dispatchEvent(new Event('focus'))")
     await harness.page.get_by_role("heading", name="再同期後").wait_for(state="visible")
     release_first.set()

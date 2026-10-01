@@ -387,7 +387,7 @@ process.stdout.write(JSON.stringify({saved, answered}));
 
 
 def test_create_success_resets_filters_and_keeps_list() -> None:
-    """追加成功後は既定条件へ戻し、返却されたファイルを一覧へ残して詳細を開かない。"""
+    """追加成功後は初期状態の条件へ戻し、返却されたファイルを一覧へ残して詳細を開かない。"""
     result = _run_node_ui(
         """
 elements['create-dialog'].open = true;
@@ -439,7 +439,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_config_ignores_legacy_plans_viewer_file(tmp_path: pathlib.Path) -> None:
-    """旧`claude-plans-viewer.toml`は読み込まず、`serve.toml`だけを正本とする。"""
+    """旧`claude-plans-viewer.toml`は読み込まず、設定を`serve.toml`だけから読み込む。"""
     legacy = tmp_path / "claude-plans-viewer.toml"
     legacy.write_text('root = "/legacy"\nremote-hosts = ["legacy-host"]\n', encoding="utf-8")
     path = tmp_path / "serve.toml"
@@ -812,7 +812,7 @@ async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """対象リポジトリ照合より先に非UTF-8化を削除競合へ正規化する。"""
+    """対象リポジトリの一致を確かめる前に非UTF-8化を削除競合へ正規化する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
@@ -1372,7 +1372,7 @@ _SINGLE_SHOW_TEXT = (
 
 
 def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """単件登録と一括取り込みの両経路でロック・remote同期・commitを無効化する。"""
+    """単件登録と一括取り込みのどちらの処理でもロック・remote同期・commitを無効化する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:

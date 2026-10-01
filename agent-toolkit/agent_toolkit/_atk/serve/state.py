@@ -20,7 +20,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
     """変更通知と購読者を管理する。
 
     `monotonic`は保留期間の経過判定に使う単調時計、`timer_factory`は保留通知の遅延発火に使う
-    タイマーの生成関数とする。既定値は標準ライブラリの実装であり、呼び出し側が別の実装を渡すと
+    タイマーの生成関数とする。指定を省略した場合は標準ライブラリの実装を使い、呼び出し側が別の実装を渡すと
     実時間の経過に依存せず発火時刻の決定を確認できる。
     """
 
@@ -58,7 +58,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         """停止要求を設定する。
 
         hypercornは停止時に全接続の切断を待ってから`graceful_timeout`を適用し、`asyncio.run`の終了処理は
-        既定のexecutorのスレッドの終了を待つ。停止要求で処理中の要求、購読中のSSE応答、スレッドの走査および
+        イベントループが作成したexecutorのスレッドの終了を待つ。停止要求で処理中の要求、購読中のSSE応答、スレッドの走査および
         リモート接続を終えないと、停止がそれらの完了まで待つ。
         """
         self.shutdown_requested.set()
@@ -212,7 +212,7 @@ async def next_subscription_item(
 ) -> str | _Signal:
     """購読キューの次の通知、heartbeat間隔の経過（`HEARTBEAT`）、停止要求（`SHUTDOWN`）のいずれかを返す。
 
-    SSEの各経路は本関数で待ち、`SHUTDOWN`を受けたら生成処理を終える。停止要求を参照しない待ちは、
+    SSEを返す各ハンドラーは本関数で待ち、`SHUTDOWN`を受けたら生成処理を終える。停止要求を参照しない待ちは、
     クライアントが切断するまでサーバーの停止を妨げる。
     """
     if shutdown.is_set():

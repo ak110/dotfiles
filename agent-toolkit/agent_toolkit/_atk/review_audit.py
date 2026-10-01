@@ -30,7 +30,7 @@ _IDENTIFIER_RE = re.compile(r"^(?:dependabot:)?[1-9][0-9]*$")
 DEPENDABOT_PREFIX = "dependabot:"
 """判定済み記録でDependabotアラート番号をreviewの`databaseId`と区別する接頭辞。"""
 _DEPENDABOT_DISABLED_MESSAGE = "Dependabot alerts are disabled for this repository."
-"""Dependabotアラート機能が無効なリポジトリへGitHub APIがHTTP 403で返す本文。実測で確認した文言をそのまま用いる。"""
+"""Dependabotアラート機能が無効なリポジトリへGitHub APIがHTTP 403で返す本文。実際の応答で確認した文言をそのまま用いる。"""
 _GH_TIMEOUT = 30.0
 _PULL_REQUESTS_QUERY = (
     "query($owner:String!,$name:String!,$cursor:String){repository(owner:$owner,name:$name){"
@@ -245,7 +245,7 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
     """未判定のopenなDependabotアラートを判定区分付きで返す。
 
     戻り値の`status`は`available`・`disabled`（機能が無効）・`unauthorized`（権限不足。`message`に応答本文）のいずれかとする。
-    `category`はマニフェストが既定ブランチに実在しなければ`inaccurate`、実在すれば`manifest_present`とする。
+    `category`はマニフェストがGitHubで標準の参照先に指定されたブランチに実在しなければ`inaccurate`、実在すれば`manifest_present`とする。
     機能無効と権限不足以外の取得失敗は`ActionableError`を送出する。
     """
     _validate_repository(repository)
@@ -298,17 +298,22 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
 
 def _default_branch(repository: str) -> str:
     try:
-        response = _gh_rest(f"repos/{repository}", operation="既定ブランチの取得")
+        response = _gh_rest(f"repos/{repository}", operation="GitHubで標準の参照先に指定されたブランチの取得")
     except _Forbidden as forbidden:
-        raise _dependabot_error(f"既定ブランチの取得が拒否された: {forbidden.message}") from forbidden
+        raise _dependabot_error(
+            f"GitHubで標準の参照先に指定されたブランチの取得が拒否された: {forbidden.message}"
+        ) from forbidden
     branch = response.get("default_branch") if isinstance(response, dict) else None
     if not isinstance(branch, str) or not branch:
-        raise _dependabot_error("既定ブランチを応答から取得できない")
+        raise _dependabot_error("GitHubで標準の参照先に指定されたブランチを応答から取得できない")
     return branch
 
 
 def _manifest_exists(repository: str, manifest_path: str, branch: str) -> bool:
-    """既定ブランチにマニフェストが実在するかを返す。HTTP 404だけを不在とし、他の失敗は例外にする。"""
+    """GitHubで標準の参照先に指定されたブランチにマニフェストが実在するかを返す。
+
+    HTTP 404だけを不在とし、他の失敗は例外にする。
+    """
     path = urllib.parse.quote(manifest_path, safe="/")
     ref = urllib.parse.quote(branch, safe="")
     try:

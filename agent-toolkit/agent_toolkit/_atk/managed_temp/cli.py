@@ -307,7 +307,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI引数を解釈して管理対象一時ディレクトリを操作する。"""
-    # `atk`本体を経由しない互換入口からも結果行を送出できるようUTF-8を強制する。
+    # `atk`本体を経由しない互換コマンドから起動した場合も結果行を送出できるようUTF-8を強制する。
     _outcome.force_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     build_parser(parser)

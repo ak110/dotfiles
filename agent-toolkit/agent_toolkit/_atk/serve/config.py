@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
 # IDEのリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、
-# Windowsローカル実行時に既定値が衝突する。Windowsのみ別値へずらして回避する。
+# Windowsでローカル実行すると、未指定時の値が衝突する。Windowsのみ別値へずらして回避する。
 LINUX_DEFAULT_PORT = 28766
 WINDOWS_DEFAULT_PORT = 28876
 
@@ -58,12 +58,12 @@ class ServeConfig:
 
 
 def default_port(platform: str | None = None) -> int:
-    """OS別の既定ポートを返す。"""
+    """ポートを指定しない場合に使うOS別の値を返す。"""
     return WINDOWS_DEFAULT_PORT if (platform or sys.platform) == "win32" else LINUX_DEFAULT_PORT
 
 
 def default_config_path() -> pathlib.Path:
-    r"""既定のTOML設定パスを返す。
+    r"""TOML設定の保存先を指定しない場合に使うパスを返す。
 
     Linuxでは`~/.config/agent-toolkit/serve.toml`、
     Windowsでは`%LOCALAPPDATA%\agent-toolkit\serve.toml`になる。
@@ -95,7 +95,7 @@ def _string_or_none(section: dict[str, typing.Any], key: str, label: str, config
     if isinstance(value, str) and value.strip():
         return value
     logger.warning(
-        "設定ファイルの%s.%sが空でない文字列ではないため無視して既定値で起動する (%s)\n%s",
+        "設定ファイルの%s.%sが空でない文字列ではないため読み込まず、設定を省略した場合の値で起動する (%s)\n%s",
         label,
         key,
         config_path,
@@ -112,7 +112,7 @@ def _hosts(section: dict[str, typing.Any], label: str, config_path: pathlib.Path
     if isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value):
         return tuple(value)
     logger.warning(
-        "設定ファイルの%s.remote_hostsが文字列の配列ではないため無視して既定値で起動する (%s)\n%s",
+        "設定ファイルの%s.remote_hostsが文字列の配列ではないため読み込まず、設定を省略した場合の値で起動する (%s)\n%s",
         label,
         config_path,
         _next_action.next_action_line("値を使う場合は設定ファイルの値を文字列の配列へ直してatk serveを再起動する"),
@@ -128,7 +128,7 @@ def _section(loaded: dict[str, typing.Any], name: str, config_path: pathlib.Path
     if isinstance(value, dict):
         return value
     logger.warning(
-        "設定ファイルの%sがテーブルではないため無視して既定値で起動する (%s)\n%s",
+        "設定ファイルの%sがテーブルではないため読み込まず、設定を省略した場合の値で起動する (%s)\n%s",
         name,
         config_path,
         _next_action.next_action_line("値を使う場合は設定ファイルの節をテーブルへ直してatk serveを再起動する"),

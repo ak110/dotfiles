@@ -181,7 +181,7 @@ if TYPE_CHECKING:
 
 _STATIC_DIR = pathlib.Path(__file__).with_name("static")
 
-# リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`を正本とする。
+# リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`が定める。
 REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_plans_remote_helper.py")
 
 
@@ -193,7 +193,7 @@ REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_plans_remote_he
 def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
     """`path`が対象接尾辞・`root`配下・非dotdirの全条件を満たすか判定する。
 
-    読取・検索・変更監視の3経路が同一の対象集合を返すよう、この判定を1箇所へ集約する。
+    読取・検索・変更監視の3つの処理が同一の対象集合を返すよう、この判定を1箇所へ集約する。
     作業rootではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
     保存rootと明示rootでは旧付属ファイルも読取・検索・監視の対象に含める。
     リモート側`atk_serve_plans_remote_helper.py`の`_is_target_path`と同一基準を保つ
@@ -418,7 +418,7 @@ def search_files(root: pathlib.Path, query: str, source_id: str = "", *, stop: t
 
 def resolve_under_root(root: pathlib.Path, rel: str, source_id: str = "") -> pathlib.Path | None:
     """`rel`が`root`配下の対象ファイルを指す場合のみ絶対パスを返す。存在しない場合はNone。"""
-    # シンボリックリンクを辿ってroot外へ出ないよう、resolve後のパスで範囲検査する。
+    # シンボリックリンクを辿ってroot外へ出ないよう、resolve後のパスが範囲内かを確認する。
     target = (root / rel).resolve()
     try:
         target.relative_to(root.resolve())
@@ -434,7 +434,7 @@ def read_pygments_css() -> str:
 
     pygmentsの基本ルール（`.codehilite { background: ...; color: ... }`）は除外し、
     トークン別カラールール（`.codehilite .k`等）のみを返す。
-    背景と既定文字色はapp.css側の`pre code`ルールへ委ね、
+    背景と、トークンごとに指定しない文字色はapp.css側の`pre code`ルールで定め、
     `<pre>`の背景上に異色矩形が出現する事象を防ぐ。
     """
     raw = _PYGMENTS_FORMATTER.get_style_defs(f".{_PYGMENTS_CSS_CLASS}")

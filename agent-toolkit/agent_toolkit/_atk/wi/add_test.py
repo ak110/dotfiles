@@ -254,7 +254,7 @@ def test_add_dry_run_reports_style_warnings_with_section_errors(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """必須節の欠落と表記警告を1回の検査で示す。"""
+    """必須節の欠落と表記警告を1回の実行で確認して示す。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     body = "本文\u2014説明"
@@ -597,7 +597,7 @@ def test_cmd_add_accepts_agent_awi_without_alignment_record(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """通常AWIの投入では照合記録を自動生成しない。"""
+    """通常AWIを投入しても、本文の一致を記録するファイルは自動生成されない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -865,7 +865,7 @@ def test_cli_add_does_not_output_body_verification_details(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """複数件投入でも本文照合の内部情報を出力しない。"""
+    """複数件投入でも本文の一致を確認する際の内部情報は出力しない。"""
     _setup_notes(tmp_path)
     messages = [
         '1件目。"引用"を含む。\n\n## 見出し\n\n複数行。',
@@ -1518,7 +1518,7 @@ def test_add_operation_accepts_canonical_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """新しい正規配置の`## 概要`直下からベースコミットを照合する。"""
+    """新しい正規配置の`## 概要`直下からベースコミットを取得し、対象コミットとの一致を確認する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "canonical-plan.md"
     plan.write_text(
@@ -1623,7 +1623,7 @@ def test_add_operation_accepts_legacy_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """現行形式が無い既存計画では背景直下のメタ情報を照合する。"""
+    """現行形式が無い既存計画では背景直下のメタ情報を取得し、対象コミットとの一致を確認する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "legacy-plan.md"
     plan.write_text(
@@ -1903,7 +1903,7 @@ class TestAddOrderEditorFirst:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """引数指定経路でもremote同期→書き込み→commitの順序で動作すること。"""
+        """引数で指定した場合もremote同期→書き込み→commitの順序で動作すること。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -2433,7 +2433,7 @@ def _invoke_add_body_file(
 
 
 class TestAddBodyFile:
-    """`mq add --body-file`によるシェル引用符を経由しない本文入力経路を検証する。"""
+    """`mq add --body-file`でシェル引用符を経由せずに本文を渡せることを検証する。"""
 
     def test_body_file_content_becomes_message(
         self,
@@ -2547,7 +2547,7 @@ def test_add_rejects_reserved_user_comment_heading_in_agent_environment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """エージェント環境では全ての通常入力経路で予約見出しを拒否する。"""
+    """エージェント環境では通常入力の全ての方法で予約見出しを拒否する。"""
     notes = _setup_notes(tmp_path)
     repo = tmp_path / "myrepo"
     repo.mkdir()
@@ -2570,7 +2570,7 @@ def test_add_accepts_reserved_user_comment_heading_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """エージェント環境でなければ全ての通常入力経路で予約見出しを受理する。"""
+    """エージェント環境でなければ通常入力の全ての方法で予約見出しを受理する。"""
     notes = _setup_notes(tmp_path)
     repo = tmp_path / "myrepo"
     repo.mkdir()
@@ -2684,7 +2684,7 @@ def test_add_reports_body_mismatch_when_saved_body_is_altered(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存経路で本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
+    """保存の処理中に本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())

@@ -328,7 +328,7 @@ _BATCH_TEXT = (
 
 
 def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """一括取り込み経路のロック・remote同期・commitを無効化する。"""
+    """一括取り込みで使うロック・remote同期・commitを無効化する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:

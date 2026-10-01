@@ -197,7 +197,7 @@ function navigateRelative(delta) {
 }
 
 function createFileItem(file) {
-  // 1ファイルエントリのDOMノードを生成する。差分更新時の追加経路から呼ぶ。
+  // 1ファイルエントリのDOMノードを生成する。差分更新で項目を追加する際に呼ぶ。
   const item = document.createElement("a");
   item.dataset.key = fileKey(file);
   const name = document.createElement("div");
@@ -877,7 +877,7 @@ function bindScreenEvents() {
     document.getElementById("plans-filter").focus();
   });
   document.getElementById("preview").addEventListener("click", (event) => {
-    // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけが選択経路になる。
+    // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけから選択できる。
     // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
     const link = event.target.closest("a[data-plan-path]");
     if (!link || !isPlainPrimaryClick(event) || link.target) return;

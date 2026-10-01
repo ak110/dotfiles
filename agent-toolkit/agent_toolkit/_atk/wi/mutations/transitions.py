@@ -131,7 +131,7 @@ _AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要にな
 _IMPLICIT_TERMINAL_STATE_PRIORITY = (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
 """`adopt`・`reject`のファイル名指定で同名が複数の状態にある場合の優先順。
 
-`set-dependencies`の既定順、`answer`の回答対象の解決順と同じ順とする。
+`set-dependencies`で指定を省いた場合の順序、`answer`の回答対象の解決順と同じ順とする。
 """
 
 
@@ -139,7 +139,7 @@ def _implicit_terminal_source_states(action: str) -> tuple[str, ...]:
     """`adopt`・`reject`のファイル名指定が探索する状態を優先順で返す。
 
     状態の集合は`--all`の候補と同じ`BULK_SOURCE_STATES`から導き、本関数は順序だけを定める。
-    両経路が状態を別々に列挙すると、状態の追加が片方にだけ反映されるためである。
+    両方の処理が状態を別々に列挙すると、状態の追加が片方にだけ反映されるためである。
     """
     return tuple(
         sorted(
@@ -274,7 +274,7 @@ def _validate_transition_targets(
             # 移動前にtype欠落・不正を拒否する。
             _require_type(path, content)
             # `--target-repo`未指定でもtarget_repo欠落とfrontmatter解析不能を拒否するため、
-            # 不一致判定を`_verify_target_repo_content`へ委ねる一方でこの必須検査は残す。
+            # 不一致判定を`_verify_target_repo_content`へ委ねる一方でこの必須条件の確認は残す。
             _entry_target_repo(path, content)
         if len(normalized_target_repos) <= 1:
             _verify_target_repo_content(path, content, normalized_target_repos[0] if normalized_target_repos else None)
@@ -300,7 +300,7 @@ def _validate_transition_targets(
         protected = [path.name for path in paths if path.parent.name == WI_STATE_PROCESSING]
         if protected:
             _outcome.report_failure(
-                f"processing状態のファイルは既定で削除を保護する: {', '.join(protected)}",
+                f"processing状態のファイルは、--forceを指定しない限り削除できない: {', '.join(protected)}",
                 next_action="削除するには--force（Web APIはforce指定）を指定する",
             )
             sys.exit(2)
@@ -420,8 +420,8 @@ def transition_entries(
     """平引数でエントリの一括状態遷移または削除を実行する。
 
     `action="remove"`では`actor_is_agent`が真の場合にinboxとholdだけを対象とする。
-    偽の場合は全状態を対象とし、`force=False`（既定）でprocessing状態のファイルが
-    対象に含まれるとexit 2で拒否する（`atk wi rm`の既定保護。処理中ファイルの
+    偽の場合は全状態を対象とし、`force=False`の場合（省略時もFalse）、processing状態のファイルが
+    対象に含まれるとexit 2で拒否する（`atk wi rm`で--forceを省略した場合の保護。処理中ファイルの
     意図しない削除を防ぐ。解除するには`force=True`を渡す）。
     """
     _validate_transition_options(
@@ -499,7 +499,7 @@ def _bulk_transition(
     *,
     action: str,
 ) -> list[str]:
-    """`--all`経路で候補を確定し、確認済みの項目へその操作を1回のcommitで適用する。"""
+    """`--all`を指定した際に候補を確定し、確認済みの項目へその操作を1回のcommitで適用する。"""
     note = getattr(args, "note", None)
     commit = getattr(args, "commit", None)
     skip_push = getattr(args, "skip_push", False)

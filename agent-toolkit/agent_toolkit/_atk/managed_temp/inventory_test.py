@@ -192,7 +192,7 @@ class TestManagedTempWindows:
             subject._windows_identity(junction)
 
     def test_reparse_identity_identifies_the_link_object(self, tmp_path: pathlib.Path) -> None:
-        """専用経路はリンク先ではなくreparse point自体を識別する。"""
+        """専用の処理はリンクを辿らず、reparse point自体を識別する。"""
         destination = tmp_path / "reparse-identity-destination"
         destination.mkdir()
         first = tmp_path / "first-reparse-identity-junction"
@@ -544,7 +544,7 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """別実行主体の実測相当ACE追加後も公開検証とcleanupが成立する。"""
+        """別実行主体が、実物で確認したものと同じACEを追加した後も公開検証とcleanupが成立する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-external-writer")
         current_sid = subject._windows_sid_bytes(subject._windows_current_sid())

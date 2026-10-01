@@ -149,7 +149,7 @@ NEW_PORTABLE_ROOT = "$(atk config get private_notes)/plans"
 LEGACY_PORTABLE_ROOT = "~/.claude/plans"
 _UNRESOLVED_PRIVATE_NOTES_ROOT = pathlib.Path.home() / ".claude" / ".plans-viewer-private-notes-unresolved"
 
-# 付属計画ファイルの接尾辞。計画一覧からは除外されるため、表示応答内のリンクが到達経路になる。
+# 付属計画ファイルの接尾辞。計画一覧からは除外されるため、表示応答内のリンクを使って開く。
 _DETAIL_SUFFIX = ".detail.md"
 _BUGS_SUFFIX = ".bugs.md"
 _TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
@@ -221,7 +221,7 @@ SSH_TIMEOUT_SEC = 30.0
 STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
 # RPCリクエスト1件あたりのタイムアウト秒。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
-# SSHフォールバック経路の検索を同時に実行する上限（全ホスト合計）。
+# SSHによる代替の検索を同時に実行する上限（全ホスト合計）。
 DEFAULT_REMOTE_SEARCH_LIMIT = 4
 # `serve`用のSSH追加オプション。ネットワーク途絶を最大30秒程度で検知する。
 SSH_WATCH_OPTIONS = (
@@ -237,9 +237,9 @@ REMOTE_BACKOFF_INITIAL_SEC = 1.0
 REMOTE_BACKOFF_MAX_SEC = 30.0
 REMOTE_BACKOFF_JITTER_RANGE = (0.8, 1.2)
 # リモートwatch subprocessのstdout用StreamReader上限（バイト）。
-# helperが1行JSONとして全エントリーを出力するsnapshot行がasyncio既定の64KiBを超えるため引き上げる。
+# helperが1行JSONとして全エントリーを出力するsnapshot行は、asyncioが標準で使う64KiBを超えるため、上限を引き上げる。
 REMOTE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
-# 各停止段階で`proc.wait()`に与える既定タイムアウト（秒）。
+# 各停止段階で`proc.wait()`に指定する標準のタイムアウト（秒）。
 TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
 # SSHランナーの抽象シグネチャ。テストではfake実装を注入し、本番は`default_ssh_runner`を使う。
@@ -354,7 +354,7 @@ def normalize_root_specs(specs: typing.Iterable[RootSpec]) -> tuple[RootSpec, ..
                     duplicate_index = index
                     break
             except OSError:
-                # 実体照合に失敗しても、そのrootで起きた障害によって他rootの処理を停止しない。
+                # 対象が同じ実体かを確認できなくても、そのrootで起きた障害によって他rootの処理を停止しない。
                 continue
         if duplicate_index is None:
             normalized.append(candidate)

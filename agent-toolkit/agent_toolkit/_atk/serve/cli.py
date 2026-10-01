@@ -52,7 +52,7 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
     """Quartアプリをhypercornで起動し、シグナル受信でgraceful shutdownする。
 
     シグナル（SIGINT・SIGTERM・SIGHUP）を単一の`shutdown_trigger`へ集約する。
-    hypercorn既定のシグナル処理はSIGHUPを含まないため、プロセス監視ツール等からの
+    hypercornが標準で行うシグナル処理はSIGHUPを含まないため、プロセス監視ツール等からの
     SIGHUP到達時も購読中のSSE接続を片付けてから終了できるようにする。
     """
     state = _atk_serve_state.ServeState(private_notes)

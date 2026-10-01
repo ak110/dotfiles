@@ -507,7 +507,7 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各エージェント環境と編集経路でユーザーコメント変更を書き込み前に拒否する。"""
+    """各エージェント環境では、どの方法で編集してもユーザーコメントの変更を書き込み前に拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="本文\n\n## ユーザーコメント\n\n保持する")
@@ -587,7 +587,7 @@ def test_cli_edit_omits_body_verification_details_for_each_write_route(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各編集経路が一致判定と保存本文を再掲しない。"""
+    """編集方法によらず、一致判定と保存本文を再掲しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")
@@ -1007,7 +1007,7 @@ def _replace_edit_message_with_body_file(command: list[str], tmp_path: pathlib.P
 class TestTargetRepoVerification:
     """mutation系サブコマンド: `--target-repo`指定時のfrontmatter一致検証を検証する。
 
-    既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_awi_file`既定値）。
+    テストの準備で書くfrontmatterの`target_repo`は`github.com/example/foo`（`_write_awi_file`で指定を省いた場合の値）。
     """
 
     @pytest.mark.parametrize(
@@ -1228,7 +1228,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """editの事前検査も解決済みprocessing実体へ適用する。"""
+        """editの事前の確認も解決済みprocessing実体へ適用する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-dup.md", target_repo="github.com/example/foo")
         processing = notes / "processing"

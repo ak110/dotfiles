@@ -7,7 +7,7 @@ from agent_toolkit._atk import outcome
 
 def test_failure_and_warning_require_next_action() -> None:
     with pytest.raises(TypeError):
-        # 必須引数の欠落そのものを検証するため、静的検査の指摘を抑止する。
+        # 必須引数の欠落そのものを検証するため、静的解析による指摘を抑止する。
         outcome.report_failure("理由")  # type: ignore[call-arg]  # ty: ignore[missing-argument]  # pylint: disable=missing-kwoa
     with pytest.raises(TypeError):
         outcome.report_warning("理由")  # type: ignore[call-arg]  # ty: ignore[missing-argument]  # pylint: disable=missing-kwoa

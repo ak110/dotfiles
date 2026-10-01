@@ -1,6 +1,6 @@
 """`atk config`サブコマンド（`_atk_config`モジュール）のテスト。
 
-`atk config show`（既定動作）・`get`・`set`・`apply-preset`の4操作と、XDG関連パスの解決結果を検証する。
+`atk config show`・`get`・`set`・`apply-preset`の4操作（サブコマンド省略時はshowを実行）と、XDG関連パスの解決結果を検証する。
 """
 
 import json
@@ -377,7 +377,7 @@ class TestConfigGet:
     def test_empty_environment_override_is_ignored(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """空文字列の環境変数は未指定として既定値を返す。"""
+        """環境変数が空文字列なら未指定として扱い、設定の初期値を返す。"""
         with pytest.raises(SystemExit):
             atk.main(["config", "get", "high_tier_model"], home=tmp_path)
         baseline = capsys.readouterr().out
@@ -392,7 +392,7 @@ class TestConfigGet:
     def test_immutable_environment_name_does_not_override_private_notes(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """変更可能キー以外を模した環境変数は既存の解決経路へ影響しない。"""
+        """変更可能キー以外を模した環境変数は既存の設定値の解決に影響しない。"""
         with pytest.raises(SystemExit):
             atk.main(["config", "get", "private_notes"], home=tmp_path)
         original = capsys.readouterr().out
@@ -547,7 +547,7 @@ class TestConfigSet:
         assert capsys.readouterr().err == ""
 
     def test_set_preserves_unconfigured_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """旧キーがない設定保存では、未設定の既定値を永続化しない。"""
+        """旧キーがない設定保存では、未設定なら初期値を保存しない。"""
         config_file = tmp_path / "config" / "config.json"
         config_file.parent.mkdir(parents=True)
         config_file.write_text(json.dumps({"other_setting": "keep"}) + "\n", encoding="utf-8")
@@ -654,7 +654,7 @@ class TestConfigSet:
     def test_candidate_warnings_identify_only_unknown_candidate(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """候補ごとの既知一覧照合で一覧外の候補だけを警告し、保存は成功する。"""
+        """候補ごとに既知の一覧との一致を確かめ、一覧外の候補だけを警告し、保存は成功する。"""
         known = "codex:gpt-6-astra/low"
         unknown = "claude:unknown-model/medium"
 

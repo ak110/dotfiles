@@ -109,7 +109,7 @@ def test_session_id_create_is_idempotent_and_cleanup_resolves_target(tmp_path: p
 
 
 def test_cli_writes_result_lines_under_a_non_utf8_stdio_encoding(tmp_path: pathlib.Path) -> None:
-    """標準入出力の既定符号化が日本語を扱えない環境でも結果行を送出する。"""
+    """標準入出力に使う符号化を指定せず、日本語を扱えない環境でも結果行を送出する。"""
     env, _ = _isolated_cli_environment(tmp_path)
     env["PYTHONIOENCODING"] = "cp1252"
 

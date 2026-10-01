@@ -288,7 +288,7 @@ def test_set_dependencies_cli_rejects_cycle(
     assert captured.value.code == 1
     err = capsys.readouterr().err
     assert "循環する依存" in err
-    # 受信側が外す依存先を特定できるよう、循環の経路と確認に使うコマンドを示すこと。
+    # 受信側が外す依存先を特定できるよう、循環する依存先の並びと確認に使うコマンドを示すこと。
     assert "second.md → first.md → second.md" in err
     next_actions = [line for line in err.splitlines() if line.startswith("次の操作: ")]
     assert len(next_actions) == 1
@@ -422,7 +422,7 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """変換コマンドが保存後に返された照合対象を表示する。"""
+    """変換コマンドが保存後に返された一致確認の対象を表示する。"""
     details: dict[str, object | None] = {
         "target_repo": "github.com/example/foo",
         "target_commit": "a" * 40,
@@ -657,7 +657,7 @@ class TestSkipPush:
         tmp_path: pathlib.Path,
     ) -> None:
         """通常遷移は即時pushし、remote進行後もskip-pushの滞留commitを回復する。"""
-        # 対象リポジトリの照合はテスト実行時のカレントディレクトリに依存するため、既定解決を無効化する。
+        # 対象リポジトリの一致判定はテスト実行時のカレントディレクトリに依存するため、省略時の解決を無効化する。
         monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
         first_home = tmp_path / "first"
         first_home.mkdir()

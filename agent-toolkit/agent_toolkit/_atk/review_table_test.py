@@ -171,7 +171,7 @@ def test_add_reports_each_saved_cell_match_without_saved_bodies(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """追加は指摘箇所と指摘内容を別々に照合し、本文を出力しない。"""
+    """追加時は指摘箇所と指摘内容がそれぞれ一致するかを確かめ、本文は出力しない。"""
     path = tmp_path / "review.tsv"
     location = "module.py:10\nissue_body_match: 一致"
     issue = "1行目\n2行目"
@@ -237,7 +237,7 @@ def test_respond_reports_decoded_response_and_match(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応要ではデコード済み本文を照合し、一致判定だけを出力する。"""
+    """対応要ではデコード済み本文が一致するかを確かめ、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     response = '応答本文へ"二重引用符"と\\逆斜線を含める。\nタブ\tも含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -255,7 +255,7 @@ def test_respond_reports_body_mismatch_when_saved_response_is_altered(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """応答の保存経路で本文が改変された場合、CLIは差異の診断を出力して失敗する。"""
+    """応答を保存する処理中に本文が改変された場合、CLIは差異の診断を出力して失敗する。"""
     path = tmp_path / "review.tsv"
     response = "送信元の対応本文"
     response_file = tmp_path / "response.md"
@@ -338,7 +338,7 @@ def test_respond_reports_only_decoded_no_response_reason(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応不要では更新した理由を照合し、一致判定だけを出力する。"""
+    """対応不要では更新した理由の一致を確かめ、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     reason = '対象外の理由へ"引用符"、\\逆斜線、タブ\tおよび\n改行を含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -394,7 +394,7 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
 
 
 def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pathlib.Path) -> None:
-    """存在しないパスに対する作成と追記の成功経路を、読み込みの拒否と区別して維持する。"""
+    """存在しないパスに対する作成と追記が成功する場合を、読み込みの拒否と区別して維持する。"""
     created = tmp_path / "created.plan-review.tsv"
     assert table.init(created) == 0
     assert created.is_file()
@@ -406,7 +406,7 @@ def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pa
 
 @pytest.mark.parametrize("name", ("legacy.plan-review.tsv", f"dlg-{'a' * 40}.exec-review.tsv"))
 def test_dispatch_rejects_removed_review_write_paths(tmp_path: pathlib.Path, name: str) -> None:
-    """保存済み旧表と廃止した対話是正表は公開作成経路で更新しない。"""
+    """保存済み旧表と廃止した対話是正表は公開された作成コマンドで更新しない。"""
     args = argparse.Namespace(review_table_subcommand="init", path=str(tmp_path / name))
 
     with pytest.raises(ValueError, match="旧レビュー表は読み取り専用"):
@@ -760,7 +760,7 @@ def test_duplicate_key_and_existing_init_are_rejected(tmp_path: pathlib.Path) ->
 
 
 def test_start_gate_preserves_existing_table_and_initializes_only_missing_table(tmp_path: pathlib.Path) -> None:
-    """開始ゲートは既存表を初期化せず構造検証し、未作成時だけ初期化する。"""
+    """開始前の確認は既存表を初期化せず構造を検証し、表を作成していない場合だけ初期化する。"""
     existing = tmp_path / "existing-review.tsv"
     table.init(existing)
     table.add(existing, "1", _TRACK, "module.py:10", "既存の指摘")
@@ -1096,7 +1096,7 @@ def test_cell_file_options_are_shown_in_help(
 
 
 def test_respond_help_presents_row_id_as_default_selector(capsys: pytest.CaptureFixture[str]) -> None:
-    """応答ヘルプはshow由来のrow-idを既定とし、複合キーを互換経路として示す。"""
+    """応答ヘルプはshow由来のrow-idを使うよう案内し、複合キーによる指定も互換の手段として示す。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(["review-table", "respond", "--help"])
 
@@ -1104,7 +1104,7 @@ def test_respond_help_presents_row_id_as_default_selector(capsys: pytest.Capture
     help_text = capsys.readouterr().out
     assert "`show`が出力した`row-id`で応答対象を一意に指定" in help_text
     assert "応答対象は`show`が出力した`row-id`で指定" in help_text
-    assert "部分複合キー指定も互換経路" in help_text
+    assert "部分複合キー指定も互換の指定方法" in help_text
 
 
 @pytest.mark.parametrize(

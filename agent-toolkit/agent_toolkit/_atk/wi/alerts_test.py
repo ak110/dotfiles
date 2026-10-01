@@ -43,7 +43,7 @@ def test_collect_gitlab_ci_failures_only_when_latest_failed() -> None:
 
 
 def test_resolve_target_branch_paths() -> None:
-    """追跡先を優先し、失敗時は既定ブランチへ退避する。"""
+    """追跡先を優先し、失敗時はGitHubで標準の参照先に指定されたブランチへ退避する。"""
 
     def upstream_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":
@@ -120,7 +120,7 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
 
 def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Path) -> None:
-    """外部更新を無効化し、保存本文を検査できるAWI領域を準備する。"""
+    """外部更新を無効化し、保存した本文を確認できるAWI領域を準備する。"""
     (notes / "inbox").mkdir(parents=True)
 
     def no_repo_lock(*_args: object, **_kwargs: object) -> contextlib.AbstractContextManager[None]:
@@ -183,7 +183,7 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
 def test_check_and_submit_alerts_writes_kind_specific_completion(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開入口がアラート種別ごとの外部可視の完成条件を保存する。"""
+    """公開された収集コマンドがアラート種別ごとの外部可視の完成条件を保存する。"""
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
 
@@ -275,7 +275,7 @@ def test_collect_new_alerts_warns_on_generic_failure(tmp_path: pathlib.Path, cap
 def test_collect_new_alerts_decodes_utf8_json_bytes_without_locale_dependency(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開収集経路が非ASCIIのUTF-8 JSON bytesをアラートへ変換する。"""
+    """公開された収集コマンドが非ASCIIのUTF-8 JSON bytesをアラートへ変換する。"""
     payload = [{"workflowName": "日本語CI", "status": "completed", "conclusion": "failure", "databaseId": 21}]
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
@@ -293,7 +293,7 @@ def test_collect_new_alerts_decodes_utf8_json_bytes_without_locale_dependency(
 def test_collect_new_alerts_warns_when_json_stdout_is_not_utf8(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開収集経路が不正UTF-8 stdoutを原因付き収集エラーとして警告する。"""
+    """公開された収集コマンドが不正UTF-8 stdoutを原因付き収集エラーとして警告する。"""
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(command, 0, stdout=b"\xff", stderr=b"")
@@ -307,7 +307,7 @@ def test_collect_new_alerts_warns_when_json_stdout_is_not_utf8(
 def test_collect_new_alerts_keeps_non_utf8_stderr_as_bytes_notation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開収集経路が非UTF-8診断bytesを警告へ残す。"""
+    """公開された収集コマンドが非UTF-8診断bytesを警告へ残す。"""
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"failed: \x81")

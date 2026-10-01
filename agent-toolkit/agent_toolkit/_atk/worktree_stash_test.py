@@ -213,7 +213,7 @@ def test_save_refuses_queue_repository_worktree(
     error = capsys.readouterr().err
     assert "キュー管理リポジトリ" in error
     assert "次の操作: " in error
-    assert "atk wi・atk plans・atk serve" in error
+    assert "atk wi・atk plansのコマンドかatk serveの画面" in error
     assert "atk wi commit" in error
     assert _git(["status", "--short"], queue_repository).stdout == queue_status
     assert _git(["show-ref", "--verify", "--quiet", "refs/worktree/queue-save"], queue_repository, check=False).returncode == 1
@@ -241,7 +241,7 @@ def test_drop_refuses_queue_repository_worktree(
     error = capsys.readouterr().err
     assert "キュー管理リポジトリ" in error
     assert "次の操作: " in error
-    assert "atk wi・atk plans・atk serve" in error
+    assert "atk wi・atk plansのコマンドかatk serveの画面" in error
     assert "atk wi commit" in error
     assert _git(["show-ref", "--verify", "--quiet", ref], queue_repository).returncode == 0
     monkeypatch.chdir(target_repository)
@@ -363,7 +363,7 @@ def test_drop_uses_the_oid_observed_under_the_lock(
 
 
 def test_drop_removes_shared_stash_by_identifier(tmp_path: pathlib.Path) -> None:
-    """共有stashも固定ロックを使う同じ削除経路で回収する。"""
+    """共有stashの回収にも同じ削除処理を使い、固定ロックの保持中に削除する。"""
     repo = _make_repository(tmp_path)
     (repo / "untracked.txt").write_text("temporary\n", encoding="utf-8")
     _git(["stash", "push", "--include-untracked"], repo)

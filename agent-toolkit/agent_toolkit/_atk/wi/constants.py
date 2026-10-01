@@ -76,7 +76,7 @@ TRANSITION_EXPLICIT_STATES = {
 }
 """操作ごとに明示`state`として受理する遷移元の状態。
 
-ファイル名指定の暗黙解決は各操作の既定として別に扱い、本表は明示指定だけを統治する。
+ファイル名指定の暗黙解決は各操作で指定を省いた場合の動作として別に扱い、本表は明示指定だけを統治する。
 暗黙解決は多くの操作で`inbox`・`processing`を探索し、`adopt`・`reject`は`BULK_SOURCE_STATES`から導いた`inbox`・`processing`・`hold`を探索する。
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
 `remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
@@ -107,7 +107,7 @@ BULK_ACTION_LABELS = {
     "reject": "不採用",
     "remove": "削除",
 }
-"""一括経路の候補0件、確認および再照合の各メッセージが使う操作名。"""
+"""一括操作の候補0件、確認および確認後の一致判定を伝える各メッセージが使う操作名。"""
 
 
 def bulk_source_states(action: str, *, actor_is_agent: bool) -> tuple[str, ...]:
@@ -130,7 +130,7 @@ LEGACY_WI_TYPES = {"feedback": WI_TYPE_AWI, "tbd": WI_TYPE_UWI}
 """旧形式で保存された`type`値と、現行の値の対応。
 
 private-notesには旧値を持つ項目が残り得る。
-読み取り経路だけが本表を参照し、書き込み経路は常に現行の値を保存する。
+本表は読み取り時にだけ参照する。書き込み時は常に現行の値を保存する。
 """
 
 
@@ -149,9 +149,9 @@ def normalized_wi_type(value: object) -> str | None:
 def unrepairable_entry_next_action(name: str) -> str:
     """frontmatterの破損・必須キー欠落の項目に対する次の操作を返す。
 
-    `atk wi edit`の非対話経路も同じ検証を先に行って拒否するため、エージェントが直せる操作として案内しない。
+    `atk wi edit`で非対話の編集をする場合も同じ検証を先に行って拒否するため、エージェントが直せる操作として案内しない。
     """
     return (
         f"`atk wi show {name}`で保存内容を確かめ、ユーザーへ報告する"
-        "（この状態の項目は`atk wi edit`の`--body-file`経路でも同じ理由で拒否される）"
+        "（この状態の項目は`atk wi edit`の`--body-file`で本文を渡しても同じ理由で拒否される）"
     )

@@ -1,4 +1,4 @@
-"""atk setup-projectの公開入口と移行・削除を検証する。"""
+"""利用者が使うatk setup-projectコマンドを通して移行・削除を検証する。"""
 
 from __future__ import annotations
 

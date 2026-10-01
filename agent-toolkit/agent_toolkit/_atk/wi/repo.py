@@ -144,7 +144,7 @@ def resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> st
 def detect_current_repo_id() -> str | None:
     """カレントディレクトリが属するリポジトリの識別子を返し、解決できない場合はNoneを返す。
 
-    `--target-repo`を省略したときの既定値として使う。Gitの作業ツリー外、`origin`未設定、
+    `--target-repo`を省略したときに使う値とする。Gitの作業ツリー外、`origin`未設定、
     リモートURLを正規化できない形式のいずれでもNoneを返す。Noneを受け取った呼び出し元は
     対象を限定せず、全ての対象リポジトリを扱う。
     """
@@ -233,7 +233,7 @@ def resolve_head_commit(local_worktree: pathlib.Path) -> str:
 
 
 def _verify_target_repo_content(path: pathlib.Path, content: str, normalized_expected: str | None) -> None:
-    """解決済み実体の`target_repo`を正規化済み期待値と照合する。"""
+    """解決済み実体の`target_repo`が正規化済みの期待値と一致するかを確かめる。"""
     if normalized_expected is None:
         return
     actual = _parse_target_repo(content)

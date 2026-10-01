@@ -410,7 +410,7 @@ async def test_state_discards_pending_notification_when_stopped(
 
 
 def test_navigation_offers_three_screens_in_declared_order(tmp_path: pathlib.Path) -> None:
-    """3画面の入口を同じappへ登録する。"""
+    """3画面を開くURLを同じappへ登録する。"""
     app = _three_screen_app(tmp_path)
     rules = {rule.rule for rule in app.url_map.iter_rules()}
     assert {"/", "/plans", "/sessions"} <= rules
@@ -850,7 +850,7 @@ async def test_protocol_relative_prefix_logs_rejection_via_proxy_fix(
 
     404単独では既存のルート未マッチ応答と区別できないため、`pytilpack.web.validate_forwarded_prefix`が
     記録する`X-Forwarded-Prefixに不正な値が含まれています`という警告ログの有無でProxyFix層の
-    拒否経路が実際に実行されたことを検証する。
+    拒否の処理が実際に実行されたことを検証する。
     """
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()

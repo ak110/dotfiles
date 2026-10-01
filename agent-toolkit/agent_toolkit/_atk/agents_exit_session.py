@@ -88,7 +88,7 @@ _STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 
 @dataclass(frozen=True)
 class Target:
-    """再照合に必要な単一プロセスの識別情報。"""
+    """単一プロセスが引き続き同じ対象であることを確かめるための識別情報。"""
 
     pid: int
     host: str
@@ -294,7 +294,7 @@ def request_termination(
 
 
 def main() -> int:
-    """終了要求の実行証跡を出力し、再照合済みの単一PIDだけを停止する。"""
+    """終了要求の実行証跡を出力し、現在の識別情報が一致すると確認した単一PIDだけを停止する。"""
 
     def _before_signal(target: Target) -> None:
         _outcome.report_success(

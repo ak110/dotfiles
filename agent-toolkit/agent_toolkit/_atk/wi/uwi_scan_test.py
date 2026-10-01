@@ -165,7 +165,7 @@ class TestScanActiveUwis:
 
 
 class TestPrivateNotesRoot:
-    """環境変数指定と既定の保存先を解決する。"""
+    """環境変数で指定した保存先と、未指定の場合の保存先を解決する。"""
 
     def test_prefers_environment_override(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         override = tmp_path / "override"

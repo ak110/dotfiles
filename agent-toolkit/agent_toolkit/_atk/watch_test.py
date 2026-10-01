@@ -43,7 +43,7 @@ def _run_watch(arguments: list[str]) -> int:
 
 
 class TestWatch:
-    """`atk watch`の出力と終了コードを検査する。"""
+    """`atk watch`の出力と終了コードが期待どおりかを確認する。"""
 
     def test_outputs_exact_values_for_worktree_and_file(
         self,
@@ -85,7 +85,7 @@ class TestWatch:
         monkeypatch: pytest.MonkeyPatch,
         make_clean_repo: collections.abc.Callable[..., pathlib.Path],
     ) -> None:
-        """相対パスの作業ツリーから差分件数・HEAD・既定ラベルを取得する。"""
+        """相対パスの作業ツリーから差分件数・HEAD・ラベル省略時の値を取得する。"""
         repo = make_clean_repo(tmp_path, "relative-repo")
         monkeypatch.chdir(tmp_path)
 
@@ -209,7 +209,7 @@ class TestWatch:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """既定ラベルが衝突する対象を終了コード2で拒否する。"""
+        """ラベルを省略した際に他と衝突する対象を終了コード2で拒否する。"""
         first = tmp_path / "first" / "result.txt"
         second = tmp_path / "second" / "result.md"
 
@@ -229,7 +229,7 @@ class TestWatch:
         capsys: pytest.CaptureFixture[str],
         whitespace: str,
     ) -> None:
-        """空白文字を含む既定・明示ラベルを終了コード2で拒否する。"""
+        """空白文字を含む省略時に使うラベルと明示指定したラベルを終了コード2で拒否する。"""
         values = [f"has{whitespace}space={tmp_path / 'artifact.txt'}"]
         if whitespace == " ":
             values.append(str(tmp_path / "has space.txt"))

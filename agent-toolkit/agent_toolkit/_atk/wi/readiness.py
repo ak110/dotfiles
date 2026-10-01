@@ -280,7 +280,7 @@ def _effective_dependencies(
 
 
 def _has_explicit_dependencies(entry: QueueEntry) -> bool:
-    """トップレベルの`depends_on`が正本として存在するか返す。"""
+    """トップレベルに`depends_on`が保存されているかを返す。"""
     parsed = parse_frontmatter(entry.text)
     return parsed is not None and "depends_on" in parsed[0]
 

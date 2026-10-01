@@ -105,14 +105,14 @@ OUT_OF_SCOPE_COMMANDS = frozenset({"atk wi process-loop", "atk serve", "atk run-
 """結果行の規約の対象外。常駐処理、サーバーおよび委譲先scriptが終了状態を表す。"""
 
 NO_MATCH_COMMANDS = frozenset({"atk wi grep", "atk managed-temp list"})
-"""該当0件で終了コード1を返し、該当0件の行を標準エラーへ書く読み取り経路。"""
+"""該当0件で終了コード1を返し、該当0件の行を標準エラーへ書く読み取りのコマンド。"""
 
 
 def force_utf8_stdio() -> None:
     """結果行を書く前に標準出力と標準エラーをUTF-8へ切り替える。
 
-    接頭辞と本文が日本語のため、Windowsのcp932・cp1252環境では既定の符号化で送出に失敗する。
-    結果行を書く入口はこの関数を呼んでから`report_*`を使う。
+    接頭辞と本文が日本語のため、Windowsのcp932・cp1252環境では符号化を指定せずに送出すると失敗する。
+    結果行を出力する処理はこの関数を呼んでから`report_*`を使う。
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -129,13 +129,13 @@ def report_success(message: str, kind: ResultKind = ResultKind.STATE_CHANGE) -> 
 def report_failure(message: str, *, next_action: str) -> None:
     """非0で終了する理由を失敗行へ、次に行う操作を続く行へ標準エラーへ書く。
 
-    次の操作を任意にすると、受信側が理由だけを受け取って次の行動を推測する経路が残るため必須の引数とする。
+    受信側が理由だけから次の行動を推測せずに済むよう、次の操作を必須の引数とする。
     """
     print(_next_action.with_next_action(f"{FAILURE_PREFIX}{message}", next_action), file=sys.stderr)
 
 
 def report_warning(message: str, *, next_action: str, to_stderr: bool = True) -> None:
-    """警告行と次に行う操作の行を書く。出力先はその警告が属する経路の現行の出力先を呼び出し側が指定する。
+    """警告行と次に行う操作の行を書く。出力先はその警告を発生させた処理の現在の出力先を呼び出し側が指定する。
 
     対処が不要な警告も、続行してよいことを次の操作として明示する。
     """
@@ -146,5 +146,5 @@ def report_warning(message: str, *, next_action: str, to_stderr: bool = True) ->
 
 
 def report_no_match(message: str) -> None:
-    """該当0件で終了コード1を返す読み取り経路の正常完了を標準エラーへ書く。"""
+    """該当0件で終了コード1を返す読み取りのコマンドが正常に完了したことを標準エラーへ書く。"""
     print(f"{NO_MATCH_PREFIX}{message}", file=sys.stderr)

@@ -271,7 +271,7 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """既定activeのgrepはhold配下のawiとUWIをいずれも含める。"""
+        """状態を指定せずactiveを使うgrepはhold配下のawiとUWIをいずれも含める。"""
         notes = _setup_notes(tmp_path)
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)

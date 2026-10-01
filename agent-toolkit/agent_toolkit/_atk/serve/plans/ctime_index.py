@@ -325,7 +325,7 @@ def update_creation_time_index(
             creation = min(observed_epoch, cached) if cached is not None else observed_epoch
             resolved[rel] = creation
             updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
-        # インデックスを更新する経路は全て同じロックを保持するため、冒頭で読み込んだ内容へ直接反映する。
+        # インデックスの更新時は必ず同じロックを保持するため、冒頭で読み込んだ内容へ直接反映できる。
         for key, entry in list(index.items()):
             if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
                 del index[key]

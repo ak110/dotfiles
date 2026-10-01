@@ -47,7 +47,7 @@ _DOTFILES_REPO_ID = _process_loop._DOTFILES_REPO_ID  # pylint: disable=protected
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部コマンド・Claude設定・既定TTLをユーザー環境から分離する。"""
+    """外部コマンド・Claude設定・初期値のTTLをユーザー環境から分離する。"""
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
@@ -63,7 +63,7 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 
 
 def _command_was_called(calls: list[list[str]], command: str) -> bool:
-    """呼び出し配列の先頭要素を基底名で照合する。"""
+    """呼び出し配列の先頭要素の基底名が一致するか確認する。"""
     return any(pathlib.Path(call[0]).stem.lower() == command for call in calls)
 
 
@@ -154,7 +154,7 @@ class TestProcessLoopIncludesProcessingInCount:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             # claude実行を模したのちファイルを削除し、次反復で件数0とすることで
-            # `_wait_for_changes`経路へ進めてループを終了させる。
+            # `_wait_for_changes`を呼び出してループを終了させる。
             if cmd[:1] == ["claude"]:
                 (inbox_dir / "a.md").unlink(missing_ok=True)
                 (processing_dir / "b.md").unlink(missing_ok=True)
@@ -346,7 +346,7 @@ class TestWaitForChanges:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """inboxディレクトリ未作成でも監視前に作成され、タイムアウト経路が動作すること。"""
+        """inboxディレクトリ未作成でも監視前に作成され、タイムアウト時の処理が動作すること。"""
         private_notes = tmp_path / "private-notes"
         monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 0.1)
         monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
@@ -444,7 +444,7 @@ class TestWaitForChanges:
         monkeypatch.setattr(
             _process_loop,
             "_pull",
-            lambda _path: pytest.fail("デバウンス経路では_pullを呼ばないこと"),
+            lambda _path: pytest.fail("デバウンスの処理では_pullを呼ばないこと"),
         )
 
         wait_calls: list[float | None] = []
@@ -605,7 +605,7 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """既定の起動形でも、セッション中の中断要求を再起動より先に検出して終了する。"""
+        """オプションを省略して起動した場合も、セッション中の中断要求を再起動より先に検出して終了する。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -956,7 +956,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """異種engineの候補を先頭から検査し、最初に成功した候補だけで本作業を起動する。"""
+        """異種engineの候補を先頭から実際に試し、最初に成功した候補だけで本作業を起動する。"""
         _setup_notes(tmp_path)
         _set_orchestrate_model(tmp_path, "claude:sonnet/high,codex:gpt-5.6-sol/low")
         capsys.readouterr()
@@ -1202,7 +1202,7 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """次の反復では候補選択を先頭候補の事前検査からやり直す。"""
+        """次の反復では先頭候補を事前に試すところから候補選択をやり直す。"""
         _setup_notes(tmp_path)
         _set_orchestrate_model(tmp_path, "claude:sonnet/high,codex:gpt-5.6-sol/medium")
         myrepo = tmp_path / "myrepo"
@@ -2001,7 +2001,7 @@ def test_process_loop_rejects_removed_options(
 
 
 def test_process_loop_internal_mise_refreshed_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    """内部専用オプションの既定値・指定時の値・help非露出をargparse境界で固定する。"""
+    """内部専用オプション省略時の値・指定時の値・helpへの非表示をargparse境界で固定する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     assert parser.parse_args(["wi", "process-loop"]).internal_mise_refreshed is False
     assert parser.parse_args(["wi", "process-loop", "--internal-mise-refreshed"]).internal_mise_refreshed is True
@@ -2012,7 +2012,7 @@ def test_process_loop_internal_mise_refreshed_contract(capsys: pytest.CaptureFix
 
 
 def test_process_loop_internal_dotfiles_updated_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    """更新済み内部指定の既定値・指定時の値・help非露出をargparse境界で固定する。"""
+    """更新済み内部指定を省略した場合の値・指定時の値・helpへの非表示をargparse境界で固定する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     assert parser.parse_args(["wi", "process-loop"]).internal_dotfiles_updated is False
     assert parser.parse_args(["wi", "process-loop", "--internal-dotfiles-updated"]).internal_dotfiles_updated is True

@@ -213,7 +213,7 @@ def test_plan_file_write_paths_store_portable_value_for_absolute_input(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存root配下の計画を絶対パスで渡しても、全ての書込経路が可搬値を保存する。"""
+    """保存root配下の計画を絶対パスで渡しても、書き込む全ての処理が可搬値を保存する。"""
     _disable_convert_git(monkeypatch)
     _disable_transition_git(monkeypatch)
     _patch_integration_target_resolution(monkeypatch)
@@ -1185,7 +1185,7 @@ class TestEditBodyFile:
         assert exc_info.value.code == 2
         failure, next_action = capsys.readouterr().err.splitlines()
         assert failure.startswith("失敗: processingの項目はエージェント環境から編集できない: fb-001.md")
-        # 置換の代わりに使える投入と追記の2経路を、実在するコマンドで示すこと。
+        # 置換の代わりに使える投入と追記の2つの操作を、実在するコマンドで示すこと。
         assert next_action.startswith("次の操作: ")
         assert "atk wi add" in next_action
         assert "atk wi edit --append" in next_action
@@ -1400,7 +1400,7 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """非対話edit経路からtarget_commitを注入できない。"""
+        """非対話editによってtarget_commitを注入できない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8")
@@ -1500,7 +1500,7 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """edit経路からplan_fileを注入できない。"""
+        """editによってplan_fileを注入できない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8")
@@ -1520,7 +1520,7 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """通常edit経路から再処理抑制期限を注入できない。"""
+        """通常editによって再処理抑制期限を注入できない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8")
@@ -1569,7 +1569,7 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """edit経路から修復UWIの予約キーを注入できない。"""
+        """editによって修復UWIの予約キーを注入できない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8")
@@ -1624,7 +1624,7 @@ def test_edit_reserved_key_rejection_names_alternative_route(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """予約キーの拒否は、その値を変える代わりの経路を次の操作として示す。"""
+    """予約キーを拒否する際は、その値を変更するために使える別の操作を示す。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb-001.md")
     original = path.read_text(encoding="utf-8")

@@ -760,7 +760,7 @@ def test_terminal_transition_prints_destination_path(
 
 
 class TestRejectIfInbox:
-    """rejectのinbox状態前提を公開CLI経路で検証する。"""
+    """rejectのinbox状態前提を公開CLIを呼び出して検証する。"""
 
     def test_rejects_inbox_entry_and_preserves_note(
         self,
@@ -1332,7 +1332,7 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """編集の保存経路で本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
+    """編集した本文を保存する処理中に本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")
@@ -1378,7 +1378,7 @@ def _write_bulk_entry(
     *,
     target_repo: str = "github.com/example/foo",
 ) -> pathlib.Path:
-    """一括経路の検証用エントリを指定状態へ書き込む。"""
+    """一括操作の検証に使うエントリを指定状態へ書き込む。"""
     directory = notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
@@ -1387,7 +1387,7 @@ def _write_bulk_entry(
 
 
 def _patch_bulk_git(monkeypatch: pytest.MonkeyPatch, commit_calls: list[str]) -> None:
-    """一括経路が経由する2モジュールのgit操作を抑止し、commitメッセージを記録する。"""
+    """一括操作が呼び出す2モジュールのgit操作を抑止し、commitメッセージを記録する。"""
     _disable_transition_git(monkeypatch)
     monkeypatch.setattr(bulk, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(bulk, "_pull", lambda _path: None)
@@ -1567,7 +1567,7 @@ def test_bulk_transition_rejects_invalid_combinations(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """個別指定と一括指定の併用制約を公開CLIの入口で拒否する。"""
+    """個別指定と一括指定の併用制約を公開CLIで引数を受け取る際に拒否する。"""
     _setup_notes(tmp_path)
     _disable_transition_git(monkeypatch)
 
@@ -1579,7 +1579,7 @@ def test_bulk_transition_rejects_invalid_combinations(
 
 
 def _write_bulk_uwi(notes: pathlib.Path, state: str, filename: str) -> pathlib.Path:
-    """一括経路の検証用UWIを指定状態へ作成する。"""
+    """一括操作の検証に使うUWIを指定状態へ作成する。"""
     directory = notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
@@ -1598,7 +1598,7 @@ def test_bulk_cooldown_rejects_non_awi_like_individual_route(
     """`--all`と`--cooldown-days`の組み合わせは、個別指定と同じ結果で非AWIを拒否する。
 
     `--cooldown-days`はAWI専用であり、候補にUWIが含まれる実行では、どのファイルへも
-    `cooldown_until`を書き込まずに拒否する。個別指定経路と同じ終了コードで終える。
+    `cooldown_until`を書き込まずに拒否する。個別指定した場合と同じ終了コードで終える。
     """
     notes = _setup_notes(tmp_path)
     awi_entry = _write_bulk_entry(notes, "processing", "target.md")

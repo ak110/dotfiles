@@ -62,7 +62,7 @@ _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しまし
 SSE_HEARTBEAT_SEC = 15.0
 """3画面のSSEがheartbeatを送る間隔。
 
-中継するリバースプロキシの無通信タイムアウト（Apacheの既定は300秒）より十分短く保つ。
+中継するリバースプロキシの無通信タイムアウト（Apacheは指定が無ければ300秒）より十分短く保つ。
 heartbeatはスクリプトから観測できる名前付きイベントで送り、ブラウザーが無通信を判定する根拠とする。
 """
 SSE_STALL_SEC = SSE_HEARTBEAT_SEC * 3
@@ -73,7 +73,7 @@ _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}
 
 # 配布物独立性を保つため同等機能を独立実装する。
 
-# 安全なbase_pathの照合パターン。先頭スラッシュ必須、英数字と`._~/-`のみ許可し、
+# base_pathが安全な形式に一致するかを確認するパターン。先頭スラッシュ必須、英数字と`._~/-`のみ許可し、
 # 連続スラッシュ（スキーム相対URL扱いになり外部オリジン誘導の口になる）は別途禁止する。
 # 配布物独立性の制約（agent-toolkit配下は他ディレクトリの実装を参照しない）により、
 # 同種の検証を行う実装は本ファイル内で完結させる。
@@ -444,7 +444,7 @@ class _ShutdownAwareAsgi:
 
     hypercornは停止時に`server.wait_closed()`で全接続の終了を待ってから`graceful_timeout`を適用するため、
     処理に時間のかかる要求（一覧・検索の走査やリモート取得）が接続を保持すると停止がその完了まで待つ。
-    経路ごとではなくアプリのASGI呼び出しの1箇所で打ち切り、今後加える経路も書き足さずに対象とする。
+    アプリのASGI呼び出しの1箇所で打ち切り、今後加えるハンドラーも書き足さずに対象とする。
     応答を開始していない要求には503を返す。`BoundedWorkers.run`は`asyncio.shield`で同期処理の完了を保つため、
     WIの変更処理は要求を打ち切っても途中で止まらない。
     """
@@ -541,7 +541,7 @@ class Operations:
             if target_repo_filter is not None:
                 if not isinstance(item_target_repo, str):
                     continue
-                # 正規化は旧パス形とURL形の統合にだけ用い、解決不能な保存値は原値で照合する。
+                # 正規化は旧パス形とURL形の統合にだけ用い、解決不能な保存値は原値のまま一致を確認する。
                 if canonical_target_repo is None:
                     if item_target_repo != target_repo_filter:
                         continue
@@ -628,7 +628,7 @@ class Operations:
     def sync(self) -> bool:
         """未送信commitをpushし、リポジトリを明示的に同期する。
 
-        ユーザーの操作に対応する経路であるため、直近のpullからの経過時間によらず毎回実行する。
+        ユーザーの操作によって呼ばれるため、直近のpullからの経過時間によらず毎回実行する。
         """
         return common.synchronize(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
@@ -647,7 +647,7 @@ class Operations:
         """指定状態のエントリに現れる対象リポジトリを昇順で返す。
 
         新規登録フォームの補完候補とフィルターの選択肢に用いる。
-        既定の`active`ではactiveエントリに加え、直近7日以内に処理した終端エントリを含める。
+        状態を省略した場合に使う`active`ではactiveエントリに加え、直近7日以内に処理した終端エントリを含める。
         他の状態を明示した場合はその状態の全エントリを返す。
         `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
         """
@@ -743,7 +743,7 @@ class Operations:
         """エントリを原子的に追加する。
 
         `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`を必須とし、
-        検証は`add_entries`の共通経路へ委ねる。
+        入力の検証は、各呼び出し元が使う`add_entries`でまとめて行う。
         """
         if entry_type not in common.WI_TYPES:
             raise WebApiInputError("typeが不正です")
@@ -829,7 +829,7 @@ class Operations:
         """複数エントリを全件検証後に移動または削除する。
 
         `force`は`action="remove"`の場合のみ意味を持ち、
-        processing状態のファイルへの既定保護（`atk wi rm`の`--force`と同義）を解除する。
+        processing状態のファイルを通常の削除から守る処理（`atk wi rm`の`--force`と同義）を解除する。
         """
         try:
             return awi_mutations.transition_entries(
@@ -1106,7 +1106,7 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
 
     @app.get("/api/plans/raw")
     async def plans_raw() -> quart.Response:
-        # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため経路を分離する。
+        # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため別のAPIとする。
         host, source_id, rel = _plan_request_target(context)
         try:
             text = await serve_plans.resolve_text(context, host, source_id, rel)

@@ -1,8 +1,8 @@
-"""`atk`のコマンド木へサブコマンドを登録する唯一の経路を提供する。
+"""`atk`のコマンド木へサブコマンドの登録をこのモジュールだけで行う。
 
 親の一覧へ表示する要約と、そのコマンド自身の`--help`へ表示する説明の双方を必須入力とする。
-argparseの既定では前者だけを設定でき、各コマンドの`--help`が自分の目的、対象、前提、後始末を
-示さない状態を許すため、登録経路の側で双方を要求する。
+argparseは追加設定が無ければ前者だけを設定でき、各コマンドの`--help`が自分の目的、対象、前提、後始末を
+示さない状態を許すため、登録する際に双方を要求する。
 定型の見出しと組み込みヘルプの説明も日本語へそろえ、折り返しでは識別子を分割しない。
 """
 
@@ -49,13 +49,13 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi add": {
         "summary": "エントリをinboxへ投入する",
-        "description": "目的: AWIまたはUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文を照合し、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せず、検証が成立したことだけを標準出力へ書く。\n前提: 本文を`--body-file`または$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
+        "description": "目的: AWIまたはUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せず、検証が成立したことだけを標準出力へ書く。\n前提: 本文を`--body-file`または$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
         "epilog": "実行例:\n\n  atk wi add --body-file=/tmp/awi-body.md",
     },
     "atk wi list": {
         "summary": "エントリを1件1行で一覧表示する",
-        "description": "目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外ではテキスト形式を既定とする。`--output-file`を指定した場合は標準出力の内容を指定されたファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: 既定でremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": "現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を照合する。\n\n実行例:\n\n  atk wi list --state=active\n  atk wi list --state=all",
+        "description": "目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外では形式の省略時にテキストで表示する。`--output-file`を指定した場合は標準出力の内容を指定されたファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: 指定が無ければremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を比べて一致を確かめる。\n\n実行例:\n\n  atk wi list --state=active\n  atk wi list --state=all",
     },
     "atk wi show": {
         "summary": "指定エントリまたは全件の本文を表示する",
@@ -65,7 +65,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi grep": {
         "summary": "本文を正規表現で検索して該当行を列挙する",
         "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現で検索し、ファイル名、行番号、該当行を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。\n対象と出力: private-notesを読み取り、標準出力へ`<ファイル名>:<行番号>:<該当行>`の形式で書く。`--output-file`を指定した場合は標準出力の内容を指定されたファイルへ保存し、標準出力へ保存先パスと行数だけを書く。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNはPythonのreモジュールが解釈できる正規表現として与える。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": '現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を照合する。\n\n実行例:\n\n  atk wi grep "worktree-stash" --state=active\n  atk wi grep "worktree-stash" --state=all',
+        "epilog": '現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を比べて一致を確かめる。\n\n実行例:\n\n  atk wi grep "worktree-stash" --state=active\n  atk wi grep "worktree-stash" --state=all',
     },
     "atk wi start-processing": {
         "summary": "AWIまたはUWIをprocessingへ移して処理中にする",
@@ -99,12 +99,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi rm": {
         "summary": "指定項目またはフィルターに一致する項目を削除する",
-        "description": "目的: 指定した項目、または対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、確認を求める場合だけ削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。`--note-file`はUTF-8ファイルの絶対パスで指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合はそのcommitから復元する。",
+        "description": "目的: 指定した項目、または対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、確認を求める場合だけ削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。`--note-file`はUTF-8ファイルの絶対パスで指定する。processingの項目を削除するには`--force`を指定する。指定が無ければ削除を拒否する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合はそのcommitから復元する。",
         "epilog": "実行例:\n\n  atk wi rm 20260901-072734-001.md",
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文を照合し、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdだけで使い、タイムゾーン付きISO 8601日時を渡す。空文字列で期限を解除する。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。コーディングエージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。コーディングエージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdだけで使い、タイムゾーン付きISO 8601日時を渡す。空文字列で期限を解除する。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。コーディングエージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。コーディングエージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/tmp/awi-body.md",
     },
     "atk wi set-dependencies": {
@@ -159,7 +159,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans": {
         "summary": "計画ファイルの取得・保存と旧保存先からの移行",
-        "description": "目的: 保存済み計画を作業rootへ取得し、計画ファイルまたは独立CI実行レビュー表をprivate-notesへ保存し、旧保存先の計画ファイルを現行の保存先へ移行する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、独立CI実行レビュー表の保存、旧保存先の移行を行うとき。保存の契機は起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: 保存と移行はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "description": "目的: 保存済み計画を作業rootへ取得し、計画ファイルまたは独立CI実行レビュー表をprivate-notesへ保存し、旧保存先の計画ファイルを現行の保存先へ移行する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、独立CI実行レビュー表の保存、旧保存先の移行を行うとき。保存の契機は計画を開始した方法ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: 保存と移行はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans checkout": {
@@ -169,7 +169,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドルまたは独立CI実行レビュー表を保存してcommit・pushする",
-        "description": "目的: 指定した計画バンドルまたは独立CI実行レビュー表を作業rootからprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたは独立CI実行レビュー表の保存の契機に達したとき。契機は起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 計画バンドルは年月階層へ、独立CI実行レビュー表は`plans/ci/`へ移し、既定でpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、作業root直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは計画作業root直下のメイン計画ファイル名、保存root相対のメイン計画パス、または`ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commitまたはpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
+        "description": "目的: 指定した計画バンドルまたは独立CI実行レビュー表を作業rootからprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたは独立CI実行レビュー表の保存の契機に達したとき。契機は計画を開始した方法ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 計画バンドルは年月階層へ、独立CI実行レビュー表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、作業root直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは計画作業root直下のメイン計画ファイル名、保存root相対のメイン計画パス、または`ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commitまたはpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans list": {
@@ -179,7 +179,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans rewrite-references": {
         "summary": "保存済み計画の付属ファイル参照を計画ファイル基準の表記へそろえる",
-        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、計画ファイル基準が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして既定でpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
+        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、計画ファイル基準が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
@@ -189,12 +189,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config": {
         "summary": "XDG関連パスと工程別モデル設定を確認・変更する",
-        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、工程別モデル設定を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は既定値を表示する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
+        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、工程別モデル設定を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
         "epilog": "実行例:\n\n  atk config show\n  atk config get private_notes",
     },
     "atk config show": {
-        "summary": "XDG関連パスと工程別モデル設定を一覧表示する（既定動作）",
-        "description": "目的: XDG関連パスと工程別モデル設定を`<キー>: <値>`で1キー1行ずつ表示する。参考一覧外のモデル名・effortは警告する。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も既定値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "summary": "XDG関連パスと工程別モデル設定を一覧表示する（サブコマンド省略時も同じ動作）",
+        "description": "目的: XDG関連パスと工程別モデル設定を`<キー>: <値>`で1キー1行ずつ表示する。参考一覧外のモデル名・effortは警告する。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
     "atk config get": {
@@ -219,7 +219,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents": {
         "summary": "委譲sessionの待機・通知・一覧・詳細・記録表示を行う",
-        "description": "目的: `agents_server`が保持する委譲sessionをCLIから待機、通知または診断する。\n利用場面: 背景ジョブでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`は結果受領の正規経路、`notify`は実行中通知、`list`と`show`は共有状態ファイルの診断経路として動作する。\n前提: `wait`と`notify`は対象sessionと同じルートセッションで実行する。直接端末の`list`は有効な全ルートを統合し、`show`はsession IDが一意な場合に所有ルートを解決する。\n復元・後始末: `wait`が回収した結果ファイルと通知ファイルは削除される。追加の結果受領操作は不要である。",
+        "description": "目的: `agents_server`が保持する委譲sessionをCLIから待機、通知または診断する。\n利用場面: 背景ジョブでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`は結果を受領する正式な手段、`notify`は実行中通知、`list`と`show`は共有状態ファイルの診断の手段として動作する。\n前提: `wait`と`notify`は対象sessionと同じルートセッションで実行する。直接端末の`list`は有効な全ルートを統合し、`show`はsession IDが一意な場合に所有ルートを解決する。\n復元・後始末: `wait`が回収した結果ファイルと通知ファイルは削除される。追加の結果受領操作は不要である。",
         "epilog": "実行例:\n\n  atk agents wait\n  atk agents list\n  atk agents show <session_id>\n  atk agents logs <session_id> --follow",
     },
     "atk agents wait": {
@@ -230,11 +230,11 @@ HELP: dict[str, dict[str, str]] = {
     "atk agents notify": {
         "summary": "委譲先から委譲元のルートセッションへ本文を1件送る",
         "description": "目的: 委譲先が自身のturnを終端せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーションまたは阻害要因を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲元が`wait`で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
-        "epilog": "実行例:\n\n  atk agents notify --body='検査コマンドが未導入で実行できない'",
+        "epilog": "実行例:\n\n  atk agents notify --body='チェックに使うコマンドが未導入で実行できない'",
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを詳しい状態とともに一覧表示する",
-        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。\n前提: 既定では未回収結果を持たない終端済みsessionを除く。エージェント環境で会話rootとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。各sessionへ起動文を含めず、起動文は`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終端済みsessionを除く。エージェント環境で会話rootとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
     },
     "atk agents show": {
@@ -248,7 +248,7 @@ HELP: dict[str, dict[str, str]] = {
             "目的: 保存済みセッションの発話と操作を読み、markdownへ出力する。\n"
             "利用場面: 1件の経過を調べるか、複数の記録をまとめて保存するとき。\n"
             "対象と出力: Claude Codeの親・サブエージェント、Codex、agents_serverが保存したAntigravityの出力を扱う。"
-            "単一IDの既定は時刻・種別・本文のtext表示とし、`--format markdown`では会話とツールの詳細を描画する。"
+            "単一IDで形式を省略した場合は時刻・種別・本文をtextで表示し、`--format markdown`では会話とツールの詳細を描画する。"
             "`--all`と`--project-dir`はClaude Codeの親とCodexの記録を一括選択し、`--output-dir`は1件1ファイルへ保存する。\n"
             "前提: ローカル記録の読取権限を持つ。Antigravityを直接起動した会話DBは対象外。"
             "`--follow`は単一IDのtext表示でだけ使い、Ctrl-Cで終了する。\n"
@@ -265,7 +265,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
-        "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報を再照合する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 利用者入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
+        "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 利用者入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
     },
     "atk managed-temp": {
@@ -299,8 +299,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk worktree-stash save --label=before-rebase",
     },
     "atk worktree-stash drop": {
-        "summary": "退避識別子をOID照合して削除する",
-        "description": "目的: worktree固有refまたは共有stashの退避物を、現在指しているOIDを照合したうえで削除する。\n利用場面: 復元済み、または不要と判断した退避物を取り除くとき。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、指定した識別子が現在指すOIDを確認してから削除する。削除した識別子を標準出力へ書く。\n前提: 識別子は`refs/worktree/<ラベル>`か`stash@{<番号>}`の形式で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: 削除した退避物は復元できない。復元が必要な内容は、削除の前に`git stash apply`で取り出す。",
+        "summary": "退避識別子が期待するOIDを指すことを確認して削除する",
+        "description": "目的: worktree固有refまたは共有stashの退避物を、現在指しているOIDが期待値と一致することを確認して削除する。\n利用場面: 復元済み、または不要と判断した退避物を取り除くとき。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、指定した識別子が現在指すOIDを確認してから削除する。削除した識別子を標準出力へ書く。\n前提: 識別子は`refs/worktree/<ラベル>`か`stash@{<番号>}`の形式で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: 削除した退避物は復元できない。復元が必要な内容は、削除の前に`git stash apply`で取り出す。",
         "epilog": "実行例:\n\n  atk worktree-stash drop refs/worktree/before-rebase",
     },
     "atk watch": {
@@ -311,7 +311,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk review-table": {
         "summary": "レビュー指摘管理表（8列TSV）を操作する",
         "description": "目的: 実行レビューの指摘、指摘レベル、対応内容を7列のTSVへ排他的に記録し、保存済みの旧レビュー表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行の実行レビュー表を読み書きし、保存済みの旧レビュー表は読み取り専用で扱う。保存済み計画の領域（private-notesの`plans`配下）にある表への`init`・`add`・`respond`は、表を変更せず非0で終了する。この領域の表へ追記する場合は、`atk plans checkout`で作業rootへ取得してから更新し、`atk plans commit`で保存する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新規の経路では`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`および`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
+        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新規作成する場合は`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`および`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
     },
     "atk review-table init": {
         "summary": "空のレビュー表を作成する",
@@ -320,12 +320,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、保存済みの表から読み直した指摘箇所と指摘内容を送信した本文と照合する。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`および`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、保存済みの表から読み直した指摘箇所と指摘内容が、それぞれ送信した本文と一致するかを確かめる。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`および`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
         "epilog": "実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --round=1 --track=exec-review --level=詳細 --location-file=/tmp/location.txt --issue-file=/tmp/issue.md",
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容または対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方を、送信した本文と照合する。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換経路として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容または対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方が、送信した本文と一致するかを確かめる。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換の指定方法として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
         "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-file=/tmp/response.md",
     },
     "atk review-table show": {
@@ -350,7 +350,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-audit pending": {
         "summary": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する",
-        "description": "目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストが既定ブランチに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストがGitHubで標準の参照先に指定されたブランチに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles",
     },
     "atk review-audit mark": {

@@ -411,7 +411,7 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
     monkeypatch: pytest.MonkeyPatch,
     agent_environment: bool,
 ) -> None:
-    """処理日時だけが異なる同一終端はpull・pushの両経路でupstreamへ揃える。"""
+    """処理日時だけが異なる同一終端はpull・pushのどちらでもupstreamへ揃える。"""
     if agent_environment:
         monkeypatch.setenv("AI_AGENT", "1")
     local, peer = _init_diverged_mq_repos(tmp_path)

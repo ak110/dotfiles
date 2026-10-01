@@ -104,7 +104,7 @@ def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
 
 
 class TestDetectSelfContainmentDeficiency:
-    """`_detect_self_containment_deficiency`単体テスト（FB2: UWI本文の自己完結性検査）。"""
+    """`_detect_self_containment_deficiency`単体テスト（FB2: UWI本文の自己完結性の判定）。"""
 
     def test_temporary_identifier_alone(self) -> None:
         assert _detect_self_containment_deficiency("fb 090830 これでよいか") == "一時識別子の単独使用"
@@ -513,7 +513,7 @@ class TestUwiAddSourceOption:
 class TestUwiMutationTargetRepoVerification:
     """UWIのedit・adopt・rm: `--target-repo`指定時のfrontmatter一致検証を検証する。
 
-    既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_uwi_file`既定値）。
+    テストの準備で書くfrontmatterの`target_repo`は`github.com/example/foo`（`_write_uwi_file`で指定を省いた場合の値）。
     """
 
     def test_uwi_edit_mismatch_exits_2(
@@ -745,7 +745,7 @@ class TestUwiAnswerEditorFailure:
 
 
 class TestUwiAnswerNonInteractive:
-    """answerサブコマンド: ファイル名と回答本文を引数で受け取る非対話経路を検証する。
+    """answerサブコマンド: ファイル名と回答本文を引数で渡し、非対話で回答できることを検証する。
 
     自律実行中のエージェントが`$EDITOR`を介さずに回答を記録できることを担保する。
     """
@@ -858,7 +858,7 @@ def test_agent_environment_rejects_uwi_answer_before_writing(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各エージェント環境ではUWI回答をCLI入口で拒否する。"""
+    """各エージェント環境ではCLIで受け取ったUWI回答を拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = f"{_FIXED_TIMESTAMP}-001.md"
     path = _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
@@ -882,7 +882,7 @@ def test_answer_uwi_common_core_accepts_agent_environment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ブラウザー経路が使う共有中核はエージェント環境でも回答を保存する。"""
+    """ブラウザーから呼ぶ共有の実装はエージェント環境でも回答を保存する。"""
     notes = _setup_notes(tmp_path)
     path = _write_uwi_file(notes, "uwi.md", question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -1429,7 +1429,7 @@ def test_answer_uwi_does_not_auto_adopt_other_answers(
 def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
     tmp_path: pathlib.Path,
 ) -> None:
-    """空回答は共有コア入口で拒否し、既存回答を1バイトも変更しない。"""
+    """空回答は共有の実装で受け取る際に拒否し、既存回答を1バイトも変更しない。"""
     notes = _setup_notes(tmp_path)
     path = notes / "inbox" / "20260101-000000-003.md"
     path.write_text(

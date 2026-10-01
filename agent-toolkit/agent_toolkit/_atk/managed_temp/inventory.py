@@ -226,7 +226,7 @@ _WINDOWS_SYMLINK_REPARSE_TAG = 0xA000000C
 
 
 def _lstat_or_none(path: pathlib.Path) -> os.stat_result | None:
-    """存在しない場合だけNoneを返す。検査できない場合は例外を送出する。"""
+    """対象が存在しない場合だけNoneを返し、存在を確認できない場合は例外を送出する。"""
     try:
         return os.lstat(path)
     except FileNotFoundError:
@@ -272,7 +272,7 @@ def _classify_quarantine(root: pathlib.Path, path: pathlib.Path) -> _QuarantineJ
         if _path_identity(quarantine) != expected:
             return _QuarantineJudgement(_QuarantineState.MISMATCHED, quarantine)
     except (OSError, ManagedTempError) as error:
-        return _QuarantineJudgement(_QuarantineState.UNVERIFIABLE, reason=f"隔離途中状態を検査できない: {error}")
+        return _QuarantineJudgement(_QuarantineState.UNVERIFIABLE, reason=f"隔離途中の対象の状態を確認できない: {error}")
     return _QuarantineJudgement(_QuarantineState.MATCHED, quarantine, expected)
 
 
@@ -325,10 +325,10 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
 
 
 def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
-    """既定の一時root直下で、マーカーだけが残る管理対象の絶対パスを返す。
+    """一時rootを指定しない場合に使う場所の直下で、マーカーだけが残る管理対象の絶対パスを返す。
 
     本関数は`atk`の`managed-temp`以外の全サブコマンドの前段から呼ばれ、対話シェルの起動ごとに
-    発火する経路を持つ。一時ディレクトリ直下の項目ごとに外部状態ディレクトリを解決すると、
+    発火する場合がある。一時ディレクトリ直下の項目ごとに外部状態ディレクトリを解決すると、
     その項目数に比例した待ち時間が対話シェルの起動へ生じる。判定を追加する場合も、
     項目の種別とマーカーの有無で候補を限定した後に外部状態を解決する評価順序を維持する。
     """
@@ -381,7 +381,7 @@ def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
 
 
 def _report_unregistered_candidates(prefix: str | None) -> None:
-    """既定の一時root直下で、マーカーだけが残る管理対象を報告する。"""
+    """一時rootを指定しない場合に使う場所の直下で、マーカーだけが残る管理対象を報告する。"""
     try:
         candidates = _unregistered_candidates(prefix)
     except (OSError, ManagedTempError) as error:
@@ -424,7 +424,7 @@ def list_managed_temp(
     利用中の管理対象へ影響しない。消滅を確定できない登録は削除せず列挙対象から外す。
     記録時と列挙時で一時領域の設定が異なる登録も回収対象へ含めるため、現在の一時領域直下で
     あることは条件としない。
-    `report_recovery_candidates`が真の場合だけ、削除せず保持した登録と、既定の一時root直下で
+    `report_recovery_candidates`が真の場合だけ、削除せず保持した登録と、一時rootを指定しない場合に使う場所の直下で
     登録を持たない管理対象を警告として報告する。回収候補の報告を`atk managed-temp list`に
     限ることで、全コマンドの起動時に実行する掃引が利用者の操作と無関係な警告を出力しない。
     """
@@ -917,7 +917,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
     `recover_registry`が真の場合だけ、消費途中状態も持たず登録だけを失った管理対象について、
     実体側マーカーが記録した絶対パスと実体のidentityへ一致することを確認して登録を復元する。
     マーカーは実体側にあり、作成処理が書いたものと後から置かれたものを内容だけでは区別できない。
-    この復元は利用者の明示指定を第二の信頼根拠として要求し、既定では行わない。
+    この復元は利用者の明示指定を第二の信頼根拠として要求し、指定が無ければ行わない。
     """
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     registry_path = _registry_path(path)
@@ -1071,7 +1071,7 @@ def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
     """個別の管理情報を持たない子領域を、登録済み領域の配下である場合に削除する。
 
     `atk managed-temp create --session-root`は、個別登録を持たない子領域を親の配下へ作成する。
-    この子領域は管理情報を持たないため、通常の検証経路では回収できない。
+    この子領域は管理情報を持たないため、通常の検証を通しても回収できない。
     祖先に登録済みの管理対象領域が実在する場合だけ、その子領域を削除して回収を成立させる。
     """
     path = pathlib.Path(path_arg)

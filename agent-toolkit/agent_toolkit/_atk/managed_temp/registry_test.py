@@ -33,7 +33,7 @@ from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 def test_default_root_path_uses_platform_cache_on_posix(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """POSIXの既定rootをユーザーキャッシュ取得経路の配下へ置く。"""
+    """POSIXでrootを指定しない場合は、取得したユーザーキャッシュの配下へ置く。"""
     cache = tmp_path / "cache"
     monkeypatch.setattr(registry_subject.sys, "platform", "linux")
     monkeypatch.setattr(registry_subject.platformdirs, "user_cache_dir", lambda *_args, **_kwargs: str(cache))
@@ -44,7 +44,7 @@ def test_default_root_path_uses_platform_cache_on_posix(monkeypatch: pytest.Monk
 def test_default_root_path_uses_local_app_data_without_cache_on_windows(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """Windowsの既定rootへplatformdirs固有のCache階層を加えない。"""
+    """Windowsでrootを指定しない場合も、platformdirs固有のCache階層を加えない。"""
     local_app_data = tmp_path / "LocalAppData"
     monkeypatch.setattr(registry_subject.sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
@@ -113,7 +113,7 @@ def test_cli_list_accepts_stale_posix_device(monkeypatch: pytest.MonkeyPatch, tm
     assert "管理情報の内容が一致しない" not in listed.stderr
 
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIXのinode照合を検証する")
+@pytest.mark.skipif(os.name != "posix", reason="POSIXでinodeが一致するかの判定を検証する")
 def test_cli_list_rejects_changed_inode(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """保存済みinodeが異なる領域はCLIから列挙しない。"""
     env, state_root = _isolated_cli_environment(tmp_path)
