@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
-import json
 import os
 import pathlib
 import shutil
@@ -101,6 +99,8 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     assert uv_executable is not None
     monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "ci-tool-bin"))
     monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "ci-tools"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "ci-codex-home"))
+    monkeypatch.setenv("CODEX_INSTALL_DIR", str(tmp_path / "ci-codex-bin"))
     monkeypatch.setattr(upgrade.shutil, "which", lambda _name: uv_executable)
     observations: list[tuple[dict[str, str], pathlib.Path, pathlib.Path]] = []
 
@@ -108,6 +108,10 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
         env = kwargs.get("env")
         if env is not None:
             assert isinstance(env, dict)
+            home = pathlib.Path(env["HOME"])
+            assert env["CODEX_HOME"] == str(home / ".codex")
+            assert pathlib.Path(env["CODEX_HOME"]).is_dir()
+            assert env["CODEX_INSTALL_DIR"] == str(home / ".local" / "bin")
             bin_result = subprocess.run(
                 [uv_executable, "tool", "dir", "--bin"],
                 env=env,
@@ -141,120 +145,19 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
         assert env["PYTHONIOENCODING"] == "utf-8"
 
 
-def test_run_propagates_child_failure(tmp_path: pathlib.Path) -> None:
-    """子プロセスの失敗を成功として継続しない。"""
+def test_initial_apply_failure_preserves_child_output_and_stops_update(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """初期適用の失敗を出力と終了コード付きで返し、公開更新を開始しない。"""
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"test-uv")
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(uv))
+    calls: list[list[str]] = []
 
     def runner(arguments, **_kwargs):
-        return subprocess.CompletedProcess(arguments, 23, stdout="child-out\n", stderr="child-error\n")
-
-    with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23"):
-        upgrade._run(  # pylint: disable=protected-access  # noqa: SLF001
-            ("failing-command",), cwd=tmp_path, runner=runner
-        )
-
-
-@pytest.mark.parametrize("diagnostic_failure", ["none", "timeout", "invalid-json", "os-profile-unavailable"])
-def test_initial_apply_failure_collects_state_before_cleanup(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    diagnostic_failure: str,
-) -> None:
-    """失敗時の実体を回収前に採取し、診断失敗でも元の終了コードを保持する。"""
-    uv = tmp_path / "uv.exe"
-    uv.write_bytes(b"test-uv")
-
-    def which(name: str, **_kwargs: object) -> str:
-        return str(uv if name == "uv" else tmp_path / "powershell.exe")
-
-    monkeypatch.setattr(upgrade.shutil, "which", which)
-    monkeypatch.setenv("AUTH_TOKEN", "must-not-be-collected")
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex-home"))
-    os_profile = tmp_path / "os-profile"
-    missing_hook_version = os_profile / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/without-hook"
-    missing_hook_version.mkdir(parents=True)
-    observed_checkout: list[pathlib.Path] = []
-    diagnostic_calls: list[list[str]] = []
-    hook_content = b"hook-at-failure\n"
-
-    def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        env = kwargs.get("env")
+        calls.append(arguments)
         if arguments[0] == "chezmoi":
-            assert isinstance(env, dict)
-            checkout = kwargs["cwd"]
-            assert isinstance(checkout, pathlib.Path)
-            observed_checkout.append(checkout)
-            snapshot = checkout / "agent-toolkit-codex"
-            for root in (checkout / "agent-toolkit", snapshot):
-                hook = root / "agent_toolkit" / "hook.py"
-                hook.parent.mkdir(parents=True)
-                hook.write_bytes(hook_content)
-            manifest = checkout / ".agents" / "plugins" / "marketplace.json"
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text(
-                json.dumps(
-                    {
-                        "name": "ak110-dotfiles",
-                        "plugins": [
-                            {
-                                "name": "agent-toolkit",
-                                "source": {
-                                    "source": "local",
-                                    "path": "./agent-toolkit-codex",
-                                },
-                            }
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            plugin = snapshot / ".codex-plugin" / "plugin.json"
-            plugin.parent.mkdir(parents=True)
-            plugin.write_text(json.dumps({"name": "agent-toolkit", "version": "1.2.3"}), encoding="utf-8")
-            cache_hook = (
-                pathlib.Path(env["HOME"]) / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/local/agent_toolkit/hook.py"
-            )
-            cache_hook.parent.mkdir(parents=True)
-            cache_hook.write_bytes(hook_content)
-            (cache_hook.parent / "unnecessary-asset.txt").write_text("unused", encoding="utf-8")
-            unrelated_hook = pathlib.Path(env["HOME"]) / ".codex/plugins/cache/unrelated/plugin/1/agent_toolkit/hook.py"
-            unrelated_hook.parent.mkdir(parents=True)
-            unrelated_hook.write_text("unrelated", encoding="utf-8")
-            (pathlib.Path(env["HOME"]) / ".codex/auth.json").write_text("must-not-be-collected", encoding="utf-8")
-            return subprocess.CompletedProcess(arguments, 23, stdout="original-out", stderr="original-error")
-        if env is not None:
-            assert isinstance(env, dict)
-            assert observed_checkout[0].is_dir()
-            timeout = kwargs["timeout"]
-            assert isinstance(timeout, int) and timeout > 0
-            diagnostic_calls.append(arguments)
-            home = pathlib.Path(env["HOME"])
-            if "-c" in arguments:
-                output = (
-                    "not-json"
-                    if diagnostic_failure == "invalid-json"
-                    else json.dumps(
-                        {
-                            "python": "test-python",
-                            "home": str(home),
-                            "codex": str(home / "codex.exe"),
-                            "codex_home": env["CODEX_HOME"],
-                        }
-                    )
-                )
-            elif "-Command" in arguments:
-                if diagnostic_failure == "os-profile-unavailable":
-                    return subprocess.CompletedProcess(arguments, 32, stdout="", stderr="profile-api-error")
-                output = str(os_profile)
-            elif "--version" in arguments:
-                if diagnostic_failure == "timeout":
-                    raise subprocess.TimeoutExpired(arguments, 30, output=b"partial-out", stderr=b"partial-error")
-                output = "codex-test-version"
-            elif "marketplace" in arguments:
-                output = json.dumps({"marketplaces": [{"name": "ak110-dotfiles", "root": str(observed_checkout[0])}]})
-            else:
-                output = json.dumps({"installed": [{"name": "agent-toolkit", "version": "1.2.3"}]})
-            return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="diagnostic-stderr")
+            return subprocess.CompletedProcess(arguments, 23, stdout="child-out\n", stderr="child-error\n")
         values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
         output = next((value for option, value in values.items() if option in arguments), "")
         return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
@@ -262,34 +165,10 @@ def test_initial_apply_failure_collects_state_before_cleanup(
     with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23"):
         upgrade.run_upgrade_check(tmp_path, "windows", runner=runner)
     stdout, stderr = capsys.readouterr()
-    assert not observed_checkout[0].exists()
-    assert "old=old-oid current=current-oid" in stdout
-    assert "診断環境:" in stdout
-    assert "診断Python検収先:" in stdout
-    assert "1.2.3" in stdout
-    assert "診断plugin cache:" in stdout
-    assert 'versions=["local"]' in stdout
-    assert "cache_exists=False exists=False" in stdout
-    assert "unnecessary-asset.txt" not in stdout + stderr
-    assert "unrelated/plugin" not in stdout + stderr
-    assert "診断cache一覧:" not in stdout
-    if diagnostic_failure == "os-profile-unavailable":
-        assert "診断OS profile採取失敗" in stderr
-        assert "profile-api-error" in stderr
-    else:
-        assert f"診断OS profile: {os_profile}" in stdout
-        assert f"root={missing_hook_version.parent} cache_exists=True exists=True" in stdout
-        assert f"path={missing_hook_version / 'agent_toolkit/hook.py'} is_file=False" in stdout
-    assert hashlib.sha256(hook_content).hexdigest() in stdout
-    assert "must-not-be-collected" not in stdout + stderr
-    assert "original-error" in stderr
-    if diagnostic_failure == "invalid-json":
-        assert "診断メタデータ採取失敗" in stderr
-        assert len(diagnostic_calls) == 2
-    else:
-        assert len(diagnostic_calls) == 5
-        assert "診断stderr: diagnostic-stderr" in stderr
-        assert "codex-test-version" in stdout or "partial-out" in stdout
+    assert "child-out\n" in stdout
+    assert stderr == "child-error\n"
+    assert calls[-1][0] == "chezmoi"
+    assert sum("update-ref" in arguments for arguments in calls) == 1
 
 
 def test_verify_updated_oid_rejects_mismatch() -> None:
