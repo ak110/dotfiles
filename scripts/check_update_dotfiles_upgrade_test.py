@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import types
@@ -88,16 +89,54 @@ def test_platform_entrypoint_selects_real_launcher(tmp_path: pathlib.Path, platf
     assert pathlib.Path(upgrade.platform_entrypoint(tmp_path, platform_name)[-1]).name == expected
 
 
-def test_isolated_env_uses_utf8_for_child_python_output(tmp_path: pathlib.Path) -> None:
-    """旧checkout内のPythonも日本語を出力できるようUTF-8を継承する。"""
-    uv_executable = tmp_path / "uv.exe"
-    uv_executable.touch()
+@pytest.mark.parametrize("platform_name", ["linux", "windows"])
+def test_upgrade_check_isolates_uv_tools_and_child_output(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, platform_name: str
+) -> None:
+    """CIのtool配置を引き継がず、初期適用と更新へ隔離した配置とUTF-8を渡す。"""
+    native_path = os.pathsep.join(part for part in os.environ["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
+    uv_executable = shutil.which("uv", path=native_path)
+    assert uv_executable is not None
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "ci-tool-bin"))
+    monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "ci-tools"))
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: uv_executable)
+    observations: list[tuple[dict[str, str], pathlib.Path, pathlib.Path]] = []
 
-    env = upgrade._isolated_env(  # pylint: disable=protected-access  # noqa: SLF001
-        tmp_path / "home", uv_executable, "windows"
-    )
+    def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get("env")
+        if env is not None:
+            assert isinstance(env, dict)
+            bin_result = subprocess.run(
+                [uv_executable, "tool", "dir", "--bin"],
+                env=env,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=20,
+            )
+            tools_result = subprocess.run(
+                [uv_executable, "tool", "dir"],
+                env=env,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=20,
+            )
+            observations.append((env, pathlib.Path(bin_result.stdout.strip()), pathlib.Path(tools_result.stdout.strip())))
+        values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
+        output = next((value for option, value in values.items() if option in arguments), "")
+        return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
 
-    assert env["PYTHONIOENCODING"] == "utf-8"
+    upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner)
+
+    assert len(observations) == 2
+    for env, bin_dir, tools_dir in observations:
+        home = pathlib.Path(env["HOME"])
+        assert env["USERPROFILE"] == str(home)
+        assert bin_dir == home / ".local" / "bin"
+        assert tools_dir.is_relative_to(home)
+        assert tools_dir != pathlib.Path(os.environ["UV_TOOL_DIR"])
+        assert env["PYTHONIOENCODING"] == "utf-8"
 
 
 def test_run_propagates_child_failure(tmp_path: pathlib.Path) -> None:

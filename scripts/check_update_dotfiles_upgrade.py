@@ -97,6 +97,8 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
             "XDG_CONFIG_HOME": str(home / ".config"),
             "XDG_DATA_HOME": str(home / ".local" / "share"),
             "XDG_STATE_HOME": str(home / ".local" / "state"),
+            "UV_TOOL_BIN_DIR": str(uv_target.parent),
+            "UV_TOOL_DIR": str(home / ".local" / "share" / "uv" / "tools"),
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
             "PYTHONIOENCODING": "utf-8",
