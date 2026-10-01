@@ -12,6 +12,8 @@ import types
 
 import pytest
 
+from pytools._internal import setup_codex_cli, setup_herdr_cli
+
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 
 
@@ -101,6 +103,11 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "ci-tools"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "ci-codex-home"))
     monkeypatch.setenv("CODEX_INSTALL_DIR", str(tmp_path / "ci-codex-bin"))
+    profile = tmp_path / "ci-profile"
+    monkeypatch.setenv("LOCALAPPDATA", str(profile / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(profile / "AppData" / "Roaming"))
+    monkeypatch.setenv("HERDR_HOME", str(profile / ".herdr"))
+    monkeypatch.setenv("HERDR_INSTALL_DIR", str(profile / "herdr-bin"))
     monkeypatch.setattr(upgrade.shutil, "which", lambda _name: uv_executable)
     observations: list[tuple[dict[str, str], pathlib.Path, pathlib.Path]] = []
 
@@ -118,7 +125,26 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
             assert platform_name != "windows" or not codex_bin.exists()
             uv_name = "uv.exe" if platform_name == "windows" else "uv"
             assert (shared_bin / uv_name).is_file()
-            visible_bins = list(dict.fromkeys((str(codex_bin), str(shared_bin))))
+            assert env["HERDR_HOME"] == str(home / ".herdr")
+            assert "HERDR_INSTALL_DIR" not in env
+            launcher, codex_visible = _resolve_consumer_paths(monkeypatch, env, platform_name)
+            assert codex_visible == codex_bin
+            if platform_name == "windows":
+                local_app_data = home / "AppData" / "Local"
+                assert env["LOCALAPPDATA"] == str(local_app_data)
+                assert env["APPDATA"] == str(home / "AppData" / "Roaming")
+                assert local_app_data.is_dir() and pathlib.Path(env["APPDATA"]).is_dir()
+                herdr_bin = local_app_data / "Programs" / "Herdr" / "bin"
+                assert launcher == herdr_bin / "herdr.exe"
+                visible_bins = list(dict.fromkeys((str(codex_bin), str(shared_bin), str(herdr_bin))))
+            else:
+                # Linuxの消費側はAppDataを参照しないため、親の値を変更しない。
+                assert env["LOCALAPPDATA"] == os.environ["LOCALAPPDATA"]
+                assert env["APPDATA"] == os.environ["APPDATA"]
+                assert launcher == shared_bin / "herdr"
+                visible_bins = list(dict.fromkeys((str(codex_bin), str(shared_bin))))
+            assert launcher.is_relative_to(home)
+            assert not launcher.is_relative_to(profile)
             assert env["PATH"].split(os.pathsep)[: len(visible_bins)] == visible_bins
             bin_result = subprocess.run(
                 [uv_executable, "tool", "dir", "--bin"],
@@ -151,6 +177,18 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
         assert tools_dir.is_relative_to(home)
         assert tools_dir != pathlib.Path(os.environ["UV_TOOL_DIR"])
         assert env["PYTHONIOENCODING"] == "utf-8"
+
+
+def _resolve_consumer_paths(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], platform_name: str
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """検証環境を受け取ったpost-applyの消費側が解決するHerdrランチャーとCodex可視binを返す。"""
+    platform = types.SimpleNamespace(platform="win32" if platform_name == "windows" else "linux")
+    with monkeypatch.context() as context:
+        context.setattr(os, "environ", env)
+        context.setattr(setup_herdr_cli, "sys", platform)
+        context.setattr(setup_codex_cli, "sys", platform)
+        return setup_herdr_cli._launcher_path(), setup_codex_cli._visible_bin_dir()  # pylint: disable=protected-access
 
 
 def test_initial_apply_failure_preserves_child_output_and_stops_update(

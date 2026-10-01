@@ -94,10 +94,24 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
     # 専用binはinstallerが作成するため、ここでは作成しない。
     codex_bin = home / ".local" / "share" / "codex" / "bin" if platform_name == "windows" else uv_target.parent
     env = os.environ.copy()
+    # 可視binの上書きを継承すると、installerが検証home外のjunctionを作成・更新する。
+    env.pop("HERDR_INSTALL_DIR", None)
+    visible_bins = [str(codex_bin), str(uv_target.parent)]
+    if platform_name == "windows":
+        # Windowsの消費側は可視binをAppData配下へ置くため、HOMEと同じ検証homeへそろえる。
+        # 通常profileのAppDataを継承すると、検証homeの回収後も通常profileに検証用の配置が残る。
+        local_app_data = home / "AppData" / "Local"
+        roaming_app_data = home / "AppData" / "Roaming"
+        local_app_data.mkdir(parents=True, exist_ok=True)
+        roaming_app_data.mkdir(parents=True, exist_ok=True)
+        env["LOCALAPPDATA"] = str(local_app_data)
+        env["APPDATA"] = str(roaming_app_data)
+        visible_bins.append(str(local_app_data / "Programs" / "Herdr" / "bin"))
     env.update(
         {
             "HOME": str(home),
             "USERPROFILE": str(home),
+            "HERDR_HOME": str(home / ".herdr"),
             "XDG_CACHE_HOME": str(home / ".cache"),
             "XDG_CONFIG_HOME": str(home / ".config"),
             "XDG_DATA_HOME": str(home / ".local" / "share"),
@@ -111,8 +125,7 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
             "PYTHONIOENCODING": "utf-8",
         }
     )
-    visible_bins = dict.fromkeys((str(codex_bin), str(uv_target.parent)))
-    env["PATH"] = os.pathsep.join((*visible_bins, env.get("PATH", "")))
+    env["PATH"] = os.pathsep.join((*dict.fromkeys(visible_bins), env.get("PATH", "")))
     return env
 
 
