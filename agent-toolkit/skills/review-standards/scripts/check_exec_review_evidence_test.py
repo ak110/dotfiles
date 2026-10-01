@@ -110,6 +110,46 @@ def test_public_command_rejects_shared_evidence_without_reference(
     assert evidence_text.strip() in diagnostic and "証拠不足へ再判定" in diagnostic
 
 
+def _shared_rows(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, evidence: str) -> pathlib.Path:
+    """保存と再読込の2条件へ同じ根拠を記入した証拠と、参照先の記録を用意する。"""
+    records = tmp_path / "records"
+    records.mkdir()
+    record = records / "観測.md"
+    record.write_text("# 設定保存\n保存と再読込が成功した。\n", encoding="utf-8")
+    (records / "test_settings.py").write_text("", encoding="utf-8")
+    rows = [_condition(FIRST_WI, "保存"), _condition(FIRST_WI, "再読込")]
+    for row in rows:
+        row["evidence"] = evidence.format(absolute=record)
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    return path
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "検証記録: records/観測.md#設定保存 で保存後の再読込まで観測した",
+        "`records/観測.md:12`の保存と再読込の両観測",
+        "[検証](records/観測.md#設定保存)の手順2で保存と再読込が成功",
+        "{absolute} の設定保存節で両方の結果を確認",
+        "`records/test_settings.py::test_save` 成功",
+        "test_save_settings PASSED",
+        "`test_save_settings` 成功",
+        "test_save_settings: 成功",
+    ],
+)
+def test_public_command_accepts_shared_reference_with_explanation_or_test_result(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reference: str
+) -> None:
+    """同じ記録への参照に観測内容の説明を添えた共用と、具体的なテスト成功結果の共用は受理する。"""
+    path = _shared_rows(tmp_path, monkeypatch, reference)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 0
+
+
 @pytest.mark.parametrize(
     "reference",
     [
@@ -119,28 +159,35 @@ def test_public_command_rejects_shared_evidence_without_reference(
         "[検証](records/観測.md#設定保存)",
         "{absolute}",
         "`{absolute}:12`",
-        "[検証]({absolute}#設定保存)",
-        "`records/test_settings.py::test_save` 成功",
-        "test_save_settings PASSED",
-        "`test_save_settings` 成功",
-        "test_save_settings: 成功",
+        "records/観測.md、records/test_settings.py",
+        "検証: records/観測.md",
+        "検証記録：`records/観測.md#設定保存`",
+        "根拠: records/観測.md、確認: records/test_settings.py",
     ],
 )
-def test_public_command_accepts_shared_file_or_test_result(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reference: str
+def test_public_command_rejects_shared_reference_without_explanation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], reference: str
 ) -> None:
-    """実在する同じ記録の参照と具体的なテスト成功結果の共用は公開されたコマンドで受理する。"""
-    records = tmp_path / "records"
-    records.mkdir()
-    record = records / "観測.md"
-    record.write_text("# 設定保存\n保存と再読込が成功した。\n", encoding="utf-8")
-    (records / "test_settings.py").write_text("", encoding="utf-8")
-    rows = [_condition(FIRST_WI, "保存"), _condition(FIRST_WI, "再読込")]
-    for row in rows:
-        row["evidence"] = reference.format(absolute=record)
-    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
-    path = tmp_path / "evidence.json"
-    _write_evidence(path, rows)
+    """行ごとの説明が無く同じファイル参照だけを異なる条件へ写した証拠を、両方の行について拒否する。"""
+    path = _shared_rows(tmp_path, monkeypatch, reference)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    assert "wi_conditions[1].evidence" in error and "wi_conditions[2].evidence" in error
+    assert "行ごとの説明が無いファイル参照だけ" in error
+
+
+def test_public_command_accepts_same_file_with_row_specific_explanations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同じファイルを参照しても、行ごとに満たす箇所と内容を書いた根拠は受理する。"""
+    path = _shared_rows(tmp_path, monkeypatch, "records/観測.md")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["wi_conditions"][0]["evidence"] = "records/観測.md の設定保存節で保存が成功"
+    data["wi_conditions"][1]["evidence"] = "records/観測.md の設定保存節で再読込後も値が残る"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     args = argparse.Namespace(
         script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
     )

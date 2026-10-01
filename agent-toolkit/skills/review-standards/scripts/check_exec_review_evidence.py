@@ -41,6 +41,11 @@ SENTENCE = re.compile(r"[^。．.!?！？]+[。．.!?！？]*")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\(([^)]+)\)|`([^`]+)`|([^\s`\[\]（）「」、。]+)")
+# ファイル参照を除いた残りがこれらの区切りと接続語だけなら、行ごとの説明を持たない参照だけの根拠とみなす。
+REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<>`]+|および|及び|と|や")
+# 参照の直前に置いたコロン付きの見出し語（`検証: <パス>`など）は所在の標識であり、行ごとの説明に数えない。
+REFERENCE_MARK = "\0"
+REFERENCE_LABEL = re.compile(r"[^\s、。，,.;；:：\0]{1,20}[:：]\s*(?=\0)")
 TEST_RESULT = re.compile(
     r"(?<!\w)test_[\w]+(?:\[[^\]\n]+\])?(?:`)?\s*(?::|：|=|は|が|\s)\s*(?:成功|合格|PASS(?:ED)?|passed)(?!\w)"
 )
@@ -343,10 +348,9 @@ def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, 
     return errors
 
 
-def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
-    """所在を記したファイル参照か、具体的なテスト識別子と成功結果を認識する。"""
-    if TEST_RESULT.search(evidence):
-        return True
+def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[str]]:
+    """根拠の中で実在ファイルを指す参照（裸のパス、インラインコード、Markdownリンク）の一致を返す。"""
+    matches = []
     for match in EVIDENCE_REFERENCE.finditer(evidence):
         candidate = next(value for value in match.groups() if value is not None).strip().strip("<>")
         # テスト識別子・節・行番号はファイルの所在と分け、内容の妥当性はレビューへ残す。
@@ -358,15 +362,38 @@ def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
             reference = repository / reference
         try:
             if reference.is_file():
-                return True
+                matches.append(match)
         except OSError:
             # 自由文の語も候補へ入るため、ファイル名として扱えない文字列は参照としない。
             continue
-    return False
+    return matches
+
+
+def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
+    """所在を記したファイル参照か、具体的なテスト識別子と成功結果を認識する。"""
+    return bool(TEST_RESULT.search(evidence) or _file_references(evidence, repository))
+
+
+def _is_reference_only(evidence: str, repository: pathlib.Path) -> bool:
+    """根拠がファイル参照だけで、その行の条件を満たす箇所や内容の説明を持たないかを判定する。"""
+    if TEST_RESULT.search(evidence):
+        return False
+    references = _file_references(evidence, repository)
+    if not references:
+        return False
+    rest = evidence
+    for match in reversed(references):
+        rest = rest[: match.start()] + REFERENCE_MARK + rest[match.end() :]
+    rest = REFERENCE_LABEL.sub("", rest).replace(REFERENCE_MARK, " ")
+    return not REFERENCE_SEPARATORS.sub("", rest)
 
 
 def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
-    """両配列の全達成行を要求単位で区別し、所在のない共用を報告する。"""
+    """両配列の全達成行を要求単位で区別し、所在のない共用と、説明のない参照だけの共用を報告する。
+
+    同じ検証記録のパスだけを多数の行へ写すと、各行の条件を判定せずに空欄を埋めた証拠と区別できない。
+    同じファイルでも行ごとに満たす箇所や内容を書いた根拠は文字列が異なるため、この共用に当たらない。
+    """
     groups: dict[str, list[tuple[str, int, str, str]]] = collections.defaultdict(list)
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         rows = payload[section]
@@ -374,18 +401,27 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
         for index, row in enumerate(rows, start=1):
             if row["outcome"] == "達成":
                 groups[row["evidence"].strip()].append((section, index, row["awi"], row[field]))
-    errors = []
+    errors: list[str] = []
     for evidence, rows in groups.items():
         units = {(section, awi, text) for section, _, awi, text in rows}
-        if len(units) < 2 or _has_evidence_reference(evidence, repository):
+        if len(units) < 2:
             continue
-        for section, index, awi, _ in rows:
-            errors.append(
-                f"{awi or '計画由来'}: {section}[{index}].evidence: "
-                f"異なる要求単位で達成根拠を共用していますが、具体的な参照先がありません: {evidence!r}。"
-                "実在ファイルのパスか具体的なテスト名と成功結果を記入する。"
-                "条件を観測できていない場合は証拠不足へ再判定する"
+        if _is_reference_only(evidence, repository):
+            reason = (
+                f"異なる要求単位で、行ごとの説明が無いファイル参照だけの達成根拠を共用しています: {evidence!r}。"
+                "参照先のうちその行の条件を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
             )
+        elif not _has_evidence_reference(evidence, repository):
+            reason = (
+                f"異なる要求単位で達成根拠を共用していますが、具体的な参照先がありません: {evidence!r}。"
+                "実在ファイルのパスか具体的なテスト名と成功結果を記入する"
+            )
+        else:
+            continue
+        errors.extend(
+            f"{awi or '計画由来'}: {section}[{index}].evidence: {reason}。条件を観測できていない場合は証拠不足へ再判定する"
+            for section, index, awi, _ in rows
+        )
     return errors
 
 
