@@ -874,8 +874,10 @@ class StatusFileWriter:
         *,
         state_root: pathlib.Path | None = None,
         aggregate_seconds: float = 1.0,
+        expired_sessions: dict[str, SessionResumeState] | None = None,
     ) -> None:
         self._sessions = sessions
+        self._expired_sessions: dict[str, SessionResumeState] = {} if expired_sessions is None else expired_sessions
         self._identity = identity
         self._state_root = state_root
         self._directory = status_directory(identity.root_session_id, state_root)
@@ -901,6 +903,11 @@ class StatusFileWriter:
     def sessions(self) -> dict[str, SessionState]:
         """射影元の共有session辞書を返す。"""
         return self._sessions
+
+    @property
+    def expired_sessions(self) -> dict[str, SessionResumeState]:
+        """保持期限で本体を解放したsessionの再開状態を返す。稼働中の子孫を持つ祖先の表示に使う。"""
+        return self._expired_sessions
 
     def activate(self) -> None:
         """書込を有効化し、前回プロセスの残存状態を初期化する。"""
@@ -931,17 +938,30 @@ class StatusFileWriter:
         self._remove_stale_status_files()
         now = asyncio.get_running_loop().time()
         self._write_terminal_results()
-        visible = [
+        # 稼働中の子孫を持つsessionは、自身の結果回収と表示期限によらず祖先の行として残す。
+        # 結果の再公開や期限の延長はせず、子孫の終端後の次回flushで通常の判定へ戻る。
+        live_hosts = _live_descendant_hosts(self._directory, self._path)
+        visible: list[SessionState | SessionResumeState] = [
             session
             for session in self._sessions.values()
             if session.announced
-            and (session.retention_deadline is None or session.retention_deadline > now)
             and (
-                not session.result_available
-                or has_uncollected_result(session, self.result_state(session.session_id) == "consumed")
+                session.session_id in live_hosts
+                or (
+                    (session.retention_deadline is None or session.retention_deadline > now)
+                    and (
+                        not session.result_available
+                        or has_uncollected_result(session, self.result_state(session.session_id) == "consumed")
+                    )
+                )
             )
         ]
-        visible.sort(key=lambda session: session.started_at)
+        visible.extend(
+            session
+            for session in self._expired_sessions.values()
+            if session.session_id in live_hosts and session.session_id not in self._sessions and session.started_at is not None
+        )
+        visible.sort(key=lambda session: session.started_at or "")
         payload: dict[str, Any] = {
             "version": 1,
             "host_session_id": self._resolve_host_session_id(),
@@ -1143,7 +1163,7 @@ class StatusFileWriter:
             if heartbeat is not None and heartbeat.tzinfo is not None and heartbeat < cutoff:
                 path.unlink(missing_ok=True)
 
-    def _schedule_retention(self, sessions: list[SessionState], now: float) -> None:
+    def _schedule_retention(self, sessions: list[SessionState | SessionResumeState], now: float) -> None:
         if self._retention_handle is not None:
             self._retention_handle.cancel()
         deadlines = [
@@ -1156,7 +1176,63 @@ class StatusFileWriter:
             self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self.flush)
 
 
-def _serialize_session(session: SessionState) -> dict[str, Any]:
+def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> set[str]:
+    """他の書込主体の状態ファイルから、稼働中の子孫を持つsession識別子を集める。
+
+    状態ファイルの`host_session_id`は、そのファイルのsessionを起動した親sessionを指す。
+    直下の子が終端していても、さらに先の子孫が稼働していれば祖先として数える。
+    生存の印が失効したファイルは稼働の根拠にしない。
+    """
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
+    children: dict[str, list[tuple[str, str]]] = {}
+    for path in sorted(directory.glob("*.json")):
+        if path == own_path:
+            continue
+        entry = _read_child_statuses(path, cutoff)
+        if entry is not None:
+            children.setdefault(entry[0], []).extend(entry[1])
+    live: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for host, entries in children.items():
+            if host not in live and any(status == "running" or child in live for child, status in entries):
+                live.add(host)
+                changed = True
+    return live
+
+
+def _read_child_statuses(path: pathlib.Path, cutoff: datetime.datetime) -> tuple[str, list[tuple[str, str]]] | None:
+    """状態ファイルから親session識別子と、各sessionの識別子・状態を読む。"""
+    try:
+        payload: Any = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return None
+    host = payload.get("host_session_id")
+    sessions = payload.get("sessions")
+    if not isinstance(host, str) or not isinstance(sessions, list):
+        return None
+    heartbeat_at = payload.get("heartbeat_at")
+    if heartbeat_at is not None:
+        try:
+            heartbeat = datetime.datetime.fromisoformat(heartbeat_at) if isinstance(heartbeat_at, str) else None
+        except ValueError:
+            return None
+        if heartbeat is None or heartbeat.tzinfo is None or heartbeat < cutoff:
+            return None
+    return host, [
+        (item["session_id"], item["status"])
+        for item in sessions
+        if isinstance(item, dict) and isinstance(item.get("session_id"), str) and isinstance(item.get("status"), str)
+    ]
+
+
+def _serialize_session(session: SessionState | SessionResumeState) -> dict[str, Any]:
+    if isinstance(session, SessionResumeState):
+        # 本体を解放したsessionは進捗を持たないため、起動情報と終端状態だけを表示する。
+        return {**_serialize_retained_session(session), "progress": "", "last_action": ""}
     serialized = {
         **_serialize_retained_session(session),
         "progress": session.progress,
@@ -1187,7 +1263,8 @@ def _serialize_retained_session(session: SessionState | SessionResumeState) -> d
     }
 
 
-def _updated_at(sessions: list[SessionState]) -> str:
-    if sessions:
-        return max(session.updated_at for session in sessions)
+def _updated_at(sessions: list[SessionState | SessionResumeState]) -> str:
+    updated = [session.updated_at for session in sessions if session.updated_at is not None]
+    if updated:
+        return max(updated)
     return datetime.datetime.now(datetime.UTC).isoformat()

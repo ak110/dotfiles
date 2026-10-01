@@ -612,7 +612,9 @@ class AgentsServerManager:
         self.sessions: dict[str, SessionState] = (
             status_writer.sessions if isinstance(status_writer, status_file.StatusFileWriter) else {}
         )
-        self.expired_sessions: dict[str, SessionResumeState] = {}
+        self.expired_sessions: dict[str, SessionResumeState] = (
+            status_writer.expired_sessions if isinstance(status_writer, status_file.StatusFileWriter) else {}
+        )
         self.stopped_sessions: dict[str, SessionResumeState] = {}
         self._pending_resumes: dict[str, _PendingResume] = {}
         self._condition = asyncio.Condition()
@@ -629,7 +631,7 @@ class AgentsServerManager:
             identity = status_file.resolve_status_file_identity(os.environ)
             if identity is None:
                 identity = status_file.create_process_root_identity()
-            self._status_writer = status_file.StatusFileWriter(self.sessions, identity)
+            self._status_writer = status_file.StatusFileWriter(self.sessions, identity, expired_sessions=self.expired_sessions)
         else:
             assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
             self._status_writer = status_writer
