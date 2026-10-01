@@ -590,7 +590,7 @@ def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterial
     for _lineno, line in nonempty:
         match = _HUMAN_MATERIAL_LINE_PATTERN.fullmatch(line)
         if match is None:
-            errors.append(f"提示素材はWIファイル名の箇条書きまたは`なし`だけにする: {line}")
+            errors.append(f"提示素材はファイル名の箇条書きまたは`なし`だけにする: {line}")
             continue
         path = match.group("path").strip()
         if _STRICT_INTERNAL_PLAN_ID_PATTERN.search(path):

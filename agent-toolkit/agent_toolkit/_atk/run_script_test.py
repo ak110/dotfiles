@@ -24,7 +24,7 @@ def test_registry_stays_inside_plugin_root() -> None:
 def test_dispatch_forwards_help_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
     args = argparse.Namespace(script_name="plan-check", script_args=["--", "--help"])
     assert run_script.dispatch(args) == 0
-    assert "計画の成立に必要な情報契約" in capsys.readouterr().out
+    assert "計画に必要な情報と実体が揃っているか確かめる" in capsys.readouterr().out
 
 
 def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPatch) -> None:

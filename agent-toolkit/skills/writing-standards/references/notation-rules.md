@@ -56,7 +56,7 @@ Read履歴を持つEditとの区別を保ち、Codexのapply_patchは現在本�
 
 ## 口語表現チェック
 
-恒久成果物にはpyfltrの有効なチェック定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。`<pyfltrの起動形>`は`agent-toolkit:check-execution`の「pyfltrの起動形」に従って解決する。
+恒久成果物にはpyfltrの有効なチェック定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で通常の除外を解除し、指定したファイルへ到達したかをJSONLから判定する。`<pyfltrの起動形>`は`agent-toolkit:check-execution`の「pyfltrの起動形」に従って解決する。
 
 ```sh
 <pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
@@ -82,7 +82,7 @@ uv run --frozen python -c 'print(__import__("pyfltr.colloquial.check", fromlist=
 `--work-dir`へ渡し、`--allow-external-paths`を併用する。
 
 ```sh
-<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <検査設定を持つプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
+<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <チェックする内容を設定したプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
 ```
 
 この手順でも、JSONLの`header`レコードと各commandレコードで対象ファイルへの到達を判定する。

@@ -1,3 +1,4 @@
+# agent-doc-tone: test-data
 """`notation-rules.md`が定める外部パスへチェックを届かせる条件の回帰テスト。"""
 
 import json

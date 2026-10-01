@@ -150,22 +150,40 @@ statusline-version-subproject-aware = false
 markdownlint-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     ".chezmoi-source/dot_claude/rules/myprojects-common.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
 ]
-textlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
+textlint-exclude = [
+    ".chezmoi-source/dot_codex/AGENTS.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+]
+colloquial-check-exclude = [
+    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+]
+typos-exclude = [
+    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+]
+prek-exclude = [
+    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+]
 textlint-args = ["--cache"]
 lychee-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
+    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
     "agent-toolkit/agent_toolkit/_atk/serve/static/index.html",
 ]
-# profile_ipy/はIPython自動生成プロファイル、
-# tone-examples.md・tone-examples-llm-tone.mdは意図的な違反例を収録するため検査対象外とする。
+# profile_ipy/はIPython自動生成プロファイルとして対象外とする。
+# 対比集の除外は各コマンドで保ち、agent-doc-toneは悪い例と説明文を区別して読む。
 extend-exclude = [
     "*/profile_ipy/*",
     # agent-toolkit-codex/はGit追跡の有無を問わずagent-toolkit/から生成するため、生成元と重複検査しない。
     "agent-toolkit-codex/**",
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     # Antigravity CLIへ配る外部由来の規範。検査を通すための書き換えは出所の正確さを損なうため、
     # 本リポジトリの表記検査の対象から外す。
     ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
@@ -262,7 +280,14 @@ targets = [
 
 [tool.pyfltr.custom-commands.agent-doc-tone]
 type = "linter"
-path = "scripts/check_agent_doc_tone.py"
+path = "uv"
+args = [
+    "run", "--frozen", "python", "scripts/check_agent_doc_tone.py",
+    "--term-root", "agent-toolkit",
+    "--term-root", ".claude-plugin/marketplace.json",
+    "--term-root", "scripts/check_agent_doc_tone.py",
+    "--term-root", "scripts/check_agent_doc_tone_test.py",
+]
 targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "AGENTS.md",
@@ -270,6 +295,24 @@ targets = [
     "agent-toolkit/share/*.md",
     "agent-toolkit/skills/*/*.md",
     "agent-toolkit/skills/*/*/*.md",
+    # 説明文を置くコードにも、ファイル名を固定せずに到達させる。
+    "agent-toolkit/agent_toolkit/*.py",
+    "agent-toolkit/agent_toolkit/*/*.py",
+    "agent-toolkit/agent_toolkit/*/*/*.py",
+    "agent-toolkit/agent_toolkit/*/*/*/*.py",
+    "agent-toolkit/agent_toolkit/*/*/*/*/*.py",
+    "agent-toolkit/agent_toolkit/*/*/*/*/*/*.py",
+    "agent-toolkit/skills/*/scripts/*.py",
+    "agent-toolkit/scripts/*.py",
+    "agent-toolkit/bin/*",
+    "agent-toolkit/agent_toolkit/_atk/serve/static/*.css",
+    "agent-toolkit/agent_toolkit/_atk/serve/static/*.js",
+    "agent-toolkit/*.toml",
+    "agent-toolkit/*.json",
+    "agent-toolkit/*/*.json",
+    ".claude-plugin/marketplace.json",
+    "scripts/check_agent_doc_tone.py",
+    "scripts/check_agent_doc_tone_test.py",
     ".chezmoi-source/dot_claude/*/*.md",
     ".chezmoi-source/dot_claude/*/*/*.md",
     ".chezmoi-source/dot_claude/*/*/*/*.md",
