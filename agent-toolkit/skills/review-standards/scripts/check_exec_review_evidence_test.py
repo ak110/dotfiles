@@ -724,3 +724,130 @@ def test_public_command_runs_platform_launcher(
     _write_evidence(path, [], rows[:1])
     assert run_script.dispatch(args) == 1
     assert f"不足: {_FENCED_REQUIREMENTS[1]}" in capsys.readouterr().err
+
+
+_TEMPLATE_BODIES = {
+    FIRST_WI: (
+        "type: awi\nsource: agent\n---\n# WI\n"
+        "## 完成条件\n- 保存できる\n- 再読込後も保持する\n"
+        "## ユーザー指摘の逐語引用\n出所: 会話\n\n```text\n設定を移して。旧入口を廃止して。\n```\n"
+        "## ユーザーコメント\n- 案内も直して。\n"
+    ),
+    SECOND_WI: "type: awi\n---\n# 題\n\n検索範囲を変更して。\n\n## 処理結果\n\n- 採否: adopted\n",
+    "20260928-192559-003.md": "type: uwi\n---\n## 質問\n\nどうしますか？\n\n## 回答\n\n<!-- 案内 -->\nmediumのまま雛形で補助\n",
+}
+
+
+def _template(path: pathlib.Path, *wi: str) -> int:
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", "--template", str(path), *wi])
+    return run_script.dispatch(args)
+
+
+def _check(path: pathlib.Path, *wi: str) -> int:
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), *wi, "--expected-head", REVIEWED_HEAD]
+    )
+    return run_script.dispatch(args)
+
+
+def _judge_all(path: pathlib.Path) -> dict[str, list[dict[str, str]]]:
+    """雛形の全行を担当が判定した状態へ置き換え、行ごとに異なる根拠を記入する。"""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for section in ("wi_conditions", "user_requirements"):
+        for index, row in enumerate(data[section], start=1):
+            row.update(outcome="達成", evidence=f"{section}の{index}行目を観測した結果", reviewed_head=REVIEWED_HEAD)
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return data
+
+
+def test_template_writes_every_expected_row(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """完成条件、逐語引用、ユーザーコメント、原文AWI、UWI回答の全単位を原文と出所付きで、判定欄を空にして出力する。"""
+    _mock_wi(monkeypatch, tmp_path, _TEMPLATE_BODIES)
+    path = tmp_path / "evidence.json"
+    wis = list(_TEMPLATE_BODIES)
+    assert _template(path, *wis) == 0
+    output = capsys.readouterr().out
+    assert "追加 7 行" in output and "\n次の操作: " in output
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [(row["awi"], row["condition"], row["source"]) for row in data["wi_conditions"]] == [
+        (FIRST_WI, "保存できる", f"{FIRST_WI}#完成条件 1"),
+        (FIRST_WI, "再読込後も保持する", f"{FIRST_WI}#完成条件 2"),
+    ]
+    assert [(row["awi"], row["requirement"], row["origin"]) for row in data["user_requirements"]] == [
+        (FIRST_WI, "設定を移して。", f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"),
+        (FIRST_WI, "旧入口を廃止して。", f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"),
+        (FIRST_WI, "案内も直して。", f"{FIRST_WI}#ユーザーコメント"),
+        (SECOND_WI, "検索範囲を変更して。", f"{SECOND_WI}#本文"),
+        ("20260928-192559-003.md", "mediumのまま雛形で補助", "20260928-192559-003.md#回答"),
+    ]
+    for row in [*data["wi_conditions"], *data["user_requirements"]]:
+        assert (row["outcome"], row["evidence"], row["reviewed_head"]) == ("", "", "")
+
+
+def test_unfilled_template_is_rejected_until_each_row_is_judged(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """雛形のまま、または判定とHEADだけを埋めて根拠を欠く証拠を拒否し、全欄の記入後に受理する。"""
+    _mock_wi(monkeypatch, tmp_path, _TEMPLATE_BODIES)
+    path = tmp_path / "evidence.json"
+    wis = list(_TEMPLATE_BODIES)
+    assert _template(path, *wis) == 0
+    capsys.readouterr()
+
+    assert _check(path, *wis) == 1
+    error = capsys.readouterr().err
+    assert error.count("判定が未記入") == 7 and error.count("根拠が未記入") == 7
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for row in [*data["wi_conditions"], *data["user_requirements"]]:
+        row.update(outcome="達成", reviewed_head=REVIEWED_HEAD)
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert _check(path, *wis) == 1
+    error = capsys.readouterr().err
+    assert "判定が未記入" not in error and error.count("根拠が未記入") == 7
+
+    _judge_all(path)
+    assert _check(path, *wis) == 0, capsys.readouterr().err
+
+
+def test_template_preserves_existing_rows_and_adds_only_missing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """再レビューで記入済みの行と他の行を保ち、不足行だけを追加し、2回目は何も追加しない。"""
+    _mock_wi(monkeypatch, tmp_path, _TEMPLATE_BODIES)
+    path = tmp_path / "evidence.json"
+    judged = {**_condition(FIRST_WI, "- 再読込後も保持する"), "evidence": "記入済みの根拠"}
+    plan_row = {**_requirement("", "計画だけの要求"), "evidence": "計画の観測"}
+    _write_evidence(path, [judged], [plan_row])
+
+    assert _check(path, FIRST_WI) == 1
+    assert f"--template {path} {FIRST_WI}" in capsys.readouterr().err
+
+    assert _template(path, FIRST_WI) == 0
+    assert "追加 4 行、既存 2 行を保持" in capsys.readouterr().out
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["wi_conditions"][0] == judged and data["user_requirements"][0] == plan_row
+    assert [row["condition"] for row in data["wi_conditions"]] == ["- 再読込後も保持する", "保存できる"]
+
+    before = path.read_text(encoding="utf-8")
+    assert _template(path, FIRST_WI) == 0
+    assert "追加 0 行" in capsys.readouterr().out
+    assert path.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["{", '{"wi_conditions": {}, "user_requirements": []}', '{"wi_conditions": [{"awi": 1}], "user_requirements": []}'],
+)
+def test_template_keeps_invalid_evidence_untouched(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str
+) -> None:
+    """読めない既存の証拠へは書き込まず、診断と次の操作を返す。"""
+    _mock_wi(monkeypatch, tmp_path, _TEMPLATE_BODIES)
+    path = tmp_path / "evidence.json"
+    path.write_text(content, encoding="utf-8")
+    assert _template(path, FIRST_WI) == 1
+    assert "\n次の操作: 証拠JSONは変更していない" in capsys.readouterr().err
+    assert path.read_text(encoding="utf-8") == content
