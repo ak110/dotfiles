@@ -37,6 +37,7 @@ try:
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
+    from agent_toolkit._hooks.bash_command_parser import QuotingScanner as _QuotingScanner
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
@@ -4039,7 +4040,10 @@ def _is_normal_nonterminal_result(event: dict[str, Any]) -> bool:
         return False
     tokens = _shell_command_tokens(command)
     # 連結全体の終了コードを待機へ帰属させず、同じコマンドによる継続だけを除外する。
-    return tokens is not None and not any(set(token) <= _SHELL_OPERATOR_CHARS for token in tokens)
+    # 演算子形のデータを含む語も従来どおり除外の対象外とし、待機継続の除外範囲を広げない。
+    if tokens is None:
+        return False
+    return not any(set(token.value) <= _SHELL_OPERATOR_CHARS for token in tokens)
 
 
 def _is_normal_negative_result(event: dict[str, Any]) -> bool:
@@ -4085,18 +4089,72 @@ def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
     return tokens is not None and _is_negative_search_command(tokens, int(matched.group(1)))
 
 
-def _shell_command_tokens(command: str) -> list[str] | None:
-    """シェルのコマンド文字列を、演算子を独立した要素とする語の列へ分解する。解釈できない場合は`None`を返す。"""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        tokens = list(lexer)
-    except ValueError:
+class _ShellToken(NamedTuple):
+    """シェルのコマンド文字列から得た語1件。`operator`は引用の外にある演算子であることを表す。"""
+
+    value: str
+    operator: bool
+
+
+_DOUBLE_QUOTE_ESCAPABLE = frozenset('$`"\\\n')
+
+
+def _shell_command_tokens(command: str) -> list[_ShellToken] | None:
+    """シェルのコマンド文字列を、演算子を独立した要素とする語の列へ分解する。解釈できない場合は`None`を返す。
+
+    引用とエスケープは`QuotingScanner`で判定し、引用の外にある演算子文字の連続だけを演算子とする。
+    引用またはエスケープで渡された演算子形の文字はデータの語に残り、連結構造の判定に使わない。
+    """
+    scanner = _QuotingScanner(command)
+    # 文字ごとの区分を集める。`None`は語の区切り、真偽値は引用の外の演算子文字かを表す。
+    pieces: list[tuple[str, bool] | None] = []
+    while scanner.index < len(command):
+        char = command[scanner.index]
+        quote_before = scanner.quote
+        escaped_before = scanner.escaped
+        if scanner.consume_quoted():
+            if escaped_before:
+                if quote_before == '"' and char not in _DOUBLE_QUOTE_ESCAPABLE:
+                    pieces.append(("\\" + char, False))
+                elif char != "\n":
+                    pieces.append((char, False))
+            elif scanner.escaped:
+                pass
+            elif quote_before is not None and scanner.quote is None:
+                pieces.append(("", False))
+            else:
+                pieces.append((char, False))
+            continue
+        if char in {"'", '"'}:
+            pieces.append(("", False))
+            scanner.enter_quote(char)
+            continue
+        scanner.index += 1
+        if char.isspace():
+            pieces.append(None)
+        elif char in _SHELL_OPERATOR_CHARS:
+            pieces.append((char, True))
+        elif char == "#" and (not pieces or pieces[-1] is None or pieces[-1][1]):
+            break
+        else:
+            pieces.append((char, False))
+    if scanner.quote is not None or scanner.escaped:
         return None
-    return tokens or None
+    tokens: list[_ShellToken] = []
+    current: list[tuple[str, bool]] = []
+    for piece in [*pieces, None]:
+        operator = None if piece is None else piece[1]
+        if current and operator != current[0][1]:
+            tokens.append(_ShellToken("".join(text for text, _ in current), current[0][1]))
+            current = []
+        if piece is not None:
+            current.append(piece)
+    if not tokens:
+        return None
+    return tokens
 
 
-def _is_negative_search_command(tokens: list[str], exit_code: int) -> bool:
+def _is_negative_search_command(tokens: list[_ShellToken], exit_code: int) -> bool:
     """出力の無い非0終了が、検索の一致0件という正常な否定結果に当たるかを返す。
 
     `&&`で連結した全段が読取専用の述語であれば、終了コード1を正常な否定結果とする。
@@ -4104,24 +4162,24 @@ def _is_negative_search_command(tokens: list[str], exit_code: int) -> bool:
     最終段が読取専用の述語で終了コード1、または最終段が検索を起動する`xargs`で終了コード123
     （起動したコマンドのいずれかが1から125で終わったことを表す）の場合を一致0件とする。
     """
-    if "&&" in tokens:
+    if _ShellToken("&&", True) in tokens:
         parts: list[list[str]] = [[]]
         for token in tokens:
-            if token == "&&":
+            if token.operator and token.value == "&&":
                 parts.append([])
-            elif set(token) <= _SHELL_OPERATOR_CHARS:
+            elif token.operator:
                 return False
             else:
-                parts[-1].append(token)
+                parts[-1].append(token.value)
         return exit_code == 1 and all(part and _is_negative_predicate(part) for part in parts)
     segments: list[list[str]] = [[]]
     for token in tokens:
-        if set(token) <= _SHELL_OPERATOR_CHARS:
-            if token != "|":
+        if token.operator:
+            if token.value != "|":
                 return False
             segments.append([])
         else:
-            segments[-1].append(token)
+            segments[-1].append(token.value)
     if any(not segment for segment in segments):
         return False
     last = segments[-1]
