@@ -487,76 +487,42 @@ def test_start_operations_match_registered_start_tools() -> None:
     assert registered - non_start_operations == tool_names.START_OPERATIONS
 
 
-def test_start_tools_describe_cwd_condition() -> None:
-    """全ての起動ツールのスキーマが、起動処理が確認する`cwd`の条件（既存ディレクトリの絶対パス）を示す。
-
-    起動ツールを追加して`cwd`の説明を付け忘れた変更も失敗させる。
-    `start_shell`はシェルの作業ディレクトリとして独自の説明を持ち、他の起動ツールは説明を共有する。
-    """
-    descriptions = {}
-    for name in tool_names.START_OPERATIONS:
-        tool = subject.mcp._tool_manager.get_tool(name)
-        assert tool is not None
-        description = tool.parameters["properties"]["cwd"].get("description", "")
-        assert "既存ディレクトリの絶対パス" in description, name
-        descriptions[name] = description
-    assert "実行時の作業ディレクトリ" in descriptions.pop("start_shell")
-    assert len(set(descriptions.values())) == 1
-    assert "委譲先の作業ディレクトリ" in next(iter(descriptions.values()))
+def _start_tool() -> Any:
+    tool = subject.mcp._tool_manager.get_tool("start")
+    assert tool is not None
+    return tool
 
 
-def test_public_tools_separate_task_document_and_custom_start() -> None:
-    """専用タスク文書と自由本文の公開入力を別ツールへ分離する。"""
-    assert set(subject.mcp._tool_manager._tools) == {
-        "start",
-        "start_custom",
-        "start_explore",
-        "start_write",
-        "start_shell",
-        "send_message",
-        "kill",
-        "list",
-        "show",
-        "stop",
-    }
-    start_tool = subject.mcp._tool_manager.get_tool("start")
-    assert start_tool is not None
+def test_start_tool_describes_cwd_condition() -> None:
+    """`start`のスキーマが、起動処理が確認する`cwd`の条件（既存ディレクトリの絶対パス）と全modeでの必須を示す。"""
+    tool = _start_tool()
+    description = tool.parameters["properties"]["cwd"].get("description", "")
+    assert "既存ディレクトリの絶対パス" in description
+    assert "全modeで必須" in description
+    assert tool.parameters["required"] == ["cwd"]
+
+
+def test_public_tools_expose_single_start_with_modes() -> None:
+    """公開ツールは起動の`start`1件と継続・中断・破棄・一覧・詳細の6件とし、`start`はmodeごとの入力を持つ。"""
+    assert set(subject.mcp._tool_manager._tools) == {"start", "send_message", "kill", "list", "show", "stop"}
+    start_tool = _start_tool()
     properties = start_tool.parameters["properties"]
-    assert {"subagent_md_path", "extra_params", "cwd", "label", "model_type"} == properties.keys()
+    assert properties.keys() == {
+        "cwd",
+        "mode",
+        "subagent_md_path",
+        "extra_params",
+        "prompt",
+        "command",
+        "summary_policy",
+        "label",
+        "model_type",
+    }
     assert {"engine", "model", "effort"}.isdisjoint(properties)
-    custom_tool = subject.mcp._tool_manager.get_tool("start_custom")
-    assert custom_tool is not None
-    assert {"prompt", "model_type", "cwd", "label"} == custom_tool.parameters["properties"].keys()
-    model_type_description = custom_tool.parameters["properties"]["model_type"]["description"]
-    assert "必須" in model_type_description
-    assert "共通引数`model_type`" in model_type_description
-    instructions = subject.mcp.instructions or ""
-    assert "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium" in instructions
-    assert "候補は先頭から試し" in instructions
-    explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
-    assert explore_tool is not None
-    assert {"prompt", "cwd", "label", "model_type"} == explore_tool.parameters["properties"].keys()
-    shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
-    assert shell_tool is not None
-    assert {"command", "cwd", "summary_policy", "label", "model_type"} == shell_tool.parameters["properties"].keys()
-    write_tool = subject.mcp._tool_manager.get_tool("start_write")
-    assert write_tool is not None
-    assert {"prompt", "cwd", "label", "model_type"} == write_tool.parameters["properties"].keys()
-    for tool in (start_tool, custom_tool, explore_tool, shell_tool, write_tool):
-        assert tool.parameters["properties"]["label"]["default"] is None
-    for tool in (start_tool, custom_tool, explore_tool):
-        assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
-    assert "タスク文書に対応する工程別モデル設定" in start_tool.description
-    for tool in (start_tool, explore_tool, shell_tool, write_tool):
-        override = tool.parameters["properties"]["model_type"]
-        assert override["default"] is None
-        assert "省略時は" in override["description"]
-        assert "共通引数`model_type`" in override["description"]
-    assert "`low_tier_model`" in explore_tool.description
-    assert "`medium_tier`" in explore_tool.parameters["properties"]["model_type"]["description"]
-    assert "`low_tier_model`" in shell_tool.description
-    assert "`write_model`" in write_tool.description
-    assert "文章起草" in write_tool.description
+    assert tuple(properties["mode"]["enum"]) == tool_names.START_MODES
+    assert properties["mode"]["default"] == tool_names.DEFAULT_START_MODE
+    for name in properties.keys() - {"cwd", "mode"}:
+        assert properties[name]["default"] is None, name
     show_tool = subject.mcp._tool_manager.get_tool("show")
     assert show_tool is not None
     assert "`model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列" in show_tool.description
@@ -568,30 +534,98 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     assert stop_tool.parameters["properties"].keys() == {"session_id"}
 
 
-def test_start_tool_descriptions_require_same_turn_observation() -> None:
-    """開始ツールの公開説明が返却sessionを同じ応答内で観測させる。"""
-    for tool_name in ("start", "start_custom", "start_explore", "start_write", "start_shell"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        assert "返した`session_id`" in tool.description
-        assert "`atk agents wait`" in tool.description
-        assert "結果が不要なら`kill`で破棄する" in tool.description
+def test_start_parameter_descriptions_are_self_contained() -> None:
+    """各引数の説明だけで意味、書式、省略時の動作とmodeごとの必須・禁止を判断でき、外部の説明を参照しない。"""
+    properties = _start_tool().parameters["properties"]
+    for name, schema in properties.items():
+        description = schema.get("description", "")
+        assert "instructions" not in description, name
+        assert "共通引数" not in description, name
+        assert "agent-toolkit:delegation" not in description, name
+    mode = properties["mode"]["description"]
+    assert "省略時は`task`" in mode
+    for value in tool_names.START_MODES:
+        assert f"`{value}`" in mode, value
+    assert "taskで必須、他のmodeでは指定しない" in properties["subagent_md_path"]["description"]
+    assert "taskだけで受理し" in properties["extra_params"]["description"]
+    assert "宣言外の入力名" in properties["extra_params"]["description"]
+    assert "delegate・explore・writeで必須、taskとshellでは指定しない" in properties["prompt"]["description"]
+    for name in ("command", "summary_policy"):
+        assert "shellで必須、他のmodeでは指定しない" in properties[name]["description"], name
+    model_type = properties["model_type"]["description"]
+    for fragment in (
+        "`<claude|codex|agy>:<model>[/<effort>]`",
+        "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium",
+        "候補は先頭から試し",
+        "delegateでは必須",
+        "taskがタスク文書に対応する工程別設定",
+        "exploreとshellが`low_tier`",
+        "writeが`write`の設定",
+        "`medium_tier`",
+        "`atk config set`",
+    ):
+        assert fragment in model_type, fragment
+    label = properties["label"]["description"]
+    for fragment in (
+        "`<レーン識別子>-<タスク文書名>`",
+        "`explore-<調査対象を示す1〜2語>`",
+        "`write-<起草対象を示す1〜2語>`",
+        "`shell-<コマンド名など1〜2語>`",
+        "`<レビュー対象を表す語>-review`",
+        "依頼本文の先頭にある空でない1行",
+        "`shell-<コマンドの最初の語のbasename>`",
+        "statusline",
+    ):
+        assert fragment in label, fragment
 
 
-def test_start_tool_descriptions_show_agents_wait_invocation() -> None:
-    """instructionsと開始ツールの公開説明が、引数なしの単独の待機コマンドと`session_id`を引数に渡さないことを示す。
+def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
+    """`start`の説明だけでmodeを選べるよう、用途・必須と禁止の入力の表と各modeの最小呼び出し例を持つ。"""
+    description = _start_tool().description
+    for mode in tool_names.START_MODES:
+        assert f"- {mode}: `{{" in description, mode
+    for fragment in (
+        "| `task`（省略時） |",
+        "| `delegate` |",
+        "| `explore` |",
+        "| `write` |",
+        "| `shell` |",
+        "共有規範が配送されず",
+        "スキルの手順を要する作業にはtaskかdelegateを使う",
+        "4,000トークン",
+        "成果ファイルの出力を依頼しない",
+        "成果物種別、読者、事実、根拠、反映先と完成形",
+        "委譲先を起動せずに拒否し",
+        "engineの利用上限などで起動できない候補はサーバーが除外し、残る候補で起動する",
+        "呼び出し元の文脈へは",
+    ):
+        assert fragment in description, fragment
+    assert "147,000トークン" not in description
+
+
+def test_instructions_keep_server_overview_without_argument_specification() -> None:
+    """instructionsはサーバー全体の操作の関係だけを持ち、引数の書式とlabelの凡例を引数説明へ委ねない。"""
+    instructions = subject.mcp.instructions or ""
+    assert "`mode`" in instructions
+    assert "引数なしの単独コマンド`atk agents wait`で受け取る" in instructions
+    assert "--output-file" not in instructions
+    for fragment in ("共通引数", "agy:gemini-3.8-flash", "| 起動 | 形式 | 例 |"):
+        assert fragment not in instructions, fragment
+    for legacy in tool_names.LEGACY_START_MODES:
+        assert legacy not in instructions, legacy
+
+
+def test_start_tool_description_requires_same_turn_observation() -> None:
+    """`start`の公開説明が返却sessionを同じ応答内で、引数なしの単独の待機コマンドで観測させる。
 
     保存先の指定を受領手段として示すと、委譲元は待機のたびに保存先の組み立てと確認のコマンドを連結する。
     """
-    instructions = subject.mcp.instructions or ""
-    assert "引数なしの単独コマンド`atk agents wait`で受け取る" in instructions
-    assert "--output-file" not in instructions
-    for tool_name in ("start", "start_custom", "start_explore", "start_write", "start_shell"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        assert "`atk agents wait`を単独で" in tool.description, tool_name
-        assert "--output-file" not in tool.description, tool_name
-        assert "`atk agents wait`は`session_id`を引数に取らず" in tool.description, tool_name
+    description = _start_tool().description
+    assert "返した`session_id`" in description
+    assert "`atk agents wait`を単独で" in description
+    assert "結果が不要なら`kill`で破棄する" in description
+    assert "--output-file" not in description
+    assert "`atk agents wait`は`session_id`を引数に取らず" in description
 
 
 @pytest.mark.asyncio
@@ -792,15 +826,6 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_delegation_result_scope_is_available_before_calling() -> None:
-    """探索委譲とシェル実行委譲の説明が、呼び出し元へ届く結果の範囲を示す。"""
-    for tool_name in ("start_explore", "start_shell"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        assert "呼び出し元の文脈へは" in tool.description
-        assert "147,000トークン" not in tool.description
-
-
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
     """公開schemaの待機系操作がtimeoutを省略した場合の値の決まり方を示す。"""
     assert subject.DEFAULT_KILL_TIMEOUT == 270.0
@@ -841,11 +866,8 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert send_tool is not None
 
     assert "`session_id`と`status`" in start_tool.description
-    for tool_name in ("start", "start_custom", "start_explore", "start_shell", "start_write"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        assert "root sessionの識別子を保持する場合" in tool.description
-        assert "`root_session_id`" in tool.description
+    assert "root sessionの識別子を保持する場合" in start_tool.description
+    assert "`root_session_id`" in start_tool.description
     assert "`--" + "turn`へそのまま渡す" not in start_tool.description
     assert "`atk agents wait`" in start_tool.description
     assert "`delivery`" in send_tool.description
@@ -878,7 +900,7 @@ async def test_start_rejects_prompt_missing_required_input(
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError, match=rf"目的.*{re.escape(str(task_document))}"):
-        await subject.start(str(task_document), {"対象": "値"}, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値"})
 
     assert called is False
 
@@ -900,7 +922,7 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
     extra_params = _observed_input_params(task_document.name, tmp_path)
 
-    response = await subject.start(str(task_document), extra_params, str(tmp_path))
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     assert response == {"session_id": "session", "status": "running"}
     assert called is True
@@ -930,7 +952,7 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"追加指示": "検証はpytestで行う"}
 
     with pytest.raises(ValueError, match="タスク文書が宣言していない入力です: 追加指示") as raised:
-        await subject.start(str(task_document), extra_params, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     assert "受理する入力名:" in str(raised.value)
     assert "環境構築" in str(raised.value)
@@ -943,8 +965,8 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
 @pytest.mark.parametrize(
     ("document", "extra_params", "operation"),
     [
-        ("relative.subagent.md", {}, "`start_custom`"),
-        ("/nonexistent/share/missing.subagent.md", {}, "`start_custom`"),
+        ("relative.subagent.md", {}, "`delegate`"),
+        ("/nonexistent/share/missing.subagent.md", {}, "`delegate`"),
         ("exec.subagent.md", {"不正 な名前": "値"}, "空白"),
     ],
     ids=["relative-path", "missing-file", "invalid-input-name"],
@@ -956,13 +978,13 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """タスク文書の指定と入力名の誤りは、正しい渡し方か`start_custom`への切替を次の操作で示す。"""
+    """タスク文書の指定と入力名の誤りは、正しい渡し方か自由本文の`delegate`への切替を次の操作で示す。"""
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     path = str(subject._SHARE_DIRECTORY / document) if document == "exec.subagent.md" else document
 
     with pytest.raises(ValueError) as raised:
-        await subject.start(path, extra_params, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=path, extra_params=extra_params)
 
     assert operation in _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
     manager.start.assert_not_awaited()
@@ -972,16 +994,16 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
 async def test_start_reports_missing_model_type_mapping_as_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """工程別設定の対応が無いタスク文書は、欠陥の報告と`start_custom`への切替を次の操作で示す。"""
+    """工程別設定の対応が無いタスク文書は、欠陥の報告と自由本文の`delegate`への切替を次の操作で示す。"""
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.delitem(subject._TASK_MODEL_TYPES, "exec.subagent.md")
 
     with pytest.raises(ValueError, match="no model_type mapping") as raised:
-        await subject.start(str(subject._SHARE_DIRECTORY / "exec.subagent.md"), {}, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(subject._SHARE_DIRECTORY / "exec.subagent.md"), extra_params={})
 
     next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
-    assert "`start_custom`" in next_action
+    assert "`delegate`" in next_action
     assert "報告" in next_action
     manager.start.assert_not_awaited()
 
@@ -999,7 +1021,7 @@ async def test_start_accepts_declared_optional_and_common_inputs(
         "待機表明の例外": "適用しない。待機対象の種別を問わず前景で終端を観測する",
     }
 
-    await subject.start(str(task_document), extra_params, str(tmp_path))
+    await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     prompt = manager.start.await_args.args[1]
     assert "\n入力:\n" in prompt
@@ -1019,7 +1041,9 @@ async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(subject, "_MANAGER", manager)
     explain = subject._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
 
-    response = await subject.start(str(explain), _observed_input_params(explain.name, tmp_path), str(tmp_path))
+    response = await subject.start(
+        str(tmp_path), subagent_md_path=str(explain), extra_params=_observed_input_params(explain.name, tmp_path)
+    )
 
     shown = manager.show_session(response["session_id"])
     assert shown["launch_kind"] == "explore"
@@ -1052,7 +1076,9 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
     monkeypatch.setattr(subject, "_MANAGER", manager)
     task_document = subject._SHARE_DIRECTORY / task_name
 
-    response = await subject.start(str(task_document), _observed_input_params(task_name, tmp_path), str(tmp_path))
+    response = await subject.start(
+        str(tmp_path), subagent_md_path=str(task_document), extra_params=_observed_input_params(task_name, tmp_path)
+    )
 
     shown = manager.show_session(response["session_id"])
     assert shown["launch_kind"] == launch_kind
@@ -1067,11 +1093,11 @@ async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.Monke
     task_document = _write_declared_task_document(tmp_path, "必須入力名: 対象\n任意入力名: 補足")
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
-    await subject.start(str(task_document), {"対象": "値", "補足": "値"}, str(tmp_path))
+    await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値", "補足": "値"})
     task_document.write_text(
         task_document.read_text(encoding="utf-8").replace("任意入力名: 補足", "起動種別: batch"), encoding="utf-8"
     )
-    await subject.start(str(task_document), {"対象": "値", "未宣言": "値"}, str(tmp_path))
+    await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値", "未宣言": "値"})
 
     assert [call.kwargs["launch_kind"] for call in manager.start.await_args_list] == ["delegate", "delegate"]
 
@@ -1100,22 +1126,22 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     )
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
-    assert await subject.start_custom("本文", "high_tier", str(tmp_path)) == {
+    assert await subject.start(str(tmp_path), mode="delegate", prompt="本文", model_type="high_tier") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
     }
-    assert await subject.start_explore("探索", str(tmp_path)) == {
+    assert await subject.start(str(tmp_path), mode="explore", prompt="探索") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
     }
-    assert await subject.start_write("定型変更", str(tmp_path)) == {
+    assert await subject.start(str(tmp_path), mode="write", prompt="定型変更") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
     }
-    assert await subject.start_shell("make test", str(tmp_path), "終了状態") == {
+    assert await subject.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
@@ -1239,14 +1265,14 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "reader", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     params = dict(line.split(": ", 1) for line in _observed_input_lines(task.name, tmp_path, rereview=rereview))
-    response = await subject.start(str(task), params, str(tmp_path))
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task), extra_params=params)
     assert response["session_id"] == "reader"
     manager.start.assert_awaited_once()
     prompt = manager.start.await_args.args[1]
     assert all(f"{key}: {value}" in prompt for key, value in params.items())
     manager.start.reset_mock()
     with pytest.raises(ActionableError, match="宣言"):
-        await subject.start(str(task), {**params, "追加説明": "全体を再走査"}, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(task), extra_params={**params, "追加説明": "全体を再走査"})
     manager.start.assert_not_awaited()
 
 
@@ -1264,7 +1290,7 @@ async def test_exec_review_public_start_accepts_previous_revision(
         "round": "2",
         "前回確認版": str(tmp_path / "previous.md"),
     }
-    response = await subject.start(str(task), params, str(tmp_path))
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task), extra_params=params)
     assert response["session_id"] == "review"
     assert f"前回確認版: {params['前回確認版']}" in manager.start.await_args.args[1]
 
@@ -1280,7 +1306,7 @@ async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path,
     monkeypatch.setattr(subject, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path)
 
-    response = await subject.start(str(task_document), extra_params, str(tmp_path))
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     assert response == {"session_id": "session", "status": "running"}
     manager.start.assert_awaited_once()
@@ -1317,7 +1343,7 @@ async def test_start_rejects_exec_prompt_without_handoff_path(monkeypatch: pytes
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
     with pytest.raises(ValueError, match=rf"引き継ぎ記録先.*{re.escape(str(task_document))}"):
-        await subject.start(str(task_document), extra_params, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     assert called is False
 
@@ -1342,7 +1368,7 @@ async def test_start_warns_and_continues_without_required_input_marker(
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
-        response = await subject.start(str(task_document), {}, str(tmp_path))
+        response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
     assert response == {"session_id": "session", "status": "running"}
     assert "必須入力を確認できません" in caplog.text
@@ -6289,7 +6315,7 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": status}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
-    response = await subject.start_custom("調査", "high_tier", str(tmp_path))
+    response = await subject.start(str(tmp_path), mode="delegate", prompt="調査", model_type="high_tier")
 
     if expects_next_action:
         assert "atk agents wait" in response["next_action"]
@@ -6853,7 +6879,7 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError) as exc_info:
-        await subject.start(str(task_document), {}, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
     message = _actionable_message(exc_info.value)
     assert "`extra_params`" in message.split(NEXT_ACTION_PREFIX, 1)[1]
     assert "必須入力が欠けています: 対象" in message
@@ -6877,7 +6903,7 @@ async def test_start_accepts_task_document_path_with_spaces(
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
-    response = await subject.start(str(task_document), {"対象": "値"}, str(tmp_path))
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値"})
 
     assert response == {"session_id": "session", "status": "running"}
     manager.start.assert_awaited_once()
@@ -6902,7 +6928,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
-    await subject.start(str(task_document), {"補足": "${CLAUDE_PLUGIN_ROOT}"}, str(tmp_path))
+    await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"補足": "${CLAUDE_PLUGIN_ROOT}"})
 
     prompt = manager.start.await_args.args[1]
     assert f"`{plugin_root.resolve()}/share/other.parent.md`を読む。" in prompt
@@ -6939,7 +6965,7 @@ async def test_start_rejects_task_document_that_cannot_be_read(
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError, match="タスク文書をUTF-8で読めません"):
-        await subject.start(str(task_document), {}, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
     manager.start.assert_not_awaited()
 
@@ -7027,11 +7053,16 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
 
     responses = {
         "delegate": await subject.start(
-            str(task_document), _observed_input_params(task_document.name, tmp_path), str(tmp_path), model_type=override
+            str(tmp_path),
+            subagent_md_path=str(task_document),
+            extra_params=_observed_input_params(task_document.name, tmp_path),
+            model_type=override,
         ),
-        "explore": await subject.start_explore("調査", str(tmp_path), model_type=override),
-        "shell": await subject.start_shell("make test", str(tmp_path), "終了状態", model_type=override),
-        "write": await subject.start_write("起草", str(tmp_path), model_type=override),
+        "explore": await subject.start(str(tmp_path), mode="explore", prompt="調査", model_type=override),
+        "shell": await subject.start(
+            str(tmp_path), mode="shell", command="make test", summary_policy="終了状態", model_type=override
+        ),
+        "write": await subject.start(str(tmp_path), mode="write", prompt="起草", model_type=override),
     }
 
     assert requested == [override] * 4
@@ -7048,10 +7079,10 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
     manager, _ = _manager_with_fake("codex")
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
-    await subject.start_explore("調査", str(tmp_path))
-    await subject.start_explore("調査", str(tmp_path), model_type="medium_tier")
-    await subject.start_shell("make test", str(tmp_path), "終了状態")
-    await subject.start_write("起草", str(tmp_path))
+    await subject.start(str(tmp_path), mode="explore", prompt="調査")
+    await subject.start(str(tmp_path), mode="explore", prompt="調査", model_type="medium_tier")
+    await subject.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態")
+    await subject.start(str(tmp_path), mode="write", prompt="起草")
 
     assert requested == ["low_tier", "medium_tier", "low_tier", "write"]
 
@@ -7068,14 +7099,18 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
     pick_params = _observed_input_params(pick_document.name, tmp_path)
 
     labels = {
-        "lane": await subject.start(str(exec_document), exec_params, str(tmp_path)),
-        "pick": await subject.start(str(pick_document), pick_params, str(tmp_path)),
-        "named": await subject.start(str(pick_document), pick_params, str(tmp_path), label="pick-wi-gv"),
-        "blank": await subject.start(str(pick_document), pick_params, str(tmp_path), label="   "),
-        "shell": await subject.start_shell("make test", str(tmp_path), "終了状態"),
-        "shell_path": await subject.start_shell("/usr/bin/git status", str(tmp_path), "終了状態"),
-        "explore": await subject.start_explore("調査\n詳細", str(tmp_path)),
-        "write": await subject.start_write("起草\n詳細", str(tmp_path)),
+        "lane": await subject.start(str(tmp_path), subagent_md_path=str(exec_document), extra_params=exec_params),
+        "pick": await subject.start(str(tmp_path), subagent_md_path=str(pick_document), extra_params=pick_params),
+        "named": await subject.start(
+            str(tmp_path), subagent_md_path=str(pick_document), extra_params=pick_params, label="pick-wi-gv"
+        ),
+        "blank": await subject.start(str(tmp_path), subagent_md_path=str(pick_document), extra_params=pick_params, label="   "),
+        "shell": await subject.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態"),
+        "shell_path": await subject.start(
+            str(tmp_path), mode="shell", command="/usr/bin/git status", summary_policy="終了状態"
+        ),
+        "explore": await subject.start(str(tmp_path), mode="explore", prompt="調査\n詳細"),
+        "write": await subject.start(str(tmp_path), mode="write", prompt="起草\n詳細"),
     }
 
     shown = {key: manager.show_session(response["session_id"])["label"] for key, response in labels.items()}
@@ -7091,77 +7126,116 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
     }
 
 
-def test_label_legend_in_instructions() -> None:
-    """共通引数の説明をサーバーの`instructions`へ1か所にまとめ、各ツールの説明は固有の省略時の値と参照だけにする。"""
-    instructions = subject.mcp.instructions or ""
-    for fragment in (
-        "共通引数`model_type`",
-        "`<claude|codex|agy>:<model>[/<effort>]`",
-        "`atk config set`",
-        "共通引数`label`",
-        "`<レーン識別子>-<タスク文書名>`",
-        "`<レビュー対象を表す語>-review`",
-        "`explore-<調査対象を示す1〜2語>`",
-        "`shell-<コマンド名など1〜2語>`",
-        "`write-<起草対象を示す1〜2語>`",
-        "labelを明示して起動する",
-    ):
-        assert fragment in instructions, fragment
-    specific = {
-        "start": "`<レーン識別子>-<タスク文書名>`",
-        "start_custom": "依頼本文の先頭",
-        "start_explore": "`explore-<調査対象を示す1〜2語>`",
-        "start_shell": "`shell-<コマンド名など1〜2語>`",
-        "start_write": "`write-<起草対象を示す1〜2語>`",
-    }
-    descriptions = []
-    for tool_name, fragment in specific.items():
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        description = tool.parameters["properties"]["label"]["description"]
-        assert "共通引数`label`" in description, tool_name
-        assert "`show`・`atk agents list`・statuslineへ現れる" not in description, tool_name
-        assert fragment in description, tool_name
-        descriptions.append(description)
-    assert len(set(descriptions)) == len(descriptions)
-
-
-def test_lightweight_launch_limits_in_instructions() -> None:
-    """起動手段を選ぶ呼び出し元が読む`instructions`に、軽量起動で使えない規範とスキル、代わりの`start`、および固定指示が定める事項を示す。
-
-    欠けると呼び出し元は軽量起動でもスキルと共有規範を使えると誤解し、起動文を短く書いて
-    スキルの手順を要する作業を`start_explore`などへ渡し、委譲先は必要な手順を持たないまま作業する。
-    """
-    instructions = subject.mcp.instructions or ""
-    for fragment in (
-        "共有規範が注入されず",
-        "スキルを使える保証も無い",
-        "作業に必要な指示を全て起動文へ書く",
-        "スキルの手順を要する作業には`start`を使う",
-        "各起動種別の固定指示（`share/agents-server-*.md`）が既に定めるため、起動文へ書かない",
-    ):
-        assert fragment in instructions, fragment
-
-
 def test_start_description_declares_input_and_launch_kind_contract() -> None:
-    """`start`の説明と`instructions`が、宣言済み入力だけの受理と起動種別による軽量起動を示し、`追加指示`を案内しない。
+    """`start`の説明が、宣言済み入力だけの受理と起動種別による軽量起動を示し、`追加指示`を案内しない。
 
     `追加指示`へ補足を渡す案内が残ると、呼び出し元は拒否される項目名で起動し、同じ呼び出しをやり直す。
     """
-    instructions = subject.mcp.instructions or ""
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
     extra_params = start_tool.parameters["properties"]["extra_params"]["description"]
     assert "追加指示" not in extra_params
     assert "宣言外の入力名を含む場合は委譲先を起動しない" in extra_params
     assert "`待機表明の例外`" in extra_params
-    assert "宣言した起動種別に従い" in instructions
-    assert "宣言外の入力名を含む起動は拒否する" in instructions
-    assert "`起動種別:`を宣言した場合" in start_tool.description
-    for tool_name in ("start_explore", "start_write", "start_shell"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        assert "専用タスク文書を用意できない単発の作業に使う" in tool.description, tool_name
+    assert "タスク文書が宣言した起動種別" in start_tool.description
+    assert "宣言外の入力名は拒否し" in start_tool.description
+
+
+_MODE_INPUT_CASES = [
+    pytest.param("task", {}, "subagent_md_path", id="task-missing-document"),
+    pytest.param("task", {"subagent_md_path": "/abs/x.subagent.md", "prompt": "本文"}, "prompt", id="task-mixed-prompt"),
+    pytest.param("delegate", {"prompt": "本文"}, "model_type", id="delegate-missing-model-type"),
+    pytest.param(
+        "delegate",
+        {"prompt": "本文", "model_type": "high_tier", "extra_params": {}},
+        "extra_params",
+        id="delegate-mixed-extra-params",
+    ),
+    pytest.param("explore", {}, "prompt", id="explore-missing-prompt"),
+    pytest.param("write", {"prompt": "本文", "command": "ls"}, "command", id="write-mixed-command"),
+    pytest.param("shell", {"command": "make test"}, "summary_policy", id="shell-missing-policy"),
+    pytest.param(
+        "shell",
+        {"command": "make test", "summary_policy": "終了状態", "prompt": "本文"},
+        "prompt",
+        id="shell-mixed-prompt",
+    ),
+    pytest.param(
+        "explore",
+        {"prompt": "本文", "subagent_md_path": "/abs/x.subagent.md"},
+        "subagent_md_path",
+        id="explore-mixed-document",
+    ),
+]
+
+
+@pytest.mark.parametrize(("mode", "inputs", "named"), _MODE_INPUT_CASES)
+@pytest.mark.asyncio
+async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    mode: str,
+    inputs: dict[str, Any],
+    named: str,
+) -> None:
+    """modeが必要とする入力の欠落と受理しない入力の混在を、委譲先の起動前に修正可能な診断で拒否する。"""
+    manager = SimpleNamespace(
+        start=AsyncMock(),
+        start_explore=AsyncMock(),
+        start_write=AsyncMock(),
+        start_shell=AsyncMock(),
+    )
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    with pytest.raises(ToolError) as raised:
+        await subject.mcp.call_tool("start", {"cwd": str(tmp_path), "mode": mode, **inputs})
+
+    body = str(raised.value)
+    assert named in body
+    assert "委譲先は起動していない" in body
+    assert NEXT_ACTION_PREFIX in body
+    assert "最小の呼び出し例" in body
+    for method in (manager.start, manager.start_explore, manager.start_write, manager.start_shell):
+        method.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_routes_each_mode_to_launch_kind_model_and_label(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """公開境界から各modeの起動種別、省略時のmodel_typeおよびlabelがManagerへ届く。"""
+    requested: list[str] = []
+
+    def candidates(model_type: str) -> list[tuple[str, str, str]]:
+        requested.append(model_type)
+        return [("codex", "model", "high")]
+
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", candidates)
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    calls: dict[str, dict[str, Any]] = {
+        "task": {"subagent_md_path": str(task_document), "extra_params": _observed_input_params(task_document.name, tmp_path)},
+        "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "high_tier"},
+        "explore": {"mode": "explore", "prompt": "調査", "label": "explore-対象"},
+        "write": {"mode": "write", "prompt": "起草"},
+        "shell": {"mode": "shell", "command": "make test", "summary_policy": "終了状態"},
+    }
+
+    shown = {}
+    for mode, arguments in calls.items():
+        response = await subject.start(str(tmp_path), **arguments)
+        shown[mode] = manager.show_session(response["session_id"])
+
+    assert requested == [subject._TASK_MODEL_TYPES[task_document.name], "high_tier", "low_tier", "write", "low_tier"]
+    assert [call[2] for call in backend.start_calls] == ["delegate", "delegate", "explore", "write", "shell"]
+    assert {mode: item["label"] for mode, item in shown.items()} == {
+        "task": "lane-01-exec",
+        "delegate": "監査",
+        "explore": "explore-対象",
+        "write": "write",
+        "shell": "shell-make",
+    }
 
 
 @pytest.mark.asyncio
@@ -7170,7 +7244,7 @@ async def test_start_rejects_removed_wi_draft_review(tmp_path: pathlib.Path) -> 
     task_document = subject._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
 
     with pytest.raises(ValueError, match="is not an existing .subagent.md file"):
-        await subject.start(str(task_document), {"レビュー対象": "draft.md"}, str(tmp_path))
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"レビュー対象": "draft.md"})
 
     assert "wi-draft-review.subagent.md" not in subject._TASK_MODEL_TYPES
 
@@ -7225,7 +7299,7 @@ async def test_start_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest.
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
     with pytest.raises(ValueError) as raised:
-        await subject.start_explore("調査", str(workdir))
+        await subject.start(str(workdir), mode="explore", prompt="調査")
 
     message = _actionable_message(raised.value)
     assert f"cwd={workdir}" in message
@@ -7254,7 +7328,7 @@ async def test_start_reports_path_check_when_plugin_commands_are_missing(
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
     with pytest.raises(ValueError) as raised:
-        await subject.start_explore("調査", str(tmp_path))
+        await subject.start(str(tmp_path), mode="explore", prompt="調査")
 
     message = _actionable_message(raised.value)
     assert "実行ファイルが見つからない" in message
@@ -7303,17 +7377,6 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
         "delivery": "reply_started",
         "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
     }
-
-
-def test_model_type_descriptions_reference_instructions() -> None:
-    """model_typeの書式と用途は`instructions`だけが持ち、各ツールの説明は省略時の値と参照だけにする。"""
-    for tool_name in ("start", "start_custom", "start_explore", "start_shell", "start_write"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        description = tool.parameters["properties"]["model_type"]["description"]
-        assert "共通引数`model_type`" in description, tool_name
-        assert "<claude|codex|agy>" not in description, tool_name
-        assert "`atk config set`" not in description, tool_name
 
 
 @pytest.mark.asyncio

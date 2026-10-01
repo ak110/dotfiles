@@ -15,12 +15,15 @@ from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 _EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
 
 
-def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
+def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None) -> subprocess.CompletedProcess[str]:
+    tool_input = {"prompt": prompt, "cwd": str(tmp_path), "model_type": "high_tier"}
+    if mode is not None:
+        tool_input["mode"] = mode
     return _run(
         {
             "tool_name": tool_name,
-            "tool_input": {"prompt": prompt, "cwd": str(tmp_path), "model_type": "high_tier"},
-            "session_id": f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}",
+            "tool_input": tool_input,
+            "session_id": f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}-{mode}",
             "cwd": str(tmp_path),
         },
         env_overrides=_plan_file_state_env(tmp_path),
@@ -28,27 +31,36 @@ def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path) -> subprocess.C
 
 
 @pytest.mark.parametrize(
-    "tool_name",
+    ("tool_name", "mode"),
     [
-        "mcp__plugin_agent-toolkit_agents_server__start_custom",
-        "mcp__plugin_agent-toolkit_agents_server__start_explore",
-        "mcp__agents_server__start_write",
+        ("mcp__plugin_agent-toolkit_agents_server__start", "delegate"),
+        ("mcp__plugin_agent-toolkit_agents_server__start", "explore"),
+        ("mcp__agents_server__start", "write"),
     ],
 )
-def test_free_text_start_pointing_task_document_is_blocked(tool_name: str, tmp_path: pathlib.Path) -> None:
-    """自由本文の起動でタスク文書を指すと遮断し、`start`と`subagent_md_path`での起動を案内する。
+def test_free_text_start_pointing_task_document_is_blocked(tool_name: str, mode: str, tmp_path: pathlib.Path) -> None:
+    """自由本文のmodeでタスク文書を指すと遮断し、taskの`start`と`subagent_md_path`での起動を案内する。
 
     通すと、タスク文書の宣言を経ない起動文が委譲先のコンテキストへ取り込まれる。
     """
-    result = _invoke(tool_name, f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path)
+    result = _invoke(tool_name, f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path, mode)
 
     assert result.returncode == 2
     assert f"subagent_md_path={_EXEC_DOCUMENT}" in result.stderr
+    assert f"`start`の`{mode}`" in result.stderr
+
+
+@pytest.mark.parametrize("mode", [None, "shell"])
+def test_task_and_shell_modes_are_not_free_text_starts(mode: str | None, tmp_path: pathlib.Path) -> None:
+    """taskとshellは`prompt`を受理しないmodeであり、本文の遮断対象にしない。入力の拒否はサーバーが行う。"""
+    result = _invoke("mcp__plugin_agent-toolkit_agents_server__start", f"{_EXEC_DOCUMENT}の手順を実行せよ。\n", tmp_path, mode)
+
+    assert result.returncode == 0
 
 
 def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) -> None:
     """タスク文書を指さない自由本文の起動は遮断しない。"""
-    result = _invoke("mcp__plugin_agent-toolkit_agents_server__start_explore", "対象の所在を調べて返す。", tmp_path)
+    result = _invoke("mcp__plugin_agent-toolkit_agents_server__start", "対象の所在を調べて返す。", tmp_path, "explore")
 
     assert result.returncode == 0
 

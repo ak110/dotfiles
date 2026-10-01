@@ -160,9 +160,7 @@ def _advance_language_reinjection(payload: dict, session_id: str) -> bool:
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}"
-    for namespace in _AGENTS_SERVER_NAMESPACES
-    for tool in ("start", "start_custom", "start_explore", "start_shell", "start_write")
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in _agents_server_tool_names.START_OPERATIONS
 )
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
@@ -309,10 +307,7 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
         return _llm_notice(
             f"warn: {display_name}には空でない`session_id`が必要である。",
             tag=_WARN_TAG,
-            fix=(
-                "`start`系ツール（`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`）が返した"
-                "`session_id`を指定して再実行する。"
-            ),
+            fix=("`start`が返した`session_id`を指定して再実行する。"),
             removable_cause=True,
         )
     state = read_state(session_id)

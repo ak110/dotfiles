@@ -12,7 +12,7 @@
 ## 起動方法
 
 `agents_server`の`start`によるタスク文書起動（`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」）で起動する。
-`start_explore`は使わない。その委譲先はSkillツールを持たず、調査に要る`agent-toolkit:bugfix`を起動できないためである。
+`start`の`explore`は使わない。その委譲先はSkillツールを持たず、調査に要る`agent-toolkit:bugfix`を起動できないためである。
 独立した不良が複数ある場合は、不良ごとに1件起動する（`agent-toolkit:delegation`の`references/routing.md`の独立した文脈による事実収集）。
 `cwd`は見つけた主体の作業ディレクトリの絶対パスとする。
 

@@ -31,7 +31,7 @@ STALL_NOTICE_SECONDS = 300.0
 # 以降の上限はこの閾値を制約として導出する。単独の値として決めない。
 HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # backendがsessionの初期化を完了するまで起動側が待つ上限秒数と、同じ候補で試みる回数。
-# Claude Codeの記録では、start系ツールの呼び出しから起動された子sessionの記録の先頭エントリまでの
+# Claude Codeの記録では、`start`の呼び出しから起動された子sessionの記録の先頭エントリまでの
 # 経過が233件中232件で47.65秒以内に収まり、残る1件が604.22秒だった。
 # 同じ母集団のうち7件は初期化が到達せず、ホストがMCPツール呼び出しを1800.5秒で打ち切っていた。
 # 1回の上限は観測の上位側の47.65秒を含む値とし、回数との積へ起動直後の可用性失敗を待つ上限
@@ -809,7 +809,7 @@ def consume_agents_server_tool_result(
 ) -> None:
     """agents_serverツールの結果を孫session集合へ反映する。"""
     normalized = _agents_server_tool_name(tool_name)
-    if normalized in {"start", "start_explore", "start_shell", "start_write"}:
+    if normalized in tool_names.RECORDED_START_OPERATIONS:
         session_id = result.get("session_id")
         if isinstance(session_id, str) and session_id:
             session.live_child_session_ids.add(session_id)
@@ -968,7 +968,7 @@ def _agents_server_tool_name(tool_name: str) -> str | None:
     for prefix in tool_names.MCP_NAMESPACES:
         if tool_name.startswith(prefix):
             return tool_name.removeprefix(prefix)
-    if tool_name in {"start", "start_explore", "start_shell", "start_write", "kill"}:
+    if tool_name in tool_names.RECORDED_START_OPERATIONS or tool_name == "kill":
         return tool_name
     return None
 

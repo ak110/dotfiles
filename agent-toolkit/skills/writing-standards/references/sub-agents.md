@@ -44,7 +44,7 @@ frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agent
 `## 入力`の項目を追加、除去または改名する変更では、同じ変更単位でこれらの行を更新する。
 
 同じコードブロックへ任意の`起動種別: <delegate|explore|write|shell>`行を置ける。行が無い場合は`delegate`（通常委譲）とする。
-`explore`・`write`・`shell`を宣言したタスク文書は、`start`が`start_explore`・`start_write`・`start_shell`と同じ軽量な起動条件で起動する。
+`explore`・`write`・`shell`を宣言したタスク文書は、`start`が同名の`mode`と同じ軽量な起動条件で起動する。
 軽量な起動条件の受信者はスキルと共有規範を読む手段を持たないため、判定基準と手順をタスク文書の中で完結させる。
 
 `<役割名>.parent.md`はH1の直後で最初のH2より前へ`text`のコードブロックを1件置く。

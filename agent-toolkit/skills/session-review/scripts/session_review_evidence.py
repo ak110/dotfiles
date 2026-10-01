@@ -1038,12 +1038,12 @@ _CODEX_TOKEN_KEYS = (
 )
 _CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
 _THREAD_ID_KEYS = ("session_id", "sessionId", "threadId", "conversationId")
-# 新しい委譲記録の発見元は子sessionを生成する起動ツールに限る。
+# 新しい委譲記録の発見元は子sessionを生成する起動ツールに限る。統合前に保存された記録の旧名も含める。
 # 既存session操作と外側実行セルの入力文字列は、新しい委譲の証拠にならない。
 _AGENTS_SERVER_TOOL_NAMES = frozenset(
     f"{namespace}{name}"
     for namespace in _agents_server_tool_names.MCP_NAMESPACES
-    for name in _agents_server_tool_names.START_OPERATIONS
+    for name in _agents_server_tool_names.RECORDED_START_OPERATIONS
 )
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
 
@@ -1367,7 +1367,7 @@ def _codex_mcp_start_item(entry: dict[str, Any]) -> dict[str, Any] | None:
         and item.get("type") == "McpToolCall"
         and item.get("server") == "agents_server"
         and isinstance(item.get("tool"), str)
-        and item.get("tool") in _agents_server_tool_names.START_OPERATIONS
+        and item.get("tool") in _agents_server_tool_names.RECORDED_START_OPERATIONS
     ):
         return item
     return None
@@ -2190,6 +2190,17 @@ def _is_execution_tool_name(name: str | None) -> bool:
     return leaf in {"bash", "commandexecution", "exec_command", "start_batch", "start_shell"}
 
 
+def _execution_kind_name(name: str, arguments: Any) -> str:
+    """`agents_server`の`start`のうちshellのmodeを、コマンド実行のツール名`start_shell`へ揃えて返す。
+
+    統合前の記録はツール名`start_shell`でコマンド実行を表し、統合後は`start`の`mode`で表す。
+    """
+    leaf = name.rsplit("__", maxsplit=1)[-1]
+    if leaf in _agents_server_tool_names.START_OPERATIONS and _agents_server_tool_names.start_mode(leaf, arguments) == "shell":
+        return "start_shell"
+    return name
+
+
 def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
     """ツール結果の識別子を、先行する呼び出しのツール名へ対応付ける。"""
     names: dict[str, str] = {}
@@ -2204,7 +2215,7 @@ def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
                 tool_id = block.get("id")
                 name = block.get("name")
                 if isinstance(tool_id, str) and isinstance(name, str):
-                    names[tool_id] = name
+                    names[tool_id] = _execution_kind_name(name, block.get("input"))
         payload = entry.get("payload")
         if not isinstance(payload, dict) or payload.get("type") not in {"function_call", "custom_tool_call"}:
             continue
@@ -3394,7 +3405,7 @@ _UNEXPECTED_EVENT_PREFIXES = ("想定外事象:", "想定外事象：")
 _VERDICT_LINE = re.compile(r"^(?:#+\s*)?(?:\*\*)?\s*判定[^:：]{0,30}[:：]\s*(?:\*\*)?\s*(?P<value>\S.*)$")
 _SHELL_OPERATOR_CHARS = frozenset(";&|<>()")
 _SHELL_DELEGATION_MARKER = "次のコマンドを実行し、結果を報告せよ。"
-"""`agents_server`の`start_shell`が委譲先へ渡す指示本文の冒頭の文。値が同サーバーの指示本文と一致することをテストが確かめる。"""
+"""`agents_server`の`start`のshellが委譲先へ渡す指示本文の冒頭の文。値が同サーバーの指示本文と一致することをテストが確かめる。"""
 _REPORTED_EXIT_CODE = re.compile(r"(?:終了コード|exit(?:[_ ]?code)?|(?<![A-Za-z])rc)[^0-9\n]{0,15}?(\d+)", re.IGNORECASE)
 _REPORTED_NONZERO_COUNT = re.compile(
     r"(?:(?:failed|warnings?|diagnostics)[\"'`]*\s*[:=]\s*[1-9])|(?:(?:失敗|警告|診断)[^0-9\n]{0,10}?[1-9][0-9]*\s*件)",
@@ -4258,7 +4269,7 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
 
 
 def _delegation_record_kinds(timeline: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
-    """コマンド実行の委譲（`start_shell`）を受け取った委譲先と、再開された委譲先の記録IDを返す。
+    """コマンド実行の委譲（`start`のshell）を受け取った委譲先と、再開された委譲先の記録IDを返す。
 
     実行環境が先に注入した利用者ロールの本文を除き、最初の配送本文で
     コマンド実行の委譲かを判定する。配送本文が2件以上ある記録を再開されたものとする。

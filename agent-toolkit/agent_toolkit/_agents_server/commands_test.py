@@ -206,7 +206,7 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
     session = state.SessionState("parent-1", "/tmp")
     state.consume_claude_agents_server_message(
         session,
-        {"content": [{"id": "toolu_1", "name": "mcp__agents_server__start_explore", "input": {"prompt": "調査"}}]},
+        {"content": [{"id": "toolu_1", "name": "mcp__agents_server__start", "input": {"mode": "explore", "prompt": "調査"}}]},
     )
     state.consume_claude_agents_server_message(
         session, {"content": [{"tool_use_id": "toolu_1", "content": {"session_id": "session-1", "status": "running"}}]}

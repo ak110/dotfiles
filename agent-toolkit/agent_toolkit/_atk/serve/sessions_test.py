@@ -201,7 +201,9 @@ def test_listing_links_recorded_delegation_and_metadata_levels(tmp_path: pathlib
     assert str(grandchild) not in entries
 
 
-def test_listing_links_codex_start_result_to_claude_child(tmp_path: pathlib.Path) -> None:
+# 統合前の起動ツール名を持つ保存済みの記録と、統合後の`start`の記録の双方を読む。
+@pytest.mark.parametrize("tool", ["start", "start_explore"])
+def test_listing_links_codex_start_result_to_claude_child(tmp_path: pathlib.Path, tool: str) -> None:
     """Codex起動結果が指す実在するClaudeセッションだけを結ぶ。"""
     parent = _codex_record(tmp_path)
     records = [json.loads(line) for line in parent.read_text(encoding="utf-8").splitlines()]
@@ -209,7 +211,7 @@ def test_listing_links_codex_start_result_to_claude_child(tmp_path: pathlib.Path
         [
             {
                 "type": "response_item",
-                "payload": {"type": "custom_tool_call", "call_id": "delegate", "name": "mcp__agents_server__start_explore"},
+                "payload": {"type": "custom_tool_call", "call_id": "delegate", "name": f"mcp__agents_server__{tool}"},
             },
             {
                 "type": "response_item",
@@ -229,7 +231,8 @@ def test_listing_links_codex_start_result_to_claude_child(tmp_path: pathlib.Path
     assert entries[str(child)].parent_path == str(parent)
 
 
-def test_listing_links_codex_mcp_tool_call_and_excluded_candidate(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("tool", ["start", "start_explore"])
+def test_listing_links_codex_mcp_tool_call_and_excluded_candidate(tmp_path: pathlib.Path, tool: str) -> None:
     parent = _codex_record(tmp_path)
     chosen = _claude_record(tmp_path)
     excluded_id = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
@@ -249,7 +252,7 @@ def test_listing_links_codex_mcp_tool_call_and_excluded_candidate(tmp_path: path
                 "item": {
                     "type": "McpToolCall",
                     "server": "agents_server",
-                    "tool": "start_explore",
+                    "tool": tool,
                     "result": json.dumps(
                         {
                             "structuredContent": {

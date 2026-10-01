@@ -67,13 +67,30 @@ def test_all_launch_system_prompts_include_language_condition() -> None:
 
 
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
-def test_child_session_is_tracked_for_every_host_tool_name_form(namespace: str) -> None:
-    """ホストが配送するいずれの修飾形式でも孫sessionを追跡対象へ登録する。"""
+@pytest.mark.parametrize(
+    ("operation", "arguments"),
+    [
+        ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "extra_params": {}}),
+        ("start", {"mode": "delegate", "prompt": "調査", "model_type": "high_tier"}),
+        ("start", {"mode": "explore", "prompt": "調査"}),
+        ("start", {"mode": "write", "prompt": "起草"}),
+        ("start", {"mode": "shell", "command": "make test", "summary_policy": "終了状態"}),
+        ("start_explore", {"prompt": "調査"}),
+        ("start_custom", {"prompt": "調査", "model_type": "high_tier"}),
+    ],
+)
+def test_child_session_is_tracked_for_every_host_tool_name_form(
+    namespace: str, operation: str, arguments: dict[str, object]
+) -> None:
+    """ホストが配送するいずれの修飾形式と`start`の各modeでも孫sessionを追跡対象へ登録する。
+
+    統合前の起動ツール名で記録された呼び出しも同じく追跡する。
+    """
     session = state.SessionState("parent-1", "/tmp")
 
     state.consume_claude_agents_server_message(
         session,
-        {"content": [{"id": "toolu_1", "name": f"{namespace}start_explore", "input": {"prompt": "調査"}}]},
+        {"content": [{"id": "toolu_1", "name": f"{namespace}{operation}", "input": arguments}]},
     )
     state.consume_claude_agents_server_message(
         session,
@@ -87,7 +104,7 @@ def test_child_session_is_tracked_for_every_host_tool_name_form(namespace: str) 
 def _start_child(session: state.SessionState, tool_use_id: str, child_id: str) -> None:
     state.consume_claude_agents_server_message(
         session,
-        {"content": [{"id": tool_use_id, "name": "mcp__agents_server__start_explore", "input": {"prompt": "調査"}}]},
+        {"content": [{"id": tool_use_id, "name": "mcp__agents_server__start", "input": {"mode": "explore", "prompt": "調査"}}]},
     )
     state.consume_claude_agents_server_message(
         session,

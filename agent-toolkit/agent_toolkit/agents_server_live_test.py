@@ -19,14 +19,15 @@ _PROMPT = """Bashツールで`sleep 2`を背景実行し、待たずにturnを�
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("launch_kind", ["start", "start_explore", "start_shell"])
+@pytest.mark.parametrize("mode", ["delegate", "explore", "shell"])
 async def test_live_launch_waits_for_automatic_resume(
-    launch_kind: str,
+    mode: str,
     monkeypatch: pytest.MonkeyPatch,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """3つの公開起動手段が再開指示なしで背景作業完了後の結果を返す。"""
+    """公開する起動ツール`start`の3つのmodeが、再開指示なしで背景作業完了後の結果を返す。"""
     manager = subject.AgentsServerManager()
+    monkeypatch.setattr(subject, "_MANAGER", manager)
     cwd = str(pathlib.Path(__file__).parents[2])
     host = host_environ()
     for name in (
@@ -50,15 +51,16 @@ async def test_live_launch_waits_for_automatic_resume(
         lambda _model_type: [("claude", "sonnet[1m]", "medium")],
     )
     try:
-        if launch_kind == "start":
-            await manager.start("low_tier", _PROMPT, cwd)
-        elif launch_kind == "start_explore":
-            await manager.start_explore(_PROMPT, cwd)
+        if mode == "delegate":
+            await subject.start(cwd, mode="delegate", prompt=_PROMPT, model_type="low_tier")
+        elif mode == "explore":
+            await subject.start(cwd, mode="explore", prompt=_PROMPT)
         else:
-            await manager.start_shell(
-                "sleep 2",
+            await subject.start(
                 cwd,
-                "Bashツールを背景実行し、完了通知で再開した後に`AUTO_RESUME_COMPLETED`だけを返す。",
+                mode="shell",
+                command="sleep 2",
+                summary_policy="Bashツールを背景実行し、完了通知で再開した後に`AUTO_RESUME_COMPLETED`だけを返す。",
             )
 
         result = await manager.wait()
