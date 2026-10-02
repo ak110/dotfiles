@@ -1,7 +1,7 @@
-"""セッション一覧の親子付けを検証する記録の検体を作成する。
+"""セッション一覧の親子付けを検証するテスト用の記録を作成する。
 
-ローカルの一覧、リモートヘルパーおよびセッション画面のテストが同じ検体を使い、
-親子の情報源（サブエージェントのmetadata、`start`系の結果、Codexの親thread、登録簿の起動元）と
+ローカルの一覧、リモートヘルパーおよびセッション画面のテストが同じテスト用の記録を使い、
+親子の情報源（サブエージェントのmetadata、`start`系の結果、Codexの親thread、登録簿の委譲元）と
 実行系の異なる親子、件数上限で外れる親を同じ期待値で確かめる。
 """
 
@@ -23,12 +23,12 @@ NEW_CHILD_ID = "aaaaaaaa-0000-0000-0000-000000000010"
 SUBAGENT_ID = "agent-sub1"
 
 TOTAL_ENTRIES = 11
-"""検体が一覧へ載せる記録の件数。件数上限をこれより1件少なくすると、最古の親だけが切り詰めで外れる。"""
+"""テスト用の記録のうち一覧へ載せる記録の件数。件数上限をこれより1件少なくすると、最古の親だけが切り詰めで外れる。"""
 
 
 @dataclasses.dataclass(frozen=True)
 class SessionTree:
-    """作成した検体の記録のパスと、子の記録ごとの期待する親の記録のパス。"""
+    """作成したテスト用の記録のパスと、子の記録ごとの期待する親の記録のパス。"""
 
     paths: dict[str, pathlib.Path]
     expected_parents: dict[str, str]
@@ -111,7 +111,7 @@ def _codex(
 
 
 def write_session_tree(claude_home: pathlib.Path, codex_home: pathlib.Path, state_dir: pathlib.Path) -> SessionTree:
-    """親子付けの情報源ごとの親子と、件数上限で外れる親を持つ記録の検体を作成する。"""
+    """親子付けの情報源ごとの親子と、件数上限で外れる親を持つテスト用の記録を作成する。"""
     project = claude_home / "projects" / "repo"
     sessions = codex_home / "sessions"
     paths: dict[str, pathlib.Path] = {}

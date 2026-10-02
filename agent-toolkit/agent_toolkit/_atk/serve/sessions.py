@@ -512,7 +512,7 @@ class SessionsContext:
     remote_hosts: tuple[str, ...]
     runner: SshRunner
     state: "SessionsState"
-    # agents_serverのsession登録簿を置く状態ディレクトリ。登録簿の起動元を一覧の親子付けに使う。
+    # agents_serverのsession登録簿を置く状態ディレクトリ。登録簿の委譲元を一覧の親子付けに使う。
     state_dir: pathlib.Path | None = None
 
 

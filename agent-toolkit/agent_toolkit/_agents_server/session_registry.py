@@ -93,8 +93,8 @@ def publish(
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。
 
-    `launcher_session_id`はsessionを作成した時点の起動元sessionの識別子である。
-    省略した場合は既存のレコードが持つ値を引き継ぐ。`atk serve`の一覧が、親の会話記録に
+    `launcher_session_id`はsessionを作成した時点の委譲元sessionの識別子である。
+    省略した場合は既存のレコードが持つ値を引き継ぐ。`atk serve`の一覧が、親のセッション記録に
     起動結果が残らない委譲先の親を結ぶために読むため、状態の更新で失わないようにする。
     """
     _validate_session_id(session_id)

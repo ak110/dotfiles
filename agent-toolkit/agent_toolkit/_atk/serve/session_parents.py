@@ -10,7 +10,7 @@
 1. Claude Codeのサブエージェントのmetadata（呼び出し元が`parent_path`として渡す）
 2. 親の記録に残る`agents_server`の`start`系の結果（`delegated_ids`）
 3. Codexの記録の最初の`session_meta`が示す親thread
-4. `agents_server`のsession登録簿が持つ起動元
+4. `agents_server`のsession登録簿が持つ委譲元
 
 登録簿を最後に置くのは、最上位のClaude Codeが起動したMCPサーバーが起動時のsession識別子を保持し続け、
 `/clear`の後は古い会話を指し得るためである。親と子の実行系（Claude CodeとCodex）は異なり得るため、

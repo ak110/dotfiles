@@ -4722,7 +4722,7 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
 ) -> None:
     """全ての起動経路の子が、親の展開で`aria-level`2として現れ、第1階層に現れない。
 
-    検体は実行系の異なる親子、Codexの親thread、登録簿の起動元だけで親が決まる委譲先、
+    テストコードの記録は実行系の異なる親子、Codexの親thread、登録簿の委譲元だけで親が決まる委譲先、
     Claude Codeのサブエージェント、件数上限で外れた親とその子を持つ。
     画面が親を子の実行系で引くと、実行系の異なる子が第1階層へ並ぶ。
     """

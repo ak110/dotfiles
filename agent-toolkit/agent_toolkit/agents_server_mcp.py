@@ -356,7 +356,7 @@ _EXTRA_PARAMS_DESCRIPTION = _parameter_description(
     "`<役割名>.subagent.md`が`## 入力`で宣言した入力名（必須入力名と任意入力名）をキー、文字列を値とする。"
     "待機と再開の方針はサーバーが伝えるため、委譲プロンプトへ書き足さない。"
     "必須入力の欠落と宣言外の入力名を含む場合は委譲先を起動しない。"
-    "ただし必須入力の`引き継ぎ記録先`を省略した場合は、サーバーが呼び出し元のセッション領域の直下に`（新規）`の記録先を用意し、"
+    "ただし必須入力の`引き継ぎ記録先`を省略した場合は、サーバーが委譲元のセッションのmanaged-tempの直下に`（新規）`の記録先を用意し、"
     "その絶対パスを応答の`handoff_record_path`で返す。継続する担当へは、その値へ`（継続）`を付けて渡す。"
 )
 _PROMPT_DESCRIPTION = _parameter_description(
@@ -567,14 +567,14 @@ _HANDOFF_INPUT_NAME = "引き継ぎ記録先"
 """サーバーが省略時の値を用意する必須入力の名前。値は呼び出し元の判断を含まず一意に決まる。"""
 
 _HANDOFF_TEMP_PREFIX = "handoff"
-"""呼び出し元のセッション領域を解決できない場合に作成する管理対象一時領域の接頭辞。"""
+"""委譲元のセッションのmanaged-tempを解決できない場合に作成するmanaged-tempの接頭辞。"""
 
 
 def _default_handoff_path() -> pathlib.Path | None:
-    """`（新規）`の引き継ぎ記録先として、呼び出し元のセッション領域直下の未使用のファイルパスを返す。
+    """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
 
-    セッション領域は`AGENT_TOOLKIT_OWNER_SESSION`か`CLAUDE_CODE_SESSION_ID`が示すsessionのものを作成せずに解決する。
-    解決できない場合（Codex CLIが直接起動したMCPサーバーなど）は新しい管理対象一時領域を作成する。
+    セッションのmanaged-tempは`AGENT_TOOLKIT_OWNER_SESSION`か`CLAUDE_CODE_SESSION_ID`が示すsessionのものを作成せずに解決する。
+    解決できない場合（Codex CLIが直接起動したMCPサーバーなど）は新しいmanaged-tempを作成する。
     どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
     ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
     """
@@ -1366,9 +1366,9 @@ class AgentsServerManager:
         return remaining, excluded
 
     def _launcher_session_id(self) -> str | None:
-        """作成するsessionの起動元sessionの識別子を返す。
+        """作成するsessionの委譲元sessionの識別子を返す。
 
-        状態ファイルの書込主体が射影する起動元、所有ルート（プロセス専用ルートを除く）、
+        状態ファイルの書込主体が射影する委譲元、所有ルート（プロセス専用ルートを除く）、
         呼び出しプロセスの環境の`CODEX_THREAD_ID`の順に解決する。
         """
         if self._status_writer is not None:
@@ -1465,8 +1465,8 @@ class AgentsServerManager:
                 _LOG.warning("agy_start_failed model_type=%s model=%s reason=%s", model_type, model, reason)
                 continue
             session.engine = engine
-            # テストや独自のMCPクライアントから起動して親の会話記録に起動結果が残らない委譲先も、
-            # `atk serve`の一覧が親の下へ置けるよう、作成時点の起動元を登録簿へ記録する。
+            # テストや独自のMCPクライアントから起動して親のセッション記録に起動結果が残らない委譲先も、
+            # `atk serve`の一覧が親の下へ置けるよう、作成時点の委譲元を登録簿へ記録する。
             session.launcher_session_id = self._launcher_session_id()
             if session.status == "starting":
                 session.status = "running"

@@ -1454,7 +1454,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
 async def test_start_keeps_given_handoff_path_and_rejects_other_missing_inputs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """呼び出し元が渡した`引き継ぎ記録先`はそのまま起動文へ載せ、それ以外の必須入力の欠落は従来どおり拒否する。"""
+    """委譲元が渡した`引き継ぎ記録先`はそのまま委譲プロンプトへ載せ、それ以外の必須入力の欠落は従来どおり拒否する。"""
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     extra_params = dict(line.split(": ", 1) for line in _observed_input_lines(task_document.name, tmp_path))
     prompts: list[str] = []
@@ -1601,7 +1601,7 @@ async def test_success_response_key_sets_for_all_tools(
 
 
 class _RegistryBackend(FakeBackend):
-    """作成したsessionを登録簿へ公開するバックエンド。起動元の記録を登録簿で観測するテストが使う。"""
+    """作成したsessionを登録簿へ公開するバックエンド。委譲元の記録を登録簿で観測するテストが使う。"""
 
     async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
         session = await super().start(*args, **kwargs)
@@ -1648,9 +1648,9 @@ async def test_start_records_launcher_in_registry_and_keeps_it(
     host_alias: tuple[str, str, str] | None,
     expected: str,
 ) -> None:
-    """`start`は作成時点の起動元を登録簿へ記録し、状態の更新と解放済みへの置き換えの後も保持する。
+    """`start`は作成時点の委譲元を登録簿へ記録し、状態の更新と解放済みへの置き換えの後も保持する。
 
-    親の会話記録に起動結果が残らない委譲先は、登録簿の起動元が無いと`atk serve`の一覧で親を持たない。
+    親のセッション記録に起動結果が残らない委譲先は、登録簿の委譲元が無いと`atk serve`の一覧で親を持たない。
     """
     monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
     for name in _LAUNCHER_ENVIRONMENT_NAMES:

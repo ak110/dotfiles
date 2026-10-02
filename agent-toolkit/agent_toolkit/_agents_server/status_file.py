@@ -922,9 +922,9 @@ class StatusFileWriter:
         return self._identity.root_session_id
 
     def launcher_session_id(self) -> str | None:
-        """このMCPサーバーが作成するsessionの起動元sessionの識別子を返す。
+        """このMCPサーバーが作成するsessionの委譲元sessionの識別子を返す。
 
-        状態ファイルの`host_session_id`として射影する起動元を優先し、無ければ所有ルートを返す。
+        状態ファイルの`host_session_id`として射影する委譲元を優先し、無ければ所有ルートを返す。
         プロセス専用ルートは会話を指さないため返さない。
         """
         host_session_id = self._resolve_host_session_id()

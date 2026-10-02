@@ -205,7 +205,7 @@ def _list_payload(
 def _state_dir() -> pathlib.Path | None:
     """agents_serverの状態ディレクトリを返す。解決に要る`platformdirs`が無い起動形では`None`を返す。
 
-    登録簿の起動元は親子付けの情報源の1つであり、読めない場合も他の情報源で一覧を返す。
+    登録簿の委譲元は親子付けの情報源の1つであり、読めない場合も他の情報源で一覧を返す。
     """
     try:
         return session_launchers.state_dir()

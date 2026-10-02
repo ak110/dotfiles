@@ -153,7 +153,7 @@ from agent_toolkit._atk.managed_temp.windows_security import *  # noqa: F403
 
 
 SESSION_TEMP_PREFIX = "session"
-"""SessionStartが会話ごとに作成するセッション領域の接頭辞。
+"""SessionStartが会話ごとに作成するセッションのmanaged-tempの接頭辞。
 
 フックとagents_serverの双方が同じ領域を解決するため、両者より前の層のこのモジュールが持つ。
 """

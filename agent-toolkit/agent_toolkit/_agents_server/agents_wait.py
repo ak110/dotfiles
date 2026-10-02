@@ -48,18 +48,18 @@ _FAILED_RESULT_NEXT_ACTION = (
 )
 _INTERRUPTED_RESULT_NEXT_ACTION = "中断を要求していない場合は同じsessionへ`send_message`で継続するか、作業を巻き取る"
 _BODY_FILE_NEXT_ACTION = (
-    "回収した結果は退避して保持しているため、管理対象一時領域へ書き込めない原因（容量や権限）を解消してから"
+    "回収した結果は退避して保持しているため、managed-tempへ書き込めない原因（容量や権限）を解消してから"
     "`atk agents wait`を再実行し、同じ結果を受け取る"
 )
 _BODY_TEMP_PREFIX = "agents-wait"
-"""結果本文のファイルを置く管理対象一時領域の接頭辞。呼び出しごとに新しい領域を作成し、7日後の自動削除へ委ねる。"""
+"""結果本文のファイルを置くmanaged-tempの接頭辞。呼び出しごとに新しい領域を作成し、7日後の自動削除へ委ねる。"""
 
 
 class _BodyFileWriter:
     """終端結果の`agent_message`をエスケープを含まないMarkdownファイルへ書き、その絶対パスを返す。
 
     呼び出し元がJSON文字列のエスケープを解く処理を持たずに結果本文を読めるようにするためである。
-    書込先の管理対象一時領域は最初の書込時に1回だけ作成する。
+    書込先のmanaged-tempは最初の書込時に1回だけ作成する。
     """
 
     def __init__(self) -> None:

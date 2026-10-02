@@ -477,7 +477,7 @@ class SessionState:
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     compaction_started_at_ms: dict[str, int] = dataclasses.field(default_factory=dict, repr=False)
     publish_registry: bool = dataclasses.field(default=False, repr=False)
-    # sessionを作成した時点の起動元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
+    # sessionを作成した時点の委譲元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
     launcher_session_id: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_launcher: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
