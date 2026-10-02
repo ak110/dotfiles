@@ -9,13 +9,13 @@
 
 ## 起動
 
-置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をセッション領域（`agent-toolkit:managed-temp`）のファイルへ保存する。
-その後、タスク文書起動（`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」）で1件のレビュー担当を起動する。
+置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をセッションのmanaged-temp（`agent-toolkit:managed-temp`）のファイルへ保存する。
+その後、`bulk-replace-review.subagent.md`を指定する起動（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）で1件のレビュー担当を起動する。
 `cwd`は置換した作業ツリーの絶対パスとし、`extra_params`には次の名前付き入力だけを渡す。
 
 - `差分ファイル`: 保存した差分ファイルの絶対パスと行数
 
-観点と返却形式はタスク文書が定めるため、起動文で再掲しない。
+観点と返却形式は`bulk-replace-review.subagent.md`が定めるため、委譲プロンプトで再掲しない。
 
 ## 受領
 

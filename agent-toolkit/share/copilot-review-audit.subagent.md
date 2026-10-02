@@ -3,7 +3,7 @@
 対象GitHubリポジトリのCopilot由来のレビュー指摘を1回取得し、要修正、是正済み、根拠付き対応不要、指摘なしへ分類する。
 是正済みと根拠付き対応不要の分類と根拠をGitHubへ記録し、判定済みのreview本文を記録する。
 あわせて未判定のDependabotアラートを誤検知、是正済み、要修正へ判定し、誤検知を却下して、判定したアラートを記録する。
-対象リポジトリの追跡ファイルと履歴は変更せず、要修正の是正とAWIへの記録は呼び出し元が担う。
+対象リポジトリの追跡ファイルと履歴は変更せず、要修正の是正とAWIへの記録は委譲元が担う。
 最初に`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`を全文読み、同書の対象、取得、判定、GitHubへの記録、判定済みの記録およびDependabotアラートの節に従う。
 完了報告と、GitHubへ投稿する文面は日本語で書く。
 
@@ -13,7 +13,7 @@
 必須入力名: pending取得結果,引き継ぎ記録先
 ```
 
-- `pending取得結果`: 呼び出し元が`atk review-audit pending --repo <OWNER>/<REPO>`の標準出力を保存したJSONファイルの絶対パス。JSONは`reviews`・`threads`とDependabotアラートの`dependabot`、各件数の`counts`を持つ。コマンドが失敗した場合とJSONまたは件数を解釈できない場合は`なし`とし、同書の横断GraphQLクエリーとDependabotアラートの直接取得で監査対象を取得する
+- `pending取得結果`: 委譲元が`atk review-audit pending --repo <OWNER>/<REPO>`の標準出力を保存したJSONファイルの絶対パス。JSONは`reviews`・`threads`とDependabotアラートの`dependabot`、各件数の`counts`を持つ。コマンドが失敗した場合とJSONまたは件数を解釈できない場合は`なし`とし、同書の横断GraphQLクエリーとDependabotアラートの直接取得で監査対象を取得する
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと新規・継続の別。GitHubへの返信、threadの解決、コメント投稿を済ませた対象と、判定済みとして記録した対象を書き残し、再開時に同じ書き込みを重ねない。記録する内容は`${CLAUDE_PLUGIN_ROOT}/share/rules-subagent.md`「多段工程の引き継ぎ記録」が定める
 
 対象リポジトリは起動時の`cwd`が属するGit worktreeのroot、`<OWNER>/<REPO>`はそのリポジトリのGitHub上の所在とする。

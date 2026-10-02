@@ -1,7 +1,7 @@
 # rules-main.codex.md: Codexの主体に適用する規範
 
-本文書はCodexの`AGENTS.md`としてCodexの全主体（メインエージェント、サブエージェントおよび委譲先）へ配送され、`agent-toolkit/rules/`配下の共有規範と同じ拘束力を持つ。
-Codex固有の公開能力と共有規範との差分を扱う。「メインエージェントだけに適用する規範」節はCodexのメインエージェントだけへ適用し、他の節はCodexの全主体へ適用する。
+本文書はCodexの`AGENTS.md`としてCodexの全主体（メインエージェント、サブエージェントおよび委譲先）へ配送され、`agent-toolkit/rules/`配下の常時規範と同じ拘束力を持つ。
+Codex固有の公開能力と常時規範との差分を扱う。「メインエージェントだけに適用する規範」節はCodexのメインエージェントだけへ適用し、他の節はCodexの全主体へ適用する。
 
 ## Codex固有の入出力
 
@@ -13,22 +13,22 @@ Codex固有の公開能力と共有規範との差分を扱う。「メインエ
 
 - agent-toolkitのスキルはplugin marketplaceが導入した実体の`<plugin root>/skills/<スキル名>/SKILL.md`を読む
 - `<plugin root>`は`<Codexホーム>/plugins/cache/<marketplaceName>/<name>/<version>`の書式で組み立てる。`marketplaceName`、`name`および`version`には`codex plugin list --json`の`installed`配列から`name`が`agent-toolkit`の要素の値を使う。Codexホームは`CODEX_HOME`が設定済みならその値、未設定なら`~/.codex`とする
-- 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落またはroot不在では固定パスを推測せず呼び出し元へ差し戻す
-- 起点のroot確定はホストのplugin導入情報だけから`SKILL.md`読取前に行い、確定した値を以後も使う（努力目標。同じ導入情報から確定し直しても結果は変わらない）。読取済み`SKILL.md`の絶対パスからplugin資源rootを再解決する処理は、起点の確定の外で用いる
+- 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落またはroot不在では固定パスを推測せず委譲元へ差し戻す
+- 起点のroot確定はホストのplugin導入情報だけから`SKILL.md`読取前に行い、確定した値を以後も使う（努力目標。同じ導入情報から確定し直しても結果は変わらない）。読取済み`SKILL.md`の絶対パスからplugin rootを再解決する処理は、起点の確定の外で用いる
 - 公開サブコマンドがないplugin内部資源は、読取済みのagent-toolkitスキルの絶対パスから現行plugin rootを再解決する
 - プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`および作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う
 
 ## Codexホスト契約の適用
 
-Codexではsystem、developer、userのホスト命令階層を常に優先する。`AGENTS.md`、プロジェクト指示および共有規範は配送されたroleの範囲で適用し、`01-agent.md`の優先順位はホスト階層の適用後に残る同一role内の順位として読む。公開能力または個別ツール契約と共有規範が異なる場合は、ホスト契約を優先する。
+Codexではsystem、developer、userのホスト命令階層を常に優先する。`AGENTS.md`、プロジェクト規範および常時規範は配送されたroleの範囲で適用し、`01-agent.md`の優先順位はホスト階層の適用後に残る同一role内の順位として読む。公開能力または個別ツール契約と常時規範が異なる場合は、ホスト契約を優先する。
 
 ツール前の短い`commentary`を求めるホストでは、ツール呼び出しの前に短い`commentary`を送る。コード評価を伴うコマンドでは、処理、読取対象、確認目的を説明する。承認対象では、内容と影響範囲、復元方法を実行前に説明する。
 
-会話圧縮後は、一時対象、固定集合、保留、承認、当初目的、確定済み要件および残る完成条件を、対象リポジトリ、キュー管理リポジトリまたはホストの記録原本から再解決する。出所には記録原本の記述を用い、内部要約の言い換えはその代わりから外す。
+会話圧縮後は、一時対象、処理対象WI、保留、承認、当初目的、確定済み要件および残る完成条件を、対象リポジトリ、private-notesまたはホストの記録原本から再解決する。出所には記録原本の記述を用い、内部要約の言い換えはその代わりから外す。
 
 Codexの`list_agents`が対象を`running`と返す間の待機と、`interrupt_agent`による中断を許す条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「Codex後続操作の共通先行条件」に従う。
 
-Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは共有規範の再開手順を使う。
+Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは常時規範の再開手順を使う。
 
 ## メインエージェントだけに適用する規範
 
