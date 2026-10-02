@@ -375,7 +375,10 @@ def test_linux_does_not_touch_registry(tmp_path: pathlib.Path, monkeypatch: pyte
 def test_profile_leak_fails_check(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, platform_name: str, relative: str
 ) -> None:
-    """検証中に通常profile側の監視ディレクトリへ項目が作成されると、そのパスを含む失敗にする。"""
+    """検証中に通常profile側の監視ディレクトリへ項目が作成されると、そのパスを含む失敗にする。
+
+    失敗文は検証の子プロセスに加え、ランナー側の常駐処理・予約タスクとその対処先も確認先として示す。
+    """
     monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(tmp_path / "uv"))
     (tmp_path / "uv").write_bytes(b"uv")
     env = _profile_env(tmp_path)
@@ -389,7 +392,11 @@ def test_profile_leak_fails_check(
     with pytest.raises(upgrade.UpgradeCheckError) as exc_info:
         upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=env)
 
-    assert str(leaked) in str(exc_info.value)
+    message = str(exc_info.value)
+    assert str(leaked) in message
+    assert "_isolated_env" in message
+    assert "予約タスク" in message
+    assert "test-windows" in message
 
 
 def test_profile_unchanged_passes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
