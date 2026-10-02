@@ -144,7 +144,7 @@ def _hostname_color(*, hostname: str | None = None) -> str:
 
 
 def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool, home: Path | None = None) -> dict:
-    """managed設定のdictを構築する。
+    """dotfilesが管理する設定項目のdictを構築する。
 
     Args:
         hostname: Activity Bar色生成に使うホスト名。
@@ -174,7 +174,7 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool,
 
 
 def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] = ()) -> bool:
-    """managed設定を`settings.json`にマージして書き込む。
+    """dotfilesが管理する設定項目を`settings.json`にマージして書き込む。
 
     dict値は浅いマージ（既存キーを保持）、それ以外は上書き。
     VSCodeの`settings.json`はJSONC形式のため`pytilpack.jsonc.loads`でパースする。

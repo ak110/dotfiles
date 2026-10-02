@@ -8,7 +8,7 @@
 
 個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、pickerの起動より前に`ak110-projects-operations`スキルを起動する。
 同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
-起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude CodeではSkillツールから起動する。
+起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude Codeでは`Skill`ツールから起動する。
 
 ## 個人プロジェクトのリリース開始手順
 

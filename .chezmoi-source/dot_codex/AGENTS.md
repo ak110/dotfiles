@@ -1,4 +1,4 @@
-<!-- dotfilesリポジトリの.chezmoi-source/dot_codex/AGENTS.mdから~/.codex/AGENTS.mdへ配布する自動生成ファイル。dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。本文は全リポジトリ共通のCodex向け規範であり、作業対象リポジトリのAGENTS.mdの記述ではない。 -->
+<!-- dotfilesリポジトリの.chezmoi-source/dot_codex/AGENTS.mdから~/.codex/AGENTS.mdへ配布する自動生成ファイル。dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。本文は全リポジトリ共通のCodex向け規範であり、対象リポジトリのAGENTS.mdの記述ではない。 -->
 
 # rules-main.codex.md: Codexの主体に適用する規範
 
@@ -59,7 +59,7 @@ Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_
 
 個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、pickerの起動より前に`ak110-projects-operations`スキルを起動する。
 同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
-起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude CodeではSkillツールから起動する。
+起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude Codeでは`Skill`ツールから起動する。
 
 ## 個人プロジェクトのリリース開始手順
 

@@ -71,7 +71,7 @@ bumpの完了条件は、実装開始時点の版との増加比較で判定せ�
 公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、および定義元2ファイルと派生manifestの`version`が一致することで判定する。
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
 `agent-toolkit:process-wi`の各レーンは、bump種別（`bump不要`を含む）と「判定基準」に基づく選定根拠、MAJORの場合は認可根拠を計画へ記録し、版数更新コマンドを実行しない。
-AWI本文の版数区分は、起草時にその要求だけを見た判定である。メインは同じ処理回の統合変更へ「判定基準」を適用し、AWI単独の区分より上位の変更があれば上位区分を`bump種別`として終端担当へ渡す。終端担当が全レーンのマージ後に`scripts/agent_toolkit_bump.py`を1回実行する。
+AWI本文の版数区分は、起草時にその要求だけを見た判定である。メインはprocess-wiの同じ実行で統合した変更へ「判定基準」を適用し、AWI単独の区分より上位の変更があれば上位区分を`bump種別`として終端担当へ渡す。終端担当が全レーンのマージ後に`scripts/agent_toolkit_bump.py`を1回実行する。
 版数更新を完成条件に持つAWIは`agent-toolkit/share/lane-integration.subagent.md`の延期`adopt`に従い、終端担当が版数、派生manifestと公開結果を検収した後に終端する。
 統合ブランチのpush前に上流進行を観測してrebaseした場合は、
 rebase後の公開済み統合先と手元の定義元ファイルのversionを「競合解決と統合後の確認」節の基準で再比較する。

@@ -279,7 +279,7 @@ def test_sync_ignores_tracked_file_deleted_from_worktree(manifest_root: Path) ->
 
 
 def test_codex_interface_descriptions_and_prompts(manifest_root: Path) -> None:
-    """Codex向けinterfaceが紹介文と起動プロンプトの契約を満たす。"""
+    """Codex向けinterfaceが`longDescription`と`defaultPrompt`の契約を満たす。"""
     subject.sync(manifest_root)
     generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8"))
     interface = generated["interface"]
@@ -311,7 +311,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Codex 0.154.0は専用rootから8イベントを登録し、project trustで集合を変えない。"""
+    """Codex 0.154.0は`agent-toolkit-codex/`から8イベントを登録し、project trustで集合を変えない。"""
     # 実機のCLIを起動するため、既定で隔離されるホームとPATHを戻す。CLIの有無はモジュール読込時にホストのPATHで判定済み。
     isolation.restore_host_environment(monkeypatch)
     version = subprocess.run(  # noqa: S603
@@ -676,7 +676,7 @@ def test_check_reports_codex_root_difference_without_repairing(
     capsys: pytest.CaptureFixture[str],
     kind: str,
 ) -> None:
-    """Codex専用rootの差を相対パスと種類で表示し、検査で修復しない。"""
+    """`agent-toolkit-codex/`の差を相対パスと種類で表示し、検査で修復しない。"""
     monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
     subject.sync(manifest_root)
     target = manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET / ("extra.md" if kind == "余剰" else "GENERATED.md")

@@ -73,9 +73,9 @@ uv sync --reinstall  # .venvを再構築する場合
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
   無効化する方針を採用する。あわせて`.github/workflows/audit.yaml`が`uv audit`を定期実行し、
   検出結果をSARIFでCode Scanningへ送る。Dependabot alertsの未解決分は、`agent-toolkit:process-wi`が
-  処理回ごとに実行する自動コードレビュー監査（`atk review-audit pending`）で拾い、削除済みマニフェストに
+  1回の実行ごとに行う自動コードレビュー監査（`atk review-audit pending`）で拾い、削除済みマニフェストに
   紐づく誤検知は却下し、実在する脆弱性は依存更新へ回す。`atk wi process-loop`の待機中確認は、
-  未判定のアラートがあれば処理回を起動するだけで、AWIを起票しない。Code Scanning由来のアラートは
+  未判定のアラートがあればprocess-wiの実行を起動するだけで、AWIを起票しない。Code Scanning由来のアラートは
   これらの処理の対象に含めない。
   実際に確認した結果、Dependabot alertsは有効である（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）。
   自動修正PRの作成は無効である（`gh api repos/ak110/dotfiles/automated-security-fixes`が

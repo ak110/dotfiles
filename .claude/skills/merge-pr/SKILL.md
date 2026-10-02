@@ -39,7 +39,7 @@ GitHubの設定でhead branchを`develop`だけに制限する操作は行わず
 - `git worktree list --porcelain`の出力で`branch refs/heads/develop`を持つblockが1件だけある。その`worktree`行の絶対パスを`develop` worktreeとする
 - `develop` worktreeの`git status --porcelain`の出力が空である
 - 現在branchが`develop`である
-- rebase・merge・cherry-pickの中断状態が無い。中断状態は対象worktreeに対応するGit管理領域の`rebase-merge`、`rebase-apply`、`MERGE_HEAD`と`CHERRY_PICK_HEAD`の実在で判定する
+- rebase・merge・cherry-pickの中断状態が無い。中断状態は対象worktreeに対応するGitディレクトリ（`--git-dir`）の`rebase-merge`、`rebase-apply`、`MERGE_HEAD`と`CHERRY_PICK_HEAD`の実在で判定する
 - `git merge-base --is-ancestor HEAD <基準ref>`が終了コード0を返す（fast-forwardが成立する）
 
 観測には次の読み取りコマンドを使う。
@@ -147,7 +147,7 @@ Release runの失敗は「失敗時の共通規定」を適用する。tag、Rel
 ## マージ後に到着したレビューの確認
 
 GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待つ区間に到着する場合がある。
-「マージ後のbranch同期とCI」と「条件付きRelease検収」を終えた時点で、`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。終了コード0でJSONの`reviews`と`threads`を解釈でき、対象PRが両方に含まれない場合は、そのPRの取得と判定を省く。含まれる場合は、対象PRのCopilot由来のreview本文とreview threadを1回取得する。コマンドが非0で終わった場合とJSONを解釈できない場合は従来の取得と判定を実施する。
+「マージ後のbranch同期とCI」と「条件付きRelease検収」を終えた時点で、`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。終了コード0でJSONの`reviews`と`threads`を解釈でき、対象PRが両方に含まれない場合は、そのPRの取得と判定を省く。含まれる場合は、対象PRのCopilot由来のreview本文とreview threadを1回取得する。コマンドが非0で終わった場合とJSONを解釈できない場合は、`pending`の結果によらず対象PRのCopilot由来のreview本文とreview threadを1回取得して判定する。
 
 取得、判定、GitHubへの記録および判定済みの記録は
 `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が定める手順に従い、対象をそのPRへ限定して適用する。

@@ -8,7 +8,7 @@ Codexはagent-toolkitの標準構成に含まれる。単体インストーラ�
 Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグインを一括設定する。
 プラグイン導入後は、次の手順で更新を反映する。
 
-## AWIの常駐処理
+## `atk wi process-loop`によるAWIの継続処理
 
 次のコマンドはCodexの対話UIを起動し、対象リポジトリのAWIを継続して処理する。
 
@@ -18,7 +18,7 @@ atk wi process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
-ready項目がなくなると、`agent-toolkit:completion-report`が選定工程で完了した振り返りの結果を含む固定報告を完了し、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
+ready項目がなくなると、`agent-toolkit:completion-report`が選定工程で完了した振り返りの結果を含む完了報告を完了し、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
 probe未実行、読取失敗または値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
@@ -39,8 +39,8 @@ Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCo
 ## プラグイン更新の反映
 
 dotfilesはClaude Code・Agent Plugins向けの`agent-toolkit/`を元にし、Codex向けには`agent-toolkit-codex/`を生成する。
-Codex専用rootは、Agent Plugins用の直下`plugin.json`と`mcp.json`を除き、`.codex-plugin/plugin.json`、hook、skill、Python実装、lockfileその他の実行資源を通常ファイルとして含む。
-Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、専用rootは相対シンボリックリンクを含めない。
+`agent-toolkit-codex/`はAgent Plugins用の直下`plugin.json`と`mcp.json`を除き、`.codex-plugin/plugin.json`、hook、skill、Python実装、lockfileその他の実行資源を通常ファイルとして含む。
+Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、`agent-toolkit-codex/`は相対シンボリックリンクを含めない。
 `.agents/plugins/marketplace.json`だけが`./agent-toolkit-codex`を参照し、Claude CodeとAgent Pluginsは引き続き`agent-toolkit/`を参照する。
 `agent-toolkit-codex/`はGitで追跡せず、`update-dotfiles`のpost-applyがCodex plugin導入の直前に生成する。
 手動で再生成する場合は`scripts/sync_codex_plugin_manifests.py`を実行し、`--check`で大元の定義との一致を確認する。
@@ -177,7 +177,7 @@ WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版�
 - `~/.codex/skills/*`: `.chezmoi-source/dot_claude/skills/*`のうちdotfiles固有のグローバルスキルへのシンボリックリンク。agent-toolkit skillsはCodex plugin marketplace経由で配布する
 - プロジェクト直下の`.agents/skills`: プロジェクト専用スキルディレクトリへのシンボリックリンク
 
-CodexとClaude Code 2.1.277以上は、プロジェクト指示の基準として`AGENTS.md`を共用できる。
+CodexとClaude Code 2.1.277以上は、プロジェクト規範を書くファイルとして`AGENTS.md`を共用できる。
 そのため、常時読み込む設定は`AGENTS.md`へ集約し、本文は原本ファイルを参照する形にする。
 ファイルコピーで同期すると一部のコピーに更新が反映されないため、共有対象はリンクで配布する。
 chezmoiの`symlink_`はWindowsで特権不足により失敗するため採用しない。

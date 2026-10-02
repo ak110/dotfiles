@@ -1,7 +1,7 @@
 # dotfiles環境の振り返り観点
 
 `agent-toolkit:session-review`の振り返りでメインが問題の原因と対策を確定するときと、所要時間を分析するときに適用する。
-振り返りの準備スクリプトが出力するJSONの`reference_document`が本文書の絶対パスを示す。
+振り返りの`atk run-script session-review-prepare`が出力するJSONの`reference_document`が本文書の絶対パスを示す。
 
 ## セッションの所要時間目標
 
