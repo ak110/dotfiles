@@ -300,7 +300,7 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
     """呼び元用文書が`` - `<項目名>`: ``で渡すと定める項目は、起動対象のいずれかが宣言した入力名である。
 
     宣言外の項目を渡す呼び元手順は、`agents_server`の`start`が起動を拒否するため成立しない。
-    全ての受信者の宣言が読めること（不正な`起動種別:`を含まないこと）も同時に確かめる。
+    全ての受信者の宣言が読めること（不正な`mode:`を含まないこと）も同時に確かめる。
     """
     share = pathlib.Path(__file__).resolve().parents[1] / "share"
     errors: list[str] = []

@@ -80,7 +80,7 @@ def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path)
     assert str(first) in notification
     assert str(second) in notification
     assert "残りのバンドルはその場に残して" in notification
-    assert "atk plans commit <計画作業ルート内の計画ファイル（メイン）名>" in notification
+    assert "atk plans commit <~/.claude/plans直下の計画ファイル（メイン）名>" in notification
     assert not second_result
 
 

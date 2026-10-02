@@ -9,7 +9,7 @@
 
 ```text
 必須入力名: 差分ファイル
-起動種別: explore
+mode: explore
 ```
 
 - `差分ファイル`: `git diff --word-diff=plain --word-diff-regex=.`の出力を保存したファイルの絶対パスと行数。`[-…-]`が削除、`{+…+}`が追加を示す

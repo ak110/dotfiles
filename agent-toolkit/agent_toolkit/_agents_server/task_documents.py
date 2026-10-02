@@ -1,7 +1,7 @@
-"""agent-toolkitの`share/<役割名>.subagent.md`が宣言する入力と`起動種別:`を読む。
+"""agent-toolkitの`share/<役割名>.subagent.md`が宣言する入力と`mode:`を読む。
 
 `<役割名>.subagent.md`は`## 入力`直後の`text`コードブロックへ、1行目の`必須入力名:`に続けて任意の`任意入力名:`と
-`起動種別:`を置く。`agents_server`の`start`と、`Agent`ツール・自由本文の起動を確認するPreToolUseフックが
+`mode:`を置く。`mode:`の値は`agents_server`の`start`の`mode`と同じ語を使う。`agents_server`の`start`と、`Agent`ツール・自由本文の起動を確認するPreToolUseフックが
 同じ宣言を読むため、解析を本モジュールへ集約する。解析が2箇所へ分かれると、一方だけが新しい行を受理し、
 同じ委譲プロンプトがサーバーでは拒否されフックでは通る（またはその逆の）不一致が生じる。
 """
@@ -16,7 +16,9 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
 REQUIRED_INPUT_PREFIX = "必須入力名: "
 OPTIONAL_INPUT_PREFIX = "任意入力名: "
-LAUNCH_KIND_PREFIX = "起動種別: "
+LAUNCH_KIND_PREFIX = "mode: "
+# `mode:`へ改める前の宣言行。旧形式の`<役割名>.subagent.md`を同じ意味で読む読み取り互換に限って使う。
+_LEGACY_LAUNCH_KIND_PREFIX = "起動種別: "
 INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 TASK_DOCUMENT_SUFFIX = ".subagent.md"
 
@@ -30,7 +32,7 @@ _TASK_DOCUMENT_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:)?[/\\][^\s`'\"<>|（）�
 
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
-    """`<役割名>.subagent.md`が`## 入力`で宣言した入力名と`起動種別:`の値。"""
+    """`<役割名>.subagent.md`が`## 入力`で宣言した入力名と`mode:`の値。"""
 
     required: tuple[str, ...]
     optional: tuple[str, ...]
@@ -60,7 +62,7 @@ def read_declaration(task_document: pathlib.Path, document_text: str | None = No
     """`<役割名>.subagent.md`の宣言を返す。宣言を読めない場合は理由を示す警告文を返す。
 
     警告文を返す場合、呼び出し元は必須入力と宣言外入力を確認できないことを示して起動を続ける。
-    宣言行の書式違反（`起動種別:`の未知の値を含む）も警告文として返す。
+    宣言行の書式違反（`mode:`の未知の値を含む）も警告文として返す。
     """
     if not is_agent_toolkit_task_document(task_document):
         return f"必須入力を確認できません: `<役割名>.subagent.md`がshare配下ではありません: {task_document}"
@@ -93,10 +95,11 @@ def read_declaration_unchecked(
             if parsed is None:
                 return f"必須入力を確認できません: 任意入力名の書式が不正です: {task_document}"
             optional = parsed
-        elif line.startswith(LAUNCH_KIND_PREFIX):
-            value = line.removeprefix(LAUNCH_KIND_PREFIX).strip()
+        elif line.startswith((LAUNCH_KIND_PREFIX, _LEGACY_LAUNCH_KIND_PREFIX)):
+            prefix = LAUNCH_KIND_PREFIX if line.startswith(LAUNCH_KIND_PREFIX) else _LEGACY_LAUNCH_KIND_PREFIX
+            value = line.removeprefix(prefix).strip()
             if value not in LAUNCH_KINDS:
-                return f"必須入力を確認できません: `起動種別:`の値が不正です: {value}: {task_document}"
+                return f"必須入力を確認できません: `mode:`の値が不正です: {value}: {task_document}"
             launch_kind = value
     return TaskDocumentDeclaration(required=required, optional=optional, launch_kind=launch_kind)
 

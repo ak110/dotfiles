@@ -10,7 +10,7 @@
 ```text
 必須入力名: 成果物,種別,読者像
 任意入力名: レビュー種別,修正範囲,未解決事項
-起動種別: explore
+mode: explore
 ```
 
 - `成果物`: 読む文章成果物の絶対パスと行数。private-notesにあるWIでは、ファイル名と取得に使う`atk wi show <ファイル名> --skip-pull`

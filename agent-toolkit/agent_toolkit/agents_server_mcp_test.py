@@ -1109,7 +1109,7 @@ async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytes
 
 @pytest.mark.asyncio
 async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`起動種別: explore`を宣言した`<役割名>.subagent.md`は`start_explore`と同じ軽量な起動条件で起動する。
+    """`mode: explore`を宣言した`<役割名>.subagent.md`は`start_explore`と同じ軽量な起動条件で起動する。
 
     起動条件はsession記録の`launch_kind`と、backendへ渡すシステム指示・許可ツールを決める種別で確かめる。
     """
@@ -1164,7 +1164,7 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
 
 @pytest.mark.asyncio
 async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`起動種別:`行の無い`<役割名>.subagent.md`は通常委譲で起動し、不正な値は宣言を読めない扱いで通常委譲とする。"""
+    """`mode:`行の無い`<役割名>.subagent.md`は通常委譲で起動し、不正な値は宣言を読めない扱いで通常委譲とする。"""
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     task_document = _write_declared_task_document(tmp_path, "必須入力名: 対象\n任意入力名: 補足")
@@ -1172,11 +1172,25 @@ async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.Monke
 
     await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値", "補足": "値"})
     task_document.write_text(
-        task_document.read_text(encoding="utf-8").replace("任意入力名: 補足", "起動種別: batch"), encoding="utf-8"
+        task_document.read_text(encoding="utf-8").replace("任意入力名: 補足", "mode: batch"), encoding="utf-8"
     )
     await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値", "未宣言": "値"})
 
     assert [call.kwargs["launch_kind"] for call in manager.start.await_args_list] == ["delegate", "delegate"]
+
+
+@pytest.mark.asyncio
+async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`mode:`へ改める前の`起動種別:`行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    current = _write_declared_task_document(tmp_path / "current", "必須入力名: 対象\nmode: explore")
+    legacy = _write_declared_task_document(tmp_path / "legacy", "必須入力名: 対象\n起動種別: explore")
+    for task_document in (current, legacy):
+        monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "low_tier")
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値"})
+
+    assert [call.kwargs["launch_kind"] for call in manager.start.await_args_list] == ["explore", "explore"]
 
 
 @pytest.mark.asyncio
@@ -7391,7 +7405,7 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
 
 
 def test_start_description_declares_input_and_launch_kind_contract() -> None:
-    """`start`の説明が、宣言済み入力だけの受理と`起動種別:`による軽量起動を示し、`追加指示`を案内しない。
+    """`start`の説明が、宣言済み入力だけの受理と`mode:`による軽量起動を示し、`追加指示`を案内しない。
 
     `追加指示`へ補足を渡す案内が残ると、委譲元は拒否される項目名で起動し、同じ呼び出しをやり直す。
     """
@@ -7402,7 +7416,7 @@ def test_start_description_declares_input_and_launch_kind_contract() -> None:
     assert "宣言外の入力名を含む場合は委譲先を起動しない" in extra_params
     assert "待機表明の例外" not in extra_params
     assert "待機と再開の方針はサーバーが伝える" in extra_params
-    assert "`<役割名>.subagent.md`の`起動種別:`" in start_tool.description
+    assert "`<役割名>.subagent.md`の`mode:`" in start_tool.description
     assert "宣言外の入力名は拒否し" in start_tool.description
 
 

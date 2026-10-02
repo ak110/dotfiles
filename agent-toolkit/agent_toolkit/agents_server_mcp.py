@@ -2694,7 +2694,7 @@ _START_DESCRIPTION = "\n".join(
         "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
         "| `task`（省略時） | agent-toolkitの`share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path` | "
-        "`<役割名>.subagent.md`の`起動種別:`、同ファイルに対応する工程別設定 |",
+        "`<役割名>.subagent.md`の`mode:`、同ファイルに対応する工程別設定 |",
         "| `delegate` | `<役割名>.subagent.md`の無い単発の作業を自由本文で委譲する | `prompt`・`model_type` | "
         "通常起動。委譲先は常時規範を受け取りスキルを使える |",
         "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`low_tier` |",
