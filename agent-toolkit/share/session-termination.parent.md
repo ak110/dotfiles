@@ -35,7 +35,7 @@
 `終端完了`に続く8行を受領し、次のとおり確認する。確認の入力は受領した8行と現在のGit状態とし、成果物と実装差分の再読解は省く（努力目標。検収の合否は8行とGit状態で判定できる）。`deferred_adopted`の値はJSON parserで文字列配列として検証し、不正JSON、配列以外または文字列以外の要素を返却契約の不成立とする。いずれかが一致しない場合は同じ終端担当へ差し戻す。
 
 - `git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
-- 全体検証を確認する。`overall_verification`は`CI判定`または`ローカル成功`のいずれかだけを受理し、`terminal_steps`は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「出力」の同項目が定める記載条件を満たす
+- 全体検証を確認する。`overall_verification`は`CI判定`または`ローカル成功`のいずれかだけを受理し、`terminal_steps`は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「出力」の同項目が定める記載条件を満たす。`CI判定`ではpush前に実行したチェックがそれぞれ終了コード0で警告の扱いが報告され、集合を求めた根拠が挙がっていることを確かめる
 - `ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
 - `ci_verified_head`と`final_branch_head`が異なり、`final_branch_head`自体のCI成功を前項で検収していない場合は、両方を7文字以上の一意な短縮OIDのまま対象リポジトリのGitコマンドへ渡す。
   `final_branch_head`がマージcommitなら、第1親を`<final_branch_head>^1`として参照し、

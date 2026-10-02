@@ -2,13 +2,18 @@
 name: check-execution
 user-invocable: false
 description: >
-  formatter、linter、testerまたはプロジェクト固有のチェックツールを起動する直前に起動する。
+  formatter、linter、testerまたはプロジェクト固有のチェックツールを起動する直前と、
+  変更範囲の検証の対象を選ぶ時点（計画の検証コマンドを書くときを含む）に起動する。
 ---
 
 # formatter・linter・testerの実行
 
 本スキルはformatter、linter、testerおよびプロジェクト固有のチェックツールを起動する主体へ、起動手段の選び方を提供する。
 各ツールの受理形式、出力形式、個別の対処は、そのツールのヘルプ、MCPツールのスキーマ、公式ドキュメントに従う。
+
+## 変更範囲の検証の対象選定
+
+変更範囲の検証で動かすチェックとテストを選ぶとき（計画の検証コマンドを書くとき、実装後に検証する前、実行レビューで直接消費側を求めるとき）は、選ぶ前に`references/verification-scope.md`を全文読み、同書の類型で対象を決める。
 
 ## 統合実行ツール経由の起動
 

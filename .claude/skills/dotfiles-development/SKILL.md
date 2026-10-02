@@ -32,31 +32,34 @@ description: >
     自動修正が必要な場合は`make format`（`uv run --frozen pyfltr fast`）を使う
   - 特定ファイルに限定する場合はMCP経由の`run`へそのファイルのパスを渡す。
     MCPを利用できない場合は`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。
-    初回の変更範囲の検証では、変更ファイルに適用できるチェックを全て動かすため、MCPの`commands`とCLIの`--commands`を指定しない。
-    Pythonファイルまたはエージェント向け文書を変更するレーンの変更範囲の検証へ、後述の`repo_invariant`マーカーのテストを含める。
-    `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言を変更した場合は、変更した挙動に対応するhook固有の`<hook名>_test.py`も加える。
-    `agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約を変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`を変更範囲の検証へ加える。同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。共有契約の変更は、変更前か変更後の実際の呼び出し経路が異なる2つ以上のサブコマンドへ到達する処理の挙動・契約の変更や撤去、および共通出力の内容・書式・条件・有無の変更とする。共通後処理も含め、import数だけや単一サブコマンド内の複数モジュールから判定せず、内部のコメント・空白だけの変更はこの追加条件に含めない。共有の生成値や処理を期待する未変更のテストも検証するためである。
-    `agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更したレーンでは、`uv run --frozen pytest -p no:cacheprovider pytools scripts`を変更範囲の検証へ加え、同じコマンドを統合のfast-forward直前にも専用worktreeで1回実行する。`agent-toolkit/`の外にも`agent_toolkit`をimportする実装とテストがあり（現行は`pytools/`と`scripts/`）、引数の必須化や例外の追加のような実行時にだけ成立する契約の変更は、固定文字列の検索と`ty`の型チェックでは呼び出し元の破損を検出できないためである。統合直前にも実行するのは、並行する別のレーンが同じ契約の新しい呼び出し元を加えた場合に、統合後に初めて破損が成立するためである。
-    デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
+    初回の変更範囲の検証ではMCPの`commands`とCLIの`--commands`を指定しない。
+    修正後に失敗したチェックだけを再実行する場合は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を、CLIでは`--commands=mypy,ruff-check`を渡す
+  - 変更範囲の検証の対象は`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で選ぶ。本リポジトリで使う値は次のとおり
+    - 横断テスト: `repo_invariant`マーカーで識別し、`uv run --frozen pytest -p no:cacheprovider -m repo_invariant agent-toolkit/agent_toolkit scripts`で実行する。新しい横断テストにも`pytestmark = pytest.mark.repo_invariant`を付ける
+    - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
+    - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。
+      共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。内部のコメント・空白だけの変更は含めない
+    - パッケージ外の利用者: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -p no:cacheprovider pytools scripts`
+    - 名前の削除・改名の全体静的検査: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
+    - 統合後の検証: 前記の共有契約とパッケージ外の利用者のpytest、`repo_invariant`のテスト、`ty`、および`uv run --frozen pyfltr run --commands=arid`は、各レーンの統合でfast-forwardの前に専用worktreeで1回実行する
+  - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
-  - 初回の変更範囲の検証で失敗したチェックを修正後に再実行する時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
-    CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
   - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
-  - 検証は変更ファイルに対応する変更範囲の検証を先に実行する。公開前の全体検証はCIへ委ね、ローカルでは次の4件を実行する。CIの成功を確認して全体検証の結論を確定する
+  - 公開前の全体検証は`agent-toolkit:commit`の`references/publish.md`「検証とCI」に従う。本リポジトリでpush前に実行するCI非実行のチェックと全体走査のチェックは次の4件である
     - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
-    - 複数の書込主体の成果を統合した後にだけ成立するチェック: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの変更範囲の検証では検出できないため、全体検証をCIへ委ねる判定が成立する場合も、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する。push対象のtreeが直前にチェックを実行したtreeと同じ場合は、push前の実行を省いてよい
-    - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず、`agent-toolkit/`を含むリポジトリ全体を対象にする。名前を削除・改名したモジュールに追随していない未変更のテストや呼び出し元は、変更ファイルだけを対象とする変更範囲の検証では検出できないため、Pythonファイルを変更するレーンでは、計画担当が計画の`変更範囲の検証`行へ含める。あわせてaridと同じく、各レーンの統合でfast-forwardの前に専用worktreeで1回、および公開工程のpush前に1回実行する。push対象のtreeが直前にチェックを実行したtreeと同じ場合は、push前の実行を省いてよい
-    - 全追跡ファイルと全ソースの不変条件: `uv run --frozen pytest -p no:cacheprovider -m repo_invariant agent-toolkit/agent_toolkit scripts`。変更ファイルの外に残る未解決参照、subprocessの文字コード指定、hook通知の言語などを検出する。Pythonファイルまたはエージェント向け文書を変更するレーンの変更範囲の検証、各レーンの統合でfast-forwardする前、および公開工程のpush前に実行する。push対象のtreeが直前にチェックを実行したtreeと同じ場合は、push前の実行を省いてよい。新しい横断テストにも`pytestmark = pytest.mark.repo_invariant`を付ける
-    - `make test`が実行するツール集合はCIの`python-lint (3.14)`ジョブとほぼ同じである。差分は同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
-      次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
-      - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
-      - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
-      - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
-      - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
-      - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
+    - レーンをまたぐ重複実装の検出: `uv run --frozen pyfltr run --commands=arid`
+    - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`
+    - 全追跡ファイルと全ソースの不変条件: `uv run --frozen pytest -p no:cacheprovider -m repo_invariant agent-toolkit/agent_toolkit scripts`
+  - `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
+    次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
+    - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
+    - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
+    - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
+    - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
+    - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
     - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する

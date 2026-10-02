@@ -52,7 +52,7 @@
 - 2026年9月13日、利用者指示により、計画レビューを廃止し、計画の起草者であるレーン担当がそのまま実装と変更範囲の検証までを担う方針へ改めた
   - 計画は1ファイル書式とし、計画型AWIと計画変換を廃止する
   - 実装系モデルは`high_tier_model`へ一本化し、レーンでは変更範囲の検証だけを実行する
-  - 全体検証はCIへ委ね、ローカルではCIが実行しない検証だけを実行する
+  - 全体検証はCIへ委ね、ローカルではCIが実行しない検証だけを実行する。現行の適用規範は`agent-toolkit:commit`の`references/publish.md`「検証とCI」と、変更範囲の検証の対象選定を定める`agent-toolkit:check-execution`の`references/verification-scope.md`である
   - `agent-toolkit:plan-mode`をメインが起動した場合は、追加worktreeを作成せず現在のworktreeで実装する
   - 以下に残る計画レビュー、計画型AWI、二ファイル書式およびモデル分岐の記述は、2026年9月13日の変更より前の判断経緯を示し、現行の実行契約ではない
 - 判断はQCD（Quality、Cost、Delivery）で評価する。QualityはCostとDeliveryより常に優先し、CostとDeliveryの間に固定の優先順位は置かず場面ごとの増分で選ぶ（2026年8月に品質最優先として明文化。2026年9月、利用者指示によりQCDの語で整理し、Cost対Deliveryを増分の比較とした）
