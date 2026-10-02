@@ -24,17 +24,18 @@ import typing
 
 from agent_toolkit._common import next_action as _next_action
 
-OUTCOMES = frozenset({"達成", "未達", "証拠不足", "失効"})
-# 分割起票で他のWIへ割り当てた要求単位と分割元の依頼全体の単位は、原文要求の行にだけ現れる。
-# 各WIの完成条件は起票時の割当の対象外であるため、完成条件の行では受理しない。
-SECTION_OUTCOMES = {
-    "wi_conditions": OUTCOMES,
-    "user_requirements": OUTCOMES | {"割当外"},
-}
+# 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
+JUDGMENT_OUTCOMES = frozenset({"達成", "未達", "証拠不足"})
 REQUIRED_FIELDS = {
     "wi_conditions": ("awi", "condition", "outcome", "source", "evidence"),
     "user_requirements": ("awi", "requirement", "origin", "outcome", "source", "evidence"),
 }
+WI_FILENAME = re.compile(r"\d{8}-\d{6}-\d{3}\.md")
+# 絶対パスの開始位置（POSIXの`/`かWindowsのドライブ文字）。計画ファイル名は空白を含み得るため、終端は`.md`で探す。
+PATH_START = re.compile(r"[A-Za-z]:[\\/]|/")
+BRACKETED_TITLE = re.compile(r"「([^」]+)」")
+WHOLE_REQUEST = "分割元の依頼全体"
+ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
 # 全角の終止記号は位置によらず文末とする。ASCIIの終止記号は直後が空白か段落末の場合だけ文末とし、
@@ -500,19 +501,26 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
     return errors
 
 
-def _expired_source_error(row: dict[str, str], index: int, repository: pathlib.Path, wi_outputs: dict[str, str]) -> str | None:
+def _load_wi(reference: str, repository: pathlib.Path, wi_outputs: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """WI本文を取得結果の保持から再利用して、frontmatterと本文へ分ける。"""
+    if reference not in wi_outputs:
+        wi_outputs[reference] = _show_wi(reference, repository)
+    return _wi_body(wi_outputs[reference], reference)
+
+
+def _expired_source_error(
+    row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
+) -> str | None:
     """失効行のsourceから、記入済みユーザー判断の参照先を確認する。"""
     source = row["source"]
-    references = dict.fromkeys(re.findall(r"\d{8}-\d{6}-\d{3}\.md", source))
+    references = dict.fromkeys(WI_FILENAME.findall(source))
     reasons: list[str] = []
     for reference in references:
         own_comment = reference == row["awi"] and "ユーザーコメント" in source
         if not own_comment and "回答" not in source:
             continue
         try:
-            if reference not in wi_outputs:
-                wi_outputs[reference] = _show_wi(reference, repository)
-            frontmatter, body = _wi_body(wi_outputs[reference], reference)
+            frontmatter, body = _load_wi(reference, repository, wi_outputs)
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             reasons.append(str(exc))
             continue
@@ -528,10 +536,124 @@ def _expired_source_error(row: dict[str, str], index: int, repository: pathlib.P
             reasons.append(f"{reference}: 記入済みユーザーコメントか回答済みUWIの参照ではありません")
     detail = f"（{'、'.join(reasons)}）" if reasons else ""
     return (
-        f"{row['awi']}: wi_conditions[{index}].source: 失効のユーザー判断を確認できません{detail}。"
+        f"{row['awi'] or '計画由来'}: {section}[{index}].source: 失効のユーザー判断を確認できません{detail}。"
         "対象AWIの記入済みユーザーコメントか関連する回答済みUWIのファイル名と所在を記録する。"
         "ユーザーの回答がない場合は、その判断を得てから同じ証拠をもう一度確かめる"
     )
+
+
+def _is_file(path: pathlib.Path) -> bool:
+    """自由文から切り出した候補がファイル名として扱えない場合も、ファイルではないと判定する。"""
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
+def _plan_files(source: str) -> list[pathlib.Path]:
+    """sourceの文字列から、実在する計画ファイルの絶対パスを出現順に返す。"""
+    starts = [match.start() for match in PATH_START.finditer(source)]
+    plans: list[pathlib.Path] = []
+    for end in (match.end() for match in re.finditer(r"\.md", source)):
+        candidate = next(
+            (
+                path
+                for path in (pathlib.Path(source[start:end]) for start in starts if start < end)
+                if path.is_absolute() and _is_file(path)
+            ),
+            None,
+        )
+        if candidate is not None and candidate not in plans:
+            plans.append(candidate)
+    return plans
+
+
+def _assignment_record(source: str, repository: pathlib.Path, wi_outputs: dict[str, str]) -> tuple[list[str] | None, str]:
+    """割当外行のsourceが指す割当の記録の節を返す。節を特定できない場合は理由を返す。"""
+    reasons: list[str] = []
+    if "反映内容と反映先" in source:
+        for reference in dict.fromkeys(WI_FILENAME.findall(source)):
+            try:
+                _, body = _load_wi(reference, repository, wi_outputs)
+            except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+                reasons.append(str(exc))
+                continue
+            section = _section(body, "## 反映内容と反映先")
+            if section is not None:
+                return section, ""
+            reasons.append(f"{reference}に『反映内容と反映先』節がありません")
+    if "実施内容" in source:
+        for plan in _plan_files(source):
+            try:
+                section = _section(plan.read_text(encoding="utf-8").splitlines(), "## 実施内容")
+            except (OSError, UnicodeError) as exc:
+                reasons.append(f"計画ファイルを読めません: {exc}")
+                continue
+            if section is not None:
+                return section, ""
+            reasons.append(f"{plan}に『実施内容』節がありません")
+    if not reasons:
+        reasons.append(
+            "WIファイル名と節名『反映内容と反映先』、または実在する計画ファイルの絶対パスと節名『実施内容』がありません"
+        )
+    return None, "、".join(reasons)
+
+
+def _unassigned_source_error(
+    row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
+) -> str | None:
+    """割当外行について、割当の記録の所在、割当先の表記、記録との一致を確かめる。
+
+    記録は要求単位を言い換えて複数の単位を1行で覆うため、要求単位の原文と記録行の一致は求めず、
+    割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
+    """
+    label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
+    record, reason = _assignment_record(row["source"], repository, wi_outputs)
+    if record is None:
+        return (
+            f"{label}.source: 割当外の根拠となる割当の記録を特定できません（{reason}）。"
+            "割当を記録したWIのファイル名と節名『反映内容と反映先』、"
+            "または計画ファイルの絶対パスと節名『実施内容』をsourceへ書く。"
+            "割当の記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
+        )
+    evidence = row["evidence"]
+    assignees = [*WI_FILENAME.findall(evidence), *BRACKETED_TITLE.findall(evidence)]
+    if WHOLE_REQUEST in evidence:
+        assignees.append(WHOLE_REQUEST)
+    if not assignees:
+        return (
+            f"{label}.evidence: 割当先の表記がありません。"
+            f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトル、または{WHOLE_REQUEST}）をevidenceへ書く"
+        )
+    lines = [line for line in record if any(word in line for word in ASSIGNMENT_WORDS)]
+    if any(assignee in line for assignee in assignees for line in lines):
+        return None
+    return (
+        f"{label}.evidence: 割当先（{_quoted_units(assignees)}）がsourceの節の割当を示す行にありません。"
+        "記録に書かれたとおりの割当先をevidenceへ写すか、記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
+    )
+
+
+ExemptionCheck = typing.Callable[[dict[str, str], str, int, pathlib.Path, dict[str, str]], "str | None"]
+# 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と対にして登録する。
+# 検証関数を持たない免除の判定値を受理値へ加えると、根拠の無い行が確認を通過するためである。
+# 割当外は分割起票で他のWIへ割り当てた原文要求と分割元の依頼全体の単位にだけ使うため、完成条件の行では受理しない。
+EXEMPTIONS: dict[str, dict[str, ExemptionCheck]] = {
+    "wi_conditions": {"失効": _expired_source_error},
+    "user_requirements": {"失効": _expired_source_error, "割当外": _unassigned_source_error},
+}
+SECTION_OUTCOMES = {section: JUDGMENT_OUTCOMES | set(checks) for section, checks in EXEMPTIONS.items()}
+
+
+def _check_exemptions(payload: dict[str, typing.Any], repository: pathlib.Path, wi_outputs: dict[str, str]) -> list[str]:
+    """両配列の全行のうち免除の判定値を持つ行について、登録した検証関数で根拠の記録を確かめる。"""
+    errors: list[str] = []
+    for section, checks in EXEMPTIONS.items():
+        for index, row in enumerate(payload[section], start=1):
+            check = checks.get(row["outcome"])
+            if check is not None and (error := check(row, section, index, repository, wi_outputs)) is not None:
+                errors.append(error)
+    return errors
 
 
 def _quoted_units(units: typing.Iterable[str]) -> str:
@@ -558,6 +680,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     requirement_rows = payload["user_requirements"]
     assert isinstance(condition_rows, list) and isinstance(requirement_rows, list)
     wi_outputs: dict[str, str] = {}
+    errors.extend(_check_exemptions(payload, repository, wi_outputs))
     for filename in filenames:
         try:
             if filename not in wi_outputs:
@@ -566,11 +689,6 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             errors.append(str(exc))
             continue
-        for index, row in enumerate(condition_rows, start=1):
-            if row["awi"] == filename and row["outcome"] == "失効":
-                error = _expired_source_error(row, index, repository, wi_outputs)
-                if error is not None:
-                    errors.append(error)
         actual = [row["condition"] for row in condition_rows if row["awi"] == filename]
         normalized_actual = [_normalize_condition(condition) for condition in actual]
         unmatched = [
