@@ -96,7 +96,7 @@ def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTEN
 
 
 def _write_wi(private_notes: pathlib.Path, body: str, name: str = _plan_fixture.WI_FILES[0][0]) -> None:
-    """キュー管理リポジトリの状態ディレクトリへWIファイルを作成する。"""
+    """private-notesの状態ディレクトリへWIファイルを作成する。"""
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / name).write_text(body, encoding="utf-8")

@@ -1,9 +1,10 @@
-"""セッション振り返りの入力を抽出し、会話の流れ、問題候補の一覧およびセッション統計を作業ディレクトリへ書く。
+"""セッション振り返りの入力を抽出し、会話の流れ、`candidates.md`およびセッション統計を作業ディレクトリへ書く。
 
 1回の実行で証拠bundleを抽出し、メインが同じセッション内で読む3つの文書を書いて、所在と件数を1行のJSONで返す。
 会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で並べ、メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
-候補一覧は1候補を1行の要約と記録位置で示し、全文が要る候補だけをメインが抽出器の`--detail`で照会する。
+`candidates.md`は1候補を1行の要約と記録位置で示す。全文が要る候補だけを、
+メインが`atk run-script session-review-evidence`の`--detail`で照会する。
 
 本スクリプトはデータ取得を目的とし、合否を判定しないため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -49,13 +50,13 @@ _IMPROVEMENT_MARKER = "気付いた改善点:"
 振り返りは工程2でこの行を全件拾うため、長い発話の省略区間にあっても会話の流れへ残す。
 """
 _SUMMARY_LENGTH = 200
-"""候補一覧の1行の要約、対象のツール呼び出しおよび直前のアシスタント発話、会話の流れのツール呼び出しと失敗の標識へ載せる文字数。
+"""`candidates.md`の1行の要約、対象のツール呼び出しおよび直前のアシスタント発話、会話の流れのツール呼び出しと失敗の標識へ載せる文字数。
 
 ツール呼び出しの行を500字にすると大きい記録で会話の流れが約3割増えた一方、200字でコマンドとファイルパスを識別できた。
 """
 _SLOW_CALL_LIMIT = 10
 _FULL_TEXT_KINDS = frozenset({"user-intervention", "escalation"})
-"""候補一覧へ本文の全文を載せる候補種別。利用者の是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
+"""`candidates.md`へ本文の全文を載せる候補種別。利用者の是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
 _FAILURE_KINDS = frozenset({"command-failure", "tool-failure"})
 _FAILURE_LEDGER_DAYS = 30
 
@@ -70,7 +71,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--work-dir",
         metavar="PATH",
         required=True,
-        help="メインが作成した管理対象一時領域の絶対パス。3つの文書と証拠bundleをこの直下へ書く。",
+        help="メインがmanaged-tempに作成したディレクトリの絶対パス。3つの文書と証拠bundleをこの直下へ書く。",
     )
     parser.add_argument(
         "--target-repo",
@@ -85,7 +86,7 @@ _MISSING_NEXT_ACTIONS = {
         "`atk run-script session-review-prepare -- <引数>`で起動する。"
         "解消しない場合はagent-toolkitの導入が壊れているため、ユーザーへ報告する"
     ),
-    "work_dir": "`atk managed-temp create`で作成した管理対象一時領域の絶対パスを`--work-dir`へ渡して再実行する",
+    "work_dir": "`atk managed-temp create`で作成したディレクトリの絶対パスを`--work-dir`へ渡して再実行する",
     "transcript_path": (
         "`--transcript`へ実在するClaude Codeのtranscriptの絶対パスを渡すか、Codexでは`--codex-thread-id`を渡して再実行する"
     ),
@@ -106,7 +107,7 @@ def _missing(item: str, detail: str | None = None) -> int:
 
 
 def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pathlib.Path | None:
-    """Git共通dirから対象リポジトリ固有の振り返り参照文書を解決する。"""
+    """Git共通ディレクトリ（`--git-common-dir`）から対象リポジトリ固有の振り返り参照文書を解決する。"""
     if target_repo is None:
         return None
     try:
@@ -136,14 +137,14 @@ def _read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
 
 
 def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> str | None:
-    """抽出器の集約実行で証拠bundleを作成する。失敗時は診断の文字列を返す。
+    """`atk run-script session-review-evidence`の集約実行で証拠bundleを作成する。失敗時は診断の文字列を返す。
 
-    抽出器は標準出力へ要約イベントを書くため、1行JSONの出力契約を保つよう取り込んで破棄する。
+    `atk run-script session-review-evidence`は標準出力へ要約イベントを書くため、1行JSONの出力契約を保つよう取り込んで破棄する。
     """
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
         exit_code = session_review_evidence.main([*session_arguments, "--bundle", str(bundle_dir)])
-    return None if exit_code == 0 else captured.getvalue() or f"抽出器の終了コード: {exit_code}"
+    return None if exit_code == 0 else captured.getvalue() or f"atk run-script session-review-evidenceの終了コード: {exit_code}"
 
 
 def _fence(body: str, info: str = "text") -> list[str]:
@@ -229,7 +230,7 @@ def _omitted_improvement_lines(text: str) -> list[str]:
 
 
 def _readable_entry_text(text: str) -> str:
-    """抽出器がエントリ全体をJSONで返した詳細から、人が読む本文を取り出す。
+    """`atk run-script session-review-evidence`がエントリ全体をJSONで返した詳細から、人が読む本文を取り出す。
 
     本文を取り出せないJSONと、切り詰めでJSONとして解釈できない文字列はそのまま返す。
     """
@@ -332,13 +333,13 @@ def _candidates_document(
     detail_command: str,
     single_failures: list[dict[str, Any]],
 ) -> str:
-    """問題候補の一覧を組み立てる。"""
+    """`candidates.md`の本文を組み立てる。"""
     counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
     count_text = "、".join(f"{kind} {count}件" for kind, count in sorted(counts.items())) or "なし"
     excluded = summary.get("excluded", {})
     excluded_text = "、".join(f"{name} {count}件" for name, count in sorted(excluded.items())) or "なし"
     lines = [
-        "# 問題候補の一覧",
+        "# 問題候補",
         "",
         f"- 候補: {len(candidates)}件（{count_text}）",
         f"- 候補から除いた件数: {excluded_text}",
@@ -432,7 +433,7 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
 def _select_repeated_failures(
     candidates: list[dict[str, Any]], summary: dict[str, Any], session_id: str, now: datetime.datetime
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], int]:
-    """抽出器の失敗候補を別セッションの反復と単発へ分ける。"""
+    """`atk run-script session-review-evidence`が検出した失敗候補を別セッションの反復と単発へ分ける。"""
     failures = [item for item in candidates if item.get("candidate_kind") in _FAILURE_KINDS]
     session_counts, skipped = _failure_ledger(failures, session_id, now)
     retained: list[dict[str, Any]] = []
@@ -532,7 +533,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     except (OSError, ValueError, KeyError) as error:
         return _missing("bundle", str(error))
 
-    # 抽出器の`--transcript`と`--codex-thread-id`へそのまま渡せる形を、全文を照会するコマンドとして示す。
+    # `atk run-script session-review-evidence`の`--transcript`と`--codex-thread-id`へそのまま渡せる形を、
+    # 全文を照会するコマンドとして示す。
     detail_command = (
         f"atk run-script session-review-evidence -- {transcript_path}"
         if transcript_path is not None

@@ -102,7 +102,7 @@ READ_ONLY_COMMANDS = frozenset(
 """読み取り専用型のリーフサブコマンド。成功行を書かない。"""
 
 OUT_OF_SCOPE_COMMANDS = frozenset({"atk wi process-loop", "atk serve", "atk run-script"})
-"""結果行の規約の対象外。常駐処理、サーバーおよび委譲先scriptが終了状態を表す。"""
+"""結果行の規約の対象外。process-loop、サーバーおよび委譲先scriptが終了状態を表す。"""
 
 NO_MATCH_COMMANDS = frozenset({"atk wi grep", "atk managed-temp list"})
 """該当0件で終了コード1を返し、該当0件の行を標準エラーへ書く読み取りのコマンド。"""

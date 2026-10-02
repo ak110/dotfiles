@@ -90,7 +90,7 @@ _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
-# 受領した委譲先がユーザー自身の発話と区別できるよう、境界標識で囲んで渡す。
+# 受領した委譲先がユーザー自身の発話と区別できるよう、`atk-auto`要素で囲んで渡す。
 _AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
     "応答できる場合はOKだけを返してください。",
     source=_automated_prompt.SOURCE_PROCESS_LOOP,
@@ -112,23 +112,23 @@ def _process_loop_abort_path() -> pathlib.Path:
 def _cmd_process_loop_abort() -> None:
     """process-loopへ現在のセッション終了後の中断を要求する。"""
     _process_loop_log.request_abort()
-    _outcome.report_success("常駐処理へ中断を要求した")
+    _outcome.report_success("process-loopへ中断を要求した")
 
 
 def _cmd_process_loop_abort_cancel() -> None:
     """process-loopへの中断要求を解除する。"""
     path = _process_loop_abort_path()
     if not path.exists():
-        _outcome.report_success("常駐処理への中断要求は設定されていないため、解除の変更は無い")
+        _outcome.report_success("process-loopへの中断要求は設定されていないため、解除の変更は無い")
         return
     path.unlink(missing_ok=True)
-    _outcome.report_success("常駐処理への中断要求を解除した")
+    _outcome.report_success("process-loopへの中断要求を解除した")
 
 
 def _cmd_process_loop_status() -> None:
     """process-loopへの中断要求と保持中の追加指示を表示する。"""
     status = "あり" if _process_loop_abort_path().exists() else "なし"
-    print(f"常駐処理への中断要求: {status}")
+    print(f"process-loopへの中断要求: {status}")
     instructions = _process_loop_log.read_instructions()
     print(f"保持中の追加指示: {len(instructions)}件")
     for index, body in enumerate(instructions, start=1):
@@ -162,7 +162,7 @@ def _cmd_process_loop_instruct_cancel() -> None:
 
 
 def _consume_process_loop_abort() -> bool:
-    """中断要求があればベルを3回鳴らして要求を消費し、常駐処理を終了すべきかを返す。
+    """中断要求があればベルを3回鳴らして要求を消費し、process-loopを終了すべきかを返す。
 
     判定点は反復の境界と、呼び出し元へ戻らない再起動の直前の2箇所へ限定する。
     `_restart_process_loop`は`os.execv`または`sys.exit`で呼び出し元へ戻らないため、
@@ -199,7 +199,7 @@ def _child_env() -> dict[str, str]:
     """起動元ツールの仮想環境を除いた子プロセス用の環境変数を返す。
 
     対象は`atk`から起動する外部コマンド（claudeセッション・`update-dotfiles`）とする。
-    `update-dotfiles`は`chezmoi apply`を経て作業対象リポジトリのuvベースのパッケージ操作へ至るため、
+    `update-dotfiles`は`chezmoi apply`を経て対象リポジトリのuvベースのパッケージ操作へ至るため、
     claudeセッションと同じく起動元ツールの環境を引き継がせない。
     自己再起動を行う`_restart_process_loop`は本関数の対象外とする。
     再起動先は`atk`自身であり、起動元と同じ実行環境で継続する必要があるためである。
@@ -539,7 +539,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     """worktreeを準備して対象リポジトリの上流最新へ追随させる。
 
     上流は現在ブランチの追跡先を優先し、利用不能な場合だけ`refs/remotes/origin/HEAD`へ後退する。
-    解決結果はworktreeのfetch・作成・rebaseだけに用い、公開先を起動プロンプトへ暗黙に設定しない。
+    解決結果はworktreeのfetch・作成・rebaseだけに用い、公開先を最初のプロンプトへ暗黙に設定しない。
 
     worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
     前回反復の成果がpush済みでも、その後に他の作業ツリーが上流へ進めた分は
@@ -684,7 +684,7 @@ def _build_process_loop_prompt() -> str:
     スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として扱われて
     スキル側の規範より優先される。
 
-    目的文は`/goal`条件としてオーケストレーターへ渡り、ターンを終えるたびに会話記録の全体を
+    目的文は`/goal`条件としてオーケストレーターへ渡り、ターンを終えるたびにセッション記録の全体を
     入力とする評価の対象となる。条件が長いほど各評価の入力が増える。この関数へ記述を足す
     変更は行わない。過去に作業ディレクトリ、対象リポジトリおよび終了手順の指示が順に加わり、
     そのたびに短縮を求める指摘を受領した経緯がある。
@@ -693,7 +693,7 @@ def _build_process_loop_prompt() -> str:
     `atk wi`の各サブコマンドは`--target-repo`を省略した場合に作業ディレクトリから対象
     リポジトリを解決するため、目的文へ処理対象を書く必要はない。
 
-    目的文は境界標識で囲み、受領した子セッションがユーザー自身の発話と区別できる形にする。
+    目的文は`atk-auto`要素で囲み、受領した子セッションがユーザー自身の発話と区別できる形にする。
     標識は`/goal`の引数の位置へ置く。ホストは1行目の先頭にあるスラッシュコマンドだけを
     コマンドとして解釈するため、本文全体を囲むとコマンドとして成立しない。
     """
@@ -1254,7 +1254,7 @@ def _run_process_session(
     resume_pending: bool,
     dotfiles_root: pathlib.Path | None,
 ) -> bool:
-    """子セッションを1回実行し、常駐処理を終了すべきかを返す。
+    """子セッションを1回実行し、process-loopを終了すべきかを返す。
 
     中断要求の判定は`_restart_process_loop`の呼び出しより前に置く。同関数は呼び出し元へ
     戻らないため、後段へ置いた判定は`--no-update`を省略して起動した場合には実行されない。
@@ -1326,8 +1326,8 @@ def _check_process_loop_alerts(
 ) -> tuple[float | None, int, int]:
     """確認間隔を満たす場合だけアラートを確認し、確認時刻、CI失敗のAWI投入件数、未判定のDependabotアラート件数を返す。
 
-    Dependabotアラートは処理回の自動コードレビュー監査が判定するため、AWIを起票せず件数だけを返す。
-    呼び出し側は投入が無く件数が1以上のとき、監査を実施させるために処理回を起動する。
+    Dependabotアラートはprocess-wiの実行が行う自動コードレビュー監査が判定するため、AWIを起票せず件数だけを返す。
+    呼び出し側は投入が無く件数が1以上のとき、監査を実施させるためにprocess-wiを1回実行させる。
     """
     if args.no_alerts:
         return last_alert_check, 0, 0
@@ -1410,8 +1410,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（指定が無ければ有効、`--no-alerts`で無効化）を`--alert-interval`
     秒間隔で実行する。新規のCI失敗を検知した場合はAWIへ投入して即座に次反復へ進む。
-    未判定のDependabotアラートがある場合はAWIを起票せず、処理回の自動コードレビュー監査に判定させるため
-    処理回を1回起動する。
+    未判定のDependabotアラートがある場合はAWIを起票せず、自動コードレビュー監査に判定させるため
+    process-wiを1回実行させる。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
     待機に入るたびに待機メッセージを1度出力する。
@@ -1541,7 +1541,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         refresh_before_session = True
                         continue
                     if dependabot_pending > 0:
-                        print(f"未判定のDependabotアラートが{dependabot_pending}件あるため処理回を起動します。")
+                        print(f"未判定のDependabotアラートが{dependabot_pending}件あるためprocess-wiを1回実行させます。")
                         alert_session_pending = True
                         refresh_before_session = True
                         continue

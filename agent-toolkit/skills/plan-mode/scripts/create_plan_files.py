@@ -1,6 +1,6 @@
 """plan-modeが使う新規計画ファイルの内部作成処理。
 
-このスクリプトは公開CLIではなく、plan-modeが管理対象一時領域へ準備した
+このスクリプトは公開CLIではなく、plan-modeがmanaged-tempの中へ準備した
 メイン本文と任意のバグ本文を`~/.claude/plans`へ確定するための内部APIを提供する。
 """
 
@@ -104,12 +104,12 @@ def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> 
 
 
 def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
-    """計画作業rootを解決し、`~/.claude`外へのsymlinkを拒否する。"""
+    """`~/.claude/plans`を解決し、`~/.claude`外へのsymlinkを拒否する。"""
     home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
     claude_root = (home_path / ".claude").resolve(strict=False)
     plans_root = _plan_file.working_plans_root(home_path).resolve(strict=False)
     if not plans_root.is_relative_to(claude_root):
-        raise PlanCreationError("計画作業rootが~/.claudeの外を指しています", next_action=_ROOT_NEXT_ACTION)
+        raise PlanCreationError("`~/.claude/plans`が~/.claudeの外を指しています", next_action=_ROOT_NEXT_ACTION)
     return plans_root
 
 
@@ -120,7 +120,7 @@ def _require_plans_root_path(path: pathlib.Path, plans_root: pathlib.Path) -> No
     except OSError as error:
         raise PlanCreationError(f"計画作成先を検証できません: {path}", next_action=_ROOT_NEXT_ACTION) from error
     if not resolved.is_relative_to(plans_root):
-        raise PlanCreationError(f"計画作成先が計画作業rootの外を指しています: {path}", next_action=_ROOT_NEXT_ACTION)
+        raise PlanCreationError(f"計画作成先が`~/.claude/plans`の外を指しています: {path}", next_action=_ROOT_NEXT_ACTION)
 
 
 def _read_source(path: pathlib.Path | str) -> bytes:
@@ -349,10 +349,10 @@ def create_plan_files(
     work_dir: pathlib.Path | str | None = None,
     max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
 ) -> tuple[pathlib.Path, ...]:
-    """入力本文を計画作業rootへ作成し、確定済みパスを返す。
+    """入力本文を`~/.claude/plans`へ作成し、確定済みパスを返す。
 
-    ``main_source``および任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
-    private-notesは既存の可搬参照の妥当性を判定するときだけ使い、計画本文は作業rootへ保存する。
+    ``main_source``および任意の``bug_source``はmanaged-tempの中にあるUTF-8本文を指す。
+    private-notesは既存の可搬参照の妥当性を判定するときだけ使い、計画本文は`~/.claude/plans`へ保存する。
     """
     if max_attempts <= 0:
         raise ValueError("max_attemptsは1以上にしてください")

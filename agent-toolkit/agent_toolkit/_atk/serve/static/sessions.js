@@ -27,7 +27,7 @@ let visibleLimit = 100;
 let filterTimer = null;
 const expandedKeys = new Set();
 let visibleSessions = [];
-// サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元の記録を古い順に保持して戻れるようにする。
+// サブエージェントの記録は左ペインの一覧に現れないため、委譲元の記録を古い順に保持して戻れるようにする。
 let parentTrail = [];
 // 初期化後は文書とともに維持するSSE購読。
 let eventSource = null;
@@ -423,7 +423,7 @@ function renderBack() {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "detail-back button-secondary";
-  button.textContent = "呼び出し元の記録へ戻る";
+  button.textContent = "委譲元の記録へ戻る";
   button.addEventListener("click", () => openSession(parent.host, parent.engine, parent.path, trail.slice(0, -1)));
   return button;
 }
@@ -566,7 +566,7 @@ async function refreshSelectedDetail() {
   }
 }
 
-// `trail`は開こうとする記録の呼び出し元を古い順に並べる。左ペインから選んだ記録には呼び出し元が無いため、省略した場合は空とする。
+// `trail`は開こうとする記録の委譲元を古い順に並べる。左ペインから選んだ記録には委譲元が無いため、省略した場合は空とする。
 async function openSession(host, engine, path, trail = [], updateUrl = true) {
   selected = { host, engine, path };
   if (updateUrl && location.pathname.endsWith("/sessions")) {

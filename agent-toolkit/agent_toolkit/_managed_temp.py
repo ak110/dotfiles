@@ -1,4 +1,4 @@
-"""管理対象一時領域CLIの旧呼び出し方を受け付ける。"""
+"""`atk managed-temp`の旧呼び出し方を受け付ける。"""
 
 from __future__ import annotations
 

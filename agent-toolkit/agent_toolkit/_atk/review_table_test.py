@@ -131,7 +131,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _invoke_table_operation(operation: str, path: pathlib.Path) -> int:
-    """レビュー表を入力として受け取る4つの操作を、同じパスで呼び出す。"""
+    """レビュー指摘管理表を入力として受け取る4つの操作を、同じパスで呼び出す。"""
     return {
         "validate": lambda: table.validate(path),
         "show": lambda: table.show(path),
@@ -375,7 +375,7 @@ def test_non_regular_file_input_is_rejected_with_the_expected_input_form(
     with pytest.raises(next_action.ActionableError) as exc_info:
         _invoke_table_operation(operation, path)
 
-    assert exc_info.value.reason == f"レビュー表を読み込めない: {path}: 通常ファイルではない"
+    assert exc_info.value.reason == f"レビュー指摘管理表を読み込めない: {path}: 通常ファイルではない"
     assert ".exec-review.tsv" in exc_info.value.next_action
     assert "標準入力" in exc_info.value.next_action
 
@@ -388,7 +388,7 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
     with pytest.raises(next_action.ActionableError) as exc_info:
         _invoke_table_operation(operation, path)
 
-    assert exc_info.value.reason == f"レビュー表を読み込めない: {path}: 存在しない"
+    assert exc_info.value.reason == f"レビュー指摘管理表を読み込めない: {path}: 存在しない"
     assert ".exec-review.tsv" in exc_info.value.next_action
     assert "標準入力" in exc_info.value.next_action
 
@@ -409,7 +409,7 @@ def test_dispatch_rejects_removed_review_write_paths(tmp_path: pathlib.Path, nam
     """保存済み旧表と廃止した対話是正表は公開された作成コマンドで更新しない。"""
     args = argparse.Namespace(review_table_subcommand="init", path=str(tmp_path / name))
 
-    with pytest.raises(ValueError, match="旧レビュー表は読み取り専用"):
+    with pytest.raises(ValueError, match="旧形式のレビュー指摘管理表は読み取り専用"):
         table.dispatch(args)
 
 

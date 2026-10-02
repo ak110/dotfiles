@@ -13,7 +13,7 @@ _SPEC.loader.exec_module(helper)
 
 @pytest.mark.parametrize("name", ("p.detail.md", "p.plan-review.tsv"))
 def test_working_root_excludes_removed_attachments(tmp_path: pathlib.Path, name: str) -> None:
-    """リモート側も作業rootの旧付属ファイルを対象にしない。"""
+    """リモート側も`~/.claude/plans`の旧付属ファイルを対象にしない。"""
     root = tmp_path / "plans"
     root.mkdir()
     path = root / name

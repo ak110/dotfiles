@@ -60,7 +60,7 @@ def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
 
 
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
-    """常駐処理の通知、定時promptおよび実行環境が挿入した本文を利用者介入から除く。"""
+    """process-loopの通知、定時promptおよび実行環境が挿入した本文を利用者介入から除く。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "main", "line": 2, "text": "Goal check-in: «目標» is still active"},
@@ -122,7 +122,7 @@ def test_candidate_events_excludes_hook_notices_without_tag() -> None:
 def test_candidate_events_reports_no_detail_budget_exclusion_without_omitted_notices() -> None:
     """同じ種類の発生が1件だけのhook通知では、省略が無いため`hook-notice-detail-budget`を除外件数へ載せない。
 
-    値0の区分が残ると、候補一覧の「候補から除いた件数」が除外の起きたように読める。
+    値0の区分が残ると、`candidates.md`の「候補から除いた件数」が除外の起きたように読める。
     """
     hook_notices = [
         {
@@ -361,7 +361,7 @@ def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
 
 
 def test_delegate_completion_values_are_defined_by_task_documents() -> None:
-    """除外に使う完了値が、委譲先のタスク文書が返却値として定める語と一致し続けることを確かめる。"""
+    """除外に使う返却値が、`<役割名>.subagent.md`が返却値として定める語と一致し続けることを確かめる。"""
     share = pathlib.Path(evidence.__file__).resolve().parents[3] / "share"
     documents = "\n".join(path.read_text(encoding="utf-8") for path in sorted(share.glob("*.md")))
     lines = set(documents.splitlines())
@@ -723,8 +723,8 @@ def test_hook_repeat_annotation_does_not_split_notice_kinds() -> None:
     "body",
     [
         "対象の検査に該当した。" + "理由の説明を続ける。" * 12,
-        "未完了の背景タスクが書く /home/user/work/output.txt を読む前に完了通知を待つこと。",
-        "未完了の背景タスクの出力を読む前に完了通知を待つこと。\nこの通知は同一セッションで2件目である。",
+        "未完了のバックグラウンドタスクが書く /home/user/work/output.txt を読む前に完了通知を待つこと。",
+        "未完了のバックグラウンドタスクの出力を読む前に完了通知を待つこと。\nこの通知は同一セッションで2件目である。",
     ],
     ids=["longer-than-kind-length", "with-path", "with-repeat-annotation"],
 )

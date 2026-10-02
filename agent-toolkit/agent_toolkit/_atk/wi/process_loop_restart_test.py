@@ -162,7 +162,7 @@ def test_posix_launcher_logs_non_restart_exit(
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部コマンド・Claude設定・管理対象一時領域の登録簿をユーザー環境から分離する。"""
+    """外部コマンド・Claude設定・managed-tempの登録簿をユーザー環境から分離する。"""
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")

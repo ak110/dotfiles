@@ -32,7 +32,7 @@ def add_output_file_arg(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="標準出力を指定した絶対パスのファイルへ保存し、保存先パスと保存した行数を表示する。"
         "エージェント環境で本オプションを省略した場合、標準出力がUTF-8で16384バイトを超えると"
-        "全量を新しい管理対象一時領域へ自動で保存し、同じ形式で保存先と行数だけを表示する。",
+        "全量を新しいmanaged-tempのディレクトリへ自動で保存し、同じ形式で保存先と行数だけを表示する。",
     )
     parser.set_defaults(subparser=parser)
 

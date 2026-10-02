@@ -4152,7 +4152,7 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
 @pytest.mark.asyncio
 async def test_subagent_records_open_from_the_parent_detail(screen_harness: _ScreenHarness) -> None:
-    """親セッションの詳細からサブエージェント記録を開いて呼び出し元へ戻り、記録本体が無い項目は選択できない表示とする。"""
+    """親セッションの詳細からサブエージェント記録を開いて委譲元へ戻り、記録本体が無い項目は選択できない表示とする。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
@@ -4171,7 +4171,7 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     ]
     assert offsets[1] > offsets[0]
 
-    # 呼び出し元の記録は左ペインの一覧から選び直せるが、サブエージェントの記録は一覧に現れないため戻る操作を置く。
+    # 委譲元の記録は左ペインの一覧から選び直せるが、サブエージェントの記録は一覧に現れないため戻る操作を置く。
     assert await harness.page.locator("#detail .detail-back").count() == 0
     await items.nth(0).click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")

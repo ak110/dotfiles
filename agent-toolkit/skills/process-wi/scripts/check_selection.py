@@ -34,7 +34,7 @@ except ImportError as _import_error:
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
         # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script pick-wi-check -- <選定結果ファイルの絶対パス>`で起動する",
+        "次の操作: `atk run-script pick-wi-check -- <選定結果の出力先ファイルの絶対パス>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -159,7 +159,7 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
     if items is None:
         raise InputError(f"選定結果に`{_selection.DECISIONS_KEY}`の列がない: {selection_file}")
     if not private_notes.is_dir():
-        raise InputError(f"キュー管理リポジトリが実在しない: {private_notes}")
+        raise InputError(f"private-notesが実在しない: {private_notes}")
     errors: list[str] = []
     for decision in items:
         if not isinstance(decision, dict) or not isinstance(decision.get(_selection.WI_KEY), str):
@@ -172,9 +172,9 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
         try:
             source = _plan_file.find_wi_source(awi, private_notes)
         except OSError as error:
-            raise InputError(f"キュー管理リポジトリを走査できない: {private_notes}: {error}") from error
+            raise InputError(f"private-notesを走査できない: {private_notes}: {error}") from error
         if source is None:
-            errors.append(f"{awi}: 本文を特定できない: キュー管理リポジトリ{private_notes}の状態ディレクトリに無い")
+            errors.append(f"{awi}: 本文を特定できない: private-notes（{private_notes}）の状態ディレクトリに無い")
             continue
         try:
             body = source.read_text(encoding="utf-8")
@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
             str(error),
             next_action=(
                 "位置引数へpickerが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する。"
-                "キュー管理リポジトリが実在しない場合は`atk config get private_notes`が返す場所を確かめる"
+                "private-notesが実在しない場合は`atk config get private_notes`が返す場所を確かめる"
             ),
         )
         return 2

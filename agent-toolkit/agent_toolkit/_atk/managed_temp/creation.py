@@ -168,7 +168,7 @@ def prefix_violation(prefix: str) -> str | None:
 
 
 def is_valid_prefix(prefix: str) -> bool:
-    """prefixが管理対象一時領域の命名規則に一致するか返す。"""
+    """prefixがmanaged-tempのディレクトリの命名規則に一致するか返す。"""
     return prefix_violation(prefix) is None
 
 
@@ -334,7 +334,7 @@ def create_managed_temp(
 
 
 def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathlib.Path:
-    """登録済みセッションroot直下へ、個別登録を持たない子領域を作成する。"""
+    """登録済みのセッションのmanaged-temp直下へ、個別登録を持たない作業ディレクトリを作成する。"""
     if not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
     root_argument = pathlib.Path(session_root)

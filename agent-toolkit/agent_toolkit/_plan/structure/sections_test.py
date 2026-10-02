@@ -403,7 +403,7 @@ def test_agent_document_target_covers_every_layer_and_kind(layer: str, kind_path
 
 @pytest.mark.parametrize("path", ("AGENTS.md", "CLAUDE.md", "project/AGENTS.md", "project/CLAUDE.md"))
 def test_agent_document_target_includes_project_instruction_files(path: str) -> None:
-    """プロジェクト指示ファイルは配置ディレクトリによらず判定する。"""
+    """プロジェクト規範のファイルは配置ディレクトリによらず判定する。"""
     assert _plan_format.is_agent_doc_target_file(path)
 
 

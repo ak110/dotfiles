@@ -519,7 +519,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     try:
         _require_agent_edit_source(edited)
         if message is not None or tmp_path is not None:
-            # 既存本文が旧書式でも、置換後の本文の原因欄は必ず判定する。
+            # 既存本文が旧書式でも、置換後の本文の`直接的原因`行は必ず判定する。
             _add.require_confirmed_cause(edited)
     except WebInputError as error:
         if tmp_path is not None:

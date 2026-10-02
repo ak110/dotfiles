@@ -13,7 +13,7 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 STAGES = ("work-complete", "review-result", "review-submission")
 REVIEW_STATES = ("success", "not-run", "failed")
 REVIEW_SUMMARY_PREFIXES = ("- 候補: ", "- 所要時間: ", "- 改善見込み: ")
-"""振り返りが正常完了した報告が持つ要約行の接頭辞。値は準備スクリプトの出力から転記する。"""
+"""振り返りが正常完了した報告が持つ要約行の接頭辞。値は`atk run-script session-review-prepare`の出力から転記する。"""
 REVIEW_SUCCESS_SECTIONS = ("確定した問題と対策", "対策を見送った問題")
 """振り返りが正常完了した報告のH3。確定した問題ごとの対策と、対策を見送った問題とその理由を読めるようにする。"""
 _WI_FILENAME = re.compile(r"\b\d{8}-\d{6}-\d{3}\.md\b")

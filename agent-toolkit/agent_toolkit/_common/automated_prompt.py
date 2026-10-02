@@ -1,6 +1,6 @@
-"""機械が生成してユーザー入力欄へ入る本文の境界標識。
+"""機械が生成してユーザー入力欄へ入る本文を囲む`atk-auto`要素。
 
-常駐処理が子セッションの最初の入力として渡す本文は、ホストからはユーザーの発話と同じ
+`atk wi process-loop`が子セッションの最初の入力として渡す本文は、ホストからはユーザーの発話と同じ
 入力欄へ届く。受領したエージェントがユーザー自身の発話と区別できるよう、生成側が本要素で囲み、
 消費側は同じ要素の有無だけで判定する。生成側と消費側が別の判定を持つと、両者の集合がずれる。
 
@@ -18,7 +18,7 @@ _OPENING_TAGS = (f"<{ELEMENT}", f"<{message_format.LEGACY_AUTO_INSERTED_ELEMENT}
 
 
 def wrap(body: str, *, source: str, kind: str) -> str:
-    """本文へ境界標識を付ける。"""
+    """本文を`atk-auto`要素で囲む。"""
     return message_format.auto_message(body, source=source, kind=kind)
 
 

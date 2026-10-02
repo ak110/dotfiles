@@ -194,7 +194,7 @@ _AWI_HEADING_ORDER: tuple[str, ...] = (
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
-    """先頭frontmatterと論理本文を返し、種別共通の本文契約を検証する。"""
+    """先頭frontmatterと論理本文を返し、`agent-toolkit:wi-standards`「通常AWIの本文」の要件のうち種別共通のものを検証する。"""
     frontmatter, body = _parse_leading_frontmatter(message)
     if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
         raise WebInputError(_EMPTY_AWI_ERROR, next_action=_EMPTY_AWI_NEXT_ACTION)

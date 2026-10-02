@@ -194,8 +194,8 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") 
     """`path`が対象接尾辞・`root`配下・非dotdirの全条件を満たすか判定する。
 
     読取・検索・変更監視の3つの処理が同一の対象集合を返すよう、この判定を1箇所へ集約する。
-    作業rootではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
-    保存rootと明示rootでは旧付属ファイルも読取・検索・監視の対象に含める。
+    `~/.claude/plans`ではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
+    `private-notes/plans/`と設定で明示したrootでは旧付属ファイルも読取・検索・監視の対象に含める。
     リモート側`atk_serve_plans_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
@@ -215,7 +215,7 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") 
 def is_listed_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
     """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
-    メイン計画は常に一覧へ載せ、付属の詳細・バグ計画は除外する。レビュー指摘管理表は対応する
+    メイン計画は常に一覧へ載せ、付属の詳細・計画ファイル（バグ）は除外する。レビュー指摘管理表は対応する
     メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
     """
     if not is_target_path(path, root, source_id):

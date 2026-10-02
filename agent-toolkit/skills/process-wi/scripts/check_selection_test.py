@@ -26,7 +26,7 @@ _REPO_FILES = (
 
 @pytest.fixture(name="env")
 def fixture_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, pathlib.Path]:
-    """対象リポジトリとキュー管理リポジトリを`tmp_path`配下へ作成し、そのパスを返す。"""
+    """対象リポジトリとprivate-notesを`tmp_path`配下へ作成し、そのパスを返す。"""
     repo = tmp_path / "repo"
     for relative in _REPO_FILES:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
@@ -81,7 +81,7 @@ def test_reports_uncovered_broad_and_invalid_exclusion(
 def test_reads_current_field_names_like_legacy_ones(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """日本語の欄名で書いた選定結果を、旧欄名の選定結果と同じ照合結果で検証する。"""
+    """日本語の欄名で書いた選定結果からも、旧欄名の選定結果と同じ違反を報告する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`と`docs/development/design.md`を変える。")
     _awi(notes, "c.md", "`src/model.py`を変える。`README.md`は変更しない。")
@@ -176,7 +176,7 @@ def test_reports_missing_body_and_rejects_unreadable_input(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """本文を特定できないdecisionは違反として、キュー管理リポジトリの不在と読めない選定結果は入力エラーとして返す。"""
+    """本文を特定できないdecisionは違反として、private-notesの不在と読めない選定結果は入力エラーとして返す。"""
     repo, _notes = env
 
     assert _run(tmp_path, repo, [{"awi": "absent.md", "lane": "lane-01", "write_files": []}]) == 1
@@ -186,7 +186,7 @@ def test_reports_missing_body_and_rejects_unreadable_input(
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(missing_root))
     assert _run(tmp_path, repo, [{"awi": "a.md", "lane": "lane-01", "write_files": []}]) == 2
     err = capsys.readouterr().err
-    assert f"キュー管理リポジトリが実在しない: {missing_root}" in err
+    assert f"private-notesが実在しない: {missing_root}" in err
     assert "次の操作: " in err
     assert "Traceback" not in err
 

@@ -1,4 +1,4 @@
-"""計画ファイルと独立CI実行レビュー表のcheckout・commitを提供するCLI補助。
+"""計画ファイルとCI対応レビュー指摘管理表のcheckout・commitを提供するCLI補助。
 
 checkout記録は取得からcommit成功まで保持し、取得元と取得時点の内容を更新時の
 競合検出に使う。commitまたはpush失敗後の再実行と、作業バンドルを削除して取得を
@@ -37,7 +37,7 @@ _SAVED_BUNDLE_CONFLICT_NEXT_ACTION = (
     "保存済み計画を正とする場合は作業側を退避し、作業側を残す場合は別名の新しい計画として保存してください"
 )
 _PLAN_PATH_NEXT_ACTION = (
-    "作業root直下のdd-{名称}-{16進数4桁}.md、または保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdで指定し直す。"
+    "`~/.claude/plans`直下のdd-{名称}-{16進数4桁}.md、または`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdで指定し直す。"
     "作業中の計画は`atk plans list`で確認できる"
 )
 _UNPUSHED_NEXT_ACTION = "commitはローカルに残っている。`atk wi commit`でpushしてから、同じコマンドを再実行して到達を確認する"
@@ -46,7 +46,8 @@ _READBACK_NEXT_ACTION = (
     "保存先のファイルシステムの空き容量と権限を確認してから同じコマンドを再実行する。繰り返す場合はユーザーへ報告する"
 )
 _CHANGED_DURING_SAVE_NEXT_ACTION = (
-    "保存rootへの保存とcommitは完了している。作業ファイルの変更内容を確認し、反映する場合は同じ`atk plans commit`を再実行する"
+    "`private-notes/plans/`への保存とcommitは完了している。"
+    "作業ファイルの変更内容を確認し、反映する場合は同じ`atk plans commit`を再実行する"
 )
 
 
@@ -62,22 +63,22 @@ def build_parser(parser) -> None:
     checkout_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
-        help="保存root相対の計画メインファイル、または独立CI実行レビュー表のパス",
+        help="`private-notes/plans/`相対の計画メインファイル、またはCI対応レビュー指摘管理表のパス",
     )
     commit_parser = _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk plans commit"])
     commit_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
         help=(
-            "計画作業root直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
-            "保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.md、または"
+            "`~/.claude/plans`直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
+            "`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{16進数4桁}.md、または"
             "ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsv。"
         ),
     )
     commit_parser.add_argument(
         "--skip-push",
         action="store_true",
-        help="保存rootへ対象限定commitを作成し、pushは行わない",
+        help="`private-notes/plans/`へ対象限定commitを作成し、pushは行わない",
     )
     list_parser = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
     _output_file.add_output_file_arg(list_parser)
@@ -87,13 +88,13 @@ def build_parser(parser) -> None:
 _LOCK_SUFFIX = ".lock"
 _PLAN_CREATE_LOCK_NAME = f".agent-toolkit-plan-create{_LOCK_SUFFIX}"
 _WORKING_RESIDUE_SUFFIXES = (_LOCK_SUFFIX, ".bak", ".tmp")
-"""計画バンドルへ含めず、作業バンドルの回収時に作業rootから取り除く付随ファイルの拡張子。"""
+"""計画バンドルへ含めず、作業バンドルの回収時に`~/.claude/plans`から取り除く付随ファイルの拡張子。"""
 
 
 def _excluded_path(path: pathlib.Path) -> bool:
-    """計画バンドルから一時ファイルと所有記録を除外する。
+    """計画バンドルから一時ファイルと計画の所有記録を除外する。
 
-    所有記録は計画作業rootの局所状態であり、private-notesへ保存しない。
+    計画の所有記録は`~/.claude/plans`の局所状態であり、private-notesへ保存しない。
     """
     return path.name.endswith((*_WORKING_RESIDUE_SUFFIXES, _plan_file.OWNER_RECORD_SUFFIX))
 
@@ -101,11 +102,11 @@ def _excluded_path(path: pathlib.Path) -> bool:
 def _remove_working_residue(working_main: pathlib.Path) -> None:
     """指定計画のstemに対応する作業側の付随ファイルを削除する。
 
-    これらは計画バンドルから除外されて保存rootへ移らないため、作業バンドルの回収と
+    これらは計画バンドルから除外されて`private-notes/plans/`へ移らないため、作業バンドルの回収と
     同じ時点で取り除く。stemに前方一致する名前だけを対象とするため、計画作成の排他に
-    使う作業root直下の共有ロックは削除しない。
+    使う`~/.claude/plans`直下の共有ロックは削除しない。
     `.bak`と`.tmp`は現行の書き込み処理が生成する。`.lock`はレビュー指摘管理表の
-    ロックを兄弟ファイルとして置いていた旧版の生成物であり、現行版は作業rootの外へ置く。
+    ロックを兄弟ファイルとして置いていた旧版の生成物であり、現行版は`~/.claude/plans`の外へ置く。
     """
     prefix = f"{working_main.stem}."
     for path in working_main.parent.iterdir():
@@ -120,12 +121,12 @@ def _as_relative_notes_path(path: pathlib.Path, private_notes: pathlib.Path) -> 
     except (OSError, ValueError) as error:
         raise _common.WebInputError(
             f"private-notes外のパスをcommit対象にできません: {path}",
-            next_action=f"保存rootの配置を確認し、解消しない場合は{_REPORT_BUG_NEXT_ACTION}",
+            next_action=f"`private-notes/plans/`の配置を確認し、解消しない場合は{_REPORT_BUG_NEXT_ACTION}",
         ) from error
     if any(part in ("", ".", "..") for part in relative.parts):
         raise _common.WebInputError(
             f"commit対象の相対パスが不正です: {path}",
-            next_action=f"保存rootの配置を確認し、解消しない場合は{_REPORT_BUG_NEXT_ACTION}",
+            next_action=f"`private-notes/plans/`の配置を確認し、解消しない場合は{_REPORT_BUG_NEXT_ACTION}",
         )
     return relative.as_posix()
 
@@ -173,11 +174,11 @@ def _plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tu
 
 
 def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """作業rootにある現行形式の計画バンドルを返す。"""
+    """`~/.claude/plans`にある現行形式の計画バンドルを返す。"""
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     parent = (root / relative_main.parent).resolve(strict=False)
     if not parent.is_relative_to(root):
-        raise _common.WebInputError("計画作業バンドルが作業root外を指しています", next_action=_PLAN_PATH_NEXT_ACTION)
+        raise _common.WebInputError("計画作業バンドルが`~/.claude/plans`の外を指しています", next_action=_PLAN_PATH_NEXT_ACTION)
     main = parent / relative_main.name
     if not main.is_file() or main.is_symlink():
         return ()
@@ -203,11 +204,13 @@ def _current_bundle_contents(contents: dict[str, bytes], main_name: str) -> dict
 
 
 def _saved_plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """保存rootに実在する指定stemの通常ファイルを返す。"""
+    """`private-notes/plans/`に実在する指定stemの通常ファイルを返す。"""
     root = _plan_file.new_plans_root(private_notes).resolve(strict=False)
     parent = (root / relative_main.parent).resolve(strict=False)
     if not parent.is_relative_to(root):
-        raise _common.WebInputError("計画保存バンドルが保存root外を指しています", next_action=_PLAN_PATH_NEXT_ACTION)
+        raise _common.WebInputError(
+            "計画保存バンドルが`private-notes/plans/`の外を指しています", next_action=_PLAN_PATH_NEXT_ACTION
+        )
     main = parent / relative_main.name
     if not main.is_file() or main.is_symlink():
         return ()
@@ -274,7 +277,7 @@ def _checkout_record_root(relative_main: pathlib.Path) -> pathlib.Path:
 
 
 def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
-    """正規形式または移行済み形式の保存root相対メイン計画パスを返す。"""
+    """正規形式または移行済み形式の`private-notes/plans/`相対メイン計画パスを返す。"""
     try:
         return _plan_file.validate_plan_relative_path(plan_file)
     except ValueError as canonical_error:
@@ -285,35 +288,35 @@ def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
 
 
 def _validate_working_ci_review_relative_path(review_table: str) -> pathlib.Path:
-    """計画作業root直下の独立CI実行レビュー表名を返す。"""
+    """`~/.claude/plans`直下のCI対応レビュー指摘管理表名を返す。"""
     next_action = "ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvの形式で指定し直す"
     if "\0" in review_table or "\\" in review_table or "$(" in review_table:
-        raise _common.WebInputError("独立CI実行レビュー表のパスが不正です", next_action=next_action)
+        raise _common.WebInputError("CI対応レビュー指摘管理表のパスが不正です", next_action=next_action)
     relative = pathlib.Path(review_table)
     if relative.parent != pathlib.Path() or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
         raise _common.WebInputError(
-            "独立CI実行レビュー表はci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
+            "CI対応レビュー指摘管理表はci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
             next_action=next_action,
         )
     return relative
 
 
 def _validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
-    """Plans root相対の独立CI実行レビュー表パスを返す。"""
+    """Plans root相対のCI対応レビュー指摘管理表パスを返す。"""
     next_action = "ci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvの形式で指定し直す"
     if "\0" in review_table or "\\" in review_table or "$(" in review_table:
-        raise _common.WebInputError("独立CI実行レビュー表のパスが不正です", next_action=next_action)
+        raise _common.WebInputError("CI対応レビュー指摘管理表のパスが不正です", next_action=next_action)
     relative = pathlib.Path(review_table)
     if relative.parent != _CI_REVIEW_DIRECTORY or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
         raise _common.WebInputError(
-            "保存済みの独立CI実行レビュー表はci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
+            "保存済みのCI対応レビュー指摘管理表はci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
             next_action=next_action,
         )
     return relative
 
 
 def _validate_saved_checkout_relative_path(path: str) -> pathlib.Path:
-    """checkout記録が受理する計画または独立CI実行レビュー表の相対パスを返す。"""
+    """checkout記録が受理する計画またはCI対応レビュー指摘管理表の相対パスを返す。"""
     if path.endswith(".exec-review.tsv"):
         return _validate_saved_ci_review_relative_path(path)
     return _validate_saved_plan_relative_path(path)
@@ -326,8 +329,8 @@ def _read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, di
         return None
     # 取得記録は取得時点の内容を持つだけで、作業バンドルそのものではない。壊れた記録を削除しても作業側は失われない。
     next_action = (
-        f"作業root直下の該当計画バンドルを作業root外へ退避してから取得記録{root}を削除し、"
-        "`atk plans checkout <保存root相対パス>`で再取得する"
+        f"`~/.claude/plans`直下の該当計画バンドルを`~/.claude/plans`の外へ退避してから取得記録{root}を削除し、"
+        "`atk plans checkout <private-notes/plans/相対パス>`で再取得する"
     )
     if root.is_symlink() or not root.is_dir():
         raise _common.WebInputError(f"計画の取得記録が不正です: {root}", next_action=next_action)
@@ -400,7 +403,7 @@ def checkout_plan(
     *,
     home: pathlib.Path | str | None = None,
 ) -> tuple[pathlib.Path, ...]:
-    """保存済み計画バンドルを作業rootへ取得し、取得時点と所有セッションを記録する。"""
+    """保存済み計画バンドルを`~/.claude/plans`へ取得し、取得時点と所有セッションを記録する。"""
     if plan_file.endswith(".exec-review.tsv"):
         return checkout_ci_review(private_notes, plan_file, home=home)
     relative_main = _validate_saved_plan_relative_path(plan_file)
@@ -409,8 +412,9 @@ def checkout_plan(
     duplicate_error = _common.WebInputError(
         f"同じ計画を取得済みです: {relative_main}",
         next_action=(
-            "作業root直下にその計画バンドルがある場合は、それが取得結果のため再取得は不要です。"
-            f"作業root直下にその計画バンドルが無い場合は、`atk plans commit {working_main.name}`で取得記録を回収してください。"
+            "`~/.claude/plans`直下にその計画バンドルがある場合は、それが取得結果のため再取得は不要です。"
+            "`~/.claude/plans`直下にその計画バンドルが無い場合は、"
+            f"`atk plans commit {working_main.name}`で取得記録を回収してください。"
         ),
     )
     with _atk_git_sync.repo_lock(private_notes):
@@ -423,14 +427,14 @@ def checkout_plan(
         if not saved_bundle:
             raise _common.WebInputError(
                 f"指定したメイン計画が見つかりません: {relative_main}",
-                next_action="保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdを確かめて指定し直す",
+                next_action="`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdを確かめて指定し直す",
             )
         destinations = tuple(working_root / path.name for path in saved_bundle)
         conflicts = tuple(path for path in destinations if path.exists())
         if conflicts:
             raise _common.WebInputError(
-                f"作業rootに同名ファイルがあります: {conflicts[0]}",
-                next_action="作業root側のファイルを作業root外へ退避してから再実行する",
+                f"`~/.claude/plans`に同名ファイルがあります: {conflicts[0]}",
+                next_action="`~/.claude/plans`側のファイルを`~/.claude/plans`の外へ退避してから再実行する",
             )
         snapshots = {path.name: path.read_bytes() for path in saved_bundle}
         working_root.mkdir(parents=True, exist_ok=True)
@@ -456,14 +460,14 @@ def checkout_ci_review(
     *,
     home: pathlib.Path | str | None = None,
 ) -> tuple[pathlib.Path, ...]:
-    """保存済みの独立CI実行レビュー表を計画作業rootへ取得する。"""
+    """保存済みのCI対応レビュー指摘管理表を`~/.claude/plans`へ取得する。"""
     relative = _validate_saved_ci_review_relative_path(review_table)
     working = _plan_file.working_plans_root(home) / relative.name
     duplicate_error = _common.WebInputError(
-        f"同じ独立CI実行レビュー表を取得済みです: {relative}",
+        f"同じCI対応レビュー指摘管理表を取得済みです: {relative}",
         next_action=(
-            "作業root直下にその表がある場合は、それが取得結果のため再取得は不要です。"
-            f"作業root直下にその表が無い場合は、`atk plans commit {working.name}`で取得記録を回収してください。"
+            "`~/.claude/plans`直下にその表がある場合は、それが取得結果のため再取得は不要です。"
+            f"`~/.claude/plans`直下にその表が無い場合は、`atk plans commit {working.name}`で取得記録を回収してください。"
         ),
     )
     with _atk_git_sync.repo_lock(private_notes):
@@ -475,13 +479,13 @@ def checkout_ci_review(
         saved = _plan_file.new_plans_root(private_notes) / relative
         if saved.is_symlink() or not saved.is_file():
             raise _common.WebInputError(
-                f"指定した独立CI実装レビュー表が見つかりません: {relative}",
-                next_action="保存root相対のci/ci-{短縮OID}.exec-review.tsvを確かめて指定し直す",
+                f"指定したCI対応レビュー指摘管理表が見つかりません: {relative}",
+                next_action="`private-notes/plans/`相対のci/ci-{短縮OID}.exec-review.tsvを確かめて指定し直す",
             )
         if working.exists():
             raise _common.WebInputError(
-                f"作業rootに同名ファイルがあります: {working}",
-                next_action="作業root側のファイルを作業root外へ退避してから再実行する",
+                f"`~/.claude/plans`に同名ファイルがあります: {working}",
+                next_action="`~/.claude/plans`側のファイルを`~/.claude/plans`の外へ退避してから再実行する",
             )
         content = saved.read_bytes()
         working.parent.mkdir(parents=True, exist_ok=True)
@@ -501,7 +505,7 @@ def _copy_working_bundle(
     relative_main: pathlib.Path,
     working_bundle: tuple[pathlib.Path, ...],
 ) -> tuple[tuple[pathlib.Path, ...], dict[pathlib.Path, tuple[tuple[int, int], bytes]]]:
-    """作業バンドルを保存rootへ排他的に複製し、回収用snapshotを返す。"""
+    """作業バンドルを`private-notes/plans/`へ排他的に複製し、回収用snapshotを返す。"""
     destination_directory = _plan_file.new_plans_root(private_notes) / relative_main.parent
     destination_directory.mkdir(parents=True, exist_ok=True)
     snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
@@ -699,9 +703,9 @@ def commit_plan(
     lock_timeout: float = -1,
     skip_push: bool = False,
 ) -> dict[str, object]:
-    """指定計画bundleを保存rootへ移し、対象限定commitを作成する。
+    """指定計画bundleを`private-notes/plans/`へ移し、対象限定commitを作成する。
 
-    作業バンドルを回収する時点でその計画の所有記録も回収し、計画作業rootへ記録だけが残らないようにする。
+    作業バンドルを回収する時点でその計画の所有記録も回収し、`~/.claude/plans`へ記録だけが残らないようにする。
     """
     if plan_file.endswith(".exec-review.tsv"):
         return commit_ci_review(
@@ -752,10 +756,10 @@ def commit_plan(
         if residue:
             names = "、".join(path.name for path in residue)
             raise _common.WebInputError(
-                f"作業root直下に保存済み計画バンドルと同じstemのファイルが残っています: {names}。"
+                f"`~/.claude/plans`直下に保存済み計画バンドルと同じstemのファイルが残っています: {names}。"
                 "保存先へ反映していないため、この状態では保存を完了できません。",
                 next_action=(
-                    f"作業root直下の{names}を作業root外へ退避し、保存済み計画を正とするか、"
+                    f"`~/.claude/plans`直下の{names}を`~/.claude/plans`の外へ退避し、保存済み計画を正とするか、"
                     "退避した内容を別名の新しい計画として保存してください。"
                 ),
             )
@@ -768,7 +772,7 @@ def commit_plan(
         raise _common.WebInputError(
             f"指定した作業中の計画バンドルが見つかりません: {working_relative}",
             next_action=(
-                "保存済みの場合は`atk plans checkout <保存root相対パス>`で取得してください。"
+                "保存済みの場合は`atk plans checkout <private-notes/plans/相対パス>`で取得してください。"
                 "作業中の計画は`atk plans list`で確認できる"
             ),
         )
@@ -823,7 +827,7 @@ def commit_plan(
                     f"保存も取得もできません。相違した対象は{differences}です。",
                     next_action=(
                         "次の順に実行してください。"
-                        f"作業root直下の{bundle_names}を作業root外へ退避します。"
+                        f"`~/.claude/plans`直下の{bundle_names}を`~/.claude/plans`の外へ退避します。"
                         f"`atk plans commit {working_main.name}`を実行すると、"
                         "作業バンドルが不在のため取得記録だけを回収します。"
                         "保存済み計画を確認し、退避した内容を残す場合は別名の新しい計画として保存します。"
@@ -863,7 +867,7 @@ def commit_ci_review(
     lock_timeout: float = -1,
     skip_push: bool = False,
 ) -> dict[str, object]:
-    """独立CI実行レビュー表を対象限定でcommitし、成功後に作業側を回収する。"""
+    """CI対応レビュー指摘管理表を対象限定でcommitし、成功後に作業側を回収する。"""
     try:
         working_relative = _validate_working_ci_review_relative_path(review_table)
         requested_relative = working_relative
@@ -885,9 +889,9 @@ def commit_ci_review(
         return {"plan_file": relative.as_posix(), "paths": (), "message": "", "kind": "ci-review"}
     if working.is_symlink() or not working.is_file():
         raise _common.WebInputError(
-            f"指定した独立CI実行レビュー表が見つかりません: {working_relative}",
+            f"指定したCI対応レビュー指摘管理表が見つかりません: {working_relative}",
             next_action=(
-                "作業root直下の表の名前を確かめて指定し直す。"
+                "`~/.claude/plans`直下の表の名前を確かめて指定し直す。"
                 "保存済みの表は`atk plans checkout ci/<ファイル名>`で取得してから編集する"
             ),
         )
@@ -903,7 +907,7 @@ def commit_ci_review(
             _atk_git_sync.pull(private_notes)
         if saved.exists() and (saved.is_symlink() or not saved.is_file()):
             raise _common.WebInputError(
-                f"保存先の独立CI実行レビュー表が通常ファイルではありません: {saved}",
+                f"保存先のCI対応レビュー指摘管理表が通常ファイルではありません: {saved}",
                 next_action=f"`git -C {private_notes} status`で保存先の状態を確認し、原因が分からない場合はユーザーへ報告する",
             )
         saved_contents = {saved.name: saved.read_bytes()} if saved.is_file() else {}
@@ -924,12 +928,12 @@ def commit_ci_review(
                     remote_contents,
                 )
                 raise _common.WebInputError(
-                    f"取得後に保存元の独立CI実行レビュー表が変更されています: {relative}。"
+                    f"取得後に保存元のCI対応レビュー指摘管理表が変更されています: {relative}。"
                     "取得時点・作業側・保存元の内容が一致しないため、どれを正とするかが確定するまで"
                     f"保存も取得もできません。相違した対象は{differences}です。",
                     next_action=(
                         "次の順に実行してください。"
-                        f"作業root直下の{working.name}を作業root外へ退避します。"
+                        f"`~/.claude/plans`直下の{working.name}を`~/.claude/plans`の外へ退避します。"
                         f"`atk plans commit {working.name}`を実行すると、作業側が不在のため取得記録だけを回収します。"
                         "保存済みの表を確認し、退避した内容を残す場合は別の原因commitに対応する表として保存します。"
                     ),
@@ -948,14 +952,15 @@ def commit_ci_review(
                     output.write(working_contents[working.name])
         if saved.read_bytes() != working_contents[working.name]:
             raise _common.WebInputError(
-                f"保存した独立CI実行レビュー表の読戻し内容が一致しません: {saved}", next_action=_READBACK_NEXT_ACTION
+                f"保存したCI対応レビュー指摘管理表の読戻し内容が一致しません: {saved}", next_action=_READBACK_NEXT_ACTION
             )
         relative_path = _as_relative_notes_path(saved, private_notes)
         message = f"chore: update CI review {working.stem}"
         _atk_git_sync.commit_and_push(private_notes, message, (relative_path,), skip_push=skip_push)
         if not skip_push and _atk_git_sync.has_remote(private_notes) and not _atk_git_sync.remote_contains_head(private_notes):
             raise _common.WebInputError(
-                "独立CI実行レビュー表のcommitがremote branchへ到達したことを確認できません", next_action=_UNPUSHED_NEXT_ACTION
+                "CI対応レビュー指摘管理表のcommitがremote branchへ到達したことを確認できません",
+                next_action=_UNPUSHED_NEXT_ACTION,
             )
         _remove_checked_out_working_bundle((working,), snapshots, working_relative)
         if checkout_record is not None:
@@ -971,7 +976,7 @@ def _resolve_progress_source(
 ) -> pathlib.Path:
     """進捗ログを読む計画ファイル（メイン）の実体を返す。
 
-    保存root相対で指定した場合は保存rootの実体を先に探し、無い場合だけ同名の作業側の実体を返す。
+    `private-notes/plans/`相対で指定した場合は`private-notes/plans/`の実体を先に探し、無い場合だけ同名の作業側の実体を返す。
     保存済み計画参照の既存の解決規則と同じ順序にそろえる。
     """
     working_root = _plan_file.working_plans_root(home)
@@ -1017,11 +1022,11 @@ def plan_progress(
 
 
 def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str, object], ...]:
-    """計画作業rootの計画ファイル（メイン）を所有セッションと最終更新時刻とともに返す。
+    """`~/.claude/plans`の計画ファイル（メイン）を所有セッションと最終更新時刻とともに返す。
 
     所有の有無で対象を絞らないため、他のセッションが取得した計画と所有記録を持たない計画も返す。
     最終更新時刻はその計画バンドルの構成ファイルの更新時刻の最大値とする。
-    一覧の作成前に、作業rootへ残る孤立したsidecarロックを回収する。
+    一覧の作成前に、`~/.claude/plans`へ残る孤立したsidecarロックを回収する。
     """
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     if not root.is_dir():
@@ -1044,11 +1049,11 @@ def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str
 
 
 def _remove_legacy_sidecar_locks(root: pathlib.Path) -> None:
-    """計画作業root配下に残る旧版のsidecarロックを削除する。
+    """`~/.claude/plans`配下に残る旧版のsidecarロックを削除する。
 
     レビュー指摘管理表のロックを兄弟ファイルとして置いていた旧版の生成物が対象であり、現行版はロックを
-    計画作業rootの外へ置くため、いずれも読み書きしない。本体の表が実在するかで残置を分けると、表を
-    作業rootへ置いたままの計画で回収の契機が永久に訪れないため、本体の有無によらず削除する。
+    `~/.claude/plans`の外へ置くため、いずれも読み書きしない。本体の表が実在するかで残置を分けると、表を
+    `~/.claude/plans`へ置いたままの計画で回収の契機が永久に訪れないため、本体の有無によらず削除する。
     計画作成の排他に使う共有ロックは残す。削除できないファイルがあっても一覧の出力は続ける。
     """
     for path in root.rglob(f"*{_LOCK_SUFFIX}"):
@@ -1092,7 +1097,7 @@ _NON_COMPONENT_SUFFIXES = (".bugs.md", ".review.md", "-workaround-check.md")
 
 
 def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
-    """保存rootの計画ファイル（メイン）と計画ファイル（詳細）の本文を返す。"""
+    """`private-notes/plans/`の計画ファイル（メイン）と計画ファイル（詳細）の本文を返す。"""
     root = _plan_file.new_plans_root(private_notes)
     texts: dict[pathlib.Path, str] = {}
     if not root.is_dir():
@@ -1139,7 +1144,7 @@ def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:
 
 
 def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> dict[str, object]:
-    """保存済み計画の可搬表記の付属ファイル参照を計画ファイル基準の表記へそろえる。
+    """保存済み計画の可搬表記の付属ファイル参照を`plan-file-standards.md`の表記へそろえる。
 
     書き換えるのは、ファイル名がその計画のstemで始まる参照だけとする。
     stemが一致しない参照とキュー項目の本文は、参照先の計画が別であるため書き換えない。
@@ -1218,13 +1223,13 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     if args.plans_subcommand == "checkout":
         paths = checkout_plan(private_notes, args.plan_file, home=home)
         main = next(path for path in paths if path.name == pathlib.Path(args.plan_file).name)
-        _outcome.report_success(f"保存済みバンドルを作業rootへ取得した: {main}")
+        _outcome.report_success(f"保存済みバンドルを`~/.claude/plans`へ取得した: {main}")
         return 0
     if args.plans_subcommand == "commit":
         result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
         action = "commitした" if args.skip_push else "commit・pushした"
-        subject = "独立CI実行レビュー表" if result.get("kind") == "ci-review" else "計画bundle"
-        _outcome.report_success(f"{subject}を保存rootへ移動して{action}: {result['plan_file']}")
+        subject = "CI対応レビュー指摘管理表" if result.get("kind") == "ci-review" else "計画bundle"
+        _outcome.report_success(f"{subject}を`private-notes/plans/`へ移動して{action}: {result['plan_file']}")
         return 0
     if args.plans_subcommand == "list":
         for entry in list_working_plans(home):

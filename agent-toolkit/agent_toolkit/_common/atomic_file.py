@@ -1,6 +1,6 @@
 """Claude Code agent-toolkit: 一時ファイル経由の原子的書き込み共通ヘルパー。
 
-`_hooks/session_state.py`のセッション状態書き込みと`_atk/review_table.py`のレビュー表書き込みが
+`_hooks/session_state.py`のセッション状態書き込みと`_atk/review_table.py`のレビュー指摘管理表の書き込みが
 同一の一時ファイル経由`os.replace`パターンを個別に持っていたため、本モジュールへ集約する。
 """
 

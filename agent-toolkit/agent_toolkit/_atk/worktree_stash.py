@@ -13,7 +13,7 @@ from agent_toolkit._common import file_lock as _file_lock  # pylint: disable=wro
 
 _LOCK_NAME = "agent-toolkit-stash.lock"
 _STASH_IDENTIFIER_PATTERN = re.compile(r"stash@\{[0-9]+\}\Z")
-_QUEUE_REPOSITORY_ERROR = "対象はキュー管理リポジトリのため操作を拒否した"
+_QUEUE_REPOSITORY_ERROR = "対象はprivate-notesのため操作を拒否した"
 _QUEUE_REPOSITORY_NEXT_ACTION = (
     "変更はatk wi・atk plansのコマンドかatk serveの画面から行い、未コミットのキュー操作はatk wi commitで確定する"
 )
@@ -52,7 +52,7 @@ def _common_dir(cwd: pathlib.Path) -> pathlib.Path | None:
 
 
 def _is_queue_repository(worktree: pathlib.Path, private_notes: pathlib.Path | None) -> bool:
-    """キュー管理リポジトリでは退避を拒否し、並行するキュー操作の喪失を防ぐ。"""
+    """private-notesでは退避を拒否し、並行するキュー操作の喪失を防ぐ。"""
     if private_notes is None or not private_notes.exists():
         return False
     common_dirs: list[pathlib.Path] = []

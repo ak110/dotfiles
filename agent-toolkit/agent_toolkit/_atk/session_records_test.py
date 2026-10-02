@@ -91,9 +91,9 @@ class TestInvokedProcessWi:
     def test_codex_prompt_contained_in_larger_text_is_detected(self, tmp_path: pathlib.Path) -> None:
         """Codexの起動判定は完全一致ではなく包含で行う。
 
-        確定した現象: 起動プロンプトの完全一致条件は、実記録2169件へ適用しても0件だった
+        確定した現象: 最初のプロンプトの完全一致条件は、実記録2169件へ適用しても0件だった
         （2026年9月10日に実物を確認。監査記録にある同じ事象の記録を参照）。
-        期待する契約: `atk wi process-loop`がCodexへ渡す起動プロンプトを含むuser役
+        期待する契約: `atk wi process-loop`がCodexへ渡す最初のプロンプトを含むuser役
         レコードを持つセッションを候補とする。
         直接的原因: 記録される`text`は実行環境が挿入する前置き
         （``# AGENTS.md instructions``または``<recommended_plugins>``で始まる）を含むため、
@@ -117,9 +117,9 @@ class TestInvokedProcessWi:
         """前置きだけを含む最初のuser役レコードは起動判定へ寄与しない。
 
         確定した現象: 最初のuser役レコードの本文は実行環境が挿入する前置きであり、
-        起動プロンプト本文を含まない（2026年9月10日に実物を確認）。
+        最初のプロンプト本文を含まない（2026年9月10日に実物を確認）。
         期待する契約: 判定はレコードの位置ではなく本文の包含だけで行う。
-        直接的原因: 包含判定へ改めても、前置き文字列自体には起動プロンプト本文が
+        直接的原因: 包含判定へ改めても、前置き文字列自体には最初のプロンプト本文が
         現れないため、位置に依存せず誤って真とはならない。
         """
         path = tmp_path / "records.jsonl"
@@ -131,11 +131,11 @@ class TestInvokedProcessWi:
         assert session_records.invoked_process_wi(path, "codex") is False
 
     def test_codex_prompt_constant_is_pinned_to_process_loop_builder(self) -> None:
-        """判定文の定数は`atk wi process-loop`が渡す起動プロンプトと一致し続ける。
+        """判定文の定数は`atk wi process-loop`が渡す最初のプロンプトと一致し続ける。
 
         確定した現象: 判定文を保持する定数`_CODEX_PROCESS_WI_PROMPT`は、`_build_process_loop_prompt`
         が返す値と別々に保持されている。
-        期待する契約: 判定文の定数と起動プロンプトの実体は同じ文字列を保つ。
+        期待する契約: 判定文の定数と最初のプロンプトの実体は同じ文字列を保つ。
         直接的原因: 一方だけを変更すると判定が無効化されるため、自動チェックで双方の一致を確認する。
         """
         assert (

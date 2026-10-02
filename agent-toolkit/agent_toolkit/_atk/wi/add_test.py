@@ -48,7 +48,7 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pyli
 
 @pytest.fixture(autouse=True)
 def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """共通起動の管理対象一時領域をテストごとのrootへ隔離する。"""
+    """共通起動のmanaged-tempをテストごとのrootへ隔離する。"""
     monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -825,7 +825,7 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """UWIも、種別による除外なしに原因欄の未確定宣言を拒否する。"""
+    """UWIも、種別による除外なしに`直接的原因`行の未確定宣言を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -876,7 +876,7 @@ def test_add_accepts_undetermined_cause_from_human(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント環境の外からの投入は、原因欄が未確定でも保存する。"""
+    """エージェント環境の外からの投入は、`直接的原因`行が未確定でも保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 

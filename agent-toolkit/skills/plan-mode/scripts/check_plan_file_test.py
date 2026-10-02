@@ -20,7 +20,7 @@ _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 _TWO_FILE_MIGRATION = "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"
-_FILENAME_ERROR_MARKER = "計画作業root直下の計画ファイル名が保存工程の受理条件を満たさない"
+_FILENAME_ERROR_MARKER = "`~/.claude/plans`直下の計画ファイル名が保存工程の受理条件を満たさない"
 
 type _MigrationInputFactory = collections.abc.Callable[[pathlib.Path], tuple[str, str]]
 
@@ -686,7 +686,7 @@ def test_lane_selection_combines_prior_plans(
 
 
 def test_lane_selection_reads_current_field_names(repo: tuple[pathlib.Path, str]) -> None:
-    """日本語の欄名（`選定`、`WI`、`レーン`、`再開位置`）で書いた選定結果も旧欄名と同じく照合する。"""
+    """日本語の欄名（`選定`、`WI`、`レーン`、`再開位置`）で書いた選定結果からも、旧欄名と同じくレーンの割当を読み取る。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
     other = "20260831-000000-002.md"
@@ -722,8 +722,8 @@ def _run_lane_check_with_resumed(
 ) -> tuple[int, str]:
     """再開位置を含む選定結果をそのまま`plan-check`のCLIに渡し、終了コードと標準エラーを返す。
 
-    CLIは由来を比べるWIファイルをキュー管理リポジトリから探すため、実行環境の実物に依存しないよう
-    一時のキュー管理リポジトリへ計画の人間由来行が指すWIファイルを置く。
+    CLIは由来を比べるWIファイルをprivate-notesから探すため、実行環境の実物に依存しないよう
+    一時のprivate-notesへ計画の人間由来行が指すWIファイルを置く。
     """
     private_notes = work_dir / "private-notes"
     inbox = private_notes / "inbox"
@@ -1210,7 +1210,7 @@ def test_working_plan_filename_follows_save_stage_condition(
     filename: str,
     rejected: bool,
 ) -> None:
-    """計画作業root直下の計画ファイル名が保存工程と同じ受理条件を満たすか確かめる。"""
+    """`~/.claude/plans`直下の計画ファイル名が保存工程と同じ受理条件を満たすか確かめる。"""
     work_dir, base = repo
     home = tmp_path / "home"
     plan_path = home / ".claude/plans" / filename
@@ -1229,7 +1229,7 @@ def test_working_plan_filename_is_not_checked_outside_working_root(
     repo: tuple[pathlib.Path, str],
     tmp_path: pathlib.Path,
 ) -> None:
-    """計画作業root直下に無い計画ファイルの名前が所定の形式であるかは判定しない。"""
+    """`~/.claude/plans`直下に無い計画ファイルの名前が所定の形式であるかは判定しない。"""
     work_dir, base = repo
     home = tmp_path / "home"
     plan_path = home / ".claude/plans/2026/08/example-plan.md"
@@ -1552,7 +1552,7 @@ def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, st
 
 
 def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
-    """改訂用CLI入力は移行警告を拒否しても実装工程の進捗行を保持する。"""
+    """改訂用CLI入力は移行警告を拒否しても実行工程の進捗行を保持する。"""
     work_dir, _base = repo
     main_content = _plan_fixture.current_plan(repo=work_dir.resolve())
     main_content = main_content.replace(

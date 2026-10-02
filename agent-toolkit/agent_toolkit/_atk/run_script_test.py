@@ -35,7 +35,7 @@ def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPa
 
 
 def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
-    """再度の一致確認に使う全引数を抽出器へ同じ順序で渡す。"""
+    """再度の一致確認に使う全引数を`atk run-script session-review-evidence`へ同じ順序で渡す。"""
     observed: list[str] = []
 
     def capture_argv(_target: str, *, run_name: str) -> None:

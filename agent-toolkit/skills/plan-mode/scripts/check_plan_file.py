@@ -288,7 +288,7 @@ def _check_plan_size(lines: list[str]) -> list[_ClassifiedWarning]:
         (
             "advisory",
             f"計画の行数が閾値を超えている: {len(lines)}行（閾値{_PLAN_LINE_WARNING_THRESHOLD}行）。"
-            "重複する記述を単一の情報源へ集約し、計画ファイル基準の`### 実装資料と完了条件`が定める配置規約に従って"
+            "重複する記述を単一の情報源へ集約し、`plan-file-standards.md`の`### 実装資料と完了条件`が定める配置規約に従って"
             "逐語本文を付属素材へ分離する",
         )
     ]
@@ -648,12 +648,12 @@ def _check_legacy_format(
 
 
 def _check_working_plan_filename(plan_path: pathlib.Path, home: pathlib.Path | str | None) -> list[str]:
-    """計画作業root直下の計画ファイル名が保存工程と同じ受理条件を満たすか確かめる。
+    """`~/.claude/plans`直下の計画ファイル名が保存工程と同じ受理条件を満たすか確かめる。
 
-    保存工程は計画作業root直下のファイル名へ`validate_working_plan_relative_path()`の条件を課す。
+    保存工程は`~/.claude/plans`直下のファイル名へ`validate_working_plan_relative_path()`の条件を課す。
     起草時の判定で同じ関数を呼ばないと、合格した計画が保存で初めて拒否され、
     計画バンドルの改名と内部参照の修正という手戻りが生じる。判定規則を本スクリプトへ書き写さない。
-    計画作業root直下に無い対象は保存rootの日付階層などを含むため、ファイル名が形式を満たすかは判定しない。
+    `~/.claude/plans`直下に無い対象は`private-notes/plans/`の日付階層などを含むため、ファイル名が形式を満たすかは判定しない。
     """
     working_root = _plan_file.working_plans_root(home).resolve(strict=False)
     if plan_path.parent.resolve(strict=False) != working_root:
@@ -661,7 +661,7 @@ def _check_working_plan_filename(plan_path: pathlib.Path, home: pathlib.Path | s
     try:
         _plan_file.validate_working_plan_relative_path(plan_path.name)
     except ValueError as error:
-        return [f"計画作業root直下の計画ファイル名が保存工程の受理条件を満たさない: {plan_path.name}: {error}"]
+        return [f"`~/.claude/plans`直下の計画ファイル名が保存工程の受理条件を満たさない: {plan_path.name}: {error}"]
     return []
 
 
@@ -681,14 +681,14 @@ def check(
 ) -> tuple[list[str], list[str]]:
     """計画ファイルが基準を満たすか判定し、エラーと警告を返す。
 
-    計画作業root直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
-    計画作業root直下の対象では、保存工程と同じ条件でファイル名が所定の形式であるかも確かめる。
+    `~/.claude/plans`直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
+    `~/.claude/plans`直下の対象では、保存工程と同じ条件でファイル名が所定の形式であるかも確かめる。
     対応する`<stem>.detail.md`があれば旧二ファイル形式として扱う。
     detailが無く、現行H2集合を持つ場合は現行の1ファイル形式、それ以外は旧単一ファイル形式として扱う。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
     種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
     移行警告の拒否と、起草時の`## 進捗ログ`内容行の拒否は呼び出し側が独立に指定する。
-    既存計画の改訂では移行警告を拒否し、実装工程が記録した進捗行は保持するためである。
+    既存計画の改訂では移行警告を拒否し、実行工程が記録した進捗行は保持するためである。
     """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -716,17 +716,18 @@ def check(
             format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
     errors.extend(
-        f"返却予定の規範文書パスが計画本文にない: {relative}。編集対象のパスを計画本文へ明記し、同じ一覧でもう一度確かめる"
+        f"返却予定のエージェント向け文書のパスが計画本文にない: {relative}。"
+        "編集対象のパスを計画本文へ明記し、同じ一覧でもう一度確かめる"
         for relative in agent_rule_paths
         if relative not in text
     )
     if (selection_file is None) != (lane is None):
-        raise ValueError("選定結果ファイルとレーン識別子は組で指定する")
+        raise ValueError("選定結果の出力先ファイルとレーン識別子は組で指定する")
     if prior_plans and selection_file is None:
-        raise ValueError("先行計画は選定結果ファイルとレーン識別子とともに指定する")
+        raise ValueError("先行計画は選定結果の出力先ファイルとレーン識別子とともに指定する")
     if selection_file is not None and lane is not None:
         if not selection_file.is_absolute() or re.fullmatch(r"lane-\d{2}", lane) is None:
-            raise ValueError("選定結果ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
+            raise ValueError("選定結果の出力先ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
         if plan_path in prior_plans or len(prior_plans) != len(set(prior_plans)):
             raise ValueError("追加計画と先行計画に同じファイルを重複指定できない")
         errors.extend(_check_lane_selection(text, selection_file, lane, prior_plans, work_dir))
@@ -753,16 +754,14 @@ def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
     if not skips:
         return None
     actions = []
-    if any("キュー管理リポジトリが実在しない:" in message for message in skips):
-        actions.append(
-            "`atk info`でキュー管理リポジトリの場所を確認し、`AGENT_TOOLKIT_PRIVATE_NOTES`をその場所へ合わせて再実行する"
-        )
+    if any("private-notesが実在しない:" in message for message in skips):
+        actions.append("`atk info`でprivate-notesの場所を確認し、`AGENT_TOOLKIT_PRIVATE_NOTES`をその場所へ合わせて再実行する")
     if any("WIファイルを特定できない:" in message for message in skips):
         actions.append("実施内容と関連WIのファイル名を`atk wi show <ファイル名>`で確かめ、誤りを直して再実行する")
     if any("WI本文を取得できない:" in message for message in skips):
         actions.append("表示された権限・文字コードのエラーの原因を解消して再実行する")
     actions.append(
-        "解消できない場合は、由来をWI本文と比べられなかったWIファイル名と原因を呼び出し元（メインから起動した場合はユーザー）へ報告する"
+        "解消できない場合は、由来をWI本文と比べられなかったWIファイル名と原因を委譲元（メインから起動した場合はユーザー）へ報告する"
     )
     return "。".join(actions)
 
@@ -778,7 +777,7 @@ def main(argv: list[str] | None = None) -> int:
         "--agent-rule-path",
         action="append",
         default=None,
-        help="返却予定の規範文書のリポジトリ相対パス。全件を反復指定し、計画本文に固定文字列として含まれるか確かめる",
+        help="返却予定のエージェント向け文書のリポジトリ相対パス。全件を反復指定し、計画本文に固定文字列として含まれるか確かめる",
     )
     parser.add_argument(
         "--prior-plan",

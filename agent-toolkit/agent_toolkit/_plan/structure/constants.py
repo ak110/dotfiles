@@ -345,7 +345,7 @@ PLAN_HISTORY_ORIGINS: tuple[str, ...] = ("ユーザー発言", "レビュー指�
 PLAN_HISTORY_REVIEW_ID_PATTERN = re.compile(r"^R(?P<round>[0-9]+)-(?P<track>[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$")
 """レビュー指摘行のID書式。ラウンド番号と系統名を一意に分離できる形に限定する。"""
 PLAN_HISTORY_TRACK_VALUES: tuple[str, ...] = ("plan-review", "plan-conformance", "independent")
-"""レビュー表CLIと共通する新形式の系統名。"""
+"""`atk review-table`と共通する新形式の系統名。"""
 PLAN_LEGACY_HISTORY_TRACK_VALUES: tuple[str, ...] = ("conformance",)
 """旧形式で既存計画に残る系統名の読み取り互換値。"""
 PLAN_LEGACY_HISTORY_REVIEW_ID_PATTERN = re.compile(r"^C-[0-9]{3}$")
@@ -516,7 +516,7 @@ PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
     "類似見直し結果",
     "再発防止策",
 )
-"""バグ調査表の固定行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。
+"""バグ調査表の固定行。行名と順序を`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の条件と対応させる。
 
 根本原因は原因分析表の到達した最深段のセルへ、原因分析の品質確認は原因分析の工程へ、
 設計意図の記録は`再発防止策`の記載内容へ統合したため、いずれも独立した行を持たない。

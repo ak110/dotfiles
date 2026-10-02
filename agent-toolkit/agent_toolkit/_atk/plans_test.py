@@ -30,7 +30,7 @@ def _isolate_state_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyP
 
 
 _OWNER_SESSION = "plans-test-session"
-"""テスト中に所有記録へ書かれるセッション識別子。"""
+"""テスト中に計画の所有記録へ書かれるセッション識別子。"""
 
 
 def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -129,7 +129,7 @@ def test_preserved_times_ignores_unavailable_birth_time(
 
 
 def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) -> None:
-    """保存済みバンドルをbytes保持で作業rootへ取得し、取得時点を記録する。"""
+    """保存済みバンドルをbytes保持で`~/.claude/plans`へ取得し、取得時点を記録する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -217,7 +217,7 @@ def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) ->
 
 
 def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path) -> None:
-    """計画契約なしの再帰的CI失敗で同じ表を取得、更新、再保存できる。"""
+    """対応する計画なしの再帰的CI失敗で同じ表を取得、更新、再保存できる。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     remote = tmp_path / "private-notes.git"
@@ -407,7 +407,7 @@ def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
         _atk_plans.commit_plan(notes, main.name, home=home)
 
     assert "相違した対象" in str(exc_info.value)
-    assert "作業root外へ退避" in exc_info.value.next_action
+    assert "`~/.claude/plans`の外へ退避" in exc_info.value.next_action
     assert "別名の新しい計画" in exc_info.value.next_action
 
     assert (
@@ -655,7 +655,7 @@ def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> Non
 
 
 def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_path: pathlib.Path) -> None:
-    """現行作業バンドルを保存rootへ移し、旧添付は作業側へ残す。"""
+    """現行作業バンドルを`private-notes/plans/`へ移し、旧添付は作業側へ残す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -876,7 +876,9 @@ def test_dispatch_reports_saved_relative_path_for_direct_working_plan(
     result = _atk_plans.dispatch(args, notes, home)
 
     assert result == 0
-    assert capsys.readouterr().out == (f"成功: 計画bundleを保存rootへ移動してcommitした: {year}/{month}/{relative.name}\n")
+    assert capsys.readouterr().out == (
+        f"成功: 計画bundleを`private-notes/plans/`へ移動してcommitした: {year}/{month}/{relative.name}\n"
+    )
 
 
 def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path: pathlib.Path) -> None:
@@ -955,7 +957,7 @@ def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp
 
 
 def test_commit_saved_bundle_rejects_working_root_residue(tmp_path: pathlib.Path) -> None:
-    """保存済み計画と同じstemのファイルが作業root直下に残っていれば失敗を返す。"""
+    """保存済み計画と同じstemのファイルが`~/.claude/plans`直下に残っていれば失敗を返す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -1003,7 +1005,7 @@ def test_commit_plan_includes_deleted_bundle_when_parent_directory_is_gone(tmp_p
 
 
 def _saved_plan_with_references(notes: pathlib.Path, stem: str = "01-参照表記-1a2b") -> tuple[pathlib.Path, pathlib.Path]:
-    """保存rootへ、自計画と他計画の参照を持つ計画ファイルを作成する。"""
+    """`private-notes/plans/`へ、自計画と他計画の参照を持つ計画ファイルを作成する。"""
     directory = notes / "plans" / "2026" / "09"
     directory.mkdir(parents=True, exist_ok=True)
     main = directory / f"{stem}.md"
@@ -1155,7 +1157,7 @@ def test_rewrite_references_commits_and_pushes(tmp_path: pathlib.Path) -> None:
 
 
 def test_checkout_records_owning_session_without_saving_it(tmp_path: pathlib.Path) -> None:
-    """取得は所有記録を作業rootへ作成し、保存rootへは含めない。"""
+    """取得は計画の所有記録を`~/.claude/plans`へ作成し、`private-notes/plans/`へは含めない。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -1237,7 +1239,7 @@ def test_commit_removes_working_residue_and_reclaims_parent_directories(tmp_path
 
 
 def test_commit_keeps_shared_plan_creation_lock_in_working_root(tmp_path: pathlib.Path) -> None:
-    """保存確定は他計画の残骸と作業root直下の共有ロックを削除しない。"""
+    """保存確定は他計画の残骸と`~/.claude/plans`直下の共有ロックを削除しない。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -1430,7 +1432,7 @@ def test_dispatch_rejects_removed_progress_subcommand_for_empty_plan(
 
 
 def test_progress_prefers_saved_plan_and_falls_back_to_working_copy(tmp_path: pathlib.Path) -> None:
-    """保存root相対の指定では保存側を先に読み、保存側が無い場合だけ同名の作業側を読む。"""
+    """`private-notes/plans/`相対の指定では保存側を先に読み、保存側が無い場合だけ同名の作業側を読む。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -1521,7 +1523,7 @@ def test_rewrite_references_rejects_dirty_notes_with_commit_guidance(tmp_path: p
 def test_finalize_keeps_working_file_when_content_changed_after_check(tmp_path: pathlib.Path) -> None:
     """確認後に作業ファイルの内容が変わった場合は、作業ファイルを移さず保存済みの旨と次の操作を返す。
 
-    回収前の確認と確定の間に書き換わった作業ファイルを保存rootへ移すと、commitしていない変更が
+    回収前の確認と確定の間に書き換わった作業ファイルを`private-notes/plans/`へ移すと、commitしていない変更が
     保存済みの計画として扱われる。
     """
     source = tmp_path / "working" / "01-example-1a2b.md"

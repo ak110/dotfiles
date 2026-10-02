@@ -747,7 +747,7 @@ class TestUwiAnswerEditorFailure:
 class TestUwiAnswerNonInteractive:
     """answerサブコマンド: ファイル名と回答本文を引数で渡し、非対話で回答できることを検証する。
 
-    自律実行中のエージェントが`$EDITOR`を介さずに回答を記録できることを担保する。
+    自律モードで動くエージェントが`$EDITOR`を介さずに回答を記録できることを担保する。
     """
 
     def test_arguments_record_answer_without_editor(

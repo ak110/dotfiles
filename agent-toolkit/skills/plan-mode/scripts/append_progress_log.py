@@ -1,7 +1,7 @@
 """計画ファイルの進捗ログへ実行時刻を含む1行を追記する。
 
 保存済み計画の領域（private-notesの`plans`配下）の計画は変更せずに失敗する。
-保存済み計画へ追記する場合は、`atk plans checkout`で作業rootへ取得してから追記し、`atk plans commit`で保存する。
+保存済み計画へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから追記し、`atk plans commit`で保存する。
 """
 
 from __future__ import annotations

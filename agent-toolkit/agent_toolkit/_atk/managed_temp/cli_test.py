@@ -128,7 +128,7 @@ def test_cli_writes_result_lines_under_a_non_utf8_stdio_encoding(tmp_path: pathl
 
     assert created.returncode == 0, created.stderr
     assert cleaned.returncode == 0, cleaned.stderr
-    assert "成功: セッションの管理対象一時領域を回収した" in cleaned.stdout.decode("utf-8")
+    assert "成功: セッションのmanaged-tempを回収した" in cleaned.stdout.decode("utf-8")
 
 
 def test_cleanup_rejects_path_with_session_id(tmp_path: pathlib.Path) -> None:
@@ -148,7 +148,7 @@ def test_cleanup_rejects_path_with_session_id(tmp_path: pathlib.Path) -> None:
 
 
 def test_create_with_session_root_returns_unregistered_child() -> None:
-    """`--session-root`は親の配下へ個別登録を持たない子領域を作成する。"""
+    """`--session-root`は親の配下へ個別登録を持たないmanaged-temp直下の作業ディレクトリを作成する。"""
     session_root = subject.create_managed_temp("session", session_id="session-1")
 
     assert subject.main(["create", "--prefix", "work", "--session-root", str(session_root)]) == 0
@@ -160,7 +160,7 @@ def test_create_with_session_root_returns_unregistered_child() -> None:
 
 
 def test_cleanup_removes_child_of_registered_temp(capsys: pytest.CaptureFixture[str]) -> None:
-    """`--session-root`で作成した子領域は、個別の管理情報が無くても回収できる。"""
+    """`--session-root`で作成したmanaged-temp直下の作業ディレクトリは、個別の管理情報が無くても回収できる。"""
     session_root = subject.create_managed_temp("session", session_id="session-1")
     assert subject.main(["create", "--prefix", "work", "--session-root", str(session_root)]) == 0
     child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
@@ -188,7 +188,7 @@ def test_cleanup_rejects_path_outside_registered_temp(tmp_path: pathlib.Path, ca
 
 @pytest.mark.parametrize("conflict", ["--awi=20260913-221409-001.md", "--session-id=session-2"])
 def test_create_with_session_root_rejects_registration_options(conflict: str) -> None:
-    """セッション内の子領域へ個別登録用の引数を併用しない。"""
+    """セッションのmanaged-temp直下の作業ディレクトリへ個別登録用の引数を併用しない。"""
     session_root = subject.create_managed_temp("session", session_id="session-1")
 
     assert subject.main(["create", "--prefix", "work", "--session-root", str(session_root), conflict]) == 2
