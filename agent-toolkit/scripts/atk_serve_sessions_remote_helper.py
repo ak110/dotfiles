@@ -27,7 +27,11 @@ import typing
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-import-position
+    session_parents,
     session_watch,
+)
+from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position
+    session_launchers,
 )
 
 # 1件の記録から取得する最大バイト数。過大な記録の全文転送により接続が占有される事態を避ける上限とする。
@@ -93,9 +97,9 @@ def _codex_session_id(path: pathlib.Path) -> str:
 def _entry(index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing.Any]:
     """一覧の1件を組み立てる。読み取れない情報は`None`のままとする。
 
-    `has_user_message`は一覧からの除外の判定材料であり、`_list_payload`が応答から取り除く。
+    `has_user_message`と`codex_parent_thread_id`は除外と親子付けの判定材料であり、`_list_payload`が応答から取り除く。
     """
-    (cwd, first_user_message, started_at, has_user), st = index.summary(path, engine)
+    (cwd, first_user_message, started_at, has_user, parent_thread_id), st = index.summary(path, engine)
     if isinstance(st, OSError):
         return {
             "engine": engine,
@@ -108,6 +112,7 @@ def _entry(index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: 
             "updated_at": None,
             "warning": f"記録の情報を取得できません: {st}",
             "has_user_message": has_user,
+            "codex_parent_thread_id": parent_thread_id,
         }
     return {
         "engine": engine,
@@ -120,6 +125,7 @@ def _entry(index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: 
         "updated_at": st.st_mtime,
         "warning": None,
         "has_user_message": has_user,
+        "codex_parent_thread_id": parent_thread_id,
     }
 
 
@@ -168,19 +174,43 @@ def _list_payload(
         if has_user is not False:
             kept.append(entry)
     entries = kept
-    by_id: dict[str, list[dict[str, typing.Any]]] = {}
-    for entry in entries:
-        by_id.setdefault(entry["session_id"], []).append(entry)
-    for parent in entries:
-        if parent.get("parent_path") or not isinstance(parent.get("path"), str):
-            continue
-        for child_id in index.delegated_ids(pathlib.Path(parent["path"]), parent["engine"]):
-            matches = [entry for entry in by_id.get(child_id, []) if entry.get("path") != parent["path"]]
-            if len(matches) == 1:
-                matches[0]["parent_path"] = parent["path"]
+    links = session_parents.resolve_parent_paths(
+        [
+            session_parents.ParentSource(
+                path=entry["path"],
+                engine=entry["engine"],
+                session_id=entry["session_id"],
+                subagent_parent_path=entry.get("parent_path"),
+                codex_parent_thread_id=entry.get("codex_parent_thread_id"),
+            )
+            for entry in entries
+            if isinstance(entry.get("path"), str)
+        ],
+        delegated_ids=lambda path, engine: index.delegated_ids(pathlib.Path(path), engine),
+        launcher_of=session_launchers.launcher_reader(_state_dir()),
+    )
     index.finish_scan()
+    for entry in entries:
+        entry.pop("codex_parent_thread_id", None)
+        parent_path = links.get(entry["path"]) if isinstance(entry.get("path"), str) else None
+        if parent_path is not None:
+            entry["parent_path"] = parent_path
     entries.sort(key=lambda item: item["started_at"] or "", reverse=True)
-    return {"host": socket.gethostname(), "entries": entries[:MAX_LIST_ENTRIES]}
+    limited = session_parents.limit_with_ancestors(
+        entries, MAX_LIST_ENTRIES, path_of=lambda item: item.get("path"), parent_of=lambda item: item.get("parent_path")
+    )
+    return {"host": socket.gethostname(), "entries": limited}
+
+
+def _state_dir() -> pathlib.Path | None:
+    """agents_serverの状態ディレクトリを返す。解決に要る`platformdirs`が無い起動形では`None`を返す。
+
+    登録簿の起動元は親子付けの情報源の1つであり、読めない場合も他の情報源で一覧を返す。
+    """
+    try:
+        return session_launchers.state_dir()
+    except ImportError:
+        return None
 
 
 def _is_safe_record_path(raw: str) -> bool:

@@ -1362,6 +1362,19 @@ class AgentsServerManager:
             return candidates, {}
         return remaining, excluded
 
+    def _launcher_session_id(self) -> str | None:
+        """作成するsessionの起動元sessionの識別子を返す。
+
+        状態ファイルの書込主体が射影する起動元、所有ルート（プロセス専用ルートを除く）、
+        呼び出しプロセスの環境の`CODEX_THREAD_ID`の順に解決する。
+        """
+        if self._status_writer is not None:
+            launcher = self._status_writer.launcher_session_id()
+            if launcher is not None:
+                return launcher
+        codex_thread_id = os.environ.get("CODEX_THREAD_ID")
+        return codex_thread_id if codex_thread_id and status_file.valid_session_id(codex_thread_id) else None
+
     def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
         """可用性を理由に終端した候補を、同じ起動条件の次回へ引き継ぐ。
 
@@ -1449,11 +1462,16 @@ class AgentsServerManager:
                 _LOG.warning("agy_start_failed model_type=%s model=%s reason=%s", model_type, model, reason)
                 continue
             session.engine = engine
+            # テストや独自のMCPクライアントから起動して親の会話記録に起動結果が残らない委譲先も、
+            # `atk serve`の一覧が親の下へ置けるよう、作成時点の起動元を登録簿へ記録する。
+            session.launcher_session_id = self._launcher_session_id()
             if session.status == "starting":
                 session.status = "running"
                 session.touch()
                 if self._status_writer is not None:
                     self._status_writer.flush()
+            else:
+                session.touch()
             await self._await_start_outcome(session)
             response: dict[str, Any] = {
                 "session_id": session.session_id,

@@ -477,6 +477,9 @@ class SessionState:
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     compaction_started_at_ms: dict[str, int] = dataclasses.field(default_factory=dict, repr=False)
     publish_registry: bool = dataclasses.field(default=False, repr=False)
+    # sessionを作成した時点の起動元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
+    launcher_session_id: str | None = dataclasses.field(default=None, repr=False)
+    _published_registry_launcher: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
@@ -596,6 +599,7 @@ class SessionState:
                 registry_terminal != self._published_registry_terminal
                 or self.turn_seq != self._published_registry_turn_seq
                 or self.status != self._published_registry_status
+                or self.launcher_session_id != self._published_registry_launcher
             )
         ):
             session_registry.publish(
@@ -613,7 +617,9 @@ class SessionState:
                 session_updated_at=self.updated_at,
                 turn_id=self.turn_id or None,
                 status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
+                launcher_session_id=self.launcher_session_id,
             )
+            self._published_registry_launcher = self.launcher_session_id
             self._published_registry_terminal = registry_terminal
             self._published_registry_turn_seq = self.turn_seq
             self._published_registry_status = self.status

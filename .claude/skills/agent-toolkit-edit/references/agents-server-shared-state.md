@@ -38,7 +38,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`と`current.json` | 先行waitへ合流する後続`atk agents wait` | 先行waitが`running`と`published`および再待機が必要かを示す`continuable`を書き、結果を返した後続waitが`consumed`を書く |
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`と`notices/<通知ファイル>` | 中断後に同じrunを再開する`atk agents wait` | 待機CLI。結果は所有者を確認した排他区間で、通知は原本の削除前に退避する |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加。`atk agents wait`と同じく索引を経たルートへ登録する）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
-| 全sessionの終端登録と再開情報、所有側による解放済みの理由と時刻 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait` | そのsessionを所有するMCPサーバー（停止時の終端公開を含む）。所有者のいない`running`のCodexの記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
+| 全sessionの終端登録と再開情報、所有側による解放済みの理由と時刻、作成時点の起動元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk serve`のセッション一覧（ローカルとリモートヘルパー。起動元だけを親子付けに読む） | そのsessionを所有するMCPサーバー（停止時の終端公開を含む）。所有者のいない`running`のCodexの記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | session-reviewの証拠抽出器 | agents_serverのCodex backend |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify`が作成し、MCP待機とCLI待機が回収時に削除する |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、`root_session_id`を明示する応答の値を操作名によらず使う） |
@@ -72,7 +72,7 @@ MCPサーバーは`start`、`send_message`、`list`の応答へ、自身の状�
 
 CLI待機の配送は結果と通知の損失防止を優先する。runへ本文を保存してからstdoutまたはstderrへflushし、その後に配送済みのrun状態を保存する。後続waitが保存済みの本文を配送する場合も、flush後に`consumed`を保存する。どちらの場合でも、flush後かつ配送状態の保存前にプロセスが停止すると、次のwaitは保存本文を1回再出力してよい。強制終了を伴わない同時発行の合流では同じrunを1回だけ回収し、1回の再開処理で同じsessionの結果を重ねて出力しない。flushと状態ファイルの更新を受信確認の仕組みなしに原子化できないため、この中断点での再出力を許容する。
 
-各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルに加え、生存の印が失効した他の状態ファイルを削除できる。生存の印を持たない状態ファイルは保持する。`results`配下は共有するため、削除できるのは結果本文を呼び出し元へ配送した後、CLIのrun別退避物へ耐久的に保存した後、または`stop`による明示的な破棄の後とする。削除の契機はこれらに限り、経過時間は契機から外す。`notices`および`hosts`配下も共有するため、各書込主体が削除できるのは保持期限を超えたファイルだけとする。`sessions`配下の登録簿レコードを解放済みレコード（理由と時刻だけを持ち、再開条件を持たない）へ置き換えられるのはそのsessionを所有するMCPサーバーだけとし、契機は`stop`による明示的な破棄と保持期限の経過に限る。終端を観測した待機側はそのレコードを保持する。レコードを削除せず置き換えるのは、保持しない識別子を照会した別のMCPサーバーが、所有側による解放と記録の不在を区別して応答するためである。
+各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルに加え、生存の印が失効した他の状態ファイルを削除できる。生存の印を持たない状態ファイルは保持する。`results`配下は共有するため、削除できるのは結果本文を呼び出し元へ配送した後、CLIのrun別退避物へ耐久的に保存した後、または`stop`による明示的な破棄の後とする。削除の契機はこれらに限り、経過時間は契機から外す。`notices`および`hosts`配下も共有するため、各書込主体が削除できるのは保持期限を超えたファイルだけとする。`sessions`配下の登録簿レコードを解放済みレコード（理由と時刻だけを持ち、再開条件を持たない）へ置き換えられるのはそのsessionを所有するMCPサーバーだけとし、契機は`stop`による明示的な破棄と保持期限の経過に限る。終端を観測した待機側はそのレコードを保持する。レコードを削除せず置き換えるのは、保持しない識別子を照会した別のMCPサーバーが、所有側による解放と記録の不在を区別して応答するためである。起動元の項目は作成時に書き、状態の更新と解放済みへの置き換えでも既存の値を引き継ぐ。
 
 MCPサーバーの起動時とSessionEndでは、配下の全ファイルの最終更新から7日を超えたrootディレクトリ、`sessions`の登録簿、および`compaction`の計測記録を掃引する。現在の会話のrootは除外し、`compaction`のJSONLとlockは対として削除する。個別の削除失敗を記録し、後続対象の掃引と起動・終了処理を継続する。
 

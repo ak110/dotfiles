@@ -20,6 +20,7 @@ from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import session_launchers as _session_launchers
 
 _CONFIG_FILENAME = "config.json"
 
@@ -102,11 +103,7 @@ def state_dir() -> pathlib.Path:
     `atk config get state_dir`の出力と、フックが状態ファイルを置く位置の双方をここで決める。
     Linuxでは絶対パスの`XDG_STATE_HOME`だけを受理し、相対値は`HOME/.local/state`へ退避する。
     """
-    resolved = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
-    xdg_state_home = os.environ.get("XDG_STATE_HOME")
-    if os.name != "nt" and xdg_state_home and not pathlib.Path(xdg_state_home).is_absolute():
-        return pathlib.Path.home() / ".local" / "state" / "agent-toolkit"
-    return resolved
+    return _session_launchers.state_dir()
 
 
 def _config_file_path() -> pathlib.Path:

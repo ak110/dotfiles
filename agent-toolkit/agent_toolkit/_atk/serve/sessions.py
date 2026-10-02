@@ -22,8 +22,10 @@ import socket
 import threading
 import typing
 
+from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._atk.serve import session_watch
+from agent_toolkit._atk.serve import session_parents, session_watch
+from agent_toolkit._common import session_launchers
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 logger = logging.getLogger(__name__)
@@ -510,6 +512,8 @@ class SessionsContext:
     remote_hosts: tuple[str, ...]
     runner: SshRunner
     state: "SessionsState"
+    # agents_serverのsession登録簿を置く状態ディレクトリ。登録簿の起動元を一覧の親子付けに使う。
+    state_dir: pathlib.Path | None = None
 
 
 @dataclasses.dataclass(slots=True)
@@ -539,6 +543,7 @@ def create_context(
     codex_home: pathlib.Path | None = None,
     remote_hosts: typing.Iterable[str] | None = None,
     ssh_runner: SshRunner | None = None,
+    state_dir: pathlib.Path | None = None,
 ) -> SessionsContext:
     """セッション画面の依存と初期接続状態を生成する。"""
     resolved_hostname = hostname if hostname is not None else socket.gethostname()
@@ -556,14 +561,15 @@ def create_context(
         remote_hosts=hosts,
         runner=ssh_runner if ssh_runner is not None else default_ssh_runner,
         state=state,
+        state_dir=state_dir if state_dir is not None else _atk_config.state_dir(),
     )
 
 
 def _local_entry(
     index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: str, session_id: str, host: str
-) -> tuple[SessionSummary, bool | None]:
-    """ローカルの記録1件を一覧の項目へ変換し、ユーザー発話の有無とともに返す。"""
-    (cwd, first_user_message, started_at, has_user), st = index.summary(path, engine)
+) -> tuple[SessionSummary, bool | None, str | None]:
+    """ローカルの記録1件を一覧の項目へ変換し、ユーザー発話の有無とCodexの親threadの識別子とともに返す。"""
+    (cwd, first_user_message, started_at, has_user, parent_thread_id), st = index.summary(path, engine)
     if isinstance(st, OSError):
         summary = SessionSummary(
             engine=engine,
@@ -577,7 +583,7 @@ def _local_entry(
             size=None,
             warning=f"記録の情報を取得できません: {st}",
         )
-        return summary, has_user
+        return summary, has_user, parent_thread_id
     summary = SessionSummary(
         engine=engine,
         host=host,
@@ -589,7 +595,7 @@ def _local_entry(
         updated_at=_isoformat(st.st_mtime),
         size=st.st_size,
     )
-    return summary, has_user
+    return summary, has_user, parent_thread_id
 
 
 def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
@@ -604,7 +610,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     stop = context.state.stop_requested
     index = context.state.record_index
     index.begin_scan()
-    collected: list[tuple[SessionSummary, bool | None]] = []
+    collected: list[tuple[SessionSummary, bool | None, str | None]] = []
     projects = context.claude_home / "projects"
     if projects.is_dir():
         for project_dir in projects.iterdir():
@@ -630,10 +636,10 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
                             parent_path = str(path)
                         if parent_path is None:
                             continue
-                        child, child_has_user = _local_entry(
+                        child, child_has_user, child_thread = _local_entry(
                             index, pathlib.Path(child_path), "claude", item["agent_id"], context.hostname
                         )
-                        collected.append((dataclasses.replace(child, parent_path=parent_path), child_has_user))
+                        collected.append((dataclasses.replace(child, parent_path=parent_path), child_has_user, child_thread))
     sessions = context.codex_home / "sessions"
     if sessions.is_dir():
         for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
@@ -642,25 +648,31 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
                 collected.append(_local_entry(index, path, "codex", codex_session_id(path), context.hostname))
     watch = context.state.record_watch
     if watch is not None:
-        for entry, has_user in collected:
+        for entry, has_user, _ in collected:
             if has_user is not None:
                 watch.tracker.prime(entry.path, has_user)
     # 読めずに判定できなかった記録（`None`）は警告とともに一覧へ残す。
-    entries = [entry for entry, has_user in collected if has_user is not False]
-    by_id: dict[str, list[SessionSummary]] = {}
-    for entry in entries:
-        by_id.setdefault(entry.session_id, []).append(entry)
-    parents = {entry.path: entry for entry in entries if entry.parent_path is None}
-    links: dict[str, str] = {}
-    for parent in parents.values():
-        for child_id in index.delegated_ids(pathlib.Path(parent.path), parent.engine):
-            matches = [entry for entry in by_id.get(child_id, []) if entry.path != parent.path]
-            if len(matches) == 1:
-                links[matches[0].path] = parent.path
+    kept = [(entry, parent_thread_id) for entry, has_user, parent_thread_id in collected if has_user is not False]
+    links = session_parents.resolve_parent_paths(
+        [
+            session_parents.ParentSource(
+                path=entry.path,
+                engine=entry.engine,
+                session_id=entry.session_id,
+                subagent_parent_path=entry.parent_path,
+                codex_parent_thread_id=parent_thread_id,
+            )
+            for entry, parent_thread_id in kept
+        ],
+        delegated_ids=lambda path, engine: index.delegated_ids(pathlib.Path(path), engine),
+        launcher_of=session_launchers.launcher_reader(context.state_dir),
+    )
     index.finish_scan()
-    entries = [dataclasses.replace(entry, parent_path=links.get(entry.path, entry.parent_path)) for entry in entries]
+    entries = [dataclasses.replace(entry, parent_path=links.get(entry.path)) for entry, _ in kept]
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
-    return entries[:MAX_LIST_ENTRIES]
+    return session_parents.limit_with_ancestors(
+        entries, MAX_LIST_ENTRIES, path_of=lambda entry: entry.path, parent_of=lambda entry: entry.parent_path
+    )
 
 
 def is_local_record_path(context: SessionsContext, raw: str) -> bool:
@@ -729,6 +741,7 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
 
     リモート起動コマンドはPOSIXシェル非依存とし、クオートはダブルクォートのみを使う。
     `~`はcmd.exeでは展開されないため、Pythonの`os.path.expanduser('~')`で展開する。
+    `platformdirs`は、ヘルパーがagents_serverの状態ディレクトリを解決して登録簿の起動元を読むために加える。
     """
     return [
         "uv",
@@ -736,6 +749,8 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
         "--no-project",
         "--with",
         '"watchdog>=6.0.0"',
+        "--with",
+        '"platformdirs>=4.0"',
         "python",
         "-c",
         f'"{REMOTE_BOOTSTRAP}"',
@@ -1067,7 +1082,14 @@ async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSumma
         if warning is not None:
             warnings.append(warning)
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
-    return entries[:MAX_LIST_ENTRIES], warnings
+    # 親の参照は同じホストの記録を指すため、ホストとパスの組で祖先を戻す。
+    limited = session_parents.limit_with_ancestors(
+        entries,
+        MAX_LIST_ENTRIES,
+        path_of=lambda entry: json.dumps([entry.host, entry.path]),
+        parent_of=lambda entry: json.dumps([entry.host, entry.parent_path]) if entry.parent_path else None,
+    )
+    return limited, warnings
 
 
 def _remote_subagents(engine: str, payload: dict[str, typing.Any]) -> tuple[list[dict[str, typing.Any]] | None, bool]:

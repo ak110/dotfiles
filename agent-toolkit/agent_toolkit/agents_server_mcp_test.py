@@ -1572,6 +1572,85 @@ async def test_success_response_key_sets_for_all_tools(
     )
 
 
+class _RegistryBackend(FakeBackend):
+    """作成したsessionを登録簿へ公開するバックエンド。起動元の記録を登録簿で観測するテストが使う。"""
+
+    async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await super().start(*args, **kwargs)
+        session.publish_registry = True
+        return session
+
+
+_LAUNCHER_ENVIRONMENT_NAMES = (
+    "CLAUDE_CODE_SESSION_ID",
+    "AGENT_TOOLKIT_OWNER_SESSION",
+    "AGENT_TOOLKIT_DELEGATED_SESSION",
+    "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+    "CODEX_THREAD_ID",
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("environment", "host_alias", "expected"),
+    [
+        ({"CLAUDE_CODE_SESSION_ID": "claude-main"}, None, "claude-main"),
+        (
+            {
+                "AGENT_TOOLKIT_OWNER_SESSION": "owner-root",
+                "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+                "CLAUDE_CODE_SESSION_ID": "claude-delegate",
+            },
+            None,
+            "claude-delegate",
+        ),
+        (
+            {"AGENT_TOOLKIT_OWNER_SESSION": "owner-root", "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer-1"},
+            ("owner-root", "writer-1", "codex-thread-9"),
+            "codex-thread-9",
+        ),
+        ({"CODEX_THREAD_ID": "codex-thread-direct"}, None, "codex-thread-direct"),
+    ],
+    ids=["claude-main", "claude-delegate", "codex-delegate", "codex-direct"],
+)
+async def test_start_records_launcher_in_registry_and_keeps_it(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    environment: dict[str, str],
+    host_alias: tuple[str, str, str] | None,
+    expected: str,
+) -> None:
+    """`start`は作成時点の起動元を登録簿へ記録し、状態の更新と解放済みへの置き換えの後も保持する。
+
+    親の会話記録に起動結果が残らない委譲先は、登録簿の起動元が無いと`atk serve`の一覧で親を持たない。
+    """
+    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    for name in _LAUNCHER_ENVIRONMENT_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    if host_alias is not None:
+        root_session_id, writer, host = host_alias
+        status_file.write_host_alias(root_session_id, writer, host, tmp_path)
+    manager = subject.AgentsServerManager()
+    _install_backend(manager, "codex", _RegistryBackend(manager.sessions, "codex"))
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
+    )
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+    session_id = str(response["session_id"])
+    registry = session_registry.registry_directory(tmp_path) / f"{session_id}.json"
+
+    assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
+    _complete(manager.sessions[session_id])
+    assert json.loads(registry.read_text(encoding="utf-8"))["status"] == "completed"
+    assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
+    session_registry.release(session_id, reason="stopped")
+    assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
+    assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
+
+
 @pytest.mark.asyncio
 async def test_send_message_tool_returns_same_root_as_list(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """MCPツール`send_message`の応答は、同じサーバーの`list`と同じ`root_session_id`を返す。

@@ -15,12 +15,14 @@ import re
 from typing import Any, Literal
 
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common.atomic_file import atomic_write
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 _STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupted"})
 ReleaseReason = Literal["retention_expired", "stopped"]
 _RELEASE_REASONS: frozenset[str] = frozenset({"retention_expired", "stopped"})
+LAUNCHER_KEY = _session_launchers.LAUNCHER_KEY
 
 
 class Resolution(enum.StrEnum):
@@ -67,8 +69,7 @@ class SessionResolution:
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     """session登録簿のディレクトリを返す。"""
-    root = _atk_config.state_dir() if state_root is None else state_root
-    return root / "agents-server" / "sessions"
+    return _session_launchers.registry_directory(_atk_config.state_dir() if state_root is None else state_root)
 
 
 def publish(
@@ -87,9 +88,15 @@ def publish(
     started_at: str | None = None,
     session_updated_at: str | None = None,
     turn_id: str | None = None,
+    launcher_session_id: str | None = None,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """sessionの終端可否と再開条件を原子的に公開する。"""
+    """sessionの終端可否と再開条件を原子的に公開する。
+
+    `launcher_session_id`はsessionを作成した時点の起動元sessionの識別子である。
+    省略した場合は既存のレコードが持つ値を引き継ぐ。`atk serve`の一覧が、親の会話記録に
+    起動結果が残らない委譲先の親を結ぶために読むため、状態の更新で失わないようにする。
+    """
     _validate_session_id(session_id)
     if not isinstance(terminal, bool):
         raise TypeError("terminal must be a bool")
@@ -119,7 +126,13 @@ def publish(
     if turn_id:
         payload["turn_id"] = turn_id
     path = registry_directory(state_root) / f"{session_id}.json"
+    launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
+    if launcher is not None:
+        payload[LAUNCHER_KEY] = launcher
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+_recorded_launcher = _session_launchers.read_launcher
 
 
 def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> SessionResolution:
@@ -163,13 +176,17 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
     _validate_session_id(session_id)
     if reason not in _RELEASE_REASONS:
         raise ValueError(f"invalid release reason: {reason}")
-    payload = {
+    path = registry_directory(state_root) / f"{session_id}.json"
+    payload: dict[str, Any] = {
         "version": 3,
         "session_id": session_id,
         "released_reason": reason,
         "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    atomic_write(registry_directory(state_root) / f"{session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
+    launcher = _recorded_launcher(path)
+    if launcher is not None:
+        payload[LAUNCHER_KEY] = launcher
+    atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def _validate_session_id(session_id: str) -> None:

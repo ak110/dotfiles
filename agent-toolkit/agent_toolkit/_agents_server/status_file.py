@@ -103,9 +103,13 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
     return StatusFileIdentity(owner, file_name, host_session_id)
 
 
+PROCESS_ROOT_PREFIX = "mcp-"
+"""環境から所有会話を解決できないMCPプロセス専用のルート識別子の接頭辞。"""
+
+
 def create_process_root_identity() -> StatusFileIdentity:
     """環境から所有会話を解決できないMCPプロセス専用のルート識別子を生成する。"""
-    return StatusFileIdentity(f"mcp-{uuid.uuid4().hex}", "root.json", None)
+    return StatusFileIdentity(f"{PROCESS_ROOT_PREFIX}{uuid.uuid4().hex}", "root.json", None)
 
 
 def status_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -916,6 +920,18 @@ class StatusFileWriter:
     def root_session_id(self) -> str:
         """自身が状態ファイルを書き込むルートsession識別子を返す。"""
         return self._identity.root_session_id
+
+    def launcher_session_id(self) -> str | None:
+        """このMCPサーバーが作成するsessionの起動元sessionの識別子を返す。
+
+        状態ファイルの`host_session_id`として射影する起動元を優先し、無ければ所有ルートを返す。
+        プロセス専用ルートは会話を指さないため返さない。
+        """
+        host_session_id = self._resolve_host_session_id()
+        if host_session_id is not None:
+            return host_session_id
+        root_session_id = self.root_session_id
+        return None if root_session_id.startswith(PROCESS_ROOT_PREFIX) else root_session_id
 
     @property
     def sessions(self) -> dict[str, SessionState]:

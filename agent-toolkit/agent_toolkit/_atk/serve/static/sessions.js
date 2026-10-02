@@ -81,11 +81,13 @@ function matchesFilter(entry) {
 }
 
 function treeRows() {
-  const byKey = new Map(sessions.map(entry => [sessionKey(entry), entry]));
+  // 親と子の実行系（Claude CodeとCodex）は異なり得るため、親は子の実行系を使わずホストとパスで引く。
+  // 記録のパスはホスト内で一意である。
+  const byPath = new Map(sessions.map(entry => [JSON.stringify([entry.host, entry.path]), entry]));
   const children = new Map();
   const roots = [];
   for (const entry of sessions) {
-    const parent = entry.parent_path && byKey.get(JSON.stringify([entry.host, entry.engine, entry.parent_path]));
+    const parent = entry.parent_path && byPath.get(JSON.stringify([entry.host, entry.parent_path]));
     if (!parent || parent === entry) roots.push(entry);
     else {
       const key = sessionKey(parent);
