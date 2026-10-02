@@ -120,9 +120,7 @@ def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys:
     contract = tmp_path / "review-contract.yaml"
     arguments = ["--", "--contract", str(contract), "--target-repo", str(tmp_path)]
     contract.write_text(
-        "version: 1\n"
-        "clauses:\n  - clause: 対象\n    content: 内容\n    source: 計画\n"
-        "commit_references: []\nawi_references: []\n",
+        "version: 1\nclauses:\n  - clause: 対象\n    content: commit abc1234の契約\n    source: 20260921-204636-005.md\n",
         encoding="utf-8",
     )
 
@@ -134,7 +132,7 @@ def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys:
     # 手順書を読んだ主体が登録名を推測せず`--help`だけで見つけられることを保証する。
     assert "review-contract" in parser.format_help()
 
-    contract.write_text("version: 1\nclauses: []\ncommit_references: []\nawi_references: []\n", encoding="utf-8")
+    contract.write_text("version: 1\nclauses: []\n", encoding="utf-8")
 
     assert run_script.dispatch(argparse.Namespace(script_name="review-contract", script_args=arguments)) == 2
     assert "clauses" in capsys.readouterr().err
