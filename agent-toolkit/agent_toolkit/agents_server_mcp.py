@@ -783,6 +783,62 @@ class AgentsServerManager:
             self.stopped_sessions[session_id] = resume_state
         return resume_state
 
+    async def take_over_orphaned_session(self, session_id: str) -> None:
+        """所有者のいない`running`の登録簿記録を、委譲先CLIの記録がturnの終端を示す場合だけ終端として公開する。
+
+        登録簿が終端を示さない記録は、別のプロセスがturnを実行している可能性を排除できないため再開しない。
+        ただし所有側が終端を公開せずに終了したCodexの記録は、その保護のままでは恒久的に回収できない。
+        そこで次の2条件をともに満たす場合だけ終端を公開し、後続の`show`と`send_message`が通常の復元へ進めるようにする。
+        生存の印が有効な状態ファイルがそのsessionを載せていないこと（書ける所有者がいない）と、
+        `thread/read`が元turn（記録が無い場合は全turn）の終端を示し、それより後に進行中のturnが無いことである。
+        経過時間だけでは終端と推定しない。照会の失敗、条件の不成立、Codex以外のengineでは何もせず、従来の拒否に委ねる。
+        """
+        if (
+            not status_file.valid_session_id(session_id)
+            or session_id in self.sessions
+            or session_id in self._pending_resumes
+            or session_id in self.stopped_sessions
+            or session_id in self.expired_sessions
+        ):
+            return
+        resolution = session_registry.resolve(session_id)
+        info = resolution.resume_info
+        if resolution.state is not session_registry.Resolution.RUNNING or info is None or info.engine != "codex":
+            return
+        if status_file.live_writer_holds_session(session_id):
+            return
+        try:
+            turns = await self._backend("codex").read_thread_turns(session_id)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # 照会できない記録は引き継がず、従来どおり実行中の可能性があるものとして拒否する。
+            _LOG.warning("orphaned_session_takeover_skipped session_id=%s reason=%s", session_id, exc)
+            return
+        status = _terminal_turn_status(turns, info.turn_id)
+        if status is None:
+            return
+        session_registry.publish(
+            session_id,
+            terminal=True,
+            engine=info.engine,
+            cwd=info.cwd,
+            model=info.model,
+            effort=info.effort,
+            model_type=info.model_type,
+            launch_kind=info.launch_kind,
+            turn_seq=info.turn_seq,
+            status=status,
+            created_at=info.created_at,
+            started_at=info.started_at,
+            session_updated_at=info.session_updated_at,
+            turn_id=info.turn_id,
+        )
+        _LOG.info(
+            "session_transition event=terminal session_id=%s writer=takeover status=%s turn_seq=%d",
+            session_id,
+            status,
+            info.turn_seq,
+        )
+
     def _restore_registry_session(
         self,
         session_id: str,
@@ -2016,6 +2072,7 @@ class AgentsServerManager:
     ) -> dict[str, Any]:
         """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。"""
         _validate_prompt(prompt)
+        await self.take_over_orphaned_session(session_id)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ActionableError(
                 "timeout must be positive", next_action="`timeout`を省略して270秒で待つか、正の秒数を指定する"
@@ -2260,11 +2317,52 @@ class AgentsServerManager:
         backends = tuple(backend for backend in (self._codex, self._claude, self._agy) if backend is not None)
         for backend in backends:
             await backend.close()
+        self._publish_closed_sessions()
         remove_terminal_listener(self._carry_over_unavailable_candidate)
         remove_terminal_listener(self._record_pending_unobserved_child_sessions)
         if self._status_writer is not None:
             remove_touch_listener(self._status_writer.schedule)
             self._status_writer.deactivate()
+
+    def _publish_closed_sessions(self) -> None:
+        """backendの停止で終わった未終端のturnを`interrupted`へ遷移させ、登録簿と結果ファイルへ公開する。
+
+        停止では所有側が自らturnを終了するため、ここで公開しないと登録簿が`running`のまま残る。
+        登録簿が終端を示さない記録は、再起動後のプロセスが別プロセスの実行中と区別できず回収できなくなる。
+        遷移はbackendごとに書かず、全engineに共通の停止処理として本関数へ集約する。
+        """
+        for session in tuple(self.sessions.values()):
+            if not session.publish_registry or session.result_available or session.result_delivered:
+                continue
+            if not session.terminal:
+                session.status = "interrupted"
+            session.turn_completed = True
+            session.turn_start_ambiguous = False
+            session.awaiting_auto_resume = False
+            session.interrupt_requested = False
+            session.touch()
+        if self._status_writer is not None:
+            # 集約予約を待たずに結果ファイルを書き、状態ファイルの無効化より前に終端結果を残す。
+            self._status_writer.flush()
+
+
+def _terminal_turn_status(
+    turns: Sequence[tuple[str, str]], turn_id: str | None
+) -> Literal["completed", "failed", "interrupted"] | None:
+    """`thread/read`のturn一覧から、元turnが終端して後続の進行中turnが無い場合の終端状態を返す。
+
+    元turnの識別子を持たない旧形式の記録では、全turnが終端している場合に最後のturnの状態を返す。
+    """
+    if turn_id is None:
+        if not turns or any(status not in TERMINAL_STATUSES for _, status in turns):
+            return None
+        return cast(Literal["completed", "failed", "interrupted"], turns[-1][1])
+    index = next((position for position, (identifier, _) in enumerate(turns) if identifier == turn_id), None)
+    if index is None or turns[index][1] not in TERMINAL_STATUSES:
+        return None
+    if any(status not in TERMINAL_STATUSES for _, status in turns[index + 1 :]):
+        return None
+    return cast(Literal["completed", "failed", "interrupted"], turns[index][1])
 
 
 _MANAGER = AgentsServerManager()
@@ -2752,6 +2850,7 @@ async def show_session(
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """
+    await _MANAGER.take_over_orphaned_session(session_id)
     return _MANAGER.show_session(session_id, verbose=verbose)
 
 
