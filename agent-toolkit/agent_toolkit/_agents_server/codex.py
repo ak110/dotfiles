@@ -49,7 +49,6 @@ from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import
 from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
 from agent_toolkit._common import codex_models
 from agent_toolkit._common.next_action import ActionableError
-from agent_toolkit._plan import locations as _plan_file  # pylint: disable=wrong-import-position
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
@@ -185,10 +184,13 @@ class JsonRpcProcess:
         on_notification: Callable[[dict[str, Any]], Awaitable[None]],
         on_server_request: Callable[[dict[str, Any]], Awaitable[None]],
         on_failure: Callable[[BaseException], Awaitable[None]] | None = None,
+        *,
+        root_session_id: str | None = None,
     ) -> None:
         self._on_notification = on_notification
         self._on_server_request = on_server_request
         self._on_failure = on_failure
+        self._root_session_id = root_session_id
         self.process: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -207,7 +209,6 @@ class JsonRpcProcess:
         return {
             "stage": self._initialization_stage,
             "received_message_types": dict(sorted(self._received_message_types.items())),
-            "received_message_count": sum(self._received_message_types.values()),
             "child_pid": None if process is None else process.pid,
             "stderr": self._stderr_text.strip(),
         }
@@ -220,7 +221,7 @@ class JsonRpcProcess:
         try:
             environment = os.environ.copy()
             environment.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
-            owner_session_id = _plan_file.resolve_owner_session_id()
+            owner_session_id = self._root_session_id
             if owner_session_id is not None:
                 environment["AGENT_TOOLKIT_OWNER_SESSION"] = owner_session_id
             self.process = await asyncio.create_subprocess_exec(
@@ -493,11 +494,14 @@ class AppServerManager:
         sessions: dict[str, SessionState] | None = None,
         condition: asyncio.Condition | None = None,
         publish_registry: bool = False,
+        *,
+        root_session_id: str | None = None,
     ) -> None:
         self.client: JsonRpcProcess | None = None
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
         self._publish_registry = publish_registry
+        self._root_session_id = root_session_id
         self._lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._writer_session_ids: dict[str, str] = {}
@@ -548,7 +552,7 @@ class AppServerManager:
     ) -> tuple[dict[str, Any], str | None, str | None]:
         """thread開始・再開に必要な設定と書込主体を返す。"""
         config = self._base_thread_config(lightweight=lightweight)
-        owner_session_id = _plan_file.resolve_owner_session_id()
+        owner_session_id = self._root_session_id
         if owner_session_id is None:
             return config, None, None
         writer_session_id = self._writer_session_ids.get(session_id) if session_id is not None else None
@@ -577,6 +581,7 @@ class AppServerManager:
                 self._handle_notification,
                 self._handle_server_request,
                 self._handle_client_failure,
+                root_session_id=self._root_session_id,
             )
             self.client = client
             try:
@@ -891,8 +896,8 @@ class AppServerManager:
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None
 
-    @staticmethod
     async def _resume_thread(
+        self,
         session: SessionState,
         client: Any,
         writer_session_id: str | None = None,
@@ -907,7 +912,7 @@ class AppServerManager:
         if session.model is not None:
             resume_params["model"] = session.model
         config = AppServerManager._base_thread_config(lightweight=session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
-        owner_session_id = _plan_file.resolve_owner_session_id()
+        owner_session_id = self._root_session_id
         if owner_session_id is not None:
             writer_session_id = writer_session_id or uuid.uuid4().hex
             config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))

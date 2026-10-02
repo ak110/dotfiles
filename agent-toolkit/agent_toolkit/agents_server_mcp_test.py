@@ -29,6 +29,7 @@ import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file, tool_names
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.helpers import delivery_payload
 
@@ -821,7 +822,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
     assert response["sessions"][0]["status"] == "expired"
     assert response["sessions"][1]["status"] == "running"
     assert response["sessions"][2]["status"] == "running"
-    assert response["omitted"] == 0
+    assert "omitted" not in response
 
 
 @pytest.mark.asyncio
@@ -858,7 +859,7 @@ async def test_list_sessions_omits_terminated_sessions_without_pending_result(
     assert response["omitted"] == 2
     all_sessions = manager.list_sessions(include_terminated=True)
     assert len(all_sessions["sessions"]) == 4
-    assert all_sessions["omitted"] == 0
+    assert "omitted" not in all_sessions
 
 
 @pytest.mark.asyncio
@@ -873,7 +874,7 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
 
     assert [item["session_id"] for item in listed] == ["long", "exact"]
     assert all(
-        {"session_id", "status", "started_at", "updated_at"}
+        {"session_id", "status"}
         <= item.keys()
         <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
         for item in listed
@@ -1590,7 +1591,7 @@ async def test_success_response_key_sets_for_all_tools(
     assert await manager.stop(terminal_id) == {}
 
     listed = manager.list_sessions(include_terminated=True)
-    assert listed.keys() == {"sessions", "omitted", "root_session_id"}
+    assert listed.keys() == {"sessions", "root_session_id"}
     assert listed["root_session_id"] == "root-session"
     assert all(
         {"session_id", "status"}
@@ -1716,7 +1717,6 @@ async def test_list_returns_root_session_id_when_session_list_is_empty(tmp_path:
 
     assert manager.list_sessions() == {
         "sessions": [],
-        "omitted": 0,
         "root_session_id": "root-session",
     }
 
@@ -2809,7 +2809,8 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
     assert await wait_task == 0
     result = json.loads(capsys.readouterr().out)
     assert result["agent_message"] == "再開結果"
-    assert result["turn_seq"] == 5
+    assert resumed.turn_seq == 5
+    assert {"turn_seq", "finalized_at"}.isdisjoint(result)
     await manager.close()
 
 
@@ -2985,13 +2986,13 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
     text_silent_detail = manager.show_session(text_silent.session_id)
     inactive_detail = manager.show_session(inactive.session_id)
 
-    assert fresh_detail["output_updated_at"] is None
-    assert isinstance(fresh_detail["seconds_since_output"], int)
-    assert fresh_detail["updated_at"] == fresh.updated_at
+    assert {"updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(fresh_detail)
     assert isinstance(fresh_detail["seconds_since_activity"], int)
     # テキスト出力だけが閾値を超えて止まっている状態と、活動そのものが止まった状態を経過秒数で区別できる。
-    assert text_silent_detail["output_updated_at"] == text_silent.output_updated_at
-    assert text_silent_detail["seconds_since_output"] >= subject.state.STALL_NOTICE_SECONDS
+    assert {"updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(text_silent_detail)
+    diagnostic = manager.show_session(text_silent.session_id, verbose=True)
+    assert diagnostic["output_updated_at"] == text_silent.output_updated_at
+    assert diagnostic["updated_at"] == text_silent.updated_at
     assert text_silent_detail["seconds_since_activity"] < subject.state.STALL_NOTICE_SECONDS
     assert inactive_detail["seconds_since_activity"] >= subject.state.STALL_NOTICE_SECONDS
 
@@ -3021,7 +3022,8 @@ async def test_claude_api_error_is_visible_in_show_and_list(tmp_path: pathlib.Pa
 
     assert shown["api_error"]["type"] == "rate_limit_error"
     assert shown["api_error"]["http_status"] == 429
-    assert shown["api_error"]["count"] == 2
+    assert {"count", "first_at"}.isdisjoint(shown["api_error"])
+    assert session.api_error is not None and session.api_error["count"] == 2
     assert shown["api_error"]["elapsed_seconds"] >= 0
     assert listed["api_error"] == shown["api_error"]
     assert shown["seconds_since_activity"] >= subject.state.STALL_NOTICE_SECONDS
@@ -3121,7 +3123,7 @@ async def test_show_reports_active_tool_uses_with_input_detail(tmp_path: pathlib
         {"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00", "detail": "command=git status"}
     ]
     assert codex_detail["active_tool_uses"][0]["type"] == "commandExecution"
-    assert codex_detail["active_tool_uses"][0]["id"] == "item-1"
+    assert "id" not in codex_detail["active_tool_uses"][0]
     assert codex_detail["active_tool_uses"][0]["detail"] == "command=git status"
     assert "active_tool_uses" not in manager.show_session(idle.session_id)
     assert "active_tool_uses" not in manager.show_session(terminal.session_id)
@@ -3185,8 +3187,8 @@ async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) ->
     assert response["status"] == "running"
     assert "agent_message" not in response
     assert response["notices"] == [
-        {"sent_at": "2026-09-06T00:00:01+00:00", "body": "先の通知"},
-        {"sent_at": "2026-09-06T00:00:02+00:00", "body": "後の通知"},
+        {"body": "先の通知"},
+        {"body": "後の通知"},
     ]
     _set_wait_timeout(manager, 0.0)
     second = await manager.wait()
@@ -3213,7 +3215,7 @@ async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: 
 
     assert response["status"] == "completed"
     assert response["agent_message"] == "最終結果"
-    assert response["notices"] == [{"sent_at": "2026-09-06T00:00:01+00:00", "body": "終端前の通知"}]
+    assert response["notices"] == [{"body": "終端前の通知"}]
     assert not any(notices.iterdir())
     await manager.close()
 
@@ -3283,7 +3285,7 @@ async def test_kill_includes_notices_only_when_available(
 
     expected: dict[str, Any] = {"status": "running", "kill_requested": True}
     if with_notice:
-        expected["notices"] = [{"sent_at": "2026-09-06T00:00:01+00:00", "body": "中断前の通知"}]
+        expected["notices"] = [{"body": "中断前の通知"}]
     assert response == expected
     await manager.close()
 
@@ -3689,7 +3691,8 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     assert await wait_task == 0
     output = json.loads(capsys.readouterr().out)
     assert output["agent_message"] == "結果B"
-    assert output["turn_seq"] == 2
+    assert session.turn_seq == 2
+    assert {"turn_seq", "finalized_at"}.isdisjoint(output)
     await manager.close()
 
 
@@ -3833,6 +3836,57 @@ class FakeCodexClient:
     async def close(self) -> None:
         """実クライアントと同じ終了インターフェースを提供する。"""
         self.closed = True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment_owner", [None, "environment-root"])
+async def test_manager_root_connects_codex_start_resume_and_notification(
+    environment_owner: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """環境ownerの有無にかかわらず、Managerのrootで起動・再開・通知回収を接続する。"""
+    for name in (
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CODEX_THREAD_ID",
+        "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    if environment_owner is not None:
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", environment_owner)
+        monkeypatch.setenv("CODEX_THREAD_ID", "host-thread")
+    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    manager = subject.AgentsServerManager()
+    other = subject.AgentsServerManager()
+    assert manager._status_writer is not None
+    assert other._status_writer is not None
+    root = manager._status_writer.root_session_id
+    if environment_owner is None:
+        assert root != other._status_writer.root_session_id
+    else:
+        assert root == environment_owner
+    client = FakeCodexClient()
+    backend = manager._backend("codex")
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+    try:
+        session = await backend.start("調査", str(tmp_path))
+        await backend.resume("resumed-thread", state.ResumePrompt("続行"), str(tmp_path))
+        configs = [params["config"] for method, params in client.requests if method in {"thread/start", "thread/resume"}]
+        assert len(configs) == 2
+        for config in configs:
+            assert config["mcp_servers"]["agents_server"]["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == root
+        environment = {**configs[0]["mcp_servers"]["agents_server"]["env"], "CODEX_THREAD_ID": session.session_id}
+        assert send_notification("途中の観測", environment=environment, state_root=tmp_path) == 0
+        response = await manager.wait()
+        assert response["session_id"] == session.session_id
+        assert response["status"] == "starting"
+        assert "途中の観測" in response["notices"][0]["body"]
+        assert f"delegate:{session.session_id}" in response["notices"][0]["body"]
+        assert status_file.take_notices(root, session.session_id, state_root=tmp_path) == []
+        if environment_owner is None:
+            assert status_file.take_notices(other._status_writer.root_session_id, session.session_id, state_root=tmp_path) == []
+    finally:
+        await manager.close()
+        await other.close()
 
 
 class BlockingResumeCodexClient(FakeCodexClient):
@@ -4102,7 +4156,6 @@ async def test_codex_explore_changes_thread_start_only(
     tmp_path: pathlib.Path,
 ) -> None:
     """Codex探索起動はthreadの指示源だけを軽量化し、turn入力を変えない。"""
-    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     normal_manager = codex_backend.AppServerManager()
     normal_client = FakeCodexClient()
 
@@ -4136,7 +4189,6 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
     tmp_path: pathlib.Path,
 ) -> None:
     """Codexのシェル実行起動は探索と同じthread条件で開始し、指示だけを実行専用へ替える。"""
-    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     manager = codex_backend.AppServerManager()
     client = FakeCodexClient()
 
@@ -4154,19 +4206,17 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
 @pytest.mark.asyncio
 async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """Codexの再開は`mode`に応じた委譲先宣言をthread/resumeへ渡す。"""
-    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     client = FakeCodexClient()
+    manager = codex_backend.AppServerManager()
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
     normal_session = subject.SessionState("thread-normal", str(tmp_path), engine="codex")
     explore_session = subject.SessionState("thread-explore", str(tmp_path), engine="codex", launch_kind="explore")
     shell_session = subject.SessionState("thread-shell", str(tmp_path), engine="codex", launch_kind="shell")
 
-    await codex_backend.AppServerManager._resume_thread(normal_session, client)
-    await codex_backend.AppServerManager._resume_thread(explore_session, client)
-    await codex_backend.AppServerManager._resume_thread(shell_session, client)
+    for session in (normal_session, explore_session, shell_session):
+        await manager.resume(session.session_id, state.ResumePrompt("続行"), session.cwd, launch_kind=session.launch_kind)
 
-    normal_resume = client.requests[0][1]
-    explore_resume = client.requests[1][1]
-    shell_resume = client.requests[2][1]
+    normal_resume, explore_resume, shell_resume = [params for method, params in client.requests if method == "thread/resume"]
     assert normal_resume["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert normal_resume["config"] == {"bypass_hook_trust": True}
     assert explore_resume["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
@@ -4293,8 +4343,9 @@ async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(codex_backend.asyncio, "create_subprocess_exec", create_subprocess)
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: "owner-session")
-    client = codex_backend.JsonRpcProcess(lambda _message: asyncio.sleep(0), lambda _message: asyncio.sleep(0))
+    client = codex_backend.JsonRpcProcess(
+        lambda _message: asyncio.sleep(0), lambda _message: asyncio.sleep(0), root_session_id="owner-session"
+    )
     with pytest.raises(RuntimeError, match="capture complete"):
         await client.start()
     environment = observed.pop("env")
@@ -4441,7 +4492,6 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
     tmp_path: pathlib.Path,
 ) -> None:
     """共有MCP層のstartが保存済みCodex threadを再開する。"""
-    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     manager = subject.AgentsServerManager()
     backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
     client = FakeCodexClient()
@@ -4714,6 +4764,34 @@ class FakeClaudeClient:
 
     async def disconnect(self) -> None:
         self.disconnected = True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("root", ["manager-one", "manager-two"])
+async def test_each_manager_delivers_its_root_to_claude_start_and_resume(
+    root: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """別の環境ownerがあっても、SDKの新規と再開は各Managerのrootに属する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "other-environment-root")
+    writer = status_file.StatusFileWriter({}, status_file.StatusFileIdentity(root, "root.json", None), state_root=tmp_path)
+    manager = subject.AgentsServerManager(writer)
+    backend = manager._backend("claude")
+    options_received: list[Any] = []
+
+    def client_factory(options: Any) -> FakeClaudeClient:
+        options_received.append(options)
+        return FakeClaudeClient([[SystemMessage("claude-root-test"), ResultMessage("完了")]])
+
+    monkeypatch.setattr(backend, "_client_factory", client_factory)
+    try:
+        session = await backend.start("新規", str(tmp_path))
+        await backend.resume(session.session_id, state.ResumePrompt("再開"), str(tmp_path))
+        assert len(options_received) == 2
+        assert [options.env["AGENT_TOOLKIT_OWNER_SESSION"] for options in options_received] == [root, root]
+        assert options_received[0].resume is None
+        assert options_received[1].resume == session.session_id
+    finally:
+        await manager.close()
 
 
 class DelayedClaudeClient(FakeClaudeClient):
@@ -5148,7 +5226,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     """Claude Agent SDKへClaude Code presetと設定読込元、解決した所有セッションを渡す。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "owner-session")
 
-    options = claude_backend._build_options(str(tmp_path), "model", "high")
+    options = claude_backend._build_options(str(tmp_path), "model", "high", root_session_id="owner-session")
     assert options.system_prompt == {
         "type": "preset",
         "preset": "claude_code",
@@ -5922,8 +6000,6 @@ async def test_recovered_session_restores_persisted_result_once(
         "status": "failed",
         "agent_message": "永続結果",
         "error": {"message": "失敗結果"},
-        "turn_seq": persisted.turn_seq,
-        "finalized_at": persisted.finalized_at,
     }
     assert second == {"status": "failed", "recovery": "result_unavailable", "kill_requested": False}
     assert not result_path.exists()
@@ -6227,7 +6303,7 @@ async def test_stop_discards_terminal_session(
     assert response == {}
     listed = manager.list_sessions()
     assert listed["sessions"] == []
-    assert listed["omitted"] == 0
+    assert "omitted" not in listed
     assert "terminal" not in manager.sessions
     assert "terminal" not in manager.expired_sessions
     assert manager.stopped_sessions["terminal"].session_id == "terminal"
@@ -6461,8 +6537,6 @@ async def test_stop_releases_wait_target_before_waiting_for_new_result(
         "session_id": "new-session",
         "status": "completed",
         "agent_message": "新しい結果",
-        "turn_seq": 0,
-        "finalized_at": new_session.finalized_at,
     }
     await manager.close()
 
@@ -6572,7 +6646,7 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
     assert session.session_id in manager.stopped_sessions
     listed = manager.list_sessions()
     assert listed["sessions"] == []
-    assert listed["omitted"] == 0
+    assert "omitted" not in listed
     assert backend.release_calls == [session.session_id]
 
 
@@ -6833,8 +6907,8 @@ async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
     assert saved["started_at"] == session.started_at
     assert saved["updated_at"] == session.updated_at
     assert legacy["started_at"] is None
-    assert "updated_at" not in legacy
-    assert listed[session.session_id]["updated_at"] == session.updated_at
+    assert legacy["updated_at"] is None
+    assert {"started_at", "updated_at", "output_updated_at"}.isdisjoint(listed[session.session_id])
     assert "updated_at" not in listed["legacy-activity"]
     await observer.close()
     await owner.close()

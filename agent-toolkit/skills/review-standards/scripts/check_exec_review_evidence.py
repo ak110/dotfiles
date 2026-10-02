@@ -456,26 +456,48 @@ def _is_reference_only(evidence: str, repository: pathlib.Path) -> bool:
     return not REFERENCE_SEPARATORS.sub("", rest)
 
 
+def _evidence_body(row: dict[str, str], field: str) -> str:
+    """行情報と一致する標識だけを除き、観測箇所・内容・結果を比較へ残す。"""
+    source = re.escape(row["source"])
+    text = re.escape(row[field])
+    markers = (
+        rf"対象単位\s*[:：]\s*{source}",
+        rf"証拠行\s*[:：]?\s*{source}",
+        rf"要件原文\s*「{text}」",
+    )
+    evidence = row["evidence"].strip()
+    for marker in markers:
+        # 原文の全文を使うので、原文内の閉じ括弧・引用符で途中を切り出さない。
+        wrapped = rf"(?:（\s*{marker}\s*）|\(\s*{marker}\s*\)|{marker}(?=$|[\s、,;；。|）)]))"
+        evidence = re.sub(rf"[\s、,;；|]*{wrapped}[\s、,;；|]*", " ", evidence)
+    return re.sub(r"\s+", " ", evidence).strip()
+
+
 def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
     """両配列の全達成行を要求単位で区別し、所在のない共用と、説明のない参照だけの共用を報告する。
 
     同じ検証記録のパスだけを多数の行へ写すと、各行の条件を判定せずに空欄を埋めた証拠と区別できない。
-    同じファイルでも行ごとに満たす箇所や内容を書いた根拠は文字列が異なるため、この共用に当たらない。
+    行情報の再掲だけによる文字列の違いを、観測内容の違いとして扱わない。
     異なるWIの原文が異なる行どうしの共用は、説明を添えていても受理しない。同じ1文が別々のWIの異なる要求を
     それぞれ直接満たす箇所を示すことはできず、汎用的な説明を添えた写しと区別できないためである。
     分割起票した兄弟WIが同じ原文の行を同じ根拠で記録する共用と、具体的なテスト名と成功結果を持つ共用は受理する。
     """
     groups: dict[str, list[tuple[str, int, str, str]]] = collections.defaultdict(list)
+    body_groups: dict[str, list[tuple[str, int, str, str, str]]] = collections.defaultdict(list)
+    test_results: dict[tuple[str, int], bool] = {}
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         rows = payload[section]
         assert isinstance(rows, list)
         for index, row in enumerate(rows, start=1):
             if row["outcome"] == "達成":
                 groups[row["evidence"].strip()].append((section, index, row["awi"], row[field]))
+                body = _evidence_body(row, field)
+                body_groups[body].append((section, index, row["awi"], row[field], row["evidence"].strip()))
+                test_results[section, index] = bool(TEST_RESULT.search(body))
     errors: list[str] = []
     for evidence, rows in groups.items():
         units = {(section, awi, text) for section, _, awi, text in rows}
-        if len(units) < 2 or TEST_RESULT.search(evidence):
+        if len(units) < 2 or all(test_results[section, index] for section, index, _, _ in rows):
             continue
         if any(awi != other_awi and text != other_text for _, awi, text in units for _, other_awi, other_text in units):
             reason = (
@@ -498,7 +520,18 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
             f"{awi or '計画由来'}: {section}[{index}].evidence: {reason}。条件を観測できていない場合は証拠不足へ再判定する"
             for section, index, awi, _ in rows
         )
-    return errors
+    for body, rows in body_groups.items():
+        if len({text for _, _, _, text, _ in rows}) < 2 or len({evidence for _, _, _, _, evidence in rows}) < 2:
+            continue
+        if TEST_RESULT.search(body):
+            continue
+        errors.extend(
+            f"{awi or '計画由来'}: {section}[{index}].evidence: "
+            "異なる原文の達成根拠が単位名・行標識・原文引用だけで異なります。"
+            "各行の要求を満たす箇所と観測した内容を記入する。条件を観測できていない場合は証拠不足へ再判定する"
+            for section, index, awi, _, _ in rows
+        )
+    return list(dict.fromkeys(errors))
 
 
 def _load_wi(reference: str, repository: pathlib.Path, wi_outputs: dict[str, str]) -> tuple[dict[str, str], list[str]]:

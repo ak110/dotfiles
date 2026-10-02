@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import os
 import os.path
 import re
@@ -416,6 +417,310 @@ def resolve_execution_segment(tokens: list[str]) -> ExecutionSegment:
     if index >= len(tokens) or tokens[index].startswith("-"):
         return ExecutionSegment((), False)
     return ExecutionSegment(tuple(tokens[index:]), True, is_agent_toolkit_script)
+
+
+class _BashOutput(enum.Enum):
+    PIPE = "pipe"
+    UNKNOWN = "unknown"
+
+
+type _OutputTarget = str | int | _BashOutput
+
+
+@dataclasses.dataclass(frozen=True)
+class BashInvocation:
+    """静的に得た外側の引数と、その実行へ作用する出力接続を保持する。
+
+    展開を含む引数は`arguments_known`を偽にし、値を実行して求めない。
+    出力の整数は囲むシェルから継承するファイル記述子を表す。
+    助言と実行記録が共有する`ExecutionSegment`の既存解析は変更しない。
+    """
+
+    segment: ExecutionSegment
+    arguments_known: bool
+    outputs: tuple[_OutputTarget, _OutputTarget] = (1, 2)
+    background: bool = False
+    captured: bool = False
+
+    @property
+    def output_pipe(self) -> bool:
+        """標準出力または標準エラーが後段のパイプへ渡るかを返す。"""
+        return _BashOutput.PIPE in self.outputs
+
+    @property
+    def stdout_discarded(self) -> bool:
+        """標準出力の最終的な接続先が/dev/nullであるかを返す。"""
+        return self.outputs[0] == "/dev/null"
+
+
+@dataclasses.dataclass(frozen=True)
+class _BashToken:
+    value: str
+    operator: bool = False
+    known: bool = True
+    nested: tuple[str, ...] = ()
+    assignment: bool = False
+
+
+_BASH_REDIRECTION = re.compile(r"[0-9]*(?:&>>|&>|<<-|<<<|>>|<<|<>|<&|>&|>\||>|<)")
+_BASH_OPERATORS = ("&&", "||", "|&", ";;", ";", "&", "|", "(", ")", "{", "}", "\n")
+_UNKNOWN_BASH_WORD = "\x00"
+
+
+def extract_bash_invocations(command: str) -> list[BashInvocation]:
+    """引用・置換・出力接続を保持し、判定できるBashの実行位置を返す。
+
+    heredoc本文とリテラル引数を実行位置にせず、置換の内側は別の呼び出しとして解析する。
+    変数や別ファイルに隠れた起動、未対応の複合構文、閉じない構文から実行位置を推定しない。
+    """
+    try:
+        tokens = _bash_tokens(mask_heredoc_bodies(command))
+        invocations, end = _bash_command_list(tokens, 0)
+    except ValueError:
+        return []
+    return invocations if end == len(tokens) else []
+
+
+def _bash_tokens(command: str) -> list[_BashToken]:
+    """演算子とシェル語を区別し、置換内の語を外側のトークンへ混ぜない。"""
+    tokens: list[_BashToken] = []
+    index = 0
+    while index < len(command):
+        if command[index] in " \t\r":
+            index += 1
+            continue
+        if command.startswith("\\\n", index):
+            index += 2
+            continue
+        if command[index] == "#":
+            end = command.find("\n", index)
+            index = len(command) if end < 0 else end
+            continue
+        if command.startswith("((", index):
+            _, index = _bash_substitution(command, index)
+            tokens.append(_BashToken(_UNKNOWN_BASH_WORD, known=False))
+            continue
+        # プロセス置換はリダイレクト演算子とは別のシェル語である。
+        redirect = None if command[index : index + 2] in {"<(", ">("} else _BASH_REDIRECTION.match(command, index)
+        operator = next((value for value in _BASH_OPERATORS if command.startswith(value, index)), None)
+        if redirect is not None or operator is not None:
+            value = redirect.group() if redirect is not None else operator
+            assert value is not None
+            tokens.append(_BashToken(value, operator=True))
+            index += len(value)
+            continue
+        word, index = _bash_word(command, index)
+        tokens.append(word)
+    return tokens
+
+
+def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
+    """1つの語の引用と展開を区別し、静的な値と置換の本文を返す。"""
+    pieces: list[str] = []
+    nested: list[str] = []
+    quote: str | None = None
+    known = True
+    index = start
+    while index < len(command):
+        char = command[index]
+        if char == "\\" and quote != "'":
+            if index + 1 >= len(command):
+                raise ValueError("閉じないエスケープ")
+            if command[index + 1] != "\n":
+                pieces.append(command[index : index + 2])
+            index += 2
+            continue
+        if char == quote:
+            quote = None
+            pieces.append(char)
+            index += 1
+            continue
+        if quote != "'" and (
+            command.startswith(("$(", "${"), index)
+            or char == "`"
+            or (quote is None and command[index : index + 2] in {"<(", ">("})
+        ):
+            body, index = _bash_substitution(command, index)
+            if body is not None:
+                nested.append(body)
+            pieces.append(_UNKNOWN_BASH_WORD)
+            known = False
+            continue
+        if quote is None and char in {"'", '"'}:
+            quote = char
+        elif quote is None and (char.isspace() or char in ";&|()<>"):
+            break
+        elif (
+            quote != "'"
+            and char == "$"
+            and index + 1 < len(command)
+            and (command[index + 1].isalnum() or command[index + 1] in "{_@*#?!-$")
+            or quote is None
+            and (char in "*?[" or (char == "~" and index == start))
+        ):
+            known = False
+        pieces.append(char)
+        index += 1
+    if quote is not None or not pieces:
+        raise ValueError("閉じない引用または未対応の語")
+    values = shlex.split("".join(pieces), posix=True)
+    if len(values) != 1:
+        raise ValueError("シェル語を確定できない")
+    value = values[0]
+    if not known:
+        assignment = _ENV_ASSIGN_PATTERN.match(value)
+        value = (assignment.group() if assignment else "") + _UNKNOWN_BASH_WORD
+    return _BashToken(
+        value, known=known, nested=tuple(nested), assignment=_ENV_ASSIGN_PATTERN.match("".join(pieces)) is not None
+    ), index
+
+
+def _bash_substitution(command: str, start: int) -> tuple[str | None, int]:
+    """置換の対応する終端を、内側の引用と入れ子を区別して求める。"""
+    backtick = command[start] == "`"
+    parameter = command.startswith("${", start)
+    arithmetic = command.startswith("((", start)
+    opening, closing = ("{", "}") if parameter else ("(", ")")
+    cursor = start + (1 if backtick else 2)
+    body_start = cursor
+    depth = 2 if arithmetic else 1
+    quote: str | None = None
+    while cursor < len(command):
+        char = command[cursor]
+        if char == "\\" and quote != "'":
+            cursor += 2
+            continue
+        if backtick and char == "`":
+            return command[body_start:cursor], cursor + 1
+        if char == quote:
+            quote = None
+        elif quote is None and char in {"'", '"'}:
+            quote = char
+        elif quote != "'" and (command.startswith(("$(", "${"), cursor) or (char == "`" and not backtick)):
+            _, cursor = _bash_substitution(command, cursor)
+            continue
+        elif quote is None and char == opening:
+            depth += 1
+        elif quote is None and char == closing:
+            depth -= 1
+            if depth == 0:
+                body = command[body_start:cursor]
+                return (None if parameter or arithmetic or body.startswith("(") else body), cursor + 1
+        cursor += 1
+    raise ValueError("閉じない置換")
+
+
+def _bash_command_list(
+    tokens: Sequence[_BashToken], start: int, closing: str | None = None
+) -> tuple[list[BashInvocation], int]:
+    """単純なコマンドと括弧・波括弧のグループへ接続を対応付ける。"""
+    result: list[BashInvocation] = []
+    pipeline_start = 0
+    index = start
+    while index < len(tokens):
+        if tokens[index].operator and tokens[index].value == closing:
+            return result, index + 1
+        if tokens[index].operator and tokens[index].value in {";", "\n", "&&", "||"}:
+            pipeline_start = len(result)
+            index += 1
+            continue
+        grouped = tokens[index].operator and tokens[index].value in {"(", "{"}
+        if grouped:
+            inner_closing = ")" if tokens[index].value == "(" else "}"
+            current, index = _bash_command_list(tokens, index + 1, inner_closing)
+            words: list[_BashToken] = []
+        else:
+            current = []
+            words = []
+        redirects: list[tuple[str, _BashToken]] = []
+        while index < len(tokens):
+            token = tokens[index]
+            if token.operator:
+                if _BASH_REDIRECTION.fullmatch(token.value):
+                    if index + 1 >= len(tokens) or tokens[index + 1].operator:
+                        raise ValueError("リダイレクト先がない")
+                    redirects.append((token.value, tokens[index + 1]))
+                    index += 2
+                    continue
+                break
+            if grouped:
+                raise ValueError("グループの後ろの未対応の語")
+            words.append(token)
+            index += 1
+        separator = tokens[index].value if index < len(tokens) else ""
+        if separator in {"(", "{", ")", "}"} and separator != closing:
+            raise ValueError("未対応のグループ境界")
+        if not grouped:
+            current = _bash_word_invocations(words)
+        outputs = _bash_output_targets(redirects, separator)
+        current = [_inherit_bash_outputs(item, outputs) for item in current]
+        result.extend(current)
+        if separator == "&":
+            result[pipeline_start:] = [dataclasses.replace(item, background=True) for item in result[pipeline_start:]]
+        if separator in {";", "\n", "&&", "||", "&"}:
+            pipeline_start = len(result)
+        if separator == closing:
+            return result, index + 1
+        if not separator:
+            break
+        index += 1
+    if closing is not None:
+        raise ValueError("閉じないグループ")
+    return result, index
+
+
+def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
+    """実行前置語を解決し、引用されたシェル本文と能動的な置換を解析する。"""
+    result: list[BashInvocation] = []
+    values = [word.value for word in words]
+    prefix = 0
+    while prefix < len(words) and words[prefix].assignment:
+        prefix += 1
+    # 引用された名前や`=`はシェルの前置代入にならず、その語自身が実行位置になる。
+    quoted_assignment = prefix < len(words) and _ENV_ASSIGN_PATTERN.match(values[prefix]) is not None
+    segment = ExecutionSegment(tuple(values[prefix:]), True) if quoted_assignment else resolve_execution_segment(values)
+    known = not any(_UNKNOWN_BASH_WORD in token for token in segment.tokens)
+    if segment.resolved and segment.tokens and _UNKNOWN_BASH_WORD not in segment.tokens[0]:
+        shell = _shell_c_argument(segment.tokens)
+        if shell is not None and known:
+            result.extend(extract_bash_invocations(shell))
+        else:
+            result.append(BashInvocation(segment, known))
+    for word in words:
+        for body in word.nested:
+            result.extend(dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body))
+    return result
+
+
+def _bash_output_targets(redirects: Sequence[tuple[str, _BashToken]], separator: str) -> tuple[_OutputTarget, _OutputTarget]:
+    """リダイレクトを左から適用し、後段へ実際に渡る出力を求める。"""
+    outputs: dict[int, _OutputTarget] = {1: _BashOutput.PIPE if separator in _PIPE_SEPARATORS else 1, 2: 2}
+    for raw, operand in redirects:
+        operator = raw.lstrip("0123456789")
+        fd = int(raw[: len(raw) - len(operator)] or ("0" if operator.startswith("<") else "1"))
+        if operator.startswith("<") or fd not in {1, 2}:
+            continue
+        if not operand.known:
+            target: _OutputTarget = _BashOutput.UNKNOWN
+        elif operator == ">&":
+            target = outputs.get(int(operand.value), _BashOutput.UNKNOWN) if operand.value.isdecimal() else _BashOutput.UNKNOWN
+        else:
+            target = operand.value
+        outputs[fd] = target
+        if operator.startswith("&>"):
+            outputs[2] = target
+    if separator == "|&":
+        outputs[2] = outputs[1]
+    return outputs[1], outputs[2]
+
+
+def _inherit_bash_outputs(invocation: BashInvocation, outputs: tuple[_OutputTarget, _OutputTarget]) -> BashInvocation:
+    """グループの出力先を、内側で上書きされていない接続へ渡す。"""
+    inherited = tuple(
+        outputs[value - 1] if isinstance(value, int) and not (invocation.captured and value == 1) else value
+        for value in invocation.outputs
+    )
+    return dataclasses.replace(invocation, outputs=(inherited[0], inherited[1]))
 
 
 def is_python_token(token: str) -> bool:

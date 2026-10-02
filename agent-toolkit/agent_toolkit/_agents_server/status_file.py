@@ -37,6 +37,8 @@ from agent_toolkit._agents_server.state import (
     SessionResumeState,
     SessionState,
     has_uncollected_result,
+    public_notice,
+    public_result,
     terminal_result_payload,
     with_review_result_next_action,
 )
@@ -558,7 +560,8 @@ def take_result(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。
 
-    返す本文から内部の項目（所有者と保持状態）を除き、起動時の`label`だけを`label`として残す。
+    回収後の公開境界で返す項目を限定し、内部の所有者・保持状態・時刻を保存へ残す。
+    起動時の`label`は、依頼と結果の対応に使う。
     呼び出し元が`session_id`から依頼名への対応表を持たずに、どの依頼の結果かを判別できるようにするためである。
     レビューを目的とするsessionの完了結果へは採否確定の次の操作を加える。
     """
@@ -602,12 +605,11 @@ def take_result(
                         owner_status_file,
                         collector,
                     )
-            payload.pop("owner_status_file", None)
-            session = payload.pop("session", None)
+            session = payload.get("session")
             label = session.get("label") if isinstance(session, dict) else None
             if isinstance(label, str) and label:
                 payload["label"] = label
-            return with_review_result_next_action(payload, label), None
+            return with_review_result_next_action(public_result(payload), label), None
         finally:
             release_lock(lock_file)
 
@@ -877,7 +879,7 @@ def take_notices(
         except FileNotFoundError:
             continue
         taken.append(notice)
-    return taken
+    return [public_notice(notice) for notice in taken]
 
 
 def normalize_label(value: str) -> str:

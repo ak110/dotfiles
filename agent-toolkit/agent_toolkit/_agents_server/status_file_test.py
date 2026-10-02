@@ -509,7 +509,6 @@ async def test_host_alias_outlives_uncollected_nested_result(tmp_path: pathlib.P
     assert subject.take_result("root", "nested", "writer.json", collector="test", state_root=tmp_path)[0] == {
         "status": "completed",
         "agent_message": "完了",
-        "turn_seq": 3,
     }
     other.deactivate()
     assert not host_path.exists()
@@ -567,9 +566,9 @@ def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp
     notices = subject.take_notices("root", "target", tmp_path)
 
     assert notices == [
-        {"sent_at": "2026-09-07T01:00:00Z", "body": "同時刻A"},
-        {"sent_at": "2026-09-07T01:00:00Z", "body": "同時刻B"},
-        {"sent_at": "2026-09-07T02:00:00Z", "body": "後"},
+        {"body": "同時刻A"},
+        {"body": "同時刻B"},
+        {"body": "後"},
     ]
     assert {path.name for path in directory.iterdir()} == {
         "invalid-version.json",
@@ -1397,6 +1396,9 @@ def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> N
                 "status": "completed",
                 "agent_message": "完了",
                 "owner_status_file": "delegate.json",
+                "turn_seq": 7,
+                "finalized_at": "2026-10-03T00:00:00Z",
+                "future_internal": "公開しない",
             }
         ),
         encoding="utf-8",

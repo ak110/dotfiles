@@ -88,14 +88,25 @@ def _cell(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _row_position(row_id: int) -> str:
+    """showとrespondが使う行識別子を診断へ表示する。"""
+    return f"row-id {row_id}"
+
+
+def _physical_position(line: int, column: int | None = None) -> str:
+    """TSVの構文不正の物理位置を表示する。"""
+    position = f"物理行番号 {line}"
+    return position if column is None else f"{position}、列番号 {column}"
+
+
 def _decode_cell(value: str, *, line: int, column: int) -> str:
     """JSON文字列セルをデコードし、形式不正をエラーにする。"""
     try:
         decoded = json.loads(value)
     except (json.JSONDecodeError, TypeError) as error:
-        raise ValueError(f"{line}行{column}列がJSON文字列ではない") from error
+        raise ValueError(f"{_physical_position(line, column)}がJSON文字列ではない") from error
     if not isinstance(decoded, str):
-        raise ValueError(f"{line}行{column}列が文字列ではない")
+        raise ValueError(f"{_physical_position(line, column)}が文字列ではない")
     return decoded
 
 
@@ -131,7 +142,8 @@ def _parse_text(text: str) -> list[tuple[str, list[str]]]:
         cells = line.split("\t")
         if len(cells) not in (_COLUMN_COUNT, _LEGACY_WIDE_COLUMN_COUNT):
             raise _ActionableError(
-                f"{line_number}行の列数が{_COLUMN_COUNT}ではない: {len(cells)}", next_action=_FIX_FORMAT_NEXT_ACTION
+                f"{_physical_position(line_number)}の列数が{_COLUMN_COUNT}ではない: {len(cells)}",
+                next_action=_FIX_FORMAT_NEXT_ACTION,
             )
         row = [_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)]
         row = _drop_legacy_response_needed(row)
@@ -186,29 +198,31 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
     keys: set[tuple[str, str, str, str]] = set()
     for index, row in enumerate(rows, start=1):
         if len(row) != _COLUMN_COUNT:
-            raise _ActionableError(f"{index}行の列数が{_COLUMN_COUNT}ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
+            raise _ActionableError(
+                f"{_row_position(index)}の列数が{_COLUMN_COUNT}ではない", next_action=_FIX_FORMAT_NEXT_ACTION
+            )
         if any(not _normalized(value) for value in row[:_KEY_COLUMN_COUNT]):
-            raise _ActionableError(f"{index}行の先頭4列は空にできない", next_action=_FIX_ROW_NEXT_ACTION)
+            raise _ActionableError(f"{_row_position(index)}の先頭4列は空にできない", next_action=_FIX_ROW_NEXT_ACTION)
         if _ROUND_RE.match(_normalized(row[0])) is None:
-            raise _ActionableError(f"{index}行のラウンドが1以上の整数ではない", next_action=_FIX_ROW_NEXT_ACTION)
+            raise _ActionableError(f"{_row_position(index)}のラウンドが1以上の整数ではない", next_action=_FIX_ROW_NEXT_ACTION)
         if row[1] not in TRACK_VALUES:
-            raise _ActionableError(f"{index}行のtrackが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
+            raise _ActionableError(f"{_row_position(index)}のtrackが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
         if row[4] and row[4] not in LEVEL_VALUES:
-            raise _ActionableError(f"{index}行のlevelが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
+            raise _ActionableError(f"{_row_position(index)}のlevelが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
         key = _key(row)
         if key in keys:
-            raise _ActionableError(f"{index}行の先頭4列が重複している", next_action=_FIX_ROW_NEXT_ACTION)
+            raise _ActionableError(f"{_row_position(index)}の先頭4列が重複している", next_action=_FIX_ROW_NEXT_ACTION)
         keys.add(key)
         response = row[5].strip()
         reason = row[6].strip()
         if response and reason:
             raise _ActionableError(
-                f"{index}行は対応内容と対応不要理由を同時に持てない",
+                f"{_row_position(index)}は対応内容と対応不要理由を同時に持てない",
                 next_action=f"`atk review-table respond <PATH> --row-id {index}`で対応内容か対応不要理由の一方だけを記録し直す",
             )
         if require_responses and not response and not reason:
             raise _ActionableError(
-                f"{index}行が未応答である",
+                f"{_row_position(index)}が未応答である",
                 next_action=(
                     f"`atk review-table respond <PATH> --row-id {index}`へ--response-fileか"
                     "--no-response-reason-fileを指定して応答する"
@@ -681,6 +695,6 @@ def _require_writable_exec_review(raw_path: str) -> None:
         raw_track = _decode_cell(raw_line.rstrip("\r\n").split("\t")[1], line=line_number, column=2)
         if raw_track != "exec-review":
             raise _ActionableError(
-                f"{line_number}行の旧review typeは読み取り専用です: {raw_track}",
+                f"{_row_position(line_number)}の旧review typeは読み取り専用です: {raw_track}",
                 next_action="更新にはexec-reviewの行だけを持つ.exec-review.tsvを指定する",
             )

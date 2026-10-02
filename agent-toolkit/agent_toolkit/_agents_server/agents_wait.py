@@ -69,10 +69,8 @@ class _BodyFileWriter:
         """本文を書いたファイルの絶対パスを返す。書けない場合は`OSError`か`ManagedTempError`を送出する。"""
         if self._directory is None:
             self._directory = _managed_temp.create_managed_temp(_BODY_TEMP_PREFIX)
-        turn_seq = result.get("turn_seq")
-        # labelは利用者の自由な文字列を含み得るため、ファイル名はsession識別子とturn番号だけで組み立てる。
-        suffix = f"-turn{turn_seq}" if isinstance(turn_seq, int) and not isinstance(turn_seq, bool) else ""
-        path = self._directory / f"{session_id}{suffix}.md"
+        # 呼び出しごとに新しい領域なので、内部のturn番号を公開結果へ残す必要はない。
+        path = self._directory / f"{session_id}.md"
         with path.open("w", encoding="utf-8", newline="") as stream:
             stream.write(str(result["agent_message"]))
         return path
@@ -129,6 +127,7 @@ def _publish_wait_result(
     stream: str = "stdout",
     continuable: bool = False,
 ) -> int:
+    output = _public_wait_output(output, stream)
     value = _read_json(run_path) or {}
     value.update(
         {
@@ -175,7 +174,7 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
         or not isinstance(code, int)
     ):
         return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
-    print(output, file=sys.stderr if stream == "stderr" else sys.stdout, flush=True)
+    print(_public_wait_output(output, stream), file=sys.stderr if stream == "stderr" else sys.stdout, flush=True)
     value["status"] = "consumed"
     _write_json(run_path, value)
     _remove_wait_stash(run_path)
@@ -606,8 +605,33 @@ def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
     return sessions
 
 
+def _public_wait_output(output: str, stream: str | None) -> str:
+    """標準エラーの診断は保持し、標準出力のJSON Linesへ公開射影を適用する。"""
+    if stream == "stderr":
+        return output
+    return "\n".join(
+        json.dumps(_public_wait_response(json.loads(line)), ensure_ascii=False, separators=(",", ":"))
+        for line in output.splitlines()
+    )
+
+
+def _public_wait_response(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """保存済みの待機行も同じ公開項目へ射影し、古い内部項目を返さない。"""
+    response = state.public_result(payload)
+    for key in ("seconds_since_activity", "agent_message_path"):
+        if key in payload:
+            response[key] = payload[key]
+    if isinstance(payload.get("api_error"), Mapping):
+        response["api_error"] = {
+            key: payload["api_error"][key] for key in ("type", "http_status", "elapsed_seconds") if key in payload["api_error"]
+        }
+    if payload.get("notices"):
+        response["notices"] = [state.public_notice(notice) for notice in payload["notices"]]
+    return response
+
+
 def _running_response(session_id: str | None, output_activity: Mapping[str, Any]) -> dict[str, Any]:
-    """非終端の待機応答へ活動とテキスト出力の観測値を加える。
+    """非終端の待機応答へ最後の活動からの経過を加える。
 
     対象を1件も解決できない場合は`session_id`を省き、`status`だけを返す。
     """
@@ -615,4 +639,4 @@ def _running_response(session_id: str | None, output_activity: Mapping[str, Any]
     if session_id is not None:
         response = {"session_id": session_id, "status": "running"}
     response.update(output_activity)
-    return response
+    return _public_wait_response(response)

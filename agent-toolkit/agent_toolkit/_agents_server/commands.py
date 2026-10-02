@@ -151,7 +151,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             # 選べるsessionを持たないrootの見出しは端末の一覧を埋めるだけなので除く
             print(_human_tree([(root_id, sessions) for root_id, sessions in groups if sessions]))
         else:
-            print(_dump({"sessions": [_without_prompt(session) for _, sessions in groups for session in sessions]}, env))
+            print(_dump({"sessions": [_public_session(session) for _, sessions in groups for session in sessions]}, env))
         return 0
     if args.agents_subcommand == "logs":
         selected = sum((args.session_id is not None, args.all_sessions, args.project_dir is not None))
@@ -211,18 +211,33 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             ),
         )
         return 2
-    print(_dump(selected, env))
+    print(_dump(_public_session(selected, detailed=True), env))
     return 0
 
 
-def _without_prompt(session: dict[str, Any]) -> dict[str, Any]:
-    """委譲プロンプトを除いた一覧用の射影を返す。
-
-    `list`の用途は稼働状況の把握であり、委譲プロンプトはこれに使わない。
-    委譲プロンプトの量はsession数と長さの積で増えるため、一覧から外して委譲元が受け取る量の伸びを抑える。
-    委譲プロンプトは`show`が返すため、この一覧から除いても取得できる。
-    """
-    return {key: value for key, value in session.items() if key != "prompt"}
+def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> dict[str, Any]:
+    """稼働状況と復旧の用途を分け、内部追加が公開へ混入しないよう射影する。"""
+    fields = (
+        "session_id",
+        "status",
+        "label",
+        "last_action",
+        "result_available",
+        "created_at",
+        "started_at",
+        "seconds_since_activity",
+        "api_error",
+    )
+    if detailed:
+        fields += ("cwd", "engine", "model", "effort", "model_type", "launch_kind", "prompt", "progress", "agent_message")
+    result = {key: session[key] for key in fields if key in session}
+    if isinstance(result.get("api_error"), dict):
+        result["api_error"] = {
+            key: result["api_error"][key] for key in ("type", "http_status", "elapsed_seconds") if key in result["api_error"]
+        }
+    if detailed and session.get("error"):
+        result["error"] = session["error"]
+    return result
 
 
 def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]]) -> str:

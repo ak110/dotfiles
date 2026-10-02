@@ -98,7 +98,6 @@ def test_build_options_inherits_parent_settings(
 
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", types.SimpleNamespace(ClaudeAgentOptions=Options))
     monkeypatch.setattr(claude, "_parent_settings", lambda: settings)
-    monkeypatch.setattr(claude._plan_file, "resolve_owner_session_id", lambda: None)  # pylint: disable=protected-access
 
     claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
 
@@ -116,7 +115,6 @@ def _capture_options(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", types.SimpleNamespace(ClaudeAgentOptions=Options))
     monkeypatch.setattr(claude, "_parent_settings", lambda: None)
-    monkeypatch.setattr(claude._plan_file, "resolve_owner_session_id", lambda: None)  # pylint: disable=protected-access
     return captured
 
 
@@ -296,7 +294,8 @@ def test_initialization_diagnostic_identifies_received_messages() -> None:
 
     public = diagnostic.public()
     assert public["received_messages"] == ["SimpleNamespace: SessionStart", "SimpleNamespace: PreToolUse"]
-    assert public["received_message_count"] == 2
+    assert public["received_message_types"] == {"SimpleNamespace": 2}
+    assert "received_message_count" not in public
     assert not public["child_processes"]
 
 
@@ -320,7 +319,6 @@ async def test_start_aborts_when_init_message_never_arrives(
     """initへ到達しないsessionを上限で打ち切り、子プロセスを終了させて例外で返す。"""
     monkeypatch.setattr(shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
     monkeypatch.setattr(claude.logging_config, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(claude._plan_file, "resolve_owner_session_id", lambda: None)  # pylint: disable=protected-access
     client = _SilentClient()
     manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
 

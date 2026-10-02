@@ -33,6 +33,7 @@ Bash:
 
 - Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は閾値以下の連続した行範囲を示す
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
+- atkから後段への出力パイプと、`atk agents wait`のシェル背景化・標準出力破棄の遮断 (block)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
 
 Skill:
@@ -126,6 +127,7 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.shell_checks import (
         _check_bash_process_kill_by_pattern,
         _check_bash_option_after_terminator,
+        _check_bash_atk_output_loss,
         _warn_git_rev_parse_short_multiple,
         _warn_windows_drive_letter_path,
     )
@@ -339,6 +341,8 @@ def _handle_bash_tool(
     if _check_bash_process_kill_by_pattern(command):
         return 2
     if _check_bash_option_after_terminator(command):
+        return 2
+    if _check_bash_atk_output_loss(command):
         return 2
     warnings: list[str] = []
     rev_parse_warning = _warn_git_rev_parse_short_multiple(command)

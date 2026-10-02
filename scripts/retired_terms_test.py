@@ -50,6 +50,15 @@ class _RetiredTerm:
 
 # 命名の是正で撤去した語のうち、旧形式を読む互換の実装や外部の固定文言として残す箇所。
 _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
+    "証拠行": (
+        # 既存の達成根拠へ付加された標識を読み、観測本文と分けて比較する箇所。
+        _AllowedLocation("agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence.py", 'rf"証拠行'),
+        _AllowedLocation(
+            "agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py", '"証拠行 {source}"'
+        ),
+        _AllowedLocation("agent-toolkit/share/exec-review.subagent.md", "`証拠行`"),
+        _AllowedLocation("docs/development/design.md", "「証拠行」"),
+    ),
     "計画レビュー": (
         # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/*.py"),

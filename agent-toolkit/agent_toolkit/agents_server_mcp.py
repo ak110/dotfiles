@@ -199,9 +199,6 @@ def _listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
     停滞の判定は`seconds_since_activity`と閾値の比較で委譲元が行うため、判定済みの印を返さない。
     """
     public = {"session_id": session["session_id"], "status": session["status"]}
-    for key in ("started_at", "updated_at"):
-        if key in session:
-            public[key] = session[key]
     if "seconds_since_activity" in session:
         public["seconds_since_activity"] = session["seconds_since_activity"]
     if "api_error" in session:
@@ -734,12 +731,14 @@ class AgentsServerManager:
             await asyncio.sleep(0.1 if awaiting else 1.0)
 
     def _backend(self, engine: str) -> Any:
+        root_session_id = None if self._status_writer is None else self._status_writer.root_session_id
         if engine == "codex":
             if self._codex is None:
                 self._codex = codex_backend.AppServerManager(
                     self.sessions,
                     self._condition,
                     publish_registry=True,
+                    root_session_id=root_session_id,
                 )
             return self._codex
         if engine == "claude":
@@ -749,6 +748,7 @@ class AgentsServerManager:
                     self._condition,
                     expire_session=self._expire_session,
                     publish_registry=True,
+                    root_session_id=root_session_id,
                 )
             return self._claude
         if engine == "agy":
@@ -758,6 +758,7 @@ class AgentsServerManager:
                     self._condition,
                     publish_registry=True,
                     log_directory=self._status_writer.path.parent / "logs" if self._status_writer is not None else None,
+                    root_session_id=root_session_id,
                 )
             return self._agy
         raise ActionableError(f"unsupported engine: {engine}", next_action=_MODEL_TYPE_NEXT_ACTION)
@@ -1110,7 +1111,6 @@ class AgentsServerManager:
         if include_terminated:
             response: dict[str, Any] = {
                 "sessions": [_listed_public_session(session) for session in sessions],
-                "omitted": 0,
             }
         else:
             visible = [
@@ -1118,10 +1118,10 @@ class AgentsServerManager:
                 for session in sessions
                 if session["result_available"] or session["status"] not in TERMINAL_STATUSES | {"expired"}
             ]
-            response = {
-                "sessions": [_listed_public_session(session) for session in visible],
-                "omitted": len(sessions) - len(visible),
-            }
+            response = {"sessions": [_listed_public_session(session) for session in visible]}
+            omitted = len(sessions) - len(visible)
+            if omitted:
+                response["omitted"] = omitted
         if self._status_writer is not None:
             response["root_session_id"] = self._status_writer.root_session_id
         return response
@@ -1217,6 +1217,8 @@ class AgentsServerManager:
                 effort=session.effort,
                 started_at=session.started_at,
                 turn_seq=session.turn_seq,
+                updated_at=session.updated_at,
+                output_updated_at=session.output_updated_at,
             )
             if self._status_writer is not None:
                 response["root_session_id"] = self._status_writer.root_session_id
@@ -2832,7 +2834,7 @@ async def send_message(
         public["root_session_id"] = response["root_session_id"]
     previous_result = response.get("previous_result")
     if previous_result:
-        public["previous_result"] = previous_result
+        public["previous_result"] = state.public_result(previous_result)
     next_action = _REPLY_NEXT_ACTIONS.get(response["delivery"])
     if next_action is not None:
         public["next_action"] = next_action
@@ -2889,7 +2891,7 @@ async def list_sessions(
         bool,
         Field(
             description=_parameter_description(
-                "真のとき、未回収結果を持たない終端済みと`expired`のsessionも返す。省略時は除き、除いた件数を`omitted`へ返す。"
+                "真のとき、未回収結果を持たない終端済みと`expired`のsessionも返す。除いた件数があるときだけ`omitted`へ返す。"
             )
         ),
     ] = False,
@@ -2898,11 +2900,11 @@ async def list_sessions(
 
     所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
     各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
-    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒および件数を返し、モデル出力が止まっていることを示す。
+    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータスと経過秒を返し、モデル出力が止まっていることを示す。
     起動条件は`show`で取得する。
     結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
     表示範囲を指定しない場合は未回収結果を持たない終端済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
-    全件が必要な場合は`include_terminated`へ真を渡す。このとき`omitted`は0となる。
+    全件が必要な場合は`include_terminated`へ真を渡す。除いた件数が0なら`omitted`は省く。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
     return _MANAGER.list_sessions(include_terminated=include_terminated)
@@ -2925,9 +2927,7 @@ async def show_session(
     `verbose`を指定しない場合は識別名、起動prompt、cwd、種別、model_type、status、結果の有無および進行中の停滞診断を返す。
     `model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列である。
     停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の可能性はこの値で判定する。
-    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータス、経過秒および件数を返し、モデル出力が止まっていることを示す。
-    `seconds_since_output`は最新のテキスト出力からの経過秒数である。
-    テキスト出力だけが止まり活動が続いている状態は長時間のコマンドの実行中であり、停滞ではない。
+    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータスと経過秒を返し、モデル出力が止まっていることを示す。
     `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻および入力の要約を返す。
     前回の照会と同じ呼び出しが同じ開始時刻で続いている場合も、長時間のコマンドの実行中として扱う。
     `status`が`running`で、このsessionが`start`で起動し終端をまだ観測していない子sessionがある場合は、

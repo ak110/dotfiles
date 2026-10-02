@@ -37,7 +37,6 @@ from agent_toolkit._agents_server.state import (
     _begin_reply,
 )
 from agent_toolkit._common.next_action import ActionableError
-from agent_toolkit._plan import locations as _plan_file
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
@@ -96,7 +95,6 @@ class _InitializationDiagnostic:
         return {
             "stage": self.stage,
             "received_message_types": dict(sorted(self.received_message_types.items())),
-            "received_message_count": sum(self.received_message_types.values()),
             "received_messages": list(self.received_messages),
             "child_pid": self.child_pid,
             "child_processes": _describe_child_processes(self.child_pid),
@@ -239,12 +237,13 @@ def _build_options(
     launch_kind: LaunchKind = "delegate",
     stderr: Callable[[str], None] | None = None,
     debug_file: pathlib.Path | None = None,
+    root_session_id: str | None = None,
 ) -> Any:
     """Claude Codeが用意するシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
     委譲先の印を追加する。
-    委譲先の計画バンドルを委譲元の所有として記録できるよう、自プロセスで解決した所有セッション識別子も渡す。
+    共有状態を所有するManagerから受け取ったrootを委譲先へ渡す。
     子Claudeが親と同じ設定の下で動くよう、親の`--settings`層を継承する。
     親cmdlineを取得できない実行環境では継承せず、従来の設定層を維持する。
 
@@ -256,9 +255,8 @@ def _build_options(
     from claude_agent_sdk import ClaudeAgentOptions
 
     env = {_ENV_DELEGATED_SESSION: "1"}
-    owner_session = _plan_file.resolve_owner_session_id()
-    if owner_session is not None:
-        env[_ENV_OWNER_SESSION] = owner_session
+    if root_session_id is not None:
+        env[_ENV_OWNER_SESSION] = root_session_id
     # 委譲先のプロンプトキャッシュ保持期間を`mode`ごとに固定する。評価順序は`_wait_schedule.py`のdocstringが定める。
     # 軽量起動（探索委譲とシェル実行委譲）は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
     # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。
@@ -365,12 +363,15 @@ class ClaudeServerManager:
         client_factory: Callable[[Any], Any] | None = None,
         expire_session: Callable[[str], None] | None = None,
         publish_registry: bool = False,
+        *,
+        root_session_id: str | None = None,
     ) -> None:
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
         self._client_factory = client_factory or self._default_client_factory
         self._expire_session = expire_session or self._expire_local_session
         self._publish_registry = publish_registry
+        self._root_session_id = root_session_id
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._channels: dict[str, _CommandChannel] = {}
@@ -473,6 +474,7 @@ class ClaudeServerManager:
             launch_kind=launch_kind,
             stderr=diagnostic.capture_stderr,
             debug_file=debug_file,
+            root_session_id=self._root_session_id,
         )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()

@@ -287,7 +287,7 @@ def test_active_tool_uses_include_input_detail_and_sort_by_start() -> None:
 
 
 def test_current_item_is_projected_as_active_tool_use() -> None:
-    """Codex backendの進行中itemを、`type`・`id`・開始時刻と入力の要約として返す。"""
+    """Codex backendの進行中itemを、種別・開始時刻と入力の要約として返し、内部IDを保持だけに使う。"""
     session = state.SessionState("thread-1", "/tmp", engine="codex")
 
     session.record_current_item_start({"type": "commandExecution", "id": "item-1", "command": "rg -n foo"})
@@ -295,8 +295,9 @@ def test_current_item_is_projected_as_active_tool_use() -> None:
 
     assert len(entries) == 1
     assert entries[0]["type"] == "commandExecution"
-    assert entries[0]["id"] == "item-1"
-    # `type`と`id`は別の項目として既に返すため、要約からは除く。
+    assert "id" not in entries[0]
+    assert session.current_item is not None and session.current_item["id"] == "item-1"
+    # 種別は別の項目で返し、内部IDは入力の要約へ含めない。
     assert entries[0]["detail"] == "command=rg -n foo"
     assert entries[0]["started_at"]
     assert session.last_action == "commandExecution: command=rg -n foo"
@@ -365,7 +366,7 @@ def test_activity_projection_decides_stall_by_activity_time() -> None:
     )
     unreadable = state.activity_projection(updated_at=None, output_updated_at=None, started_at="2026-09-15T00:00:00")
 
-    assert text_silent["seconds_since_output"] >= state.STALL_NOTICE_SECONDS
+    assert {"updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(text_silent)
     assert text_silent["seconds_since_activity"] == 0
     assert text_silent["seconds_since_activity"] < state.STALL_NOTICE_SECONDS
     assert inactive["seconds_since_activity"] >= state.STALL_NOTICE_SECONDS

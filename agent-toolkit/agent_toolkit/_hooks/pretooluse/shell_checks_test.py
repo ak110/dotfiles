@@ -688,6 +688,11 @@ class TestBashGitRevParseShortMultiple:
             "git rev-parse --short HEAD 2>/dev/null",
             "git rev-parse --short HEAD < /dev/null",
             "git rev-parse --short=7 HEAD >> f",
+            "git rev-parse --short $(git rev-parse HEAD)",
+            'git rev-parse --short "$(git rev-parse HEAD)"',
+            "git rev-parse --short `git rev-parse HEAD`",
+            "git rev-parse --short $(printf '%s' $(git rev-parse HEAD))",
+            "git rev-parse --short $REVISION",
         ],
     )
     def test_single_revision_or_other_command_not_warned(self, command: str):
@@ -714,6 +719,7 @@ class TestBashOptionAfterTerminator:
             ("cd /tmp && rg -- x y -g '*.md'", "-g"),
             # `git grep`は`--`より前にパターンが無いと`--`の直後をパターン、続く`--`を区切りとして読む（git 2.47.3）。
             ("git grep -c -F -- 'X' -- --glob", "--glob"),
+            ("git diff --stat a b -- $(printf path.py) --stat", "--stat"),
             ("git grep -c -F -e 'X' -- --glob", "--glob"),
             # `-e`・`-f`を`--`より前に置くと`--`の後ろは全てパスになる（ripgrep 15.2.0、GNU grep）。
             ("rg -c -F -e 'X' -- --glob", "--glob"),
@@ -749,12 +755,106 @@ class TestBashOptionAfterTerminator:
             "git grep -c -F -- -n -- agent-toolkit/share",
             "git grep -c -F -e 'X' -- agent-toolkit/share",
             "git grep -c -F 'X' -- agent-toolkit/share",
+            "git diff --stat a b -- $(git diff --name-only c d) | tail -3",
+            "git show --stat HEAD -- `git diff --name-only HEAD~1 HEAD`",
+            "git diff --stat a b -- <(git diff --name-only c d)",
+            'git diff --stat a b -- "$(git diff --name-only c d)"',
+            "rg -n -F -- x $(git diff --name-only HEAD~1 HEAD)",
+            'git diff -- a b $(printf "%s" "$(git diff --name-only c d)")',
         ],
     )
     def test_allows_data_or_downstream_options(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "オプション終端" not in result.stderr
+
+
+class TestBashAtkOutputLoss:
+    """結果を失う入力を遮断し、通知の案内で直した入力とリテラルを通す。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "atk agents wait &",
+            "atk agents wait >/dev/null",
+            "atk agents wait 1>/dev/null",
+            'atk agents wait &>"/dev/null"',
+            "atk agents wait &>>/dev/null",
+            "env X=1 /opt/tools/atk agents wait >'/dev/null' &",
+            "atk agents wait 1>\\\n/dev/null",
+            "atk agents list 2>&1 | head -c 3000",
+            "atk wi list | jq .",
+            "atk agents list |& head -c 3000",
+            "atk wi show sample.md | tee result",
+            "(atk agents wait; printf done) &",
+            "(atk agents wait) >/dev/null",
+            "{ atk wi list; printf done; } | head",
+            "printf '%s' \"$(atk wi list | head)\"",
+            "printf '%s' `atk agents wait >/dev/null`",
+            "cat <(atk agents wait >/dev/null)",
+            "sh -c 'atk agents wait &'; printf done",
+            "atk agents wait >/dev/null 2>&1",
+        ],
+    )
+    @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
+    def test_atk_output_loss_is_blocked(self, command: str, extra_payload: dict[str, str]) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
+        assert result.returncode == 2
+        assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
+        assert "結果と終了状態を直接受領できない入力" in result.stderr
+        assert "run_in_background" in result.stderr
+        assert "--output-file" in result.stderr
+        assert "別の呼び出し" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "atk agents wait",
+            "atk agents wait 2>/dev/null",
+            "atk agents wait 2>&1",
+            "atk agents wait >saved.stdout 2>saved.stderr",
+            "atk agents wait >/dev/null >saved.stdout",
+            "atk agents wait >/dev/null 1>&2",
+            "(atk agents wait >saved.stdout) >/dev/null",
+            "printf data | atk wi add --body-file body.md",
+            "printf data | atk agents wait",
+            "atk agents list --count=1",
+            "atk agents list --output-file=output.jsonl",
+            "head -c 3000 output.jsonl",
+            "atk agents list && printf done",
+            "atk agents list || printf failed",
+            "atk agents list >saved.stdout | head",
+            "atk agents list >saved.stdout |& head",
+            "atk agents list >saved.stdout 2>&1 | head",
+            "printf '%s' 'atk agents wait >/dev/null &'",
+            "rg -F -- 'atk wi list | jq .' records.txt",
+            "cat <<'EOF'\natk agents wait >/dev/null &\natk wi list | head\nEOF",
+            "printf '%s' '$(atk agents wait &)'",
+            r"printf '%s' \$\(atk\ agents\ wait\ \&\)",
+            "$(printf atk) agents wait &",
+            "$PROGRAM agents wait &",
+            "((atk)) | head",
+            '"X=1" atk agents wait &',
+            'A=1 "B=2" atk agents list | head',
+            'printf "%s" "${VALUE:-$(atk wi list | head)}"',
+            "atk agents wait >$OUTPUT",
+            'bash -c "$COMMAND"',
+            "printf data | head; atk agents wait",
+            "atk agents wait; printf done &",
+        ],
+    )
+    def test_atk_literal_and_supported_outputs_are_allowed(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "結果と終了状態を直接受領できない入力" not in result.stderr
+
+    def test_corrected_atk_invocation_is_allowed(self) -> None:
+        """通知が案内するホスト管理の背景待機へ書き直すと通過する。"""
+        blocked = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait >/dev/null &"}})
+        assert blocked.returncode == 2
+        assert "単独で発行する" in blocked.stderr
+        allowed = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait", "run_in_background": True}})
+        assert allowed.returncode == 0
 
 
 class TestBashWindowsDriveLetterPath:

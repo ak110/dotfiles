@@ -307,6 +307,94 @@ def test_public_command_accepts_sibling_or_test_result_shared_across_wi(
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("section", "other_wi"),
+    [("wi_conditions", FIRST_WI), ("wi_conditions", SECOND_WI), ("user_requirements", FIRST_WI), ("user_requirements", "")],
+)
+@pytest.mark.parametrize(
+    "marker",
+    ["（対象単位: {source}）", "証拠行 {source}", "要件原文「{text}」", "(対象単位: {source}) | 要件原文「{text}」"],
+)
+def test_public_command_rejects_row_markers_disguising_shared_observation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    other_wi: str,
+    marker: str,
+) -> None:
+    """単位名と原文引用だけが異なる定型を、WI内外・配列間・計画由来の全達成行で拒否する。"""
+    first_text, second_text = "保存（「設定」）", "再読込（「保持」）"
+    record = tmp_path / "verification.md"
+    record.write_text("# 観測\n保存と再読込。\n", encoding="utf-8")
+    first = _condition(FIRST_WI, first_text)
+    second = {"wi_conditions": _condition, "user_requirements": _requirement}[section](other_wi, second_text)
+    for index, row in enumerate((first, second), 1):
+        row["source"] = f"{row['awi'] or '計画'}#原文 {index}"
+        suffix = marker.format(source=row["source"], text=(first_text, second_text)[index - 1])
+        row["evidence"] = f"{record}:12-16 の該当箇所を確認した {suffix}"
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {
+            FIRST_WI: f"type: awi\n---\n## 完成条件\n- {first_text}\n"
+            + (f"- {second_text}\n" if section == "wi_conditions" and other_wi == FIRST_WI else "")
+        },
+    )
+    path = tmp_path / "evidence.json"
+    _write_evidence(
+        path, [first, second] if section == "wi_conditions" else [first], [second] if section == "user_requirements" else []
+    )
+    assert _check(path, FIRST_WI) == 1
+    diagnostic = capsys.readouterr().err
+    assert "wi_conditions[1].evidence" in diagnostic
+    assert f"{section}[{2 if section == 'wi_conditions' else 1}].evidence" in diagnostic
+    assert "単位名・行標識・原文引用だけ" in diagnostic and "証拠不足へ再判定" in diagnostic
+
+
+@pytest.mark.parametrize(
+    ("first_body", "second_body", "texts", "expected"),
+    [
+        ("test_save_and_reload: 成功", "test_save_and_reload: 成功", ("保存", "再読込"), 0),
+        ("観測.md:12 で値1を観測", "観測.md:13 で値2を観測", ("保存", "再読込"), 0),
+        ("観測.md:12 保存が成功", "観測.md:12 再読込後に保持", ("保存", "再読込"), 0),
+        ("観測.md:12 を確認", "観測.md:12 を確認", ("保存", "保存"), 0),
+        ("観測.md:12 を確認", "観測.md:12 を確認", ("test_save: 成功", "test_reload: 成功"), 1),
+    ],
+)
+def test_public_command_preserves_observation_and_excludes_success_inside_quote(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    first_body: str,
+    second_body: str,
+    texts: tuple[str, str],
+    expected: int,
+) -> None:
+    """観測の差と正当なテスト共用を保ち、原文引用の成功文字列だけでは免除しない。"""
+    (tmp_path / "観測.md").write_text("観測\n", encoding="utf-8")
+    rows = [_condition(FIRST_WI, texts[0]), _condition(SECOND_WI, texts[1])]
+    for row, body in zip(rows, (first_body, second_body), strict=True):
+        row["evidence"] = f"{body}（対象単位: {row['awi']}） 要件原文「{row['condition']}」"
+        row["source"] = row["awi"]
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: f"type: awi\n---\n## 完成条件\n- {texts[0]}\n"})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    assert _check(path, FIRST_WI) == expected, capsys.readouterr().err
+
+
+def test_public_command_keeps_markers_that_do_not_match_row_information(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """行情報と一致しない単位名や引用を保持し、観測内容が異なる根拠を受理する。"""
+    path = _shared_rows(tmp_path, monkeypatch, "records/観測.md")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for row, detail in zip(data["wi_conditions"], ("対象単位: 別の保存記録", "要件原文「別の再読込記録」"), strict=True):
+        row["evidence"] += f" で確認。{detail}"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert _check(path, FIRST_WI) == 0
+
+
 def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開されたコマンドで複数箇条書きと段落一件の条件数を判定する。"""
     evidence = tmp_path / "evidence.json"
