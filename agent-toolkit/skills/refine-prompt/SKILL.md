@@ -25,7 +25,7 @@ frontmatterの発火条件に加えて、頻繁に使うskillや自動化の中�
 
 ## ワークフロー
 
-本スキルは通常モードで実行する。実行環境がPlan modeを提供する場合は通常モードへ移ってから開始する。Claude Codeでは`ExitPlanMode`を使う。
+本スキルはPlan modeの外で実行する。実行環境がPlan modeを提供する場合はPlan modeを抜けてから開始する。Claude Codeでは`ExitPlanMode`を使う。
 `agent-toolkit:plan-mode`スキルは呼び出さない
 （ユーザーが提示された改善案の採否を対話的に判断する前提であり、計画ファイル化が必要な場合はユーザーが別途指示するため）。
 
@@ -44,7 +44,7 @@ frontmatterの発火条件に加えて、頻繁に使うskillや自動化の中�
    詳細は「指摘の集約と改善案作成」節に従う。
 5. 全処理が完了したら、続行か終了かをユーザーに確認する。
    - 続行する場合は新規サブエージェントで再評価する
-   - ユーザーが終了を告げた時点で評価の反復を終える。反映後は対象に応じた編集スキル、`agent-toolkit:check-execution`および`agent-toolkit:completion-report`の工程へ進む
+   - ユーザーが終了を告げた時点で評価の反復を終える。反映後は対象の編集手順を定めるスキル（`agent-toolkit:writing-standards`など）、`agent-toolkit:check-execution`および`agent-toolkit:completion-report`の工程へ進む
 
 ## サブエージェントへの指示
 
@@ -91,7 +91,7 @@ frontmatterの発火条件に加えて、頻繁に使うskillや自動化の中�
   - メインは`agent-toolkit:review-standards`を起動し、`references/reviewee.md`に従って指摘ごとの採否を確定する。定義元の内容の転記を求める指摘は、`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」を読んで判定する
   - 各指摘の観点を再評価し、対象プロンプトの目的・スコープから外れたものを除外する
 - 改善案の作成: 統廃合・取捨選択後の各指摘について、メインが対応する改善案（変更内容のdiff）を作成する
-  - 作成時は事前に呼び出した`agent-toolkit:writing-standards`の基準に従う。コーディングエージェント向け文書では同スキルの「コーディングエージェント向け文書の編集時に読む資料」を読み、その基準で改善案を作成する
+  - 作成時は事前に呼び出した`agent-toolkit:writing-standards`の基準に従う。エージェント向け文書では同スキルの「コーディングエージェント向け文書の編集時に読む資料」を読み、その基準で改善案を作成する
 - ユーザーへの提示: 各指摘と改善案を後述フォーマットで本文へ転記する
   - サブエージェントの出力はユーザーに直接表示されないため、指摘部分は原文に近い形で残す
 - 採否確認: ユーザー確認し、提案を回答可能な件数ずつまとめる。Claude Codeでは`AskUserQuestion`の`multiSelect`で最大4件ずつ1質問にまとめる
