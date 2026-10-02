@@ -410,8 +410,9 @@ def _record_agents_server_session_state(
     update_state(session_id, _mutator)
     starts_reply = operation == "send_message" and structured.get("delivery") in {"reply_started", "reply_ambiguous"}
     if operation in _AGENTS_SERVER_START_OPERATIONS or starts_reply:
+        # `atk agents wait`と同じ解決（別名索引を経たルート）で登録し、登録と読み取りの名前空間を一致させる。
         try:
-            identity = _agents_server_status_file.resolve_status_owner_identity(os.environ)
+            identity = _agents_server_status_file.resolve_wait_identity(os.environ, None)
             if (
                 identity is None
                 and os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")
@@ -420,7 +421,7 @@ def _record_agents_server_session_state(
             ):
                 environment = dict(os.environ)
                 environment["AGENT_TOOLKIT_STATUS_HOST_SESSION"] = fallback_status_host_session
-                identity = _agents_server_status_file.resolve_status_owner_identity(environment)
+                identity = _agents_server_status_file.resolve_wait_identity(environment, None)
         except ValueError as error:
             return f"agents_serverの待機対象を登録できない: {error}"
         if identity is not None and _agents_server_status_file.valid_session_id(remote_session_id):
@@ -843,6 +844,14 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             _record_background_task_id(session_id, agent_id)
         return 0
 
+    # agents_serverの応答が`root_session_id`を持てば、操作名によらずここで1回だけ別名索引へ記録する。
+    # 後続の待機対象の登録より前に置き、再起動後の最初の操作が`send_message`でも、
+    # 登録と`atk agents wait`が同じルートを使えるようにする。
+    if tool_name in AGENTS_SERVER_HOOK_TOOL_NAMES:
+        _record_agents_server_root_alias(
+            session_id, _extract_agents_server_structured_response(payload.get("tool_response", {}))
+        )
+
     # showの応答が返す稼働中の子sessionは、識別子と`cwd`の対だけを記録する。
     # session記録そのものはそのsessionを起動した主体が持つため、ここでは更新しない。
     if tool_name in _AGENTS_SERVER_SHOW_TOOLS:
@@ -850,7 +859,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_child_session_cwds(session_id, structured)
         return 0
 
-    # listはsession状態を変更せず、応答が明示した所有rootだけを別名索引へ記録する。
+    # listはsession状態を変更しない。応答が明示した所有rootの別名索引への記録は前段が行う。
     if tool_name in _AGENTS_SERVER_LIST_TOOLS:
         structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
         missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
@@ -864,7 +873,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                     removable_cause=False,
                 )
             )
-        _record_agents_server_root_alias(session_id, structured)
         return 0
 
     # agents_server応答からsession_id→cwdを保存し、session状態を更新する。
@@ -900,7 +908,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
-            _record_agents_server_root_alias(session_id, structured)
             model_type = _agents_server_model_type(tool_input, operation)
             if model_type in _TRACKED_MODEL_TYPES:
                 _process_loop_log.append("subagent_start", session_id=session_id, type=model_type)

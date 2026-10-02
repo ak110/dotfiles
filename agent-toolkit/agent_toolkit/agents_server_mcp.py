@@ -2070,7 +2070,18 @@ class AgentsServerManager:
         prompt: str,
         timeout: float = DEFAULT_SEND_MESSAGE_TIMEOUT,
     ) -> dict[str, Any]:
-        """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。"""
+        """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。
+
+        状態ファイルの書込主体を持つ場合は、`start`・`list`と同じく`root_session_id`を応答へ加える。
+        再起動した会話が既存sessionへの`send_message`から再開しても、PostToolUseがこの値で別名索引を書けるようにするためである。
+        """
+        response = await self._deliver_message(session_id, prompt, timeout)
+        if self._status_writer is not None:
+            response = {**response, "root_session_id": self._status_writer.root_session_id}
+        return response
+
+    async def _deliver_message(self, session_id: str, prompt: str, timeout: float) -> dict[str, Any]:
+        """`send_message`の配送本体。応答の`root_session_id`は呼び出し元が加える。"""
         _validate_prompt(prompt)
         await self.take_over_orphaned_session(session_id)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
@@ -2723,7 +2734,8 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`を含む。終端済みsessionの未回収の終端結果を消費して新しいturnを開始した場合は、
+    応答は`delivery`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
+    終端済みsessionの未回収の終端結果を消費して新しいturnを開始した場合は、
     その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
     消費した結果は`atk agents wait`で受領できないため、呼び出し元は同じ応答から受け取る。
     回収済みの結果は含めない。
@@ -2740,6 +2752,8 @@ async def send_message(
     """
     response = await _MANAGER.send_message(session_id, prompt, timeout)
     public: dict[str, Any] = {"delivery": response["delivery"]}
+    if "root_session_id" in response:
+        public["root_session_id"] = response["root_session_id"]
     previous_result = response.get("previous_result")
     if previous_result:
         public["previous_result"] = previous_result

@@ -37,11 +37,11 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop時の未観測作業の助言 | `atk agents wait`。1書込主体につき同時に1実行だけが全対象を待ち、ロックファイル自体は解放後も保持する |
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`と`current.json` | 先行waitへ合流する後続`atk agents wait` | 先行waitが`running`と`published`および再待機が必要かを示す`continuable`を書き、結果を返した後続waitが`consumed`を書く |
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`と`notices/<通知ファイル>` | 中断後に同じrunを再開する`atk agents wait` | 待機CLI。結果は所有者を確認した排他区間で、通知は原本の削除前に退避する |
-| CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
+| CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加。`atk agents wait`と同じく索引を経たルートへ登録する）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
 | 全sessionの終端登録と再開情報、所有側による解放済みの理由と時刻 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait` | そのsessionを所有するMCPサーバー（停止時の終端公開を含む）。所有者のいない`running`のCodexの記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | session-reviewの証拠抽出器 | agents_serverのCodex backend |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify`が作成し、MCP待機とCLI待機が回収時に削除する |
-| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`と`list`の応答が明示する`root_session_id`を使う） |
+| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、`root_session_id`を明示する応答の値を操作名によらず使う） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
 | 委譲先CLI自身の診断記録 | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成、初期化完了後の改名と、保持世代を超えた記録の削除） |
 | Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、session-reviewの証拠抽出器、セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
@@ -56,7 +56,7 @@ ClaudeのAPI失敗が連続する間の`api_error`はMCPサーバーの`SessionS
 Antigravityのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。
 
 索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
-MCPサーバーは`start`と`list`の応答へ、自身の状態ファイル書込先である`root_session_id`を明示する。`list`はsession一覧が空でも同じ項目を返す。PostToolUseフックは応答のその項目を索引へ直接書き、子session識別子から状態ディレクトリを逆引きしない。
+MCPサーバーは`start`、`send_message`、`list`の応答へ、自身の状態ファイル書込先である`root_session_id`を明示する。`list`はsession一覧が空でも同じ項目を返す。PostToolUseフックは`root_session_id`を持つ応答であれば操作名によらずその項目を索引へ直接書き、子session識別子から状態ディレクトリを逆引きしない。`claude --resume`で起動した会話でもMCPサーバーと会話側の識別子が分かれ、最初のMCP操作が`send_message`になり得るためである。
 `atk agents list`と`atk agents wait`は索引または現行識別子自身の状態ディレクトリから会話rootとの対応を確認する。対応を確認できず対象が0件の場合は、CLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行する復旧手順を返す。対応確認済みの空状態は通常の空状態として扱う。
 `atk agents notify`は委譲先から`AGENT_TOOLKIT_OWNER_SESSION`で所有者sessionを直接解決するため、索引の読み取りを省く。
 子から親へ通知する場合は宛先を所有者sessionから解決する。現行のsession識別子から解決すると、宛先が自分自身になるためである。

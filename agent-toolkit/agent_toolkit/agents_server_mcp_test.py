@@ -378,6 +378,13 @@ class ConcurrentOwnerGoneBackend(FakeBackend):
         return await super().send_message(session, prompt)
 
 
+def _without_root(response: dict[str, Any]) -> dict[str, Any]:
+    """`send_message`の応答から、書込主体を持つmanagerが加える`root_session_id`を確かめて除いた本体を返す。"""
+    body = dict(response)
+    assert status_file.valid_session_id(body.pop("root_session_id"))
+    return body
+
+
 def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[subject.AgentsServerManager, FakeBackend]:
     """指定engineだけをFakeBackendへ差し替えた共有managerを返す。"""
     manager = subject.AgentsServerManager()
@@ -1500,7 +1507,7 @@ async def test_success_response_key_sets_for_all_tools(
         "progress",
         "elapsed_seconds",
     }
-    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery"}
+    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery", "root_session_id"}
     session.turn_id = "turn-1"
     assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
 
@@ -1519,6 +1526,31 @@ async def test_success_response_key_sets_for_all_tools(
         <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
         for item in listed["sessions"]
     )
+
+
+@pytest.mark.asyncio
+async def test_send_message_tool_returns_same_root_as_list(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """MCPツール`send_message`の応答は、同じサーバーの`list`と同じ`root_session_id`を返す。
+
+    再起動した会話の最初のMCP操作が`send_message`でも、PostToolUseがこの値で別名索引を書くため、
+    欠けると`atk agents wait`が旧ルートを読んで結果を受け取れない。
+    """
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+    _complete(session, message="計画作成完了")
+    manager.sessions[session.session_id] = session
+
+    response = await subject.send_message(session.session_id, "実装開始")
+
+    assert response["delivery"] == "reply_started"
+    assert response["root_session_id"] == (await subject.list_sessions())["root_session_id"] == "root-session"
 
 
 @pytest.mark.asyncio
@@ -2603,7 +2635,7 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
     response = await manager.send_message("saved-session", "続行")
 
-    assert response == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started"}
     assert "previous_result" not in response
     assert backend.resume_calls == ["saved-session"]
     assert "saved-session" not in manager.expired_sessions
@@ -2649,7 +2681,7 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
 
-    assert await manager.send_message("created-session", "続行") == {"delivery": "reply_started"}
+    assert _without_root(await manager.send_message("created-session", "続行")) == {"delivery": "reply_started"}
     writer.flush()
 
     resumed = manager.sessions["created-session"]
@@ -3575,7 +3607,7 @@ async def test_send_message_keeps_previous_result_after_reply_failed_response(tm
     )
 
     first = await manager.send_message(session_id, "1回目")
-    assert first == {"delivery": "reply_failed"}
+    assert _without_root(first) == {"delivery": "reply_failed"}
 
     second = await manager.send_message(session_id, "2回目")
     assert second["previous_result"]["agent_message"] == "reply失敗結果"
@@ -3614,7 +3646,7 @@ async def test_send_message_steered_response_has_no_previous_result(tmp_path: pa
     session.turn_id = "turn-1"
     manager.sessions[session.session_id] = session
     response = await manager.send_message(session.session_id, "追加指示")
-    assert response == {"delivery": "steered"}
+    assert _without_root(response) == {"delivery": "steered"}
 
 
 class FakeCodexClient:
@@ -4278,7 +4310,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
     )
     response = await manager.send_message("thread-saved", "続行")
 
-    assert response == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started"}
     assert client.requests[0] == (
         "thread/resume",
         {
@@ -5601,7 +5633,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
     assert result["error"]["engine"] == "claude"
     response = await manager.send_message(session.session_id, "続行")
 
-    assert response == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started"}
     assert not manager.expired_sessions
     assert manager.sessions[session.session_id].status == "running"
     await backend.close()
@@ -5637,7 +5669,7 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
     previous_error = response["previous_result"].pop("error")
     assert previous_error["message"] == "stream failed"
     assert previous_error["engine"] == "claude"
-    assert response == {
+    assert _without_root(response) == {
         "delivery": "reply_started",
         "previous_result": {
             "status": "failed",
@@ -7469,7 +7501,7 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
 
     response = await subject.send_message(session.session_id, "実装開始")
 
-    assert response == {
+    assert _without_root(response) == {
         "delivery": "reply_started",
         "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
     }
