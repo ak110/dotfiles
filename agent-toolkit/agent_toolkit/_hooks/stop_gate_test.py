@@ -966,6 +966,27 @@ class TestIsPendingAsyncWork:
         transcript = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(transcript), "queued-order", background_tasks=[]) is pending
 
+    @pytest.mark.parametrize("operation", ["popAll", "popOne"])
+    def test_editable_pop_before_notification_delivery(self, tmp_path: pathlib.Path, operation: str) -> None:
+        """編集用に取り出した入力を1件ずつ除き、後続の先頭配送で通知を配送済みにする。"""
+        queue = [
+            {"type": "queue-operation", "operation": "enqueue", "content": "編集1"},
+            {"type": "queue-operation", "operation": "enqueue", "content": "編集1"},
+            {"type": "queue-operation", "operation": "enqueue", "content": "編集2"},
+            _queue_operation_task_notification_entry("enqueue", tool_use_id="toolu_done"),
+            {"type": "queue-operation", "operation": operation, "content": "登録されていない本文"},
+            {"type": "queue-operation", "operation": operation, "content": "編集1"},
+            {"type": "queue-operation", "operation": operation, "content": "編集2"},
+        ]
+        dequeue = {"type": "queue-operation", "operation": "dequeue"}
+        tail = [_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()])]
+        # 取り出し直後と1回目の配送後は、同じ本文の残り1件が通知より先にあるため未配送として残る。
+        for name, dequeues, pending in (("popped", 0, True), ("first", 1, True), ("delivered", 2, False)):
+            directory = tmp_path / name
+            directory.mkdir()
+            transcript = _write_transcript(directory, [*queue, *([dequeue] * dequeues), *tail])
+            assert is_pending_async_work(str(transcript), "queued-pop", background_tasks=[]) is pending
+
     def test_non_notification_enqueue_still_occupies_fifo(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

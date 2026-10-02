@@ -132,17 +132,17 @@ Markdownの文体の密度に加え、本文・見出しと、コードのコメ
 引用、意図的な悪い例と保存形式の名称は、その役割を確認して保持する。
 文の書き直し方針は`agent-toolkit:writing-standards`の`references/textlint-violations.md`を参照してください。
 
-委譲と起動したsessionの管理には、`start`・`start_custom`・`start_explore`・`start_shell`・`start_write`・`send_message`・`kill`・`list`・`show`・`stop`の各ツールと、結果を受け取る`atk agents wait`を使う。
-`start`は専用のタスク文書（`share/<役割名>.subagent.md`）の絶対パス、そのタスク文書が`## 入力`で宣言した入力名だけを持つ`extra_params`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。
-宣言外の入力名を渡すと委譲先を起動せず、宣言外の項目名と受理する項目名を返す。タスク文書が`起動種別:`で`explore`・`write`・`shell`を宣言した場合は、`start_explore`などと同じ軽量な起動条件で開始する。
-自由本文の`start_custom`は工程別モデル設定のキー名から`_model`を除いた`model_type`と`prompt`を受け取り、専用のタスク文書を用意できない単発の作業に使う。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
-応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
-`start_explore`は`prompt`と絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`model_type`の省略時は`low_tier_model`、`medium_tier`の指定時は`medium_tier_model`の設定を使う。
-`start`・`start_explore`・`start_shell`・`start_write`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
-`start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
+委譲と起動したsessionの管理には、`start`・`send_message`・`kill`・`list`・`show`・`stop`の各ツールと、結果を受け取る`atk agents wait`を使う。
+`start`は`mode`で入力の形を選び、全`mode`で既存ディレクトリの絶対`cwd`を受け取って、完了を待たず`session_id`を返す。`mode`が必要とする入力の欠落と受理しない入力の混在は、委譲先を起動せずに拒否する。
+`task`（省略時）は専用のタスク文書（`share/<役割名>.subagent.md`）の絶対パスと、そのタスク文書が`## 入力`で宣言した入力名だけを持つ`extra_params`を受け取る。宣言外の入力名を渡すと委譲先を起動せず、宣言外の項目名と受理する項目名を返す。タスク文書が`起動種別:`で`explore`・`write`・`shell`を宣言した場合は、同名の`mode`と同じ軽量な起動条件で開始する。
+`delegate`は工程別モデル設定のキー名から`_model`を除いた必須の`model_type`と`prompt`を受け取り、専用のタスク文書を用意できない単発の作業に使う。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
+候補を切り替えた場合は採用した値を応答へ含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
+`explore`は`prompt`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`model_type`の省略時は`low_tier_model`、`medium_tier`の指定時は`medium_tier_model`の設定を使う。`write`は確定済みの文章起草を`write_model`の候補列で開始する。
+`delegate`以外の`mode`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
+`shell`は`command`と`summary_policy`を受け取り、`explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start`の説明は`mode`の選び方、各`mode`の最小呼び出し例と、`explore`・`shell`で委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は、対象を変更しないよう`prompt`で指示する。
 `send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、呼び出し側は検収済み状態を渡して新規起動する。
-`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みずにターンを終えると、残した作業の結果を受け取る主体がいなくなる。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
+`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みずにターンを終えると、残した作業の結果を受け取る主体がいなくなる。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。保持していた`session_id`の回復と、並行する委譲先の残作業の把握に使う。
 `stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`wait`は引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。
 `wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
@@ -158,9 +158,9 @@ Markdownの文体の密度に加え、本文・見出しと、コードのコメ
 | キー | 対応する起動 |
 | --- | --- |
 | `high_tier_model` | 計画・実装・修正・AWI投入・公開工程の終端・自動コードレビュー監査 |
-| `medium_tier_model` | WI選定・実行レビュー・`model_type="medium_tier"`を指定した`start_explore` |
-| `low_tier_model` | `start_explore`の既定・`start_shell`・軽量種別を宣言したタスク文書の`start` |
-| `write_model` | `start_write` |
+| `medium_tier_model` | WI選定・実行レビュー・`model_type="medium_tier"`を指定した`start`の`explore` |
+| `low_tier_model` | `start`の`explore`と`shell`の既定・軽量種別を宣言したタスク文書の`task` |
+| `write_model` | `start`の`write` |
 | `orchestrate_model` | `atk wi process-loop` |
 
 `atk config show`はパス4行とモデル設定5行を表示し、`atk config get`はモデル設定値をそのまま返す。
@@ -303,7 +303,7 @@ AWIは人間向けの作業要求である。実装を伴うレーンでは、�
 
 `atk serve`の詳細画面では、inboxまたはholdにあるエージェント由来のawiにユーザーコメントの編集操作が表示される。エージェント由来とは、frontmatterの`source`が設定されており、その値が`human`でないものを指す。
 コメントがない場合は末尾の`## ユーザーコメント`節へ追記し、既存のコメントを保存すると同じ節だけを置換する。
-空のコメントによる節削除はできない。
+コメント欄を空にして保存すると、`## ユーザーコメント`節を削除する。節がない項目で空のまま保存した場合は本文を変更しない。
 コードフェンス外のH2を含めるコメント、同名節が複数ある本文、末尾以外に予約節がある本文は保存できない。
 processing、UWI、終端項目および人間由来の項目では操作を使用できない。
 
@@ -384,13 +384,13 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
-| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取と、Windows上でPATHへドライブ文字形式（`C:/...`）の要素を加えるコマンドを警告する。`agents_server`の`start_custom`・`start_explore`・`start_write`の本文がタスク文書を指す起動と、`Agent`でタスク文書を指す本文が命令と宣言済みの入力以外の行を含む起動を遮断する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する。`agents_server`の自由本文の起動がタスク文書を指す場合の遮断に対応する |
+| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作だけを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了を遮断し、未完了の背景タスクが書き込む出力ファイルの読取と、Windows上でPATHへドライブ文字形式（`C:/...`）の要素を加えるコマンドを警告する。`agents_server`の`start`の`delegate`・`explore`・`write`の本文がタスク文書を指す起動と、`Agent`でタスク文書を指す本文が命令と宣言済みの入力以外の行を含む起動を遮断する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了の遮断に加え、出力の上限を超える通常ファイルの全文取得を遮断する。`agents_server`の自由本文の起動がタスク文書を指す場合の遮断に対応する |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・背景タスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録に対応する |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は品質想起通知も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。完了済みの背景タスクの通知が配送されないまま残る場合は、その出力ファイルの読取を1回だけ案内する | 対応 | 非対応 |
+| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて入力と記録の一致を求める注記と、実ユーザー発話の全角`！！`から認識合わせスキルの起動を促す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |

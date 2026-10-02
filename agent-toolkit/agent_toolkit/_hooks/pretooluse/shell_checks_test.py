@@ -524,6 +524,8 @@ class TestBashProcessKillByPattern:
             "rg -n pkill agent-toolkit/",
             "rg -g '*.{md,py}' pkill .",
             "git grep -n -F 'pkill' -- agent-toolkit",
+            "git grep --max-depth 1 pkill -- agent-toolkit",
+            "git grep --threads 2 pkill -- agent-toolkit",
             "git log -S 'killall' --oneline",
             "git -C /tmp grep -n -F 'pkill' -- agent-toolkit",
             "git -C /tmp log -S 'killall' --oneline",
@@ -539,6 +541,33 @@ class TestBashProcessKillByPattern:
     def test_allows_literal_argument_matches(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
+
+    def test_required_git_grep_options_match_help(self) -> None:
+        """Gitが値を要求する全オプションを判定側が扱い、検索語の誤遮断を防ぐ。"""
+        result = subprocess.run(
+            ["git", "grep", "-h"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env={**os.environ, "LC_ALL": "C"},
+            check=False,
+        )
+        assert result.returncode == 129
+        required: set[str] = set()
+        for line in (result.stdout + result.stderr).splitlines():
+            declaration = re.match(r"^\s+(-.*?)\s+<[^>]+>", line)
+            if declaration is not None:
+                required.update(re.findall(r"--?[\w-]+", declaration.group(1).replace("[no-]", "")))
+        assert required
+        # 公開Git仕様に対する判定集合の欠落を検出するため、定義を直接比較する。
+        # pylint: disable=protected-access
+        supported = (
+            shell_checks._GIT_GREP_VALUED_OPTIONS
+            | shell_checks._GIT_GREP_PATTERN_OPTIONS
+            | shell_checks._GIT_GREP_PATTERN_FILE_OPTIONS
+        )
+        # pylint: enable=protected-access
+        assert required <= supported
 
     @pytest.mark.parametrize(
         "command",
@@ -619,6 +648,10 @@ class TestBashGitRevParseShortMultiple:
             "git rev-parse --short origin/develop origin/master",
             "git -C /tmp/repo rev-parse --short=7 HEAD~1 HEAD",
             "cd /tmp/repo && git rev-parse --verify --short=7 main develop",
+            "git rev-parse --short --prefix sub A B",
+            'git rev-parse --short=7 A B && git status; echo "rc=$?"',
+            "git rev-parse --short --since 2026-01-01 HEAD",
+            "git rev-parse --short --sq-quote a b",
         ],
     )
     def test_warns_multiple_revisions(self, command: str):
@@ -627,6 +660,9 @@ class TestBashGitRevParseShortMultiple:
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert "`git rev-parse --short`へ2つのリビジョン" in context
         assert "`git rev-parse --short=7 <revision>`" in context
+        assert "終了コード128" in context
+        assert "`&&`で連結した後段は実行されず" in context
+        assert "`$?`は後段ではなくこの失敗" in context
 
     def test_redirection_is_not_counted_as_revision(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git rev-parse --short=7 HEAD~1 HEAD > /tmp/x"}})
@@ -638,6 +674,10 @@ class TestBashGitRevParseShortMultiple:
         "command",
         [
             "git rev-parse --short=7 HEAD",
+            "git rev-parse --short --prefix sub HEAD",
+            "git rev-parse --short --default master HEAD",
+            "git rev-parse --short --git-path HEAD HEAD",
+            "git rev-parse --short --resolve-git-dir .git HEAD",
             "git rev-parse HEAD~1 HEAD",
             "git rev-parse --short=7 HEAD -- path/file",
             "git log --oneline HEAD~1 HEAD",

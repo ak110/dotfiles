@@ -31,7 +31,7 @@ STALL_NOTICE_SECONDS = 300.0
 # 以降の上限はこの閾値を制約として導出する。単独の値として決めない。
 HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # backendがsessionの初期化を完了するまで起動側が待つ上限秒数と、同じ候補で試みる回数。
-# Claude Codeの記録では、start系ツールの呼び出しから起動された子sessionの記録の先頭エントリまでの
+# Claude Codeの記録では、`start`の呼び出しから起動された子sessionの記録の先頭エントリまでの
 # 経過が233件中232件で47.65秒以内に収まり、残る1件が604.22秒だった。
 # 同じ母集団のうち7件は初期化が到達せず、ホストがMCPツール呼び出しを1800.5秒で打ち切っていた。
 # 1回の上限は観測の上位側の47.65秒を含む値とし、回数との積へ起動直後の可用性失敗を待つ上限
@@ -110,6 +110,8 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "shell": SHELL_SYSTEM_PROMPT,
     "write": WRITE_SYSTEM_PROMPT,
 }
+# 同じsessionの自動再開を実際に行うbackend（ClaudeとCodex）だけが起動時の指示へ加える。
+# Antigravity backendは自動再開を実機で確かめていないため、この能力を伝えない。
 AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), kind="auto-resume")
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
@@ -153,6 +155,27 @@ class DelegateBackendError(RuntimeError):
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終端を観測してから`send_message`を再送する"
 """turnが中断中または未終端のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
+
+# レビューを目的とするsessionのlabelの末尾。`start`のlabelの凡例と、タスク文書から生成するlabelがこの末尾を持つ。
+REVIEW_LABEL_SUFFIX = "-review"
+
+# レビューを目的とするsessionの完了結果を受け取った主体へ示す次の操作。
+REVIEW_RESULT_NEXT_ACTION = (
+    "レビューの指摘を受領した。採否を確定する前に`agent-toolkit:review-standards`をSkill機能で起動し、"
+    "同スキルの`references/reviewee.md`に従って採否と修正を確定する。"
+    "ユーザーの合意を見送りの根拠にする場合は、合意を示すユーザー発話を特定してから根拠にする"
+)
+
+
+def with_review_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
+    """labelが`-review`で終わるsessionの`completed`結果へ、指摘の採否を確定する手順を次の操作として加える。
+
+    受領した主体が参照できるのは受け取った結果だけであるため、採否確定の工程へ入る手掛かりを結果へ載せる。
+    失敗と中断の結果、レビュー以外のsessionの結果は変えない。
+    """
+    if result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
+        result["next_action"] = REVIEW_RESULT_NEXT_ACTION
+    return result
 
 
 class ActionableRuntimeError(ActionableError, RuntimeError):
@@ -439,7 +462,7 @@ class SessionState:
     awaiting_auto_resume: bool = False
     # `auto_resume_consumed`を真にするのは、Claude backendのタスク完了通知による再開と、
     # MCP層が孫sessionの終端を検出して発行する再開の2つの処理だけである。
-    # Codex backendは終端結果を保留しないため、これらの処理へ到達しない。
+    # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
     pending_result: dict[str, Any] | None = None
@@ -629,7 +652,7 @@ class SessionState:
         }
         if _nonempty_error(self.error):
             result["error"] = self.error
-        return result
+        return with_review_result_next_action(result, self.label)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -809,7 +832,7 @@ def consume_agents_server_tool_result(
 ) -> None:
     """agents_serverツールの結果を孫session集合へ反映する。"""
     normalized = _agents_server_tool_name(tool_name)
-    if normalized in {"start", "start_explore", "start_shell", "start_write"}:
+    if normalized in tool_names.RECORDED_START_OPERATIONS:
         session_id = result.get("session_id")
         if isinstance(session_id, str) and session_id:
             session.live_child_session_ids.add(session_id)
@@ -968,7 +991,7 @@ def _agents_server_tool_name(tool_name: str) -> str | None:
     for prefix in tool_names.MCP_NAMESPACES:
         if tool_name.startswith(prefix):
             return tool_name.removeprefix(prefix)
-    if tool_name in {"start", "start_explore", "start_shell", "start_write", "kill"}:
+    if tool_name in tool_names.RECORDED_START_OPERATIONS or tool_name == "kill":
         return tool_name
     return None
 

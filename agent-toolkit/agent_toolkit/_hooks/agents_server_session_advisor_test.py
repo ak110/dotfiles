@@ -33,7 +33,10 @@ def _record_operation(
     """PostToolUseを通してagents_serverの公開操作応答を記録する。"""
     remote_session_id = str(response["session_id"])
     tool_input: dict[str, object] = {"session_id": remote_session_id}
-    if operation in {"start", "start_explore"}:
+    if operation == "start":
+        tool_input = {"cwd": str(state_directory), "mode": "explore", "prompt": "委譲する"}
+    elif operation == "start_explore":
+        # 統合前の起動ツール名で記録される呼び出し。
         tool_input = {"cwd": str(state_directory), "prompt": "委譲する"}
     elif operation == "send_message":
         tool_input["prompt"] = "続行する"

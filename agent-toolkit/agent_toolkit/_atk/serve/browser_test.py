@@ -1857,6 +1857,40 @@ async def _wait_and_close_operation_notice(page: playwright.async_api.Page, text
 
 
 @pytest.mark.asyncio
+async def test_user_comment_ui_empty_save_removes_section(browser_harness: _BrowserHarness) -> None:
+    """コメント欄を空にして保存すると節が消え、節が無い状態の空保存も成功として伝える。"""
+    harness = browser_harness
+    page = harness.page
+    path = harness.root / "inbox" / "awi.md"
+    kept = "---\ntype: awi\ntarget_repo: example/repo\nsource: session-review\n---\n\n通常本文\n"
+    path.write_text(kept + "\n## ユーザーコメント\n\n削除対象のコメント\n", encoding="utf-8")
+    await page.goto(harness.base_url + "/")
+    detail = page.get_by_role("dialog", name="詳細")
+
+    await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
+    await detail.wait_for(state="visible")
+    await playwright.async_api.expect(detail).to_contain_text("削除対象のコメント")
+    await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
+    comment_input = detail.locator("#user-comment-input")
+    await playwright.async_api.expect(comment_input).to_have_value("削除対象のコメント")
+    await playwright.async_api.expect(detail.locator("#user-comment-input-hint")).to_be_visible()
+    await comment_input.fill("")
+    await detail.get_by_role("button", name="コメントを保存").click()
+    await _wait_and_close_operation_notice(page, "ユーザーコメントを削除しました")
+    await playwright.async_api.expect(detail).to_be_hidden()
+    assert path.read_text(encoding="utf-8") == kept
+
+    await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
+    await detail.wait_for(state="visible")
+    await playwright.async_api.expect(detail).not_to_contain_text("削除対象のコメント")
+    await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
+    await playwright.async_api.expect(comment_input).to_have_value("")
+    await detail.get_by_role("button", name="コメントを保存").click()
+    await _wait_and_close_operation_notice(page, "ユーザーコメントが無いため、変更していません")
+    assert path.read_text(encoding="utf-8") == kept
+
+
+@pytest.mark.asyncio
 async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updates(
     browser_harness: _BrowserHarness,
 ) -> None:

@@ -695,11 +695,14 @@ class Operations:
             raise WebApiInputError("指定したエントリを操作できません") from error
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """エージェント由来のinboxまたはhold項目へユーザーコメントを追記または置換する。"""
+        """エージェント由来のinboxまたはhold項目へユーザーコメントを追記、置換または削除する。
+
+        空白だけのコメントはユーザーコメント節の削除として扱う。
+        """
         if state not in {common.WI_STATE_INBOX, common.WI_STATE_HOLD}:
             raise WebApiInputError("ユーザーコメントを編集できる状態はinboxまたはholdだけです")
-        if not isinstance(comment, str) or not comment.strip():
-            raise WebApiInputError("commentは空でない文字列で指定してください")
+        if not isinstance(comment, str):
+            raise WebApiInputError("commentは文字列で指定してください")
         if not isinstance(expected_content, str) or not expected_content.strip():
             raise WebApiInputError("expected_contentは空でない文字列で指定してください")
 
@@ -1484,11 +1487,13 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         for name, value in (
             ("state", state_name),
             ("filename", filename),
-            ("comment", comment),
             ("expected_content", expected_content),
         ):
             if not isinstance(value, str) or not value.strip():
                 raise WebApiInputError(f"{name}は空でない文字列で指定してください")
+        # 空のコメントはユーザーコメント節の削除を表すため、文字列であることだけを確かめる。
+        if not isinstance(comment, str):
+            raise WebApiInputError("commentは文字列で指定してください")
         return quart.jsonify(
             changed=await workers.run(
                 ops.user_comment,

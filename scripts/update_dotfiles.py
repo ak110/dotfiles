@@ -47,10 +47,12 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 
 import argparse
 import contextlib
+import io
 import logging
 import logging.handlers
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -503,13 +505,50 @@ def _filter_apply_pending(status_output: str) -> list[str]:
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     """コマンドライン引数を解析する。"""
     parser = argparse.ArgumentParser(description="dotfilesを取得し、chezmoiで反映する")
+    parser.add_argument("command", nargs="?", choices=["logs"], help="logs: 直近1回の更新実行の保存ログを表示する")
     return parser.parse_args([] if argv is None else argv)
+
+
+def _show_logs() -> int:
+    """保存済みの直近の更新実行を、複数行レコードと世代境界を保って表示する。"""
+    header = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} run=(\S+) \S+ ")
+    records: list[tuple[str, str]] = []
+    run_id = ""
+    for generation in range(_LOG_BACKUP_COUNT, -1, -1):
+        path = _LOG_PATH.with_name(f"{_LOG_PATH.name}.{generation}") if generation else _LOG_PATH
+        try:
+            with path.open(encoding="utf-8") as log_file:
+                for line in log_file:
+                    match = header.match(line)
+                    if match is not None:
+                        run_id = match[1]
+                    records.append((run_id, line))
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeError) as error:
+            print(
+                f"保存ログを読み取れませんでした: {path}: {error}。読み取り権限とファイルの内容を確認してください。",
+                file=sys.stderr,
+            )
+            return 1
+    # 単独post-applyを除き、開始記録が既に削除された更新も残っている実行IDから選ぶ。
+    update_ids = {identifier for identifier, _ in records if re.fullmatch(r"\d+-\d+", identifier)}
+    if not update_ids:
+        print("保存済みの更新ログはありません。")
+        return 0
+    latest_id = max(update_ids, key=lambda identifier: tuple(map(int, identifier.split("-"))))
+    for identifier, line in records:
+        if identifier == latest_id:
+            sys.stdout.write(line)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
     global _current_run_id, _persistent_log_ready, _current_stage_title, _last_stderr_tail  # noqa: PLW0603
-    _parse_args(argv)
+    args = _parse_args(argv)
+    if args.command == "logs":
+        return _show_logs()
     _current_run_id = f"{time.time_ns()}-{os.getpid()}"
     _current_stage_title = None
     _last_stderr_tail = None
@@ -599,4 +638,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    for output_stream in (sys.stdout, sys.stderr):
+        if isinstance(output_stream, io.TextIOWrapper):
+            output_stream.reconfigure(encoding="utf-8", errors="replace")
     raise SystemExit(main(sys.argv[1:]))

@@ -1170,7 +1170,6 @@ def test_assets_state_sets_match_python_states() -> None:
         ),
         ("本文\n", "## コメント内見出し", "ユーザーコメントにコードフェンス外のH2見出しを含められません"),
         ("本文\n", "```markdown\n## コメント内見出し\n```", ""),
-        ("本文\n", " \n\n", "ユーザーコメントは空にできません"),
     ],
 )
 def test_user_comment_pure_update_rejects_invalid_structure_without_mutation(

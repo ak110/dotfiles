@@ -593,12 +593,9 @@ async def test_unobserved_child_sessions_merge_with_existing_identifiers(tmp_pat
     }
 
 
-@pytest.mark.asyncio
-async def test_codex_child_session_is_published_as_unobserved(
-    monkeypatch: pytest.MonkeyPatch,
+def _codex_parent_with_child(
     tmp_path: pathlib.Path,
-) -> None:
-    """Codexは孫sessionを未観測として記録し、turn終端結果を直ちに公開する。"""
+) -> tuple[subject.AgentsServerManager, codex_backend.AppServerManager, state.SessionState, status_file.StatusFileWriter]:
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root", "root.json", None),
@@ -618,8 +615,13 @@ async def test_codex_child_session_is_published_as_unobserved(
     )
     manager.sessions[session.session_id] = session
     writer.activate()
-    child_session_id = "codex-child"
-    session_registry.publish(child_session_id, terminal=False)
+    return manager, backend, session, writer
+
+
+async def _complete_codex_turn_with_child(
+    backend: codex_backend.AppServerManager, session: state.SessionState, child_session_id: str
+) -> None:
+    """Codexの委譲先が孫sessionを起動し、回収せずに待機表明でturnを終える通知をbackendへ渡す。"""
     await backend._handle_notification(
         {
             "method": "item/completed",
@@ -631,13 +633,23 @@ async def test_codex_child_session_is_published_as_unobserved(
                     "type": "mcpToolCall",
                     "server": "agents_server",
                     "tool": "start",
-                    "arguments": {"model_type": "high_tier"},
+                    "arguments": {"mode": "shell", "command": "sleep 5", "summary_policy": "終了状態"},
                     "status": "completed",
                     "result": {
                         "content": [],
                         "structuredContent": {"session_id": child_session_id, "status": "running"},
                     },
                 },
+            },
+        }
+    )
+    await backend._handle_notification(
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": session.session_id,
+                "turnId": session.turn_id,
+                "item": {"id": "msg-1", "type": "agentMessage", "text": f"待機中: {child_session_id}"},
             },
         }
     )
@@ -651,12 +663,106 @@ async def test_codex_child_session_is_published_as_unobserved(
         }
     )
 
+
+@pytest.mark.asyncio
+async def test_codex_child_session_holds_result_until_single_auto_resume(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Codexは孫sessionが残るturnの待機表明を公開せず保留し、孫の終端後に同じsessionを一度だけ再開する。
+
+    呼び出し元は手動の再開指示なしに、再開したturnの完了報告を受け取る。
+    """
+    manager, backend, session, _writer = _codex_parent_with_child(tmp_path)
+    child_session_id = "codex-child"
+    session_registry.publish(child_session_id, terminal=False)
+    await _complete_codex_turn_with_child(backend, session, child_session_id)
+
+    assert session.awaiting_auto_resume is True
+    assert session.result_available is False
+    assert session.status == "running"
+    assert session.pending_result is not None
+    assert session.pending_result["agent_message"] == f"待機中: {child_session_id}"
+    assert session.live_child_session_ids == {child_session_id}
+
+    prompts: list[str] = []
+
+    async def resume(target: state.SessionState, prompt: str) -> dict[str, Any]:
+        prompts.append(prompt)
+        state._begin_reply(target)
+        target.status = "completed"
+        target.agent_message = "AUTO_RESUME_COMPLETED"
+        target.turn_completed = True
+        target.touch()
+        return {"delivery": "reply_started", "previous_result": {}}
+
+    monkeypatch.setattr(backend, "send_message", resume)
+    try:
+        session_registry.publish(child_session_id, terminal=True)
+        result = await _wait_with_timeout(manager, 5)
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "AUTO_RESUME_COMPLETED"
+        assert session.turn_seq == 2
+        assert "error" not in result
+        assert len(prompts) == 1
+        assert child_session_id in prompts[0]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_codex_kill_during_hold_returns_pending_result_with_unobserved_child(tmp_path: pathlib.Path) -> None:
+    """保留中のCodex sessionへの中断は要求を送らず、保留した結果を未観測の孫の識別子とともに確定する。"""
+    manager, backend, session, _writer = _codex_parent_with_child(tmp_path)
+    child_session_id = "codex-child"
+    session_registry.publish(child_session_id, terminal=False)
+    await _complete_codex_turn_with_child(backend, session, child_session_id)
+    try:
+        await backend.interrupt(session)
+        assert session.result_available is True
+        assert session.awaiting_auto_resume is False
+        assert session.agent_message == f"待機中: {child_session_id}"
+        assert session.error == {"unobservedSessions": [child_session_id]}
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_codex_auto_resume_failure_reports_unobserved_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """再開の配送に失敗した場合は、待機表明を成功として扱わず、失敗と孫の識別子を返す。"""
+    manager, backend, session, _writer = _codex_parent_with_child(tmp_path)
+    child_session_id = "codex-child"
+    session_registry.publish(child_session_id, terminal=False)
+    await _complete_codex_turn_with_child(backend, session, child_session_id)
+    monkeypatch.setattr(backend, "send_message", AsyncMock(side_effect=RuntimeError("resume unavailable")))
+    try:
+        session_registry.publish(child_session_id, terminal=True)
+        result = await _wait_with_timeout(manager, 5)
+        assert result["status"] == "failed"
+        assert result["error"]["unobservedSessions"] == [child_session_id]
+        assert "resume unavailable" in result["error"]["message"]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_codex_auto_resume_deadline_publishes_pending_result_with_unobserved_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """孫が終端しないまま保留期限に達した場合は、保留した結果と未観測の孫の識別子を返す。"""
+    manager, backend, session, _writer = _codex_parent_with_child(tmp_path)
+    child_session_id = "codex-child"
+    session_registry.publish(child_session_id, terminal=False)
+    await _complete_codex_turn_with_child(backend, session, child_session_id)
+    session.auto_resume_deadline = 0.0
     send_message = AsyncMock()
     monkeypatch.setattr(backend, "send_message", send_message)
     try:
-        result = await _wait_with_timeout(manager, 1)
+        result = await _wait_with_timeout(manager, 5)
+        assert result["status"] == "completed"
         assert result["error"] == {"unobservedSessions": [child_session_id]}
-        assert session.live_child_session_ids == set()
         send_message.assert_not_awaited()
     finally:
         await manager.close()

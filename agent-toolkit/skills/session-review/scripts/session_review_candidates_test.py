@@ -787,6 +787,28 @@ def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash(
     assert candidates[-1]["excluded"] == {"normal-negative-result": 6}
 
 
+def test_candidate_events_treats_quoted_operator_shaped_search_terms_as_data() -> None:
+    """引用・エスケープで渡した演算子形の検索語はデータとして扱い、実際の演算子を伴う失敗は残す。"""
+    timeline = [
+        _bash_failure(1, "rg -n -F '<<<<<<<' docs"),
+        _bash_failure(2, "rg -n -F ';' docs"),
+        _bash_failure(3, 'rg -n -F "&&" docs && git grep -n -F "<<<<<<<" -- docs'),
+        _bash_failure(4, r"rg -n -F \| docs"),
+        _bash_failure(5, "git ls-files | rg -F '<<<<<<<'"),
+        _bash_failure(6, "git ls-files -z | xargs -0 rg -n -F '&&'", "Exit code 123"),
+        _bash_failure(7, "rg -n -F '<<<<<<<' docs && echo found"),
+        _bash_failure(8, "rg -n -F '<<<<<<<' docs > found.txt"),
+        _bash_failure(9, "rg -n -F '<<<<<<<' docs", "Exit code 2"),
+        _bash_failure(10, "rg -n -F ';' docs", "Exit code 1\nrg: docs: No such file or directory"),
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    kept_lines = sorted(locator["line"] for candidate in candidates[:-1] for locator in candidate["locators"])
+    assert kept_lines == [7, 8, 9, 10]
+    assert candidates[-1]["excluded"] == {"normal-negative-result": 6}
+
+
 def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Bashの記録を公開bundleで処理し、包装と出力形式が違う継続を同じ区分へ集計する。"""
     entries = []

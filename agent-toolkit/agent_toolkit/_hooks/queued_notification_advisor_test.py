@@ -82,6 +82,66 @@ def test_delegated_session_is_notified(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert _evaluate(transcript)[0] == "notify"
 
 
+@pytest.mark.parametrize("launch_kind", ["Agent", "Task"])
+@pytest.mark.parametrize("with_tool_id", [False, True])
+def test_agent_notification_uses_returned_message(tmp_path: pathlib.Path, launch_kind: str, with_tool_id: bool) -> None:
+    """Agent/Taskの直接IDとtask-idの代替解決で、内部transcriptの読取を案内しない。"""
+    tool_id = "toolu_agent1"
+    notification = _notification()
+    if with_tool_id:
+        notification = notification.replace("</task-notification>", f"<tool-use-id>{tool_id}</tool-use-id></task-notification>")
+    entries = [
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": tool_id, "name": launch_kind}]}},
+        {
+            "type": "user",
+            "toolUseResult": {"agentId": "b6n4gipz5"},
+            "message": {"content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "起動済み"}]},
+        },
+        _queue("enqueue", notification),
+    ]
+    transcript = _write_transcript(tmp_path, entries)
+    decision, body = _evaluate(transcript)
+    assert decision == "notify"
+    assert "返却メッセージの本文を結果として使って" in body
+    assert "b6n4gipz5" in body
+    assert _OUTPUT_FILE not in body
+    assert "出力ファイルを読んで" not in body
+    assert _evaluate(transcript) == ("approve", "")
+
+
+def test_mixed_agent_and_bash_notifications_keep_distinct_guidance(tmp_path: pathlib.Path) -> None:
+    """同じキューのAgent返却とBash出力を、それぞれの受領手段で案内する。"""
+    agent = _notification("agent", "/tmp/agent-transcript.jsonl").replace(
+        "</task-notification>", "<tool-use-id>toolu_agent</tool-use-id></task-notification>"
+    )
+    bash = _notification("bash", "/tmp/bash.output").replace(
+        "</task-notification>", "<tool-use-id>toolu_bash</tool-use-id></task-notification>"
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "tool_use", "id": "toolu_agent", "name": "Agent"},
+                        {"type": "tool_use", "id": "toolu_bash", "name": "Bash"},
+                    ]
+                },
+            },
+            _queue("enqueue", agent),
+            _queue("enqueue", bash),
+        ],
+    )
+    decision, body = _evaluate(transcript)
+    assert decision == "notify"
+    assert "返却メッセージの本文を結果として使って" in body
+    assert "出力ファイルを読んで結果を受け取り" in body
+    assert "/tmp/agent-transcript.jsonl" not in body
+    assert "/tmp/bash.output" in body
+    assert _evaluate(transcript) == ("approve", "")
+
+
 def test_second_stop_for_same_notification_is_silent(tmp_path: pathlib.Path) -> None:
     """同じ通知が残ったままの2回目のStopでは案内しない。"""
     transcript = _write_transcript(tmp_path, [_queue("enqueue", _notification())])
@@ -110,6 +170,8 @@ def test_new_notification_after_notified_one_is_reported_alone(tmp_path: pathlib
     [
         pytest.param([_queue("enqueue", _notification()), _queue("dequeue")], id="dequeue"),
         pytest.param([_queue("enqueue", _notification()), _queue("remove", _notification())], id="remove"),
+        pytest.param([_queue("enqueue", _notification()), _queue("popAll", _notification())], id="popAll"),
+        pytest.param([_queue("enqueue", _notification()), _queue("popOne", _notification())], id="popOne"),
         pytest.param([], id="empty"),
     ],
 )
@@ -129,6 +191,38 @@ def test_notification_without_output_file_shows_task_id_only(tmp_path: pathlib.P
     assert decision == "notify"
     assert "- task-id: b6n4gipz5\n" in body + "\n"
     assert "出力ファイル: " not in body
+
+
+@pytest.mark.parametrize("operation", ["popAll", "popOne"])
+def test_pop_removes_only_matching_content_from_stop_and_advisor(tmp_path: pathlib.Path, operation: str) -> None:
+    """同じ本文1件だけを配送し、未配送の別通知と重複通知を全消去しない。"""
+    first = _notification()
+    second = _notification("other", "/tmp/other.output")
+    entries = [
+        _queue("enqueue", first),
+        _queue("enqueue", second),
+        _queue("enqueue", first),
+        _queue(operation, "登録されていない本文"),
+        _queue(operation, first),
+    ]
+    assert _stop_gate.queued_task_notification_contents(entries) == [second, first]
+    transcript = _write_transcript(tmp_path, entries)
+    assert _stop_gate.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+    entries.extend([_queue(operation, first), _queue(operation, second)])
+    transcript = _write_transcript(tmp_path, entries)
+    assert _evaluate(transcript) == ("approve", "")
+    assert not _stop_gate.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+
+
+@pytest.mark.parametrize("operation", ["popAll", "popOne"])
+@pytest.mark.parametrize(("delivered", "expected"), [(False, "notify"), (True, "approve")])
+def test_editable_pop_then_delivery(tmp_path: pathlib.Path, operation: str, delivered: bool, expected: str) -> None:
+    """編集用に取り出した通常入力を除き、配送前の通知だけを案内する。"""
+    entries = [_queue("enqueue", "編集する入力"), _queue("enqueue", _notification()), _queue(operation, "編集する入力")]
+    if delivered:
+        entries.append(_queue("dequeue"))
+    transcript = _write_transcript(tmp_path, entries)
+    assert _evaluate(transcript)[0] == expected
 
 
 def test_missing_transcript_path_is_silent() -> None:

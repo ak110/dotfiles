@@ -149,6 +149,7 @@ def test_list_response_writes_conversation_root_alias(monkeypatch: pytest.Monkey
     ("operation", "structured"),
     [
         ("start", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
+        # 統合前の起動ツール名を公開する旧版のサーバーの応答も同じく扱う。
         ("start_custom", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
         ("start_explore", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
         ("start_write", {"session_id": "remote-session", "turn_id": "turn-1", "status": "running"}),
@@ -1947,18 +1948,24 @@ class TestRemovedRecordsAreAbsent:
 @pytest.mark.parametrize(
     ("operation", "tool_input", "expected"),
     (
+        ("start", {"mode": "write", "prompt": "起草する", "cwd": "/tmp/x"}, "write"),
+        ("start", {"mode": "shell", "command": "make test", "cwd": "/tmp/x"}, "low_tier"),
+        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
+        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "medium_tier"}, "medium_tier"),
+        ("start", {"mode": "delegate", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "high_tier"}, "high_tier"),
+        ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "cwd": "/tmp/x"}, "high_tier"),
+        ("start", {"model_type": "medium_tier"}, "medium_tier"),
+        ("start", {"mode": "unknown", "prompt": "調べる"}, None),
+        # 統合前の起動ツール名で記録された呼び出しも、対応するmodeの種別を記録する。
         ("start_write", {"prompt": "起草する", "cwd": "/tmp/x"}, "write"),
         ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "low_tier"),
         ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
-        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x", "model_type": "medium_tier"}, "medium_tier"),
-        ("start", {"model_type": "medium_tier"}, "medium_tier"),
-        ("start_shell", {"model_type": "medium_tier"}, "medium_tier"),
-        ("start_write", {"model_type": "medium_tier"}, "medium_tier"),
+        ("start_custom", {"prompt": "調べる", "cwd": "/tmp/x"}, None),
     ),
 )
-def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str) -> None:
-    """記録する工程種別は、サーバーが各起動ツールの省略時に使う種別と一致する。
+def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str | None) -> None:
+    """記録する工程種別は、サーバーが各modeの省略時に使う種別と一致する。
 
-    `start_write`で種別を省略すると`write`を使うため、`start_shell`と同じ`low_tier`を記録すると工程を別の種別に加算してしまう。
+    writeで種別を省略すると`write`を使うため、shellと同じ`low_tier`を記録すると工程を別の種別に加算してしまう。
     """
     assert _POSTTOOLUSE_MODULE._agents_server_model_type(tool_input, operation) == expected

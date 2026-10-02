@@ -4,6 +4,7 @@
 //! Linuxは絶対パスの`XDG_STATE_HOME`を優先し、無ければ`HOME/.local/state`、
 //! Windowsは`LOCALAPPDATA`の配下に`agent-toolkit`を結合する。
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -109,34 +110,66 @@ pub(crate) fn read_state_files(directory: &Path) -> Vec<StateFile> {
         .filter(|path| path.is_file() && is_state_file(path))
         .collect::<Vec<_>>();
     paths.sort();
-    paths
+    let mut files = paths
         .into_iter()
         .filter_map(|path| {
             let file_name = path.file_name()?.to_str()?.to_string();
             let raw = fs::read_to_string(path).ok()?;
             let value = serde_json::from_str::<Value>(&raw).ok()?;
-            let mut state_file = parse_state_file(file_name, &value, Utc::now())?;
-            retain_sessions_with_results(&mut state_file, |session_id| {
-                directory
-                    .join("results")
-                    .join(format!("{session_id}.json"))
-                    .is_file()
-            });
-            Some(state_file)
+            parse_state_file(file_name, &value, Utc::now())
         })
-        .collect()
+        .collect::<Vec<_>>();
+    retain_displayed_sessions(&mut files, |session_id| {
+        directory
+            .join("results")
+            .join(format!("{session_id}.json"))
+            .is_file()
+    });
+    files
 }
 
-fn retain_sessions_with_results(
-    state_file: &mut StateFile,
-    mut result_exists: impl FnMut(&str) -> bool,
-) {
-    state_file.sessions.retain(|session| {
-        !matches!(
-            session.status.as_str(),
-            "completed" | "failed" | "interrupted"
-        ) || result_exists(&session.session_id)
-    });
+/// 終端sessionは未回収の結果があるか、稼働中の子孫へつながる場合だけ残す。
+///
+/// 子孫の判定は全状態ファイルの親子関係を解決した後に行う。
+/// 親自身の結果回収だけで行を除くと、稼働中の孫が親を失った行として残る。
+fn retain_displayed_sessions(files: &mut [StateFile], mut result_exists: impl FnMut(&str) -> bool) {
+    let live_hosts = live_descendant_hosts(files);
+    for file in files.iter_mut() {
+        file.sessions.retain(|session| {
+            !matches!(
+                session.status.as_str(),
+                "completed" | "failed" | "interrupted"
+            ) || live_hosts.contains(&session.session_id)
+                || result_exists(&session.session_id)
+        });
+    }
+}
+
+/// 稼働中のsessionを子孫に持つsession識別子を返す。
+///
+/// 状態ファイルの`host_session_id`はそのファイルのsessionを起動した親を指す。
+/// 生存の印が失効したファイルは解釈の段階で除かれ、稼働の根拠にならない。
+fn live_descendant_hosts(files: &[StateFile]) -> HashSet<String> {
+    let mut live = HashSet::new();
+    loop {
+        let mut changed = false;
+        for file in files {
+            let Some(host) = file.host_session_id.as_deref() else {
+                continue;
+            };
+            if !live.contains(host)
+                && file.sessions.iter().any(|session| {
+                    session.status == "running" || live.contains(&session.session_id)
+                })
+            {
+                live.insert(host.to_string());
+                changed = true;
+            }
+        }
+        if !changed {
+            return live;
+        }
+    }
 }
 
 fn is_state_file(path: &Path) -> bool {
@@ -951,15 +984,182 @@ mod tests {
         file.sessions[1].status = "completed".to_string();
         file.sessions[2].status = "failed".to_string();
 
-        retain_sessions_with_results(&mut file, |session_id| session_id == "retained");
+        let mut files = [file];
+        retain_displayed_sessions(&mut files, |session_id| session_id == "retained");
 
         assert_eq!(
-            file.sessions
+            files[0]
+                .sessions
                 .iter()
                 .map(|session| session.session_id.as_str())
                 .collect::<Vec<_>>(),
             ["running", "retained"]
         );
+    }
+
+    fn status_session(session_id: &str, status: &str, started_at: &str) -> Value {
+        let mut value = session(
+            session_id,
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("", session_id),
+            started_at,
+        );
+        value["status"] = Value::String(status.to_string());
+        value
+    }
+
+    fn displayed_ids(files: &[StateFile]) -> Vec<String> {
+        flatten_sessions(files)
+            .iter()
+            .map(|item| item.session.session_id.clone())
+            .collect()
+    }
+
+    #[test]
+    fn terminal_parent_stays_while_grandchild_runs() {
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        for status in ["completed", "failed", "interrupted"] {
+            let parent = || {
+                state_file(
+                    "root.json",
+                    Value::Null,
+                    serde_json::json!([status_session(
+                        "parent",
+                        status,
+                        "2025-12-31T23:59:00+00:00"
+                    )]),
+                )
+            };
+            let grandchild = |grandchild_status: &str| {
+                state_file(
+                    "parent-writer.json",
+                    Value::String("parent".to_string()),
+                    serde_json::json!([status_session(
+                        "grandchild",
+                        grandchild_status,
+                        "2025-12-31T23:59:30+00:00"
+                    )]),
+                )
+            };
+
+            // 親の結果は回収済みで結果ファイルが無い。
+            let mut files = [parent(), grandchild("running")];
+            retain_displayed_sessions(&mut files, |_| false);
+            let lines = render_state_files(&files, 140, now);
+            assert_eq!(lines.len(), 2, "{lines:?}");
+            assert!(lines[0].starts_with("parent (claude)"), "{lines:?}");
+            assert!(lines[0].ends_with(&format!("1m0s · {status}")), "{lines:?}");
+            assert!(lines[1].starts_with("└ grandchild (claude)"), "{lines:?}");
+            assert!(lines[1].ends_with("30s · running"), "{lines:?}");
+
+            // 最後の孫が終端すると、親は通常の結果判定へ戻る。
+            let mut files = [parent(), grandchild("completed")];
+            retain_displayed_sessions(&mut files, |_| false);
+            assert!(displayed_ids(&files).is_empty());
+            let mut files = [parent(), grandchild("completed")];
+            retain_displayed_sessions(&mut files, |session_id| session_id == "parent");
+            assert_eq!(displayed_ids(&files), ["parent"]);
+        }
+    }
+
+    #[test]
+    fn ancestors_stay_for_partial_and_deep_descendants() {
+        let root = || {
+            state_file(
+                "root.json",
+                Value::Null,
+                serde_json::json!([status_session(
+                    "parent",
+                    "completed",
+                    "2025-12-31T23:59:00+00:00"
+                )]),
+            )
+        };
+        let children = |second: &str| {
+            state_file(
+                "parent-writer.json",
+                Value::String("parent".to_string()),
+                serde_json::json!([
+                    status_session("grandchild-1", "completed", "2025-12-31T23:59:10+00:00"),
+                    status_session("grandchild-2", second, "2025-12-31T23:59:20+00:00")
+                ]),
+            )
+        };
+        let deep = |status: &str| {
+            state_file(
+                "grandchild-writer.json",
+                Value::String("grandchild-2".to_string()),
+                serde_json::json!([status_session(
+                    "great-grandchild",
+                    status,
+                    "2025-12-31T23:59:30+00:00"
+                )]),
+            )
+        };
+
+        let mut files = [root(), children("running")];
+        retain_displayed_sessions(&mut files, |_| false);
+        assert_eq!(displayed_ids(&files), ["parent", "grandchild-2"]);
+
+        let mut files = [root(), children("completed"), deep("running")];
+        retain_displayed_sessions(&mut files, |_| false);
+        assert_eq!(
+            displayed_ids(&files),
+            ["parent", "grandchild-2", "great-grandchild"]
+        );
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        let lines = render_state_files(&files, 140, now);
+        assert!(
+            lines[2].starts_with("  └ great-grandchild (claude)"),
+            "{lines:?}"
+        );
+
+        let mut files = [root(), children("completed"), deep("completed")];
+        retain_displayed_sessions(&mut files, |_| false);
+        assert!(displayed_ids(&files).is_empty());
+    }
+
+    #[test]
+    fn running_descendant_with_expired_heartbeat_keeps_no_parent() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "claude-statusline-descendant-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let fresh = Utc::now().to_rfc3339();
+        let stale =
+            (Utc::now() - chrono::Duration::seconds(HEARTBEAT_EXPIRY_SECONDS + 1)).to_rfc3339();
+        let root = serde_json::json!({
+            "version": 1,
+            "host_session_id": null,
+            "heartbeat_at": fresh,
+            "updated_at": fresh,
+            "sessions": [status_session("parent", "completed", "2025-12-31T23:59:00+00:00")],
+        });
+        let grandchild = serde_json::json!({
+            "version": 1,
+            "host_session_id": "parent",
+            "heartbeat_at": stale,
+            "updated_at": stale,
+            "sessions": [status_session("grandchild", "running", "2025-12-31T23:59:30+00:00")],
+        });
+        fs::write(directory.join("root.json"), root.to_string()).unwrap();
+        fs::write(directory.join("parent-writer.json"), grandchild.to_string()).unwrap();
+
+        let files = read_state_files(&directory);
+
+        assert!(displayed_ids(&files).is_empty());
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

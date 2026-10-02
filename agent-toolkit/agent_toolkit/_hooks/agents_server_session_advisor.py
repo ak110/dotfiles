@@ -1,6 +1,6 @@
 """観測を試みていないagents_serverの作業をStop時に警告する。
 
-`start`・`start_explore`・`start_shell`と新しいturnを起こす`send_message`は、委譲先に
+`start`（全mode）と新しいturnを起こす`send_message`は、委譲先に
 新しい作業を発生させる。実行中turnへの`steered`配送は新しい作業の発生に含めない。
 PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し、
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。

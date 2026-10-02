@@ -1,12 +1,13 @@
-"""キューに残る完了済み背景タスクの通知について、出力ファイルの読取を案内するStopフック。
+"""キューに残る完了通知について、起動種別に適した結果の受領を案内するStopフック。
 
 背景タスクがターンの終了より前に完了すると、その完了通知は`queue-operation`の`enqueue`として
 最上位transcriptのキューへ入る。Stopフックや`/goal`の目標評価がターンを継続させても、
 継続した応答がツールを呼ばない限り通知は配送されない。配送はツール呼び出し時の取り込み
 （`remove`の`absorbed_mid_turn`）か、ターン終了後の`dequeue`で起きる。
 実行主体が完了通知の到着を待ってツールを呼ばずにターンを終えると、継続のたびに同じ状態が続く。
-本フックはキューに残る通知ごとに`<task-id>`と`<output-file>`を示し、出力ファイルの読取を促す。
-読取はツール呼び出しであるため、通知の配送と結果の受領が同じターンで起きる。
+Agent・Taskの起動記録に対応する通知には返却メッセージの利用を案内する。
+Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を示し、出力ファイルの読取を促す。
+ファイル読取はツール呼び出しであるため、通知の配送と結果の受領が同じターンで起きる。
 
 キューの解析規則は`stop_gate.queued_task_notification_contents`を`stop_gate.is_pending_async_work`と共有する。
 発火条件はキューの状態だけとし、`/goal`の有無、待機コマンドの種類および実行主体を条件に含めない。
@@ -45,6 +46,8 @@ _NOTICE_FIX = (
     "同じ結果を得る目的で待機コマンドを再発行しない。"
     "`atk agents wait`は回収した結果を削除するため、再発行しても同じ結果は返らない。"
 )
+_AGENT_NOTICE_BODY = "完了済みの`Agent`または`Task`の返却通知が、配送されないままキューに残っている。"
+_AGENT_NOTICE_FIX = "通知の配送後、返却メッセージの本文を結果として使って工程を進める。別の結果取得操作は不要である。"
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
@@ -75,10 +78,10 @@ def _notification_key(notification: str) -> str:
     return f"content:{notification}"
 
 
-def _describe(notification: str) -> str:
+def _describe(notification: str, *, include_output_file: bool = True) -> str:
     """通知1件の`<task-id>`と`<output-file>`を1行で示す。"""
     task_id = _first(_TASK_ID_RE, notification) or _first(_TOOL_USE_ID_RE, notification) or "不明"
-    output_file = _first(_OUTPUT_FILE_RE, notification)
+    output_file = _first(_OUTPUT_FILE_RE, notification) if include_output_file else None
     if output_file is None:
         return f"- task-id: {task_id}"
     return f"- task-id: {task_id} 出力ファイル: {output_file}"
@@ -118,7 +121,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     notified = _notified_keys(read_state(session_id))
     pending: dict[str, str] = {}
-    for content in stop_gate.queued_task_notification_contents(stop_gate.read_transcript_entries_cached(transcript_path)):
+    entries = stop_gate.read_transcript_entries_cached(transcript_path)
+    for content in stop_gate.queued_task_notification_contents(entries):
         for notification in _notification_elements(content):
             key = _notification_key(notification)
             if key not in notified and key not in pending:
@@ -127,5 +131,17 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     _record_notified(session_id, list(pending))
-    body = "\n".join([_NOTICE_BODY, *(_describe(notification) for notification in pending.values())])
-    return "notify", _notice(body, fix=_NOTICE_FIX, removable_cause=True, summary=body)
+    agent_notifications = [
+        notification for notification in pending.values() if stop_gate.is_agent_task_notification(notification, entries)
+    ]
+    file_notifications = [notification for notification in pending.values() if notification not in agent_notifications]
+    notices: list[str] = []
+    if agent_notifications:
+        body = "\n".join(
+            [_AGENT_NOTICE_BODY, *(_describe(notification, include_output_file=False) for notification in agent_notifications)]
+        )
+        notices.append(_notice(body, fix=_AGENT_NOTICE_FIX, removable_cause=True, summary=body))
+    if file_notifications:
+        body = "\n".join([_NOTICE_BODY, *(_describe(notification) for notification in file_notifications)])
+        notices.append(_notice(body, fix=_NOTICE_FIX, removable_cause=True, summary=body))
+    return "notify", "\n".join(notices)

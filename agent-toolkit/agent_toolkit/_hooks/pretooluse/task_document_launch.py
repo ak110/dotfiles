@@ -4,8 +4,8 @@
 タスク文書と受信者が読む規範が定める。起動文へそれらを書き足すと、委譲の費用が増え、指示の重複や
 呼び出し元の先入観が受信者へ混入する。本モジュールは次の2つを遮断する。
 
-- `agents_server`の`start_custom`・`start_explore`・`start_write`の本文がタスク文書を指す起動。
-  タスク文書起動は`start`へ`subagent_md_path`と`extra_params`で渡す
+- `agents_server`の`start`のうち、自由本文を渡すmode（`delegate`・`explore`・`write`）の本文がタスク文書を指す起動。
+  タスク文書起動は`start`のtaskへ`subagent_md_path`と`extra_params`で渡す
 - `Agent`ツールの本文がタスク文書を指し、1行目の`<タスク文書の絶対パス>の手順を実行せよ。`と
   宣言済みの入力名の行（字下げした続きの行を含む）以外を含む起動
 
@@ -25,12 +25,13 @@ from agent_toolkit._hooks.notice import block_formatter
 
 _block_notice = block_formatter("pretooluse")
 
-FREE_TEXT_START_TOOLS: frozenset[str] = frozenset(
-    f"{namespace}{operation}"
-    for namespace in _tool_names.MCP_NAMESPACES
-    for operation in ("start_custom", "start_explore", "start_write")
+START_TOOLS: frozenset[str] = frozenset(
+    f"{namespace}{operation}" for namespace in _tool_names.MCP_NAMESPACES for operation in _tool_names.START_OPERATIONS
 )
-"""本文を自由に書く`agents_server`の起動ツールの完全修飾名。"""
+"""`agents_server`の起動ツールの完全修飾名。"""
+
+FREE_TEXT_START_MODES: frozenset[str] = frozenset({"delegate", "explore", "write"})
+"""`start`のうち、本文を自由に書くmode。"""
 
 AGENT_TOOL_NAMES: frozenset[str] = frozenset({"Agent", "Task"})
 """Claude Codeのサブエージェント起動ツール名（旧名`Task`を含む）。"""
@@ -44,23 +45,24 @@ def check_task_document_launch(tool_name: str, tool_input: dict) -> str | None:
     prompt = tool_input.get("prompt")
     if not isinstance(prompt, str):
         return None
-    if tool_name in FREE_TEXT_START_TOOLS:
-        return _check_free_text_start(tool_name, prompt)
+    if tool_name in START_TOOLS:
+        operation = tool_name.rsplit("__", 1)[-1]
+        mode = _tool_names.start_mode(operation, tool_input)
+        return _check_free_text_start(mode, prompt) if mode in FREE_TEXT_START_MODES else None
     if tool_name in AGENT_TOOL_NAMES:
         return _check_agent_prompt(prompt)
     return None
 
 
-def _check_free_text_start(tool_name: str, prompt: str) -> str | None:
+def _check_free_text_start(mode: str, prompt: str) -> str | None:
     documents = task_documents.find_task_documents(prompt)
     if not documents:
         return None
-    display_name = tool_name.rsplit("__", 1)[-1]
     return _block_notice(
-        f"blocked: `{display_name}`の本文がタスク文書`{documents[0]}`を指している。"
+        f"blocked: `start`の`{mode}`で渡した`prompt`がタスク文書`{documents[0]}`を指している。"
         "タスク文書を持つ委譲は自由本文の起動の対象外である。",
         fix=(
-            f"`agents_server`の`start`へ`subagent_md_path={documents[0]}`と、"
+            f"`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={documents[0]}`と、"
             "タスク文書が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
         ),
     )

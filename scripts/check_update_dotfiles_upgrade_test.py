@@ -5,11 +5,14 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import types
 
 import pytest
+
+from pytools._internal import setup_codex_cli, setup_herdr_cli
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 
@@ -88,28 +91,130 @@ def test_platform_entrypoint_selects_real_launcher(tmp_path: pathlib.Path, platf
     assert pathlib.Path(upgrade.platform_entrypoint(tmp_path, platform_name)[-1]).name == expected
 
 
-def test_isolated_env_uses_utf8_for_child_python_output(tmp_path: pathlib.Path) -> None:
-    """旧checkout内のPythonも日本語を出力できるようUTF-8を継承する。"""
-    uv_executable = tmp_path / "uv.exe"
-    uv_executable.touch()
+@pytest.mark.parametrize("platform_name", ["linux", "windows"])
+def test_upgrade_check_isolates_uv_tools_and_child_output(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, platform_name: str
+) -> None:
+    """CIのtool配置を引き継がず、初期適用と更新へ隔離した配置とUTF-8を渡す。"""
+    native_path = os.pathsep.join(part for part in os.environ["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
+    uv_executable = shutil.which("uv", path=native_path)
+    assert uv_executable is not None
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "ci-tool-bin"))
+    monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "ci-tools"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "ci-codex-home"))
+    monkeypatch.setenv("CODEX_INSTALL_DIR", str(tmp_path / "ci-codex-bin"))
+    profile = tmp_path / "ci-profile"
+    monkeypatch.setenv("LOCALAPPDATA", str(profile / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(profile / "AppData" / "Roaming"))
+    monkeypatch.setenv("HERDR_HOME", str(profile / ".herdr"))
+    monkeypatch.setenv("HERDR_INSTALL_DIR", str(profile / "herdr-bin"))
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: uv_executable)
+    observations: list[tuple[dict[str, str], pathlib.Path, pathlib.Path]] = []
 
-    env = upgrade._isolated_env(  # pylint: disable=protected-access  # noqa: SLF001
-        tmp_path / "home", uv_executable, "windows"
-    )
+    def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get("env")
+        if env is not None:
+            assert isinstance(env, dict)
+            home = pathlib.Path(env["HOME"])
+            assert env["CODEX_HOME"] == str(home / ".codex")
+            assert pathlib.Path(env["CODEX_HOME"]).is_dir()
+            shared_bin = home / ".local" / "bin"
+            codex_bin = home / ".local" / "share" / "codex" / "bin" if platform_name == "windows" else shared_bin
+            assert env["CODEX_INSTALL_DIR"] == str(codex_bin)
+            # Windowsのinstallerが専用binを作成・置換できるよう、事前に作成しない。
+            assert platform_name != "windows" or not codex_bin.exists()
+            uv_name = "uv.exe" if platform_name == "windows" else "uv"
+            assert (shared_bin / uv_name).is_file()
+            assert env["HERDR_HOME"] == str(home / ".herdr")
+            assert "HERDR_INSTALL_DIR" not in env
+            launcher, codex_visible = _resolve_consumer_paths(monkeypatch, env, platform_name)
+            assert codex_visible == codex_bin
+            if platform_name == "windows":
+                local_app_data = home / "AppData" / "Local"
+                assert env["LOCALAPPDATA"] == str(local_app_data)
+                assert env["APPDATA"] == str(home / "AppData" / "Roaming")
+                assert local_app_data.is_dir() and pathlib.Path(env["APPDATA"]).is_dir()
+                herdr_bin = local_app_data / "Programs" / "Herdr" / "bin"
+                assert launcher == herdr_bin / "herdr.exe"
+                visible_bins = list(dict.fromkeys((str(codex_bin), str(shared_bin), str(herdr_bin))))
+            else:
+                # Linuxの消費側はAppDataを参照しないため、親の値を変更しない。
+                assert env["LOCALAPPDATA"] == os.environ["LOCALAPPDATA"]
+                assert env["APPDATA"] == os.environ["APPDATA"]
+                assert launcher == shared_bin / "herdr"
+                visible_bins = list(dict.fromkeys((str(codex_bin), str(shared_bin))))
+            assert launcher.is_relative_to(home)
+            assert not launcher.is_relative_to(profile)
+            assert env["PATH"].split(os.pathsep)[: len(visible_bins)] == visible_bins
+            bin_result = subprocess.run(
+                [uv_executable, "tool", "dir", "--bin"],
+                env=env,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=20,
+            )
+            tools_result = subprocess.run(
+                [uv_executable, "tool", "dir"],
+                env=env,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=20,
+            )
+            observations.append((env, pathlib.Path(bin_result.stdout.strip()), pathlib.Path(tools_result.stdout.strip())))
+        values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
+        output = next((value for option, value in values.items() if option in arguments), "")
+        return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
 
-    assert env["PYTHONIOENCODING"] == "utf-8"
+    upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner)
+
+    assert len(observations) == 2
+    for env, bin_dir, tools_dir in observations:
+        home = pathlib.Path(env["HOME"])
+        assert env["USERPROFILE"] == str(home)
+        assert bin_dir == home / ".local" / "bin"
+        assert tools_dir.is_relative_to(home)
+        assert tools_dir != pathlib.Path(os.environ["UV_TOOL_DIR"])
+        assert env["PYTHONIOENCODING"] == "utf-8"
 
 
-def test_run_propagates_child_failure(tmp_path: pathlib.Path) -> None:
-    """子プロセスの失敗を成功として継続しない。"""
+def _resolve_consumer_paths(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], platform_name: str
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """検証環境を受け取ったpost-applyの消費側が解決するHerdrランチャーとCodex可視binを返す。"""
+    platform = types.SimpleNamespace(platform="win32" if platform_name == "windows" else "linux")
+    with monkeypatch.context() as context:
+        context.setattr(os, "environ", env)
+        context.setattr(setup_herdr_cli, "sys", platform)
+        context.setattr(setup_codex_cli, "sys", platform)
+        return setup_herdr_cli._launcher_path(), setup_codex_cli._visible_bin_dir()  # pylint: disable=protected-access
+
+
+def test_initial_apply_failure_preserves_child_output_and_stops_update(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """初期適用の失敗を出力と終了コード付きで返し、公開更新を開始しない。"""
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"test-uv")
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(uv))
+    calls: list[list[str]] = []
 
     def runner(arguments, **_kwargs):
-        return subprocess.CompletedProcess(arguments, 23, stdout="child-out\n", stderr="child-error\n")
+        calls.append(arguments)
+        if arguments[0] == "chezmoi":
+            return subprocess.CompletedProcess(arguments, 23, stdout="child-out\n", stderr="child-error\n")
+        values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
+        output = next((value for option, value in values.items() if option in arguments), "")
+        return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
 
     with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23"):
-        upgrade._run(  # pylint: disable=protected-access  # noqa: SLF001
-            ("failing-command",), cwd=tmp_path, runner=runner
-        )
+        upgrade.run_upgrade_check(tmp_path, "windows", runner=runner)
+    stdout, stderr = capsys.readouterr()
+    assert "child-out\n" in stdout
+    assert stderr == "child-error\n"
+    assert calls[-1][0] == "chezmoi"
+    assert sum("update-ref" in arguments for arguments in calls) == 1
 
 
 def test_verify_updated_oid_rejects_mismatch() -> None:

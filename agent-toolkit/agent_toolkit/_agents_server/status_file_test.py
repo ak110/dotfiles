@@ -733,6 +733,182 @@ async def test_writer_excludes_already_expired_session(tmp_path: pathlib.Path) -
     writer.deactivate()
 
 
+def _write_descendant_file(
+    tmp_path: pathlib.Path,
+    file_name: str,
+    host_session_id: str,
+    statuses: dict[str, str],
+    *,
+    heartbeat_age: float = 0,
+) -> pathlib.Path:
+    """別の書込主体が書いた子孫の状態ファイルを置く。"""
+    path = subject.status_directory("root", tmp_path) / file_name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    heartbeat = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=heartbeat_age)
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "host_session_id": host_session_id,
+                "heartbeat_at": heartbeat.isoformat(),
+                "updated_at": heartbeat.isoformat(),
+                "sessions": [{"session_id": session_id, "status": status} for session_id, status in statuses.items()],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _terminal_parent(tmp_path: pathlib.Path, status: str) -> state.SessionState:
+    """turnが終端した親sessionを返す。"""
+    session = state.SessionState("parent", str(tmp_path), announced=True, turn_seq=1, label="lane-01-exec")
+    session.status = status
+    session.agent_message = "待機中: grandchild"
+    session.turn_completed = True
+    session.touch()
+    return session
+
+
+def _shown_sessions(writer: subject.StatusFileWriter) -> dict[str, str]:
+    """状態ファイルへ書かれたsessionの識別子と状態を返す。"""
+    payload = json.loads(writer.path.read_text(encoding="utf-8"))
+    return {item["session_id"]: item["status"] for item in payload["sessions"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
+async def test_writer_keeps_collected_parent_while_grandchild_runs(tmp_path: pathlib.Path, status: str) -> None:
+    """結果を回収した終端の親も、孫の稼働中は実際の終端状態のまま表示し、結果は再公開しない。"""
+    parent = _terminal_parent(tmp_path, status)
+    writer = subject.StatusFileWriter(
+        {parent.session_id: parent},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    grandchild = _write_descendant_file(tmp_path, "parent-writer.json", "parent", {"grandchild": "running"})
+    writer.activate()
+    result_path = subject.results_directory("root", tmp_path) / "parent.json"
+    assert result_path.exists()
+
+    # CLIの`atk agents wait`と同じ`take_result`で、書込主体の外から結果を取得する。
+    assert subject.take_result("root", "parent", "root.json", collector="cli", state_root=tmp_path)[0] is not None
+    writer.flush()
+
+    assert _shown_sessions(writer) == {"parent": status}
+    assert not result_path.exists()
+    assert subject.take_result("root", "parent", "root.json", collector="cli", state_root=tmp_path) == (None, None)
+
+    _write_descendant_file(tmp_path, grandchild.name, "parent", {"grandchild": "completed"})
+    writer.flush()
+
+    assert not _shown_sessions(writer)
+    assert not result_path.exists()
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_returns_uncollected_parent_to_normal_rules_after_grandchild_ends(tmp_path: pathlib.Path) -> None:
+    """結果を回収する対照: 未回収かつ表示期限内の親は孫の終端後も従来どおり残る。"""
+    parent = _terminal_parent(tmp_path, "completed")
+    parent.retention_deadline = asyncio.get_running_loop().time() + 60
+    writer = subject.StatusFileWriter(
+        {parent.session_id: parent},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    _write_descendant_file(tmp_path, "parent-writer.json", "parent", {"grandchild": "completed"})
+    writer.activate()
+
+    assert _shown_sessions(writer) == {"parent": "completed"}
+    assert (subject.results_directory("root", tmp_path) / "parent.json").exists()
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_keeps_parent_past_retention_deadline_while_descendant_runs(tmp_path: pathlib.Path) -> None:
+    """表示期限の到達後も、本体を解放したsessionも、稼働中の子孫がある間は表示する。"""
+    parent = _terminal_parent(tmp_path, "completed")
+    parent.retention_deadline = asyncio.get_running_loop().time() - 1
+    expired_parent = _terminal_parent(tmp_path, "failed")
+    expired_parent.session_id = "expired-parent"
+    expired = {"expired-parent": state.SessionResumeState.from_session(expired_parent)}
+    writer = subject.StatusFileWriter(
+        {parent.session_id: parent},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+        expired_sessions=expired,
+    )
+    _write_descendant_file(tmp_path, "parent-writer.json", "parent", {"grandchild": "running"})
+    expired_writer = _write_descendant_file(tmp_path, "expired-writer.json", "expired-parent", {"other-grandchild": "running"})
+    writer.activate()
+
+    shown = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    assert {item["session_id"]: item["status"] for item in shown} == {"parent": "completed", "expired-parent": "failed"}
+    assert next(item for item in shown if item["session_id"] == "expired-parent")["label"] == "lane-01-exec"
+
+    _write_descendant_file(tmp_path, expired_writer.name, "expired-parent", {"other-grandchild": "completed"})
+    writer.flush()
+
+    assert _shown_sessions(writer) == {"parent": "completed"}
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_keeps_parent_for_partial_and_deep_descendants(tmp_path: pathlib.Path) -> None:
+    """複数の孫の一部だけが終端した場合と、終端した孫の先で稼働が続く場合も親を残す。"""
+    parent = _terminal_parent(tmp_path, "completed")
+    parent.result_delivered = True
+    writer = subject.StatusFileWriter(
+        {parent.session_id: parent},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    children = _write_descendant_file(
+        tmp_path, "parent-writer.json", "parent", {"grandchild-1": "completed", "grandchild-2": "running"}
+    )
+    writer.activate()
+    assert _shown_sessions(writer) == {"parent": "completed"}
+
+    _write_descendant_file(tmp_path, children.name, "parent", {"grandchild-1": "completed", "grandchild-2": "completed"})
+    deep = _write_descendant_file(tmp_path, "grandchild-writer.json", "grandchild-2", {"great-grandchild": "running"})
+    writer.flush()
+    assert _shown_sessions(writer) == {"parent": "completed"}
+
+    _write_descendant_file(tmp_path, deep.name, "grandchild-2", {"great-grandchild": "completed"})
+    writer.flush()
+    assert not _shown_sessions(writer)
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_ignores_running_descendant_with_expired_heartbeat(tmp_path: pathlib.Path) -> None:
+    """生存の印が失効した子孫の古いrunning行では親を残さない。"""
+    parent = _terminal_parent(tmp_path, "completed")
+    parent.result_delivered = True
+    writer = subject.StatusFileWriter(
+        {parent.session_id: parent},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    _write_descendant_file(
+        tmp_path,
+        "parent-writer.json",
+        "parent",
+        {"grandchild": "running"},
+        heartbeat_age=subject.HEARTBEAT_EXPIRY_SECONDS + 1,
+    )
+    writer.activate()
+
+    assert not _shown_sessions(writer)
+    writer.deactivate()
+
+
 @pytest.mark.asyncio
 async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Path) -> None:
     """ルートwriterは自身と保持期限切れの共有ファイルだけを除く。"""

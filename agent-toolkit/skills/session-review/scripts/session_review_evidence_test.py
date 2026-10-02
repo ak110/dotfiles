@@ -1504,6 +1504,28 @@ def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_err
     assert records[-1]["excluded"]["check-detected"] == 2
 
 
+def test_bundle_treats_quoted_operator_shaped_search_terms_as_data(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """引用・エスケープした演算子形の検索語の一致0件を除外し、実際の演算子・診断・終了2は候補へ残す。"""
+    cases = [
+        (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs"], 1, ""),
+        (["/bin/bash", "-lc", "rg -n -F ';' docs"], 1, ""),
+        (["/bin/bash", "-lc", "rg -n -F '&&' docs && git grep -n -F '<<<<<<<' -- docs"], 1, ""),
+        (["/bin/bash", "-lc", r"rg -n -F \| docs"], 1, ""),
+        (["/bin/bash", "-lc", "git ls-files | rg -F '&&'"], 1, ""),
+        (["/bin/bash", "-lc", "git ls-files -z | xargs -0 rg -n -F ';'"], 123, ""),
+        (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs && echo found"], 1, ""),
+        (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs > found.txt"], 1, ""),
+        (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs"], 2, ""),
+        (["/bin/bash", "-lc", "rg -n -F ';' docs"], 1, "rg: docs: No such file or directory"),
+    ]
+    records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
+    candidates = [item for item in records if item["kind"] == "candidate"]
+    assert {locator["line"] for item in candidates for locator in item["locators"]} == {7, 8, 9, 10}
+    assert records[-1]["excluded"]["normal-negative-result"] == 6
+
+
 def test_bundle_excludes_wait_continuations_but_keeps_real_failures(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -4523,10 +4545,27 @@ def test_stats_resolves_claude_session_from_codex_rollout_tool_result(
     assert _events_by_kind(events, "stats-total")[0]["agent_thread_counts"] == {"claude": 1}
 
 
+@pytest.mark.parametrize(
+    ("name", "arguments", "expected"),
+    [
+        ("mcp__plugin_agent-toolkit_agents_server__start", {"mode": "shell", "command": "make test"}, True),
+        ("mcp__agents_server__start", {"mode": "explore", "prompt": "調査"}, False),
+        ("mcp__agents_server__start", {"subagent_md_path": "/plugin/share/exec.subagent.md"}, False),
+        # 統合前の記録はツール名でコマンド実行を表す。
+        ("mcp__agents_server__start_shell", {"command": "make test"}, True),
+        ("mcp__agents_server__start_explore", {"prompt": "調査"}, False),
+    ],
+)
+def test_execution_tool_kind_follows_start_mode_and_legacy_name(name: str, arguments: dict[str, str], expected: bool) -> None:
+    """コマンド実行の結果として警告を走査するかを、`start`のmodeと統合前のツール名の双方から判定する。"""
+    kind = evidence._execution_kind_name(name, arguments)  # pylint: disable=protected-access
+    assert evidence._is_execution_tool_name(kind) is expected  # pylint: disable=protected-access
+
+
 def test_collect_includes_start_custom_and_start_write_delegates(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`start_custom`と`start_write`で起動した委譲先も収集し、記録の無い委譲先は`unresolved-record`にする。"""
+    """統合前の記録の`start_custom`と`start_write`で起動した委譲先も収集し、記録の無い委譲先は`unresolved-record`にする。"""
     custom_session = "claude-session-custom-1111"
     write_session = "agy-session-write-2222"
     home = tmp_path / "home"

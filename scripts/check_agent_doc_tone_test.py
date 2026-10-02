@@ -277,7 +277,34 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
     assert check_agent_doc_tone.main([str(path)]) == 1
 
 
-def test_registered_pyfltr_check_reaches_examples_and_code(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    ("example_body", "application_body", "helper_tail", "expected_returncode", "expected_output"),
+    [
+        (
+            "```text\n悪い例: 正本を読む。\n書き換え: 正本を読む。\n```\n",
+            '# 既定の値を使う。\nprint("照合する値")\n',
+            'raise RuntimeError("既定の値を照合できない")\n',
+            1,
+            ["正本", "既定", "照合", "tone-examples.md", "new_module.py", "helper.py"],
+        ),
+        (
+            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            'from pathlib import Path\npath = Path("照合.md")\nprint("是正本文")\n',
+            "",
+            0,
+            [],
+        ),
+    ],
+    ids=["violations", "compliant"],
+)
+def test_registered_pyfltr_check_reaches_examples_and_code(
+    tmp_path: pathlib.Path,
+    example_body: str,
+    application_body: str,
+    helper_tail: str,
+    expected_returncode: int,
+    expected_output: list[str],
+) -> None:
     """通常の登録対象を通るチェックが、例の良い文と新しいコードの説明へ到達する。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     settings = tomllib.loads((repository / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pyfltr"]
@@ -299,10 +326,10 @@ def test_registered_pyfltr_check_reaches_examples_and_code(tmp_path: pathlib.Pat
     example.parent.mkdir(parents=True)
     application.parent.mkdir(parents=True)
     helper.parent.mkdir(parents=True)
-    example.write_text("```text\n悪い例: 正本を読む。\n書き換え: 正本を読む。\n```\n", encoding="utf-8")
-    application.write_text('# 既定の値を使う。\nprint("照合する値")\n', encoding="utf-8")
+    example.write_text(example_body, encoding="utf-8")
+    application.write_text(application_body, encoding="utf-8")
     fixture_data = '# agent-doc-tone: test-data\nsample = "既定の値を照合する。"\n'
-    helper.write_text(fixture_data + 'raise RuntimeError("既定の値を照合できない")\n', encoding="utf-8")
+    helper.write_text(fixture_data + helper_tail, encoding="utf-8")
     path_config.write_text('{"input_path": "照合.md"}', encoding="utf-8")
     arguments = [
         sys.executable,
@@ -321,19 +348,10 @@ def test_registered_pyfltr_check_reaches_examples_and_code(tmp_path: pathlib.Pat
         str(path_config),
     ]
 
-    failed = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+    result = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8", timeout=45, check=False)
 
-    assert failed.returncode == 1, failed.stdout + failed.stderr
-    records = [json.loads(line) for line in failed.stdout.splitlines()]
+    assert result.returncode == expected_returncode, result.stdout + result.stderr
+    records = [json.loads(line) for line in result.stdout.splitlines()]
     decoded = json.dumps(records, ensure_ascii=False)
-    assert "正本" in decoded and "既定" in decoded and "照合" in decoded
-    assert "tone-examples.md" in decoded and "new_module.py" in decoded
-    assert "helper.py" in decoded
-
-    example.write_text("```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n", encoding="utf-8")
-    application.write_text('from pathlib import Path\npath = Path("照合.md")\nprint("是正本文")\n', encoding="utf-8")
-    helper.write_text(fixture_data, encoding="utf-8")
-
-    passed = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
-
-    assert passed.returncode == 0, passed.stdout + passed.stderr
+    for expected in expected_output:
+        assert expected in decoded

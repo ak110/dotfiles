@@ -137,7 +137,8 @@ _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
-_AGENTS_SERVER_START_OPERATIONS = _agents_server_tool_names.START_OPERATIONS
+# 統合前の起動ツール名を公開する旧版のサーバーが稼働中でも、同じ観測義務とcwdを記録する。
+_AGENTS_SERVER_START_OPERATIONS = _agents_server_tool_names.RECORDED_START_OPERATIONS
 _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in _AGENTS_SERVER_START_OPERATIONS
 )
@@ -231,24 +232,22 @@ def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict
 
 
 def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
-    """開始操作の入力から工程別モデル設定の種別を返す。"""
+    """開始操作の入力から工程別モデル設定の種別を返す。
+
+    種別は`start`の`mode`から決める。統合前の起動ツール名で記録された呼び出しも同じmodeとして扱う。
+    """
     model_type = tool_input.get("model_type")
     if isinstance(model_type, str):
         return model_type
-    if operation == "start":
+    mode = _agents_server_tool_names.start_mode(operation, tool_input)
+    if mode == "task":
         task_path = tool_input.get("subagent_md_path")
         return (
             _agents_server_state.TASK_MODEL_TYPES.get(pathlib.PurePath(task_path).name) if isinstance(task_path, str) else None
         )
-    if operation == "start_custom":
+    if mode is None:
         return None
-    if operation == "start_explore":
-        return "low_tier"
-    if operation == "start_write":
-        return "write"
-    if operation == "start_shell":
-        return "low_tier"
-    return None
+    return _agents_server_tool_names.START_MODE_MODEL_TYPES.get(mode)
 
 
 def _agents_server_missing_response_fields(session_id: str, payload: dict, structured: dict, tool_name: str) -> list[str]:

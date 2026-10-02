@@ -844,7 +844,7 @@ def _has_queued_task_notification(entries: list[dict]) -> bool:
 def queued_task_notification_contents(entries: list[dict]) -> list[str]:
     """最上位transcriptのキューに残る配送待ちの完了通知の`content`を投入順に返す。
 
-    `enqueue`で投入し、`dequeue`で先頭から、`remove`で同じ本文の要素を取り除く。
+    `enqueue`で投入し、`dequeue`で先頭から、`remove`・`popAll`・`popOne`で同じ本文の要素を1件取り除く。
     Stop判定の入力待ち判定と、未配送の完了通知を案内する判定が同じ規則を共有する。
     """
     queue: deque[object] = deque()
@@ -857,10 +857,23 @@ def queued_task_notification_contents(entries: list[dict]) -> list[str]:
         elif operation == "dequeue":
             if queue:
                 queue.popleft()
-        elif operation == "remove":
+        elif operation in {"remove", "popAll", "popOne"}:
             with contextlib.suppress(ValueError):
                 queue.remove(entry.get("content"))
     return [content for content in queue if isinstance(content, str) and "<task-notification>" in content]
+
+
+def is_agent_task_notification(notification: str, entries: list[dict]) -> bool:
+    """通知の起動記録がAgentまたはTaskへ一意に対応する場合に真を返す。"""
+    agent_ids = _collect_agent_tool_use_ids(entries)
+    tool_ids = set(_TOOL_USE_ID_RE.findall(notification))
+    if tool_ids:
+        return tool_ids <= agent_ids
+    task_map = _collect_task_id_tool_use_ids(entries)
+    mapped_ids: set[str] = set()
+    for task_id in _TASK_ID_RE.findall(notification):
+        mapped_ids.update(task_map.get(task_id, set()))
+    return bool(mapped_ids) and mapped_ids <= agent_ids
 
 
 def _collect_nested_agent_launches(

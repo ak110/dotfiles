@@ -125,8 +125,8 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, cwd: str, byte_thres
         f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した（閾値: {byte_threshold}バイト）: {path}",
         fix=(
             f"次の連続した行範囲を全て取得すると全文を読了したものとする: {_range_plan(path, plan)}。"
-            "`agents_server`の`start_explore`へ"
-            f"質問と`cwd={cwd}`を渡して読み取り専用調査を委譲してもよい。"
+            "`agents_server`の`start`へ`mode`の`explore`と"
+            f"質問の`prompt`、`cwd={cwd}`を渡して読み取り専用調査を委譲してもよい。"
         ),
     )
 

@@ -30,8 +30,8 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
     ("tool_input", "next_action_names"),
     [
         ({"session_id": "owned"}, ["`prompt`"]),
-        # 継続先の識別子は起動系ツールだけが返すため、実在する全ての起動系ツール名を案内する。
-        ({"prompt": "続行する"}, ["`start`", "`start_custom`", "`start_explore`", "`start_shell`", "`start_write`"]),
+        # 継続先の識別子は起動ツールだけが返すため、実在する起動ツール名を案内する。
+        ({"prompt": "続行する"}, ["`start`"]),
     ],
 )
 def test_agents_server_missing_required_input_warns(

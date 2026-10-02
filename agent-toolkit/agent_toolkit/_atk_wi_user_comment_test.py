@@ -28,6 +28,31 @@ def test_update_user_comment_keeps_preserved_part_bytes() -> None:
     assert updated == "---\r\ntype: awi\r\n---\r\n\r\n本文\r\n\r\n## ユーザーコメント\n\n新コメント\n"
 
 
+@pytest.mark.parametrize("comment", ["", " \n\n"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_empty_comment_removes_section_and_keeps_other_parts(comment: str, newline: str) -> None:
+    """空のコメントは予約節だけを削除し、frontmatterと前の本文を元の改行のまま保つ。"""
+    kept = newline.join(
+        ["---", "type: awi", "source: session-review", "---", "", "本文", "", "```markdown", "## コード内見出し", "```", ""]
+    )
+    original = kept + newline.join(["", "## ユーザーコメント", "", "旧コメント", ""])
+
+    updated = user_comment.update_user_comment(original, comment)
+
+    assert updated == kept
+    assert user_comment.extract_user_comment(updated) is None
+    # 節が無い本文への空の保存は、本文を変えずに成功する。
+    assert user_comment.update_user_comment(updated, comment) == updated
+
+
+def test_empty_comment_keeps_structure_errors() -> None:
+    """空のコメントでも、削除対象を一意に定められない本文は変更せずに拒否する。"""
+    original = "---\ntype: awi\n---\n\n本文\n\n## ユーザーコメント\n\nA\n\n## 後続\n\nB\n"
+
+    with pytest.raises(user_comment.UserCommentError, match="後ろに別のH2見出し"):
+        user_comment.update_user_comment(original, "")
+
+
 def test_extract_and_has_reserved_heading_accept_crlf() -> None:
     """CRLF本文の予約見出しを検出し、抽出結果をLFへ正規化する。"""
     text = "---\r\ntype: awi\r\n---\r\n\r\n本文\r\n\r\n## ユーザーコメント\r\n\r\n1行目\r\n2行目\r\n"

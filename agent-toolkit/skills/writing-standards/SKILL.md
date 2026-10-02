@@ -74,6 +74,7 @@ description: >
 - コードを編集する時点、設計判断を確定する時、および依存の追加・更新をする時: `references/implementation-time.md`
 - 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、およびコードレビューを実施する場合: `references/design-heuristics.md`
 - 依存の追加・更新をする時: `references/dependency-management.md`
+- MCPサーバーのツール、説明、応答を設計、実装、変更またはレビューする時: `references/mcp-server-design.md`
 - テストコードを書く時、および条件分岐と判定条件を新設または変更する時: `references/testing.md`
 - 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`

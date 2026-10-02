@@ -91,7 +91,13 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
    登録猶予は、実行が1件も登録されないまま終わる場合を区別するための待機であり、
    判定対象を確定する期限ではない
 4. CI失敗では、最初の失敗jobを検出した時点で`agent-toolkit:bugfix`を起動し、監視は継続する。証拠の取得、帰属、原因および拡張原因分析の要否は同スキルのCI失敗分析契約に従う
-5. CI失敗の修正は、同じbranchへの通常commitとして追加する。push済みcommitへのamend、fixup、rebaseその他の履歴書き換えと、force pushは修正手段として使わない
+5. CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。
+   - 原因commitへ取り込む区分: 次の全てが成立する場合は、修正を原因のcommitへ取り込む（amendか、fixupとautosquash）。同じbranchは`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待値を明示した形で更新する。背景の`git fetch`で追跡refが進むと、期待値を省いた`--force-with-lease`の保護が働かない。取り込みの実行手順は`agent-toolkit:commit`の`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う
+     - push先のbranchが、remoteのHEADが指すbranch（`git ls-remote --symref <remote> HEAD`が示すbranch）と異なる
+     - push先のbranchが、対象リポジトリの規範（`AGENTS.md`など）が直接pushまたはforce pushを禁じるbranchに当たらない
+     - 操作の直前に`git fetch --all --prune`を実行する。その後、書き換える最古のcommitに対する`git for-each-ref --contains=<そのcommit> refs/heads/ refs/remotes/`の出力が、push先のlocal branchとその追跡refだけである。他のbranch、worktreeが保持するbranch、別remoteから到達できる場合は書き換えない
+   - 通常commitを使う区分: 前項のいずれかが成立しない場合は、同じbranchへの通常commitとして追加し、force pushを使わない。ベースbranchへ直接pushする運用はこの区分に当たる。forgeの保護設定でforce pushが拒否された場合も、push失敗として扱い、通常commitで修正し直す
+   - 原因commitへ取り込む区分でも`## push前`手順3のdry-runを同じ明示形で実行する。強制更新を示すstatus lineは、前項の3条件を満たし承認済みdestinationへの更新である場合だけ承認済みとして扱う。CI記録には書き換え前後のOID、tree・親・件名の対応、`git range-diff`の結果と是正した原因の対応を残す
 6. 診断目的で対象jobを再実行した後も、保存済みの同一baselineに対して`wait_ci.py --baseline`を再起動し、待機はこのスクリプトへ委ねる。自作の待機ループは、baselineが定める判定対象を再現しないため、待機手段として使わない。
    許容された再実行後も失敗が残る場合は、CI未通過を終端状態として確定する。
    完了報告と採否記録には、未通過であることと帰属判定を記録する。
@@ -119,4 +125,4 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 ## 後始末
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
-追加pushでは新しいディレクトリとbaselineを作成する。
+追加pushでは新しいディレクトリとbaselineを作成する。原因commitへ取り込んだ修正のforce pushにも同じく適用する。

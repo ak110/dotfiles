@@ -518,6 +518,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
     )
     _output_file.add_output_file_arg(show)
     show.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="target_repoとファイル名・状態の見出しだけを表示し、frontmatterと本文を省く。",
+    )
+    show.add_argument(
         "--type",
         choices=("all", *_common.WI_TYPES),
         action="append",

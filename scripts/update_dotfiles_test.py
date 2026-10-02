@@ -13,6 +13,7 @@ import sys
 import time
 from typing import Any, cast
 
+import platformdirs
 import psutil
 import pytest
 
@@ -444,6 +445,137 @@ def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch,
     captured = capsys.readouterr()
     assert "未コミット内容の退避を開始できませんでした" in captured.err
     assert "Traceback" not in captured.err
+
+
+@pytest.fixture(name="logs_path")
+def _logs_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """CLIの状態保存先を両OSで隔離する。"""
+    for variable in (
+        "HOME",
+        "USERPROFILE",
+        "XDG_STATE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "PROGRAMDATA",
+    ):
+        monkeypatch.setenv(variable, str(tmp_path / variable))
+    state_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+    state_dir.mkdir(parents=True)
+    return state_dir / "update-dotfiles.log"
+
+
+def _run_logs_cli(arguments: list[str] | None = None) -> subprocess.CompletedProcess[str]:
+    """実スクリプトのCLIを新しいプロセスで実行する。"""
+    return subprocess.run(
+        [sys.executable, str(pathlib.Path(update_dotfiles.__file__).resolve()), *(arguments or ["logs"])],
+        check=False,
+        capture_output=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+
+
+def test_logs_cli_shows_latest_update_only(logs_path: pathlib.Path) -> None:
+    """単独post-applyと以前の更新を表示へ混ぜない。"""
+    latest = "2026-10-01 12:00:00,000 run=100-2 INFO update-dotfiles開始: root=test\n"
+    logs_path.write_text(
+        "2026-10-01 11:00:00,000 run=9-1 INFO 以前の更新\n"
+        + latest
+        + "2026-10-01 12:00:01,000 run=post-apply-999 INFO 単独起動\n単独の続き\n",
+        encoding="utf-8",
+    )
+
+    result = _run_logs_cli()
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == latest
+    assert not result.stderr
+
+
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_logs_cli_preserves_rotated_multiline_records(logs_path: pathlib.Path, exit_code: int) -> None:
+    """成功・失敗の実行を世代境界から読み、diffとpost-applyの続きも保つ。"""
+    first = "2026-10-01 12:00:00,000 run=100-2 INFO update-dotfiles開始: root=test\n"
+    diff = "2026-10-01 12:00:01,000 run=100-2 INFO chezmoi diffの出力:\n-old\n+日本語の差分\n"
+    post_apply = "2026-10-01 12:00:02,000 run=100-2 WARNING post-applyの記録\nTraceback: 保存した続き\n"
+    finish = f"2026-10-01 12:00:03,000 run=100-2 INFO update-dotfiles終了: exit={exit_code}\n"
+    logs_path.with_name(f"{logs_path.name}.3").write_text(
+        "2026-10-01 11:00:00,000 run=9-1 INFO 以前の更新\n" + first, encoding="utf-8"
+    )
+    logs_path.with_name(f"{logs_path.name}.1").write_text(diff, encoding="utf-8")
+    logs_path.write_text(post_apply + finish, encoding="utf-8")
+
+    result = _run_logs_cli()
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == first + diff + post_apply + finish
+    assert not result.stderr
+
+
+def test_logs_cli_reads_update_when_start_record_has_rotated_away(logs_path: pathlib.Path) -> None:
+    """開始記録が残らない更新も、保存された記録を表示する。"""
+    saved = "2026-10-01 12:00:03,000 run=100-2 INFO update-dotfiles終了: exit=7\n"
+    logs_path.write_text(saved, encoding="utf-8")
+
+    result = _run_logs_cli()
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == saved
+
+
+@pytest.mark.parametrize("contents", [None, "", "2026-10-01 12:00:00,000 run=post-apply-999 INFO 単独起動\n"])
+def test_logs_cli_reports_no_saved_update(logs_path: pathlib.Path, contents: str | None) -> None:
+    """保存された更新実行が無いことを利用者へ案内する。"""
+    if contents is not None:
+        logs_path.write_text(contents, encoding="utf-8")
+
+    result = _run_logs_cli()
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "保存済みの更新ログはありません。\n"
+    assert not result.stderr
+
+
+def test_logs_cli_does_not_write_state(logs_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """表示によるログ追記、同期結果更新、ロック生成と更新開始を検出する。"""
+    logs_path.write_text("2026-10-01 12:00:00,000 run=100-2 INFO 保存済みログ\n", encoding="utf-8")
+    report = logs_path.with_name("sync-report.json")
+    report.write_text('{"status": "failed"}', encoding="utf-8")
+    before = {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in logs_path.parent.iterdir()}
+    monkeypatch.setenv("UPDATE_DOTFILES_GIT_TIMEOUT_SEC", "invalid")
+
+    result = _run_logs_cli()
+
+    assert result.returncode == 0, result.stderr
+    assert "保存済みログ" in result.stdout
+    after = {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in logs_path.parent.iterdir()}
+    assert after == before
+
+
+def test_logs_cli_reports_read_failure(logs_path: pathlib.Path) -> None:
+    """読めない保存先を空ログ扱いせず、対象と失敗を示す。"""
+    logs_path.mkdir()
+
+    result = _run_logs_cli()
+
+    assert result.returncode == 1
+    assert not result.stdout
+    assert str(logs_path) in result.stderr
+    assert "読み取れませんでした" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_help_describes_logs(logs_path: pathlib.Path) -> None:
+    """ヘルプから表示コマンドの目的を知ることができ、更新を開始しない。"""
+    result = _run_logs_cli(["--help"])
+
+    assert result.returncode == 0, result.stderr
+    assert "logs" in result.stdout
+    assert "直近1回" in result.stdout
+    assert not list(logs_path.parent.iterdir())
 
 
 class TestFiveStepsInOrder:

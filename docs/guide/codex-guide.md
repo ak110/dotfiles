@@ -99,14 +99,14 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 
 ## agents_serverによる委譲
 
-`agents_server`はCodex pluginから利用できる共有MCPである。`start(model_type, prompt, cwd)`は対応する工程別モデル設定からengine、modelおよびeffortを解決する。
-CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値のengine部が`claude`ならサーバーがClaude backendを選ぶ。調査専用の軽量起動には`start_explore(prompt, cwd)`を使い、出力量が大きいコマンドの実行には`start_shell(command, cwd, summary_policy)`を使う。
-`start_explore`の`model_type`を省略すると`low_tier`を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は既定のまま使い、軽量な探索では判断材料が不足する調査だけ`model_type="medium_tier"`を指定する。
+`agents_server`はCodex pluginから利用できる共有MCPである。起動は`start`の1つで行い、`mode`で入力の形を選ぶ。`start`は`model_type`に対応する工程別モデル設定からengine、modelおよびeffortを解決する。
+CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値のengine部が`claude`ならサーバーがClaude backendを選ぶ。調査専用の軽量起動には`mode`を`explore`として`prompt`と`cwd`を渡し、出力量が大きいコマンドの実行には`mode`を`shell`として`command`、`cwd`、`summary_policy`を渡す。
+`explore`で`model_type`を省略すると`low_tier`を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は既定のまま使い、軽量な探索では判断材料が不足する調査だけ`model_type="medium_tier"`を指定する。
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
-公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つである。`start`、`start_explore`および`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、
-完了を待たず`session_id`を返す。`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`wait`を再発行する前に、`list`で待機対象のsessionの`status`を確認する。
-`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionについては、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。作業の観測を試みずにターンを終えると、その作業を観測する主体が残らない。
+公開ツールは`start`、`send_message`、`kill`、`list`、`show`、`stop`の6つであり、終端と結果の受領は`atk agents wait`が担う。`start`の`cwd`は全`mode`で既存ディレクトリの絶対パスとし、
+完了を待たず`session_id`を返す。`atk agents wait`は引数を受け取らず、登録済みのsessionの終端を待ち、回収できた終端結果を全件返す。待機上限は実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`wait`を再発行する前に、`list`で待機対象のsessionの`status`を確認する。
+`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionについては、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。作業の観測を試みずにターンを終えると、その作業を観測する主体が残らない。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。`kill`の`kill_requested`、

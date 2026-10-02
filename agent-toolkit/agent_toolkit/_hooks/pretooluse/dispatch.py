@@ -18,10 +18,9 @@ AskUserQuestion / ExitPlanMode:
 
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 
-mcp__plugin_agent-toolkit_agents_server__start / start_custom / start_explore / start_write / start_shell /
-send_message / kill / list:
+mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
-- `start_custom`・`start_explore`・`start_write`の本文がタスク文書（`share/*.subagent.md`）を指す起動の遮断 (block)
+- `start`の自由本文のmode（`delegate`・`explore`・`write`）の本文がタスク文書（`share/*.subagent.md`）を指す起動の遮断 (block)
 - `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
 - 対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)

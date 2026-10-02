@@ -324,3 +324,12 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
 
     assert not before_output
     assert after_output
+
+
+@pytest.mark.parametrize("launch_kind", shared_state.LAUNCH_SYSTEM_PROMPTS)
+def test_system_prompt_does_not_promise_auto_resume(launch_kind: shared_state.LaunchKind) -> None:
+    """自動再開を確かめていないAntigravity backendは、同じsessionの自動再開と待機表明を受信者へ約束しない。"""
+    prompt = antigravity._system_prompt(launch_kind)  # pylint: disable=protected-access
+
+    assert prompt == shared_state.LAUNCH_SYSTEM_PROMPTS[launch_kind]
+    assert shared_state.AUTO_RESUME_NOTICE not in prompt
