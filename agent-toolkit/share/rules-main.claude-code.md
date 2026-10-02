@@ -2,6 +2,8 @@
 
 本書はClaude Codeのメインに適用する。共通判断は`01-agent.md`と`02-agent-operations.md`に従う。
 
+利用上限の猶予通知を受けたときは、`agent-toolkit:user-confirmation-and-report`を起動し、同スキルが定める状況伝達・続行・再開の手順を適用する。
+
 ## ツールAPIと権限
 
 - Windows版Claude CodeのBashツールは引用符付きheredocや単一引用符内でもコマンド中の`\\`をシェルへ渡す前に`\`へ縮め、エスケープ表記を含むコードを直接渡すと成果物へ制御文字や改行を書き込む。そのコードはWriteツールでmanaged-tempの中のファイルへ保存してから実行する。
