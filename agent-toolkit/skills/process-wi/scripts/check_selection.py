@@ -198,7 +198,7 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
             raise InputError(f"`--work-dir`がディレクトリではない: {value}")
         return value.resolve()
     result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, encoding="utf-8", check=False
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise InputError(f"現在のディレクトリからGitルートを解決できない: {result.stderr.strip()}")
