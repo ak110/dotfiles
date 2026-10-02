@@ -332,9 +332,12 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
     """通常profileの差分を報告する文を返す。"""
     paths = "\n".join(f"  {path}" for path in leaks)
     return (
-        "検証の隔離が漏れ、通常profile側の次の項目が検証の前後で追加または削除された。"
-        "検証が起動した処理がどの環境変数から書込先を決めたかを調べ、`_isolated_env`で検証homeへ向ける:\n"
-        f"{paths}"
+        "通常profile側の次の項目が検証の前後で追加または削除された:\n"
+        f"{paths}\n"
+        "書込主体として次の2つを確認する。\n"
+        "  (1) 検証が起動した処理: どの環境変数から書込先を決めたかを調べ、`_isolated_env`で検証homeへ向ける。\n"
+        "  (2) 検証と無関係なランナー側の常駐処理や予約タスク: 同じ実行者で動くため`_isolated_env`では解消しない。"
+        "`.github/workflows/ci.yaml`の`test-windows`などで、検証より前に発生源を止める。"
     )
 
 

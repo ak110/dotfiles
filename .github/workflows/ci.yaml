@@ -85,6 +85,27 @@ jobs:
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+      - name: Mozilla予約タスクの停止
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        # ランナーイメージのFirefox Default Browser Agentなどの予約タスクは、runneradminとしてジョブと無関係な時刻に
+        # 通常profile（LOCALAPPDATA・APPDATA直下のMozilla）へ書き込む。「約3日前からの update-dotfiles 更新検証」の
+        # 通常profile監視と衝突し隔離漏れと誤判定されるため、VM起動後の実行時刻より前となるジョブ冒頭で止める。
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tasks = @(Get-ScheduledTask | Where-Object { $_.TaskPath.StartsWith('\Mozilla\') })
+          if ($tasks.Count -eq 0) {
+            Write-Output "TaskPathが\Mozilla\の予約タスクは0件である。"
+            exit 0
+          }
+          foreach ($task in $tasks) {
+            if ($task.State -eq 'Running') {
+              Stop-ScheduledTask -TaskPath $task.TaskPath -TaskName $task.TaskName
+            }
+            $disabled = Disable-ScheduledTask -TaskPath $task.TaskPath -TaskName $task.TaskName
+            Write-Output "TaskPath=$($disabled.TaskPath) TaskName=$($disabled.TaskName) State=$($disabled.State)"
+            if ("$($disabled.State)" -ne 'Disabled') { throw "予約タスクを無効化できなかった: $($task.TaskPath)$($task.TaskName)" }
+          }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
@@ -109,6 +130,15 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
+      - name: agent-toolkit環境の事前構築
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        # ランチャーへ到達するテストが初回起動でagent-toolkit/.venvを構築すると、Windowsランナーのcopy方式の
+        # 導入時間がテストごとの60秒上限へ算入されるため、構築をテストより前に済ませる。
+        # 指定はagent-toolkit/bin/atk.cmdのuv runと同じにし、ランチャーがこの環境をそのまま使えるようにする。
+        # 「Windows境界テスト」へ追加する実ランチャー到達テストもこの環境を使う。
+        shell: pwsh
+        working-directory: ${{ env.DOTFILES_DIR }}
+        run: uv sync --project agent-toolkit --locked --no-default-groups
       - name: Windows境界テスト
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: pwsh

@@ -2,6 +2,7 @@
 
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import typing
@@ -155,3 +156,116 @@ def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
     for target in targets:
         # pytestのnode指定はファイルパスの後に::でクラス名やテスト名を持つ。
         assert (_REPOSITORY_ROOT / target.split("::", maxsplit=1)[0]).exists(), target
+
+
+def _flag_options(tokens: list[str]) -> set[str]:
+    """値を取る`--project`を除いた`--`始まりのオプションを返す。"""
+    return {token for token in tokens if token.startswith("--") and token != "--project"}
+
+
+def test_windows_launcher_environment_is_built_before_boundary_tests(workflow_data: dict[str, object]) -> None:
+    """実ランチャー到達テストより前に、ランチャーと同じ指定でagent-toolkit環境を構築する。
+
+    構築がテスト中に起きると、Windowsランナーの導入時間がテストごとの60秒上限へ算入される。
+    """
+    steps = _steps(_mapping(_jobs(workflow_data)["test-windows"]))
+    launcher_test = "check_exec_review_evidence_test.py::test_public_command_runs_platform_launcher"
+    test_index = next(i for i, step in enumerate(steps) if launcher_test in str(step.get("run", "")))
+    sync_indexes = [
+        i
+        for i, step in enumerate(steps)
+        if shlex.split(str(step.get("run", "")))[:4] == ["uv", "sync", "--project", "agent-toolkit"]
+    ]
+    assert len(sync_indexes) == 1
+    sync_index = sync_indexes[0]
+    assert sync_index < test_index
+    sync_step, test_step = steps[sync_index], steps[test_index]
+    for key in ("if", "shell", "working-directory"):
+        assert sync_step.get(key) == test_step.get(key), key
+
+    # ランチャーと指定が異なるとuv runが環境を再作成し、事前構築が無効になる。
+    launcher_lines = [
+        line
+        for line in (_REPOSITORY_ROOT / "agent-toolkit" / "bin" / "atk.cmd").read_text(encoding="utf-8").splitlines()
+        if line.startswith("uv run --project")
+    ]
+    assert len(launcher_lines) == 1
+    assert _flag_options(shlex.split(str(sync_step["run"]))) == _flag_options(shlex.split(launcher_lines[0]))
+
+
+def _windows_step(steps: list[dict[str, object]], name: str) -> tuple[int, dict[str, object]]:
+    matches = [(i, step) for i, step in enumerate(steps) if step.get("name") == name]
+    assert len(matches) == 1, name
+    return matches[0]
+
+
+_MOZILLA_STEP = "Mozilla予約タスクの停止"
+
+
+def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: dict[str, object]) -> None:
+    """更新検証の通常profile監視より前に、同じ実行条件でMozilla予約タスクを止める。"""
+    steps = _steps(_mapping(_jobs(workflow_data)["test-windows"]))
+    stop_index, stop_step = _windows_step(steps, _MOZILLA_STEP)
+    check_index, check_step = _windows_step(steps, "約3日前からの update-dotfiles 更新検証")
+    assert stop_index < check_index
+    assert stop_step.get("if") == check_step.get("if")
+    assert stop_step.get("shell") == "pwsh"
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+@pytest.mark.parametrize(
+    ("tasks", "expected_lines", "unexpected"),
+    [
+        (
+            [("\\Mozilla\\", "Firefox Default Browser Agent 308046B0AF4A39CB", "Running"), ("\\Other\\", "Keep", "Ready")],
+            [
+                "STOP \\Mozilla\\Firefox Default Browser Agent 308046B0AF4A39CB",
+                "TaskPath=\\Mozilla\\ TaskName=Firefox Default Browser Agent 308046B0AF4A39CB State=Disabled",
+            ],
+            "Keep",
+        ),
+        ([("\\Other\\", "Keep", "Ready")], ["TaskPathが\\Mozilla\\の予約タスクは0件である。"], "Keep"),
+    ],
+)
+def test_windows_mozilla_step_disables_only_mozilla_tasks(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    tasks: list[tuple[str, str, str]],
+    expected_lines: list[str],
+    unexpected: str,
+) -> None:
+    """ステップ本体は`\\Mozilla\\`配下だけを停止・無効化して結果を出力し、0件でも成功する。"""
+    steps = _steps(_mapping(_jobs(workflow_data)["test-windows"]))
+    script = _windows_step(steps, _MOZILLA_STEP)[1]["run"]
+    assert isinstance(script, str)
+    # Windowsの予約タスクcmdletは他のOSに無いため、同名の関数で置き換えて分岐と出力を確かめる。
+    entries = ",".join(
+        f"[pscustomobject]@{{TaskPath='{path}';TaskName='{name}';State='{state}'}}" for path, name, state in tasks
+    )
+    prelude = "\n".join(
+        (
+            f"function Get-ScheduledTask {{ @({entries}) }}",
+            'function Stop-ScheduledTask { param($TaskPath, $TaskName) Write-Output "STOP $TaskPath$TaskName" }',
+            "function Disable-ScheduledTask { param($TaskPath, $TaskName) "
+            "[pscustomobject]@{TaskPath=$TaskPath;TaskName=$TaskName;State='Disabled'} }",
+        )
+    )
+    script_path = tmp_path / "step.ps1"
+    script_path.write_text(f"{prelude}\n{script}", encoding="utf-8-sig")
+    pwsh = shutil.which("pwsh")
+    assert pwsh is not None
+
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    for line in expected_lines:
+        assert line in lines
+    assert unexpected not in result.stdout
