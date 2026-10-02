@@ -37,7 +37,17 @@ REQUIRED_FIELDS = {
 }
 LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
-SENTENCE = re.compile(r"[^。．.!?！？]+[。．.!?！？]*")
+# 全角の終止記号は位置によらず文末とする。ASCIIの終止記号は直後が空白か段落末の場合だけ文末とし、
+# ドメイン名・ファイル名・版番号など語の内部のピリオドで文を分けない。
+FULLWIDTH_TERMINATORS = "。．！？"
+ASCII_TERMINATORS = ".!?"
+# 文末記号の直後に続く閉じ括弧類は同じ文へ含め、閉じ括弧だけの単位が残る分割を避ける。
+CLOSING_BRACKETS = ")）」』]】"
+INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
+# 確認回答の記録（`質問: `・`選択肢: `・`回答: `・`自由記述: `の行頭ラベルを持つ書式）の各ラベル。
+# 質問と選択肢はエージェントが書いた文であり、利用者の要求は回答と自由記述の値だけである。
+ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
+USER_ANSWER_LABELS = ("回答: ", "自由記述: ")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\(([^)]+)\)|`([^`]+)`|([^\s`\[\]（）「」、。]+)")
@@ -187,6 +197,32 @@ def _without_fenced_blocks(lines: list[str]) -> list[str]:
     return remaining
 
 
+def _sentences(text: str) -> list[str]:
+    """段落の文字列を文へ分ける。インラインコードの内側では分割しない。"""
+    protected = [False] * len(text)
+    for match in INLINE_CODE.finditer(text):
+        protected[match.start() : match.end()] = [True] * (match.end() - match.start())
+    terminators = FULLWIDTH_TERMINATORS + ASCII_TERMINATORS
+    sentences: list[str] = []
+    start = index = 0
+    while index < len(text):
+        if protected[index] or text[index] not in terminators:
+            index += 1
+            continue
+        end = index
+        while end < len(text) and text[end] in terminators and not protected[end]:
+            end += 1
+        fullwidth = any(char in FULLWIDTH_TERMINATORS for char in text[index:end])
+        while end < len(text) and text[end] in CLOSING_BRACKETS and not protected[end]:
+            end += 1
+        if fullwidth or end == len(text) or text[end].isspace():
+            sentences.append(text[start:end])
+            start = end
+        index = end
+    sentences.append(text[start:])
+    return [sentence.strip() for sentence in sentences if sentence.strip()]
+
+
 def _requirement_units(content: list[str]) -> list[str]:
     """要求原文を、箇条書きの項目と文の単位へ分ける。
 
@@ -198,7 +234,7 @@ def _requirement_units(content: list[str]) -> list[str]:
 
     def flush() -> None:
         if paragraph:
-            units.extend(unit.strip() for unit in SENTENCE.findall(" ".join(paragraph)) if unit.strip())
+            units.extend(_sentences(" ".join(paragraph)))
             paragraph.clear()
 
     cleaned = _without_fenced_blocks(HTML_COMMENT.sub("", "\n".join(content)).splitlines())
@@ -210,9 +246,37 @@ def _requirement_units(content: list[str]) -> list[str]:
         item = LIST_ITEM.match(stripped)
         if item:
             flush()
-            units.extend(unit.strip() for unit in SENTENCE.findall(stripped[item.end() :]) if unit.strip())
+            units.extend(_sentences(stripped[item.end() :]))
             continue
         paragraph.append(stripped)
+    flush()
+    return units
+
+
+def _answer_record_units(content: list[str]) -> list[str] | None:
+    """確認回答の記録を含む容器から、記録より前の地の文と、回答・自由記述の値を要求単位として返す。
+
+    行頭`質問: `の行の後に行頭`回答: `の行を持たない容器は確認回答の記録ではないため`None`を返す。
+    ラベルの値は次のラベル行の直前まで複数行に続く（回答は選んだ案を改行で並べる）。
+    """
+    start = next((index for index, line in enumerate(content) if line.startswith("質問: ")), None)
+    if start is None or not any(line.startswith("回答: ") for line in content[start + 1 :]):
+        return None
+    units = _requirement_units(content[:start])
+    label: str | None = None
+    value: list[str] = []
+
+    def flush() -> None:
+        if label in USER_ANSWER_LABELS:
+            units.extend(_requirement_units(value))
+
+    for line in content[start:]:
+        current = next((candidate for candidate in ANSWER_LABELS if line.startswith(candidate)), None)
+        if current is None:
+            value.append(line)
+            continue
+        flush()
+        label, value = current, [line.removeprefix(current)]
     flush()
     return units
 
@@ -221,6 +285,7 @@ def _quoted_requirements(body: list[str], filename: str) -> list[tuple[str, str]
     """逐語引用の節にある外側の`text`フェンスを要求原文の容器として読み、その内容を出所付きの要求単位へ分ける。
 
     容器の内側にある補足のフェンスは`_requirement_units`が除く。
+    容器が確認回答の記録を含む場合は、質問と選択肢を要求単位から除く（`_answer_record_units`）。
     """
     requirements: list[tuple[str, str]] = []
     for heading in (line for line in body if line.startswith("## ") and "逐語引用" in line):
@@ -229,7 +294,9 @@ def _quoted_requirements(body: list[str], filename: str) -> list[tuple[str, str]
         containers = [(start, end) for start, end, info in _fenced_blocks(section) if info == "text"]
         for number, (start, end) in enumerate(containers, start=1):
             origin = f"{filename}#{heading.removeprefix('## ')} ブロック{number}"
-            requirements.extend((unit, origin) for unit in _requirement_units(section[start + 1 : end]))
+            content = section[start + 1 : end]
+            units = _answer_record_units(content)
+            requirements.extend((unit, origin) for unit in (units if units is not None else _requirement_units(content)))
     return requirements
 
 
@@ -393,6 +460,9 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
 
     同じ検証記録のパスだけを多数の行へ写すと、各行の条件を判定せずに空欄を埋めた証拠と区別できない。
     同じファイルでも行ごとに満たす箇所や内容を書いた根拠は文字列が異なるため、この共用に当たらない。
+    異なるWIの原文が異なる行どうしの共用は、説明を添えていても受理しない。同じ1文が別々のWIの異なる要求を
+    それぞれ直接満たす箇所を示すことはできず、汎用的な説明を添えた写しと区別できないためである。
+    分割起票した兄弟WIが同じ原文の行を同じ根拠で記録する共用と、具体的なテスト名と成功結果を持つ共用は受理する。
     """
     groups: dict[str, list[tuple[str, int, str, str]]] = collections.defaultdict(list)
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
@@ -404,9 +474,14 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
     errors: list[str] = []
     for evidence, rows in groups.items():
         units = {(section, awi, text) for section, _, awi, text in rows}
-        if len(units) < 2:
+        if len(units) < 2 or TEST_RESULT.search(evidence):
             continue
-        if _is_reference_only(evidence, repository):
+        if any(awi != other_awi and text != other_text for _, awi, text in units for _, other_awi, other_text in units):
+            reason = (
+                f"異なるWIの異なる要求単位で同じ達成根拠を共用しています: {evidence!r}。"
+                "各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
+            )
+        elif _is_reference_only(evidence, repository):
             reason = (
                 f"異なる要求単位で、行ごとの説明が無いファイル参照だけの達成根拠を共用しています: {evidence!r}。"
                 "参照先のうちその行の条件を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
@@ -459,6 +534,11 @@ def _expired_source_error(row: dict[str, str], index: int, repository: pathlib.P
     )
 
 
+def _quoted_units(units: typing.Iterable[str]) -> str:
+    """不足した単位を「」で囲んで並べ、単位の中の句読点と単位どうしの区切りを区別できるようにする。"""
+    return "、".join(f"「{unit}」" for unit in units)
+
+
 def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: str) -> list[str]:
     """証拠ファイルと対象WIが基準を満たすか判定し、診断を全件返す。"""
     try:
@@ -506,7 +586,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
         if missing_conditions:
             errors.append(
                 f"{filename}: 完成条件の証拠が不足しています"
-                f"（期待 {len(expected)} 行、実数 {len(actual)} 行、不足: {', '.join(missing_conditions.elements())}）。"
+                f"（期待 {len(expected)} 行、実数 {len(actual)} 行、不足: {_quoted_units(missing_conditions.elements())}）。"
                 f"{template}で不足した条件を原文どおり`wi_conditions`へ追記し、追加した行を判定して記入する"
             )
         if requirements:
@@ -517,7 +597,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
                 matched = sum((expected_units & actual_units).values())
                 errors.append(
                     f"{filename}: 原文要求の証拠が不足しています"
-                    f"（期待 {len(requirements)} 行、実数 {matched} 行、不足: {', '.join(missing.elements())}）。"
+                    f"（期待 {len(requirements)} 行、実数 {matched} 行、不足: {_quoted_units(missing.elements())}）。"
                     f"{template}で不足した要求を原文どおり`user_requirements`へ追記し、追加した行を判定して記入する"
                 )
     return errors
