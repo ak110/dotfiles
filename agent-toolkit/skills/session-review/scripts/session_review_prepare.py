@@ -1,6 +1,7 @@
 """セッション振り返りの入力を抽出し、会話の流れ、問題候補の一覧およびセッション統計を作業ディレクトリへ書く。
 
 1回の実行で証拠bundleを抽出し、メインが同じセッション内で読む3つの文書を書いて、所在と件数を1行のJSONで返す。
+会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で並べ、メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 候補一覧は1候補を1行の要約と記録位置で示し、全文が要る候補だけをメインが抽出器の`--detail`で照会する。
 
@@ -40,9 +41,13 @@ _UTTERANCE_EDGE_LENGTH = 500
 
 実際の記録では自動挿入本文を除いた発話の大半が1000字以下で、超える発話は記録あたり0〜2件だった。
 流れをたどるには先頭と末尾で足り、全文が要る発話は記録位置から照会する。
+ツール呼び出しと失敗の標識は1行（`_SUMMARY_LENGTH`字まで）で載せ、発話とは別の書式で区別する。
 """
 _SUMMARY_LENGTH = 200
-"""候補一覧の1行の要約、対象のツール呼び出しおよび直前のアシスタント発話へ載せる文字数。"""
+"""候補一覧の1行の要約、対象のツール呼び出しおよび直前のアシスタント発話、会話の流れのツール呼び出しと失敗の標識へ載せる文字数。
+
+ツール呼び出しの行を500字にすると大きい記録で会話の流れが約3割増えた一方、200字でコマンドとファイルパスを識別できた。
+"""
 _SLOW_CALL_LIMIT = 10
 _FULL_TEXT_KINDS = frozenset({"user-intervention", "escalation"})
 """候補一覧へ本文の全文を載せる候補種別。利用者の是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
@@ -149,20 +154,46 @@ def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
     return normalized if len(normalized) <= limit else normalized[:limit] + "…"
 
 
-def _conversation_document(utterances: list[dict[str, Any]], detail_command: str) -> str:
-    """会話の流れを、発話ごとの役割、時刻、記録位置と本文で組み立てる。"""
+def _conversation_document(events: list[dict[str, Any]], detail_command: str) -> str:
+    """会話の流れを、発話と、ツール呼び出し・失敗の標識の行で時系列に組み立てる。
+
+    発話は本文を改変せずフェンスで囲む（逐語引用の出所に使われるため）。
+    ツール呼び出しと失敗の標識はフェンスの外のリスト行とし、発話と区別できるようにする。
+    """
     lines = [
         "# 会話の流れ",
         "",
-        "メイン記録の利用者発話とアシスタント発話を時系列で並べる。自動挿入本文、実行環境の挿入、スキル展開、"
-        f"ツール呼び出しとツール結果は含まない。{_UTTERANCE_FULL_LIMIT}字を超える発話は先頭と末尾の"
-        f"{_UTTERANCE_EDGE_LENGTH}字ずつを載せる。全文は`{detail_command} --detail <記録位置>`で取得する。",
+        "メイン記録の利用者発話、アシスタント発話およびツール呼び出しを時系列で並べる。"
+        f"ツール呼び出しはツール名と代表入力（{_SUMMARY_LENGTH}字まで。`Write`・`Edit`は対象ファイルだけ）の1行で示し、"
+        "失敗したツール結果は直後に診断の1行を示す。"
+        "成功したツール結果の本文、自動挿入本文、実行環境の挿入、スキル展開、hookの追加コンテキスト、thinkingおよび委譲先の記録の内部は含まない。"
+        f"{_UTTERANCE_FULL_LIMIT}字を超える発話は先頭と末尾の{_UTTERANCE_EDGE_LENGTH}字ずつを載せる。"
+        f"発話とツール呼び出し・結果の全文は`{detail_command} --detail <記録位置>`で取得する。",
     ]
-    if not utterances:
-        lines.extend(["", "発話は0件である。"])
-    for item in utterances:
-        role = "利用者" if item["role"] == "user" else "アシスタント"
+    if not events:
+        lines.extend(["", "発話とツール呼び出しは0件である。"])
+    calls: dict[str, int] = {}
+    for item in events:
         locator = f"{item['record']}:{item['line']}"
+        kind = item.get("kind", "utterance")
+        if kind == "tool-call":
+            if item.get("call_id"):
+                calls[str(item["call_id"])] = len(lines)
+            lines.extend(
+                ["", f"- ツール呼び出し（{locator}）: {item.get('tool') or '名前なし'} {_one_line(str(item['text']))}".rstrip()]
+            )
+            continue
+        if kind == "tool-failure":
+            failure = f"  - 失敗（{locator}）: {_one_line(str(item['text'])) or '診断なし'}"
+            position = calls.get(str(item.get("call_id")))
+            if position is not None and position + 1 < len(lines) and lines[position + 1].startswith("- ツール呼び出し"):
+                # 並列の呼び出しでは結果の行が後の呼び出しより後に現れるため、対応する呼び出しの直後へ置く。
+                lines.insert(position + 2, failure)
+                calls = {key: value + 1 if value > position else value for key, value in calls.items()}
+            else:
+                lines.append(failure)
+            continue
+        role = "利用者" if item["role"] == "user" else "アシスタント"
         text = str(item["text"]).strip()
         lines.extend(["", f"## {role}（{item.get('timestamp') or '時刻なし'}、{locator}）", ""])
         if len(text) > _UTTERANCE_FULL_LIMIT:
@@ -471,7 +502,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         candidate_rows = _read_jsonl(bundle_dir / "candidates.jsonl")
         stats = _read_jsonl(bundle_dir / "stats.jsonl")
         timeline = _read_jsonl(bundle_dir / "timeline.jsonl")
-        utterances = _read_jsonl(bundle_dir / "conversation.jsonl")
+        conversation = _read_jsonl(bundle_dir / "conversation.jsonl")
         candidates = [row for row in candidate_rows if row.get("kind") == "candidate"]
         summary = next((row for row in candidate_rows if row.get("kind") == "candidate-summary"), {})
         evidence_by_id = {
@@ -490,7 +521,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     conversation_path = work_dir / CONVERSATION_FILENAME
     candidates_path = work_dir / CANDIDATES_FILENAME
     stats_path = work_dir / STATS_FILENAME
-    conversation_path.write_text(_conversation_document(utterances, detail_command), encoding="utf-8")
+    conversation_path.write_text(_conversation_document(conversation, detail_command), encoding="utf-8")
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
     candidates, single_failures, summary, ledger_skipped = _select_repeated_failures(candidates, summary, session_id, current)
@@ -502,7 +533,9 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
     total = next((event for event in stats if event.get("kind") == "stats-total"), {})
     compaction = next((event for event in stats if event.get("kind") == "stats-compaction-total"), {})
-    role_counts = collections.Counter(str(item["role"]) for item in utterances)
+    role_counts = collections.Counter(
+        str(item["role"]) for item in conversation if item.get("kind", "utterance") == "utterance"
+    )
     record = {
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
