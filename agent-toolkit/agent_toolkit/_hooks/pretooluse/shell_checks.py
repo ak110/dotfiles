@@ -66,8 +66,18 @@ _PROCESS_KILL_UNSAFE_MARKERS = frozenset("$`(){}")
 _PROCESS_KILL_LITERAL_SEARCH_COMMANDS = frozenset({"egrep", "fgrep", "grep", "rg"})
 
 
-def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
-    """`git grep`がリテラル検索パターンとして読む引数位置を返す。"""
+def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int | None]:
+    """`git grep`の引数列から、検索パターンの位置の集合と、revision・パスの区切り`--`の位置を返す。
+
+    gitの受理形式（git 2.47.3の実行で確認）は、最初の`--`より前に`-e`・`-f`か位置引数の検索パターンがあるかで分かれる。
+
+    - ある場合: 最初の`--`がrevision・パスの区切りであり、その後ろは全てrevisionとパスとして読まれる
+    - 無い場合: 最初の`--`はオプションの終端であり、直後の1トークンが検索パターンになる。
+      その後ろに現れる最初の`--`がrevision・パスの区切りになる
+
+    パターンの位置には`-e`の値と位置引数の検索パターンを含め、`-f`が読むファイル名は含めない。
+    `-ie`のように`-e`を他の短縮オプションと束ねた形は`-e`として扱わない。
+    """
     indices: set[int] = set()
     pattern_seen = False
     index = 0
@@ -99,7 +109,21 @@ def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
             pattern_seen = True
             indices.add(index)
         index += 1
-    return indices
+    if index >= len(arguments):
+        return indices, None
+    if pattern_seen:
+        return indices, index
+    pattern_index = index + 1
+    if pattern_index >= len(arguments):
+        return indices, None
+    indices.add(pattern_index)
+    separator = next((i for i in range(pattern_index + 1, len(arguments)) if arguments[i] == "--"), None)
+    return indices, separator
+
+
+def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
+    """`git grep`がリテラル検索パターンとして読む引数位置を返す。"""
+    return _git_grep_argument_layout(arguments)[0]
 
 
 def _git_log_literal_search_indices(arguments: Sequence[str]) -> set[int]:
@@ -305,25 +329,51 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
 # --- Bash: オプション終端`--`の後ろに置いたCLI自身のオプション ---
 
 _OPTION_TERMINATOR_PATTERN_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
-"""`--`の直後の1トークンを検索パターンとして受け取り得るコマンド。"""
+"""`-e`・`-f`を`--`より前に置かない場合に、`--`の直後の1トークンを検索パターンとして受け取るコマンド。"""
+
+_OPTION_TERMINATOR_PATTERN_OPTIONS = frozenset({"-e", "--regexp", "-f", "--file"})
+"""`rg`・`grep`系で検索パターンを指定するオプション。`--`より前にあると`--`の後ろは全てパスとして読まれる。"""
 
 _OPTION_TERMINATOR_GIT_SUBCOMMANDS = frozenset({"log", "diff", "show", "grep"})
-"""`--`の後ろを全てパス指定として扱う`git`のサブコマンド。"""
+"""`--`の後ろを全てパス指定として扱う`git`のサブコマンド。
+
+例外として`git grep`は、`--`より前に検索パターンが無い場合に最初の`--`の直後を検索パターンとし、
+続く`--`をrevision・パスの区切りとする（`_git_grep_argument_layout`）。
+"""
 
 
-def _options_after_terminator(arguments: Sequence[str], *, pattern_slot: bool) -> list[str]:
-    """引数列の`--`より後ろにある、`-`で始まるトークンを返す。
+def _options_after_terminator(arguments: Sequence[str], *, excluded: Iterable[int] = ()) -> list[str]:
+    """引数列の最初の`--`より後ろにある、`-`で始まるトークンを返す。
 
-    `pattern_slot`が真の場合は、`--`の直後の1トークンを検索パターンの位置として判定から除く。
+    `excluded`の位置（検索パターンや区切りの`--`）は判定から除く。
     `-`単独は標準入力を表すデータであり、オプションに数えない。
     """
-    arguments = list(strip_redirections(arguments))
     if "--" not in arguments:
         return []
-    after = arguments[arguments.index("--") + 1 :]
-    if pattern_slot:
-        after = after[1:]
-    return [token for token in after if token.startswith("-") and token != "-"]
+    skip = set(excluded)
+    start = list(arguments).index("--") + 1
+    return [
+        token
+        for index, token in enumerate(arguments)
+        if index >= start and index not in skip and token.startswith("-") and token != "-"
+    ]
+
+
+def _pattern_command_slot(arguments: Sequence[str]) -> set[int]:
+    """`rg`・`grep`系で、`--`の直後を検索パターンとして読む場合にその位置を返す。
+
+    `-e`・`--regexp`・`-f`・`--file`（`=`や`-eX`の連結形を含む）を`--`より前に置く場合は、
+    `--`の後ろが全てパスとして読まれるため空集合を返す（ripgrep 15.2.0とGNU grepの実行で確認）。
+    """
+    if "--" not in arguments:
+        return set()
+    terminator = list(arguments).index("--")
+    for token in arguments[:terminator]:
+        if token.split("=", 1)[0] in _OPTION_TERMINATOR_PATTERN_OPTIONS:
+            return set()
+        if _attached_short_value_option(token, ("-e", "-f")) is not None:
+            return set()
+    return {terminator + 1}
 
 
 def _check_bash_option_after_terminator(command: str) -> bool:
@@ -334,7 +384,8 @@ def _check_bash_option_after_terminator(command: str) -> bool:
     条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
     遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
     この誤りは明らかな行動誤りで、判定はコマンド文字列から機械的に確定でき、遮断で失うのはコマンド1回の発行だけである。
-    `rg`・`grep`系では`--`の直後を検索パターンとみなして除くため、`-`で始まるパターンは遮断しない。
+    `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
+    `-`で始まるパターンは遮断しない。`git grep`ではその後ろのrevision・パスの区切り`--`も除く。
     下位コマンドへ`--`の後ろでオプションを渡すCLI（`uv run --`など）は対象コマンドに含めない。
     """
     for segment in _extract_execution_segments(command):
@@ -342,13 +393,19 @@ def _check_bash_option_after_terminator(command: str) -> bool:
             continue
         name = pathlib.PurePath(segment.tokens[0]).name
         if name in _OPTION_TERMINATOR_PATTERN_COMMANDS:
-            found = _options_after_terminator(segment.tokens[1:], pattern_slot=True)
+            arguments = list(strip_redirections(segment.tokens[1:]))
+            found = _options_after_terminator(arguments, excluded=_pattern_command_slot(arguments))
             label = name
         else:
             subcommand = _git_subcommand_tokens(segment)
             if subcommand is None or subcommand[0] not in _OPTION_TERMINATOR_GIT_SUBCOMMANDS:
                 continue
-            found = _options_after_terminator(subcommand[1], pattern_slot=False)
+            arguments = list(strip_redirections(subcommand[1]))
+            excluded: set[int] = set()
+            if subcommand[0] == "grep":
+                pattern_indices, separator = _git_grep_argument_layout(arguments)
+                excluded = pattern_indices | ({separator} if separator is not None else set())
+            found = _options_after_terminator(arguments, excluded=excluded)
             label = f"git {subcommand[0]}"
         if not found:
             continue
