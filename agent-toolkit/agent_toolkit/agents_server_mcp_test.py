@@ -630,6 +630,17 @@ def test_instructions_keep_server_overview_without_argument_specification() -> N
         assert legacy not in instructions, legacy
 
 
+def test_instructions_process_each_returned_result_before_waiting_rest() -> None:
+    """instructionsだけから、返った終端結果をその場で処理し、残りを再発行で待ち、全件待ちのループで包まないと判断できる。
+
+    全件の終端まで戻らない回収ループで待機を包むと、先に終わった委譲先の結果が未処理のまま残る。
+    """
+    instructions = subject.mcp.instructions or ""
+    assert "応答の時点で終端したsessionの結果を返す" in instructions
+    assert "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ" in instructions
+    assert "全件の終端まで戻らないループやスクリプトで待機を包まない" in instructions
+
+
 def test_delegation_choice_and_cron_cues_are_read_before_first_start() -> None:
     """委譲手段を選ぶ時点と最初の起動の直前に読む文面へ、`Agent`ツールとの関係と定期再確認の装着時点を置く。
 
