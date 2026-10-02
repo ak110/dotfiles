@@ -554,8 +554,9 @@ def take_result(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。
 
-    返す本文から内部の項目（所有者と保持状態）を除き、レビューを目的とするsessionの完了結果へは
-    採否確定の次の操作を加える。判定に使うlabelは除く前の保持状態から読む。
+    返す本文から内部の項目（所有者と保持状態）を除き、起動時の`label`だけを`label`として残す。
+    呼び出し元が`session_id`から依頼名への対応表を持たずに、どの依頼の結果かを判別できるようにするためである。
+    レビューを目的とするsessionの完了結果へは採否確定の次の操作を加える。
     """
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
@@ -600,6 +601,8 @@ def take_result(
             payload.pop("owner_status_file", None)
             session = payload.pop("session", None)
             label = session.get("label") if isinstance(session, dict) else None
+            if isinstance(label, str) and label:
+                payload["label"] = label
             return with_review_result_next_action(payload, label), None
         finally:
             release_lock(lock_file)

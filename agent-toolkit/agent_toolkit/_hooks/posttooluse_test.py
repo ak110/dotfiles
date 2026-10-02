@@ -257,7 +257,10 @@ def test_reply_after_resume_registers_under_mcp_root_and_wait_collects_result(
 
     lines = capsys.readouterr().out.splitlines()
     assert wait_exit == 0
-    assert [json.loads(line) for line in lines] == [terminal]
+    delivered = [json.loads(line) for line in lines]
+    for row in delivered:
+        row.pop("agent_message_path")
+    assert delivered == [terminal]
 
 
 @pytest.mark.parametrize(

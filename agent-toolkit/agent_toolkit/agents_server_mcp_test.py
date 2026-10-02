@@ -378,6 +378,13 @@ class ConcurrentOwnerGoneBackend(FakeBackend):
         return await super().send_message(session, prompt)
 
 
+def _without_body_path(result: dict[str, Any]) -> dict[str, Any]:
+    """`atk agents wait`の終端行から、本文ファイルの内容が`agent_message`と一致することを確かめて`agent_message_path`を除く。"""
+    body = dict(result)
+    assert pathlib.Path(body.pop("agent_message_path")).read_text(encoding="utf-8") == body["agent_message"]
+    return body
+
+
 def _without_root(response: dict[str, Any]) -> dict[str, Any]:
     """`send_message`の応答から、書込主体を持つmanagerが加える`root_session_id`を確かめて除いた本体を返す。"""
     body = dict(response)
@@ -5798,7 +5805,7 @@ async def test_recovered_session_restores_persisted_result_once(
         )
         == 0
     )
-    restored = json.loads(capsys.readouterr().out)
+    restored = _without_body_path(json.loads(capsys.readouterr().out))
     second = await manager.kill(session_id, timeout=0)
 
     assert "`send_message`" in restored.pop("next_action")
@@ -6343,7 +6350,7 @@ async def test_stop_releases_wait_target_before_waiting_for_new_result(
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out) == {
+    assert _without_body_path(json.loads(capsys.readouterr().out)) == {
         "session_id": "new-session",
         "status": "completed",
         "agent_message": "新しい結果",

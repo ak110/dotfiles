@@ -67,10 +67,16 @@ def _dump(payload: Any, environment: Mapping[str, str]) -> str:
 
 
 def summarize_saved_wait(path: pathlib.Path) -> None:
-    """保存した待機結果に含まれる通知と終端の内訳を表示する。"""
+    """保存した待機結果に含まれる通知と終端の内訳を表示する。
+
+    終端行ごとに`label`、`status`および`agent_message_path`を1行ずつ示し、呼び出し元が保存先を開かずに
+    どの依頼が終端したかと結果本文のファイルの所在を得られるようにする。
+    行頭は`保存先:`以外とし、保存先の行を読む既存の処理と競合させない。
+    """
     notice_count = 0
     notice_session_ids: set[str] = set()
     terminal_count = 0
+    terminal_lines: list[str] = []
     with path.open(encoding="utf-8", newline="") as stream:
         for line in stream:
             try:
@@ -87,10 +93,19 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
                     notice_session_ids.add(session_id)
             if result.get("status") in state.TERMINAL_STATUSES:
                 terminal_count += 1
+                fields = [
+                    f"session_id={result.get('session_id')}",
+                    f"label={result.get('label') or 'なし'}",
+                    f"status={result.get('status')}",
+                    f"agent_message_path={result.get('agent_message_path') or 'なし'}",
+                ]
+                terminal_lines.append(f"終端行: {' '.join(fields)}")
     if notice_count:
         print(f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）")
     if terminal_count:
         print(f"終端: {terminal_count}件")
+        for line in terminal_lines:
+            print(line)
 
 
 def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None = None) -> int:
