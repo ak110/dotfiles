@@ -28,6 +28,48 @@ def _load_module() -> types.ModuleType:
 upgrade = _load_module()
 
 
+class _FakeRegistry:
+    """`HKCU\\Environment`の代わりに値を保持し、操作を記録する偽の実装。"""
+
+    def __init__(self, values: dict[str, tuple[object, int]] | None = None) -> None:
+        self.values = dict(values or {})
+        self.operations: list[str] = []
+
+    def read(self) -> dict[str, tuple[object, int]]:
+        self.operations.append("read")
+        return dict(self.values)
+
+    def write(self, name: str, value: object, kind: int) -> None:
+        self.operations.append(f"write:{name}")
+        self.values[name] = (value, kind)
+
+    def delete(self, name: str) -> None:
+        self.operations.append(f"delete:{name}")
+        del self.values[name]
+
+
+def _profile_env(tmp_path: pathlib.Path) -> dict[str, str]:
+    """通常profileの代わりに`tmp_path`配下を指す環境変数を返す。"""
+    profile = tmp_path / "normal-profile"
+    (profile / ".local" / "bin").mkdir(parents=True, exist_ok=True)
+    (profile / ".local" / "share").mkdir(parents=True, exist_ok=True)
+    (profile / "AppData" / "Local" / "Programs").mkdir(parents=True, exist_ok=True)
+    (profile / "AppData" / "Roaming").mkdir(parents=True, exist_ok=True)
+    return {
+        "HOME": str(profile),
+        "USERPROFILE": str(profile),
+        "LOCALAPPDATA": str(profile / "AppData" / "Local"),
+        "APPDATA": str(profile / "AppData" / "Roaming"),
+    }
+
+
+def _git_answers(arguments: list[str]) -> subprocess.CompletedProcess[str]:
+    """検証が問い合わせるGitの値を返す。"""
+    values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
+    output = next((value for option, value in values.items() if option in arguments), "")
+    return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
+
+
 def test_cli_outputs_japanese_when_default_stream_encoding_is_not_utf8() -> None:
     """非UTF-8の既定ストリームでも日本語のCLI出力を維持する。"""
     env = os.environ.copy()
@@ -167,7 +209,9 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
         output = next((value for option, value in values.items() if option in arguments), "")
         return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
 
-    upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner)
+    upgrade.run_upgrade_check(
+        tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
+    )
 
     assert len(observations) == 2
     for env, bin_dir, tools_dir in observations:
@@ -209,7 +253,9 @@ def test_initial_apply_failure_preserves_child_output_and_stops_update(
         return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
 
     with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23"):
-        upgrade.run_upgrade_check(tmp_path, "windows", runner=runner)
+        upgrade.run_upgrade_check(
+            tmp_path, "windows", runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
+        )
     stdout, stderr = capsys.readouterr()
     assert "child-out\n" in stdout
     assert stderr == "child-error\n"
@@ -251,3 +297,133 @@ def test_create_local_remote_can_advance_checkout(tmp_path: pathlib.Path) -> Non
     git("--git-dir", bare_repo, "update-ref", "refs/heads/upgrade-check", current_oid)
     git("-C", checkout, "pull", "--ff-only")
     assert git("-C", checkout, "rev-parse", "HEAD").stdout.strip() == current_oid
+
+
+_REG_SZ = 1
+_REG_EXPAND_SZ = 2
+
+
+def _registry_writing_runner(registry: _FakeRegistry, *, fail: bool):
+    """公開ランチャーの実行中にレジストリを書き換え、指定時は失敗する偽のrunnerを返す。"""
+
+    def runner(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[0] == "cmd.exe":
+            registry.values["LIBARCHIVE"] = ("C:\\temp\\home\\libarchive.dll", _REG_SZ)
+            registry.values["Path"] = ("%USERPROFILE%\\bin;C:\\temp\\home\\.herdr", _REG_EXPAND_SZ)
+            del registry.values["MSYS"]
+            if fail:
+                return subprocess.CompletedProcess(arguments, 9, stdout="", stderr="")
+        return _git_answers(arguments)
+
+    return runner
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_windows_registry_restored(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    fail: bool,
+) -> None:
+    """検証中に追加・変更・削除された値を、成功時と子プロセス失敗時の双方で退避前の値と値型へ戻す。"""
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(tmp_path / "uv"))
+    (tmp_path / "uv").write_bytes(b"uv")
+    saved: dict[str, tuple[object, int]] = {
+        "Path": ("%USERPROFILE%\\bin", _REG_EXPAND_SZ),
+        "MSYS": ("winsymlinks:nativestrict", _REG_SZ),
+    }
+    registry = _FakeRegistry(saved)
+
+    runner = _registry_writing_runner(registry, fail=fail)
+    if fail:
+        with pytest.raises(upgrade.UpgradeCheckError, match="終了コード9"):
+            upgrade.run_upgrade_check(tmp_path, "windows", runner=runner, registry=registry, profile_env=_profile_env(tmp_path))
+    else:
+        upgrade.run_upgrade_check(tmp_path, "windows", runner=runner, registry=registry, profile_env=_profile_env(tmp_path))
+
+    assert registry.values == saved
+    stdout = capsys.readouterr().out
+    for name in ("LIBARCHIVE", "MSYS", "Path"):
+        assert f"検証前の値へ戻したユーザー環境変数: {name}" in stdout
+
+
+def test_linux_does_not_touch_registry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Linuxではレジストリの実装を呼ばない。"""
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(tmp_path / "uv"))
+    (tmp_path / "uv").write_bytes(b"uv")
+    registry = _FakeRegistry({"Path": ("x", _REG_SZ)})
+
+    upgrade.run_upgrade_check(
+        tmp_path,
+        "linux",
+        runner=lambda arguments, **_kwargs: _git_answers(arguments),
+        registry=registry,
+        profile_env=_profile_env(tmp_path),
+    )
+
+    assert not registry.operations
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "relative"),
+    [
+        ("linux", ".local/bin/codex"),
+        ("windows", "AppData/Local/Programs/Herdr"),
+        ("windows", "AppData/Roaming/leaked"),
+    ],
+)
+def test_profile_leak_fails_check(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, platform_name: str, relative: str
+) -> None:
+    """検証中に通常profile側の監視ディレクトリへ項目が作成されると、そのパスを含む失敗にする。"""
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(tmp_path / "uv"))
+    (tmp_path / "uv").write_bytes(b"uv")
+    env = _profile_env(tmp_path)
+    leaked = pathlib.Path(env["HOME"]) / relative
+
+    def runner(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[0] in ("cmd.exe", "bash"):
+            leaked.mkdir(parents=True)
+        return _git_answers(arguments)
+
+    with pytest.raises(upgrade.UpgradeCheckError) as exc_info:
+        upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=env)
+
+    assert str(leaked) in str(exc_info.value)
+
+
+def test_profile_unchanged_passes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存ファイルの内容が変わっても、項目名が変わらなければ成功する。"""
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(tmp_path / "uv"))
+    (tmp_path / "uv").write_bytes(b"uv")
+    env = _profile_env(tmp_path)
+    existing = pathlib.Path(env["HOME"]) / ".bashrc"
+    existing.write_text("before\n", encoding="utf-8")
+
+    def runner(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[0] == "cmd.exe":
+            existing.write_text("after\n", encoding="utf-8")
+        return _git_answers(arguments)
+
+    upgrade.run_upgrade_check(tmp_path, "windows", runner=runner, registry=_FakeRegistry(), profile_env=env)
+
+
+def test_profile_leak_reported_with_original_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """子プロセスが失敗した検証では元の例外を保ち、通常profileの差分を標準エラーへ書く。"""
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(tmp_path / "uv"))
+    (tmp_path / "uv").write_bytes(b"uv")
+    env = _profile_env(tmp_path)
+    leaked = pathlib.Path(env["HOME"]) / ".local" / "share" / "uv"
+
+    def runner(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[0] == "bash":
+            leaked.mkdir(parents=True)
+            return subprocess.CompletedProcess(arguments, 5, stdout="", stderr="")
+        return _git_answers(arguments)
+
+    with pytest.raises(upgrade.UpgradeCheckError, match="終了コード5"):
+        upgrade.run_upgrade_check(tmp_path, "linux", runner=runner, registry=None, profile_env=env)
+
+    assert str(leaked) in capsys.readouterr().err
