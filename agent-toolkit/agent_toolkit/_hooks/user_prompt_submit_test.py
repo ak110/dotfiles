@@ -353,7 +353,7 @@ class TestSlashCommandDetection:
 
 
 class TestNonMatchingPrompts:
-    """非スキル起動プロンプトでスキル状態とsessionTitleが変わらないことの検証。"""
+    """スキルを起動しないプロンプトでスキル状態とsessionTitleが変わらないことの検証。"""
 
     @staticmethod
     def _assert_no_notice(result: subprocess.CompletedProcess[str]) -> None:
@@ -392,7 +392,7 @@ class TestNonMatchingPrompts:
         assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
 
     def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
-        """常駐処理が渡す起動時プロンプトは注記の対象から外し、経過時間も記録しない。"""
+        """process-loopが渡す起動時プロンプトは注記の対象から外し、経過時間も記録しない。"""
         sid = "automated-prompt"
         goal = automated_prompt.wrap(
             "`agent-toolkit:process-wi`を完遂してください。",

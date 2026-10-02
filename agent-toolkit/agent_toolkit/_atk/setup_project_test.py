@@ -22,10 +22,10 @@ def _run(monkeypatch: pytest.MonkeyPatch, target: Path, *options: str) -> int:
 def test_default_migrates_instructions_and_links_skills_without_rules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     target = tmp_path / "project"
     (target / ".claude" / "skills").mkdir(parents=True)
-    (target / "CLAUDE.md").write_text("# プロジェクト指示\n", encoding="utf-8")
+    (target / "CLAUDE.md").write_text("# プロジェクト規範\n", encoding="utf-8")
 
     assert _run(monkeypatch, target) == 0
-    assert (target / "AGENTS.md").read_text(encoding="utf-8") == "# プロジェクト指示\n"
+    assert (target / "AGENTS.md").read_text(encoding="utf-8") == "# プロジェクト規範\n"
     assert not (target / "CLAUDE.md").exists()
     assert os.readlink(target / ".agents" / "skills") == "../.claude/skills"
     assert not (target / ".claude" / "rules" / "agent-toolkit").exists()

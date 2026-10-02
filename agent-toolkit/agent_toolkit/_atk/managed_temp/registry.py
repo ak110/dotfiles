@@ -117,7 +117,7 @@ _PREFIX_RULES = (
 """prefixの受理条件と、条件ごとの説明文。`_PREFIX_RE`と同じ規則を条件単位で表す。"""
 _UTC_ISO8601_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+00:00\Z")
 MAX_AGE_DAYS = 7
-"""管理対象一時領域を自動削除するまでの日数。最終更新日時からの経過で判定する。"""
+"""managed-tempのディレクトリを自動削除するまでの日数。最終更新日時からの経過で判定する。"""
 _WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
 _WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
 _WINDOWS_ACL_REVISION = 2
@@ -169,7 +169,7 @@ class ManagedTempError(Exception):
 
 
 class _ManagedTempEntry(typing.TypedDict):
-    """真正性検証済みの管理対象一時領域を列挙する公開項目。"""
+    """真正性検証済みのmanaged-tempのディレクトリを列挙する公開項目。"""
 
     path: str
     prefix: str | None

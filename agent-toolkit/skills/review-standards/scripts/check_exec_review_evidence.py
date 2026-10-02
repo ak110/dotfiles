@@ -3,7 +3,7 @@
 異なる要求へ参照先のない根拠を写すと条件別の検収が成立しないため、errorとして扱う。
 参照内容が実際に各条件を満たすかはレビュー担当が判定する。
 
-`--template`は証拠の判定と同じ抽出規則で期待行を求め、証拠JSONに不足する行を判定欄が空の雛形として追記する。
+`--template`は証拠の判定と同じ規則で期待行を求め、`完成条件証拠`に不足する行を判定欄が空の雛形として追記する。
 担当が原文を書き写す量を減らすためであり、判定・根拠・判定したHEADは担当が各行で記入する。
 雛形が判定欄を埋めないのは、全行へ同じ判定やHEADを機械的に付けると意味の確認を省いた証拠になるためである。
 未記入の行は証拠の判定で拒否する。
@@ -335,7 +335,7 @@ def _validate_structure(data: object) -> tuple[dict[str, typing.Any], list[str]]
     """最上位、配列、行と必須項目の型を確かめる。判定値の内容は問わない。"""
     errors: list[str] = []
     if not isinstance(data, dict):
-        return {}, ["証拠JSONの最上位はオブジェクトにしてください"]
+        return {}, ["`完成条件証拠`の最上位はオブジェクトにしてください"]
     for section, fields in REQUIRED_FIELDS.items():
         rows = data.get(section)
         if not isinstance(rows, list):
@@ -392,7 +392,7 @@ def _commit_oid(repository: pathlib.Path, revision: str) -> str:
 
 
 def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
-    """WIの指定集合によらず証拠の全判定行が実レビュー対象に対応するか確かめる。"""
+    """WIの指定集合によらず`完成条件証拠`の全ての行が実レビュー対象に対応するか確かめる。"""
     expected = _commit_oid(repository, expected_head)
     errors = []
     for section in REQUIRED_FIELDS:
@@ -666,7 +666,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        return [f"証拠JSONを読めません: {exc}"]
+        return [f"`完成条件証拠`を読めません: {exc}"]
     payload, errors = _validate_schema(data)
     if errors:
         return errors
@@ -696,7 +696,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
         ]
         for condition in unmatched:
             errors.append(
-                f"{filename}: 完成条件の証拠行が原文と一致しません: {condition}。"
+                f"{filename}: `完成条件証拠`の`wi_conditions`の`condition`が原文と一致しません: {condition}。"
                 "`atk wi show`で完成条件を読み、原文どおりに書き直す"
             )
         template = f"`atk run-script exec-review-evidence-check -- --template {path} {filename}`"
@@ -722,7 +722,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
 
 
 def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str], int, int]:
-    """不足する期待行を判定欄が空の雛形として証拠JSONへ追記し、診断、追加行数、保持行数を返す。
+    """不足する期待行を判定欄が空の雛形として`完成条件証拠`へ追記し、診断、追加行数、保持行数を返す。
 
     再レビューでも記入済みの行を失わないよう、既存の行は内容と順序を保ち、不足分だけを各配列の末尾へ加える。
     既存の証拠を読めない場合は書き込まず診断を返す。
@@ -731,7 +731,7 @@ def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str],
         text = path.read_text(encoding="utf-8") if path.exists() else ""
         data = json.loads(text) if text.strip() else {"wi_conditions": [], "user_requirements": []}
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        return [f"証拠JSONを読めません: {exc}"], 0, 0
+        return [f"`完成条件証拠`を読めません: {exc}"], 0, 0
     payload, errors = _validate_structure(data)
     if errors:
         return errors, 0, 0
@@ -788,9 +788,9 @@ def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str],
 
 
 def main(argv: list[str] | None = None) -> int:
-    """証拠JSONと対象WI名を受け取り、基準を満たすか判定するか雛形を書き込んで結果を返す。"""
+    """`完成条件証拠`と対象WI名を受け取り、基準を満たすか判定するか雛形を書き込んで結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("evidence", type=pathlib.Path, help="完成条件証拠JSONの絶対パス")
+    parser.add_argument("evidence", type=pathlib.Path, help="`完成条件証拠`（JSON）の絶対パス")
     parser.add_argument("wi", nargs="+", help="対象WIのファイル名")
     parser.add_argument(
         "--expected-head",
@@ -799,11 +799,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--template",
         action="store_true",
-        help="判定せず、証拠JSONに不足する完成条件と原文要求の行を判定欄が空の雛形として追記する",
+        help="判定せず、`完成条件証拠`に不足する完成条件と原文要求の行を判定欄が空の雛形として追記する",
     )
     args = parser.parse_args(argv)
     if not args.evidence.is_absolute():
-        parser.error("証拠JSONには絶対パスを指定してください")
+        parser.error("`完成条件証拠`には絶対パスを指定してください")
     if args.template:
         if args.expected_head is not None:
             parser.error("--templateと--expected-headは同時に指定できません。雛形の出力後に--expected-headだけを付けて判定する")
@@ -813,14 +813,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"失敗: {error}", file=sys.stderr)
             print(
                 _next_action.next_action_line(
-                    "証拠JSONは変更していない。各行が示す箇所を直して同じコマンドでもう一度実行する。"
+                    "`完成条件証拠`は変更していない。各行が示す箇所を直して同じコマンドでもう一度実行する。"
                     "WI本文を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめる"
                 ),
                 file=sys.stderr,
             )
             return 1
         print(
-            f"成功: 証拠JSONへ雛形を書き込みました（追加 {added} 行、既存 {kept} 行を保持）: {args.evidence}\n"
+            f"成功: `完成条件証拠`へ雛形を書き込みました（追加 {added} 行、既存 {kept} 行を保持）: {args.evidence}\n"
             + _next_action.next_action_line(
                 "空欄のoutcome・evidence・reviewed_headを各行で判定して記入し、"
                 f"`atk run-script exec-review-evidence-check -- {args.evidence} {' '.join(args.wi)} "
@@ -836,7 +836,7 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         print(
             _next_action.next_action_line(
-                "各行が示す箇所を証拠JSONで直して同じコマンドでもう一度確かめる。"
+                "各行が示す箇所を`完成条件証拠`で直して同じコマンドでもう一度確かめる。"
                 "WI本文や節を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめ、"
                 "WI側が欠けている場合はWIの欠陥として報告する"
             ),

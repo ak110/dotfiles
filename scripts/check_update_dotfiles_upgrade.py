@@ -336,7 +336,7 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
         f"{paths}\n"
         "書込主体として次の2つを確認する。\n"
         "  (1) 検証が起動した処理: どの環境変数から書込先を決めたかを調べ、`_isolated_env`で検証homeへ向ける。\n"
-        "  (2) 検証と無関係なランナー側の常駐処理や予約タスク: 同じ実行者で動くため`_isolated_env`では解消しない。"
+        "  (2) 検証と無関係なランナー側の常駐プロセスや予約タスク: 同じ実行者で動くため`_isolated_env`では解消しない。"
         "`.github/workflows/ci.yaml`の`test-windows`などで、検証より前に発生源を止める。"
     )
 

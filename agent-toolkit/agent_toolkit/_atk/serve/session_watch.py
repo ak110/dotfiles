@@ -60,13 +60,30 @@ def _is_user_record(record: dict[str, typing.Any], engine: str) -> bool:
     return isinstance(payload, dict) and payload.get("role") == "user"
 
 
-def summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None, str | None, bool | None]:
-    """一覧の識別に使う作業ディレクトリ、最初の発話、開始日時および発話の有無を先頭から取得する。
+SummaryFields = tuple[str | None, str | None, str | None, bool | None, str | None]
+"""`summary_fields`が返す作業ディレクトリ、最初の発話、開始日時、発話の有無およびCodexの親threadの識別子。"""
+
+
+def _codex_parent_thread_id(payload: dict[str, typing.Any]) -> str | None:
+    """Codexの`session_meta`の`source`から、`spawn_agent`系で起動した親threadの識別子を取り出す。"""
+    source = payload.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
+    parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
+    return parent if isinstance(parent, str) and parent else None
+
+
+def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
+    """一覧の識別に使う作業ディレクトリ、最初の発話、開始日時、発話の有無および親threadを先頭から取得する。
 
     発話の有無は、ユーザー発話の記録行を1件でも持てば`True`とする。
     最初の発話が本文を持たない形式でも`True`とし、`first_user_message`がnullであることとは区別する。
     記録を読み取れない場合は判定できないため`None`を返す。
+    親threadはCodex自身のサブエージェントの記録だけが持ち、最初の`session_meta`行の値を使う。
+    2行目以降の`session_meta`行は親thread側のメタデータの写しであり、記録自身を表さないためである。
     """
+    parent_thread_id: str | None = None
+    meta_seen = False
     cwd: str | None = None
     first_user_message: str | None = None
     first_user_seen = False
@@ -101,6 +118,9 @@ def summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | N
                     payload = record.get("payload")
                     if not isinstance(payload, dict):
                         continue
+                    if record.get("type") == "session_meta" and not meta_seen:
+                        meta_seen = True
+                        parent_thread_id = _codex_parent_thread_id(payload)
                     if (
                         started_at is None
                         and record.get("type") == "session_meta"
@@ -119,8 +139,8 @@ def summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | N
                 if cwd is not None and first_visible_user_seen and started_at is not None:
                     break
     except OSError:
-        return cwd, first_user_message, started_at or first_timestamp, None
-    return cwd, first_user_message, started_at or first_timestamp, first_user_seen
+        return cwd, first_user_message, started_at or first_timestamp, None, parent_thread_id
+    return cwd, first_user_message, started_at or first_timestamp, first_user_seen, parent_thread_id
 
 
 def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
@@ -138,9 +158,6 @@ def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
         return None
     return False
 
-
-SummaryFields = tuple[str | None, str | None, str | None, bool | None]
-"""`summary_fields`が返す作業ディレクトリ、最初の発話、開始日時および発話の有無。"""
 
 _TRUSTED_AGE_NS = 2_000_000_000
 """解析結果を信用するために必要な、解析の開始時刻と更新時刻の差。秒単位とFATの2秒の時刻精度を覆う。"""

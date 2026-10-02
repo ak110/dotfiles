@@ -11,7 +11,7 @@ Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッ
 `session.start`は読込目印へ`ready`を書き、終了要求を`consumed`へ初期化する。Pythonは目印の内容が`ready`で、更新時刻が現在のClaude Code本体の開始より後の場合だけ、終了要求へ`requested`を書いて`exit_requested`を返す。`turn.complete`はメインのターンだけでその値を読み、`consumed`へ書き換えた後に`/exit`をキューへ入れる。目印が無い場合とCodexでは、対話CLI本体を従来の方法で終了させる。
 
 `/exit`は終了とともに停止するセッション限りの作業が残ると確認画面を表示するため、`turn.complete`は`/exit`の直前に`durable`が真でないcron taskを削除する。一覧の取得と各削除は`$.tool.check`の判定が`allow`の場合だけ行い、失敗しても`/exit`は実行する。
-常駐処理が起動した会話の最上位のStopでは、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`が背景作業の残存を確かめる。終了要求が`requested`かつStop入力の`background_tasks`に有効な非`teammate`の作業が残る場合は、同フックが終了要求を`consumed`へ戻してblockする。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
+process-loopが起動した会話の最上位のStopでは、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がバックグラウンドタスクの残存を確かめる。終了要求が`requested`かつStop入力の`background_tasks`に有効な非`teammate`の作業が残る場合は、同フックが終了要求を`consumed`へ戻してblockする。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
 
 通常のSessionEndでは現行セッションの2ファイルを保持し、期限を過ぎた他セッションのファイルを回収する。`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルには前掲の固定値だけを保存し、発話やツール結果は保存しない。
 
@@ -22,7 +22,7 @@ hookは1呼び出しごとに独立プロセスとして起動するため、情
 
 - パス規則: 本書冒頭が定めるパスを`tempfile.gettempdir()`と`payload["session_id"]`から組み立てる
 - 形式: 単一のJSONオブジェクト。新規フラグの名前はsnake_caseにそろえる（努力目標。命名の一貫性を保つため。既存のフラグ名は読み取り側との契約であり、そのまま保つ）
-- 書き込み: PostToolUseで観測したイベント（スキル呼び出し・背景タスクの起動など）をフラグとして記録する
+- 書き込み: PostToolUseで観測したイベント（スキル呼び出し・バックグラウンドタスクの起動など）をフラグとして記録する
 - 読み取り: PreToolUse・UserPromptSubmit・Stopで判定材料として参照する（例: 所有外TaskStopの遮断・計画名の表示・終了前の未観測作業の通知）
 - 破損・不在時: 空辞書として扱い、安全側の判定にフォールバックする
 - `session_id`の切替え: 現行状態が無い場合だけtranscriptを先頭から走査し、状態ファイルを持つ別の`session_id`が一意なら全キーを継承する。継承元を状態へ記録し、現行状態がある通常時は状態ファイルの存在確認だけで終える
@@ -34,11 +34,11 @@ hookは1呼び出しごとに独立プロセスとして起動するため、情
 - 通常状態の期限より長く保持する記録は通常状態JSONへ混在させず、用途別の保存先と排他ロックへ分離する。
   `agent-toolkit`の計画名再出力抑止記録は本書冒頭が定める分離先を使う
 - 状態JSONの削除契機は、期限回収と、終了理由が`clear`のSessionEndに限る。SessionEndは同じセッションへ後から戻る場合にも発火し、`--continue`・`--resume`・`/resume`で戻ると同じ`session_id`で会話が続くため、それ以外の契機で削除すると再開後の記録が失われる。期限回収の対象は更新から一定期間が経過した通常状態と計画名の再出力抑止記録とする。`clear`では会話の破棄が確定するため、排他ロック下でそのセッションの通常状態と再出力抑止記録を削除する。ロックファイルの扱いは「並行書き込みの排他制御」に従う
-- サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。サブエージェント側で記録される状態は呼び出し元へ自動伝播しないため、親側で必要な値は完了報告の構造化欄から厳格に解析する
+- サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。サブエージェント側で記録される状態は委譲元へ自動伝播しないため、親側で必要な値は完了報告の構造化欄から厳格に解析する
 
-### 管理対象一時領域の登録情報
+### managed-tempの登録情報
 
-管理対象一時領域の管理用マーカーファイル（`.agent-toolkit-managed-temp.json`）と利用者専用登録簿は、同じ版数付きの登録情報を保持する。
+managed-tempの管理用マーカーファイル（`.agent-toolkit-managed-temp.json`）と利用者専用登録簿は、同じ版数付きの登録情報を保持する。
 スキーマ版数3では`prefix`・`created_at`・`awis`を必須とし、全項目の完全一致を検証する。
 スキーマ版数2は`prefix`と`created_at`を必須とする版数2のフィールド集合どうしだけを完全一致で検証する。
 スキーマ版数1は版数1のフィールド集合どうしだけを完全一致で検証する。
@@ -81,7 +81,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 ## plan系
 
-- `working_plan_save_notified`: 計画作業rootに残る計画バンドルの保存確認をStopフックが促した事実を記録する。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、同フックが再通知の抑止に読む。セッション終了まで保持し、リセットする手段は設けない
+- `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認をStopフックが促した事実を記録する。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、同フックが再通知の抑止に読む。セッション終了まで保持し、リセットする手段は設けない
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画構造の自動チェックの適用判定に使う
 - `current_plan_file_path`: PostToolUseが計画ファイルの編集時と公開された計画ファイル作成コマンドの出力からパスを記録し、PreToolUse(Skill)がplan-mode起動時に消去する。UserPromptSubmitが計画名の`sessionTitle`出力に読む
 - `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値を記録する。
@@ -94,10 +94,10 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `process_wi_skill_invoked`: process-wiスキルの起動を記録する。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受領した時点で偽へ戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が`atk agents-exit-session`の実行と機械可読な応答を記録し、
-  `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。同フックが背景作業の残存で終了要求を取り下げた時点で偽へ戻し、`atk agents-exit-session`の再実行が再び真にする。保持はセッション状態の有効期間中に限り、通常のスキル完了処理では再利用の対象外とする
+  `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。同フックがバックグラウンドタスクの残存で終了要求を取り下げた時点で偽へ戻し、`atk agents-exit-session`の再実行が再び真にする。保持はセッション状態の有効期間中に限り、通常のスキル完了処理では再利用の対象外とする
 - `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションのツール呼び出しを含まないターンの連続回数を記録する。
-  同フックが常駐ループの停止判定の入力として読む。ツール呼び出しを観測したターンと、委譲先または背景ジョブの完了待ちのターンで0へ戻し、停止工程を実行した時点でも0へ戻す。セッション終了まで保持する
-- `stop_observed_entry_count`: 同フックが、Stop判定の時点で観測済みの会話記録のエントリ数を記録する。
+  同フックが常駐ループの停止判定の入力として読む。ツール呼び出しを観測したターンと、委譲先またはバックグラウンドタスクの完了待ちのターンで0へ戻し、停止工程を実行した時点でも0へ戻す。セッション終了まで保持する
+- `stop_observed_entry_count`: 同フックが、Stop判定の時点で観測済みのセッション記録のエントリ数を記録する。
   同フックが次のターンで増分だけを走査する起点として読む。セッション終了まで保持する
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間を読み、発話の内容を現物で確かめる手順を示す注記を注入するか判定する。
@@ -121,17 +121,17 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 ## agents_server連携系
 
-- `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の事前判定および各ツールのPostToolUse状態更新に使う。`show`の応答が返す稼働中の子sessionの識別子と`cwd`の対も同じキーへ記録し、呼び出し元がその子sessionへ追送と打ち切りを発行できる状態にする
-- `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。公開状態はそのsessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`はその作業を発生させた主体を示す。`model_type`は起動入力の`model_type`を優先し、省略時は`start`の`task`ではタスク文書名、他の`mode`では`mode`ごとの省略時の種別から解決する。統合前の旧名で記録された開始は対応する`mode`として扱う。`error`と`agent_message`は終端時の値とする。内部状態は`turn_id`とする。記録は`start`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する。`pending_observation`は各開始操作の成功応答で真になる。`send_message`の応答では`delivery`が`reply_started`または`reply_ambiguous`である場合だけ真にする。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録する。`delivery`が`steered`である応答では真にしない。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、そのturnの終端はそのturnに対する既存の観測が待つためである。`agent_id`を持たないメイン会話は`main`とする。呼出主体の判別に`transcript_path`を使わない扱いは`claude-hooks.md`「hookスクリプトの基本プロトコル」の呼出主体の判別の項に従う。`kill`の成功応答、Bash経由の`atk agents wait`完了時および、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合は`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。CLI待機中はルートセッションが所有する待機所有権の生存をStopフックが確認し、`pending_observation`が真でも未観測警告の対象から除外する。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する全sessionを観測済みにする。更新の対象は、既存の記録を持つsessionに限る。呼び出しが受理された時点で観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。警告の対象は、責任主体を記録した形式の記録に限る。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
+- `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の事前判定および各ツールのPostToolUse状態更新に使う。`show`の応答が返す稼働中の子sessionの識別子と`cwd`の対も同じキーへ記録し、委譲元がその子sessionへ追送と打ち切りを発行できる状態にする
+- `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。公開状態はそのsessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`はその作業を発生させた主体を示す。`model_type`は起動入力の`model_type`を優先し、省略時は`start`の`task`では`<役割名>.subagent.md`のファイル名、他の`mode`では`mode`ごとの省略時の種別から解決する。統合前の旧名で記録された開始は対応する`mode`として扱う。`error`と`agent_message`は終端時の値とする。内部状態は`turn_id`とする。記録は`start`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する。`pending_observation`は各開始操作の成功応答で真になる。`send_message`の応答では`delivery`が`reply_started`または`reply_ambiguous`である場合だけ真にする。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録する。`delivery`が`steered`である応答では真にしない。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、そのturnの終端はそのturnに対する既存の観測が待つためである。`agent_id`を持たないメイン会話は`main`とする。呼出主体の判別に`transcript_path`を使わない扱いは`claude-hooks.md`「hookスクリプトの基本プロトコル」の呼出主体の判別の項に従う。`kill`の成功応答、Bash経由の`atk agents wait`完了時および、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合は`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。CLI待機中はルートセッションが所有する待機所有権の生存をStopフックが確認し、`pending_observation`が真でも未観測警告の対象から除外する。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する全sessionを観測済みにする。更新の対象は、既存の記録を持つsessionに限る。呼び出しが受理された時点で観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。警告の対象は、責任主体を記録した形式の記録に限る。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
 `status`が`running`である記録の件数は、待機の遮断の入力の外にある。`stop`の成功応答を受領した場合は、その`session_id`のエントリーを本キーから除去する。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その応答はそのsessionが終端済み、期限切れまたは既破棄のいずれかであることを含意し、除去により未終端のsessionの記録が失われることはない。
 
-## 背景タスク系
+## バックグラウンドタスク系
 
-- `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から取得したタスクIDを重複なく記録する。
+- `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から取得したタスクIDを重複なく記録する。この記録をバックグラウンドタスクの所有記録と呼ぶ。バックグラウンドタスクは、BashやAgentを背景で動かした非同期の処理を指す。
   記録の契機は次の4つとする。Bashの`run_in_background`指定が成功した応答と、同じ指定が失敗した応答。
-  ツール種別を問わない背景移行通知。`Agent`・`Task`の背景起動の応答（`status`が`async_launched`）が返した`agentId`。所有の根拠は自身の呼び出しが識別子を返したことであり、
+  ツール種別を問わないバックグラウンドタスクへの移行通知。`Agent`・`Task`の背景起動の応答（`status`が`async_launched`）が返した`agentId`。所有の根拠は自身の呼び出しが識別子を返したことであり、
   その呼び出しの成否に依存しない。
-  PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力として読む。
+  PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力として読む。
   セッション終了まで保持し、リセット処理は設けない
 - `background_task_output_paths`: PostToolUseが背景移行応答から得たタスクIDをキー、絶対出力パスを値として記録する。
   `run_in_background=true`の応答と、実行時間上限によるホストの背景移行応答を同じ形式で扱う。

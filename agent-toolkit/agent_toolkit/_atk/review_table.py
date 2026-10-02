@@ -1,8 +1,8 @@
 """レビュー指摘管理表の8列TSVを排他更新する補助CLI。
 
 排他ロックは表と同じディレクトリではなくホーム配下の専用ディレクトリへ置く。
-表の配置先には計画作業rootが含まれる。兄弟のロックファイルを生成すると、計画バンドルの回収後も
-ロックだけが作業rootへ残存し、計画の一覧と親ディレクトリの回収を妨げる。
+表の配置先には`~/.claude/plans`が含まれる。兄弟のロックファイルを生成すると、計画バンドルの回収後も
+ロックだけが`~/.claude/plans`へ残存し、計画の一覧と親ディレクトリの回収を妨げる。
 表の本体ファイル自身へのロックには移行できない。更新は一時ファイルの原子的置換で行い、
 置換のたびにinodeが変わるため、本体を開いて取得したロックは後続の更新と同じ実体を指さない。
 """
@@ -141,7 +141,7 @@ def _parse_text(text: str) -> list[tuple[str, list[str]]]:
 
 
 def _read_table_text(path: Path) -> str:
-    """レビュー表の本文をUTF-8で読む。
+    """レビュー指摘管理表の本文をUTF-8で読む。
 
     通常ファイル以外は読み込みを試みずに拒否する。標準入力とプロセス置換は`/dev/fd`配下の
     パイプとして渡り、読み込むと書き込み側を待って停止するためである。
@@ -149,13 +149,13 @@ def _read_table_text(path: Path) -> str:
     渡すと`_path`の解決が存在しないパスへ至り、同じ文面では原因を判別できないためである。
     """
     if not path.exists():
-        raise _ActionableError(f"レビュー表を読み込めない: {path}: 存在しない", next_action=_INPUT_GUIDANCE)
+        raise _ActionableError(f"レビュー指摘管理表を読み込めない: {path}: 存在しない", next_action=_INPUT_GUIDANCE)
     if not path.is_file():
-        raise _ActionableError(f"レビュー表を読み込めない: {path}: 通常ファイルではない", next_action=_INPUT_GUIDANCE)
+        raise _ActionableError(f"レビュー指摘管理表を読み込めない: {path}: 通常ファイルではない", next_action=_INPUT_GUIDANCE)
     try:
         return path.read_text(encoding="utf-8")
     except OSError as error:
-        raise _ActionableError(f"レビュー表を読み込めない: {path}: {error}", next_action=_INPUT_GUIDANCE) from error
+        raise _ActionableError(f"レビュー指摘管理表を読み込めない: {path}: {error}", next_action=_INPUT_GUIDANCE) from error
 
 
 def _read(path: Path) -> list[list[str]]:
@@ -233,7 +233,7 @@ def _write_atomic(path: Path, rows: list[list[str]]) -> None:
 
 
 def lock_path(path: str | Path) -> Path:
-    """レビュー表の排他に使うロックファイルのパスを返す。
+    """レビュー指摘管理表の排他に使うロックファイルのパスを返す。
 
     格納先を表と同じディレクトリから分離し、対象の絶対パスのダイジェストで名前を一意にする。
     分離の理由と本体ファイル自身をロックできない理由はモジュールのdocstringが述べる。
@@ -247,7 +247,7 @@ def lock_path(path: str | Path) -> Path:
 
 @contextlib.contextmanager
 def _table_lock(path: Path) -> Iterator[None]:
-    """レビュー表の排他ロックを取得し、離脱時に解放する。"""
+    """レビュー指摘管理表の排他ロックを取得し、離脱時に解放する。"""
     target_lock = lock_path(path)
     target_lock.parent.mkdir(parents=True, exist_ok=True)
     with target_lock.open("a+", encoding="utf-8") as lock_file:
@@ -276,7 +276,7 @@ def init(path: str | Path) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
     with _table_lock(target):
         if target.exists():
-            raise _ActionableError(f"レビュー表が既に存在する: {target}", next_action="既存の表をそのまま使う")
+            raise _ActionableError(f"レビュー指摘管理表が既に存在する: {target}", next_action="既存の表をそのまま使う")
         _write_atomic(target, [])
     _outcome.report_success(f"レビュー指摘管理表を作成した: {target}", _outcome.ResultKind.VALUE_OUTPUT)
     print(target)
@@ -346,7 +346,7 @@ def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], 
     return (
         f"指定された部分キー: {requested}\n"
         f"候補行（デコード済み）:\n{candidates}\n"
-        "レビュー表のセルはJSON文字列として保存されるため、キーにはデコード後の値を指定する。\n"
+        "レビュー指摘管理表のセルはJSON文字列として保存されるため、キーにはデコード後の値を指定する。\n"
         "改行・記号を含む`location`は、シェルが改行や記号を解釈しないよう`--location-file <絶対パス>`で渡す。"
     )
 
@@ -623,7 +623,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """argparse結果をレビュー表操作へ振り分ける。"""
+    """argparse結果をレビュー指摘管理表の操作へ振り分ける。"""
     command = args.review_table_subcommand
     if command == "init":
         _require_writable_exec_review(args.path)
@@ -672,7 +672,9 @@ def _require_writable_exec_review(raw_path: str) -> None:
     _plan_locations.reject_saved_plans_root_write(target)
     name = target.name
     if name.endswith(".plan-review.tsv") or (name.startswith("dlg-") and name.endswith(".exec-review.tsv")):
-        raise _ActionableError("保存済みの旧レビュー表は読み取り専用です", next_action="更新には.exec-review.tsvを指定する")
+        raise _ActionableError(
+            "保存済みの旧形式のレビュー指摘管理表は読み取り専用です", next_action="更新には.exec-review.tsvを指定する"
+        )
     if not target.exists():
         return
     for line_number, (raw_line, _row) in enumerate(_parse_text(_read_table_text(target)), start=1):

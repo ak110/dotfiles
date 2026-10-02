@@ -1,6 +1,6 @@
 # session-records.md: セッション記録の構造と集計
 
-Claude CodeとCodexのセッション記録を集計・分析する場合の構造知識を扱う。
+Claude CodeとCodexのセッション記録を集計・分析する場合の構造知識を扱う。セッション記録はClaude CodeとCodexが保存する会話の記録（transcript）を指す。
 
 Claude Codeの記録は`~/.claude/projects`配下、Codexのロールアウトは
 `<CODEX_HOME>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`に置かれる
@@ -14,7 +14,7 @@ Codexでは`type`が`compacted`のレコードに、所要時間を除いた情�
 
 ## Claude Codeの記録
 
-- 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、セッション本体）と
+- 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、セッション本体の記録であるメイン記録）と
   深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）の2値のみである。
   孫エージェントの記録も祖先セッション直下へフラット格納されるため、深さは常に4である
 - `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスから導かれる（英数字以外の文字を`-`へ置き換えた形）。
@@ -52,12 +52,12 @@ Codexでスキルの起動を判定する場合は、そのスキルの起動を
 
 ## 集計値の典拠
 
-セッション記録から集計したトークン量、リクエスト数または所要時間を成果物へ書く場合と利用者へ提示する場合は、抽出器の出力を典拠とする。
-抽出器は`atk run-script session-review-evidence -- <引数>`とする。
-振り返りの全候補は同抽出器の`--bundle`が生成する`candidates.jsonl`から取る。`agent-toolkit:session-review`の準備スクリプトはこれを問題候補の一覧へ整形する。
+セッション記録から集計したトークン量、リクエスト数または所要時間を成果物へ書く場合と利用者へ提示する場合は、`atk run-script session-review-evidence`の出力を典拠とする。
+起動形は`atk run-script session-review-evidence -- <引数>`とする。
+振り返りの全候補は同コマンドの`--bundle`が生成する`candidates.jsonl`から取る。`atk run-script session-review-prepare`はこれを`candidates.md`へ整形する。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付けて実行する。
 自作の集計は典拠として扱わない。
-Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。抽出器はこの重複を最後の`usage`だけへ畳み込んだ値を返す。
+Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。`atk run-script session-review-evidence`はこの重複を最後の`usage`だけへ畳み込んだ値を返す。
 `--elapsed-until`が返す`elapsed_seconds`はセッションの最初のレコードの時刻から指定した時刻までの差であり、その時刻より後に実施する工程を含まない。
 `--stats`が返す総量と工程別の内訳は基準が異なる。
 総量の`elapsed_seconds`はセッションの最初と最後のレコードの時刻差であり、抽出した時点より後の工程を含まない。
@@ -69,7 +69,7 @@ Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれ�
 集計値を判断の根拠に使う前に、その値の始点と終点、数え方が判断に必要な量と一致するかを確かめる。次の3つは一致しない例として観測されている。
 
 - 委譲先の所要時間を比べる場合は、`stats-agent-thread`と`stats-subagent`の`turn_elapsed_seconds`（最初のturnの開始から最後のturnの完了まで）を使う。`elapsed_seconds`は記録の最後までの差であり、turnの完了後に残るプロセスや待機の記録（`after_last_turn_seconds`）を含むため、その区間を所要時間に数えない
-- 複数の処理回を集計して現行の工程を評価する場合は、集計期間内にその工程を定める文書（スキル、タスク文書、規範）が変わったかを`git log --since=<期間の開始> -- <文書のパス>`などの変更履歴で確かめる。変わっていれば、変更後の記録だけを現行の値とする
+- `agent-toolkit:process-wi`の複数回の実行を集計して現行の工程を評価する場合は、集計期間内にその工程を定める文書（スキル、`<役割名>.subagent.md`、規範）が変わったかを`git log --since=<期間の開始> -- <文書のパス>`などの変更履歴で確かめる。変わっていれば、変更後の記録だけを現行の値とする
 - 同じファイルを行範囲に分けて取得した回数は、1回の読了として数える。分割取得を別々の読み取りと数えると、読み直しの回数を過大に見積もる
 
 ## 複数セッションの比較結果
@@ -88,6 +88,6 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 対象はClaude CodeとCodexの記録に含まれる利用者発話、ツール結果、警告と委譲記録とする。
 Claude Codeの記録はtranscriptの絶対パスを位置引数へ渡すか、セッション識別子を`--claude-session-id <セッション識別子>`へ渡す。Codexの記録は`--codex-thread-id <thread ID>`へ渡す。
 検索語から該当箇所を探す場合は`--grep <Pythonの正規表現>`、位置が確定している記録の本文を読む場合は`--detail <記録>:<行番号>`、出力を保存する場合は`--output-file <絶対パス>`を付ける。
-本節の手段はこの抽出器に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および候補一覧の標準出力への全量表示は対象としない。
+本節の手段は`atk run-script session-review-evidence`に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および`candidates.md`の標準出力への全量表示は対象としない。
 記録は行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を適用するとマッチングの上限に達するためである。
-抽出器が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
+`atk run-script session-review-evidence`が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。

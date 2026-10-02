@@ -14,6 +14,7 @@ import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit import atk
 from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import wait_schedule
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
@@ -86,7 +87,7 @@ def test_agents_wait_outputs_every_retained_result(
     """未回収の終端結果を識別子順のJSON Linesで全件返し、回収した結果ファイルを残さない。
 
     失敗で終端した結果には、継続・別候補での再起動・巻き取りを選ぶ次の操作が付く。
-    欠けると受信側は失敗の結果だけを受け取り、同じ候補での再起動を繰り返し得る。
+    欠けると委譲元は失敗の結果だけを受け取り、同じ候補での再起動を繰り返し得る。
     """
     wait_environment.mkdir(parents=True)
     first = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
@@ -107,6 +108,74 @@ def test_agents_wait_outputs_every_retained_result(
     assert not captured.err
     assert not (wait_environment / "session-1.json").exists()
     assert not (wait_environment / "session-2.json").exists()
+
+
+def test_agents_wait_rows_carry_launch_label_and_body_file(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """終端行と`status: running`の行が起動時の`label`を持ち、終端行の本文ファイルは`agent_message`と一致する。
+
+    `label`が無いと、呼び出し元は`session_id`から依頼名への対応表を自前で持つ。
+    本文がJSON文字列にだけあると、呼び出し元はエスケープを解く処理を自前で持つ。
+    """
+    wait_environment.mkdir(parents=True)
+    message = '## 結果\n\n- `a`と"b"を確認した\n'
+    (wait_environment / "session-1.json").write_text(
+        json.dumps({"status": "completed", "agent_message": message, "turn_seq": 3, "session": {"label": "依頼A"}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+    terminal = json.loads(capsys.readouterr().out)
+    assert terminal["label"] == "依頼A"
+    body_path = pathlib.Path(terminal["agent_message_path"])
+    assert body_path.name == "session-1-turn3.md"
+    assert body_path.read_text(encoding="utf-8") == message == terminal["agent_message"]
+
+    _write_own_status(wait_environment, [{"session_id": "session-2", "status": "running", "label": "依頼B"}])
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0.0)
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents", "wait"])
+    running = _running_body(json.loads(capsys.readouterr().out))
+    assert running["session_id"] == "session-2"
+    assert running["label"] == "依頼B"
+
+
+def test_agents_wait_redelivers_result_after_body_file_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """本文ファイルを書けない待機は非0で終わり、再発行した待機が同じ終端行を配送する。
+
+    配送前に終えずに失敗を無視すると本文ファイルの無い行が届き、退避物を削除してから失敗すると結果が失われる。
+    """
+    _write_own_status(wait_environment, [{"session_id": "session-1", "status": "running"}])
+    wait_environment.mkdir(parents=True, exist_ok=True)
+    terminal = {"status": "completed", "agent_message": "結果本文", "turn_seq": 1}
+    (wait_environment / "session-1.json").write_text(json.dumps(terminal), encoding="utf-8")
+    original_create = managed_temp.create_managed_temp
+
+    def fail_create(*_args: Any, **_kwargs: Any) -> pathlib.Path:
+        raise managed_temp.ManagedTempError("容量不足")
+
+    monkeypatch.setattr(managed_temp, "create_managed_temp", fail_create)
+    with pytest.raises(SystemExit) as failed:
+        atk.main(["agents", "wait"])
+    first = capsys.readouterr()
+    assert failed.value.code not in (0, 3)
+    assert not first.out
+    assert "結果本文のファイルを書けません" in first.err
+    assert NEXT_ACTION_PREFIX in first.err
+
+    monkeypatch.setattr(managed_temp, "create_managed_temp", original_create)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+    delivered = json.loads(capsys.readouterr().out)
+    assert pathlib.Path(delivered.pop("agent_message_path")).read_text(encoding="utf-8") == "結果本文"
+    assert delivered == {"session_id": "session-1", **terminal}
 
 
 @pytest.mark.parametrize(
@@ -333,7 +402,9 @@ def test_delegate_wait_consumes_own_writer_result(
         == 0
     )
 
-    assert json.loads(capsys.readouterr().out) == {
+    delivered = json.loads(capsys.readouterr().out)
+    assert pathlib.Path(delivered.pop("agent_message_path")).read_text(encoding="utf-8") == "委譲先の結果"
+    assert delivered == {
         "session_id": "delegate-result",
         "status": "completed",
         "agent_message": "委譲先の結果",

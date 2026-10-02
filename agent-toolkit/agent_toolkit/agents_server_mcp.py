@@ -15,6 +15,7 @@ import os
 import pathlib
 import subprocess
 import typing
+import uuid
 import warnings
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from typing import Annotated, Any, Literal, cast
@@ -61,6 +62,7 @@ from agent_toolkit._agents_server.state import (
     selected_candidate,
 )
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
@@ -113,14 +115,14 @@ _TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
 PREFLIGHT_COMMANDS: tuple[tuple[str, ...], ...] = (("uv", "--version"), ("uvx", "--version"))
 # 事前確認の1コマンドあたりの上限秒数。成功した2コマンドの連続実行に約0.14秒かかることを確認した。
 PREFLIGHT_TIMEOUT = 20.0
-# 確認処理が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
+# 確認処理が受理する行の書式。拒否応答の本文へ添え、委譲元が同じ応答だけで書式を確定できる状態にする。
 _REQUIRED_INPUT_LINE_FORMAT = (
     "受理する書式: 必須入力の行は`<項目名>:`で始める。"
     "項目名へ別の語を連結した行はその項目として解決しないため、補足する語は別の行へ書く。"
 )
 
 
-# 受信側がツールのエラー本文や状態値だけで次の行動を決められるよう、応答へ載せる次の操作の文面。
+# 委譲元がツールのエラー本文や状態値だけで次の行動を決められるよう、応答へ載せる次の操作の文面。
 # 同じ状況を複数の処理が返すため、処理ごとに書き分けず1か所へ置く。
 _TASK_DOCUMENT_PATH_NEXT_ACTION = (
     "`subagent_md_path`へ`<plugin root>/share/*.subagent.md`の絶対パスを渡す。"
@@ -152,12 +154,12 @@ _REPLY_NEXT_ACTIONS = {
 }
 _EXPIRED_KILL_NEXT_ACTION = "中断対象は無い。未回収の結果は`atk agents wait`で受領する"
 
-# タスク文書の本文がプラグインルートを参照するときの変数名。
+# `<役割名>.subagent.md`の本文がプラグインルートを参照するときの変数名。
 _PLUGIN_ROOT_VARIABLE = "${CLAUDE_PLUGIN_ROOT}"
 
 
 def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
-    """agent-toolkit pluginのshare直下にあるタスク文書だけを受理する。"""
+    """agent-toolkit pluginのshare直下にある`<役割名>.subagent.md`だけを受理する。"""
     return task_documents.is_agent_toolkit_task_document(path)
 
 
@@ -182,7 +184,7 @@ class _PendingResume:
 
 
 def _resolve_display_label(label: str | None, fallback: str) -> str:
-    """呼び出し元が指定した識別名を正規化し、空になる指定では代替の本文から導く。
+    """委譲元が指定した識別名を正規化し、空になる指定では代替の本文から導く。
 
     未指定と、空白だけで構成された指定を含む空になる指定を同じ扱いとする。
     識別名の列が空のまま表示されると、そのsessionを名前で見分けられないためである。
@@ -194,7 +196,7 @@ def _resolve_display_label(label: str | None, fallback: str) -> str:
 def _listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
     """一覧の公開応答へ返す項目だけを取り出す。
 
-    停滞の判定は`seconds_since_activity`と閾値の比較で呼び出し元が行うため、判定済みの印を返さない。
+    停滞の判定は`seconds_since_activity`と閾値の比較で委譲元が行うため、判定済みの印を返さない。
     """
     public = {"session_id": session["session_id"], "status": session["status"]}
     for key in ("started_at", "updated_at"):
@@ -208,13 +210,13 @@ def _listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
 
 
 def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
-    """起動の応答のうち呼び出し元へ公開する項目を返す。
+    """起動の応答のうち委譲元へ公開する項目を返す。
 
     候補を切り替えて成立した起動だけが、除外した候補と採用した候補を加える。
     除外した候補のうち実際に作成したsessionは、その識別子も保持する。
     切り替えが起きない起動は`session_id`と`status`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
-    起動直後に失敗で終端した応答は、受信側が状態値だけで次の行動を決められるよう`next_action`を加える。
+    起動直後に失敗で終端した応答は、委譲元が状態値だけで次の行動を決められるよう`next_action`を加える。
     """
     public: dict[str, Any] = {key: response[key] for key in ("session_id", "status")}
     if "root_session_id" in response:
@@ -320,44 +322,47 @@ def _shell_prompt(command: str, summary_policy: str) -> str:
 StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 """`start`の`mode`が受理する値。`tool_names.START_MODES`と同じ集合を保つ。"""
 
-# 各引数の説明は、呼び出し元がサーバーの`instructions`や外部の規範文書を読まずに、
+# 各引数の説明は、委譲元がサーバーの`instructions`や外部のエージェント向け文書を読まずに、
 # 意味、書式、省略時の動作およびmodeごとの必須・禁止を判断できる内容にする。
 _CWD_DESCRIPTION = _parameter_description(
     "全modeで必須。委譲先の作業ディレクトリで、shellではコマンドを実行するディレクトリとなる。既存ディレクトリの絶対パスを渡す。"
 )
 _MODE_DESCRIPTION = _parameter_description(
     "入力の形と起動条件を選ぶ。省略時は`task`。"
-    "`task`は専用タスク文書の定型作業、`delegate`は自由本文の通常委譲、`explore`は読み取り専用の調査とレビュー、"
+    "`task`は`<役割名>.subagent.md`の定型作業、`delegate`は自由本文の通常委譲、`explore`は読み取り専用の調査とレビュー、"
     "`write`は確定済みの文章起草と小規模な定型書込、`shell`はコマンドの実行と結果の要約に使う。"
     "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
-    "選び方: タスク文書がある作業はtaskで渡す。手順、権限、検証方法、返却形式はタスク文書が定めるため、起動文へ書き足さない。"
-    "タスク文書を読み、同文書が宣言した入力名と`extra_params`が一致するか確かめてから起動する。"
-    "explore・write・shellの委譲先へは共有規範が配送されず、スキルを使える保証も無い"
+    "選び方: `<役割名>.subagent.md`がある作業はtaskで渡す。"
+    "手順、権限、検証方法、返却形式は同ファイルが定めるため、委譲プロンプトへ書き足さない。"
+    "`<役割名>.subagent.md`を読み、同ファイルが宣言した入力名と`extra_params`が一致するか確かめてから起動する。"
+    "explore・write・shellの委譲先へは常時規範が配送されず、スキルを使える保証も無い"
     "（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な指示は全て`prompt`へ書く。"
-    "読み取り専用、応答言語、担当の範囲は各modeの固定指示が既に定めるため書かない。"
+    "読み取り専用、応答言語、担当の範囲は各modeの`share/agents-server-*.md`が既に定めるため書かない。"
     "スキルの手順を要する作業にはtaskかdelegateを使う。\n"
     "explore: 読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を委譲する。"
     "委譲先はファイルを作成、変更および削除しないため、成果ファイルの出力を依頼しない。"
-    "呼び出し元の文脈へは結果の要約だけが入る。\n"
+    "委譲元の文脈へは結果の要約だけが入る。\n"
     "write: 設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。"
     "読者が異なる文章は別の依頼にする。委譲先はファイルの読取・検索・作成・編集だけを行う。\n"
     "shell: 出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドを委譲し、"
     "1,000トークン未満に収まる見込みのコマンドは自ら実行する。"
-    "読み取り専用の制約は課さないため、対象を変更する自動チェックも渡せる。呼び出し元の文脈へは終了状態と要約だけが入る。"
+    "読み取り専用の制約は課さないため、対象を変更する自動チェックも渡せる。委譲元の文脈へは終了状態と要約だけが入る。"
 )
 _SUBAGENT_MD_PATH_DESCRIPTION = _parameter_description(
-    "taskで必須、他のmodeでは指定しない。受信側の手順と返却契約を保持するagent-toolkitの`share/*.subagent.md`の絶対パス。"
+    "taskで必須、他のmodeでは指定しない。委譲先の手順と返却契約を保持するagent-toolkitの`share/*.subagent.md`の絶対パス。"
 )
 _EXTRA_PARAMS_DESCRIPTION = _parameter_description(
     "taskだけで受理し、他のmodeでは指定しない。省略時は入力なしとして扱う。"
-    "タスク文書が`## 入力`で宣言した入力名（必須入力名と任意入力名）をキー、文字列を値とする。"
-    "待機と再開の方針はサーバーが伝えるため、起動文へ書き足さない。"
+    "`<役割名>.subagent.md`が`## 入力`で宣言した入力名（必須入力名と任意入力名）をキー、文字列を値とする。"
+    "待機と再開の方針はサーバーが伝えるため、委譲プロンプトへ書き足さない。"
     "必須入力の欠落と宣言外の入力名を含む場合は委譲先を起動しない。"
+    "ただし必須入力の`引き継ぎ記録先`を省略した場合は、サーバーが委譲元のセッションのmanaged-tempの直下に`（新規）`の記録先を用意し、"
+    "その絶対パスを応答の`handoff_record_path`で返す。継続する担当へは、その値へ`（継続）`を付けて渡す。"
 )
 _PROMPT_DESCRIPTION = _parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
-    "explore・writeの委譲先は共有規範を受け取らないため、作業に必要な指示を全て書く。"
-    "専用タスク文書を指す本文は渡さず、taskで起動する。"
+    "explore・writeの委譲先は常時規範を受け取らないため、作業に必要な指示を全て書く。"
+    "`<役割名>.subagent.md`を指す本文は渡さず、taskで起動する。"
 )
 _COMMAND_DESCRIPTION = _parameter_description("shellで必須、他のmodeでは指定しない。委譲先がシェルで実行するコマンド。")
 _SUMMARY_POLICY_DESCRIPTION = _parameter_description(
@@ -367,9 +372,9 @@ _LABEL_DESCRIPTION = _parameter_description(
     "そのsessionを人が識別する短い名前。`show`・`atk agents list`・statuslineへ現れる。"
     "`<…1〜2語>`は英小文字・数字・日本語の語をハイフンで連結した1〜2語とし、依頼本文や文章をそのまま使わない。"
     "modeごとの形式と省略時の値は次のとおり。"
-    "taskは省略してよく、`extra_params`に`レーン識別子`があれば`<レーン識別子>-<タスク文書名>`、"
-    "無ければ`<タスク文書名>`を生成する"
-    "（タスク文書名はファイル名から`.subagent.md`を除いた名前。例: `lane-01-exec`、`pick-wi`）。"
+    "taskは省略してよく、`extra_params`に`レーン識別子`があれば`<レーン識別子>-<役割名>`、"
+    "無ければ`<役割名>`を生成する"
+    "（役割名はファイル名から`.subagent.md`を除いた名前。例: `lane-01-exec`、`pick-wi`）。"
     "delegateは役割を表す短い語（例: `audit`）とし、省略時は依頼本文の先頭にある空でない1行を正規化した値を使う。"
     "exploreは`explore-<調査対象を示す1〜2語>`（例: `explore-pyfltr`）、"
     "writeは`write-<起草対象を示す1〜2語>`（例: `write-awi`）、"
@@ -387,7 +392,7 @@ _MODEL_TYPE_DESCRIPTION = _parameter_description(
     "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`の候補列"
     "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
-    "delegateでは必須。他のmodeでは省略してよく、省略時はtaskがタスク文書に対応する工程別設定、"
+    "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`low_tier`、writeが`write`の設定を使う。"
     "軽量側の候補では判断材料が不足する調査には、exploreで`medium_tier`を指定する。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
@@ -438,7 +443,7 @@ def _validate_start_inputs(mode: str, **inputs: Any) -> None:
 
 
 def _task_document_label(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:
-    """`start`のlabel省略時の識別名をタスク文書名とレーン識別子から組み立てる。"""
+    """`start`のlabel省略時の識別名を役割名とレーン識別子から組み立てる。"""
     name = pathlib.PurePath(subagent_md_path).name.removesuffix(_TASK_DOCUMENT_SUFFIX)
     lane = extra_params.get("レーン識別子", "").strip()
     return f"{lane}-{name}" if lane else name
@@ -476,7 +481,7 @@ def _run_preflight_command(command: tuple[str, ...], cwd: str) -> tuple[str, str
     if completed.returncode != 0:
         return (
             f"command={' '.join(command)} exit_code={completed.returncode} stderr={completed.stderr.strip()}",
-            "未trustのmise設定が原因の場合は、呼び出し元で`mise trust`の要否を判断してから再実行する。"
+            "未trustのmise設定が原因の場合は、委譲元で`mise trust`の要否を判断してから再実行する。"
             "それ以外はstderrの原因を解消するか、`cwd`を変えて再実行する",
         )
     return None
@@ -504,7 +509,7 @@ def _wrap_delivery_body(body: str) -> str:
     """委譲先へ配送する本文を、生成された配送境界で囲む。
 
     配送境界は最初の開始タグと最後の同名終了タグで確定する。
-    受信側の解釈は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」が定める。
+    委譲先の解釈は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」が定める。
     """
     return auto_message(body, source="agents-server", kind="delivery")
 
@@ -514,7 +519,7 @@ def _validate_required_prompt_inputs(
     extra_params: Mapping[str, str],
     document_text: str | None = None,
 ) -> str | None:
-    """タスク文書の宣言と名前付き入力が一致するか確かめ、宣言を読めない場合だけ警告文を返す。
+    """`<役割名>.subagent.md`の宣言と名前付き入力が一致するか確かめ、宣言を読めない場合だけ警告文を返す。
 
     必須入力の欠落と宣言外の入力名は委譲先を起動せず`ValueError`で拒否する。
     """
@@ -529,9 +534,9 @@ def _task_document_declaration(
     task_document: pathlib.Path,
     document_text: str | None,
 ) -> task_documents.TaskDocumentDeclaration | str:
-    """タスク文書の宣言を読む。共有規則の判定は`_is_agent_toolkit_task_document`を経由する。"""
+    """`<役割名>.subagent.md`の宣言を読む。共有規則の判定は`_is_agent_toolkit_task_document`を経由する。"""
     if not _is_agent_toolkit_task_document(task_document):
-        return f"必須入力を確認できません: タスク文書がshare配下ではありません: {task_document}"
+        return f"必須入力を確認できません: `<役割名>.subagent.md`がshare配下ではありません: {task_document}"
     return task_documents.read_declaration_unchecked(task_document, document_text)
 
 
@@ -544,25 +549,67 @@ def _check_declared_inputs(
     missing = [name for name in declaration.required if name not in extra_params]
     if missing:
         raise ActionableError(
-            f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}",
+            f"必須入力が欠けています: {', '.join(missing)}; `subagent_md_path`: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}",
             next_action="欠けた入力名をキーとして`extra_params`へ加え、`start`を再発行する",
         )
     undeclared = [name for name in extra_params if name not in declaration.accepted]
     if undeclared:
         raise ActionableError(
-            f"タスク文書が宣言していない入力です: {', '.join(undeclared)}; "
-            f"受理する入力名: {', '.join(sorted(declaration.accepted))}; タスク文書: {task_document}。",
+            f"`<役割名>.subagent.md`が宣言していない入力です: {', '.join(undeclared)}; "
+            f"受理する入力名: {', '.join(sorted(declaration.accepted))}; `subagent_md_path`: {task_document}。",
             next_action=(
-                "今回限りの補足を渡す欄は無いため、値をタスク文書が宣言した入力へ収めるか、宣言外の値を渡さずに起動する"
+                "今回限りの補足を渡す欄は無いため、値を`<役割名>.subagent.md`が宣言した入力へ収めるか、宣言外の値を渡さずに起動する"
             ),
         )
+
+
+_HANDOFF_INPUT_NAME = "引き継ぎ記録先"
+"""サーバーが省略時の値を用意する必須入力の名前。値は呼び出し元の判断を含まず一意に決まる。"""
+
+_HANDOFF_TEMP_PREFIX = "handoff"
+"""委譲元のセッションのmanaged-tempを解決できない場合に作成するmanaged-tempの接頭辞。"""
+
+
+def _default_handoff_path() -> pathlib.Path | None:
+    """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
+
+    セッションのmanaged-tempは`AGENT_TOOLKIT_OWNER_SESSION`か`CLAUDE_CODE_SESSION_ID`が示すsessionのものを作成せずに解決する。
+    解決できない場合（Codex CLIが直接起動したMCPサーバーなど）は新しいmanaged-tempを作成する。
+    どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
+    ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
+    """
+    directory: pathlib.Path | None = None
+    session_id = status_file.resolve_root_session_id(os.environ)
+    if session_id is not None:
+        try:
+            entries = _managed_temp.list_managed_temp(_managed_temp.SESSION_TEMP_PREFIX, session_id=session_id)
+        except (_managed_temp.ManagedTempError, OSError):
+            entries = []
+        recorded = entries[-1].get("path") if entries else None
+        if isinstance(recorded, str) and pathlib.Path(recorded).is_dir():
+            directory = pathlib.Path(recorded)
+    if directory is None:
+        try:
+            directory = _managed_temp.create_managed_temp(_HANDOFF_TEMP_PREFIX)
+        except (_managed_temp.ManagedTempError, OSError):
+            _LOG.warning("省略された引き継ぎ記録先の代わりの記録先を用意できません", exc_info=True)
+            return None
+    while True:
+        candidate = directory / f"handoff-{uuid.uuid4().hex[:12]}.md"
+        if not candidate.exists():
+            return candidate
 
 
 def _task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
-) -> tuple[str, str, LaunchKind]:
-    """専用タスク文書と名前付き入力からmodel種別、起動文および起動種別を返す。"""
+) -> tuple[str, str, LaunchKind, pathlib.Path | None]:
+    """`<役割名>.subagent.md`と名前付き入力からmodel種別、委譲プロンプト、`mode:`の値およびサーバーが用意した引き継ぎ記録先を返す。
+
+    `<役割名>.subagent.md`が`引き継ぎ記録先`を必須入力とし、`extra_params`がこれを持たない場合は、
+    拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを4要素目で返す。
+    委譲元が値を渡した場合と、宣言を読めない場合の4要素目は`None`とする。
+    """
     task_document = pathlib.Path(subagent_md_path)
     if not task_document.is_absolute():
         raise ActionableError("subagent_md_path must be an absolute path", next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION)
@@ -587,7 +634,8 @@ def _task_document_request(
         raise ActionableError(
             "extra_params contains an invalid input name",
             next_action=(
-                "`extra_params`のキーはタスク文書の`## 入力`が宣言した入力名にし、空白・バッククォート・読点を含めず、"
+                "`extra_params`のキーは`<役割名>.subagent.md`の`## 入力`が宣言した入力名にし、"
+                "空白・バッククォート・読点を含めず、"
                 "先頭と末尾をコロンにしない"
             ),
         )
@@ -597,23 +645,29 @@ def _task_document_request(
         document_text = task_document.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         raise ActionableError(
-            f"タスク文書をUTF-8で読めません: {task_document}: {error}", next_action=_TASK_DOCUMENT_DEFECT_NEXT_ACTION
+            f"`<役割名>.subagent.md`をUTF-8で読めません: {task_document}: {error}",
+            next_action=_TASK_DOCUMENT_DEFECT_NEXT_ACTION,
         ) from error
     # 委譲先は配送された本文だけを読むため、プラグインルートの変数を配送側で解決する。
     # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     declaration = _task_document_declaration(task_document, document_text)
     launch_kind: LaunchKind = "delegate"
+    handoff_path: pathlib.Path | None = None
     if isinstance(declaration, str):
         _LOG.warning("%s", declaration)
     else:
+        if _HANDOFF_INPUT_NAME in declaration.required and _HANDOFF_INPUT_NAME not in extra_params:
+            handoff_path = _default_handoff_path()
+            if handoff_path is not None:
+                extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         _check_declared_inputs(task_document, declaration, extra_params)
         launch_kind = declaration.launch_kind
-    prompt_lines = [f"次のタスク文書の手順を実行せよ（出所: {task_document}）。", document_text]
+    prompt_lines = [f"次の文書の手順を実行せよ（出所: {task_document}）。", document_text]
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
-    return model_type, "\n".join(prompt_lines), launch_kind
+    return model_type, "\n".join(prompt_lines), launch_kind, handoff_path
 
 
 _DEFAULT_STATUS_WRITER = object()
@@ -952,7 +1006,7 @@ class AgentsServerManager:
     ) -> dict[str, Any]:
         """sessionを一覧向けの公開項目へ射影する。
 
-        最終活動時刻からの経過秒数を返し、停滞かどうかの判定は呼び出し元へ委ねる。
+        最終活動時刻からの経過秒数を返し、停滞かどうかの判定は委譲元へ委ねる。
         判定済みの印は同じ応答の値と閾値から再現できるため、公開項目へ加えない。
         """
         label = session.label
@@ -1124,7 +1178,7 @@ class AgentsServerManager:
             if active_tool_uses:
                 response["active_tool_uses"] = active_tool_uses
         if status == "running" and isinstance(session, SessionState) and session.live_child_session_ids:
-            # 呼び出し元がその識別子へ`send_message`と`kill`を発行できるよう、許可判定の入力となる`cwd`を併記する。
+            # 委譲元がその識別子へ`send_message`と`kill`を発行できるよう、許可判定の入力となる`cwd`を併記する。
             # `cwd`を解決できない識別子は、対を持たない側の項目として区別できる形で返す。
             resolved: list[dict[str, str]] = []
             unresolved: list[str] = []
@@ -1143,8 +1197,8 @@ class AgentsServerManager:
             if unresolved:
                 response["live_child_session_ids_without_cwd"] = unresolved
         if status == "running" and isinstance(session, SessionState) and session.awaiting_auto_resume:
-            # モデルのturnは終わり、背景作業か孫sessionの終端を待って結果を保留している。
-            # 活動時刻が進まないため、呼び出し元が停滞と区別できるよう保留と待機対象を公開する。
+            # モデルのturnは終わり、バックグラウンドタスクか孫sessionの終端を待って結果を保留している。
+            # 活動時刻が進まないため、委譲元が停滞と区別できるよう保留と待機対象を公開する。
             response["result_held"] = True
             if session.live_tasks:
                 response["live_background_tasks"] = [
@@ -1311,6 +1365,19 @@ class AgentsServerManager:
             return candidates, {}
         return remaining, excluded
 
+    def _launcher_session_id(self) -> str | None:
+        """作成するsessionの委譲元sessionの識別子を返す。
+
+        状態ファイルの書込主体が射影する委譲元、所有ルート（プロセス専用ルートを除く）、
+        呼び出しプロセスの環境の`CODEX_THREAD_ID`の順に解決する。
+        """
+        if self._status_writer is not None:
+            launcher = self._status_writer.launcher_session_id()
+            if launcher is not None:
+                return launcher
+        codex_thread_id = os.environ.get("CODEX_THREAD_ID")
+        return codex_thread_id if codex_thread_id and status_file.valid_session_id(codex_thread_id) else None
+
     def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
         """可用性を理由に終端した候補を、同じ起動条件の次回へ引き継ぐ。
 
@@ -1357,7 +1424,7 @@ class AgentsServerManager:
 
         起動直後にengineの可用性を理由として終端した候補とagyの失敗候補を
         除外集合へ加えて次候補へ進む。agy以外のbackend起動例外では候補を進めない。
-        Claude/Codexで候補を変えても結果が変わらない失敗は、そのまま呼び出し元へ返す。
+        Claude/Codexで候補を変えても結果が変わらない失敗は、そのまま委譲元へ返す。
         候補を除外して後続の候補で成立した場合は、除外した候補と除外の根拠を応答へ加える。
         """
         _validate_prompt(prompt)
@@ -1398,11 +1465,16 @@ class AgentsServerManager:
                 _LOG.warning("agy_start_failed model_type=%s model=%s reason=%s", model_type, model, reason)
                 continue
             session.engine = engine
+            # テストや独自のMCPクライアントから起動して親のセッション記録に起動結果が残らない委譲先も、
+            # `atk serve`の一覧が親の下へ置けるよう、作成時点の委譲元を登録簿へ記録する。
+            session.launcher_session_id = self._launcher_session_id()
             if session.status == "starting":
                 session.status = "running"
                 session.touch()
                 if self._status_writer is not None:
                     self._status_writer.flush()
+            else:
+                session.touch()
             await self._await_start_outcome(session)
             response: dict[str, Any] = {
                 "session_id": session.session_id,
@@ -1637,7 +1709,7 @@ class AgentsServerManager:
         """待機の対象となる保持中sessionを識別子順に返す。
 
         未回収の終端結果を持つ破棄済みまたは期限切れsessionも対象へ含め、
-        呼び出し元が回収する前に結果本文を失わないようにする。
+        委譲元が回収する前に結果本文を失わないようにする。
         """
         targets = set(self.sessions) | set(self._pending_resumes)
         for session_id, resume_state in (*self.expired_sessions.items(), *self.stopped_sessions.items()):
@@ -1669,12 +1741,12 @@ class AgentsServerManager:
         この上限へ達した応答は`status`と`elapsed_seconds`を返す。
         保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
         以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
-        呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
-        公開MCP toolではなく、`atk agents wait`を実行ホストの前景または背景ジョブとして起動する。
-        委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
-        呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
+        委譲元のセッションに`/goal`が設定され、未完了のバックグラウンドタスクが本ツールの呼び出しを移したものだけになる場合は、
+        公開MCP toolではなく、`atk agents wait`を実行ホストの前景またはバックグラウンドタスクとして起動する。
+        委譲先がバックグラウンドタスクを残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
+        委譲元はバックグラウンドタスクの完了後に`send_message`で再開を指示しない。
         終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
-        終端結果は呼び出し元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
+        終端結果は委譲元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
         受領した終端結果のsessionを破棄する場合は`stop`を発行する。
         終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
         委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
@@ -1687,7 +1759,7 @@ class AgentsServerManager:
         deadline = loop.time() + float(timeout)
         ordered_ids = self._wait_target_ids()
         # 保留中の結果を進める判定は待機の刻みごとに1回だけ行う。
-        # backendは背景作業の完了通知で受け取った再開turnの結果へ保留中の結果を差し替えるため、
+        # backendはバックグラウンドタスクの完了通知で受け取った再開turnの結果へ保留中の結果を差し替えるため、
         # 通知のたびに判定するとその差し替えの前に保留中の結果を確定してしまう。
         advance_pending = True
 
@@ -2070,7 +2142,18 @@ class AgentsServerManager:
         prompt: str,
         timeout: float = DEFAULT_SEND_MESSAGE_TIMEOUT,
     ) -> dict[str, Any]:
-        """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。"""
+        """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。
+
+        状態ファイルの書込主体を持つ場合は、`start`・`list`と同じく`root_session_id`を応答へ加える。
+        再起動した会話が既存sessionへの`send_message`から再開しても、PostToolUseがこの値で別名索引を書けるようにするためである。
+        """
+        response = await self._deliver_message(session_id, prompt, timeout)
+        if self._status_writer is not None:
+            response = {**response, "root_session_id": self._status_writer.root_session_id}
+        return response
+
+    async def _deliver_message(self, session_id: str, prompt: str, timeout: float) -> dict[str, Any]:
+        """`send_message`の配送本体。応答の`root_session_id`は呼び出し元が加える。"""
         _validate_prompt(prompt)
         await self.take_over_orphaned_session(session_id)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
@@ -2484,7 +2567,7 @@ def _actionable_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
     """ツール関数の例外を、理由と次の操作の2行を本文とするツールのエラーへ変える。
 
     FastMCPは例外の`str()`をエラー本文へ使う。共通の例外型の`str()`は理由だけを返すため、
-    ここで次の操作の行を加えないと受信側へ届かない。入力スキーマはFastMCPが`__wrapped__`の署名から生成するため変わらない。
+    ここで次の操作の行を加えないと委譲元へ届かない。入力スキーマはFastMCPが`__wrapped__`の署名から生成するため変わらない。
     """
 
     @functools.wraps(fn)
@@ -2584,10 +2667,12 @@ with warnings.catch_warnings():
             "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
             "Claude Codeからの委譲は`Agent`ツールではなく本サーバーを標準とする。"
             "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
-            "`start`がsessionを開始し、`mode`でタスク文書の定型作業、自由本文の委譲、読み取り専用の探索、"
+            "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
             "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
             "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
-            "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待つ。"
+            "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待ち、応答の時点で終端したsessionの結果を返す。"
+            "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ。"
+            "全件の終端まで戻らないループやスクリプトで待機を包まない。"
             "`list`は最小状態、`show`は個別の診断情報を返す。"
             "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
             "`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
@@ -2608,17 +2693,17 @@ _START_DESCRIPTION = "\n".join(
         "",
         "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
-        "| `task`（省略時） | 専用タスク文書（agent-toolkitの`share/*.subagent.md`）を持つ定型作業 | `subagent_md_path` | "
-        "タスク文書が宣言した起動種別、タスク文書に対応する工程別設定 |",
-        "| `delegate` | タスク文書の無い単発の作業を自由本文で委譲する | `prompt`・`model_type` | "
-        "通常起動。委譲先は共有規範を受け取りスキルを使える |",
+        "| `task`（省略時） | agent-toolkitの`share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path` | "
+        "`<役割名>.subagent.md`の`mode:`、同ファイルに対応する工程別設定 |",
+        "| `delegate` | `<役割名>.subagent.md`の無い単発の作業を自由本文で委譲する | `prompt`・`model_type` | "
+        "通常起動。委譲先は常時規範を受け取りスキルを使える |",
         "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`low_tier` |",
         "| `write` | 確定済みの文章起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",
         "| `shell` | コマンドを実行して結果を要約する | `command`・`summary_policy` | 軽量起動、`low_tier` |",
         "",
         "modeごとの選び方は`mode`、受理しない入力は各引数の説明が示す。"
         "入力の欠落とmodeが受理しない入力の混在は、委譲先を起動せずに拒否し、受理する入力と次の呼び出し方を返す。"
-        "taskではタスク文書の必須入力の欠落と宣言外の入力名は拒否し、欠けた項目名または宣言外の項目名と受理する項目名を返す。",
+        "taskでは`<役割名>.subagent.md`の必須入力の欠落と宣言外の入力名は拒否し、欠けた項目名または宣言外の項目名と受理する項目名を返す。",
         "",
         "最小の呼び出し例（`cwd`は全modeで必須）:",
         '- task: `{"cwd": "/repo", "subagent_md_path": "<plugin root>/share/exec-review.subagent.md", '
@@ -2669,7 +2754,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if mode == "task":
         assert subagent_md_path is not None
         params = extra_params or {}
-        task_model_type, task_prompt, launch_kind = _task_document_request(subagent_md_path, params)
+        task_model_type, task_prompt, launch_kind, handoff_path = _task_document_request(subagent_md_path, params)
         response = await _MANAGER.start(
             model_type or task_model_type,
             task_prompt,
@@ -2677,6 +2762,10 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             launch_kind=launch_kind,
             label=_resolve_display_label(label, _task_document_label(subagent_md_path, params)),
         )
+        if handoff_path is not None:
+            public = _public_start_response(response)
+            public["handoff_record_path"] = str(handoff_path)
+            return public
     elif mode == "delegate":
         assert prompt is not None and model_type is not None
         response = await _MANAGER.start(model_type, prompt, cwd, label=label)
@@ -2721,9 +2810,10 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`を含む。終端済みsessionの未回収の終端結果を消費して新しいturnを開始した場合は、
+    応答は`delivery`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
+    終端済みsessionの未回収の終端結果を消費して新しいturnを開始した場合は、
     その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
-    消費した結果は`atk agents wait`で受領できないため、呼び出し元は同じ応答から受け取る。
+    消費した結果は`atk agents wait`で受領できないため、委譲元は同じ応答から受け取る。
     回収済みの結果は含めない。
     `delivery`の値は次のとおりである。
     `steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
@@ -2738,6 +2828,8 @@ async def send_message(
     """
     response = await _MANAGER.send_message(session_id, prompt, timeout)
     public: dict[str, Any] = {"delivery": response["delivery"]}
+    if "root_session_id" in response:
+        public["root_session_id"] = response["root_session_id"]
     previous_result = response.get("previous_result")
     if previous_result:
         public["previous_result"] = previous_result
@@ -2843,10 +2935,10 @@ async def show_session(
     この一覧は子の終端を観測するまで残るため、子が稼働中である根拠にしない。
     子の状態は、子の`session_id`を渡した`show`の`status`と`seconds_since_activity`で判定する。
     `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、その識別子へは追送と打ち切りを発行できない。
-    `result_held`が真のsessionは、委譲先のモデルのturnが終わり、背景作業または子sessionの終端を待って結果を保留している。
-    活動が止まるため`seconds_since_activity`が増えても停滞を意味しない。追跡中の背景作業は`live_background_tasks`
+    `result_held`が真のsessionは、委譲先のモデルのturnが終わり、バックグラウンドタスクまたは子sessionの終端を待って結果を保留している。
+    活動が止まるため`seconds_since_activity`が増えても停滞を意味しない。追跡中のバックグラウンドタスクは`live_background_tasks`
     （`task_id`・`task_type`・`description`・`seconds_since_start`）で返す。
-    背景作業の後の結果が不要なら`kill`で保留中の結果を受け取れる。
+    バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取れる。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """

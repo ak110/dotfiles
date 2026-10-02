@@ -2,7 +2,7 @@
 
 対象リポジトリのCI失敗（GitHub Actions run失敗・GitLabパイプライン失敗）を収集し、
 AWIへの重複投入を防いだうえで`add_entries`へ引き渡す本文を組み立てる。
-GitHubのDependabotアラートは処理回ごとの自動コードレビュー監査（`atk review-audit pending`）が扱い、
+GitHubのDependabotアラートはprocess-wiの実行ごとの自動コードレビュー監査（`atk review-audit pending`）が扱い、
 本モジュールはAWIを起票しない。GitLabの脆弱性アラート（Dependency Scanning等）は
 GitLab Ultimateプラン限定機能のため対象外とする。
 """

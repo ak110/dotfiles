@@ -19,7 +19,7 @@ from agent_toolkit._testing.helpers import _write_transcript
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 _RULES_FILE = _SCRIPTS_DIR.parent / "rules" / "01-agent.md"
 
-# hookメッセージが規範文書の見出しを鉤括弧付きで引用する形式。
+# hookメッセージがエージェント向け文書の見出しを鉤括弧付きで引用する形式。
 _RULE_HEADING_REFERENCE_PATTERN = re.compile(r"01-agent\.md「([^」]+)」")
 
 
@@ -145,6 +145,16 @@ class TestCheckText:
             ),
             "needs_escalation",
             "status: needs_escalation",
+            (
+                "統合完了\n"
+                "統合後のHEAD: 0123456789abcdef0123456789abcdef01234567\n"
+                'adoptを延期したAWIとcommit: [{"awi":"20260101-ccc.md","commit":"0123456789abcdef0123456789abcdef01234567"}]\n'
+                "adoptしたWI: 20260101-aaa.md, 20260101-bbb.md\n"
+                "rejectしたWI: なし\n"
+                '変更したエージェント向け文書: ["agent-toolkit/share/exec.subagent.md"]'
+            ),
+            "状態: completed\nレビューしたHEAD: abc1234\n未解決の指摘数: 0",
+            "状態: needs_escalation\n続行できない理由: 認可範囲の外にある既存不良が変更範囲の検証を妨げる",
         ],
     )
     def test_allows_specified_return_formats(self, text: str):

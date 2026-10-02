@@ -2,21 +2,21 @@
 
 `atk wi process-loop`が起動したセッションでは、ターンを終えるたびに`/goal`の目標評価が発動する。
 権限拒否などで工程が進まない状態では、ツール呼び出しを伴わないターンと目標評価だけが繰り返され、
-利用者が介入するまでトークンを消費し続ける。本判定はこの反復を検知し、常駐処理へ中断を要求したうえで
+利用者が介入するまでトークンを消費し続ける。本判定はこの反復を検知し、process-loopへ中断を要求したうえで
 そのセッションへ終了要求を送る。
 
-適用対象は常駐処理が起動した会話IDを持つ最上位セッションに限り、委譲先セッションと対話セッションは対象外とする。
+適用対象はprocess-loopが起動した会話IDを持つ最上位セッションに限り、委譲先セッションと対話セッションは対象外とする。
 
-無進捗ターンは、前回のStop判定から今回のStop判定までに会話記録へ加わったエントリの中に、
+無進捗ターンは、前回のStop判定から今回のStop判定までにセッション記録へ加わったエントリの中に、
 自セッションのツール呼び出しが1件も無いターンとする。連続回数が`_THRESHOLD`へ達した時点で停止工程へ進む。
 
-本判定は、委譲先または背景ジョブの完了を待つターンと無進捗ターンを`is_pending_async_work`で区別できることを
+本判定は、委譲先またはバックグラウンドタスクの完了を待つターンと無進捗ターンを`is_pending_async_work`で区別できることを
 前提とする。この前提が成立しない場合、正当な待機のセッションが本判定で停止する。
 
 停止工程の順序は次のとおりとする。
 
 1. 判定根拠を常時ログへ記録する
-2. 常駐処理への中断要求を作成し、現反復の終了後に次の反復へ進まない状態にする
+2. process-loopへの中断要求を作成し、現反復の終了後に次の反復へ進まない状態にする
 3. 停止の事実を`systemMessage`で利用者へ伝える
 4. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
    それ以外では一致した単一PIDへ終了要求を送る
@@ -48,7 +48,7 @@ _THRESHOLD = 3
 # 連続した無進捗ターン数を保持するセッション状態のキー。
 _COUNT_STATE_KEY = "stop_no_tool_turn_count"
 
-# 観測済みの会話記録エントリ数を保持するセッション状態のキー。
+# 観測済みのセッション記録エントリ数を保持するセッション状態のキー。
 _OBSERVED_STATE_KEY = "stop_observed_entry_count"
 
 
@@ -86,8 +86,8 @@ def _halt(session_id: str, count: int) -> str:
         {"count": count, "threshold": _THRESHOLD, "termination": status},
     )
     lines = [
-        f"無進捗のターンが{count}回続いたため、常駐処理の停止とセッションの終了を要求した。",
-        f"常駐処理への中断要求: {abort_path}（解除は`atk wi process-loop abort-cancel`）。",
+        f"無進捗のターンが{count}回続いたため、process-loopの停止とセッションの終了を要求した。",
+        f"process-loopへの中断要求: {abort_path}（解除は`atk wi process-loop abort-cancel`）。",
     ]
     if status == "exit_requested":
         lines.append("現在のセッションはターン終了後に/exitで終了する。")
@@ -144,7 +144,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
 
 def main(payload_text: str) -> int:
-    """無進捗の反復を検知して常駐処理とセッションを停止するエントリポイント。"""
+    """無進捗の反復を検知してprocess-loopとセッションを停止するエントリポイント。"""
     decision, body = evaluate(payload_text)
     if decision == "notify_user":
         print(json.dumps({"systemMessage": body}, ensure_ascii=False))

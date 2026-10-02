@@ -55,7 +55,7 @@ _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
 # 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を有界で保持する。
 _INITIALIZATION_MESSAGE_LIMIT = 20
 _INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS = 200
-# 委譲先CLIの診断記録を置く場所と、自動削除の対象を決める保持世代数。
+# 委譲先CLIの診断ログを置く場所と、自動削除の対象を決める保持世代数。
 _DEBUG_LOG_DIR_NAME = "delegate-debug"
 _DEBUG_LOG_RETENTION = 20
 
@@ -143,7 +143,7 @@ def _describe_child_processes(pid: int | None) -> list[str]:
 
 
 def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
-    """委譲先CLIの診断記録の保存先を用意し、保持世代を超えた記録を削除する。
+    """委譲先CLIの診断ログの保存先を用意し、保持世代を超えた記録を削除する。
 
     session識別子は初期化の完了まで確定しないため、開始時点では時刻を名前に使う。
     確定後の改名は`rename_debug_file_for_session`が行う。
@@ -159,7 +159,7 @@ def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
 
 
 def rename_debug_file_for_session(debug_file: pathlib.Path, session_id: str, launch_kind: LaunchKind) -> pathlib.Path:
-    """診断記録の名前がsession識別子を持つ形へ改名し、確定後の絶対パスを返す。
+    """診断ログの名前がsession識別子を持つ形へ改名し、確定後の絶対パスを返す。
 
     委譲先CLIが対象ファイルを開いたまま改名する。改名できない実行環境では元の名前を保ち、
     session識別子との対応は終端結果の`debugFile`から解決する。
@@ -259,7 +259,7 @@ def _build_options(
     owner_session = _plan_file.resolve_owner_session_id()
     if owner_session is not None:
         env[_ENV_OWNER_SESSION] = owner_session
-    # 委譲先のプロンプトキャッシュ保持期間を起動種別ごとに固定する。評価順序は`_wait_schedule.py`のdocstringが定める。
+    # 委譲先のプロンプトキャッシュ保持期間を`mode`ごとに固定する。評価順序は`_wait_schedule.py`のdocstringが定める。
     # 軽量起動（探索委譲とシェル実行委譲）は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
     # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。
     # 前提が成立しなくなった場合は、軽量起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが
@@ -325,7 +325,7 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
     """assistantメッセージをsessionの共有状態へ反映する。
 
     正常なメッセージではテキストの有無によらず活動時刻を進める。進めないと、ツール呼び出しだけを長時間続ける
-    sessionへ停滞の印が付き、呼び出し元が不要な催促と巻き取りへ進む。
+    sessionへ停滞の印が付き、委譲元が不要な催促と巻き取りへ進む。
     ツール呼び出しの記録はテキストの反映後に行う。同じメッセージがテキストと
     ツール呼び出しの両方を持つ場合、後に発行したツール呼び出しを最後の行動とするためである。
 
@@ -758,7 +758,8 @@ class ClaudeServerManager:
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
                             result = self._result_values(session, message)
-                            # 自動再開したturnも背景作業を残して待機を表明し得るため、`origin`によらず保留を判定する。
+                            # 自動再開したturnもバックグラウンドタスクを残して待機を表明し得るため、
+                            # `origin`によらず保留を判定する。
                             # 確定後は以後のメッセージを読まないため、ここで確定すると後続の自動再開turnの結果を失う。
                             if shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                                 shared_state.begin_auto_resume_wait(session, result)

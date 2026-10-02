@@ -5,7 +5,7 @@ PostToolUseフックから毎回呼ばれる。セッション状態へ対象リ
 ファイル名だけを通知する。セッション開始後の初回観測は基準値の記録だけを行い、
 通知しない。
 
-キュー管理リポジトリは複数のセッションが共有するため、回答済みUWIの通知は投入元のセッションへ限る。
+private-notesは複数のセッションが共有するため、回答済みUWIの通知は投入元のセッションへ限る。
 frontmatterの`submitter_session`がフック入力の`session_id`と一致するUWIと、キーを持たないUWIだけを通知する。
 キーを持たないUWIは本機能の導入前の投入分と、Codexのメインのように投入元を解決できない方法での投入分であり、
 通知しないと回答の反映契機を失うため通知側へ倒す。
@@ -173,10 +173,10 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
     return (
         f"リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
         "反映の対象はこのセッション（委譲先を含む）が投入したUWIに限る。"
-        "このセッションが投入していないUWIは読まずに無視し、投入した処理回か次の処理回の選定工程に任せる。"
+        "このセッションが投入していないUWIは読まずに無視し、投入したprocess-wiの実行か次の実行の選定工程に任せる。"
         "`agent-toolkit:process-wi`の実行中でないセッションでは、セッションを終える前に"
         "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から依存作業の再開までを完了する。"
         "`agent-toolkit:process-wi`の実行中は、処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、"
         "保留していた工程を再開する。"
-        "それ以外の回答済みUWIはそのセッションで反映せず、`agent-toolkit:wi-standards`「状態と依存」に従い、次の処理回の選定工程が取り込む。"
+        "それ以外の回答済みUWIはそのセッションで反映せず、`agent-toolkit:wi-standards`「状態と依存」に従い、次のprocess-wiの実行の選定工程が取り込む。"
     )

@@ -22,17 +22,17 @@ from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
 
-# Claude Codeのハーネスが、Skillツール起動の`tool_result`として記録する起動確認文言。
+# Claude Codeのハーネスが、`Skill`ツールの起動の`tool_result`として記録する起動確認文言。
 _CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
 _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 
-# `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す起動プロンプトの本体。
-# 起動プロンプトは`/goal`とautomated-prompt要素の境界を伴うため、本体だけを判定に用いる。
+# `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す最初のプロンプトの本体。
+# 最初のプロンプトは`/goal`とautomated-prompt要素の境界を伴うため、本体だけを判定に用いる。
 #
 # 完全一致ではなく包含で判定する。2026年9月10日に実物を確認した結果（監査記録参照）で、このプロンプト本文との
 # 完全一致は実記録2169件に対して0件だった。記録される`text`は実行環境が挿入する前置き
 # （``# AGENTS.md instructions``または``<recommended_plugins>``で始まる）を含むため、完全一致では
-# 成立しない。期待する契約は、`atk wi process-loop`がCodexへ渡す起動プロンプトを含むuser役
+# 成立しない。期待する契約は、`atk wi process-loop`がCodexへ渡す最初のプロンプトを含むuser役
 # レコードを持つセッションを候補とすることであり、包含判定でこの契約を満たす。
 # 監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日」にある。

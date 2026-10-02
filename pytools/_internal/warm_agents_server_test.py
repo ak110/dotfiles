@@ -102,7 +102,7 @@ def test_missing_target_is_logged_and_not_warmed(
 
 
 def test_no_existing_target_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """参照先がすべて不在なら更新段階へ失敗を伝播する。"""
+    """参照先がすべて不在ならウォームアップを呼び出した更新処理へ失敗を伝播する。"""
     calls = _setup(monkeypatch, tmp_path)
     (tmp_path / "claude" / "agent_toolkit" / "agents_server_mcp.py").unlink()
     (
@@ -123,7 +123,7 @@ def test_no_existing_target_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
 
 
 def test_missing_uv_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """uv不在時は外部コマンドを実行せず更新段階へ失敗を伝播する。"""
+    """uv不在時は外部コマンドを実行せず、ウォームアップを呼び出した更新処理へ失敗を伝播する。"""
     calls = _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(
         _claude_common,
@@ -141,7 +141,7 @@ def test_warmup_failure_raises_with_exit_code_and_duration(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """個別のuv失敗を終了コードと所要時間付きで更新段階へ伝播する。"""
+    """個別のuv失敗を終了コードと所要時間付きで、ウォームアップを呼び出した更新処理へ伝播する。"""
     calls = _setup(monkeypatch, tmp_path)
 
     def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
@@ -165,7 +165,7 @@ def test_warmup_launch_failure_raises_without_exit_code(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """timeoutまたは起動不能で結果が無い場合も更新段階へ失敗を伝播する。"""
+    """timeoutまたは起動不能で結果が無い場合も、ウォームアップを呼び出した更新処理へ失敗を伝播する。"""
     _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(_claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
 

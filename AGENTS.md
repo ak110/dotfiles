@@ -3,7 +3,7 @@
 本リポジトリはchezmoi管理のdotfilesリポジトリであり、`.chezmoi-source/`配下を`~/.*`にデプロイする。
 多数の小規模なコマンドラインツールや、Claude Code用の共有設定（ルール・プラグイン）も持つ。
 
-この作業ツリーでPythonコードを実行するときは、標準ライブラリだけを使う短い照会に`python3`、リポジトリの依存やモジュールを使う処理に`uv run --frozen python`を使う。共有規範中の`python -c`は起動形の例であり、実行ファイル`python`の存在を保証しない。
+この作業ツリーでPythonコードを実行するときは、標準ライブラリだけを使う短い照会に`python3`、リポジトリの依存やモジュールを使う処理に`uv run --frozen python`を使う。常時規範中の`python -c`は起動形の例であり、実行ファイル`python`の存在を保証しない。
 
 ## 詳細の参照先
 
@@ -29,7 +29,7 @@
 | --- | --- |
 | `dotfiles-development` | テスト、整形および依存更新の手順と、振り返りの参照文書の位置 |
 | `dotfiles-release` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
-| `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応、process-wiのpickerが書く`project_notes`、変更した規範の自セッション適用 |
+| `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応、process-wiのpickerが書く`プロジェクト規範の指定`、変更した規範の自セッション適用 |
 | `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、version bump、権限設定の配置 |
 | `pytools-edit` | `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集 |
 | `sync-platform-pair` | Linux/Windowsペアファイルの同期 |

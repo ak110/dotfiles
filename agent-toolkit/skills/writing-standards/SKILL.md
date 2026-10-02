@@ -2,7 +2,7 @@
 name: writing-standards
 user-invocable: false
 description: >
-  ドキュメント・コメント・コード・テストコード・コーディングエージェント向け文書
+  ドキュメント・コメント・コード・テストコード・エージェント向け文書
   （`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）の
   新規作成・修正・計画・レビュー時に最初に必ず呼び出す。
   AWI・UWIの本文起草時、成果物へ書く事実主張の裏付け調査時、ホスト機能の可否・入出力契約の調査時、
@@ -16,7 +16,7 @@ description: >
 
 # 成果物の品質基準
 
-本スキルはドキュメント、コードおよびコーディングエージェント向け文書を書く主体へ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、実行主体別のルールと各作業のスキルが定める。
+本スキルはドキュメント、コードおよびエージェント向け文書を書く主体へ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、実行主体別のルールと各作業のスキルが定める。
 着手する作業に該当する参照資料を全文読み、そのすべてを適用する。
 本スキルが「<条件>のとき: <参照先>」の形で挙げる参照先は、その条件が成立した時点で全文読む。条件は起動時だけでなく作業の途中でも成立するため、成立を判定してから読み、読む前にその条件が成立する操作へ着手しない。
 条件付きの参照先を読まずに操作へ進むと、その参照先が定める品質基準を適用できない。
@@ -31,14 +31,15 @@ description: >
 | --- | --- |
 | 人間が読む文章（Markdown・README・技術文書・API文書、コメント、AWI・UWIの本文） | `references/writing.md` |
 | コード・テストコード | `references/writing.md` |
-| コーディングエージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`） | 後掲「コーディングエージェント向け文書の編集時に読む資料」に従う |
+| エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`） | 後掲「エージェント向け文書の編集時に読む資料」に従う |
 
 ## 文章の作成時に読む資料
 
 文章を書く時と表記をチェックする時は、まず`references/notation-rules.md`を全文読む。
-同資料は表記規則の目次とチェック手段を持つ。該当する節が、textlint違反、lint緩和の判定、口調の対比集の各資料への条件付きの参照を示す。
+同資料は表記規則の目次とチェック手段を持つ。該当する節が、textlint違反、`lint-relax-criteria.md`、`tone-examples.md`・`tone-examples-llm-tone.md`の各資料への条件付きの参照を示す。
 
 新しい概念名または識別子を導入する時は、併せて`references/referent-table.md`を全文読む。
+既存の対象を名前で指す時と新しい名前を付ける時は、併せて`references/defined-names.md`を全文読む。
 
 ## コードの編集時に読む資料
 
@@ -82,9 +83,9 @@ description: >
 - 前項の画面をHTML、CSS、JavaScriptで実装またはレビューする時: `references/ui-ux-web-rules.md`
 - 前々項の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時: `references/ui-ux-patterns.md`
 
-## コーディングエージェント向け文書の編集時に読む資料
+## エージェント向け文書の編集時に読む資料
 
-コーディングエージェント向け文書の編集に着手する前に、次の3段を順に実施する。
+エージェント向け文書の編集に着手する前に、次の3段を順に実施する。
 
 1. `references/llm-characteristics.md`を全文読む。同資料は後続2段の設計入力となる読者特性を扱う。
 2. `references/writing.md`と`references/agent-documents-basics.md`を全文読む。
@@ -99,4 +100,4 @@ description: >
 - セッション状態ファイルまたはフラグを扱う編集: `references/session-state-and-flags.md`。hookの実装も編集する場合は`references/claude-hooks.md`も読む
 - セッション記録の集計・分析: `references/session-records.md`
 - 機械チェックスクリプトの新設・改修: `references/check-script-design.md`
-- 規範文書へ新しい規定を追記する場面、および文書の記述量を管理する場面: `references/agent-documents-additions.md`
+- エージェント向け文書へ新しい規定を追記する場面、および文書の記述量を管理する場面: `references/agent-documents-additions.md`

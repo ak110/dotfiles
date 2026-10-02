@@ -50,7 +50,7 @@ class TestRun:
         scenario_id: str,
         files: list[str],
     ) -> None:
-        """配布先が未存在でも、境界標識を付けた本文を両方の配布先へ書く。"""
+        """配布先が未存在でも、`atk-auto`要素で囲んだ本文を両方の配布先へ書く。"""
         del scenario_id
         dotfiles_root, claude_home, codex_home = env
         src = _src_dir(dotfiles_root)

@@ -614,7 +614,7 @@ def test_main_requires_exactly_one_transcript_source(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """親記録のパスとthread IDは同時指定も同時省略も拒否する。"""
+    """メイン記録のパスとthread IDは同時指定も同時省略も拒否する。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
     thread_id = "44444444-4444-4444-8444-444444444444"
 
@@ -651,7 +651,7 @@ def test_observation_boundary_excludes_later_main_records_in_all_modes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """観測境界より後の親記録を全照会モードから除外する。"""
+    """観測境界より後のメイン記録を全照会モードから除外する。"""
     before_notice = "[auto-generated: test/before][warn] warning: before needle"
     after_notice = "[auto-generated: test/after][warn] warning: after needle"
     transcript = _write_transcript(
@@ -742,7 +742,7 @@ def test_observation_boundary_does_not_apply_to_delegate_records(
     """境界前に始まった委譲先の終了記録を保持し、後発の委譲先を除く。"""
     transcript = _write_transcript(
         tmp_path,
-        [_timestamped_entry("2026-09-01T00:00:01Z", "親記録")],
+        [_timestamped_entry("2026-09-01T00:00:01Z", "メイン記録")],
     )
     _write_subagent(
         transcript.with_suffix("") / "subagents",
@@ -2099,7 +2099,7 @@ def test_warn_excludes_quoted_warning_inside_code_fence_of_command_output(
     """コマンドが表示した文書のコードフェンス内の警告は、実行時警告として扱わない。
 
     `sed`や`cat -n`で過去の振り返りのAWIなどのMarkdownを表示すると、過去の警告の引用がフェンス内に現れる。
-    これを候補にすると、対象セッションで発生していない警告が候補一覧へ載る。フェンス外の警告は保持する。
+    これを候補にすると、対象セッションで発生していない警告が`candidates.md`へ載る。フェンス外の警告は保持する。
     """
     shown_document = "\n".join(
         [
@@ -4807,7 +4807,7 @@ def test_agy_grandchild_launch_is_neither_detected_nor_collected(
 
 
 def test_extractor_runtimes_match_supported_engines() -> None:
-    """抽出器が時系列へ変換できる実行系は、agents_serverが起動できる実行系と一致する。
+    """本スクリプトが時系列へ変換できる実行系は、agents_serverが起動できる実行系と一致する。
 
     実行系を追加して変換を追随させないと、その実行系の委譲先の記録は候補と集計へ現れない。
     """
@@ -7660,7 +7660,7 @@ def test_catalog_claude_project_aggregates_traceable_descendants_without_leaving
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Claudeカタログはroot内の子記録だけを集約し、root外参照を未解決として数える。"""
+    """Claudeカタログはroot内のサブエージェント記録だけを集約し、root外参照を未解決として数える。"""
     root = tmp_path / "project"
     child_id = "child-session"
     missing_id = "outside-session"
@@ -7806,7 +7806,7 @@ def test_catalog_codex_history_reports_unknown_fields_and_successful_wi_operatio
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Codexカタログは親記録を期間で選び、未記録値をunknownとして返す。"""
+    """Codexカタログはメイン記録を期間で選び、未記録値をunknownとして返す。"""
     root = tmp_path / "codex-history"
     session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     _write_jsonl(
@@ -7883,7 +7883,7 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
 
 
 def test_candidates_exclude_boundary_marked_injections() -> None:
-    """属性を伴う境界標識付きの自動注入本文を、実行環境の挿入として除外する。"""
+    """属性を伴う境界の要素で囲んだ自動注入本文を、実行環境の挿入として除外する。"""
     normative = '<normative-context source="agent-toolkit" kind="rules-main">\n条文\n</normative-context>'
     hook_notice = (
         '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice">\n注記\n</agent-toolkit-hook-message>'
@@ -8188,7 +8188,7 @@ def test_context_at_judges_claude_context_across_compaction(tmp_path: pathlib.Pa
         transcript.parent / transcript.stem / "subagents",
         "agent-child",
         [
-            {"type": "user", "timestamp": "2026-09-29T00:00:03Z", "message": {"role": "user", "content": "委譲の起動文"}},
+            {"type": "user", "timestamp": "2026-09-29T00:00:03Z", "message": {"role": "user", "content": "委譲プロンプト"}},
             {"type": "user", "timestamp": "2026-09-29T00:00:04Z", "message": {"role": "user", "content": "委譲先の事象"}},
         ],
     )

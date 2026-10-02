@@ -10,7 +10,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 
 検出対象:
 
-1. plan file（計画作業root `~/.claude/plans/` または
+1. plan file（`~/.claude/plans/` または
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）書式の判定 (Write / Edit / MultiEdit / apply_patch)
 2. plan-modeスキル呼び出し検出 (Skill)
 3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
@@ -20,8 +20,9 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
    `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
-7. Bashの背景実行、背景移行通知およびAgent・Taskの背景起動が返した識別子の所有記録 (Bash / Agent / Task)
-   PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
+7. Bashの背景実行、バックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した識別子を、
+   バックグラウンドタスクの所有記録へ記録 (Bash / Agent / Task)
+   PostToolUseFailure: Bashのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
 8. PermissionDenied: 状態を変更せず終了
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
@@ -127,7 +128,7 @@ def _executable_name(token: str) -> str:
 
 # --- plan-modeスキル呼び出し検出 ---
 
-# Skillツールの`skill`引数として許容するスキル名。
+# `Skill`の`skill`引数として許容するスキル名。
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
@@ -410,8 +411,9 @@ def _record_agents_server_session_state(
     update_state(session_id, _mutator)
     starts_reply = operation == "send_message" and structured.get("delivery") in {"reply_started", "reply_ambiguous"}
     if operation in _AGENTS_SERVER_START_OPERATIONS or starts_reply:
+        # `atk agents wait`と同じ解決（別名索引を経たルート）で登録し、登録と読み取りの名前空間を一致させる。
         try:
-            identity = _agents_server_status_file.resolve_status_owner_identity(os.environ)
+            identity = _agents_server_status_file.resolve_wait_identity(os.environ, None)
             if (
                 identity is None
                 and os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")
@@ -420,7 +422,7 @@ def _record_agents_server_session_state(
             ):
                 environment = dict(os.environ)
                 environment["AGENT_TOOLKIT_STATUS_HOST_SESSION"] = fallback_status_host_session
-                identity = _agents_server_status_file.resolve_status_owner_identity(environment)
+                identity = _agents_server_status_file.resolve_wait_identity(environment, None)
         except ValueError as error:
             return f"agents_serverの待機対象を登録できない: {error}"
         if identity is not None and _agents_server_status_file.valid_session_id(remote_session_id):
@@ -499,9 +501,9 @@ def _record_agents_server_observation_attempt(
     *,
     operation: str,
 ) -> None:
-    """背景タスクへ移った`kill`の移行通知から観測の試みだけを記録する。
+    """バックグラウンドタスクへ移った`kill`の移行通知から観測の試みだけを記録する。
 
-    実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
+    実行環境が呼び出しをバックグラウンドタスクへ移すと構造化応答が返らないため、応答の`session_id`と
     `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
     呼び出しが受理された時点で観測を試みたものとして扱い、応答境界へ到達しない場合でも
     `pending_observation`を偽にする。`tool_input`の`session_id`で解決した既存記録に限り、
@@ -668,11 +670,11 @@ def _structured_background_task_id(value: object) -> str | None:
 
 
 def _record_background_task_id(session_id: str, task_id: str) -> None:
-    """自セッションのツール呼び出しが返した背景タスクのIDを記録する。
+    """自セッションのツール呼び出しが返したバックグラウンドタスクのIDを記録する。
 
-    PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力とする。
+    PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力とする。
     記録の契機は、Bashの背景実行が成功した応答、同じ指定で失敗した応答、
-    ツール種別を問わない背景移行通知およびAgent・Taskの背景起動が返した`agentId`の4つとする。
+    ツール種別を問わないバックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した`agentId`の4つとする。
     所有の根拠は自身の呼び出しが識別子を返したことであり、その呼び出しの成否に依存しない。
     """
 
@@ -689,7 +691,7 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
 
 
 def _record_background_task_output(session_id: str, response: object) -> None:
-    """背景タスクIDとホストが示した出力先を同じsession状態へ記録する。"""
+    """バックグラウンドタスクIDとホストが示した出力先を同じsession状態へ記録する。"""
     pair = _background_task_outputs.task_output_from_response(response)
     if pair is None:
         return
@@ -807,8 +809,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     payload, session_id, tool_name, tool_input, cwd, event_name = parsed
     set_warning_session_id(session_id)
 
-    # 所有の根拠は、自セッションのツール呼び出しの応答が背景タスク識別子を返したことである。
-    # 起動の成否は所有の有無を変えないため、背景移行通知はツール種別と成否によらず記録する。
+    # 所有の根拠は、自セッションのツール呼び出しの応答がバックグラウンドタスク識別子を返したことである。
+    # 起動の成否は所有の有無を変えないため、バックグラウンドタスクへの移行通知はツール種別と成否によらず記録する。
     notice_task_id = _stop_gate.background_task_id_from_notice(payload.get("tool_response"))
     if notice_task_id is not None:
         _record_background_task_id(session_id, notice_task_id)
@@ -836,12 +838,20 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_skill_use(session_id, tool_input.get("skill"))
         return 0
 
-    # AgentとTask: 背景起動の応答が返した`agentId`だけを所有記録へ残す。後続の分岐は対象としない
+    # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す。後続の分岐は対象としない
     if tool_name in ("Agent", "Task"):
         agent_id = _stop_gate.async_agent_launch_id(payload.get("tool_response"))
         if agent_id is not None:
             _record_background_task_id(session_id, agent_id)
         return 0
+
+    # agents_serverの応答が`root_session_id`を持てば、操作名によらずここで1回だけ別名索引へ記録する。
+    # 後続の待機対象の登録より前に置き、再起動後の最初の操作が`send_message`でも、
+    # 登録と`atk agents wait`が同じルートを使えるようにする。
+    if tool_name in AGENTS_SERVER_HOOK_TOOL_NAMES:
+        _record_agents_server_root_alias(
+            session_id, _extract_agents_server_structured_response(payload.get("tool_response", {}))
+        )
 
     # showの応答が返す稼働中の子sessionは、識別子と`cwd`の対だけを記録する。
     # session記録そのものはそのsessionを起動した主体が持つため、ここでは更新しない。
@@ -850,7 +860,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_child_session_cwds(session_id, structured)
         return 0
 
-    # listはsession状態を変更せず、応答が明示した所有rootだけを別名索引へ記録する。
+    # listはsession状態を変更しない。応答が明示した所有rootの別名索引への記録は前段が行う。
     if tool_name in _AGENTS_SERVER_LIST_TOOLS:
         structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
         missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
@@ -864,7 +874,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                     removable_cause=False,
                 )
             )
-        _record_agents_server_root_alias(session_id, structured)
         return 0
 
     # agents_server応答からsession_id→cwdを保存し、session状態を更新する。
@@ -900,7 +909,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
-            _record_agents_server_root_alias(session_id, structured)
             model_type = _agents_server_model_type(tool_input, operation)
             if model_type in _TRACKED_MODEL_TYPES:
                 _process_loop_log.append("subagent_start", session_id=session_id, type=model_type)

@@ -39,7 +39,7 @@ def make_fresh_install_fake(calls: list[list[str]], *, version: str = "") -> typ
 
     `plugin list`は成功した`plugin install`を後続呼び出しへ反映し、`marketplace list`は空リスト、
     `marketplace add`/`plugin install`は成功する。それ以外のコマンドは失敗を返す。
-    `version`は導入後の`plugin list`が示す版で、導入後の版の検証まで通す検体では目標の版を渡す。
+    `version`は導入後の`plugin list`が示す版で、導入後の版の検証まで通すテストでは目標の版を渡す。
     install_claude_plugins 系テストの新規導入シナリオで共用する。
     """
     installed_plugin_ids: set[str] = set()

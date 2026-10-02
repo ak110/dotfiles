@@ -185,33 +185,8 @@ from agent_toolkit._atk.serve.plans.roots import (
 
 
 def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
-    """SSH経由でリモートヘルパーを起動するargv要素列を返す。
-
-    SSHは末尾の各要素を空白で連結してリモートシェルへ渡すため、
-    シェルにより1単位として解釈すべき要素はあらかじめダブルクォートで囲んで返す。
-
-    リモート起動コマンドはPOSIXシェル非依存とする。
-    Windows OpenSSHが指定を省いた場合に使う`cmd.exe`では`bash -c`やheredoc展開が利用できないため、
-    シェル組み込みコマンドへ依存しないこと。
-    リモート側に`$HOME/dotfiles`が存在することを前提とし、そのディレクトリからヘルパースクリプトを読み込む。
-    クオートはPOSIXシェル/cmd.exe共通のダブルクォートのみを使い、
-    `$`・`%`・`<`・`>`・`|`・`&`・`^`はコマンド本体に含めない。
-    bootstrapコード本体が満たす制約は`_atk_serve_remote.remote_bootstrap`が定める。
-    """
-    return [
-        "uv",
-        "run",
-        "--no-project",
-        "--with",
-        '"watchdog>=6.0.0"',
-        "--with",
-        '"platformdirs>=4.0"',
-        "python",
-        "-c",
-        f'"{REMOTE_BOOTSTRAP}"',
-        op,
-        *args,
-    ]
+    """この画面のリモートヘルパーを起動するargv要素列を返す。起動形は`_atk_serve_remote.remote_command_argv`が定める。"""
+    return _atk_serve_remote.remote_command_argv(REMOTE_BOOTSTRAP, op, args)
 
 
 # 単発SSHの失敗の表現と標準エラー出力の整形はセッション画面と共通の契約とする。
@@ -220,13 +195,10 @@ _stderr_excerpt = _atk_serve_remote.stderr_excerpt
 
 
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
-    """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
-
-    常駐watch経由RPCが利用できない場合の代替処理だけで使う。
-    非0終了は`RemoteHelperError`として送出し、呼び出し元がキャンセルされた場合は子プロセスを終了させる。
-    """
-    cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
-    return await _atk_serve_remote.run_helper(cmd, timeout=SSH_TIMEOUT_SEC)
+    """SSH経由でこの画面のリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。"""
+    return await _atk_serve_remote.run_remote_helper(
+        REMOTE_BOOTSTRAP, host, op, args, ssh_options=SSH_BASE_OPTIONS, timeout=SSH_TIMEOUT_SEC
+    )
 
 
 def _decode_read_payload(payload: typing.Mapping[str, typing.Any]) -> str:

@@ -18,6 +18,7 @@ import pytest
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import sessions
+from agent_toolkit._testing import session_tree
 
 
 def _write(path: pathlib.Path, records: typing.Iterable[typing.Any]) -> pathlib.Path:
@@ -739,6 +740,71 @@ def test_remote_helper_listing_links_recorded_delegation(tmp_path: pathlib.Path)
     assert entries[str(child)]["parent_path"] == str(parent)
 
 
+def _load_remote_helper() -> typing.Any:
+    """リモート補助を同じプロセスへ読み込む。件数上限を差し替えて`_list_payload`を呼ぶテストが使う。"""
+    helper_path = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"
+    spec = importlib.util.spec_from_file_location("_atk_serve_sessions_remote_helper_tree", helper_path)
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper
+
+
+def test_local_and_remote_listing_link_children_from_every_launch_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """ローカルの一覧とリモート補助が、親子の全情報源と件数上限で外れた親について同じ親子を返す。
+
+    実行系の異なる親子、Codexの親thread、登録簿の委譲元だけで親が決まる委譲先が親を持たないと、
+    画面の第1階層へ並ぶ。親の記録に起動結果がある委譲先では、登録簿の委譲元より起動結果を優先する。
+    件数上限で外れた親を戻さないと、その子が親を持たない項目として並ぶ。
+    """
+    state_dir = tmp_path / "state" / "agent-toolkit"
+    tree = session_tree.write_session_tree(tmp_path / ".claude", tmp_path / "codex", state_dir)
+    monkeypatch.setattr(sessions, "MAX_LIST_ENTRIES", session_tree.TOTAL_ENTRIES - 1)
+    context = sessions.create_context(
+        hostname="local-host", claude_home=tmp_path / ".claude", codex_home=tmp_path / "codex", state_dir=state_dir
+    )
+
+    local = sessions.list_local_sessions(context)
+
+    local_parents = {entry.path: entry.parent_path for entry in local if entry.parent_path is not None}
+    assert local_parents == tree.expected_parents
+    assert len(local) == session_tree.TOTAL_ENTRIES
+    assert str(tree.paths[session_tree.OLD_PARENT_ID]) in {entry.path for entry in local}
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_dir.parent))
+    helper = _load_remote_helper()
+    monkeypatch.setattr(helper, "MAX_LIST_ENTRIES", session_tree.TOTAL_ENTRIES - 1)
+    remote = helper._list_payload()["entries"]
+    remote_parents = {entry["path"]: entry["parent_path"] for entry in remote if entry.get("parent_path")}
+    assert remote_parents == tree.expected_parents
+    assert len(remote) == session_tree.TOTAL_ENTRIES
+    assert all("codex_parent_thread_id" not in entry for entry in remote)
+
+
+def test_listing_restores_only_ancestors_dropped_by_the_limit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """件数上限を超えるのは戻した祖先の件数に限り、親を持たない古い記録は戻さない。"""
+    state_dir = tmp_path / "state" / "agent-toolkit"
+    tree = session_tree.write_session_tree(tmp_path / ".claude", tmp_path / "codex", state_dir)
+    unrelated = _write(
+        tmp_path / ".claude" / "projects" / "repo" / "old-unrelated.jsonl",
+        [{"type": "user", "timestamp": "2026-07-01T00:00:00Z", "message": {"content": "古い無関係の記録"}}],
+    )
+    monkeypatch.setattr(sessions, "MAX_LIST_ENTRIES", session_tree.TOTAL_ENTRIES - 1)
+    context = sessions.create_context(
+        hostname="local-host", claude_home=tmp_path / ".claude", codex_home=tmp_path / "codex", state_dir=state_dir
+    )
+
+    paths = [entry.path for entry in sessions.list_local_sessions(context)]
+
+    assert len(paths) == session_tree.TOTAL_ENTRIES
+    assert str(tree.paths[session_tree.OLD_PARENT_ID]) in paths
+    assert str(unrelated) not in paths
+
+
 @pytest.mark.asyncio
 async def test_unreachable_host_is_reported_and_others_are_returned(tmp_path: pathlib.Path) -> None:
     """1台へ到達できなくても、他のホストとローカルの一覧は返す。"""
@@ -1113,11 +1179,12 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     assert len(started) == 1
 
 
-def test_remote_helper_is_started_with_watchdog() -> None:
-    """常駐接続のリモート補助は変更監視に使うwatchdogを伴って起動する。"""
+def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
+    """リモート補助は変更監視に使うwatchdogと、登録簿の状態ディレクトリの解決に使うplatformdirsを伴って起動する。"""
     argv = sessions._build_remote_command_argv("serve", [])
 
-    assert argv[argv.index("--with") + 1] == '"watchdog>=6.0.0"'
+    with_values = [argv[index + 1] for index, value in enumerate(argv) if value == "--with"]
+    assert with_values == ['"watchdog>=6.0.0"', '"platformdirs>=4.0"']
 
 
 @pytest.mark.asyncio

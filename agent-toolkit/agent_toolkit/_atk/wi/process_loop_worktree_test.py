@@ -19,7 +19,7 @@ from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable
 
 @pytest.fixture(autouse=True)
 def _prepare_process_loop_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """公開CLIテストの外部コマンド解決・private-notes同期・管理対象一時領域の登録簿を隔離する。"""
+    """公開CLIテストの外部コマンド解決・private-notes同期・managed-tempの登録簿を隔離する。"""
     monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)

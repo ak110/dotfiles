@@ -272,8 +272,8 @@ def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None, source
     """`path`が指定root配下の対象計画ファイルか判定する。
 
     `_atk/serve/plans/`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
-    作業rootではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
-    保存rootと明示rootでは旧付属ファイルも読取・検索・監視の対象に含める。
+    `~/.claude/plans`ではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
+    `private-notes/plans/`と設定で明示したrootでは旧付属ファイルも読取・検索・監視の対象に含める。
     付属ファイルは一覧だけから除外し、`_is_listed_path`が一覧専用の判定を持つ。
     `ROOT`自身がドット配下でも通るよう、判定は`ROOT`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`ROOT`外を指すリンクは対象外となる
@@ -297,7 +297,7 @@ def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None, source
 def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None, source_id: str = "") -> bool:
     """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
-    メイン計画は常に一覧へ載せ、付属の詳細・バグ計画は除外する。レビュー指摘管理表は対応する
+    メイン計画は常に一覧へ載せ、付属の詳細・計画ファイル（バグ）は除外する。レビュー指摘管理表は対応する
     メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
     """
     if not _is_target_path(path, root, source_id):

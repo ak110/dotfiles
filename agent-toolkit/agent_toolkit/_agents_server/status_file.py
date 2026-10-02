@@ -103,9 +103,13 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
     return StatusFileIdentity(owner, file_name, host_session_id)
 
 
+PROCESS_ROOT_PREFIX = "mcp-"
+"""環境から所有会話を解決できないMCPプロセス専用のルート識別子の接頭辞。"""
+
+
 def create_process_root_identity() -> StatusFileIdentity:
     """環境から所有会話を解決できないMCPプロセス専用のルート識別子を生成する。"""
-    return StatusFileIdentity(f"mcp-{uuid.uuid4().hex}", "root.json", None)
+    return StatusFileIdentity(f"{PROCESS_ROOT_PREFIX}{uuid.uuid4().hex}", "root.json", None)
 
 
 def status_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -482,7 +486,7 @@ def resolve_conversation_root_session_id(environment: Mapping[str, str], state_r
 
 
 def unconfirmed_root_recovery(resolution: ConversationRootResolution, command: str) -> tuple[str, str]:
-    """未確認の会話rootを診断する理由と、MCPの一覧応答から復旧する次の操作を返す。"""
+    """未確認のルートsessionを診断する理由と、MCPの一覧応答から復旧する次の操作を返す。"""
     if not resolution.alias_present:
         reason = "aliasが存在しません"
     elif not resolution.alias_valid:
@@ -490,7 +494,7 @@ def unconfirmed_root_recovery(resolution: ConversationRootResolution, command: s
     else:
         reason = "aliasの参照先を確認できません"
     return (
-        f"agents_serverの会話root対応を確認できません。CLIが解決したroot={resolution.root_session_id}、{reason}。",
+        f"agents_serverのルートsession対応を確認できません。CLIが解決したroot={resolution.root_session_id}、{reason}。",
         f"MCPの`list`を1回呼び出してから`{command}`を再実行する",
     )
 
@@ -530,7 +534,7 @@ def results_directory(root_session_id: str, state_root: pathlib.Path | None = No
 def read_retained_result(
     root_session_id: str, session_id: str, state_root: pathlib.Path | None = None
 ) -> dict[str, Any] | None:
-    """同じ会話rootの未回収終端結果を削除せずに読む。"""
+    """同じルートsessionの未回収終端結果を削除せずに読む。"""
     if not valid_session_id(session_id):
         return None
     path = results_directory(root_session_id, state_root) / f"{session_id}.json"
@@ -554,8 +558,9 @@ def take_result(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。
 
-    返す本文から内部の項目（所有者と保持状態）を除き、レビューを目的とするsessionの完了結果へは
-    採否確定の次の操作を加える。判定に使うlabelは除く前の保持状態から読む。
+    返す本文から内部の項目（所有者と保持状態）を除き、起動時の`label`だけを`label`として残す。
+    呼び出し元が`session_id`から依頼名への対応表を持たずに、どの依頼の結果かを判別できるようにするためである。
+    レビューを目的とするsessionの完了結果へは採否確定の次の操作を加える。
     """
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
@@ -600,6 +605,8 @@ def take_result(
             payload.pop("owner_status_file", None)
             session = payload.pop("session", None)
             label = session.get("label") if isinstance(session, dict) else None
+            if isinstance(label, str) and label:
+                payload["label"] = label
             return with_review_result_next_action(payload, label), None
         finally:
             release_lock(lock_file)
@@ -686,7 +693,7 @@ def notices_directory(root_session_id: str, state_root: pathlib.Path | None = No
 
 
 def hosts_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """書込主体から起動元threadへの索引ディレクトリを返す。"""
+    """書込主体から委譲元threadへの索引ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "hosts"
 
 
@@ -734,7 +741,7 @@ def resolve_status_owner_identity(
         return identity
     if len(writers) != 1:
         raise ActionableError(
-            "起動元sessionに対応する書込主体を一意に解決できません: "
+            "委譲元sessionに対応する書込主体を一意に解決できません: "
             f"host_session_id={identity.host_session_id}, writers={','.join(sorted(writers))}",
             next_action=(
                 "同じsessionで`atk agents list`を実行して書込主体を確かめ、"
@@ -774,7 +781,7 @@ def resolve_wait_identity(
 
     if inferred is not None and inferred.mapping_confirmed and inferred.root_session_id != explicit_root_session_id:
         raise ActionableError(
-            "確認済みの会話rootと指定したroot_session_idが一致しません: "
+            "確認済みのルートsessionと指定したroot_session_idが一致しません: "
             f"conversation={inferred.root_session_id}, explicit={explicit_root_session_id}",
             next_action="`--root-session-id`を外して再実行する",
         )
@@ -789,7 +796,7 @@ def write_host_alias(
     host_session_id: str,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """書込主体を起動元threadへ対応付ける索引を書く。"""
+    """書込主体を委譲元threadへ対応付ける索引を書く。"""
     if not all(valid_session_id(value) for value in (root_session_id, writer_session_id, host_session_id)):
         raise ValueError("invalid session_id")
     payload = {"version": 1, "host_session_id": host_session_id}
@@ -913,6 +920,18 @@ class StatusFileWriter:
     def root_session_id(self) -> str:
         """自身が状態ファイルを書き込むルートsession識別子を返す。"""
         return self._identity.root_session_id
+
+    def launcher_session_id(self) -> str | None:
+        """このMCPサーバーが作成するsessionの委譲元sessionの識別子を返す。
+
+        状態ファイルの`host_session_id`として射影する委譲元を優先し、無ければ所有ルートを返す。
+        プロセス専用ルートは会話を指さないため返さない。
+        """
+        host_session_id = self._resolve_host_session_id()
+        if host_session_id is not None:
+            return host_session_id
+        root_session_id = self.root_session_id
+        return None if root_session_id.startswith(PROCESS_ROOT_PREFIX) else root_session_id
 
     @property
     def sessions(self) -> dict[str, SessionState]:
@@ -1141,7 +1160,7 @@ class StatusFileWriter:
                 hosts.rmdir()
 
     def _resolve_host_session_id(self) -> str | None:
-        """書込主体に対応する起動元threadを一度だけ状態ファイルへ射影する。"""
+        """書込主体に対応する委譲元threadを一度だけ状態ファイルへ射影する。"""
         if self._projected_host_session_id is not None:
             return self._projected_host_session_id
         writer_session_id = self._identity.host_session_id

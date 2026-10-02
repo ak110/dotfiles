@@ -1163,15 +1163,13 @@ def _collect_origin_notices(
 ) -> None:
     """`人間由来のWI`行をWI本文と比べて確かめ、移行の指摘と省略の事実を積む。
 
-    WIファイルを特定できない場合とキュー管理リポジトリのルートが実在しない場合はその行とWI本文との比較だけを省略し、
+    WIファイルを特定できない場合とprivate-notesのルートが実在しない場合はその行とWI本文との比較だけを省略し、
     他の判定結果を変えない。
     """
     root = _plan_file.private_notes_root(private_notes, home=home)
     try:
         if not root.is_dir():
-            origin_skips.append(
-                f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。キュー管理リポジトリが実在しない: {root}"
-            )
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。private-notesが実在しない: {root}")
             return
         source = _plan_file.find_wi_source(name, root)
         if source is None:
@@ -1203,9 +1201,7 @@ def _wi_has_scope(
     root = _plan_file.private_notes_root(private_notes, home=home)
     try:
         if not root.is_dir():
-            origin_skips.append(
-                f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。キュー管理リポジトリが実在しない: {root}"
-            )
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。private-notesが実在しない: {root}")
             return True
         source = _plan_file.find_wi_source(name, root)
         if source is None:

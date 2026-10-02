@@ -93,7 +93,7 @@ def _failure_next_action(record: RunRecord | JobRecord, record_type: str, reposi
         command = ["gh", "api", f"repos/{target.project_path}/actions/jobs/{identifier}/logs", "--allow-escape-sequences"]
         if target.hostname is not None:
             command.extend(["--hostname", target.hostname])
-        return f"`{shlex.join(command)}`で全jobログを管理対象一時領域のファイルへ保存し、失敗箇所を読んで原因を調べる"
+        return f"`{shlex.join(command)}`で全jobログをmanaged-tempの中のファイルへ保存し、失敗箇所を読んで原因を調べる"
     repo = f"{target.hostname}/{target.project_path}" if target.hostname else target.project_path
     command = ["gh", "run", "view", identifier, "--repo", repo, "--log-failed"]
     return f"`{shlex.join(command)}`で失敗ログを取得して原因を調べる"

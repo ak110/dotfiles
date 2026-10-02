@@ -26,6 +26,7 @@ from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
+from agent_toolkit._testing import session_tree
 
 _BROWSER_TEST_ENV = "AGENT_TOOLKIT_SERVE_BROWSER_TESTS"
 _MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js"
@@ -2251,6 +2252,23 @@ async def _serve(
             await server_task
 
 
+def _browser_app(tmp_path: Path, plans_root: Path, **sessions_options: Any) -> Any:
+    """3画面を登録したテスト用アプリを生成する。`sessions_options`はセッション画面のコンテキストへ渡す。"""
+    return serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        serve_state.ServeState(tmp_path),
+        operations=_BrowserOperations(tmp_path),
+        plans_context=serve_plans.create_context(root=plans_root, hostname="browser-test"),
+        sessions_context=serve_sessions.create_context(
+            hostname="browser-test",
+            claude_home=tmp_path / "claude",
+            codex_home=tmp_path / "codex",
+            **sessions_options,
+        ),
+    )
+
+
 @pytest_asyncio.fixture(name="screen_harness")
 async def _screen_harness_fixture(
     tmp_path: Path,
@@ -2265,18 +2283,7 @@ async def _screen_harness_fixture(
     plan_path = plans_root / "plan.md"
     plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     _write_session_records(tmp_path)
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        serve_state.ServeState(tmp_path),
-        operations=_BrowserOperations(tmp_path),
-        plans_context=serve_plans.create_context(root=plans_root, hostname="browser-test"),
-        sessions_context=serve_sessions.create_context(
-            hostname="browser-test",
-            claude_home=tmp_path / "claude",
-            codex_home=tmp_path / "codex",
-        ),
-    )
+    app = _browser_app(tmp_path, plans_root)
     plans_state: serve_plans.BroadcastState = app.config["PLANS_CONTEXT"].state
     async with _serve(app, browser) as (context, page, port):
         requests: list[str] = []
@@ -2361,19 +2368,11 @@ async def _remote_sessions_harness_fixture(
     (plans_root / "plan.md").write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     # 常駐接続は実際のsshを起動するため開始させず、単発SSHの差し替えだけでリモートの応答を与える。
     monkeypatch.setattr(serve_sessions, "start_remote_clients", lambda context: None)
-    app = serve_app.create_app(
+    app = _browser_app(
         tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        serve_state.ServeState(tmp_path),
-        operations=_BrowserOperations(tmp_path),
-        plans_context=serve_plans.create_context(root=plans_root, hostname="browser-test"),
-        sessions_context=serve_sessions.create_context(
-            hostname="browser-test",
-            claude_home=tmp_path / "claude",
-            codex_home=tmp_path / "codex",
-            remote_hosts=[_NEW_REMOTE_HOST, _LEGACY_REMOTE_HOST],
-            ssh_runner=_remote_sessions_runner,
-        ),
+        plans_root,
+        remote_hosts=[_NEW_REMOTE_HOST, _LEGACY_REMOTE_HOST],
+        ssh_runner=_remote_sessions_runner,
     )
     async with _serve(app, browser) as (context, page, port):
         yield _RemoteSessionsHarness(page=page, context=context, base_url=f"http://127.0.0.1:{port}")
@@ -4153,7 +4152,7 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
 @pytest.mark.asyncio
 async def test_subagent_records_open_from_the_parent_detail(screen_harness: _ScreenHarness) -> None:
-    """親セッションの詳細からサブエージェント記録を開いて呼び出し元へ戻り、記録本体が無い項目は選択できない表示とする。"""
+    """親セッションの詳細からサブエージェント記録を開いて委譲元へ戻り、記録本体が無い項目は選択できない表示とする。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
@@ -4172,11 +4171,12 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     ]
     assert offsets[1] > offsets[0]
 
-    # 呼び出し元の記録は左ペインの一覧から選び直せるが、サブエージェントの記録は一覧に現れないため戻る操作を置く。
+    # 委譲元の記録は左ペインの一覧から選び直せるが、サブエージェントの記録は一覧に現れないため戻る操作を置く。
     assert await harness.page.locator("#detail .detail-back").count() == 0
     await items.nth(0).click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
     assert "サブエージェントの発話" in await harness.page.locator("#detail").inner_text()
+    assert await harness.page.locator("#detail .detail-back").inner_text() == "委譲元の記録へ戻る"
 
     await harness.page.locator("#detail .detail-back").click()
     await harness.page.locator("#detail .kind-thinking").wait_for(state="visible")
@@ -4712,6 +4712,47 @@ async def test_session_tree_expands_one_branch_and_retains_keyboard_focus(screen
     await page.keyboard.press("Enter")
     await playwright.async_api.expect(toggle).to_have_attribute("aria-expanded", "false")
     await playwright.async_api.expect(rows).to_have_count(2)
+
+
+@pytest.mark.asyncio
+async def test_session_tree_places_children_of_every_launch_source_under_parents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    browser: playwright.async_api.Browser,
+) -> None:
+    """全ての起動経路の子が、親の展開で`aria-level`2として現れ、第1階層に現れない。
+
+    テストコードの記録は実行系の異なる親子、Codexの親thread、登録簿の委譲元だけで親が決まる委譲先、
+    Claude Codeのサブエージェント、件数上限で外れた親とその子を持つ。
+    画面が親を子の実行系で引くと、実行系の異なる子が第1階層へ並ぶ。
+    """
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    _write_entries(tmp_path)
+    state_dir = tmp_path / "state" / "agent-toolkit"
+    tree = session_tree.write_session_tree(tmp_path / "claude", tmp_path / "codex", state_dir)
+    monkeypatch.setattr(serve_sessions, "MAX_LIST_ENTRIES", session_tree.TOTAL_ENTRIES - 1)
+    plans_root = tmp_path / "plans"
+    plans_root.mkdir()
+    app = _browser_app(
+        tmp_path,
+        plans_root,
+        state_dir=state_dir,
+    )
+    async with _serve(app, browser) as (_context, page, port):
+        await page.goto(f"http://127.0.0.1:{port}/sessions")
+        rows = page.locator("#sessions .session-tree-row")
+        parents = set(tree.expected_parents.values())
+        await playwright.async_api.expect(rows).to_have_count(session_tree.TOTAL_ENTRIES - len(tree.expected_parents))
+        top_level = page.locator('#sessions .session-tree-row[aria-level="1"] .session-item')
+        top_paths = [await item.get_attribute("data-path") for item in await top_level.all()]
+        assert set(top_paths) == parents
+        for parent_path in sorted(parents):
+            parent_row = rows.filter(has=page.locator(f'.session-item[data-path="{parent_path}"]'))
+            await parent_row.locator(".session-tree-toggle").click()
+        await playwright.async_api.expect(rows).to_have_count(session_tree.TOTAL_ENTRIES)
+        for child_path in tree.expected_parents:
+            child_row = rows.filter(has=page.locator(f'.session-item[data-path="{child_path}"]'))
+            await playwright.async_api.expect(child_row).to_have_attribute("aria-level", "2")
 
 
 @pytest.mark.asyncio

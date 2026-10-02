@@ -1400,7 +1400,7 @@ class TestNextActionOnNonZeroExit:
             assert "repos/team/project/actions/jobs/904/logs" in action
             assert "--hostname github.example.com" in action
             assert "--allow-escape-sequences" in action
-            assert "管理対象一時領域のファイルへ保存" in action
+            assert "managed-tempの中のファイルへ保存" in action
             assert "--log-failed" not in action
         else:
             assert "gh run view 303 --repo github.example.com/team/project --log-failed" in action

@@ -200,7 +200,7 @@ def test_save_refuses_queue_repository_worktree(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """saveはキュー管理リポジトリを拒否し、別リポジトリでは成功する。"""
+    """saveはprivate-notesを拒否し、別リポジトリでは成功する。"""
     queue_repository = _make_repository(tmp_path, "private-notes")
     target_repository = _make_repository(tmp_path, "target")
     _make_changes(queue_repository, "queue")
@@ -211,7 +211,7 @@ def test_save_refuses_queue_repository_worktree(
     monkeypatch.chdir(queue_repository)
     assert stash.dispatch(args, private_notes=queue_repository) == 2
     error = capsys.readouterr().err
-    assert "キュー管理リポジトリ" in error
+    assert "private-notes" in error
     assert "次の操作: " in error
     assert "atk wi・atk plansのコマンドかatk serveの画面" in error
     assert "atk wi commit" in error
@@ -227,7 +227,7 @@ def test_drop_refuses_queue_repository_worktree(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """dropはキュー管理リポジトリを拒否し、別リポジトリでは成功する。"""
+    """dropはprivate-notesを拒否し、別リポジトリでは成功する。"""
     queue_repository = _make_repository(tmp_path, "private-notes")
     target_repository = _make_repository(tmp_path, "target")
     ref = "refs/worktree/drop-target"
@@ -239,7 +239,7 @@ def test_drop_refuses_queue_repository_worktree(
     monkeypatch.chdir(queue_repository)
     assert stash.dispatch(args, private_notes=queue_repository) == 2
     error = capsys.readouterr().err
-    assert "キュー管理リポジトリ" in error
+    assert "private-notes" in error
     assert "次の操作: " in error
     assert "atk wi・atk plansのコマンドかatk serveの画面" in error
     assert "atk wi commit" in error

@@ -1,13 +1,14 @@
-"""選定結果の`write_files`がAWI本文の反映先パスを覆うか確かめる。
+"""選定結果の`書込対象`がAWI本文の反映先パスを覆うか確かめる。
 
-pickerは各decisionの`write_files`をAWI本文の`## 反映内容と反映先`から手で書き写すため、
+pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`から手で書き写すため、
 反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
-本スクリプトは`lane`が`なし`でない各decisionについて、同節のインラインコードから反映先パスを抽出し、
-`write_files`と`excluded_paths`の双方に照らして次の3区分の違反を報告する。
+本スクリプトは`レーン`が`なし`でない各項目について、同節のインラインコードから反映先パスを抽出し、
+`書込対象`と`書き込まない反映先`の双方に照らして次の3区分の違反を報告する。
+旧欄名（`decisions`、`awi`、`lane`、`write_files`、`excluded_paths`）で書かれた選定結果も同じ意味で読む。
 
-- 未被覆: 反映先パスが`write_files`の同じパスにも、`write_files`のディレクトリ範囲の配下にも、`excluded_paths`にも無い
-- 広すぎる範囲: `write_files`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
-- `excluded_paths`の不正: 反映先パスに無いパスを`excluded_paths`が含む
+- 未被覆: 反映先パスが`書込対象`の同じパスにも、`書込対象`のディレクトリ範囲の配下にも、`書き込まない反映先`にも無い
+- 広すぎる範囲: `書込対象`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
+- `書き込まない反映先`の不正: 反映先パスに無いパスを`書き込まない反映先`が含む
 
 3区分はいずれも、レーン分けと重なりの判定が実際の書込対象と異なる結果になるため、違反として終了コード1を返す。
 入力を読めない場合はチェックを開始できないため終了コード2を返し、内容の違反と区別する。
@@ -28,11 +29,12 @@ try:
     from agent_toolkit._common import markdown_headings as _markdown_headings
     from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan import locations as _plan_file
+    from agent_toolkit._plan import selection as _selection
 except ImportError as _import_error:
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
         # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script pick-wi-check -- <選定結果ファイルの絶対パス>`で起動する",
+        "次の操作: `atk run-script pick-wi-check -- <選定結果の出力先ファイルの絶対パス>`で起動する",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -130,7 +132,7 @@ def check_decision(
     write_files: list[str],
     excluded_paths: list[str],
 ) -> list[str]:
-    """1件のdecisionの違反を、AWIのファイル名・区分・パスを含む行の一覧で返す。"""
+    """選定結果の1件の項目の違反を、AWIのファイル名・区分・パスを含む行の一覧で返す。"""
     errors: list[str] = []
     for path in sorted(reflected):
         if path in excluded_paths or any(_covers(entry, path) for entry in write_files):
@@ -143,35 +145,36 @@ def check_decision(
         inner = [path for path in reflected if path != entry and path.startswith(entry)]
         if inner and not any(entry.startswith(scope) for scope in reflected_ranges):
             errors.append(f"{awi}: 広すぎる範囲: {entry}")
-    errors.extend(f"{awi}: excluded_pathsの不正: {path}" for path in excluded_paths if path not in reflected)
+    errors.extend(f"{awi}: 書き込まない反映先の不正: {path}" for path in excluded_paths if path not in reflected)
     return errors
 
 
 def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: pathlib.Path) -> list[str]:
-    """選定結果の全decisionを確かめ、違反の行を返す。"""
+    """選定結果の全項目を確かめ、違反の行を返す。"""
     try:
         selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
         raise InputError(f"選定結果を読み込めない: {selection_file}: {error}") from error
-    if not isinstance(selection, dict) or not isinstance(selection.get("decisions"), list):
-        raise InputError(f"選定結果に`decisions`の列がない: {selection_file}")
+    items = _selection.decisions(selection)
+    if items is None:
+        raise InputError(f"選定結果に`{_selection.DECISIONS_KEY}`の列がない: {selection_file}")
     if not private_notes.is_dir():
-        raise InputError(f"キュー管理リポジトリが実在しない: {private_notes}")
+        raise InputError(f"private-notesが実在しない: {private_notes}")
     errors: list[str] = []
-    for decision in selection["decisions"]:
-        if not isinstance(decision, dict) or not isinstance(decision.get("awi"), str):
-            raise InputError(f"`awi`を持たないdecisionがある: {decision!r}")
-        awi = decision["awi"]
-        if decision.get("lane") == _LANE_NONE:
+    for decision in items:
+        if not isinstance(decision, dict) or not isinstance(decision.get(_selection.WI_KEY), str):
+            raise InputError(f"`{_selection.WI_KEY}`を持たない項目がある: {decision!r}")
+        awi = decision[_selection.WI_KEY]
+        if decision.get(_selection.LANE_KEY) == _LANE_NONE:
             continue
-        write_files = _string_list(decision, "write_files")
-        excluded_paths = _string_list(decision, "excluded_paths")
+        write_files = _string_list(decision, _selection.WRITE_FILES_KEY)
+        excluded_paths = _string_list(decision, _selection.EXCLUDED_PATHS_KEY)
         try:
             source = _plan_file.find_wi_source(awi, private_notes)
         except OSError as error:
-            raise InputError(f"キュー管理リポジトリを走査できない: {private_notes}: {error}") from error
+            raise InputError(f"private-notesを走査できない: {private_notes}: {error}") from error
         if source is None:
-            errors.append(f"{awi}: 本文を特定できない: キュー管理リポジトリ{private_notes}の状態ディレクトリに無い")
+            errors.append(f"{awi}: 本文を特定できない: private-notes（{private_notes}）の状態ディレクトリに無い")
             continue
         try:
             body = source.read_text(encoding="utf-8")
@@ -182,12 +185,12 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
 
 
 def _string_list(decision: dict[str, object], key: str) -> list[str]:
-    """decisionの列項目を文字列の一覧で返す。行の不在は空列として扱う。"""
+    """項目の列の欄を文字列の一覧で返す。行の不在は空列として扱う。"""
     value = decision.get(key, [])
     if value is None:
         return []
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise InputError(f"{decision.get('awi')}の`{key}`が文字列の列ではない: {value!r}")
+        raise InputError(f"{decision.get(_selection.WI_KEY)}の`{key}`が文字列の列ではない: {value!r}")
     return value
 
 
@@ -219,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
             str(error),
             next_action=(
                 "位置引数へpickerが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する。"
-                "キュー管理リポジトリが実在しない場合は`atk config get private_notes`が返す場所を確かめる"
+                "private-notesが実在しない場合は`atk config get private_notes`が返す場所を確かめる"
             ),
         )
         return 2

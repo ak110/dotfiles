@@ -530,6 +530,8 @@ class TestBashProcessKillByPattern:
             "git -C /tmp grep -n -F 'pkill' -- agent-toolkit",
             "git -C /tmp log -S 'killall' --oneline",
             "git grep -e 'pkill' -e 'killall' -- agent-toolkit",
+            "git grep -n -F -- 'pkill' agent-toolkit",
+            "git grep -n -F -- 'pkill' -- agent-toolkit",
             "git log --grep='pkill' --oneline",
             "git log -S pkill --oneline",
             "rg -n 'p[k]ill' agent-toolkit/",
@@ -704,12 +706,20 @@ class TestBashOptionAfterTerminator:
         ("command", "expected_token"),
         [
             ("rg -l -F -- 'x' --glob '*.py' .", "--glob"),
-            ("rg -n -- '検体' . --type-not markdown", "--type-not"),
+            ("rg -n -- 'テストコード' . --type-not markdown", "--type-not"),
             ("grep -rl -F -- 'x' --include='*.md' docs", "--include=*.md"),
             ("git grep -l -F -- 'x' --cached", "--cached"),
             ("git log -- path --oneline", "--oneline"),
             ("git -C /tmp/repo diff -- a.py --stat", "--stat"),
             ("cd /tmp && rg -- x y -g '*.md'", "-g"),
+            # `git grep`は`--`より前にパターンが無いと`--`の直後をパターン、続く`--`を区切りとして読む（git 2.47.3）。
+            ("git grep -c -F -- 'X' -- --glob", "--glob"),
+            ("git grep -c -F -e 'X' -- --glob", "--glob"),
+            # `-e`・`-f`を`--`より前に置くと`--`の後ろは全てパスになる（ripgrep 15.2.0、GNU grep）。
+            ("rg -c -F -e 'X' -- --glob", "--glob"),
+            ("grep -rc -F -e 'X' -- --include", "--include"),
+            ("rg -c -F --regexp=X -- --glob", "--glob"),
+            ("grep -rc -F -f patterns.txt -- --include", "--include"),
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
@@ -733,6 +743,12 @@ class TestBashOptionAfterTerminator:
             "echo 'rg -- x --glob y'",
             "cat - -- file",
             "rg -n -- pattern - ",
+            "git grep -c -F -- 'X' -- agent-toolkit/share",
+            "git grep -c -F -- 'X' HEAD -- agent-toolkit/share",
+            "git grep -c -F -- '-n' agent-toolkit/share",
+            "git grep -c -F -- -n -- agent-toolkit/share",
+            "git grep -c -F -e 'X' -- agent-toolkit/share",
+            "git grep -c -F 'X' -- agent-toolkit/share",
         ],
     )
     def test_allows_data_or_downstream_options(self, command: str):

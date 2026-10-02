@@ -20,20 +20,20 @@ AskUserQuestion / ExitPlanMode:
 
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
-- `start`の自由本文のmode（`delegate`・`explore`・`write`）の本文がタスク文書（`share/*.subagent.md`）を指す起動の遮断 (block)
+- `start`の自由本文のmode（`delegate`・`explore`・`write`）の本文が`share/<役割名>.subagent.md`を指す起動の遮断 (block)
 - `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
 - 対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 Agent / Task:
 
-- タスク文書を指す本文が1行目の命令と宣言済みの入力以外の行を含む起動の遮断 (block)
+- `<役割名>.subagent.md`を指す本文が1行目の命令と宣言済みの入力以外の行を含む起動の遮断 (block)
 
 Bash:
 
 - Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は閾値以下の連続した行範囲を示す
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
-- 未完了の背景タスクが書き込む出力ファイルの読取の警告 (warn)
+- 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
 
 Skill:
 
@@ -324,7 +324,7 @@ def _handle_bash_tool(
     """Bashコマンドの遮断と警告を処理する。
 
     Codexの大量読取の遮断、パターン一致によるプロセス終了の遮断、
-    未完了の背景タスクが書き込む出力ファイルの読取の警告を扱う。
+    未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
     """
     command = tool_input.get("command")
     if not isinstance(command, str):
@@ -359,7 +359,7 @@ def _handle_bash_tool(
             if _background_task_outputs.command_reads_path(command, pending_paths):
                 warnings.append(
                     _llm_notice(
-                        "未完了の背景タスクが書き込む出力ファイルを読み取ろうとしている。",
+                        "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。",
                         tag=_WARN_TAG,
                         fix="完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。",
                         removable_cause=True,

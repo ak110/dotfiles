@@ -465,7 +465,7 @@ class TestWaitForChanges:
 
 
 class TestProcessLoopPromptAndEnv:
-    """process-loopサブコマンド: claude起動プロンプトと環境変数、正常終了時の反復継続を検証する。"""
+    """process-loopサブコマンド: claudeへ渡す最初のプロンプトと環境変数、正常終了時の反復継続を検証する。"""
 
     def test_invokes_claude_with_prompt_env_and_continues_loop(
         self,
@@ -852,7 +852,7 @@ class TestProcessLoopPromptAndEnv:
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
     def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:
-        """新規セッションの目的文がスキルの完遂だけを伝え、機械生成の境界標識を持つこと。"""
+        """新規セッションの目的文がスキルの完遂だけを伝え、機械生成を示す`atk-auto`要素を持つこと。"""
         prompt = _process_loop._build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
         assert prompt.startswith("/goal ")
         assert "`agent-toolkit:process-wi`を完遂してください。" in prompt
@@ -2412,7 +2412,7 @@ class TestMiseLatestRefresh:
         failure: str,
         expected_detail: str,
     ) -> None:
-        """0以外の終了とtimeoutを警告へ変換し、常駐処理へ失敗を送出しない。"""
+        """0以外の終了とtimeoutを警告へ変換し、process-loopへ失敗を送出しない。"""
 
         def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
             if failure == "timeout":
@@ -2651,7 +2651,7 @@ class TestProcessLoopUpdateAndRestart:
     ) -> None:
         """セッション終了後の`update-dotfiles`起動へ、仮想環境を除去した環境を渡すこと。
 
-        `update-dotfiles`は`chezmoi apply`を経て作業対象リポジトリのuvベースのパッケージ操作へ至るため、
+        `update-dotfiles`は`chezmoi apply`を経て対象リポジトリのuvベースのパッケージ操作へ至るため、
         起動元ツールのエフェメラル仮想環境を引き継がせない。
         """
         myrepo = tmp_path / "repo"
@@ -3366,7 +3366,7 @@ class TestAlertMonitoring:
     def test_unjudged_dependabot_alerts_start_session_without_submitting_awi(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """待機中に未判定のDependabotアラートがあれば、AWIを投入せずに処理回を起動し、起動の有無を記録する。"""
+        """待機中に未判定のDependabotアラートがあれば、AWIを投入せずにprocess-wiを1回実行させ、起動の有無を記録する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -3401,7 +3401,7 @@ class TestAlertMonitoring:
     def test_judged_dependabot_alerts_do_not_start_session(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """全アラートが判定済みで未判定件数が0なら、処理回を起動せず待機へ進む。"""
+        """全アラートが判定済みで未判定件数が0なら、process-wiを実行させず待機へ進む。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()

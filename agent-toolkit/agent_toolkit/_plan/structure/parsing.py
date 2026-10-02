@@ -473,7 +473,7 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレートによる規範の改訂を判定できなくなる。
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md(\.tmpl)?$"),
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md(\.tmpl)?$"),
-    # ユーザーのプロジェクトが直接持つ規範文書。配布元固有パスだけを対象にすると、
+    # ユーザーのプロジェクトが直接持つエージェント向け文書。配布元固有パスだけを対象にすると、
     # プラグインとして配布された先のプロジェクトで改訂を判定できなくなる。
     # `skills`配下の粒度は`agent-toolkit/skills/`側と揃え、`SKILL.md`と`references/`配下に限定する。
     re.compile(r"(^|/)\.claude/rules/.+\.md$"),
@@ -482,20 +482,20 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     # サブエージェント定義も`agent-toolkit/agents/`と同じ種類としてプロジェクト側の層で判定する。
     re.compile(r"(^|/)\.claude/agents/.+\.md$"),
 )
-# basenameとの一致で判定するコーディングエージェント向け文書判定対象ファイル名。
+# basenameとの一致で判定するエージェント向け文書の判定対象ファイル名。
 # ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
 AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
 
 
 def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
-    """パス文字列がコーディングエージェント向け文書判定対象かを判定する。
+    """パス文字列がエージェント向け文書の判定対象かを判定する。
 
     実行時の利用者は`agent-toolkit/skills/plan-mode/scripts/list_agent_doc_changes.py`
     （`atk run-script agent-doc-changes`）であり、
-    レーン統合の`agent_rule_changes`の対象集合を定める。
-    対象集合は`agent-toolkit:writing-standards`の成果物種別表が定めるコーディングエージェント向け文書
+    レーン統合の`変更したエージェント向け文書`の対象集合を定める。
+    対象集合は`agent-toolkit:writing-standards`の成果物種別表が定めるエージェント向け文書
     （`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）と
-    `agent-toolkit/share/`のタスク文書とし、chezmoiの配布元にあるルールとスキルも含む。
+    `agent-toolkit/share/`の`<役割名>.subagent.md`とし、chezmoiの配布元にあるルールとスキルも含む。
     種類ごとに`agent-toolkit/`直下とプロジェクトの`.claude/`直下の両方の層を判定する。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。

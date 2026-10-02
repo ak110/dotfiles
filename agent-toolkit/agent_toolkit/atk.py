@@ -18,11 +18,11 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
   `/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は無効化しない限りCI失敗を自動検出してAWI投入し、未判定のDependabotアラートがあれば
-  処理回を起動して監査させる（`--no-alerts`で無効化）
-- mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: 常駐処理への中断要求と追加指示を操作する
+  process-wiを1回実行させて監査させる（`--no-alerts`で無効化）
+- mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: process-loopへの中断要求と追加指示を操作する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
-- plans commit/list: 現行計画または独立CI実行レビュー表の保存と作業中計画の一覧
-- managed-temp create/cleanup: 管理対象一時領域の作成・後始末
+- plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
+- managed-temp create/cleanup: managed-tempのディレクトリの作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 - agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
@@ -113,7 +113,7 @@ _WI_SYNC_MUTATIONS = frozenset(
 _UNREGISTERED_TEMP_FINGERPRINT_KEY = "unregistered_managed_temp_fingerprint"
 
 _MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed-temp list`で残存を確認する"
-"""管理対象一時領域の自動削除・探索の失敗に添える次の操作。"""
+"""managed-tempのディレクトリの自動削除・探索の失敗に添える次の操作。"""
 
 
 def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
@@ -629,9 +629,13 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     ).completer = _holdable_filename_completer
     hold.add_argument(
         "--state",
-        choices=(_common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED),
+        choices=(_common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED),
         default=None,
-        help="終端した項目を保留する場合に指定する。省略時はinboxまたはprocessingから保留する。--allとは併用できない。",
+        help=(
+            "終端した項目、またはエージェント環境で処理中の項目を保留する場合に指定する。"
+            "省略時はinboxまたはprocessingから保留する。ただしエージェント環境ではprocessingの項目を保留せず失敗する。"
+            "--allとは併用できない。"
+        ),
     )
     _add_bulk_transition_args(hold, action_label="保留")
     _add_target_repo_arg(
@@ -884,7 +888,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
-    """常駐処理サブコマンドを登録する。"""
+    """`atk wi process-loop`サブコマンドを登録する。"""
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
     loop.add_argument(
         "--target-repo",
@@ -892,7 +896,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）。省略時は現在の作業リポジトリを対象とする。",
     )
-    # 常駐処理はローカル作業ツリーのパスを必要とするため、未指定時の解決を自身で行う。
+    # process-loopはローカル作業ツリーのパスを必要とするため、未指定時の解決を自身で行う。
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
     loop.add_argument(
         "--worktree",
@@ -925,7 +929,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop.add_argument(
         "--no-alerts",
         action="store_true",
-        help="待機中のCI失敗の検出と、未判定のDependabotアラートによる処理回の起動を無効化する（指定しない場合は有効）。",
+        help="待機中のCI失敗の検出と、未判定のDependabotアラートによるprocess-wiの実行を無効化する（指定しない場合は有効）。",
     )
     loop.add_argument(
         "--alert-interval",
@@ -1015,7 +1019,9 @@ def _build_parser() -> argparse.ArgumentParser:
     commit.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
     setup_project = _atk_help.add_command(top, "setup-project", **_atk_help.HELP["atk setup-project"])
     setup_project_options = setup_project.add_mutually_exclusive_group()
-    setup_project_options.add_argument("--with-rules", action="store_true", help="共有規範をプロジェクトへ複製する。")
+    setup_project_options.add_argument(
+        "--with-rules", action="store_true", help="agent-toolkit/rules/配下の規範をプロジェクトへ複製する。"
+    )
     setup_project_options.add_argument("--clean", action="store_true", help="配置済みの共有リンクと規範を削除する。")
     wi = _atk_help.add_command(top, "wi", **_atk_help.HELP["atk wi"])
     _build_wi_parser(wi)
@@ -1378,7 +1384,7 @@ def main(
         automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
         _outcome.report_warning(
-            f"管理対象一時領域の自動削除に失敗した: {error}",
+            f"managed-tempのディレクトリの自動削除に失敗した: {error}",
             next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
         )
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"

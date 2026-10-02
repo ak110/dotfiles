@@ -45,10 +45,10 @@ _PROJECT_ROOT = _ATK_PATH.parents[1]
 
 
 def _isolated_cli_environ(host_environ: Callable[[], dict[str, str]], tmp_path: pathlib.Path) -> dict[str, str]:
-    """実CLIを起動する子プロセスへ、管理対象一時領域のrootと状態ディレクトリを`tmp_path`配下へ向けた環境変数を返す。
+    """実CLIを起動する子プロセスへ、managed-tempのrootと状態ディレクトリを`tmp_path`配下へ向けた環境変数を返す。
 
     `host_environ`はmiseのshimを解決できるよう実環境のホームと設定ディレクトリを戻す。そのまま渡すと、
-    `atk`の共通起動が実環境の管理対象一時領域を読み、別のセッションが残した領域について警告を
+    `atk`の共通起動が実環境のmanaged-tempを読み、別のセッションが残した領域について警告を
     標準エラーへ書き、実環境の領域を自動回収する。uvのキャッシュは実環境の位置を保ち、依存の再取得を避ける。
     """
     environ = host_environ()
@@ -407,7 +407,7 @@ class TestWaitScheduleParser:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """任意のサブコマンドに共通する実行処理で管理対象一時領域を整理する。"""
+        """任意のサブコマンドに共通する実行処理でmanaged-tempを整理する。"""
         calls: list[datetime.datetime] = []
 
         def fake_sweep(*, now: datetime.datetime) -> list[pathlib.Path]:
@@ -628,7 +628,7 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "*/30 * * * *\n"
-        assert "警告: 管理対象一時領域を自動削除できない" in captured.err
+        assert "警告: managed-tempのディレクトリを自動削除できない" in captured.err
         assert f"atk managed-temp cleanup --path {target}" in captured.err
         assert target.exists()
 
@@ -1366,12 +1366,12 @@ def test_process_loop_abort_commands_report_and_transition_state(
     state_file = tmp_path / "state" / "agent-toolkit" / "process-wi-abort"
 
     for command, expected in (
-        ("status", "常駐処理への中断要求: なし\n保持中の追加指示: 0件\n"),
-        ("abort-cancel", "成功: 常駐処理への中断要求は設定されていないため、解除の変更は無い\n"),
-        ("abort", "成功: 常駐処理へ中断を要求した\n"),
-        ("status", "常駐処理への中断要求: あり\n保持中の追加指示: 0件\n"),
-        ("abort-cancel", "成功: 常駐処理への中断要求を解除した\n"),
-        ("status", "常駐処理への中断要求: なし\n保持中の追加指示: 0件\n"),
+        ("status", "process-loopへの中断要求: なし\n保持中の追加指示: 0件\n"),
+        ("abort-cancel", "成功: process-loopへの中断要求は設定されていないため、解除の変更は無い\n"),
+        ("abort", "成功: process-loopへ中断を要求した\n"),
+        ("status", "process-loopへの中断要求: あり\n保持中の追加指示: 0件\n"),
+        ("abort-cancel", "成功: process-loopへの中断要求を解除した\n"),
+        ("status", "process-loopへの中断要求: なし\n保持中の追加指示: 0件\n"),
     ):
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "process-loop", command], home=tmp_path)
@@ -1407,7 +1407,7 @@ def test_process_loop_subcommand_help_is_available(
     subcommand: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """常駐処理の各サブコマンドが個別のヘルプを表示する。"""
+    """process-loopの各サブコマンドが個別のヘルプを表示する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
 
     with pytest.raises(SystemExit) as exc_info:
@@ -1442,7 +1442,7 @@ def test_add_output_reloads_saved_metadata(
 
 
 def test_review_table_subcommands_are_public() -> None:
-    """レビュー表の5操作がトップレベルCLIへ登録されている。"""
+    """レビュー指摘管理表の5操作がトップレベルCLIへ登録されている。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]

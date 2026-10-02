@@ -2,7 +2,8 @@
 
 Claude Codeはplugin経由で配布したMCPサーバーのツール名を`mcp__plugin_<plugin-name>_<server-key>__`で、
 Codexは`mcp__<server-key>__`で修飾する。この修飾と、子sessionを生成する起動ツールの操作名を判定する箇所は、
-session状態側の孫session追跡、PreToolUse・PostToolUseの各フック、session-reviewの証拠抽出器に分かれるため、
+session状態側の孫session追跡、PreToolUse・PostToolUseの各フック、
+session-reviewの`atk run-script session-review-evidence`に分かれるため、
 受理する値の集合を本モジュールへ集約し、判定箇所が同じ値を参照する。
 
 判定箇所が値を個別に保持すると、新しい修飾形式や起動ツールへ追随した箇所と追随しない箇所が混在する。
@@ -31,7 +32,7 @@ START_MODES: tuple[str, ...] = ("task", "delegate", "explore", "write", "shell")
 DEFAULT_START_MODE = START_MODES[0]
 
 START_MODE_MODEL_TYPES: Mapping[str, str] = {"explore": "low_tier", "write": "write", "shell": "low_tier"}
-"""`model_type`を省略した起動で使う工程別設定の種別。taskはタスク文書から、delegateは必須の指定から決める。"""
+"""`model_type`を省略した起動で使う工程別設定の種別。taskは`<役割名>.subagent.md`から、delegateは必須の指定から決める。"""
 
 LEGACY_START_MODES: Mapping[str, str] = {
     "start_custom": "delegate",
@@ -41,12 +42,13 @@ LEGACY_START_MODES: Mapping[str, str] = {
 }
 """`start`へ統合する前の起動ツール名と、統合後の`mode`の対応。
 
-公開ツールとしては登録しない。統合前に保存された会話記録を読む処理（session-reviewの証拠抽出器など）が、
+公開ツールとしては登録しない。
+統合前に保存されたセッション記録を読む処理（session-reviewの`atk run-script session-review-evidence`など）が、
 旧名の起動も委譲として認識するために使う。
 """
 
 RECORDED_START_OPERATIONS: frozenset[str] = START_OPERATIONS | frozenset(LEGACY_START_MODES)
-"""会話記録に現れ得る起動ツールの操作名。統合前の旧名を含む。"""
+"""セッション記録に現れ得る起動ツールの操作名。統合前の旧名を含む。"""
 
 
 def start_mode(operation: str, arguments: Mapping[str, Any] | None) -> str | None:

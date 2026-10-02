@@ -13,7 +13,7 @@ transcript上のbackground task起動の検出条件は次の4種を統合して
   文字列で存在するか、text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む
   （SendMessageによるサブエージェント背景再開）
 - 非sidechainのMCP tool_useに対応するtool_result本文に`moved to the background as task`を含む
-  （MCP背景タスク）
+  （MCPバックグラウンドタスク）
 
 SendMessage背景再開は前2者と異なり`toolUseResult`側に起動状態を示すstatusを持たないため、
 SendMessage呼び出し由来のtool_resultへ限定したうえで`resumedAgentId`の有無で識別する。
@@ -75,7 +75,7 @@ _MCP_BACKGROUND_TASK_PATTERNS = (
     re.compile(r"timed out[^\n]{0,160}?\bID:\s*(\S+)"),
     re.compile(r"did not complete within its [^\n]{1,40} timeout and was moved to the background\s*\(ID:\s*(\S+)"),
 )
-"""背景移行通知が識別子を示す形。
+"""バックグラウンドタスクへの移行通知が識別子を示す形。
 
 第1はMCP呼び出しの移行通知、第2・第3は実行ホストが実行時間の上限により`Bash`のジョブを
 背景へ移した通知である。いずれも自身の呼び出しが返した識別子であり、
@@ -83,10 +83,10 @@ _MCP_BACKGROUND_TASK_PATTERNS = (
 
 第2・第3の判定へ実行上限による移行を示す文面を必須とするのは、`run_in_background`を指定しない前景実行の応答が
 `running in background with ID:`の形で識別子を返す場合と区別するためである。
-前景実行の応答を所有記録へ加えると、起動していない対象の停止が通る。
+前景実行の応答をバックグラウンドタスクの所有記録へ加えると、起動していない対象の停止が通る。
 """
 
-# 抽出した値は背景タスクの識別子として`<task-id>`との突合と停止対象の所有判定へ渡すため、
+# 抽出した値はバックグラウンドタスクの識別子として`<task-id>`との突合と停止対象の所有判定へ渡すため、
 # 文末に付く句読点を識別子へ取り込まない。
 # 識別子の文字種を限定する形は採らない。限定した場合、その文字種に含まれない文字を持つ識別子は
 # 途中までしか一致せず、従来正しく抽出できていた入力の結果が変わるためである。
@@ -226,7 +226,7 @@ def is_pending_async_work(
     かかわらず真を返す。個別taskの`status`その他の任意フィールドは判定に使わない。
     `background_tasks`がlistで全要素が有効な場合は空listと`teammate`だけの一覧も現在状態の
     権威ある申告とし、この入力が申告する背景Agent、背景BashおよびSendMessage背景再開の
-    transcript由来残差を根拠にしない。MCPツールの背景移行はStop入力へ現れないため、
+    transcript由来残差を根拠にしない。MCPツールのバックグラウンドタスクへの移行はStop入力へ現れないため、
     transcriptから復元した残差を独立した根拠とする。フィールド欠落、listでない入力、
     無効な要素を含むlistおよびCodexでは、transcriptから復元した全種別の判定を代替入力として用いる。
     直前の非同期待機系tool_useと有効な非`teammate` taskは、一覧の権威性にかかわらず独立した根拠とする。
@@ -240,7 +240,7 @@ def is_pending_async_work(
       `toolUseResult.resumedAgentId`が文字列で存在するか、text本文に
       `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
     - 非sidechainのMCP tool_useに対応するuser tool_result本文に`moved to the background as task`を含む
-      （MCP背景タスク）
+      （MCPバックグラウンドタスク）
 
     完了集合は後続エントリの`<task-notification>`要素、最上位transcriptの
     `queue-operation`に含まれる完了通知およびTaskStopの停止成功結果から構成する。
@@ -259,8 +259,8 @@ def is_pending_async_work(
     起動集合から完了集合を差し引いて1件以上残れば「未完了background taskあり」と判断する。
 
     `transcript_path`が与えられた最上位Stop判定では、同じstemの`subagents`配下にある
-    `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読み、子記録から孫Agent起動と
-    task-id対応表を起動集合へ加える。子記録の不在・破損・無関係なmetadataは無視する。
+    `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読み、サブエージェント記録から孫Agent起動と
+    task-id対応表を起動集合へ加える。サブエージェント記録の不在・破損・無関係なmetadataは無視する。
     この追加走査は非sidechainの最上位Stop判定だけで行い、SubagentStopの走査範囲は拡張しない。
 
     この処理は非sidechainエントリだけを走査する。
@@ -585,7 +585,7 @@ def _describe_pending_background_tasks(
     include_sidechain: bool = False,
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
 ) -> tuple[set[str], set[str]]:
-    """transcriptを読み込み、指定した走査範囲の背景タスク起動集合と完了集合を返す。"""
+    """transcriptを読み込み、指定した走査範囲のバックグラウンドタスク起動集合と完了集合を返す。"""
     launched, completed, _host_reported_launched = _describe_pending_background_entries(
         _read_transcript_entries(transcript_path),
         session_id,
@@ -604,7 +604,7 @@ def _describe_pending_background_entries(
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
     transcript_path: str | None = None,
 ) -> tuple[set[str], set[str], set[str]]:
-    r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
+    r"""transcript全体からバックグラウンドタスクの起動集合と完了集合を抽出する。
 
     `include_sidechain`が偽の場合はメインのStop判定用に非sidechainエントリへ限定する。
     真の場合はSubagentStop判定用にsidechainエントリも走査する。
@@ -618,7 +618,7 @@ def _describe_pending_background_entries(
        `toolUseResult.resumedAgentId`が文字列で存在するか、text本文に
        `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
     - 非sidechain assistantの`mcp__` tool_useに対応するuser tool_result本文が
-      `moved to the background as task`を含む（MCP背景タスク）
+      `moved to the background as task`を含む（MCPバックグラウンドタスク）
 
     完了通知の記録: 次の3形式から`tool_use_id`を抽出する。
     - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロックの
@@ -637,8 +637,8 @@ def _describe_pending_background_entries(
     `Path(transcript_path).with_suffix("") / "subagents"`の固定ディレクトリから
     `agent-*.jsonl`を列挙し、metadataの親子関係で直接の子に限定する。直接の子の記録にある
     Agent・Task起動を孫起動として`launched`へ加え、子の`agentId`とtool-use-idの対応を
-    `task_id_map`へ追加する。子記録の読取失敗、欠落または無関係なmetadataは既存の最上位transcript
-    の判定を変えずに無視する。`include_sidechain`が偽の最上位Stop判定だけがこの子記録を
+    `task_id_map`へ追加する。サブエージェント記録の読取失敗、欠落または無関係なmetadataは既存の最上位transcript
+    の判定を変えずに無視する。`include_sidechain`が偽の最上位Stop判定だけがこのサブエージェント記録を
     読み取り、SubagentStopの走査範囲を拡張しない。
 
     TaskStopの停止成功結果も完了集合へ加える。
@@ -647,9 +647,9 @@ def _describe_pending_background_entries(
     `task_id`は背景Bashの`backgroundTaskId`対応表と既存の`task_id_map`で解決し、
     解決できない停止結果は通知と同じ`task_notification_unresolved`形式で常時ログへ出力する。
 
-    起動集合から完了集合を差し引いて1件以上残れば未完了背景タスクありと判定する。
+    起動集合から完了集合を差し引いて1件以上残れば未完了バックグラウンドタスクありと判定する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
-    Agent・Bash・SendMessage背景再開・MCP背景タスクとも同一の完了通知機構で通知され共通の抽出処理を用いる。
+    Agent・Bash・SendMessage背景再開・MCPバックグラウンドタスクとも同一の完了通知機構で通知され共通の抽出処理を用いる。
     `kinds`は起動集合へ含める種別を`agent`・`bash`・`sendmessage`・`mcp`から指定する。
     種別を指定しなければ全種別を対象とし、既存の呼び出し元の挙動を維持する。
     第3要素はStop入力の`background_tasks`が申告する種別の起動集合である。
@@ -883,7 +883,7 @@ def _collect_nested_agent_launches(
 
     Claude Codeの子transcriptは最上位transcriptと同じファイル名stemの
     `subagents`ディレクトリへ配置される。入力値のagent IDをパスへ連結せず、固定の
-    `agent-*.jsonl`列挙とmetadataの親子関係だけで直接の子を選別する。子記録の欠落、
+    `agent-*.jsonl`列挙とmetadataの親子関係だけで直接の子を選別する。サブエージェント記録の欠落、
     破損または不正なmetadataは、最上位transcriptの既存判定を維持するため無視する。
     """
     if not isinstance(transcript_path, str) or not transcript_path:
@@ -992,7 +992,7 @@ def _collect_mcp_background_task_id_tool_use_ids(
     *,
     include_sidechain: bool = False,
 ) -> dict[str, set[str]]:
-    """MCPタイムアウト通知の背景タスクIDと起動`tool_use` IDの対応を全`tool_result`から収集する。"""
+    """MCPタイムアウト通知のバックグラウンドタスクIDと起動`tool_use` IDの対応を全`tool_result`から収集する。"""
     result: dict[str, set[str]] = {}
     for entry in entries:
         if entry.get("type") != "user" or not _entry_in_scan_scope(
@@ -1031,7 +1031,7 @@ def async_agent_launch_id(tool_response: object) -> str | None:
 
 
 def background_task_id_from_notice(value: object) -> str | None:
-    """背景移行通知からタスクIDを返す。
+    """バックグラウンドタスクへの移行通知からタスクIDを返す。
 
     対象はMCP呼び出しの移行通知と、実行時間の上限により実行ホストがジョブを背景へ移した通知とする。
     識別子の直後に続く文末の句読点は除く。
@@ -1060,7 +1060,7 @@ def background_task_id_from_notice(value: object) -> str | None:
 def _collect_task_id_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> dict[str, set[str]]:
     """transcript全行のuserエントリから、agentId（task-id）→tool_use_id集合マップを構築する。
 
-    起動を記録した`toolUseResult`に`agentId`（背景タスクの`task-id`）が含まれる場合、
+    起動を記録した`toolUseResult`に`agentId`（バックグラウンドタスクの`task-id`）が含まれる場合、
     task-notification本文の`<task-id>`要素経由での完了突合をフォールバックとして提供する。
     `<tool-use-id>`要素が通知形式変動で欠落した場合に解決する手段として用いる。
     """

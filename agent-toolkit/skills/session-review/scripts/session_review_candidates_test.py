@@ -60,7 +60,7 @@ def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
 
 
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
-    """常駐処理の通知、定時promptおよび実行環境が挿入した本文を利用者介入から除く。"""
+    """process-loopの通知、定時promptおよび実行環境が挿入した本文を利用者介入から除く。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "main", "line": 2, "text": "Goal check-in: «目標» is still active"},
@@ -122,7 +122,7 @@ def test_candidate_events_excludes_hook_notices_without_tag() -> None:
 def test_candidate_events_reports_no_detail_budget_exclusion_without_omitted_notices() -> None:
     """同じ種類の発生が1件だけのhook通知では、省略が無いため`hook-notice-detail-budget`を除外件数へ載せない。
 
-    値0の区分が残ると、候補一覧の「候補から除いた件数」が除外の起きたように読める。
+    値0の区分が残ると、`candidates.md`の「候補から除いた件数」が除外の起きたように読める。
     """
     hook_notices = [
         {
@@ -227,15 +227,22 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
             "text": "status: analysis_failed\nreason: 記録の取得に失敗した",
         },
         {"kind": "final-result", "record": "agent-3", "line": 40, "text": "status: failed"},
+        {
+            "kind": "final-result",
+            "record": "agent-4",
+            "line": 50,
+            "text": "状態: needs_escalation\n続行できない理由: 入力の欠落",
+        },
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"] * 2 + ["escalation"]
+    assert sorted(candidate["candidate_kind"] for candidate in candidates[:-1]) == ["delegate-return"] * 2 + ["escalation"] * 2
     assert candidates[-1]["included_locators"] == [
         {"record": "agent-1", "line": 20},
         {"record": "agent-2", "line": 30},
         {"record": "agent-3", "line": 40},
+        {"record": "agent-4", "line": 50},
     ]
 
 
@@ -251,6 +258,8 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
         "受け取り済みの結果を返し直す。\nstatus: completed\nunresolved: 0",
         "Review complete with no unresolved issues found. Final output:\n\nstatus: completed\nunresolved: 0",
         "status: completed\nreviewed_head: abc1234\nunresolved: 0",
+        "状態: completed\nレビューしたHEAD: abc1234\n未解決の指摘数: 0",
+        "受け取り済みの結果を返し直す。\n状態: completed\n未解決の指摘数: 0",
         "```text\n統合完了\nmerged_head: abc1234\n```",
         "実装完了\n検証結果: 終了コード0、警告なし",
         "```text\n判定: 合格\nround: 1\n```",
@@ -259,6 +268,7 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
     kept_texts = [
         "統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した",
         "status: completed\nreviewed_head: abc1234\nunresolved: 2",
+        "状態: completed\nレビューしたHEAD: abc1234\n未解決の指摘数: 2",
         "判定1: 適合\n判定2: 不適合。参照先の見出しが無い",
         "## 判定結果: 一部不適合\n根拠を示す",
         "調査結果を報告する。対象の関数は3件だった。",
@@ -351,7 +361,7 @@ def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
 
 
 def test_delegate_completion_values_are_defined_by_task_documents() -> None:
-    """除外に使う完了値が、委譲先のタスク文書が返却値として定める語と一致し続けることを確かめる。"""
+    """除外に使う返却値が、`<役割名>.subagent.md`が返却値として定める語と一致し続けることを確かめる。"""
     share = pathlib.Path(evidence.__file__).resolve().parents[3] / "share"
     documents = "\n".join(path.read_text(encoding="utf-8") for path in sorted(share.glob("*.md")))
     lines = set(documents.splitlines())
@@ -386,19 +396,19 @@ def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None
             "kind": "final-result",
             "record": "agent-1",
             "line": 20,
-            "text": f"status: needs_escalation\nreason: {shared_prefix}認可の不足",
+            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-2",
             "line": 30,
-            "text": f"status: needs_escalation\nreason: {shared_prefix}認可の不足",
+            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-3",
             "line": 40,
-            "text": f"status: needs_escalation\nreason: {shared_prefix}入力の欠落",
+            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}入力の欠落",
         },
     ]
 
@@ -713,8 +723,8 @@ def test_hook_repeat_annotation_does_not_split_notice_kinds() -> None:
     "body",
     [
         "対象の検査に該当した。" + "理由の説明を続ける。" * 12,
-        "未完了の背景タスクが書く /home/user/work/output.txt を読む前に完了通知を待つこと。",
-        "未完了の背景タスクの出力を読む前に完了通知を待つこと。\nこの通知は同一セッションで2件目である。",
+        "未完了のバックグラウンドタスクが書く /home/user/work/output.txt を読む前に完了通知を待つこと。",
+        "未完了のバックグラウンドタスクの出力を読む前に完了通知を待つこと。\nこの通知は同一セッションで2件目である。",
     ],
     ids=["longer-than-kind-length", "with-path", "with-repeat-annotation"],
 )

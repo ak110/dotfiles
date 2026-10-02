@@ -592,7 +592,7 @@ def sweep_expired_managed_temp(
     now: datetime.datetime,
     max_age_days: int = MAX_AGE_DAYS,
 ) -> list[pathlib.Path]:
-    """最終更新から`max_age_days`を超えた管理対象一時領域を削除し、削除したパスを返す。
+    """最終更新から`max_age_days`を超えたmanaged-tempのディレクトリを削除し、削除したパスを返す。
 
     登録済み領域は`.git`を含むものを除いて削除する。続いて、一時rootを指定しない場合に使う場所の直下で
     登録を失った領域（マーカーだけを持つ領域）も、他の作業が使用中と判定できるもの以外を削除する。
@@ -621,7 +621,7 @@ def sweep_expired_managed_temp(
             if _sweep_cleanup_completed_elsewhere(path, registry_path, nonce):
                 continue
             _outcome.report_warning(
-                f"管理対象一時領域を自動削除できない: {path}: {error}",
+                f"managed-tempのディレクトリを自動削除できない: {path}: {error}",
                 next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} で回収する",
             )
             continue
@@ -644,7 +644,7 @@ def sweep_expired_managed_temp(
             if _sweep_cleanup_completed_elsewhere(path, _registry_path(path), None):
                 continue
             _outcome.report_warning(
-                f"登録を失った管理対象一時領域を自動削除できない: {path}: {error}",
+                f"登録を失ったmanaged-tempのディレクトリを自動削除できない: {path}: {error}",
                 next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} --force-remove で回収する",
             )
             continue
@@ -1142,7 +1142,7 @@ def _force_remove_managed_temp(
 
 
 def _registered_ancestor(path: pathlib.Path) -> pathlib.Path | None:
-    """対象の祖先にある登録済み管理対象領域を返す。該当が無ければNoneを返す。"""
+    """対象の祖先にある登録済みのmanaged-tempのディレクトリを返す。該当が無ければNoneを返す。"""
     try:
         resolved = pathlib.Path(os.path.abspath(path))
     except OSError:
@@ -1158,11 +1158,11 @@ def _registered_ancestor(path: pathlib.Path) -> pathlib.Path | None:
 
 
 def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
-    """個別の管理情報を持たない子領域を、登録済み領域の配下である場合に削除する。
+    """個別の管理情報を持たないmanaged-temp直下の作業ディレクトリを、登録済みのディレクトリの配下である場合に削除する。
 
-    `atk managed-temp create --session-root`は、個別登録を持たない子領域を親の配下へ作成する。
-    この子領域は管理情報を持たないため、通常の検証を通しても回収できない。
-    祖先に登録済みの管理対象領域が実在する場合だけ、その子領域を削除して回収を成立させる。
+    `atk managed-temp create --session-root`は、個別登録を持たないmanaged-temp直下の作業ディレクトリを親の配下へ作成する。
+    この作業ディレクトリは管理情報を持たないため、通常の検証を通しても回収できない。
+    祖先に登録済みのmanaged-tempのディレクトリが実在する場合だけ、その作業ディレクトリを削除して回収を成立させる。
     """
     path = pathlib.Path(path_arg)
     if os.path.lexists(path / _MARKER_NAME) or not path.is_dir():
@@ -1172,7 +1172,7 @@ def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
         return False
     shutil.rmtree(path)
     print(
-        f"note: 登録済みの管理対象領域{ancestor}の配下にあるため、個別の管理情報を経ずに削除した: {path}",
+        f"note: 登録済みのmanaged-tempのディレクトリ{ancestor}の配下にあるため、個別の管理情報を経ずに削除した: {path}",
         file=sys.stderr,
     )
     return True

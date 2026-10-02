@@ -378,6 +378,20 @@ class ConcurrentOwnerGoneBackend(FakeBackend):
         return await super().send_message(session, prompt)
 
 
+def _without_body_path(result: dict[str, Any]) -> dict[str, Any]:
+    """`atk agents wait`の終端行から、本文ファイルの内容が`agent_message`と一致することを確かめて`agent_message_path`を除く。"""
+    body = dict(result)
+    assert pathlib.Path(body.pop("agent_message_path")).read_text(encoding="utf-8") == body["agent_message"]
+    return body
+
+
+def _without_root(response: dict[str, Any]) -> dict[str, Any]:
+    """`send_message`の応答から、書込主体を持つmanagerが加える`root_session_id`を確かめて除いた本体を返す。"""
+    body = dict(response)
+    assert status_file.valid_session_id(body.pop("root_session_id"))
+    return body
+
+
 def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[subject.AgentsServerManager, FakeBackend]:
     """指定engineだけをFakeBackendへ差し替えた共有managerを返す。"""
     manager = subject.AgentsServerManager()
@@ -479,7 +493,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
 def test_start_operations_match_registered_start_tools() -> None:
     """子sessionを生成する登録ツールの集合が、判定箇所が参照する起動ツールの定義と一致する。
 
-    起動ツールを追加して定義を更新しない変更では、証拠抽出器やフックがその委譲を認識しない。
+    起動ツールを追加して定義を更新しない変更では、`atk run-script session-review-evidence`やフックがその委譲を認識しない。
     未分類のツールを登録した変更も、子sessionを生成するかの分類を求めるため失敗させる。
     """
     non_start_operations = {"send_message", "kill", "list", "show", "stop"}
@@ -558,7 +572,7 @@ def test_start_parameter_descriptions_are_self_contained() -> None:
         "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium",
         "候補は先頭から試し",
         "delegateでは必須",
-        "taskがタスク文書に対応する工程別設定",
+        "taskが`<役割名>.subagent.md`に対応する工程別設定",
         "exploreとshellが`low_tier`",
         "writeが`write`の設定",
         "`medium_tier`",
@@ -567,7 +581,7 @@ def test_start_parameter_descriptions_are_self_contained() -> None:
         assert fragment in model_type, fragment
     label = properties["label"]["description"]
     for fragment in (
-        "`<レーン識別子>-<タスク文書名>`",
+        "`<レーン識別子>-<役割名>`",
         "`explore-<調査対象を示す1〜2語>`",
         "`write-<起草対象を示す1〜2語>`",
         "`shell-<コマンド名など1〜2語>`",
@@ -592,14 +606,14 @@ def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
         "| `explore` |",
         "| `write` |",
         "| `shell` |",
-        "共有規範が配送されず",
+        "常時規範が配送されず",
         "スキルの手順を要する作業にはtaskかdelegateを使う",
         "4,000トークン",
         "成果ファイルの出力を依頼しない",
         "成果物種別、読者、事実、根拠、反映先と完成形",
         "委譲先を起動せずに拒否し",
         "engineの利用上限などで起動できない候補はサーバーが除外し、残る候補で起動する",
-        "呼び出し元の文脈へは",
+        "委譲元の文脈へは",
     ):
         assert fragment in description, fragment
     assert "147,000トークン" not in description
@@ -628,6 +642,17 @@ def test_instructions_keep_server_overview_without_argument_specification() -> N
         assert fragment not in instructions, fragment
     for legacy in tool_names.LEGACY_START_MODES:
         assert legacy not in instructions, legacy
+
+
+def test_instructions_process_each_returned_result_before_waiting_rest() -> None:
+    """instructionsだけから、返った終端結果をその場で処理し、残りを再発行で待ち、全件待ちのループで包まないと判断できる。
+
+    全件の終端まで戻らない回収ループで待機を包むと、先に終わった委譲先の結果が未処理のまま残る。
+    """
+    instructions = subject.mcp.instructions or ""
+    assert "応答の時点で終端したsessionの結果を返す" in instructions
+    assert "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ" in instructions
+    assert "全件の終端まで戻らないループやスクリプトで待機を包まない" in instructions
 
 
 def test_delegation_choice_and_cron_cues_are_read_before_first_start() -> None:
@@ -909,7 +934,7 @@ async def test_start_rejects_prompt_missing_required_input(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """startはタスク文書の必須入力が欠けた起動文をbackendへ渡さない。"""
+    """startは`<役割名>.subagent.md`の必須入力が欠けた委譲プロンプトをbackendへ渡さない。"""
     task_document = tmp_path / "share" / "task.subagent.md"
     (tmp_path / ".claude-plugin").mkdir(parents=True)
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -958,7 +983,7 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
 
 
 def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> pathlib.Path:
-    """agent-toolkitのshare配下と同じ構造の一時タスク文書を作成し、その絶対パスを返す。"""
+    """agent-toolkitのshare配下と同じ構造の一時の`<役割名>.subagent.md`を作成し、その絶対パスを返す。"""
     plugin_root = tmp_path / "plugin"
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -973,14 +998,14 @@ def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> p
 async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """宣言外の入力名を渡した`start`は委譲先を起動せず、宣言外の項目名と受理する項目名の一覧を返す。
 
-    受理すると、タスク文書が定める手順を呼び出し元が起動文へ書き足して起動できてしまう。
+    受理すると、`<役割名>.subagent.md`が定める手順を委譲元が委譲プロンプトへ書き足して起動できてしまう。
     """
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"追加指示": "検証はpytestで行う"}
 
-    with pytest.raises(ValueError, match="タスク文書が宣言していない入力です: 追加指示") as raised:
+    with pytest.raises(ValueError, match="`<役割名>.subagent.md`が宣言していない入力です: 追加指示") as raised:
         await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     assert "受理する入力名:" in str(raised.value)
@@ -1007,7 +1032,7 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """タスク文書の指定と入力名の誤りは、正しい渡し方か自由本文の`delegate`への切替を次の操作で示す。"""
+    """`<役割名>.subagent.md`の指定と入力名の誤りは、正しい渡し方か自由本文の`delegate`への切替を次の操作で示す。"""
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     path = str(subject._SHARE_DIRECTORY / document) if document == "exec.subagent.md" else document
@@ -1023,7 +1048,7 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
 async def test_start_reports_missing_model_type_mapping_as_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """工程別設定の対応が無いタスク文書は、欠陥の報告と自由本文の`delegate`への切替を次の操作で示す。"""
+    """工程別設定の対応が無い`<役割名>.subagent.md`は、欠陥の報告と自由本文の`delegate`への切替を次の操作で示す。"""
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.delitem(subject._TASK_MODEL_TYPES, "exec.subagent.md")
@@ -1039,7 +1064,7 @@ async def test_start_reports_missing_model_type_mapping_as_defect(
 
 @pytest.mark.asyncio
 async def test_start_accepts_declared_optional_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """必須・任意入力名だけの`start`は起動し、起動文は`入力:`見出しを持ち`追加指示:`を持たない。"""
+    """必須・任意入力名だけの`start`は起動し、委譲プロンプトは`入力:`見出しを持ち`追加指示:`を持たない。"""
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
@@ -1056,13 +1081,27 @@ async def test_start_accepts_declared_optional_inputs(monkeypatch: pytest.Monkey
 
 @pytest.mark.asyncio
 async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """待機と再開の方針はサーバーが伝えるため、呼び出し元が渡す`待機表明の例外`は宣言外の入力として拒否する。"""
+    """待機と再開の方針はサーバーが伝えるため、委譲元が渡す`待機表明の例外`は宣言外の入力として拒否する。"""
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     manager = SimpleNamespace(start=AsyncMock())
     monkeypatch.setattr(subject, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"待機表明の例外": "適用する"}
 
-    with pytest.raises(ActionableError, match="タスク文書が宣言していない入力です: 待機表明の例外"):
+    with pytest.raises(ActionableError, match="`<役割名>.subagent.md`が宣言していない入力です: 待機表明の例外"):
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
+
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """終端担当はpush済みの範囲をベースbranchの追跡refから得るため、撤去した`直前にpushしたcommit`は宣言外の入力として拒否する。"""
+    task_document = subject._SHARE_DIRECTORY / "session-termination.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock())
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    extra_params = _observed_input_params(task_document.name, tmp_path) | {"直前にpushしたcommit": "abc1234"}
+
+    with pytest.raises(ActionableError, match="直前にpushしたcommit"):
         await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     manager.start.assert_not_awaited()
@@ -1070,7 +1109,7 @@ async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`起動種別: explore`を宣言したタスク文書は`start_explore`と同じ軽量な起動条件で起動する。
+    """`mode: explore`を宣言した`<役割名>.subagent.md`は`start_explore`と同じ軽量な起動条件で起動する。
 
     起動条件はsession記録の`launch_kind`と、backendへ渡すシステム指示・許可ツールを決める種別で確かめる。
     """
@@ -1105,9 +1144,9 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """定型の委譲を移したタスク文書は、呼び元文書が定める入力だけで`start`から起動し、宣言した起動条件と段位で動く。
+    """定型の委譲を移した`<役割名>.subagent.md`は、`<役割名>.parent.md`が定める入力だけで`start`から起動し、宣言した起動条件と段位で動く。
 
-    起動条件が通常委譲へ戻ると読み取り専用の探索が規範とプロジェクト指示を読み込み、段位を誤ると監査を下位モデルで行う。
+    起動条件が通常委譲へ戻ると読み取り専用の探索が規範とプロジェクト規範を読み込み、段位を誤ると監査を下位モデルで行う。
     """
     _recording_candidates(monkeypatch)
     manager, _ = _manager_with_fake("codex")
@@ -1125,7 +1164,7 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
 
 @pytest.mark.asyncio
 async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`起動種別:`行の無いタスク文書は通常委譲で起動し、不正な起動種別は宣言を読めない扱いで通常委譲とする。"""
+    """`mode:`行の無い`<役割名>.subagent.md`は通常委譲で起動し、不正な値は宣言を読めない扱いで通常委譲とする。"""
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     task_document = _write_declared_task_document(tmp_path, "必須入力名: 対象\n任意入力名: 補足")
@@ -1133,11 +1172,25 @@ async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.Monke
 
     await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値", "補足": "値"})
     task_document.write_text(
-        task_document.read_text(encoding="utf-8").replace("任意入力名: 補足", "起動種別: batch"), encoding="utf-8"
+        task_document.read_text(encoding="utf-8").replace("任意入力名: 補足", "mode: batch"), encoding="utf-8"
     )
     await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値", "未宣言": "値"})
 
     assert [call.kwargs["launch_kind"] for call in manager.start.await_args_list] == ["delegate", "delegate"]
+
+
+@pytest.mark.asyncio
+async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`mode:`へ改める前の`起動種別:`行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    current = _write_declared_task_document(tmp_path / "current", "必須入力名: 対象\nmode: explore")
+    legacy = _write_declared_task_document(tmp_path / "legacy", "必須入力名: 対象\n起動種別: explore")
+    for task_document in (current, legacy):
+        monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "low_tier")
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値"})
+
+    assert [call.kwargs["launch_kind"] for call in manager.start.await_args_list] == ["explore", "explore"]
 
 
 @pytest.mark.asyncio
@@ -1191,7 +1244,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
 
 
 def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool = False) -> list[str]:
-    """実運用で観測した起動文の名前付き入力を組み立てる。"""
+    """実運用で観測した委譲プロンプトの名前付き入力を組み立てる。"""
     handoff = f"引き継ぎ記録先: {root / 'handoff.md'}"
     if task_name == "exec-review.subagent.md":
         return [
@@ -1255,12 +1308,12 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
         return [f"差分ファイル: {root / 'word-diff.txt'}（120行）"]
     if task_name == "pick-wi-explain.subagent.md":
         return [
-            f"説明対象の選定結果ファイル: {root / 'selection.json'}",
+            f"説明対象の選定結果の出力先ファイル: {root / 'selection.json'}",
             "選定理由への質問: 20260101-000000-001.mdを別レーンにした理由",
         ]
     if task_name == "defect-investigation.subagent.md":
-        return ["対象の不良: 起動文の必須入力検査が見出しを誤認する（agents_server_mcp.py）", handoff]
-    raise ValueError(f"未対応のタスク文書: {task_name}")
+        return ["対象の不良: 委譲プロンプトの必須入力検査が見出しを誤認する（agents_server_mcp.py）", handoff]
+    raise ValueError(f"未対応の`<役割名>.subagent.md`: {task_name}")
 
 
 def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]:
@@ -1286,7 +1339,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
     ],
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
-    """実運用で観測した最小起動文が必須入力の確認処理を通過する。"""
+    """実運用で観測した最小の委譲プロンプトが必須入力の確認処理を通過する。"""
     task_document = subject._SHARE_DIRECTORY / task_name
     extra_params = _observed_input_params(task_name, tmp_path)
 
@@ -1318,7 +1371,7 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
 async def test_exec_review_public_start_accepts_previous_revision(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """引き継ぎ再レビューの比較元を宣言済み入力として起動文へ配送する。"""
+    """引き継ぎ再レビューの比較元を宣言済み入力として委譲プロンプトへ配送する。"""
     task = subject._SHARE_DIRECTORY / "exec-review.subagent.md"
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "review", "status": "running"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
@@ -1335,7 +1388,7 @@ async def test_exec_review_public_start_accepts_previous_revision(
 
 @pytest.mark.asyncio
 async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存不良の調査担当は`start`から`high_tier`で起動し、起動文へタスク文書の出所と対象の不良を載せる。
+    """既存不良の調査担当は`start`から`high_tier`で起動し、委譲プロンプトへ`<役割名>.subagent.md`の出所と対象の不良を載せる。
 
     工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
     """
@@ -1364,26 +1417,63 @@ def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path
 
 
 @pytest.mark.asyncio
-async def test_start_rejects_exec_prompt_without_handoff_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """startは引き継ぎ記録先だけを欠く実装起動文をbackendへ渡さない。"""
+async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`引き継ぎ記録先`を省略した`start`は拒否されず、委譲元のセッションのmanaged-temp直下の`（新規）`記録先で起動する。
+
+    渡し忘れの拒否と再発行の往復を除くため、サーバーが用意した絶対パスを委譲プロンプトと応答の双方へ載せる。
+    応答の値が委譲プロンプトと一致しないと、委譲元は`（継続）`で渡す記録先を誤る。
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-state")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    session_area = subject._managed_temp.create_managed_temp("session", session_id="caller-session")
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     input_lines = [
         line for line in _observed_input_lines(task_document.name, tmp_path) if not line.startswith("引き継ぎ記録先:")
     ]
     extra_params = dict(line.split(": ", 1) for line in input_lines)
-    called = False
+    prompts: list[str] = []
 
-    async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
-        nonlocal called
-        called = True
+    async def fake_start(_model_type: str, prompt: str, *_args: object, **_kwargs: object) -> dict[str, Any]:
+        prompts.append(prompt)
         return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
-    with pytest.raises(ValueError, match=rf"引き継ぎ記録先.*{re.escape(str(task_document))}"):
-        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
-    assert called is False
+    handoff = pathlib.Path(response["handoff_record_path"])
+    assert handoff.is_absolute()
+    assert handoff.parent == session_area
+    assert not handoff.exists()
+    assert f"引き継ぎ記録先: {handoff}（新規）" in prompts[0].splitlines()
+
+
+@pytest.mark.asyncio
+async def test_start_keeps_given_handoff_path_and_rejects_other_missing_inputs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """委譲元が渡した`引き継ぎ記録先`はそのまま委譲プロンプトへ載せ、それ以外の必須入力の欠落は従来どおり拒否する。"""
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    extra_params = dict(line.split(": ", 1) for line in _observed_input_lines(task_document.name, tmp_path))
+    prompts: list[str] = []
+
+    async def fake_start(_model_type: str, prompt: str, *_args: object, **_kwargs: object) -> dict[str, Any]:
+        prompts.append(prompt)
+        return {"session_id": "session", "status": "running"}
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
+
+    assert "handoff_record_path" not in response
+    assert f"引き継ぎ記録先: {extra_params['引き継ぎ記録先']}" in prompts[0].splitlines()
+
+    without_kind = {name: value for name, value in extra_params.items() if name != "担当種別"}
+    with pytest.raises(ValueError, match=rf"担当種別.*{re.escape(str(task_document))}"):
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=without_kind)
+    assert len(prompts) == 1
 
 
 @pytest.mark.asyncio
@@ -1392,7 +1482,7 @@ async def test_start_warns_and_continues_without_required_input_marker(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """必須入力名を取得できないタスク文書は警告してbackendを起動する。"""
+    """必須入力名を取得できない`<役割名>.subagent.md`は警告してbackendを起動する。"""
     task_document = tmp_path / "share" / "task.subagent.md"
     (tmp_path / ".claude-plugin").mkdir(parents=True)
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -1489,7 +1579,7 @@ async def test_success_response_key_sets_for_all_tools(
         "progress",
         "elapsed_seconds",
     }
-    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery"}
+    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery", "root_session_id"}
     session.turn_id = "turn-1"
     assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
 
@@ -1510,9 +1600,113 @@ async def test_success_response_key_sets_for_all_tools(
     )
 
 
+class _RegistryBackend(FakeBackend):
+    """作成したsessionを登録簿へ公開するバックエンド。委譲元の記録を登録簿で観測するテストが使う。"""
+
+    async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await super().start(*args, **kwargs)
+        session.publish_registry = True
+        return session
+
+
+_LAUNCHER_ENVIRONMENT_NAMES = (
+    "CLAUDE_CODE_SESSION_ID",
+    "AGENT_TOOLKIT_OWNER_SESSION",
+    "AGENT_TOOLKIT_DELEGATED_SESSION",
+    "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+    "CODEX_THREAD_ID",
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("environment", "host_alias", "expected"),
+    [
+        ({"CLAUDE_CODE_SESSION_ID": "claude-main"}, None, "claude-main"),
+        (
+            {
+                "AGENT_TOOLKIT_OWNER_SESSION": "owner-root",
+                "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+                "CLAUDE_CODE_SESSION_ID": "claude-delegate",
+            },
+            None,
+            "claude-delegate",
+        ),
+        (
+            {"AGENT_TOOLKIT_OWNER_SESSION": "owner-root", "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer-1"},
+            ("owner-root", "writer-1", "codex-thread-9"),
+            "codex-thread-9",
+        ),
+        ({"CODEX_THREAD_ID": "codex-thread-direct"}, None, "codex-thread-direct"),
+    ],
+    ids=["claude-main", "claude-delegate", "codex-delegate", "codex-direct"],
+)
+async def test_start_records_launcher_in_registry_and_keeps_it(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    environment: dict[str, str],
+    host_alias: tuple[str, str, str] | None,
+    expected: str,
+) -> None:
+    """`start`は作成時点の委譲元を登録簿へ記録し、状態の更新と解放済みへの置き換えの後も保持する。
+
+    親のセッション記録に起動結果が残らない委譲先は、登録簿の委譲元が無いと`atk serve`の一覧で親を持たない。
+    """
+    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    for name in _LAUNCHER_ENVIRONMENT_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    if host_alias is not None:
+        root_session_id, writer, host = host_alias
+        status_file.write_host_alias(root_session_id, writer, host, tmp_path)
+    manager = subject.AgentsServerManager()
+    _install_backend(manager, "codex", _RegistryBackend(manager.sessions, "codex"))
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
+    )
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+    session_id = str(response["session_id"])
+    registry = session_registry.registry_directory(tmp_path) / f"{session_id}.json"
+
+    assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
+    _complete(manager.sessions[session_id])
+    assert json.loads(registry.read_text(encoding="utf-8"))["status"] == "completed"
+    assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
+    session_registry.release(session_id, reason="stopped")
+    assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
+    assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
+
+
+@pytest.mark.asyncio
+async def test_send_message_tool_returns_same_root_as_list(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """MCPツール`send_message`の応答は、同じサーバーの`list`と同じ`root_session_id`を返す。
+
+    再起動した会話の最初のMCP操作が`send_message`でも、PostToolUseがこの値で別名索引を書くため、
+    欠けると`atk agents wait`が旧ルートを読んで結果を受け取れない。
+    """
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+    _complete(session, message="計画作成完了")
+    manager.sessions[session.session_id] = session
+
+    response = await subject.send_message(session.session_id, "実装開始")
+
+    assert response["delivery"] == "reply_started"
+    assert response["root_session_id"] == (await subject.list_sessions())["root_session_id"] == "root-session"
+
+
 @pytest.mark.asyncio
 async def test_list_returns_root_session_id_when_session_list_is_empty(tmp_path: pathlib.Path) -> None:
-    """空一覧でもPostToolUseが会話rootの索引を復旧できる値を返す。"""
+    """空一覧でもPostToolUseがルートsessionの索引を復旧できる値を返す。"""
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root-session", "root.json", None),
@@ -1825,7 +2019,7 @@ async def test_agy_failed_turn_advances_config_candidate(
 async def test_agy_init_failure_reports_reason_when_candidates_exhausted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """最後のagy候補がinit前に失敗した場合も、根拠を呼び出し元へ返す。"""
+    """最後のagy候補がinit前に失敗した場合も、根拠を委譲元へ返す。"""
     manager = subject.AgentsServerManager()
     agy = FakeBackend(manager.sessions, "agy")
     monkeypatch.setattr(agy, "start", AsyncMock(side_effect=RuntimeError("stderr=model unavailable")))
@@ -2592,7 +2786,7 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
     response = await manager.send_message("saved-session", "続行")
 
-    assert response == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started"}
     assert "previous_result" not in response
     assert backend.resume_calls == ["saved-session"]
     assert "saved-session" not in manager.expired_sessions
@@ -2638,7 +2832,7 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
 
-    assert await manager.send_message("created-session", "続行") == {"delivery": "reply_started"}
+    assert _without_root(await manager.send_message("created-session", "続行")) == {"delivery": "reply_started"}
     writer.flush()
 
     resumed = manager.sessions["created-session"]
@@ -2853,7 +3047,7 @@ async def test_four_observation_paths_share_the_same_activity_projection(
     """`show`・`list`・待機CLI・`atk agents list`が、同じ入力へ同じ経過秒数を返す。
 
     いずれかの呼び出し手段が共通の射影から外れて独自の判定入力へ戻る退行を検出する。
-    停滞の判定は呼び出し元が経過秒数と閾値の比較で行うため、4つの呼び出し手段が返す経過秒数で同じ判定が得られることを確認する。
+    停滞の判定は委譲元が経過秒数と閾値の比較で行うため、4つの呼び出し手段が返す経過秒数で同じ判定が得られることを確認する。
     """
     started_at = "2000-01-01T00:00:00+00:00"
     output_updated_at = "2000-01-01T00:00:00+00:00"
@@ -3564,7 +3758,7 @@ async def test_send_message_keeps_previous_result_after_reply_failed_response(tm
     )
 
     first = await manager.send_message(session_id, "1回目")
-    assert first == {"delivery": "reply_failed"}
+    assert _without_root(first) == {"delivery": "reply_failed"}
 
     second = await manager.send_message(session_id, "2回目")
     assert second["previous_result"]["agent_message"] == "reply失敗結果"
@@ -3603,7 +3797,7 @@ async def test_send_message_steered_response_has_no_previous_result(tmp_path: pa
     session.turn_id = "turn-1"
     manager.sessions[session.session_id] = session
     response = await manager.send_message(session.session_id, "追加指示")
-    assert response == {"delivery": "steered"}
+    assert _without_root(response) == {"delivery": "steered"}
 
 
 class FakeCodexClient:
@@ -3959,7 +4153,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
 
 @pytest.mark.asyncio
 async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """Codexの再開は起動種別に応じた委譲先宣言をthread/resumeへ渡す。"""
+    """Codexの再開は`mode`に応じた委譲先宣言をthread/resumeへ渡す。"""
     monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     client = FakeCodexClient()
     normal_session = subject.SessionState("thread-normal", str(tmp_path), engine="codex")
@@ -4267,7 +4461,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
     )
     response = await manager.send_message("thread-saved", "続行")
 
-    assert response == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started"}
     assert client.requests[0] == (
         "thread/resume",
         {
@@ -5590,7 +5784,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
     assert result["error"]["engine"] == "claude"
     response = await manager.send_message(session.session_id, "続行")
 
-    assert response == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started"}
     assert not manager.expired_sessions
     assert manager.sessions[session.session_id].status == "running"
     await backend.close()
@@ -5626,7 +5820,7 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
     previous_error = response["previous_result"].pop("error")
     assert previous_error["message"] == "stream failed"
     assert previous_error["engine"] == "claude"
-    assert response == {
+    assert _without_root(response) == {
         "delivery": "reply_started",
         "previous_result": {
             "status": "failed",
@@ -5718,7 +5912,7 @@ async def test_recovered_session_restores_persisted_result_once(
         )
         == 0
     )
-    restored = json.loads(capsys.readouterr().out)
+    restored = _without_body_path(json.loads(capsys.readouterr().out))
     second = await manager.kill(session_id, timeout=0)
 
     assert "`send_message`" in restored.pop("next_action")
@@ -6263,7 +6457,7 @@ async def test_stop_releases_wait_target_before_waiting_for_new_result(
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out) == {
+    assert _without_body_path(json.loads(capsys.readouterr().out)) == {
         "session_id": "new-session",
         "status": "completed",
         "agent_message": "新しい結果",
@@ -6447,7 +6641,7 @@ async def test_tool_error_body_carries_next_action(
     """MCPツールのエラー本文は理由の後に`次の操作: `の行を持ち、失敗の種類に応じた操作を示す。
 
     FastMCPは例外の`str()`をエラー本文へ使うため、共通の例外型の次の操作も想定外の例外の案内も、
-    登録の共通層が加えない限り受信側へ届かない。
+    登録の共通層が加えない限り委譲元へ届かない。
     """
 
     def raise_error(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -6497,7 +6691,7 @@ async def test_unrecoverable_registry_record_reports_next_action(
 ) -> None:
     """再開できない登録簿の状態は、符号に加えて取るべき操作を次の操作で示す。
 
-    符号だけを返すと、受信側は別の主体が実行中のsessionを新しいstartでやり直し得る。
+    符号だけを返すと、委譲元は別の主体が実行中のsessionを新しいstartでやり直し得る。
     """
     monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
@@ -7000,7 +7194,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """startはタスク文書本文のプラグインルート変数を、そのタスク文書が属するプラグインルートへ展開して配送する。"""
+    """startは`<役割名>.subagent.md`の本文のプラグインルート変数を、そのファイルが属するプラグインルートへ展開して配送する。"""
     plugin_root = tmp_path / "plugin root"
     task_document = plugin_root / "share" / "task.subagent.md"
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
@@ -7016,7 +7210,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
 
     prompt = manager.start.await_args.args[1]
     assert f"`{plugin_root.resolve()}/share/other.parent.md`を読む。" in prompt
-    # 名前付き入力は呼び出し元の値のまま配送する
+    # 名前付き入力は委譲元の値のまま配送する
     assert prompt.endswith("補足: ${CLAUDE_PLUGIN_ROOT}")
 
 
@@ -7048,7 +7242,7 @@ async def test_start_rejects_task_document_that_cannot_be_read(
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
-    with pytest.raises(ValueError, match="タスク文書をUTF-8で読めません"):
+    with pytest.raises(ValueError, match="`<役割名>.subagent.md`をUTF-8で読めません"):
         await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
     manager.start.assert_not_awaited()
@@ -7062,7 +7256,7 @@ def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_pat
 
     warning = subject._validate_required_prompt_inputs(task_document, {})
     assert warning is not None
-    assert "タスク文書がshare配下ではありません" in warning
+    assert "`<役割名>.subagent.md`がshare配下ではありません" in warning
 
 
 def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_path: pathlib.Path) -> None:
@@ -7076,7 +7270,7 @@ def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_p
 
     warning = subject._validate_required_prompt_inputs(task_document, {})
     assert warning is not None
-    assert "タスク文書がshare配下ではありません" in warning
+    assert "`<役割名>.subagent.md`がshare配下ではありません" in warning
 
 
 @pytest.mark.parametrize("cwd", ["", "relative/path"])
@@ -7105,9 +7299,9 @@ def test_validate_model_effort_rejects_incomplete_values(model: str | None, effo
 
 
 def test_initialization_failure_resolves_before_host_moves_call_to_background() -> None:
-    """初期化の失敗がホストの背景移行閾値より前に確定する。
+    """初期化の失敗がホストがバックグラウンドタスクへ移す閾値より前に確定する。
 
-    この関係が成立しなくなると、呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
+    この関係が成立しなくなると、委譲元は`start`の失敗を受け取らないまま待機へ進む。
     上限値を0などへ置換せずに、現行の定数どうしの関係だけを判定する。
     """
     failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
@@ -7211,9 +7405,9 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
 
 
 def test_start_description_declares_input_and_launch_kind_contract() -> None:
-    """`start`の説明が、宣言済み入力だけの受理と起動種別による軽量起動を示し、`追加指示`を案内しない。
+    """`start`の説明が、宣言済み入力だけの受理と`mode:`による軽量起動を示し、`追加指示`を案内しない。
 
-    `追加指示`へ補足を渡す案内が残ると、呼び出し元は拒否される項目名で起動し、同じ呼び出しをやり直す。
+    `追加指示`へ補足を渡す案内が残ると、委譲元は拒否される項目名で起動し、同じ呼び出しをやり直す。
     """
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
@@ -7222,7 +7416,7 @@ def test_start_description_declares_input_and_launch_kind_contract() -> None:
     assert "宣言外の入力名を含む場合は委譲先を起動しない" in extra_params
     assert "待機表明の例外" not in extra_params
     assert "待機と再開の方針はサーバーが伝える" in extra_params
-    assert "タスク文書が宣言した起動種別" in start_tool.description
+    assert "`<役割名>.subagent.md`の`mode:`" in start_tool.description
     assert "宣言外の入力名は拒否し" in start_tool.description
 
 
@@ -7288,7 +7482,7 @@ async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_sessi
 async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開境界から各modeの起動種別、省略時のmodel_typeおよびlabelがManagerへ届く。"""
+    """公開境界から各modeの`launch_kind`、省略時のmodel_typeおよびlabelがManagerへ届く。"""
     requested: list[str] = []
 
     def candidates(model_type: str) -> list[tuple[str, str, str]]:
@@ -7325,7 +7519,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
 
 @pytest.mark.asyncio
 async def test_start_rejects_removed_wi_draft_review(tmp_path: pathlib.Path) -> None:
-    """廃止した投入前レビューのタスク文書は配布物に無く、`start`は起動しない。"""
+    """廃止した投入前レビューの`<役割名>.subagent.md`は配布物に無く、`start`は起動しない。"""
     task_document = subject._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
 
     with pytest.raises(ValueError, match="is not an existing .subagent.md file"):
@@ -7402,7 +7596,7 @@ async def test_start_reports_path_check_when_plugin_commands_are_missing(
 ) -> None:
     """起動コマンドの実行ファイルが無い場合は、mise以外の原因としてPATHの確認を次の操作に示す。
 
-    miseの案内だけを返すと、受信側は無関係な`mise trust`を試して同じ失敗を繰り返す。
+    miseの案内だけを返すと、委譲元は無関係な`mise trust`を試して同じ失敗を繰り返す。
     """
     _use_real_plugin_preflight(monkeypatch)
     _recording_candidates(monkeypatch)
@@ -7458,7 +7652,7 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
 
     response = await subject.send_message(session.session_id, "実装開始")
 
-    assert response == {
+    assert _without_root(response) == {
         "delivery": "reply_started",
         "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
     }
@@ -7522,7 +7716,7 @@ async def test_close_publishes_running_session_as_interrupted_for_restart(
     """実行中sessionを持つマネージャーの停止で登録簿と結果ファイルへ終端を公開し、別のマネージャーが再開できる。
 
     停止時に公開しないと登録簿が`running`のまま残り、再起動後の`show`・`send_message`が実行中の可能性として拒否し続け、
-    起動元の`atk agents wait`も待機上限での終了を繰り返す。
+    委譲元の`atk agents wait`も待機上限での終了を繰り返す。
     """
     monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter({}, status_file.StatusFileIdentity("root-session", "root.json", None))

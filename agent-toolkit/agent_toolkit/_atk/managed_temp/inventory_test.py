@@ -213,7 +213,7 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
         directory: bool,
     ) -> None:
-        """管理root内を指すfile・directory symlinkはリンク先を保持して回収する。"""
+        """managed-tempのroot内を指すfile・directory symlinkはリンク先を保持して回収する。"""
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-symlink")
         destination = target.parent / "symlink-destination"
@@ -744,7 +744,7 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """管理root内を指すJunctionはリンク先を保持して回収する。"""
+        """managed-tempのroot内を指すJunctionはリンク先を保持して回収する。"""
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-junction")
         destination = target.parent / "junction-destination"
@@ -809,7 +809,7 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """走査後に管理root外へ向け直されたJunctionを解除しない。"""
+        """走査後にmanaged-tempのroot外へ向け直されたJunctionを解除しない。"""
         managed_root = tmp_path / "managed-root"
         managed_root.mkdir()
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
@@ -847,7 +847,7 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """隔離済み状態からも管理root内を指すJunctionを回収する。"""
+        """隔離済み状態からもmanaged-tempのroot内を指すJunctionを回収する。"""
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-quarantine-junction")
         destination = target.parent / "quarantine-destination"

@@ -1,17 +1,17 @@
-"""タスク文書を指す委譲の起動文を、宣言済みの入力だけへ限る。
+"""`<役割名>.subagent.md`を指す委譲プロンプトを、宣言済みの入力だけへ限る。
 
-専用のタスク文書（`share/<役割名>.subagent.md`）を持つ委譲では、受信者の手順、権限、検証方法、返却形式は
-タスク文書と受信者が読む規範が定める。起動文へそれらを書き足すと、委譲の費用が増え、指示の重複や
-呼び出し元の先入観が受信者へ混入する。本モジュールは次の2つを遮断する。
+`share/<役割名>.subagent.md`を持つ委譲では、委譲先の手順、権限、検証方法、返却形式は
+`<役割名>.subagent.md`と委譲先が読む規範が定める。委譲プロンプトへそれらを書き足すと、委譲の費用が増え、指示の重複や
+委譲元の先入観が委譲先へ混入する。本モジュールは次の2つを遮断する。
 
-- `agents_server`の`start`のうち、自由本文を渡すmode（`delegate`・`explore`・`write`）の本文がタスク文書を指す起動。
-  タスク文書起動は`start`のtaskへ`subagent_md_path`と`extra_params`で渡す
-- `Agent`ツールの本文がタスク文書を指し、1行目の`<タスク文書の絶対パス>の手順を実行せよ。`と
+- `agents_server`の`start`のうち、自由本文を渡すmode（`delegate`・`explore`・`write`）の本文が`<役割名>.subagent.md`を指す起動。
+  `<役割名>.subagent.md`を指定する起動は`start`のtaskへ`subagent_md_path`と`extra_params`で渡す
+- `Agent`ツールの本文が`<役割名>.subagent.md`を指し、1行目の`<.subagent.mdの絶対パス>の手順を実行せよ。`と
   宣言済みの入力名の行（字下げした続きの行を含む）以外を含む起動
 
-遮断の根拠: 委譲の起動は起動文を委譲先のコンテキストへ取り込ませるため、通した後に結果を復元できない。
+遮断の根拠: 委譲の起動は委譲プロンプトを委譲先のコンテキストへ取り込ませるため、通した後に結果を復元できない。
 実行主体は同じターンで、通知が示す`start`の呼び出しまたは宣言済みの行だけの本文へ組み直して再実行できる。
-宣言を読めないタスク文書は入力との一致を確かめられないため遮断しない（`agents_server`の`start`も警告だけで起動を続ける）。
+宣言を読めない`<役割名>.subagent.md`は入力との一致を確かめられないため遮断しない（`agents_server`の`start`も警告だけで起動を続ける）。
 宣言の解析は`agents_server`の`start`と`agent_toolkit._agents_server.task_documents`を共有する。
 """
 
@@ -59,11 +59,11 @@ def _check_free_text_start(mode: str, prompt: str) -> str | None:
     if not documents:
         return None
     return _block_notice(
-        f"blocked: `start`の`{mode}`で渡した`prompt`がタスク文書`{documents[0]}`を指している。"
-        "タスク文書を持つ委譲は自由本文の起動の対象外である。",
+        f"blocked: `start`の`{mode}`で渡した`prompt`が`{documents[0]}`を指している。"
+        "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。",
         fix=(
             f"`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={documents[0]}`と、"
-            "タスク文書が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
+            "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
         ),
     )
 
@@ -96,10 +96,9 @@ def _check_agent_prompt(prompt: str) -> str | None:
         return None
     shown = "\n".join(f"  {line}" for line in violations[:5])
     return _block_notice(
-        f"blocked: `Agent`の本文がタスク文書`{document}`を指しながら、1行目の命令と宣言済みの入力以外の行を含む。\n"
-        f"宣言外の行:\n{shown}",
+        f"blocked: `Agent`の本文が`{document}`を指しながら、1行目の命令と宣言済みの入力以外の行を含む。\n宣言外の行:\n{shown}",
         fix=(
             f"1行目を`{expected_first}`とし、2行目以降は`<入力名>: <値>`の行と半角空白2字で字下げした続きの行だけにする。"
-            f"受理する入力名: {', '.join(sorted(accepted))}。手順、権限、返却形式はタスク文書が定めるため書かない。"
+            f"受理する入力名: {', '.join(sorted(accepted))}。手順、権限、返却形式は`<役割名>.subagent.md`が定めるため書かない。"
         ),
     )

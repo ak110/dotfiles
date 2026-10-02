@@ -6,7 +6,7 @@
 
 起草の開始を管理する手段として、`update_plan`へ「調査」と「計画ファイル起草」を独立工程として登録することを推奨する。登録すると調査の完了と確定事項を工程の状態として残せ、登録を省くと未確定事項の残る起草開始に気付きにくくなる。登録した場合は、調査工程を`completed`へ更新するときに`explanation`へ確認対象、確認手段、確定事項および未確定事項の有無を対応付ける。ユーザー依存事項は`agent-toolkit:user-confirmation-and-report`のユーザー確認を完了してから起草へ進み、登録した場合は起草工程を`in_progress`へ更新する。
 
-変更対象または採用方針を左右する提案的表現の扱いは`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`に従う。回答を同期的に得られない実行では、共有規範が定めるUWI記録と暫定判断を完了した事項だけを起草の対象にできる。この扱いは`agent-toolkit:process-wi`による実行に限る。レーン担当の確認の扱いは`agent-toolkit:plan-mode`のSKILL.mdに従う。
+変更対象または採用方針を左右する提案的表現の扱いは`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`に従う。回答を同期的に得られない実行では、常時規範が定めるUWI記録と暫定判断を完了した事項だけを起草の対象にできる。この扱いは`agent-toolkit:process-wi`による実行に限る。レーン担当の確認の扱いは`agent-toolkit:plan-mode`のSKILL.mdに従う。
 
 起草後に事実不足が判明した場合は、調査工程へ戻ってから再開する。レビュー指摘の反映と進捗ログ追記は初版の開始制御の対象外とする。
 

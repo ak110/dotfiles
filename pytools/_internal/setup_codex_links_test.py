@@ -231,7 +231,7 @@ def test_run_leaves_the_rules_destination_to_the_rules_sync(
     `pytools/post_apply.py`はルールの同期の直後にリンクの同期を実行する。
     ルールがリンクの対象へ戻ると、リンクの同期が同じ配布先を扱おうとして警告を残し、
     配布経路が同期とリンクの2つへ分かれる。post-applyと同じ順序で両方を実行し、
-    配布先に対する警告が無いことと、境界標識付きの本文が残ることを確かめる。
+    配布先に対する警告が無いことと、`atk-auto`の境界付きの本文が残ることを確かめる。
     """
     dotfiles_root = tmp_path / "dotfiles"
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: dotfiles_root)

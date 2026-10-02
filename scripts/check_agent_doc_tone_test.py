@@ -177,9 +177,12 @@ def test_cli_rejects_inflected_expressions(tmp_path: pathlib.Path, body: str) ->
         ("app.py", '既定 = 4\ndefault_route = 1\nprint("是正本文")\n'),
         ("app.py", 'fields = ("起動経路", "利用者と入口", "計画検査完了")\n'),
         ("app.py", 'fields = ("正本ファイル名", "選択肢と帰結")\n'),
+        ("doc.md", "第2走査は「前提を疑う観点」とし、採用案の前提を確かめる。\n"),
         ("app.py", 'import re\npattern = re.compile("正本")\n'),
         ("doc.md", "`terminal_order`が`既定`の項目を読む。\n"),
         ("doc.md", "```yaml\nterminal_order: <省略時は「既定」>\n```\n"),
+        ("doc.md", "`プロジェクト固有の公開後の操作の順序`が`既定`の項目を読む。\n"),
+        ("doc.md", "```yaml\nプロジェクト固有の公開後の操作の順序: <省略時は「既定」>\n```\n"),
         ("config.json", '{"既定": "是正本文", "起動経路": "CLI"}\n'),
         ("config.toml", '"正本" = "是正本文"\n'),
         ("doc.md", "> 他者が記した正本・既定・照合の説明。\n"),
@@ -199,6 +202,12 @@ def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: s
 
     assert check_agent_doc_tone.main([str(path)]) == 0
     assert path.read_text(encoding="utf-8") == body
+
+
+@pytest.mark.parametrize("body", ["「前提を疑う観点」で実装を疑う。\n", "「前提を疑う観点」を使う。\n前提を疑う。\n"])
+def test_cli_rejects_other_uses_of_doubt_beside_defined_viewpoint_name(tmp_path: pathlib.Path, body: str) -> None:
+    """定義済みの名前だけを除き、同じ行と別の行にある同じ動詞の他の用法は検出する。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 1
 
 
 def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> None:

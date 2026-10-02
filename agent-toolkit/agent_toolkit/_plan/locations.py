@@ -1,9 +1,9 @@
-"""計画ファイルの保存root・参照表記・種別判定を扱う共通モジュール。
+"""計画ファイルの保存先（`private-notes/plans/`）・参照表記・種別判定を扱う共通モジュール。
 
 新規計画は`~/.claude/plans/`直下で作業し、実行レビュー完了後は作成日の年月階層を付けて
 private-notesへ移す。計画本文が同じ計画に属する付属ファイルを参照する場合は、固定接頭辞
 `~/.claude/plans/`とファイル名を用い、接頭辞を展開せずその参照を含む計画ファイルの
-ディレクトリを基準に解決する。これにより計画が作業rootと保存rootのどちらにあっても
+ディレクトリを基準に解決する。これにより計画が`~/.claude/plans`と`private-notes/plans/`のどちらにあっても
 同じ参照値が同じ実体を指す。計画の外にあるキューmetadataの`plan_file`は基準となる
 計画ファイルを持たないため、移動後の位置を表す`$(atk config get private_notes)/`を
 固定接頭辞として用いる。既存の日付階層の作業ファイル、計画本文に残る可搬表記および
@@ -41,12 +41,12 @@ _OWNER_SESSION_ENVIRONMENT_KEYS = ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_S
 _FORBIDDEN_NAME_CHARACTERS = set('/\\:*?"<>|')
 _CANONICAL_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<label>.+)-(?P<token>[0-9a-f]{4})\.md\Z")
 _MIGRATED_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<legacy_name>.+\.md)\Z")
-_SAVED_PLAN_PATH_NEXT_ACTION = "保存root相対のyyyy/MM/dd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
-_WORKING_PLAN_PATH_NEXT_ACTION = "計画作業root直下のdd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
-_MIGRATED_PLAN_PATH_NEXT_ACTION = "保存root相対のyyyy/MM/dd-{旧ファイル名}の形式で指定し直す"
+_SAVED_PLAN_PATH_NEXT_ACTION = "`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
+_WORKING_PLAN_PATH_NEXT_ACTION = "`~/.claude/plans`直下のdd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
+_MIGRATED_PLAN_PATH_NEXT_ACTION = "`private-notes/plans/`相対のyyyy/MM/dd-{旧ファイル名}の形式で指定し直す"
 _PLAN_FILE_VALUE_NEXT_ACTION = (
     "plan_fileを`$(atk config get private_notes)/plans/yyyy/MM/<ファイル名>`の可搬表記か、"
-    "保存rootまたは計画作業root配下の絶対パスで指定し直す"
+    "`private-notes/plans/`または`~/.claude/plans`配下の絶対パスで指定し直す"
 )
 _ADJUNCT_REFERENCE_NEXT_ACTION = (
     f"計画本文の参照値を`{PLAN_ADJUNCT_REFERENCE_PREFIX}<同じディレクトリのファイル名>`の形式へ直す"
@@ -76,7 +76,7 @@ def private_notes_root(
 
 
 def find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
-    """キュー管理リポジトリのルート配下からWIファイルを探す。
+    """private-notesのルート配下からWIファイルを探す。
 
     状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
     計画構造の自動チェックと選定結果の検証が同じ探索を使い、状態ディレクトリの扱いを1箇所に保つ。
@@ -94,13 +94,13 @@ def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.P
 
 
 def working_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
-    """実行レビュー完了まで使う計画作業rootの絶対パスを返す。"""
+    """実行レビュー完了まで使う`~/.claude/plans`の絶対パスを返す。"""
     home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
     return home_path / ".claude" / "plans"
 
 
 def legacy_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
-    """旧直下形式も残る計画作業rootの絶対パスを返す。"""
+    """旧直下形式も残る`~/.claude/plans`の絶対パスを返す。"""
     return working_plans_root(home)
 
 
@@ -246,14 +246,15 @@ def validate_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Pa
 
 
 def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Path:
-    """計画作業root直下のメイン計画パスを検証して返す。"""
+    """`~/.claude/plans`直下のメイン計画パスを検証して返す。"""
     raw = os.fspath(relative_path)
     if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
         raise ActionableError("作業中の計画ファイルの相対パスが不正です", next_action=_WORKING_PLAN_PATH_NEXT_ACTION)
     relative = pathlib.PurePosixPath(raw)
     if relative.is_absolute() or len(relative.parts) != 1 or relative.parts[0] in ("", ".", ".."):
         raise ActionableError(
-            "作業中の計画ファイルは計画作業root直下のファイル名で指定してください", next_action=_WORKING_PLAN_PATH_NEXT_ACTION
+            "作業中の計画ファイルは`~/.claude/plans`直下のファイル名で指定してください",
+            next_action=_WORKING_PLAN_PATH_NEXT_ACTION,
         )
     filename = relative.name
     canonical = _CANONICAL_MAIN_RE.fullmatch(filename)
@@ -390,7 +391,7 @@ _HANDOFF_SUFFIX = ".handoff.md"
 
 
 def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
-    """作業rootまたは保存root内の計画ファイルの種別を返す。"""
+    """`~/.claude/plans`または`private-notes/plans/`内の計画ファイルの種別を返す。"""
     try:
         path = _resolve(pathlib.Path(file_path))
         working_root = _resolve(working_plans_root())
@@ -462,14 +463,15 @@ def resolve_plan_file(
                     if direct_candidate.exists():
                         if not direct_candidate.is_relative_to(working_root):
                             raise ActionableError(
-                                "計画ファイルの作業パスが作業root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+                                "計画ファイルの作業パスが`~/.claude/plans`の外を指しています",
+                                next_action=_PLAN_FILE_VALUE_NEXT_ACTION,
                             )
                         return direct_candidate
             working_candidate = _resolve(working_root.joinpath(*relative.parts[1:]))
             if working_candidate.exists():
                 if not working_candidate.is_relative_to(working_root):
                     raise ActionableError(
-                        "計画ファイルの作業パスが作業root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+                        "計画ファイルの作業パスが`~/.claude/plans`の外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
                     )
                 return working_candidate
         return candidate
@@ -490,7 +492,9 @@ def resolve_plan_file(
         return resolved
     if allow_legacy_absolute:
         return resolved
-    raise ActionableError("plan_fileが許可された保存root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION)
+    raise ActionableError(
+        "plan_fileが許可された`private-notes/plans/`の外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
+    )
 
 
 def reject_saved_plans_root_write(
@@ -500,8 +504,8 @@ def reject_saved_plans_root_write(
 ) -> None:
     """保存済み計画rootの配下を指すパスへの直接書込みを`ActionableError`で拒否する。
 
-    保存済み計画は`atk plans checkout`で作業rootへ取得してから更新し、`atk plans commit`で保存し直す。
-    書込補助処理が保存rootのファイルを直接書き換えると、private-notesに所有者のいない未コミット差分が残る。
+    保存済み計画は`atk plans checkout`で`~/.claude/plans`へ取得してから更新し、`atk plans commit`で保存し直す。
+    書込補助処理が`private-notes/plans/`のファイルを直接書き換えると、private-notesに所有者のいない未コミット差分が残る。
     """
     root = new_plans_root(private_notes)
     relative = _relative_to(pathlib.Path(target), root)
@@ -509,14 +513,16 @@ def reject_saved_plans_root_write(
         return
     checkout = pathlib.PurePosixPath(*relative.parts)
     # 付属ファイルは計画バンドルの単位で取得するため、同じstemのメイン計画を案内する。
-    # 独立CI実行レビュー表（`ci-*.exec-review.tsv`）はそれ自体を取得の単位とする。
+    # CI対応レビュー指摘管理表（`ci-*.exec-review.tsv`）はそれ自体を取得の単位とする。
     for suffix in (".exec-review.tsv", ".bugs.md"):
         if checkout.name.endswith(suffix) and not checkout.name.startswith("ci-"):
             checkout = checkout.with_name(checkout.name.removesuffix(suffix) + ".md")
             break
     raise ActionableError(
         f"保存済み計画の領域（{root}）のファイルは直接更新できない",
-        next_action=f"`atk plans checkout {checkout}`で作業rootへ取得して更新し、`atk plans commit {checkout}`で保存する",
+        next_action=(
+            f"`atk plans checkout {checkout}`で`~/.claude/plans`へ取得して更新し、`atk plans commit {checkout}`で保存する"
+        ),
     )
 
 
@@ -543,7 +549,7 @@ def resolve_plan_adjunct_reference(value: pathlib.Path | str, *, plan_path: path
     """計画本文の付属ファイル参照を実ファイルパスへ解決する。
 
     接頭辞は展開せず、その参照を含む計画ファイルのディレクトリへファイル名を結合する。
-    計画が作業rootと保存rootのどちらにあっても同じ参照値が同じ計画の実体を指す。
+    計画が`~/.claude/plans`と`private-notes/plans/`のどちらにあっても同じ参照値が同じ計画の実体を指す。
     """
     raw = os.fspath(value)
     if not is_plan_adjunct_reference(raw):
@@ -560,7 +566,7 @@ def to_portable_plan_file(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> str:
-    """保存rootまたは作業root内の絶対パスをportable値へ変換する。
+    """`private-notes/plans/`または`~/.claude/plans`内の絶対パスをportable値へ変換する。
 
     旧直下形式または過去のroot外絶対パスは読み取り互換のため絶対表記を維持する。
     """
@@ -576,7 +582,7 @@ def to_portable_plan_file(
             if main_candidate is not None:
                 relative_main = _relative_to(main_candidate, working_plans_root(home))
                 if relative_main is None:
-                    raise ValueError("計画メインファイルが作業root外です")
+                    raise ValueError("計画メインファイルが`~/.claude/plans`の外です")
                 if len(relative_main.parts) == 1:
                     validate_working_plan_relative_path(relative_main.as_posix())
                     birth_date = file_birth_date(main_candidate)
@@ -620,7 +626,7 @@ def _plan_file_name(file_path: str) -> str | None:
 
 
 def _is_component_name(name: str) -> bool:
-    """作業rootの現行計画ファイル名を判定する。"""
+    """`~/.claude/plans`の現行計画ファイル名を判定する。"""
     if (
         name.endswith(".detail.md")
         or name.endswith(".plan-review.tsv")

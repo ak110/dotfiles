@@ -88,7 +88,7 @@ def test_review_table_match_is_connected_to_the_main_plan() -> None:
 
 @pytest.mark.parametrize("name", ("p.detail.md", "p.plan-review.tsv"))
 def test_working_root_excludes_removed_attachments(tmp_path: pathlib.Path, name: str) -> None:
-    """作業rootでは廃止した詳細計画と計画レビュー表を表示対象にしない。"""
+    """`~/.claude/plans`では廃止した詳細計画と計画レビュー表を表示対象にしない。"""
     root = tmp_path / "plans"
     root.mkdir()
     path = _plan(root, name)

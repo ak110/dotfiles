@@ -197,6 +197,113 @@ def test_start_and_reply_register_wait_target_for_caller(
     assert error is None
 
 
+def _isolate_conversation(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, conversation_session_id: str) -> None:
+    """会話側の現行session識別子と状態ディレクトリをテスト用に固定する。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", conversation_session_id)
+    for name in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(agents_wait.logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "logs"))
+
+
+def _write_root_status(tmp_path: pathlib.Path, root_session_id: str, sessions: list[dict[str, object]]) -> pathlib.Path:
+    """指定ルートの書込主体`root.json`を作成し、その状態ディレクトリを返す。"""
+    directory = _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory(root_session_id, tmp_path)
+    directory.mkdir(parents=True)
+    (directory / "root.json").write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
+    return directory
+
+
+def test_reply_after_resume_registers_under_mcp_root_and_wait_collects_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`claude --resume`後の最初の操作が`send_message`でも、`atk agents wait`がそのturnの結果を受け取る。
+
+    MCPサーバーは起動時の識別子のルートへ書き、会話側は再開した会話の識別子で動く。
+    旧ルートの状態ディレクトリが残り索引が無い状態で、応答の`root_session_id`から索引を作成せず
+    環境変数のルートへ登録すると、待機は旧ルートを読んで対象不在で終わる。
+    """
+    _isolate_conversation(monkeypatch, tmp_path, "conversation-session")
+    _write_root_status(tmp_path, "conversation-session", [])
+    mcp_root = _write_root_status(tmp_path, "mcp-root", [{"session_id": "remote-session", "status": "running"}])
+
+    exit_code = _POSTTOOLUSE_MODULE.main(
+        json.dumps(
+            {
+                "session_id": "conversation-session",
+                "cwd": str(tmp_path),
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
+                "tool_input": {"session_id": "remote-session", "prompt": "続行"},
+                "tool_response": {"structuredContent": {"delivery": "reply_started", "root_session_id": "mcp-root"}},
+            }
+        )
+    )
+    assert exit_code == 0
+    status_file = _POSTTOOLUSE_MODULE._agents_server_status_file
+    assert status_file.read_wait_targets("mcp-root", "root.json", tmp_path) == ({"remote-session"}, None)
+    assert status_file.read_wait_targets("conversation-session", "root.json", tmp_path) == (set(), None)
+
+    results = mcp_root / "results"
+    results.mkdir()
+    terminal = {"session_id": "remote-session", "status": "completed", "turn_seq": 2, "agent_message": "完了"}
+    (results / "remote-session.json").write_text(json.dumps(terminal), encoding="utf-8")
+    capsys.readouterr()
+
+    wait_exit = agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "conversation-session"}, state_root=tmp_path)
+
+    lines = capsys.readouterr().out.splitlines()
+    assert wait_exit == 0
+    delivered = [json.loads(line) for line in lines]
+    for row in delivered:
+        row.pop("agent_message_path")
+    assert delivered == [terminal]
+
+
+@pytest.mark.parametrize(
+    ("operation", "structured"),
+    [
+        ("show", {"session_id": "remote-session", "status": "running", "root_session_id": "mcp-root"}),
+        ("send_message", {"delivery": "steered", "root_session_id": "mcp-root"}),
+        ("kill", {"status": "interrupted", "kill_requested": True, "root_session_id": "mcp-root"}),
+    ],
+)
+@pytest.mark.parametrize("delegated", [False, True], ids=["conversation", "delegate"])
+def test_any_response_with_root_writes_alias_except_in_delegate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    operation: str,
+    structured: dict[str, object],
+    delegated: bool,
+) -> None:
+    """`root_session_id`を持つ応答なら操作名によらず別名索引を書き、委譲先の環境では書かない。"""
+    _isolate_conversation(monkeypatch, tmp_path, "conversation-session")
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-session")
+    _write_root_status(tmp_path, "mcp-root", [])
+
+    exit_code = _POSTTOOLUSE_MODULE.main(
+        json.dumps(
+            {
+                "session_id": "conversation-session",
+                "cwd": str(tmp_path),
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
+                "tool_input": {"session_id": "remote-session"},
+                "tool_response": {"structuredContent": structured},
+            }
+        )
+    )
+
+    alias = tmp_path / "agents-server" / "aliases" / "conversation-session.json"
+    assert exit_code == 0
+    assert alias.exists() is not delegated
+    if not delegated:
+        assert json.loads(alias.read_text(encoding="utf-8")) == {"version": 1, "root_session_id": "mcp-root"}
+
+
 def test_steer_does_not_register_wait_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """既存turnへ追送するsteerは、新しい待機対象として登録しない。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
@@ -1709,7 +1816,7 @@ class TestAgentsServerSessionState:
 
     @staticmethod
     def _background_notice_response(operation: str) -> dict:
-        """実行環境が上限到達で返す背景移行通知を模したtool_responseを組み立てる。"""
+        """実行環境が上限到達で返すバックグラウンドタスクへの移行通知を模したtool_responseを組み立てる。"""
         return {
             "content": [
                 {
@@ -1743,7 +1850,7 @@ class TestAgentsServerSessionState:
         assert result.returncode == 0
 
     def test_background_kill_notice_clears_pending_observation(self, tmp_path: pathlib.Path) -> None:
-        """観測操作が背景タスクへ移った通知でも、観測を試みた事実として未観測作業を解消する。"""
+        """観測操作がバックグラウンドタスクへ移った通知でも、観測を試みた事実として未観測作業を解消する。"""
         operation = "kill"
         sid = "background-kill"
         remote_session_id = "remote-background-kill"

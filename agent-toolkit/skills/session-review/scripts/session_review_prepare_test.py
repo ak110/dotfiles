@@ -1,4 +1,7 @@
-"""振り返りの入力（会話の流れ、問題候補の一覧、セッション統計）を書く準備スクリプトを、公開されたコマンドから利用シナリオを実行して検証する。"""
+"""振り返りの入力（会話の流れ、`candidates.md`、セッション統計）を書く`atk run-script session-review-prepare`を検証する。
+
+公開されたコマンドから利用シナリオを実行する。
+"""
 
 from __future__ import annotations
 
@@ -19,7 +22,7 @@ _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
 _BACKGROUND_OUTPUT_NOTICE = (
     '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
-    "未完了の背景タスクが書き込む出力ファイルを読み取った。完了通知を受けてから読むこと。</agent-toolkit-auto-inserted>"
+    "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取った。完了通知を受けてから読むこと。</agent-toolkit-auto-inserted>"
 )
 
 
@@ -96,7 +99,7 @@ def test_response_language_notices_are_excluded_from_candidates(
     """応答言語hookの警告を候補から除いて件数だけを数え、同じ発生源・区分の他の警告と別の発生源の同じ本文は候補に残す。
 
     応答言語hookは遮断後に対処する型で、振り返りのたびに同じ見送り判定になる。
-    除外しないと候補一覧へ毎回載り、発生源や区分を見ずに除くと是正を要する他の警告まで候補から消える。
+    除外しないと`candidates.md`へ毎回載り、発生源や区分を見ずに除くと是正を要する他の警告まで候補から消える。
     """
     opening = '<atk-auto source="pretooluse" kind="warn">'
     first_warning = f"{opening}{response_language_check.WARNING_BODY}判定対象の冒頭: 「I will run」</atk-auto>"
@@ -132,7 +135,7 @@ def test_response_language_notices_are_excluded_from_candidates(
     assert record["excluded_counts"]["response-language-notice"] == 2
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert "response-language-notice 2件" in candidates
-    assert "未完了の背景タスクが書き込む出力ファイルを読み取った" in candidates
+    assert "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取った" in candidates
     assert "  - 記録位置: main:6" in candidates
     assert "累計2回以上" not in candidates
 
@@ -155,7 +158,8 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 ) -> None:
     """1回の実行で3つの文書を作業ディレクトリへ書き、所在と件数を1行JSONで返し、キューを変更しない。
 
-    振り返りはメインが同じセッション内で分析するため、準備スクリプトがAWIを投入するとキューへ未分析の項目が残る。
+    振り返りはメインが同じセッション内で分析する。
+    `atk run-script session-review-prepare`がAWIを投入すると、キューへ未分析の項目が残る。
     `atk`を起動できない環境でも成功することで、キュー操作を呼ばないことを確かめる。
     """
     monkeypatch.setenv("PATH", str(tmp_path / "no-atk"))
@@ -208,6 +212,41 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     stats = pathlib.Path(record["stats_path"]).read_text(encoding="utf-8")
     assert "- 経過秒: 60秒（セッションの最初の記録から準備時点まで）" in stats
     assert not list(work_dir.glob("*material*"))
+
+
+def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """1000字を超える発話の省略区間にある`気付いた改善点:`の行を、会話の流れへ全て残す。
+
+    振り返りは会話の流れからこの行を全件拾うため、省略区間で行が消えると、作業中に伝えた改善の機会を振り返りが分析できない。
+    行を持たない長い発話は従来どおり先頭と末尾だけを載せ、中間の本文を残さない。
+    """
+    first_note = "気付いた改善点: atk agents waitの出力をjqで加工するスクリプトを3回作った（ツールの出力形式）"
+    second_note = "  気付いた改善点: 全件そろうまで戻らない回収ループで先に届いた結果を待たせた（待ち方の手順）"
+    filler = "作業の経過を説明する。" * 60
+    report = "\n".join(
+        ["作業完了報告。" + "冒頭の説明。" * 90, filler, first_note, filler, second_note, filler, "末尾の結び。" * 90]
+    )
+    entries = [
+        {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:10Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": report}]},
+        },
+        {"type": "user", "timestamp": "2026-09-06T12:01:00Z", "message": {"role": "user", "content": _LONG_INTERVENTION}},
+    ]
+    transcript = tmp_path / "33333333-4444-5555-6666-777777777777.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
+
+    conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
+    assert report not in conversation
+    omitted_marker = "全文は記録位置main:2）…\n"
+    assert f"{omitted_marker}{first_note}\n{second_note.strip()}\n" in conversation
+    assert filler not in conversation
+    # 行を持たない長い発話は、省略の標識の直後に末尾の本文が続く。
+    assert f"全文は記録位置main:3）…\n{_LONG_INTERVENTION[-500:]}" in conversation
 
 
 def test_prepare_reads_codex_thread(
@@ -521,7 +560,10 @@ def test_prepare_resolves_reference_document_from_main_worktree_name(
 def test_prepare_reports_missing_items(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記録、作業ディレクトリまたは抽出器の同一性が成立しない場合は、不足項目を返して標準出力を空に保つ。"""
+    """記録、作業ディレクトリまたは`atk run-script session-review-evidence`の同一性が成立しない場合を扱う。
+
+    不足項目を返して標準出力を空に保つ。
+    """
     transcript = _write_claude_transcript(tmp_path)
     work_dir = _work_dir(tmp_path)
 

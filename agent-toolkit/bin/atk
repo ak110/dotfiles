@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
 SCRIPT="${SCRIPT_DIR}/agent_toolkit/atk.py"
 
 # 常駐サブコマンド以外は従来どおり実体へ置き換えて起動する。
-# `process-loop`配下のサブコマンド（`abort`など）は常駐処理を開始しないため、第3引数が
+# `process-loop`配下のサブコマンド（`abort`など）はprocess-loopを開始しないため、第3引数が
 # 空であるかオプションである場合だけ監督ループへ入る。
 if [ "${2:-}" != "process-loop" ] || { [ "${1:-}" != "wi" ] && [ "${1:-}" != "mq" ]; } ||
     { [ -n "${3:-}" ] && [ "${3#-}" = "${3}" ]; }; then
@@ -30,7 +30,7 @@ log_launcher() {
         "$(date '+%Y-%m-%dT%H:%M:%S')" "$1" "$$" "$2" "${received_signal}" >>"${LOG}"; then
         printf 'process-loop監督ログへ記録できません: %s\n' "${LOG}" >&2
         # 次の操作の標識は`agent_toolkit/_common/next_action.py`の`NEXT_ACTION_PREFIX`とそろえる。
-        printf '次の操作: 常駐処理は継続する。再起動と終了の記録が欠けるため、%sの親ディレクトリの所有者と書き込み権限を確かめる\n' "${LOG}" >&2
+        printf '次の操作: process-loopは継続する。再起動と終了の記録が欠けるため、%sの親ディレクトリの所有者と書き込み権限を確かめる\n' "${LOG}" >&2
     fi
 }
 finish_launcher() {

@@ -448,7 +448,7 @@ class TestLegacyReservationMigration:
 
 
 class TestListPlanImplementationClassification:
-    """独立キーを持つ計画実装型を未分類として分類委譲へ混入させない。"""
+    """独立キーを持つ`plan`区分の項目を未分類として分類委譲へ混入させない。"""
 
     def test_missing_schedule_metadata_is_labeled_plan_implementation(
         self,
@@ -456,7 +456,7 @@ class TestListPlanImplementationClassification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """queue_schedule欠落時もトップレベルplan_fileを優先して計画実装型と表示する。"""
+        """queue_schedule欠落時もトップレベルplan_fileを優先して`plan`区分と表示する。"""
         notes = _setup_notes(tmp_path)
         plan = tmp_path / "plan.md"
         path = _write_awi_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
@@ -501,7 +501,7 @@ class TestListPlanImplementationClassification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """本文ハッシュ不一致時もトップレベルplan_fileを優先して計画実装型と表示する。"""
+        """本文ハッシュ不一致時もトップレベルplan_fileを優先して`plan`区分と表示する。"""
         notes = _setup_notes(tmp_path)
         plan = tmp_path / "plan.md"
         path = _write_awi_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")

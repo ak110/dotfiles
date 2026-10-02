@@ -76,7 +76,7 @@ class TestAgentNameParameterAccepted:
 
 
 class TestTaskStopBlock:
-    """`TaskStop`を自セッションの所有記録または停滞検知完了記録へ限定する。"""
+    """`TaskStop`を自セッションのバックグラウンドタスクの所有記録または停滞検知完了記録へ限定する。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -92,14 +92,14 @@ class TestTaskStopBlock:
         return _run(payload, env_overrides=env)
 
     def test_unowned_target_is_blocked_on_every_call(self, state_dir: dict[str, str]) -> None:
-        """所有記録が無い対象は再実行しても通さない。"""
+        """バックグラウンドタスクの所有記録が無い対象は再実行しても通さない。"""
         first = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
         second = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
 
         assert first.returncode == 2
         assert second.returncode == 2
         assert first.stderr == second.stderr
-        assert "所有記録に一致する識別子" in first.stderr
+        assert "バックグラウンドタスクの所有記録に一致する識別子" in first.stderr
         assert "対象別の停滞検知完了記録を作成" in first.stderr
         assert "再実行すると続行できる" not in first.stderr
 
@@ -107,7 +107,7 @@ class TestTaskStopBlock:
         """遮断文面が停止の根拠、その完了条件の所在、不十分な理由、確認手段、再実行方法を示す。"""
         stderr = self._invoke("task-stop-message", state_dir).stderr
         assert "現在のセッションには" in stderr
-        assert "所有記録も停滞検知完了記録も無い" in stderr
+        assert "バックグラウンドタスクの所有記録も停滞検知完了記録も無い" in stderr
         assert "明示的な即時停止要求" in stderr
         assert "停滞検知の手順" in stderr
         assert "進行が遅い" in stderr
@@ -153,7 +153,7 @@ class TestTaskStopBlock:
         label: str,
         tool_input: dict,
     ) -> None:
-        """自セッションが起動した背景タスクの停止は初回から通す。"""
+        """自セッションが起動したバックグラウンドタスクの停止は初回から通す。"""
         session_id = f"task-stop-self-{label}"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, tool_input).returncode == 0
@@ -195,7 +195,7 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """実行上限による背景移行通知を所有記録から停止許可まで渡す。"""
+        """実行上限によるバックグラウンドタスクへの移行通知をバックグラウンドタスクの所有記録から停止許可まで渡す。"""
         session_id = "task-stop-timeout-notice"
         notice = "Command did not complete within its 15s timeout and was moved to the background (ID: bgm3jt6xn)."
         recorded = _run_posttooluse(
@@ -217,7 +217,7 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """`run_in_background`なしのBashが時間切れで背景へ移った構造化応答も所有記録へ渡す。"""
+        """`run_in_background`なしのBashが時間切れで背景へ移った構造化応答もバックグラウンドタスクの所有記録へ渡す。"""
         session_id = "task-stop-structured-timeout"
         recorded = _run_posttooluse(
             {
@@ -268,7 +268,7 @@ class TestTaskStopBlock:
         self,
         state_dir: dict[str, str],
     ) -> None:
-        """前景実行の出力本文に背景起動の文言が現れても所有記録にしない。"""
+        """前景実行の出力本文に背景起動の文言が現れてもバックグラウンドタスクの所有記録にしない。"""
         session_id = "task-stop-foreground-text"
         recorded = _run_posttooluse(
             {
@@ -289,7 +289,7 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """記録に無いタスクの停止は、他の背景タスクを記録済みでも遮断する。"""
+        """記録に無いタスクの停止は、他のバックグラウンドタスクを記録済みでも遮断する。"""
         session_id = "task-stop-other-target"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
@@ -378,7 +378,7 @@ class TestExecuteReviewAlternateRouteAllowed:
         assert result.returncode == 0
 
     def test_guarded_task_references_exist(self) -> None:
-        """回帰テストが与えるタスク文書名の実在を確認し、改名による空振りを検出する。"""
+        """回帰テストが与える役割名の実在を確認し、改名による空振りを検出する。"""
         for task_name in _EXECUTE_REVIEW_TASK_NAMES:
             assert (_SHARE_DIR / task_name).is_file()
 

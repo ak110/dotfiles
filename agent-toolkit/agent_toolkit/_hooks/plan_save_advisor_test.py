@@ -1,4 +1,4 @@
-"""計画作業rootの保存確認Stopフックの公開契約を検証する。"""
+"""`~/.claude/plans`の保存確認Stopフックの公開契約を検証する。"""
 
 import json
 import os
@@ -59,7 +59,7 @@ def _decision(result: subprocess.CompletedProcess[str]) -> dict:
 
 
 def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path) -> None:
-    """自セッションによる編集の有無によらず、作業rootに残る計画を1回だけ通知する。"""
+    """自セッションによる編集の有無によらず、`~/.claude/plans`に残る計画を1回だけ通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -80,7 +80,7 @@ def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path)
     assert str(first) in notification
     assert str(second) in notification
     assert "残りのバンドルはその場に残して" in notification
-    assert "atk plans commit <計画作業ルート内の計画ファイル（メイン）名>" in notification
+    assert "atk plans commit <~/.claude/plans直下の計画ファイル（メイン）名>" in notification
     assert not second_result
 
 
@@ -101,7 +101,7 @@ def test_nested_working_plans_are_reported(tmp_path: pathlib.Path) -> None:
 
 
 def test_absent_working_root_approves(tmp_path: pathlib.Path) -> None:
-    """作業rootが存在しない場合は通知しない。"""
+    """`~/.claude/plans`が存在しない場合は通知しない。"""
     transcript = _write_transcript(tmp_path, [])
 
     result = _run(_payload("no-root", transcript), state_dir=tmp_path, home=tmp_path / "home")
@@ -189,7 +189,7 @@ def test_stop_hook_active_still_notifies(tmp_path: pathlib.Path) -> None:
 
 
 def test_paths_outside_the_working_root_approve(tmp_path: pathlib.Path) -> None:
-    """保存先へ戻した計画と作業rootの対象外ファイルは通知しない。"""
+    """保存先へ戻した計画と`~/.claude/plans`の対象外ファイルは通知しない。"""
     home = tmp_path / "home"
     working_root = home / ".claude" / "plans"
     working_root.mkdir(parents=True)
@@ -214,9 +214,9 @@ def test_invalid_payload_approves(tmp_path: pathlib.Path, payload: object) -> No
 @pytest.mark.parametrize(
     ("owner_records", "expected_notified"),
     [
-        pytest.param({}, (), id="所有記録なし"),
-        pytest.param({"own.md": "current"}, ("own.md",), id="自セッションの所有記録"),
-        pytest.param({"other.md": "another"}, (), id="他セッションの所有記録"),
+        pytest.param({}, (), id="計画の所有記録なし"),
+        pytest.param({"own.md": "current"}, ("own.md",), id="自セッションを示す計画の所有記録"),
+        pytest.param({"other.md": "another"}, (), id="他セッションを示す計画の所有記録"),
         pytest.param({"own.md": "current", "other.md": "another"}, ("own.md",), id="自他の混在"),
     ],
 )
@@ -225,7 +225,7 @@ def test_notified_plans_are_limited_to_the_current_session(
     owner_records: dict[str, str],
     expected_notified: tuple[str, ...],
 ) -> None:
-    """所有記録が自セッションを示す計画だけを通知し、他は承認する。"""
+    """計画の所有記録が自セッションを示す計画だけを通知し、他は承認する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -251,7 +251,7 @@ def test_notified_plans_are_limited_to_the_current_session(
 
 @pytest.mark.parametrize("record", ["{不正なJSON", '{"recorded_at": "2026-09-03T00:00:00+09:00"}'])
 def test_unreadable_owner_record_approves(tmp_path: pathlib.Path, record: str) -> None:
-    """所有記録をJSONとして解釈できない場合と`session_id`が無い場合は通知しない。"""
+    """計画の所有記録をJSONとして解釈できない場合と`session_id`が無い場合は通知しない。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)

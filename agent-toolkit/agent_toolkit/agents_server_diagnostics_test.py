@@ -15,7 +15,7 @@ async def _ignore_message(_message: dict[str, object]) -> None:
 async def test_start_failure_reports_command_returncode_and_stderr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """初期化前に子が終了した場合も終了理由を呼出元へ返す。"""
+    """初期化前に子が終了した場合も終了理由を委譲元へ返す。"""
     command = (
         sys.executable,
         "-c",
@@ -35,7 +35,7 @@ async def test_start_failure_reports_command_returncode_and_stderr(
 
 @pytest.mark.asyncio
 async def test_start_failure_bounds_reported_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
-    """大量の標準エラーは上限内の末尾だけを呼出元へ返す。"""
+    """大量の標準エラーは上限内の末尾だけを委譲元へ返す。"""
     command = (
         sys.executable,
         "-c",

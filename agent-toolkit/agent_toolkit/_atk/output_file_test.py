@@ -62,7 +62,7 @@ def _run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int |
 
 @pytest.fixture
 def _long_output_argv(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """管理対象一時領域をテスト内へ隔離し、16384バイトを超える標準出力を生む`atk run-script`の引数を返す。"""
+    """managed-tempをテスト内へ隔離し、16384バイトを超える標準出力を生む`atk run-script`の引数を返す。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))

@@ -96,14 +96,14 @@ class TestBuildNotice:
         assert "unanswered-0.md" in notice
         assert "unanswered-1.md" not in notice
         # hookはprocess-wiの実行中かを判定しないため、本文は条件ごとの扱いを書き分ける。
-        # 完了指示に条件が付かないと、処理中のメインは選定時の固定集合と両立しない同一セッション内の反映も求められる。
+        # 完了指示に条件が付かないと、処理中のメインは選定時の処理対象WIと両立しない同一セッション内の反映も求められる。
         sentences = [sentence for sentence in notice.split("。") if sentence]
         completion = [sentence for sentence in sentences if "セッションを終える前に" in sentence]
         assert completion
         assert all("`agent-toolkit:process-wi`の実行中でないセッションでは" in sentence for sentence in completion)
         in_process_wi = [sentence for sentence in sentences if sentence.startswith("`agent-toolkit:process-wi`の実行中は")]
         assert in_process_wi
-        assert any("次の処理回の選定工程が取り込む" in sentence for sentence in sentences)
+        assert any("次のprocess-wiの実行の選定工程が取り込む" in sentence for sentence in sentences)
 
     def test_notifies_only_uwis_submitted_by_this_session_or_without_submitter(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

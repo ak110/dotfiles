@@ -466,7 +466,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """セッション領域は作成直後の掃引では回収しない。"""
+        """セッションのmanaged-tempは作成直後の掃引では回収しない。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("session", session_id="session-1")
 
@@ -501,7 +501,7 @@ class TestManagedTempPosix:
         assert failed.exists()
         assert not deleted.exists()
         captured = capsys.readouterr()
-        assert f"警告: 管理対象一時領域を自動削除できない: {failed}" in captured.err
+        assert f"警告: managed-tempのディレクトリを自動削除できない: {failed}" in captured.err
         assert "note: 最終更新から" not in captured.err
 
     @pytest.mark.parametrize("race_point", ["stat", "scandir", "cleanup"])
@@ -595,7 +595,7 @@ class TestManagedTempPosix:
 
         assert subject.sweep_expired_managed_temp(now=now) == []
         assert triggered
-        assert f"警告: 管理対象一時領域を自動削除できない: {target}" in capsys.readouterr().err
+        assert f"警告: managed-tempのディレクトリを自動削除できない: {target}" in capsys.readouterr().err
 
     def test_sweep_keeps_an_expired_root_with_recent_nested_content(
         self,
@@ -1069,7 +1069,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """管理CLIが作成していない領域の自己整合マーカーは、利用者の指定が無ければ信頼しない。"""
+        """`atk managed-temp`が作成していない領域の自己整合マーカーは、利用者の指定が無ければ信頼しない。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = tmp_path / "handmade"
         target.mkdir(mode=0o700)

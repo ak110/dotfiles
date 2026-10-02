@@ -275,8 +275,8 @@ def test_rules_files_have_no_main_only_capabilities() -> None:
         "`AskUserQuestion`で",
         "ユーザーへ報告",
         "UWIへ記録",
-        "をSkill機能で起動して登録",
-        "をSkill機能で起動してUWI",
+        "を起動して登録",
+        "を起動してUWI",
     )
     common = "\n".join(path.read_text(encoding="utf-8") for path in (_PLUGIN_ROOT / "rules").glob("*.md"))
     assert not any(value in common for value in prohibited)
@@ -310,7 +310,7 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
 def test_session_start_injects_process_loop_instruction(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """常駐処理が渡した追加指示をメインへ注入し、委譲先へは注入しない。"""
+    """process-loopが渡した追加指示をメインへ注入し、委譲先へは注入しない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "既存のテストコードを先に読む")
@@ -347,9 +347,9 @@ def test_session_start_temp_notice_names_tmp_and_delegation(
     output = _output(capsys)
     entries = managed_temp.list_managed_temp(session_id="session-2")
 
-    assert f"このセッションの管理対象一時領域: {entries[0]['path']}" in output
+    assert f"このセッションのmanaged-temp: {entries[0]['path']}" in output
     assert "一時ファイルは`/tmp`ではなくこの領域の直下へ置く" in output
-    assert "サブエージェントへ委ねる場合は、この絶対パスを起動文へ渡す" in output
+    assert "サブエージェントへ委ねる場合は、この絶対パスを委譲プロンプトへ渡す" in output
 
 
 def test_subagent_start_notifies_existing_session_temp_without_creating(
@@ -359,7 +359,7 @@ def test_subagent_start_notifies_existing_session_temp_without_creating(
 ) -> None:
     """SubagentStartは親のSessionStartが作成した領域を新たに作成せずに解決し、SessionStartと同じ所在と行動を通知する。
 
-    Agentツールのサブエージェントへ所在が届かないと、委譲元が起動文へ渡し忘れた場合に`/tmp`が選ばれる。
+    Agentツールのサブエージェントへ所在が届かないと、委譲元が委譲プロンプトへ渡し忘れた場合に`/tmp`が選ばれる。
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
@@ -375,7 +375,7 @@ def test_subagent_start_notifies_existing_session_temp_without_creating(
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "session-3"}))
     output = _output(capsys)
 
-    assert f"このセッションの管理対象一時領域: {session_root}" in output
+    assert f"このセッションのmanaged-temp: {session_root}" in output
     assert "一時ファイルは`/tmp`ではなくこの領域の直下へ置く" in output
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
 
@@ -391,7 +391,7 @@ def test_subagent_start_without_parent_session_temp_omits_notice(
 
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "no-parent-area"}))
 
-    assert "このセッションの管理対象一時領域" not in _output(capsys)
+    assert "このセッションのmanaged-temp" not in _output(capsys)
 
 
 def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
@@ -430,7 +430,7 @@ def test_session_start_resets_language_reinjection_count(
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
 
     def _no_session_temp(*_args: object, **_kwargs: object) -> pathlib.Path:
-        raise OSError("テストではセッション領域を作成しない")
+        raise OSError("テストではセッションのmanaged-tempを作成しない")
 
     monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", _no_session_temp)
     session_state.update_state("reset-target", lambda current: {**current, rules_context.LANGUAGE_REINJECTION_COUNT_KEY: 7})

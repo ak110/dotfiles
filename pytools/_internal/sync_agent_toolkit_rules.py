@@ -4,7 +4,7 @@
 `~/.codex/agent-toolkit/rules/`へ反映する。chezmoiは`agent-toolkit/`配下を配布対象にしないため、
 `chezmoi apply`後処理で別経路の同期を行う。
 
-配布先の本文は境界標識で囲む。実行主体は配布先の本文を常時読み込む規範として受け取るため、
+配布先の本文は`atk-auto`要素で囲む。実行主体は配布先の本文を常時読み込む規範として受け取るため、
 生成主体、種別および埋め込み元のパスを本文から判別できる状態にする。
 同期は内容の一致で冪等性を判定する。境界は要素名と属性で判別する。
 """
@@ -48,7 +48,7 @@ def run() -> bool:
 
 
 def wrapped_body(rule: Path) -> str:
-    """配布先へ書く本文を、境界標識で囲んだ形で返す。"""
+    """配布先へ書く本文を、`atk-auto`要素で囲んだ形で返す。"""
     marker = (RULES_RELATIVE / rule.name).as_posix()
     body = rule.read_text(encoding="utf-8").rstrip("\n")
     opening = f'<{NORMATIVE_ELEMENT} source="{NORMATIVE_SOURCE}" kind="{NORMATIVE_KIND}" path="{marker}">'

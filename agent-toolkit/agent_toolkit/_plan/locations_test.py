@@ -281,7 +281,7 @@ def test_portable_plan_file_resolves_working_copy_before_saved_copy(tmp_path: pa
 
 
 def test_reject_saved_plans_root_write_guides_checkout_and_commit(tmp_path: pathlib.Path) -> None:
-    """保存rootへの直接書込みは、取得と保存のコマンドを次の操作として返す。"""
+    """`private-notes/plans/`への直接書込みは、取得と保存のコマンドを次の操作として返す。"""
     private_notes = tmp_path / "private-notes"
     target = private_notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
 

@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
+from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import ActionableError, report, with_next_action
@@ -46,6 +47,35 @@ _FAILED_RESULT_NEXT_ACTION = (
     "利用上限・認証・過負荷など候補の可用性による失敗なら別の`model_type`で起動し直し、いずれも成立しなければ作業を巻き取る"
 )
 _INTERRUPTED_RESULT_NEXT_ACTION = "中断を要求していない場合は同じsessionへ`send_message`で継続するか、作業を巻き取る"
+_BODY_FILE_NEXT_ACTION = (
+    "回収した結果は退避して保持しているため、managed-tempへ書き込めない原因（容量や権限）を解消してから"
+    "`atk agents wait`を再実行し、同じ結果を受け取る"
+)
+_BODY_TEMP_PREFIX = "agents-wait"
+"""結果本文のファイルを置くmanaged-tempの接頭辞。呼び出しごとに新しい領域を作成し、7日後の自動削除へ委ねる。"""
+
+
+class _BodyFileWriter:
+    """終端結果の`agent_message`をエスケープを含まないMarkdownファイルへ書き、その絶対パスを返す。
+
+    呼び出し元がJSON文字列のエスケープを解く処理を持たずに結果本文を読めるようにするためである。
+    書込先のmanaged-tempは最初の書込時に1回だけ作成する。
+    """
+
+    def __init__(self) -> None:
+        self._directory: pathlib.Path | None = None
+
+    def write(self, session_id: str, result: Mapping[str, Any]) -> pathlib.Path:
+        """本文を書いたファイルの絶対パスを返す。書けない場合は`OSError`か`ManagedTempError`を送出する。"""
+        if self._directory is None:
+            self._directory = _managed_temp.create_managed_temp(_BODY_TEMP_PREFIX)
+        turn_seq = result.get("turn_seq")
+        # labelは利用者の自由な文字列を含み得るため、ファイル名はsession識別子とturn番号だけで組み立てる。
+        suffix = f"-turn{turn_seq}" if isinstance(turn_seq, int) and not isinstance(turn_seq, bool) else ""
+        path = self._directory / f"{session_id}{suffix}.md"
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            stream.write(str(result["agent_message"]))
+        return path
 
 
 def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Path | None) -> pathlib.Path:
@@ -225,7 +255,7 @@ def wait_for_result(
     """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
 
     回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終端結果が
-    残っている間は呼び出し元がその結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
+    残っている間は委譲元がその結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
     回収の途中で終端結果の読取に失敗した場合は、同じ巡回で回収済みの本文を先に配送してから終わる。
     回収は結果ファイルと通知ファイルの削除を伴うため、その失敗を理由に配送を取りやめると回収済みの本文が失われる。
     読取の失敗は次の起動でも同じ状態で現れるため、その回の診断を1回遅らせても失われない。
@@ -350,8 +380,9 @@ def wait_for_result(
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         # 上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、CLIとMCPで同じ値を使う。
-        # 呼び出し元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
+        # 委譲元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
         wait_timeout = get_wait_timeout("main")
+        body_writer = _BodyFileWriter()
         started_at = time.monotonic()
         deadline = started_at + wait_timeout
         while True:
@@ -419,6 +450,17 @@ def wait_for_result(
                 )
                 if result is not None:
                     result["session_id"] = session_id
+                    if isinstance(result.get("agent_message"), str):
+                        # 書込に失敗した場合は配送前に終え、run別の退避物と待機対象の登録を残して次の待機で再配送する。
+                        try:
+                            result["agent_message_path"] = str(body_writer.write(session_id, result))
+                        except (_managed_temp.ManagedTempError, OSError) as error:
+                            return _fail(
+                                f"結果本文のファイルを書けません: session_id={session_id}: {error}",
+                                11,
+                                next_action=_BODY_FILE_NEXT_ACTION,
+                                session_id=session_id,
+                            )
                     if notices:
                         result["notices"] = notices
                     collected.append(_with_result_next_action(result))
@@ -426,6 +468,7 @@ def wait_for_result(
                     continue
                 if notices:
                     response = _running_response(session_id, _session_output_activity(status_paths, session_id))
+                    _add_session_label(response, status_paths, session_id)
                     response["notices"] = notices
                     response["next_action"] = _NOTICE_NEXT_ACTION
                     collected.append(response)
@@ -452,6 +495,8 @@ def wait_for_result(
                 selected,
                 {} if selected is None else _session_output_activity(status_paths, selected),
             )
+            if selected is not None:
+                _add_session_label(response, status_paths, selected)
             remaining = deadline - now
             if remaining <= 0:
                 response["next_action"] = _RERUN_WAIT_NEXT_ACTION
@@ -534,6 +579,17 @@ def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict
                 api_error=session.get("api_error") if isinstance(session.get("api_error"), dict) else None,
             )
     return {}
+
+
+def _add_session_label(response: dict[str, Any], paths: list[pathlib.Path], session_id: str) -> None:
+    """状態ファイルのsession一覧が持つ起動時の`label`を、非終端の待機応答へ加える。"""
+    for path in paths:
+        for session in _read_sessions(path) or ():
+            if session["session_id"] == session_id:
+                label = session.get("label")
+                if isinstance(label, str) and label:
+                    response["label"] = label
+                return
 
 
 def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:

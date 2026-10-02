@@ -136,6 +136,41 @@ def remote_bootstrap(helper_name: str) -> str:
     )
 
 
+def remote_command_argv(bootstrap: str, op: str, args: list[str]) -> list[str]:
+    """SSH経由でリモートヘルパーを起動するargv要素列を返す。両画面が同じ起動形を使う。
+
+    SSHは末尾の各要素を空白で連結してリモートシェルへ渡すため、
+    シェルにより1単位として解釈すべき要素はあらかじめダブルクォートで囲んで返す。
+    リモート起動コマンドはPOSIXシェル非依存とする。
+    Windows OpenSSHが指定を省いた場合に使う`cmd.exe`では`bash -c`やheredoc展開が利用できないため、
+    シェル組み込みコマンドへ依存しない。クオートはPOSIXシェル/cmd.exe共通のダブルクォートのみを使い、
+    `$`・`%`・`<`・`>`・`|`・`&`・`^`はコマンド本体に含めない。bootstrapコード本体が満たす制約は`remote_bootstrap`が定める。
+    `watchdog`は常駐モードの変更監視に、`platformdirs`は状態ディレクトリの解決
+    （計画ファイル画面の作成日時の索引と、セッション画面が読むagents_serverの登録簿）に使う。
+    """
+    return [
+        "uv",
+        "run",
+        "--no-project",
+        "--with",
+        '"watchdog>=6.0.0"',
+        "--with",
+        '"platformdirs>=4.0"',
+        "python",
+        "-c",
+        f'"{bootstrap}"',
+        op,
+        *args,
+    ]
+
+
+async def run_remote_helper(
+    bootstrap: str, host: str, op: str, args: list[str], *, ssh_options: tuple[str, ...], timeout: float
+) -> str:
+    """リモートヘルパーを単発SSHで起動し、標準出力をUTF-8文字列で返す。失敗と停止の扱いは`run_helper`に従う。"""
+    return await run_helper(["ssh", *ssh_options, host, *remote_command_argv(bootstrap, op, args)], timeout=timeout)
+
+
 def raise_if_cancelling() -> None:
     """後始末の待機が吸収したキャンセル要求が残っていれば、タスクを終えるため送出する。
 

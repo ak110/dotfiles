@@ -267,7 +267,7 @@ def test_non_develop_branch_uses_release_download(monkeypatch: pytest.MonkeyPatc
 
 
 def test_non_git_working_tree_uses_release_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Git管理領域でない作業ツリーではRelease downloadを使う。"""
+    """Gitリポジトリでない作業ツリーではRelease downloadを使う。"""
     working_tree = tmp_path / "not-repository"
     working_tree.mkdir()
     _, install_path, _ = _prepare_install_paths(monkeypatch, tmp_path)

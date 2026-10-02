@@ -298,7 +298,7 @@ def _make_managed_temp_git_case(
     monkeypatch: pytest.MonkeyPatch,
     condition: str,
 ) -> str:
-    """管理対象一時領域のGit除外判定に与える条件別の作業場所を作成する。"""
+    """managed-tempのGit除外判定に与える条件別の作業場所を作成する。"""
     state_home = tmp_path / "managed-temp-state"
     monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
     monkeypatch.setenv("LOCALAPPDATA", str(state_home))

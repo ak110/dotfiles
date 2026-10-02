@@ -79,7 +79,7 @@ def _payload(transcript_path: str, *, agent_id: str | None = None) -> str:
 
 
 def _turn(tmp_path: pathlib.Path, index: int, entries: list[dict]) -> tuple[str, str]:
-    """1ターン分の会話記録を書き、判定結果を返す。"""
+    """1ターン分のセッション記録を書き、判定結果を返す。"""
     transcript_path = _write_transcript(tmp_path, f"transcript-{index}.jsonl", entries)
     return busy_loop_guard.evaluate(_payload(transcript_path))
 
@@ -152,7 +152,7 @@ def test_pending_async_work_resets_count(
     calls: dict[str, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """委譲先または背景ジョブの完了待ちのターンは無進捗として数えない。"""
+    """委譲先またはバックグラウンドタスクの完了待ちのターンは無進捗として数えない。"""
     monkeypatch.setattr(busy_loop_guard, "is_pending_async_work", lambda *args, **kwargs: True)
     entries: list[dict] = []
     for index in range(4):

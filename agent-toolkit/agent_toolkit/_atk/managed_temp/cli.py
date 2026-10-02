@@ -167,7 +167,7 @@ from agent_toolkit._atk.managed_temp.registry import *  # noqa: F403
 
 
 def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "command") -> None:
-    """管理対象一時領域のサブコマンドを登録する。"""
+    """`atk managed-temp`のサブコマンドを登録する。"""
     subparsers = _atk_help.add_subcommands(
         parser,
         dest=command_dest,
@@ -191,7 +191,7 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     create_location.add_argument(
         "--session-root",
         type=pathlib.Path,
-        help="SessionStartが通知した管理対象一時領域。直下へ個別登録を持たない子領域を作成する。",
+        help="SessionStartが通知したセッションのmanaged-temp。直下へ個別登録を持たない作業ディレクトリを作成する。",
     )
     create_parser.add_argument(
         "--awi",
@@ -257,7 +257,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                         session_id=args.session_id,
                     )
                 )
-            _outcome.report_success(f"管理対象一時領域を作成した: {created}", _outcome.ResultKind.VALUE_OUTPUT)
+            _outcome.report_success(f"managed-tempのディレクトリを作成した: {created}", _outcome.ResultKind.VALUE_OUTPUT)
             print(created)
         elif getattr(args, command_dest) == "cleanup":
             if args.path is None and args.session_id is None:
@@ -283,20 +283,20 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                     recover_registry=getattr(args, "recover_registry", False),
                     force_remove=getattr(args, "force_remove", False),
                 )
-                _outcome.report_success(f"管理対象一時領域を回収した: {args.path}")
+                _outcome.report_success(f"managed-tempのディレクトリを回収した: {args.path}")
             else:
                 cleanup_managed_temp(
                     session_id=args.session_id,
                     recover_registry=getattr(args, "recover_registry", False),
                     force_remove=getattr(args, "force_remove", False),
                 )
-                _outcome.report_success(f"セッションの管理対象一時領域を回収した: session_id={args.session_id}")
+                _outcome.report_success(f"セッションのmanaged-tempを回収した: session_id={args.session_id}")
         else:
             entries = list_managed_temp(args.prefix, report_recovery_candidates=True)
             for entry in entries:
                 print(json.dumps(entry, ensure_ascii=False, sort_keys=True))
             if not entries:
-                _outcome.report_no_match("条件に一致する管理対象一時領域は無い。探索は正常に完了した")
+                _outcome.report_no_match("条件に一致するmanaged-tempのディレクトリは無い。探索は正常に完了した")
                 return 1
             return 0
         return 0

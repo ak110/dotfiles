@@ -259,7 +259,7 @@ _PYGMENTS_CSS_CLASS = "codehilite"
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class RootSpec:
-    """一つの計画保存rootと、画面へ返す可搬表記をまとめた定義。"""
+    """一つの計画rootと、画面へ返す可搬表記をまとめた定義。"""
 
     source_id: str
     path: pathlib.Path

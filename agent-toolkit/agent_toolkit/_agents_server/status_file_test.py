@@ -226,7 +226,7 @@ def test_wait_identity_rejects_invalid_or_missing_explicit_root(
 def test_wait_identity_rejects_explicit_root_different_from_confirmed_conversation(
     tmp_path: pathlib.Path,
 ) -> None:
-    """確認済み会話rootと異なる明示値から別ルートの結果を回収しない。"""
+    """確認済みルートsessionと異なる明示値から別ルートの結果を回収しない。"""
     subject.status_directory("conversation-root", tmp_path).mkdir(parents=True)
     subject.status_directory("other-root", tmp_path).mkdir(parents=True)
 
@@ -357,7 +357,7 @@ def test_status_directory_uses_platform_state_dir(monkeypatch: pytest.MonkeyPatc
 
 
 def test_write_host_alias_resolves_writer_to_thread_id(tmp_path: pathlib.Path) -> None:
-    """書込主体から起動元threadへの索引は形式を検証して保存する。"""
+    """書込主体から委譲元threadへの索引は形式を検証して保存する。"""
     subject.write_host_alias("root", "writer", "thread", tmp_path)
 
     assert json.loads((subject.hosts_directory("root", tmp_path) / "writer.json").read_text(encoding="utf-8")) == {
@@ -388,7 +388,7 @@ def test_resolve_status_owner_identity_keeps_unindexed_identity(tmp_path: pathli
 
 
 def test_resolve_status_owner_identity_recovers_from_live_status_file(tmp_path: pathlib.Path) -> None:
-    """索引が失われても、起動元threadを記録した状態から書込主体を一意に復元する。"""
+    """索引が失われても、委譲元threadを記録した状態から書込主体を一意に復元する。"""
     root = subject.status_directory("root", tmp_path)
     root.mkdir(parents=True)
     (root / "writer.json").write_text('{"version": 1, "host_session_id": "thread", "sessions": []}', encoding="utf-8")
@@ -410,7 +410,7 @@ def test_resolve_status_owner_identity_rejects_ambiguous_aliases(tmp_path: pathl
 
 @pytest.mark.asyncio
 async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_path: pathlib.Path) -> None:
-    """内側の3起動種別を親thread識別子へ射影して1つの状態ファイルへ集約する。"""
+    """内側の3つのmode（delegate・explore・shell）のsessionを親thread識別子へ射影して1つの状態ファイルへ集約する。"""
     identity = subject.resolve_status_file_identity(
         {"AGENT_TOOLKIT_OWNER_SESSION": "root", "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer"}
     )
@@ -1134,7 +1134,7 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """候補切替で除外した試行を隠し、呼出元へ返したsessionだけを書く。"""
+    """候補切替で除外した試行を隠し、委譲元へ返したsessionだけを書く。"""
     writer = _status_writer(tmp_path)
     manager = agents_server_mcp.AgentsServerManager(writer)
     backend: _FakeStatusBackend = (

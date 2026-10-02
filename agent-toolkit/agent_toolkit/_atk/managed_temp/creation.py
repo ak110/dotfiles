@@ -152,6 +152,13 @@ from agent_toolkit._atk.managed_temp.registry import *  # noqa: F403
 from agent_toolkit._atk.managed_temp.windows_security import *  # noqa: F403
 
 
+SESSION_TEMP_PREFIX = "session"
+"""SessionStartが会話ごとに作成するセッションのmanaged-tempの接頭辞。
+
+フックとagents_serverの双方が同じ領域を解決するため、両者より前の層のこのモジュールが持つ。
+"""
+
+
 def prefix_violation(prefix: str) -> str | None:
     """prefixが違反した最初の条件の説明を返す。違反が無ければNoneを返す。"""
     for description, satisfied in _PREFIX_RULES:
@@ -161,7 +168,7 @@ def prefix_violation(prefix: str) -> str | None:
 
 
 def is_valid_prefix(prefix: str) -> bool:
-    """prefixが管理対象一時領域の命名規則に一致するか返す。"""
+    """prefixがmanaged-tempのディレクトリの命名規則に一致するか返す。"""
     return prefix_violation(prefix) is None
 
 
@@ -327,7 +334,7 @@ def create_managed_temp(
 
 
 def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathlib.Path:
-    """登録済みセッションroot直下へ、個別登録を持たない子領域を作成する。"""
+    """登録済みのセッションのmanaged-temp直下へ、個別登録を持たない作業ディレクトリを作成する。"""
     if not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
     root_argument = pathlib.Path(session_root)

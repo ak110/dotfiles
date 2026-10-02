@@ -71,12 +71,12 @@ def _without_wrapping(text: str) -> str:
 
 
 def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.CaptureFixture[str]) -> None:
-    """一覧が起動文を含まないことと、起動文の取得先を説明する。"""
+    """一覧が委譲プロンプトを含まないことと、委譲プロンプトの取得先を説明する。"""
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list", "--help"])
 
     output = _without_wrapping(capsys.readouterr().out)
-    assert _without_wrapping("各sessionへ起動文を含めず、起動文は`atk agents show`が返す。") in output
+    assert _without_wrapping("各sessionへ委譲プロンプトを含めず、委譲プロンプトは`atk agents show`が返す。") in output
     assert _without_wrapping("MCPの`list`を1回呼び出してから再実行") in output
 
 
@@ -117,7 +117,7 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
 def test_agents_list_returns_diagnostic_fields_without_prompt(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """listは診断用の項目を返し、起動文だけを除く。"""
+    """listは診断用の項目を返し、委譲プロンプトだけを除く。"""
     monkeypatch.setenv("AI_AGENT", "1")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -146,27 +146,40 @@ def test_agents_wait_saves_collected_lines_to_the_output_file(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存先を指定した待機は、終端件数を示し、回収したJSON Linesを指定したファイルへ残す。
+    """保存先を指定した待機は、終端行ごとの依頼名と本文ファイルを標準出力に示し、JSON Linesを指定したファイルへ残す。
 
     保存先を持たない待機では、回収と同時に原本が削除されて本文が標準出力にだけ現れ、
-    後続の工程や後続のセッションがその本文を取得できない。
+    後続の工程や後続のセッションがその本文を取得できない。要約行が依頼名と本文ファイルを示さないと、
+    呼び出し元はsession_idから依頼名への対応表と、保存先を開いて本文を取り出す処理を自前で持つことになる。
     """
     results = status_file.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
-    (results / "session-1.json").write_text(
-        json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "完了"}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    payload = {
+        "status": "completed",
+        "owner_status_file": "root.json",
+        "agent_message": "完了\n\n- 詳細は`報告.md`",
+        "session": {"session_id": "session-1", "label": "調査レーンA"},
+    }
+    (results / "session-1.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     destination = tmp_path / "wait-result.jsonl"
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait", f"--output-file={destination}"])
 
     output_lines = capsys.readouterr().out.splitlines()
-    assert output_lines == [f"保存先: {destination}", "行数: 1", "終端: 1件"]
     saved = json.loads(destination.read_text(encoding="utf-8").strip())
+    body_path = pathlib.Path(saved["agent_message_path"])
+    assert output_lines == [
+        f"保存先: {destination}",
+        "行数: 1",
+        "終端: 1件",
+        f"終端行: session_id=session-1 label=調査レーンA status=completed agent_message_path={body_path}",
+    ]
     assert saved["session_id"] == "session-1"
-    assert saved["agent_message"] == "完了"
+    assert saved["label"] == "調査レーンA"
+    assert saved["agent_message"] == payload["agent_message"]
+    assert body_path.is_absolute()
+    assert body_path.read_text(encoding="utf-8") == payload["agent_message"]
 
 
 @pytest.mark.usefixtures("session_environment")
@@ -197,10 +210,11 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
         atk.main(["agents", "wait"])
 
     output = capsys.readouterr().out
-    saved_line, count_line, terminal_line = output.splitlines()
+    saved_line, count_line, terminal_line, terminal_row = output.splitlines()
     saved = pathlib.Path(saved_line.removeprefix("保存先: "))
     assert saved_line.startswith("保存先: ")
     assert (count_line, terminal_line) == ("行数: 1", "終端: 1件")
+    assert terminal_row.startswith("終端行: session_id=session-1 label=なし status=completed agent_message_path=")
     assert json.loads(saved.read_text(encoding="utf-8"))["agent_message"] == long_message
 
     session = state.SessionState("parent-1", "/tmp")
@@ -263,13 +277,14 @@ def test_agents_wait_saves_notice_and_terminal_summary(tmp_path: pathlib.Path, c
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait", f"--output-file={destination}"])
 
+    saved = json.loads(destination.read_text(encoding="utf-8"))
     assert capsys.readouterr().out.splitlines() == [
         f"保存先: {destination}",
         "行数: 1",
         "通知: 2件（session_id: session-1）",
         "終端: 1件",
+        f"終端行: session_id=session-1 label=なし status=completed agent_message_path={saved['agent_message_path']}",
     ]
-    saved = json.loads(destination.read_text(encoding="utf-8"))
     assert saved["status"] == "completed"
     assert len(saved["notices"]) == 2
 
@@ -340,7 +355,7 @@ def test_agents_list_shows_tree_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人間が読む環境ではrootとsessionの関係を表示し、起動文を除く。"""
+    """人間が読む環境ではrootとsessionの関係を表示し、委譲プロンプトを除く。"""
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
 

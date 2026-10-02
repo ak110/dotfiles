@@ -1,6 +1,6 @@
 r"""agent-toolkit pluginの自律終了Stopフック。
 
-環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と、起動側が渡したセッションIDに
+環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と、process-loopが渡したセッションIDに
 一致する会話を対象とする。本フックは対象セッションに限り、`atk agents-exit-session`の
 起動されていないことを検知してそのターンの継続をblockし再促する。
 
@@ -10,19 +10,19 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 判定順序は以下のとおり。
 
-1. 常駐処理が起動した会話でない: 常駐ループ外のセッションのため無条件approve
+1. process-loopが起動した会話でない: 常駐ループ外のセッションのため無条件approve
 2. hookの呼出主体が最上位でない: 常駐ループの最上位ではないため無条件approve
-3. 終了要求が`requested`で、Stop入力に有効な非`teammate`の背景作業が残る: 終了要求を`consumed`へ、
+3. 終了要求が`requested`で、Stop入力に有効な非`teammate`のバックグラウンドタスクが残る: 終了要求を`consumed`へ、
    `autonomous_exit_invoked`を偽へ戻してblockし、作業の終端を確かめてから終了工程をやり直すよう求める
 4. `is_pending_async_work`が真: 非同期処理または未回収の終端結果が残るためapprove
 5. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
 6. 上記いずれでもない: blockして順序制約の再促文を返す
 
-3の取り下げは、背景作業が残ったまま同じターン完了のFunction hooksが`/exit`を実行し、
+3の取り下げは、バックグラウンドタスクが残ったまま同じターン完了のFunction hooksが`/exit`を実行し、
 無人のセッションが「Background work is running」の確認画面で止まることを防ぐ。
-背景作業は停止すると途中の結果を失うため自動では止めず、本hookは終了要求を取り下げるだけとする。
+バックグラウンドタスクは停止すると途中の結果を失うため自動では止めず、本hookは終了要求を取り下げるだけとする。
 Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
-次のStopでは要求が`consumed`のため4が背景作業の残存をapproveし、作業の終了後は5・6が再実行を促す。
+次のStopでは要求が`consumed`のため4がバックグラウンドタスクの残存をapproveし、作業の終了後は5・6が再実行を促す。
 
 `stop.py`が各判定に共通する連続blockの上限を管理する。
 
@@ -61,10 +61,10 @@ _REASON_BODY = """\
 どの工程が未完了かは判定していない。"""
 
 
-# 背景作業が残る終了要求を取り下げた場合の本文。残った作業の一覧は後ろへ続ける。
+# バックグラウンドタスクが残る終了要求を取り下げた場合の本文。残った作業の一覧は後ろへ続ける。
 _WITHDRAW_BODY = """\
-終了要求を取り下げた。背景作業が残ったまま終了すると、無人のセッションが終了確認の画面で止まるためである。
-残っている背景作業:"""
+終了要求を取り下げた。バックグラウンドタスクが残ったまま終了すると、無人のセッションが終了確認の画面で止まるためである。
+残っているバックグラウンドタスク:"""
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
 

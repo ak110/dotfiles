@@ -22,7 +22,7 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 
 ## 公開状態の4項目
 
-ベースbranchの公開を確かめる次の4項目を「公開状態の4項目」と呼ぶ。4項目は判定の時点で現在のGit状態から再取得し、全て成立した場合だけ公開済みと判定する。これら4項目の取得には、`.git`内部のパス探索と複数のrefを1回へ渡す`git rev-parse --short`を使わない。
+ベースbranchの公開を確かめる次の4項目を「公開状態の4項目」と呼ぶ。これらは判定の時点で現在のGit状態から再取得し、全て成立した場合だけ公開済みと判定する。これらの取得には、`.git`内部のパス探索と複数のrefを1回へ渡す`git rev-parse --short`を使わない。
 
 1. `git -C <対象リポジトリの絶対パス> status --porcelain=v2 --branch`の`# branch.head`の値がベースbranch名と一致する
 2. 同じ出力で`#`で始まらない行が0件である
@@ -33,17 +33,17 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 
 直前に`git commit --amend`または`git commit --fixup`を実行した作業ツリーでは、pushの前に`git status --short`を単独で実行し、追跡ファイルの未コミット差分が残っていないことを確認する。差分が残る場合はその差分を確定してからpushへ進む。
 
-1. pushの許可（計画に記録した元の要求または確認回答・委譲元の起動文・ユーザー指示のいずれか）が
+1. pushの許可（計画に記録した元の要求または確認回答・委譲元の委譲プロンプト・ユーザー指示のいずれか）が
    対象リポジトリと対象branchを含むことを確認する
 2. `git fetch`後に上流との差分を双方向で確認する。上流が進んでいる場合は追随後に検証をやり直す
 3. `git remote -v`、`git branch --show-current`、追跡branch、有効な`push.default`と明示された承認済みdestinationから、引数なしpushの到達先を先に判定する。`push.default=simple`で現在branch名と追跡branch名が異なる場合や追跡branchが無い場合など、引数なしpushの失敗が確定する構成では、そのdry-runを省く。承認済みの`<remote> <source>:refs/heads/<destination>`を明示した`git push --dry-run --porcelain`を最初に試す。引数なしpushが承認済みdestinationへ到達すると確定する場合は、引数なしdry-runを最初に実行する。設定だけで判定できない場合は、引数なしdry-runを試し、失敗するか意図したrefspecを示さなければ明示dry-runを続ける。
 
    成功したdry-runの全status lineが承認済みremote・destinationへのrefspecを示す場合だけ、その方式を選ぶ。拒否や失敗予定のref、または承認範囲と異なるremote・destinationがあればpushしない。明示指定ではremote、source、完全なdestination refをすべて書き、実際のpushも成功したdry-runと同じ方式を使う
 
-呼び出し元がそのpushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
+委譲元がそのpushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
 CIを判定する場合は、次の3工程で監視用の証拠を作成する。
 
-1. セッション領域（`agent-toolkit:managed-temp`）の中へ、pushごとに別のディレクトリを作成し、その絶対パスを保持する
+1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）の中へ、pushごとに別のディレクトリを作成し、その絶対パスを保持する
 2. 削除refを除き、更新refごとにsource refを1件確定する。
    手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
    `--source-ref`へ渡すのはこの左辺だけとし、refspecの右辺`<destination>`、destination ref、remote-tracking refは別の値として扱う。

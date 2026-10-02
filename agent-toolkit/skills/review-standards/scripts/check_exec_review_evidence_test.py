@@ -383,7 +383,7 @@ def test_reports_every_wi_with_missing_rows(
 def test_raw_awi_requires_each_original_sentence_and_comment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """原文AWIの文とユーザーコメントを対象WIの証拠行へ結び付ける。"""
+    """原文AWIの文とユーザーコメントを対象WIの`完成条件証拠`の行へ結び付ける。"""
     evidence = tmp_path / "evidence.json"
     first = "検索範囲を変更して。"
     second = "選択が反映されるように直して。"
@@ -748,7 +748,7 @@ def test_rejects_missing_required_wi_content(
 @pytest.mark.parametrize(
     ("content", "diagnostic"),
     [
-        ("{", "証拠JSONを読めません"),
+        ("{", "`完成条件証拠`を読めません"),
         ('{"wi_conditions": {}, "user_requirements": []}', "wi_conditions: 配列が必要"),
         ('{"wi_conditions": [{"awi": 1}], "user_requirements": []}', "wi_conditions[1].awi: 文字列が必要"),
         (
@@ -869,7 +869,7 @@ _SUPPLEMENTS = {
 
 
 def _fenced_body(route: str, supplement: str) -> tuple[str, list[dict[str, str]]]:
-    """2つの要求の間に補足フェンスを置いたWI本文と、完成条件の証拠行を入力の種類ごとに返す。"""
+    """2つの要求の間に補足フェンスを置いたWI本文と、`完成条件証拠`の行を入力の種類ごとに返す。"""
     content = f"{_FENCED_REQUIREMENTS[0]}\n\n{supplement}\n\n{_FENCED_REQUIREMENTS[1]}\n"
     if route == "raw-awi":
         return f"type: awi\n---\n# 題\n\n{content}", []
@@ -1190,5 +1190,5 @@ def test_template_keeps_invalid_evidence_untouched(
     path = tmp_path / "evidence.json"
     path.write_text(content, encoding="utf-8")
     assert _template(path, FIRST_WI) == 1
-    assert "\n次の操作: 証拠JSONは変更していない" in capsys.readouterr().err
+    assert "\n次の操作: `完成条件証拠`は変更していない" in capsys.readouterr().err
     assert path.read_text(encoding="utf-8") == content

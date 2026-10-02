@@ -8,7 +8,7 @@
 隔離する次元は次の6つとする。
 
 - ホームディレクトリと設定ディレクトリの環境変数
-- キュー管理リポジトリ（`AGENT_TOOLKIT_PRIVATE_NOTES`）
+- private-notes（`AGENT_TOOLKIT_PRIVATE_NOTES`）
 - 一時ディレクトリ
 - Gitのglobal・system設定
 - 開発セッションの環境変数（エージェント環境の判定、委譲先とprocess-loopの標識）

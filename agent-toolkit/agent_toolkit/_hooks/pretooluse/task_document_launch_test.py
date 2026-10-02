@@ -2,7 +2,7 @@
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/task_document_launch.py のテスト。
 
-PreToolUseフックをsubprocessで起動し、配布物のタスク文書を指す起動文の終了コードと通知を検証する。
+PreToolUseフックをsubprocessで起動し、配布物の`<役割名>.subagent.md`を指す委譲プロンプトの終了コードと通知を検証する。
 """
 
 import pathlib
@@ -39,9 +39,9 @@ def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | Non
     ],
 )
 def test_free_text_start_pointing_task_document_is_blocked(tool_name: str, mode: str, tmp_path: pathlib.Path) -> None:
-    """自由本文のmodeでタスク文書を指すと遮断し、taskの`start`と`subagent_md_path`での起動を案内する。
+    """自由本文のmodeで`<役割名>.subagent.md`を指すと遮断し、taskの`start`と`subagent_md_path`での起動を案内する。
 
-    通すと、タスク文書の宣言を経ない起動文が委譲先のコンテキストへ取り込まれる。
+    通すと、`<役割名>.subagent.md`の宣言を経ない委譲プロンプトが委譲先のコンテキストへ取り込まれる。
     """
     result = _invoke(tool_name, f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path, mode)
 
@@ -59,7 +59,7 @@ def test_task_and_shell_modes_are_not_free_text_starts(mode: str | None, tmp_pat
 
 
 def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) -> None:
-    """タスク文書を指さない自由本文の起動は遮断しない。"""
+    """`<役割名>.subagent.md`を指さない自由本文の起動は遮断しない。"""
     result = _invoke("mcp__plugin_agent-toolkit_agents_server__start", "対象の所在を調べて返す。", tmp_path, "explore")
 
     assert result.returncode == 0

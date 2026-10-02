@@ -121,7 +121,7 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
 
 
 # 日本語の応答指示を再注入するツール呼び出しの間隔。
-# 2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の英語検知通知までの
+# 2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の`response_language_check`の通知までの
 # ツール呼び出し回数は55件で中央値20回、下位20%が7回、下位30%が11回だった。
 # 10回ごとの注入は最初の英語化の約7割より前に日本語の指示を文脈の近くへ置き、注入は1行のため文脈の消費は小さい。
 LANGUAGE_REINJECTION_INTERVAL = 10
@@ -177,7 +177,7 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 # --- 計画単位の状態管理 ---
 
-# Skillツールの`skill`引数として許容するplan-modeスキル名。
+# `Skill`の`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
 _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
@@ -186,10 +186,10 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 
 
 def _check_task_stop(session_id: str, tool_input: dict) -> bool:
-    """自セッションの所有記録または対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
+    """自セッションのバックグラウンドタスクの所有記録または対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
 
     停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
-    このキーは、PostToolUseがBashの`run_in_background`指定の応答と背景移行通知から取得したタスクID、
+    このキーは、PostToolUseがBashの`run_in_background`指定の応答とバックグラウンドタスクへの移行通知から取得したタスクID、
     およびAgent・Taskの背景起動の応答が返した`agentId`を記録したものであり、
     自セッションが起動して停止用の識別子を保持している対象を表す。
     起動主体の確認を要する遮断の対象は、自セッションの起動記録が無い停止に限る。
@@ -208,8 +208,8 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
         return False
     print(
         _block_notice(
-            "blocked: TaskStop。現在のセッションには、指定した対象の所有記録も停滞検知完了記録も無い。"
-            "背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
+            "blocked: TaskStop。現在のセッションには、指定した対象のバックグラウンドタスクの所有記録も停滞検知完了記録も無い。"
+            "バックグラウンドタスクの停止は、ユーザーの明示的な即時停止要求があるか、"
             "停滞検知の手順を完了した場合に限る。"
             "この手順の完了条件は`agent-toolkit:delegation`の"
             f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
@@ -218,7 +218,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
             "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
             "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
             fix=(
-                "自セッションが起動した対象は所有記録に一致する識別子を指定する。"
+                "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定する。"
                 "その他の対象は"
                 f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
                 "「停滞の検知と巻き取り」節に従い、"

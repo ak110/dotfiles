@@ -51,7 +51,7 @@ except ImportError as _import_error:
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
-# Claude Codeのサブエージェントが報告本文を呼び出し元へ渡すツールの名前。
+# Claude Codeのサブエージェントが報告本文を委譲元へ渡すツールの名前。
 _HANDBACK_TOOL = "SubagentHandback"
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
@@ -875,7 +875,7 @@ RUNTIME_EXTRACTORS: dict[str, Callable[[list[dict[str, Any]], list[int]], list[d
     "codex": _extract_codex,
     "agy": _extract_agy,
 }
-"""実行系ごとの時系列への変換。キーの集合は抽出器が変換できる実行系を表す。"""
+"""実行系ごとの時系列への変換。キーの集合は本スクリプトが変換できる実行系を表す。"""
 
 
 def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -908,7 +908,7 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _handback_messages(content: Any) -> list[str]:
-    """Claude Codeのサブエージェントが`SubagentHandback`で呼び出し元へ渡した報告本文を返す。"""
+    """Claude Codeのサブエージェントが`SubagentHandback`で委譲元へ渡した報告本文を返す。"""
     if not isinstance(content, list):
         return []
     messages: list[str] = []
@@ -1065,7 +1065,7 @@ def _record_timestamp(record: _Record) -> datetime.datetime | None:
 
 
 def _apply_observation_boundary(records: list[_Record], boundary: datetime.datetime) -> list[_Record]:
-    """時刻無しと境界以前の親記録を、元の行番号を保って返す。"""
+    """時刻無しと境界以前のメイン記録を、元の行番号を保って返す。"""
     return [record for record in records if (timestamp := _record_timestamp(record)) is None or timestamp <= boundary]
 
 
@@ -3142,7 +3142,7 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
     振り返りでセッション全体の流れ（試したコマンド、読み書きしたファイル、委譲の起動、遠回り、手戻り、
     同じ論点の反復、利用者による是正）を通読するための入力とする。発話は切り詰めずに返す。
     ツール呼び出しはツール名と代表入力だけを返し、書き込む本文と置換文字列は含めない。
-    ツール結果は抽出器が`failed-tool`として検出した失敗だけを、診断の1行とともに返す。
+    ツール結果は本スクリプトが`failed-tool`として検出した失敗だけを、診断の1行とともに返す。
     自動挿入本文、実行環境が生成した本文、スキル本文の展開、hookの追加コンテキスト、成功したツール結果の本文は除く。
     確認への回答（`質問: … 回答: …`）と初期要求は利用者の入力として残す。
     委譲先の内部は問題候補の側で扱うため、メイン記録だけを対象とする。
@@ -3469,8 +3469,12 @@ _BUNDLE_BODY_LENGTH = 200
 _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
 _HOOK_NOTICE_VARIANT_LIMIT = 5
-_RETURN_STATUS_PREFIX = "status:"
+# 委譲先の返却形式の欄名。日本語名へ改める前の英字の欄名（後者）で返す版の委譲先も同じ意味で読む。
+_RETURN_STATUS_PREFIXES = ("状態:", "status:")
 _ESCALATION_RETURN_STATUS = "needs_escalation"
+_COMPLETED_RETURN_LINES = frozenset(f"{prefix} completed" for prefix in _RETURN_STATUS_PREFIXES)
+_UNRESOLVED_RETURN_PREFIXES = ("未解決の指摘数:", "unresolved:")
+_ESCALATION_REASON_PREFIXES = ("続行できない理由:", "reason:")
 _CANDIDATE_EVIDENCE_LENGTH = 2000
 UNTRUNCATED_EVIDENCE_KINDS = frozenset(
     {"user-intervention", "command-failure", "tool-failure", "delegate-return", "escalation"}
@@ -3499,7 +3503,7 @@ _DELEGATE_COMPLETION_VALUES = frozenset(
         "終端完了",
     }
 )
-"""委譲先のタスク文書が成功の完了値として定める固定の先頭行。各値が`agent-toolkit/share/`のタスク文書に現れることをテストが確かめる。"""
+"""`<役割名>.subagent.md`が成功の返却値として定める固定の先頭行。各値が`agent-toolkit/share/`の`<役割名>.subagent.md`に現れることをテストが確かめる。"""
 _UNEXPECTED_EVENT_PREFIXES = ("想定外事象:", "想定外事象：")
 _VERDICT_LINE = re.compile(r"^(?:#+\s*)?(?:\*\*)?\s*判定[^:：]{0,30}[:：]\s*(?:\*\*)?\s*(?P<value>\S.*)$")
 _SHELL_OPERATOR_CHARS = frozenset(";&|<>()")
@@ -3553,7 +3557,7 @@ def _bundle_events(
         return [
             _error_event(
                 f"出力先が実在するディレクトリでない: {directory}",
-                next_action="`--bundle`へ作成済みのディレクトリ（管理対象一時領域の配下など）の絶対パスを渡して再実行する",
+                next_action="`--bundle`へ作成済みのディレクトリ（managed-tempの中など）の絶対パスを渡して再実行する",
             )
         ], 2
     resolved = directory.resolve()
@@ -3985,7 +3989,7 @@ def _is_delegate_return(event: dict[str, Any]) -> bool:
     """委譲先の空でない最終返却のうち、明示的なエスカレーション以外を返す。
 
     `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
-    委譲先の記録ではその委譲先が呼び出し元へ返した返却値に対応する。
+    委譲先の記録ではその委譲先が委譲元へ返した返却値に対応する。
     成功の定型形式だけの返却の除外は、`_is_normal_delegate_return`が候補の集約時に行う。
     メイン記録の最終出力は委譲返却ではない。明示的なエスカレーションは独立した候補へ送る。
     """
@@ -4003,9 +4007,10 @@ def _is_escalation_return(event: dict[str, Any]) -> bool:
     if not isinstance(text, str):
         return False
     return any(
-        line.strip().removeprefix(_RETURN_STATUS_PREFIX).strip() == _ESCALATION_RETURN_STATUS
+        line.strip().removeprefix(prefix).strip() == _ESCALATION_RETURN_STATUS
         for line in text.splitlines()
-        if line.strip().startswith(_RETURN_STATUS_PREFIX)
+        for prefix in _RETURN_STATUS_PREFIXES
+        if line.strip().startswith(prefix)
     )
 
 
@@ -4059,7 +4064,7 @@ def _user_candidate_exclusion(
 ) -> str | None:
     """構造と固定接頭辞だけで利用者介入ではない入力を分類する。
 
-    接頭辞は、実行環境が利用者のメッセージへ挿入する本文、常駐処理の通知、および定時promptの
+    接頭辞は、実行環境が利用者のメッセージへ挿入する本文、process-loopの通知、および定時promptの
     先頭に現れる固定文字列を実記録から採取したものとする。これらは利用者の発話ではないため、
     残すと利用者介入の候補が実際の介入件数を超える。
     接頭辞を持たない実行環境の生成は本文の形からは判別できないため、`_is_runtime_generated`が
@@ -4336,10 +4341,11 @@ def _is_negative_predicate(args: list[str]) -> bool:
 def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, resumed: bool = False) -> bool:
     """想定外事象を持たず、正常な完了だけを示す委譲返却であるかを返す。
 
-    正常な完了は、`status: completed`の行を持ち未解決の指摘が0件の返却、タスク文書が定める完了値で始まる返却、
+    正常な完了は、`状態: completed`（旧形式の`status: completed`を含む）の行を持ち未解決の指摘が0件の返却、
+    `<役割名>.subagent.md`が定める返却値で始まる返却、
     全ての判定が適合または合格の返却、およびコマンド実行の委譲（`shell`）で報告した終了コードが全て0で
     失敗・警告・診断の件数に1以上が無い返却とする。
-    `status: completed`の前に置いた前置きの文は、1回の配送で終えた委譲先に限って正常な完了に含める。
+    `状態: completed`の前に置いた前置きの文は、1回の配送で終えた委譲先に限って正常な完了に含める。
     再開された委譲先（`resumed`）の前置きは、受け取り済みの報告の返し直しのような異常を述べる場合があるためである。
     委譲先は想定外の事象を`想定外事象:`行で返すため、この行を持つ返却と、調査結果のような
     自由記述の返却は、本文の意味の判断を要するため候補に残す。
@@ -4353,8 +4359,8 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
     body = [line for line in lines if line and not line.startswith("```")]
     if not body:
         return False
-    if body[0] == "status: completed" or ("status: completed" in body and not resumed):
-        unresolved = [line.partition(":")[2].strip() for line in body if line.startswith("unresolved:")]
+    if body[0] in _COMPLETED_RETURN_LINES or (not _COMPLETED_RETURN_LINES.isdisjoint(body) and not resumed):
+        unresolved = [line.partition(":")[2].strip() for line in body if line.startswith(_UNRESOLVED_RETURN_PREFIXES)]
         return all(value == "0" for value in unresolved)
     if body[0] in _DELEGATE_COMPLETION_VALUES:
         return True
@@ -4493,7 +4499,9 @@ def _candidate_mechanism(candidate_kind: str, event: dict[str, Any]) -> str:
     if not isinstance(raw, str):
         return ""
     if candidate_kind == "escalation":
-        reason = next((line.partition(":")[2].strip() for line in raw.splitlines() if line.startswith("reason:")), "")
+        reason = next(
+            (line.partition(":")[2].strip() for line in raw.splitlines() if line.startswith(_ESCALATION_REASON_PREFIXES)), ""
+        )
     elif candidate_kind == "hook-notice" and event.get("tag") == "block":
         marker = re.search(r"\b(?:blocked|block):\s*", raw, flags=re.IGNORECASE)
         detail = raw[marker.end() :].strip() if marker else ""
@@ -4585,7 +4593,7 @@ def _failure_diagnostic(event: dict[str, Any]) -> str:
 
 
 def _failure_signature(candidate_kind: str, event: dict[str, Any]) -> tuple[str, str]:
-    """可変値を除いた失敗署名と、候補一覧へ表示するコマンド・診断を返す。"""
+    """可変値を除いた失敗署名と、`candidates.md`へ表示するコマンド・診断を返す。"""
     name, subcommand, display, _ = _failure_command_parts(event)
     code = _failure_exit_code(event)
     diagnostic = _failure_diagnostic(event)
@@ -5017,7 +5025,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--observation-boundary",
         metavar="TIMESTAMP",
-        help="ISO 8601の時刻を観測境界とし、親記録のうちその時刻より後の`timestamp`を持つレコードを"
+        help="ISO 8601の時刻を観測境界とし、メイン記録のうちその時刻より後の`timestamp`を持つレコードを"
         "全モードの対象外にする。委譲先の記録へは適用しない。`--detail`の行番号は元ファイルの行番号を維持する。"
         "解析できない値はエラーイベントを出力して終了コード2を返す。",
     )

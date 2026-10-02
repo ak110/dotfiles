@@ -1,7 +1,7 @@
 """SubagentStop hook: 完了報告が空であるか判定する。
 
 公式仕様の`last_assistant_message`を直参照し、空文字列だけの完了報告をblockする。
-成果物と検証結果の妥当性は呼び出し元による現物の確認と実行レビュー担当のレビューへ委ねる。
+成果物と検証結果の妥当性は委譲元による現物の確認と実行レビュー担当のレビューへ委ねる。
 
 正常許可と`stop_hook_active`真の再呼び出し時は、両ホスト共通でstdoutを空にする。
 transcriptを完了判定の契約へ利用せず、安定入力の`last_assistant_message`が空であるかの判定だけを共有する。
@@ -41,7 +41,7 @@ def main(payload_text: str) -> int:
 
     if _is_empty_completion_report(payload.get("last_assistant_message")):
         reason = _block_notice(
-            "停止する前に、空でない完了報告を出力する。呼び出し元は遮断された報告本文を保持しない。",
+            "停止する前に、空でない完了報告を出力する。委譲元は遮断された報告本文を保持しない。",
             fix="空でない完了報告を書いてから、あらためて停止する。",
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))

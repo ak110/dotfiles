@@ -1,12 +1,13 @@
 ---
 name: export-session
 description: >
-  Claude CodeやCodexのセッション履歴（会話ログ）をmarkdownに出力・保存する依頼で使う。
+  Claude CodeやCodexのセッション記録をmarkdownに出力・保存する依頼（「会話ログ」「セッション履歴」の出力・保存を含む）で使う。
 ---
 
-# セッション履歴のmarkdown出力
+# セッション記録のmarkdown出力
 
 `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ変換する。
+descriptionに「会話ログ」「セッション履歴」を残すのは、本スキルの起動条件を利用者が依頼で使う語と一致させるためである。
 
 ## 使い方
 

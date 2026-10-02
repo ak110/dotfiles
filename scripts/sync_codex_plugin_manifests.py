@@ -372,7 +372,7 @@ def _differences(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[
 
 
 def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tuple[bytes, int]]:
-    """Codex専用rootへ通常ファイルとして投影する内容とmodeを返す。"""
+    """`agent-toolkit-codex/`へ通常ファイルとして投影する内容とmodeを返す。"""
     source_root = root / "agent-toolkit"
     outputs: dict[Path, tuple[bytes, int]] = {}
     generated_by_relative = {
@@ -407,7 +407,7 @@ def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tu
 
 
 def _codex_root_difference_details(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[tuple[Path, str], ...]:
-    """Codex専用rootについて、相対パスと不一致の種類を返す。"""
+    """`agent-toolkit-codex/`について、相対パスと不一致の種類を返す。"""
     target_root = root / CODEX_PLUGIN_ROOT_TARGET
     existing = {path.relative_to(target_root) for path in target_root.rglob("*") if path.is_file() or path.is_symlink()}
     differences = []
@@ -431,12 +431,12 @@ def _codex_root_difference_details(root: Path, expected: dict[Path, tuple[bytes,
 
 
 def _codex_root_differences(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[Path, ...]:
-    """Codex専用rootで同期を要するパスを返す。"""
+    """`agent-toolkit-codex/`で同期を要するパスを返す。"""
     return tuple(dict.fromkeys(path for path, _kind in _codex_root_difference_details(root, expected)))
 
 
 def _sync_codex_root(root: Path, expected: dict[Path, tuple[bytes, int]]) -> bool:
-    """Codex専用rootを期待集合へ同期する。"""
+    """`agent-toolkit-codex/`を期待集合へ同期する。"""
     target_root = root / CODEX_PLUGIN_ROOT_TARGET
     stale = set(_codex_root_differences(root, expected))
     for relative in sorted(stale - set(expected), key=str, reverse=True):

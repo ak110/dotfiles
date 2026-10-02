@@ -22,4 +22,4 @@ git pushとコミットメッセージは`agent-toolkit:commit`、WI本文は`ag
 ## 起動と受領
 
 投稿する主体は`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.parent.md`を全文読み、同書に従ってレビュー担当を起動し、結果を受領する。
-レビュー担当の観点、読者像および返却形式はタスク文書が定めるため、起動文へ書かない。
+レビュー担当の観点、読者像および返却形式は`external-write-review.subagent.md`が定めるため、委譲プロンプトへ書かない。

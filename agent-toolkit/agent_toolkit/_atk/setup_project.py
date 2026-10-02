@@ -1,4 +1,4 @@
-"""プロジェクト指示と共有スキルをClaude CodeとCodexで共用できる形へ整える。"""
+"""プロジェクト規範と共有スキルをClaude CodeとCodexで共用できる形へ整える。"""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def _exclude_from_git(target: Path, path: Path) -> None:
 
 
 def migrate_project_instructions(target: Path) -> None:
-    """プロジェクト指示の実体をAGENTS.mdへ収束させる。"""
+    """プロジェクト規範の実体をAGENTS.mdへ収束させる。"""
     agents_md = target / _AGENTS_MD
     claude_md = target / _CLAUDE_MD
     agents_kind = _classify_instruction_path(agents_md, expected_target=_CLAUDE_MD)

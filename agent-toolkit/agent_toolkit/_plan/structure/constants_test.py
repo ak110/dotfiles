@@ -323,16 +323,16 @@ def test_duplicate_headings_accepts_same_text_under_different_parents() -> None:
     ],
 )
 def test_plan_file_standards_states_every_structure_constant(expected: str) -> None:
-    """構造の判定に用いる見出し名を計画ファイル基準の本文が明記する。
+    """構造の判定に用いる見出し名を`plan-file-standards.md`の本文が明記する。
 
-    実装だけが要件を持つ状態を避け、構造定数を改訂した場合に計画ファイル基準が更新されていないことを検出する。
+    実装だけが要件を持つ状態を避け、構造定数を改訂した場合に`plan-file-standards.md`が更新されていないことを検出する。
     """
     assert expected in _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("track", _plan_format.PLAN_HISTORY_TRACK_VALUES)
 def test_main_history_accepts_review_table_track_values(track: str) -> None:
-    """新形式の変更履歴はレビュー表の正規trackを受理する。"""
+    """新形式の変更履歴はレビュー指摘管理表の正規trackを受理する。"""
     content = _canonical_main_content().replace(
         _plan_fixture.HISTORY_USER_ROW,
         f"| R1-{track} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
@@ -383,7 +383,7 @@ def test_detail_structure_permanence_rejects_free_h3() -> None:
 
 
 def test_origin_check_skips_when_queue_repository_is_absent(tmp_path: pathlib.Path) -> None:
-    """キュー管理リポジトリのルートが実在しない環境ではWI本文との比較だけを省略する。"""
+    """private-notesのルートが実在しない環境ではWI本文との比較だけを省略する。"""
     absent = tmp_path / "absent"
     errors, notices, skips = _origin_check(absent)
     assert not errors, errors

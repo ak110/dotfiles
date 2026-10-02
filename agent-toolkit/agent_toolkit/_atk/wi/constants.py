@@ -6,10 +6,10 @@
 """
 
 PROCESS_WI_GOAL_BODY = "`agent-toolkit:process-wi`を完遂してください。"
-"""常駐処理が子セッションへ渡す目的文の本体。
+"""`atk wi process-loop`が子セッションへ渡す目的文の本体。
 
-起動プロンプトを組み立てる側と、セッション記録からそのセッションを判別する側が同じ値を使う。
-起動プロンプトは境界標識で囲むため、記録側は本文の包含で判定する。
+最初のプロンプトを組み立てる側と、セッション記録からそのセッションを判別する側が同じ値を使う。
+最初のプロンプトは`atk-auto`要素で囲むため、記録側は本文の包含で判定する。
 """
 
 WI_STATE_INBOX = "inbox"
@@ -63,7 +63,7 @@ WI_USER_REMOVABLE_STATES = (
 TRANSITION_EXPLICIT_STATES = {
     "start-processing": (WI_STATE_HOLD,),
     "return-to-inbox": (WI_STATE_REJECTED, WI_STATE_ADOPTED),
-    "hold": (WI_STATE_REJECTED, WI_STATE_ADOPTED),
+    "hold": (WI_STATE_PROCESSING, WI_STATE_REJECTED, WI_STATE_ADOPTED),
     "adopt": (WI_STATE_HOLD,),
     "reject": (WI_STATE_INBOX, WI_STATE_HOLD),
     "remove": (
@@ -80,6 +80,8 @@ TRANSITION_EXPLICIT_STATES = {
 暗黙解決は多くの操作で`inbox`・`processing`を探索し、`adopt`・`reject`は`BULK_SOURCE_STATES`から導いた`inbox`・`processing`・`hold`を探索する。
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
 `remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
+`hold`の`processing`は、エージェント環境で処理中の自項目を保留する場合の明示指定に使う。
+エージェント環境のファイル名指定は`processing`を暗黙に解決しない。
 """
 
 BULK_SOURCE_STATES = {
@@ -94,7 +96,7 @@ BULK_SOURCE_STATES = {
 """操作ごとの遷移元状態集合。`--all`の候補はこの集合に属する項目だけとする。
 
 各値は、個別指定時の暗黙解決が探索する状態と`TRANSITION_EXPLICIT_STATES`が受理する状態の和集合と一致する。
-`remove`だけは呼出主体で値が変わるため、本表は非エージェント環境の値を持ち、
+`remove`と`hold`は呼出主体で値が変わるため、本表は非エージェント環境の値を持ち、
 エージェント環境の値は`bulk_source_states`が返す。
 """
 
@@ -114,6 +116,8 @@ def bulk_source_states(action: str, *, actor_is_agent: bool) -> tuple[str, ...]:
     """呼出主体を加味した、その操作の遷移元状態集合を返す。"""
     if action == "remove":
         return WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
+    if action == "hold" and actor_is_agent:
+        return tuple(state for state in BULK_SOURCE_STATES[action] if state != WI_STATE_PROCESSING)
     return BULK_SOURCE_STATES[action]
 
 

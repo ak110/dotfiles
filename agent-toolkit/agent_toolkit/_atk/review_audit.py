@@ -1,7 +1,7 @@
 """自動コードレビュー監査の未判定対象を取得し、判定済みの識別子を記録する。
 
 対象はGitHub Copilot由来のreviewとthread、およびDependabotアラートである。
-Dependabotアラートは処理回ごとの監査で拾うため、`atk wi process-loop`の待機中確認も同じ取得と判定を使う。
+Dependabotアラートはprocess-wiの実行ごとの監査で拾うため、`atk wi process-loop`の待機中確認も同じ取得と判定を使う。
 """
 
 from __future__ import annotations

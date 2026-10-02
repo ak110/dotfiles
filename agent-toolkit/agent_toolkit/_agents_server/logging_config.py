@@ -28,7 +28,7 @@ class _LogFileHandler(logging.handlers.RotatingFileHandler):
 
 
 def state_dir() -> pathlib.Path:
-    """agents_serverの診断記録を置く状態ディレクトリを返す。"""
+    """agents_serverの診断ログを置く状態ディレクトリを返す。"""
     return pathlib.Path(user_state_dir("agent-toolkit", appauthor=False))
 
 
