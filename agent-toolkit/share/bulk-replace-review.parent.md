@@ -1,10 +1,10 @@
-# 表記の一括置換の差分レビュー担当の起動と受領
+# 一括置換後レビュー担当の起動と受領
 
 ```text
 起動対象: bulk-replace-review.subagent.md
 ```
 
-`agent-toolkit:writing-standards`の`references/notation-rules.md`「表記の一括置換」で候補置換を適用した主体が、本書に従って差分レビュー担当を起動し、結果を受領する。
+`agent-toolkit:writing-standards`の`references/notation-rules.md`「表記の一括置換」で候補置換を適用した主体が、本書に従って一括置換後レビュー担当を起動し、結果を受領する。
 レビュー担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/bulk-replace-review.subagent.md`が定める。
 
 ## 起動

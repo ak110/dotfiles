@@ -7,7 +7,7 @@ user-invocable: false
 
 # 委譲
 
-本規範群では、委譲元と呼び出し元を同じ主体の呼称とし、委譲先、呼び出し先およびサブエージェントを、実行環境の`Agent`ツールで起動する子と`agents_server`で起動する子sessionの総称とする。
+本規範群では、委譲先を起動した主体を委譲元と呼ぶ。委譲先は、実行環境の`Agent`ツールで起動する子（サブエージェント）と`agents_server`で起動する子sessionの総称とする。
 
 Codexで実行する場合は、委譲、待機、状態確認または中断へ着手する前に`references/codex-runtime.md`を全文読む。
 

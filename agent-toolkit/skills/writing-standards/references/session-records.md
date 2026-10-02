@@ -1,6 +1,6 @@
 # session-records.md: セッション記録の構造と集計
 
-Claude CodeとCodexのセッション記録を集計・分析する場合の構造知識を扱う。
+Claude CodeとCodexのセッション記録を集計・分析する場合の構造知識を扱う。セッション記録はClaude CodeとCodexが保存する会話の記録（transcript）を指す。
 
 Claude Codeの記録は`~/.claude/projects`配下、Codexのロールアウトは
 `<CODEX_HOME>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`に置かれる
@@ -14,7 +14,7 @@ Codexでは`type`が`compacted`のレコードに、所要時間を除いた情�
 
 ## Claude Codeの記録
 
-- 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、セッション本体）と
+- 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、セッション本体の記録であるメイン記録）と
   深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）の2値のみである。
   孫エージェントの記録も祖先セッション直下へフラット格納されるため、深さは常に4である
 - `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスから導かれる（英数字以外の文字を`-`へ置き換えた形）。

@@ -17,6 +17,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 - **メイン**: `agent-toolkit/rules/01-agent.md`が定めるメインエージェントの短縮呼称
 - **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める
 - **picker**: 選定工程で処理対象のAWIを固定する担当
+- **処理対象WI**: pickerが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI。処理中に利用者が追加を明示したAWIを含む
 - **レーン**: pickerが固定した処理対象を割り当てる仮想的な処理単位。各レーンは専用branchと専用worktreeを1つ持つ（`references/run-lanes.md`「レーンと資源」が規定）
 - **専用worktree**: 各レーンへ1つ割り当てるgit worktree。書き込む主体はそのレーンのレーン担当threadだけとする
 - **レーン担当**: 各レーンの計画、実装、レビュー修正、履歴統合および主作業ツリーへの統合を同じthreadで担う担当。担当種別はレーン担当、レビュー修正担当、CI修正担当の3種とする（`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分が規定）

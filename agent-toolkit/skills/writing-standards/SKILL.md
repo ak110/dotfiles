@@ -39,6 +39,7 @@ description: >
 同資料は表記規則の目次とチェック手段を持つ。該当する節が、textlint違反、lint緩和の判定、口調の対比集の各資料への条件付きの参照を示す。
 
 新しい概念名または識別子を導入する時は、併せて`references/referent-table.md`を全文読む。
+既存の対象を名前で指す時と新しい名前を付ける時は、併せて`references/defined-names.md`を全文読む。
 
 ## コードの編集時に読む資料
 
