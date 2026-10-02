@@ -4,7 +4,7 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 
 ## レーンと資源
 
-レーンごとに専用branchと専用worktreeを1つ作成する。対象リポジトリの規範がworktreeの作成手順を定める場合は、その手順で作成し、返された作成先の絶対パスを記録する。手順がdetached HEADのworktreeを作成する場合は、そのworktreeで専用branchを作成する。対象の作成手順が無い場合は、レーン用の管理対象一時領域を`atk managed-temp create --prefix <レーン識別子>`で作成し、専用worktreeをその直下のサブディレクトリへ作成する。`.git`を含む管理対象領域は自動削除の対象外であるため、「統合とAWI終端」が回収する。作成前にベースbranchの7文字以上の一意な短縮OIDを取得し、用途、作成先の絶対パス、管理対象領域を作成した場合はそのパス、作成時HEAD、作成主体、所有主体、回収対象および専用branch名を記録する。対象リポジトリが定めるworktree前提ファイルとmise trustを準備する。
+レーンごとに専用branchと専用worktreeを1つ作成する。対象リポジトリの規範がworktreeの作成手順を定める場合は、その手順で作成し、返された作成先の絶対パスを記録する。手順がdetached HEADのworktreeを作成する場合は、そのworktreeで専用branchを作成する。対象の作成手順が無い場合は、レーン用の管理対象一時領域を`atk managed-temp create --prefix <レーン識別子>`で作成し、専用worktreeをその直下のサブディレクトリへ作成する。`.git`を含む管理対象領域は自動削除の対象外であるため、「統合とAWI終端」が回収する。用途、作成先の絶対パス、管理対象領域を作成した場合はそのパス、作成主体、所有主体、回収対象および専用branch名を記録する。対象リポジトリが定めるworktree前提ファイルとmise trustを準備する。
 
 専用worktreeが検証に必要な環境をベース作業ツリーから引き継がない場合は対象リポジトリの開発手順が定める環境構築をworktreeの作成と同じ工程で背景ジョブとして開始する。作成主体はジョブの終了コードと出力を観測し、終了コード0と警告の不在を確認してからレーン担当を起動する。ジョブは出力の全量をレーン用の管理対象一時領域、作成しなかった場合はセッション領域のファイルへ保存し、環境構築コマンド自身の終了コードを保持する形で実行する。`tail`などへのパイプは末尾のコマンドの終了コードで元の失敗を覆い、残した末尾の行だけでは警告の不在を判定できない。完了を確定できない場合と失敗した場合は、レーン担当の起動文へ環境構築を自ら実行する指示を渡す。その結果は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`環境構築`の項目でレーン担当へ渡す。
 
@@ -89,13 +89,13 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 統合結果のOID、計画保存およびAWI終端を検収した後、レーン担当の終端と外部プロセスの終了を確認する。専用worktree、専用branch、作成した場合のレーン用管理対象一時領域は、それらを入力とする全工程が完了してから、メインが「レーンと資源」で記録した値を使って次の手順で回収する。対象リポジトリの規範がworktreeの撤去手順を定める場合は、その手順を`git worktree remove`より前に実行する。レーン担当の作業ディレクトリは回収対象のworktreeの内側にあるため、回収はメインが自ら行う。
 
 - `マージあり`: `git -C <統合先worktree> symbolic-ref --short HEAD`が統合先branchと一致することを確かめる。`git -C <対象リポジトリ> worktree remove <専用worktree>`を専用branchの削除より先に実行する。続けて`git -C <統合先worktree> merge-base --is-ancestor <専用branch> <統合先branch>`の終了コード0で到達を確認し、`git -C <統合先worktree> branch -D <専用branch>`で削除する。削除には到達確認を経た`-D`だけを使う。専用branchにupstreamが設定されている場合、`-d`はローカルのマージ先ではなくupstreamを基準に統合を判定し、push前の統合を未統合として拒否する。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日」にある
-- `マージなし`: 専用worktreeで`git status --porcelain=v1`の出力が空であり、`git symbolic-ref --short HEAD`が専用branch名、`git rev-parse HEAD`が作成時HEADと一致することを確かめる。`git -C <対象リポジトリ> worktree remove <専用worktree>`の後に、`git -C <対象リポジトリ> update-ref -d refs/heads/<専用branch> <作成時HEADの完全OID>`で作成時から更新されていない専用branchだけを削除する。作成時HEADは記録した短縮OIDを操作の直前に`git rev-parse --verify <短縮OID>^{commit}`で完全OIDへ解決して渡す
+- `マージなし`: 専用worktreeで`git status --porcelain=v1`の出力が空であり、`git symbolic-ref --short HEAD`が専用branch名であることを確かめる。続けて`git -C <対象リポジトリ> worktree remove <専用worktree>`を実行する。その後、`git -C <統合先worktree> merge-base --is-ancestor <専用branch> <統合先branch>`を実行する。終了コード0は専用branchが統合先branchに無いcommitを持たないことを示し、その場合だけ`git -C <統合先worktree> branch -D <専用branch>`で削除する。終了コードが0でない場合は専用branchを削除しない
 
-worktreeとbranchの削除後、レーン用の管理対象一時領域を作成した場合だけ`atk managed-temp cleanup --path <レーン用の管理対象一時領域>`でその領域を削除する。削除の完了は各コマンドの終了コード0と成功の報告で判定する。確認結果が記録と一致しない場合や削除に失敗した場合は、以降の資源を削除せず、記録値と観測値の差分と残存対象を`agent-toolkit:wi-standards`に従ってWIへ登録し、他のレーンを続ける。
+worktreeとbranchの削除後、レーン用の管理対象一時領域を作成した場合だけ`atk managed-temp cleanup --path <レーン用の管理対象一時領域>`でその領域を削除する。削除の完了は各コマンドの終了コード0と成功の報告で判定する。確認結果が記録や期待と一致しない場合（到達確認の終了コードが0でない場合を含む）や削除に失敗した場合は、以降の資源を削除せず、期待値と観測値の差分と残存対象を`agent-toolkit:wi-standards`に従ってWIへ登録し、他のレーンを続ける。
 
 ## 中断レーンの再開
 
-`processing`のまま残った項目では、計画を持つレーンはpickerが`atk plans list`と計画の`関連WI`から特定した作業root内の計画ファイルを`再開位置`として使う。複数計画を持つ場合は引き継ぎ記録に累積した全計画、各AWI集合と進捗、保存状態を比べてから渡し、単数の計画名だけで再開工程を決めない。計画なしのレーンは引き継ぎ記録のAWI集合、開始時HEAD、完了commitおよびレビュー表から再開工程を決め、`再開位置: 計画なし`として渡す。メインは計画ファイルまたは引き継ぎ記録の実在、AWI集合の一致および専用worktreeの所有主体が終端済みであることを確認する。
+`processing`のまま残った項目では、計画を持つレーンはpickerが`atk plans list`と計画の`関連WI`から特定した作業root内の計画ファイルを`再開位置`として使う。複数計画を持つ場合は引き継ぎ記録に累積した全計画、各AWI集合と進捗、保存状態を比べてから渡し、単数の計画名だけで再開工程を決めない。計画なしのレーンは引き継ぎ記録のAWI集合とレビュー表に加え、`git merge-base <専用branch> <ベースbranch>`と`git log <その結果>..<専用branch>`から得た開始時点とcommitで再開工程を決め、`再開位置: 計画なし`として渡す。メインは計画ファイルまたは引き継ぎ記録の実在、AWI集合の一致および専用worktreeの所有主体が終端済みであることを確認する。
 
 残存する専用worktreeとbranchが安全に再利用できる場合は、新しいレーン担当へ同じ絶対パス、branch、現在HEADおよび再開位置を渡す。再利用できない場合は、既存成果を失わない新しい専用worktreeを現在HEADから作成し、計画を持つレーンでは`atk run-script plan-progress --`で`## 進捗ログ`へ、計画なしのレーンでは引き継ぎ記録へ移行内容を記録する。未コミット差分の復元、破棄または別worktreeへの移送が必要な場合は独自に処理せずユーザー確認する。
 

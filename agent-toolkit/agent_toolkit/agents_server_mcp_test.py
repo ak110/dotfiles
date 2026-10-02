@@ -1094,6 +1094,20 @@ async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
+async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """終端担当はpush済みの範囲をベースbranchの追跡refから得るため、撤去した`直前にpushしたcommit`は宣言外の入力として拒否する。"""
+    task_document = subject._SHARE_DIRECTORY / "session-termination.subagent.md"
+    manager = SimpleNamespace(start=AsyncMock())
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    extra_params = _observed_input_params(task_document.name, tmp_path) | {"直前にpushしたcommit": "abc1234"}
+
+    with pytest.raises(ActionableError, match="直前にpushしたcommit"):
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
+
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`起動種別: explore`を宣言したタスク文書は`start_explore`と同じ軽量な起動条件で起動する。
 
