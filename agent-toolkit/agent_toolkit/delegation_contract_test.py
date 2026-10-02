@@ -279,7 +279,7 @@ def test_picker_explanation_contract_covers_questions_without_state_changes() ->
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
     assert declaration.launch_kind == "explore"
-    assert declaration.required == ("説明対象の選定結果ファイル", "選定理由への質問")
+    assert declaration.required == ("説明対象の選定結果の出力先ファイル", "選定理由への質問")
     assert "pick-wi-explain.parent.md" in question_route
     assert "## 選定理由の説明" not in picker
     assert not _declaration(share / "pick-wi.subagent.md").accepted & set(declaration.required)

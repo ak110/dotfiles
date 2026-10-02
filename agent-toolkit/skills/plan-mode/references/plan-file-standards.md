@@ -50,8 +50,8 @@ stemは計画メタ情報の`起動経路`ごとに次のとおりとし、`dd`�
 自身が所有しない計画はそのまま残す。private-notesの計画ファイルの更新は`atk plans`の各コマンドで行う。
 
 実行レビュー指摘管理表は計画ファイルと同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
-計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。WIだけをレビュー基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
-前者は収束後に削除し、後者は`atk plans commit ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
+計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。WIだけをレビュー基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
+前者は収束後に削除し、後者は`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
 
 本書、`agent-toolkit:plan-mode`のSKILL.mdおよび`${CLAUDE_PLUGIN_ROOT}/share/`配下の計画関連文書は、計画に属するファイルを次の呼称で指す。
 

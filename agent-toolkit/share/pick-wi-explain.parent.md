@@ -11,7 +11,7 @@
 
 元のpickerが終端していても、新しい担当をタスク文書起動（`agent-toolkit:delegation`の`references/base-contract.md`「タスク文書起動」）で起動する。`cwd`は元の選定対象リポジトリとし、`extra_params`には次の名前付き入力だけを渡す。
 
-- `説明対象の選定結果ファイル`: 元の`pick-wi.yaml`の絶対パス
+- `説明対象の選定結果の出力先ファイル`: 元の`pick-wi.yaml`の絶対パス
 - `選定理由への質問`: ユーザーの問い
 
 ## 受領
