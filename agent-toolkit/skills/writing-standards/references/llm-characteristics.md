@@ -17,7 +17,7 @@
 - 前の版との差の扱いは`agent-documents-basics.md`の「語調と現行規則の表現」が定める
 - 読み手は文脈にある文体を再生産する。否定形の宣言、指示語、法令調の語を多く含む文書を読んだ後の成果物は
   同じ文体になり、範囲外の追加要素と過剰な設計も増える。
-  観測記録は`docs/development/audit-records.md`の対応する記録にあり、規定本文は`agent-documents-basics.md`の「語調と現行規則の表現」が持つ
+  観測記録は`docs/development/audit-records.md`の対応する記録にあり、規定本文は`agent-documents-basics.md`の「語調と現行規則の表現」が持ち、否定形の宣言については`writing.md`「人間向け文章の共通規定」の否定・除外・不変の表明を扱う項が持つ
 
 ## コンテキスト配置
 
