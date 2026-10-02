@@ -528,8 +528,8 @@ class SessionsState:
     stop_requested: threading.Event = dataclasses.field(default_factory=threading.Event)
     # ローカルの記録単位の解析結果。要求ごとの走査で変更のない記録を読み直さないために保持する。
     record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
-    # 進行中のローカル走査。同時に届いた一覧の要求はこの1回の結果を共有する。
-    local_list_task: "asyncio.Future[list[SessionSummary]] | None" = None
+    # 進行中の一覧の取得（ローカルの走査とリモートの取得）。同時に届いた一覧の要求はこの1回の結果を共有する。
+    list_task: "asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None" = None
 
 
 def create_context(
@@ -1025,36 +1025,39 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
     return entries, None
 
 
-def _retrieve_exception(task: "asyncio.Future[list[SessionSummary]]") -> None:
-    """待つ要求が残らずに終わった走査の例外を回収し、未回収の例外としてログへ出力しない。"""
+def _retrieve_exception(task: "asyncio.Future[typing.Any]") -> None:
+    """待つ要求が残らずに終わった取得の例外を回収し、未回収の例外としてログへ出力しない。"""
     if not task.cancelled():
         task.exception()
-
-
-async def _shared_local_sessions(context: SessionsContext) -> list[SessionSummary]:
-    """ローカルの一覧を、進行中の走査があればその結果の共有で、無ければ新しい走査で返す。
-
-    同時に届いた要求ごとに全記録を走査すると、同じ結果を返す重い走査がスレッドで重なり、
-    GILを奪い合い、他の画面の要求も待たされる。共有する走査は要求のキャンセルで止めない
-    （`asyncio.shield`）。1つの要求の打ち切りが、同じ結果を待つ他の要求を失敗させないためである。
-    走査そのものはサーバーの停止要求（`stop_requested`）で打ち切る。
-    """
-    state = context.state
-    task = state.local_list_task
-    if task is None or task.done():
-        task = asyncio.ensure_future(asyncio.to_thread(list_local_sessions, context))
-        task.add_done_callback(_retrieve_exception)
-        state.local_list_task = task
-    return await asyncio.shield(task)
 
 
 async def list_sessions(context: SessionsContext) -> tuple[list[SessionSummary], list[dict[str, str]]]:
     """ローカルと設定済みリモートホストの一覧を、到達できないホストの警告とともに返す。
 
+    進行中の取得があればその結果を共有し、無ければ新しく取得する。同時に届いた要求ごとに取得すると、
+    ローカルの重い走査がスレッドで重なってGILを奪い合い、他の画面の要求も待たされる。
+    リモートホストへの要求も常駐接続の上で順に処理されるため、後の要求ほど待たされる。
+    共有する取得は要求のキャンセルで止めない（`asyncio.shield`）。1つの要求の打ち切りが、
+    同じ結果を待つ他の要求を失敗させないためである。ローカルの走査はサーバーの停止要求
+    （`stop_requested`）で打ち切る。
+    """
+    state = context.state
+    task = state.list_task
+    if task is None or task.done():
+        task = asyncio.ensure_future(_collect_sessions(context))
+        task.add_done_callback(_retrieve_exception)
+        state.list_task = task
+    entries, warnings = await asyncio.shield(task)
+    return list(entries), list(warnings)
+
+
+async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSummary], list[dict[str, str]]]:
+    """ローカルと設定済みリモートホストの一覧を取得する。
+
     到達できないホストがある場合も、他のホストとローカルの一覧は返す。
     """
     local_entries, remote_results = await asyncio.gather(
-        _shared_local_sessions(context),
+        asyncio.to_thread(list_local_sessions, context),
         asyncio.gather(*(_remote_sessions(context, host) for host in context.remote_hosts)),
     )
     entries: list[SessionSummary] = list(local_entries)

@@ -1249,13 +1249,17 @@ def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.
 
 
 @pytest.mark.asyncio
-async def test_concurrent_list_requests_share_one_local_scan(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同時に届いた一覧の要求は、進行中の1回のローカル走査の結果を共有する。
+async def test_concurrent_list_requests_share_one_listing(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """同時に届いた一覧の要求は、進行中の1回の取得（ローカルの走査とリモートの取得）の結果を共有する。
 
-    要求ごとに走査すると同じ重い走査がスレッドで重なり、GILを奪い合って他の画面の要求まで遅れる。
+    要求ごとに取得すると同じ重い走査がスレッドで重なり、GILを奪い合って他の画面の要求まで遅れる。
+    リモートホストへの要求も常駐接続の上で順に処理され、後の要求ほど待たされる。
     """
     _claude_record(tmp_path)
-    context = _context(tmp_path)
+    runner, remote_calls = _runner_returning(
+        {"host": "remote", "entries": [{"engine": "claude", "session_id": "r", "path": "/remote/r.jsonl"}]}
+    )
+    context = _context(tmp_path, remote_hosts=["remote"], ssh_runner=runner)
     started = threading.Event()
     release = threading.Event()
     calls: list[int] = []
@@ -1277,11 +1281,13 @@ async def test_concurrent_list_requests_share_one_local_scan(tmp_path: pathlib.P
     (first_entries, _), (second_entries, _) = await asyncio.gather(first, second)
 
     assert calls == [1]
+    assert len(remote_calls) == 1
     assert first_entries == second_entries
-    assert first_entries
+    assert {entry.host for entry in first_entries} == {"local-host", "remote"}
 
     await sessions.list_sessions(context)
     assert calls == [1, 1]
+    assert len(remote_calls) == 2
 
 
 def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
