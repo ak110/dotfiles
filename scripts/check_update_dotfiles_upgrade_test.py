@@ -377,7 +377,7 @@ def test_profile_leak_fails_check(
 ) -> None:
     """検証中に通常profile側の監視ディレクトリへ項目が作成されると、そのパスを含む失敗にする。
 
-    失敗文は検証の子プロセスに加え、ランナー側の常駐処理・予約タスクとその対処先も確認先として示す。
+    失敗文は検証の子プロセスに加え、ランナー側の常駐プロセス・予約タスクとその対処先も確認先として示す。
     """
     monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(tmp_path / "uv"))
     (tmp_path / "uv").write_bytes(b"uv")

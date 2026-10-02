@@ -49,7 +49,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 | `write_model` | `start`の`write`による文章起草 | 文章を委譲する主体 | `agents_server` MCP | `agents_server` MCP |
 | `orchestrate_model` | `atk wi process-loop`の新しいセッション | process-loop | `atk` | `atk` |
 
-各工程の起動文書と段位は、その工程の起動節に明記する。`atk config show`と`atk config get`は設定値を返し、Codex系列名の解決は委譲の起動時に行う。`show`は候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合、その設定キーと候補を標準エラーへ警告として書く。
+各工程の委譲に使う文書と段位は、その工程の起動節に明記する。`atk config show`と`atk config get`は設定値を返し、Codex系列名の解決は委譲の起動時に行う。`show`は候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合、その設定キーと候補を標準エラーへ警告として書く。
 
 設定値の書式は`<engine>:<model>[/<effort>]`とする。`engine`には`claude`、`codex`、`agy`のいずれかを指定する。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で、agyは起動・turnの失敗で次の候補へ進む。

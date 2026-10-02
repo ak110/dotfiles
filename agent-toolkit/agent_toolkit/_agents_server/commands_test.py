@@ -76,7 +76,7 @@ def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.Cap
         atk.main(["agents", "list", "--help"])
 
     output = _without_wrapping(capsys.readouterr().out)
-    assert _without_wrapping("各sessionへ起動文を含めず、起動文は`atk agents show`が返す。") in output
+    assert _without_wrapping("各sessionへ委譲プロンプトを含めず、委譲プロンプトは`atk agents show`が返す。") in output
     assert _without_wrapping("MCPの`list`を1回呼び出してから再実行") in output
 
 
