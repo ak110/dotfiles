@@ -832,6 +832,38 @@ class TestWarnJsonAndLanguageWarningComposition:
         assert language_warning in context
         assert lockfile_warning in context
 
+    def test_atk_output_loss_block_preserves_pending_warning(self, tmp_path: pathlib.Path) -> None:
+        """新しいBash遮断でも、保留中の通知を失わずstderrへ届ける。"""
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"id": "atk-output", "role": "assistant", "content": [{"type": "text", "text": "A" * 100}]},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        env = {
+            **_plan_file_state_env(tmp_path),
+            "AGENT_TOOLKIT_DELEGATED_SESSION": "0",
+            "AGENT_TOOLKIT_OWNER_SESSION": "",
+        }
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk agents wait >/dev/null &"},
+                "session_id": "atk-output-pending-warning",
+                "transcript_path": str(transcript),
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert result.stdout == ""
+        assert "結果と終了状態を直接受領できない入力" in result.stderr
+        assert "英語主体" in result.stderr
+
 
 class TestRemovedChecksAreSilent:
     """規範の想起、CLI形式の事前検出または文体の検出を目的としていた撤去済みの判定処理が、通知も補正も返さないことを検証する。

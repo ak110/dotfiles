@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _GLOBAL_OPTIONS_WITH_VALUE,
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
+    extract_bash_invocations,
     split_bash_segments,
 )
 from agent_toolkit._common.shell_tokens import strip_redirections
@@ -307,7 +308,10 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
     条文で定めた後も同じ失敗が反復したため、実行の直前に判定する。
     結果は再実行で是正できるため、遮断せず警告に留める。
     """
-    for segment in _extract_execution_segments(command):
+    for invocation in extract_bash_invocations(command):
+        if not invocation.arguments_known:
+            continue
+        segment = invocation.segment
         subcommand = _git_subcommand_tokens(segment)
         if subcommand is None or subcommand[0] != "rev-parse":
             continue
@@ -383,12 +387,14 @@ def _check_bash_option_after_terminator(command: str) -> bool:
     存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
     条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
     遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
-    この誤りは明らかな行動誤りで、判定はコマンド文字列から機械的に確定でき、遮断で失うのはコマンド1回の発行だけである。
+    外側に所属する既知の引数だけを判定し、置換内の語と展開結果が未確定の引数はオプションとして扱わない。
+    遮断で失うのはコマンド1回の発行だけである。
     `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
     `-`で始まるパターンは遮断しない。`git grep`ではその後ろのrevision・パスの区切り`--`も除く。
     下位コマンドへ`--`の後ろでオプションを渡すCLI（`uv run --`など）は対象コマンドに含めない。
     """
-    for segment in _extract_execution_segments(command):
+    for invocation in extract_bash_invocations(command):
+        segment = invocation.segment
         if not segment.resolved or not segment.tokens:
             continue
         name = pathlib.PurePath(segment.tokens[0]).name
@@ -417,6 +423,46 @@ def _check_bash_option_after_terminator(command: str) -> bool:
                 fix=(
                     "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
                     "`-`で始まるパスを渡す場合は`./`を前置する。"
+                ),
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
+
+
+# --- Bash: atkの結果を受領できない出力接続 ---
+
+
+def _check_bash_atk_output_loss(command: str) -> bool:
+    """静的に確定したatkの出力パイプとwaitの背景化・標準出力破棄を遮断する。
+
+    Bashが返す出力から結果と終了状態を失う反復を、その場で書き直せる入力で止める。
+    引数のリテラルやheredoc本文、未知の実行位置は判定せず、ホストが管理する背景実行は通す。
+    """
+    for invocation in extract_bash_invocations(command):
+        tokens = invocation.segment.tokens
+        if not invocation.segment.resolved or not tokens or pathlib.PurePosixPath(tokens[0]).name != "atk":
+            continue
+        is_wait = tokens[1:3] == ("agents", "wait")
+        causes: list[str] = []
+        if is_wait and invocation.background:
+            causes.append("シェルの`&`による背景化")
+        if is_wait and invocation.stdout_discarded:
+            causes.append("標準出力の`/dev/null`への破棄")
+        if invocation.output_pipe:
+            causes.append("atkから後段へ出力を渡すパイプ")
+        if not causes:
+            continue
+        label = "atk agents wait" if is_wait else "atk"
+        print(
+            _block_notice(
+                f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
+                fix=(
+                    "`atk agents wait`は`&`と標準出力の破棄を外して単独で発行する。"
+                    "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
+                    "`atk`の出力量はサブコマンドが公開する対象限定で減らす。保存先を指定する必要がある場合は"
+                    "`--output-file`を使い、保存した本文の選別は別の呼び出しで行う。"
                 ),
             ),
             file=sys.stderr,

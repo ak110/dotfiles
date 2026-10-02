@@ -380,6 +380,13 @@ agent-toolkitプラグインはpyfltrのMCPサーバーを同梱する。
 lintやテストの実行・横断検索・横断置換・実行履歴の参照をシェルを経由せずに呼び出せる。
 サーバーは`uvx`でpyfltrを取得して起動するため、pyfltr自体の事前インストールは要らない。
 
+`atk agents wait`はシェルの`&`と標準出力の破棄を外して単独で発行する。
+Claude Codeで背景で待つ場合はBashの`run_in_background`を使い、返されたtask識別子で結果を受領する。
+出力量はサブコマンドの対象限定で減らし、保存先を指定する必要がある場合は`--output-file`を使う。
+保存した本文の選別は別の呼び出しで行う。
+判定は静的に分かるatkの実行位置と出力接続に限り、検索語やheredoc本文、ホスト管理の背景実行を通す。
+この限定と、一般の検証コマンドの出力切り詰めチェックを復元しなかった理由は、[フックの責務境界](../development/design.md#フックの責務境界)を参照。
+
 agent-toolkitは以下のフックを常時有効化する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
 `個人設定`はdotfiles利用者の`~/.claude/settings.json`へ配布される分を指す。
@@ -387,7 +394,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
-| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作と、入力から機械的に判定できる明らかな誤りを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了と、オプション終端`--`の後ろへ`rg`・`grep`系・`git log`・`git diff`・`git show`・`git grep`自身のオプションを置くコマンドを遮断する。未完了のバックグラウンドタスクが書き込む出力ファイルの読取、`git rev-parse --short`へ複数のリビジョンを渡すコマンド、Windows上でPATHへドライブ文字形式（`C:/...`）の要素を加えるコマンドを警告する。`agents_server`の`start`の`delegate`・`explore`・`write`の本文が`<役割名>.subagent.md`を指す起動と、`Agent`で`<役割名>.subagent.md`を指す本文が命令と宣言済みの入力以外の行を含む起動を遮断する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではパターン一致によるプロセス終了とオプション終端の後ろのオプションの遮断、`git rev-parse --short`の複数リビジョンの警告に加え、出力の上限を超える通常ファイルの全文取得を遮断する。PATHのドライブ文字形式の警告はPowerShellでシェルを実行するため非対応。`agents_server`の自由本文の起動が`<役割名>.subagent.md`を指す場合の遮断に対応する |
+| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作と、入力から機械的に判定できる明らかな誤りを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了と、オプション終端`--`の後ろへ`rg`・`grep`系・`git log`・`git diff`・`git show`・`git grep`自身のオプションを置くコマンドを遮断する。atkから後段へ出力を渡すパイプと、`atk agents wait`のシェルの`&`による背景化・標準出力の`/dev/null`への破棄も遮断する。未完了のバックグラウンドタスクが書き込む出力ファイルの読取、`git rev-parse --short`へ複数のリビジョンを渡すコマンド、Windows上でPATHへドライブ文字形式（`C:/...`）の要素を加えるコマンドを警告する。`agents_server`の`start`の`delegate`・`explore`・`write`の本文が`<役割名>.subagent.md`を指す起動と、`Agent`で`<役割名>.subagent.md`を指す本文が命令と宣言済みの入力以外の行を含む起動を遮断する。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではatkの出力パイプ・waitのシェル背景化・標準出力破棄、パターン一致によるプロセス終了、オプション終端の後ろのオプションの遮断、`git rev-parse --short`の複数リビジョンの警告に加え、出力の上限を超える通常ファイルの全文取得を遮断する。PATHのドライブ文字形式の警告はPowerShellでシェルを実行するため非対応。`agents_server`の自由本文の起動が`<役割名>.subagent.md`を指す場合の遮断に対応する |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・バックグラウンドタスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録に対応する |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は`QUALITY_CHECKPOINT_NOTICE`も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
