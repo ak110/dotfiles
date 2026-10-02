@@ -66,6 +66,8 @@ class _CacheEntry:
     parsed: _ParsedFile
     trusted: bool
     """更新時刻の精度の範囲外で解析したため、無効化キーの一致だけで再利用できるか。"""
+    updated_at: str
+    """更新時刻のISO 8601表記。無効化キーが一致する間は同じ値になるため、解析結果とともに保持する。"""
 
 
 class EntryIndex:
@@ -73,7 +75,8 @@ class EntryIndex:
 
     def __init__(self, private_notes: pathlib.Path) -> None:
         self._private_notes = private_notes
-        self._cache: dict[str, dict[pathlib.Path, _CacheEntry]] = {}
+        # 状態ごとに、実パスの文字列をキーとして保持する。`Path`をキーにすると比較のたびに正規化を伴う。
+        self._cache: dict[str, dict[str, _CacheEntry]] = {}
         self._lock = threading.Lock()
 
     def scan(self, states: typing.Iterable[str]) -> tuple[list[IndexedEntry], list[dict[str, str]]]:
@@ -88,7 +91,7 @@ class EntryIndex:
         scan_started_ns = time.time_ns()
         for state in states:
             previous_cache = self._cache.get(state, {})
-            next_cache: dict[pathlib.Path, _CacheEntry] = {}
+            next_cache: dict[str, _CacheEntry] = {}
             self._cache[state] = next_cache
             directory = self._private_notes / state
             try:
@@ -96,7 +99,7 @@ class EntryIndex:
                     entries = sorted(iterator, key=lambda entry: entry.name)
                 # リンクでないファイルの実パスはディレクトリの実パスの下の名前で決まるため、
                 # 実パスの解決は走査ごとにディレクトリ1回とリンクのファイルだけで済ませる。
-                real_directory = directory.resolve()
+                real_directory = str(directory.resolve())
             except FileNotFoundError:
                 continue
             for directory_entry in entries:
@@ -105,18 +108,23 @@ class EntryIndex:
                     continue
                 try:
                     file_stat = directory_entry.stat()
-                    real_path = path.resolve() if directory_entry.is_symlink() else real_directory / directory_entry.name
+                    real_path = (
+                        str(path.resolve())
+                        if directory_entry.is_symlink()
+                        else os.path.join(real_directory, directory_entry.name)
+                    )
                 except FileNotFoundError:
                     continue
                 except OSError:
                     warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
                     continue
                 cached = previous_cache.get(real_path)
-                if (
-                    cached is None
-                    or not cached.trusted
-                    or (cached.mtime_ns, cached.size) != (file_stat.st_mtime_ns, file_stat.st_size)
-                ):
+                reused = (
+                    cached is not None
+                    and cached.trusted
+                    and (cached.mtime_ns, cached.size) == (file_stat.st_mtime_ns, file_stat.st_size)
+                )
+                if not reused:
                     try:
                         text = path.read_text(encoding="utf-8")
                     except FileNotFoundError:
@@ -136,16 +144,20 @@ class EntryIndex:
                         size=file_stat.st_size,
                         parsed=parsed,
                         trusted=scan_started_ns - file_stat.st_mtime_ns >= _TRUSTED_AGE_NS,
+                        updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
                     )
-                try:
-                    current_stat = path.stat()
-                except FileNotFoundError:
-                    continue
-                except OSError:
-                    warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
-                    continue
-                if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
-                    continue
+                    # 読み取りの間に書き換わったファイルは、読んだ本文と無効化キーが対応しないため今回は除く。
+                    # 解析結果を再利用したファイルは本文を読まないため、この確認を要さない。
+                    try:
+                        current_stat = path.stat()
+                    except FileNotFoundError:
+                        continue
+                    except OSError:
+                        warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
+                        continue
+                    if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
+                        continue
+                assert cached is not None
                 next_cache[real_path] = cached
                 result.append(
                     IndexedEntry(
@@ -155,7 +167,7 @@ class EntryIndex:
                         text_folded=cached.parsed.text_folded,
                         metadata=cached.parsed.metadata,
                         kind=cached.parsed.kind,
-                        updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
+                        updated_at=cached.updated_at,
                         derived=cached.parsed.derived,
                     )
                 )
