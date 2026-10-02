@@ -245,6 +245,21 @@ def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path |
     return matches[0] if len(unique) == 1 else None
 
 
+def live_writer_holds_session(session_id: str, state_root: pathlib.Path | None = None) -> bool:
+    """生存の印が失効していないいずれかのrootの状態ファイルが、指定sessionを載せているかを返す。
+
+    再起動前の登録簿の記録を別のMCPサーバーが引き継ぐ前に、その記録を書ける所有者の不在を確かめるために使う。
+    生存の印を持たない状態ファイルは、失効を判定できないため生存しているものとして扱う。
+    """
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
+    for root_session_id in list_root_session_ids(state_root):
+        for path in list_status_files(root_session_id, state_root):
+            entry = _read_live_status_file(path, cutoff)
+            if entry is not None and any(child == session_id for child, _ in entry[1]):
+                return True
+    return False
+
+
 UNAVAILABLE_CANDIDATES_RETENTION_SECONDS = 1800.0
 """可用性を理由に除外した候補を、最終除外時刻から保持し続ける秒数。
 
@@ -1204,6 +1219,17 @@ def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> s
 
 def _read_child_statuses(path: pathlib.Path, cutoff: datetime.datetime) -> tuple[str, list[tuple[str, str]]] | None:
     """状態ファイルから親session識別子と、各sessionの識別子・状態を読む。"""
+    entry = _read_live_status_file(path, cutoff)
+    if entry is None or entry[0] is None:
+        return None
+    return entry[0], entry[1]
+
+
+def _read_live_status_file(path: pathlib.Path, cutoff: datetime.datetime) -> tuple[str | None, list[tuple[str, str]]] | None:
+    """生存の印が失効していない状態ファイルから、親session識別子（root直下の書込主体では`None`）と各sessionの状態を読む。
+
+    読めないファイルと失効したファイルは`None`を返す。生存の印を持たないファイルは失効を判定できないため読む。
+    """
     try:
         payload: Any = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -1212,7 +1238,7 @@ def _read_child_statuses(path: pathlib.Path, cutoff: datetime.datetime) -> tuple
         return None
     host = payload.get("host_session_id")
     sessions = payload.get("sessions")
-    if not isinstance(host, str) or not isinstance(sessions, list):
+    if (host is not None and not isinstance(host, str)) or not isinstance(sessions, list):
         return None
     heartbeat_at = payload.get("heartbeat_at")
     if heartbeat_at is not None:

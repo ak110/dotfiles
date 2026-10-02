@@ -343,7 +343,6 @@ class TestReadiness:
             tmp_path,
             "missing.md",
             cooldown_until="2026-08-15T00:00:00+00:00",
-            plan_file=tmp_path / "missing-plan.md",
             depends_on=("absent.md",),
         )
         invalid = _write_awi(
@@ -382,12 +381,10 @@ class TestReadiness:
         )
 
         assert pending.actionable_count == 0
-        assert not pending.missing_plan_file
         assert not pending.invalid_dependencies
         assert not pending.missing_dependencies
         assert not pending.self_dependencies
         assert not pending.cyclic_dependencies
-        assert expired.missing_plan_file == ("missing.md",)
         assert expired.invalid_dependencies == ("invalid.md",)
         assert expired.missing_dependencies == ("missing.md",)
         assert expired.self_dependencies == ("self.md",)
@@ -705,46 +702,6 @@ class TestReadiness:
         assert first.cyclic_dependencies == ("first.md",)
         assert second.cyclic_dependencies == ("second.md",)
         assert first.actionable_count == second.actionable_count == 1
-
-    def test_missing_plan_file_requires_one_repair_uwi(self, tmp_path: pathlib.Path) -> None:
-        _write_awi(tmp_path, "plan.md", plan_file=tmp_path / "missing.md")
-
-        first = _common.calculate_readiness(tmp_path, "github.com/example/repo")
-        _write_uwi(tmp_path, "repair.md")
-        repair = tmp_path / "inbox" / "repair.md"
-        repair.write_text(
-            repair.read_text(encoding="utf-8").replace(
-                "type: uwi\n",
-                "type: uwi\nrepair_target: plan.md\nrepair_kind: missing-plan-file\n",
-            ),
-            encoding="utf-8",
-        )
-        second = _common.calculate_readiness(tmp_path, "github.com/example/repo")
-
-        assert first.missing_plan_file_needs_uwi == ("plan.md",)
-        assert not second.missing_plan_file_needs_uwi
-
-    def test_queue_entry_loader_reads_plan_and_repair_kind(self, tmp_path: pathlib.Path) -> None:
-        plan = tmp_path / "plan.md"
-        plan.write_text("# 計画\n", encoding="utf-8")
-        _write_awi(tmp_path, "plan-item.md", plan_file=plan)
-        _write_uwi(tmp_path, "repair.md")
-        repair = tmp_path / "inbox" / "repair.md"
-        repair.write_text(
-            repair.read_text(encoding="utf-8").replace(
-                "type: uwi\n",
-                "type: uwi\nrepair_target: plan-item.md\nrepair_kind: frontmatter\n",
-            ),
-            encoding="utf-8",
-        )
-
-        entries = _readiness._load_queue_entries(  # pylint: disable=protected-access  # noqa: SLF001
-            tmp_path, None, ("inbox",)
-        )
-        by_name = {entry.filename: entry for entry in entries}
-
-        assert by_name["plan-item.md"].plan_file == str(plan)
-        assert by_name["repair.md"].repair_kind == "frontmatter"
 
     def test_readiness_reads_active_once_and_only_referenced_terminal_entries(
         self,

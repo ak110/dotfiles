@@ -111,7 +111,6 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     reasons = (
         ("frontmatter-broken", readiness.frontmatter_broken),
         ("invalid-cooldown", readiness.invalid_cooldowns),
-        ("missing-plan-file", readiness.missing_plan_file),
         ("invalid-dependency", readiness.invalid_dependencies),
         ("missing-dependency", readiness.missing_dependencies),
         ("self-dependency", readiness.self_dependencies),
@@ -135,6 +134,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
         print(f"# {header_type or 'unknown'}")
         for path, target_repo, text, state, entry_type in sorted(group, key=lambda entry: entry[0].name):
             parsed = parse_frontmatter(text)
+            # `plan`区分は、廃止した計画ファイル付きの型で保存された終端済み項目を表示で見分けるための読取互換である。
             plan_file = parsed[0].get("plan_file") if parsed is not None else None
             item_kind = "frontmatter-broken" if parsed is None else "plan" if isinstance(plan_file, str) else "normal"
             state_readiness = _state_readiness(state, path.name, readiness)

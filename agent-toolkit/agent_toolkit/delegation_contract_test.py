@@ -7,6 +7,7 @@ import re
 import pytest
 
 from agent_toolkit._agents_server import task_documents
+from agent_toolkit._atk import run_script
 
 pytestmark = pytest.mark.repo_invariant
 
@@ -353,6 +354,11 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "`/`" in output and "`/`" in receipt
     assert "パス要素" in generation and "パス要素" in receipt
     assert "狭い方の範囲" in generation and "狭い方の範囲" in receipt
+    # 選定時と受領時の双方で、反映先と`write_files`の対応を同じ公開コマンドで確かめる。
+    assert "excluded_paths" in fields
+    assert "`excluded_paths`" in output
+    assert "atk run-script pick-wi-check" in output and "atk run-script pick-wi-check" in receipt
+    assert "pick-wi-check" in run_script.SCRIPT_PATHS
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:

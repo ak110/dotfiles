@@ -168,18 +168,15 @@ class TestListSingle:
         assert "blocked_reason=cooldown-until cooldown_until=2999-01-01T00:00:00+00:00" in output
         assert "blocked_reason=invalid-cooldown" in output
 
-    def test_working_plan_without_saved_copy_is_blocked(
+    def test_unfinished_item_with_missing_plan_file_is_listed_as_normal_awi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """作業rootにだけ実体があるplan_fileをmissing-plan-fileとして表示する。"""
+        """廃止した計画ファイル付きの型の未終端項目は、計画ファイルが無くても待機理由なしで着手可能と表示する。"""
         notes = _setup_notes(tmp_path)
         entry = _write_awi_file(notes, "plan.md")
-        working = pathlib.Path.home() / ".claude/plans/30-working-plan-a1b2.md"
-        working.parent.mkdir(parents=True)
-        working.write_text("# 計画\n", encoding="utf-8")
         entry.write_text(
             entry.read_text(encoding="utf-8").replace(
                 "type: awi\n",
@@ -193,7 +190,9 @@ class TestListSingle:
             atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert "blocked_reason=missing-plan-file" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert "missing-plan-file" not in output
+        assert "inbox/plan/ready" in output
 
 
 class TestLegacyReservationMigration:
@@ -472,7 +471,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[inbox/plan/blocked]" in output
+        assert "[inbox/plan/ready]" in output
         assert "unclassified" not in output
 
     def test_missing_dependency_displays_repair_reason(
@@ -518,7 +517,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[inbox/plan/blocked]" in output
+        assert "[inbox/plan/ready]" in output
         assert "unclassified" not in output
 
 

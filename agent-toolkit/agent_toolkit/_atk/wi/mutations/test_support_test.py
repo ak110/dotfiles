@@ -97,22 +97,6 @@ def _write_convert_plan(directory: pathlib.Path, target_commit: str) -> pathlib.
     return plan
 
 
-def _write_integration_plan(
-    directory: pathlib.Path,
-    target_commit: str,
-    filenames: tuple[str, ...],
-) -> pathlib.Path:
-    """計画型変換テスト用に関連WIを持つ計画を作成する。"""
-    directory.mkdir(parents=True, exist_ok=True)
-    plan = directory / "plan.md"
-    related_wi = "".join(f"  - {filename}: 変換対象の要求\n" for filename in filenames)
-    plan.write_text(
-        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- 関連WI:\n{related_wi}- ベースコミット: `{target_commit}`\n",
-        encoding="utf-8",
-    )
-    return plan
-
-
 def _edit_plan_args(tmp_path: pathlib.Path, filename: str, body: str, plan: pathlib.Path) -> list[str]:
     """計画型編集を本文ファイル経由で呼ぶCLI引数を返す。"""
     body_file = tmp_path / "body.md"
@@ -128,20 +112,6 @@ def _edit_plan_args(tmp_path: pathlib.Path, filename: str, body: str, plan: path
         "--target-repo",
         "github.com/example/foo",
     ]
-
-
-def _write_legacy_integration_plan(
-    tmp_path: pathlib.Path,
-    _target_commit: str,
-    filenames: tuple[str, ...],
-) -> pathlib.Path:
-    """計画型変換テスト用に提示素材を持つ旧書式の計画を作成する。"""
-    plan = tmp_path / "plan.md"
-    plan.write_text(
-        "## 提示素材\n\n" + "".join(f"- {name}\n" for name in filenames),
-        encoding="utf-8",
-    )
-    return plan
 
 
 def _write_convert_awi(
@@ -165,78 +135,23 @@ def _write_convert_awi(
     return path
 
 
-def _patch_integration_target_resolution(monkeypatch: pytest.MonkeyPatch, target_commit: str = "b" * 40) -> None:
-    """hold統合テストの対象worktreeと計画ベースcommit解決を固定する。"""
-    monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
-    monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda _plan, _worktree: target_commit)
-
-
 def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """変換テストでprivate-notesへのgit操作を無効化する。"""
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(mutations, "_assert_conversion_paths_clean", lambda _path, _paths: None)
-    monkeypatch.setattr(mutations, "_assert_conversion_targets_tracked", lambda _path, _paths: None)
     monkeypatch.setattr(mutations, "_git_head", lambda _path: "a" * 40)
-
-
-def _initialize_private_notes_git(notes: pathlib.Path) -> str:
-    """変換失敗時の作業ツリーとindex復元を検証するGit管理repoを作成する。"""
-    for state in common.WI_STATES:
-        (notes / state).mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["git", "-C", str(notes), "init", "--initial-branch=main"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(["git", "-C", str(notes), "add", "-A"], check=True, capture_output=True, text=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(notes),
-            "-c",
-            "user.email=agent-toolkit@test.invalid",
-            "-c",
-            "user.name=agent-toolkit-test",
-            "commit",
-            "-m",
-            "test: initialize private notes",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-
-def _disable_real_convert_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実Git変換テストでremote同期だけを無効化する。"""
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
 
 
 __all__ = [
     "_AGENT_ENVIRONMENT_VARIABLES",
     "_USER_COMMENT_ERROR",
     "_disable_convert_git",
-    "_disable_real_convert_network",
     "_disable_transition_git",
     "_edit_plan_args",
-    "_initialize_private_notes_git",
     "_isolate_environment",
-    "_patch_integration_target_resolution",
     "_write_convert_awi",
     "_write_convert_plan",
-    "_write_integration_plan",
-    "_write_legacy_integration_plan",
     "_write_uwi_entry",
 ]

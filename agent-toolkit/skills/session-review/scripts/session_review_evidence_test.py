@@ -6857,10 +6857,11 @@ def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """会話の流れはメイン記録の利用者発話とアシスタント発話だけを全文で載せ、記録位置の`--detail`で全文を返す。
+    """会話の流れはメイン記録の発話を全文で、ツール呼び出しを代表入力で、失敗したツール結果を診断の1行で時系列に載せる。
 
-    振り返りは会話の流れからセッション全体の遠回りや是正を探すため、配送本文、実行環境の挿入、
-    スキル展開、ツール呼び出しとツール結果を同じ本文に含めると利用者の発話と区別できなくなる。
+    振り返りは会話の流れからセッション全体の試行と遠回りを探すため、ツール呼び出しと失敗が流れに欠けると
+    候補の観点に当たらない問題が分析の入力から欠ける。成功した結果の本文、書き込む本文、配送本文、実行環境の挿入、
+    スキル展開を含めると量が膨らみ、利用者の発話と区別できなくなる。
     長い発話は会話の流れの表示で先頭と末尾だけになるため、記録位置の照会が全文を返す必要がある。
     """
     long_reply = "長い応答の先頭。" + "あ" * 1500 + "長い応答の末尾。"
@@ -6895,6 +6896,34 @@ def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
                 "type": "user",
                 "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "a.txt"}]},
             },
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call-2",
+                            "name": "Write",
+                            "input": {"file_path": "/x/a.md", "content": "書き込む本文"},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-2",
+                            "is_error": True,
+                            "content": "Exit code 1\n書込失敗の診断",
+                        }
+                    ],
+                },
+            },
             {"type": "user", "message": {"role": "user", "content": "全文抽出すべきでは？"}},
             {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": long_reply}]}},
         ],
@@ -6906,15 +6935,21 @@ def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
     capsys.readouterr()
 
     conversation = [json.loads(line) for line in (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [(item["role"], item["line"], item["text"]) for item in conversation] == [
-        ("user", 1, "振り返りを速くしたい"),
-        ("assistant", 6, "調べます。"),
-        ("user", 8, "全文抽出すべきでは？"),
-        ("assistant", 9, long_reply),
+    assert [(item["kind"], item.get("role") or item.get("tool"), item["line"], item["text"]) for item in conversation] == [
+        ("utterance", "user", 1, "振り返りを速くしたい"),
+        ("utterance", "assistant", 6, "調べます。"),
+        ("tool-call", "Bash", 6, "ls"),
+        ("tool-call", "Write", 8, "/x/a.md"),
+        ("tool-failure", None, 9, "書込失敗の診断"),
+        ("utterance", "user", 10, "全文抽出すべきでは？"),
+        ("utterance", "assistant", 11, long_reply),
     ]
+    assert conversation[4]["call_id"] == "call-2"
+    serialized = (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8")
+    assert "a.txt" not in serialized and "書き込む本文" not in serialized
 
-    assert evidence.main([str(transcript), "--detail", "main:9"]) == 0
-    assert _read_jsonl(capsys) == [{"kind": "detail", "line": 9, "timestamp": None, "role": "assistant", "text": long_reply}]
+    assert evidence.main([str(transcript), "--detail", "main:11"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "detail", "line": 11, "timestamp": None, "role": "assistant", "text": long_reply}]
 
 
 @pytest.mark.parametrize("existing", [False, True])

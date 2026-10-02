@@ -49,6 +49,9 @@ class ResumeInfo:
     created_at: str | None = None
     started_at: str | None = None
     session_updated_at: str | None = None
+    # 最後に公開した時点のturnを表すengine固有の識別子（Codexのturn id）。
+    # 再起動後に残存記録の終端を委譲先CLIの記録と照らすために使う。項目を持たない記録とCodex以外では`None`とする。
+    turn_id: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -83,6 +86,7 @@ def publish(
     created_at: str | None = None,
     started_at: str | None = None,
     session_updated_at: str | None = None,
+    turn_id: str | None = None,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。"""
@@ -112,6 +116,8 @@ def publish(
         payload["started_at"] = started_at
     if session_updated_at is not None:
         payload["session_updated_at"] = session_updated_at
+    if turn_id:
+        payload["turn_id"] = turn_id
     path = registry_directory(state_root) / f"{session_id}.json"
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
@@ -201,4 +207,5 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         created_at=payload.get("created_at") if isinstance(payload.get("created_at"), str) else None,
         started_at=payload.get("started_at") if isinstance(payload.get("started_at"), str) else None,
         session_updated_at=payload.get("session_updated_at") if isinstance(payload.get("session_updated_at"), str) else None,
+        turn_id=payload.get("turn_id") if isinstance(payload.get("turn_id"), str) and payload.get("turn_id") else None,
     )

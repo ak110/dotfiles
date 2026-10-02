@@ -184,7 +184,9 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert "初期要求" in conversation
     assert "I will run the linter now." in conversation
     assert "agent-toolkit-auto-inserted" not in conversation
-    assert "Error: 検査に失敗した" not in conversation
+    # ツール呼び出しは発話と区別できるリスト行で、失敗したツール結果は呼び出しの直後に診断の1行で載せる。
+    assert "- ツール呼び出し（main:2）: Bash make lint\n  - 失敗（main:4）: Error: 検査に失敗した\n" in conversation
+    assert "hook_additional_context" not in conversation
     # 1000字を超える介入は先頭と末尾だけを載せ、全文を照会する記録位置を示す。
     assert _LONG_INTERVENTION not in conversation
     assert _LONG_INTERVENTION[:500] in conversation
@@ -216,17 +218,54 @@ def test_prepare_reads_codex_thread(
     rollout_dir = codex_home / "sessions" / "2026" / "09" / "06"
     rollout_dir.mkdir(parents=True)
     thread_id = "019900aa-bbbb-7ccc-8ddd-eeeeeeeeeeee"
-    (rollout_dir / f"rollout-test-{thread_id}.jsonl").write_text(
-        json.dumps(
-            {
-                "timestamp": "2026-09-06T12:00:00Z",
-                "type": "response_item",
-                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+    entries = [
+        {
+            "timestamp": "2026-09-06T12:00:00Z",
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+        },
+        {
+            "timestamp": "2026-09-06T12:00:01Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call-ls",
+                "arguments": json.dumps({"cmd": "ls docs"}),
             },
-            ensure_ascii=False,
-        )
-        + "\n",
-        encoding="utf-8",
+        },
+        {
+            "timestamp": "2026-09-06T12:00:02Z",
+            "type": "response_item",
+            "payload": {"type": "function_call_output", "call_id": "call-ls", "output": "成功した出力の本文"},
+        },
+        {
+            "timestamp": "2026-09-06T12:00:03Z",
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "apply_patch",
+                "call_id": "call-patch",
+                "input": "*** Begin Patch\n*** Update File: docs/a.md\n+書き込む本文\n*** End Patch",
+            },
+        },
+        {
+            "timestamp": "2026-09-06T12:00:04Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "CommandExecution",
+                    "status": "failed",
+                    "command": ["rg", "x"],
+                    "exit_code": 2,
+                    "stderr": "rg: 失敗",
+                },
+            },
+        },
+    ]
+    (rollout_dir / f"rollout-test-{thread_id}.jsonl").write_text(
+        "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8"
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
@@ -238,6 +277,10 @@ def test_prepare_reads_codex_thread(
     assert record["utterance_counts"] == {"user": 1, "assistant": 0}
     conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
     assert f"--codex-thread-id {thread_id} --detail <記録位置>" in conversation
+    assert "- ツール呼び出し（main:2）: exec_command ls docs" in conversation
+    assert "- ツール呼び出し（main:4）: apply_patch docs/a.md" in conversation
+    assert "  - 失敗（main:5）: rg: 失敗" in conversation
+    assert "成功した出力の本文" not in conversation and "書き込む本文" not in conversation
     assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
 
 

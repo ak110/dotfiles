@@ -587,6 +587,25 @@ class AppServerManager:
                 raise
             return client
 
+    async def read_thread_turns(self, session_id: str) -> list[tuple[str, str]]:
+        """保存済みthreadの全turnを、識別子と状態（`inProgress`・`completed`・`failed`・`interrupted`）の組で時系列順に返す。
+
+        再起動前のプロセスが終端を公開できなかった記録について、turnが終わったかを委譲先CLIの記録で確かめるために使う。
+        応答がthreadとturnの一覧を持たない場合は`AppServerError`を送出する。
+        """
+        client = await self._ensure_client()
+        response = await client.request("thread/read", {"threadId": session_id, "includeTurns": True})
+        thread = response.get("thread") if isinstance(response, dict) else None
+        turns = thread.get("turns") if isinstance(thread, dict) else None
+        if not isinstance(turns, list):
+            raise AppServerError("thread/read returned no thread.turns")
+        result: list[tuple[str, str]] = []
+        for turn in turns:
+            if not isinstance(turn, dict) or not isinstance(turn.get("id"), str) or not isinstance(turn.get("status"), str):
+                raise AppServerError("thread/read returned a turn without id or status")
+            result.append((turn["id"], turn["status"]))
+        return result
+
     async def list_models(self) -> list[dict[str, Any]]:
         """既存のApp Server接続から表示対象の全モデルページを取得する。"""
         client = await self._ensure_client()

@@ -405,7 +405,6 @@ def _add_wi_add_parser(sub: Any) -> None:
         default=None,
         help="UWIの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
     )
-    add.set_defaults(plan_file=None)
     add.add_argument(
         "--depends-on",
         metavar="FILENAME",
@@ -826,8 +825,6 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         default=None,
         help="inbox・holdの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。空文字列で解除する。",
     )
-    edit.set_defaults(plan_file=None)
-    edit.set_defaults(depends_on=None)
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 

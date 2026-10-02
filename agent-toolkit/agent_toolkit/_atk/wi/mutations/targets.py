@@ -86,26 +86,7 @@ if TYPE_CHECKING:
         _cmd_set_dependencies,
         _dependency_reaches,
         _entry_dependencies,
-        _entry_dependencies_for_conversion,
         set_entry_dependencies,
-    )
-    from agent_toolkit._atk.wi.mutations.plan_conversion import (
-        _assert_conversion_paths_clean,
-        _assert_conversion_targets_tracked,
-        _cmd_convert_to_plan,
-        _convert_held_entries,
-        _normalize_stored_plan_file,
-        _plan_awi_paths,
-        _PlanAwiValidationError,
-        _read_plan_input_filenames,
-        _resolve_plan_base_commit,
-        _restore_conversion_paths,
-        _store_plan_file,
-        _StoredPlanFile,
-        _validated_plan_awi_paths,
-        convert_entries_to_plan,
-        convert_entry_to_plan,
-        edit_entry_to_plan,
     )
     from agent_toolkit._atk.wi.mutations.transitions import (
         _apply_transition,
@@ -415,47 +396,6 @@ def _resolve_editable_targets(
             )
         sys.exit(2)
     return resolved
-
-
-def _resolve_conversion_targets(
-    filenames: tuple[str, ...],
-    inbox_dir: pathlib.Path,
-    processing_dir: pathlib.Path,
-    hold_dir: pathlib.Path,
-) -> tuple[str, list[pathlib.Path]]:
-    """convert-to-planの入力を状態ごとに解決し、混在を拒否する。"""
-    resolved: list[pathlib.Path] = []
-    missing: list[str] = []
-    for name in filenames:
-        inbox_path = _validate_filename(name, inbox_dir)
-        processing_path = _validate_filename(inbox_path.name, processing_dir)
-        hold_path = _validate_filename(inbox_path.name, hold_dir)
-        if hold_path.exists():
-            if inbox_path.exists() or processing_path.exists():
-                raise WebInputError(
-                    f"異なる状態の同名項目が存在するため変換できません: {hold_path.name}",
-                    next_action=f"`atk wi show {hold_path.name}`で各状態の項目を比較し、不要な側を整理してから再実行する",
-                )
-            resolved.append(hold_path)
-        elif processing_path.exists():
-            resolved.append(processing_path)
-        elif inbox_path.exists():
-            resolved.append(inbox_path)
-        else:
-            missing.append(inbox_path.name)
-    if missing:
-        for name in missing:
-            _outcome.report_failure(
-                f"inbox・processing・holdのいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION
-            )
-        sys.exit(2)
-    states = {path.parent.name for path in resolved}
-    if len(states) != 1:
-        raise WebInputError(
-            "異なる状態の入力を混在させて変換できません",
-            next_action="同じ状態の項目だけを指定し、状態ごとに分けて再実行する",
-        )
-    return next(iter(states)), resolved
 
 
 def _resolve_active_targets(

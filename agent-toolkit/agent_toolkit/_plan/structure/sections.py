@@ -1154,18 +1154,6 @@ def _has_machine_detectable_human_origin(content: str) -> bool:
     return bool(h2_headings) and h2_headings[-1].text == PLAN_WI_USER_COMMENT_HEADING
 
 
-def _find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
-    """キュー管理リポジトリのルート配下からWIファイルを探す。
-
-    状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
-    """
-    for candidate in sorted(root.iterdir()):
-        source = candidate / name
-        if candidate.is_dir() and source.is_file():
-            return source
-    return None
-
-
 def _collect_origin_notices(
     name: str,
     origin_notices: list[str],
@@ -1185,7 +1173,7 @@ def _collect_origin_notices(
                 f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。キュー管理リポジトリが実在しない: {root}"
             )
             return
-        source = _find_wi_source(name, root)
+        source = _plan_file.find_wi_source(name, root)
         if source is None:
             origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WIファイルを特定できない: {name}")
             return
@@ -1219,7 +1207,7 @@ def _wi_has_scope(
                 f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。キュー管理リポジトリが実在しない: {root}"
             )
             return True
-        source = _find_wi_source(name, root)
+        source = _plan_file.find_wi_source(name, root)
         if source is None:
             origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WIファイルを特定できない: {name}")
             return True

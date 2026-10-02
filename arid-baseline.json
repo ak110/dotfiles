@@ -252,16 +252,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:3825d26c6e56eb3a767726fe909d9b30b51a98aa942a133f8981de034c055e41",
-      "lines": 16,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:39ea7bbe753477a3febdb82da73794f17cb6831b346ce584a1b7ac2e9b59b0e7",
       "lines": 15,
       "occurrences": [
@@ -312,20 +302,6 @@
         {
           "path": "agent-toolkit/agent_toolkit/_atk/plans.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:5ca3b058a1962a1f14d57335cc866b2a14be684b4d603569f39d9b14ffadd55d",
-      "lines": 17,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/dependencies_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion_test.py",
-          "count": 1
         }
       ]
     },
@@ -986,16 +962,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:d25e9fd1842615cd27df451b3e31dcc7a0defd775f9797f840d683f2d435c363",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:d6446097f83855cb29ed1b050b3226e717db8dce34108fca74784084d71bb48e",
       "lines": 12,
       "occurrences": [
@@ -1157,20 +1123,6 @@
         },
         {
           "path": "agent-toolkit/agent_toolkit/_atk/config_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:f31c8e69b557afb739e66befad3702f5a47e654d9c464d7b80b6a1dba8a32f8f",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/targets_test.py",
           "count": 1
         }
       ]

@@ -217,7 +217,6 @@ if TYPE_CHECKING:
         _check_verification_section,
         _collect_origin_notices,
         _comma_separated_values,
-        _find_wi_source,
         _has_frontmatter_source,
         _has_machine_detectable_human_origin,
         _materials_section,

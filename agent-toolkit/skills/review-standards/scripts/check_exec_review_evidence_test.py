@@ -198,10 +198,24 @@ def test_public_command_accepts_same_file_with_row_specific_explanations(
 def test_public_command_excludes_nonachieved_shared_reasons(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, outcome: str
 ) -> None:
-    """公開待ちや不採用の理由を共有しても達成根拠の共用には含めない。"""
-    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
-    first = {**_requirement("", "保存"), "outcome": outcome, "evidence": "公開工程待ち"}
-    second = {**_requirement("", "再読込"), "outcome": outcome, "evidence": "公開工程待ち"}
+    """公開待ちや不採用の理由を共有しても達成根拠の共用には含めない。
+
+    失効と割当外は根拠の記録を確かめる判定値であるため、計画由来の行にも有効な記録を与える。
+    """
+    answer = "20260929-120000-001.md"
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n", answer: "type: uwi\n---\n## 回答\n条件を外す\n"},
+    )
+    plan = tmp_path / "plan.md"
+    plan.write_text("## 実施内容\n\n| 保存と再読込は分割元の依頼全体として割当外 |\n", encoding="utf-8")
+    source, evidence = {
+        "失効": (f"{answer} の ## 回答", "公開工程待ち"),
+        "割当外": (f"{plan} の ## 実施内容", "分割元の依頼全体（公開工程待ち）"),
+    }.get(outcome, ("WI本文", "公開工程待ち"))
+    first = {**_requirement("", "保存"), "outcome": outcome, "source": source, "evidence": evidence}
+    second = {**_requirement("", "再読込"), "outcome": outcome, "source": source, "evidence": evidence}
     path = tmp_path / "evidence.json"
     _write_evidence(path, [_condition(FIRST_WI, "保存")], [first, second])
     args = argparse.Namespace(
@@ -223,6 +237,74 @@ def test_public_command_accepts_same_unit_duplicates_and_distinct_evidence(
         script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
     )
     assert run_script.dispatch(args) == 0
+
+
+THIRD_WI = "20260928-192559-003.md"
+
+
+def _cross_wi_rows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, texts: dict[str, list[str]], evidence: str
+) -> pathlib.Path:
+    """WIごとの原文AWIの文を要求単位とし、全行へ同じ根拠を記入した証拠を用意する。"""
+    record = tmp_path / "verification.md"
+    record.write_text("# 受入シナリオ\n全シナリオが成功した。\n", encoding="utf-8")
+    _mock_wi(monkeypatch, tmp_path, {awi: f"type: awi\n---\n# 題\n\n{''.join(lines)}\n" for awi, lines in texts.items()})
+    rows = [
+        {**_requirement(awi, text), "evidence": evidence.format(record=record)}
+        for awi, lines in texts.items()
+        for text in lines
+    ]
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [], rows)
+    return path
+
+
+def test_public_command_rejects_explained_reference_shared_across_wi_requirements(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """異なるWIの異なる要求単位へ、パスに汎用的な説明を添えただけの同じ根拠を写した証拠を拒否する。
+
+    受理すると、各行の要求を判定せずに空欄を埋めた証拠が確認を通り、未判定の行が達成として統合へ渡る。
+    """
+    texts = {
+        FIRST_WI: ["報告見えてないんだけど、拡張思考の中で発話したつもりになったりしてない？"],
+        SECOND_WI: ["既存規範優先ってどこまで？", "維持でいいよ。"],
+        THIRD_WI: ["改善してほしい。", "設定にも加える (Recommended)"],
+    }
+    path = _cross_wi_rows(tmp_path, monkeypatch, texts, "{record} の該当実装・受入結果を確認。")
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=["--", str(path), FIRST_WI, SECOND_WI, THIRD_WI, "--expected-head", REVIEWED_HEAD],
+    )
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    assert error.count("異なるWIの異なる要求単位で同じ達成根拠を共用しています") == 5
+    assert f"{THIRD_WI}: user_requirements[5].evidence" in error
+
+
+@pytest.mark.parametrize(
+    ("texts", "evidence"),
+    [
+        # 分割起票した兄弟WIが、同じ原文の要求を同じ根拠で記録する。
+        ({FIRST_WI: ["設定を移して。"], SECOND_WI: ["設定を移して。"]}, "{record} の移行節で設定の移行を観測"),
+        # 具体的なテスト名と成功結果は、異なるWIの要求へ共用しても行を判定した根拠として読める。
+        ({FIRST_WI: ["設定を移して。"], SECOND_WI: ["旧入口を廃止して。"]}, "test_settings_migration: 成功"),
+    ],
+    ids=["sibling-same-text", "test-result"],
+)
+def test_public_command_accepts_sibling_or_test_result_shared_across_wi(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    texts: dict[str, list[str]],
+    evidence: str,
+) -> None:
+    """WIをまたぐ共用のうち、同じ原文の行どうしと具体的なテスト結果の共用は受理する。"""
+    path = _cross_wi_rows(tmp_path, monkeypatch, texts, evidence)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), *texts, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
 
 
 def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -381,21 +463,17 @@ def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
     own = "設定画面を直して。"
     whole = "処理全体を3時間以内に収めて。"
     _mock_wi(
-        monkeypatch,
-        tmp_path,
-        {
-            FIRST_WI: (
-                "type: awi\nsource: agent\n---\n# WI\n"
-                "## 完成条件\n- 設定画面で保存できる\n"
-                "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
-                f"```text\n{own}{whole}\n```\n"
-            )
-        },
+        monkeypatch, tmp_path, {FIRST_WI: _split_awi(own, whole, f"- 引用の後半（所要時間）は{_WHOLE}として割当外とする\n")}
     )
     args = argparse.Namespace(
         script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
     )
-    unassigned = {**_requirement(FIRST_WI, whole), "outcome": "割当外", "evidence": "分割元の依頼全体"}
+    unassigned = {
+        **_requirement(FIRST_WI, whole),
+        "outcome": "割当外",
+        "source": f"{FIRST_WI} ## 反映内容と反映先",
+        "evidence": _WHOLE,
+    }
 
     _write_evidence(evidence, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), unassigned])
     assert run_script.dispatch(args) == 0
@@ -409,6 +487,121 @@ def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
     stderr = capsys.readouterr().err
     assert "wi_conditions[1].outcome: 未知の判定です: 割当外（受理する値: " in stderr
     assert "\n次の操作: " in stderr
+
+
+_WHOLE = "分割元の依頼全体"
+_OTHER_TITLE = "設定の一括移行"
+
+
+def _split_awi(own: str, other: str, record: str) -> str:
+    """2つの要求を逐語引用に持ち、`## 反映内容と反映先`へ割当の記録を持つ分割起票のAWI本文を返す。"""
+    return (
+        "type: awi\nsource: agent\n---\n# WI\n"
+        f"## 反映内容と反映先\n\n- 引用の前半は本AWIで扱う\n{record}\n"
+        "## 完成条件\n- 設定画面で保存できる\n"
+        "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
+        f"```text\n{own}{other}\n```\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("record", "source", "evidence", "diagnostic"),
+    [
+        # 割当の記録が無い節を指す行。割当先の名前だけが割当を示さない行にある。
+        (
+            f"- 「{_OTHER_TITLE}」の担当範囲を確認した\n",
+            "{wi} ## 反映内容と反映先",
+            f"「{_OTHER_TITLE}」",
+            "割当を示す行にありません",
+        ),
+        # sourceが割当の記録の所在（WIファイル名と節名）を持たない行。
+        (f"- 引用の後半は「{_OTHER_TITLE}」へ割当\n", "WI本文", f"「{_OTHER_TITLE}」", "記録を特定できません"),
+        # evidenceが割当先の表記を持たない行。
+        (
+            f"- 引用の後半は「{_OTHER_TITLE}」へ割当\n",
+            "{wi} ## 反映内容と反映先",
+            "対象プロジェクト宛ての別AWI",
+            "割当先の表記がありません",
+        ),
+        # evidenceの割当先が記録の行に無い行。
+        (f"- 引用の後半は「{_OTHER_TITLE}」へ割当\n", "{wi} ## 反映内容と反映先", f"{SECOND_WI}", "割当を示す行にありません"),
+    ],
+)
+def test_unassigned_requirement_without_matching_record_is_rejected(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record: str,
+    source: str,
+    evidence: str,
+    diagnostic: str,
+) -> None:
+    """割当の記録の所在、割当先の表記、記録との一致のいずれかを欠く割当外行を拒否する。
+
+    受理すると、自身の反映先へ対応する要求まで割当外として記録した証拠が統合時の読解まで残る。
+    """
+    own = "設定画面を直して。"
+    other = "旧設定も一括で移して。"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _split_awi(own, other, record)})
+    path = tmp_path / "evidence.json"
+    unassigned = {
+        **_requirement(FIRST_WI, other),
+        "outcome": "割当外",
+        "source": source.format(wi=FIRST_WI),
+        "evidence": evidence,
+    }
+    _write_evidence(path, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), unassigned])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    line = next(line for line in error.splitlines() if "user_requirements[2]" in line)
+    assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[2].") and diagnostic in line
+    assert "sourceへ書く" in line or "evidenceへ" in line
+
+
+def test_unassigned_requirement_matching_record_is_accepted(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """割当先が記録の同じ節の割当を示すいずれかの行にあれば、（同上）の行や計画の記録を所在とする行も受理する。"""
+    own = "設定画面を直して。"
+    others = ["旧設定も一括で移して。", "移行後に旧形式を削除して。", "全体を今週中に終えて。"]
+    record = f"- 引用の2文目は「{_OTHER_TITLE}」へ割当（{SECOND_WI}）\n- 引用の3文目（同上）も割当外\n"
+    body = _split_awi(own, "".join(others), record)
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    plan = tmp_path / "計画 レーン01.md"
+    plan.write_text(f"## 実施内容\n\n| 引用の4文目は{_WHOLE}として割当外 | 人間由来のWI |\n\n## 検証\n", encoding="utf-8")
+    source = f"{FIRST_WI} ## 反映内容と反映先"
+    rows = [
+        _requirement(FIRST_WI, own),
+        {**_requirement(FIRST_WI, others[0]), "outcome": "割当外", "source": source, "evidence": f"「{_OTHER_TITLE}」"},
+        {**_requirement(FIRST_WI, others[1]), "outcome": "割当外", "source": source, "evidence": f"{SECOND_WI}（同上）"},
+        {**_requirement(FIRST_WI, others[2]), "outcome": "割当外", "source": f"{plan} の ## 実施内容", "evidence": _WHOLE},
+    ]
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [_condition(FIRST_WI, "設定画面で保存できる")], rows)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+
+def test_expired_requirement_also_checks_user_answer_source(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """原文要求の失効行も、完成条件の失効行と同じくユーザー判断の参照先を確かめる。"""
+    own = "設定画面を直して。"
+    other = "旧設定も一括で移して。"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _split_awi(own, other, "")})
+    path = tmp_path / "evidence.json"
+    expired = {**_requirement(FIRST_WI, other), "outcome": "失効", "source": "計画の不採用行"}
+    _write_evidence(path, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), expired])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 1
+    assert f"失敗: {FIRST_WI}: user_requirements[2].source: 失効のユーザー判断を確認できません" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("awi", [FIRST_WI, SECOND_WI])
@@ -715,7 +908,7 @@ def test_fenced_supplements_are_not_requirements(
         _write_evidence(path, conditions, kept)
         assert run_script.dispatch(args) == 1
         error = capsys.readouterr().err
-        assert f"不足: {omitted}" in error and "期待 2 行" in error
+        assert f"不足: 「{omitted}」" in error and "期待 2 行" in error
 
 
 def test_unclosed_fence_keeps_following_requirements(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -727,6 +920,107 @@ def test_unclosed_fence_keeps_following_requirements(tmp_path: pathlib.Path, mon
         script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
     )
     assert run_script.dispatch(args) == 1
+
+
+_UTTERANCE = "サイトの掲載を確かめて。止まると困るので一時障害の扱いを決めたい。"
+_ANSWER = "一時障害は警告扱い (Recommended)"
+_ANSWER_RECORD = (
+    "質問: 共通前提: 掲載はdocs.python.orgで確かめます。\n"
+    "TLS障害は9月から続いています。一時障害をどう扱いますか。\n"
+    "選択肢: 一時障害は警告扱い (Recommended): 定期実行を止めずに警告だけを表示します。\n"
+    "選択肢: 失敗扱い: 定期実行を失敗させます。\n"
+    "選択肢: 確認を省く: 掲載を確かめません。\n"
+    f"回答: {_ANSWER}\n"
+)
+
+
+def _answer_record_wi(answer_record: str) -> str:
+    """利用者の発話の`text`フェンスと、確認回答の記録の`text`フェンスを逐語引用に持つAWI本文を返す。"""
+    return (
+        "type: awi\nsource: agent\n---\n# WI\n## 完成条件\n- 掲載を確かめる\n"
+        "## ユーザー指摘の逐語引用\n\n"
+        f"```text\n{_UTTERANCE}\n```\n\n```text\n{answer_record}```\n"
+    )
+
+
+def test_answer_record_requires_only_user_utterances_and_answer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """確認回答の記録の質問・共通前提・選択肢を要求単位に数えず、利用者の発話の各文と回答の値だけを求める。
+
+    質問や選択肢を要求に数えると、担当は利用者が述べていない文へ判定を書くか、記録を入力欠陥として返す。
+    """
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _answer_record_wi(_ANSWER_RECORD)})
+    path = tmp_path / "evidence.json"
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    conditions = [_condition(FIRST_WI, "掲載を確かめる")]
+    utterances = ["サイトの掲載を確かめて。", "止まると困るので一時障害の扱いを決めたい。"]
+    _write_evidence(path, conditions, [_requirement(FIRST_WI, text) for text in [*utterances, _ANSWER]])
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+    _write_evidence(path, conditions, [_requirement(FIRST_WI, text) for text in utterances])
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    assert f"不足: 「{_ANSWER}」" in error
+    assert "質問" not in error and "選択肢" not in error and "docs." not in error
+
+
+def test_answer_record_keeps_multiline_answer_and_free_text(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """複数行に続く回答の値と自由記述の値を要求単位に残す。"""
+    record = _ANSWER_RECORD.replace(f"回答: {_ANSWER}\n", "回答: 失敗扱い\n確認を省く\n自由記述: 夜間だけ止めて。\n")
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _answer_record_wi(record)})
+    path = tmp_path / "evidence.json"
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    _write_evidence(path, [_condition(FIRST_WI, "掲載を確かめる")], [])
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    assert "「失敗扱い 確認を省く」、「夜間だけ止めて。」" in error
+
+
+@pytest.mark.parametrize("route", ["raw-awi", "quoted-awi", "user-comment", "uwi-answer"])
+def test_periods_inside_words_do_not_split_requirements(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
+) -> None:
+    """語の内部のピリオドと文末の閉じ括弧では分割せず、空白が続くASCIIの文末では従来どおり分割する。"""
+    requirements = [
+        "docs.python.orgとpyproject.tomlの記載をv0.24.2に合わせて。",
+        "`a. b`の表記は変えない（~/.sshは対象外。）",
+        "Keep the old name.",
+        "Add a new one!",
+    ]
+    content = f"{requirements[0]}{requirements[1]}\n{requirements[2]} {requirements[3]}\n"
+    conditions: list[dict[str, str]] = []
+    if route == "raw-awi":
+        body = f"type: awi\n---\n# 題\n\n{content}"
+    elif route == "uwi-answer":
+        body = f"type: uwi\n---\n# 確認\n\n## 回答\n\n{content}"
+    else:
+        conditions = [_condition(FIRST_WI, "保存")]
+        section = (
+            f"## ユーザーコメント\n\n{content}"
+            if route == "user-comment"
+            else f"## ユーザー指摘の逐語引用\n\n```text\n{content}```\n"
+        )
+        body = f"type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n\n{section}"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    path = tmp_path / "evidence.json"
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    _write_evidence(path, conditions, [_requirement(FIRST_WI, text) for text in requirements])
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+    _write_evidence(
+        path, conditions, [_requirement(FIRST_WI, text) for text in [*requirements[:2], " ".join(requirements[2:])]]
+    )
+    assert run_script.dispatch(args) == 1
+    assert "不足: 「Keep the old name.」、「Add a new one!」" in capsys.readouterr().err
 
 
 def test_public_command_runs_platform_launcher(
@@ -770,7 +1064,7 @@ def test_public_command_runs_platform_launcher(
 
     _write_evidence(path, [], rows[:1])
     assert run_script.dispatch(args) == 1
-    assert f"不足: {_FENCED_REQUIREMENTS[1]}" in capsys.readouterr().err
+    assert f"不足: 「{_FENCED_REQUIREMENTS[1]}」" in capsys.readouterr().err
 
 
 _TEMPLATE_BODIES = {

@@ -44,6 +44,7 @@ _ENTRY_STATES = set(common.WI_STATES)
 _STATUS_FILTERS = {"all", "active", "processable", *common.WI_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _PLAN_FILTERS = {"all", "normal", "plan"}
+"""`plan`は、廃止した計画ファイル付きの型で保存された項目を見分ける読取互換の表示区分である。"""
 _SOURCE_KIND_FILTERS = {"human", "agent"}
 _ENTRY_PAGE_SIZE = 100
 _DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")

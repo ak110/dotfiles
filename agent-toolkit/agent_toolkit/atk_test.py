@@ -44,6 +44,27 @@ _ATK_PATH = pathlib.Path(atk.__file__).resolve()
 _PROJECT_ROOT = _ATK_PATH.parents[1]
 
 
+def _isolated_cli_environ(host_environ: Callable[[], dict[str, str]], tmp_path: pathlib.Path) -> dict[str, str]:
+    """実CLIを起動する子プロセスへ、管理対象一時領域のrootと状態ディレクトリを`tmp_path`配下へ向けた環境変数を返す。
+
+    `host_environ`はmiseのshimを解決できるよう実環境のホームと設定ディレクトリを戻す。そのまま渡すと、
+    `atk`の共通起動が実環境の管理対象一時領域を読み、別のセッションが残した領域について警告を
+    標準エラーへ書き、実環境の領域を自動回収する。uvのキャッシュは実環境の位置を保ち、依存の再取得を避ける。
+    """
+    environ = host_environ()
+    uv_cache = subprocess.run(
+        ["uv", "cache", "dir"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=environ, check=True
+    ).stdout.strip()
+    home = pathlib.Path(environ.get("HOME", str(pathlib.Path.home())))
+    # miseはshimの信頼設定とキャッシュを同じXDG変数から解決するため、実環境の位置を明示して保つ。
+    environ.setdefault("MISE_STATE_DIR", str(pathlib.Path(environ.get("XDG_STATE_HOME", home / ".local" / "state")) / "mise"))
+    environ.setdefault("MISE_CACHE_DIR", str(pathlib.Path(environ.get("XDG_CACHE_HOME", home / ".cache")) / "mise"))
+    environ["UV_CACHE_DIR"] = uv_cache
+    environ["XDG_CACHE_HOME"] = str(tmp_path / "cli-cache")
+    environ["XDG_STATE_HOME"] = str(tmp_path / "cli-state")
+    return environ
+
+
 def test_info_reports_current_execution_context(capsys: pytest.CaptureFixture[str]) -> None:
     """公開CLIのinfoが実行文脈とplugin版数の所在を返す。"""
     atk.main(["info"])
@@ -170,7 +191,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     _write_awi_file(notes, "awi.md", body="searchable")
     read_fd, write_fd = os.pipe()
     os.close(read_fd)
-    env = host_environ()
+    env = _isolated_cli_environ(host_environ, tmp_path)
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
@@ -210,7 +231,7 @@ def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     _write_uwi_file(notes, "other.md", target_repo="github.com/example/other", question="対象外")
     monkeypatch.setenv("UV_FROZEN", "1")
     monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "parent-venv"))
-    env = host_environ()
+    env = _isolated_cli_environ(host_environ, tmp_path)
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     # 子projectのlock指定と環境を使い、親のuv設定による警告をCLI出力へ混ぜない。
     env.pop("UV_FROZEN", None)
@@ -1370,7 +1391,7 @@ def test_add_output_reloads_saved_metadata(
     output = capsys.readouterr().out
     assert "target_repo: github.com/example/myrepo" in output
     assert f"target_commit: {_FIXED_HEAD_COMMIT}" in output
-    assert "plan_file: なし" in output
+    assert "plan_file" not in output
     assert "depends_on: なし" in output
 
 

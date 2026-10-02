@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from agent_toolkit._atk import run_script
+from agent_toolkit._atk import help_text, run_script
 from agent_toolkit._common import next_action
 
 
@@ -128,7 +128,8 @@ def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys:
 
     assert run_script.dispatch(argparse.Namespace(script_name="review-contract", script_args=arguments)) == 0
 
-    parser = argparse.ArgumentParser()
+    # `atk`と同じヘルプ書式で整形する。標準の書式は登録名の`-`で折り返し、名前の一致を判定できないため。
+    parser = argparse.ArgumentParser(formatter_class=help_text.JapaneseHelpFormatter)
     run_script.build_parser(parser)
     # 手順書を読んだ主体が登録名を推測せず`--help`だけで見つけられることを保証する。
     assert "review-contract" in parser.format_help()

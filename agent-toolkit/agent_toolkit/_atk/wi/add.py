@@ -12,6 +12,8 @@ import re
 import subprocess
 import sys
 
+import markdown_it
+
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
@@ -41,7 +43,6 @@ from agent_toolkit._atk.wi.common import (
 from agent_toolkit._atk.wi.formatters import _shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._common import body_match as _body_match
-from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import locations as _plan_file
 
 
@@ -82,7 +83,6 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     return {
         "target_repo": data.get("target_repo"),
         "target_commit": data.get("target_commit"),
-        "plan_file": data.get("plan_file"),
         "depends_on": depends_on,
         "source": data.get("source"),
         "extra_frontmatter": {key: value for key, value in data.items() if key not in _RESERVED_FRONTMATTER_KEYS},
@@ -91,7 +91,7 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
 
 def _print_entry_details(details: dict[str, object | None]) -> None:
     """一致を確認したエントリの項目を決まった順で表示する。"""
-    for key in ("target_repo", "target_commit", "plan_file"):
+    for key in ("target_repo", "target_commit"):
         value = details[key]
         print(f"    {key}: {value if value is not None else 'なし'}")
     depends_on = details["depends_on"]
@@ -209,7 +209,6 @@ def _require_agent_awi_sections(
     *,
     entry_type: str,
     source: str | None,
-    plan_file: str | None,
 ) -> None:
     """`source`を持つ通常AWIが必須H2を全件持ち、規定順序に従うことを検証する。
 
@@ -218,7 +217,7 @@ def _require_agent_awi_sections(
     """
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
-    if entry_type != WI_TYPE_AWI or plan_file is not None or not item_source:
+    if entry_type != WI_TYPE_AWI or not item_source:
         return
     sections = _headings.h2_sections(body)
     filled = {name for name, has_body in sections if has_body}
@@ -243,6 +242,55 @@ def _require_agent_awi_sections(
             f"再投入する。{_CAUSE_ANALYSIS_HEADING}を置く場合はその節にも本文を書く"
         ),
     )
+
+
+_DIRECT_CAUSE_LABEL = "直接的原因"
+_UNDETERMINED_CAUSE_RE = re.compile(r"(?:未確定|不明|未特定|調査中|未確認)(?:$|[\s。、，,．.:：;；（(「『【\[/／・*_`~])")
+"""原因が確定していないことを宣言する値の形。
+
+値の冒頭の語が単独で置かれるか、直後に句読点・空白・括弧・Markdown装飾の閉じ記号などの区切りが続く場合だけを宣言とみなす。
+確定した原因の説明に現れる同じ語（「不明だった設定を特定した」「旧値の残存。不明だった由来を特定した」など）は拒否しない。
+"""
+_TABLE_CELL_DECORATION = "*_`~ \t"
+_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+UNDETERMINED_CAUSE_NEXT_ACTION = (
+    "直接的原因を現物の観測で確定してから本文を書き直して再実行する。"
+    "確定できない場合は保存しない（既存項目の編集では保存済みの本文がそのまま残る）"
+)
+
+
+def undetermined_cause_rows(body: str) -> list[str]:
+    """表の`直接的原因`行のうち、値が原因の未確定を宣言する行を返す。
+
+    コードフェンスとインデントコードブロックの内側にある表は引用・例示として扱い、判定しない。
+    """
+    normalized = _frontmatter.normalize_newlines(body)
+    lines = normalized.split("\n")
+    rows: list[str] = []
+    for token in _MARKDOWN.parse(normalized):
+        if token.type != "table_open" or token.map is None:
+            continue
+        for line in lines[token.map[0] : token.map[1]]:
+            cells = [cell.strip(_TABLE_CELL_DECORATION) for cell in line.strip().strip("|").split("|")]
+            if len(cells) >= 2 and cells[0] == _DIRECT_CAUSE_LABEL and _UNDETERMINED_CAUSE_RE.match(cells[1]):
+                rows.append(line.strip())
+    return rows
+
+
+def require_confirmed_cause(body: str) -> None:
+    """エージェント環境から保存する本文が、直接的原因を未確定のまま宣言していないことを検証する。
+
+    原因が確定するまでWIを保存しないという起草の条件を、委譲の追送などで差し戻しが上書きされた場合も
+    保存処理自身で守る。判定するのは明示された未確定の宣言だけであり、原因として書かれた内容の妥当性は起草とレビューが確かめる。
+    種別（AWIとUWI）と`source`の有無で対象を分けない。人間の入力は拒否しない。
+    """
+    if not is_agent_environment():
+        return
+    if rows := undetermined_cause_rows(body):
+        raise WebInputError(
+            "直接的原因が未確定のまま保存しようとした: " + " / ".join(rows),
+            next_action=UNDETERMINED_CAUSE_NEXT_ACTION,
+        )
 
 
 def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
@@ -284,32 +332,6 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
             raise _target_repo_error(raw_target_repo, error) from error
 
 
-def _verify_plan_target_repos(
-    parsed_messages: list[tuple[dict[str, object], str]],
-    target_repo: str,
-) -> None:
-    """計画実装型の全メッセージが投入先リポジトリを実効的に上書きしないことを検証する。"""
-    for frontmatter, _body in parsed_messages:
-        raw_target_repo = frontmatter.get("target_repo")
-        if raw_target_repo is None:
-            continue
-        if not isinstance(raw_target_repo, str):
-            raise WebInputError(
-                "plan_file指定時のメッセージfrontmatterのtarget_repoは文字列で指定してください",
-                next_action="frontmatterのtarget_repoを削除するか、投入先と同じ値の文字列にして再投入する",
-            )
-        try:
-            item_target_repo = resolve_repo_id_or_raise(raw_target_repo)
-        except WebInputError as error:
-            raise _target_repo_error(raw_target_repo, error) from error
-        if item_target_repo != target_repo:
-            raise WebInputError(
-                "plan_file指定時はメッセージfrontmatterで対象リポジトリを別の値へ上書きできません。"
-                f"投入先={target_repo}、frontmatter={item_target_repo}",
-                next_action="frontmatterのtarget_repoを削除するか、投入先と同じ値にして再投入する",
-            )
-
-
 _RESERVED_FRONTMATTER_KEYS = (
     "target_repo",
     "target_commit",
@@ -347,6 +369,7 @@ CLIオプションより優先して採用するが、`target_repo`は`resolve_r
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
 `reservation`・`reservation_companion`・`target_commit_history`はユーザーによる直接指定を禁止し、
 CLIが管理する識別情報、依存、修復UWI、旧形式の内部metadataとして予約する。
+`plan_file`は廃止した計画ファイル付きの型で保存された項目のメタデータであり、読取互換として残し、新しい項目へは書かせない。
 """
 
 
@@ -381,7 +404,6 @@ def _add_entries_locked(
     question_type: str | None,
     choices: str | None,
     target_commit: str | None = None,
-    plan_file: str | None = None,
     repair_targets: list[str | None] | None = None,
     repair_kinds: list[str | None] | None = None,
     depends_on: tuple[str, ...] = (),
@@ -444,8 +466,6 @@ def _add_entries_locked(
             logical_body = f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
         else:
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
-            if plan_file is not None:
-                frontmatter_data["plan_file"] = plan_file
             if depends_on:
                 frontmatter_data["depends_on"] = list(depends_on)
         content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
@@ -469,7 +489,6 @@ def add_entries(
     question_type: str | None = None,
     choices: str | None = None,
     target_commit: str | None = None,
-    plan_file: str | None = None,
     depends_on: tuple[str, ...] = (),
     lock_timeout: float = -1,
     saved_details: dict[str, dict[str, object | None]] | None = None,
@@ -485,15 +504,13 @@ def add_entries(
     `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
     `submitter_session`はUWI種別のfrontmatterへだけ保存する。
     """
-    parsed_messages, normalized_target_repo, stored_plan_file = _validate_add_entries(
-        private_notes,
+    parsed_messages, normalized_target_repo = _validate_add_entries(
         messages=messages,
         target_repo=target_repo,
         entry_type=entry_type,
         question_type=question_type,
         choices=choices,
         target_commit=target_commit,
-        plan_file=plan_file,
         source=source,
     )
     with _repo_lock(private_notes, timeout=lock_timeout):
@@ -510,7 +527,6 @@ def add_entries(
             question_type=question_type,
             choices=choices,
             target_commit=target_commit,
-            plan_file=stored_plan_file,
             depends_on=depends_on,
             submitter_session=submitter_session,
         )
@@ -534,7 +550,6 @@ def add_entries(
 
 
 def _validate_add_entries(
-    private_notes: pathlib.Path,
     *,
     messages: list[str],
     target_repo: str | None,
@@ -542,9 +557,8 @@ def _validate_add_entries(
     question_type: str | None,
     choices: str | None,
     target_commit: str | None,
-    plan_file: str | None,
     source: str | None = None,
-) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
+) -> tuple[list[tuple[dict[str, object], str]], str | None]:
     """保存前の入力検証を行い、正規化済みの値を返す。"""
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください", next_action="本文を1件以上指定して再投入する")
@@ -559,31 +573,6 @@ def _validate_add_entries(
             normalized_target_repo = resolve_repo_id_or_raise(target_repo)
         except WebInputError as error:
             raise _target_repo_error(target_repo, error) from error
-    plan_path: pathlib.Path | None = None
-    if plan_file is not None:
-        if entry_type != WI_TYPE_AWI:
-            raise WebInputError("plan_fileはawi種別でのみ指定できます", next_action="plan_fileを外すか、awi種別で投入し直す")
-        try:
-            stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
-            plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
-        except ValueError as error:
-            # 保存前の作業root直下の計画は保存を、保存済みの計画は可搬表記への指定し直しを案内する。
-            raise WebInputError(
-                f"plan_fileを解決できません: {plan_file}（{error}）",
-                next_action=(
-                    error.next_action
-                    if isinstance(error, _next_action.ActionableError)
-                    else "作業root直下の計画は`atk plans commit <ファイル名>`で保存してから、保存済みの計画は"
-                    "`$(atk config get private_notes)/plans/yyyy/MM/<ファイル名>`で指定し直す"
-                ),
-            ) from error
-        except OSError as error:
-            raise WebInputError(
-                f"plan_fileを検証できません: {plan_file}",
-                next_action="plan_fileが指すファイルの存在と読み取り権限を確認してから再投入する",
-            ) from error
-    else:
-        stored_plan_file = None
     if entry_type != WI_TYPE_AWI and question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError(
             f"question_typeが不正です: {question_type}",
@@ -596,22 +585,14 @@ def _validate_add_entries(
             frontmatter,
             entry_type=entry_type,
             source=source,
-            plan_file=plan_file,
         )
     if normalized_target_repo is None:
         _verify_frontmatter_target_repos(parsed_messages)
-    if plan_path is not None:
-        if normalized_target_repo is None:
-            raise WebInputError(
-                "plan_file指定時はtarget_repoを指定してください",
-                next_action="target_repoへ計画の対象リポジトリを指定して再投入する",
-            )
-        _verify_plan_target_repos(parsed_messages, normalized_target_repo)
     if entry_type != WI_TYPE_AWI and question_type == "choice" and not choices:
         raise WebInputError(
             "choice形式にはchoicesが必要です", next_action="`--choices`で選択肢を指定するか、別のquestion_typeを選ぶ"
         )
-    return parsed_messages, normalized_target_repo, stored_plan_file
+    return parsed_messages, normalized_target_repo
 
 
 def read_body_files(paths: list[str]) -> list[str]:
@@ -656,7 +637,6 @@ def _cmd_add(
     エディター起動前のブロッキング待ち（他端末の投入分を反映するremote同期）を無くしてUXを改善する。
     remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
-    計画実装型の分類は`--plan-file`の指定だけで確定する。
     `--body-file`を指定した場合はそのファイルの内容を本文として扱う。
     引用符・改行を含む長文を、シェルの引用規則による解釈を介さずに渡す。複数回指定すれば複数件を投入できる。
     `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
@@ -699,8 +679,11 @@ def _cmd_add(
                     frontmatter,
                     entry_type=args.type,
                     source=args.source,
-                    plan_file=args.plan_file,
                 )
+            except WebInputError as error:
+                validation_errors.append(error)
+            try:
+                require_confirmed_cause(body)
             except WebInputError as error:
                 validation_errors.append(error)
         except WebInputError as error:
@@ -756,14 +739,12 @@ def _cmd_add(
     try:
         if args.dry_run:
             _validate_add_entries(
-                private_notes,
                 messages=messages,
                 target_repo=target_repo,
                 entry_type=args.type,
                 question_type=args.question_type,
                 choices=args.choices,
                 target_commit=target_commit,
-                plan_file=args.plan_file,
                 source=args.source,
             )
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
@@ -779,7 +760,6 @@ def _cmd_add(
             question_type=args.question_type,
             choices=args.choices,
             target_commit=target_commit,
-            plan_file=args.plan_file,
             depends_on=canonical_dependencies,
             saved_details=saved_details,
             submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,

@@ -6453,7 +6453,12 @@ async def test_tool_error_body_carries_next_action(
     def raise_error(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
         raise error
 
-    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(show_session=raise_error))
+    async def keep_registry(_session_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(
+        subject, "_MANAGER", SimpleNamespace(take_over_orphaned_session=keep_registry, show_session=raise_error)
+    )
 
     with pytest.raises(ToolError) as raised:
         await subject.mcp.call_tool("show", {"session_id": "3468feae-b2bf-4d67-ac55-3c40207e8b5b"})
@@ -7487,4 +7492,171 @@ async def test_child_collected_by_background_agents_wait_is_not_unobserved(
 
     error = parent.error if isinstance(parent.error, dict) else {}
     assert error.get("unobservedSessions") == expected_unobserved
+    await manager.close()
+
+
+class ThreadReadBackend(FakeBackend):
+    """Codex App Serverの`thread/read`へ固定のturn一覧を返すか、照会の失敗を返すバックエンド。"""
+
+    def __init__(
+        self, sessions: dict[str, subject.SessionState], turns: list[tuple[str, str]] | None, error: Exception | None = None
+    ) -> None:
+        super().__init__(sessions, "codex")
+        self.turns = turns
+        self.error = error
+        self.read_calls: list[str] = []
+
+    async def read_thread_turns(self, session_id: str) -> list[tuple[str, str]]:
+        self.read_calls.append(session_id)
+        if self.error is not None:
+            raise self.error
+        assert self.turns is not None
+        return self.turns
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["codex", "claude", "agy"])
+async def test_close_publishes_running_session_as_interrupted_for_restart(
+    engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """実行中sessionを持つマネージャーの停止で登録簿と結果ファイルへ終端を公開し、別のマネージャーが再開できる。
+
+    停止時に公開しないと登録簿が`running`のまま残り、再起動後の`show`・`send_message`が実行中の可能性として拒否し続け、
+    起動元の`atk agents wait`も待機上限での終了を繰り返す。
+    """
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    writer = status_file.StatusFileWriter({}, status_file.StatusFileIdentity("root-session", "root.json", None))
+    manager = subject.AgentsServerManager(writer)
+    _install_backend(manager, engine, FakeBackend(manager.sessions, engine))
+    writer.activate()
+    session_id = f"{engine}-closing"
+    running = subject.SessionState(session_id, str(tmp_path), engine=engine, turn_seq=1, publish_registry=True)
+    state._initialize_turn(running)
+    running.turn_id = "turn-9"
+    running.announced = True
+    manager.sessions[session_id] = running
+    running.touch()
+    assert session_registry.resolve(session_id).state is session_registry.Resolution.RUNNING
+
+    await manager.close()
+
+    resolution = session_registry.resolve(session_id)
+    assert resolution.state is session_registry.Resolution.TERMINAL
+    assert resolution.resume_info is not None and resolution.resume_info.status == "interrupted"
+    # 再起動後の引き継ぎが`thread/read`の元turnと比べられるよう、Codexのturn識別子も登録簿へ残す。
+    assert resolution.resume_info.turn_id == "turn-9"
+    assert status_file.read_retained_result("root-session", session_id, tmp_path) is not None
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+
+    restarted, backend = _manager_with_fake(engine)
+    assert (await _show_through_tool(monkeypatch, restarted, session_id))["status"] == "interrupted"
+    response = await restarted.send_message(session_id, "続行")
+    assert response["delivery"] == "reply_started"
+    assert backend.resume_calls == [session_id]
+    await restarted.close()
+
+
+async def _show_through_tool(
+    monkeypatch: pytest.MonkeyPatch, manager: subject.AgentsServerManager, session_id: str
+) -> dict[str, Any]:
+    """MCPの`show`ツールの関数を、指定したマネージャーで呼ぶ。"""
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    return await subject.show_session(session_id)
+
+
+def _publish_orphaned_codex(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, session_id: str, turn_id: str | None
+) -> None:
+    """所有者が終端を公開せずに終了したCodexの`running`記録を保存する。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    session_registry.publish(
+        session_id, terminal=False, engine="codex", cwd=str(tmp_path), turn_seq=3, status="running", turn_id=turn_id
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("turn_id", "turns", "status"),
+    [
+        ("turn-2", [("turn-1", "completed"), ("turn-2", "interrupted")], "interrupted"),
+        ("turn-1", [("turn-1", "completed")], "completed"),
+        (None, [("turn-1", "completed"), ("turn-2", "interrupted")], "interrupted"),
+    ],
+    ids=["recorded-turn", "single-turn", "legacy-record-all-terminal"],
+)
+async def test_orphaned_codex_record_is_taken_over_when_turn_has_ended(
+    turn_id: str | None,
+    turns: list[tuple[str, str]],
+    status: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """所有者が不在で`thread/read`が元turnの終端を示す残存記録は、`show`と`send_message`で終端として復元する。"""
+    session_id = "01a0f920-43f0-7cb3-b1e6-e06cd9bb7cad"
+    _publish_orphaned_codex(monkeypatch, tmp_path, session_id, turn_id)
+    manager = subject.AgentsServerManager(None)
+    backend = ThreadReadBackend(manager.sessions, turns)
+    _install_backend(manager, "codex", backend)
+
+    assert (await _show_through_tool(monkeypatch, manager, session_id))["status"] == status
+    resolution = session_registry.resolve(session_id)
+    assert resolution.state is session_registry.Resolution.TERMINAL
+    assert resolution.resume_info is not None and resolution.resume_info.status == status
+
+    response = await manager.send_message(session_id, "続行")
+    assert response["delivery"] == "reply_started"
+    assert backend.resume_calls == [session_id]
+    await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case", ["in-progress-after", "recorded-turn-running", "live-status-file", "query-failure", "claude-engine"]
+)
+async def test_orphaned_record_keeps_turn_unobserved_unless_takeover_conditions_hold(
+    case: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """所有者の生存、進行中のturn、照会の失敗、Codex以外のengineでは引き継がず、従来どおり実行中の可能性として拒否する。
+
+    引き継ぐと、別のプロセスが実行中のturnへ同じsessionの新しいturnを重ねて起動する。
+    """
+    session_id = "01a0f953-44f1-7c23-91ce-7350e83c57ab"
+    _publish_orphaned_codex(monkeypatch, tmp_path, session_id, "turn-1")
+    turns: list[tuple[str, str]] | None = [("turn-1", "interrupted")]
+    error: Exception | None = None
+    if case == "in-progress-after":
+        turns = [("turn-1", "interrupted"), ("turn-2", "inProgress")]
+    elif case == "recorded-turn-running":
+        turns = [("turn-1", "inProgress")]
+    elif case == "query-failure":
+        error = codex_backend.AppServerError("thread/read failed")
+    elif case == "live-status-file":
+        directory = status_file.status_directory("owner-root", tmp_path)
+        directory.mkdir(parents=True)
+        heartbeat = datetime.datetime.now(datetime.UTC).isoformat()
+        (directory / "root.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "host_session_id": None,
+                    "heartbeat_at": heartbeat,
+                    "updated_at": heartbeat,
+                    "sessions": [{"session_id": session_id, "status": "running"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+    else:
+        session_registry.publish(session_id, terminal=False, engine="claude", cwd=str(tmp_path), status="running")
+    manager = subject.AgentsServerManager(None)
+    backend = ThreadReadBackend(manager.sessions, turns, error)
+    _install_backend(manager, "codex", backend)
+
+    with pytest.raises(ValueError, match="error.recovery=turn_unobserved"):
+        await manager.send_message(session_id, "続行")
+    with pytest.raises(ValueError, match="another writer"):
+        await _show_through_tool(monkeypatch, manager, session_id)
+    assert session_registry.resolve(session_id).state is session_registry.Resolution.RUNNING
+    assert not backend.resume_calls
+    assert (not backend.read_calls) is (case in {"live-status-file", "claude-engine"})
     await manager.close()

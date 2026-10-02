@@ -611,6 +611,7 @@ class SessionState:
                 created_at=self.created_at,
                 started_at=self.started_at,
                 session_updated_at=self.updated_at,
+                turn_id=self.turn_id or None,
                 status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
             )
             self._published_registry_terminal = registry_terminal

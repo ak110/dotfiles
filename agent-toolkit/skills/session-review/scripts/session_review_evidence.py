@@ -3131,11 +3131,19 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
     return events
 
 
-def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """メイン記録の利用者発話とアシスタント発話を、切り詰めずに時系列で返す。
+_CONVERSATION_INPUT_LIMIT = 1000
+"""会話の流れのツール呼び出しへ保存する代表入力の上限。表示側がさらに1行へ切り詰める。"""
+_APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 
-    振り返りでセッション全体の流れ（遠回り、手戻り、同じ論点の反復、利用者による是正）を読むための入力とする。
-    自動挿入本文、実行環境が生成した本文、スキル本文の展開、hookの追加コンテキスト、ツール呼び出しとツール結果は除く。
+
+def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """メイン記録の利用者発話とアシスタント発話、ツール呼び出しおよび失敗の標識を時系列で返す。
+
+    振り返りでセッション全体の流れ（試したコマンド、読み書きしたファイル、委譲の起動、遠回り、手戻り、
+    同じ論点の反復、利用者による是正）を通読するための入力とする。発話は切り詰めずに返す。
+    ツール呼び出しはツール名と代表入力だけを返し、書き込む本文と置換文字列は含めない。
+    ツール結果は抽出器が`failed-tool`として検出した失敗だけを、診断の1行とともに返す。
+    自動挿入本文、実行環境が生成した本文、スキル本文の展開、hookの追加コンテキスト、成功したツール結果の本文は除く。
     確認への回答（`質問: … 回答: …`）と初期要求は利用者の入力として残す。
     委譲先の内部は問題候補の側で扱うため、メイン記録だけを対象とする。
     """
@@ -3147,11 +3155,33 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
         events = _extract_records(main_record.records)
     finally:
         _TEXT_LIMIT.reset(token)
-    utterances: list[dict[str, Any]] = []
+    # 同じ記録行の中では発話を先に、ツール呼び出しを内容の順に、失敗の標識を最後に並べる。
+    ordered: list[tuple[int, int, dict[str, Any]]] = []
     for event in events:
         kind = event.get("kind")
         text = event.get("text")
         if not isinstance(text, str) or not text.strip():
+            continue
+        raw_line = event.get("line")
+        line = raw_line if isinstance(raw_line, int) else 0
+        if kind == "failed-tool":
+            diagnostic = event.get("diagnostic_last_line") or next(
+                (value.strip() for value in reversed(text.splitlines()) if value.strip()), ""
+            )
+            ordered.append(
+                (
+                    line,
+                    2,
+                    {
+                        "kind": "tool-failure",
+                        "record": "main",
+                        "line": event.get("line"),
+                        "timestamp": event.get("timestamp"),
+                        "call_id": event.get("tool"),
+                        "text": diagnostic,
+                    },
+                )
+            )
             continue
         if kind == "user":
             if event.get("runtime_generated") is True or _is_runtime_inserted_text(text):
@@ -3161,17 +3191,86 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
             role = "assistant"
         else:
             continue
-        utterances.append(
-            {
-                "kind": "utterance",
-                "role": role,
-                "record": "main",
-                "line": event.get("line"),
-                "timestamp": event.get("timestamp"),
-                "text": text,
-            }
+        ordered.append(
+            (
+                line,
+                0,
+                {
+                    "kind": "utterance",
+                    "role": role,
+                    "record": "main",
+                    "line": event.get("line"),
+                    "timestamp": event.get("timestamp"),
+                    "text": text,
+                },
+            )
         )
-    return utterances
+    ordered.extend((call["line"], 1, call) for call in _conversation_tool_calls(main_record.records))
+    ordered.sort(key=lambda item: (item[0], item[1]))
+    return [item for _, _, item in ordered]
+
+
+def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
+    """メイン記録のツール呼び出しを、ツール名、代表入力、呼び出し識別子および記録位置で返す。"""
+    calls: list[dict[str, Any]] = []
+    for record in records:
+        timestamp = record.entry.get("timestamp")
+        message = record.entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    name = str(block.get("name", ""))
+                    calls.append(
+                        _conversation_call(
+                            record.line, timestamp, name, block.get("id"), _claude_call_input(name, block.get("input"))
+                        )
+                    )
+            continue
+        payload = record.entry.get("payload")
+        if isinstance(payload, dict) and payload.get("type") in {"function_call", "custom_tool_call"}:
+            name = str(payload.get("name", ""))
+            calls.append(
+                _conversation_call(record.line, timestamp, name, payload.get("call_id"), _codex_call_input(name, payload))
+            )
+    return calls
+
+
+def _conversation_call(line: int, timestamp: Any, name: str, call_id: Any, summary: str) -> dict[str, Any]:
+    return {
+        "kind": "tool-call",
+        "record": "main",
+        "line": line,
+        "timestamp": timestamp if isinstance(timestamp, str) else None,
+        "tool": name,
+        "call_id": call_id if isinstance(call_id, str) else None,
+        "text": _clip(summary, _CONVERSATION_INPUT_LIMIT),
+    }
+
+
+def _claude_call_input(name: str, block_input: Any) -> str:
+    """Claude Codeのツール呼び出しの代表入力を返す。`Write`・`Edit`は対象ファイルだけとし、本文を含めない。"""
+    hint = _claude_call_hint(block_input)
+    if hint is not None:
+        return hint
+    if not isinstance(block_input, dict):
+        return ""
+    keys = {"Agent": ("description", "prompt"), "Task": ("description", "prompt"), "Skill": ("skill", "args")}.get(name)
+    if keys is not None:
+        return " ".join(str(block_input[key]) for key in keys if isinstance(block_input.get(key), str) and block_input[key])
+    return json.dumps(block_input, ensure_ascii=False, sort_keys=True)
+
+
+def _codex_call_input(name: str, payload: dict[str, Any]) -> str:
+    """Codexのツール呼び出しの代表入力を返す。パッチの適用は対象ファイルだけとし、差分の本文を含めない。"""
+    raw = payload.get("input")
+    if name == "apply_patch" and isinstance(raw, str):
+        return " ".join(_APPLY_PATCH_FILE.findall(raw)) or name
+    hint = _codex_call_hint(payload)
+    if hint is not None:
+        return hint
+    arguments = payload.get("arguments")
+    return arguments if isinstance(arguments, str) else ""
 
 
 def _grep_collection_events(
@@ -4999,7 +5098,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--bundle",
         metavar="DIR",
-        help="通常表示、`--warn`、`--stats`および`--hook-notices`の走査と、問題候補と会話の流れ（メイン記録の発話）の抽出を"
+        help="通常表示、`--warn`、`--stats`および`--hook-notices`の走査と、問題候補と会話の流れ"
+        "（メイン記録の発話、ツール呼び出しと失敗の標識）の抽出を"
         "1回の記録読み込みで行い、走査ごとの全量を指定したディレクトリ配下のファイルへ書く。"
         "標準出力へは、走査ごとのファイルの絶対パスとイベント件数、通常表示のイベント種別ごとの件数、"
         "問題候補の特定に用いるイベントの位置と本文の冒頭、および警告の種別ごとの件数を返す。"
