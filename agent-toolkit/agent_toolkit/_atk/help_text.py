@@ -158,8 +158,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi process-loop instruct-cancel",
     },
     "atk plans": {
-        "summary": "計画ファイルの取得・保存と旧保存先からの移行",
-        "description": "目的: 保存済み計画を作業rootへ取得し、計画ファイルまたは独立CI実行レビュー表をprivate-notesへ保存し、旧保存先の計画ファイルを現行の保存先へ移行する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、独立CI実行レビュー表の保存、旧保存先の移行を行うとき。保存の契機は計画を開始した方法ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: 保存と移行はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "summary": "計画ファイルの取得・保存・一覧と参照の書き換え",
+        "description": "目的: 保存済み計画を作業rootへ取得し、計画ファイルまたは独立CI実行レビュー表をprivate-notesへ保存する。作業rootの計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、独立CI実行レビュー表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は計画を開始した方法ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans checkout": {

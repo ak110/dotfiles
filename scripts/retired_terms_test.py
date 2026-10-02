@@ -80,6 +80,18 @@ _RETIRED_TERMS = (
         )
         for term in ("計画実装型", "convert-to-plan")
     ),
+    # `atk plans migrate`による旧保存先からの計画移行は後継なし（2026年9月13日に撤去）。
+    *(
+        _RetiredTerm(
+            term=term,
+            replacement="なし（2026年9月13日に撤去）",
+            allowed=(
+                # 撤去の不在を確かめるテスト
+                _AllowedLocation("*_test.py"),
+            ),
+        )
+        for term in ("plans migrate", "migrate_plans", "旧保存先")
+    ),
 )
 
 
