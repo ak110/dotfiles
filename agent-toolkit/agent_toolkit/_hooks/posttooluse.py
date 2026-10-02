@@ -16,7 +16,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
-   `process_wi_skill_invoked`のリセット (Skill)
+   `process_wi_skill_invoked`のリセット (Skill)、
+   `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
 7. Bashの背景実行、背景移行通知およびAgent・Taskの背景起動が返した識別子の所有記録 (Bash / Agent / Task)
@@ -132,6 +133,10 @@ _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
 # process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
 _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
+
+# 起動でUserPromptSubmitの起動促しを止めるスキル。フルネームと短縮名の両方を許容する。
+USER_CONFIRMATION_SKILL_NAMES = frozenset({"agent-toolkit:user-confirmation-and-report", "user-confirmation-and-report"})
+USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
 
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
@@ -717,6 +722,16 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
         update_state(session_id, _set_invoked)
     if skill_name in _PROCESS_WI_SKILL_NAMES:
         update_state(session_id, _set_process_wi_invoked)
+    if skill_name in USER_CONFIRMATION_SKILL_NAMES:
+        update_state(session_id, clear_user_confirmation_pending)
+
+
+def clear_user_confirmation_pending(state: dict) -> dict | None:
+    """`agent-toolkit:user-confirmation-and-report`の起動を待つ状態を解除する。既に解除済みならNoneを返す。"""
+    if not state.get(USER_CONFIRMATION_PENDING_KEY, False):
+        return None
+    state[USER_CONFIRMATION_PENDING_KEY] = False
+    return state
 
 
 def _record_plan_file(session_id: str, file_path: str) -> None:

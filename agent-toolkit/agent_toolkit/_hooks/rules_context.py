@@ -98,6 +98,28 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     return "\n\n".join(parts) or None
 
 
+USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
+"""`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態を示すセッション状態のキー。"""
+_CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
+"""会話の文脈を引き継がずに始まるSessionStartの`source`。`resume`と`fork`は文脈を引き継ぐため含めない。"""
+
+
+def mark_user_confirmation_pending(session_id: str) -> None:
+    """`agent-toolkit:user-confirmation-and-report`の起動を待つ状態を記録する。
+
+    同スキルは内容が文脈に無い状態で受けた実ユーザー発話の前に起動する契機を持つ。
+    UserPromptSubmitがこの状態を読んで起動を促し、PostToolUse(Skill)が同スキルの起動で解除する。
+    """
+
+    def _mark(current: dict) -> dict | None:
+        if current.get(USER_CONFIRMATION_PENDING_KEY) is True:
+            return None
+        current[USER_CONFIRMATION_PENDING_KEY] = True
+        return current
+
+    update_state(session_id, _mark)
+
+
 def reset_language_reinjection_count(session_id: str) -> None:
     """`RESPONSE_LANGUAGE_NOTICE`を注入した時点で、再注入までのツール呼び出し回数を0へ戻す。"""
 
@@ -193,6 +215,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if isinstance(session_id, str) and session_id:
             if not delegated:
                 reset_language_reinjection_count(session_id)
+                if source in _CONTEXT_LOSING_SOURCES:
+                    mark_user_confirmation_pending(session_id)
             try:
                 session_temp = managed_temp.create_managed_temp(
                     SESSION_TEMP_PREFIX,

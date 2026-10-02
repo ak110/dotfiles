@@ -1750,7 +1750,7 @@ class TestInboxAlwaysEnabled:
 class TestPrivateNotesMissing:
     """`AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定したパスが不在の場合にexit 1とディレクトリ不在案内を返すこと。
 
-    conftestの`_atk_private_notes_env`が全テストへ`AGENT_TOOLKIT_PRIVATE_NOTES=tmp_path/private-notes`を
+    conftestが適用する隔離（`agent_toolkit._testing.isolation`）が全テストへ`AGENT_TOOLKIT_PRIVATE_NOTES=tmp_path/private-notes`を
     設定するため、このディレクトリを作成しない限り「明示指定パスが不在」の分岐（自動生成の対象外）を検証できる。
     """
 

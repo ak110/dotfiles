@@ -98,7 +98,7 @@ class TestApproveConditions:
         assert "decision" not in decision
 
     def test_stop_hook_active_still_blocks(self, tmp_path: pathlib.Path):
-        """`stop_hook_active`が真でも終了スキル未起動ならblockする。"""
+        """`stop_hook_active`が真でも`atk agents-exit-session`が未実行ならblockする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {

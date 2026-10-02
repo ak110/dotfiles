@@ -1165,7 +1165,7 @@ class TestValidateFilename:
 class TestPrivateNotesAutoCreate:
     """`AGENT_TOOLKIT_PRIVATE_NOTES`未設定かつ省略時に使うパスが不在の場合のローカルリポジトリ自動生成を検証する。
 
-    conftestの`_atk_private_notes_env`autouseフィクスチャが全テストへ環境変数を設定するため、
+    conftestが適用する隔離（`agent_toolkit._testing.isolation`）が全テストへ環境変数を設定するため、
     本クラスの各テストは`monkeypatch.delenv`で明示的に解除してから検証する。
     """
 
@@ -1323,7 +1323,7 @@ def _git_stdout(root: pathlib.Path, *args: str) -> str:
 class TestMigrateLegacyLayout:
     """旧2階層レイアウトから平坦レイアウトへの自動移行を検証する。
 
-    管理repoのパスはconftestの`_atk_private_notes_env`が`tmp_path/private-notes`へ差し替えるため、
+    管理repoのパスはconftestが適用する隔離（`agent_toolkit._testing.isolation`）が`tmp_path/private-notes`へ差し替えるため、
     `_ensure_environment`へ渡すhomeは解決結果に影響しない。
     """
 

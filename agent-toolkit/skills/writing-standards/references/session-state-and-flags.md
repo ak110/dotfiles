@@ -104,6 +104,11 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   記録と注入の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力したスラッシュコマンドも対象に含め、機械注入ターンは対象外とする。
   機械注入ターンの判定入力は5系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`<atk-auto source="periodic-recheck" kind="periodic-recheck">`か旧標識だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まること。第5に`prompt`の1行目が新旧の自動挿入要素の開始タグを含むこと。
   セッション終了まで保持し、リセット処理は設けない
+- `user_confirmation_skill_pending`: `agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態を記録する（真偽値）。
+  `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`startup`・`clear`・`compact`で委譲先でない場合に真にし、`resume`と`fork`では変えない。
+  `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す。機械注入ターンでは読まず、状態も変えない。
+  PostToolUse(Skill)が同スキルの起動で偽へ戻し、UserPromptSubmitもユーザーが同スキルをスラッシュコマンドで起動した発話で偽へ戻す。CodexではSkillの起動を観測できないため、UserPromptSubmitが注記を返した時点で偽へ戻す。
+  寿命はセッション状態ファイルと同じとする
 
 ## 通知反復系
 

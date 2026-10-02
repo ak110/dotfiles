@@ -499,7 +499,7 @@ class TestPlanFileDoesNotRequireSelfPath:
 
 
 class TestAgentTaskLaunchIndependence:
-    """Agent／Task起動が委譲スキル状態から独立していることを確認する。"""
+    """Agent／Task起動が`agent-toolkit:delegation`の起動状態から独立していることを確認する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_without_skill_is_allowed(self, tmp_path: pathlib.Path, tool_name: str) -> None:
@@ -545,7 +545,7 @@ class TestAgentTaskLaunchIndependence:
 
 
 class TestWorkflowSkillInvocation:
-    """工程スキル起動が委譲スキルの状態記録または事前案内を発生させないことを確認する。"""
+    """`agent-toolkit:delegation`以外のスキルの起動が、`agent-toolkit:delegation`の状態記録または事前案内を発生させないことを確認する。"""
 
     @pytest.mark.parametrize(
         "skill_name",
@@ -561,7 +561,7 @@ class TestWorkflowSkillInvocation:
         ],
     )
     def test_no_delegation_notice_for_workflow_skill(self, tmp_path: pathlib.Path, skill_name: str) -> None:
-        """工程スキルを起動しても委譲に関する追加出力を返さない。"""
+        """`agent-toolkit:delegation`以外のスキルを起動しても委譲に関する追加出力を返さない。"""
         result = _run(
             {
                 "tool_name": "Skill",
@@ -601,7 +601,7 @@ class TestWorkflowSkillInvocation:
         assert result.stdout == ""
 
     def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
-        """工程スキル起動後のAgent起動も委譲スキル状態に依存しない。"""
+        """`agent-toolkit:delegation`以外のスキルの起動後のAgent起動も、`agent-toolkit:delegation`の起動状態に依存しない。"""
         env = _plan_file_state_env(tmp_path)
         skill_result = _run(
             {

@@ -13,6 +13,7 @@ import pytest
 import sync_codex_plugin_manifests as subject
 import yaml
 from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._testing import isolation
 
 from pytools._internal import claude_common
 
@@ -311,6 +312,8 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Codex 0.154.0は専用rootから8イベントを登録し、project trustで集合を変えない。"""
+    # 実機のCLIを起動するため、既定で隔離されるホームとPATHを戻す。CLIの有無はモジュール読込時にホストのPATHで判定済み。
+    isolation.restore_host_environment(monkeypatch)
     version = subprocess.run(  # noqa: S603
         ["codex", "--version"], capture_output=True, check=True, text=True
     ).stdout.strip()

@@ -116,6 +116,7 @@ def _run_subcommand(
     *,
     state_dir: pathlib.Path,
     home_dir: pathlib.Path | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
@@ -124,7 +125,106 @@ def _run_subcommand(
     env["TMP"] = str(state_dir)
     if home_dir is not None:
         env["HOME"] = str(home_dir)
+    env.update(extra_env or {})
     return _fork_runner.run_script(_SCRIPT, argv=(subcommand,), input=text, env=env)
+
+
+class TestUserConfirmationSkillPrompt:
+    """セッション開始後と会話圧縮後に、`agent-toolkit:user-confirmation-and-report`の起動を促す注記。
+
+    SessionStart、UserPromptSubmit、PostToolUse(Skill)のhookを`hook.py`のサブコマンドから順に起動し、
+    同スキルの内容が文脈に無い状態で届いた実ユーザー発話にだけ注記が付くことを確かめる。
+    注記が欠けると、同スキルが定める公開範囲の確認などの工程を想起する手掛かりが無いまま作業が始まる。
+    注記が過剰だと、起動済みの発話や機械注入のターンにも毎回同じ指示が載る。
+    """
+
+    _SKILL = "agent-toolkit:user-confirmation-and-report"
+
+    @staticmethod
+    def _session_start(
+        source: str, state_dir: pathlib.Path, *, host: str = "claude", extra_env: dict[str, str] | None = None
+    ) -> None:
+        subcommand = "rules_context_codex" if host == "codex" else "rules_context"
+        payload = {"hook_event_name": "SessionStart", "source": source, "session_id": "confirm"}
+        result = _run_subcommand(subcommand, payload, state_dir=state_dir, extra_env=extra_env)
+        assert result.returncode == 0, result.stderr
+
+    @staticmethod
+    def _prompt(prompt: str, state_dir: pathlib.Path, *, host: str = "claude") -> str:
+        payload: dict[str, str] = {"session_id": "confirm", "prompt": prompt}
+        if host == "codex":
+            payload["model"] = "gpt-5"
+        result = _run(payload, state_dir=state_dir)
+        assert result.returncode == 0, result.stderr
+        if not result.stdout:
+            return ""
+        return json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
+
+    @classmethod
+    def _invoke_skill(cls, state_dir: pathlib.Path) -> None:
+        payload = {"session_id": "confirm", "tool_name": "Skill", "tool_input": {"skill": cls._SKILL}}
+        result = _run_subcommand("posttooluse", payload, state_dir=state_dir)
+        assert result.returncode == 0, result.stderr
+
+    @classmethod
+    def _has_notice(cls, context: str) -> bool:
+        return f"次の操作: 応答と作業の着手より前に`{cls._SKILL}`をスキル機能で起動する。" in context
+
+    @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
+    def test_claude_repeats_until_skill_invoked(self, source: str, tmp_path: pathlib.Path) -> None:
+        """Claude Codeでは同スキルの起動まで実ユーザー発話ごとに注記を返し、起動後は返さない。"""
+        self._session_start(source, tmp_path)
+        assert self._has_notice(self._prompt("画面を直して", tmp_path))
+        assert self._has_notice(self._prompt("続けて", tmp_path))
+        self._invoke_skill(tmp_path)
+        assert not self._has_notice(self._prompt("次の依頼", tmp_path))
+
+    def test_compact_after_invocation_prompts_again(self, tmp_path: pathlib.Path) -> None:
+        """会話圧縮で内容が文脈から失われるため、圧縮前に起動していても圧縮後の発話へ注記を返す。"""
+        self._session_start("startup", tmp_path)
+        self._invoke_skill(tmp_path)
+        self._session_start("compact", tmp_path)
+        assert self._has_notice(self._prompt("続けて", tmp_path))
+
+    @pytest.mark.parametrize("source", ["resume", "fork"])
+    def test_resume_and_fork_keep_state(self, source: str, tmp_path: pathlib.Path) -> None:
+        """文脈を引き継ぐ再開と分岐では、起動済みの状態を変えない。"""
+        self._session_start("startup", tmp_path)
+        self._invoke_skill(tmp_path)
+        self._session_start(source, tmp_path)
+        assert not self._has_notice(self._prompt("続けて", tmp_path))
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            "<task-notification>完了</task-notification>",
+            '<atk-auto source="process-loop" kind="goal">\n継続\n</atk-auto>',
+            f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n稼働状況を確認する。",
+        ],
+    )
+    def test_machine_injected_turn_neither_receives_nor_consumes(self, prompt: str, tmp_path: pathlib.Path) -> None:
+        """機械注入のターンには注記を返さず、その後の最初の実ユーザー発話には返す。"""
+        self._session_start("startup", tmp_path)
+        assert not self._has_notice(self._prompt(prompt, tmp_path))
+        assert self._has_notice(self._prompt("依頼", tmp_path))
+
+    def test_delegated_session_start_does_not_mark(self, tmp_path: pathlib.Path) -> None:
+        """委譲先のSessionStartは起動待ちを記録しない。"""
+        self._session_start("startup", tmp_path, extra_env={"AGENT_TOOLKIT_DELEGATED_SESSION": "1"})
+        assert not self._has_notice(self._prompt("依頼", tmp_path))
+
+    def test_user_typed_skill_command_clears(self, tmp_path: pathlib.Path) -> None:
+        """ユーザー自身が同スキルをスラッシュコマンドで起動した発話には注記を返さない。"""
+        self._session_start("startup", tmp_path)
+        assert not self._has_notice(self._prompt(f"/{self._SKILL}", tmp_path))
+        assert not self._has_notice(self._prompt("依頼", tmp_path))
+
+    @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
+    def test_codex_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
+        """CodexではSkillの起動を観測できないため、文脈1つにつき最初の実ユーザー発話へ1回だけ返す。"""
+        self._session_start(source, tmp_path, host="codex")
+        assert self._has_notice(self._prompt("依頼", tmp_path, host="codex"))
+        assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 
 
 class TestMachineInjectedTurn:

@@ -7,8 +7,8 @@ r"""多段終了手順の起動順が要求を満たすかStopフックで確か
 transcriptのSkillの成功結果とBashツール起動記録から判定する。
 
 対象スキルの起動が無いセッションでは起動順を判定せず常時approveする。
-最新の対象スキル起動より前の終了スキル起動は充足の判定へ流用しない。
-終了スキルの起動順が要求と逆である場合も未充足として扱う。
+最新の対象スキル起動より前の終了工程の起動は充足の判定へ流用しない。
+終了工程の起動順が要求と逆である場合も未充足として扱う。
 
 多段終了手順の起動順を判定する処理は`stop_hook_active`が真の回だけ遮断する。
 偽の回で遮断すると、対象スキルの起動後の通常のターン終了を毎回阻止する
@@ -54,7 +54,7 @@ _COMPLETION_REPORT = (
 )
 _EXIT_SESSION = ("atk agents-exit-session", frozenset({"atk agents-exit-session"}))
 
-# 起動順を確かめるスキルの(代表名, 名前集合)と、その最新起動以後に要求順で起動される必要がある終了スキル列。
+# 起動順を確かめるスキルの(代表名, 名前集合)と、その最新起動以後に要求順で起動される必要がある終了工程の列。
 _TERMINATION_SEQUENCES: tuple[tuple[tuple[str, frozenset[str]], tuple[tuple[str, frozenset[str]], ...]], ...] = (
     (_PROCESS_WI, (_COMPLETION_REPORT, _EXIT_SESSION)),
     (_ADD_AWI_BY_USER, (_COMPLETION_REPORT,)),

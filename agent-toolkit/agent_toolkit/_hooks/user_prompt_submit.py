@@ -17,6 +17,8 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 固定値の判定は、その呼び出しでのスキル起動フラグ更新の後に行う
 （同一呼び出しで検出したスラッシュコマンド起動を、その場でsessionTitleへ反映するため）。
 
+セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
+実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
 通常発話へ返す現物との比較を求める注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
 全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず認識合わせスキルの起動を促す。
 成立した注記を1つの`additionalContext`へまとめる。
@@ -59,6 +61,9 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: 
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_WI_SKILL_NAMES,
+    USER_CONFIRMATION_PENDING_KEY,
+    USER_CONFIRMATION_SKILL_NAMES,
+    clear_user_confirmation_pending,
 )
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     claim_session_title,
@@ -119,6 +124,10 @@ _VERIFICATION_NOTICE_BODY = (
 規則による分類の誤りは、現物との比較を最も要する発話で注記を無音のまま欠落させるためである。
 """
 _llm_notice = _notice_formatter("user_prompt_submit")
+_USER_CONFIRMATION_NOTICE_BODY = (
+    "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
+)
+_USER_CONFIRMATION_NOTICE_FIX = "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
 _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
     "次の操作: `agent-toolkit:realign-with-user`を起動し、目標と解決したい問題の理解を確かめる。"
@@ -174,6 +183,26 @@ def _set_process_wi_invoked(state: dict) -> dict | None:
         return None
     state["process_wi_skill_invoked"] = True
     return state
+
+
+def _claim_user_confirmation_notice(session_id: str, *, is_codex: bool) -> bool:
+    """`agent-toolkit:user-confirmation-and-report`の起動を促す注記を返す場合に真を返す。
+
+    SessionStartが記録した起動待ちの状態を読む。Claude CodeではPostToolUse(Skill)が同スキルの起動で
+    状態を解除するまで、後続の実ユーザー発話にも注記を返す。同スキルの起動契機は、読み損ねたまま受けた
+    後続の発話も含むためである。CodexではSkillの起動を観測できず解除の契機が無いため、
+    注記を返した時点で状態を解除し、文脈1つにつき1回だけ返す。
+    """
+    if read_state(session_id).get(USER_CONFIRMATION_PENDING_KEY) is not True:
+        return False
+    if is_codex:
+        update_state(session_id, clear_user_confirmation_pending)
+    return True
+
+
+def _user_confirmation_notice() -> str:
+    """`agent-toolkit:user-confirmation-and-report`の起動を促す注記を整形する。"""
+    return _llm_notice(_USER_CONFIRMATION_NOTICE_BODY, tag="notice", fix=_USER_CONFIRMATION_NOTICE_FIX)
 
 
 def _fixed_session_title(session_id: str) -> str | None:
@@ -261,6 +290,13 @@ def main(payload_text: str) -> int:
     is_normal_prompt = not machine_injected
     # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
     notices: list[str] = []
+    if is_normal_prompt and first_line.startswith(command_prefix):
+        command = first_line[len(command_prefix) :].split(maxsplit=1)
+        if command and command[0] in USER_CONFIRMATION_SKILL_NAMES:
+            # ユーザー自身がスキルを起動した発話では、その起動で内容が文脈へ入る。
+            update_state(session_id, clear_user_confirmation_pending)
+    if is_normal_prompt and _claim_user_confirmation_notice(session_id, is_codex=is_codex):
+        notices.append(_user_confirmation_notice())
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
         notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     if is_normal_prompt and "！！" in prompt:

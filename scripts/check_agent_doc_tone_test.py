@@ -297,6 +297,9 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
     ],
     ids=["violations", "compliant"],
 )
+# 子処理の時間上限（120秒）より大きいテスト単位の上限を置き、停止時は子処理の時間切れとして報告させる。
+# CIで全チェックを並行して実行するジョブでは子処理に約40秒を要したため、子処理の上限は観測値の約3倍とする。
+@pytest.mark.timeout(180)
 def test_registered_pyfltr_check_reaches_examples_and_code(
     tmp_path: pathlib.Path,
     example_body: str,
@@ -348,7 +351,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
         str(path_config),
     ]
 
-    result = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8", timeout=45, check=False)
+    result = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
 
     assert result.returncode == expected_returncode, result.stdout + result.stderr
     records = [json.loads(line) for line in result.stdout.splitlines()]
