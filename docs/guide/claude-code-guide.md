@@ -390,7 +390,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する | 対応 | 非対応 |
+| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて入力と記録の一致を求める注記と、実ユーザー発話の全角`！！`から認識合わせスキルの起動を促す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |

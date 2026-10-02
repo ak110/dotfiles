@@ -1383,10 +1383,11 @@ Stopの登録は共通ハンドラー1件とする。
 続いて、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行忘れを判定する。同モジュールは入力待ちの判定より先に、終了要求が`requested`でStop入力に有効な非`teammate`の背景作業が残る場合の取り下げを判定する。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
 続いて、`plan_save_advisor.py`で計画作業rootに残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 続いて、`pending_question_advisor.py`で地の文の問いかけによる終了を遮断し、`termination_order_advisor.py`で終端順序の未実行を判定する。
-両判定の間に、`user_response_advisor.py`が最新の人間の発話の後に可視の本文が無い終了を遮断する。開始時の文字列入力と途中配送のqueued_commandを扱い、thinking・ツール結果・空白・待機記号を本文へ数えない。task-notificationを最新入力とする待機の回と委譲先は除く。既存の発話規範だけでは本文の欠落が見逃されたため、終了する時点のStop集約処理で検出する。回答が質問に答えているかは判断せず、同じターンで本文を出力すれば解除できる。
 最後に、`queued_notification_advisor.py`で最上位transcriptのキューに残る未配送の完了通知を案内する。
 共通ハンドラーは判定の順序、例外の隔離、応答の集約および連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。
-これら以外を扱わず、利用者の意図、作業完了、振り返り要否、Git変更件数、managed-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
+これら以外を扱わず、利用者の意図、作業完了、振り返り要否、Git変更件数、managed-temp回収要否を判定しない。
+人間の発話の後に可視の発話本文が無い終了をStopで遮断する案は採らず、`agent-toolkit/share/rules-main.claude-code.md`「ツールAPIと権限」の発話本文の箇条で扱う（2026年10月に一度追加して撤去した）。防ぐ失敗は次のターンで本文を出力し直せば回復できる可逆な失敗であり、規範の想起を目的とする判定は同節「warn・block判定の全件確認（2026年9月26日）」の基準でhookに置かないためである。
+個人設定の入力待ちベルも同じ入力待ち判定を使う。
 
 未配送の完了通知の案内は、Stopの継続がキューに残った完了通知を配送しないホストの挙動に対処する。
 背景タスクがターンの終了より前に完了すると、完了通知は最上位transcriptの`queue-operation`へ`enqueue`として入る。
