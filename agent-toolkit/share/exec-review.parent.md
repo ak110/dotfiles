@@ -46,7 +46,8 @@
 ## `review_contract`の生成
 
 メインは実装完了と検証結果を受領した後、初回の実行レビュー担当を起動する直前と、別の計画で認可されたcommitが累積差分へ加わった再レビューの指示の直前（「レビュー修正」）に、計画から得られない条項がある場合だけ`review_contract`を生成する。全条項が計画から定まり、計画外の認可情報が無い場合は省略する。
-実行レビュー担当は、初回起動と引き継ぎ再レビューのいずれも`<役割名>.subagent.md`を指定する起動（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）で起動し、`cwd`は対象worktreeの絶対パスとする。
+実行レビュー担当は、初回起動と引き継ぎ再レビューのいずれも`<役割名>.subagent.md`を指定する起動（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）で起動する。
+`cwd`は対象worktreeの絶対パスとする。
 初回の`extra_params`にはレビュー基準、`完成条件証拠`と、計画外の条項がある場合は検証済み`review_contract`の絶対パスを含める。`引き継ぎ記録先`は省略してサーバーに用意させ、引き継ぎ再レビューでは応答の`handoff_record_path`へ`（継続）`を付けて渡す（`agent-toolkit:delegation`の`references/base-contract.md`の`引き継ぎ記録先`の段落）。
 レーンの作業を対象とする起動では、`extra_params`へそのレーンの`レーン識別子`も加え、session識別名を`<レーン識別子>-exec-review`にする。`CI記録`だけを渡す起動には加えない。
 メインが条項を生成する出典は、受領するレビュー基準のうち計画から得られない次の資料とする。計画由来の条項は実行レビュー担当が計画ファイルから生成する。
