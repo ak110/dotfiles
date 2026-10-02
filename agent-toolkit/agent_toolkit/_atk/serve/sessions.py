@@ -737,26 +737,8 @@ def _detail_project(engine: str, records: list[dict[str, typing.Any]], path: pat
 
 
 def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
-    """SSH経由でリモートヘルパーを起動するargv要素列を返す。
-
-    リモート起動コマンドはPOSIXシェル非依存とし、クオートはダブルクォートのみを使う。
-    `~`はcmd.exeでは展開されないため、Pythonの`os.path.expanduser('~')`で展開する。
-    `platformdirs`は、ヘルパーがagents_serverの状態ディレクトリを解決して登録簿の起動元を読むために加える。
-    """
-    return [
-        "uv",
-        "run",
-        "--no-project",
-        "--with",
-        '"watchdog>=6.0.0"',
-        "--with",
-        '"platformdirs>=4.0"',
-        "python",
-        "-c",
-        f'"{REMOTE_BOOTSTRAP}"',
-        op,
-        *args,
-    ]
+    """この画面のリモートヘルパーを起動するargv要素列を返す。起動形は`_atk_serve_remote.remote_command_argv`が定める。"""
+    return _atk_serve_remote.remote_command_argv(REMOTE_BOOTSTRAP, op, args)
 
 
 # 単発SSHの失敗の表現と標準エラー出力の整形は計画ファイル画面と共通の契約とする。
@@ -765,12 +747,10 @@ _stderr_excerpt = _atk_serve_remote.stderr_excerpt
 
 
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
-    """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
-
-    非0終了は`RemoteHelperError`として送出し、呼び出し元がキャンセルされた場合は子プロセスを終了させる。
-    """
-    cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
-    return await _atk_serve_remote.run_helper(cmd, timeout=SSH_TIMEOUT_SEC)
+    """SSH経由でこの画面のリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。"""
+    return await _atk_serve_remote.run_remote_helper(
+        REMOTE_BOOTSTRAP, host, op, args, ssh_options=SSH_BASE_OPTIONS, timeout=SSH_TIMEOUT_SEC
+    )
 
 
 class RemoteSessionClient:

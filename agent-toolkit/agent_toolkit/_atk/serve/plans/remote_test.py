@@ -157,3 +157,49 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     await asyncio.wait_for(plans.stop_remote_watchers(context), timeout=5)
 
     assert len(started) == 1
+
+
+@pytest.mark.asyncio
+async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを従来の起動形で起動し、失敗を標準エラー付きで示す。
+
+    起動形をセッション画面と共通の関数へ移したため、計画ファイル画面のbootstrap・op・argsが渡らないか、
+    `watchdog`・`platformdirs`が欠けると、リモートの計画ファイル一覧と本文を取得できなくなる。
+    """
+    sent: list[tuple[list[str], float]] = []
+
+    async def fake_run_ssh(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
+        sent.append((cmd, timeout))
+        return 3, b"", b"helper not found\n"
+
+    monkeypatch.setattr(plans._atk_serve_remote, "run_ssh", fake_run_ssh)
+
+    with pytest.raises(plans.RemoteHelperError) as error:
+        await plans.default_ssh_runner("remote-host", "read", ["cGF0aA=="])
+
+    assert "atk_serve_plans_remote_helper.py" in plans.REMOTE_BOOTSTRAP
+    assert sent == [
+        (
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "remote-host",
+                "uv",
+                "run",
+                "--no-project",
+                "--with",
+                '"watchdog>=6.0.0"',
+                "--with",
+                '"platformdirs>=4.0"',
+                "python",
+                "-c",
+                f'"{plans.REMOTE_BOOTSTRAP}"',
+                "read",
+                "cGF0aA==",
+            ],
+            plans.SSH_TIMEOUT_SEC,
+        )
+    ]
+    assert "終了コード3" in str(error.value)
+    assert "helper not found" in str(error.value)
