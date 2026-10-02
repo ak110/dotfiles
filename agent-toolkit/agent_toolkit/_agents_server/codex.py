@@ -64,7 +64,7 @@ DEFAULT_WAIT_TIMEOUT = 300.0
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 APP_SERVER_STDERR_LIMIT_CHARS = 4000
 APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT = 1.0
-# 版別ディレクトリ配下の配布物を複製する管理対象一時領域の接頭辞。
+# 版別ディレクトリ配下の配布物を複製するmanaged-tempの接頭辞。
 STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
 # 複製へ持ち込まない対象。仮想環境とバイトコードは複製先で再生成され、Git履歴は起動へ要らない。
 STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
@@ -97,7 +97,7 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
 
     起動コマンドは委譲先のturnごとに実行されるため、解決結果は本プロセスの生存期間を通じて
     ディスク上の実体を必要とする。版別ディレクトリ配下の配布物は更新で除去されるため、
-    管理対象一時領域へ複製した実体を返す。複製元ごとの結果を保持し、同じ複製元に対する
+    managed-tempへ複製した実体を返す。複製元ごとの結果を保持し、同じ複製元に対する
     複製を本プロセスで1回に限る。
     複製に失敗した場合は解決したrootをそのまま返し、複製の失敗を委譲の不成立へ変えない。
     `plugin_root`には解決済みrootを渡し、省略時は自身の位置から解決する。

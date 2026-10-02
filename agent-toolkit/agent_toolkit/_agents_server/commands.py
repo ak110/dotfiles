@@ -50,7 +50,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     logs.add_argument("--format", choices=("text", "markdown"), default="text", help="出力形式。省略時はtextで出力する。")
     logs.add_argument("--output-dir", type=pathlib.Path, help="記録を1件1ファイルで保存するディレクトリ。")
     logs.add_argument("--include-thinking", action="store_true", help="markdownへ思考ブロックを含める。")
-    logs.add_argument("--include-subagents", action="store_true", help="markdownの親記録へサブエージェントを含める。")
+    logs.add_argument("--include-subagents", action="store_true", help="markdownのメイン記録へサブエージェントを含める。")
     logs.add_argument("--no-tool-details", action="store_true", help="markdownのツール呼び出しを1行へ簡略化する。")
     logs.add_argument("--follow", action="store_true", help="新着の記録を表示し続ける。Ctrl-Cで終了する。")
 
@@ -216,11 +216,11 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
 
 
 def _without_prompt(session: dict[str, Any]) -> dict[str, Any]:
-    """起動文を除いた一覧用の射影を返す。
+    """委譲プロンプトを除いた一覧用の射影を返す。
 
-    `list`の用途は稼働状況の把握であり、起動文はこれに使わない。
-    起動文の量はsession数と長さの積で増えるため、一覧から外して呼び出し元が受け取る量の伸びを抑える。
-    起動文は`show`が返すため、この一覧から除いても取得できる。
+    `list`の用途は稼働状況の把握であり、委譲プロンプトはこれに使わない。
+    委譲プロンプトの量はsession数と長さの積で増えるため、一覧から外して委譲元が受け取る量の伸びを抑える。
+    委譲プロンプトは`show`が返すため、この一覧から除いても取得できる。
     """
     return {key: value for key, value in session.items() if key != "prompt"}
 
@@ -270,7 +270,7 @@ def _append_children(
 
 
 def _show_logs(session_id: str, *, follow: bool) -> int:
-    """保存済みの会話記録を表示し、指定時は追尾する。"""
+    """保存済みのセッション記録を表示し、指定時は追尾する。"""
     selected = record_paths.find_session_record(session_id)
     if selected is None:
         report(f"sessionの記録が見つかりません: {session_id}", next_action=logs_export.MISSING_RECORD_NEXT_ACTION)
@@ -306,7 +306,7 @@ def _show_logs(session_id: str, *, follow: bool) -> int:
 
 
 def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] | None:
-    """表示期限を過ぎた未回収結果を同じ会話rootから表示する。"""
+    """表示期限を過ぎた未回収結果を同じルートsessionから表示する。"""
     result = status_file.read_retained_result(root_session_id, session_id)
     if result is None:
         return None

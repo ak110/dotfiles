@@ -17,7 +17,7 @@ _READ_COMMANDS = frozenset({"cat", "head", "less", "more", "sed", "tail", "wc", 
 
 
 def task_output_from_response(value: object) -> tuple[str, str] | None:
-    """背景移行応答からタスクIDと絶対出力パスを返す。"""
+    """バックグラウンドタスクへの移行を示す応答からタスクIDと絶対出力パスを返す。"""
     texts = list(_iter_text(value))
     structured_id = value.get("backgroundTaskId") if isinstance(value, dict) else None
     task_id = structured_id if isinstance(structured_id, str) and structured_id else None

@@ -87,7 +87,7 @@ def test_agents_wait_outputs_every_retained_result(
     """未回収の終端結果を識別子順のJSON Linesで全件返し、回収した結果ファイルを残さない。
 
     失敗で終端した結果には、継続・別候補での再起動・巻き取りを選ぶ次の操作が付く。
-    欠けると受信側は失敗の結果だけを受け取り、同じ候補での再起動を繰り返し得る。
+    欠けると委譲元は失敗の結果だけを受け取り、同じ候補での再起動を繰り返し得る。
     """
     wait_environment.mkdir(parents=True)
     first = {"session_id": "session-1", "status": "completed", "turn_seq": 2}

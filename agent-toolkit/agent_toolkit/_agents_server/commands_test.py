@@ -71,7 +71,7 @@ def _without_wrapping(text: str) -> str:
 
 
 def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.CaptureFixture[str]) -> None:
-    """一覧が起動文を含まないことと、起動文の取得先を説明する。"""
+    """一覧が委譲プロンプトを含まないことと、委譲プロンプトの取得先を説明する。"""
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list", "--help"])
 
@@ -117,7 +117,7 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
 def test_agents_list_returns_diagnostic_fields_without_prompt(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """listは診断用の項目を返し、起動文だけを除く。"""
+    """listは診断用の項目を返し、委譲プロンプトだけを除く。"""
     monkeypatch.setenv("AI_AGENT", "1")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -355,7 +355,7 @@ def test_agents_list_shows_tree_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人間が読む環境ではrootとsessionの関係を表示し、起動文を除く。"""
+    """人間が読む環境ではrootとsessionの関係を表示し、委譲プロンプトを除く。"""
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
 

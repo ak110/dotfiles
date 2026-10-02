@@ -22,7 +22,7 @@ def _set_state_directory(monkeypatch: pytest.MonkeyPatch, directory: pathlib.Pat
 
 
 def _skill_entry(skill: str, *, tool_use_id: str = "toolu_skill") -> dict:
-    """Skillツール起動を含むアシスタントエントリを生成する。"""
+    """`Skill`の呼び出しを含むアシスタントエントリを生成する。"""
     return {
         "type": "assistant",
         "message": {

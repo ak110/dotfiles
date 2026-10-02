@@ -16,7 +16,7 @@ from agent_toolkit._agents_server import state as shared_state
 
 
 def test_debug_file_name_carries_session_id_after_initialization(tmp_path: pathlib.Path) -> None:
-    """診断記録の名前にsession識別子を含め、時刻を比較せずに対応するsessionを判別できる状態にする。"""
+    """診断ログの名前にsession識別子を含め、時刻を比較せずに対応するsessionを判別できる状態にする。"""
     debug_file = tmp_path / "20260916T000000000000-delegate.log"
     debug_file.write_text("diagnostic", encoding="utf-8")
 
@@ -156,7 +156,7 @@ def test_build_options_loads_user_hooks_for_every_launch(
 
 
 def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """診断記録の保存先を委譲先CLIの引数として渡す。"""
+    """診断ログの保存先を委譲先CLIの引数として渡す。"""
     captured = _capture_options(monkeypatch)
     debug_file = tmp_path / "delegate.log"
 
@@ -178,7 +178,7 @@ def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, c
 
 
 def test_build_options_omits_debug_file_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存先を指定しない起動では診断記録の引数を渡さない。"""
+    """保存先を指定しない起動では診断ログの引数を渡さない。"""
     captured = _capture_options(monkeypatch)
 
     claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
@@ -190,7 +190,7 @@ def test_prepare_debug_file_drops_records_beyond_retention(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持世代を超えた古い診断記録を自動的に削除する。"""
+    """保持世代を超えた古い診断ログを自動的に削除する。"""
     monkeypatch.setattr(claude.logging_config, "state_dir", lambda: tmp_path)
     directory = tmp_path / claude._DEBUG_LOG_DIR_NAME  # pylint: disable=protected-access
     directory.mkdir(parents=True)

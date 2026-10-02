@@ -1,4 +1,4 @@
-"""Claude backendの背景作業完了後の自動再開を検証する。"""
+"""Claude backendのバックグラウンドタスク完了後の自動再開を検証する。"""
 
 # テストでは自動再開の内部状態を直接検証する。
 # pylint: disable=protected-access
@@ -48,7 +48,7 @@ class SystemMessage:
 
 
 class TaskStartedMessage:
-    """背景タスクの開始を再現する。"""
+    """バックグラウンドタスクの開始を再現する。"""
 
     def __init__(self, task_id: str, task_type: str = "local_bash", description: str = "") -> None:
         self.task_id = task_id
@@ -57,7 +57,7 @@ class TaskStartedMessage:
 
 
 class TaskUpdatedMessage:
-    """背景タスクの状態更新を再現する。"""
+    """バックグラウンドタスクの状態更新を再現する。"""
 
     def __init__(self, task_id: str, status: str) -> None:
         self.task_id = task_id
@@ -65,7 +65,7 @@ class TaskUpdatedMessage:
 
 
 class TaskNotificationMessage(TaskUpdatedMessage):
-    """背景タスクの完了通知を再現する。"""
+    """バックグラウンドタスクの完了通知を再現する。"""
 
 
 class ResultMessage:
@@ -671,7 +671,7 @@ async def test_codex_child_session_holds_result_until_single_auto_resume(
 ) -> None:
     """Codexは孫sessionが残るturnの待機表明を公開せず保留し、孫の終端後に同じsessionを一度だけ再開する。
 
-    呼び出し元は手動の再開指示なしに、再開したturnの完了報告を受け取る。
+    委譲元は手動の再開指示なしに、再開したturnの完了報告を受け取る。
     """
     manager, backend, session, _writer = _codex_parent_with_child(tmp_path)
     child_session_id = "codex-child"
@@ -773,7 +773,7 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """背景作業が残る初回結果を返さず、自動再開turnの結果を返す。"""
+    """バックグラウンドタスクが残る初回結果を返さず、自動再開turnの結果を返す。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.05)
     client = ControlledClaudeClient()
     manager, backend = _manager(client, monkeypatch)
@@ -808,7 +808,7 @@ async def test_result_without_background_task_is_immediately_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """背景作業が無いturnは従来どおり最初の結果で終端する。"""
+    """バックグラウンドタスクが無いturnは従来どおり最初の結果で終端する。"""
     client = ControlledClaudeClient()
     manager, backend = _manager(client, monkeypatch)
     try:
@@ -889,7 +889,7 @@ async def test_show_reports_held_result_and_live_background_tasks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """結果を保留している間だけ、`show`が保留と追跡中の背景作業を返す。"""
+    """結果を保留している間だけ、`show`が保留と追跡中のバックグラウンドタスクを返す。"""
     client = ControlledClaudeClient("claude-show")
     manager, backend = _manager(client, monkeypatch)
     try:

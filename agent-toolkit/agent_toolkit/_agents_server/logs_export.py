@@ -23,7 +23,7 @@ _OUTPUT_DIR_NEXT_ACTION = "`--output-dir`を書込可能で同名のファイル
 
 @dataclasses.dataclass(frozen=True)
 class RecordTarget:
-    """1件のローカル記録と開始時刻。"""
+    """1件のローカルのセッション記録と開始時刻。"""
 
     engine: str
     path: pathlib.Path

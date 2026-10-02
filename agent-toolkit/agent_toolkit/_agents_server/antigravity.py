@@ -49,7 +49,7 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
 
     Antigravity CLIの非対話モードはシステム指示の専用オプションを持たないため、
     システム指示は本文の先頭へ置いて渡す。1つのメッセージへ配送本文と同居するため、
-    受信側が両者を区別できるよう、システム指示側は`state.py`が付ける境界を保ったまま渡す。
+    委譲先が両者を区別できるよう、システム指示側は`state.py`が付ける境界を保ったまま渡す。
     同じsessionの自動再開はこのbackendで確かめていないため、自動再開の通知（`AUTO_RESUME_NOTICE`）は加えない。
     """
     return LAUNCH_SYSTEM_PROMPTS[launch_kind]

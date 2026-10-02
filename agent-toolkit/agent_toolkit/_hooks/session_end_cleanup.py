@@ -11,7 +11,7 @@
 同じ会話へ戻る処理ではないため、状態を保持する意味が無い。
 `session_id`が再利用された場合には、残った記録が誤った判定材料になる。
 
-SessionStartが作成するセッション単位の管理対象一時領域も、同じ理由でSessionEndでは削除しない。
+SessionStartが作成するセッションのmanaged-tempも、同じ理由でSessionEndでは削除しない。
 `agents_server`経由のsessionはturnごとにSessionEndが発火し、後続のturnと委譲先が同じ領域の成果物を読む。
 回収は`atk`の実行時に最終更新から7日を超えた登録済み領域を削除する掃引へ委ねる。
 """

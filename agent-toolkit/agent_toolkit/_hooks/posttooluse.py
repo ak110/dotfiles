@@ -10,7 +10,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 
 検出対象:
 
-1. plan file（計画作業root `~/.claude/plans/` または
+1. plan file（`~/.claude/plans/` または
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）書式の判定 (Write / Edit / MultiEdit / apply_patch)
 2. plan-modeスキル呼び出し検出 (Skill)
 3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
@@ -20,8 +20,9 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
    `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
-7. Bashの背景実行、背景移行通知およびAgent・Taskの背景起動が返した識別子の所有記録 (Bash / Agent / Task)
-   PostToolUseFailure: Bashの背景タスク識別子を所有記録へ保存し、その他は変更せず終了
+7. Bashの背景実行、バックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した識別子を、
+   バックグラウンドタスクの所有記録へ記録 (Bash / Agent / Task)
+   PostToolUseFailure: Bashのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
 8. PermissionDenied: 状態を変更せず終了
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
@@ -127,7 +128,7 @@ def _executable_name(token: str) -> str:
 
 # --- plan-modeスキル呼び出し検出 ---
 
-# Skillツールの`skill`引数として許容するスキル名。
+# `Skill`の`skill`引数として許容するスキル名。
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
@@ -500,9 +501,9 @@ def _record_agents_server_observation_attempt(
     *,
     operation: str,
 ) -> None:
-    """背景タスクへ移った`kill`の移行通知から観測の試みだけを記録する。
+    """バックグラウンドタスクへ移った`kill`の移行通知から観測の試みだけを記録する。
 
-    実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
+    実行環境が呼び出しをバックグラウンドタスクへ移すと構造化応答が返らないため、応答の`session_id`と
     `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
     呼び出しが受理された時点で観測を試みたものとして扱い、応答境界へ到達しない場合でも
     `pending_observation`を偽にする。`tool_input`の`session_id`で解決した既存記録に限り、
@@ -669,11 +670,11 @@ def _structured_background_task_id(value: object) -> str | None:
 
 
 def _record_background_task_id(session_id: str, task_id: str) -> None:
-    """自セッションのツール呼び出しが返した背景タスクのIDを記録する。
+    """自セッションのツール呼び出しが返したバックグラウンドタスクのIDを記録する。
 
-    PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力とする。
+    PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力とする。
     記録の契機は、Bashの背景実行が成功した応答、同じ指定で失敗した応答、
-    ツール種別を問わない背景移行通知およびAgent・Taskの背景起動が返した`agentId`の4つとする。
+    ツール種別を問わないバックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した`agentId`の4つとする。
     所有の根拠は自身の呼び出しが識別子を返したことであり、その呼び出しの成否に依存しない。
     """
 
@@ -690,7 +691,7 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
 
 
 def _record_background_task_output(session_id: str, response: object) -> None:
-    """背景タスクIDとホストが示した出力先を同じsession状態へ記録する。"""
+    """バックグラウンドタスクIDとホストが示した出力先を同じsession状態へ記録する。"""
     pair = _background_task_outputs.task_output_from_response(response)
     if pair is None:
         return
@@ -808,8 +809,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     payload, session_id, tool_name, tool_input, cwd, event_name = parsed
     set_warning_session_id(session_id)
 
-    # 所有の根拠は、自セッションのツール呼び出しの応答が背景タスク識別子を返したことである。
-    # 起動の成否は所有の有無を変えないため、背景移行通知はツール種別と成否によらず記録する。
+    # 所有の根拠は、自セッションのツール呼び出しの応答がバックグラウンドタスク識別子を返したことである。
+    # 起動の成否は所有の有無を変えないため、バックグラウンドタスクへの移行通知はツール種別と成否によらず記録する。
     notice_task_id = _stop_gate.background_task_id_from_notice(payload.get("tool_response"))
     if notice_task_id is not None:
         _record_background_task_id(session_id, notice_task_id)
@@ -837,7 +838,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_skill_use(session_id, tool_input.get("skill"))
         return 0
 
-    # AgentとTask: 背景起動の応答が返した`agentId`だけを所有記録へ残す。後続の分岐は対象としない
+    # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す。後続の分岐は対象としない
     if tool_name in ("Agent", "Task"):
         agent_id = _stop_gate.async_agent_launch_id(payload.get("tool_response"))
         if agent_id is not None:

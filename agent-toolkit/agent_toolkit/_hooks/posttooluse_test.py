@@ -1816,7 +1816,7 @@ class TestAgentsServerSessionState:
 
     @staticmethod
     def _background_notice_response(operation: str) -> dict:
-        """実行環境が上限到達で返す背景移行通知を模したtool_responseを組み立てる。"""
+        """実行環境が上限到達で返すバックグラウンドタスクへの移行通知を模したtool_responseを組み立てる。"""
         return {
             "content": [
                 {
@@ -1850,7 +1850,7 @@ class TestAgentsServerSessionState:
         assert result.returncode == 0
 
     def test_background_kill_notice_clears_pending_observation(self, tmp_path: pathlib.Path) -> None:
-        """観測操作が背景タスクへ移った通知でも、観測を試みた事実として未観測作業を解消する。"""
+        """観測操作がバックグラウンドタスクへ移った通知でも、観測を試みた事実として未観測作業を解消する。"""
         operation = "kill"
         sid = "background-kill"
         remote_session_id = "remote-background-kill"

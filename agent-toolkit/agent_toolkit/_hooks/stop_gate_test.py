@@ -684,7 +684,7 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
 
     def test_empty_background_tasks_do_not_hide_mcp_background_remainder(self, tmp_path: pathlib.Path) -> None:
-        """申告対象外のMCP背景移行は空の`background_tasks`でも未完了と判定する。"""
+        """申告対象外のMCPツールのバックグラウンドタスクへの移行は空の`background_tasks`でも未完了と判定する。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -1004,7 +1004,7 @@ class TestIsPendingAsyncWork:
         assert "source=queued_notification" in log_path.read_text(encoding="utf-8")
 
     def test_missing_child_transcript_preserves_top_level_decision(self, tmp_path: pathlib.Path) -> None:
-        """子記録ディレクトリが無い場合も、最上位の起動・完了判定を維持する。"""
+        """サブエージェント記録ディレクトリが無い場合も、最上位の起動・完了判定を維持する。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -1044,7 +1044,7 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "") is False
 
     def test_empty_child_metadata_is_ignored(self, tmp_path: pathlib.Path) -> None:
-        """直接の子を示すmetadataが空の場合は子記録を走査しない。"""
+        """直接の子を示すmetadataが空の場合はサブエージェント記録を走査しない。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -1699,7 +1699,7 @@ class TestReadTranscriptEntriesCached:
 
 
 class TestBackgroundTaskIdFromNotice:
-    """背景移行通知から抽出する識別子の境界を固定する。"""
+    """バックグラウンドタスクへの移行通知から抽出する識別子の境界を固定する。"""
 
     @pytest.mark.parametrize(
         ("text", "expected"),

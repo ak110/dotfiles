@@ -706,7 +706,7 @@ class TestBashOptionAfterTerminator:
         ("command", "expected_token"),
         [
             ("rg -l -F -- 'x' --glob '*.py' .", "--glob"),
-            ("rg -n -- '検体' . --type-not markdown", "--type-not"),
+            ("rg -n -- 'テストコード' . --type-not markdown", "--type-not"),
             ("grep -rl -F -- 'x' --include='*.md' docs", "--include=*.md"),
             ("git grep -l -F -- 'x' --cached", "--cached"),
             ("git log -- path --oneline", "--oneline"),

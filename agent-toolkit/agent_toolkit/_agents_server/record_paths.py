@@ -1,6 +1,7 @@
 """委譲先sessionの記録を識別子から探す処理をまとめる。
 
-`atk agents logs`とsession-reviewの証拠抽出器は、同じ委譲先の記録を実行系ごとに異なる保存先から探す。
+`atk agents logs`とsession-reviewの`atk run-script session-review-evidence`は、
+同じ委譲先の記録を実行系ごとに異なる保存先から探す。
 探索を呼び出し側ごとに実装すると、`agents_server`へ実行系を追加したときに一部の呼び出し側だけが
 新しい保存先を探さないまま残る。探索は本モジュールへ集約し、解決できる実行系の集合と
 `agents_server`の実行系集合と一致することをテストで確かめる。

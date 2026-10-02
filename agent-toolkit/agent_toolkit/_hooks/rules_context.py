@@ -2,8 +2,8 @@
 
 委譲先かどうかは`_common.delegated_session`が判定する。
 
-出力する自動挿入本文は`atk-auto`で囲む。常駐処理が渡したユーザー自身の入力は
-`forwarded-user-input`で囲む。受信側が区分ごとに生成主体と種別を
+出力する自動挿入本文は`atk-auto`で囲む。process-loopが渡したユーザー自身の入力は
+`forwarded-user-input`で囲む。読み手のエージェントが区分ごとに生成主体と種別を
 判別できるようにするためであり、区分ごとに囲んだ本文を全体で重ねて囲まない。
 
 Claude Codeはhook 1件の出力を10,000文字で切り詰める。条文の欠落を防ぐため、
@@ -48,7 +48,7 @@ SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 SESSION_TEMP_PREFIX = managed_temp.SESSION_TEMP_PREFIX
-# `atk wi process-loop instruct`が保持し、常駐処理がセッション起動時に渡す本文。
+# `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
 # 実行主体へ常時読み込ませる規範の境界。種別で読み手を区別する。
@@ -65,7 +65,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を冒頭の1文へ
     置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先はこの規定の対象外のため追加しない。
 
-    常駐処理が渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
+    process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
     """
     parts: list[str] = []
@@ -138,22 +138,22 @@ def _normative_context(body: str, *, kind: str) -> str:
 
 
 def session_temp_notice(session_temp: pathlib.Path | str) -> str:
-    """セッション領域の所在と、一時ファイルの置き場所を選ぶ時点で従う行動を対にした通知本文を返す。
+    """セッションのmanaged-tempの所在と、一時ファイルの置き場所を選ぶ時点で従う行動を対にした通知本文を返す。
 
     所在だけを示す通知では、一時ファイルを作成する時点で`/tmp`が選ばれ、後始末の削除が権限判定に拒否された。
     置き場所の選択と結び付く語（`/tmp`）と、委譲先へ所在を渡す行動を同じ本文へ置く。
     """
     return (
-        f"このセッションの管理対象一時領域: {session_temp}\n"
+        f"このセッションのmanaged-temp: {session_temp}\n"
         "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
-        "一時ファイルを作成する作業をサブエージェントへ委ねる場合は、この絶対パスを起動文へ渡す。"
+        "一時ファイルを作成する作業をサブエージェントへ委ねる場合は、この絶対パスを委譲プロンプトへ渡す。"
     )
 
 
 def _existing_session_temp(session_id: object) -> str | None:
-    """SessionStartが作成済みのセッション領域を、新たに作成せずに解決する。
+    """SessionStartが作成済みのセッションのmanaged-tempを、新たに作成せずに解決する。
 
-    サブエージェントは親と同じsession_idを受け取るため、親のセッション領域を解決できる。
+    サブエージェントは親と同じsession_idを受け取るため、親のセッションのmanaged-tempを解決できる。
     SubagentStartでは管理領域を登録しない。親のSessionStartが作成していない場合は通知しない。
     """
     if not isinstance(session_id, str) or not session_id:
@@ -178,7 +178,7 @@ def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
     return (
         f"このサブエージェント専用の一時領域: {child}\n"
         "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
-        f"親のセッション領域: {session_temp}\n"
+        f"親のセッションのmanaged-temp: {session_temp}\n"
         "親の領域は、委譲元が渡したファイルの読み書きに使ってよい。"
     )
 

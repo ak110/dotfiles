@@ -347,7 +347,7 @@ def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool) -> p
 
 @pytest.fixture(autouse=True)
 def _isolate_stable_plugin_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """複製先の記録と管理対象一時領域の作成先をテストごとに分離する。"""
+    """複製先の記録とmanaged-tempの作成先をテストごとに分離する。"""
     monkeypatch.setattr(subject, "_stable_plugin_roots", {})
     monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setenv("TMPDIR", str(tmp_path / "managed-temp"))

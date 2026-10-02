@@ -486,7 +486,7 @@ def resolve_conversation_root_session_id(environment: Mapping[str, str], state_r
 
 
 def unconfirmed_root_recovery(resolution: ConversationRootResolution, command: str) -> tuple[str, str]:
-    """未確認の会話rootを診断する理由と、MCPの一覧応答から復旧する次の操作を返す。"""
+    """未確認のルートsessionを診断する理由と、MCPの一覧応答から復旧する次の操作を返す。"""
     if not resolution.alias_present:
         reason = "aliasが存在しません"
     elif not resolution.alias_valid:
@@ -494,7 +494,7 @@ def unconfirmed_root_recovery(resolution: ConversationRootResolution, command: s
     else:
         reason = "aliasの参照先を確認できません"
     return (
-        f"agents_serverの会話root対応を確認できません。CLIが解決したroot={resolution.root_session_id}、{reason}。",
+        f"agents_serverのルートsession対応を確認できません。CLIが解決したroot={resolution.root_session_id}、{reason}。",
         f"MCPの`list`を1回呼び出してから`{command}`を再実行する",
     )
 
@@ -534,7 +534,7 @@ def results_directory(root_session_id: str, state_root: pathlib.Path | None = No
 def read_retained_result(
     root_session_id: str, session_id: str, state_root: pathlib.Path | None = None
 ) -> dict[str, Any] | None:
-    """同じ会話rootの未回収終端結果を削除せずに読む。"""
+    """同じルートsessionの未回収終端結果を削除せずに読む。"""
     if not valid_session_id(session_id):
         return None
     path = results_directory(root_session_id, state_root) / f"{session_id}.json"
@@ -693,7 +693,7 @@ def notices_directory(root_session_id: str, state_root: pathlib.Path | None = No
 
 
 def hosts_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """書込主体から起動元threadへの索引ディレクトリを返す。"""
+    """書込主体から委譲元threadへの索引ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "hosts"
 
 
@@ -741,7 +741,7 @@ def resolve_status_owner_identity(
         return identity
     if len(writers) != 1:
         raise ActionableError(
-            "起動元sessionに対応する書込主体を一意に解決できません: "
+            "委譲元sessionに対応する書込主体を一意に解決できません: "
             f"host_session_id={identity.host_session_id}, writers={','.join(sorted(writers))}",
             next_action=(
                 "同じsessionで`atk agents list`を実行して書込主体を確かめ、"
@@ -781,7 +781,7 @@ def resolve_wait_identity(
 
     if inferred is not None and inferred.mapping_confirmed and inferred.root_session_id != explicit_root_session_id:
         raise ActionableError(
-            "確認済みの会話rootと指定したroot_session_idが一致しません: "
+            "確認済みのルートsessionと指定したroot_session_idが一致しません: "
             f"conversation={inferred.root_session_id}, explicit={explicit_root_session_id}",
             next_action="`--root-session-id`を外して再実行する",
         )
@@ -796,7 +796,7 @@ def write_host_alias(
     host_session_id: str,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """書込主体を起動元threadへ対応付ける索引を書く。"""
+    """書込主体を委譲元threadへ対応付ける索引を書く。"""
     if not all(valid_session_id(value) for value in (root_session_id, writer_session_id, host_session_id)):
         raise ValueError("invalid session_id")
     payload = {"version": 1, "host_session_id": host_session_id}
@@ -1160,7 +1160,7 @@ class StatusFileWriter:
                 hosts.rmdir()
 
     def _resolve_host_session_id(self) -> str | None:
-        """書込主体に対応する起動元threadを一度だけ状態ファイルへ射影する。"""
+        """書込主体に対応する委譲元threadを一度だけ状態ファイルへ射影する。"""
         if self._projected_host_session_id is not None:
             return self._projected_host_session_id
         writer_session_id = self._identity.host_session_id

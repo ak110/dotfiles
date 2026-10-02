@@ -307,7 +307,7 @@ _RUNNING_TASKS = [
 
 
 class TestExitRequestWithdrawal:
-    """背景作業が残る終了要求を取り下げ、終端の確認と終了工程の再実行を求める。"""
+    """バックグラウンドタスクが残る終了要求を取り下げ、終端の確認と終了工程の再実行を求める。"""
 
     def _run_with_request(
         self,
@@ -345,7 +345,7 @@ class TestExitRequestWithdrawal:
         assert _read_state(tmp_path, "withdraw")["autonomous_exit_invoked"] is False
 
     def test_withdrawn_request_falls_back_to_pending_work_approval(self, tmp_path: pathlib.Path) -> None:
-        """取り下げ済み（`consumed`）なら従来どおり背景作業の残存をapproveする。"""
+        """取り下げ済み（`consumed`）なら従来どおりバックグラウンドタスクの残存をapproveする。"""
         decision, request_path = self._run_with_request(
             tmp_path, "consumed", request="consumed", background_tasks=_RUNNING_TASKS
         )
@@ -356,14 +356,14 @@ class TestExitRequestWithdrawal:
 
     @pytest.mark.parametrize("tasks", [[], [{"id": "tm1", "type": "teammate", "description": "チームの作業"}]])
     def test_no_remaining_work_keeps_exit_request(self, tmp_path: pathlib.Path, tasks: list[dict]) -> None:
-        """有効な非`teammate`の背景作業が無ければ終了要求を保ち、従来の判定（実行済みでapprove）を返す。"""
+        """有効な非`teammate`のバックグラウンドタスクが無ければ終了要求を保ち、従来の判定（実行済みでapprove）を返す。"""
         decision, request_path = self._run_with_request(tmp_path, "no-work", request="requested", background_tasks=tasks)
 
         assert "decision" not in decision
         assert request_path.read_text(encoding="utf-8") == "requested"
 
     def test_outside_process_loop_does_not_withdraw(self, tmp_path: pathlib.Path) -> None:
-        """常駐処理外の対話セッションでは終了要求を取り下げない。"""
+        """process-loop外の対話セッションでは終了要求を取り下げない。"""
         decision, request_path = self._run_with_request(
             tmp_path, "interactive", request="requested", background_tasks=_RUNNING_TASKS, required_env=None
         )

@@ -25,12 +25,12 @@ RESULT_RETENTION_SECONDS = 1800.0
 AUTO_RESUME_DEADLINE_SECONDS = 1800.0
 # 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
 # 値は利用者の提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
-# 超過は停滞の確定ではなく呼び出し元が状況を調べる契機として扱う。
+# 超過は停滞の確定ではなく委譲元が状況を調べる契機として扱う。
 STALL_NOTICE_SECONDS = 300.0
-# ホストが応答しないMCPツール呼び出しを背景タスクへ移すまでの秒数。
+# ホストが応答しないMCPツール呼び出しをバックグラウンドタスクへ移すまでの秒数。
 # 以降の上限はこの閾値を制約として導出する。単独の値として決めない。
 HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
-# backendがsessionの初期化を完了するまで起動側が待つ上限秒数と、同じ候補で試みる回数。
+# backendがsessionの初期化を完了するまでagents_serverが待つ上限秒数と、同じ候補で試みる回数。
 # Claude Codeの記録では、`start`の呼び出しから起動された子sessionの記録の先頭エントリまでの
 # 経過が233件中232件で47.65秒以内に収まり、残る1件が604.22秒だった。
 # 同じ母集団のうち7件は初期化が到達せず、ホストがMCPツール呼び出しを1800.5秒で打ち切っていた。
@@ -38,7 +38,7 @@ HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # （agents_server_mcp.pyのSTART_AVAILABILITY_TIMEOUT）を直列に加えた和が
 # HOST_BACKGROUND_THRESHOLD_SECONDSを下回るように選ぶ。
 # この関係が成立しなくなると、初期化の失敗が確定する前にホストがツール呼び出しを背景へ移し、
-# 呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
+# 委譲元は`start`の失敗を受け取らないまま待機へ進む。
 # 監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
 SESSION_INITIALIZATION_TIMEOUT = 50.0
@@ -59,7 +59,7 @@ TASK_MODEL_TYPES = {
     "session-termination.subagent.md": "high_tier",
     "usability-review.subagent.md": "medium_tier",
 }
-"""専用タスク文書名と工程別モデル設定の対応。"""
+"""`<役割名>.subagent.md`の役割名と工程別モデル設定の対応。"""
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 
 
@@ -81,7 +81,7 @@ def _normative(body: str, *, kind: str) -> str:
     """System promptへ渡す本文へ、生成主体と種別を示す境界を付ける。
 
     委譲先のsystem promptは、ホストが用意する指示と同じ仕組みで実行主体へ届く。
-    本リポジトリが生成した範囲を受信側が判別できるよう、他の自動注入と同じ形式で囲む。
+    本リポジトリが生成した範囲を委譲先が判別できるよう、他の自動注入と同じ形式で囲む。
     """
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
@@ -113,7 +113,7 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
 # 同じsessionの自動再開を実際に行うbackend（ClaudeとCodex）だけが起動時の指示へ加える。
 # Antigravity backendは自動再開を実機で確かめていないため、この能力を伝えない。
 AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), kind="auto-resume")
-# プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
+# プロジェクト規範と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
 _TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
@@ -156,12 +156,12 @@ class DelegateBackendError(RuntimeError):
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終端を観測してから`send_message`を再送する"
 """turnが中断中または未終端のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
 
-# レビューを目的とするsessionのlabelの末尾。`start`のlabelの凡例と、タスク文書から生成するlabelがこの末尾を持つ。
+# レビューを目的とするsessionのlabelの末尾。`start`のlabelの凡例と、`<役割名>.subagent.md`から生成するlabelがこの末尾を持つ。
 REVIEW_LABEL_SUFFIX = "-review"
 
 # レビューを目的とするsessionの完了結果を受け取った主体へ示す次の操作。
 REVIEW_RESULT_NEXT_ACTION = (
-    "レビューの指摘を受領した。採否を確定する前に`agent-toolkit:review-standards`をSkill機能で起動し、"
+    "レビューの指摘を受領した。採否を確定する前に`agent-toolkit:review-standards`を起動し、"
     "同スキルの`references/reviewee.md`に従って採否と修正を確定する。"
     "ユーザーの合意を見送りの根拠にする場合は、合意を示すユーザー発話を特定してから根拠にする"
 )
@@ -351,8 +351,8 @@ def activity_projection(
 
     停滞の判定入力は活動時刻とする。テキスト出力の時刻を判定入力にすると、
     ツール呼び出しだけを長時間続ける正常なsessionを停滞と判定し、
-    呼び出し元が不要な催促と巻き取りへ進む。
-    呼び出し元が1回の照会で、テキスト出力だけが停止したのか活動も停止したのか判別できるよう、
+    委譲元が不要な催促と巻き取りへ進む。
+    委譲元が1回の照会で、テキスト出力だけが停止したのか活動も停止したのか判別できるよう、
     両者の時刻と経過を同じ応答へ並べる。
     `show`・`list`・`atk agents wait`・`atk agents list`は本関数を共有する。
     呼び出し手段ごとに判定入力が分かれると、同じsessionへ異なる停滞の印が返る。
@@ -392,7 +392,7 @@ def _append_bounded(existing: str, delta: str, limit: int = 4000) -> str:
 class LiveTask:
     """Claude backendが追跡する背景task（`TaskStartedMessage`の内容と受信時刻）。
 
-    結果を保留している間の待機対象を`show`で呼び出し元へ示すために保持する。
+    結果を保留している間の待機対象を`show`で委譲元へ示すために保持する。
     """
 
     task_type: str
@@ -445,7 +445,7 @@ class SessionState:
     # engineの可用性失敗は最初のモデル出力より前に生じるため、`start`はこの値で起動直後の終端待ちを打ち切る。
     # `start`は新しいsessionだけを待つため、turnごとに初期化しない。
     model_output_observed: bool = False
-    # Claude backendの背景タスクだけを表し、Codex backendでは値を持たない。キーはtask識別子とする。
+    # Claude backendのバックグラウンドタスクだけを表し、Codex backendでは値を持たない。キーはtask識別子とする。
     live_tasks: dict[str, LiveTask] = dataclasses.field(default_factory=dict)
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
@@ -533,7 +533,7 @@ class SessionState:
     def active_tool_uses(self) -> list[dict[str, str]]:
         """未完了のツール呼び出しを、開始時刻の昇順で公開項目へ射影する。
 
-        呼び出し元が停滞の可能性を確認する際、1回の照会で長時間のコマンドを実行しているのか
+        委譲元が停滞の可能性を確認する際、1回の照会で長時間のコマンドを実行しているのか
         活動そのものが停止したのかを判別できるようにする。
         Claude backendは`tool_use`ブロックの記録から、Codex backendは進行中itemから射影する。
         1つのsessionはいずれか一方のbackendだけを使うため、両者を同じ項目で返す。
@@ -799,7 +799,7 @@ def consume_claude_agents_server_message(session: SessionState, message: Any) ->
     """Claude SDKのツール利用と結果から、孫sessionと未完了のツール呼び出しの状態を更新する。
 
     未完了のツール呼び出しは`agents_server`のツールに限らず記録する。
-    記録の対象を`agents_server`のツールへ限ると、呼び出し元は委譲先が何で止まっているかを
+    記録の対象を`agents_server`のツールへ限ると、委譲元は委譲先が何で止まっているかを
     `show`の応答から判定できない。
     """
     for block in _content_blocks(message):

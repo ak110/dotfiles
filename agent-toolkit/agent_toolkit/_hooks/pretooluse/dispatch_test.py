@@ -469,7 +469,7 @@ class TestAtkContractBeforeQuestion:
 
     def test_question_without_subcommand_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
         """サブコマンド名を含まない確認は遮断しない。"""
-        payload = _user_facing_payload("question", "常駐処理の扱いを選んでください。")
+        payload = _user_facing_payload("question", "process-loopの扱いを選んでください。")
         payload["session_id"] = "contract-absent"
 
         result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
@@ -481,7 +481,7 @@ class TestAtkContractBeforeQuestion:
         """計画本文も遮断しない。"""
         payload = {
             "tool_name": "ExitPlanMode",
-            "tool_input": {"plan": f"`{self._SUBCOMMAND}`で常駐処理を止める。"},
+            "tool_input": {"plan": f"`{self._SUBCOMMAND}`でprocess-loopを止める。"},
             "session_id": "contract-plan",
         }
 
@@ -912,7 +912,8 @@ class TestRemovedChecksAreSilent:
 class TestLanguageReinjection:
     """Claude Codeのメインセッションで、直前の注入から10回目のツール呼び出しへ日本語の応答指示を添える。
 
-    間隔10回は、2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の英語検知通知までの
+    間隔10回は、2026-09-22以降のClaude Codeメイン記録で、
+    セッション開始または会話圧縮から最初の`response_language_check`の通知までの
     ツール呼び出し回数が中央値20回、下位30%が11回だった集計に基づく。
     委譲先とCodexは応答をユーザーが直接読まないため添えない。
     """

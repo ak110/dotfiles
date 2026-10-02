@@ -255,7 +255,7 @@ def wait_for_result(
     """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
 
     回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終端結果が
-    残っている間は呼び出し元がその結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
+    残っている間は委譲元がその結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
     回収の途中で終端結果の読取に失敗した場合は、同じ巡回で回収済みの本文を先に配送してから終わる。
     回収は結果ファイルと通知ファイルの削除を伴うため、その失敗を理由に配送を取りやめると回収済みの本文が失われる。
     読取の失敗は次の起動でも同じ状態で現れるため、その回の診断を1回遅らせても失われない。
@@ -380,7 +380,7 @@ def wait_for_result(
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         # 上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、CLIとMCPで同じ値を使う。
-        # 呼び出し元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
+        # 委譲元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
         wait_timeout = get_wait_timeout("main")
         body_writer = _BodyFileWriter()
         started_at = time.monotonic()

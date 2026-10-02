@@ -1,4 +1,4 @@
-"""agents_serverの実backendによる背景作業完了後の自動再開を検証する。"""
+"""agents_serverの実backendによるバックグラウンドタスク完了後の自動再開を検証する。"""
 
 import os
 import pathlib
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 _PROMPT = """Bashツールで`sleep 2`を背景実行し、待たずにturnを終えよ。
-背景作業の完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
+バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,7 @@ async def test_live_launch_waits_for_automatic_resume(
     mode: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """公開する起動ツール`start`の3つのmodeが、再開指示なしで背景作業完了後の結果を返す。"""
+    """公開する起動ツール`start`の3つのmodeが、再開指示なしでバックグラウンドタスク完了後の結果を返す。"""
     manager = subject.AgentsServerManager()
     monkeypatch.setattr(subject, "_MANAGER", manager)
     cwd = str(pathlib.Path(__file__).parents[2])
@@ -70,7 +70,7 @@ async def test_live_grandchild_wait_resumes_same_session(
 ) -> None:
     """委譲先が孫sessionを起動して待機を表明すると、孫の終端後に同じsessionが手動の指示なしに再開し完了報告を返す。
 
-    待機表明の行を完了報告として配送せず、再開したturnの結果だけを呼び出し元へ返すことを確かめる。
+    待機表明の行を完了報告として配送せず、再開したturnの結果だけを委譲元へ返すことを確かめる。
     """
     manager = subject.AgentsServerManager()
     monkeypatch.setattr(subject, "_MANAGER", manager)
