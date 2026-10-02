@@ -3724,17 +3724,39 @@ async def test_sidebar_items_share_style_between_plans_and_sessions(screen_harne
 
 
 @pytest.mark.asyncio
-async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarness) -> None:
-    """一覧表示後に削除された計画ファイルを選ぶと、再試行を求めず移動または削除済みを示して一覧を更新する。"""
+@pytest.mark.parametrize("delay_auto_opened_body", [False, True])
+async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarness, delay_auto_opened_body: bool) -> None:
+    """一覧表示後に削除された計画ファイルを選ぶと、再試行を求めず移動または削除済みを示して一覧を更新する。
+
+    広い画面は一覧の表示後に先頭の計画を自動で開き、本文を取得する。
+    この取得が削除より後にサーバーへ届くと404から一覧が取り直され、選ぶ項目がDOMから外れる。
+    負荷の高いCIで起きるこの到着順を、本文の応答の遅延で再現しても成功することを確かめる。
+    """
     harness = screen_harness
     page = harness.page
     # 更新通知の購読を止め、削除後も一覧が古いままの状態で項目を選ぶ。
     await page.route("**/api/plans/events", lambda route: route.abort())
+    body_delivered = asyncio.Event()
+    if delay_auto_opened_body:
+
+        async def delay_body(route: playwright.async_api.Route) -> None:
+            # 負荷の高い環境での到着の遅れを模すため、自動で開く本文の要求をサーバーへ送る前に待つ。
+            await asyncio.sleep(0.3)
+            response = await route.fetch()
+            await route.fulfill(response=response)
+            body_delivered.set()
+
+        await page.route("**/api/plans/file?*", delay_body, times=1)
     await page.goto(harness.base_url + "/plans")
     item = page.locator("#files .file", has_text="plan.md")
     await item.wait_for(state="visible")
+    # 自動で開いた先頭の計画の本文表示を待ち、本文の取得と削除を競合させない。
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
 
     harness.plan_path.unlink()
+    if delay_auto_opened_body:
+        # 遅れた本文の応答が画面へ届いてから項目を選び、削除と本文の取得が重なる順序を固定する。
+        await asyncio.wait_for(body_delivered.wait(), timeout=5)
     await item.click()
 
     preview = page.locator("#preview")
