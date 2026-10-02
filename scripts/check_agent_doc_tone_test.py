@@ -180,6 +180,8 @@ def test_cli_rejects_inflected_expressions(tmp_path: pathlib.Path, body: str) ->
         ("app.py", 'import re\npattern = re.compile("正本")\n'),
         ("doc.md", "`terminal_order`が`既定`の項目を読む。\n"),
         ("doc.md", "```yaml\nterminal_order: <省略時は「既定」>\n```\n"),
+        ("doc.md", "`プロジェクト固有の公開後の操作の順序`が`既定`の項目を読む。\n"),
+        ("doc.md", "```yaml\nプロジェクト固有の公開後の操作の順序: <省略時は「既定」>\n```\n"),
         ("config.json", '{"既定": "是正本文", "起動経路": "CLI"}\n'),
         ("config.toml", '"正本" = "是正本文"\n'),
         ("doc.md", "> 他者が記した正本・既定・照合の説明。\n"),

@@ -685,6 +685,35 @@ def test_lane_selection_combines_prior_plans(
         assert any(expected_fragment in error for error in errors), errors
 
 
+def test_lane_selection_reads_current_field_names(repo: tuple[pathlib.Path, str]) -> None:
+    """日本語の欄名（`選定`、`WI`、`レーン`、`再開位置`）で書いた選定結果も旧欄名と同じく照合する。"""
+    work_dir, _base = repo
+    filename = _plan_fixture.WI_FILES[0][0]
+    other = "20260831-000000-002.md"
+    plan_path = work_dir / "plan.md"
+    plan_path.write_text(
+        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),)), encoding="utf-8"
+    )
+    selection_path = work_dir / "selection.yaml"
+    selection_path.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {"WI": filename, "レーン": "lane-01"},
+                    {"WI": other, "レーン": "lane-01", "再開位置": "/tmp/plan.md 実装"},
+                    {"WI": "20260831-000000-003.md", "レーン": "lane-02"},
+                ]
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection_path, lane="lane-01")
+
+    assert not errors, errors
+
+
 def _run_lane_check_with_resumed(
     work_dir: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -227,15 +227,22 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
             "text": "status: analysis_failed\nreason: 記録の取得に失敗した",
         },
         {"kind": "final-result", "record": "agent-3", "line": 40, "text": "status: failed"},
+        {
+            "kind": "final-result",
+            "record": "agent-4",
+            "line": 50,
+            "text": "状態: needs_escalation\n続行できない理由: 入力の欠落",
+        },
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"] * 2 + ["escalation"]
+    assert sorted(candidate["candidate_kind"] for candidate in candidates[:-1]) == ["delegate-return"] * 2 + ["escalation"] * 2
     assert candidates[-1]["included_locators"] == [
         {"record": "agent-1", "line": 20},
         {"record": "agent-2", "line": 30},
         {"record": "agent-3", "line": 40},
+        {"record": "agent-4", "line": 50},
     ]
 
 
@@ -251,6 +258,8 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
         "受け取り済みの結果を返し直す。\nstatus: completed\nunresolved: 0",
         "Review complete with no unresolved issues found. Final output:\n\nstatus: completed\nunresolved: 0",
         "status: completed\nreviewed_head: abc1234\nunresolved: 0",
+        "状態: completed\nレビューしたHEAD: abc1234\n未解決の指摘数: 0",
+        "受け取り済みの結果を返し直す。\n状態: completed\n未解決の指摘数: 0",
         "```text\n統合完了\nmerged_head: abc1234\n```",
         "実装完了\n検証結果: 終了コード0、警告なし",
         "```text\n判定: 合格\nround: 1\n```",
@@ -259,6 +268,7 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
     kept_texts = [
         "統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した",
         "status: completed\nreviewed_head: abc1234\nunresolved: 2",
+        "状態: completed\nレビューしたHEAD: abc1234\n未解決の指摘数: 2",
         "判定1: 適合\n判定2: 不適合。参照先の見出しが無い",
         "## 判定結果: 一部不適合\n根拠を示す",
         "調査結果を報告する。対象の関数は3件だった。",
@@ -386,19 +396,19 @@ def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None
             "kind": "final-result",
             "record": "agent-1",
             "line": 20,
-            "text": f"status: needs_escalation\nreason: {shared_prefix}認可の不足",
+            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-2",
             "line": 30,
-            "text": f"status: needs_escalation\nreason: {shared_prefix}認可の不足",
+            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-3",
             "line": 40,
-            "text": f"status: needs_escalation\nreason: {shared_prefix}入力の欠落",
+            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}入力の欠落",
         },
     ]
 

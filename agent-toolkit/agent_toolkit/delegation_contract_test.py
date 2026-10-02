@@ -257,7 +257,8 @@ def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> Non
     review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     criteria = (plugin_root / "skills" / "review-standards" / "references" / "reviewer.md").read_text(encoding="utf-8")
 
-    assert all("staleness" in content for content in (picker, lane, review))
+    assert all("鮮度" in content for content in (picker, lane))
+    assert all("staleness" in content for content in (picker, review))
     assert all("notice" in content for content in (picker, lane, criteria))
     assert all("不一致" in content and "充足済み" in content and "巻戻し" in content for content in (picker, lane, criteria))
     assert "reviewer.md" in review
@@ -322,19 +323,23 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     output_format = _h2_section(picker, "出力").split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
-    lane_cost_fields = re.findall(r"^  ([a-z_]+):", output_format.split("lane_costs:\n", maxsplit=1)[1], flags=re.MULTILINE)
+    lane_cost_fields = re.findall(
+        r"^  ([^\s:]+):", output_format.split("レーンの所要時間:\n", maxsplit=1)[1], flags=re.MULTILINE
+    )
 
-    assert "after_lanes" in lane_cost_fields
-    assert "`after_lanes`" in _h2_section(parent, "出力の受領")
-    assert "`after_lanes`" in _h2_section(lanes, "レーンと資源")
+    assert "先行レーン" in lane_cost_fields
+    assert "`先行レーン`" in _h2_section(parent, "出力の受領")
+    assert "`先行レーン`" in _h2_section(lanes, "レーンと資源")
+    # 旧欄名で書かれた既存の選定結果を読む互換は、生成と受領の双方に残す。
+    assert "`after_lanes`" in _h2_section(picker, "出力") and "`after_lanes`" in _h2_section(parent, "出力の受領")
     for document in (picker, parent, lanes):
         assert "既存出力の読取互換" in document
-        assert "新しい選定では省略または空列" in document or "新しい選定の`after_lanes`は省略または空列" in document
+        assert "新しい選定では省略または空列" in document or "新しい選定の`先行レーン`は省略または空列" in document
         assert "同じレーン" in document
     assert "推移的な依存先" in _h2_section(picker, "処理対象の決定")
     assert "推移的にたどる" in _h2_section(parent, "出力の受領")
     assert "依存先が先行" in parent and "依存先から処理" in lanes
-    assert "候補とdecisionへ全項目を残す" in picker
+    assert "候補と`選定`へ全項目を残す" in picker
     assert "後続だけを開始せず依存待ちを維持" in picker
     assert "後続を依存待ち" in lanes
 
@@ -346,17 +351,17 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
     output = _h2_section(picker, "出力")
     output_format = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
-    fields = re.findall(r"^  ([a-z_]+):", output_format.split("lane_costs:\n", maxsplit=1)[0], flags=re.MULTILINE)
-    assert "write_files" in fields
+    fields = re.findall(r"^  ([^\s:]+):", output_format.split("レーンの所要時間:\n", maxsplit=1)[0], flags=re.MULTILINE)
+    assert "書込対象" in fields
     receipt = _h2_section(parent, "出力の受領")
     generation = _h2_section(picker, "調査とレーン分け")
-    assert "`write_files`" in receipt
+    assert "`書込対象`" in receipt
     assert "`/`" in output and "`/`" in receipt
     assert "パス要素" in generation and "パス要素" in receipt
     assert "狭い方の範囲" in generation and "狭い方の範囲" in receipt
-    # 選定時と受領時の双方で、反映先と`write_files`の対応を同じ公開コマンドで確かめる。
-    assert "excluded_paths" in fields
-    assert "`excluded_paths`" in output
+    # 選定時と受領時の双方で、反映先と`書込対象`の対応を同じ公開コマンドで確かめる。
+    assert "書き込まない反映先" in fields
+    assert "`書き込まない反映先`" in output
     assert "atk run-script pick-wi-check" in output and "atk run-script pick-wi-check" in receipt
     assert "pick-wi-check" in run_script.SCRIPT_PATHS
 
@@ -377,7 +382,7 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     receipt = _h2_section(parent, "出力の受領")
     assert "「出力」の組合せ条件" in generation
     assert "組合せ条件も検収" in receipt and "同一pickerへの再取得" in receipt
-    assert "`上流要求だけ`（`lane`が`なし`）" in _h2_section(lanes, "上流投入")
+    assert "`上流要求だけ`（`レーン`が`なし`）" in _h2_section(lanes, "上流投入")
 
     def assert_no_blanket_exclusion(text: str) -> None:
         assert "外部操作または待機だけの項目は`lane`を`なし`とする" not in text

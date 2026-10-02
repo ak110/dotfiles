@@ -199,10 +199,10 @@ PreToolUseフックは、`start`の`delegate`・`explore`・`write`の本文が�
 受領後は実行識別子、タスク文書の必須欄、対象、権限および完了条件との一致を確認し、次のいずれかだけを返す。
 
 ```text
-route: <実際に使った委譲手段>
-identifier: <threadまたはagent識別子>
-status: completed | needs_escalation
-response: <受信者の最小完了報告>
+委譲手段: <実際に使った委譲手段>
+委譲先の識別子: <threadまたはagent識別子>
+状態: completed | needs_escalation
+委譲先の完了報告: <受信者の最小完了報告>
 ```
 
 `needs_escalation`は確認、認可または前提の補正を呼び出し元へ返す状態である。

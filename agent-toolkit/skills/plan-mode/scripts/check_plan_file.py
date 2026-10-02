@@ -22,6 +22,9 @@ try:
         locations as _plan_file,
     )
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        selection as _selection,
+    )
+    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         structure as _plan_format,
     )
 except ImportError as _import_error:
@@ -67,27 +70,29 @@ def _check_lane_selection(
 ) -> list[str]:
     """選定済みWI集合と人間由来行の根拠が計画に対応するか確かめる。
 
-    計画と比べる集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）decisionとする。
+    計画と比べる集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）選定結果の項目とする。
+    旧欄名で書かれた選定結果も`agent_toolkit._plan.selection`で新しい欄名へそろえて読む。
     再開位置を持つ項目は再開位置が指す既存計画で続け、新しい計画の対象にしないためである。
     不一致は、割り当てた要求を実行とレビューへ渡せない致命的な問題としてerrorにする。
     """
     selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
-    if not isinstance(selection, dict) or not isinstance(selection.get("decisions"), list):
-        raise ValueError("選定結果のdecisionsがYAMLの配列ではない")
+    items = _selection.decisions(selection)
+    if items is None:
+        raise ValueError(f"選定結果の`{_selection.DECISIONS_KEY}`がYAMLの配列ではない")
     lane_awis: list[str] = []
     expected: list[str] = []
-    for decision in selection["decisions"]:
+    for decision in items:
         if (
             not isinstance(decision, dict)
-            or not isinstance(decision.get("lane"), str)
-            or not isinstance(decision.get("awi"), str)
+            or not isinstance(decision.get(_selection.LANE_KEY), str)
+            or not isinstance(decision.get(_selection.WI_KEY), str)
         ):
-            raise ValueError("選定結果のdecisionにawiまたはlaneがない")
-        if decision["lane"] != lane:
+            raise ValueError(f"選定結果の項目に`{_selection.WI_KEY}`または`{_selection.LANE_KEY}`がない")
+        if decision[_selection.LANE_KEY] != lane:
             continue
-        lane_awis.append(decision["awi"])
+        lane_awis.append(decision[_selection.WI_KEY])
         if decision.get(_RESUME_POSITION_KEY, _RESUME_POSITION_NONE) == _RESUME_POSITION_NONE:
-            expected.append(decision["awi"])
+            expected.append(decision[_selection.WI_KEY])
     if not lane_awis:
         raise ValueError(f"選定結果にレーンがない: {lane}")
     if len(lane_awis) != len(set(lane_awis)):

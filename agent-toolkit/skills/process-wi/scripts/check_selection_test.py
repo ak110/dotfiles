@@ -1,4 +1,4 @@
-"""選定結果の`write_files`がAWI本文の反映先パスを覆うかの検証を確かめる。"""
+"""選定結果の`書込対象`がAWI本文の反映先パスを覆うかの検証を確かめる。"""
 
 import argparse
 import pathlib
@@ -73,9 +73,41 @@ def test_reports_uncovered_broad_and_invalid_exclusion(
     err = capsys.readouterr().err
     assert "a.md: 未被覆: docs/development/design.md" in err
     assert "b.md: 広すぎる範囲: src/" in err
-    assert "c.md: excluded_pathsの不正: LICENSE" in err
-    assert "c.md: excluded_pathsの不正: README.md" not in err
+    assert "c.md: 書き込まない反映先の不正: LICENSE" in err
+    assert "c.md: 書き込まない反映先の不正: README.md" not in err
     assert "次の操作: " in err
+
+
+def test_reads_current_field_names_like_legacy_ones(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """日本語の欄名で書いた選定結果を、旧欄名の選定結果と同じ照合結果で検証する。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`と`docs/development/design.md`を変える。")
+    _awi(notes, "c.md", "`src/model.py`を変える。`README.md`は変更しない。")
+    _awi(notes, "d.md", "`docs/development/design.md`を変える。")
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                    {"WI": "c.md", "レーン": "lane-02", "書込対象": ["src/model.py"], "書き込まない反映先": ["LICENSE"]},
+                    {"WI": "d.md", "レーン": "なし", "書込対象": []},
+                ]
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 1
+
+    err = capsys.readouterr().err
+    assert "a.md: 未被覆: docs/development/design.md" in err
+    assert "c.md: 未被覆: README.md" in err
+    assert "c.md: 書き込まない反映先の不正: LICENSE" in err
+    assert "d.md" not in err
 
 
 def test_accepts_covered_selection_and_skips_out_of_scope_decisions(

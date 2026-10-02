@@ -92,7 +92,10 @@ _TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _DENIED_
 # 計画の列・メタ情報と担当の返却値として保存する名称。周辺の説明も判定する。
 _STRUCTURAL_LABELS = ("利用者と入口", "起動経路", "計画検査完了", "正本ファイル名", "選択肢と帰結")
 _QUOTED_DATA_PATTERN = re.compile(r"「[^」]*」|`[^`]*`")
-_TERMINAL_ORDER_VALUE_PATTERN = re.compile(r'(terminal_order[^\n]*?)(?:`既定`|「既定」|"既定")')
+# 選定結果の欄`プロジェクト固有の公開後の操作の順序`（旧欄名`terminal_order`）の値`既定`は保存形式の値として扱う。
+_TERMINAL_ORDER_VALUE_PATTERN = re.compile(
+    r'((?:プロジェクト固有の公開後の操作の順序|terminal_order)[^\n]*?)(?:`既定`|「既定」|"既定")'
+)
 
 
 def _without_structural_labels(text: str) -> str:

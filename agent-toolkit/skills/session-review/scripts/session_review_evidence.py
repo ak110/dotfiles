@@ -3469,8 +3469,12 @@ _BUNDLE_BODY_LENGTH = 200
 _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
 _HOOK_NOTICE_VARIANT_LIMIT = 5
-_RETURN_STATUS_PREFIX = "status:"
+# 委譲先の返却形式の欄名。日本語名へ改める前の英字の欄名（後者）で返す版の委譲先も同じ意味で読む。
+_RETURN_STATUS_PREFIXES = ("状態:", "status:")
 _ESCALATION_RETURN_STATUS = "needs_escalation"
+_COMPLETED_RETURN_LINES = frozenset(f"{prefix} completed" for prefix in _RETURN_STATUS_PREFIXES)
+_UNRESOLVED_RETURN_PREFIXES = ("未解決の指摘数:", "unresolved:")
+_ESCALATION_REASON_PREFIXES = ("続行できない理由:", "reason:")
 _CANDIDATE_EVIDENCE_LENGTH = 2000
 UNTRUNCATED_EVIDENCE_KINDS = frozenset(
     {"user-intervention", "command-failure", "tool-failure", "delegate-return", "escalation"}
@@ -4003,9 +4007,10 @@ def _is_escalation_return(event: dict[str, Any]) -> bool:
     if not isinstance(text, str):
         return False
     return any(
-        line.strip().removeprefix(_RETURN_STATUS_PREFIX).strip() == _ESCALATION_RETURN_STATUS
+        line.strip().removeprefix(prefix).strip() == _ESCALATION_RETURN_STATUS
         for line in text.splitlines()
-        if line.strip().startswith(_RETURN_STATUS_PREFIX)
+        for prefix in _RETURN_STATUS_PREFIXES
+        if line.strip().startswith(prefix)
     )
 
 
@@ -4336,10 +4341,11 @@ def _is_negative_predicate(args: list[str]) -> bool:
 def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, resumed: bool = False) -> bool:
     """想定外事象を持たず、正常な完了だけを示す委譲返却であるかを返す。
 
-    正常な完了は、`status: completed`の行を持ち未解決の指摘が0件の返却、タスク文書が定める完了値で始まる返却、
+    正常な完了は、`状態: completed`（旧形式の`status: completed`を含む）の行を持ち未解決の指摘が0件の返却、
+    タスク文書が定める完了値で始まる返却、
     全ての判定が適合または合格の返却、およびコマンド実行の委譲（`shell`）で報告した終了コードが全て0で
     失敗・警告・診断の件数に1以上が無い返却とする。
-    `status: completed`の前に置いた前置きの文は、1回の配送で終えた委譲先に限って正常な完了に含める。
+    `状態: completed`の前に置いた前置きの文は、1回の配送で終えた委譲先に限って正常な完了に含める。
     再開された委譲先（`resumed`）の前置きは、受け取り済みの報告の返し直しのような異常を述べる場合があるためである。
     委譲先は想定外の事象を`想定外事象:`行で返すため、この行を持つ返却と、調査結果のような
     自由記述の返却は、本文の意味の判断を要するため候補に残す。
@@ -4353,8 +4359,8 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
     body = [line for line in lines if line and not line.startswith("```")]
     if not body:
         return False
-    if body[0] == "status: completed" or ("status: completed" in body and not resumed):
-        unresolved = [line.partition(":")[2].strip() for line in body if line.startswith("unresolved:")]
+    if body[0] in _COMPLETED_RETURN_LINES or (not _COMPLETED_RETURN_LINES.isdisjoint(body) and not resumed):
+        unresolved = [line.partition(":")[2].strip() for line in body if line.startswith(_UNRESOLVED_RETURN_PREFIXES)]
         return all(value == "0" for value in unresolved)
     if body[0] in _DELEGATE_COMPLETION_VALUES:
         return True
@@ -4493,7 +4499,9 @@ def _candidate_mechanism(candidate_kind: str, event: dict[str, Any]) -> str:
     if not isinstance(raw, str):
         return ""
     if candidate_kind == "escalation":
-        reason = next((line.partition(":")[2].strip() for line in raw.splitlines() if line.startswith("reason:")), "")
+        reason = next(
+            (line.partition(":")[2].strip() for line in raw.splitlines() if line.startswith(_ESCALATION_REASON_PREFIXES)), ""
+        )
     elif candidate_kind == "hook-notice" and event.get("tag") == "block":
         marker = re.search(r"\b(?:blocked|block):\s*", raw, flags=re.IGNORECASE)
         detail = raw[marker.end() :].strip() if marker else ""

@@ -51,9 +51,9 @@ _MACHINE_IDENTIFIER_PATTERN = re.compile(
 # 機械可読な返却行。小文字のsnake_case識別子だけの行と、その識別子をキーとする`<キー>: <値>`行を対象とする。
 # `agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」は、委譲先がチェックポイントまたは
 # 完了報告でターンを終える場合に指定形式の文面だけを出力し地の文を加えないことを求める。
-# これらの形式（`status: checkpoint`などのcheckpointブロック、`merged_head:`などの統合結果、
-# `needs_escalation`の単独返却）は英字だけで構成されるため、地の文へ残すと英語応答と判定され、
-# 規定どおりの返却が遮断される。
+# これらの形式のうち英字だけで構成される行（`status: checkpoint`などのcheckpointブロック、
+# 英字の欄名で返す旧形式の返却、`needs_escalation`の単独返却）は、地の文へ残すと英語応答と判定され、
+# 規定どおりの返却が遮断される。日本語の欄名（`統合後のHEAD:`など）の行は日本語の地の文として数える。
 # キーを小文字のsnake_caseへ限定するのは、`Summary:`のように大文字で始まる英語の散文を
 # 除外対象にせず、人間向け本文が英語で返ることの検出を維持するためである。
 _MACHINE_READABLE_LINE_PATTERN = re.compile(r"^[ \t]*[a-z][a-z0-9_]*(?::[^\n]*)?[ \t]*$", re.MULTILINE)

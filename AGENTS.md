@@ -29,7 +29,7 @@
 | --- | --- |
 | `dotfiles-development` | テスト、整形および依存更新の手順と、振り返りの参照文書の位置 |
 | `dotfiles-release` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
-| `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応、process-wiのpickerが書く`project_notes`、変更した規範の自セッション適用 |
+| `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応、process-wiのpickerが書く`プロジェクト規範の指定`、変更した規範の自セッション適用 |
 | `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、version bump、権限設定の配置 |
 | `pytools-edit` | `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集 |
 | `sync-platform-pair` | Linux/Windowsペアファイルの同期 |
