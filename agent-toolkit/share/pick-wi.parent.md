@@ -44,7 +44,7 @@ pickerから`status`、`output_file`および`lines`の3行を受領し、出力
 
 再開位置がある項目では、作業root内の計画ファイルの絶対パスであり、計画の`関連WI`が対象AWIを含むことを確認する。再開位置が無い項目は新しい計画を起草する対象とする。省略時の値との一致により省略された行は、pickerの出力契約が定める省略時の値として解釈する。
 
-欠落、重複、形式外の値または不一致を検出した場合だけ、観測値を添えて同じpicker threadへ再取得を指示する。`needs_escalation`では結果をそのまま保持し、確認事項をユーザー確認する。回答を得られない場合はUWIを登録し、その回答を得るまで進められない項目を`atk wi hold`で保留する。
+欠落、重複、形式外の値または不一致を検出した場合だけ、観測値を添えて同じpicker threadへ再取得を指示する。`needs_escalation`では結果をそのまま保持し、確認事項をユーザー確認する。回答を得られない場合はUWIを登録し、その回答を得るまで進められない項目を`atk wi hold`で保留する。選定後に`processing`へ移した項目は`atk wi hold --state=processing <ファイル名>`で保留する。
 
 メインはpickerの出力へ不採用と既存実装による充足の確定が含まれないことを検収する。選定工程ではメインがAWIを直接`reject`または`adopt`せず、採否と通常の終端はレーン担当と統合担当が行う。反映後の観測だけが残る延期`adopt`は`agent-toolkit:process-wi`の`references/finish-session.md`「セッション終了」に従う。採否の確定はレーン担当の職務であり、その職務境界は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める。
 
