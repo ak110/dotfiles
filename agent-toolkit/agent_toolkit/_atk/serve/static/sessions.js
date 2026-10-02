@@ -236,7 +236,35 @@ function renderWarnings(warnings) {
   showWarnings((warnings || []).map((warning) => `${warning.host}: ${warning.reason}`));
 }
 
-async function loadList() {
+// 取得中に再び呼ばれた処理は新しい要求を並行して発行せず、進行中の取得の完了後に1回だけ取り直す。
+// `refresh`通知は新しい記録の作成ごとに届き、一覧の取得より短い間隔で続くことがある。
+// 要求を重ねるとサーバーで同じ走査が重なり、他の画面の応答も待たされる。
+// 呼び出し元へは取り直しまで含めた完了を返す。
+function coalesced(run) {
+  let inFlight = null;
+  let rerun = false;
+  return () => {
+    if (inFlight) {
+      rerun = true;
+      return inFlight;
+    }
+    inFlight = (async () => {
+      try {
+        do {
+          rerun = false;
+          await run();
+        } while (rerun);
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+}
+
+const loadList = coalesced(fetchList);
+
+async function fetchList() {
   try {
     const response = await (fetch(BASE_PATH + "/api/sessions/list"));
     if (!response.ok) throw new Error(`一覧を取得できません (${response.status})`);
@@ -608,10 +636,10 @@ function subscribeEvents() {
   });
 }
 
-async function resyncFromServer() {
+const resyncFromServer = coalesced(async () => {
   await loadList();
   await refreshSelectedDetail();
-}
+});
 
 async function init() {
   readBasePath();

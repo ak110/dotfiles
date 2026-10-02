@@ -442,7 +442,7 @@ class TestWaitScheduleParser:
         monkeypatch.setattr(
             _managed_temp,
             "list_unregistered_candidates",
-            lambda: tuple(tmp_path / f"orphan-{index}" for index in range(count)),
+            lambda **_kwargs: tuple(tmp_path / f"orphan-{index}" for index in range(count)),
         )
 
         with pytest.raises(SystemExit) as exc_info:
@@ -456,7 +456,7 @@ class TestWaitScheduleParser:
         if count == 0:
             assert not warning_lines
         else:
-            assert warning_lines == [f"警告: 登録を持たない管理対象が{count}件ある"]
+            assert warning_lines == [f"警告: 自動削除されずに残った、登録を持たない管理対象が{count}件ある"]
             next_action = err_lines[err_lines.index(warning_lines[0]) + 1]
             assert next_action.startswith("次の操作: ")
             assert "atk managed-temp list" in next_action
@@ -477,7 +477,7 @@ class TestWaitScheduleParser:
         """未登録領域の警告は値が1の委譲先だけで抑止する。"""
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda: (tmp_path / "orphan",))
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
         if delegated_session is None:
             monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         else:
@@ -507,7 +507,7 @@ class TestWaitScheduleParser:
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
 
-        def fail_count() -> tuple[pathlib.Path, ...]:
+        def fail_count(**_kwargs: object) -> tuple[pathlib.Path, ...]:
             raise _managed_temp.ManagedTempError("走査失敗")
 
         monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", fail_count)
@@ -535,7 +535,7 @@ class TestWaitScheduleParser:
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda: (tmp_path / "orphan",))
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
         state: dict = {}
 
         def update_state(_session_id: str, mutator):
@@ -567,7 +567,7 @@ class TestWaitScheduleParser:
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda: (tmp_path / "orphan",))
+        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
 
         def fail_update(_session_id: str, _mutator) -> bool:
             return False
@@ -631,6 +631,52 @@ class TestWaitScheduleParser:
         assert "警告: 管理対象一時領域を自動削除できない" in captured.err
         assert f"atk managed-temp cleanup --path {target}" in captured.err
         assert target.exists()
+
+    def test_unregistered_managed_temp_is_swept_unless_in_use(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """登録を失った領域は、最終更新7日以内とgit worktreeの登録が残る`.git`を含むもの以外を削除する。
+
+        残すべき領域を削除すると他の作業が使う一時ファイルやworktreeを失い、
+        削除すべき領域を残すと所有を確かめられない領域が無期限に残る。
+        """
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        repository_admin = tmp_path / "repository" / ".git" / "worktrees" / "lane"
+        repository_admin.mkdir(parents=True)
+
+        def unregistered(prefix: str, *, expired: bool, gitdir: pathlib.Path | None = None) -> pathlib.Path:
+            target = _managed_temp.create_managed_temp(prefix)
+            _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
+            if gitdir is not None:
+                (target / "wt").mkdir()
+                (target / "wt" / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
+            if expired:
+                for path in (*target.rglob("*"), target):
+                    os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
+            return target
+
+        abandoned = unregistered("abandoned", expired=True)
+        recent = unregistered("recent", expired=False)
+        live_worktree = unregistered("live-worktree", expired=True, gitdir=repository_admin)
+        stale_worktree = unregistered("stale-worktree", expired=True, gitdir=tmp_path / "missing" / "worktrees" / "lane")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now)
+
+        assert exc_info.value.code == 0
+        assert not abandoned.exists()
+        assert not stale_worktree.exists()
+        assert recent.exists()
+        assert live_worktree.exists()
+        err_lines = capsys.readouterr().err.splitlines()
+        assert [line for line in err_lines if "登録を持たない管理対象が" in line] == [
+            "警告: 自動削除されずに残った、登録を持たない管理対象が1件ある"
+        ]
 
     @pytest.mark.parametrize("path_form", ["canonical", "parent-reference"])
     def test_explicit_cleanup_succeeds_after_automatic_cleanup(

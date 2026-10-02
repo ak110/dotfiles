@@ -997,11 +997,12 @@ fetchCalls.length = 0;
 elements['search-input'].value = 'all-filters-only';
 elements['kind-filter'].value = 'all';
 elements['state-filter'].value = 'all';
+elements['period-filter'].value = 'all';
 elements['answer-filter'].value = 'all';
 elements['target-filter'].value = '';
 elements['source-filter'].value = '';
 fetchHandler = async url => {
-  if (url !== '/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1') {
+  if (url !== '/atk/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1') {
     throw new Error('想定外のURL: ' + url);
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
@@ -1026,7 +1027,7 @@ process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, 
         assert result[name]["noticeHidden"] is False
         assert result[name]["warning"] == ""
         assert result[name]["urls"] == [
-            f"/atk/api/entries?type=all&status=active&answered=all&q={name}&page=1",
+            f"/atk/api/entries?type=all&status=active&answered=all&period=2w&q={name}&page=1",
             f"/atk/api/entries?q={name}&page=1",
         ]
         assert result[name]["filters"] == {
@@ -1043,23 +1044,23 @@ process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, 
         assert result[name]["warning"] == "一覧から除外したファイル: initial.md（初回警告）"
         assert result[name]["status"] == "一致する項目はありません"
         assert result[name]["urls"] == [
-            f"/atk/api/entries?type=all&status=active&answered=all&q={name}&page=1",
+            f"/atk/api/entries?type=all&status=active&answered=all&period=2w&q={name}&page=1",
             f"/atk/api/entries?q={name}&page=1",
         ]
     assert result["normal"] == {
         "rows": ["normal.md"],
         "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=active&answered=all&q=normal&page=1"],
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all&period=2w&q=normal&page=1"],
     }
     assert result["emptySearch"] == {
         "rows": [],
         "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=active&answered=all&page=1"],
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all&period=2w&page=1"],
     }
     assert result["allFilters"] == {
         "rows": [],
         "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1"],
+        "urls": ["/atk/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1"],
     }
     assert result["fallbackNotice"] == expected_notice
 

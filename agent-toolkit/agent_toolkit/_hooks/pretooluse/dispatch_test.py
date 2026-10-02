@@ -964,3 +964,30 @@ class TestLanguageReinjection:
     ) -> None:
         contexts = self._contexts(tmp_path, extra_payload, extra_env)
         assert all(rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE not in context for context in contexts)
+
+
+@pytest.mark.parametrize(
+    ("extra_payload", "expected_warned"),
+    [({}, True), ({"turn_id": "codex-turn"}, False)],
+    ids=["claude-code", "codex"],
+)
+def test_bash_drive_letter_path_warning_reaches_additional_context(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    extra_payload: dict[str, str],
+    expected_warned: bool,
+) -> None:
+    """Windows上のClaude CodeのBashでは、PATHのドライブ文字形式の警告が`additionalContext`へ届く。
+
+    Codexのpayload（`turn_id`を持つ）はPowerShellでシェルを実行するため警告しない。
+    """
+    monkeypatch.setattr(sys, "platform", "win32")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": 'T="C:/x"; export PATH="$T/bin:$PATH"; command -v jq'},
+        "session_id": "dispatch-drive-letter-path",
+        **extra_payload,
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    out = capsys.readouterr().out
+    assert ("`PATH`へドライブ文字形式の要素" in out) is expected_warned

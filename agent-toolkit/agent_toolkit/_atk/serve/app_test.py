@@ -945,6 +945,85 @@ async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(t
 
 
 @pytest.mark.asyncio
+async def test_entries_api_period_limits_by_filename_creation_time(tmp_path: pathlib.Path) -> None:
+    """一覧APIの`period`はファイル名の作成日時で限定し、省略時と`all`は全期間、不正値は400を返す。
+
+    更新時刻で限定すると、Gitの取得や同期で古いWIの更新時刻が新しくなり期間の内側へ戻る。
+    """
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    now = datetime.datetime.now()
+    names = {days: f"{now - datetime.timedelta(days=days):%Y%m%d-%H%M%S}-001.md" for days in (1, 20, 40, 70)}
+    for name in [*names.values(), "unnamed.md"]:
+        (inbox / name).write_text("---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
+    # 更新時刻はすべて現在とし、期間の判定が更新時刻に依存しないことを確かめる。
+    client = _serve_app(tmp_path).test_client()
+
+    async def filenames(query: str) -> list[str]:
+        response = await client.get(f"/api/entries?status=inbox{query}")
+        assert response.status_code == 200
+        return [item["filename"] for item in (await response.get_json())["entries"]]
+
+    every = sorted([*names.values(), "unnamed.md"], reverse=True)
+    assert await filenames("") == every
+    assert await filenames("&period=all") == every
+    assert await filenames("&period=2w") == sorted([names[1], "unnamed.md"], reverse=True)
+    assert await filenames("&period=4w") == sorted([names[1], names[20], "unnamed.md"], reverse=True)
+    assert await filenames("&period=8w") == sorted([names[1], names[20], names[40], "unnamed.md"], reverse=True)
+    invalid = await client.get("/api/entries?period=1w")
+    assert invalid.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_entries_api_returns_identical_pages_while_reusing_unchanged_files(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2回目以降の一覧は、変更のないファイルの実パス解決と表示用項目の組み立てを繰り返さずに同じ結果を返す。
+
+    再利用が値まで固定すると、更新したファイルの要約と更新日時が古いまま返る。
+    """
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    for index in range(3):
+        path = inbox / f"entry-{index}.md"
+        path.write_text(f"---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文{index}\n", encoding="utf-8")
+        os.utime(path, (1_700_000_000, 1_700_000_000))
+    client = _serve_app(tmp_path).test_client()
+    query = "/api/entries?status=all&page=1"
+    first = await (await client.get(query)).get_json()
+    built: list[str] = []
+    resolved: list[pathlib.Path] = []
+    original_entry = serve_app._entry
+    original_resolve = pathlib.Path.resolve
+
+    def counting_entry(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> dict[str, object]:
+        built.append(path.name)
+        return original_entry(path, *args, **kwargs)
+
+    def counting_resolve(self: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> pathlib.Path:
+        resolved.append(self)
+        return original_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(serve_app, "_entry", counting_entry)
+    monkeypatch.setattr(pathlib.Path, "resolve", counting_resolve)
+
+    second = await (await client.get(query)).get_json()
+
+    assert second == first
+    assert not built
+    assert not [path for path in resolved if path.suffix == ".md"]
+
+    changed = inbox / "entry-1.md"
+    changed.write_text("---\ntype: awi\ntarget_repo: example/repo\n---\n\n更新後の本文\n", encoding="utf-8")
+    third = await (await client.get(query)).get_json()
+
+    by_name = {item["filename"]: item for item in third["entries"]}
+    assert by_name["entry-1.md"]["summary"] == "更新後の本文"
+    assert built == ["entry-1.md"]
+    assert third["pagination"] == first["pagination"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("path", "payload"),
     [

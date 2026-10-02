@@ -1,14 +1,16 @@
 """Claude CodeとCodexの起動結果から子セッションIDを取得する。"""
 
-import functools
 import json
 import pathlib
 import typing
 
 
-@functools.lru_cache(maxsize=2048)
-def _delegated_ids_cached(path: pathlib.Path, engine: str, _mtime_ns: int, _size: int) -> frozenset[str]:
-    """更新時刻とサイズでキャッシュした記録から子セッションIDを返す。"""
+def delegated_session_ids(path: pathlib.Path, engine: str) -> frozenset[str]:
+    """起動ツールの結果に記録された子セッションIDを返す。
+
+    記録を毎回読み直す。一覧の走査で変更のない記録を読み直さないための保持は、
+    `session_watch.RecordSummaryIndex`が記録の実パスごとに担う。
+    """
     call_ids: set[str] = set()
     children: set[str] = set()
 
@@ -106,12 +108,3 @@ def _delegated_ids_cached(path: pathlib.Path, engine: str, _mtime_ns: int, _size
     except OSError:
         return frozenset()
     return frozenset(children)
-
-
-def delegated_session_ids(path: pathlib.Path, engine: str) -> frozenset[str]:
-    """起動ツールの結果に記録された子セッションIDを返す。"""
-    try:
-        stat = path.stat()
-    except OSError:
-        return frozenset()
-    return _delegated_ids_cached(path, engine, stat.st_mtime_ns, stat.st_size)

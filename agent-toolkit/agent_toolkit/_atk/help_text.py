@@ -270,7 +270,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk managed-temp": {
         "summary": "管理対象一時領域を作成・列挙・後始末する",
-        "description": "目的: agent-toolkitが所有権を持つ一時ディレクトリを作成し、列挙し、後始末する。\n利用場面: 一時ファイルはSessionStartが通知するセッション単位の領域へ置くことを基本とし、本コマンドはその通知が無い場合、別のnamespaceから同じパスへ到達させる場合、Git worktreeなど`.git`を含む領域を置く場合に使う。残存した領域を確認するとき。\n対象と出力: agent-toolkitのデータディレクトリ配下の一時領域と登録簿を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 登録済み領域は最終更新から7日を超えると`atk`の実行時に自動削除する。`.git`を含む領域は自動削除の対象外とする。\n復元・後始末: 早く削除したい領域と`.git`を含む領域は`atk managed-temp cleanup`で削除する。残存した領域は`atk managed-temp list`で確認する。",
+        "description": "目的: agent-toolkitが所有権を持つ一時ディレクトリを作成し、列挙し、後始末する。\n利用場面: 一時ファイルはSessionStartが通知するセッション単位の領域へ置くことを基本とし、本コマンドはその通知が無い場合、別のnamespaceから同じパスへ到達させる場合、Git worktreeなど`.git`を含む領域を置く場合に使う。残存した領域を確認するとき。\n対象と出力: agent-toolkitのデータディレクトリ配下の一時領域と登録簿を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 登録済み領域は最終更新から7日を超えると`atk`の実行時に自動削除する。`.git`を含む登録済み領域は自動削除の対象外とする。一時rootを指定しない場合に使う場所の直下で登録を失った領域も、最終更新から7日を超えると自動削除する。ただし、git worktreeとして登録が残る`.git`を含む領域は使用中として残す。\n復元・後始末: 早く削除したい領域と`.git`を含む領域は`atk managed-temp cleanup`で削除する。残存した領域は`atk managed-temp list`で確認する。",
         "epilog": "実行例:\n\n  atk managed-temp create\n  atk managed-temp list",
     },
     "atk managed-temp create": {

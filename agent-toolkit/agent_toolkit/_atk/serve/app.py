@@ -46,6 +46,11 @@ _ANSWERED_FILTERS = {"all", "yes", "no"}
 _PLAN_FILTERS = {"all", "normal", "plan"}
 """`plan`は、廃止した計画ファイル付きの型で保存された項目を見分ける読取互換の表示区分である。"""
 _SOURCE_KIND_FILTERS = {"human", "agent"}
+_PERIOD_WEEKS = {"2w": 2, "4w": 4, "8w": 8}
+"""一覧の期間の指定と週数。`all`は期間で限定しない。"""
+_PERIOD_FILTERS = {"all", *_PERIOD_WEEKS}
+_CREATED_AT_RE = re.compile(r"(\d{8}-\d{6})-")
+"""WIファイル名の先頭にある作成日時。`atk wi add`がローカル時刻で付ける。"""
 _ENTRY_PAGE_SIZE = 100
 _DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
 _WEB_LOCK_TIMEOUT = 2.0
@@ -59,6 +64,7 @@ Web UIはエンドユーザーが画面を閲覧する前提のため短く取�
 # 別のホストで記録した処理日時と、このホストのファイル更新時刻の時計のずれを吸収する余裕。
 _PROCESSED_TIME_CLOCK_MARGIN = datetime.timedelta(days=1)
 _PROCESSED_AT_KEY = "terminal_processing_time"
+_LIST_ENTRY_KEY = "list_entry"
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
 SSE_HEARTBEAT_SEC = 15.0
 """3画面のSSEがheartbeatを送る間隔。
@@ -233,6 +239,20 @@ def _summary(text: str, kind: str) -> str:
     if kind == common.WI_TYPE_UWI:
         lines = [line for line in lines if not line.startswith("<!--")]
     return lines[0][:160] if lines else ""
+
+
+def _created_at(filename: str) -> datetime.datetime | None:
+    """WIファイル名の先頭の作成日時をローカル時刻として返す。読めない名前は`None`を返す。
+
+    一覧の期間の起点に更新時刻を使わないのは、Gitの取得や同期で変わり、作成からの経過を表さないためである。
+    """
+    match = _CREATED_AT_RE.match(filename)
+    if match is None:
+        return None
+    try:
+        return datetime.datetime.strptime(match.group(1), "%Y%m%d-%H%M%S")
+    except ValueError:
+        return None
 
 
 def _source_kind(source: typing.Any) -> str:
@@ -516,6 +536,8 @@ class Operations:
         plan_filter = filters.get("plan", "all")
         target_repo_filter = filters.get("target_repo")
         query_terms = [term for term in filters.get("q", "").casefold().split(" ") if term]
+        period_weeks = _PERIOD_WEEKS.get(filters.get("period", "all"))
+        created_after = datetime.datetime.now() - datetime.timedelta(weeks=period_weeks) if period_weeks is not None else None
         states = _resolve_states(status_filter)
         resolver_cache: dict[str, str | None] = {}
         canonical_target_repo = (
@@ -525,6 +547,11 @@ class Operations:
         for indexed in indexed_entries:
             if kind_filter not in ("all", indexed.kind):
                 continue
+            if created_after is not None:
+                created_at = _created_at(indexed.path.name)
+                # 作成日時を読めない名前の項目は、期間を判定できないため期間の指定にかかわらず返す。
+                if created_at is not None and created_at < created_after:
+                    continue
             metadata = indexed.metadata
             is_plan = indexed.kind == common.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str)
             if plan_filter != "all" and is_plan != (plan_filter == "plan"):
@@ -561,15 +588,24 @@ class Operations:
                 )
                 if not all(any(term in value for value in search_values) for term in query_terms):
                     continue
-            item = _entry(
-                indexed.path,
-                indexed.kind or "unknown",
-                indexed.state,
-                indexed.text,
-                metadata,
-                indexed.updated_at,
-            )
-            result.append(item)
+            # 表示用項目は本文、状態、ファイル名および更新時刻だけで決まるため、解析結果とともに保持して
+            # 変更のないファイルでは組み立て直さない。
+            entry_key = (indexed.state, indexed.path.name, indexed.updated_at)
+            cached_entry = indexed.derived.get(_LIST_ENTRY_KEY)
+            if cached_entry is None or cached_entry[0] != entry_key:
+                cached_entry = (
+                    entry_key,
+                    _entry(
+                        indexed.path,
+                        indexed.kind or "unknown",
+                        indexed.state,
+                        indexed.text,
+                        metadata,
+                        indexed.updated_at,
+                    ),
+                )
+                indexed.derived[_LIST_ENTRY_KEY] = cached_entry
+            result.append(dict(cached_entry[1]))
         return sorted(result, key=lambda item: str(item["filename"]), reverse=True), warnings
 
     def entries_with_warnings(
@@ -1305,6 +1341,8 @@ def _validate_entry_filters(filters: dict[str, str]) -> None:
         raise WebApiInputError("answeredが不正です")
     if filters.get("plan", "all") not in _PLAN_FILTERS:
         raise WebApiInputError("planが不正です")
+    if filters.get("period", "all") not in _PERIOD_FILTERS:
+        raise WebApiInputError("periodが不正です")
     _entry_page(filters)
     if "source_empty" in filters and filters["source_empty"] != "true":
         raise WebApiInputError("source_emptyはtrueで指定してください")
@@ -1344,6 +1382,7 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             "status",
             "answered",
             "plan",
+            "period",
             "page",
             "target_repo",
             "source",

@@ -351,9 +351,30 @@ def count_unregistered_candidates(prefix: str | None = None) -> int:
     return len(_unregistered_candidates(prefix))
 
 
-def list_unregistered_candidates(prefix: str | None = None) -> tuple[pathlib.Path, ...]:
-    """登録を持たない管理対象の絶対パスを安定順で返す。"""
-    return tuple(_unregistered_candidates(prefix))
+def list_unregistered_candidates(
+    prefix: str | None = None,
+    *,
+    stale_at: datetime.datetime | None = None,
+    max_age_days: int = MAX_AGE_DAYS,
+) -> tuple[pathlib.Path, ...]:
+    """登録を持たない管理対象の絶対パスを安定順で返す。
+
+    `stale_at`を指定した場合は、その時点で最終更新から`max_age_days`を超えた候補だけを返す。
+    自動削除の掃引の後に呼ぶと、使用中と判定されて残った候補と削除に失敗した候補だけが残る。
+    """
+    candidates = _unregistered_candidates(prefix)
+    if stale_at is None:
+        return tuple(candidates)
+    cutoff_ns = _cutoff_ns(stale_at, max_age_days)
+    stale: list[pathlib.Path] = []
+    for path in candidates:
+        try:
+            latest_mtime_ns, _git_paths = _latest_update_and_git_paths(path)
+        except OSError:
+            continue
+        if latest_mtime_ns < cutoff_ns:
+            stale.append(path)
+    return tuple(stale)
 
 
 def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
@@ -514,17 +535,73 @@ def _sweep_cleanup_completed_elsewhere(
         return False
 
 
+def _cutoff_ns(now: datetime.datetime, max_age_days: int) -> int:
+    """`now`から`max_age_days`を遡った時刻をエポックからのナノ秒で返す。"""
+    reference = now if now.tzinfo is not None else now.astimezone()
+    cutoff = (reference - datetime.timedelta(days=max_age_days)).astimezone(datetime.UTC)
+    elapsed = cutoff - datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
+    return (elapsed.days * 86_400 + elapsed.seconds) * 1_000_000_000 + elapsed.microseconds * 1_000
+
+
+def _latest_update_and_git_paths(path: pathlib.Path) -> tuple[int, list[pathlib.Path]]:
+    """領域自身と配下の最終更新時刻（ナノ秒）と、配下にある`.git`のパスを返す。
+
+    作成時刻ではなく配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
+    """
+    latest_mtime_ns = path.stat().st_mtime_ns
+    git_paths: list[pathlib.Path] = []
+    pending = [path]
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as children:
+            for child in children:
+                metadata = child.stat(follow_symlinks=False)
+                latest_mtime_ns = max(latest_mtime_ns, metadata.st_mtime_ns)
+                if child.name == ".git":
+                    git_paths.append(pathlib.Path(child.path))
+                if stat.S_ISDIR(metadata.st_mode):
+                    pending.append(pathlib.Path(child.path))
+    return latest_mtime_ns, git_paths
+
+
+def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
+    """`.git`ファイルの`gitdir:`が指すリポジトリ側の管理ディレクトリが実在するかを返す。
+
+    git worktreeの`.git`はファイルで、リポジトリ側の`worktrees/<名前>`を指す。指す先が残る間は
+    元のリポジトリの`git worktree list`に登録が残っており、そのリポジトリの作業が使用中である。
+    ディレクトリの`.git`（単独の複製）は他から参照されないため、ここでは使用中と扱わない。
+    """
+    if not git_path.is_file() or git_path.is_symlink():
+        return False
+    try:
+        first_line = git_path.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, UnicodeDecodeError, IndexError):
+        # 内容を読めない場合は使用中かを判定できないため、削除せず残す側へ倒す。
+        return True
+    prefix = "gitdir:"
+    if not first_line.startswith(prefix):
+        return True
+    target = pathlib.Path(first_line[len(prefix) :].strip())
+    if not target.is_absolute():
+        target = git_path.parent / target
+    return target.is_dir()
+
+
 def sweep_expired_managed_temp(
     *,
     now: datetime.datetime,
     max_age_days: int = MAX_AGE_DAYS,
 ) -> list[pathlib.Path]:
-    """最終更新から`max_age_days`を超えた管理対象一時領域を削除し、削除したパスを返す。"""
-    reference = now if now.tzinfo is not None else now.astimezone()
-    cutoff = (reference - datetime.timedelta(days=max_age_days)).astimezone(datetime.UTC)
-    epoch = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
-    elapsed = cutoff - epoch
-    cutoff_ns = (elapsed.days * 86_400 + elapsed.seconds) * 1_000_000_000 + elapsed.microseconds * 1_000
+    """最終更新から`max_age_days`を超えた管理対象一時領域を削除し、削除したパスを返す。
+
+    登録済み領域は`.git`を含むものを除いて削除する。続いて、一時rootを指定しない場合に使う場所の直下で
+    登録を失った領域（マーカーだけを持つ領域）も、他の作業が使用中と判定できるもの以外を削除する。
+    一時rootを指定しない場合に使う場所は`atk`だけが作成する場所であり、登録を失った領域を所有の検証なしに回収しても
+    利用者のディレクトリを巻き込まないという利用者の判断（2026年10月2日）に基づく。
+    使用中の判定は、配下を含む最終更新が`max_age_days`以内であることと、git worktreeとして
+    登録が残る`.git`を含むことの2つとする。
+    """
+    cutoff_ns = _cutoff_ns(now, max_age_days)
     deleted: list[pathlib.Path] = []
     for entry in list_managed_temp():
         path = pathlib.Path(entry["path"])
@@ -534,22 +611,10 @@ def sweep_expired_managed_temp(
             record = _load_private_json(registry_path)
             recorded_nonce = record.get("nonce")
             nonce = recorded_nonce if isinstance(recorded_nonce, str) else None
-            latest_mtime_ns = path.stat().st_mtime_ns
-            if latest_mtime_ns >= cutoff_ns:
+            if path.stat().st_mtime_ns >= cutoff_ns:
                 continue
-            contains_git = False
-            pending = [path]
-            while pending:
-                directory = pending.pop()
-                with os.scandir(directory) as children:
-                    for child in children:
-                        metadata = child.stat(follow_symlinks=False)
-                        latest_mtime_ns = max(latest_mtime_ns, metadata.st_mtime_ns)
-                        if child.name == ".git":
-                            contains_git = True
-                        if stat.S_ISDIR(metadata.st_mode):
-                            pending.append(pathlib.Path(child.path))
-            if latest_mtime_ns >= cutoff_ns or contains_git:
+            latest_mtime_ns, git_paths = _latest_update_and_git_paths(path)
+            if latest_mtime_ns >= cutoff_ns or git_paths:
                 continue
             cleanup_managed_temp(path)
         except (ManagedTempError, OSError) as error:
@@ -558,6 +623,29 @@ def sweep_expired_managed_temp(
             _outcome.report_warning(
                 f"管理対象一時領域を自動削除できない: {path}: {error}",
                 next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} で回収する",
+            )
+            continue
+        deleted.append(path)
+    try:
+        unregistered = _unregistered_candidates(None)
+    except (OSError, ManagedTempError):
+        # `atk`の共通起動は続けて同じ探索で残存件数を数え、失敗を警告する（委譲先セッションと`atk managed-temp`を除く）。
+        return deleted
+    for path in unregistered:
+        if path.name.startswith(".agent-toolkit-cleanup-"):
+            # 中断した後始末の隔離先はマーカーを持つが、元の領域の登録か消費途中状態が後始末の再開を担う。
+            continue
+        try:
+            latest_mtime_ns, git_paths = _latest_update_and_git_paths(path)
+            if latest_mtime_ns >= cutoff_ns or any(_is_registered_git_worktree(git_path) for git_path in git_paths):
+                continue
+            cleanup_managed_temp(path, recover_registry=True, force_remove=True, force_reason="自動削除")
+        except (ManagedTempError, OSError) as error:
+            if _sweep_cleanup_completed_elsewhere(path, _registry_path(path), None):
+                continue
+            _outcome.report_warning(
+                f"登録を失った管理対象一時領域を自動削除できない: {path}: {error}",
+                next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} --force-remove で回収する",
             )
             continue
         deleted.append(path)
@@ -1008,7 +1096,9 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
         ) from error
 
 
-def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: ManagedTempError) -> None:
+def _force_remove_managed_temp(
+    path_arg: pathlib.Path | str, original_error: ManagedTempError, *, reason: str = "--force-remove"
+) -> None:
     """親root、通常ディレクトリおよび所有者だけを確認して実体と登録を回収する。"""
     try:
         _, path = _validate_path_shape(pathlib.Path(path_arg))
@@ -1046,7 +1136,7 @@ def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: Man
     except OSError as error:
         raise ManagedTempError(f"管理対象を強制回収できない: {path}: {error}") from error
     _outcome.report_warning(
-        f"--force-removeにより管理情報、登録および権限の検証を省いて管理対象を回収した: {path}",
+        f"{reason}により管理情報、登録および権限の検証を省いて管理対象を回収した: {path}",
         next_action="対応不要（処理は継続した）",
     )
 
@@ -1094,8 +1184,12 @@ def cleanup_managed_temp(
     session_id: str | None = None,
     recover_registry: bool = False,
     force_remove: bool = False,
+    force_reason: str = "--force-remove",
 ) -> None:
-    """通常の後始末を行い、明示指定時だけ検証失敗後の強制回収を試みる。"""
+    """通常の後始末を行い、明示指定時だけ検証失敗後の強制回収を試みる。
+
+    `force_reason`は強制回収を報告する警告で、回収を指示した操作として示す語である。
+    """
     if path_arg is not None and session_id is not None:
         raise ManagedTempError("pathとsession_idは同時に指定できない")
     if session_id is not None:
@@ -1114,4 +1208,4 @@ def cleanup_managed_temp(
     except ManagedTempError as error:
         if not force_remove:
             raise
-        _force_remove_managed_temp(path_arg, error)
+        _force_remove_managed_temp(path_arg, error, reason=force_reason)

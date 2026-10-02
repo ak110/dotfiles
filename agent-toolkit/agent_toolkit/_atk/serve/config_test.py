@@ -87,14 +87,15 @@ process.stdout.write(JSON.stringify({focused, hidden: elements['operation-notice
 
 
 def test_assets_render_three_contextual_empty_states() -> None:
-    """条件適用中、対応中0件、全件0件を別の回復操作へ案内する。"""
+    """条件適用中、対応中0件、期間内0件、全件0件を別の回復操作へ案内する。"""
     result = _run_node_ui(
         """
 entries = [];
 renderEmptyState();
 const active = {
   message: elements['empty-state-message'].textContent,
-  allStates: !elements['empty-all-states-button'].hidden
+  allStates: !elements['empty-all-states-button'].hidden,
+  allPeriods: !elements['empty-all-periods-button'].hidden
 };
 elements['search-input'].value = 'none';
 renderEmptyState();
@@ -105,17 +106,26 @@ const filtered = {
 elements['search-input'].value = '';
 elements['state-filter'].value = 'all';
 renderEmptyState();
+const recent = {
+  message: elements['empty-state-message'].textContent,
+  create: !elements['empty-create-button'].hidden,
+  allPeriods: !elements['empty-all-periods-button'].hidden
+};
+elements['period-filter'].value = 'all';
+renderEmptyState();
 const all = {
   message: elements['empty-state-message'].textContent,
-  create: !elements['empty-create-button'].hidden
+  create: !elements['empty-create-button'].hidden,
+  allPeriods: !elements['empty-all-periods-button'].hidden
 };
-process.stdout.write(JSON.stringify({active, filtered, all}));
+process.stdout.write(JSON.stringify({active, filtered, recent, all}));
 """
     )
     assert result == {
-        "active": {"message": "対応中の項目はありません。", "allStates": True},
+        "active": {"message": "直近2週間に作成された対応中の項目はありません。", "allStates": True, "allPeriods": True},
         "filtered": {"message": "条件に一致する項目はありません。", "clear": True},
-        "all": {"message": "項目はまだありません。", "create": True},
+        "recent": {"message": "直近2週間に作成された項目はありません。", "create": False, "allPeriods": True},
+        "all": {"message": "項目はまだありません。", "create": True, "allPeriods": False},
     }
 
 
@@ -1033,8 +1043,8 @@ process.stdout.write(JSON.stringify({
         "state": "active",
         "candidates": ["", "active/repo"],
         "listUrls": [
-            "/atk/api/entries?type=all&status=adopted&answered=all&page=1",
-            "/atk/api/entries?type=all&status=active&answered=all&page=1",
+            "/atk/api/entries?type=all&status=adopted&answered=all&period=2w&page=1",
+            "/atk/api/entries?type=all&status=active&answered=all&period=2w&page=1",
         ],
         "rows": ["active.md"],
     }

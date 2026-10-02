@@ -23,7 +23,7 @@ import threading
 import typing
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._atk.serve import session_delegations, session_watch
+from agent_toolkit._atk.serve import session_watch
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 logger = logging.getLogger(__name__)
@@ -526,6 +526,10 @@ class SessionsState:
     record_watch: session_watch.RecordWatch | None = None
     # サーバーの停止要求。スレッドで動くローカル走査が反復の途中で参照して打ち切る。
     stop_requested: threading.Event = dataclasses.field(default_factory=threading.Event)
+    # ローカルの記録単位の解析結果。要求ごとの走査で変更のない記録を読み直さないために保持する。
+    record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
+    # 進行中の一覧の取得（ローカルの走査とリモートの取得）。同時に届いた一覧の要求はこの1回の結果を共有する。
+    list_task: "asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None" = None
 
 
 def create_context(
@@ -555,12 +559,12 @@ def create_context(
     )
 
 
-def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) -> tuple[SessionSummary, bool | None]:
+def _local_entry(
+    index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: str, session_id: str, host: str
+) -> tuple[SessionSummary, bool | None]:
     """ローカルの記録1件を一覧の項目へ変換し、ユーザー発話の有無とともに返す。"""
-    cwd, first_user_message, started_at, has_user = session_watch.summary_fields(path, engine)
-    try:
-        st = path.stat()
-    except OSError as error:
+    (cwd, first_user_message, started_at, has_user), st = index.summary(path, engine)
+    if isinstance(st, OSError):
         summary = SessionSummary(
             engine=engine,
             host=host,
@@ -571,7 +575,7 @@ def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) ->
             started_at=started_at,
             updated_at=None,
             size=None,
-            warning=f"記録の情報を取得できません: {error}",
+            warning=f"記録の情報を取得できません: {st}",
         )
         return summary, has_user
     summary = SessionSummary(
@@ -598,6 +602,8 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     サーバーの停止要求を受けた場合は記録1件ごとの確認で`ServeStopping`を送出して打ち切る。
     """
     stop = context.state.stop_requested
+    index = context.state.record_index
+    index.begin_scan()
     collected: list[tuple[SessionSummary, bool | None]] = []
     projects = context.claude_home / "projects"
     if projects.is_dir():
@@ -607,7 +613,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
             for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
                 _atk_serve_remote.raise_if_stopping(stop)
                 if path.is_file():
-                    collected.append(_local_entry(path, "claude", path.stem, context.hostname))
+                    collected.append(_local_entry(index, path, "claude", path.stem, context.hostname))
                     subagents = claude_subagents(path) or []
                     agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
                     for item in subagents:
@@ -625,7 +631,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
                         if parent_path is None:
                             continue
                         child, child_has_user = _local_entry(
-                            pathlib.Path(child_path), "claude", item["agent_id"], context.hostname
+                            index, pathlib.Path(child_path), "claude", item["agent_id"], context.hostname
                         )
                         collected.append((dataclasses.replace(child, parent_path=parent_path), child_has_user))
     sessions = context.codex_home / "sessions"
@@ -633,7 +639,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
         for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
             _atk_serve_remote.raise_if_stopping(stop)
             if path.is_file():
-                collected.append(_local_entry(path, "codex", codex_session_id(path), context.hostname))
+                collected.append(_local_entry(index, path, "codex", codex_session_id(path), context.hostname))
     watch = context.state.record_watch
     if watch is not None:
         for entry, has_user in collected:
@@ -647,10 +653,11 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     parents = {entry.path: entry for entry in entries if entry.parent_path is None}
     links: dict[str, str] = {}
     for parent in parents.values():
-        for child_id in session_delegations.delegated_session_ids(pathlib.Path(parent.path), parent.engine):
+        for child_id in index.delegated_ids(pathlib.Path(parent.path), parent.engine):
             matches = [entry for entry in by_id.get(child_id, []) if entry.path != parent.path]
             if len(matches) == 1:
                 links[matches[0].path] = parent.path
+    index.finish_scan()
     entries = [dataclasses.replace(entry, parent_path=links.get(entry.path, entry.parent_path)) for entry in entries]
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
     return entries[:MAX_LIST_ENTRIES]
@@ -1018,8 +1025,34 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
     return entries, None
 
 
+def _retrieve_exception(task: "asyncio.Future[typing.Any]") -> None:
+    """待つ要求が残らずに終わった取得の例外を回収し、未回収の例外としてログへ出力しない。"""
+    if not task.cancelled():
+        task.exception()
+
+
 async def list_sessions(context: SessionsContext) -> tuple[list[SessionSummary], list[dict[str, str]]]:
     """ローカルと設定済みリモートホストの一覧を、到達できないホストの警告とともに返す。
+
+    進行中の取得があればその結果を共有し、無ければ新しく取得する。同時に届いた要求ごとに取得すると、
+    ローカルの重い走査がスレッドで重なってGILを奪い合い、他の画面の要求も待たされる。
+    リモートホストへの要求も常駐接続の上で順に処理されるため、後の要求ほど待たされる。
+    共有する取得は要求のキャンセルで止めない（`asyncio.shield`）。1つの要求の打ち切りが、
+    同じ結果を待つ他の要求を失敗させないためである。ローカルの走査はサーバーの停止要求
+    （`stop_requested`）で打ち切る。
+    """
+    state = context.state
+    task = state.list_task
+    if task is None or task.done():
+        task = asyncio.ensure_future(_collect_sessions(context))
+        task.add_done_callback(_retrieve_exception)
+        state.list_task = task
+    entries, warnings = await asyncio.shield(task)
+    return list(entries), list(warnings)
+
+
+async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSummary], list[dict[str, str]]]:
+    """ローカルと設定済みリモートホストの一覧を取得する。
 
     到達できないホストがある場合も、他のホストとローカルの一覧は返す。
     """

@@ -953,7 +953,7 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
-        "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all&page=1"],
+        "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all&period=2w&page=1"],
         "rows": ["entry.md"],
         "error": "候補取得失敗",
     }
@@ -1060,7 +1060,7 @@ process.stdout.write(JSON.stringify({
         "state": "adopted",
         "candidates": ["", "adopted/repo"],
         "selected": "adopted/repo",
-        "lastListUrl": ("/atk/api/entries?type=all&status=adopted&answered=all&target_repo=adopted%2Frepo&page=1"),
+        "lastListUrl": ("/atk/api/entries?type=all&status=adopted&answered=all&period=2w&target_repo=adopted%2Frepo&page=1"),
         "rows": ["selected.md"],
     }
 
