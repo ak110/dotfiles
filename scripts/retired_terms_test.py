@@ -232,7 +232,7 @@ _RETIRED_TERMS = (
             ("調整手順", "「`share/review-loop-coordination.md`の手順」"),
             ("読者ごとの探索担当", "読者別探索担当"),
             ("振り返り担当", "現行の主体（メイン）"),
-            ("Challenger", "前提を問い直す観点"),
+            ("Challenger", "前提を疑う観点"),
             ("処理回", "process-wiの1回の実行"),
             ("分岐検証", "「`references/testing.md`「分岐条件の効果の裏付け」による検証」"),
             ("成立確認", "「外部の既存挙動の再現観測（wi-standards「通常AWIの本文」）」"),
