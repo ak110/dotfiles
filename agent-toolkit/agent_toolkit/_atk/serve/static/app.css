@@ -284,6 +284,17 @@ main > .toolbar {
 #screen-wi .pane-heading {
   justify-content: space-between;
 }
+#screen-wi #entry-heading {
+  flex-shrink: 0;
+}
+/* 件数と期間は1つのまとまりとして右端に置き、狭い幅では見出しを縮めずに折り返す。 */
+#screen-wi .entry-heading-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
 #screen-wi .connection-status,
 #screen-wi .secondary-text,
 #screen-wi .readonly-notice,
