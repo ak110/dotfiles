@@ -1384,7 +1384,8 @@ def main(
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
     if args.command != "managed-temp" and not is_delegated_session:
         try:
-            unregistered_candidates = _managed_temp.list_unregistered_candidates()
+            # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
+            unregistered_candidates = _managed_temp.list_unregistered_candidates(stale_at=now)
         except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
             _outcome.report_warning(
                 f"登録を持たない管理対象を探索できなかった: {error}",
@@ -1393,7 +1394,7 @@ def main(
         else:
             if _claim_unregistered_temp_warning(unregistered_candidates):
                 _outcome.report_warning(
-                    f"登録を持たない管理対象が{len(unregistered_candidates)}件ある",
+                    f"自動削除されずに残った、登録を持たない管理対象が{len(unregistered_candidates)}件ある",
                     next_action="`atk managed-temp list`で一覧と回収方法を確認する",
                 )
     _validate_bulk_transition_args(args)
