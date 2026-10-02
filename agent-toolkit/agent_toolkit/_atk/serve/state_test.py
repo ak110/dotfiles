@@ -1036,10 +1036,10 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "repoCountDuringUser": 1,
         "listUrls": [
-            "/atk/api/entries?type=awi&status=active&answered=all&page=1",
+            "/atk/api/entries?type=awi&status=active&answered=all&period=2w&page=1",
             "/atk/api/entries?type=uwi&status=all&answered=all",
             "/atk/api/entries?type=uwi&status=all&answered=all",
-            "/atk/api/entries?type=awi&status=active&answered=all&page=1",
+            "/atk/api/entries?type=awi&status=active&answered=all&period=2w&page=1",
         ],
         "status": "1件を表示",
         "rows": ["filtered.md"],

@@ -4,11 +4,14 @@
 
 import asyncio
 import base64
+import importlib.util
+import io
 import json
 import os
 import pathlib
 import subprocess
 import sys
+import threading
 import typing
 
 import pytest
@@ -1156,3 +1159,161 @@ def test_list_local_sessions_stops_on_shutdown_request(tmp_path: pathlib.Path) -
 
     with pytest.raises(_atk_serve_remote.ServeStopping):
         sessions.list_local_sessions(context)
+
+
+def _count_record_opens(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
+    """記録（`.jsonl`）を開いた回数を数えるため、開いたパスを順に記録する。"""
+    opened: list[pathlib.Path] = []
+    original_open = pathlib.Path.open
+
+    def counting_open(self: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        if self.suffix == ".jsonl":
+            opened.append(self)
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "open", counting_open)
+    return opened
+
+
+def _age(*paths: pathlib.Path) -> None:
+    """更新時刻を十分過去へ戻し、索引が解析結果を信用できる記録にする。"""
+    for path in paths:
+        os.utime(path, (1_700_000_000, 1_700_000_000))
+
+
+def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """記録が2,049件以上でも、2回目の一覧は変更のない記録を開き直さず、変更は次の一覧へ反映する。
+
+    固定上限のキャッシュは巡回する記録数が上限を超えると全件を順に破棄し、毎回の全件読み直しへ戻る。
+    再利用が値まで固定すると、追記・新規作成の後も古い`updated_at`・`size`・親子関係が返る。
+    """
+    project = tmp_path / "claude" / "projects" / "proj"
+    records = [
+        _write(
+            project / f"session-{index:05d}.jsonl",
+            [
+                {
+                    "type": "user",
+                    "timestamp": f"2026-08-01T00:{index // 60 % 60:02d}:{index % 60:02d}Z",
+                    "message": {"content": f"会話{index}"},
+                }
+            ],
+        )
+        for index in range(2049)
+    ]
+    # 件数上限による切り詰めで外れないよう、親子関係を確かめる記録は開始日時を新しくする。
+    parent = _write(
+        project / "parent.jsonl", [{"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"content": "親"}}]
+    )
+    records.append(parent)
+    child = _codex_record(tmp_path)
+    _age(*records, child)
+    context = _context(tmp_path)
+    opened = _count_record_opens(monkeypatch)
+
+    first = sessions.list_local_sessions(context)
+    first_open_count = len(opened)
+    opened.clear()
+    second = sessions.list_local_sessions(context)
+
+    assert first_open_count >= 2050
+    assert not opened
+    assert second == first
+
+    _write(
+        parent,
+        [
+            {"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"content": "親"}},
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "tool_use", "id": "start", "name": "mcp__agents_server__start", "input": {}}]},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"session_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "start", "content": "起動"}]},
+            },
+        ],
+    )
+    added = _write(
+        project / "added.jsonl", [{"type": "user", "timestamp": "2026-09-03T00:00:00Z", "message": {"content": "追加"}}]
+    )
+    opened.clear()
+    third = {entry.path: entry for entry in sessions.list_local_sessions(context)}
+
+    assert set(opened) == {parent, added}
+    assert third[str(parent)].size == parent.stat().st_size
+    assert third[str(parent)].updated_at == sessions._isoformat(parent.stat().st_mtime)
+    assert third[str(child)].parent_path == str(parent)
+    assert str(added) in third
+
+
+@pytest.mark.asyncio
+async def test_concurrent_list_requests_share_one_local_scan(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """同時に届いた一覧の要求は、進行中の1回のローカル走査の結果を共有する。
+
+    要求ごとに走査すると同じ重い走査がスレッドで重なり、GILを奪い合って他の画面の要求まで遅れる。
+    """
+    _claude_record(tmp_path)
+    context = _context(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[int] = []
+    original = sessions.list_local_sessions
+
+    def slow_scan(scan_context: sessions.SessionsContext) -> list[sessions.SessionSummary]:
+        calls.append(1)
+        started.set()
+        release.wait(timeout=10)
+        return original(scan_context)
+
+    monkeypatch.setattr(sessions, "list_local_sessions", slow_scan)
+
+    first = asyncio.ensure_future(sessions.list_sessions(context))
+    await asyncio.to_thread(started.wait, 10)
+    second = asyncio.ensure_future(sessions.list_sessions(context))
+    await asyncio.sleep(0)
+    release.set()
+    (first_entries, _), (second_entries, _) = await asyncio.gather(first, second)
+
+    assert calls == [1]
+    assert first_entries == second_entries
+    assert first_entries
+
+    await sessions.list_sessions(context)
+    assert calls == [1, 1]
+
+
+def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """リモートヘルパーの常駐モードは、同じプロセスの2回目の`list`要求で変更のない記録を開き直さない。"""
+    home = tmp_path / "home"
+    record = _write(
+        home / ".claude" / "projects" / "proj" / "session.jsonl",
+        [{"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "やあ"}}],
+    )
+    _age(record)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    helper_path = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"
+    spec = importlib.util.spec_from_file_location("_atk_serve_sessions_remote_helper_under_test", helper_path)
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+
+    def no_watch() -> tuple[None, typing.Any]:
+        return None, None
+
+    monkeypatch.setattr(helper, "_start_watch", no_watch)
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"id": 1, "op": "list"}\n{"id": 2, "op": "list"}\n'))
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", output)
+    opened = _count_record_opens(monkeypatch)
+
+    assert helper._serve() == 0
+
+    responses = [json.loads(line) for line in output.getvalue().splitlines() if '"response"' in line]
+    assert [response["id"] for response in responses] == [1, 2]
+    assert responses[0]["entries"] == responses[1]["entries"]
+    assert [entry["path"] for entry in responses[1]["entries"]] == [str(record)]
+    # 1回目の要求が一覧の値と子セッションIDのために2回開き、2回目の要求は開かない。
+    assert opened == [record, record]

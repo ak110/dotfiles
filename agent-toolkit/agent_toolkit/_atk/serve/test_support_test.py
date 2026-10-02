@@ -119,10 +119,11 @@ class Element {{
 }}
 const ids = [
   'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button',
-  'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
+  'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'period-filter', 'answer-filter',
   'target-filter', 'source-filter', 'entry-count',
   'result-status', 'list-warning', 'list-fallback-notice', 'loading-indicator', 'entry-list', 'empty-state',
-  'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-create-button',
+  'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-all-periods-button',
+  'empty-create-button', 'entry-period',
   'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
   'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
   'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
@@ -150,6 +151,7 @@ elements['operation-notice'].append(elements['operation-notice-message'], elemen
 elements['operation-notice-close-button'].setAttribute('aria-label', '操作通知を閉じる');
 elements['kind-filter'].value = 'all';
 elements['state-filter'].value = 'active';
+elements['period-filter'].value = '2w';
 elements['answer-filter'].value = 'all';
 elements['create-kind'].value = 'awi';
 elements['create-question-type'].value = 'free-form';

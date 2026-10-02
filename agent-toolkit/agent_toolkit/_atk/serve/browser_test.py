@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextlib
 import dataclasses
+import datetime
 import functools
 import json
 import os
@@ -773,14 +774,18 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator("#answer-filter").input_value() == "all"
     assert await page.locator("#source-filter option").all_text_contents() == ["all", "human", "agent"]
     async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?type=awi&status=active&answered=all&source_kind=agent&page=1")
+        lambda response: response.url.endswith(
+            "/api/entries?type=awi&status=active&answered=all&period=2w&source_kind=agent&page=1"
+        )
     ):
         await page.locator("#source-filter").select_option("agent")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
     await playwright.async_api.expect(awi_row).to_be_visible()
     await playwright.async_api.expect(empty_row).to_be_visible()
     async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?type=awi&status=active&answered=all&source_kind=human&page=1")
+        lambda response: response.url.endswith(
+            "/api/entries?type=awi&status=active&answered=all&period=2w&source_kind=human&page=1"
+        )
     ):
         await page.locator("#source-filter").select_option("human")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
@@ -795,7 +800,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     async with page.expect_response(
         lambda response: (
             response.request.method == "GET"
-            and response.url.endswith("/api/entries?type=all&status=active&answered=all&page=1")
+            and response.url.endswith("/api/entries?type=all&status=active&answered=all&period=2w&page=1")
         )
     ):
         await page.locator("#clear-filters-button").click()
@@ -806,7 +811,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
         lambda response: (
             response.request.method == "GET"
             and response.url.endswith(
-                "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
+                "/api/entries?type=all&status=active&answered=all&period=2w&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
             )
         )
     ):
@@ -910,13 +915,13 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
     await page.wait_for_timeout(100)
     _assert_list_request_without_fallback(
-        request_urls, browser_harness.base_url, "/api/entries?type=all&status=active&answered=all&page=1"
+        request_urls, browser_harness.base_url, "/api/entries?type=all&status=active&answered=all&period=2w&page=1"
     )
 
     request_urls.clear()
     async with page.expect_response(
         lambda response: response.url.endswith(
-            "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
+            "/api/entries?type=all&status=active&answered=all&period=2w&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
         )
     ):
         await page.locator("#search-input").fill("編集対象")
@@ -927,26 +932,105 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     _assert_list_request_without_fallback(
         request_urls,
         browser_harness.base_url,
-        "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1",
+        "/api/entries?type=all&status=active&answered=all&period=2w&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1",
     )
 
     await page.locator("#kind-filter").select_option("all")
     await page.locator("#state-filter").select_option("all")
+    await page.locator("#period-filter").select_option("all")
     await page.locator("#answer-filter").select_option("all")
     await page.locator("#target-filter").select_option("")
     await page.locator("#source-filter").select_option("")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     request_urls.clear()
     async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1")
+        lambda response: response.url.endswith(
+            "/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1"
+        )
     ):
         await page.locator("#search-input").fill("all-filters-only")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await playwright.async_api.expect(notice).to_be_hidden()
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     _assert_list_request_without_fallback(
-        request_urls, browser_harness.base_url, "/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1"
+        request_urls,
+        browser_harness.base_url,
+        "/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1",
     )
+
+
+@pytest.mark.asyncio
+async def test_period_filter_limits_work_items_to_recent_by_default(browser_harness: _BrowserHarness) -> None:
+    """期間の初期値は直近2週間で、期間を広げると古いWIが現れ、条件をクリアすると直近2週間へ戻る。
+
+    初期値で期間を限定しないと古いWIが一覧を埋め、期間を広げる操作が無いと古いWIへ到達できない。
+    """
+    harness = browser_harness
+    page = harness.page
+    now = datetime.datetime.now()
+    names = {days: f"{now - datetime.timedelta(days=days):%Y%m%d-%H%M%S}-001.md" for days in (1, 20, 40)}
+    for name in names.values():
+        (harness.root / "inbox" / name).write_text(
+            f"---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n期間の確認 {name}\n",
+            encoding="utf-8",
+        )
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_filters(page)
+    period = page.locator("#period-filter")
+    rows = page.locator("#entry-list .entry-select")
+    await playwright.async_api.expect(period).to_have_value("2w")
+    await playwright.async_api.expect(rows.filter(has_text=names[1])).to_have_count(1)
+    await playwright.async_api.expect(rows.filter(has_text=names[20])).to_have_count(0)
+
+    await period.select_option("4w")
+    await playwright.async_api.expect(rows.filter(has_text=names[20])).to_have_count(1)
+    await playwright.async_api.expect(rows.filter(has_text=names[40])).to_have_count(0)
+    await period.select_option("8w")
+    await playwright.async_api.expect(rows.filter(has_text=names[40])).to_have_count(1)
+    await period.select_option("all")
+    await playwright.async_api.expect(rows.filter(has_text=names[40])).to_have_count(1)
+    # 作成日時を読めない名前の項目は期間で隠さない。
+    await playwright.async_api.expect(rows.filter(has_text="awi.md")).to_have_count(1)
+
+    await page.locator("#clear-filters-button").click()
+    await playwright.async_api.expect(period).to_have_value("2w")
+    await playwright.async_api.expect(rows.filter(has_text=names[20])).to_have_count(0)
+    await playwright.async_api.expect(rows.filter(has_text=names[1])).to_have_count(1)
+    await playwright.async_api.expect(page.locator("#entry-period")).to_have_text("直近2週間に作成")
+
+
+@pytest.mark.asyncio
+async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: _BrowserHarness) -> None:
+    """期間の内側に対応中の項目が無い空状態から、全期間の一覧へ1操作で進め、狭い幅でも期間の限定を確認できる。
+
+    空状態に期間を広げる操作が無いと、古い対応中の項目を探す利用者がフィルター欄を探して開く必要がある。
+    """
+    harness = browser_harness
+    page = harness.page
+    await page.set_viewport_size({"width": 320, "height": 800})
+    old_name = f"{datetime.datetime.now() - datetime.timedelta(days=40):%Y%m%d-%H%M%S}-001.md"
+    (harness.root / "inbox" / old_name).write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n古い対応中の項目\n", encoding="utf-8"
+    )
+
+    async def empty_recent(route: playwright.async_api.Route) -> None:
+        await route.fulfill(
+            json={"entries": [], "warnings": [], "pagination": {"page": 1, "page_size": 100, "page_count": 1, "total_count": 0}}
+        )
+
+    await page.route("**/api/entries?*period=2w*", empty_recent)
+    await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#empty-state-message")).to_have_text(
+        "直近2週間に作成された対応中の項目はありません。"
+    )
+    await playwright.async_api.expect(page.locator("#entry-period")).to_be_visible()
+    await playwright.async_api.expect(page.locator("#entry-period")).to_have_text("直近2週間に作成")
+    await page.get_by_role("button", name="全期間を表示").click()
+
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select").filter(has_text=old_name)).to_have_count(1)
+    await playwright.async_api.expect(page.locator("#period-filter")).to_have_value("all")
+    await playwright.async_api.expect(page.locator("#entry-period")).to_be_hidden()
 
 
 @pytest.mark.asyncio
@@ -2754,7 +2838,8 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
     """最長の状態表示を含む一覧でも固定列を折り返さず、全行を同じ高さで描画する。"""
     processing = screen_harness.plan_path.parent.parent / "processing"
     processing.mkdir()
-    (processing / "20260906-123456-001.md").write_text(
+    # 期間の初期値（直近2週間）の内側に入るよう、作成日時を現在に近づける。
+    (processing / f"{datetime.datetime.now():%Y%m%d}-123456-001.md").write_text(
         "---\ntype: uwi\ntarget_repo: example/long-repository\nsource: human\n"
         "plan_file: /tmp/plan.md\n---\n\n長い要約を持つ確認事項 "
         + "要約" * 80
@@ -4815,6 +4900,55 @@ async def test_session_list_updates_when_records_are_added(screen_harness: _Scre
     listing = page.locator("#sessions")
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/added-claude")
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/added-codex")
+
+
+@pytest.mark.asyncio
+async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
+    """一覧の取得中に`refresh`通知が続いても、一覧の要求を同時に2件以上発行せず、完了後に1回だけ取り直す。
+
+    通知ごとに要求を重ねると、サーバーで同じ走査が重なって他の画面の応答まで遅れる。
+    """
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    items = page.locator("#sessions .session-item")
+    await playwright.async_api.expect(items).to_have_count(2)
+    release = asyncio.Event()
+    entered = asyncio.Event()
+    concurrency = {"current": 0, "max": 0, "total": 0}
+
+    async def hold_list(route: playwright.async_api.Route) -> None:
+        concurrency["current"] += 1
+        concurrency["total"] += 1
+        concurrency["max"] = max(concurrency["max"], concurrency["current"])
+        entered.set()
+        try:
+            await release.wait()
+            await route.continue_()
+        finally:
+            concurrency["current"] -= 1
+
+    await page.route("**/api/sessions/list", hold_list)
+    try:
+        for index in range(3):
+            _append_jsonl(
+                tmp_path / "claude" / "projects" / "-home-aki-burst" / f"burst-{index}.jsonl",
+                [{"type": "user", "timestamp": f"2026-09-05T00:00:0{index}Z", "message": {"content": f"通知{index}"}}],
+            )
+            if index == 0:
+                await asyncio.wait_for(entered.wait(), timeout=5)
+            else:
+                # 記録の変更監視は0.5秒の時間窓で通知をまとめるため、窓を越えて別々の`refresh`を届ける。
+                await asyncio.sleep(1.0)
+        assert concurrency["total"] == 1
+        release.set()
+        await playwright.async_api.expect(items).to_have_count(5, timeout=5000)
+    finally:
+        release.set()
+        await page.unroute("**/api/sessions/list", hold_list)
+    assert concurrency["max"] == 1
+    # 取得中に届いた通知は完了後の1回の取り直しへまとまる。負荷で変更監視が3件の作成を1回の通知へ
+    # まとめた場合は取り直しが生じないため、上限だけを判定する。
+    assert concurrency["total"] <= 2
 
 
 @pytest.mark.asyncio

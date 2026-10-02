@@ -27,7 +27,6 @@ import typing
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-import-position
-    session_delegations,
     session_watch,
 )
 
@@ -91,17 +90,13 @@ def _codex_session_id(path: pathlib.Path) -> str:
     return "-".join(parts[-5:]) if len(parts) >= 5 else stem
 
 
-def _entry(path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing.Any]:
+def _entry(index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing.Any]:
     """一覧の1件を組み立てる。読み取れない情報は`None`のままとする。
 
     `has_user_message`は一覧からの除外の判定材料であり、`_list_payload`が応答から取り除く。
     """
-    cwd, first_user_message, started_at, has_user = session_watch.summary_fields(path, engine)
-    try:
-        st = path.stat()
-        size = st.st_size
-        updated_at = st.st_mtime
-    except OSError as error:
+    (cwd, first_user_message, started_at, has_user), st = index.summary(path, engine)
+    if isinstance(st, OSError):
         return {
             "engine": engine,
             "session_id": session_id,
@@ -111,7 +106,7 @@ def _entry(path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing
             "size": None,
             "started_at": started_at,
             "updated_at": None,
-            "warning": f"記録の情報を取得できません: {error}",
+            "warning": f"記録の情報を取得できません: {st}",
             "has_user_message": has_user,
         }
     return {
@@ -120,23 +115,31 @@ def _entry(path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing
         "cwd": cwd,
         "first_user_message": first_user_message,
         "path": str(path),
-        "size": size,
+        "size": st.st_size,
         "started_at": started_at,
-        "updated_at": updated_at,
+        "updated_at": st.st_mtime,
         "warning": None,
         "has_user_message": has_user,
     }
 
 
-def _list_payload(tracker: session_watch.RecordChangeTracker | None = None) -> dict[str, typing.Any]:
+def _list_payload(
+    tracker: session_watch.RecordChangeTracker | None = None,
+    index: session_watch.RecordSummaryIndex | None = None,
+) -> dict[str, typing.Any]:
     """ローカルの保存済みセッション一覧を返す。
 
     ユーザー発話の記録行を持たない記録は、件数上限による切り詰めより前に除外する。
     `tracker`を渡した場合は、判定した発話の有無を変更監視の判定へ引き継ぐ。
+    `index`を渡した場合は記録単位の解析結果を再利用する。常駐モードが1プロセスに1つ持ち、
+    単発の`list`モードは保持先が無いため毎回新しい索引で走査する。
     """
+    if index is None:
+        index = session_watch.RecordSummaryIndex()
+    index.begin_scan()
     entries: list[dict[str, typing.Any]] = []
     for path in _iter_claude_records():
-        entries.append(_entry(path, "claude", path.stem))
+        entries.append(_entry(index, path, "claude", path.stem))
         subagents = _subagents(path)
         agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
         for item in subagents:
@@ -151,11 +154,11 @@ def _list_payload(tracker: session_watch.RecordChangeTracker | None = None) -> d
                 parent_path = str(path)
             if parent_path is None:
                 continue
-            child = _entry(pathlib.Path(child_path), "claude", item["agent_id"])
+            child = _entry(index, pathlib.Path(child_path), "claude", item["agent_id"])
             child["parent_path"] = parent_path
             entries.append(child)
     for path in _iter_codex_records():
-        entries.append(_entry(path, "codex", _codex_session_id(path)))
+        entries.append(_entry(index, path, "codex", _codex_session_id(path)))
     kept: list[dict[str, typing.Any]] = []
     for entry in entries:
         has_user = entry.pop("has_user_message")
@@ -171,10 +174,11 @@ def _list_payload(tracker: session_watch.RecordChangeTracker | None = None) -> d
     for parent in entries:
         if parent.get("parent_path") or not isinstance(parent.get("path"), str):
             continue
-        for child_id in session_delegations.delegated_session_ids(pathlib.Path(parent["path"]), parent["engine"]):
+        for child_id in index.delegated_ids(pathlib.Path(parent["path"]), parent["engine"]):
             matches = [entry for entry in by_id.get(child_id, []) if entry.get("path") != parent["path"]]
             if len(matches) == 1:
                 matches[0]["parent_path"] = parent["path"]
+    index.finish_scan()
     entries.sort(key=lambda item: item["started_at"] or "", reverse=True)
     return {"host": socket.gethostname(), "entries": entries[:MAX_LIST_ENTRIES]}
 
@@ -267,7 +271,9 @@ def _emit(payload: dict[str, typing.Any]) -> None:
 
 
 def _handle_request(
-    req: dict[str, typing.Any], tracker: session_watch.RecordChangeTracker | None = None
+    req: dict[str, typing.Any],
+    tracker: session_watch.RecordChangeTracker | None = None,
+    index: session_watch.RecordSummaryIndex | None = None,
 ) -> dict[str, typing.Any]:
     """RPCリクエストを処理して応答辞書を返す。"""
     req_id = req.get("id")
@@ -276,7 +282,7 @@ def _handle_request(
         return {"type": "response", "id": -1, "ok": False, "error": "invalid id"}
     try:
         if op == "list":
-            return {"type": "response", "id": req_id, "ok": True, **_list_payload(tracker)}
+            return {"type": "response", "id": req_id, "ok": True, **_list_payload(tracker, index)}
         if op == "read":
             return {"type": "response", "id": req_id, "ok": True, **_read_payload(str(req.get("path", "")))}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
@@ -323,6 +329,7 @@ def _serve() -> int:
     起動直後に`{"type":"ready","host":...}`を1行出力し、呼び出し側の接続確立の契機とする。
     """
     watch, tracker = _start_watch()
+    index = session_watch.RecordSummaryIndex()
     _emit({"type": "ready", "host": socket.gethostname()})
     try:
         for raw in sys.stdin:
@@ -335,7 +342,7 @@ def _serve() -> int:
                 _emit({"type": "response", "id": -1, "ok": False, "error": f"json: {error}"})
                 continue
             try:
-                _emit(_handle_request(req, tracker))
+                _emit(_handle_request(req, tracker, index))
             except BrokenPipeError:
                 return 0
     finally:

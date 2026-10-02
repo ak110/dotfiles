@@ -358,6 +358,11 @@ function renderEntry(entry) {
   return item;
 }
 
+// 期間の初期値と「条件をクリア」後の値。古いWIを確認する場面は少ないため直近2週間とする。
+// 期間は状態と同じく常に選ばれている条件であり、空の一覧の文言で範囲を示す。
+const DEFAULT_PERIOD = '2w';
+const PERIOD_LABELS = {'2w': '直近2週間', '4w': '直近4週間', '8w': '直近8週間'};
+
 function hasNonStateFilters() {
   return byId('search-input').value !== '' ||
     byId('kind-filter').value !== 'all' ||
@@ -371,18 +376,25 @@ function renderEmptyState() {
   const message = byId('empty-state-message');
   const clear = byId('empty-clear-button');
   const allStates = byId('empty-all-states-button');
+  const allPeriods = byId('empty-all-periods-button');
   const create = byId('empty-create-button');
   empty.hidden = entries.length !== 0;
   clear.hidden = true;
   allStates.hidden = true;
+  allPeriods.hidden = true;
   create.hidden = true;
   if (entries.length) return;
+  const periodLabel = PERIOD_LABELS[byId('period-filter').value];
   if (hasNonStateFilters() || !['active', 'all'].includes(byId('state-filter').value)) {
     message.textContent = '条件に一致する項目はありません。';
     clear.hidden = false;
   } else if (byId('state-filter').value === 'active') {
-    message.textContent = '対応中の項目はありません。';
+    message.textContent = periodLabel ? `${periodLabel}に作成された対応中の項目はありません。` : '対応中の項目はありません。';
     allStates.hidden = false;
+    allPeriods.hidden = !periodLabel;
+  } else if (periodLabel) {
+    message.textContent = `${periodLabel}に作成された項目はありません。`;
+    allPeriods.hidden = false;
   } else {
     message.textContent = '項目はまだありません。';
     create.hidden = false;
@@ -410,6 +422,10 @@ function renderList(warnings = [], announce = false, searchFallback = false) {
   }
   const unanswered = entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
   byId('entry-count').textContent = `${entries.length}件（未回答UWI ${unanswered}件）`;
+  // フィルター欄を折りたたむ狭い幅でも、一覧が期間で限られていることを見出しの近くで示す。
+  const periodLabel = PERIOD_LABELS[byId('period-filter').value];
+  byId('entry-period').textContent = periodLabel ? `${periodLabel}に作成` : '';
+  byId('entry-period').hidden = !periodLabel;
   renderPagination();
   setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
   renderWarnings(warnings);
@@ -424,6 +440,7 @@ function buildQuery(page = currentPage) {
   parameters.set('type', byId('kind-filter').value);
   parameters.set('status', byId('state-filter').value);
   parameters.set('answered', byId('answer-filter').value);
+  parameters.set('period', byId('period-filter').value);
   const values = {
     target_repo: byId('target-filter').value,
     source_kind: byId('source-filter').value,
@@ -436,7 +453,8 @@ function buildQuery(page = currentPage) {
 
 function hasSearchFallbackFilters(query) {
   return query.get('type') !== 'all' || query.get('status') !== 'all' ||
-    query.get('answered') !== 'all' || query.has('target_repo') || query.has('source_kind');
+    query.get('answered') !== 'all' || query.get('period') !== 'all' ||
+    query.has('target_repo') || query.has('source_kind');
 }
 
 function captureListLoadingView() {
@@ -682,6 +700,7 @@ async function clearFilters() {
   byId('search-input').value = '';
   byId('kind-filter').value = 'all';
   byId('state-filter').value = 'active';
+  byId('period-filter').value = DEFAULT_PERIOD;
   byId('answer-filter').value = 'all';
   byId('target-filter').value = '';
   byId('source-filter').value = '';
@@ -714,7 +733,9 @@ function detailReturnTarget() {
   if (original?.isConnected) return original;
   const firstRow = document.querySelectorAll('.entry-select')[0];
   if (firstRow) return firstRow;
-  const emptyAction = [byId('empty-clear-button'), byId('empty-all-states-button'), byId('empty-create-button')]
+  const emptyAction = [
+    byId('empty-clear-button'), byId('empty-all-states-button'), byId('empty-all-periods-button'), byId('empty-create-button')
+  ]
     .find(button => !button.hidden);
   return emptyAction || byId('search-input');
 }
@@ -1520,8 +1541,13 @@ function bindEvents() {
     byId('state-filter').value = 'all';
     handleFilterChange({reloadRepos: true});
   });
+  byId('empty-all-periods-button').addEventListener('click', () => {
+    byId('period-filter').value = 'all';
+    handleFilterChange();
+  });
   byId('kind-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('state-filter').addEventListener('change', () => { void handleFilterChange({reloadRepos: true}); });
+  byId('period-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });

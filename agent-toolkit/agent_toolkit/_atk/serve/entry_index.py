@@ -94,6 +94,9 @@ class EntryIndex:
             try:
                 with os.scandir(directory) as iterator:
                     entries = sorted(iterator, key=lambda entry: entry.name)
+                # リンクでないファイルの実パスはディレクトリの実パスの下の名前で決まるため、
+                # 実パスの解決は走査ごとにディレクトリ1回とリンクのファイルだけで済ませる。
+                real_directory = directory.resolve()
             except FileNotFoundError:
                 continue
             for directory_entry in entries:
@@ -102,7 +105,7 @@ class EntryIndex:
                     continue
                 try:
                     file_stat = directory_entry.stat()
-                    real_path = path.resolve()
+                    real_path = path.resolve() if directory_entry.is_symlink() else real_directory / directory_entry.name
                 except FileNotFoundError:
                     continue
                 except OSError:

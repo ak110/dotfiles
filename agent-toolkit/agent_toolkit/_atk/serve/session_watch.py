@@ -8,11 +8,15 @@
 発話を持たない記録（Codexを起動しただけで入力しなかった記録など）は、選んでも本文がほぼ空になるためである。
 """
 
+import dataclasses
 import json
+import os
 import pathlib
 import threading
+import time
 import typing
 
+from agent_toolkit._atk.serve import session_delegations
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 RECORD_SUFFIX = ".jsonl"
@@ -133,6 +137,100 @@ def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
     except OSError:
         return None
     return False
+
+
+SummaryFields = tuple[str | None, str | None, str | None, bool | None]
+"""`summary_fields`が返す作業ディレクトリ、最初の発話、開始日時および発話の有無。"""
+
+_TRUSTED_AGE_NS = 2_000_000_000
+"""解析結果を信用するために必要な、解析の開始時刻と更新時刻の差。秒単位とFATの2秒の時刻精度を覆う。"""
+
+
+@dataclasses.dataclass(frozen=True)
+class _IndexedRecord:
+    """記録1件の無効化キーと解析結果。"""
+
+    mtime_ns: int
+    size: int
+    trusted: bool
+    """更新時刻の精度の範囲外で解析したため、無効化キーの一致だけで再利用できるか。"""
+    fields: SummaryFields
+    delegated_ids: frozenset[str] | None = None
+    """子セッションIDの集合。親として扱う記録にだけ求めるため、未計算の間は`None`とする。"""
+
+
+class RecordSummaryIndex:
+    """セッション一覧が記録1件ごとに求める値を、記録の実パスごとに保持する索引。
+
+    一覧は要求のたびに全記録を巡回するため、記録単位の解析結果を再利用しないと、変更のない記録まで
+    毎回全行を読み直す。再利用の条件はワークアイテム一覧の`EntryIndex`と同じく、更新時刻（ナノ秒）と
+    サイズが一致し、解析を始めた時点が更新時刻より2秒以上後であることとする。秒精度のファイルシステムで
+    同じ秒に同じサイズのまま追記された記録を、更新時刻とサイズだけでは区別できないためである。
+    `begin_scan`から`finish_scan`までの走査で参照しなかった記録は破棄し、保持件数を走査対象の記録数に
+    追従させる。固定の上限を置くと、巡回する記録数が上限を超えた時点でLRUが全件を順に破棄し、再利用が止まる。
+    走査が停止要求などで途中で終わった場合は破棄せずに残し、次の走査の終わりにまとめて破棄する。
+    サーバーとリモートヘルパーの常駐モードが1プロセスに1つ持ち、複数スレッドから使えるようロックで保護する。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._records: dict[str, _IndexedRecord] = {}
+        self._seen: set[str] = set()
+
+    def begin_scan(self) -> None:
+        """走査の開始を記録し、走査で参照した記録の集合を空にする。"""
+        with self._lock:
+            self._seen = set()
+
+    def finish_scan(self) -> None:
+        """走査で参照しなかった記録の解析結果を破棄する。"""
+        with self._lock:
+            self._records = {key: value for key, value in self._records.items() if key in self._seen}
+
+    def summary(self, path: pathlib.Path, engine: str) -> tuple[SummaryFields, os.stat_result | OSError]:
+        """記録の`summary_fields`の値と、無効化の判定に使った`stat`の結果を返す。
+
+        `stat`できない記録は保持せずに解析し、`stat`の結果の代わりにその例外を返す。
+        """
+        analysis_started_ns = time.time_ns()
+        try:
+            st = path.stat()
+        except OSError as error:
+            return summary_fields(path, engine), error
+        key = str(path)
+        with self._lock:
+            self._seen.add(key)
+            cached = self._records.get(key)
+        if cached is not None and cached.trusted and (cached.mtime_ns, cached.size) == (st.st_mtime_ns, st.st_size):
+            return cached.fields, st
+        fields = summary_fields(path, engine)
+        record = _IndexedRecord(
+            mtime_ns=st.st_mtime_ns,
+            size=st.st_size,
+            trusted=analysis_started_ns - st.st_mtime_ns >= _TRUSTED_AGE_NS,
+            fields=fields,
+        )
+        with self._lock:
+            self._records[key] = record
+        return fields, st
+
+    def delegated_ids(self, path: pathlib.Path, engine: str) -> frozenset[str]:
+        """記録が起動した子セッションIDの集合を返す。
+
+        同じ走査で先に`summary`が保持した版の記録に限り、求めた集合を保持して次の走査で再利用する。
+        保持した版が信用できない場合は、`summary`が次の走査で読み直すのに合わせて集合も求め直す。
+        """
+        key = str(path)
+        with self._lock:
+            cached = self._records.get(key)
+        if cached is not None and cached.delegated_ids is not None:
+            return cached.delegated_ids
+        delegated = session_delegations.delegated_session_ids(path, engine)
+        if cached is not None:
+            with self._lock:
+                if self._records.get(key) is cached:
+                    self._records[key] = dataclasses.replace(cached, delegated_ids=delegated)
+        return delegated
 
 
 class RecordChangeTracker:

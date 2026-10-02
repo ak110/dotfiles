@@ -171,7 +171,10 @@ def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
     @contextlib.contextmanager
     def scandir(directory: pathlib.Path) -> typing.Iterator[list[types.SimpleNamespace]]:
         with original_scandir(directory) as entries:
-            yield [types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat) for entry in entries]
+            yield [
+                types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat, is_symlink=entry.is_symlink)
+                for entry in entries
+            ]
 
     monkeypatch.setattr(pathlib.Path, "stat", path_stat)
     monkeypatch.setattr(os, "scandir", scandir)
@@ -210,7 +213,7 @@ def _report_fixed_stat(
     def scandir(directory: pathlib.Path) -> typing.Iterator[list[typing.Any]]:
         with original_scandir(directory) as entries:
             yield [
-                types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat)
+                types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat, is_symlink=entry.is_symlink)
                 if pathlib.Path(entry.path) == path
                 else entry
                 for entry in entries
