@@ -26,7 +26,7 @@ _REPO_FILES = (
 
 @pytest.fixture(name="env")
 def fixture_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, pathlib.Path]:
-    """対象リポジトリとキュー管理リポジトリを`tmp_path`配下へ作り、そのパスを返す。"""
+    """対象リポジトリとキュー管理リポジトリを`tmp_path`配下へ作成し、そのパスを返す。"""
     repo = tmp_path / "repo"
     for relative in _REPO_FILES:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
