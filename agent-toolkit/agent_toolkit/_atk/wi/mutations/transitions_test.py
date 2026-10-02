@@ -1290,3 +1290,108 @@ def test_bulk_source_states_cover_transition_explicit_states() -> None:
     for action, explicit_states in TRANSITION_EXPLICIT_STATES.items():
         source_states = bulk_source_states(action, actor_is_agent=False)
         assert set(explicit_states) <= set(source_states), action
+
+
+def _set_agent_environment(monkeypatch: pytest.MonkeyPatch, *, agent: bool) -> None:
+    """エージェント環境の判定に使う環境変数をそろえる。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    if agent:
+        monkeypatch.setenv("CLAUDECODE", "1")
+
+
+def test_agent_hold_rejects_processing_entry_without_explicit_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント環境の`atk wi hold`は、別セッションが処理中の項目を`--state`なしで保留しない。
+
+    保留を経由した本文置換は処理中のセッションへ届かず、`unhold`で`inbox`へ戻るため、移さずに非0で終え、
+    処理中の項目の扱いと自セッションの保留に使う`--state=processing`を案内する。
+    """
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "processing.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
+    _set_agent_environment(monkeypatch, agent=True)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", "processing.md"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code != 0
+    assert (notes / "processing/processing.md").is_file()
+    assert not (notes / "hold/processing.md").exists()
+    err = capsys.readouterr().err
+    assert "失敗: " in err
+    assert "`atk wi edit --append`" in err
+    assert "`agent-toolkit:wi-standards`「由来と承認」" in err
+    assert "`--state=processing`" in err
+
+
+def test_agent_hold_moves_processing_entry_with_explicit_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """自セッションの処理中の項目は、エージェント環境でも`--state=processing`で保留できる。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "processing.md")
+    _write_awi_file(notes, "inbox.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
+    _set_agent_environment(monkeypatch, agent=True)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", "--state=processing", "processing.md"], home=tmp_path, now=_FIXED_DT)
+    assert exc_info.value.code == 0
+    assert (notes / "hold/processing.md").is_file()
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", "inbox.md"], home=tmp_path, now=_FIXED_DT)
+    assert exc_info.value.code == 0
+    assert (notes / "hold/inbox.md").is_file()
+
+
+def test_user_hold_keeps_implicit_processing_resolution(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """エージェント環境以外の`atk wi hold`は、従来どおり`processing`の項目を`--state`なしで保留する。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "processing.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
+    _set_agent_environment(monkeypatch, agent=False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "hold", "processing.md"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 0
+    assert (notes / "hold/processing.md").is_file()
+
+
+def test_agent_bulk_hold_excludes_processing_entries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """エージェント環境の`atk wi hold --all`は`processing`の項目を候補に含めず移さない。"""
+    notes = _setup_notes(tmp_path)
+    inbox_entry = _write_bulk_entry(notes, "inbox", "inbox.md")
+    processing_entry = _write_bulk_entry(notes, "processing", "processing.md")
+    commits: list[str] = []
+    _patch_bulk_git(monkeypatch, commits)
+    _set_agent_environment(monkeypatch, agent=True)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", "hold", "--all", "--target-repo=github.com/example/foo", "--yes"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    assert not inbox_entry.exists()
+    assert (notes / "hold/inbox.md").is_file()
+    assert processing_entry.is_file()
+    assert bulk_source_states("hold", actor_is_agent=True) == ("inbox", "rejected", "adopted")
+    assert bulk_source_states("hold", actor_is_agent=False) == BULK_SOURCE_STATES["hold"]

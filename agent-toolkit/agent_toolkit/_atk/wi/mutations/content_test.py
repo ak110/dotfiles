@@ -908,17 +908,18 @@ class TestEditBodyFile:
     ) -> None:
         """processingから保留した項目も、inboxと同じくエージェント環境から本文を置換できる。
 
-        投入済み項目の更新は保留、本文置換、解除の順で行うため、保留前の状態で置換を拒否すると
-        処理中だった項目の更新だけが操作不能になる。
+        holdの項目の編集はinboxと同じ条件で許すため、保留前の状態で置換を拒否すると
+        処理中だった項目の更新だけが操作不能になる。エージェント環境で処理中の項目を保留するには
+        `--state=processing`を要するため、保留はその形で行う。
         """
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
         monkeypatch.setenv("AI_AGENT", "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
-        for action in ("start-processing", "hold"):
+        for argv in (["start-processing", "fb-001.md"], ["hold", "--state=processing", "fb-001.md"]):
             with pytest.raises(SystemExit) as transition:
-                atk.main(["wi", action, "fb-001.md"], home=tmp_path, now=_FIXED_DT)
+                atk.main(["wi", *argv], home=tmp_path, now=_FIXED_DT)
             assert transition.value.code == 0
 
         with pytest.raises(SystemExit) as replaced:

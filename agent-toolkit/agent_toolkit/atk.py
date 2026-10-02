@@ -629,9 +629,13 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     ).completer = _holdable_filename_completer
     hold.add_argument(
         "--state",
-        choices=(_common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED),
+        choices=(_common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED),
         default=None,
-        help="終端した項目を保留する場合に指定する。省略時はinboxまたはprocessingから保留する。--allとは併用できない。",
+        help=(
+            "終端した項目、またはエージェント環境で処理中の項目を保留する場合に指定する。"
+            "省略時はinboxまたはprocessingから保留する。ただしエージェント環境ではprocessingの項目を保留せず失敗する。"
+            "--allとは併用できない。"
+        ),
     )
     _add_bulk_transition_args(hold, action_label="保留")
     _add_target_repo_arg(

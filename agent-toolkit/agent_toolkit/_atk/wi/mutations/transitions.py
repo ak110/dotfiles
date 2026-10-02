@@ -108,6 +108,12 @@ if TYPE_CHECKING:
 
 _AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要になった項目なら`atk wi reject`で不採用にする"
 
+_AGENT_PROCESSING_HOLD_NEXT_ACTION = (
+    "別セッションが処理中の要求を改訂する場合は保留せず、`agent-toolkit:wi-standards`「由来と承認」の処理中の項目の扱いに従い、"
+    "書き換えたい内容を新しい項目として投入するか`atk wi edit --append`で追記する。"
+    "自セッションの`agent-toolkit:process-wi`が処理中の項目を回答待ちなどで保留する場合は`--state=processing`を付けて再実行する"
+)
+
 _IMPLICIT_TERMINAL_STATE_PRIORITY = (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
 """`adopt`・`reject`のファイル名指定で同名が複数の状態にある場合の優先順。
 
@@ -197,6 +203,15 @@ def _resolve_transition_paths(
                         f"エージェント環境ではstate={candidate}の項目を削除できません",
                         next_action=_AGENT_REMOVE_NEXT_ACTION,
                     )
+    if action == "hold" and state is None and actor_is_agent:
+        for filename in filenames:
+            if _validate_filename(filename, inbox_dir).is_file():
+                continue
+            if _validate_filename(filename, processing_dir).is_file():
+                raise WebInputError(
+                    f"エージェント環境では処理中（processing）の項目を--state=processingの指定なしに保留できません: {filename}",
+                    next_action=_AGENT_PROCESSING_HOLD_NEXT_ACTION,
+                )
     if state is not None:
         return _resolve_awi_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
     if action == "start-processing":
@@ -400,6 +415,7 @@ def transition_entries(
     """平引数でエントリの一括状態遷移または削除を実行する。
 
     `action="remove"`では`actor_is_agent`が真の場合にinboxとholdだけを対象とする。
+    `action="hold"`では`actor_is_agent`が真で`state`を省いた場合、processingの項目を保留せず`WebInputError`を送出する。
     偽の場合は全状態を対象とし、`force=False`の場合（省略時もFalse）、processing状態のファイルが
     対象に含まれるとexit 2で拒否する（`atk wi rm`で--forceを省略した場合の保護。処理中ファイルの
     意図しない削除を防ぐ。解除するには`force=True`を渡す）。
@@ -639,6 +655,7 @@ def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
         now=now,
         target_repo=args.target_repo,
         state=args.state,
+        actor_is_agent=is_agent_environment(),
     )
     _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
 

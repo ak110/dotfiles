@@ -74,7 +74,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi hold": {
         "summary": "inbox・processingまたは終端した項目を保留する",
-        "description": "目的: 項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで処理させないとき。誤って終端した項目を回答待ちにするとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。終端からの移動では旧処理結果を除く。\n前提: 対象がinboxまたはprocessingにあること。adoptedまたはrejectedから移す場合は`--state`を指定する。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
+        "description": "目的: 項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで処理させないとき。誤って終端した項目を回答待ちにするとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。終端からの移動では旧処理結果を除く。\n前提: 対象がinboxまたはprocessingにあること。adoptedまたはrejectedから移す場合は`--state`を指定する。エージェント環境（`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかを設定した環境）では、processingの項目の保留に`--state=processing`を要し、指定しない場合は移さずに失敗する。別セッションが処理中の要求を改訂する場合は保留せず、新しい項目の投入か`atk wi edit --append`による追記を使う。`--all`はエージェント環境ではprocessingの項目を候補に含めない。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
         "epilog": "実行例:\n\n  atk wi hold 20260901-072734-001.md",
     },
     "atk wi unhold": {
