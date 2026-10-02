@@ -213,7 +213,7 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """1000字を超える発話の省略区間にある`気付いた改善点:`の行を、会話の流れへ全て残す。
 
-    振り返りは会話の流れからこの行を全件拾うため、省略区間で行が消えると作業中に伝えた改善の機会が分析から漏れる。
+    振り返りは会話の流れからこの行を全件拾うため、省略区間で行が消えると、作業中に伝えた改善の機会を振り返りが分析できない。
     行を持たない長い発話は従来どおり先頭と末尾だけを載せ、中間の本文を残さない。
     """
     first_note = "気付いた改善点: atk agents waitの出力をjqで加工するスクリプトを3回作った（ツールの出力形式）"
