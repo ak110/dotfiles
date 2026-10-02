@@ -152,6 +152,13 @@ from agent_toolkit._atk.managed_temp.registry import *  # noqa: F403
 from agent_toolkit._atk.managed_temp.windows_security import *  # noqa: F403
 
 
+SESSION_TEMP_PREFIX = "session"
+"""SessionStartが会話ごとに作成するセッション領域の接頭辞。
+
+フックとagents_serverの双方が同じ領域を解決するため、両者より前の層のこのモジュールが持つ。
+"""
+
+
 def prefix_violation(prefix: str) -> str | None:
     """prefixが違反した最初の条件の説明を返す。違反が無ければNoneを返す。"""
     for description, satisfied in _PREFIX_RULES:

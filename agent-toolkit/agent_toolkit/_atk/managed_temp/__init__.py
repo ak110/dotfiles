@@ -36,6 +36,7 @@ for _source in _MODULES:
 
 from agent_toolkit._atk.managed_temp.cli import build_parser, dispatch, main
 from agent_toolkit._atk.managed_temp.creation import (
+    SESSION_TEMP_PREFIX,
     _invalid_prefix_error,
     _remove_created_target,
     _validate_path_shape,

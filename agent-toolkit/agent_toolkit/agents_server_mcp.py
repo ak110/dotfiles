@@ -15,6 +15,7 @@ import os
 import pathlib
 import subprocess
 import typing
+import uuid
 import warnings
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from typing import Annotated, Any, Literal, cast
@@ -61,6 +62,7 @@ from agent_toolkit._agents_server.state import (
     selected_candidate,
 )
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
@@ -353,6 +355,8 @@ _EXTRA_PARAMS_DESCRIPTION = _parameter_description(
     "タスク文書が`## 入力`で宣言した入力名（必須入力名と任意入力名）をキー、文字列を値とする。"
     "待機と再開の方針はサーバーが伝えるため、起動文へ書き足さない。"
     "必須入力の欠落と宣言外の入力名を含む場合は委譲先を起動しない。"
+    "ただし必須入力の`引き継ぎ記録先`を省略した場合は、サーバーが呼び出し元のセッション領域の直下に`（新規）`の記録先を用意し、"
+    "その絶対パスを応答の`handoff_record_path`で返す。継続する担当へは、その値へ`（継続）`を付けて渡す。"
 )
 _PROMPT_DESCRIPTION = _parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
@@ -558,11 +562,53 @@ def _check_declared_inputs(
         )
 
 
+_HANDOFF_INPUT_NAME = "引き継ぎ記録先"
+"""サーバーが省略時の値を用意する必須入力の名前。値は呼び出し元の判断を含まず一意に決まる。"""
+
+_HANDOFF_TEMP_PREFIX = "handoff"
+"""呼び出し元のセッション領域を解決できない場合に作成する管理対象一時領域の接頭辞。"""
+
+
+def _default_handoff_path() -> pathlib.Path | None:
+    """`（新規）`の引き継ぎ記録先として、呼び出し元のセッション領域直下の未使用のファイルパスを返す。
+
+    セッション領域は`AGENT_TOOLKIT_OWNER_SESSION`か`CLAUDE_CODE_SESSION_ID`が示すsessionのものを作成せずに解決する。
+    解決できない場合（Codex CLIが直接起動したMCPサーバーなど）は新しい管理対象一時領域を作成する。
+    どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
+    ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
+    """
+    directory: pathlib.Path | None = None
+    session_id = status_file.resolve_root_session_id(os.environ)
+    if session_id is not None:
+        try:
+            entries = _managed_temp.list_managed_temp(_managed_temp.SESSION_TEMP_PREFIX, session_id=session_id)
+        except (_managed_temp.ManagedTempError, OSError):
+            entries = []
+        recorded = entries[-1].get("path") if entries else None
+        if isinstance(recorded, str) and pathlib.Path(recorded).is_dir():
+            directory = pathlib.Path(recorded)
+    if directory is None:
+        try:
+            directory = _managed_temp.create_managed_temp(_HANDOFF_TEMP_PREFIX)
+        except (_managed_temp.ManagedTempError, OSError):
+            _LOG.warning("省略された引き継ぎ記録先の代わりの記録先を用意できません", exc_info=True)
+            return None
+    while True:
+        candidate = directory / f"handoff-{uuid.uuid4().hex[:12]}.md"
+        if not candidate.exists():
+            return candidate
+
+
 def _task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
-) -> tuple[str, str, LaunchKind]:
-    """専用タスク文書と名前付き入力からmodel種別、起動文および起動種別を返す。"""
+) -> tuple[str, str, LaunchKind, pathlib.Path | None]:
+    """専用タスク文書と名前付き入力からmodel種別、起動文、起動種別およびサーバーが用意した引き継ぎ記録先を返す。
+
+    タスク文書が`引き継ぎ記録先`を必須入力とし、`extra_params`がこれを持たない場合は、
+    拒否せずに`（新規）`の記録先を用意して起動文へ加え、その絶対パスを4要素目で返す。
+    呼び出し元が値を渡した場合と、宣言を読めない場合の4要素目は`None`とする。
+    """
     task_document = pathlib.Path(subagent_md_path)
     if not task_document.is_absolute():
         raise ActionableError("subagent_md_path must be an absolute path", next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION)
@@ -604,16 +650,21 @@ def _task_document_request(
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     declaration = _task_document_declaration(task_document, document_text)
     launch_kind: LaunchKind = "delegate"
+    handoff_path: pathlib.Path | None = None
     if isinstance(declaration, str):
         _LOG.warning("%s", declaration)
     else:
+        if _HANDOFF_INPUT_NAME in declaration.required and _HANDOFF_INPUT_NAME not in extra_params:
+            handoff_path = _default_handoff_path()
+            if handoff_path is not None:
+                extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         _check_declared_inputs(task_document, declaration, extra_params)
         launch_kind = declaration.launch_kind
     prompt_lines = [f"次のタスク文書の手順を実行せよ（出所: {task_document}）。", document_text]
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
-    return model_type, "\n".join(prompt_lines), launch_kind
+    return model_type, "\n".join(prompt_lines), launch_kind, handoff_path
 
 
 _DEFAULT_STATUS_WRITER = object()
@@ -2682,7 +2733,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if mode == "task":
         assert subagent_md_path is not None
         params = extra_params or {}
-        task_model_type, task_prompt, launch_kind = _task_document_request(subagent_md_path, params)
+        task_model_type, task_prompt, launch_kind, handoff_path = _task_document_request(subagent_md_path, params)
         response = await _MANAGER.start(
             model_type or task_model_type,
             task_prompt,
@@ -2690,6 +2741,10 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             launch_kind=launch_kind,
             label=_resolve_display_label(label, _task_document_label(subagent_md_path, params)),
         )
+        if handoff_path is not None:
+            public = _public_start_response(response)
+            public["handoff_record_path"] = str(handoff_path)
+            return public
     elif mode == "delegate":
         assert prompt is not None and model_type is not None
         response = await _MANAGER.start(model_type, prompt, cwd, label=label)

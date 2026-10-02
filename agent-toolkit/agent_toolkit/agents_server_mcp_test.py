@@ -1382,26 +1382,63 @@ def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path
 
 
 @pytest.mark.asyncio
-async def test_start_rejects_exec_prompt_without_handoff_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """startは引き継ぎ記録先だけを欠く実装起動文をbackendへ渡さない。"""
+async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`引き継ぎ記録先`を省略した`start`は拒否されず、呼び出し元のセッション領域直下の`（新規）`記録先で起動する。
+
+    渡し忘れの拒否と再発行の往復を除くため、サーバーが用意した絶対パスを起動文と応答の双方へ載せる。
+    応答の値が起動文と一致しないと、呼び出し元は`（継続）`で渡す記録先を誤る。
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-state")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    session_area = subject._managed_temp.create_managed_temp("session", session_id="caller-session")
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
     input_lines = [
         line for line in _observed_input_lines(task_document.name, tmp_path) if not line.startswith("引き継ぎ記録先:")
     ]
     extra_params = dict(line.split(": ", 1) for line in input_lines)
-    called = False
+    prompts: list[str] = []
 
-    async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
-        nonlocal called
-        called = True
+    async def fake_start(_model_type: str, prompt: str, *_args: object, **_kwargs: object) -> dict[str, Any]:
+        prompts.append(prompt)
         return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
-    with pytest.raises(ValueError, match=rf"引き継ぎ記録先.*{re.escape(str(task_document))}"):
-        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
-    assert called is False
+    handoff = pathlib.Path(response["handoff_record_path"])
+    assert handoff.is_absolute()
+    assert handoff.parent == session_area
+    assert not handoff.exists()
+    assert f"引き継ぎ記録先: {handoff}（新規）" in prompts[0].splitlines()
+
+
+@pytest.mark.asyncio
+async def test_start_keeps_given_handoff_path_and_rejects_other_missing_inputs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """呼び出し元が渡した`引き継ぎ記録先`はそのまま起動文へ載せ、それ以外の必須入力の欠落は従来どおり拒否する。"""
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    extra_params = dict(line.split(": ", 1) for line in _observed_input_lines(task_document.name, tmp_path))
+    prompts: list[str] = []
+
+    async def fake_start(_model_type: str, prompt: str, *_args: object, **_kwargs: object) -> dict[str, Any]:
+        prompts.append(prompt)
+        return {"session_id": "session", "status": "running"}
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+
+    response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
+
+    assert "handoff_record_path" not in response
+    assert f"引き継ぎ記録先: {extra_params['引き継ぎ記録先']}" in prompts[0].splitlines()
+
+    without_kind = {name: value for name, value in extra_params.items() if name != "担当種別"}
+    with pytest.raises(ValueError, match=rf"担当種別.*{re.escape(str(task_document))}"):
+        await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=without_kind)
+    assert len(prompts) == 1
 
 
 @pytest.mark.asyncio
