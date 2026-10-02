@@ -333,3 +333,33 @@ def test_system_prompt_does_not_promise_auto_resume(launch_kind: shared_state.La
 
     assert prompt == shared_state.LAUNCH_SYSTEM_PROMPTS[launch_kind]
     assert shared_state.AUTO_RESUME_NOTICE not in prompt
+
+
+def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動と継続の子環境は、環境の別ownerよりManagerのrootを優先する。"""
+    fake = _install_fake_agy(tmp_path, monkeypatch)
+    captured = tmp_path / "roots.jsonl"
+    fake.write_text(
+        _FAKE_AGY.format(python=sys.executable).replace(
+            "import sys\n",
+            f'import sys\nimport os\nwith open({str(captured)!r}, "a", encoding="utf-8") as stream:\n'
+            '    stream.write(json.dumps(os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")) + "\\n")\n',
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "other-root")
+
+    async def scenario() -> None:
+        manager = antigravity.AntigravityManager(root_session_id="manager-root")
+        try:
+            session = await manager.start("最初の依頼", str(tmp_path))
+            while not session.terminal:
+                await asyncio.sleep(0.02)
+            await manager.send_message(session, "続行")
+            while not session.terminal:
+                await asyncio.sleep(0.02)
+        finally:
+            await manager.close()
+
+    asyncio.run(scenario())
+    assert [json.loads(line) for line in captured.read_text(encoding="utf-8").splitlines()] == ["manager-root", "manager-root"]

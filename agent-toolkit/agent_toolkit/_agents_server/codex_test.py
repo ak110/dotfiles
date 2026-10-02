@@ -14,7 +14,6 @@ import pytest
 
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._plan import locations as plan_file
 
 
 class _ThreadStartClient:
@@ -250,9 +249,8 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
 ) -> None:
     """内側MCPサーバーへルートと書込主体を完全な定義で配送する。"""
     client = _ThreadStartClient()
-    manager = subject.AppServerManager()
+    manager = subject.AppServerManager(root_session_id="root-session")
     monkeypatch.setattr(manager, "_ensure_client", lambda: _return(client))
-    monkeypatch.setattr(plan_file, "resolve_owner_session_id", lambda: "root-session")
     monkeypatch.setattr(
         subject.status_file, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread))
     )

@@ -100,7 +100,8 @@ def test_agents_wait_outputs_every_retained_result(
 
     captured = capsys.readouterr()
     completed, failed = [json.loads(line) for line in captured.out.splitlines()]
-    assert completed == first
+    assert completed == {"session_id": "session-1", "status": "completed"}
+    assert "turn_seq" not in completed
     next_action = failed.pop("next_action")
     assert failed == second
     assert "`send_message`" in next_action
@@ -131,7 +132,7 @@ def test_agents_wait_rows_carry_launch_label_and_body_file(
     terminal = json.loads(capsys.readouterr().out)
     assert terminal["label"] == "依頼A"
     body_path = pathlib.Path(terminal["agent_message_path"])
-    assert body_path.name == "session-1-turn3.md"
+    assert body_path.name == "session-1.md"
     assert body_path.read_text(encoding="utf-8") == message == terminal["agent_message"]
 
     _write_own_status(wait_environment, [{"session_id": "session-2", "status": "running", "label": "依頼B"}])
@@ -175,7 +176,7 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
         atk.main(["agents", "wait"])
     delivered = json.loads(capsys.readouterr().out)
     assert pathlib.Path(delivered.pop("agent_message_path")).read_text(encoding="utf-8") == "結果本文"
-    assert delivered == {"session_id": "session-1", **terminal}
+    assert delivered == {"session_id": "session-1", "status": "completed", "agent_message": terminal["agent_message"]}
 
 
 @pytest.mark.parametrize(
@@ -292,7 +293,7 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     assert running == {
         "session_id": "session-2",
         "status": "running",
-        "notices": [{"sent_at": sent_at, "body": "検査コマンドが未導入"}],
+        "notices": [{"body": "検査コマンドが未導入"}],
     }
     assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())
@@ -602,7 +603,7 @@ def _stash_notice(tmp_path: pathlib.Path, run_path: pathlib.Path) -> None:
     )
     assert status_file.take_notices(
         "root-session", "session-1", tmp_path, stash_directory=run_path.with_suffix("") / "notices"
-    ) == [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}]
+    ) == [{"body": "通知"}]
 
 
 def _interrupt_after_published(
@@ -782,7 +783,7 @@ def test_wait_replays_follower_output_after_interrupt(
             {
                 "session_id": "session-1",
                 "status": "running",
-                "notices": [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}],
+                "notices": [{"body": "通知"}],
             },
         ),
     ],
@@ -947,7 +948,7 @@ def test_wait_recovers_claimed_notice_once(
     notice_path.write_text(json.dumps(payload), encoding="utf-8")
     stash_directory = run_path.with_suffix("") / "notices"
     assert status_file.take_notices("root-session", "session-1", tmp_path, stash_directory=stash_directory) == [
-        {"sent_at": payload["sent_at"], "body": payload["body"]}
+        {"body": payload["body"]}
     ]
     if original_exists:
         notice_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -958,7 +959,7 @@ def test_wait_recovers_claimed_notice_once(
         {
             "session_id": "session-1",
             "status": "running",
-            "notices": [{"sent_at": payload["sent_at"], "body": payload["body"]}],
+            "notices": [{"body": payload["body"]}],
         }
     ]
     assert not notice_path.exists()
@@ -1000,7 +1001,7 @@ def test_wait_replays_published_notice_after_publication_interrupt(
     assert _running_body(json.loads(capsys.readouterr().out)) == {
         "session_id": "session-1",
         "status": "running",
-        "notices": [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}],
+        "notices": [{"body": "通知"}],
     }
 
 
@@ -1035,7 +1036,7 @@ def test_wait_replays_flushed_result_after_interrupt(
         {
             "session_id": "session-1",
             "status": "completed",
-            "notices": [{"sent_at": "2026-09-25T00:00:00Z", "body": "通知"}],
+            "notices": [{"body": "通知"}],
         }
     ]
 
@@ -1379,8 +1380,8 @@ def test_agents_wait_returns_notices_while_running(
         "session_id": "session-1",
         "status": "running",
         "notices": [
-            {"sent_at": "2026-09-07T00:00:01+00:00", "body": "先の通知"},
-            {"sent_at": "2026-09-07T00:00:02+00:00", "body": "後の通知"},
+            {"body": "先の通知"},
+            {"body": "後の通知"},
         ],
     }
     assert not any(notices.iterdir())
@@ -1559,8 +1560,8 @@ def test_agents_wait_reports_seconds_since_output_on_timeout(
         atk.main(["agents", "wait"])
 
     response = json.loads(capsys.readouterr().out)
-    assert response["output_updated_at"] == output_updated_at
-    assert response["updated_at"] == updated_at
+    assert {"output_updated_at", "updated_at", "seconds_since_output"}.isdisjoint(response)
+    assert response["seconds_since_activity"] == 0
     assert "atk agents wait" in response["next_action"]
 
 
@@ -1604,7 +1605,7 @@ def test_agents_wait_returns_stall_notice_after_threshold(
         atk.main(["agents", "wait"])
 
     response = json.loads(capsys.readouterr().out)
-    assert response["output_updated_at"] is None
+    assert "output_updated_at" not in response
     assert response["seconds_since_activity"] >= state.STALL_NOTICE_SECONDS
 
 
@@ -1647,8 +1648,8 @@ def test_agents_wait_notices_response_reports_seconds_since_output(
         atk.main(["agents", "wait"])
 
     response = json.loads(capsys.readouterr().out)
-    assert response["output_updated_at"] == output_updated_at
-    assert response["updated_at"] == updated_at
+    assert {"output_updated_at", "updated_at", "seconds_since_output"}.isdisjoint(response)
+    assert response["seconds_since_activity"] == 0
 
 
 def test_agents_wait_stall_uses_activity_not_text_output(
@@ -1672,7 +1673,7 @@ def test_agents_wait_stall_uses_activity_not_text_output(
         atk.main(["agents", "wait"])
 
     response = json.loads(capsys.readouterr().out)
-    assert response["seconds_since_output"] >= state.STALL_NOTICE_SECONDS
+    assert "seconds_since_output" not in response
     assert response["seconds_since_activity"] == 0
 
 
@@ -1697,7 +1698,8 @@ def test_agents_wait_adds_notices_to_terminal_result(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
 
-    payload["notices"] = [{"sent_at": notice["sent_at"], "body": notice["body"]}]
+    payload.pop("turn_seq")
+    payload["notices"] = [{"body": notice["body"]}]
     assert json.loads(capsys.readouterr().out) == payload
     assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())

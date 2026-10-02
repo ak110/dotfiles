@@ -74,10 +74,12 @@ def build_command(
     return command
 
 
-def _child_env() -> dict[str, str]:
-    """委譲先の印を付けた環境を返す。"""
+def _child_env(root_session_id: str | None) -> dict[str, str]:
+    """委譲先の印とManagerが所有するrootを配送する。"""
     env = dict(os.environ)
     env[_ENV_DELEGATED_SESSION] = "1"
+    if root_session_id is not None:
+        env["AGENT_TOOLKIT_OWNER_SESSION"] = root_session_id
     return env
 
 
@@ -99,11 +101,14 @@ class AntigravityManager:
         condition: asyncio.Condition | None = None,
         publish_registry: bool = False,
         log_directory: pathlib.Path | None = None,
+        *,
+        root_session_id: str | None = None,
     ) -> None:
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
         self._publish_registry = publish_registry
         self._log_directory = log_directory
+        self._root_session_id = root_session_id
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._processes: dict[str, asyncio.subprocess.Process] = {}
@@ -304,7 +309,7 @@ class AntigravityManager:
                 process = await asyncio.create_subprocess_exec(
                     *command,
                     cwd=cwd,
-                    env=_child_env(),
+                    env=_child_env(self._root_session_id),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )

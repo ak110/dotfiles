@@ -260,7 +260,7 @@ def test_reply_after_resume_registers_under_mcp_root_and_wait_collects_result(
     delivered = [json.loads(line) for line in lines]
     for row in delivered:
         row.pop("agent_message_path")
-    assert delivered == [terminal]
+    assert delivered == [{"session_id": "remote-session", "status": "completed", "agent_message": "完了"}]
 
 
 @pytest.mark.parametrize(
@@ -1328,7 +1328,7 @@ class TestAgentsServerSessionState:
             ("send_message", {"session_id": "remote"}, {"delivery": "reply_started"}),
             ("kill", {"session_id": "remote"}, {"status": "interrupted", "kill_requested": True}),
             ("stop", {"session_id": "remote"}, {}),
-            ("list", {}, {"sessions": [], "omitted": 0, "root_session_id": "root-session"}),
+            ("list", {}, {"sessions": [], "root_session_id": "root-session"}),
         ),
     )
     def test_reduced_success_responses_have_no_missing_fields(

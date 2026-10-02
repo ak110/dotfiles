@@ -76,7 +76,7 @@ def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.Cap
         atk.main(["agents", "list", "--help"])
 
     output = _without_wrapping(capsys.readouterr().out)
-    assert _without_wrapping("各sessionへ委譲プロンプトを含めず、委譲プロンプトは`atk agents show`が返す。") in output
+    assert _without_wrapping("実行条件と委譲プロンプトは`atk agents show`が返す。") in output
     assert _without_wrapping("MCPの`list`を1回呼び出してから再実行") in output
 
 
@@ -102,6 +102,13 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
                         "label": "調査レーン",
                         "model_type": "execute",
                         "launch_kind": "delegate",
+                        "engine": "codex",
+                        "model": "model",
+                        "effort": "medium",
+                        "progress": "進捗",
+                        "last_action": "Bash: git status",
+                        "created_at": "2026-09-12T00:00:00+00:00",
+                        "future_internal": "内部診断",
                         "started_at": "2026-09-13T00:00:00+00:00",
                         "updated_at": "2026-09-13T00:01:00+00:00",
                     }
@@ -117,7 +124,7 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
 def test_agents_list_returns_diagnostic_fields_without_prompt(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """listは診断用の項目を返し、委譲プロンプトだけを除く。"""
+    """listは稼働と稼働時間に使う項目へ限定し、内部追加と詳細診断を返さない。"""
     monkeypatch.setenv("AI_AGENT", "1")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -127,17 +134,12 @@ def test_agents_list_returns_diagnostic_fields_without_prompt(
     assert session == {
         "session_id": "session-1",
         "status": "running",
-        "cwd": "/worktree",
         "label": "調査レーン",
-        "model_type": "execute",
-        "launch_kind": "delegate",
+        "last_action": "Bash: git status",
+        "created_at": "2026-09-12T00:00:00+00:00",
         "started_at": "2026-09-13T00:00:00+00:00",
-        "updated_at": "2026-09-13T00:01:00+00:00",
-        "owner_status_file": "root.json",
         "result_available": False,
         "seconds_since_activity": session["seconds_since_activity"],
-        "output_updated_at": None,
-        "seconds_since_output": session["seconds_since_output"],
     }
 
 
@@ -298,6 +300,14 @@ def test_agents_show_selects_one_session(capsys: pytest.CaptureFixture[str]) -> 
     payload = json.loads(capsys.readouterr().out)
     assert payload["session_id"] == "session-1"
     assert payload["prompt"] == "調査せよ"
+    assert payload["cwd"] == "/worktree"
+    assert payload["engine"] == "codex"
+    assert payload["model"] == "model"
+    assert payload["effort"] == "medium"
+    assert payload["progress"] == "進捗"
+    assert {"future_internal", "owner_status_file", "updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(
+        payload
+    )
 
 
 @pytest.mark.usefixtures("session_environment")
@@ -331,7 +341,7 @@ def test_agents_show_finds_uncollected_result_after_status_expires(
     assert payload["status"] == "completed"
     assert payload["prompt"] == "調査せよ"
     assert payload["agent_message"] == "完了"
-    assert payload["owner_status_file"] == "writer.json"
+    assert "owner_status_file" not in payload
 
     (results / "nested.json").write_text(
         json.dumps({"status": "completed", "agent_message": "完了", "owner_status_file": "writer.json"}),

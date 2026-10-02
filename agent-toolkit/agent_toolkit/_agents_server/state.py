@@ -347,25 +347,19 @@ def activity_projection(
     started_at: str | None,
     api_error: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """活動とテキスト出力の各時刻からの経過、および停滞の印を公開項目へ射影する。
+    """最後の活動からの経過とAPI失敗を公開項目へ射影する。
 
     停滞の判定入力は活動時刻とする。テキスト出力の時刻を判定入力にすると、
     ツール呼び出しだけを長時間続ける正常なsessionを停滞と判定し、
     委譲元が不要な催促と巻き取りへ進む。
-    委譲元が1回の照会で、テキスト出力だけが停止したのか活動も停止したのか判別できるよう、
-    両者の時刻と経過を同じ応答へ並べる。
     `show`・`list`・`atk agents wait`・`atk agents list`は本関数を共有する。
     呼び出し手段ごとに判定入力が分かれると、同じsessionへ異なる停滞の印が返る。
     """
+    del output_updated_at
     seconds_since_activity = elapsed_seconds(updated_at or started_at)
     if seconds_since_activity is None:
         return {}
-    projection: dict[str, Any] = {
-        "updated_at": updated_at,
-        "seconds_since_activity": seconds_since_activity,
-        "output_updated_at": output_updated_at,
-        "seconds_since_output": elapsed_seconds(output_updated_at or started_at),
-    }
+    projection: dict[str, Any] = {"seconds_since_activity": seconds_since_activity}
     if api_error is not None:
         first_at = api_error.get("first_at")
         elapsed = elapsed_seconds(first_at) if isinstance(first_at, str) else None
@@ -374,13 +368,29 @@ def activity_projection(
                 "type": api_error.get("type"),
                 "http_status": api_error.get("http_status"),
                 "elapsed_seconds": elapsed,
-                "count": api_error.get("count"),
             }
     return projection
 
 
 def _nonempty_error(error: Any) -> bool:
     return error is not None and error != "" and error != {}
+
+
+def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """内部の結果保存項目を含めず、回収と継続に使う結果だけを返す。"""
+    result = {
+        key: payload[key]
+        for key in ("session_id", "status", "label", "agent_message", "next_action", "recovery")
+        if key in payload
+    }
+    if _nonempty_error(payload.get("error")):
+        result["error"] = payload["error"]
+    return result
+
+
+def public_notice(payload: Mapping[str, str]) -> dict[str, str]:
+    """整列後の通知本文を返す。送信時刻は保存と整列に残す。"""
+    return {"body": payload["body"]}
 
 
 def _append_bounded(existing: str, delta: str, limit: int = 4000) -> str:
@@ -542,7 +552,7 @@ class SessionState:
         """
         if self.current_item is not None and self.current_item_started_at is not None:
             entry: dict[str, str] = {"started_at": self.current_item_started_at}
-            for key in ("type", "id"):
+            for key in ("type",):
                 value = self.current_item.get(key)
                 if isinstance(value, str) and value:
                     entry[key] = value
@@ -743,7 +753,7 @@ def has_uncollected_result(session: SessionState | SessionResumeState, result_co
 
 
 def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[str, Any]:
-    """終端結果ファイルへ保存する公開結果を返す。
+    """終端結果ファイルへ保存する結果と復旧用の項目を返す。
 
     保持中と退避済みのsessionが同じ結果本文を公開できるよう、必要な項目だけへ射影する。
     """
