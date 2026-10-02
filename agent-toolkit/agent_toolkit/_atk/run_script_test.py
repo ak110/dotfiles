@@ -335,6 +335,57 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
     assert output.is_file()
 
 
+def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib.Path) -> None:
+    """公開された`atk run-script plan-progress`のヘルプに撤去した`--start-head`が無く、渡すと引数エラーで終わる。
+
+    開始時のHEADは専用branchとベースbranchから`git merge-base`で得るため、進捗ログへ記録する手段を撤去した。
+    利用者が呼び出す`atk run-script`のスクリプト選択と引数の受け渡しを経ても、撤去したオプションが受理されないことを確かめる。
+    """
+    executable = run_script.PLUGIN_ROOT / "bin/atk"
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    environment.pop("VIRTUAL_ENV", None)
+    plan = tmp_path / "plan.md"
+    plan.write_text("# 計画\n", encoding="utf-8")
+    saved = plan.read_bytes()
+
+    help_result = subprocess.run(
+        [executable, "run-script", "plan-progress", "--", "--help"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    rejected = subprocess.run(
+        [
+            executable,
+            "run-script",
+            "plan-progress",
+            "--",
+            str(plan),
+            "--completed-step",
+            "開始",
+            "--result",
+            "専用worktree",
+            "--start-head",
+            "HEAD",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert help_result.returncode == 0, help_result.stderr
+    assert "--completed-step" in help_result.stdout
+    assert "--start-head" not in help_result.stdout
+    assert rejected.returncode == 2, rejected.stderr
+    assert "--start-head" in rejected.stderr
+    assert plan.read_bytes() == saved
+
+
 def test_unregistered_script_lists_registered_names() -> None:
     """未登録のscript名は登録済みscriptの一覧を次の操作として示す。"""
     with pytest.raises(next_action.ActionableError) as raised:
