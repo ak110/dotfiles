@@ -823,6 +823,74 @@ def test_validate_rejects_unanswered_response(tmp_path: pathlib.Path) -> None:
     assert "atk review-table respond <PATH> --row-id 1" in exc_info.value.next_action
 
 
+def test_row_id_diagnostic_guides_response(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """空行と応答済み行の後の指摘へ、診断とshowの同じ識別子で応答できる。"""
+    path = tmp_path / "positions.exec-review.tsv"
+    rows = [
+        ["1", _TRACK, "first", "対応済み", "詳細", "修正した", ""],
+        ["1", _TRACK, "second", "未対応", "仕様", "", ""],
+    ]
+    path.write_text("\n" + "\n\n".join("\t".join(json.dumps(cell) for cell in row) for row in rows) + "\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "validate", str(path)], home=tmp_path)
+    assert result.value.code == 1
+    error = capsys.readouterr().err
+    assert "row-id 2が未応答" in error
+    assert "--row-id 2" in error
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), "--format=jsonl"], home=tmp_path)
+    assert result.value.code == 0
+    assert [json.loads(line)["row-id"] for line in capsys.readouterr().out.splitlines()] == [1, 2]
+    response = tmp_path / "response.md"
+    response.write_text("修正した", encoding="utf-8")
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "respond", str(path), "--row-id=2", f"--response-file={response}"], home=tmp_path)
+    assert result.value.code == 0
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "validate", str(path)], home=tmp_path)
+    assert result.value.code == 0
+
+
+@pytest.mark.parametrize(
+    ("cells", "reason"),
+    [
+        (["1", _TRACK], "列数が7ではない"),
+        (["1", _TRACK, "位置", None, "詳細", "", ""], "列番号 4がJSON文字列ではない"),
+        (["1", _TRACK, "位置", 7, "詳細", "", ""], "列番号 4が文字列ではない"),
+    ],
+)
+def test_syntax_diagnostic_identifies_physical_line(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], cells: list[object], reason: str
+) -> None:
+    """構文不正は空行を数える物理位置を示し、行識別子として案内しない。"""
+    path = tmp_path / "syntax.exec-review.tsv"
+    line = "\t".join("broken" if cell is None else json.dumps(cell) for cell in cells)
+    path.write_text("\n\n" + line + "\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path)], home=tmp_path)
+    assert result.value.code == 1
+    error = capsys.readouterr().err
+    assert "物理行番号 3" in error
+    assert reason in error
+    assert "row-id 3" not in error
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "reason"),
+    [(0, "", "先頭4列"), (0, "R2", "ラウンド"), (1, "invalid", "track"), (4, "重大", "level")],
+)
+def test_invalid_row_diagnostic_uses_show_identifier(tmp_path: pathlib.Path, column: int, value: str, reason: str) -> None:
+    """未応答以外の行内容の診断も空行を除く識別子へ対応する。"""
+    path = tmp_path / "invalid.exec-review.tsv"
+    row = ["1", _TRACK, "位置", "指摘", "詳細", "対応済み", ""]
+    row[column] = value
+    path.write_text("\n" + "\t".join(json.dumps(cell) for cell in row) + "\n", encoding="utf-8")
+    with pytest.raises(next_action.ActionableError) as error:
+        table.validate(path)
+    assert "row-id 1" in error.value.reason
+    assert reason in error.value.reason
+
+
 def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: pathlib.Path) -> None:
     """不正な列数の表を検出したとき、修復に必要な列構造と正規値を全操作で示す。"""
     path = tmp_path / "review.tsv"
@@ -889,7 +957,7 @@ def test_show_preserves_legacy_seven_columns_with_and_without_track_filter(
     ("cells", "expected_error"),
     (
         (("1", _TRACK, "位置", "指摘", "", ""), "列数が7ではない"),
-        (("1", _TRACK, "位置", None, "仕様", "", "", ""), "4列がJSON文字列ではない"),
+        (("1", _TRACK, "位置", None, "仕様", "", "", ""), "列番号 4がJSON文字列ではない"),
     ),
 )
 def test_show_rejects_malformed_rows_before_output(
