@@ -60,7 +60,6 @@ def _cmd_add_args(
     *,
     source: str | None = None,
     entry_type: str = "awi",
-    plan_file: str | None = None,
     dry_run: bool = False,
     depends_on: list[str] | None = None,
 ) -> argparse.Namespace:
@@ -77,7 +76,6 @@ def _cmd_add_args(
         scope=None,
         question_type="free-form" if entry_type == WI_TYPE_UWI else None,
         choices=None,
-        plan_file=plan_file,
         dry_run=dry_run,
         subparser=None,
     )
@@ -777,27 +775,6 @@ def test_cmd_add_accepts_uwi_without_required_sections(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
-def test_cmd_add_accepts_plan_awi_without_required_sections(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """計画実装型AWIはsourceを持っても必須節が無い本文を保存する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    plan = notes / "plans" / "2026" / "09" / "test.md"
-    plan.parent.mkdir(parents=True)
-    plan.write_text("# 計画\n", encoding="utf-8")
-
-    add_module._cmd_add(
-        _cmd_add_args(tmp_path, "計画本文", source="test", plan_file=str(plan)),
-        notes,
-        _FIXED_DT,
-        tmp_path,
-    )
-
-    assert len(list((notes / "inbox").iterdir())) == 1
-
-
 def _with_direct_cause(body: str, value: str) -> str:
     """通常AWIの本文へ`直接的原因`行を持つ原因分析を加える。"""
     section = f"## 原因分析\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | {value} |\n\n"
@@ -843,28 +820,27 @@ def test_add_rejects_undetermined_direct_cause(
     assert not list((notes / "inbox").iterdir())
 
 
-def test_add_rejects_undetermined_direct_cause_in_uwi_and_plan_awi(
+def test_add_rejects_undetermined_direct_cause_in_uwi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """UWIと計画実装型AWIも、種別による除外なしに原因欄の未確定宣言を拒否する。"""
+    """UWIも、種別による除外なしに原因欄の未確定宣言を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
     table = "| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n"
-    plan = notes / "plans" / "2026" / "09" / "test.md"
-    plan.parent.mkdir(parents=True)
-    plan.write_text("# 計画\n", encoding="utf-8")
 
-    for args in (
-        _cmd_add_args(tmp_path, f"どちらを選ぶか？\n\n## 判断材料\n\n{table}", source="test", entry_type=WI_TYPE_UWI),
-        _cmd_add_args(tmp_path, f"計画本文\n\n{table}", source="test", plan_file=str(plan)),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            add_module._cmd_add(args, notes, _FIXED_DT, tmp_path)
-        assert exc_info.value.code == 1
-        assert "直接的原因が未確定のまま保存しようとした" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(
+            _cmd_add_args(tmp_path, f"どちらを選ぶか？\n\n## 判断材料\n\n{table}", source="test", entry_type=WI_TYPE_UWI),
+            notes,
+            _FIXED_DT,
+            tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    assert "直接的原因が未確定のまま保存しようとした" in capsys.readouterr().err
     assert not list((notes / "inbox").iterdir())
 
 
@@ -1233,6 +1209,7 @@ def test_flat_add_operation_drops_input_queue_schedule(
         ("origin_session", "forged-session"),
         ("origin_locator", "forged-rollout:1"),
         ("submitter_session", "forged-session"),
+        ("plan_file", "$(atk config get private_notes)/plans/2026/09/forged.md"),
     ],
 )
 def test_flat_add_operation_drops_input_repair_metadata(
@@ -1263,40 +1240,6 @@ def test_flat_add_operation_drops_input_repair_metadata(
     assert parsed is not None
     assert reserved_key not in parsed[0]
     assert parsed[0]["alert_keys"] == "github-run:1"
-
-
-def test_add_operation_classifies_explicit_plan_file(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """plan_file指定時に計画実装型の独立キーを記録する。"""
-    notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
-    plan = tmp_path / "plan.md"
-    plan.write_text(
-        "## 概要\n\n成果。\n\n### 計画メタ情報\n\n"
-        "## 実装資料\n\n### 変更説明\n\nREADMEを更新する。\n\n"
-        "## 完了条件\n\n検証。\n\n## 進捗ログ\n\n未着手。\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-
-    generated = add_module.add_entries(
-        notes,
-        messages=[f"対象計画ファイル: `{plan}`"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        plan_file=str(plan),
-    )
-
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
-    parsed = frontmatter.parse_frontmatter(content)
-    assert parsed is not None
-    assert parsed[0]["plan_file"] == str(plan)
-    assert "queue_schedule" not in parsed[0]
 
 
 def test_add_operation_does_not_infer_plan_file_from_body(
@@ -1433,512 +1376,6 @@ def test_add_rejects_dependencies_for_uwi(tmp_path: pathlib.Path, capsys: pytest
 
     assert exc_info.value.code == 1
     assert "--type=awiでのみ" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("plan_file", ["relative-plan.md", "/missing-plan.md"])
-def test_add_operation_rejects_invalid_plan_file(
-    plan_file: str,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """plan_fileが相対パスまたは未実在の場合は投入を拒否する。"""
-    notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-
-    with pytest.raises(WebInputError):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            plan_file=plan_file,
-        )
-
-
-def test_add_operation_rejects_plan_file_for_uwi(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """UWI種別とplan_fileの併用を拒否する。"""
-    notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
-    plan = tmp_path / "plan.md"
-    plan.write_text("# plan\n", encoding="utf-8")
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-
-    with pytest.raises(WebInputError):
-        add_module.add_entries(
-            notes,
-            messages=[f"対象計画ファイル: `{plan}`"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            entry_type=WI_TYPE_UWI,
-            question_type="free-form",
-            plan_file=str(plan),
-        )
-
-
-def _write_plan_with_base_commit(tmp_path: pathlib.Path, value: str | None) -> pathlib.Path:
-    """計画メタ情報を持つ計画ファイルを作成する。"""
-    plan = tmp_path / "plan.md"
-    base_line = "" if value is None else f"- ベースコミット: `{value}`\n"
-    plan.write_text(f"## 実装契約\n\n### 計画メタ情報\n\n{base_line}", encoding="utf-8")
-    return plan
-
-
-def test_add_operation_ignores_mismatched_base_commit(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """計画作成時点の参照値と`target_commit`を比較せず投入を継続する。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="b" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_accepts_plan_file_with_matching_base_commit(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_ignores_annotated_base_commit(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """計画ベースの注記付き参照値を投入先の検証へ使わない。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "plan.md"
-    plan.write_text(
-        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 7}`（`git rev-parse --short=7 HEAD`で実測）\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="b" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_ignores_spoofed_or_duplicate_plan_metadata(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "plan.md"
-    plan.write_text(
-        f"# 計画\n\n## 引用\n\n> ### 計画メタ情報\n>\n> - ベースコミット: `{'a' * 40}`\n\n"
-        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n\n"
-        f"### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-    assert len(generated) == 1
-
-
-def test_add_operation_ignores_blockquoted_plan_metadata(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """計画メタ情報を投入先の検証へ使わない。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "plan.md"
-    plan.write_text(
-        f"# 計画\n\n## 引用\n\n> ### 計画メタ情報\n>\n> - ベースコミット: `{'a' * 40}`\n\n"
-        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_accepts_plan_file_without_base_commit(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = _write_plan_with_base_commit(tmp_path, None)
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_accepts_canonical_plan_metadata(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """新しい正規配置の`## 概要`直下からベースコミットを取得し、対象コミットとの一致を確認する。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "canonical-plan.md"
-    plan.write_text(
-        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n"
-        "- 起動経路: `agent-toolkit:plan-mode`\n"
-        "- 対象リポジトリ: `/repo`\n"
-        "- 作業種別: 通常変更\n"
-        f"- ベースコミット: `{'a' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_prefers_canonical_over_legacy_plan_metadata(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """正規配置と旧配置が併存する移行期の計画では正規配置の値を採用する。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "transitional-plan.md"
-    plan.write_text(
-        f"# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n\n"
-        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_ignores_metadata_split_across_legacy_sections(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """旧配置の計画メタ情報を投入先の検証へ使わない。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "ambiguous-plan.md"
-    plan.write_text(
-        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n\n"
-        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-    assert len(generated) == 1
-
-
-def test_add_operation_ignores_unquoted_base_commit(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """囲みのないベース参照値も投入先の検証へ使わない。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "unquoted-plan.md"
-    plan.write_text(
-        f"# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- ベースコミット: {'a' * 40}\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="b" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_accepts_legacy_plan_metadata(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """現行形式が無い既存計画では背景直下のメタ情報を取得し、対象コミットとの一致を確認する。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "legacy-plan.md"
-    plan.write_text(
-        f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_accepts_legacy_plan_without_metadata(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "legacy-plan.md"
-    plan.write_text("# 旧計画\n", encoding="utf-8")
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_ignores_base_commit_inside_metadata_code_fence(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """コードフェンス内外のベース参照値を投入先の検証へ使わない。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "plan.md"
-    plan.write_text(
-        f"## 実装契約\n\n### 計画メタ情報\n\n```text\n- ベースコミット: `{'a' * 40}`\n```\n\n- ベースコミット: `{'b' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_accepts_duplicate_base_commit_candidates(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = tmp_path / "plan.md"
-    plan.write_text(
-        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n- 基準コミット: `{'a' * 40}`\n",
-        encoding="utf-8",
-    )
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-    assert len(generated) == 1
-
-
-def test_add_operation_accepts_abbreviated_base_commit(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = _write_plan_with_base_commit(tmp_path, "01234567")
-
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_rejects_plan_file_with_target_repo_override(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
-    message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
-
-    with pytest.raises(WebInputError, match="対象リポジトリ"):
-        add_module.add_entries(
-            notes,
-            messages=[message],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
-
-    assert not list((notes / "inbox").iterdir())
-
-
-def test_add_operation_rejects_plan_file_only_in_working_root(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """保存前の作業計画を拒否し、inboxへ項目を書き込まない。"""
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = pathlib.Path.home() / ".claude/plans/30-working-plan-a1b2.md"
-    plan.parent.mkdir(parents=True)
-    plan.write_text("# 計画\n", encoding="utf-8")
-
-    with pytest.raises(WebInputError, match="保存先に実体がありません") as error_info:
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
-
-    # 作業root直下の計画は、保存するコマンドを次の操作として返す。
-    assert "atk plans commit" in error_info.value.next_action
-
-    assert not list((notes / "inbox").iterdir())
-
-
-def test_add_operation_accepts_plan_file_with_equivalent_target_repo(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
-    message = "---\ntarget_repo: GitHub.com/Example/Repo.git\n---\n\n本文"
-
-    generated = add_module.add_entries(
-        notes,
-        messages=[message],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-        target_commit="a" * 40,
-        plan_file=str(plan),
-    )
-
-    assert len(generated) == 1
-
-
-def test_add_operation_rejects_all_messages_when_one_overrides_target_repo(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes = _prepare_notes(tmp_path, monkeypatch)
-    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
-    messages = ["本文1", "---\ntarget_repo: github.com/other/repo\n---\n\n本文2"]
-
-    with pytest.raises(WebInputError, match="対象リポジトリ"):
-        add_module.add_entries(
-            notes,
-            messages=messages,
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
-
-    assert not list((notes / "inbox").iterdir())
 
 
 class TestAddOrderEditorFirst:
@@ -2937,19 +2374,17 @@ def test_cli_add_outputs_missing_source_and_extra_frontmatter_as_none(
 
 def test_validate_rejects_unresolvable_frontmatter_target_repo_in_one_failure(tmp_path: pathlib.Path) -> None:
     """frontmatterのtarget_repoを解決できない場合は、解決側の出力を重ねず1件の例外に次の操作を持たせる。"""
-    notes = _setup_notes(tmp_path)
+    _setup_notes(tmp_path)
     message = "---\ntarget_repo: not-a-repository\nsource: test\n---\n\n" + _AGENT_AWI_BODY
 
     with pytest.raises(WebInputError, match="target_repoを解決できません: not-a-repository") as error_info:
         add_module._validate_add_entries(  # pylint: disable=protected-access
-            notes,
             messages=[message],
             target_repo=None,
             entry_type="awi",
             question_type=None,
             choices=None,
             target_commit=None,
-            plan_file=None,
         )
 
     assert "`--target-repo`へローカルworktreeのパスかremote URLを指定" in error_info.value.next_action
@@ -2966,18 +2401,16 @@ def test_validate_uwi_question_type_errors_name_accepted_values(
     tmp_path: pathlib.Path, question_type: str, choices: str | None, expected: str
 ) -> None:
     """question_typeの不正とchoicesの欠落は、受理する値や指定するオプションを次の操作として返す。"""
-    notes = _setup_notes(tmp_path)
+    _setup_notes(tmp_path)
 
     with pytest.raises(WebInputError) as error_info:
         add_module._validate_add_entries(  # pylint: disable=protected-access
-            notes,
             messages=["どちらを選びますか？"],
             target_repo="github.com/example/repo",
             entry_type=WI_TYPE_UWI,
             question_type=question_type,
             choices=choices,
             target_commit=None,
-            plan_file=None,
         )
 
     assert expected in error_info.value.next_action

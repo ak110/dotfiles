@@ -493,31 +493,6 @@ def resolve_plan_file(
     raise ActionableError("plan_fileが許可された保存root外を指しています", next_action=_PLAN_FILE_VALUE_NEXT_ACTION)
 
 
-def require_saved_plan_file(
-    value: pathlib.Path | str,
-    *,
-    private_notes: pathlib.Path | str | None = None,
-    home: pathlib.Path | str | None = None,
-) -> pathlib.Path:
-    """記録するplan_file値を、その値が指す保存先の実体へ解決する。
-
-    記録値の消費主体は計画作業rootへのフォールバックを持たないため、値を記録する処理と着手可否判定は
-    記録値をそのまま解決した実体だけを受理する。
-    """
-    path = resolve_plan_file(
-        value,
-        private_notes=private_notes,
-        home=home,
-        allow_working_fallback=False,
-    )
-    if not path.is_file():
-        raise ActionableError(
-            "plan_fileの保存先に実体がありません",
-            next_action="先に`atk plans commit <計画作業root直下のメイン計画ファイル名>`で計画バンドルを保存してください",
-        )
-    return path
-
-
 def reject_saved_plans_root_write(
     target: pathlib.Path | str,
     *,
@@ -618,15 +593,6 @@ def to_portable_plan_file(
         except ValueError:
             pass
     return str(resolved)
-
-
-def normalize_plan_file(
-    value: pathlib.Path | str,
-    *,
-    private_notes: pathlib.Path | str | None = None,
-) -> str:
-    """保存用のplan_file値へ正規化する。"""
-    return to_portable_plan_file(value, private_notes=private_notes)
 
 
 def stored_plan_file_path(

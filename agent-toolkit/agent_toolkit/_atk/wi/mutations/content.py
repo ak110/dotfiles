@@ -75,28 +75,7 @@ if TYPE_CHECKING:
         _cmd_set_dependencies,
         _dependency_reaches,
         _entry_dependencies,
-        _entry_dependencies_for_conversion,
         set_entry_dependencies,
-    )
-    from agent_toolkit._atk.wi.mutations.plan_conversion import (
-        _assert_conversion_paths_clean,
-        _assert_conversion_targets_tracked,
-        _cmd_convert_to_plan,
-        _convert_held_entries,
-        _normalize_stored_plan_file,
-        _PLAN_FILE_RESOLUTION_NEXT_ACTION,
-        _PLAN_WORKTREE_NEXT_ACTION,
-        _plan_awi_paths,
-        _PlanAwiValidationError,
-        _read_plan_input_filenames,
-        _resolve_plan_base_commit,
-        _restore_conversion_paths,
-        _store_plan_file,
-        _StoredPlanFile,
-        _validated_plan_awi_paths,
-        convert_entries_to_plan,
-        convert_entry_to_plan,
-        edit_entry_to_plan,
     )
     from agent_toolkit._atk.wi.mutations.targets import (
         _GIT_TIMEOUT_SECONDS,
@@ -111,7 +90,6 @@ if TYPE_CHECKING:
         _MISSING_TARGET_NEXT_ACTION,
         _resolve_awi_targets,
         _resolve_commit,
-        _resolve_conversion_targets,
         _resolve_editable_targets,
         _resolve_processable_targets,
         _resolve_active_targets,
@@ -153,7 +131,9 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "cooldown_until": "frontmatterからcooldown_untilを除き、期限は`atk wi edit <FILE> --cooldown-until`で設定する",
     "repair_target": "frontmatterからrepair_targetを除いて再実行する（repair_targetはatkが記録する）",
     "repair_kind": "frontmatterからrepair_kindを除いて再実行する（repair_kindはatkが記録する）",
-    "plan_file": "frontmatterからplan_fileを除いて再実行する（atk wi editでは計画ファイルを変更できない）",
+    "plan_file": (
+        "frontmatterからplan_fileを除いて再実行する（plan_fileは廃止した型で保存された項目のメタデータであり、新しく書けない）"
+    ),
     "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
 }
 """`atk wi edit`が受け付けない予約キーと、代わりに行う操作の対応。"""
@@ -445,87 +425,14 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if args.cooldown_until is not None:
         if args.filename is None:
             args.subparser.error("--cooldown-untilではFILENAMEを指定してください。")
-        if args.append or args.plan_file is not None:
-            args.subparser.error("--cooldown-untilは--appendおよび計画ファイルの指定と併用できません。")
-    if args.depends_on and args.plan_file is None:
-        args.subparser.error("--depends-onは計画ファイルの指定とともに指定してください。")
-    if args.plan_file is not None:
-        if args.filename is None or message is None:
-            args.subparser.error("計画ファイルの指定ではFILENAMEと--body-fileを指定してください。")
         if args.append:
-            args.subparser.error("計画ファイルの指定と--appendは併用できません。")
-        assert args.filename is not None
-        assert message is not None
-    elif args.append:
+            args.subparser.error("--cooldown-untilは--appendと併用できません。")
+    if args.append:
         if args.filename is None or message is None:
             args.subparser.error("--appendではFILENAMEと--body-fileを指定してください。")
         assert message is not None
     elif message is not None and args.filename is None:
         args.subparser.error("--body-fileを指定する場合はFILENAMEも指定してください。")
-    if args.plan_file is not None:
-        assert args.filename is not None
-        assert message is not None
-        try:
-            target_repo, local_worktree = _add.resolve_add_target(args.target_repo)
-            if local_worktree is None:
-                local_worktree = _candidate_local_worktree(args.target_repo)
-            if local_worktree is None:
-                raise WebInputError(
-                    "計画型編集には対象リポジトリのローカルworktreeが必要です", next_action=_PLAN_WORKTREE_NEXT_ACTION
-                )
-            if _local_worktree_repo_id(local_worktree) != target_repo:
-                raise WebInputError(
-                    "計画型編集の対象repoとローカルworktreeが一致しません", next_action=_PLAN_WORKTREE_NEXT_ACTION
-                )
-            stored_plan_file = _normalize_stored_plan_file(args.plan_file, private_notes=private_notes)
-            plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
-            target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
-        except (OSError, ValueError, WebInputError) as error:
-            _outcome.report_failure(
-                f"計画型編集を拒否した: {error}",
-                next_action=(
-                    error.next_action if isinstance(error, _next_action.ActionableError) else _PLAN_FILE_RESOLUTION_NEXT_ACTION
-                ),
-            )
-            sys.exit(1)
-
-        inbox_dir = private_notes / WI_STATE_INBOX
-        _validate_filenames_only([args.filename], inbox_dir)
-        with _repo_lock(private_notes):
-            _pull(private_notes)
-            snapshot_path = _validate_filename(args.filename, private_notes / WI_STATE_HOLD)
-            if not snapshot_path.is_file():
-                _outcome.report_failure(f"holdに存在しない: {snapshot_path.name}", next_action=_MISSING_TARGET_NEXT_ACTION)
-                sys.exit(2)
-            snapshot = snapshot_path.read_text(encoding="utf-8")
-            _verify_target_repo_content(snapshot_path, snapshot, target_repo)
-        if _reject_agent_user_comment_message(message):
-            sys.exit(1)
-        message = _preserve_agent_user_comment(snapshot, message)
-        try:
-            _add.require_confirmed_cause(message)
-            details = edit_entry_to_plan(
-                private_notes,
-                filename=snapshot_path.name,
-                content=message,
-                plan_file=args.plan_file,
-                target_commit=target_commit,
-                depends_on=tuple(args.depends_on or ()),
-                target_repo=target_repo,
-                expected_content=snapshot,
-            )
-        except RuntimeError:
-            _outcome.report_failure(
-                f"編集中に他プロセスが対象を変更した: {snapshot_path.name}。指定した本文は反映していない",
-                next_action="同じFILENAMEと--body-fileで再実行する",
-            )
-            sys.exit(1)
-        except WebInputError as error:
-            _outcome.report_failure(f"計画型編集を拒否した: {error}", next_action=error.next_action)
-            sys.exit(1)
-        _outcome.report_success(f"計画型の編集を反映した: {snapshot_path.name}")
-        _add._print_entry_details(details)  # pylint: disable=protected-access
-        return
     if args.append:
         assert message is not None
         _cmd_append(args, private_notes, message)
@@ -640,7 +547,6 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         original_frontmatter,
                         entry_type=WI_TYPE_AWI,
                         source=None,
-                        plan_file=args.plan_file,
                     )
                 except WebInputError:
                     pass  # 既存の旧書式の編集では本文の表記診断だけを行う。
@@ -651,7 +557,6 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                             frontmatter,
                             entry_type=WI_TYPE_AWI,
                             source=None,
-                            plan_file=args.plan_file,
                         )
                     except WebInputError as error:
                         _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)

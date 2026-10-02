@@ -21,18 +21,8 @@ from agent_toolkit._atk.wi.formatters import _parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._git import remote as _git_remote
-from agent_toolkit._plan import locations as _plan_file
 
-type RepairKind = Literal["frontmatter", "missing-plan-file"]
-
-
-def _plan_file_exists(value: str) -> bool:
-    """保存済みplan_fileが指す保存先に実在通常ファイルがあるか判定する。"""
-    try:
-        _plan_file.require_saved_plan_file(value)
-    except (OSError, ValueError):
-        return False
-    return True
+type RepairKind = Literal["frontmatter"]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,7 +35,6 @@ class QueueEntry:
     target_repo: str | None
     uwi_answered: bool | None
     frontmatter_broken: bool
-    plan_file: str | None
     cooldown_present: bool
     cooldown_until: object | None
     legacy_dependency: dict[str, object] | None
@@ -66,8 +55,6 @@ class ReadinessResult:
     internal_dependency_waits: tuple[str, ...] = ()
     frontmatter_broken: tuple[str, ...] = ()
     frontmatter_broken_needs_uwi: tuple[str, ...] = ()
-    missing_plan_file: tuple[str, ...] = ()
-    missing_plan_file_needs_uwi: tuple[str, ...] = ()
     invalid_dependencies: tuple[str, ...] = ()
     missing_dependencies: tuple[str, ...] = ()
     self_dependencies: tuple[str, ...] = ()
@@ -81,7 +68,6 @@ class ReadinessResult:
         """処理セッションを起動すべき項目数を返す。"""
         repair_targets = {
             *self.frontmatter_broken_needs_uwi,
-            *self.missing_plan_file_needs_uwi,
             *self.invalid_dependencies,
             *self.missing_dependencies,
             *self.self_dependencies,
@@ -185,11 +171,8 @@ def _queue_entry(
         repair_kind = None
     elif raw_repair_kind is None or raw_repair_kind == "frontmatter":
         repair_kind = "frontmatter"
-    elif raw_repair_kind == "missing-plan-file":
-        repair_kind = "missing-plan-file"
     else:
         repair_kind = None
-    plan_file = data.get("plan_file")
     schedule = data.get("queue_schedule")
     legacy_dependency = schedule.get("dependency") if isinstance(schedule, dict) else None
     return QueueEntry(
@@ -199,7 +182,6 @@ def _queue_entry(
         target_repo=_normalized_repo_or_none(entry_repo, resolver_cache),
         uwi_answered=_is_uwi_answered(text) if entry_type == WI_TYPE_UWI else None,
         frontmatter_broken=frontmatter_broken,
-        plan_file=plan_file if isinstance(plan_file, str) else None,
         cooldown_present="cooldown_until" in data,
         cooldown_until=data.get("cooldown_until"),
         legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
@@ -464,14 +446,6 @@ def calculate_readiness(
 
     broken = tuple(sorted(entry.filename for entry in active if entry.frontmatter_broken))
     broken_needs_uwi = tuple(name for name in broken if (name, "frontmatter") not in existing_repairs)
-    missing_plan = tuple(
-        sorted(
-            entry.filename
-            for entry in active
-            if entry.filename not in cooldown_pending and entry.plan_file is not None and not _plan_file_exists(entry.plan_file)
-        )
-    )
-    missing_plan_needs_uwi = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
 
     dependency_map = {
         entry.filename: _effective_dependencies(entry, resolver_cache) for entry in active if not entry.frontmatter_broken
@@ -511,9 +485,7 @@ def calculate_readiness(
     )
     all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
     cyclic = tuple(sorted((set(_cycle_members(all_graph)) & set(dependency_map)) - cooldown_pending))
-    permanently_blocked = set(
-        (*broken, *missing_plan, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns)
-    )
+    permanently_blocked = set((*broken, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns))
     ready: list[str] = []
     blocked: list[str] = []
     internal_waits: list[str] = []
@@ -556,8 +528,6 @@ def calculate_readiness(
         internal_dependency_waits=tuple(sorted(internal_waits)),
         frontmatter_broken=broken,
         frontmatter_broken_needs_uwi=broken_needs_uwi,
-        missing_plan_file=missing_plan,
-        missing_plan_file_needs_uwi=missing_plan_needs_uwi,
         invalid_dependencies=invalid,
         missing_dependencies=missing_dependencies,
         self_dependencies=self_dependencies,

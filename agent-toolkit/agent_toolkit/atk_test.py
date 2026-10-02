@@ -1391,7 +1391,7 @@ def test_add_output_reloads_saved_metadata(
     output = capsys.readouterr().out
     assert "target_repo: github.com/example/myrepo" in output
     assert f"target_commit: {_FIXED_HEAD_COMMIT}" in output
-    assert "plan_file: なし" in output
+    assert "plan_file" not in output
     assert "depends_on: なし" in output
 
 

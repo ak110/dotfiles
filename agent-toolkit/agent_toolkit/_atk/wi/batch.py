@@ -52,8 +52,6 @@ from agent_toolkit._atk.wi.common import (
     validate_filename,
 )
 from agent_toolkit._atk.wi.formatters import _shorten_home
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._plan import locations as _plan_file
 
 _ENTRY_HEADING_RE = re.compile(r"### (?P<name>\S+\.md)(?: \[[^\]]*\])?")
 """エントリ境界となる`show`の見出し行。角括弧内の状態ラベルは無視する。"""
@@ -215,8 +213,7 @@ def _duplicate_original_names(
 
     同じ`show`形式の出力を二重に取り込む操作で、内容の同じ項目が再採番されて増えることを防ぐ。
     本文の一致は全文の完全一致で判定し、frontmatterの差異と空白の差異を同一視しない。
-    比較する入力は`_normalize_plan_file`を適用済みのエントリとし、ここでさらに改行を正規化する。
-    移行元が`plan_file`を旧表記で保存していても、正規化後に同じ本文となる入力を重複として扱うためである。
+    比較する前に改行を正規化する。frontmatterの値（`plan_file`を含む）は原文のまま比べる。
 
     `_rewrite_depends_on`による読み替えは本判定の前に適用しない。読み替え先は取り込むエントリの
     保存名の割り当てで決まり、その割り当ては本判定の結果に依存するためである。
@@ -353,35 +350,6 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def _normalize_plan_file(entry: BatchEntry, private_notes: pathlib.Path) -> BatchEntry:
-    """保存前の`plan_file`だけを共通契約の可搬表記へ正規化する。"""
-    raw_plan_file = entry.frontmatter.get("plan_file")
-    if not isinstance(raw_plan_file, str):
-        return entry
-    try:
-        stored_plan_file = _plan_file.normalize_plan_file(raw_plan_file, private_notes=private_notes)
-    except ValueError as error:
-        raise WebInputError(
-            f"plan_fileを解決できません: {raw_plan_file}（{error}）",
-            next_action=(
-                error.next_action
-                if isinstance(error, _next_action.ActionableError)
-                else "plan_fileを`$(atk config get private_notes)/plans/yyyy/MM/<ファイル名>`の形式へ直して再投入する"
-            ),
-        ) from error
-    if stored_plan_file == raw_plan_file:
-        return entry
-    frontmatter = dict(entry.frontmatter)
-    frontmatter["plan_file"] = stored_plan_file
-    raw_text = _frontmatter.serialize_frontmatter(frontmatter, entry.body)
-    return BatchEntry(
-        original_name=entry.original_name,
-        raw_text=raw_text,
-        frontmatter=frontmatter,
-        body=entry.body,
-    )
-
-
 def _declared_dependencies(entry: BatchEntry) -> list[str]:
     """`depends_on`が宣言する依存先名を列として返す。
 
@@ -463,9 +431,8 @@ def add_batch_entries(
                 next_action="重複した見出しのファイル名を別名にして再投入する",
             )
         existing = existing_entry_filenames(private_notes)
-        normalized_entries = [_normalize_plan_file(entry, private_notes) for entry in entries]
-        skipped = _duplicate_original_names(private_notes, normalized_entries, existing=existing, case_sensitive=case_sensitive)
-        imported = [entry for entry in normalized_entries if entry.original_name not in skipped]
+        skipped = _duplicate_original_names(private_notes, entries, existing=existing, case_sensitive=case_sensitive)
+        imported = [entry for entry in entries if entry.original_name not in skipped]
         assignments = _assign_filenames(
             private_notes,
             imported,

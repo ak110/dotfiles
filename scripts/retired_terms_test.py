@@ -62,6 +62,24 @@ _RETIRED_TERMS = (
             _AllowedLocation("*_test.py"),
         ),
     ),
+    # 計画実装型AWIと計画化の手順は後継なし（2026年9月13日に廃止）。
+    *(
+        _RetiredTerm(
+            term=term,
+            replacement="なし（2026年9月13日に廃止）",
+            allowed=(
+                # 日付の付いた過去の障害記録
+                _AllowedLocation("docs/development/incidents-*.md"),
+                # 廃止を決めた利用者の方針記録
+                _AllowedLocation("docs/development/concepts-principles.md"),
+                # 廃止を記す方針記録の行
+                _AllowedLocation("docs/development/concepts-workflows.md", "2026年9月13日の利用者指示で廃止した"),
+                # 撤去の不在を確かめるテスト
+                _AllowedLocation("*_test.py"),
+            ),
+        )
+        for term in ("計画実装型", "convert-to-plan")
+    ),
 )
 
 

@@ -20,7 +20,6 @@ from agent_toolkit._atk.wi import add as add_module
 from agent_toolkit._atk.wi import batch
 from agent_toolkit._atk.wi import show as show_module
 from agent_toolkit._atk.wi.common import WI_STATES, WebInputError
-from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
@@ -603,29 +602,34 @@ def test_import_keeps_unresolvable_legacy_target_repo(
     assert "target_repo: /home/other/absent-repo\n" in (notes / "inbox" / "legacy.md").read_text(encoding="utf-8")
 
 
-def test_import_normalizes_new_plan_file_to_portable_value(
+@pytest.mark.parametrize(
+    "plan_file",
+    ["$(atk config get private_notes)/plans/2026/08/30-計画保存先移行-d4f9.md", "/home/user/.claude/plans/missing.md"],
+)
+def test_import_keeps_plan_file_verbatim(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    plan_file: str,
 ) -> None:
-    """batch取り込みでも新plans rootの絶対plan_fileを可搬表記で保存する。"""
+    """保存済み項目の`plan_file`は、指す計画ファイルの有無によらず原文のまま取り込む。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
-    plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
-    plan.parent.mkdir(parents=True)
-    plan.write_text("# 計画\n", encoding="utf-8")
-    text = f"### imported.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\nplan_file: {plan}\n---\n\n本文\n\n"
+    text = (
+        f"### imported.md [adopted]\n---\ntarget_repo: github.com/example/foo\ntype: awi\nplan_file: {plan_file}\n---\n\n"
+        "本文\n\n"
+    )
 
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     stored = (notes / "inbox/imported.md").read_text(encoding="utf-8")
-    assert f"plan_file: {_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/08/30-計画保存先移行-d4f9.md" in stored
+    assert f"plan_file: {plan_file}\n" in stored
 
 
 def test_import_skips_entry_matching_existing_after_plan_file_normalization(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`plan_file`の表記だけが異なる再投入も、正規化後に本文が一致すれば取り込みを省く。"""
+    """`plan_file`を持つ項目の同じ出力を再投入しても、取り込みを省く。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
     plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"

@@ -77,24 +77,6 @@ if TYPE_CHECKING:
         append_entry_content,
         edit_entry_content,
     )
-    from agent_toolkit._atk.wi.mutations.plan_conversion import (
-        _assert_conversion_paths_clean,
-        _assert_conversion_targets_tracked,
-        _cmd_convert_to_plan,
-        _convert_held_entries,
-        _normalize_stored_plan_file,
-        _plan_awi_paths,
-        _PlanAwiValidationError,
-        _read_plan_input_filenames,
-        _resolve_plan_base_commit,
-        _restore_conversion_paths,
-        _store_plan_file,
-        _StoredPlanFile,
-        _validated_plan_awi_paths,
-        convert_entries_to_plan,
-        convert_entry_to_plan,
-        edit_entry_to_plan,
-    )
     from agent_toolkit._atk.wi.mutations.targets import (
         _GIT_TIMEOUT_SECONDS,
         _atomic_write_text,
@@ -107,7 +89,6 @@ if TYPE_CHECKING:
         _local_worktree_repo_id,
         _resolve_awi_targets,
         _resolve_commit,
-        _resolve_conversion_targets,
         _resolve_processable_targets,
         _resolve_active_targets,
         commit_entries,
@@ -132,9 +113,6 @@ if TYPE_CHECKING:
 
 
 _BROKEN_ENTRY_NEXT_ACTION = "`atk wi show {name}`で保存内容を確認し、ユーザーへ報告する"
-_LEGACY_DEPENDENCY_NEXT_ACTION = (
-    "`atk wi set-dependencies {name} --depends-on <依存先>`で依存を現行の形式へ指定し直してから再実行する"
-)
 
 
 def _entry_dependencies(path: pathlib.Path, data: dict[str, object]) -> tuple[str, ...]:
@@ -146,30 +124,6 @@ def _entry_dependencies(path: pathlib.Path, data: dict[str, object]) -> tuple[st
             next_action=f"`atk wi set-dependencies {path.name} --depends-on <依存先>`で依存を指定し直す",
         )
     return tuple(raw_dependencies)
-
-
-def _entry_dependencies_for_conversion(path: pathlib.Path, data: dict[str, object]) -> tuple[str, ...]:
-    """変換時にトップレベルまたは意味を保てる旧形式の依存先を返す。"""
-    if "depends_on" in data:
-        return _entry_dependencies(path, data)
-    schedule = data.get("queue_schedule")
-    if not isinstance(schedule, dict):
-        return ()
-    dependency = schedule.get("dependency")
-    if not isinstance(dependency, dict) or dependency.get("kind") in (None, "none"):
-        return ()
-    if dependency.get("kind") != "entries":
-        raise WebInputError(
-            f"旧形式の依存を計画実装型へ移行できません: {path.name}",
-            next_action=_LEGACY_DEPENDENCY_NEXT_ACTION.format(name=path.name),
-        )
-    filenames = dependency.get("filenames")
-    if not isinstance(filenames, list) or not filenames or any(not isinstance(value, str) or not value for value in filenames):
-        raise WebInputError(
-            f"旧形式の依存が不正なため変換できません: {path.name}",
-            next_action=_LEGACY_DEPENDENCY_NEXT_ACTION.format(name=path.name),
-        )
-    return tuple(dict.fromkeys(filenames))
 
 
 def set_entry_dependencies(
