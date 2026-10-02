@@ -1,0 +1,242 @@
+"""選定結果の`write_files`がAWI本文の反映先パスを覆うか確かめる。
+
+pickerは各decisionの`write_files`をAWI本文の`## 反映内容と反映先`から手で書き写すため、
+反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
+本スクリプトは`lane`が`なし`でない各decisionについて、同節のインラインコードから反映先パスを抽出し、
+`write_files`と`excluded_paths`の双方に照らして次の3区分の違反を報告する。
+
+- 未被覆: 反映先パスが`write_files`の同じパスにも、`write_files`のディレクトリ範囲の配下にも、`excluded_paths`にも無い
+- 広すぎる範囲: `write_files`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
+- `excluded_paths`の不正: 反映先パスに無いパスを`excluded_paths`が含む
+
+3区分はいずれも、レーン分けと重なりの判定が実際の書込対象と異なる結果になるため、違反として終了コード1を返す。
+入力を読めない場合はチェックを開始できないため終了コード2を返し、内容の違反と区別する。
+"""
+
+from __future__ import annotations
+
+import argparse
+import pathlib
+import re
+import subprocess
+import sys
+
+import markdown_it
+import yaml
+
+try:
+    from agent_toolkit._common import markdown_headings as _markdown_headings
+    from agent_toolkit._common import next_action as _next_action
+    from agent_toolkit._plan import locations as _plan_file
+except ImportError as _import_error:
+    print(
+        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
+        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
+        "次の操作: `atk run-script pick-wi-check -- <選定結果ファイルの絶対パス>`で起動する",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+_TARGET_SECTION = "反映内容と反映先"
+_LANE_NONE = "なし"
+_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+# 末尾の`:<行番号>`と`:<行番号>-<行番号>`は参照位置の付記であり、パスの一部ではない。
+_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
+# 絶対パス、ホーム起点、変数展開、プレースホルダーはリポジトリ相対パスではない。
+_NON_PATH_PREFIXES = ("/", "~", "$", "<")
+# ワイルドカードとURLは個別のパスを指さない。
+_NON_PATH_FRAGMENTS = ("*", "://")
+
+
+class InputError(Exception):
+    """チェックを開始できない入力の問題。"""
+
+
+def reflected_paths(body: str, work_dir: pathlib.Path) -> set[str]:
+    """AWI本文の`## 反映内容と反映先`から反映先パスの集合を返す。
+
+    `/`を含む候補は、`work_dir`からの相対パスとして実在するか、親ディレクトリが実在する場合に採る。
+    親ディレクトリだけの実在で採るのは、反映先が挙げる新設ファイルを含めるためである。
+    `/`を含まない候補は、`work_dir`直下に実在するファイルの場合だけ採る。
+    `/`を含まない語はコマンド名や識別子であることが多く、実在するファイルだけをパスとみなすためである。
+    """
+    section = _section_text(body, _TARGET_SECTION)
+    if section is None:
+        return set()
+    paths: set[str] = set()
+    for candidate in _inline_codes(section):
+        path = _normalize_candidate(candidate)
+        if path is None:
+            continue
+        target = work_dir / path
+        if "/" in path:
+            if target.exists() or target.parent.is_dir():
+                paths.add(path)
+        elif target.is_file():
+            paths.add(path)
+    return paths
+
+
+def _section_text(body: str, heading: str) -> str | None:
+    """トップレベルのATX H2のうち`heading`の節の本文を返す。節が無ければ`None`を返す。"""
+    normalized = _markdown_headings.normalize_newlines(body)
+    lines = normalized.split("\n")
+    headings = _markdown_headings.top_level_atx_headings(normalized, 2)
+    for index, (token, content) in enumerate(headings):
+        if content.strip() != heading:
+            continue
+        assert token.map is not None
+        next_token = headings[index + 1][0] if index + 1 < len(headings) else None
+        end = next_token.map[0] if next_token is not None and next_token.map is not None else len(lines)
+        return "\n".join(lines[token.map[1] : end])
+    return None
+
+
+def _inline_codes(text: str) -> list[str]:
+    """コードフェンスの外にあるインラインコードの内容を出現順で返す。"""
+    codes: list[str] = []
+    for token in _MARKDOWN.parse(text):
+        if token.type != "inline" or not token.children:
+            continue
+        codes.extend(child.content for child in token.children if child.type == "code_inline")
+    return codes
+
+
+def _normalize_candidate(candidate: str) -> str | None:
+    """インラインコードの内容をリポジトリ相対パスの候補へ整え、パスでなければ`None`を返す。"""
+    value = _LINE_SUFFIX_RE.sub("", candidate.strip())
+    if not value or any(char.isspace() for char in value):
+        return None
+    if value.startswith(_NON_PATH_PREFIXES) or any(fragment in value for fragment in _NON_PATH_FRAGMENTS):
+        return None
+    if ".." in value.rstrip("/").split("/"):
+        return None
+    return value
+
+
+def _is_range(path: str) -> bool:
+    """末尾の`/`でディレクトリ範囲を表す。"""
+    return path.endswith("/")
+
+
+def _covers(entry: str, path: str) -> bool:
+    """`entry`が`path`を同じパスとして、またはパス要素単位の配下として含むかを返す。"""
+    return entry == path or (_is_range(entry) and path.startswith(entry))
+
+
+def check_decision(
+    awi: str,
+    reflected: set[str],
+    write_files: list[str],
+    excluded_paths: list[str],
+) -> list[str]:
+    """1件のdecisionの違反を、AWIのファイル名・区分・パスを含む行の一覧で返す。"""
+    errors: list[str] = []
+    for path in sorted(reflected):
+        if path in excluded_paths or any(_covers(entry, path) for entry in write_files):
+            continue
+        errors.append(f"{awi}: 未被覆: {path}")
+    reflected_ranges = [path for path in reflected if _is_range(path)]
+    for entry in write_files:
+        if not _is_range(entry):
+            continue
+        inner = [path for path in reflected if path != entry and path.startswith(entry)]
+        if inner and not any(entry.startswith(scope) for scope in reflected_ranges):
+            errors.append(f"{awi}: 広すぎる範囲: {entry}")
+    errors.extend(f"{awi}: excluded_pathsの不正: {path}" for path in excluded_paths if path not in reflected)
+    return errors
+
+
+def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: pathlib.Path) -> list[str]:
+    """選定結果の全decisionを確かめ、違反の行を返す。"""
+    try:
+        selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
+        raise InputError(f"選定結果を読み込めない: {selection_file}: {error}") from error
+    if not isinstance(selection, dict) or not isinstance(selection.get("decisions"), list):
+        raise InputError(f"選定結果に`decisions`の列がない: {selection_file}")
+    if not private_notes.is_dir():
+        raise InputError(f"キュー管理リポジトリが実在しない: {private_notes}")
+    errors: list[str] = []
+    for decision in selection["decisions"]:
+        if not isinstance(decision, dict) or not isinstance(decision.get("awi"), str):
+            raise InputError(f"`awi`を持たないdecisionがある: {decision!r}")
+        awi = decision["awi"]
+        if decision.get("lane") == _LANE_NONE:
+            continue
+        write_files = _string_list(decision, "write_files")
+        excluded_paths = _string_list(decision, "excluded_paths")
+        try:
+            source = _plan_file.find_wi_source(awi, private_notes)
+        except OSError as error:
+            raise InputError(f"キュー管理リポジトリを走査できない: {private_notes}: {error}") from error
+        if source is None:
+            errors.append(f"{awi}: 本文を特定できない: キュー管理リポジトリ{private_notes}の状態ディレクトリに無い")
+            continue
+        try:
+            body = source.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise InputError(f"AWI本文を読み込めない: {source}: {error}") from error
+        errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
+    return errors
+
+
+def _string_list(decision: dict[str, object], key: str) -> list[str]:
+    """decisionの列項目を文字列の一覧で返す。行の不在は空列として扱う。"""
+    value = decision.get(key, [])
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise InputError(f"{decision.get('awi')}の`{key}`が文字列の列ではない: {value!r}")
+    return value
+
+
+def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
+    """`--work-dir`の値か、現在のディレクトリが属するGitルートを返す。"""
+    if value is not None:
+        if not value.is_dir():
+            raise InputError(f"`--work-dir`がディレクトリではない: {value}")
+        return value.resolve()
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, encoding="utf-8", check=False
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise InputError(f"現在のディレクトリからGitルートを解決できない: {result.stderr.strip()}")
+    return pathlib.Path(result.stdout.strip())
+
+
+def main(argv: list[str] | None = None) -> int:
+    """コマンドライン引数を解析し、選定結果を確かめる。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("selection_file", type=pathlib.Path, help="pickerが保存した選定結果の絶対パス")
+    parser.add_argument("--work-dir", type=pathlib.Path, default=None, help="対象リポジトリの絶対パス")
+    args = parser.parse_args(argv)
+    try:
+        work_dir = _resolve_work_dir(args.work_dir)
+        errors = check(args.selection_file, work_dir, _plan_file.private_notes_root())
+    except InputError as error:
+        _next_action.report(
+            str(error),
+            next_action=(
+                "位置引数へpickerが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する。"
+                "キュー管理リポジトリが実在しない場合は`atk config get private_notes`が返す場所を確かめる"
+            ),
+        )
+        return 2
+    for error in errors:
+        print(error, file=sys.stderr)
+    if errors:
+        print(
+            _next_action.next_action_line(
+                "未被覆のパスは`write_files`へ加えるか、書き込まない場合は`excluded_paths`へ加える。"
+                "広すぎる範囲は反映先が挙げる個別のパスへ置き換える。不正な`excluded_paths`は除く。"
+                "直した後に同じコマンドで確かめる"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

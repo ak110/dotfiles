@@ -75,6 +75,19 @@ def private_notes_root(
     return pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
 
 
+def find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
+    """キュー管理リポジトリのルート配下からWIファイルを探す。
+
+    状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
+    計画構造の自動チェックと選定結果の検証が同じ探索を使い、状態ディレクトリの扱いを1箇所に保つ。
+    """
+    for candidate in sorted(root.iterdir()):
+        source = candidate / name
+        if candidate.is_dir() and source.is_file():
+            return source
+    return None
+
+
 def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.Path:
     """保存済み計画rootの絶対パスを返す。"""
     return private_notes_root(private_notes) / NEW_PLANS_DIRECTORY
