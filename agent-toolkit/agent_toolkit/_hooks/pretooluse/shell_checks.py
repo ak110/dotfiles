@@ -300,3 +300,158 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
                 removable_cause=True,
             )
     return None
+
+
+# --- Bash: オプション終端`--`の後ろに置いたCLI自身のオプション ---
+
+_OPTION_TERMINATOR_PATTERN_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
+"""`--`の直後の1トークンを検索パターンとして受け取り得るコマンド。"""
+
+_OPTION_TERMINATOR_GIT_SUBCOMMANDS = frozenset({"log", "diff", "show", "grep"})
+"""`--`の後ろを全てパス指定として扱う`git`のサブコマンド。"""
+
+
+def _options_after_terminator(arguments: Sequence[str], *, pattern_slot: bool) -> list[str]:
+    """引数列の`--`より後ろにある、`-`で始まるトークンを返す。
+
+    `pattern_slot`が真の場合は、`--`の直後の1トークンを検索パターンの位置として判定から除く。
+    `-`単独は標準入力を表すデータであり、オプションに数えない。
+    """
+    arguments = list(strip_redirections(arguments))
+    if "--" not in arguments:
+        return []
+    after = arguments[arguments.index("--") + 1 :]
+    if pattern_slot:
+        after = after[1:]
+    return [token for token in after if token.startswith("-") and token != "-"]
+
+
+def _check_bash_option_after_terminator(command: str) -> bool:
+    """オプション終端`--`の後ろへCLI自身のオプションを置いたコマンドを遮断する。
+
+    `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
+    存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
+    条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
+    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+    この誤りは明らかな行動誤りで、判定はコマンド文字列から機械的に確定でき、遮断で失うのはコマンド1回の発行だけである。
+    `rg`・`grep`系では`--`の直後を検索パターンとみなして除くため、`-`で始まるパターンは遮断しない。
+    下位コマンドへ`--`の後ろでオプションを渡すCLI（`uv run --`など）は対象コマンドに含めない。
+    """
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        name = pathlib.PurePath(segment.tokens[0]).name
+        if name in _OPTION_TERMINATOR_PATTERN_COMMANDS:
+            found = _options_after_terminator(segment.tokens[1:], pattern_slot=True)
+            label = name
+        else:
+            subcommand = _git_subcommand_tokens(segment)
+            if subcommand is None or subcommand[0] not in _OPTION_TERMINATOR_GIT_SUBCOMMANDS:
+                continue
+            found = _options_after_terminator(subcommand[1], pattern_slot=False)
+            label = f"git {subcommand[0]}"
+        if not found:
+            continue
+        print(
+            _block_notice(
+                f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
+                "`--`の後ろは全てデータとして扱われるため、これらはオプションではなくパスとして解釈され、"
+                "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
+                fix=(
+                    "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
+                    "`-`で始まるパスを渡す場合は`./`を前置する。"
+                ),
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
+
+
+# --- Bash: WindowsのGit BashでPATHへ加えるドライブ文字形式の要素の検出 ---
+
+_SHELL_ASSIGNMENT_PATTERN = re.compile(r"^([A-Za-z_]\w*)=(.*)$", re.DOTALL)
+_DRIVE_LETTER_PATH_PATTERN = re.compile(r"[A-Za-z]:[/\\]")
+_PATH_ELEMENT_VARIABLE_PATTERN = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
+
+
+def _segment_assignments(raw_tokens: Sequence[str]) -> list[tuple[str, str]]:
+    """区間の元トークン列から、先頭の代入の並びと`export`の引数にある代入を順に返す。
+
+    単独の代入文とコマンド前置の代入はいずれも先頭の`KEY=VALUE`の並びに現れる。
+    `export`の後の`KEY=VALUE`もシェル変数への代入として扱う。
+    """
+    assignments: list[tuple[str, str]] = []
+    index = 0
+    while index < len(raw_tokens) and (match := _SHELL_ASSIGNMENT_PATTERN.match(raw_tokens[index])):
+        assignments.append((match.group(1), match.group(2)))
+        index += 1
+    if index < len(raw_tokens) and raw_tokens[index] == "export":
+        for token in raw_tokens[index + 1 :]:
+            if match := _SHELL_ASSIGNMENT_PATTERN.match(token):
+                assignments.append((match.group(1), match.group(2)))
+    return assignments
+
+
+def _drive_letter_path_elements(value: str, assigned: dict[str, str]) -> list[str]:
+    r"""PATHの値のうち、ドライブ文字形式で始まる要素を説明用の文字列で返す。
+
+    要素の先頭（値の先頭かコロンの直後）がリテラルの`C:/`・`C:\\`形式である要素と、
+    同じコマンドの中でそれより前にドライブ文字形式の値を代入した変数の展開で始まる要素を対象とする。
+    """
+    found: list[str] = []
+    for position in range(len(value)):
+        if position > 0 and value[position - 1] != ":":
+            continue
+        rest = value[position:]
+        if _DRIVE_LETTER_PATH_PATTERN.match(rest):
+            end = rest.find(":", 2)
+            found.append(rest if end < 0 else rest[:end])
+            continue
+        variable = _PATH_ELEMENT_VARIABLE_PATTERN.match(rest)
+        if variable is None:
+            continue
+        name = variable.group(1) or variable.group(2)
+        assigned_value = assigned.get(name)
+        if assigned_value is not None and _DRIVE_LETTER_PATH_PATTERN.match(assigned_value):
+            found.append(f"${name}（代入値: {assigned_value}）")
+    return found
+
+
+def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | None:
+    """WindowsのGit BashでPATHへドライブ文字形式の要素を加えるコマンドへ警告本文を返す。
+
+    Git Bash（MSYS2）のPATHはコロン区切りでドライブ文字形式を変換しないため、`C:/x`は`C`と`/x`の2要素に分かれ、
+    意図したディレクトリが検索されない。その結果を根拠に結論を下す前に気付けるよう、実行の直前に判定する。
+
+    判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    「遮断・警告フックの成立条件」にある。誤ったPATHはコマンドを失敗させずに誤った結果を返し、
+    その結果が誤った結論の根拠になる。判定はコマンド文字列から機械的に確定でき、実行を止めないため誤検出の費用も小さい。
+    影響はそのコマンドのプロセス環境に閉じ、正しい形式で再実行すれば是正できるため遮断はしない。
+    反復しても母集団の欠落や工程の停止を招かないため、反復時の昇格もしない。
+
+    対象はWindows上のClaude CodeのBashツールに限る。CodexはPowerShell（PATHはセミコロン区切り）で
+    シェルを実行し、Windows以外ではドライブ文字形式のパスが通常の操作で現れない。
+    継承した環境変数の展開、コマンド置換および別のBash呼び出しで代入した変数は、値をhookの入力から
+    確定できないため判定しない。
+    """
+    if sys.platform != "win32" or is_codex:
+        return None
+    assigned: dict[str, str] = {}
+    found: list[str] = []
+    for segment in _extract_execution_segments(command):
+        for name, value in _segment_assignments(segment.raw_tokens):
+            if name == "PATH":
+                found.extend(_drive_letter_path_elements(value, assigned))
+            assigned[name] = value
+    if not found:
+        return None
+    return _llm_notice(
+        f"`PATH`へドライブ文字形式の要素（{'、'.join(found)}）を加えている。"
+        "`Git Bash`の`PATH`はコロン区切りのため、ドライブ文字形式の要素は`C`と`/...`の2要素に分かれ、"
+        "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`に依存した結果"
+        "（`command -v`の出力、実行されたプログラム、計測値）は意図した構成のものではない。",
+        tag=_WARN_TAG,
+        fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行する。",
+        removable_cause=True,
+    )
