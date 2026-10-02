@@ -74,7 +74,7 @@
     公式資料はキャッシュキーを規定していない。
     hook等の制限時間内実行が必要なスクリプトを事前ウォームアップする場合は、
     パス非依存を前提にせず、実行時に参照される実パスを対象にする。
-    観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日」にある
+    監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日」にある
 - project lockfileを使う`uv run`では、lockfileを更新しない指定（`--frozen`または`--locked`）を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
 - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけlockfileを更新しない指定を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
 - script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してからlockfileを更新しない指定を付ける

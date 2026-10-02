@@ -11,7 +11,7 @@ MCP仕様の要求は硬い制約として守る。開発元の推奨と実装�
 ## 典拠
 
 本書の記述は2026年10月2日に取得した次の一次資料に基づく。MCP仕様は版2025-11-25を対象とし、利用するSDKが対応する仕様の版を実装前に確かめる。
-ホスト固有の値の観測記録と再検証手段は`docs/development/audit-records.md`にある。
+ホスト固有の値の監査記録と再検証手段は`docs/development/audit-records.md`にある。
 節名は「agent-toolkit/skills/writing-standards/references/mcp-server-design.md：典拠と既存サーバーへの適用：2026年10月2日」である。
 
 | 区分 | 資料 | 本書で使う節 |
@@ -64,7 +64,7 @@ MCP仕様の要求は硬い制約として守る。開発元の推奨と実装�
 
 ### 単体での利用
 
-MCPサーバーは、接続したモデルがツールの説明と引数のスキーマだけで基本的な呼び出しを確定できる構成にし、別の規範文書への依存を極力減らす（努力目標。instructionsは任意のヒントでsystem promptへの追加もクライアントの選択である）。
+MCPサーバーは、接続したモデルがツールの説明と引数のスキーマだけで基本的な呼び出しを確定できる構成にし、別のエージェント向け文書への依存を極力減らす（努力目標。instructionsは任意のヒントでsystem promptへの追加もクライアントの選択である）。
 典拠はSchema「InitializeResult.instructions」である。
 開発元も説明の明確さを推奨している（Writing effective tools「Prompt-engineering your tool descriptions」）。「極力」の程度は、正しい呼び出しに必要な情報が各公開説明にそろうかで判断し、補助資料は併用してよい。
 
