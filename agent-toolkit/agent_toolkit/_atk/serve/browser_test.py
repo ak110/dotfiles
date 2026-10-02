@@ -4176,6 +4176,7 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     await items.nth(0).click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
     assert "サブエージェントの発話" in await harness.page.locator("#detail").inner_text()
+    assert await harness.page.locator("#detail .detail-back").inner_text() == "委譲元の記録へ戻る"
 
     await harness.page.locator("#detail .detail-back").click()
     await harness.page.locator("#detail .kind-thinking").wait_for(state="visible")
