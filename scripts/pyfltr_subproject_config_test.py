@@ -39,7 +39,7 @@ _SHARED_SECTIONS: tuple[tuple[str, ...], ...] = (
 _INTENTIONAL_DIFFERENCES = {
     ("pyfltr", "ty-args"): "探索パスをそれぞれのcwd基準で書くため",
     ("pyright", "extraPaths"): "探索パスをそれぞれのcwd基準で書くため",
-    ("pyfltr", "mypy-exclude"): "直下・agent_toolkit/・skills/の3つのconftest.pyが同じ実行に入る直下だけの事情のため",
+    ("pyfltr", "mypy-exclude"): "直下・agent-toolkit/・agent_toolkit/の3つのconftest.pyが同じ実行に入る直下だけの事情のため",
     ("pyfltr", "extend-exclude"): "直下の値はリポジトリ直下基準のパスだけを持つため",
 }
 # cwdの設定ファイルだけを読むツールの設定ファイル。いずれも分割しない検査が直下で読む。

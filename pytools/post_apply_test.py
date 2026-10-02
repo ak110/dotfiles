@@ -21,6 +21,10 @@ import pytest
 from pytools import post_apply
 from pytools._internal import post_apply_outcome
 
+# `post_apply`は削除対象の表をimport時のホームで組み立てる。テストの実行中はホームが一時ディレクトリへ隔離されるため、
+# 表を引く鍵もimport時のホームから組み立てる。
+_IMPORT_HOME = Path.home()
+
 # 配布先cleanup契約の定数を直接検証する。
 # pylint: disable=protected-access
 
@@ -252,29 +256,29 @@ def test_persistent_log_uses_size_limited_rotation() -> None:
 def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
     """旧個人スキルをClaude CodeとCodexの両配布先からcleanupする。"""
     relative = Path("skills/session-review-dotfiles")
-    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".claude"]  # noqa: SLF001
-    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".codex"]  # noqa: SLF001
+    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
+    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".codex"]  # noqa: SLF001
 
 
 def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
     """改名前の個人プロジェクト運用スキルを両配布先からcleanupする。"""
     relative = Path("skills/sync-cross-project")
-    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".claude"]  # noqa: SLF001
-    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".codex"]  # noqa: SLF001
+    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
+    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".codex"]  # noqa: SLF001
 
 
 def test_legacy_reference_directory_is_cleanup_target() -> None:
     """スキル配下以外の旧`references/`を配布先から削除する。"""
-    assert Path("references") in post_apply._REMOVED_PATHS[Path.home() / ".claude"]  # noqa: SLF001
+    assert Path("references") in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:
     """旧計画ビューアーの設定・CLI・Windowsスタートアップ用shimを配布先から除去する。"""
-    assert Path("pytools/claude-plans-viewer.toml") in post_apply._REMOVED_PATHS[Path.home() / ".config"]  # noqa: SLF001
-    local_bin = post_apply._REMOVED_PATHS[Path.home() / ".local" / "bin"]  # noqa: SLF001
+    assert Path("pytools/claude-plans-viewer.toml") in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".config"]  # noqa: SLF001
+    local_bin = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".local" / "bin"]  # noqa: SLF001
     assert Path("claude-plans-viewer") in local_bin
     assert Path("claude-plans-viewer.exe") in local_bin
-    startup = Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    startup = _IMPORT_HOME / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
     assert Path("claude-plans-viewer.cmd") in post_apply._REMOVED_PATHS_IF_CONTENT[startup]  # noqa: SLF001
     # 旧systemd unitは停止と無効化を経てから削除するため、この一括削除の対象へ含めない。
     for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
@@ -283,7 +287,7 @@ def test_removes_legacy_plans_viewer_config_and_shim() -> None:
 
 def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
     """作業ツリー版を覆い隠す旧atkランチャーを登録し、現行のサービス用・hook用ラッパーは登録しない。"""
-    local_bin = post_apply._REMOVED_PATHS[Path.home() / ".local" / "bin"]  # noqa: SLF001
+    local_bin = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".local" / "bin"]  # noqa: SLF001
     assert Path("atk") in local_bin
     assert Path("atk.cmd") in local_bin
     for kept in ("atk-serve", "atk-hook", "atk-hook.cmd"):
@@ -292,7 +296,7 @@ def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
 
 def test_removes_flag_files_of_retired_steps_but_keeps_current_config() -> None:
     """廃止した工程のフラグファイルを登録し、現行のagent-toolkit設定は登録しない。"""
-    config = post_apply._REMOVED_PATHS[Path.home() / ".config"]  # noqa: SLF001
+    config = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".config"]  # noqa: SLF001
     assert Path("agent-toolkit/feedback-inbox.enabled") in config
     assert Path("agent-toolkit/review-balance-mode.claude-heavy") in config
     for kept in ("agent-toolkit/config.json", "agent-toolkit/serve.toml"):
@@ -322,7 +326,7 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
     kept: tuple[str, ...],
 ) -> None:
     """実際の登録内容を一時ホームへ適用し、旧生成物だけが削除されることを確かめる。"""
-    registered = post_apply._REMOVED_PATHS[Path.home() / base]  # noqa: SLF001
+    registered = post_apply._REMOVED_PATHS[_IMPORT_HOME / base]  # noqa: SLF001
     home_dir = tmp_path / "home"
     target_dir = home_dir / base
     monkeypatch.setenv("HOME", str(home_dir))
@@ -344,7 +348,7 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
 
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
-    paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
+    paths = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".ipython"]  # noqa: SLF001
     assert Path("profile_default/startup/README") in paths
     assert not any(path.is_relative_to("profile_ipy") for path in paths)
 

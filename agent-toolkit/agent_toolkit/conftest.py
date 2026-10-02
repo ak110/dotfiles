@@ -1,9 +1,11 @@
-"""pytest conftest: このディレクトリ配下のテストへ共通のfixtureを提供する。"""
+"""pytest conftest: このディレクトリ配下のテストへ共通のfixtureを提供する。
+
+開発機の状態からの隔離は`agent-toolkit/conftest.py`が適用する。本ファイルはこのディレクトリ固有の差し替えを持つ。
+"""
 
 import os
 import pathlib
 import subprocess
-import tempfile
 from collections.abc import Callable
 
 import pytest
@@ -12,8 +14,6 @@ from agent_toolkit._common import codex_models
 from agent_toolkit._hooks import notice
 
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
-_GIT_IDENTITY_NAME = "test"
-_GIT_IDENTITY_EMAIL = "test@example.invalid"
 _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
     "FORCE_PROMPT_CACHING_5M",
     "CLAUDE_CODE_PROMPT_CACHE_TTL",
@@ -29,154 +29,12 @@ _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
     "CLAUDE_CODE_USE_FOUNDRY",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS",
 )
-_ISOLATED_HOME_ENVIRONMENT_NAMES = ("HOME", "USERPROFILE")
-_ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES = (
-    "XDG_CONFIG_HOME",
-    "XDG_CACHE_HOME",
-    "XDG_DATA_HOME",
-    "XDG_STATE_HOME",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "PROGRAMDATA",
-)
-# `_isolated_home`が差し替える前の値。fixture適用後の`os.environ`からは取得できないため、
-# conftestの読み込み時点（どのfixtureよりも先）で控える。`host_environ`が復元に使う。
-_HOST_HOME_ENVIRON = {
-    name: value
-    for name in (*_ISOLATED_HOME_ENVIRONMENT_NAMES, *_ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES)
-    if (value := os.environ.get(name)) is not None
-}
-
-
-@pytest.fixture(autouse=True)
-def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """テストが生成するGitリポジトリのコミッター識別情報を実行環境から独立させる。
-
-    識別情報を環境変数で与え、`GIT_CONFIG_GLOBAL`・`GIT_CONFIG_SYSTEM`を`os.devnull`へ向けて
-    実行環境のGit設定の混入を断つ。これにより、リポジトリ生成箇所が`git config user.*`を
-    設定していなくても`git commit`が成功し、開発機と継続的インテグレーションで成否が一致する。
-
-    global・system設定を遮断しつつ、テストが生成した作業ツリーを所有者差で拒否しないよう
-    `safe.directory=*`をコマンドスコープのGit設定として与える。本リポジトリの作業ツリーを
-    対象にするテストも同じfixtureで実行できる。
-
-    既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
-    環境変数はこの設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
-    このディレクトリ配下のテストを単独で実行する場合にも同じ前提が成立するよう、
-    上位ディレクトリのfixtureへ依存せず本ファイルで定義する。
-    """
-    monkeypatch.setenv("GIT_AUTHOR_NAME", _GIT_IDENTITY_NAME)
-    monkeypatch.setenv("GIT_AUTHOR_EMAIL", _GIT_IDENTITY_EMAIL)
-    monkeypatch.setenv("GIT_COMMITTER_NAME", _GIT_IDENTITY_NAME)
-    monkeypatch.setenv("GIT_COMMITTER_EMAIL", _GIT_IDENTITY_EMAIL)
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
-    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
-    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
-    monkeypatch.setenv("GIT_CONFIG_KEY_0", "safe.directory")
-    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "*")
-
-
-@pytest.fixture(autouse=True)
-def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`atk wi`用の管理repo rootをテスト用一時ディレクトリへ差し替える。
-
-    実運用の`~/private-notes/`ハードコードを避け、`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で
-    テストごとに`tmp_path/private-notes`を指す。実ディレクトリの作成は各テストヘルパー
-    （`_setup_notes`等）が担う。
-    """
-    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
-
-
-@pytest.fixture(autouse=True)
-def _managed_temp_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """管理対象一時領域のrootを実行環境から隔離する。"""
-    for name in ("TMPDIR", "TEMP", "TMP"):
-        monkeypatch.setenv(name, str(tmp_path))
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-
-
-@pytest.fixture(autouse=True)
-def _isolated_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """ホームディレクトリと設定ディレクトリの参照をテスト用一時ディレクトリへ向ける。
-
-    TTL判定はユーザー設定ファイル`~/.claude/settings.json`を読むため、実行環境のホームが
-    混入すると開発機と継続的インテグレーションで結果が変わる。`HOME`の差し替えは
-    `platformdirs`が解決する状態ディレクトリの位置も一時ディレクトリ配下へ移すため、
-    計画の取得記録など状態ディレクトリを使う処理も同じfixtureで隔離される。
-    プラットフォームごとに参照される変数が異なるため、両系統をまとめて差し替える。
-
-    差し替えた環境変数はテストが起動する子プロセスへも継承される。実行環境のホーム・設定
-    ディレクトリから版や信頼設定を解決する外部ツール（miseのshimとして提供される`uv`・`node`など）を
-    起動するテストは、この隔離を渡すと解決に失敗する。そうしたテストでは`os.environ`をそのまま渡さず、
-    `host_environ` fixtureが組み立てる環境変数を子プロセスへ渡す。
-    """
-    home = tmp_path / "home"
-    for name in _ISOLATED_HOME_ENVIRONMENT_NAMES:
-        monkeypatch.setenv(name, str(home))
-    for name in _ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
-        monkeypatch.setenv(name, str(home / name.lower()))
-
-
-@pytest.fixture(name="host_environ")
-def _host_environ() -> Callable[[], dict[str, str]]:
-    """miseのshimで提供される外部コマンドを起動する子プロセスへ渡す環境変数を組み立てるfactory。
-
-    `_isolated_home`が差し替えた変数だけを隔離前の値へ戻し、他のfixtureによる隔離は維持する。
-    shimは実行環境のホーム・設定ディレクトリから信頼設定とツールの版を解決するため、隔離した値を
-    渡すとPythonの起動前に失敗する。作業ツリーの位置により結果が変わるのを防ぐ用途で使う。
-
-    呼び出し時点の`os.environ`を基にするため、autouse fixtureの適用順序へ依存しない。
-    """
-
-    def _build() -> dict[str, str]:
-        environ = dict(os.environ)
-        for name in (*_ISOLATED_HOME_ENVIRONMENT_NAMES, *_ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES):
-            environ.pop(name, None)
-        environ.update(_HOST_HOME_ENVIRON)
-        return environ
-
-    return _build
 
 
 @pytest.fixture(autouse=True)
 def _clear_wait_schedule_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """TTL判定用の環境変数を各テストの実行環境から除去する。"""
     for name in _WAIT_SCHEDULE_ENVIRONMENT_NAMES:
-        monkeypatch.delenv(name, raising=False)
-
-
-@pytest.fixture(autouse=True)
-def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
-    """委譲先セッションの標識を各テストの実行環境から除去する。
-
-    process-loopが委譲先へ渡す環境を検証するテストは、実行元の環境にこの標識が無いことを前提とする。
-    委譲先のセッションからテストを実行すると標識が継承され、その前提が成立しなくなる。
-    """
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", raising=False)
-
-
-@pytest.fixture(autouse=True)
-def _clear_process_loop_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
-    """process-loop起動セッションの標識を各テストの実行環境から除去する。
-
-    この標識はUserPromptSubmitの固定sessionTitleを決める入力であり、
-    子プロセスへ継承されると出力を伴わないことを検証するテストが失敗する。
-    標識の有無で分岐する動作を検証するテストは自身で`setenv`する。
-    """
-    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
-
-
-@pytest.fixture(autouse=True)
-def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """エージェント環境の判定変数を各テストの実行環境から除去する。
-
-    コーディングエージェントからテストを起動すると変数が子プロセスへ継承され、
-    エージェント環境向けの分岐を確かめるテストと、それ以外のテストの結果が実行環境で変わる。
-    """
-    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
 
 

@@ -2,12 +2,12 @@
 
 import os
 import pathlib
-from collections.abc import Callable
 
 import pytest
 
 import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._testing import isolation
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("AGENT_TOOLKIT_LIVE_AGENTS_TEST") != "1",
@@ -18,37 +18,18 @@ _PROMPT = """Bashツールで`sleep 2`を背景実行し、待たずにturnを�
 背景作業の完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
 
 
-def _use_host_environment(monkeypatch: pytest.MonkeyPatch, host: dict[str, str]) -> None:
-    """委譲先CLIが認証と設定を読めるよう、ホストのホーム・設定・状態ディレクトリの環境変数を戻す。"""
-    for name in (
-        "HOME",
-        "USERPROFILE",
-        "XDG_CONFIG_HOME",
-        "XDG_CACHE_HOME",
-        "XDG_DATA_HOME",
-        "XDG_STATE_HOME",
-        "APPDATA",
-        "LOCALAPPDATA",
-        "PROGRAMDATA",
-    ):
-        if name in host:
-            monkeypatch.setenv(name, host[name])
-        else:
-            monkeypatch.delenv(name, raising=False)
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["delegate", "explore", "shell"])
 async def test_live_launch_waits_for_automatic_resume(
     mode: str,
     monkeypatch: pytest.MonkeyPatch,
-    host_environ: Callable[[], dict[str, str]],
 ) -> None:
     """公開する起動ツール`start`の3つのmodeが、再開指示なしで背景作業完了後の結果を返す。"""
     manager = subject.AgentsServerManager()
     monkeypatch.setattr(subject, "_MANAGER", manager)
     cwd = str(pathlib.Path(__file__).parents[2])
-    _use_host_environment(monkeypatch, host_environ())
+    # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
+    isolation.restore_host_environment(monkeypatch)
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
@@ -86,7 +67,6 @@ _GRANDCHILD_PROMPT = """`agents_server`の起動ツールで、コマンド`slee
 async def test_live_grandchild_wait_resumes_same_session(
     candidate: tuple[str, str, str],
     monkeypatch: pytest.MonkeyPatch,
-    host_environ: Callable[[], dict[str, str]],
 ) -> None:
     """委譲先が孫sessionを起動して待機を表明すると、孫の終端後に同じsessionが手動の指示なしに再開し完了報告を返す。
 
@@ -95,7 +75,8 @@ async def test_live_grandchild_wait_resumes_same_session(
     manager = subject.AgentsServerManager()
     monkeypatch.setattr(subject, "_MANAGER", manager)
     cwd = str(pathlib.Path(__file__).parents[2])
-    _use_host_environment(monkeypatch, host_environ())
+    # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
+    isolation.restore_host_environment(monkeypatch)
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [candidate])
     try:
         started = await subject.start(cwd, mode="delegate", prompt=_GRANDCHILD_PROMPT, model_type="high_tier")

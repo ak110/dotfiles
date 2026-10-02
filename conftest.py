@@ -1,37 +1,10 @@
-"""pytest conftest: リポジトリ全体のテストへ共通の実行環境隔離を提供する。"""
+"""pytest conftest: `pytools/`・`scripts/`のテストへ開発機の状態からの隔離を自動で適用する。
 
-import os
+隔離の定義は`agent_toolkit._testing.isolation`が持ち、`agent-toolkit/conftest.py`も同じ定義を適用する。
+"""
 
-import pytest
+from agent_toolkit._testing import isolation
 
-_GIT_IDENTITY_NAME = "test"
-_GIT_IDENTITY_EMAIL = "test@example.invalid"
-
-
-@pytest.fixture(autouse=True)
-def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """テストが生成するGitリポジトリのコミッター識別情報を実行環境から独立させる。
-
-    識別情報を環境変数で与え、`GIT_CONFIG_GLOBAL`・`GIT_CONFIG_SYSTEM`を`os.devnull`へ向けて
-    実行環境のGit設定の混入を断つ。これにより、リポジトリ生成箇所が`git config user.*`を
-    設定していなくても`git commit`が成功し、開発機とCIで成否が一致する。
-
-    global・system設定を遮断しつつ、所有者の異なるCIの作業ツリーへGitを実行できるよう、
-    `safe.directory=*`をコマンドスコープのGit設定として与える。
-
-    既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
-    環境変数は既存の`git config user.*`より優先されるため実行結果は変わらず、一括削除は本fixtureの目的に不要である。
-    """
-    environment = {
-        "GIT_AUTHOR_NAME": _GIT_IDENTITY_NAME,
-        "GIT_AUTHOR_EMAIL": _GIT_IDENTITY_EMAIL,
-        "GIT_COMMITTER_NAME": _GIT_IDENTITY_NAME,
-        "GIT_COMMITTER_EMAIL": _GIT_IDENTITY_EMAIL,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": "safe.directory",
-        "GIT_CONFIG_VALUE_0": "*",
-    }
-    for name, value in environment.items():
-        monkeypatch.setenv(name, value)
+isolated_path_value = isolation.isolated_path_value
+isolate_development_state = isolation.isolate_development_state
+host_environ = isolation.host_environ

@@ -119,7 +119,7 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 # lintの自動修正は`make format`（`uv run --frozen pyfltr fast`）のfix段が引き続き担う。
 ruff-format-by-check = false
 pylint-args = ["--jobs=4"]
-# リポジトリ直下、agent-toolkit/agent_toolkit/およびagent-toolkit/skills/の`conftest.py`は、いずれもトップレベルの
+# リポジトリ直下、agent-toolkit/およびagent-toolkit/agent_toolkit/の`conftest.py`は、いずれもトップレベルの
 # モジュール`conftest`へ解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
 # 除外指定はパスではなくファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。
 # 3件ともruff・pylint・pyright・tyが引き続き検査する。
