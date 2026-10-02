@@ -12,6 +12,8 @@ import re
 import subprocess
 import sys
 
+import markdown_it
+
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
@@ -243,6 +245,55 @@ def _require_agent_awi_sections(
             f"再投入する。{_CAUSE_ANALYSIS_HEADING}を置く場合はその節にも本文を書く"
         ),
     )
+
+
+_DIRECT_CAUSE_LABEL = "直接的原因"
+_UNDETERMINED_CAUSE_RE = re.compile(r"(?:未確定|不明|未特定|調査中|未確認)(?:$|[\s。、，,．.:：;；（(「『【\[/／・*_`~])")
+"""原因が確定していないことを宣言する値の形。
+
+値の冒頭の語が単独で置かれるか、直後に句読点・空白・括弧・Markdown装飾の閉じ記号などの区切りが続く場合だけを宣言とみなす。
+確定した原因の説明に現れる同じ語（「不明だった設定を特定した」「旧値の残存。不明だった由来を特定した」など）は拒否しない。
+"""
+_TABLE_CELL_DECORATION = "*_`~ \t"
+_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+UNDETERMINED_CAUSE_NEXT_ACTION = (
+    "直接的原因を現物の観測で確定してから本文を書き直して再実行する。"
+    "確定できない場合は保存しない（既存項目の編集では保存済みの本文がそのまま残る）"
+)
+
+
+def undetermined_cause_rows(body: str) -> list[str]:
+    """表の`直接的原因`行のうち、値が原因の未確定を宣言する行を返す。
+
+    コードフェンスとインデントコードブロックの内側にある表は引用・例示として扱い、判定しない。
+    """
+    normalized = _frontmatter.normalize_newlines(body)
+    lines = normalized.split("\n")
+    rows: list[str] = []
+    for token in _MARKDOWN.parse(normalized):
+        if token.type != "table_open" or token.map is None:
+            continue
+        for line in lines[token.map[0] : token.map[1]]:
+            cells = [cell.strip(_TABLE_CELL_DECORATION) for cell in line.strip().strip("|").split("|")]
+            if len(cells) >= 2 and cells[0] == _DIRECT_CAUSE_LABEL and _UNDETERMINED_CAUSE_RE.match(cells[1]):
+                rows.append(line.strip())
+    return rows
+
+
+def require_confirmed_cause(body: str) -> None:
+    """エージェント環境から保存する本文が、直接的原因を未確定のまま宣言していないことを検証する。
+
+    原因が確定するまでWIを保存しないという起草の条件を、委譲の追送などで差し戻しが上書きされた場合も
+    保存処理自身で守る。判定するのは明示された未確定の宣言だけであり、原因として書かれた内容の妥当性は起草とレビューが確かめる。
+    種別（通常型・計画実装型のAWI、UWI）と`source`の有無で対象を分けない。人間の入力は拒否しない。
+    """
+    if not is_agent_environment():
+        return
+    if rows := undetermined_cause_rows(body):
+        raise WebInputError(
+            "直接的原因が未確定のまま保存しようとした: " + " / ".join(rows),
+            next_action=UNDETERMINED_CAUSE_NEXT_ACTION,
+        )
 
 
 def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
@@ -701,6 +752,10 @@ def _cmd_add(
                     source=args.source,
                     plan_file=args.plan_file,
                 )
+            except WebInputError as error:
+                validation_errors.append(error)
+            try:
+                require_confirmed_cause(body)
             except WebInputError as error:
                 validation_errors.append(error)
         except WebInputError as error:

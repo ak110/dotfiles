@@ -1130,6 +1130,30 @@ class TestEditBodyFile:
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
 
+    def test_edit_rejects_undetermined_direct_cause_even_for_legacy_body(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """既存本文が必須節を欠く旧書式でも、原因の未確定を宣言する本文への置換を拒否し保存本文を保つ。"""
+        notes = _setup_notes(tmp_path)
+        inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
+        path = inbox_path.rename(notes / "hold" / inbox_path.name)
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "編集後\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
+
+        assert exc_info.value.code == 1
+        error = capsys.readouterr().err
+        assert "編集を拒否した: 直接的原因が未確定のまま保存しようとした" in error
+        assert "保存済みの本文がそのまま残る" in error
+        assert path.read_text(encoding="utf-8") == original
+
     def test_processing_hold_allows_agent_replacement(
         self,
         monkeypatch: pytest.MonkeyPatch,

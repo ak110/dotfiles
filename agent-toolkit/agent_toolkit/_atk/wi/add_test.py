@@ -798,6 +798,122 @@ def test_cmd_add_accepts_plan_awi_without_required_sections(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
+def _with_direct_cause(body: str, value: str) -> str:
+    """通常AWIの本文へ`直接的原因`行を持つ原因分析を加える。"""
+    section = f"## 原因分析\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | {value} |\n\n"
+    return body.replace("## 適用範囲\n", f"{section}## 適用範囲\n", 1)
+
+
+@pytest.mark.parametrize(
+    ("value", "dry_run"),
+    [
+        ("未確定。調査を後続へ分ける", False),
+        ("**調査中**", True),
+        ("`不明`", False),
+        ("未特定（再現待ち）", False),
+        ("未確認 原因候補は2件", False),
+        ("**調査中**: 再現条件を確認している", False),
+        ("`不明`: ログが残っていない", False),
+    ],
+)
+def test_add_rejects_undetermined_direct_cause(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    value: str,
+    dry_run: bool,
+) -> None:
+    """エージェントが原因の未確定を宣言した通常AWIを、保存とcommitの前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_public_add(
+            _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, value), source="test", dry_run=dry_run),
+            notes,
+            _FIXED_DT,
+            tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "直接的原因が未確定のまま保存しようとした" in error
+    assert "次の操作: 直接的原因を現物の観測で確定してから" in error
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_rejects_undetermined_direct_cause_in_uwi_and_plan_awi(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """UWIと計画実装型AWIも、種別による除外なしに原因欄の未確定宣言を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    table = "| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n"
+    plan = notes / "plans" / "2026" / "09" / "test.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+
+    for args in (
+        _cmd_add_args(tmp_path, f"どちらを選ぶか？\n\n## 判断材料\n\n{table}", source="test", entry_type=WI_TYPE_UWI),
+        _cmd_add_args(tmp_path, f"計画本文\n\n{table}", source="test", plan_file=str(plan)),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            add_module._cmd_add(args, notes, _FIXED_DT, tmp_path)
+        assert exc_info.value.code == 1
+        assert "直接的原因が未確定のまま保存しようとした" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _with_direct_cause(_AGENT_AWI_BODY, "旧値の残存。`git log -S`で、それまで不明だった設定値の由来を特定した"),
+        _with_direct_cause(_AGENT_AWI_BODY, "不明だった設定を特定した"),
+        _with_direct_cause(_AGENT_AWI_BODY, "調査中の設定変更が旧値を残していたと特定した"),
+        _AGENT_AWI_BODY.replace(
+            "## 適用範囲\n",
+            "## 原因分析\n\n確定した原因の説明。例示:\n\n```markdown\n| 直接的原因 | 未確定 |\n```\n\n## 適用範囲\n",
+            1,
+        ),
+    ],
+)
+def test_add_accepts_determined_cause_variants(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    message: str,
+) -> None:
+    """確定した原因の文中の語とコードフェンス内の例は、未確定の宣言として拒否しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
+def test_add_accepts_undetermined_cause_from_human(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """エージェント環境の外からの投入は、原因欄が未確定でも保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    _run_public_add(
+        _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, "未確定"), source="test"),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """平引数操作が生成名を返し、frontmatter付きファイルを書き込む。"""
     notes = tmp_path / "private-notes"

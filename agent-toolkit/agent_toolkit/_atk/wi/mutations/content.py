@@ -503,6 +503,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             sys.exit(1)
         message = _preserve_agent_user_comment(snapshot, message)
         try:
+            _add.require_confirmed_cause(message)
             details = edit_entry_to_plan(
                 private_notes,
                 filename=snapshot_path.name,
@@ -610,6 +611,9 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
     try:
         _require_agent_edit_source(edited)
+        if message is not None or tmp_path is not None:
+            # 既存本文が旧書式でも、置換後の本文の原因欄は必ず判定する。
+            _add.require_confirmed_cause(edited)
     except WebInputError as error:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
