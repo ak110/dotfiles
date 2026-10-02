@@ -31,7 +31,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, auto
 
 
 class TestAgentsServerInputChecks:
-    """agents_serverの入力の妥当性判定が委譲スキル状態に依存しないことを確認する。"""
+    """agents_serverの入力の妥当性判定が`agent-toolkit:delegation`の起動状態に依存しないことを確認する。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:

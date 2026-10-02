@@ -125,7 +125,7 @@ def test_blocks_when_termination_skill_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """対象スキル起動後に終了スキルが1つも起動されていない場合は遮断する。"""
+    """対象スキル起動後に終了工程が1つも起動されていない場合は遮断する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     transcript = _write_transcript(
@@ -145,7 +145,7 @@ def test_blocks_when_termination_order_reversed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終了スキルの起動順が逆の場合も未充足として遮断する。"""
+    """終了工程の起動順が逆の場合も未充足として遮断する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     transcript = _write_transcript(
@@ -345,7 +345,7 @@ def test_add_awi_blocks_without_completion_report(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """`agent-toolkit:add-awi-by-user`起動後に終了スキルが無ければ遮断する。"""
+    """`agent-toolkit:add-awi-by-user`起動後に終了工程が無ければ遮断する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
     transcript = _write_transcript(
