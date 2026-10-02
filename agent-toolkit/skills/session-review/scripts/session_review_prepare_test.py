@@ -210,6 +210,41 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert not list(work_dir.glob("*material*"))
 
 
+def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """1000字を超える発話の省略区間にある`気付いた改善点:`の行を、会話の流れへ全て残す。
+
+    振り返りは会話の流れからこの行を全件拾うため、省略区間で行が消えると作業中に伝えた改善の機会が分析から漏れる。
+    行を持たない長い発話は従来どおり先頭と末尾だけを載せ、中間の本文を残さない。
+    """
+    first_note = "気付いた改善点: atk agents waitの出力をjqで加工するスクリプトを3回作った（ツールの出力形式）"
+    second_note = "  気付いた改善点: 全件そろうまで戻らない回収ループで先に届いた結果を待たせた（待ち方の手順）"
+    filler = "作業の経過を説明する。" * 60
+    report = "\n".join(
+        ["作業完了報告。" + "冒頭の説明。" * 90, filler, first_note, filler, second_note, filler, "末尾の結び。" * 90]
+    )
+    entries = [
+        {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:10Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": report}]},
+        },
+        {"type": "user", "timestamp": "2026-09-06T12:01:00Z", "message": {"role": "user", "content": _LONG_INTERVENTION}},
+    ]
+    transcript = tmp_path / "33333333-4444-5555-6666-777777777777.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
+
+    conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
+    assert report not in conversation
+    omitted_marker = "全文は記録位置main:2）…\n"
+    assert f"{omitted_marker}{first_note}\n{second_note.strip()}\n" in conversation
+    assert filler not in conversation
+    # 行を持たない長い発話は、省略の標識の直後に末尾の本文が続く。
+    assert f"全文は記録位置main:3）…\n{_LONG_INTERVENTION[-500:]}" in conversation
+
+
 def test_prepare_reads_codex_thread(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

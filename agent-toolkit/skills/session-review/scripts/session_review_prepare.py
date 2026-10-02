@@ -43,6 +43,11 @@ _UTTERANCE_EDGE_LENGTH = 500
 流れをたどるには先頭と末尾で足り、全文が要る発話は記録位置から照会する。
 ツール呼び出しと失敗の標識は1行（`_SUMMARY_LENGTH`字まで）で載せ、発話とは別の書式で区別する。
 """
+_IMPROVEMENT_MARKER = "気付いた改善点:"
+"""作業中に気付いた改善の機会をメインと委譲先が1行で伝える行の先頭。
+
+振り返りは工程2でこの行を全件拾うため、長い発話の省略区間にあっても会話の流れへ残す。
+"""
 _SUMMARY_LENGTH = 200
 """候補一覧の1行の要約、対象のツール呼び出しおよび直前のアシスタント発話、会話の流れのツール呼び出しと失敗の標識へ載せる文字数。
 
@@ -167,7 +172,8 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str) ->
         f"ツール呼び出しはツール名と代表入力（{_SUMMARY_LENGTH}字まで。`Write`・`Edit`は対象ファイルだけ）の1行で示し、"
         "失敗したツール結果は直後に診断の1行を示す。"
         "成功したツール結果の本文、自動挿入本文、実行環境の挿入、スキル展開、hookの追加コンテキスト、thinkingおよび委譲先の記録の内部は含まない。"
-        f"{_UTTERANCE_FULL_LIMIT}字を超える発話は先頭と末尾の{_UTTERANCE_EDGE_LENGTH}字ずつを載せる。"
+        f"{_UTTERANCE_FULL_LIMIT}字を超える発話は先頭と末尾の{_UTTERANCE_EDGE_LENGTH}字ずつを載せ、"
+        f"省略した中間にある`{_IMPROVEMENT_MARKER}`で始まる行は省略の標識の後へ全て載せる。"
         f"発話とツール呼び出し・結果の全文は`{detail_command} --detail <記録位置>`で取得する。",
     ]
     if not events:
@@ -198,14 +204,28 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str) ->
         lines.extend(["", f"## {role}（{item.get('timestamp') or '時刻なし'}、{locator}）", ""])
         if len(text) > _UTTERANCE_FULL_LIMIT:
             omitted = len(text) - 2 * _UTTERANCE_EDGE_LENGTH
+            kept = "".join(f"{line}\n" for line in _omitted_improvement_lines(text))
             body = (
                 f"{text[:_UTTERANCE_EDGE_LENGTH]}\n…（中間の{omitted}字を省略。全文は記録位置{locator}）…\n"
-                f"{text[-_UTTERANCE_EDGE_LENGTH:]}"
+                f"{kept}{text[-_UTTERANCE_EDGE_LENGTH:]}"
             )
         else:
             body = text
         lines.extend(_fence(body))
     return "\n".join(lines) + "\n"
+
+
+def _omitted_improvement_lines(text: str) -> list[str]:
+    """先頭と末尾の載せる範囲に全体が収まらない`気付いた改善点:`の行を、出現順に全文で返す。"""
+    kept: list[str] = []
+    start = 0
+    tail_start = len(text) - _UTTERANCE_EDGE_LENGTH
+    for line in text.splitlines(keepends=True):
+        end = start + len(line)
+        if line.lstrip().startswith(_IMPROVEMENT_MARKER) and end > _UTTERANCE_EDGE_LENGTH and start < tail_start:
+            kept.append(line.strip())
+        start = end
+    return kept
 
 
 def _readable_entry_text(text: str) -> str:
