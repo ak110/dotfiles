@@ -41,6 +41,9 @@ def test_stop_blocks_unanswered_human_input(
     assert 'source="user_response_advisor"' in output["reason"]
     assert "拡張思考" in output["reason"]
     assert "発話本文として出力" in output["reason"]
+    assert "判断の報告・確認結果・回答" in output["reason"]
+    assert "内容も含め" in output["reason"]
+    assert "受領や状況の説明だけで済ませない" in output["reason"]
 
 
 @pytest.mark.parametrize("human", [_HUMAN, _QUEUED])
