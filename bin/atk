@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# 同じリポジトリではcwdのworktreeを使い、配布物側へ起動と常駐制御を委ねる。
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+INSTALL_ROOT="$(cd "$(dirname "${SELF}")/.." && pwd)"
+INSTALL_COMMON="$(git -C "${INSTALL_ROOT}" rev-parse --path-format=absolute --git-common-dir)"
+TARGET_ROOT="${INSTALL_ROOT}"
+# Git外のcwdは通常の呼び出しなので、探索時のnot-a-repository診断を表示しない。
+if CWD_COMMON="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" &&
+    [[ "${CWD_COMMON}" == "${INSTALL_COMMON}" ]]; then
+    TARGET_ROOT="$(git rev-parse --show-toplevel)"
+fi
+ATK_ENTRY="${TARGET_ROOT}/agent-toolkit/bin/atk"
+if [[ ! -x "${ATK_ENTRY}" ]]; then
+    printf 'atkの起動先がありません: %s\n' "${ATK_ENTRY}" >&2
+    printf '次の操作: 対象worktreeのagent-toolkit/bin/atkを復元してから再実行する。\n' >&2
+    exit 127
+fi
+exec "${ATK_ENTRY}" "$@"

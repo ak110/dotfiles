@@ -45,6 +45,8 @@
 
 ## [公開出力から導出できる項目の撤去](design-cli.md#公開出力から導出できる項目の撤去)
 
+## [dotfilesのatkで実行するworktree](design-cli.md#dotfilesのatkで実行するworktree)
+
 ## [agents_server sessionのstatusline表示](design-agents-runtime.md#agents_server-sessionのstatusline表示)
 
 ## [大出力コマンドの分離実行](design-delegation.md#大出力コマンドの分離実行)
