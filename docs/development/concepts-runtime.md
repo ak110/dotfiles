@@ -5,7 +5,7 @@
 ## フックのホスト間共通化
 
 2026年8月の利用者指示（Claude CodeにあるフックをCodexへも極力実装し、実装を共通化する）で確定した領域である。
-現行の規定は[design.md](design.md)の「フックの責務境界」にある。
+現行の規定は[design-hooks.md](design-hooks.md#フックの責務境界)の「フックの責務境界」にある。
 
 - 公式契約または実物の観測で同等性を確認できるフックだけを共有中核へ集約し、
   ホスト固有の入力変換と出力契約だけを分離する方針が確定した
@@ -16,7 +16,7 @@
 
 ## Claude CodeとCodexの規範配置
 
-現行の規定は[design.md](design.md)の「Claude CodeとCodexの規範配置」にある。
+現行の規定は[design-hosts.md](design-hosts.md#claude-codeとcodexの規範配置)の「Claude CodeとCodexの規範配置」にある。
 
 共通のルール・スキルは`agent-toolkit/`の共有原本へ置き、Codex固有の公開能力との差分は`agent-toolkit/share/rules-main.codex.md`へ集約する。
 hook・MCP定義などホスト別に明確に分離された資源は、各ホストの定義へ置く。
@@ -68,7 +68,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   規範の配送と権限の自動許可は遮断・警告に当たらない。
   2026年9月26日の利用者指示は、フックを元へ戻せない結果を防ぐ判定と常駐運用の終端保証だけに置き、範囲の外は利用者が例外として確定した場合だけ残すとしていた。
   2026年10月2日の利用者指示（「hookは元へ戻せない結果を防ぐものだけ残すだけだと厳しすぎる」、基準はQCD）で、この範囲限定をQCDの費用比較へ改めた。
-  経緯と全件確認の表は[design.md](design.md)「warn・block判定の全件確認（2026年9月26日）」にある。
+  経緯と全件確認の表は[design-hooks.md](design-hooks.md#warnblock判定の全件確認2026年9月26日)「warn・block判定の全件確認（2026年9月26日）」にある。
   現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある
 - フックのblockは、通した場合の結果を復元できない操作と、遮断で失うターンの入力と作業が小さい明らかな行動誤りに用いる。
   それ以外の再編集または再実行で是正できる操作にはwarnを用いる。

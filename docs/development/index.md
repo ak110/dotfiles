@@ -2,7 +2,7 @@
 
 本リポジトリ自体の開発に関するドキュメントである。
 
-- [docs/development/design.md](design.md): 複数ファイルへまたがる機構の設計意図
+- [docs/development/design.md](design.md): 機構の設計記録の索引。主題別の本文から目的・構造の理由・知識境界・却下案を読む
 - [docs/development/concepts.md](concepts.md): 過去のAWIから確定した方針・意向
 - [docs/development/incidents.md](incidents.md): 再発防止の判断材料となる障害・欠陥
 - [docs/development/development.md](development.md): 開発環境セットアップ・コマンド・運用ルール
