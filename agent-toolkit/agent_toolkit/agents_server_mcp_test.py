@@ -3647,6 +3647,33 @@ async def test_stopped_review_session_previous_result_guides_review_findings(tmp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["codex", "claude"])
+@pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review"])
+@pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
+async def test_send_message_previous_and_stopped_results_relay_improvements(
+    engine: str, label: str, status: str, tmp_path: pathlib.Path
+) -> None:
+    """継続入力と破棄済みsessionの未回収結果が、同じ改善点の案内と本文を返す。"""
+    manager, _ = _manager_with_fake(engine, "reply_started")
+    message = "完了\n  気付いた改善点: 再読した\n気付いた改善点: 反復した"
+    session = subject.SessionState("thread-1", str(tmp_path), engine=engine, label=label)
+    _complete(session, message=message)
+    session.status = status
+    manager.sessions[session.session_id] = session
+    stopped = state.SessionResumeState.from_session(session)
+
+    response = await manager.send_message(session.session_id, "続行")
+    previous = response["previous_result"]
+    stopped_result = subject.AgentsServerManager._stopped_result_response(stopped)
+
+    assert previous == stopped_result
+    assert previous["agent_message"] == message
+    action = previous["next_action"]
+    assert action.count(state.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
+    assert (state.REVIEW_RESULT_NEXT_ACTION in action) is (status == "completed" and label.endswith("-review"))
+
+
+@pytest.mark.asyncio
 async def test_send_message_omits_previous_result_after_wait_returned_result(tmp_path: pathlib.Path) -> None:
     """waitで回収した結果本文を継続入力の応答へ再送しない。"""
     manager, _ = _manager_with_fake("codex")

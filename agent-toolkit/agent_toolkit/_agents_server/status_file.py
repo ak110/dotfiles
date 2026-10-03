@@ -40,7 +40,7 @@ from agent_toolkit._agents_server.state import (
     public_notice,
     public_result,
     terminal_result_payload,
-    with_review_result_next_action,
+    with_result_next_action,
 )
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
@@ -609,7 +609,7 @@ def take_result(
             label = session.get("label") if isinstance(session, dict) else None
             if isinstance(label, str) and label:
                 payload["label"] = label
-            return with_review_result_next_action(public_result(payload), label), None
+            return with_result_next_action(public_result(payload), label), None
         finally:
             release_lock(lock_file)
 

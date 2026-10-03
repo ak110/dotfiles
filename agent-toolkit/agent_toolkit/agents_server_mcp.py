@@ -978,7 +978,7 @@ class AgentsServerManager:
         }
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
-        return state.with_review_result_next_action(response, resume_state.label)
+        return state.with_result_next_action(response, resume_state.label)
 
     def _take_stopped_result(
         self,

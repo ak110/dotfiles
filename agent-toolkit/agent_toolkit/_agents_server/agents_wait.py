@@ -200,9 +200,9 @@ def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
     """委譲先が失敗または中断で終端した結果へ、受領した主体の次の操作を加える。"""
     status = result.get("status")
     if status == "failed":
-        result["next_action"] = _FAILED_RESULT_NEXT_ACTION
+        result = state.append_result_next_action(result, _FAILED_RESULT_NEXT_ACTION)
     elif status == "interrupted":
-        result["next_action"] = _INTERRUPTED_RESULT_NEXT_ACTION
+        result = state.append_result_next_action(result, _INTERRUPTED_RESULT_NEXT_ACTION)
     return result
 
 

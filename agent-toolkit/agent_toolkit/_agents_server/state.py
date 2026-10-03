@@ -177,14 +177,32 @@ REVIEW_RESULT_NEXT_ACTION = (
 )
 
 
-def with_review_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
-    """labelが`-review`で終わるsessionの`completed`結果へ、指摘の採否を確定する手順を次の操作として加える。
+IMPROVEMENT_RESULT_NEXT_ACTION = (
+    "メインエージェントは`agent_message`の`気付いた改善点:`で始まる全行を、"
+    "次のユーザーへの発話へ逐語で転記する。"
+    "`agent-toolkit/share/rules-main.md`「協調と自律」に従い、出所と必要な確認も添える"
+)
 
-    受領した主体が参照できるのは受け取った結果だけであるため、採否確定の工程へ入る手掛かりを結果へ載せる。
-    失敗と中断の結果、レビュー以外のsessionの結果は変えない。
-    """
+
+def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[str, Any]:
+    """既存の案内を保持して次の操作を併記し、複数の返却処理で同じ案内を重ねない。"""
+    result = dict(result)
+    existing = result.get("next_action")
+    if isinstance(existing, str) and existing:
+        if next_action not in existing:
+            result["next_action"] = f"{existing}\n{next_action}"
+    else:
+        result["next_action"] = next_action
+    return result
+
+
+def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
+    """受領時に必要なレビューの採否確定と改善点の転記を、既存の次の操作に併記する。"""
     if result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
-        result["next_action"] = REVIEW_RESULT_NEXT_ACTION
+        result = append_result_next_action(result, REVIEW_RESULT_NEXT_ACTION)
+    message = result.get("agent_message")
+    if isinstance(message, str) and any(line.lstrip().startswith("気付いた改善点:") for line in message.splitlines()):
+        result = append_result_next_action(result, IMPROVEMENT_RESULT_NEXT_ACTION)
     return result
 
 
@@ -702,7 +720,7 @@ class SessionState:
         }
         if _nonempty_error(self.error):
             result["error"] = self.error
-        return with_review_result_next_action(result, self.label)
+        return with_result_next_action(result, self.label)
 
 
 @dataclasses.dataclass(frozen=True)
