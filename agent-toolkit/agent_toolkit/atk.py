@@ -704,8 +704,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="SHA",
         default=None,
         help=(
-            "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
-            "記録時に対象リポジトリで解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "ローカルworktreeとrevisionを検証してcommit情報を記録する。"
+            "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
+            "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
@@ -738,8 +739,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="SHA",
         default=None,
         help=(
-            "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
-            "記録時に対象リポジトリで解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "ローカルworktreeとrevisionを検証してcommit情報を記録する。"
+            "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
+            "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
