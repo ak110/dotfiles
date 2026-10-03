@@ -1265,7 +1265,7 @@ class TestPrivateNotesAutoCreate:
         assert not _git_stdout(root, "status", "--porcelain")
 
     def test_ensure_environment_keeps_recorded_gitignore_pattern(self, tmp_path: pathlib.Path) -> None:
-        """`.gitignore`へ記録済みの管理パターンと利用者の変更を、commitも削除もしない。"""
+        """`.gitignore`へ記録済みの管理パターンとユーザーの変更を、commitも削除もしない。"""
         home = tmp_path / "home"
         root = home / "private-notes"
         root.mkdir(parents=True)

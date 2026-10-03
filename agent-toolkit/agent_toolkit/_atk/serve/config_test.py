@@ -62,7 +62,7 @@ def test_assets_are_self_contained() -> None:
 
 
 def test_assets_global_error_does_not_restore_refresh_after_user_focus_move() -> None:
-    """同期中の消去後に利用者が別の入力へ移動した場合は、そのフォーカスを維持する。"""
+    """同期中の消去後にエンドユーザーが別の入力へ移動した場合は、そのフォーカスを維持する。"""
     result = _run_node_ui(
         """
 bindEvents();
@@ -1051,7 +1051,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_preserve_user_announcement_across_user_and_sse_request_orders() -> None:
-    """利用者要求とSSE要求の開始・完了順にかかわらず、件数を一度通知する。"""
+    """エンドユーザーの要求とSSE要求の開始・完了順にかかわらず、件数を一度通知する。"""
     result = _run_node_ui(
         """
 async function runCase(startOrder, completionOrder) {

@@ -96,7 +96,7 @@ class TestPreflight:
         # _preflight_check は副作用ゼロの事前検証フェーズとして設計されており、
         # ValueError を伝播させて即座に中断する（_process_target が try/except で各件を
         # キャッチして継続するのとは対照的な設計）。SystemExit(1) に統一しない理由は、
-        # preflight 失敗は「処理開始前の中断」であり CLI 利用者には未捕捉例外として
+        # preflight 失敗は「処理開始前の中断」であり CLI を使うエンドユーザーには未捕捉例外として
         # スタックトレースを見せることが意図されているため。
         monkeypatch.setattr(sys, "argv", ["repack-archive", "--no-trash", str(a), str(b)])
         with pytest.raises(ValueError, match="出力 ZIP が衝突"):

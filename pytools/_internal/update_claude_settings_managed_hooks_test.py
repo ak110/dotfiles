@@ -167,7 +167,7 @@ class TestWarnOrphanDotfilesHookCommands:
         assert not any("exist_hook.py" in message for message in caplog.messages)
 
     def test_does_not_warn_for_non_dotfiles_hook_command(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """`dotfiles/scripts/`を参照しないコマンド（プラグイン由来・利用者追加）は警告しない。"""
+        """`dotfiles/scripts/`を参照しないコマンド（プラグイン由来・ユーザー追加）は警告しない。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -252,7 +252,7 @@ class TestNormalizeManagedHooks:
         assert not changed_again
 
     def test_custom_command_in_same_entry_is_preserved(self, tmp_path: Path):
-        """管理対象コマンドと同居する利用者独自コマンドを保持する。"""
+        """管理対象コマンドと同居するユーザー独自コマンドを保持する。"""
         managed_command = "managed-stop"
         custom_hook = {"type": "command", "command": "custom-stop"}
         managed_entry = {"hooks": [{"type": "command", "command": managed_command}]}

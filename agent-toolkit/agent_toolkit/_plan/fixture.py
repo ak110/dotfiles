@@ -209,7 +209,7 @@ def current_plan(
 ### {_plan_format.PLAN_ACCEPTANCE_H3}
 
 {_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)}
-| 公開契約の判定 | ユーザー指示 | 利用者と公開入口 | 判定を実行する | 更新後の結果を得る | 公開入口のテスト |
+| 公開契約の判定 | ユーザー指示 | ユーザーと公開入口 | 判定を実行する | 更新後の結果を得る | 公開入口のテスト |
 
 ## {_plan_format.PLAN_H2_CURRENT_PERMANENCE}
 

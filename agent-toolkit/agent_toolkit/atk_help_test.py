@@ -224,7 +224,7 @@ def test_managed_temp_cleanup_help_explains_force_remove_boundary() -> None:
 
     assert "--force-remove" in help_text
     assert "一時rootの直下" in help_text
-    assert "現在の利用者が所有するディレクトリ" in help_text
+    assert "実行中のOSアカウントが所有するディレクトリ" in help_text
     assert "後始末する領域を、作成時に指定したセッションの識別子で指定する。--pathとは同時に指定できない。" in help_text
 
 

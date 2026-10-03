@@ -54,7 +54,7 @@ def _process_label(name: str, exe: str, cmdline_values: list[str], pid: int) -> 
 
     `name`を取得できない場合は、Codexの識別に用いた`exe`または`cmdline`第1要素から実行名を導く。
     いずれからも実行名を得られない場合だけ`pid <pid>`とする。
-    `codex [OPTIONS] [PROMPT]`の通常起動では第2要素が利用者のプロンプトになり得るため、
+    `codex [OPTIONS] [PROMPT]`の通常起動では第2要素がユーザーのプロンプトになり得るため、
     完全一致で許可したサブコマンド名以外はラベルへ含めない。
     """
     candidates = (_executable_name(value) for value in (name, exe, cmdline_values[0] if cmdline_values else ""))

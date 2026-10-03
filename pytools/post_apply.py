@@ -82,7 +82,7 @@ class _BelowWarningFilter(logging.Filter):
 
 
 class _ScreenFilter(logging.Filter):
-    """利用者の判断に使わない行を画面から外す。永続ログのハンドラーには付けない。"""
+    """ユーザーの判断に使わない行を画面から外す。永続ログのハンドラーには付けない。"""
 
     def filter(self, record: logging.LogRecord) -> bool:
         """画面へ出力するレコードなら真を返す。"""
@@ -348,7 +348,7 @@ def _cleanup_removed_paths() -> bool:
         total_removed += cleanup_paths.cleanup_paths(base_dir, relative_paths)
     for base_dir, expected in _REMOVED_PATHS_IF_CONTENT.items():
         total_removed += cleanup_paths.cleanup_paths_if_content_matches(base_dir, expected)
-    # 配布済みREADMEの親だけを深い順で除去する。rmdirにより利用者ファイルが残るディレクトリは保持する。
+    # 配布済みREADMEの親だけを深い順で除去する。rmdirによりユーザーファイルが残るディレクトリは保持する。
     ipython_dir = Path.home() / ".ipython"
     try:
         ipython_resolved = ipython_dir.resolve()
@@ -579,7 +579,7 @@ def _print_plugin_recommendations(recommendations: list[str]) -> None:
     if len(recommendations) == 1:
         print(recommendations[0], flush=True)
         return
-    # 利用者がコピペ1回で全件実行できるよう && で連結し、可読性のため行末継続記号で改行する。
+    # ユーザーがコピペ1回で全件実行できるよう && で連結し、可読性のため行末継続記号で改行する。
     # 継続記号はシェル別に切り替える (bash: \, cmd: ^)。
     continuation = "^" if sys.platform == "win32" else "\\"
     last_index = len(recommendations) - 1

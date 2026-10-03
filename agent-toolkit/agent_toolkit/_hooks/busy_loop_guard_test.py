@@ -104,7 +104,7 @@ def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict
 def test_halt_requests_function_hook_exit(
     tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Stop hookが会話IDを渡して終了要求を発行し、ターン後の終了を利用者へ伝える。"""
+    """Stop hookが会話IDを渡して終了要求を発行し、ターン後の終了をユーザーへ伝える。"""
 
     def _terminate(*, session_id: str) -> tuple[str, object]:
         assert session_id == _SESSION_ID
@@ -242,7 +242,7 @@ def test_native_subagent_question_does_not_block_parent_loop(tmp_path: pathlib.P
 def test_stop_entry_point_reports_system_message(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
     """各Stop判定を集約する関数が停止の本文を`systemMessage`へ集約する。
 
-    同じターンで別の判定が遮断を返す場合も、利用者向けの本文を同じ応答へ添える。
+    同じターンで別の判定が遮断を返す場合も、エンドユーザー向けの本文を同じ応答へ添える。
     """
     entries: list[dict] = []
     result: dict = {}

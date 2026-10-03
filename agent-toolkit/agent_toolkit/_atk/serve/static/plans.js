@@ -25,7 +25,7 @@ let selectedPath = null;
 let appliedPreviewHtml = null;
 // ホスト別の接続状態。connected / connecting / disconnected。
 let hostStatus = {};
-// ホスト・保存元別のroot警告。source IDは表示せず、利用者が復旧判断できる本文だけを表示する。
+// ホスト・保存元別のroot警告。source IDは表示せず、エンドユーザーが復旧判断できる本文だけを表示する。
 let rootStatus = {};
 // renderFilesが最後に描画したエントリ列（フィルタ適用後の全件）。
 // ↑↓ナビゲーションは選択中項目の前後インデックスをこの列から算出する。

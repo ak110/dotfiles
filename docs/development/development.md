@@ -69,7 +69,7 @@ uv sync --reinstall  # .venvを再構築する場合
 - ロックファイル尊重: Python依存は`uv.lock`を再resolveせず使用する。mise管理ツールはルートと配布用設定に対応する2つの`mise.lock`を優先する
 - 公開待機: Python依存は`exclude-newer`で公開から1日、mise管理ツールは`minimum_release_age`で公開から7日を経たものだけを採用する
 - ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
-- 脆弱性検知: dotfilesは実行可能なコマンドラインツール群を配布するため、依存が利用者の実行環境へ
+- 脆弱性検知: dotfilesは実行可能なコマンドラインツール群を配布するため、依存がエンドユーザーの実行環境へ
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
   無効化する方針を採用する。あわせて`.github/workflows/audit.yaml`が`uv audit`を定期実行し、
   検出結果をSARIFでCode Scanningへ送る。Dependabot alertsの未解決分は、`agent-toolkit:process-wi`が
@@ -116,7 +116,7 @@ GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が
 `override-dependencies`による上書きは本リポジトリの依存解決にのみ適用され、配布物のメタデータには含まれない。
 上書き設定が適用されない状態で依存解決が成立することを
 `uvx --exclude-newer "1 day" --from . dirsize --help`で実際に動かして確かめる。
-この`uvx`コマンドは利用者環境と同じ方法で配布物の依存を解決する。
+この`uvx`コマンドはエンドユーザーの環境と同じ方法で配布物の依存を解決する。
 そのため、上書き設定に依存した版指定を検出できる。
 `uvx`は`pyproject.toml`の`[tool.uv]`を読まず`exclude-newer`が適用されない。
 公開待機を維持するため`--exclude-newer`を明示する。
@@ -158,4 +158,4 @@ GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が
 
 設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`（prekが読む
 設定ファイルで、ファイル名自体は変更しない）を参照する。
-利用者向けのグローバル設定一覧は[docs/guide/security.md](../guide/security.md)を参照する。
+エンドユーザー向けのグローバル設定一覧は[docs/guide/security.md](../guide/security.md)を参照する。

@@ -111,7 +111,7 @@ if TYPE_CHECKING:
         PLAN_IMPLEMENTATION_UNIT_ID_PATTERN,
         PLAN_IMPLEMENTATION_UNITS_H3,
         PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
-        PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER,
+        PLAN_LEGACY_ACCEPTANCE_TABLE_HEADERS,
         PLAN_LEGACY_ACTION_TABLE_HEADER,
         PLAN_LEGACY_AGENT_FEEDBACK_ORIGIN,
         PLAN_LEGACY_BUG_TABLE_ROWS,
@@ -953,7 +953,7 @@ def has_legacy_refactoring_table(content: str) -> bool:
 def has_legacy_acceptance_table(content: str) -> bool:
     """改名前の列名を持つ受入シナリオ表が本文にある場合に真を返す。"""
     tables = extract_tables(list(iter_markdown_body_lines(content)))
-    return any(table.header == PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER for table in tables)
+    return any(table.header in PLAN_LEGACY_ACCEPTANCE_TABLE_HEADERS for table in tables)
 
 
 def _check_h1(headings: list[PlanHeading]) -> list[str]:
@@ -1984,7 +1984,7 @@ def check_plan_single_file_structure(
                 (
                     item
                     for item in acceptance_tables
-                    if item.header in (PLAN_ACCEPTANCE_TABLE_HEADER, PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER)
+                    if item.header in (PLAN_ACCEPTANCE_TABLE_HEADER, *PLAN_LEGACY_ACCEPTANCE_TABLE_HEADERS)
                 ),
                 None,
             )

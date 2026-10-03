@@ -10,7 +10,7 @@ Stopの連続遮断上限は共通のStop処理に任せ、独自の状態や上
 遮断で失うのは本文を出力し直す1回の応答だけである。基準は
 `agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
 
-委譲先での実行可否: 利用者への応答責務を持つメインだけを対象とし、
+委譲先での実行可否: ユーザーへの応答責務を持つメインだけを対象とし、
 agent_idと委譲先の環境印でサブエージェントと委譲先を除く。
 """
 
@@ -61,8 +61,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     stop_gate.append_stop_log(session_id, "block_missing_user_response", {})
     return "block", _block_notice(
-        "人間の発話の後に、利用者へ表示される応答本文が無い。拡張思考の中の記述は利用者へ表示されない。",
-        fix="利用者の発話への回答または受領の説明を、発話本文として出力する。",
+        "人間の発話の後に、ユーザーへ表示される応答本文が無い。拡張思考の中の記述はユーザーへ表示されない。",
+        fix="ユーザーの発話への回答または受領の説明を、発話本文として出力する。",
     )
 
 

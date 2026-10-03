@@ -4,7 +4,7 @@
 判定順を保つ。遮断が1件以上ある場合は全ての遮断理由の後に通知を空行で連結して`reason`へ含め、
 遮断が無い場合だけ通知を`hookSpecificOutput.additionalContext`へ集約する。
 
-判定が`notify_user`を返した本文は利用者向けの`systemMessage`へ集約し、遮断の有無によらず同じ応答へ添える。
+判定が`notify_user`を返した本文はエンドユーザー向けの`systemMessage`へ集約し、遮断の有無によらず同じ応答へ添える。
 
 連続blockの上限は7回とし、Claude Codeが8回の連続blockでフックを上書きして
 ターンを終える仕様の内側で、打ち切りの事実を記録して終了を許可する。
@@ -79,7 +79,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
             user_messages.append(body)
 
     def _finalize(result: dict[str, object]) -> dict[str, object]:
-        """利用者宛ての本文がある場合に`systemMessage`を添えて返す。"""
+        """ユーザー宛ての本文がある場合に`systemMessage`を添えて返す。"""
         if is_codex_payload(payload):
             return {key: value for key, value in result.items() if key in {"decision", "reason"}}
         if user_messages:

@@ -150,7 +150,7 @@ def platform_entrypoint(repo: pathlib.Path, platform_name: str) -> list[str]:
 
 
 def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name: str) -> dict[str, str]:
-    """利用者環境から状態を分離し、ランチャーが参照するuvを配置する。"""
+    """ユーザー環境から状態を分離し、ランチャーが参照するuvを配置する。"""
     uv_name = "uv.exe" if platform_name == "windows" else "uv"
     uv_target = home / ".local" / "bin" / uv_name
     uv_target.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +282,7 @@ def run_upgrade_check(
 ) -> None:
     r"""ローカルremoteを用いて旧版から現行版への更新を終端まで検証する。
 
-    検証は利用者の永続状態を前後で変えないことも成功条件とする。
+    検証はユーザーの永続状態を前後で変えないことも成功条件とする。
     Windowsでは`HKCU\\Environment`を検証前の状態へ戻し、両プラットフォームで通常profile側の監視ディレクトリの
     直下の項目名を前後で比べる。差分があれば、隔離の漏れとして検証の時点で失敗させる。
     """

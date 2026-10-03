@@ -415,7 +415,7 @@ async def _open_question(page: playwright.async_api.Page) -> playwright.async_ap
 
 
 async def _open_filters(page: playwright.async_api.Page) -> None:
-    """WI一覧のフィルターが閉じている場合に利用者操作で開く。"""
+    """WI一覧のフィルターが閉じている場合にエンドユーザーの操作で開く。"""
     details = page.locator(".filters details")
     if not await details.evaluate("element => element.open"):
         await details.locator("summary").click()
@@ -424,10 +424,10 @@ async def _open_filters(page: playwright.async_api.Page) -> None:
 def _assert_list_request_without_fallback(request_urls: list[str], base_url: str, expected_path: str) -> None:
     """期待した条件の一覧要求が送られ、補助検索の要求が送られていないことを判定する。
 
-    要求一覧の完全一致は使わない。画面は利用者操作と独立に、外部変更時の再読込で
+    要求一覧の完全一致は使わない。画面はエンドユーザーの操作と独立に、外部変更時の再読込で
     `/api/entries?type=uwi&status=all&answered=all`と現在の条件の一覧要求を任意の時点で追加送信するためである。
     再読込の契機はSSE接続の確立、`window`の`focus`、`visibilitychange`、SSEの`changed`、
-    および利用者操作中に保留した再読込の操作終了後の実行である。
+    およびエンドユーザーの操作中に保留した再読込の操作終了後の実行である。
     条件付きの一覧要求は常に`/api/entries?type=`で始まり、条件を外した補助検索の要求だけが
     `/api/entries?q=`で始まるため、後者の不在で補助検索の混入を判定できる。
     """
@@ -707,7 +707,7 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
 
 @pytest.mark.asyncio
 async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harness: _BrowserHarness) -> None:
-    """回答・削除フォーカス、条件依存、警告、利用者起点だけの件数通知を検証する。"""
+    """回答・削除フォーカス、条件依存、警告、エンドユーザー起点だけの件数通知を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -1005,7 +1005,7 @@ async def test_period_filter_limits_work_items_to_recent_by_default(browser_harn
 async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: _BrowserHarness) -> None:
     """期間の内側に対応中の項目が無い空状態から、全期間の一覧へ1操作で進め、狭い幅でも期間の限定を確認できる。
 
-    空状態に期間を広げる操作が無いと、古い対応中の項目を探す利用者がフィルター欄を探して開く必要がある。
+    空状態に期間を広げる操作が無いと、古い対応中の項目を探すエンドユーザーがフィルター欄を探して開く必要がある。
     """
     harness = browser_harness
     page = harness.page
@@ -1304,14 +1304,14 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
 
     await detail.get_by_role("button", name="編集", exact=True).click()
     edit_input = detail.locator("#edit-content")
-    await edit_input.fill("利用者の未保存本文")
+    await edit_input.fill("ユーザーの未保存本文")
     awi_path.write_text(
         "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n編集中の外部更新\n",
         encoding="utf-8",
     )
     harness.current_state.publish()
     await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible")
-    assert await edit_input.input_value() == "利用者の未保存本文"
+    assert await edit_input.input_value() == "ユーザーの未保存本文"
     await playwright.async_api.expect(detail.get_by_role("button", name="保存", exact=True)).to_be_disabled()
 
     awi_path.unlink()
@@ -1552,7 +1552,7 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
 async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """同一状態の後発SSE候補要求後も、利用者の件数通知を完了する。"""
+    """同一状態の後発SSE候補要求後も、エンドユーザーの件数通知を完了する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -3041,7 +3041,7 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
 async def test_entry_copy_label_survives_list_reload(screen_harness: _ScreenHarness) -> None:
     """コピー表示の期間中に一覧の再読込が完了しても、同じ項目のボタンは表示を保ち、期間の終わりに戻る。
 
-    再読込は利用者の操作と無関係な契機（ウィンドウのfocus、SSEの変更通知）でも起きるため、
+    再読込はエンドユーザーの操作と無関係な契機（ウィンドウのfocus、SSEの変更通知）でも起きるため、
     一覧取得の応答を保留してクリックを再描画より先に起こし、再描画後の新しいボタンの表示を確かめる。
     """
     page = screen_harness.page
@@ -4008,7 +4008,7 @@ async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> Non
 
 @pytest.mark.asyncio
 async def test_session_details_open_developer_by_default(screen_harness: _ScreenHarness) -> None:
-    """利用者、アシスタントおよび開発者の本文を初期状態で開く。"""
+    """ユーザー、アシスタントおよび開発者の本文を初期状態で開く。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="codex"]').click()

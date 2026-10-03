@@ -57,7 +57,7 @@ def _repository(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_lists_only_agent_documents_changed_between_revisions(
     repository: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """エージェント向け文書の追加・変更・削除・改名だけを重複なしの昇順で返し、通常コードと利用者向け文書を含めない。"""
+    """エージェント向け文書の追加・変更・削除・改名だけを重複なしの昇順で返し、通常コードとエンドユーザー向け文書を含めない。"""
     base = _commit_all(repository, "base")
     _write(repository / "AGENTS.md", "規範\n")
     _write(repository / "agent-toolkit" / "skills" / "search" / "SKILL.md", "検索\n")

@@ -104,7 +104,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
         _AllowedLocation("agent-toolkit/agent_toolkit/atk.py"),
     ),
     "自律実行": (
-        # 利用者の設定から取り除く旧版の文面と一致させる文字列
+        # ユーザーの設定から取り除く旧版の文面と一致させる文字列
         _AllowedLocation("pytools/_internal/update_claude_settings.py"),
     ),
     "振り返り担当": (
@@ -128,6 +128,31 @@ _RETIRED_TERMS = (
             _AllowedLocation("*_test.py"),
         ),
     ),
+    # 範囲のあいまいな人の呼称（2026年10月3日にユーザーがユーザーとエンドユーザーの包含関係を確定して是正）。
+    # 置き換え先は`agent-toolkit/skills/writing-standards/references/notation-rules.md`「日本語の表記ルール」を正とする。
+    _RetiredTerm(
+        term="利用者",
+        replacement="ユーザー、エンドユーザー、dotfilesユーザーなど対象を添えた呼称、消費主体、実行中のOSアカウントまたは呼び出し元",
+        allowed=(
+            # 改称前の計画の列名と素材種別を読む構造定数と読取処理
+            _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/constants.py"),
+            _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/sections.py", "利用者"),
+            # 旧形式の計画を作成する試験入力と、その読み取り互換を確かめるテスト
+            _AllowedLocation("agent-toolkit/agent_toolkit/_plan/fixture.py", "利用者合意"),
+            _AllowedLocation("*_test.py", "利用者合意"),
+            _AllowedLocation("*_test.py", "利用者指示"),
+            _AllowedLocation("*_test.py", "利用者と入口"),
+            # 旧形式の計画の基準文書
+            _AllowedLocation("agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md", "利用者と入口"),
+            # 旧列名を構造の名前として扱う文体検査
+            _AllowedLocation("scripts/check_agent_doc_tone.py", "利用者と入口"),
+            # 呼称の使用停止を定める規定と、その方針記録
+            _AllowedLocation("agent-toolkit/skills/writing-standards/references/notation-rules.md", "新しい説明文に使わない"),
+            _AllowedLocation("docs/development/concepts-principles.md", "新しい説明文に使わず"),
+            # 登録した語の不在を確かめる本テスト
+            _AllowedLocation("retired_terms_invariant_test.py"),
+        ),
+    ),
     # 計画実装型AWIと計画化の手順は後継なし（2026年9月13日に廃止）。
     *(
         _RetiredTerm(
@@ -136,10 +161,10 @@ _RETIRED_TERMS = (
             allowed=(
                 # 日付の付いた過去の障害記録
                 _AllowedLocation("docs/development/incidents-*.md"),
-                # 廃止を決めた利用者の方針記録
+                # 廃止を決めたユーザーの方針記録
                 _AllowedLocation("docs/development/concepts-principles.md"),
                 # 廃止を記す方針記録の行
-                _AllowedLocation("docs/development/concepts-workflows.md", "2026年9月13日の利用者指示で廃止した"),
+                _AllowedLocation("docs/development/concepts-workflows.md", "2026年9月13日のユーザー指示で廃止した"),
                 # 撤去の不在を確かめるテスト
                 _AllowedLocation("*_test.py"),
             ),
@@ -188,7 +213,7 @@ _RETIRED_TERMS = (
             ("実行レビュー証拠", "実行レビューの入力`完成条件証拠`", ()),
         )
     ),
-    # 規範を横断して使う定義の無い名前と別名（2026年10月2日に利用者が命名の方針を確定して是正）。
+    # 規範を横断して使う定義の無い名前と別名（2026年10月2日にユーザーが命名の方針を確定して是正）。
     # 置き換え先と定義は`agent-toolkit/skills/writing-standards/references/defined-names.md`を正とする。
     # 日付付きの経緯記録は当時の名前のまま残す。
     *(

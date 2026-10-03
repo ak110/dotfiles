@@ -528,7 +528,7 @@ def test_logs_cli_reads_update_when_start_record_has_rotated_away(logs_path: pat
 
 @pytest.mark.parametrize("contents", [None, "", "2026-10-01 12:00:00,000 run=post-apply-999 INFO 単独起動\n"])
 def test_logs_cli_reports_no_saved_update(logs_path: pathlib.Path, contents: str | None) -> None:
-    """保存された更新実行が無いことを利用者へ案内する。"""
+    """保存された更新実行が無いことをユーザーへ案内する。"""
     if contents is not None:
         logs_path.write_text(contents, encoding="utf-8")
 

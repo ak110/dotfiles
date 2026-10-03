@@ -113,7 +113,7 @@ class TestDetectSelfContainmentDeficiency:
         "body",
         [
             "採否は?",
-            "保存の失敗を利用者へ通知する変更を残してよいか?",
+            "保存の失敗をエンドユーザーへ通知する変更を残してよいか?",
             "対象ファイルの現在の実装状況を確認した。今回変更するコードの分量は限定的であり、"
             "既存のテストケースを維持しながら新しい関数を追加する。実装完了後は担当者へ結果を共有する。",
         ],
@@ -155,7 +155,7 @@ class TestCmdUwiAddSelfContainmentWarning:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        assert _invoke_uwi_add(tmp_path, str(myrepo), body="保存の失敗を利用者へ通知する変更を残してよいか?").code == 0
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body="保存の失敗をエンドユーザーへ通知する変更を残してよいか?").code == 0
         stderr = capsys.readouterr().err
         assert "自己完結要件" not in stderr
         assert "警告" not in stderr

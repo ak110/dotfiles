@@ -885,7 +885,7 @@ function displayEntry(entry) {
 }
 
 // 一覧の行と開いている詳細の対象は、外部操作で移動・削除され得る。移動はサーバーが全状態から最新の状態を
-// 探して返すため、詳細APIの404は削除済みを意味する。利用者へ再操作を求めず、削除済みの通知と一覧の更新を行う。
+// 探して返すため、詳細APIの404は削除済みを意味する。エンドユーザーへ再操作を求めず、削除済みの通知と一覧の更新を行う。
 function reportDeletedEntry(filename, {reloadList = true} = {}) {
   deliverOperationMessage(`${filename}は削除されたため表示できません。一覧を更新しました。`);
   if (reloadList) void reloadFromExternalChange();

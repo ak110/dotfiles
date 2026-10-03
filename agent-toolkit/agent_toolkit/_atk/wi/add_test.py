@@ -1042,7 +1042,7 @@ def test_flat_add_operation_drops_input_target_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """利用者入力のtarget_commitを保存せず、システム確定値だけを採用する。"""
+    """投入時の入力のtarget_commitを保存せず、システム確定値だけを採用する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1173,7 +1173,7 @@ def test_flat_add_operation_drops_input_queue_schedule(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """利用者入力のqueue_scheduleを保存内容へ引き継がない。"""
+    """投入時の入力のqueue_scheduleを保存内容へ引き継がない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1218,7 +1218,7 @@ def test_flat_add_operation_drops_input_repair_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """利用者入力の修復UWI予約キーを保存内容へ引き継がない。"""
+    """投入時の入力の修復UWI予約キーを保存内容へ引き継がない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())

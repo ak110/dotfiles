@@ -231,7 +231,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 
 ### 受入シナリオ
 
-| シナリオ | 由来 | 利用者と入口 | 操作 | 期待結果 | テスト |
+| シナリオ | 由来 | 消費主体と入口 | 操作 | 期待結果 | テスト |
 | --- | --- | --- | --- | --- | --- |
 | 保存 | ユーザー指示 | 計画作成者と`atk` | 隔離したhomeを渡す | 計画を保存する | 本テスト |
 
@@ -315,7 +315,8 @@ def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib
     """公開された`atk run-script plan-progress`のヘルプに撤去した`--start-head`が無く、渡すと引数エラーで終わる。
 
     開始時のHEADは専用branchとベースbranchから`git merge-base`で得るため、進捗ログへ記録する手段を撤去した。
-    利用者が呼び出す`atk run-script`のスクリプト選択と引数の受け渡しを経ても、撤去したオプションが受理されないことを確かめる。
+    エンドユーザーが呼び出す`atk run-script`のスクリプト選択と引数の受け渡しを経ても、
+    撤去したオプションが受理されないことを確かめる。
     """
     executable = run_script.PLUGIN_ROOT / "bin/atk"
     environment = dict(os.environ)

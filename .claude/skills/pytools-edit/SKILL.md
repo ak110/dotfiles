@@ -35,8 +35,8 @@ description: >
 - 非ASCIIを標準出力または標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどのランタイム既定エンコーディングへ依存すると、日本語の最初の出力でCLIが停止するためである
 - ストリームの再構成を経由しないログと標準出力のメッセージは、WindowsのCP932で符号化できる範囲に収める。可否は`str.encode("cp932")`の成否で判定する。漢字にもU+20BB7のように符号化できないものがあり、em dash・en dash・`✓`・`•`も符号化できない
 - `pytools/post_apply.py`のステップが外部ツールの不在でそのステップ全体をスキップする場合は、そのツールを同じステップまたは先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
-  利用者が導入先を選ぶアプリケーションは、この対象から外す
-- `pytools/post_apply.py`の工程が配置するファイル（ランチャー、フラグファイル、unitなど）の配置先を改名する場合と工程を廃止する場合は、同じ変更で旧パスを`_REMOVED_PATHS`へ登録する。利用者が編集し得るファイルは`_REMOVED_PATHS_IF_CONTENT`へ登録する。
+  dotfilesユーザーが導入先を選ぶアプリケーションは、この対象から外す
+- `pytools/post_apply.py`の工程が配置するファイル（ランチャー、フラグファイル、unitなど）の配置先を改名する場合と工程を廃止する場合は、同じ変更で旧パスを`_REMOVED_PATHS`へ登録する。dotfilesユーザーが編集し得るファイルは`_REMOVED_PATHS_IF_CONTENT`へ登録する。
   工程の生成物はchezmoiの管理外であり、登録しないと旧生成物が配布先に残り続ける
 - `rust/`配下の配置の単位は`rust/<クレート名>/`のCargoクレートとする。
   記述作法は`agent-toolkit:writing-standards`の`references/rust.md`が定める。

@@ -234,7 +234,7 @@ def _render_tool_call(
 
 
 def _tool_summary(name: str, raw_input: typing.Any) -> str:
-    """ツール名と利用者が識別する入力の短い要約を返す。"""
+    """ツール名とユーザーが識別する入力の短い要約を返す。"""
     parsed = raw_input
     if isinstance(parsed, str):
         try:

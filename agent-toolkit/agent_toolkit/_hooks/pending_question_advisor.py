@@ -1,6 +1,6 @@
 """地の文の問いかけでターンを終える応答を検出するStopフック。
 
-直前のアシスタント応答の地の文へ、利用者へ判断を求める文が含まれ、同じ応答が
+直前のアシスタント応答の地の文へ、ユーザーへ判断を求める文が含まれ、同じ応答が
 `AskUserQuestion`の呼び出しを持たない場合にターンの終了を遮断する。
 判断を求める場面で`AskUserQuestion`を使う規定は規範が定めるが、自身の応答が
 その場面に当てはまるかの分類は誤りやすいため、機械的な検出を置く。
@@ -41,7 +41,7 @@ _QUOTE_LINE_PATTERN = re.compile(r"^[ \t]*>.*$", re.MULTILINE)
 # 「〜ですか？と尋ねられた」のように語句の内側にある疑問符は文末ではないため、終端に含めない。
 _SENTENCE_END_PATTERN = re.compile(r"[。．！!\n]|[？?](?=\s|$)")
 
-# 利用者へ判断を促す定型表現。疑問符を伴わない依頼形の問いかけを検出する。
+# ユーザーへ判断を促す定型表現。疑問符を伴わない依頼形の問いかけを検出する。
 _REQUEST_EXPRESSIONS = (
     "お知らせください",
     "ご指示ください",
@@ -60,7 +60,7 @@ _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 # hookメッセージ英語規定（agent-toolkit/skills/writing-standards/references/claude-hooks.md）の例外。
 # 遮断の対象が日本語で書かれた地の文であり、対象と同じ言語で示す方が該当箇所を特定しやすい。
 BLOCK_BODY = (
-    "地の文で利用者へ判断を求めたままターンを終えようとしている。"
+    "地の文でユーザーへ判断を求めたままターンを終えようとしている。"
     "判断を求める場合はAskUserQuestionで確認し、"
     "確認が不要な場合はその問いかけを本文から除いて応答を書き直すこと。"
 )
@@ -91,7 +91,7 @@ def _sentences(plain_text: str) -> Iterator[str]:
 
 
 def _asks_user(plain_text: str) -> bool:
-    """地の文が利用者へ判断を求める文を含むかを返す。"""
+    """地の文がユーザーへ判断を求める文を含むかを返す。"""
     for raw in _sentences(plain_text):
         sentence = raw.strip()
         if not sentence:

@@ -85,7 +85,7 @@ def test_force_remove_rejects_target_owned_by_another_user(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """現在の実効利用者が所有しない対象は強制回収しない。"""
+    """実行中のOSアカウントが所有しない対象は強制回収しない。"""
     monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("force-owner")
     registry = subject._registry_path(target)

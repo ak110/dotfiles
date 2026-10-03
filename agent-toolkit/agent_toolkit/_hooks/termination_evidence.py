@@ -484,13 +484,13 @@ def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
 
 
 def decision_hint(payload: dict[str, Any]) -> str:
-    """判断記録に必要な会話と直近の利用者入力の識別子を、不足の通知へ添える本文として返す。"""
+    """判断記録に必要な会話と直近のユーザー入力の識別子を、不足の通知へ添える本文として返す。"""
     data = session_state.read_state(payload["session_id"]).get(STATE_KEY)
     last = data.get("last_input") if isinstance(data, dict) else None
     entry = data.get("inputs", {}).get(last) if isinstance(data, dict) else None
     lines = [f"判断記録の`session_id`: {payload['session_id']}"]
     if isinstance(entry, dict) and entry.get("human") is True:
-        lines.append(f"直近の利用者入力の`input_id`: {last}")
+        lines.append(f"直近のユーザー入力の`input_id`: {last}")
     return "\n".join(lines)
 
 

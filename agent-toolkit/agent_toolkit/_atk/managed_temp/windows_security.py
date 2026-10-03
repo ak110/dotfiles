@@ -584,12 +584,12 @@ def _windows_security_from_handle(
 
 
 def _windows_security_base_is_valid(security: _WindowsSecurity, current_sid: bytes) -> bool:
-    """Ownerと保護DACLが現在利用者の管理下にあるか返す。"""
+    """Ownerと保護DACLが実行中のOSアカウントの管理下にあるか返す。"""
     return security.dacl_present and security.protected and _windows_equal_sids(security.owner, current_sid)
 
 
 def _windows_current_user_ace_is_valid(ace: _WindowsAce, current_sid: bytes, expected_flags: int) -> bool:
-    """ACEが現在利用者のFullControlを表すか返す。"""
+    """ACEが実行中のOSアカウントのFullControlを表すか返す。"""
     return (
         ace.ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE
         and ace.flags == expected_flags
@@ -611,7 +611,7 @@ def _windows_external_writer_ace_is_valid(ace: _WindowsAce, current_sid: bytes, 
 
 
 def _validate_windows_security(path: pathlib.Path) -> None:
-    """内部真正性状態に現在利用者だけの厳格なACLを要求する。"""
+    """内部真正性状態に実行中のOSアカウントだけの厳格なACLを要求する。"""
     current_sid = _windows_sid_bytes(_windows_current_sid())
     security = _windows_security_descriptor(path)
     expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if security.directory else 0

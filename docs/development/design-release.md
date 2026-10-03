@@ -35,7 +35,7 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 管理一時ディレクトリ内へローカルbare remote、旧版checkoutおよび隔離HOMEを構成し、旧版をchezmoiで適用する。
 その後、同じbranchのremote refだけを現行HEADへ進め、旧版checkout内の`bin/update-dotfiles`または
 `bin/update-dotfiles.cmd`を起動する。公開ランチャーの終了コードが0で、更新後checkoutの`git rev-parse --short=7 HEAD`が
-検証開始時の現行HEADと一致した場合だけ成功とする。利用者HOMEと外部remoteは変更対象にしない。
+検証開始時の現行HEADと一致した場合だけ成功とする。実行中のOSアカウントのHOMEと外部remoteは変更対象にしない。
 
 | イベント | head repository | head branch | base branch | 共通6 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ workflowの`workflow_run`入力境界は同日時点の[workflow_runイベント
 
 PRマージ後は、`origin/master`をマージコミットの基準として保持し、`git rev-parse --short=7 origin/master`で人間可読の識別子を取得する。
 その後に`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。ローカルbranchを`origin/develop`更新の操作元にしない。
-マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前に必須checkの成功を確認したPR headのツリーと同じになり、developへ載るのも同じマージコミットである。両pushのCIは同じ中身の再実行であり、待機してもリリースの完了時刻が後ろへずれる以外の効果が無い（2026年9月24日、利用者指示）。以前は「commitが同一」「ツリーが同一」などの省略条件を個別に判定していたが、マージコミットをdevelopへ同期した直後にdevelop側の条件が成立せず、同じ中身のCIを待つ事象が起きたため撤去した。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commitが一致することの確認は省略しない。Release runはmaster CIの成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論はRelease runの検収で確かめる。
+マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前に必須checkの成功を確認したPR headのツリーと同じになり、developへ載るのも同じマージコミットである。両pushのCIは同じ中身の再実行であり、待機してもリリースの完了時刻が後ろへずれる以外の効果が無い（2026年9月24日、ユーザー指示）。以前は「commitが同一」「ツリーが同一」などの省略条件を個別に判定していたが、マージコミットをdevelopへ同期した直後にdevelop側の条件が成立せず、同じ中身のCIを待つ事象が起きたため撤去した。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commitが一致することの確認は省略しない。Release runはmaster CIの成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論はRelease runの検収で確かめる。
 同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。
 
 `origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub ReleaseおよびLinux・Windows assetを検収する。`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。
@@ -141,13 +141,13 @@ GitHubのpush後CIは、baselineにない同一SHAのrunを監視対象とする
 他workflowの`dynamic`実行は除外しない。SHA一致だけで除外すると手動診断の失敗を見逃し、workflow名だけで
 除外すると起動契機の異なるrunを同一視するため、両fieldの積を境界とする。
 
-メインは全レーンの統合結果、公開先、利用者の認可およびCI結果を知る。
+メインは全レーンの統合結果、公開先、ユーザーの認可およびCI結果を知る。
 レーンは担当commitと変更範囲の検証を知るが、他のレーンの完了状況や公開操作の認可を知らない。
 固有指示で`adopt`を延期した項目は、指定されたベース反映後に完成条件を観測した担当が終端する。反映後の新プロセスでしか観測できない条件が残る項目は、観測を終えるまで`processing`を保つ。
 
 この順序により、実装は公開操作と分離して進められ、公開対象を統合後の1つの変更集合へ固定できる。
 レーンへ公開を委譲する案は、公開の重複と認可の分散を生むため採用しない。
-明記のない不可逆操作を技術判断で補う案も、利用者の認可範囲を拡張するため採用しない。
+明記のない不可逆操作を技術判断で補う案も、ユーザーの認可範囲を拡張するため採用しない。
 統括の詳細な手順は`agent-toolkit/skills/process-wi/references/run-lanes.md`に従う。
 
 公開対象が1つも無いprocess-wiの実行では、終端担当を起動せずに公開工程を短絡する。pickerの項目は、レーン外操作、`上流投入`またはプロジェクト固有の公開後の操作の順序を持つものだけを数える。レーンの統合による未公開のcommitは、記録した処理開始時のHEADと統合結果を比べず、公開状態の4項目のうち追跡refとのahead値（`# branch.ab`が`+0`でないこと）で検出する。回答済みUWI、プロジェクト固有の公開後の操作および延期`adopt`も無い場合、終端担当が実行する版数更新、生成物同期、push、CI確認およびプロジェクト固有の公開後の操作は対象を持たない。短絡の可否は、終端担当がpush後に観測するのと同じ4項目をメインが取得して判定する。選定された通常レーンの件数を操作量とみなす案は、実装commitを持たないprocess-wiの実行まで公開工程へ送るため採用しない。

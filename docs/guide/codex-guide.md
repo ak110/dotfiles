@@ -4,7 +4,7 @@ Codexはagent-toolkitの標準構成に含まれる。単体インストーラ�
 `agents_server` MCPはClaude CodeとCodexの双方へ共有され、工程別モデル設定の`model_type`で委譲先を選択する。
 
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル
-`AGENTS.md`と共有リンク群を展開しない。dotfiles利用者は`update-dotfiles`または`chezmoi apply`により、
+`AGENTS.md`と共有リンク群を展開しない。dotfilesユーザーは`update-dotfiles`または`chezmoi apply`により、
 Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグインを一括設定する。
 プラグイン導入後は、次の手順で更新を反映する。
 
@@ -22,7 +22,7 @@ ready項目がなくなると、`agent-toolkit:completion-report`が選定工程
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
 probe未実行、読取失敗または値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
-終了対象を確認できない環境では対話UIに終了案内を表示し、利用者が`/exit`を入力すると親の監視ループへ戻る。
+終了対象を確認できない環境では対話UIに終了案内を表示し、ユーザーが`/exit`を入力すると親の監視ループへ戻る。
 終了時の`atk agents-exit-session`は起動時の分岐値を再利用せず、停止要求直前に終了対象を新規識別する。
 表示済みPIDの開始時刻と実行ファイルのデバイス・inodeが再確認で一致した場合だけCodexを停止する。
 
@@ -30,7 +30,7 @@ Linuxでremote-controlを使わない直接CLIを終了対象として確認で�
 `update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。
 同期に失敗した場合はCodexを起動せず、変更検知を待って再試行する。
 
-process-loopはCodexの承認方針とsandbox設定を上書きせず、利用者のCodex設定を継承する。
+process-loopはCodexの承認方針とsandbox設定を上書きせず、ユーザーのCodex設定を継承する。
 WindowsではCodexを親の監視ループと別のプロセスグループで起動するため、
 Codexの実行中もCtrl+Cで親の監視ループを終了できる。
 また、process-loop内のCodexに限り、Git for Windowsを介してbash形式のplugin hookへ
@@ -118,7 +118,7 @@ backendから承認・入力・認証・attestationなどの非対話要求を�
 
 ### フックの信頼確認
 
-Codexはplugin同梱フックの定義が変わると、利用者が変更後のフックを再び信頼するまで、そのフックを実行しない。
+Codexはplugin同梱フックの定義が変わると、ユーザーが変更後のフックを再び信頼するまで、そのフックを実行しない。
 更新処理は先にapp-serverの`hooks/list`で登録状態を確認する。次の9イベントがすべて登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で定義を確認して信頼する案内を表示する。
 登録が0件または不足している場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
 信頼後に新しいセッションを開始し、SessionStartの規範注入を確認する。
@@ -147,7 +147,7 @@ Stopは終了工程の証拠だけを判定する。報告の構造確認や振�
 
 ## Codex CLI本体
 
-dotfiles配布利用者では、`chezmoi apply`後の処理がCodexの公式インストーラーを非対話で実行する。
+dotfilesユーザーでは、`chezmoi apply`後の処理がCodexの公式インストーラーを非対話で実行する。
 未導入時はスタンドアローン版を導入し、導入済みの場合は最新版へ更新する。
 管理対象パッケージは`~/.codex/packages/standalone/`へ配置される。
 可視コマンドの既定配置先はLinuxとmacOSで`~/.local/bin`、Windowsで`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`である。

@@ -143,7 +143,7 @@ def test_sync_rejects_out_of_range_warn_ratio(tmp_path: Path, warn_ratio: float)
 
 
 def test_config_template_applies_shared_limits_and_preserves_existing_values() -> None:
-    """chezmoiの実行結果へ共有設定を反映し、無関係な利用者設定を保持する。"""
+    """chezmoiの実行結果へ共有設定を反映し、無関係なユーザー設定を保持する。"""
     template = subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
     result = subprocess.run(
         [
@@ -180,7 +180,7 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
     ],
 )
 def test_config_template_removes_reasoning_overrides(reasoning_config: str) -> None:
-    """既存設定の有無と値によらず固定を解除し、無関係な利用者設定を保つ。"""
+    """既存設定の有無と値によらず固定を解除し、無関係なユーザー設定を保つ。"""
     template = subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
     result = subprocess.run(
         ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(subject.REPO_ROOT)],

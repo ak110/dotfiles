@@ -152,21 +152,21 @@ class TestUpdateClaudeSettings:
         assert result["env"] == {"FOO": "bar", "CLAUDE_CODE_NO_FLICKER": "1"}
 
     def test_managed_project_files_environment_merges_with_existing_rules(self, tmp_path: Path) -> None:
-        """作業ツリーの環境宣言が、既定ルールと利用者の独自設定を保持して届く。"""
+        """作業ツリーの環境宣言が、既定ルールとユーザーの独自設定を保持して届く。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         declaration = next(item for item in managed["autoMode"]["environment"] if item.startswith("Project files: "))
         existing = {
             "autoMode": {
-                "environment": ["$defaults", "利用者固有の信頼境界"],
-                "allow": ["利用者固有の許可"],
+                "environment": ["$defaults", "ユーザー固有の信頼境界"],
+                "allow": ["ユーザー固有の許可"],
             },
         }
         result = _run(tmp_path, managed, existing)["autoMode"]
         assert declaration in result["environment"]
-        assert "利用者固有の信頼境界" in result["environment"]
+        assert "ユーザー固有の信頼境界" in result["environment"]
         assert result["environment"].count("$defaults") == 1
         assert set(managed["autoMode"]["environment"]) <= set(result["environment"])
-        assert "利用者固有の許可" in result["allow"]
+        assert "ユーザー固有の許可" in result["allow"]
         assert "$defaults" in result["allow"]
 
 
@@ -207,7 +207,7 @@ class TestJsoncCommentPreservation:
     """JSONCコメント維持経路のテスト。
 
     既存パスの値置換のみで済む更新は`pytilpack.jsonc.edit`経由で書き戻され、
-    利用者が加えた行コメント・空行・独自インデントを維持する。
+    ユーザーが加えた行コメント・空行・独自インデントを維持する。
     構造変化（キー追加・list変更）を含む更新は現行の`json.dumps`経路にフォールバックする。
     """
 
@@ -723,7 +723,7 @@ class TestCodexMcpTimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """利用者が加えたフィールドを持つ定義は変更しない。"""
+        """ユーザーが加えたフィールドを持つ定義は変更しない。"""
         _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
         existing = {
@@ -787,7 +787,7 @@ class TestCodexMcpTimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """従来管理値と異なるtimeoutは利用者設定として保持する。"""
+        """従来管理値と異なるtimeoutはユーザー設定として保持する。"""
         _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
         existing = {"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"], "timeout": 1_000}}}
@@ -1493,12 +1493,12 @@ class TestStripRemovedKeys:
         ("existing", "expected"),
         [
             (
-                {"autoMode": {"allowMode": "extend", "allow": ["利用者独自ルール"]}},
-                {"autoMode": {"allow": ["利用者独自ルール"]}},
+                {"autoMode": {"allowMode": "extend", "allow": ["ユーザー独自ルール"]}},
+                {"autoMode": {"allow": ["ユーザー独自ルール"]}},
             ),
             (
-                {"autoMode": {"allow": ["利用者独自ルール"]}},
-                {"autoMode": {"allow": ["利用者独自ルール"]}},
+                {"autoMode": {"allow": ["ユーザー独自ルール"]}},
+                {"autoMode": {"allow": ["ユーザー独自ルール"]}},
             ),
         ],
     )
@@ -1526,13 +1526,13 @@ class TestStripRemovedKeys:
         """`run()`はsettings.jsonと.claude.jsonの廃止キーを安全に除去する。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
-        existing = {"autoMode": {"allowMode": "extend", "allow": ["利用者独自ルール"]}}
+        existing = {"autoMode": {"allowMode": "extend", "allow": ["ユーザー独自ルール"]}}
         settings_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
         config_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
 
         mod.run()
 
-        expected = {"autoMode": {"allow": ["利用者独自ルール"]}}
+        expected = {"autoMode": {"allow": ["ユーザー独自ルール"]}}
         assert json.loads(settings_path.read_text(encoding="utf-8")) == expected
         assert json.loads(config_path.read_text(encoding="utf-8")) == expected
 
@@ -1579,14 +1579,14 @@ class TestStripRemovedListItems:
         assert result["autoMode"]["allow"] == ["新ルール文面"]
 
     def test_strip_removed_list_items_preserves_others(self, tmp_path: Path):
-        """部分文字列を含まない要素（利用者の独自追加項目）は保持される。"""
+        """部分文字列を含まない要素（ユーザーの独自追加項目）は保持される。"""
         mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
         target_path = tmp_path / "target.json"
         target_path.write_text(
             json.dumps(
-                {"autoMode": {"allow": ["利用者独自ルール1", "利用者独自ルール2"]}},
+                {"autoMode": {"allow": ["ユーザー独自ルール1", "ユーザー独自ルール2"]}},
                 ensure_ascii=False,
             ),
             encoding="utf-8",
@@ -1595,7 +1595,7 @@ class TestStripRemovedListItems:
         update_claude_settings(managed_path, target_path, removed_list_item_substrings=mappings)
 
         result = json.loads(target_path.read_text(encoding="utf-8"))
-        assert result["autoMode"]["allow"] == ["利用者独自ルール1", "利用者独自ルール2"]
+        assert result["autoMode"]["allow"] == ["ユーザー独自ルール1", "ユーザー独自ルール2"]
 
     def test_strip_removed_list_items_missing_path(self, tmp_path: Path):
         """対象パスが存在しない場合は例外を送出せず処理が継続する。"""
@@ -1676,7 +1676,7 @@ class TestStripRemovedListItems:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`run()`は旧管理denyだけを除去し、利用者独自denyと現行管理denyを保持する。
+        """`run()`は旧管理denyだけを除去し、ユーザー独自denyと現行管理denyを保持する。
 
         撤去した秘匿ファイルの読取禁止3件と、以前に撤去した`Read(./.env)`が除去対象である。
         """
@@ -1721,7 +1721,7 @@ class TestStripRemovedListItems:
                     "autoMode": {
                         "allow": [
                             "ak110の個人リポジトリ（dotfiles, pytilpack等）ではデフォルトブランチへの直接pushを許可。",
-                            "利用者独自ルール",
+                            "ユーザー独自ルール",
                         ]
                     }
                 },
@@ -1733,14 +1733,14 @@ class TestStripRemovedListItems:
         mod.run()
 
         result = json.loads(settings_path.read_text(encoding="utf-8"))
-        assert result["autoMode"]["allow"] == ["利用者独自ルール"]
+        assert result["autoMode"]["allow"] == ["ユーザー独自ルール"]
 
     def test_run_removes_legacy_codex_mcp_permission(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`run()`は旧Codex MCPの許可だけを除去し、現行MCPと利用者独自許可を保持する。"""
+        """`run()`は旧Codex MCPの許可だけを除去し、現行MCPとユーザー独自許可を保持する。"""
         settings_path = _setup_run_paths(
             tmp_path,
             monkeypatch,
@@ -1790,7 +1790,7 @@ class TestStripStaleLabeledListItems:
                 {
                     "autoMode": {
                         "allow": [
-                            "ak110の個人リポジトリでの利用者独自エントリ",
+                            "ak110の個人リポジトリでのユーザー独自エントリ",
                             "AWI-Originated Gate Revision: atk fb process-loop を使う旧文面",
                         ]
                     }
@@ -1804,12 +1804,12 @@ class TestStripStaleLabeledListItems:
 
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert result["autoMode"]["allow"] == [
-            "ak110の個人リポジトリでの利用者独自エントリ",
+            "ak110の個人リポジトリでのユーザー独自エントリ",
             "AWI-Originated Gate Revision: atk wi process-loop を使う新文面",
         ]
 
     def test_unlabeled_user_entry_is_preserved(self, tmp_path: Path):
-        """ラベルを持たない利用者独自エントリは除去対象にならない（再発防止テスト）。"""
+        """ラベルを持たないユーザー独自エントリは除去対象にならない（再発防止テスト）。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"autoMode": {"allow": ["Some Label: 現行文面"]}}, ensure_ascii=False),
@@ -1817,7 +1817,7 @@ class TestStripStaleLabeledListItems:
         )
         target_path = tmp_path / "target.json"
         target_path.write_text(
-            json.dumps({"autoMode": {"allow": ["ラベルを持たない利用者独自ルール"]}}, ensure_ascii=False),
+            json.dumps({"autoMode": {"allow": ["ラベルを持たないユーザー独自ルール"]}}, ensure_ascii=False),
             encoding="utf-8",
         )
 
@@ -1825,7 +1825,7 @@ class TestStripStaleLabeledListItems:
 
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert result["autoMode"]["allow"] == [
-            "ラベルを持たない利用者独自ルール",
+            "ラベルを持たないユーザー独自ルール",
             "Some Label: 現行文面",
         ]
 
@@ -1901,7 +1901,7 @@ class TestStripStaleLabeledListItems:
                 {
                     "autoMode": {
                         "allow": [
-                            "ak110の個人リポジトリでの利用者独自エントリ",
+                            "ak110の個人リポジトリでのユーザー独自エントリ",
                             "AWI-Originated Gate Revision: atk fb process-loop を使う旧文面",
                             "AWI-Originated Gate Revision: atk wi process-loop を使う新文面",
                         ]
@@ -1923,7 +1923,7 @@ class TestStripStaleLabeledListItems:
 
         result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert result["autoMode"]["allow"] == [
-            "ak110の個人リポジトリでの利用者独自エントリ",
+            "ak110の個人リポジトリでのユーザー独自エントリ",
             "AWI-Originated Gate Revision: atk wi process-loop を使う新文面",
         ]
 
@@ -2002,14 +2002,14 @@ class TestRetiredAutoModeAllowLabels:
     )
 
     def test_retired_labels_are_stripped_from_user_settings(self, tmp_path: Path) -> None:
-        """配布反映で、配布先に残る旧ラベルが除去され現行ルールと利用者独自エントリが残る。"""
+        """配布反映で、配布先に残る旧ラベルが除去され現行ルールとユーザー独自エントリが残る。"""
         target_path = tmp_path / "settings.json"
         target_path.write_text(
             json.dumps(
                 {
                     "autoMode": {
                         "allow": [
-                            "ラベルを持たない利用者独自ルール",
+                            "ラベルを持たないユーザー独自ルール",
                             *[f"{label}: 旧文面" for label in self._RETIRED_LABELS],
                         ]
                     }
@@ -2028,6 +2028,6 @@ class TestRetiredAutoModeAllowLabels:
 
         allow = json.loads(target_path.read_text(encoding="utf-8"))["autoMode"]["allow"]
         assert [item for item in allow if any(item.startswith(f"{label}: ") for label in self._RETIRED_LABELS)] == []
-        assert "ラベルを持たない利用者独自ルール" in allow
+        assert "ラベルを持たないユーザー独自ルール" in allow
         managed_allow = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))["autoMode"]["allow"]
         assert [item for item in managed_allow if item not in allow] == []

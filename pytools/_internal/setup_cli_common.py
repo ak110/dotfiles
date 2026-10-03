@@ -254,7 +254,7 @@ def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None 
     """npmのグローバルパッケージのディレクトリを返す。
 
     解決できない場合は`None`を返す。`unresolved`を渡した場合は、解決できなかった情報を
-    そのリストへ1件追加する（呼び出し元が利用者へ保持の理由を示すために使う）。
+    そのリストへ1件追加する（呼び出し元がユーザーへ保持の理由を示すために使う）。
     """
     prefix_result = claude_common.run_subprocess(
         [str(npm), "prefix", "--global"], timeout=claude_common.CLAUDE_TIMEOUT, tag=npm.name

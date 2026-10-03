@@ -357,7 +357,7 @@ def test_claude_answer_ignores_non_string_annotation_notes(tmp_path: pathlib.Pat
     ],
 )
 def test_claude_ignores_non_string_answer_maps(tmp_path: pathlib.Path, answers: object) -> None:
-    """文字列辞書ではないClaude answersから利用者判断を捏造しない。"""
+    """文字列辞書ではないClaude answersからユーザー判断を捏造しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -394,7 +394,7 @@ def test_claude_ignores_unmatched_normal_tool_results(
     tmp_path: pathlib.Path,
     tool_result: dict[str, object],
 ) -> None:
-    """payload形状にかかわらず未対応の通常tool resultを利用者判断へ変換しない。"""
+    """payload形状にかかわらず未対応の通常tool resultをユーザー判断へ変換しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -664,7 +664,7 @@ def test_main_requires_exactly_one_transcript_source(
 
 
 def _timestamped_entry(timestamp: str | None, text: str) -> dict:
-    """任意の時刻を持つClaude利用者エントリを作成する。"""
+    """任意の時刻を持つClaudeユーザーエントリを作成する。"""
     entry: dict = {"type": "user", "message": {"role": "user", "content": text}}
     if timestamp is not None:
         entry["timestamp"] = timestamp
@@ -1796,7 +1796,7 @@ def test_claude_normal_user_entry_keeps_multiple_text_blocks_in_order(tmp_path: 
 
 @pytest.mark.parametrize("field", ["isMeta", "turnCompanion"])
 def test_claude_runtime_generated_user_entry_is_marked(field: str, tmp_path: pathlib.Path) -> None:
-    """実行環境が生成したエントリの利用者イベントへ標識を付ける。"""
+    """実行環境が生成したエントリのユーザーイベントへ標識を付ける。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -2298,7 +2298,7 @@ def test_user_events_returns_main_user_events_in_range(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """指定区間のメイン記録にある利用者イベントだけを由来位置付きで返す。"""
+    """指定区間のメイン記録にあるユーザーイベントだけを由来位置付きで返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -2490,7 +2490,7 @@ def test_user_events_resolves_claude_session_id(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """セッション識別子から親transcriptを解決し、パスを渡した場合と同じ利用者イベントを返す。
+    """セッション識別子から親transcriptを解決し、パスを渡した場合と同じユーザーイベントを返す。
 
     呼び出し元は自身の`CLAUDE_CODE_SESSION_ID`から記録を指定するため、
     `projects`配下の作業ディレクトリを符号化した名前を組み立てずに同じ原文を得られる必要がある。
@@ -2539,7 +2539,7 @@ def test_claude_session_id_unknown_returns_error(
 
 
 def test_user_events_keeps_long_text(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """2000字を超える利用者発話も切り詰めずに返す。逐語引用と文字列比較する原文として使うためである。"""
+    """2000字を超えるユーザー発話も切り詰めずに返す。逐語引用と文字列比較する原文として使うためである。"""
     long_text = "長" * 2500 + "末尾"
     transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", long_text)])
 
@@ -6244,8 +6244,8 @@ def test_query_event_is_a_stable_problem_locator(
     transcript = _write_transcript(
         tmp_path,
         [
-            {"type": "user", "message": {"role": "user", "content": "locatorへ含めない利用者本文1"}},
-            {"type": "user", "message": {"role": "user", "content": "locatorへ含めない利用者本文2"}},
+            {"type": "user", "message": {"role": "user", "content": "locatorへ含めないユーザー本文1"}},
+            {"type": "user", "message": {"role": "user", "content": "locatorへ含めないユーザー本文2"}},
             {
                 "type": "assistant",
                 "message": {
@@ -6284,7 +6284,7 @@ def test_query_event_is_a_stable_problem_locator(
     assert second[locator["event_index"]] == expected_event
     assert set(locator) == {"event_index"}
     assert "successful command warning" not in json.dumps(locator)
-    assert "locatorへ含めない利用者本文" not in json.dumps(locator, ensure_ascii=False)
+    assert "locatorへ含めないユーザー本文" not in json.dumps(locator, ensure_ascii=False)
 
 
 def test_multi_line_detail_query_keeps_each_problem_locator_stable(
@@ -6923,7 +6923,7 @@ def test_common_runtime_inserted_classifier(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """画面と共有する判定で新しい挿入本文を会話から除き、利用者の入力は残す。"""
+    """画面と共有する判定で新しい挿入本文を会話から除き、ユーザーの入力は残す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -6940,7 +6940,7 @@ def test_common_runtime_inserted_classifier(
                 },
             },
             {"type": "user", "message": {"role": "user", "content": "$agent-toolkit:process-wi"}},
-            {"type": "user", "message": {"role": "user", "content": "後続の利用者発話"}},
+            {"type": "user", "message": {"role": "user", "content": "後続のユーザー発話"}},
         ],
     )
     bundle_dir = tmp_path / "bundle"
@@ -6949,7 +6949,7 @@ def test_common_runtime_inserted_classifier(
     assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
     capsys.readouterr()
     conversation = [json.loads(line) for line in (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [item["text"] for item in conversation] == ["最初の依頼", "$agent-toolkit:process-wi", "後続の利用者発話"]
+    assert [item["text"] for item in conversation] == ["最初の依頼", "$agent-toolkit:process-wi", "後続のユーザー発話"]
 
 
 def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
@@ -6960,7 +6960,7 @@ def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
 
     振り返りは会話の流れからセッション全体の試行と遠回りを探すため、ツール呼び出しと失敗が流れに欠けると
     候補の観点に当たらない問題が分析の入力から欠ける。成功した結果の本文、書き込む本文、配送本文、実行環境の挿入、
-    スキル展開を含めると量が膨らみ、利用者の発話と区別できなくなる。
+    スキル展開を含めると量が膨らみ、ユーザーの発話と区別できなくなる。
     長い発話は会話の流れの表示で先頭と末尾だけになるため、記録位置の照会が全文を返す必要がある。
     """
     long_reply = "長い応答の先頭。" + "あ" * 1500 + "長い応答の末尾。"
@@ -8004,7 +8004,7 @@ def test_candidates_exclude_boundary_marked_injections() -> None:
 
 
 def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_intervention() -> None:
-    """先頭スキル要求と対応本文を別区分で除外し、後続の利用者介入を保持する。"""
+    """先頭スキル要求と対応本文を別区分で除外し、後続のユーザー介入を保持する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
         {"kind": "user", "record": "main", "line": 2, "text": "$agent-toolkit:process-wi"},

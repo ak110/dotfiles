@@ -82,7 +82,7 @@ _RESTART_EXIT_CODE = 75
 # process-loopが起動した会話を環境印と会話IDで識別する。
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
-# 次に起動する1セッションだけへ渡す利用者の追加指示。SessionStart hookが本文を注入する。
+# 次に起動する1セッションだけへ渡すユーザーの追加指示。SessionStart hookが本文を注入する。
 _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
@@ -1081,7 +1081,7 @@ def _resolve_dotfiles_root() -> pathlib.Path | None:
     その場合`pathlib.Path(__file__)`はdotfilesチェックアウトの外側（キャッシュ配下のバージョンディレクトリ）を
     指すため、自己コード更新検知の基準には使用できない
     （キャッシュ配下は`agent-toolkit/`のみを含む部分ツリーで、`.git`もdotfiles全体の履歴も持たない）。
-    利用者ごとに単一の`~/dotfiles`チェックアウトを持つ運用前提
+    OSアカウントごとに単一の`~/dotfiles`チェックアウトを持つ運用前提
     （`.bashrc`が`$HOME/dotfiles/bin`を直接PATHへ追加する既存運用と同じ前提。
     `atk wi process-loop`の対象リポジトリ（`--target-repo`）とは独立に、常に`~/dotfiles`を指す）に基づき、
     ホームディレクトリ直下の`dotfiles/`を直接の解決先とする。

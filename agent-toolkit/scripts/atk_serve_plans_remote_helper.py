@@ -149,7 +149,7 @@ def _stderr_excerpt(stderr: str) -> str:
 def _resolve_private_notes_result() -> tuple[pathlib.Path | None, str | None]:
     """対象ホスト上の`atk config get private_notes`を実行し、失敗理由も返す。
 
-    失敗理由は利用者へ渡る警告本文となるため、失敗元の標準エラー出力を引き継ぐ。
+    失敗理由はエンドユーザーへ渡る警告本文となるため、失敗元の標準エラー出力を引き継ぐ。
     """
     try:
         completed = subprocess.run(

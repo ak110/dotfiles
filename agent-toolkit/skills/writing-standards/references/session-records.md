@@ -52,7 +52,7 @@ Codexでスキルの起動を判定する場合は、そのスキルの起動を
 
 ## 集計値の典拠
 
-セッション記録から集計したトークン量、リクエスト数または所要時間を成果物へ書く場合と利用者へ提示する場合は、`atk run-script session-review-evidence`の出力を典拠とする。
+セッション記録から集計したトークン量、リクエスト数または所要時間を成果物へ書く場合とユーザーへ提示する場合は、`atk run-script session-review-evidence`の出力を典拠とする。
 起動形は`atk run-script session-review-evidence -- <引数>`とする。
 振り返りの全候補は同コマンドの`--bundle`が生成する`candidates.jsonl`から取る。`atk run-script session-review-prepare`はこれを`candidates.md`へ整形する。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付けて実行する。
@@ -85,7 +85,7 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 ## 本文の検索
 
 セッション記録から本文を取得する場合は、`atk run-script session-review-evidence -- <引数>`を用いる。
-対象はClaude CodeとCodexの記録に含まれる利用者発話、ツール結果、警告と委譲記録とする。
+対象はClaude CodeとCodexの記録に含まれるユーザー発話、ツール結果、警告と委譲記録とする。
 Claude Codeの記録はtranscriptの絶対パスを位置引数へ渡すか、セッション識別子を`--claude-session-id <セッション識別子>`へ渡す。Codexの記録は`--codex-thread-id <thread ID>`へ渡す。
 検索語から該当箇所を探す場合は`--grep <Pythonの正規表現>`、位置が確定している記録の本文を読む場合は`--detail <記録>:<行番号>`、出力を保存する場合は`--output-file <絶対パス>`を付ける。
 本節の手段は`atk run-script session-review-evidence`に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および`candidates.md`の標準出力への全量表示は対象としない。

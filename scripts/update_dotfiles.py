@@ -10,7 +10,7 @@ r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 `chezmoi apply --force`を、プロセス間排他ロック下で直列実行する。
 画面には4段の進捗を示し、diffの詳細は永続ログへ記録する。
 pull前にルート`mise.lock`の差分を破棄する。`mise.lock`はコミット済みの`mise.toml`から
-再生成でき、更新処理のmise操作が書き戻した差分を利用者の未コミット内容として保持しないためである。
+再生成でき、更新処理のmise操作が書き戻した差分をユーザーの未コミット内容として保持しないためである。
 それ以外の未コミット内容は退避してpull後に復元する。
 pullまたは退避復元が競合した場合は、元HEADと未コミット内容を専用参照へ保存し、
 設定済み上流へ作業branchを合わせて更新を継続する。
@@ -246,10 +246,10 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。
 
     `submodule.recurse=false`は、dotfilesリポジトリがsubmoduleを持たないため不要な再帰を無効化する。
-    利用者設定でこの再帰が有効な場合、`git pull`が`git-submodule`を起動する。`git-submodule`は
+    ユーザー設定でこの再帰が有効な場合、`git pull`が`git-submodule`を起動する。`git-submodule`は
     POSIX shで実行され、PATH上の`gettext.sh`を読み込むため、そのファイルがbash専用構文を含むと
     構文エラーで終了し、更新処理が最初の工程で止まる。
-    `_child_env`の`MISE_AUTO_INSTALL=0`と同じく、工程が利用者環境の設定を引き継いで停止する経路を抑止する。
+    `_child_env`の`MISE_AUTO_INSTALL=0`と同じく、工程がユーザー環境の設定を引き継いで停止する経路を抑止する。
 
     子のセッションとプロセスグループは変更せず、SSH鍵のパスフレーズを制御端末から入力できる状態を保つ。
     `timeout=None`は待機上限を設けない。上限超過時は子を終了する前に子孫を列挙して全て強制終了し、

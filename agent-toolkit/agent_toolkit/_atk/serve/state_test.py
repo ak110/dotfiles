@@ -215,7 +215,7 @@ openDialog(elements['detail-dialog'], origin, elements['detail-dialog-body']);
 await reloadFromExternalChange();
 const viewed = elements['detail-content'].innerHTML;
 enterEdit();
-elements['edit-content'].value = '利用者の未保存本文';
+elements['edit-content'].value = 'ユーザーの未保存本文';
 detailContent = '編集中の外部更新';
 await reloadFromExternalChange();
 const editing = {
@@ -226,7 +226,7 @@ const editing = {
   open: elements['detail-dialog'].open
 };
 setDetailMode('answer');
-elements['answer-input'].value = '利用者の未保存回答';
+elements['answer-input'].value = 'ユーザーの未保存回答';
 detailContent = '回答中の外部更新';
 await reloadFromExternalChange();
 const answering = {
@@ -249,14 +249,14 @@ process.stdout.write(JSON.stringify({
     assert result["viewed"] == "<p>外部更新後の本文</p>"
     assert result["detailRequests"] >= 3
     assert result["editing"] == {
-        "input": "利用者の未保存本文",
+        "input": "ユーザーの未保存本文",
         "baseline": "外部更新後の本文",
         "alert": "外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。",
         "saveDisabled": True,
         "open": True,
     }
     assert result["answering"] == {
-        "input": "利用者の未保存回答",
+        "input": "ユーザーの未保存回答",
         "alert": "外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。",
         "saveDisabled": True,
         "open": True,
@@ -650,7 +650,7 @@ async def test_edit_and_answer_apis_detect_external_changes(
     awi_path.write_text(external_awi, encoding="utf-8")
     conflict = await client.put(
         "/api/entries/inbox/awi.md",
-        json={"content": "利用者の本文", "expected_content": awi_detail["entry"]["content"]},
+        json={"content": "ユーザーの本文", "expected_content": awi_detail["entry"]["content"]},
     )
     assert conflict.status_code == 409
     assert (await conflict.get_json())["code"] == "edit_conflict"
@@ -886,7 +886,7 @@ async def test_serve_tolerates_absent_and_unsupported_signals(
 
 
 def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """利用者の明示的な同期はレート制限を経由せず、毎回未送信commitをpushしてからpullする。"""
+    """エンドユーザーの明示的な同期はレート制限を経由せず、毎回未送信commitをpushしてからpullする。"""
     calls: list[str] = []
 
     @contextlib.contextmanager
@@ -991,7 +991,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_keep_user_filter_load_when_same_state_sse_supersedes_repo_request() -> None:
-    """利用者の候補要求中に届いたSSEを保留し、一覧通知を維持する。"""
+    """エンドユーザーの候補要求中に届いたSSEを保留し、一覧通知を維持する。"""
     result = _run_node_ui(
         """
 const repoResolvers = [];

@@ -365,7 +365,7 @@ if value.get("command") != "codex" or value.get("args") != ["mcp-server"]:
 if value.get("timeout") not in (None, 7200000):
     raise SystemExit(3)
 # 旧installerが使う`claude mcp add`は`-e`未指定でもenvを空で書き込む。
-# 値を持つenvは利用者が加えた設定として保持する（PowerShell版と同じ契約）。
+# 値を持つenvはユーザーが加えた設定として保持する（PowerShell版と同じ契約）。
 env = value.get("env")
 if env is not None and env != {}:
     raise SystemExit(3)
@@ -384,7 +384,7 @@ _migrate_legacy_codex_mcp() {
         return 0
     fi
     if [ "$status" -eq 3 ]; then
-        echo "User scopeのcodex MCP定義は利用者固有設定のため保持します。必要なら claude mcp remove --scope user codex を手動実行してください。" >&2
+        echo "User scopeのcodex MCP定義はユーザー固有設定のため保持します。必要なら claude mcp remove --scope user codex を手動実行してください。" >&2
         return 0
     fi
     if [ "$status" -ne 0 ]; then

@@ -6,13 +6,13 @@
 
 ## 命名の方針
 
-利用者は2026年10月2日に、工程・レビュー・検証・判定・担当などの名前をその場で作成せず、定義して統一すると確定した。
+ユーザーは2026年10月2日に、工程・レビュー・検証・判定・担当などの名前をその場で作成せず、定義して統一すると確定した。
 適用範囲はagent-toolkitの規範に従って書く全ての成果物とし、名前は次の方針で選ぶ。
 
 1. 定義を読まなくても指す対象が分かる自然な語を選ぶ
 2. 一般的な語（独立、root、固定、管理など）に独自の意味を持たせず、別々の概念に似た名前を付けない
 3. 識別子（スキル名、コマンド名、ファイル名、定数名など）がある対象は、日本語の説明的な名前を作成せず識別子で書く
-4. 利用者が名付けた名前と、`atk serve`の画面など利用者が目にする場所で使う名前は残す
+4. ユーザーが名付けた名前と、`atk serve`の画面などエンドユーザーが目にする場所で使う名前は残す
 5. 境界があいまいな名前は、書き手が決めずにユーザー確認する
 6. 返却形式の欄名も日本語名にする
 7. 用例の多さや既存の定義の有無を、名前を残す根拠にしない
@@ -29,6 +29,8 @@
 
 | 名前 | 指示対象 | 定義元 |
 | --- | --- | --- |
+| ユーザー | コーディングエージェントへ要求・指示・判断を与える人。エンドユーザーに含まれる | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| エンドユーザー | ソフトウェア・設定・文書などの成果物を使う人の総称。ユーザーを含む | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | 選定工程 | `agent-toolkit:process-wi`の3つの主要工程のうち、処理対象のAWIを固定する工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レーン工程 | `agent-toolkit:process-wi`の3つの主要工程のうち、レーンごとに計画、実装、レビューおよび統合を行う工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 公開工程 | `agent-toolkit:process-wi`の3つの主要工程のうち、版数更新、push、CI確認と公開後の操作を行う工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
@@ -40,7 +42,7 @@
 | 終端担当 | 公開工程のpush、CI、検証失敗時の修正、プロジェクト固有の公開後の操作および延期adoptを担う委譲先 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 監査担当 | 自動コードレビュー監査で未処置の対象を判定する委譲先 | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
 | 自動コードレビュー | GitHub Copilotのレビューなど、外部サービスが自動で付けるレビュー | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
-| WI作成 | 目的、利用者、完成条件と実現方式を定めたWIを作成する工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
+| WI作成 | 目的、消費主体、完成条件と実現方式を定めたWIを作成する工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
 | 計画 | WIから外部仕様、変更対象、受入シナリオ、テストと検証コマンドを定める工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
 | 実行 | 計画どおり実装し、受入シナリオを検証する工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
 | 実行レビュー | 実装後に要件・外部仕様の水準で実装とテストを確認する工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |

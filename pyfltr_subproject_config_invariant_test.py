@@ -63,7 +63,7 @@ def _section(tool: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
 
 def _subproject_awareness(root_dir: pathlib.Path) -> dict[str, bool]:
     """直下の設定で各コマンドをsubprojectへ分割するかを返す。"""
-    # 利用者のglobal設定が判定へ混ざらないよう、存在しないパスを渡す。
+    # ユーザーのglobal設定が判定へ混ざらないよう、存在しないパスを渡す。
     config = pyfltr_config.load_config(root_dir, global_config_path=root_dir / "pyfltr-global-config-unused.toml")
     return {
         name: pyfltr_config.resolve_subproject_aware(config.values, name, info.subproject_aware)

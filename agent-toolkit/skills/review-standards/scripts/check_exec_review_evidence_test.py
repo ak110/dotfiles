@@ -712,7 +712,7 @@ def test_conditions_also_require_verbatim_requests_and_user_comment(
     evidence = tmp_path / "evidence.json"
     first = "設定を移して。"
     second = "旧入口を廃止して。"
-    comment = "利用者向けの案内も直して。"
+    comment = "エンドユーザー向けの案内も直して。"
     _mock_wi(
         monkeypatch,
         tmp_path,
@@ -1228,7 +1228,7 @@ _ANSWER_RECORD = (
 
 
 def _answer_record_wi(answer_record: str) -> str:
-    """利用者の発話の`text`フェンスと、確認回答の記録の`text`フェンスを逐語引用に持つAWI本文を返す。"""
+    """ユーザーの発話の`text`フェンスと、確認回答の記録の`text`フェンスを逐語引用に持つAWI本文を返す。"""
     return (
         "type: awi\nsource: agent\n---\n# WI\n## 完成条件\n- 掲載を確かめる\n"
         "## ユーザー指摘の逐語引用\n\n"
@@ -1239,9 +1239,9 @@ def _answer_record_wi(answer_record: str) -> str:
 def test_answer_record_requires_only_user_utterances_and_answer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """確認回答の記録の質問・共通前提・選択肢を要求単位に数えず、利用者の発話の各文と回答の値だけを求める。
+    """確認回答の記録の質問・共通前提・選択肢を要求単位に数えず、ユーザーの発話の各文と回答の値だけを求める。
 
-    質問や選択肢を要求に数えると、担当は利用者が述べていない文へ判定を書くか、記録を入力欠陥として返す。
+    質問や選択肢を要求に数えると、担当はユーザーが述べていない文へ判定を書くか、記録を入力欠陥として返す。
     """
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _answer_record_wi(_ANSWER_RECORD)})
     path = tmp_path / "evidence.json"

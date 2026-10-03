@@ -283,7 +283,7 @@ def _warn_conflict(
     pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...],
     snapshot: pathlib.Path,
 ) -> None:
-    """自動復元を止めた競合と、利用者が行う復旧・回収手順を警告する。"""
+    """自動復元を止めた競合と、ユーザーが行う復旧・回収手順を警告する。"""
     home_paths = ", ".join(str(home_path) for home_path, _ in pairs)
     target_paths = ", ".join(str(target_path) for _, target_path in pairs)
     logger.warning(

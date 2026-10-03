@@ -2,7 +2,7 @@
 
 `atk wi process-loop`が起動したセッションでは、ターンを終えるたびに`/goal`の目標評価が発動する。
 権限拒否などで工程が進まない状態では、ツール呼び出しを伴わないターンと目標評価だけが繰り返され、
-利用者が介入するまでトークンを消費し続ける。本判定はこの反復を検知し、process-loopへ中断を要求したうえで
+ユーザーが介入するまでトークンを消費し続ける。本判定はこの反復を検知し、process-loopへ中断を要求したうえで
 そのセッションへ終了要求を送る。
 
 適用対象はprocess-loopが起動した会話IDを持つ最上位セッションに限り、委譲先セッションと対話セッションは対象外とする。
@@ -17,7 +17,7 @@
 
 1. 判定根拠を常時ログへ記録する
 2. process-loopへの中断要求を作成し、現反復の終了後に次の反復へ進まない状態にする
-3. 停止の事実を`systemMessage`で利用者へ伝える
+3. 停止の事実を`systemMessage`でユーザーへ伝える
 4. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
    それ以外では一致した単一PIDへ終了要求を送る
 
@@ -77,7 +77,7 @@ def _is_target_session(session_id: str, payload: dict) -> bool:
 
 
 def _halt(session_id: str, count: int) -> str:
-    """中断要求の作成と終了要求の送出を行い、利用者へ伝える本文を返す。"""
+    """中断要求の作成と終了要求の送出を行い、ユーザーへ伝える本文を返す。"""
     abort_path = _process_loop_log.request_abort()
     status, target = _agents_exit_session.request_termination(session_id=session_id)
     append_stop_log(
@@ -101,7 +101,7 @@ def _halt(session_id: str, count: int) -> str:
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """無進捗ターンの連続を判定し、停止した場合は利用者向けの本文を返す。"""
+    """無進捗ターンの連続を判定し、停止した場合はエンドユーザー向けの本文を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""

@@ -38,7 +38,7 @@ hookは1呼び出しごとに独立プロセスとして起動するため、情
 
 ### managed-tempの登録情報
 
-managed-tempの管理用マーカーファイル（`.agent-toolkit-managed-temp.json`）と利用者専用登録簿は、同じ版数付きの登録情報を保持する。
+managed-tempの管理用マーカーファイル（`.agent-toolkit-managed-temp.json`）とOSアカウント専用の登録簿は、同じ版数付きの登録情報を保持する。
 スキーマ版数3では`prefix`・`created_at`・`awis`を必須とし、全項目の完全一致を検証する。
 スキーマ版数2は`prefix`と`created_at`を必須とする版数2のフィールド集合どうしだけを完全一致で検証する。
 スキーマ版数1は版数1のフィールド集合どうしだけを完全一致で検証する。

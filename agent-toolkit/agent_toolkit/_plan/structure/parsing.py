@@ -490,7 +490,7 @@ AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"
 def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     """パス文字列がエージェント向け文書の判定対象かを判定する。
 
-    実行時の利用者は`agent-toolkit/skills/plan-mode/scripts/list_agent_doc_changes.py`
+    実行時の呼び出し元は`agent-toolkit/skills/plan-mode/scripts/list_agent_doc_changes.py`
     （`atk run-script agent-doc-changes`）であり、
     レーン統合の`変更したエージェント向け文書`の対象集合を定める。
     対象集合は`agent-toolkit:writing-standards`の成果物種別表が定めるエージェント向け文書

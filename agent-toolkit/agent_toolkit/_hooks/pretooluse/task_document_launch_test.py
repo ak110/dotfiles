@@ -140,7 +140,10 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
 def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path) -> None:
     """初回3入力と再レビュー入力を通し、宣言外補足の拒否を維持する。"""
     task = _SHARE_DIR / "reader-fit-review.subagent.md"
-    initial = f"{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n種別: 利用者向け文書\n読者像: 初めて導入する利用者\n"
+    initial = (
+        f"{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n"
+        "種別: エンドユーザー向け文書\n読者像: 初めて導入するエンドユーザー\n"
+    )
     rereview = initial + (
         f"レビュー種別: 再レビュー\n修正範囲: {tmp_path / 'before.md'}と成果物の保存節の差分\n未解決事項: なし\n"
     )

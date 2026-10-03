@@ -173,7 +173,7 @@ def test_cli_rejects_inflected_expressions(tmp_path: pathlib.Path, body: str) ->
 @pytest.mark.parametrize(
     ("name", "body"),
     [
-        ("doc.md", "是正本文を読む。\n起動経路を記録する。\n| 利用者と入口 |\n| --- |\n| CLI |\n"),
+        ("doc.md", "是正本文を読む。\n起動経路を記録する。\n| 消費主体と入口 |\n| --- |\n| CLI |\n"),
         ("app.py", '既定 = 4\ndefault_route = 1\nprint("是正本文")\n'),
         ("app.py", 'fields = ("起動経路", "利用者と入口", "計画検査完了")\n'),
         ("doc.md", "```text\n書込対象の検査: 終了コード0\n```\n"),

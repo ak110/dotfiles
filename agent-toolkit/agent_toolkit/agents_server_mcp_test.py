@@ -1306,8 +1306,8 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "reader-fit-review.subagent.md":
         lines = [
             f"成果物: {root / 'guide.md'}（40行）",
-            "種別: 利用者向け文書",
-            "読者像: ツールを初めて導入する利用者。内部の実装は知らない",
+            "種別: エンドユーザー向け文書",
+            "読者像: ツールを初めて導入するエンドユーザー。内部の実装は知らない",
         ]
         if rereview:
             lines.extend(
@@ -6286,7 +6286,7 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
         subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
     )
     manager, backend = _manager_with_fake("codex")
-    body = '<agent-toolkit-auto-inserted from="main:root-session">\n利用者の発話\n</agent-toolkit-auto-inserted>'
+    body = '<agent-toolkit-auto-inserted from="main:root-session">\nユーザーの発話\n</agent-toolkit-auto-inserted>'
     try:
         await manager.start("plan", body, str(tmp_path))
 

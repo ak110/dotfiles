@@ -36,12 +36,12 @@ description: >
     修正後に失敗したチェックだけを再実行する場合は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を、CLIでは`--commands=mypy,ruff-check`を渡す
   - 変更範囲の検証の対象は`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で選ぶ。本リポジトリで使う値は次のとおり
     - 横断テスト: `repo_invariant`マーカーで識別し、`uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .`で実行する。マーカーの付け方は`pytools-edit`「テスト配置」に従う
-    - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
+    - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
     - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。
       共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。内部のコメント・空白だけの変更は含めない
-    - パッケージ外の利用者: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -p no:cacheprovider pytools scripts`
+    - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -p no:cacheprovider pytools scripts`
     - 名前の削除・改名の全体静的検査: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
-    - 統合後の検証: 前記の共有契約とパッケージ外の利用者のpytest、`repo_invariant`のテスト、`ty`、および`uv run --frozen pyfltr run --commands=arid`は、各レーンの統合でfast-forwardの前に専用worktreeで1回実行する
+    - 統合後の検証: 前記の共有契約とパッケージ外の呼び出し元のpytest、`repo_invariant`のテスト、`ty`、および`uv run --frozen pyfltr run --commands=arid`は、各レーンの統合でfast-forwardの前に専用worktreeで1回実行する
   - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
@@ -76,8 +76,8 @@ description: >
     報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
     指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる。
     語の再使用は`agent-toolkit:writing-standards`の`references/textlint-violations.md`に従って文全体を書き直す
-- 新規Linux環境では、利用者が自分の端末から`make setup-browser`でChromiumとシステム依存を初期導入する。
-  Ubuntu/DebianでPowerShell検証が必要な場合も、利用者が自分の端末から`make setup-pwsh`で初期導入する
+- 新規Linux環境では、ユーザーが自分の端末から`make setup-browser`でChromiumとシステム依存を初期導入する。
+  Ubuntu/DebianでPowerShell検証が必要な場合も、ユーザーが自分の端末から`make setup-pwsh`で初期導入する
 - エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
   実ブラウザーテストを変更した場合は`make test-browser`を実行する

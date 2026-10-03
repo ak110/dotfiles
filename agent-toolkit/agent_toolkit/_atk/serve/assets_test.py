@@ -268,10 +268,10 @@ async function exercise(kind, status, code, withExternalUpdate) {
   openDialog(elements['detail-dialog'], new Element(`${kind}-origin`, 'BUTTON'), elements['detail-dialog-body']);
   if (answering) {
     enterAnswer();
-    elements['answer-input'].value = '利用者の回答';
+    elements['answer-input'].value = 'ユーザーの回答';
   } else {
     enterEdit();
-    elements['edit-content'].value = '利用者の保存本文';
+    elements['edit-content'].value = 'ユーザーの保存本文';
   }
   let resolveMutation;
   let markStarted;
@@ -328,18 +328,18 @@ process.stdout.write(JSON.stringify({
         assert result[name]["mode"] == ("answer" if name.startswith("answer") else "edit")
     assert "保存できませんでした。 一般失敗" in result["saveGeneral"]["alert"]
     assert "回答できませんでした。 一般失敗" in result["answerGeneral"]["alert"]
-    assert result["saveGeneral"]["input"] == "利用者の保存本文"
-    assert result["answerGeneral"]["input"] == "利用者の回答"
+    assert result["saveGeneral"]["input"] == "ユーザーの保存本文"
+    assert result["answerGeneral"]["input"] == "ユーザーの回答"
     assert result["savePermission"] == {
         "alert": "inbox/entry.mdを保存できませんでした。 権限がありません",
         "disabled": False,
-        "input": "利用者の保存本文",
+        "input": "ユーザーの保存本文",
         "mode": "edit",
     }
     assert result["answerPermission"] == {
         "alert": "inbox/question.mdへ回答できませんでした。 権限がありません",
         "disabled": False,
-        "input": "利用者の回答",
+        "input": "ユーザーの回答",
         "mode": "answer",
     }
 

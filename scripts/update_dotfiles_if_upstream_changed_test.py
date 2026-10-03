@@ -178,7 +178,7 @@ def test_pending_state_survives_failure(
 def test_pending_state_save_failure_prevents_update(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """未完了を保存できなければ更新を起動せず、利用者へ理由を示す。"""
+    """未完了を保存できなければ更新を起動せず、ユーザーへ理由を示す。"""
     update_dotfiles = _prepare_root(monkeypatch, tmp_path)
     calls: list[list[str]] = []
     monkeypatch.setattr(subprocess, "run", _fake_run(calls))

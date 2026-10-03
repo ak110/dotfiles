@@ -38,7 +38,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 
 ### 付帯作業の扱い
 
-`agent-toolkit/rules/01-agent.md`が定める付帯作業のうち、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書の改訂は主作業とする。これらの文書はルール、`SKILL.md`、`references/`、`<役割名>.parent.md`と`<役割名>.subagent.md`であり、利用者へ配布する成果物そのものである。変更目的ごとにcommitとWIを扱う。`agent-toolkit/agent_toolkit/`配下のPythonコードやスクリプト、hookのリファクタリング、テスト、CI、コメントの整備は一般の付帯作業として扱う。
+`agent-toolkit/rules/01-agent.md`が定める付帯作業のうち、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書の改訂は主作業とする。これらの文書はルール、`SKILL.md`、`references/`、`<役割名>.parent.md`と`<役割名>.subagent.md`であり、エンドユーザーへ配布する成果物そのものである。変更目的ごとにcommitとWIを扱う。`agent-toolkit/agent_toolkit/`配下のPythonコードやスクリプト、hookのリファクタリング、テスト、CI、コメントの整備は一般の付帯作業として扱う。
 
 ### scripts配下の配置
 
@@ -105,7 +105,7 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
 
 ## 配布物としての記述方針
 
-配布先のエンドユーザーは本リポジトリのdotfiles利用者とは限らないため、手元プロジェクト固有の前提は条件付きで書く。
+配布先のエンドユーザーは本リポジトリのdotfilesユーザーとは限らないため、手元プロジェクト固有の前提は条件付きで書く。
 
 - 自己言及的な表現・特定設定値の前提・特定ディレクトリ構成の前提を決め打ちせず、
   異なり得る条件は条件付き表現（「`～`設定が有効な場合、」など）で書く
@@ -121,7 +121,7 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
 - 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名チェックを適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文では、hookの挙動をエンドユーザーが観測できる結果（特定操作がブロックされる・警告が返る等）として提示する。
-  ハッシュ値の比較・SHA256記録・ブロック機構・状態フラグ書き込みなどの内部実装の説明は、提示の対象から外す（努力目標。利用者が観測する結果に限定すると、実装変更に本文が引きずられない）。
+  ハッシュ値の比較・SHA256記録・ブロック機構・状態フラグ書き込みなどの内部実装の説明は、提示の対象から外す（努力目標。エンドユーザーが観測する結果に限定すると、実装変更に本文が引きずられない）。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
     （`<plugin root>/skills/writing-standards/references/session-state-and-flags.md`等）は本規定の対象外とする
 
@@ -148,7 +148,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 ## スキル間の連携
 
-`agent-toolkit/skills/single-lane-process/`配下以外の`agent-toolkit/`配下のエージェント向け文書は、`single-lane-process`を名指ししない（努力目標。共通側が読み替え先を知らない一方向依存に保つと、改訂が片側で済む）。共通契約と`agent-toolkit:process-wi`側は読み替え先を知らない一方向の依存とし、`single-lane-process`側から共通契約を参照して上書きを定める。利用者が起動名を知る必要がある`docs/`配下の案内と方針記録は対象外とする。
+`agent-toolkit/skills/single-lane-process/`配下以外の`agent-toolkit/`配下のエージェント向け文書は、`single-lane-process`を名指ししない（努力目標。共通側が読み替え先を知らない一方向依存に保つと、改訂が片側で済む）。共通契約と`agent-toolkit:process-wi`側は読み替え先を知らない一方向の依存とし、`single-lane-process`側から共通契約を参照して上書きを定める。エンドユーザーが起動名を知る必要がある`docs/`配下の案内と方針記録は対象外とする。
 
 ## バージョン更新
 
