@@ -54,6 +54,7 @@ except ImportError as _import_error:
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
+_IMPROVEMENT_MARKER = "気付いた改善点:"
 # Claude Codeのサブエージェントが報告本文を委譲元へ渡すツールの名前。
 _HANDBACK_TOOL = "SubagentHandback"
 _WARNING_LINE_PATTERN = re.compile(
@@ -250,6 +251,28 @@ def _clip(text: str, limit: int | None = None) -> str:
     return normalized[:effective] + _OMISSION_MARK
 
 
+def _clip_assistant_text(text: str) -> str:
+    """本文の先頭を短縮し、省略区間にある改善点の標識行は全文で保持する。"""
+    normalized = text.strip()
+    clipped = _clip(normalized)
+    if clipped == normalized:
+        return clipped
+    boundary = len(clipped) - len(_OMISSION_MARK)
+    prefix = normalized[:boundary]
+    kept: list[str] = []
+    start = 0
+    for line in normalized.splitlines(keepends=True):
+        end = start + len(line)
+        if line.lstrip().startswith(_IMPROVEMENT_MARKER) and end > boundary:
+            if start < boundary:
+                prefix = normalized[:start]
+            kept.append(line.rstrip("\r\n"))
+        start = end
+    if not kept:
+        return clipped
+    return prefix + _OMISSION_MARK + "\n" + "\n".join(kept)
+
+
 class _DetailBudget:
     """1エントリの詳細出力が共有する残り文字数と、省略の発生有無。
 
@@ -312,8 +335,9 @@ def _codex_text_blocks(content: Any) -> list[str]:
 
 
 def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] | None:
+    """共通イベントを生成し、アシスタント本文の省略区間の改善点を候補判定まで保つ。"""
     runtime_inserted = kind == "user" and _is_runtime_inserted_text(text)
-    clipped = _clip(text)
+    clipped = _clip_assistant_text(text) if kind == "assistant" else _clip(text)
     if not clipped:
         return None
     event: dict[str, Any] = {"kind": kind, "text": clipped}
@@ -4392,7 +4416,7 @@ def _is_negative_predicate(args: list[str]) -> bool:
 
 
 def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, resumed: bool = False) -> bool:
-    """想定外事象を持たず、正常な完了だけを示す委譲返却であるかを返す。
+    """想定外事象や改善点を持たず、正常な完了だけを示す委譲返却であるかを返す。
 
     正常な完了は、`状態: completed`（旧形式の`status: completed`を含む）の行を持ち未解決の指摘が0件の返却、
     `<役割名>.subagent.md`が定める返却値で始まる返却、
@@ -4402,11 +4426,14 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
     再開された委譲先（`resumed`）の前置きは、受け取り済みの報告の返し直しのような異常を述べる場合があるためである。
     委譲先は想定外の事象を`想定外事象:`行で返すため、この行を持つ返却と、調査結果のような
     自由記述の返却は、本文の意味の判断を要するため候補に残す。
+    改善点の標識行は、完了・適合・shellの各正常分岐より先に候補へ保持する。
     """
     text = event.get("text")
     if not isinstance(text, str):
         return False
     lines = [line.strip() for line in text.splitlines()]
+    if any(line.startswith(_IMPROVEMENT_MARKER) for line in lines):
+        return False
     if any(line.startswith(_UNEXPECTED_EVENT_PREFIXES) for line in lines):
         return False
     body = [line for line in lines if line and not line.startswith("```")]

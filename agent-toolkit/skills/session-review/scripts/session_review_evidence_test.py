@@ -8465,3 +8465,68 @@ def test_bundle_excludes_atk_no_match_of_claude_bash(tmp_path: pathlib.Path, cap
     lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
     assert lines == {10, 12, 14, 16}
     assert records[-1]["excluded"]["normal-negative-result"] == 4
+
+
+@pytest.mark.parametrize("runtime", ["claude", "handback", "codex", "agy"])
+@pytest.mark.parametrize("long_body", [False, True])
+def test_bundle_preserves_improvement_lines_of_every_runtime(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str, long_body: bool
+) -> None:
+    """未転記の改善点を、各記録形式の短い返却と境界・末尾を含む長い返却から候補まで通す。"""
+    notes = ["気付いた改善点: 同じ操作を繰り返した。", "  気付いた改善点: 手順に不要な回避があった。"]
+    body = "状態: completed\n未解決の指摘数: 0\n"
+    if long_body:
+        boundary_note = "気付いた改善点: 短縮境界をまたぐ行も全文で保持する。"
+        body += "x" * (1994 - len(body)) + "\n" + boundary_note + "\n" + "後続" * 400 + "\n"
+        notes.insert(0, boundary_note)
+    body += "\n".join(notes[-2:])
+    entries: list[dict[str, object]]
+    if runtime == "claude":
+        entries = [_assistant_text(body)]
+    elif runtime == "handback":
+        entries = [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "SubagentHandback", "id": "handback", "input": {"message": body}}],
+                },
+            },
+            _assistant_text("返却を渡した。"),
+        ]
+    elif runtime == "codex":
+        entries = [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final",
+                    "content": [{"type": "output_text", "text": body}],
+                },
+            }
+        ]
+    else:
+        entries = [{"event": "result", "result": {"status": "SUCCESS", "response": body}}]
+    texts = _bundle_delegate_return_texts(tmp_path, entries)
+    capsys.readouterr()
+    assert len(texts) == 1
+    for note in notes:
+        assert note in texts[0]
+    assert texts[0].count("気付いた改善点:") == len(notes)
+    if long_body:
+        assert "…[省略]" in texts[0]
+
+
+def test_assistant_clipping_without_improvement_and_main_record_separation() -> None:
+    """標識の無い本文は元の短縮を使い、メインの標識は保持しても委譲返却候補にはしない。"""
+    body = "本文" * 1500
+    event = evidence._event("assistant", body)  # pylint: disable=protected-access
+    assert event is not None
+    assert event["text"] == body[:2000] + "…[省略]"
+    note = "気付いた改善点: メインの改善点。"
+    event = evidence._event("assistant", body + "\n" + note)  # pylint: disable=protected-access
+    assert event is not None and note in event["text"]
+    event.update(kind="final-result", record="main", line=1)
+    candidates = evidence._candidate_events([event], [], [])  # pylint: disable=protected-access
+    assert not candidates[:-1]
