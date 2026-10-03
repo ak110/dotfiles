@@ -35,11 +35,21 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
+        "matcher": "Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
         "hooks": [
           {
             "type": "command",
             "command": "atk-hook posttooluse"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "atk-hook stop"
           }
         ]
       }

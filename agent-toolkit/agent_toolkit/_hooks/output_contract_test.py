@@ -368,3 +368,37 @@ def test_permission_request_union_accepts_each_branch(decision: dict[str, object
         }
     }
     assert validate_hook_output("PermissionRequest", output) == []
+
+
+@pytest.mark.parametrize("output", [{}, {"decision": "block", "reason": "残る報告を発話する"}])
+def test_codex_stop_accepts_only_approval_or_continuation(output: dict[str, object]) -> None:
+    assert validate_hook_output("Stop", output, host="codex") == []
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        {"decision": "block"},
+        {"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": "通知"}},
+        {"systemMessage": "通知"},
+        {"decision": "approve"},
+    ],
+)
+def test_codex_stop_rejects_claude_only_output(output: dict[str, object]) -> None:
+    assert validate_hook_output("Stop", output, host="codex")
+
+
+def test_codex_stop_public_entry_returns_host_output(tmp_path: pathlib.Path) -> None:
+    payload, environment, _managed = _build_fixture("Stop", "stop", tmp_path)
+    environment.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
+    payload.update({"turn_id": "codex-turn", "last_assistant_message": "完了した。"})
+    result = subprocess.run(
+        [sys.executable, str(_HOOK_SCRIPT), "stop"],
+        input=json.dumps(payload, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    assert validate_hook_output("Stop", json.loads(result.stdout), host="codex") == []

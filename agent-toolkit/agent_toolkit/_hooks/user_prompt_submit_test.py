@@ -359,17 +359,24 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at"}
+        assert set(state) == {"last_user_prompt_at", "termination_evidence"}
+        evidence = state["termination_evidence"]
+        assert not evidence["works"]
+        assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True}
 
     @pytest.mark.parametrize(
-        "prompt", ["<cross-session-message>継続</cross-session-message>", "<automated-prompt>継続</automated-prompt>"]
+        ("prompt", "expected_keys"),
+        [
+            ("<cross-session-message>継続</cross-session-message>", {"last_user_prompt_at"}),
+            ("<automated-prompt>継続</automated-prompt>", {"last_user_prompt_at", "termination_evidence"}),
+        ],
     )
-    def test_old_wrappers_are_not_machine_turns(self, tmp_path: pathlib.Path, prompt: str):
+    def test_old_wrappers_are_not_machine_turns(self, tmp_path: pathlib.Path, prompt: str, expected_keys: set[str]):
         sid = "old-wrapper"
         result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
+        assert set(_read_state(tmp_path, sid)) == expected_keys
 
     def test_unrelated_slash_is_treated_as_user_utterance(self, tmp_path: pathlib.Path):
         """対応スキル以外のスラッシュコマンドもユーザー自身の発話として注記の対象にする。"""
@@ -380,7 +387,7 @@ class TestNonMatchingPrompts:
         )
         assert result.returncode == 0
         self._assert_no_notice(result)
-        assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
+        assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at", "termination_evidence"}
 
     def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
         """process-loopが渡す起動時プロンプトは注記の対象から外し、経過時間も記録しない。"""
@@ -408,7 +415,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at"}
+        assert set(state) == {"last_user_prompt_at", "termination_evidence"}
 
     def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
@@ -424,7 +431,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at"}
+        assert set(state) == {"last_user_prompt_at", "termination_evidence"}
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -498,7 +505,7 @@ class TestRealignNoticeInjection:
             assert len(bodies) == 1
             assert "agent-toolkit:realign-with-user" in bodies[0]
             assert "次の操作:" in bodies[0]
-            assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at"}
+            assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at", "termination_evidence"}
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize("prompt", ["直してほしい!!", "直してほしい！", "通常の依頼"])
@@ -644,7 +651,7 @@ class TestVerificationNoticeInjection:
         assert result.returncode == 0
         assert result.stdout == ""
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at"}
+        assert set(state) == {"last_user_prompt_at", "termination_evidence"}
 
     def test_does_not_inject_for_harness_message(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-harness-message"

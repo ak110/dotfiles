@@ -55,6 +55,7 @@ CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
 CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
 CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
 CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
+CODEX_STOP_COMMAND = _hook_command("stop")
 CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
 CODEX_SESSION_END_COMMAND = _hook_command("session_end_cleanup")
 CODEX_RULES_CONTEXT_COMMAND = _hook_command("rules_context")
@@ -121,8 +122,9 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("posttooluse"),
-        matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
     ),
+    "Stop": CodexHookProjection((CODEX_STOP_COMMAND,), output_command=_codex_hook_command("stop")),
     "PermissionRequest": CodexHookProjection(
         (_hook_command("permissionrequest"),),
         matcher="Bash",

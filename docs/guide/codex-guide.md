@@ -119,12 +119,12 @@ backendから承認・入力・認証・attestationなどの非対話要求を�
 ### フックの信頼確認
 
 Codexはplugin同梱フックの定義が変わると、利用者が変更後のフックを再び信頼するまで、そのフックを実行しない。
-更新処理は先にapp-serverの`hooks/list`で登録状態を確認する。次の8イベントがすべて登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で定義を確認して信頼する案内を表示する。
+更新処理は先にapp-serverの`hooks/list`で登録状態を確認する。次の9イベントがすべて登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で定義を確認して信頼する案内を表示する。
 登録が0件または不足している場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
 信頼後に新しいセッションを開始し、SessionStartの規範注入を確認する。
 再信頼の操作だけではSessionStartの規範注入を検収できない。
 プラグイン更新後は新しいCodexセッションで`/hooks`を実行し、agent-toolkitについて
-次の8イベントが含まれることを確認する。他の有効pluginは、独自のイベントを追加する場合がある。
+次の9イベントが含まれることを確認する。他の有効pluginは、独自のイベントを追加する場合がある。
 
 - `SessionStart`
 - `SubagentStart`
@@ -132,6 +132,7 @@ Codexはplugin同梱フックの定義が変わると、利用者が変更後の
 - `PostToolUse`
 - `PermissionRequest`
 - `UserPromptSubmit`
+- `Stop`
 - `SubagentStop`
 - `SessionEnd`
 
@@ -142,7 +143,7 @@ Codexはplugin同梱フックの定義が変わると、利用者が変更後の
 信頼後の`PreToolUse`は`apply_patch`が`uv.lock`などのlockfileを直接編集する場合、
 `uv add`などのパッケージ管理ツールでの更新を促す通知を返す。
 動作を確かめる場合は、`uv.lock`へ1行を加える変更を`apply_patch`で適用し、通知の有無を確認する。
-Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
+Stopは終了工程の証拠だけを判定する。報告の構造確認や振り返りの準備の後に残る報告段階と、確認に合格した報告本文を発話していない停止を遮断し、`decision: "block"`と`reason`で同じターンを続けさせる。対処と中止・待機の判断の記録は`agent-toolkit:completion-report`に従う。Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
 
 ## Codex CLI本体
 

@@ -110,6 +110,12 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   PostToolUse(Skill)が同スキルの起動で偽へ戻し、UserPromptSubmitもユーザーが同スキルをスラッシュコマンドで起動した発話で偽へ戻す。CodexではSkillの起動を観測できないため、UserPromptSubmitが注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
 
+- `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程の証拠を作業単位で保持する。
+  中身は作業ごとの構造確認に合格した報告本文、振り返りの準備結果、呼び出し、判断記録、遅れて返る応答を元の作業へ対応付けるための未完了の呼び出しと、判断の根拠となる人間の入力である。
+  PreToolUse・PostToolUse・UserPromptSubmitが更新し、Stopの`termination_order_advisor`と`completion_report_delivery_advisor`が読む。可視発話を観測した報告には`delivered`を記録し、以後のStopで同じ本文の記録を読み直さない。
+  解決して参照が不要になった呼び出しと入力は更新のたびに除き、保持量を未完了の作業と現在の本文の大きさに対応させる。版や形式が異なる値は破棄してStop判定ログへ診断を残す。
+  寿命と継承はセッション状態ファイルと同じとし、別会話から継承した値は`session_id`の一致を確かめてから使う
+
 ## 通知反復系
 
 - `unregistered_managed_temp_fingerprint`: `atk`の共通エントリポイントが、登録を持たない管理対象の絶対パス集合を安定順で正規化した指紋を記録する。同じセッションで同じ集合を報告済みの場合は警告を省略し、集合が変化した場合は再度警告する。寿命はセッション状態ファイルと同じとする

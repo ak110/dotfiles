@@ -1,4 +1,4 @@
-"""Claude Codeのhook出力をイベントごとに検証するJSON Schema。"""
+"""hook出力をイベントごとに検証し、Stopはホストの契約を区別する。"""
 
 from __future__ import annotations
 
@@ -214,9 +214,21 @@ HOOK_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
-def validate_hook_output(event_name: str, output: object) -> list[str]:
+def validate_hook_output(event_name: str, output: object, *, host: str = "claude-code") -> list[str]:
     """hook出力がイベントの契約を満たすか確かめ、違反内容を文字列で返す。"""
     schema = HOOK_OUTPUT_SCHEMAS.get(event_name)
+    if host == "codex" and event_name == "Stop":
+        schema = {
+            "oneOf": [
+                {"type": "object", "maxProperties": 0},
+                {
+                    "type": "object",
+                    "properties": _BLOCK_PROPERTIES,
+                    "required": ["decision", "reason"],
+                    "additionalProperties": False,
+                },
+            ]
+        }
     if schema is None:
         return [f"未定義のhookイベント: {event_name}"]
     validator = Draft202012Validator(schema)

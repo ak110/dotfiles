@@ -21,6 +21,7 @@ from agent_toolkit._hooks.stop_gate import append_stop_log  # noqa: E402  # pyli
 from agent_toolkit._hooks.stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position
     parse_stop_session as _parse_stop_session,
 )
+from agent_toolkit._hooks.tool_input import is_codex_payload
 
 CHECK_MODULE_NAMES = (
     "busy_loop_guard",
@@ -30,8 +31,12 @@ CHECK_MODULE_NAMES = (
     "pending_question_advisor",
     "user_response_advisor",
     "termination_order_advisor",
+    "completion_report_delivery_advisor",
     "queued_notification_advisor",
 )
+
+# CodexのStopは終了工程の証拠だけを判定する。他の判定はClaude Codeの記録形式と通知手段を前提とするため適用しない。
+CODEX_CHECK_MODULE_NAMES = ("termination_order_advisor", "completion_report_delivery_advisor")
 
 _CONSECUTIVE_BLOCK_LIMIT = 7
 _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"
@@ -55,7 +60,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
     blocking_checks: list[str] = []
     notifications: list[str] = []
     user_messages: list[str] = []
-    for module_name in CHECK_MODULE_NAMES:
+    for module_name in CODEX_CHECK_MODULE_NAMES if is_codex_payload(payload) else CHECK_MODULE_NAMES:
         try:
             module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
             decision, body = module.evaluate(payload_text)
@@ -75,6 +80,8 @@ def evaluate(payload_text: str) -> dict[str, object]:
 
     def _finalize(result: dict[str, object]) -> dict[str, object]:
         """利用者宛ての本文がある場合に`systemMessage`を添えて返す。"""
+        if is_codex_payload(payload):
+            return {key: value for key, value in result.items() if key in {"decision", "reason"}}
         if user_messages:
             result["systemMessage"] = "\n\n".join(user_messages)
         return result
