@@ -309,7 +309,7 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk watch --worktree=lane-05=/home/aki/dotfiles/.claude/worktrees/lane-05",
     },
     "atk review-table": {
-        "summary": "レビュー指摘管理表（8列TSV）を操作する",
+        "summary": "レビュー指摘管理表（7列TSV）を操作する",
         "description": "目的: 実行レビューの指摘、指摘レベル、対応内容を7列のTSVへ排他的に記録し、保存済みの旧形式のレビュー指摘管理表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行のレビュー指摘管理表を読み書きし、保存済みの旧形式のレビュー指摘管理表は読み取り専用で扱う。保存済み計画の領域（private-notesの`plans`配下）にある表への`init`・`add`・`respond`は、表を変更せず非0で終了する。この領域の表へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから更新し、`atk plans commit`で保存する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新規作成する場合は`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`および`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
     },
@@ -330,7 +330,17 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table show": {
         "summary": "レビュー指摘管理表を表示する",
-        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は`row-id`を先頭に付けた8フィールドの表示形式、`jsonl`は`row-id`とデコード済みの各列を持つJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は保存済み7列TSVの各行の先頭へ整数の`row-id`を付けた8フィールドの表示形式、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を指定されたファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定するとそのtrackの行だけを、`--round`を指定するとそのラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。デコード済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順に表示するか、指定ラウンドの件数を生成する。"
+        "`--format`は`tsv`、`jsonl`、`summary`を受理する。\n"
+        "利用場面: 指摘と対応の状況を確認し、レビュー返却の未解決件数を表から得るとき。\n"
+        "対象と出力: 指定した表を読み取り、標準出力へ書く。"
+        "tsvは`row-id`を先頭に付けた8フィールドの表示形式で保存済み7列を表示し、jsonlはrow-idと各列を持つJSON Lines。"
+        "summaryはround・track・total_count・unanswered_count・answered_countを持つ1件のJSON。"
+        "未応答はresponseとno-response-reasonがともに空の行であり、過去ラウンドの応答を含めない。"
+        "--output-fileは同じ出力を保存し、保存先と行数を返す。表は変更しない。\n"
+        "前提: --trackと--roundで行を限定できる。summaryは1以上の--roundが必須で、track省略時はexec-review。"
+        "対象行が無い場合、summaryは各件数0のJSON、tsvとjsonlは空の出力で終了0となる。\n"
+        "復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-table validate": {

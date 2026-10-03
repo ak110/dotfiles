@@ -10,7 +10,7 @@ import typing
 
 import pytest
 
-from agent_toolkit._atk import run_script
+from agent_toolkit._atk import review_table, run_script
 
 FIRST_WI = "20260928-192559-001.md"
 SECOND_WI = "20260928-192559-002.md"
@@ -74,6 +74,205 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     return requested
+
+
+def _return_args(path: pathlib.Path, table: pathlib.Path, *extra: str) -> argparse.Namespace:
+    return argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[
+            str(path),
+            FIRST_WI,
+            "--expected-head",
+            REVIEWED_HEAD,
+            "--review-table",
+            str(table),
+            "--round",
+            "2",
+            "--return-result",
+            *extra,
+        ],
+    )
+
+
+def _no_evidence_return_args(table: pathlib.Path, *extra: str) -> argparse.Namespace:
+    """証拠要求なしの起動で、現在roundの表から返却を生成する引数。"""
+    return argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[
+            "なし",
+            "--expected-head",
+            REVIEWED_HEAD,
+            "--review-table",
+            str(table),
+            "--round",
+            "2",
+            *extra,
+            "--return-result",
+        ],
+    )
+
+
+def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_after_registration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """旧形式の確認は成功しても、0件と証拠不足の返却は拒否し、実在指摘の登録後に回復する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    row = _condition(FIRST_WI, "保存")
+    row.update(outcome="証拠不足", evidence="保存操作の証拠をまだ取得できない")
+    path = tmp_path / "evidence.json"
+    table = tmp_path / "plan.exec-review.tsv"
+    _write_evidence(path, [row])
+    review_table.init(table)
+    capsys.readouterr()
+    legacy = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=[str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(legacy) == 0
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table)) == 1
+    result = capsys.readouterr()
+    assert not result.out and "wi_conditions[1]" in result.err and "現在round" in result.err
+    review_table.add(table, "2", "exec-review", "保存操作", "保存の証拠を補う", "仕様")
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table)) == 0
+    assert capsys.readouterr().out == (
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n完成条件証拠のパス: {path}\n"
+    )
+
+
+def test_return_result_recovers_after_evidence_is_observed_without_inventing_issue(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path = tmp_path / "evidence.json"
+    table = tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    row = _condition(FIRST_WI, "保存")
+    row.update(evidence="test_save_settings 成功")
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table)) == 0
+    assert "未解決の指摘数: 0\n" in capsys.readouterr().out
+    assert not table.read_bytes()
+
+
+@pytest.mark.parametrize("outcome,expected", [("証拠不足", 0), ("未達", 1)])
+def test_return_result_distinguishes_optional_observation_from_observed_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], outcome: str, expected: int
+) -> None:
+    condition = "任意の判断材料: 実機の観測値"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: f"type: awi\nsource: agent\n---\n## 完成条件\n- {condition}\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    row = _condition(FIRST_WI, condition)
+    row.update(outcome=outcome, evidence="実機の観測に関する判定")
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table)) == expected
+
+
+@pytest.mark.parametrize("kind", ["reject", "deferred", "publication", "parallel"])
+def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    record = tmp_path / "input.md"
+    bodies = {
+        "reject": "## 実施内容\n\n| 実施内容 | 採否 | 根拠 |\n| --- | --- | --- |\n"
+        f"| {FIRST_WI}の要求 | 不採用 | 前提が成立しない |\n",
+        "deferred": f"AWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 延期adopt\n"
+        "後続工程: 公開後の再観測\n検収時機: 公開後に保存結果を取得した後\n",
+        "publication": f"AWI: {FIRST_WI}\n判定対象: 保存\n判定工程: 公開工程\n",
+        "parallel": f"AWI: {FIRST_WI}\n判定対象: 保存\n判定工程: ユーザビリティレビュー\n進行状態: 並行中\n",
+    }
+    record.write_text(bodies[kind], encoding="utf-8")
+    review_table.init(table)
+    row = _condition(FIRST_WI, "保存")
+    row.update(
+        outcome="証拠不足", source=str(record), evidence=f"{record} の判断に従いこの条件を後続工程または不採用へ対応付けた"
+    )
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 0
+    assert "未解決の指摘数: 0" in capsys.readouterr().out
+    assert run_script.dispatch(_return_args(path, table)) == 1
+    result = capsys.readouterr()
+    assert not result.out and "--input-record" in result.err
+
+
+def test_return_result_without_evidence_generates_three_lines_from_current_round(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _mock_wi(monkeypatch, tmp_path, {})
+    table = tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    review_table.add(table, "1", "exec-review", "旧指摘", "前回の指摘", "詳細")
+    capsys.readouterr()
+    assert run_script.dispatch(_no_evidence_return_args(table)) == 0
+    assert capsys.readouterr().out == f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n"
+
+
+@pytest.mark.parametrize("source_suffix", ["#存在しない節", "#別の節", ":99-100"])
+def test_return_result_does_not_use_unreferenced_section_as_permission(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], source_suffix: str
+) -> None:
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    record = tmp_path / "input.md"
+    record.write_text(
+        f"## 別の節\n\n通常の記録\n\n## 後続工程\n\nAWI: {FIRST_WI}\n判定対象: 保存\n"
+        "終端区分: 延期adopt\n後続工程: 公開\n検収時機: 公開後\n",
+        encoding="utf-8",
+    )
+    review_table.init(table)
+    row = _condition(FIRST_WI, "保存")
+    row.update(outcome="証拠不足", source=str(record) + source_suffix, evidence="後続工程を根拠とするという申告")
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 1
+    result = capsys.readouterr()
+    assert not result.out and "wi_conditions[1]" in result.err
+
+
+def test_plan_only_template_and_return_keep_existing_rows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _mock_wi(monkeypatch, tmp_path, {})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    plan = tmp_path / "plan.md"
+    plan.write_text("# 計画\n\nユーザーの要求は保存である。\n", encoding="utf-8")
+    template = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--template", str(path), "--plan", str(plan)]
+    )
+    assert not path.exists()
+    assert run_script.dispatch(template) == 0
+    row = _requirement("", "保存")
+    row.update(source=str(plan), evidence="test_save_settings 成功")
+    _write_evidence(path, [], [row])
+    before = path.read_bytes()
+    assert run_script.dispatch(template) == 0
+    assert json.loads(path.read_text(encoding="utf-8"))["user_requirements"] == [row]
+    review_table.init(table)
+    capsys.readouterr()
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[
+            str(path),
+            "--plan",
+            str(plan),
+            "--expected-head",
+            REVIEWED_HEAD,
+            "--review-table",
+            str(table),
+            "--round",
+            "2",
+            "--return-result",
+        ],
+    )
+    assert run_script.dispatch(args) == 0
+    assert "未解決の指摘数: 0" in capsys.readouterr().out
+    assert json.loads(before) == json.loads(path.read_bytes())
 
 
 @pytest.mark.parametrize("layout", ["same-wi", "cross-wi", "cross-array", "plan"])
@@ -1462,3 +1661,52 @@ def test_template_keeps_invalid_evidence_untouched(
     assert _template(path, FIRST_WI) == 1
     assert "\n次の操作: `完成条件証拠`は変更していない" in capsys.readouterr().err
     assert path.read_text(encoding="utf-8") == content
+
+
+@pytest.mark.parametrize("with_plan", [False, True])
+def test_wi_template_from_uncreated_output_reaches_return_result(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], with_plan: bool
+) -> None:
+    """WIだけと計画とWIの入力で、WI本文の取得後に未作成の出力先へ雛形を作成し、判定の記入後に返却を生成できる。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    plan = tmp_path / "plan.md"
+    plan.write_text(f"# 計画\n\n- 関連WI:\n  - {FIRST_WI}: 保存\n", encoding="utf-8")
+    plan_args = ["--plan", str(plan)] if with_plan else []
+    assert not path.exists()
+    template = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--template", str(path), FIRST_WI, *plan_args]
+    )
+    assert run_script.dispatch(template) == 0
+    rows = json.loads(path.read_text(encoding="utf-8"))["wi_conditions"]
+    assert [row["condition"] for row in rows] == ["保存"] and rows[0]["outcome"] == ""
+    filled = _condition(FIRST_WI, "保存")
+    filled.update(source=rows[0]["source"], evidence="test_save_settings 成功")
+    _write_evidence(path, [filled])
+    review_table.init(table)
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table, *plan_args)) == 0
+    assert "未解決の指摘数: 0" in capsys.readouterr().out
+
+
+def test_input_record_saved_outside_repository_is_resolved_by_template_and_return(
+    tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """担当がmanaged-tempへ保存したCI記録の入力記録を、雛形の生成と返却の生成の双方が解決できる。"""
+    _mock_wi(monkeypatch, tmp_path, {})
+    record = tmp_path_factory.mktemp("managed-temp") / "ci-record.md"
+    record.write_text("# CI記録\n\n原因分析結果: lintの失敗\n修正認可根拠: CI失敗の修正\n", encoding="utf-8")
+    path, table = tmp_path / "evidence.json", tmp_path / "ci.exec-review.tsv"
+    template = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--template", str(path), "--input-record", str(record)]
+    )
+    assert run_script.dispatch(template) == 0
+    assert json.loads(path.read_text(encoding="utf-8")) == {"wi_conditions": [], "user_requirements": []}
+    review_table.init(table)
+    review_table.add(table, "2", "exec-review", "lint", "設定の誤りを直す", "実装")
+    capsys.readouterr()
+    assert run_script.dispatch(_no_evidence_return_args(table, "--input-record", str(record))) == 0
+    assert capsys.readouterr().out == f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"

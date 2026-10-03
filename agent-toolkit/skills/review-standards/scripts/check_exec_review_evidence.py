@@ -22,8 +22,10 @@ import sys
 import tempfile
 import typing
 
+from agent_toolkit._atk import review_table
 from agent_toolkit._common import markdown_headings
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
 # 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
 JUDGMENT_OUTCOMES = frozenset({"達成", "未達", "証拠不足"})
@@ -863,6 +865,141 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     return errors
 
 
+def _input_records(paths: list[pathlib.Path], repository: pathlib.Path, head: str) -> dict[pathlib.Path, str]:
+    """採否と後続工程の既存記録を読み、引用した例を判断記録へ混ぜない。"""
+    records: dict[pathlib.Path, str] = {}
+    for path in paths:
+        if not path.is_absolute():
+            raise ValueError(f"計画と入力記録には絶対パスを指定する: {path}")
+        target = path.resolve()
+        records[target] = _reference_content(target, repository, head).decode("utf-8")
+    return records
+
+
+def _referenced_records(row: dict[str, str], records: dict[pathlib.Path, str], repository: pathlib.Path) -> list[str]:
+    """sourceとevidenceが実際に指す、今回渡された入力記録だけを返す。"""
+    found: list[str] = []
+    for match in _file_references(row["source"] + " " + row["evidence"], repository):
+        candidate, location = _reference_parts(match)
+        text = records.get((repository / candidate).resolve())
+        if text is not None:
+            headings = {title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)}
+            if _reference_location_error(text.encode("utf-8"), location, headings) is not None:
+                continue
+            body = markdown_body_text(text).splitlines()
+            if location.startswith("#"):
+                start = next(
+                    (index for index, line in enumerate(body) if line.lstrip("# ") == location[1:] and line.startswith("#")),
+                    None,
+                )
+                if start is None:
+                    continue
+                level = len(body[start]) - len(body[start].lstrip("#"))
+                end = next(
+                    (
+                        index
+                        for index in range(start + 1, len(body))
+                        if body[index].startswith("#") and len(body[index]) - len(body[index].lstrip("#")) <= level
+                    ),
+                    len(body),
+                )
+                body = body[start:end]
+            elif location.startswith(":") and not location.startswith("::"):
+                bounds = location.removeprefix(":").split("-")
+                # 行位置は原文で確かめた。引用を含む範囲は許容根拠の自動判定に使わない。
+                raw_body = text.splitlines()[int(bounds[0]) - 1 : int(bounds[-1])]
+                if "\n".join(raw_body) not in "\n".join(body):
+                    continue
+                body = raw_body
+            found.append("\n".join(body))
+    return found
+
+
+def _reject_record(text: str, filename: str) -> bool:
+    """計画の実施内容にある不採用行から、WI全体のrejectを確認する。"""
+    section = _section(text.splitlines(), "## 実施内容")
+    if section is None or not filename:
+        return False
+    decisions: list[tuple[str, str]] = []
+    for table in extract_tables(list(enumerate(section, start=1))):
+        if "採否" not in table.header or "根拠" not in table.header:
+            continue
+        index = table.header.index("採否")
+        reason_index = table.header.index("根拠")
+        decisions.extend(
+            (row[index], row[reason_index]) for row in table.rows if len(row) == len(table.header) and filename in " ".join(row)
+        )
+    return bool(decisions) and all(value == "不採用" and reason.strip() for value, reason in decisions)
+
+
+def _deferred_record(text: str, row: dict[str, str], field: str) -> bool:
+    """対象と後続工程を明示した既存の判断記録へ非達成行を対応付ける。
+
+    判定対象の原文、AWI、終端区分または判定工程を持つ同じ段落だけを使う。
+    自由文の意味は推定せず、延期などの語が他の段落にあるだけでは受理しない。
+    """
+    for paragraph in text.split("\n\n"):
+        values = dict(line.strip().removeprefix("- ").split(": ", 1) for line in paragraph.splitlines() if ": " in line)
+        if values.get("AWI") != (row["awi"] or "計画由来") or values.get("判定対象") != row[field]:
+            continue
+        if values.get("終端区分") == "延期adopt" and values.get("後続工程", "").strip() and values.get("検収時機", "").strip():
+            return True
+        if values.get("判定工程") == "公開工程":
+            return True
+        if values.get("判定工程") == "ユーザビリティレビュー" and values.get("進行状態") == "並行中":
+            return True
+    return False
+
+
+def check_return_result(
+    evidence_path: pathlib.Path | None,
+    filenames: list[str],
+    *,
+    expected_head: str,
+    table_path: pathlib.Path,
+    round_value: int,
+    input_paths: list[pathlib.Path],
+) -> tuple[list[str], int]:
+    """未応答件数と達成を要する行の整合を返却生成の直前に確かめる。
+
+    指摘がある正常なレビューはcompletedとして渡せる。指摘0件の返却が達成必須の
+    非達成行を隠す場合は後続の収束判断が成立しないためerrorとする。
+    """
+    try:
+        repository = _repository_root()
+        head = _commit_oid(repository, expected_head)
+        if not table_path.is_absolute():
+            raise ValueError("レビュー指摘管理表には絶対パスを指定する")
+        unanswered = int(review_table.summary(table_path, round_value)["unanswered_count"])
+        records = _input_records(input_paths, repository, head)
+    except (OSError, UnicodeError, subprocess.TimeoutExpired, ValueError) as error:
+        return [str(error)], 0
+    if evidence_path is None:
+        if filenames:
+            return ["対象WIがあるレビューには完成条件証拠を作成する。--templateで生成して各行を記入する"], unanswered
+        return [], unanswered
+    errors = check_evidence(evidence_path, filenames, expected_head=head)
+    if errors or unanswered:
+        return errors, unanswered
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
+        for index, row in enumerate(payload[section], start=1):
+            if row["outcome"] == "達成" or row["outcome"] in EXEMPTIONS[section]:
+                continue
+            if section == "wi_conditions" and row["outcome"] == "証拠不足" and row[field].startswith("任意の判断材料"):
+                continue
+            referred = _referenced_records(row, records, repository)
+            if any(_reject_record(text, row["awi"]) or _deferred_record(text, row, field) for text in referred):
+                continue
+            errors.append(
+                f"{row['awi'] or '計画由来'}: {section}[{index}]: 未解決の指摘数0件と{row['outcome']}が一致しません。"
+                "必要な証拠を補って再判定するか、実在の指摘を現在roundの表へ登録する。"
+                "許容される非達成なら、採否・後続工程の実在する記録をsourceとevidenceで指し、"
+                "その計画かWI・CI記録を--planまたは--input-recordで渡す"
+            )
+    return errors, unanswered
+
+
 def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str], int, int]:
     """不足する期待行を判定欄が空の雛形として`完成条件証拠`へ追記し、診断、追加行数、保持行数を返す。
 
@@ -932,8 +1069,25 @@ def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str],
 def main(argv: list[str] | None = None) -> int:
     """`完成条件証拠`と対象WI名を受け取り、基準を満たすか判定するか雛形を書き込んで結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("evidence", type=pathlib.Path, help="`完成条件証拠`（JSON）の絶対パス")
-    parser.add_argument("wi", nargs="+", help="対象WIのファイル名")
+    parser.add_argument(
+        "evidence", type=pathlib.Path, help="`完成条件証拠`（JSON）の絶対パス。証拠要求なしの返却生成では『なし』"
+    )
+    parser.add_argument("wi", nargs="*", help="対象WIのファイル名。計画だけのレビューでは省略する")
+    parser.add_argument("--review-table", type=pathlib.Path, help="返却の件数を取得するレビュー指摘管理表の絶対パス")
+    parser.add_argument("--round", type=int, help="今回のexec-reviewのラウンド番号")
+    parser.add_argument(
+        "--plan", type=pathlib.Path, action="append", default=[], help="採否を持つ計画の絶対パス。複数計画では反復する"
+    )
+    parser.add_argument(
+        "--input-record",
+        type=pathlib.Path,
+        action="append",
+        default=[],
+        help="採否と後続工程を持つWI・CI・引き継ぎ記録の絶対パス。反復できる",
+    )
+    parser.add_argument(
+        "--return-result", action="store_true", help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する"
+    )
     parser.add_argument(
         "--expected-head",
         help="最後に実際にレビューした対象commit。返却値reviewed_headを渡す。--templateを付けない判定では必須",
@@ -944,9 +1098,19 @@ def main(argv: list[str] | None = None) -> int:
         help="判定せず、`完成条件証拠`に不足する完成条件と原文要求の行を判定欄が空の雛形として追記する",
     )
     args = parser.parse_args(argv)
-    if not args.evidence.is_absolute():
+    no_evidence = str(args.evidence) == "なし"
+    if not args.evidence.is_absolute() and not (no_evidence and args.return_result):
         parser.error("`完成条件証拠`には絶対パスを指定してください")
+    gate_requested = args.review_table is not None or args.round is not None or args.return_result
+    if gate_requested and (args.review_table is None or args.round is None):
+        parser.error("返却の整合確認には--review-tableと--roundの両方を指定する")
+    if not args.wi and not no_evidence and not args.plan and not args.input_record:
+        parser.error("対象WIの無い証拠には--planか--input-recordでレビュー入力を指定する")
+    if any(not path.is_absolute() or not path.is_file() for path in [*args.plan, *args.input_record]):
+        parser.error("--planと--input-recordには実在する通常ファイルの絶対パスを指定する")
     if args.template:
+        if gate_requested:
+            parser.error("--templateは返却生成と別に実行する。雛形を記入してから返却の整合を確かめる")
         if args.expected_head is not None:
             parser.error("--templateと--expected-headは同時に指定できません。雛形の出力後に--expected-headだけを付けて判定する")
         errors, added, kept = write_template(args.evidence, args.wi)
@@ -972,7 +1136,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.expected_head is None:
         parser.error("証拠の判定には--expected-headが必要です。雛形を書き込む場合は--templateを付ける")
-    errors = check_evidence(args.evidence, args.wi, expected_head=args.expected_head)
+    unanswered = 0
+    if gate_requested:
+        assert args.review_table is not None and args.round is not None
+        errors, unanswered = check_return_result(
+            None if no_evidence else args.evidence,
+            args.wi,
+            expected_head=args.expected_head,
+            table_path=args.review_table,
+            round_value=args.round,
+            input_paths=[*args.plan, *args.input_record],
+        )
+    else:
+        errors = check_evidence(args.evidence, args.wi, expected_head=args.expected_head)
     for error in errors:
         print(f"失敗: {error}", file=sys.stderr)
     if errors:
@@ -985,7 +1161,14 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(args.wi)} 件）")
+    if args.return_result:
+        print("状態: completed")
+        print(f"レビューしたHEAD: {args.expected_head}")
+        print(f"未解決の指摘数: {unanswered}")
+        if not no_evidence:
+            print(f"完成条件証拠のパス: {args.evidence}")
+    else:
+        print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(args.wi)} 件）")
     return 0
 
 

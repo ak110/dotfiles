@@ -1,4 +1,4 @@
-"""レビュー指摘管理表の8列TSVを排他更新する補助CLI。
+"""レビュー指摘管理表の7列TSVを排他更新する補助CLI。
 
 排他ロックは表と同じディレクトリではなくホーム配下の専用ディレクトリへ置く。
 表の配置先には`~/.claude/plans`が含まれる。兄弟のロックファイルを生成すると、計画バンドルの回収後も
@@ -461,6 +461,23 @@ def respond(
     return 0
 
 
+def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -> dict[str, int | str]:
+    """指定ラウンドに登録した指摘を用いて未応答件数を導き、過去の応答を混ぜない。"""
+    if round_value < 1:
+        raise _ActionableError("roundは1以上の整数で指定する", next_action="現在のレビューの--roundを指定して再実行する")
+    rows = _read(_path(str(path)))
+    _validate_rows(rows, require_responses=False)
+    selected = [row for row in rows if _normalized(row[0]) == str(round_value) and row[1] == _normalize_track(track)]
+    unanswered = sum(not row[5].strip() and not row[6].strip() for row in selected)
+    return {
+        "round": round_value,
+        "track": _normalize_track(track),
+        "total_count": len(selected),
+        "unanswered_count": unanswered,
+        "answered_count": len(selected) - unanswered,
+    }
+
+
 def show(
     path: str | Path,
     track: str | None = None,
@@ -468,6 +485,13 @@ def show(
     round_value: int | None = None,
 ) -> int:
     """表を保存順で表示し、指定時はtrackとラウンドで限定する。"""
+    if output_format == "summary":
+        if round_value is None:
+            raise _ActionableError(
+                "件数の生成にはroundが必要である", next_action="--format=summaryへ現在のレビューの--roundを加えて再実行する"
+            )
+        print(json.dumps(summary(path, round_value, track=track or "exec-review"), ensure_ascii=False))
+        return 0
     target = _path(str(path))
     text = _read_table_text(target)
     rows = _parse_text(text)
@@ -622,9 +646,11 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     )
     show_parser.add_argument(
         "--format",
-        choices=("tsv", "jsonl"),
+        choices=("tsv", "jsonl", "summary"),
         default="tsv",
-        help="出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Linesを表示する。",
+        help="出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Lines。"
+        "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す。"
+        "summaryのtrack省略時はexec-review。",
     )
     _output_file.add_output_file_arg(show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
