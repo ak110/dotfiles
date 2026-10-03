@@ -804,6 +804,75 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("saved", [False, True])
+@pytest.mark.parametrize("remaining", [None, "task", "child"])
+async def test_claude_collects_background_wait_before_holding_result(
+    saved: bool,
+    remaining: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """背景waitの終了・読取・turn終了の順序で回収を反映し、残る対象だけを待って結果を公開する。"""
+    client = ControlledClaudeClient("claude-collected-wait")
+    manager, backend = _manager(client, monkeypatch)
+    output = tmp_path / "background-output.txt"
+    output.write_text("", encoding="utf-8")
+    child = "collected-alternate-child"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        _emit_child_start(client, child)
+        if remaining == "child":
+            session_registry.publish("remaining-child", terminal=False)
+            _emit_child_start(client, "remaining-child")
+        elif remaining == "task":
+            client.emit(TaskStartedMessage("remaining-task"))
+        client.emit(AssistantMessage([SimpleNamespace(id="wait-tool", name="Bash", input={"command": "atk agents wait"})]))
+        client.emit(
+            UserMessage(
+                [
+                    SimpleNamespace(
+                        tool_use_id="wait-tool",
+                        content=f"Command running in background with ID: wait-job. Output is being written to: {output}.",
+                    )
+                ]
+            )
+        )
+        await _await_state(lambda: str(output) in session.agents_wait_background_outputs)
+        terminal = json.dumps({"session_id": child, "status": "completed", "agent_message": "子の結果"})
+        if saved:
+            saved_output = tmp_path / "saved-result.jsonl"
+            saved_output.write_text(terminal, encoding="utf-8")
+            output.write_text(f"保存先: {saved_output}\n", encoding="utf-8")
+        else:
+            output.write_text(terminal, encoding="utf-8")
+        client.emit(TaskUpdatedMessage("wait-job", "completed"))
+        client.emit(ResultMessage("実装完了"))
+        await _await_state(lambda: session.turn_completed or session.awaiting_auto_resume)
+
+        assert child not in session.live_child_session_ids
+        assert session.awaiting_auto_resume is (remaining is not None)
+        if remaining == "task":
+            assert "remaining-task" in session.live_tasks
+            client.emit(TaskNotificationMessage("remaining-task", "completed"))
+            client.emit(ResultMessage("残作業後の結果", origin={"kind": "task-notification"}))
+        elif remaining == "child":
+            session_registry.publish("remaining-child", terminal=True)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        if remaining == "child":
+            await _await_state(lambda: len(client.queries) == 2)
+            assert child not in client.queries[-1]
+            client.emit(ResultMessage("残作業後の結果"))
+        result = await wait_task
+        assert result["status"] == "completed"
+        assert result["agent_message"] == ("実装完了" if remaining is None else "残作業後の結果")
+        assert "error" not in result
+        if remaining is None:
+            assert len(client.queries) == 1
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
 async def test_result_without_background_task_is_immediately_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
