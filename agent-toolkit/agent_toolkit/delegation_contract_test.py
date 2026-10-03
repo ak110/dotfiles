@@ -364,6 +364,15 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "`書き込まない反映先`" in output
     assert "atk run-script pick-wi-check" in output and "atk run-script pick-wi-check" in receipt
     assert "pick-wi-check" in run_script.SCRIPT_PATHS
+    reply = next(block for _, block in _text_blocks(output.splitlines()) if block[0].startswith("状態:"))
+    reply_fields = {line.partition(":")[0] for line in reply}
+    receiver_fields = set(re.findall(r"`([^`]+)`", receipt))
+    assert "書込対象の検査" in reply_fields
+    assert reply_fields <= receiver_fields
+    # 実行結果は委譲の返却へ渡し、選定YAMLのWI属性へ複製しない。
+    assert "書込対象の検査" not in fields
+    assert "終了コード0" in output and "終了コード0" in receipt
+    assert "3行だけの返却では結果不明" in receipt
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
