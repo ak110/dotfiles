@@ -20,7 +20,8 @@ import pytest
 
 pytestmark = pytest.mark.repo_invariant
 
-_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 @dataclasses.dataclass(frozen=True)
@@ -164,7 +165,7 @@ _RETIRED_TERMS = (
             replacement=replacement,
             allowed=(
                 # 登録した語の不在を確かめる本テスト
-                _AllowedLocation("scripts/retired_terms_test.py"),
+                _AllowedLocation("retired_terms_invariant_test.py"),
                 *extra_allowed,
             ),
         )
@@ -200,7 +201,7 @@ _RETIRED_TERMS = (
                 _AllowedLocation("docs/development/incidents*.md"),
                 _AllowedLocation("docs/development/audit-records.md"),
                 # 登録した語の不在を確かめる本テスト
-                _AllowedLocation("scripts/retired_terms_test.py"),
+                _AllowedLocation("retired_terms_invariant_test.py"),
                 *_NAMING_EXTRA_ALLOWED.get(term, ()),
             ),
         )

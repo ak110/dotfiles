@@ -60,7 +60,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 `scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の自動チェックの被覆が失われるためである。
 同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
 モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名とは異なる名前を選ぶ。
-テストは対象モジュールと同じディレクトリへ`<モジュール名>_test.py`として置く。
+テストは`pytools-edit`「テスト配置」に従い、対象モジュールの動作テストを同居させ、実物の文書や設定を読むテストをその近くへ置く。
 
 ### atkの実行結果出力
 
@@ -162,7 +162,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/agent_toolkit/manifest_ssot_test.py`が確かめ、不整合があれば`uv run --frozen pyfltr run`が自動的に失敗する。
+整合性は`manifest_ssot_invariant_test.py`が確かめ、不整合があれば`uv run --frozen pyfltr run`が自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`をもとに`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。変更は生成元の更新と生成器の実行で行う。
@@ -183,7 +183,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
   `agent-toolkit/rules/`配下のmdファイル一覧は完全一致を保つ
-  （整合性は`install_script_ssot_test.py`が検証し、`scripts/gen-install-files.py`を含む`uv run python scripts/sync_generated_files.py`が一覧を自動同期する）
+  （整合性は`install_script_ssot_invariant_test.py`が検証し、`scripts/gen-install-files.py`を含む`uv run python scripts/sync_generated_files.py`が一覧を自動同期する）
 - 配布物スキル本体の外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）へ
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する

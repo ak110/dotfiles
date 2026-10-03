@@ -16,11 +16,12 @@ import pytest
 
 pytestmark = pytest.mark.repo_invariant
 
+
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
 _SKILL_INVOCATION_PATTERN = re.compile(rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:([A-Za-z0-9][A-Za-z0-9_-]*)")
 _SKILL_PATH_PATTERN = re.compile(
-    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*/?"
+    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?"
 )
 _PYTHON_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/(?:scripts|agent_toolkit)/"
@@ -132,7 +133,7 @@ def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
 
 def test_agent_toolkit_references_resolve() -> None:
     """追跡中の`.json`・`.md`・`.py`にあるスキルとPython参照が全て実体へ解決する。"""
-    root = pathlib.Path(__file__).resolve().parents[1]
+    root = pathlib.Path(__file__).resolve().parent
     sources = _tracked_source_paths(root)
     assert any(path.parts[0] == ".claude" for path in sources)
     unresolved = _unresolved_references(root, sources)
@@ -144,13 +145,18 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
     skill = tmp_path / _PLUGIN_PREFIX / "skills" / "present"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: present\n---\n", encoding="utf-8")
+    root_test = skill.parent / "contract_test.py"
+    root_test.write_text("", encoding="utf-8")
     source = pathlib.Path("source.md")
     (tmp_path / source).write_text(
-        f"{_PLUGIN_PREFIX}:present\n{_PLUGIN_PREFIX}/skills/present/SKILL.md\n",
+        f"{_PLUGIN_PREFIX}:present\n{_PLUGIN_PREFIX}/skills/present/SKILL.md\n{_PLUGIN_PREFIX}/skills/contract_test.py\n",
         encoding="utf-8",
     )
 
     assert not _unresolved_references(tmp_path, [source])
+
+    root_test.unlink()
+    assert _unresolved_references(tmp_path, [source]) == [(f"{_PLUGIN_PREFIX}/skills/contract_test.py", source)]
 
 
 def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
@@ -322,7 +328,7 @@ def _unresolved_heading_references(
 
 def test_normative_heading_references_resolve() -> None:
     """規範Markdownの見出し名参照が、参照先に残る見出しまたは本文の文字列へ解決する。"""
-    root = pathlib.Path(__file__).resolve().parents[1]
+    root = pathlib.Path(__file__).resolve().parent
     tracked = _tracked_source_paths(root)
     markdown_paths = [path for path in tracked if path.suffix == ".md"]
     sources = _normative_markdown_paths(tracked)

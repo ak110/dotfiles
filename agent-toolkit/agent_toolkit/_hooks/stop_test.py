@@ -217,6 +217,7 @@ def test_stop_evaluations_scan_transcript_once(
     assert calls == 1
 
 
+@pytest.mark.repo_invariant
 def test_registered_stop_checks_document_delegated_execution() -> None:
     manifest = json.loads(_HOOKS_PATH.read_text(encoding="utf-8"))
     module_names: list[str] = []

@@ -489,3 +489,50 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 - 適用済み: 全ツールの`inputSchema`はobjectで、構造化結果は戻り値の型で検証してから返す。想定内の誤りは`ToolError`からツール実行エラーとして返り、`show_run`などは有効な値を得るツールを案内する。`grep`は件数上限、要約の選択、省略件数と`guidance`を返す。MCPのstdoutへは書かず、ログを標準エラーへ向ける
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
 - 仕様上の是正: 確定した該当なし。未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。子プロセスの標準出力が常に取り込まれるかは確認していない
+
+## テストの近接配置と横断選択の再検証：2026年10月3日
+
+配置変更前の554312ce7では、リポジトリ直下から`--ignore=agent-toolkit-codex`を指定したpytestの収集が8092件、repo_invariantの選択が80件であった。
+ここで「旧node」は、554312ce7で収集された`<ファイル>::<クラス>::<関数>[パラメーター]`の識別子を指す。
+クラスとパラメーターが無い識別子も含む。基準版と再検証する版は独立した作業ツリーへ用意し、
+`dotfiles-development`の環境準備を終えてから、それぞれのリポジトリ直下で次の2つのコマンドで収集する。
+
+全nodeの収集:
+
+```sh
+uv run --frozen pytest -p no:cacheprovider -p no:xdist -o addopts='' --collect-only -q --ignore=agent-toolkit-codex .
+```
+
+repo_invariantの選択結果の収集:
+
+```sh
+uv run --frozen pytest -p no:cacheprovider -p no:xdist -o addopts='' --collect-only -q -m repo_invariant --ignore=agent-toolkit-codex .
+```
+
+再検証する版でのrepo_invariantの実行:
+
+```sh
+uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .
+```
+
+移動の対応は`git diff --find-renames 554312ce7..HEAD -- '*_test.py'`と、両版の収集出力から復元する。
+ファイル全体の改名はrenameの組、部分分離は同名のクラス・関数とパラメーターで対応させる。
+収集結果が合格となるのは、全ての旧nodeが移動先か維持する場所で一度ずつ収集され、欠落・重複が無い場合である。
+元のassert・パラメーター・対象集合を維持し、旧80選択の各nodeも保持する。
+追加した横断nodeが選ばれ、通常の動作nodeを一律に選択へ含めず、選択したテストの実行が終了0であることも確かめる。
+今回の変更後の確認値は、全8092node、横断130nodeの選択と130件成功、担当範囲の通常614nodeの非選択である。
+将来の追加や改訂では件数だけを固定値と比べず、各nodeの対応と選択を比べ、意図した増減の理由を記録する。
+
+生成・参照・設定の追随は、再検証する版のリポジトリ直下で次を実行する。
+
+```sh
+uv run --frozen python scripts/sync_generated_files.py
+uv run --frozen python scripts/sync_codex_plugin_manifests.py --check
+uv run --frozen pytest -p no:cacheprovider ci_workflow_test.py custom_linters_invariant_test.py sync_generated_files_invariant_test.py scripts/sync_codex_plugin_manifests_test.py scripts/gen-install-files_test.py
+```
+
+生成と設定の追随が合格となるのは、同期後の`--check`が終了0で、上記のテストが前提を満たす環境で成功する場合である。
+通常ファイルの投影、wheelのテスト除外と隔離の契約も保持する。
+`test_agent_doc_tone_covers_every_population_root`はpyfltrの公開APIのexpand_all_files・filter_by_globsで実際に届く対象を確かめる。
+`test_sync_targets_cover_agent_toolkit_skills_and_share`は新配置を含む各階層の同期対象を確かめる。
+両テストで既存の代表を保持し、新配置7階層も対象へ加えた。自動実行や処理速度はこの配置変更の検証対象へ含めない。

@@ -155,7 +155,7 @@ jobs:
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
           uv run --frozen --python 3.14 pytest -v -p no:cacheprovider
-          scripts/update_dotfiles_launcher_test.py
+          bin/update_dotfiles_launcher_test.py
       - name: chezmoi インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash

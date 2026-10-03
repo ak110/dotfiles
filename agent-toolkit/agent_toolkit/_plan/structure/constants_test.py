@@ -314,22 +314,6 @@ def test_duplicate_headings_accepts_same_text_under_different_parents() -> None:
     assert not _plan_format.check_duplicate_headings(content)
 
 
-@pytest.mark.parametrize(
-    "expected",
-    [
-        *(f"`## {name}`" for name in _plan_format.PLAN_SINGLE_FILE_H2_ORDER),
-        *(f"`### {name}`" for name in _plan_format.PLAN_PERMANENCE_H3),
-        f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}<1から始まる連番>`",
-    ],
-)
-def test_plan_file_standards_states_every_structure_constant(expected: str) -> None:
-    """構造の判定に用いる見出し名を`plan-file-standards.md`の本文が明記する。
-
-    実装だけが要件を持つ状態を避け、構造定数を改訂した場合に`plan-file-standards.md`が更新されていないことを検出する。
-    """
-    assert expected in _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
-
-
 @pytest.mark.parametrize("track", _plan_format.PLAN_HISTORY_TRACK_VALUES)
 def test_main_history_accepts_review_table_track_values(track: str) -> None:
     """新形式の変更履歴はレビュー指摘管理表の正規trackを受理する。"""

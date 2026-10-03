@@ -14,7 +14,8 @@ import pytest
 
 pytestmark = pytest.mark.repo_invariant
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 # 本ファイル自身を検出しないよう、禁止する語を2つの部分文字列の連結で持つ。
 # Unicodeエスケープは整形処理がリテラルへ戻すため使わない。
@@ -23,7 +24,7 @@ FORBIDDEN_TERM = "ユーザー" + "報告"
 ALLOWED_PATHS = (
     "agent-toolkit/rules/01-agent.md",
     ".chezmoi-source/dot_codex/AGENTS.md",
-    "scripts/report_direction_term_test.py",
+    "report_direction_term_invariant_test.py",
 )
 
 

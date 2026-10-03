@@ -5,7 +5,6 @@ import pathlib
 import shutil
 import subprocess
 import sys
-import tomllib
 
 import platformdirs
 import pytest
@@ -382,14 +381,3 @@ def test_windows_warning_redirects_as_utf8_without_bom() -> None:
     assert result.returncode == 0
     assert not result.stdout
     assert result.stderr == f"{_UPDATE_WARNING}\r\n".encode()
-
-
-def test_root_mise_files_do_not_manage_uv() -> None:
-    """bootstrap基盤のuvがルートmise設定とlockへ再混入しない。"""
-    with (_ROOT / "mise.toml").open("rb") as file:
-        config = tomllib.load(file)
-    with (_ROOT / "mise.lock").open("rb") as file:
-        lock = tomllib.load(file)
-
-    assert "uv" not in config["tools"]
-    assert "uv" not in lock["tools"]

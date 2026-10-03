@@ -54,6 +54,7 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     return _Env(module=module, rules_dir=rules_dir, install_sh=install_sh, install_ps1=install_ps1)
 
 
+@pytest.mark.repo_invariant
 def test_current_repo_files_are_synced() -> None:
     """リポジトリ実体のrules一覧と両install scriptのマーカーブロックが一致する。"""
     names = sorted(path.name for path in (_REPO_ROOT / "agent-toolkit" / "rules").glob("*.md"))

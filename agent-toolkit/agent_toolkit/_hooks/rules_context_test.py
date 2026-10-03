@@ -5,15 +5,12 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
-import re
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
 from agent_toolkit._hooks import rules_context, rules_context_codex, session_state
-
-_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _output(capsys: pytest.CaptureFixture[str]) -> str:
@@ -144,13 +141,6 @@ def test_subagent_start_codex_excludes_claude_code_rules(capsys: pytest.CaptureF
     assert rules_context.SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
 
 
-def test_hooks_json_registers_rules_context_without_matcher() -> None:
-    hooks = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
-    for event in ("SessionStart", "SubagentStart"):
-        assert "matcher" not in hooks[event][0]
-        assert hooks[event][0]["hooks"][0]["command"].endswith("hook.py rules_context")
-
-
 def _session_start_length_report(output: str) -> str:
     """SessionStartの追加本文が上限を超えた場合の失敗本文を組み立てる。
 
@@ -195,27 +185,6 @@ def test_session_start_length_report_shows_overage_and_breakdown() -> None:
     assert f"{rules_context.MAIN_RULES_CLAUDE_CODE_PATH.name}=" in report
 
 
-def test_share_task_documents_have_no_bare_return_line_examples() -> None:
-    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
-
-    条件付き出力の書式例をフェンスの外へ置くと、常時出力する行と誤読される。
-    母集団は`rules_context.SHARE_DIR`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
-    """
-    bare_label_line = re.compile(r"^[^\s#\-*>|`][^\n:`]*: \S.*$")
-    offending: list[str] = []
-    for path in sorted(rules_context.SHARE_DIR.glob("*.md")):
-        in_fence = False
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if line.lstrip().startswith("```"):
-                in_fence = not in_fence
-                continue
-            if in_fence:
-                continue
-            if bare_label_line.match(line):
-                offending.append(f"{path.name}:{lineno}: {line}")
-    assert not offending
-
-
 def test_subagent_start_does_not_create_session_scoped_managed_temp(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -257,29 +226,6 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     assert session_root.exists()
     child = managed_temp.create_session_temp("child", session_root)
     assert child.parent == session_root
-
-
-def test_rules_files_have_no_role_specific_sentences() -> None:
-    pattern = re.compile(r"^(?:- |\d+\. )?(?:委譲先|サブエージェント|メインエージェント)は")
-    actual = {
-        line
-        for path in (_PLUGIN_ROOT / "rules").glob("*.md")
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if pattern.match(line)
-    }
-    assert not actual
-
-
-def test_rules_files_have_no_main_only_capabilities() -> None:
-    prohibited = (
-        "`AskUserQuestion`で",
-        "ユーザーへ報告",
-        "UWIへ記録",
-        "を起動して登録",
-        "を起動してUWI",
-    )
-    common = "\n".join(path.read_text(encoding="utf-8") for path in (_PLUGIN_ROOT / "rules").glob("*.md"))
-    assert not any(value in common for value in prohibited)
 
 
 @pytest.mark.parametrize(

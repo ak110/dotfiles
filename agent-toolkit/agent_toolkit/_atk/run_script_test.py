@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import pathlib
-import shlex
 import subprocess
 import sys
 
@@ -14,6 +13,7 @@ from agent_toolkit._atk import help_text, run_script
 from agent_toolkit._common import next_action
 
 
+@pytest.mark.repo_invariant
 def test_registry_stays_inside_plugin_root() -> None:
     for relative in run_script.SCRIPT_PATHS.values():
         target = (run_script.PLUGIN_ROOT / relative).resolve()
@@ -58,28 +58,6 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
     assert run_script.dispatch(argparse.Namespace(script_name="session-review-evidence", script_args=["--", *script_args])) == 0
 
     assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
-
-
-def test_session_review_documents_use_public_script_entries() -> None:
-    """振り返りの手順書の実行例が登録済みのコマンドを使い、実装ファイルを直接起動しない。"""
-    documents = (run_script.PLUGIN_ROOT / "skills" / "session-review" / "SKILL.md",)
-    commands: list[list[str]] = []
-    for document in documents:
-        in_block = False
-        for line in document.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if stripped == "```text":
-                in_block = True
-            elif stripped == "```":
-                in_block = False
-            elif in_block and stripped.startswith("atk run-script session-review-"):
-                commands.append(shlex.split(stripped))
-
-    assert {command[2] for command in commands} == {"session-review-prepare"}
-    for command in commands:
-        assert command[:2] == ["atk", "run-script"]
-        assert command[3] == "--"
-        assert run_script.registered_script_path(command[2]).is_file()
 
 
 @pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report"])
