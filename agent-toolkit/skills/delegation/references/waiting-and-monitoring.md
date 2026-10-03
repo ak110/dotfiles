@@ -187,6 +187,7 @@ Codexで元担当の回復、置換、再起動、代替起動または役割引
 ## 停滞の検知と巻き取り
 
 - Claude委譲先の`show`または`list`が429の`rate_limit_error`を`api_error`へ返し、`status`が`running`の間は同じsessionの終端または正常なモデル出力を待つ。API失敗の合成メッセージはモデル活動時刻を進めないため、`seconds_since_activity`の増大だけで停滞を確定せず、後続の催促・巻き取りへ進まない。`api_error`が消えた場合とsessionが終端した場合は通常の待機判定へ戻る
+- Codex委譲先の`show`または`list`が`api_error`の種別`serverOverloaded`を返し、`status`が`running`の間は、`agents_server`が待機の後に同じsessionで作業を続ける。委譲元は`send_message`で継続を送らず、終端まで待機を続ける。自動継続の上限に達した場合は失敗の終端結果が届くため、その時点で候補を変えて起動し直す
 - 停滞の可能性に気付いた時点で`show`を1回発行し、`active_tool_uses`を確認する。
   この項目が存在し、前回の観測と同じツール呼び出しが同じ開始時刻で続いている場合は、委譲先が長時間のコマンドを実行中であるため、催促と巻き取りのどちらも保留する。
   この項目が無く`seconds_since_activity`が停滞の可能性がある長さに達している場合だけ、以降の停滞の確定の手順へ進む。

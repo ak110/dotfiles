@@ -304,7 +304,8 @@ pub(crate) fn render_state_files(
         .map(|(item, name)| {
             // 最後に観測した行動を優先する。テキスト出力の無い区間でもツール名が進み、
             // 稼働しているかを1行で読み取れる。
-            let api_error = if item.session.engine == "claude" && item.session.status == "running" {
+            // ClaudeのAPI再試行とCodexの過負荷による自動継続の待機は、どちらも実行中の`api_error`で表す。
+            let api_error = if item.session.status == "running" {
                 item.session.api_error.as_ref()
             } else {
                 None
@@ -742,8 +743,14 @@ mod tests {
         });
         let mut recovered = retrying.clone();
         recovered.as_object_mut().unwrap().remove("api_error");
-        let mut other_engine = retrying.clone();
-        other_engine["engine"] = Value::String("codex".to_string());
+        let mut overloaded = retrying.clone();
+        overloaded["engine"] = Value::String("codex".to_string());
+        overloaded["api_error"] = serde_json::json!({
+            "type": "serverOverloaded",
+            "http_status": null,
+            "first_at": "2025-12-31T23:59:30+00:00",
+            "count": 2,
+        });
         let mut terminal = retrying.clone();
         terminal["status"] = Value::String("completed".to_string());
         let mut malformed = retrying.clone();
@@ -759,7 +766,11 @@ mod tests {
                 Value::Null,
                 serde_json::json!([recovered]),
             ),
-            state_file("other.json", Value::Null, serde_json::json!([other_engine])),
+            state_file(
+                "overloaded.json",
+                Value::Null,
+                serde_json::json!([overloaded]),
+            ),
             state_file("terminal.json", Value::Null, serde_json::json!([terminal])),
             state_file(
                 "malformed.json",
@@ -776,8 +787,20 @@ mod tests {
         assert!(lines[0].contains("3回"));
         assert!(lines.iter().all(|line| display_width(line) <= 80));
         assert!(!lines[0].contains("Bash"));
-        assert!(lines[1..].iter().all(|line| !line.contains("API再試行")));
-        assert!(lines[1..].iter().all(|line| line.contains("Bash")));
+        let overloaded_line = lines
+            .iter()
+            .find(|line| line.contains("serverOverloaded"))
+            .expect("Codexの過負荷の待機を表示する");
+        assert!(overloaded_line.contains("API再試行 serverOverloaded"));
+        assert!(overloaded_line.contains("HTTP ?"));
+        assert!(overloaded_line.contains("2回"));
+        let others: Vec<_> = lines[1..]
+            .iter()
+            .filter(|line| !line.contains("serverOverloaded"))
+            .collect();
+        assert_eq!(others.len(), 3);
+        assert!(others.iter().all(|line| !line.contains("API再試行")));
+        assert!(others.iter().all(|line| line.contains("Bash")));
     }
 
     #[test]

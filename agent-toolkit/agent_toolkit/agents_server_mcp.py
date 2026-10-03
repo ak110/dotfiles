@@ -52,6 +52,7 @@ from agent_toolkit._agents_server.state import (
     _validate_shell_request,
     add_terminal_listener,
     add_touch_listener,
+    clear_overload_resume,
     consume_agents_wait_background_outputs,
     finalize_pending_result,
     has_pending_auto_resume_targets,
@@ -1197,7 +1198,8 @@ class AgentsServerManager:
             if unresolved:
                 response["live_child_session_ids_without_cwd"] = unresolved
         if status == "running" and isinstance(session, SessionState) and session.awaiting_auto_resume:
-            # モデルのturnは終わり、バックグラウンドタスクか孫sessionの終端を待って結果を保留している。
+            # モデルのturnは終わり、バックグラウンドタスクか孫sessionの終端、
+            # または過負荷後の継続の待機のために結果を保留している。
             # 活動時刻が進まないため、委譲元が停滞と区別できるよう保留と待機対象を公開する。
             response["result_held"] = True
             if session.live_tasks:
@@ -1478,6 +1480,8 @@ class AgentsServerManager:
             else:
                 session.touch()
             await self._await_start_outcome(session)
+            # 以後に過負荷で終端したturnは候補切替ではなく同じsessionの自動継続で扱う。
+            session.availability_checked = True
             response: dict[str, Any] = {
                 "session_id": session.session_id,
                 "status": session.status,
@@ -1848,8 +1852,12 @@ class AgentsServerManager:
         return self._status_writer.read_result(session_id) is not None
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
-        """保留中の結果を、孫sessionの終端または保持期限に応じて進める。"""
+        """保留中の結果を、孫sessionの終端・過負荷の待機の経過または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
+            return
+        if session.overload_resume_at is not None:
+            if asyncio.get_running_loop().time() >= session.overload_resume_at:
+                await self._resume_after_overload(session)
             return
         # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終端結果ファイルが消えた後も未観測にしない。
         consume_agents_wait_background_outputs(session)
@@ -1933,6 +1941,33 @@ class AgentsServerManager:
             finalize_pending_result(session)
             if unobserved:
                 record_unobserved_sessions(session, unobserved)
+
+    async def _resume_after_overload(self, session: SessionState) -> None:
+        """過負荷の待機を終えたsessionへ、同じ作業を続ける指示を新しいturnとして送る。"""
+        pending_result = session.pending_result
+        assert pending_result is not None
+        error = pending_result["error"]
+        message = error.get("message") if isinstance(error, dict) else None
+        prompt = _wrap_delivery_body(
+            "直前のturnはモデルの過負荷（serverOverloaded）で中断した。\n"
+            f"失敗の内容: {message or 'serverOverloaded'}\n"
+            "中断前の作業を続け、所定の返却形式を返せ。",
+        )
+        finalize_pending_result(session, touch=False, keep_overload_chain=True)
+        try:
+            await self._backend(session.engine).send_message(session, prompt)
+        except Exception as exc:
+            clear_overload_resume(session)
+            session.status = pending_result["status"]
+            session.agent_message = pending_result["agent_message"]
+            session.error = {**error, "autoResumeError": f"{type(exc).__name__}: {exc}"} if isinstance(error, dict) else error
+            session.turn_completed = True
+            session.turn_start_ambiguous = False
+            session.touch()
+            return
+        session.api_error = None
+        if self._status_writer is not None:
+            self._status_writer.delete_result(session.session_id, collector="auto-resume")
 
     def _take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""

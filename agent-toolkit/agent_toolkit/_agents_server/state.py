@@ -23,6 +23,12 @@ RESULT_RETENTION_SECONDS = 1800.0
 # 自動再開の待機上限は終端結果の保持期限とは目的が異なる。本計画の起草時点では
 # 値を変える根拠となる観測結果が無いため、現行の結果保持期限と同じ値を選ぶ。
 AUTO_RESUME_DEADLINE_SECONDS = 1800.0
+# 起動の可用性確認を過ぎた後にCodexのturnがモデルの過負荷で終端した場合に、同じsessionへ継続を送るまでの待機秒数。
+# 要素数が1回の失敗の連鎖で行う自動継続の上限回数となる。値はユーザー指示（15秒・30秒・60秒）による。
+# 直後の再送では過負荷が解けなかった観測があるため待機を置き、間隔を広げる。上限に達しても解けない場合は
+# 最後の失敗を公開し、その候補を次回の起動の除外対象として記録して、委譲元の起動し直しで別のモデルへ移す。
+OVERLOAD_RESUME_DELAYS_SECONDS = (15.0, 30.0, 60.0)
+OVERLOAD_ERROR_INFO = "serverOverloaded"
 # 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
 # 値はユーザーの提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
 # 超過は停滞の確定ではなく委譲元が状況を調べる契機として扱う。
@@ -475,6 +481,13 @@ class SessionState:
     # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
+    # `start`の可用性確認を終えたか。確認を終える前の過負荷は起動時の候補切替が扱う。
+    availability_checked: bool = False
+    # 過負荷による自動継続。連鎖の中で行った継続の回数、次の継続を送る時刻（イベントループの時計）と、
+    # 連鎖の最初の過負荷の時刻を持つ。過負荷以外の終端、委譲元の`kill`・`send_message`および上限到達で初期化する。
+    overload_resume_count: int = 0
+    overload_resume_at: float | None = None
+    overload_first_at: str | None = None
     pending_result: dict[str, Any] | None = None
     finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
@@ -958,11 +971,18 @@ def _discard_collected(session: SessionState, collected: set[str]) -> None:
     session.terminal_child_session_ids.difference_update(collected)
 
 
-def finalize_pending_result(session: SessionState, *, touch: bool = True) -> None:
-    """保留したturn結果を公開可能な終端状態へ移す。"""
+def finalize_pending_result(session: SessionState, *, touch: bool = True, keep_overload_chain: bool = False) -> None:
+    """保留したturn結果を公開可能な終端状態へ移す。
+
+    過負荷の自動継続を送る処理だけが`keep_overload_chain`を真にし、連鎖の回数を引き継ぐ。
+    それ以外（`kill`、委譲元の`send_message`、期限到来）は連鎖を終える。
+    """
     result = session.pending_result
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
+    session.overload_resume_at = None
+    if not keep_overload_chain:
+        clear_overload_resume(session)
     session.awaiting_auto_resume = False
     session.auto_resume_deadline = None
     session.pending_result = None
@@ -974,6 +994,50 @@ def finalize_pending_result(session: SessionState, *, touch: bool = True) -> Non
     session.turn_start_ambiguous = False
     if touch:
         session.touch()
+
+
+def is_overload_failure(session: SessionState) -> bool:
+    """turnがCodexのモデルの過負荷で失敗したかを返す。"""
+    return (
+        session.status == "failed"
+        and isinstance(session.error, dict)
+        and session.error.get("codexErrorInfo") == OVERLOAD_ERROR_INFO
+    )
+
+
+def clear_overload_resume(session: SessionState) -> None:
+    """過負荷による自動継続の連鎖を終える。"""
+    session.overload_resume_count = 0
+    session.overload_resume_at = None
+    session.overload_first_at = None
+
+
+def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) -> bool:
+    """過負荷で終端したturnの結果を保留し、待機後の継続を予定する。
+
+    上限に達していれば保留せずに連鎖を終えて偽を返し、呼び出し元は結果をそのまま公開する。
+    待機中は既存の`api_error`へ種別`serverOverloaded`とHTTP状態の不明を記録して状態の読者へ公開する。
+    """
+    count = session.overload_resume_count
+    if count >= len(OVERLOAD_RESUME_DELAYS_SECONDS):
+        clear_overload_resume(session)
+        return False
+    session.pending_result = result
+    session.awaiting_auto_resume = True
+    session.auto_resume_deadline = None
+    session.overload_resume_at = asyncio.get_running_loop().time() + OVERLOAD_RESUME_DELAYS_SECONDS[count]
+    session.overload_resume_count = count + 1
+    if session.overload_first_at is None:
+        session.overload_first_at = _utc_now()
+    session.api_error = {
+        "type": OVERLOAD_ERROR_INFO,
+        "http_status": None,
+        "first_at": session.overload_first_at,
+        "count": session.overload_resume_count,
+    }
+    for listener in tuple(_TOUCH_LISTENERS):
+        listener()
+    return True
 
 
 def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> float:

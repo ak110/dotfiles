@@ -7941,3 +7941,171 @@ async def test_orphaned_record_keeps_turn_unobserved_unless_takeover_conditions_
     assert not backend.resume_calls
     assert (not backend.read_calls) is (case in {"live-status-file", "claude-engine"})
     await manager.close()
+
+
+_OVERLOAD_ERROR = {
+    "message": "Selected model is at capacity. Please try a different model.",
+    "codexErrorInfo": "serverOverloaded",
+}
+
+
+async def _wait_until_terminal(manager: subject.AgentsServerManager, attempts: int = 50) -> dict[str, Any]:
+    """委譲元と同じく、`running`が返る間は`wait`を再発行して終端結果を受け取る。"""
+    _set_wait_timeout(manager, 0.2)
+    for _ in range(attempts):
+        response = await manager.wait()
+        if response.get("status") in state.TERMINAL_STATUSES:
+            return response
+    raise AssertionError("終端結果を受け取れない")
+
+
+class OverloadingBackend(FakeBackend):
+    """起動応答の後のturnをCodexの過負荷で終端させる偽バックエンド。
+
+    Codex backendの`turn/completed`の処理（可用性確認後の過負荷の保留）を、共有状態の同じ関数で再現する。
+    `overloads`回まで過負荷で終え、その後の継続turnは`final_message`で正常に終える。
+    """
+
+    def __init__(
+        self,
+        sessions: dict[str, subject.SessionState],
+        condition: asyncio.Condition,
+        overloads: int,
+        final_message: str = "継続後の結果",
+    ) -> None:
+        super().__init__(sessions, "codex")
+        self._condition = condition
+        self._remaining = overloads
+        self._final_message = final_message
+        self.pending: list[asyncio.Task[None]] = []
+
+    async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await super().start(*args, **kwargs)
+        session.model = session.model or "gpt-6.1-sol"
+        session.effort = session.effort or "high"
+        self.pending.append(asyncio.create_task(self._finish_turn(session, delay=0.05)))
+        return session
+
+    async def send_message(self, session: subject.SessionState, prompt: str) -> dict[str, Any]:
+        result = await super().send_message(session, prompt)
+        self.pending.append(asyncio.create_task(self._finish_turn(session, delay=0.0)))
+        return result
+
+    async def _finish_turn(self, session: subject.SessionState, *, delay: float) -> None:
+        await asyncio.sleep(delay)
+        if self._remaining > 0:
+            self._remaining -= 1
+            session.status = "failed"
+            session.error = dict(_OVERLOAD_ERROR)
+            session.turn_completed = True
+            if (session.availability_checked or session.turn_seq > 1) and state.begin_overload_resume_wait(
+                session, {"status": "failed", "agent_message": "", "error": session.error}
+            ):
+                session.status = "running"
+            else:
+                session.touch()
+        else:
+            _complete(session, message=self._final_message)
+        async with self._condition:
+            self._condition.notify_all()
+
+
+@pytest.mark.asyncio
+async def test_overloaded_turn_resumes_same_session_and_publishes_resumed_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起動後の過負荷は失敗を公開せず、待機の後に同じsessionで継続し、継続したturnの結果を終端結果として返す。"""
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _m: [("codex", "gpt-6.1-sol", "high")])
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
+    monkeypatch.setattr(state, "OVERLOAD_RESUME_DELAYS_SECONDS", (0.0, 0.0, 0.0))
+    manager = subject.AgentsServerManager()
+    backend = OverloadingBackend(manager.sessions, manager._condition, overloads=2)
+    _install_backend(manager, "codex", backend)
+
+    started = await manager.start("high_tier", "作業する", str(tmp_path))
+    response = await _wait_until_terminal(manager)
+
+    assert started["status"] == "running"
+    assert response["session_id"] == started["session_id"]
+    assert response["status"] == "completed"
+    assert response["agent_message"] == "継続後の結果"
+    assert backend.send_calls == 2
+    assert all("serverOverloaded" in prompt and "所定の返却形式" in prompt for prompt in backend.prompts[1:])
+    assert manager.sessions[started["session_id"]].turn_seq == 3
+    assert not status_file.load_unavailable_candidates("high_tier", "delegate", now=datetime.datetime.now(datetime.UTC))
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_overload_wait_is_visible_as_running_with_api_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """待機中の`show`と`list`は`running`、`api_error`の種別`serverOverloaded`と結果の保留を返す。"""
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _m: [("codex", "gpt-6.1-sol", "high")])
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
+    monkeypatch.setattr(state, "OVERLOAD_RESUME_DELAYS_SECONDS", (3600.0, 3600.0, 3600.0))
+    manager = subject.AgentsServerManager()
+    backend = OverloadingBackend(manager.sessions, manager._condition, overloads=1)
+    _install_backend(manager, "codex", backend)
+
+    started = await manager.start("high_tier", "作業する", str(tmp_path))
+    await asyncio.gather(*backend.pending)
+    shown = manager.show_session(started["session_id"])
+    listed = manager.list_sessions()
+
+    assert shown["status"] == "running"
+    assert shown["result_held"] is True
+    assert shown["api_error"]["type"] == "serverOverloaded"
+    assert shown["api_error"]["http_status"] is None
+    listed_session = next(item for item in listed["sessions"] if item["session_id"] == started["session_id"])
+    assert listed_session["status"] == "running"
+    assert listed_session["api_error"]["type"] == "serverOverloaded"
+    assert backend.send_calls == 0
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_overload_limit_publishes_last_failure_and_excludes_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """3回の継続も過負荷で終われば、最後の失敗を現行の形で公開し、候補を次回の除外対象に記録する。"""
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _m: [("codex", "gpt-6.1-sol", "high")])
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
+    monkeypatch.setattr(state, "OVERLOAD_RESUME_DELAYS_SECONDS", (0.0, 0.0, 0.0))
+    manager = subject.AgentsServerManager()
+    backend = OverloadingBackend(manager.sessions, manager._condition, overloads=4)
+    _install_backend(manager, "codex", backend)
+
+    started = await manager.start("high_tier", "作業する", str(tmp_path))
+    response = await _wait_until_terminal(manager)
+
+    assert response["status"] == "failed"
+    assert response["error"]["codexErrorInfo"] == "serverOverloaded"
+    assert response["error"] == _OVERLOAD_ERROR
+    assert backend.send_calls == 3
+    assert manager.sessions[started["session_id"]].turn_seq == 4
+    assert status_file.load_unavailable_candidates("high_tier", "delegate", now=datetime.datetime.now(datetime.UTC)) == {
+        ("codex", "gpt-6.1-sol", "high"): "serverOverloaded"
+    }
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_overload_within_availability_check_switches_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起動の可用性確認の間に過負荷で終端した候補は、自動継続せず次の候補への切替で扱う。"""
+    candidates = [("codex", "gpt-6.1-sol", "high"), ("codex", "gpt-6-sol", "high")]
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _m: candidates)
+    manager = subject.AgentsServerManager()
+    _install_backend(manager, "codex", UnavailableStartBackend(manager.sessions, "codex", error=dict(_OVERLOAD_ERROR)))
+
+    response = await manager.start("high_tier", "作業する", str(tmp_path))
+
+    assert response["status"] == "failed"
+    assert [item["reason"] for item in response["excluded_candidates"]] == ["serverOverloaded", "serverOverloaded"]
+    await manager.close()
