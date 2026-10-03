@@ -687,7 +687,7 @@ def test_platforms_preserve_scalar_args_and_string_timeout(
     tmp_path: pathlib.Path,
     rules_url: str,
 ) -> None:
-    """両プラットフォーム版は型に一致しない利用者定義を旧定義として削除しない。"""
+    """両プラットフォーム版は型に一致しないユーザー定義を旧定義として削除しない。"""
     home = tmp_path / "home"
     home.mkdir()
     _write_claude_config(home, config)

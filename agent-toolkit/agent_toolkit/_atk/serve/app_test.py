@@ -250,7 +250,7 @@ detailOriginKey = entryKey(processing);
 elements['detail-dialog'].open = true;
 entries = [inbox, processing];
 enterEdit();
-elements['edit-content'].value = '利用者の保存本文';
+elements['edit-content'].value = 'ユーザーの保存本文';
 const putUrls = [];
 fetchHandler = async (url, options) => {
   if (options.method === 'PUT') {

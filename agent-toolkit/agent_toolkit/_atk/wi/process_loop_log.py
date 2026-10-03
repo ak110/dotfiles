@@ -82,7 +82,7 @@ def read_instructions() -> list[str]:
 
 
 def append_instruction(body: str) -> tuple[bool, str]:
-    """追加指示を追記し、追記したかどうかと利用者へ示す要旨を返す。
+    """追加指示を追記し、追記したかどうかとユーザーへ示す要旨を返す。
 
     保持済みのいずれかと完全一致する本文は、誤操作による二重投入として追記しない。
     追記後の合計が`INSTRUCTION_MAX_CHARS`を超える投入は拒否する。

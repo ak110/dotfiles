@@ -1128,6 +1128,14 @@ class AppServerManager:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
                 shared_state.record_unobserved_sessions(session, unobserved_session_ids)
+            elif not shared_state.is_overload_failure(session):
+                shared_state.clear_overload_resume(session)
+            elif (session.availability_checked or session.turn_seq > 1) and shared_state.begin_overload_resume_wait(
+                session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+            ):
+                # 起動の可用性確認を過ぎた後の過負荷は時間の経過で解け得るため、結果を保留して待機後に同じsessionで続ける。
+                # 継続の送信はMCP層の常駐監視（`_monitor_auto_resume`）が行う。確認を終える前の過負荷は起動時の候補切替が扱う。
+                session.status = "running"
             session.compaction_started_at_ms.clear()
         elif method == "turn/plan/updated":
             plan = params.get("plan")

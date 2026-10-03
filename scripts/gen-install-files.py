@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         if changed and not claude_common.atomic_write_bytes(path, data, tag="install files"):
             raise OSError(f"install scriptの書き込みに失敗: {path}")
     # 原子的書き込みは一時ファイルを生成して置き換えるため元ファイルの実行権限が失われる。
-    # install-claude.shはshebangを持ち利用者がそのまま実行するファイルであり、
+    # install-claude.shはshebangを持ちエンドユーザーがそのまま実行するファイルであり、
     # pre-commitのcheck-shebang-scripts-are-executableも実行権限を要求するため復元する。
     _INSTALL_SH.chmod(_INSTALL_SH.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return 0

@@ -48,6 +48,7 @@ _EXPECTED_HOOK_EVENTS = {
     "postToolUse",
     "permissionRequest",
     "userPromptSubmit",
+    "stop",
     "subagentStop",
     "sessionEnd",
 }
@@ -148,7 +149,7 @@ def _hooks_list() -> dict[str, Any] | None:
 
 
 def _hook_trust_notice_required(result: dict[str, Any] | None) -> bool:
-    """期待する8イベントが登録済みで、hook信頼だけが未完了の場合に真を返す。"""
+    """期待する9イベントが登録済みで、hook信頼だけが未完了の場合に真を返す。"""
     data = result.get("data") if isinstance(result, dict) else None
     if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
         return False

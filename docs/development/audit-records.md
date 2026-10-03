@@ -536,3 +536,9 @@ uv run --frozen pytest -p no:cacheprovider ci_workflow_test.py custom_linters_in
 `test_agent_doc_tone_covers_every_population_root`はpyfltrの公開APIのexpand_all_files・filter_by_globsで実際に届く対象を確かめる。
 `test_sync_targets_cover_agent_toolkit_skills_and_share`は新配置を含む各階層の同期対象を確かめる。
 両テストで既存の代表を保持し、新配置7階層も対象へ加えた。自動実行や処理速度はこの配置変更の検証対象へ含めない。
+
+## agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日
+
+AWI `20261003-134122-001.md`と`20261003-110859-001.md`の起草時に、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
+実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
+再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。

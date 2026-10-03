@@ -31,7 +31,7 @@ _IMPORT_HOME = Path.home()
 
 @pytest.fixture(autouse=True)
 def _isolate_update_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """post-applyの永続ログを実利用者のstate directoryから隔離する。"""
+    """post-applyの永続ログを実際のOSアカウントのstate directoryから隔離する。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
 
 
@@ -391,7 +391,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_startup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """startupに利用者ファイルが残る場合はprofile_defaultまで保持する。"""
+    """startupにユーザーファイルが残る場合はprofile_defaultまで保持する。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)
@@ -412,7 +412,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_profile_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """profile_default直下に利用者ファイルが残る場合はルートだけを保持する。"""
+    """profile_default直下にユーザーファイルが残る場合はルートだけを保持する。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)

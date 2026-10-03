@@ -156,7 +156,7 @@ class ManagedTempError(Exception):
         "解消しない場合はユーザーへ報告する"
     )
     PERMISSION_NEXT_ACTION = (
-        "表示されたパスの所有者が現在の利用者で、権限がディレクトリは0700・ファイルは0600であることを確認する。"
+        "表示されたパスの所有者が実行中のOSアカウントで、権限がディレクトリは0700・ファイルは0600であることを確認する。"
         "自分で直せない場合はユーザーへ報告する"
     )
     REPLACED_NEXT_ACTION = "同じ操作を再実行する。繰り返す場合は別の主体が同じパスを操作していないか確認し、ユーザーへ報告する"
@@ -281,7 +281,8 @@ def _validate_root(
                 )
         elif metadata.st_uid != os.geteuid():
             raise ManagedTempError(
-                f"管理対象rootの所有者が現在の利用者ではない: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                f"管理対象rootの所有者が実行中のOSアカウントではない: {root}",
+                next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
             )
         current = _ValidatedRoot(metadata.st_dev, metadata.st_ino, metadata.st_uid, mode)
     elif os.name == "nt":

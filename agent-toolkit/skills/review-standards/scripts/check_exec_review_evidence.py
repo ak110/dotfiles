@@ -22,8 +22,10 @@ import sys
 import tempfile
 import typing
 
+from agent_toolkit._atk import review_table
 from agent_toolkit._common import markdown_headings
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
 # 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
 JUDGMENT_OUTCOMES = frozenset({"達成", "未達", "証拠不足"})
@@ -37,6 +39,11 @@ PATH_START = re.compile(r"[A-Za-z]:[\\/]|/")
 BRACKETED_TITLE = re.compile(r"「([^」]+)」")
 WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
+BACKGROUND = "背景"
+REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
+# 背景の記録が原文の範囲を中略して引用するときの省略記号。
+ELLIPSIS = re.compile(r"…+|\.{3,}")
+WHITESPACE = re.compile(r"\s+")
 LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
 # 全角の終止記号は位置によらず文末とする。ASCIIの終止記号は直後が空白か段落末の場合だけ文末とし、
@@ -47,7 +54,7 @@ ASCII_TERMINATORS = ".!?"
 CLOSING_BRACKETS = ")）」』]】"
 INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
 # 確認回答の記録（`質問: `・`選択肢: `・`回答: `・`自由記述: `の行頭ラベルを持つ書式）の各ラベル。
-# 質問と選択肢はエージェントが書いた文であり、利用者の要求は回答と自由記述の値だけである。
+# 質問と選択肢はエージェントが書いた文であり、ユーザーの要求は回答と自由記述の値だけである。
 ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
 USER_ANSWER_LABELS = ("回答: ", "自由記述: ")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -709,8 +716,32 @@ def _plan_files(source: str) -> list[pathlib.Path]:
     return plans
 
 
-def _assignment_record(source: str, repository: pathlib.Path, wi_outputs: dict[str, str]) -> tuple[list[str] | None, str]:
-    """割当外行のsourceが指す割当の記録の節を返す。節を特定できない場合は理由を返す。"""
+def _review_tables(source: str) -> list[pathlib.Path]:
+    """sourceの文字列から、実在するレビュー指摘管理表の絶対パスを出現順に返す。"""
+    starts = [match.start() for match in PATH_START.finditer(source)]
+    tables: list[pathlib.Path] = []
+    for end in (match.end() for match in re.finditer(re.escape(REVIEW_TABLE_SUFFIX), source)):
+        candidate = next(
+            (
+                path
+                for path in (pathlib.Path(source[start:end]) for start in starts if start < end)
+                if path.is_absolute() and _is_file(path)
+            ),
+            None,
+        )
+        if candidate is not None and candidate not in tables:
+            tables.append(candidate)
+    return tables
+
+
+def _record_section(
+    source: str, repository: pathlib.Path, wi_outputs: dict[str, str], *, review_table_allowed: bool = False
+) -> tuple[list[str] | None, str]:
+    """免除行のsourceが指す記録の節を返す。節を特定できない場合は理由を返す。
+
+    記録はWI本文の`## 反映内容と反映先`か計画の`## 実施内容`とし、`review_table_allowed`のときは
+    実装着手後に分類を記録したレビュー指摘管理表の全行も受け付ける。
+    """
     reasons: list[str] = []
     if "反映内容と反映先" in source:
         for reference in dict.fromkeys(WI_FILENAME.findall(source)):
@@ -733,9 +764,18 @@ def _assignment_record(source: str, repository: pathlib.Path, wi_outputs: dict[s
             if section is not None:
                 return section, ""
             reasons.append(f"{plan}に『実施内容』節がありません")
+    if review_table_allowed:
+        for table in _review_tables(source):
+            try:
+                rows = review_table.read_rows(table)
+            except (OSError, UnicodeError, ValueError) as exc:
+                reasons.append(f"レビュー指摘管理表を読めません: {exc}")
+                continue
+            return [" ".join(row) for row in rows], ""
     if not reasons:
         reasons.append(
             "WIファイル名と節名『反映内容と反映先』、または実在する計画ファイルの絶対パスと節名『実施内容』がありません"
+            + ("（実装着手後はレビュー指摘管理表の絶対パスも可）" if review_table_allowed else "")
         )
     return None, "、".join(reasons)
 
@@ -749,7 +789,7 @@ def _unassigned_source_error(
     割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
     """
     label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
-    record, reason = _assignment_record(row["source"], repository, wi_outputs)
+    record, reason = _record_section(row["source"], repository, wi_outputs)
     if record is None:
         return (
             f"{label}.source: 割当外の根拠となる割当の記録を特定できません（{reason}）。"
@@ -775,13 +815,107 @@ def _unassigned_source_error(
     )
 
 
+def _compact(text: str) -> str:
+    """空白の有無と改行位置の違いで原文との対応が崩れないよう、空白を全て除いた文字列を返す。"""
+    return WHITESPACE.sub("", text)
+
+
+def _original_text(row: dict[str, str], repository: pathlib.Path, wi_outputs: dict[str, str]) -> str | None:
+    """行の原文要求を含む原文（WI本文、計画だけの行では`origin`が指す計画）を返す。"""
+    if row["awi"]:
+        try:
+            _, body = _load_wi(row["awi"], repository, wi_outputs)
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return None
+        return "\n".join(body)
+    for plan in _plan_files(row["origin"]):
+        try:
+            return plan.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+    return None
+
+
+def _quote_spans(quote: str, original: str) -> list[tuple[int, int]]:
+    """中略を含み得る引用が原文上で覆い得る範囲を全て返す。
+
+    記録自身も原文と同じ本文に含まれ得るため、最初の出現だけでなく全ての出現から範囲を求める。
+    """
+    pieces = [piece for piece in (_compact(part) for part in ELLIPSIS.split(quote)) if piece]
+    spans: list[tuple[int, int]] = []
+    start = original.find(pieces[0]) if pieces else -1
+    while start >= 0:
+        end = start + len(pieces[0])
+        for piece in pieces[1:]:
+            found = original.find(piece, end)
+            if found < 0:
+                break
+            end = found + len(piece)
+        else:
+            spans.append((start, end))
+        start = original.find(pieces[0], start + 1)
+    return spans
+
+
+def _covered_by_background(requirement: str, record: list[str], original: str) -> bool:
+    """「背景」を含む記録行のいずれかの引用が、原文上で要求単位の位置を覆うかを返す。"""
+    unit = _compact(requirement)
+    positions = [index for index in range(len(original)) if original.startswith(unit, index)] if unit else []
+    for line in record:
+        if BACKGROUND not in line:
+            continue
+        for quote in BRACKETED_TITLE.findall(line):
+            for start, end in _quote_spans(quote, original):
+                if any(start <= position and position + len(unit) <= end for position in positions):
+                    return True
+    return False
+
+
+def _background_source_error(
+    row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
+) -> str | None:
+    """背景行について、分類の記録の所在、原文の範囲との対応、要求を含まない理由の記述を確かめる。
+
+    要求を含むかの意味判断は実行レビュー担当と統合時に判定するメインが担い、本関数は「背景」の語だけで免除しない。
+    記録の所在と、記録が「」で引用した原文の範囲が行の要求単位を覆うことを機械で確かめる。
+    """
+    label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
+    record, reason = _record_section(row["source"], repository, wi_outputs, review_table_allowed=True)
+    if record is None:
+        return (
+            f"{label}.source: 背景の根拠となる分類の記録を特定できません（{reason}）。"
+            "背景とした原文の範囲と理由を記録したWIのファイル名と節名『反映内容と反映先』、"
+            "計画ファイルの絶対パスと節名『実施内容』、または実装着手後に記録したレビュー指摘管理表の絶対パスをsourceへ書く。"
+            "記録が無い単位は記録を補ってから背景とするか、達成・未達・証拠不足のいずれかで判定する"
+        )
+    original = _original_text(row, repository, wi_outputs)
+    if original is None or not _covered_by_background(row["requirement"], record, _compact(original)):
+        return (
+            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を「」で引用していません。"
+            "背景とした原文の範囲を「」で囲んで記録へ書く（中略は…で示す）。"
+            "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"
+        )
+    evidence = row["evidence"].strip()
+    if not evidence or _is_reference_only(evidence, repository):
+        return (
+            f"{label}.evidence: 要求を含まない理由がありません。"
+            "分類の記録を指し、その単位が要求・制約・採否・選好・回答を求める問いを含まない理由をevidenceへ書く"
+        )
+    return None
+
+
 ExemptionCheck = typing.Callable[[dict[str, str], str, int, pathlib.Path, dict[str, str]], "str | None"]
 # 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と対にして登録する。
 # 検証関数を持たない免除の判定値を受理値へ加えると、根拠の無い行が確認を通過するためである。
 # 割当外は分割起票で他のWIへ割り当てた原文要求と分割元の依頼全体の単位にだけ使うため、完成条件の行では受理しない。
+# 背景は原文要求のうち要求を含まない過去の観測や経緯の文にだけ使う。完成条件はWI自身の達成対象であるため受理しない。
 EXEMPTIONS: dict[str, dict[str, ExemptionCheck]] = {
     "wi_conditions": {"失効": _expired_source_error},
-    "user_requirements": {"失効": _expired_source_error, "割当外": _unassigned_source_error},
+    "user_requirements": {
+        "失効": _expired_source_error,
+        "割当外": _unassigned_source_error,
+        BACKGROUND: _background_source_error,
+    },
 }
 SECTION_OUTCOMES = {section: JUDGMENT_OUTCOMES | set(checks) for section, checks in EXEMPTIONS.items()}
 
@@ -863,6 +997,141 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     return errors
 
 
+def _input_records(paths: list[pathlib.Path], repository: pathlib.Path, head: str) -> dict[pathlib.Path, str]:
+    """採否と後続工程の既存記録を読み、引用した例を判断記録へ混ぜない。"""
+    records: dict[pathlib.Path, str] = {}
+    for path in paths:
+        if not path.is_absolute():
+            raise ValueError(f"計画と入力記録には絶対パスを指定する: {path}")
+        target = path.resolve()
+        records[target] = _reference_content(target, repository, head).decode("utf-8")
+    return records
+
+
+def _referenced_records(row: dict[str, str], records: dict[pathlib.Path, str], repository: pathlib.Path) -> list[str]:
+    """sourceとevidenceが実際に指す、今回渡された入力記録だけを返す。"""
+    found: list[str] = []
+    for match in _file_references(row["source"] + " " + row["evidence"], repository):
+        candidate, location = _reference_parts(match)
+        text = records.get((repository / candidate).resolve())
+        if text is not None:
+            headings = {title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)}
+            if _reference_location_error(text.encode("utf-8"), location, headings) is not None:
+                continue
+            body = markdown_body_text(text).splitlines()
+            if location.startswith("#"):
+                start = next(
+                    (index for index, line in enumerate(body) if line.lstrip("# ") == location[1:] and line.startswith("#")),
+                    None,
+                )
+                if start is None:
+                    continue
+                level = len(body[start]) - len(body[start].lstrip("#"))
+                end = next(
+                    (
+                        index
+                        for index in range(start + 1, len(body))
+                        if body[index].startswith("#") and len(body[index]) - len(body[index].lstrip("#")) <= level
+                    ),
+                    len(body),
+                )
+                body = body[start:end]
+            elif location.startswith(":") and not location.startswith("::"):
+                bounds = location.removeprefix(":").split("-")
+                # 行位置は原文で確かめた。引用を含む範囲は許容根拠の自動判定に使わない。
+                raw_body = text.splitlines()[int(bounds[0]) - 1 : int(bounds[-1])]
+                if "\n".join(raw_body) not in "\n".join(body):
+                    continue
+                body = raw_body
+            found.append("\n".join(body))
+    return found
+
+
+def _reject_record(text: str, filename: str) -> bool:
+    """計画の実施内容にある不採用行から、WI全体のrejectを確認する。"""
+    section = _section(text.splitlines(), "## 実施内容")
+    if section is None or not filename:
+        return False
+    decisions: list[tuple[str, str]] = []
+    for table in extract_tables(list(enumerate(section, start=1))):
+        if "採否" not in table.header or "根拠" not in table.header:
+            continue
+        index = table.header.index("採否")
+        reason_index = table.header.index("根拠")
+        decisions.extend(
+            (row[index], row[reason_index]) for row in table.rows if len(row) == len(table.header) and filename in " ".join(row)
+        )
+    return bool(decisions) and all(value == "不採用" and reason.strip() for value, reason in decisions)
+
+
+def _deferred_record(text: str, row: dict[str, str], field: str) -> bool:
+    """対象と後続工程を明示した既存の判断記録へ非達成行を対応付ける。
+
+    判定対象の原文、AWI、終端区分または判定工程を持つ同じ段落だけを使う。
+    自由文の意味は推定せず、延期などの語が他の段落にあるだけでは受理しない。
+    """
+    for paragraph in text.split("\n\n"):
+        values = dict(line.strip().removeprefix("- ").split(": ", 1) for line in paragraph.splitlines() if ": " in line)
+        if values.get("AWI") != (row["awi"] or "計画由来") or values.get("判定対象") != row[field]:
+            continue
+        if values.get("終端区分") == "延期adopt" and values.get("後続工程", "").strip() and values.get("検収時機", "").strip():
+            return True
+        if values.get("判定工程") == "公開工程":
+            return True
+        if values.get("判定工程") == "ユーザビリティレビュー" and values.get("進行状態") == "並行中":
+            return True
+    return False
+
+
+def check_return_result(
+    evidence_path: pathlib.Path | None,
+    filenames: list[str],
+    *,
+    expected_head: str,
+    table_path: pathlib.Path,
+    round_value: int,
+    input_paths: list[pathlib.Path],
+) -> tuple[list[str], int]:
+    """未応答件数と達成を要する行の整合を返却生成の直前に確かめる。
+
+    指摘がある正常なレビューはcompletedとして渡せる。指摘0件の返却が達成必須の
+    非達成行を隠す場合は後続の収束判断が成立しないためerrorとする。
+    """
+    try:
+        repository = _repository_root()
+        head = _commit_oid(repository, expected_head)
+        if not table_path.is_absolute():
+            raise ValueError("レビュー指摘管理表には絶対パスを指定する")
+        unanswered = int(review_table.summary(table_path, round_value)["unanswered_count"])
+        records = _input_records(input_paths, repository, head)
+    except (OSError, UnicodeError, subprocess.TimeoutExpired, ValueError) as error:
+        return [str(error)], 0
+    if evidence_path is None:
+        if filenames:
+            return ["対象WIがあるレビューには完成条件証拠を作成する。--templateで生成して各行を記入する"], unanswered
+        return [], unanswered
+    errors = check_evidence(evidence_path, filenames, expected_head=head)
+    if errors or unanswered:
+        return errors, unanswered
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
+        for index, row in enumerate(payload[section], start=1):
+            if row["outcome"] == "達成" or row["outcome"] in EXEMPTIONS[section]:
+                continue
+            if section == "wi_conditions" and row["outcome"] == "証拠不足" and row[field].startswith("任意の判断材料"):
+                continue
+            referred = _referenced_records(row, records, repository)
+            if any(_reject_record(text, row["awi"]) or _deferred_record(text, row, field) for text in referred):
+                continue
+            errors.append(
+                f"{row['awi'] or '計画由来'}: {section}[{index}]: 未解決の指摘数0件と{row['outcome']}が一致しません。"
+                "必要な証拠を補って再判定するか、実在の指摘を現在roundの表へ登録する。"
+                "許容される非達成なら、採否・後続工程の実在する記録をsourceとevidenceで指し、"
+                "その計画かWI・CI記録を--planまたは--input-recordで渡す"
+            )
+    return errors, unanswered
+
+
 def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str], int, int]:
     """不足する期待行を判定欄が空の雛形として`完成条件証拠`へ追記し、診断、追加行数、保持行数を返す。
 
@@ -932,8 +1201,25 @@ def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str],
 def main(argv: list[str] | None = None) -> int:
     """`完成条件証拠`と対象WI名を受け取り、基準を満たすか判定するか雛形を書き込んで結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("evidence", type=pathlib.Path, help="`完成条件証拠`（JSON）の絶対パス")
-    parser.add_argument("wi", nargs="+", help="対象WIのファイル名")
+    parser.add_argument(
+        "evidence", type=pathlib.Path, help="`完成条件証拠`（JSON）の絶対パス。証拠要求なしの返却生成では『なし』"
+    )
+    parser.add_argument("wi", nargs="*", help="対象WIのファイル名。計画だけのレビューでは省略する")
+    parser.add_argument("--review-table", type=pathlib.Path, help="返却の件数を取得するレビュー指摘管理表の絶対パス")
+    parser.add_argument("--round", type=int, help="今回のexec-reviewのラウンド番号")
+    parser.add_argument(
+        "--plan", type=pathlib.Path, action="append", default=[], help="採否を持つ計画の絶対パス。複数計画では反復する"
+    )
+    parser.add_argument(
+        "--input-record",
+        type=pathlib.Path,
+        action="append",
+        default=[],
+        help="採否と後続工程を持つWI・CI・引き継ぎ記録の絶対パス。反復できる",
+    )
+    parser.add_argument(
+        "--return-result", action="store_true", help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する"
+    )
     parser.add_argument(
         "--expected-head",
         help="最後に実際にレビューした対象commit。返却値reviewed_headを渡す。--templateを付けない判定では必須",
@@ -944,9 +1230,19 @@ def main(argv: list[str] | None = None) -> int:
         help="判定せず、`完成条件証拠`に不足する完成条件と原文要求の行を判定欄が空の雛形として追記する",
     )
     args = parser.parse_args(argv)
-    if not args.evidence.is_absolute():
+    no_evidence = str(args.evidence) == "なし"
+    if not args.evidence.is_absolute() and not (no_evidence and args.return_result):
         parser.error("`完成条件証拠`には絶対パスを指定してください")
+    gate_requested = args.review_table is not None or args.round is not None or args.return_result
+    if gate_requested and (args.review_table is None or args.round is None):
+        parser.error("返却の整合確認には--review-tableと--roundの両方を指定する")
+    if not args.wi and not no_evidence and not args.plan and not args.input_record:
+        parser.error("対象WIの無い証拠には--planか--input-recordでレビュー入力を指定する")
+    if any(not path.is_absolute() or not path.is_file() for path in [*args.plan, *args.input_record]):
+        parser.error("--planと--input-recordには実在する通常ファイルの絶対パスを指定する")
     if args.template:
+        if gate_requested:
+            parser.error("--templateは返却生成と別に実行する。雛形を記入してから返却の整合を確かめる")
         if args.expected_head is not None:
             parser.error("--templateと--expected-headは同時に指定できません。雛形の出力後に--expected-headだけを付けて判定する")
         errors, added, kept = write_template(args.evidence, args.wi)
@@ -972,7 +1268,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.expected_head is None:
         parser.error("証拠の判定には--expected-headが必要です。雛形を書き込む場合は--templateを付ける")
-    errors = check_evidence(args.evidence, args.wi, expected_head=args.expected_head)
+    unanswered = 0
+    if gate_requested:
+        assert args.review_table is not None and args.round is not None
+        errors, unanswered = check_return_result(
+            None if no_evidence else args.evidence,
+            args.wi,
+            expected_head=args.expected_head,
+            table_path=args.review_table,
+            round_value=args.round,
+            input_paths=[*args.plan, *args.input_record],
+        )
+    else:
+        errors = check_evidence(args.evidence, args.wi, expected_head=args.expected_head)
     for error in errors:
         print(f"失敗: {error}", file=sys.stderr)
     if errors:
@@ -985,7 +1293,14 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(args.wi)} 件）")
+    if args.return_result:
+        print("状態: completed")
+        print(f"レビューしたHEAD: {args.expected_head}")
+        print(f"未解決の指摘数: {unanswered}")
+        if not no_evidence:
+            print(f"完成条件証拠のパス: {args.evidence}")
+    else:
+        print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(args.wi)} 件）")
     return 0
 
 

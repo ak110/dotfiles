@@ -32,6 +32,7 @@ from agent_toolkit._atk.wi.common import _count_pending_entries, _pull, _repo_lo
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY, WI_STATE_INBOX, WI_STATE_PROCESSING
 from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
 from agent_toolkit._common import automated_prompt as _automated_prompt
+from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import next_action as _next_action
@@ -82,7 +83,7 @@ _RESTART_EXIT_CODE = 75
 # process-loopが起動した会話を環境印と会話IDで識別する。
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
-# 次に起動する1セッションだけへ渡す利用者の追加指示。SessionStart hookが本文を注入する。
+# 次に起動する1セッションだけへ渡すユーザーの追加指示。SessionStart hookが本文を注入する。
 _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
@@ -741,9 +742,23 @@ def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
 
 
 def _availability_probe_argv(orchestrator: str, model: str, effort: str) -> list[str]:
-    """候補3値を全て渡す副作用のない可用性判定用argvを返す。"""
+    """候補3値を全て渡す副作用のない可用性判定用argvを返す。
+
+    Claudeは利用上限の種類と解除予定時刻を読み取れるよう、構造化出力（`stream-json`）で起動する。
+    """
     if orchestrator == "claude":
-        return ["claude", "-p", "--model", model, "--effort", effort, _AVAILABILITY_PROBE_PROMPT]
+        return [
+            "claude",
+            "-p",
+            "--model",
+            model,
+            "--effort",
+            effort,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            _AVAILABILITY_PROBE_PROMPT,
+        ]
     return [
         "codex",
         "exec",
@@ -761,49 +776,100 @@ def _claude_ignored_effort(stderr: str) -> bool:
     return "--effort" in folded and any(word in folded for word in ("ignored", "ignoring"))
 
 
+def _probe_usage_limit(
+    orchestrator: str, result: subprocess.CompletedProcess[str]
+) -> _claude_usage_limit.UsageLimitState | None:
+    """失敗した可用性判定がClaudeのWeekly limitか5時間の利用上限による拒否なら、その状態を返す。"""
+    if orchestrator != "claude":
+        return None
+    usage_limit = _claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
+    return usage_limit if usage_limit is not None and usage_limit.is_wait_target else None
+
+
+def _wait_for_usage_limit(candidate: str, usage_limit: _claude_usage_limit.UsageLimitState) -> None:
+    """利用上限の解除予定時刻まで待つ。待機の内容を端末とprocess-loopのログへ出力する。"""
+    delay = usage_limit.delay_seconds(time.time())
+    print(f"{usage_limit.describe()}。{int(delay)}秒後に同じ候補で可用性を確かめ直します: {candidate}")
+    print("解除後に自動で本作業へ進むため、手動での再送や再起動は不要です。")
+    _process_loop_log.append(
+        "usage_limit_wait",
+        candidate=candidate,
+        limit_type=usage_limit.limit_type or "",
+        resets_at=usage_limit.resets_at_iso() or "",
+        delay_seconds=int(delay),
+    )
+    time.sleep(delay)
+
+
 def _select_available_orchestrator(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path
 ) -> tuple[str, str, str]:
-    """候補を先頭から事前に試し、最初に可用な3つ組を返す。"""
+    """候補を先頭から事前に試し、最初に可用な3つ組を返す。
+
+    ClaudeがWeekly limitか5時間の利用上限で拒否した場合は、次の候補へ切り替えず解除まで待って同じ候補を試し直す
+    （ユーザー指示）。待機の回数と総時間に上限を置かない。
+    """
     last_failure = (candidates[-1][0], 1, "")
     for orchestrator, model, effort in candidates:
         candidate = f"{orchestrator}:{model}/{effort}"
-        try:
-            result = subprocess.run(
-                _availability_probe_argv(orchestrator, model, effort),
-                check=False,
-                env=_availability_probe_env(env, orchestrator),
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-        except OSError as error:
-            _console_title.set_console_title("atk wi process-loop")
-            last_failure = (orchestrator, 1, f"engineを起動できません: {error}")
-            _next_action.report(
-                f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
-                next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
-            )
-            continue
-        _console_title.set_console_title("atk wi process-loop")
-        ignored_effort = orchestrator == "claude" and _claude_ignored_effort(result.stderr)
-        if result.returncode == 0 and not ignored_effort:
-            print(f"モデル候補の可用性判定に成功しました: {candidate}")
-            print(f"本作業へ採用するモデル候補: {candidate}")
-            return orchestrator, model, effort
-        failure_code = result.returncode or 1
-        diagnostic = (result.stderr or "").strip()
-        reason = "engineがeffortを無視しました" if ignored_effort else f"exit code {result.returncode}"
-        reason = f"{reason}; engine診断: {diagnostic}" if diagnostic else f"{reason}; engineの診断出力はありません"
-        last_failure = (orchestrator, failure_code, reason)
-        _next_action.report(
-            f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}",
-            next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
-        )
+        while True:
+            outcome = _probe_candidate(orchestrator, model, effort, env, cwd, candidate)
+            if outcome is None:
+                return orchestrator, model, effort
+            usage_limit, failure = outcome
+            if usage_limit is None:
+                break
+            _wait_for_usage_limit(candidate, usage_limit)
+        assert failure is not None
+        last_failure = failure
     _exit_abnormal_session(*last_failure)
     raise AssertionError("到達不能")
+
+
+def _probe_candidate(
+    orchestrator: str, model: str, effort: str, env: dict[str, str], cwd: pathlib.Path, candidate: str
+) -> tuple[_claude_usage_limit.UsageLimitState | None, tuple[str, int, str] | None] | None:
+    """1候補の可用性を判定する。可用なら`None`、失敗なら解除待ちの対象と失敗の内容の組を返す。
+
+    解除待ちの対象を返す場合、呼び出し元は次の候補へ進まず同じ候補を試し直すため、失敗の案内を出力しない。
+    """
+    try:
+        result = subprocess.run(
+            _availability_probe_argv(orchestrator, model, effort),
+            check=False,
+            env=_availability_probe_env(env, orchestrator),
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as error:
+        _console_title.set_console_title("atk wi process-loop")
+        _next_action.report(
+            f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
+            next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
+        )
+        return None, (orchestrator, 1, f"engineを起動できません: {error}")
+    _console_title.set_console_title("atk wi process-loop")
+    ignored_effort = orchestrator == "claude" and _claude_ignored_effort(result.stderr)
+    if result.returncode == 0 and not ignored_effort:
+        print(f"モデル候補の可用性判定に成功しました: {candidate}")
+        print(f"本作業へ採用するモデル候補: {candidate}")
+        return None
+    if not ignored_effort:
+        usage_limit = _probe_usage_limit(orchestrator, result)
+        if usage_limit is not None:
+            return usage_limit, None
+    failure_code = result.returncode or 1
+    diagnostic = (result.stderr or "").strip()
+    reason = "engineがeffortを無視しました" if ignored_effort else f"exit code {result.returncode}"
+    reason = f"{reason}; engine診断: {diagnostic}" if diagnostic else f"{reason}; engineの診断出力はありません"
+    _next_action.report(
+        f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}",
+        next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
+    )
+    return None, (orchestrator, failure_code, reason)
 
 
 def _build_session_argv(
@@ -1081,7 +1147,7 @@ def _resolve_dotfiles_root() -> pathlib.Path | None:
     その場合`pathlib.Path(__file__)`はdotfilesチェックアウトの外側（キャッシュ配下のバージョンディレクトリ）を
     指すため、自己コード更新検知の基準には使用できない
     （キャッシュ配下は`agent-toolkit/`のみを含む部分ツリーで、`.git`もdotfiles全体の履歴も持たない）。
-    利用者ごとに単一の`~/dotfiles`チェックアウトを持つ運用前提
+    OSアカウントごとに単一の`~/dotfiles`チェックアウトを持つ運用前提
     （`.bashrc`が`$HOME/dotfiles/bin`を直接PATHへ追加する既存運用と同じ前提。
     `atk wi process-loop`の対象リポジトリ（`--target-repo`）とは独立に、常に`~/dotfiles`を指す）に基づき、
     ホームディレクトリ直下の`dotfiles/`を直接の解決先とする。

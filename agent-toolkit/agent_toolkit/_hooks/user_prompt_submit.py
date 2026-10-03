@@ -43,6 +43,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 import time
 
 from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -55,6 +56,7 @@ from agent_toolkit._common.process_loop_session import (
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks import background_task_outputs as _background_task_outputs  # noqa: E402
+from agent_toolkit._hooks import termination_evidence
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -274,6 +276,11 @@ def main(payload_text: str) -> int:
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt:
         return 0
+
+    try:
+        termination_evidence.observe_user(payload_text)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        print(f"終了工程の原入力を取得できない: {error}", file=sys.stderr)
 
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。

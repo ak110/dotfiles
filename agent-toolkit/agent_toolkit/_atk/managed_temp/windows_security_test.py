@@ -1069,7 +1069,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`atk managed-temp`が作成していない領域の自己整合マーカーは、利用者の指定が無ければ信頼しない。"""
+        """`atk managed-temp`が作成していない領域の自己整合マーカーは、ユーザーの指定が無ければ信頼しない。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = tmp_path / "handmade"
         target.mkdir(mode=0o700)

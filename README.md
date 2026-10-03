@@ -140,5 +140,5 @@ statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CL
 ## ドキュメント
 
 - [docs/index.md](docs/index.md): ドキュメントの総合案内
-- [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）
+- [docs/guide/index.md](docs/guide/index.md): エンドユーザー向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）
 - [docs/development/development.md](docs/development/development.md): 開発者向け

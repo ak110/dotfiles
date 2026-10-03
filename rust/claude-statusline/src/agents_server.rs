@@ -49,7 +49,13 @@ struct ApiError {
     http_status: Option<u64>,
     first_at: String,
     count: u64,
+    /// Claude Codeの利用上限の解除待ちだけが持つ、利用枠の種類と解除予定時刻。
+    limit_type: Option<String>,
+    resets_at: Option<String>,
 }
+
+/// `api_error.type`のうち、Claude Codeの利用上限の解除待ちを表す値。
+const USAGE_LIMIT_ERROR_TYPE: &str = "usage_limit";
 
 #[derive(Debug)]
 struct DisplaySession<'a> {
@@ -269,11 +275,20 @@ fn parse_api_error(value: &Value) -> Option<ApiError> {
     if count == 0 {
         return None;
     }
+    let optional_string = |key: &str| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+    };
     Some(ApiError {
         error_type: error_type.to_string(),
         http_status,
         first_at: first_at.to_string(),
         count,
+        limit_type: optional_string("limit_type"),
+        resets_at: optional_string("resets_at"),
     })
 }
 
@@ -304,12 +319,20 @@ pub(crate) fn render_state_files(
         .map(|(item, name)| {
             // 最後に観測した行動を優先する。テキスト出力の無い区間でもツール名が進み、
             // 稼働しているかを1行で読み取れる。
-            let api_error = if item.session.engine == "claude" && item.session.status == "running" {
+            // ClaudeのAPI再試行とCodexの過負荷による自動継続の待機は、どちらも実行中の`api_error`で表す。
+            let api_error = if item.session.status == "running" {
                 item.session.api_error.as_ref()
             } else {
                 None
             };
-            let description = if let Some(api_error) = api_error {
+            // 利用上限の解除待ちは解除まで待てば同じsessionで続くため、API再試行と別の表示にする。
+            let usage_limit = api_error.filter(|error| error.error_type == USAGE_LIMIT_ERROR_TYPE);
+            let description = if let Some(usage_limit) = usage_limit {
+                format!(
+                    "利用上限の解除待ち {}",
+                    usage_limit.limit_type.as_deref().unwrap_or("?")
+                )
+            } else if let Some(api_error) = api_error {
                 format!("API再試行 {}", api_error.error_type)
             } else if item.session.last_action.is_empty() {
                 item.session.progress.clone()
@@ -317,7 +340,23 @@ pub(crate) fn render_state_files(
                 item.session.last_action.clone()
             };
             let mut right_parts = Vec::new();
-            if let Some(api_error) = api_error {
+            if let Some(usage_limit) = usage_limit {
+                let now_value = Value::String(now.to_rfc3339());
+                let remaining = usage_limit
+                    .resets_at
+                    .as_deref()
+                    .and_then(|resets_at| DateTime::parse_from_rfc3339(resets_at).ok())
+                    .and_then(|resets_at| {
+                        format_elapsed(Some(&now_value), resets_at.with_timezone(&Utc))
+                    });
+                right_parts.push(remaining.map_or_else(
+                    || "解除時刻確認中".to_string(),
+                    |value| format!("解除まで{value}"),
+                ));
+                let first_at = Value::String(usage_limit.first_at.clone());
+                right_parts
+                    .push(format_elapsed(Some(&first_at), now).unwrap_or_else(|| "?".to_string()));
+            } else if let Some(api_error) = api_error {
                 let status = api_error
                     .http_status
                     .map_or_else(|| "?".to_string(), |value| value.to_string());
@@ -742,8 +781,14 @@ mod tests {
         });
         let mut recovered = retrying.clone();
         recovered.as_object_mut().unwrap().remove("api_error");
-        let mut other_engine = retrying.clone();
-        other_engine["engine"] = Value::String("codex".to_string());
+        let mut overloaded = retrying.clone();
+        overloaded["engine"] = Value::String("codex".to_string());
+        overloaded["api_error"] = serde_json::json!({
+            "type": "serverOverloaded",
+            "http_status": null,
+            "first_at": "2025-12-31T23:59:30+00:00",
+            "count": 2,
+        });
         let mut terminal = retrying.clone();
         terminal["status"] = Value::String("completed".to_string());
         let mut malformed = retrying.clone();
@@ -759,7 +804,11 @@ mod tests {
                 Value::Null,
                 serde_json::json!([recovered]),
             ),
-            state_file("other.json", Value::Null, serde_json::json!([other_engine])),
+            state_file(
+                "overloaded.json",
+                Value::Null,
+                serde_json::json!([overloaded]),
+            ),
             state_file("terminal.json", Value::Null, serde_json::json!([terminal])),
             state_file(
                 "malformed.json",
@@ -776,8 +825,78 @@ mod tests {
         assert!(lines[0].contains("3回"));
         assert!(lines.iter().all(|line| display_width(line) <= 80));
         assert!(!lines[0].contains("Bash"));
-        assert!(lines[1..].iter().all(|line| !line.contains("API再試行")));
-        assert!(lines[1..].iter().all(|line| line.contains("Bash")));
+        let overloaded_line = lines
+            .iter()
+            .find(|line| line.contains("serverOverloaded"))
+            .expect("Codexの過負荷の待機を表示する");
+        assert!(overloaded_line.contains("API再試行 serverOverloaded"));
+        assert!(overloaded_line.contains("HTTP ?"));
+        assert!(overloaded_line.contains("2回"));
+        let others: Vec<_> = lines[1..]
+            .iter()
+            .filter(|line| !line.contains("serverOverloaded"))
+            .collect();
+        assert_eq!(others.len(), 3);
+        assert!(others.iter().all(|line| !line.contains("API再試行")));
+        assert!(others.iter().all(|line| line.contains("Bash")));
+    }
+
+    #[test]
+    fn rendering_usage_limit_wait_differs_from_api_retry() {
+        let mut waiting = session(
+            "waiting",
+            "claude",
+            Value::Null,
+            ("impl", "delegate"),
+            ("latest progress", "lane-01"),
+            "2025-12-31T23:00:00+00:00",
+        );
+        waiting["api_error"] = serde_json::json!({
+            "type": "usage_limit",
+            "http_status": 429,
+            "first_at": "2025-12-31T23:30:00+00:00",
+            "count": 2,
+            "limit_type": "seven_day",
+            "resets_at": "2026-01-01T02:05:00+00:00",
+        });
+        let mut unknown_reset = waiting.clone();
+        unknown_reset["api_error"]["limit_type"] = Value::String("five_hour".to_string());
+        unknown_reset["api_error"]
+            .as_object_mut()
+            .unwrap()
+            .remove("resets_at");
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let files = [
+            state_file("waiting.json", Value::Null, serde_json::json!([waiting])),
+            state_file(
+                "unknown.json",
+                Value::Null,
+                serde_json::json!([unknown_reset]),
+            ),
+        ];
+        let lines = render_state_files(&files, 100, now);
+
+        assert_eq!(lines.len(), 2);
+        let waiting_line = lines
+            .iter()
+            .find(|line| line.contains("seven_day"))
+            .expect("Weekly limitの解除待ちを表示する");
+        assert!(
+            waiting_line.contains("利用上限の解除待ち seven_day"),
+            "{lines:?}"
+        );
+        assert!(waiting_line.contains("解除まで2h5m"), "{lines:?}");
+        assert!(waiting_line.contains("30m0s"), "{lines:?}");
+        assert!(!waiting_line.contains("API再試行"), "{lines:?}");
+        let unknown_line = lines
+            .iter()
+            .find(|line| line.contains("five_hour"))
+            .expect("5時間の利用上限の解除待ちを表示する");
+        assert!(unknown_line.contains("解除時刻確認中"), "{lines:?}");
+        assert!(lines.iter().all(|line| display_width(line) <= 100));
     }
 
     #[test]

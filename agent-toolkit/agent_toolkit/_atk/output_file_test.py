@@ -53,7 +53,7 @@ def test_redirect_reports_saved_output_when_system_exit_propagates(
 
 
 def _run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int | str | None, str, str]:
-    """`atk`を利用者が使うコマンドとして実行し、終了コード、標準出力および標準エラーを返す。"""
+    """`atk`をエンドユーザーが使うコマンドとして実行し、終了コード、標準出力および標準エラーを返す。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv)
     captured = capsys.readouterr()

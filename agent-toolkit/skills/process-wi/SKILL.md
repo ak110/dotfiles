@@ -17,7 +17,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 - **メイン**: `agent-toolkit/rules/01-agent.md`が定めるメインエージェントの短縮呼称
 - **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める
 - **picker**: 選定工程で処理対象のAWIを固定する担当
-- **処理対象WI**: pickerが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI。処理中に利用者が追加を明示したAWIを含む
+- **処理対象WI**: pickerが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI。処理中にユーザーが追加を明示したAWIを含む
 - **レーン**: pickerが固定した処理対象を割り当てる仮想的な処理単位。各レーンは専用branchと専用worktreeを1つ持つ（`references/run-lanes.md`「レーンと資源」が規定）
 - **専用worktree**: 各レーンへ1つ割り当てるgit worktree。書き込む主体はそのレーンのレーン担当threadだけとする
 - **レーン担当**: 各レーンの計画、実装、レビュー修正、履歴統合および主作業ツリーへの統合を同じthreadで担う担当。担当種別はレーン担当、レビュー修正担当、CI修正担当の3種とする（`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分が規定）
@@ -31,7 +31,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 - 計画のレビュー工程を置かず、実装後に要件・外部仕様水準の実行レビューを計画ごとに最終実装HEADで行う。計画なしのレーンはWIをレビュー基準とする
 - 1つの専用worktreeへ書き込む主体は、計画、実装、レビュー修正および統合を担う同じレーン担当threadだけとし、レーン担当が主作業ツリーへ書き込むのは統合のときに限る。大規模な文単位修正の一時的な内部群は、別branchと別worktreeへ書込担当を1つずつ置き、レーン担当が検収と統合を担う
 - 人間由来の要求を全部または一部不採用にする場合は、ユーザーの確認またはUWIの回答を得てからその項目を終端する
-- 選定時に固定した処理対象WIを処理の終わりまで使い、ready一覧を再取得しない。利用者が処理中にAWIを追加するよう明示した場合だけ、`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」に従って検収した`選定`の項目を`選定結果の出力先ファイル`へ追記する。`## 即時対応`で確定したAWIも`references/run-lanes.md`の是正レーンとして追加する
+- 選定時に固定した処理対象WIを処理の終わりまで使い、ready一覧を再取得しない。ユーザーが処理中にAWIを追加するよう明示した場合だけ、`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」に従って検収した`選定`の項目を`選定結果の出力先ファイル`へ追記する。`## 即時対応`で確定したAWIも`references/run-lanes.md`の是正レーンとして追加する
 - 対象リポジトリへpushする主体は公開工程の終端担当だけとする
 - 公開工程の終端担当は対象リポジトリの公開差分へ起動する。前回の公開後に同じセッションで新しい成果がベースbranchへ統合された場合は、追加差分だけを入力として再起動し、セッション終了前に最新HEADのpushとCIを検収する。差分が無い再検収では再起動しない
 - 計画、レビュー指摘管理表およびworktreeは、それを使う全工程の完了後にだけ回収する
@@ -69,7 +69,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 4. `references/run-lanes.md`を全文読み、選定結果から専用worktreeとレーンを作成し、レーン担当を起動する。
 5. 各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
 6. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
-7. 利用者が明示して追加した処理対象WIは`references/run-lanes.md`に従って割り当て、実装とレビューを収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
+7. ユーザーが明示して追加した処理対象WIは`references/run-lanes.md`に従って割り当て、実装とレビューを収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
 8. 全レーンの終端および起動した監査の処置確定後、`references/finish-session.md`を全文読み、公開とセッション終端を完遂する。
 
 ## 直前の同期結果の検分

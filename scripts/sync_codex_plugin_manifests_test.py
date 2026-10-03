@@ -84,6 +84,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             "hooks": [{"type": "command", "command": subject.CODEX_SUBAGENT_STOP_COMMAND}],
                         }
                     ],
+                    "Stop": [{"hooks": [{"type": "command", "command": subject.CODEX_STOP_COMMAND}]}],
                     "SessionEnd": [
                         {
                             "hooks": [{"type": "command", "command": subject.CODEX_SESSION_END_COMMAND, "async": True}],
@@ -226,6 +227,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [{"type": "command", "command": "atk-hook subagent_stop_advisor"}],
                 }
             ],
+            "Stop": [{"hooks": [{"type": "command", "command": "atk-hook stop"}]}],
             "SessionEnd": [
                 {
                     "hooks": [
@@ -261,7 +263,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             ],
         }
     }
-    assert len(generated_hooks["hooks"]) == 8
+    assert len(generated_hooks["hooks"]) == 9
     assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == "atk-hook rules_context_codex"
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
@@ -310,7 +312,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Codex 0.154.0は`agent-toolkit-codex/`から8イベントを登録し、project trustで集合を変えない。"""
+    """Codex 0.154.0は`agent-toolkit-codex/`から9イベントを登録し、project trustで集合を変えない。"""
     # 実機のCLIを起動するため、既定で隔離されるホームとPATHを戻す。CLIの有無はモジュール読込時にホストのPATHで判定済み。
     isolation.restore_host_environment(monkeypatch)
     version = subprocess.run(  # noqa: S603
@@ -437,6 +439,8 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     assert generated["PostToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
+    assert generated["Stop"] == [{"hooks": [{"type": "command", "command": "atk-hook stop"}]}]
+    assert "Bash" in generated["PostToolUse"][0]["matcher"].split("|")
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
 
 
@@ -705,7 +709,8 @@ def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "event", ["SessionStart", "SubagentStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "SessionEnd"]
+    "event",
+    ["SessionStart", "SubagentStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStop", "SessionEnd"],
 )
 def test_rejects_missing_shared_allowlisted_handler(manifest_root: Path, event: str) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))

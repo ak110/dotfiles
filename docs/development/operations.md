@@ -51,7 +51,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationに依存させない
 - アイドル（`idle_prompt`）はベルの対象に含めない。応答終了の約60秒後に発火するため、
   背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も入力待ちと同じ扱いで発火し、
-  利用者の入力を要さない待機でベルが鳴るためである
+  ユーザーの入力を要さない待機でベルが鳴るためである
 - 応答終了そのものは`Stop`のフック（`pytools/claude_hook/stop_bell.py`）で鳴らす。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
   背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の判定を用いる。
@@ -111,7 +111,7 @@ armedされた場合の中止条件はタイマー発火以降のユーザー操
 
 `dialogExpiry`の対象はリモートクライアントへ転送された権限ダイアログとユーザーダイアログが回答を待って駐留できる上限、
 およびHELD状態のcross-sessionメッセージが承認を待つ時間である。
-上限を超えるとキャンセルまたは拒否付きのdropへ解決するため、エージェントは期限切れと実利用者の拒否を区別できない。
+上限を超えるとキャンセルまたは拒否付きのdropへ解決するため、エージェントは期限切れとユーザー本人の拒否を区別できない。
 リモートクライアントが接続していないローカル専用の権限プロンプトは影響を受けない。
 `~/.claude/settings.json`は`remoteControlAtStartup`が真であり、権限ダイアログが転送されるため、
 既定値の`5m`のままでは離席が5分を超えた時点で自動キャンセルされる。
@@ -122,7 +122,7 @@ armedされた場合の中止条件はタイマー発火以降のユーザー操
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
 TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/agent_toolkit/_common/wait_schedule.py`の
 プロンプトキャッシュTTL判定を用いる。
-利用者が`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、明示されたTTLを判定に用いる。
+ユーザーが`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、明示されたTTLを判定に用いる。
 CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。
 Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
 `CLAUDE_STREAM_IDLE_TIMEOUT_MS`および`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
@@ -203,7 +203,7 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 ホームディレクトリ側と共有メモリー側のDB、WAL、SHMが1件でも異なる場合は、自動的にどちらか一方を選択しない。
 共有メモリー側の集合を`~/.codex/logs_2-restore-conflict-<集合SHA-256>/`へ保存し、復元未完了を警告する。
 競合スナップショットは所有者だけが参照できる手動復旧用データであり、post-apply処理は削除しない。
-利用者が次の手順を完了するまで保持する。
+ユーザーが次の手順を完了するまで保持する。
 
 1. Codexを停止したまま、`~/.codex/`、`/dev/shm/codex-<UID>-*`、競合スナップショットの3集合を比べる
 2. SQLiteのDB、WAL、SHMを一組として復旧し、通常ストレージ側の内容を検証する
@@ -265,7 +265,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
     - miseのshimはサービス実行環境でバージョン未解決となり起動しないため優先しない
   - このランチャー生成処理は2026年7月27日（1116f984）まで`~/.local/bin/atk`へランチャーを生成しており、改名時に旧名が残存した。
     `post_apply`の旧配布物削除がこの旧ランチャーと`atk.cmd`を除去し、dotfilesホストの`atk`を作業ツリー版へ解決させる
-  - `install-claude.sh`もプラグイン単体利用者向けに同じ`~/.local/bin/atk`へ別系統のラッパーを生成するが、dotfilesホストでは実行しない前提であり、この生成処理とは無関係
+  - `install-claude.sh`もagent-toolkit単体のユーザー向けに同じ`~/.local/bin/atk`へ別系統のラッパーを生成するが、dotfilesホストでは実行しない前提であり、この生成処理とは無関係
 - 導入処理はrestart後に常駐を確認し、起動しない場合は失敗として`update-dotfiles`の出力へ表示する
 - 旧計画ビューアーの`claude-plans-viewer.service`は導入処理が停止と無効化に成功した場合だけunitファイルを削除する
   - 停止できない場合はunitファイルを残して警告を記録し、後続の配置は続行する
@@ -279,8 +279,8 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
    `RequestHeader set X-Forwarded-Prefix /cpv`を維持して`/cpv/`を残すか、`/cpv/`の設定ブロックを削除する
 2. `/cpv/`を残す場合、`https://tqzh.tk/cpv/`は`atk serve`のWI画面を表示する。
    計画ファイル画面は同じベースパス配下の`/cpv/plans`となる
-3. `/cpv/`を削除する場合、利用者は`https://tqzh.tk/atk/plans`へ移動する。
-   既存の`/atk/`利用者のアクセス先と表示は変わらない
+3. `/cpv/`を削除する場合、エンドユーザーは`https://tqzh.tk/atk/plans`へ移動する。
+   既存の`/atk/`を開くエンドユーザーのアクセス先と表示は変わらない
 4. `sudo apachectl configtest`で構文を確認してから`sudo systemctl reload apache2`を実行する
 
 ## euryaleでの上流更新の自動反映
@@ -294,7 +294,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
   - commit IDが一致し未完了状態も無ければ、`update-dotfiles`を起動せず正常終了する
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
-    - euryaleでは利用者が配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`scripts/update_dotfiles.py`が`chezmoi apply`へ渡す
+    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`scripts/update_dotfiles.py`が`chezmoi apply`へ渡す
   - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、resetおよびcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
 - systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
   導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
@@ -318,8 +318,8 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 ## post-applyテンプレートのキャッシュ
 
 `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる。
-`dotfiles-post-apply`は主作業ツリーからの実行を既定とする。linked worktreeから起動すると、利用者全体の設定が複製を指さないよう、どの後処理も始めず終了コード2で停止する。
-複製からの実行が必要な場合は`dotfiles-post-apply --allow-non-canonical-root`で明示的に解除する。この指定では利用者全体の設定が実行した複製を参照する。
+`dotfiles-post-apply`は主作業ツリーからの実行を既定とする。linked worktreeから起動すると、OSアカウント全体の設定が複製を指さないよう、どの後処理も始めず終了コード2で停止する。
+複製からの実行が必要な場合は`dotfiles-post-apply --allow-non-canonical-root`で明示的に解除する。この指定ではOSアカウント全体の設定が実行した複製を参照する。
 
 - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
 - 期待シムは`pyproject.toml`の`[project.scripts]`から両テンプレートが展開時に導出する。定数の手動更新は不要とする
@@ -364,12 +364,12 @@ dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工�
 実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
 本節には日次リリースの自動実施を導入した経緯と根拠を記録する。
 
-判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日の利用者指示による。
+判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日のユーザー指示による。
 廃止した条件では、WIキュー全体からそのセッションで固定した集合を除き、残った項目がすべて着手できないことを求めていた。
 この条件は「固定したAWIの全件が終端してからリリースする」目的を守るためのものだった。
 `agent-toolkit:process-wi`では公開工程を全レーンの終端後に実施するため、条件を廃止してもこの目的は失われない。
 一方、廃止した条件は共有キューの現在状態を入力としていた。
-この状態はprocess-wiの1回の実行の進行中に`agent-toolkit:session-review`、並行セッションおよび利用者が投入する項目で増減する。
+この状態はprocess-wiの1回の実行の進行中に`agent-toolkit:session-review`、並行セッションおよびユーザーが投入する項目で増減する。
 増減した項目は、そのセッションの成果と因果を持たない。
 それでも、セッションの成果の完成度とは無関係にリリースが止まった。
 2026年9月16日のprocess-wiの実行では、選定時点のdotfiles宛の`inbox`が4件だったのに対し、レーンの統合が終わる時点では17件になっていた。
@@ -377,4 +377,4 @@ dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工�
 2026年9月15日には、同じ原因に対処するため、廃止した条件の評価時点を公開工程から選定工程の完了へ前倒ししていた。
 この是正では入力を取得する時点だけが早まった。入力がセッションの外側から変わる性質は残っていた。
 
-auto-merge、マージ失敗後の自動再試行および自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)が記録する利用者指示による。
+auto-merge、マージ失敗後の自動再試行および自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)が記録するユーザー指示による。

@@ -19,7 +19,7 @@ PLAN_LOCK_IGNORE_PATTERN = "/plans/**/*.lock"
 
 `ensure_plan_lock_ignored`が受理するロックはリポジトリroot直下の`plans/`配下に限るため、
 除外範囲も同じ範囲へ合わせる。書き込み先はGit common directory配下の`info/exclude`であり、
-Gitの版管理の対象外にある。除外設定は利用者のcloneごとに閉じ、他のcloneとは共有されない。
+Gitの版管理の対象外にある。除外設定はユーザーのcloneごとに閉じ、他のcloneとは共有されない。
 """
 
 _GITIGNORE_UPDATE_LOCK = "agent-toolkit-plan-lock-gitignore.lock"

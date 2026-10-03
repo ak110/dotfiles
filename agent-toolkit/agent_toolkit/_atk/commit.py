@@ -8,10 +8,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 from pathlib import Path
 
 from agent_toolkit._atk import config, outcome
-from agent_toolkit._common import automated_prompt, message_format
+from agent_toolkit._common import automated_prompt, claude_usage_limit, message_format
 from agent_toolkit._common import next_action as _next_action
 
 _PROMPT_SOURCE = "atk-commit"
@@ -142,8 +144,28 @@ def _git_state(root: Path) -> tuple[tuple[int, str], tuple[int, str]]:
     return (head.returncode, head.stdout), (status.returncode, status.stdout)
 
 
-def _command(engine: str, executable: str, model: str, effort: str, root: Path, temporary: str, prompt: str) -> list[str]:
+_USAGE_LIMIT_RESUME_PROMPT = (
+    "直前の応答はClaude Codeの利用上限で中断し、解除予定時刻まで待った。"
+    "中断前の作業を続けてcommitを完了せよ。既に行ったstageとcommitを繰り返さないこと。"
+)
+
+
+def _command(
+    engine: str,
+    executable: str,
+    model: str,
+    effort: str,
+    root: Path,
+    temporary: str,
+    prompt: str,
+    *,
+    session_id: str | None = None,
+    resume: bool = False,
+) -> list[str]:
     if engine == "claude":
+        # 利用上限で中断した会話を同じ会話のまま続けられるよう、会話を保存して識別子を指定する。
+        # 利用枠の種類と解除予定時刻を読み取るため、構造化出力で起動する。
+        session = [f"--resume={session_id}"] if resume else [f"--session-id={session_id}"]
         return [
             executable,
             "--print",
@@ -154,7 +176,9 @@ def _command(engine: str, executable: str, model: str, effort: str, root: Path, 
             "--strict-mcp-config",
             "--system-prompt=.",
             f"--model={model}",
-            "--no-session-persistence",
+            *session,
+            "--output-format=stream-json",
+            "--verbose",
             f"--effort={effort}",
             "--",
             prompt,
@@ -173,6 +197,55 @@ def _command(engine: str, executable: str, model: str, effort: str, root: Path, 
         temporary,
         prompt,
     ]
+
+
+def _invoke(command: list[str], temporary: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=temporary,
+        check=False,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def _run_candidate(
+    engine: str, executable: str, model: str, effort: str, root: Path, temporary: str, prompt: str
+) -> subprocess.CompletedProcess[str]:
+    """1候補を起動する。ClaudeがWeekly limitか5時間の利用上限で拒否した場合は解除まで待ち、同じ会話を続ける。
+
+    元の依頼を新しい作業として送り直さず同じ会話を再開するため、拒否より前に行ったstageとcommitを繰り返さない。
+    待機の回数と総時間に上限を置かない（ユーザー指示）。会話は同じ作業ディレクトリでだけ再開できるため、
+    呼び出し元は待機の間も`temporary`を保持する。
+    """
+    if engine != "claude":
+        return _invoke(_command(engine, executable, model, effort, root, temporary, prompt), temporary)
+    session_id = str(uuid.uuid4())
+    result = _invoke(_command(engine, executable, model, effort, root, temporary, prompt, session_id=session_id), temporary)
+    while result.returncode != 0:
+        usage_limit = claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
+        if usage_limit is None or not usage_limit.is_wait_target:
+            return result
+        delay = usage_limit.delay_seconds(time.time())
+        print(f"{usage_limit.describe()}。{int(delay)}秒後に同じ会話を再開します。", file=sys.stderr)
+        print("解除後に自動で続けるため、手動での再実行は不要です。", file=sys.stderr)
+        time.sleep(delay)
+        command = _command(
+            engine, executable, model, effort, root, temporary, _USAGE_LIMIT_RESUME_PROMPT, session_id=session_id, resume=True
+        )
+        result = _invoke(command, temporary)
+    return result
+
+
+def _agent_output(engine: str, stdout: str | None) -> str:
+    """ユーザーへ示すエージェントの最終応答を返す。Claudeは構造化出力の`result`イベントから取り出す。"""
+    if engine != "claude" or not stdout:
+        return stdout or ""
+    final = claude_usage_limit.result_from_stream_lines(stdout.splitlines())
+    text = final.get("result") if final is not None else None
+    return text if isinstance(text, str) else stdout
 
 
 def run(args: argparse.Namespace) -> int:
@@ -217,27 +290,19 @@ def run(args: argparse.Namespace) -> int:
             continue
         before = _git_state(root)
         with tempfile.TemporaryDirectory() as temporary:
-            command = _command(engine, executable, model, effort, root, temporary, prompt)
             try:
-                result = subprocess.run(
-                    command,
-                    cwd=temporary,
-                    check=False,
-                    stdout=subprocess.PIPE,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
+                result = _run_candidate(engine, executable, model, effort, root, temporary, prompt)
             except OSError as error:
                 print(f"候補をスキップします: {engine}を起動できません: {error}", file=sys.stderr)
                 continue
+        output = _agent_output(engine, result.stdout)
         if result.returncode == 0:
             outcome.report_success("コミット用エージェントの実行が完了した")
-            if result.stdout:
-                print(result.stdout, end="")
+            if output:
+                print(output, end="" if output.endswith("\n") else "\n")
             return 0
-        if result.stdout:
-            print(result.stdout, end="", file=sys.stderr)
+        if output:
+            print(output, end="" if output.endswith("\n") else "\n", file=sys.stderr)
         if _git_state(root) != before:
             outcome.report_failure(
                 f"{engine}がGit状態を変更した後に失敗したため、次の候補を起動しません",

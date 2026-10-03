@@ -3,9 +3,9 @@
 本リポジトリには配布物と本リポジトリ専用設定が混在するため、変更対象に応じてtypeを使い分ける。
 
 - 配布物の振る舞いを変える変更は`feat`/`fix`/`perf`相当
-  - `.chezmoi-source/`配下: dotfiles利用者の環境に展開されるため、利用者振る舞いを変える変更は機能変更
-  - `agent-toolkit/`配下: プラグイン利用者のエージェントの振る舞いが変わる（スキル・サブエージェント・ルール・`references/`）
-  - `pytools/`・`bin/`配下: dotfiles利用者向けCLIツールのため、挙動変更はそのまま機能変更
+  - `.chezmoi-source/`配下: dotfilesユーザーの環境に展開されるため、その振る舞いを変える変更は機能変更
+  - `agent-toolkit/`配下: agent-toolkitユーザーのエージェントの振る舞いが変わる（スキル・サブエージェント・ルール・`references/`）
+  - `pytools/`・`bin/`配下: dotfilesユーザー向けCLIツールのため、挙動変更はそのまま機能変更
 - 本リポジトリ専用設定の変更は`chore`相当（リポジトリ直下の`.claude/`・`AGENTS.md`）
-- 配布物の利用者向け説明の変更は`docs`相当（`README.md`・`docs/guide/`配下など）
+- 配布物のエンドユーザー向け説明の変更は`docs`相当（`README.md`・`docs/guide/`配下など）
 - 軽微な誤字修正・スタイル調整・コメント整形などは内容にかかわらず`chore`に倒してよい

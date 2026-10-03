@@ -157,7 +157,7 @@ class TestConfigGet:
         """`state_dir()`の戻り値と`atk config get state_dir`の出力が一致する。
 
         フックは`state_dir()`経由で状態ファイルを配置する。
-        両者が一致しない場合、利用者が`atk config get`で確認した位置と実際の配置先が異なる。
+        両者が一致しない場合、ユーザーが`atk config get`で確認した位置と実際の配置先が異なる。
         """
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "state_dir"], home=tmp_path)

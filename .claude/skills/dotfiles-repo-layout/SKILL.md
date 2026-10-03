@@ -4,7 +4,7 @@ user-invocable: false
 description: >
   dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.gemini/`・`~/.config/`）の対応を
   判定するとき、ファイルの削除と改名で`pytools/post_apply.py`の`_REMOVED_PATHS`と
-  `setup_codex_links.py`の`_LINKS`を扱うとき、dotfiles利用者・agent-toolkit利用者・全プロジェクト編集者・
+  `setup_codex_links.py`の`_LINKS`を扱うとき、dotfilesユーザー・agent-toolkitユーザー・全プロジェクト編集者・
   dotfiles編集者のどのロール向けのファイル群かを判定するとき、`agent-toolkit:process-wi`のpickerが
   AWIごとの`プロジェクト規範の指定`を書くとき、`AGENTS.md`・`agent-toolkit/rules/`・
   `agent-toolkit/skills/`・`agent-toolkit/share/`・`.claude/skills/`の規範をセッション内で変更してから
@@ -20,8 +20,9 @@ description: >
 
 本リポジトリと配布物には複数のロールが関与する。ファイル群を編集する際は対象読者を意識する。
 
-- dotfiles利用者: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
-- agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfiles利用者含む）
+- dotfilesユーザー: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
+- agent-toolkitユーザー: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfilesユーザー含む）
+- dotfilesユーザーとagent-toolkitユーザーはどちらもエンドユーザーの部分集合であり、コーディングエージェントへ指示するユーザー（`agent-toolkit/rules/01-agent.md`「役割分担」）との兼任を妨げない
   - 配布ルール（`~/.claude/rules/agent-toolkit/`）も導入済み前提で記述してよい
 - 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするコーディングエージェント
   - 配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
@@ -34,12 +35,12 @@ description: >
 | ファイル群 | 対象読者 | 役割 |
 | --- | --- | --- |
 | `agent-toolkit/skills/`配下 | 全プロジェクト編集者 | スキルの指示本体 |
-| `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者・dotfiles利用者 | 常時自動ロードされる行動原則（dotfiles利用者には配布先`~/.claude/`相当） |
+| `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者・dotfilesユーザー | 常時自動ロードされる行動原則（dotfilesユーザーには配布先`~/.claude/`相当） |
 | `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |
-| `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |
+| `docs/guide/claude-code-guide.md` | agent-toolkitユーザー | プラグインの導入・更新手順 |
 | `.claude/`（リポジトリ直下） | dotfiles編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
 | `AGENTS.md`（リポジトリ直下） | dotfiles編集者 | 本リポジトリの案内 |
-| `pytools/`・`bin/`・`scripts/` | dotfiles利用者・dotfiles編集者 | コマンドラインツールと開発スクリプト |
+| `pytools/`・`bin/`・`scripts/` | dotfilesユーザー・dotfiles編集者 | コマンドラインツールと開発スクリプト |
 
 ## ディレクトリ構造の注意
 
@@ -105,7 +106,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 `agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`プロジェクト規範の指定`を書く。
 `プロジェクト規範の指定`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
 本節の適用対象となる規範を変更するAWIには、その変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
-反映先に本リポジトリのエージェント向け文書を含むAWIには、その変更を確定する主体自身が計画の採否を確定する前に次を読む要求も書く。`docs/development/concepts.md`と`docs/development/incidents.md`は索引であり、全文を読む。加えて、索引の見出しのうち変更対象のファイル名、工程名または機能名を含む見出しがリンクする分割ファイルの節を読む。見出しで判定できない場合は、索引がリンクする分割ファイルを変更対象のファイル名と工程名で検索し、一致した節を読む。利用者が確定した方針の本文は分割ファイルにあり、索引の全文だけでは届かない。
+反映先に本リポジトリのエージェント向け文書を含むAWIには、その変更を確定する主体自身が計画の採否を確定する前に次を読む要求も書く。`docs/development/concepts.md`と`docs/development/incidents.md`は索引であり、全文を読む。加えて、索引の見出しのうち変更対象のファイル名、工程名または機能名を含む見出しがリンクする分割ファイルの節を読む。見出しで判定できない場合は、索引がリンクする分割ファイルを変更対象のファイル名と工程名で検索し、一致した節を読む。ユーザーが確定した方針の本文は分割ファイルにあり、索引の全文だけでは届かない。
 対象かどうかの判定は、そのAWIが挙げる反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行う。
 レーン担当は選定工程の`選定結果の出力先ファイル`から自レーンの`プロジェクト規範の指定`を読むため、メインの委譲プロンプトではその要求の再掲を省く（努力目標。再掲は重複になる）。
 メインは`プロジェクト規範の指定`が`なし`以外である項目を担当するレーンの委譲プロンプトへ、その項目のファイル名と対象ファイルのパスを渡す。

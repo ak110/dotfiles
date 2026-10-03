@@ -447,7 +447,7 @@ def list_managed_temp(
     あることは条件としない。
     `report_recovery_candidates`が真の場合だけ、削除せず保持した登録と、一時rootを指定しない場合に使う場所の直下で
     登録を持たない管理対象を警告として報告する。回収候補の報告を`atk managed-temp list`に
-    限ることで、全コマンドの起動時に実行する掃引が利用者の操作と無関係な警告を出力しない。
+    限ることで、全コマンドの起動時に実行する掃引がユーザーの操作と無関係な警告を出力しない。
     """
     if prefix is not None and not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
@@ -597,7 +597,7 @@ def sweep_expired_managed_temp(
     登録済み領域は`.git`を含むものを除いて削除する。続いて、一時rootを指定しない場合に使う場所の直下で
     登録を失った領域（マーカーだけを持つ領域）も、他の作業が使用中と判定できるもの以外を削除する。
     一時rootを指定しない場合に使う場所は`atk`だけが作成する場所であり、登録を失った領域を所有の検証なしに回収しても
-    利用者のディレクトリを巻き込まないという利用者の判断（2026年10月2日）に基づく。
+    ユーザーのディレクトリを巻き込まないというユーザーの判断（2026年10月2日）に基づく。
     使用中の判定は、配下を含む最終更新が`max_age_days`以内であることと、git worktreeとして
     登録が残る`.git`を含むことの2つとする。
     """
@@ -1005,7 +1005,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
     `recover_registry`が真の場合だけ、消費途中状態も持たず登録だけを失った管理対象について、
     実体側マーカーが記録した絶対パスと実体のidentityへ一致することを確認して登録を復元する。
     マーカーは実体側にあり、作成処理が書いたものと後から置かれたものを内容だけでは区別できない。
-    この復元は利用者の明示指定を第二の信頼根拠として要求し、指定が無ければ行わない。
+    この復元はユーザーの明示指定を第二の信頼根拠として要求し、指定が無ければ行わない。
     """
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     registry_path = _registry_path(path)
@@ -1037,7 +1037,7 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
             f"欠落した登録をマーカーから復元した: {validated.registry_path}", next_action="対応不要（処理は継続した）"
         )
     if os.name == "nt":
-        # 利用中に追加された受理済みACEを除去し、隔離以降を現在利用者だけのDACLで実行する。
+        # 利用中に追加された受理済みACEを除去し、隔離以降を実行中のOSアカウントだけのDACLで実行する。
         _windows_secure_path(
             path,
             directory=True,
@@ -1113,14 +1113,16 @@ def _force_remove_managed_temp(
         if os.name == "posix":
             if metadata.st_uid != os.geteuid():
                 raise ManagedTempError(
-                    f"管理対象の所有者が現在の利用者ではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                    f"管理対象の所有者が実行中のOSアカウントではない: {path}",
+                    next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
                 )
         elif os.name == "nt":
             security = _windows_security_descriptor(path)
             current_sid = _windows_sid_bytes(_windows_current_sid())
             if not _windows_equal_sids(security.owner, current_sid):
                 raise ManagedTempError(
-                    f"管理対象の所有者が現在の利用者ではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+                    f"管理対象の所有者が実行中のOSアカウントではない: {path}",
+                    next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
                 )
         else:
             raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)

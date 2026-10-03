@@ -74,7 +74,7 @@ def run() -> tuple[bool, list[str]]:
     Returns:
         (changed, recommendations) のタプル。
         changedは何らかのpluginを新たにインストールまたは更新した場合にTrue。
-        recommendationsは呼び出し元が利用者へ案内する推奨コマンド列。
+        recommendationsは呼び出し元がユーザーへ案内する推奨コマンド列。
 
     Raises:
         RuntimeError: 管理対象pluginの導入・更新に失敗した場合、または導入後の状態が目標と一致しない場合。

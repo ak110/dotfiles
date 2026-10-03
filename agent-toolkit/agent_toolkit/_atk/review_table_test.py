@@ -1,4 +1,4 @@
-"""レビュー指摘管理表の8列TSV操作を検証する。"""
+"""レビュー指摘管理表の7列TSV操作を検証する。"""
 
 import argparse
 import json
@@ -517,6 +517,59 @@ def test_show_combines_round_track_and_jsonl(tmp_path: pathlib.Path, capsys: pyt
     assert table.show(path, track=_TRACK, output_format="jsonl", round_value=1) == 0
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [row["issue"] for row in rows] == ["対象"]
+
+
+def test_public_summary_counts_current_unanswered_rows_without_waiting_for_responses(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """過去の応答、現在の再指摘と他trackを分け、同じ表から返却件数を得る。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", "再指摘")
+    table.respond(path, "1", _TRACK, "module.py:10", "再指摘", "修正済み", "")
+    table.add(path, "1", _TRACK, "module.py:11", "過去の未応答")
+    table.add(path, "2", _TRACK, "module.py:10", "再指摘")
+    table.add(path, "2", _TRACK, "module.py:20", "対応不要")
+    table.respond(path, "2", _TRACK, "module.py:20", "対応不要", "", "確定要件と一致する")
+    table.add(path, "2", "independent", "module.py:30", "別track")
+    capsys.readouterr()
+    before = path.read_bytes()
+    with pytest.raises(SystemExit) as returned:
+        atk.main(["review-table", "show", str(path), "--format=summary", "--round=2"], home=tmp_path)
+    assert returned.value.code == 0
+    result = capsys.readouterr()
+    assert not result.err
+    assert json.loads(result.out) == {
+        "round": 2,
+        "track": "exec-review",
+        "total_count": 2,
+        "unanswered_count": 1,
+        "answered_count": 1,
+    }
+    assert path.read_bytes() == before
+
+
+def test_public_summary_returns_zero_counts_for_no_current_rows(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "plan.exec-review.tsv"
+    table.init(path)
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as returned:
+        atk.main(["review-table", "show", str(path), "--format=summary", "--round=3"], home=tmp_path)
+    assert returned.value.code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "round": 3,
+        "track": "exec-review",
+        "total_count": 0,
+        "unanswered_count": 0,
+        "answered_count": 0,
+    }
+
+
+def test_summary_requires_current_round(tmp_path: pathlib.Path) -> None:
+    with pytest.raises(next_action.ActionableError, match="roundが必要"):
+        table.show(tmp_path / "plan.exec-review.tsv", output_format="summary")
 
 
 @pytest.mark.parametrize("track", (_TRACK, _COMPAT_TRACK))
@@ -1192,7 +1245,8 @@ def test_respond_help_presents_row_id_as_default_selector(capsys: pytest.Capture
             "show",
             (
                 "表示対象を指定したレビュー区分の行だけに限定する",
-                "出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Linesを表示する",
+                "出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Lines",
+                "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す",
             ),
         ),
         ("validate", ("未応答行を許容し、7列と複合キーなどの構造だけを検証する",)),

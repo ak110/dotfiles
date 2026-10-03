@@ -116,7 +116,7 @@ class TestTaskStopBlock:
         assert "「停滞の検知と巻き取り」節" in stderr
 
     def test_block_message_refers_user_intervention_to_owner_section(self, state_dir: dict[str, str]) -> None:
-        """遮断文面が利用者介入時の扱いを所有者の節（delegation「継続と新規起動」）へ委ねる。"""
+        """遮断文面がユーザー介入時の扱いを所有者の節（delegation「継続と新規起動」）へ委ねる。"""
         stderr = self._invoke("task-stop-message-route", state_dir).stderr
         assert "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める" in stderr
 

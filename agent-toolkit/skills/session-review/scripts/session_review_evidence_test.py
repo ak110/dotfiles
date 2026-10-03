@@ -53,6 +53,7 @@ def test_output_file_saves_events_and_prints_path_and_line_count(
 
     assert json.loads(output_path.read_text(encoding="utf-8")) == {
         "kind": "user",
+        "runtime_inserted": False,
         "text": "入力",
         "line": 1,
         "timestamp": None,
@@ -208,6 +209,7 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
         {
             "kind": "user",
             "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答",
+            "runtime_inserted": False,
             "line": 1,
             "timestamp": None,
             "sequence": 1,
@@ -355,7 +357,7 @@ def test_claude_answer_ignores_non_string_annotation_notes(tmp_path: pathlib.Pat
     ],
 )
 def test_claude_ignores_non_string_answer_maps(tmp_path: pathlib.Path, answers: object) -> None:
-    """文字列辞書ではないClaude answersから利用者判断を捏造しない。"""
+    """文字列辞書ではないClaude answersからユーザー判断を捏造しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -392,7 +394,7 @@ def test_claude_ignores_unmatched_normal_tool_results(
     tmp_path: pathlib.Path,
     tool_result: dict[str, object],
 ) -> None:
-    """payload形状にかかわらず未対応の通常tool resultを利用者判断へ変換しない。"""
+    """payload形状にかかわらず未対応の通常tool resultをユーザー判断へ変換しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -472,8 +474,22 @@ def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_pa
     )
 
     assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "user", "text": "質問: 質問\n回答: 回答", "line": 1, "timestamp": None, "sequence": 1},
-        {"kind": "user", "text": "質問: 別の質問\n回答: 別の回答", "line": 1, "timestamp": None, "sequence": 2},
+        {
+            "kind": "user",
+            "text": "質問: 質問\n回答: 回答",
+            "runtime_inserted": False,
+            "line": 1,
+            "timestamp": None,
+            "sequence": 1,
+        },
+        {
+            "kind": "user",
+            "text": "質問: 別の質問\n回答: 別の回答",
+            "runtime_inserted": False,
+            "line": 1,
+            "timestamp": None,
+            "sequence": 2,
+        },
     ]
 
 
@@ -501,6 +517,7 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     assert len(lines) == 1
     assert json.loads(lines[0]) == {
         "kind": "user",
+        "runtime_inserted": False,
         "text": "入力",
         "line": 1,
         "timestamp": None,
@@ -529,7 +546,14 @@ def test_main_resolves_codex_transcript_from_thread_id(
     assert evidence.main(["--codex-thread-id", thread_id, "--codex-home", str(codex_home)]) == 0
 
     assert _read_jsonl(capsys) == [
-        {"kind": "user", "text": "thread IDから解決した記録", "line": 1, "timestamp": None, "sequence": 1}
+        {
+            "kind": "user",
+            "text": "thread IDから解決した記録",
+            "runtime_inserted": False,
+            "line": 1,
+            "timestamp": None,
+            "sequence": 1,
+        }
     ]
 
 
@@ -640,7 +664,7 @@ def test_main_requires_exactly_one_transcript_source(
 
 
 def _timestamped_entry(timestamp: str | None, text: str) -> dict:
-    """任意の時刻を持つClaude利用者エントリを作成する。"""
+    """任意の時刻を持つClaudeユーザーエントリを作成する。"""
     entry: dict = {"type": "user", "message": {"role": "user", "content": text}}
     if timestamp is not None:
         entry["timestamp"] = timestamp
@@ -1150,6 +1174,7 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
         {
             "kind": "user",
             "text": "質問: 最初の質問\n選択肢: 提示した選択肢\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答1\n次の回答2",
+            "runtime_inserted": False,
             "line": 1,
             "timestamp": None,
             "sequence": 2,
@@ -1771,7 +1796,7 @@ def test_claude_normal_user_entry_keeps_multiple_text_blocks_in_order(tmp_path: 
 
 @pytest.mark.parametrize("field", ["isMeta", "turnCompanion"])
 def test_claude_runtime_generated_user_entry_is_marked(field: str, tmp_path: pathlib.Path) -> None:
-    """実行環境が生成したエントリの利用者イベントへ標識を付ける。"""
+    """実行環境が生成したエントリのユーザーイベントへ標識を付ける。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -2273,7 +2298,7 @@ def test_user_events_returns_main_user_events_in_range(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """指定区間のメイン記録にある利用者イベントだけを由来位置付きで返す。"""
+    """指定区間のメイン記録にあるユーザーイベントだけを由来位置付きで返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -2465,7 +2490,7 @@ def test_user_events_resolves_claude_session_id(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """セッション識別子から親transcriptを解決し、パスを渡した場合と同じ利用者イベントを返す。
+    """セッション識別子から親transcriptを解決し、パスを渡した場合と同じユーザーイベントを返す。
 
     呼び出し元は自身の`CLAUDE_CODE_SESSION_ID`から記録を指定するため、
     `projects`配下の作業ディレクトリを符号化した名前を組み立てずに同じ原文を得られる必要がある。
@@ -2514,13 +2539,87 @@ def test_claude_session_id_unknown_returns_error(
 
 
 def test_user_events_keeps_long_text(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """2000字を超える利用者発話も切り詰めずに返す。逐語引用と文字列比較する原文として使うためである。"""
+    """2000字を超えるユーザー発話も切り詰めずに返す。逐語引用と文字列比較する原文として使うためである。"""
     long_text = "長" * 2500 + "末尾"
     transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", long_text)])
 
     events = _user_events([str(transcript)], capsys)
 
     assert [event["text"] for event in events if event["kind"] == "user"] == [long_text]
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_user_events_excludes_generated_inputs_without_losing_human_text(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
+) -> None:
+    """原文と構造標識で生成本文を除き、人間の長文・手動起動・是正の位置を保持する。"""
+    texts = [
+        "<skill>" + "本文" * 1600 + "</skill>",
+        "実行環境の挿入",
+        "会話に添えた生成本文",
+        "最初の依頼",
+        "/agent-toolkit:plan-mode" if host == "claude" else "$agent-toolkit:plan-mode",
+        "人間の長文" * 600,
+        '<atk-auto source="runtime" kind="rules">規範</atk-auto>',
+        "# AGENTS.md instructions\n環境と規範",
+        "後続の訂正",
+    ]
+    entries: list[dict] = []
+    for index, text in enumerate(texts):
+        timestamp = f"2026-09-01T00:00:{index + 1:02d}Z"
+        entry = (
+            _timestamped_entry(timestamp, text)
+            if host == "claude"
+            else {
+                "type": "response_item",
+                "timestamp": timestamp,
+                "payload": {"type": "message", "role": "user", "content": text},
+            }
+        )
+        if index == 1:
+            entry["isMeta"] = True
+        elif index == 2:
+            entry["turnCompanion"] = True
+        entries.append(entry)
+    transcript = _write_transcript(tmp_path, entries)
+    events = _user_events([str(transcript)], capsys)
+    assert [(event["line"], event["text"]) for event in events if event["kind"] == "user"] == [
+        (4, texts[3]),
+        (5, texts[4]),
+        (6, texts[5]),
+        (9, texts[8]),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 4}
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_long_injection_is_classified_before_display_shortening(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
+) -> None:
+    """2000文字より後の閉タグが表示から消えても、初期要求と介入候補を変えない。"""
+    texts = ["<skill>" + "規範" * 1600 + "</skill>", "最初の依頼", "後続の訂正"]
+    entries = [
+        _timestamped_entry("2026-09-01T00:00:01Z", text)
+        if host == "claude"
+        else {
+            "type": "response_item",
+            "timestamp": "2026-09-01T00:00:01Z",
+            "payload": {"type": "message", "role": "user", "content": text},
+        }
+        for text in texts
+    ]
+    transcript = _write_transcript(tmp_path, entries)
+    displayed = evidence.load_and_extract(str(transcript))
+    first = next(event for event in displayed if event["kind"] == "user")
+    assert "</skill>" not in first["text"]
+    assert first["runtime_inserted"] is True
+    records, _ = _bundle_candidates_and_evidence(tmp_path, capsys, entries)
+    assert [locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]] == [3]
+    assert records[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1}
+    conversation = [
+        json.loads(line) for line in (tmp_path / "bundle/conversation.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event["text"] for event in conversation if event.get("role") == "user"] == texts[1:]
 
 
 def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -6145,8 +6244,8 @@ def test_query_event_is_a_stable_problem_locator(
     transcript = _write_transcript(
         tmp_path,
         [
-            {"type": "user", "message": {"role": "user", "content": "locatorへ含めない利用者本文1"}},
-            {"type": "user", "message": {"role": "user", "content": "locatorへ含めない利用者本文2"}},
+            {"type": "user", "message": {"role": "user", "content": "locatorへ含めないユーザー本文1"}},
+            {"type": "user", "message": {"role": "user", "content": "locatorへ含めないユーザー本文2"}},
             {
                 "type": "assistant",
                 "message": {
@@ -6185,7 +6284,7 @@ def test_query_event_is_a_stable_problem_locator(
     assert second[locator["event_index"]] == expected_event
     assert set(locator) == {"event_index"}
     assert "successful command warning" not in json.dumps(locator)
-    assert "locatorへ含めない利用者本文" not in json.dumps(locator, ensure_ascii=False)
+    assert "locatorへ含めないユーザー本文" not in json.dumps(locator, ensure_ascii=False)
 
 
 def test_multi_line_detail_query_keeps_each_problem_locator_stable(
@@ -6824,7 +6923,7 @@ def test_common_runtime_inserted_classifier(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """画面と共有する判定で新しい挿入本文を会話から除き、利用者の入力は残す。"""
+    """画面と共有する判定で新しい挿入本文を会話から除き、ユーザーの入力は残す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -6841,7 +6940,7 @@ def test_common_runtime_inserted_classifier(
                 },
             },
             {"type": "user", "message": {"role": "user", "content": "$agent-toolkit:process-wi"}},
-            {"type": "user", "message": {"role": "user", "content": "後続の利用者発話"}},
+            {"type": "user", "message": {"role": "user", "content": "後続のユーザー発話"}},
         ],
     )
     bundle_dir = tmp_path / "bundle"
@@ -6850,7 +6949,7 @@ def test_common_runtime_inserted_classifier(
     assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
     capsys.readouterr()
     conversation = [json.loads(line) for line in (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [item["text"] for item in conversation] == ["最初の依頼", "$agent-toolkit:process-wi", "後続の利用者発話"]
+    assert [item["text"] for item in conversation] == ["最初の依頼", "$agent-toolkit:process-wi", "後続のユーザー発話"]
 
 
 def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
@@ -6861,7 +6960,7 @@ def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
 
     振り返りは会話の流れからセッション全体の試行と遠回りを探すため、ツール呼び出しと失敗が流れに欠けると
     候補の観点に当たらない問題が分析の入力から欠ける。成功した結果の本文、書き込む本文、配送本文、実行環境の挿入、
-    スキル展開を含めると量が膨らみ、利用者の発話と区別できなくなる。
+    スキル展開を含めると量が膨らみ、ユーザーの発話と区別できなくなる。
     長い発話は会話の流れの表示で先頭と末尾だけになるため、記録位置の照会が全文を返す必要がある。
     """
     long_reply = "長い応答の先頭。" + "あ" * 1500 + "長い応答の末尾。"
@@ -7287,6 +7386,7 @@ def test_explicit_codex_home_applies_to_parent_and_delegate_records(
         {
             "kind": "user",
             "text": "明示先の委譲記録",
+            "runtime_inserted": False,
             "line": 1,
             "timestamp": None,
             "sequence": 1,
@@ -7904,7 +8004,7 @@ def test_candidates_exclude_boundary_marked_injections() -> None:
 
 
 def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_intervention() -> None:
-    """先頭スキル要求と対応本文を別区分で除外し、後続の利用者介入を保持する。"""
+    """先頭スキル要求と対応本文を別区分で除外し、後続のユーザー介入を保持する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
         {"kind": "user", "record": "main", "line": 2, "text": "$agent-toolkit:process-wi"},

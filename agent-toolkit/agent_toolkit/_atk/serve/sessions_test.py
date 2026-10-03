@@ -396,7 +396,7 @@ def test_codex_roles_and_compaction_are_preserved(tmp_path: pathlib.Path) -> Non
     path = _write(
         tmp_path / "codex" / "sessions" / "2026" / "09" / "01" / "rollout-roles.jsonl",
         [
-            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "利用者"}]}},
+            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "ユーザー"}]}},
             {"type": "response_item", "payload": {"role": "developer", "content": [{"text": "開発者"}]}},
             {"type": "response_item", "payload": {"role": "assistant", "content": [{"text": "応答"}]}},
             {"type": "response_item", "payload": {"role": "unknown", "content": [{"text": "不明"}]}},
@@ -429,7 +429,7 @@ def test_codex_roles_and_compaction_are_preserved(tmp_path: pathlib.Path) -> Non
 
 
 def test_runtime_inserted_events(tmp_path: pathlib.Path) -> None:
-    """挿入本文だけを表示種別へ分け、利用者とツールのイベントを保つ。"""
+    """挿入本文だけを表示種別へ分け、ユーザーとツールのイベントを保つ。"""
     claude = _write(
         tmp_path / "claude" / "projects" / "p" / "claude.jsonl",
         [

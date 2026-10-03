@@ -9,12 +9,13 @@ import datetime
 import json
 import logging
 import pathlib
+import time
 import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import session_registry, task_documents, tool_names
-from agent_toolkit._common import background_output, message_format
+from agent_toolkit._common import background_output, claude_usage_limit, message_format
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
@@ -23,8 +24,17 @@ RESULT_RETENTION_SECONDS = 1800.0
 # 自動再開の待機上限は終端結果の保持期限とは目的が異なる。本計画の起草時点では
 # 値を変える根拠となる観測結果が無いため、現行の結果保持期限と同じ値を選ぶ。
 AUTO_RESUME_DEADLINE_SECONDS = 1800.0
+# 起動の可用性確認を過ぎた後にCodexのturnがモデルの過負荷で終端した場合に、同じsessionへ継続を送るまでの待機秒数。
+# 要素数が1回の失敗の連鎖で行う自動継続の上限回数となる。値はユーザー指示（15秒・30秒・60秒）による。
+# 直後の再送では過負荷が解けなかった観測があるため待機を置き、間隔を広げる。上限に達しても解けない場合は
+# 最後の失敗を公開し、その候補を次回の起動の除外対象として記録して、委譲元の起動し直しで別のモデルへ移す。
+OVERLOAD_RESUME_DELAYS_SECONDS = (15.0, 30.0, 60.0)
+OVERLOAD_ERROR_INFO = "serverOverloaded"
+# Claude CodeのWeekly limitと5時間の利用上限の解除待ちを`api_error`の`type`で示す値。
+# 解除待ちは回数と総時間の上限を持たない（解除まで待ち、別の候補へ切り替えない。ユーザー指示）。
+USAGE_LIMIT_ERROR_TYPE = "usage_limit"
 # 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
-# 値は利用者の提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
+# 値はユーザーの提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
 # 超過は停滞の確定ではなく委譲元が状況を調べる契機として扱う。
 STALL_NOTICE_SECONDS = 300.0
 # ホストが応答しないMCPツール呼び出しをバックグラウンドタスクへ移すまでの秒数。
@@ -340,6 +350,11 @@ def elapsed_seconds(value: str | None) -> int | None:
     return max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
 
 
+# `api_error`の公開項目。利用上限の解除待ちだけが後半の2項目を持つ。
+API_ERROR_USAGE_LIMIT_KEYS = ("limit_type", "resets_at")
+API_ERROR_PUBLIC_KEYS = ("type", "http_status", "elapsed_seconds", *API_ERROR_USAGE_LIMIT_KEYS)
+
+
 def activity_projection(
     *,
     updated_at: str | None,
@@ -369,6 +384,10 @@ def activity_projection(
                 "http_status": api_error.get("http_status"),
                 "elapsed_seconds": elapsed,
             }
+            # 利用上限の解除待ちでは、種類と解除予定時刻を加えてAPI再試行と区別できるようにする。
+            for key in API_ERROR_USAGE_LIMIT_KEYS:
+                if api_error.get(key) is not None:
+                    projection["api_error"][key] = api_error[key]
     return projection
 
 
@@ -475,6 +494,20 @@ class SessionState:
     # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
+    # `start`の可用性確認を終えたか。確認を終える前の過負荷は起動時の候補切替が扱う。
+    availability_checked: bool = False
+    # 過負荷による自動継続。連鎖の中で行った継続の回数、次の継続を送る時刻（イベントループの時計）と、
+    # 連鎖の最初の過負荷の時刻を持つ。過負荷以外の終端、委譲元の`kill`・`send_message`および上限到達で初期化する。
+    overload_resume_count: int = 0
+    overload_resume_at: float | None = None
+    overload_first_at: str | None = None
+    # Claudeが最後に報告した利用枠の状態。待機の対象かの判定と解除予定時刻に使う。
+    usage_limit: claude_usage_limit.UsageLimitState | None = None
+    # 利用上限の解除待ち。次に同じsessionへ継続を送る時刻（イベントループの時計）、待機の回数と最初の拒否の時刻を持つ。
+    # 待機対象以外の終端と委譲元の`kill`・`send_message`で初期化し、回数では打ち切らない。
+    usage_limit_resume_at: float | None = None
+    usage_limit_wait_count: int = 0
+    usage_limit_first_at: str | None = None
     pending_result: dict[str, Any] | None = None
     finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
@@ -958,11 +991,20 @@ def _discard_collected(session: SessionState, collected: set[str]) -> None:
     session.terminal_child_session_ids.difference_update(collected)
 
 
-def finalize_pending_result(session: SessionState, *, touch: bool = True) -> None:
-    """保留したturn結果を公開可能な終端状態へ移す。"""
+def finalize_pending_result(session: SessionState, *, touch: bool = True, keep_resume_chain: bool = False) -> None:
+    """保留したturn結果を公開可能な終端状態へ移す。
+
+    過負荷の自動継続と利用上限の解除待ちの継続を送る処理だけが`keep_resume_chain`を真にし、連鎖の回数と開始時刻を引き継ぐ。
+    それ以外（`kill`、委譲元の`send_message`、期限到来）は連鎖を終える。
+    """
     result = session.pending_result
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
+    session.overload_resume_at = None
+    session.usage_limit_resume_at = None
+    if not keep_resume_chain:
+        clear_overload_resume(session)
+        clear_usage_limit_wait(session)
     session.awaiting_auto_resume = False
     session.auto_resume_deadline = None
     session.pending_result = None
@@ -974,6 +1016,98 @@ def finalize_pending_result(session: SessionState, *, touch: bool = True) -> Non
     session.turn_start_ambiguous = False
     if touch:
         session.touch()
+
+
+def is_overload_failure(session: SessionState) -> bool:
+    """turnがCodexのモデルの過負荷で失敗したかを返す。"""
+    return (
+        session.status == "failed"
+        and isinstance(session.error, dict)
+        and session.error.get("codexErrorInfo") == OVERLOAD_ERROR_INFO
+    )
+
+
+def clear_overload_resume(session: SessionState) -> None:
+    """過負荷による自動継続の連鎖を終える。"""
+    session.overload_resume_count = 0
+    session.overload_resume_at = None
+    session.overload_first_at = None
+
+
+def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) -> bool:
+    """過負荷で終端したturnの結果を保留し、待機後の継続を予定する。
+
+    上限に達していれば保留せずに連鎖を終えて偽を返し、呼び出し元は結果をそのまま公開する。
+    待機中は既存の`api_error`へ種別`serverOverloaded`とHTTP状態の不明を記録して状態の読者へ公開する。
+    """
+    count = session.overload_resume_count
+    if count >= len(OVERLOAD_RESUME_DELAYS_SECONDS):
+        clear_overload_resume(session)
+        return False
+    session.pending_result = result
+    session.awaiting_auto_resume = True
+    session.auto_resume_deadline = None
+    session.overload_resume_at = asyncio.get_running_loop().time() + OVERLOAD_RESUME_DELAYS_SECONDS[count]
+    session.overload_resume_count = count + 1
+    if session.overload_first_at is None:
+        session.overload_first_at = _utc_now()
+    session.api_error = {
+        "type": OVERLOAD_ERROR_INFO,
+        "http_status": None,
+        "first_at": session.overload_first_at,
+        "count": session.overload_resume_count,
+    }
+    for listener in tuple(_TOUCH_LISTENERS):
+        listener()
+    return True
+
+
+def clear_usage_limit_wait(session: SessionState) -> None:
+    """利用上限の解除待ちの連鎖を終える。"""
+    session.usage_limit_wait_count = 0
+    session.usage_limit_resume_at = None
+    session.usage_limit_first_at = None
+
+
+def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> bool:
+    """Weekly limitか5時間の利用上限で失敗したturnの結果を保留し、解除後の継続を予定する。
+
+    最後に報告された利用枠が待機の対象でなければ保留せずに連鎖を終えて偽を返し、呼び出し元は従来どおり扱う。
+    保留した結果の`error.usageLimit`と`api_error`へ種類と解除予定時刻を記録し、状態の読者へ解除待ちを公開する。
+    待機は`auto_resume_deadline`と`retention_deadline`の対象にせず、回数でも打ち切らない。
+    """
+    limit = session.usage_limit
+    if result.get("status") != "failed" or limit is None or not limit.is_wait_target:
+        clear_usage_limit_wait(session)
+        return False
+    original_error = result.get("error")
+    error: dict[str, Any] = (
+        dict(original_error)
+        if isinstance(original_error, dict)
+        else {"message": str(original_error or "Claude usage limit reached")}
+    )
+    resets_at = limit.resets_at_iso()
+    error["usageLimit"] = {"type": limit.limit_type, "resetsAt": resets_at}
+    result = {**result, "error": error}
+    session.pending_result = result
+    session.awaiting_auto_resume = True
+    session.auto_resume_deadline = None
+    session.usage_limit_resume_at = asyncio.get_running_loop().time() + limit.delay_seconds(time.time())
+    session.usage_limit_wait_count += 1
+    if session.usage_limit_first_at is None:
+        session.usage_limit_first_at = _utc_now()
+    http_status = error.get("apiErrorStatus")
+    session.api_error = {
+        "type": USAGE_LIMIT_ERROR_TYPE,
+        "http_status": http_status if isinstance(http_status, int) else None,
+        "first_at": session.usage_limit_first_at,
+        "count": session.usage_limit_wait_count,
+        "limit_type": limit.limit_type,
+        "resets_at": resets_at,
+    }
+    for listener in tuple(_TOUCH_LISTENERS):
+        listener()
+    return True
 
 
 def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> float:

@@ -973,11 +973,14 @@ def test_current_plan_acceptance_table_accepts_new_header(repo: tuple[pathlib.Pa
     assert not any("受入シナリオ表" in warning for warning in warnings), warnings
 
 
-def test_current_plan_legacy_acceptance_header_is_migration_only(repo: tuple[pathlib.Path, str]) -> None:
+@pytest.mark.parametrize("legacy", _plan_format.PLAN_LEGACY_ACCEPTANCE_TABLE_HEADERS)
+def test_current_plan_legacy_acceptance_header_is_migration_only(
+    repo: tuple[pathlib.Path, str], legacy: tuple[str, ...]
+) -> None:
     """改名前の列名を持つ受入シナリオ表は読取時に警告して受理し、新規作成・改訂では拒否する。"""
     work_dir, _base = repo
     new_header = _acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
-    legacy_header = _acceptance_header_row(_plan_format.PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER)
+    legacy_header = _acceptance_header_row(legacy)
     content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(new_header, legacy_header, 1)
     path = work_dir / "legacy-acceptance.md"
     path.write_text(content, encoding="utf-8")
@@ -991,11 +994,14 @@ def test_current_plan_legacy_acceptance_header_is_migration_only(repo: tuple[pat
     assert any("受入シナリオ表の列名が旧形式" in error for error in create_errors), create_errors
 
 
-def test_current_plan_legacy_acceptance_table_still_requires_filled_cells(repo: tuple[pathlib.Path, str]) -> None:
+@pytest.mark.parametrize("legacy", _plan_format.PLAN_LEGACY_ACCEPTANCE_TABLE_HEADERS)
+def test_current_plan_legacy_acceptance_table_still_requires_filled_cells(
+    repo: tuple[pathlib.Path, str], legacy: tuple[str, ...]
+) -> None:
     """改名前の列名の表も現行の表と同じく空セルを拒否する。"""
     work_dir, _base = repo
     new_header = _acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
-    legacy_header = _acceptance_header_row(_plan_format.PLAN_LEGACY_ACCEPTANCE_TABLE_HEADER)
+    legacy_header = _acceptance_header_row(legacy)
     content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(new_header, legacy_header, 1)
     lines = content.splitlines(keepends=True)
     row_index = next(index for index, line in enumerate(lines) if line.startswith(legacy_header)) + 2

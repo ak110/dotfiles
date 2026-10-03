@@ -6,14 +6,13 @@ r"""多段終了手順の起動順が要求を満たすかStopフックで確か
 本フックは対象スキルの最新の起動以後に、要求される終了工程が要求順で実行されたかを
 transcriptのSkillの成功結果とBashツール起動記録から判定する。
 
-対象スキルの起動が無いセッションでは起動順を判定せず常時approveする。
+実際の報告構造確認・振り返り準備の結果が供給された作業は、初回Stopから不足を判定する。
+対象スキルの起動が無く、工程証拠も無いセッションではapproveする。
 最新の対象スキル起動より前の終了工程の起動は充足の判定へ流用しない。
 終了工程の起動順が要求と逆である場合も未充足として扱う。
 
-多段終了手順の起動順を判定する処理は`stop_hook_active`が真の回だけ遮断する。
-偽の回で遮断すると、対象スキルの起動後の通常のターン終了を毎回阻止する
-（既存の`agents_server_session_advisor.py`も、他の判定が既にターン継続を強制している
-再入回であることを`stop_hook_active`で確認したうえで自身の判定を重ねる前提を用いる）。
+Claude Codeの旧版の起動順判定は、工程結果が未供給の場合の再入回へ維持する。
+CodexではClaude Code形式のSkill記録を根拠へ使わない。
 
 継続中の非同期作業がある場合は`is_pending_async_work`の判定を維持し、遮断しない。
 セッション記録（transcript）を読み取れない場合も遮断せず、Stop判定ログへ起動順を確かめられないことを記録する。
@@ -25,6 +24,7 @@ import json
 import pathlib
 
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
+from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
@@ -36,6 +36,7 @@ from agent_toolkit._hooks.stop_gate import (
     read_transcript_entries_cached,
 )
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
+from agent_toolkit._hooks.tool_input import is_codex_payload
 
 _HOOK_ID = "termination_order_advisor"
 
@@ -154,12 +155,34 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     session_id, payload = resolved
 
-    if payload.get("stop_hook_active") is not True:
-        append_stop_log(session_id, "approve_not_reentrant", {})
-        return "approve", ""
-
     if not is_main_agent_context(payload):
         append_stop_log(session_id, "approve_delegated_session", {})
+        return "approve", ""
+
+    missing_evidence = [
+        f"作業 {work_id}: {', '.join(termination_evidence.missing_stages(work))}"
+        for work_id, work in termination_evidence.pending_work(payload)
+        if termination_evidence.missing_stages(work)
+    ]
+    if missing_evidence:
+        append_stop_log(session_id, "block_missing_termination_evidence", {"count": len(missing_evidence)})
+        return "block", _block_notice(
+            "終了工程の実行結果が不足している。\n"
+            + "\n".join(missing_evidence)
+            + "\n"
+            + termination_evidence.decision_hint(payload),
+            fix=(
+                "不足する段階の報告を書き、`atk run-script completion-report-check`で構造を確かめる。"
+                "中止・置換・待機・技術的不成立は原証拠と対象の`work_id`を"
+                "`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡す。"
+            ),
+        )
+
+    if is_codex_payload(payload):
+        return "approve", ""
+
+    if payload.get("stop_hook_active") is not True:
+        append_stop_log(session_id, "approve_not_reentrant", {})
         return "approve", ""
 
     raw_transcript = payload.get("transcript_path", "")

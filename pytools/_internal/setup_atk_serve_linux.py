@@ -23,7 +23,7 @@ _LEGACY_UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / 
 # ランチャー本文のテンプレート。dotfiles 作業ツリーの agent-toolkit を直接参照し、
 # Claude Code のプラグインキャッシュ配置に依存せず解決先を1点に定める。
 # uv は systemd user service の PATH に存在しないため、導入時に解決した絶対パスを埋め込む。
-# ~/.local/bin/atk は install-claude.sh がプラグイン単体利用者向けに生成するラッパーで
+# ~/.local/bin/atk は install-claude.sh がagent-toolkit単体のユーザー向けに生成するラッパーで
 # 内容が競合するため、本モジュールはサービス専用の別名を用いる。
 # dotfiles ホストでは post_apply の旧配布物削除が ~/.local/bin/atk を除去する。
 _LAUNCHER_TEMPLATE = """#!/bin/sh

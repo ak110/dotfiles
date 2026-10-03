@@ -186,7 +186,7 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str, fail_on_error: boo
         return
     # 失敗時は構築コマンドの標準エラーと標準出力を必ず伝播させる。
     # 終了コードと経過時間だけの診断では、依存解決の失敗本文が永続ログにもtracebackにも現れず、
-    # 利用者と後続の調査主体が原因へ到達できない。
+    # ユーザーと後続の調査主体が原因へ到達できない。
     if result is None:
         summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {target}"
     else:

@@ -80,19 +80,19 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
 
 # settings.json の env 配下から除去するキー。
 # share/claude_settings_json_managed.* から廃止した env キーを列挙する。
-# dict は再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
+# dict は再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
 _REMOVED_ENV_KEYS: tuple[str, ...] = (
     "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
 )
 
 # 配布元から廃止した設定キーのドット区切りパス。
-# dictは再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
+# dictは再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
 _REMOVED_KEYS: tuple[str, ...] = ("autoMode.allowMode",)
 
 # `~/.claude.json`から除去する設定キーのドット区切りパス。
 # `verbose`は`~/.claude/settings.json`が管理するため、`~/.claude.json`側に残ると
-# 両方が同じ表示を指定し、どちらの値が適用されるかを利用者が判別できない。
+# 両方が同じ表示を指定し、どちらの値が適用されるかをユーザーが判別できない。
 _REMOVED_CONFIG_KEYS: tuple[str, ...] = (*_REMOVED_KEYS, "verbose")
 
 # settings.json 配下のリスト要素から除去する部分文字列のペア。
@@ -122,7 +122,7 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
         "autoMode.allow",
         "自律終了再促フックからの誘導・ユーザーのSkill名明示指定のいずれか",
     ),
-    # 2026-08: ラベル付きの Personal Repo Default-Branch Push へ移管したため利用者記入の旧文面を除去
+    # 2026-08: ラベル付きの Personal Repo Default-Branch Push へ移管したためユーザー記入の旧文面を除去
     (
         "autoMode.allow",
         "ak110の個人リポジトリ（dotfiles, pytilpack",
@@ -152,7 +152,7 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
     ),
     # 2026-09: autoMode.allow を4件の包括ルールへ再編したため、廃止したラベルの旧文面を除去する。
     # `_strip_stale_labeled_list_items`は配布原本に現存するラベルの旧文面だけを除去するため、
-    # 配布原本から消えたラベルはここで明示しないと利用者設定に残り続ける
+    # 配布原本から消えたラベルはここで明示しないとユーザー設定に残り続ける
     # （配布原本14件に対し`~/.claude/settings.json`が16件を保持していた実測による。
     # 残留していたのは下記の`Feedback-`で始まる2件）。
     ("autoMode.allow", "Session-Owned Amend: "),
@@ -174,7 +174,7 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
 # ラベル付き配列要素（`^<ラベル>: `形式の接頭辞を持つ要素）の先頭ラベルを抽出する正規表現。
 # `_strip_stale_labeled_list_items`が使う。ラベルは先頭文字がアルファベット、
 # 以降がアルファベット・数字・空白・ハイフンのみで構成される
-# （日本語で始まる利用者独自エントリを誤検出しないため）。
+# （日本語で始まるユーザー独自エントリを誤検出しないため）。
 _LABELED_LIST_ITEM_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9 -]*): ")
 
 # `_strip_stale_labeled_list_items`の対象パス一覧（ドット区切り）。
@@ -584,7 +584,7 @@ def _strip_stale_labeled_list_items(data: dict, managed: dict, paths: tuple[str,
     要素をマージ前に全件除去する。通常のunionマージ（`_union_list`）は文字列完全一致でしか
     重複判定しないため、配布原本側でラベル本文を改訂すると旧文面が残り続ける。本関数は
     改訂のたびに `_REMOVED_LIST_ITEM_SUBSTRINGS` へ旧文面を手動追記する運用に頼らず、
-    ラベル単位で旧文面を自動除去する。ラベルを持たない要素（利用者独自エントリ）は
+    ラベル単位で旧文面を自動除去する。ラベルを持たない要素（ユーザー独自エントリ）は
     除去対象にならず保護される。
 
     `paths` の既定値は空タプル。settings.json 専用の配列項目を対象とする場合は呼び出し元で
@@ -621,7 +621,7 @@ def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> N
     """配布原本のいずれにも存在しない`dotfiles/scripts/`参照のフックコマンドを警告する。
 
     対象は`~/.claude/settings.json`のフックコマンドのうち`dotfiles/scripts/`を参照するものに限る。
-    利用者が手動で追加したフックやプラグイン由来のフックを誤検出しないためである。
+    ユーザーが手動で追加したフックやプラグイン由来のフックを誤検出しないためである。
     `_platform_overrides`は`sys.platform`により片方の原本しか返さないため、
     本検査では`.posix.json`・`.win32.json`の両方とbase JSONを明示的に読む。
     """

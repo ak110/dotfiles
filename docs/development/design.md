@@ -1,7 +1,7 @@
 # 設計記録の索引
 
 機構の目的、構造の理由、知識境界と却下した代替案を、主題別の本文から選んで読むための索引である。
-利用者が確定した方針・意向は[concepts.md](concepts.md)、障害の経緯は[incidents.md](incidents.md)が扱う。
+ユーザーが確定した方針・意向は[concepts.md](concepts.md)、障害の経緯は[incidents.md](incidents.md)が扱う。
 実行時に適用する規範は現行のルールファイルとスキルが定め、設計記録はその背景と構造の理由を保持する。
 既存の主題の記録は対応する本文の節へ追記する。独立した新しい主題は主題別の本文へ置き、本索引の対応表と各節へのリンク付き見出しを追加する。
 機構の詳細は主題別の本文に置き、本索引には本文を複製しない。
@@ -44,6 +44,8 @@
 ## [処理中の処理対象WIの追加と反映後の観測](design-process-loop.md#処理中の処理対象wiの追加と反映後の観測)
 
 ## [公開出力から導出できる項目の撤去](design-cli.md#公開出力から導出できる項目の撤去)
+
+## [dotfilesのatkで実行するworktree](design-cli.md#dotfilesのatkで実行するworktree)
 
 ## [agents_server sessionのstatusline表示](design-agents-runtime.md#agents_server-sessionのstatusline表示)
 
@@ -104,6 +106,8 @@
 ### [事前に防ぐ型と遮断後に対処する型（2026年9月29日）](design-hooks.md#事前に防ぐ型と遮断後に対処する型2026年9月29日)
 
 ### [委譲手段の選択と待機の装着の手掛かり（2026年10月1日）](design-hooks.md#委譲手段の選択と待機の装着の手掛かり2026年10月1日)
+
+### [終了工程の証拠と報告の発話の確認（2026年10月3日）](design-hooks.md#終了工程の証拠と報告の発話の確認2026年10月3日)
 
 ### [hook出力契約の自動チェック](design-hooks.md#hook出力契約の自動チェック)
 

@@ -6,7 +6,9 @@
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
 1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
 対象の記録はtranscriptの絶対パス、Claude Codeのセッション識別子、Codex thread IDおよびカタログ走査のいずれか1つで指定する。
-`--user-events`は逐語引用の原文として使うため、本文を切り詰めず、確認回答には提示した全選択肢を含める。
+ユーザーイベントの由来は原文と生成標識から判定し、その結果を保持してから通常表示の本文を短縮する。
+`--user-events`は人間の発話と確認回答だけを逐語引用の原文として返す。
+本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開と実行環境の生成本文は除く。
 
 本スクリプトはデータ抽出を目的とし、合否を判定しないため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -309,13 +311,26 @@ def _codex_text_blocks(content: Any) -> list[str]:
 
 
 def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] | None:
+    runtime_inserted = kind == "user" and _is_runtime_inserted_text(text)
     clipped = _clip(text)
     if not clipped:
         return None
     event: dict[str, Any] = {"kind": kind, "text": clipped}
+    if kind == "user":
+        event["runtime_inserted"] = runtime_inserted
     if tool:
         event["tool"] = tool
     return event
+
+
+def _generated_user_event(event: dict[str, Any]) -> bool:
+    """原文から得た由来を消費し、保存済み旧イベントは既存の本文判定で読む。"""
+    if event.get("runtime_generated") is True:
+        return True
+    classified = event.get("runtime_inserted")
+    if isinstance(classified, bool):
+        return classified
+    return _is_runtime_inserted_text(str(event.get("text", "")))
 
 
 _OfferedOption = tuple[str, str]
@@ -777,6 +792,8 @@ def _codex_entry_events(
             for text in _codex_text_blocks(payload.get("content")):
                 event = _event(kind, text)
                 if event:
+                    if kind == "user" and _is_runtime_generated(entry):
+                        event["runtime_generated"] = True
                     phase = payload.get("phase")
                     if isinstance(phase, str):
                         event["phase"] = phase
@@ -805,7 +822,7 @@ def _extract_agy(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[s
     """Antigravityの委譲先ログを共通イベントへ変換する。
 
     ログは時刻を持たないため、各イベントの`timestamp`はnullになる。
-    委譲先がさらに起動した孫（`invoke_subagent`・`call_mcp_tool`など）は、利用者が網羅の対象から外したため
+    委譲先がさらに起動した孫（`invoke_subagent`・`call_mcp_tool`など）は、ユーザーが網羅の対象から外したため
     失敗した場合を除いて事象へ写さず、委譲先の発見元にもしない。
     """
     events: list[dict[str, Any]] = []
@@ -2827,7 +2844,7 @@ def _entry_detail_events(
     空の出力が元から空だったのか省略の結果なのかを判別できない。
     各イベントは元エントリの`timestamp`を持ち、区間境界の時刻を元記録を読み直さずに確定できるようにする。
 
-    `full_message_text`では、利用者とアシスタントの発話本文（テキスト要素）を予算の外で切り詰めずに先頭へ返す。
+    `full_message_text`では、ユーザーとアシスタントの発話本文（テキスト要素）を予算の外で切り詰めずに先頭へ返す。
     会話の流れは長い発話の先頭と末尾だけを載せて記録位置を添えるため、その位置の照会で全文へ到達できる必要がある。
     """
     budget = _DetailBudget(limit)
@@ -2880,7 +2897,7 @@ def _entry_detail_events(
 
 
 def _message_texts(entry: dict[str, Any]) -> list[tuple[str, str]]:
-    """利用者またはアシスタントのメッセージのエントリから、役割とテキスト要素の本文を出現順に返す。"""
+    """ユーザーまたはアシスタントのメッセージのエントリから、役割とテキスト要素の本文を出現順に返す。"""
     message = entry.get("message")
     if (
         isinstance(message, dict)
@@ -3089,7 +3106,7 @@ def _warning_collection_events(collected: list[_CollectedRecord], unresolved: li
 
 
 def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
-    """メイン記録の状態を保ち、指定時刻より後に成立した利用者イベントだけを返す。
+    """メイン記録の状態を保ち、指定時刻より後に成立したユーザーイベントだけを返す。
 
     出力は逐語引用と文字列比較する原文として使うため、本文を切り詰めない。
     """
@@ -3124,7 +3141,9 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
             timestamp = _record_timestamp(record)
             if timestamp is not None and timestamp > since:
                 selected_events.extend(record_events)
-        user_events = [event for event in _finalize(selected_events) if event["kind"] == "user"]
+        user_events = [
+            event for event in _finalize(selected_events) if event["kind"] == "user" and not _generated_user_event(event)
+        ]
         events.extend(_events_with_record(user_events, item.record_id))
         break
     events.append({"kind": "summary", "count": len(events)})
@@ -3137,14 +3156,14 @@ _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.
 
 
 def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """メイン記録の利用者発話とアシスタント発話、ツール呼び出しおよび失敗の標識を時系列で返す。
+    """メイン記録のユーザー発話とアシスタント発話、ツール呼び出しおよび失敗の標識を時系列で返す。
 
     振り返りでセッション全体の流れ（試したコマンド、読み書きしたファイル、委譲の起動、遠回り、手戻り、
-    同じ論点の反復、利用者による是正）を通読するための入力とする。発話は切り詰めずに返す。
+    同じ論点の反復、ユーザーによる是正）を通読するための入力とする。発話は切り詰めずに返す。
     ツール呼び出しはツール名と代表入力だけを返し、書き込む本文と置換文字列は含めない。
     ツール結果は本スクリプトが`failed-tool`として検出した失敗だけを、診断の1行とともに返す。
     自動挿入本文、実行環境が生成した本文、スキル本文の展開、hookの追加コンテキスト、成功したツール結果の本文は除く。
-    確認への回答（`質問: … 回答: …`）と初期要求は利用者の入力として残す。
+    確認への回答（`質問: … 回答: …`）と初期要求はユーザーの入力として残す。
     委譲先の内部は問題候補の側で扱うため、メイン記録だけを対象とする。
     """
     main_record = next((item for item in collected if item.record_id == "main"), None)
@@ -3184,7 +3203,7 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
             )
             continue
         if kind == "user":
-            if event.get("runtime_generated") is True or _is_runtime_inserted_text(text):
+            if _generated_user_event(event):
                 continue
             role = "user"
         elif kind in {"assistant", "final-result"}:
@@ -3608,7 +3627,7 @@ def _candidate_events(
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
-    母集団はhook通知、利用者介入、失敗したツール実行、警告および工程の返却値とする。
+    母集団はhook通知、ユーザー介入、失敗したツール実行、警告および工程の返却値とする。
     返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合に含まれなくなるためである。
     正常な完了だけを示し、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
 
@@ -3617,7 +3636,7 @@ def _candidate_events(
     `tool-failure`も保持し、許可ルールと実行失敗の双方の見直しへ対応付ける。
 
     候補件数の削減は、正規化した本文での集約と、恒久対策の要否が記録の構造から定まる事象の除外だけで行う。
-    除外するのは、利用者介入ではない入力、正常な完了だけの委譲返却、検索の一致0件などの正常な否定結果、
+    除外するのは、ユーザー介入ではない入力、正常な完了だけの委譲返却、検索の一致0件などの正常な否定結果、
     および起草者が保存前に処置するWI本文の表記診断の警告である。
     hookの標識を持つツール失敗と、hook通知と同じ本文の警告は、hook通知として発生源別の上限の対象にする。
     上限は発生源と区分の組ごとに適用し、フック名のツール部分ごとに最多の種類を残して、件数の少ないツールの通知も候補に残す。
@@ -4062,11 +4081,11 @@ def _user_candidate_exclusion(
     initial_skill_request: tuple[str, int] | None = None,
     initial_skill_body: tuple[str, int] | None = None,
 ) -> str | None:
-    """構造と固定接頭辞だけで利用者介入ではない入力を分類する。
+    """構造と固定接頭辞だけでユーザー介入ではない入力を分類する。
 
-    接頭辞は、実行環境が利用者のメッセージへ挿入する本文、process-loopの通知、および定時promptの
-    先頭に現れる固定文字列を実記録から採取したものとする。これらは利用者の発話ではないため、
-    残すと利用者介入の候補が実際の介入件数を超える。
+    接頭辞は、実行環境がユーザーのメッセージへ挿入する本文、process-loopの通知、および定時promptの
+    先頭に現れる固定文字列を実記録から採取したものとする。これらはユーザーの発話ではないため、
+    残すとユーザー介入の候補が実際の介入件数を超える。
     接頭辞を持たない実行環境の生成は本文の形からは判別できないため、`_is_runtime_generated`が
     付けた標識で分類する。
     確認への回答のうち`answer_intervention`を持つものは、選択肢をそのまま選んだ回答ではなく
@@ -4080,7 +4099,7 @@ def _user_candidate_exclusion(
         return "initial-skill-request"
     if initial_skill_body == (record, line):
         return "initial-skill-body"
-    if _is_runtime_inserted_text(text):
+    if _generated_user_event(event):
         return "runtime-inserted"
     if text.startswith("質問:") and "回答:" in text:
         return None if event.get("answer_intervention") is True else "question-answer"
@@ -4376,7 +4395,7 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
 def _delegation_record_kinds(timeline: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
     """コマンド実行の委譲（`start`のshell）を受け取った委譲先と、再開された委譲先の記録IDを返す。
 
-    実行環境が先に注入した利用者ロールの本文を除き、最初の配送本文で
+    実行環境が先に注入したユーザーロールの本文を除き、最初の配送本文で
     コマンド実行の委譲かを判定する。配送本文が2件以上ある記録を再開されたものとする。
     """
     user_texts: dict[str, list[str]] = collections.defaultdict(list)
@@ -5055,7 +5074,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="RECORD:LINE",
         help="指定した<記録>:<行番号>（数値だけならメイン記録）のエントリの詳細（tool_useの入力全体・tool_result本文。"
-        "本文が退避されている場合はツール実行結果側の本文）を照会する。利用者とアシスタントの発話本文は切り詰めずに返す。"
+        "本文が退避されている場合はツール実行結果側の本文）を照会する。ユーザーとアシスタントの発話本文は切り詰めずに返す。"
         "複数指定ではオプションを繰り返す。"
         "各イベントは元記録行の時刻`timestamp`（無ければnull）を持つ。"
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
@@ -5096,7 +5115,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--user-events",
         action="store_true",
-        help="`--since`より後から観測境界までのメイン記録にある利用者イベントだけを照会する。`--since`が必須。",
+        help="`--since`より後から観測境界までのメイン記録にある人間の発話と確認回答を全文で照会する。"
+        "スキル展開と実行環境の生成本文は除く。`--since`が必須。",
     )
     parser.add_argument(
         "--since",

@@ -211,7 +211,7 @@ class TestLegacyReservationMigration:
             "---\ntarget_repo: github.com/example/foo\ntype: awi\n"
             "depends_on: [companion.md, normal.md]\n"
             f"reservation: {reservation}\n"
-            "target_commit_history: [abc123]\n---\n\n利用者本文\n",
+            "target_commit_history: [abc123]\n---\n\nユーザー本文\n",
             encoding="utf-8",
         )
         return path
@@ -255,7 +255,7 @@ class TestLegacyReservationMigration:
         tmp_path: pathlib.Path,
         reservation: str,
     ) -> None:
-        """予約の妥当性や期限にかかわらず利用者データを通常inboxへ戻す。"""
+        """予約の妥当性や期限にかかわらずユーザーデータを通常inboxへ戻す。"""
         notes = _setup_notes(tmp_path)
         self._write_legacy_main(notes, reservation=reservation)
         self._write_companion(notes)
@@ -274,7 +274,7 @@ class TestLegacyReservationMigration:
         assert "reservation" not in metadata
         assert "target_commit_history" not in metadata
         assert metadata["depends_on"] == ["normal.md"]
-        assert "利用者本文" in body
+        assert "ユーザー本文" in body
         assert not (notes / "processing/main.md").exists()
         assert not (notes / "inbox/companion.md").exists()
         migration_commits = [
@@ -356,7 +356,7 @@ class TestLegacyReservationMigration:
     ) -> None:
         """内部repo以外の同名metadataを旧生成物と誤認しない。"""
         notes = _setup_notes(tmp_path)
-        path = _write_awi_file(notes, "user.md", body="利用者本文")
+        path = _write_awi_file(notes, "user.md", body="ユーザー本文")
         original = path.read_text(encoding="utf-8").replace(
             "type: awi\n",
             "type: awi\nreservation_companion: {target_repo: github.com/example/foo}\n",
@@ -377,9 +377,9 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """旧companionが無い利用者metadataは移行対象にしない。"""
+        """旧companionが無いユーザーmetadataは移行対象にしない。"""
         notes = _setup_notes(tmp_path)
-        path = _write_awi_file(notes, "user.md", body="利用者本文")
+        path = _write_awi_file(notes, "user.md", body="ユーザー本文")
         processing_path = notes / "processing" / path.name
         processing_path.parent.mkdir()
         path.rename(processing_path)

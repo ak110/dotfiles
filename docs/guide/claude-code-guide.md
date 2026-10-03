@@ -51,11 +51,11 @@ agent-toolkitはルールファイル、共通のプラグインパッケージ�
 - `uv`: [uv](https://docs.astral.sh/uv/)による配布スクリプト実行環境
 
 Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Claude Code 2.1.163以上を要求する。
-プラグイン単体利用者では非強制の前提条件、dotfiles配布の管理設定では`requiredMinimumVersion`で強制する。
+agent-toolkit単体のユーザーでは非強制の前提条件、dotfiles配布の管理設定では`requiredMinimumVersion`で強制する。
 
 ## クイックスタート
 
-dotfiles配布利用者では、`chezmoi apply`後の処理がAnthropic公式ネイティブ版を管理する。
+dotfilesユーザーでは、`chezmoi apply`後の処理がAnthropic公式ネイティブ版を管理する。
 未導入時は公式インストーラーで導入し、導入済みの場合は`claude update`で更新する。
 WindowsでClaude Codeが実行中の場合は停止せず、更新と旧npm版の整理を次回へ延期する。
 
@@ -142,17 +142,18 @@ Markdownの文体の密度に加え、本文・見出しと、コードのコメ
 `shell`は`command`と`summary_policy`を受け取り、`explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start`の説明は`mode`の選び方、各`mode`の最小呼び出し例と、`explore`・`shell`で委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト規範とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は、対象を変更しないよう`prompt`で指示する。
 `send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、委譲元は検収済み状態を渡して新規起動する。
-`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みずにターンを終えると、残した作業の結果を受け取る主体がいなくなる。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
+`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`atk agents wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みずにターンを終えると、残した作業の結果を受け取る主体がいなくなる。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。保持していた`session_id`の回復と、並行する委譲先の残作業の把握に使う。
-`stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`wait`は引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。
-`wait`は引数を受け取らず、委譲元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
-終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
-同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
-正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
+`stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`atk agents wait`は対象を指定する引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。
+`atk agents wait`は対象と待機上限を指定する引数を受け取らず、起動中のsessionと未回収の結果の全体を対象とする。1回の巡回で回収できた終端結果と通知を全件、1件1行のJSON Linesで返す。複数のsessionが同時に終端した場合も1回の応答で全件を受け取るため、各行を処理してから、残る待機対象があれば同じコマンドを再発行する。待機の完了は、待機対象の`session_id`を持つ終端行が応答に含まれるかで判定する。通知だけを回収したsessionは`status`が`running`の行で返る。待機上限は実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間から同コマンドが導出し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
+終端結果は配送した時点で回収済みとなり、同じ結果を再び返さない。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
+同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`atk agents wait`か`show`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`atk agents wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
 成功応答の`kill_requested`は中断要求の受理事実を示し、自然終端を中断成功へ置き換えない。MCP内部で承認・一覧操作は公開しない。
 
 工程別モデル設定の各キーは、`<engine>:<model>[/<effort>]`をASCIIカンマで区切った複数候補を受け取る。
 先頭の候補から順に起動を試み、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
+Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は次の候補へ進まず、解除まで待って同じClaudeで作業を続ける。`agents_server`、`atk wi process-loop`および`atk commit`のいずれも手動での再送は要らず、待機中は解除待ちの種類と解除予定時刻を`show`・`list`・statuslineまたは端末へ示す。待機を止める場合は`agents_server`では`kill`、CLIでは中断操作を使う。
 変更できるキーと対応する起動は次のとおり。
 
 | キー | 対応する起動 |
@@ -284,6 +285,7 @@ AWIが常時発生しないリポジトリでは、常駐実行を起動せず�
 show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.md`の行を持ち、その行より前が空行と`# awi`・`# uwi`・`## target_repo: ...`の見出しだけで構成される本文を指す。
 このときtarget-repo欄とUWI用の入力欄の値は使わない。
 AWIは人間向けの作業要求である。実装を伴うレーンでは、原則として計画を作成する。前述の除外条件に当たるレーンはWIを直接実装する。どちらも実装後に実行レビューを行い、メインの判断を要する場合だけレーン担当が返答を待つ。
+実行レビューの指摘表は委譲元が準備し、`完成条件証拠`のJSONはレビュー担当が初回に生成する。未解決件数は現在roundの指摘表から取得し、必須の証拠不足を残した0件の返却は収束として受理しない。指摘のある正常なレビューはcompletedとして修正へ進み、延期条件や公開後の検収は、その条件を判定する後続工程へつなぐ。
 
 | 登録方法 | 選ぶ場面 |
 | --- | --- |
@@ -291,13 +293,15 @@ AWIは人間向けの作業要求である。実装を伴うレーンでは、�
 | `atk wi add --batch` | 別環境の`atk wi show --all`の出力を複数件まとめて移行・復元したい |
 | `/agent-toolkit:add-awi-by-user` | 依頼内容を対話で確定してから登録したい |
 
+登録済みの未終端WIを直したい場合や、既存WIの前提へ懸念がある場合は、エージェントが対話や調査より先にその項目を`atk wi hold`で自動処理から外し、更新した本文を確かめてから`atk wi unhold`で戻す。処理中の項目は保留せず、変更内容を新しい項目として登録する。
+
 `atk wi reject`はprocess-loopが要求の全てを不採用と確定した場合だけに使用する。
 採用内容を統合した元項目または別リポジトリへ移管した元項目は、統合先または移管先をnoteへ記録して`atk wi rm --force`で除去する。
 技術的な失敗、入力不足および外部条件待ちは、不採用にせずactive項目として保持する。ユーザーの回答を待つ項目は保留し（処理中の項目は`atk wi hold --state=processing <ファイル名>`、それ以外は`atk wi hold <ファイル名>`）、回答後に`atk wi unhold`で自動処理へ戻す。
 
 ### atk serveの3画面
 
-`atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初の利用者発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は`~/.config/agent-toolkit/serve.toml`の`[plans]`・`[sessions]`で指定する。未指定の場合、計画ファイル画面はprivate-notesの`plans`と`~/.claude/plans`の両方を参照し、セッション画面は`~/.claude`と、`CODEX_HOME`が空のときは`~/.codex`を参照する。
+`atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初のユーザー発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は`~/.config/agent-toolkit/serve.toml`の`[plans]`・`[sessions]`で指定する。未指定の場合、計画ファイル画面はprivate-notesの`plans`と`~/.claude/plans`の両方を参照し、セッション画面は`~/.claude`と、`CODEX_HOME`が空のときは`~/.codex`を参照する。
 
 セッション画面を開いたままでも、ローカルと設定済みリモートホストで新しいセッションの記録が保存されると一覧へ自動で加わり、表示中の記録へ追記されたイベントも再読み込みせずに右ペインへ現れる。右ペインの更新では、開いたイベント、「さらに100件表示」で広げた件数およびスクロール位置を保つ。末尾を表示している間は追記に合わせて末尾へ進み、それより上を読んでいる間は右ペインの下端へ新しいイベントの件数と末尾へ移動するボタンを表示する。
 一覧への掲載は、記録にユーザーのロールを持つ行が1件でもあるかで決める。ユーザーのロールを持つ行が無い記録（Codexを起動しただけで入力しなかった記録など）は一覧に出ず、その行が保存されると一覧へ加わる。実行環境の挿入本文だけを持つ記録は一覧に残るが、最初の発話の検索値は空になる。リモートホストの自動更新には、リモートホスト側のdotfilesの更新が必要である。
@@ -343,7 +347,7 @@ claude mcp remove --scope user codex
 ```
 
 上記の削除は、`claude mcp get codex`で旧`codex mcp-server`定義を確認した場合だけ実行する。
-custom定義を削除する場合は利用者が内容を確認してから明示的に実行する。2時間のtimeoutは新しい設定へ引き継がない。
+custom定義を削除する場合はユーザーが内容を確認してから明示的に実行する。2時間のtimeoutは新しい設定へ引き継がない。
 
 ```bash
 chezmoi apply
@@ -362,7 +366,7 @@ Claude Codeがマーケットプレイス経由でインストールした実体
 - Windows: `~/.local/bin/atk.cmd`に同等のバッチラッパーを配置する
 - いずれも`~/.local/bin`がPATHに含まれていない環境では警告を表示する
 
-dotfiles配布利用者は`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
+dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
 
 ## 構成と機能
 
@@ -389,18 +393,18 @@ Claude Codeで背景で待つ場合はBashの`run_in_background`を使い、返�
 
 agent-toolkitは以下のフックを常時有効化する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
-`個人設定`はdotfiles利用者の`~/.claude/settings.json`へ配布される分を指す。
+`個人設定`はdotfilesユーザーの`~/.claude/settings.json`へ配布される分を指す。
 Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の実機検証で確認した範囲を示す。
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
 | plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作と、入力から機械的に判定できる明らかな誤りを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashではパターン一致によるプロセス終了と、オプション終端`--`の後ろへ`rg`・`grep`系・`git log`・`git diff`・`git show`・`git grep`自身のオプションを置くコマンドを遮断する。atkから後段へ出力を渡すパイプと、`atk agents wait`のシェルの`&`による背景化・標準出力の`/dev/null`への破棄も遮断する。未完了のバックグラウンドタスクが書き込む出力ファイルの読取、`git rev-parse --short`へ複数のリビジョンを渡すコマンド、Windows上でPATHへドライブ文字形式（`C:/...`）の要素を加えるコマンドを警告する。`agents_server`の自由本文の起動に`<役割名>.subagent.md`の実行命令がある場合と、`Agent`・`Task`の実行命令が正式な命令と宣言済み入力以外の行を含む場合に遮断する。文書の読解・引用・比較への参照と引用だけの命令は通す。直前の応答が英語主体の場合も警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。Bashではatkの出力パイプ・waitのシェル背景化・標準出力破棄、パターン一致によるプロセス終了、オプション終端の後ろのオプションの遮断、`git rev-parse --short`の複数リビジョンの警告に加え、出力の上限を超える通常ファイルの全文取得を遮断する。PATHのドライブ文字形式の警告はPowerShellでシェルを実行するため非対応。`agents_server`の自由本文の起動が`<役割名>.subagent.md`の実行命令を持つ場合の遮断に対応する |
-| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・バックグラウンドタスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録に対応する |
+| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・バックグラウンドタスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録、Bashで実行した報告の構造確認と振り返りの準備の結果の記録に対応する |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は`QUALITY_CHECKPOINT_NOTICE`も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する | 対応 | 非対応 |
+| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する。報告の構造確認と振り返りの準備の実際の結果から、残る報告段階と、確認に合格した本文を発話していない停止を初回から遮断する | 対応 | 対応。終了工程の証拠の2判定だけを実行し、`decision`と`reason`だけを返す |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて入力と記録の一致を求める注記、実ユーザー発話の全角`！！`から`agent-toolkit:realign-with-user`の起動を促す注記、セッション開始後と会話圧縮後に`agent-toolkit:user-confirmation-and-report`の起動を促す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
@@ -410,8 +414,8 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前のチェック | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
 
 Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では`QUALITY_CHECKPOINT_NOTICE`も追加する。
-pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする8イベントの定義を確認して信頼する。
-登録集合は`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`SubagentStop`、`SessionEnd`である。
+pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする9イベントの定義を確認して信頼する。
+登録集合は`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`Stop`、`SubagentStop`、`SessionEnd`である。
 登録が0件の場合は信頼操作へ進まず、`agent-toolkit-codex/`のmanifest選択を確認する。信頼前は登録済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
 信頼後に新しいセッションを開始し、最初の応答の前に自動生成通知が現れることを確認する。
 
@@ -479,7 +483,7 @@ Claude Codeで有効化する。
   自動的に適用せず、対象工程が高度な委譲の条件を持つ場合にだけ読み込む
 - `agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の実行レビューを含む実行引き継ぎ
   - 計画確定時は計画構造の自動チェックで固定H2と表、計画メタ情報、見出し階層、参照実在を確認する
-  - 利用者発言は`## 変更履歴`、実装時の進捗は`## 進捗ログ`へ記録する
+  - ユーザー発言は`## 変更履歴`、実装時の進捗は`## 進捗ログ`へ記録する
   - 実行レビューでは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`をレビュー担当が作成・更新し、全ラウンドで同じ表を使う
   - バグ対応計画は計画メタ情報の固定記法から判定し、関連WIの`## 原因分析`に記録した原因と調査を参照する。入力WIが無い場合とWIの原因分析を訂正・追加する場合だけ、計画ファイル（バグ）の原因分析表と固定の調査表で両要因を分析し、原因起点の類似見直し、対策・横展開・再発防止を記録する
   - 変更履歴は見出しごとの記録でレビュー指摘をラウンド単位に集約し、指摘原文・個別採否・対応内容はレビュー指摘管理表へ記録し、変更履歴には書かない
@@ -488,10 +492,10 @@ Claude Codeで有効化する。
   レビュー担当にはコードレビュー・ドキュメントレビューの実施基準を、レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領したレビューイーには修正要否の立証、安全な修正、自己点検と公開可能性の検証基準を与える
 - `agent-toolkit:wi-standards`: AWIとUWIの本文、由来、状態、承認および投入の共通規範
 - `agent-toolkit:workflow-overview`: 対話型、自律型、まとめ処理型をまたぐWI運用の全体像と、運用変更時に確認する主体・操作・適用先
-- `agent-toolkit:add-awi-by-user`: 利用者向け要件を対話で確定し、AWIまたはUWIを手動投入する
+- `agent-toolkit:add-awi-by-user`: ユーザーの要件を対話で確定し、AWIまたはUWIを手動投入する
 - `agent-toolkit:single-lane-process`: AWIをレーンへ分けずに、1回の起動で対応する作業ツリーへ実装して終端する。計画を要する項目は同じセッションの中で計画の作成から実装まで進め、複数リポジトリでは計画と実行レビューを対象worktreeごとに分ける
 - `agent-toolkit:process-wi`: 選定工程（選定とレーン分け）、レーン工程（並列レーン実行）、公開工程（全レーン後のpush・CI・終了）の3段階でAWIを処理する。
-  処理中に利用者が追加を明示したAWIは別の選定結果で検収して同じ実行へ加える。指示の無い新着はprocess-wiの次の実行で扱う。
+  処理中にユーザーが追加を明示したAWIは別の選定結果で検収して同じ実行へ加える。指示の無い新着はprocess-wiの次の実行で扱う。
   計画を要する通常レーンは1つの計画を使い、レーン担当が計画・実装・変更範囲の検証を続けて行った後、実行レビューを要求する。
   計画を省くレーンはWIの要求と完成条件を基準に実装・レビューする。計画がある場合は自動チェックでWI集合の一致と人間由来行の根拠欄を確認する。人間由来の縮小、エージェント向け文書の編集、明示禁止条件のいずれかがある場合だけメインの判断を待つ。
   実装不要またはholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
@@ -500,7 +504,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `atk agents-exit-session`: ユーザー指示時または自律モードのスキル完遂時に、現在のClaude CodeまたはCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行してセッション記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。振り返りが対策のAWIを投入する場合は、投入の前に振り返り結果を予告し、投入の完了後に完了の旨と投入したAWIのファイル名を報告する
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。振り返りが対策のAWIを投入する場合は、投入の前に振り返り結果を予告し、投入の完了後に完了の旨と投入したAWIのファイル名を報告する。途中の回答や割り込みへの返答の後に残りの報告段階へ進まない停止と、構造確認に合格した報告を発話しない停止はStopフックが遮断して戻す。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 

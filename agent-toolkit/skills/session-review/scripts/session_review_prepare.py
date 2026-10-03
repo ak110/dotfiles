@@ -56,7 +56,7 @@ _SUMMARY_LENGTH = 200
 """
 _SLOW_CALL_LIMIT = 10
 _FULL_TEXT_KINDS = frozenset({"user-intervention", "escalation"})
-"""`candidates.md`へ本文の全文を載せる候補種別。利用者の是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
+"""`candidates.md`へ本文の全文を載せる候補種別。ユーザーの是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
 _FAILURE_KINDS = frozenset({"command-failure", "tool-failure"})
 _FAILURE_LEDGER_DAYS = 30
 
@@ -169,7 +169,7 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str) ->
     lines = [
         "# 会話の流れ",
         "",
-        "メイン記録の利用者発話、アシスタント発話およびツール呼び出しを時系列で並べる。"
+        "メイン記録のユーザー発話、アシスタント発話およびツール呼び出しを時系列で並べる。"
         f"ツール呼び出しはツール名と代表入力（{_SUMMARY_LENGTH}字まで。`Write`・`Edit`は対象ファイルだけ）の1行で示し、"
         "失敗したツール結果は直後に診断の1行を示す。"
         "成功したツール結果の本文、自動挿入本文、実行環境の挿入、スキル展開、hookの追加コンテキスト、thinkingおよび委譲先の記録の内部は含まない。"
@@ -200,7 +200,7 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str) ->
             else:
                 lines.append(failure)
             continue
-        role = "利用者" if item["role"] == "user" else "アシスタント"
+        role = "ユーザー" if item["role"] == "user" else "アシスタント"
         text = str(item["text"]).strip()
         lines.extend(["", f"## {role}（{item.get('timestamp') or '時刻なし'}、{locator}）", ""])
         if len(text) > _UTTERANCE_FULL_LIMIT:

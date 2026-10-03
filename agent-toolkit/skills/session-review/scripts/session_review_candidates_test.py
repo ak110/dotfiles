@@ -60,7 +60,7 @@ def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
 
 
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
-    """process-loopの通知、定時promptおよび実行環境が挿入した本文を利用者介入から除く。"""
+    """process-loopの通知、定時promptおよび実行環境が挿入した本文をユーザー介入から除く。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "main", "line": 2, "text": "Goal check-in: «目標» is still active"},
@@ -77,7 +77,7 @@ def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
 
 
 def test_candidate_events_excludes_runtime_generated_user_records() -> None:
-    """実行環境が生成した標識を持つ利用者イベントを候補から除き、除外種類別へ計上する。"""
+    """実行環境が生成した標識を持つユーザーイベントを候補から除き、除外種類別へ計上する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "main", "line": 2, "text": "注記", "runtime_generated": True},

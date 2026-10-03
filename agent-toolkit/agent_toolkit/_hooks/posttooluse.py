@@ -34,6 +34,7 @@ import os
 import pathlib
 import re
 import shlex
+import sys
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._agents_server import (
@@ -57,6 +58,7 @@ from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import
     background_task_outputs as _background_task_outputs,
 )
 from agent_toolkit._hooks import stop_gate as _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
@@ -975,6 +977,10 @@ def main(payload_text: str) -> int:
     """
     notices: list[str] = []
     exit_code = _dispatch(payload_text, notices)
+    try:
+        termination_evidence.observe_tool(payload_text, after=True)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        print(f"終了工程の実行結果を取得できない: {error}", file=sys.stderr)
     if notices:
         try:
             event_name = json.loads(payload_text).get("hook_event_name", "PostToolUse")

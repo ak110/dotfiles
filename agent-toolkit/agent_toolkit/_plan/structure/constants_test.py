@@ -61,7 +61,7 @@ def test_canonical_plan_passes_structure_check() -> None:
 
 def test_human_readable_history_requires_canonical_user_heading() -> None:
     """新規書式の直接入力は連番のユーザー発言見出しと空でない逐語本文を持つ。"""
-    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_EVENT_HEADING, "### 利用者からの確認", 1)
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_EVENT_HEADING, "### ユーザーからの確認", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any(f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}1`見出し" in error for error in errors), errors
 
@@ -120,7 +120,7 @@ def test_human_readable_main_accepts_legacy_wi_names() -> None:
 
 
 def test_human_readable_main_accepts_external_identifiers_and_verbatim_ids() -> None:
-    """通常の外部識別子と利用者発言の逐語文は合成IDとして誤拒否しない。"""
+    """通常の外部識別子とユーザー発言の逐語文は合成IDとして誤拒否しない。"""
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_ACTION_SUBJECT, "MCP-toolとTLSのP-256を維持する", 1)
     content = content.replace(_plan_fixture.USER_EVENT_TEXT, "P-001という入力を変更しない。", 1)
     assert not _plan_format.check_plan_main_structure(content)[1]
@@ -267,7 +267,7 @@ def test_structured_material_contract_requires_adjacent_tables() -> None:
     assert any("素材表の直後に要求表" in error for error in errors), errors
 
 
-@pytest.mark.parametrize("material_id", ["P-001（利用者発言）:", "P-001: 利用者発言"])
+@pytest.mark.parametrize("material_id", ["P-001（ユーザー発言）:", "P-001: ユーザー発言"])
 def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: str) -> None:
     content = _LEGACY_CONTENT.replace("P-001:", material_id, 1)
 

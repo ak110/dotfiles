@@ -19,16 +19,8 @@ from pytools._internal import claude_common, codex_processes, install_codex_plug
 from ._test_helpers import _FakeResult
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
-_EXPECTED_HOOK_EVENTS = {
-    "sessionStart",
-    "subagentStart",
-    "preToolUse",
-    "postToolUse",
-    "permissionRequest",
-    "userPromptSubmit",
-    "subagentStop",
-    "sessionEnd",
-}
+# 生成器の許可表と同じ9イベント。install_codex_pluginsはこの集合が全て登録済みかを判定する。
+_EXPECTED_HOOK_EVENTS = install_codex_plugins._EXPECTED_HOOK_EVENTS  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)

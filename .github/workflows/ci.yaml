@@ -243,7 +243,7 @@ jobs:
         run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
-      - name: 利用者設定から隔離したlockfile検証
+      - name: ユーザー設定から隔離したlockfile検証
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
         run: |
           set -euo pipefail

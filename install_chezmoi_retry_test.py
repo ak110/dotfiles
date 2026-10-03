@@ -18,7 +18,7 @@ RETRY_DELAY = "sleep 2"
 
 
 def test_all_chezmoi_install_paths_share_bounded_retry_contract() -> None:
-    """CIと利用者向け導入処理で同じ再試行制限を維持する。"""
+    """CIとエンドユーザー向け導入処理で同じ再試行制限を維持する。"""
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     install_script = INSTALL_SCRIPT.read_text(encoding="utf-8")
     workflow_functions = _extract_install_functions(workflow)

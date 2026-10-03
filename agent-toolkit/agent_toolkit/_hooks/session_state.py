@@ -119,7 +119,7 @@ def sweep_stale_states(
 
 
 def _collect_stale_state(path: pathlib.Path, threshold: float) -> bool:
-    """期限切れ状態を、ロック利用者がいない間に回収する。対応するロックは削除しない。"""
+    """期限切れ状態を、ロックを使うプロセスがいない間に回収する。対応するロックは削除しない。"""
     lock_path = _lock_path(path)
     try:
         with lock_path.open("a+", encoding="utf-8") as lock_file:
@@ -296,7 +296,7 @@ def clear_session_state(session_id: str) -> bool:
 
 
 def _delete_state_paths(paths: tuple[pathlib.Path, ...]) -> bool:
-    """指定状態を、ロック利用者がいない間に削除する。対応するロックは削除しない。"""
+    """指定状態を、ロックを使うプロセスがいない間に削除する。対応するロックは削除しない。"""
     succeeded = True
     for path in paths:
         if not path.exists():

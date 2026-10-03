@@ -39,7 +39,7 @@ def is_legacy_definition(value: object) -> bool:
 
     受理するフィールドの集合は移行元の実生成物を基準とする。旧installerが使う
     `claude mcp add`は`-e`を指定しない場合も`env`を空dictとして書き込むため、
-    値を持たない`env`だけを受理し、値を持つ`env`は利用者が加えた設定として保持する。
+    値を持たない`env`だけを受理し、値を持つ`env`はユーザーが加えた設定として保持する。
     """
     if not isinstance(value, dict) or not set(value).issubset(_ALLOWED_FIELDS):
         return False

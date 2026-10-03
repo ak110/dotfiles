@@ -7,7 +7,7 @@ description: >
 # セッション記録のmarkdown出力
 
 `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ変換する。
-descriptionに「会話ログ」「セッション履歴」を残すのは、本スキルの起動条件を利用者が依頼で使う語と一致させるためである。
+descriptionに「会話ログ」「セッション履歴」を残すのは、本スキルの起動条件をユーザーが依頼で使う語と一致させるためである。
 
 ## 使い方
 

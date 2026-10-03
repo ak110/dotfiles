@@ -9,6 +9,7 @@ process-loopサブコマンド（常駐ループ）、リモートURL正規化�
 import argparse
 import contextlib
 import io
+import json
 import os
 import pathlib
 import stat
@@ -32,6 +33,9 @@ from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  #
 from agent_toolkit._atk.wi import process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import automated_prompt as _automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common import (
+    claude_usage_limit as _claude_usage_limit,  # noqa: E402  # pylint: disable=wrong-import-position
+)
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
@@ -1008,6 +1012,117 @@ class TestProcessLoopPromptAndEnv:
         captured = capsys.readouterr()
         assert captured.err.count("claude:sonnet/high") == 1
         assert captured.out.count("codex:gpt-5.6-sol/low") == 2
+
+    @pytest.mark.parametrize("limit_type", ["seven_day", "five_hour"])
+    def test_claude_usage_limit_waits_and_retries_same_candidate(
+        self,
+        limit_type: str,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Weekly limitか5時間の利用上限の拒否では次候補へ進まず、解除まで待って同じClaude候補で本作業を始める。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:opus/high,codex:gpt-5.6-sol/low")
+        capsys.readouterr()
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        probes: list[list[str]] = []
+        sessions: list[list[str]] = []
+        sleeps: list[float] = []
+        logged: list[tuple[str, dict[str, object]]] = []
+        rejected = "\n".join(
+            (
+                json.dumps({"type": "system", "subtype": "init", "session_id": "probe"}),
+                json.dumps(
+                    {
+                        "type": "rate_limit_event",
+                        "rate_limit_info": {"status": "rejected", "rateLimitType": limit_type, "resetsAt": None},
+                        "session_id": "probe",
+                    }
+                ),
+                json.dumps({"type": "result", "is_error": True, "result": "You've hit your limit", "session_id": "probe"}),
+            )
+        )
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"]:
+                probes.append(cmd)
+                if len(probes) <= 2:
+                    return subprocess.CompletedProcess(cmd, 1, rejected, "")
+                return subprocess.CompletedProcess(cmd, 0, json.dumps({"type": "result", "is_error": False}), "")
+            if cmd[:2] == ["codex", "exec"]:
+                probes.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+            if cmd[:1] == ["claude"]:
+                sessions.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop.time, "sleep", sleeps.append)
+
+        def record_append(event: str, **fields: object) -> None:
+            logged.append((event, fields))
+
+        monkeypatch.setattr(_process_loop._process_loop_log, "append", record_append)  # pylint: disable=protected-access  # noqa: SLF001
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert [probe[0] for probe in probes] == ["claude", "claude", "claude"]
+        assert all(probe[probe.index("--output-format") + 1] == "stream-json" for probe in probes)
+        assert sleeps == [_claude_usage_limit.RECHECK_SECONDS, _claude_usage_limit.RECHECK_SECONDS]
+        assert len(sessions) == 1
+        assert sessions[0][sessions[0].index("--model") + 1] == "opus"
+        waits = [fields for event, fields in logged if event == "usage_limit_wait"]
+        assert [fields["limit_type"] for fields in waits] == [limit_type, limit_type]
+        captured = capsys.readouterr()
+        assert captured.out.count(f"Claude Codeの利用上限（{limit_type}）の解除待ち") == 2
+        assert "手動での再送や再起動は不要" in captured.out
+        assert "モデル候補の可用性判定に失敗しました" not in captured.err
+
+    def test_claude_overage_rejection_falls_back_to_next_candidate(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """待機の対象外（`overage`）の拒否は従来どおり次の候補へ切り替え、待機しない。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:opus/high,codex:gpt-5.6-sol/low")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        sessions: list[list[str]] = []
+        sleeps: list[float] = []
+        overage = json.dumps(
+            {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "overage"}}
+        )
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"]:
+                return subprocess.CompletedProcess(cmd, 1, overage, "")
+            if cmd[:2] == ["codex", "exec"]:
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+            if cmd[:1] == ["codex"]:
+                sessions.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop.time, "sleep", sleeps.append)
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+
+        with pytest.raises(SystemExit):
+            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert not sleeps
+        assert len(sessions) == 1
 
     def test_effort_only_difference_changes_probe_and_ignored_claude_effort_falls_back(
         self,

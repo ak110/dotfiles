@@ -205,7 +205,7 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert "make lint" in candidates
     # hook通知の是非は通知が判定した応答を読まないと判断できないため、直前のアシスタント発話を添える。
     assert "  - 直前のアシスタント発話: I will run the linter now." in candidates
-    # 利用者の是正は要約すると趣旨が変わるため全文を載せる。
+    # ユーザーの是正は要約すると趣旨が変わるため全文を載せる。
     assert _LONG_INTERVENTION in candidates
     assert "直前と直後のユーザー発話" not in candidates
 

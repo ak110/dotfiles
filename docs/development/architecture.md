@@ -14,11 +14,11 @@
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
   - 例: `{{ include (joinPath .chezmoi.workingTree "pyproject.toml") }}`
 
-## 開発者と利用者の対象環境
+## 開発者とエンドユーザーの対象環境
 
 本dotfilesは以下の二者を想定している。配布対象と開発対象でサポート範囲が異なるため、ファイル追加時にどちら用かを確認。
 
-- 利用者: Linux+Windows（配布対象。`install.sh`/`install.ps1`/`install-claude.sh`/`install-claude.ps1`/
+- エンドユーザー: Linux+Windows（配布対象。`install.sh`/`install.ps1`/`install-claude.sh`/`install-claude.ps1`/
   chezmoi管理ファイルはすべて両OS対応とする）
 - 開発者: Linuxのみ（`make test`/prek/CIの開発系ジョブはLinux前提。macOS/Windowsでのローカル開発は非対応で構わない）
 

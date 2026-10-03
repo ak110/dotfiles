@@ -134,27 +134,27 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",
-        "description": "目的: 稼働中のprocess-loopへ中断を要求し、現在のセッションが終わった時点で次の反復へ進まず終了させる。\n利用場面: process-loopを安全に止めたいが、実行中のセッションは最後まで進めたいとき。\n対象と出力: 中断要求の状態ファイルを作成し、中断要求を設定したことを標準出力へ書く。process-loopのセッションと対象リポジトリは変更しない。\n前提: process-loopと同じ利用者の状態ディレクトリを使う。process-loopが動いていない場合も要求だけを設定する。\n復元・後始末: 要求は`atk wi process-loop abort-cancel`で解除できる。process-loopが中断で終了した時点でも解除される。",
+        "description": "目的: 稼働中のprocess-loopへ中断を要求し、現在のセッションが終わった時点で次の反復へ進まず終了させる。\n利用場面: process-loopを安全に止めたいが、実行中のセッションは最後まで進めたいとき。\n対象と出力: 中断要求の状態ファイルを作成し、中断要求を設定したことを標準出力へ書く。process-loopのセッションと対象リポジトリは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。process-loopが動いていない場合も要求だけを設定する。\n復元・後始末: 要求は`atk wi process-loop abort-cancel`で解除できる。process-loopが中断で終了した時点でも解除される。",
         "epilog": "実行例:\n\n  atk wi process-loop abort",
     },
     "atk wi process-loop abort-cancel": {
         "summary": "process-loopへの中断要求を解除する",
-        "description": "目的: 設定済みの中断要求を取り消し、process-loopが反復を続ける状態へ戻す。\n利用場面: 中断を要求した後に、process-loopの継続へ判断を変えたとき。\n対象と出力: 中断要求の状態ファイルを削除し、中断要求を解除したことを標準出力へ書く。要求が無い場合も中断要求が設定されていないことを書いて正常終了する。\n前提: process-loopと同じ利用者の状態ディレクトリを使う。\n復元・後始末: 解除後に再び止める場合は`atk wi process-loop abort`を実行する。",
+        "description": "目的: 設定済みの中断要求を取り消し、process-loopが反復を続ける状態へ戻す。\n利用場面: 中断を要求した後に、process-loopの継続へ判断を変えたとき。\n対象と出力: 中断要求の状態ファイルを削除し、中断要求を解除したことを標準出力へ書く。要求が無い場合も中断要求が設定されていないことを書いて正常終了する。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 解除後に再び止める場合は`atk wi process-loop abort`を実行する。",
         "epilog": "実行例:\n\n  atk wi process-loop abort-cancel",
     },
     "atk wi process-loop status": {
         "summary": "process-loopへの中断要求の有無を表示する",
-        "description": "目的: 中断要求が設定されているかを表示する。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じ利用者の状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 中断要求が設定されているかを表示する。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk wi process-loop status",
     },
     "atk wi process-loop instruct": {
         "summary": "次に起動する1セッションへ渡す追加指示を保持する",
-        "description": "目的: process-loopが次に起動する1セッションだけへ、利用者の追加指示を届ける。\n利用場面: 反復の合間に、そのセッションに限って方針を伝えるとき。\n対象と出力: 追加指示の状態ファイルへ本文を追記し、保持中の件数を標準出力へ書く。保持済みの本文と完全一致する投入は追記せず、追加指示が変更されなかったことを書く。\n前提: process-loopと同じ利用者の状態ディレクトリを使う。保持中の合計が上限を超える投入は非0で終了する。\n復元・後始末: 保持は`atk wi process-loop instruct-cancel`で破棄できる。セッションの起動時にも消費されて消える。",
+        "description": "目的: process-loopが次に起動する1セッションだけへ、ユーザーの追加指示を届ける。\n利用場面: 反復の合間に、そのセッションに限って方針を伝えるとき。\n対象と出力: 追加指示の状態ファイルへ本文を追記し、保持中の件数を標準出力へ書く。保持済みの本文と完全一致する投入は追記せず、追加指示が変更されなかったことを書く。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。保持中の合計が上限を超える投入は非0で終了する。\n復元・後始末: 保持は`atk wi process-loop instruct-cancel`で破棄できる。セッションの起動時にも消費されて消える。",
         "epilog": "実行例:\n\n  atk wi process-loop instruct 'まず既存のテストコードを読んでから実装する'",
     },
     "atk wi process-loop instruct-cancel": {
         "summary": "保持中の追加指示を破棄する",
-        "description": "目的: 次のセッションへ渡す予定の追加指示を全件取り消す。\n利用場面: 投入した追加指示を送らない判断へ変えたとき。\n対象と出力: 追加指示の状態ファイルを削除し、破棄した件数を標準出力へ書く。保持中の追加指示が無い場合も、その状態を書いて正常終了する。\n前提: process-loopと同じ利用者の状態ディレクトリを使う。\n復元・後始末: 破棄した本文は復元できないため、必要な場合は同じ本文を投入し直す。",
+        "description": "目的: 次のセッションへ渡す予定の追加指示を全件取り消す。\n利用場面: 投入した追加指示を送らない判断へ変えたとき。\n対象と出力: 追加指示の状態ファイルを削除し、破棄した件数を標準出力へ書く。保持中の追加指示が無い場合も、その状態を書いて正常終了する。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 破棄した本文は復元できないため、必要な場合は同じ本文を投入し直す。",
         "epilog": "実行例:\n\n  atk wi process-loop instruct-cancel",
     },
     "atk plans": {
@@ -252,7 +252,7 @@ HELP: dict[str, dict[str, str]] = {
             "`--all`と`--project-dir`はClaude Codeの親とCodexの記録を一括選択し、`--output-dir`は1件1ファイルへ保存する。\n"
             "前提: ローカルのセッション記録の読取権限を持つ。Antigravityを直接起動した会話DBは対象外。"
             "`--follow`は単一IDのtext表示でだけ使い、Ctrl-Cで終了する。\n"
-            "復元・後始末: 出力ファイルは上書きせず、不要なら利用者が保存先から削除する。"
+            "復元・後始末: 出力ファイルは上書きせず、不要ならユーザーが保存先から削除する。"
         ),
         "epilog": (
             "実行例:\n\n"
@@ -265,7 +265,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
-        "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 利用者入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
+        "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
     },
     "atk managed-temp": {
@@ -280,7 +280,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk managed-temp cleanup": {
         "summary": "managed-tempのディレクトリを後始末する",
-        "description": "目的: 指定したmanaged-tempのディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成したmanaged-temp直下の作業ディレクトリのように個別の管理情報を持たない対象は、祖先に登録済みのmanaged-tempのディレクトリが実在する場合に限り検証を省略して削除し、省略したことを標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり現在の利用者が所有するディレクトリであることだけを確認して実体と登録を回収する。",
+        "description": "目的: 指定したmanaged-tempのディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成したmanaged-temp直下の作業ディレクトリのように個別の管理情報を持たない対象は、祖先に登録済みのmanaged-tempのディレクトリが実在する場合に限り検証を省略して削除し、省略したことを標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり実行中のOSアカウントが所有するディレクトリであることだけを確認して実体と登録を回収する。",
         "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/tmp/wi-show-abcd1234",
     },
     "atk managed-temp list": {
@@ -309,7 +309,7 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk watch --worktree=lane-05=/home/aki/dotfiles/.claude/worktrees/lane-05",
     },
     "atk review-table": {
-        "summary": "レビュー指摘管理表（8列TSV）を操作する",
+        "summary": "レビュー指摘管理表（7列TSV）を操作する",
         "description": "目的: 実行レビューの指摘、指摘レベル、対応内容を7列のTSVへ排他的に記録し、保存済みの旧形式のレビュー指摘管理表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行のレビュー指摘管理表を読み書きし、保存済みの旧形式のレビュー指摘管理表は読み取り専用で扱う。保存済み計画の領域（private-notesの`plans`配下）にある表への`init`・`add`・`respond`は、表を変更せず非0で終了する。この領域の表へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから更新し、`atk plans commit`で保存する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新規作成する場合は`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`および`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
     },
@@ -330,7 +330,17 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table show": {
         "summary": "レビュー指摘管理表を表示する",
-        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は`row-id`を先頭に付けた8フィールドの表示形式、`jsonl`は`row-id`とデコード済みの各列を持つJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は保存済み7列TSVの各行の先頭へ整数の`row-id`を付けた8フィールドの表示形式、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を指定されたファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定するとそのtrackの行だけを、`--round`を指定するとそのラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。デコード済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順に表示するか、指定ラウンドの件数を生成する。"
+        "`--format`は`tsv`、`jsonl`、`summary`を受理する。\n"
+        "利用場面: 指摘と対応の状況を確認し、レビュー返却の未解決件数を表から得るとき。\n"
+        "対象と出力: 指定した表を読み取り、標準出力へ書く。"
+        "tsvは`row-id`を先頭に付けた8フィールドの表示形式で保存済み7列を表示し、jsonlはrow-idと各列を持つJSON Lines。"
+        "summaryはround・track・total_count・unanswered_count・answered_countを持つ1件のJSON。"
+        "未応答はresponseとno-response-reasonがともに空の行であり、過去ラウンドの応答を含めない。"
+        "--output-fileは同じ出力を保存し、保存先と行数を返す。表は変更しない。\n"
+        "前提: --trackと--roundで行を限定できる。summaryは1以上の--roundが必須で、track省略時はexec-review。"
+        "対象行が無い場合、summaryは各件数0のJSON、tsvとjsonlは空の出力で終了0となる。\n"
+        "復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-table validate": {
