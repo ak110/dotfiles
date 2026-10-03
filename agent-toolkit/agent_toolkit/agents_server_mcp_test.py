@@ -620,6 +620,19 @@ def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
     assert "147,000トークン" not in description
 
 
+def test_start_description_alone_assigns_storage_to_existing_routes() -> None:
+    """引数説明を読まなくても探索の保存制約と3つの保存主体を選べる。"""
+    description = _start_tool().description
+    for contract in (
+        "`explore`はファイルを作成・変更・削除しない",
+        "全量コマンド出力の保存は`shell`へ",
+        "調査と成果ファイル作成は`delegate`へ渡す",
+        "返却本文を保存する場合は委譲元が保存する",
+    ):
+        assert contract in description
+    assert "`atk agents wait`" in description
+
+
 @pytest.mark.asyncio
 async def test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument() -> None:
     """Claude Codeが設定を変えない状態で切り詰める2,048文字に説明を収め、全引数へ説明を付けて単体で呼び出せるようにする。

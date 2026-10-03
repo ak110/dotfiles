@@ -2692,6 +2692,8 @@ _START_DESCRIPTION = "\n".join(
         "委譲先のsessionを開始する。agents_serverの唯一の起動ツールであり、`mode`で入力の形と起動条件を選ぶ。",
         "返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、"
         "結果が不要なら`kill`で破棄する。`atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
+        "`explore`はファイルを作成・変更・削除しない。全量コマンド出力の保存は`shell`へ、"
+        "調査と成果ファイル作成は`delegate`へ渡す。返却本文を保存する場合は委譲元が保存する。",
         "",
         "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
@@ -2710,13 +2712,12 @@ _START_DESCRIPTION = "\n".join(
         "最小の呼び出し例（`cwd`は全modeで必須）:",
         '- task: `{"cwd": "/repo", "subagent_md_path": "<plugin root>/share/exec-review.subagent.md", '
         '"extra_params": {"計画": "/abs/plan.md"}}`',
-        '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", '
-        '"model_type": "high_tier", "label": "audit"}`',
-        '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と調べる範囲>", "label": "explore-pyfltr"}`',
+        '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "high_tier"}`',
+        '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と調べる範囲>"}`',
         '- write: `{"cwd": "/repo", "mode": "write", "prompt": "<成果物種別・読者・事実・根拠・反映先・完成形>", '
         '"label": "write-awi"}`',
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '
-        '"summary_policy": "終了コードと失敗したテスト名", "label": "shell-make-test"}`',
+        '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
         "起動前の準備: Claude Codeで`CronCreate`を使える実行主体が待機のためにターンを終える場合は、"
         "そのセッションで最初にこのツールを呼ぶ前に定期再確認を装着する"
