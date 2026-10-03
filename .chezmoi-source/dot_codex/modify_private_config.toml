@@ -7,9 +7,9 @@
 {{- /* CodexとAGENTS.mdへ渡す文書量の上限は共有設定を正本にする。 */ -}}
 {{- $config = setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes $config -}}
 {{- $config = setValueAtPath "tool_output_token_limit" $codexConfig.tool_output_token_limit $config -}}
-{{- /* 長い作業セッションを扱うため、コンテキストと自動圧縮の境界を明示する。 */ -}}
-{{- $config = setValueAtPath "model_context_window" 1000000 $config -}}
-{{- $config = setValueAtPath "model_auto_compact_token_limit" 900000 $config -}}
+{{- /* コンテキスト長と自動圧縮の境界はCodexとモデルのデフォルトへ委ねる。 */ -}}
+{{- $config = deleteValueAtPath "model_context_window" $config -}}
+{{- $config = deleteValueAtPath "model_auto_compact_token_limit" $config -}}
 {{- /* 権限判定と実行範囲はCodexの自動レビュー経路へ委ねる。 */ -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
