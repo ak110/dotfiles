@@ -40,6 +40,11 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 代替の組合せの目安と、effortを指定できない環境でGPT系または上位モデルを選ぶ方針は
 `agent-toolkit/skills/delegation/references/runtime-routing.md`へ集約する。
 
+- Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は、解除まで待って同じClaudeで作業を続け、Codexなど別の候補へ切り替えない
+  （2026年10月4日、ユーザー指示。待てば確実に解除されるため、切替で作業の文脈を失う方が損失が大きい）。
+  対象は`agents_server`、`atk wi process-loop`の可用性判定と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
+  待機は回数と総時間で打ち切らない。実装契約は[design-agents-runtime.md](design-agents-runtime.md)のAPI失敗の段落にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`「停滞の検知と巻き取り」が定める
+
 - Codexのサブエージェント既定モデルと既定の推論量は上書きせず、Codexの既定値を使う
   （2026年8月、ユーザー指示。上書きより既定値の方が動作が安定するとの実運用判断による）。
   本方針は`agent-toolkit/agent_toolkit/_hooks/pretooluse/`の既定モデルへのoverride検出が実行時に担保する

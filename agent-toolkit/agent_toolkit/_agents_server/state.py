@@ -9,12 +9,13 @@ import datetime
 import json
 import logging
 import pathlib
+import time
 import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import session_registry, task_documents, tool_names
-from agent_toolkit._common import background_output, message_format
+from agent_toolkit._common import background_output, claude_usage_limit, message_format
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
@@ -29,6 +30,9 @@ AUTO_RESUME_DEADLINE_SECONDS = 1800.0
 # 最後の失敗を公開し、その候補を次回の起動の除外対象として記録して、委譲元の起動し直しで別のモデルへ移す。
 OVERLOAD_RESUME_DELAYS_SECONDS = (15.0, 30.0, 60.0)
 OVERLOAD_ERROR_INFO = "serverOverloaded"
+# Claude CodeのWeekly limitと5時間の利用上限の解除待ちを`api_error`の`type`で示す値。
+# 解除待ちは回数と総時間の上限を持たない（解除まで待ち、別の候補へ切り替えない。ユーザー指示）。
+USAGE_LIMIT_ERROR_TYPE = "usage_limit"
 # 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
 # 値はユーザーの提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
 # 超過は停滞の確定ではなく委譲元が状況を調べる契機として扱う。
@@ -346,6 +350,11 @@ def elapsed_seconds(value: str | None) -> int | None:
     return max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
 
 
+# `api_error`の公開項目。利用上限の解除待ちだけが後半の2項目を持つ。
+API_ERROR_USAGE_LIMIT_KEYS = ("limit_type", "resets_at")
+API_ERROR_PUBLIC_KEYS = ("type", "http_status", "elapsed_seconds", *API_ERROR_USAGE_LIMIT_KEYS)
+
+
 def activity_projection(
     *,
     updated_at: str | None,
@@ -375,6 +384,10 @@ def activity_projection(
                 "http_status": api_error.get("http_status"),
                 "elapsed_seconds": elapsed,
             }
+            # 利用上限の解除待ちでは、種類と解除予定時刻を加えてAPI再試行と区別できるようにする。
+            for key in API_ERROR_USAGE_LIMIT_KEYS:
+                if api_error.get(key) is not None:
+                    projection["api_error"][key] = api_error[key]
     return projection
 
 
@@ -488,6 +501,13 @@ class SessionState:
     overload_resume_count: int = 0
     overload_resume_at: float | None = None
     overload_first_at: str | None = None
+    # Claudeが最後に報告した利用枠の状態。待機の対象かの判定と解除予定時刻に使う。
+    usage_limit: claude_usage_limit.UsageLimitState | None = None
+    # 利用上限の解除待ち。次に同じsessionへ継続を送る時刻（イベントループの時計）、待機の回数と最初の拒否の時刻を持つ。
+    # 待機対象以外の終端と委譲元の`kill`・`send_message`で初期化し、回数では打ち切らない。
+    usage_limit_resume_at: float | None = None
+    usage_limit_wait_count: int = 0
+    usage_limit_first_at: str | None = None
     pending_result: dict[str, Any] | None = None
     finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
@@ -971,18 +991,20 @@ def _discard_collected(session: SessionState, collected: set[str]) -> None:
     session.terminal_child_session_ids.difference_update(collected)
 
 
-def finalize_pending_result(session: SessionState, *, touch: bool = True, keep_overload_chain: bool = False) -> None:
+def finalize_pending_result(session: SessionState, *, touch: bool = True, keep_resume_chain: bool = False) -> None:
     """保留したturn結果を公開可能な終端状態へ移す。
 
-    過負荷の自動継続を送る処理だけが`keep_overload_chain`を真にし、連鎖の回数を引き継ぐ。
+    過負荷の自動継続と利用上限の解除待ちの継続を送る処理だけが`keep_resume_chain`を真にし、連鎖の回数と開始時刻を引き継ぐ。
     それ以外（`kill`、委譲元の`send_message`、期限到来）は連鎖を終える。
     """
     result = session.pending_result
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
     session.overload_resume_at = None
-    if not keep_overload_chain:
+    session.usage_limit_resume_at = None
+    if not keep_resume_chain:
         clear_overload_resume(session)
+        clear_usage_limit_wait(session)
     session.awaiting_auto_resume = False
     session.auto_resume_deadline = None
     session.pending_result = None
@@ -1034,6 +1056,54 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
         "http_status": None,
         "first_at": session.overload_first_at,
         "count": session.overload_resume_count,
+    }
+    for listener in tuple(_TOUCH_LISTENERS):
+        listener()
+    return True
+
+
+def clear_usage_limit_wait(session: SessionState) -> None:
+    """利用上限の解除待ちの連鎖を終える。"""
+    session.usage_limit_wait_count = 0
+    session.usage_limit_resume_at = None
+    session.usage_limit_first_at = None
+
+
+def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> bool:
+    """Weekly limitか5時間の利用上限で失敗したturnの結果を保留し、解除後の継続を予定する。
+
+    最後に報告された利用枠が待機の対象でなければ保留せずに連鎖を終えて偽を返し、呼び出し元は従来どおり扱う。
+    保留した結果の`error.usageLimit`と`api_error`へ種類と解除予定時刻を記録し、状態の読者へ解除待ちを公開する。
+    待機は`auto_resume_deadline`と`retention_deadline`の対象にせず、回数でも打ち切らない。
+    """
+    limit = session.usage_limit
+    if result.get("status") != "failed" or limit is None or not limit.is_wait_target:
+        clear_usage_limit_wait(session)
+        return False
+    original_error = result.get("error")
+    error: dict[str, Any] = (
+        dict(original_error)
+        if isinstance(original_error, dict)
+        else {"message": str(original_error or "Claude usage limit reached")}
+    )
+    resets_at = limit.resets_at_iso()
+    error["usageLimit"] = {"type": limit.limit_type, "resetsAt": resets_at}
+    result = {**result, "error": error}
+    session.pending_result = result
+    session.awaiting_auto_resume = True
+    session.auto_resume_deadline = None
+    session.usage_limit_resume_at = asyncio.get_running_loop().time() + limit.delay_seconds(time.time())
+    session.usage_limit_wait_count += 1
+    if session.usage_limit_first_at is None:
+        session.usage_limit_first_at = _utc_now()
+    http_status = error.get("apiErrorStatus")
+    session.api_error = {
+        "type": USAGE_LIMIT_ERROR_TYPE,
+        "http_status": http_status if isinstance(http_status, int) else None,
+        "first_at": session.usage_limit_first_at,
+        "count": session.usage_limit_wait_count,
+        "limit_type": limit.limit_type,
+        "resets_at": resets_at,
     }
     for listener in tuple(_TOUCH_LISTENERS):
         listener()

@@ -187,11 +187,12 @@ Codexで元担当の回復、置換、再起動、代替起動または役割引
 ## 停滞の検知と巻き取り
 
 - Claude委譲先の`show`または`list`が429の`rate_limit_error`を`api_error`へ返し、`status`が`running`の間は同じsessionの終端または正常なモデル出力を待つ。API失敗の合成メッセージはモデル活動時刻を進めないため、`seconds_since_activity`の増大だけで停滞を確定せず、後続の催促・巻き取りへ進まない。`api_error`が消えた場合とsessionが終端した場合は通常の待機判定へ戻る
+- Claude委譲先の`show`または`list`が`api_error`の種別`usage_limit`と`status`の`running`を返す場合、その委譲先はClaude CodeのWeekly limitか5時間の利用上限の解除を待っている。`agents_server`が解除予定時刻（`resets_at`）の後に同じsessionで作業を続けるため、委譲元は活動停止の長さを理由に催促、巻き取りおよびCodexへの再委譲をせず、終端まで待機を続ける。解除待ちの作業が不要になった場合だけ`kill`で保留中の結果を受け取る
 - Codex委譲先の`show`または`list`が`api_error`の種別`serverOverloaded`を返し、`status`が`running`の間は、`agents_server`が待機の後に同じsessionで作業を続ける。委譲元は`send_message`で継続を送らず、終端まで待機を続ける。自動継続の上限に達した場合は失敗の終端結果が届くため、その時点で候補を変えて起動し直す
 - 停滞の可能性に気付いた時点で`show`を1回発行し、`active_tool_uses`を確認する。
   この項目が存在し、前回の観測と同じツール呼び出しが同じ開始時刻で続いている場合は、委譲先が長時間のコマンドを実行中であるため、催促と巻き取りのどちらも保留する。
   この項目が無く`seconds_since_activity`が停滞の可能性がある長さに達している場合だけ、以降の停滞の確定の手順へ進む。
-  `result_held`が真の場合は、委譲先のモデルのturnが終わりバックグラウンドタスクか子sessionの終端を待って結果を保留している状態であり、停滞の確定の手順を保留する。
+  `result_held`が真の場合は、委譲先のモデルのturnが終わりバックグラウンドタスクか子sessionの終端、または利用上限の解除を待って結果を保留している状態であり、停滞の確定の手順を保留する。
   `live_background_tasks`の`seconds_since_start`と`live_child_sessions`から待機を続けるかを判断し、バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取る。
   保留中のsessionの状況確認には`show`を使う。`send_message`は新しいturnを始めるためである
 - 委譲先が所有する外部プロセスまたはバックグラウンドタスクの実行中は、停滞の判定に成果物差分と実行識別子の直接照会の両方を用いる。

@@ -36,6 +36,7 @@ from agent_toolkit._agents_server.state import (
     _append_bounded,
     _begin_reply,
 )
+from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
@@ -345,6 +346,9 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
         return
     session.api_error = None
     session.model_output_observed = True
+    # 正常なモデル出力は利用上限で拒否されていない証拠であり、以前の拒否の報告を待機の根拠から外す。
+    if session.usage_limit is not None and session.usage_limit.is_wait_target:
+        session.usage_limit = None
     text = _assistant_text(message)
     if text.strip():
         session.agent_message = text
@@ -612,6 +616,8 @@ class ClaudeServerManager:
         command_task: asyncio.Task[Any] | None = None
         retrieved: _Command | None = None
         active_future: asyncio.Future[_DeliveryResult] | None = None
+        # `SystemMessage(init)`より前に届いた利用枠の報告。sessionの作成時に引き継ぐ。
+        early_usage_limit: claude_usage_limit.UsageLimitState | None = None
         try:
             diagnostic.stage = "creating_client"
             client = self._client_factory(options)
@@ -721,6 +727,7 @@ class ClaudeServerManager:
                                     publish_registry=self._publish_registry,
                                 )
                                 self.sessions[session_id] = session
+                                session.usage_limit = early_usage_limit
                                 session.status = "starting" if expected_session_id is None else "running"
                                 session.touch()
                                 self._channels[session_id] = channel
@@ -731,6 +738,14 @@ class ClaudeServerManager:
                                     initialized.set_result(session)
                             elif session_id != session.session_id:
                                 raise shared_state.DelegateBackendError("Claude init message reported a different session_id")
+                        elif name == "RateLimitEvent":
+                            # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
+                            usage_limit = claude_usage_limit.from_event(message)
+                            if usage_limit is not None:
+                                if session is None:
+                                    early_usage_limit = usage_limit
+                                else:
+                                    session.usage_limit = usage_limit
                         elif name == "AssistantMessage" and session is not None:
                             consume_assistant_message(session, message)
                             await self._notify_waiters()
@@ -760,10 +775,14 @@ class ClaudeServerManager:
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
                             result = self._result_values(session, message)
+                            # Weekly limitか5時間の利用上限による失敗は公開せず保留し、MCP層の常駐監視が
+                            # 解除予定時刻に同じsessionへ継続を送る。以後のメッセージは継続のturnで読む。
+                            if shared_state.begin_usage_limit_wait(session, result):
+                                iterator = None
                             # 自動再開したturnもバックグラウンドタスクを残して待機を表明し得るため、
                             # `origin`によらず保留を判定する。
                             # 確定後は以後のメッセージを読まないため、ここで確定すると後続の自動再開turnの結果を失う。
-                            if shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+                            elif shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                                 shared_state.begin_auto_resume_wait(session, result)
                                 session.touch()
                             else:

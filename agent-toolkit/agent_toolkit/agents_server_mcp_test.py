@@ -30,6 +30,7 @@ from agent_toolkit._agents_server import agents_wait, logging_config, session_re
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server.notify import send_notification
+from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.helpers import delivery_payload
 
@@ -4739,12 +4740,19 @@ class ErrorAssistantMessage(AssistantMessage):
 class ResultMessage:
     """Claude SDK resultメッセージの偽型。"""
 
-    is_error = False
-
-    def __init__(self, result: str, terminal_reason: str | None = None) -> None:
+    def __init__(
+        self,
+        result: str,
+        terminal_reason: str | None = None,
+        *,
+        is_error: bool = False,
+        api_error_status: int | None = None,
+    ) -> None:
         self.result = result
         self.errors: list[str] = []
         self.terminal_reason = terminal_reason
+        self.is_error = is_error
+        self.api_error_status = api_error_status
 
 
 class FakeClaudeClient:
@@ -8109,3 +8117,199 @@ async def test_overload_within_availability_check_switches_candidate(
     assert response["status"] == "failed"
     assert [item["reason"] for item in response["excluded_candidates"]] == ["serverOverloaded", "serverOverloaded"]
     await manager.close()
+
+
+def _rate_limit_event(status: str, limit_type: str | None, resets_at: int | None = None) -> Any:
+    """Claude Agent SDKが利用枠の報告として返すイベント。"""
+    info = claude_agent_sdk.RateLimitInfo(status=cast(Any, status), rate_limit_type=cast(Any, limit_type), resets_at=resets_at)
+    return claude_agent_sdk.RateLimitEvent(rate_limit_info=info, uuid="rate-limit", session_id="")
+
+
+def _usage_limit_result(text: str = "You've hit your limit", api_error_status: int = 429) -> ResultMessage:
+    """利用上限で拒否されたturnの`ResultMessage`。"""
+    return ResultMessage(text, is_error=True, api_error_status=api_error_status)
+
+
+def _rejected_stream(limit_type: str, resets_at: int | None, *, before_init: bool, session_id: str) -> list[Any]:
+    event = _rate_limit_event("rejected", limit_type, resets_at)
+    failure = [ErrorAssistantMessage("API Error: 429 usage limit"), _usage_limit_result()]
+    if before_init:
+        return [event, SystemMessage(session_id), *failure]
+    return [SystemMessage(session_id), event, *failure]
+
+
+async def _usage_limited_manager(
+    monkeypatch: pytest.MonkeyPatch, streams: list[list[Any]]
+) -> tuple[subject.AgentsServerManager, FakeClaudeClient, FakeBackend]:
+    """先頭のClaude候補が利用上限で拒否され、後続にCodex候補を持つ起動条件のManagerを返す。"""
+    candidates = [("claude", "opus", "high"), ("codex", "gpt-6.1-sol", "high")]
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _m: candidates)
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 5.0)
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    client = FakeClaudeClient(streams)
+    manager = subject.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
+    _install_backend(manager, "claude", backend)
+    codex = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", codex)
+    return manager, client, codex
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit_type", ["seven_day", "seven_day_opus", "seven_day_sonnet", "five_hour"])
+@pytest.mark.parametrize("before_init", [True, False])
+async def test_claude_usage_limit_waits_and_resumes_same_session(
+    limit_type: str,
+    before_init: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起動直後にWeekly limitか5時間の利用上限で拒否されても失敗を公開せず、解除後に同じsessionで続けた結果を返す。"""
+    monkeypatch.setattr(claude_usage_limit, "RECHECK_SECONDS", 0.05)
+    streams = [
+        _rejected_stream(limit_type, None, before_init=before_init, session_id="claude-limited"),
+        [_rate_limit_event("allowed", limit_type), AssistantMessage("再開後"), ResultMessage("継続後の結果")],
+    ]
+    manager, client, codex = await _usage_limited_manager(monkeypatch, streams)
+    try:
+        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        response = await _wait_until_terminal(manager)
+
+        assert started["status"] == "running"
+        assert started["engine"] == "claude"
+        assert "excluded_candidates" not in started
+        assert response["session_id"] == "claude-limited"
+        assert response["status"] == "completed"
+        assert response["agent_message"] == "継続後の結果"
+        assert codex.start_calls == []
+        assert len(client.queries) == 2
+        assert limit_type in client.queries[1] and "所定の返却形式" in client.queries[1]
+        assert not status_file.load_unavailable_candidates("high_tier", "delegate", now=datetime.datetime.now(datetime.UTC))
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_usage_limit_keeps_waiting_while_rejection_continues(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """継続のturnも拒否される間は待機へ戻り、回数で打ち切らずに解除後の結果を返す。"""
+    monkeypatch.setattr(claude_usage_limit, "RECHECK_SECONDS", 0.02)
+    rejected = [_rate_limit_event("rejected", "seven_day"), _usage_limit_result()]
+    streams = [
+        _rejected_stream("seven_day", None, before_init=False, session_id="claude-repeated"),
+        *[list(rejected) for _ in range(4)],
+        [AssistantMessage("再開後"), ResultMessage("解除後の結果")],
+    ]
+    manager, client, codex = await _usage_limited_manager(monkeypatch, streams)
+    try:
+        await manager.start("high_tier", "作業する", str(tmp_path))
+        response = await _wait_until_terminal(manager, attempts=100)
+
+        assert response["status"] == "completed"
+        assert response["agent_message"] == "解除後の結果"
+        assert len(client.queries) == 6
+        assert codex.start_calls == []
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_usage_limit_wait_is_visible_and_kill_returns_held_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """解除待ちの間は`show`・`list`が`running`と種類・解除予定時刻を返し、`kill`は保留した結果で終端して候補を除外しない。"""
+    resets_at = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
+    streams = [_rejected_stream("seven_day_opus", resets_at, before_init=False, session_id="claude-visible")]
+    manager, client, codex = await _usage_limited_manager(monkeypatch, streams)
+    try:
+        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        shown = manager.show_session(started["session_id"])
+        listed = next(item for item in manager.list_sessions()["sessions"] if item["session_id"] == started["session_id"])
+
+        assert started["status"] == "running"
+        assert shown["status"] == "running"
+        assert shown["result_held"] is True
+        expected_reset = datetime.datetime.fromtimestamp(resets_at, datetime.UTC).isoformat()
+        assert shown["api_error"]["type"] == "usage_limit"
+        assert shown["api_error"]["limit_type"] == "seven_day_opus"
+        assert shown["api_error"]["resets_at"] == expected_reset
+        assert listed["status"] == "running"
+        assert listed["api_error"]["limit_type"] == "seven_day_opus"
+        assert len(client.queries) == 1
+
+        killed = await manager.kill(started["session_id"])
+
+        assert killed["status"] == "failed"
+        assert killed["error"]["usageLimit"] == {"type": "seven_day_opus", "resetsAt": expected_reset}
+        assert codex.start_calls == []
+        assert not status_file.load_unavailable_candidates("high_tier", "delegate", now=datetime.datetime.now(datetime.UTC))
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_usage_limit_wait_accepts_send_message_as_reply(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """解除待ちの間に委譲元が`send_message`を送ると、保留を確定してreplyとして配送する。"""
+    resets_at = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
+    streams = [
+        _rejected_stream("five_hour", resets_at, before_init=False, session_id="claude-reply"),
+        [AssistantMessage("返信"), ResultMessage("返信の結果")],
+    ]
+    manager, client, _codex = await _usage_limited_manager(monkeypatch, streams)
+    try:
+        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        await manager.send_message(started["session_id"], "続けて")
+        response = await _wait_until_terminal(manager)
+
+        assert response["status"] == "completed"
+        assert response["agent_message"] == "返信の結果"
+        assert "続けて" in client.queries[1]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_overage_rejection_still_switches_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """待機の対象外（`overage`）の拒否は従来どおり次の候補へ切り替え、新しい形式の理由で記録する。"""
+    streams = [_rejected_stream("overage", None, before_init=False, session_id="claude-overage")]
+    manager, _client, codex = await _usage_limited_manager(monkeypatch, streams)
+    # 切替先のCodex候補はモデル出力を返さないため、可用性確認の上限まで待つ時間を短くする。
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.3)
+    try:
+        response = await manager.start("high_tier", "作業する", str(tmp_path))
+
+        assert response["engine"] == "codex"
+        assert codex.start_calls == [("gpt-6.1-sol", "high", "delegate")]
+        assert [item["reason"] for item in response["excluded_candidates"]] == ["429:overage"]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_claude_rate_limit_record_does_not_skip_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """旧版がClaudeの429へ記録した除外理由`429`では候補を除外せず、その候補で起動し直す。"""
+    status_file.record_unavailable_candidate(
+        "high_tier", "delegate", ("claude", "opus", "high"), "429", now=datetime.datetime.now(datetime.UTC)
+    )
+    streams = [[SystemMessage("claude-legacy"), AssistantMessage("進行"), ResultMessage("完了")]]
+    manager, _client, codex = await _usage_limited_manager(monkeypatch, streams)
+    try:
+        response = await manager.start("high_tier", "作業する", str(tmp_path))
+
+        assert response["engine"] == "claude"
+        assert "excluded_candidates" not in response
+        assert codex.start_calls == []
+    finally:
+        await manager.close()

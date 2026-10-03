@@ -233,7 +233,7 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
     result = {key: session[key] for key in fields if key in session}
     if isinstance(result.get("api_error"), dict):
         result["api_error"] = {
-            key: result["api_error"][key] for key in ("type", "http_status", "elapsed_seconds") if key in result["api_error"]
+            key: result["api_error"][key] for key in state.API_ERROR_PUBLIC_KEYS if key in result["api_error"]
         }
     if detailed and session.get("error"):
         result["error"] = session["error"]

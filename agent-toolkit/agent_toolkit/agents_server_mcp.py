@@ -53,6 +53,7 @@ from agent_toolkit._agents_server.state import (
     add_terminal_listener,
     add_touch_listener,
     clear_overload_resume,
+    clear_usage_limit_wait,
     consume_agents_wait_background_outputs,
     finalize_pending_result,
     has_pending_auto_resume_targets,
@@ -98,6 +99,10 @@ ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExcee
 # 前2者と一致するため同じ集合の要素とする。
 # 500（api_error）はサービス内部の失敗であり、候補の変更で解決するとは限らないため含めない。
 ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({401, 403, 429, 529})
+# 旧版がClaudeの429へ記録した除外理由。Weekly limitと5時間の利用上限による拒否も含むため、
+# 候補を除外する根拠にせず、その候補で起動して利用枠の報告から判定し直す。
+# 現行版は解除待ちの対象を記録せず、対象外のClaudeの429を`429:<利用枠の種類>`として記録するため、旧版の記録と区別できる。
+LEGACY_CLAUDE_RATE_LIMIT_REASON = "429"
 # 接続先がCodex候補のモデルIDを受け付けなかった失敗へ付ける除外理由。
 # Codex CLI 0.159.1の`codex app-server generate-json-schema`が出力する`CodexErrorInfo`の列挙にはモデルの不受理を表す値が無く、
 # 接続先がモデルIDを拒否した失敗は`codexErrorInfo: other`で届く。その`message`はJSON文字列で、`error`オブジェクトが
@@ -238,8 +243,14 @@ def _engine_unavailable_reason(session: SessionState) -> str | None:
     error_info = session.error.get("codexErrorInfo")
     if error_info in ENGINE_UNAVAILABLE_ERROR_INFO:
         return str(error_info)
+    # Weekly limitと5時間の利用上限は解除まで待つ対象であり、別の候補へ切り替える理由にしない（ユーザー指示）。
+    if isinstance(session.error.get("usageLimit"), dict):
+        return None
     api_error_status = session.error.get("apiErrorStatus")
     if api_error_status in ENGINE_UNAVAILABLE_API_ERROR_STATUS:
+        if session.engine == "claude" and api_error_status == 429:
+            limit_type = session.usage_limit.limit_type if session.usage_limit is not None else None
+            return f"429:{limit_type or 'rate_limit'}"
         return str(api_error_status)
     if session.engine == "codex" and _codex_rejected_parameter(session.error) == "model":
         return ENGINE_MODEL_REJECTED_REASON
@@ -1199,7 +1210,7 @@ class AgentsServerManager:
                 response["live_child_session_ids_without_cwd"] = unresolved
         if status == "running" and isinstance(session, SessionState) and session.awaiting_auto_resume:
             # モデルのturnは終わり、バックグラウンドタスクか孫sessionの終端、
-            # または過負荷後の継続の待機のために結果を保留している。
+            # または過負荷後の継続と利用上限の解除の待機のために結果を保留している。
             # 活動時刻が進まないため、委譲元が停滞と区別できるよう保留と待機対象を公開する。
             response["result_held"] = True
             if session.live_tasks:
@@ -1363,7 +1374,12 @@ class AgentsServerManager:
             launch_kind,
             now=datetime.datetime.now(datetime.UTC),
         )
-        excluded = {candidate: recorded[candidate] for candidate in candidates if candidate in recorded}
+        excluded = {
+            candidate: recorded[candidate]
+            for candidate in candidates
+            if candidate in recorded
+            and not (candidate[0] == "claude" and recorded[candidate] == LEGACY_CLAUDE_RATE_LIMIT_REASON)
+        }
         remaining = [item for item in candidates if item not in excluded]
         if not remaining:
             return candidates, {}
@@ -1634,17 +1650,26 @@ class AgentsServerManager:
 
         engineの可用性失敗は最初のモデル出力より前に生じるため、モデル出力を観測した時点で待機を打ち切る。
         Claudeでは、APIの応答開始（`message_start`）をモデル出力の観測とする。
+        Weekly limitか5時間の利用上限の解除待ちへ入った時点でも打ち切り、`start`は`running`を返す。
         上限内に終端もモデル出力もしないsessionと、打ち切ったsessionは通常の実行中として扱い、
         以降は`atk agents wait`が観測する。
         """
-        if session.result_available or session.model_output_observed:
+        if self._start_outcome_observed(session):
             return
         with contextlib.suppress(TimeoutError):
             async with self._condition:
                 await asyncio.wait_for(
-                    self._condition.wait_for(lambda: session.result_available or session.model_output_observed),
+                    self._condition.wait_for(lambda: self._start_outcome_observed(session)),
                     timeout=START_AVAILABILITY_TIMEOUT,
                 )
+
+    @staticmethod
+    def _start_outcome_observed(session: SessionState) -> bool:
+        """起動直後の可用性を確定できたかを返す。
+
+        利用上限の解除待ちへ入ったsessionは、別の候補へ切り替えず同じsessionで待つため、`running`として確定する。
+        """
+        return session.result_available or session.model_output_observed or session.usage_limit_resume_at is not None
 
     async def start_explore(
         self,
@@ -1852,12 +1877,16 @@ class AgentsServerManager:
         return self._status_writer.read_result(session_id) is not None
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
-        """保留中の結果を、孫sessionの終端・過負荷の待機の経過または保持期限に応じて進める。"""
+        """保留中の結果を、孫sessionの終端・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
             return
         if session.overload_resume_at is not None:
             if asyncio.get_running_loop().time() >= session.overload_resume_at:
                 await self._resume_after_overload(session)
+            return
+        if session.usage_limit_resume_at is not None:
+            if asyncio.get_running_loop().time() >= session.usage_limit_resume_at:
+                await self._resume_after_usage_limit(session)
             return
         # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終端結果ファイルが消えた後も未観測にしない。
         consume_agents_wait_background_outputs(session)
@@ -1953,7 +1982,7 @@ class AgentsServerManager:
             f"失敗の内容: {message or 'serverOverloaded'}\n"
             "中断前の作業を続け、所定の返却形式を返せ。",
         )
-        finalize_pending_result(session, touch=False, keep_overload_chain=True)
+        finalize_pending_result(session, touch=False, keep_resume_chain=True)
         try:
             await self._backend(session.engine).send_message(session, prompt)
         except Exception as exc:
@@ -1966,6 +1995,35 @@ class AgentsServerManager:
             session.touch()
             return
         session.api_error = None
+        if self._status_writer is not None:
+            self._status_writer.delete_result(session.session_id, collector="auto-resume")
+
+    async def _resume_after_usage_limit(self, session: SessionState) -> None:
+        """利用上限の解除予定時刻を迎えたsessionへ、同じ作業を続ける指示を新しいturnとして送る。
+
+        再び拒否された場合はbackendが同じ待機へ戻すため、回数と総時間では打ち切らない。
+        """
+        pending_result = session.pending_result
+        assert pending_result is not None
+        error = pending_result["error"]
+        usage_limit = error.get("usageLimit") if isinstance(error, dict) else None
+        limit_type = usage_limit.get("type") if isinstance(usage_limit, dict) else None
+        prompt = _wrap_delivery_body(
+            f"直前のturnはClaude Codeの利用上限（{limit_type or '不明'}）で中断し、解除予定時刻まで待った。\n"
+            "中断前の作業を続け、所定の返却形式を返せ。",
+        )
+        finalize_pending_result(session, touch=False, keep_resume_chain=True)
+        try:
+            await self._backend(session.engine).send_message(session, prompt)
+        except Exception as exc:
+            clear_usage_limit_wait(session)
+            session.status = pending_result["status"]
+            session.agent_message = pending_result["agent_message"]
+            session.error = {**error, "autoResumeError": f"{type(exc).__name__}: {exc}"} if isinstance(error, dict) else error
+            session.turn_completed = True
+            session.turn_start_ambiguous = False
+            session.touch()
+            return
         if self._status_writer is not None:
             self._status_writer.delete_result(session.session_id, collector="auto-resume")
 
@@ -2937,6 +2995,10 @@ async def list_sessions(
     所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
     各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
     ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータスと経過秒を返し、モデル出力が止まっていることを示す。
+    Claude Codeの利用上限（Weekly limitと5時間）の解除待ちでは`api_error.type`が`usage_limit`となり、
+    種類の`limit_type`と解除予定時刻の`resets_at`も返す。
+    解除待ちのsessionは解除後に同じsessionで作業を続けるため、
+    催促、巻き取りおよび別の候補での起動し直しの理由にしない。
     起動条件は`show`で取得する。
     結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
     表示範囲を指定しない場合は未回収結果を持たない終端済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
@@ -2964,6 +3026,10 @@ async def show_session(
     `model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列である。
     停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の可能性はこの値で判定する。
     ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータスと経過秒を返し、モデル出力が止まっていることを示す。
+    Claude Codeの利用上限（Weekly limitと5時間）の解除待ちでは`api_error.type`が`usage_limit`となり、
+    種類の`limit_type`と解除予定時刻の`resets_at`も返す。
+    解除待ちのsessionは解除後に同じsessionで作業を続けるため、
+    催促、巻き取りおよび別の候補での起動し直しの理由にしない。
     `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻および入力の要約を返す。
     前回の照会と同じ呼び出しが同じ開始時刻で続いている場合も、長時間のコマンドの実行中として扱う。
     `status`が`running`で、このsessionが`start`で起動し終端をまだ観測していない子sessionがある場合は、
@@ -2971,7 +3037,8 @@ async def show_session(
     この一覧は子の終端を観測するまで残るため、子が稼働中である根拠にしない。
     子の状態は、子の`session_id`を渡した`show`の`status`と`seconds_since_activity`で判定する。
     `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、その識別子へは追送と打ち切りを発行できない。
-    `result_held`が真のsessionは、委譲先のモデルのturnが終わり、バックグラウンドタスクまたは子sessionの終端を待って結果を保留している。
+    `result_held`が真のsessionは、委譲先のモデルのturnが終わり、
+    バックグラウンドタスクまたは子sessionの終端か利用上限の解除を待って結果を保留している。
     活動が止まるため`seconds_since_activity`が増えても停滞を意味しない。追跡中のバックグラウンドタスクは`live_background_tasks`
     （`task_id`・`task_type`・`description`・`seconds_since_start`）で返す。
     バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取れる。

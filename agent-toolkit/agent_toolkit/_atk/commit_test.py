@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import commit
+from agent_toolkit._common import claude_usage_limit
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -170,6 +172,97 @@ def test_candidates_skip_only_before_git_state_changes(
     monkeypatch.setattr(commit.subprocess, "run", run)
     assert commit.run(atk._build_parser().parse_args(["commit", "--model-type", "medium_tier"])) == (9 if change_state else 0)  # pylint: disable=protected-access
     assert calls == expected_calls
+
+
+def _stream(*events: dict[str, Any]) -> str:
+    return "".join(json.dumps(event) + "\n" for event in events)
+
+
+def _claude_then_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, list[float]]:
+    """Claude、Codexの順の候補で`atk commit`を起動する準備をし、リポジトリと待機秒数の記録先を返す。"""
+    repository = _repo(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(
+        commit.config,
+        "resolve_model_candidates",
+        lambda _value: [("claude", "sonnet", "high"), ("codex", "second", "medium")],
+    )
+    monkeypatch.setattr(commit, "_executable", lambda engine: f"/fake/{engine}")
+    sleeps: list[float] = []
+    monkeypatch.setattr(commit.time, "sleep", sleeps.append)
+    return repository, sleeps
+
+
+@pytest.mark.parametrize("limit_type", ["seven_day_sonnet", "five_hour"])
+def test_claude_usage_limit_waits_and_resumes_same_conversation(
+    limit_type: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """stageの後に利用上限で拒否されたClaudeは、解除まで待って同じ会話を続け、Codexを起動せずにcommitを1回だけ作成する。"""
+    repository, sleeps = _claude_then_codex(tmp_path, monkeypatch)
+    original_run = subprocess.run
+    calls: list[list[str]] = []
+    cwds: list[str] = []
+    rejected = _stream(
+        {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": limit_type}},
+        {"type": "result", "is_error": True, "result": "You've hit your limit"},
+    )
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if command[0].startswith("/fake/"):
+            calls.append(command)
+            cwds.append(kwargs["cwd"])
+            assert Path(kwargs["cwd"]).is_dir()
+            if len(calls) == 1:
+                original_run(["git", "-C", str(repository), "add", "change.txt"], check=True)
+                return subprocess.CompletedProcess(command, 1, stdout=rejected)
+            if len(calls) == 2:
+                return subprocess.CompletedProcess(command, 1, stdout=rejected)
+            original_run(["git", "-C", str(repository), "commit", "-q", "-m", "test: 変更を保存する"], check=True)
+            return subprocess.CompletedProcess(command, 0, stdout=_stream({"type": "result", "result": "commitした"}))
+        return original_run(command, check=kwargs.pop("check", False), **kwargs)
+
+    monkeypatch.setattr(commit.subprocess, "run", run)
+    assert commit.run(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
+
+    assert [command[0] for command in calls] == ["/fake/claude"] * 3
+    session_ids = [argument for argument in calls[0] if argument.startswith("--session-id=")]
+    assert len(session_ids) == 1
+    session_id = session_ids[0].removeprefix("--session-id=")
+    assert all(f"--resume={session_id}" in command for command in calls[1:])
+    assert all("--no-session-persistence" not in command for command in calls)
+    assert all(command[-1] == commit._USAGE_LIMIT_RESUME_PROMPT for command in calls[1:])  # pylint: disable=protected-access
+    assert len(set(cwds)) == 1
+    assert sleeps == [claude_usage_limit.RECHECK_SECONDS] * 2
+    captured = capsys.readouterr()
+    assert captured.err.count(f"Claude Codeの利用上限（{limit_type}）の解除待ち") == 2
+    assert "手動での再実行は不要" in captured.err
+    assert captured.out.splitlines()[1] == "commitした"
+    log = original_run(["git", "-C", str(repository), "log", "--format=%s"], capture_output=True, text=True, check=True)
+    assert log.stdout.splitlines() == ["test: 変更を保存する"]
+
+
+def test_claude_overage_rejection_keeps_existing_candidate_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """待機の対象外（`overage`）の拒否は待たず、Git状態を変えていなければ従来どおり次の候補へ進む。"""
+    _repository, sleeps = _claude_then_codex(tmp_path, monkeypatch)
+    original_run = subprocess.run
+    calls: list[str] = []
+    overage = _stream({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "overage"}})
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if command[0].startswith("/fake/"):
+            calls.append(command[0].removeprefix("/fake/"))
+            if command[0] == "/fake/claude":
+                return subprocess.CompletedProcess(command, 1, stdout=overage)
+            return subprocess.CompletedProcess(command, 0, stdout="")
+        return original_run(command, check=kwargs.pop("check", False), **kwargs)
+
+    monkeypatch.setattr(commit.subprocess, "run", run)
+    assert commit.run(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
+    assert calls == ["claude", "codex"]
+    assert not sleeps
 
 
 def test_missing_executable_uses_next_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

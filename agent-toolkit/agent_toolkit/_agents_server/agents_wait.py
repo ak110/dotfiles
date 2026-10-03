@@ -623,7 +623,7 @@ def _public_wait_response(payload: Mapping[str, Any]) -> dict[str, Any]:
             response[key] = payload[key]
     if isinstance(payload.get("api_error"), Mapping):
         response["api_error"] = {
-            key: payload["api_error"][key] for key in ("type", "http_status", "elapsed_seconds") if key in payload["api_error"]
+            key: payload["api_error"][key] for key in state.API_ERROR_PUBLIC_KEYS if key in payload["api_error"]
         }
     if payload.get("notices"):
         response["notices"] = [state.public_notice(notice) for notice in payload["notices"]]
