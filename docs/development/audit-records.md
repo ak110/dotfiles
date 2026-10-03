@@ -556,3 +556,13 @@ uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 ```
 
 収集結果の各nodeが専用ファイルへ一度ずつ対応し、通常の動作nodeを追加していないことを確認する。Markdownだけを渡した既存hookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
+
+HEAD `80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
+保持記録から解決した値を`atk watch --worktree "$worktree_path"`と
+`atk watch --file "$artifact_path"`へ個別に渡し、両方の終了コード0を確認した。
+前者は作業ツリーのdirty件数とHEAD、後者はファイルのlinesとageを返した。
+Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状態と完了通知を用いる既存契約を保つ。
+再検証は同じ公開ヘルプを取得し、その回の読み取り可能な作業ツリーと通常ファイルを保持記録から解決して、
+上記の各コマンドへ渡す。cwd、コマンド、標準出力、標準エラーと終了コードを保存し、項目と受理形式を比べる。
