@@ -36,6 +36,7 @@ try:
     from agent_toolkit._agents_server import record_paths as _record_paths
     from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
     from agent_toolkit._atk import config as _atk_config
+    from agent_toolkit._atk import outcome as _outcome
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
@@ -3525,7 +3526,7 @@ _DELEGATE_COMPLETION_VALUES = frozenset(
 """`<役割名>.subagent.md`が成功の返却値として定める固定の先頭行。各値が`agent-toolkit/share/`の`<役割名>.subagent.md`に現れることをテストが確かめる。"""
 _UNEXPECTED_EVENT_PREFIXES = ("想定外事象:", "想定外事象：")
 _VERDICT_LINE = re.compile(r"^(?:#+\s*)?(?:\*\*)?\s*判定[^:：]{0,30}[:：]\s*(?:\*\*)?\s*(?P<value>\S.*)$")
-_SHELL_OPERATOR_CHARS = frozenset(";&|<>()")
+_SHELL_OPERATOR_CHARS = frozenset(";&|<>()\n")
 _SHELL_DELEGATION_MARKER = "次のコマンドを実行し、結果を報告せよ。"
 """`agents_server`の`start`のshellが委譲先へ渡す指示本文の冒頭の文。値が同サーバーの指示本文と一致することをテストが確かめる。"""
 _REPORTED_EXIT_CODE = re.compile(r"(?:終了コード|exit(?:[_ ]?code)?|(?<![A-Za-z])rc)[^0-9\n]{0,15}?(\d+)", re.IGNORECASE)
@@ -3710,6 +3711,9 @@ def _candidate_events(
                 excluded["hook-notice-represented"] += 1
                 continue
             if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(event):
+                excluded["normal-negative-result"] += 1
+                continue
+            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_atk_no_match(event):
                 excluded["normal-negative-result"] += 1
                 continue
             if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_nonterminal_result(event):
@@ -4203,6 +4207,34 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
     return exit_code == 1 and _is_negative_predicate(args)
 
 
+def _is_normal_atk_no_match(event: dict[str, Any]) -> bool:
+    """単独のatkが結果行と終了1で表す該当0件を、生成側の契約から判定する。"""
+    if event.get("tool") != "CommandExecution" and event.get("tool_name") != "Bash":
+        return False
+    if _failure_exit_code(event) != 1:
+        return False
+    executable, _subcommand, command, _args = _failure_command_parts(event)
+    if executable != "atk":
+        return False
+    # 包装の外側の連結も、解除したshellの内部の連結も、終了コードをatkへ帰属できない。
+    operation = _json_object(str(event.get("operation", "")))
+    original_command = operation.get("command") if operation is not None else None
+    commands = [command]
+    if isinstance(original_command, str):
+        commands.append(original_command)
+    for source in commands:
+        tokens = _shell_command_tokens(source)
+        if tokens is None or any(token.operator for token in tokens):
+            return False
+    output = event.get("diagnostic") if event.get("tool") == "CommandExecution" else event.get("text")
+    if not isinstance(output, str) or _OMISSION_MARK in output:
+        return False
+    lines = [line.lstrip() for line in output.splitlines()]
+    return any(line.startswith(_outcome.NO_MATCH_PREFIX) for line in lines) and not any(
+        line.startswith((_outcome.FAILURE_PREFIX, _outcome.WARNING_PREFIX)) for line in lines
+    )
+
+
 def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
     """Claude CodeのBashで、読取専用の述語または検索が出力なしで偽を返した事象を区分する。
 
@@ -4264,7 +4296,9 @@ def _shell_command_tokens(command: str) -> list[_ShellToken] | None:
             scanner.enter_quote(char)
             continue
         scanner.index += 1
-        if char.isspace():
+        if char == "\n":
+            pieces.append((char, True))
+        elif char.isspace():
             pieces.append(None)
         elif char in _SHELL_OPERATOR_CHARS:
             pieces.append((char, True))
@@ -4543,7 +4577,10 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
     else:
         value = command.get("command") if command is not None else None
         args = _shell_tokens(value) if isinstance(value, str) else []
-    display = " ".join(args)
+    # Bashの引用と演算子は原文で保ち、直接渡されたargvでは引用してデータとして扱う。
+    value = command.get("command") if command is not None else None
+    display = value if not isinstance(raw, str) and isinstance(value, str) else shlex.join(args)
+    shell_unwrapped = False
     for _ in range(5):
         if not args:
             break
@@ -4556,7 +4593,9 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
                 index += 1
             args = args[index:]
         elif name in _SHELL_NAMES and len(args) >= 3 and args[1] in {"-c", "-lc"}:
-            display = args[2]
+            if not shell_unwrapped:
+                display = args[2]
+                shell_unwrapped = True
             args = _shell_tokens(args[2])
         elif name == "uv" and len(args) >= 3 and args[1] == "run":
             index = 2

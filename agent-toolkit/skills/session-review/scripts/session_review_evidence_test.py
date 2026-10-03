@@ -11,6 +11,7 @@ import pytest
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit import agents_server_mcp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._atk import outcome
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -8382,3 +8383,85 @@ def test_context_at_rejects_invalid_input(tmp_path: pathlib.Path, capsys, argume
     (event,) = _read_jsonl(capsys)
     assert event["kind"] == "error"
     assert message in event["text"]
+
+
+def test_bundle_excludes_atk_no_match_without_hiding_real_failures(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """結果行の契約を持つ終了1を除き、警告・失敗・連結・別コード・切り詰めは候補へ残す。"""
+    no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
+    cases = [
+        (["atk", "wi", "grep", "needle"], 1, no_match),
+        (["atk", "managed-temp", "list"], 1, no_match),
+        (
+            ["/repo/agent-toolkit/bin/atk", "wi", "grep", "needle", "--output-file=/file"],
+            1,
+            no_match + "\n保存先: /file\n行数: 0",
+        ),
+        (["timeout", "60", "env", "KEY=VALUE", "uv", "run", "--frozen", "bash", "-lc", "atk wi grep 'a|b'"], 1, no_match),
+        (["atk", "wi", "grep", "|"], 1, no_match),
+        (["atk", "wi", "grep", "needle"], 1, no_match + "\n" + outcome.WARNING_PREFIX + "要確認"),
+        (["atk", "wi", "grep", "needle"], 1, no_match + "\n" + outcome.FAILURE_PREFIX + "入力が不正"),
+        (["atk", "wi", "grep", "needle"], 2, no_match),
+        (["other", "wi", "grep", "needle"], 1, no_match),
+        (["bash", "-lc", "atk wi grep needle; false"], 1, no_match),
+        (["bash", "-lc", "bash -lc 'atk wi grep needle' && false"], 1, no_match),
+        (["bash", "-lc", "atk wi grep needle\nfalse"], 1, no_match),
+        (["atk", "wi", "grep", "needle"], 1, no_match + "\n" + "出力" * 1500 + "\n" + outcome.WARNING_PREFIX + "末尾警告"),
+    ]
+    records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
+    lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
+    assert lines == set(range(6, 14))
+    assert records[-1]["excluded"]["normal-negative-result"] == 5
+
+
+def test_bundle_excludes_atk_no_match_of_claude_bash(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """引用した検索語と包装を保ち、Bashの終了1と結果行を公開bundleで同じ区分へ数える。"""
+    no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
+    commands = [
+        "atk wi grep 'a|b'",
+        "atk managed-temp list",
+        "timeout 60 env KEY=VALUE uv run --frozen atk wi grep ';' --output-file=/file",
+        "bash -lc \"atk wi grep '&&'\"",
+        "atk wi grep needle && false",
+        "atk wi grep needle | cat",
+        "bash -lc 'atk wi grep needle' && false",
+        "atk wi grep needle\nfalse",
+    ]
+    entries = []
+    for index, command in enumerate(commands):
+        call_id = f"no-match-{index}"
+        entries.extend(
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": call_id,
+                                "is_error": True,
+                                "content": "Exit code 1\n" + no_match + "\n保存先: /file\n行数: 0",
+                            }
+                        ],
+                    },
+                },
+            ]
+        )
+    transcript = _write_transcript(tmp_path, entries)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    _read_jsonl(capsys)
+    records = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
+    assert lines == {10, 12, 14, 16}
+    assert records[-1]["excluded"]["normal-negative-result"] == 4
