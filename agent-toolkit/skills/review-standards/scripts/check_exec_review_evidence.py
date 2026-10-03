@@ -1,4 +1,4 @@
-"""実行レビューの入力`完成条件証拠`の形式とWI原文との対応を確かめ、所在のない達成根拠の共用を検出する。
+"""実行レビューの入力`完成条件証拠`の形式、WI原文との対応と、達成根拠の参照先を確かめる。
 
 異なる要求へ参照先のない根拠を写すと条件別の検収が成立しないため、errorとして扱う。
 参照内容が実際に各条件を満たすかはレビュー担当が判定する。
@@ -22,6 +22,7 @@ import sys
 import tempfile
 import typing
 
+from agent_toolkit._common import markdown_headings
 from agent_toolkit._common import next_action as _next_action
 
 # 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
@@ -416,25 +417,133 @@ def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, 
     return errors
 
 
+def _unit_markers(source: str) -> tuple[str, str]:
+    """単位の標識を候補抽出と共用比較で共有する。sourceはエスケープ済みの正規表現とする。"""
+    return rf"対象単位\s*[:：]\s*{source}", rf"証拠行\s*[:：]?\s*{source}"
+
+
 def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[str]]:
-    """根拠の中で実在ファイルを指す参照（裸のパス、インラインコード、Markdownリンク）の一致を返す。"""
+    """根拠からファイル参照の候補を取り出し、不在の参照も対象版で確認する。"""
     matches = []
     for match in EVIDENCE_REFERENCE.finditer(evidence):
-        candidate = next(value for value in match.groups() if value is not None).strip().strip("<>")
-        # テスト識別子・節・行番号はファイルの所在と分け、内容の妥当性はレビューへ残す。
-        candidate = re.split(r"::|#|:(?=\d+(?:\D|$))", candidate, maxsplit=1)[0].rstrip(".,;:)")
-        if "://" in candidate:
+        candidate, _ = _reference_parts(match)
+        if "://" in candidate or candidate.startswith("~"):
             continue
         reference = pathlib.Path(candidate)
-        if not reference.is_absolute():
-            reference = repository / reference
-        try:
-            if reference.is_file():
-                matches.append(match)
-        except OSError:
-            # 自由文の語も候補へ入るため、ファイル名として扱えない文字列は参照としない。
+        # 単位の標識はWIの識別子であり、根拠ファイルへの参照ではない。
+        if WI_FILENAME.fullmatch(candidate) and any(
+            re.search(f"{marker}$", evidence[: match.start()]) for marker in _unit_markers("")
+        ):
             continue
+        # インラインコードにはコマンドも現れる。パスの前に複数の語が続く値を丸ごとパスにしない。
+        # 絶対パス、リンク先、空白を含むファイル名は保持し、パスより前の引数列とオプションを区別する。
+        if (
+            match[2] is not None
+            and re.match(r"[^/\\\s]+\s+.*[/\\]|\S+\s+--?(?:\s|[A-Za-z])", candidate)
+            and not re.match(r"[A-Za-z]:[\\/]", candidate)
+        ):
+            continue
+        # 自由文の単語やパスのないテスト名は候補にしない。明示されたパスは実在に依存させない。
+        looks_like_path = (
+            reference.is_absolute()
+            or (match[3] is None and ("/" in candidate or "\\" in candidate))
+            or re.fullmatch(r"[A-Za-z0-9_.-]+(?:[/\\][A-Za-z0-9_.-]+)+", candidate) is not None
+            or re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
+            or candidate in {"Makefile", "Dockerfile", "LICENSE"}
+        )
+        if candidate and (looks_like_path or _is_file(repository / reference)):
+            matches.append(match)
     return matches
+
+
+def _reference_parts(match: re.Match[str]) -> tuple[str, str]:
+    """参照のパスと見出し・行位置を分け、見出し本文の空白とインライン記法を保つ。"""
+    candidate = next(value for value in match.groups() if value is not None).strip()
+    if candidate.startswith("<"):
+        closing = candidate.find(">")
+        if closing >= 0:
+            candidate = candidate[1:closing] + candidate[closing + 1 :]
+    if match[3] is not None:
+        candidate = candidate.rstrip(".,;)")
+    separator = re.search(r"::|#|:(?=[+-]?\d)", candidate)
+    if separator is None:
+        return candidate, ""
+    return candidate[: separator.start()], candidate[separator.start() :]
+
+
+def _reference_content(path: pathlib.Path, repository: pathlib.Path, head: str) -> bytes:
+    """worktree内の参照は対象commitのblob、外部参照は現在の実ファイルから読む。"""
+    if not path.is_relative_to(repository):
+        return path.read_bytes()
+    relative = path.relative_to(repository).as_posix()
+    result = subprocess.run(
+        ["git", "-C", str(repository), "cat-file", "blob", f"{head}:{relative}"],
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"対象commit {head}のファイルを読めません: {result.stderr.decode('utf-8', errors='replace').strip()}")
+    return result.stdout
+
+
+def _reference_location_error(content: bytes, location: str, headings: set[str]) -> str | None:
+    """所在の書式と境界を確かめ、内容が条件を満たすかの判定は担当へ残す。"""
+    if location.startswith("#"):
+        return None if location[1:] in headings else f"見出し『{location[1:]}』がありません"
+    if not location or location.startswith("::"):
+        return None
+    matched = re.fullmatch(r":(\d+)(?:-(\d+))?", location)
+    if matched is None:
+        return f"行位置の書式が不正です: {location}。:Nか:N-Mで記し、複数範囲は範囲ごとにパスを再記載する"
+    start = int(matched[1])
+    end = int(matched[2] or matched[1])
+    count = len(content.decode("utf-8").splitlines())
+    if not 1 <= start <= end <= count:
+        return f"行範囲{location}が1〜{count}行の範囲内で順に並んでいません"
+    return None
+
+
+def _check_reference_locations(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
+    """両配列の全達成行で、明示されたファイル・見出し・行を対象版から確認する。"""
+    head = _commit_oid(repository, expected_head)
+    contents: dict[pathlib.Path, bytes | str] = {}
+    headings: dict[pathlib.Path, set[str]] = {}
+    errors: list[str] = []
+    for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
+        rows = payload[section]
+        assert isinstance(rows, list)
+        for index, row in enumerate(rows, start=1):
+            if row["outcome"] != "達成":
+                continue
+            for match in _file_references(_evidence_body(row, field), repository):
+                candidate, location = _reference_parts(match)
+                # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
+                path = pathlib.Path(os.path.abspath(repository / candidate))
+                if path not in contents:
+                    try:
+                        contents[path] = _reference_content(path, repository, head)
+                    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+                        contents[path] = str(exc)
+                content = contents[path]
+                reason: str | None = content if isinstance(content, str) else None
+                if isinstance(content, bytes):
+                    try:
+                        if location.startswith("#") and path not in headings:
+                            text = content.decode("utf-8")
+                            headings[path] = {
+                                title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)
+                            }
+                        reason = _reference_location_error(content, location, headings.get(path, set()))
+                    except UnicodeError as exc:
+                        reason = f"参照先をUTF-8として読めません: {exc}"
+                if reason is not None:
+                    errors.append(
+                        f"{row['awi'] or '計画由来'}: {section}[{index}].evidence: "
+                        f"参照『{candidate}{location}』: {reason}。"
+                        "実際に読んだ対象版の箇所へ参照を訂正するか、観測が不足する行を証拠不足へ再判定する"
+                    )
+    return errors
 
 
 def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
@@ -461,8 +570,7 @@ def _evidence_body(row: dict[str, str], field: str) -> str:
     source = re.escape(row["source"])
     text = re.escape(row[field])
     markers = (
-        rf"対象単位\s*[:：]\s*{source}",
-        rf"証拠行\s*[:：]?\s*{source}",
+        *_unit_markers(source),
         rf"要件原文\s*「{text}」",
     )
     evidence = row["evidence"].strip()
@@ -470,7 +578,7 @@ def _evidence_body(row: dict[str, str], field: str) -> str:
         # 原文の全文を使うので、原文内の閉じ括弧・引用符で途中を切り出さない。
         wrapped = rf"(?:（\s*{marker}\s*）|\(\s*{marker}\s*\)|{marker}(?=$|[\s、,;；。|）)]))"
         evidence = re.sub(rf"[\s、,;；|]*{wrapped}[\s、,;；|]*", " ", evidence)
-    return re.sub(r"\s+", " ", evidence).strip()
+    return evidence.strip()
 
 
 def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
@@ -491,7 +599,7 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
         for index, row in enumerate(rows, start=1):
             if row["outcome"] == "達成":
                 groups[row["evidence"].strip()].append((section, index, row["awi"], row[field]))
-                body = _evidence_body(row, field)
+                body = re.sub(r"\s+", " ", _evidence_body(row, field)).strip()
                 body_groups[body].append((section, index, row["awi"], row[field], row["evidence"].strip()))
                 test_results[section, index] = bool(TEST_RESULT.search(body))
     errors: list[str] = []
@@ -706,6 +814,7 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     try:
         repository = _repository_root()
         errors.extend(_check_reviewed_heads(payload, repository, expected_head))
+        errors.extend(_check_reference_locations(payload, repository, expected_head))
         errors.extend(_check_shared_evidence(payload, repository))
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [str(exc)]

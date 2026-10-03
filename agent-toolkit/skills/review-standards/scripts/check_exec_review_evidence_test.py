@@ -15,6 +15,7 @@ from agent_toolkit._atk import run_script
 FIRST_WI = "20260928-192559-001.md"
 SECOND_WI = "20260928-192559-002.md"
 REVIEWED_HEAD = "a" * 40
+LEGACY_UNIT_MARKER = "証拠行 {source}"
 
 
 def _condition(awi: str, condition: str) -> dict[str, str]:
@@ -52,9 +53,14 @@ def _write_evidence(
 def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: dict[str, str]) -> list[str]:
     requested: list[str] = []
 
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[typing.Any]:
         del kwargs
         if args[0] == "git":
+            if "cat-file" in args:
+                reference = tmp_path / args[-1].split(":", maxsplit=1)[1]
+                if reference.is_file():
+                    return subprocess.CompletedProcess(args, 0, stdout=reference.read_bytes(), stderr=b"")
+                return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"file is absent")
             value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
             return subprocess.CompletedProcess(args, 0, stdout=f"{value}\n", stderr="")
         filename = args[3]
@@ -115,7 +121,7 @@ def _shared_rows(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, eviden
     records = tmp_path / "records"
     records.mkdir()
     record = records / "観測.md"
-    record.write_text("# 設定保存\n保存と再読込が成功した。\n", encoding="utf-8")
+    record.write_text("# 設定保存\n保存と再読込が成功した。\n" + "観測。\n" * 10, encoding="utf-8")
     (records / "test_settings.py").write_text("", encoding="utf-8")
     rows = [_condition(FIRST_WI, "保存"), _condition(FIRST_WI, "再読込")]
     for row in rows:
@@ -372,7 +378,7 @@ def test_public_command_preserves_observation_and_excludes_success_inside_quote(
     expected: int,
 ) -> None:
     """観測の差と正当なテスト共用を保ち、原文引用の成功文字列だけでは免除しない。"""
-    (tmp_path / "観測.md").write_text("観測\n", encoding="utf-8")
+    (tmp_path / "観測.md").write_text("観測\n" * 13, encoding="utf-8")
     rows = [_condition(FIRST_WI, texts[0]), _condition(SECOND_WI, texts[1])]
     for row, body in zip(rows, (first_body, second_body), strict=True):
         row["evidence"] = f"{body}（対象単位: {row['awi']}） 要件原文「{row['condition']}」"
@@ -1109,6 +1115,182 @@ def test_periods_inside_words_do_not_split_requirements(
     )
     assert run_script.dispatch(args) == 1
     assert "不足: 「Keep the old name.」、「Add a new one!」" in capsys.readouterr().err
+
+
+_REFERENCE_MARKDOWN = (
+    "# 設定  保存 ##\n## 括弧 (完了)\n\nSetext *見出し*\n====\n\n"
+    "~~~~text\n# 偽見出し\n~~~~\n\n## 重複\n結果。\n## 重複\n別結果。\n"
+)
+
+
+@pytest.fixture(name="reference_repository")
+def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, str, pathlib.Path]:
+    """実Gitと通常のWI取得を使い、対象版の見出し・行を確かめる公開コマンドの入力を用意する。"""
+    repository = tmp_path / "target repo"
+    notes = tmp_path / "private notes"
+    (repository / "docs").mkdir(parents=True)
+    (notes / "inbox").mkdir(parents=True)
+    (repository / "docs/record.md").write_text(_REFERENCE_MARKDOWN, encoding="utf-8")
+    for command in (
+        ["init", "-q"],
+        ["remote", "add", "origin", "https://github.com/example/foo.git"],
+        ["add", "docs/record.md"],
+        ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "観測記録"],
+    ):
+        subprocess.run(["git", "-C", str(repository), *command], capture_output=True, check=True, timeout=30)
+    head = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=30,
+    ).stdout.strip()
+    (notes / "inbox" / FIRST_WI).write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 題\n## 完成条件\n- 完成\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.chdir(repository)
+    return repository, head, tmp_path / "evidence.json"
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        ("docs/record.md の結果を読んだ", 0),
+        ("`docs/record.md#設定  保存`の結果を読んだ", 0),
+        ("`docs/record.md#括弧 (完了)`の結果を読んだ", 0),
+        ("[記録](docs/record.md#Setext *見出し*)の結果を読んだ", 0),
+        ("`{repository}/docs/record.md#重複`の結果を読んだ", 0),
+        ("docs/record.md:14 の最終行を読んだ", 0),
+        ("docs/record.md:1-14 の全行を読んだ", 0),
+        ("対象単位: 20260929-120000-001.md 要件原文「完成」。docs/record.md:1 で確認", 0),
+        ("対象単位: `20260929-120000-001.md`。docs/record.md:1 で確認", 0),
+        (LEGACY_UNIT_MARKER + "。docs/record.md:1 で確認", 0),
+        ("`docs/record.md:1`は旧H2/H3へのリンク付き入口を保持する。", 0),
+        ("`git diff abc1234 def5678 -- docs/record.md`で観測した。", 0),
+        ("`uv run python tools/check.py`で観測した。", 0),
+        ("`pytest tests/absent_test.py::test_save`で観測した。", 0),
+        ("`git diff -- docs/record.md`で観測。docs/missing.md:1 を参照", 1),
+        ("[記録](docs/absent file.md)で確認", 1),
+        ("`docs/absent file.md`で確認", 1),
+        ("`absent file.md`で確認", 1),
+        ("20260929-120000-001.md を根拠ファイルとして確認", 1),
+        ("docs/record.md:1-2,5-7 で確認", 1),
+        ("docs/record.md#偽見出し で確認", 1),
+        ("docs/record.md#設定 で確認", 1),
+        ("docs/record.md#setting-save で確認", 1),
+        ("missing.md で確認", 1),
+        ("docs/missing.md で確認", 1),
+        ("docs/record.md:0 で確認", 1),
+        ("docs/record.md:-1 で確認", 1),
+        ("docs/record.md:15 で確認", 1),
+        ("docs/record.md:2-1 で確認", 1),
+        ("docs/record.md:1-15 で確認", 1),
+        ("docs/record.md:1- で確認", 1),
+        ("https://example.test/missing.md で公開結果を確認", 0),
+        ("test_save: 成功", 0),
+        ("条件に対応する観測の結果", 0),
+    ],
+)
+def test_public_command_resolves_evidence_references(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    reference: str,
+    expected: int,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対象commitのファイル・見出し・行の境界を公開コマンドで確かめ、パスのない成功結果と自由文を誤拒否しない。"""
+    repository, head, evidence = reference_repository
+    row = {
+        **_condition(FIRST_WI, "完成"),
+        "reviewed_head": head,
+        "evidence": reference.format(repository=repository, source=FIRST_WI),
+    }
+    _write_evidence(evidence, [row])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    assert run_script.dispatch(args) == expected
+    error = capsys.readouterr().err
+    if expected:
+        assert "wi_conditions[1].evidence" in error
+        assert "参照『" in error and "証拠不足へ再判定" in error
+        if ":1-2,5-7" in reference:
+            assert "範囲ごとにパスを再記載" in error
+    else:
+        assert not error
+
+
+@pytest.mark.parametrize("layout", ["single", "outside-selection", "other-array", "plan"])
+def test_reference_checks_every_achieved_row(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path], layout: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """共用しない参照も、指定集合外・両配列・計画由来の達成行まで拒否する。"""
+    _, head, evidence = reference_repository
+    good = {**_condition(FIRST_WI, "完成"), "reviewed_head": head, "evidence": "test_complete: 成功"}
+    invalid = {
+        "single": _condition(FIRST_WI, "完成"),
+        "outside-selection": _condition(SECOND_WI, "別条件"),
+        "other-array": _requirement(FIRST_WI, "別要求"),
+        "plan": _requirement("", "計画要求"),
+    }[layout]
+    invalid.update(reviewed_head=head, evidence="docs/absent.md の該当入力を確認")
+    conditions = [invalid] if layout == "single" else [good]
+    if layout == "outside-selection":
+        conditions.append(invalid)
+    _write_evidence(evidence, conditions, [invalid] if layout in {"other-array", "plan"} else [])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    assert run_script.dispatch(args) == 1
+    error = capsys.readouterr().err
+    assert "docs/absent.md" in error and (invalid["awi"] or "計画由来") in error
+
+
+def test_reference_uses_reviewed_commit_and_external_records(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """現在本文だけの見出しを拒否し、対象版の参照とGit管理外の実際の記録を受理する。"""
+    repository, head, evidence = reference_repository
+    record = repository / "docs/record.md"
+    record.write_text("# 現在本文だけ\n" * 20, encoding="utf-8")
+    outside = repository.parent / "外部記録.md"
+    outside.write_text("# 外部観測\n結果。\n", encoding="utf-8")
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    for reference, expected in (
+        ("docs/record.md#現在本文だけ", 1),
+        ("docs/record.md:20", 1),
+        ("docs/record.md#重複", 0),
+        (f"{outside}#外部観測", 0),
+        (f"{outside}:2", 0),
+        (f"{outside}#不実在", 1),
+        (f"{outside}:3", 1),
+        (str(repository.parent / "不実在.md"), 1),
+    ):
+        row = {**_condition(FIRST_WI, "完成"), "reviewed_head": head, "evidence": f"`{reference}`の結果を確認"}
+        _write_evidence(evidence, [row])
+        assert run_script.dispatch(args) == expected, capsys.readouterr().err
+    record.unlink()
+    row.update(evidence="docs/record.md#重複 で対象版を確認")
+    _write_evidence(evidence, [row])
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize("outcome", ["未達", "証拠不足"])
+def test_nonachieved_missing_reference_is_a_valid_reason(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path], outcome: str
+) -> None:
+    """参照が無いという未達の説明へ、達成根拠の所在を要求しない。"""
+    _, head, evidence = reference_repository
+    row = {**_condition(FIRST_WI, "完成"), "reviewed_head": head, "outcome": outcome, "evidence": "docs/absent.md は未作成"}
+    _write_evidence(evidence, [row])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    assert run_script.dispatch(args) == 0
 
 
 def test_public_command_runs_platform_launcher(
