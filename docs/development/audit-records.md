@@ -542,3 +542,17 @@ uv run --frozen pytest -p no:cacheprovider ci_workflow_test.py custom_linters_in
 AWI `20261003-134122-001.md`と`20261003-110859-001.md`の起草時に、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
+
+## dotfiles-development：不変条件テストのfast自動実行：2026年10月4日
+
+pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。変更前のマーカー収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。ファイル名だけで件数を確認すると、この対象が外れても通常のfastは成功するため、各nodeの対応を比較する。
+
+再検証はrootで次を個別に実行する。
+
+```sh
+uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex . --collect-only -q
+uv run --frozen pyfltr fast --commands=pytest
+uv run --frozen prek run pyfltr --files docs/development/design-packages.md
+```
+
+収集結果の各nodeが専用ファイルへ一度ずつ対応し、通常の動作nodeを追加していないことを確認する。Markdownだけを渡した既存hookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。

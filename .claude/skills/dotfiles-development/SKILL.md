@@ -35,24 +35,23 @@ description: >
     初回の変更範囲の検証ではMCPの`commands`とCLIの`--commands`を指定しない。
     修正後に失敗したチェックだけを再実行する場合は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を、CLIでは`--commands=mypy,ruff-check`を渡す
   - 変更範囲の検証の対象は`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で選ぶ。本リポジトリで使う値は次のとおり
-    - 横断テスト: `repo_invariant`マーカーで識別し、`uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .`で実行する。マーカーの付け方は`pytools-edit`「テスト配置」に従う
+    - 横断テスト: `repo_invariant`マーカーと`*_invariant_test.py`で識別する。両projectの`pytest-fast-targets`の指定に従い、既存のprekが起動する`pyfltr fast`で自動実行する。通常のcommitではこの自動実行の結果を使う。配置は`pytools-edit`「テスト配置」に従う
     - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
     - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。
       共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。内部のコメント・空白だけの変更は含めない
     - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -p no:cacheprovider pytools scripts`
     - 名前の削除・改名の全体静的検査: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
-    - 統合後の検証: 前記の共有契約とパッケージ外の呼び出し元のpytest、`repo_invariant`のテスト、`ty`、および`uv run --frozen pyfltr run --commands=arid`は、各レーンの統合でfast-forwardの前に専用worktreeで1回実行する
+    - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
   - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
   - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
-  - 公開前の全体検証は`agent-toolkit:commit`の`references/publish.md`「検証とCI」に従う。本リポジトリでpush前に実行するCI非実行のチェックと全体走査のチェックは次の4件である
+  - 公開前の全体検証は`agent-toolkit:commit`の`references/publish.md`「検証とCI」に従う。本リポジトリでpush前に実行するCI非実行のチェックと全体走査のチェックは次の3件である
     - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
     - レーンをまたぐ重複実装の検出: `uv run --frozen pyfltr run --commands=arid`
     - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`
-    - 全追跡ファイルと全ソースの不変条件: `uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .`
   - `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
     次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
     - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト

@@ -13,14 +13,6 @@ from agent_toolkit._atk import help_text, run_script
 from agent_toolkit._common import next_action
 
 
-@pytest.mark.repo_invariant
-def test_registry_stays_inside_plugin_root() -> None:
-    for relative in run_script.SCRIPT_PATHS.values():
-        target = (run_script.PLUGIN_ROOT / relative).resolve()
-        assert target.is_relative_to(run_script.PLUGIN_ROOT)
-        assert target.is_file()
-
-
 def test_dispatch_forwards_help_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
     args = argparse.Namespace(script_name="plan-check", script_args=["--", "--help"])
     assert run_script.dispatch(args) == 0

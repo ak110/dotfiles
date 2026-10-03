@@ -28,7 +28,7 @@
 直下に置く公開ファイルは接頭辞`_`を付けずに命名する。
 `_managed_temp.py`だけは接頭辞を残す。
 このパスは`agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex.py`がCodex側の許可判定で解決し、hookの出力契約テストが生成するコマンド文字列にも現れる。
-改名すると同じコマンドが許可されなくなるため、名前を維持して`agent-toolkit/agent_toolkit/script_prefix_test.py`へ`_managed_temp.py`の除外を置く。
+改名すると同じコマンドが許可されなくなるため、名前を維持して`agent-toolkit/agent_toolkit/script_prefix_invariant_test.py`へ`_managed_temp.py`の除外を置く。
 
 サブパッケージ内のimportには相対importを使わず絶対importを使う。
 `scripts/check_script_imports.py`は`sys.path.insert`の静的評価と絶対importの解決によりPEP 723スクリプトのimport到達性を確かめる。
@@ -94,10 +94,16 @@ fixtureの文書を入力にして実装を呼ぶテストは実装の動作テ�
 
 複数領域の契約の整合を調べるテストも`repo_invariant`で選ぶ。
 全ソース走査に限る旧説明では、文書と実装、マニフェストと設定などの整合性を確かめるテストが選択から漏れていた。
-マーカー全体はリポジトリ直下から選択し、Codex投影だけを収集から除く。通常の動作テストは一律にこのマーカーへ含めない。
+マーカー対象は近接する`*_invariant_test.py`へそろえ、rootとagent-toolkitの`pytest-fast-targets`に同じ単一globを指定する。
+既存のprekが起動するfastから実行するため、通常のcommitで担当がマーカーやファイル一覧を組み立てる必要がない。
+通常テストとの混在はマーカー対象だけを分け、検証用のヘルパーの入力を調べるテストも元の集合に入っていた場合は保持する。
+通常の動作テストを一律にfastへ加えず、Codex投影も既存の除外で収集対象から外す。
 検証する主体は近くのテストを探索の起点にし、`verification-scope.md`の直接消費側の類型でパッケージ境界を越える対象も集める。
 
 隠しディレクトリのchezmoi配布原本はpytestの通常の収集では対象に入らないため、その契約を読むrootのテストを維持する。
 近接のためだけにpytestの再帰設定やconftestを増やす案は、収集と隔離の別系統を生むため採らない。
 Codex投影は既存の通常ファイルの同期を維持し、移動したテストも含める。wheelは既存のPythonパッケージだけを含み、テストを除外する。
-生成同期と説明文の自動チェックのglobは新配置に追随させる。自動実行機能や実行頻度の変更は配置整理とは分ける。
+生成同期と説明文の自動チェックのglobは新配置に追随させる。
+fastへの集約はテストの対象選択を自動化する変更であり、commit後にrebaseでできた組合せを確かめる役割も保持する。
+統合時も同じfastのpytestを実行して組合せを確かめる。
+個別のテスト一覧を設定へ写す案は移動のたびに更新を要し、独立したhookを足す案は同じテストを別の呼び出しでも起動するため採らない。

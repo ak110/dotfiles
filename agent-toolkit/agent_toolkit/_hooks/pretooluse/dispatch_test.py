@@ -36,17 +36,6 @@ _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hook
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
 
 
-def _matcher_covers(matcher: str, tool_name: str) -> bool:
-    """matcherがtool_nameへ一致するかを判定する。
-
-    `re.fullmatch`は`*`だけのパターンへ`re.error: nothing to repeat`を送出するため、
-    matcherが`*`である場合は正規表現として評価せず全一致として扱う。
-    """
-    if matcher == "*":
-        return True
-    return re.fullmatch(matcher, tool_name) is not None
-
-
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
 def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
     """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""
@@ -91,24 +80,6 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     )
     expected_lineno = source.splitlines().index("    print(notice, file=sys.stderr)") + 1
     assert _stderr_warn_offenders(source) == [expected_lineno]
-
-
-@pytest.mark.repo_invariant
-def test_pretooluse_matcher_covers_agents_server_tool_names() -> None:
-    """PreToolUse matcherが実装側のagents_serverツール名集合全体を被覆する。
-
-    実装側の`agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES`を入力として反復し、
-    hooks.json（Claude Code、matcherは`*`）とhooks.codex.json（Codex）の双方が
-    全要素が含まれているか確かめる。実装側の集合へ要素を追加してもmatcherへ
-    追加し忘れると、Codex側のその要素だけが判定されなくなり、このテストが失敗する。
-    """
-    claude_matcher = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
-    codex_matcher = json.loads(_HOOKS_CODEX_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
-    assert claude_matcher == "*"
-    for tool_name in agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES:
-        assert _matcher_covers(claude_matcher, tool_name)
-        if tool_name.startswith("mcp__agents_server__"):
-            assert _matcher_covers(codex_matcher, tool_name), tool_name
 
 
 def test_second_removable_warning_continues_with_count_and_fix(tmp_path: pathlib.Path) -> None:

@@ -3,12 +3,12 @@ revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version == '3.14.*' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
     "python_full_version < '3.13' and sys_platform != 'win32'",
 ]
 
@@ -75,7 +75,7 @@ requires-dist = [
 dev = [
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.17.7" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.20.0" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
@@ -1405,7 +1405,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.19.9"
+version = "3.20.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1437,9 +1437,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4e/3e/ce27c62155bdab7c91c0c89ea56ea8147771d6e768bb56f9a571a3139d4e/pyfltr-3.19.9.tar.gz", hash = "sha256:090798810f8938f09860ebd61637426502cf49eaad072694755c2e578f3d541a", size = 934000, upload-time = "2026-10-02T06:04:48.128Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/fe/68bbfb0f0de60b18c2ca67b199f617e307fbc5df64711f656219ce5abc1d/pyfltr-3.20.0.tar.gz", hash = "sha256:f240fd27cb14ee23ce1478ac1c4c38f7da690e44fdf12d3f64e53aa84f59ea88", size = 939360, upload-time = "2026-10-03T08:31:18.81Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/de/324e9c0479e89cccf6d2cc064e58ff2825d8afef3a494dfc9aba6794f4c1/pyfltr-3.19.9-py3-none-any.whl", hash = "sha256:11653e2488afa22c2fbcdc999ac6fe51320750ebaa240ee81360d91b0d7c1ffb", size = 403380, upload-time = "2026-10-02T06:04:46.327Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/e2/21a9f85a70844d95ad630f09f4ca48f39e35e7537a56973c144faf3671d1/pyfltr-3.20.0-py3-none-any.whl", hash = "sha256:c94bc0ecd90b73572145d5516dd844785f551fe9b568515d5e444c6ebaa9712e", size = 405181, upload-time = "2026-10-03T08:31:17.29Z" },
 ]
 
 [[package]]
@@ -1741,8 +1741,8 @@ version = "0.23.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version == '3.14.*' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform != 'win32'",

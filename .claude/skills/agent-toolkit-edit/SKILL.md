@@ -54,7 +54,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 `_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
 新しいモジュールの追加先は、そのモジュールを読み込む主体が属するサブパッケージで判定する。
 直下の公開スクリプトは接頭辞`_`を付けずに命名する。
-`_managed_temp.py`だけは外部の許可判定がそのパスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_test.py`がこの1件を除外する。
+`_managed_temp.py`だけは外部の許可判定がそのパスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_invariant_test.py`がこの1件を除外する。
 
 サブパッケージ内のimportには絶対importを使う。
 `scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の自動チェックの被覆が失われるためである。

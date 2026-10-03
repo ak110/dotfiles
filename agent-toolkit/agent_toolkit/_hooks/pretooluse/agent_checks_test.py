@@ -377,12 +377,6 @@ class TestExecuteReviewAlternateRouteAllowed:
         )
         assert result.returncode == 0
 
-    @pytest.mark.repo_invariant
-    def test_guarded_task_references_exist(self) -> None:
-        """回帰テストが与える役割名の実在を確認し、改名による空振りを検出する。"""
-        for task_name in _EXECUTE_REVIEW_TASK_NAMES:
-            assert (_SHARE_DIR / task_name).is_file()
-
 
 class TestPlanFileDoesNotRequireSelfPath:
     """計画自身のパスとの一致を判定しないことを検証する。"""
